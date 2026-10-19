@@ -84,7 +84,7 @@ P0 ──> P1 ──> P2 ──> P3
 - `AET-WO-1200` — spike, then build: the constraint solver (`RUL-02`). The spike measures solve time on the chosen part's full pin table with both the SMT prior and a pure-Rust search, and records the number in `architecture.md` §2 by amendment before the build half starts.
 - `AET-WO-1300` — board emitter: `.kicad_sch`, `.kicad_pcb`, bill of materials, and the parasitic extraction the twin will need, validated by `kicad-cli` with `--exit-code-violations`.
 - `AET-WO-1400` — spike, then build: the generated typestate board crate (`RUL-04`). The spike answers `OQ-04` with a harness over a harness-owned register image that catches one seeded typestate bug, or shows that it cannot, and records which.
-- `AET-WO-1500` — the MCP tool server: TypeScript on the official MCP TypeScript SDK, stdio transport, spawning the `AET-WO-0300` binary and exposing its subcommands as tools (`RUL-10`). Runs in parallel with everything else in P1; nothing in P1 depends on it.
+- `AET-WO-1500` — the `aethelgard mcp` subcommand: `rmcp` over stdio, with the tool list generated from the command tree so the CLI and MCP surfaces cannot drift (`RUL-10`). Runs in parallel with everything else in P1; nothing in P1 depends on it.
 
 **Exit gate**
 
@@ -93,7 +93,7 @@ P0 ──> P1 ──> P2 ──> P3
 - A `trybuild` suite of at least five firmware snippets that each touch an unconfigured pin, an ungated peripheral clock, or a bus speed above the solved rise-time ceiling fails to compile, and one valid driver compiles (`INV-02`'s falsification, run as a test).
 - Regenerating from the specification twice produces byte-identical board files and board crate (`INV-01`).
 - Either `cargo kani` proves the harness from `AET-WO-1400` on the generated register block, or `architecture.md` §8 records under `OQ-04` why it cannot and what replaces it. A gate that cannot be checked is fixed by amendment, not waved through.
-- MCP Inspector connected to the `AET-WO-1500` server over stdio lists every `aethelgard` subcommand as a tool and completes one `validate` call; `grep` over the server tree finds no network listener and no credential.
+- MCP Inspector connected to `aethelgard mcp` over stdio lists every subcommand as a tool and completes one `validate` call; adding a throwaway subcommand to the command tree makes it appear in `tools/list` with no change to the `mcp` module; `grep` over the crate finds no network listener and no credential.
 
 ### P2 — The twin and the faults
 
@@ -147,7 +147,7 @@ Rows of **number as built → what it actually was → what the roadmap had plan
 | `AET-WO-0300` | reserved, now the `aethelgard` CLI (`RUL-10`) | Argon drafts: `AET-WO-0003`, a Rust MCP server in P0 |
 | `AET-WO-0400` | reserved, now local-first (`RUL-06`) | Argon drafts: `AET-WO-0004`, R2-primary |
 | `AET-WO-1100` … `AET-WO-1400` | reserved, `1200` and `1400` now spike-then-build | Argon drafts: `AET-WO-1001` … `AET-WO-1004` |
-| `AET-WO-1500` | reserved: TypeScript MCP wrapper over the CLI, moved from P0 to P1 | Argon drafts: part of `AET-WO-0003` |
+| `AET-WO-1500` | reserved: the `mcp` subcommand of the CLI binary, moved from P0 to P1 | Argon drafts: part of `AET-WO-0003`, a separate server crate |
 | `AET-WO-2100` … `AET-WO-2300` | reserved as intent pending the `OQ-02` spike | Argon drafts: `AET-WO-2001` … `AET-WO-2003`, fully scoped |
 | `AET-WO-3100` … `AET-WO-3300` | reserved as intent | Argon drafts: `AET-WO-3001` … `AET-WO-3003`, fully scoped |
 
@@ -158,7 +158,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | Date | Section | Change | Rationale |
 |---|---|---|---|
 | 2026-10-14 | — | Initial draft | Seed. Week ranges removed, KiCad gates given `--exit-code-violations`, P2 and P3 reduced to intent pending spikes, human-track items added |
-| 2026-10-19 | status, §3, §5, §7 | Ratified by merge of PR #1. `AET-WO-0300` became the CLI, `AET-WO-1500` added for the TypeScript MCP wrapper, P0 and P1 gates extended, `OQ-01`/`OQ-05` removed from human-track | Follows `architecture.md` `RUL-08`, `RUL-10`, `RUL-11` ruled the same day; the P0 gate had required a server nothing in P0 or P1 consumed |
+| 2026-10-19 | status, §3, §5, §7 | Ratified by merge of PR #1. `AET-WO-0300` became the CLI, `AET-WO-1500` added for the `mcp` subcommand, P0 and P1 gates extended, `OQ-01`/`OQ-05` removed from human-track | Follows `architecture.md` `RUL-08`, `RUL-10`, `RUL-11` ruled the same day; the P0 gate had required a server nothing in P0 or P1 consumed |
 
 ## 9. Provenance
 
