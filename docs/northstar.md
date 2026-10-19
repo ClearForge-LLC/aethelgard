@@ -1,9 +1,9 @@
 # Aethelgard — north star
 
-**Status:** draft for ratification, 2026-10-14. **Supersedes** the unmerged northstar draft inside `docs/inputs/argon-session/05-bootstrap-script-v2-repo-genesis.md`. Read before `architecture.md`.
+**Status:** ratified 2026-10-19 by merge of pull request #1; first drafted 2026-10-14. **Supersedes** the unmerged northstar draft inside `docs/inputs/argon-session/05-bootstrap-script-v2-repo-genesis.md`. Read before `architecture.md`.
 **Author:** Claude Code, synthesizing the Argon (Gemini) planning session with Scotty · **Gate:** Scotty · **Builder:** a separate build session per work order.
 
-> Nothing below is ratified until Scotty says so. Argon's draft carried the word "Ratified" on documents nobody had ratified; this one does not.
+> Ratification is the gate's act, not the author's. Argon's draft carried the word "Ratified" on documents nobody had ratified; this one carried "draft" until Scotty merged it.
 
 ---
 
@@ -78,6 +78,7 @@ Each carries its reason, because the reason is what stops it being relitigated e
 | Date | Section | Change | Rationale |
 |---|---|---|---|
 | 2026-10-14 | — | Initial draft | Seed. Synthesized from the five Argon session captures; `INV-07` and `NG-04`, `NG-05` added by Claude with reasons stated inline |
+| 2026-10-19 | status | Ratified | Scotty merged PR #1 with `INV-07`, `NG-04`, and `NG-05` called out in the review summary, and delegated the remaining open questions to Claude. No invariant text changed |
 
 ## 8. Provenance
 
