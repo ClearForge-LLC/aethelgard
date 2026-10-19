@@ -201,3 +201,19 @@ fn duplicate_key_is_a_deserialization_error() {
     let err = parse_error(&VALID_JSON.replacen('{', r#"{"project_name":"q","#, 1));
     assert!(err.contains("duplicate field"), "{err}");
 }
+
+#[test]
+fn positional_sequence_form_is_a_deserialization_error() {
+    let err = parse_error(r#"["p",[],[]]"#);
+    assert!(err.contains("expected a TopologyGraph object"), "{err}");
+
+    let err = parse_error(
+        r#"{"project_name":"p","voltage_domains":[["V",3300,50]],"net_constraints":[]}"#,
+    );
+    assert!(err.contains("expected a VoltageDomain object"), "{err}");
+
+    let err = parse_error(
+        r#"{"project_name":"p","voltage_domains":[],"net_constraints":[["N",1,1,null]]}"#,
+    );
+    assert!(err.contains("expected a NetConstraint object"), "{err}");
+}

@@ -2,19 +2,24 @@
 //! (`docs/architecture.md` §3). Every shared specification type lives here and
 //! nowhere else (`INV-01`).
 //!
-//! Every type refuses unknown fields, and [`TopologyGraph::validate`] refuses
-//! rather than defaults (`INV-06`).
+//! Every type refuses unknown fields and accepts only an object, never serde's
+//! positional-sequence form, and [`TopologyGraph::validate`] refuses rather
+//! than defaults (`INV-06`).
 
 #![forbid(unsafe_code)]
 
 use std::collections::HashSet;
 
-use serde::{Deserialize, Serialize};
+use std::fmt;
+
+use serde::de::value::MapAccessDeserializer;
+use serde::de::{MapAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// The top-level specification: one project, its voltage domains, and its net
 /// constraints.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, remote = "Self")]
 pub struct TopologyGraph {
     pub project_name: String,
     pub voltage_domains: Vec<VoltageDomain>,
@@ -23,7 +28,7 @@ pub struct TopologyGraph {
 
 /// A supply rail and how far it may stray from nominal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, remote = "Self")]
 pub struct VoltageDomain {
     pub id: String,
     pub nominal_millivolts: u32,
@@ -32,7 +37,7 @@ pub struct VoltageDomain {
 
 /// The electrical bounds one net must stay within.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, remote = "Self")]
 pub struct NetConstraint {
     pub net_name: String,
     pub max_capacitance_femtofarads: u64,
@@ -42,6 +47,42 @@ pub struct NetConstraint {
     #[serde(deserialize_with = "Option::deserialize")]
     pub impedance_ohms: Option<u32>,
 }
+
+/// The derives above are `remote = "Self"`, so they generate inherent
+/// functions; these trait impls wrap them so a type deserializes only from an
+/// object. The derived form would also accept a positional sequence such as
+/// `["p",[],[]]`, which bypasses field names entirely.
+macro_rules! object_only {
+    ($($ty:ident),*) => {$(
+        impl Serialize for $ty {
+            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                $ty::serialize(self, serializer)
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $ty {
+            fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                struct ObjectVisitor;
+
+                impl<'de> Visitor<'de> for ObjectVisitor {
+                    type Value = $ty;
+
+                    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                        f.write_str(concat!("a ", stringify!($ty), " object"))
+                    }
+
+                    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<$ty, A::Error> {
+                        $ty::deserialize(MapAccessDeserializer::new(map))
+                    }
+                }
+
+                deserializer.deserialize_map(ObjectVisitor)
+            }
+        }
+    )*};
+}
+
+object_only!(TopologyGraph, VoltageDomain, NetConstraint);
 
 /// One variant per refusal. Each names the offending id, or its index when the
 /// id itself is what is missing.
