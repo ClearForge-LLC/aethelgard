@@ -1,6 +1,6 @@
 # Aethelgard — roadmap
 
-**Status:** draft for ratification, 2026-10-14. **Supersedes** the unmerged roadmap draft inside `docs/inputs/argon-session/05-bootstrap-script-v2-repo-genesis.md`. Read `architecture.md` first.
+**Status:** ratified 2026-10-19 by merge of pull request #1; first drafted 2026-10-14. **Supersedes** the unmerged roadmap draft inside `docs/inputs/argon-session/05-bootstrap-script-v2-repo-genesis.md`. Read `architecture.md` first.
 **Author:** Claude Code, synthesizing the Argon (Gemini) planning session with Scotty · **Gate:** Scotty.
 
 ---
@@ -37,9 +37,7 @@ P0 ──> P1 ──> P2 ──> P3
 - **Risk concentrates in two places.** `P2`'s lock-step bridge (`OQ-02`) is where a bug produces a simulation that runs but measures nothing, and `P3`'s attribution is where a bug produces a *confident wrong answer* about which half failed. Everything else fails loudly. Those two get the adversarial pass and the most review.
 - **What runs in parallel.** The trace schema and local archive (`AET-WO-0400`) depend only on the workspace, not on anything in P1. Within P1, the board emitter and the board crate both consume the solved graph and do not touch each other.
 - **Human-track, not code.** These are the most likely things to block delivery while everyone stares at code, so they are named here:
-  - Scotty rules on `OQ-01` (reference microcontroller) before `AET-WO-1100` can start.
-  - Scotty rules on `OQ-05` (tool server language) before `AET-WO-0300` can start.
-  - A physical development board for the chosen target has to be bought before the end of P2, so P3's simulated verdicts can be compared against one real board (northstar `NG-05`).
+  - A Nucleo-H753ZI development board (`architecture.md` `RUL-08`) has to be bought before the end of P2, so P3's simulated verdicts can be compared against one real board (northstar `NG-05`). `OQ-01` and `OQ-05` were ruled on 2026-10-19 and no longer block anything.
   - A fabrication order and its budget are needed for the P3 gate; the gate is "package emitted and verified", but the northstar's scar section stays empty until a board exists.
   - A Cloudflare R2 bucket and scoped credentials only if the optional mirror in `RUL-06` is wanted; nothing in any gate requires it.
 
@@ -57,13 +55,13 @@ P0 ──> P1 ──> P2 ──> P3
 ### P0 — Foundation
 
 **Goal:** make everything after this measurable: a workspace that builds, tools that run headless, and traces that replay.
-**Depends on:** nothing. `OQ-05` must be ruled before `AET-WO-0300`.
+**Depends on:** nothing.
 
 **Work orders**
 
 - `AET-WO-0100` — Rust workspace skeleton: the seven parts from `architecture.md` §3 as crates, `#![forbid(unsafe_code)]` at every crate root, and the first fail-closed specification types in `aethelgard-ir` with negative tests (`INV-06`). Argon's type sketch in capture 05 is the input.
 - `AET-WO-0200` — pinned container image with `kicad-cli`, `renode`, `ngspice`, and `cargo kani` installed, and a smoke test for each. Measures the `kicad-cli` default exit code and reads the rest of Renode's platform list; both land in `architecture.md` §2 by amendment.
-- `AET-WO-0300` — tool server exposing build, ERC/DRC, proof, and simulation runs as tool calls, with the subprocess posture from `architecture.md` §6.
+- `AET-WO-0300` — the `aethelgard` command-line binary: one executable, JSON on stdin and stdout, documented exit codes, subcommands for validate, build, check, prove, and simulate that each call into the crates or spawn an external tool with the subprocess posture from `architecture.md` §6. This is the contract every later caller (CI, a human, the tool server) uses (`RUL-10`).
 - `AET-WO-0400` — Cap'n Proto trace schema, local append-only archive, deterministic replay reader, and the optional remote mirror behind named credentials (`RUL-06`). Measures trace bytes per simulated second and records it for `OQ-03`.
 
 **Exit gate**
@@ -71,20 +69,22 @@ P0 ──> P1 ──> P2 ──> P3
 - `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` all exit 0 inside the container.
 - Inside the container, `kicad-cli version`, `renode --version`, `ngspice --version`, and `cargo kani --version` each exit 0.
 - `kicad-cli pcb drc --exit-code-violations` on a checked-in board with one deliberate violation exits 5, and on a clean board exits 0.
+- `aethelgard validate` reads a checked-in specification from stdin and exits 0 with a JSON report; the same with one zeroed voltage domain exits nonzero with a JSON error naming the domain (`INV-06`).
 - A synthetic 10,000-event trace written to the local archive replays to a state sequence whose hash equals the original's (`INV-04`'s falsification, run as a test).
 - With the remote-mirror credentials unset, the archive step logs one error naming the missing variable and the run still produces a verdict; with `renode` removed from `PATH`, the run halts with an error naming it and produces no verdict (`INV-06`).
 
 ### P1 — One source, two projections
 
 **Goal:** one specification lowers to a checked board and a board crate, and the two cannot disagree.
-**Depends on:** P0. `OQ-01` must be ruled before `AET-WO-1100`.
+**Depends on:** P0. Target is the STM32H753ZI (`architecture.md` `RUL-08`).
 
 **Work orders**
 
 - `AET-WO-1100` — specification graph: microcontroller package and alternate-function table ingested from the vendor register description, buses, voltage domains, passives with electrical bounds; round-trip serialization.
 - `AET-WO-1200` — spike, then build: the constraint solver (`RUL-02`). The spike measures solve time on the chosen part's full pin table with both the SMT prior and a pure-Rust search, and records the number in `architecture.md` §2 by amendment before the build half starts.
 - `AET-WO-1300` — board emitter: `.kicad_sch`, `.kicad_pcb`, bill of materials, and the parasitic extraction the twin will need, validated by `kicad-cli` with `--exit-code-violations`.
-- `AET-WO-1400` — spike, then build: the generated typestate board crate (`RUL-04`). The spike answers `OQ-04` with a harness that proves one real register-block property or shows that it cannot, and records which.
+- `AET-WO-1400` — spike, then build: the generated typestate board crate (`RUL-04`). The spike answers `OQ-04` with a harness over a harness-owned register image that catches one seeded typestate bug, or shows that it cannot, and records which.
+- `AET-WO-1500` — the MCP tool server: TypeScript on the official MCP TypeScript SDK, stdio transport, spawning the `AET-WO-0300` binary and exposing its subcommands as tools (`RUL-10`). Runs in parallel with everything else in P1; nothing in P1 depends on it.
 
 **Exit gate**
 
@@ -93,6 +93,7 @@ P0 ──> P1 ──> P2 ──> P3
 - A `trybuild` suite of at least five firmware snippets that each touch an unconfigured pin, an ungated peripheral clock, or a bus speed above the solved rise-time ceiling fails to compile, and one valid driver compiles (`INV-02`'s falsification, run as a test).
 - Regenerating from the specification twice produces byte-identical board files and board crate (`INV-01`).
 - Either `cargo kani` proves the harness from `AET-WO-1400` on the generated register block, or `architecture.md` §8 records under `OQ-04` why it cannot and what replaces it. A gate that cannot be checked is fixed by amendment, not waved through.
+- MCP Inspector connected to the `AET-WO-1500` server over stdio lists every `aethelgard` subcommand as a tool and completes one `validate` call; `grep` over the server tree finds no network listener and no credential.
 
 ### P2 — The twin and the faults
 
@@ -101,7 +102,7 @@ P0 ──> P1 ──> P2 ──> P3
 
 **Work orders (intent)**
 
-- `AET-WO-2100` — spike, then build: emit the Renode platform description from the solved graph, boot the generated firmware headless, and decide the lock-step transport (`OQ-02`) by measuring all three candidates on one I2C transaction.
+- `AET-WO-2100` — spike, then build: emit the Renode platform description from the solved graph (adding the SPI instances Renode's own `stm32h7.repl` omits, `architecture.md` §2.2), boot the generated firmware headless, and decide the lock-step transport (`OQ-02`) by measuring all three candidates on one I2C transaction, starting with the in-process `libngspice` prior.
 - `AET-WO-2200` — analog bridge: the extracted parasitics as an `ngspice` netlist for the designated nets, driven in lock-step with the digital run.
 - `AET-WO-2300` — fault orchestrator: scenarios authored independently of the generated artifacts (`INV-07`), including a held-low data line, an oversized pull-up, a rail droop, and an interrupt storm; every campaign writes to the P0 archive.
 
@@ -143,9 +144,10 @@ Rows of **number as built → what it actually was → what the roadmap had plan
 | — (pull request #1, no work order) | the four steering documents and the five session captures, written before any work order existed | Argon's `AET-WO-0100` had bundled the documents with the workspace skeleton; the documents landed first so the skeleton has something to cite |
 | `AET-WO-0100` | reserved: workspace skeleton only | Argon drafts: `AET-WO-0001` "Repo Genesis & Context Pyramid Bootstrap" |
 | `AET-WO-0200` | reserved | Argon drafts: `AET-WO-0002` |
-| `AET-WO-0300` | reserved | Argon drafts: `AET-WO-0003` |
+| `AET-WO-0300` | reserved, now the `aethelgard` CLI (`RUL-10`) | Argon drafts: `AET-WO-0003`, a Rust MCP server in P0 |
 | `AET-WO-0400` | reserved, now local-first (`RUL-06`) | Argon drafts: `AET-WO-0004`, R2-primary |
 | `AET-WO-1100` … `AET-WO-1400` | reserved, `1200` and `1400` now spike-then-build | Argon drafts: `AET-WO-1001` … `AET-WO-1004` |
+| `AET-WO-1500` | reserved: TypeScript MCP wrapper over the CLI, moved from P0 to P1 | Argon drafts: part of `AET-WO-0003` |
 | `AET-WO-2100` … `AET-WO-2300` | reserved as intent pending the `OQ-02` spike | Argon drafts: `AET-WO-2001` … `AET-WO-2003`, fully scoped |
 | `AET-WO-3100` … `AET-WO-3300` | reserved as intent | Argon drafts: `AET-WO-3001` … `AET-WO-3003`, fully scoped |
 
@@ -156,6 +158,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | Date | Section | Change | Rationale |
 |---|---|---|---|
 | 2026-10-14 | — | Initial draft | Seed. Week ranges removed, KiCad gates given `--exit-code-violations`, P2 and P3 reduced to intent pending spikes, human-track items added |
+| 2026-10-19 | status, §3, §5, §7 | Ratified by merge of PR #1. `AET-WO-0300` became the CLI, `AET-WO-1500` added for the TypeScript MCP wrapper, P0 and P1 gates extended, `OQ-01`/`OQ-05` removed from human-track | Follows `architecture.md` `RUL-08`, `RUL-10`, `RUL-11` ruled the same day; the P0 gate had required a server nothing in P0 or P1 consumed |
 
 ## 9. Provenance
 
