@@ -2,7 +2,7 @@
 
 Generates a circuit board and the firmware that drives it from one specification, and refuses to call either finished until the pair has survived simulated electrical and software faults together, before any board is manufactured.
 
-**Status:** pre-build. The steering documents are ratified; no code exists yet. Phase P0 of 4 has not started. Licensed `MIT OR Apache-2.0` (see `LICENSE-MIT` and `LICENSE-APACHE`).
+**Status:** phase P0 of 4 in progress. The workspace builds and its first subcommand, `aethelgard validate`, runs; nothing is generated or simulated yet. Licensed `MIT OR Apache-2.0` (see `LICENSE-MIT` and `LICENSE-APACHE`).
 
 ## Where to go
 
@@ -15,7 +15,11 @@ Generates a circuit board and the firmware that drives it from one specification
 
 ## Running it
 
-Nothing runs yet. The first work order, `AET-WO-0100` in the roadmap, produces a workspace that builds.
+Check a specification. It prints one line of JSON and exits 0 when the specification is valid, nonzero otherwise; the codes are in [`crates/aethelgard-cli/README.md`](crates/aethelgard-cli/README.md).
+
+```bash
+cargo run -q -p aethelgard-cli -- validate < examples/sentinel-01-minimal.json
+```
 
 ---
 

@@ -80,7 +80,7 @@ P0 ──> P1 ──> P2 ──> P3
 
 **Work orders**
 
-- `AET-WO-1100` — specification graph: microcontroller package and alternate-function table ingested from the vendor register description, buses, voltage domains, passives with electrical bounds; round-trip serialization.
+- `AET-WO-1100` — carries `architecture.md` `RUL-14` (identifier set, at least one voltage domain) as well as the graph itself. Specification graph: microcontroller package and alternate-function table ingested from the vendor register description, buses, voltage domains, passives with electrical bounds; round-trip serialization.
 - `AET-WO-1200` — spike, then build: the constraint solver (`RUL-02`). The spike measures solve time on the chosen part's full pin table with both the SMT prior and a pure-Rust search, and records the number in `architecture.md` §2 by amendment before the build half starts.
 - `AET-WO-1300` — board emitter: `.kicad_sch`, `.kicad_pcb`, bill of materials, and the parasitic extraction the twin will need, validated by `kicad-cli` with `--exit-code-violations`.
 - `AET-WO-1400` — spike, then build: the generated typestate board crate (`RUL-04`). The spike answers `OQ-04` with a harness over a harness-owned register image that catches one seeded typestate bug, or shows that it cannot, and records which.
@@ -142,7 +142,7 @@ Rows of **number as built → what it actually was → what the roadmap had plan
 | number as built | what it actually was | what the roadmap had planned |
 |---|---|---|
 | — (pull request #1, no work order) | the four steering documents and the five session captures, written before any work order existed | Argon's `AET-WO-0100` had bundled the documents with the workspace skeleton; the documents landed first so the skeleton has something to cite |
-| `AET-WO-0100` | reserved: workspace skeleton only | Argon drafts: `AET-WO-0001` "Repo Genesis & Context Pyramid Bootstrap" |
+| `AET-WO-0100` | **merged (PR #4):** seven crates, `unsafe` forbidden by workspace lint and crate attribute, fail-closed IR types that accept only JSON objects, `aethelgard validate` with exit codes 0/2/3/64/70, CI on every PR. Found and fixed serde's positional-array acceptance (`architecture.md` §2.3). Satisfies the P0 gate's `validate` clause; the fmt/clippy/test clause holds on Furnace and in CI, and holds "inside the container" only once `AET-WO-0200` exists | Argon drafts: `AET-WO-0001` "Repo Genesis & Context Pyramid Bootstrap" |
 | `AET-WO-0200` | reserved | Argon drafts: `AET-WO-0002` |
 | `AET-WO-0300` | reserved, now the `aethelgard` CLI (`RUL-10`) | Argon drafts: `AET-WO-0003`, a Rust MCP server in P0 |
 | `AET-WO-0400` | reserved, now local-first (`RUL-06`) | Argon drafts: `AET-WO-0004`, R2-primary |
@@ -159,6 +159,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 |---|---|---|---|
 | 2026-10-14 | — | Initial draft | Seed. Week ranges removed, KiCad gates given `--exit-code-violations`, P2 and P3 reduced to intent pending spikes, human-track items added |
 | 2026-10-19 | status, §3, §5, §7 | Ratified by merge of PR #1. `AET-WO-0300` became the CLI, `AET-WO-1500` added for the `mcp` subcommand, P0 and P1 gates extended, `OQ-01`/`OQ-05` removed from human-track | Follows `architecture.md` `RUL-08`, `RUL-10`, `RUL-11` ruled the same day; the P0 gate had required a server nothing in P0 or P1 consumed |
+| 2026-10-19 | §5, §7 | `AET-WO-0100` reconciled as built; `AET-WO-1100` carries `RUL-14` | PR #4 merged; its FEEDBACK F4 and F5 were ruled into work for the graph work order rather than widening `AET-WO-0100` |
 
 ## 9. Provenance
 
