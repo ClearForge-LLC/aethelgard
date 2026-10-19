@@ -132,19 +132,19 @@ Close: the §5 adversarial pass (fresh subagent if you can), the §5a reduction 
 
 ## 9. Operator setup before kickoff (human-track, Scotty, from the phone)
 
-None of this is the builder's. Each line is short enough to paste from Termux. `furnace` is the existing SSH host alias; `fur` is the existing attach alias.
+None of this is the builder's. Each line is short enough to paste from Termux. `furnace` is the existing SSH host alias, **and it logs in as the operator user `ikthys777`**; every builder step below runs as `forge`, so each one overrides the user with `-l forge` (the phone's key is `forge`'s only login, per `furnace777` `docs/runbooks/agent-user.md`). The architect got this wrong once on 2026-10-19, created `aet` under `ikthys777`, and had to kill it; the lines below are the corrected ones.
 
 1. Clone, as `forge`, in a plain SSH shell (not inside an agent pane). The repository is public, so no credential helper is needed:
    ```
-   ssh furnace 'git clone -q https://github.com/ClearForge-LLC/aethelgard.git ~/aethelgard'
+   ssh -l forge furnace 'git clone -q https://github.com/ClearForge-LLC/aethelgard.git ~/aethelgard'
    ```
 2. Create the durable session with the keeper, which maps it, stages `cc-resume`, and forces a save:
    ```
-   ssh furnace 'cc-new aet ~/aethelgard'
+   ssh -l forge furnace 'cc-new aet ~/aethelgard'
    ```
-   Then `ssh furnace 'bash ~/furnace777/scripts/user/verify-sessions.sh'` must end `0 failure(s)` with `aet` reported as an unmanaged map.local line (a WARN, not a FAIL).
+   Then `ssh -l forge furnace 'bash ~/furnace777/scripts/user/verify-sessions.sh'` must end `0 failure(s)` with `aet` reported as an unmanaged map.local line (a WARN, not a FAIL).
 3. Promote the map line by PR to `ClearForge-LLC/furnace777`, file `host/home/forge/.cc-sessions/map`, one added line: `aet:cc=~/aethelgard`. Until that merges, a restore after a reboot still brings `aet` back (map.local counts for restore), but `verify-sessions.sh` keeps warning.
-4. The S25 alias, matching the `art`/`stake` precedent: append `alias aet='ssh -t furnace tmux attach -d -t aet'` to `~/.bashrc` on the phone, then `source ~/.bashrc`.
+4. The S25 alias, matching the `art`/`stake` precedent but with the user override: `alias aet='ssh -t -l forge furnace tmux attach -d -t aet'` in `~/.bashrc` on the phone, then `source ~/.bashrc`.
 5. Attach with `aet`, start `claude` in the pane, and send §8's three steps.
 
 **Why the name `aet`:** it is the work-order prefix, the branch prefix, and now the session and alias, so one string finds everything about this project in a `grep`, a `tmux ls`, and a shell history. The thematic alternative `anvil` (the furnace heats, the anvil shapes, Argon shields the weld) reads well but would be the only place that word appears.
