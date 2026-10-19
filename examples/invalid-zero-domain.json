@@ -1,0 +1,20 @@
+{
+  "project_name": "sentinel-01",
+  "voltage_domains": [
+    { "id": "VDD_3V3", "nominal_millivolts": 0, "tolerance_permille": 50 }
+  ],
+  "net_constraints": [
+    {
+      "net_name": "I2C1_SDA",
+      "max_capacitance_femtofarads": 400000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "USB_DP",
+      "max_capacitance_femtofarads": 20000,
+      "max_rise_time_nanoseconds": 4,
+      "impedance_ohms": 45
+    }
+  ]
+}
