@@ -80,6 +80,7 @@ A Sonnet subagent ran in `~/worktrees/aethelgard/adv-0100` at `c8bf457` and repo
 | F17 | The forbid-attribute check on `ir` and `cli` reads `src/lib.rs`/`src/main.rs` and would miss a `[lib]`/`[[bin]] path` override on those two crates. The workspace lint still enforces the forbid; only the visible-statement check is affected | `crates/aethelgard-cli/tests/workspace_shape.rs:82` | note | Leave until a path override is proposed. Not worth more test code now | no |
 | F18 | Disagreement between subagents, surfaced rather than averaged: the reduction reviewer called `arg_required_else_help = false` a no-op default. The builder's observed run before the setting existed disproves it | `crates/aethelgard-cli/src/main.rs:27` | note | Kept | no |
 | F19 | Push outcome: PUSH_PENDING | — | note | — | no |
+| F20 | Two protected surfaces go stale when this merges. `README.md` says "no code exists yet", "Phase P0 of 4 has not started", and "Nothing runs yet". `docs/roadmap.md` §7 lists `AET-WO-0100` as "reserved: workspace skeleton only". Neither was touched (§2) | `README.md` Status and Running it; `docs/roadmap.md` §7 | note | The architect amends both on merge: status "P0 in progress", `aethelgard validate` as the first thing that runs, the §7 row as built | **yes** |
 
 ## 5. Deliberately not built (§4 held)
 
@@ -115,4 +116,4 @@ Checked against the diff:
 
 This is the first work order; there is no prior FEEDBACK to promote. Needs none.
 
-The decisions in F3, F4, F5, F9 and F14 need rulings before `AET-WO-0200` starts.
+The decisions in F3, F4, F5, F9, F14 and F20 need rulings before `AET-WO-0200` starts.
