@@ -12,6 +12,8 @@ The `aethelgard` binary. It is the contract every caller uses (`docs/architectur
 | `64` | Usage error: unknown subcommand or flag, missing subcommand | `UsageError` |
 | `70` | Internal error: the report could not be written to stdout (for example, the reader closed the pipe). Nothing is printed on stdout; the reason goes to stderr | none |
 
+A stdout closed by the caller (`>&-`) is not an exit-`70` case: the Rust runtime reopens a closed standard descriptor on `/dev/null` before `main` runs, so it behaves exactly like `>/dev/null`, and the exit code still reports the verdict.
+
 `--help` and `--version` exit `0` and are the only output that is not JSON.
 
 ## `validate`
@@ -20,7 +22,7 @@ The `aethelgard` binary. It is the contract every caller uses (`docs/architectur
 aethelgard validate [--file <path>]
 ```
 
-Reads one `TopologyGraph` from stdin, or from `--file` when given (stdin is then not read), and runs `TopologyGraph::validate()`.
+Reads one `TopologyGraph` from stdin, or from `--file` when given (stdin is then not read; `-` is a file name, not stdin), and runs `TopologyGraph::validate()`. The specification and each domain and net must be JSON objects.
 
 On success, exit `0`:
 
