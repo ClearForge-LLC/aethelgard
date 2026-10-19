@@ -1,0 +1,13 @@
+[package]
+name = "aethelgard-chaos"
+description = "Aethelgard fault scenarios, campaign runner, trace archive, and verdicts."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+aethelgard-ir.workspace = true
+
+[lints]
+workspace = true

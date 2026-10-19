@@ -1,0 +1,13 @@
+[package]
+name = "aethelgard-twin"
+description = "Aethelgard simulator platform descriptions, analog model, and lock-step bridge."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+aethelgard-ir.workspace = true
+
+[lints]
+workspace = true
