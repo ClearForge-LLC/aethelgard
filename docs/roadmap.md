@@ -40,6 +40,8 @@ P0 ──> P1 ──> P2 ──> P3
   - A Nucleo-H753ZI development board (`architecture.md` `RUL-08`) has to be bought before the end of P2, so P3's simulated verdicts can be compared against one real board (northstar `NG-05`). `OQ-01` and `OQ-05` are ruled (`RUL-08`, `RUL-10`) and no longer block anything.
   - A fabrication order and its budget are needed for the P3 gate; the gate is "package emitted and verified", but the northstar's scar section stays empty until a board exists.
   - A Cloudflare R2 bucket and scoped credentials only if the optional mirror in `RUL-06` is wanted; nothing in any gate requires it.
+  - **Crate names and the first publish.** `aethelgard` and every `aethelgard-*` member name were free on crates.io when checked (§8, the amendment that added this item). crates.io's usage policy (RFC 3463) removes crates that exist only to hold a name, so the names are claimed by the first real publish, not by placeholders. The first publish of a crate needs a crates.io token from Scotty's account, used once from his own machine; after that, crates.io trusted publishing lets CI release with no stored secret.
+  - **The announcement, after P1's launch-readiness clause passes, never before.** Channels, in order: This Week in Rust, the Rust Embedded and embassy Matrix rooms, the KiCad forum, Antmicro (whose STM32H753 Renode twin `RUL-08` builds on), and r/embedded. Show HN waits for the P2 gate, because an injected fault traced and blamed on the right half is the headline. Announcing a scaffold spends credibility the project cannot earn back.
 
 ## 4. Phase map
 
@@ -84,7 +86,7 @@ P0 ──> P1 ──> P2 ──> P3
 - `AET-WO-1200` — spike, then build: the constraint solver (`RUL-02`). The spike measures solve time on the chosen part's full pin table with both the SMT prior and a pure-Rust search, and records the number in `architecture.md` §2 by amendment before the build half starts.
 - `AET-WO-1300` — board emitter: `.kicad_sch`, `.kicad_pcb`, bill of materials, and the parasitic extraction the twin will need, validated by `kicad-cli` with `--exit-code-violations`.
 - `AET-WO-1400` — spike, then build: the generated typestate board crate (`RUL-04`). The spike answers `OQ-04` with a harness over a harness-owned register image that catches one seeded typestate bug, or shows that it cannot, and records which.
-- `AET-WO-1500` — the `aethelgard mcp` subcommand: `rmcp` over stdio, with the tool list generated from the command tree so the CLI and MCP surfaces cannot drift (`RUL-10`). Runs in parallel with everything else in P1; nothing in P1 depends on it.
+- `AET-WO-1500` — the `aethelgard mcp` subcommand: `rmcp` over stdio, with the tool list generated from the command tree so the CLI and MCP surfaces cannot drift (`RUL-10`). It also adds the `aethelgard` binary to the published tools image, so one pull gives a user or an agent both the engine and its tools. Runs in parallel with everything else in P1; nothing in P1 depends on it except the launch-readiness clause.
 
 **Exit gate**
 
@@ -94,6 +96,9 @@ P0 ──> P1 ──> P2 ──> P3
 - Regenerating from the specification twice produces byte-identical board files and board crate (`INV-01`).
 - Either `cargo kani` proves the harness from `AET-WO-1400` on the generated register block, or `architecture.md` §8 records under `OQ-04` why it cannot and what replaces it. A gate that cannot be checked is fixed by amendment, not waved through.
 - MCP Inspector connected to `aethelgard mcp` over stdio lists every subcommand as a tool and completes one `validate` call; adding a throwaway subcommand to the command tree makes it appear in `tools/list` with no change to the `mcp` module; `grep` over the crate finds no network listener and no credential.
+- **Launch readiness.** This clause covers a public release, not the announcement (§3).
+  - On a clean machine with only Docker installed, the README's quickstart reproduces this gate's first two clauses with commands copied verbatim: the reference probe passes ERC and DRC, and the doubly-assigned pin is refused, naming both claimants. The quickstart runs against the published image, which then carries the `aethelgard` binary.
+  - The same binary installs from crates.io under its published name.
 
 ### P2 — The twin and the faults
 
@@ -161,6 +166,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | 2026-10-19 | status, §3, §5, §7 | Ratified by merge of PR #1. `AET-WO-0300` became the CLI, `AET-WO-1500` added for the `mcp` subcommand, P0 and P1 gates extended, `OQ-01`/`OQ-05` removed from human-track | Follows `architecture.md` `RUL-08`, `RUL-10`, `RUL-11` ruled the same day; the P0 gate had required a server nothing in P0 or P1 consumed |
 | 2026-10-19 | §5, §7 | `AET-WO-0100` reconciled as built; `AET-WO-1100` carries `RUL-14` | PR #4 merged; its FEEDBACK F4 and F5 were ruled into work for the graph work order rather than widening `AET-WO-0100` |
 | 2026-10-20 | §7 | `AET-WO-0200` reconciled as built | PR #7 merged. Three of the P0 gate's six clauses now hold, and the rest wait on `AET-WO-0300` and `AET-WO-0400` |
+| 2026-10-20 | §3, §5 | Added a launch-readiness clause to the P1 exit gate. `AET-WO-1500` now also puts the `aethelgard` binary in the published image. Two human-track items added: the crate names with the first publish, and the announcement | Scotty asked for launch as a gate. Names checked against the crates.io API on this date. It sits at P1 because that is the first point with something true to show: one specification, a board and a crate that cannot disagree. The announcement itself stays human-track, since its outcome is not checkable by anyone outside the room |
 
 ## 9. Provenance
 
