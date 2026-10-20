@@ -1,4 +1,4 @@
-* AET-WO-0200 spike: RC step response. 10-90 % rise is 2.2*R*C = 2.2 ms.
+* Calibration input for container/smoke.sh: RC step response. 10-90 % rise is 2.2*R*C = 2.2 ms.
 V1 in 0 PULSE(0 1 0 1n 1n 50m 100m)
 R1 in out 1k
 C1 out 0 1u

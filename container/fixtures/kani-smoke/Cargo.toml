@@ -1,5 +1,5 @@
 [package]
-name = "kani-probe"
+name = "kani-smoke"
 version = "0.0.0"
 edition = "2021"
 publish = false
