@@ -100,7 +100,7 @@ Measured in CI, because Furnace has no container runtime. The builder recorded t
 
 **Cost.** The image is 4.8 GB. A cold build takes about 210–260 s, and a warm one, with the layers from the Actions cache, about 50–100 s. Both candidates' layers took 2.6 GB of the repository's 10 GB cache. Smoke runs in 8 s, and the workspace gates inside the image in 17 s. An `ubuntu-latest` runner had 86 GB free with no cleanup, x86_64, 4 CPUs and 15 GiB.
 
-**GHCR from a pull request.** With `contents: read`, `docker login ghcr.io` succeeds and the package API returns 404. What a PR cannot measure is a push; the first `main` publish is that measurement (`RUL-15`).
+**GHCR from a pull request.** With `contents: read`, `docker login ghcr.io` succeeds and the package API returns 404. What a PR cannot measure is a push; the first `main` publish is that measurement (`RUL-15`). **Confirmed 2026-10-20 by that publish,** [run 39363778781](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39363778781). The `GITHUB_TOKEN` with `packages: write` created the package with no new secret and pushed `ghcr.io/clearforge-llc/aethelgard-tools@sha256:74f69bd36cda772187aea76e633e1eebd9e82bd3c07c82a16ae0c46e1bba206c`, tagged `166b746…`, after smoke passed on that same image under `--network none`. The digest is now in `container/IMAGE`. A package an org's Actions create is private by default, and an anonymous pull is refused until its visibility is set to public.
 
 ## 3. Shape — one representation, two projections, one loop
 
