@@ -240,7 +240,7 @@ jobs:
       - name: variant Dockerfile without cargo kani setup
         shell: bash
         run: |
-          sed '/cargo kani setup/d' container/Dockerfile > "$RUNNER_TEMP/Dockerfile.nosetup"
+          sed -e '/cargo kani setup/d' -e 's| /opt/kani$||' container/Dockerfile > "$RUNNER_TEMP/Dockerfile.nosetup"
           if [ "$(grep -c 'cargo kani setup' "$RUNNER_TEMP/Dockerfile.nosetup")" -ne 0 ] || cmp -s container/Dockerfile "$RUNNER_TEMP/Dockerfile.nosetup"; then
             echo "ADVERSARIAL 5.4 MISSED: harness could not remove the setup step"; exit 1
           fi
