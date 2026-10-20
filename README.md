@@ -2,7 +2,7 @@
 
 Generates a circuit board and the firmware that drives it from one specification, and refuses to call either finished until the pair has survived simulated electrical and software faults together, before any board is manufactured.
 
-**Status:** phase P0 of 4 in progress. The workspace builds and its first subcommand, `aethelgard validate`, runs; nothing is generated or simulated yet. Licensed `MIT OR Apache-2.0` (see `LICENSE-MIT` and `LICENSE-APACHE`).
+**Status:** phase P0 of 4 in progress. The workspace builds, its first subcommand, `aethelgard validate`, runs, and the pinned tools image (KiCad, Renode, ngspice, Kani) builds and passes its smoke test in CI. Nothing is generated or simulated yet. Licensed `MIT OR Apache-2.0` (see `LICENSE-MIT` and `LICENSE-APACHE`).
 
 ## Where to go
 

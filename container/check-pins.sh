@@ -9,7 +9,10 @@
 #     --no-install-recommends` block whose every package is name=version;
 #   - `cargo install` is --locked with a --version, and rustup installs a
 #     numbered toolchain;
-#   - nothing is swallowed with `||`, and no other fetcher is used.
+#   - nothing is swallowed with `||`, and the common fetchers outside the curl
+#     shape (wget, pip, npm, git clone, ADD <url>) are refused. That last list
+#     is a deny-list, so a deliberate fetch another way (python, git fetch) is
+#     left to review; this script stops accidental drift, not an attacker.
 # Needs no container runtime.
 #
 #   bash container/check-pins.sh [container/Dockerfile]
