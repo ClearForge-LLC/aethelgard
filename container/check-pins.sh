@@ -1,53 +1,101 @@
 #!/usr/bin/env bash
-# container/check-pins.sh: refuses a Dockerfile that can drift (INV-06). Every
-# FROM is pinned by sha256 digest, every curl download is checked by
-# `sha256sum -c` against a digest written in the file, every apt package has an
-# exact version, and nothing is piped into a shell. Needs no container runtime.
+# container/check-pins.sh: refuses a Dockerfile that can drift (INV-06). It
+# accepts only known-safe shapes rather than hunting for bad ones:
+#   - every FROM, in any case or indent, names image@sha256:<64 hex>, and a
+#     COPY --from names a build stage or a digest-pinned image;
+#   - every curl is exactly `curl -fsSLo PATH https://URL`, and the next line is
+#     `&& echo "<64 hex>  PATH" | sha256sum -c -`, the only pipe allowed;
+#   - apt runs only as `apt-get update` and one `apt-get install -y
+#     --no-install-recommends` block whose every package is name=version;
+#   - `cargo install` is --locked with a --version, and rustup installs a
+#     numbered toolchain;
+#   - nothing is swallowed with `||`, and no other fetcher is used.
+# Needs no container runtime.
 #
 #   bash container/check-pins.sh [container/Dockerfile]
 set -euo pipefail
-set -f  # no globbing when words are split below
 
 file=${1:-container/Dockerfile}
 [ -f "$file" ] || { echo "check-pins: $file not found" >&2; exit 1; }
+mapfile -t lines < "$file"
+
+hex='[0-9a-f]{64}'
 bad=0
+from_seen=0
+in_apt=0
 refuse() {
-  echo "check-pins: $1" >&2
+  echo "check-pins: line $(($1 + 1)): $2" >&2
   bad=1
 }
 
-# Bases pinned by digest.
-while read -r line; do
-  [[ "$line" =~ @sha256:[0-9a-f]{64}([[:space:]]|$) ]] || refuse "unpinned base: $line"
-done < <(grep -E '^FROM[[:space:]]' "$file")
-grep -qE '^FROM[[:space:]]' "$file" || refuse "no FROM line"
+for i in "${!lines[@]}"; do
+  line=${lines[$i]}
+  [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
 
-# Every curl output file has a sha256sum check naming it.
-while read -r out; do
-  grep -qE "echo \"[0-9a-f]{64}  $out\" \| sha256sum -c -" "$file" || refuse "download without sha256 check: $out"
-done < <(grep -oE 'curl [^|&]*-[a-zA-Z]*o +[^ ]+' "$file" | awk '{ print $NF }')
-
-# No pipe into a shell.
-if grep -qE '\|[[:space:]]*(ba|z|da)?sh\b' "$file"; then refuse "pipes a download into a shell"; fi
-
-# Every package on an `apt-get install` line or its continuations is name=version.
-in_install=0
-while IFS= read -r line; do
-  if [[ "$line" == *"apt-get install"* ]]; then
-    in_install=1
-    line=${line#*apt-get install}
+  # Inside the apt install block: one name=version per line until the cleanup.
+  if [ "$in_apt" -eq 1 ]; then
+    if [[ "$line" =~ ^[[:space:]]+\&\&\ rm\ -rf\ /var/lib/apt/lists/\*$ ]]; then
+      in_apt=0
+    elif ! [[ "$line" =~ ^[[:space:]]+[a-z0-9][a-z0-9.+-]*=[0-9][^[:space:]=*]*\ \\$ ]]; then
+      refuse "$i" "apt package without an exact version: $line"
+    fi
+    continue
   fi
-  [ "$in_install" -eq 1 ] || continue
-  for word in ${line%\\}; do
-    case "$word" in
-      \&\&*) in_install=0; break ;;
-      -*) ;;
-      *=*) ;;
-      *) refuse "apt package without an exact version: $word" ;;
-    esac
-  done
-  [[ "$line" == *\\ ]] || in_install=0
-done < "$file"
 
+  if [[ "$line" == *"||"* ]]; then refuse "$i" "'||' would swallow a failure"; fi
+
+  if [[ "${line,,}" =~ ^[[:space:]]*from[[:space:]] ]]; then
+    from_seen=1
+    read -ra words <<< "$line"
+    image=
+    for word in "${words[@]:1}"; do
+      [[ "$word" == --* ]] || { image=$word; break; }
+    done
+    [[ "$image" =~ ^[^@[:space:]]+@sha256:${hex}$ ]] || refuse "$i" "unpinned base: $line"
+  fi
+
+  if [[ "$line" =~ --from=([^[:space:]]+) ]]; then
+    ref=${BASH_REMATCH[1]}
+    if [[ "$ref" =~ [:/@.] ]] && ! [[ "$ref" =~ @sha256:${hex}$ ]]; then
+      refuse "$i" "COPY --from an unpinned image: $ref"
+    fi
+  fi
+
+  if [[ "$line" =~ (^|[^a-z-])(wget|pip3?|npm|git[[:space:]]+clone)([^a-z-]|$) ]] || [[ "${line,,}" =~ ^[[:space:]]*add[[:space:]].*:// ]]; then
+    refuse "$i" "fetches outside the checked curl shape: $line"
+  fi
+
+  if [[ "$line" == *curl* ]]; then
+    if [[ "$line" =~ ^[[:space:]]*(RUN|\&\&)\ curl\ -fsSLo\ (/[^[:space:]]+)\ https://[^[:space:]]+\ \\$ ]]; then
+      out=${BASH_REMATCH[2]}
+      next=${lines[$((i + 1))]:-}
+      [[ "$next" =~ ^[[:space:]]*\&\&\ echo\ \"${hex}\ \ ${out//./\\.}\"\ \|\ sha256sum\ -c\ -\ \\$ ]] \
+        || refuse "$i" "download not checked by the next line: $out"
+    else
+      refuse "$i" "curl not in the checked shape: $line"
+    fi
+  elif [[ "$line" == *"|"* ]] && ! [[ "$line" =~ ^[[:space:]]*\&\&\ echo\ \"${hex}\ \ /[^[:space:]]+\"\ \|\ sha256sum\ -c\ -\ \\$ ]]; then
+    refuse "$i" "pipe other than a sha256 check: $line"
+  fi
+
+  if [[ "$line" =~ (^|[^a-z-])apt(-get)?[[:space:]] ]]; then
+    if [[ "$line" =~ ^[[:space:]]*\&\&\ apt-get\ install\ -y\ --no-install-recommends\ \\$ ]]; then
+      in_apt=1
+    elif ! [[ "$line" =~ ^RUN\ apt-get\ update\ \\$ ]]; then
+      refuse "$i" "apt used outside the pinned install block: $line"
+    fi
+  fi
+
+  if [[ "$line" == *"cargo install"* ]] && ! [[ "$line" =~ cargo\ install\ --locked\ .*--version\ [0-9] ]]; then
+    refuse "$i" "cargo install without --locked and a --version: $line"
+  fi
+  if [[ "$line" == *"toolchain"* ]] && [[ "$line" =~ (--default-toolchain|toolchain\ install)\ ([^[:space:]]+) ]] \
+    && ! [[ "${BASH_REMATCH[2]}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    refuse "$i" "Rust toolchain not pinned to a numbered release: $line"
+  fi
+done
+
+[ "$from_seen" -eq 1 ] || refuse -1 "no FROM line"
+[ "$in_apt" -eq 0 ] || refuse -1 "apt install block never closed"
 [ "$bad" -eq 0 ] || exit 1
 echo "check-pins: $file ok"

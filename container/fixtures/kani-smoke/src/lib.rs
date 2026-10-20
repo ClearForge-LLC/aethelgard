@@ -1,7 +1,3 @@
-//! Calibrates the image's Kani install: `add_in_range` must verify and
-//! `add_overflows` must fail on its seeded overflow. A version string proves
-//! the binary exists; a failing proof proves the backend runs.
-
 #![forbid(unsafe_code)]
 
 pub fn add(a: u8, b: u8) -> u8 {

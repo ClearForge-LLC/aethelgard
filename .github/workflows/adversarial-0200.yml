@@ -1,0 +1,286 @@
+# TEMPORARY adversarial pass for AET-WO-0200 (section 5). Not part of the
+# deliverable: push once, read the ADVERSARIAL lines, delete. Every attack
+# prints exactly one "ADVERSARIAL <id> caught" or "ADVERSARIAL <id> MISSED: <why>"
+# line; a job fails if any attack is MISSED. No continue-on-error; every exit
+# code is captured and compared.
+name: adversarial-0200
+
+on:
+  pull_request:
+    paths:
+      - "container/**"
+      - ".github/workflows/adversarial-0200.yml"
+
+permissions:
+  contents: read
+
+env:
+  IMG: aethelgard-tools:adv
+
+jobs:
+  # 5.5, and the shape of a refusal: unpinned FROM variants must be refused.
+  pins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: bare-tag FROM variants
+        shell: bash
+        run: |
+          set +e
+          miss=0
+          caught() { echo "ADVERSARIAL $1 caught"; }
+          missed() { echo "ADVERSARIAL $1 MISSED: $2"; miss=1; }
+          d="$RUNNER_TEMP/pins"; mkdir -p "$d"
+          if bash container/check-pins.sh container/Dockerfile > "$d/control.out" 2>&1; then
+            caught control.pins-accepts-real-dockerfile
+          else
+            missed control.pins-accepts-real-dockerfile "$(cat "$d/control.out")"
+          fi
+          try() { # id, sed expression
+            sed "$2" container/Dockerfile > "$d/$1.df"
+            if cmp -s container/Dockerfile "$d/$1.df"; then missed "5.5.$1" "mutation did not change the Dockerfile"; return; fi
+            bash container/check-pins.sh "$d/$1.df" > "$d/$1.out" 2>&1
+            rc=$?
+            if [ "$rc" -ne 0 ] && grep -qF "unpinned base" "$d/$1.out"; then
+              caught "5.5.$1"
+            else
+              missed "5.5.$1" "rc=$rc out=$(tr '\n' ' ' < "$d/$1.out")"
+            fi
+          }
+          try bare_tag   's|^\(FROM kicad/kicad:10.0.7\)@sha256:[0-9a-f]*|\1|'
+          try no_tag     's|^FROM kicad/kicad:10.0.7@sha256:[0-9a-f]*|FROM kicad/kicad|'
+          try latest     's|^FROM kicad/kicad:10.0.7@sha256:[0-9a-f]*|FROM kicad/kicad:latest|'
+          try short_hash 's|^\(FROM kicad/kicad:10.0.7@sha256:\)[0-9a-f]*|\13224d1bf|'
+          try second_from_unpinned '$a FROM debian:trixie'
+          exit "$miss"
+
+  # 5.2: corrupt each committed sha256 in turn; the build must fail at that
+  # step. Uncached on purpose (the gha cache is not reachable from a run step),
+  # and the corrupted step is early, except Kani's, whose RUN compiles the
+  # driver first.
+  checksum:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: renode, path: /tmp/renode.tar.gz }
+          - { name: rustup, path: /tmp/rustup-init }
+          - { name: kani, path: /tmp/kani.tar.gz }
+    env:
+      TARGET: ${{ matrix.name }}
+      FILEPATH: ${{ matrix.path }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - name: corrupt one sha256 and build
+        shell: bash
+        run: |
+          set +e
+          id="5.2.$TARGET"
+          h=$(grep -oE "[0-9a-f]{64}  $FILEPATH" container/Dockerfile | cut -d' ' -f1)
+          if [ "${#h}" -ne 64 ]; then echo "ADVERSARIAL $id MISSED: harness could not find the hash for $FILEPATH"; exit 1; fi
+          if [ "${h:0:1}" = a ]; then nf=b; else nf=a; fi
+          bad="$nf${h:1}"
+          mkdir -p "$RUNNER_TEMP/ctx" "$RUNNER_TEMP/df"
+          sed "s/$h/$bad/" container/Dockerfile > "$RUNNER_TEMP/df/Dockerfile"
+          if cmp -s container/Dockerfile "$RUNNER_TEMP/df/Dockerfile"; then echo "ADVERSARIAL $id MISSED: mutation did not apply"; exit 1; fi
+          docker buildx build --progress=plain -f "$RUNNER_TEMP/df/Dockerfile" "$RUNNER_TEMP/ctx" > "$RUNNER_TEMP/build.log" 2>&1
+          rc=$?
+          grep -nE "FAILED|did NOT match|ERROR: failed to solve" "$RUNNER_TEMP/build.log" | head -10
+          if [ "$rc" -ne 0 ] && grep -qF "$FILEPATH: FAILED" "$RUNNER_TEMP/build.log"; then
+            echo "ADVERSARIAL $id caught"
+          else
+            tail -30 "$RUNNER_TEMP/build.log"
+            echo "ADVERSARIAL $id MISSED: build rc=$rc and no '$FILEPATH: FAILED' in the log"
+            exit 1
+          fi
+
+  # 5.1 (remove and shadow), 5.3 (drop the flag), the Renode negative control.
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - name: build the real image (cache read only)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: container
+          tags: ${{ env.IMG }}
+          load: true
+          cache-from: type=gha,scope=tools-image
+      - name: attacks against smoke.sh
+        shell: bash
+        run: |
+          set +e
+          miss=0
+          caught() { echo "ADVERSARIAL $1 caught"; }
+          missed() { echo "ADVERSARIAL $1 MISSED: $2"; miss=1; }
+          W="$RUNNER_TEMP/adv"; mkdir -p "$W"
+          C="$PWD/container"
+          IMGPATH=$(docker run --rm "$IMG" printenv PATH)
+          echo "OBS image PATH=$IMGPATH"
+
+          # smoke failed, with a real failure exit, and stderr holds NEEDLE.
+          expect_fail() { # id rc errfile needle
+            case "$2" in
+              0|124|125|126|127|137) missed "$1" "rc=$2, not a smoke failure exit: $(head -c 300 "$3" | tr '\n' ' ')"; return ;;
+            esac
+            if grep -qF -- "$4" "$3"; then
+              caught "$1"
+              echo "OBS $1 rc=$2 stderr: $(grep -m1 -F -- "$4" "$3")"
+            else
+              missed "$1" "rc=$2 but stderr lacks '$4': $(head -c 300 "$3" | tr '\n' ' ')"
+            fi
+          }
+
+          # Control: the unmutated smoke passes here, or nothing below means anything.
+          docker run --rm --network none -v "$C:/container:ro" "$IMG" bash /container/smoke.sh > "$W/base.out" 2> "$W/base.err"
+          rc=$?
+          if [ "$rc" -eq 0 ] && grep -qF "smoke: all checks passed" "$W/base.out"; then
+            caught control.baseline-smoke-passes
+            grep -E '^measure' "$W/base.out" | sed 's/^/OBS /'
+          else
+            cat "$W/base.out" "$W/base.err"
+            missed control.baseline-smoke-passes "rc=$rc"
+          fi
+
+          # 5.1 remove each tool.
+          for t in kicad-cli renode ngspice cargo-kani; do
+            docker run --rm --network none -v "$C:/container:ro" "$IMG" bash -c '
+              p=$(command -v "$1") || { echo "harness: $1 not found" >&2; exit 99; }
+              rm -f -- "$p"
+              if command -v "$1" > /dev/null; then echo "harness: $1 still present" >&2; exit 98; fi
+              exec bash /container/smoke.sh' _ "$t" > "$W/rm-$t.out" 2> "$W/rm-$t.err"
+            rc=$?
+            case "$rc" in
+              98|99) missed "5.1.remove.$t" "harness rc=$rc: $(cat "$W/rm-$t.err")" ;;
+              *) expect_fail "5.1.remove.$t" "$rc" "$W/rm-$t.err" "$t" ;;
+            esac
+          done
+
+          # 5.1 remove what a tool stands on, with the tool still on PATH.
+          docker run --rm --network none -v "$C:/container:ro" "$IMG" bash -c '
+            rm -f /usr/lib/x86_64-linux-gnu/libngspice.so.0*
+            exec bash /container/smoke.sh' > "$W/rm-libngspice.out" 2> "$W/rm-libngspice.err"
+          expect_fail 5.1.remove.libngspice "$?" "$W/rm-libngspice.err" libngspice
+          docker run --rm --network none -v "$C:/container:ro" "$IMG" bash -c '
+            rm -rf /opt/kani
+            exec bash /container/smoke.sh' > "$W/rm-kanibackend.out" 2> "$W/rm-kanibackend.err"
+          expect_fail 5.1.remove.kani-backend "$?" "$W/rm-kanibackend.err" "FAIL    kani"
+
+          # 5.1 shadow each on PATH with a stub that prints the right version
+          # and exits 0 for everything. The version checks pass by design; a
+          # real-function check must fail.
+          mkstub() { mkdir -p "$1"; printf '#!/bin/sh\n%s\n' "$3" > "$1/$2"; chmod +x "$1/$2"; }
+          shadow() { # id stubname needle  (stub dir already filled at $W/stub-$id)
+            docker run --rm --network none -e PATH="/stub:$IMGPATH" -v "$W/stub-$1:/stub:ro" -v "$C:/container:ro" "$IMG" bash /container/smoke.sh > "$W/sh-$1.out" 2> "$W/sh-$1.err"
+            expect_fail "5.1.shadow.$1" "$?" "$W/sh-$1.err" "$2"
+          }
+          mkstub "$W/stub-kicad-cli" kicad-cli 'echo 10.0.7; exit 0'
+          shadow kicad-cli kicad-cli.drc
+          mkstub "$W/stub-ngspice" ngspice 'echo "** ngspice-44.2 : Circuit level simulation program"; exit 0'
+          shadow ngspice ngspice.rc_step
+          mkstub "$W/stub-renode" renode 'echo "Renode v1.17.0"; exit 0'
+          shadow renode renode.nucleo_h753zi
+          # cargo looks in $CARGO_HOME/bin before PATH for cargo-kani, so shadow
+          # the cargo front door too.
+          mkstub "$W/stub-kani" cargo 'if [ "$1" = kani ]; then [ "$2" = "--version" ] && echo "Kani Rust Verifier 0.68.0 (cargo plugin)"; exit 0; fi; exec /opt/cargo/bin/cargo "$@"'
+          shadow kani kani.add_
+          # a stub that fakes the board's CPU line for any platform: only the
+          # negative control can catch it.
+          mkstub "$W/stub-renode-smart" renode 'case "$1" in --version) echo "Renode v1.17.0";; *) echo "cpu (CortexM)";; esac; exit 0'
+          shadow renode-smart renode.negative_control
+          # observation only: cargo-kani stub on PATH alone (cargo prefers its own bin dir).
+          mkstub "$W/stub-obs" cargo-kani 'echo "Kani Rust Verifier 0.68.0 (cargo plugin)"; exit 0'
+          docker run --rm --network none -e PATH="/stub:$IMGPATH" -v "$W/stub-obs:/stub:ro" -v "$C:/container:ro" "$IMG" bash /container/smoke.sh > "$W/obs.out" 2> "$W/obs.err"
+          echo "OBS cargo-kani-stub-on-PATH-only smoke rc=$? (0 means cargo ran the real plugin, not the stub)"
+
+          # 5.3 smoke.sh with --exit-code-violations removed.
+          cp -r "$C" "$W/cmut"
+          sed -i 's/ --exit-code-violations//' "$W/cmut/smoke.sh"
+          if [ "$(grep -c -- '--exit-code-violations' "$W/cmut/smoke.sh")" -ne 0 ]; then
+            missed 5.3.drop-flag "mutation left the flag in smoke.sh"
+          else
+            docker run --rm --network none -v "$W/cmut:/container:ro" "$IMG" bash /container/smoke.sh > "$W/drop.out" 2> "$W/drop.err"
+            rc=$?
+            expect_fail 5.3.drop-flag "$rc" "$W/drop.err" "FAIL    kicad-cli.drc.violation"
+            echo "OBS 5.3 the violation board without the flag: $(grep -m1 'kicad-cli.drc.violation' "$W/drop.err")"
+          fi
+
+          # Renode negative control inside the real image, no network. Record
+          # what stdin does to the exit code and the hang.
+          neg() { # label, docker flags..., stdin file
+            label=$1; shift
+            start=$(date +%s)
+            "$@" bash -c 'timeout 60 renode --disable-gui --console --plain -e "mach create; machine LoadPlatformDescription @platforms/boards/does-not-exist.repl; peripherals; quit"' > "$W/neg-$label.log" 2>&1 < "${NEG_STDIN:-/dev/null}"
+            rc=$?
+            echo "OBS renode.negative.$label rc=$rc seconds=$(( $(date +%s) - start )) cpu_line=$(grep -cF 'cpu (CortexM)' "$W/neg-$label.log") could_not_find=$(grep -cF 'Could not find file' "$W/neg-$label.log") ERROR_tag=$(grep -c '\[ERROR\]' "$W/neg-$label.log")"
+          }
+          neg no-i docker run --rm --network none "$IMG"
+          neg dash-i-devnull docker run --rm -i --network none "$IMG"
+          if grep -qF 'Could not find file' "$W/neg-no-i.log" && ! grep -qF 'cpu (CortexM)' "$W/neg-no-i.log"; then
+            caught renode.negative-control-signature
+          else
+            tail -20 "$W/neg-no-i.log"
+            missed renode.negative-control-signature "no 'Could not find file' or a cpu line appeared for a nonexistent .repl"
+          fi
+          exit "$miss"
+
+  # 5.4: an image built without `cargo kani setup`; the harnesses must fail
+  # with no network and must not fetch.
+  nosetup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: variant Dockerfile without cargo kani setup
+        shell: bash
+        run: |
+          sed '/cargo kani setup/d' container/Dockerfile > "$RUNNER_TEMP/Dockerfile.nosetup"
+          if [ "$(grep -c 'cargo kani setup' "$RUNNER_TEMP/Dockerfile.nosetup")" -ne 0 ] || cmp -s container/Dockerfile "$RUNNER_TEMP/Dockerfile.nosetup"; then
+            echo "ADVERSARIAL 5.4 MISSED: harness could not remove the setup step"; exit 1
+          fi
+          diff container/Dockerfile "$RUNNER_TEMP/Dockerfile.nosetup" || true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - name: build the variant (cache read only, never written)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: container
+          file: ${{ runner.temp }}/Dockerfile.nosetup
+          tags: aethelgard-tools:nosetup
+          load: true
+          cache-from: type=gha,scope=tools-image
+      - name: run the harnesses
+        shell: bash
+        run: |
+          set +e
+          miss=0
+          W="$RUNNER_TEMP/ns"; mkdir -p "$W"
+          K='cp -r /container/fixtures/kani-smoke /tmp/k && cd /tmp/k && cargo kani --harness add_in_range'
+          docker run --rm --network none -v "$PWD/container:/container:ro" aethelgard-tools:nosetup bash -c "$K" > "$W/none.log" 2>&1
+          rc_none=$?
+          docker run --rm -v "$PWD/container:/container:ro" aethelgard-tools:nosetup bash -c "$K" > "$W/net.log" 2>&1
+          rc_net=$?
+          echo "OBS nosetup --network none rc=$rc_none successful=$(grep -cF 'VERIFICATION:- SUCCESSFUL' "$W/none.log") fetch_words=$(grep -ciE 'download|fetch|Installing' "$W/none.log")"
+          tail -15 "$W/none.log" | sed 's/^/OBS none| /'
+          echo "OBS nosetup with network rc=$rc_net successful=$(grep -cF 'VERIFICATION:- SUCCESSFUL' "$W/net.log") fetch_words=$(grep -ciE 'download|fetch|Installing' "$W/net.log")"
+          tail -8 "$W/net.log" | sed 's/^/OBS net| /'
+          if [ "$rc_net" -ne 0 ] || ! grep -qF 'VERIFICATION:- SUCCESSFUL' "$W/net.log"; then
+            echo "ADVERSARIAL 5.4.kani-no-setup MISSED: inconclusive, the setup-less variant fails with the network too (rc=$rc_net)"; miss=1
+          elif [ "$rc_none" -ne 0 ] && ! grep -qF 'VERIFICATION:- SUCCESSFUL' "$W/none.log"; then
+            echo "ADVERSARIAL 5.4.kani-no-setup caught"
+          else
+            echo "ADVERSARIAL 5.4.kani-no-setup MISSED: harness ran under --network none without setup (rc=$rc_none)"; miss=1
+          fi
+          docker run --rm --network none -v "$PWD/container:/container:ro" aethelgard-tools:nosetup bash /container/smoke.sh > "$W/smoke.out" 2> "$W/smoke.err"
+          rc=$?
+          if [ "$rc" -ne 0 ] && grep -qF 'FAIL    kani.' "$W/smoke.err"; then
+            echo "ADVERSARIAL 5.4.smoke-no-setup caught"
+          else
+            echo "ADVERSARIAL 5.4.smoke-no-setup MISSED: smoke rc=$rc stderr=$(head -c 300 "$W/smoke.err" | tr '\n' ' ')"; miss=1
+          fi
+          exit "$miss"

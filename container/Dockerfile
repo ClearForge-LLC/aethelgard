@@ -13,7 +13,6 @@ LABEL org.opencontainers.image.source="https://github.com/ClearForge-LLC/aethelg
       org.opencontainers.image.licenses="MIT OR Apache-2.0"
 
 USER root
-SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive \
     RUSTUP_HOME=/opt/rustup \
     CARGO_HOME=/opt/cargo \

@@ -34,6 +34,7 @@ expect() {
   pass "$name"
 }
 contains() { grep -qF -- "$2" "$WORK/$1.log" || fail "$1" "output lacks '$2'"; }
+is_line() { grep -qxF -- "$2" "$WORK/$1.log" || fail "$1" "no line is exactly '$2'"; }
 lacks() { if grep -qF -- "$2" "$WORK/$1.log"; then fail "$1" "output contains '$2'"; fi; }
 
 # 1. Each tool is present and reports its pinned version.
@@ -41,13 +42,13 @@ for tool in kicad-cli renode ngspice cargo-kani; do
   command -v "$tool" > /dev/null || fail "$tool" "not on PATH"
 done
 expect kicad-cli.version 0 kicad-cli version
-contains kicad-cli.version "10.0.7"
+is_line kicad-cli.version "10.0.7"
 expect renode.version 0 renode --version
-contains renode.version "Renode v1.17.0"
+is_line renode.version "Renode v1.17.0"
 expect ngspice.version 0 ngspice --version
-contains ngspice.version "ngspice-44.2"
+contains ngspice.version "** ngspice-44.2 : "
 expect kani.version 0 cargo kani --version
-contains kani.version "Kani Rust Verifier 0.68.0"
+is_line kani.version "Kani Rust Verifier 0.68.0 (cargo plugin)"
 
 # 2. DRC with RUL-03's mandatory flag: the clean board exits 0, the board with
 # one deliberate clearance violation exits 5 and reports it.
@@ -62,10 +63,10 @@ expect kicad-cli.drc.violation 5 drc drc-violation
 kicad-cli pcb drc --format json -o "$WORK/noflag.json" "$FIX/drc-violation.kicad_pcb" > "$WORK/noflag.log" 2>&1
 echo "measure kicad-cli.drc.violation_without_flag exit=$?"
 
-# 4. Renode loads RUL-08's board headless and quits. A failed load aborts the
-# remaining commands, `quit` included, and prints no [ERROR] tag, so the log
-# must name the board's CPU as well as the exit code being 0. A nonexistent
-# platform must fail the same check (negative control).
+# 4. Renode loads RUL-08's board headless and quits. A failed load prints no
+# [ERROR] tag and, with stdin at EOF, still exits 0, so the exit code alone
+# proves nothing: the log must list the board's CPU. The negative control, a
+# nonexistent platform, must name the missing file and list no CPU.
 renode_load() {
   timeout "$1" renode --disable-gui --console --plain \
     -e "mach create; machine LoadPlatformDescription @$2; peripherals; quit"
@@ -73,12 +74,10 @@ renode_load() {
 expect renode.nucleo_h753zi 0 renode_load 180 platforms/boards/nucleo_h753zi.repl
 contains renode.nucleo_h753zi "cpu (CortexM)"
 lacks renode.nucleo_h753zi "There was an error executing command"
-renode_load 30 platforms/boards/does-not-exist.repl > "$WORK/renode.missing.log" 2>&1
-missing_rc=$?
-echo "measure renode.missing_platform exit=$missing_rc"
-if [ "$missing_rc" -eq 0 ] && grep -qF "cpu (CortexM)" "$WORK/renode.missing.log"; then
-  fail renode.negative_control "a nonexistent platform passed the load check"
-fi
+renode_load 30 platforms/boards/does-not-exist.repl > "$WORK/renode.negative_control.log" 2>&1
+echo "measure renode.missing_platform exit=$?"
+contains renode.negative_control "Could not find file 'platforms/boards/does-not-exist.repl'"
+lacks renode.negative_control "cpu (CortexM)"
 pass renode.negative_control
 
 # 5. ngspice in batch mode: the RC step's 10-90 % rise is within 2 % of

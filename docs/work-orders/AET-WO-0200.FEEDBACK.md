@@ -101,9 +101,11 @@ So nothing is fetched at run time, and the backend really runs.
 | | a (`kicad/kicad:10.0.7`) | b (`ubuntu:26.04` + apt) |
 |---|---|---|
 | Image size (`docker image inspect .Size`) | **4,802,171,602 B (4.8 GB)** | 3,062,476,838 B (3.1 GB) |
-| Cold build step, empty cache, including cache export and loading into Docker | 250 s | 208 s |
+| Cold build, empty cache: `ANSWER cold_build_seconds`, the workflow's own clock from before buildx setup to after the build, including cache export and loading into Docker | **257 s** | **216 s** |
+| The same, as the `build (cold)` step alone, from the jobs API's step timestamps | 250 s | 208 s |
 | Cold job total, with both probe runs | 400 s | 418 s |
-| Warm build step on a fresh runner, from the Actions cache | 95 s | 60 s |
+| Warm build on a fresh runner, from the Actions cache: `ANSWER warm_build_seconds`, same clock | **100 s** | **65 s** |
+| The same, as the `build (warm)` step alone, from the jobs API | 95 s | 60 s |
 | Warm job total | 166 s | 151 s |
 
 Both are far inside the 10 GB and 45-minute stops.
@@ -120,7 +122,7 @@ Both are far inside the 10 GB and 45-minute stops.
 | Export and load into Docker | 75 s |
 | Writing layers to the Actions cache | the remainder |
 
-The installs are cheap; moving 4.8 GB around is the cost.
+The installs are cheap; moving 4.8 GB around is the cost. *Corrected at the architect's review: the headline seconds are now the `ANSWER` values, and the jobs API's step durations are named as the second source.*
 
 **The cache holds.**
 - In both warm builds, every RUN layer reported `CACHED`.
@@ -129,7 +131,7 @@ The installs are cheap; moving 4.8 GB around is the cost.
 
 **Runner facts:**
 - `ubuntu-latest`: x86_64, 4 CPUs, 15 GiB, Docker 28.0.4.
-- 86 GB of disk free before cleanup, and 94 GB still free after building candidate a. The `rm -rf` of preinstalled SDKs was not needed (F6).
+- 86 GB of disk free before cleanup (`disk_free_before`). The cleanup raised that to 104 GB, and 94 GB remained after building candidate a, so the build used about 10 GB, well inside the 86 GB the runner started with. The `rm -rf` of preinstalled SDKs was not needed (F6). *Corrected at the architect's review: the 94 GB was measured after the cleanup, not from the 86 GB.*
 
 ### S4 — `kicad-cli pcb drc` without `--exit-code-violations`: exit 0
 
@@ -187,7 +189,7 @@ Until a digest exists, PRs build the image from the Dockerfile, as this spike di
 | F4 | Debian packages (`ngspice`, `libngspice0`, `gcc`, `libc6-dev`, `curl`, `ca-certificates`) are installed unpinned in the spike, signed by Debian's archive keys but free to move | `spike/Dockerfile` apt step | risk | Build half: pin exact versions (`ngspice=44.2+ds-1`, `libngspice0=44.2+ds-1`) against `snapshot.debian.org` at a fixed timestamp, so a rebuild is the same image | no |
 | F5 | The spike image runs everything as `root`, and the official KiCad image defines its own user | `spike/Dockerfile` `USER root` | scope-question | Build half: decide the runtime user (probably a non-root user owning `KANI_HOME`'s use and a writable `HOME` for KiCad's config) | no |
 | F6 | The runner had 86 GB free before any cleanup, and the 4.8 GB build used about 10 GB of it. The preinstalled-SDK `rm -rf` is unnecessary today | workflow `cold` job | note | Build half: drop the cleanup and keep only the `df` measurement, so a shrinking runner disk is noticed rather than silently worked around | no |
-| F7 | Candidate b is 1.7 GB smaller and 35 s faster warm, but loses KiCad 10 | S3 | note | None; KiCad 10 decides it | no |
+| F7 | Candidate b is 1.7 GB smaller and 35 s faster warm (`ANSWER` 100 s against 65 s), but loses KiCad 10 | S3 | note | None; KiCad 10 decides it | no |
 
 **AET-WO-0100 FEEDBACK, promote-or-needs-none:** its findings were promoted at its close. F3 and F9 became `RUL-13`, F4 and F5 became `RUL-14`, and the measurements became `architecture.md` §2.3, through PR #5. F14 (Rust on Furnace's `PATH`) is still open on the furnace777 side, and every `cargo` call this session still exported `PATH`. Nothing else needs promoting.
 

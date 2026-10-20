@@ -6,6 +6,3 @@ publish = false
 
 # Not a member of the repository's workspace.
 [workspace]
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
