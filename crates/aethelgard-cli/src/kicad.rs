@@ -119,7 +119,7 @@ pub fn judge(
         _ => Err(Stop::tool_error(
             TOOL,
             format!(
-                "{TOOL} exited {code} but the report holds {} finding(s)",
+                "{TOOL} exited {code} with {} finding(s) in the report; the codes measured for it are 0 with none and 5 with some",
                 findings.len()
             ),
         )),
