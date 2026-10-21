@@ -281,3 +281,23 @@ Rejected:
 **Is the "Not confined" list empty?** At the socket layer, yes, and inherited descriptors are now refused (B2). What remains is stated in the README: Landlock's read set, the temporary directory, and non-socket IPC (B5). B5 is out of this WO; the image stays the supported boundary (ruled on PR #15).
 
 **AET-WO-0300 FEEDBACK, promote-or-needs-none:** promoted at its close into §2.5, §6, `RUL-10` and the roadmap (PR #13). Its B3 is this work order.
+
+## Flag-and-stop: the GitHub runner host leaks two pipes (B2 measurement)
+
+**Parked on `b8024cd`.** `ci` [39553415557](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39553415557) is **red in `gates` and green in `tools`**. This is the case the B2 ruling named: a runner that legitimately passes a descriptor is a flag-and-stop, never an allowlist entry.
+
+- **The leak.** In `gates`, where `cargo test` runs directly on the `ubuntu-latest` host, the test process holds two descriptors without close-on-exec:
+
+  ```
+  the runner leaks ["142 -> Some(\"pipe:[12135]\")", "145 -> Some(\"pipe:[12136]\")"]
+  ```
+
+  The CLI therefore refuses every tool call there, as ruled: the refusal test saw `inherited without close-on-exec: [3, 142, 145]` where it expects `[3]`. `cargo test` stopped at that first failing binary, so the other tier-1 tool tests did not run in `gates`, and they would refuse the same way.
+- **Where it does not leak.**
+  - `tools`: the same tests inside the image behind `docker run`. Both descriptor tests pass, and so do tier 1 (101), the socket test, and tier 2 (12/12).
+  - Furnace's `cargo test` (printed `[]`).
+- **The source is not established.** It is two pipe descriptors, high-numbered, present on the runner host and absent behind `docker run`. That points at the GitHub Actions runner process handing pipes to the step's shell, or at a jobserver passed down through `cargo`. Telling them apart needs one diagnostic run that prints `CARGO_MAKEFLAGS`, `MAKEFLAGS`, and `/proc/$$/fd` with `fdinfo` from the step's shell, before `cargo` and inside `cargo test`. This round allowed one push, so that run has not been made.
+
+| # | finding | where | type | recommendation | decision-needed |
+|---|---|---|---|---|---|
+| B7 | The `ubuntu-latest` host passes pipe descriptors 142 and 145, without close-on-exec, into `cargo test` in `gates`, so B2's refusal makes every tool call refuse there | `.github/workflows/ci.yml` `gates`, and the runner | risk | Options, none taken without a ruling: (a) find the source with one diagnostic push, then close the descriptors in the CI step's own shell before `cargo` (for example a step wrapper that `exec`s with those descriptors closed), which changes CI, not the CLI; (b) run tier 1's tool tests in `gates` inside a clean `env -i`, `setsid` process whose descriptors are closed by the step's shell; (c) accept that the tool subcommands refuse on such hosts, because they are leaking, and move tier 1's tool tests to `tools` only, which would weaken `gates`, so it is not recommended. The CLI is behaving as ruled; the question is what the CI host hands it | **yes** |
