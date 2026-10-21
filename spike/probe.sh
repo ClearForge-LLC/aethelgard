@@ -88,11 +88,8 @@ group "kicad-cli sch erc --help"
 endgroup
 
 # Count against exit code on KiCad's own demos: do they ever disagree?
-n=0
-for f in /usr/share/kicad/demos/*/*.kicad_pcb /usr/share/kicad/demos/*/*.kicad_sch; do
+for f in $(ls /usr/share/kicad/demos/*/*.kicad_pcb 2> /dev/null | head -8) $(ls /usr/share/kicad/demos/*/*.kicad_sch 2> /dev/null | head -8); do
   [ -e "$f" ] || continue
-  n=$((n + 1))
-  [ "$n" -le 16 ] || break
   base=$(basename "$f")
   case "$f" in
     *.kicad_pcb) "$KICAD" pcb drc --format json -o "$OUT/demo.json" --exit-code-violations "$f" > /dev/null 2>&1 < /dev/null ;;
@@ -108,32 +105,33 @@ for f in /usr/share/kicad/demos/*/*.kicad_pcb /usr/share/kicad/demos/*/*.kicad_s
 done
 
 # ---------------------------------------------------------------- tool runs
-# Each takes a working directory as $1 (also HOME) and runs with stdin from
+# Each takes a working directory as $1 (also HOME and TMPDIR, the posture the
+# CLI will use) and runs with stdin from
 # /dev/null. $2... is an `env -i` assignment list. Success is the expected exit
 # code plus the expected key in the output.
 try_drc() {
   local w=$1
   shift
-  (cd "$w" && env -i HOME="$w" "$@" "$KICAD" pcb drc --exit-code-violations --format json -o "$w/r.json" "$FIX/drc-violation.kicad_pcb") > "$w/log" 2>&1 < /dev/null
+  (cd "$w" && env -i HOME="$w" TMPDIR="$w" "$@" "$KICAD" pcb drc --exit-code-violations --format json -o "$w/r.json" "$FIX/drc-violation.kicad_pcb") > "$w/log" 2>&1 < /dev/null
   [ $? -eq 5 ] && grep -qE '"type": *"clearance"' "$w/r.json" 2> /dev/null
 }
 try_erc() {
   local w=$1
   shift
-  (cd "$w" && env -i HOME="$w" "$@" "$KICAD" sch erc --exit-code-violations --format json -o "$w/r.json" "$SPK/erc-clean.kicad_sch") > "$w/log" 2>&1 < /dev/null
+  (cd "$w" && env -i HOME="$w" TMPDIR="$w" "$@" "$KICAD" sch erc --exit-code-violations --format json -o "$w/r.json" "$SPK/erc-clean.kicad_sch") > "$w/log" 2>&1 < /dev/null
   [ $? -eq 0 ] && [ -s "$w/r.json" ]
 }
 try_renode() {
   local w=$1
   shift
-  (cd "$w" && env -i HOME="$w" "$@" timeout 120 "$RENODE" --disable-gui --console --plain -e "$NUCLEO") > "$w/log" 2>&1 < /dev/null
+  (cd "$w" && env -i HOME="$w" TMPDIR="$w" "$@" timeout 120 "$RENODE" --disable-gui --console --plain -e "$NUCLEO") > "$w/log" 2>&1 < /dev/null
   [ $? -eq 0 ] && grep -qF 'cpu (CortexM)' "$w/log"
 }
 try_kani() {
   local w=$1
   shift
   cp -r "$FIX/kani-smoke" "$w/crate"
-  (cd "$w/crate" && env -i HOME="$w" "$@" "$CARGO" kani --harness add_in_range) > "$w/log" 2>&1 < /dev/null
+  (cd "$w/crate" && env -i HOME="$w" TMPDIR="$w" "$@" "$CARGO" kani --harness add_in_range) > "$w/log" 2>&1 < /dev/null
   [ $? -eq 0 ] && grep -qF 'VERIFICATION:- SUCCESSFUL' "$w/log"
 }
 
@@ -146,13 +144,18 @@ for tool in drc erc renode kani; do
   if "try_$tool" "$w" "${FULL[@]}"; then full=works; else full=FAILS; fi
   w=$(mktemp -d /tmp/s2.XXXXXX)
   if "try_$tool" "$w"; then empty=works; else empty=fails; fi
-  required=()
+  # Sequential elimination: drop each variable in turn and keep it dropped if
+  # the tool still works. The result is a minimal sufficient set in FULL's
+  # order, not necessarily the only one (two variables may stand in for each
+  # other).
+  cur=("${FULL[@]}")
   for var in "${FULL[@]}"; do
     rest=()
-    for v in "${FULL[@]}"; do [ "$v" = "$var" ] || rest+=("$v"); done
+    for v in "${cur[@]}"; do [ "$v" = "$var" ] || rest+=("$v"); done
     w=$(mktemp -d /tmp/s2.XXXXXX)
-    "try_$tool" "$w" "${rest[@]}" || required+=("$var")
+    "try_$tool" "$w" "${rest[@]}" && cur=("${rest[@]}")
   done
+  required=("${cur[@]}")
   # The minimal set, run once more with a marker to see what it writes outside $w.
   w=$(mktemp -d /tmp/s2.XXXXXX)
   touch /tmp/s2-marker
@@ -201,7 +204,7 @@ for policy in strict strict+proc+dev; do
     esac
     dir=$w
     [ "$tool" = kani ] && dir=$w/crate
-    (cd "$dir" && HOME="$w" "$BIN/confine" --ro "$ro" --rw "$rw" -- "${cmd[@]}") > "$w/log" 2>&1 < /dev/null
+    (cd "$dir" && HOME="$w" TMPDIR="$w" "$BIN/confine" --ro "$ro" --rw "$rw" -- "${cmd[@]}") > "$w/log" 2>&1 < /dev/null
     rc=$?
     case $tool in
       drc) grep -qE '"type": *"clearance"' "$w/r.json" 2> /dev/null && key=yes || key=no ;;
@@ -254,7 +257,7 @@ for tool in renode kani; do
       else
         cp -r "$FIX/kani-smoke" "$w/crate"
         cmd=(sh -c "cd $w/crate && exec $CARGO kani --harness add_in_range")
-        settle=2
+        settle=1
       fi
       # stdin is a FIFO held open by this shell, so it outlives the probe.
       mkfifo "$w/stdin"
