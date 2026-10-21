@@ -393,7 +393,9 @@ fn simulate(platform: &Path) -> Result<verdict::Verdict, run::Stop> {
     let invocation = |args: Vec<OsString>, status: &str| run::Invocation {
         tool: &tool,
         args,
-        env: Vec::new(),
+        // .NET would otherwise try to open its diagnostic IPC socket, which the
+        // seccomp filter refuses; this removes even the attempt (PR #15, S2-F).
+        env: vec![("DOTNET_EnableDiagnostics", "0".into())],
         workdir: &scratch.tool,
         cwd: scratch.tool.clone(),
         status: scratch.root.join(status),
