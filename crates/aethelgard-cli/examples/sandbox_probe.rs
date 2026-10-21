@@ -10,7 +10,7 @@
 use std::io;
 use std::net::{TcpStream, UdpSocket};
 use std::os::linux::net::SocketAddrExt;
-use std::os::unix::net::{SocketAddr, UnixStream};
+use std::os::unix::net::{SocketAddr, UnixDatagram, UnixStream};
 use std::process::exit;
 
 use serde_json::json;
@@ -63,6 +63,14 @@ fn main() {
                 "127.0.0.1",
                 target("tcp").parse::<u16>().unwrap_or(1),
             ))),
+        ),
+        // A datagram pair can be pointed at any datagram socket outside.
+        (
+            "unix_dgram_pair_connect",
+            result(
+                UnixDatagram::pair()
+                    .and_then(|(a, _)| a.connect(target("dgram")).and_then(|()| a.send(b"x"))),
+            ),
         ),
         ("socketpair", result(UnixStream::pair())),
         ("io_uring_setup", result(io_uring::IoUring::new(2))),

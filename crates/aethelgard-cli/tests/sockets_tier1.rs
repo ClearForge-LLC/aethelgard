@@ -8,7 +8,7 @@ use std::fs;
 use std::net::{TcpListener, TcpStream};
 use std::os::linux::net::SocketAddrExt;
 use std::os::unix::fs::symlink;
-use std::os::unix::net::{SocketAddr, UnixListener, UnixStream};
+use std::os::unix::net::{SocketAddr, UnixDatagram, UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -43,16 +43,26 @@ fn the_s4_attack_set_is_refused_inside_the_sandbox() {
     let abstract_listener =
         UnixListener::bind_addr(&SocketAddr::from_abstract_name(name.as_bytes()).unwrap()).unwrap();
     let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
+    let dgram_path = dir.join("journal.sock");
+    let dgram = UnixDatagram::bind(&dgram_path).unwrap();
     let port = tcp.local_addr().unwrap().port();
     // Control: each is reachable from here, so a refusal inside is the sandbox.
     UnixStream::connect(&path).unwrap();
     UnixStream::connect_addr(&SocketAddr::from_abstract_name(name.as_bytes()).unwrap()).unwrap();
     TcpStream::connect(("127.0.0.1", port)).unwrap();
+    UnixDatagram::unbound()
+        .unwrap()
+        .send_to(b"control", &dgram_path)
+        .unwrap();
 
     let board = dir.join("targets.kicad_pcb");
     fs::write(
         &board,
-        format!("unix={}\nabstract={name}\ntcp={port}\n", path.display()),
+        format!(
+            "unix={}\nabstract={name}\ntcp={port}\ndgram={}\n",
+            path.display(),
+            dgram_path.display()
+        ),
     )
     .unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
@@ -80,11 +90,20 @@ fn the_s4_attack_set_is_refused_inside_the_sandbox() {
             "unix_abstract=errno=1",
             "udp_sendto=errno=1",
             "tcp_connect=errno=1",
+            "unix_dgram_pair_connect=errno=1",
             "socketpair=ok",
             "io_uring_setup=errno=1",
         ],
         "{v}"
     );
-    drop((unix, abstract_listener, tcp));
+    // Only the control reached the datagram socket; nothing from inside did.
+    dgram.set_nonblocking(true).unwrap();
+    let mut buf = [0u8; 16];
+    assert_eq!(dgram.recv(&mut buf).ok(), Some(7));
+    assert!(
+        dgram.recv(&mut buf).is_err(),
+        "a datagram from inside the sandbox arrived"
+    );
+    drop((unix, abstract_listener, tcp, dgram));
     fs::remove_dir_all(&dir).unwrap();
 }

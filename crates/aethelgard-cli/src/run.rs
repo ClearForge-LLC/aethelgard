@@ -528,7 +528,10 @@ pub fn confine_main(args: &[OsString]) -> ! {
         }
     };
     // Required like Landlock (INV-06): no filter, no tool.
-    if let Err(e) = apply_filter(&socket_filter()) {
+    let installed = socket_filter()
+        .ok_or_else(|| "no filter for this architecture".to_owned())
+        .and_then(|program| apply_filter(&program).map_err(|e| e.to_string()));
+    if let Err(e) = installed {
         let _ = writeln!(status, "unavailable seccomp {e}");
         exit(0);
     }
@@ -548,9 +551,16 @@ pub fn confine_main(args: &[OsString]) -> ! {
 /// an x32 call (number | 0x4000_0000) through a default-allow filter.
 ///
 /// `socket` is refused for every family because no tool needs one (measured
-/// in the spike); `socketpair` is allowed: it reaches nothing outside.
-pub fn socket_filter() -> BpfProgram {
+/// in the spike). `socketpair` is allowed only as an `AF_UNIX` stream or
+/// seqpacket pair: such a pair is born connected to itself and cannot be
+/// redirected. A datagram pair (`SOCK_DGRAM`, or `SOCK_RAW`, which `AF_UNIX`
+/// treats as datagram) can `connect` or `sendto` any pathname datagram socket
+/// outside, which the adversarial pass showed by writing to the systemd
+/// journal, so it is refused like `socket`.
+#[cfg(target_arch = "x86_64")]
+pub fn socket_filter() -> Option<BpfProgram> {
     const LD_W_ABS: u16 = 0x20; // BPF_LD | BPF_W | BPF_ABS
+    const AND_K: u16 = 0x54; // BPF_ALU | BPF_AND | BPF_K
     const JEQ_K: u16 = 0x15; // BPF_JMP | BPF_JEQ | BPF_K
     const JSET_K: u16 = 0x45; // BPF_JMP | BPF_JSET | BPF_K
     const RET_K: u16 = 0x06; // BPF_RET | BPF_K
@@ -558,28 +568,50 @@ pub fn socket_filter() -> BpfProgram {
     const X32_SYSCALL_BIT: u32 = 0x4000_0000;
     const OFFSET_NR: u32 = 0;
     const OFFSET_ARCH: u32 = 4;
+    const OFFSET_ARG0: u32 = 16; // low 32 bits, little-endian
+    const OFFSET_ARG1: u32 = 24;
     const NR_SOCKET: u32 = 41;
+    const NR_SOCKETPAIR: u32 = 53;
     const NR_IO_URING_SETUP: u32 = 425;
     const NR_IO_URING_ENTER: u32 = 426;
     const NR_IO_URING_REGISTER: u32 = 427;
+    const AF_UNIX: u32 = 1;
+    const SOCK_TYPE_MASK: u32 = 0xf;
+    const SOCK_STREAM: u32 = 1;
+    const SOCK_SEQPACKET: u32 = 5;
     const RET_ALLOW: u32 = 0x7fff_0000;
     const RET_EPERM: u32 = 0x0005_0000 | 1;
     const RET_KILL_PROCESS: u32 = 0x8000_0000;
     let op = |code, k, jt, jf| sock_filter { code, jt, jf, k };
-    // Jump offsets count instructions after the next one: 9 is EPERM, 10 kill.
-    vec![
+    // Jump offsets count instructions after the next one: 15 is EPERM,
+    // 16 kill, 17 allow.
+    Some(vec![
         op(LD_W_ABS, OFFSET_ARCH, 0, 0),       // 0
-        op(JEQ_K, AUDIT_ARCH_X86_64, 0, 8),    // 1: else kill (10)
+        op(JEQ_K, AUDIT_ARCH_X86_64, 0, 14),   // 1: else kill (16)
         op(LD_W_ABS, OFFSET_NR, 0, 0),         // 2
-        op(JSET_K, X32_SYSCALL_BIT, 6, 0),     // 3: x32, kill (10)
-        op(JEQ_K, NR_SOCKET, 4, 0),            // 4: EPERM (9)
-        op(JEQ_K, NR_IO_URING_SETUP, 3, 0),    // 5: EPERM (9)
-        op(JEQ_K, NR_IO_URING_ENTER, 2, 0),    // 6: EPERM (9)
-        op(JEQ_K, NR_IO_URING_REGISTER, 1, 0), // 7: EPERM (9)
-        op(RET_K, RET_ALLOW, 0, 0),            // 8
-        op(RET_K, RET_EPERM, 0, 0),            // 9
-        op(RET_K, RET_KILL_PROCESS, 0, 0),     // 10
-    ]
+        op(JSET_K, X32_SYSCALL_BIT, 12, 0),    // 3: x32, kill (16)
+        op(JEQ_K, NR_SOCKET, 10, 0),           // 4: EPERM (15)
+        op(JEQ_K, NR_IO_URING_SETUP, 9, 0),    // 5: EPERM (15)
+        op(JEQ_K, NR_IO_URING_ENTER, 8, 0),    // 6: EPERM (15)
+        op(JEQ_K, NR_IO_URING_REGISTER, 7, 0), // 7: EPERM (15)
+        op(JEQ_K, NR_SOCKETPAIR, 0, 8),        // 8: not socketpair, allow (17)
+        op(LD_W_ABS, OFFSET_ARG0, 0, 0),       // 9: the family
+        op(JEQ_K, AF_UNIX, 0, 4),              // 10: else EPERM (15)
+        op(LD_W_ABS, OFFSET_ARG1, 0, 0),       // 11: the type, with flags
+        op(AND_K, SOCK_TYPE_MASK, 0, 0),       // 12
+        op(JEQ_K, SOCK_STREAM, 3, 0),          // 13: allow (17)
+        op(JEQ_K, SOCK_SEQPACKET, 2, 0),       // 14: allow (17), else EPERM
+        op(RET_K, RET_EPERM, 0, 0),            // 15
+        op(RET_K, RET_KILL_PROCESS, 0, 0),     // 16
+        op(RET_K, RET_ALLOW, 0, 0),            // 17
+    ])
+}
+
+/// No filter exists for other architectures, so the call refuses with
+/// `SandboxUnavailable`, `id` `seccomp`, rather than running unfiltered.
+#[cfg(not(target_arch = "x86_64"))]
+pub fn socket_filter() -> Option<BpfProgram> {
+    None
 }
 
 /// Applies Landlock to this process: filesystem rights through ABI 3 are
@@ -644,35 +676,48 @@ mod tests {
     #[test]
     fn socket_filter_is_exactly_this_program() {
         let got: Vec<(u16, u8, u8, u32)> = socket_filter()
+            .unwrap()
             .iter()
             .map(|i| (i.code, i.jt, i.jf, i.k))
             .collect();
         let want = vec![
-            (0x20, 0, 0, 4),           // load arch
-            (0x15, 0, 8, 0xc000_003e), // x86_64, else kill
-            (0x20, 0, 0, 0),           // load nr
-            (0x45, 6, 0, 0x4000_0000), // x32 bit: kill
-            (0x15, 4, 0, 41),          // socket: EPERM
-            (0x15, 3, 0, 425),         // io_uring_setup: EPERM
-            (0x15, 2, 0, 426),         // io_uring_enter: EPERM
-            (0x15, 1, 0, 427),         // io_uring_register: EPERM
-            (0x06, 0, 0, 0x7fff_0000), // allow
-            (0x06, 0, 0, 0x0005_0001), // errno EPERM
-            (0x06, 0, 0, 0x8000_0000), // kill process
+            (0x20, 0, 0, 4),            // load arch
+            (0x15, 0, 14, 0xc000_003e), // x86_64, else kill
+            (0x20, 0, 0, 0),            // load nr
+            (0x45, 12, 0, 0x4000_0000), // x32 bit: kill
+            (0x15, 10, 0, 41),          // socket: EPERM
+            (0x15, 9, 0, 425),          // io_uring_setup: EPERM
+            (0x15, 8, 0, 426),          // io_uring_enter: EPERM
+            (0x15, 7, 0, 427),          // io_uring_register: EPERM
+            (0x15, 0, 8, 53),           // socketpair? else allow
+            (0x20, 0, 0, 16),           // load family
+            (0x15, 0, 4, 1),            // AF_UNIX, else EPERM
+            (0x20, 0, 0, 24),           // load type
+            (0x54, 0, 0, 0xf),          // type & SOCK_TYPE_MASK
+            (0x15, 3, 0, 1),            // SOCK_STREAM: allow
+            (0x15, 2, 0, 5),            // SOCK_SEQPACKET: allow, else EPERM
+            (0x06, 0, 0, 0x0005_0001),  // errno EPERM
+            (0x06, 0, 0, 0x8000_0000),  // kill process
+            (0x06, 0, 0, 0x7fff_0000),  // allow
         ];
         assert_eq!(got, want);
     }
 
     #[test]
     fn every_jump_lands_on_the_return_it_names() {
-        let p = socket_filter();
-        let kill = p.len() - 1;
-        let eperm = p.len() - 2;
-        assert_eq!(1 + 1 + usize::from(p[1].jf), kill);
-        assert_eq!(3 + 1 + usize::from(p[3].jt), kill);
+        let p = socket_filter().unwrap();
+        let (eperm, kill, allow) = (15, 16, 17);
+        let target = |i: usize, off: u8| i + 1 + usize::from(off);
+        assert_eq!(target(1, p[1].jf), kill);
+        assert_eq!(target(3, p[3].jt), kill);
         for (i, op) in p.iter().enumerate().take(8).skip(4) {
-            assert_eq!(i + 1 + usize::from(op.jt), eperm, "instruction {i}");
+            assert_eq!(target(i, op.jt), eperm, "instruction {i}");
         }
+        assert_eq!(target(8, p[8].jf), allow);
+        assert_eq!(target(10, p[10].jf), eperm);
+        assert_eq!(target(13, p[13].jt), allow);
+        assert_eq!(target(14, p[14].jt), allow);
+        assert_eq!(target(14, p[14].jf), eperm);
     }
 
     #[test]
