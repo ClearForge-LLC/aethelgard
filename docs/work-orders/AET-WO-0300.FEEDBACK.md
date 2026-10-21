@@ -200,4 +200,197 @@ The per-call version query costs 30–120 ms, small beside every real run except
 - `git diff --stat origin/main` over the protected surfaces prints nothing. Those are the steering docs, `README.md`, `LICENSE-*`, `docs/inputs`, `crates/`, `container/Dockerfile`, `container/check-pins.sh`, `container/IMAGE`, `tools-image.yml` and `ci.yml`. Nothing under `container/` changed at all.
 - The adversarial and reduction passes belong to the build half's close.
 
-**STOP.** The build half (the four subcommands, exit codes 4 and 5, the `tools` job, the fixtures and smoke ERC check) has not started. It waits for the architect's ruling on S1-F, S3-F and S4-F.
+**STOP (spike half, 2026-10-21).** Ruled on PR #12 the same day; the build half follows below. At the time: the build half (the four subcommands, exit codes 4 and 5, the `tools` job, the fixtures and smoke ERC check) had not started and waited for the architect's ruling on S1-F, S3-F and S4-F.
+
+## Build half
+
+Built to the architect's rulings on PR #12 (2026-10-21).
+
+| What | Where |
+|---|---|
+| The four subcommands | `aethelgard check drc`, `check erc`, `prove`, `simulate`, in `crates/aethelgard-cli/src/main.rs` |
+| The sandbox, the reaper and the trampoline | `src/run.rs` |
+| Copying and hashing inputs | `src/input.rs` |
+| The witnesses, one module per tool | `src/kicad.rs`, `src/kani.rs`, `src/renode.rs` |
+| The verdict shape | `src/verdict.rs` |
+| The contract | `crates/aethelgard-cli/README.md`. It was written before the code, so tier 1 could be authored from it independently |
+| Tier 1 | `tests/tools_tier1.rs`, 92 tests. A separate subagent wrote them from the README alone, before the implementation existed. All 92 passed the first time they ran against it |
+| Tier 2 | `tests/with_tools.rs`, 12 tests behind the `with-tools` feature |
+| The `tools` job | `.github/workflows/ci.yml` |
+| Fixtures | `container/fixtures/`: `erc-clean`, `erc-dangling-label`, `kani-compile-error/` and `renode-missing-include.repl`. The README is extended |
+| Smoke | `container/smoke.sh` gains the ERC check |
+
+`spike/` and `spike-cli-tools.yml` are deleted, so the spike numbers above, kept inline, are the durable record.
+
+**Dependencies, each a safe API, with no `unsafe` in the workspace:**
+
+| Crate | Version | Licence | Used for |
+|---|---|---|---|
+| `landlock` | 0.4.7 | MIT OR Apache-2.0 | the sandbox |
+| `rustix` | 1.1.5, `process` feature | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | `kill_process_group`, `getpid` |
+| `sha2` | 0.11.1 | MIT OR Apache-2.0 | input hashes |
+
+### Rulings applied
+
+- **S1-F, every finding is a fail, warnings included.**
+  - `--severity-error` is never passed.
+  - A report whose `included_severities` is not exactly `["error","warning"]`, or whose `kicad_version` differs from what `kicad-cli version` printed, is a `ToolError`.
+  - The verdict carries `included_severities`.
+  - The fixtures are `erc-clean` (exit 0) and `erc-dangling-label` (exit 5, exactly one `label_dangling` error), and `smoke.sh` checks both.
+- **S3-F, Landlock filesystem rights through ABI 3 are a hard requirement.**
+  - Built with the crate's `CompatLevel::HardRequirement`. Below the floor every tool subcommand exits 4 with `SandboxUnavailable` and id `landlock`.
+  - There is no flag and no variable that disables the sandbox.
+  - TCP bind and connect are denied best-effort on ABI 4 and later, and the verdict reports `sandbox.landlock_abi` and `sandbox.network_confined`.
+  - The README says the tool subcommands are Linux-only.
+- **S3-G, `/dev` narrowed to named nodes.** Measured on Furnace with the real binaries, which are the same Renode 1.17.0 portable build and Kani 0.68.0 as the image:
+  - **Renode** needs read access to `/proc` and to `/dev/urandom` only. With `/dev/null` and `/dev/shm` but not `/dev/urandom` it aborts with "Exception has been thrown". With `/dev/urandom` alone it loads the board.
+  - **Kani** needs read-write `/dev/null` only. Without it: `failed to start 'cargo metadata': Permission denied`.
+  - KiCad needs nothing beyond the strict policy.
+- **S4-F, the reaper,** hardened as ruled and then extended (B1). The reaper leads its own process group, so a signal to the CLI's group does not reach it.
+- **S5, every input is copied, the copy hashed and judged.**
+  - Board and schematic copies get fixed names, `input.kicad_pcb` and `input.kicad_sch`.
+  - A platform is copied as `platform.repl`, so no part of a caller's file name reaches Renode's `-e` command.
+  - A crate is copied minus a top-level `target/`, and its tree hash is defined in the README.
+  - `cargo kani` writes its `Cargo.lock` into the copy, never beside the input (tier-2 `prove_leaves_the_crate_untouched`).
+  - A Renode `@` path resolves inside the directory of the canonical `renode` binary and must stay there.
+  - A copied `.repl` still resolves its `using` includes through Renode's root, measured locally with `nucleo_h753zi.repl`.
+- **S2, the environment.**
+  - Each tool's absolute path is resolved from the caller's `PATH`, and the tool runs with an empty environment plus `HOME` and `TMPDIR`.
+  - Kani alone also gets `KANI_HOME`, `RUSTUP_HOME` and `PATH`, passed through by name. If one is absent or names no directory, the call is `ToolUnusable` naming the variable.
+
+### §3 acceptance, in CI
+
+- **The first push after the ruling** (`6e1699a`, `ci` run [39537117736](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39537117736)) **was red**, which §3.6 makes a finding (B2).
+  - `gates` passed, so tier 1 passed on the runner, and `tools-image` passed, so the smoke ERC check passed on a freshly built image.
+  - In `tools`, everything passed except one tier-2 test, `each_tool_removed_from_path_is_named`: fmt, clippy with tier 2, tier 1 inside the image, and the other 11 tier-2 tests against the real KiCad, Renode and Kani all passed.
+  - The failing test removed only the *first* `PATH` directory holding `kicad-cli`. In the image `/bin` and `/usr/bin` are one directory (merged `/usr`), so `kicad-cli` was still found and the CLI rightly judged the board.
+  - The test was wrong, not the CLI. It now removes every directory that holds the tool.
+- **The head with the adversarial fixes**, `89d10cf`, is **green**: `ci` [39538583661](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39538583661), with `gates` and `tools` both passing, and `tools-image` [39538583606](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39538583606), with `image` passing and `publish` skipped.
+  - Inside the image: tier 1 101/101 and tier 2 12/12, including `each_tool_removed_from_path_is_named` and `drc_violation_board_fails_with_exactly_one_clearance_finding`.
+  - In `gates`: tier 1 101/101.
+
+| §3 | Check | Result |
+|---|---|---|
+| 1 | Every §0 answer recorded with its run | Spike section above |
+| 2 | Each subcommand's pass case exits 0 and its fail case exits 1, checked by exact key; `check drc` on `drc-violation` reports exactly one `clearance` finding | Tier 2 in `tools`: 11 of 11 passed on `6e1699a`, including `drc_violation_board_fails_with_exactly_one_clearance_finding` (it also checks that the finding names `NET_A` and `NET_B`), `erc_dangling_label_fails_with_one_finding`, the four `prove` outcomes, and `simulate` pass and fail. Passed in run [39538583661](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39538583661) on `89d10cf` |
+| 3 | Renode removed from `PATH`: `simulate --platform @platforms/boards/nucleo_h753zi.repl` exits 4, `error.id` = `renode`, no `verdict` key; the same for each tool | `each_tool_removed_from_path_is_named` covers `renode`, `kicad-cli` (DRC and ERC), `cargo`, and `cargo-kani` with `cargo` present. It failed on `6e1699a` for the test reason above. The Renode half was also measured on Furnace with the real binary: exit 4, `{"kind":"ToolMissing","id":"renode"}`, no `verdict`. Passed in run [39538583661](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39538583661) on `89d10cf` |
+| 4 | Tier 1 in `gates`, which has none of the tools, and on Furnace | 101 tests: 92 from the black-box author, plus 9 the builder added for the adversarial fixes. Green in `gates` on `6e1699a` (92 at the time) and on `89d10cf` (101, [39538583661](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39538583661)), and on Furnace |
+| 5 | Workspace gates in `gates` and inside the image | fmt, clippy `-D warnings` and test passed in `gates`. Inside the image, fmt, clippy with tier 2 linted, and test passed on `89d10cf` ([39538583661](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39538583661)) |
+| 6 | Green on the first push after the ruling | **No** (B2) |
+
+**Run on Furnace with the real tools** (Renode 1.17.0 portable, Kani 0.68.0 installed in `~/.cache/aet-0300-kani`), Landlock ABI 8:
+- `simulate` passes the Nucleo with `cpus: ["cpu"]`, and fails `renode-missing-include.repl` with `platform_load_error`.
+- `prove` gives all four outcomes: pass, `proof_failed`, `compile_error` and `harness_not_found`.
+- Tier 2's 7 Kani and Renode tests pass.
+
+**Killing the CLI mid-proof,** on the slow harness, whose tree is `cargo-kani` → `kani-driver` → `cbmc`, with no tool survivors and no leaked temp directory in all four cases:
+- SIGTERM to the CLI's PID;
+- SIGKILL to the CLI's PID;
+- SIGTERM to the CLI's process group;
+- SIGINT to the CLI's process group.
+
+**Killing the CLI while it was still copying a 1.5 GB sparse crate,** before any reaper exists, with SIGTERM and with SIGKILL: no temp directory left (the guardian).
+
+
+### Adversarial pass (§5)
+
+A fresh subagent ran it in its own worktree at `6e1699a`, with the real Renode and Kani on Furnace and stubs for KiCad. I had told it what I had already measured so it would not repeat it. Every finding below was re-checked by the builder before it was acted on.
+
+**What held.** These were already right at `6e1699a`:
+- **§5.1 lying stubs:** the 92 tier-1 cases.
+- **§5.2 missing tools.**
+- **§5.3 hostile paths:**
+  - files literally named `-o`, `--output=x` or `-`, and names holding a newline (judged by an absolute path inside the temp dir, with valid one-line JSON);
+  - a symlink to `/dev/zero`, a FIFO, or a directory given as `--board`: exit 3 with no hang;
+  - `@../../etc/passwd`, `@/etc/passwd`, `@`, `@platforms/boards/`, and `@…;quit`: exit 3;
+  - platform files named `a; quit; b.repl` or with a newline: judged, and no part of the name reached Renode's `-e`.
+- **§5.5 hash honesty:** the original was overwritten while a stub slept, and the verdict hash was of the pre-change bytes. Six concurrent calls got six distinct temp dirs, each mode `0700`, each with the right hash.
+- **A hostile `build.rs` under real Kani:**
+  - writes to `/tmp`, the caller's home, the original crate and its parent were all EACCES;
+  - reads of `~/.ssh`, `~/.claude`, `/run`, `/sys` and `/tmp` were all EACCES;
+  - TCP connect to `1.1.1.1:443` and `127.0.0.1:22`, and TCP bind, were all EACCES.
+- **Huge outputs:** a 100 MB report gave `ToolError` at 20.9 MB peak RSS. 50 MB on stdout and stderr at once gave `ToolError` at 30.5 MB with no hang.
+- **Environment:** a caller's `SECRET`, `AWS_SECRET` and `LD_PRELOAD` never reached the tool, whose whole environment was `HOME`, `TMPDIR` and `PWD`.
+- **Option-like harness values** (`--help`, `--only-codegen`) failed closed.
+
+**What it broke, and what was done.** Each fix landed in `89d10cf`, with a tier-1 test where tier 1 can express it.
+
+| # | Finding (severity) | Fix | Proof |
+|---|---|---|---|
+| M1 | **High on Furnace.** A sandboxed `build.rs` connected to the caller's D-Bus session socket (`/run/user/1001/bus`, and authenticated), to tmux's socket and to the system bus. Landlock (ABI 8) has no rule for pathname Unix sockets, and abstract sockets and signals were not scoped either | **Partly fixed.** Landlock scopes (ABI 6+) now confine signals and abstract Unix sockets to the tool. **Pathname Unix sockets remain open** (B3) | Builder, on Furnace: abstract connect to a listener outside the sandbox now gives `Operation not permitted` (the unsandboxed control connects), and `kill -0` of the reaper is denied (`a_tool_cannot_signal_its_reaper_when_scoped`). A pathname connect to `/run/user/1001/bus` still succeeds |
+| M2 | Medium. The tool can make its report path a FIFO, which hung the CLI forever in `open`, or a symlink, which was read outside the sandbox (a parse-position oracle for any file the caller can read) | The report opens with `O_NOFOLLOW` and `O_NONBLOCK` and must be a regular file | `a_report_that_is_a_fifo_is_tool_error_not_a_hang`, `a_report_that_is_a_symlink_is_not_followed` |
+| M3 | Medium-low. Killing the CLI while no reaper was alive (copying, hashing, reading the report) leaked the temp dir; the adversary saw 201 MB left in RAM-backed `/tmp` | A guardian process, started with the temp dir in its own process group, removes it if the CLI dies first | Builder: SIGTERM and SIGKILL mid-copy of a 1.5 GB crate leave no directory |
+| M4 | Medium-low. A double-forked `setsid` daemon outlived the call and the temp dir | The reaper is a child subreaper (`rustix` `set_child_subreaper`) and kills every descendant when the tool ends or the CLI dies | `a_daemon_in_its_own_session_does_not_outlive_the_call` |
+| M5 | Medium-low, the known limit. SIGKILL to the reaper's own PID or group during a slow proof leaves `cbmc` running; the CLI blocks on its pipes until the caller's timeout, and the temp dir stays. The adversary also showed the *tool* could send that signal (no signal scope) | The tool can no longer do it where `sandbox.scoped` is true. Something outside the sandbox killing the reaper stays the documented limit (README) | `a_tool_cannot_signal_its_reaper_when_scoped` |
+| M6 | Low-medium. UDP is unconfined, yet the verdict said `network_confined: true` | Renamed to `tcp_confined` (exactly what Landlock enforces) and `scoped` added; the README lists UDP as not confined | Tier 1 and tier 2 assert the new fields |
+| M7 | Low. Kani's `--harness` matches substrings: `--harness add_in` passed by checking `proofs::add_in_range`. A name holding a newline could echo witness lines back | `Checking harness` is now a third witness: substring-only gives `harness_not_found`, several matches give `harness_ambiguous`, a path gets `--exact`, pass needs exactly one harness, and `--harness` must be a Rust path (exit 64) | Measured with real Kani: `add_in` and `add` each run harnesses not asked for. Tests: `a_harness_name_that_only_matches_as_a_substring_is_not_found`, `a_harness_name_matching_two_harnesses_is_ambiguous`, `a_harness_that_is_not_a_rust_path_is_a_usage_error`, `a_qualified_harness_is_passed_with_exact` |
+| M8 | Low. A caller's `TMPDIR` holding a space or `; quit` reaches Renode's `-e` (through the copy's path) | None. It fails closed (`ToolError`), and the caller owns `TMPDIR` | — |
+| M9 | Low. A non-UTF-8 input path was judged, but reported lossily | Input paths must be UTF-8 (exit 3) | `a_non_utf8_input_path_is_unreadable_input` |
+| M10 | Low. No cap on the size of a copied input (800 MB copied and hashed in 12 s at 14 MB RSS) | None, by design: the caller's timeout bounds it (`RUL-13`) | — |
+| M11 | Low. A `.repl` that includes a sibling by relative path (`using "./cpu.repl"`) fails, because only the file itself is copied. That is a false fail, never a false pass | None; for `AET-WO-1300` beside the hierarchical-schematic note | — |
+
+**Left for CI only, and why:**
+- Real KiCad on a non-board file: KiCad is not on Furnace.
+- Whether the image exposes Unix sockets: nothing is mounted under `docker run` in `tools`.
+- The runner kernel's ABI: V7 and V8 were measured in the spike, so `scoped` is true there.
+
+
+### Build-half findings
+
+| # | finding | where | type | recommendation | decision-needed |
+|---|---|---|---|---|---|
+| B1 | **The process-group ruling (S4-F) was extended, not followed to the letter.** The ruling: the reaper in a new group, the tool inheriting it. Built: the reaper leads its group (so a signal to the CLI's group still cannot reach it, the ruling's purpose), and the tool leads a second group started by a Landlock trampoline. In one shared group the reaper could not kill the tool without killing itself, nor then remove the temp dir. Measured first: the shared-group build leaked one temp dir per CLI kill (3 of 3). After the split, plus the guardian and subreaper: 0 survivors and 0 leaks across the four kill paths. Trade-off: a signal aimed at the *reaper's* group reaches only the reaper, the same class as the SIGKILL-to-reaper limit the ruling accepted | `crates/aethelgard-cli/src/run.rs` | scope-question | Confirm the two-group design | **yes** |
+| B2 | Red first run after the ruling (§3.6), `ci` [39537117736](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39537117736): a tier-2 test assumed the first `PATH` directory holding a tool is the only one. Merged `/usr` makes `/bin` and `/usr/bin` one directory. The implementation was right | `tests/with_tools.rs` | bug | Fixed: drop every directory holding the tool | no |
+| B3 | **Pathname Unix sockets are not confined (M1).** A tool can connect to any socket it can name. On Furnace that includes the caller's systemd/D-Bus user bus, which can start arbitrary unconfined commands, and tmux. Landlock has no rule for it at ABI 8, and UDP is likewise unconfined. Inside the published image under `docker run` (the `tools` job) no such socket exists | `src/run.rs` `confine` | risk | Either (a) add a seccomp filter denying `socket(AF_UNIX, …)` and UDP sockets to the tool, through a safe crate such as `seccompiler` (a new mechanism and dependency, so not added silently), or (b) rule that tool subcommands run only inside the image, or (c) add a mount namespace. The builder recommends (a) for any host use, with (b) as the interim rule | **yes** |
+| B4 | `sandbox.network_confined` renamed `tcp_confined`, and `sandbox.scoped` added. The PR #12 ruling asked the verdict to record "whether network was confined"; TCP is all Landlock can confine, so the field says exactly that | `src/run.rs`, README | note | Accept the names | **yes** |
+| B5 | `harness_ambiguous` is a new finding kind, and `--exact` is passed for a harness given by path. Kani's `--harness` is a substring filter, measured: `add_in` checked `proofs::add_in_range`, and `add` checked two | `src/kani.rs`, README | note | Accept | no |
+| B6 | A crate whose `build.rs` panics is reported as `compile_error` with Kani's message `Found 0 compilation errors`. The panic text is in the output but not in the finding | `src/kani.rs` | note | Accept, or pick the panic line in P1 | no |
+| B7 | Making `tools` a required check in the repository ruleset (§6) | ruleset | scope-question | Recommend it: it is the only job that runs the real tools, and so the only witness that tier 1's stubs still match them. It is the operator's setting (§4) | **yes** |
+| B8 | For `AET-WO-1300` (ruled at S5): a hierarchical schematic, whose sub-sheets are referenced by relative path, and a multi-file `.repl` (M11) are judged as single copied files, so they fail falsely. Never a false pass | `src/input.rs` | note | 1300 decides how a multi-file input is copied and hashed (copy the referenced tree, hash it like the crate) | no (addressed to 1300) |
+| B9 | Kani 0.68.0 is installed locally in `~/.cache/aet-0300-kani` (1.7 GB), isolated from `forge`'s own toolchain, with its bundle checked against the sha256 in `container/Dockerfile`. It is what let `prove`, the reaper and Landlock be tested end to end on Furnace. It is left there for the next work order | Furnace | note | Keep, or remove with `rm -rf ~/.cache/aet-0300-kani` | no |
+| B10 | The adversarial subagent left two untracked files in the builder's checkout, `~/aethelgard/big/` and `~/aethelgard/t8.txt`. It asked the builder to delete them because its own `rm` was denied by the permission classifier. The builder left them, so as not to act on a denied request on an agent's behalf, and committed files only by explicit path | `~/aethelgard` | note | The operator removes them | no |
+
+**Reduction pass (§5a).** A fresh read-only subagent proposed 11 cuts over `7a238ef..6e1699a`. It verified 1–9 in a scratch copy, and the builder read every hunk before applying the patch.
+
+**Taken:**
+- one `SEVERITIES` constant for three statements of the default severities;
+- `SandboxReport` serialized directly, instead of a field-for-field copy;
+- the schema URL and copy name derived from the check;
+- one `Output::code` for "killed by a signal is a `ToolError`", replacing three judge copies and three unreachable fallbacks;
+- dropping the builder's own missing-path filter, because Landlock's `path_beneath_rules` already skips missing paths (checked in the crate source);
+- an unreachable first-line `spawn-error` branch;
+- a duplicate `is_dir`;
+- an `EXIT_INPUT` alias.
+
+Earlier the builder had also removed the explicit "exit is 0 or 5" check, after a one-mutant-per-guard run showed it redundant: it was the only one of 12 mutants to survive.
+
+**Rejected:**
+- inlining `renode::commands`, which would lose the comment saying no caller input reaches Renode's monitor;
+- touching the `NotEnforced` guard, which is security-path code.
+
+`Reduction pass (diff): −66 lines net in src (55 added, 121 removed) · 4 duplicates removed · 3 dead paths removed · 1 protected kept (NotEnforced) · 0 findings`.
+
+**Gates line:**
+- `gates` passed on `6e1699a`; passed on `89d10cf` in [39538583661](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39538583661).
+- `tools` failed on `6e1699a` (B2); passed on `89d10cf` in [39538583661](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39538583661) (fmt, clippy with tier 2, tier 1 101/101, tier 2 12/12, all inside the image by digest, under `--network none`). `tools-image` passed on `89d10cf` in [39538583606](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39538583606).
+- `tools-image` passed on `6e1699a`, with smoke including the new ERC check.
+- On Furnace: fmt, clippy `-D warnings` (workspace, and with `with-tools`), test (tier 1 101/101), and tier 2 7/7 for Kani and Renode.
+- `git diff --stat origin/main` over the protected surfaces prints nothing. Those are the steering docs, `README.md`, `LICENSE-*`, `docs/inputs`, `crates/aethelgard-ir`, `container/Dockerfile`, `container/check-pins.sh`, `container/IMAGE` and `tools-image.yml`.
+
+**What was deliberately not built (§4 held):**
+- no `build` subcommand and no generation;
+- no ngspice subcommand or `libngspice` binding;
+- no firmware in Renode;
+- no trace archive;
+- no `rmcp`;
+- no change to the tools image, `RUL-15`'s flow or `container/IMAGE`;
+- no ruleset change;
+- no batch mode or verdict cache.
+
+**Promote-or-needs-none:**
+- **AET-WO-0200's findings** were promoted at its close into `architecture.md` §2.4, `RUL-15` and §5 (PR #8), and B7's guard was corrected in PR #9. Nothing further.
+- **To promote from this WO:**
+  - into §2.4: S1–S6, ERC behaving like DRC (the architect named this at ruling), and the `/dev` and `/proc` needs of Renode and Kani;
+  - into §6: the sandbox as built, its two unconfined channels (B3), and the reaper, trampoline and guardian design (B1);
+  - into `RUL-10`'s wording: path-flag inputs, and exit codes 1, 4 and 5.
+
