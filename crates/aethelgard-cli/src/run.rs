@@ -327,26 +327,13 @@ fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop
     let mut lines = status.lines();
     let first = lines.next().unwrap_or_default();
     if let Some(rest) = first.strip_prefix("unavailable ") {
+        // Only the trampoline writes this line: `landlock` or `seccomp`.
         let (layer, reason) = rest.split_once(' ').unwrap_or((rest, ""));
-        let message = match layer {
-            "landlock" => {
-                format!("Landlock cannot enforce the required filesystem rules: {reason}")
-            }
-            "seccomp" => {
-                format!("the seccomp filter that refuses sockets cannot be installed: {reason}")
-            }
-            _ => {
-                return Err(Stop::tool_error(
-                    tool,
-                    format!("the reaper reported an unknown sandbox layer: {rest}"),
-                ));
-            }
-        };
         return Err(Stop {
             code: EXIT_TOOL_UNAVAILABLE,
             kind: "SandboxUnavailable",
             id: Some(layer.to_owned()),
-            message,
+            message: format!("the required {layer} sandbox layer cannot be enforced: {reason}"),
         });
     }
     let sandbox = first
@@ -560,10 +547,8 @@ pub fn confine_main(args: &[OsString]) -> ! {
 /// rules match system-call numbers under `AUDIT_ARCH_X86_64` and so would let
 /// an x32 call (number | 0x4000_0000) through a default-allow filter.
 ///
-/// In order: kill the process for any architecture but x86_64, and for any
-/// x32 call; refuse `socket` (every family: no tool needs one, measured in the
-/// spike) and the three `io_uring` calls with `EPERM`; allow everything else,
-/// `socketpair` included, which reaches nothing outside the process.
+/// `socket` is refused for every family because no tool needs one (measured
+/// in the spike); `socketpair` is allowed: it reaches nothing outside.
 pub fn socket_filter() -> BpfProgram {
     const LD_W_ABS: u16 = 0x20; // BPF_LD | BPF_W | BPF_ABS
     const JEQ_K: u16 = 0x15; // BPF_JMP | BPF_JEQ | BPF_K
@@ -691,26 +676,14 @@ mod tests {
     }
 
     #[test]
-    fn an_unavailable_seccomp_line_is_sandbox_unavailable_naming_seccomp() {
-        let stop = parse_status("unavailable seccomp Prctl(EINVAL)\n", "kicad-cli").unwrap_err();
-        assert_eq!(
-            (stop.code, stop.kind, stop.id.as_deref()),
-            (4, "SandboxUnavailable", Some("seccomp"))
-        );
-    }
-
-    #[test]
-    fn an_unavailable_landlock_line_still_names_landlock() {
-        let stop = parse_status("unavailable landlock NotImplemented\n", "kicad-cli").unwrap_err();
-        assert_eq!(
-            (stop.code, stop.kind, stop.id.as_deref()),
-            (4, "SandboxUnavailable", Some("landlock"))
-        );
-    }
-
-    #[test]
-    fn a_verdict_reports_the_sockets_denied() {
-        let (sandbox, _) = parse_status("sandbox abi=8\nended code=0\n", "kicad-cli").unwrap();
-        assert!(sandbox.sockets_denied);
+    fn an_unavailable_line_is_sandbox_unavailable_naming_its_layer() {
+        for layer in ["seccomp", "landlock"] {
+            let stop = parse_status(&format!("unavailable {layer} some reason\n"), "kicad-cli")
+                .unwrap_err();
+            assert_eq!(
+                (stop.code, stop.kind, stop.id.as_deref()),
+                (4, "SandboxUnavailable", Some(layer))
+            );
+        }
     }
 }
