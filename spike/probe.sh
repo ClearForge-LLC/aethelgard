@@ -73,12 +73,13 @@ report() {
 drc() { "$KICAD" pcb drc --format json -o "$OUT/$1.json" "${@:3}" "$2"; }
 erc() { "$KICAD" sch erc --format json -o "$OUT/$1.json" "${@:3}" "$2"; }
 
-for b in drc-clean drc-violation; do
-  report "drc.$b.flag" drc "drc.$b.flag" "$FIX/$b.kicad_pcb" --exit-code-violations
-  report "drc.$b.noflag" drc "drc.$b.noflag" "$FIX/$b.kicad_pcb"
-  report "drc.$b.flag.severity_error" drc "drc.$b.flag.severity_error" "$FIX/$b.kicad_pcb" --exit-code-violations --severity-error
+for b in "$FIX/drc-clean" "$FIX/drc-violation" "$SPK/drc-warnings-only"; do
+  n=$(basename "$b")
+  report "drc.$n.flag" drc "drc.$n.flag" "$b.kicad_pcb" --exit-code-violations
+  report "drc.$n.noflag" drc "drc.$n.noflag" "$b.kicad_pcb"
+  report "drc.$n.flag.severity_error" drc "drc.$n.flag.severity_error" "$b.kicad_pcb" --exit-code-violations --severity-error
 done
-for s in erc-clean erc-dangling-wire erc-dangling-label erc-unconnected-input; do
+for s in erc-clean erc-dangling-wire erc-dangling-label erc-unconnected-input erc-lone-noconnect; do
   report "erc.$s.flag" erc "erc.$s.flag" "$SPK/$s.kicad_sch" --exit-code-violations
   report "erc.$s.noflag" erc "erc.$s.noflag" "$SPK/$s.kicad_sch"
   report "erc.$s.flag.severity_error" erc "erc.$s.flag.severity_error" "$SPK/$s.kicad_sch" --exit-code-violations --severity-error
@@ -178,7 +179,7 @@ endgroup
 answer s3.status "$("$BIN/confine" --ro / --rw /tmp -- true 2>&1 | grep '^landlock' | head -1)"
 SYS=/usr:/lib:/lib64:/bin:/sbin:/etc
 # confined NAME POLICY RO RW -- tool function : run a tool under Landlock.
-for policy in strict strict+proc+dev; do
+for policy in strict strict+proc strict+dev strict+proc+dev; do
   for tool in drc erc renode kani; do
     w=$(mktemp -d /tmp/s3.XXXXXX)
     case $tool in
@@ -188,10 +189,8 @@ for policy in strict strict+proc+dev; do
       kani) ro="$FIX:/opt/cargo:/opt/rustup:/opt/kani:$SYS" ;;
     esac
     rw="$w"
-    if [ "$policy" = strict+proc+dev ]; then
-      ro="$ro:/proc"
-      rw="$rw:/dev"
-    fi
+    case $policy in *proc*) ro="$ro:/proc" ;; esac
+    case $policy in *dev*) rw="$rw:/dev" ;; esac
     case $tool in
       drc) cmd=("$KICAD" pcb drc --exit-code-violations --format json -o "$w/r.json" "$FIX/drc-violation.kicad_pcb"); want=5 ;;
       erc) cmd=("$KICAD" sch erc --exit-code-violations --format json -o "$w/r.json" "$SPK/erc-clean.kicad_sch"); want=0 ;;
@@ -255,9 +254,10 @@ for tool in renode kani; do
         cmd=("$RENODE" --disable-gui --console --plain -e 'mach create; machine LoadPlatformDescription @platforms/boards/nucleo_h753zi.repl')
         settle=4
       else
-        cp -r "$FIX/kani-smoke" "$w/crate"
-        cmd=(sh -c "cd $w/crate && exec $CARGO kani --harness add_in_range")
-        settle=1
+        # A harness CBMC works on for minutes, so the tree is alive at the kill.
+        cp -r "$REPO/spike/kani-slow" "$w/crate"
+        cmd=(sh -c "cd $w/crate && exec $CARGO kani --harness mul_commutes")
+        settle=3
       fi
       # stdin is a FIFO held open by this shell, so it outlives the probe.
       mkfifo "$w/stdin"
