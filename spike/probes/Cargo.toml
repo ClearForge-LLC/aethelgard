@@ -1,0 +1,15 @@
+[package]
+name = "aet-0300a-probes"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "AET-WO-0300a spike probes: measurement only, deleted by the build half."
+
+# Not a member of the repository's workspace, so its `unsafe` (raw x32, i386
+# and io_uring system calls in `standin`, which no safe API offers) is outside
+# the workspace's forbid. `seccomp-wrap` itself has none.
+[workspace]
+
+[dependencies]
+libc = "0.2"
+seccompiler = "0.5.0"
