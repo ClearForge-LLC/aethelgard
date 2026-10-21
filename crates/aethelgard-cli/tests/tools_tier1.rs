@@ -275,12 +275,14 @@ fn kani_stub(tb: &Dir, version: Version, exit: i32, stdout: &str, stderr: &str) 
     let body = format!(
         r#"if [ "$1" = kani ] && [ "$2" = --version ]; then {version}; fi
 [ "$1" = kani ] || exit 99
-prev=; ok=
+prev=; ok=; h=
 for a in "$@"; do
-  if [ "$prev" = --harness ] && [ -n "$a" ]; then ok=1; fi
+  if [ "$prev" = --harness ] && [ -n "$a" ]; then ok=1; h=$a; fi
   prev=$a
 done
 [ "$ok" = 1 ] || exit 99
+# Like real Kani, name the harness checked before its verdict.
+case "$(/bin/cat '{out}')" in *"Checking harness"*) ;; *VERIFICATION*) printf 'Checking harness proofs::%s...\n' "$h";; esac
 /bin/cat '{out}'
 /bin/cat '{err}' >&2
 exit {exit}"#,
@@ -868,7 +870,8 @@ fn drc_pass_reports_the_full_verdict() {
     assert_eq!(report["tool"]["version"], "10.0.7");
     assert_eq!(report["tool"]["exit_code"], 0);
     assert!(report["sandbox"]["landlock_abi"].as_u64().unwrap() >= 3);
-    assert!(report["sandbox"]["network_confined"].is_boolean());
+    assert!(report["sandbox"]["tcp_confined"].is_boolean());
+    assert!(report["sandbox"]["scoped"].is_boolean());
 }
 
 #[test]
@@ -1375,4 +1378,144 @@ fn the_tool_is_handed_a_copy_whose_bytes_match_the_hash() {
     k.install(&tb);
     let report = judged(&drc(&tb, &i.path), "pass", "drc");
     assert_eq!(report["input"]["path"], i.path.to_str().unwrap());
+}
+
+// ---------------------------------------------------------------- adversarial-pass fixes (builder)
+
+#[test]
+fn a_report_that_is_a_fifo_is_tool_error_not_a_hang() {
+    let tb = Dir::new("tb");
+    let mut k = Kicad::new(0, None);
+    k.pre = "/usr/bin/mkfifo \"$out\"".into();
+    k.install(&tb);
+    let b = board();
+    refused_id(&drc(&tb, &b.path), 5, "ToolError", "kicad-cli");
+}
+
+#[test]
+fn a_report_that_is_a_symlink_is_not_followed() {
+    let tb = Dir::new("tb");
+    let elsewhere = tb.write("elsewhere.json", drc_report(vec![]).to_string().as_bytes());
+    let mut k = Kicad::new(0, None);
+    k.pre = format!("/bin/ln -s '{}' \"$out\"", elsewhere.display());
+    k.install(&tb);
+    let b = board();
+    refused_id(&drc(&tb, &b.path), 5, "ToolError", "kicad-cli");
+}
+
+#[test]
+fn a_harness_name_that_only_matches_as_a_substring_is_not_found() {
+    let tb = Dir::new("tb");
+    let out = format!("Checking harness proofs::add_in_range...\n{KANI_PASS}");
+    kani_stub(&tb, Version::Good, 0, &out, "");
+    let c = krate();
+    let report = judged(&prove(&tb, &c.path, "add_in"), "fail", "prove");
+    assert_eq!(
+        report["findings"][0]["kind"], "harness_not_found",
+        "{report}"
+    );
+}
+
+#[test]
+fn a_harness_name_matching_two_harnesses_is_ambiguous() {
+    let tb = Dir::new("tb");
+    let out = "Checking harness a::check...\nVERIFICATION:- SUCCESSFUL\nChecking harness b::check...\nVERIFICATION:- SUCCESSFUL\nComplete - 2 successfully verified harnesses, 0 failures, 2 total.\n";
+    kani_stub(&tb, Version::Good, 0, out, "");
+    let c = krate();
+    let report = judged(&prove(&tb, &c.path, "check"), "fail", "prove");
+    assert_eq!(
+        report["findings"][0]["kind"], "harness_ambiguous",
+        "{report}"
+    );
+}
+
+#[test]
+fn a_harness_that_is_not_a_rust_path_is_a_usage_error() {
+    let tb = Dir::new("tb");
+    kani_stub(&tb, Version::Good, 0, KANI_PASS, "");
+    let c = krate();
+    for bad in [
+        "add in",
+        "add\nVERIFICATION:- SUCCESSFUL",
+        "--help",
+        "a::",
+        "",
+    ] {
+        refused(&prove(&tb, &c.path, bad), 64, "UsageError");
+    }
+}
+
+#[test]
+fn a_qualified_harness_is_passed_with_exact() {
+    let tb = Dir::new("tb");
+    kani_stub(&tb, Version::Good, 0, KANI_PASS, "");
+    // The stub refuses unless --exact is present.
+    let cargo = tb.join("cargo");
+    let body = fs::read_to_string(&cargo).unwrap().replace(
+        "[ \"$ok\" = 1 ] || exit 99",
+        "[ \"$ok\" = 1 ] || exit 99\ncase \" $* \" in *\" --exact \"*) ;; *) exit 98;; esac",
+    );
+    fs::write(&cargo, body).unwrap();
+    let c = krate();
+    judged(
+        &prove(&tb, &c.path, "proofs::add_in_range"),
+        "pass",
+        "prove",
+    );
+}
+
+#[test]
+fn a_non_utf8_input_path_is_unreadable_input() {
+    use std::os::unix::ffi::OsStrExt;
+    let tb = Dir::new("tb");
+    Kicad::new(0, Some(drc_report(vec![]))).install(&tb);
+    let dir = Dir::new("in");
+    let name = OsStr::from_bytes(b"bad\xff.kicad_pcb");
+    let path = dir.0.join(name);
+    fs::write(&path, b"x").unwrap();
+    refused(&drc(&tb, &path), 3, "UnreadableInput");
+}
+
+#[test]
+fn a_daemon_in_its_own_session_does_not_outlive_the_call() {
+    let tb = Dir::new("tb");
+    let mut k = Kicad::new(0, Some(drc_report(vec![])));
+    // A daemon in a new session, stdio closed so it holds no pipe open.
+    k.pre = "/usr/bin/setsid /bin/sh -c 'exec 1>&- 2>&-; exec /bin/sleep 300' &".into();
+    k.install(&tb);
+    let b = board();
+    let output = drc(&tb, &b.path);
+    judged(&output, "pass", "drc");
+    // No `sleep 300` from the stub may remain once the call has returned.
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let survivors: Vec<String> = fs::read_dir("/proc")
+        .unwrap()
+        .flatten()
+        .filter(|e| {
+            fs::read(e.path().join("cmdline"))
+                .map(|c| c == b"/bin/sleep\x00300\x00")
+                .unwrap_or(false)
+        })
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        survivors.is_empty(),
+        "daemons survived the call: {survivors:?}"
+    );
+}
+
+#[test]
+fn a_tool_cannot_signal_its_reaper_when_scoped() {
+    let tb = Dir::new("tb");
+    let mut k = Kicad::new(5, None);
+    // Report the outcome of signalling the parent (the reaper) as the finding.
+    k.pre = r#"e=$(kill -0 $PPID 2>&1); if [ $? -eq 0 ]; then r=delivered; else r=denied; fi
+printf '{"$schema":"https://schemas.kicad.org/drc.v1.json","coordinate_units":"mm","date":"x","ignored_checks":[],"included_severities":["error","warning"],"kicad_version":"10.0.7","source":"b","violations":[{"type":"probe","severity":"error","description":"%s","items":[]}],"unconnected_items":[],"schematic_parity":[]}' "$r" > "$out""#.into();
+    k.install(&tb);
+    let b = board();
+    let report = judged(&drc(&tb, &b.path), "fail", "drc");
+    if report["sandbox"]["scoped"] == true {
+        let message = report["findings"][0]["message"].as_str().unwrap();
+        assert!(message.contains("denied"), "{report}");
+    }
 }

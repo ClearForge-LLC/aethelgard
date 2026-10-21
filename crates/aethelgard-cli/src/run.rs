@@ -27,9 +27,12 @@ use std::time::Duration;
 
 use landlock::{
     ABI, Access, AccessFs, AccessNet, CompatLevel, Compatible, LandlockStatus, Ruleset,
-    RulesetAttr, RulesetCreatedAttr, RulesetStatus, path_beneath_rules,
+    RulesetAttr, RulesetCreatedAttr, RulesetStatus, Scope, path_beneath_rules,
 };
-use rustix::process::{Pid, Signal, kill_process_group};
+use rustix::process::{
+    Pid, Signal, WaitOptions, getpid, kill_process, kill_process_group, set_child_subreaper,
+    waitpid,
+};
 
 use crate::{EXIT_TOOL_ERROR, EXIT_TOOL_UNAVAILABLE, EXIT_UNREADABLE};
 
@@ -147,7 +150,23 @@ impl Tool {
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 pub struct SandboxReport {
     pub landlock_abi: i32,
-    pub network_confined: bool,
+    /// TCP bind and connect denied (Landlock ABI 4+). UDP is not covered.
+    pub tcp_confined: bool,
+    /// Signals and abstract Unix sockets scoped to the tool's own processes
+    /// (Landlock ABI 6+). Pathname Unix sockets are not covered.
+    pub scoped: bool,
+}
+
+impl SandboxReport {
+    /// Filesystem rights are required and everything else is requested
+    /// best-effort, so what was enforced follows from the effective ABI.
+    fn from_abi(landlock_abi: i32) -> Self {
+        Self {
+            landlock_abi,
+            tcp_confined: landlock_abi >= 4,
+            scoped: landlock_abi >= 6,
+        }
+    }
 }
 
 /// How a tool run ended.
@@ -295,7 +314,7 @@ fn capture(mut pipe: impl Read + Send + 'static) -> thread::JoinHandle<Option<Ve
 }
 
 /// The status file holds one line about the sandbox, then one about how the
-/// tool ended: `sandbox abi=8 net=1` then `ended code=0` or `ended signal=9`;
+/// tool ended: `sandbox abi=8` then `ended code=0` or `ended signal=9`;
 /// or a single `unavailable …` or `spawn-error …` line.
 fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop> {
     let mut lines = status.lines();
@@ -309,22 +328,9 @@ fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop
         });
     }
     let sandbox = first
-        .strip_prefix("sandbox ")
-        .and_then(|rest| {
-            let mut abi = None;
-            let mut net = None;
-            for field in rest.split(' ') {
-                match field.split_once('=') {
-                    Some(("abi", v)) => abi = v.parse().ok(),
-                    Some(("net", v)) => net = Some(v == "1"),
-                    _ => {}
-                }
-            }
-            Some(SandboxReport {
-                landlock_abi: abi?,
-                network_confined: net?,
-            })
-        })
+        .strip_prefix("sandbox abi=")
+        .and_then(|abi| abi.parse().ok())
+        .map(SandboxReport::from_abi)
         .ok_or_else(|| Stop::tool_error(tool, "the reaper reported no sandbox".to_owned()))?;
     let second = lines.next().unwrap_or_default();
     if let Some(reason) = second.strip_prefix("spawn-error ") {
@@ -390,6 +396,11 @@ fn parse_internal(args: &[OsString]) -> Internal {
 pub fn reaper_main(args: &[OsString]) -> ! {
     let internal = parse_internal(args);
     let parent = parent_id();
+    // Orphans the tool leaves, a double-forked daemon in its own session
+    // included, are reparented here, so none outlives the call.
+    if set_child_subreaper(Some(getpid())).is_err() {
+        exit(70);
+    }
     let Ok(me) = env::current_exe() else { exit(70) };
     let Ok(mut child) = Command::new(me)
         .arg(CONFINE_ARG)
@@ -403,8 +414,9 @@ pub fn reaper_main(args: &[OsString]) -> ! {
     loop {
         match child.try_wait() {
             Ok(Some(ended)) => {
-                // Whatever the tool left running in its group dies with it.
+                // Whatever the tool left running dies with it.
                 let _ = kill_process_group(tool_group, Signal::KILL);
+                kill_descendants();
                 let line = match (ended.code(), ended.signal()) {
                     (Some(code), _) => format!("ended code={code}"),
                     (None, Some(sig)) => format!("ended signal={sig}"),
@@ -420,23 +432,76 @@ pub fn reaper_main(args: &[OsString]) -> ! {
             Err(_) => exit(70),
         }
         if parent_id() != parent {
-            // The CLI is gone: take the tool's group, then the temporary
-            // directory the CLI would have removed.
+            // The CLI is gone: take everything the tool started. The guardian
+            // removes the temporary directory.
             let _ = kill_process_group(tool_group, Signal::KILL);
             let _ = child.wait();
-            if let Some(root) = internal.status.parent()
-                && root
-                    .file_name()
-                    .and_then(OsStr::to_str)
-                    .is_some_and(|n| n.starts_with("aethelgard-"))
-            {
-                let _ = fs::remove_dir_all(root);
-            }
+            kill_descendants();
             exit(70);
         }
         thread::sleep(Duration::from_millis(20));
     }
 }
+
+/// Kills every process whose parent is this one, until none is left. As a
+/// child subreaper, this process inherits every orphan the tool leaves.
+fn kill_descendants() {
+    let me = std::process::id().to_string();
+    for _ in 0..100 {
+        let children: Vec<Pid> = fs::read_dir("/proc")
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| {
+                let stat = fs::read_to_string(e.path().join("stat")).ok()?;
+                // `pid (comm) state ppid …`; comm may hold spaces or parens.
+                let ppid = stat.rsplit_once(')')?.1.split_whitespace().nth(1)?;
+                (ppid == me)
+                    .then(|| e.file_name().to_str()?.parse().ok().and_then(Pid::from_raw))
+                    .flatten()
+            })
+            .collect();
+        if children.is_empty() {
+            return;
+        }
+        for pid in children {
+            let _ = kill_process(pid, Signal::KILL);
+        }
+        while let Ok(Some(_)) = waitpid(None, WaitOptions::NOHANG) {}
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// The guardian: `aethelgard --aethelgard-internal-guard <dir>`. In its own
+/// process group from the moment the call's temporary directory exists, it
+/// removes the directory if the CLI dies before removing it itself, whatever
+/// the CLI was doing then. Never returns.
+pub fn guard_main(args: &[OsString]) -> ! {
+    let Some(dir) = args.first().map(PathBuf::from) else {
+        exit(64)
+    };
+    if !dir
+        .file_name()
+        .and_then(OsStr::to_str)
+        .is_some_and(|n| n.starts_with("aethelgard-"))
+    {
+        exit(64);
+    }
+    let parent = parent_id();
+    loop {
+        if !dir.exists() {
+            exit(0);
+        }
+        if parent_id() != parent {
+            let _ = fs::remove_dir_all(&dir);
+            exit(0);
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// The first argument that turns this binary into the guardian.
+pub const GUARD_ARG: &str = "--aethelgard-internal-guard";
 
 /// The trampoline: `aethelgard --aethelgard-internal-confine <internal args>`.
 /// Confines itself with Landlock, records the sandbox, and becomes the tool.
@@ -453,12 +518,7 @@ pub fn confine_main(args: &[OsString]) -> ! {
             exit(0);
         }
     };
-    let _ = writeln!(
-        status,
-        "sandbox abi={} net={}",
-        sandbox.landlock_abi,
-        u8::from(sandbox.network_confined)
-    );
+    let _ = writeln!(status, "sandbox abi={}", sandbox.landlock_abi);
     let (program, tool_args) = internal
         .tool
         .split_first()
@@ -469,7 +529,8 @@ pub fn confine_main(args: &[OsString]) -> ! {
 }
 
 /// Applies Landlock to this process: filesystem rights through ABI 3 are
-/// required; TCP bind and connect are denied where the kernel can (ABI 4+).
+/// required; where the kernel can, TCP bind and connect are denied (ABI 4+)
+/// and signals and abstract Unix sockets are scoped to the tool (ABI 6+).
 fn confine(read_only: &[PathBuf], read_write: &[PathBuf]) -> Result<SandboxReport, String> {
     let fs_rights = AccessFs::from_all(ABI::V3);
     let status = Ruleset::default()
@@ -479,6 +540,7 @@ fn confine(read_only: &[PathBuf], read_write: &[PathBuf]) -> Result<SandboxRepor
             r.set_compatibility(CompatLevel::BestEffort)
                 .handle_access(AccessNet::from_all(ABI::V4))
         })
+        .and_then(|r| r.scope(Scope::from_all(ABI::V6)))
         .and_then(|r| r.create())
         .and_then(|r| r.add_rules(path_beneath_rules(read_only, AccessFs::from_read(ABI::V3))))
         .and_then(|r| r.add_rules(path_beneath_rules(read_write, fs_rights)))
@@ -490,14 +552,9 @@ fn confine(read_only: &[PathBuf], read_write: &[PathBuf]) -> Result<SandboxRepor
     };
     match status.ruleset {
         RulesetStatus::NotEnforced => Err("the ruleset was not enforced".to_owned()),
-        RulesetStatus::PartiallyEnforced => Ok(SandboxReport {
-            landlock_abi: abi,
-            network_confined: false,
-        }),
-        RulesetStatus::FullyEnforced => Ok(SandboxReport {
-            landlock_abi: abi,
-            network_confined: true,
-        }),
+        RulesetStatus::PartiallyEnforced | RulesetStatus::FullyEnforced => {
+            Ok(SandboxReport::from_abi(abi))
+        }
     }
 }
 

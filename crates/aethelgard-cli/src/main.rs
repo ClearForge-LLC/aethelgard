@@ -15,6 +15,7 @@ use std::ffi::OsString;
 use std::fs::{self, DirBuilder, File};
 use std::io::{self, Read, Write};
 use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -62,8 +63,9 @@ enum Command {
         /// the copy is judged.
         #[arg(long = "crate")]
         crate_dir: PathBuf,
-        /// The harness to prove, as `cargo kani --harness` takes it.
-        #[arg(long)]
+        /// The harness to prove: its name, or its path such as proofs::add_in_range.
+        /// It must name exactly one harness.
+        #[arg(long, value_parser = harness_name)]
         harness: String,
     },
     /// Load a platform in Renode, list the machine it built, and print the verdict.
@@ -130,6 +132,7 @@ fn main() -> ExitCode {
     match args.get(1).and_then(|a| a.to_str()) {
         Some(run::REAPER_ARG) => run::reaper_main(&args[2..]),
         Some(run::CONFINE_ARG) => run::confine_main(&args[2..]),
+        Some(run::GUARD_ARG) => run::guard_main(&args[2..]),
         _ => {}
     }
     let cli = match Cli::try_parse() {
@@ -181,6 +184,20 @@ fn main() -> ExitCode {
     }
 }
 
+/// A harness name is a Rust path: letters, digits, `_` and `::`. Anything
+/// else could not name a harness, and could be read by Kani as something else.
+fn harness_name(s: &str) -> Result<String, String> {
+    let ok = !s.is_empty()
+        && s.split("::").all(|part| {
+            !part.is_empty() && part.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        });
+    if ok {
+        Ok(s.to_owned())
+    } else {
+        Err("a harness is a Rust path such as add_in_range or proofs::add_in_range".to_owned())
+    }
+}
+
 /// The call's private temporary directory: `root/status-*` for the reaper,
 /// `root/tool/` for everything the tool may write. Removed on drop.
 struct Scratch {
@@ -202,9 +219,29 @@ impl Scratch {
             )
         };
         DirBuilder::new().mode(0o700).create(&root).map_err(fail)?;
-        let tool = root.join("tool");
-        DirBuilder::new().mode(0o700).create(&tool).map_err(fail)?;
-        Ok(Self { root, tool })
+        let scratch = Self {
+            tool: root.join("tool"),
+            root,
+        };
+        DirBuilder::new()
+            .mode(0o700)
+            .create(&scratch.tool)
+            .map_err(fail)?;
+        // The guardian removes the directory if this process dies first.
+        std::env::current_exe()
+            .and_then(|me| {
+                std::process::Command::new(me)
+                    .arg(run::GUARD_ARG)
+                    .arg(&scratch.root)
+                    .env_clear()
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .process_group(0)
+                    .spawn()
+            })
+            .map_err(fail)?;
+        Ok(scratch)
     }
 }
 
@@ -312,6 +349,11 @@ fn prove(crate_dir: &Path, harness: &str) -> Result<verdict::Verdict, run::Stop>
     ))?;
     let mut run_args = run::args(["kani", "--harness"]);
     run_args.push(harness.into());
+    // A path names exactly one harness only with --exact, because --harness
+    // alone matches substrings; a bare name is checked against what ran.
+    if harness.contains("::") {
+        run_args.push("--exact".into());
+    }
     let out = invocation(run_args, &input.copy, "status-run").run()?;
     let code = out.code("cargo-kani")?;
     let findings = kani::judge(code, &out, harness)?;

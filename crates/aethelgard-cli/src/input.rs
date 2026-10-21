@@ -23,9 +23,18 @@ fn hex(digest: impl AsRef<[u8]>) -> String {
     digest.as_ref().iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// The canonical path, which must be UTF-8 so the verdict can report it
+/// exactly.
 fn canonical(path: &Path) -> Result<PathBuf, Stop> {
-    fs::canonicalize(path)
-        .map_err(|e| Stop::unreadable(format!("cannot resolve {}: {e}", path.display())))
+    let resolved = fs::canonicalize(path)
+        .map_err(|e| Stop::unreadable(format!("cannot resolve {}: {e}", path.display())))?;
+    if resolved.to_str().is_none() {
+        return Err(Stop::unreadable(format!(
+            "{} is not a UTF-8 path",
+            resolved.display()
+        )));
+    }
+    Ok(resolved)
 }
 
 /// Copies `from` to `to`, hashing exactly the bytes written.

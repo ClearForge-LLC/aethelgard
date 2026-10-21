@@ -3,10 +3,12 @@
 //! exit code must agree (0 with none, 5 with some), and the report must name
 //! the version that `kicad-cli version` printed and the default severities.
 
-use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::Read;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
+use rustix::fs::OFlags;
 use serde_json::Value;
 
 use crate::run::{MAX_CAPTURE, Stop};
@@ -101,11 +103,25 @@ pub fn judge(check: Check, code: i32, report: &Path, version: &str) -> Result<Ve
     }
 }
 
+/// The tool wrote the report where it could also have put a symlink or a
+/// FIFO; neither is followed or waited on, so only a regular file is read.
 fn read_report(path: &Path) -> Result<Value, Stop> {
+    let no_report = |e: std::io::Error| Stop::tool_error(TOOL, format!("no report: {e}"));
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits() as i32)
+        .open(path)
+        .map_err(no_report)?;
+    if !file.metadata().map_err(no_report)?.is_file() {
+        return Err(Stop::tool_error(
+            TOOL,
+            "the report is not a regular file".to_owned(),
+        ));
+    }
     let mut bytes = Vec::new();
-    File::open(path)
-        .and_then(|f| f.take(MAX_CAPTURE as u64 + 1).read_to_end(&mut bytes))
-        .map_err(|e| Stop::tool_error(TOOL, format!("no report: {e}")))?;
+    file.take(MAX_CAPTURE as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(no_report)?;
     if bytes.len() > MAX_CAPTURE {
         return Err(Stop::tool_error(
             TOOL,

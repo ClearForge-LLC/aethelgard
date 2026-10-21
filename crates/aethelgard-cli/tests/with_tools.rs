@@ -63,7 +63,8 @@ fn assert_judged(v: &Value, check: &str, tool: &str, version: &str) {
     assert_eq!(v["tool"]["name"], tool);
     assert_eq!(v["tool"]["version"], version);
     assert!(v["sandbox"]["landlock_abi"].as_i64().unwrap() >= 3, "{v}");
-    assert!(v["sandbox"]["network_confined"].is_boolean(), "{v}");
+    assert!(v["sandbox"]["tcp_confined"].is_boolean(), "{v}");
+    assert!(v["sandbox"]["scoped"].is_boolean(), "{v}");
 }
 
 #[test]

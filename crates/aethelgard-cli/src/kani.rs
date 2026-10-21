@@ -33,10 +33,45 @@ pub fn judge(code: i32, out: &Output, harness: &str) -> Result<Vec<Finding>, Sto
     let disagree =
         |why: &str| Stop::tool_error(TOOL, format!("cargo kani exited {code} but {why}"));
 
+    // A third witness: `--harness` is a substring filter, so the harnesses
+    // Kani says it checked must be exactly the one asked for.
+    let checked: Vec<&str> = lines
+        .iter()
+        .filter_map(|l| l.strip_prefix("Checking harness ")?.strip_suffix("..."))
+        .collect();
+    let suffix = format!("::{harness}");
+    let exact = |name: &&str| *name == harness || name.ends_with(&suffix);
+    if (code == 0 || code == 1) && !checked.is_empty() {
+        if !checked.iter().any(exact) {
+            return Ok(vec![Finding::plain(
+                "harness_not_found",
+                format!(
+                    "no harness is named `{harness}`; it only matched {}",
+                    checked.join(", ")
+                ),
+            )]);
+        }
+        if checked.len() > 1 {
+            return Ok(vec![Finding::plain(
+                "harness_ambiguous",
+                format!(
+                    "`{harness}` matches {}; name one by its full path",
+                    checked.join(", ")
+                ),
+            )]);
+        }
+    }
+
     match code {
         0 => {
-            let complete_ok = matches!(totals.as_slice(), [(n, 0)] if *n >= 1);
-            if succeeded && !failed && complete_ok && !compile_errors && !no_harness {
+            let complete_ok = totals == [(1, 0)];
+            if succeeded
+                && !failed
+                && complete_ok
+                && checked.len() == 1
+                && !compile_errors
+                && !no_harness
+            {
                 Ok(Vec::new())
             } else {
                 Err(disagree(
