@@ -116,6 +116,25 @@ Measured inside the published image in CI, with Landlock and process behaviour c
 
 **Cost.** A cold `docker pull` of the image by digest on a fresh runner takes 55–58 s. A tool's `--version` costs 30–120 ms per call. One real run costs 0.3–0.6 s for DRC or ERC, 2.6–3.3 s for Renode loading the Nucleo, and 0.13–0.3 s for a fixture Kani proof.
 
+### 2.6 Measurements from AET-WO-0300a (2026-10-21, GitHub Actions and Furnace)
+
+The architect re-read each value from the runs' own output and the Furnace before-and-after attack output; the record is `docs/work-orders/AET-WO-0300a.FEEDBACK.md`.
+
+**Landlock leaves real channels open on a host.** On Furnace, under Landlock alone, a sandboxed process could still:
+- `connect` to the user's D-Bus session bus and to tmux's socket;
+- `sendto` over UDP;
+- open `io_uring`.
+
+A seccomp filter installed by the Landlock trampoline refused all four with `EPERM` at `socket()`. It installs unprivileged, under Docker's default profile too, in 25–323 µs.
+
+**`seccompiler`'s rule compiler cannot express an x32-safe default-allow filter.** It matches system-call numbers under `AUDIT_ARCH_X86_64`, which x32 shares. So a rule on `socket` never sees x32's `socket` (`0x40000000|41`). The filter is therefore hand-assembled BPF that tests the x32 bit itself. Neither measured kernel enables x32, so no test could have shown the hole.
+
+**A datagram `socketpair` reaches outside; a stream or seqpacket pair does not.** An `AF_UNIX` `SOCK_DGRAM` pair can be re-`connect`ed, or used to `sendto`, any pathname datagram socket. From inside the sandbox it wrote into the systemd journal. Stream and seqpacket pairs give `EISCONN`. Kani needs stream and seqpacket pairs, and no tool needs any `socket()` family.
+
+**`io_uring` is blocked by Docker's default profile inside the image, but open on Furnace's host kernel.** On a host, the filter is the only barrier to it.
+
+**The GitHub Actions runner leaks two pipe descriptors (142 and 145, without close-on-exec) into every step's shell on the `ubuntu-latest` host.** They are not present behind `docker run`, nor under Furnace's `cargo test`.
+
 ## 3. Shape — one representation, two projections, one loop
 
 ```
@@ -219,7 +238,19 @@ The `aethelgard` binary is the only part that executes external programs, and it
 4. **An empty environment,** apart from `HOME` and `TMPDIR`, which point at the temporary directory. Kani alone also gets `KANI_HOME`, `RUSTUP_HOME` and `PATH`, passed through by name. stdin is `/dev/null`.
 5. **Landlock's filesystem rights through ABI V3 are required.** Below that floor the call refuses with exit 4, `SandboxUnavailable`, and there is no flag or variable that runs a tool unconfined. TCP rules (ABI V4 and later) and signal and abstract-socket scoping (ABI V6 and later) are applied where the kernel has them, and reported in the verdict as `sandbox.tcp_confined` and `sandbox.scoped`.
 
-**Known gap, closed by `AET-WO-0300a` before `AET-WO-1500`.** Landlock does not confine pathname Unix sockets or UDP (§2.5). So until a seccomp filter denies those sockets to the tool, the tool subcommands are supported only where no such socket is reachable, as in the published image under `docker run`.
+**Socket gap closed by `AET-WO-0300a` (§2.6).**
+
+Two more steps now run in the trampoline before the tool starts:
+
+1. **Before Landlock, the descriptor check.** It refuses the call when the tool would inherit any descriptor above 2 without close-on-exec, with exit 4, `SandboxUnavailable`, `id` `descriptors`. A leaked connected socket is a channel no filter sees, so callers must not leak. Our own CI closes the runner's leaked descriptors in the step's shell.
+2. **After Landlock, a required seccomp filter.** It applies to the tool and to everything the tool starts. It does three things:
+   - kills any non-x86_64 or x32 system call;
+   - refuses `socket` for every family, and `socketpair` other than an `AF_UNIX` stream or seqpacket pair;
+   - refuses `io_uring`.
+
+   If the filter cannot be installed, the call refuses with `SandboxUnavailable`, `id` `seccomp`. There is no escape hatch.
+
+**Still open on a host:** non-socket channels to other processes with the same uid, namely System V shared memory, `unshare(CLONE_NEWUSER)` and `pidfd_open`. The filter is default-allow by design (§4 of the work order). Inside the published image, Docker gives the tool its own IPC namespace and refuses unprivileged `unshare`, so **the image is the supported boundary for tool subcommands.** A host-side system-call allowlist is `AET-WO-1600`, which must land before the P1 launch clause puts a crates.io-installed binary on hosts.
 
 **A rule for whoever builds the `mcp` subcommand.** The internal first arguments that start the reaper, the trampoline and the guardian execute the argument vector they are given. They are safe only because they are not in the command tree. The `mcp` subcommand must therefore map every tool to a `clap` subcommand and never forward raw arguments.
 
@@ -253,6 +284,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-10-20 | §2, §2.4, §4, §5 | Added §2.4 measurements from `AET-WO-0200`. Marked §2's KiCad exit-code question settled. Added `RUL-15` (the tools image). Rewrote §5's opening, its Renode and Kani bullets, and the amd64-only constraint from measurement | Rulings made at review of PR #7. The spike showed the DRC flag is load-bearing. The build showed a failed Renode load exits 0, which neither the plan nor the review's suggested log strings anticipated |
 | 2026-10-20 | §4 | `RUL-15`'s last reason corrected: branch protection does not stop a same-repository branch's pull-request run from requesting `packages: write`; write access to the repository is the boundary | The first wording, taken from the builder's B7, named the wrong guard. The run that could publish happens before any merge, so a rule on `main` cannot reach it |
 | 2026-10-21 | §2.5, §4, §6 | Added §2.5 measurements from `AET-WO-0300`. Amended `RUL-10`: path flags, exit codes 1, 4 and 5. Added the sandbox as built to §6, with its socket gap and the `mcp` argv rule | Rulings at review of PR #12. The builder's two-process-group reaper replaced the one-group design the spike ruling specified, which leaked a temporary directory on every kill. Its adversarial pass found that Landlock leaves pathname Unix sockets open, which became `AET-WO-0300a` |
+| 2026-10-21 | §2.6, §6 | Added §2.6 measurements from `AET-WO-0300a`. §6's socket gap marked closed, with the seccomp filter, the descriptor refusal, the non-socket channels still open on a host, and the image as the supported boundary | Rulings at review of PR #15. The architect's spike ruling that `socketpair` "reaches nothing outside" was wrong for datagram pairs, and the adversarial pass proved it by writing to the systemd journal from inside the sandbox |
 
 New sections continue the sequence and never reuse a number.
 
