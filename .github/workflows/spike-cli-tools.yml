@@ -1,0 +1,51 @@
+# AET-WO-0300 spike: runs spike/probe.sh inside the published tools image and
+# prints the answers to the work order's §0 as `ANSWER` lines. Measurement
+# only; the build half deletes it.
+name: spike-cli-tools
+
+on:
+  pull_request:
+    paths:
+      - "spike/**"
+      - ".github/workflows/spike-cli-tools.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: runner facts
+        run: |
+          echo "ANSWER runner kernel=$(uname -r) arch=$(uname -m) cpus=$(nproc)"
+          echo "ANSWER runner docker=$(docker version --format '{{.Server.Version}}')"
+          echo "ANSWER runner security_options=$(docker info --format '{{json .SecurityOptions}}')"
+          echo "ANSWER runner lsm=$(cat /sys/kernel/security/lsm 2>/dev/null || echo unreadable)"
+
+      # S6: a fresh runner has nothing cached, so this is the cold pull.
+      - name: pull the image by digest
+        run: |
+          start=$(date +%s%N)
+          docker pull "$(cat container/IMAGE)"
+          echo "ANSWER s6.pull_ms=$(( ($(date +%s%N) - start) / 1000000 ))"
+          start=$(date +%s%N)
+          docker pull -q "$(cat container/IMAGE)"
+          echo "ANSWER s6.repull_ms=$(( ($(date +%s%N) - start) / 1000000 ))"
+
+      - name: build the probes inside the image
+        run: >-
+          docker run --rm -v "$PWD/spike/probes:/src:ro" -v "$RUNNER_TEMP/target:/target"
+          -e CARGO_TARGET_DIR=/target "$(cat container/IMAGE)"
+          cargo build --release --locked --manifest-path /src/Cargo.toml
+
+      - name: probe (--network none)
+        run: >-
+          docker run --rm --network none
+          -v "$PWD:/repo:ro" -v "$RUNNER_TEMP/target:/target:ro"
+          -v "$PWD/container/fixtures/kani-smoke:/ro-crate:ro"
+          "$(cat container/IMAGE)" bash /repo/spike/probe.sh
