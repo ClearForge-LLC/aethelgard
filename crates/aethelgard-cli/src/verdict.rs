@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use crate::input::Input;
-use crate::run::{Ended, SandboxReport, Tool};
+use crate::run::{SandboxReport, Tool};
 
 #[derive(Serialize)]
 pub struct Verdict {
@@ -12,9 +12,9 @@ pub struct Verdict {
     pub check: &'static str,
     pub input: InputReport,
     pub tool: ToolReport,
-    pub sandbox: SandboxJson,
+    pub sandbox: SandboxReport,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub included_severities: Option<Vec<String>>,
+    pub included_severities: Option<&'static [&'static str]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub harness: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -33,12 +33,6 @@ pub struct ToolReport {
     pub name: &'static str,
     pub version: String,
     pub exit_code: i32,
-}
-
-#[derive(Serialize)]
-pub struct SandboxJson {
-    pub landlock_abi: i32,
-    pub network_confined: bool,
 }
 
 #[derive(Serialize)]
@@ -109,22 +103,11 @@ impl Verdict {
                 version,
                 exit_code: code,
             },
-            sandbox: SandboxJson {
-                landlock_abi: sandbox.landlock_abi,
-                network_confined: sandbox.network_confined,
-            },
+            sandbox,
             included_severities: None,
             harness: None,
             machine: None,
             findings,
         }
-    }
-}
-
-/// The exit code of a run that ended normally, or `None` for a signal.
-pub fn code_of(ended: Ended) -> Option<i32> {
-    match ended {
-        Ended::Code(c) => Some(c),
-        Ended::Signal(_) => None,
     }
 }

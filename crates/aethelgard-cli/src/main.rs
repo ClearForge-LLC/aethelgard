@@ -28,8 +28,6 @@ use serde_json::error::Category;
 const EXIT_FAIL: u8 = 1;
 const EXIT_INVALID_SPEC: u8 = 2;
 const EXIT_UNREADABLE: u8 = 3;
-/// Exit 3 also covers a tool subcommand's input path.
-const EXIT_INPUT: u8 = EXIT_UNREADABLE;
 const EXIT_TOOL_UNAVAILABLE: u8 = 4;
 const EXIT_TOOL_ERROR: u8 = 5;
 const EXIT_USAGE: u8 = 64;
@@ -259,8 +257,8 @@ fn check_kicad(check: kicad::Check, path: &Path) -> Result<verdict::Verdict, run
     args.push(report.clone().into_os_string());
     args.push(input.copy.clone().into_os_string());
     let out = invocation(args, "status-run").run()?;
-    let (findings, severities) = kicad::judge(check, &out, &report, &version)?;
-    let code = verdict::code_of(out.ended).unwrap_or_default();
+    let code = out.code("kicad-cli")?;
+    let findings = kicad::judge(check, code, &report, &version)?;
     let mut v = verdict::Verdict::new(
         check.name(),
         &input,
@@ -270,7 +268,7 @@ fn check_kicad(check: kicad::Check, path: &Path) -> Result<verdict::Verdict, run
         out.sandbox,
         findings,
     );
-    v.included_severities = Some(severities);
+    v.included_severities = Some(&kicad::SEVERITIES);
     Ok(v)
 }
 
@@ -315,19 +313,17 @@ fn prove(crate_dir: &Path, harness: &str) -> Result<verdict::Verdict, run::Stop>
     let mut run_args = run::args(["kani", "--harness"]);
     run_args.push(harness.into());
     let out = invocation(run_args, &input.copy, "status-run").run()?;
-    let findings = kani::judge(&out, harness)?;
-    let code = verdict::code_of(out.ended).unwrap_or_default();
+    let code = out.code("cargo-kani")?;
+    let findings = kani::judge(code, &out, harness)?;
     let mut v = verdict::Verdict::new(
         "prove",
         &input,
-        &cargo,
+        &cargo_kani,
         version,
         code,
         out.sandbox,
         findings,
     );
-    // The judge is Kani; `cargo` only fronts it.
-    v.tool.name = "cargo-kani";
     v.harness = Some(harness.to_owned());
     Ok(v)
 }
@@ -371,8 +367,8 @@ fn simulate(platform: &Path) -> Result<verdict::Verdict, run::Stop> {
         &renode::commands(&input.copy),
     ]);
     let out = invocation(args, "status-run").run()?;
-    let (findings, machine) = renode::judge(&out)?;
-    let code = verdict::code_of(out.ended).unwrap_or_default();
+    let code = out.code("renode")?;
+    let (findings, machine) = renode::judge(code, &out)?;
     let mut v = verdict::Verdict::new(
         "simulate",
         &input,

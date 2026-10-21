@@ -277,76 +277,46 @@ fn assert_tool_missing(out: &Output, tool: &str) {
     assert!(v.get("verdict").is_none(), "{v}");
 }
 
+/// `PATH` without every directory that holds `tool`. Every one, not the first:
+/// with merged /usr, /bin and /usr/bin are the same directory.
+fn path_without(tool: &str) -> String {
+    std::env::var("PATH")
+        .unwrap()
+        .split(':')
+        .filter(|d| !Path::new(d).join(tool).exists())
+        .collect::<Vec<_>>()
+        .join(":")
+}
+
 #[test]
 fn each_tool_removed_from_path_is_named() {
-    let without = |dir: &str| -> String {
-        std::env::var("PATH")
-            .unwrap()
-            .split(':')
-            .filter(|d| *d != dir)
-            .collect::<Vec<_>>()
-            .join(":")
-    };
-    let renode_dir = Path::new(&which("renode"))
-        .parent()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned();
-    let kicad_dir = Path::new(&which("kicad-cli"))
-        .parent()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned();
-    let cargo_dir = Path::new(&which("cargo"))
-        .parent()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned();
-    assert_tool_missing(
-        &run(
-            &[
-                "simulate",
-                "--platform",
-                "@platforms/boards/nucleo_h753zi.repl",
-            ],
-            Some(&without(&renode_dir)),
-        ),
-        "renode",
-    );
+    let nucleo = [
+        "simulate",
+        "--platform",
+        "@platforms/boards/nucleo_h753zi.repl",
+    ];
+    assert_tool_missing(&run(&nucleo, Some(&path_without("renode"))), "renode");
     let board = fixture("drc-clean.kicad_pcb");
-    assert_tool_missing(
-        &run(
-            &["check", "drc", "--board", board.to_str().unwrap()],
-            Some(&without(&kicad_dir)),
-        ),
-        "kicad-cli",
-    );
+    let drc = ["check", "drc", "--board", board.to_str().unwrap()];
+    assert_tool_missing(&run(&drc, Some(&path_without("kicad-cli"))), "kicad-cli");
     let sch = fixture("erc-clean.kicad_sch");
-    assert_tool_missing(
-        &run(
-            &["check", "erc", "--schematic", sch.to_str().unwrap()],
-            Some(&without(&kicad_dir)),
-        ),
-        "kicad-cli",
-    );
+    let erc = ["check", "erc", "--schematic", sch.to_str().unwrap()];
+    assert_tool_missing(&run(&erc, Some(&path_without("kicad-cli"))), "kicad-cli");
     let krate = fixture("kani-smoke");
-    let prove_args = [
+    let prove = [
         "prove",
         "--crate",
         krate.to_str().unwrap(),
         "--harness",
         "add_in_range",
     ];
-    assert_tool_missing(&run(&prove_args, Some(&without(&cargo_dir))), "cargo");
+    assert_tool_missing(&run(&prove, Some(&path_without("cargo"))), "cargo");
     // cargo present, cargo-kani absent: a directory holding only cargo.
     let only_cargo = std::env::temp_dir().join(format!("aet-only-cargo-{}", std::process::id()));
     fs::create_dir_all(&only_cargo).unwrap();
     let _ = symlink(which("cargo"), only_cargo.join("cargo"));
-    let path = format!("{}:{}", only_cargo.display(), without(&cargo_dir));
-    assert_tool_missing(&run(&prove_args, Some(&path)), "cargo-kani");
+    let path = format!("{}:{}", only_cargo.display(), path_without("cargo-kani"));
+    assert_tool_missing(&run(&prove, Some(&path)), "cargo-kani");
     fs::remove_dir_all(&only_cargo).unwrap();
 }
 

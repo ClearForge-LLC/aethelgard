@@ -59,9 +59,7 @@ fn copy_hashed(from: &Path, to: &Path) -> Result<String, Stop> {
 /// after following symlinks. Returns its canonical path.
 pub fn file_check(path: &Path) -> Result<PathBuf, Stop> {
     let original = canonical(path)?;
-    let meta = fs::metadata(&original)
-        .map_err(|e| Stop::unreadable(format!("cannot read {}: {e}", original.display())))?;
-    if !meta.is_file() {
+    if !original.is_file() {
         return Err(Stop::unreadable(format!(
             "{} is not a regular file",
             original.display()
@@ -121,12 +119,6 @@ pub fn platform(arg: &Path, renode_root: &Path, dest: &Path) -> Result<Input, St
 /// tree hash defined in the README.
 pub fn crate_dir(path: &Path, dest: &Path) -> Result<Input, Stop> {
     let original = canonical(path)?;
-    if !original.is_dir() {
-        return Err(Stop::unreadable(format!(
-            "{} is not a directory",
-            original.display()
-        )));
-    }
     let mut files = Vec::new();
     walk(&original, &original, &mut files)?;
     files.sort();

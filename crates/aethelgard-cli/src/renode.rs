@@ -5,7 +5,7 @@
 //! of `There was an error executing command`.
 
 use crate::run::{Output, Stop};
-use crate::verdict::{Finding, Machine, Peripheral, code_of};
+use crate::verdict::{Finding, Machine, Peripheral};
 
 const TOOL: &str = "renode";
 const LOAD_ERROR: &str = "There was an error executing command";
@@ -19,9 +19,7 @@ pub fn commands(copy: &std::path::Path) -> String {
     )
 }
 
-pub fn judge(out: &Output) -> Result<(Vec<Finding>, Option<Machine>), Stop> {
-    let code = code_of(out.ended)
-        .ok_or_else(|| Stop::tool_error(TOOL, format!("renode was killed: {:?}", out.ended)))?;
+pub fn judge(code: i32, out: &Output) -> Result<(Vec<Finding>, Option<Machine>), Stop> {
     if code != 0 {
         return Err(Stop::tool_error(TOOL, format!("renode exited {code}")));
     }
@@ -30,15 +28,10 @@ pub fn judge(out: &Output) -> Result<(Vec<Finding>, Option<Machine>), Stop> {
     let mut peripherals = Vec::new();
     let mut cpus = Vec::new();
     for (i, line) in lines.iter().enumerate() {
-        let Some(entry) = line
-            .trim_start_matches([' ', '│'])
-            .trim_start()
+        let branch = line.trim_start_matches([' ', '│']).trim_start();
+        let Some(entry) = branch
             .strip_prefix("├── ")
-            .or_else(|| {
-                line.trim_start_matches([' ', '│'])
-                    .trim_start()
-                    .strip_prefix("└── ")
-            })
+            .or_else(|| branch.strip_prefix("└── "))
         else {
             continue;
         };

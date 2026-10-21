@@ -9,8 +9,8 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::run::{MAX_CAPTURE, Output, Stop};
-use crate::verdict::{Finding, Where, code_of};
+use crate::run::{MAX_CAPTURE, Stop};
+use crate::verdict::{Finding, Where};
 
 #[derive(Clone, Copy)]
 pub enum Check {
@@ -20,10 +20,7 @@ pub enum Check {
 
 impl Check {
     pub fn name(self) -> &'static str {
-        match self {
-            Check::Drc => "drc",
-            Check::Erc => "erc",
-        }
+        self.verb()[1]
     }
     /// The `kicad-cli` subcommand.
     pub fn verb(self) -> [&'static str; 2] {
@@ -33,40 +30,28 @@ impl Check {
         }
     }
     /// The file name the copy is given; KiCad reads the extension.
-    pub fn copy_name(self) -> &'static str {
-        match self {
-            Check::Drc => "board.kicad_pcb",
-            Check::Erc => "schematic.kicad_sch",
-        }
-    }
-    fn schema(self) -> &'static str {
-        match self {
-            Check::Drc => "https://schemas.kicad.org/drc.v1.json",
-            Check::Erc => "https://schemas.kicad.org/erc.v1.json",
-        }
+    pub fn copy_name(self) -> String {
+        format!("input.kicad_{}", self.verb()[0])
     }
 }
 
 const TOOL: &str = "kicad-cli";
 
+/// The severities KiCad must report it included, and the only ones a finding may have.
+pub const SEVERITIES: [&str; 2] = ["error", "warning"];
+
 /// Judges a run from its exit code and its report file.
-pub fn judge(
-    check: Check,
-    out: &Output,
-    report: &Path,
-    version: &str,
-) -> Result<(Vec<Finding>, Vec<String>), Stop> {
-    let code = code_of(out.ended)
-        .ok_or_else(|| Stop::tool_error(TOOL, format!("{TOOL} was killed: {:?}", out.ended)))?;
+pub fn judge(check: Check, code: i32, report: &Path, version: &str) -> Result<Vec<Finding>, Stop> {
     let doc = read_report(report)?;
     let field = |key: &str| {
         doc.get(key)
             .ok_or_else(|| Stop::tool_error(TOOL, format!("the report has no `{key}`")))
     };
-    if field("$schema")?.as_str() != Some(check.schema()) {
+    let schema = format!("https://schemas.kicad.org/{}.v1.json", check.name());
+    if field("$schema")?.as_str() != Some(&schema) {
         return Err(Stop::tool_error(
             TOOL,
-            format!("the report's $schema is not {}", check.schema()),
+            format!("the report's $schema is not {schema}"),
         ));
     }
     if field("kicad_version")?.as_str() != Some(version) {
@@ -78,21 +63,11 @@ pub fn judge(
             ),
         ));
     }
-    let severities: Vec<String> = field("included_severities")?
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default();
-    if severities != ["error", "warning"] {
+    let severities = field("included_severities")?;
+    if *severities != serde_json::json!(SEVERITIES) {
         return Err(Stop::tool_error(
             TOOL,
-            format!(
-                "the report's included_severities is {}, not [\"error\",\"warning\"]",
-                field("included_severities")?
-            ),
+            format!("the report's included_severities is {severities}, not {SEVERITIES:?}"),
         ));
     }
     let mut findings = Vec::new();
@@ -115,7 +90,7 @@ pub fn judge(
         }
     }
     match (code, findings.is_empty()) {
-        (0, true) | (5, false) => Ok((findings, severities)),
+        (0, true) | (5, false) => Ok(findings),
         _ => Err(Stop::tool_error(
             TOOL,
             format!(
@@ -156,7 +131,7 @@ fn parse_findings(list: &Value) -> Result<Vec<Finding>, Stop> {
                     .ok_or_else(|| bad(key))
             };
             let severity = text("severity")?;
-            if severity != "error" && severity != "warning" {
+            if !SEVERITIES.contains(&severity.as_str()) {
                 return Err(bad("severity"));
             }
             let location = f

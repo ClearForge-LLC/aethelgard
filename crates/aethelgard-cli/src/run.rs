@@ -31,7 +31,7 @@ use landlock::{
 };
 use rustix::process::{Pid, Signal, kill_process_group};
 
-use crate::{EXIT_INPUT, EXIT_TOOL_ERROR, EXIT_TOOL_UNAVAILABLE};
+use crate::{EXIT_TOOL_ERROR, EXIT_TOOL_UNAVAILABLE, EXIT_UNREADABLE};
 
 /// The first argument that turns this binary into a reaper. It is not a
 /// subcommand, so it never appears in the command tree.
@@ -58,7 +58,7 @@ pub struct Stop {
 impl Stop {
     pub fn unreadable(message: String) -> Self {
         Self {
-            code: EXIT_INPUT,
+            code: EXIT_UNREADABLE,
             kind: "UnreadableInput",
             id: None,
             message,
@@ -144,7 +144,7 @@ impl Tool {
 }
 
 /// What the sandbox achieved, as the verdict reports it.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize)]
 pub struct SandboxReport {
     pub landlock_abi: i32,
     pub network_confined: bool,
@@ -171,6 +171,17 @@ impl Output {
         s.push('\n');
         s.push_str(&String::from_utf8_lossy(&self.stderr));
         s
+    }
+
+    /// The exit code; a tool killed by a signal gave no verdict (`ToolError`).
+    pub fn code(&self, tool: &str) -> Result<i32, Stop> {
+        match self.ended {
+            Ended::Code(code) => Ok(code),
+            Ended::Signal(sig) => Err(Stop::tool_error(
+                tool,
+                format!("{tool} was killed by signal {sig}"),
+            )),
+        }
     }
 
     /// The first non-empty line of stdout, trimmed: a tool's version string.
@@ -297,12 +308,6 @@ fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop
             message: format!("Landlock cannot enforce the required filesystem rules: {reason}"),
         });
     }
-    if let Some(reason) = first.strip_prefix("spawn-error ") {
-        return Err(Stop::unusable(
-            tool,
-            format!("cannot start {tool}: {reason}"),
-        ));
-    }
     let sandbox = first
         .strip_prefix("sandbox ")
         .and_then(|rest| {
@@ -328,8 +333,8 @@ fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop
             format!("cannot start {tool}: {reason}"),
         ));
     }
-    let ended = Some(second)
-        .and_then(|l| l.strip_prefix("ended "))
+    let ended = second
+        .strip_prefix("ended ")
         .and_then(|rest| match rest.split_once('=') {
             Some(("code", v)) => v.parse().ok().map(Ended::Code),
             Some(("signal", v)) => v.parse().ok().map(Ended::Signal),
@@ -467,9 +472,6 @@ pub fn confine_main(args: &[OsString]) -> ! {
 /// required; TCP bind and connect are denied where the kernel can (ABI 4+).
 fn confine(read_only: &[PathBuf], read_write: &[PathBuf]) -> Result<SandboxReport, String> {
     let fs_rights = AccessFs::from_all(ABI::V3);
-    let existing = |paths: &[PathBuf]| -> Vec<PathBuf> {
-        paths.iter().filter(|p| p.exists()).cloned().collect()
-    };
     let status = Ruleset::default()
         .set_compatibility(CompatLevel::HardRequirement)
         .handle_access(fs_rights)
@@ -478,13 +480,8 @@ fn confine(read_only: &[PathBuf], read_write: &[PathBuf]) -> Result<SandboxRepor
                 .handle_access(AccessNet::from_all(ABI::V4))
         })
         .and_then(|r| r.create())
-        .and_then(|r| {
-            r.add_rules(path_beneath_rules(
-                existing(read_only),
-                AccessFs::from_read(ABI::V3),
-            ))
-        })
-        .and_then(|r| r.add_rules(path_beneath_rules(existing(read_write), fs_rights)))
+        .and_then(|r| r.add_rules(path_beneath_rules(read_only, AccessFs::from_read(ABI::V3))))
+        .and_then(|r| r.add_rules(path_beneath_rules(read_write, fs_rights)))
         .and_then(|r| r.restrict_self())
         .map_err(|e| e.to_string())?;
     let abi = match status.landlock {

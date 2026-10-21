@@ -5,7 +5,7 @@
 //! and any combination not in the table is a `ToolError`.
 
 use crate::run::{Output, Stop};
-use crate::verdict::{Finding, code_of};
+use crate::verdict::Finding;
 
 const TOOL: &str = "cargo-kani";
 
@@ -17,9 +17,7 @@ fn complete(line: &str) -> Option<(u32, u32)> {
     Some((ok.parse().ok()?, failed.parse().ok()?))
 }
 
-pub fn judge(out: &Output, harness: &str) -> Result<Vec<Finding>, Stop> {
-    let code = code_of(out.ended)
-        .ok_or_else(|| Stop::tool_error(TOOL, format!("cargo kani was killed: {:?}", out.ended)))?;
+pub fn judge(code: i32, out: &Output, harness: &str) -> Result<Vec<Finding>, Stop> {
     let text = out.text();
     let lines: Vec<&str> = text.lines().map(str::trim).collect();
     let has = |l: &str| lines.contains(&l);
