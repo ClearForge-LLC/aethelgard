@@ -96,7 +96,7 @@ With the filter, every attempt is refused at `socket()` with `EPERM`, before it 
 - Spike run [39545817072](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39545817072) passed.
 - `git diff --stat origin/main` over the protected surfaces prints nothing: the steering docs, `README.md`, `LICENSE-*`, `docs/inputs`, `crates/`, `container/`, `tools-image.yml` and `ci.yml`.
 
-**STOP.** The build half (the filter in `run.rs`, `sockets_denied`, the tests, the README) has not started. It waits for the architect's ruling on S1-F and S-TEST.
+**STOP (spike half, 2026-10-21).** Ruled on PR #15 the same day; the build half follows below. At the time: the build half (the filter in `run.rs`, `sockets_denied`, the tests, the README) had not started and waited for the architect's ruling on S1-F and S-TEST.
 
 **The raw output of F1 on Furnace** (kernel `7.0.0-38-generic`, uid 1001, with a live session bus and tmux socket):
 
@@ -138,3 +138,145 @@ ANSWER install_time.run3=in 179 us
 ANSWER install_time.run4=in 185 us
 ANSWER install_time.run5=in 186 us
 ```
+
+## Build half
+
+Built to the architect's rulings on PR #15 (2026-10-21).
+
+**The filter.** `socket_filter` in `crates/aethelgard-cli/src/run.rs` is a fixed program assembled from `seccompiler::sock_filter` (0.5.0, Apache-2.0 OR BSD-3-Clause) and installed with `seccompiler::apply_filter`. Both are safe; `seccompiler::SeccompFilter` is not used (S1-F). The trampoline, `confine_main`, installs it after Landlock and before `exec`. In order, the program:
+- kills on any architecture but x86_64;
+- kills on any x32 call;
+- returns `EPERM` for `socket` and for the three `io_uring` calls;
+- allows `socketpair` only for `AF_UNIX` stream or seqpacket, and returns `EPERM` for any other `socketpair` (B1);
+- allows everything else.
+
+It is **18 instructions**. The ruling's "14" was the spike's count with an empty family list. Dropping the family machinery removed 3 instructions (11), and closing B1 added 7 (18).
+
+**Every tool call goes through it.** Every `Invocation::run`, the version queries included, starts the reaper, which starts the trampoline, which installs Landlock and then the filter. The adversarial pass measured a stub whose `version` answer tried a socket: `sock=-1 errno=1 nnp=1 seccomp=2`.
+
+**The rest of the rulings:**
+- **Required.** An install failure, or a host that is not x86_64, writes `unavailable seccomp …`. `parse_status` maps that to exit 4, `SandboxUnavailable`, with `id` `seccomp`. There is no escape hatch.
+- **Reported.** `SandboxReport` gains `sockets_denied: true`.
+- **S2-F.** Renode runs with `DOTNET_EnableDiagnostics=0`, passed by name.
+- **S3-F.** Tier 1 tests `io_uring_setup` refusal on hosts.
+- **S4-F.** The README's socket-layer "Not confined" list is empty and says so.
+- **S-TEST, option (b).** The install-failure branch is covered by code reading: `confine_main` writes the line, and `seccompiler::apply_filter` returns `Err` when `prctl` or `seccomp(SET_MODE_FILTER)` fails (crate source, lib.rs 336–376). A unit test proves the line maps to exit 4 with `id` `seccomp`.
+
+### §3 acceptance
+
+| §3 | Check | Result |
+|---|---|---|
+| 1 | Every §0 answer recorded | Spike section above |
+| 2 | On Furnace, the S4 attack set succeeds without the filter and is refused with `EPERM` with it; both outputs pasted | **Without:** spike F1's `landlock` lines above (session bus, tmux, UDP and `io_uring` all `ok` under the same trampoline). **With:** the production CLI below, against Furnace's real session bus and tmux socket. And tier 1's test, with the filter mutated out, reproduces the attack (below) |
+| 3 | Tier 1 in `gates` and on Furnace, including the socket and `io_uring` tests | `gates` green on `83dc85b` ([39551672323](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39551672323)), with `the_s4_attack_set_is_refused_inside_the_sandbox` passing, tier 1 at 101, and unit tests at 5 (at the time). Green again at `3cbfbff` in [39552571828](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39552571828), and on Furnace |
+| 4 | Tier 2 in `tools`, inside the image, under `--network none`, every AET-WO-0300 case unchanged | `tools` green on `83dc85b` ([39551672323](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39551672323)): tier 2 12/12, tier 1 101/101, the socket test, the unit tests. At `3cbfbff`, 12/12 in [39552571828](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39552571828) under the narrowed `socketpair` rule (real KiCad, Renode and Kani), and 7/7 Kani and Renode on Furnace |
+| 5 | Workspace gates in `gates` and inside the image | fmt, clippy `-D warnings` and test all green in both jobs of [39551672323](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39551672323) |
+| 6 | Green on the first push after the ruling | **Yes**: `83dc85b`, [39551672323](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39551672323) |
+
+**The production filter against Furnace's real targets** (`aethelgard check drc` with the stand-in as `kicad-cli`, at `83dc85b`):
+
+```
+== unix target /run/user/1001/bus
+sandbox: {"landlock_abi": 8, "tcp_confined": true, "scoped": true, "sockets_denied": true}
+   unix_path=errno=1
+   unix_abstract=errno=1
+   udp_sendto=errno=1
+   tcp_connect=errno=1
+   socketpair=ok
+   io_uring_setup=errno=1
+== unix target /tmp/tmux-1001/default
+   (the same six lines)
+```
+
+**Tier 1 with the filter install mutated out of the trampoline**, on Furnace. The test fails, and its output is the AET-WO-0300 M1 attack:
+
+```
+left: ["unix_path=ok", "unix_abstract=errno=1", "udp_sendto=ok", "tcp_connect=errno=13", "socketpair=ok", "io_uring_setup=ok"]
+```
+
+**Mutations of the guards this WO adds** (one each, on Furnace):
+
+| Mutation | Caught by |
+|---|---|
+| No `apply_filter` | the socket test |
+| The `io_uring_setup` jump retargeted to allow | the socket test, the exact-sequence unit test and the jump-target unit test |
+| The `socketpair` rule made allow-all | the socket test, reproducing B1 with `unix_dgram_pair_connect=ok` |
+
+The adversarial subagent ran 11 more mutations; see below.
+
+### Adversarial pass (§5)
+
+A fresh subagent ran it in its own worktree at `83dc85b`, with real Renode and Kani and the live Furnace sockets, using a static C probe outside the workspace for raw system calls. Every finding was re-checked before it was acted on.
+
+**Caught, with the result observed:**
+- **`socket()`:** every family from 0 to 45, and `AF_UNIX`, `AF_INET`, `AF_NETLINK`, `AF_PACKET` and vsock with `SOCK_CLOEXEC|SOCK_NONBLOCK`, gave `EPERM`.
+- **Other ABIs and number tricks:**
+  - x32 `socket` was killed (SIGSYS);
+  - i386 `int 0x80` 359 and `socketcall` 102 were killed;
+  - `41|1<<32` gave `EPERM` (the kernel truncates the number to 32 bits);
+  - `nr|1<<31` gave `ENOSYS`.
+- **Inherited by children:** `socket` after `fork`, after `exec`, and after `setsid` plus a double fork all gave `EPERM`.
+- **`io_uring`:** all three calls gave `EPERM`.
+- **`open()` on the bus and tmux paths:** `EACCES` from Landlock.
+- **Removing the filter:**
+  - `PR_SET_NO_NEW_PRIVS 0` gave `EINVAL`, with `NoNewPrivs 1` and `Seccomp 2` visible from inside;
+  - a second allow-all filter, and a LOG filter with TSYNC, both install, and `socket` stays `EPERM`;
+  - `sudo` from inside: "no new privileges flag is set".
+- **Unwired paths:** none. The four `.run()` call sites and every version query go through the trampoline (measured, above).
+- **Mutations:** 11 instruction and constant mutations were all caught by the unit tests or the socket test. One survived: ignoring the `apply_filter` error. That branch can't be provoked, as S-TEST accepted.
+- **Regressions:** none. Tier 1, and the Kani and Renode tier-2 cases, ran with no behaviour change.
+
+| # | Finding (severity) | Done | Proof |
+|---|---|---|---|
+| B1 | **High.** `socketpair(AF_UNIX, SOCK_DGRAM)`, allowed under the ruled "reaches nothing outside", can `connect` or `sendto` any pathname datagram socket outside. Landlock does not mediate the connect, and BPF cannot filter `sendto`'s address. The adversary wrote "ADVERSARY-0300a: message written from inside the aethelgard sandbox" into the systemd journal (`/run/systemd/journal/dev-log`), with the verdict saying `sockets_denied:true`. It also had a two-way exchange with an outside datagram server. And a safe-Rust `build.rs` under `prove` (`UnixDatagram::pair()`, `.connect`, `.send`) reached an outside server while the verdict was `pass`. Stream and seqpacket pairs give `errno 91 (EISCONN)` on `connect`: they cannot be redirected | **Fixed** in `3cbfbff`: `socketpair` is allowed only for `AF_UNIX` with type & `0xf` = `SOCK_STREAM` or `SOCK_SEQPACKET`. `SOCK_DGRAM` and `SOCK_RAW` (datagram in `AF_UNIX`) get `EPERM`. Refusing every `socketpair` was measured by the adversary to break Kani (5 of 5 prove cases); the narrowed rule keeps all 7 Kani and Renode tier-2 cases green | Tier 1 now tries `unix_dgram_pair_connect` against a live outside datagram socket, proven reachable by a control send: `errno=1`, and nothing arrives. Mutating the rule back to allow reproduces the bypass and fails the test |
+| B2 | **Medium, depends on the caller.** The tool inherits any descriptor the CLI's caller leaves open without close-on-exec: a connected socket passed as fd 3 was written through from inside. No layer between the CLI and the tool closes descriptors, and closing or marking a raw descriptor has no safe API in `rustix` 1.1.5 or the current `nix` (each needs `unsafe`) | **Not fixed.** The README now says callers must not leak descriptors | — |
+| B3 | Note. The reaper is unconfined, same uid, and an ancestor of the tool; with Yama `ptrace_scope=1` every `ptrace`, `process_vm_*` and `pidfd_getfd` attempt gave `EPERM`. The adversary's worry was `ptrace_scope=0` | Landlock itself restricts `ptrace` to processes inside the tracer's own domain, independently of Yama, so the reaper (outside the tool's domain) is not traceable from inside either way. That is from the kernel's Landlock design, not measured here (changing `ptrace_scope` needs root) | — |
+| B4 | Note. A filter written for x86_64 would kill every system call on another architecture, undiagnosed | **Fixed:** `socket_filter` is `cfg(target_arch = "x86_64")`. Elsewhere it is `None`, and the call refuses with `SandboxUnavailable`, `id` `seccomp` | Reading (no other architecture here) |
+| B5 | Note. The filter is default-allow, so non-socket system calls remain open. Observed: `shmget` (System V shared memory with other same-uid processes), `unshare(CLONE_NEWUSER)` and `pidfd_open`. bpf, `perf_event_open`, `userfaultfd` and `mq_open` were refused by the kernel or Landlock | Outside this WO (§4: a general system-call allowlist is a different work order). The README now names non-socket channels as outside the filter's scope | — |
+
+### Build-half findings
+
+| # | finding | where | type | recommendation | decision-needed |
+|---|---|---|---|---|---|
+| B1 | `socketpair` was narrowed to `AF_UNIX` stream and seqpacket, which departs from the ruled "socketpair stays allowed". The ruling's reason holds only for connected pairs | `src/run.rs` `socket_filter` | bug | Confirm the narrowing | **yes** |
+| B2 | Inherited descriptors reach the tool | `src/run.rs` `confine_main` | risk | Either (a) the trampoline reads `/proc/self/fdinfo/N` before `exec` and refuses, with `SandboxUnavailable` and a new `id` such as `descriptors`, any descriptor above 2 without `O_CLOEXEC`. That is safe Rust, fails closed, and adds a refusal id. Or (b) keep the caller contract only. AET-WO-1500's MCP server is our own Rust and can guarantee it either way | **yes** |
+| B4 | The filter is unavailable off x86_64, so the tool subcommands refuse there | `src/run.rs` | note | Consistent with the amd64-only image (`RUL-15`) | no |
+| B5 | Non-socket IPC (System V shared memory, user namespaces) is outside this WO and remains open to a tool | README | scope-question | A later work order on a system-call allowlist, if the threat model wants it | **yes** |
+| B6 | The install-failure branch can't be provoked without a hook, so it is covered by reading (S-TEST (b)) and by the `parse_status` unit test. The adversary's one surviving mutation (ignoring the error) is in exactly that branch | `src/run.rs` | note | As ruled | no |
+
+**Reduction pass (§5a).** A fresh read-only reviewer proposed 4 cuts, verified 1–3 in a scratch copy, and the builder applied all four in `fb16d88`:
+1. One `SandboxUnavailable` message for both layers. The unknown-layer arm was unreachable, because only the trampoline writes the line.
+2. The two `unavailable` unit tests merged into one over both layers.
+3. The `sockets_denied` unit test dropped, because tier 1 asserts the field on real CLI output.
+4. The filter's doc comment no longer restates its per-instruction comments.
+
+Rejected:
+- `seccompiler` without default features: its json feature is already off.
+- Dropping `io-uring`: it is the safe route the S3-F test needs.
+- The jump-target test: it is a different guard from the exact-sequence test.
+
+`Reduction pass (diff): −27 lines net (13 added, 40 removed) · 2 duplicates removed · 1 dead path removed · 0 protected kept · 0 findings`.
+
+**Gates line:**
+- `83dc85b`: `ci` [39551672323](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39551672323), with `gates` and `tools` green.
+- `3cbfbff`, with the B1 fix and the reduction: `ci` [39552571828](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39552571828), `gates` and `tools` green. Inside the image: unit tests 3, the socket test (with the datagram-pair route), tier 1 101/101 and tier 2 12/12, all under the 18-instruction filter.
+- The protected-surface diff prints nothing: the steering docs, `README.md`, `LICENSE-*`, `docs/inputs`, `crates/aethelgard-ir`, `container/` and `tools-image.yml`.
+
+**What was deliberately not built (§4 held):**
+- no namespaces, `chroot` or `pivot_root`;
+- no Landlock rule change;
+- no system call filtered beyond `socket`, `socketpair` (B1), the three `io_uring` calls and the architecture checks;
+- no image, smoke or `container/IMAGE` change;
+- no `mcp` subcommand and no trace archive.
+
+**Measured facts for `architecture.md` §2.5 and §6:**
+- S1–S5 above.
+- The filter is 18 instructions and installs in 25–323 µs.
+- No tool needs any socket family. Kani uses only `AF_UNIX` stream and seqpacket `socketpair`, and Renode only .NET's diagnostic socket, which `DOTNET_EnableDiagnostics=0` removes.
+- `seccompiler::SeccompFilter` lets x32 calls through a default-allow filter (S1-F).
+- A datagram `socketpair` reaches outside (B1).
+- Docker's default profile already blocks `io_uring`; Furnace's host kernel does not.
+
+**Is the "Not confined" list empty?** At the socket layer, yes. What remains is stated in the README: Landlock's read set, the temporary directory, non-socket IPC (B5), and inherited descriptors (B2).
+
+**AET-WO-0300 FEEDBACK, promote-or-needs-none:** promoted at its close into §2.5, §6, `RUL-10` and the roadmap (PR #13). Its B3 is this work order.
