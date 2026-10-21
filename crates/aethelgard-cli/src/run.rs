@@ -520,6 +520,22 @@ pub fn confine_main(args: &[OsString]) -> ! {
     let Ok(mut status) = File::create(&internal.status) else {
         exit(70)
     };
+    // Checked before Landlock, which denies /proc to most tools. Nothing
+    // opened from here to exec is inheritable: Rust opens close-on-exec.
+    match inherited_descriptors() {
+        Ok(leaked) if leaked.is_empty() => {}
+        Ok(leaked) => {
+            let _ = writeln!(
+                status,
+                "unavailable descriptors inherited without close-on-exec: {leaked:?}"
+            );
+            exit(0);
+        }
+        Err(reason) => {
+            let _ = writeln!(status, "unavailable descriptors {reason}");
+            exit(0);
+        }
+    }
     let sandbox = match confine(&internal.read_only, &internal.read_write) {
         Ok(s) => s,
         Err(reason) => {
@@ -543,6 +559,47 @@ pub fn confine_main(args: &[OsString]) -> ! {
     let err = Command::new(program).args(tool_args).exec();
     let _ = writeln!(status, "spawn-error {err}");
     exit(127);
+}
+
+/// Every descriptor above 2 this process holds without close-on-exec: each
+/// would reach the tool, a channel no sandbox layer sees (ruled on PR #15,
+/// B2). Read from /proc/self/fdinfo; any doubt is an error, never a pass.
+fn inherited_descriptors() -> Result<Vec<u32>, String> {
+    const O_CLOEXEC: u32 = 0o2_000_000;
+    let unreadable = |what: &str, e: io::Error| format!("cannot read {what}: {e}");
+    let mut leaked = Vec::new();
+    for entry in fs::read_dir("/proc/self/fd").map_err(|e| unreadable("/proc/self/fd", e))? {
+        let entry = entry.map_err(|e| unreadable("/proc/self/fd", e))?;
+        let Some(fd) = entry
+            .file_name()
+            .to_str()
+            .and_then(|n| n.parse::<u32>().ok())
+        else {
+            return Err(format!(
+                "unexpected entry {:?} in /proc/self/fd",
+                entry.file_name()
+            ));
+        };
+        if fd <= 2 {
+            continue;
+        }
+        let info = match fs::read_to_string(format!("/proc/self/fdinfo/{fd}")) {
+            Ok(info) => info,
+            // The directory listing's own descriptor, closed once read.
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(unreadable(&format!("/proc/self/fdinfo/{fd}"), e)),
+        };
+        let flags = info
+            .lines()
+            .find_map(|l| l.strip_prefix("flags:"))
+            .and_then(|v| u32::from_str_radix(v.trim(), 8).ok())
+            .ok_or_else(|| format!("no flags for descriptor {fd}"))?;
+        if flags & O_CLOEXEC == 0 {
+            leaked.push(fd);
+        }
+    }
+    leaked.sort_unstable();
+    Ok(leaked)
 }
 
 /// The seccomp filter (AET-WO-0300a, ruled on PR #15): a fixed program,
