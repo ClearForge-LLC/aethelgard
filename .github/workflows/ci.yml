@@ -30,3 +30,31 @@ jobs:
           status=0
           cat examples/invalid-zero-domain.json | cargo run -q -p aethelgard-cli -- validate || status=$?
           test "$status" -eq 2
+
+  # Tier 2: the tool subcommands against the real tools, inside the image
+  # pinned by container/IMAGE (RUL-15). Crates are fetched and everything is
+  # compiled with the network; every tool run happens under --network none.
+  tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RUN: >-
+        docker run --rm -v ${{ github.workspace }}:/repo -w /repo
+        -e CARGO_HOME=/repo/target/cargo-home -e CARGO_TARGET_DIR=/repo/target
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: pull the tools image by its pinned digest
+        run: docker pull "$(cat container/IMAGE)"
+
+      - name: fetch crates and build, with the network
+        run: $RUN "$(cat container/IMAGE)" cargo test --workspace --all-targets --locked --features aethelgard-cli/with-tools --no-run
+
+      - name: cargo fmt inside the image
+        run: $RUN --network none "$(cat container/IMAGE)" cargo fmt --all -- --check
+
+      - name: cargo clippy inside the image, tier 2 included
+        run: $RUN --network none "$(cat container/IMAGE)" cargo clippy --workspace --all-targets --locked --offline --features aethelgard-cli/with-tools -- -D warnings
+
+      - name: cargo test inside the image, tier 1 and tier 2
+        run: $RUN --network none "$(cat container/IMAGE)" cargo test --workspace --locked --offline --features aethelgard-cli/with-tools

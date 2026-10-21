@@ -6,5 +6,11 @@
 - `drc-clean.kicad_pcb`: the same board outline with no tracks. The same command must exit 0.
 - `rc-step.cir`: a 1 kΩ resistor into a 1 µF capacitor driven by a step. ngspice must measure a 10–90 % rise within 2 % of 2.2·R·C = 2.2 ms.
 - `kani-smoke/`: a crate outside the workspace with two Kani harnesses. `add_in_range` must verify, and `add_overflows` must fail on its seeded overflow.
+- `erc-clean.kicad_sch`: a schematic with nothing on it. `kicad-cli sch erc --exit-code-violations` must exit 0.
+- `erc-dangling-label.kicad_sch`: one local label connected to nothing. The same command must exit 5 and report exactly one `label_dangling` error.
+- `kani-compile-error/`: a crate that does not compile. `aethelgard prove` must report a `compile_error`.
+- `renode-missing-include.repl`: a platform whose only line includes a file Renode does not have. `aethelgard simulate` must report a `platform_load_error`.
+
+`container/smoke.sh` uses the KiCad files and `kani-smoke`; the `aethelgard` tier-2 tests (`--features with-tools`) use all of them.
 
 These files are tool-calibration inputs, not board artifacts. No specification produces them, and `INV-01` (`docs/northstar.md` §4) governs only artifacts generated from a specification, so a builder should not flag-and-stop on them.

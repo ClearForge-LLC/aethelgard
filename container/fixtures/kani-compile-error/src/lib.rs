@@ -1,4 +1,4 @@
-// S5 probe: a crate that does not compile, to record Kani's output for it.
+// Calibration input for `aethelgard prove`: a crate that does not compile.
 pub fn add(a: u8, b: u8) -> u8 {
     a + b + "not a number"
 }

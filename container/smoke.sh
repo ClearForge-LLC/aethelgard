@@ -58,6 +58,14 @@ expect kicad-cli.drc.violation 5 drc drc-violation
 [ "$(grep -cE '"type": *"clearance"' "$WORK/drc-violation.json")" -eq 1 ] \
   || fail kicad-cli.drc.violation "report does not hold exactly one clearance violation"
 
+# 2b. ERC with the same flag: the empty schematic exits 0, the schematic with
+# one dangling label exits 5 and reports it. Warnings count too (PR #12).
+erc() { kicad-cli sch erc --exit-code-violations --format json -o "$WORK/$1.json" "$FIX/$1.kicad_sch"; }
+expect kicad-cli.erc.clean 0 erc erc-clean
+expect kicad-cli.erc.violation 5 erc erc-dangling-label
+[ "$(grep -cE '"type": *"label_dangling"' "$WORK/erc-dangling-label.json")" -eq 1 ] \
+  || fail kicad-cli.erc.violation "report does not hold exactly one label_dangling violation"
+
 # 3. Measurement only (architecture.md §2): the violation board without the
 # flag. Its exit code is printed and deliberately not asserted.
 kicad-cli pcb drc --format json -o "$WORK/noflag.json" "$FIX/drc-violation.kicad_pcb" > "$WORK/noflag.log" 2>&1
