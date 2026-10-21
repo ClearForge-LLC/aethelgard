@@ -259,7 +259,9 @@ Rejected:
 
 **Gates line:**
 - `83dc85b`: `ci` [39551672323](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39551672323), with `gates` and `tools` green.
-- **B2 head** (the commit carrying this line, the PR head): the `ci` run on it, with `gates` and `tools`, in which `the_test_runner_leaks_no_descriptor_into_the_cli` and `an_inherited_socket_refuses_the_call_and_the_tool_never_runs` run on the runner host and inside the image. One push for this round, as ruled, so the run ID is not in this file; it is on the PR.
+- `b8024cd`, B2: `ci` [39553415557](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39553415557), `gates` red (B7) and `tools` green.
+- `b59299b`, the B7 step: `ci` [39557637334](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39557637334), `gates` green with both descriptor tests on the runner host.
+- The PR head (the commit carrying this line, FEEDBACK only): the `ci` run on it is on the PR.
 - `3cbfbff`, with the B1 fix and the reduction: `ci` [39552571828](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39552571828), `gates` and `tools` green. Inside the image: unit tests 3, the socket test (with the datagram-pair route), tier 1 101/101 and tier 2 12/12, all under the 18-instruction filter.
 - The protected-surface diff prints nothing: the steering docs, `README.md`, `LICENSE-*`, `docs/inputs`, `crates/aethelgard-ir`, `container/` and `tools-image.yml`.
 
@@ -296,7 +298,19 @@ Rejected:
 - **Where it does not leak.**
   - `tools`: the same tests inside the image behind `docker run`. Both descriptor tests pass, and so do tier 1 (101), the socket test, and tier 2 (12/12).
   - Furnace's `cargo test` (printed `[]`).
-- **The source is not established.** It is two pipe descriptors, high-numbered, present on the runner host and absent behind `docker run`. That points at the GitHub Actions runner process handing pipes to the step's shell, or at a jobserver passed down through `cargo`. Telling them apart needs one diagnostic run that prints `CARGO_MAKEFLAGS`, `MAKEFLAGS`, and `/proc/$$/fd` with `fdinfo` from the step's shell, before `cargo` and inside `cargo test`. This round allowed one push, so that run has not been made.
+- **The source: the Actions runner, not `cargo`.** The ruled diagnostic ran on `b59299b`, in `gates` of `ci` [39557637334](https://github.com/ClearForge-LLC/aethelgard/actions/runs/39557637334). Its step's shell holds both descriptors before `cargo` starts:
+
+  ```
+  lr-x------ 1 runner runner 64 Oct 21 06:47 142 -> pipe:[11057]
+  l-wx------ 1 runner runner 64 Oct 21 06:47 145 -> pipe:[11058]
+  /proc/3051/fdinfo/142:flags:	04000
+  /proc/3051/fdinfo/145:flags:	01
+  ```
+
+  The descriptors are the read end of one pipe (`O_NONBLOCK`) and the write end of another, neither with close-on-exec. So the runner process that starts the step's `bash` hands them to it. The descriptor numbers are the same on both runs; the pipe inodes differ (12135/12136 on `b8024cd`). Nothing in `cargo` is involved: Furnace's `cargo test` prints `[]`.
+- **The fix, as ruled.** The `gates` test step prints its descriptors, then closes every descriptor above 2 by number in a subshell, and execs `cargo test` from there. The step's own script descriptor (255) stays open in the parent shell. After closing, `ls -l /proc/self/fd` shows only 0, 1, 2 and `ls`'s own directory handle. On that run both descriptor tests pass on the runner host, as do the socket test and tier 1 (101/101). The CLI is unchanged, and nothing is allowlisted.
+- **Reduction pass (B7 diff): nothing to remove.** The step is one print and one loop, and it holds no fact stated elsewhere.
+- **Checked on Furnace.** The same step with 142 and 145 opened by hand closes them, and both tests pass. The descriptor test without the step, with 142 left open, fails with `the runner leaks ["142 -> Some(\"/dev/null\")"]`.
 
 | # | finding | where | type | recommendation | decision-needed |
 |---|---|---|---|---|---|
