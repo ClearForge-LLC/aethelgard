@@ -10,11 +10,19 @@ repository.workspace = true
 name = "aethelgard"
 path = "src/main.rs"
 
+[features]
+# Tier-2 tests that run the real tools; only the `tools` CI job, inside the
+# published image, enables it.
+with-tools = []
+
 [dependencies]
 aethelgard-ir.workspace = true
 clap.workspace = true
+landlock.workspace = true
+rustix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 syn.workspace = true
