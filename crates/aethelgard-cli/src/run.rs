@@ -6,10 +6,11 @@
 //! reach it), with an empty environment, stdin from `/dev/null` and its
 //! working directory inside the call's private temporary directory. The reaper
 //! starts a *trampoline*, a third copy, in a process group of its own; the
-//! trampoline confines itself with Landlock, records the sandbox it achieved,
-//! and becomes the tool. The reaper waits. If the CLI dies, by any signal, the
-//! reaper sees its parent change, kills the tool's whole group, removes the
-//! temporary directory the CLI can no longer remove, and exits.
+//! trampoline confines itself with Landlock, installs the seccomp filter that
+//! refuses every socket Landlock cannot see (AET-WO-0300a), records the
+//! sandbox it achieved, and becomes the tool. The reaper waits. If the CLI
+//! dies, by any signal, the reaper sees its parent change and kills the tool's
+//! group and every descendant; a guardian removes the temporary directory.
 //!
 //! The status file the CLI reads (the sandbox line, then how the tool ended)
 //! lives outside the tool's read-write directory, so the tool cannot forge it.
@@ -33,6 +34,7 @@ use rustix::process::{
     Pid, Signal, WaitOptions, getpid, kill_process, kill_process_group, set_child_subreaper,
     waitpid,
 };
+use seccompiler::{BpfProgram, apply_filter, sock_filter};
 
 use crate::{EXIT_TOOL_ERROR, EXIT_TOOL_UNAVAILABLE, EXIT_UNREADABLE};
 
@@ -153,8 +155,12 @@ pub struct SandboxReport {
     /// TCP bind and connect denied (Landlock ABI 4+). UDP is not covered.
     pub tcp_confined: bool,
     /// Signals and abstract Unix sockets scoped to the tool's own processes
-    /// (Landlock ABI 6+). Pathname Unix sockets are not covered.
+    /// (Landlock ABI 6+).
     pub scoped: bool,
+    /// `socket()` refused for every family, and `io_uring` refused, by the
+    /// seccomp filter. Always true: the filter is required, so no verdict
+    /// exists without it.
+    pub sockets_denied: bool,
 }
 
 impl SandboxReport {
@@ -165,6 +171,7 @@ impl SandboxReport {
             landlock_abi,
             tcp_confined: landlock_abi >= 4,
             scoped: landlock_abi >= 6,
+            sockets_denied: true,
         }
     }
 }
@@ -319,12 +326,14 @@ fn capture(mut pipe: impl Read + Send + 'static) -> thread::JoinHandle<Option<Ve
 fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop> {
     let mut lines = status.lines();
     let first = lines.next().unwrap_or_default();
-    if let Some(reason) = first.strip_prefix("unavailable ") {
+    if let Some(rest) = first.strip_prefix("unavailable ") {
+        // Only the trampoline writes this line: `landlock` or `seccomp`.
+        let (layer, reason) = rest.split_once(' ').unwrap_or((rest, ""));
         return Err(Stop {
             code: EXIT_TOOL_UNAVAILABLE,
             kind: "SandboxUnavailable",
-            id: Some("landlock".to_owned()),
-            message: format!("Landlock cannot enforce the required filesystem rules: {reason}"),
+            id: Some(layer.to_owned()),
+            message: format!("the required {layer} sandbox layer cannot be enforced: {reason}"),
         });
     }
     let sandbox = first
@@ -511,13 +520,37 @@ pub fn confine_main(args: &[OsString]) -> ! {
     let Ok(mut status) = File::create(&internal.status) else {
         exit(70)
     };
+    // Checked before Landlock, which denies /proc to most tools. Nothing
+    // opened from here to exec is inheritable: Rust opens close-on-exec.
+    match inherited_descriptors() {
+        Ok(leaked) if leaked.is_empty() => {}
+        Ok(leaked) => {
+            let _ = writeln!(
+                status,
+                "unavailable descriptors inherited without close-on-exec: {leaked:?}"
+            );
+            exit(0);
+        }
+        Err(reason) => {
+            let _ = writeln!(status, "unavailable descriptors {reason}");
+            exit(0);
+        }
+    }
     let sandbox = match confine(&internal.read_only, &internal.read_write) {
         Ok(s) => s,
         Err(reason) => {
-            let _ = writeln!(status, "unavailable {reason}");
+            let _ = writeln!(status, "unavailable landlock {reason}");
             exit(0);
         }
     };
+    // Required like Landlock (INV-06): no filter, no tool.
+    let installed = socket_filter()
+        .ok_or_else(|| "no filter for this architecture".to_owned())
+        .and_then(|program| apply_filter(&program).map_err(|e| e.to_string()));
+    if let Err(e) = installed {
+        let _ = writeln!(status, "unavailable seccomp {e}");
+        exit(0);
+    }
     let _ = writeln!(status, "sandbox abi={}", sandbox.landlock_abi);
     let (program, tool_args) = internal
         .tool
@@ -526,6 +559,116 @@ pub fn confine_main(args: &[OsString]) -> ! {
     let err = Command::new(program).args(tool_args).exec();
     let _ = writeln!(status, "spawn-error {err}");
     exit(127);
+}
+
+/// Every descriptor above 2 this process holds without close-on-exec: each
+/// would reach the tool, a channel no sandbox layer sees (ruled on PR #15,
+/// B2). Read from /proc/self/fdinfo; any doubt is an error, never a pass.
+fn inherited_descriptors() -> Result<Vec<u32>, String> {
+    const O_CLOEXEC: u32 = 0o2_000_000;
+    let unreadable = |what: &str, e: io::Error| format!("cannot read {what}: {e}");
+    let mut leaked = Vec::new();
+    for entry in fs::read_dir("/proc/self/fd").map_err(|e| unreadable("/proc/self/fd", e))? {
+        let entry = entry.map_err(|e| unreadable("/proc/self/fd", e))?;
+        let Some(fd) = entry
+            .file_name()
+            .to_str()
+            .and_then(|n| n.parse::<u32>().ok())
+        else {
+            return Err(format!(
+                "unexpected entry {:?} in /proc/self/fd",
+                entry.file_name()
+            ));
+        };
+        if fd <= 2 {
+            continue;
+        }
+        let info = match fs::read_to_string(format!("/proc/self/fdinfo/{fd}")) {
+            Ok(info) => info,
+            // The directory listing's own descriptor, closed once read.
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(unreadable(&format!("/proc/self/fdinfo/{fd}"), e)),
+        };
+        let flags = info
+            .lines()
+            .find_map(|l| l.strip_prefix("flags:"))
+            .and_then(|v| u32::from_str_radix(v.trim(), 8).ok())
+            .ok_or_else(|| format!("no flags for descriptor {fd}"))?;
+        if flags & O_CLOEXEC == 0 {
+            leaked.push(fd);
+        }
+    }
+    leaked.sort_unstable();
+    Ok(leaked)
+}
+
+/// The seccomp filter (AET-WO-0300a, ruled on PR #15): a fixed program,
+/// assembled here rather than by `seccompiler::SeccompFilter`, whose compiled
+/// rules match system-call numbers under `AUDIT_ARCH_X86_64` and so would let
+/// an x32 call (number | 0x4000_0000) through a default-allow filter.
+///
+/// `socket` is refused for every family because no tool needs one (measured
+/// in the spike). `socketpair` is allowed only as an `AF_UNIX` stream or
+/// seqpacket pair: such a pair is born connected to itself and cannot be
+/// redirected. A datagram pair (`SOCK_DGRAM`, or `SOCK_RAW`, which `AF_UNIX`
+/// treats as datagram) can `connect` or `sendto` any pathname datagram socket
+/// outside, which the adversarial pass showed by writing to the systemd
+/// journal, so it is refused like `socket`.
+#[cfg(target_arch = "x86_64")]
+pub fn socket_filter() -> Option<BpfProgram> {
+    const LD_W_ABS: u16 = 0x20; // BPF_LD | BPF_W | BPF_ABS
+    const AND_K: u16 = 0x54; // BPF_ALU | BPF_AND | BPF_K
+    const JEQ_K: u16 = 0x15; // BPF_JMP | BPF_JEQ | BPF_K
+    const JSET_K: u16 = 0x45; // BPF_JMP | BPF_JSET | BPF_K
+    const RET_K: u16 = 0x06; // BPF_RET | BPF_K
+    const AUDIT_ARCH_X86_64: u32 = 0xc000_003e;
+    const X32_SYSCALL_BIT: u32 = 0x4000_0000;
+    const OFFSET_NR: u32 = 0;
+    const OFFSET_ARCH: u32 = 4;
+    const OFFSET_ARG0: u32 = 16; // low 32 bits, little-endian
+    const OFFSET_ARG1: u32 = 24;
+    const NR_SOCKET: u32 = 41;
+    const NR_SOCKETPAIR: u32 = 53;
+    const NR_IO_URING_SETUP: u32 = 425;
+    const NR_IO_URING_ENTER: u32 = 426;
+    const NR_IO_URING_REGISTER: u32 = 427;
+    const AF_UNIX: u32 = 1;
+    const SOCK_TYPE_MASK: u32 = 0xf;
+    const SOCK_STREAM: u32 = 1;
+    const SOCK_SEQPACKET: u32 = 5;
+    const RET_ALLOW: u32 = 0x7fff_0000;
+    const RET_EPERM: u32 = 0x0005_0000 | 1;
+    const RET_KILL_PROCESS: u32 = 0x8000_0000;
+    let op = |code, k, jt, jf| sock_filter { code, jt, jf, k };
+    // Jump offsets count instructions after the next one: 15 is EPERM,
+    // 16 kill, 17 allow.
+    Some(vec![
+        op(LD_W_ABS, OFFSET_ARCH, 0, 0),       // 0
+        op(JEQ_K, AUDIT_ARCH_X86_64, 0, 14),   // 1: else kill (16)
+        op(LD_W_ABS, OFFSET_NR, 0, 0),         // 2
+        op(JSET_K, X32_SYSCALL_BIT, 12, 0),    // 3: x32, kill (16)
+        op(JEQ_K, NR_SOCKET, 10, 0),           // 4: EPERM (15)
+        op(JEQ_K, NR_IO_URING_SETUP, 9, 0),    // 5: EPERM (15)
+        op(JEQ_K, NR_IO_URING_ENTER, 8, 0),    // 6: EPERM (15)
+        op(JEQ_K, NR_IO_URING_REGISTER, 7, 0), // 7: EPERM (15)
+        op(JEQ_K, NR_SOCKETPAIR, 0, 8),        // 8: not socketpair, allow (17)
+        op(LD_W_ABS, OFFSET_ARG0, 0, 0),       // 9: the family
+        op(JEQ_K, AF_UNIX, 0, 4),              // 10: else EPERM (15)
+        op(LD_W_ABS, OFFSET_ARG1, 0, 0),       // 11: the type, with flags
+        op(AND_K, SOCK_TYPE_MASK, 0, 0),       // 12
+        op(JEQ_K, SOCK_STREAM, 3, 0),          // 13: allow (17)
+        op(JEQ_K, SOCK_SEQPACKET, 2, 0),       // 14: allow (17), else EPERM
+        op(RET_K, RET_EPERM, 0, 0),            // 15
+        op(RET_K, RET_KILL_PROCESS, 0, 0),     // 16
+        op(RET_K, RET_ALLOW, 0, 0),            // 17
+    ])
+}
+
+/// No filter exists for other architectures, so the call refuses with
+/// `SandboxUnavailable`, `id` `seccomp`, rather than running unfiltered.
+#[cfg(not(target_arch = "x86_64"))]
+pub fn socket_filter() -> Option<BpfProgram> {
+    None
 }
 
 /// Applies Landlock to this process: filesystem rights through ABI 3 are
@@ -579,4 +722,70 @@ where
     S: AsRef<OsStr>,
 {
     items.into_iter().map(|s| s.as_ref().to_owned()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The filter as an exact instruction sequence: any edit to it must show
+    /// up here (ruled on PR #15). (code, jt, jf, k)
+    #[test]
+    fn socket_filter_is_exactly_this_program() {
+        let got: Vec<(u16, u8, u8, u32)> = socket_filter()
+            .unwrap()
+            .iter()
+            .map(|i| (i.code, i.jt, i.jf, i.k))
+            .collect();
+        let want = vec![
+            (0x20, 0, 0, 4),            // load arch
+            (0x15, 0, 14, 0xc000_003e), // x86_64, else kill
+            (0x20, 0, 0, 0),            // load nr
+            (0x45, 12, 0, 0x4000_0000), // x32 bit: kill
+            (0x15, 10, 0, 41),          // socket: EPERM
+            (0x15, 9, 0, 425),          // io_uring_setup: EPERM
+            (0x15, 8, 0, 426),          // io_uring_enter: EPERM
+            (0x15, 7, 0, 427),          // io_uring_register: EPERM
+            (0x15, 0, 8, 53),           // socketpair? else allow
+            (0x20, 0, 0, 16),           // load family
+            (0x15, 0, 4, 1),            // AF_UNIX, else EPERM
+            (0x20, 0, 0, 24),           // load type
+            (0x54, 0, 0, 0xf),          // type & SOCK_TYPE_MASK
+            (0x15, 3, 0, 1),            // SOCK_STREAM: allow
+            (0x15, 2, 0, 5),            // SOCK_SEQPACKET: allow, else EPERM
+            (0x06, 0, 0, 0x0005_0001),  // errno EPERM
+            (0x06, 0, 0, 0x8000_0000),  // kill process
+            (0x06, 0, 0, 0x7fff_0000),  // allow
+        ];
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn every_jump_lands_on_the_return_it_names() {
+        let p = socket_filter().unwrap();
+        let (eperm, kill, allow) = (15, 16, 17);
+        let target = |i: usize, off: u8| i + 1 + usize::from(off);
+        assert_eq!(target(1, p[1].jf), kill);
+        assert_eq!(target(3, p[3].jt), kill);
+        for (i, op) in p.iter().enumerate().take(8).skip(4) {
+            assert_eq!(target(i, op.jt), eperm, "instruction {i}");
+        }
+        assert_eq!(target(8, p[8].jf), allow);
+        assert_eq!(target(10, p[10].jf), eperm);
+        assert_eq!(target(13, p[13].jt), allow);
+        assert_eq!(target(14, p[14].jt), allow);
+        assert_eq!(target(14, p[14].jf), eperm);
+    }
+
+    #[test]
+    fn an_unavailable_line_is_sandbox_unavailable_naming_its_layer() {
+        for layer in ["seccomp", "landlock"] {
+            let stop = parse_status(&format!("unavailable {layer} some reason\n"), "kicad-cli")
+                .unwrap_err();
+            assert_eq!(
+                (stop.code, stop.kind, stop.id.as_deref()),
+                (4, "SandboxUnavailable", Some(layer))
+            );
+        }
+    }
 }
