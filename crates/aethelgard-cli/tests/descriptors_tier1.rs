@@ -26,9 +26,10 @@ fn inheritable_descriptors() -> Vec<String> {
         .collect()
 }
 
-/// What this test runner hands down to the CLI: nothing (measured in `gates`,
-/// `tools` and on Furnace, where this test runs). A runner that leaked a
-/// descriptor, a jobserver for example, would make every tool call refuse.
+/// What this test runner hands down to the CLI: nothing (measured in `tools`
+/// and on Furnace; `gates` closes the two pipes its runner host leaks before
+/// `cargo` runs, B7). A runner that leaked a descriptor would make every tool
+/// call refuse.
 #[test]
 fn the_test_runner_leaks_no_descriptor_into_the_cli() {
     let leaked = inheritable_descriptors();
