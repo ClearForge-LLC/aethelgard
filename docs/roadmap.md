@@ -65,7 +65,12 @@ P0 ──> P1 ──> P2 ──> P3
 - `AET-WO-0200` — pinned container image with `kicad-cli`, `renode`, `ngspice`, and `cargo kani` installed, and a smoke test for each. Measures the `kicad-cli` default exit code and reads the rest of Renode's platform list; both land in `architecture.md` §2 by amendment.
 - `AET-WO-0300` — the `aethelgard` command-line binary: one executable, JSON on stdin and stdout, documented exit codes, subcommands for validate, build, check, prove, and simulate that each call into the crates or spawn an external tool with the subprocess posture from `architecture.md` §6. This is the contract every later caller (CI, a human, the tool server) uses (`RUL-10`).
 - `AET-WO-0300a` — inserted at review of PR #12. A seccomp filter denies `socket(AF_UNIX, …)` and UDP sockets to every tool process, through a safe crate. It is spike-first, because each tool is measured with them denied (Renode's .NET diagnostic socket is the likely casualty). Landlock cannot confine either (`architecture.md` §2.5, §6). It must merge before `AET-WO-1500`, and before any tool is installed on a host with a session bus.
-- `AET-WO-0400` — Cap'n Proto trace schema, local append-only archive, deterministic replay reader, and the optional remote mirror behind named credentials (`RUL-06`). Measures trace bytes per simulated second and records it for `OQ-03`.
+- `AET-WO-0300b` — inserted at Argon's review of `main` at 9818c4f. Two verdict-path gaps in the merged CLI, both cheap to close:
+  - `simulate` passes a Renode load that lists a CPU, even if the log carries `[ERROR]` lines from a peripheral that failed to register. Measure which `[ERROR]` lines a clean Nucleo load prints, then refuse the rest.
+  - The `prove` crate copy has no size cap. Apply `RUL-13`'s 16 MiB to the whole copy, with a file-count cap, and refuse with `InputTooLarge`.
+
+  Build-only. It must merge before `AET-WO-1500` puts these verdicts in front of agents.
+- `AET-WO-0400` — the trace archive in deterministic CBOR (`RUL-06` as amended), with a local append-only archive, a strict reader, deterministic replay, and the optional remote mirror's credential boundary. **Build-only now:** `architecture.md` answers its old spike questions, and the work order fixes the profile, layout, commit protocol and golden hashes. It measures encoded bytes per synthetic event, labelled as plumbing; `OQ-03`'s bytes per simulated second waits for real events in P2.
 
 **Exit gate**
 
@@ -83,16 +88,24 @@ P0 ──> P1 ──> P2 ──> P3
 
 **Work orders**
 
-- `AET-WO-1100` — carries `architecture.md` `RUL-14` (identifier set, at least one voltage domain) as well as the graph itself. Specification graph: microcontroller package and alternate-function table ingested from the vendor register description, buses, voltage domains, passives with electrical bounds; round-trip serialization.
-- `AET-WO-1200` — spike, then build: the constraint solver (`RUL-02`). The spike measures solve time on the chosen part's full pin table with both the SMT prior and a pure-Rust search, and records the number in `architecture.md` §2 by amendment before the build half starts.
-- `AET-WO-1300` — board emitter: `.kicad_sch`, `.kicad_pcb`, bill of materials, and the parasitic extraction the twin will need, validated by `kicad-cli` with `--exit-code-violations`.
-- `AET-WO-1400` — spike, then build: the generated typestate board crate (`RUL-04`). The spike answers `OQ-04` with a harness over a harness-owned register image that catches one seeded typestate bug, or shows that it cannot, and records which.
-- `AET-WO-1500` — the `aethelgard mcp` subcommand: `rmcp` over stdio, with the tool list generated from the command tree so the CLI and MCP surfaces cannot drift (`RUL-10`). Depends on `AET-WO-0300a`. The `mcp` subcommand maps every tool to a `clap` subcommand and never forwards raw arguments (`architecture.md` §6). It also adds the `aethelgard` binary to the published tools image, so one pull gives a user or an agent both the engine and its tools. Runs in parallel with everything else in P1; nothing in P1 depends on it except the launch-readiness clause.
-- `AET-WO-1600` — intent, inserted at review of PR #15: a host-side system-call allowlist for the tool sandbox, closing the non-socket channels `architecture.md` §6 lists as open on a host (System V shared memory, user namespaces, `pidfd_open`). It must merge before the launch-readiness clause puts a crates.io-installed binary on hosts. Until then, the published image is the supported boundary for tool subcommands.
+- `AET-WO-1100` — carries `architecture.md` `RUL-14` (identifier set, at least one voltage domain) and `RUL-16` (`Specification` and `SolvedTopology` as separate types, no `HashMap`) as well as the graph itself. The specification graph covers buses, voltage domains, passives with electrical bounds, and round-trip serialization.
+  - **The package pinout and alternate-function table come from ST's MCU database through `stm32-data`, not from the SVD,** which has neither (`architecture.md` §2.1). The work order checks `stm32-data`'s licence, and that of the ST data it carries, before any code depends on either. A licence that does not fit `RUL-11` is a flag-and-stop.
+  - **It breaks today's examples on purpose.** New required fields make `examples/sentinel-01-minimal.json` invalid. The same PR updates both examples, `crates/aethelgard-ir/tests`, `crates/aethelgard-cli/tests/validate_cli.rs` and the `gates` step that validates the examples, so the P0 gate's `validate` clause holds on the new shape.
+- `AET-WO-1200` — spike, then build: the constraint solver (`RUL-02`, whose prior is now a pure-Rust search). The spike measures solve time on the chosen part's full pin table for the search and for SMT. It records both numbers in `architecture.md` §2 by amendment before the build half starts, and it shows two solves of the same specification returning the same assignment.
+- `AET-WO-1300` — spike, then build: the schematic emitter. It emits `.kicad_sch` and the bill of materials, and passes `kicad-cli sch erc --exit-code-violations`. The spike answers two questions:
+  - how the board is to be placed and routed headless (split below);
+  - whether a gate-written `.kicad_dru` overrides looser rules in the emitted project files (`RUL-03` as amended).
+
+  **Split at Argon's review of `main` at 9818c4f.** The P1 gate's DRC must exit 0, and `kicad-cli` counts every unconnected item as a finding (`crates/aethelgard-cli/src/kicad.rs` reads `unconnected_items`). So a board that is only emitted, never placed and routed, cannot pass. The original line did not say this.
+- `AET-WO-1301` — reserved, scoped after `AET-WO-1300`'s spike: placement of the board.
+- `AET-WO-1302` — reserved, scoped after `AET-WO-1300`'s spike. It routes the board, and it extracts the parasitics the twin will need. DRC runs against rules the gate derives from the specification (`INV-07`), with `--exit-code-violations` and `--schematic-parity`.
+- `AET-WO-1400` — spike, then build: the generated typestate board crate (`RUL-04`). The spike answers `OQ-04` with a harness over a harness-owned register image that catches one seeded typestate bug, or shows that it cannot, and records which. **The proof harness is generated from the specification, never taken from the crate under proof** (`INV-07`). `prove` reads Kani's exit 0 honestly, but a crate that supplies its own trivial harness earns that exit 0 legitimately. Argon raised this at its review of `main` at 9818c4f.
+- `AET-WO-1500` — the `aethelgard mcp` subcommand: `rmcp` over stdio, with the tool list generated from the command tree so the CLI and MCP surfaces cannot drift (`RUL-10`). Depends on `AET-WO-0300a` and `AET-WO-0300b`. The `mcp` subcommand maps every tool to a `clap` subcommand and never forwards raw arguments (`architecture.md` §6). It also adds the `aethelgard` binary to the published tools image, so one pull gives a user or an agent both the engine and its tools. Runs in parallel with everything else in P1; nothing in P1 depends on it except the launch-readiness clause.
+- `AET-WO-1600` — intent, inserted at review of PR #15: a host-side system-call allowlist for the tool sandbox, closing the non-socket channels `architecture.md` §6 lists as open on a host (System V shared memory, user namespaces, `pidfd_open`). At Argon's review of `main` at 9818c4f it also gained `ptrace`, `process_vm_readv`, `process_vm_writev` and `pidfd_getfd`, which Landlock already confines across domains, so this is defence in depth, not a gap. It also gained dropping every capability before `exec`. It must merge before the launch-readiness clause puts a crates.io-installed binary on hosts. Until then, the published image is the supported boundary for tool subcommands.
 
 **Exit gate**
 
-- From a checked-in specification for the reference probe, one command emits a schematic and a board; `kicad-cli sch erc --exit-code-violations` and `kicad-cli pcb drc --exit-code-violations --schematic-parity` both exit 0 on them (`INV-01`, `INV-03`).
+- From a checked-in specification for the reference probe, one command emits a schematic and a placed and routed board; `kicad-cli sch erc --exit-code-violations` and `kicad-cli pcb drc --exit-code-violations --schematic-parity` both exit 0 on them (`INV-01`, `INV-03`). DRC judges against design rules the gate derives from the specification, not those the emitted files carry (`INV-07`, `RUL-03`).
 - The same specification with one pin deliberately assigned twice makes the solver exit nonzero naming both claimants, and emits no board files (`INV-06`).
 - A `trybuild` suite of at least five firmware snippets that each touch an unconfigured pin, an ungated peripheral clock, or a bus speed above the solved rise-time ceiling fails to compile, and one valid driver compiles (`INV-02`'s falsification, run as a test).
 - Regenerating from the specification twice produces byte-identical board files and board crate (`INV-01`).
@@ -109,8 +122,9 @@ P0 ──> P1 ──> P2 ──> P3
 
 **Work orders (intent)**
 
-- `AET-WO-2100` — spike, then build: emit the Renode platform description from the solved graph (adding the SPI instances Renode's own `stm32h7.repl` omits, `architecture.md` §2.2), boot the generated firmware headless, and decide the lock-step transport (`OQ-02`) by measuring all three candidates on one I2C transaction, starting with the in-process `libngspice` prior.
-- `AET-WO-2200` — analog bridge: the extracted parasitics as an `ngspice` netlist for the designated nets, driven in lock-step with the digital run.
+- `AET-WO-2100` — emit the Renode platform description from the solved graph, adding the SPI instances Renode's own `stm32h7.repl` omits (`architecture.md` §2.2), and boot the generated firmware headless.
+- `AET-WO-2101` — spike, then build: decide the lock-step transport (`OQ-02`) by measuring the surviving candidates on one I2C transaction, starting with `libngspice` behind a process boundary. It begins from an architect's desk spike, which reads the three leads in `architecture.md` §8 at source. **Split from `AET-WO-2100` at Argon's review of `main` at 9818c4f,** so that the risk the critical path names (§3) gets its own work order and its own adversarial pass.
+- `AET-WO-2200` — analog bridge: the extracted parasitics as an `ngspice` netlist for the designated nets, driven in lock-step with the digital run. If Renode's I2C model is transaction-level (`OQ-02`'s third lead), an analog fault reaches the firmware only as a controller error flag set by the bridge. The trace then records that flag as the bridge's verdict, never as an observed waveform.
 - `AET-WO-2300` — fault orchestrator: scenarios authored independently of the generated artifacts (`INV-07`), including a held-low data line, an oversized pull-up, a rail droop, and an interrupt storm; every campaign writes to the P0 archive.
 
 **Exit gate (to be refined by amendment after the `AET-WO-2100` spike, never weakened)**
@@ -142,6 +156,27 @@ P0 ──> P1 ──> P2 ──> P3
 
 Every work order inherits: spike first on anything novel, then stop for review; one pull request per work order, left unmerged for the architect; an adversarial pass before the feedback document; `FEEDBACK.md` findings promoted into these documents by amendment rather than left in the branch; and no number faked, a blocked measurement is reported as blocked with the harness that would produce it. Work-order structure itself is owned by the ClearForge `co-architect-work-order` skill.
 
+Three rules added at Argon's review, each learned from a work order that ran without it:
+
+- **Graduating a stub crate is stated, not implied.** A work order that gives a library crate its first code names the checks in `crates/aethelgard-cli/tests/workspace_shape.rs` that the crate leaves, and the checks that replace them. `AET-WO-0400` as first written said only "extend the allowed dependencies", which would have left two stub checks failing.
+- **Adversarial depth follows the trust boundary.** The table below sets it per work order. A full pass by a fresh subagent goes where a mistake becomes a false pass or an escape. Pure plumbing gets a targeted pass.
+- **A ruling that adds a stop condition comes with a replacement goal.** A builder holding a goal it can no longer meet loops on it. This was learned twice, in `AET-WO-0200` and in `AET-WO-0300a`.
+
+**Spend by tier.** Work is tagged by who builds it and how deep the adversarial pass goes, so that spend follows risk. A *cheap builder* is a lower-cost model working from a fully ruled, build-only work order. A *strong builder* handles any spike or open design. The architect always reviews against CI logs, whatever the tier.
+
+| Work order | Builder | Adversarial pass | Why |
+|---|---|---|---|
+| `AET-WO-0300b` | cheap | full on the two changed checks | small and fully specified, but it sits on the verdict path |
+| `AET-WO-0400` | cheap | targeted: forgery, interrupted writes, hostile archives | the format and protocol are ruled; the risk is integrity, not escape |
+| `AET-WO-1100` | strong | targeted | licence check and an IR reshape that every later crate inherits |
+| `AET-WO-1200` | strong for the spike, cheap for the build if the ruling is tight | targeted: determinism, conflict naming | a wrong assignment is caught by the P1 gate, not hidden |
+| `AET-WO-1300` … `AET-WO-1302` | strong | full on the DRC rule injection | headless place and route is unknown, and the rule injection is `INV-07` |
+| `AET-WO-1400` | strong | full | Kani over generated `unsafe` is the proof the project leans on |
+| `AET-WO-1500`, `AET-WO-1600` | strong | full | the agent-facing surface and the host sandbox are the trust boundaries |
+| `AET-WO-2100` | cheap once `AET-WO-1100` lands | targeted | platform emission is text generation, checked by Renode itself |
+| `AET-WO-2101`, `AET-WO-2200`, `AET-WO-2300` | strong | full | `OQ-02` is where a simulation runs but measures nothing (§3) |
+| `AET-WO-3100` … `AET-WO-3300` | strong | full | attribution is where a bug becomes a confident wrong answer (§3) |
+
 ## 7. Reconciliation — plan versus built
 
 Rows of **number as built → what it actually was → what the roadmap had planned**. History is left as written; the table explains divergence, it does not erase it.
@@ -153,11 +188,12 @@ Rows of **number as built → what it actually was → what the roadmap had plan
 | `AET-WO-0200` | **merged (PR #7):** spike then build. `container/Dockerfile` on the official KiCad 10.0.7 image by digest, with Renode 1.17.0, ngspice 44.2, Kani 0.68.0 and Rust 1.99.1 each pinned and checksummed. `container/smoke.sh` proves each tool on a real input, with and without the network. `container/check-pins.sh` refuses drift. A `main`-only publish job (`RUL-15`). Measured that `kicad-cli` without the flag exits 0 on violations and that a failed Renode load exits 0 (`architecture.md` §2.4). Satisfies the P0 gate's first three clauses: fmt, clippy and test inside the container; each tool runs; DRC exits 5 and 0. "Reads the rest of Renode's platform list" was already done in `architecture.md` §2.2 before this WO was written, so it was dropped from its scope | Argon drafts: `AET-WO-0002` |
 | `AET-WO-0300` | **merged (PR #12):** spike, then build. `check drc`, `check erc`, `prove` and `simulate` each return one JSON verdict carrying the input's sha256 and the version of the tool that judged it, cross-checked by at least two witnesses. The sandbox is Landlock with a reaper and a guardian (`architecture.md` §6). A tier-2 `tools` job runs the real tools on every PR inside the image pinned by `container/IMAGE`. No `build` subcommand: nothing generates until `AET-WO-1300`, and a stub would have become a fake MCP tool. Satisfies the Renode half of the P0 gate's last clause. The roadmap line above still lists `build`; it is left as written, and this row explains why | Argon drafts: `AET-WO-0003`, a Rust MCP server in P0 |
 | `AET-WO-0300a` | **merged (PR #15):** a required, hand-assembled seccomp filter refuses every socket a tool could reach outside itself, plus `io_uring`, x32 and non-native calls. The CLI also refuses a call that would hand the tool an inherited descriptor. The `gates` CI step closes the descriptors the Actions runner leaks. `AET-WO-1500`'s precondition is met | none; found by `AET-WO-0300`'s adversarial pass |
-| `AET-WO-1600` | inserted at review of PR #15, intent: a host-side system-call allowlist | none; the non-socket channels `AET-WO-0300a` measured as still open on a host |
-| `AET-WO-0400` | reserved, now local-first (`RUL-06`) | Argon drafts: `AET-WO-0004`, R2-primary |
-| `AET-WO-1100` … `AET-WO-1400` | reserved, `1200` and `1400` now spike-then-build | Argon drafts: `AET-WO-1001` … `AET-WO-1004` |
+| `AET-WO-1600` | inserted at review of PR #15, intent: a host-side system-call allowlist; widened at Argon's review | none; the non-socket channels `AET-WO-0300a` measured as still open on a host |
+| `AET-WO-0300b` | inserted at Argon's review, written, build-only: refuse Renode `[ERROR]` lines on a load, and cap the `prove` crate copy | none; Argon's red-team findings RT-02 and RT-04 |
+| `AET-WO-0400` | written spike-first and held for budget, then rewritten after Argon's review as build-only in deterministic CBOR (`RUL-06` as amended), which answers its spike's format question | Argon drafts: `AET-WO-0004`, R2-primary, Cap'n Proto |
+| `AET-WO-1100` … `AET-WO-1400` | reserved, `1200` and `1400` now spike-then-build. `1300` split into `1300`, `1301` and `1302` at Argon's review, because a DRC that must exit 0 needs a placed and routed board | Argon drafts: `AET-WO-1001` … `AET-WO-1004` |
 | `AET-WO-1500` | reserved: the `mcp` subcommand of the CLI binary, moved from P0 to P1 | Argon drafts: part of `AET-WO-0003`, a separate server crate |
-| `AET-WO-2100` … `AET-WO-2300` | reserved as intent pending the `OQ-02` spike | Argon drafts: `AET-WO-2001` … `AET-WO-2003`, fully scoped |
+| `AET-WO-2100` … `AET-WO-2300` | reserved as intent pending the `OQ-02` spike. `2101` split from `2100` at Argon's review to hold that spike | Argon drafts: `AET-WO-2001` … `AET-WO-2003`, fully scoped |
 | `AET-WO-3100` … `AET-WO-3300` | reserved as intent | Argon drafts: `AET-WO-3001` … `AET-WO-3003`, fully scoped |
 
 Run a reconciliation audit at every phase boundary: count what was planned, what merged, and what did not, and confirm the gap is deliberate.
@@ -173,6 +209,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | 2026-10-20 | §3, §5 | Added a launch-readiness clause to the P1 exit gate. `AET-WO-1500` now also puts the `aethelgard` binary in the published image. Two human-track items added: the crate names with the first publish, and the announcement | Scotty asked for launch as a gate. Names checked against the crates.io API on this date. It sits at P1 because that is the first point with something true to show: one specification, a board and a crate that cannot disagree. The announcement itself stays human-track, since its outcome is not checkable by anyone outside the room |
 | 2026-10-21 | §5, §7 | `AET-WO-0300` reconciled as built. `AET-WO-0300a` inserted, and `AET-WO-1500` made to depend on it | PR #12 merged. The insertion closes a sandbox gap that its adversarial pass measured, before an agent-facing surface can reach it |
 | 2026-10-21 | §5, §7 | `AET-WO-0300a` reconciled as built. `AET-WO-1600` inserted as intent, and the launch-readiness clause made to depend on it | PR #15 merged. Host use of the tool subcommands still has non-socket channels open, and a crates.io install is host use |
+| 2026-10-29 | §5, §6, §7 | Inserted `AET-WO-0300b`. `AET-WO-0400` made build-only in CBOR. `AET-WO-1100` now takes pins from `stm32-data` and breaks the examples on purpose. `AET-WO-1300` split into `1300`, `1301` and `1302`, and `AET-WO-2101` split from `2100`. `AET-WO-1400`'s harness now comes from the specification. `AET-WO-1600` widened. The P1 gate's first clause now names a routed board and spec-derived DRC rules. §6 gained three cadence rules and a spend-by-tier table | Rulings on Argon's review of `main` at 9818c4f, with the matching `architecture.md` amendments of the same date. The gate change strengthens a clause and weakens none. The tier table exists because builds are paused for budget, and the cheapest safe builder for each work order is now a planning input |
 
 ## 9. Provenance
 
