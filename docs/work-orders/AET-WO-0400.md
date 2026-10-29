@@ -52,6 +52,7 @@ Write the encoder and the strict decoder in `aethelgard-chaos` itself, with no C
   - an array has at most 65,536 elements;
   - a string has at most 1 MiB;
   - nesting is at most 8 deep.
+- **Each file is consumed exactly.** `manifest.cbor` and `mirror.cbor` are one item each, with nothing after it, and `trace.cbor` ends exactly at the end of its last event. Trailing bytes, padding included, are refused.
 - Every refusal is a typed error carrying the byte offset.
 - **The defining property:** for every byte string the decoder accepts, encoding the decoded value gives back the same bytes. Test it directly.
 
@@ -64,7 +65,7 @@ A run directory holds exactly these entries:
     - `run_id` is a 16-byte byte string the caller supplies.
     - `time_unit` is the text `"ns"`, the only unit version 1 admits.
     - `artifacts` is an array of `[name, sha256]` pairs, sorted by name, with names unique. Each `sha256` is a 32-byte byte string. These are the hashes of what the run judged (`INV-03`).
-  - **Events:** `[kind, timestamp, …payload]`. `timestamp` is an unsigned integer in `time_unit`. Timestamps never decrease; equal timestamps are allowed, and file order then decides.
+  - **Events:** `[kind, timestamp, …payload]`. `timestamp` is an unsigned integer in `time_unit`. Timestamps never decrease; equal timestamps are allowed, and file order then decides. File order is the order the simulator produced, which is causal: a register write and the pin change it causes can share a nanosecond. So events are never re-sorted by any other key. Keeping that order deterministic is the writer's obligation, and the golden test (§1.7) proves it.
 
     | kind | name | payload |
     |---|---|---|
@@ -74,7 +75,7 @@ A run directory holds exactly these entries:
     | 3 | analog sample | `net` (text), `microvolts` (any `i64`) |
     | 4 | fault injected | `scenario` (text), `detail` (text) |
 
-    Pin, net and scenario names are 1 to 64 bytes of printable ASCII `0x21`–`0x7E`, the set `RUL-14` rules. An unknown kind, or a payload of the wrong length or type, is refused, never skipped.
+    Pin, net and scenario names are 1 to 64 bytes of printable ASCII `0x21`–`0x7E`, the set `RUL-14` rules. `detail` is 0 to 1,024 bytes of printable ASCII with space, `0x20`–`0x7E`, so no text in a trace has two Unicode spellings. An unknown kind, or a payload of the wrong length or type, is refused, never skipped.
 - **`manifest.cbor`:** `["aethelgard-manifest", 1, trace_bytes, trace_sha256, event_count, state_hash]`. It is written last, and is what makes the run committed.
 - **`mirror.cbor`, optional:** `["aethelgard-mirror", 1, uploaded, reason]`. It is written after the commit (§1.5), and replay never reads it.
 
@@ -211,7 +212,7 @@ Add `crates/aethelgard-chaos/README.md` covering:
 - A CLI subcommand that records or replays.
 - Compression, retention, sampling or garbage collection. Sampling touches `INV-04` and is Scotty's ruling under `OQ-03`.
 - Authenticity. The manifest proves integrity, that the bytes are the ones committed. It does not prove who committed them. Signing is a later ruling.
-- A Python writer. The format is chosen so one can exist; none is written here.
+- A second writer. The archive has one writer, the Rust orchestrator (`RUL-06`). Renode's hooks will send it events over the bridge.
 
 ## 5. Adversarial pass — targeted, at the integrity tier
 
