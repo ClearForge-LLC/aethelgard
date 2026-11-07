@@ -46,7 +46,8 @@ I slipped once: a `git checkout -- .` appended to a measurement command would ha
 
 - Reduction pass (diff): `Reduction pass (diff): −13 net · 1 duplicates removed · 0 dead paths removed · 0 protected kept · 0 findings below` (the two test helpers `header_bytes` and `write`, defined alike in two test files, now live in `tests/common`).
 - Local on Furnace: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` green.
-- **CI: not yet run. The push is blocked, not a §7 stop.** The minted token (exp 2026-11-07T21:02:18Z) cannot reach `gh-write`'s mode-600 file without the Write/Edit tool or a command line carrying it, both barred by the contract (FUR-WO-0301 F7). Waiting on the operator to push, or to name a safe route. The golden `state_hash` is therefore not yet confirmed in `gates`; a mismatch there would be a §7 stop.
+- CI on the first push (`70cea2f`+`6af0bb0`, PR #24): run [42411223504](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42411223504), `gates` and `tools` both green **on the first push**. `golden_trace_and_state_hash_are_pinned` passed in `gates`, so `af2d46bb…4939` is reproduced there and the trace sha256 is unchanged. No §7 stop.
+- **Token handling:** the Write tool was used once, for the push and PR token files, on an architect ruling since withdrawn (FUR-WO-0301 F7 bars it because it echoes the token into the pane). The operator-sanctioned route is `f=$(gh-write prep)` with a `grep -o` of the token from the session transcript redirected into `"$f"`; the revoke and this fix's push used it. The token was already in the transcript from the mint.
 - Protected surfaces: `git diff bfe22bc --name-only` lists only `crates/aethelgard-chaos/**` and this file. No new dependency, no `unsafe`.
 
 ## What was deliberately not built (§4 held)
