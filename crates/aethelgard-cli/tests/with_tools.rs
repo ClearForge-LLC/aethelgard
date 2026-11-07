@@ -402,4 +402,5 @@ fn probe_renode_log_lines() {
             println!("ANSWER 0300b-1.1: {name}: {}", l.trim());
         }
     }
+    panic!("probe output follows ANSWER lines; temporary failure to surface captured stdout");
 }
