@@ -123,7 +123,11 @@ P0 ──> P1 ──> P2 ──> P3
   - **The prior is therefore a deterministic grid router in Rust inside `aethelgard-eda`.** It also gives the twin exact segment geometry for parasitics.
   - Argon's sizing, about 150 lines and under 5 ms, is unmeasured. Escape routing from the 0.5 mm-pitch package is where it will be tested.
 - `AET-WO-1400` — spike, then build: the generated typestate board crate (`RUL-04`). The spike answers `OQ-04` with a harness over a harness-owned register image that catches one seeded typestate bug, or shows that it cannot, and records which. **The proof harness is generated from the specification, never taken from the crate under proof** (`INV-07`). `prove` reads Kani's exit 0 honestly, but a crate that supplies its own trivial harness earns that exit 0 legitimately. The harness is named by its full path, so `prove` always passes `--exact`. Argon raised this at its review of `main` at 9818c4f.
-- `AET-WO-1500` — the `aethelgard mcp` subcommand: `rmcp` over stdio, with the tool list generated from the command tree so the CLI and MCP surfaces cannot drift (`RUL-10`). Depends on `AET-WO-0300a` and `AET-WO-0300b`. The `mcp` subcommand maps every tool to a `clap` subcommand and never forwards raw arguments (`architecture.md` §6). It also adds the `aethelgard` binary to the published tools image, so one pull gives a user or an agent both the engine and its tools. Runs in parallel with everything else in P1; nothing in P1 depends on it except the launch-readiness clause.
+- `AET-WO-1500` — the `aethelgard mcp` subcommand: `rmcp` over stdio, with the tool list generated from the command tree so the CLI and MCP surfaces cannot drift (`RUL-10`). Written, build-only. Depends on `AET-WO-0300a` and `AET-WO-0300b`, both merged.
+  - **Calls.** Each tool call runs the binary itself, as a child, with an argument vector built only from that subcommand's declared arguments. So `mcp` maps every tool to a `clap` subcommand and never forwards raw arguments (`architecture.md` §6), and every call keeps the CLI's sandbox and exit codes.
+  - **The proof.** A stdio protocol test in CI proves the gate's MCP clause, and MCP Inspector is the documented human check.
+  - **Parallel.** It runs in parallel with everything else in P1. Nothing in P1 depends on it except the launch-readiness clause.
+- `AET-WO-1501` — reserved: adds the `aethelgard` binary to the published tools image, so one pull gives a user or an agent both the engine and its tools. **Split from `AET-WO-1500`,** because it changes `container/` and the publish job (`RUL-15`), which `AET-WO-1500`'s fence protects. The launch-readiness clause depends on it.
 - `AET-WO-1600` — intent, inserted at review of PR #15: a host-side system-call allowlist for the tool sandbox, closing the non-socket channels `architecture.md` §6 lists as open on a host (System V shared memory, user namespaces, `pidfd_open`). At Argon's review of `main` at 9818c4f it also gained `ptrace`, `process_vm_readv`, `process_vm_writev` and `pidfd_getfd`, which Landlock already confines across domains, so this is defence in depth, not a gap. It also gained dropping every capability before `exec`. It must merge before the launch-readiness clause puts a crates.io-installed binary on hosts. Until then, the published image is the supported boundary for tool subcommands.
 
 **Exit gate**
@@ -198,6 +202,7 @@ Three rules added at Argon's review, each learned from a work order that ran wit
 | `AET-WO-1300` … `AET-WO-1302` | strong | full on the DRC rule injection | headless place and route is unknown, and the rule injection is `INV-07` |
 | `AET-WO-1400` | strong | full | Kani over generated `unsafe` is the proof the project leans on |
 | `AET-WO-1500` | cheap | full, by a strong reviewer, on the argv rule | a thin layer over the `clap` tree, but it is the agent-facing trust boundary (Argon's tier) |
+| `AET-WO-1501` | cheap | targeted: the published image still passes smoke under `--network none` | packaging, inside `RUL-15`'s existing publish path |
 | `AET-WO-1600` | strong | full | the host sandbox is a trust boundary, in hand-assembled BPF |
 | `AET-WO-2100` | cheap once `AET-WO-1100` lands | targeted | platform emission is text generation, checked by Renode itself |
 | `AET-WO-2101`, `AET-WO-2200`, `AET-WO-2300` | strong | full | `OQ-02` is where a simulation runs but measures nothing (§3) |
@@ -220,7 +225,7 @@ Rows of **number as built → what it actually was → what the roadmap had plan
 | `AET-WO-0400a` | inserted at review of PR #21, written: adversarial findings 1, 2 and 3 | none; `AET-WO-0400`'s adversarial pass |
 | **P0 gate** | **passed.** Planned: `0100`, `0200`, `0300`, `0400`. Inserted: `0300a`, `0300b`. All six merged, and every gate clause is owned by merged work. `0400a` is a post-gate refinement. The one deliberate gap is still the `build` subcommand (see the `0300` row) | the plan's four work orders |
 | `AET-WO-1100` … `AET-WO-1400` | reserved, `1200` and `1400` now spike-then-build. `1100` written build-only, and `1101` split from it for the pin table, after the architect's licence check. `1300` split into `1300`, `1301` and `1302` at Argon's review, because a DRC that must exit 0 needs a placed and routed board | Argon drafts: `AET-WO-1001` … `AET-WO-1004` |
-| `AET-WO-1500` | reserved: the `mcp` subcommand of the CLI binary, moved from P0 to P1 | Argon drafts: part of `AET-WO-0003`, a separate server crate |
+| `AET-WO-1500` | written, build-only: the `mcp` subcommand of the CLI binary, moved from P0 to P1. The image half was split out as `1501` | Argon drafts: part of `AET-WO-0003`, a separate server crate |
 | `AET-WO-2100` … `AET-WO-2300` | reserved as intent pending the `OQ-02` spike. `2101` split from `2100` at Argon's review to hold that spike | Argon drafts: `AET-WO-2001` … `AET-WO-2003`, fully scoped |
 | `AET-WO-3100` … `AET-WO-3300` | reserved as intent | Argon drafts: `AET-WO-3001` … `AET-WO-3003`, fully scoped |
 
@@ -241,6 +246,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | 2026-11-07 | §5, §6, §7 | `AET-WO-1100` written build-only. `AET-WO-1101` split from it for the pin table, taken from ST's own BSD-3-Clause data. Tier rows updated | The licence question that held `AET-WO-1100` is answered (`architecture.md` §2.8), and a separate pin-table work order keeps each build small enough for a cheap builder |
 | 2026-11-07 | §7 | `AET-WO-0300b` reconciled as built | PR #18 merged. The cheap-builder tier held on its first pilot |
 | 2026-11-07 | §5, §6, §7 | `AET-WO-0400` reconciled as built. `AET-WO-0400a` inserted. The P0 gate is marked passed after the phase-boundary audit | PR #21 merged. Every P0 clause is owned by merged work. The audit counted four planned and two inserted work orders, all merged, and one deliberate gap |
+| 2026-11-07 | §5, §6, §7 | `AET-WO-1500` written build-only. `AET-WO-1501` split from it to add the binary to the published image | The image change touches `container/` and the publish job, which a cheap builder on the `mcp` work order should not. Splitting keeps each fence simple |
 
 ## 9. Provenance
 
