@@ -155,6 +155,18 @@ fn main() -> ExitCode {
         diagnose(&format!("cannot set the parent-death signal: {e}"));
         return ExitCode::from(EXIT_INTERNAL);
     }
+    // A parent that died before the line above never sends the signal. `mcp`
+    // names itself, so its CLI checks once more, now that the signal is armed.
+    if let Some(named) = std::env::var_os(run::PARENT_PID_VAR) {
+        let Some(parent) = run::pid_arg(&named) else {
+            let message = format!("{} is not a pid", run::PARENT_PID_VAR);
+            return emit(&Refusal::new("UsageError", None, message), EXIT_USAGE);
+        };
+        if std::os::unix::process::parent_id() != parent {
+            diagnose("the process that started this one is gone");
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    }
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(err)

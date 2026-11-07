@@ -36,12 +36,17 @@ use rustix::process::{
     Pid, Signal, WaitOptions, getpid, kill_process, kill_process_group, set_child_subreaper,
     waitpid,
 };
-
-/// The argument that tells the reaper and the guardian the CLI's pid.
-pub const CLI_PID_ARG: &str = "--cli-pid";
 use seccompiler::{BpfProgram, apply_filter, sock_filter};
 
 use crate::{EXIT_TOOL_ERROR, EXIT_TOOL_UNAVAILABLE, EXIT_UNREADABLE};
+
+/// The argument that tells the reaper and the guardian the CLI's pid.
+pub const CLI_PID_ARG: &str = "--cli-pid";
+
+/// The variable through which `mcp` tells each CLI it starts its own pid, so a
+/// CLI whose parent died before it armed its parent-death signal sees that at
+/// once. Internal, like the first arguments: not part of the contract.
+pub const PARENT_PID_VAR: &str = "AETHELGARD_INTERNAL_PARENT_PID";
 
 /// The first argument that turns this binary into a reaper. It is not a
 /// subcommand, so it never appears in the command tree.
@@ -392,17 +397,14 @@ struct Internal {
     tool: Vec<OsString>,
 }
 
-/// A pid as the CLI writes it: decimal digits, no sign, not zero, at most
-/// `i32::MAX`. Anything else is `None`, so the parse exits 64.
-fn pid_arg(arg: Option<&OsString>) -> Option<u32> {
-    let s = arg?.to_str()?;
-    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+/// A pid exactly as this binary writes one: decimal digits with no sign and no
+/// leading zero, at most `i32::MAX`. Anything else is `None`, a refusal.
+pub(crate) fn pid_arg(arg: &OsStr) -> Option<u32> {
+    let s = arg.to_str()?;
+    if s.starts_with('0') || !s.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
-    s.parse::<i32>()
-        .ok()
-        .filter(|&p| p > 0)
-        .map(i32::unsigned_abs)
+    s.parse::<i32>().ok().map(i32::unsigned_abs)
 }
 
 fn parse_internal(args: &[OsString]) -> Internal {
@@ -411,7 +413,14 @@ fn parse_internal(args: &[OsString]) -> Internal {
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.to_str() {
-            Some(CLI_PID_ARG) => cli_pid = Some(pid_arg(it.next()).unwrap_or_else(|| exit(64))),
+            // Once only: a second pid could only contradict the first.
+            Some(CLI_PID_ARG) if cli_pid.is_none() => {
+                cli_pid = Some(
+                    it.next()
+                        .and_then(|a| pid_arg(a))
+                        .unwrap_or_else(|| exit(64)),
+                );
+            }
             Some("--status") => status = it.next().map(PathBuf::from),
             Some("--ro") => read_only.extend(it.next().map(PathBuf::from)),
             Some("--rw") => read_write.extend(it.next().map(PathBuf::from)),
@@ -526,14 +535,19 @@ fn kill_descendants() {
 /// Never returns.
 pub fn guard_main(args: &[OsString]) -> ! {
     let (cli_pid, dir) = match args {
-        [flag, pid, dir] if flag == CLI_PID_ARG => (pid_arg(Some(pid)), PathBuf::from(dir)),
+        [flag, pid, dir] if flag == CLI_PID_ARG => (pid_arg(pid), PathBuf::from(dir)),
         _ => exit(64),
     };
     let Some(cli_pid) = cli_pid else { exit(64) };
-    if !dir
-        .file_name()
-        .and_then(OsStr::to_str)
-        .is_some_and(|n| n.starts_with("aethelgard-"))
+    // The path must end in its own `aethelgard-*` name: `file_name` reads past a
+    // trailing `/` or `/.`, and with either `remove_dir_all` follows a symlink.
+    let raw = dir.as_os_str().as_encoded_bytes();
+    if raw.ends_with(b"/")
+        || raw.ends_with(b"/.")
+        || !dir
+            .file_name()
+            .and_then(OsStr::to_str)
+            .is_some_and(|n| n.starts_with("aethelgard-"))
     {
         exit(64);
     }

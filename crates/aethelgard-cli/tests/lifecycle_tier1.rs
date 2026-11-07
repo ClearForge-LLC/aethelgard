@@ -1,37 +1,23 @@
 //! Tier 1 of `AET-WO-0300c` §1.5: the reaper and the guardian learn the CLI's pid from the CLI
 //! (`--cli-pid`), never by sampling their parent, and the guardian starts before its directory.
+//! A CLI told its parent's pid checks it once its parent-death signal is armed.
 
 mod common;
 
 use std::ffi::OsString;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::os::unix::fs::{PermissionsExt, symlink};
+use std::path::Path;
+use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use common::{alive, eventually};
+use common::{Scratch, alive, eventually, example, stat_fields};
 
 const BIN: &str = env!("CARGO_BIN_EXE_aethelgard");
 const REAPER: &str = "--aethelgard-internal-reaper";
 const GUARD: &str = "--aethelgard-internal-guard";
 const SYSTEM_DIRS: [&str; 6] = ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc"];
-
-struct Dir(PathBuf);
-
-impl Dir {
-    fn new(label: &str) -> Dir {
-        let p = std::env::temp_dir().join(format!("aet-life-{}-{label}", std::process::id()));
-        let _ = fs::remove_dir_all(&p);
-        fs::create_dir_all(&p).unwrap();
-        Dir(fs::canonicalize(p).unwrap())
-    }
-}
-
-impl Drop for Dir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+const PARENT_PID_VAR: &str = "AETHELGARD_INTERNAL_PARENT_PID";
 
 /// The pid of a process that has exited and been reaped.
 fn dead_pid() -> u32 {
@@ -41,14 +27,24 @@ fn dead_pid() -> u32 {
     pid
 }
 
-/// Runs the reaper with `cli_pid` (or no pid argument at all) on a tool that creates `marker`.
-/// Returns its exit code and, read while it is a zombie, the minor page faults of the children
-/// it waited for (`cminflt`, `proc(5)`): zero exactly when it started no process at all.
-fn reaper(dir: &Path, cli_pid: Option<&str>, marker: &Path) -> (Option<i32>, u64) {
+/// Waits for `child` to exit. Returns its exit code and, read while it is a zombie, the minor
+/// page faults of the children it waited for (`cminflt`, `proc(5)`): zero exactly when it
+/// started no process at all.
+fn exit_and_child_faults(mut child: Child) -> (Option<i32>, u64) {
+    let mut child_faults = None;
+    eventually("the process to exit", || {
+        let f = stat_fields(child.id()).unwrap();
+        // Field 3 is the state, field 11 cminflt.
+        child_faults = (f[0] == "Z").then(|| f[8].parse().unwrap());
+        child_faults.is_some()
+    });
+    (child.wait().unwrap().code(), child_faults.unwrap())
+}
+
+/// Runs the reaper with `pid_args` before its other arguments, on a tool that creates `marker`.
+fn reaper(dir: &Path, pid_args: &[&str], marker: &Path) -> (Option<i32>, u64) {
     let mut args: Vec<OsString> = vec![REAPER.into()];
-    if let Some(pid) = cli_pid {
-        args.extend(["--cli-pid".into(), pid.into()]);
-    }
+    args.extend(pid_args.iter().map(OsString::from));
     args.extend(["--status".into(), dir.join("status").into()]);
     for d in SYSTEM_DIRS {
         args.extend(["--ro".into(), d.into()]);
@@ -60,7 +56,7 @@ fn reaper(dir: &Path, cli_pid: Option<&str>, marker: &Path) -> (Option<i32>, u64
         ": > \"$0\"".into(),
         marker.into(),
     ]);
-    let mut child = Command::new(BIN)
+    let child = Command::new(BIN)
         .args(args)
         .env_clear()
         .stdin(Stdio::null())
@@ -68,27 +64,14 @@ fn reaper(dir: &Path, cli_pid: Option<&str>, marker: &Path) -> (Option<i32>, u64
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    let mut child_faults = None;
-    eventually("the reaper to exit", || {
-        let stat = fs::read_to_string(format!("/proc/{}/stat", child.id())).unwrap();
-        let rest: Vec<&str> = stat
-            .rsplit_once(')')
-            .unwrap()
-            .1
-            .split_whitespace()
-            .collect();
-        // Field 3 is the state, field 11 cminflt.
-        child_faults = (rest[0] == "Z").then(|| rest[8].parse().unwrap());
-        child_faults.is_some()
-    });
-    (child.wait().unwrap().code(), child_faults.unwrap())
+    exit_and_child_faults(child)
 }
 
 #[test]
 fn a_reaper_started_with_a_dead_clis_pid_exits_70_and_spawns_nothing() {
-    let dir = Dir::new("reaper-dead");
+    let dir = Scratch::new("reaper-dead");
     let marker = dir.0.join("ran");
-    let (code, child_faults) = reaper(&dir.0, Some(&dead_pid().to_string()), &marker);
+    let (code, child_faults) = reaper(&dir.0, &["--cli-pid", &dead_pid().to_string()], &marker);
     assert_eq!(code, Some(70));
     assert_eq!(child_faults, 0, "the reaper started a process");
     // The trampoline creates the status file first thing; the tool creates the marker.
@@ -96,7 +79,8 @@ fn a_reaper_started_with_a_dead_clis_pid_exits_70_and_spawns_nothing() {
     assert!(!marker.exists(), "the tool ran");
 
     // The control: with its real parent's pid the same reaper runs the tool.
-    let (code, child_faults) = reaper(&dir.0, Some(&std::process::id().to_string()), &marker);
+    let me = std::process::id().to_string();
+    let (code, child_faults) = reaper(&dir.0, &["--cli-pid", &me], &marker);
     assert_eq!(code, Some(0));
     assert!(
         child_faults > 0,
@@ -107,11 +91,13 @@ fn a_reaper_started_with_a_dead_clis_pid_exits_70_and_spawns_nothing() {
 
 #[test]
 fn a_missing_or_malformed_cli_pid_is_refused_with_64() {
-    let dir = Dir::new("reaper-malformed");
+    let dir = Scratch::new("reaper-malformed");
     let marker = dir.0.join("ran");
+    let me = std::process::id().to_string();
     let bad = [
         "",
         "0",
+        "01",
         "-1",
         "+1",
         " 1",
@@ -120,9 +106,13 @@ fn a_missing_or_malformed_cli_pid_is_refused_with_64() {
         "2147483648",
         "99999999999",
     ];
-    for pid in bad.iter().map(|p| Some(*p)).chain([None]) {
-        let (code, _) = reaper(&dir.0, pid, &marker);
-        assert_eq!(code, Some(64), "reaper, pid {pid:?}");
+    let mut cases: Vec<Vec<&str>> = bad.iter().map(|p| vec!["--cli-pid", p]).collect();
+    cases.push(vec![]);
+    cases.push(vec!["--cli-pid"]);
+    cases.push(vec!["--cli-pid", &me, "--cli-pid", &me]);
+    for args in &cases {
+        let (code, _) = reaper(&dir.0, args, &marker);
+        assert_eq!(code, Some(64), "reaper {args:?}");
         assert!(!dir.0.join("status").exists() && !marker.exists());
     }
     // A dead pid where one is well formed: a guardian that wrongly accepted its arguments
@@ -130,24 +120,102 @@ fn a_missing_or_malformed_cli_pid_is_refused_with_64() {
     let dead = dead_pid().to_string();
     let target = dir.0.join("aethelgard-x");
     let target = target.to_str().unwrap();
-    let guards: [&[&str]; 7] = [
+    // `file_name` reads `aethelgard-link` past a trailing `/` or `/.`, through which
+    // `remove_dir_all` would empty the directory the link points at.
+    let victim = dir.0.join("victim");
+    fs::create_dir(&victim).unwrap();
+    fs::write(victim.join("keep"), "x").unwrap();
+    symlink(&victim, dir.0.join("aethelgard-link")).unwrap();
+    let slash = format!("{}/aethelgard-link/", dir.0.display());
+    let dot = format!("{}/aethelgard-link/.", dir.0.display());
+    let guards: [&[&str]; 9] = [
         &[target],
         &["--cli-pid", target],
         &["--cli-pid", "abc", target],
-        &["--cli-pid", "0", target],
         &["--cli-pid", &dead, target, "extra"],
         &["--pid", &dead, target],
         &["--cli-pid", &dead, "/tmp/not-ours"],
+        &["--cli-pid", &dead, &slash],
+        &["--cli-pid", &dead, &dot],
+        &["--cli-pid", &dead, &format!("{target}/..")],
     ];
     for args in guards {
         let out = Command::new(BIN).arg(GUARD).args(args).output().unwrap();
         assert_eq!(out.status.code(), Some(64), "guardian {args:?}: {out:?}");
     }
+    assert!(
+        victim.join("keep").exists(),
+        "a guardian emptied a linked directory"
+    );
+}
+
+/// The adversarial pass's finding 1: a parent that dies before the CLI arms its parent-death
+/// signal never sends it. Told its parent's pid, as `mcp` tells it, the CLI then exits 70
+/// before it starts anything or creates a directory.
+#[test]
+fn a_cli_told_a_dead_parents_pid_exits_70_and_starts_nothing() {
+    let dir = Scratch::new("cli-dead-parent");
+    let tb = dir.0.join("toolbox");
+    let tmp = dir.0.join("tmp");
+    fs::create_dir_all(&tb).unwrap();
+    fs::create_dir(&tmp).unwrap();
+    let marker = dir.0.join("ran");
+    let stub = tb.join("kicad-cli");
+    fs::write(
+        &stub,
+        format!("#!/bin/sh\n: > '{}'\necho 10.0.7\n", marker.display()),
+    )
+    .unwrap();
+    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    let board = dir.0.join("b.kicad_pcb");
+    fs::write(&board, "x").unwrap();
+    let cli = |parent: &str| {
+        let mut cmd = Command::new(BIN);
+        cmd.args(["check", "drc", "--board"])
+            .arg(&board)
+            .env_clear()
+            .env("PATH", &tb)
+            .env("TMPDIR", &tmp)
+            .env(PARENT_PID_VAR, parent)
+            .stdin(Stdio::null());
+        cmd
+    };
+    let child = cli(&dead_pid().to_string())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let (code, child_faults) = exit_and_child_faults(child);
+    assert_eq!(code, Some(70));
+    assert_eq!(child_faults, 0, "the CLI started a process");
+    assert!(!marker.exists(), "the tool ran");
+    assert_eq!(
+        fs::read_dir(&tmp).unwrap().count(),
+        0,
+        "a directory was made"
+    );
+
+    for bad in ["", "0", "01", "x", "-1"] {
+        let out = cli(bad).output().unwrap();
+        assert_eq!(out.status.code(), Some(64), "{bad:?}: {out:?}");
+        let refusal: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(refusal["error"]["kind"], "UsageError", "{refusal}");
+    }
+
+    // The control: the right pid lets the call through.
+    let out = Command::new(BIN)
+        .arg("validate")
+        .arg("--file")
+        .arg(example("sentinel-01-minimal.json"))
+        .env(PARENT_PID_VAR, std::process::id().to_string())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
 }
 
 #[test]
 fn a_guardian_started_before_its_directory_removes_it_when_its_parent_dies() {
-    let dir = Dir::new("guard-dies");
+    let dir = Scratch::new("guard-dies");
     let target = dir.0.join("aethelgard-guarded");
     // The parent starts the guardian, creates the directory only once the guardian is running,
     // lets it see the directory, then dies by SIGKILL.
@@ -173,7 +241,7 @@ fn a_guardian_started_before_its_directory_removes_it_when_its_parent_dies() {
 
 #[test]
 fn a_guardian_waits_for_its_directory_and_exits_0_when_its_parent_removes_it() {
-    let dir = Dir::new("guard-clean");
+    let dir = Scratch::new("guard-clean");
     let target = dir.0.join("aethelgard-guarded");
     let mut guardian = Command::new(BIN)
         .args([GUARD, "--cli-pid", &std::process::id().to_string()])

@@ -230,6 +230,7 @@ async fn drain(mut pipe: impl AsyncRead + Unpin, cap: usize, over: &Notify) -> O
 async fn execute(exe: &PathBuf, args: &[OsString]) -> std::io::Result<Finished> {
     let mut child = Child::new(exe)
         .args(args)
+        .env(run::PARENT_PID_VAR, std::process::id().to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

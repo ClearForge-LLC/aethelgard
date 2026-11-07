@@ -5,11 +5,11 @@ mod common;
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use common::{Client, WAIT, alive, descendants, eventually, example};
+use common::{Client, Scratch, WAIT, alive, descendants, eventually, example, stat_fields};
 use serde_json::{Value, json};
 
 fn text(response: &Value) -> Value {
@@ -179,16 +179,7 @@ fn an_inherited_descriptor_refuses_at_startup_with_exit_4() {
 
 // ------------------------------------------------------- cancellation and shutdown
 
-struct Scratch(PathBuf);
-
 impl Scratch {
-    fn new(label: &str) -> Scratch {
-        let p = std::env::temp_dir().join(format!("aet-mcp-{}-{label}", std::process::id()));
-        let _ = fs::remove_dir_all(&p);
-        fs::create_dir_all(&p).unwrap();
-        Scratch(fs::canonicalize(p).unwrap())
-    }
-
     /// A `kicad-cli` that reports a version and then runs `body` as the check.
     fn stub_kicad(&self, body: &str) {
         let tb = self.0.join("toolbox");
@@ -207,12 +198,6 @@ impl Scratch {
         Client::spawn(|cmd| {
             cmd.env_clear().env("PATH", &tb);
         })
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
     }
 }
 
@@ -371,13 +356,12 @@ fn sigterm_with_no_call_exits_143() {
 /// A process's start time in clock ticks since boot, `None` once it is gone or a zombie. With
 /// the pid it names one process, so a reused pid is never mistaken for a survivor.
 fn start_time(pid: u32) -> Option<u64> {
-    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    let rest = stat.rsplit_once(')')?.1;
-    if rest.trim_start().starts_with('Z') {
-        return None;
-    }
-    // Field 22 of stat; `rest` starts at field 3.
-    rest.split_whitespace().nth(19)?.parse().ok()
+    // Field 22 of stat.
+    stat_fields(pid)
+        .filter(|f| f[0] != "Z")?
+        .get(19)?
+        .parse()
+        .ok()
 }
 
 /// Every live process whose command line or environment holds `marker`, wherever it has been
@@ -467,13 +451,20 @@ fn an_immediate_cancel_storm_leaves_no_process_and_no_directory() {
     stop.store(true, Ordering::Relaxed);
     let seen = sampler.join().unwrap();
 
+    nothing_left(&tmp, &seen, &format!("storm: calls={CALLS}"));
+}
+
+/// Waits for every process in `seen` (pid and start time) and every process naming `tmp` to be
+/// gone, and for `tmp` to hold no `aethelgard-*` directory; kills what survives, prints the
+/// counts after `label`, and fails if anything was left.
+fn nothing_left(tmp: &Path, seen: &std::collections::HashSet<(u32, u64)>, label: &str) {
     let survivors = settle(|| {
         let mut left: Vec<u32> = seen
             .iter()
             .filter(|&&(p, t)| start_time(p) == Some(t))
             .map(|&(p, _)| p)
             .collect();
-        left.extend(marked(&tmp));
+        left.extend(marked(tmp));
         left.sort_unstable();
         left.dedup();
         left
@@ -490,14 +481,14 @@ fn an_immediate_cancel_storm_leaves_no_process_and_no_directory() {
             .args(["-KILL", &p.to_string()])
             .status();
     }
-    let dirs: Vec<String> = fs::read_dir(&tmp)
+    let dirs: Vec<String> = fs::read_dir(tmp)
         .unwrap()
         .flatten()
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| n.starts_with("aethelgard-"))
         .collect();
     println!(
-        "storm: calls={CALLS} descendants_seen={} survivors={} leftover_dirs={}",
+        "{label} descendants_seen={} survivors={} leftover_dirs={}",
         seen.len(),
         survivors.len(),
         dirs.len()
@@ -505,6 +496,42 @@ fn an_immediate_cancel_storm_leaves_no_process_and_no_directory() {
     assert!(
         survivors.is_empty() && dirs.is_empty(),
         "survivors {described:#?}, leftover directories {dirs:?}"
+    );
+}
+
+/// The adversarial pass's finding 1: a server SIGKILLed while its calls are starting, some
+/// CLIs not yet past arming their parent-death signal. Each server gets a burst of calls and
+/// dies 0 to 9.5 ms later; nothing may outlive them.
+#[test]
+fn servers_sigkilled_while_calls_start_leave_nothing() {
+    const SERVERS: u64 = 100;
+    const BURST: usize = 5;
+    let dir = Scratch::new("parent-kill");
+    dir.stub_kicad("exec /bin/sleep 309");
+    let board = dir.0.join("b.kicad_pcb");
+    fs::write(&board, "x").unwrap();
+    let tmp = dir.0.join("tmp");
+    fs::create_dir(&tmp).unwrap();
+    let tb = dir.0.join("toolbox");
+    for i in 0..SERVERS {
+        let mut c = Client::spawn(|cmd| {
+            cmd.env_clear().env("PATH", &tb).env("TMPDIR", &tmp);
+        });
+        c.initialize();
+        for _ in 0..BURST {
+            c.start(
+                "tools/call",
+                json!({"name": "check_drc", "arguments": {"board": board}}),
+            );
+        }
+        std::thread::sleep(Duration::from_micros((i % 20) * 500));
+        signal(c.pid(), "KILL");
+        assert_eq!(wait_exit(&mut c), None);
+    }
+    nothing_left(
+        &tmp,
+        &std::collections::HashSet::new(),
+        &format!("parent-kill: servers={SERVERS} burst={BURST}"),
     );
 }
 
