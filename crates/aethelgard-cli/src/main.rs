@@ -7,6 +7,7 @@
 mod input;
 mod kani;
 mod kicad;
+mod mcp;
 mod renode;
 mod run;
 mod verdict;
@@ -74,6 +75,8 @@ enum Command {
         #[arg(long)]
         platform: PathBuf,
     },
+    /// Serve every other subcommand as an MCP tool on stdin and stdout.
+    Mcp,
 }
 
 #[derive(Subcommand)]
@@ -110,6 +113,9 @@ struct Refusal {
 struct RefusalBody {
     kind: &'static str,
     id: Option<String>,
+    /// The JSON path of the refused field (`InvalidIdentifier` only); absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
     message: String,
 }
 
@@ -120,9 +126,15 @@ impl Refusal {
             error: RefusalBody {
                 kind,
                 id: id.map(str::to_owned),
+                path: None,
                 message,
             },
         }
+    }
+
+    fn at(mut self, path: Option<&str>) -> Self {
+        self.error.path = path.map(str::to_owned);
+        self
     }
 }
 
@@ -167,6 +179,7 @@ fn main() -> ExitCode {
         } => check_kicad(kicad::Check::Erc, &schematic),
         Command::Prove { crate_dir, harness } => prove(&crate_dir, &harness),
         Command::Simulate { platform } => simulate(&platform),
+        Command::Mcp => return mcp::serve(),
     };
     match judged {
         Ok(v) => {
@@ -456,7 +469,7 @@ fn validate(file: Option<&Path>) -> ExitCode {
             0,
         ),
         Err(err) => emit(
-            &Refusal::new(err.kind(), err.id(), err.to_string()),
+            &Refusal::new(err.kind(), err.id(), err.to_string()).at(err.path()),
             EXIT_INVALID_SPEC,
         ),
     }

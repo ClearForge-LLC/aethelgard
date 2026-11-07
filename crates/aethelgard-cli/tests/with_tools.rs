@@ -5,6 +5,8 @@
 
 #![cfg(feature = "with-tools")]
 
+mod common;
+
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
@@ -331,4 +333,62 @@ fn which(tool: &str) -> String {
         .to_str()
         .unwrap()
         .to_owned()
+}
+
+// ---------------------------------------------------------------- through `aethelgard mcp`
+
+/// One tool call through the MCP server; returns the call's `result`.
+fn mcp_call(tool: &str, arguments: Value) -> Value {
+    let mut client = common::Client::spawn(|_| {});
+    client.initialize();
+    let response = client.call(tool, arguments);
+    assert!(response.get("error").is_none(), "{response}");
+    response["result"].clone()
+}
+
+fn mcp_judged(result: &Value, exit_code: i64, verdict: &str) {
+    assert_eq!(result["isError"], false, "{result}");
+    assert_eq!(
+        result["structuredContent"]["exit_code"], exit_code,
+        "{result}"
+    );
+    assert_eq!(
+        result["structuredContent"]["verdict"]["verdict"], verdict,
+        "{result}"
+    );
+}
+
+#[test]
+fn mcp_check_drc_passes_the_clean_board_and_fails_the_violation_without_is_error() {
+    let clean = fixture("drc-clean.kicad_pcb");
+    mcp_judged(
+        &mcp_call("check_drc", serde_json::json!({"board": clean})),
+        0,
+        "pass",
+    );
+    let bad = fixture("drc-violation.kicad_pcb");
+    mcp_judged(
+        &mcp_call("check_drc", serde_json::json!({"board": bad})),
+        1,
+        "fail",
+    );
+}
+
+#[test]
+fn mcp_prove_fails_the_seeded_overflow_without_is_error() {
+    let krate = fixture("kani-smoke");
+    let r = mcp_call(
+        "prove",
+        serde_json::json!({"crate": krate, "harness": "add_overflows"}),
+    );
+    mcp_judged(&r, 1, "fail");
+}
+
+#[test]
+fn mcp_simulate_loads_the_nucleo_board() {
+    let r = mcp_call(
+        "simulate",
+        serde_json::json!({"platform": "@platforms/boards/nucleo_h753zi.repl"}),
+    );
+    mcp_judged(&r, 0, "pass");
 }

@@ -19,11 +19,13 @@ with-tools = []
 aethelgard-ir.workspace = true
 clap.workspace = true
 landlock.workspace = true
+rmcp.workspace = true
 rustix.workspace = true
 seccompiler.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 # Used only by examples/sandbox_probe.rs, tier 1's stand-in tool: a safe
