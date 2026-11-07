@@ -13,7 +13,7 @@ The `aethelgard` binary. It is the contract every caller uses (`docs/architectur
 | `4` | The tool cannot be used: it is not on `PATH`, is not executable, will not report its version, or lacks an environment variable it needs; or the sandbox is unavailable. Never a verdict (`INV-06`) | `ToolMissing` (`id`: the tool), `ToolUnusable` (`id`: the tool, or the missing variable), `SandboxUnavailable` (`id`: `landlock`, `seccomp`, or `descriptors`) |
 | `5` | The tool ran but its output cannot be trusted as a verdict: killed by a signal, an exit code outside the ones measured for it, a missing, unparseable or oversized report or output, or two witnesses that disagree. Never read as pass or fail | `ToolError` (`id`: the tool) |
 | `64` | Usage error: unknown subcommand or flag, missing subcommand or required flag | `UsageError` |
-| `70` | Internal error: the report could not be written to stdout (for example, the reader closed the pipe). Nothing is printed on stdout; the reason goes to stderr | none |
+| `70` | Internal error: the report could not be written to stdout (for example, the reader closed the pipe), the parent-death signal could not be set, or the process that started this one is already gone (see the reaper below). Nothing is printed on stdout; the reason goes to stderr | none |
 
 A stdout closed by the caller (`>&-`) is not an exit-`70` case: the Rust runtime reopens a closed standard descriptor on `/dev/null` before `main` runs, so it behaves exactly like `>/dev/null`, and the exit code still reports the verdict.
 
