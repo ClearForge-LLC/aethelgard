@@ -1,6 +1,6 @@
 # AET-WO-1400 — FEEDBACK
 
-**Branch:** `wo/aet-1400-board-crate` · **Base:** `1b4fe5f` (the merge of PR #37), as the kickoff set it. Live `main` is now `ad27d9e` (AET-WO-0300d, `run.rs`'s guardian retry); it touches no file here and is merged before the build half, with 1200. · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace (x86_64, kernel 7.0.0-38). · **Cadence:** spike half only. §0 is answered below and the branch is **stopped for the architect's ruling**. Nothing from §1 is built. No §7 condition arose: no image change, no target added to the project, nothing under `container/` or `.github/`, no `unsafe` in a workspace crate, no vacuous proof, no `assume` that excludes a seeded bug.
+**Branch:** `wo/aet-1400-board-crate` · **Base:** `1b4fe5f` (the merge of PR #37), as the kickoff set it. `origin/main` at `7e3ce87` (AET-WO-0300d and its follow-up, #39 and #41) is merged in with a merge commit, `59a7e16`, before the first push, as the architect directed. It touches no file here. 1200 is merged before the build half. · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace (x86_64, kernel 7.0.0-38). · **Cadence:** spike half only. §0 is answered below and the branch is **stopped for the architect's ruling**. Nothing from §1 is built. No §7 condition arose: no image change, no target added to the project, nothing under `container/` or `.github/`, no `unsafe` in a workspace crate, no vacuous proof, no `assume` that excludes a seeded bug.
 
 Entry schema: `finding · where · severity · type · recommendation · decision-needed`.
 
@@ -201,7 +201,7 @@ A Kani proof over a harness-owned register image, substituted for the base addre
 
 ## Gates
 
-Furnace, on the spike diff: `cargo fmt --all -- --check` ok; `cargo clippy --workspace --all-targets --locked -- -D warnings` ok, with `--features aethelgard-cli/with-tools` too; `cargo test --workspace --locked` GATES_TEST. Both spike crates are `cargo fmt`-clean and pass `clippy --all-targets -D warnings` (`--manifest-path`). Tier 2 is accepted from CI: CI_RUN. The adversarial pass (§5) and the reduction pass (§5a) close the build half and are not run on a spike.
+Furnace, on the merged tree (`59a7e16`): `cargo fmt --all -- --check` ok; `cargo clippy --workspace --all-targets --locked -- -D warnings` ok, with `--features aethelgard-cli/with-tools` too; `cargo test --workspace --locked` ok, 309 passed and 0 failed across 29 test targets in 17.3 s, with inherited descriptors above 2 closed as `ci.yml` does. Both spike crates are `cargo fmt`-clean and pass `clippy --all-targets -D warnings` (`--manifest-path`). Tier 2 is accepted from CI: CI_RUN. The adversarial pass (§5) and the reduction pass (§5a) close the build half and are not run on a spike.
 
 ## Promote-or-needs-none pass over `AET-WO-1200`'s FEEDBACK
 
