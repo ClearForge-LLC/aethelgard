@@ -216,6 +216,8 @@ pub fn solve_with_limit(
         };
         out.gpio.insert(cs.net.to_owned(), pin.to_owned());
     }
+    // belt-and-suspenders: the search already keeps every rule `validate`
+    // checks; this refuses rather than emits if a change to it ever breaks one.
     out.validate().map_err(SolveError::InvalidSpecification)?;
     Ok(out)
 }

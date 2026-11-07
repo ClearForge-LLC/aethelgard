@@ -472,6 +472,14 @@ fn an_invalid_specification_hash_or_part_is_refused_before_the_search() {
 }
 
 #[test]
+fn a_malformed_hash_is_refused_before_the_search_finds_infeasibility() {
+    let s = spec(vec![i2c("A"), i2c("B"), i2c("C"), i2c("D")], vec![], vec![]);
+    assert_eq!(refused(&s).kind(), "Infeasible");
+    let err = solve(&s, &table(), "not-a-hash").unwrap_err();
+    assert_eq!(err.kind(), "MalformedSpecificationHash");
+}
+
+#[test]
 fn refusals_come_in_the_readme_order() {
     // An unknown pin is found before a peripheral problem, which is found
     // before a bus no instance can serve.
