@@ -286,4 +286,4 @@ Its harness:
   - R3: `fn solve` and `fn validate` share their read-parse-validate block (about 12 lines, as a shared helper).
 
   They are worth doing after `AET-WO-0300c` merges.
-- **CI:** pending until the push.
+- **CI**, first push after the ruling (`824acad`): `gates` and `tools` both green, https://github.com/ClearForge-LLC/aethelgard/actions/runs/42423285608 (PR #32). `gates` ran the new tests in its debug profile, so clause 2, clause 4's solver half with the spike's digests, the stress bound and the six-tool MCP list all passed there. Live acceptance is not done; it is the operator's.
