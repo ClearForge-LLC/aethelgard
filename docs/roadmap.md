@@ -88,9 +88,20 @@ P0 ──> P1 ──> P2 ──> P3
 
 **Work orders**
 
-- `AET-WO-1100` — carries `architecture.md` `RUL-14` (identifier set, at least one voltage domain) and `RUL-16` (`Specification` and `SolvedTopology` as separate types, no `HashMap`) as well as the graph itself. The specification graph covers buses, voltage domains, passives with electrical bounds, and round-trip serialization.
-  - **The package pinout and alternate-function table come from ST's MCU database through `stm32-data`, not from the SVD,** which has neither (`architecture.md` §2.1). The work order checks `stm32-data`'s licence, and that of the ST data it carries, before any code depends on either. A licence that does not fit `RUL-11` is a flag-and-stop.
-  - **It breaks today's examples on purpose.** New required fields make `examples/sentinel-01-minimal.json` invalid. The same PR updates both examples, `crates/aethelgard-ir/tests`, `crates/aethelgard-cli/tests/validate_cli.rs` and the `gates` step that validates the examples, so the P0 gate's `validate` clause holds on the new shape.
+- `AET-WO-1100` — written, build-only. It carries `architecture.md` `RUL-14` (the identifier set, at least one voltage domain) and `RUL-16` (`Specification` and `SolvedTopology` as separate types, no `HashMap`). The specification graph is version 1, covering:
+  - the microcontroller;
+  - voltage domains;
+  - I2C and SPI buses, each with an optional hand-pinned signal;
+  - I2C and SPI devices;
+  - the I2C pull-up;
+  - net constraints, with round-trip serialization.
+
+  **It breaks today's examples on purpose.** The same PR rewrites both, keeping their file names so the `gates` step needs no change, and the P0 gate's `validate` clause holds on the new shape.
+- `AET-WO-1101` — reserved, build-only: the microcontroller's pin table.
+  - **The source.** It vendors ST's BSD-3-Clause `STM32_open_pin_data` files for the STM32H753ZI, pinned by commit and sha256 with ST's notice (`architecture.md` §2.8). The pin and alternate-function tables are not in the SVD, which has neither (`architecture.md` §2.1).
+  - **The parse.** `aethelgard-svd-hal` parses the files into an IR pin table. That graduates the crate from the stub checks, with a pure-Rust XML parser as its one new dependency.
+  - **The golden facts.** 114 I/O pins, and PB8 carries `I2C1_SCL` on AF4.
+  - **The order.** It depends on `AET-WO-1100`, and `AET-WO-1200` depends on it.
 - `AET-WO-1200` — spike, then build: the constraint solver (`RUL-02`, whose prior is now a pure-Rust search). The spike measures solve time on the chosen part's full pin table for the search and for SMT. It records both numbers in `architecture.md` §2 by amendment before the build half starts, and it shows two solves of the same specification returning the same assignment.
 - `AET-WO-1300` — spike, then build: the schematic emitter. It emits `.kicad_sch` and the bill of materials, and passes `kicad-cli sch erc --exit-code-violations`. The spike answers two questions:
   - how the board is to be placed and routed headless (split below);
@@ -174,7 +185,8 @@ Three rules added at Argon's review, each learned from a work order that ran wit
 |---|---|---|---|
 | `AET-WO-0300b` | cheap | full on the two changed checks | small and fully specified, but it sits on the verdict path |
 | `AET-WO-0400` | cheap | targeted: forgery, interrupted writes, hostile archives | the format and protocol are ruled; the risk is integrity, not escape |
-| `AET-WO-1100` | cheap, once the architect has checked `stm32-data`'s licence and fixed the types | targeted | data modelling is cheap work once its open questions are closed at the desk (Argon's tier) |
+| `AET-WO-1100` | cheap | targeted | data modelling, with every rule fixed in the work order (Argon's tier) |
+| `AET-WO-1101` | cheap | targeted: hostile XML, pinned-hash refusal | a parse of two pinned files, checked against golden facts |
 | `AET-WO-1200` | strong for the spike, cheap for the build if the ruling is tight | targeted: determinism, conflict naming | a wrong assignment is caught by the P1 gate, not hidden |
 | `AET-WO-1300` … `AET-WO-1302` | strong | full on the DRC rule injection | headless place and route is unknown, and the rule injection is `INV-07` |
 | `AET-WO-1400` | strong | full | Kani over generated `unsafe` is the proof the project leans on |
@@ -198,7 +210,7 @@ Rows of **number as built → what it actually was → what the roadmap had plan
 | `AET-WO-1600` | inserted at review of PR #15, intent: a host-side system-call allowlist; widened at Argon's review | none; the non-socket channels `AET-WO-0300a` measured as still open on a host |
 | `AET-WO-0300b` | inserted at Argon's review, written, build-only: refuse Renode `[ERROR]` lines on a load, and cap the `prove` crate copy | none; Argon's red-team findings RT-02 and RT-04 |
 | `AET-WO-0400` | written spike-first and held for budget, then rewritten after Argon's review as build-only in deterministic CBOR (`RUL-06` as amended), which answers its spike's format question | Argon drafts: `AET-WO-0004`, R2-primary, Cap'n Proto |
-| `AET-WO-1100` … `AET-WO-1400` | reserved, `1200` and `1400` now spike-then-build. `1300` split into `1300`, `1301` and `1302` at Argon's review, because a DRC that must exit 0 needs a placed and routed board | Argon drafts: `AET-WO-1001` … `AET-WO-1004` |
+| `AET-WO-1100` … `AET-WO-1400` | reserved, `1200` and `1400` now spike-then-build. `1100` written build-only, and `1101` split from it for the pin table, after the architect's licence check. `1300` split into `1300`, `1301` and `1302` at Argon's review, because a DRC that must exit 0 needs a placed and routed board | Argon drafts: `AET-WO-1001` … `AET-WO-1004` |
 | `AET-WO-1500` | reserved: the `mcp` subcommand of the CLI binary, moved from P0 to P1 | Argon drafts: part of `AET-WO-0003`, a separate server crate |
 | `AET-WO-2100` … `AET-WO-2300` | reserved as intent pending the `OQ-02` spike. `2101` split from `2100` at Argon's review to hold that spike | Argon drafts: `AET-WO-2001` … `AET-WO-2003`, fully scoped |
 | `AET-WO-3100` … `AET-WO-3300` | reserved as intent | Argon drafts: `AET-WO-3001` … `AET-WO-3003`, fully scoped |
@@ -217,6 +229,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | 2026-10-21 | §5, §7 | `AET-WO-0300` reconciled as built. `AET-WO-0300a` inserted, and `AET-WO-1500` made to depend on it | PR #12 merged. The insertion closes a sandbox gap that its adversarial pass measured, before an agent-facing surface can reach it |
 | 2026-10-21 | §5, §7 | `AET-WO-0300a` reconciled as built. `AET-WO-1600` inserted as intent, and the launch-readiness clause made to depend on it | PR #15 merged. Host use of the tool subcommands still has non-socket channels open, and a crates.io install is host use |
 | 2026-10-29 | §5, §6, §7 | Inserted `AET-WO-0300b`. `AET-WO-0400` made build-only in CBOR. `AET-WO-1100` now takes pins from `stm32-data` and breaks the examples on purpose. `AET-WO-1300` split into `1300`, `1301` and `1302`, and `AET-WO-2101` split from `2100`. `AET-WO-1400`'s harness now comes from the specification. `AET-WO-1600` widened. The P1 gate's first clause now names a routed board and spec-derived DRC rules. §6 gained three cadence rules and a spend-by-tier table | Rulings on Argon's review of `main` at 9818c4f, with the matching `architecture.md` amendments of the same date. The gate change strengthens a clause and weakens none. The tier table exists because builds are paused for budget, and the cheapest safe builder for each work order is now a planning input. Argon's answers to the architect's follow-up questions reached the `AET-WO-1302` line (routing) and the `AET-WO-2101` line (the I2C model, read at source in `architecture.md` §2.7). Its tier table moved `1100` and `1500` to cheap builders |
+| 2026-11-07 | §5, §6, §7 | `AET-WO-1100` written build-only. `AET-WO-1101` split from it for the pin table, taken from ST's own BSD-3-Clause data. Tier rows updated | The licence question that held `AET-WO-1100` is answered (`architecture.md` §2.8), and a separate pin-table work order keeps each build small enough for a cheap builder |
 
 ## 9. Provenance
 
