@@ -20,10 +20,17 @@ const MEMBERS: [&str; 7] = [
     "crates/aethelgard-cli",
 ];
 
-/// Every member but `ir` (first) and `cli` (last); the order is pinned by
+const CHAOS: &str = "crates/aethelgard-chaos";
+
+/// Every member but `ir` (first), `cli` (last) and `chaos`, which graduated
+/// from the stub checks in `AET-WO-0400`; the order is pinned by
 /// `members_are_exactly_the_seven_parts`.
-fn libraries() -> &'static [&'static str] {
-    &MEMBERS[1..6]
+fn libraries() -> Vec<&'static str> {
+    MEMBERS[1..6]
+        .iter()
+        .copied()
+        .filter(|m| *m != CHAOS)
+        .collect()
 }
 
 const LIBRARY_DEPENDENCIES: [&str; 3] = ["aethelgard-ir", "serde", "thiserror"];
@@ -197,6 +204,37 @@ fn ir_depends_on_no_other_member() {
         assert!(
             !name.starts_with("aethelgard"),
             "aethelgard-ir depends on {name}"
+        );
+    }
+}
+
+/// `aethelgard-chaos` holds the trace archive (`AET-WO-0400`), so it is no
+/// longer a re-export stub. It is held to a smaller rule instead: its files,
+/// its manifest keys and its dependencies are fixed.
+#[test]
+fn chaos_has_only_its_known_files_keys_and_dependencies() {
+    for file in files(&root().join(CHAOS)) {
+        let allowed = file == "Cargo.toml"
+            || file == "README.md"
+            || (file.starts_with("src/") && file.ends_with(".rs"))
+            || (file.starts_with("tests/") && file.ends_with(".rs"));
+        assert!(allowed, "chaos has a file outside the allowed set: {file}");
+    }
+    let chaos = manifest(CHAOS);
+    for key in chaos.keys() {
+        assert!(
+            ["package", "dependencies", "lints"].contains(&key.as_str()),
+            "chaos sets [{key}]"
+        );
+    }
+    let mut names = dependency_names(&chaos);
+    names.sort();
+    assert_eq!(names, ["sha2", "thiserror"]);
+    for (name, dep) in chaos["dependencies"].as_table().unwrap() {
+        assert_eq!(
+            dep.get("workspace").and_then(Value::as_bool),
+            Some(true),
+            "chaos dependency {name} is not from the workspace table"
         );
     }
 }
