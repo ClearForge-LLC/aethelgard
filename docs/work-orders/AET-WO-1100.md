@@ -1,6 +1,6 @@
 # AET-WO-1100 — The specification graph: `Specification` and `SolvedTopology`, fail-closed
 
-**Repo:** `ClearForge-LLC/aethelgard` · **Base:** `main` (named in the kickoff; verify live HEAD before branching).
+**Repo:** `ClearForge-LLC/aethelgard` · **Base:** `main` after `AET-WO-0300b` has merged (named in the kickoff; verify live HEAD before branching). This work order uses the shared input cap that 0300b introduces.
 **Branch:** `wo/aet-1100-specification`.
 **Author:** Claude (architect) · **Builder:** a cheap builder (`docs/roadmap.md` §6, spend by tier), in a fresh session on Furnace.
 **Phase:** P1 (One source, two projections). **Phase exit gate:** `docs/roadmap.md` §5 P1. This work order owns no clause outright. It is the input every clause reads, and it keeps the P0 gate's `validate` clause true on the new shape.
@@ -83,6 +83,8 @@ The JSON shape, version 1. Every key shown is required. A value shown as `null` 
   - Every `Option` field uses `deserialize_with = "Option::deserialize"`, so a missing key is a refusal.
   - Integer widths: `schema_version: u32`, `speed_hz: u32`, `pull_up_ohms: u32`, `address: u8`.
 - **Order is content.** The arrays keep document order, so serialization is a function of content. No `HashMap` or `HashSet` appears in any type (`RUL-16`).
+- **`RUL-16` holds as follows.** The lists in a `Specification` are not keyed collections in `RUL-16`'s sense. They are what a person wrote, in the order they wrote it. Nothing is sorted, unsorted input is accepted, and duplicates are refused by §1.2.
+- **Lists that may be empty.** Every list except `voltage_domains` may be empty: both bus lists, both device lists, and `net_constraints`, as `RUL-14` already rules for the last.
 
 ### 1.2 `Specification::validate`
 
@@ -91,7 +93,7 @@ It returns the first refusal, checking in the order below, and in document order
 | # | Rule | Refusal (`id()` returns) |
 |---|---|---|
 | 1 | `schema_version` is 1 | `UnsupportedSchemaVersion` (none) |
-| 2 | Every identifier is 1 to 64 bytes of printable ASCII `0x21`–`0x7E` (`RUL-14`). The identifiers are the project name, the part, every id, `peripheral` and `pin` where set, every net and net name, every reference, and every name that refers to another item | `InvalidIdentifier` (none). It carries the JSON path of the field, such as `i2c_buses[0].sda.net`. It replaces `EmptyProjectName`, `EmptyDomainId` and `EmptyNetName`, whose cases it covers. Comparisons are now exact, with no trimming, because whitespace is refused |
+| 2 | Every identifier is 1 to 64 bytes of printable ASCII `0x21`–`0x7E` (`RUL-14`). The identifiers, and the order they are checked in, are listed below the table | `InvalidIdentifier` (none). It carries the JSON path of the field, such as `i2c_buses[0].sda.net`. It replaces `EmptyProjectName`, `EmptyDomainId` and `EmptyNetName`, whose cases it covers. Comparisons are now exact, with no trimming, because whitespace is refused |
 | 3 | `voltage_domains` is not empty | `NoVoltageDomain` (none) |
 | 4 | Domains: unique ids, nominal voltage not 0, tolerance in 1..=500 | `DuplicateDomainId`, `ZeroNominalVoltage`, `ToleranceOutOfRange`, as today |
 | 5 | `mcu.supply`, every bus `domain` and every device `supply` names a declared domain | `UnknownDomain` (the name) |
@@ -100,8 +102,20 @@ It returns the first refusal, checking in the order below, and in document order
 | 8 | References are unique across both device lists | `DuplicateReference` (the reference) |
 | 9 | A device's `bus` names a bus of its own kind | `UnknownBus` (the name) |
 | 10 | An I2C address is in `0x08..=0x77` and unique on its bus | `I2cAddressOutOfRange`, `DuplicateI2cAddress` (the device reference) |
-| 11 | A net is declared by exactly one signal across every bus and every `cs` | `DuplicateNetName` (the net) |
-| 12 | Net constraints: unique `net_name`; each names a declared signal net or a voltage domain id; and capacitance, rise time and impedance are not 0, as today | `DuplicateNetName`, `UnknownNet`, `ZeroCapacitance`, `ZeroRiseTime`, `ZeroImpedance` |
+| 11 | A net is declared by exactly one signal across every bus and every `cs`, and no signal net has the same name as a voltage domain id | `DuplicateNetName`, `NetShadowsDomain` (the net) |
+| 12 | Net constraints: unique `net_name`; each names a declared signal net or a voltage domain id; and capacitance, rise time and impedance are not 0, as today | `DuplicateNetConstraint`, `UnknownNet`, `ZeroCapacitance`, `ZeroRiseTime`, `ZeroImpedance` |
+
+**Step 2's identifiers, in check order.** This is §1.1's key order, with each list walked by index:
+1. `project_name`;
+2. `mcu.part`, then `mcu.supply`;
+3. `voltage_domains[i].id`;
+4. for each `i2c_buses[i]`: `id`, `peripheral` if set, `domain`, then for `sda` and then `scl`, `net` followed by `pin` if set;
+5. for each `spi_buses[i]`: `id`, `peripheral` if set, `domain`, then for `sck`, `mosi` and `miso`, `net` followed by `pin` if set;
+6. for each `i2c_devices[i]`: `reference`, `part`, `supply`, `bus`;
+7. for each `spi_devices[i]`: `reference`, `part`, `supply`, `bus`, `cs.net`, then `cs.pin` if set;
+8. `net_constraints[i].net_name`.
+
+The path is written exactly as shown, for example `spi_devices[0].cs.net`. A `SolvedTopology` path is `assignments.<net>` for the key itself, and `assignments.<net>.pin`, `.peripheral` or `.signal` for a value.
 
 `validate` does **not** check:
 - that a part, a peripheral or a pin exists;
@@ -126,18 +140,24 @@ pub struct PinAssignment {
 ```
 
 - Both go through `object_only!`.
-- `SolvedTopology::validate` refuses:
-  - a version other than 1;
-  - a malformed hash;
-  - a non-identifier, under the same rule as §1.2.2;
-  - an alternate function above 15;
-  - one pin assigned to two nets (`DuplicatePin`, naming the pin).
+- `SolvedTopology::validate` refuses, in this order:
+  - a version other than 1: `UnsupportedSchemaVersion`;
+  - a hash that is not exactly 64 lowercase hex digits: `MalformedSpecificationHash`;
+  - a non-identifier, under step 2's rule and path format: `InvalidIdentifier`;
+  - an alternate function above 15: `AlternateFunctionOutOfRange`, naming the net;
+  - one pin assigned to two nets: `DuplicatePin`, naming the pin.
+- **A repeated key in `assignments` is refused at deserialization.** serde's derived `BTreeMap` keeps the last value of a repeated key and drops the first without a word. So `assignments` uses a `deserialize_with` that refuses any key seen twice, and the CLI then reports it like any other schema error. Test it.
 - Nothing in this work order constructs one, outside tests.
 - The CLI's `validate` accepts only a `Specification`. A `SolvedTopology` document given to it is refused by `deny_unknown_fields`, with the same exit code and kind as any other unknown field. Test it.
 
 ### 1.4 The CLI, the examples and the README
 
-- **`validate`** deserializes a `Specification`. Its output and exit codes are unchanged. `InputTooLarge` keeps the cap `AET-WO-0300b` shares.
+- **`validate`** deserializes a `Specification`. Its report keeps the same fields and its exit codes are unchanged. Counts such as `"net_constraints"` follow the new example, so `valid_example_exits_0` and the README's success line are updated to the new numbers. Do not pad the example to keep an old count. `InputTooLarge` uses the shared cap that `AET-WO-0300b` introduced.
+- **Tests that change meaning, and are rewritten rather than deleted:**
+  - in `crates/aethelgard-ir/tests/validate.rs`, the three `refuses_empty_*` tests become `InvalidIdentifier` tests;
+  - the two `…including_whitespace_variants` duplicate tests become tests that a padded id is an `InvalidIdentifier`;
+  - every helper that builds a `TopologyGraph` builds a `Specification`.
+- **The README's sentence on "the trimmed offending id"** is rewritten, because nothing is trimmed any more.
 - **`examples/sentinel-01-minimal.json`** becomes the §1.1 document. **`examples/invalid-zero-domain.json`** becomes the same document with `nominal_millivolts` 0. Both keep their file names, so the `gates` step that validates them needs no change, and `.github/workflows/` stays untouched.
 - **`crates/aethelgard-cli/README.md`:** the `validate` section, and the kinds in the exit-2 row.
 - **`crates/aethelgard-ir`** gains a short `README.md` holding the §1.1 shape and the §1.2 table.
@@ -152,7 +172,10 @@ pub struct PinAssignment {
   - `container/`, `.github/workflows/`;
   - every crate except `aethelgard-ir` and `aethelgard-cli`.
 
-  In `aethelgard-cli`, only `src/main.rs`'s `validate` path, `tests/validate_cli.rs` and `README.md` may change.
+  In `aethelgard-cli`, these may change:
+  - in `src/main.rs`: the `validate` function, the `use aethelgard_ir::…` import, and the `Validate` subcommand's doc comment (which changes `--help`);
+  - `tests/validate_cli.rs`;
+  - `README.md`.
 - One PR, left unmerged. Push with `gh-write`, and batch the pushes.
 
 ## 3. Tests and acceptance, proven not asserted
@@ -193,7 +216,7 @@ Run the `reduction-pass` skill on the finished diff. One line in FEEDBACK's gate
 - the gates line with CI run URLs;
 - what was not built;
 - any rule in §1.2 the build showed to be wrong or missing, as decision-needed, not silently changed;
-- a promote-or-needs-none pass over `AET-WO-0300b`'s and `AET-WO-0400`'s FEEDBACK.
+- a promote-or-needs-none pass over `AET-WO-0300b`'s and `AET-WO-0400`'s FEEDBACK. If either file is absent on the base, record "not yet merged" for it and move on.
 
 ## 7. Flag-and-stop conditions
 
