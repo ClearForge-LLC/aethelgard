@@ -21,7 +21,7 @@ use rmcp::model::{
     Implementation, JsonObject, ListToolsResult, PaginatedRequestParams, ServerCapabilities,
     ServerConfig, Tool,
 };
-use rmcp::service::{RequestContext, RoleServer};
+use rmcp::service::{RequestContext, RoleServer, ServerInitializeError};
 use rmcp::{ServiceExt, transport};
 use serde_json::{Value, json};
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -273,7 +273,8 @@ fn result(done: &Finished) -> CallToolResult {
         |c| format!("exited {c}"),
     );
     if let Some(cap) = done.capped {
-        return error(format!("the child {exit}: {cap}; the call was stopped"));
+        // `exit` describes the kill this module sent, so the cap is named first.
+        return error(format!("{cap}: the call was stopped (the child {exit})"));
     }
     let line = done
         .stdout
@@ -397,8 +398,16 @@ async fn run_server(exe: PathBuf) -> ExitCode {
         leaves: leaves(&command),
         exe,
     };
-    let running = match server.serve(transport::stdio()).await {
+    // Signals are served from the start: a handshake that never comes must not hold them off.
+    let started = tokio::select! {
+        started = server.serve(transport::stdio()) => started,
+        _ = term.recv() => return ExitCode::from(EXIT_SIGTERM),
+        _ = int.recv() => return ExitCode::from(EXIT_SIGINT),
+    };
+    let running = match started {
         Ok(running) => running,
+        // stdin closed before `initialize`: the same clean end as closing it later.
+        Err(ServerInitializeError::ConnectionClosed(_)) => return ExitCode::SUCCESS,
         Err(e) => {
             crate::diagnose(&format!("cannot start the MCP service: {e}"));
             return ExitCode::from(crate::EXIT_INTERNAL);
@@ -671,11 +680,16 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn a_child_that_prints_forever_is_killed_and_drained() {
-        let d = execute(
-            &PathBuf::from("/bin/sh"),
-            &sh("while :; do echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; done"),
+        // A removed notify would hang here, so the wait is bounded.
+        let d = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            execute(
+                &PathBuf::from("/bin/sh"),
+                &sh("while :; do echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; done"),
+            ),
         )
         .await
+        .expect("the cap must stop the child")
         .unwrap();
         assert!(d.capped.unwrap().contains("stdout"));
         assert!(d.stdout.len() <= MAX_STDOUT);
@@ -684,11 +698,16 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn a_child_that_floods_stderr_is_capped_too() {
-        let d = execute(
-            &PathBuf::from("/bin/sh"),
-            &sh("while :; do echo yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy >&2; done"),
+        // A removed notify would hang here, so the wait is bounded.
+        let d = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            execute(
+                &PathBuf::from("/bin/sh"),
+                &sh("while :; do echo yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy >&2; done"),
+            ),
         )
         .await
+        .expect("the cap must stop the child")
         .unwrap();
         assert!(d.capped.unwrap().contains("stderr"));
         assert!(d.stderr.len() <= MAX_STDERR);

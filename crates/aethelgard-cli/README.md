@@ -126,7 +126,7 @@ docker run --rm --network none -v "$PWD:/repo:ro" -w /repo "$IMAGE" target/debug
 
 `aethelgard mcp` serves the other subcommands as [Model Context Protocol](https://modelcontextprotocol.io) tools on stdin and stdout (`RUL-10`, built on `rmcp` 3.7.0 with its `server` and `transport-io` features only). It takes no arguments, listens on no socket, holds no credential, and exits `0` when stdin closes. Stdout carries protocol messages and nothing else; diagnostics go to stderr. It is not a tool itself and adds no tool behaviour.
 
-Before it starts, it runs the trampoline's inherited-descriptor check. A descriptor above 2 without close-on-exec refuses with exit `4`, `SandboxUnavailable`, `id` `descriptors`; the refusal object goes to stderr, since stdout is reserved for the protocol. A `SIGTERM` or `SIGINT` kills the running calls and exits `143` or `130`.
+Before it starts, it runs the trampoline's inherited-descriptor check. A descriptor above 2 without close-on-exec refuses with exit `4`, `SandboxUnavailable`, `id` `descriptors`; the refusal object goes to stderr, since stdout is reserved for the protocol. A `SIGTERM` or `SIGINT` kills the running calls and exits `143` or `130`, from the first moment, handshake or not. Closing stdin before `initialize` also exits `0`. `SIGHUP` and `SIGKILL` are not handled; see the work order's FEEDBACK.
 
 ### The tool list
 
@@ -149,10 +149,10 @@ The server checks the arguments against the schema (declared names only, string 
 For a child that exits and prints exactly one JSON object line:
 
 - `content[0].text` is that line, unchanged, without its newline;
-- `structuredContent` is `{"exit_code": <n or null>, "verdict": <the child's object>}`. `null` means the child was killed by a signal;
+- `structuredContent` (its object keys sorted, so not byte-identical to the text) is `{"exit_code": <n or null>, "verdict": <the child's object>}`. `null` means the child was killed by a signal;
 - `isError` is `false` for exit `0` and `1`, because a fail verdict is a successful call, and `true` for every other exit code. A refusal, such as `ZeroNominalVoltage` (exit `2`), is therefore `isError` `true` with the refusal object as the verdict.
 
-`isError` is also `true`, with no `structuredContent` and a text naming the problem, when the child was killed by a signal or its stdout is not exactly one JSON object line, and when it exceeds a cap: stdout 1 MiB, stderr 64 KiB. Past a cap the server kills the child and keeps draining until the pipes close.
+`isError` is `true` for exit `null` as above. It is also `true`, with no `structuredContent` and a text naming the problem, when stdout is not exactly one JSON object line (a child killed before it printed one, for example), and when it exceeds a cap (the server kills the child, so a legitimate verdict over 1 MiB is reported as the cap): stdout 1 MiB, stderr 64 KiB. Past a cap the server kills the child and keeps draining until the pipes close.
 
 ### Cancellation and bounds
 

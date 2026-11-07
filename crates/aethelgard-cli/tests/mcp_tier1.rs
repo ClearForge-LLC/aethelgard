@@ -317,6 +317,30 @@ fn a_client_that_disconnects_mid_call_leaves_nothing_after_the_grace() {
 }
 
 #[test]
+fn stdin_closed_before_initialize_exits_0() {
+    let mut c = Client::spawn(|_| {});
+    c.stdin = None;
+    assert_eq!(wait_exit(&mut c), Some(0));
+}
+
+#[test]
+fn sigterm_before_initialize_exits_143() {
+    let mut c = Client::spawn(|_| {});
+    // Wait for the handler (SigCgt bit for signal 15), so the signal cannot beat it.
+    let pid = c.pid();
+    eventually("the SIGTERM handler", || {
+        fs::read_to_string(format!("/proc/{pid}/status")).is_ok_and(|s| {
+            s.lines()
+                .find_map(|l| l.strip_prefix("SigCgt:"))
+                .and_then(|m| u64::from_str_radix(m.trim(), 16).ok())
+                .is_some_and(|m| m & (1 << 14) != 0)
+        })
+    });
+    signal(pid, "TERM");
+    assert_eq!(wait_exit(&mut c), Some(143));
+}
+
+#[test]
 fn sigterm_with_no_call_exits_143() {
     let mut c = Client::spawn(|_| {});
     c.initialize();
