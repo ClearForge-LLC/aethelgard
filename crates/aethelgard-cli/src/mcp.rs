@@ -35,6 +35,7 @@ const MAX_STDOUT: usize = 1 << 20;
 /// Stderr is kept for the diagnostic only.
 const MAX_STDERR: usize = 64 << 10;
 /// Exit statuses of a signalled `mcp`: 128 + the signal number.
+const EXIT_SIGHUP: u8 = 129;
 const EXIT_SIGINT: u8 = 130;
 const EXIT_SIGTERM: u8 = 143;
 
@@ -229,6 +230,7 @@ async fn drain(mut pipe: impl AsyncRead + Unpin, cap: usize, over: &Notify) -> O
 async fn execute(exe: &PathBuf, args: &[OsString]) -> std::io::Result<Finished> {
     let mut child = Child::new(exe)
         .args(args)
+        .env(run::PARENT_PID_VAR, std::process::id().to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -385,9 +387,10 @@ pub fn serve() -> ExitCode {
 
 async fn run_server(exe: PathBuf) -> ExitCode {
     use tokio::signal::unix::{SignalKind, signal};
-    let (Ok(mut term), Ok(mut int)) = (
+    let (Ok(mut term), Ok(mut int), Ok(mut hup)) = (
         signal(SignalKind::terminate()),
         signal(SignalKind::interrupt()),
+        signal(SignalKind::hangup()),
     ) else {
         crate::diagnose("cannot install signal handlers");
         return ExitCode::from(crate::EXIT_INTERNAL);
@@ -403,6 +406,7 @@ async fn run_server(exe: PathBuf) -> ExitCode {
         started = server.serve(transport::stdio()) => started,
         _ = term.recv() => return ExitCode::from(EXIT_SIGTERM),
         _ = int.recv() => return ExitCode::from(EXIT_SIGINT),
+        _ = hup.recv() => return ExitCode::from(EXIT_SIGHUP),
     };
     let running = match started {
         Ok(running) => running,
@@ -424,7 +428,8 @@ async fn run_server(exe: PathBuf) -> ExitCode {
             }
         },
         _ = term.recv() => ExitCode::from(EXIT_SIGTERM),
-        _ = int.recv() => ExitCode::from(EXIT_SIGINT)
+        _ = int.recv() => ExitCode::from(EXIT_SIGINT),
+        _ = hup.recv() => ExitCode::from(EXIT_SIGHUP)
     }
 }
 
