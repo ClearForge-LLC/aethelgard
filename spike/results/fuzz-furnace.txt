@@ -1,0 +1,16 @@
+# spike/run.sh fuzz SEED COUNT, release, furnace777, 2f13278, rustc 1.99.1 (58cf8f9c3 2026-10-13)
+seed=777 count=2000 limit=2000000: fc+im+pm solved=782 infeasible=278 prechecked=940 budget=0; disagreements_or_verify_failures=0
+  worst fc: nodes=2451500 secs=0.7449
+  worst fc+im: nodes=1299 secs=0.0006
+  worst fc+pm: nodes=2451500 secs=0.9599
+  worst fc+im+pm: nodes=1299 secs=0.0009
+seed=2026 count=3000 limit=2000000: fc+im+pm solved=1164 infeasible=445 prechecked=1391 budget=0; disagreements_or_verify_failures=0
+  worst fc: nodes=3387287 secs=1.4619
+  worst fc+im: nodes=1478 secs=0.0009
+  worst fc+pm: nodes=3386455 secs=2.3473
+  worst fc+im+pm: nodes=1478 secs=0.0011
+seed=31337 count=3000 limit=2000000: fc+im+pm solved=1182 infeasible=415 prechecked=1403 budget=0; disagreements_or_verify_failures=0
+  worst fc: nodes=2106934 secs=0.6579
+  worst fc+im: nodes=1729 secs=0.0014
+  worst fc+pm: nodes=2008529 secs=0.5836
+  worst fc+im+pm: nodes=1729 secs=0.0016

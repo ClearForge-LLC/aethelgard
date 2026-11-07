@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "project_name": "ph-spi",
+  "mcu": {
+    "part": "STM32H753ZITx",
+    "supply": "VDD_3V3"
+  },
+  "voltage_domains": [
+    {
+      "id": "VDD_3V3",
+      "nominal_millivolts": 3300,
+      "tolerance_permille": 50
+    }
+  ],
+  "i2c_buses": [],
+  "spi_buses": [
+    {
+      "id": "SPI_BUS_0",
+      "peripheral": null,
+      "speed_hz": 20000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "SPI0_SCK_NET",
+        "pin": null
+      },
+      "mosi": {
+        "net": "SPI0_MOSI_NET",
+        "pin": null
+      },
+      "miso": {
+        "net": "SPI0_MISO_NET",
+        "pin": null
+      }
+    },
+    {
+      "id": "SPI_BUS_1",
+      "peripheral": null,
+      "speed_hz": 20000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "SPI1_SCK_NET",
+        "pin": null
+      },
+      "mosi": {
+        "net": "SPI1_MOSI_NET",
+        "pin": null
+      },
+      "miso": {
+        "net": "SPI1_MISO_NET",
+        "pin": null
+      }
+    },
+    {
+      "id": "SPI_BUS_2",
+      "peripheral": null,
+      "speed_hz": 20000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "SPI2_SCK_NET",
+        "pin": null
+      },
+      "mosi": {
+        "net": "SPI2_MOSI_NET",
+        "pin": null
+      },
+      "miso": {
+        "net": "SPI2_MISO_NET",
+        "pin": null
+      }
+    },
+    {
+      "id": "SPI_BUS_3",
+      "peripheral": null,
+      "speed_hz": 20000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "SPI3_SCK_NET",
+        "pin": null
+      },
+      "mosi": {
+        "net": "SPI3_MOSI_NET",
+        "pin": null
+      },
+      "miso": {
+        "net": "SPI3_MISO_NET",
+        "pin": null
+      }
+    },
+    {
+      "id": "SPI_BUS_4",
+      "peripheral": null,
+      "speed_hz": 20000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "SPI4_SCK_NET",
+        "pin": null
+      },
+      "mosi": {
+        "net": "SPI4_MOSI_NET",
+        "pin": null
+      },
+      "miso": {
+        "net": "SPI4_MISO_NET",
+        "pin": null
+      }
+    },
+    {
+      "id": "SPI_BUS_5",
+      "peripheral": null,
+      "speed_hz": 20000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "SPI5_SCK_NET",
+        "pin": null
+      },
+      "mosi": {
+        "net": "SPI5_MOSI_NET",
+        "pin": null
+      },
+      "miso": {
+        "net": "SPI5_MISO_NET",
+        "pin": null
+      }
+    },
+    {
+      "id": "SPI_BUS_6",
+      "peripheral": null,
+      "speed_hz": 20000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "SPI6_SCK_NET",
+        "pin": null
+      },
+      "mosi": {
+        "net": "SPI6_MOSI_NET",
+        "pin": null
+      },
+      "miso": {
+        "net": "SPI6_MISO_NET",
+        "pin": null
+      }
+    }
+  ],
+  "i2c_devices": [],
+  "spi_devices": [
+    {
+      "reference": "U200",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "SPI_BUS_0",
+      "cs": {
+        "net": "SPI_BUS_0_CS0_NET",
+        "pin": null
+      }
+    },
+    {
+      "reference": "U201",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "SPI_BUS_1",
+      "cs": {
+        "net": "SPI_BUS_1_CS0_NET",
+        "pin": null
+      }
+    },
+    {
+      "reference": "U202",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "SPI_BUS_2",
+      "cs": {
+        "net": "SPI_BUS_2_CS0_NET",
+        "pin": null
+      }
+    },
+    {
+      "reference": "U203",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "SPI_BUS_3",
+      "cs": {
+        "net": "SPI_BUS_3_CS0_NET",
+        "pin": null
+      }
+    },
+    {
+      "reference": "U204",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "SPI_BUS_4",
+      "cs": {
+        "net": "SPI_BUS_4_CS0_NET",
+        "pin": null
+      }
+    },
+    {
+      "reference": "U205",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "SPI_BUS_5",
+      "cs": {
+        "net": "SPI_BUS_5_CS0_NET",
+        "pin": null
+      }
+    },
+    {
+      "reference": "U206",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "SPI_BUS_6",
+      "cs": {
+        "net": "SPI_BUS_6_CS0_NET",
+        "pin": null
+      }
+    }
+  ],
+  "net_constraints": []
+}

@@ -1,0 +1,9 @@
+# measure, debug profile (as gates builds), furnace777, 2f13278, rustc 1.99.1 (58cf8f9c3 2026-10-13), runs=21; command: cargo build --manifest-path spike/solver-probe/Cargo.toml --target-dir target/spike-solver, then PRUNING=<p> target/spike-solver/debug/measure 21 <files>
+# pin_table("STM32H753ZITx") load, hash check and parse, 21 runs: min=17553.0us median=18009.6us (not inside the solve times below)
+spike/specs/stress.json fc+im+pm: runs=21 min=1377.4us median=1451.8us max=1570.8us nodes=42 searches=1 identical=true out_sha256=759f41463aaf205dec2eed472c0929e38a300f749cfe51ff49f3937c23e4b578
+examples/sentinel-01-minimal.json fc+im+pm: runs=21 min=620.7us median=654.9us max=685.9us nodes=7 searches=1 identical=true out_sha256=c7f59a497e8ed989e83491a3a55af2a86a076f06470c8ac13c64e987e561f0cd
+spike/specs/pigeonhole-spi.json fc+im+pm: runs=21 min=3387.2us median=3530.8us max=3556.5us nodes=308 searches=8 identical=true out_sha256=9015bf98b98d00130be1b7430142323fa8c4022be394a371350c9884675ff3e4
+spike/specs/thrash-pins.json fc+im+pm: runs=21 min=1791.6us median=1871.2us max=1896.7us nodes=41 searches=11 identical=true out_sha256=2157e20359067facf4dc99fdcd99a2e6fa9879ad5358015643c5646619c58596
+spike/specs/stress.json fc: runs=21 min=975.7us median=986.3us max=1103.7us nodes=42 searches=1 identical=true out_sha256=759f41463aaf205dec2eed472c0929e38a300f749cfe51ff49f3937c23e4b578
+examples/sentinel-01-minimal.json fc: runs=21 min=616.9us median=625.1us max=642.6us nodes=7 searches=1 identical=true out_sha256=c7f59a497e8ed989e83491a3a55af2a86a076f06470c8ac13c64e987e561f0cd
+spike/specs/pigeonhole-i2c.json fc: runs=21 min=10824.3us median=11010.2us max=11186.2us nodes=17310 searches=6 identical=true out_sha256=853b63335b99602f3a904d75f73814689d7c0a1f9a89256705cbbe05e7d81e7e

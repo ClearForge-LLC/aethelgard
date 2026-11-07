@@ -1,0 +1,22 @@
+# Its own workspace, outside the root's seven members (pinned by
+# crates/aethelgard-cli/tests/workspace_shape.rs), as AET-WO-0300a's spike was.
+# Run through spike/run.sh. The build half deletes this directory.
+[package]
+name = "aethelgard-spike-solver"
+description = "AET-WO-1200 spike probe: the pin search, measured. The build deletes it."
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace]
+
+[dependencies]
+aethelgard-ir = { path = "../../crates/aethelgard-ir" }
+aethelgard-svd-hal = { path = "../../crates/aethelgard-svd-hal" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+
+[lints.rust]
+unsafe_code = "forbid"

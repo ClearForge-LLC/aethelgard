@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "project_name": "sentinel-01",
+  "mcu": {
+    "part": "STM32H753ZITx",
+    "supply": "VDD_3V3"
+  },
+  "voltage_domains": [
+    {
+      "id": "VDD_3V3",
+      "nominal_millivolts": 3300,
+      "tolerance_permille": 50
+    }
+  ],
+  "i2c_buses": [
+    {
+      "id": "SENSORS",
+      "peripheral": "I2C3",
+      "speed_hz": 400000,
+      "pull_up_ohms": 2200,
+      "domain": "VDD_3V3",
+      "sda": {
+        "net": "I2C_SDA",
+        "pin": null
+      },
+      "scl": {
+        "net": "I2C_SCL",
+        "pin": null
+      }
+    }
+  ],
+  "spi_buses": [
+    {
+      "id": "FLASH",
+      "peripheral": null,
+      "speed_hz": 20000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "SPI_SCK",
+        "pin": null
+      },
+      "mosi": {
+        "net": "SPI_MOSI",
+        "pin": null
+      },
+      "miso": {
+        "net": "SPI_MISO",
+        "pin": null
+      }
+    }
+  ],
+  "i2c_devices": [
+    {
+      "reference": "U2",
+      "part": "BME280",
+      "supply": "VDD_3V3",
+      "bus": "SENSORS",
+      "address": 118
+    },
+    {
+      "reference": "U3",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "SENSORS",
+      "address": 72
+    }
+  ],
+  "spi_devices": [
+    {
+      "reference": "U4",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "FLASH",
+      "cs": {
+        "net": "FLASH_CS",
+        "pin": "PC9"
+      }
+    }
+  ],
+  "net_constraints": [
+    {
+      "net_name": "I2C_SDA",
+      "max_capacitance_femtofarads": 400000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    }
+  ]
+}
