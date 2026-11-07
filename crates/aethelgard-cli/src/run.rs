@@ -26,7 +26,7 @@ use std::os::unix::process::{CommandExt, ExitStatusExt, parent_id};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio, exit};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use landlock::{
     ABI, Access, AccessFs, AccessNet, CompatLevel, Compatible, LandlockStatus, Ruleset,
@@ -528,10 +528,14 @@ fn kill_descendants() {
     }
 }
 
+/// How long the guardian keeps trying to remove its directory once the CLI is gone.
+const GUARD_REMOVAL_BOUND: Duration = Duration::from_secs(10);
+
 /// The guardian: `aethelgard --aethelgard-internal-guard --cli-pid N <dir>`.
 /// Started, in its own process group, before the call's temporary directory
 /// exists, it removes the directory if the CLI dies before removing it itself,
-/// whatever the CLI was doing then. It never sets a death signal on itself.
+/// whatever the CLI was doing then, retrying while a writer races it, and exits 70
+/// (directory left) after the bound. It never sets a death signal on itself.
 /// Never returns.
 pub fn guard_main(args: &[OsString]) -> ! {
     let (cli_pid, dir) = match args {
@@ -555,8 +559,20 @@ pub fn guard_main(args: &[OsString]) -> ! {
     loop {
         // The parent first: once it is gone, nothing can create the directory.
         if parent_id() != cli_pid {
-            let _ = fs::remove_dir_all(&dir);
-            exit(0);
+            // A writer can still be racing the removal (the trampoline's status file, a tool
+            // stub the reaper has not killed yet), so the last `rmdir` may lose: retry.
+            let give_up = Instant::now() + GUARD_REMOVAL_BOUND;
+            loop {
+                match fs::remove_dir_all(&dir) {
+                    Ok(()) => exit(0),
+                    Err(e) if e.kind() == io::ErrorKind::NotFound && !dir.exists() => exit(0),
+                    Err(_) => {}
+                }
+                if Instant::now() >= give_up {
+                    exit(70);
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
         }
         if dir.exists() {
             seen = true;
