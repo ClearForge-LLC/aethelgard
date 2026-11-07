@@ -573,7 +573,7 @@ pub fn confine_main(args: &[OsString]) -> ! {
 /// Every descriptor above 2 this process holds without close-on-exec: each
 /// would reach the tool, a channel no sandbox layer sees (ruled on PR #15,
 /// B2). Read from /proc/self/fdinfo; any doubt is an error, never a pass.
-fn inherited_descriptors() -> Result<Vec<u32>, String> {
+pub(crate) fn inherited_descriptors() -> Result<Vec<u32>, String> {
     const O_CLOEXEC: u32 = 0o2_000_000;
     let unreadable = |what: &str, e: io::Error| format!("cannot read {what}: {e}");
     let mut leaked = Vec::new();
