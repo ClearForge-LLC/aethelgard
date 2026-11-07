@@ -219,6 +219,47 @@ object_only!(
     PinAssignment
 );
 
+/// The pins of one part and package, built from a vendored vendor source and
+/// never read from a user, so it is `Serialize` and not `Deserialize`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PinTable {
+    pub part: String,
+    pub package: String,
+    pub source: PinSource,
+    /// Keyed by canonical pin name, such as `PB8`.
+    pub pins: BTreeMap<String, Pin>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Pin {
+    /// The package pin number.
+    pub position: u16,
+    /// Signal name to alternate-function number, such as `I2C1_SCL` to 4.
+    pub alternate_functions: BTreeMap<String, u8>,
+}
+
+/// Where a [`PinTable`] came from: a repository, a commit, and each file's sha256.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PinSource {
+    pub repository: String,
+    pub commit: String,
+    pub files: BTreeMap<String, String>,
+}
+
+impl PinTable {
+    /// `RUL-14` over every pin key and signal name; `path` is `pins.<key>` or
+    /// `pins.<key>.<signal>`.
+    pub fn validate(&self) -> Result<(), IrValidationError> {
+        for (name, pin) in &self.pins {
+            identifier(name, || format!("pins.{name}"))?;
+            for signal in pin.alternate_functions.keys() {
+                identifier(signal, || format!("pins.{name}.{signal}"))?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// One variant per refusal. Each names what `id()` returns, or nothing.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum IrValidationError {
@@ -236,6 +277,8 @@ pub enum IrValidationError {
     ToleranceOutOfRange { id: String, value: u16 },
     #[error("`{id}` is not a declared voltage domain")]
     UnknownDomain { id: String },
+    #[error("`{id}` runs on a different voltage domain from its bus or the microcontroller")]
+    SupplyMismatch { id: String },
     #[error("bus id `{id}` appears more than once")]
     DuplicateBusId { id: String },
     #[error("I2C bus `{id}` has speed_hz {value}, not 100000, 400000 or 1000000")]
@@ -285,6 +328,7 @@ impl IrValidationError {
             Self::ZeroNominalVoltage { .. } => "ZeroNominalVoltage",
             Self::ToleranceOutOfRange { .. } => "ToleranceOutOfRange",
             Self::UnknownDomain { .. } => "UnknownDomain",
+            Self::SupplyMismatch { .. } => "SupplyMismatch",
             Self::DuplicateBusId { .. } => "DuplicateBusId",
             Self::UnsupportedI2cSpeed { .. } => "UnsupportedI2cSpeed",
             Self::ZeroPullUp { .. } => "ZeroPullUp",
@@ -319,6 +363,7 @@ impl IrValidationError {
             | Self::ZeroNominalVoltage { id }
             | Self::ToleranceOutOfRange { id, .. }
             | Self::UnknownDomain { id }
+            | Self::SupplyMismatch { id }
             | Self::DuplicateBusId { id }
             | Self::UnsupportedI2cSpeed { id, .. }
             | Self::ZeroPullUp { id }
@@ -430,6 +475,33 @@ impl Specification {
         }
         for device in &self.spi_devices {
             known(&device.supply)?;
+        }
+        // 5a: one rail. A device whose bus is unknown is left to step 9.
+        for bus in &self.i2c_buses {
+            if bus.domain != self.mcu.supply {
+                return Err(E::SupplyMismatch { id: bus.id.clone() });
+            }
+        }
+        for bus in &self.spi_buses {
+            if bus.domain != self.mcu.supply {
+                return Err(E::SupplyMismatch { id: bus.id.clone() });
+            }
+        }
+        for device in &self.i2c_devices {
+            let bus = self.i2c_buses.iter().find(|b| b.id == device.bus);
+            if bus.is_some_and(|b| b.domain != device.supply) {
+                return Err(E::SupplyMismatch {
+                    id: device.reference.clone(),
+                });
+            }
+        }
+        for device in &self.spi_devices {
+            let bus = self.spi_buses.iter().find(|b| b.id == device.bus);
+            if bus.is_some_and(|b| b.domain != device.supply) {
+                return Err(E::SupplyMismatch {
+                    id: device.reference.clone(),
+                });
+            }
         }
         // 6
         let mut i2c_ids = BTreeSet::new();
