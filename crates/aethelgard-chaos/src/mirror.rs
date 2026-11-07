@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::ArchiveError;
 use crate::archive::{MANIFEST, MIRROR, publish};
 use crate::cbor::{self, Value};
-use crate::event::{MIRROR_MAGIC, VERSION, text_ok};
+use crate::event::{MIRROR_MAGIC, VERSION};
 
 /// The three variables, in the order they are read. Names only; no value is
 /// ever formatted into anything.
@@ -48,12 +48,11 @@ pub fn mirror_step(
         }
         None => NOT_BUILT.to_owned(),
     };
-    debug_assert!(text_ok(&reason, 0, 1024));
     let record = Value::Array(vec![
         Value::Text(MIRROR_MAGIC.to_owned()),
         Value::Uint(VERSION),
         Value::Uint(0),
         Value::Text(reason),
     ]);
-    publish(dir, MIRROR, &cbor::to_bytes(&record), || {}, || {})
+    publish(dir, MIRROR, &cbor::to_bytes(&record), |_| {})
 }

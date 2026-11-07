@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::ArchiveError;
-use crate::cbor::{self, Value};
+use crate::cbor;
 use crate::event::{Event, Fault, Header, Manifest};
 use crate::replay::{Replayer, State};
 
@@ -16,7 +16,8 @@ pub const TRACE: &str = "trace.cbor";
 pub const MANIFEST: &str = "manifest.cbor";
 pub const MIRROR: &str = "mirror.cbor";
 
-/// Where a commit is, for tests that stop the writer there.
+/// Where a commit is, for tests that stop the writer there. The mirror's
+/// record goes through the same steps and reports the same two last stages.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CommitStage {
     /// The trace is flushed and `sync_all`ed; no manifest exists yet.
@@ -33,13 +34,12 @@ fn sync_dir(dir: &Path) -> Result<(), ArchiveError> {
 }
 
 /// Write `name` in `dir` by temp file, `sync_all`, rename, directory sync.
-/// `after_temp` and `after_rename` run between the steps.
+/// `between` is told each stage that is reached before the directory sync.
 pub(crate) fn publish(
     dir: &Path,
     name: &str,
     bytes: &[u8],
-    after_temp: impl FnOnce(),
-    after_rename: impl FnOnce(),
+    mut between: impl FnMut(CommitStage),
 ) -> Result<(), ArchiveError> {
     let tmp = dir.join(format!("{name}.tmp"));
     let target = dir.join(name);
@@ -52,9 +52,9 @@ pub(crate) fn publish(
         .map_err(|e| ArchiveError::io(&tmp, e))?;
     file.sync_all().map_err(|e| ArchiveError::io(&tmp, e))?;
     drop(file);
-    after_temp();
+    between(CommitStage::ManifestTempWritten);
     fs::rename(&tmp, &target).map_err(|e| ArchiveError::io(&target, e))?;
-    after_rename();
+    between(CommitStage::ManifestRenamed);
     sync_dir(dir)
 }
 
@@ -81,7 +81,7 @@ impl TraceWriter {
         header: &Header,
         capacity: usize,
     ) -> Result<Self, ArchiveError> {
-        let mut header_bytes = cbor::to_bytes(&header.to_value());
+        let header_bytes = cbor::to_bytes(&header.to_value());
         // The writer refuses a header its own reader would refuse.
         let reread = cbor::decode_exact(&header_bytes)
             .map_err(|_| ArchiveError::InvalidHeader("header is outside the profile's bounds"))?;
@@ -110,7 +110,7 @@ impl TraceWriter {
             replayer: Replayer::new(&header_bytes),
             scratch: Vec::new(),
         };
-        writer.put(&std::mem::take(&mut header_bytes))?;
+        writer.put(&header_bytes)?;
         Ok(writer)
     }
 
@@ -139,11 +139,6 @@ impl TraceWriter {
         result
     }
 
-    /// Bytes of `trace.cbor` produced so far (flushed or not).
-    pub fn bytes_written(&self) -> u64 {
-        self.bytes
-    }
-
     /// Finish the run: sync the trace, then publish the manifest.
     pub fn commit(self) -> Result<Manifest, ArchiveError> {
         self.commit_observed(|_| {})
@@ -169,14 +164,7 @@ impl TraceWriter {
             state_hash: self.replayer.state_hash(),
         };
         let bytes = cbor::to_bytes(&manifest.to_value());
-        let observer = std::cell::RefCell::new(&mut observe);
-        publish(
-            &self.dir,
-            MANIFEST,
-            &bytes,
-            || (observer.borrow_mut())(CommitStage::ManifestTempWritten),
-            || (observer.borrow_mut())(CommitStage::ManifestRenamed),
-        )?;
+        publish(&self.dir, MANIFEST, &bytes, observe)?;
         Ok(manifest)
     }
 }
@@ -319,10 +307,4 @@ pub fn replay_dir(dir: &Path) -> Result<Replayed, ArchiveError> {
         manifest,
         state: replayer.state().clone(),
     })
-}
-
-/// Read one item file (a manifest or a mirror record) back as a value.
-pub fn read_item(path: &Path) -> Result<Value, ArchiveError> {
-    let bytes = read_all(path)?;
-    cbor::decode_exact(&bytes).map_err(ArchiveError::NotDeterministicCbor)
 }

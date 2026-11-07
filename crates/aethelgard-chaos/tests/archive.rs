@@ -401,12 +401,11 @@ fn a_second_manifest_or_any_stray_entry_is_refused() {
 fn symlinks_are_refused_wherever_they_sit() {
     for name in ["trace.cbor", "manifest.cbor"] {
         let (dir, _) = write_run(&format!("link-{name}"), 0x0400, &events(5));
-        let real = dir.join(format!("{name}.real"));
         fs::rename(dir.join(name), dir.parent().unwrap().join("moved")).unwrap();
         symlink(dir.parent().unwrap().join("moved"), dir.join(name)).unwrap();
         assert!(
             matches!(replay_dir(&dir), Err(E::UnexpectedEntry(n)) if n == name),
-            "{name} {real:?}"
+            "{name}"
         );
     }
     let (dir, _) = write_run("link-mirror", 0x0400, &events(5));
