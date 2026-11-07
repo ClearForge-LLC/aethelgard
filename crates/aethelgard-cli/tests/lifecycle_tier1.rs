@@ -263,3 +263,56 @@ fn a_guardian_waits_for_its_directory_and_exits_0_when_its_parent_removes_it() {
     });
     assert_eq!(guardian.wait().unwrap().code(), Some(0));
 }
+
+/// Ruled on PR #34: without the variable the CLI arms no parent-death signal, so a CLI started
+/// from a thread that ends while it runs (any multi-threaded caller) completes normally.
+#[test]
+fn a_cli_without_the_variable_outlives_the_thread_that_started_it() {
+    let dir = Scratch::new("cli-thread");
+    let tb = dir.0.join("toolbox");
+    let tmp = dir.0.join("tmp");
+    fs::create_dir_all(&tb).unwrap();
+    fs::create_dir(&tmp).unwrap();
+    // Slow to report its version, then a clean DRC report: a pass.
+    let report = r#"{"$schema":"https://schemas.kicad.org/drc.v1.json","coordinate_units":"mm","date":"x","ignored_checks":[],"included_severities":["error","warning"],"kicad_version":"10.0.7","source":"b","violations":[],"unconnected_items":[],"schematic_parity":[]}"#;
+    let stub = tb.join("kicad-cli");
+    fs::write(
+        &stub,
+        format!(
+            "#!/bin/sh\nif [ \"$1\" = version ]; then sleep 1; echo 10.0.7; exit 0; fi\n\
+             out=; prev=\nfor a in \"$@\"; do [ \"$prev\" = -o ] && out=$a; prev=$a; done\n\
+             printf '%s' '{report}' > \"$out\"\n"
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    let board = dir.0.join("b.kicad_pcb");
+    fs::write(&board, "x").unwrap();
+    let mut cli = std::thread::spawn(move || {
+        let cli = Command::new(BIN)
+            .args(["check", "drc", "--board"])
+            .arg(&board)
+            .env_clear()
+            .env("PATH", &tb)
+            .env("TMPDIR", &tmp)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        // Long enough for a CLI to have armed the signal, had it armed one.
+        std::thread::sleep(Duration::from_millis(300));
+        cli
+    })
+    .join()
+    .unwrap();
+    // The thread that started it has ended; the CLI is still in its version check.
+    assert!(
+        cli.try_wait().unwrap().is_none(),
+        "the CLI ended with its thread"
+    );
+    let out = cli.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let verdict: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(verdict["verdict"], "pass", "{verdict}");
+}

@@ -310,6 +310,26 @@ fn sigkill_of_the_server_during_a_call_leaves_nothing() {
     all_gone(&all);
 }
 
+/// Ruled on PR #34: `mcp` never arms the parent-death signal on itself, even with the variable
+/// set, so a server started from a thread that ends keeps serving.
+#[test]
+fn the_server_outlives_the_thread_that_started_it() {
+    let me = std::process::id().to_string();
+    let mut c = std::thread::spawn(move || {
+        let c = Client::spawn(|cmd| {
+            cmd.env("AETHELGARD_INTERNAL_PARENT_PID", &me);
+        });
+        // Long enough for the server to have armed the signal, had it armed one.
+        std::thread::sleep(Duration::from_millis(300));
+        c
+    })
+    .join()
+    .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(alive(c.pid()), "the server died with its thread");
+    assert_eq!(c.initialize()["result"]["serverInfo"]["name"], "aethelgard");
+}
+
 #[test]
 fn a_client_that_disconnects_mid_call_leaves_nothing_after_the_grace() {
     let (_dir, mut c, _id, all) = blocked_call("disconnect", 305);
