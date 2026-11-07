@@ -41,6 +41,7 @@ Record every answer in `docs/work-orders/AET-WO-1200.FEEDBACK.md` under "Spike",
     - every SPI device's `cs` picks any I/O pin, as a plain GPIO output (§1.2);
     - no pin is used twice;
     - a hand-set `peripheral` or `pin` is fixed.
+    - **the debug port is reserved:** `PA13` (SWDIO) and `PA14` (SWCLK) are never assigned, because a board that loses them cannot be programmed or debugged. This addresses `AET-WO-1101` FEEDBACK finding 4, as ruled at review of PR #27. A hand pin on either refuses with `ReservedPin`. Debugging is SWD-only, so the JTAG-only pins `PA15`, `PB3` and `PB4` stay assignable. The README states that assumption.
   - **The order is fixed:**
     - buses in document order, I2C before SPI;
     - instances in ascending name order;
