@@ -86,6 +86,8 @@ jobs:
         env:
           TOOLS_IMAGE: ${{ steps.base.outputs.tools_image }}
         run: |
+          # The build's base lives in the buildx builder, not the daemon: pull the same digest.
+          docker pull --quiet "$TOOLS_IMAGE"
           base_layers=$(docker image inspect --format '{{len .RootFS.Layers}}' "$TOOLS_IMAGE")
           total_layers=$(docker image inspect --format '{{len .RootFS.Layers}}' "$IMAGE")
           echo "layers: base=$base_layers total=$total_layers"
