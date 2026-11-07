@@ -79,6 +79,7 @@ This work order proves the clause with a stdio test in CI. MCP Inspector is the 
    - `mcp` also handles SIGTERM and SIGINT by killing every live child, and then exits.
    - Killing the CLI child is enough to end a call. Its reaper watches it and ends the tool's whole process group (`architecture.md` §6). Nothing watches the `mcp` process itself, so this module must do the killing.
 5. **`validate` through MCP.** The child's stdin is `/dev/null`, so a `validate` call without `file` is refused as empty input, and the result says so. That is the CLI's behaviour, unchanged. README says to pass `file`. An inline specification argument is not in this work order.
+5a. **`path` in the refusal envelope** (`AET-WO-1100` FEEDBACK A7, ruled at review of PR #25). The CLI's refusal envelope gains an optional `path` field. It carries the JSON path for `InvalidIdentifier`, and is absent otherwise. An agent then reads the path as a field, not from the human-readable message. This is the one change to the CLI's output contract this work order makes. The README's exit-2 row says so, and `validate_cli.rs` gains one test.
 6. **`crates/aethelgard-cli/README.md`.** The root `README.md` is protected. Add a `mcp` section covering:
    - how to run it;
    - the generated tool list;
