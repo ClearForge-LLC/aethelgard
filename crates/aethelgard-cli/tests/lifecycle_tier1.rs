@@ -9,6 +9,8 @@ use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use common::{Scratch, alive, eventually, example, stat_fields};
@@ -315,4 +317,65 @@ fn a_cli_without_the_variable_outlives_the_thread_that_started_it() {
     assert_eq!(out.status.code(), Some(0), "{out:?}");
     let verdict: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(verdict["verdict"], "pass", "{verdict}");
+}
+
+/// A writer that races the guardian: from a thread, it keeps recreating a few files in `dir`
+/// (the guardian's own removal of them is lost at once), so a removal that reads the directory
+/// and then removes it loses to a new entry. It stops when `stop` is set.
+fn racing_writer(dir: &Path, stop: Arc<AtomicBool>) -> std::thread::JoinHandle<()> {
+    let files: Vec<_> = ["a", "b", "c", "d"].iter().map(|n| dir.join(n)).collect();
+    for f in &files {
+        fs::File::create(f).unwrap();
+    }
+    std::thread::spawn(move || {
+        while !stop.load(Ordering::Relaxed) {
+            for f in &files {
+                let _ = fs::File::create(f);
+            }
+        }
+    })
+}
+
+/// Starts a guardian whose CLI is already gone (the pid it is given is not its parent's) over a
+/// directory a writer is racing. Returns the guardian and the writer's stop flag and handle.
+fn guardian_over_racing_writer(
+    target: &Path,
+) -> (Child, Arc<AtomicBool>, std::thread::JoinHandle<()>) {
+    fs::create_dir(target).unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let writer = racing_writer(target, stop.clone());
+    let guardian = Command::new(BIN)
+        .args([GUARD, "--cli-pid", &dead_pid().to_string()])
+        .arg(target)
+        .stdin(Stdio::null())
+        .spawn()
+        .unwrap();
+    (guardian, stop, writer)
+}
+
+/// `AET-WO-0300d` §1.1, §1.3: a writer that stops after a few hundred milliseconds does not
+/// leave the directory behind. Run on `main`, the single unretried removal lost this race.
+#[test]
+fn a_guardian_removes_its_directory_though_a_writer_races_it() {
+    let dir = Scratch::new("guard-race");
+    let mut left = 0;
+    for n in 0..10 {
+        let target = dir.0.join(format!("aethelgard-race-{n}"));
+        let (mut guardian, stop, writer) = guardian_over_racing_writer(&target);
+        std::thread::sleep(Duration::from_millis(500));
+        stop.store(true, Ordering::Relaxed);
+        writer.join().unwrap();
+        eventually("the guardian to exit", || {
+            guardian.try_wait().unwrap().is_some()
+        });
+        let code = guardian.wait().unwrap().code();
+        let present = target.exists();
+        if present {
+            left += 1;
+            let _ = fs::remove_dir_all(&target);
+        }
+        eprintln!("try {n}: exit {code:?} left={present}");
+        assert_eq!(code, Some(0), "try {n}");
+    }
+    assert_eq!(left, 0, "directories left behind, of 10 tries");
 }
