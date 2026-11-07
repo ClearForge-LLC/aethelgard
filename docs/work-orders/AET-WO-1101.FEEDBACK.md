@@ -14,7 +14,7 @@ Entry schema: `finding · where · type · recommendation · decision-needed`.
 ## Gates
 
 - Furnace: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`: pass. Determinism constant `80dcd2751a3a0036f7609c06929a33b6446885b5ac04a380f34afcf0f61d9e2c` (sha256 of `serde_json::to_string` of the table). Cross-checked by an independent Python implementation of §1.3 on the same files, which produced the same digest.
-- CI (`gates`, `tools`, and the constant reproduced in `gates`): CI_PLACEHOLDER
+- CI, first push, `gates` and `tools` both green; the determinism constant reproduced in `gates` (Furnace and `gates` agree): https://github.com/ClearForge-LLC/aethelgard/actions/runs/42414010501 (PR #27). Furnace acceptance beyond the local run is not done.
 - Tier 2 (`--features with-tools`) cannot run on Furnace, as in `AET-WO-1100`; this diff touches none of that code.
 - Mutation (sized to the diff, one mutant per guard, against the svd-hal suite): hash check forced true, killed; signal-in-MCU-file filter off, killed; AF conflict check off, killed; `{1,2}` widened to `{1,3}`, killed; duplicate-position check off, killed. One survived, the "no third digit after the run" guard: `take_while` counts every digit, so it could never fire. **Removed** (reduction pass).
 - Reduction pass (diff-sized): removed that dead guard and a redundant length test. Nothing else cut: each remaining extra refusal below has a test that fails without it.
