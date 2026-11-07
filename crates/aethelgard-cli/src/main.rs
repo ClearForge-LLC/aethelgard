@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use aethelgard_ir::TopologyGraph;
+use aethelgard_ir::Specification;
 use clap::error::ErrorKind;
 use clap::{Parser, Subcommand};
 use serde::Serialize;
@@ -45,7 +45,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Validate one JSON TopologyGraph read from stdin, or from --file.
+    /// Validate one JSON Specification read from stdin, or from --file.
     Validate {
         /// Read the specification from this file instead of stdin.
         #[arg(long)]
@@ -431,8 +431,8 @@ fn validate(file: Option<&Path>) -> ExitCode {
         Err(refusal) => return emit(&refusal, EXIT_UNREADABLE),
     };
 
-    let graph: TopologyGraph = match serde_json::from_slice(&input) {
-        Ok(graph) => graph,
+    let spec: Specification = match serde_json::from_slice(&input) {
+        Ok(spec) => spec,
         // Well-formed JSON of the wrong shape is an invalid specification;
         // anything that is not one JSON document is unreadable input.
         Err(err) if err.classify() == Category::Data => {
@@ -445,13 +445,13 @@ fn validate(file: Option<&Path>) -> ExitCode {
         }
     };
 
-    match graph.validate() {
+    match spec.validate() {
         Ok(()) => emit(
             &ValidReport {
                 ok: true,
-                project_name: &graph.project_name,
-                voltage_domains: graph.voltage_domains.len(),
-                net_constraints: graph.net_constraints.len(),
+                project_name: &spec.project_name,
+                voltage_domains: spec.voltage_domains.len(),
+                net_constraints: spec.net_constraints.len(),
             },
             0,
         ),

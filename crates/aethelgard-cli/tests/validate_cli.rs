@@ -51,7 +51,7 @@ fn valid_example_exits_0() {
             "ok": true,
             "project_name": "sentinel-01",
             "voltage_domains": 1,
-            "net_constraints": 2
+            "net_constraints": 1
         })
     );
 }
@@ -68,6 +68,41 @@ fn zero_domain_example_exits_2_naming_the_domain() {
     let input = std::fs::read(example("invalid-zero-domain.json")).unwrap();
     let report = assert_refused(&run(&["validate"], &input), 2, "ZeroNominalVoltage");
     assert_eq!(report["error"]["id"], "VDD_3V3");
+}
+
+#[test]
+fn solved_topology_document_exits_2() {
+    let solved = serde_json::json!({
+        "schema_version": 1,
+        "specification_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "assignments": {}
+    });
+    let output = run(&["validate"], solved.to_string().as_bytes());
+    let report = assert_refused(&output, 2, "SchemaViolation");
+    assert_eq!(report["error"]["id"], Value::Null);
+}
+
+#[test]
+fn solved_field_smuggled_into_a_specification_exits_2() {
+    let mut doc: Value =
+        serde_json::from_slice(&std::fs::read(example("sentinel-01-minimal.json")).unwrap())
+            .unwrap();
+    doc["assignments"] = serde_json::json!({});
+    let output = run(&["validate"], doc.to_string().as_bytes());
+    assert_refused(&output, 2, "SchemaViolation");
+}
+
+#[test]
+fn invalid_identifier_exits_2_with_a_path_in_the_message() {
+    let mut doc: Value =
+        serde_json::from_slice(&std::fs::read(example("sentinel-01-minimal.json")).unwrap())
+            .unwrap();
+    doc["i2c_buses"][0]["sda"]["net"] = "I2C SDA".into();
+    let output = run(&["validate"], doc.to_string().as_bytes());
+    let report = assert_refused(&output, 2, "InvalidIdentifier");
+    assert_eq!(report["error"]["id"], Value::Null);
+    let message = report["error"]["message"].as_str().unwrap();
+    assert!(message.contains("i2c_buses[0].sda.net"), "{message}");
 }
 
 #[test]
