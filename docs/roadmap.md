@@ -108,7 +108,7 @@ P0 ──> P1 ──> P2 ──> P3
   - **The parse.** `aethelgard-svd-hal` parses the files into an IR pin table. That graduates the crate from the stub checks, with a pure-Rust XML parser as its one new dependency.
   - **The golden facts.** 114 I/O pins, and PB8 carries `I2C1_SCL` on AF4.
   - **The order.** It depends on `AET-WO-1100`, and `AET-WO-1200` depends on it.
-- `AET-WO-1200` — spike, then build: the constraint solver (`RUL-02`, whose prior is now a pure-Rust search). The spike measures solve time on the chosen part's full pin table for the search and for SMT. It records both numbers in `architecture.md` §2 by amendment before the build half starts, and it shows two solves of the same specification returning the same assignment.
+- `AET-WO-1200` — written, spike, then build: the constraint solver (`RUL-02`, whose prior is now a pure-Rust search), as `solve` in `aethelgard-ir` and `aethelgard solve` in the CLI. The spike measures Z3 only if the search exceeds 1 s on a stress specification. It also settles how `SolvedTopology` records a GPIO-driven chip select, which has no alternate function. The spike measures solve time on the chosen part's full pin table for the search and for SMT. It records both numbers in `architecture.md` §2 by amendment before the build half starts, and it shows two solves of the same specification returning the same assignment.
 - `AET-WO-1300` — spike, then build: the schematic emitter. It emits `.kicad_sch` and the bill of materials, and passes `kicad-cli sch erc --exit-code-violations`. The spike answers two questions:
   - how the board is to be placed and routed headless (split below);
   - how to prove that DRC applies the gate's own rule files, not the emitter's (`RUL-03` as amended).
