@@ -36,3 +36,10 @@ Gates: diff-sized reduction pass on the finished diff: one loop and one constant
 ## Backlog
 
 - None required. The README's description of exit 70 for the guardian is not updated here (protected surface); the architect may add "exit 70 after 10 s with the directory left" to architecture §6.
+
+## Follow-up (PR after #39): a deterministic test of the guardian's bound
+
+- **The failure.** `lifecycle_tier1::a_guardian_that_cannot_empty_its_directory_exits_70_within_11_seconds` failed in PR #36's `tools` job (run 42426363992, job 128565386241): it expected exit 70 and got 0, the binary finishing in 5.47 s.
+- **The cause.** The test's premise was that a writer thread that never stops always beats `remove_dir_all`. That holds only by timing. Once the guardian's `rmdir` wins one window, the writer's `File::create` fails because the directory is gone, and the guardian correctly exits 0. The test was nondeterministic, and on `main` since PR #39. It passed my local runs only by luck of scheduling.
+- **The replacement ruling** (architect; not a §7 stop). The retry is factored out of `guard_main` into `remove_with_retry(dir, bound, remover) -> exit code`; `guard_main` passes `fs::remove_dir_all` and `GUARD_REMOVAL_BOUND`, behaviour unchanged. The bound is now tested in `run.rs` unit tests with a 200 ms bound: (a) always-`ENOTEMPTY` returns 70, no earlier than the bound and before twice it; (b) three failures then success returns 0 after 4 calls; (c) `NotFound` with the directory absent returns 0 on the first call; (d) `NotFound` while the directory exists keeps retrying. The integration test and nothing else is deleted; `a_guardian_removes_its_directory_though_a_writer_races_it` stays, as its assertion holds under any scheduling.
+- **Counts.** `cargo test -p aethelgard-cli --test lifecycle_tier1` (7 tests) and `--bin aethelgard` (26 tests, the 4 new among them) ran **20 times in a row** on Furnace in a capped cgroup: 20/20 passed. `cargo test --workspace`, fmt and clippy pass. (A first loop I ran filtered the unit tests with a wrong name and matched none; it is not counted. The 20/20 above is the rerun.)
