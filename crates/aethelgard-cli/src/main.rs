@@ -52,6 +52,12 @@ enum Command {
         #[arg(long)]
         file: Option<PathBuf>,
     },
+    /// Solve one Specification's pins and print the SolvedTopology.
+    Solve {
+        /// The specification file.
+        #[arg(long)]
+        file: PathBuf,
+    },
     /// Run a KiCad check on a board or schematic and print its verdict.
     Check {
         #[command(subcommand)]
@@ -171,6 +177,7 @@ fn main() -> ExitCode {
 
     let judged = match cli.command {
         Command::Validate { file } => return validate(file.as_deref()),
+        Command::Solve { file } => return solve(&file),
         Command::Check {
             check: CheckCommand::Drc { board },
         } => check_kicad(kicad::Check::Drc, &board),
@@ -470,6 +477,76 @@ fn validate(file: Option<&Path>) -> ExitCode {
         ),
         Err(err) => emit(
             &Refusal::new(err.kind(), err.id(), err.to_string()).at(err.path()),
+            EXIT_INVALID_SPEC,
+        ),
+    }
+}
+
+/// `aethelgard solve --file`: read and validate as `validate` does, load the
+/// part's pin table, solve, and print the `SolvedTopology` on one line (exit
+/// 0). A specification the solver cannot realize is exit 2, with `claimants`.
+fn solve(file: &Path) -> ExitCode {
+    #[derive(Serialize)]
+    struct SolveRefusal {
+        ok: bool,
+        error: SolveRefusalBody,
+    }
+    #[derive(Serialize)]
+    struct SolveRefusalBody {
+        kind: &'static str,
+        id: Option<String>,
+        claimants: Vec<String>,
+        message: String,
+    }
+
+    let input = match read_input(Some(file)) {
+        Ok(input) => input,
+        Err(refusal) => return emit(&refusal, EXIT_UNREADABLE),
+    };
+    let spec: Specification = match serde_json::from_slice(&input) {
+        Ok(spec) => spec,
+        Err(err) if err.classify() == Category::Data => {
+            let refusal = Refusal::new("SchemaViolation", None, err.to_string());
+            return emit(&refusal, EXIT_INVALID_SPEC);
+        }
+        Err(err) => {
+            let refusal = Refusal::new("InvalidJson", None, err.to_string());
+            return emit(&refusal, EXIT_UNREADABLE);
+        }
+    };
+    if let Err(err) = spec.validate() {
+        let refusal = Refusal::new(err.kind(), err.id(), err.to_string()).at(err.path());
+        return emit(&refusal, EXIT_INVALID_SPEC);
+    }
+    let table = match aethelgard_svd_hal::pin_table(&spec.mcu.part) {
+        Ok(table) => table,
+        Err(err @ aethelgard_svd_hal::PinTableError::UnknownPart { .. }) => {
+            let refusal = Refusal::new(err.kind(), Some(&spec.mcu.part), err.to_string());
+            return emit(&refusal, EXIT_INVALID_SPEC);
+        }
+        // The vendored table failed its own check: a corrupted build, not a
+        // bad specification. Nothing on stdout, as for exit 70.
+        Err(err) => {
+            diagnose(&format!("the pin table is unusable: {err}"));
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    };
+    let sha256 = <sha2::Sha256 as sha2::Digest>::digest(&input)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    match aethelgard_ir::solve(&spec, &table, &sha256) {
+        Ok(topology) => emit(&topology, 0),
+        Err(err) => emit(
+            &SolveRefusal {
+                ok: false,
+                error: SolveRefusalBody {
+                    kind: err.kind(),
+                    id: err.id().map(str::to_owned),
+                    claimants: err.claimants(),
+                    message: err.to_string(),
+                },
+            },
             EXIT_INVALID_SPEC,
         ),
     }

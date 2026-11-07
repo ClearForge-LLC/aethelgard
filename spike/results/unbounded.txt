@@ -1,7 +1,0 @@
-# unbounded runs (NODE_LIMIT unset), release, furnace777, 2f13278, rustc 1.99.1; made before the probe gained its node budget and moved to its own workspace (same search code).
-# 1. PRUNING=fc measure 1 spike/specs/pigeonhole-spi.json  (the WO's search)
-spike/specs/pigeonhole-spi.json ForwardCheck: runs=1 min=328957971.3us median=328957971.3us max=328957971.3us nodes=3105219359 searches=8 identical=true out_sha256=9015bf98b98d00130be1b7430142323fa8c4022be394a371350c9884675ff3e4
-real	5m28.975s
-user	5m28.680s
-sys	0m0.006s
-# 2. PRUNING=im measure 1 spike/specs/thrash-pins.json, under timeout 600: killed at real 10m0.004s with no answer (forward check + instance matching)

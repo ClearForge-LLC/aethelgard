@@ -10,6 +10,10 @@
 
 #![forbid(unsafe_code)]
 
+mod solve;
+
+pub use solve::{NODE_LIMIT, RESERVED_PINS, SolveError, solve, solve_with_limit};
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -120,7 +124,9 @@ pub struct NetConstraint {
 }
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
-/// a `BTreeMap`, so serialization is a function of content.
+/// `BTreeMap`s, so serialization is a function of content. `assignments` holds
+/// the signals on an alternate function; `gpio` holds each net driven as a
+/// plain GPIO output (an SPI device's `cs`), net to pin.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct SolvedTopology {
@@ -129,6 +135,8 @@ pub struct SolvedTopology {
     pub specification_sha256: String,
     #[serde(deserialize_with = "unique_keys")]
     pub assignments: BTreeMap<String, PinAssignment>,
+    #[serde(deserialize_with = "unique_keys")]
+    pub gpio: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -142,21 +150,21 @@ pub struct PinAssignment {
 
 /// serde's derived `BTreeMap` keeps the last value of a repeated key and drops
 /// the first without a word; this refuses it instead (`INV-06`).
-fn unique_keys<'de, D: Deserializer<'de>>(
+fn unique_keys<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
     deserializer: D,
-) -> Result<BTreeMap<String, PinAssignment>, D::Error> {
-    struct Unique;
+) -> Result<BTreeMap<String, V>, D::Error> {
+    struct Unique<V>(std::marker::PhantomData<V>);
 
-    impl<'de> Visitor<'de> for Unique {
-        type Value = BTreeMap<String, PinAssignment>;
+    impl<'de, V: Deserialize<'de>> Visitor<'de> for Unique<V> {
+        type Value = BTreeMap<String, V>;
 
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.write_str("an assignments object")
+            f.write_str("an object keyed by net")
         }
 
         fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
             let mut out = BTreeMap::new();
-            while let Some((key, value)) = map.next_entry::<String, PinAssignment>()? {
+            while let Some((key, value)) = map.next_entry::<String, V>()? {
                 if out.contains_key(&key) {
                     return Err(serde::de::Error::custom(format!(
                         "duplicate assignment for net `{key}`"
@@ -168,7 +176,7 @@ fn unique_keys<'de, D: Deserializer<'de>>(
         }
     }
 
-    deserializer.deserialize_map(Unique)
+    deserializer.deserialize_map(Unique(std::marker::PhantomData))
 }
 
 /// The derives above are `remote = "Self"`, so they generate inherent
@@ -313,6 +321,8 @@ pub enum IrValidationError {
     MalformedSpecificationHash,
     #[error("net `{id}` has alternate_function {value}, above 15")]
     AlternateFunctionOutOfRange { id: String, value: u8 },
+    #[error("net `{id}` is in both assignments and gpio")]
+    NetAssignedTwice { id: String },
     #[error("pin `{id}` is assigned to more than one net")]
     DuplicatePin { id: String },
 }
@@ -346,6 +356,7 @@ impl IrValidationError {
             Self::ZeroImpedance { .. } => "ZeroImpedance",
             Self::MalformedSpecificationHash => "MalformedSpecificationHash",
             Self::AlternateFunctionOutOfRange { .. } => "AlternateFunctionOutOfRange",
+            Self::NetAssignedTwice { .. } => "NetAssignedTwice",
             Self::DuplicatePin { .. } => "DuplicatePin",
         }
     }
@@ -380,6 +391,7 @@ impl IrValidationError {
             | Self::ZeroRiseTime { id }
             | Self::ZeroImpedance { id }
             | Self::AlternateFunctionOutOfRange { id, .. }
+            | Self::NetAssignedTwice { id }
             | Self::DuplicatePin { id } => Some(id),
         }
     }
@@ -673,9 +685,10 @@ impl Specification {
 }
 
 impl SolvedTopology {
-    /// Refuses the first malformed value found: version, hash, identifiers (a
-    /// net, then its `pin`, `peripheral`, `signal`, nets in sorted order), then
-    /// alternate functions, then a pin used twice.
+    /// Refuses the first malformed value found: version, hash, identifiers (in
+    /// `assignments` a net, then its `pin`, `peripheral`, `signal`; then in
+    /// `gpio` a net, then its pin; nets in sorted order), then alternate
+    /// functions, then a net in both maps, then a pin used twice across both.
     pub fn validate(&self) -> Result<(), IrValidationError> {
         use IrValidationError as E;
 
@@ -694,6 +707,10 @@ impl SolvedTopology {
             identifier(&a.peripheral, || format!("assignments.{net}.peripheral"))?;
             identifier(&a.signal, || format!("assignments.{net}.signal"))?;
         }
+        for (net, pin) in &self.gpio {
+            identifier(net, || format!("gpio.{net}"))?;
+            identifier(pin, || format!("gpio.{net}.pin"))?;
+        }
         for (net, a) in &self.assignments {
             if a.alternate_function > 15 {
                 return Err(E::AlternateFunctionOutOfRange {
@@ -702,10 +719,18 @@ impl SolvedTopology {
                 });
             }
         }
+        if let Some(net) = self.gpio.keys().find(|n| self.assignments.contains_key(*n)) {
+            return Err(E::NetAssignedTwice { id: net.clone() });
+        }
         let mut pins = BTreeSet::new();
-        for a in self.assignments.values() {
-            if !pins.insert(a.pin.as_str()) {
-                return Err(E::DuplicatePin { id: a.pin.clone() });
+        let all = self
+            .assignments
+            .values()
+            .map(|a| &a.pin)
+            .chain(self.gpio.values());
+        for pin in all {
+            if !pins.insert(pin.as_str()) {
+                return Err(E::DuplicatePin { id: pin.clone() });
             }
         }
         Ok(())

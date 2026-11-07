@@ -445,7 +445,14 @@ mod tests {
     fn the_five_tools_come_from_the_tree() {
         assert_eq!(
             names(&Cli::command()),
-            ["validate", "check_drc", "check_erc", "prove", "simulate"]
+            [
+                "validate",
+                "solve",
+                "check_drc",
+                "check_erc",
+                "prove",
+                "simulate"
+            ]
         );
     }
 
@@ -482,7 +489,7 @@ mod tests {
             Some("A subcommand added by a test")
         );
         assert_eq!(t.input_schema["required"], json!(["thing"]));
-        assert_eq!(all.len(), 6);
+        assert_eq!(all.len(), 7);
     }
 
     #[test]

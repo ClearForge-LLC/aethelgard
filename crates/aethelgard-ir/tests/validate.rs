@@ -672,6 +672,7 @@ fn solved() -> SolvedTopology {
             ("I2C_SDA".to_owned(), assignment("PB9", 4)),
         ]
         .into(),
+        gpio: [("FLASH_CS".to_owned(), "PA0".to_owned())].into(),
     }
 }
 
@@ -753,8 +754,8 @@ fn solved_round_trip_is_equal_and_byte_stable() {
 
 #[test]
 fn solved_serialization_is_sorted_whatever_the_input_order() {
-    let a = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}}}"#;
-    let b = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}}}"#;
+    let a = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"Z":"g","C":"c"}}"#;
+    let b = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"C":"c","Z":"g"}}"#;
     let a: SolvedTopology = serde_json::from_str(a).unwrap();
     let b: SolvedTopology = serde_json::from_str(b).unwrap();
     assert_eq!(
@@ -795,7 +796,7 @@ fn solved_serde_edge_cases_are_refused() {
 
 #[test]
 fn solved_repeated_assignment_key_is_refused() {
-    let json = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"N":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"N":{"pin":"x","peripheral":"q","signal":"s","alternate_function":1}}}"#;
+    let json = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"N":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"N":{"pin":"x","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{}}"#;
     let err = serde_json::from_str::<SolvedTopology>(json).unwrap_err();
     assert!(
         err.to_string().contains("duplicate assignment for net `N`"),
@@ -829,4 +830,64 @@ fn a_solved_field_in_a_specification_and_the_reverse_are_refused() {
     );
     assert!(serde_json::from_value::<Specification>(solved_json()).is_err());
     assert!(serde_json::from_value::<SolvedTopology>(spec_json()).is_err());
+}
+
+// ---- SolvedTopology.gpio (AET-WO-1200 S4) ----------------------------------
+
+#[test]
+fn solved_refuses_gpio_non_identifiers_with_paths() {
+    let err = solved_refusal(|t| {
+        t.gpio.insert("CS 2".into(), "PA1".into());
+    });
+    assert_invalid_identifier(err, "gpio.CS 2");
+    let err = solved_refusal(|t| {
+        t.gpio.insert("FLASH_CS".into(), "".into());
+    });
+    assert_invalid_identifier(err, "gpio.FLASH_CS.pin");
+    // assignments are checked before gpio
+    let err = solved_refusal(|t| {
+        t.gpio.insert("CS 2".into(), "PA1".into());
+        t.assignments.get_mut("I2C_SDA").unwrap().pin = "".into();
+    });
+    assert_invalid_identifier(err, "assignments.I2C_SDA.pin");
+}
+
+#[test]
+fn solved_refuses_a_net_in_both_maps() {
+    let err = solved_refusal(|t| {
+        t.gpio.insert("I2C_SDA".into(), "PA1".into());
+    });
+    assert_refusal(err, "NetAssignedTwice", Some("I2C_SDA"));
+    // before a duplicate pin
+    let err = solved_refusal(|t| {
+        t.gpio.insert("I2C_SDA".into(), "PB8".into());
+    });
+    assert_refusal(err, "NetAssignedTwice", Some("I2C_SDA"));
+}
+
+#[test]
+fn solved_refuses_a_pin_used_twice_across_or_within_gpio() {
+    let err = solved_refusal(|t| {
+        t.gpio.insert("FLASH_CS".into(), "PB9".into());
+    });
+    assert_refusal(err, "DuplicatePin", Some("PB9"));
+    let err = solved_refusal(|t| {
+        t.gpio.insert("OTHER_CS".into(), "PA0".into());
+    });
+    assert_refusal(err, "DuplicatePin", Some("PA0"));
+}
+
+#[test]
+fn solved_refuses_a_repeated_or_missing_gpio() {
+    let json = r#"{"schema_version":1,"specification_sha256":"h","assignments":{},"gpio":{"N":"p","N":"q"}}"#;
+    let err = serde_json::from_str::<SolvedTopology>(json).unwrap_err();
+    assert!(
+        err.to_string().contains("duplicate assignment for net `N`"),
+        "{err}"
+    );
+    let json = r#"{"schema_version":1,"specification_sha256":"h","assignments":{}}"#;
+    let err = serde_json::from_str::<SolvedTopology>(json).unwrap_err();
+    assert!(err.to_string().contains("missing field `gpio`"), "{err}");
+    let json = r#"{"schema_version":1,"specification_sha256":"h","assignments":{},"gpio":{"N":4}}"#;
+    assert!(serde_json::from_str::<SolvedTopology>(json).is_err());
 }
