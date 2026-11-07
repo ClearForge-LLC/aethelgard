@@ -10,23 +10,10 @@ use std::time::Instant;
 use aethelgard_chaos::archive::{MAX_EVENT_BYTES, MAX_HEADER_BYTES, MAX_TRACE_BYTES};
 use aethelgard_chaos::cbor;
 use aethelgard_chaos::replay::Replayer;
-use aethelgard_chaos::synthetic;
 use aethelgard_chaos::{ArchiveError as E, Event, Manifest, replay_dir};
 use sha2::{Digest, Sha256};
 
 use common::*;
-
-fn header_bytes() -> Vec<u8> {
-    cbor::to_bytes(&synthetic::header(0x0400).to_value())
-}
-
-fn write(timestamp: u64, address: u32, value: u32) -> Event {
-    Event::RegisterWrite {
-        timestamp,
-        address,
-        value,
-    }
-}
 
 /// `n` register writes to `n` distinct addresses, folded through the replayer.
 fn replay_distinct(n: u32) -> f64 {

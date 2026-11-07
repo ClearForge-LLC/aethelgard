@@ -21,10 +21,6 @@ fn events(n: usize) -> Vec<Event> {
     synthetic::events(0x0400).take(n).collect()
 }
 
-fn header_bytes() -> Vec<u8> {
-    cbor::to_bytes(&synthetic::header(0x0400).to_value())
-}
-
 fn enc(event: &Event) -> Vec<u8> {
     cbor::to_bytes(&event.to_value())
 }
@@ -152,14 +148,6 @@ fn swapped(name: &str, evs: &[Event], i: usize) -> Result<(), E> {
     fs::write(dir.join("trace.cbor"), raw_trace(&header_bytes(), &items)).unwrap();
     recompute_manifest(&dir, &manifest);
     replay_dir(&dir).map(|_| ())
-}
-
-fn write(timestamp: u64, address: u32, value: u32) -> Event {
-    Event::RegisterWrite {
-        timestamp,
-        address,
-        value,
-    }
 }
 
 #[test]
