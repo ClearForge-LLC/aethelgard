@@ -26,6 +26,8 @@ use clap::{Parser, Subcommand};
 use serde::Serialize;
 use serde_json::error::Category;
 
+use input::MAX_INPUT_BYTES;
+
 const EXIT_FAIL: u8 = 1;
 const EXIT_INVALID_SPEC: u8 = 2;
 const EXIT_UNREADABLE: u8 = 3;
@@ -33,9 +35,6 @@ const EXIT_TOOL_UNAVAILABLE: u8 = 4;
 const EXIT_TOOL_ERROR: u8 = 5;
 const EXIT_USAGE: u8 = 64;
 const EXIT_INTERNAL: u8 = 70;
-
-/// Larger input is refused unread, so hostile input cannot exhaust memory.
-const MAX_INPUT_BYTES: u64 = 16 * 1024 * 1024;
 
 #[derive(Parser)]
 #[command(name = "aethelgard", version, about, arg_required_else_help = false)]
