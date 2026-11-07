@@ -36,3 +36,15 @@ pub fn golden_events() -> Vec<Event> {
 pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
+
+pub fn header_bytes() -> Vec<u8> {
+    aethelgard_chaos::cbor::to_bytes(&synthetic::header(0x0400).to_value())
+}
+
+pub fn write(timestamp: u64, address: u32, value: u32) -> Event {
+    Event::RegisterWrite {
+        timestamp,
+        address,
+        value,
+    }
+}

@@ -5,8 +5,12 @@ use crate::cbor::Value;
 
 /// The only time unit version 1 admits.
 pub const TIME_UNIT: &str = "ns";
-/// The format version every item carries.
+/// The format version of the trace header and the mirror record.
 pub const VERSION: u64 = 1;
+/// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
+/// event's delta, not the whole state, so a version-1 manifest means a hash
+/// this reader no longer computes.
+pub const MANIFEST_VERSION: u64 = 2;
 pub const TRACE_MAGIC: &str = "aethelgard-trace";
 pub const MANIFEST_MAGIC: &str = "aethelgard-manifest";
 pub const MIRROR_MAGIC: &str = "aethelgard-mirror";
@@ -270,7 +274,7 @@ impl Header {
     }
 
     pub fn from_value(value: &Value) -> Result<Self, Fault> {
-        let items = envelope(value, TRACE_MAGIC)?;
+        let items = envelope(value, TRACE_MAGIC, VERSION)?;
         let [
             _,
             _,
@@ -311,7 +315,7 @@ impl Header {
 /// Check the magic and the version of a `[magic, version, …]` item and
 /// return its elements. The version is judged before the shape, so a future
 /// format reads as an unknown version and not as a malformed one.
-fn envelope<'a>(value: &'a Value, magic: &str) -> Result<&'a [Value], Fault> {
+fn envelope<'a>(value: &'a Value, magic: &str, version: u64) -> Result<&'a [Value], Fault> {
     let Value::Array(items) = value else {
         return malformed("item is not an array");
     };
@@ -319,7 +323,7 @@ fn envelope<'a>(value: &'a Value, magic: &str) -> Result<&'a [Value], Fault> {
         return malformed("magic text is wrong");
     }
     match items.get(1).and_then(uint) {
-        Some(VERSION) => Ok(items),
+        Some(found) if found == version => Ok(items),
         Some(other) => Err(Fault::Version(other)),
         None => malformed("item has no unsigned version"),
     }
@@ -338,7 +342,7 @@ impl Manifest {
     pub fn to_value(&self) -> Value {
         Value::Array(vec![
             Value::Text(MANIFEST_MAGIC.to_owned()),
-            Value::Uint(VERSION),
+            Value::Uint(MANIFEST_VERSION),
             Value::Uint(self.trace_bytes),
             Value::Bytes(self.trace_sha256.to_vec()),
             Value::Uint(self.event_count),
@@ -347,7 +351,7 @@ impl Manifest {
     }
 
     pub fn from_value(value: &Value) -> Result<Self, Fault> {
-        let items = envelope(value, MANIFEST_MAGIC)?;
+        let items = envelope(value, MANIFEST_MAGIC, MANIFEST_VERSION)?;
         let [
             _,
             _,

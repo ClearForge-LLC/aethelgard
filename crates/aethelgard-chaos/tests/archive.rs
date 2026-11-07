@@ -21,10 +21,6 @@ fn events(n: usize) -> Vec<Event> {
     synthetic::events(0x0400).take(n).collect()
 }
 
-fn header_bytes() -> Vec<u8> {
-    cbor::to_bytes(&synthetic::header(0x0400).to_value())
-}
-
 fn enc(event: &Event) -> Vec<u8> {
     cbor::to_bytes(&event.to_value())
 }
@@ -152,14 +148,6 @@ fn swapped(name: &str, evs: &[Event], i: usize) -> Result<(), E> {
     fs::write(dir.join("trace.cbor"), raw_trace(&header_bytes(), &items)).unwrap();
     recompute_manifest(&dir, &manifest);
     replay_dir(&dir).map(|_| ())
-}
-
-fn write(timestamp: u64, address: u32, value: u32) -> Event {
-    Event::RegisterWrite {
-        timestamp,
-        address,
-        value,
-    }
 }
 
 #[test]
@@ -296,15 +284,15 @@ fn a_declared_length_of_u64_max_is_refused_without_allocating() {
         raw_with_event("hostile-arr", arr),
         Err(E::NotDeterministicCbor(_))
     ));
-    // A manifest that declares a trace of u64::MAX bytes is a truncation, and
-    // the trace is never read.
+    // A manifest that declares a trace of u64::MAX bytes is over the bound,
+    // and the trace is never read.
     let (dir, m) = write_run("hostile-manifest-len", 0x0400, &events(5));
     let m = Manifest {
         trace_bytes: u64::MAX,
         ..m
     };
     fs::write(dir.join("manifest.cbor"), cbor::to_bytes(&m.to_value())).unwrap();
-    assert!(matches!(replay_dir(&dir), Err(E::Truncated { .. })));
+    assert!(matches!(replay_dir(&dir), Err(E::TraceTooLarge { .. })));
 }
 
 #[test]
@@ -343,7 +331,7 @@ fn a_timestamp_of_u64_max_followed_by_another_event_is_refused() {
 }
 
 #[test]
-fn version_2_is_an_unknown_version() {
+fn an_unknown_version_is_refused() {
     let mut trace = header_bytes();
     // [magic, 1, ...] -> version byte is the one right after the magic text.
     let at = 1 + 1 + "aethelgard-trace".len();
@@ -361,16 +349,19 @@ fn version_2_is_an_unknown_version() {
     let (dir, m) = write_run("v2-manifest", 0x0400, &events(5));
     let mut bytes = cbor::to_bytes(&m.to_value());
     let at = 1 + 1 + "aethelgard-manifest".len();
-    assert_eq!(bytes[at], 0x01);
-    bytes[at] = 0x02;
-    fs::write(dir.join("manifest.cbor"), bytes).unwrap();
-    assert!(matches!(
-        replay_dir(&dir),
-        Err(E::UnknownVersion {
-            item: "manifest",
-            found: 2
-        })
-    ));
+    // The manifest's version is 2 since AET-WO-0400a; 1 (the old state hash) and 3 are refused.
+    assert_eq!(bytes[at], 0x02);
+    for found in [1u8, 3] {
+        bytes[at] = found;
+        fs::write(dir.join("manifest.cbor"), &bytes).unwrap();
+        assert!(matches!(
+            replay_dir(&dir),
+            Err(E::UnknownVersion {
+                item: "manifest",
+                found: f
+            }) if f == u64::from(found)
+        ));
+    }
 }
 
 #[test]
@@ -378,7 +369,6 @@ fn a_second_manifest_or_any_stray_entry_is_refused() {
     for (i, extra) in [
         "manifest2.cbor",
         "manifest.cbor.tmp",
-        "mirror.cbor.tmp",
         "notes.txt",
         ".hidden",
     ]
@@ -738,6 +728,21 @@ fn the_mirror_never_runs_before_the_commit_or_twice() {
         mirror_step(&dir, lookup([false; 3]), &mut log),
         Err(E::MirrorExists)
     ));
+}
+
+#[test]
+fn a_planted_mirror_tmp_is_ignored_and_then_cleared() {
+    let (dir, manifest) = write_run("mirror-tmp", 0x0400, &events(20));
+    fs::write(dir.join("mirror.cbor.tmp"), [0xff; 1000]).unwrap();
+    assert_eq!(replay_dir(&dir).unwrap().manifest, manifest);
+    let mut log = Vec::new();
+    mirror_step(&dir, lookup([false; 3]), &mut log).unwrap();
+    assert!(!dir.join("mirror.cbor.tmp").exists());
+    assert_eq!(replay_dir(&dir).unwrap().manifest, manifest);
+    // A tmp that is not a regular file is still a stray entry.
+    let (dir, _) = write_run("mirror-tmp-link", 0x0400, &events(5));
+    symlink(dir.join("trace.cbor"), dir.join("mirror.cbor.tmp")).unwrap();
+    assert!(matches!(replay_dir(&dir), Err(E::UnexpectedEntry(n)) if n == "mirror.cbor.tmp"));
 }
 
 #[test]
