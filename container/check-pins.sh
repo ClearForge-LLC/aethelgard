@@ -15,16 +15,22 @@
 #     left to review; this script stops accidental drift, not an attacker.
 # Needs no container runtime.
 #
+# One extension (AET-WO-1501): a Dockerfile may `FROM ${TOOLS_IMAGE}` when it
+# declares `ARG TOOLS_IMAGE` with no default and container/IMAGE, read here, is
+# image@sha256:<64 hex>; the workflow passes that file's content as the argument.
+#
 #   bash container/check-pins.sh [container/Dockerfile]
 set -euo pipefail
 
 file=${1:-container/Dockerfile}
+image_file=$(dirname "$file")/IMAGE
 [ -f "$file" ] || { echo "check-pins: $file not found" >&2; exit 1; }
 mapfile -t lines < "$file"
 
 hex='[0-9a-f]{64}'
 bad=0
 from_seen=0
+arg_seen=0
 in_apt=0
 refuse() {
   echo "check-pins: line $(($1 + 1)): $2" >&2
@@ -54,7 +60,21 @@ for i in "${!lines[@]}"; do
     for word in "${words[@]:1}"; do
       [[ "$word" == --* ]] || { image=$word; break; }
     done
-    [[ "$image" =~ ^[^@[:space:]]+@sha256:${hex}$ ]] || refuse "$i" "unpinned base: $line"
+    if [ "$image" = '${TOOLS_IMAGE}' ] && [ "$arg_seen" -eq 1 ]; then
+      [ -f "$image_file" ] || refuse "$i" "$image_file not found: the base digest is unreadable"
+      [ -f "$image_file" ] && ! [[ "$(<"$image_file")" =~ ^[^@[:space:]]+@sha256:${hex}$ ]] \
+        && refuse "$i" "$image_file is not image@sha256:<64 hex>"
+    else
+      [[ "$image" =~ ^[^@[:space:]]+@sha256:${hex}$ ]] || refuse "$i" "unpinned base: $line"
+    fi
+  fi
+
+  if [[ "$line" =~ ^[[:space:]]*[Aa][Rr][Gg][[:space:]] ]]; then
+    if [ "${line//[[:space:]]/}" = "ARGTOOLS_IMAGE" ] && [ "$from_seen" -eq 0 ]; then
+      arg_seen=1
+    else
+      refuse "$i" "ARG other than a bare 'ARG TOOLS_IMAGE' before FROM: $line"
+    fi
   fi
 
   if [[ "$line" =~ --from=([^[:space:]]+) ]]; then

@@ -1,0 +1,142 @@
+# The engine image (AET-WO-1501): the pinned tools image plus the aethelgard
+# binary built from this repository. Pull requests build it and run the smoke
+# under --network none; they never publish. A push to main does the same and
+# then publishes from one job, the only one holding packages: write, the very
+# image it has just smoke-tested (RUL-15).
+name: engine-image
+
+on:
+  pull_request:
+    paths:
+      - "crates/**"
+      - "Cargo.*"
+      - "rust-toolchain.toml"
+      - ".dockerignore"
+      - "container/IMAGE"
+      - "container/engine*"
+      - "container/check-pins.sh"
+      - ".github/workflows/engine-image.yml"
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "Cargo.*"
+      - "rust-toolchain.toml"
+      - ".dockerignore"
+      - "container/IMAGE"
+      - "container/engine*"
+      - "container/check-pins.sh"
+      - ".github/workflows/engine-image.yml"
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: aethelgard:ci
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: refuse an unpinned engine Dockerfile or base digest
+        run: bash container/check-pins.sh container/engine.Dockerfile
+
+      # INV-06: a missing or unreadable container/IMAGE fails here by name.
+      - name: read the base digest
+        id: base
+        run: |
+          [ -r container/IMAGE ] || { echo "container/IMAGE missing or unreadable" >&2; exit 1; }
+          echo "tools_image=$(cat container/IMAGE)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: container/engine.Dockerfile
+          build-args: TOOLS_IMAGE=${{ steps.base.outputs.tools_image }}
+          tags: ${{ env.IMAGE }}
+          load: true
+          cache-from: type=gha,scope=engine-image
+          cache-to: type=gha,mode=max,scope=engine-image
+
+      - name: image size and layers
+        run: |
+          echo "ANSWER image_bytes=$(docker image inspect --format '{{.Size}}' "$IMAGE")"
+          docker history --no-trunc "$IMAGE"
+          if docker history --no-trunc "$IMAGE" | grep -iE 'token|password|secret|credential'; then
+            echo "credential-like text in a layer" >&2
+            exit 1
+          fi
+
+      - name: no source, build directory or .git left in the image
+        run: |
+          docker run --rm "$IMAGE" bash -c 'for p in /src /.git /tmp/cargo-build /tmp/target-build; do [ ! -e "$p" ] || { echo "left behind: $p" >&2; exit 1; }; done; echo "clean"'
+
+      - name: smoke with --network none
+        run: |
+          docker run --rm -i --network none \
+            -v "$PWD/container:/container:ro" -v "$PWD/examples:/examples:ro" \
+            "$IMAGE" bash /container/engine-smoke.sh
+
+  publish:
+    needs: image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    env:
+      TAG: ghcr.io/clearforge-llc/aethelgard:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: refuse an unpinned engine Dockerfile or base digest
+        run: bash container/check-pins.sh container/engine.Dockerfile
+
+      - name: read the base digest
+        id: base
+        run: |
+          [ -r container/IMAGE ] || { echo "container/IMAGE missing or unreadable" >&2; exit 1; }
+          echo "tools_image=$(cat container/IMAGE)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: container/engine.Dockerfile
+          build-args: TOOLS_IMAGE=${{ steps.base.outputs.tools_image }}
+          tags: ${{ env.TAG }}
+          load: true
+          cache-from: type=gha,scope=engine-image
+
+      # The image pushed is the image smoke-tested here, not a rebuild of it.
+      - name: smoke the image about to be published
+        run: |
+          docker run --rm -i --network none \
+            -v "$PWD/container:/container:ro" -v "$PWD/examples:/examples:ro" \
+            "$TAG" bash /container/engine-smoke.sh
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # CI never writes to the repository.
+      - name: push and record the digest
+        run: |
+          docker push "$TAG"
+          digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$TAG")
+          echo "Published \`$digest\` from \`$GITHUB_SHA\`." >> "$GITHUB_STEP_SUMMARY"

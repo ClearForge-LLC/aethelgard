@@ -14,3 +14,7 @@
 `container/smoke.sh` uses the KiCad files and `kani-smoke`; the `aethelgard` tier-2 tests (`--features with-tools`) use all of them.
 
 These files are tool-calibration inputs, not board artifacts. No specification produces them, and `INV-01` (`docs/northstar.md` §4) governs only artifacts generated from a specification, so a builder should not flag-and-stop on them.
+
+## The engine image
+
+`ghcr.io/clearforge-llc/aethelgard` is the pinned tools image plus the `aethelgard` binary (`AET-WO-1501`), published from `main` as `:<commit sha>` only, never `latest`. Pull and run it by digest, which the `engine-image` run summary prints for each publish: `docker run --rm -i --network none -v "$PWD:/repo:ro" -w /repo ghcr.io/clearforge-llc/aethelgard@sha256:<digest> aethelgard validate --file examples/sentinel-01-minimal.json`.
