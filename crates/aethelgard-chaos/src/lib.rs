@@ -45,6 +45,8 @@ pub enum ArchiveError {
     MalformedHeader(String),
     #[error("unknown format version {found} in {item}")]
     UnknownVersion { item: &'static str, found: u64 },
+    #[error("the manifest declares a trace of {declared} bytes, over the {limit}-byte bound")]
+    TraceTooLarge { declared: u64, limit: u64 },
     #[error("trace is {actual} bytes, the manifest committed {expected}")]
     Truncated { expected: u64, actual: u64 },
     #[error("trace is {actual} bytes, the manifest committed {expected}")]

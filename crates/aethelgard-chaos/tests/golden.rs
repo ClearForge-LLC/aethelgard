@@ -13,8 +13,9 @@ use common::*;
 /// version and saying why in FEEDBACK.
 const GOLDEN_TRACE_SHA256: &str =
     "51c6193f94ca0571a1c93e8f575af767161c70f1c0f167e79523eaeb9cca896d";
-/// The golden `state_hash`. Same rule.
-const GOLDEN_STATE_HASH: &str = "535db2250d335265437f934432b213659629417e5db2d55c7a2f0b7e8a3adac4";
+/// The golden `state_hash`. Same rule. It was `535db225…adac4` (manifest
+/// version 1) until `AET-WO-0400a` made the chain hash each event's delta.
+const GOLDEN_STATE_HASH: &str = "af2d46bb1b30e472e73fc9109f69213a80f8537e35d8d9d18f08b2bffb7b4939";
 
 #[test]
 fn golden_trace_and_state_hash_are_pinned() {

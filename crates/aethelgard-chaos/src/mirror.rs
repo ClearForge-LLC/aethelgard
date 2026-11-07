@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::Path;
 
 use crate::ArchiveError;
-use crate::archive::{MANIFEST, MIRROR, publish};
+use crate::archive::{CommitStage, MANIFEST, MIRROR, MIRROR_TMP, publish};
 use crate::cbor::{self, Value};
 use crate::event::{MIRROR_MAGIC, VERSION};
 
@@ -29,6 +29,18 @@ pub fn mirror_step(
     dir: &Path,
     env: impl Fn(&str) -> Option<OsString>,
     log: &mut impl Write,
+) -> Result<(), ArchiveError> {
+    mirror_step_observed(dir, env, log, |_| {})
+}
+
+/// As [`mirror_step`], calling `observe` at each [`CommitStage`] its record
+/// reaches (`ManifestTempWritten`, then `ManifestRenamed`), for tests that
+/// stop it there.
+pub fn mirror_step_observed(
+    dir: &Path,
+    env: impl Fn(&str) -> Option<OsString>,
+    log: &mut impl Write,
+    observe: impl FnMut(CommitStage),
 ) -> Result<(), ArchiveError> {
     if !dir.join(MANIFEST).is_file() {
         return Err(ArchiveError::MirrorBeforeCommit);
@@ -54,5 +66,12 @@ pub fn mirror_step(
         Value::Uint(0),
         Value::Text(reason),
     ]);
-    publish(dir, MIRROR, &cbor::to_bytes(&record), |_| {})
+    // A crash after the temporary file was written leaves it behind; it is
+    // never the record, so it is cleared before ours is written.
+    match std::fs::remove_file(dir.join(MIRROR_TMP)) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(ArchiveError::io(&dir.join(MIRROR_TMP), e)),
+    }
+    publish(dir, MIRROR, &cbor::to_bytes(&record), observe)
 }

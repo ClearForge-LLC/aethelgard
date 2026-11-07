@@ -15,6 +15,31 @@ use crate::replay::{Replayer, State};
 pub const TRACE: &str = "trace.cbor";
 pub const MANIFEST: &str = "manifest.cbor";
 pub const MIRROR: &str = "mirror.cbor";
+/// The mirror step's temporary file. Replay ignores it, as it ignores `mirror.cbor`.
+pub const MIRROR_TMP: &str = "mirror.cbor.tmp";
+
+/// A manifest declaring a longer trace is refused before the trace is read
+/// (`OQ-03` revisits the number when P2 measures real volume).
+pub const MAX_TRACE_BYTES: u64 = 256 << 20;
+/// The longest encoded header item the reader will build.
+pub const MAX_HEADER_BYTES: usize = 1 << 20;
+/// The longest encoded event item the reader will build; the largest legal one is under 1,200.
+pub const MAX_EVENT_BYTES: usize = 4096;
+
+/// Decode the item at `offset`, looking at no more than `max` bytes. An item
+/// that runs past that window is `Ok(None)`: nothing nested is built from it,
+/// so the allocation is bounded by `max`, not by the input.
+fn decode_bounded(
+    trace: &[u8],
+    offset: usize,
+    max: usize,
+) -> Result<Option<(cbor::Value, usize)>, cbor::CborError> {
+    let end = offset.saturating_add(max).min(trace.len());
+    match cbor::decode_prefix(&trace[..end], offset) {
+        Err(e) if end < trace.len() && e.kind == cbor::CborErrorKind::UnexpectedEnd => Ok(None),
+        other => other.map(Some),
+    }
+}
 
 /// Where a commit is, for tests that stop the writer there. The mirror's
 /// record goes through the same steps and reports the same two last stages.
@@ -83,6 +108,9 @@ impl TraceWriter {
     ) -> Result<Self, ArchiveError> {
         let header_bytes = cbor::to_bytes(&header.to_value());
         // The writer refuses a header its own reader would refuse.
+        if header_bytes.len() > MAX_HEADER_BYTES {
+            return Err(ArchiveError::InvalidHeader("header is over 1 MiB"));
+        }
         let reread = cbor::decode_exact(&header_bytes)
             .map_err(|_| ArchiveError::InvalidHeader("header is outside the profile's bounds"))?;
         if let Err(Fault::Malformed(reason)) = Header::from_value(&reread) {
@@ -186,7 +214,8 @@ fn read_all(path: &Path) -> Result<Vec<u8>, ArchiveError> {
 }
 
 /// Check the directory's shape: a real directory holding only regular files
-/// named `trace.cbor`, `manifest.cbor` and optionally `mirror.cbor`.
+/// named `trace.cbor`, `manifest.cbor` and optionally `mirror.cbor`
+/// and `mirror.cbor.tmp`.
 fn check_entries(dir: &Path) -> Result<(), ArchiveError> {
     let meta = fs::symlink_metadata(dir).map_err(|e| ArchiveError::io(dir, e))?;
     if !meta.file_type().is_dir() {
@@ -200,7 +229,7 @@ fn check_entries(dir: &Path) -> Result<(), ArchiveError> {
         let entry = entry.map_err(|e| ArchiveError::io(dir, e))?;
         let name = entry.file_name().to_string_lossy().into_owned();
         let regular = entry.file_type().is_ok_and(|t| t.is_file());
-        if !(regular && [TRACE, MANIFEST, MIRROR].contains(&name.as_str())) {
+        if !(regular && [TRACE, MANIFEST, MIRROR, MIRROR_TMP].contains(&name.as_str())) {
             bad.push(name);
         }
     }
@@ -235,6 +264,12 @@ pub fn replay_dir(dir: &Path) -> Result<Replayed, ArchiveError> {
         Fault::UnknownKind(_) => ArchiveError::MalformedManifest("unexpected kind".to_owned()),
     })?;
 
+    if manifest.trace_bytes > MAX_TRACE_BYTES {
+        return Err(ArchiveError::TraceTooLarge {
+            declared: manifest.trace_bytes,
+            limit: MAX_TRACE_BYTES,
+        });
+    }
     let trace_path = dir.join(TRACE);
     let actual = match fs::metadata(&trace_path) {
         Ok(meta) => meta.len(),
@@ -262,8 +297,9 @@ pub fn replay_dir(dir: &Path) -> Result<Replayed, ArchiveError> {
         return Err(ArchiveError::HashMismatch);
     }
 
-    let (header_value, mut offset) =
-        cbor::decode_prefix(&trace, 0).map_err(ArchiveError::NotDeterministicCbor)?;
+    let (header_value, mut offset) = decode_bounded(&trace, 0, MAX_HEADER_BYTES)
+        .map_err(ArchiveError::NotDeterministicCbor)?
+        .ok_or_else(|| ArchiveError::MalformedHeader("header is over 1 MiB".to_owned()))?;
     let header = Header::from_value(&header_value).map_err(|fault| match fault {
         Fault::Version(found) => ArchiveError::UnknownVersion {
             item: "header",
@@ -275,8 +311,13 @@ pub fn replay_dir(dir: &Path) -> Result<Replayed, ArchiveError> {
     let mut replayer = Replayer::new(&trace[..offset]);
     while offset < trace.len() {
         let index = replayer.event_count();
-        let (value, end) =
-            cbor::decode_prefix(&trace, offset).map_err(ArchiveError::NotDeterministicCbor)?;
+        let (value, end) = decode_bounded(&trace, offset, MAX_EVENT_BYTES)
+            .map_err(ArchiveError::NotDeterministicCbor)?
+            .ok_or(ArchiveError::MalformedEvent {
+                index,
+                offset,
+                reason: "event is over 4096 bytes",
+            })?;
         let event = Event::from_value(&value).map_err(|fault| match fault {
             Fault::UnknownKind(kind) => ArchiveError::UnknownEventKind {
                 index,

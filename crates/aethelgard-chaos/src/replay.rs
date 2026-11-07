@@ -19,63 +19,40 @@ pub struct State {
 }
 
 impl State {
-    fn apply(&mut self, event: &Event) {
+    /// Fold one event in and return its delta: one array in the profile, which
+    /// is what the hash chain sees (`README.md`, "Replay and the state hash").
+    /// A write that changes nothing still has a delta.
+    fn apply(&mut self, event: &Event) -> Value {
+        let u = |n: u64| Value::Uint(n);
         match event {
             Event::RegisterWrite { address, value, .. } => {
                 self.registers.insert(*address, *value);
+                Value::Array(vec![u(0), u(u64::from(*address)), u(u64::from(*value))])
             }
             Event::PinLevel { pin, level, .. } => {
                 self.pins.insert(pin.clone(), *level);
+                Value::Array(vec![u(1), Value::Text(pin.clone()), u(u64::from(*level))])
             }
             Event::Interrupt { line, .. } => {
-                *self.interrupts.entry(u32::from(*line)).or_insert(0) += 1;
+                let count = self.interrupts.entry(u32::from(*line)).or_insert(0);
+                *count += 1;
+                Value::Array(vec![u(2), u(u64::from(*line)), u(*count)])
             }
             Event::AnalogSample {
                 net, microvolts, ..
             } => {
                 self.nets.insert(net.clone(), *microvolts);
+                Value::Array(vec![
+                    u(3),
+                    Value::Text(net.clone()),
+                    Value::from_i64(*microvolts),
+                ])
             }
-            Event::FaultInjected { .. } => self.faults += 1,
+            Event::FaultInjected { .. } => {
+                self.faults += 1;
+                Value::Array(vec![u(4), u(self.faults)])
+            }
         }
-    }
-
-    /// The profile encoding, every map an array of `[key, value]` pairs in key order.
-    pub fn encode(&self, out: &mut Vec<u8>) {
-        fn pairs<K, V>(
-            map: &BTreeMap<K, V>,
-            key: impl Fn(&K) -> Value,
-            val: impl Fn(&V) -> Value,
-        ) -> Value {
-            Value::Array(
-                map.iter()
-                    .map(|(k, v)| Value::Array(vec![key(k), val(v)]))
-                    .collect(),
-            )
-        }
-        let state = Value::Array(vec![
-            pairs(
-                &self.registers,
-                |k| Value::Uint(u64::from(*k)),
-                |v| Value::Uint(u64::from(*v)),
-            ),
-            pairs(
-                &self.pins,
-                |k| Value::Text(k.clone()),
-                |v| Value::Uint(u64::from(*v)),
-            ),
-            pairs(
-                &self.interrupts,
-                |k| Value::Uint(u64::from(*k)),
-                |v| Value::Uint(*v),
-            ),
-            pairs(
-                &self.nets,
-                |k| Value::Text(k.clone()),
-                |v| Value::from_i64(*v),
-            ),
-            Value::Uint(self.faults),
-        ]);
-        cbor::encode(&state, out);
     }
 }
 
@@ -107,9 +84,9 @@ impl Replayer {
             return Err(ArchiveError::TimestampRegressed { index: self.count });
         }
         self.last_timestamp = event.timestamp();
-        self.state.apply(event);
+        let delta = self.state.apply(event);
         self.scratch.clear();
-        self.state.encode(&mut self.scratch);
+        cbor::encode(&delta, &mut self.scratch);
         let mut hasher = Sha256::new();
         hasher.update(self.hash);
         hasher.update(&self.scratch);

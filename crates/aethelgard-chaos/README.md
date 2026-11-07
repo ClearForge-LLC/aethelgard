@@ -31,8 +31,10 @@ RFC 8949 §4.2.1 core deterministic encoding, restricted further.
 ## The run directory
 
 A run directory holds exactly `trace.cbor` and `manifest.cbor`, and optionally
-`mirror.cbor`. Each is a regular file. Anything else, a symlink or a leftover
-`*.tmp` included, is refused.
+`mirror.cbor` and `mirror.cbor.tmp`. Each is a regular file. Anything else, a
+symlink or a leftover `manifest.cbor.tmp` included, is refused. Replay reads
+neither mirror file (`mirror.cbor.tmp` is what a crash in the mirror step
+leaves behind; it must not orphan a committed run).
 
 - **`trace.cbor`**, a CBOR sequence (RFC 8742): the header, then one item per
   event, no enclosing array, so it can be appended to.
@@ -55,24 +57,39 @@ A run directory holds exactly `trace.cbor` and `manifest.cbor`, and optionally
     Pin, net and scenario names are 1 to 64 bytes of `0x21`–`0x7E` (`RUL-14`).
     `detail` is 0 to 1,024 bytes of `0x20`–`0x7E`. An unknown kind, or a payload
     of the wrong length or type, is refused.
-- **`manifest.cbor`**: `["aethelgard-manifest", 1, trace_bytes, trace_sha256,
+- **`manifest.cbor`**: `["aethelgard-manifest", 2, trace_bytes, trace_sha256,
   event_count, state_hash]`. Written last; it is what commits the run.
 - **`mirror.cbor`**, optional: `["aethelgard-mirror", 1, uploaded, reason]`.
-  Written after the commit; replay never reads it.
+  Written after the commit; replay never reads it, so it is not covered by the
+  manifest: its contents and size are unchecked.
 
 ## Version rule
 
-Every item carries version 1. A reader refuses any other version
-(`UnknownVersion`), judged before the item's shape. A change to the format, to
-the event table, or to the golden constants in `tests/golden.rs` bumps it.
+The trace header and the mirror record carry version 1; the manifest carries
+version 2 (`AET-WO-0400a` changed what `state_hash` means, the trace's bytes
+not at all). A reader refuses any other version (`UnknownVersion`), judged
+before the item's shape. A change to the format, to the event table, or to the
+golden constants in `tests/golden.rs` bumps it.
 
 ## Replay and the state hash
 
 Replay folds events into registers (`BTreeMap<u32, u32>`), pin levels, interrupt
 counts, the last sample on each net, and a fault count. The state hash is a
-chain: `h0 = sha256(header item bytes)`, `h_i = sha256(h_{i-1} ‖ encode(state
-after event i))`, where `encode` is the profile with every map an array of
-`[key, value]` pairs in key order. The final `h` is `state_hash`.
+chain over each event's change, so replay is linear in events:
+`h0 = sha256(header item bytes)`, `h_i = sha256(h_{i-1} ‖ encode(delta_i))`,
+and the final `h` is `state_hash`. `delta_i` is one array in the profile:
+
+| event | delta |
+|---|---|
+| register write | `[0, address, value]` |
+| pin level | `[1, pin, level]` |
+| interrupt | `[2, line, new_count]` |
+| analog sample | `[3, net, microvolts]` (negative: major type 1) |
+| fault injected | `[4, new_fault_count]` |
+
+A write that leaves the state as it was still has its delta, so it changes
+`state_hash`. Timestamps, and a fault's scenario and detail, are not in the
+chain; `trace_sha256` covers them.
 
 ## Commit protocol
 
@@ -92,12 +109,16 @@ Reader (`replay_dir`) checks in this order, each refusal its own
 | `manifest.cbor` present | `Uncommitted` |
 | `trace.cbor` present | `MissingTrace` |
 | Manifest decodes under the profile | `MalformedManifest` |
-| Manifest version is 1 | `UnknownVersion` |
+| Manifest version is 2 | `UnknownVersion` |
+| Manifest's `trace_bytes` is at most 256 MiB | `TraceTooLarge` |
 | Trace length equals `trace_bytes` (checked before the file is read) | `Truncated` / `Extended` |
 | Trace sha256 equals `trace_sha256` | `HashMismatch` |
-| Header and events decode | `NotDeterministicCbor` (with offset), `MalformedHeader`, `UnknownVersion`, `UnknownEventKind`, `MalformedEvent`, `TimestampRegressed` |
+| Header and events decode; a header item is at most 1 MiB and an event item at most 4,096 encoded bytes, checked before the item's nested values are built | `NotDeterministicCbor` (with offset), `MalformedHeader`, `UnknownVersion`, `UnknownEventKind`, `MalformedEvent`, `TimestampRegressed` |
 | Event count equals `event_count` | `EventCountMismatch` |
 | Replayed state hash equals `state_hash` | `ReplayDiverged` |
+
+`MirrorBeforeCommit` and `MirrorExists` are the mirror step's refusals, not
+the reader's. An empty environment variable counts as unset there.
 
 The manifest proves integrity (these are the committed bytes), not
 authenticity: whoever can rewrite the events can recompute the manifest.
@@ -113,3 +134,8 @@ it writes exactly one line naming the first such variable to `log` and writes
 `uploaded` 0 with the reason "remote mirror not built (RUL-06, OQ-03)": nothing
 is uploaded, and it never says otherwise. No variable's value is read into a
 log, a trace, a manifest or `mirror.cbor`, and the commit's result is unchanged.
+
+The record goes through the same temporary file, `sync_all`, rename and
+directory sync as the manifest. The step removes a stale `mirror.cbor.tmp`
+before writing its own, so a crash between the two never orphans the run
+(`mirror_step_observed` lets a test stop it there).
