@@ -291,3 +291,10 @@ The five KiCad cases (`drc_…`, `erc_…`, `mcp_check_drc…`) fail `ToolMissin
 
   They are worth doing after `AET-WO-0300c` merges.
 - **CI**, first push after the ruling (`824acad`), before `AET-WO-0300c` merged: `gates` and `tools` both green, https://github.com/ClearForge-LLC/aethelgard/actions/runs/42423285608 (PR #32). `gates` ran the new tests in its debug profile, so clause 2, clause 4's solver half with the spike's digests, the stress bound and the six-tool MCP list all passed there. Live acceptance is not done; it is the operator's.
+- **CI after merging `AET-WO-0300c` (`ae04803`): `gates` failed once, on a test this diff does not touch.** The test is `mcp_tier1::servers_sigkilled_while_calls_start_leave_nothing`, from `AET-WO-0300c` (#34). The log reads `survivors [], leftover directories ["aethelgard-7773-1794093670722372015"]`: one `check_drc` call's scratch directory outlived its SIGKILLed server. https://github.com/ClearForge-LLC/aethelgard/actions/runs/42424760372
+
+  On Furnace the same test passed **30 of 30** at `ae04803` (its binary run alone, 30 times), and it passed in `main`'s own CI at `1b4fe5f`. `solve` creates no scratch directory and never reaches the guardian. This diff's only change to `mcp_tier1.rs` is the tool-list line.
+
+  | # | Finding | Severity | Type | Recommendation | Decision-needed |
+  |---|---|---|---|---|---|
+  | C1 | `AET-WO-0300c`'s parent-kill test is timing-sensitive on a loaded runner. Rarely, a guardian does not remove its directory, which is an escape in 0300c's own guarantee, not a test artifact. This was not retried away silently; the next push re-ran CI (result below) | medium | finding for `AET-WO-0300c`'s owner | Investigate the guardian start-up path under load; do not loosen the test | yes |
