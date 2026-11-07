@@ -311,6 +311,16 @@ Two more steps now run in the trampoline before the tool starts:
 
 **Still open on a host:** non-socket channels to other processes with the same uid, namely System V shared memory, `unshare(CLONE_NEWUSER)` and `pidfd_open`. The filter is default-allow by design (§4 of the work order). Inside the published image, Docker gives the tool its own IPC namespace and refuses unprivileged `unshare`, so **the image is the supported boundary for tool subcommands.** A host-side system-call allowlist is `AET-WO-1600`, which must land before the P1 launch clause puts a crates.io-installed binary on hosts.
 
+**The lifecycle at every instant (`AET-WO-0300c`, rulings on PR #34).**
+- The reaper and the guardian take the CLI's pid as an internal argument, `--cli-pid`, and never sample their parent.
+- The guardian starts before the scratch directory exists.
+- Under `aethelgard mcp`, which names itself in the internal variable `AETHELGARD_INTERNAL_PARENT_PID`, each CLI arms `PR_SET_PDEATHSIG` and then checks its parent against that pid. The variable never reaches a tool, because tool environments are cleared. Only `mcp` sets it, and it spawns every CLI from its main thread.
+- **The signal is armed nowhere else.** Linux sends it when the parent's *thread* ends, so arming it for every CLI would kill the CLI under any multi-threaded caller. `mcp` never arms it on itself.
+
+Measured: an immediate-cancel storm of 500 calls left 0 survivors, three runs in a row, against 8 before the fix. 100 `mcp` servers SIGKILLed while calls were starting left 0, against 52 before. 11,319 timed kills of the CLI left 0.
+
+**The residual, accepted for P0:** a direct caller that dies in the CLI's first instant leaves that call to run to its own end. A direct caller owns its child's lifetime, as `RUL-13` already rules for timeouts.
+
 **A rule for whoever builds the `mcp` subcommand.** The internal first arguments that start the reaper, the trampoline and the guardian execute the argument vector they are given. They are safe only because they are not in the command tree. The `mcp` subcommand must therefore map every tool to a `clap` subcommand and never forward raw arguments.
 
 ## 7. Traceability
@@ -359,6 +369,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-11-07 | §2.1, §2.8, §4 | Added §2.8: the pin table comes from ST's BSD-3-Clause `STM32_open_pin_data`, vendored by `AET-WO-1101`. The §2.1 row's licence question is resolved, and `RUL-11`'s inventory names the source | The architect read both candidates' licences and ST's files for the STM32H753ZI. The primary source has a clear licence; the derivative's generated data has none |
 | 2026-11-07 | §2.9, §4 | Added §2.9 measurements from `AET-WO-0300b`. Amended `RUL-13` with the tool-input copy cap and the 4,096-file crate cap | Rulings at review of PR #18, promoting its FEEDBACK's two items. The measurement showed that the `[ERROR]` path Argon's RT-02 named does not occur in Renode 1.17.0. The check stays as a backstop |
 | 2026-11-07 | §2.10 | Added §2.10 measurements from `AET-WO-0400` | Rulings at review of PR #21. Its adversarial findings 1, 2 and 3 became `AET-WO-0400a`: a per-event delta hash chain (manifest version 2), shape-bounded decoding, and a mirror crash that leaves the run readable. Findings 6 and 7 and the three scope questions were accepted as built and recorded there |
+| 2026-11-07 | §6 | Added the sandbox lifecycle as `AET-WO-0300c` built it, the internal variable `AETHELGARD_INTERNAL_PARENT_PID`, and the accepted residual for direct callers | Rulings at review of PR #34. The parent-death signal fires on the parent thread's exit, so it is armed only under `mcp`, which spawns from its main thread |
 
 New sections continue the sequence and never reuse a number.
 
