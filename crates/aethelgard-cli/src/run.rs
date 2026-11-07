@@ -26,7 +26,7 @@ use std::os::unix::process::{CommandExt, ExitStatusExt, parent_id};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio, exit};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use landlock::{
     ABI, Access, AccessFs, AccessNet, CompatLevel, Compatible, LandlockStatus, Ruleset,
@@ -528,10 +528,37 @@ fn kill_descendants() {
     }
 }
 
+/// How long the guardian keeps trying to remove its directory once the CLI is gone.
+const GUARD_REMOVAL_BOUND: Duration = Duration::from_secs(10);
+
+/// Removes `dir` with `remove`, retrying every 20 ms while a writer can still be racing it (the
+/// trampoline's status file, a tool stub the reaper has not killed yet), so the last `rmdir` may
+/// lose. Returns the guardian's exit code: 0 once the directory is gone (`remove` succeeded, or
+/// failed `NotFound` with the directory absent), 70 once `bound` has passed.
+fn remove_with_retry(
+    dir: &Path,
+    bound: Duration,
+    mut remove: impl FnMut(&Path) -> io::Result<()>,
+) -> i32 {
+    let give_up = Instant::now() + bound;
+    loop {
+        match remove(dir) {
+            Ok(()) => return 0,
+            Err(e) if e.kind() == io::ErrorKind::NotFound && !dir.exists() => return 0,
+            Err(_) => {}
+        }
+        if Instant::now() >= give_up {
+            return 70;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
 /// The guardian: `aethelgard --aethelgard-internal-guard --cli-pid N <dir>`.
 /// Started, in its own process group, before the call's temporary directory
 /// exists, it removes the directory if the CLI dies before removing it itself,
-/// whatever the CLI was doing then. It never sets a death signal on itself.
+/// whatever the CLI was doing then, retrying while a writer races it, and exits 70
+/// (directory left) after the bound. It never sets a death signal on itself.
 /// Never returns.
 pub fn guard_main(args: &[OsString]) -> ! {
     let (cli_pid, dir) = match args {
@@ -555,8 +582,9 @@ pub fn guard_main(args: &[OsString]) -> ! {
     loop {
         // The parent first: once it is gone, nothing can create the directory.
         if parent_id() != cli_pid {
-            let _ = fs::remove_dir_all(&dir);
-            exit(0);
+            exit(remove_with_retry(&dir, GUARD_REMOVAL_BOUND, |d| {
+                fs::remove_dir_all(d)
+            }));
         }
         if dir.exists() {
             seen = true;
@@ -786,6 +814,59 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TEST_BOUND: Duration = Duration::from_millis(200);
+
+    #[test]
+    fn a_removal_that_always_fails_gives_up_with_70_after_the_bound() {
+        let mut calls = 0;
+        let started = Instant::now();
+        let code = remove_with_retry(Path::new("/nonexistent/aethelgard-x"), TEST_BOUND, |_| {
+            calls += 1;
+            Err(io::Error::from_raw_os_error(39)) // ENOTEMPTY
+        });
+        let took = started.elapsed();
+        assert_eq!(code, 70);
+        assert!(calls > 1, "never retried");
+        assert!(took >= TEST_BOUND, "gave up early: {took:?}");
+        assert!(took < TEST_BOUND * 2, "gave up late: {took:?}");
+    }
+
+    #[test]
+    fn a_removal_that_fails_3_times_then_succeeds_returns_0_after_4_calls() {
+        let mut calls = 0;
+        let code = remove_with_retry(Path::new("/nonexistent/aethelgard-x"), TEST_BOUND, |_| {
+            calls += 1;
+            if calls <= 3 {
+                Err(io::Error::from_raw_os_error(39))
+            } else {
+                Ok(())
+            }
+        });
+        assert_eq!((code, calls), (0, 4));
+    }
+
+    #[test]
+    fn not_found_with_the_directory_absent_returns_0_on_the_first_call() {
+        let mut calls = 0;
+        let code = remove_with_retry(Path::new("/nonexistent/aethelgard-x"), TEST_BOUND, |_| {
+            calls += 1;
+            Err(io::ErrorKind::NotFound.into())
+        });
+        assert_eq!((code, calls), (0, 1));
+    }
+
+    #[test]
+    fn not_found_while_the_directory_exists_keeps_retrying() {
+        let mut calls = 0;
+        // `/` exists, so a `NotFound` from the remover is a lost race, not a clean exit.
+        let code = remove_with_retry(Path::new("/"), TEST_BOUND, |_| {
+            calls += 1;
+            Err(io::ErrorKind::NotFound.into())
+        });
+        assert_eq!(code, 70);
+        assert!(calls > 1, "returned on the first NotFound");
+    }
 
     /// The filter as an exact instruction sequence: any edit to it must show
     /// up here (ruled on PR #15). (code, jt, jf, k)
