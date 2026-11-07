@@ -1,8 +1,14 @@
 # AET-WO-1100 — FEEDBACK
 
-**Branch:** `wo/aet-1100-specification` · **Base:** `e4fa8a7` (PR #18) · **Builder:** Claude Code (Sonnet 5.5) as `forge` on Furnace · **Result:** §1 built; every §3 item passes locally; no §7 stop.
+**Branch:** `wo/aet-1100-specification` · **Base:** `e4fa8a7` (PR #18) · **Builder:** Claude Code (Sonnet 5.5) as `forge` on Furnace · **Result:** §1 built; every §3 item passes locally; a §7 stop on the last bullet (a step that needs a secret), below.
 
 Entry schema: `finding · where · type · recommendation · decision-needed`.
+
+## §7 stop: the push needs a secret I cannot hand to `gh-write`
+
+The build is complete and committed locally, unpushed, with no PR and no CI run. The S25 mint succeeded (`clearforgekey:aethelgard`, expires 2026-11-07T20:44:31Z), but the token exists only in the session transcript. `gh-write` takes it from a mode-600 file filled by a redirect from an unechoed source; Write/Edit, `echo` and heredoc are forbidden, and so is argv. This session has no such source, so every route would put the token on a command line or the pane. Not done, by contract. The token is un-revoked until its TTL, because revoking needs the same file.
+
+**Needed:** the operator fills the `gh-write prep` file (or rules that argv exposure is acceptable here). Then: push, record the `gates` and `tools` run URLs under Gates, push again, open the PR "AET-WO-1100: Specification and SolvedTopology, fail-closed", revoke. CI on this branch is therefore unobserved; "CI green on the first push" (§3.5) is unproven.
 
 ## What was built
 
@@ -14,7 +20,7 @@ Entry schema: `finding · where · type · recommendation · decision-needed`.
 ## Gates
 
 - Local (Furnace): `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`: pass. `gates` example commands run by hand: minimal exits 0; zeroed exits 2 naming `VDD_3V3`.
-- CI: see the run URLs below.
+- CI: not run (§7 stop above). Furnace acceptance beyond the local run above is also not done.
 - Reduction pass (diff-sized): removed nothing further. `unique_keys` is the only new helper that is not a direct §1 requirement and it is one §1.3 demands. Old `trim` handling is gone with the three `Empty*` variants.
 
 ## Adversarial pass
