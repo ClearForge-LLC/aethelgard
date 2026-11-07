@@ -103,6 +103,14 @@ fn invalid_identifier_exits_2_with_a_path_in_the_message() {
     assert_eq!(report["error"]["id"], Value::Null);
     let message = report["error"]["message"].as_str().unwrap();
     assert!(message.contains("i2c_buses[0].sda.net"), "{message}");
+    assert_eq!(report["error"]["path"], "i2c_buses[0].sda.net");
+}
+
+#[test]
+fn path_is_absent_from_every_other_refusal() {
+    let output = run(&["validate"], br#"{"project_name":"p"}"#);
+    let report = assert_refused(&output, 2, "SchemaViolation");
+    assert!(report["error"].get("path").is_none(), "{report}");
 }
 
 #[test]

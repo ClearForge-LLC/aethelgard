@@ -8,7 +8,7 @@ The `aethelgard` binary. It is the contract every caller uses (`docs/architectur
 |---|---|---|
 | `0` | `validate`: the specification is valid. A tool subcommand: the tool ran and its verdict is pass | none: stdout is the success report or the verdict |
 | `1` | A tool subcommand: the tool ran and its verdict is fail (violations found, the proof failed, the crate did not compile, the harness does not exist, the platform did not load). The input is at fault; the tool worked | none: stdout is the verdict |
-| `2` | Invalid specification: well-formed JSON of the wrong shape (unknown, missing or duplicate field, wrong type including deep nesting where a value was expected, negative or overflowing number), or a value `validate()` refuses | `SchemaViolation`, or an `IrValidationError` variant name such as `InvalidIdentifier`, `NoVoltageDomain`, `UnknownDomain`, `DuplicateI2cAddress` or `ZeroNominalVoltage` |
+| `2` | Invalid specification: well-formed JSON of the wrong shape (unknown, missing or duplicate field, wrong type including deep nesting where a value was expected, negative or overflowing number), or a value `validate()` refuses | `SchemaViolation`, or an `IrValidationError` variant name such as `InvalidIdentifier`, `NoVoltageDomain`, `UnknownDomain`, `DuplicateI2cAddress` or `ZeroNominalVoltage`; `InvalidIdentifier` also carries `error.path` |
 | `3` | Unreadable input. `validate`: the file or stdin cannot be read, is empty, is more than 16 MiB, or is not one JSON document (syntax error, trailing data, a byte-order mark). A tool subcommand: an input path that does not exist, cannot be read, or is not a regular file (not a directory, for `--crate`); a crate holding a symlink, a special file or a non-UTF-8 name; a Renode built-in path outside Renode's own tree; `InputTooLarge`: a copied file, or a crate's files together, of more than 16 MiB (16,777,216 bytes), or a crate of more than 4,096 files (counted after `target/` is skipped). The byte cap is enforced while copying, never by truncating | `UnreadableInput`, `InputTooLarge`, `InvalidJson` |
 | `4` | The tool cannot be used: it is not on `PATH`, is not executable, will not report its version, or lacks an environment variable it needs; or the sandbox is unavailable. Never a verdict (`INV-06`) | `ToolMissing` (`id`: the tool), `ToolUnusable` (`id`: the tool, or the missing variable), `SandboxUnavailable` (`id`: `landlock`, `seccomp`, or `descriptors`) |
 | `5` | The tool ran but its output cannot be trusted as a verdict: killed by a signal, an exit code outside the ones measured for it, a missing, unparseable or oversized report or output, or two witnesses that disagree. Never read as pass or fail | `ToolError` (`id`: the tool) |
@@ -39,7 +39,7 @@ On refusal, exit `2` or `3`:
 {"ok":false,"error":{"kind":"ZeroNominalVoltage","id":"VDD_3V3","message":"voltage domain `VDD_3V3` has nominal_millivolts 0"}}
 ```
 
-`id` is the offending name exactly as written (nothing is trimmed; whitespace is refused as an invalid identifier), or `null` when the refusal names no single thing: `InvalidIdentifier` (the JSON path of the field, such as `i2c_buses[0].sda.net`, is in `message`), `UnsupportedSchemaVersion`, `NoVoltageDomain`, a whole-document error.
+`id` is the offending name exactly as written (nothing is trimmed; whitespace is refused as an invalid identifier), or `null` when the refusal names no single thing: `InvalidIdentifier` (the JSON path of the field, such as `i2c_buses[0].sda.net`, is in the optional `path` field, which exists for that kind only and is absent from every other refusal; `message` repeats it for humans), `UnsupportedSchemaVersion`, `NoVoltageDomain`, a whole-document error.
 
 Every key is required, including `peripheral`, `pin` and `impedance_ohms`, which are `null` when unset. The shape and the refusals, in check order, are in `crates/aethelgard-ir/README.md`. See `examples/` at the repository root.
 
@@ -121,3 +121,47 @@ docker run --rm --network none -v "$PWD:/repo:ro" -w /repo "$IMAGE" target/debug
 docker run --rm --network none -v "$PWD:/repo:ro" -w /repo "$IMAGE" target/debug/aethelgard prove --crate container/fixtures/kani-smoke --harness add_in_range
 docker run --rm --network none -v "$PWD:/repo:ro" -w /repo "$IMAGE" target/debug/aethelgard simulate --platform @platforms/boards/nucleo_h753zi.repl
 ```
+
+## `mcp`
+
+`aethelgard mcp` serves the other subcommands as [Model Context Protocol](https://modelcontextprotocol.io) tools on stdin and stdout (`RUL-10`, built on `rmcp` 3.7.0 with its `server` and `transport-io` features only). It takes no arguments, listens on no socket, holds no credential, and exits `0` when stdin closes. Stdout carries protocol messages and nothing else; diagnostics go to stderr. It is not a tool itself and adds no tool behaviour.
+
+Before it starts, it runs the trampoline's inherited-descriptor check. A descriptor above 2 without close-on-exec refuses with exit `4`, `SandboxUnavailable`, `id` `descriptors`; the refusal object goes to stderr, since stdout is reserved for the protocol. A `SIGTERM` or `SIGINT` kills the running calls and exits `143` or `130`, from the first moment, handshake or not. Closing stdin before `initialize` also exits `0`. `SIGHUP` and `SIGKILL` are not handled; see the work order's FEEDBACK.
+
+### The tool list
+
+Generated at startup from the unbuilt `clap` command tree, never written by hand, so a new subcommand appears with no change to the `mcp` module (`INV-01`):
+
+- one tool per leaf subcommand, named by its path joined with `_`: `validate`, `check_drc`, `check_erc`, `prove`, `simulate`. `help` and `mcp` are never tools;
+- the description is the subcommand's about text;
+- the input schema is an object with one **string** property per declared argument, keyed by its **long name** (`prove`'s directory is `crate`, not `crate_dir`), `required` exactly when `clap` requires it, and `additionalProperties` false.
+
+Every argument must be a long-named, value-taking option. Anything else (a positional, a boolean flag) makes the tool list refuse to build, which a unit test catches before a client can.
+
+### A call
+
+The server checks the arguments against the schema (declared names only, string values only, required ones present, no NUL byte). A failure is an MCP invalid-params error (`-32602`) and nothing runs; so is an unknown tool name. Otherwise it runs this binary itself as a child, with stdin from `/dev/null`, and the argument vector is the subcommand path followed by one `--<long>=<value>` token per argument. One token per argument means a value starting with `-` can never be read as a flag; the CLI judges it. The internal first arguments are not in the tree, so no call reaches them. The call therefore has exactly the CLI's sandbox, exit codes and JSON.
+
+`validate` reads stdin when `file` is absent, and the child's stdin is empty, so pass `file`: without it the call is refused as empty input (exit `3`).
+
+### The result
+
+For a child that exits and prints exactly one JSON object line:
+
+- `content[0].text` is that line, unchanged, without its newline;
+- `structuredContent` (its object keys sorted, so not byte-identical to the text) is `{"exit_code": <n or null>, "verdict": <the child's object>}`. `null` means the child was killed by a signal;
+- `isError` is `false` for exit `0` and `1`, because a fail verdict is a successful call, and `true` for every other exit code. A refusal, such as `ZeroNominalVoltage` (exit `2`), is therefore `isError` `true` with the refusal object as the verdict.
+
+`isError` is `true` for exit `null` as above. It is also `true`, with no `structuredContent` and a text naming the problem, when stdout is not exactly one JSON object line (a child killed before it printed one, for example), and when it exceeds a cap (the server kills the child, so a legitimate verdict over 1 MiB is reported as the cap): stdout 1 MiB, stderr 64 KiB. Past a cap the server kills the child and keeps draining until the pipes close.
+
+### Cancellation and bounds
+
+A `notifications/cancelled` for a call kills its child; the CLI's reaper then ends the tool's whole process group. Closing stdin lets running calls finish for up to 5 s (`rmcp`'s grace), then cancels them. The server sets no timeout of its own (`RUL-13`). `rmcp` drops a JSON-RPC line over 16 MiB without replying. The number of concurrent calls is not bounded by this server.
+
+### Human check
+
+```
+npx @modelcontextprotocol/inspector aethelgard mcp
+```
+
+lists the five tools, and a `validate` call with `file` set to `examples/sentinel-01-minimal.json` returns `isError` false.
