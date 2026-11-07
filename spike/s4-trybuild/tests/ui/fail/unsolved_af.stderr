@@ -1,0 +1,38 @@
+error[E0277]: the trait bound `aet_1400_s1_probe::good::Pin<8, Unconfigured>: SolvedAf<6>` is not satisfied
+  --> tests/ui/fail/unsolved_af.rs:11:20
+   |
+11 |     let _scl = pb8.into_alternate::<6, _>(&mut r);
+   |                    ^^^^^^^^^^^^^^ the trait `SolvedAf<6>` is not implemented for `aet_1400_s1_probe::good::Pin<8, Unconfigured>`
+   |
+help: the following other types implement trait `SolvedAf<AF>`
+  --> $AET_1400_S1_PROBE/src/lib.rs
+   |
+   |               impl<M> SolvedAf<4> for Pin<8, M> {}
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `aet_1400_s1_probe::good::Pin<8, M>`
+   |               impl<M> SolvedAf<4> for Pin<9, M> {}
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `aet_1400_s1_probe::good::Pin<9, M>`
+...
+   | / board!(
+   | |     good,
+   | |     af_value = knobs::af_exact,
+   | |     afr_offset = knobs::afr_offset,
+   | |     enable_i2c1_clock = true
+   | | );
+   | |_- in this macro invocation
+note: required by a bound in `aet_1400_s1_probe::good::Pin::<N, Unconfigured>::into_alternate`
+  --> $AET_1400_S1_PROBE/src/lib.rs
+   |
+   |                   pub fn into_alternate<const AF: u8, R: Registers>(
+   |                          -------------- required by a bound in this associated function
+...
+   |                       Self: SolvedAf<AF>,
+   |                             ^^^^^^^^^^^^ required by this bound in `Pin::<N, Unconfigured>::into_alternate`
+...
+   | / board!(
+   | |     good,
+   | |     af_value = knobs::af_exact,
+   | |     afr_offset = knobs::afr_offset,
+   | |     enable_i2c1_clock = true
+   | | );
+   | |_- in this macro invocation
+   = note: this error originates in the macro `board` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,30 @@
+error[E0277]: the trait bound `FastPlus1M: AtMostCeiling` is not satisfied
+  --> tests/ui/fail/bus_too_fast.rs:14:27
+   |
+14 |     let _bus = i2c.init::<FastPlus1M, _>(&mut r, scl, sda);
+   |                    ----   ^^^^^^^^^^ the trait `AtMostCeiling` is not implemented for `FastPlus1M`
+   |                    |
+   |                    required by a bound introduced by this call
+   |
+help: the following other types implement trait `AtMostCeiling`
+  --> $AET_1400_S1_PROBE/src/lib.rs
+   |
+   |     impl AtMostCeiling for Standard100k {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Standard100k`
+...
+   |     impl AtMostCeiling for Fast400k {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Fast400k`
+note: required by a bound in `aet_1400_s1_probe::good::I2c1::<Clocked>::init`
+  --> $AET_1400_S1_PROBE/src/lib.rs
+   |
+   |                   pub fn init<S: AtMostCeiling, R: Registers>(
+   |                                  ^^^^^^^^^^^^^ required by this bound in `I2c1::<Clocked>::init`
+...
+   | / board!(
+   | |     good,
+   | |     af_value = knobs::af_exact,
+   | |     afr_offset = knobs::afr_offset,
+   | |     enable_i2c1_clock = true
+   | | );
+   | |_- in this macro invocation
+   = note: this error originates in the macro `board` (in Nightly builds, run with -Z macro-backtrace for more info)

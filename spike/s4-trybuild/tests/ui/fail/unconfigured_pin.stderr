@@ -1,0 +1,24 @@
+error[E0308]: mismatched types
+  --> tests/ui/fail/unconfigured_pin.rs:13:48
+   |
+13 |     let _bus = i2c.init::<Fast400k, _>(&mut r, pb8, sda);
+   |                    -------------------         ^^^ expected `Pin<8, AlternateFunction<4>>`, found `Pin<8, Unconfigured>`
+   |                    |
+   |                    arguments to this method are incorrect
+   |
+   = note: expected struct `Pin<8, AlternateFunction<4>>`
+              found struct `Pin<8, Unconfigured>`
+note: method defined here
+  --> $AET_1400_S1_PROBE/src/lib.rs
+   |
+   |                   pub fn init<S: AtMostCeiling, R: Registers>(
+   |                          ^^^^
+...
+   | / board!(
+   | |     good,
+   | |     af_value = knobs::af_exact,
+   | |     afr_offset = knobs::afr_offset,
+   | |     enable_i2c1_clock = true
+   | | );
+   | |_- in this macro invocation
+   = note: this error originates in the macro `board` (in Nightly builds, run with -Z macro-backtrace for more info)

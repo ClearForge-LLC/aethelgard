@@ -1,0 +1,27 @@
+error[E0308]: arguments to this method are incorrect
+  --> tests/ui/fail/swapped_pins.rs:14:20
+   |
+14 |     let _bus = i2c.init::<Fast400k, _>(&mut r, sda, scl);
+   |                    ^^^^^^^^^^^^^^^^^^^         ---  --- expected `aet_1400_s1_probe::good::Pin<9, AlternateFunction<4>>`, found `aet_1400_s1_probe::good::Pin<8, AlternateFunction<4>>`
+   |                                                |
+   |                                                expected `aet_1400_s1_probe::good::Pin<8, AlternateFunction<4>>`, found `aet_1400_s1_probe::good::Pin<9, AlternateFunction<4>>`
+   |
+note: method defined here
+  --> $AET_1400_S1_PROBE/src/lib.rs
+   |
+   |                   pub fn init<S: AtMostCeiling, R: Registers>(
+   |                          ^^^^
+...
+   | / board!(
+   | |     good,
+   | |     af_value = knobs::af_exact,
+   | |     afr_offset = knobs::afr_offset,
+   | |     enable_i2c1_clock = true
+   | | );
+   | |_- in this macro invocation
+   = note: this error originates in the macro `board` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: swap these arguments
+   |
+14 -     let _bus = i2c.init::<Fast400k, _>(&mut r, sda, scl);
+14 +     let _bus = i2c.init::<Fast400k, _>(&mut r, scl, sda);
+   |

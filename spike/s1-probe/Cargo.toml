@@ -1,0 +1,14 @@
+[package]
+name = "aet-1400-s1-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+# AET-WO-1400 spike probe, S1. Not a member of the repository's workspace, and
+# deliberately without dependencies: `aethelgard prove` judges it in a sandbox
+# with no network and an empty cargo home.
+[workspace]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
