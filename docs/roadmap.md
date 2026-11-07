@@ -77,6 +77,7 @@ P0 ──> P1 ──> P2 ──> P3
   - `mcp` handles SIGHUP.
 
   It must merge before `AET-WO-1501` publishes the binary, and before any release.
+- `AET-WO-0300d` — inserted at review of PR #32, written, build-only, cheap tier: once the CLI is gone, the guardian retries removing its directory, within 10 s, instead of trying once. PR #32's `gates` run left one directory with no surviving process. The trampoline can still be creating `status-*` when the guardian's single `remove_dir_all` runs, and nothing retries it. A leaked directory, not a leaked process, so `AET-WO-1501` does not wait on it.
 - `AET-WO-0400` — the trace archive in deterministic CBOR (`RUL-06` as amended), with a local append-only archive, a strict reader, deterministic replay, and the optional remote mirror's credential boundary. **Build-only now:** `architecture.md` answers its old spike questions, and the work order fixes the profile, layout, commit protocol and golden hashes. It measures encoded bytes per synthetic event, labelled as plumbing; `OQ-03`'s bytes per simulated second waits for real events in P2.
 - `AET-WO-0400a` — inserted at review of PR #21, written, build-only. It makes three changes:
   - the state chain hashes each event's change, so replay is linear, and the manifest moves to version 2;
@@ -203,6 +204,7 @@ Three rules added at Argon's review, each learned from a work order that ran wit
 |---|---|---|---|
 | `AET-WO-0300b` | cheap | full on the two changed checks | small and fully specified, but it sits on the verdict path |
 | `AET-WO-0300c` | strong | full | the sandbox lifecycle is a trust boundary |
+| `AET-WO-0300d` | cheap | targeted, on the guardian | one function, a fully specified retry; the reproduction comes first |
 | `AET-WO-0400` | cheap | targeted: forgery, interrupted writes, hostile archives | the format and protocol are ruled; the risk is integrity, not escape |
 | `AET-WO-0400a` | cheap | targeted | three measured fixes, each fully specified |
 | `AET-WO-1100` | cheap | targeted | data modelling, with every rule fixed in the work order (Argon's tier) |
@@ -259,6 +261,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | 2026-11-07 | §5, §6, §7 | `AET-WO-1500` written build-only. `AET-WO-1501` split from it to add the binary to the published image | The image change touches `container/` and the publish job, which a cheap builder on the `mcp` work order should not. Splitting keeps each fence simple |
 | 2026-11-07 | §5, §6 | `AET-WO-0300c` inserted, and `AET-WO-1501` made to depend on it | `AET-WO-1500`'s adversarial pass found that a CLI killed during start-up leaves its tool running, because the reaper samples its parent's pid. The bug predates `mcp`, but `mcp` makes it routine, since every cancel kills the CLI |
 | 2026-11-07 | §5, §7 | `AET-WO-0300c` merged. `AET-WO-1501` written, as a second engine image rather than a change to the tools image | PR #34 merged with zero survivors. The tools image rebuilds only when `container/` changes and cannot see the source, so the engine needs its own image, built on the tools image's pinned digest |
+| 2026-11-07 | §5, §6 | `AET-WO-0300d` inserted | PR #32's `gates` run (42424760372) left one scratch directory with 0 survivors in 0300c's parent-kill test. The guardian removes its directory once and ignores the result, while the trampoline may still be writing in it |
 
 ## 9. Provenance
 
