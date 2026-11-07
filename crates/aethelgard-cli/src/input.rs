@@ -10,6 +10,15 @@ use sha2::{Digest, Sha256};
 
 use crate::run::Stop;
 
+/// The cap on one input, in bytes (`RUL-13`): `validate`'s file or stdin, and
+/// the sum of every file a tool input copies. Larger is refused unread past the
+/// cap, never truncated.
+pub const MAX_INPUT_BYTES: u64 = 16 * 1024 * 1024;
+
+/// The cap on the files in a crate, counted after a top-level `target/` is
+/// skipped.
+pub const MAX_CRATE_FILES: usize = 4096;
+
 /// An input ready to be judged.
 pub struct Input {
     /// The canonical path of the original, as reported in the verdict.
@@ -37,11 +46,14 @@ fn canonical(path: &Path) -> Result<PathBuf, Stop> {
     Ok(resolved)
 }
 
-/// Copies `from` to `to`, hashing exactly the bytes written.
-fn copy_hashed(from: &Path, to: &Path) -> Result<String, Stop> {
+/// Copies `from` to `to`, hashing exactly the bytes written. Reads at most one
+/// byte past `budget`, the bytes the whole input may still use, and refuses
+/// (naming `what`) rather than copy past it; on success `budget` is reduced by
+/// the bytes copied.
+fn copy_hashed(from: &Path, to: &Path, budget: &mut u64, what: &str) -> Result<String, Stop> {
     let unreadable =
         |e: std::io::Error| Stop::unreadable(format!("cannot copy {}: {e}", from.display()));
-    let mut src = File::open(from).map_err(unreadable)?;
+    let src = File::open(from).map_err(unreadable)?;
     // The open file must still be a regular file: no swap to a FIFO or device
     // between the check and the open.
     if !src.metadata().map_err(unreadable)?.is_file() {
@@ -50,7 +62,9 @@ fn copy_hashed(from: &Path, to: &Path) -> Result<String, Stop> {
             from.display()
         )));
     }
+    let mut src = src.take(*budget + 1);
     let mut dst = File::create(to).map_err(unreadable)?;
+    let mut copied = 0u64;
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 64 * 1024];
     loop {
@@ -58,9 +72,14 @@ fn copy_hashed(from: &Path, to: &Path) -> Result<String, Stop> {
         if n == 0 {
             break;
         }
+        copied += n as u64;
+        if copied > *budget {
+            return Err(Stop::too_large(what, MAX_INPUT_BYTES));
+        }
         hasher.update(&buf[..n]);
         dst.write_all(&buf[..n]).map_err(unreadable)?;
     }
+    *budget -= copied;
     Ok(hex(hasher.finalize()))
 }
 
@@ -93,7 +112,9 @@ pub fn dir_check(path: &Path) -> Result<(), Stop> {
 /// symlinks, copied to `dest`.
 pub fn file(path: &Path, dest: &Path) -> Result<Input, Stop> {
     let original = file_check(path)?;
-    let sha256 = copy_hashed(&original, dest)?;
+    let what = original.display().to_string();
+    let mut budget = MAX_INPUT_BYTES;
+    let sha256 = copy_hashed(&original, dest, &mut budget, &what)?;
     Ok(Input {
         original,
         copy: dest.to_path_buf(),
@@ -131,6 +152,8 @@ pub fn crate_dir(path: &Path, dest: &Path) -> Result<Input, Stop> {
     let mut files = Vec::new();
     walk(&original, &original, &mut files)?;
     files.sort();
+    let what = format!("crate {}", original.display());
+    let mut budget = MAX_INPUT_BYTES;
     let mut tree = Sha256::new();
     for rel in &files {
         let to = dest.join(rel);
@@ -138,7 +161,7 @@ pub fn crate_dir(path: &Path, dest: &Path) -> Result<Input, Stop> {
             fs::create_dir_all(parent)
                 .map_err(|e| Stop::unreadable(format!("cannot copy {rel}: {e}")))?;
         }
-        let digest = copy_hashed(&original.join(rel), &to)?;
+        let digest = copy_hashed(&original.join(rel), &to, &mut budget, &what)?;
         tree.update(format!("{digest}  {rel}\n").as_bytes());
     }
     fs::create_dir_all(dest)
@@ -179,6 +202,9 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), Stop> {
             }
             walk(root, &path, out)?;
         } else if kind.is_file() {
+            if out.len() >= MAX_CRATE_FILES {
+                return Err(Stop::too_large_files(root, MAX_CRATE_FILES));
+            }
             out.push(rel);
         } else {
             return Err(Stop::unreadable(format!(

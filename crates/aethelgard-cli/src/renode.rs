@@ -2,13 +2,16 @@
 //! 0 even when the load fails (`architecture.md` §2.4), so the exit code is
 //! recorded but never trusted alone. Two witnesses in the output: a CPU in the
 //! `peripherals` listing (an entry followed by a `Slot:` line) and the absence
-//! of `There was an error executing command`.
+//! of `There was an error executing command`. A CPU listed beside an `[ERROR]`
+//! log line is a failed load too (`platform_load_error`).
 
 use crate::run::{Output, Stop};
 use crate::verdict::{Finding, Machine, Peripheral};
 
 const TOOL: &str = "renode";
 const LOAD_ERROR: &str = "There was an error executing command";
+/// Renode's error log level; a CPU listed beside one is not a clean load.
+const LOG_ERROR: &str = "[ERROR]";
 
 /// The monitor commands. The platform is always the call's own copy, at a
 /// path this CLI chose, so no part of the caller's input reaches the monitor.
@@ -52,7 +55,16 @@ pub fn judge(code: i32, out: &Output) -> Result<(Vec<Finding>, Option<Machine>),
     }
     let error = lines.iter().position(|l| l.contains(LOAD_ERROR));
     match (cpus.is_empty(), error) {
-        (false, None) => Ok((Vec::new(), Some(Machine { cpus, peripherals }))),
+        (false, None) => match lines.iter().find(|l| l.contains(LOG_ERROR)) {
+            None => Ok((Vec::new(), Some(Machine { cpus, peripherals }))),
+            Some(line) => Ok((
+                vec![Finding::plain(
+                    "platform_load_error",
+                    line.trim().to_owned(),
+                )],
+                None,
+            )),
+        },
         (true, Some(i)) => {
             let detail = lines.get(i + 1).map(|l| l.trim()).unwrap_or_default();
             Ok((
