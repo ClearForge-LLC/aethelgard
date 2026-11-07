@@ -203,3 +203,36 @@ The alternative rejected is making `PinAssignment.alternate_function` an `Option
 | B6 | Root `Cargo.toml` gains `aethelgard-svd-hal` in `[workspace.dependencies]` (one line), and `Cargo.lock` the CLI→svd-hal edge. Neither file is on §2's protected list | root | scope touch | Accept | no |
 | B7 | The test `mcp::tests::the_five_tools_come_from_the_tree` now checks six names. It was **not renamed**, to keep the overlap with `AET-WO-0300c` in `mcp.rs` to the expectation lines | `mcp.rs` | stale name | Rename after `0300c` merges | no |
 | B8 | The final `out.validate()` in `solve` is labelled `belt-and-suspenders:`. Its mutant survives by construction: the search never produces an output it would refuse | `solve.rs` | protected redundancy | Keep | no |
+
+### §3 acceptance
+
+1. **Every §0 answer is in FEEDBACK with its measurement:** the Spike section above.
+2. **§1.4's tests pass on Furnace** (Gates below):
+   - clause 2: `gate_clause_2_a_pin_set_twice_names_both_claimants_and_emits_nothing_else`. Exit 2, `PinClaimedTwice`, claimants `i2c_buses[0].sda` and `spi_devices[0].cs`, and no file written in the working directory or beside the input;
+   - two solves byte-identical: `gate_clause_4_two_solves_are_byte_identical_and_match_the_spike`, also pinning the spike's digests;
+   - each S3 refusal, at both the library and the CLI;
+   - the stress specification within the 1 s bound. That is a bound, not a benchmark: debug takes about 1.5 ms;
+   - the MCP tool list includes `solve`, through `AET-WO-1500`'s test (`mcp_tier1.rs`, merged) and the unit test in `mcp.rs`.
+3. **CI green on the first push after the ruling:** cited in Gates.
+
+### Measured on the build (Furnace, release)
+
+- **Nodes**, from `solve_with_limit`'s smallest finishing budget (a scratch harness, not committed): reference 7, stress 42, `infeasible-shared` 44, `pigeonhole-spi` 308, `thrash-pins` 41. These are identical to the spike's `fc+im+pm`.
+- **`aethelgard solve` end to end** (process start, file read, table load and solve; median of 21): reference 2.47 ms, stress 2.57 ms, `infeasible-shared` 2.44 ms, `pigeonhole-spi` 2.99 ms, `thrash-pins` 2.53 ms.
+
+### For `architecture.md` §2, by amendment (the architect's to write)
+
+- **`RUL-02`, as measured:** the pure-Rust search meets the bound by four orders of magnitude, so Z3 was not measured. Plain forward checking is exponential on infeasible input (329 s). Instance plus pin matching, before every node, makes every case found sub-millisecond, and a 10 M-node budget backstops the rest.
+- **§2.8, the table's use:** reserved pins `PA13`, `PA14`, `PC14`, `PC15`, `PH0`, `PH1`; debugging assumed SWD only; key order is byte order.
+
+### What was not built
+
+Clocks and timing beyond bus speed bounds, voltage-domain routing, any emitter, a second part, and any change to `PinTable` or its source (§4). The pin table's own README was not touched, since that crate is fenced.
+
+### Promote-or-needs-none pass over `AET-WO-1101` FEEDBACK
+
+- **Finding 1, the datasheet cross-check of five AF entries:** still open. This WO adds no data and cannot close it. **Promote:** it should stay tracked until a session with datasheet access records the revision.
+- **Finding 2, hash-check bypass:** verified there; needs none.
+- **Finding 3, `_C` pads and ports above `K`:** needs none. The solver compares pins as table keys only, which is `A5` by construction.
+- **Finding 4, debug pins:** ruled at review of PR #27 and at the spike ruling, and built here (`RESERVED_PINS`, `ReservedPin`).
+- **Additions 1 to 6** (refusals on malformed source): needs none.
