@@ -8,7 +8,7 @@ The `aethelgard` binary. It is the contract every caller uses (`docs/architectur
 |---|---|---|
 | `0` | `validate`: the specification is valid. A tool subcommand: the tool ran and its verdict is pass | none: stdout is the success report or the verdict |
 | `1` | A tool subcommand: the tool ran and its verdict is fail (violations found, the proof failed, the crate did not compile, the harness does not exist, the platform did not load). The input is at fault; the tool worked | none: stdout is the verdict |
-| `2` | Invalid specification: well-formed JSON of the wrong shape (unknown, missing or duplicate field, wrong type including deep nesting where a value was expected, negative or overflowing number), or a value `validate()` refuses | `SchemaViolation`, or an `IrValidationError` variant name such as `ZeroNominalVoltage` |
+| `2` | Invalid specification: well-formed JSON of the wrong shape (unknown, missing or duplicate field, wrong type including deep nesting where a value was expected, negative or overflowing number), or a value `validate()` refuses | `SchemaViolation`, or an `IrValidationError` variant name such as `InvalidIdentifier`, `NoVoltageDomain`, `UnknownDomain`, `DuplicateI2cAddress` or `ZeroNominalVoltage` |
 | `3` | Unreadable input. `validate`: the file or stdin cannot be read, is empty, is more than 16 MiB, or is not one JSON document (syntax error, trailing data, a byte-order mark). A tool subcommand: an input path that does not exist, cannot be read, or is not a regular file (not a directory, for `--crate`); a crate holding a symlink, a special file or a non-UTF-8 name; a Renode built-in path outside Renode's own tree; `InputTooLarge`: a copied file, or a crate's files together, of more than 16 MiB (16,777,216 bytes), or a crate of more than 4,096 files (counted after `target/` is skipped). The byte cap is enforced while copying, never by truncating | `UnreadableInput`, `InputTooLarge`, `InvalidJson` |
 | `4` | The tool cannot be used: it is not on `PATH`, is not executable, will not report its version, or lacks an environment variable it needs; or the sandbox is unavailable. Never a verdict (`INV-06`) | `ToolMissing` (`id`: the tool), `ToolUnusable` (`id`: the tool, or the missing variable), `SandboxUnavailable` (`id`: `landlock`, `seccomp`, or `descriptors`) |
 | `5` | The tool ran but its output cannot be trusted as a verdict: killed by a signal, an exit code outside the ones measured for it, a missing, unparseable or oversized report or output, or two witnesses that disagree. Never read as pass or fail | `ToolError` (`id`: the tool) |
@@ -25,12 +25,12 @@ A stdout closed by the caller (`>&-`) is not an exit-`70` case: the Rust runtime
 aethelgard validate [--file <path>]
 ```
 
-Reads one `TopologyGraph` from stdin, or from `--file` when given (stdin is then not read; `-` is a file name, not stdin), and runs `TopologyGraph::validate()`. The specification and each domain and net must be JSON objects.
+Reads one `Specification` from stdin, or from `--file` when given (stdin is then not read; `-` is a file name, not stdin), and runs `Specification::validate()`. The specification and everything nested in it must be JSON objects. A `SolvedTopology` document is not a specification and is refused as a `SchemaViolation`.
 
 On success, exit `0`:
 
 ```json
-{"ok":true,"project_name":"sentinel-01","voltage_domains":1,"net_constraints":2}
+{"ok":true,"project_name":"sentinel-01","voltage_domains":1,"net_constraints":1}
 ```
 
 On refusal, exit `2` or `3`:
@@ -39,9 +39,9 @@ On refusal, exit `2` or `3`:
 {"ok":false,"error":{"kind":"ZeroNominalVoltage","id":"VDD_3V3","message":"voltage domain `VDD_3V3` has nominal_millivolts 0"}}
 ```
 
-`id` is the trimmed offending domain id or net name, or `null` when the refusal has no id to name (an empty id, a whole-document error).
+`id` is the offending name exactly as written (nothing is trimmed; whitespace is refused as an invalid identifier), or `null` when the refusal names no single thing: `InvalidIdentifier` (the JSON path of the field, such as `i2c_buses[0].sda.net`, is in `message`), `UnsupportedSchemaVersion`, `NoVoltageDomain`, a whole-document error.
 
-Every key is required, including `impedance_ohms`, which is `null` when unconstrained. See `examples/` at the repository root.
+Every key is required, including `peripheral`, `pin` and `impedance_ohms`, which are `null` when unset. The shape and the refusals, in check order, are in `crates/aethelgard-ir/README.md`. See `examples/` at the repository root.
 
 ## The tool subcommands
 
