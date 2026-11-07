@@ -116,6 +116,8 @@ The search backtracks. Before it starts, and again after each bus is placed, eve
 
 Each check answers only yes or no, so none can change which answer is found. Together they turn the infeasible specifications the `AET-WO-1200` spike found exponential into refusals that take well under a millisecond. Neither matching check alone covers both shapes.
 
+They are not complete. When two instances need the same single pin for one signal, both checks pass, and an infeasible specification can still spend the whole budget (`AET-WO-1200` FEEDBACK A1).
+
 The search tries at most `NODE_LIMIT` (10,000,000) values across the whole solve, including the minimal-set searches.
 
 ### Refusals (`SolveError`), in check order

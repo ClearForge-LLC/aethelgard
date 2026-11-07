@@ -236,3 +236,54 @@ Clocks and timing beyond bus speed bounds, voltage-domain routing, any emitter, 
 - **Finding 3, `_C` pads and ports above `K`:** needs none. The solver compares pins as table keys only, which is `A5` by construction.
 - **Finding 4, debug pins:** ruled at review of PR #27 and at the spike ruling, and built here (`RESERVED_PINS`, `ReservedPin`).
 - **Additions 1 to 6** (refusals on malformed source): needs none.
+
+## Adversarial pass (§5)
+
+This pass was run by a separate reviewer (Claude Opus 5.5, its own worktree, at `369b8c5`, whose search code matches the head's apart from the reduction pass's refactors). A1 was reproduced on `9c5fec6`.
+
+Its harness:
+- an independent verifier, checking every `Ok` against the table directly;
+- an independent model of the checks before the search;
+- an unpruned backtracking oracle in the README order, against which every `Ok` must be byte-equal;
+- for every `Infeasible`, a check that the set is infeasible and that dropping any one bus makes it placeable;
+- random generation, plus two hill-climbers seeking high node counts.
+
+| # | Finding | Severity | Type | Recommendation | Decision-needed |
+|---|---|---|---|---|---|
+| **A1** | **An infeasible specification can still spend the whole budget.** When two instances' only remaining pin for one signal is the same pin, both matching checks pass: pin matching unions over instances, and instance matching ignores pins. An example is `SPI1_MISO` and `SPI6_MISO` both reduced to `PB4` by `cs` hand pins, while all six SPI instances are needed. The search then re-fails under every earlier choice. **Reproduced** with `aethelgard solve`, release, on `9c5fec6`: `fuzz-natural-6spi.json` (found by random fuzzing, with no hand peripherals) took 5.6 s, and `core-infeasible.json` took 6.6 s. Both refuse `BudgetExceeded`, naming `SPIB3`, the first bus of the colliding set to be placed, not the collision. Unbounded (400 M nodes), `fuzz-natural-6spi` is `Infeasible` across all six SPI buses after 18.7 s (measured). The reviewer measured about 43 s in debug, and 0.55 to 0.9 µs per node in release. **This refutes the spike's S1.3 claim that `im+pm` "removes every such case found":** the spike's fuzz never produced the shape. The bound holds and no answer is wrong. `BudgetExceeded` naming one bus is the ruled exception to §7, so this is not a §7 stop | medium | missing propagation | A further check, proposed by the reviewer and **unmeasured**: when the buses left of a kind equal that kind's placeable instances, every instance is forced, so run pin matching over (instance, signal) rows. It answers yes or no only, so it cannot change an answer. Not built: it changes the ruled design, and per the scope test it is the architect's call, as an amendment here or a follow-up WO. Reproducers: `docs/work-orders/AET-WO-1200.repro/` | **yes** |
+| A2 | `BudgetExceeded` is exit 2, "the specification cannot be realized", which the solver has not proven. A1's specifications are in fact infeasible, but a budget refusal only means "not decided" | low | contract tension | Keep exit 2 as ruled, or give an undecided search its own code | yes |
+| A3 | The budget covers the minimal-set searches, so the main search can prove infeasibility and the solve still return `BudgetExceeded`. The refusal kind then depends on the budget, not only on feasibility. This is documented (B-table, ruling 2) and deterministic | low | design consequence | Accept, or exempt the minimal set from the budget, which bounds the time less tightly | yes |
+| A4 | `instances()` decides whether an instance is offered from every pin, reserved ones included, while `candidates` drops reserved pins. On this table no reserved pin carries an I2C or SPI signal, so it cannot trigger. If it could, an instance living only on reserved pins would be "offered" and then refused `NoInstance`, which is a correct refusal | none on this part | note | None now | no |
+| A5 | **§5.1 determinism: nothing found.** Every fuzz case was solved twice in-process, and the CLI was run twice from different working directories and with `LC_ALL=C TZ=UTC` (`cmp` identical). There is no `HashMap`, `HashSet`, clock, environment read, thread or randomness in `solve.rs`, and `matching` returns only a bool | none | verified | none | no |
+| A6 | **§5.2 false unsat, or an invalid result accepted: nothing found** in 508 000 random cases. About 188 000 solved. All were verified except 46 in the first run, where the oracle hit its 2 M cap; the 8 000-case run then verified unconditionally. Every solve the oracle finished was byte-equal to the unpruned first solution, so pruning never changed an answer. About 14 300 were infeasible, each with a correct minimal set. Every check before the search was exercised and matched the independent model. No feasible specification over the budget was found; the worst built by hand took 192 204 nodes and 149 ms | none | verified | none | no |
+
+**§5.3 answer:** a bound is needed, and 10 M holds. A1 is a realistic shape that reaches it: about 5.5 to 7 s in release, and about 45 s in debug.
+
+## Gates (build)
+
+- **Furnace:** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` pass (counts below, at the final commit). Tier 2 (`--features with-tools`) cannot run on Furnace, as in `AET-WO-1100`; this diff touches none of its code.
+- **Mutation**, sized to the diff: one mutant per new guard, against `aethelgard-ir`'s suites and `solve_cli.rs`. **21 of 23 killed at first.** The two survivors were the hash check before the search and the final output check, each backing up the other:
+  - A test was added (`a_malformed_hash_is_refused_before_the_search_finds_infeasibility`), and the first is now killed.
+  - The second is labelled `belt-and-suspenders:` (B8).
+
+  The mutants:
+  - `im` off and `pm` off (killed by the adversarial fixtures' bound);
+  - the budget off, and the budget per search (killed by the exact-sum test, which was added after the first test passed both ways);
+  - reserved pins out of the candidates, the hand refusal and the `cs` pass, and one oscillator pin unreserved;
+  - each of the five checks before the search, case-folded pin lookup (`A5`), the part check, and the re-validation;
+  - `cs` from the end, pins in reverse, and the minimal set keeping every bus;
+  - the net in both maps, `DuplicatePin` ignoring `gpio`, and the `gpio` identifiers.
+
+  After the reduction pass, the four mutants on the guards it touched (budget off, budget per search, `PeripheralClaimedTwice`, `UnknownPeripheral`) are still killed.
+- **Reduction pass (diff):** −7 lines net · 8 duplicates removed · 0 dead paths removed · 1 protected kept · 3 findings below.
+  - The duplicates: the limit threaded beside `Budget`; the bus path built twice; two doc comments restating the README; four CLI README sentences restating `aethelgard-ir/README.md`.
+  - The protected one: the final `out.validate()`.
+  - The run was a fresh read-only subagent. Each removal was checked by the suites and the touched guards' mutants.
+
+  Findings, not applied because each needs an edit outside `fn solve`, which ruling 8 fences:
+  - R1: `fn solve` repeats the sha256-to-hex fold that `input::hex` already holds (3 lines; `input.rs` would need `pub(crate)`);
+  - R2: the solve-local `SolveRefusal` mirrors `Refusal` (about 11 lines; `RefusalBody` would gain an optional `claimants`);
+  - R3: `fn solve` and `fn validate` share their read-parse-validate block (about 12 lines, as a shared helper).
+
+  They are worth doing after `AET-WO-0300c` merges.
+- **CI:** pending until the push.
