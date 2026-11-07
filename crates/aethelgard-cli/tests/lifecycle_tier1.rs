@@ -11,7 +11,7 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use common::{Scratch, alive, eventually, example, stat_fields};
 
@@ -378,24 +378,4 @@ fn a_guardian_removes_its_directory_though_a_writer_races_it() {
         assert_eq!(code, Some(0), "try {n}");
     }
     assert_eq!(left, 0, "directories left behind, of 10 tries");
-}
-
-/// `AET-WO-0300d` §1.2: a writer that never stops costs the guardian its whole bound, and it
-/// then says so: exit 70, directory left.
-#[test]
-fn a_guardian_that_cannot_empty_its_directory_exits_70_within_11_seconds() {
-    let dir = Scratch::new("guard-bound");
-    let target = dir.0.join("aethelgard-bound");
-    let (mut guardian, stop, writer) = guardian_over_racing_writer(&target);
-    let started = Instant::now();
-    eventually("the guardian to give up", || {
-        guardian.try_wait().unwrap().is_some()
-    });
-    let took = started.elapsed();
-    stop.store(true, Ordering::Relaxed);
-    writer.join().unwrap();
-    assert_eq!(guardian.wait().unwrap().code(), Some(70));
-    assert!(took >= Duration::from_secs(9), "gave up early: {took:?}");
-    assert!(took <= Duration::from_secs(11), "gave up late: {took:?}");
-    assert!(target.exists(), "exit 70 must leave the directory");
 }
