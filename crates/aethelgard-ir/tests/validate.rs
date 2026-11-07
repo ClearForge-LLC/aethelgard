@@ -314,6 +314,50 @@ fn refuses_unknown_domain_at_each_use() {
     }
 }
 
+fn with_second_domain(s: &mut Specification) {
+    let mut other = s.voltage_domains[0].clone();
+    other.id = "VDD_1V8".into();
+    s.voltage_domains.push(other);
+}
+
+#[test]
+fn refuses_a_bus_off_the_mcu_rail() {
+    let err = refusal(|s| {
+        with_second_domain(s);
+        s.i2c_buses[0].domain = "VDD_1V8".into();
+    });
+    assert_refusal(err, "SupplyMismatch", Some("SENSORS"));
+    let err = refusal(|s| {
+        with_second_domain(s);
+        s.spi_buses[0].domain = "VDD_1V8".into();
+    });
+    assert_refusal(err, "SupplyMismatch", Some("FLASH"));
+}
+
+#[test]
+fn refuses_a_device_off_its_buss_rail() {
+    let err = refusal(|s| {
+        with_second_domain(s);
+        s.i2c_devices[1].supply = "VDD_1V8".into();
+    });
+    assert_refusal(err, "SupplyMismatch", Some("U3"));
+    let err = refusal(|s| {
+        with_second_domain(s);
+        s.spi_devices[0].supply = "VDD_1V8".into();
+    });
+    assert_refusal(err, "SupplyMismatch", Some("U4"));
+}
+
+#[test]
+fn a_device_with_an_unknown_bus_is_left_to_step_nine() {
+    let err = refusal(|s| {
+        with_second_domain(s);
+        s.i2c_devices[0].bus = "NOPE".into();
+        s.i2c_devices[0].supply = "VDD_1V8".into();
+    });
+    assert_refusal(err, "UnknownBus", Some("NOPE"));
+}
+
 #[test]
 fn refuses_duplicate_bus_id_across_both_lists() {
     let err = refusal(|s| s.spi_buses[0].id = "SENSORS".into());
