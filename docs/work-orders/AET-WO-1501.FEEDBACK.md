@@ -9,7 +9,7 @@
 - One paragraph in `container/fixtures/README.md` on pulling and running by digest.
 
 ## §3.3 numbers (PR #36, CI run 42424634787)
-- Image size: **4,808,173,457 bytes** (4.81 GB; the tools base is most of it). The first, failed run measured 4,808,173,328.
+- Image size: **4,807,263,047 bytes** (4.81 GB; the tools base is most of it), measured on `934f674` after R1. Before R1 (the COPY layer) it was 4,808,173,457: 910,410 bytes smaller now, the source no longer shipping.
 - Build time: the `image` job took 2m56s with the tools base layers from the GHA cache; the engine layer itself (`cargo fetch` + build) is about 40 s (`Finished release ... in 36.97s`). **Cold** (empty cache) was not measured separately: the first push's job ran 4m01s including a failure and had no engine cache. Warm = 2m56s.
 - Smoke output (`--network none`):
 ```
@@ -52,3 +52,13 @@ No crates.io publish, no `latest` tag, no multi-arch, no quickstart; no §7 cond
 - **Handed to AET-WO-0300d (PR #38):** the `gates` failure at 5770bc9, `mcp_tier1::an_immediate_cancel_storm_leaves_no_process_and_no_directory` left one `aethelgard-*` directory. That is 0300c's guardian residual, not 1501's; PR #32 hit it too. No crate source or test was touched here.
 - **A second 0300d-family failure, not 1501's:** on `e7d8067`, `tools-image` (unmodified) failed `lifecycle_tier1::a_guardian_that_cannot_empty_its_directory_exits_70_within_11_seconds` (exit `Some(0)`, expected `Some(70)`). Also handed to AET-WO-0300d; nothing touched here.
 - **My R2 step failed first time:** it inspected the base by digest, but the base is in the buildx builder, not the daemon (`No such image`). Fixed with a `docker pull` of the same digest.
+
+## R2 listing (CI run 42426772791, `934f674`)
+`layers: base=17 total=18`: exactly one engine layer, and it holds only:
+```
+drwxr-xr-x 0/0               0 2026-10-05 00:00 usr/
+drwxr-xr-x 0/0               0 2026-10-05 00:00 usr/local/
+drwxr-xr-x 0/0               0 2026-11-07 23:48 usr/local/bin/
+-rwxr-xr-x 0/0         5091544 2026-11-07 23:48 usr/local/bin/aethelgard
+```
+No `src/`, no `tmp/`. The `engine-image` run (image job 4m13s with the extra pull and `docker save`) passed with the smoke lines unchanged. On this push `gates`' sibling `tools` job in `ci.yml` and `tools-image` both failed the same 0300d-family test (`a_guardian_that_cannot_empty_its_directory_exits_70_within_11_seconds`, `Some(0)` vs `Some(70)`), on unmodified code and workflows; `gates` passed. Handed to AET-WO-0300d; not touched.
