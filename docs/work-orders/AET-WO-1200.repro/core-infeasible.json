@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "project_name": "adv",
+  "mcu": {
+    "part": "STM32H753ZITx",
+    "supply": "VDD_3V3"
+  },
+  "voltage_domains": [
+    {
+      "id": "VDD_3V3",
+      "nominal_millivolts": 3300,
+      "tolerance_permille": 50
+    }
+  ],
+  "i2c_buses": [
+    {
+      "id": "I2CB0",
+      "peripheral": null,
+      "speed_hz": 400000,
+      "pull_up_ohms": 2200,
+      "domain": "VDD_3V3",
+      "sda": {
+        "net": "i0_sda",
+        "pin": null
+      },
+      "scl": {
+        "net": "i0_scl",
+        "pin": null
+      }
+    },
+    {
+      "id": "I2CB1",
+      "peripheral": null,
+      "speed_hz": 400000,
+      "pull_up_ohms": 2200,
+      "domain": "VDD_3V3",
+      "sda": {
+        "net": "i1_sda",
+        "pin": null
+      },
+      "scl": {
+        "net": "i1_scl",
+        "pin": null
+      }
+    },
+    {
+      "id": "I2CB2",
+      "peripheral": null,
+      "speed_hz": 400000,
+      "pull_up_ohms": 2200,
+      "domain": "VDD_3V3",
+      "sda": {
+        "net": "i2_sda",
+        "pin": null
+      },
+      "scl": {
+        "net": "i2_scl",
+        "pin": null
+      }
+    },
+    {
+      "id": "I2CB3",
+      "peripheral": null,
+      "speed_hz": 400000,
+      "pull_up_ohms": 2200,
+      "domain": "VDD_3V3",
+      "sda": {
+        "net": "i3_sda",
+        "pin": null
+      },
+      "scl": {
+        "net": "i3_scl",
+        "pin": null
+      }
+    }
+  ],
+  "spi_buses": [
+    {
+      "id": "SPIB0",
+      "peripheral": "SPI2",
+      "speed_hz": 1000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "s0_sck",
+        "pin": null
+      },
+      "mosi": {
+        "net": "s0_mosi",
+        "pin": null
+      },
+      "miso": {
+        "net": "s0_miso",
+        "pin": null
+      }
+    },
+    {
+      "id": "SPIB1",
+      "peripheral": "SPI3",
+      "speed_hz": 1000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "s1_sck",
+        "pin": null
+      },
+      "mosi": {
+        "net": "s1_mosi",
+        "pin": null
+      },
+      "miso": {
+        "net": "s1_miso",
+        "pin": null
+      }
+    },
+    {
+      "id": "SPIB2",
+      "peripheral": "SPI5",
+      "speed_hz": 1000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "s2_sck",
+        "pin": null
+      },
+      "mosi": {
+        "net": "s2_mosi",
+        "pin": null
+      },
+      "miso": {
+        "net": "s2_miso",
+        "pin": null
+      }
+    },
+    {
+      "id": "SPIB3",
+      "peripheral": null,
+      "speed_hz": 1000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "s3_sck",
+        "pin": null
+      },
+      "mosi": {
+        "net": "s3_mosi",
+        "pin": null
+      },
+      "miso": {
+        "net": "s3_miso",
+        "pin": null
+      }
+    },
+    {
+      "id": "SPIB4",
+      "peripheral": null,
+      "speed_hz": 1000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "s4_sck",
+        "pin": null
+      },
+      "mosi": {
+        "net": "s4_mosi",
+        "pin": null
+      },
+      "miso": {
+        "net": "s4_miso",
+        "pin": null
+      }
+    },
+    {
+      "id": "SPIB5",
+      "peripheral": null,
+      "speed_hz": 1000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "s5_sck",
+        "pin": null
+      },
+      "mosi": {
+        "net": "s5_mosi",
+        "pin": null
+      },
+      "miso": {
+        "net": "s5_miso",
+        "pin": null
+      }
+    }
+  ],
+  "i2c_devices": [],
+  "spi_devices": [
+    {
+      "reference": "U0",
+      "part": "X",
+      "supply": "VDD_3V3",
+      "bus": "SPIB0",
+      "cs": {
+        "net": "cs0",
+        "pin": "PB3"
+      }
+    },
+    {
+      "reference": "U1",
+      "part": "X",
+      "supply": "VDD_3V3",
+      "bus": "SPIB0",
+      "cs": {
+        "net": "cs1",
+        "pin": "PG11"
+      }
+    },
+    {
+      "reference": "U2",
+      "part": "X",
+      "supply": "VDD_3V3",
+      "bus": "SPIB0",
+      "cs": {
+        "net": "cs2",
+        "pin": "PG13"
+      }
+    }
+  ],
+  "net_constraints": []
+}
