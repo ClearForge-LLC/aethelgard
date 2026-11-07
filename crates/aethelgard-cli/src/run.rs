@@ -69,21 +69,13 @@ impl Stop {
             message,
         }
     }
-    /// A tool input over a cap (`RUL-13`): `what` names the input.
-    pub fn too_large(what: &str, cap: u64) -> Self {
+    /// A tool input over a cap (`RUL-13`); `message` names the input and the cap.
+    pub fn too_large(message: String) -> Self {
         Self {
             code: EXIT_UNREADABLE,
             kind: "InputTooLarge",
             id: None,
-            message: format!("{what} exceeds {cap} bytes"),
-        }
-    }
-    pub fn too_large_files(crate_root: &Path, cap: usize) -> Self {
-        Self {
-            code: EXIT_UNREADABLE,
-            kind: "InputTooLarge",
-            id: None,
-            message: format!("crate {} holds more than {cap} files", crate_root.display()),
+            message,
         }
     }
     pub fn missing(tool: &str) -> Self {

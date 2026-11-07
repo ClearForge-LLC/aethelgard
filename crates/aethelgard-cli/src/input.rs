@@ -74,7 +74,9 @@ fn copy_hashed(from: &Path, to: &Path, budget: &mut u64, what: &str) -> Result<S
         }
         copied += n as u64;
         if copied > *budget {
-            return Err(Stop::too_large(what, MAX_INPUT_BYTES));
+            return Err(Stop::too_large(format!(
+                "{what} exceeds {MAX_INPUT_BYTES} bytes"
+            )));
         }
         hasher.update(&buf[..n]);
         dst.write_all(&buf[..n]).map_err(unreadable)?;
@@ -203,7 +205,10 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), Stop> {
             walk(root, &path, out)?;
         } else if kind.is_file() {
             if out.len() >= MAX_CRATE_FILES {
-                return Err(Stop::too_large_files(root, MAX_CRATE_FILES));
+                return Err(Stop::too_large(format!(
+                    "crate {} holds more than {MAX_CRATE_FILES} files",
+                    root.display()
+                )));
             }
             out.push(rel);
         } else {
