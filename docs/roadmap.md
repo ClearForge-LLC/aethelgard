@@ -71,8 +71,14 @@ P0 ──> P1 ──> P2 ──> P3
 
   Build-only. It must merge before `AET-WO-1500` puts these verdicts in front of agents.
 - `AET-WO-0400` — the trace archive in deterministic CBOR (`RUL-06` as amended), with a local append-only archive, a strict reader, deterministic replay, and the optional remote mirror's credential boundary. **Build-only now:** `architecture.md` answers its old spike questions, and the work order fixes the profile, layout, commit protocol and golden hashes. It measures encoded bytes per synthetic event, labelled as plumbing; `OQ-03`'s bytes per simulated second waits for real events in P2.
+- `AET-WO-0400a` — inserted at review of PR #21, written, build-only. It makes three changes:
+  - the state chain hashes each event's change, so replay is linear, and the manifest moves to version 2;
+  - decoding is bounded by shape, with a 256 MiB trace cap;
+  - a stale `mirror.cbor.tmp` no longer orphans a committed run.
 
-**Exit gate**
+  It must merge before any trace this project did not write is replayed, and before `AET-WO-2300`'s first campaign.
+
+**Exit gate: passed, as reconciled in §7.** Every clause below is owned by merged work.
 
 - `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` all exit 0 inside the container.
 - Inside the container, `kicad-cli version`, `renode --version`, `ngspice --version`, and `cargo kani --version` each exit 0.
@@ -185,6 +191,7 @@ Three rules added at Argon's review, each learned from a work order that ran wit
 |---|---|---|---|
 | `AET-WO-0300b` | cheap | full on the two changed checks | small and fully specified, but it sits on the verdict path |
 | `AET-WO-0400` | cheap | targeted: forgery, interrupted writes, hostile archives | the format and protocol are ruled; the risk is integrity, not escape |
+| `AET-WO-0400a` | cheap | targeted | three measured fixes, each fully specified |
 | `AET-WO-1100` | cheap | targeted | data modelling, with every rule fixed in the work order (Argon's tier) |
 | `AET-WO-1101` | cheap | targeted: hostile XML, pinned-hash refusal | a parse of two pinned files, checked against golden facts |
 | `AET-WO-1200` | strong for the spike, cheap for the build if the ruling is tight | targeted: determinism, conflict naming | a wrong assignment is caught by the P1 gate, not hidden |
@@ -208,8 +215,10 @@ Rows of **number as built → what it actually was → what the roadmap had plan
 | `AET-WO-0300` | **merged (PR #12):** spike, then build. `check drc`, `check erc`, `prove` and `simulate` each return one JSON verdict carrying the input's sha256 and the version of the tool that judged it, cross-checked by at least two witnesses. The sandbox is Landlock with a reaper and a guardian (`architecture.md` §6). A tier-2 `tools` job runs the real tools on every PR inside the image pinned by `container/IMAGE`. No `build` subcommand: nothing generates until `AET-WO-1300`, and a stub would have become a fake MCP tool. Satisfies the Renode half of the P0 gate's last clause. The roadmap line above still lists `build`; it is left as written, and this row explains why | Argon drafts: `AET-WO-0003`, a Rust MCP server in P0 |
 | `AET-WO-0300a` | **merged (PR #15):** a required, hand-assembled seccomp filter refuses every socket a tool could reach outside itself, plus `io_uring`, x32 and non-native calls. The CLI also refuses a call that would hand the tool an inherited descriptor. The `gates` CI step closes the descriptors the Actions runner leaks. `AET-WO-1500`'s precondition is met | none; found by `AET-WO-0300`'s adversarial pass |
 | `AET-WO-1600` | inserted at review of PR #15, intent: a host-side system-call allowlist; widened at Argon's review | none; the non-socket channels `AET-WO-0300a` measured as still open on a host |
-| `AET-WO-0300b` | inserted at Argon's review, written, build-only: refuse Renode `[ERROR]` lines on a load, and cap the `prove` crate copy | none; Argon's red-team findings RT-02 and RT-04 |
-| `AET-WO-0400` | written spike-first and held for budget, then rewritten after Argon's review as build-only in deterministic CBOR (`RUL-06` as amended), which answers its spike's format question | Argon drafts: `AET-WO-0004`, R2-primary, Cap'n Proto |
+| `AET-WO-0300b` | **merged (PR #18):** a CPU listed beside an `[ERROR]` line fails the load, and every tool input copy is capped at 16 MiB, with 4,096 files for a crate. Measured that Renode 1.17.0 never logs a platform failure at `[ERROR]`, so that check is a backstop (`architecture.md` §2.9). The first cheap-builder pilot: one session, 22 minutes, CI green on the first push, and no high or medium adversarial finding. `AET-WO-1500`'s second precondition is met | none; Argon's red-team findings RT-02 and RT-04 |
+| `AET-WO-0400` | **merged (PR #21):** the trace archive in a hand-written strict CBOR codec, a commit protocol proven by SIGKILL tests, replay with a state-hash chain, and the mirror's credential boundary. `aethelgard-chaos` graduated from the stub checks. Golden constants were computed on Furnace and reproduced in `gates` (`architecture.md` §2.10). It satisfies the P0 gate's fifth clause and the mirror half of its sixth. Second cheap-builder pilot: one session, 24 minutes, CI green on the first push | Argon drafts: `AET-WO-0004`, R2-primary, Cap'n Proto |
+| `AET-WO-0400a` | inserted at review of PR #21, written: adversarial findings 1, 2 and 3 | none; `AET-WO-0400`'s adversarial pass |
+| **P0 gate** | **passed.** Planned: `0100`, `0200`, `0300`, `0400`. Inserted: `0300a`, `0300b`. All six merged, and every gate clause is owned by merged work. `0400a` is a post-gate refinement. The one deliberate gap is still the `build` subcommand (see the `0300` row) | the plan's four work orders |
 | `AET-WO-1100` … `AET-WO-1400` | reserved, `1200` and `1400` now spike-then-build. `1100` written build-only, and `1101` split from it for the pin table, after the architect's licence check. `1300` split into `1300`, `1301` and `1302` at Argon's review, because a DRC that must exit 0 needs a placed and routed board | Argon drafts: `AET-WO-1001` … `AET-WO-1004` |
 | `AET-WO-1500` | reserved: the `mcp` subcommand of the CLI binary, moved from P0 to P1 | Argon drafts: part of `AET-WO-0003`, a separate server crate |
 | `AET-WO-2100` … `AET-WO-2300` | reserved as intent pending the `OQ-02` spike. `2101` split from `2100` at Argon's review to hold that spike | Argon drafts: `AET-WO-2001` … `AET-WO-2003`, fully scoped |
@@ -230,6 +239,8 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | 2026-10-21 | §5, §7 | `AET-WO-0300a` reconciled as built. `AET-WO-1600` inserted as intent, and the launch-readiness clause made to depend on it | PR #15 merged. Host use of the tool subcommands still has non-socket channels open, and a crates.io install is host use |
 | 2026-10-29 | §5, §6, §7 | Inserted `AET-WO-0300b`. `AET-WO-0400` made build-only in CBOR. `AET-WO-1100` now takes pins from `stm32-data` and breaks the examples on purpose. `AET-WO-1300` split into `1300`, `1301` and `1302`, and `AET-WO-2101` split from `2100`. `AET-WO-1400`'s harness now comes from the specification. `AET-WO-1600` widened. The P1 gate's first clause now names a routed board and spec-derived DRC rules. §6 gained three cadence rules and a spend-by-tier table | Rulings on Argon's review of `main` at 9818c4f, with the matching `architecture.md` amendments of the same date. The gate change strengthens a clause and weakens none. The tier table exists because builds are paused for budget, and the cheapest safe builder for each work order is now a planning input. Argon's answers to the architect's follow-up questions reached the `AET-WO-1302` line (routing) and the `AET-WO-2101` line (the I2C model, read at source in `architecture.md` §2.7). Its tier table moved `1100` and `1500` to cheap builders |
 | 2026-11-07 | §5, §6, §7 | `AET-WO-1100` written build-only. `AET-WO-1101` split from it for the pin table, taken from ST's own BSD-3-Clause data. Tier rows updated | The licence question that held `AET-WO-1100` is answered (`architecture.md` §2.8), and a separate pin-table work order keeps each build small enough for a cheap builder |
+| 2026-11-07 | §7 | `AET-WO-0300b` reconciled as built | PR #18 merged. The cheap-builder tier held on its first pilot |
+| 2026-11-07 | §5, §6, §7 | `AET-WO-0400` reconciled as built. `AET-WO-0400a` inserted. The P0 gate is marked passed after the phase-boundary audit | PR #21 merged. Every P0 clause is owned by merged work. The audit counted four planned and two inserted work orders, all merged, and one deliberate gap |
 
 ## 9. Provenance
 
