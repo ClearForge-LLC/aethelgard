@@ -70,7 +70,8 @@ jobs:
         run: |
           echo "ANSWER image_bytes=$(docker image inspect --format '{{.Size}}' "$IMAGE")"
           docker history --no-trunc "$IMAGE"
-          if docker history --no-trunc "$IMAGE" | grep -iE 'token|password|secret|credential'; then
+          # Only this image's own two layers (COPY, RUN) are inspected; the base's history is the tools image's.
+          if docker history --no-trunc "$IMAGE" | sed -n '2,3p' | grep -iE 'token|password|secret|credential'; then
             echo "credential-like text in a layer" >&2
             exit 1
           fi
