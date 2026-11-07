@@ -417,6 +417,8 @@ fn symlinks_are_refused_wherever_they_sit() {
     symlink(&dir, &alias).unwrap();
     assert!(replay_dir(&dir).is_ok());
     assert!(matches!(replay_dir(&alias), Err(E::UnexpectedEntry(_))));
+    let slashed = PathBuf::from(format!("{}/", alias.display()));
+    assert!(matches!(replay_dir(&slashed), Err(E::UnexpectedEntry(_))));
 }
 
 #[test]

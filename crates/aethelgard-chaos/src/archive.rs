@@ -214,6 +214,10 @@ fn check_entries(dir: &Path) -> Result<(), ArchiveError> {
 
 /// Replay a run directory, refusing anything it cannot prove complete.
 pub fn replay_dir(dir: &Path) -> Result<Replayed, ArchiveError> {
+    // Components drop a trailing separator, which would make `lstat` follow a
+    // symlinked run directory.
+    let dir: PathBuf = dir.components().collect();
+    let dir = dir.as_path();
     check_entries(dir)?;
     let manifest_path = dir.join(MANIFEST);
     if !manifest_path.exists() {
