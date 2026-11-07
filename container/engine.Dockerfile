@@ -12,15 +12,17 @@ LABEL org.opencontainers.image.source="https://github.com/ClearForge-LLC/aethelg
       org.opencontainers.image.description="Aethelgard engine: the aethelgard CLI on the pinned tools image" \
       org.opencontainers.image.licenses="MIT OR Apache-2.0"
 
-COPY . /src
-
-# The dependency fetch is the only network use; the build is --offline against
-# a throwaway CARGO_HOME, so the base image's /opt/cargo is not touched. The
-# source, the build directory and the fetched registry go in the same layer.
-RUN cd /src \
+# The context is bind-mounted into the one RUN, never COPYed: a COPY is a layer
+# of its own and ships in the image even if a later RUN deletes it. The mount is
+# read-only; CARGO_HOME and the target are under /tmp. The dependency fetch is
+# the only network use; the build is --offline against a throwaway CARGO_HOME,
+# so the base image's /opt/cargo is not touched. The one layer holds only the
+# installed binary.
+RUN --mount=type=bind,target=/src \
+    cd /src \
  && export CARGO_HOME=/tmp/cargo-build CARGO_TARGET_DIR=/tmp/target-build \
  && cargo fetch --locked \
  && cargo build --release --locked --offline -p aethelgard-cli \
  && install -m 0755 /tmp/target-build/release/aethelgard /usr/local/bin/aethelgard \
  && cd / \
- && rm -rf /src /tmp/cargo-build /tmp/target-build
+ && rm -rf /tmp/cargo-build /tmp/target-build

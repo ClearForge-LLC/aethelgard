@@ -80,6 +80,26 @@ jobs:
         run: |
           docker run --rm "$IMAGE" bash -c 'for p in /src /.git /tmp/cargo-build /tmp/target-build; do [ ! -e "$p" ] || { echo "left behind: $p" >&2; exit 1; }; done; echo "clean"'
 
+      # Every layer ships, so list the engine's own layer from docker save: it must
+      # hold the binary and its parent directories, at most an empty tmp/, nothing else.
+      - name: the engine's own layer holds only the binary
+        env:
+          TOOLS_IMAGE: ${{ steps.base.outputs.tools_image }}
+        run: |
+          base_layers=$(docker image inspect --format '{{len .RootFS.Layers}}' "$TOOLS_IMAGE")
+          total_layers=$(docker image inspect --format '{{len .RootFS.Layers}}' "$IMAGE")
+          echo "layers: base=$base_layers total=$total_layers"
+          [ "$total_layers" -eq $((base_layers + 1)) ] || { echo "expected exactly one engine layer" >&2; exit 1; }
+          d=$(mktemp -d)
+          docker save "$IMAGE" -o "$d/image.tar"
+          tar -xf "$d/image.tar" -C "$d" manifest.json
+          layer=$(jq -r '.[0].Layers[-1]' "$d/manifest.json")
+          tar -xf "$d/image.tar" -C "$d" "$layer"
+          tar -tvf "$d/$layer" | tee "$d/list.txt"
+          bad=$(tar -tf "$d/$layer" | grep -vxE 'usr/|usr/local/|usr/local/bin/|usr/local/bin/aethelgard|tmp/' || true)
+          [ -z "$bad" ] || { echo "unexpected entries in the engine layer:" >&2; echo "$bad" >&2; exit 1; }
+          tar -tf "$d/$layer" | grep -qx 'usr/local/bin/aethelgard' || { echo "binary missing from the engine layer" >&2; exit 1; }
+
       - name: smoke with --network none
         run: |
           docker run --rm -i --network none \

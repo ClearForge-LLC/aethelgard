@@ -1,7 +1,7 @@
 # AET-WO-1501 — FEEDBACK
 
 ## What was built
-- `container/engine.Dockerfile`: `ARG TOOLS_IMAGE` / `FROM ${TOOLS_IMAGE}`, `COPY . /src`, one `RUN` that does `cargo fetch --locked`, then `cargo build --release --locked --offline -p aethelgard-cli` against a throwaway `CARGO_HOME`/target under `/tmp`, installs `/usr/local/bin/aethelgard`, and removes the source, build directory and fetched registry in the same layer. No `ENTRYPOINT`, user stays root.
+- `container/engine.Dockerfile`: `ARG TOOLS_IMAGE` / `FROM ${TOOLS_IMAGE}`, one `RUN` (the context is bind-mounted with `--mount=type=bind,target=/src`, not COPYed) that does `cargo fetch --locked`, then `cargo build --release --locked --offline -p aethelgard-cli` against a throwaway `CARGO_HOME`/target under `/tmp`, installs `/usr/local/bin/aethelgard`, and removes the build directory and fetched registry; the source never enters a layer, since a bind mount is not one. No `ENTRYPOINT`, user stays root.
 - `.dockerignore` (repo root): `**/target/`, `.git/`, `docs/`, `spike/`.
 - `container/engine-smoke.sh`: version, `validate` (0 and 2), `check drc` (0 and 1), `mcp` `initialize` + `tools/list` over a pipe naming all five tools.
 - `.github/workflows/engine-image.yml`: PR and push-to-main `image` job (builds, layer and leftover checks, smoke under `--network none`); `publish` job on `main` only, the sole holder of `packages: write`, smokes the image it then pushes. All actions pinned by the same shas as `tools-image.yml`.
@@ -44,3 +44,9 @@ The first publish from `main` creates `ghcr.io/clearforge-llc/aethelgard` as **p
 
 ## Not built (§4 held)
 No crates.io publish, no `latest` tag, no multi-arch, no quickstart; no §7 condition arose.
+
+## Rulings and review (architect)
+- **R1, caught by the architect's review of PR #36 (defect):** the first build used `COPY . /src` then `rm -rf /src`. A COPY is a layer of its own, so the source shipped in the published image although it was hidden from the final filesystem; the sentence "removes the source ... in the same layer" above was false for that build. Fixed by `RUN --mount=type=bind,target=/src` (no `# syntax=` line).
+- **R2, adversarial §5.3 listing:** a CI step now runs `docker save`, asserts exactly one engine layer, and prints that layer's file list (below), failing on anything beyond the binary, its parent directories and an empty `tmp/`. It adds to the history grep and the absent-path check.
+- Finding 2 (`FROM ${TOOLS_IMAGE}` in `check-pins.sh`): accepted. Cold build time: accepted as unmeasured, upper bound 4m01s.
+- **Handed to AET-WO-0300d (PR #38):** the `gates` failure at 5770bc9, `mcp_tier1::an_immediate_cancel_storm_leaves_no_process_and_no_directory` left one `aethelgard-*` directory. That is 0300c's guardian residual, not 1501's; PR #32 hit it too. No crate source or test was touched here.
