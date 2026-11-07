@@ -261,7 +261,7 @@ Its harness:
 
 ## Gates (build)
 
-- **Furnace:** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` pass (counts below, at the final commit). Tier 2 (`--features with-tools`) cannot run on Furnace, as in `AET-WO-1100`; this diff touches none of its code.
+- **Furnace:** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` pass at `203d76f` (after merging `origin/main` `9e2705e`): 329 tests passed, 0 failed. `spike/` is gone. The protected surfaces in §2 diff to empty against `origin/main`: the steering documents, `README.md`, `LICENSE-*`, `docs/inputs/**`, `container/`, `.github/`, and the five other crates. Tier 2 (`--features with-tools`) cannot run on Furnace, as in `AET-WO-1100`; this diff touches none of its code.
 - **Mutation**, sized to the diff: one mutant per new guard, against `aethelgard-ir`'s suites and `solve_cli.rs`. **21 of 23 killed at first.** The two survivors were the hash check before the search and the final output check, each backing up the other:
   - A test was added (`a_malformed_hash_is_refused_before_the_search_finds_infeasibility`), and the first is now killed.
   - The second is labelled `belt-and-suspenders:` (B8).
