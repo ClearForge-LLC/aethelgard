@@ -69,6 +69,15 @@ impl Stop {
             message,
         }
     }
+    /// A tool input over a cap (`RUL-13`); `message` names the input and the cap.
+    pub fn too_large(message: String) -> Self {
+        Self {
+            code: EXIT_UNREADABLE,
+            kind: "InputTooLarge",
+            id: None,
+            message,
+        }
+    }
     pub fn missing(tool: &str) -> Self {
         Self {
             code: EXIT_TOOL_UNAVAILABLE,

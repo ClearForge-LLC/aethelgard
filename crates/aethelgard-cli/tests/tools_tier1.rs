@@ -1519,3 +1519,125 @@ printf '{"$schema":"https://schemas.kicad.org/drc.v1.json","coordinate_units":"m
         assert!(message.contains("denied"), "{report}");
     }
 }
+
+// ---------------------------------------------------------------- 12. WO-0300b: the verdict-path gaps
+
+const CAP: u64 = 16 * 1024 * 1024;
+const RENODE_LOG_ERROR: &str = "[19:12:11.9] [ERROR] Could not register peripheral 'x'\n";
+
+/// A sparse file of exactly `len` bytes.
+fn sparse(path: &Path, len: u64) {
+    fs::File::create(path).unwrap().set_len(len).unwrap();
+}
+
+/// Refused with `InputTooLarge`, the message naming the input and the cap.
+fn too_large(output: &Output, input: &Path, cap: &str) {
+    let report = refused(output, 3, "InputTooLarge");
+    let message = report["error"]["message"].as_str().unwrap();
+    let name = fs::canonicalize(input).unwrap();
+    assert!(message.contains(name.to_str().unwrap()), "{message}");
+    assert!(message.contains(cap), "{message}");
+}
+
+#[test]
+fn simulate_with_a_cpu_and_an_error_log_line_fails() {
+    let tb = Dir::new("tb");
+    renode_stub(
+        &tb,
+        Version::Good,
+        0,
+        &format!("{RENODE_LOG_ERROR}{CPU_LISTING}"),
+    );
+    let p = input("p.repl", b"x\n");
+    let report = judged(&simulate(&tb, p.path.as_os_str()), "fail", "simulate");
+    assert_eq!(finding_count(&report), 1);
+    assert_eq!(report["findings"][0]["kind"], "platform_load_error");
+    assert_eq!(report["findings"][0]["message"], RENODE_LOG_ERROR.trim());
+    assert!(report.get("machine").is_none(), "{report}");
+}
+
+#[test]
+fn simulate_with_a_cpu_and_a_warning_log_line_still_passes() {
+    let tb = Dir::new("tb");
+    renode_stub(
+        &tb,
+        Version::Good,
+        0,
+        &format!("[19:12:11.9] [WARNING] w\n{CPU_LISTING}"),
+    );
+    let p = input("p.repl", b"x\n");
+    judged(&simulate(&tb, p.path.as_os_str()), "pass", "simulate");
+}
+
+#[test]
+fn crate_over_the_byte_cap_is_input_too_large() {
+    let tb = Dir::new("tb");
+    kani_stub(&tb, Version::Good, 0, KANI_PASS, "");
+    let c = krate();
+    sparse(&c.dir.0.join("big.bin"), CAP + 1);
+    too_large(&prove(&tb, &c.path, "h"), &c.path, "16777216 bytes");
+}
+
+#[test]
+fn crate_exactly_at_the_byte_cap_is_accepted() {
+    let tb = Dir::new("tb");
+    kani_stub(&tb, Version::Good, 0, KANI_PASS, "");
+    let c = krate();
+    let small = fs::metadata(c.dir.0.join("Cargo.toml")).unwrap().len()
+        + fs::metadata(c.dir.0.join("src/lib.rs")).unwrap().len();
+    sparse(&c.dir.0.join("big.bin"), CAP - small);
+    judged(&prove(&tb, &c.path, "h"), "pass", "prove");
+}
+
+#[test]
+fn many_files_each_under_the_cap_but_over_it_together_are_refused() {
+    let tb = Dir::new("tb");
+    kani_stub(&tb, Version::Good, 0, KANI_PASS, "");
+    let c = krate();
+    for i in 0..3 {
+        sparse(&c.dir.0.join(format!("part{i}.bin")), CAP / 2);
+    }
+    too_large(&prove(&tb, &c.path, "h"), &c.path, "16777216 bytes");
+}
+
+#[test]
+fn crate_over_the_file_cap_is_input_too_large() {
+    let tb = Dir::new("tb");
+    kani_stub(&tb, Version::Good, 0, KANI_PASS, "");
+    let c = krate();
+    // Cargo.toml and src/lib.rs make 2; 4094 more make 4096, one more makes 4097.
+    for i in 0..4094 {
+        c.dir.write(&format!("f{i}"), b"");
+    }
+    judged(&prove(&tb, &c.path, "h"), "pass", "prove");
+    c.dir.write("one-more", b"");
+    too_large(&prove(&tb, &c.path, "h"), &c.path, "4096 files");
+}
+
+#[test]
+fn files_under_target_do_not_count_toward_either_cap() {
+    let tb = Dir::new("tb");
+    kani_stub(&tb, Version::Good, 0, KANI_PASS, "");
+    let c = krate();
+    fs::create_dir(c.dir.0.join("target")).unwrap();
+    sparse(&c.dir.0.join("target/big.bin"), CAP + 1);
+    judged(&prove(&tb, &c.path, "h"), "pass", "prove");
+}
+
+#[test]
+fn board_file_over_the_byte_cap_is_input_too_large() {
+    let tb = Dir::new("tb");
+    Kicad::new(0, Some(drc_report(vec![]))).install(&tb);
+    let b = board();
+    sparse(&b.path, CAP + 1);
+    too_large(&drc(&tb, &b.path), &b.path, "16777216 bytes");
+}
+
+#[test]
+fn board_file_exactly_at_the_byte_cap_is_accepted() {
+    let tb = Dir::new("tb");
+    Kicad::new(0, Some(drc_report(vec![]))).install(&tb);
+    let b = board();
+    sparse(&b.path, CAP);
+    judged(&drc(&tb, &b.path), "pass", "drc");
+}
