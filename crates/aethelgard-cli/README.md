@@ -49,7 +49,7 @@ Every key is required, including `peripheral`, `pin` and `impedance_ohms`, which
 aethelgard solve --file <path>
 ```
 
-Reads one `Specification` from the file, under the same 16 MiB cap and with the same exit `2` and `3` refusals as `validate`, and validates it. It then loads the pin table for `mcu.part` (exit `2`, `UnknownPart`, `id` the part, for any part but `STM32H753ZITx`), solves (`aethelgard_ir::solve`), and prints the `SolvedTopology` as one JSON line, exit `0`. `specification_sha256` is the sha256 of the file's bytes as read, so reformatting the file changes the hash and nothing else. Two solves of one file give the same bytes. It writes no file.
+Reads one `Specification` from the file, under the same 16 MiB cap and with the same exit `2` and `3` refusals as `validate`, and validates it. It then loads the pin table for `mcu.part` (exit `2`, `UnknownPart`, `id` the part, for any part but `STM32H753ZITx`), solves (`aethelgard_ir::solve`), and prints the `SolvedTopology` as one JSON line, exit `0`. `specification_sha256` is the sha256 of the file's bytes as read, so reformatting the file changes the hash and nothing else. It writes no file.
 
 ```json
 {"schema_version":1,"specification_sha256":"9a42e84f…","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},…},"gpio":{"FLASH_CS":"PA0"}}
@@ -61,7 +61,7 @@ A specification the solver cannot realize is exit `2`. The refusal envelope adds
 {"ok":false,"error":{"kind":"PinClaimedTwice","id":"PB9","claimants":["i2c_buses[0].sda","spi_devices[0].cs"],"message":"pin `PB9` is claimed by both `i2c_buses[0].sda` and `spi_devices[0].cs`"}}
 ```
 
-The kinds are `PartMismatch`, `UnknownPin`, `ReservedPin`, `PinClaimedTwice`, `UnknownPeripheral`, `PeripheralClaimedTwice`, `NoInstance`, `Infeasible`, `BudgetExceeded` and `NoFreePin`. Claimants are signal paths for pin refusals, bus paths for peripheral refusals, and bus ids for `NoInstance`, `Infeasible` and `BudgetExceeded`. The search order, the reserved pins (the SWD port `PA13`/`PA14`, assuming debugging is SWD only, and the oscillator pins `PC14`/`PC15`/`PH0`/`PH1`) and the check order are in `crates/aethelgard-ir/README.md`. `solve` is also an MCP tool, `solve`, with one required argument, `file`.
+The kinds, what `claimants` names for each, the search order, the reserved pins and the check order are in `crates/aethelgard-ir/README.md`.
 
 ## The tool subcommands
 

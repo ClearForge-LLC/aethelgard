@@ -1,12 +1,12 @@
 # AET-WO-1200 — FEEDBACK
 
-**Branch:** `wo/aet-1200-solver` · **Base:** `2f13278` (PR #28, the base the kickoff named; `ReservedPin` present in the WO) · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Result:** spike only. Every §0 question has a measured answer below, except S2's `gates` half, which has a recorded reason. The build half has **not** started; this branch is stopped for the architect's ruling.
+**Branch:** `wo/aet-1200-solver` · **Base:** `2f13278` (PR #28, the base the kickoff named; `ReservedPin` present in the WO) · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Result:** spike answered (below), ruled at review of PR #32 (2026-11-07), and §1 built under that ruling on the same branch after merging `origin/main` (`c923cd3`). Every §3 item passes on Furnace; CI is cited in the build's Gates section.
 
 Entry schema: `finding · where · type · recommendation · decision-needed`.
 
 ## Spike
 
-Probes are under `spike/` (`spike/README.md`). Every command is `spike/run.sh` from the repo root, and the recorded output is in `spike/results/`:
+The probes were under `spike/` (`spike/README.md`), which the build deleted by ruling 8. They remain at commit `03490cb`, read with `git show 03490cb:spike/<path>`. Every command was `spike/run.sh` from the repo root, and the recorded output is in `spike/results/`:
 - `furnace-release.txt`: `spike/run.sh measure` (its header names what it ran on);
 - `furnace-debug.txt`: the debug profile, as `gates` builds it;
 - `unbounded.txt`: two runs with no node budget;
@@ -157,4 +157,49 @@ The alternative rejected is making `PinAssignment.alternate_function` an `Option
 
 - Root, on Furnace: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` pass (257 passed, 0 failed). The root diff outside `spike/` and this file is empty.
 - Probe: `spike/run.sh gates` passes.
-- CI: pending; the first push's run URL is added below once it reports.
+- CI, first push (`03490cb`): `gates` and `tools` both green, https://github.com/ClearForge-LLC/aethelgard/actions/runs/42419462859 (PR #32). As S2 records, the probe was not in it.
+
+## Build (after the ruling on PR #32)
+
+### What was built
+
+- **`aethelgard-ir`:**
+  - `src/solve.rs`: `solve`, `solve_with_limit`, `SolveError` (with `kind()`, `id()` and `claimants()`), `RESERVED_PINS` and `NODE_LIMIT`, re-exported from `lib.rs`.
+  - `SolvedTopology.gpio`, with `unique_keys` made generic over the value type, and `validate` extended (S4).
+  - README: the model, the search order, the reserved pins and the SWD-only assumption, and the refusals in check order.
+- **`aethelgard-cli`:**
+  - `Command::Solve { file }`, placed after `Validate`, so the generated tool list is `validate, solve, check_drc, check_erc, prove, simulate`;
+  - `fn solve`, which carries its own refusal envelope (`claimants`) so the shared `RefusalBody` stays untouched;
+  - the README's `solve` section, its exit-code rows 0, 2 and 70, and the MCP tool list.
+- **Tests:**
+  - `aethelgard-ir/tests/solve.rs`: 21 tests on a synthetic `PinTable`. The real table cannot be used there, because `ir_depends_on_no_other_member` counts dev-dependencies.
+  - `aethelgard-ir/tests/validate.rs`: 4 new `gpio` tests, and the existing fixtures updated for the new key.
+  - `aethelgard-cli/tests/solve_cli.rs`: 11 end-to-end tests on the real table, over four fixtures copied byte for byte from the spike (`tests/fixtures/solve/`).
+  - The two tool-list expectations, in `mcp.rs` and `mcp_tier1.rs`.
+- **`spike/` deleted** (ruling 8).
+
+### The ruling, as built
+
+| Ruling | As built | Where |
+|---|---|---|
+| 1. `im` and `pm` before the search; no memo | Both run in `Search::consistent` at the root and after each bus is placed, together with the forward check | `solve.rs` `consistent` |
+| 2. Node budget 10,000,000, `BudgetExceeded`, exit 2 | `NODE_LIMIT`, counted in nodes **across the whole solve, minimal-set searches included** (my reading: the ruling did not say per search). Per search, the worst case would be (buses + 1) × 10 M. Pinned by an exact-sum test | `the_budget_covers_the_whole_solve_minimal_set_included` |
+| 3. `BudgetExceeded` names the bus being placed; `PeripheralClaimedTwice` accepted | As ruled; `claimants()` is that one bus | ir tests |
+| 4. `cs` last, greedy; check order confirmed | As ruled; the order is in `aethelgard-ir/README.md` | `refusals_come_in_the_readme_order` |
+| 5. S4: `gpio`; `DuplicatePin` across both maps; a net in both refused | The new variant is `NetAssignedTwice`, checked before `DuplicatePin` | `validate.rs` gpio tests |
+| 6. `PC14`, `PC15`, `PH0`, `PH1` reserved | `RESERVED_PINS` has six pins. They are dropped from every candidate list and skipped by the `cs` pass, and a hand pin on one refuses `ReservedPin` | `a_hand_pin_on_each_reserved_pin_refuses`, `no_reserved_pin_is_ever_assigned` |
+| 7. Probe out of CI; §1.4 is the `gates` measurement | `solve_cli.rs` pins the spike's digests. The build reproduces both (`c7f59a49…`, `759f4146…`), and its node counts match the spike's `fc+im+pm` exactly (7, 42, 44, 308, 41) | `gate_clause_4_…` |
+| 8. Delete `spike/`, merge `origin/main`, keep `main.rs` to the command tree and `solve` | All `main.rs` changes are the `Solve` variant, its match arm and `fn solve`, using fully qualified paths so the import block is untouched. **`mcp.rs` is touched in its test module only**: the tool-list expectation, and the throwaway test's count from 6 to 7 | see below |
+
+### Choices the WO and ruling left open (each flagged)
+
+| # | Finding | Where | Type | Recommendation | Decision-needed |
+|---|---|---|---|---|---|
+| B1 | **The signature takes the hash:** `solve(&Specification, &PinTable, specification_sha256: &str)`. The WO's two-argument form cannot see the bytes that `INV-03` says to hash. Taking bytes instead would add `sha2` to `aethelgard-ir` and put parsing inside `solve`. The CLI hashes the bytes it read | `solve.rs` | deviation from the WO's signature | Accept | **yes** |
+| B2 | `solve` re-runs `Specification::validate`, refusing with `InvalidSpecification` (which reports the inner kind). Without it, a duplicate net would collapse silently in the `BTreeMap`. It also checks the hash format first, and checks `mcu.part` against the table (`PartMismatch`) | `solve.rs` | addition (fail-closed) | Accept | no |
+| B3 | A `cs` with no free pin gets its own variant, `NoFreePin` (spike S3.4). It is unreachable on the STM32H753ZI and tested on a small synthetic table | `solve.rs` | addition | Accept | no |
+| B4 | **Claimants are signal paths, not field paths:** `i2c_buses[0].sda`, as the WO's own example has it, where the spike printed `….pin` for some refusals. Peripheral refusals name the bus path (`i2c_buses[0]`). `NoInstance`, `Infeasible` and `BudgetExceeded` name bus ids (spike S3.3, which was not ruled explicitly) | `solve.rs`, CLI README | contract choice | Ratify | **yes** |
+| B5 | A vendored pin table that fails its own check (`SourceHashMismatch`, `MalformedSource`) is **exit 70**, with nothing on stdout and the reason on stderr, the existing meaning of 70 extended in the README's row. Only a corrupted build can cause it | `main.rs` `fn solve`, CLI README | contract | Accept, or name another code | yes |
+| B6 | Root `Cargo.toml` gains `aethelgard-svd-hal` in `[workspace.dependencies]` (one line), and `Cargo.lock` the CLI→svd-hal edge. Neither file is on §2's protected list | root | scope touch | Accept | no |
+| B7 | The test `mcp::tests::the_five_tools_come_from_the_tree` now checks six names. It was **not renamed**, to keep the overlap with `AET-WO-0300c` in `mcp.rs` to the expectation lines | `mcp.rs` | stale name | Rename after `0300c` merges | no |
+| B8 | The final `out.validate()` in `solve` is labelled `belt-and-suspenders:`. Its mutant survives by construction: the search never produces an output it would refuse | `solve.rs` | protected redundancy | Keep | no |

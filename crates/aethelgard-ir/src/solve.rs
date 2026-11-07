@@ -1,11 +1,7 @@
 //! The pin solver (`AET-WO-1200`, `RUL-02`): a deterministic search from a
 //! [`Specification`] and a [`PinTable`] to a [`SolvedTopology`]. The search
 //! order, the reserved pins and the refusals, in check order, are in this
-//! crate's `README.md`.
-//!
-//! Every collection is a `BTreeMap`, `BTreeSet` or `Vec`, and the search
-//! counts its work in nodes, never in time, so the output is a function of
-//! the specification, the table and the hash alone (`INV-01`).
+//! crate's `README.md`, as is why its output depends on its inputs alone.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -20,10 +16,7 @@ pub const RESERVED_PINS: [&str; 6] = ["PA13", "PA14", "PC14", "PC15", "PH0", "PH
 /// minimal-set searches, before refusing with [`SolveError::BudgetExceeded`].
 pub const NODE_LIMIT: u64 = 10_000_000;
 
-/// One variant per refusal. `claimants` are JSON paths for the pin refusals
-/// (the signal, such as `i2c_buses[0].sda`) and the peripheral refusals (the
-/// bus, such as `spi_buses[1]`), and bus ids for the refusals about whole
-/// buses that the search reaches.
+/// One variant per refusal; what `claimants()` names is in the README.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SolveError {
     /// The specification failed [`Specification::validate`], or the hash is
@@ -172,10 +165,10 @@ pub fn solve_with_limit(
     let mut search = Search::new(&model, all.clone());
     let found = search.run(&mut budget);
     if let Some(pos) = search.exceeded {
-        return Err(model.budget_error(&search, pos, node_limit));
+        return Err(model.budget_error(&search, pos));
     }
     if !found {
-        return Err(model.minimal_set(all, &mut budget, node_limit));
+        return Err(model.minimal_set(all, &mut budget));
     }
 
     for (pos, &b) in search.active.iter().enumerate() {
@@ -258,6 +251,7 @@ struct Sig<'s, 't> {
 struct Bus<'s, 't> {
     kind: Kind,
     id: &'s str,
+    path: String,
     peripheral: Option<&'s str>,
     signals: Vec<Sig<'s, 't>>,
 }
@@ -346,6 +340,7 @@ impl<'s, 't> Model<'s, 't> {
             buses.push(Bus {
                 kind: Kind::I2c,
                 id: &b.id,
+                path: at.clone(),
                 peripheral: b.peripheral.as_deref(),
                 signals: vec![
                     sig("SDA", &b.sda, format!("{at}.sda"))?,
@@ -358,6 +353,7 @@ impl<'s, 't> Model<'s, 't> {
             buses.push(Bus {
                 kind: Kind::Spi,
                 id: &b.id,
+                path: at.clone(),
                 peripheral: b.peripheral.as_deref(),
                 signals: vec![
                     sig("SCK", &b.sck, format!("{at}.sck"))?,
@@ -399,7 +395,7 @@ impl<'s, 't> Model<'s, 't> {
             spi_instances,
             candidates,
         };
-        model.check_peripherals(spec)?;
+        model.check_peripherals()?;
         model.check_each_bus()?;
         Ok(model)
     }
@@ -417,14 +413,11 @@ impl<'s, 't> Model<'s, 't> {
             .map_or(&[], Vec::as_slice)
     }
 
-    fn check_peripherals(&self, spec: &Specification) -> Result<(), SolveError> {
-        let paths = (0..spec.i2c_buses.len())
-            .map(|i| format!("i2c_buses[{i}]"))
-            .chain((0..spec.spi_buses.len()).map(|i| format!("spi_buses[{i}]")));
+    fn check_peripherals(&self) -> Result<(), SolveError> {
         let mut taken: BTreeMap<&str, String> = BTreeMap::new();
-        for (bus, path) in self.buses.iter().zip(paths) {
+        for bus in &self.buses {
             let Some(p) = bus.peripheral else { continue };
-            let claimant = path;
+            let claimant = bus.path.clone();
             if !self.instances_of(bus.kind).iter().any(|i| i == p) {
                 return Err(SolveError::UnknownPeripheral {
                     peripheral: p.to_owned(),
@@ -488,17 +481,17 @@ impl<'s, 't> Model<'s, 't> {
         Ok(())
     }
 
-    fn budget_error(&self, search: &Search, pos: usize, limit: u64) -> SolveError {
+    fn budget_error(&self, search: &Search, pos: usize) -> SolveError {
         SolveError::BudgetExceeded {
             bus: self.buses[search.active[pos]].id.to_owned(),
-            limit,
+            limit: search.budget.limit,
         }
     }
 
     /// Deletion: drop each bus in document order if the rest stay
     /// infeasible. The set left is minimal (irreducible), not necessarily the
     /// smallest; it costs one search per bus, inside the same budget.
-    fn minimal_set(&self, mut set: Vec<usize>, budget: &mut Budget, limit: u64) -> SolveError {
+    fn minimal_set(&self, mut set: Vec<usize>, budget: &mut Budget) -> SolveError {
         let mut i = 0;
         while i < set.len() {
             let mut without = set.clone();
@@ -506,7 +499,7 @@ impl<'s, 't> Model<'s, 't> {
             let mut search = Search::new(self, without.clone());
             let found = search.run(budget);
             if let Some(pos) = search.exceeded {
-                return self.budget_error(&search, pos, limit);
+                return self.budget_error(&search, pos);
             }
             if found {
                 i += 1;
