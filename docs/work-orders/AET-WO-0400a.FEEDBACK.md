@@ -46,7 +46,7 @@ I slipped once: a `git checkout -- .` appended to a measurement command would ha
 
 - Reduction pass (diff): `Reduction pass (diff): −13 net · 1 duplicates removed · 0 dead paths removed · 0 protected kept · 0 findings below` (the two test helpers `header_bytes` and `write`, defined alike in two test files, now live in `tests/common`).
 - Local on Furnace: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` green.
-- CI: filled in below after the first push.
+- **CI: not yet run. The push is blocked, not a §7 stop.** The minted token (exp 2026-11-07T21:02:18Z) cannot reach `gh-write`'s mode-600 file without the Write/Edit tool or a command line carrying it, both barred by the contract (FUR-WO-0301 F7). Waiting on the operator to push, or to name a safe route. The golden `state_hash` is therefore not yet confirmed in `gates`; a mismatch there would be a §7 stop.
 - Protected surfaces: `git diff bfe22bc --name-only` lists only `crates/aethelgard-chaos/**` and this file. No new dependency, no `unsafe`.
 
 ## What was deliberately not built (§4 held)
