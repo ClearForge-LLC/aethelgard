@@ -95,6 +95,14 @@ One new test pins it:
 
 If `AET-WO-0400` has already merged, follow the shape of its graduation test. If it has not, write the same shape, and the second of the two to merge reconciles them.
 
+### 1.4a One rule `AET-WO-1100` missed (its FEEDBACK A4, ruled at review of PR #25)
+
+`Specification::validate` gains step **5a**, after step 5. Every I2C or SPI device's `supply` must equal its bus's `domain`, and every bus's `domain` must equal `mcu.supply`. Either mismatch refuses with `SupplyMismatch`, whose `id()` is the device reference or the bus id.
+
+- **Why equality:** the reference probe has one rail. Level shifting between domains is a design feature that no work order has scoped, so a mismatch today is a specification error, not a feature.
+- **Tests:** add one test for each case to `crates/aethelgard-ir/tests/validate.rs`.
+- **The fence:** this is the one change to `Specification` this work order makes.
+
 ### 1.5 Documentation
 
 Add `crates/aethelgard-svd-hal/README.md` covering:
