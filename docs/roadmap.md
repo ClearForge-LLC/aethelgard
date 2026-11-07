@@ -70,6 +70,13 @@ P0 ──> P1 ──> P2 ──> P3
   - The `prove` crate copy has no size cap. Apply `RUL-13`'s 16 MiB to the whole copy, with a file-count cap, and refuse with `InputTooLarge`.
 
   Build-only. It must merge before `AET-WO-1500` puts these verdicts in front of agents.
+- `AET-WO-0300c` — inserted at review of PR #29, written, build-only, strong tier: closes the reaper's start-up race, which `AET-WO-1500`'s adversarial pass measured. 17 of 2,500 immediate MCP cancels left a tool running under PID 1.
+  - The reaper and guardian take the CLI's pid from the CLI instead of sampling it.
+  - The guardian starts before its directory exists.
+  - The CLI dies with its parent.
+  - `mcp` handles SIGHUP.
+
+  It must merge before `AET-WO-1501` publishes the binary, and before any release.
 - `AET-WO-0400` — the trace archive in deterministic CBOR (`RUL-06` as amended), with a local append-only archive, a strict reader, deterministic replay, and the optional remote mirror's credential boundary. **Build-only now:** `architecture.md` answers its old spike questions, and the work order fixes the profile, layout, commit protocol and golden hashes. It measures encoded bytes per synthetic event, labelled as plumbing; `OQ-03`'s bytes per simulated second waits for real events in P2.
 - `AET-WO-0400a` — inserted at review of PR #21, written, build-only. It makes three changes:
   - the state chain hashes each event's change, so replay is linear, and the manifest moves to version 2;
@@ -127,7 +134,7 @@ P0 ──> P1 ──> P2 ──> P3
   - **Calls.** Each tool call runs the binary itself, as a child, with an argument vector built only from that subcommand's declared arguments. So `mcp` maps every tool to a `clap` subcommand and never forwards raw arguments (`architecture.md` §6), and every call keeps the CLI's sandbox and exit codes.
   - **The proof.** A stdio protocol test in CI proves the gate's MCP clause, and MCP Inspector is the documented human check.
   - **Parallel.** It runs in parallel with everything else in P1. Nothing in P1 depends on it except the launch-readiness clause.
-- `AET-WO-1501` — reserved: adds the `aethelgard` binary to the published tools image, so one pull gives a user or an agent both the engine and its tools. **Split from `AET-WO-1500`,** because it changes `container/` and the publish job (`RUL-15`), which `AET-WO-1500`'s fence protects. The launch-readiness clause depends on it.
+- `AET-WO-1501` — reserved: adds the `aethelgard` binary to the published tools image, so one pull gives a user or an agent both the engine and its tools. **Split from `AET-WO-1500`,** because it changes `container/` and the publish job (`RUL-15`), which `AET-WO-1500`'s fence protects. The launch-readiness clause depends on it, and it depends on `AET-WO-0300c`.
 - `AET-WO-1600` — intent, inserted at review of PR #15: a host-side system-call allowlist for the tool sandbox, closing the non-socket channels `architecture.md` §6 lists as open on a host (System V shared memory, user namespaces, `pidfd_open`). At Argon's review of `main` at 9818c4f it also gained `ptrace`, `process_vm_readv`, `process_vm_writev` and `pidfd_getfd`, which Landlock already confines across domains, so this is defence in depth, not a gap. It also gained dropping every capability before `exec`. It must merge before the launch-readiness clause puts a crates.io-installed binary on hosts. Until then, the published image is the supported boundary for tool subcommands.
 
 **Exit gate**
@@ -194,6 +201,7 @@ Three rules added at Argon's review, each learned from a work order that ran wit
 | Work order | Builder | Adversarial pass | Why |
 |---|---|---|---|
 | `AET-WO-0300b` | cheap | full on the two changed checks | small and fully specified, but it sits on the verdict path |
+| `AET-WO-0300c` | strong | full | the sandbox lifecycle is a trust boundary |
 | `AET-WO-0400` | cheap | targeted: forgery, interrupted writes, hostile archives | the format and protocol are ruled; the risk is integrity, not escape |
 | `AET-WO-0400a` | cheap | targeted | three measured fixes, each fully specified |
 | `AET-WO-1100` | cheap | targeted | data modelling, with every rule fixed in the work order (Argon's tier) |
@@ -247,6 +255,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | 2026-11-07 | §7 | `AET-WO-0300b` reconciled as built | PR #18 merged. The cheap-builder tier held on its first pilot |
 | 2026-11-07 | §5, §6, §7 | `AET-WO-0400` reconciled as built. `AET-WO-0400a` inserted. The P0 gate is marked passed after the phase-boundary audit | PR #21 merged. Every P0 clause is owned by merged work. The audit counted four planned and two inserted work orders, all merged, and one deliberate gap |
 | 2026-11-07 | §5, §6, §7 | `AET-WO-1500` written build-only. `AET-WO-1501` split from it to add the binary to the published image | The image change touches `container/` and the publish job, which a cheap builder on the `mcp` work order should not. Splitting keeps each fence simple |
+| 2026-11-07 | §5, §6 | `AET-WO-0300c` inserted, and `AET-WO-1501` made to depend on it | `AET-WO-1500`'s adversarial pass found that a CLI killed during start-up leaves its tool running, because the reaper samples its parent's pid. The bug predates `mcp`, but `mcp` makes it routine, since every cancel kills the CLI |
 
 ## 9. Provenance
 
