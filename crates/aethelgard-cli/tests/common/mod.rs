@@ -162,14 +162,35 @@ pub fn descendants(root: u32) -> Vec<u32> {
     found
 }
 
+/// The fields of `/proc/<pid>/stat` from field 3 (the state) on, so field `n` is at `n - 3`;
+/// `None` once the process is gone. The command name may hold spaces and parentheses.
+pub fn stat_fields(pid: u32) -> Option<Vec<String>> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let rest = stat.rsplit_once(')')?.1;
+    Some(rest.split_whitespace().map(str::to_owned).collect())
+}
+
 pub fn alive(pid: u32) -> bool {
     // A zombie is dead for this purpose: its state is Z.
-    std::fs::read_to_string(format!("/proc/{pid}/stat"))
-        .map(|s| {
-            s.rsplit_once(')')
-                .is_some_and(|(_, r)| !r.trim_start().starts_with('Z'))
-        })
-        .unwrap_or(false)
+    stat_fields(pid).is_some_and(|f| f[0] != "Z")
+}
+
+/// A test's own directory under the system temporary directory, removed on drop.
+pub struct Scratch(pub PathBuf);
+
+impl Scratch {
+    pub fn new(label: &str) -> Scratch {
+        let p = std::env::temp_dir().join(format!("aet-test-{}-{label}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        Scratch(std::fs::canonicalize(p).unwrap())
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 /// Polls until the condition holds or a deadline passes.

@@ -174,6 +174,30 @@ fn main() -> ExitCode {
             return emit(&Refusal::new("UsageError", None, message), EXIT_USAGE);
         }
     };
+    // Only a CLI that `mcp` started dies with its parent (ruled on PR #34): Linux
+    // sends the signal when the parent *thread* ends, which would kill a CLI that
+    // any other multi-threaded caller runs, and `mcp` starts every CLI from its
+    // main thread. `mcp` never arms it on itself, nor do the reaper and guardian,
+    // which must outlive this process to clean up after it.
+    if let Some(named) = std::env::var_os(run::PARENT_PID_VAR)
+        && !matches!(cli.command, Command::Mcp)
+    {
+        let Some(parent) = run::pid_arg(&named) else {
+            let message = format!("{} is not a pid", run::PARENT_PID_VAR);
+            return emit(&Refusal::new("UsageError", None, message), EXIT_USAGE);
+        };
+        if let Err(e) =
+            rustix::process::set_parent_process_death_signal(Some(rustix::process::Signal::KILL))
+        {
+            diagnose(&format!("cannot set the parent-death signal: {e}"));
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+        // A parent that died before the signal was armed never sends it.
+        if std::os::unix::process::parent_id() != parent {
+            diagnose("the process that started this one is gone");
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    }
 
     let judged = match cli.command {
         Command::Validate { file } => return validate(file.as_deref()),
@@ -237,21 +261,16 @@ impl Scratch {
                 format!("cannot create a temporary directory: {e}"),
             )
         };
-        DirBuilder::new().mode(0o700).create(&root).map_err(fail)?;
-        let scratch = Self {
-            tool: root.join("tool"),
-            root,
-        };
-        DirBuilder::new()
-            .mode(0o700)
-            .create(&scratch.tool)
-            .map_err(fail)?;
-        // The guardian removes the directory if this process dies first.
-        std::env::current_exe()
+        // The guardian starts before the directory exists, so no instant of this
+        // process's death leaves the directory unguarded. It removes the
+        // directory if this process dies first.
+        let mut guardian = std::env::current_exe()
             .and_then(|me| {
                 std::process::Command::new(me)
                     .arg(run::GUARD_ARG)
-                    .arg(&scratch.root)
+                    .arg(run::CLI_PID_ARG)
+                    .arg(std::process::id().to_string())
+                    .arg(&root)
                     .env_clear()
                     .stdin(std::process::Stdio::null())
                     .stdout(std::process::Stdio::null())
@@ -259,6 +278,20 @@ impl Scratch {
                     .process_group(0)
                     .spawn()
             })
+            .map_err(fail)?;
+        if let Err(e) = DirBuilder::new().mode(0o700).create(&root) {
+            // Not ours, if it already existed: the guardian must not remove it.
+            let _ = guardian.kill();
+            let _ = guardian.wait();
+            return Err(fail(e));
+        }
+        let scratch = Self {
+            tool: root.join("tool"),
+            root,
+        };
+        DirBuilder::new()
+            .mode(0o700)
+            .create(&scratch.tool)
             .map_err(fail)?;
         Ok(scratch)
     }
