@@ -21,15 +21,16 @@ const MEMBERS: [&str; 7] = [
 ];
 
 const CHAOS: &str = "crates/aethelgard-chaos";
+const SVD_HAL: &str = "crates/aethelgard-svd-hal";
 
-/// Every member but `ir` (first), `cli` (last) and `chaos`, which graduated
-/// from the stub checks in `AET-WO-0400`; the order is pinned by
-/// `members_are_exactly_the_seven_parts`.
+/// Every member but `ir` (first), `cli` (last), `chaos` (graduated in
+/// `AET-WO-0400`) and `svd-hal` (graduated in `AET-WO-1101`); the order is
+/// pinned by `members_are_exactly_the_seven_parts`.
 fn libraries() -> Vec<&'static str> {
     MEMBERS[1..6]
         .iter()
         .copied()
-        .filter(|m| *m != CHAOS)
+        .filter(|m| *m != CHAOS && *m != SVD_HAL)
         .collect()
 }
 
@@ -236,5 +237,62 @@ fn chaos_has_only_its_known_files_keys_and_dependencies() {
             Some(true),
             "chaos dependency {name} is not from the workspace table"
         );
+    }
+}
+
+/// `aethelgard-svd-hal` holds the vendored pin data and its parser
+/// (`AET-WO-1101`), so it is no longer a re-export stub. Its files, manifest
+/// keys and dependencies are fixed.
+#[test]
+fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
+    const DATA: [&str; 4] = [
+        "data/st-open-pin-data/GPIO-STM32H747_gpio_v1_0_Modes.xml",
+        "data/st-open-pin-data/LICENSE",
+        "data/st-open-pin-data/SOURCE.md",
+        "data/st-open-pin-data/STM32H753ZITx.xml",
+    ];
+    for file in files(&root().join(SVD_HAL)) {
+        let allowed = file == "Cargo.toml"
+            || file == "README.md"
+            || (file.starts_with("src/") && file.ends_with(".rs"))
+            || (file.starts_with("tests/") && file.ends_with(".rs"))
+            || DATA.contains(&file.as_str());
+        assert!(
+            allowed,
+            "svd-hal has a file outside the allowed set: {file}"
+        );
+    }
+    for file in DATA {
+        assert!(root().join(SVD_HAL).join(file).exists(), "missing {file}");
+    }
+    let svd = manifest(SVD_HAL);
+    for key in svd.keys() {
+        assert!(
+            ["package", "dependencies", "dev-dependencies", "lints"].contains(&key.as_str()),
+            "svd-hal sets [{key}]"
+        );
+    }
+    let table = |key: &str| -> Vec<String> {
+        let mut names: Vec<String> = svd
+            .get(key)
+            .and_then(Value::as_table)
+            .map(|deps| deps.keys().cloned().collect())
+            .unwrap_or_default();
+        names.sort();
+        names
+    };
+    assert_eq!(
+        table("dependencies"),
+        ["aethelgard-ir", "roxmltree", "sha2", "thiserror"]
+    );
+    assert_eq!(table("dev-dependencies"), ["serde_json"]);
+    for key in ["dependencies", "dev-dependencies"] {
+        for (name, dep) in svd[key].as_table().unwrap() {
+            assert_eq!(
+                dep.get("workspace").and_then(Value::as_bool),
+                Some(true),
+                "svd-hal dependency {name} is not from the workspace table"
+            );
+        }
     }
 }
