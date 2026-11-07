@@ -7,6 +7,9 @@
 
 **Grounds:**
 - **The failure.** PR #32's `gates` run 42424760372 (job 128560549661, head ae04803) failed `mcp_tier1::servers_sigkilled_while_calls_start_leave_nothing` with `parent-kill: servers=100 burst=5 descendants_seen=0 survivors=0 leftover_dirs=1`. No process survived; one `aethelgard-*` directory did. `main` was green on the same test before and after.
+  - Two minutes later, PR #36's `gates` run 42424971511 (job 128561175483) failed the immediate-cancel storm with `calls=500 descendants_seen=681 survivors=0 leftover_dirs=1`.
+  - Each failure passed on a single re-run.
+  - On cancel, `mcp` kills only the CLI child (`kill_on_drop`). The guardian has its own process group and is not the reaper's descendant, so it lives on to retry. Both tests hit one mechanism.
 - **The architect's reading,** from `main` at 1b4fe5f. Not yet reproduced: the first step below must confirm it.
   - When its parent is gone, `run.rs` `guard_main` calls `fs::remove_dir_all(&dir)` once, discards the result, and exits 0.
   - The directory is not quiet at that moment. The trampoline (`confine_main`) does `File::create(&internal.status)` on `root/status-*` (`main.rs` `Scratch`). The tool's stub may also still be writing under `root/tool` until the reaper's next 20 ms poll kills it.
@@ -37,7 +40,7 @@
 3. **Tests:**
    - item 1's test passes: the directory is gone once the writer stops, on every try;
    - a writer that never stops: the guardian exits 70 within 11 s, and the test then cleans up after it;
-   - `servers_sigkilled_while_calls_start_leave_nothing` and the immediate-cancel storm pass 3 times in a row on Furnace, each with `leftover_dirs=0` recorded in FEEDBACK;
+   - `servers_sigkilled_while_calls_start_leave_nothing` and the immediate-cancel storm pass 10 times in a row on Furnace, each with `leftover_dirs=0` recorded in FEEDBACK. Ten runs, not three, because each failure appeared about once in a few CI runs;
    - every existing tier-1 and tier-2 test passes unchanged.
 
 ## 2. Invariants and fences
