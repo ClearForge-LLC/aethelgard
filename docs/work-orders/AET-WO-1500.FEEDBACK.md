@@ -54,9 +54,13 @@ My mutants (one per new guard): `kill_on_drop(false)` fails the cancel and disco
 
 - Reduction pass (diff): `Reduction pass (diff): −26 net · 1 duplicates removed · 1 dead paths removed · 0 protected kept · 0 findings below` (the live-child registry and `kill_all`, mutant-proven redundant with `kill_on_drop`; the loose `Live` plumbing).
 - Local on Furnace after the merge with `2f13278`: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (also with `--features aethelgard-cli/with-tools`), `cargo test --workspace`: green. `mcp_tier1`: 16 tests, run three times green.
-- **Tier 2 (§3.4) did not run on Furnace**: `kicad-cli`, `cargo-kani` and `renode` are not installed here (as in AET-WO-1100's FEEDBACK). The three tests are in `with_tools.rs`, compile and lint clean with `with-tools`, and belong to the CI `tools` job; they are **unproven until that job runs**.
+- **Tier 2 (§3.4) did not run on Furnace**: `kicad-cli`, `cargo-kani` and `renode` are not installed here (as in AET-WO-1100's FEEDBACK). The three tests are in `with_tools.rs`, compile and lint clean with `with-tools`, and belong to the CI `tools` job; they passed in the CI `tools` job (see the §7 stop below).
 - Protected surfaces: `git diff origin/main --name-only` lists only `crates/aethelgard-cli/**`, the workspace `Cargo.toml`/`Cargo.lock` and this file. No `unsafe`, no secret, no sudo.
-- CI: see the PR.
+- CI on the first push (PR #29, run [42416150791](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42416150791)): `gates` and `tools` both green. The tier-2 MCP tests passed in `tools`.
+
+## §7 stop, scoped to one clause: tier 2 on Furnace
+
+§3.4's three tier-2 tests (`check_drc` clean and violation, `prove` on the seeded overflow, `simulate` on the Nucleo board, through `mcp`) cannot run on Furnace: `kicad-cli`, `cargo-kani` and `renode` are not installed, and installing them needs `sudo` or a system package, which §7 forbids ("Any step that needs sudo, a system package, or a secret"). Recorded as a §7 stop for **that clause only**; the rest of §1 and §3 is built and proven. The evidence that exists is CI, not Furnace: PR #29, run 42416150791, `tools` job green (2m26s) inside the image pinned by `container/IMAGE`, `gates` green. The kickoff's "on Furnace" wording is therefore met for tier 1 and the workspace gates, and for tier 2 only by the CI `tools` job. The architect decides whether that stands as acceptance.
 
 ## Promote-or-needs-none pass
 
