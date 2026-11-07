@@ -5,7 +5,6 @@
 //! load-bearing ones are read off the table rather than argued.
 
 use std::collections::BTreeMap;
-use std::path::Path;
 
 use super::pcb::{Board, Fp, Seg};
 use super::{Ctx, Finding, answer, verdict_summary, write};
@@ -202,28 +201,38 @@ pub fn run(ctx: &mut Ctx) -> Result<(), String> {
         ),
         Err(e) => answer("S3", format!("aethelgard check drc: {e}")),
     }
-    footprint_rows(ctx, &spec_setup_fn(), &spec_pro, &spec_dru)?;
+    footprint_rows(ctx, &spec_pro, &spec_dru, &loose_pro, &loose_dru)?;
     Ok(())
 }
 
-fn spec_setup_fn() -> String {
-    setup(SPEC_MM)
-}
-
-/// Scope-informing extra (§5.1's "rules embedded in a footprint"): a pad
-/// carrying its own 0.05 mm local clearance, a NET_B track 0.1 mm from it,
-/// with every gate step applied.
-fn footprint_rows(ctx: &Ctx, setup: &str, pro: &str, rules: &str) -> Result<(), String> {
+/// §5.1's "rules embedded in a footprint": a NET_B track 0.1 mm from a pad
+/// whose footprint or pad carries a 0.05 mm local clearance, against each
+/// gate step alone and both together. Round 1 found the pro's board minimum,
+/// not the gate's custom rule, catching a pad-local override.
+fn footprint_rows(
+    ctx: &Ctx,
+    spec_pro: &str,
+    spec_dru: &str,
+    loose_pro: &str,
+    loose_dru: &str,
+) -> Result<(), String> {
     let Some(libs) = &ctx.libs else {
         answer("S3", "footprint rows blocked: no footprint library");
         return Ok(());
     };
     let lib_id = "Resistor_SMD:R_0603_1608Metric";
     let src = libs.footprint(lib_id)?;
-    for (name, local) in [
-        ("fp-pad-default", None),
-        ("fp-pad-local-0.05", Some(50_000)),
-    ] {
+    let overrides: [(&str, Option<i64>, Option<i64>); 3] = [
+        ("fp-pad-default", None, None),
+        ("fp-pad-local-0.05", Some(50_000), None),
+        ("fp-footprint-local-0.05", None, Some(50_000)),
+    ];
+    let gates: [(&str, &str, &str); 3] = [
+        ("gate-pro+dru", spec_pro, spec_dru),
+        ("gate-dru-only", loose_pro, spec_dru),
+        ("gate-pro-only", spec_pro, loose_dru),
+    ];
+    for (name, pad_cl, fp_cl) in overrides {
         let fp = Fp {
             lib_id: lib_id.into(),
             reference: "R1".into(),
@@ -236,12 +245,14 @@ fn footprint_rows(ctx: &Ctx, setup: &str, pro: &str, rules: &str) -> Result<(), 
                 ("2".to_owned(), "NET_A".to_owned()),
             ]),
             src: src.clone(),
-            pad_clearance: local,
+            pad_clearance: pad_cl,
+            fp_clearance: fp_cl,
+            extra_props: Vec::new(),
         };
         let mut b = Board {
             key: "s3fp".into(),
             version: PCB_VERSION.into(),
-            setup: setup.into(),
+            setup: setup(SPEC_MM),
             outline: (100 * MM, 100 * MM, 130 * MM, 120 * MM),
             footprints: vec![fp],
             segs: Vec::new(),
@@ -263,8 +274,12 @@ fn footprint_rows(ctx: &Ctx, setup: &str, pro: &str, rules: &str) -> Result<(), 
             net: "NET_B".into(),
         });
         let text = b.emit()?;
-        row(ctx, name, &text, Some(pro), Some(rules))?;
+        for (g, pro, rules) in gates {
+            if name == "fp-pad-default" && g != "gate-pro+dru" {
+                continue;
+            }
+            row(ctx, &format!("{name}-{g}"), &text, Some(pro), Some(rules))?;
+        }
     }
-    let _ = Path::new("");
     Ok(())
 }

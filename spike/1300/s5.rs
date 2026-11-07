@@ -81,16 +81,6 @@ fn sheet(names: &[String], power: &str) -> Sheet {
     }
 }
 
-fn nets(net: &Sx) -> Vec<String> {
-    net.child("nets")
-        .map(|n| {
-            n.children("net")
-                .filter_map(|n| n.child("name").and_then(|x| x.arg(1)).map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 fn comps(net: &Sx) -> Vec<(String, String)> {
     net.child("components")
         .map(|c| {
@@ -154,11 +144,52 @@ pub fn run(ctx: &mut Ctx) -> Result<(), String> {
         .iter()
         .flat_map(|f| f.items.iter().map(|i| i.0.clone()))
         .collect();
+    for f in findings.iter().filter(|f| {
+        matches!(
+            f.kind.as_str(),
+            "bus_to_net_conflict" | "multiple_net_names" | "unresolved_variable"
+        )
+    }) {
+        let items: Vec<&str> = f.items.iter().map(|i| i.0.as_str()).collect();
+        answer(
+            "S5",
+            format!(
+                "ERC {} {}: {} {:?}",
+                f.kind, f.severity, f.description, items
+            ),
+        );
+    }
     let net = super::s2::netlist(ctx, &path)?;
-    let net_names = net.as_ref().map(nets).unwrap_or_default();
     let components = net.as_ref().map(comps).unwrap_or_default();
+    // Each net by the nodes on it: the label net of name i is the one holding
+    // R<name> pin 1, its power net the one holding P<i> pin 1.
+    let mut by_node: BTreeMap<(String, String), String> = BTreeMap::new();
+    if let Some(nl) = &net
+        && let Some(nets) = nl.child("nets")
+    {
+        for n in nets.children("net") {
+            let name = n
+                .child("name")
+                .and_then(|x| x.arg(1))
+                .unwrap_or("")
+                .to_owned();
+            for node in n.children("node") {
+                let r = node
+                    .child("ref")
+                    .and_then(|x| x.arg(1))
+                    .unwrap_or("")
+                    .to_owned();
+                let p = node
+                    .child("pin")
+                    .and_then(|x| x.arg(1))
+                    .unwrap_or("")
+                    .to_owned();
+                by_node.insert((r, p), name.clone());
+            }
+        }
+    }
     let mut bad = 0;
-    for n in &all {
+    for (i, n) in all.iter().enumerate() {
         // ERC: the exact text inside the item descriptions' quotes.
         let erc = |want: &str| -> String {
             let quoted = [
@@ -172,47 +203,32 @@ pub fn run(ctx: &mut Ctx) -> Result<(), String> {
             {
                 "ok".into()
             } else {
-                let near: Vec<&String> = descriptions
-                    .iter()
-                    .filter(|d| {
-                        d.contains(&want[..want.len().min(2)])
-                            && d.contains(&want[want.len().saturating_sub(1)..])
-                    })
-                    .take(1)
-                    .collect();
-                format!("MISSING(near {near:?})")
+                "MISSING".into()
             }
         };
-        let net_has = |want: &str| -> String {
-            if net_names.iter().any(|x| x == want) {
-                "ok".into()
-            } else {
-                let near: Vec<&String> = net_names
-                    .iter()
-                    .filter(|x| {
-                        x.ends_with(&want[want.len().saturating_sub(1)..]) && x.contains(&want[..1])
-                    })
-                    .take(2)
-                    .collect();
-                format!("MISSING(near {near:?})")
+        let net_at = |r: &str, want: &str| -> String {
+            match by_node.get(&(r.to_owned(), "1".to_owned())) {
+                Some(got) if got == want => "ok".into(),
+                Some(got) => format!("CHANGED to {got:?}"),
+                None => format!("MISSING (no node {r}.1)"),
             }
         };
         let comp = components.iter().find(|(r, _)| *r == format!("R{n}"));
         let fields = match comp {
             Some((_, v)) if *v == format!("V{n}") => "ok".to_owned(),
-            Some((_, v)) => format!("value read back as {v:?}"),
+            Some((_, v)) => format!("value CHANGED to {v:?}"),
             None => "ref MISSING".to_owned(),
         };
         let line = format!(
             "name {n:?}: label-erc {} label-net {} global-erc {} domain-net {} ref-erc {} ref+value-netlist {}",
             erc(&format!("L{n}")),
-            net_has(&format!("/L{n}")),
+            net_at(&format!("R{n}"), &format!("/L{n}")),
             erc(&format!("G{n}")),
-            net_has(&format!("D{n}")),
+            net_at(&format!("P{i}"), &format!("D{n}")),
             erc(&format!("R{n}")),
             fields
         );
-        if line.contains("MISSING") || line.contains("read back") {
+        if line.contains("MISSING") || line.contains("CHANGED") {
             bad += 1;
         }
         answer("S5", line);

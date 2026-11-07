@@ -10,6 +10,7 @@
 // Spike code: signatures are shaped by the probes, not an API.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
+pub mod env;
 pub mod kilib;
 pub mod pcb;
 pub mod sch;
@@ -82,11 +83,22 @@ impl Ran {
 /// Runs a program to completion (5 min cap), output to files so no pipe can
 /// fill and stall it.
 pub fn run(program: &str, args: &[&str], cwd: &Path) -> Result<Ran, String> {
+    run_env(program, args, cwd, &[])
+}
+
+/// `run` with extra environment variables.
+pub fn run_env(
+    program: &str,
+    args: &[&str],
+    cwd: &Path,
+    env: &[(String, String)],
+) -> Result<Ran, String> {
     let out = cwd.join(".spike-stdout");
     let err = cwd.join(".spike-stderr");
     let started = Instant::now();
     let mut child = Command::new(program)
         .args(args)
+        .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(fs::File::create(&out).map_err(|e| e.to_string())?)
@@ -187,10 +199,35 @@ impl Ctx {
         run("kicad-cli", args, cwd)
     }
 
-    /// `kicad-cli sch erc --exit-code-violations --format json` on `sch`.
+    pub fn kicad_env(
+        &self,
+        args: &[&str],
+        cwd: &Path,
+        env: &[(String, String)],
+    ) -> Result<Ran, String> {
+        run_env("kicad-cli", args, cwd, env)
+    }
+
     pub fn erc(&self, sch: &Path) -> Result<(Ran, Vec<Finding>), String> {
+        self.erc_env(sch, &[])
+    }
+
+    pub fn drc(
+        &self,
+        pcb: &Path,
+        extra: &[&str],
+    ) -> Result<(Ran, BTreeMap<String, Vec<Finding>>), String> {
+        self.drc_env(pcb, extra, &[])
+    }
+
+    /// `kicad-cli sch erc --exit-code-violations --format json` on `sch`.
+    pub fn erc_env(
+        &self,
+        sch: &Path,
+        env: &[(String, String)],
+    ) -> Result<(Ran, Vec<Finding>), String> {
         let report = sch.with_extension("erc.json");
-        let ran = self.kicad(
+        let ran = self.kicad_env(
             &[
                 "sch",
                 "erc",
@@ -202,6 +239,7 @@ impl Ctx {
                 &sch.to_string_lossy(),
             ],
             sch.parent().unwrap(),
+            env,
         )?;
         let doc = read_json(&report).map_err(|e| {
             format!(
@@ -219,10 +257,11 @@ impl Ctx {
 
     /// `kicad-cli pcb drc --exit-code-violations --format json [extra]` on
     /// `pcb`; findings by report key.
-    pub fn drc(
+    pub fn drc_env(
         &self,
         pcb: &Path,
         extra: &[&str],
+        env: &[(String, String)],
     ) -> Result<(Ran, BTreeMap<String, Vec<Finding>>), String> {
         let report = pcb.with_extension("drc.json");
         let report_s = report.to_string_lossy().into_owned();
@@ -230,7 +269,7 @@ impl Ctx {
         let mut args = vec!["pcb", "drc", "--exit-code-violations", "--format", "json"];
         args.extend_from_slice(extra);
         args.extend_from_slice(&["-o", &report_s, &pcb_s]);
-        let ran = self.kicad(&args, pcb.parent().unwrap())?;
+        let ran = self.kicad_env(&args, pcb.parent().unwrap(), env)?;
         let doc = read_json(&report).map_err(|e| {
             format!(
                 "drc exit {}: {e}; stderr: {}",
@@ -307,6 +346,9 @@ pub fn main(aethelgard: &Path, tmp: &Path) -> Vec<String> {
             std::env::var("AETHELGARD_IMAGE").unwrap_or_else(|_| "unnamed".into())
         ),
     );
+    if kicad.is_some() {
+        env::show_templates();
+    }
     let mut ctx = Ctx {
         work,
         aethelgard: aethelgard.to_path_buf(),

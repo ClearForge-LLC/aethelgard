@@ -9,7 +9,7 @@ use std::fs;
 use super::kilib::{self, Libs};
 use super::sch::{self, Conn, GRID, Part, Sheet};
 use super::sexpr::{self, Sx};
-use super::{Ctx, answer, sha256_hex, summary, verdict_summary, write};
+use super::{Ctx, answer, env, sha256_hex, summary, verdict_summary, write};
 
 pub const VERSION: &str = "20231120";
 pub const RAIL: &str = "VDD_3V3";
@@ -20,38 +20,68 @@ pub struct Variant {
     pub nc: bool,
     pub flags: bool,
     pub vcap_flag: bool,
+    /// VCAP pins on separate nets, each with its own capacitor, and SDO
+    /// through a resistor to GND (round 2).
+    pub fixed: bool,
+    pub version: &'static str,
 }
 
-pub const VARIANTS: [Variant; 5] = [
+pub const VARIANTS: [Variant; 7] = [
     Variant {
         name: "naive",
         nc: false,
         flags: false,
         vcap_flag: false,
+        fixed: false,
+        version: VERSION,
     },
     Variant {
         name: "nc",
         nc: true,
         flags: false,
         vcap_flag: false,
+        fixed: false,
+        version: VERSION,
     },
     Variant {
         name: "flags",
         nc: false,
         flags: true,
         vcap_flag: false,
+        fixed: false,
+        version: VERSION,
     },
     Variant {
         name: "nc+flags",
         nc: true,
         flags: true,
         vcap_flag: false,
+        fixed: false,
+        version: VERSION,
     },
     Variant {
         name: "nc+flags+vcap",
         nc: true,
         flags: true,
         vcap_flag: true,
+        fixed: false,
+        version: VERSION,
+    },
+    Variant {
+        name: "fixed",
+        nc: true,
+        flags: true,
+        vcap_flag: false,
+        fixed: true,
+        version: VERSION,
+    },
+    Variant {
+        name: "fixed@20260306",
+        nc: true,
+        flags: true,
+        vcap_flag: false,
+        fixed: true,
+        version: "20260306",
     },
 ];
 
@@ -302,7 +332,7 @@ pub fn sheet(
     let mut sheet = Sheet {
         project: project.into(),
         title: project.into(),
-        version: VERSION.into(),
+        version: v.version.into(),
         paper: "A0".into(),
         parts,
         flags,
@@ -321,7 +351,9 @@ pub fn sheet(
             conns: BTreeMap::from([("1".to_owned(), Conn::Label("VCAP".into()))]),
         });
     }
-    let _ = pin_named;
+    if v.fixed && ids.footprints {
+        fix(&mut sheet, ids, syms)?;
+    }
     Ok(sheet)
 }
 
@@ -353,7 +385,7 @@ pub fn run(ctx: &mut Ctx) -> Result<(), String> {
         ),
     );
     for v in VARIANTS {
-        let dir = ctx.dir(&format!("s2-{}", v.name.replace('+', "-")))?;
+        let dir = ctx.dir(&format!("s2-{}", v.name.replace(['+', '@'], "-")))?;
         let s = sheet(&ids, &syms, v, "s2")?;
         let text = sch::emit(&s, &syms)?;
         let path = dir.join("s2.kicad_sch");
@@ -417,7 +449,7 @@ pub fn run(ctx: &mut Ctx) -> Result<(), String> {
                 item_uuids.len()
             ),
         );
-        if matches!(v.name, "naive" | "nc+flags+vcap" | "nc+flags") {
+        if matches!(v.name, "naive" | "nc+flags+vcap" | "nc+flags" | "fixed") {
             match ctx.check("erc", "--schematic", &path) {
                 Ok((ran, verdict)) => answer(
                     "S2",
@@ -434,6 +466,18 @@ pub fn run(ctx: &mut Ctx) -> Result<(), String> {
         if v.name == "nc+flags+vcap" {
             netlist(ctx, &path)?;
             upgrade(ctx, &path, &text)?;
+        }
+        if v.name == "fixed" {
+            netlist(ctx, &path)?;
+            treatments(ctx, v.name, &text, &env::ALL)?;
+        }
+        if v.name == "fixed@20260306" {
+            treatments(
+                ctx,
+                v.name,
+                &text,
+                &[env::Treat::Bare, env::Treat::ConfigHome],
+            )?;
         }
     }
     demo_header(ctx);
@@ -593,4 +637,100 @@ fn demo_header(ctx: &Ctx) {
         let head: Vec<&str> = text.lines().take(6).map(str::trim).collect();
         answer("S2", format!("demo {first} header: {}", head.join(" ")));
     }
+}
+
+/// Round 1's remaining errors, cleared: the STM32 symbol makes both VCAP pins
+/// `power_out`, so joined they are a `pin_to_pin` error; each gets its own
+/// net and capacitor. BME280's SDO (bidirectional) on the flagged GND net is a
+/// `pin_to_pin` warning; it goes to GND through R3 instead.
+fn fix(sheet: &mut Sheet, ids: &Ids, syms: &BTreeMap<String, Sx>) -> Result<(), String> {
+    let c_fp = "Capacitor_SMD:C_0402_1005Metric";
+    let r_fp = "Resistor_SMD:R_0402_1005Metric";
+    let gnd = || Conn::Power(ids.gnd.clone(), "GND".into());
+    let mcu = sheet
+        .parts
+        .iter_mut()
+        .find(|p| p.reference == "U1")
+        .ok_or("no U1")?;
+    let vcaps: Vec<String> = mcu
+        .conns
+        .iter()
+        .filter(|(_, c)| **c == Conn::Label("VCAP".into()))
+        .map(|(n, _)| n.clone())
+        .collect();
+    for (i, n) in vcaps.iter().enumerate() {
+        mcu.conns
+            .insert(n.clone(), Conn::Label(format!("VCAP{}", i + 1)));
+    }
+    let c3 = sheet
+        .parts
+        .iter_mut()
+        .find(|p| p.reference == "C3")
+        .ok_or("no C3")?;
+    c3.conns.insert("1".into(), Conn::Label("VCAP1".into()));
+    sheet.parts.push(passive(
+        ids,
+        &ids.c,
+        "C4",
+        "2u2",
+        c_fp,
+        (GRID * 140, GRID * 120),
+        Conn::Label("VCAP2".into()),
+        gnd(),
+    ));
+    let sdo = pin_named(&syms[&ids.sensor], "SDO");
+    let u2 = sheet
+        .parts
+        .iter_mut()
+        .find(|p| p.reference == "U2")
+        .ok_or("no U2")?;
+    for n in sdo {
+        u2.conns.insert(n, Conn::Label("SDO".into()));
+    }
+    sheet.parts.push(passive(
+        ids,
+        &ids.r,
+        "R3",
+        "10k",
+        r_fp,
+        (GRID * 160, GRID * 120),
+        Conn::Label("SDO".into()),
+        gnd(),
+    ));
+    answer(
+        "S2",
+        format!("fixed: VCAP pins {vcaps:?} on VCAP1/VCAP2 with C3/C4; SDO to GND through R3"),
+    );
+    Ok(())
+}
+
+/// The fixed schematic under each library-configuration treatment, raw
+/// `kicad-cli` in a directory of its own.
+fn treatments(ctx: &Ctx, name: &str, text: &str, which: &[env::Treat]) -> Result<(), String> {
+    for t in which {
+        let dir = ctx.dir(&format!("s2-{}-{t:?}", name.replace(['+', '@'], "-")))?;
+        let path = dir.join("s2.kicad_sch");
+        write(&path, text)?;
+        let e = env::prepare(ctx, &dir, "s2", *t)?;
+        let (ran, findings) = ctx.erc_env(&path, &e)?;
+        answer(
+            "S2",
+            format!(
+                "{name} [{t:?}]: kicad-cli sch erc exit {}, findings {}",
+                ran.code_text(),
+                summary(&findings)
+            ),
+        );
+        for f in findings.iter().take(3) {
+            let items: Vec<&str> = f.items.iter().map(|i| i.0.as_str()).collect();
+            answer(
+                "S2",
+                format!(
+                    "{name} [{t:?}]:   {} {}: {} {:?}",
+                    f.kind, f.severity, f.description, items
+                ),
+            );
+        }
+    }
+    Ok(())
 }

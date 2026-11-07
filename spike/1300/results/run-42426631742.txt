@@ -1,0 +1,343 @@
+# CI run 42426631742 (commit 02d951d), job tools, step 'cargo test inside the image, tier 1 and tier 2': every ANSWER line, verbatim.
+ANSWER ENV kicad-cli=10.0.7 libs=/usr/share/kicad/symbols + /usr/share/kicad/footprints image=unnamed
+ANSWER S1 symbol libraries: 223 .kicad_sym files, 0 .kicad_symdir dirs in /usr/share/kicad/symbols; footprint libraries: 155 .pretty in /usr/share/kicad/footprints
+ANSWER S1 Device library header: (kicad_symbol_lib 	(version 20251024) 	(generator "kicad_symbol_editor")
+ANSWER S1 symbol Sensor:BME280 (BME280): pins=8 Footprint="Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering" ki_fp_filters="*LGA*2.5x2.5mm*P0.65mm*Clockwise*" extends_flattened=ok
+ANSWER S1 symbol MCU_ST_STM32H7:STM32H743ZITx (STM32H743ZITx): pins=144 Footprint="Package_QFP:LQFP-144_20x20mm_P0.5mm" ki_fp_filters="LQFP*20x20mm*P0.5mm*" extends_flattened=ok
+ANSWER S1 symbol MCU_ST_STM32H7:STM32H753ZITx (STM32H753ZITx): pins=144 Footprint="Package_QFP:LQFP-144_20x20mm_P0.5mm" ki_fp_filters="LQFP*20x20mm*P0.5mm*" extends_flattened=ok
+ANSWER S1 symbol Sensor_Temperature:TMP117xxDRV (TMP117xxDRV): pins=6 Footprint="Package_SON:WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm" ki_fp_filters="WSON*1EP?2x2mm?P0.65mm?EP1x1.6mm*" extends_flattened=ok
+ANSWER S1 symbol Sensor_Temperature:TMP117xxYBG (TMP117xxYBG): pins=6 Footprint="Package_BGA:Texas_DSBGA-6_0.95x1.488mm_Layout2x3_P0.4mm" ki_fp_filters="Texas?DSBGA?6?0.95x1.488mm?Layout2x3?P0.4mm*" extends_flattened=ok
+ANSWER S1 symbol Memory_Flash:W25Q128JVE (W25Q128JVE): pins=9 Footprint="Package_SON:WSON-8-1EP_8x6mm_P1.27mm_EP3.4x4.3mm" ki_fp_filters="WSON*1EP*8x6mm*P1.27mm*" extends_flattened=ok
+ANSWER S1 symbol Memory_Flash:W25Q128JVP (W25Q128JVP): pins=9 Footprint="Package_SON:WSON-8-1EP_6x5mm_P1.27mm_EP3.4x4.3mm" ki_fp_filters="WSON*1EP*6x5mm*P1.27mm*EP3.4x4.3mm*" extends_flattened=ok
+ANSWER S1 symbol Memory_Flash:W25Q128JVS (W25Q128JVS): pins=8 Footprint="Package_SO:SOIC-8_5.3x5.3mm_P1.27mm" ki_fp_filters="*SOIC*5.3x5.3mm*P1.27mm*" extends_flattened=ok
+ANSWER S1 symbol Memory_Flash:W25Q16JVSS (W25Q16JVSS): pins=8 Footprint="Package_SO:SOIC-8_5.3x5.3mm_P1.27mm" ki_fp_filters="*SOIC*5.3x5.3mm*P1.27mm*" extends_flattened=ok
+ANSWER S1 symbol Memory_Flash:W25Q32JVSS (W25Q32JVSS): pins=8 Footprint="Package_SO:SOIC-8_5.3x5.3mm_P1.27mm" ki_fp_filters="*SOIC*5.3x5.3mm*P1.27mm*" extends_flattened=ok
+ANSWER S1 symbol Memory_Flash:W25Q32JVZP (W25Q32JVZP): pins=9 Footprint="Package_SON:WSON-8-1EP_6x5mm_P1.27mm_EP3.4x4.3mm" ki_fp_filters="WSON*1EP*6x5mm*P1.27mm*" extends_flattened=ok
+ANSWER S1 symbol matching W25Q64: NONE
+ANSWER S1 footprints Package_QFP:LQFP-144*: LQFP-144-1EP_20x20mm_P0.5mm_EP6.5x6.5mm, LQFP-144-1EP_20x20mm_P0.5mm_EP6.5x6.5mm_ThermalVias, LQFP-144_20x20mm_P0.5mm
+ANSWER S1 footprints Resistor_SMD:R_0402_*: R_0402_1005Metric, R_0402_1005Metric_Pad0.72x0.64mm_HandSolder
+ANSWER S1 footprints Resistor_SMD:R_0603_*: R_0603_1608Metric, R_0603_1608Metric_Pad0.98x0.95mm_HandSolder
+ANSWER S1 footprints Capacitor_SMD:C_0402_*: C_0402_1005Metric, C_0402_1005Metric_Pad0.74x0.62mm_HandSolder
+ANSWER S1 footprints Capacitor_SMD:C_0603_*: C_0603_1608Metric, C_0603_1608Metric_Pad1.08x0.95mm_HandSolder
+ANSWER S1 footprints Package_LGA:Bosch_LGA-8*: Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering, Bosch_LGA-8_2x2.5mm_P0.65mm_ClockwisePinNumbering, Bosch_LGA-8_3x3mm_P0.8mm_ClockwisePinNumbering
+ANSWER S1 footprints Package_SON:WSON-6*: WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm, WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm_ThermalVias, WSON-6-1EP_3x3mm_P0.95mm, WSON-6_1.5x1.5mm_P0.5mm
+ANSWER S1 Sensor:BME280 names footprint Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering: exists=true
+ANSWER S1 MCU_ST_STM32H7:STM32H743ZITx names footprint Package_QFP:LQFP-144_20x20mm_P0.5mm: exists=true
+ANSWER S1 MCU_ST_STM32H7:STM32H753ZITx names footprint Package_QFP:LQFP-144_20x20mm_P0.5mm: exists=true
+ANSWER S1 Sensor_Temperature:TMP117xxDRV names footprint Package_SON:WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm: exists=true
+ANSWER S1 Sensor_Temperature:TMP117xxYBG names footprint Package_BGA:Texas_DSBGA-6_0.95x1.488mm_Layout2x3_P0.4mm: exists=true
+ANSWER S1 Memory_Flash:W25Q128JVE names footprint Package_SON:WSON-8-1EP_8x6mm_P1.27mm_EP3.4x4.3mm: exists=true
+ANSWER S1 Memory_Flash:W25Q128JVP names footprint Package_SON:WSON-8-1EP_6x5mm_P1.27mm_EP3.4x4.3mm: exists=true
+ANSWER S1 Memory_Flash:W25Q128JVS names footprint Package_SO:SOIC-8_5.3x5.3mm_P1.27mm: exists=true
+ANSWER S1 Memory_Flash:W25Q16JVSS names footprint Package_SO:SOIC-8_5.3x5.3mm_P1.27mm: exists=true
+ANSWER S1 Memory_Flash:W25Q32JVSS names footprint Package_SO:SOIC-8_5.3x5.3mm_P1.27mm: exists=true
+ANSWER S1 Memory_Flash:W25Q32JVZP names footprint Package_SON:WSON-8-1EP_6x5mm_P1.27mm_EP3.4x4.3mm: exists=true
+ANSWER S1 licence file /usr/share/kicad/demos/stickhub/LICENSE.md: 21092 bytes sha256 9962b75e57113a5df84ba397cec20b8d937a6d5e86dc407471f505ac5a064d88
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: This work may be freely used and re-distributed under the terms of the _Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)_ license, with the following extra exemption:
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: # Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: Creative Commons Corporation (“Creative Commons”) is not a law firm and does not provide legal services or legal advice. Distribution of Creative Commons public licenses does not create a lawyer-client or other relationship. Creative Commons makes its licenses and related information available on an “as-is” basis. Creative Commons gives no warranties regarding its licenses, any material licensed under their terms and conditions, or any related information. Creative Commons disclaims all liability for damages resulting from their use to the fullest extent possible.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: ### Using Creative Commons Public Licenses
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: Creative Commons public licenses provide a standard set of terms and conditions that creators and other rights holders may use to share original works of authorship and other material subject to copyright and certain other rights specified in the public license below. The following considerations are for informational purposes only, are not exhaustive, and do not form part of our licenses.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: * __Considerations for licensors:__ Our public licenses are intended for use by those authorized to give the public permission to use material in ways otherwise restricted by copyright and certain other rights. Our licenses are irrevocable. Licensors should read and understand the terms and conditions of the license they choose before applying it. Licensors should also secure all rights necessary before applying our licenses so that the public can reuse the material as expected. Licensors should clearly mark any material not subject to the license. This includes other CC-licensed material, or material used under an exception or limitation to copyright. [More considerations for licensors](http://wiki.creativecommons.org/Considerations_for_licensors_and_licensees#Considerations_for_licensors).
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: * __Considerations for the public:__ By using one of our public licenses, a licensor grants the public permission to use the licensed material under specified terms and conditions. If the licensor’s permission is not necessary for any reason–for example, because of any applicable exception or limitation to copyright–then that use is not regulated by the license. Our licenses grant only permissions under copyright and certain other rights that a licensor has authority to grant. Use of the licensed material may still be restricted for other reasons, including because others have copyright or other rights in the material. A licensor may make special requests, such as asking that all changes be marked or described. Although not required by our licenses, you are encouraged to respect those requests where reasonable. [More considerations for the public](http://wiki.creativecommons.org/Considerations_for_licensors_and_licensees#Considerations_for_licensees).
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: ## Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International Public License
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: By exercising the Licensed Rights (defined below), You accept and agree to be bound by the terms and conditions of this Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International Public License ("Public License"). To the extent this Public License may be interpreted as a contract, You are granted the Licensed Rights in consideration of Your acceptance of these terms and conditions, and the Licensor grants You such rights in consideration of benefits the Licensor receives from making the Licensed Material available under these terms and conditions.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: a. __Adapted Material__ means material subject to Copyright and Similar Rights that is derived from or based upon the Licensed Material and in which the Licensed Material is translated, altered, arranged, transformed, or otherwise modified in a manner requiring permission under the Copyright and Similar Rights held by the Licensor. For purposes of this Public License, where the Licensed Material is a musical work, performance, or sound recording, Adapted Material is always produced where the Licensed Material is synched in timed relation with a moving image.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: b. __Adapter's License__ means the license You apply to Your Copyright and Similar Rights in Your contributions to Adapted Material in accordance with the terms and conditions of this Public License.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: c. __BY-NC-SA Compatible License__ means a license listed at [creativecommons.org/compatiblelicenses](http://creativecommons.org/compatiblelicenses), approved by Creative Commons as essentially the equivalent of this Public License.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: f. __Exceptions and Limitations__ means fair use, fair dealing, and/or any other exception or limitation to Copyright and Similar Rights that applies to Your use of the Licensed Material.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: g. __License Elements__ means the license attributes listed in the name of a Creative Commons Public License. The License Elements of this Public License are Attribution, NonCommercial, and ShareAlike.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: B. produce, reproduce, and Share Adapted Material for NonCommercial purposes only.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: 2. __Exceptions and Limitations.__ For the avoidance of doubt, where Exceptions and Limitations apply to Your use, this Public License does not apply, and You do not need to comply with its terms and conditions.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: 4. __Media and formats; technical modifications allowed.__ The Licensor authorizes You to exercise the Licensed Rights in all media and formats whether now known or hereafter created, and to make technical modifications necessary to do so. The Licensor waives and/or agrees not to assert any right or authority to forbid You from making technical modifications necessary to exercise the Licensed Rights, including technical modifications necessary to circumvent Effective Technological Measures. For purposes of this Public License, simply making modifications authorized by this Section 2(a)(4) never produces Adapted Material.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: B. __Additional offer from the Licensor – Adapted Material.__ Every recipient of Adapted Material from You automatically receives an offer from the Licensor to exercise the Licensed Rights in the Adapted Material under the conditions of the Adapter’s License You apply.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: 1. Moral rights, such as the right of integrity, are not licensed under this Public License, nor are publicity, privacy, and/or other similar personality rights; however, to the extent possible, the Licensor waives and/or agrees not to assert any such rights held by the Licensor to the limited extent necessary to allow You to exercise the Licensed Rights, but not otherwise.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: 3. To the extent possible, the Licensor waives any right to collect royalties from You for the exercise of the Licensed Rights, whether directly or through a collecting society under any voluntary or waivable statutory or compulsory licensing scheme. In all other cases the Licensor expressly reserves any right to collect such royalties, including when the Licensed Material is used other than for NonCommercial purposes.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: In addition to the conditions in Section 3(a), if You Share Adapted Material You produce, the following conditions also apply.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: 1. The Adapter’s License You apply must be a Creative Commons license with the same License Elements, this version or later, or a BY-NC-SA Compatible License.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: 2. You must include the text of, or the URI or hyperlink to, the Adapter's License You apply. You may satisfy this condition in any reasonable manner based on the medium, means, and context in which You Share Adapted Material.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: 3. You may not offer or impose any additional or different terms or conditions on, or apply any Effective Technological Measures to, Adapted Material that restrict exercise of the rights granted under the Adapter's License You apply.
+ANSWER S1   /usr/share/kicad/demos/stickhub/LICENSE.md: b. if You include all or a substantial portion of the database contents in a database in which You have Sui Generis Database Rights, then the database in which You have Sui Generis Database Rights (but not its individual contents) is Adapted Material, including for purposes of Section 3(b); and
+ANSWER S1 licence file /usr/share/kicad/demos/cm5_minima/LICENSE.txt: 13419 bytes sha256 253ad3f89603e728abfa60c36fbcaf8225cf55c1eab12725f19fb3d74d647f3a
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: CERN Open Hardware Licence Version 2 - Strongly Reciprocal
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: CERN has developed this licence to promote collaboration among
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: Hardware Licence comes in three variants: CERN-OHL-P (permissive); and
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: two reciprocal licences: CERN-OHL-W (weakly reciprocal) and this
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: licence, CERN-OHL-S (strongly reciprocal).
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: Use of this Licence does not imply any endorsement by CERN of any
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: 1.1 'Licence' means this CERN-OHL-S.
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: 1.2 'Compatible Licence' means
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: a) any earlier version of the CERN Open Hardware licence, or
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: c) any licence which permits You to treat the Source to which
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: under this Licence.
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: Licence; or
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: licensed under a licence approved by the Free Software
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: 3.3(b)) and all notices that refer to this Licence and to the
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: this Licence.
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: 2.1 This Licence governs the use, copying, modification, Conveying
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: exercising any right granted under this Licence, You irrevocably
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: 2.2 This Licence is granted by the Licensor directly to You, and
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: rights granted under this Licence to other Licensees.
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: 2.4 This Licence is not intended to restrict fair use, fair dealing,
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: conditions of this Licence (or, as set out in subsection
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: 8.3, a later version, if permitted by the licence of the
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: applicable licences.
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: of this Licence and a condition for the grant of any rights
+ANSWER S1   /usr/share/kicad/demos/cm5_minima/LICENSE.txt: granted under this Licence.
+ANSWER S1 licence file /usr/share/kicad/demos/tiny_tapeout/LICENSE.txt: 10174 bytes sha256 0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594
+ANSWER S1   /usr/share/kicad/demos/tiny_tapeout/LICENSE.txt: not limited to compiled object code, generated documentation,
+ANSWER S1   /usr/share/kicad/demos/tiny_tapeout/LICENSE.txt: within a display generated by the Derivative Works, if and
+ANSWER S1 licence file /usr/share/kicad/demos/royalblue54L_feather/LICENSE: 8852 bytes sha256 6e471d647db50527d0c75ee5f1a55a74012ab177c73282bef0bdc7f6562b7ded
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: CERN Open Hardware Licence Version 2 - Permissive
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: CERN has developed this licence to promote collaboration among
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: Hardware Licence comes in three variants: this licence, CERN-OHL-P
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: (permissive); and two reciprocal licences: CERN-OHL-W (weakly
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: Use of this Licence does not imply any endorsement by CERN of any
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: 1.1 'Licence' means this CERN-OHL-P.
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: under this Licence.
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: (subsection 3.3(b)) and all notices that refer to this Licence
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: this Licence.
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: under the terms and conditions of this Licence. A person may be
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: 2.1 This Licence governs the use, copying, modification, Conveying
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: exercising any right granted under this Licence, You irrevocably
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: 2.2 This Licence is granted by the Licensor directly to You, and
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: rights granted under this Licence to other Licensees.
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: 2.4 This Licence is not intended to restrict fair use, fair dealing,
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: licence terms which differ from the terms of this Licence
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: b) provide a copy of this Licence to anyone to whom You
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: of this Licence and a condition for the grant of any rights
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: granted under this Licence.
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: 6.1 Subject to the terms and conditions of this Licence, each
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: for cause) patent licence to Make, have Made, use, offer to
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: and Products, where such licence applies only to those patent
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: licensed to You under this Licence is invalid or unenforceable
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: then any rights granted to You under this Licence shall
+ANSWER S1   /usr/share/kicad/demos/royalblue54L_feather/LICENSE: 7.1 If any provisions of this Licence are or subsequently become
+ANSWER S1 licence file /usr/share/kicad/demos/jetson-agx-thor-baseboard/LICENSE: 11358 bytes sha256 c95bae1d1ce0235ecccd3560b772ec1efb97f348a79f0fbe0a634f0c2ccefe2c
+ANSWER S1   /usr/share/kicad/demos/jetson-agx-thor-baseboard/LICENSE: not limited to compiled object code, generated documentation,
+ANSWER S1   /usr/share/kicad/demos/jetson-agx-thor-baseboard/LICENSE: within a display generated by the Derivative Works, if and
+ANSWER S1 licence file /usr/share/kicad/demos/openair-max/LICENSE.txt: 20138 bytes sha256 28a9529c7d0bb4dc51f4bf5c116a3d16ef247a052f7591466768ddf563fd1cf5
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: Creative Commons Corporation ("Creative Commons") is not a law firm and
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: Creative Commons public licenses does not create a lawyer-client or
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: other relationship. Creative Commons makes its licenses and related
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: information available on an "as-is" basis. Creative Commons gives no
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: terms and conditions, or any related information. Creative Commons
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: Using Creative Commons Public Licenses
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: Creative Commons public licenses provide a standard set of terms and
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: licensed material, or material used under an exception or
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: example, because of any applicable exception or limitation to
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: Creative Commons Attribution-ShareAlike 4.0 International Public
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: to be bound by the terms and conditions of this Creative Commons
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: a. Adapted Material means material subject to Copyright and Similar
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: Adapted Material is always produced where the Licensed Material is
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: and Similar Rights in Your contributions to Adapted Material in
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: f. Exceptions and Limitations means fair use, fair dealing, and/or
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: any other exception or limitation to Copyright and Similar Rights
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: of a Creative Commons Public License. The License Elements of this
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: b. produce, reproduce, and Share Adapted Material.
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: 2. Exceptions and Limitations. For the avoidance of doubt, where
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: Exceptions and Limitations apply to Your use, this Public
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: Licensor waives and/or agrees not to assert any right or
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: (4) never produces Adapted Material.
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: b. Additional offer from the Licensor -- Adapted Material.
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: Every recipient of Adapted Material from You
+ANSWER S1   /usr/share/kicad/demos/openair-max/LICENSE.txt: exercise the Licensed Rights in the Adapted Material
+ANSWER S1 library file /usr/share/kicad/symbols/Device.kicad_sym: sha256 d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d
+ANSWER S1 library file /usr/share/kicad/symbols/power.kicad_sym: sha256 dfd086b4029e347d7a0041744b684ba8dda351ba8d8f7838cc0cbaeb06c87b54
+ANSWER S1 library file /usr/share/kicad/symbols/Sensor.kicad_sym: sha256 38a3525933a1e648557dc9e4ccd218da96cc21954bb73629caed030fc179c7eb
+ANSWER S1 library file /usr/share/kicad/symbols/MCU_ST_STM32H7.kicad_sym: sha256 6f095b497a944f57015012ea26e0da0259957673919c15471d024330e9bbc249
+ANSWER S1 probe time 4864 ms
+ANSWER S2 MCU_ST_STM32H7:STM32H753ZITx: 144 pins at 136 points, hidden 8, by type {"bidirectional": 114, "input": 4, "passive": 8, "power_in": 16, "power_out": 2}
+ANSWER S2 naive: emitted 167502 bytes sha256 69f80dd67c5c87b49269e87721efb817d874dcc9662d38eb0959df983d38a60e (0 no_connect); second emission (inputs reversed) identical=true
+ANSWER S2 naive: kicad-cli sch erc exit 5, 422 ms, findings 163 [footprint_link_issuesx7(warning), lib_symbol_issuesx39(warning), pin_not_connectedx113(error), pin_not_drivenx1(error), pin_to_pinx1(error), power_pin_not_drivenx2(error)]
+ANSWER S2 naive:   e.g. power_pin_not_driven error: Input Power pin not driven by any Output Power pins ["Symbol #PWR002 Pin 1 [Power input, Line]"]
+ANSWER S2 naive:   e.g. power_pin_not_driven error: Input Power pin not driven by any Output Power pins ["Symbol #PWR001 Pin 1 [Power input, Line]"]
+ANSWER S2 naive:   e.g. pin_not_connected error: Pin not connected ["Symbol U1 Pin 25 [NRST, Input, Line]"]
+ANSWER S2 naive:   e.g. pin_not_driven error: Input pin not driven by any Output pins ["Symbol U1 Pin 25 [NRST, Input, Line]"]
+ANSWER S2 naive:   e.g. pin_not_connected error: Pin not connected ["Symbol U1 Pin 23 [PH0, Bidirectional, Line]"]
+ANSWER S2 naive:   e.g. pin_to_pin error: Pins of type Power output and Power output are connected ["Symbol U1 Pin 71 [VCAP, Power output, Line]", "Symbol U1 Pin 106 [VCAP, Power output, Line]"]
+ANSWER S2 naive:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR006 [+3V3]"]
+ANSWER S2 naive:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Symbol R1 [R]"]
+ANSWER S2 naive:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'Device' ["Symbol R1 [R]"]
+ANSWER S2 naive:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Package_LGA' ["Symbol U2 [BME280]"]
+ANSWER S2 naive: finding item uuids present in the emitted file: 164 of 164
+ANSWER S2 naive: aethelgard check erc exit 1: ok=false verdict="fail" exit_code=5 findings={"footprint_link_issues": 7, "lib_symbol_issues": 39, "pin_not_connected": 113, "pin_not_driven": 1, "pin_to_pin": 1, "power_pin_not_driven": 2}
+ANSWER S2 nc: emitted 177082 bytes sha256 b6d51c29cb6716829591b972b2a6ccb180fa3b5b16ab304e5aa48c52625ded9f (113 no_connect); second emission (inputs reversed) identical=true
+ANSWER S2 nc: kicad-cli sch erc exit 5, 281 ms, findings 49 [footprint_link_issuesx7(warning), lib_symbol_issuesx39(warning), pin_to_pinx1(error), power_pin_not_drivenx2(error)]
+ANSWER S2 nc:   e.g. power_pin_not_driven error: Input Power pin not driven by any Output Power pins ["Symbol #PWR002 Pin 1 [Power input, Line]"]
+ANSWER S2 nc:   e.g. power_pin_not_driven error: Input Power pin not driven by any Output Power pins ["Symbol #PWR001 Pin 1 [Power input, Line]"]
+ANSWER S2 nc:   e.g. pin_to_pin error: Pins of type Power output and Power output are connected ["Symbol U1 Pin 71 [VCAP, Power output, Line]", "Symbol U1 Pin 106 [VCAP, Power output, Line]"]
+ANSWER S2 nc:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR006 [+3V3]"]
+ANSWER S2 nc:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Symbol R1 [R]"]
+ANSWER S2 nc:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'Device' ["Symbol R1 [R]"]
+ANSWER S2 nc:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Package_LGA' ["Symbol U2 [BME280]"]
+ANSWER S2 nc: finding item uuids present in the emitted file: 50 of 50
+ANSWER S2 flags: emitted 174096 bytes sha256 17ab2507fd472780ca18fa5ff6df80d1eedc2416c349ac22c6e1468b90cf8698 (0 no_connect); second emission (inputs reversed) identical=true
+ANSWER S2 flags: kicad-cli sch erc exit 5, 281 ms, findings 166 [footprint_link_issuesx7(warning), lib_symbol_issuesx43(warning), pin_not_connectedx113(error), pin_not_drivenx1(error), pin_to_pinx1(error), pin_to_pinx1(warning)]
+ANSWER S2 flags:   e.g. pin_not_connected error: Pin not connected ["Symbol U1 Pin 25 [NRST, Input, Line]"]
+ANSWER S2 flags:   e.g. pin_not_driven error: Input pin not driven by any Output pins ["Symbol U1 Pin 25 [NRST, Input, Line]"]
+ANSWER S2 flags:   e.g. pin_not_connected error: Pin not connected ["Symbol U1 Pin 23 [PH0, Bidirectional, Line]"]
+ANSWER S2 flags:   e.g. pin_to_pin error: Pins of type Power output and Power output are connected ["Symbol U1 Pin 71 [VCAP, Power output, Line]", "Symbol U1 Pin 106 [VCAP, Power output, Line]"]
+ANSWER S2 flags:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #FLG001 [PWR_FLAG]"]
+ANSWER S2 flags:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR033 [+3V3]"]
+ANSWER S2 flags:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Symbol R1 [R]"]
+ANSWER S2 flags:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Package_LGA' ["Symbol U2 [BME280]"]
+ANSWER S2 flags:   e.g. pin_to_pin warning: Pins of type Bidirectional and Power output are connected ["Symbol U2 Pin 5 [SDO, Bidirectional, Line]", "Symbol #FLG002 Pin 1 [Power output, Line]"]
+ANSWER S2 flags: finding item uuids present in the emitted file: 168 of 168
+ANSWER S2 nc+flags: emitted 183676 bytes sha256 bd504d7811d522f3879d4ce973f68b2f0819627bb2c0559ec7e03d6f3e0a9031 (113 no_connect); second emission (inputs reversed) identical=true
+ANSWER S2 nc+flags: kicad-cli sch erc exit 5, 281 ms, findings 52 [footprint_link_issuesx7(warning), lib_symbol_issuesx43(warning), pin_to_pinx1(error), pin_to_pinx1(warning)]
+ANSWER S2 nc+flags:   e.g. pin_to_pin error: Pins of type Power output and Power output are connected ["Symbol U1 Pin 71 [VCAP, Power output, Line]", "Symbol U1 Pin 106 [VCAP, Power output, Line]"]
+ANSWER S2 nc+flags:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #FLG001 [PWR_FLAG]"]
+ANSWER S2 nc+flags:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR033 [+3V3]"]
+ANSWER S2 nc+flags:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Symbol R1 [R]"]
+ANSWER S2 nc+flags:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Package_LGA' ["Symbol U2 [BME280]"]
+ANSWER S2 nc+flags:   e.g. pin_to_pin warning: Pins of type Bidirectional and Power output are connected ["Symbol U2 Pin 5 [SDO, Bidirectional, Line]", "Symbol #FLG002 Pin 1 [Power output, Line]"]
+ANSWER S2 nc+flags: finding item uuids present in the emitted file: 54 of 54
+ANSWER S2 nc+flags: aethelgard check erc exit 1: ok=false verdict="fail" exit_code=5 findings={"footprint_link_issues": 7, "lib_symbol_issues": 43, "pin_to_pin": 2}
+ANSWER S2 nc+flags+vcap: emitted 185209 bytes sha256 d5948b37c834ba6fff0bd1740dacee3ff05b64bb087cf08b93844563a7836b4d (113 no_connect); second emission (inputs reversed) identical=true
+ANSWER S2 nc+flags+vcap: kicad-cli sch erc exit 5, 281 ms, findings 54 [footprint_link_issuesx7(warning), lib_symbol_issuesx44(warning), pin_to_pinx2(error), pin_to_pinx1(warning)]
+ANSWER S2 nc+flags+vcap:   e.g. pin_to_pin error: Pins of type Power output and Power output are connected ["Symbol #FLG100 Pin 1 [Power output, Line]", "Symbol U1 Pin 71 [VCAP, Power output, Line]"]
+ANSWER S2 nc+flags+vcap:   e.g. pin_to_pin error: Pins of type Power output and Power output are connected ["Symbol U1 Pin 71 [VCAP, Power output, Line]", "Symbol U1 Pin 106 [VCAP, Power output, Line]"]
+ANSWER S2 nc+flags+vcap:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #FLG001 [PWR_FLAG]"]
+ANSWER S2 nc+flags+vcap:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR033 [+3V3]"]
+ANSWER S2 nc+flags+vcap:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Symbol R1 [R]"]
+ANSWER S2 nc+flags+vcap:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Package_LGA' ["Symbol U2 [BME280]"]
+ANSWER S2 nc+flags+vcap: finding item uuids present in the emitted file: 57 of 57
+ANSWER S2 nc+flags+vcap: aethelgard check erc exit 1: ok=false verdict="fail" exit_code=5 findings={"footprint_link_issues": 7, "lib_symbol_issues": 44, "pin_to_pin": 3}
+ANSWER S2 netlist: 118 nets (5 named, the rest unconnected-*): ["/I2C_SCL(3)", "/I2C_SDA(3)", "/VCAP(3)", "GND(17)", "VDD_3V3(23)"]; components ["C1", "C2", "C3", "R1", "R2", "U1", "U2"]
+ANSWER S2 kicad-cli sch subcommands: Usage: kicad-cli sch [--help] {erc,export,upgrade} / Schematics / Optional arguments: / -h, --help  Shows help message and exits / Subcommands: / erc        Runs the Electrical Rules Check (ERC) on the schematic and creates a report / export     Export utilities (netlist, pdf, bom, etc) / upgrade    Upgrade the schematic file's format to the latest one
+ANSWER S2 kicad-cli sch upgrade exit 0: 185209 -> 197969 bytes, (version 20260306), identical=false, our uuids kept 409 of 409; stderr 
+ANSWER S2 demo schematics in the image: 115
+ANSWER S2 demo /usr/share/kicad/demos/cm5_minima/CM5.kicad_sch header: (kicad_sch (version 20250610) (generator "eeschema") (generator_version "9.99") (uuid "1b112ac5-701b-420f-be34-0e29a2cb55ca") (paper "A3")
+ANSWER S2 probe time 4400 ms
+ANSWER S3 board emitted twice identical=true; gap 0.1 mm between NET_A and NET_B; board's own rules 0.05 mm, specification 0.2 mm
+ANSWER S3 base-plain-setup-no-sidecars: exit 5, clearance violations 1, all 3 [clearancex1(error), track_danglingx2(warning)]
+ANSWER S3 base-plain-setup-no-sidecars:   Clearance violation ( clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 base-loose-setup-no-sidecars: exit 5, clearance violations 1, all 3 [clearancex1(error), track_danglingx2(warning)]
+ANSWER S3 base-loose-setup-no-sidecars:   Clearance violation ( clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 base-spec-setup-no-sidecars: exit 5, clearance violations 1, all 3 [clearancex1(error), track_danglingx2(warning)]
+ANSWER S3 base-spec-setup-no-sidecars:   Clearance violation ( clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 base-plain-setup-loose-pro: exit 5, clearance violations 0, all 2 [track_danglingx2(warning)]
+ANSWER S3 base-plain-setup-loose-dru: exit 5, clearance violations 0, all 2 [track_danglingx2(warning)]
+ANSWER S3 gate_setup_0_pro_0_dru_0_: exit 5, clearance violations 0, all 2 [track_danglingx2(warning)]
+ANSWER S3 gate_setup_1_pro_0_dru_0_: exit 5, clearance violations 0, all 2 [track_danglingx2(warning)]
+ANSWER S3 gate_setup_0_pro_1_dru_0_: exit 5, clearance violations 0, all 2 [track_danglingx2(warning)]
+ANSWER S3 gate_setup_1_pro_1_dru_0_: exit 5, clearance violations 0, all 2 [track_danglingx2(warning)]
+ANSWER S3 gate_setup_0_pro_0_dru_1_: exit 5, clearance violations 1, all 3 [clearancex1(error), track_danglingx2(warning)]
+ANSWER S3 gate_setup_0_pro_0_dru_1_:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 gate_setup_1_pro_0_dru_1_: exit 5, clearance violations 1, all 3 [clearancex1(error), track_danglingx2(warning)]
+ANSWER S3 gate_setup_1_pro_0_dru_1_:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 gate_setup_0_pro_1_dru_1_: exit 5, clearance violations 1, all 3 [clearancex1(error), track_danglingx2(warning)]
+ANSWER S3 gate_setup_0_pro_1_dru_1_:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 gate_setup_1_pro_1_dru_1_: exit 5, clearance violations 1, all 3 [clearancex1(error), track_danglingx2(warning)]
+ANSWER S3 gate_setup_1_pro_1_dru_1_:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 aethelgard check drc on the loose board with its own .kicad_pro and .kicad_dru beside it: exit 1: ok=false verdict="fail" exit_code=5 findings={"clearance": 1, "track_dangling": 2}
+ANSWER S3 fp-pad-default: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 fp-pad-default:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 fp-pad-local-0.05: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 fp-pad-local-0.05:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 probe time 8101 ms
+ANSWER S4 `kicad-cli --help` exit 0: Usage: kicad-cli [--version] [--help] {fp,jobset,pcb,sch,sym,version} / Optional arguments: / -v, --version  prints version information and exits / -h, --help     Shows help message and exits / Subcommands: / fp            Footprint and Footprint Libraries / jobset        Jobset / pcb           PCB / sch           Schematics / sym           Symbol and Symbol Libraries / version       Reports the version info in various formats
+ANSWER S4 `kicad-cli pcb --help` exit 0: Usage: kicad-cli pcb [--help] {drc,export,import,render,upgrade} / PCB / Optional arguments: / -h, --help  Shows help message and exits / Subcommands: / drc        Runs the Design Rules Check (DRC) on the PCB and creates a report / export     Export utilities (Gerbers, drill, position files, etc) / import     Import a non-KiCad PCB file to KiCad format / render     Renders the PCB in 3D view to PNG or JPEG image / upgrade    Upgrade the board file's format to the latest one
+ANSWER S4 `kicad-cli pcb export --help` exit 0: Usage: pcb export [--help] {3dpdf,brep,drill,dxf,gencad,gerbers,glb,hpgl,ipc2581,ipcd356,odb,pdf,ply,pos,ps,stats,step,stl,stpz,svg,u3d,vrml,xao} / Export utilities (Gerbers, drill, position files, etc) / Optional arguments: / -h, --help  Shows help message and exits / Subcommands: / 3dpdf      Export PDF / brep       Export BREP / drill      Generate Drill Files / dxf        Generate a DXF from a list of layers / gencad     Export the PCB in Gencad format / gerbers    Plot multiple Gerbers for a PCB, including the ability to use stored board plot settings / glb        Export GLB (binary GLTF) / hpgl       No longer supported as of KiCad 10.0. / ipc2581    Export the PCB in IPC-2581 format / ipcd356    Generate IPC-D-356 netlist file / odb        Export the PCB in ODB++ format / pdf        Generate PDF from a list of layers / ply        Export PLY / pos        Generate Position File / ps         Generate Postscript from a list of layers / stats      Generate a board statistics report / step       Export STEP / stl        Export STL / stpz       Export STEPZ / svg        Generate SVG outputs of a given layer list / u3d        Export U3D / vrml       Export VRML / xao        Export XAO
+ANSWER S4 `kicad-cli pcb drc --help` exit 0: Usage: pcb drc [--help] [--output OUTPUT_FILE] [--define-var KEY=VALUE]... [--format FORMAT] [--all-track-errors] [--schematic-parity] [--units UNITS] [--severity-all] [--severity-error] [--severity-warning] [--severity-exclusions] [--exit-code-violations] [--refill-zones] [--save-board] INPUT_FILE / Runs the Design Rules Check (DRC) on the PCB and creates a report / Positional arguments: / INPUT_FILE              Input file / Optional arguments: / -h, --help              Shows help message and exits / -o, --output            Output file [nargs=0..1] [default: ""] / -D, --define-var        Overrides or adds project variables, can be used multiple times to declare multiple variables. / Use in the format of '--define-var key=value' or '-D key=value' [nargs=0..1] [default: {}] [may be repeated] / --format                Output file format, options: json, report [nargs=0..1] [default: "report"] / --all-track-errors      Report all errors for each track / --schematic-parity      Test for parity between PCB and schematic / --units                 Report units; valid options: in, mm, mils [nargs=0..1] [default: "mm"] / --severity-all          Report all DRC violations, this is equivalent to including all the other severity arguments / --severity-error        Report all DRC error level violations, this can be combined with the other severity arguments / --severity-warning      Report all DRC warning level violations, this can be combined with the other severity arguments / --severity-exclusions   Report all excluded DRC violations, this can be combined with the other severity arguments / --exit-code-violations  Return a nonzero exit code if DRC violations exist / --refill-zones          Refill zones before running DRC / --save-board            Save the board after DRC, must be used with --refill-zones
+ANSWER S4 `kicad-cli pcb import --help` exit 0: Usage: pcb import [--help] [--output OUTPUT_FILE] [--format FORMAT] [--report-format FORMAT] [--report-file FILE] INPUT_FILE / Import a non-KiCad PCB file to KiCad format / Positional arguments: / INPUT_FILE       Input file / Optional arguments: / -h, --help       Shows help message and exits / -o, --output     Output file [nargs=0..1] [default: ""] / --format         Input format hint: auto, pads, altium, eagle, cadstar, fabmaster, pcad, solidworks (default: auto) [nargs=0..1] [default: "auto"] / --report-format  Import report format: none, json, text (default: none) [nargs=0..1] [default: "none"] / --report-file    File path for import report (default: stdout) [nargs=0..1] [default: ""]
+ANSWER S4 lead 1: `dsn` in kicad-cli help=false, `specctra`=false, `ses`=false
+ANSWER S4 lead 3: pcb drc options mention refill=true, zone=true
+ANSWER S4 lead 2: pcbnew Python module files: ["/usr/lib/python3/dist-packages/pcbnew.py", "/usr/lib/python3/dist-packages/_pcbnew.so"] (not imported, RUL-12)
+ANSWER S4 lead 2: python3 on PATH: /usr/bin/python3
+ANSWER S4 lead 2: python on PATH: absent
+ANSWER S4 lead 2: java on PATH: absent
+ANSWER S4 lead 3: zone board emitted twice identical=true (no filled_polygon written)
+ANSWER S4 lead 3 [no flag]: exit 5, unconnected 1, findings 2 [lib_footprint_issuesx1(warning), unconnected_itemsx1(error)]; board file changed=false filled_polygon in file=false
+ANSWER S4 lead 3 [--refill-zones]: exit 5, unconnected 0, findings 1 [lib_footprint_issuesx1(warning)]; board file changed=false filled_polygon in file=false
+ANSWER S4 lead 3 [--refill-zones --save-board]: exit 5, unconnected 0, findings 1 [lib_footprint_issuesx1(warning)]; board file changed=true filled_polygon in file=true
+ANSWER S4 lead 3: two refills saved identical=false (sha256 9c63d47c3fb74039 / 7a2d049097ff9d43)
+ANSWER S4 parity: the schematic's nets as KiCad names them: ["/A", "/B"]
+ANSWER S4 router: net /A: 5 segments, 0 vias, cost 124; net /B: 3 segments, 0 vias, cost 74; 8 segments, 0 vias; two emissions identical=true; nets "/A" "/B"
+ANSWER S4 P0 matching: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 2 [footprint_symbol_field_mismatchx2(warning)]
+ANSWER S4 P0 matching:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R1"]
+ANSWER S4 P0 matching:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R2"]
+ANSWER S4 P0 matching:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R1"]
+ANSWER S4 P0 matching:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R2"]
+ANSWER S4 P1 board reference R9: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 3 [extra_footprintx1(warning), footprint_symbol_field_mismatchx1(warning), missing_footprintx1(warning)]
+ANSWER S4 P1 board reference R9:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R1"]
+ANSWER S4 P1 board reference R9:   missing_footprint warning: Missing footprint R2 (10k) []
+ANSWER S4 P1 board reference R9:   extra_footprint warning: Extra footprint ["Footprint R9"]
+ANSWER S4 P1 board reference R9:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R1"]
+ANSWER S4 P2 footprint lib id 0402 on 0603 copper: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 3 [footprint_symbol_field_mismatchx2(warning), footprint_symbol_mismatchx1(warning)]
+ANSWER S4 P2 footprint lib id 0402 on 0603 copper:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R1"]
+ANSWER S4 P2 footprint lib id 0402 on 0603 copper:   footprint_symbol_mismatch warning: Resistor_SMD:R_0402_1005Metric doesn't match footprint given by symbol (Resistor_SMD:R_0603_1608Metric) ["Footprint R2"]
+ANSWER S4 P2 footprint lib id 0402 on 0603 copper:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R2"]
+ANSWER S4 P2 footprint lib id 0402 on 0603 copper:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R1"]
+ANSWER S4 P3 board nets without the sheet prefix: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 6 [footprint_symbol_field_mismatchx2(warning), net_conflictx4(warning)]
+ANSWER S4 P3 board nets without the sheet prefix:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R1"]
+ANSWER S4 P3 board nets without the sheet prefix:   net_conflict warning: Pad net (A) doesn't match net given by schematic (/A) ["Pad 1 [A] of R1 on F.Cu"]
+ANSWER S4 P3 board nets without the sheet prefix:   net_conflict warning: Pad net (B) doesn't match net given by schematic (/B) ["Pad 2 [B] of R1 on F.Cu"]
+ANSWER S4 P3 board nets without the sheet prefix:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R2"]
+ANSWER S4 P4 R2 path names no symbol: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 2 [footprint_symbol_field_mismatchx2(warning)]
+ANSWER S4 P4 R2 path names no symbol:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R1"]
+ANSWER S4 P4 R2 path names no symbol:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R2"]
+ANSWER S4 P4 R2 path names no symbol:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R1"]
+ANSWER S4 P4 R2 path names no symbol:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R2"]
+ANSWER S4 P5 schematic R2 value 1k, board 10k: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 3 [footprint_symbol_field_mismatchx2(warning), footprint_symbol_mismatchx1(warning)]
+ANSWER S4 P5 schematic R2 value 1k, board 10k:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R1"]
+ANSWER S4 P5 schematic R2 value 1k, board 10k:   footprint_symbol_mismatch warning: Value (R2) doesn't match symbol value (10k) ["Footprint R2"]
+ANSWER S4 P5 schematic R2 value 1k, board 10k:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R2"]
+ANSWER S4 P5 schematic R2 value 1k, board 10k:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R1"]
+ANSWER S4 P6 no .kicad_pro beside the board: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 2 [footprint_symbol_field_mismatchx2(warning)]
+ANSWER S4 P6 no .kicad_pro beside the board:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R1"]
+ANSWER S4 P6 no .kicad_pro beside the board:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R2"]
+ANSWER S4 P6 no .kicad_pro beside the board:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R1"]
+ANSWER S4 P6 no .kicad_pro beside the board:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R2"]
+ANSWER S4 probe time 8036 ms
+ANSWER S5 45 names x 6 classes emitted; our own reader re-parses the file: ok; identical on re-emission=true
+ANSWER S5 ERC exit 5, findings 315 [bus_to_net_conflictx1(error), label_danglingx84(error), lib_symbol_issuesx135(warning), multiple_net_namesx2(warning), pin_not_connectedx46(error), power_pin_not_drivenx44(error), unresolved_variablex3(error)]
+ANSWER S5 name "A!B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A\"B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A#B": label-erc ok label-net MISSING(near ["/LA!B", "/LA\"B"]) global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A$B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A%B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A&B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A'B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A(B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A)B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A*B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A+B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A,B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A-B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A.B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A/B": label-erc ok label-net MISSING(near ["/LA!B", "/LA\"B"]) global-erc ok domain-net MISSING(near ["DA!B", "DA\"B"]) ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A:B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A;B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A<B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A=B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A>B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A?B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A@B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A[B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A\\B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A]B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A^B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A_B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A`B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A{B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A|B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A}B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A~B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "~{X}": label-erc ok label-net MISSING(near ["/L${X}", "/L^{X}"]) global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "^{X}": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "_{X}": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "${X}": label-erc ok label-net ok global-erc MISSING(near []) domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "${PROJECTNAME}": label-erc MISSING(near ["Label 'L${X}'"]) label-net MISSING(near ["/L${X}", "/L^{X}"]) global-erc MISSING(near []) domain-net MISSING(near ["D${X}", "D^{X}"]) ref-erc ok ref+value-netlist value read back as "V"
+ANSWER S5 name "A{slash}B": label-erc MISSING(near ["Label 'LA!B'"]) label-net ok global-erc MISSING(near ["Global Label 'GA!B'"]) domain-net ok ref-erc MISSING(near ["Symbol RA!B Pin 2 [Passive, Line]"]) ref+value-netlist value read back as "VA/B"
+ANSWER S5 name "\\\"": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "\\\\": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name ")(": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "9A": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A//B": label-erc ok label-net MISSING(near ["/LA!B", "/LA\"B"]) global-erc ok domain-net MISSING(near ["DA!B", "DA\"B"]) ref-erc ok ref+value-netlist ok
+ANSWER S5 name "/A": label-erc ok label-net MISSING(near ["/L9A", "/L{slash}A"]) global-erc ok domain-net MISSING(near ["D9A", "D{slash}A"]) ref-erc ok ref+value-netlist ok
+ANSWER S5 name "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 8 of 45 names changed or lost in some class
+ANSWER S5 project-name class: 44 of 45 files read back with title and R1 intact; failures ["\"${PROJECTNAME}\": title Some(\"T\") refs [(\"R1\", \"1k\")]"]
+ANSWER S5 probe time 13000 ms

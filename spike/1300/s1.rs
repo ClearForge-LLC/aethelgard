@@ -106,6 +106,7 @@ pub fn run(ctx: &mut Ctx) -> Result<(), String> {
         .join(" ");
         answer("S1", format!("{lib} library header: {head}"));
     }
+    provenance()?;
     // Symbol scan.
     for (lib, path) in &lib_names {
         let texts: Vec<String> = if path.is_dir() {
@@ -239,6 +240,19 @@ pub fn run(ctx: &mut Ctx) -> Result<(), String> {
                     sha256_hex(&bytes)
                 ),
             );
+            if line.contains("/demos/") {
+                let first = String::from_utf8_lossy(&bytes)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_owned();
+                answer(
+                    "S1",
+                    format!("  (a demo project's licence, not the libraries'): {first}"),
+                );
+                continue;
+            }
             let text = String::from_utf8_lossy(&bytes);
             let mut shown = 0;
             for l in text.lines() {
@@ -285,6 +299,40 @@ pub fn run(ctx: &mut Ctx) -> Result<(), String> {
                 ),
             );
         }
+    }
+    Ok(())
+}
+
+/// Where the libraries came from, so the licence can be fetched at the
+/// matching version: the installed packages, and whether the image drops
+/// `/usr/share/doc` (where Debian packages put their copyright files).
+fn provenance() -> Result<(), String> {
+    let cmds = [
+        "dpkg-query -W -f '${Package} ${Version}\\n' 'kicad*' 2>&1",
+        "ls /etc/dpkg/dpkg.cfg.d/ 2>&1; cat /etc/dpkg/dpkg.cfg.d/* 2>&1 | grep -v '^#' | grep -v '^$'",
+        "for p in $(dpkg-query -W -f '${Package}\\n' 'kicad*' 2>/dev/null); do dpkg -L \"$p\" 2>/dev/null | grep -i -E 'copyright|licen|copying'; done",
+        "find / -xdev -ipath '*kicad*' \\( -iname '*licen*' -o -iname copyright -o -iname 'copying*' \\) -not -path '*/demos/*' 2>/dev/null",
+        "ls /usr/share/doc 2>&1 | grep -i kicad",
+    ];
+    for c in cmds {
+        let r = run_cmd("sh", &["-c", c], Path::new("/"))?;
+        let out: Vec<&str> = r
+            .stdout
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .collect();
+        answer(
+            "S1",
+            format!(
+                "provenance `{c}`: {}",
+                if out.is_empty() {
+                    "(nothing)".to_owned()
+                } else {
+                    out.join(" / ")
+                }
+            ),
+        );
     }
     Ok(())
 }

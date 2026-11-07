@@ -20,8 +20,12 @@ pub struct Fp {
     pub pad_nets: BTreeMap<String, String>,
     /// The library footprint as read.
     pub src: Sx,
-    /// A local clearance on every pad (S3's footprint-rule row).
+    /// A local clearance on every pad (S3's footprint-rule rows).
     pub pad_clearance: Option<i64>,
+    /// A footprint-level local clearance.
+    pub fp_clearance: Option<i64>,
+    /// Extra hidden properties (the symbol's fields, for parity).
+    pub extra_props: Vec<(String, String)>,
 }
 
 #[derive(Clone, Debug)]
@@ -117,6 +121,21 @@ impl Board {
             v.push(Sx::list(vec![
                 Sx::atom("sheetfile"),
                 Sx::str(f.sheetfile.clone()),
+            ]));
+        }
+        if let Some(cl) = f.fp_clearance {
+            v.push(Sx::node("clearance", &[&mm(cl)]));
+        }
+        for (i, (name, value)) in f.extra_props.iter().enumerate() {
+            v.push(Sx::list(vec![
+                Sx::atom("property"),
+                Sx::str(name.clone()),
+                Sx::str(value.clone()),
+                Sx::node("at", &["0", "0", "0"]),
+                Sx::list(vec![Sx::atom("layer"), Sx::str("F.Fab")]),
+                Sx::node("hide", &["yes"]),
+                uuid_sx(&format!("{key}/prop/{i}")),
+                sexpr::parse("(effects (font (size 1 1) (thickness 0.15)))")?,
             ]));
         }
         let mut count = 0;
@@ -290,6 +309,9 @@ pub struct Rules {
     pub drill: i64,
     pub edge: i64,
     pub pitch: i64,
+    /// F.Cu only within this distance of the net's own pads, which forces the
+    /// rest of the route onto B.Cu through vias (S4's via case).
+    pub fcu_near_pads: Option<i64>,
 }
 
 enum Shape {
@@ -382,8 +404,13 @@ pub fn route(board: &mut Board, nets: &[&str], r: &Rules) -> Result<Vec<String>,
         for iy in 0..ny {
             for ix in 0..nx {
                 let p = pos(ix, iy);
+                let near_own = r.fcu_near_pads.is_none_or(|lim| {
+                    own.iter()
+                        .any(|o| Shape::Disc(f(o.centre), 0.0).dist(f(p)) <= lim as f64)
+                });
                 for (l, _) in LAYER_NAMES.iter().enumerate() {
-                    track_ok[idx(ix, iy, l)] = free(l, p, r.width as f64 / 2.0);
+                    track_ok[idx(ix, iy, l)] =
+                        free(l, p, r.width as f64 / 2.0) && (l == 1 || near_own);
                 }
                 via_ok[iy * nx + ix] = (0..2).all(|l| free(l, p, r.via as f64 / 2.0));
             }

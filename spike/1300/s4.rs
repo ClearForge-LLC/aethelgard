@@ -139,6 +139,8 @@ fn fp(src: &Sx, reference: &str, at: (i64, i64), nets: [&str; 2], path: Option<S
         ]),
         src: src.clone(),
         pad_clearance: None,
+        fp_clearance: None,
+        extra_props: Vec::new(),
     }
 }
 
@@ -239,6 +241,23 @@ fn zones(ctx: &Ctx, src: &Sx) -> Result<(), String> {
                     &sha256_hex(second.as_bytes())[..16]
                 ),
             );
+            let diffs: Vec<(usize, &str, &str)> = first
+                .lines()
+                .zip(second.lines())
+                .enumerate()
+                .filter(|(_, (x, y))| x != y)
+                .map(|(i, (x, y))| (i + 1, x.trim(), y.trim()))
+                .collect();
+            answer(
+                "S4",
+                format!(
+                    "lead 3: {} differing lines (of {} / {}); first three: {:?}",
+                    diffs.len(),
+                    first.lines().count(),
+                    second.lines().count(),
+                    diffs.iter().take(3).collect::<Vec<_>>()
+                ),
+            );
         }
     }
     Ok(())
@@ -315,32 +334,58 @@ fn routed(ctx: &Ctx, src: &Sx) -> Result<(), String> {
         }
     }
     let path = |r: &str| Some(format!("/{}", sch::symbol_uuid("s4", r)));
-    let rules = Rules {
+    let rules = |fcu_near_pads: Option<i64>| Rules {
         width: MM / 4,
         clearance: 200_000,
         via: 600_000,
         drill: 300_000,
         edge: 500_000,
         pitch: 100_000,
+        fcu_near_pads,
     };
+    // The symbol's fields a footprint lacks; KiCad 10's parity check asks
+    // for them (round 1: "Missing symbol field 'ki_keywords'").
+    let (ids, syms) = super::s2::load(ctx)?;
+    let own: Vec<&str> = src.children("property").filter_map(|p| p.arg(1)).collect();
+    let fields: Vec<(String, String)> = syms[&ids.r]
+        .children("property")
+        .filter_map(|p| Some((p.arg(1)?.to_owned(), p.arg(2)?.to_owned())))
+        .filter(|(n, _)| {
+            !matches!(
+                n.as_str(),
+                "Reference" | "Value" | "Footprint" | "ki_fp_filters"
+            )
+        })
+        .filter(|(n, _)| !own.contains(&n.as_str()))
+        .collect();
+    answer(
+        "S4",
+        format!("parity: symbol fields the footprint lacks: {fields:?}"),
+    );
     let build = |r2_ref: &str,
                  r2_lib: &str,
                  r2_path: Option<String>,
-                 net_a: &str,
-                 net_b: &str|
+                 nets: (&str, &str),
+                 props: bool,
+                 fcu: Option<i64>|
      -> Result<(Board, Vec<String>), String> {
+        let (net_a, net_b) = nets;
         let mut r1 = fp(src, "R1", (108 * MM, 107 * MM), [net_a, net_b], path("R1"));
         let mut r2 = fp(src, r2_ref, (117 * MM, 107 * MM), [net_b, net_a], r2_path);
         r2.lib_id = r2_lib.into();
-        r1.value = "10k".into();
+        if props {
+            r1.extra_props = fields.clone();
+            r2.extra_props = fields.clone();
+        }
         let mut b = board("s4", vec![r1, r2]);
-        let report = pcb::route(&mut b, &[net_a, net_b], &rules)?;
+        let report = pcb::route(&mut b, &[net_a, net_b], &rules(fcu))?;
         Ok((b, report))
     };
     let (a, bn) = (names["A"].clone(), names["B"].clone());
-    let (good, report) = build("R2", R_FP, path("R2"), &a, &bn)?;
+    let nets = (a.as_str(), bn.as_str());
+    let (good, report) = build("R2", R_FP, path("R2"), nets, false, None)?;
     let text = good.emit()?;
-    let (again, _) = build("R2", R_FP, path("R2"), &a, &bn)?;
+    let (again, _) = build("R2", R_FP, path("R2"), nets, false, None)?;
     answer(
         "S4",
         format!(
@@ -351,57 +396,159 @@ fn routed(ctx: &Ctx, src: &Sx) -> Result<(), String> {
             text == again.emit()?
         ),
     );
+    let (via_board, via_report) = build("R2", R_FP, path("R2"), nets, true, Some(1_500_000))?;
+    answer(
+        "S4",
+        format!(
+            "router, F.Cu allowed only within 1.5 mm of each net's pads: {}; {} segments, {} vias",
+            via_report.join("; "),
+            via_board.segs.len(),
+            via_board.vias.len()
+        ),
+    );
     write(&dir.join("s4.kicad_pcb"), &text)?;
     if ctx.kicad.is_none() {
         return Ok(());
     }
-    let mut cases: Vec<(&str, String, String)> = vec![("P0 matching", text, sch_text.clone())];
-    let wrong_ref = build("R9", R_FP, path("R2"), &a, &bn)?.0.emit()?;
-    cases.push(("P1 board reference R9", wrong_ref, sch_text.clone()));
-    let wrong_lib = build("R2", "Resistor_SMD:R_0402_1005Metric", path("R2"), &a, &bn)?
-        .0
-        .emit()?;
-    cases.push((
-        "P2 footprint lib id 0402 on 0603 copper",
-        wrong_lib,
-        sch_text.clone(),
-    ));
-    let bare_a = a.trim_start_matches('/').to_owned();
-    let bare_b = bn.trim_start_matches('/').to_owned();
-    if bare_a != a {
-        let wrong_net = build("R2", R_FP, path("R2"), &bare_a, &bare_b)?.0.emit()?;
+    use super::env::Treat;
+    let emit = |r: Result<(Board, Vec<String>), String>| r.and_then(|(b, _)| b.emit());
+    let with_fields = emit(build("R2", R_FP, path("R2"), nets, true, None))?;
+    let (sch_1k, _) = schematic(ctx, ["10k", "1k"])?.ok_or("no schematic")?;
+    let bare = (
+        a.trim_start_matches('/').to_owned(),
+        bn.trim_start_matches('/').to_owned(),
+    );
+    // (name, board, schematic, gate project and rules beside it, treatment)
+    let mut cases: Vec<(&str, String, String, bool, Treat)> = vec![
+        (
+            "P0 matching",
+            text.clone(),
+            sch_text.clone(),
+            true,
+            Treat::Bare,
+        ),
+        (
+            "P1 board reference R9",
+            emit(build("R9", R_FP, path("R2"), nets, false, None))?,
+            sch_text.clone(),
+            true,
+            Treat::Bare,
+        ),
+        (
+            "P2 footprint lib id 0402 on 0603 copper",
+            emit(build(
+                "R2",
+                "Resistor_SMD:R_0402_1005Metric",
+                path("R2"),
+                nets,
+                false,
+                None,
+            ))?,
+            sch_text.clone(),
+            true,
+            Treat::Bare,
+        ),
+    ];
+    if bare.0 != a {
         cases.push((
             "P3 board nets without the sheet prefix",
-            wrong_net,
+            emit(build(
+                "R2",
+                R_FP,
+                path("R2"),
+                (&bare.0, &bare.1),
+                false,
+                None,
+            ))?,
             sch_text.clone(),
+            true,
+            Treat::Bare,
         ));
     }
-    let wrong_path = build(
-        "R2",
-        R_FP,
-        Some(format!("/{}", super::uuid("not-a-symbol"))),
-        &a,
-        &bn,
-    )?
-    .0
-    .emit()?;
-    cases.push(("P4 R2 path names no symbol", wrong_path, sch_text.clone()));
-    let (sch_1k, _) = schematic(ctx, ["10k", "1k"])?.ok_or("no schematic")?;
-    let good_again = build("R2", R_FP, path("R2"), &a, &bn)?.0.emit()?;
-    cases.push((
-        "P5 schematic R2 value 1k, board 10k",
-        good_again.clone(),
-        sch_1k,
-    ));
-    cases.push(("P6 no .kicad_pro beside the board", good_again, sch_text));
-    for (name, board_text, sch_t) in cases {
-        let d = ctx.dir(&format!("s4-{}", &name[..2]))?;
+    cases.extend([
+        (
+            "P4 R2 path names no symbol",
+            emit(build(
+                "R2",
+                R_FP,
+                Some(format!("/{}", super::uuid("not-a-symbol"))),
+                nets,
+                false,
+                None,
+            ))?,
+            sch_text.clone(),
+            true,
+            Treat::Bare,
+        ),
+        (
+            "P5 schematic R2 value 1k, board 10k",
+            text.clone(),
+            sch_1k,
+            true,
+            Treat::Bare,
+        ),
+        (
+            "P6 no .kicad_pro beside the board",
+            text.clone(),
+            sch_text.clone(),
+            false,
+            Treat::Bare,
+        ),
+        (
+            "P7 symbol fields copied to footprints",
+            with_fields.clone(),
+            sch_text.clone(),
+            true,
+            Treat::Bare,
+        ),
+        (
+            "P8 fields + project fp-lib-table",
+            with_fields.clone(),
+            sch_text.clone(),
+            true,
+            Treat::Tables,
+        ),
+        (
+            "P9 fields + project severities",
+            with_fields.clone(),
+            sch_text.clone(),
+            true,
+            Treat::Severities,
+        ),
+        (
+            "P10 fields + KICAD_CONFIG_HOME tables",
+            with_fields,
+            sch_text.clone(),
+            true,
+            Treat::ConfigHome,
+        ),
+        (
+            "P11 forced vias, fields, KICAD_CONFIG_HOME",
+            via_board.emit()?,
+            sch_text.clone(),
+            true,
+            Treat::ConfigHome,
+        ),
+    ]);
+    for (name, board_text, sch_t, gate, treat) in cases {
+        let d = ctx.dir(&format!("s4-{}", name.split(' ').next().unwrap()))?;
         write(&d.join("s4.kicad_pcb"), &board_text)?;
         write(&d.join("s4.kicad_sch"), &sch_t)?;
-        if !name.starts_with("P6") {
+        if gate {
             gate_files(&d, "s4")?;
         }
-        let (ran, by) = ctx.drc(&d.join("s4.kicad_pcb"), &["--schematic-parity"])?;
+        let env = super::env::prepare(ctx, &d, "s4", treat)?;
+        if matches!(treat, Treat::Severities) {
+            write(
+                &d.join("s4.kicad_pro"),
+                &project(
+                    "s4",
+                    SPEC_MM,
+                    "\"lib_footprint_issues\": \"ignore\", \"lib_footprint_mismatch\": \"ignore\"",
+                ),
+            )?;
+        }
+        let (ran, by) = ctx.drc_env(&d.join("s4.kicad_pcb"), &["--schematic-parity"], &env)?;
         answer(
             "S4",
             format!(
