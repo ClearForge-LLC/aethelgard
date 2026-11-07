@@ -395,30 +395,35 @@ fn the_budget_refuses_naming_the_bus_being_placed() {
     assert!(solve_with_limit(&s, &table(), HASH, 100).is_ok());
 }
 
-#[test]
-fn the_budget_covers_the_minimal_set_too() {
-    let s = spec(vec![i2c("A"), i2c("B"), i2c("C"), i2c("D")], vec![], vec![]);
-    // Enough for the first search's refusal, not for the deletions after it.
-    let first = (1..1_000)
+/// The nodes a solve spends: the smallest budget it finishes within.
+fn nodes(s: &Specification) -> u64 {
+    (0..100_000)
         .find(|&n| {
             !matches!(
-                solve_with_limit(&s, &table(), HASH, n),
+                solve_with_limit(s, &table(), HASH, n),
                 Err(SolveError::BudgetExceeded { .. })
             )
         })
-        .expect("a budget that finishes");
-    assert_eq!(
-        solve_with_limit(&s, &table(), HASH, first)
-            .unwrap_err()
-            .kind(),
-        "Infeasible"
-    );
-    assert_eq!(
-        solve_with_limit(&s, &table(), HASH, first - 1)
-            .unwrap_err()
-            .kind(),
-        "BudgetExceeded"
-    );
+        .expect("finishes within 100000 nodes")
+}
+
+#[test]
+fn the_budget_covers_the_whole_solve_minimal_set_included() {
+    // Four buses over three placeable instances: refused at the root before
+    // any node, so every node is spent in the minimal-set searches, one per
+    // bus, each feasible and identical to solving the other three alone.
+    let buses = ["A", "B", "C", "D"];
+    let s = spec(buses.iter().map(|b| i2c(b)).collect(), vec![], vec![]);
+    assert_eq!(refused(&s).kind(), "Infeasible");
+    let alone: Vec<u64> = (0..buses.len())
+        .map(|drop| {
+            let rest = buses.iter().enumerate().filter(|(i, _)| *i != drop);
+            nodes(&spec(rest.map(|(_, b)| i2c(b)).collect(), vec![], vec![]))
+        })
+        .collect();
+    assert!(alone.iter().filter(|n| **n > 0).count() > 1, "{alone:?}");
+    // A budget per search would make this the maximum, not the sum.
+    assert_eq!(nodes(&s), alone.iter().sum::<u64>(), "{alone:?}");
 }
 
 #[test]
