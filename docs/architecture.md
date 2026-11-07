@@ -171,6 +171,28 @@ Eight broken platforms were tried, among them an unknown peripheral type, an unk
 
 One case reports nothing at all: two overlapping tags in `init:` list a CPU and print nothing. The `[ERROR]` check `AET-WO-0300b` added is therefore a fail-closed backstop that no real input has yet reached. Argon's RT-02 described a path that Renode, as measured, does not take.
 
+### 2.10 Measurements from AET-WO-0400 (2026-11-07, Furnace and GitHub Actions)
+
+The record is `docs/work-orders/AET-WO-0400.FEEDBACK.md`. These are plumbing numbers for synthetic events, not `OQ-03`.
+
+**Determinism across machines.** The golden 10,000-event trace was computed on Furnace: 191,873 bytes, sha256 `51c6193f…896d`, `state_hash` `535db225…adac4`. CI's `gates` job reproduced both unchanged. Encoded bytes per event, by kind:
+- register write: 17.0;
+- pin level: 13.1;
+- interrupt: 9.7;
+- analog sample: 22.3;
+- fault injected: 33.8.
+
+The mean is 19.2 bytes.
+
+**Cost.** Writing and committing the stream, every `sync_all` included, takes 0.213 s in release (46,888 events/s) and 1.334 s in debug. Replay takes 0.195 s in release.
+
+**What the adversarial pass measured:**
+- **Integrity holds, as intended.** 3 million mutation-fuzz iterations found no input the decoder accepts that fails to round-trip. A forged trace with a recomputed manifest replays, because the manifest proves integrity, not authenticity.
+- **Replay as built is quadratic** in distinct state keys: 6.5 s for 20,000 distinct registers.
+- **Memory is not yet bounded by shape:** one crafted 16.8 MB event reached a peak of 578 MB.
+
+Both are fixed by `AET-WO-0400a`, before any trace from outside is replayed.
+
 ## 3. Shape — one representation, two projections, one loop
 
 ```
@@ -336,6 +358,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-10-29 | §2.1, §3, §4, §8 | Added a §2.1 row: SVD has no pin or alternate-function table. Amended `RUL-02` (the prior inverted to a pure-Rust search), `RUL-03` (DRC rules from the specification) and `RUL-06` (deterministic CBOR replaces Cap'n Proto). Added `RUL-16` (`Specification` and `SolvedTopology`), and the `ir` row in §3 to match. `OQ-02` gained three unverified leads, and its spike is now `AET-WO-2101`. Added §2.7, read from Renode's 1.17.0 source: its I2C model has no error flags, which turned one `OQ-02` lead into a fact. A fourth lead covers the bridge's channel. `RUL-03` now has the gate supply every rule-bearing file, and `RUL-06` records that the archive has one writer | Rulings on Argon's review of `main` at 9818c4f, triaged by the architect. Argon's own text is in `docs/inputs/argon-session/` as captures 06 and 07. Two of its red-team findings were overstated and are recorded in the roadmap where they changed a work order: Kani's exit 0 cannot be forged, and what matters is that the harness comes from the specification side (`AET-WO-1400`); tampering with a verdict after the tool has spoken needs `ptrace` or `/proc/<pid>/fd` access to the CLI, which sits outside the tool's Landlock domain and is refused, so blocking `ptrace` outright is cheap defence in depth for `AET-WO-1600`. The Cap'n Proto compiler problem was `AET-WO-0400`'s first spike question, and is answered here instead, so that work order no longer needs a spike |
 | 2026-11-07 | §2.1, §2.8, §4 | Added §2.8: the pin table comes from ST's BSD-3-Clause `STM32_open_pin_data`, vendored by `AET-WO-1101`. The §2.1 row's licence question is resolved, and `RUL-11`'s inventory names the source | The architect read both candidates' licences and ST's files for the STM32H753ZI. The primary source has a clear licence; the derivative's generated data has none |
 | 2026-11-07 | §2.9, §4 | Added §2.9 measurements from `AET-WO-0300b`. Amended `RUL-13` with the tool-input copy cap and the 4,096-file crate cap | Rulings at review of PR #18, promoting its FEEDBACK's two items. The measurement showed that the `[ERROR]` path Argon's RT-02 named does not occur in Renode 1.17.0. The check stays as a backstop |
+| 2026-11-07 | §2.10 | Added §2.10 measurements from `AET-WO-0400` | Rulings at review of PR #21. Its adversarial findings 1, 2 and 3 became `AET-WO-0400a`: a per-event delta hash chain (manifest version 2), shape-bounded decoding, and a mirror crash that leaves the run readable. Findings 6 and 7 and the three scope questions were accepted as built and recorded there |
 
 New sections continue the sequence and never reuse a number.
 
