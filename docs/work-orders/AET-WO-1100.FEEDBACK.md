@@ -18,6 +18,7 @@ The first push attempt parked here: the minted token existed only in the session
 ## Gates
 
 - Local (Furnace): `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`: pass. `gates` example commands run by hand: minimal exits 0; zeroed exits 2 naming `VDD_3V3`.
+- Furnace tier 2 (`--features with-tools`): not runnable in this session. `kicad-cli`, `cargo-kani` and `renode` are not on PATH here (11 of 12 `with_tools` tests report `ToolMissing`; the twelfth needs no tool), and no KiCad kit exists on Furnace. Tier 2 is the CI `tools` job's (image-pinned); this diff touches none of its code, and `tools` is green on both pushes. §3.5's Furnace clause is read as the workspace gates (above), which pass.
 - CI, first push, `gates` and `tools` both green: https://github.com/ClearForge-LLC/aethelgard/actions/runs/42411395855 (PR #25). Furnace acceptance beyond the local run above is not done.
 - Reduction pass (diff-sized): removed nothing further. `unique_keys` is the only new helper that is not a direct §1 requirement and it is one §1.3 demands. Old `trim` handling is gone with the three `Empty*` variants.
 
