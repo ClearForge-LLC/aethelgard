@@ -97,7 +97,7 @@ P0 ──> P1 ──> P2 ──> P3
   - net constraints, with round-trip serialization.
 
   **It breaks today's examples on purpose.** The same PR rewrites both, keeping their file names so the `gates` step needs no change, and the P0 gate's `validate` clause holds on the new shape.
-- `AET-WO-1101` — reserved, build-only: the microcontroller's pin table.
+- `AET-WO-1101` — written, build-only: the microcontroller's pin table.
   - **The source.** It vendors ST's BSD-3-Clause `STM32_open_pin_data` files for the STM32H753ZI, pinned by commit and sha256 with ST's notice (`architecture.md` §2.8). The pin and alternate-function tables are not in the SVD, which has neither (`architecture.md` §2.1).
   - **The parse.** `aethelgard-svd-hal` parses the files into an IR pin table. That graduates the crate from the stub checks, with a pure-Rust XML parser as its one new dependency.
   - **The golden facts.** 114 I/O pins, and PB8 carries `I2C1_SCL` on AF4.
