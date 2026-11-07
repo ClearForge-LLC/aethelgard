@@ -11,6 +11,8 @@
 //! sandbox it achieved, and becomes the tool. The reaper waits. If the CLI
 //! dies, by any signal, the reaper sees its parent change and kills the tool's
 //! group and every descendant; a guardian removes the temporary directory.
+//! Both are told the CLI's pid (`--cli-pid`) rather than sampling their parent,
+//! so a CLI that dies before they look is seen at once (AET-WO-0300c).
 //!
 //! The status file the CLI reads (the sandbox line, then how the tool ended)
 //! lives outside the tool's read-write directory, so the tool cannot forge it.
@@ -34,6 +36,9 @@ use rustix::process::{
     Pid, Signal, WaitOptions, getpid, kill_process, kill_process_group, set_child_subreaper,
     waitpid,
 };
+
+/// The argument that tells the reaper and the guardian the CLI's pid.
+pub const CLI_PID_ARG: &str = "--cli-pid";
 use seccompiler::{BpfProgram, apply_filter, sock_filter};
 
 use crate::{EXIT_TOOL_ERROR, EXIT_TOOL_UNAVAILABLE, EXIT_UNREADABLE};
@@ -252,7 +257,11 @@ impl Invocation<'_> {
             Stop::tool_error(self.tool.name, format!("cannot find this executable: {e}"))
         })?;
         let mut cmd = Command::new(me);
-        cmd.arg(REAPER_ARG).arg("--status").arg(&self.status);
+        cmd.arg(REAPER_ARG)
+            .arg(CLI_PID_ARG)
+            .arg(std::process::id().to_string())
+            .arg("--status")
+            .arg(&self.status);
         let system = SYSTEM_DIRS.iter().map(PathBuf::from);
         for p in system.chain(self.read_only.iter().cloned()) {
             cmd.arg("--ro").arg(p);
@@ -374,20 +383,35 @@ fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop
 }
 
 /// The internal arguments shared by the reaper and the trampoline:
-/// `--status F [--ro P]… [--rw P]… -- TOOL ARGS…`.
+/// `--cli-pid N --status F [--ro P]… [--rw P]… -- TOOL ARGS…`.
 struct Internal {
+    cli_pid: u32,
     status: PathBuf,
     read_only: Vec<PathBuf>,
     read_write: Vec<PathBuf>,
     tool: Vec<OsString>,
 }
 
+/// A pid as the CLI writes it: decimal digits, no sign, not zero, at most
+/// `i32::MAX`. Anything else is `None`, so the parse exits 64.
+fn pid_arg(arg: Option<&OsString>) -> Option<u32> {
+    let s = arg?.to_str()?;
+    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    s.parse::<i32>()
+        .ok()
+        .filter(|&p| p > 0)
+        .map(i32::unsigned_abs)
+}
+
 fn parse_internal(args: &[OsString]) -> Internal {
-    let mut status = None;
+    let (mut cli_pid, mut status) = (None, None);
     let (mut read_only, mut read_write, mut tool) = (Vec::new(), Vec::new(), Vec::new());
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.to_str() {
+            Some(CLI_PID_ARG) => cli_pid = Some(pid_arg(it.next()).unwrap_or_else(|| exit(64))),
             Some("--status") => status = it.next().map(PathBuf::from),
             Some("--ro") => read_only.extend(it.next().map(PathBuf::from)),
             Some("--rw") => read_write.extend(it.next().map(PathBuf::from)),
@@ -398,8 +422,9 @@ fn parse_internal(args: &[OsString]) -> Internal {
             _ => exit(64),
         }
     }
-    match status {
-        Some(status) if !tool.is_empty() => Internal {
+    match (cli_pid, status) {
+        (Some(cli_pid), Some(status)) if !tool.is_empty() => Internal {
+            cli_pid,
             status,
             read_only,
             read_write,
@@ -410,10 +435,14 @@ fn parse_internal(args: &[OsString]) -> Internal {
 }
 
 /// The reaper: `aethelgard --aethelgard-internal-reaper <internal args>`.
-/// Unconfined, so it can clean up; never returns.
+/// Unconfined, so it can clean up; never returns. It never sets a death signal
+/// on itself: it has to outlive the CLI to clean up after it.
 pub fn reaper_main(args: &[OsString]) -> ! {
     let internal = parse_internal(args);
-    let parent = parent_id();
+    if parent_id() != internal.cli_pid {
+        // The CLI died before this process looked: start nothing.
+        exit(70);
+    }
     // Orphans the tool leaves, a double-forked daemon in its own session
     // included, are reparented here, so none outlives the call.
     if set_child_subreaper(Some(getpid())).is_err() {
@@ -449,7 +478,7 @@ pub fn reaper_main(args: &[OsString]) -> ! {
             Ok(None) => {}
             Err(_) => exit(70),
         }
-        if parent_id() != parent {
+        if parent_id() != internal.cli_pid {
             // The CLI is gone: take everything the tool started. The guardian
             // removes the temporary directory.
             let _ = kill_process_group(tool_group, Signal::KILL);
@@ -490,14 +519,17 @@ fn kill_descendants() {
     }
 }
 
-/// The guardian: `aethelgard --aethelgard-internal-guard <dir>`. In its own
-/// process group from the moment the call's temporary directory exists, it
-/// removes the directory if the CLI dies before removing it itself, whatever
-/// the CLI was doing then. Never returns.
+/// The guardian: `aethelgard --aethelgard-internal-guard --cli-pid N <dir>`.
+/// Started, in its own process group, before the call's temporary directory
+/// exists, it removes the directory if the CLI dies before removing it itself,
+/// whatever the CLI was doing then. It never sets a death signal on itself.
+/// Never returns.
 pub fn guard_main(args: &[OsString]) -> ! {
-    let Some(dir) = args.first().map(PathBuf::from) else {
-        exit(64)
+    let (cli_pid, dir) = match args {
+        [flag, pid, dir] if flag == CLI_PID_ARG => (pid_arg(Some(pid)), PathBuf::from(dir)),
+        _ => exit(64),
     };
+    let Some(cli_pid) = cli_pid else { exit(64) };
     if !dir
         .file_name()
         .and_then(OsStr::to_str)
@@ -505,13 +537,17 @@ pub fn guard_main(args: &[OsString]) -> ! {
     {
         exit(64);
     }
-    let parent = parent_id();
+    let mut seen = false;
     loop {
-        if !dir.exists() {
+        // The parent first: once it is gone, nothing can create the directory.
+        if parent_id() != cli_pid {
+            let _ = fs::remove_dir_all(&dir);
             exit(0);
         }
-        if parent_id() != parent {
-            let _ = fs::remove_dir_all(&dir);
+        if dir.exists() {
+            seen = true;
+        } else if seen {
+            // The CLI removed it.
             exit(0);
         }
         thread::sleep(Duration::from_millis(50));

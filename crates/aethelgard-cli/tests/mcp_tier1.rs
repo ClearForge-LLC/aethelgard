@@ -308,6 +308,24 @@ fn sigint_during_a_call_leaves_nothing() {
 }
 
 #[test]
+fn sighup_during_a_call_leaves_nothing() {
+    let (_dir, mut c, _id, all) = blocked_call("hup", 307);
+    signal(c.pid(), "HUP");
+    assert_eq!(wait_exit(&mut c), Some(129));
+    all_gone(&all);
+}
+
+/// SIGKILL cannot be handled: the CLI dies by its parent-death signal, then its reaper and
+/// guardian clean up (AET-WO-0300c §1.3).
+#[test]
+fn sigkill_of_the_server_during_a_call_leaves_nothing() {
+    let (_dir, mut c, _id, all) = blocked_call("kill", 308);
+    signal(c.pid(), "KILL");
+    assert_eq!(wait_exit(&mut c), None);
+    all_gone(&all);
+}
+
+#[test]
 fn a_client_that_disconnects_mid_call_leaves_nothing_after_the_grace() {
     let (_dir, mut c, _id, all) = blocked_call("disconnect", 305);
     c.stdin = None;
@@ -346,6 +364,148 @@ fn sigterm_with_no_call_exits_143() {
     c.initialize();
     signal(c.pid(), "TERM");
     assert_eq!(wait_exit(&mut c), Some(143));
+}
+
+// ------------------------------------------- AET-WO-0300c: the CLI killed at any instant
+
+/// A process's start time in clock ticks since boot, `None` once it is gone or a zombie. With
+/// the pid it names one process, so a reused pid is never mistaken for a survivor.
+fn start_time(pid: u32) -> Option<u64> {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let rest = stat.rsplit_once(')')?.1;
+    if rest.trim_start().starts_with('Z') {
+        return None;
+    }
+    // Field 22 of stat; `rest` starts at field 3.
+    rest.split_whitespace().nth(19)?.parse().ok()
+}
+
+/// Every live process whose command line or environment holds `marker`, wherever it has been
+/// reparented: the CLI, its guardian, its reaper, the trampoline and the tool all do.
+fn marked(marker: &Path) -> Vec<u32> {
+    let marker = marker.as_os_str().as_encoded_bytes();
+    fs::read_dir("/proc")
+        .unwrap()
+        .flatten()
+        .filter_map(|e| {
+            let pid: u32 = e.file_name().to_str()?.parse().ok()?;
+            let holds = |file: &str| {
+                fs::read(e.path().join(file))
+                    .is_ok_and(|b| b.windows(marker.len()).any(|w| w == marker))
+            };
+            ((holds("cmdline") || holds("environ")) && alive(pid)).then_some(pid)
+        })
+        .collect()
+}
+
+/// Waits up to 30 s for `left` to return nothing, and returns what it last returned.
+fn settle(mut left: impl FnMut() -> Vec<u32>) -> Vec<u32> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let now = left();
+        if now.is_empty() || std::time::Instant::now() > deadline {
+            return now;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// `AET-WO-1500` finding 8a. Each call is cancelled at once, or after up to 12 ms, so the
+/// kill of the CLI sweeps its start-up: before the guardian, between the guardian and its
+/// directory, before the reaper looks at its parent. Every descendant ever seen, and every
+/// process naming this test's `TMPDIR`, must be gone by the deadline, and so must every
+/// `aethelgard-*` directory.
+#[test]
+fn an_immediate_cancel_storm_leaves_no_process_and_no_directory() {
+    use std::collections::HashSet;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    const CALLS: u64 = 500;
+    let dir = Scratch::new("storm");
+    dir.stub_kicad("exec /bin/sleep 306");
+    let board = dir.0.join("b.kicad_pcb");
+    fs::write(&board, "x").unwrap();
+    let tmp = dir.0.join("tmp");
+    fs::create_dir(&tmp).unwrap();
+    let tb = dir.0.join("toolbox");
+    let mut c = Client::spawn(|cmd| {
+        cmd.env_clear().env("PATH", &tb).env("TMPDIR", &tmp);
+    });
+    c.initialize();
+    let server = c.pid();
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let sampler = {
+        let stop = Arc::clone(&stop);
+        std::thread::spawn(move || {
+            let mut seen = HashSet::new();
+            while !stop.load(Ordering::Relaxed) {
+                for p in descendants(server) {
+                    seen.extend(start_time(p).map(|t| (p, t)));
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            seen
+        })
+    };
+    for i in 0..CALLS {
+        let id = c.start(
+            "tools/call",
+            json!({"name": "check_drc", "arguments": {"board": board}}),
+        );
+        std::thread::sleep(Duration::from_micros((i % 25) * 500));
+        c.send(
+            &json!({"jsonrpc": "2.0", "method": "notifications/cancelled",
+                       "params": {"requestId": id, "reason": "storm"}}),
+        );
+    }
+    // Still serving; then a shutdown ends any call whose cancel came too early to count.
+    assert!(c.request("tools/list", json!({}))["result"]["tools"].is_array());
+    signal(server, "TERM");
+    assert_eq!(wait_exit(&mut c), Some(143));
+    stop.store(true, Ordering::Relaxed);
+    let seen = sampler.join().unwrap();
+
+    let survivors = settle(|| {
+        let mut left: Vec<u32> = seen
+            .iter()
+            .filter(|&&(p, t)| start_time(p) == Some(t))
+            .map(|&(p, _)| p)
+            .collect();
+        left.extend(marked(&tmp));
+        left.sort_unstable();
+        left.dedup();
+        left
+    });
+    let described: Vec<String> = survivors
+        .iter()
+        .map(|p| {
+            let cmd = fs::read(format!("/proc/{p}/cmdline")).unwrap_or_default();
+            format!("{p}: {}", String::from_utf8_lossy(&cmd).replace('\0', " "))
+        })
+        .collect();
+    for p in &survivors {
+        let _ = Command::new("kill")
+            .args(["-KILL", &p.to_string()])
+            .status();
+    }
+    let dirs: Vec<String> = fs::read_dir(&tmp)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("aethelgard-"))
+        .collect();
+    println!(
+        "storm: calls={CALLS} descendants_seen={} survivors={} leftover_dirs={}",
+        seen.len(),
+        survivors.len(),
+        dirs.len()
+    );
+    assert!(
+        survivors.is_empty() && dirs.is_empty(),
+        "survivors {described:#?}, leftover directories {dirs:?}"
+    );
 }
 
 // ------------------------------------------------------------------- no listener

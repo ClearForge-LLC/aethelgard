@@ -146,6 +146,15 @@ fn main() -> ExitCode {
         Some(run::GUARD_ARG) => run::guard_main(&args[2..]),
         _ => {}
     }
+    // Not for the reaper and the guardian above, which must outlive this
+    // process. If the parent dies by any signal, this process dies too, and its
+    // reaper and guardian clean up after it (AET-WO-0300c).
+    if let Err(e) =
+        rustix::process::set_parent_process_death_signal(Some(rustix::process::Signal::KILL))
+    {
+        diagnose(&format!("cannot set the parent-death signal: {e}"));
+        return ExitCode::from(EXIT_INTERNAL);
+    }
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(err)
@@ -230,21 +239,16 @@ impl Scratch {
                 format!("cannot create a temporary directory: {e}"),
             )
         };
-        DirBuilder::new().mode(0o700).create(&root).map_err(fail)?;
-        let scratch = Self {
-            tool: root.join("tool"),
-            root,
-        };
-        DirBuilder::new()
-            .mode(0o700)
-            .create(&scratch.tool)
-            .map_err(fail)?;
-        // The guardian removes the directory if this process dies first.
-        std::env::current_exe()
+        // The guardian starts before the directory exists, so no instant of this
+        // process's death leaves the directory unguarded. It removes the
+        // directory if this process dies first.
+        let mut guardian = std::env::current_exe()
             .and_then(|me| {
                 std::process::Command::new(me)
                     .arg(run::GUARD_ARG)
-                    .arg(&scratch.root)
+                    .arg(run::CLI_PID_ARG)
+                    .arg(std::process::id().to_string())
+                    .arg(&root)
                     .env_clear()
                     .stdin(std::process::Stdio::null())
                     .stdout(std::process::Stdio::null())
@@ -252,6 +256,20 @@ impl Scratch {
                     .process_group(0)
                     .spawn()
             })
+            .map_err(fail)?;
+        if let Err(e) = DirBuilder::new().mode(0o700).create(&root) {
+            // Not ours, if it already existed: the guardian must not remove it.
+            let _ = guardian.kill();
+            let _ = guardian.wait();
+            return Err(fail(e));
+        }
+        let scratch = Self {
+            tool: root.join("tool"),
+            root,
+        };
+        DirBuilder::new()
+            .mode(0o700)
+            .create(&scratch.tool)
             .map_err(fail)?;
         Ok(scratch)
     }
