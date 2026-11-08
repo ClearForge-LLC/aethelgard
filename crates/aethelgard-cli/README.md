@@ -2,6 +2,8 @@
 
 The `aethelgard` binary. It is the contract every caller uses (`docs/architecture.md` `RUL-10`): exactly one JSON object on one line of stdout, and the exit codes below. Diagnostics go to stderr. `AET-WO-1500` inherits these codes; changing one is a breaking change.
 
+The repository `README.md`'s `## Quickstart` runs `emit`, `check erc`, `check drc` and `solve` from the published engine image.
+
 ## Exit codes
 
 | Code | Meaning | `error.kind` values |
