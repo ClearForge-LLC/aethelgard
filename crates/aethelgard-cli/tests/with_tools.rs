@@ -934,6 +934,18 @@ fn mutate(board: &str, pick: &dyn Fn(&Sx, &str) -> Option<Sx>) -> String {
 
 use aethelgard_eda::sexpr::Sx;
 
+/// The board without the router's copper: the placed board these parity
+/// rows were measured on (`AET-WO-1301`). Parity does not read copper; on
+/// the routed board a mismatched pad also shorts the tracks that reach it
+/// (`AET-WO-1302`), which the routed check after the rows asserts.
+fn unrouted(board: &str) -> String {
+    let mut root = aethelgard_eda::sexpr::parse(board).unwrap();
+    if let Some(items) = root.items_mut() {
+        items.retain(|c| !matches!(c.head(), Some("segment" | "via" | "zone")));
+    }
+    aethelgard_eda::sexpr::write(&root)
+}
+
 /// §5.2 as a regression: parity fails a board that does not match its
 /// schematic, each way it can differ, with exactly the finding KiCad names
 /// for it. The last row is ruling (a)'s ground: the exposed pad on GND,
@@ -943,7 +955,8 @@ fn parity_fails_a_board_that_does_not_match_its_schematic() {
     let t = Temp::new("mismatch");
     let spec = example_spec("sentinel-01-minimal.json");
     let r = emit_to(&spec, &t.0);
-    let board = fs::read_to_string(r["board"]["path"].as_str().unwrap()).unwrap();
+    let routed = fs::read_to_string(r["board"]["path"].as_str().unwrap()).unwrap();
+    let board = unrouted(&routed);
     let sch_text = fs::read_to_string(r["schematic"]["path"].as_str().unwrap()).unwrap();
     let property = |name: &'static str, value: Option<&'static str>| {
         move |sx: &Sx, fp: &str| -> Option<Sx> {
@@ -1028,4 +1041,20 @@ fn parity_fails_a_board_that_does_not_match_its_schematic() {
         );
         assert_eq!(v["verdict"], "fail");
     }
+    // The routed board fails the same way, its copper adding findings.
+    let dir = t.0.join("routed");
+    fs::create_dir_all(&dir).unwrap();
+    let (bp, sp) = (dir.join("b.kicad_pcb"), dir.join("s.kicad_sch"));
+    fs::write(&bp, mutate(&routed, &renamed)).unwrap();
+    fs::write(&sp, &sch_text).unwrap();
+    let v = drc_parity(&bp, &sp, &spec);
+    let found = beyond_unconnected(&v);
+    record_1301(&format!(
+        "mismatch row board net renamed, routed: {found:?}"
+    ));
+    assert!(
+        found.iter().any(|f| f.starts_with("net_conflict:")),
+        "{found:?}"
+    );
+    assert_eq!(v["verdict"], "fail");
 }

@@ -1996,4 +1996,186 @@ mod tests {
         r.segments[0].net = "/A".into();
         assert!(check(&b2, &r).is_err());
     }
+
+    fn seg(net: &str, layer: Layer, a: (i64, i64), b: (i64, i64)) -> Segment {
+        Segment {
+            net: net.into(),
+            layer,
+            start: a,
+            end: b,
+        }
+    }
+
+    /// The edge, the hole gap and the axis are judged too.
+    #[test]
+    fn the_check_judges_the_edge_holes_and_axis() {
+        let board = Board {
+            outline: rect(0, 0, 10 * MM, 10 * MM),
+            parts: vec![],
+        };
+        let ok = |r: &Routed| check(&board, r);
+        let near_edge = EDGE_NM + WIDTH_NM / 2;
+        let one = |y| Routed {
+            segments: vec![seg("/A", Layer::B, (2 * MM, y), (8 * MM, y))],
+            ..Routed::default()
+        };
+        assert!(ok(&one(near_edge)).is_ok());
+        assert!(ok(&one(near_edge - 1)).is_err());
+        let vias = |gap: i64| Routed {
+            vias: vec![
+                Via {
+                    net: "/A".into(),
+                    at: (5 * MM, 5 * MM),
+                },
+                Via {
+                    net: "/A".into(),
+                    at: (5 * MM + gap, 5 * MM),
+                },
+            ],
+            ..Routed::default()
+        };
+        assert!(ok(&vias(DRILL_NM + HOLE_GAP_NM)).is_ok());
+        assert!(ok(&vias(DRILL_NM + HOLE_GAP_NM - 1)).is_err());
+        let slanted = Routed {
+            segments: vec![seg("/A", Layer::F, (2 * MM, 2 * MM), (3 * MM, 3 * MM))],
+            ..Routed::default()
+        };
+        assert!(ok(&slanted).is_err());
+    }
+
+    /// A ground via the zone cannot reach, a zone taken away, and a via with
+    /// copper on one layer only, each leave the copper unjoined.
+    #[test]
+    fn connectivity_needs_the_zone_and_both_layers_of_a_via() {
+        let r = |reference: &str, x: i64| Part {
+            reference: reference.into(),
+            pads: vec![
+                pad(
+                    "1",
+                    Some(GROUND),
+                    rect(
+                        x - 760_000,
+                        10 * MM - 320_000,
+                        x - 260_000,
+                        10 * MM + 320_000,
+                    ),
+                ),
+                pad(
+                    "2",
+                    Some("/A"),
+                    rect(
+                        x + 260_000,
+                        10 * MM - 320_000,
+                        x + 760_000,
+                        10 * MM + 320_000,
+                    ),
+                ),
+            ],
+        };
+        let board = Board {
+            outline: rect(0, 0, 20 * MM, 20 * MM),
+            parts: vec![r("R1", 5 * MM), r("R2", 15 * MM)],
+        };
+        let routed = route(&board).unwrap();
+        assert_eq!(routed.zones, vec![(GROUND.to_owned(), Layer::B)]);
+        connectivity(&board, &routed).unwrap();
+        let mut no_zone = routed.clone();
+        no_zone.zones.clear();
+        assert!(connectivity(&board, &no_zone).is_err());
+        // A B.Cu box of another net round the first ground via.
+        let v = routed.vias.iter().find(|v| v.net == GROUND).unwrap().at;
+        let d = MM;
+        let mut fenced = routed.clone();
+        let (x0, y0, x1, y1) = (v.0 - d, v.1 - d, v.0 + d, v.1 + d);
+        for (a, b) in [
+            ((x0, y0), (x1, y0)),
+            ((x1, y0), (x1, y1)),
+            ((x0, y1), (x1, y1)),
+            ((x0, y0), (x0, y1)),
+        ] {
+            fenced.segments.push(seg("/Z", Layer::B, a, b));
+        }
+        assert!(connectivity(&board, &fenced).is_err());
+        // A signal via with copper on F.Cu only.
+        let mut dangling = routed.clone();
+        dangling.vias.push(Via {
+            net: "/A".into(),
+            at: (10 * MM, 3 * MM),
+        });
+        dangling
+            .segments
+            .push(seg("/A", Layer::F, (10 * MM, 3 * MM), (10 * MM, 4 * MM)));
+        assert!(connectivity(&board, &dangling).is_err());
+    }
+
+    /// What the router does not model is refused when read, never guessed.
+    #[test]
+    fn reading_refuses_what_the_router_does_not_model() {
+        let fp = |at: &str, pad: &str| {
+            sexpr::parse(&format!(
+                "(footprint \"x\" (at {at}) (property \"Reference\" \"R1\") {pad})"
+            ))
+            .unwrap()
+        };
+        let smd = "(pad \"1\" smd rect (at 0 0) (size 1 1) (layers \"F.Cu\"))";
+        assert!(part_of(&fp("1 2", smd)).is_ok());
+        for (at, pad, want) in [
+            ("1 2 90", smd, "rotated"),
+            (
+                "1 2",
+                "(pad \"1\" thru_hole circle (at 0 0) (size 1 1) (drill 0.5) (layers \"*.Cu\"))",
+                "front SMD",
+            ),
+            (
+                "1 2",
+                "(pad \"1\" smd rect (at 0 0 45) (size 1 1) (layers \"F.Cu\"))",
+                "angle 45",
+            ),
+            (
+                "1 2",
+                "(pad \"1\" smd custom (at 0 0) (size 1 1) (layers \"F.Cu\"))",
+                "shape",
+            ),
+            (
+                "1 2",
+                "(pad \"1\" smd rect (at 0 0) (size 1 1) (layers \"B.Cu\"))",
+                "front SMD",
+            ),
+        ] {
+            let e = part_of(&fp(at, pad)).unwrap_err();
+            assert!(e.contains(want), "{pad}: {e}");
+        }
+        let board = |copper: &str| {
+            sexpr::parse(&format!(
+                "(kicad_pcb (gr_rect (start 0 0) (end 10 10) (layer \"Edge.Cuts\")) {copper})"
+            ))
+            .unwrap()
+        };
+        assert!(
+            read(&board(
+                "(segment (start 1 1) (end 2 1) (width 0.2) (layer \"F.Cu\") (net \"/A\"))"
+            ))
+            .is_ok()
+        );
+        for copper in [
+            "(segment (start 1 1) (end 2 1) (width 0.25) (layer \"F.Cu\") (net \"/A\"))",
+            "(segment (start 1 1) (end 2 1) (width 0.2) (layer \"In1.Cu\") (net \"/A\"))",
+            "(via (at 1 1) (size 0.5) (drill 0.3) (layers \"F.Cu\" \"B.Cu\") (net \"/A\"))",
+            "(via (at 1 1) (size 0.6) (drill 0.3) (layers \"F.Cu\") (net \"/A\"))",
+            "(segment (start 1 1) (end 2 1) (width 0.2) (layer \"F.Cu\"))",
+        ] {
+            assert!(read(&board(copper)).is_err(), "{copper}");
+        }
+    }
+
+    /// A board past the grid's cap is refused before anything is allocated.
+    #[test]
+    fn a_board_too_large_is_refused() {
+        let board = Board {
+            outline: rect(0, 0, 300 * MM, 300 * MM),
+            parts: vec![],
+        };
+        let e = route(&board).unwrap_err();
+        assert!(e.why.contains("larger than"), "{e:?}");
+    }
 }

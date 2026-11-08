@@ -197,3 +197,61 @@ fn every_nets_copper_is_connected() {
     cut.segments.remove(i);
     assert!(route::connectivity(&board, &cut).is_err());
 }
+
+/// Every pad is left straight out: no F.Cu track runs inside a footprint's
+/// pad field (the box round its pads) except over a pad of its own net. At
+/// the LQFP that is the only way out between pads 0.2 mm apart.
+#[test]
+fn every_pad_is_left_straight_out_of_its_field() {
+    let d = Dir::new("escape");
+    let (board, routed) = read(&emitted(&d));
+    let step = route::PITCH_NM;
+    let mut inside = 0;
+    for part in &board.parts {
+        let Some(field) =
+            part.pads
+                .iter()
+                .map(|p| p.rect)
+                .reduce(|a, b| aethelgard_eda::pcb::Rect {
+                    x0: a.x0.min(b.x0),
+                    y0: a.y0.min(b.y0),
+                    x1: a.x1.max(b.x1),
+                    y1: a.y1.max(b.y1),
+                })
+        else {
+            continue;
+        };
+        for s in routed.segments.iter().filter(|s| s.layer == Layer::F) {
+            let (dx, dy) = (
+                (s.end.0 - s.start.0).signum(),
+                (s.end.1 - s.start.1).signum(),
+            );
+            let mut at = s.start;
+            loop {
+                let here = aethelgard_eda::pcb::Rect {
+                    x0: at.0,
+                    y0: at.1,
+                    x1: at.0,
+                    y1: at.1,
+                };
+                if field.contains(here) {
+                    inside += 1;
+                    assert!(
+                        part.pads
+                            .iter()
+                            .any(|p| p.rect.contains(here)
+                                && p.net.as_deref() == Some(s.net.as_str())),
+                        "{} crosses {}'s pad field at {at:?}",
+                        s.net,
+                        part.reference
+                    );
+                }
+                if at == s.end {
+                    break;
+                }
+                at = (at.0 + dx * step, at.1 + dy * step);
+            }
+        }
+    }
+    assert!(inside > 0, "no track reaches a pad");
+}
