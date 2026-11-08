@@ -43,10 +43,11 @@ RUN curl -fsSLo /tmp/renode.tar.gz https://github.com/renode/renode/releases/dow
 
 # Rust 1.99.1 (rust-toolchain.toml) through rustup-init 1.29.1 from the
 # versioned archive, checked against static.rust-lang.org's published sha256.
+# The thumbv7em-none-eabihf target links the twin's firmware (AET-WO-2100, R4).
 RUN curl -fsSLo /tmp/rustup-init https://static.rust-lang.org/rustup/archive/1.29.1/x86_64-unknown-linux-gnu/rustup-init \
  && echo "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71  /tmp/rustup-init" | sha256sum -c - \
  && chmod +x /tmp/rustup-init \
- && /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain 1.99.1 --component rustfmt,clippy \
+ && /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain 1.99.1 --component rustfmt,clippy --target thumbv7em-none-eabihf \
  && rm /tmp/rustup-init
 
 # Kani 0.68.0: the driver from crates.io (cargo checks the registry checksum)
