@@ -324,7 +324,7 @@ Names were read back from ERC's item descriptions and from the netlist, by node.
 
 ## Gates (spike half)
 
-On Furnace, at `44c1b60` with `origin/main` merged (`bfb847f`), every gate passes:
+On Furnace, at `d8066ec` with `origin/main` merged (`bfb847f`), every gate passes (only this file changes after it):
 - `cargo fmt --all -- --check`;
 - `cargo clippy --workspace --all-targets --locked -- -D warnings`, with and without `--features aethelgard-cli/with-tools`;
 - `cargo test --workspace --locked`.
