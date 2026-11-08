@@ -154,6 +154,9 @@ fn instance(peripheral: &str, facts: &RegisterFacts) -> Result<Instance, TwinErr
             added: false,
         });
     }
+    // belt-and-suspenders: every I2C and GPIO instance of the pinned H753
+    // header is stock, so this cannot fire today (mutant M15 survives); it
+    // stops a header with another one being emitted under the SPI model.
     if kind != Kind::Spi {
         return Err(TwinError::NotInRenode {
             peripheral: peripheral.to_owned(),

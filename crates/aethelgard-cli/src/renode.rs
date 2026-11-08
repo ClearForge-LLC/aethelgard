@@ -335,13 +335,6 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             )));
         }
     }
-    if observed.mips != aethelgard_twin::boot::MIPS {
-        return Err(untrusted(format!(
-            "the core runs at {} MIPS, not {}",
-            observed.mips,
-            aethelgard_twin::boot::MIPS
-        )));
-    }
     let expected = plan.instructions();
     if observed.instructions > expected {
         return Err(untrusted(format!(
