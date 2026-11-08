@@ -18,6 +18,8 @@ Each line is printed to the `tools` job's stderr as `AET-WO-1301 …` by `the_em
 
 ## Build
 
+**The grounds it consumes from 1300's FEEDBACK:** B2 (zones; none are emitted here, and the note for `1302` is below), B7 (the format version, `20260206`, measured) and B8 (the exposed pad, B1 below).
+
 **What was built (§1).**
 - **`aethelgard-eda`'s `pcb` module**, the board emitter:
   - each part's vendored `.kicad_mod` tree, given:
@@ -87,7 +89,7 @@ ICs are placed before passives because a passive's anchor must already be on the
 | B8 | The footprints' 3D `model` paths (`${KICAD10_3DMODEL_DIR}/…`) are kept as copied; no check reads them | `pcb.rs` | noted | none | no |
 
 **What `1302` should know.**
-- **Escape from the LQFP:** the pitch is 0.5 mm and the pads are 0.3 mm wide, so the gap between pads is 0.2 mm. Under the 0.2 mm floor (`FLOOR_NM`) no track passes between two pads, so every MCU net escapes straight out from its pad. Parts sit at least 0.5 mm, keep-out to keep-out, from the LQFP's courtyard. With both courtyards' margins, that leaves at least 1 mm between the LQFP's pad tips and any neighbour's copper. Of the MCU's 144 pads, 110 are single-pad `unconnected-…` nets, which need no route.
+- **Escape from the LQFP:** the pitch is 0.5 mm and the pads are 0.3 mm wide, so the gap between pads is 0.2 mm. Under the 0.2 mm floor (`FLOOR_NM`) no track passes between two pads, so every MCU net escapes straight out from its pad. Parts sit at least 0.5 mm, keep-out to keep-out, from the LQFP's courtyard. With both courtyards' margins, that leaves at least 1 mm between the LQFP's pad tips and any neighbour's copper. Of the MCU's 144 pads, 109 are single-pad `unconnected-…` nets, which need no route (U3's ALERT is the 110th on the board).
 - **The nets to route:** 13 nets, 78 pads, 65 ratsnest edges:
   - `VDD_3V3`: 29 pads;
   - `GND`: 23 pads;
@@ -163,7 +165,7 @@ None arose:
 
 ## Gates
 
-On Furnace at the PR's code head (`71ac1ea`):
+On Furnace at the PR's code head (the commit after `42a8402`, which records the board size past libtest's capture):
 - **Workspace gates:** pass. `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets --locked -- -D warnings`, with and without `--features aethelgard-cli/with-tools`; `cargo test --workspace --locked`.
 - **The `tools` job's steps in the pinned image**, run locally under rootless podman (`--network none`, `--pids-limit=-1`), at `1bc7b6b`: `cargo fmt`, `cargo clippy --features aethelgard-cli/with-tools` and `cargo test --workspace --features aethelgard-cli/with-tools` all pass, 39 suites, exit 0. Its `AET-WO-1301` lines:
   - `sentinel-01` and the S5-names board: 65 `unconnected_items` each, beyond them `[]`;

@@ -193,10 +193,15 @@ fn no_courtyards_overlap_and_every_one_is_inside_the_outline() {
             assert!(!ca.overlaps(*cb), "{a} and {b} overlap");
         }
     }
-    eprintln!(
-        "AET-WO-1301 board {} x {} mm",
-        sexpr::mm(edge.x1 - edge.x0),
-        sexpr::mm(edge.y1 - edge.y0)
+    // Past libtest's capture, so the run log records the size.
+    use std::io::Write;
+    let _ = std::io::stderr().lock().write_all(
+        format!(
+            "AET-WO-1301 board {} x {} mm\n",
+            sexpr::mm(edge.x1 - edge.x0),
+            sexpr::mm(edge.y1 - edge.y0)
+        )
+        .as_bytes(),
     );
 }
 
