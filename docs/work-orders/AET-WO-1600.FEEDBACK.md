@@ -1,10 +1,12 @@
 # AET-WO-1600 — FEEDBACK
 
-**Branch:** `wo/aet-1600-host-filter` · **Base:** `6525506` (PR #50) · **PR:** #51, unmerged · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Half:** spike, STOPPED for the architect's ruling. **The build half (§1) has not started:** the shipped filter, `socket_filter()` and its pinned test are unchanged, and nothing drops a capability.
+**Branch:** `wo/aet-1600-host-filter` · **Base:** `6525506` (PR #50), with `origin/main` at `3518ce8` (AET-WO-1400) merged in by merge commit `60b2f99` · **PR:** #51, unmerged · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Half:** spike and build. The spike was ruled on PR #51 (`~/.cache/aet-1600-ruling.md`), and the build follows the ruling.
 
 Entry schema: `finding · where (file:line) · type · recommendation · decision-needed`.
 
 ## Spike
+
+The build deleted the spike's files (F12). Every `spike/1600/` path and `results/` file below is at commit `5af33f1`.
 
 ### How it was measured
 
@@ -237,3 +239,173 @@ On the host, the probe already shows System V, `unshare` and `pidfd_open` refuse
 - **Furnace, at `910757c`:** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (with and without `--features aethelgard-cli/with-tools`) and `cargo test --workspace` all pass. `cargo test` was run with descriptors above 2 closed.
 - **CI:** run 42434959976, `gates` and `tools` green.
 - **Adversarial and reduction passes:** belong to the build half (WO §5, §5a), not run.
+
+## Build
+
+**`origin/main`.** At the ruling, `origin/main` was still `6525506`, so the first merge was a no-op. When AET-WO-1400 (`3518ce8`) landed, it merged by merge commit `60b2f99` with no conflicts. The root `Cargo.toml` keeps both sides: `exclude = ["boards"]`, and `rustix`'s `thread` feature. `cargo update --workspace --offline` locked 0 packages, so `Cargo.lock` is unchanged and `--locked` holds. The gates were re-run after the merge (below).
+
+### What was built, as ruled on PR #51
+
+- **The filter** (`crates/aethelgard-cli/src/run.rs`, `seccomp_filter`) is default-allow, 67 instructions. The x86_64, x32 and socket rules keep their meaning; they are the same instructions at new offsets.
+  - **Refused with `EPERM`:**
+    - the 27 numbers of S1 (in `DENIED`, after `socket` and the three `io_uring` calls);
+    - the six POSIX message-queue calls 240–245, added under F10 (below);
+    - `clone` with any bit of `0x7e020000` (`CLONE_NEW_MASK`).
+  - **`clone3` returns `ENOSYS`.**
+  - **Argument tests, added under F10:**
+    - `prlimit64` and `sched_setaffinity` are allowed for pid 0 and the tool's own pid only (`PID_TESTED`);
+    - `setpriority(PRIO_USER, …)` and `ioprio_set(IOPRIO_WHO_USER, …)` are refused.
+  - The program is assembled from labels, so the offsets are computed, not hand-counted. The pinned test still states every instruction literally.
+- **The capability drop** (`drop_capabilities`, called in `confine_main` after the filter and before the status line and exec). The order is F4's:
+  1. If `CAP_SETPCAP` is effective, empty the bounding set, iterating capability numbers until `EINVAL`.
+  2. Clear the ambient set.
+  3. `capset` E, P and I to empty.
+  4. Verify that E, P, I and ambient are empty, that the bounding set is empty if step 1 ran, and that `no_new_privs` is set.
+
+  Any failure writes `unavailable capabilities <reason>`, which the CLI turns into `SandboxUnavailable`, `id` `capabilities`, exit 4. `parse_status` already took any layer name, so it was not changed. A full bounding set on a host is not a refusal (F3).
+- **`rustix` `thread`:** one word in the root `Cargo.toml` (F5).
+- **Deleted:** `spike/1600/`, `tests/spike_1600.rs`, `examples/spike_1600_probe.rs`, and the `with-tools` seam (`run.rs` diffed to empty against `6525506` before the build started).
+
+### Tests (§1.3)
+
+- **Unit, in `run.rs`:**
+  - `seccomp_filter_is_exactly_this_program`: all 67 instructions as literal tuples. It was extended, not weakened.
+  - `the_filter_refuses_exactly_what_was_ruled_for_every_number` (F8). A classic-BPF interpreter runs the program over:
+    - every number 0–0xFFFF, under x86_64, i386, aarch64, an x32 arch value and 0, and with the x32 bit set;
+    - out-of-range numbers;
+    - every `clone` flag bit 0–63, with the high word ignored;
+    - every `socketpair` family 0–63 × type 0–15 × four flag combinations;
+    - the pid and `which` tests, with high-word noise.
+
+    The oracle is independent of the filter's own tables: the numbers come from `asm/unistd_64.h`, the mask from `linux/sched.h`, and `PRIO_USER` from `linux/resource.h` (`IOPRIO_WHO_USER` is an enum, so it is a literal). A missing header fails the test by name.
+  - `an_unavailable_line_is_sandbox_unavailable_naming_its_layer` now lists `capabilities` beside `seccomp` and `landlock`.
+- **Tier 1** (`tests/channels_tier1.rs`, run by `examples/sandbox_probe.rs` with `mode=channels` under the real CLI). Each test checks a control outside first:
+  - System V through `ipcmk` and `ipcrm` (`:113`);
+  - `unshare --user` (`:130`);
+  - `pidfd_open`, `pidfd_send_signal` and `pidfd_getfd` through `rustix` (`:142`). A plain descriptor gives `EBADF` outside and `EPERM` inside, so the last two are probed live even though `pidfd_open` is refused;
+  - threads and children still start, which is the `clone3` fallback (`:178`);
+  - the tool holds no capability (`:202`). As root in the image the caller holds capabilities and the tool's bounding set is 0, which pins F4's order;
+  - another process's `prlimit` and `sched_setaffinity` are refused and the tool's own are not (`:231`).
+
+  A missing helper fails by name, and no test is skipped. Two controls are asserted only outside a container, because Docker's own profile refuses the call there: `unshare` (S5) and `pidfd_getfd`'s `EBADF` (see the first push, below). The inside assertions are the same everywhere.
+- **The families with no safe live path** (F9): `setns`, `clone` with `CLONE_NEW*`, `ptrace`, `process_vm_*`, `kcmp`, the keyring calls, `bpf`, `perf_event_open`, `userfaultfd` and `mq_*`. They are covered by the interpreter and the pinned sequence. The adversarial pass then probed each of them live with raw-syscall harnesses outside the repository (below).
+- **The existing tests are unchanged.** `sockets_tier1.rs` passes byte-for-byte unchanged: `sandbox_probe`'s socket path only moved into a shared `report()`.
+
+**Mutation, sized to the guards this work order adds.** One mutant each, with `cargo test -p aethelgard-cli --bin aethelgard --test channels_tier1`. Each one was killed:
+
+| Mutant | Killed by |
+|---|---|
+| a `DENIED` entry removed | the compiler (`[_; 33]`) |
+| a `DENIED` number changed (434 → 433) | pinned, interpreter |
+| `clone3` → `EPERM` | pinned, interpreter |
+| the mask without NEWUSER | pinned, interpreter |
+| `drop_capabilities` not called | `the_tool_holds_no_capability` (host: Furnace's `CapInh` bit 35 survived) |
+| no `capset` | every `channels_tier1` test (re-run after the reduction pass): the verification refuses the call, because Furnace's `CapInh` bit is still held |
+| no bounding drop (image) | `the_tool_holds_no_capability`, in the image as root only |
+| `capset` before the bounding drop (image) | every tier-1 call refuses, in the image |
+| an `mq_*` number changed | pinned, interpreter |
+| pid 0 refused | every live probe, because glibc and Rust std call `prlimit64(0, …)` |
+| the self pid refused | pinned, interpreter. No live caller uses its own nonzero pid, which matches the census |
+| `PRIO_USER` → 1, `IOPRIO_WHO_USER` → 2 | pinned, interpreter |
+| the pid tests removed | the live `another_process…` test, pinned, interpreter |
+
+### The first push after the ruling was red
+
+Acceptance §3, "CI is green on the first push after the ruling", **was missed.** Run 42436941586 at `53651ef`: `gates` was green, but `tools` failed in `pidfd_calls_are_refused_inside_and_reach_the_kernel_outside`.
+- The outside control expected `EBADF` from `pidfd_getfd` on a plain descriptor. Docker's default profile refuses `pidfd_getfd` without `CAP_SYS_PTRACE`, so the control got `EPERM`.
+- The spike had measured exactly this (S5: `pidfd_getfd=errno=1` in the image). I wrote the control without applying my own measurement. Podman allows the call, so my Furnace pre-run did not catch it.
+- Fix `f6c9abf`: the control is asserted on a host only; the inside assertion is unchanged. Because cargo stops at the first failing test binary, tier 2 did not run in that job.
+
+### Adversarial pass (§5, full, with F10)
+
+A fresh subagent (Opus) ran it on `53651ef`, on the Furnace host (ABI 8) and as root in the pinned image under three podman variants: the default, `--cap-drop SETPCAP`, and `--cap-add ALL` with seccomp unconfined. Its harnesses are in `~/.cache/aet-1600-adv/`, outside the repository: Python ctypes raw-syscall stand-ins, an outside same-uid victim, and clones pinned at `53651ef`, including a no-`.scope()` emulation and an always-failing drop. Its claim of the `RLIMIT_CPU` kill had no saved output, so I reproduced it myself on `53651ef`. I spot-checked the rest against its `out/` files.
+
+**Findings, and what was done (the F10 clause: a plain number, or an argument test that leaves pid 0 and self allowed, with tier 2 still 16/16):**
+
+- **A1 · HIGH, fixed. `prlimit64` on another same-uid pid kills it past Landlock's signal scoping.**
+  - Reproduced: inside the sandbox `kill` and `tgkill` to an outside victim gave `EPERM` (`scoped: true`), yet `prlimit64(victim, RLIMIT_CPU, 1)` was `ok`, and the victim died with status 137. `prlimit_set_victim_nofile=ok` also took the victim's NOFILE limit from 524288 to 64.
+  - It reaches any same-uid pid, guessable without /proc: the CLI, the reaper, the operator's tmux and agent sessions.
+  - **Fix:** `prlimit64` is allowed only for pid 0 or the tool's own pid. **What "self" means:** the trampoline's pid, baked in at install; the exec keeps it. The tool's children and threads are not "self" by this test. The census shows every `prlimit64` call from every tool used pid 0 (1925 of 1925), the idiom glibc's `setrlimit` and Rust std use.
+  - Live test at `channels_tier1.rs:231`. Tier 2 16/16 in the image.
+- **A2 · MEDIUM, partly fixed; the rest needs a ruling. Scheduling, nice and I/O priority of another same-uid process.**
+  - At ABI 8 these all succeeded on an outside victim: `setpriority`, `sched_setaffinity`, `sched_setscheduler`, `sched_setparam`, `sched_setattr` and `ioprio_set`. The victim went to nice 19, `SCHED_BATCH`, affinity cpu 0 and ioprio idle. A user cannot undo nice 19.
+  - The user-wide forms were measured only in the container, where the pid namespace bounds them: `setpriority(PRIO_USER)` and `ioprio_set(IOPRIO_WHO_USER)` reniced a capless victim. On a host they would hit every process of the uid at once. They were not run on the host, by design.
+  - **Fixed:**
+    - `sched_setaffinity`: pid 0 or the tool's own pid, the same test as A1. The census shows 54 of 54 calls at pid 0.
+    - `setpriority(PRIO_USER, …)` and `ioprio_set(IOPRIO_WHO_USER, …)` refused for any `who`. With `PRIO_USER`, `who` = 0 means "my uid", not "pid 0", so this refuses no pid-0 or self form.
+  - **Not fixed: the per-pid forms of `setpriority`, `ioprio_set` and `sched_setscheduler`, plus `sched_setparam` and `sched_setattr`.** The tools call these on their own threads' ids: KiCad's workers call `setpriority(PRIO_PROCESS, own_tid, 10)`, and Renode and KiCad call `sched_setscheduler(own_tid, …)` (the spike's image trace). BPF cannot compare an argument with the caller's tid, so no test can leave "self" allowed for a thread. That is beyond F10's clause.
+  - `sched_setparam` and `sched_setattr` alone would close nothing while `sched_setscheduler` stays open, so they were not added.
+  - **Decision needed:** whether to accept these as a residual (interference only: priority and placement, no data), or rule a different mechanism.
+- **A3 · MEDIUM-LOW, fixed. POSIX message queues.** Landlock refused `mq_open` (`EACCES`), but `O_CREAT` still created the queue in the host's namespace. `/dev/mqueue/aetadv-inside` and a squatted name persisted after the call. `mq_unlink` deleted a queue made outside. My own reproduction left `/dev/mqueue/aetadv-inside` behind; I removed it. **Fix:** 240–245 are plain-number `EPERM` denials. No tool makes an `mq_*` call (the census). Covered by the interpreter.
+- **A4 · residual, already accepted. Signals below Landlock ABI 6.**
+  - In the no-scope emulation, `kill`, `tgkill`, `rt_sigqueueinfo` and an `F_SETOWN`/`F_SETSIG` SIGIO all reached the victim. At ABI 8 the same calls give `EPERM`, or the signal is never delivered. The verdict reports this as `sandbox.scoped`.
+  - It cannot be denied by number: Renode calls `tgkill`, cargo `kill`s its children, and other pids cannot be named.
+  - In the emulation the verdict still said `scoped: true`, because `from_abi` reads the kernel's ABI. A real ABI-5 kernel reports `false`. That is an artefact of the emulation, not a defect.
+- **A5 · LOW, recorded only.** In the image, where `/proc` has no `hidepid`, the `renode` persona reads other processes' `cmdline` and `status` and the CLI's descriptor numbers. On Furnace, `/proc` is `hidepid=invisible`, and the sandbox sees only its own pid. `/proc/sysvipc/shm` lists the host's segments, and other processes' limits can be read. All of this is read-only information.
+
+**What held**, live, on the host and in all three image variants:
+- **Refused with `EPERM`:**
+  - System V, including `shmat` on a segment made outside;
+  - `unshare`, `setns`, and `clone` with `CLONE_NEWUSER`, including with an all-ones high word;
+  - `pidfd_*`, `ptrace` attach and traceme, `process_vm_readv`, `kcmp`;
+  - the keyring calls, `bpf`, `perf_event_open`, `userfaultfd`.
+- **`clone3`:** `ENOSYS`, with or without `CLONE_NEWUSER`.
+- **Landlock:** refused `/proc/<pid>/mem`, `environ` and `fd`; `migrate_pages` and `move_pages` refused by its ptrace hook.
+- **Architecture and ABI:**
+  - an x32 call and `int 0x80` are both killed by SIGSYS. Unsandboxed, `int 0x80` getpid returned the pid;
+  - with a high word on the number, the low word decides, for the kernel and the filter alike;
+  - an all-ones high word on `socketpair`'s arguments is judged by the low word.
+- **The hand review of the BPF** agrees on every jump, the arch-first order and the argument offsets. Its one critique: the interpreter shares the program's layout of `seccomp_data`, so it cannot check the offsets independently. The live high-word probes do check them, and so does the new live pid test.
+- **Capabilities:**
+  - On the host the tool has E, P, I and ambient all 0, with `CapInh` bit 35 cleared, the bounding set full, and `NoNewPrivs` 1.
+  - A setuid-root `passwd` run inside kept uid 1001 and `CapEff` 0.
+  - A file-capability `ping` gained nothing.
+  - In the image: everything is 0, including the bounding set. Under `--cap-drop SETPCAP` the bounding set stays, as ruled, while E, P, I, A are 0 and a re-exec'd root shell gets nothing.
+  - The always-failing drop answers `SandboxUnavailable`, `capabilities`, exit 4, and the tool never ran (`INV-06`).
+- **Not run:** an outside `su` or `passwd` control. The auto-mode classifier denied it, so the setuid fact rests on `stat`.
+
+### Calls each tool needs, after the build
+
+None of the refused or tested calls. The tier-2 suite gives 16/16 under the final filter and drop, in the image under podman, and in CI (below). `clone3` returns `ENOSYS`, and every tool falls back to `clone`.
+
+### Whether the host can be named a supported boundary for tool subcommands
+
+**The architect's call at close-out.** The evidence:
+- every channel in the WO's list, and F10's queues, limits and user-wide priority, is now refused on a host;
+- the capability drop holds;
+- tier 2 is unaffected.
+
+What remains open on a host: A2's per-pid scheduling and nice interference (the decision above), and A4 (signals below ABI 6, reported as `sandbox.scoped: false`).
+
+### Reduction pass (§5a)
+
+A fresh subagent ran it read-only over `git diff 3518ce8 HEAD -- Cargo.toml crates/`, and I applied all nine findings:
+- **Three subsumed tests removed:**
+  - `every_jump_lands_on_the_return_it_names`: its every assertion is a function of the `jt`/`jf` bytes the pinned test fixes, and the interpreter checks behaviour;
+  - the self-exec `drop_capabilities` test: it repeated the function's own verification, and tier 1 catches a broken drop;
+  - the `capabilities` status-line test, folded into the layer loop.
+- `socket` and `io_uring` joined `DENIED`. The program is byte-identical, which the pinned test confirms.
+- One `sleeper()` helper replaces three copies.
+- The probe opens its pidfd on the outside victim instead of spawning a child.
+- Two impossible `Err` arms now exit.
+- A restated doc bullet and two wrapper closures are gone.
+- The stale `parse_status` comment now names the `capabilities` layer.
+
+Kept as deliberate redundancy:
+- the pinned sequence;
+- the interpreter's own name list and its header-derived oracle;
+- the probe's `helper` versus the test's `outside`;
+- the probe's `mask` versus `run.rs`'s `each`. These two pairs live in separate targets, and sharing them would add a layer.
+
+**Proof:**
+- the unit, tier-1 and full suites are green on the host and in the image;
+- tier 2 is 16/16;
+- the mutants whose catching tests were cut were re-run with `--no-fail-fast`, and each was still killed: no `capset`, drop not called, `pidfd_open` renumbered.
+
+## Gates (build)
+
+- **Reduction pass (diff):** −90 net · 7 duplicates removed · 3 dead paths removed · 4 protected kept · 0 findings below.
+- **Furnace, at the reduction commit:**
+  - `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, and `cargo test --workspace --locked --no-fail-fast` all pass. `cargo test` was run with descriptors above 2 closed.
+  - CI's own `tools` commands, inside the pinned image under rootless podman (`--pids-limit=-1`), also pass: 33 test binaries green, tier 2 16/16, `channels_tier1` 6/6, and AET-WO-1400's `board_tier2`.
+- **CI:** filled in from the run on this push (below).
