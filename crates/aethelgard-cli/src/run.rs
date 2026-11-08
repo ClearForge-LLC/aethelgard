@@ -38,6 +38,11 @@ use rustix::process::{
 };
 use seccompiler::{BpfProgram, apply_filter, sock_filter};
 
+// AET-WO-1600 spike seam (tier 2 only; the build deletes it).
+#[cfg(feature = "with-tools")]
+#[path = "../../../spike/1600/hook.rs"]
+pub mod spike_1600;
+
 use crate::{EXIT_TOOL_ERROR, EXIT_TOOL_UNAVAILABLE, EXIT_UNREADABLE};
 
 /// The argument that tells the reaper and the guardian the CLI's pid.
@@ -285,6 +290,8 @@ impl Invocation<'_> {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .process_group(0);
+        #[cfg(feature = "with-tools")]
+        spike_1600::forward(&mut cmd);
         let mut child = cmd.spawn().map_err(|e| {
             Stop::tool_error(self.tool.name, format!("cannot start the reaper: {e}"))
         })?;
@@ -638,12 +645,21 @@ pub fn confine_main(args: &[OsString]) -> ! {
         let _ = writeln!(status, "unavailable seccomp {e}");
         exit(0);
     }
+    #[cfg(feature = "with-tools")]
+    if let Err(e) = spike_1600::install() {
+        let _ = writeln!(status, "unavailable seccomp spike-1600 {e}");
+        exit(0);
+    }
     let _ = writeln!(status, "sandbox abi={}", sandbox.landlock_abi);
     let (program, tool_args) = internal
         .tool
         .split_first()
         .expect("parse_internal checked the tool");
-    let err = Command::new(program).args(tool_args).exec();
+    let mut tool = Command::new(program);
+    tool.args(tool_args);
+    #[cfg(feature = "with-tools")]
+    tool.env_remove(spike_1600::VAR);
+    let err = tool.exec();
     let _ = writeln!(status, "spawn-error {err}");
     exit(127);
 }

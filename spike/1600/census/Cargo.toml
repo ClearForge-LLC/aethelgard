@@ -1,0 +1,12 @@
+# AET-WO-1600 spike S3: reads `strace -f` output and lists the distinct system
+# calls each tool made. std only, its own [workspace]. The build deletes it.
+[package]
+name = "aet-1600-census"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[lints.rust]
+unsafe_code = "forbid"
