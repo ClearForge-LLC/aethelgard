@@ -129,6 +129,13 @@ P0 ──> P1 ──> P2 ──> P3
 - `AET-WO-1303` — reserved, split from `1302`'s first line: parasitic extraction from the router's own geometry, for P2's twin (`AET-WO-2200`). **Its first step is `route::read` + `connectivity`:** it derives every net from copper connectivity to pads, and refuses a board whose labels disagree (ruled on PR #60, A2 and A3).
 - `AET-WO-1304` — **merged (PR #62)**, build-only, cheap tier: KiCad's 17 vendored files move with `git mv` into a data-only crate, `aethelgard-kicad-lib` (`CC-BY-SA-4.0`). `aethelgard-eda` keeps the sha256 pins and becomes `MIT OR Apache-2.0` (`RUL-11`, amended at Scotty's direction). No emitted byte changes. It serves the launch clause, because crates.io shows every crate's licence.
 - `AET-WO-1700` — **merged (PR #63)**, build-only, cheap tier: the README's quickstart. **The launch clause's first half holds.** It is one marked `bash` block that pulls the engine image by digest, fetches the reference specification pinned by hash, and shows clause 1 (ERC and DRC pass) and clause 2 (`PinClaimedTwice` naming both claimants). A `quickstart` workflow extracts that block byte for byte and runs it on a runner that has only Docker. It is the first half of the launch-readiness clause. The crates.io half needs Scotty's token (§3).
+- `AET-WO-1800` — written 2026-11-08, build-only, cheap tier. It makes every publishable crate package:
+  - path dependencies gain versions, and every crate gains its metadata;
+  - the licence and notice files go inside each `.crate`;
+  - a `gates` step packages the crates in dependency order and builds the CLI from the packages;
+  - `docs/releasing.md` gives Scotty the ordered first-publish commands.
+
+  `aethelgard-evolve` is a stub, so it is `publish = false` (RFC 3463). The CLI stays `aethelgard-cli`, with the binary `aethelgard`. It prepares the crates.io half of the launch clause.
 - `AET-WO-1400` — **merged (PR #42)**, spike ruled on PR #42 (`OQ-04` answered yes, `RUL-04` amended to a dependency-free crate beside `embassy`), built: the generated typestate board crate (`RUL-04`), generated from `SolvedTopology` in `aethelgard-svd-hal`. The tools image has no `thumbv7em` target, so the spike measures what adding one would take, and proposes it for a ruling. The spike answers `OQ-04` with a harness over a harness-owned register image that catches one seeded typestate bug, or shows that it cannot, and records which. **The proof harness is generated from the specification, never taken from the crate under proof** (`INV-07`). `prove` reads Kani's exit 0 honestly, but a crate that supplies its own trivial harness earns that exit 0 legitimately. The harness is named by its full path, so `prove` always passes `--exact`. Argon raised this at its review of `main` at 9818c4f.
 - `AET-WO-1500` — the `aethelgard mcp` subcommand: `rmcp` over stdio, with the tool list generated from the command tree so the CLI and MCP surfaces cannot drift (`RUL-10`). Written, build-only. Depends on `AET-WO-0300a` and `AET-WO-0300b`, both merged.
   - **Calls.** Each tool call runs the binary itself, as a child, with an argument vector built only from that subcommand's declared arguments. So `mcp` maps every tool to a `clap` subcommand and never forwards raw arguments (`architecture.md` §6), and every call keeps the CLI's sandbox and exit codes.
@@ -304,6 +311,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | 2026-11-08 | §5 | `AET-WO-1700` written: the quickstart, run verbatim in CI | the launch-readiness clause |
 | 2026-11-08 | §5, §6, §7 | `AET-WO-1304` and `AET-WO-2100` reconciled. Three cadence lessons added. The twin boots | PRs #62 and #56 |
 | 2026-11-08 | §5, §7 | `AET-WO-1700` reconciled. **P1's exit gate: every clause holds except the crates.io half of the launch clause,** which needs Scotty's crates.io token for the first publish (§3) | PR #63 |
+| 2026-11-08 | §5 | `AET-WO-1800` written: publish readiness | the crates.io half of the launch clause |
 
 ## 9. Provenance
 
