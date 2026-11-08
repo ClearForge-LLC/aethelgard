@@ -133,17 +133,20 @@ pub fn prepare(text: &str, setup: &str) -> Result<String, BoardRefusal> {
         .map(|c| (c, String::new()))
         .collect();
     while let Some((item, within)) = stack.pop() {
+        // What carries the item, for a refusal's `id`.
+        let at = || {
+            if within.is_empty() {
+                "the board".to_owned()
+            } else {
+                within.clone()
+            }
+        };
         // KiCad's keywords are lowercase atoms; a quoted, upper-case or
         // missing head is refused rather than guessed at (`CLEARANCE`, or
         // `("clearance" …)`, measured: KiCad will not load them).
         if !matches!(item.items().first(), Some(Sx::Atom(a)) if !a.bytes().any(|b| b.is_ascii_uppercase()))
         {
-            let at = if within.is_empty() {
-                "the board".to_owned()
-            } else {
-                within
-            };
-            return Err(BoardRefusal::OddList(at));
+            return Err(BoardRefusal::OddList(at()));
         }
         let here = name(item, &within).unwrap_or_else(|| within.clone());
         match item.head() {
@@ -154,24 +157,14 @@ pub fn prepare(text: &str, setup: &str) -> Result<String, BoardRefusal> {
                 if !(item.items().len() == 2
                     && matches!(item.arg(1), Some("outline" | "convexhull"))) =>
             {
-                let at = if within.is_empty() {
-                    "the board".to_owned()
-                } else {
-                    within
-                };
-                return Err(BoardRefusal::LocalClearance(at));
+                return Err(BoardRefusal::LocalClearance(at()));
             }
             Some("net_class") => {
                 let class = item.arg(1).unwrap_or("?");
                 return Err(BoardRefusal::NetClass(format!("net class {class}")));
             }
             Some(token) if waives(item) => {
-                let at = if within.is_empty() {
-                    "the board".to_owned()
-                } else {
-                    within
-                };
-                return Err(BoardRefusal::Waiver(format!("{at} ({token})")));
+                return Err(BoardRefusal::Waiver(format!("{} ({token})", at())));
             }
             _ => {}
         }

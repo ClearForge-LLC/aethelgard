@@ -120,16 +120,37 @@ enum Token<'a> {
     Str(String),
 }
 
-/// The tokens of `src`, each list bracket with its byte offset.
+/// The tokens of `src`, each list bracket with its byte offset. The scan
+/// refuses every byte sequence KiCad 10.0.7's reader could read differently
+/// from this one (`AET-WO-1300` adversarial pass, measured in the tools
+/// image):
+/// - a control or non-ASCII byte outside a string, since KiCad treats NUL as
+///   whitespace;
+/// - a raw line break or control byte inside a string;
+/// - a line whose first non-blank byte is `#`, which KiCad skips;
+/// - a `"` that touches an atom, which KiCad keeps in the token.
+///
+/// What remains is read the same way by both, so a scan of these tokens is a
+/// scan of what KiCad reads.
 fn tokens(src: &str) -> impl Iterator<Item = Result<Token<'_>, SexprError>> {
     let bytes = src.as_bytes();
+    let separator = |b: u8| matches!(b, b' ' | b'\t' | b'\n' | b'\r' | b'(' | b')');
     let mut pos = 0;
+    let mut line_start = true;
     std::iter::from_fn(move || {
-        while pos < bytes.len() && matches!(bytes[pos], b' ' | b'\t' | b'\n' | b'\r') {
+        while let Some(&b) = bytes.get(pos) {
+            match b {
+                b'\n' | b'\r' => line_start = true,
+                b' ' | b'\t' => {}
+                _ => break,
+            }
             pos += 1;
         }
         let start = pos;
         let c = *bytes.get(pos)?;
+        if std::mem::take(&mut line_start) && c == b'#' {
+            return Some(Err(SexprError::CommentLine(start)));
+        }
         pos += 1;
         Some(match c {
             b'(' => Ok(Token::Open(start)),
@@ -141,102 +162,55 @@ fn tokens(src: &str) -> impl Iterator<Item = Result<Token<'_>, SexprError>> {
                         return Some(Err(SexprError::UnterminatedString(start)));
                     };
                     pos += 1;
-                    match b {
-                        b'"' => break,
-                        b'\\' => {
-                            let Some(&e) = bytes.get(pos) else {
-                                return Some(Err(SexprError::UnterminatedString(start)));
-                            };
-                            pos += 1;
-                            s.push(match e {
-                                b'n' => b'\n',
-                                b'r' => b'\r',
-                                b't' => b'\t',
-                                other => other,
-                            });
+                    let b = if b == b'\\' {
+                        let Some(&e) = bytes.get(pos) else {
+                            return Some(Err(SexprError::UnterminatedString(start)));
+                        };
+                        pos += 1;
+                        if e < 0x20 || e == 0x7f {
+                            return Some(Err(SexprError::ControlInString(start)));
                         }
-                        other => s.push(other),
-                    }
+                        match e {
+                            b'n' => b'\n',
+                            b'r' => b'\r',
+                            b't' => b'\t',
+                            other => other,
+                        }
+                    } else if b == b'"' {
+                        break;
+                    } else if (b < 0x20 && b != b'\t') || b == 0x7f {
+                        return Some(Err(SexprError::ControlInString(start)));
+                    } else {
+                        b
+                    };
+                    s.push(b);
+                }
+                if bytes.get(pos).is_some_and(|&next| !separator(next)) {
+                    return Some(Err(SexprError::QuoteInAtom(pos - 1)));
                 }
                 String::from_utf8(s)
                     .map(Token::Str)
                     .map_err(|_| SexprError::NotUtf8(start))
             }
-            _ => {
-                while pos < bytes.len() && !b"()\" \t\n\r".contains(&bytes[pos]) {
-                    pos += 1;
+            0x21..=0x7e => {
+                while let Some(&b) = bytes.get(pos) {
+                    match b {
+                        b'"' => return Some(Err(SexprError::QuoteInAtom(pos))),
+                        0x21..=0x7e if !separator(b) => pos += 1,
+                        b if separator(b) => break,
+                        _ => return Some(Err(SexprError::ForbiddenByte(pos))),
+                    }
                 }
                 Ok(Token::Atom(&src[start..pos]))
             }
+            _ => Err(SexprError::ForbiddenByte(start)),
         })
     })
-}
-
-/// Refuses every byte sequence KiCad 10.0.7's reader could read differently
-/// from this one (`AET-WO-1300` adversarial pass, measured in the tools
-/// image): a control byte outside a string (KiCad treats NUL as whitespace),
-/// a non-ASCII byte outside a string, a raw line break or control byte inside
-/// a string, a line whose first non-blank byte is `#` (KiCad skips it), and a
-/// `"` that touches an atom (KiCad keeps it in the token). What remains is
-/// read the same way by both, so a scan of it is a scan of what KiCad reads.
-pub fn lexically_plain(src: &str) -> Result<(), SexprError> {
-    let bytes = src.as_bytes();
-    let separator = |b: u8| matches!(b, b' ' | b'\t' | b'\n' | b'\r' | b'(' | b')');
-    let mut line_start = true;
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if line_start && b == b'#' {
-            return Err(SexprError::CommentLine(i));
-        }
-        match b {
-            b'\n' | b'\r' => line_start = true,
-            b' ' | b'\t' => {}
-            b'"' => {
-                if i > 0 && !separator(bytes[i - 1]) {
-                    return Err(SexprError::QuoteInAtom(i));
-                }
-                let start = i;
-                i += 1;
-                loop {
-                    let Some(&c) = bytes.get(i) else {
-                        return Err(SexprError::UnterminatedString(start));
-                    };
-                    match c {
-                        b'"' => break,
-                        b'\\' => {
-                            i += 1;
-                            if bytes.get(i).is_some_and(|&e| e < 0x20 || e == 0x7f) {
-                                return Err(SexprError::ControlInString(start));
-                            }
-                        }
-                        c if c < 0x20 && c != b'\t' => {
-                            return Err(SexprError::ControlInString(start));
-                        }
-                        0x7f => return Err(SexprError::ControlInString(start)),
-                        _ => {}
-                    }
-                    i += 1;
-                }
-                if let Some(&next) = bytes.get(i + 1)
-                    && !separator(next)
-                {
-                    return Err(SexprError::QuoteInAtom(i));
-                }
-                line_start = false;
-            }
-            0x21..=0x7e => line_start = false,
-            _ => return Err(SexprError::ForbiddenByte(i)),
-        }
-        i += 1;
-    }
-    Ok(())
 }
 
 /// Reads one top-level list, iteratively, refusing nesting past
 /// [`MAX_DEPTH`].
 pub fn parse(src: &str) -> Result<Sx, SexprError> {
-    lexically_plain(src)?;
     let mut count = 0usize;
     let mut stack: Vec<Vec<Sx>> = vec![Vec::new()];
     for token in tokens(src) {

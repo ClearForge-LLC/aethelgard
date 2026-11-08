@@ -82,6 +82,17 @@ fn a_raw_line_break_inside_a_string_and_non_ascii_outside_one_are_refused() {
         refused("(kicad_pcb (gr_text \"a\nb\" (at 0 0)))"),
         BoardRefusal::Malformed(SexprError::ControlInString(_))
     ));
+    // A control byte escaped by a backslash is still a control byte.
+    for escaped in ["\\\n", "\\\0", "\\\u{7f}"] {
+        let board = format!("(kicad_pcb (gr_text \"a{escaped}b\" (at 0 0)))");
+        assert!(
+            matches!(
+                refused(&board),
+                BoardRefusal::Malformed(SexprError::ControlInString(_))
+            ),
+            "{board:?}"
+        );
+    }
     assert!(matches!(
         refused("(kicad_pcb (gr_text \u{e9} (at 0 0)))"),
         BoardRefusal::Malformed(SexprError::ForbiddenByte(_))
