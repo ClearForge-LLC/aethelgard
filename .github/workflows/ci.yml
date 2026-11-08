@@ -102,7 +102,7 @@ jobs:
           cfg=()
           for c in $crates; do
             tar -xzf "target/package/$c-0.1.0.crate" -C "$un"
-            cfg+=(--config "patch.crates-io.$c.path='$un/$c-0.1.0'")
+            cfg+=(--config "patch.crates-io.$c.path=\"$un/$c-0.1.0\"")
           done
           cargo install --path "$un/aethelgard-cli-0.1.0" --locked --offline --root "$un/root" "${cfg[@]}"
           "$un/root/bin/aethelgard" validate < examples/sentinel-01-minimal.json
