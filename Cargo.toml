@@ -26,6 +26,7 @@ unsafe_code = "forbid"
 [workspace.dependencies]
 aethelgard-ir = { path = "crates/aethelgard-ir" }
 aethelgard-svd-hal = { path = "crates/aethelgard-svd-hal" }
+aethelgard-twin = { path = "crates/aethelgard-twin" }
 aethelgard-eda = { path = "crates/aethelgard-eda" }
 aethelgard-kicad-lib = { path = "crates/aethelgard-kicad-lib" }
 clap = { version = "4", features = ["derive"] }

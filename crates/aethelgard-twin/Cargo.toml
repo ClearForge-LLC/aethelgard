@@ -8,6 +8,12 @@ repository.workspace = true
 
 [dependencies]
 aethelgard-ir.workspace = true
+# The register facts (AET-WO-2100, ruled on PR #56, R6).
+aethelgard-svd-hal.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true

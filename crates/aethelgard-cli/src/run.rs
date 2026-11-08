@@ -95,6 +95,16 @@ impl Stop {
             message,
         }
     }
+    /// An input read but refused by name before any tool runs (exit 3), such
+    /// as `simulate`'s `MalformedFirmware`.
+    pub fn refused(kind: &'static str, message: String) -> Self {
+        Self {
+            code: EXIT_UNREADABLE,
+            kind,
+            id: None,
+            message,
+        }
+    }
     pub fn missing(tool: &str) -> Self {
         Self {
             code: EXIT_TOOL_UNAVAILABLE,
@@ -207,6 +217,24 @@ impl SandboxReport {
 pub enum Ended {
     Code(i32),
     Signal(i32),
+    /// The reaper killed the tool at a bound (`run_bounded` only).
+    Bounded(Bound),
+}
+
+/// Which bound a bounded run exceeded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Bound {
+    Wall,
+    Memory,
+}
+
+/// A wall-clock bound and a resident-memory cap on a tool's process tree,
+/// which the reaper enforces (`RUL-13` as amended for `simulate --firmware`,
+/// ruled on PR #56, B1). Only `Invocation::run_bounded` sets them.
+#[derive(Debug, Clone, Copy)]
+pub struct Bounds {
+    pub wall: Duration,
+    pub rss_kib: u64,
 }
 
 pub struct Output {
@@ -232,6 +260,10 @@ impl Output {
             Ended::Signal(sig) => Err(Stop::tool_error(
                 tool,
                 format!("{tool} was killed by signal {sig}"),
+            )),
+            Ended::Bounded(bound) => Err(Stop::tool_error(
+                tool,
+                format!("{tool} was killed at its {bound:?} bound"),
             )),
         }
     }
@@ -265,6 +297,16 @@ pub struct Invocation<'a> {
 impl Invocation<'_> {
     /// Runs the tool through the reaper and waits for it.
     pub fn run(&self) -> Result<Output, Stop> {
+        self.start(None)
+    }
+
+    /// As `run`, with the reaper killing the tool's tree past `bounds`, which
+    /// it then reports as `Ended::Bounded`.
+    pub fn run_bounded(&self, bounds: Bounds) -> Result<Output, Stop> {
+        self.start(Some(bounds))
+    }
+
+    fn start(&self, bounds: Option<Bounds>) -> Result<Output, Stop> {
         let me = env::current_exe().map_err(|e| {
             Stop::tool_error(self.tool.name, format!("cannot find this executable: {e}"))
         })?;
@@ -274,6 +316,12 @@ impl Invocation<'_> {
             .arg(std::process::id().to_string())
             .arg("--status")
             .arg(&self.status);
+        if let Some(b) = bounds {
+            cmd.arg("--wall-ms")
+                .arg(b.wall.as_millis().to_string())
+                .arg("--rss-kib")
+                .arg(b.rss_kib.to_string());
+        }
         let system = SYSTEM_DIRS.iter().map(PathBuf::from);
         for p in system.chain(self.read_only.iter().cloned()) {
             cmd.arg("--ro").arg(p);
@@ -384,6 +432,8 @@ fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop
         .and_then(|rest| match rest.split_once('=') {
             Some(("code", v)) => v.parse().ok().map(Ended::Code),
             Some(("signal", v)) => v.parse().ok().map(Ended::Signal),
+            Some(("bound", "wall")) => Some(Ended::Bounded(Bound::Wall)),
+            Some(("bound", "memory")) => Some(Ended::Bounded(Bound::Memory)),
             _ => None,
         })
         .ok_or_else(|| {
@@ -400,6 +450,7 @@ fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop
 struct Internal {
     cli_pid: u32,
     status: PathBuf,
+    bounds: Option<Bounds>,
     read_only: Vec<PathBuf>,
     read_write: Vec<PathBuf>,
     tool: Vec<OsString>,
@@ -417,6 +468,13 @@ pub(crate) fn pid_arg(arg: &OsStr) -> Option<u32> {
 
 fn parse_internal(args: &[OsString]) -> Internal {
     let (mut cli_pid, mut status) = (None, None);
+    let (mut wall_ms, mut rss_kib) = (None, None);
+    let number = |a: Option<&OsString>| -> u64 {
+        a.and_then(|a| a.to_str())
+            .filter(|s| !s.starts_with('0') && s.bytes().all(|b| b.is_ascii_digit()))
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| exit(64))
+    };
     let (mut read_only, mut read_write, mut tool) = (Vec::new(), Vec::new(), Vec::new());
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -430,6 +488,8 @@ fn parse_internal(args: &[OsString]) -> Internal {
                 );
             }
             Some("--status") => status = it.next().map(PathBuf::from),
+            Some("--wall-ms") if wall_ms.is_none() => wall_ms = Some(number(it.next())),
+            Some("--rss-kib") if rss_kib.is_none() => rss_kib = Some(number(it.next())),
             Some("--ro") => read_only.extend(it.next().map(PathBuf::from)),
             Some("--rw") => read_write.extend(it.next().map(PathBuf::from)),
             Some("--") => {
@@ -439,10 +499,19 @@ fn parse_internal(args: &[OsString]) -> Internal {
             _ => exit(64),
         }
     }
+    let bounds = match (wall_ms, rss_kib) {
+        (Some(ms), Some(kib)) => Some(Bounds {
+            wall: Duration::from_millis(ms),
+            rss_kib: kib,
+        }),
+        (None, None) => None,
+        _ => exit(64),
+    };
     match (cli_pid, status) {
         (Some(cli_pid), Some(status)) if !tool.is_empty() => Internal {
             cli_pid,
             status,
+            bounds,
             read_only,
             read_write,
             tool,
@@ -475,6 +544,8 @@ pub fn reaper_main(args: &[OsString]) -> ! {
         exit(70);
     };
     let tool_group = Pid::from_child(&child);
+    let started = Instant::now();
+    let mut tick: u32 = 0;
     loop {
         match child.try_wait() {
             Ok(Some(ended)) => {
@@ -503,8 +574,77 @@ pub fn reaper_main(args: &[OsString]) -> ! {
             kill_descendants();
             exit(70);
         }
+        if let Some(b) = internal.bounds {
+            // The memory is read every fifth tick (100 ms): a full /proc scan.
+            let over = if started.elapsed() > b.wall {
+                Some("wall")
+            } else if tick.is_multiple_of(5) && tree_rss_kib() > b.rss_kib {
+                Some("memory")
+            } else {
+                None
+            };
+            if let Some(which) = over {
+                let _ = kill_process_group(tool_group, Signal::KILL);
+                let _ = child.wait();
+                kill_descendants();
+                let appended = fs::OpenOptions::new()
+                    .append(true)
+                    .open(&internal.status)
+                    .and_then(|mut f| writeln!(f, "ended bound={which}"));
+                exit(if appended.is_ok() { 0 } else { 70 });
+            }
+            tick = tick.wrapping_add(1);
+        }
         thread::sleep(Duration::from_millis(20));
     }
+}
+
+/// The resident memory, in KiB, of every process descended from this one: the
+/// tool's whole tree, since this process is its subreaper.
+fn tree_rss_kib() -> u64 {
+    let mut parent = std::collections::BTreeMap::new();
+    for entry in fs::read_dir("/proc").into_iter().flatten().flatten() {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|n| n.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Ok(stat) = fs::read_to_string(entry.path().join("stat")) else {
+            continue;
+        };
+        // `pid (comm) state ppid …`; comm may hold spaces or parens.
+        if let Some(ppid) = stat
+            .rsplit_once(')')
+            .and_then(|(_, rest)| rest.split_whitespace().nth(1))
+            .and_then(|p| p.parse::<u32>().ok())
+        {
+            parent.insert(pid, ppid);
+        }
+    }
+    let me = std::process::id();
+    let descends = |mut pid: u32| {
+        for _ in 0..64 {
+            match parent.get(&pid) {
+                Some(&p) if p == me => return true,
+                Some(&p) if p > 1 => pid = p,
+                _ => return false,
+            }
+        }
+        false
+    };
+    parent
+        .keys()
+        .filter(|&&pid| descends(pid))
+        .filter_map(|pid| fs::read_to_string(format!("/proc/{pid}/status")).ok())
+        .filter_map(|status| {
+            status
+                .lines()
+                .find_map(|l| l.strip_prefix("VmRSS:"))
+                .and_then(|v| v.split_whitespace().next()?.parse::<u64>().ok())
+        })
+        .sum()
 }
 
 /// Kills every process whose parent is this one, until none is left. As a

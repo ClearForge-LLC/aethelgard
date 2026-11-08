@@ -13,6 +13,8 @@ sha2.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+# The regeneration guard also covers the emitted platform (AET-WO-2100, R6).
+aethelgard-twin.workspace = true
 sentinel-01-board.workspace = true
 serde_json.workspace = true
 trybuild.workspace = true

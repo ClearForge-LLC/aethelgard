@@ -28,7 +28,65 @@ pub struct Verdict {
     pub harness: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub machine: Option<Machine>,
+    /// `simulate --firmware` only: what the boot was judged by.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boot: Option<Boot>,
     pub findings: Vec<Finding>,
+}
+
+/// A boot's inputs, its expectations and what Renode read (`AET-WO-2100`).
+/// Every expected value comes from the specification's solved topology and
+/// the CLI's boot contract, never from the firmware (`INV-07`).
+#[derive(Serialize)]
+pub struct Boot {
+    pub firmware: FirmwareReport,
+    pub specification_sha256: String,
+    pub seed: u32,
+    pub virtual_time_ns: u64,
+    /// `null` until Renode has read it, as is every `observed` below.
+    pub mips: Option<u64>,
+    pub instructions: Expected<u64>,
+    /// Where the core was when the run ended, for a reader; not a witness.
+    pub pc: Option<String>,
+    pub boot_word: Word,
+    pub registers: Vec<RegisterReport>,
+    pub unobservable: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct FirmwareReport {
+    pub path: String,
+    /// The file's bytes as copied.
+    pub sha256: String,
+    /// The `PT_LOAD` file bytes in physical-address order: what Renode loads.
+    pub image_sha256: String,
+}
+
+#[derive(Serialize)]
+pub struct Expected<T> {
+    pub expected: T,
+    pub observed: Option<T>,
+}
+
+#[derive(Serialize)]
+pub struct Word {
+    pub address: String,
+    pub expected: String,
+    pub observed: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct RegisterReport {
+    pub name: String,
+    pub address: String,
+    pub mask: String,
+    pub expected: String,
+    pub observed: Option<String>,
+}
+
+/// `0x2100b007`.
+pub fn word(v: u32) -> String {
+    format!("{v:#010x}")
 }
 
 #[derive(Serialize)]
@@ -119,6 +177,7 @@ impl Verdict {
             schematic: None,
             harness: None,
             machine: None,
+            boot: None,
             findings,
         }
     }

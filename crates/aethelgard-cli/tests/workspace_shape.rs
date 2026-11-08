@@ -24,17 +24,19 @@ const MEMBERS: [&str; 8] = [
 const CHAOS: &str = "crates/aethelgard-chaos";
 const SVD_HAL: &str = "crates/aethelgard-svd-hal";
 const EDA: &str = "crates/aethelgard-eda";
+const TWIN: &str = "crates/aethelgard-twin";
 const KICAD_LIB: &str = "crates/aethelgard-kicad-lib";
 
 /// Every member but `ir` (first), `cli` (last), `chaos` (graduated in
 /// `AET-WO-0400`), `svd-hal` (graduated in `AET-WO-1101`), `eda`
-/// (graduated in `AET-WO-1300`) and `kicad-lib` (`AET-WO-1304`, a data crate);
-/// the order is pinned by `members_are_exactly_the_eight_parts`.
+/// (graduated in `AET-WO-1300`), `kicad-lib` (`AET-WO-1304`, a data crate)
+/// and `twin` (graduated in `AET-WO-2100`); the order is pinned by
+/// `members_are_exactly_the_eight_parts`.
 fn libraries() -> Vec<&'static str> {
     MEMBERS[1..7]
         .iter()
         .copied()
-        .filter(|m| ![CHAOS, SVD_HAL, EDA, KICAD_LIB].contains(m))
+        .filter(|m| ![CHAOS, SVD_HAL, EDA, KICAD_LIB, TWIN].contains(m))
         .collect()
 }
 
@@ -250,6 +252,8 @@ fn chaos_has_only_its_known_files_keys_and_dependencies() {
 /// keys and dependencies are fixed. `AET-WO-1400` added ST's CMSIS header and
 /// its licence and source note, the trybuild snapshots under `tests/ui/`, and
 /// two dev-dependencies: `trybuild` and the generated reference board.
+/// `AET-WO-2100` added a third, `aethelgard-twin`, so the regeneration guard
+/// also covers the emitted platform description (ruled on PR #56, R6).
 #[test]
 fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
     const DATA: [&str; 7] = [
@@ -298,7 +302,12 @@ fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
     );
     assert_eq!(
         table("dev-dependencies"),
-        ["sentinel-01-board", "serde_json", "trybuild"]
+        [
+            "aethelgard-twin",
+            "sentinel-01-board",
+            "serde_json",
+            "trybuild"
+        ]
     );
     for key in ["dependencies", "dev-dependencies"] {
         for (name, dep) in svd[key].as_table().unwrap() {
@@ -406,6 +415,59 @@ fn kicad_library_files_live_only_in_the_data_crate() {
     }
 }
 
+/// `aethelgard-twin` lowers a solved topology to a Renode platform and holds
+/// the judge's half of a boot (`AET-WO-2100`, ruled on PR #56, R6), so it is
+/// no longer a re-export stub. Its files, manifest keys and dependencies are
+/// fixed: the new edge `twin -> svd-hal`, for the register facts, is the
+/// ruled one, beside `twin -> ir`.
+#[test]
+fn twin_has_only_its_known_files_keys_and_dependencies() {
+    for file in files(&root().join(TWIN)) {
+        let allowed = file == "Cargo.toml"
+            || (file.starts_with("src/") && file.ends_with(".rs"))
+            || (file.starts_with("tests/") && file.ends_with(".rs"));
+        assert!(allowed, "twin has a file outside the allowed set: {file}");
+    }
+    let twin = manifest(TWIN);
+    for key in twin.keys() {
+        assert!(
+            ["package", "dependencies", "dev-dependencies", "lints"].contains(&key.as_str()),
+            "twin sets [{key}]"
+        );
+    }
+    let table = |key: &str| -> Vec<String> {
+        let mut names: Vec<String> = twin
+            .get(key)
+            .and_then(Value::as_table)
+            .map(|deps| deps.keys().cloned().collect())
+            .unwrap_or_default();
+        names.sort();
+        names
+    };
+    assert_eq!(
+        table("dependencies"),
+        ["aethelgard-ir", "aethelgard-svd-hal", "thiserror"]
+    );
+    assert_eq!(table("dev-dependencies"), ["serde_json"]);
+    for key in ["dependencies", "dev-dependencies"] {
+        for (name, dep) in twin[key].as_table().unwrap() {
+            assert_eq!(
+                dep.get("workspace").and_then(Value::as_bool),
+                Some(true),
+                "twin dependency {name} is not from the workspace table"
+            );
+        }
+    }
+}
+
+fn manifest_name(dir: &Path) -> String {
+    let manifest: Table = fs::read_to_string(dir.join("Cargo.toml"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    manifest["package"]["name"].as_str().unwrap().to_owned()
+}
+
 /// Generated board crates (`AET-WO-1400`, ruled on PR #42, R1 and R3) live under
 /// `boards/`, which the root excludes, so the workspace's lints never reach
 /// their `unsafe` `mmio` module. Each is its own crate with no `[workspace]`
@@ -458,6 +520,35 @@ fn boards_are_excluded_and_dependency_free() {
             "{} has a build.rs",
             dir.display()
         );
+        // The reference firmware beside the board (`AET-WO-2100`, R1): its
+        // own crate, no host code, and one dependency, the board beside it.
+        let firmware = dir.join("firmware");
+        let fw: Table = fs::read_to_string(firmware.join("Cargo.toml"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        for key in fw.keys() {
+            assert!(
+                ["package", "dependencies", "profile"].contains(&key.as_str()),
+                "{} sets [{key}]",
+                firmware.display()
+            );
+        }
+        let package = fw["package"].as_table().unwrap();
+        for key in ["build", "links"] {
+            assert!(
+                !package.contains_key(key),
+                "the firmware sets package.{key}"
+            );
+        }
+        assert!(
+            !firmware.join("build.rs").exists(),
+            "the firmware has a build.rs"
+        );
+        let deps = fw["dependencies"].as_table().unwrap();
+        let board = manifest_name(&dir);
+        assert_eq!(deps.keys().collect::<Vec<_>>(), [&board]);
+        assert_eq!(deps[&board]["path"].as_str(), Some(".."));
         boards.push(dir.file_name().unwrap().to_str().unwrap().to_owned());
     }
     // Exactly the boards `aethelgard-svd-hal/tests/board.rs` regenerates.

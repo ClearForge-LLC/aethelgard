@@ -11,15 +11,18 @@
 //!   array of them, or reserved padding of the same type. Offsets come from
 //!   field order, and every `Address offset:` comment must agree;
 //! - the RCC enable bit of a peripheral, `RCC_<register>_<peripheral>EN_Pos`,
-//!   which must name exactly one register.
+//!   which must name exactly one register;
+//! - an interrupt number, the one `<NAME>_IRQn = <decimal>,` line inside
+//!   `typedef enum { … } IRQn_Type;` (`AET-WO-2100`);
+//! - a memory region's size, which the header states only in the comment of its
+//!   base: `#define NAME (…) /*!< Base address of : <N>KB …` (`AET-WO-2100`).
 
 use std::collections::BTreeMap;
 
-pub(crate) const REPOSITORY: &str = "https://github.com/STMicroelectronics/cmsis-device-h7";
-pub(crate) const COMMIT: &str = "8f922cdc7cc6de2344e75ddd657889f4ff761790";
-pub(crate) const HEADER_FILE: &str = "stm32h753xx.h";
-pub(crate) const HEADER_SHA256: &str =
-    "4f6def439a9fa94705303fe227d34308048c44bd36263d311aa54cc94f8398f5";
+pub const REPOSITORY: &str = "https://github.com/STMicroelectronics/cmsis-device-h7";
+pub const COMMIT: &str = "8f922cdc7cc6de2344e75ddd657889f4ff761790";
+pub const HEADER_FILE: &str = "stm32h753xx.h";
+pub const HEADER_SHA256: &str = "4f6def439a9fa94705303fe227d34308048c44bd36263d311aa54cc94f8398f5";
 const HEADER_BYTES: &[u8] = include_bytes!("../data/st-cmsis-device-h7/stm32h753xx.h");
 
 /// How deep a chain of names may go before the parse refuses it.
@@ -366,6 +369,80 @@ impl RegisterFacts {
         }
         Ok(v)
     }
+
+    /// The interrupt number of `name` (`SPI1` for `SPI1_IRQn`, `I2C1_EV` for
+    /// `I2C1_EV_IRQn`): its one line inside the `IRQn_Type` enum.
+    pub fn irq(&self, name: &str) -> Result<u32, RegisterError> {
+        let Some(start) = self.text.find("typedef enum") else {
+            return Err(RegisterError::Undefined {
+                name: "IRQn_Type".into(),
+            });
+        };
+        let Some(len) = self.text[start..].find("} IRQn_Type;") else {
+            return Err(RegisterError::Undefined {
+                name: "IRQn_Type".into(),
+            });
+        };
+        let body = &self.text[start..start + len];
+        let wanted = format!("{name}_IRQn");
+        let mut found = Vec::new();
+        for line in body.lines() {
+            let code = strip_comment(line).trim();
+            let Some((lhs, rhs)) = code.split_once('=') else {
+                continue;
+            };
+            if lhs.trim() != wanted {
+                continue;
+            }
+            let value = rhs.trim().strip_suffix(',').unwrap_or(rhs.trim()).trim();
+            match value.parse::<u32>() {
+                Ok(v) if value.bytes().all(|b| b.is_ascii_digit()) => found.push(v),
+                _ => return malformed(format!("`{wanted}` is `{value}`, not a decimal number")),
+            }
+        }
+        match found.as_slice() {
+            [v] => Ok(*v),
+            [] => Err(RegisterError::Undefined { name: wanted }),
+            _ => malformed(format!("`{wanted}` is in the enum {} times", found.len())),
+        }
+    }
+
+    /// The size in KiB that the comment of `#define name` states:
+    /// `/*!< Base address of : <N>KB …`. The header has no size macro for its
+    /// RAM regions, so this is the only place the size is written.
+    pub fn region_kib(&self, name: &str) -> Result<u32, RegisterError> {
+        let mut found = Vec::new();
+        for line in self.text.lines() {
+            let Some(rest) = line.trim_start().strip_prefix("#define") else {
+                continue;
+            };
+            if rest.split_whitespace().next() != Some(name) {
+                continue;
+            }
+            let Some(comment) = rest.split_once("/*!<").map(|(_, c)| c.trim_start()) else {
+                return malformed(format!("`{name}` has no comment stating its size"));
+            };
+            let Some(size) = comment.strip_prefix("Base address of : ") else {
+                return malformed(format!(
+                    "`{name}`'s comment does not start `Base address of : `"
+                ));
+            };
+            let digits: String = size.chars().take_while(char::is_ascii_digit).collect();
+            let kib = match (
+                digits.parse::<u32>(),
+                size[digits.len()..].starts_with("KB "),
+            ) {
+                (Ok(k), true) if k > 0 => k,
+                _ => return malformed(format!("`{name}`'s comment states no `<N>KB ` size")),
+            };
+            found.push(kib);
+        }
+        match found.as_slice() {
+            [k] => Ok(*k),
+            [] => Err(RegisterError::Undefined { name: name.into() }),
+            _ => malformed(format!("`{name}` is defined {} times", found.len())),
+        }
+    }
 }
 
 /// `[qualifier] uint32_t NAME;` or `[qualifier] uint32_t NAME[N];`.
@@ -543,5 +620,64 @@ mod tests {
         let f = synthetic("#define RCC_AENR_X1EN_Pos (3U)\n#define RCC_BENR_X1EN_Pos (4U)\n");
         assert_eq!(f.enable_bit("X1").unwrap_err().kind(), "MalformedSource");
         assert_eq!(f.enable_bit("X2").unwrap_err().kind(), "Undefined");
+    }
+
+    #[test]
+    fn interrupts_and_region_sizes_come_out_of_the_header() {
+        let f = facts();
+        assert_eq!(f.irq("SPI1").unwrap(), 35);
+        assert_eq!(f.irq("SPI4").unwrap(), 84);
+        assert_eq!(f.irq("I2C1_EV").unwrap(), 31);
+        assert_eq!(f.irq("I2C1_ER").unwrap(), 32);
+        assert_eq!(f.irq("SPI9").unwrap_err().kind(), "Undefined");
+        assert_eq!(f.region_kib("D1_DTCMRAM_BASE").unwrap(), 128);
+        assert_eq!(f.value("D1_DTCMRAM_BASE").unwrap(), 0x2000_0000);
+        assert_eq!(f.value("FLASH_BANK1_BASE").unwrap(), 0x0800_0000);
+        assert_eq!(f.value("FLASH_BANK2_BASE").unwrap(), 0x0810_0000);
+        assert_eq!(f.value("FLASH_END").unwrap(), 0x081F_FFFF);
+    }
+
+    #[test]
+    fn an_interrupt_or_a_size_outside_its_shape_is_refused() {
+        let e = |body: &str| synthetic(&format!("typedef enum\n{{\n{body}\n}} IRQn_Type;\n"));
+        assert_eq!(e("  A_IRQn = 7, /*!< x */").irq("A").unwrap(), 7);
+        assert_eq!(
+            e("  A_IRQn = 0x7,").irq("A").unwrap_err().kind(),
+            "MalformedSource"
+        );
+        assert_eq!(
+            e("  A_IRQn = -1,").irq("A").unwrap_err().kind(),
+            "MalformedSource"
+        );
+        assert_eq!(
+            e("  A_IRQn = 1,\n  A_IRQn = 2,")
+                .irq("A")
+                .unwrap_err()
+                .kind(),
+            "MalformedSource"
+        );
+        // Outside the enum, a matching line is not read.
+        let outside = synthetic("  A_IRQn = 7,\ntypedef enum\n{\n} IRQn_Type;\n");
+        assert_eq!(outside.irq("A").unwrap_err().kind(), "Undefined");
+        assert_eq!(synthetic("").irq("A").unwrap_err().kind(), "Undefined");
+
+        let r = |line: &str| synthetic(line).region_kib("R_BASE");
+        assert_eq!(
+            r("#define R_BASE (0x1UL) /*!< Base address of : 64KB of RAM */").unwrap(),
+            64
+        );
+        for bad in [
+            "#define R_BASE (0x1UL)",
+            "#define R_BASE (0x1UL) /*!< Base address of : (up to 1 MB) flash */",
+            "#define R_BASE (0x1UL) /*!< Base address of : 0KB x */",
+            "#define R_BASE (0x1UL) /*!< Base of : 64KB x */",
+            "#define R_BASE (0x1UL) /*!< Base address of : 64KB */\n#define R_BASE (0x2UL) /*!< Base address of : 64KB */",
+        ] {
+            assert_eq!(r(bad).unwrap_err().kind(), "MalformedSource", "{bad}");
+        }
+        assert_eq!(
+            r("#define R_BASEX (0x1UL)").unwrap_err().kind(),
+            "Undefined"
+        );
     }
 }

@@ -17,6 +17,7 @@ dependencies = [
  "aethelgard-eda",
  "aethelgard-ir",
  "aethelgard-svd-hal",
+ "aethelgard-twin",
  "clap",
  "io-uring",
  "landlock",
@@ -66,6 +67,7 @@ name = "aethelgard-svd-hal"
 version = "0.1.0"
 dependencies = [
  "aethelgard-ir",
+ "aethelgard-twin",
  "roxmltree",
  "sentinel-01-board",
  "serde_json",
@@ -79,6 +81,9 @@ name = "aethelgard-twin"
 version = "0.1.0"
 dependencies = [
  "aethelgard-ir",
+ "aethelgard-svd-hal",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

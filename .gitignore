@@ -1,3 +1,6 @@
 /target/
 # A local cargo or Kani run inside a generated board (AET-WO-1400).
 /boards/*/target/
+# The reference firmware builds into the top-level target/ (its .cargo/config.toml);
+# this catches a build run with another target dir from inside the board.
+/boards/*/firmware/target/
