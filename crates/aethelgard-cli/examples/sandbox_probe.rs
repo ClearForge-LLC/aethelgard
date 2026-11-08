@@ -20,11 +20,12 @@ use std::process::{Command, Stdio, exit};
 use std::thread;
 
 use rustix::process::{
-    Pid, PidfdFlags, PidfdGetfdFlags, Signal, pidfd_getfd, pidfd_open, pidfd_send_signal,
+    Pid, PidfdFlags, PidfdGetfdFlags, Resource, Signal, getrlimit, pidfd_getfd, pidfd_open,
+    pidfd_send_signal, prlimit,
 };
 use rustix::thread::{
     CapabilitySet, capabilities, capability_is_in_ambient_set, capability_is_in_bounding_set,
-    no_new_privs,
+    no_new_privs, sched_getaffinity, sched_setaffinity,
 };
 
 use serde_json::json;
@@ -51,7 +52,15 @@ fn main() {
     let board_path = args.last().unwrap_or_else(|| exit(99));
     let board = std::fs::read_to_string(board_path).unwrap_or_else(|_| exit(98));
     if board.starts_with("mode=channels") {
-        report(&report_path(&args), &channels(Path::new(board_path)));
+        let victim = board
+            .lines()
+            .find_map(|l| l.strip_prefix("victim=")?.parse::<i32>().ok())
+            .and_then(Pid::from_raw)
+            .unwrap_or_else(|| exit(94));
+        report(
+            &report_path(&args),
+            &channels(Path::new(board_path), victim),
+        );
     }
     let target = |key: &str| {
         board
@@ -172,8 +181,10 @@ fn mask(test: fn(CapabilitySet) -> rustix::io::Result<bool>) -> String {
 }
 
 /// AET-WO-1600's channels, each by the safe path the ruling on PR #51 names,
-/// and the capability state the tool runs with.
-fn channels(board: &Path) -> Vec<(&'static str, String)> {
+/// and the capability state the tool runs with. `victim` is a process outside
+/// the sandbox, for the calls that take a pid: each is tried on it and on this
+/// probe itself.
+fn channels(board: &Path, victim: Pid) -> Vec<(&'static str, String)> {
     // A descriptor that is not a pidfd: allowed, these calls give EBADF.
     let plain = File::open(board).unwrap_or_else(|_| exit(95));
     let mut v = vec![
@@ -212,6 +223,25 @@ fn channels(board: &Path) -> Vec<(&'static str, String)> {
         Err(e) => format!("spawn-{}", result::<(), io::Error>(Err(e))),
     };
     v.push(("pidfd_open", open));
+    let nofile = getrlimit(Resource::Nofile);
+    v.push((
+        "prlimit_self",
+        result(prlimit(None, Resource::Nofile, nofile)),
+    ));
+    v.push((
+        "prlimit_victim",
+        result(prlimit(Some(victim), Resource::Nofile, nofile)),
+    ));
+    match sched_getaffinity(None) {
+        Ok(cpus) => {
+            v.push(("setaffinity_self", result(sched_setaffinity(None, &cpus))));
+            v.push((
+                "setaffinity_victim",
+                result(sched_setaffinity(Some(victim), &cpus)),
+            ));
+        }
+        Err(e) => v.push(("getaffinity_self", format!("errno={}", e.raw_os_error()))),
+    }
     let caps = match capabilities(None) {
         Ok(c) => format!(
             "eff:{:x} prm:{:x} inh:{:x} amb:{} bnd:{} nnp:{}",

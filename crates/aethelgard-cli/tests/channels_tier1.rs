@@ -18,8 +18,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use rustix::process::{
-    Pid, PidfdFlags, PidfdGetfdFlags, Signal, pidfd_getfd, pidfd_open, pidfd_send_signal,
+    Pid, PidfdFlags, PidfdGetfdFlags, Resource, Signal, getrlimit, pidfd_getfd, pidfd_open,
+    pidfd_send_signal, prlimit,
 };
+use rustix::thread::{sched_getaffinity, sched_setaffinity};
 use serde_json::Value;
 
 const EPERM: &str = "fail:Operation not permitted";
@@ -56,7 +58,13 @@ fn inside() -> BTreeMap<String, String> {
     fs::create_dir_all(&toolbox).unwrap();
     symlink(probe(), toolbox.join("kicad-cli")).unwrap();
     let board = dir.0.join("channels.kicad_pcb");
-    fs::write(&board, "mode=channels\n").unwrap();
+    // A process outside the sandbox, for the calls that take a pid.
+    let mut victim = Command::new("/usr/bin/sleep")
+        .arg("30")
+        .stdin(Stdio::null())
+        .spawn()
+        .unwrap();
+    fs::write(&board, format!("mode=channels\nvictim={}\n", victim.id())).unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
         .args(["check", "drc", "--board"])
         .arg(&board)
@@ -65,6 +73,8 @@ fn inside() -> BTreeMap<String, String> {
         .stdin(Stdio::null())
         .output()
         .unwrap();
+    let _ = victim.kill();
+    let _ = victim.wait();
     let v: Value = serde_json::from_slice(&out.stdout)
         .unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(&out.stdout)));
     assert_eq!(out.status.code(), Some(1), "{v}");
@@ -211,5 +221,31 @@ fn the_tool_holds_no_capability() {
             before["Bnd"],
             "{got:?}"
         );
+    }
+}
+
+/// Another process's limits and CPU affinity are refused; the tool's own are
+/// not. `prlimit64` on another pid can kill it (`RLIMIT_CPU`) past Landlock's
+/// signal scoping (the adversarial pass, F10).
+#[test]
+fn another_process_limits_and_affinity_are_refused_and_the_tools_own_are_not() {
+    let mut child = Command::new("/usr/bin/sleep")
+        .arg("30")
+        .stdin(Stdio::null())
+        .spawn()
+        .unwrap();
+    let pid = Some(Pid::from_child(&child));
+    prlimit(pid, Resource::Nofile, getrlimit(Resource::Nofile)).unwrap();
+    sched_setaffinity(pid, &sched_getaffinity(None).unwrap()).unwrap();
+    let _ = child.kill();
+    let _ = child.wait();
+    let got = inside();
+    for (call, want) in [
+        ("prlimit_self", "ok"),
+        ("prlimit_victim", "errno=1"),
+        ("setaffinity_self", "ok"),
+        ("setaffinity_victim", "errno=1"),
+    ] {
+        assert_eq!(got[call], want, "{call}: {got:?}");
     }
 }
