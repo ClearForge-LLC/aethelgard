@@ -1,5 +1,0 @@
-error[E0451]: field `_mode` of struct `aet_1400_s1_probe::good::Pin` is private
- --> tests/ui/fail/forged_typestate.rs:8:49
-  |
-8 |     let _scl: PB8<AlternateFunction<4>> = PB8 { _mode: PhantomData };
-  |                                                 ^^^^^ private field

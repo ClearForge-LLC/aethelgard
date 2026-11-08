@@ -18,6 +18,8 @@ Scratch measurements live outside the repository in `~/.cache/aet-1400-spike/` (
 
 ## Spike
 
+The spike's files are cited as they stood at commit `6419150`. The build deleted `spike/` and `crates/aethelgard-cli/tests/spike_1400_tier2.rs`, as the ruling directs.
+
 ### S1 `OQ-04`: a proof over a harness-owned image catches all three seeded bugs
 
 **Answer: yes.** Through `aethelgard prove`, the correct board proves and each seeded bug fails, each with a `proof_failed` finding naming the assertion it broke. Kani 0.68.0, CBMC 6.11.0.

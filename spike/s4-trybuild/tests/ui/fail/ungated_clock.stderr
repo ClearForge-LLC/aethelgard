@@ -1,7 +1,0 @@
-error[E0599]: no method named `init` found for struct `aet_1400_s1_probe::good::I2c1<Gated>` in the current scope
-  --> tests/ui/fail/ungated_clock.rs:13:27
-   |
-13 |     let _bus = board.i2c1.init::<Fast400k, _>(&mut r, scl, sda);
-   |                           ^^^^ method not found in `aet_1400_s1_probe::good::I2c1<Gated>`
-   |
-   = note: the method was found for `aet_1400_s1_probe::good::I2c1<Clocked>`
