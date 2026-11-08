@@ -1,6 +1,6 @@
 # AET-WO-1302 — FEEDBACK
 
-**Branch:** `wo/aet-1302-routing` · **Base:** `6e34432` (PR #54), with `origin/main` merged by merge commits (`28d846e` for `ec26c5f`, AET-WO-1600; `b0b778a` for `89a3514`, which also bumps `container/IMAGE`) · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Cadence:** build-only, one measurement stop. **Result:** §1 built. **P1 gate clause 1 holds** in the `tools` test: from `examples/sentinel-01-minimal.json`, `emit`, then `check erc` exit 0, then `check drc --spec --schematic` exit 0 with **no finding of any kind**. So does the board of 1300's S5 names. No §7 stop: one 1301 lever was used, `GAP_NM`, between ICs only (B1).
+**Branch:** `wo/aet-1302-routing` · **Base:** `6e34432` (PR #54), with `origin/main` merged by merge commits (`28d846e` for `ec26c5f`, AET-WO-1600; `b0b778a` for `89a3514`, which also bumps `container/IMAGE`) · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Cadence:** build-only, one measurement stop. **Result:** §1 built. **P1 gate clause 1 holds** in the `tools` test, locally in the pinned image and on CI (run 42460567224, green on the first push): from `examples/sentinel-01-minimal.json`, `emit`, then `check erc` exit 0, then `check drc --spec --schematic` exit 0 with **no finding of any kind**. So does the board of 1300's S5 names. No §7 stop: one 1301 lever was used, `GAP_NM`, between ICs only (B1).
 
 Entry schema: `finding · where · type · recommendation · decision-needed`.
 
@@ -12,7 +12,7 @@ From the `tools` test `p1_gate_clause_1_the_reference_board_passes_erc_and_drc_w
 |---|---|---|---|
 | ERC / DRC exit | 0 / 0 | 0 / 0 | `check erc`; `check drc --spec --schematic`, `"rules":"specification"`, verdict `pass` |
 | DRC findings | **0** | **0** | every kind, `unconnected_items` and `schematic_parity` included |
-| Routing time | **1.0 s** release; 6.8 s debug, emit included | 0.21 s release; 1.4 s debug | Furnace, `aethelgard emit` (release); the debug figures are the `tools` test's own, in the image |
+| Routing time | **1.0 s** release; 6.8 s debug (13.2 s on CI), emit included | 0.21 s release; 1.4 s debug (1.8 s on CI) | Furnace, `aethelgard emit` (release); the debug figures are the `tools` test's own, in the image and on CI |
 | Total track length | **348.5 mm** in 360 segments | 332.9 mm in 332 segments | `route::read` of the board as written |
 | Via count | **70** | 68 | 0.6 mm, drilled 0.3 mm (the gate's Default net class) |
 | Rip-ups | **37** | 8 | nets taken up and routed again; the bound is 500 (`route::RIPUPS`) |
@@ -154,7 +154,12 @@ On Furnace at the code head `b0b778a` (every later commit changes only this file
   - 1301's short and wide references give exit 0 with nothing beyond `unconnected_items`, which is in fact nothing.
 
   This is a pre-check; CI is the record.
-- **CI:** CI-RUN
+- **CI:** [run 42460567224](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42460567224), commit `e715cd9`, the first push (PR #60):
+  - `gates` success, in 12.8 min;
+  - `tools` success, in 28.6 min, all 42 suites `ok`;
+  - `image` success, in run 42460567229.
+
+  The `tools` log carries the clause-1 lines: `sentinel-01` and S5 names each give ERC exit 0 and DRC exit 0 with 0 findings. Its emit times, in a debug build with routing included, are 13.2 s and 1.8 s. A2 and A3 are pinned at exit 0. §1.4 passes in `gates` and `tools` (§3.1), and CI is green on the first push (§3.3). Every commit after `e715cd9` changes only this file.
 - **Mutation (diff-sized):** one mutant per guard this work order adds, each against its suite, in a `systemd-run --user --scope -p MemoryMax=32G` cgroup.
   - **The first sweep, 27 mutants,** against the eda unit tests and `routing_tier1` and `placement_tier1`. 20 fail their suite:
     - the track and via reaches;
