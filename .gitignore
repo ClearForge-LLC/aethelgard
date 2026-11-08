@@ -1,1 +1,3 @@
 /target/
+# A local cargo or Kani run inside a generated board (AET-WO-1400).
+/boards/*/target/

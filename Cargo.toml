@@ -9,6 +9,9 @@ members = [
     "crates/aethelgard-evolve",
     "crates/aethelgard-cli",
 ]
+# Generated board crates (AET-WO-1400): never members, so the workspace's
+# lints and `forbid(unsafe_code)` do not reach their `mmio` module (RUL-04).
+exclude = ["boards"]
 
 [workspace.package]
 version = "0.1.0"
@@ -35,4 +38,8 @@ sha2 = "0.11"
 syn = { version = "2", features = ["full"] }
 thiserror = "2"
 toml = "0.9"
+trybuild = "1.0.122"
+# The reference board's generated crate, a dev-dependency of aethelgard-svd-hal's
+# trybuild suite only. A path outside `members` stays outside the workspace.
+sentinel-01-board = { path = "boards/sentinel-01" }
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "io-std", "process", "signal", "io-util", "sync", "time"] }

@@ -220,7 +220,8 @@ fn chaos_has_only_its_known_files_keys_and_dependencies() {
         let allowed = file == "Cargo.toml"
             || file == "README.md"
             || (file.starts_with("src/") && file.ends_with(".rs"))
-            || (file.starts_with("tests/") && file.ends_with(".rs"));
+            || (file.starts_with("tests/") && file.ends_with(".rs"))
+            || (file.starts_with("tests/ui/") && file.ends_with(".stderr"));
         assert!(allowed, "chaos has a file outside the allowed set: {file}");
     }
     let chaos = manifest(CHAOS);
@@ -244,10 +245,15 @@ fn chaos_has_only_its_known_files_keys_and_dependencies() {
 
 /// `aethelgard-svd-hal` holds the vendored pin data and its parser
 /// (`AET-WO-1101`), so it is no longer a re-export stub. Its files, manifest
-/// keys and dependencies are fixed.
+/// keys and dependencies are fixed. `AET-WO-1400` added ST's CMSIS header and
+/// its licence and source note, the trybuild snapshots under `tests/ui/`, and
+/// two dev-dependencies: `trybuild` and the generated reference board.
 #[test]
 fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
-    const DATA: [&str; 4] = [
+    const DATA: [&str; 7] = [
+        "data/st-cmsis-device-h7/LICENSE.md",
+        "data/st-cmsis-device-h7/SOURCE.md",
+        "data/st-cmsis-device-h7/stm32h753xx.h",
         "data/st-open-pin-data/GPIO-STM32H747_gpio_v1_0_Modes.xml",
         "data/st-open-pin-data/LICENSE",
         "data/st-open-pin-data/SOURCE.md",
@@ -258,6 +264,7 @@ fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
             || file == "README.md"
             || (file.starts_with("src/") && file.ends_with(".rs"))
             || (file.starts_with("tests/") && file.ends_with(".rs"))
+            || (file.starts_with("tests/ui/") && file.ends_with(".stderr"))
             || DATA.contains(&file.as_str());
         assert!(
             allowed,
@@ -287,7 +294,10 @@ fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
         table("dependencies"),
         ["aethelgard-ir", "roxmltree", "sha2", "thiserror"]
     );
-    assert_eq!(table("dev-dependencies"), ["serde_json"]);
+    assert_eq!(
+        table("dev-dependencies"),
+        ["sentinel-01-board", "serde_json", "trybuild"]
+    );
     for key in ["dependencies", "dev-dependencies"] {
         for (name, dep) in svd[key].as_table().unwrap() {
             assert_eq!(
@@ -358,4 +368,62 @@ fn eda_has_only_its_known_files_keys_and_dependencies() {
             "eda dependency {name} is not from the workspace table"
         );
     }
+}
+
+/// Generated board crates (`AET-WO-1400`, ruled on PR #42, R1 and R3) live under
+/// `boards/`, which the root excludes, so the workspace's lints never reach
+/// their `unsafe` `mmio` module. Each is its own crate with no `[workspace]`
+/// key, and depends on nothing, because `aethelgard prove` judges it with no
+/// network and an empty cargo home.
+#[test]
+fn boards_are_excluded_and_dependency_free() {
+    let root_manifest: Table = fs::read_to_string(root().join("Cargo.toml"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    let exclude: Vec<&str> = root_manifest["workspace"]["exclude"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(exclude, ["boards"]);
+    // The trybuild suite judges the board the regeneration test owns, and no
+    // other (adversarial E8).
+    assert_eq!(
+        root_manifest["workspace"]["dependencies"]["sentinel-01-board"]["path"].as_str(),
+        Some("boards/sentinel-01")
+    );
+    let mut boards = Vec::new();
+    for entry in fs::read_dir(root().join("boards")).unwrap() {
+        let dir = entry.unwrap().path();
+        let manifest: Table = fs::read_to_string(dir.join("Cargo.toml"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        for key in manifest.keys() {
+            assert!(
+                ["package", "lints"].contains(&key.as_str()),
+                "{} sets [{key}]",
+                dir.display()
+            );
+        }
+        // No host code runs when a board builds.
+        let package = manifest["package"].as_table().unwrap();
+        for key in ["build", "links"] {
+            assert!(
+                !package.contains_key(key),
+                "{} sets package.{key}",
+                dir.display()
+            );
+        }
+        assert!(
+            !dir.join("build.rs").exists(),
+            "{} has a build.rs",
+            dir.display()
+        );
+        boards.push(dir.file_name().unwrap().to_str().unwrap().to_owned());
+    }
+    // Exactly the boards `aethelgard-svd-hal/tests/board.rs` regenerates.
+    assert_eq!(boards, ["sentinel-01"]);
 }

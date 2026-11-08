@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/ui/fail/unconfigured_pin.rs:13:48
+   |
+13 |     let _bus = i2c.init::<Fast400k, _>(&mut r, b.pb6, sda);
+   |                    -------------------         ^^^^^ expected `PB6<AlternateFunction<4>>`, found `PB6<Unconfigured>`
+   |                    |
+   |                    arguments to this method are incorrect
+   |
+   = note: expected struct `PB6<AlternateFunction<4>>`
+              found struct `PB6<Unconfigured>`
+note: method defined here
+  --> $WORKSPACE/boards/sentinel-01/src/board.rs
+   |
+   |     pub fn init<S: i2c1_speed::AtMostCeiling, R: Registers>(
+   |            ^^^^

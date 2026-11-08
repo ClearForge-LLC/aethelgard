@@ -1,0 +1,7 @@
+error[E0599]: no method named `set_low` found for struct `PA0<Unconfigured>` in the current scope
+  --> tests/ui/fail/output_unconfigured.rs:10:11
+   |
+10 |     a.pa0.set_low(&mut r);
+   |           ^^^^^^^ method not found in `PA0<Unconfigured>`
+   |
+   = note: the method was found for `PA0<sentinel_01_board::Output>`

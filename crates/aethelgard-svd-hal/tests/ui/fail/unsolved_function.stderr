@@ -1,0 +1,11 @@
+error[E0599]: no method named `into_spi1_sck` found for struct `PB6<M>` in the current scope
+  --> tests/ui/fail/unsolved_function.rs:11:22
+   |
+11 |     let _sck = b.pb6.into_spi1_sck(&mut r);
+   |                      ^^^^^^^^^^^^^
+   |
+help: there is a method `into_i2c1_scl` with a similar name
+   |
+11 -     let _sck = b.pb6.into_spi1_sck(&mut r);
+11 +     let _sck = b.pb6.into_i2c1_scl(&mut r);
+   |
