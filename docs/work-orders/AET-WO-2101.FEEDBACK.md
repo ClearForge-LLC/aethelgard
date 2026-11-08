@@ -170,7 +170,7 @@ Output: `out/s2-rise.txt`.
 - **The 1 µs × 10 ms run never finished.** It exceeded 900 s. Renode's monitor history grows with every command, about 160,000 of them in that run, and each command slows as it grows (F16).
 
 **Which quantum is enough:**
-- **A static rise-time fault needs no in-run lock-step.** Its measurement completes inside the first byte window, 22.5 µs, and never changes: every quantum from 1 ms to 1 µs reached the same verdict. The quantum only adds latency (F7). One analog pass before the boot is enough: about 4 ms per transient (S1), and the fault applies from the first instruction.
+- **A static rise-time fault needs no in-run lock-step.** Its measurement completes inside the first byte window, 22.5 µs, and never changes: every quantum from 1 ms to 1 µs reached the same verdict. The quantum only adds latency (F7). One analog pass before the boot is enough: about 4 ms per transient (S1), and the fault applies from the first instruction. This is composed from S2 and S3's never-declared row; the pass-then-boot sequence was not run end to end (REASONED from measured parts).
 - **A rail droop needs about 10 µs** (REASONED). A regulator's load-step recovery takes tens of µs, so 10 µs resolves the dip, and 100 µs would step over it. Measured: 9 s per 10 ms span with `ioc` (5 s reading one word per quantum), against 20.8–23.0 s with `lib` or `pipe`.
 
 ## S5 — Each route under the CLI's sandbox
@@ -227,7 +227,7 @@ The excerpt is from route ii at 47 kΩ, 100 µs quanta (`out/s6-events-47k.jsonl
 
 **Fault path: iii.** Stock `BME280`; the fault is its absence, either never declared or `Unregister`ed. No language layer; the firmware times out at TXIS, deterministically. It stands in for the NACK an unreadable address draws (1.36 V peak, below VIH), and the trace says so (S6). Route i remains available within `RUL-12` for wrong data. Route ii (C#) is not proposed.
 
-**Quantum.** A static rise fault needs no in-run lock-step: one analog pass runs before the boot. A rail droop needs about 10 µs (REASONED), measured at 9 s per 10 ms span (S4).
+**Quantum.** A static rise fault needs no in-run lock-step: one analog pass runs before the boot (composed, S4). A rail droop needs about 10 µs (REASONED), measured at 9 s per 10 ms span (S4).
 
 **Campaign.**
 1. For each of 2.2 kΩ and 47 kΩ: solve, then emit the `.repl` and the netlist.
@@ -237,7 +237,7 @@ The excerpt is from route ii at 47 kΩ, 100 µs quanta (`out/s6-events-47k.jsonl
 5. The verdict: 47 kΩ fails (3,982 > 300 ns; TXIS timeouts) and 2.2 kΩ passes.
 6. The run is archived and replayed twice.
 
-*285 words, counted with `wc -w` on the section above.*
+*288 words, counted with `wc -w` on the section above.*
 
 ## Gates (spike)
 
