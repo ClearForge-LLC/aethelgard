@@ -1,6 +1,6 @@
 # AET-WO-1600 — FEEDBACK
 
-**Branch:** `wo/aet-1600-host-filter` · **Base:** `6525506` (PR #50), with `origin/main` at `3518ce8` (AET-WO-1400) merged in by merge commit `60b2f99` · **PR:** #51, unmerged · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Half:** spike and build. The spike was ruled on PR #51 (`~/.cache/aet-1600-ruling.md`), and the build follows the ruling.
+**Branch:** `wo/aet-1600-host-filter` · **Base:** `6525506` (PR #50), with `origin/main` merged in twice by merge commit: `3518ce8` (AET-WO-1400) at `60b2f99`, and `cfcd44a` (AET-WO-1300) at the merge after `e52ce2b` · **PR:** #51, unmerged · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Half:** spike and build. The spike was ruled on PR #51 (`~/.cache/aet-1600-ruling.md`), and the build follows the ruling.
 
 Entry schema: `finding · where (file:line) · type · recommendation · decision-needed`.
 
@@ -223,7 +223,7 @@ The profile was read at moby `v28.0.4`, the Docker that AET-WO-0300a's run recor
   **Rec:** the adversarial pass probes them. Any finding goes to the architect, not into this build silently. **Decision:** whether the build's denial set grows.
 - **F11 · Furnace environment · type: note.** `apparmor_restrict_unprivileged_userns=1` does not stop `unshare(CLONE_NEWUSER)`: `unshare --user` succeeds outside and inside today's sandbox on Furnace and on the runner host. On a host, the filter is the only barrier. Separately, rootless podman's default `pids-limit` (2048) makes `mcp_tier1`'s process-storm test fail with `EAGAIN`. That is podman's limit, not this code; `--pids-limit=-1` passes. **Decision:** none.
 - **F12 · fence · type: flag.** The probe's entry point, `crates/aethelgard-cli/examples/spike_1600_probe.rs`, sits in `examples/`, which the fence does not name. It follows the pattern of tier 1's own stand-in tool, `examples/sandbox_probe.rs`, and is 11 lines that `#[path]`-include `spike/1600/probe.rs`. A stand-in tool must be its own executable, and `cargo test` builds examples, so there was no in-fence place for it. **Rec:** accept it for the spike; the build deletes it. **Decision:** whether that is acceptable.
-- **F13 · protected surfaces.** `container/`, `.github/workflows/`, the steering documents, `README.md` and `LICENSE-*` diff to empty (`git diff 6525506 --stat`).
+- **F13 · protected surfaces.** `container/`, `.github/workflows/`, the steering documents, `README.md` and `LICENSE-*` diff to empty. At the spike this was `git diff 6525506 --stat`; after the build's merges it is `git diff origin/main --stat` (`cfcd44a`).
 
 ### Whether the host can be named a supported boundary for tool subcommands
 
@@ -242,7 +242,12 @@ On the host, the probe already shows System V, `unshare` and `pidfd_open` refuse
 
 ## Build
 
-**`origin/main`.** At the ruling, `origin/main` was still `6525506`, so the first merge was a no-op. When AET-WO-1400 (`3518ce8`) landed, it merged by merge commit `60b2f99` with no conflicts. The root `Cargo.toml` keeps both sides: `exclude = ["boards"]`, and `rustix`'s `thread` feature. `cargo update --workspace --offline` locked 0 packages, so `Cargo.lock` is unchanged and `--locked` holds. The gates were re-run after the merge (below).
+**`origin/main`, twice.** At the ruling, `origin/main` was still `6525506`, so the first merge was a no-op. When AET-WO-1400 (`3518ce8`) landed, it merged by merge commit `60b2f99` with no conflicts. The root `Cargo.toml` keeps both sides: `exclude = ["boards"]`, and `rustix`'s `thread` feature. `cargo update --workspace --offline` locked 0 packages, so `Cargo.lock` is unchanged and `--locked` holds. The gates were re-run after the merge (below).
+
+Then AET-WO-1300 (`cfcd44a`) landed, and CI run 42441301683, which tests `e52ce2b` merged with that main, failed in `gates`: all six `channels_tier1` tests got `MalformedBoard`, exit 3.
+- **The cause, verified from that log:** since AET-WO-1300, `check drc` parses the board before any tool runs. My `mode=channels` placeholder was not a board, so the tests never reached the sandbox.
+- **The fix is the one AET-WO-1300's B5 gave `sockets_tier1`:** a minimal `(kicad_pcb …)` with the probe's lines inside, and the probe looks for a `mode=channels` line. No assertion changed.
+- **The merge:** `cfcd44a` merged by merge commit with no conflicts, and `--locked` holds.
 
 ### What was built, as ruled on PR #51
 
@@ -280,12 +285,12 @@ On the host, the probe already shows System V, `unshare` and `pidfd_open` refuse
     The oracle is independent of the filter's own tables: the numbers come from `asm/unistd_64.h`, the mask from `linux/sched.h`, and `PRIO_USER` from `linux/resource.h` (`IOPRIO_WHO_USER` is an enum, so it is a literal). A missing header fails the test by name.
   - `an_unavailable_line_is_sandbox_unavailable_naming_its_layer` now lists `capabilities` beside `seccomp` and `landlock`.
 - **Tier 1** (`tests/channels_tier1.rs`, run by `examples/sandbox_probe.rs` with `mode=channels` under the real CLI). Each test checks a control outside first:
-  - System V through `ipcmk` and `ipcrm` (`:113`);
-  - `unshare --user` (`:130`);
-  - `pidfd_open`, `pidfd_send_signal` and `pidfd_getfd` through `rustix` (`:142`). A plain descriptor gives `EBADF` outside and `EPERM` inside, so the last two are probed live even though `pidfd_open` is refused;
-  - threads and children still start, which is the `clone3` fallback (`:178`);
-  - the tool holds no capability (`:202`). As root in the image the caller holds capabilities and the tool's bounding set is 0, which pins F4's order;
-  - another process's `prlimit` and `sched_setaffinity` are refused and the tool's own are not (`:231`).
+  - System V through `ipcmk` and `ipcrm` (`system_v_ipc_is_refused_inside_and_works_outside`);
+  - `unshare --user` (`unshare_is_refused_inside`);
+  - `pidfd_open`, `pidfd_send_signal` and `pidfd_getfd` through `rustix` (`pidfd_calls_are_refused_inside_and_reach_the_kernel_outside`). A plain descriptor gives `EBADF` outside and `EPERM` inside, so the last two are probed live even though `pidfd_open` is refused;
+  - threads and children still start, which is the `clone3` fallback (`threads_and_children_still_start_inside`);
+  - the tool holds no capability (`the_tool_holds_no_capability`). As root in the image the caller holds capabilities and the tool's bounding set is 0, which pins F4's order;
+  - another process's `prlimit` and `sched_setaffinity` are refused and the tool's own are not (`another_process_limits_and_affinity_are_refused_and_the_tools_own_are_not`).
 
   A missing helper fails by name, and no test is skipped. Two controls are asserted only outside a container, because Docker's own profile refuses the call there: `unshare` (S5) and `pidfd_getfd`'s `EBADF` (see the first push, below). The inside assertions are the same everywhere.
 - **The families with no safe live path** (F9): `setns`, `clone` with `CLONE_NEW*`, `ptrace`, `process_vm_*`, `kcmp`, the keyring calls, `bpf`, `perf_event_open`, `userfaultfd` and `mq_*`. They are covered by the interpreter and the pinned sequence. The adversarial pass then probed each of them live with raw-syscall harnesses outside the repository (below).
@@ -326,7 +331,7 @@ A fresh subagent (Opus) ran it on `53651ef`, on the Furnace host (ABI 8) and as 
   - Reproduced: inside the sandbox `kill` and `tgkill` to an outside victim gave `EPERM` (`scoped: true`), yet `prlimit64(victim, RLIMIT_CPU, 1)` was `ok`, and the victim died with status 137. `prlimit_set_victim_nofile=ok` also took the victim's NOFILE limit from 524288 to 64.
   - It reaches any same-uid pid, guessable without /proc: the CLI, the reaper, the operator's tmux and agent sessions.
   - **Fix:** `prlimit64` is allowed only for pid 0 or the tool's own pid. **What "self" means:** the trampoline's pid, baked in at install; the exec keeps it. The tool's children and threads are not "self" by this test. The census shows every `prlimit64` call from every tool used pid 0 (1925 of 1925), the idiom glibc's `setrlimit` and Rust std use.
-  - Live test at `channels_tier1.rs:231`. Tier 2 16/16 in the image.
+  - Live test: `another_process_limits_and_affinity_are_refused_and_the_tools_own_are_not`. Tier 2 16/16 in the image at the time, 20/20 after AET-WO-1300's merge.
 - **A2 · MEDIUM, partly fixed; the rest needs a ruling. Scheduling, nice and I/O priority of another same-uid process.**
   - At ABI 8 these all succeeded on an outside victim: `setpriority`, `sched_setaffinity`, `sched_setscheduler`, `sched_setparam`, `sched_setattr` and `ioprio_set`. The victim went to nice 19, `SCHED_BATCH`, affinity cpu 0 and ioprio idle. A user cannot undo nice 19.
   - The user-wide forms were measured only in the container, where the pid namespace bounds them: `setpriority(PRIO_USER)` and `ioprio_set(IOPRIO_WHO_USER)` reniced a capless victim. On a host they would hit every process of the uid at once. They were not run on the host, by design.
@@ -366,7 +371,7 @@ A fresh subagent (Opus) ran it on `53651ef`, on the Furnace host (ABI 8) and as 
 
 ### Calls each tool needs, after the build
 
-None of the refused or tested calls. The tier-2 suite gives 16/16 under the final filter and drop, in the image under podman, and in CI run 42440108553. `clone3` returns `ENOSYS`, and every tool falls back to `clone`.
+None of the refused or tested calls. The tier-2 suite gave 16/16 under the final filter and drop in CI run 42440108553. After AET-WO-1300's merge it is 20/20, which now includes 1300's four new tier-2 tests, in the image under podman and in CI (Gates). `clone3` returns `ENOSYS`, and every tool falls back to `clone`.
 
 ### Whether the host can be named a supported boundary for tool subcommands
 
@@ -408,5 +413,11 @@ Kept as deliberate redundancy:
 - **Furnace, at the reduction commit:**
   - `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, and `cargo test --workspace --locked --no-fail-fast` all pass. `cargo test` was run with descriptors above 2 closed.
   - CI's own `tools` commands, inside the pinned image under rootless podman (`--pids-limit=-1`), also pass: 33 test binaries green, tier 2 16/16, `channels_tier1` 6/6, and AET-WO-1400's `board_tier2`.
-- **CI:** run [42440108553](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42440108553) at `93a4bda`: `gates` green and `tools` green, with tier 2 `16 passed` under the final filter and drop in Docker, and `channels_tier1` passing in both jobs. engine-image run 42440108574 green.
-- **The earlier red run:** 42436941586 at `53651ef`, see "The first push after the ruling was red".
+- **CI before AET-WO-1300's merge:** run [42440108553](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42440108553) at `93a4bda`: `gates` green and `tools` green, with tier 2 `16 passed` under the final filter and drop in Docker, and `channels_tier1` passing in both jobs. engine-image run 42440108574 green.
+- **After AET-WO-1300's merge, on Furnace:**
+  - the host suite has 0 failures;
+  - CI's `tools` commands in the pinned image under podman: 36 test binaries green, tier 2 `20 passed`, `channels_tier1` 6/6.
+- **CI on the final head:** see the PR's last run (named in the session's closing message).
+- **The red runs:**
+  - 42436941586 at `53651ef`: see "The first push after the ruling was red";
+  - 42441301683 at `e52ce2b`: the `MalformedBoard` merge interaction, above.
