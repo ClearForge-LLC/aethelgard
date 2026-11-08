@@ -27,6 +27,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::library;
 use crate::parity;
+use crate::route;
 use crate::rules::FLOOR_NM;
 use crate::schematic::{self, Conn, EmitError, GND, Part};
 use crate::sexpr::{self, Sx, mm};
@@ -39,7 +40,7 @@ pub const VERSION: &str = "20260206";
 pub const ORIGIN: (i64, i64) = (100_000_000, 100_000_000);
 /// The least distance between two parts' keep-out boxes (courtyard and
 /// silkscreen together).
-pub const GAP_NM: i64 = 500_000;
+pub const GAP_NM: i64 = 1_500_000;
 /// From the outermost keep-out box to the board edge.
 pub const MARGIN_NM: i64 = 2_000_000;
 /// The candidate positions' pitch.
@@ -779,10 +780,18 @@ pub(crate) fn write(project: &str, parts: &[Part]) -> Result<String, EmitError> 
     let mut order: Vec<usize> = (0..items.len()).collect();
     order.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference));
     // `place` returns each item's placement at the item's index.
+    let mut parts = Vec::new();
     for i in order {
-        out.push(footprint(project, &items[i], layout.placed[i].origin)?);
+        let fp = footprint(project, &items[i], layout.placed[i].origin)?;
+        parts.push(route::part_of(&fp).map_err(EmitError::Internal)?);
+        out.push(fp);
     }
     let o = layout.outline;
+    let board = route::Board { outline: o, parts };
+    let routed = route::route(&board).map_err(|e| EmitError::Unroutable {
+        net: e.net,
+        why: e.why,
+    })?;
     out.push(Sx::List(vec![
         Sx::atom("gr_rect"),
         at_sx("start", (o.x0, o.y0)),
@@ -796,8 +805,78 @@ pub(crate) fn write(project: &str, parts: &[Part]) -> Result<String, EmitError> 
         Sx::List(vec![Sx::atom("layer"), Sx::str("Edge.Cuts")]),
         uuid_sx(&format!("{project}/outline")),
     ]));
+    out.extend(copper(project, &routed, o));
     out.push(Sx::node("embedded_fonts", &["no"]));
     Ok(sexpr::write(&Sx::List(out)))
+}
+
+/// The router's tracks, vias and unfilled zones as board items, each
+/// keyed by its content. A zone's outline is the board's; it carries no
+/// `connect_pads` clearance, which the gate refuses (`AET-WO-1300` B2), and
+/// no fill, which the gate's `--refill-zones` computes.
+fn copper(project: &str, routed: &route::Routed, o: Rect) -> Vec<Sx> {
+    let net = |n: &str| Sx::List(vec![Sx::atom("net"), Sx::str(n)]);
+    let layer = |l: route::Layer| Sx::List(vec![Sx::atom("layer"), Sx::str(l.name())]);
+    let mut out = Vec::new();
+    for s in &routed.segments {
+        out.push(Sx::List(vec![
+            Sx::atom("segment"),
+            at_sx("start", s.start),
+            at_sx("end", s.end),
+            Sx::node("width", &[&mm(route::WIDTH_NM)]),
+            layer(s.layer),
+            net(&s.net),
+            uuid_sx(&format!(
+                "{project}/segment/{}/{}/{} {} {} {}",
+                s.net,
+                s.layer.name(),
+                s.start.0,
+                s.start.1,
+                s.end.0,
+                s.end.1
+            )),
+        ]));
+    }
+    for v in &routed.vias {
+        out.push(Sx::List(vec![
+            Sx::atom("via"),
+            at_sx("at", v.at),
+            Sx::node("size", &[&mm(route::VIA_NM)]),
+            Sx::node("drill", &[&mm(route::DRILL_NM)]),
+            Sx::List(vec![Sx::atom("layers"), Sx::str("F.Cu"), Sx::str("B.Cu")]),
+            net(&v.net),
+            uuid_sx(&format!("{project}/via/{}/{} {}", v.net, v.at.0, v.at.1)),
+        ]));
+    }
+    for (n, l) in &routed.zones {
+        let corner = |x, y| Sx::node("xy", &[&mm(x), &mm(y)]);
+        out.push(Sx::List(vec![
+            Sx::atom("zone"),
+            net(n),
+            layer(*l),
+            uuid_sx(&format!("{project}/zone/{n}/{}", l.name())),
+            Sx::node("hatch", &["edge", "0.5"]),
+            Sx::node("min_thickness", &[&mm(route::MIN_THICKNESS_NM)]),
+            Sx::node("filled_areas_thickness", &["no"]),
+            Sx::List(vec![
+                Sx::atom("fill"),
+                Sx::node("thermal_gap", &["0.5"]),
+                Sx::node("thermal_bridge_width", &["0.5"]),
+                Sx::node("island_removal_mode", &["0"]),
+            ]),
+            Sx::List(vec![
+                Sx::atom("polygon"),
+                Sx::List(vec![
+                    Sx::atom("pts"),
+                    corner(o.x0, o.y0),
+                    corner(o.x1, o.y0),
+                    corner(o.x1, o.y1),
+                    corner(o.x0, o.y1),
+                ]),
+            ]),
+        ]));
+    }
+    out
 }
 
 #[cfg(test)]
