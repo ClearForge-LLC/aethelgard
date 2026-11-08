@@ -761,16 +761,31 @@ fn beyond_unconnected(v: &Value) -> Vec<String> {
         .collect()
 }
 
-/// §1.5 tier 2: on the reference specification's emitted board and
-/// schematic, the gate reports no parity finding and nothing but
-/// unconnected items, which routing (`AET-WO-1302`) removes. So does the
-/// board of 1300's S5 names, whose references and nets KiCad must quote.
+// ---- AET-WO-1302: P1 gate clause 1 ----
+
+fn record_1302(line: &str) {
+    use std::io::Write;
+    let _ = std::io::stderr()
+        .lock()
+        .write_all(format!("AET-WO-1302 {line}\n").as_bytes());
+}
+
+/// P1 gate clause 1 (`AET-WO-1302` §1.4, tier 2), as one test. From the
+/// checked-in reference specification, one command emits a schematic and a
+/// placed and routed board; `check erc` on the schematic exits 0, and
+/// `check drc --spec --schematic` on the board, judged by the
+/// specification's rules with schematic parity, exits 0 with no finding of
+/// any kind, unconnected items included. So does the board of 1300's S5
+/// names, whose references and nets KiCad must quote. The §3.2 numbers are
+/// recorded for each.
 #[test]
-fn the_emitted_board_has_no_parity_finding_and_only_unconnected_items() {
-    let t = Temp::new("parity");
+fn p1_gate_clause_1_the_reference_board_passes_erc_and_drc_with_no_finding() {
+    let t = Temp::new("clause1");
     let reference = example_spec("sentinel-01-minimal.json");
-    let mut s5: Value = serde_json::from_slice(&fs::read(&reference).unwrap()).unwrap();
-    let mut text = serde_json::to_string(&s5).unwrap();
+    let mut text = serde_json::to_string(
+        &serde_json::from_slice::<Value>(&fs::read(&reference).unwrap()).unwrap(),
+    )
+    .unwrap();
     for (from, to) in [
         ("sentinel-01", "p\"(x)\\#"),
         ("VDD_3V3", "VDD\"3V3\\"),
@@ -782,31 +797,59 @@ fn the_emitted_board_has_no_parity_finding_and_only_unconnected_items() {
     ] {
         text = text.replace(&format!("\"{from}\""), &serde_json::to_string(to).unwrap());
     }
-    s5 = serde_json::from_str(&text).unwrap();
     let s5_path = t.0.join("s5.json");
-    fs::write(&s5_path, serde_json::to_vec(&s5).unwrap()).unwrap();
+    fs::write(&s5_path, &text).unwrap();
     for (name, spec) in [("sentinel-01", reference), ("s5-names", s5_path)] {
+        let started = std::time::Instant::now();
         let r = emit_to(&spec, &t.0.join(name));
+        let emit_ms = started.elapsed().as_millis();
         let board = PathBuf::from(r["board"]["path"].as_str().unwrap());
         let sch = PathBuf::from(r["schematic"]["path"].as_str().unwrap());
-        let v = drc_parity(&board, &sch, &spec);
-        let unconnected = kinds(&v)
-            .iter()
-            .filter(|k| **k == "unconnected_items")
-            .count();
-        record_1301(&format!(
-            "{name}: exit {} with {} finding(s), {unconnected} unconnected_items, beyond them {:?}",
-            v["tool"]["exit_code"],
-            kinds(&v).len(),
-            beyond_unconnected(&v)
-        ));
-        assert_eq!(beyond_unconnected(&v), Vec::<String>::new(), "{name}");
-        assert!(
-            unconnected > 0,
-            "{name}: an unrouted board has unconnected items"
+
+        let erc = run(
+            &["check", "erc", "--schematic", sch.to_str().unwrap()],
+            None,
         );
-        assert_eq!(v["schematic"]["sha256"], r["schematic"]["sha256"], "{name}");
-        assert_eq!(v["input"]["sha256"], r["board"]["sha256"], "{name}");
+        let erc = verdict(&erc, 0);
+        assert_judged(&erc, "erc", "kicad-cli", "10.0.7");
+        assert_eq!(erc["verdict"], "pass", "{name}: {erc}");
+        assert_eq!(kinds(&erc), Vec::<&str>::new(), "{name}: {erc}");
+
+        let drc = drc_parity(&board, &sch, &spec);
+        record_1302(&format!(
+            "{name}: erc exit {}, drc exit {} with {} finding(s) {:?}",
+            erc["tool"]["exit_code"],
+            drc["tool"]["exit_code"],
+            kinds(&drc).len(),
+            kinds(&drc)
+        ));
+        assert_eq!(drc["tool"]["exit_code"], 0, "{name}: {drc}");
+        assert_eq!(drc["verdict"], "pass", "{name}: {drc}");
+        assert_eq!(kinds(&drc), Vec::<&str>::new(), "{name}: {drc}");
+        assert_eq!(
+            drc["schematic"]["sha256"], r["schematic"]["sha256"],
+            "{name}"
+        );
+        assert_eq!(drc["input"]["sha256"], r["board"]["sha256"], "{name}");
+
+        // §3.2: the numbers, from the board as written; the rip-ups from
+        // routing its pads again, which lays the same copper.
+        let (pads, routed) = aethelgard_eda::route::read(
+            &aethelgard_eda::sexpr::parse(&fs::read_to_string(&board).unwrap()).unwrap(),
+        )
+        .unwrap();
+        let again = aethelgard_eda::route::route(&pads).unwrap();
+        assert_eq!(again.segments, routed.segments, "{name}");
+        assert_eq!(again.vias, routed.vias, "{name}");
+        record_1302(&format!(
+            "{name}: emit {emit_ms} ms (debug build, routing included); track {} um in {} segments; {} vias; {} rip-ups; zones {:?}; grid pitch {} nm",
+            routed.length_nm() / 1000,
+            routed.segments.len(),
+            routed.vias.len(),
+            again.ripups,
+            routed.zones,
+            aethelgard_eda::route::PITCH_NM,
+        ));
     }
 }
 
