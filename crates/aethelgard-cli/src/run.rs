@@ -7,8 +7,9 @@
 //! working directory inside the call's private temporary directory. The reaper
 //! starts a *trampoline*, a third copy, in a process group of its own; the
 //! trampoline confines itself with Landlock, installs the seccomp filter that
-//! refuses every socket Landlock cannot see (AET-WO-0300a), records the
-//! sandbox it achieved, and becomes the tool. The reaper waits. If the CLI
+//! refuses every socket Landlock cannot see (AET-WO-0300a) and the non-socket
+//! channels to other processes (AET-WO-1600), drops every capability it can
+//! (AET-WO-1600), records the sandbox it achieved, and becomes the tool. The reaper waits. If the CLI
 //! dies, by any signal, the reaper sees its parent change and kills the tool's
 //! group and every descendant; a guardian removes the temporary directory.
 //! Both are told the CLI's pid (`--cli-pid`) rather than sampling their parent,
@@ -32,9 +33,15 @@ use landlock::{
     ABI, Access, AccessFs, AccessNet, CompatLevel, Compatible, LandlockStatus, Ruleset,
     RulesetAttr, RulesetCreatedAttr, RulesetStatus, Scope, path_beneath_rules,
 };
+use rustix::io::Errno;
 use rustix::process::{
     Pid, Signal, WaitOptions, getpid, kill_process, kill_process_group, set_child_subreaper,
     waitpid,
+};
+use rustix::thread::{
+    CapabilitySet, CapabilitySets, capabilities, capability_is_in_ambient_set,
+    capability_is_in_bounding_set, clear_ambient_capability_set, no_new_privs,
+    remove_capability_from_bounding_set, set_capabilities,
 };
 use seccompiler::{BpfProgram, apply_filter, sock_filter};
 
@@ -350,7 +357,8 @@ fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop
     let mut lines = status.lines();
     let first = lines.next().unwrap_or_default();
     if let Some(rest) = first.strip_prefix("unavailable ") {
-        // Only the trampoline writes this line: `landlock` or `seccomp`.
+        // Only the trampoline writes this line: `landlock`, `seccomp` or
+        // `capabilities`.
         let (layer, reason) = rest.split_once(' ').unwrap_or((rest, ""));
         return Err(Stop {
             code: EXIT_TOOL_UNAVAILABLE,
@@ -631,11 +639,16 @@ pub fn confine_main(args: &[OsString]) -> ! {
         }
     };
     // Required like Landlock (INV-06): no filter, no tool.
-    let installed = socket_filter()
+    let installed = seccomp_filter(std::process::id())
         .ok_or_else(|| "no filter for this architecture".to_owned())
         .and_then(|program| apply_filter(&program).map_err(|e| e.to_string()));
     if let Err(e) = installed {
         let _ = writeln!(status, "unavailable seccomp {e}");
+        exit(0);
+    }
+    // Required too (INV-06): a tool never starts holding a capability.
+    if let Err(e) = drop_capabilities() {
+        let _ = writeln!(status, "unavailable capabilities {e}");
         exit(0);
     }
     let _ = writeln!(status, "sandbox abi={}", sandbox.landlock_abi);
@@ -689,20 +702,101 @@ pub(crate) fn inherited_descriptors() -> Result<Vec<u32>, String> {
     Ok(leaked)
 }
 
-/// The seccomp filter (AET-WO-0300a, ruled on PR #15): a fixed program,
-/// assembled here rather than by `seccompiler::SeccompFilter`, whose compiled
-/// rules match system-call numbers under `AUDIT_ARCH_X86_64` and so would let
-/// an x32 call (number | 0x4000_0000) through a default-allow filter.
+/// The system calls the filter refuses with `EPERM`: `socket` and `io_uring`
+/// (AET-WO-0300a), then (AET-WO-1600, ruled on PR #51) every non-socket channel to
+/// another process of the same uid that the spike found open on a host, and
+/// the kernel surfaces beside them. No tool needs any of them (the spike ran
+/// the whole tier-2 suite with each refused); Kani's `cargo` calls
+/// `pidfd_open` and carries on without it. The POSIX message queues were added
+/// by the adversarial pass under the ruling's F10 clause: Landlock refuses to
+/// open one, but `O_CREAT` still creates it in the host's namespace, and
+/// `mq_unlink` deletes another process's.
+const DENIED: [(&str, u32); 37] = [
+    ("socket", 41),
+    ("io_uring_setup", 425),
+    ("io_uring_enter", 426),
+    ("io_uring_register", 427),
+    // System V IPC: on a host, the host's IPC namespace.
+    ("shmget", 29),
+    ("shmat", 30),
+    ("shmctl", 31),
+    ("shmdt", 67),
+    ("semget", 64),
+    ("semop", 65),
+    ("semctl", 66),
+    ("msgget", 68),
+    ("msgsnd", 69),
+    ("msgrcv", 70),
+    ("msgctl", 71),
+    ("semtimedop", 220),
+    // Namespaces; `clone` is refused only with a namespace bit, below.
+    ("unshare", 272),
+    ("setns", 308),
+    // pidfds and cross-process access.
+    ("pidfd_open", 434),
+    ("pidfd_getfd", 438),
+    ("pidfd_send_signal", 424),
+    ("ptrace", 101),
+    ("process_vm_readv", 310),
+    ("process_vm_writev", 311),
+    ("kcmp", 312),
+    // Other kernel surfaces.
+    ("keyctl", 250),
+    ("add_key", 248),
+    ("request_key", 249),
+    ("bpf", 321),
+    ("perf_event_open", 298),
+    ("userfaultfd", 323),
+    // POSIX message queues (F10).
+    ("mq_open", 240),
+    ("mq_unlink", 241),
+    ("mq_timedsend", 242),
+    ("mq_timedreceive", 243),
+    ("mq_notify", 244),
+    ("mq_getsetattr", 245),
+];
+
+/// Calls that reach another process by pid and that the tools make only on
+/// themselves, with pid 0 (the spike's census: `prlimit64` 1925 of 1925 calls,
+/// `sched_setaffinity` 54 of 54). Allowed for pid 0 and for the tool's own pid,
+/// baked in when the trampoline installs the filter; refused for any other.
+/// `prlimit64` on another pid can kill it (`RLIMIT_CPU`) past Landlock's
+/// signal scoping, which the adversarial pass measured (F10).
+const PID_TESTED: [(&str, u32); 2] = [("prlimit64", 302), ("sched_setaffinity", 203)];
+
+/// Every `CLONE_NEW*` bit `clone(2)`'s 32-bit flags word can carry: NEWNS,
+/// NEWCGROUP, NEWUTS, NEWIPC, NEWUSER, NEWPID and NEWNET. `CLONE_NEWTIME`
+/// (0x80) lies inside `CSIGNAL`, which the kernel strips from `clone`'s
+/// flags, so only `unshare` and `clone3` could carry it, and both are refused.
+const CLONE_NEW_MASK: u32 = 0x7e02_0000;
+
+/// The seccomp filter (AET-WO-0300a, ruled on PR #15; grown by AET-WO-1600,
+/// ruled on PR #51): a fixed, default-allow program, assembled here rather than
+/// by `seccompiler::SeccompFilter`, whose compiled rules match system-call
+/// numbers under `AUDIT_ARCH_X86_64` and so would let an x32 call
+/// (number | 0x4000_0000) through a default-allow filter.
 ///
-/// `socket` is refused for every family because no tool needs one (measured
-/// in the spike). `socketpair` is allowed only as an `AF_UNIX` stream or
-/// seqpacket pair: such a pair is born connected to itself and cannot be
-/// redirected. A datagram pair (`SOCK_DGRAM`, or `SOCK_RAW`, which `AF_UNIX`
-/// treats as datagram) can `connect` or `sendto` any pathname datagram socket
-/// outside, which the adversarial pass showed by writing to the systemd
-/// journal, so it is refused like `socket`.
+/// - Any other architecture, and any x32 call, kills the process.
+/// - `socket` is refused for every family because no tool needs one (measured
+///   in the AET-WO-0300a spike). `socketpair` is allowed only as an `AF_UNIX`
+///   stream or seqpacket pair: such a pair is born connected to itself and
+///   cannot be redirected. A datagram pair (`SOCK_DGRAM`, or `SOCK_RAW`, which
+///   `AF_UNIX` treats as datagram) can `connect` or `sendto` any pathname
+///   datagram socket outside, which the adversarial pass showed by writing to
+///   the systemd journal, so it is refused like `socket`.
+/// - `io_uring` and every call in [`DENIED`] are refused with `EPERM`, and so
+///   is `clone` with any bit of [`CLONE_NEW_MASK`].
+/// - [`PID_TESTED`]'s `self_pid` is the trampoline's, which the exec keeps;
+///   `setpriority`
+///   and `ioprio_set` are refused only in their every-process-of-the-user
+///   forms (`PRIO_USER`, `IOPRIO_WHO_USER`). Their per-pid forms stay open:
+///   the tools call them on their own threads' ids, which no filter can name.
+/// - `clone3` returns `ENOSYS`, never `EPERM`. Its flags sit in user memory,
+///   where seccomp cannot read them; `ENOSYS` makes glibc fall back to `clone`,
+///   whose flags the filter tests, and is what Docker's default profile already
+///   returns. `EPERM` would stop every tool from starting a thread or a child.
 #[cfg(target_arch = "x86_64")]
-pub fn socket_filter() -> Option<BpfProgram> {
+pub fn seccomp_filter(self_pid: u32) -> Option<BpfProgram> {
     const LD_W_ABS: u16 = 0x20; // BPF_LD | BPF_W | BPF_ABS
     const AND_K: u16 = 0x54; // BPF_ALU | BPF_AND | BPF_K
     const JEQ_K: u16 = 0x15; // BPF_JMP | BPF_JEQ | BPF_K
@@ -714,48 +808,180 @@ pub fn socket_filter() -> Option<BpfProgram> {
     const OFFSET_ARCH: u32 = 4;
     const OFFSET_ARG0: u32 = 16; // low 32 bits, little-endian
     const OFFSET_ARG1: u32 = 24;
-    const NR_SOCKET: u32 = 41;
     const NR_SOCKETPAIR: u32 = 53;
-    const NR_IO_URING_SETUP: u32 = 425;
-    const NR_IO_URING_ENTER: u32 = 426;
-    const NR_IO_URING_REGISTER: u32 = 427;
+    const NR_CLONE: u32 = 56;
+    const NR_SETPRIORITY: u32 = 141;
+    const NR_IOPRIO_SET: u32 = 251;
+    const NR_CLONE3: u32 = 435;
     const AF_UNIX: u32 = 1;
     const SOCK_TYPE_MASK: u32 = 0xf;
     const SOCK_STREAM: u32 = 1;
     const SOCK_SEQPACKET: u32 = 5;
+    const PRIO_USER: u32 = 2; // linux/resource.h
+    const IOPRIO_WHO_USER: u32 = 3; // linux/ioprio.h
     const RET_ALLOW: u32 = 0x7fff_0000;
-    const RET_EPERM: u32 = 0x0005_0000 | 1;
+    const RET_ERRNO: u32 = 0x0005_0000;
+    const EPERM: u32 = 1;
+    const ENOSYS: u32 = 38;
     const RET_KILL_PROCESS: u32 = 0x8000_0000;
-    let op = |code, k, jt, jf| sock_filter { code, jt, jf, k };
-    // Jump offsets count instructions after the next one: 15 is EPERM,
-    // 16 kill, 17 allow.
-    Some(vec![
-        op(LD_W_ABS, OFFSET_ARCH, 0, 0),       // 0
-        op(JEQ_K, AUDIT_ARCH_X86_64, 0, 14),   // 1: else kill (16)
-        op(LD_W_ABS, OFFSET_NR, 0, 0),         // 2
-        op(JSET_K, X32_SYSCALL_BIT, 12, 0),    // 3: x32, kill (16)
-        op(JEQ_K, NR_SOCKET, 10, 0),           // 4: EPERM (15)
-        op(JEQ_K, NR_IO_URING_SETUP, 9, 0),    // 5: EPERM (15)
-        op(JEQ_K, NR_IO_URING_ENTER, 8, 0),    // 6: EPERM (15)
-        op(JEQ_K, NR_IO_URING_REGISTER, 7, 0), // 7: EPERM (15)
-        op(JEQ_K, NR_SOCKETPAIR, 0, 8),        // 8: not socketpair, allow (17)
-        op(LD_W_ABS, OFFSET_ARG0, 0, 0),       // 9: the family
-        op(JEQ_K, AF_UNIX, 0, 4),              // 10: else EPERM (15)
-        op(LD_W_ABS, OFFSET_ARG1, 0, 0),       // 11: the type, with flags
-        op(AND_K, SOCK_TYPE_MASK, 0, 0),       // 12
-        op(JEQ_K, SOCK_STREAM, 3, 0),          // 13: allow (17)
-        op(JEQ_K, SOCK_SEQPACKET, 2, 0),       // 14: allow (17), else EPERM
-        op(RET_K, RET_EPERM, 0, 0),            // 15
-        op(RET_K, RET_KILL_PROCESS, 0, 0),     // 16
-        op(RET_K, RET_ALLOW, 0, 0),            // 17
-    ])
+    use Label::{Allow, Clone, Enosys, Eperm, Ioprio, Kill, Next, Pid, Priority, Socketpair};
+    // (label of this instruction, code, k, jump if true, jump if false)
+    let mut prog: Vec<(Label, u16, u32, Label, Label)> = vec![
+        (Next, LD_W_ABS, OFFSET_ARCH, Next, Next),
+        (Next, JEQ_K, AUDIT_ARCH_X86_64, Next, Kill),
+        (Next, LD_W_ABS, OFFSET_NR, Next, Next),
+        (Next, JSET_K, X32_SYSCALL_BIT, Kill, Next),
+    ];
+    for &(_, nr) in &DENIED {
+        prog.push((Next, JEQ_K, nr, Eperm, Next));
+    }
+    prog.push((Next, JEQ_K, NR_CLONE3, Enosys, Next));
+    for &(_, nr) in &PID_TESTED {
+        prog.push((Next, JEQ_K, nr, Pid, Next));
+    }
+    prog.extend([
+        (Next, JEQ_K, NR_SETPRIORITY, Priority, Next),
+        (Next, JEQ_K, NR_IOPRIO_SET, Ioprio, Next),
+        (Next, JEQ_K, NR_CLONE, Clone, Socketpair),
+        // clone: refused with any namespace bit in its flags.
+        (Clone, LD_W_ABS, OFFSET_ARG0, Next, Next),
+        (Next, JSET_K, CLONE_NEW_MASK, Eperm, Allow),
+        // socketpair: only an AF_UNIX stream or seqpacket pair.
+        (Socketpair, JEQ_K, NR_SOCKETPAIR, Next, Allow),
+        (Next, LD_W_ABS, OFFSET_ARG0, Next, Next),
+        (Next, JEQ_K, AF_UNIX, Next, Eperm),
+        (Next, LD_W_ABS, OFFSET_ARG1, Next, Next),
+        (Next, AND_K, SOCK_TYPE_MASK, Next, Next),
+        (Next, JEQ_K, SOCK_STREAM, Allow, Next),
+        (Next, JEQ_K, SOCK_SEQPACKET, Allow, Eperm),
+        // PID_TESTED: pid 0 or the tool's own.
+        (Pid, LD_W_ABS, OFFSET_ARG0, Next, Next),
+        (Next, JEQ_K, 0, Allow, Next),
+        (Next, JEQ_K, self_pid, Allow, Eperm),
+        // setpriority and ioprio_set: never every process of the user.
+        (Priority, LD_W_ABS, OFFSET_ARG0, Next, Next),
+        (Next, JEQ_K, PRIO_USER, Eperm, Allow),
+        (Ioprio, LD_W_ABS, OFFSET_ARG0, Next, Next),
+        (Next, JEQ_K, IOPRIO_WHO_USER, Eperm, Allow),
+        (Eperm, RET_K, RET_ERRNO | EPERM, Next, Next),
+        (Enosys, RET_K, RET_ERRNO | ENOSYS, Next, Next),
+        (Kill, RET_K, RET_KILL_PROCESS, Next, Next),
+        (Allow, RET_K, RET_ALLOW, Next, Next),
+    ]);
+    // Jumps name labels; each becomes the forward offset BPF counts from the
+    // next instruction.
+    let at = |want: Label| {
+        prog.iter()
+            .position(|i| i.0 == want)
+            .expect("every label is placed")
+    };
+    let mut p = Vec::with_capacity(prog.len());
+    for (i, &(_, code, k, jt, jf)) in prog.iter().enumerate() {
+        let off = |t: Label| match t {
+            Next => 0,
+            t => u8::try_from(at(t) - i - 1).expect("a forward jump that fits in 8 bits"),
+        };
+        p.push(sock_filter {
+            code,
+            jt: off(jt),
+            jf: off(jf),
+            k,
+        });
+    }
+    Some(p)
+}
+
+/// Jump targets in `seccomp_filter`'s program; `Next` falls through.
+#[cfg(target_arch = "x86_64")]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Label {
+    Next,
+    Eperm,
+    Enosys,
+    Kill,
+    Allow,
+    Clone,
+    Socketpair,
+    Pid,
+    Priority,
+    Ioprio,
 }
 
 /// No filter exists for other architectures, so the call refuses with
 /// `SandboxUnavailable`, `id` `seccomp`, rather than running unfiltered.
 #[cfg(not(target_arch = "x86_64"))]
-pub fn socket_filter() -> Option<BpfProgram> {
+pub fn seccomp_filter(_self_pid: u32) -> Option<BpfProgram> {
     None
+}
+
+/// Drops every capability it can, then checks (AET-WO-1600, ruled on PR #51):
+///
+/// 1. With `CAP_SETPCAP` effective (root in the image), empties the bounding
+///    set. This must come before step 3, which takes `CAP_SETPCAP` away; the
+///    reverse order leaves the bounding set full (measured in the spike). A
+///    user on a host cannot empty it and need not: under `no_new_privs` an
+///    exec gains nothing from it.
+/// 2. Clears the ambient set.
+/// 3. Clears the effective, permitted and inheritable sets.
+/// 4. Verifies that those four sets are empty and `no_new_privs` is set
+///    (Landlock and the filter both set it), and that the bounding set is empty
+///    if step 1 ran.
+///
+/// Any failure is an error, and the call refuses (`INV-06`).
+fn drop_capabilities() -> Result<(), String> {
+    let errno = |what: &str, e: Errno| format!("{what}: errno {}", e.raw_os_error());
+    // Capability numbers run from 0 to the kernel's last; past it, EINVAL.
+    let each = |test: fn(CapabilitySet) -> rustix::io::Result<bool>| {
+        let mut held = Vec::new();
+        for n in 0..64 {
+            let cap = CapabilitySet::from_bits_retain(1 << n);
+            match test(cap) {
+                Ok(true) => held.push(cap),
+                Ok(false) => {}
+                Err(Errno::INVAL) if n > 0 => break,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(held)
+    };
+    let before = capabilities(None).map_err(|e| errno("capget", e))?;
+    let setpcap = before.effective.contains(CapabilitySet::SETPCAP);
+    if setpcap {
+        for cap in
+            each(capability_is_in_bounding_set).map_err(|e| errno("reading the bounding set", e))?
+        {
+            remove_capability_from_bounding_set(cap)
+                .map_err(|e| errno(&format!("dropping {cap:?} from the bounding set"), e))?;
+        }
+    }
+    clear_ambient_capability_set().map_err(|e| errno("clearing the ambient set", e))?;
+    let none = CapabilitySets {
+        effective: CapabilitySet::empty(),
+        permitted: CapabilitySet::empty(),
+        inheritable: CapabilitySet::empty(),
+    };
+    set_capabilities(None, none).map_err(|e| errno("capset", e))?;
+    let after = capabilities(None).map_err(|e| errno("capget", e))?;
+    if !(after.effective.is_empty() && after.permitted.is_empty() && after.inheritable.is_empty()) {
+        return Err(format!("capabilities still held: {after:?}"));
+    }
+    let left =
+        each(capability_is_in_ambient_set).map_err(|e| errno("reading the ambient set", e))?;
+    if !left.is_empty() {
+        return Err(format!("ambient capabilities still held: {left:?}"));
+    }
+    if setpcap {
+        let left = each(capability_is_in_bounding_set)
+            .map_err(|e| errno("reading the bounding set", e))?;
+        if !left.is_empty() {
+            return Err(format!("bounding capabilities still held: {left:?}"));
+        }
+    }
+    match no_new_privs() {
+        Ok(true) => Ok(()),
+        Ok(false) => Err("no_new_privs is not set".to_owned()),
+        Err(e) => Err(errno("reading no_new_privs", e)),
+    }
 }
 
 /// Applies Landlock to this process: filesystem rights through ABI 3 are
@@ -813,6 +1039,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
 
     const TEST_BOUND: Duration = Duration::from_millis(200);
@@ -869,57 +1097,311 @@ mod tests {
     }
 
     /// The filter as an exact instruction sequence: any edit to it must show
-    /// up here (ruled on PR #15). (code, jt, jf, k)
+    /// up here (ruled on PR #15, extended by AET-WO-1600). (code, jt, jf, k),
+    /// with 4242 standing for the tool's pid.
     #[test]
-    fn socket_filter_is_exactly_this_program() {
-        let got: Vec<(u16, u8, u8, u32)> = socket_filter()
+    fn seccomp_filter_is_exactly_this_program() {
+        let got: Vec<(u16, u8, u8, u32)> = seccomp_filter(4242)
             .unwrap()
             .iter()
             .map(|i| (i.code, i.jt, i.jf, i.k))
             .collect();
         let want = vec![
-            (0x20, 0, 0, 4),            // load arch
-            (0x15, 0, 14, 0xc000_003e), // x86_64, else kill
-            (0x20, 0, 0, 0),            // load nr
-            (0x45, 12, 0, 0x4000_0000), // x32 bit: kill
-            (0x15, 10, 0, 41),          // socket: EPERM
-            (0x15, 9, 0, 425),          // io_uring_setup: EPERM
-            (0x15, 8, 0, 426),          // io_uring_enter: EPERM
-            (0x15, 7, 0, 427),          // io_uring_register: EPERM
-            (0x15, 0, 8, 53),           // socketpair? else allow
-            (0x20, 0, 0, 16),           // load family
-            (0x15, 0, 4, 1),            // AF_UNIX, else EPERM
-            (0x20, 0, 0, 24),           // load type
-            (0x54, 0, 0, 0xf),          // type & SOCK_TYPE_MASK
-            (0x15, 3, 0, 1),            // SOCK_STREAM: allow
-            (0x15, 2, 0, 5),            // SOCK_SEQPACKET: allow, else EPERM
-            (0x06, 0, 0, 0x0005_0001),  // errno EPERM
-            (0x06, 0, 0, 0x8000_0000),  // kill process
-            (0x06, 0, 0, 0x7fff_0000),  // allow
+            (0x20, 0, 0, 4),             // 0: load arch
+            (0x15, 0, 63, 0xc000_003e),  // 1: x86_64, else kill
+            (0x20, 0, 0, 0),             // 2: load nr
+            (0x45, 61, 0, 0x4000_0000),  // 3: x32 bit: kill
+            (0x15, 58, 0, 41),           // 4: socket: EPERM
+            (0x15, 57, 0, 425),          // 5: io_uring_setup: EPERM
+            (0x15, 56, 0, 426),          // 6: io_uring_enter: EPERM
+            (0x15, 55, 0, 427),          // 7: io_uring_register: EPERM
+            (0x15, 54, 0, 29),           // 8: shmget: EPERM
+            (0x15, 53, 0, 30),           // 9: shmat: EPERM
+            (0x15, 52, 0, 31),           // 10: shmctl: EPERM
+            (0x15, 51, 0, 67),           // 11: shmdt: EPERM
+            (0x15, 50, 0, 64),           // 12: semget: EPERM
+            (0x15, 49, 0, 65),           // 13: semop: EPERM
+            (0x15, 48, 0, 66),           // 14: semctl: EPERM
+            (0x15, 47, 0, 68),           // 15: msgget: EPERM
+            (0x15, 46, 0, 69),           // 16: msgsnd: EPERM
+            (0x15, 45, 0, 70),           // 17: msgrcv: EPERM
+            (0x15, 44, 0, 71),           // 18: msgctl: EPERM
+            (0x15, 43, 0, 220),          // 19: semtimedop: EPERM
+            (0x15, 42, 0, 272),          // 20: unshare: EPERM
+            (0x15, 41, 0, 308),          // 21: setns: EPERM
+            (0x15, 40, 0, 434),          // 22: pidfd_open: EPERM
+            (0x15, 39, 0, 438),          // 23: pidfd_getfd: EPERM
+            (0x15, 38, 0, 424),          // 24: pidfd_send_signal: EPERM
+            (0x15, 37, 0, 101),          // 25: ptrace: EPERM
+            (0x15, 36, 0, 310),          // 26: process_vm_readv: EPERM
+            (0x15, 35, 0, 311),          // 27: process_vm_writev: EPERM
+            (0x15, 34, 0, 312),          // 28: kcmp: EPERM
+            (0x15, 33, 0, 250),          // 29: keyctl: EPERM
+            (0x15, 32, 0, 248),          // 30: add_key: EPERM
+            (0x15, 31, 0, 249),          // 31: request_key: EPERM
+            (0x15, 30, 0, 321),          // 32: bpf: EPERM
+            (0x15, 29, 0, 298),          // 33: perf_event_open: EPERM
+            (0x15, 28, 0, 323),          // 34: userfaultfd: EPERM
+            (0x15, 27, 0, 240),          // 35: mq_open: EPERM
+            (0x15, 26, 0, 241),          // 36: mq_unlink: EPERM
+            (0x15, 25, 0, 242),          // 37: mq_timedsend: EPERM
+            (0x15, 24, 0, 243),          // 38: mq_timedreceive: EPERM
+            (0x15, 23, 0, 244),          // 39: mq_notify: EPERM
+            (0x15, 22, 0, 245),          // 40: mq_getsetattr: EPERM
+            (0x15, 22, 0, 435),          // 41: clone3: ENOSYS
+            (0x15, 13, 0, 302),          // 42: prlimit64: the pid test
+            (0x15, 12, 0, 203),          // 43: sched_setaffinity: the pid test
+            (0x15, 14, 0, 141),          // 44: setpriority: the which test
+            (0x15, 15, 0, 251),          // 45: ioprio_set: the which test
+            (0x15, 0, 2, 56),            // 46: clone? else to socketpair
+            (0x20, 0, 0, 16),            // 47: load clone's flags
+            (0x45, 14, 17, 0x7e02_0000), // 48: a CLONE_NEW* bit: EPERM, else allow
+            (0x15, 0, 16, 53),           // 49: socketpair? else allow
+            (0x20, 0, 0, 16),            // 50: load family
+            (0x15, 0, 11, 1),            // 51: AF_UNIX, else EPERM
+            (0x20, 0, 0, 24),            // 52: load type
+            (0x54, 0, 0, 0xf),           // 53: type & SOCK_TYPE_MASK
+            (0x15, 11, 0, 1),            // 54: SOCK_STREAM: allow
+            (0x15, 10, 7, 5),            // 55: SOCK_SEQPACKET: allow, else EPERM
+            (0x20, 0, 0, 16),            // 56: load the pid
+            (0x15, 8, 0, 0),             // 57: pid 0: allow
+            (0x15, 7, 4, 4242),          // 58: the tool's own pid: allow, else EPERM
+            (0x20, 0, 0, 16),            // 59: load setpriority's which
+            (0x15, 2, 5, 2),             // 60: PRIO_USER: EPERM, else allow
+            (0x20, 0, 0, 16),            // 61: load ioprio_set's which
+            (0x15, 0, 3, 3),             // 62: IOPRIO_WHO_USER: EPERM, else allow
+            (0x06, 0, 0, 0x0005_0001),   // 63: errno EPERM
+            (0x06, 0, 0, 0x0005_0026),   // 64: errno ENOSYS
+            (0x06, 0, 0, 0x8000_0000),   // 65: kill process
+            (0x06, 0, 0, 0x7fff_0000),   // 66: allow
         ];
         assert_eq!(got, want);
     }
 
-    #[test]
-    fn every_jump_lands_on_the_return_it_names() {
-        let p = socket_filter().unwrap();
-        let (eperm, kill, allow) = (15, 16, 17);
-        let target = |i: usize, off: u8| i + 1 + usize::from(off);
-        assert_eq!(target(1, p[1].jf), kill);
-        assert_eq!(target(3, p[3].jt), kill);
-        for (i, op) in p.iter().enumerate().take(8).skip(4) {
-            assert_eq!(target(i, op.jt), eperm, "instruction {i}");
+    /// A classic-BPF interpreter for exactly the opcodes the filter uses, run
+    /// over `seccomp_data` built here: the oracle for the exhaustive test
+    /// (ruled on PR #51, F8). Anything else it meets is a failure.
+    fn run_bpf(p: &[sock_filter], nr: u32, arch: u32, args: [u64; 6]) -> u32 {
+        let mut data = [0u8; 64];
+        data[0..4].copy_from_slice(&nr.to_le_bytes());
+        data[4..8].copy_from_slice(&arch.to_le_bytes());
+        for (i, a) in args.iter().enumerate() {
+            data[16 + 8 * i..24 + 8 * i].copy_from_slice(&a.to_le_bytes());
         }
-        assert_eq!(target(8, p[8].jf), allow);
-        assert_eq!(target(10, p[10].jf), eperm);
-        assert_eq!(target(13, p[13].jt), allow);
-        assert_eq!(target(14, p[14].jt), allow);
-        assert_eq!(target(14, p[14].jf), eperm);
+        let (mut pc, mut acc) = (0usize, 0u32);
+        for _ in 0..p.len() {
+            let op = &p[pc];
+            let jump = |taken: bool| pc + 1 + usize::from(if taken { op.jt } else { op.jf });
+            pc = match op.code {
+                0x20 => {
+                    let k = op.k as usize;
+                    acc = u32::from_le_bytes(data[k..k + 4].try_into().unwrap());
+                    pc + 1
+                }
+                0x54 => {
+                    acc &= op.k;
+                    pc + 1
+                }
+                0x15 => jump(acc == op.k),
+                0x45 => jump(acc & op.k != 0),
+                0x06 => return op.k,
+                other => panic!("opcode {other:#x} at {pc}"),
+            };
+            assert!(pc < p.len(), "fell off the end of the program");
+        }
+        panic!("no return within {} steps", p.len());
+    }
+
+    /// `#define NAME VALUE` lines from a kernel header, as name → value.
+    fn header(path: &str, prefix: &str) -> BTreeMap<String, u64> {
+        let text = fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("{path}: {e} (the kernel headers are the oracle)"));
+        text.lines()
+            .filter_map(|l| {
+                let mut w = l.split_whitespace();
+                (w.next()? == "#define").then_some(())?;
+                let name = w.next()?.strip_prefix(prefix)?;
+                let v = w.next()?;
+                let v = match v.strip_prefix("0x") {
+                    Some(hex) => u64::from_str_radix(hex, 16).ok()?,
+                    None => v.parse().ok()?,
+                };
+                Some((name.to_owned(), v))
+            })
+            .collect()
+    }
+
+    /// Every number, both ABIs, every `clone` flag bit and every
+    /// `socketpair` family and type, against what the rulings say, with the
+    /// numbers taken from the kernel's own headers rather than from the filter.
+    #[test]
+    fn the_filter_refuses_exactly_what_was_ruled_for_every_number() {
+        const X86_64: u32 = 0xc000_003e;
+        const ALLOW: u32 = 0x7fff_0000;
+        const EPERM: u32 = 0x0005_0001;
+        const ENOSYS: u32 = 0x0005_0026;
+        const KILL: u32 = 0x8000_0000;
+        let refused = [
+            "socket",
+            "io_uring_setup",
+            "io_uring_enter",
+            "io_uring_register",
+            "shmget",
+            "shmat",
+            "shmdt",
+            "shmctl",
+            "msgget",
+            "msgsnd",
+            "msgrcv",
+            "msgctl",
+            "semget",
+            "semop",
+            "semtimedop",
+            "semctl",
+            "unshare",
+            "setns",
+            "pidfd_open",
+            "pidfd_getfd",
+            "pidfd_send_signal",
+            "ptrace",
+            "process_vm_readv",
+            "process_vm_writev",
+            "kcmp",
+            "keyctl",
+            "add_key",
+            "request_key",
+            "bpf",
+            "perf_event_open",
+            "userfaultfd",
+            "mq_open",
+            "mq_unlink",
+            "mq_timedsend",
+            "mq_timedreceive",
+            "mq_notify",
+            "mq_getsetattr",
+        ];
+        let nrs = header("/usr/include/x86_64-linux-gnu/asm/unistd_64.h", "__NR_");
+        let nr = |name: &str| u32::try_from(nrs[name]).unwrap();
+        let refused: BTreeMap<u32, &str> = refused.iter().map(|&n| (nr(n), n)).collect();
+        assert_eq!(refused.len(), 37, "37 distinct numbers");
+        let (clone, clone3, socketpair) = (nr("clone"), nr("clone3"), nr("socketpair"));
+        let pid_tested = [nr("prlimit64"), nr("sched_setaffinity")];
+        let (setpriority, ioprio_set) = (nr("setpriority"), nr("ioprio_set"));
+        let me = 4242u64;
+        let p = seccomp_filter(4242).unwrap();
+        for n in 0..0x1_0000u32 {
+            for arch in [0x4000_0003, 0xc000_00b7, 0x4000_003e, 0] {
+                assert_eq!(run_bpf(&p, n, arch, [0; 6]), KILL, "arch {arch:#x} nr {n}");
+            }
+            assert_eq!(
+                run_bpf(&p, n | 0x4000_0000, X86_64, [0; 6]),
+                KILL,
+                "x32 {n}"
+            );
+            if [clone, socketpair, setpriority, ioprio_set].contains(&n) || pid_tested.contains(&n)
+            {
+                continue;
+            }
+            let want = if refused.contains_key(&n) {
+                EPERM
+            } else if n == clone3 {
+                ENOSYS
+            } else {
+                ALLOW
+            };
+            assert_eq!(run_bpf(&p, n, X86_64, [!0; 6]), want, "nr {n}");
+        }
+        for n in [
+            0x8000_0000 | 41,
+            0x8000_0000 | clone3,
+            0x3fff_ffff,
+            0xffff_ffff,
+        ] {
+            let want = if n & 0x4000_0000 != 0 { KILL } else { ALLOW };
+            assert_eq!(run_bpf(&p, n, X86_64, [0; 6]), want, "nr {n:#x}");
+        }
+        // clone: refused exactly when a CLONE_NEW* bit that fits its 32-bit
+        // flags word is set; the high word is never read.
+        let sched = header("/usr/include/linux/sched.h", "CLONE_NEW");
+        let mask = sched
+            .values()
+            .filter(|&&v| v & 0xff == 0 && v <= u64::from(u32::MAX))
+            .fold(0u64, |m, v| m | v);
+        assert_eq!(sched.len(), 8, "CLONE_NEW* in linux/sched.h: {sched:?}");
+        for flags in [0x11u64, 0x003d_0f00, 0x0120_0011, 0x4111] {
+            assert_eq!(
+                run_bpf(&p, clone, X86_64, [flags, 0, 0, 0, 0, 0]),
+                ALLOW,
+                "{flags:#x}"
+            );
+        }
+        for bit in 0..64 {
+            let flags = 0x11u64 | (1 << bit);
+            let want = if bit < 32 && mask & (1 << bit) != 0 {
+                EPERM
+            } else {
+                ALLOW
+            };
+            assert_eq!(
+                run_bpf(&p, clone, X86_64, [flags, 0, 0, 0, 0, 0]),
+                want,
+                "clone bit {bit}"
+            );
+        }
+        // prlimit64 and sched_setaffinity: pid 0 and the tool's own; the pid
+        // is an int, so only the low word counts, for the kernel too.
+        for n in pid_tested {
+            for pid in [
+                0,
+                me,
+                me - 1,
+                me + 1,
+                1,
+                0xffff_ffff,
+                me | (1 << 32),
+                1 << 32,
+            ] {
+                let ok = pid & 0xffff_ffff == 0 || pid & 0xffff_ffff == me;
+                let got = run_bpf(&p, n, X86_64, [pid, 0, 0, 0, 0, 0]);
+                assert_eq!(got, if ok { ALLOW } else { EPERM }, "nr {n} pid {pid:#x}");
+            }
+        }
+        // setpriority's PRIO_USER (linux/resource.h) and ioprio_set's
+        // IOPRIO_WHO_USER (an enum in linux/ioprio.h, so a literal here):
+        // refused for any who; every other which allowed.
+        let prio_user = header("/usr/include/linux/resource.h", "PRIO_")["USER"];
+        for (n, user) in [(setpriority, prio_user), (ioprio_set, 3)] {
+            for which in (0..8u64).chain([user | (1 << 32)]) {
+                for who in [0, me, 1, u64::MAX] {
+                    let refused = which & 0xffff_ffff == user;
+                    let got = run_bpf(&p, n, X86_64, [which, who, 19, 0, 0, 0]);
+                    assert_eq!(
+                        got,
+                        if refused { EPERM } else { ALLOW },
+                        "nr {n} {which:#x} {who}"
+                    );
+                }
+            }
+        }
+        // socketpair: an AF_UNIX stream or seqpacket pair, with any flags.
+        for family in 0..64u64 {
+            for kind in 0..16u64 {
+                for flags in [0u64, 0x800, 0x8_0000, 0x8_0800] {
+                    let ok = family == 1 && (kind == 1 || kind == 5);
+                    let got = run_bpf(&p, socketpair, X86_64, [family, kind | flags, 0, 0, 0, 0]);
+                    assert_eq!(
+                        got,
+                        if ok { ALLOW } else { EPERM },
+                        "{family} {kind} {flags:#x}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
     fn an_unavailable_line_is_sandbox_unavailable_naming_its_layer() {
-        for layer in ["seccomp", "landlock"] {
+        for layer in ["seccomp", "landlock", "capabilities"] {
             let stop = parse_status(&format!("unavailable {layer} some reason\n"), "kicad-cli")
                 .unwrap_err();
             assert_eq!(
