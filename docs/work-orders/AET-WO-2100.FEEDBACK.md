@@ -383,7 +383,20 @@ On `bc16a9b` on Furnace:
 - `cargo clippy --workspace --all-targets --locked -- -D warnings` ok, and with `--features aethelgard-cli/with-tools`;
 - `cargo test --workspace --locked`: 522 passed, 0 failed, across 42 test targets.
 
-Tier 2 is above. CI: CI_RESULT.
+Tier 2 is above.
+
+**CI, the first push after the ruling** (`b2df9a5`, acceptance 3), green:
+- run [42459301466](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42459301466): `gates` 2 m 40 s and `tools` 15 m 10 s, on the bumped image;
+- run [42459301461](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42459301461): `image` 4 m 17 s.
+
+The architect can re-read the `tools` job's `ANSWER 2100` lines from the log:
+- the firmware builds in 0.20 s;
+- the platform passes;
+- boots 1 and 2 pass, identically;
+- the 10 µs boot, A3 and A7 fail;
+- 562 passed, 0 failed.
+
+The reference's `image_sha256` there is `8d0e710e34a17bd7ac34e3c0e2c7cbdcfa1753ed9a18c08681301d0040ae2c4c`, equal to Furnace's and podman's. Firmware identity holds across three checkout paths (F17).
 
 Reduction pass (diff): −42 lines net (the pin parser −18, the speed check −7, the tier-2 boot helper −17; the tier-1 transcript helper about even) · 3 duplicates removed · 1 redundant check removed · 4 protected kept, labelled · 1 finding below (F30).
 
