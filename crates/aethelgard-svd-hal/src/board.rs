@@ -45,8 +45,6 @@ pub enum BoardError {
         solved: u8,
         table: Option<u8>,
     },
-    #[error("pin `{pin}` is assigned twice")]
-    PinUsedTwice { pin: String },
     #[error("peripheral `{peripheral}` is not one this generator emits (I2Cn, SPIn)")]
     UnsupportedPeripheral { peripheral: String },
     #[error("signal `{signal}` is not a role of `{peripheral}`")]
@@ -80,7 +78,6 @@ impl BoardError {
             Self::InvalidPin { .. } => "InvalidPin",
             Self::UnknownPin { .. } => "UnknownPin",
             Self::AssignmentMismatch { .. } => "AssignmentMismatch",
-            Self::PinUsedTwice { .. } => "PinUsedTwice",
             Self::UnsupportedPeripheral { .. } => "UnsupportedPeripheral",
             Self::UnsupportedSignal { .. } => "UnsupportedSignal",
             Self::IncompletePeripheral { .. } => "IncompletePeripheral",
@@ -331,9 +328,7 @@ impl Plan {
                 peripheral: Some(a.peripheral.clone()),
                 net: net.clone(),
             };
-            if pins.insert(a.pin.clone(), plan).is_some() {
-                return Err(BoardError::PinUsedTwice { pin: a.pin.clone() });
-            }
+            pins.insert(a.pin.clone(), plan);
             roles
                 .entry(a.peripheral.clone())
                 .or_insert_with(|| (kind, BTreeMap::new()))
@@ -355,9 +350,7 @@ impl Plan {
                 peripheral: None,
                 net: net.clone(),
             };
-            if pins.insert(pin.clone(), plan).is_some() {
-                return Err(BoardError::PinUsedTwice { pin: pin.clone() });
-            }
+            pins.insert(pin.clone(), plan);
         }
         let mut peripherals = BTreeMap::new();
         for (name, (kind, by_role)) in roles {
@@ -394,19 +387,15 @@ impl Plan {
 }
 
 fn peripheral_kind(name: &str) -> Result<Kind, BoardError> {
-    let numbered = |prefix: &str| {
-        name.strip_prefix(prefix)
-            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
-    };
-    if numbered("I2C") {
-        Ok(Kind::I2c)
-    } else if numbered("SPI") {
-        Ok(Kind::Spi)
-    } else {
-        Err(BoardError::UnsupportedPeripheral {
+    [Kind::I2c, Kind::Spi]
+        .into_iter()
+        .find(|kind| {
+            name.strip_prefix(kind.header())
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        })
+        .ok_or_else(|| BoardError::UnsupportedPeripheral {
             peripheral: name.into(),
         })
-    }
 }
 
 /// A clock gate: the RCC register's offset and name, and the bit.
@@ -1133,6 +1122,10 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
 }
 
 /// The oracle's expectation for one GPIO register: (mask, value).
+///
+/// belt-and-suspenders: this restates the mask arithmetic of `emit_lib`'s
+/// field writes on purpose. The oracle must not read back what the crate
+/// under proof does (`INV-07`), so a slip in one copy is caught by the other.
 fn expect_field(acc: &mut BTreeMap<u32, (u32, u32)>, reg: u32, pos: u32, width: u32, value: u32) {
     let mask = ((1u32 << width) - 1) << pos;
     let e = acc.entry(reg).or_insert((0, 0));

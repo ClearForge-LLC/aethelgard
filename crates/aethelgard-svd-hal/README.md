@@ -56,7 +56,7 @@ The two modules carry `#[rustfmt::skip]`, because `cargo fmt --all` reaches the 
 
 Pin roles' output type, speed and pull are the generator's policy (`Role::policy`), not register facts. `I2C_TIMINGR` values and SPI frame settings are placeholders until a clock tree is solved.
 
-**Refusals** (`BoardError`, `kind()`): `InvalidCrateName`, `InvalidTopology` (`SolvedTopology::validate` refused it), `ReservedPin` (the solver's `RESERVED_PINS`: SWD and crystal pins), `InvalidPin`, `UnknownPin`, `AssignmentMismatch` (a solved AF the pin table does not give that pin), `PinUsedTwice`, `UnsupportedPeripheral` (anything but `I2Cn` and `SPIn`), `UnsupportedSignal`, `IncompletePeripheral`, `CeilingMismatch`, `CeilingTooLow` (unreachable behind `validate`), and the register errors.
+**Refusals** (`BoardError`, `kind()`): `InvalidCrateName`, `InvalidTopology` (`SolvedTopology::validate` refused it), `ReservedPin` (the solver's `RESERVED_PINS`: SWD and crystal pins), `InvalidPin`, `UnknownPin`, `AssignmentMismatch` (a solved AF the pin table does not give that pin), `UnsupportedPeripheral` (anything but `I2Cn` and `SPIn`), `UnsupportedSignal`, `IncompletePeripheral`, `CeilingMismatch`, `CeilingTooLow` (unreachable behind `validate`), and the register errors.
 
 **The I2C ceiling.** `SolvedTopology.i2c_ceilings` (`AET-WO-1202`) gives each I2C bus's maximum speed. The topology does not say which peripheral serves which bus, so `generate` needs exactly one ceiling per I2C peripheral (`CeilingMismatch` otherwise). It gives every I2C peripheral the lowest of them: exact for one bus, and never above any bus's ceiling for more.
 
