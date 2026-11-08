@@ -47,6 +47,69 @@ jobs:
           cat examples/invalid-zero-domain.json | cargo run -q -p aethelgard-cli -- validate || status=$?
           test "$status" -eq 2
 
+      # AET-WO-1800: every publishable crate packages, in dependency order, and
+      # the CLI builds from those packages alone. No token, no publish.
+      - name: package every publishable crate and build the CLI from the packages
+        run: |
+          set -euo pipefail
+          # Dependency order: cargo packages a path dependency's sibling from the
+          # same invocation, so this list is also the order docs/releasing.md publishes in.
+          crates="aethelgard-ir aethelgard-kicad-lib aethelgard-svd-hal aethelgard-eda aethelgard-twin aethelgard-chaos aethelgard-cli"
+          # The list must be exactly the workspace members that may publish.
+          cargo metadata --no-deps --format-version 1 --locked | python3 -c '
+          import json, sys
+          m = json.load(sys.stdin)
+          want = sorted(p["name"] for p in m["packages"] if p["publish"] != [])
+          have = sorted(sys.argv[1].split())
+          assert want == have, f"publishable set drifted: workspace {want} vs step {have}"
+          ' "$crates"
+          args=""; for c in $crates; do args="$args -p $c"; done
+          rm -rf target/package
+          cargo package --locked $args
+          python3 - $crates <<'PY'
+          import re, sys, tarfile, pathlib
+          for name in sys.argv[1:]:
+              crate = pathlib.Path("target/package") / f"{name}-0.1.0.crate"
+              tf = tarfile.open(crate)
+              files = {m.name.split("/", 1)[1] for m in tf.getmembers() if m.isfile()}
+              prefix = f"{name}-0.1.0/"
+              size = crate.stat().st_size
+              assert size < 10 * 1024 * 1024, f"{name}: {size} bytes is over the 10 MiB crates.io limit"
+              need = {"LICENSE-MIT", "LICENSE-APACHE", "README.md"}
+              if name == "aethelgard-kicad-lib":
+                  need.add("data/kicad-10.0.7/LICENSE.md")
+              if name == "aethelgard-svd-hal":
+                  need |= {"data/st-cmsis-device-h7/LICENSE.md", "data/st-cmsis-device-h7/SOURCE.md",
+                           "data/st-open-pin-data/LICENSE", "data/st-open-pin-data/SOURCE.md"}
+              for f in sorted(need - files):
+                  sys.exit(f"{name}: licence or notice file {f} is missing from the package")
+              for f in sorted(files):
+                  parts = f.split("/")
+                  if "target" in parts or ".git" in parts or "boards" in parts:
+                      sys.exit(f"{name}: forbidden path {f} in the package")
+              for f in sorted(files):
+                  if f.endswith(".rs") and f.startswith("src/"):
+                      text = tf.extractfile(prefix + f).read().decode()
+                      for t in re.findall(r"include_(?:bytes|str)!\(\s*\"([^\"]+)\"", text):
+                          target = (pathlib.PurePosixPath(f).parent / t)
+                          norm = []
+                          for part in target.parts:
+                              if part == "..": norm.pop()
+                              elif part != ".": norm.append(part)
+                          if "/".join(norm) not in files:
+                              sys.exit(f"{name}: include target {t} (from {f}) is missing from the package")
+              print(f"ok {name}: {size} bytes, {len(files)} files")
+          PY
+          # Build the CLI from the unpacked packages alone, offline.
+          un="$RUNNER_TEMP/unpacked"; rm -rf "$un"; mkdir -p "$un"
+          cfg=""
+          for c in $crates; do
+            tar -xzf "target/package/$c-0.1.0.crate" -C "$un"
+            cfg="$cfg --config patch.crates-io.$c.path=\"$un/$c-0.1.0\""
+          done
+          eval cargo install --path "$un/aethelgard-cli-0.1.0" --locked --offline --root "$un/root" $cfg
+          "$un/root/bin/aethelgard" validate < examples/sentinel-01-minimal.json
+
   # Tier 2: the tool subcommands against the real tools, inside the image
   # pinned by container/IMAGE (RUL-15). Crates are fetched and everything is
   # compiled with the network; every tool run happens under --network none.
