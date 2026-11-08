@@ -1,50 +1,50 @@
-[05:58:25.1951] [INFO] Loaded monitor commands from: /home/forge/.cache/aet-0300a-renode/x/scripts/monitor.py
+[06:17:11.8610] [INFO] Loaded monitor commands from: /home/forge/.cache/aet-0300a-renode/x/scripts/monitor.py
 Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af)
 
 (monitor) $platform=@/home/forge/aethelgard-2100/spike/2100/out/sentinel-01.repl ;  $elf=@/home/forge/aethelgard-2100/spike/2100/fw-bare/target/thumbv7em-none-ea bihf/release/aet-2100-fw-bare;  include @/home/forge/aethelgard-2100/spike/2100/ run/s3-image-cold.resc
-[05:58:25.2131] [INFO] Including script(s): /home/forge/aethelgard-2100/spike/2100/run/s3-image-cold.resc
-[05:58:25.2198] [INFO] System bus created.
-[05:58:25.8314] [INFO] Pseudorandom Number Generator was created with seed: 1886058425
-[05:58:25.9061] [INFO] sysbus: Loading block of 64 bytes length at 0x8000000.
-[05:58:25.9078] [INFO] sysbus: Loading block of 1232 bytes length at 0x8000040.
-[05:58:25.9078] [INFO] sysbus: Loading block of 20 bytes length at 0x8000510.
-[05:58:25.9078] [INFO] sysbus: Loading block of 4 bytes length at 0x20000000.
-[05:58:25.9079] [INFO] sysbus: Loading block of 4 bytes length at 0x8000524.
+[06:17:11.8797] [INFO] Including script(s): /home/forge/aethelgard-2100/spike/2100/run/s3-image-cold.resc
+[06:17:11.8862] [INFO] System bus created.
+[06:17:12.5186] [INFO] Pseudorandom Number Generator was created with seed: 2014185898
+[06:17:12.5959] [INFO] sysbus: Loading block of 64 bytes length at 0x8000000.
+[06:17:12.5976] [INFO] sysbus: Loading block of 1234 bytes length at 0x8000040.
+[06:17:12.5977] [INFO] sysbus: Loading block of 20 bytes length at 0x8000514.
+[06:17:12.5977] [INFO] sysbus: Loading block of 4 bytes length at 0x20000000.
+[06:17:12.5977] [INFO] sysbus: Loading block of 4 bytes length at 0x8000528.
 BEFORE
 0x00000000
 False
 0x00000000
-0x00000000
-[05:58:25.9352] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.gpioPortA. Address 0x58020000.
-[05:58:25.9354] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.gpioPortA. Address 0x58020004.
-0x00000000
-[05:58:25.9356] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.gpioPortA. Address 0x58020014.
-0x00[05:58:25.9357] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.gpioPortA. Address 0x58020020.
+[06:17:12.6259] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.gpioPortA. Address 0x58020000.
+0[06:17:12.6261] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.gpioPortA. Address 0x58020004.
+x00000000
+0x0[06:17:12.6263] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.gpioPortA. Address 0x58020014.
+0000000
+0x00[06:17:12.6264] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.gpioPortA. Address 0x58020020.
 000000
-0x00000[05:58:25.9359] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.gpioPortB. Address 0x58020400.
-000
-0x000[05:58:25.9360] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.gpioPortB. Address 0x58020404.
+0x000[06:17:12.6266] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.gpioPortB. Address 0x58020400.
 00000
+0x00[06:17:12.6267] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.gpioPortB. Address 0x58020404.
+000000
+0x0000[06:17:12.6269] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.gpioPortB. Address 0x58020420.
+0000
 0x00000000
-[05:58:25.9361] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.gpioPortB. Address 0x58020420.
 0x00000000
 0x00000000
+0[06:17:12.6282] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.i2c1. Address 0x40005400.
+x00000000
+0x[06:17:12.6284] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.i2c1. Address 0x40005410.
+00000000
+[06:17:12.6289] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.spi1. Address 0x40013000.
 0x00000000
-0x00000000
-[05:58:25.9374] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.i2c1. Address 0x40005400.
-0x00000000
-[05:58:25.9376] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.i2c1. Address 0x40005410.
-0x00000000[05:58:25.9381] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.spi1. Address 0x40013000.
-
-0x00000000
-[05:58:25.9383] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.spi1. Address 0x4001300C.
-[05:58:25.9894] [INFO] cpu: Guessing VectorTableOffset value to be 0x8000000.
-[05:58:25.9947] [INFO] cpu: Setting initial values: PC = 0x8000041, SP = 0x20020000.
-[05:58:25.9959] [INFO] machine-0: Machine started.
-[05:58:26.0139] [WARNING] gpioPortB: Unhandled write to offset 0x4. Unhandled bits: [6] when writing value 0x40. Tags: OT6 (0x1).
-[05:58:26.0140] [WARNING] gpioPortB: Unhandled write to offset 0x4. Unhandled bits: [7] when writing value 0x80. Tags: OT7 (0x1).
-[05:58:26.0143] [WARNING] i2c1: Unhandled write to offset 0x10. Unhandled bits: [0-1, 4-6, 8, 13, 21-22] when writing value 0x602173. Tags: SCLL (0x73), SCLH (0x21), SCLDEL (0x6).
-[05:58:26.0180] [INFO] machine-0: Machine paused.
+0[06:17:12.6292] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.spi1. Address 0x4001300C.
+x00000000
+[06:17:12.6820] [INFO] cpu: Guessing VectorTableOffset value to be 0x8000000.
+[06:17:12.6875] [INFO] cpu: Setting initial values: PC = 0x8000041, SP = 0x20020000.
+[06:17:12.6888] [INFO] machine-0: Machine started.
+[06:17:12.7071] [WARNING] gpioPortB: Unhandled write to offset 0x4. Unhandled bits: [6] when writing value 0x40. Tags: OT6 (0x1).
+[06:17:12.7073] [WARNING] gpioPortB: Unhandled write to offset 0x4. Unhandled bits: [7] when writing value 0x80. Tags: OT7 (0x1).
+[06:17:12.7075] [WARNING] i2c1: Unhandled write to offset 0x10. Unhandled bits: [0-1, 4-6, 8, 13, 21-22] when writing value 0x602173. Tags: SCLL (0x73), SCLH (0x21), SCLDEL (0x6).
+[06:17:12.7110] [INFO] machine-0: Machine paused.
 AFTER
 0x2100B007
 True
@@ -66,4 +66,4 @@ True
 0x00000000000F4240
 END
 Renode is quitting
-[05:58:26.2458] [INFO] machine-0: Disposed.
+[06:17:12.9461] [INFO] machine-0: Disposed.

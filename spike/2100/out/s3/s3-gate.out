@@ -1,0 +1,13 @@
+[06:17:13.7673] [INFO] Loaded monitor commands from: /home/forge/.cache/aet-0300a-renode/x/scripts/monitor.py
+Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af)
+
+(monitor) $platform=@/home/forge/aethelgard-2100/spike/2100/out/sentinel-01.repl ;  include @/home/forge/aethelgard-2100/spike/2100/run/s3-gate.resc
+[06:17:13.7931] [INFO] Including script(s): /home/forge/aethelgard-2100/spike/2100/run/s3-gate.resc
+[06:17:13.7995] [INFO] System bus created.
+[06:17:14.4058] [INFO] Pseudorandom Number Generator was created with seed: 1900828260
+0x00000000
+0x00000000
+[06:17:14.4780] [WARNING] sysbus: Tried to write a locked peripheral: machine-0.gpioPortA. Address 0x58020000, value 0x5
+[06:17:14.4784] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.gpioPortA. Address 0x58020000.
+Renode is quitting
+[06:17:14.5088] [INFO] machine-0: Disposed.

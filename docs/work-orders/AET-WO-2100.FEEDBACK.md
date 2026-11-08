@@ -5,7 +5,7 @@
 **The kits** (kickoff item 2):
 - **Renode 1.17.0:** `~/.cache/aet-0300a-renode/x/renode` (`--version`: `1.17.0+20260907gitf1dd1b4af`, .NET 8.0.12). `~/.cache/aet-0300a-renode/bin/renode` is a symlink to it. The kickoff names "AET-WO-1600's kit", but `~/.cache/aet-1600-adv/tools/renode` is a symlink to that work order's `probe.py` shim, not Renode. The real Renode is 0300a's.
 - **Thumb toolchain:** `RUSTUP_HOME=~/.cache/aet-1400-spike/rustup`, with `rustc 1.99.1 (58cf8f9c3 2026-10-13)` and `thumbv7em-none-eabihf` added. It links with the bundled `rust-lld` (the ELF's `.comment` names LLD 23.1.1). `rust-objcopy` needs `LD_LIBRARY_PATH=$RUSTUP_HOME/toolchains/1.99.1-x86_64-unknown-linux-gnu/lib`.
-- **Probes and outputs:** cited as they stand at commit `459005f`. Scratch measurements, including the shell loops that drove the boots and the subagent's raw files, are outside the repository in `~/.cache/aet-2100-spike/` (Furnace).
+- **Probes and outputs:** the probes as they stand at commit `459005f`; `spike/2100/out/s3/` as re-taken on the committed ELF in the commit after `bd3b99a` (the PR head); the rest at `459005f`, unchanged since. Scratch measurements, including the shell loops that drove the boots and the subagent's raw files, are outside the repository in `~/.cache/aet-2100-spike/` (Furnace).
 
 **§7, held:**
 - nothing under `container/` or `.github/`;
@@ -34,7 +34,7 @@ Entry schema: `finding · where · severity · type · recommendation · decisio
 
 ## Spike
 
-Unless a row says otherwise, every boot below runs `fw-bare` release, sha256 `bfd902ae…` (Furnace build), on `spike/2100/out/sentinel-01.repl`. Renode is driven as `renode --disable-gui --console --plain -e "<commands>" </dev/null` with `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 DOTNET_EnableDiagnostics=0`.
+Unless a row says otherwise, every boot below runs `fw-bare` release, sha256 `bfd902aede164c10…` (Furnace build, the committed source), on `spike/2100/out/sentinel-01.repl`. The UART candidate is `--features uart`, sha256 `fd44ae463359ffd5…`. The S3 outputs in `out/s3/` were re-taken on these two ELFs after the last source edit. Renode is driven as `renode --disable-gui --console --plain -e "<commands>" </dev/null` with `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 DOTNET_EnableDiagnostics=0`.
 
 ### S1 The platform description
 
@@ -128,7 +128,7 @@ Every candidate is read before `start` and after `emulation RunFor "0.01"`, by `
 | GPIO on a solved pin (`PA0`, `FLASH_CS`) | LED `False` → `True`, ODR `0x0` → `0x1` | yes | the specification (`gpio.FLASH_CS = PA0`) | partly: `into_output` already drives it high, so it shows that `PA0` was configured, not that the fixed point was reached. It is one bit, and its other value is the reset value | none |
 | Register image after N ms | GPIOA MODER `0` → `0x0000A801`, AFRL `0` → `0x55500000`; GPIOB MODER `0` → `0x0000A000`, AFRL `0` → `0x44000000`; I2C1 CR1 `0` → `1`; SPI1 CR1 `0` → `1` | yes (S4) | the specification: each solved pin's mode and AF number from `SolvedTopology` | **partly, see F10**: the RCC enables and SPI1 `CFG2` read the configured values before the firmware runs, and `OTYPER` and `TIMINGR` are never stored | none |
 
-**Witnesses for a boot that did not happen** (`out/s3/load-*.out`, §5.1):
+**Witnesses for a boot that did not happen** (`out/s3/load-junk.out`, `load-x86.out`, `load-unmapped.out`; `logLevel 3` is set only after `RunFor`, so every load and run warning is in the file; §5.1):
 - A random 4 KiB file: `sysbus LoadELF` prints `There was an error executing command 'sysbus LoadELF …' / Error while loading ELF: Could not load ELF from path`.
 - **An x86-64 ELF (`/bin/true`), and the ARM firmware relinked to `0x0A000000` (unmapped):** both load with only `[WARNING]` lines and no error string.
   - The x86 file: `WriteDoubleWord to non existing peripheral`.
@@ -138,7 +138,7 @@ Every candidate is read before `start` and after `emulation RunFor "0.01"`, by `
 
 | finding | where | severity | type | recommendation | decision-needed |
 |---|---|---|---|---|---|
-| F10. **Renode's RCC comes out of reset with every solved clock already enabled.** `RCC_AHB4ENR` reads `0x032807FF`, `APB1LENR` `0xC0FE03FF` and `APB2ENR` `0x00073033` before the firmware runs (GPIOA and GPIOB, I2C1 and SPI1 bits set). Renode does gate: with `AHB4ENR` cleared, a write to GPIOA is dropped with `[WARNING] sysbus: Tried to write a locked peripheral: machine-0.gpioPortA`, and the read returns 0 (`run/s3-gate.resc`). From the stock reset, a firmware that skipped an enable would still work, and the image could not tell. **Measured fix** (`run/s3-image-cold.resc`, `out/s3/s3-image-cold.out`): the boot script writes 0 to the three enable registers before `start`. The firmware then leaves exactly `0x3`, `0x00200000` and `0x00001000`, the solved enables and nothing else, and no locked-peripheral warning fires during the run | S3 | medium | fidelity | The boot always starts from those three registers at 0, and a `locked peripheral` warning during the run is a `fail` finding. The expected enables come from the topology | **yes** |
+| F10. **Renode's RCC comes out of reset with every solved clock already enabled.** `RCC_AHB4ENR` reads `0x032807FF`, `APB1LENR` `0xC0FE03FF` and `APB2ENR` `0x00073033` before the firmware runs (GPIOA and GPIOB, I2C1 and SPI1 bits set). Renode does gate: with `AHB4ENR` cleared, a write to GPIOA is dropped with `[WARNING] sysbus: Tried to write a locked peripheral: machine-0.gpioPortA`, and the read returns 0 (`run/s3-gate.resc`, `out/s3/s3-gate.out`). From the stock reset, a firmware that skipped an enable would still work, and the image could not tell. **Measured fix** (`run/s3-image-cold.resc`, `out/s3/s3-image-cold.out`): the boot script writes 0 to the three enable registers before `start`. The firmware then leaves exactly `0x3`, `0x00200000` and `0x00001000`, the solved enables and nothing else, and no locked-peripheral warning fires during the run | S3 | medium | fidelity | The boot always starts from those three registers at 0, and a `locked peripheral` warning during the run is a `fail` finding. The expected enables come from the topology | **yes** |
 | F11. **Two solved fields are not observable in Renode 1.17.0.** `OTYPER`: `gpioPortB: Unhandled write to offset 0x4 … Tags: OT6`/`OT7`, and it reads back 0. `I2C1_TIMINGR`'s timing bits: `Unhandled bits … SCLL (0x73), SCLH (0x21), SCLDEL (0x6)`, and it reads back 0. SPI1 `CFG2` reads `0x00400000` at reset, before the firmware sets `MASTER` | S3 | low | fidelity | The register image omits them, and the verdict names them in an `unobservable` list. Kani (P1 clause 5) is what proves those writes | no |
 | F12. **Two half-failed loads give no error string**, so the error-string witness alone would not separate them from a boot. What does separate them: the boot word stays 0 and the CPU executes 0 instructions | S3, §5.1 | high | verdict design | Refuse before Renode runs: an ELF that is not ELF32 little-endian `EM_ARM` `ET_EXEC`, or a `PT_LOAD` with file bytes outside the platform's flash and RAM (`FLASH_BANK1_BASE`, `D1_DTCMRAM_BASE` and sizes from the header). Inside the run, require `ExecutedInstructions` = MIPS × virtual time (S4) beside the boot word | **yes**, with S6 |
 | F13. **Recommendation:** judge by three witnesses, none of them Renode's exit code. (a) The boot word equals the CLI's constant: the fixed point was reached. (b) The solved register image equals the one computed from `SolvedTopology`, from F10's cold RCC: the board was configured as solved. (c) The instruction count is MIPS × time: the core never halted. In addition, there must be no `There was an error executing command` and no `locked peripheral` warning. Reject the UART (breaks §1.2) and a lone GPIO bit (one of its values is the reset value). The boot word's address and magic are a contract the CLI publishes and the generated linker script follows, not a value read from the ELF | S3 | — | ruling input | As stated | **yes** |
@@ -150,7 +150,7 @@ Every candidate is read before `start` and after `emulation RunFor "0.01"`, by `
 | Set | Host condition | Wall per boot | Host time for 10 ms virtual | Observed (word, PC, instructions, image) |
 |---|---|---|---|---|
 | plain, 5 (`plain.txt`) | idle | 1.83, 1.86, 1.94, 1.95, 2.04 s | 22.1–22.4 ms (`plain-host-time.txt`, a second run of five) | all `0x2100B007 0x80004ae 0xF4240 0xA801 0x1 0x55500000 0xA000 0x44000000 0x1 0x1` |
-| loaded, 13 (`loaded.txt`) | `taskset -c 3`, beside four busy loops pinned to core 3 | 11.5–12.4 s | — | 12 identical. One printed no value: its raw output was not saved, and the stress set below shows why |
+| loaded, 13 (`loaded.txt`) | `taskset -c 3`, beside four busy loops pinned to core 3 | 11.5–12.4 s | — | 12 identical. One printed no value, and its raw output was not saved. The stress set below reproduces one cause, a `\r` before the marker, but cannot show that it was this run's |
 | stress, 24 (`stress.txt`) | six at a time on cores 3–4, beside four busy loops; in a `MemoryMax=32G` scope | — | 0.32–2.47 s | 23 parsed and identical. In `stress-3.raw` the console wrote `\rOBSERVED`, so a line-start match missed it; the values after it are identical (F14) |
 | seeded, 3 (`seed.txt`) | idle, `emulation SetSeed 2100` twice, then `7` | ~1.9 s | — | identical |
 
@@ -242,7 +242,7 @@ This becomes the MCP tool `simulate` with three more optional string properties,
 
 Furnace, on `459005f`:
 - `cargo fmt --all -- --check` ok;
-- `cargo clippy --workspace --all-targets --locked -- -D warnings` ok;
+- `cargo clippy --workspace --all-targets --locked -- -D warnings` ok, and with `--features aethelgard-cli/with-tools` too;
 - `cargo test --workspace --locked`: 486 passed, 0 failed.
 
 The three spike crates pass `cargo fmt --check` and `cargo clippy --release -- -D warnings` in their own directories, `fw-bare` with and without `--features uart`. No workspace crate, `container/` or `.github/` file changed (`git diff --stat 7fab0e1 -- crates container .github` is empty). CI on the PR runs the unchanged workflows; it cannot witness the thumb build until S5 is ruled. The adversarial pass (§5) and the reduction pass (§5a) close the build half and are not run on a spike.

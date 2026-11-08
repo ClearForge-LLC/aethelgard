@@ -1,0 +1,10 @@
+[06:17:18.7938] [INFO] Loaded monitor commands from: /home/forge/.cache/aet-0300a-renode/x/scripts/monitor.py
+Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af)
+
+(monitor) mach create;  machine LoadPlatformDescription @/home/forge/aethelgard- 2100/spike/2100/out/sentinel-01.repl;  sysbus LoadELF @/home/forge/.cache/aet-21 00-spike/badelf/junk.bin;  logLevel 3;  emulation RunFor "0.01";  echo "OBS";  s ysbus ReadDoubleWord 0x20000000;  cpu PC;  cpu ExecutedInstructions;  quit
+[06:17:18.8183] [INFO] System bus created.
+[06:17:19.4274] [INFO] Pseudorandom Number Generator was created with seed: 160286798
+There was an error executing command 'sysbus LoadELF @/home/forge/.cache/aet-2100-spike/badelf/junk.bin': 
+Error while loading ELF: Could not load ELF from path: /home/forge/.cache/aet-2100-spike/badelf/junk.bin
+	Could not load ELF from path: /home/forge/.cache/aet-2100-spike/badelf/junk.bin
+(machine-0) [06:17:19.5283] [INFO] machine-0: Disposed.
