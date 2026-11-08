@@ -377,14 +377,32 @@ The `aethelgard` binary is the only part that executes external programs, and it
 Two more steps now run in the trampoline before the tool starts:
 
 1. **Before Landlock, the descriptor check.** It refuses the call when the tool would inherit any descriptor above 2 without close-on-exec, with exit 4, `SandboxUnavailable`, `id` `descriptors`. A leaked connected socket is a channel no filter sees, so callers must not leak. Our own CI closes the runner's leaked descriptors in the step's shell.
-2. **After Landlock, a required seccomp filter.** It applies to the tool and to everything the tool starts. It does three things:
-   - kills any non-x86_64 or x32 system call;
+2. **After Landlock, a required seccomp filter.** It applies to the tool and to everything the tool starts. It is default-allow (`AET-WO-1600` measured a default-deny allowlist as unstable across environments), and it does the following:
+   - kills any non-x86_64 or x32 system call, and any `int 0x80` call;
    - refuses `socket` for every family, and `socketpair` other than an `AF_UNIX` stream or seqpacket pair;
-   - refuses `io_uring`.
+   - refuses `io_uring`;
+   - **since `AET-WO-1600`:**
+     - refuses with `EPERM`: System V IPC, `unshare`, `setns`, `clone` with any `CLONE_NEW*` bit, the `pidfd_*` calls, `ptrace`, `process_vm_readv`/`writev`, `kcmp`, the keyring calls, `bpf`, `perf_event_open`, `userfaultfd`, and POSIX message queues;
+     - allows `prlimit64` and `sched_setaffinity` only for pid 0 or the tool itself (an outside `prlimit64` could set another process's CPU limit and kill it, past Landlock's signal scoping);
+     - refuses the user-wide forms of `setpriority` and `ioprio_set`;
+     - returns `ENOSYS` for `clone3`, so glibc falls back to `clone`, whose flags the filter can read. `EPERM` there broke every tool.
 
    If the filter cannot be installed, the call refuses with `SandboxUnavailable`, `id` `seccomp`. There is no escape hatch.
+3. **Capabilities drop before the tool starts** (`AET-WO-1600`). In order:
+   - the bounding set is emptied when `CAP_SETPCAP` is effective, which in practice means root in the image;
+   - the ambient set is cleared;
+   - the effective, permitted and inheritable sets are cleared;
+   - all of it is verified, with `no_new_privs` set.
 
-**Still open on a host:** non-socket channels to other processes with the same uid, namely System V shared memory, `unshare(CLONE_NEWUSER)` and `pidfd_open`. The filter is default-allow by design (§4 of the work order). Inside the published image, Docker gives the tool its own IPC namespace and refuses unprivileged `unshare`, so **the image is the supported boundary for tool subcommands.** A host-side system-call allowlist is `AET-WO-1600`, which must land before the P1 launch clause puts a crates.io-installed binary on hosts.
+   Failure refuses with `SandboxUnavailable`, `id` `capabilities`. An unprivileged user cannot empty the bounding set, and under `no_new_privs` a full one grants nothing.
+
+**The host is a supported boundary for tool subcommands** (named 2026-11-08, at the close of `AET-WO-1600`, PR #51). The non-socket channels this section listed as open on a host are closed: System V shared memory, `unshare(CLONE_NEWUSER)` and `pidfd_open`. So are the further channels its adversarial pass found, at no cost to any tool: tier 2 passed 16/16, then 20/20 with 1300 and 1301's tests.
+
+**Two residuals are accepted and stated:**
+- **A2:** a tool can lower another same-uid process's scheduling or I/O priority through the per-pid forms of `setpriority`, `ioprio_set` and `sched_setscheduler`, `setparam` and `setattr`. That is interference only, with no kill, no read and no write. BPF cannot tell the caller's own threads from other pids, and KiCad and Renode use these calls on their own threads.
+- **A4:** below Landlock ABI 6, signals to other same-uid processes are not scoped. The verdict reports this as `sandbox.scoped: false`.
+
+The published image remains the stronger boundary. Docker adds its own IPC namespace and profile on top.
 
 **The lifecycle at every instant (`AET-WO-0300c`, rulings on PR #34).**
 - The reaper and the guardian take the CLI's pid as an internal argument, `--cli-pid`, and never sample their parent.
@@ -452,6 +470,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-11-08 | §2.11, §4, §6, §8 | Added §2.11 (the pin search and the Kani probe). Amended `RUL-04` to a dependency-free board crate beside `embassy`. Answered `OQ-04`. Added the guardian's bounded retry to §6 | `AET-WO-1200` merged (PR #32). The `AET-WO-1400` spike was ruled on PR #42: `prove` cannot judge a crate with any dependency. `AET-WO-0300d` merged (PRs #39 and #41) after CI measured a leaked directory about once in three runs |
 | 2026-11-08 | §2.12, §4 | Added §2.12, the KiCad measurements from the `AET-WO-1300` spike. Amended `RUL-03`: every rule-bearing and library file is gate-written, local clearance overrides are refused, and no path reads a board's rules. Amended `RUL-11`: the vendored KiCad libraries are CC-BY-SA 4.0. Narrowed `RUL-14`: no identifier contains `/`, `{`, `}`, `$`, `[` or `]` | The spike was ruled on PR #40 (D1, D3–D6). It measured that a local override escapes a per-net rule, and that KiCad reinterprets those six characters |
 | 2026-11-08 | §2.13, §4 | Added §2.13 (the 1300 and 1400 builds). `RUL-03` widened to refuse waiver tokens and to require a KiCad-exact reader. `prove` fails a short cover summary | PRs #40 and #42. The adversarial passes found a critical reader bypass (A1) and a vacuous-proof pass (E1) |
+| 2026-11-08 | §6 | The seccomp filter's `AET-WO-1600` denials and the capability drop added. The host named a supported boundary for tool subcommands, with residuals A2 (priority interference) and A4 (signals below Landlock ABI 6) stated | PR #51. Measured by refusal against every tool, with a census by `strace`. The adversarial pass found that `prlimit64` could kill another process |
 
 New sections continue the sequence and never reuse a number.
 
