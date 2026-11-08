@@ -56,50 +56,47 @@ jobs:
           # same invocation, so this list is also the order docs/releasing.md publishes in.
           crates="aethelgard-ir aethelgard-kicad-lib aethelgard-svd-hal aethelgard-eda aethelgard-twin aethelgard-chaos aethelgard-cli"
           # The list must be exactly the workspace members that may publish.
-          cargo metadata --no-deps --format-version 1 --locked | python3 -c '
-          import json, sys
-          m = json.load(sys.stdin)
-          want = sorted(p["name"] for p in m["packages"] if p["publish"] != [])
-          have = sorted(sys.argv[1].split())
-          assert want == have, f"publishable set drifted: workspace {want} vs step {have}"
-          ' "$crates"
+          want=$(cargo metadata --no-deps --format-version 1 --locked \
+            | jq -r '.packages[] | select(.publish != []) | .name' | sort | tr '\n' ' ')
+          have=$(printf '%s\n' $crates | sort | tr '\n' ' ')
+          test "$want" = "$have" || { echo "publishable set drifted: workspace [$want] vs step [$have]"; exit 1; }
           args=""; for c in $crates; do args="$args -p $c"; done
           rm -rf target/package
           cargo package --locked $args
-          python3 - $crates <<'PY'
-          import re, sys, tarfile, pathlib
-          for name in sys.argv[1:]:
-              crate = pathlib.Path("target/package") / f"{name}-0.1.0.crate"
-              tf = tarfile.open(crate)
-              files = {m.name.split("/", 1)[1] for m in tf.getmembers() if m.isfile()}
-              prefix = f"{name}-0.1.0/"
-              size = crate.stat().st_size
-              assert size < 10 * 1024 * 1024, f"{name}: {size} bytes is over the 10 MiB crates.io limit"
-              need = {"LICENSE-MIT", "LICENSE-APACHE", "README.md"}
-              if name == "aethelgard-kicad-lib":
-                  need.add("data/kicad-10.0.7/LICENSE.md")
-              if name == "aethelgard-svd-hal":
-                  need |= {"data/st-cmsis-device-h7/LICENSE.md", "data/st-cmsis-device-h7/SOURCE.md",
-                           "data/st-open-pin-data/LICENSE", "data/st-open-pin-data/SOURCE.md"}
-              for f in sorted(need - files):
-                  sys.exit(f"{name}: licence or notice file {f} is missing from the package")
-              for f in sorted(files):
-                  parts = f.split("/")
-                  if "target" in parts or ".git" in parts or "boards" in parts:
-                      sys.exit(f"{name}: forbidden path {f} in the package")
-              for f in sorted(files):
-                  if f.endswith(".rs") and f.startswith("src/"):
-                      text = tf.extractfile(prefix + f).read().decode()
-                      for t in re.findall(r"include_(?:bytes|str)!\(\s*\"([^\"]+)\"", text):
-                          target = (pathlib.PurePosixPath(f).parent / t)
-                          norm = []
-                          for part in target.parts:
-                              if part == "..": norm.pop()
-                              elif part != ".": norm.append(part)
-                          if "/".join(norm) not in files:
-                              sys.exit(f"{name}: include target {t} (from {f}) is missing from the package")
-              print(f"ok {name}: {size} bytes, {len(files)} files")
-          PY
+          for c in $crates; do
+            crate="target/package/$c-0.1.0.crate"
+            files=$(tar -tzf "$crate" | grep -v '/$' | sed 's|^[^/]*/||')
+            size=$(stat -c %s "$crate")
+            test "$size" -lt $((10 * 1024 * 1024)) || { echo "$c: $size bytes is over the 10 MiB crates.io limit"; exit 1; }
+            # kicad-lib is CC-BY-SA-4.0: KiCad's LICENSE.md is its licence, and it carries neither MIT nor Apache.
+            need="README.md"
+            if [ "$c" = aethelgard-kicad-lib ]; then
+              need="$need data/kicad-10.0.7/LICENSE.md"
+              for f in LICENSE-MIT LICENSE-APACHE; do
+                if printf '%s\n' "$files" | grep -qxF "$f"; then echo "$c: $f must not be in the package"; exit 1; fi
+              done
+            else
+              need="$need LICENSE-MIT LICENSE-APACHE"
+            fi
+            if [ "$c" = aethelgard-svd-hal ]; then
+              need="$need data/st-cmsis-device-h7/LICENSE.md data/st-cmsis-device-h7/SOURCE.md data/st-open-pin-data/LICENSE data/st-open-pin-data/SOURCE.md"
+            fi
+            for f in $need; do
+              printf '%s\n' "$files" | grep -qxF "$f" || { echo "$c: licence or notice file $f is missing from the package"; exit 1; }
+            done
+            bad=$(printf '%s\n' "$files" | grep -E '(^|/)(target|\.git|boards)(/|$)' | head -1 || true)
+            test -z "$bad" || { echo "$c: forbidden path $bad in the package"; exit 1; }
+            # Every include_bytes!/include_str! target must be in the package.
+            for f in $(printf '%s\n' "$files" | grep -E '^src/.*\.rs$'); do
+              for t in $(tar -xzOf "$crate" "$c-0.1.0/$f" | tr -s ' \n' '  ' \
+                  | grep -oE 'include_(bytes|str)! ?\( ?"[^"]+"' | sed -E 's/^[^"]*"//; s/"$//'); do
+                norm=$(realpath -m --relative-to=/pkg "/pkg/$(dirname "$f")/$t")
+                printf '%s\n' "$files" | grep -qxF "$norm" \
+                  || { echo "$c: include target $t (from $f) is missing from the package"; exit 1; }
+              done
+            done
+            echo "ok $c: $size bytes, $(printf '%s\n' "$files" | wc -l) files"
+          done
           # Build the CLI from the unpacked packages alone, offline.
           un="$RUNNER_TEMP/unpacked"; rm -rf "$un"; mkdir -p "$un"
           cfg=""

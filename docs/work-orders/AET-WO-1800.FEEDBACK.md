@@ -35,7 +35,7 @@ Entry schema: `finding · where · severity · type · recommendation · decisio
 - **F2** svd-hal's dev-dependency on `aethelgard-twin` must be path-only (`../aethelgard-twin`), not `workspace = true`. A versioned entry survives packaging, and twin depends on svd-hal, so the first publish would be a cycle · `crates/aethelgard-svd-hal/Cargo.toml` · medium · design · none; the same applies to any future dev-dependency cycle · no.
 - **F3** Two READMEs are new (`aethelgard-twin`, `aethelgard-evolve`), outside the fence's letter, because the WO asks every member for `readme` and neither had one · low · scope · none · no.
 - **F4** `cargo package --workspace` packages `publish = false` members too in 1.99.1 (it packaged evolve), so the step names the publishable set with `-p` and a metadata assertion fails if that list drifts from the workspace · low · note.
-- **F5** The kicad-lib crate is `CC-BY-SA-4.0` but carries the MIT and Apache files, as the WO requires; the manifest `license` is what crates.io shows · low · for the architect · decision-needed: confirm.
+- **F5** `aethelgard-kicad-lib` is CC-BY-SA-4.0 and carries KiCad's `LICENSE.md` only, no MIT or Apache file (architect ruling on PR #65) · note.
 - **F6** The step reaches the crates.io index to resolve third-party crates; packaging itself is token-free. The CLI install is `--offline`.
 
 ## Reduction pass (gates)

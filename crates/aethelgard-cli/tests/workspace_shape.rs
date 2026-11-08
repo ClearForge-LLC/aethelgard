@@ -404,7 +404,6 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
     ];
     let mut expected: Vec<&str> = DATA.to_vec();
     expected.extend(["Cargo.toml", "README.md", "src/lib.rs"]);
-    expected.extend(LICENCE_FILES);
     expected.sort();
     assert_eq!(files(&root().join(KICAD_LIB)), expected);
     let kicad = manifest(KICAD_LIB);
