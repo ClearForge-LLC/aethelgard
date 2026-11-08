@@ -560,6 +560,27 @@ mod tests {
         leaves(&Cli::command())
     }
 
+    /// `AET-WO-2100` (R5): the boot is three optional flags on the same tool,
+    /// so `simulate` keeps its name and only `--platform` is required.
+    #[test]
+    fn simulate_keeps_its_name_and_takes_the_boot_as_optional_flags() {
+        let leaf = real().into_iter().find(|l| l.name == "simulate").unwrap();
+        let args: Vec<(&str, bool)> = leaf
+            .args
+            .iter()
+            .map(|a| (a.long.as_str(), a.required))
+            .collect();
+        assert_eq!(
+            args,
+            [
+                ("platform", true),
+                ("firmware", false),
+                ("spec", false),
+                ("for", false)
+            ]
+        );
+    }
+
     #[test]
     fn argv_builds_one_token_per_argument() {
         let v = argv(

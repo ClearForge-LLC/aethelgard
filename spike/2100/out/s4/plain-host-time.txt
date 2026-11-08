@@ -1,5 +1,0 @@
-Elapsed Host Time: 00:00:00.022228900
-Elapsed Host Time: 00:00:00.022067900
-Elapsed Host Time: 00:00:00.022151000
-Elapsed Host Time: 00:00:00.022399700
-Elapsed Host Time: 00:00:00.022329500

@@ -22,6 +22,8 @@ use aethelgard_ir::{IrValidationError, PinTable, RESERVED_PINS, SolvedTopology};
 
 use crate::cmsis::{self, RegisterError, RegisterFacts};
 
+mod firmware;
+
 /// One variant per refusal (`INV-06`).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BoardError {
@@ -134,7 +136,8 @@ pub fn generate(
             speeds.insert(name, (hz, admitted.clone()));
         }
     }
-    let facts = Facts::new(&plan, &cmsis::register_facts()?)?;
+    let register_facts = cmsis::register_facts()?;
+    let facts = Facts::new(&plan, &register_facts)?;
     let mut files = BTreeMap::new();
     files.insert("Cargo.toml".to_owned(), emit_manifest(&plan));
     files.insert("Cargo.lock".to_owned(), emit_lock(&plan));
@@ -144,6 +147,7 @@ pub fn generate(
         "src/proofs.rs".to_owned(),
         emit_proofs(&plan, &facts, &speeds),
     );
+    files.extend(firmware::emit(&plan, &register_facts, &speeds)?);
     Ok(files)
 }
 
@@ -1906,5 +1910,28 @@ mod tests {
         assert!(!code(after));
         assert!(!code(&files["src/proofs.rs"]));
         assert!(rest.contains("unsafe fn new"));
+    }
+
+    #[test]
+    fn the_firmware_follows_the_plan_and_the_header() {
+        let files = generate("b", &solved(), &table()).unwrap();
+        let main = &files["firmware/src/main.rs"];
+        // The highest admitted speed, every pin in its role, init in the board
+        // crate's argument order.
+        assert!(main.contains("init::<i2c1_speed::Fast400k, _>(&mut r, pb6, pb7)"));
+        assert!(main.contains("let _pa0 = gpioa.pa0.into_output(&mut r);"));
+        assert!(main.contains("let pb6 = gpiob.pb6.into_i2c1_scl(&mut r);"));
+        assert!(main.contains("use b::{Board, i2c1_speed, mmio::Mmio};"));
+        let mut s = solved();
+        s.i2c_ceilings.insert("BUS".into(), 1_000_000);
+        let files = generate("b", &s, &table()).unwrap();
+        assert!(files["firmware/src/main.rs"].contains("i2c1_speed::FastPlus1M, _"));
+        // The memory map is the header's, and no file of the firmware runs host code.
+        let link = &files["firmware/link.x"];
+        assert!(link.contains("FLASH : ORIGIN = 0x08000000, LENGTH = 0x100000"));
+        assert!(link.contains("RAM   : ORIGIN = 0x20000000, LENGTH = 128K"));
+        assert!(files["firmware/Cargo.toml"].contains("b = { path = \"..\" }"));
+        assert!(files["firmware/Cargo.lock"].contains("name = \"b-firmware\""));
+        assert!(!files.keys().any(|k| k.ends_with("build.rs")));
     }
 }

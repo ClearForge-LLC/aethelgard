@@ -423,6 +423,14 @@ fn twin_has_only_its_known_files_keys_and_dependencies() {
     }
 }
 
+fn manifest_name(dir: &Path) -> String {
+    let manifest: Table = fs::read_to_string(dir.join("Cargo.toml"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    manifest["package"]["name"].as_str().unwrap().to_owned()
+}
+
 /// Generated board crates (`AET-WO-1400`, ruled on PR #42, R1 and R3) live under
 /// `boards/`, which the root excludes, so the workspace's lints never reach
 /// their `unsafe` `mmio` module. Each is its own crate with no `[workspace]`
@@ -475,6 +483,35 @@ fn boards_are_excluded_and_dependency_free() {
             "{} has a build.rs",
             dir.display()
         );
+        // The reference firmware beside the board (`AET-WO-2100`, R1): its
+        // own crate, no host code, and one dependency, the board beside it.
+        let firmware = dir.join("firmware");
+        let fw: Table = fs::read_to_string(firmware.join("Cargo.toml"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        for key in fw.keys() {
+            assert!(
+                ["package", "dependencies", "profile"].contains(&key.as_str()),
+                "{} sets [{key}]",
+                firmware.display()
+            );
+        }
+        let package = fw["package"].as_table().unwrap();
+        for key in ["build", "links"] {
+            assert!(
+                !package.contains_key(key),
+                "the firmware sets package.{key}"
+            );
+        }
+        assert!(
+            !firmware.join("build.rs").exists(),
+            "the firmware has a build.rs"
+        );
+        let deps = fw["dependencies"].as_table().unwrap();
+        let board = manifest_name(&dir);
+        assert_eq!(deps.keys().collect::<Vec<_>>(), [&board]);
+        assert_eq!(deps[&board]["path"].as_str(), Some(".."));
         boards.push(dir.file_name().unwrap().to_str().unwrap().to_owned());
     }
     // Exactly the boards `aethelgard-svd-hal/tests/board.rs` regenerates.

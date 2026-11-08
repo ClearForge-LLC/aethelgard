@@ -29,6 +29,11 @@ pub const SEED: u32 = 2100;
 /// Renode's 100 MIPS (R5).
 pub const MAX_VIRTUAL_NS: u64 = 100_000_000;
 
+/// The core's speed in the emitted platform: Renode 1.17.0's default, which
+/// the platform never changes (spike S4: `cpu PerformanceInMips` reads 100,
+/// and 10 ms executes exactly 1,000,000 instructions).
+pub const MIPS: u64 = 100;
+
 /// A half-open address range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Region {

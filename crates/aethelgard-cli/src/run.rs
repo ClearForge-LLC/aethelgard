@@ -95,6 +95,16 @@ impl Stop {
             message,
         }
     }
+    /// An input read but refused by name before any tool runs (exit 3), such
+    /// as `simulate`'s `MalformedFirmware`.
+    pub fn refused(kind: &'static str, message: String) -> Self {
+        Self {
+            code: EXIT_UNREADABLE,
+            kind,
+            id: None,
+            message,
+        }
+    }
     pub fn missing(tool: &str) -> Self {
         Self {
             code: EXIT_TOOL_UNAVAILABLE,

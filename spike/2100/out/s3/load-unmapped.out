@@ -1,34 +1,0 @@
-[06:17:35.9936] [INFO] Loaded monitor commands from: /home/forge/.cache/aet-0300a-renode/x/scripts/monitor.py
-Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af)
-
-(monitor) mach create;  machine LoadPlatformDescription @/home/forge/aethelgard- 2100/spike/2100/out/sentinel-01.repl;  sysbus LoadELF @/home/forge/.cache/aet-21 00-spike/badelf/fw/target/thumbv7em-none-eabihf/release/aet-2100-fw-bare;  emula tion RunFor "0.01";  logLevel 3;  echo "OBS";  sysbus ReadDoubleWord 0x20000000;   cpu PC;  cpu ExecutedInstructions;  quit
-[06:17:36.0180] [INFO] System bus created.
-[06:17:36.6188] [INFO] Pseudorandom Number Generator was created with seed: 87795856
-[06:17:36.6864] [INFO] sysbus: Loading block of 64 bytes length at 0xA000000.
-[06:17:36.6881] [WARNING] sysbus: Tried to access bytes at non-existing peripheral in range <0x0A000000, 0x0A00003F>.
-[06:17:36.6882] [INFO] sysbus: Loading block of 1234 bytes length at 0xA000040.
-[06:17:36.6882] [WARNING] sysbus: Tried to access bytes at non-existing peripheral in range <0x0A000040, 0x0A000511>.
-[06:17:36.6882] [INFO] sysbus: Loading block of 20 bytes length at 0xA000514.
-[06:17:36.6883] [WARNING] sysbus: Tried to access bytes at non-existing peripheral in range <0x0A000514, 0x0A000527>.
-[06:17:36.6883] [INFO] sysbus: Loading block of 4 bytes length at 0x20000000.
-[06:17:36.6886] [INFO] sysbus: Loading block of 4 bytes length at 0xA000528.
-[06:17:36.6886] [WARNING] sysbus: Tried to access bytes at non-existing peripheral in range <0x0A000528, 0x0A00052B>.
-[06:17:36.7454] [INFO] cpu: Guessing VectorTableOffset value to be 0xA000000.
-[06:17:36.7513] [WARNING] cpu: Tried to set VTOR address at 0xA000000 which is not mapped on the system bus. Aborted.
-[06:17:36.7525] [INFO] cpu: Setting initial values: PC = 0x0, SP = 0x0.
-[06:17:36.7538] [INFO] machine-0: Machine started.
-[06:17:36.7641] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFFC, value 0x40000000.
-[06:17:36.7642] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFF8, value 0x0.
-[06:17:36.7642] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFF4, value 0x0.
-[06:17:36.7642] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFF0, value 0x0.
-[06:17:36.7642] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFEC, value 0x0.
-[06:17:36.7642] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFE8, value 0x0.
-[06:17:36.7642] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFE4, value 0x0.
-[06:17:36.7642] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFE0, value 0x0.
-[06:17:36.7727] [INFO] machine-0: Machine paused.
-OBS
-0x00000000
-0xeffffffe
-0x0000000000000000
-Renode is quitting
-

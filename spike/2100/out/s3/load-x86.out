@@ -1,27 +1,0 @@
-[06:17:34.1268] [INFO] Loaded monitor commands from: /home/forge/.cache/aet-0300a-renode/x/scripts/monitor.py
-Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af)
-
-(monitor) mach create;  machine LoadPlatformDescription @/home/forge/aethelgard- 2100/spike/2100/out/sentinel-01.repl;  sysbus LoadELF @/home/forge/.cache/aet-21 00-spike/badelf/x86.elf;  emulation RunFor "0.01";  logLevel 3;  echo "OBS";  sy sbus ReadDoubleWord 0x20000000;  cpu PC;  cpu ExecutedInstructions;  quit
-[06:17:34.1575] [INFO] System bus created.
-[06:17:34.7673] [INFO] Pseudorandom Number Generator was created with seed: 1294121742
-[06:17:34.8348] [INFO] sysbus: Loading block of 4352 bytes length at 0x0.
-[06:17:34.8366] [INFO] sysbus: Loading block of 13249 bytes length at 0x2000.
-[06:17:34.8366] [INFO] sysbus: Loading block of 3684 bytes length at 0x6000.
-[06:17:34.8366] [INFO] sysbus: Loading block of 1008 bytes length at 0x7C88.
-[06:17:34.8960] [INFO] cpu: Setting initial values: PC = 0x10102, SP = 0x464C457F.
-[06:17:34.8975] [INFO] machine-0: Machine started.
-[06:17:34.9113] [WARNING] sysbus: [cpu: 0x10102] WriteDoubleWord to non existing peripheral at 0x464C4574, value 0x40000200.
-[06:17:34.9114] [WARNING] sysbus: [cpu: 0x10102] WriteDoubleWord to non existing peripheral at 0x464C4570, value 0x10102.
-[06:17:34.9115] [WARNING] sysbus: [cpu: 0x10102] WriteDoubleWord to non existing peripheral at 0x464C456C, value 0x0.
-[06:17:34.9115] [WARNING] sysbus: [cpu: 0x10102] WriteDoubleWord to non existing peripheral at 0x464C4568, value 0x0.
-[06:17:34.9115] [WARNING] sysbus: [cpu: 0x10102] WriteDoubleWord to non existing peripheral at 0x464C4564, value 0x0.
-[06:17:34.9115] [WARNING] sysbus: [cpu: 0x10102] WriteDoubleWord to non existing peripheral at 0x464C4560, value 0x0.
-[06:17:34.9115] [WARNING] sysbus: [cpu: 0x10102] WriteDoubleWord to non existing peripheral at 0x464C455C, value 0x0.
-[06:17:34.9115] [WARNING] sysbus: [cpu: 0x10102] WriteDoubleWord to non existing peripheral at 0x464C4558, value 0x0.
-[06:17:34.9232] [INFO] machine-0: Machine paused.
-OBS
-0x00000000
-0xeffffffe
-0x0000000000000000
-Renode is quitting
-

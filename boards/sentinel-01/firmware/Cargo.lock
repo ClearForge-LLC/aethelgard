@@ -3,12 +3,12 @@
 version = 4
 
 [[package]]
-name = "aet-2100-fw-bare"
+name = "sentinel-01-board"
+version = "0.0.0"
+
+[[package]]
+name = "sentinel-01-board-firmware"
 version = "0.0.0"
 dependencies = [
  "sentinel-01-board",
 ]
-
-[[package]]
-name = "sentinel-01-board"
-version = "0.0.0"

@@ -4,6 +4,7 @@
 
 #![forbid(unsafe_code)]
 
+mod elf;
 mod input;
 mod kani;
 mod kicad;
@@ -87,9 +88,21 @@ enum Command {
     /// Load a platform in Renode, list the machine it built, and print the verdict.
     Simulate {
         /// A .repl file, or @path inside Renode's own tree, such as
-        /// @platforms/boards/nucleo_h753zi.repl.
+        /// @platforms/boards/nucleo_h753zi.repl. With --firmware, it must be
+        /// exactly the platform emitted for --spec.
         #[arg(long)]
         platform: PathBuf,
+        /// Boot this ELF on the platform and judge the boot by the
+        /// specification. Needs --spec and --for.
+        #[arg(long, requires_all = ["spec", "for_time"])]
+        firmware: Option<PathBuf>,
+        /// The specification the boot is judged by. Needs --firmware.
+        #[arg(long, requires = "firmware")]
+        spec: Option<PathBuf>,
+        /// The virtual time the boot runs: an integer with ns, us or ms, at
+        /// most 100ms, a whole number of 10 ns instructions. Needs --firmware.
+        #[arg(long = "for", id = "for_time", value_name = "TIME", requires = "firmware", value_parser = virtual_time)]
+        for_time: Option<u64>,
     },
     /// Serve every other subcommand as an MCP tool on stdin and stdout.
     Mcp,
@@ -236,7 +249,29 @@ fn main() -> ExitCode {
             check: CheckCommand::Erc { schematic },
         } => check_kicad(kicad::Check::Erc, &schematic, None, None),
         Command::Prove { crate_dir, harness } => prove(&crate_dir, &harness),
-        Command::Simulate { platform } => simulate(&platform),
+        Command::Simulate {
+            platform,
+            firmware,
+            spec,
+            for_time,
+        } => match (firmware, spec, for_time) {
+            (Some(firmware), Some(spec), Some(virtual_ns)) => {
+                let topology = match solved(&spec) {
+                    Ok((_, topology, _)) => topology,
+                    Err(code) => return code,
+                };
+                simulate(
+                    &platform,
+                    Some(Boot {
+                        firmware,
+                        topology,
+                        virtual_ns,
+                    }),
+                )
+            }
+            // clap's `requires` makes the three all-or-none.
+            _ => simulate(&platform, None),
+        },
         Command::Mcp => return mcp::serve(),
     };
     match judged {
@@ -252,6 +287,41 @@ fn main() -> ExitCode {
             )
         }
     }
+}
+
+/// `--for`: an integer, no leading zero, then `ns`, `us` or `ms`; at most the
+/// ruled 100 ms (`aethelgard_twin::boot::MAX_VIRTUAL_NS`), and a whole number
+/// of instructions at the platform's 100 MIPS, so the instruction witness is
+/// exact.
+fn virtual_time(s: &str) -> Result<u64, String> {
+    let (digits, scale) = if let Some(d) = s.strip_suffix("ns") {
+        (d, 1)
+    } else if let Some(d) = s.strip_suffix("us") {
+        (d, 1_000)
+    } else if let Some(d) = s.strip_suffix("ms") {
+        (d, 1_000_000)
+    } else {
+        return Err("a virtual time is an integer then ns, us or ms, such as 10ms".into());
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) || digits.starts_with('0') {
+        return Err(format!(
+            "`{digits}` is not a positive integer without a leading zero"
+        ));
+    }
+    let max = aethelgard_twin::boot::MAX_VIRTUAL_NS;
+    let ns = digits
+        .parse::<u64>()
+        .ok()
+        .and_then(|n| n.checked_mul(scale))
+        .filter(|&ns| ns <= max)
+        .ok_or_else(|| format!("{s} is more than the ruled {} ms", max / 1_000_000))?;
+    let per = 1000 / aethelgard_twin::boot::MIPS;
+    if ns % per != 0 {
+        return Err(format!(
+            "{s} is not a whole number of {per} ns instructions"
+        ));
+    }
+    Ok(ns)
 }
 
 /// A harness name is a Rust path: letters, digits, `_` and `::`. Anything
@@ -494,11 +564,99 @@ fn prove(crate_dir: &Path, harness: &str) -> Result<verdict::Verdict, run::Stop>
     Ok(v)
 }
 
-fn simulate(platform: &Path) -> Result<verdict::Verdict, run::Stop> {
-    let at_path = platform.as_os_str().as_encoded_bytes().starts_with(b"@");
-    if !at_path {
-        input::file_check(platform)?;
+/// `simulate --firmware`'s inputs, once `--spec` is solved.
+struct Boot {
+    firmware: PathBuf,
+    topology: aethelgard_ir::SolvedTopology,
+    virtual_ns: u64,
+}
+
+/// A boot ready to run: every input copied and checked, every expectation
+/// computed from the topology.
+struct Ready {
+    firmware: input::Input,
+    image_sha256: String,
+    image: aethelgard_twin::boot::Image,
+    boot_word: u32,
+    specification_sha256: String,
+    virtual_ns: u64,
+}
+
+/// The topology asks for what the twin cannot lower (exit 2), or the
+/// vendored header failed its own check (a corrupted build, as for `solve`).
+fn twin_stop(err: aethelgard_twin::TwinError) -> run::Stop {
+    let code = match err {
+        aethelgard_twin::TwinError::Register(_) => EXIT_INTERNAL,
+        _ => EXIT_INVALID_SPEC,
+    };
+    run::Stop {
+        code,
+        kind: err.kind(),
+        id: None,
+        message: err.to_string(),
     }
+}
+
+/// Copies and checks a boot's inputs before any tool is looked for: the
+/// platform must be exactly the one emitted for the topology (R6, F1), and
+/// the firmware must pass the ELF checks (R2).
+fn ready(
+    platform: &Path,
+    boot: Boot,
+    scratch: &Scratch,
+) -> Result<(input::Input, Ready), run::Stop> {
+    if platform.as_os_str().as_encoded_bytes().starts_with(b"@") {
+        return Err(run::Stop::refused(
+            "PlatformNotEmitted",
+            "with --firmware, --platform is the emitted .repl file, not a path inside Renode's tree"
+                .to_owned(),
+        ));
+    }
+    let platform = input::file(platform, &scratch.tool.join("platform.repl"))?;
+    let emitted = aethelgard_twin::platform::emit(&boot.topology).map_err(twin_stop)?;
+    let copied = fs::read(&platform.copy)
+        .map_err(|e| run::Stop::unreadable(format!("cannot read the platform's copy: {e}")))?;
+    if copied != emitted.as_bytes() {
+        return Err(run::Stop::refused(
+            "PlatformNotEmitted",
+            format!(
+                "{} is not the platform aethelgard-twin emits for specification {}",
+                platform.original.display(),
+                boot.topology.specification_sha256
+            ),
+        ));
+    }
+    let firmware = input::file(&boot.firmware, &scratch.tool.join("firmware.elf"))?;
+    let bytes = fs::read(&firmware.copy)
+        .map_err(|e| run::Stop::unreadable(format!("cannot read the firmware's copy: {e}")))?;
+    let memory = aethelgard_twin::boot::memory().map_err(twin_stop)?;
+    let image_sha256 = elf::check(&bytes, &memory)?;
+    let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
+    let boot_word = aethelgard_twin::boot::boot_word().map_err(twin_stop)?;
+    Ok((
+        platform,
+        Ready {
+            firmware,
+            image_sha256,
+            image,
+            boot_word,
+            specification_sha256: boot.topology.specification_sha256,
+            virtual_ns: boot.virtual_ns,
+        },
+    ))
+}
+
+fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run::Stop> {
+    let scratch = Scratch::new()?;
+    let ready = match boot {
+        Some(boot) => Some(ready(platform, boot, &scratch)?),
+        None => {
+            if !platform.as_os_str().as_encoded_bytes().starts_with(b"@") {
+                input::file_check(platform)?;
+            }
+            None
+        }
+    };
     let tool = run::Tool::find("renode")?;
     let root = fs::canonicalize(&tool.path)
         .ok()
@@ -506,8 +664,13 @@ fn simulate(platform: &Path) -> Result<verdict::Verdict, run::Stop> {
         .ok_or_else(|| {
             run::Stop::unusable("renode", "cannot resolve renode's installation".to_owned())
         })?;
-    let scratch = Scratch::new()?;
-    let input = input::platform(platform, &root, &scratch.tool.join("platform.repl"))?;
+    let (input, ready) = match ready {
+        Some((input, ready)) => (input, Some(ready)),
+        None => (
+            input::platform(platform, &root, &scratch.tool.join("platform.repl"))?,
+            None,
+        ),
+    };
     let mut read_only = tool.dirs();
     read_only.extend([
         root.clone(),
@@ -527,16 +690,27 @@ fn simulate(platform: &Path) -> Result<verdict::Verdict, run::Stop> {
         read_write: Vec::new(),
     };
     let version = version(invocation(run::args(["--version"]), "status-version"))?;
-    let args = run::args([
-        "--disable-gui",
-        "--console",
-        "--plain",
-        "-e",
-        &renode::commands(&input.copy),
-    ]);
+    let plan = ready.as_ref().map(|r| renode::BootPlan {
+        platform: &input.copy,
+        firmware: &r.firmware.copy,
+        virtual_ns: r.virtual_ns,
+        boot_word: r.boot_word,
+        image: &r.image,
+    });
+    let commands = match &plan {
+        Some(plan) => plan.commands(),
+        None => renode::commands(&input.copy),
+    };
+    let args = run::args(["--disable-gui", "--console", "--plain", "-e", &commands]);
     let out = invocation(args, "status-run").run()?;
     let code = out.code("renode")?;
-    let (findings, machine) = renode::judge(code, &out)?;
+    let (findings, machine, observed) = match &plan {
+        Some(plan) => renode::judge_boot(code, &out, plan)?,
+        None => {
+            let (findings, machine) = renode::judge(code, &out)?;
+            (findings, machine, None)
+        }
+    };
     let mut v = verdict::Verdict::new(
         "simulate",
         &input,
@@ -547,7 +721,53 @@ fn simulate(platform: &Path) -> Result<verdict::Verdict, run::Stop> {
         findings,
     );
     v.machine = machine;
+    if let (Some(r), Some(plan)) = (&ready, &plan) {
+        v.boot = Some(boot_report(r, plan, observed.as_ref()));
+    }
     Ok(v)
+}
+
+fn boot_report(
+    r: &Ready,
+    plan: &renode::BootPlan<'_>,
+    observed: Option<&renode::Observed>,
+) -> verdict::Boot {
+    use verdict::word;
+    verdict::Boot {
+        firmware: verdict::FirmwareReport {
+            path: r.firmware.original.display().to_string(),
+            sha256: r.firmware.sha256.clone(),
+            image_sha256: r.image_sha256.clone(),
+        },
+        specification_sha256: r.specification_sha256.clone(),
+        seed: aethelgard_twin::boot::SEED,
+        virtual_time_ns: r.virtual_ns,
+        mips: observed.map(|o| o.mips),
+        instructions: verdict::Expected {
+            expected: plan.instructions(),
+            observed: observed.map(|o| o.instructions),
+        },
+        pc: observed.map(|o| word(o.pc)),
+        boot_word: verdict::Word {
+            address: word(r.boot_word),
+            expected: word(aethelgard_twin::boot::BOOT_MAGIC),
+            observed: observed.map(|o| word(o.boot_word)),
+        },
+        registers: r
+            .image
+            .registers
+            .iter()
+            .enumerate()
+            .map(|(i, reg)| verdict::RegisterReport {
+                name: reg.name.clone(),
+                address: word(reg.address),
+                mask: word(reg.mask),
+                expected: word(reg.value),
+                observed: observed.map(|o| word(o.registers[i])),
+            })
+            .collect(),
+        unobservable: r.image.unobservable.clone(),
+    }
 }
 
 fn validate(file: Option<&Path>) -> ExitCode {
