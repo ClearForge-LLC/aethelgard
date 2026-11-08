@@ -61,4 +61,17 @@ spec.json
 
 ## CI run
 
-PENDING
+Run 42466864493 on PR #63 (head 435a12c), real Docker on `ubuntu-latest`: **green**. All four steps passed; the specification commit `3d13f4922b0adddb2f761c3a814c53fcfec61ac8` is on `main`; the image's source label is `https://github.com/ClearForge-LLC/aethelgard`. Output of `run it, as written` (lines cut at 700 bytes):
+
+```
+spec.json: OK
+ghcr.io/clearforge-llc/aethelgard@sha256:4c440a2d9e8ebcfbfc5ac49c0d10c7ca3b705a232e0c8895d1e98e0c7764234f
+{"ok":true,"project_name":"sentinel-01","specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","schematic":{"path":"out/sentinel-01.kicad_sch","sha256":"349968e34c8f14a244db008d56c38239a5e27d8613d003727941e7c1bfe9b3f9"},"bill_of_materials":{"path":"out/sentinel-01.bom.csv","sha256":"5ae3521299618066d99bb66ec45d7014f260a43edcc0487076ae7008e26a8799"},"board":{"path":"out/sentinel-01.kicad_pcb","sha256":"7b9b0e3dee3ff0d5dfa2cf8d90bd99ba615ca43a573699c062875189707c2070"}}
+{"ok":true,"verdict":"pass","check":"erc","input":{"path":"/work/out/sentinel-01.kicad_sch","sha256":"349968e34c8f14a244db008d56c38239a5e27d8613d003727941e7c1bfe9b3f9"},"tool":{"name":"kicad-cli","version":"10.0.7","exit_code":0},"sandbox":{"landlock_abi":8,"tcp_confined":true,"scoped":true,"sockets_denied":true},"included_severities":["error","warning"],"findings":[]}
+{"ok":true,"verdict":"pass","check":"drc","input":{"path":"/work/out/sentinel-01.kicad_pcb","sha256":"7b9b0e3dee3ff0d5dfa2cf8d90bd99ba615ca43a573699c062875189707c2070"},"tool":{"name":"kicad-cli","version":"10.0.7","exit_code":0},"sandbox":{"landlock_abi":8,"tcp_confined":true,"scoped":true,"sockets_denied":true},"included_severities":["error","warning"],"rules":"specification","specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","schematic":{"path":"/work/out/sentinel-01.kicad_sch","sha256":"349968e34c8f14a244db008d56c38239a5e27d8613d003727941e7c1bfe9b3f9"},"findings":[]}
+{"ok":false,"error":{"kind":"PinClaimedTwice","id":"PB9","claimants":["i2c_buses[0].sda","spi_devices[0].cs"],"message":"pin `PB9` is claimed by both `i2c_buses[0].sda` and `spi_devices[0].cs`"}}
+quickstart ok
+double.json
+out
+spec.json
+```
