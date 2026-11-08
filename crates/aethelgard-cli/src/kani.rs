@@ -5,6 +5,7 @@
 //! and any combination not in the table is a `ToolError`.
 
 use crate::run::{Output, Stop};
+use crate::said::{self, Style};
 use crate::verdict::Finding;
 
 const TOOL: &str = "cargo-kani";
@@ -30,8 +31,10 @@ pub fn judge(code: i32, out: &Output, harness: &str) -> Result<Vec<Finding>, Sto
     let no_harness = lines
         .iter()
         .any(|l| l.starts_with("error: Failed to match the following harness(es)"));
-    let disagree =
-        |why: &str| Stop::tool_error(TOOL, format!("cargo kani exited {code} but {why}"));
+    let disagree = |why: &str| {
+        let said = said::suffix(&text, Style::Cargo);
+        Stop::tool_error(TOOL, format!("cargo kani exited {code} but {why}{said}"))
+    };
 
     // A third witness: `--harness` is a substring filter, so the harnesses
     // Kani says it checked must be exactly the one asked for.
@@ -121,7 +124,10 @@ pub fn judge(code: i32, out: &Output, harness: &str) -> Result<Vec<Finding>, Sto
         },
         other => Err(Stop::tool_error(
             TOOL,
-            format!("cargo kani exited {other}, which is neither 0 nor 1"),
+            format!(
+                "cargo kani exited {other}, which is neither 0 nor 1{}",
+                said::suffix(&text, Style::Cargo)
+            ),
         )),
     }
 }

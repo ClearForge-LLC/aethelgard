@@ -213,6 +213,29 @@ fn prove_reports_a_missing_harness() {
 }
 
 #[test]
+fn prove_of_an_unresolvable_dependency_names_the_package() {
+    let dir = std::env::temp_dir().join(format!("aet-unresolvable-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(dir.join("src")).unwrap();
+    fs::write(
+        dir.join("Cargo.toml"),
+        "[package]\nname = \"unresolvable\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n[workspace]\n\n[dependencies]\naet-no-such-package-1502 = \"1\"\n",
+    )
+    .unwrap();
+    fs::write(dir.join("src/lib.rs"), "pub fn f() {}\n").unwrap();
+    let out = run(
+        &["prove", "--crate", dir.to_str().unwrap(), "--harness", "h"],
+        None,
+    );
+    let _ = fs::remove_dir_all(&dir);
+    let v = verdict(&out, 5);
+    assert_eq!(v["error"]["kind"], "ToolError", "{v}");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(message.contains("; the tool said: error:"), "{v}");
+    assert!(message.contains("aet-no-such-package-1502"), "{v}");
+}
+
+#[test]
 fn prove_leaves_the_crate_untouched() {
     let crate_dir = fixture("kani-smoke");
     let before: Vec<_> = fs::read_dir(&crate_dir)
