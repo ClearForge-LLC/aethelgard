@@ -2,8 +2,8 @@
 //! reference board, inside the tools image. The harness was generated with
 //! the crate from the specification side, and the regeneration test guards it
 //! (`INV-07`). Three seeded generator bugs, each a one-line edit to a copy of
-//! the crate, must each fail on the rule they break, so the proof cannot pass
-//! vacuously without this file going red. Each call writes an `ANSWER 1400-C5`
+//! the crate, must each fail on the rule they break, and a seeded `assume`
+//! that cuts every path must fail as `cover_unsatisfied`. Each call writes an `ANSWER 1400-C5`
 //! line to `/dev/stderr`. The proofs run one at a time: each peaks at about
 //! 3.5 GB (measured on Furnace), and the `tools` runner has 15 GiB.
 
@@ -86,7 +86,7 @@ fn seeded(label: &str, from: &str, to: &str) -> PathBuf {
     dir
 }
 
-fn fails_on(label: &str, from: &str, to: &str, message: &str) {
+fn fails_on(label: &str, from: &str, to: &str, kind: &str, message: &str) {
     let dir = seeded(label, from, to);
     let v = prove(label, &dir, 1);
     fs::remove_dir_all(&dir).unwrap();
@@ -95,7 +95,7 @@ fn fails_on(label: &str, from: &str, to: &str, message: &str) {
         .as_array()
         .unwrap()
         .iter()
-        .inspect(|f| assert_eq!(f["kind"], "proof_failed"))
+        .inspect(|f| assert_eq!(f["kind"], kind))
         .map(|f| f["message"].as_str().unwrap())
         .collect();
     assert!(messages.contains(&message), "{messages:?}");
@@ -114,6 +114,7 @@ fn a_wrong_alternate_function_fails() {
         "seed-wrong-af",
         "(v & !0x0f000000) | 0x04000000",
         "(v & !0x0f000000) | 0x05000000",
+        "proof_failed",
         "GpioB word 8: a solved pin's field is not what the specification fixes",
     );
 }
@@ -122,8 +123,9 @@ fn a_wrong_alternate_function_fails() {
 fn a_missing_clock_enable_fails() {
     fails_on(
         "seed-no-clock",
-        "r.modify(Block::Rcc, 0x0f0, |v| v | 0x00001000);",
+        "r.modify(TOKEN, Block::Rcc, 0x0f0, |v| v | 0x00001000);",
         "",
+        "proof_failed",
         "Spi1 accessed before RCC_APB2ENR bit 12 is set",
     );
 }
@@ -132,8 +134,25 @@ fn a_missing_clock_enable_fails() {
 fn a_write_past_the_block_fails() {
     fails_on(
         "seed-past-block",
-        "r.write(Block::I2c1, 0x28, u32::from(byte));",
-        "r.write(Block::I2c1, 0x2c, u32::from(byte));",
+        "r.write(TOKEN, Block::I2c1, 0x28, u32::from(byte));",
+        "r.write(TOKEN, Block::I2c1, 0x2c, u32::from(byte));",
+        "proof_failed",
         "register access past the end of its block",
     );
+}
+
+/// Adversarial E1: an `assume` that cuts every path in SPI1's start makes
+/// every assertion hold and Kani exit 0; only the harness's covers show it.
+#[test]
+fn a_vacuous_harness_fails() {
+    let dir = seeded(
+        "seed-vacuous",
+        "r.modify(TOKEN, Block::Spi1, 0x0c, |v| v | 0x00400000);",
+        "#[cfg(kani)]\n        kani::assume(false);\n        r.modify(TOKEN, Block::Spi1, 0x0c, |v| v | 0x00400000);",
+    );
+    let v = prove("seed-vacuous", &dir, 1);
+    fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(v["verdict"], "fail");
+    assert_eq!(v["tool"]["exit_code"], 0, "{v}");
+    assert_eq!(v["findings"][0]["kind"], "cover_unsatisfied", "{v}");
 }

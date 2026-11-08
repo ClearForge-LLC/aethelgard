@@ -1,6 +1,11 @@
 # AET-WO-1400 — FEEDBACK
 
-**Branch:** `wo/aet-1400-board-crate` · **Base:** `1b4fe5f` (the merge of PR #37), as the kickoff set it. `origin/main` at `7e3ce87` (AET-WO-0300d and its follow-up, #39 and #41) is merged in with a merge commit, `59a7e16`, before the first push, as the architect directed. It touches no file here. 1200 is merged before the build half. · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace (x86_64, kernel 7.0.0-38). · **Cadence:** spike half only. §0 is answered below and the branch is **stopped for the architect's ruling**. Nothing from §1 is built. No §7 condition arose: no image change, no target added to the project, nothing under `container/` or `.github/`, no `unsafe` in a workspace crate, no vacuous proof, no `assume` that excludes a seeded bug.
+**Branch:** `wo/aet-1400-board-crate` · **Base:** `1b4fe5f` (the merge of PR #37), as the kickoff set it. `origin/main` at `7e3ce87` (AET-WO-0300d and its follow-up, #39 and #41) is merged in with a merge commit, `59a7e16`, before the first push, as the architect directed. It touches no file here. For the build, `origin/main` was merged three more times, each with a merge commit: `a87de62` (`3f3924e`, AET-WO-1200), the merge of `425347e` (AET-WO-1202), and the final one, recorded under Build. · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace (x86_64, kernel 7.0.0-38). · **Cadence:** spike, stopped and ruled on PR #42 (R1 to R4, in `~/.cache/aet-1400-ruling.md`, and the ceiling ruling: option 2, AET-WO-1202), then build. No §7 condition arose in either half:
+- no image change, no target added to the project, nothing under `container/` or `.github/`;
+- no `unsafe` in a workspace crate;
+- no vacuous proof, and no `assume` that excludes a seeded bug;
+- no harness taken from the crate under proof;
+- no test skipped, ignored or weakened.
 
 Entry schema: `finding · where · severity · type · recommendation · decision-needed`.
 
@@ -212,17 +217,136 @@ The speed ceiling is a **sealed** trait implemented only for speeds at or under 
 
 A Kani proof over a harness-owned register image, substituted for the base address through a register trait, **catches** a seeded wrong AF number, a missing clock enable and a write past the block. Each is refuted with the specification rule it breaks named, and the corrected crate proves from an arbitrary starting image, all through `aethelgard prove`, on Furnace and in CI (S1). The proof is of the typestate API's register effects, not of the silicon. The useful question is answered yes, provided the crate under proof has no dependencies (F4) and the harness is generated from the specification and pinned by regeneration (F10).
 
-## Gates
+## Gates (spike)
 
 Furnace, on the merged tree (`59a7e16`): `cargo fmt --all -- --check` ok; `cargo clippy --workspace --all-targets --locked -- -D warnings` ok, with `--features aethelgard-cli/with-tools` too; `cargo test --workspace --locked` ok, 309 passed and 0 failed across 29 test targets in 17.3 s, with inherited descriptors above 2 closed as `ci.yml` does. Both spike crates are `cargo fmt`-clean and pass `clippy --all-targets -D warnings` (`--manifest-path`). Tier 2 is accepted from CI: run 42427459474 on `df0ef5d`, `gates` and `tools` green. The adversarial pass (§5) and the reduction pass (§5a) close the build half and are not run on a spike.
 
-## Promote-or-needs-none pass over `AET-WO-1200`'s FEEDBACK
-
-**Deferred to the build half.** `AET-WO-1200`'s FEEDBACK is on PR #32, unmerged, and not on this base. It is done after the ruling, when `origin/main` with 1200 is merged in.
-
-## Asked of the architect (one message, with the build goal)
+## Asked at the spike (ruled on PR #42 as R1 to R4; the build below follows the rulings)
 
 1. **F4:** amend `RUL-04` to "beside embassy, dependency-free", and say where register offsets come from (the vendored ST data, or a new SVD vendoring).
 2. **F3:** no image change in 1400? Or add the thumb target now?
 3. **F9/F10:** generated crates at `boards/<project>/`, excluded; the trybuild host; the shape-check changes; and the harness guarded by clause 4 rather than injected by `prove`.
 4. **F8:** if trybuild cannot run offline in `tools`, may clause 3 be accepted from `gates`?
+
+## Build (after the ruling on PR #42)
+
+### What was built
+
+- **R1, the register facts: ST's CMSIS device header.**
+  - Source: `STMicroelectronics/cmsis-device-h7` at `8f922cdc7cc6de2344e75ddd657889f4ff761790` (tag `v1.10.7`, "Release v1.10.7", 2026-02-16).
+  - Licence: Apache-2.0, verified three ways:
+    - GitHub's licence field;
+    - `LICENSE.md` is the Apache License 2.0 text (sha256 `49d37f1f…20df`);
+    - the header itself reads "© 2019 STMicroelectronics … licensed under terms that can be found in the LICENSE file in the root directory of this software component".
+    The repository has no NOTICE file.
+  - Vendored byte for byte at `crates/aethelgard-svd-hal/data/st-cmsis-device-h7/`: `Include/stm32h753xx.h` (2,118,971 B, sha256 `4f6def439a9fa94705303fe227d34308048c44bd36263d311aa54cc94f8398f5`), `LICENSE.md` and `SOURCE.md`.
+  - `cmsis::register_facts()` checks the hash before reading a byte. It is not a preprocessor, and refuses anything outside three shapes (README): a `#define` that is a literal, a name or a sum; a `uint32_t`-only `typedef struct`, whose offsets come from field order, cross-checked against every `Address offset:` comment; and the one `RCC_<reg>_<periph>EN_Pos` that exists.
+  - Field widths are derived from consecutive positions (`MODE1_Pos − MODE0_Pos`).
+  - The ruling's offsets are pinned by `the_probe_offsets_come_out_of_the_header`: RCC 0x0E0 and 0x0E8, GPIO 0x00, 0x20 and 0x24, I2C 0x00, 0x10 and 0x28. The bases, the clock gates and an alias chain are pinned beside them.
+  - **Machine cross-check:** the spike measured every one of those constants against `stm32-metapac` 21.0.0 (`rcc_h7rm0433.rs`, `gpio_v2.rs`, `i2c_v2.rs`), which agree. The header's own offset comments are a second, in-file check.
+  - The fallback route, a transcribed RM0433 table, was not needed.
+- **The generator, `aethelgard_svd_hal::board::generate(crate_name, &SolvedTopology, &PinTable)`.**
+  - It reads no `Specification` (`RUL-16`). It runs `SolvedTopology::validate` first, refuses the solver's `RESERVED_PINS`, and cross-checks every solved AF against the pin table.
+  - It refuses whatever it cannot emit: a peripheral other than `I2Cn` or `SPIn`, an unknown signal, a peripheral missing a role, a bad crate name, ceilings that do not number the I2C peripherals. The README lists every refusal.
+  - Its output is a `BTreeMap<path, text>`: no clock, no environment, no host name. The provenance in each file is the input hashes.
+  - Two emitters share the plan and nothing else. `emit_lib` writes the typestates. `emit_proofs` writes the harness and computes its expectations itself, labelled `belt-and-suspenders` at the site.
+  - It contains no `unsafe`, being in a workspace crate under `forbid(unsafe_code)`, and emits it only inside `mmio`, which a unit test checks.
+- **The reference board, `boards/sentinel-01/`** (R3), generated from `examples/sentinel-01-minimal.json`. That solves to I2C1 on PB6/PB7 at AF4, SPI1 on PA5/PA6/PA7 at AF5, `FLASH_CS` on PA0, and a ceiling of 400 kHz. It holds five files: `Cargo.toml` (no dependencies, no `[workspace]`), `Cargo.lock`, the `src/lib.rs` shell, `src/board.rs` and `src/proofs.rs`.
+  - The root `Cargo.toml` gains `exclude = ["boards"]`, and `trybuild` and the board in `[workspace.dependencies]`.
+  - The board is never a workspace member (`cargo metadata` lists the seven).
+  - It builds for `thumbv7em-none-eabihf` in the isolated toolchain (S2), with dev build 0.07 s.
+- **The typestates (F11, F12).**
+  - Each solved pin has exactly one method, into its solved function: `into_i2c1_scl`, `into_output`. Each writes the role's full configuration, OTYPER, OSPEEDR, PUPDR and AFR or BSRR, then MODER last.
+  - Port pins exist only from `GpioX<Clocked>::split`. A peripheral's `init` takes only its own configured pins, from `Clocked`.
+  - `i2c1_speed::AtMostCeiling` is sealed and implemented only for modes at or under the solved ceiling. `TIMINGR` and the SPI frame settings are placeholders until a clock tree is solved.
+  - `Board::take` is the one runtime check, and is documented as such.
+  - Pin-role electrical settings are generator policy (`Role::policy`: I2C open-drain, SPI push-pull at high speed, outputs starting high), not register facts.
+- **The generated harness (F1, F2).**
+  - A nondeterministic scheduler runs 13 steps. At each step it takes any action whose inputs exist: two port clocks, two peripheral clocks, seven pin configurations, two inits.
+  - That is every interleaving the typestate API admits. The `kani::assume` on the chosen action admits only those orders; the types forbid the rest at compile time. It never excludes an order the types allow.
+  - Each `init` drives each admitted speed, and zero or one byte. The output pin is driven zero or one time.
+  - The image is fully nondeterministic at the start, sized from the header's structs: RCC 76 words (0x130, not the probe's 1 KiB), GPIO 10, I2C 11, SPI 21. `unwind(77)` is the largest block plus one, and unwinding assertions are on.
+  - The oracle checks:
+    - bounds on every access;
+    - the clock before any read or write of a gated block;
+    - `TIMINGR` and SPI `CFG2` written only while disabled;
+    - every field the specification fixes for every solved pin (mode, type, speed, pull, AF) and the frame condition on every other pin's field and every other register;
+    - RCC equal to before plus exactly the solved gates, word by word;
+    - each peripheral enabled, `TIMINGR` one of the admitted speeds' values, SPI master.
+  - Every check is a `kani::assert` naming its rule. A `kani::cover!` marks the end of a complete schedule, and the scheduler asserts that it started every peripheral.
+- **The `rustfmt` problem, found and fixed.** `cargo fmt --all` reaches the board through svd-hal's path dev-dependency. That made the regeneration test and the gates' `fmt --check` contradict each other, and the regeneration test caught it on the first reformat.
+  - An inner `#![rustfmt::skip]` is refused on 1.99.1 (`E0658: custom inner attributes are unstable`, measured).
+  - So `src/lib.rs` is a shell already in rustfmt's form, holding `#[rustfmt::skip] mod board;` and `#[cfg(kani)] #[rustfmt::skip] mod proofs;`, and the generator alone owns those modules' bytes.
+- **The ceiling (the ruling on option 2).** `SolvedTopology.i2c_ceilings` (AET-WO-1202, `425347e`) is keyed by bus id, and the topology does not say which peripheral serves which bus. The generator therefore requires one ceiling per I2C peripheral (`CeilingMismatch`) and gives every I2C peripheral the lowest. That is exact for sentinel-01's single bus, and never above any bus's ceiling for more. A unit test proves the filter at 100 kHz, 400 kHz and 1 MHz, and the minimum with two buses.
+- **Deleted:** `spike/` and `crates/aethelgard-cli/tests/spike_1400_tier2.rs`.
+
+### Shape-check changes (roadmap §6: graduation is stated)
+
+In `crates/aethelgard-cli/tests/workspace_shape.rs`:
+1. `svd_hal_has_only_its_known_files_keys_and_dependencies`:
+   - `DATA` gains `data/st-cmsis-device-h7/{LICENSE.md, SOURCE.md, stm32h753xx.h}`;
+   - the file allowlist admits `tests/ui/**/*.stderr` (`.rs` under `tests/` was already allowed);
+   - the dev-dependencies are exactly `sentinel-01-board`, `serde_json` and `trybuild`, each still `workspace = true`.
+2. New, `boards_are_excluded_and_dependency_free`: the root `exclude` is exactly `["boards"]`, every `boards/*/Cargo.toml` sets only `[package]` and `[lints]` (no `[workspace]`, no dependency table of any kind), and at least one board exists.
+3. `members_are_exactly_the_seven_parts` and every other check are unchanged.
+
+### Gate clauses
+
+All three were measured on Furnace and in CI. CI is [run 42429539794](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42429539794) on `b62026b`: `gates` 1m56s, `tools` 9m42s. CI_FINAL
+
+| Clause | Test | Furnace | `tools` (b62026b) |
+|---|---|---|---|
+| 3: misuse fails to compile, a valid driver compiles | `aethelgard-svd-hal/tests/board_ui.rs`: `pass/valid_driver` plus 9 `fail/` cases (below) | ok, 0.5 s warm | ok: all 9 then present passed under `--network none`. **R4 measured: trybuild's nested build runs offline in `tools`**, so clause 3 is accepted from `tools`, and `gates` runs it too |
+| 4: regenerating twice is byte-identical | `aethelgard-svd-hal/tests/board.rs`: the whole committed tree equals the generator's output (missing, differing and extra files all reported); two generations equal; the negative control | ok | ok |
+| 5: Kani proves the generated block | `aethelgard-cli/tests/board_tier2.rs` (with-tools): `prove --crate boards/sentinel-01 --harness proofs::every_valid_sequence`, plus three seeded copies, run serially (3.5 GB each against the runner's 15 GiB) | board pass (≈70 s); seeds fail in 41–71 s; 250 s in all, peak RSS 3.53 GB | `ANSWER 1400-C5`: board `exit=0`, `findings: []`, 117.17 s; `seed-wrong-af` exit 1 `GpioB word 8: a solved pin's field is not what the specification fixes`, 68.08 s; `seed-no-clock` exit 1 `Spi1 accessed before RCC_APB2ENR bit 12 is set`, 118.23 s; `seed-past-block` exit 1 `register access past the end of its block`, 119.42 s. Every verdict has `landlock_abi 8`, `sockets_denied true` |
+
+**Clause 3 cases** (first diagnostic line; snapshots committed, regenerated with `TRYBUILD=overwrite` with the board, F7):
+
+| Case | Diagnostic |
+|---|---|
+| `unconfigured_pin`, an unconfigured PB6 into `init` | `E0308 mismatched types` |
+| `ungated_peripheral_clock`, `init` on `I2c1<Gated>` | `E0599 no method named init … I2c1<Gated>` |
+| `ungated_port_clock`, `split` before the port clock | `E0599 no method named split … GpioB<Gated>` |
+| `bus_too_fast`, `init::<FastPlus1M>` over 400 kHz | `E0277 FastPlus1M: AtMostCeiling is not satisfied` |
+| `unsolved_function`, PB6 as SPI SCK | `E0599 no method named into_spi1_sck` |
+| `swapped_pins`, SCL and SDA swapped | `E0308 arguments to this method are incorrect` |
+| `output_unconfigured`, chip select driven before it is an output | `E0599 no method named set_low … PA0<Unconfigured>` |
+| `forged_typestate`, a struct literal | `E0451 field _mode … is private` |
+| `foreign_speed`, firmware implementing the speed trait | `E0277 Turbo: i2c1_speed::sealed::Sealed` |
+
+`bus_too_fast` was written while the ceiling was pending and joined `fail/` when 1202 merged. On `b62026b` CI ran the other eight. The final head's run, cited above, runs all nine.
+
+### Adversarial pass (§5), by a fresh subagent on the frozen commit `b62026b`
+
+ADV_TABLE
+
+### Reduction pass (§5a) and mutants
+
+Reduction pass (diff): −7 net · 1 duplicate removed (the `I2C`/`SPI` prefixes, now derived from `Kind::header`) · 1 dead path removed (`PinUsedTwice`, unreachable behind `SolvedTopology::validate`'s `DuplicatePin`) · 2 protected kept (`CeilingTooLow` behind `validate`, and the oracle's restated mask arithmetic, both labelled `belt-and-suspenders`) · 0 findings below.
+
+Mutants, one per guard this work order adds (`scratchpad/mutants.py`, with each file restored). 13 of 13 are killed by their own suite:
+- the header hash check, the offset-comment cross-check, the `uint32_t`-only field check and the clock-gate uniqueness check (`--lib cmsis`);
+- the AF cross-check, the reserved-pin refusal, `validate`, the ceiling count and the ceiling filter (`--lib board`);
+- the regeneration compare, by bytes and by extra files (`--test board`);
+- the two new shape checks (`--test workspace_shape`). Each catches its fault unmutated: an extra `exclude` entry, and a `[dependencies]`, a `[target.*.dependencies]` or a `[build-dependencies]` table in the board. Each lets its fault through when mutated.
+
+### Gates (build)
+
+GATES_BUILD
+
+### Promote-or-needs-none pass over `AET-WO-1200`'s FEEDBACK (now on the base)
+
+- **S4.2, `gpio` records no direction:** needs none here. The generator treats every `gpio` entry as an output, which is all the solver emits. A direction field would reach the generator as an unknown key, refused by `SolvedTopology`'s `deny_unknown_fields`, never guessed.
+- **Reserved and special pins** (PA15 JTAG, PA11/PA12 USB, PC14/PC15/PH0/PH1): **promoted into the generator**, which now refuses `RESERVED_PINS` itself (`ReservedPin`), so a hand-built topology cannot get a board that drives SWD or the crystal. PA15, PA11 and PA12 stay assignable, as ruled for 1200.
+- **B1 to B8, A1 to A6:** needs none for 1400. Determinism (A5) is matched here by the regeneration test.
+- **1101 finding 1, the five AF entries not yet checked against a datasheet:** still open, and still to promote. 1400 emits AFs from that table, so a wrong entry would be a wrong board. The pin-table cross-check catches a solver/table mismatch, not a table/silicon one.
+
+### Findings (build)
+
+| finding | where | severity | type | recommendation | decision-needed |
+|---|---|---|---|---|---|
+| B1. `i2c_ceilings` is keyed by bus id, and nothing in `SolvedTopology` names which peripheral serves which bus. The generator applies the lowest ceiling to every I2C peripheral: sound, and exact for one bus, but it under-admits on a board with two buses of different ceilings | `board::generate`, AET-WO-1202 | medium | interface gap | A 1202 follow-up keys `i2c_ceilings` by peripheral, or carries the bus id on each I2C `PinAssignment`; then the generator maps exactly | **yes** |
+| B2. `cargo fmt --all` formats path dependencies, which made the gates' fmt check and clause 4 contradict each other. Fixed with the shell-plus-`#[rustfmt::skip]` layout; an inner `#![rustfmt::skip]` is unstable on 1.99.1 (measured) | the generated crate | medium | measured | Keep the layout for every generated crate; the regeneration test enforces it | no |
+| B3. The bless route needs `boards/<project>/` to exist: cargo cannot load the workspace without svd-hal's path dev-dependency. A first board is bootstrapped by creating its `Cargo.toml` by hand, then blessing | `tests/board.rs` | low | ergonomics | Documented in the README. A second board would want an `aethelgard` subcommand, which is a ruling (WO "is NOT") | no |
+| B4. The `tools-image` workflow ran an `image` job on this PR's pushes although the branch touches nothing under `container/` or `.github/` (`git diff --stat origin/main...HEAD -- container .github` is empty). It passed (5m2s). This is a path-filter question for that workflow, not 1400's to change | `.github/workflows/tools-image.yml` | low | observation | Architect's call | no |
+| B5. `I2C_TIMINGR` and SPI `CFG1` are placeholders, and the oracle accepts exactly the placeholder `TIMINGR` values. When a clock tree is solved, both emitters must take the solved values | `board.rs` | info | scope | A P2 clock-tree work order | no |

@@ -27,20 +27,35 @@ pub enum Block {
     Spi1,
 }
 
+/// The lock on [`Registers`].
+pub(crate) mod sealed {
+    pub trait Sealed {}
+
+    /// Only this crate can make one.
+    pub struct Token(pub(crate) ());
+}
+
+const TOKEN: sealed::Token = sealed::Token(());
+
 /// The one door to the hardware. Offsets are byte offsets into the block.
-pub trait Registers {
-    fn read(&mut self, block: Block, offset: usize) -> u32;
-    fn write(&mut self, block: Block, offset: usize, value: u32);
-    fn modify(&mut self, block: Block, offset: usize, f: impl FnOnce(u32) -> u32) {
-        let value = self.read(block, offset);
-        self.write(block, offset, f(value));
+///
+/// It is sealed, and every method takes a [`sealed::Token`] that only this
+/// crate can make. So firmware can neither implement it, which would advance
+/// the typestates on a stand-in, nor call it, which would reach a register
+/// around them. Only the typestate API below can (`INV-02`; adversarial E2, E3).
+pub trait Registers: sealed::Sealed {
+    fn read(&mut self, token: sealed::Token, block: Block, offset: usize) -> u32;
+    fn write(&mut self, token: sealed::Token, block: Block, offset: usize, value: u32);
+    fn modify(&mut self, token: sealed::Token, block: Block, offset: usize, f: impl FnOnce(u32) -> u32) {
+        let value = self.read(sealed::Token(()), block, offset);
+        self.write(token, block, offset, f(value));
     }
 }
 
 /// Volatile access at the part's real base addresses. Never exercised by
 /// the proof: Kani cannot own this memory (`architecture.md` §2.2).
 pub mod mmio {
-    use super::{Block, Registers};
+    use super::{Block, Registers, sealed};
 
     pub struct Mmio {
         _private: (),
@@ -65,12 +80,14 @@ pub mod mmio {
         }
     }
 
+    impl sealed::Sealed for Mmio {}
+
     impl Registers for Mmio {
-        fn read(&mut self, block: Block, offset: usize) -> u32 {
+        fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {
             // SAFETY: a register of a peripheral that exists on this part.
             unsafe { core::ptr::read_volatile((base(block) + offset) as *const u32) }
         }
-        fn write(&mut self, block: Block, offset: usize, value: u32) {
+        fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {
             // SAFETY: as for `read`.
             unsafe { core::ptr::write_volatile((base(block) + offset) as *mut u32, value) }
         }
@@ -122,21 +139,21 @@ pub struct PA0<M> {
 
 impl PA0<Unconfigured> {
     pub fn into_output<R: Registers>(self, r: &mut R) -> PA0<Output> {
-        r.modify(Block::GpioA, 0x04, |v| v & !0x00000001);
-        r.modify(Block::GpioA, 0x08, |v| v & !0x00000003);
-        r.modify(Block::GpioA, 0x0c, |v| v & !0x00000003);
-        r.write(Block::GpioA, 0x18, 0x00000001);
-        r.modify(Block::GpioA, 0x00, |v| (v & !0x00000003) | 0x00000001);
+        r.modify(TOKEN, Block::GpioA, 0x04, |v| v & !0x00000001);
+        r.modify(TOKEN, Block::GpioA, 0x08, |v| v & !0x00000003);
+        r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x00000003);
+        r.write(TOKEN, Block::GpioA, 0x18, 0x00000001);
+        r.modify(TOKEN, Block::GpioA, 0x00, |v| (v & !0x00000003) | 0x00000001);
         PA0 { _mode: PhantomData }
     }
 }
 
 impl PA0<Output> {
     pub fn set_high<R: Registers>(&mut self, r: &mut R) {
-        r.write(Block::GpioA, 0x18, 0x00000001);
+        r.write(TOKEN, Block::GpioA, 0x18, 0x00000001);
     }
     pub fn set_low<R: Registers>(&mut self, r: &mut R) {
-        r.write(Block::GpioA, 0x18, 0x00010000);
+        r.write(TOKEN, Block::GpioA, 0x18, 0x00010000);
     }
 }
 
@@ -147,11 +164,11 @@ pub struct PA5<M> {
 
 impl PA5<Unconfigured> {
     pub fn into_spi1_sck<R: Registers>(self, r: &mut R) -> PA5<AlternateFunction<5>> {
-        r.modify(Block::GpioA, 0x04, |v| v & !0x00000020);
-        r.modify(Block::GpioA, 0x08, |v| (v & !0x00000c00) | 0x00000800);
-        r.modify(Block::GpioA, 0x0c, |v| v & !0x00000c00);
-        r.modify(Block::GpioA, 0x20, |v| (v & !0x00f00000) | 0x00500000);
-        r.modify(Block::GpioA, 0x00, |v| (v & !0x00000c00) | 0x00000800);
+        r.modify(TOKEN, Block::GpioA, 0x04, |v| v & !0x00000020);
+        r.modify(TOKEN, Block::GpioA, 0x08, |v| (v & !0x00000c00) | 0x00000800);
+        r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x00000c00);
+        r.modify(TOKEN, Block::GpioA, 0x20, |v| (v & !0x00f00000) | 0x00500000);
+        r.modify(TOKEN, Block::GpioA, 0x00, |v| (v & !0x00000c00) | 0x00000800);
         PA5 { _mode: PhantomData }
     }
 }
@@ -163,11 +180,11 @@ pub struct PA6<M> {
 
 impl PA6<Unconfigured> {
     pub fn into_spi1_miso<R: Registers>(self, r: &mut R) -> PA6<AlternateFunction<5>> {
-        r.modify(Block::GpioA, 0x04, |v| v & !0x00000040);
-        r.modify(Block::GpioA, 0x08, |v| (v & !0x00003000) | 0x00002000);
-        r.modify(Block::GpioA, 0x0c, |v| v & !0x00003000);
-        r.modify(Block::GpioA, 0x20, |v| (v & !0x0f000000) | 0x05000000);
-        r.modify(Block::GpioA, 0x00, |v| (v & !0x00003000) | 0x00002000);
+        r.modify(TOKEN, Block::GpioA, 0x04, |v| v & !0x00000040);
+        r.modify(TOKEN, Block::GpioA, 0x08, |v| (v & !0x00003000) | 0x00002000);
+        r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x00003000);
+        r.modify(TOKEN, Block::GpioA, 0x20, |v| (v & !0x0f000000) | 0x05000000);
+        r.modify(TOKEN, Block::GpioA, 0x00, |v| (v & !0x00003000) | 0x00002000);
         PA6 { _mode: PhantomData }
     }
 }
@@ -179,11 +196,11 @@ pub struct PA7<M> {
 
 impl PA7<Unconfigured> {
     pub fn into_spi1_mosi<R: Registers>(self, r: &mut R) -> PA7<AlternateFunction<5>> {
-        r.modify(Block::GpioA, 0x04, |v| v & !0x00000080);
-        r.modify(Block::GpioA, 0x08, |v| (v & !0x0000c000) | 0x00008000);
-        r.modify(Block::GpioA, 0x0c, |v| v & !0x0000c000);
-        r.modify(Block::GpioA, 0x20, |v| (v & !0xf0000000) | 0x50000000);
-        r.modify(Block::GpioA, 0x00, |v| (v & !0x0000c000) | 0x00008000);
+        r.modify(TOKEN, Block::GpioA, 0x04, |v| v & !0x00000080);
+        r.modify(TOKEN, Block::GpioA, 0x08, |v| (v & !0x0000c000) | 0x00008000);
+        r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x0000c000);
+        r.modify(TOKEN, Block::GpioA, 0x20, |v| (v & !0xf0000000) | 0x50000000);
+        r.modify(TOKEN, Block::GpioA, 0x00, |v| (v & !0x0000c000) | 0x00008000);
         PA7 { _mode: PhantomData }
     }
 }
@@ -195,11 +212,11 @@ pub struct PB6<M> {
 
 impl PB6<Unconfigured> {
     pub fn into_i2c1_scl<R: Registers>(self, r: &mut R) -> PB6<AlternateFunction<4>> {
-        r.modify(Block::GpioB, 0x04, |v| (v & !0x00000040) | 0x00000040);
-        r.modify(Block::GpioB, 0x08, |v| v & !0x00003000);
-        r.modify(Block::GpioB, 0x0c, |v| v & !0x00003000);
-        r.modify(Block::GpioB, 0x20, |v| (v & !0x0f000000) | 0x04000000);
-        r.modify(Block::GpioB, 0x00, |v| (v & !0x00003000) | 0x00002000);
+        r.modify(TOKEN, Block::GpioB, 0x04, |v| (v & !0x00000040) | 0x00000040);
+        r.modify(TOKEN, Block::GpioB, 0x08, |v| v & !0x00003000);
+        r.modify(TOKEN, Block::GpioB, 0x0c, |v| v & !0x00003000);
+        r.modify(TOKEN, Block::GpioB, 0x20, |v| (v & !0x0f000000) | 0x04000000);
+        r.modify(TOKEN, Block::GpioB, 0x00, |v| (v & !0x00003000) | 0x00002000);
         PB6 { _mode: PhantomData }
     }
 }
@@ -211,11 +228,11 @@ pub struct PB7<M> {
 
 impl PB7<Unconfigured> {
     pub fn into_i2c1_sda<R: Registers>(self, r: &mut R) -> PB7<AlternateFunction<4>> {
-        r.modify(Block::GpioB, 0x04, |v| (v & !0x00000080) | 0x00000080);
-        r.modify(Block::GpioB, 0x08, |v| v & !0x0000c000);
-        r.modify(Block::GpioB, 0x0c, |v| v & !0x0000c000);
-        r.modify(Block::GpioB, 0x20, |v| (v & !0xf0000000) | 0x40000000);
-        r.modify(Block::GpioB, 0x00, |v| (v & !0x0000c000) | 0x00008000);
+        r.modify(TOKEN, Block::GpioB, 0x04, |v| (v & !0x00000080) | 0x00000080);
+        r.modify(TOKEN, Block::GpioB, 0x08, |v| v & !0x0000c000);
+        r.modify(TOKEN, Block::GpioB, 0x0c, |v| v & !0x0000c000);
+        r.modify(TOKEN, Block::GpioB, 0x20, |v| (v & !0xf0000000) | 0x40000000);
+        r.modify(TOKEN, Block::GpioB, 0x00, |v| (v & !0x0000c000) | 0x00008000);
         PB7 { _mode: PhantomData }
     }
 }
@@ -276,16 +293,16 @@ impl I2c1<Clocked> {
         _scl: PB6<AlternateFunction<4>>,
         _sda: PB7<AlternateFunction<4>>,
     ) -> I2c1<Enabled<S>> {
-        r.modify(Block::I2c1, 0x00, |v| v & !0x00000001);
-        r.write(Block::I2c1, 0x10, S::TIMINGR);
-        r.modify(Block::I2c1, 0x00, |v| v | 0x00000001);
+        r.modify(TOKEN, Block::I2c1, 0x00, |v| v & !0x00000001);
+        r.write(TOKEN, Block::I2c1, 0x10, S::TIMINGR);
+        r.modify(TOKEN, Block::I2c1, 0x00, |v| v | 0x00000001);
         I2c1 { _state: PhantomData }
     }
 }
 
 impl<S: i2c1_speed::AtMostCeiling> I2c1<Enabled<S>> {
     pub fn write_byte<R: Registers>(&mut self, r: &mut R, byte: u8) {
-        r.write(Block::I2c1, 0x28, u32::from(byte));
+        r.write(TOKEN, Block::I2c1, 0x28, u32::from(byte));
     }
 }
 
@@ -303,16 +320,16 @@ impl Spi1<Clocked> {
         _mosi: PA7<AlternateFunction<5>>,
         _miso: PA6<AlternateFunction<5>>,
     ) -> Spi1<Enabled<()>> {
-        r.modify(Block::Spi1, 0x00, |v| v & !0x00000001);
-        r.modify(Block::Spi1, 0x0c, |v| v | 0x00400000);
-        r.modify(Block::Spi1, 0x00, |v| v | 0x00000001);
+        r.modify(TOKEN, Block::Spi1, 0x00, |v| v & !0x00000001);
+        r.modify(TOKEN, Block::Spi1, 0x0c, |v| v | 0x00400000);
+        r.modify(TOKEN, Block::Spi1, 0x00, |v| v | 0x00000001);
         Spi1 { _state: PhantomData }
     }
 }
 
 impl Spi1<Enabled<()>> {
     pub fn write_byte<R: Registers>(&mut self, r: &mut R, byte: u8) {
-        r.write(Block::Spi1, 0x20, u32::from(byte));
+        r.write(TOKEN, Block::Spi1, 0x20, u32::from(byte));
     }
 }
 
@@ -324,25 +341,25 @@ pub struct Rcc {
 impl Rcc {
     /// `RCC_AHB4ENR` bit 0.
     pub fn enable_gpioa<R: Registers>(&mut self, r: &mut R, _gated: GpioA<Gated>) -> GpioA<Clocked> {
-        r.modify(Block::Rcc, 0x0e0, |v| v | 0x00000001);
+        r.modify(TOKEN, Block::Rcc, 0x0e0, |v| v | 0x00000001);
         GpioA { _state: PhantomData }
     }
 
     /// `RCC_AHB4ENR` bit 1.
     pub fn enable_gpiob<R: Registers>(&mut self, r: &mut R, _gated: GpioB<Gated>) -> GpioB<Clocked> {
-        r.modify(Block::Rcc, 0x0e0, |v| v | 0x00000002);
+        r.modify(TOKEN, Block::Rcc, 0x0e0, |v| v | 0x00000002);
         GpioB { _state: PhantomData }
     }
 
     /// `RCC_APB1LENR` bit 21.
     pub fn enable_i2c1<R: Registers>(&mut self, r: &mut R, _gated: I2c1<Gated>) -> I2c1<Clocked> {
-        r.modify(Block::Rcc, 0x0e8, |v| v | 0x00200000);
+        r.modify(TOKEN, Block::Rcc, 0x0e8, |v| v | 0x00200000);
         I2c1 { _state: PhantomData }
     }
 
     /// `RCC_APB2ENR` bit 12.
     pub fn enable_spi1<R: Registers>(&mut self, r: &mut R, _gated: Spi1<Gated>) -> Spi1<Clocked> {
-        r.modify(Block::Rcc, 0x0f0, |v| v | 0x00001000);
+        r.modify(TOKEN, Block::Rcc, 0x0f0, |v| v | 0x00001000);
         Spi1 { _state: PhantomData }
     }
 }

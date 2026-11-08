@@ -325,7 +325,13 @@ fn boards_are_excluded_and_dependency_free() {
         .map(|v| v.as_str().unwrap())
         .collect();
     assert_eq!(exclude, ["boards"]);
-    let mut boards = 0;
+    // The trybuild suite judges the board the regeneration test owns, and no
+    // other (adversarial E8).
+    assert_eq!(
+        root_manifest["workspace"]["dependencies"]["sentinel-01-board"]["path"].as_str(),
+        Some("boards/sentinel-01")
+    );
+    let mut boards = Vec::new();
     for entry in fs::read_dir(root().join("boards")).unwrap() {
         let dir = entry.unwrap().path();
         let manifest: Table = fs::read_to_string(dir.join("Cargo.toml"))
@@ -339,7 +345,22 @@ fn boards_are_excluded_and_dependency_free() {
                 dir.display()
             );
         }
-        boards += 1;
+        // No host code runs when a board builds.
+        let package = manifest["package"].as_table().unwrap();
+        for key in ["build", "links"] {
+            assert!(
+                !package.contains_key(key),
+                "{} sets package.{key}",
+                dir.display()
+            );
+        }
+        assert!(
+            !dir.join("build.rs").exists(),
+            "{} has a build.rs",
+            dir.display()
+        );
+        boards.push(dir.file_name().unwrap().to_str().unwrap().to_owned());
     }
-    assert!(boards > 0, "no generated board under boards/");
+    // Exactly the boards `aethelgard-svd-hal/tests/board.rs` regenerates.
+    assert_eq!(boards, ["sentinel-01"]);
 }

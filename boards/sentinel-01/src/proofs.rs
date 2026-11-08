@@ -9,6 +9,7 @@
 //! - Register facts: `https://github.com/STMicroelectronics/cmsis-device-h7` at `8f922cdc7cc6de2344e75ddd657889f4ff761790`, `stm32h753xx.h` sha256 `4f6def439a9fa94705303fe227d34308048c44bd36263d311aa54cc94f8398f5`.
 //! - Pin data: `STM32_open_pin_data` at `7d1f1514ed5583ec5007ad91236b4e1d377295b1`.
 
+use crate::board::sealed;
 use crate::*;
 
 /// The harness-owned register image, and the oracle for the ordering rules.
@@ -61,12 +62,14 @@ impl Image {
     }
 }
 
+impl sealed::Sealed for Image {}
+
 impl Registers for Image {
-    fn read(&mut self, block: Block, offset: usize) -> u32 {
+    fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {
         self.clocked(block);
         *self.slot(block, offset)
     }
-    fn write(&mut self, block: Block, offset: usize, value: u32) {
+    fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {
         self.clocked(block);
         if block == Block::I2c1 && offset == 0x10 {
             kani::assert(
@@ -80,12 +83,92 @@ impl Registers for Image {
                 "Spi1 CFG2 written while the peripheral is enabled",
             );
         }
+        if block == Block::GpioA && offset == 0x18 {
+            kani::assert(value == 0x00000001 || value == 0x00010000, "GpioA BSRR write touches a pin no solved output owns");
+        }
+        if block == Block::GpioA && offset == 0x00 {
+            let old = self.gpioa[0];
+            if value & 0x00000003 != old & 0x00000003 {
+                kani::assert(value & 0x00000003 == 0x00000001, "PA0's mode moved to one its role never takes");
+                kani::assert(
+                    self.gpioa[1] & 0x00000001 == 0x00000000
+                        && self.gpioa[2] & 0x00000003 == 0x00000000
+                        && self.gpioa[3] & 0x00000003 == 0x00000000
+                        && self.gpioa[6] == 0x00000001,
+                    "PA0 entered its mode before its other fields were final",
+                );
+            }
+            if value & 0x00000c00 != old & 0x00000c00 {
+                kani::assert(value & 0x00000c00 == 0x00000800, "PA5's mode moved to one its role never takes");
+                kani::assert(
+                    self.gpioa[1] & 0x00000020 == 0x00000000
+                        && self.gpioa[2] & 0x00000c00 == 0x00000800
+                        && self.gpioa[3] & 0x00000c00 == 0x00000000
+                        && self.gpioa[8] & 0x00f00000 == 0x00500000,
+                    "PA5 entered its mode before its other fields were final",
+                );
+            }
+            if value & 0x00003000 != old & 0x00003000 {
+                kani::assert(value & 0x00003000 == 0x00002000, "PA6's mode moved to one its role never takes");
+                kani::assert(
+                    self.gpioa[1] & 0x00000040 == 0x00000000
+                        && self.gpioa[2] & 0x00003000 == 0x00002000
+                        && self.gpioa[3] & 0x00003000 == 0x00000000
+                        && self.gpioa[8] & 0x0f000000 == 0x05000000,
+                    "PA6 entered its mode before its other fields were final",
+                );
+            }
+            if value & 0x0000c000 != old & 0x0000c000 {
+                kani::assert(value & 0x0000c000 == 0x00008000, "PA7's mode moved to one its role never takes");
+                kani::assert(
+                    self.gpioa[1] & 0x00000080 == 0x00000000
+                        && self.gpioa[2] & 0x0000c000 == 0x00008000
+                        && self.gpioa[3] & 0x0000c000 == 0x00000000
+                        && self.gpioa[8] & 0xf0000000 == 0x50000000,
+                    "PA7 entered its mode before its other fields were final",
+                );
+            }
+            kani::assert(
+                value & !0x0000fc03 == old & !0x0000fc03,
+                "a GpioA MODER write moved a pin the topology does not use",
+            );
+        }
+        if block == Block::GpioB && offset == 0x18 {
+            kani::assert(false, "GpioB BSRR write touches a pin no solved output owns");
+        }
+        if block == Block::GpioB && offset == 0x00 {
+            let old = self.gpiob[0];
+            if value & 0x00003000 != old & 0x00003000 {
+                kani::assert(value & 0x00003000 == 0x00002000, "PB6's mode moved to one its role never takes");
+                kani::assert(
+                    self.gpiob[1] & 0x00000040 == 0x00000040
+                        && self.gpiob[2] & 0x00003000 == 0x00000000
+                        && self.gpiob[3] & 0x00003000 == 0x00000000
+                        && self.gpiob[8] & 0x0f000000 == 0x04000000,
+                    "PB6 entered its mode before its other fields were final",
+                );
+            }
+            if value & 0x0000c000 != old & 0x0000c000 {
+                kani::assert(value & 0x0000c000 == 0x00008000, "PB7's mode moved to one its role never takes");
+                kani::assert(
+                    self.gpiob[1] & 0x00000080 == 0x00000080
+                        && self.gpiob[2] & 0x0000c000 == 0x00000000
+                        && self.gpiob[3] & 0x0000c000 == 0x00000000
+                        && self.gpiob[8] & 0xf0000000 == 0x40000000,
+                    "PB7 entered its mode before its other fields were final",
+                );
+            }
+            kani::assert(
+                value & !0x0000f000 == old & !0x0000f000,
+                "a GpioB MODER write moved a pin the topology does not use",
+            );
+        }
         *self.slot(block, offset) = value;
     }
 }
 
 /// The state the specification allows, from any starting image.
-fn check_final(before: &Image, after: &Image) {
+fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
     kani::assert(
         after.gpioa[0] & 0x0000fc03 == 0x0000a801,
         "GpioA word 0: a solved pin's field is not what the specification fixes",
@@ -185,9 +268,12 @@ fn check_final(before: &Image, after: &Image) {
     }
     kani::assert(after.i2c1[0] & 0x00000001 != 0, "I2c1 is not enabled");
     kani::assert(
-        after.i2c1[4] == 0x10707dbc
-            || after.i2c1[4] == 0x00602173,
-        "I2c1 TIMINGR is not an admitted speed's",
+        after.i2c1[0] & !0x00000001 == before.i2c1[0] & !0x00000001,
+        "I2c1 CR1 changed beyond its enable bit",
+    );
+    kani::assert(
+        after.i2c1[4] == i2c1_timingr,
+        "I2c1 TIMINGR is not the chosen speed's",
     );
     kani::assert(after.i2c1[1] == before.i2c1[1], "I2c1 word 1 changed");
     kani::assert(after.i2c1[2] == before.i2c1[2], "I2c1 word 2 changed");
@@ -198,7 +284,15 @@ fn check_final(before: &Image, after: &Image) {
     kani::assert(after.i2c1[8] == before.i2c1[8], "I2c1 word 8 changed");
     kani::assert(after.i2c1[9] == before.i2c1[9], "I2c1 word 9 changed");
     kani::assert(after.spi1[0] & 0x00000001 != 0, "Spi1 is not enabled");
+    kani::assert(
+        after.spi1[0] & !0x00000001 == before.spi1[0] & !0x00000001,
+        "Spi1 CR1 changed beyond its enable bit",
+    );
     kani::assert(after.spi1[3] & 0x00400000 != 0, "Spi1 is not a master");
+    kani::assert(
+        after.spi1[3] & !0x00400000 == before.spi1[3] & !0x00400000,
+        "Spi1 CFG2 changed beyond MASTER",
+    );
     kani::assert(after.spi1[1] == before.spi1[1], "Spi1 word 1 changed");
     kani::assert(after.spi1[2] == before.spi1[2], "Spi1 word 2 changed");
     kani::assert(after.spi1[4] == before.spi1[4], "Spi1 word 4 changed");
@@ -244,6 +338,7 @@ fn every_valid_sequence() {
     let mut spi1 = Some(board.spi1);
     let mut spi1_clocked = None;
     let mut spi1_done = false;
+    let mut i2c1_timingr = 0u32;
     let mut pa0 = None;
     let mut pa0_done = None;
     let mut pa5 = None;
@@ -287,8 +382,12 @@ fn every_valid_sequence() {
                 if kani::any() {
                     if kani::any() {
                         pin.set_low(&mut img);
+                        kani::assert(img.gpioa[6] == 0x00010000, "PA0 set_low did not reset it");
+                        kani::cover!(true, "PA0 driven low");
                     } else {
                         pin.set_high(&mut img);
+                        kani::assert(img.gpioa[6] == 0x00000001, "PA0 set_high did not set it");
+                        kani::cover!(true, "PA0 driven high");
                     }
                 }
                 pa0_done = Some(pin);
@@ -323,14 +422,24 @@ fn every_valid_sequence() {
                 let i = i2c1_clocked.take().unwrap();
                 let speed: u8 = kani::any();
                 if speed == 0 {
+                    i2c1_timingr = 0x10707dbc;
                     let mut bus = i.init::<i2c1_speed::Standard100k, _>(&mut img, pb6_done.take().unwrap(), pb7_done.take().unwrap());
+                    kani::cover!(true, "I2C1 started at Standard100k");
                     if kani::any() {
+                        let levels = [img.gpioa[6], img.gpiob[6]];
                         bus.write_byte(&mut img, kani::any());
+                        kani::assert(levels == [img.gpioa[6], img.gpiob[6]], "I2C1 write_byte touched a GPIO BSRR");
+                        kani::cover!(true, "I2C1 wrote a byte");
                     }
                 } else {
+                    i2c1_timingr = 0x00602173;
                     let mut bus = i.init::<i2c1_speed::Fast400k, _>(&mut img, pb6_done.take().unwrap(), pb7_done.take().unwrap());
+                    kani::cover!(true, "I2C1 started at Fast400k");
                     if kani::any() {
+                        let levels = [img.gpioa[6], img.gpiob[6]];
                         bus.write_byte(&mut img, kani::any());
+                        kani::assert(levels == [img.gpioa[6], img.gpiob[6]], "I2C1 write_byte touched a GPIO BSRR");
+                        kani::cover!(true, "I2C1 wrote a byte");
                     }
                 }
                 i2c1_done = true;
@@ -339,8 +448,12 @@ fn every_valid_sequence() {
                 kani::assume(spi1_clocked.is_some() && pa5_done.is_some() && pa7_done.is_some() && pa6_done.is_some());
                 let i = spi1_clocked.take().unwrap();
                 let mut bus = i.init::<_>(&mut img, pa5_done.take().unwrap(), pa7_done.take().unwrap(), pa6_done.take().unwrap());
+                kani::cover!(true, "SPI1 started");
                 if kani::any() {
+                    let levels = [img.gpioa[6], img.gpiob[6]];
                     bus.write_byte(&mut img, kani::any());
+                    kani::assert(levels == [img.gpioa[6], img.gpiob[6]], "SPI1 write_byte touched a GPIO BSRR");
+                    kani::cover!(true, "SPI1 wrote a byte");
                 }
                 spi1_done = true;
             }
@@ -350,6 +463,6 @@ fn every_valid_sequence() {
     kani::assert(i2c1_done, "the schedule did not start I2C1");
     kani::assert(spi1_done, "the schedule did not start SPI1");
     kani::assert(pa0_done.is_some(), "the schedule did not configure PA0");
-    check_final(&before, &img);
+    check_final(&before, &img, i2c1_timingr);
     kani::cover!(true, "the end of a complete schedule is reachable");
 }

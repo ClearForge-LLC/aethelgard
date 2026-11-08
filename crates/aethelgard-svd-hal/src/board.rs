@@ -719,20 +719,35 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         w,
         "}}\n\
          \n\
+         /// The lock on [`Registers`].\n\
+         pub(crate) mod sealed {{\n    \
+             pub trait Sealed {{}}\n\
+         \n    \
+             /// Only this crate can make one.\n    \
+             pub struct Token(pub(crate) ());\n\
+         }}\n\
+         \n\
+         const TOKEN: sealed::Token = sealed::Token(());\n\
+         \n\
          /// The one door to the hardware. Offsets are byte offsets into the block.\n\
-         pub trait Registers {{\n    \
-             fn read(&mut self, block: Block, offset: usize) -> u32;\n    \
-             fn write(&mut self, block: Block, offset: usize, value: u32);\n    \
-             fn modify(&mut self, block: Block, offset: usize, f: impl FnOnce(u32) -> u32) {{\n        \
-                 let value = self.read(block, offset);\n        \
-                 self.write(block, offset, f(value));\n    \
+         ///\n\
+         /// It is sealed, and every method takes a [`sealed::Token`] that only this\n\
+         /// crate can make. So firmware can neither implement it, which would advance\n\
+         /// the typestates on a stand-in, nor call it, which would reach a register\n\
+         /// around them. Only the typestate API below can (`INV-02`; adversarial E2, E3).\n\
+         pub trait Registers: sealed::Sealed {{\n    \
+             fn read(&mut self, token: sealed::Token, block: Block, offset: usize) -> u32;\n    \
+             fn write(&mut self, token: sealed::Token, block: Block, offset: usize, value: u32);\n    \
+             fn modify(&mut self, token: sealed::Token, block: Block, offset: usize, f: impl FnOnce(u32) -> u32) {{\n        \
+                 let value = self.read(sealed::Token(()), block, offset);\n        \
+                 self.write(token, block, offset, f(value));\n    \
              }}\n\
          }}\n\
          \n\
          /// Volatile access at the part's real base addresses. Never exercised by\n\
          /// the proof: Kani cannot own this memory (`architecture.md` §2.2).\n\
          pub mod mmio {{\n    \
-             use super::{{Block, Registers}};\n\
+             use super::{{Block, Registers, sealed}};\n\
          \n    \
              pub struct Mmio {{\n        \
                  _private: (),\n    \
@@ -773,12 +788,14 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         "        }}\n    \
          }}\n\
          \n    \
+         impl sealed::Sealed for Mmio {{}}\n\
+         \n    \
          impl Registers for Mmio {{\n        \
-             fn read(&mut self, block: Block, offset: usize) -> u32 {{\n            \
+             fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {{\n            \
                  // SAFETY: a register of a peripheral that exists on this part.\n            \
                  unsafe {{ core::ptr::read_volatile((base(block) + offset) as *const u32) }}\n        \
              }}\n        \
-             fn write(&mut self, block: Block, offset: usize, value: u32) {{\n            \
+             fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n            \
                  // SAFETY: as for `read`.\n            \
                  unsafe {{ core::ptr::write_volatile((base(block) + offset) as *mut u32, value) }}\n        \
              }}\n    \
@@ -866,7 +883,7 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             };
             let _ = writeln!(
                 w,
-                "        r.modify(Block::{block}, {reg:#04x}, |v| {body});"
+                "        r.modify(TOKEN, Block::{block}, {reg:#04x}, |v| {body});"
             );
         };
         field(w, g.otyper, pf.otyper, tw, otype);
@@ -875,7 +892,7 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         if p.role == Role::Output {
             let _ = writeln!(
                 w,
-                "        r.write(Block::{block}, {:#04x}, {:#010x});",
+                "        r.write(TOKEN, Block::{block}, {:#04x}, {:#010x});",
                 g.bsrr,
                 1u32 << pf.bs
             );
@@ -889,10 +906,10 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                 w,
                 "impl {pin}<Output> {{\n    \
                      pub fn set_high<R: Registers>(&mut self, r: &mut R) {{\n        \
-                         r.write(Block::{block}, {bsrr:#04x}, {bs:#010x});\n    \
+                         r.write(TOKEN, Block::{block}, {bsrr:#04x}, {bs:#010x});\n    \
                      }}\n    \
                      pub fn set_low<R: Registers>(&mut self, r: &mut R) {{\n        \
-                         r.write(Block::{block}, {bsrr:#04x}, {br:#010x});\n    \
+                         r.write(TOKEN, Block::{block}, {bsrr:#04x}, {br:#010x});\n    \
                      }}\n\
                  }}\n",
                 bsrr = g.bsrr,
@@ -975,9 +992,9 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                              r: &mut R,\n        \
                              {params},\n    \
                          ) -> {t}<Enabled<S>> {{\n        \
-                             r.modify(Block::{block}, {cr1:#04x}, |v| v & !{enable:#010x});\n        \
-                             r.write(Block::{block}, {cfg:#04x}, S::TIMINGR);\n        \
-                             r.modify(Block::{block}, {cr1:#04x}, |v| v | {enable:#010x});\n        \
+                             r.modify(TOKEN, Block::{block}, {cr1:#04x}, |v| v & !{enable:#010x});\n        \
+                             r.write(TOKEN, Block::{block}, {cfg:#04x}, S::TIMINGR);\n        \
+                             r.modify(TOKEN, Block::{block}, {cr1:#04x}, |v| v | {enable:#010x});\n        \
                              {t} {{ _state: PhantomData }}\n    \
                          }}\n\
                      }}\n\
@@ -999,9 +1016,9 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                              r: &mut R,\n        \
                              {params},\n    \
                          ) -> {t}<Enabled<()>> {{\n        \
-                             r.modify(Block::{block}, {cr1:#04x}, |v| v & !{enable:#010x});\n        \
-                             r.modify(Block::{block}, {cfg:#04x}, |v| v | {master:#010x});\n        \
-                             r.modify(Block::{block}, {cr1:#04x}, |v| v | {enable:#010x});\n        \
+                             r.modify(TOKEN, Block::{block}, {cr1:#04x}, |v| v & !{enable:#010x});\n        \
+                             r.modify(TOKEN, Block::{block}, {cfg:#04x}, |v| v | {master:#010x});\n        \
+                             r.modify(TOKEN, Block::{block}, {cr1:#04x}, |v| v | {enable:#010x});\n        \
                              {t} {{ _state: PhantomData }}\n    \
                          }}\n\
                      }}\n\
@@ -1016,7 +1033,7 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let _ = writeln!(
             w,
             "    pub fn write_byte<R: Registers>(&mut self, r: &mut R, byte: u8) {{\n        \
-                 r.write(Block::{block}, {txdr:#04x}, u32::from(byte));\n    \
+                 r.write(TOKEN, Block::{block}, {txdr:#04x}, u32::from(byte));\n    \
              }}\n\
              }}\n",
             txdr = pf.txdr
@@ -1052,7 +1069,7 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             w,
             "    /// `RCC_{reg}` bit {bit}.\n    \
              pub fn enable_{field}<R: Registers>(&mut self, r: &mut R, _gated: {t}<Gated>) -> {t}<Clocked> {{\n        \
-                 r.modify(Block::Rcc, {off:#05x}, |v| v | {mask:#010x});\n        \
+                 r.modify(TOKEN, Block::Rcc, {off:#05x}, |v| v | {mask:#010x});\n        \
                  {t} {{ _state: PhantomData }}\n    \
              }}",
             reg = g.register,
@@ -1173,6 +1190,7 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     let _ = writeln!(
         w,
         "\n\
+         use crate::board::sealed;\n\
          use crate::*;\n\
          \n\
          /// The harness-owned register image, and the oracle for the ordering rules.\n\
@@ -1228,12 +1246,14 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          }}\n\
          }}\n\
          \n\
+         impl sealed::Sealed for Image {{}}\n\
+         \n\
          impl Registers for Image {{\n    \
-             fn read(&mut self, block: Block, offset: usize) -> u32 {{\n        \
+             fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {{\n        \
                  self.clocked(block);\n        \
                  *self.slot(block, offset)\n    \
              }}\n    \
-             fn write(&mut self, block: Block, offset: usize, value: u32) {{\n        \
+             fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n        \
                  self.clocked(block);"
     );
     for (name, pf) in &facts.peripherals {
@@ -1256,16 +1276,120 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             en = 1u32 << pf.enable,
         );
     }
+    // GPIO write-time rules (adversarial E6, E7): a BSRR write may touch only a
+    // solved output's set or reset bit; a MODER write may move only solved pins,
+    // only to their final mode, and only once every other field of that pin
+    // already holds its final value (an output's level already high).
+    let [mw, tw, sw, pw, aw] = g.widths;
+    for port in &plan.ports {
+        let t = port_type(*port);
+        let field = port_field(*port);
+        let on_port: Vec<(&String, &PinPlan)> =
+            plan.pins.iter().filter(|(_, p)| p.port == *port).collect();
+        let allowed: Vec<String> = on_port
+            .iter()
+            .filter(|(_, p)| p.role == Role::Output)
+            .flat_map(|(n, _)| {
+                let pf = &facts.pins[*n];
+                [1u32 << pf.bs, 1u32 << pf.br]
+            })
+            .map(|v| format!("value == {v:#010x}"))
+            .collect();
+        let rule = if allowed.is_empty() {
+            "false".to_owned()
+        } else {
+            allowed.join(" || ")
+        };
+        let _ = writeln!(
+            w,
+            "        if block == Block::{t} && offset == {bsrr:#04x} {{\n            \
+                 kani::assert({rule}, \"{t} BSRR write touches a pin no solved output owns\");\n        \
+             }}\n        \
+             if block == Block::{t} && offset == {moder:#04x} {{\n            \
+                 let old = self.{field}[{mi}];",
+            bsrr = g.bsrr,
+            moder = g.moder,
+            mi = g.moder / 4,
+        );
+        let mut solved_mask = 0u32;
+        for (pin, p) in &on_port {
+            let pf = &facts.pins[*pin];
+            let (mode, otype, ospeed, pupd) = p.role.policy();
+            let mmask = ((1u32 << mw) - 1) << pf.moder;
+            solved_mask |= mmask;
+            let mut ready = vec![
+                format!(
+                    "self.{field}[{}] & {:#010x} == {:#010x}",
+                    g.otyper / 4,
+                    ((1u32 << tw) - 1) << pf.otyper,
+                    otype << pf.otyper
+                ),
+                format!(
+                    "self.{field}[{}] & {:#010x} == {:#010x}",
+                    g.ospeedr / 4,
+                    ((1u32 << sw) - 1) << pf.ospeedr,
+                    ospeed << pf.ospeedr
+                ),
+                format!(
+                    "self.{field}[{}] & {:#010x} == {:#010x}",
+                    g.pupdr / 4,
+                    ((1u32 << pw) - 1) << pf.pupdr,
+                    pupd << pf.pupdr
+                ),
+            ];
+            if p.role == Role::Output {
+                ready.push(format!(
+                    "self.{field}[{}] == {:#010x}",
+                    g.bsrr / 4,
+                    1u32 << pf.bs
+                ));
+            } else {
+                let afr = g.afr[pf.afr_index as usize] / 4;
+                ready.push(format!(
+                    "self.{field}[{afr}] & {:#010x} == {:#010x}",
+                    ((1u32 << aw) - 1) << pf.afr,
+                    p.af << pf.afr
+                ));
+            }
+            let _ = writeln!(
+                w,
+                "            if value & {mmask:#010x} != old & {mmask:#010x} {{\n                \
+                     kani::assert(value & {mmask:#010x} == {fin:#010x}, \"{pin}'s mode moved to one its role never takes\");\n                \
+                     kani::assert(\n                    \
+                         {ready},\n                    \
+                         \"{pin} entered its mode before its other fields were final\",\n                \
+                     );\n            \
+                 }}",
+                fin = mode << pf.moder,
+                ready = ready.join("\n                        && "),
+            );
+        }
+        let _ = writeln!(
+            w,
+            "            kani::assert(\n                \
+                 value & !{solved_mask:#010x} == old & !{solved_mask:#010x},\n                \
+                 \"a {t} MODER write moved a pin the topology does not use\",\n            \
+             );\n        \
+             }}"
+        );
+    }
     let _ = writeln!(
         w,
         "        *self.slot(block, offset) = value;\n    }}\n}}\n"
     );
 
     // The final-state oracle.
+    let timingr_params: Vec<String> = plan
+        .peripherals
+        .iter()
+        .filter(|(_, p)| p.kind == Kind::I2c)
+        .map(|(n, _)| format!(", {}_timingr: u32", n.to_ascii_lowercase()))
+        .collect();
     let _ = writeln!(
         w,
         "/// The state the specification allows, from any starting image.\n\
-         fn check_final(before: &Image, after: &Image) {{"
+         fn check_final(before: &Image, after: &Image{}) {{",
+        timingr_params.concat()
     );
     for port in &plan.ports {
         let field = port_field(*port);
@@ -1339,34 +1463,34 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let cr1 = pf.cr1 / 4;
         let _ = writeln!(
             w,
-            "    kani::assert(after.{field}[{cr1}] & {en:#010x} != 0, \"{t} is not enabled\");",
+            "    kani::assert(after.{field}[{cr1}] & {en:#010x} != 0, \"{t} is not enabled\");\n    \
+             kani::assert(\n        \
+                 after.{field}[{cr1}] & !{en:#010x} == before.{field}[{cr1}] & !{en:#010x},\n        \
+                 \"{t} CR1 changed beyond its enable bit\",\n    \
+             );",
             en = 1u32 << pf.enable
         );
         let written = [pf.cr1, pf.config, pf.txdr];
         match plan.peripherals[name].kind {
             Kind::I2c => {
-                let (_, admitted) = &speeds[name];
-                let ok: Vec<String> = admitted
-                    .iter()
-                    .map(|&i| {
-                        format!(
-                            "after.{field}[{}] == {:#010x}",
-                            pf.config / 4,
-                            I2C_MODES[i].2
-                        )
-                    })
-                    .collect();
                 let _ = writeln!(
                     w,
-                    "    kani::assert(\n        {},\n        \"{t} TIMINGR is not an admitted speed's\",\n    );",
-                    ok.join("\n            || ")
+                    "    kani::assert(\n        \
+                         after.{field}[{c}] == {field}_timingr,\n        \
+                         \"{t} TIMINGR is not the chosen speed's\",\n    \
+                     );",
+                    c = pf.config / 4
                 );
             }
             Kind::Spi => {
                 let master = 1u32 << pf.master.unwrap_or_default();
                 let _ = writeln!(
                     w,
-                    "    kani::assert(after.{field}[{c}] & {master:#010x} != 0, \"{t} is not a master\");",
+                    "    kani::assert(after.{field}[{c}] & {master:#010x} != 0, \"{t} is not a master\");\n    \
+                     kani::assert(\n        \
+                         after.{field}[{c}] & !{master:#010x} == before.{field}[{c}] & !{master:#010x},\n        \
+                         \"{t} CFG2 changed beyond MASTER\",\n    \
+                     );",
                     c = pf.config / 4
                 );
             }
@@ -1417,6 +1541,15 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             w,
             "    let mut {f} = Some(board.{f});\n    let mut {f}_clocked = None;\n    let mut {f}_done = false;"
         );
+    }
+    for (name, p) in &plan.peripherals {
+        if p.kind == Kind::I2c {
+            let _ = writeln!(
+                w,
+                "    let mut {}_timingr = 0u32;",
+                name.to_ascii_lowercase()
+            );
+        }
     }
     for pin in plan.pins.keys() {
         let f = pin_field(pin);
@@ -1471,15 +1604,24 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             mutable = if p.role == Role::Output { "mut " } else { "" },
         );
         if p.role == Role::Output {
+            let pf = &facts.pins[pin];
+            let port = port_field(p.port);
             let _ = writeln!(
                 w,
                 "                if kani::any() {{\n                    \
                      if kani::any() {{\n                        \
-                         pin.set_low(&mut img);\n                    \
+                         pin.set_low(&mut img);\n                        \
+                         kani::assert(img.{port}[{b}] == {br:#010x}, \"{pin} set_low did not reset it\");\n                        \
+                         kani::cover!(true, \"{pin} driven low\");\n                    \
                      }} else {{\n                        \
-                         pin.set_high(&mut img);\n                    \
+                         pin.set_high(&mut img);\n                        \
+                         kani::assert(img.{port}[{b}] == {bs:#010x}, \"{pin} set_high did not set it\");\n                        \
+                         kani::cover!(true, \"{pin} driven high\");\n                    \
                      }}\n                \
-                 }}"
+                 }}",
+                b = facts.gpio.bsrr / 4,
+                bs = 1u32 << pf.bs,
+                br = 1u32 << pf.br,
             );
         }
         let _ = writeln!(w, "                {f}_done = Some(pin);\n            }}");
@@ -1500,14 +1642,25 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                  let i = {f}_clocked.take().unwrap();",
             ready.join(" && ")
         );
-        let start = |w: &mut String, ty: &str, indent: &str| {
+        // A byte written to a peripheral must not touch any output's level.
+        let bsrr_ports: Vec<String> = plan
+            .ports
+            .iter()
+            .map(|p| format!("img.{}[{}]", port_field(*p), facts.gpio.bsrr / 4))
+            .collect();
+        let start = |w: &mut String, ty: &str, label: &str, indent: &str| {
             let _ = writeln!(
                 w,
-                "{indent}let mut bus = i.init::<{ty}>(&mut img, {});\n\
+                "{indent}let mut bus = i.init::<{ty}>(&mut img, {args});\n\
+                 {indent}kani::cover!(true, \"{name} started{label}\");\n\
                  {indent}if kani::any() {{\n\
+                 {indent}    let levels = [{levels}];\n\
                  {indent}    bus.write_byte(&mut img, kani::any());\n\
+                 {indent}    kani::assert(levels == [{levels}], \"{name} write_byte touched a GPIO BSRR\");\n\
+                 {indent}    kani::cover!(true, \"{name} wrote a byte\");\n\
                  {indent}}}",
-                args.join(", ")
+                args = args.join(", "),
+                levels = bsrr_ports.join(", "),
             );
         };
         match p.kind {
@@ -1525,7 +1678,17 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                         format!("                }} else if speed == {k} {{")
                     };
                     let _ = writeln!(w, "{open}");
-                    start(w, &format!("{m}_speed::{mode}, _"), "                    ");
+                    let _ = writeln!(
+                        w,
+                        "                    {m}_timingr = {:#010x};",
+                        I2C_MODES[admitted[k]].2
+                    );
+                    start(
+                        w,
+                        &format!("{m}_speed::{mode}, _"),
+                        &format!(" at {mode}"),
+                        "                    ",
+                    );
                 }
                 if modes.len() > 1 {
                     let _ = writeln!(w, "                }}");
@@ -1537,7 +1700,7 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                     );
                 }
             }
-            Kind::Spi => start(w, "_", "                "),
+            Kind::Spi => start(w, "_", "", "                "),
         }
         let _ = writeln!(w, "                {f}_done = true;\n            }}");
         a += 1;
@@ -1562,11 +1725,18 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             );
         }
     }
+    let timingr_args: Vec<String> = plan
+        .peripherals
+        .iter()
+        .filter(|(_, p)| p.kind == Kind::I2c)
+        .map(|(n, _)| format!(", {}_timingr", n.to_ascii_lowercase()))
+        .collect();
     let _ = writeln!(
         w,
-        "    check_final(&before, &img);\n    \
+        "    check_final(&before, &img{});\n    \
          kani::cover!(true, \"the end of a complete schedule is reachable\");\n\
-         }}"
+         }}",
+        timingr_args.concat()
     );
     s
 }

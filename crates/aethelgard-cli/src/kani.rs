@@ -3,11 +3,28 @@
 //! (measured in the AET-WO-0300 spike, S5). Exit 1 alone cannot tell a failed
 //! proof from a compile error or a missing harness, so the lines decide which,
 //! and any combination not in the table is a `ToolError`.
+//!
+//! A harness's `kani::cover!` statements are its non-vacuity witnesses
+//! (`AET-WO-1400`, adversarial E1): an `assume` that cuts every path makes
+//! every assertion hold, and Kani still exits 0. So on exit 0, every cover
+//! property Kani reports must be satisfied, or the verdict is a fail.
 
 use crate::run::{Output, Stop};
 use crate::verdict::Finding;
 
 const TOOL: &str = "cargo-kani";
+
+/// `(satisfied, total)` from `** S of T cover properties satisfied`, with or
+/// without a parenthesised remainder such as `(1 unreachable)`.
+fn covers(line: &str) -> Option<(u32, u32)> {
+    let rest = line.strip_prefix("** ")?;
+    let (satisfied, rest) = rest.split_once(" of ")?;
+    let (total, rest) = rest.split_once(" cover properties satisfied")?;
+    if !(rest.is_empty() || rest.starts_with(" (")) {
+        return None;
+    }
+    Some((satisfied.parse().ok()?, total.parse().ok()?))
+}
 
 /// `(successes, failures)` from `Complete - N successfully verified harnesses, M failures, T total.`
 fn complete(line: &str) -> Option<(u32, u32)> {
@@ -24,6 +41,10 @@ pub fn judge(code: i32, out: &Output, harness: &str) -> Result<Vec<Finding>, Sto
     let succeeded = has("VERIFICATION:- SUCCESSFUL");
     let failed = has("VERIFICATION:- FAILED");
     let totals: Vec<(u32, u32)> = lines.iter().filter_map(|l| complete(l)).collect();
+    let cover_lines: Vec<(&str, (u32, u32))> = lines
+        .iter()
+        .filter_map(|l| covers(l).map(|c| (*l, c)))
+        .collect();
     let compile_errors = lines.iter().any(|l| {
         l.contains("compilation errors") && l.starts_with("error: Failed to execute cargo")
     });
@@ -72,7 +93,19 @@ pub fn judge(code: i32, out: &Output, harness: &str) -> Result<Vec<Finding>, Sto
                 && !compile_errors
                 && !no_harness
             {
-                Ok(Vec::new())
+                match cover_lines.as_slice() {
+                    [] => Ok(Vec::new()),
+                    [(_, (satisfied, total))] if satisfied == total => Ok(Vec::new()),
+                    [(line, _)] => Ok(vec![Finding::plain(
+                        "cover_unsatisfied",
+                        format!(
+                            "{line}: a path the harness covers is never reached, so its proof may be vacuous"
+                        ),
+                    )]),
+                    _ => Err(disagree(
+                        "it printed more than one cover summary for one harness",
+                    )),
+                }
             } else {
                 Err(disagree(
                     "its output does not show one successful verification and no failure",

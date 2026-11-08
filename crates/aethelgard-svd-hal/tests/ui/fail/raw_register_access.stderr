@@ -1,0 +1,13 @@
+error[E0603]: module `sealed` is private
+ --> tests/ui/fail/raw_register_access.rs:9:33
+  |
+9 |     hw.write(sentinel_01_board::sealed::Token(()), Block::Rcc, 0xe8, 0);
+  |                                 ^^^^^^  ----- tuple struct `Token` is not publicly re-exported
+  |                                 |
+  |                                 private module
+  |
+note: the module `sealed` is defined here
+ --> $WORKSPACE/boards/sentinel-01/src/lib.rs
+  |
+  | pub use board::*;
+  |         ^^^^^

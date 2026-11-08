@@ -449,6 +449,18 @@ mod tests {
         assert_eq!(i2c.offset("TIMINGR", 0).unwrap(), 0x10);
         assert_eq!(i2c.offset("TXDR", 0).unwrap(), 0x28);
         assert_eq!(i2c.size, 0x2C);
+        // The rest the generator emits for sentinel-01 (adversarial pass: these
+        // were read correctly but not pinned).
+        let spi = f.layout("SPI").unwrap();
+        assert_eq!(spi.offset("CR1", 0).unwrap(), 0x00);
+        assert_eq!(spi.offset("CFG2", 0).unwrap(), 0x0C);
+        assert_eq!(spi.offset("TXDR", 0).unwrap(), 0x20);
+        assert_eq!(spi.size, 0x54);
+        assert_eq!(rcc.offset("APB2ENR", 0).unwrap(), 0x0F0);
+        assert_eq!(gpio.offset("BSRR", 0).unwrap(), 0x18);
+        assert_eq!(f.position("I2C_CR1_PE_Pos").unwrap(), 0);
+        assert_eq!(f.position("SPI_CR1_SPE_Pos").unwrap(), 0);
+        assert_eq!(f.position("SPI_CFG2_MASTER_Pos").unwrap(), 22);
     }
 
     #[test]
