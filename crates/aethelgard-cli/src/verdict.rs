@@ -21,6 +21,9 @@ pub struct Verdict {
     /// `check drc --spec` only: the sha256 of the specification file as read.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub specification_sha256: Option<String>,
+    /// `check drc --schematic` only: the schematic parity was judged against.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schematic: Option<InputReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub harness: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -113,6 +116,7 @@ impl Verdict {
             included_severities: None,
             rules: None,
             specification_sha256: None,
+            schematic: None,
             harness: None,
             machine: None,
             findings,
