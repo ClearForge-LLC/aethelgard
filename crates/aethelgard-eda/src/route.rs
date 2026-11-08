@@ -1421,6 +1421,9 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
     let pads = net_pads(board);
     let nets: Vec<String> = pads.keys().cloned().collect();
     let mut order: Vec<usize> = (0..nets.len())
+        // belt-and-suspenders: an `unconnected-` net is one pin's alone
+        // (`pcb::pin_nets`, and parity refuses two), so the pad count already
+        // skips it; this keeps a track from ever joining one.
         .filter(|&i| pads[&nets[i]].len() > 1 && !nets[i].starts_with(crate::parity::UNCONNECTED))
         .collect();
     let ground = nets.binary_search_by(|n| n.as_str().cmp(GROUND)).ok();
@@ -1505,6 +1508,9 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
         zones,
         ripups,
     };
+    // belt-and-suspenders: the grid's margins already keep the copper clear
+    // and joined (no tested board reaches these); the exact judges stand
+    // behind them, so a router defect fails closed rather than ships.
     check(board, &routed).map_err(|why| fail("", why))?;
     connectivity(board, &routed).map_err(|why| fail("", why))?;
     Ok(routed)
@@ -1745,6 +1751,27 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
                     board.parts[list[0].0].pads[list[0].1].number
                 ));
             }
+        }
+    }
+    // Every track and via is a routed net's, joined to that net's pads:
+    // no copper on a net no two pads carry, and none left floating.
+    let first_seg = all.len() - routed.segments.len() - routed.vias.len();
+    for (k, item) in all.iter().enumerate().skip(first_seg) {
+        let net = item.net.unwrap_or("");
+        let list = pads
+            .get(net)
+            .filter(|l| l.len() > 1 && !net.starts_with(crate::parity::UNCONNECTED))
+            .ok_or_else(|| {
+                format!(
+                    "{} is on `{net}`, which the router does not route",
+                    item.what
+                )
+            })?;
+        if find(&mut parent, k) != find(&mut parent, index[&list[0]]) {
+            return Err(format!(
+                "{} of `{net}` is joined to none of its pads",
+                item.what
+            ));
         }
     }
     Ok(())
@@ -2177,5 +2204,21 @@ mod tests {
         };
         let e = route(&board).unwrap_err();
         assert!(e.why.contains("larger than"), "{e:?}");
+    }
+
+    /// A zone of any net but ground, or on F.Cu, is refused.
+    #[test]
+    fn only_a_ground_zone_on_b_cu_is_judged_joined() {
+        let board = Board {
+            outline: rect(0, 0, 10 * MM, 10 * MM),
+            parts: vec![],
+        };
+        for zone in [("VDD".to_owned(), Layer::B), (GROUND.to_owned(), Layer::F)] {
+            let r = Routed {
+                zones: vec![zone.clone()],
+                ..Routed::default()
+            };
+            assert!(connectivity(&board, &r).is_err(), "{zone:?}");
+        }
     }
 }

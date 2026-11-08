@@ -255,3 +255,68 @@ fn every_pad_is_left_straight_out_of_its_field() {
     }
     assert!(inside > 0, "no track reaches a pad");
 }
+
+/// Adversarial pass A1 (fixed): the router's own judges refuse copper KiCad
+/// rejects but they once passed. Measured at d6c3cbd, each passed `check`
+/// and `connectivity`:
+/// - a closed F.Cu loop of `/I2C_SDA` touching nothing (KiCad:
+///   `unconnected_items`);
+/// - a stub on an `unconnected-` pad (KiCad: `track_dangling`);
+/// - a track on a net no pad carries (KiCad: `track_dangling`).
+///
+/// They also refuse what KiCad does not see (A2): every `VDD_3V3` segment
+/// and via relabelled `GND`.
+#[test]
+fn the_routers_judges_refuse_orphan_and_relabelled_copper() {
+    let d = Dir::new("orphan");
+    let board = emitted(&d);
+    let seg = |a: &str, b: &str, net: &str, i: usize| {
+        format!(
+            "\t(segment (start {a}) (end {b}) (width 0.2) (layer \"F.Cu\") (net \"{net}\") (uuid \"00000000-0000-4000-8000-00000000000{i}\"))\n"
+        )
+    };
+    let ring = [
+        seg("74 78", "76 78", "/I2C_SDA", 1),
+        seg("76 78", "76 79", "/I2C_SDA", 2),
+        seg("76 79", "74 79", "/I2C_SDA", 3),
+        seg("74 79", "74 78", "/I2C_SDA", 4),
+    ]
+    .concat();
+    let stub = seg(
+        "90.1125 85.15",
+        "89.6 85.15",
+        "unconnected-(U3-ALERT-Pad3)",
+        5,
+    );
+    let stray = seg("74 79", "76 79", "/NOPE", 6);
+    let at = board.rfind("\t(embedded_fonts no)").unwrap();
+    let mut relabelled = String::new();
+    let mut copper = false;
+    for line in board.lines() {
+        match line {
+            "\t(segment" | "\t(via" => copper = true,
+            "\t)" => copper = false,
+            _ => {}
+        }
+        relabelled.push_str(if copper && line == "\t\t(net \"VDD_3V3\")" {
+            "\t\t(net \"GND\")"
+        } else {
+            line
+        });
+        relabelled.push('\n');
+    }
+    let (b, r) = read(&board);
+    route::check(&b, &r).unwrap();
+    route::connectivity(&b, &r).unwrap();
+    for (name, edited) in [
+        ("loop", format!("{}{ring}{}", &board[..at], &board[at..])),
+        ("stub", format!("{}{stub}{}", &board[..at], &board[at..])),
+        ("stray", format!("{}{stray}{}", &board[..at], &board[at..])),
+        ("relabelled", relabelled),
+    ] {
+        assert_ne!(edited, board, "{name}");
+        let (b, r) = read(&edited);
+        let judged = route::check(&b, &r).and_then(|_| route::connectivity(&b, &r));
+        assert!(judged.is_err(), "{name}: accepted");
+    }
+}

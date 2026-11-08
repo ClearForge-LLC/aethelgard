@@ -799,9 +799,12 @@ pub(crate) fn write(project: &str, parts: &[Part]) -> Result<String, EmitError> 
     }
     let o = layout.outline;
     let board = route::Board { outline: o, parts };
-    let routed = route::route(&board).map_err(|e| EmitError::Unroutable {
-        net: e.net,
-        why: e.why,
+    let routed = route::route(&board).map_err(|e| match e.net.is_empty() {
+        true => EmitError::BoardUnroutable(e.why),
+        false => EmitError::Unroutable {
+            net: e.net,
+            why: e.why,
+        },
     })?;
     out.push(Sx::List(vec![
         Sx::atom("gr_rect"),
