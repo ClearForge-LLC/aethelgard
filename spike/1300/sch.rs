@@ -359,7 +359,7 @@ pub fn emit(sheet: &Sheet, syms: &BTreeMap<String, Sx>) -> Result<String, String
         e.instance(&flag_lib, &r, "PWR_FLAG", None, pos, &key)?;
     }
     for (i, (text, global)) in sheet.loose_labels.iter().enumerate() {
-        let pos = (GRID * 20, GRID * (20 + 4 * i as i64));
+        let pos = (GRID * 600, GRID * (20 + 4 * i as i64));
         let key = format!("{}/loose/{i}", sheet.project);
         e.label(text, *global, pos, (1, 0), &key);
     }

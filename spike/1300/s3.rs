@@ -202,6 +202,7 @@ pub fn run(ctx: &mut Ctx) -> Result<(), String> {
         Err(e) => answer("S3", format!("aethelgard check drc: {e}")),
     }
     footprint_rows(ctx, &spec_pro, &spec_dru, &loose_pro, &loose_dru)?;
+    round3(ctx, &spec_dru, &loose_dru)?;
     Ok(())
 }
 
@@ -282,4 +283,220 @@ fn footprint_rows(
         }
     }
     Ok(())
+}
+
+/// The first demo project in the image, as KiCad 10 wrote it.
+pub fn demo_pro() -> Result<(String, serde_json::Value), String> {
+    let found = super::run(
+        "find",
+        &["/usr/share/kicad/demos", "-name", "*.kicad_pro"],
+        std::path::Path::new("/"),
+    )?;
+    let mut files: Vec<&str> = found.stdout.lines().collect();
+    files.sort();
+    let first = files.first().ok_or("no demo .kicad_pro")?;
+    Ok((
+        first.to_string(),
+        super::read_json(std::path::Path::new(first))?,
+    ))
+}
+
+/// A project in the demo's own shape, with the Default net class's
+/// clearance, the board minimum, and rule severities set to ignore.
+pub fn pro_like_demo(
+    demo: &serde_json::Value,
+    name: &str,
+    netclass: f64,
+    min: f64,
+    ignore: &[&str],
+) -> Result<String, String> {
+    let mut v = demo.clone();
+    v["meta"]["filename"] = format!("{name}.kicad_pro").into();
+    let ds = &mut v["board"]["design_settings"];
+    ds["rules"]["min_clearance"] = min.into();
+    for k in ignore {
+        ds["rule_severities"][*k] = "ignore".into();
+    }
+    let classes = v["net_settings"]["classes"]
+        .as_array_mut()
+        .ok_or("demo has no net classes")?;
+    classes.retain(|c| c["name"] == "Default");
+    let default = classes.first_mut().ok_or("demo has no Default class")?;
+    default["clearance"] = netclass.into();
+    v["net_settings"]["netclass_assignments"] = serde_json::Value::Null;
+    v["net_settings"]["netclass_patterns"] = serde_json::json!([]);
+    serde_json::to_string_pretty(&v).map_err(|e| e.to_string())
+}
+
+/// The round-1 project with no `meta` in its design settings.
+fn project_no_meta(name: &str, netclass: &str, min: &str, severities: &str) -> String {
+    project(name, netclass, severities)
+        .replace("\"meta\": { \"version\": 2 },\n      ", "")
+        .replace(
+            &format!("\"min_clearance\": {netclass},"),
+            &format!("\"min_clearance\": {min},"),
+        )
+}
+
+/// Round 3. Round 2's override rows were all caught by "board minimum
+/// clearance", even with the board's own project saying 0.05, and its
+/// severities project did not silence a warning. So: which project shape
+/// does KiCad 10 read the board minimum and rule severities from, and with
+/// a shape that is read, which gate step catches a local override?
+fn round3(ctx: &Ctx, spec_dru: &str, loose_dru: &str) -> Result<(), String> {
+    let (path, demo) = demo_pro()?;
+    let ds = &demo["board"]["design_settings"];
+    let keys = |v: &serde_json::Value| -> Vec<String> {
+        v.as_object()
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default()
+    };
+    answer(
+        "S3",
+        format!(
+            "round3: template {path}: top keys {:?}; meta {}; board.design_settings keys {:?}; design_settings.meta {}; rules.min_clearance {}; rule_severities has {} keys; net_settings.meta {}",
+            keys(&demo),
+            demo["meta"],
+            keys(ds),
+            ds["meta"],
+            ds["rules"]["min_clearance"],
+            keys(&ds["rule_severities"]).len(),
+            demo["net_settings"]["meta"]
+        ),
+    );
+    // Which shape is read: netclass 0.05 (hides the 0.1 mm gap), board
+    // minimum 0.2 (catches it if read), track_dangling ignored (silences
+    // the two dangling warnings if read). Plain setup, no .kicad_dru.
+    let plain = tracks_board(SETUP_PLAIN.into()).emit()?;
+    let sev = "\"track_dangling\": \"ignore\"";
+    let shapes = [
+        (
+            "fmtA-round1",
+            project("input", LOOSE_MM, sev).replace(
+                &format!("\"min_clearance\": {LOOSE_MM},"),
+                &format!("\"min_clearance\": {SPEC_MM},"),
+            ),
+        ),
+        (
+            "fmtB-no-meta",
+            project_no_meta("input", LOOSE_MM, SPEC_MM, sev),
+        ),
+        (
+            "fmtD-demo",
+            pro_like_demo(&demo, "input", 0.05, 0.2, &["track_dangling"])?,
+        ),
+    ];
+    for (name, pro) in &shapes {
+        row(ctx, &format!("r3-read-{name}"), &plain, Some(pro), None)?;
+    }
+    // Local overrides against each gate step, with a project shape that the
+    // rows above show is read (fmtD) and with round 1's (fmtA).
+    let Some(libs) = &ctx.libs else { return Ok(()) };
+    let src = libs.footprint("Resistor_SMD:R_0603_1608Metric")?;
+    let pros: [(&str, String, String); 2] = [
+        (
+            "fmtD",
+            pro_like_demo(&demo, "input", 0.2, 0.2, &[])?,
+            pro_like_demo(&demo, "input", 0.05, 0.05, &[])?,
+        ),
+        (
+            "fmtA",
+            project("input", SPEC_MM, ""),
+            project("input", LOOSE_MM, ""),
+        ),
+    ];
+    let setups = [
+        ("spec", setup(SPEC_MM)),
+        ("loose", setup(LOOSE_MM)),
+        ("plain", SETUP_PLAIN.to_owned()),
+    ];
+    for (over, pad_cl, fp_cl) in [
+        ("pad-local", Some(50_000), None),
+        ("fp-local", None, Some(50_000)),
+        ("none", None, None),
+    ] {
+        for (fmt, gate_pro, loose_pro) in &pros {
+            // (setup, gate pro?, gate dru?)
+            let combos: [(&str, bool, bool); 7] = [
+                ("spec", true, true),
+                ("loose", true, true),
+                ("plain", true, true),
+                ("spec", false, true),
+                ("spec", true, false),
+                ("loose", false, true),
+                ("loose", false, false),
+            ];
+            for (s, gp, gd) in combos {
+                let text = override_board(
+                    &src,
+                    &setups.iter().find(|x| x.0 == s).unwrap().1,
+                    pad_cl,
+                    fp_cl,
+                )?;
+                let name = format!(
+                    "r3-{over}-{fmt}-setup_{s}-pro_{}-dru_{}",
+                    if gp { "gate" } else { "own" },
+                    if gd { "gate" } else { "own" }
+                );
+                row(
+                    ctx,
+                    &name,
+                    &text,
+                    Some(if gp { gate_pro } else { loose_pro }),
+                    Some(if gd { spec_dru } else { loose_dru }),
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A NET_B track 0.1 mm from pad 1 of a NET_A R_0603 carrying the given
+/// local clearances.
+fn override_board(
+    src: &super::sexpr::Sx,
+    setup: &str,
+    pad_cl: Option<i64>,
+    fp_cl: Option<i64>,
+) -> Result<String, String> {
+    let fp = Fp {
+        lib_id: "Resistor_SMD:R_0603_1608Metric".into(),
+        reference: "R1".into(),
+        value: "1k".into(),
+        at: (115 * MM, 112 * MM),
+        path: None,
+        sheetfile: String::new(),
+        pad_nets: BTreeMap::from([
+            ("1".to_owned(), "NET_A".to_owned()),
+            ("2".to_owned(), "NET_A".to_owned()),
+        ]),
+        src: src.clone(),
+        pad_clearance: pad_cl,
+        fp_clearance: fp_cl,
+        extra_props: Vec::new(),
+    };
+    let mut b = Board {
+        key: "s3r3".into(),
+        version: PCB_VERSION.into(),
+        setup: setup.into(),
+        outline: (100 * MM, 100 * MM, 130 * MM, 120 * MM),
+        footprints: vec![fp],
+        segs: Vec::new(),
+        vias: Vec::new(),
+        zones: Vec::new(),
+    };
+    let pads = b.pads()?;
+    let pad = pads
+        .iter()
+        .find(|p| p.number == "1" && p.layer == "F.Cu")
+        .ok_or("no pad 1")?;
+    let y = pad.centre.1 - pad.half.1 - 100_000 - 125_000;
+    b.segs.push(Seg {
+        a: (110 * MM, y),
+        b: (120 * MM, y),
+        width: MM / 4,
+        layer: "F.Cu".into(),
+        net: "NET_B".into(),
+    });
+    b.emit()
 }

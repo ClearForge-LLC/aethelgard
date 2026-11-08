@@ -350,12 +350,7 @@ fn routed(ctx: &Ctx, src: &Sx) -> Result<(), String> {
     let fields: Vec<(String, String)> = syms[&ids.r]
         .children("property")
         .filter_map(|p| Some((p.arg(1)?.to_owned(), p.arg(2)?.to_owned())))
-        .filter(|(n, _)| {
-            !matches!(
-                n.as_str(),
-                "Reference" | "Value" | "Footprint" | "ki_fp_filters"
-            )
-        })
+        .filter(|(n, _)| !matches!(n.as_str(), "Reference" | "Value" | "Footprint"))
         .filter(|(n, _)| !own.contains(&n.as_str()))
         .collect();
     answer(
@@ -516,6 +511,13 @@ fn routed(ctx: &Ctx, src: &Sx) -> Result<(), String> {
             Treat::Severities,
         ),
         (
+            "P12 fields + severities in the demo project's shape",
+            with_fields.clone(),
+            sch_text.clone(),
+            true,
+            Treat::Bare,
+        ),
+        (
             "P10 fields + KICAD_CONFIG_HOME tables",
             with_fields,
             sch_text.clone(),
@@ -546,6 +548,19 @@ fn routed(ctx: &Ctx, src: &Sx) -> Result<(), String> {
                     SPEC_MM,
                     "\"lib_footprint_issues\": \"ignore\", \"lib_footprint_mismatch\": \"ignore\"",
                 ),
+            )?;
+        }
+        if name.starts_with("P12") {
+            let (_, demo) = super::s3::demo_pro()?;
+            write(
+                &d.join("s4.kicad_pro"),
+                &super::s3::pro_like_demo(
+                    &demo,
+                    "s4",
+                    0.2,
+                    0.2,
+                    &["lib_footprint_issues", "lib_footprint_mismatch"],
+                )?,
             )?;
         }
         let (ran, by) = ctx.drc_env(&d.join("s4.kicad_pcb"), &["--schematic-parity"], &env)?;
