@@ -7,8 +7,8 @@ Schematic and bill-of-materials emission, and the design-rule files the KiCad ga
 | `schematic` | `emit(&Specification, &SolvedTopology)`: a `.kicad_sch` in KiCad 10's format (`20260306`) and a CSV bill of materials. The output is byte-identical for the same inputs. Every UUID is a sha256 of a content path. Pins are connected by the ERC rules `AET-WO-1300` S2 measured. Refusals name what is missing: an unknown part, an address the part cannot take, a net the solver did not place |
 | `library` | The vendored KiCad 10.0.7 symbols and footprints in `data/kicad-10.0.7/`, each checked against its sha256 before any is used. Symbols come out flattened (`extends` resolved) and without `ki_fp_filters` |
 | `rules` | The rules DRC judges by, and the gate's files: a setup block with no clearance token, a `.kicad_pro`, a `.kicad_dru`, and the `.kicad_pro` ERC judges with |
-| `board` | The board under judgement: it refuses any local `(clearance …)` (pad, footprint, zone) and any in-board net class, and writes the gate's setup block over the board's |
-| `sexpr` | KiCad's S-expressions: a reader with a nesting cap, and a writer whose output is a function of the tree |
+| `board` | The board under judgement. It refuses any local `(clearance …)` (pad, footprint, zone), any in-board net class, and any footprint token that waives a check, and it writes the gate's setup block over the board's |
+| `sexpr` | KiCad's S-expressions. The reader refuses whatever KiCad's reader could read differently (control bytes, `#` lines, a quote touching an atom), and it caps nesting and tokens. The writer's output is a function of the tree |
 
 **Parts with a model:**
 - the MCU `STM32H753ZITx`;

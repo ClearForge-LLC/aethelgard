@@ -12,6 +12,12 @@ use std::fmt::Write as _;
 /// cannot exhaust the stack of anything that walks the tree.
 pub const MAX_DEPTH: usize = 256;
 
+/// More tokens (lists, atoms and strings) than any board this engine emits
+/// or judges is refused, which bounds the reader's memory: a 16 MiB board
+/// of `(a)` cost 430 MiB with a cap on lists alone (`AET-WO-1300`
+/// adversarial pass, F4).
+pub const MAX_TOKENS: usize = 1_000_000;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Sx {
     List(Vec<Sx>),
@@ -33,6 +39,18 @@ pub enum SexprError {
     TooDeep(usize),
     #[error("expected exactly one top-level list, found {0} items")]
     NotOneList(usize),
+    #[error("more than {MAX_TOKENS} tokens")]
+    TooManyTokens,
+    #[error(
+        "byte {0} is a control or non-ASCII byte outside a string, which KiCad reads differently"
+    )]
+    ForbiddenByte(usize),
+    #[error("a string starting at byte {0} holds a raw line break or control byte")]
+    ControlInString(usize),
+    #[error("the line at byte {0} starts with `#`, which KiCad skips as a comment")]
+    CommentLine(usize),
+    #[error("a `\"` at byte {0} touches an atom, which KiCad reads as one token")]
+    QuoteInAtom(usize),
 }
 
 impl Sx {
@@ -154,12 +172,80 @@ fn tokens(src: &str) -> impl Iterator<Item = Result<Token<'_>, SexprError>> {
     })
 }
 
+/// Refuses every byte sequence KiCad 10.0.7's reader could read differently
+/// from this one (`AET-WO-1300` adversarial pass, measured in the tools
+/// image): a control byte outside a string (KiCad treats NUL as whitespace),
+/// a non-ASCII byte outside a string, a raw line break or control byte inside
+/// a string, a line whose first non-blank byte is `#` (KiCad skips it), and a
+/// `"` that touches an atom (KiCad keeps it in the token). What remains is
+/// read the same way by both, so a scan of it is a scan of what KiCad reads.
+pub fn lexically_plain(src: &str) -> Result<(), SexprError> {
+    let bytes = src.as_bytes();
+    let separator = |b: u8| matches!(b, b' ' | b'\t' | b'\n' | b'\r' | b'(' | b')');
+    let mut line_start = true;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if line_start && b == b'#' {
+            return Err(SexprError::CommentLine(i));
+        }
+        match b {
+            b'\n' | b'\r' => line_start = true,
+            b' ' | b'\t' => {}
+            b'"' => {
+                if i > 0 && !separator(bytes[i - 1]) {
+                    return Err(SexprError::QuoteInAtom(i));
+                }
+                let start = i;
+                i += 1;
+                loop {
+                    let Some(&c) = bytes.get(i) else {
+                        return Err(SexprError::UnterminatedString(start));
+                    };
+                    match c {
+                        b'"' => break,
+                        b'\\' => {
+                            i += 1;
+                            if bytes.get(i).is_some_and(|&e| e < 0x20 || e == 0x7f) {
+                                return Err(SexprError::ControlInString(start));
+                            }
+                        }
+                        c if c < 0x20 && c != b'\t' => {
+                            return Err(SexprError::ControlInString(start));
+                        }
+                        0x7f => return Err(SexprError::ControlInString(start)),
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                if let Some(&next) = bytes.get(i + 1)
+                    && !separator(next)
+                {
+                    return Err(SexprError::QuoteInAtom(i));
+                }
+                line_start = false;
+            }
+            0x21..=0x7e => line_start = false,
+            _ => return Err(SexprError::ForbiddenByte(i)),
+        }
+        i += 1;
+    }
+    Ok(())
+}
+
 /// Reads one top-level list, iteratively, refusing nesting past
 /// [`MAX_DEPTH`].
 pub fn parse(src: &str) -> Result<Sx, SexprError> {
+    lexically_plain(src)?;
+    let mut count = 0usize;
     let mut stack: Vec<Vec<Sx>> = vec![Vec::new()];
     for token in tokens(src) {
-        match token? {
+        let token = token?;
+        count += 1;
+        if count > MAX_TOKENS {
+            return Err(SexprError::TooManyTokens);
+        }
+        match token {
             Token::Open(at) => {
                 if stack.len() > MAX_DEPTH {
                     return Err(SexprError::TooDeep(at));

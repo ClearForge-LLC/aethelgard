@@ -338,6 +338,12 @@ pub fn emit(
         .map(|d| &d.reference)
         .chain(spec.spi_devices.iter().map(|d| &d.reference))
     {
+        // KiCad treats a reference starting with `#` as a virtual symbol (power,
+        // flag) and drops it from the netlist and BOM, and the emitter names its
+        // own power symbols and flags there.
+        if r.starts_with('#') {
+            return Err(EmitError::ReservedName(r.clone()));
+        }
         if !used.insert(r.clone()) {
             return Err(EmitError::DuplicateReference(r.clone()));
         }

@@ -23,27 +23,36 @@ pub enum BoardRefusal {
     #[error("the board has {0} `setup` blocks; KiCad reads one")]
     SetupTwice(usize),
     #[error(
+        "{0} holds a list whose head is not a lowercase keyword, which KiCad would not read as one"
+    )]
+    OddList(String),
+    #[error(
         "{0} carries a local clearance, which KiCad would judge by instead of the gate's rules; remove it"
     )]
     LocalClearance(String),
     #[error("{0} defines a net class inside the board; the gate's project supplies the only one")]
     NetClass(String),
+    #[error("{0} waives a DRC check for itself; the gate's rules decide every check")]
+    Waiver(String),
 }
 
 impl BoardRefusal {
     /// The refusal's `kind` in the CLI's envelope.
     pub fn kind(&self) -> &'static str {
         match self {
-            Self::Malformed(_) | Self::NotABoard | Self::SetupTwice(_) => "MalformedBoard",
+            Self::Malformed(_) | Self::NotABoard | Self::SetupTwice(_) | Self::OddList(_) => {
+                "MalformedBoard"
+            }
             Self::LocalClearance(_) => "LocalClearance",
             Self::NetClass(_) => "BoardNetClass",
+            Self::Waiver(_) => "BoardWaiver",
         }
     }
 
     /// What carried the refused rule, such as `pad 1 of footprint R1`.
     pub fn id(&self) -> Option<&str> {
         match self {
-            Self::LocalClearance(at) | Self::NetClass(at) => Some(at),
+            Self::LocalClearance(at) | Self::NetClass(at) | Self::Waiver(at) => Some(at),
             _ => None,
         }
     }
@@ -84,6 +93,29 @@ fn name(item: &Sx, within: &str) -> Option<String> {
     }
 }
 
+/// A footprint token that excuses its items from a check (measured on KiCad
+/// 10.0.7 by the adversarial pass: `net_tie_pad_groups` turned two clearance,
+/// a short and two mask bridges into nothing). Mask and paste margins are not
+/// here: they are the design's geometry, which DRC then judges.
+fn waives(item: &Sx) -> bool {
+    let yes = || item.arg(1) == Some("yes");
+    match item.head() {
+        Some("net_tie_pad_groups" | "jumper_pad_groups") => true,
+        Some(
+            "duplicate_pad_numbers_are_jumpers"
+            | "allow_missing_courtyard"
+            | "allow_soldermask_bridges",
+        ) => yes(),
+        Some("attr") => item.items()[1..].iter().any(|a| {
+            matches!(
+                a.text(),
+                Some("allow_missing_courtyard" | "allow_soldermask_bridges")
+            )
+        }),
+        _ => false,
+    }
+}
+
 /// Refuses a board carrying any rule of its own, then writes `setup` over its
 /// setup block. The result differs from `text` only there.
 pub fn prepare(text: &str, setup: &str) -> Result<String, BoardRefusal> {
@@ -97,13 +129,31 @@ pub fn prepare(text: &str, setup: &str) -> Result<String, BoardRefusal> {
         .items()
         .iter()
         .rev()
-        .filter(|c| c.head() != Some("setup"))
+        .filter(|c| matches!(c, Sx::List(_)) && c.head() != Some("setup"))
         .map(|c| (c, String::new()))
         .collect();
     while let Some((item, within)) = stack.pop() {
+        // KiCad's keywords are lowercase atoms; a quoted, upper-case or
+        // missing head is refused rather than guessed at (`CLEARANCE`, or
+        // `("clearance" …)`, measured: KiCad will not load them).
+        if !matches!(item.items().first(), Some(Sx::Atom(a)) if !a.bytes().any(|b| b.is_ascii_uppercase()))
+        {
+            let at = if within.is_empty() {
+                "the board".to_owned()
+            } else {
+                within
+            };
+            return Err(BoardRefusal::OddList(at));
+        }
         let here = name(item, &within).unwrap_or_else(|| within.clone());
         match item.head() {
-            Some("clearance") => {
+            // Every clearance is a rule but a custom pad's shape option,
+            // `(clearance outline)` or `(clearance convexhull)`, which stays. Any
+            // other value, whatever its spelling, is refused.
+            Some("clearance")
+                if !(item.items().len() == 2
+                    && matches!(item.arg(1), Some("outline" | "convexhull"))) =>
+            {
                 let at = if within.is_empty() {
                     "the board".to_owned()
                 } else {
@@ -114,6 +164,14 @@ pub fn prepare(text: &str, setup: &str) -> Result<String, BoardRefusal> {
             Some("net_class") => {
                 let class = item.arg(1).unwrap_or("?");
                 return Err(BoardRefusal::NetClass(format!("net class {class}")));
+            }
+            Some(token) if waives(item) => {
+                let at = if within.is_empty() {
+                    "the board".to_owned()
+                } else {
+                    within
+                };
+                return Err(BoardRefusal::Waiver(format!("{at} ({token})")));
             }
             _ => {}
         }
