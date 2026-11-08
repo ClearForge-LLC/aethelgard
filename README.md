@@ -2,7 +2,15 @@
 
 Generates a circuit board and the firmware that drives it from one specification, and refuses to call either finished until the pair has survived simulated electrical and software faults together, before any board is manufactured.
 
-**Status:** phase P0 of 4 in progress. The workspace builds, its first subcommand, `aethelgard validate`, runs, and the pinned tools image (KiCad, Renode, ngspice, Kani) builds and passes its smoke test in CI. Nothing is generated or simulated yet. Licensed `MIT OR Apache-2.0` (see `LICENSE-MIT` and `LICENSE-APACHE`).
+**Status:** phase P1 of 4 is built; only its first crates.io publish is left. From one specification, `aethelgard` does five things:
+
+- solves the pin assignment;
+- emits a schematic and a placed, routed board that pass KiCad's ERC and DRC;
+- generates a typestate board crate whose register effects Kani proves;
+- boots generated firmware in Renode;
+- serves all of this over MCP.
+
+P2 has started: analog co-simulation and fault injection. The code is licensed `MIT OR Apache-2.0` (see `LICENSE-MIT` and `LICENSE-APACHE`). KiCad's vendored symbols and footprints, in `crates/aethelgard-kicad-lib`, stay `CC-BY-SA-4.0`. Boards emitted from them carry no obligation.
 
 ## Where to go
 
