@@ -40,7 +40,7 @@ pub const VERSION: &str = "20260206";
 pub const ORIGIN: (i64, i64) = (100_000_000, 100_000_000);
 /// The least distance between two parts' keep-out boxes (courtyard and
 /// silkscreen together).
-pub const GAP_NM: i64 = 1_500_000;
+pub const GAP_NM: i64 = 1_000_000;
 /// From the outermost keep-out box to the board edge.
 pub const MARGIN_NM: i64 = 2_000_000;
 /// The candidate positions' pitch.

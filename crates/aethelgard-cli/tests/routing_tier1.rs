@@ -1,0 +1,199 @@
+//! `aethelgard emit`'s routed board, without KiCad (`AET-WO-1302` §1.4,
+//! tier 1). Every check reads the board back from the file `emit` wrote,
+//! never the router's own memory. That KiCad's gate passes it is tier 2
+//! (`with_tools.rs`).
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output, Stdio};
+
+use aethelgard_eda::route::{self, Layer};
+use aethelgard_eda::sexpr;
+use serde_json::Value;
+
+fn example(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples")
+        .join(name)
+}
+
+struct Dir(PathBuf);
+
+impl Dir {
+    fn new(tag: &str) -> Dir {
+        let d = std::env::temp_dir().join(format!(
+            "aet-1302-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&d).unwrap();
+        Dir(d)
+    }
+}
+
+impl Drop for Dir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn cli() -> Command {
+    let mut c = Command::new(env!("CARGO_BIN_EXE_aethelgard"));
+    c.stdin(Stdio::null());
+    c
+}
+
+fn json_line(out: &Output, code: i32) -> Value {
+    let stdout = String::from_utf8(out.stdout.clone()).unwrap();
+    assert_eq!(
+        stdout.lines().count(),
+        1,
+        "stdout {stdout} stderr {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(out.status.code(), Some(code), "{v}");
+    v
+}
+
+/// The reference specification's emitted board, as text.
+fn emitted(d: &Dir) -> String {
+    let r = json_line(
+        &cli()
+            .args(["emit", "--file"])
+            .arg(example("sentinel-01-minimal.json"))
+            .arg("--out")
+            .arg(d.0.join("o"))
+            .output()
+            .unwrap(),
+        0,
+    );
+    fs::read_to_string(r["board"]["path"].as_str().unwrap()).unwrap()
+}
+
+fn read(board: &str) -> (route::Board, route::Routed) {
+    route::read(&sexpr::parse(board).unwrap()).unwrap()
+}
+
+/// Two processes, in different environments, working directories and out
+/// paths, write the same routed board byte for byte; and the router, run
+/// again on the board's own pads, lays exactly the copper the file holds.
+#[test]
+fn the_routed_board_is_byte_identical_and_a_function_of_its_pads() {
+    let d = Dir::new("twice");
+    let spec = example("sentinel-01-minimal.json");
+    let cwd = d.0.join("cwd");
+    fs::create_dir(&cwd).unwrap();
+    let mut boards = Vec::new();
+    for (out, env, dir) in [
+        ("a", vec![("LC_ALL", "C")], d.0.clone()),
+        (
+            "b/deeper",
+            vec![
+                ("LC_ALL", "tr_TR.UTF-8"),
+                ("TZ", "Pacific/Kiritimati"),
+                ("SOURCE_DATE_EPOCH", "1"),
+                ("RUST_MIN_STACK", "1048576"),
+            ],
+            cwd.clone(),
+        ),
+    ] {
+        let o = d.0.join(out);
+        let r = json_line(
+            &cli()
+                .env_clear()
+                .envs(env)
+                .current_dir(dir)
+                .args(["emit", "--file", spec.to_str().unwrap(), "--out"])
+                .arg(&o)
+                .output()
+                .unwrap(),
+            0,
+        );
+        boards.push(fs::read_to_string(r["board"]["path"].as_str().unwrap()).unwrap());
+    }
+    assert_eq!(boards[0], boards[1], "two emissions of the board differ");
+    let (board, written) = read(&boards[0]);
+    assert!(!written.segments.is_empty() && !written.vias.is_empty());
+    let again = route::route(&board).unwrap();
+    assert_eq!(again.segments, written.segments);
+    assert_eq!(again.vias, written.vias);
+    assert_eq!(again.zones, written.zones);
+}
+
+/// The router's own clearance check, over every pair of copper items on the
+/// board as written: pads (those with no net included), tracks and vias.
+#[test]
+fn every_pair_of_copper_items_keeps_the_clearance() {
+    let d = Dir::new("clear");
+    let (board, routed) = read(&emitted(&d));
+    route::check(&board, &routed).unwrap();
+    for s in &routed.segments {
+        assert!(s.start.0 == s.end.0 || s.start.1 == s.end.1, "{s:?}");
+    }
+}
+
+/// No track or via comes within the clearance of a pad whose net is one of
+/// KiCad's `unconnected-…`: such a pad is joined to nothing.
+#[test]
+fn no_copper_touches_an_unconnected_pad() {
+    let d = Dir::new("unconnected");
+    let (board, routed) = read(&emitted(&d));
+    let lone: Vec<&route::Pad> = board
+        .parts
+        .iter()
+        .flat_map(|p| &p.pads)
+        .filter(|p| {
+            p.net
+                .as_deref()
+                .is_some_and(|n| n.starts_with("unconnected-"))
+        })
+        .collect();
+    assert!(lone.len() > 100, "{}", lone.len());
+    assert!(
+        routed
+            .segments
+            .iter()
+            .all(|s| !s.net.starts_with("unconnected-"))
+    );
+    assert!(
+        routed
+            .vias
+            .iter()
+            .all(|v| !v.net.starts_with("unconnected-"))
+    );
+    // One pad on its own with every track and via: the full check.
+    for pad in lone {
+        let alone = route::Board {
+            outline: board.outline,
+            parts: vec![route::Part {
+                reference: "lone".into(),
+                pads: vec![pad.clone()],
+            }],
+        };
+        route::check(&alone, &routed).unwrap();
+    }
+}
+
+/// Every routed net's copper is one piece, by the router's own
+/// connectivity: tracks end inside pads, on vias or on tracks, and the
+/// ground vias are joined by the B.Cu zone, whose net is ground.
+#[test]
+fn every_nets_copper_is_connected() {
+    let d = Dir::new("connected");
+    let (board, routed) = read(&emitted(&d));
+    route::connectivity(&board, &routed).unwrap();
+    assert_eq!(routed.zones, vec![("GND".to_owned(), Layer::B)]);
+    // A track taken away leaves a net in pieces, and the check says so.
+    let mut cut = routed.clone();
+    let i = cut
+        .segments
+        .iter()
+        .position(|s| s.net == "/SPI_SCK")
+        .unwrap();
+    cut.segments.remove(i);
+    assert!(route::connectivity(&board, &cut).is_err());
+}

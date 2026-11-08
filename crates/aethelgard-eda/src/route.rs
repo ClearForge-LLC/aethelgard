@@ -59,7 +59,7 @@ pub const MIN_THICKNESS_NM: i64 = 250_000;
 /// The net the B.Cu zone carries.
 pub const GROUND: &str = crate::schematic::GND;
 /// How many nets may be taken up, in all, to make way for others.
-pub const RIPUPS: usize = 200;
+pub const RIPUPS: usize = 500;
 
 /// Added to every reach on the grid. Two open nodes a pitch apart are each
 /// at least `R + EPS` from an obstacle, so the chord between them stays at
@@ -71,8 +71,8 @@ const _: () = assert!(500_000 % PITCH_NM == 0);
 const _: () = assert!(PITCH_NM < MIN_THICKNESS_NM);
 const _: () = assert!(EDGE_NM >= FLOOR_NM && WIDTH_NM >= FLOOR_NM && CLEARANCE_NM >= FLOOR_NM);
 
-/// The largest grid routed, per layer: 125 mm square at this pitch.
-const MAX_NODES: usize = 1_000_000;
+/// The largest grid routed, per layer: 250 mm square at this pitch.
+const MAX_NODES: usize = 4_000_000;
 /// A search's window around its ends, in pitches; then the whole board.
 const WINDOWS: [usize; 2] = [16, 64];
 
@@ -83,11 +83,16 @@ const CORRIDOR_COST: u32 = 2;
 /// Half a corridor's width: a foreign track centred nearer than this to the
 /// pad's axis blocks the pad's straight escape.
 const CORRIDOR_HALF_NM: i64 = CLEARANCE_NM + WIDTH_NM;
+/// How far beyond a pad field no other net's via may stand in a pad's
+/// corridor, so that pads side by side stagger their vias outward.
+const VIA_ESCAPE_NM: i64 = 1_000_000;
 
 const STEP_F: u32 = 2;
 const STEP_B: u32 = 6;
 const BEND: u32 = 1;
 const VIA_COST: u32 = 24;
+/// How many via nodes one connection may ban before it gives up a window.
+const BANS: usize = 4;
 /// A soft search's price for crossing another net's copper.
 const SOFT_COST: u32 = 400;
 /// What a contested node costs every later search, each time contested.
@@ -246,6 +251,8 @@ impl Pad {
 // ---- the grid ----
 
 const FREE: u32 = 0;
+/// A search state with no predecessor.
+const SOURCE: u8 = u8::MAX;
 const BLOCKED: u32 = u32::MAX;
 
 #[derive(Clone, Copy)]
@@ -376,11 +383,14 @@ struct Router<'a> {
     released: Vec<bool>,
     /// Per layer, the cost a node has gathered by being contested.
     history: [Vec<u32>; 2],
+    /// Via nodes a connection may not use: each made a via of its own path
+    /// too close to another.
+    banned: BTreeSet<usize>,
     // The search's scratch, stamped per search.
-    stamp: Vec<u32>,
+    stamp: Vec<u16>,
     cost: Vec<u32>,
-    prev: Vec<u32>,
-    generation: u32,
+    prev: Vec<u8>,
+    generation: u16,
 }
 
 fn owner(net: usize) -> u32 {
@@ -426,7 +436,11 @@ impl<'a> Router<'a> {
                 claim(&mut via, &grid, shape, VIA_REACH, who);
             }
             // The pad field: on F.Cu, only inside a pad; no via near it.
-            let Some(field) = part.pads.iter().map(|p| p.rect).reduce(|a, b| a.union_of(b))
+            let Some(field) = part
+                .pads
+                .iter()
+                .map(|p| p.rect)
+                .reduce(|a, b| a.union_of(b))
             else {
                 continue;
             };
@@ -441,6 +455,19 @@ impl<'a> Router<'a> {
             }
             for pad in &part.pads {
                 if let Some(net) = pad.net.as_ref().and_then(|n| nets.binary_search(n).ok()) {
+                    // Near the field, no other net's via stands in the
+                    // pad's way out.
+                    let keep = corridor(&grid, field, pad, CORRIDOR_HALF_NM + VIA_NM / 2, 0);
+                    for (node, cost) in keep {
+                        let depth = CORRIDOR_DEPTH - i64::from(cost / CORRIDOR_COST);
+                        if depth * PITCH_NM < VIA_ESCAPE_NM {
+                            via[node] = match via[node] {
+                                FREE => owner(net),
+                                o if o == owner(net) => o,
+                                _ => BLOCKED,
+                            };
+                        }
+                    }
                     corridors[net].extend(corridor(&grid, field, pad, CORRIDOR_HALF_NM, 0));
                     via_corridors[net].extend(corridor(
                         &grid,
@@ -480,6 +507,7 @@ impl<'a> Router<'a> {
             via_corridors,
             released: vec![false; count],
             history: [vec![0; n], vec![0; n]],
+            banned: BTreeSet::new(),
             stamp: vec![0; 2 * n * 5],
             cost: vec![0; 2 * n * 5],
             prev: vec![0; 2 * n * 5],
@@ -518,6 +546,56 @@ impl<'a> Router<'a> {
         opens(self.via[node], owner(net)) || self.vias.get(&node) == Some(&net)
     }
 
+    /// The first pair of `path`'s own new vias closer than the hole gap,
+    /// as the indices of the first's lower state and the second's upper
+    /// one. The map keeps vias apart from those already laid, not within a
+    /// path.
+    fn close_vias(&self, path: &[Node]) -> Option<(usize, usize)> {
+        let mut laid: Vec<(usize, (i64, i64))> = Vec::new();
+        for (i, w) in path.windows(2).enumerate() {
+            let ((la, a), (lb, _)) = (w[0], w[1]);
+            if la == lb || self.vias.contains_key(&a) {
+                continue;
+            }
+            let (x, y) = self.grid.at(a);
+            if let Some(&(j, _)) = laid
+                .iter()
+                .rev()
+                .find(|&&(_, (px, py))| gap2(point(px, py), point(x, y)) < HOLE_REACH * HOLE_REACH)
+            {
+                return Some((j, i + 1));
+            }
+            laid.push((i, (x, y)));
+        }
+        None
+    }
+
+    /// Two vias of one path closer than the hole gap cannot straddle
+    /// foreign copper, which would hold them 1.2 mm apart; so the hop
+    /// between them goes on the layer it left, where that layer is open.
+    /// Otherwise the second via's node is banned and `None` returned.
+    fn unhop(&mut self, net: usize, path: &mut Vec<Node>) -> Option<()> {
+        while let Some((i, j)) = self.close_vias(path) {
+            let outer = path[i].0;
+            // path[i] and path[j] are the hop's ends on the outer layer;
+            // path[i + 1..j] is the hop itself, its ends included.
+            let flat: Vec<Node> = path[i + 2..j - 1]
+                .iter()
+                .map(|&(_, n)| (outer, n))
+                .collect();
+            if flat.iter().all(|&(l, n)| self.open(l, n, owner(net))) {
+                let tail = path.split_off(j);
+                path.truncate(i + 1);
+                path.extend(flat);
+                path.extend(tail);
+            } else {
+                self.banned.insert(path[j].1);
+                return None;
+            }
+        }
+        Some(())
+    }
+
     /// The nodes inside the pad's copper where `net` may end a track, by
     /// pads and the edge alone.
     fn terminals(&self, pad: &Pad, net: usize) -> Vec<usize> {
@@ -550,6 +628,9 @@ impl<'a> Router<'a> {
             self.generation = 1;
         }
         let g = self.generation;
+        // A state is (layer, node, the direction it was entered by; 4 for
+        // none). `prev` keeps the predecessor's direction, and 8 if the
+        // move was a via.
         let id = |l: Layer, node: usize, d: usize| (l.index() * n + node) * 5 + d;
         let layer_of = |s: usize| if s / 5 >= n { Layer::B } else { Layer::F };
         let mut heap = BinaryHeap::new();
@@ -558,12 +639,12 @@ impl<'a> Router<'a> {
             if self.stamp[s] != g {
                 self.stamp[s] = g;
                 self.cost[s] = 0;
-                self.prev[s] = u32::MAX;
+                self.prev[s] = SOURCE;
                 heap.push(Reverse((h(node), s)));
             }
         }
         let (wx0, wy0, wx1, wy1) = window;
-        let mut moves: Vec<(usize, usize, u32)> = Vec::with_capacity(5);
+        let mut moves: Vec<(usize, usize, u32, u8)> = Vec::with_capacity(5);
         while let Some(Reverse((f, s))) = heap.pop() {
             let (node, d, l) = ((s / 5) % n, s % 5, layer_of(s));
             let c = self.cost[s];
@@ -572,10 +653,19 @@ impl<'a> Router<'a> {
             }
             if goal(l, node) {
                 let mut path = vec![(l, node)];
-                let mut at = s;
-                while self.prev[at] != u32::MAX {
-                    at = self.prev[at] as usize;
-                    path.push((layer_of(at), (at / 5) % n));
+                let (mut at, mut al, mut ad) = (node, l, d);
+                loop {
+                    let p = self.prev[id(al, at, ad)];
+                    if p == SOURCE {
+                        break;
+                    }
+                    if p & 8 != 0 {
+                        al = al.other();
+                    } else {
+                        at = self.grid.step(at, ad ^ 1)?;
+                    }
+                    ad = usize::from(p & 7);
+                    path.push((al, at));
                 }
                 path.reverse();
                 return Some(path);
@@ -587,6 +677,7 @@ impl<'a> Router<'a> {
                 (false, true) => Some(SOFT_COST),
                 (false, false) => None,
             };
+            let from = d as u8;
             if l == Layer::F || b_moves {
                 for dir in 0..4 {
                     let Some(m) = self.grid.step(node, dir) else {
@@ -606,7 +697,8 @@ impl<'a> Router<'a> {
                     let bend = if d != 4 && d != dir { BEND } else { 0 };
                     let corridor = if l == Layer::F { self.pending[m] } else { 0 };
                     let seen = self.history[l.index()][m];
-                    moves.push((id(l, m, dir), m, c + step + bend + corridor + seen + extra));
+                    let tc = c + step + bend + corridor + seen + extra;
+                    moves.push((id(l, m, dir), m, tc, from));
                 }
             }
             let other = l.other();
@@ -614,22 +706,20 @@ impl<'a> Router<'a> {
                 self.via_open(node, net) && self.open(other, node, who),
                 opens(self.hard_via[node], who),
             );
-            if let Some(extra) = via_price {
-                moves.push((
-                    id(other, node, 4),
-                    node,
-                    c + VIA_COST
-                        + self.pending_via[node]
-                        + self.history[0][node]
-                        + self.history[1][node]
-                        + extra,
-                ));
+            if let Some(extra) = via_price.filter(|_| !self.banned.contains(&node)) {
+                let tc = c
+                    + VIA_COST
+                    + self.pending_via[node]
+                    + self.history[0][node]
+                    + self.history[1][node]
+                    + extra;
+                moves.push((id(other, node, 4), node, tc, from | 8));
             }
-            for &(t, tn, tc) in &moves {
+            for &(t, tn, tc, p) in &moves {
                 if self.stamp[t] != g || tc < self.cost[t] {
                     self.stamp[t] = g;
                     self.cost[t] = tc;
-                    self.prev[t] = s as u32;
+                    self.prev[t] = p;
                     heap.push(Reverse((tc + h(tn), t)));
                 }
             }
@@ -668,15 +758,35 @@ impl<'a> Router<'a> {
         b_moves: bool,
         what: &str,
     ) -> Result<Vec<Node>, Stuck> {
-        for soft in [false, true] {
-            for margin in WINDOWS.iter().copied().map(Some).chain([None]) {
+        // Free paths near the ends first, then who is in the way near them,
+        // and only then the whole board.
+        let tries = [
+            (Some(WINDOWS[0]), false),
+            (Some(WINDOWS[1]), false),
+            (Some(WINDOWS[1]), true),
+            (None, false),
+            (None, true),
+        ];
+        {
+            self.banned.clear();
+            for (margin, soft) in tries {
                 let w = self.window(ends, margin);
-                if let Some(p) = self.search(net, sources, goal, h, b_moves, w, soft) {
+                let mut found = self.search(net, sources, goal, h, b_moves, w, soft);
+                for ban in 0..=BANS {
+                    let Some(mut p) = found.take() else { break };
+                    if self.unhop(net, &mut p).is_some() {
+                        found = Some(p);
+                        break;
+                    }
+                    if ban < BANS {
+                        found = self.search(net, sources, goal, h, b_moves, w, soft);
+                    }
+                }
+                if let Some(p) = found {
                     if !soft {
                         return Ok(p);
                     }
                     let by = self.blockers(net, &p);
-                    eprintln!("STUCK {what} via soft path {:?}", p.iter().map(|&(l, n)| (l, self.grid.at(n))).collect::<Vec<_>>()); // DEBUG-1302
                     if by.is_empty() {
                         return Err(Stuck::Unroutable(format!("{what}: no free path")));
                     }
@@ -705,14 +815,19 @@ impl<'a> Router<'a> {
                 }
                 (a, VIA_REACH, [true, true])
             };
-            if la == lb {
-                self.history[lb.index()][at] += HISTORY_COST;
-            } else {
-                self.history[0][at] += HISTORY_COST;
-                self.history[1][at] += HISTORY_COST;
-            }
             let (x, y) = self.grid.at(at);
             let here = point(x, y);
+            // Every node where a blocker's track would stand in the way
+            // costs more from now on: the contested node's shadow.
+            let shadow = reach + WIDTH_NM / 2;
+            for m in self.grid.nodes(here.grow_by(shadow)) {
+                let (mx, my) = self.grid.at(m);
+                if gap2(here, point(mx, my)) < shadow * shadow {
+                    for l in (0..2).filter(|&l| layers[l]) {
+                        self.history[l][m] += HISTORY_COST;
+                    }
+                }
+            }
             for (other, e) in self.edges.iter().enumerate() {
                 if other == net {
                     continue;
@@ -744,6 +859,9 @@ impl<'a> Router<'a> {
     fn commit(&mut self, net: usize, path: &[Node]) {
         for w in path.windows(2) {
             let ((la, a), (lb, b)) = (w[0], w[1]);
+            if a == b && la == lb {
+                continue;
+            }
             if la == lb {
                 self.edges[net][la.index()].insert((a.min(b), a.max(b)));
                 self.claim_edge(net, la, a, b);
@@ -760,7 +878,13 @@ impl<'a> Router<'a> {
             r: WIDTH_NM / 2,
         };
         let who = owner(net);
-        claim(&mut self.track[layer.index()], &self.grid, shape, TRACK_REACH, who);
+        claim(
+            &mut self.track[layer.index()],
+            &self.grid,
+            shape,
+            TRACK_REACH,
+            who,
+        );
         claim(&mut self.via, &self.grid, shape, VIA_REACH, who);
     }
 
@@ -920,6 +1044,86 @@ impl<'a> Router<'a> {
         Ok(())
     }
 
+    /// `None` when the zone's fill is one piece holding every ground via;
+    /// otherwise the nets whose B.Cu copper fences it apart. Every node on
+    /// such a fence costs B.Cu searches more from now on.
+    fn zone_blockers(&mut self, ground: usize) -> Option<BTreeSet<usize>> {
+        let seeds: Vec<usize> = self
+            .vias
+            .iter()
+            .filter(|&(_, &net)| net == ground)
+            .map(|(&n, _)| n)
+            .collect();
+        let core = self.zone_core(ground);
+        let labels = components(&self.grid, &core, &seeds);
+        // The piece holding the most ground vias, then the first, is the zone.
+        let mut count: BTreeMap<usize, usize> = BTreeMap::new();
+        for l in labels.iter().flatten() {
+            *count.entry(*l).or_default() += 1;
+        }
+        let main = count
+            .iter()
+            .max_by_key(|&(l, c)| (*c, Reverse(*l)))
+            .map(|(l, _)| *l);
+        if labels.iter().all(|l| l.is_some() && *l == main) {
+            return None;
+        }
+        let mut fence = BTreeSet::new();
+        let mut seen = vec![false; self.grid.len()];
+        for (k, &seed) in seeds.iter().enumerate() {
+            if labels[k].is_some() && labels[k] == main {
+                continue;
+            }
+            // Flood the island; its rim is the fence.
+            let mut stack = vec![seed];
+            while let Some(n) = stack.pop() {
+                if std::mem::replace(&mut seen[n], true) {
+                    continue;
+                }
+                for d in 0..4 {
+                    if let Some(m) = self.grid.step(n, d) {
+                        if core[m] && core[n] {
+                            stack.push(m);
+                        } else {
+                            fence.insert(m);
+                        }
+                    }
+                }
+            }
+        }
+        let reach = CLEARANCE_NM + MIN_THICKNESS_NM / 2 + EPS_NM + PITCH_NM;
+        let mut out = BTreeSet::new();
+        let shadow = CLEARANCE_NM + MIN_THICKNESS_NM / 2 + WIDTH_NM / 2;
+        for &n in &fence {
+            let (x, y) = self.grid.at(n);
+            let here = point(x, y);
+            for m in self.grid.nodes(here.grow_by(shadow)) {
+                let (mx, my) = self.grid.at(m);
+                if gap2(here, point(mx, my)) < shadow * shadow {
+                    self.history[1][m] += HISTORY_COST;
+                }
+            }
+            for (other, e) in self.edges.iter().enumerate() {
+                let r = reach + WIDTH_NM / 2;
+                if other != ground
+                    && e[1]
+                        .iter()
+                        .any(|&(p, q)| gap2(span(self.grid.at(p), self.grid.at(q)), here) < r * r)
+                {
+                    out.insert(other);
+                }
+            }
+            for (&v, &other) in &self.vias {
+                let (vx, vy) = self.grid.at(v);
+                let r = reach + VIA_NM / 2;
+                if other != ground && gap2(point(vx, vy), here) < r * r {
+                    out.insert(other);
+                }
+            }
+        }
+        Some(out)
+    }
+
     /// The B.Cu nodes the zone's fill is sure to cover: at least the
     /// clearance and half the zone's minimum width from foreign B.Cu copper
     /// and from the edge clearance.
@@ -927,19 +1131,26 @@ impl<'a> Router<'a> {
         zone_core(
             &self.grid,
             self.board.outline,
-            self.edges.iter().enumerate().filter(|&(net, _)| net != ground).flat_map(|(_, e)| {
-                e[1].iter().map(|&(a, b)| Shape {
-                    rect: span(self.grid.at(a), self.grid.at(b)),
-                    r: WIDTH_NM / 2,
-                })
-            }),
-            self.vias.iter().filter(|&(_, &net)| net != ground).map(|(&n, _)| {
-                let (x, y) = self.grid.at(n);
-                Shape {
-                    rect: point(x, y),
-                    r: VIA_NM / 2,
-                }
-            }),
+            self.edges
+                .iter()
+                .enumerate()
+                .filter(|&(net, _)| net != ground)
+                .flat_map(|(_, e)| {
+                    e[1].iter().map(|&(a, b)| Shape {
+                        rect: span(self.grid.at(a), self.grid.at(b)),
+                        r: WIDTH_NM / 2,
+                    })
+                }),
+            self.vias
+                .iter()
+                .filter(|&(_, &net)| net != ground)
+                .map(|(&n, _)| {
+                    let (x, y) = self.grid.at(n);
+                    Shape {
+                        rect: point(x, y),
+                        r: VIA_NM / 2,
+                    }
+                }),
         )
     }
 
@@ -1010,7 +1221,12 @@ impl<'a> Router<'a> {
 /// leaving the pad's own net room to escape and turn inside it.
 fn corridor(grid: &Grid, field: Rect, pad: &Pad, half: i64, beyond: i64) -> Vec<(usize, u32)> {
     let r = pad.rect;
-    let sides = [r.x0 == field.x0, r.x1 == field.x1, r.y0 == field.y0, r.y1 == field.y1];
+    let sides = [
+        r.x0 == field.x0,
+        r.x1 == field.x1,
+        r.y0 == field.y0,
+        r.y1 == field.y1,
+    ];
     if sides.iter().filter(|s| **s).count() != 1 {
         return Vec::new();
     }
@@ -1018,10 +1234,42 @@ fn corridor(grid: &Grid, field: Rect, pad: &Pad, half: i64, beyond: i64) -> Vec<
     let reach = CORRIDOR_DEPTH * PITCH_NM + beyond;
     let (h, w) = (half - 1, half - 1);
     let (area, from) = match sides {
-        [true, ..] => (Rect { x0: field.x0 - reach, y0: cy - h, x1: field.x0 - 1, y1: cy + h }, 0),
-        [_, true, ..] => (Rect { x0: field.x1 + 1, y0: cy - h, x1: field.x1 + reach, y1: cy + h }, 1),
-        [_, _, true, _] => (Rect { x0: cx - w, y0: field.y0 - reach, x1: cx + w, y1: field.y0 - 1 }, 2),
-        _ => (Rect { x0: cx - w, y0: field.y1 + 1, x1: cx + w, y1: field.y1 + reach }, 3),
+        [true, ..] => (
+            Rect {
+                x0: field.x0 - reach,
+                y0: cy - h,
+                x1: field.x0 - 1,
+                y1: cy + h,
+            },
+            0,
+        ),
+        [_, true, ..] => (
+            Rect {
+                x0: field.x1 + 1,
+                y0: cy - h,
+                x1: field.x1 + reach,
+                y1: cy + h,
+            },
+            1,
+        ),
+        [_, _, true, _] => (
+            Rect {
+                x0: cx - w,
+                y0: field.y0 - reach,
+                x1: cx + w,
+                y1: field.y0 - 1,
+            },
+            2,
+        ),
+        _ => (
+            Rect {
+                x0: cx - w,
+                y0: field.y1 + 1,
+                x1: cx + w,
+                y1: field.y1 + reach,
+            },
+            3,
+        ),
     };
     grid.nodes(area)
         .map(|n| {
@@ -1147,7 +1395,11 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
     let grid = Grid::new(board.outline).ok_or_else(|| {
         fail(
             "",
-            format!("the board is larger than the router's {MAX_NODES}-node grid"),
+            format!(
+                "the board, {} x {} mm, is larger than the router's {MAX_NODES}-node grid",
+                (board.outline.x1 - board.outline.x0) / 1_000_000,
+                (board.outline.y1 - board.outline.y0) / 1_000_000
+            ),
         )
     })?;
     let pads = net_pads(board);
@@ -1161,62 +1413,66 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
     let mut r = Router::new(board, grid, nets.clone());
     let mut queue: VecDeque<usize> = order.iter().copied().collect();
     let mut ripups = 0;
-    while let Some(net) = queue.pop_front() {
-        r.release(net);
-        loop {
-            let p = &pads[&nets[net]];
-            let result = if Some(net) == ground {
-                r.route_ground(net, p)
-            } else {
-                r.route_net(net, p)
-            };
-            if let Err(Stuck::By(by)) = &result { eprintln!("BLOCK {} by {:?}", nets[net], by.iter().map(|&b| nets[b].clone()).collect::<Vec<_>>()); } // DEBUG-1302
-            let by = match result {
-                Ok(()) => break,
-                Err(Stuck::Unroutable(why)) => return Err(fail(&nets[net], why)),
-                Err(Stuck::By(by)) => by,
-            };
-            ripups += by.len();
-            if ripups > RIPUPS {
-                // DEBUG-1302
-                for sg in r.segments() { eprintln!("SEG {} {} {} {} {} {}", sg.net, sg.layer.name(), sg.start.0, sg.start.1, sg.end.0, sg.end.1); }
-                for (&n, &v) in &r.vias { let (x, y) = grid.at(n); eprintln!("VIA {} {} {}", nets[v], x, y); }
-                for pt in &board.parts { for pd in &pt.pads { eprintln!("PAD {} {} {} {} {}", pd.net.clone().unwrap_or_default(), pd.rect.x0, pd.rect.y0, pd.rect.x1, pd.rect.y1); } }
-                let names: Vec<&str> = by.iter().map(|&b| nets[b].as_str()).collect();
-                return Err(fail(
-                    &nets[net],
-                    format!("still blocked by {names:?} after {RIPUPS} rip-ups"),
-                ));
-            }
-            // Take the net and its blockers up; route the net again now,
-            // then the blockers, in their order.
-            r.rip(net);
+    let zones = loop {
+        while let Some(net) = queue.pop_front() {
             r.release(net);
-            queue.retain(|q| !by.contains(q));
-            for &b in by.iter().rev() {
-                r.rip(b);
-                queue.push_front(b);
+            loop {
+                let p = &pads[&nets[net]];
+                let result = if Some(net) == ground {
+                    r.route_ground(net, p)
+                } else {
+                    r.route_net(net, p)
+                };
+                let by = match result {
+                    Ok(()) => break,
+                    Err(Stuck::Unroutable(why)) => return Err(fail(&nets[net], why)),
+                    Err(Stuck::By(by)) => by,
+                };
+                ripups += by.len();
+                if ripups > RIPUPS {
+                    let names: Vec<&str> = by.iter().map(|&b| nets[b].as_str()).collect();
+                    return Err(fail(
+                        &nets[net],
+                        format!("still blocked by {names:?} after {RIPUPS} rip-ups"),
+                    ));
+                }
+                // Take the net and its blockers up; route the net again now,
+                // then the blockers, in their order.
+                r.rip(net);
+                r.release(net);
+                queue.retain(|q| !by.contains(q));
+                for &b in by.iter().rev() {
+                    r.rip(b);
+                    queue.push_front(b);
+                }
             }
         }
-    }
-    let mut zones = Vec::new();
-    if let Some(g) = ground.filter(|g| r.vias.values().any(|v| v == g)) {
-        let seeds: Vec<usize> = r
-            .vias
-            .iter()
-            .filter(|&(_, &net)| net == g)
-            .map(|(&n, _)| n)
-            .collect();
-        let core = r.zone_core(g);
-        let labels = components(&grid, &core, &seeds);
-        if labels.iter().any(|l| l.is_none() || *l != labels[0]) {
+        let Some(g) = ground.filter(|g| r.vias.values().any(|v| v == g)) else {
+            break Vec::new();
+        };
+        let Some(by) = r.zone_blockers(g) else {
+            break vec![(nets[g].clone(), Layer::B)];
+        };
+        if by.is_empty() {
             return Err(fail(
                 GROUND,
-                "the B.Cu zone does not join every ground via".into(),
+                "the board edge alone cuts the B.Cu zone apart".into(),
             ));
         }
-        zones.push((nets[g].clone(), Layer::B));
-    }
+        // The zone is split: the nets whose B.Cu copper fences an island are
+        // taken up, and routed again with the fence's nodes dearer.
+        ripups += by.len();
+        if ripups > RIPUPS {
+            return Err(fail(
+                GROUND,
+                format!("the B.Cu zone does not join every ground via after {RIPUPS} rip-ups"),
+            ));
+        }
+        for &b in &by {
+            r.rip(b);
+            queue.push_back(b);
+        }
+    };
     let routed = Routed {
         segments: r.segments(),
         vias: r
@@ -1312,14 +1568,20 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
         x1: o.x1 - EDGE_NM,
         y1: o.y1 - EDGE_NM,
     };
-    for item in all.iter().filter(|i| i.what.starts_with("track") || i.what.starts_with("via")) {
+    for item in all
+        .iter()
+        .filter(|i| i.what.starts_with("track") || i.what.starts_with("via"))
+    {
         if !inner.contains(item.shape.rect.grow_by(item.shape.r)) {
             return Err(format!("{} is within {EDGE_NM} nm of the edge", item.what));
         }
     }
     for s in &routed.segments {
         if s.start.0 != s.end.0 && s.start.1 != s.end.1 || s.start == s.end {
-            return Err(format!("track {:?}-{:?} is not along an axis", s.start, s.end));
+            return Err(format!(
+                "track {:?}-{:?} is not along an axis",
+                s.start, s.end
+            ));
         }
     }
     for (i, a) in routed.vias.iter().enumerate() {
@@ -1380,13 +1642,7 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
             }
         }
     }
-    let zone_layer = |net: &str| {
-        routed
-            .zones
-            .iter()
-            .find(|(n, _)| n == net)
-            .map(|(_, l)| *l)
-    };
+    let zone_layer = |net: &str| routed.zones.iter().find(|(n, _)| n == net).map(|(_, l)| *l);
     for (net, layer) in &routed.zones {
         if net != GROUND || *layer != Layer::B {
             return Err(format!("a zone on {net} {}", layer.name()));
@@ -1404,10 +1660,14 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
                     rect: span(s.start, s.end),
                     r: WIDTH_NM / 2,
                 }),
-            routed.vias.iter().filter(|v| v.net != GROUND).map(|v| Shape {
-                rect: point(v.at.0, v.at.1),
-                r: VIA_NM / 2,
-            }),
+            routed
+                .vias
+                .iter()
+                .filter(|v| v.net != GROUND)
+                .map(|v| Shape {
+                    rect: point(v.at.0, v.at.1),
+                    r: VIA_NM / 2,
+                }),
         );
         let ground: Vec<usize> = (0..routed.vias.len())
             .filter(|&i| routed.vias[i].net == GROUND)
@@ -1425,7 +1685,10 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
         let labels = components(&grid, &core, &seeds);
         for (k, &i) in ground.iter().enumerate() {
             if labels[k].is_none() || labels[k] != labels[0] {
-                return Err(format!("the zone does not reach via {:?}", routed.vias[i].at));
+                return Err(format!(
+                    "the zone does not reach via {:?}",
+                    routed.vias[i].at
+                ));
             }
             via_layers.entry(routed.vias[i].at).or_default()[1] = true;
             let (ra, rb) = (
@@ -1488,7 +1751,9 @@ fn xy_of(item: Option<&Sx>, what: &str) -> Result<(i64, i64), String> {
 /// else is refused, never approximated.
 pub fn part_of(fp: &Sx) -> Result<Part, String> {
     let reference = fp.property("Reference").unwrap_or("?").to_owned();
-    let at = fp.child("at").ok_or_else(|| format!("{reference}: no `at`"))?;
+    let at = fp
+        .child("at")
+        .ok_or_else(|| format!("{reference}: no `at`"))?;
     if at.arg(3).is_some_and(|a| a != "0") {
         return Err(format!("{reference} is rotated"));
     }
@@ -1501,7 +1766,11 @@ pub fn part_of(fp: &Sx) -> Result<Part, String> {
             .child("layers")
             .map(|l| l.items()[1..].iter().filter_map(Sx::text).collect())
             .unwrap_or_default();
-        let copper: Vec<&str> = layers.iter().copied().filter(|l| l.ends_with(".Cu")).collect();
+        let copper: Vec<&str> = layers
+            .iter()
+            .copied()
+            .filter(|l| l.ends_with(".Cu"))
+            .collect();
         if copper.is_empty() {
             continue;
         }
@@ -1576,7 +1845,10 @@ pub fn read(board: &Sx) -> Result<(Board, Routed), String> {
     };
     let mut routed = Routed::default();
     for s in board.children("segment") {
-        let width = s.child("width").map(|w| nm_at(w, 1, "segment")).transpose()?;
+        let width = s
+            .child("width")
+            .map(|w| nm_at(w, 1, "segment"))
+            .transpose()?;
         if width != Some(WIDTH_NM) {
             return Err(format!("a segment {width:?} wide"));
         }
@@ -1603,7 +1875,9 @@ pub fn read(board: &Sx) -> Result<(Board, Routed), String> {
         });
     }
     for z in board.children("zone") {
-        routed.zones.push((net(z, "a zone")?, layer_of(z, "a zone")?));
+        routed
+            .zones
+            .push((net(z, "a zone")?, layer_of(z, "a zone")?));
     }
     routed.segments.sort();
     routed.vias.sort();
@@ -1642,8 +1916,26 @@ mod tests {
         let r = |reference: &str, x: i64, a: &str, b: &str| Part {
             reference: reference.into(),
             pads: vec![
-                pad("1", Some(a), rect(x - 760_000, 10 * MM - 320_000, x - 260_000, 10 * MM + 320_000)),
-                pad("2", Some(b), rect(x + 260_000, 10 * MM - 320_000, x + 760_000, 10 * MM + 320_000)),
+                pad(
+                    "1",
+                    Some(a),
+                    rect(
+                        x - 760_000,
+                        10 * MM - 320_000,
+                        x - 260_000,
+                        10 * MM + 320_000,
+                    ),
+                ),
+                pad(
+                    "2",
+                    Some(b),
+                    rect(
+                        x + 260_000,
+                        10 * MM - 320_000,
+                        x + 760_000,
+                        10 * MM + 320_000,
+                    ),
+                ),
             ],
         };
         let board = Board {
