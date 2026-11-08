@@ -112,4 +112,9 @@ contains kani.add_overflows "attempt to add with overflow"
 ldconfig -p | grep -qF "libngspice.so.0 " || fail libngspice "ldconfig does not list libngspice.so.0"
 pass libngspice
 
+# 8. The pinned toolchain carries the firmware target (AET-WO-2100, R4), so
+# the twin's firmware links under --network none.
+expect rustup.thumbv7em 0 rustup target list --installed --toolchain 1.99.1
+is_line rustup.thumbv7em "thumbv7em-none-eabihf"
+
 echo "smoke: all checks passed"
