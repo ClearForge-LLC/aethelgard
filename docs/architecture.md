@@ -199,7 +199,9 @@ Both are fixed by `AET-WO-0400a`, before any trace from outside is replayed.
 - Plain forward checking is exponential on infeasible input: one case took 329 s.
 - Instance matching plus pin matching before every node makes every case found sub-millisecond. On Furnace, `aethelgard solve` takes 2.4 to 3.0 ms end to end, release, the median of 21 runs. The reference specification takes 7 nodes and the stress specification 42.
 - **A 10 M-node budget is the backstop** (`BudgetExceeded`, naming a bus).
-- **A known gap, `AET-WO-1201`:** some infeasible specifications still spend the whole budget, in 5.6 to 6.6 s release, and name the first bus of the colliding set. This happens when two instances' only remaining pin for one signal is the same pin, because pin matching unions over instances. The bound holds and no answer is wrong.
+- **The gap `AET-WO-1201` closed (PR #48).** Some infeasible specifications used to spend the whole budget, in 5.6 to 6.6 s release, and name the first bus of the colliding set. It happened when two instances' only remaining pin for one signal was the same pin, because pin matching unions over instances.
+  - **The fix:** a third check. When a kind's unplaced buses equal the instances they can still take, every instance is forced, and its (instance, signal) rows must match to distinct free pins.
+  - **The result:** both reproducers now refuse `Infeasible` in 198 and 186 nodes, about 4 ms. A differential test over 3,000 fixed-seed specifications, and a one-off 450,000, found no answer changed except `BudgetExceeded` becoming `Infeasible`.
 
 **How the solver uses the pin table (§2.8).**
 - Reserved pins: `PA13` and `PA14` (SWD; debugging is assumed SWD only), and `PC14`, `PC15`, `PH0` and `PH1` (the oscillators).
