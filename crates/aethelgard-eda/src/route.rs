@@ -748,6 +748,7 @@ impl<'a> Router<'a> {
 
     /// One connection: searched in growing windows around `ends`; if none is
     /// free, the nets whose copper a soft search had to cross.
+    #[allow(clippy::too_many_arguments)]
     fn connect(
         &mut self,
         net: usize,
@@ -865,8 +866,8 @@ impl<'a> Router<'a> {
             if la == lb {
                 self.edges[net][la.index()].insert((a.min(b), a.max(b)));
                 self.claim_edge(net, la, a, b);
-            } else if !self.vias.contains_key(&a) {
-                self.vias.insert(a, net);
+            } else if let std::collections::btree_map::Entry::Vacant(e) = self.vias.entry(a) {
+                e.insert(net);
                 self.claim_via(net, a);
             }
         }
@@ -1018,6 +1019,20 @@ impl<'a> Router<'a> {
     /// Ground: each pad joined by F.Cu to a via, or to ground copper that
     /// has one; the zone joins the vias.
     fn route_ground(&mut self, net: usize, pads: &[PadRef]) -> Result<(), Stuck> {
+        // A via stands only in the largest piece of the zone as the B.Cu
+        // copper already laid leaves it.
+        let core = self.zone_core(net);
+        let all: Vec<usize> = (0..core.len()).collect();
+        let labels = components(&self.grid, &core, &all);
+        let mut size: BTreeMap<usize, usize> = BTreeMap::new();
+        for l in labels.iter().flatten() {
+            *size.entry(*l).or_default() += 1;
+        }
+        let main = size
+            .iter()
+            .max_by_key(|&(l, c)| (*c, Reverse(*l)))
+            .map(|(l, _)| *l);
+        let zone: Vec<bool> = labels.iter().map(|l| l.is_some() && *l == main).collect();
         let mut joined: BTreeSet<usize> = BTreeSet::new();
         for &p in pads {
             let name = self.pad_name(p);
@@ -1032,8 +1047,9 @@ impl<'a> Router<'a> {
                 continue;
             }
             let own: BTreeSet<usize> = ends.iter().copied().collect();
-            let goal =
-                |l: Layer, n: usize| l == Layer::B || (joined.contains(&n) && !own.contains(&n));
+            let goal = |l: Layer, n: usize| {
+                (l == Layer::B && zone[n]) || (joined.contains(&n) && !own.contains(&n))
+            };
             let sources: Vec<Node> = ends.iter().map(|&n| (Layer::F, n)).collect();
             let what = format!("cannot take {name} to a via");
             let path = self.connect(net, &sources, &ends, &goal, &|_| 0, false, &what)?;
@@ -1468,7 +1484,8 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
                 format!("the B.Cu zone does not join every ground via after {RIPUPS} rip-ups"),
             ));
         }
-        for &b in &by {
+        // Ground is stitched again after them, into the zone they leave.
+        for &b in by.iter().chain(&[g]) {
             r.rip(b);
             queue.push_back(b);
         }

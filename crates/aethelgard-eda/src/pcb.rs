@@ -40,7 +40,11 @@ pub const VERSION: &str = "20260206";
 pub const ORIGIN: (i64, i64) = (100_000_000, 100_000_000);
 /// The least distance between two parts' keep-out boxes (courtyard and
 /// silkscreen together).
-pub const GAP_NM: i64 = 1_000_000;
+pub const GAP_NM: i64 = 500_000;
+/// The least distance between two ICs' keep-out boxes: room for the router
+/// between their pads (`AET-WO-1302`). At [`GAP_NM`], the reference board's
+/// U1 pad 34 and U4 pad 7 faced each other across one track's width.
+pub const IC_GAP_NM: i64 = 1_000_000;
 /// From the outermost keep-out box to the board edge.
 pub const MARGIN_NM: i64 = 2_000_000;
 /// The candidate positions' pitch.
@@ -481,7 +485,14 @@ fn place(items: &[Item<'_>]) -> Result<Vec<Placed>, EmitError> {
                     .as_ref()
                     .map_or(ORIGIN, |p| p.courtyard.centre())
             });
-        let taken: Vec<Rect> = placed.iter().flatten().map(|p| p.keep).collect();
+        let taken: Vec<(Rect, i64)> = (0..items.len())
+            .filter_map(|j| {
+                let both = is_ic(items[j].part) && is_ic(item.part);
+                placed[j]
+                    .as_ref()
+                    .map(|p| (p.keep, if both { IC_GAP_NM } else { GAP_NM }))
+            })
+            .collect();
         let origin = spot(g, target, &taken)
             .ok_or_else(|| internal(&item.part.reference, "no free spot within a metre"))?;
         placed[i] = Some(Placed {
@@ -500,7 +511,7 @@ fn place(items: &[Item<'_>]) -> Result<Vec<Placed>, EmitError> {
 /// The first origin, in rings out from `target`, where `g`'s keep-out box
 /// clears every box in `taken` by [`GAP_NM`]. Within a ring, candidates go
 /// by squared distance, then y, then x.
-fn spot(g: Geometry, target: (i64, i64), taken: &[Rect]) -> Option<(i64, i64)> {
+fn spot(g: Geometry, target: (i64, i64), taken: &[(Rect, i64)]) -> Option<(i64, i64)> {
     let (cx, cy) = g.keep.centre();
     let snap = |v: i64| v.div_euclid(SNAP) * SNAP;
     for r in 0..=RINGS {
@@ -518,8 +529,8 @@ fn spot(g: Geometry, target: (i64, i64), taken: &[Rect]) -> Option<(i64, i64)> {
                 snap(target.0 + dx * STEP - cx),
                 snap(target.1 + dy * STEP - cy),
             );
-            let keep = g.keep.shift(origin).grow(GAP_NM);
-            if taken.iter().all(|t| !t.overlaps(keep)) {
+            let keep = g.keep.shift(origin);
+            if taken.iter().all(|&(t, gap)| !t.overlaps(keep.grow(gap))) {
                 return Some(origin);
             }
         }
