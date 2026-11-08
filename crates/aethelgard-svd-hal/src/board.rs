@@ -57,10 +57,12 @@ pub enum BoardError {
         role: &'static str,
         count: usize,
     },
-    #[error("the I2C ceilings name {got:?}, not exactly the I2C peripherals {expected:?}")]
+    #[error(
+        "the topology has I2C ceilings for buses {buses:?}, not one per I2C peripheral {peripherals:?}"
+    )]
     CeilingMismatch {
-        expected: Vec<String>,
-        got: Vec<String>,
+        peripherals: Vec<String>,
+        buses: Vec<String>,
     },
     #[error("a ceiling of {hz} Hz is below every I2C mode")]
     CeilingTooLow { hz: u32 },
@@ -89,17 +91,6 @@ impl BoardError {
     }
 }
 
-/// The highest I2C bus speed one peripheral may run at.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Ceiling {
-    /// The topology carries no ceiling yet (`AET-WO-1202` adds it). Every mode
-    /// is emitted, and the generated trait says so: a recorded gap, not a
-    /// default.
-    NotSolved,
-    /// The solver's maximum, in Hz.
-    Hz(u32),
-}
-
 /// The I2C modes of UM10204, with placeholder `TIMINGR` values.
 const I2C_MODES: [(&str, u32, u32); 3] = [
     ("Standard100k", 100_000, 0x1070_7DBC),
@@ -107,65 +98,44 @@ const I2C_MODES: [(&str, u32, u32); 3] = [
     ("FastPlus1M", 1_000_000, 0x0030_0B29),
 ];
 
-/// The board crate for `crate_name`, from `solved`, with every I2C ceiling
-/// [`Ceiling::NotSolved`] until the topology carries one.
+/// The board crate for `crate_name`, from `solved`.
+///
+/// The I2C speeds each peripheral admits come from `solved.i2c_ceilings`
+/// (`AET-WO-1202`), keyed by bus id. The topology does not say which
+/// peripheral serves which bus, so the generator needs one ceiling per I2C
+/// peripheral and gives every I2C peripheral the lowest of them: exact for one
+/// bus, and never above any bus's ceiling for more.
 pub fn generate(
     crate_name: &str,
     solved: &SolvedTopology,
     table: &PinTable,
 ) -> Result<BTreeMap<String, String>, BoardError> {
     let plan = Plan::new(crate_name, solved, table)?;
-    let ceilings = plan
-        .peripherals
-        .iter()
-        .filter(|(_, p)| p.kind == Kind::I2c)
-        .map(|(name, _)| (name.clone(), Ceiling::NotSolved))
-        .collect();
-    generate_with(plan, &ceilings)
-}
-
-/// As [`generate`], with each I2C peripheral's ceiling given.
-pub fn generate_with_ceilings(
-    crate_name: &str,
-    solved: &SolvedTopology,
-    table: &PinTable,
-    ceilings: &BTreeMap<String, Ceiling>,
-) -> Result<BTreeMap<String, String>, BoardError> {
-    generate_with(Plan::new(crate_name, solved, table)?, ceilings)
-}
-
-fn generate_with(
-    plan: Plan,
-    ceilings: &BTreeMap<String, Ceiling>,
-) -> Result<BTreeMap<String, String>, BoardError> {
     let i2c: Vec<String> = plan
         .peripherals
         .iter()
         .filter(|(_, p)| p.kind == Kind::I2c)
         .map(|(n, _)| n.clone())
         .collect();
-    let named: Vec<String> = ceilings.keys().cloned().collect();
-    if named != i2c {
+    if solved.i2c_ceilings.len() != i2c.len() {
         return Err(BoardError::CeilingMismatch {
-            expected: i2c,
-            got: named,
+            peripherals: i2c,
+            buses: solved.i2c_ceilings.keys().cloned().collect(),
         });
     }
     let mut speeds = BTreeMap::new();
-    for (name, ceiling) in ceilings {
+    if let Some(&hz) = solved.i2c_ceilings.values().min() {
         let admitted: Vec<usize> = (0..I2C_MODES.len())
-            .filter(|&i| match ceiling {
-                Ceiling::NotSolved => true,
-                Ceiling::Hz(hz) => I2C_MODES[i].1 <= *hz,
-            })
+            .filter(|&i| I2C_MODES[i].1 <= hz)
             .collect();
+        // belt-and-suspenders: `SolvedTopology::validate` admits only 100, 400
+        // and 1000 kHz, so a ceiling below every mode cannot arrive here.
         if admitted.is_empty() {
-            let Ceiling::Hz(hz) = ceiling else {
-                unreachable!("NotSolved admits every mode")
-            };
-            return Err(BoardError::CeilingTooLow { hz: *hz });
+            return Err(BoardError::CeilingTooLow { hz });
         }
-        speeds.insert(name.clone(), (*ceiling, admitted));
+        for name in i2c {
+            speeds.insert(name, (hz, admitted.clone()));
+        }
     }
     let facts = Facts::new(&plan, &cmsis::register_facts()?)?;
     let mut files = BTreeMap::new();
@@ -725,7 +695,7 @@ fn emit_root(plan: &Plan) -> String {
 }
 
 /// A per-I2C-peripheral speed trait, with the modes it admits.
-type Speeds = BTreeMap<String, (Ceiling, Vec<usize>)>;
+type Speeds = BTreeMap<String, (u32, Vec<usize>)>;
 
 fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     let mut s = header(
@@ -837,17 +807,11 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          pub struct Enabled<S>(PhantomData<S>);\n"
     );
     // Speeds.
-    for (name, (ceiling, admitted)) in speeds {
-        let note = match ceiling {
-            Ceiling::NotSolved => format!(
-                "/// The topology carries no ceiling for `{name}` yet (`AET-WO-1202`), so\n\
-                 /// every mode is admitted. This is a recorded gap, not a default."
-            ),
-            Ceiling::Hz(hz) => format!(
-                "/// The speeds at or under `{name}`'s solved ceiling of {hz} Hz. Sealed:\n\
-                 /// firmware cannot admit another."
-            ),
-        };
+    for (name, (hz, admitted)) in speeds {
+        let note = format!(
+            "/// The speeds at or under `{name}`'s solved rise-time ceiling of {hz} Hz.\n\
+             /// Sealed: firmware cannot admit another."
+        );
         let _ = writeln!(
             w,
             "/// `{name}` bus speeds. `TIMINGR` values are placeholders for a 64 MHz kernel\n\
@@ -1642,6 +1606,7 @@ mod tests {
                 ("SDA".into(), assign("PB7", "I2C1", "I2C1_SDA", 4)),
             ]),
             gpio: BTreeMap::from([("CS".into(), "PA0".into())]),
+            i2c_ceilings: BTreeMap::from([("BUS".into(), 400_000)]),
         }
     }
 
@@ -1649,45 +1614,59 @@ mod tests {
         result.unwrap_err().kind()
     }
 
-    #[test]
-    fn a_solved_ceiling_admits_only_the_modes_under_it() {
-        let ceilings = BTreeMap::from([("I2C1".into(), Ceiling::Hz(400_000))]);
-        let files = generate_with_ceilings("b", &solved(), &table(), &ceilings).unwrap();
-        let lib = &files["src/board.rs"];
-        assert!(lib.contains("impl AtMostCeiling for Standard100k"));
-        assert!(lib.contains("impl AtMostCeiling for Fast400k"));
-        assert!(!lib.contains("impl AtMostCeiling for FastPlus1M"));
-        assert!(lib.contains("solved ceiling of 400000 Hz"));
-        // The harness drives exactly the admitted speeds.
-        let proofs = &files["src/proofs.rs"];
-        assert!(proofs.contains("i2c1_speed::Fast400k"));
-        assert!(!proofs.contains("FastPlus1M"));
-        let low = BTreeMap::from([("I2C1".into(), Ceiling::Hz(99_999))]);
-        assert_eq!(
-            kind(generate_with_ceilings("b", &solved(), &table(), &low)),
-            "CeilingTooLow"
-        );
-        let none = BTreeMap::new();
-        assert_eq!(
-            kind(generate_with_ceilings("b", &solved(), &table(), &none)),
-            "CeilingMismatch"
-        );
-        let extra = BTreeMap::from([
-            ("I2C1".into(), Ceiling::NotSolved),
-            ("I2C2".into(), Ceiling::NotSolved),
-        ]);
-        assert_eq!(
-            kind(generate_with_ceilings("b", &solved(), &table(), &extra)),
-            "CeilingMismatch"
-        );
+    fn admitted(files: &BTreeMap<String, String>) -> Vec<&'static str> {
+        I2C_MODES
+            .iter()
+            .map(|m| m.0)
+            .filter(|m| files["src/board.rs"].contains(&format!("impl AtMostCeiling for {m} ")))
+            .collect()
     }
 
     #[test]
-    fn an_unsolved_ceiling_admits_every_mode_and_says_so() {
-        let files = generate("b", &solved(), &table()).unwrap();
-        let lib = &files["src/board.rs"];
-        assert!(lib.contains("impl AtMostCeiling for FastPlus1M"));
-        assert!(lib.contains("This is a recorded gap, not a default."));
+    fn the_solved_ceiling_admits_only_the_modes_at_or_under_it() {
+        for (hz, modes) in [
+            (100_000, vec!["Standard100k"]),
+            (400_000, vec!["Standard100k", "Fast400k"]),
+            (1_000_000, vec!["Standard100k", "Fast400k", "FastPlus1M"]),
+        ] {
+            let mut s = solved();
+            s.i2c_ceilings.insert("BUS".into(), hz);
+            let files = generate("b", &s, &table()).unwrap();
+            assert_eq!(admitted(&files), modes, "{hz}");
+            // The harness drives exactly the admitted speeds.
+            let proofs = &files["src/proofs.rs"];
+            for (mode, _, _) in I2C_MODES {
+                assert_eq!(
+                    proofs.contains(&format!("i2c1_speed::{mode},")),
+                    modes.contains(&mode)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ceilings_must_number_the_i2c_peripherals_and_the_lowest_applies() {
+        let mut s = solved();
+        s.i2c_ceilings.clear();
+        assert_eq!(kind(generate("b", &s, &table())), "CeilingMismatch");
+        let mut s = solved();
+        s.i2c_ceilings.insert("OTHER".into(), 100_000);
+        assert_eq!(kind(generate("b", &s, &table())), "CeilingMismatch");
+        // Two buses: each peripheral gets the lower ceiling.
+        let mut s = solved();
+        s.assignments
+            .insert("SCL2".into(), assign("PB10", "I2C2", "I2C2_SCL", 4));
+        s.assignments
+            .insert("SDA2".into(), assign("PB11", "I2C2", "I2C2_SDA", 4));
+        s.i2c_ceilings = BTreeMap::from([("A".into(), 1_000_000), ("B".into(), 100_000)]);
+        let files = generate("b", &s, &table()).unwrap();
+        let board = &files["src/board.rs"];
+        for m in ["i2c1_speed", "i2c2_speed"] {
+            let module = board.split(&format!("pub mod {m} {{")).nth(1).unwrap();
+            let module = module.split("\n}\n").next().unwrap();
+            assert!(module.contains("impl AtMostCeiling for Standard100k "));
+            assert!(!module.contains("impl AtMostCeiling for Fast400k "));
+        }
     }
 
     #[test]

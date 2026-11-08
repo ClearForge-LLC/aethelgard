@@ -17,9 +17,6 @@ help: the following other types implement trait `i2c1_speed::sealed::Sealed`
 ...
   |     impl sealed::Sealed for Fast400k {}
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Fast400k`
-...
-  |     impl sealed::Sealed for FastPlus1M {}
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `FastPlus1M`
 note: required by a bound in `AtMostCeiling`
  --> $WORKSPACE/boards/sentinel-01/src/board.rs
   |
@@ -29,4 +26,3 @@ note: required by a bound in `AtMostCeiling`
   = help: the following types implement the trait:
             sentinel_01_board::i2c1_speed::Standard100k
             sentinel_01_board::i2c1_speed::Fast400k
-            sentinel_01_board::i2c1_speed::FastPlus1M

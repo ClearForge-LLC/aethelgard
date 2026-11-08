@@ -1,6 +1,5 @@
-//! Gate, pending: I2C1 at 1 MHz over sentinel-01's 400 kHz ceiling. It moves
-//! to `ui/fail/` when the solver's `i2c_ceilings` (AET-WO-1202) reaches the
-//! generator; until then it compiles, and FEEDBACK records the gap.
+//! Gate: I2C1 at 1 MHz, above sentinel-01's solved rise-time ceiling of 400 kHz
+//! (`i2c_ceilings`, AET-WO-1202).
 use sentinel_01_board::Board;
 use sentinel_01_board::i2c1_speed::FastPlus1M;
 use sentinel_01_board::mmio::Mmio;
