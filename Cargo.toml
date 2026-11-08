@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/aethelgard-ir",
     "crates/aethelgard-eda",
+    "crates/aethelgard-kicad-lib",
     "crates/aethelgard-svd-hal",
     "crates/aethelgard-twin",
     "crates/aethelgard-chaos",
@@ -26,6 +27,7 @@ unsafe_code = "forbid"
 aethelgard-ir = { path = "crates/aethelgard-ir" }
 aethelgard-svd-hal = { path = "crates/aethelgard-svd-hal" }
 aethelgard-eda = { path = "crates/aethelgard-eda" }
+aethelgard-kicad-lib = { path = "crates/aethelgard-kicad-lib" }
 clap = { version = "4", features = ["derive"] }
 landlock = "0.4.7"
 rmcp = { version = "=3.7.0", default-features = false, features = ["server", "transport-io"] }

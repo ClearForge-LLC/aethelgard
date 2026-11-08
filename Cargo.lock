@@ -36,6 +36,7 @@ name = "aethelgard-eda"
 version = "0.1.0"
 dependencies = [
  "aethelgard-ir",
+ "aethelgard-kicad-lib",
  "sha2",
  "thiserror",
 ]
@@ -55,6 +56,10 @@ dependencies = [
  "serde_json",
  "thiserror",
 ]
+
+[[package]]
+name = "aethelgard-kicad-lib"
+version = "0.1.0"
 
 [[package]]
 name = "aethelgard-svd-hal"
