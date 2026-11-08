@@ -6,6 +6,7 @@
 //! log line is a failed load too (`platform_load_error`).
 
 use crate::run::{Output, Stop};
+use crate::said::{self, Style};
 use crate::verdict::{Finding, Machine, Peripheral};
 
 const TOOL: &str = "renode";
@@ -23,10 +24,14 @@ pub fn commands(copy: &std::path::Path) -> String {
 }
 
 pub fn judge(code: i32, out: &Output) -> Result<(Vec<Finding>, Option<Machine>), Stop> {
-    if code != 0 {
-        return Err(Stop::tool_error(TOOL, format!("renode exited {code}")));
-    }
     let text = out.text();
+    if code != 0 {
+        let said = said::suffix(&text, Style::Renode);
+        return Err(Stop::tool_error(
+            TOOL,
+            format!("renode exited {code}{said}"),
+        ));
+    }
     let lines: Vec<&str> = text.lines().collect();
     let mut peripherals = Vec::new();
     let mut cpus = Vec::new();
@@ -77,11 +82,17 @@ pub fn judge(code: i32, out: &Output) -> Result<(Vec<Finding>, Option<Machine>),
         }
         (false, Some(_)) => Err(Stop::tool_error(
             TOOL,
-            "renode listed a CPU and also reported a load error".to_owned(),
+            format!(
+                "renode listed a CPU and also reported a load error{}",
+                said::suffix(&text, Style::Renode)
+            ),
         )),
         (true, None) => Err(Stop::tool_error(
             TOOL,
-            "renode listed no CPU and reported no load error".to_owned(),
+            format!(
+                "renode listed no CPU and reported no load error{}",
+                said::suffix(&text, Style::Renode)
+            ),
         )),
     }
 }
