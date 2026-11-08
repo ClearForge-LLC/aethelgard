@@ -253,22 +253,26 @@ fn crate_name_ok(name: &str) -> bool {
 }
 
 fn split_pin(pin: &str) -> Result<(char, u32), BoardError> {
-    let bad = || BoardError::InvalidPin { pin: pin.into() };
-    let rest = pin.strip_prefix('P').ok_or_else(bad)?;
+    pin_name(pin).ok_or_else(|| BoardError::InvalidPin { pin: pin.into() })
+}
+
+/// `PB6` is port `B`, pin 6: `P`, a port `A` to `K`, then 0 to 15 in decimal
+/// digits with no leading zero and no sign. The one parser of pin names, for
+/// the generator and for `aethelgard-twin`'s judge.
+pub fn pin_name(pin: &str) -> Option<(char, u32)> {
+    let rest = pin.strip_prefix('P')?;
     let mut chars = rest.chars();
-    let port = chars
-        .next()
-        .filter(|c| ('A'..='K').contains(c))
-        .ok_or_else(bad)?;
+    let port = chars.next().filter(|c| ('A'..='K').contains(c))?;
     let digits = chars.as_str();
-    if digits.is_empty() || digits.len() > 2 || digits.starts_with('0') && digits.len() > 1 {
-        return Err(bad());
+    if digits.is_empty()
+        || digits.len() > 2
+        || !digits.bytes().all(|b| b.is_ascii_digit())
+        || digits.starts_with('0') && digits.len() > 1
+    {
+        return None;
     }
-    let index: u32 = digits.parse().map_err(|_| bad())?;
-    if index > 15 {
-        return Err(bad());
-    }
-    Ok((port, index))
+    let index: u32 = digits.parse().ok()?;
+    (index <= 15).then_some((port, index))
 }
 
 impl Plan {
@@ -1910,6 +1914,19 @@ mod tests {
         assert!(!code(after));
         assert!(!code(&files["src/proofs.rs"]));
         assert!(rest.contains("unsafe fn new"));
+    }
+
+    #[test]
+    fn pin_names_are_read_strictly() {
+        assert_eq!(pin_name("PB6"), Some(('B', 6)));
+        assert_eq!(pin_name("PK15"), Some(('K', 15)));
+        // A sign `u32::from_str` would take, a leading zero, a lowercase port,
+        // a port past K, a pin past 15, a suffix.
+        for bad in [
+            "PA+5", "PA05", "Pa5", "PL1", "PA16", "PA5_", "PA", "A5", "PA-1",
+        ] {
+            assert_eq!(pin_name(bad), None, "{bad}");
+        }
     }
 
     #[test]

@@ -76,7 +76,8 @@ fn elf() -> Vec<u8> {
     elf_at(0x0800_0000, &[0u8; 64], 40)
 }
 
-const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n";
+/// The listing of the emitted platform's CPU and every solved peripheral.
+const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n";
 
 /// The reference topology's seven registers as a correct boot leaves them.
 const GOOD_REGISTERS: [&str; 7] = [
@@ -112,37 +113,48 @@ fn reads(word: &str, instructions: &str, mips: &str, registers: &[&str]) -> Vec<
         word.to_owned(),
         instructions.to_owned(),
         mips.to_owned(),
-        "0x80004ae".to_owned(),
+        // Inside the synthetic ELF's one executable segment.
+        "0x8000010".to_owned(),
     ];
     v.extend(registers.iter().map(|r| (*r).to_owned()));
     v
 }
 
+/// A transcript with `log` before the reads.
+fn with(log: &str, word: &str, instructions: &str, mips: &str, registers: &[&str]) -> String {
+    let r = reads(word, instructions, mips, registers);
+    transcript(log, &r.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
 fn good() -> String {
-    let r = reads(
+    with(
+        "",
         "0x2100B007",
         "0x00000000000F4240",
         "0x00000064",
         &GOOD_REGISTERS,
-    );
-    transcript("", &r.iter().map(String::as_str).collect::<Vec<_>>())
+    )
 }
 
 /// A `renode` stub that answers `--version`, refuses (exit 99) a command
 /// line without the boot's fixed parts, and prints `stdout`.
 fn toolbox(stdout: &str) -> Dir {
+    toolbox_version(stdout, "Renode v1.17.0")
+}
+
+fn toolbox_version(stdout: &str, version: &str) -> Dir {
     let tb = Dir::new("tb");
     let out = tb.write("renode.out", stdout.as_bytes());
     let body = format!(
         r#"#!/bin/sh
-if [ "$1" = --version ]; then printf 'Renode v1.17.0\n'; exit 0; fi
+if [ "$1" = --version ]; then printf '{version}\n'; exit 0; fi
 case "$5" in
-  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; emulation RunFor \"0.010000000\"; logLevel 3; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; cpu VectorTableOffset 0x08000000; emulation RunFor \"0.010000000\"; logLevel 3; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
-/bin/cat '{}'
+/bin/cat '{out}'
 "#,
-        out.display()
+        out = out.display()
     );
     let stub = tb.write("renode", body.as_bytes());
     fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
@@ -221,17 +233,19 @@ fn three_agreeing_witnesses_pass() {
     assert_eq!(b["instructions"]["observed"], 1_000_000);
     assert_eq!(b["boot_word"]["address"], "0x20000000");
     assert_eq!(b["boot_word"]["observed"], "0x2100b007");
-    assert_eq!(b["pc"], "0x080004ae");
+    assert_eq!(b["pc"], "0x08000010");
     assert_eq!(b["registers"].as_array().unwrap().len(), 7);
     assert_eq!(b["registers"][0]["name"], "GPIOA.MODER");
     assert_eq!(
         b["unobservable"],
         serde_json::json!(["GPIOB.OTYPER", "I2C1.TIMINGR"])
     );
-    // The image hash is of the loaded bytes alone: 64 zero bytes.
+    // The image hash binds each segment's address and sizes to its bytes:
+    // sha256 of 0x08000000, 64, 64 (u32 LE each) and 64 zero bytes, computed
+    // outside this crate.
     assert_eq!(
         b["firmware"]["image_sha256"],
-        "f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b"
+        "548141f7eafd58bfe2d127063336109587d6af4f8e099d1649efa842a81dad22"
     );
     assert_ne!(b["firmware"]["sha256"], b["firmware"]["image_sha256"]);
 }
@@ -276,15 +290,12 @@ fn markers_must_appear_once_each_as_whole_lines() {
 
 #[test]
 fn a_boot_word_never_written_fails() {
-    let r = reads(
+    let (code, v) = boot(&with(
+        "",
         "0x00000000",
         "0x00000000000F4240",
         "0x00000064",
         &GOOD_REGISTERS,
-    );
-    let (code, v) = boot(&transcript(
-        "",
-        &r.iter().map(String::as_str).collect::<Vec<_>>(),
     ));
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["boot_word_missing"]);
@@ -294,52 +305,40 @@ fn a_boot_word_never_written_fails() {
 #[test]
 fn a_halted_core_fails_and_a_set_word_beside_one_is_untrusted() {
     // The spike's half-failed load: word 0, PC 0xeffffffe, 0 instructions.
-    let r = reads(
+    let (code, v) = boot(&with(
+        "",
         "0x00000000",
         "0x0000000000000000",
         "0x00000064",
         &GOOD_REGISTERS,
-    );
-    let (code, v) = boot(&transcript(
-        "",
-        &r.iter().map(String::as_str).collect::<Vec<_>>(),
     ));
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["boot_word_missing", "cpu_halted"]);
-    let r = reads(
+    untrusted(boot(&with(
+        "",
         "0x2100B007",
         "0x00000000000F423F",
         "0x00000064",
         &GOOD_REGISTERS,
-    );
-    untrusted(boot(&transcript(
-        "",
-        &r.iter().map(String::as_str).collect::<Vec<_>>(),
     )));
 }
 
 #[test]
 fn more_instructions_than_the_run_holds_or_another_speed_is_untrusted() {
-    let r = reads(
+    untrusted(boot(&with(
+        "",
         "0x2100B007",
         "0x00000000000F4241",
         "0x00000064",
         &GOOD_REGISTERS,
-    );
-    untrusted(boot(&transcript(
-        "",
-        &r.iter().map(String::as_str).collect::<Vec<_>>(),
     )));
     // At 1 MIPS, 10,000 instructions would fill the run; the platform is 100.
-    let r = reads(
+    untrusted(boot(&with(
+        "",
         "0x2100B007",
         "0x0000000000002710",
         "0x00000001",
         &GOOD_REGISTERS,
-    );
-    untrusted(boot(&transcript(
-        "",
-        &r.iter().map(String::as_str).collect::<Vec<_>>(),
     )));
 }
 
@@ -348,36 +347,69 @@ fn a_register_off_the_solved_image_fails() {
     let mut regs = GOOD_REGISTERS;
     regs[1] = "0x55600000"; // PA7 on AF6, not the solved AF5
     regs[6] = "0x00001001"; // a clock the topology did not solve
-    let r = reads("0x2100B007", "0x00000000000F4240", "0x00000064", &regs);
-    let (code, v) = boot(&transcript(
+    let (code, v) = boot(&with(
         "",
-        &r.iter().map(String::as_str).collect::<Vec<_>>(),
+        "0x2100B007",
+        "0x00000000000F4240",
+        "0x00000064",
+        &regs,
     ));
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["register_mismatch", "register_mismatch"]);
     // Bits outside a pin field's mask do not count.
     let mut regs = GOOD_REGISTERS;
     regs[0] = "0x0000A8FD";
-    let r = reads("0x2100B007", "0x00000000000F4240", "0x00000064", &regs);
-    let (code, v) = boot(&transcript(
+    let (code, v) = boot(&with(
         "",
-        &r.iter().map(String::as_str).collect::<Vec<_>>(),
+        "0x2100B007",
+        "0x00000000000F4240",
+        "0x00000064",
+        &regs,
     ));
     assert_eq!(code, Some(0), "{v}");
 }
 
 #[test]
+fn a_core_ending_outside_the_firmware_fails() {
+    // Adversarial A7: a jump into zero-filled external memory after the word.
+    let (code, v) = boot(&good().replace("0x8000010\n", "0x701e7bca\n"));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["pc_outside_firmware"]);
+    // The segment's last instruction is inside; its end is not.
+    let (code, v) = boot(&good().replace("0x8000010\n", "0x800003e\n"));
+    assert_eq!(code, Some(0), "{v}");
+    let (code, v) = boot(&good().replace("0x8000010\n", "0x8000040\n"));
+    assert_eq!(code, Some(1), "{v}");
+}
+
+#[test]
+fn a_listing_without_a_solved_peripheral_is_untrusted() {
+    let listing = CPU_LISTING.replace("  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n", "");
+    untrusted(boot(&good().replace(CPU_LISTING, &listing)));
+    let wrong = CPU_LISTING.replace("spi1 (STM32H7_SPI)", "spi1 (STM32F4_SPI)");
+    untrusted(boot(&good().replace(CPU_LISTING, &wrong)));
+}
+
+#[test]
+fn another_renode_is_unusable_for_a_boot() {
+    let tb = toolbox_version(&good(), "Renode v1.16.1");
+    let input = Dir::new("in");
+    let fw = input.write("fw.elf", &elf());
+    let out = boot_with(&tb.0, &platform(), &fw, "10ms");
+    let v = report(&out);
+    assert_eq!(out.status.code(), Some(4), "{v}");
+    assert_eq!(v["error"]["kind"], "ToolUnusable", "{v}");
+}
+
+#[test]
 fn a_touch_of_a_gated_peripheral_fails() {
-    let r = reads(
+    let log = "[06:00:00.0000] [WARNING] sysbus: [cpu: 0x8000100] Tried to write a locked peripheral: machine-0.gpioPortA. Address 0x58020000, value 0x5\n";
+    let (code, v) = boot(&with(
+        log,
         "0x2100B007",
         "0x00000000000F4240",
         "0x00000064",
         &GOOD_REGISTERS,
-    );
-    let log = "[06:00:00.0000] [WARNING] sysbus: [cpu: 0x8000100] Tried to write a locked peripheral: machine-0.gpioPortA. Address 0x58020000, value 0x5\n";
-    let (code, v) = boot(&transcript(
-        log,
-        &r.iter().map(String::as_str).collect::<Vec<_>>(),
     ));
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["locked_peripheral_access"]);
@@ -424,6 +456,15 @@ fn inputs_are_refused_before_renode_is_looked_for() {
         &platform(),
         &input.write("far.elf", &elf_at(0x0A00_0000, &[0; 4], 40)),
         "FirmwareOutsideMemory",
+    );
+    // Adversarial A2: the magic loaded straight into the boot word.
+    refused(
+        &platform(),
+        &input.write(
+            "word.elf",
+            &elf_at(0x2000_0000, &0x2100_B007u32.to_le_bytes(), 40),
+        ),
+        "FirmwareLoadsBootWord",
     );
     let mut edited = fs::read(platform()).unwrap();
     edited.extend_from_slice(b"\n");

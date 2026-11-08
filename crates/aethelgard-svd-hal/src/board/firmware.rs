@@ -20,8 +20,10 @@ use std::fmt::Write as _;
 use super::{BoardError, I2C_MODES, Kind, Plan, Role, Speeds, method, pin_field, port_field};
 use crate::cmsis::{self, RegisterError, RegisterFacts};
 
-/// What the firmware writes to the boot word at its fixed point: the twin's
-/// `aethelgard_twin::boot::BOOT_MAGIC`.
+// belt-and-suspenders: the judge holds its own copy
+// (`aethelgard_twin::boot::BOOT_MAGIC`), so the expected value never comes from
+// the generator (`INV-07`); tests/board.rs checks that the two agree.
+/// What the firmware writes to the boot word at its fixed point.
 pub const BOOT_MAGIC: u32 = 0x2100_B007;
 
 /// The memory the linker script describes, from the header.

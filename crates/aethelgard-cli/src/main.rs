@@ -576,6 +576,9 @@ struct Boot {
 struct Ready {
     firmware: input::Input,
     image_sha256: String,
+    executable: Vec<(u64, u64)>,
+    instances: Vec<(String, String)>,
+    vector_table: u32,
     image: aethelgard_twin::boot::Image,
     boot_word: u32,
     specification_sha256: String,
@@ -585,7 +588,12 @@ struct Ready {
 /// The topology asks for what the twin cannot lower (exit 2), or the
 /// vendored header failed its own check (a corrupted build, as for `solve`).
 fn twin_stop(err: aethelgard_twin::TwinError) -> run::Stop {
+    // A name the header does not define is the topology's fault (adversarial
+    // C3); a header that fails its own checks is a corrupted build.
     let code = match err {
+        aethelgard_twin::TwinError::Register(
+            aethelgard_svd_hal::cmsis::RegisterError::Undefined { .. },
+        ) => EXIT_INVALID_SPEC,
         aethelgard_twin::TwinError::Register(_) => EXIT_INTERNAL,
         _ => EXIT_INVALID_SPEC,
     };
@@ -630,14 +638,24 @@ fn ready(
     let bytes = fs::read(&firmware.copy)
         .map_err(|e| run::Stop::unreadable(format!("cannot read the firmware's copy: {e}")))?;
     let memory = aethelgard_twin::boot::memory().map_err(twin_stop)?;
-    let image_sha256 = elf::check(&bytes, &memory)?;
-    let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
     let boot_word = aethelgard_twin::boot::boot_word().map_err(twin_stop)?;
+    let checked = elf::check(&bytes, &memory, boot_word)?;
+    let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
+    let instances = aethelgard_twin::platform::instances(&boot.topology)
+        .map_err(twin_stop)?
+        .into_iter()
+        .map(|i| (i.name, i.model))
+        .collect();
+    let vector_table =
+        u32::try_from(memory.flash.start).expect("FLASH_BANK1_BASE is a 32-bit value");
     Ok((
         platform,
         Ready {
             firmware,
-            image_sha256,
+            image_sha256: checked.sha256,
+            executable: checked.executable,
+            instances,
+            vector_table,
             image,
             boot_word,
             specification_sha256: boot.topology.specification_sha256,
@@ -690,12 +708,24 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         read_write: Vec::new(),
     };
     let version = version(invocation(run::args(["--version"]), "status-version"))?;
+    // The stock table and the boot's measured facts are Renode 1.17.0's;
+    // another Renode is a fact the twin does not have (`INV-06`).
+    let pinned = format!("Renode v{}", aethelgard_twin::platform::RENODE_VERSION);
+    if ready.is_some() && version != pinned {
+        return Err(run::Stop::unusable(
+            "renode",
+            format!("`{version}` is not the {pinned} the twin's platform is pinned to"),
+        ));
+    }
     let plan = ready.as_ref().map(|r| renode::BootPlan {
         platform: &input.copy,
         firmware: &r.firmware.copy,
         virtual_ns: r.virtual_ns,
         boot_word: r.boot_word,
+        vector_table: r.vector_table,
         image: &r.image,
+        executable: &r.executable,
+        instances: &r.instances,
     });
     let commands = match &plan {
         Some(plan) => plan.commands(),

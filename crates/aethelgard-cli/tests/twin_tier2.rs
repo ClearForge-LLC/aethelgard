@@ -7,6 +7,9 @@
 //!   the boot word, with all three witnesses (ruled on PR #56, R2).
 //! - Two boots give the same observation.
 //! - A boot too short to reach the fixed point fails.
+//! - Two firmwares from the adversarial pass fail: one linked with no vector
+//!   table where the part boots (A3), one that leaves its own code after the
+//!   boot word (A7).
 //!
 //! (Two emissions being byte-identical is tier 1: `aethelgard-twin`'s unit
 //! tests and the regeneration guard in `aethelgard-svd-hal`.) Each boot writes
@@ -93,14 +96,77 @@ fn firmware() -> &'static Path {
     })
 }
 
-fn boot(label: &str, time: &str) -> (Option<i32>, Value) {
+/// A copy of the reference firmware with `edit` applied, built like it into
+/// its own target directory outside the repository.
+fn mutant(name: &str, change: impl Fn(&Path)) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("aet-2100-t2-{}-{name}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let src = root().join("boards/sentinel-01/firmware");
+    for rel in [
+        "Cargo.toml",
+        "Cargo.lock",
+        ".cargo/config.toml",
+        "link.x",
+        "src/main.rs",
+    ] {
+        let to = dir.join(rel);
+        fs::create_dir_all(to.parent().unwrap()).unwrap();
+        fs::copy(src.join(rel), &to).unwrap();
+    }
+    let board = fs::canonicalize(root().join("boards/sentinel-01")).unwrap();
+    edit(
+        &dir,
+        "Cargo.toml",
+        "path = \"..\"",
+        &format!("path = \"{}\"", board.display()),
+    );
+    edit(
+        &dir,
+        ".cargo/config.toml",
+        "target-dir = \"../../../target/sentinel-01-board-firmware\"",
+        &format!("target-dir = \"{}\"", dir.join("target").display()),
+    );
+    change(&dir);
+    let out = Command::new(env!("CARGO"))
+        .args(["build", "--release", "--offline", "--locked"])
+        .current_dir(&dir)
+        .env_remove("CARGO_TARGET_DIR")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    dir.join("target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware")
+}
+
+fn edit(dir: &Path, rel: &str, from: &str, to: &str) {
+    let path = dir.join(rel);
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.contains(from), "{rel} lacks {from}");
+    fs::write(&path, text.replace(from, to)).unwrap();
+}
+
+fn kinds(v: &Value) -> Vec<&str> {
+    v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["kind"].as_str().unwrap())
+        .collect()
+}
+
+/// One boot of `elf` on the committed platform, judged by the reference spec.
+fn boot_elf(label: &str, elf: &Path, time: &str) -> (Option<i32>, Value) {
     let start = Instant::now();
     let (code, v) = aethelgard(&[
         "simulate",
         "--platform",
         platform().to_str().unwrap(),
         "--firmware",
-        firmware().to_str().unwrap(),
+        elf.to_str().unwrap(),
         "--spec",
         spec().to_str().unwrap(),
         "--for",
@@ -111,6 +177,10 @@ fn boot(label: &str, time: &str) -> (Option<i32>, Value) {
         start.elapsed().as_secs_f64()
     ));
     (code, v)
+}
+
+fn boot(label: &str, time: &str) -> (Option<i32>, Value) {
+    boot_elf(label, firmware(), time)
 }
 
 #[test]
@@ -211,4 +281,42 @@ fn a_boot_too_short_to_reach_the_fixed_point_fails() {
     assert!(kinds.contains(&"boot_word_missing"), "{v}");
     assert!(!kinds.contains(&"cpu_halted"), "{v}");
     assert_eq!(v["boot"]["instructions"]["observed"], 1000);
+}
+
+#[test]
+fn a_firmware_with_no_vector_table_at_the_boot_address_fails() {
+    // Adversarial A3: Renode would guess the table from the ELF; the part
+    // boots from FLASH_BANK1_BASE.
+    let elf = mutant("flash-offset", |d| {
+        edit(
+            d,
+            "link.x",
+            "ORIGIN = 0x08000000, LENGTH = 0x100000",
+            "ORIGIN = 0x08010000, LENGTH = 0xF0000",
+        );
+    });
+    let (code, v) = boot_elf("A3 flash offset", &elf, "10ms");
+    assert_eq!(code, Some(1), "{v}");
+    let kinds = kinds(&v);
+    assert!(
+        kinds.contains(&"boot_word_missing") && kinds.contains(&"cpu_halted"),
+        "{v}"
+    );
+}
+
+#[test]
+fn a_core_that_leaves_the_firmware_after_the_boot_word_fails() {
+    // Adversarial A7: a jump into the FMC bank, plain zero-filled memory.
+    let elf = mutant("leave", |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "    // No sleep: the judge requires",
+            "    unsafe { core::arch::asm!(\"ldr r0, =0x70000001\", \"bx r0\", options(noreturn)) };\n    // No sleep: the judge requires",
+        );
+    });
+    let (code, v) = boot_elf("A7 leave", &elf, "10ms");
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["pc_outside_firmware"], "{v}");
+    assert_eq!(v["boot"]["boot_word"]["observed"], "0x2100b007");
 }

@@ -87,29 +87,11 @@ pub(crate) fn kind(peripheral: &str) -> Result<Kind, TwinError> {
     }
 }
 
-/// `PB6` is port `B`, pin 6.
+/// `PB6` is port `B`, pin 6, by `aethelgard-svd-hal`'s one pin parser.
 pub(crate) fn split_pin(pin: &str) -> Result<(char, u32), TwinError> {
-    let bad = || TwinError::InvalidPin {
+    aethelgard_svd_hal::board::pin_name(pin).ok_or_else(|| TwinError::InvalidPin {
         pin: pin.to_owned(),
-    };
-    let rest = pin.strip_prefix('P').ok_or_else(bad)?;
-    let mut chars = rest.chars();
-    let port = chars
-        .next()
-        .filter(|c| ('A'..='K').contains(c))
-        .ok_or_else(bad)?;
-    let digits = chars.as_str();
-    if digits.is_empty() || digits.len() > 2 || !digits.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(bad());
-    }
-    if digits.len() == 2 && digits.starts_with('0') {
-        return Err(bad());
-    }
-    let index: u32 = digits.parse().map_err(|_| bad())?;
-    if index > 15 {
-        return Err(bad());
-    }
-    Ok((port, index))
+    })
 }
 
 #[cfg(test)]

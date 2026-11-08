@@ -17,6 +17,9 @@ use aethelgard_svd_hal::cmsis;
 
 use crate::{TwinError, kind, split_pin};
 
+// belt-and-suspenders: the generator holds its own copy of this constant
+// (`aethelgard-svd-hal` `board/firmware.rs`), because the judge's expectations
+// are never taken from the generator (`INV-07`); the boot test proves the two agree.
 /// What a firmware writes to the boot word at its fixed point. Neither RAM's
 /// reset value (0) nor a value the cold start writes.
 pub const BOOT_MAGIC: u32 = 0x2100_B007;
@@ -57,6 +60,8 @@ pub struct Memory {
     pub ram: Region,
 }
 
+// belt-and-suspenders: the generator reads the same macros for its linker
+// script (`board/firmware.rs`); the judge reads them itself (`INV-07`).
 /// The part's memory, from the header.
 pub fn memory() -> Result<Memory, TwinError> {
     let f = cmsis::register_facts()?;
@@ -108,6 +113,8 @@ pub struct Image {
     pub unobservable: Vec<String>,
 }
 
+// belt-and-suspenders: the generator's `board.rs` states these too; the
+// judge computes the expected image without the generator's code (`INV-07`).
 /// MODER values (RM0433 §11.4.1), the two roles the topology solves.
 const MODE_OUTPUT: u32 = 0b01;
 const MODE_AF: u32 = 0b10;

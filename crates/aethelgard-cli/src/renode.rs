@@ -129,7 +129,13 @@ pub struct BootPlan<'a> {
     pub firmware: &'a std::path::Path,
     pub virtual_ns: u64,
     pub boot_word: u32,
+    /// Where the part boots from: `FLASH_BANK1_BASE`, the header's `FLASH_BASE`.
+    pub vector_table: u32,
     pub image: &'a aethelgard_twin::boot::Image,
+    /// The firmware's executable ranges, where the core must be at the end.
+    pub executable: &'a [(u64, u64)],
+    /// Every solved peripheral as the listing must name it: (name, model).
+    pub instances: &'a [(String, String)],
 }
 
 impl BootPlan<'_> {
@@ -174,6 +180,14 @@ impl BootPlan<'_> {
         for r in &self.image.cold {
             c.push(format!("sysbus WriteDoubleWord {:#010x} 0x0", r.address));
         }
+        // Only the firmware's code may set the boot word (adversarial A1, A2),
+        // and the core takes its vector table where the part boots, not where
+        // Renode guesses it from the ELF (adversarial A3).
+        c.push(format!(
+            "sysbus WriteDoubleWord {:#010x} 0x0",
+            self.boot_word
+        ));
+        c.push(format!("cpu VectorTableOffset {:#010x}", self.vector_table));
         c.push(format!(
             "emulation RunFor \"{}.{:09}\"",
             self.virtual_ns / 1_000_000_000,
@@ -223,11 +237,7 @@ fn value(line: &str) -> Option<u64> {
 /// Judges one boot. A finding means `fail`; a `Stop` means the output cannot
 /// be trusted (exit 5) or the tool exited nonzero. The exit code is never a
 /// witness (`architecture.md` §2.4).
-pub fn judge_boot(
-    code: i32,
-    out: &Output,
-    plan: &BootPlan<'_>,
-) -> Result<Judged, Stop> {
+pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged, Stop> {
     let text = out.text();
     let untrusted = |what: String| {
         Stop::tool_error(
@@ -315,6 +325,16 @@ pub fn judge_boot(
     if cpus.is_empty() {
         return Err(untrusted("renode listed no CPU after the reads".into()));
     }
+    for (name, model) in plan.instances {
+        if !peripherals
+            .iter()
+            .any(|p| &p.name == name && &p.kind == model)
+        {
+            return Err(untrusted(format!(
+                "the platform's listing lacks the solved `{name}` ({model})"
+            )));
+        }
+    }
     if observed.mips != aethelgard_twin::boot::MIPS {
         return Err(untrusted(format!(
             "the core runs at {} MIPS, not {}",
@@ -372,6 +392,17 @@ pub fn judge_boot(
             format!(
                 "the core executed {} of the run's {expected} instructions",
                 observed.instructions
+            ),
+        ));
+    }
+    // Thumb code runs at even addresses; the PC Renode reports has no Thumb bit.
+    let pc = u64::from(observed.pc);
+    if !plan.executable.iter().any(|&(s, e)| pc >= s && pc < e) {
+        findings.push(Finding::plain(
+            "pc_outside_firmware",
+            format!(
+                "the core ended at {:#010x}, outside every executable segment of the firmware",
+                observed.pc
             ),
         ));
     }

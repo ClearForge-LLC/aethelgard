@@ -1,15 +1,21 @@
 //! The firmware ELF, checked before Renode sees it (`AET-WO-2100`, ruled on
 //! PR #56, R2 and R4). Renode loads an x86 ELF, or one linked to unmapped
 //! memory, with only warnings (spike F12), so the shape is refused here:
-//! ELF32, little-endian, `EM_ARM`, `ET_EXEC`, and every `PT_LOAD` inside the
-//! part's flash or RAM. The firmware's identity is `image_sha256`, the sha256
-//! of the `PT_LOAD` file bytes in physical-address order, which is what
-//! Renode loads; the file's own hash also covers symbol names, which Cargo
-//! derives from the checkout path (spike F17).
+//! ELF32, little-endian, `EM_ARM`, `ET_EXEC`, every `PT_LOAD` inside the
+//! part's flash or RAM, no two overlapping, and none whose file bytes cover
+//! the boot word (adversarial A1, A1c, A2: the loader, or the reset handler's
+//! `.data` copy, would write the magic with no code reaching the fixed point).
+//!
+//! The firmware's identity is `image_sha256`: for every `PT_LOAD` with memory,
+//! in physical-address order, its physical address, file size and memory size
+//! (each `u32` little-endian), then its file bytes. That is the memory image
+//! Renode builds. The file's own hash also covers symbol names, which Cargo
+//! derives from the checkout path (spike F17); a hash of the bytes alone
+//! would give one identity to two images (adversarial A4, A5).
 
 use sha2::{Digest, Sha256};
 
-use aethelgard_twin::boot::{Memory, Region};
+use aethelgard_twin::boot::Memory;
 
 use crate::input::hex;
 use crate::run::Stop;
@@ -19,6 +25,7 @@ const PHDR_LEN: usize = 32;
 const EM_ARM: u16 = 40;
 const ET_EXEC: u16 = 2;
 const PT_LOAD: u32 = 1;
+const PF_X: u32 = 1;
 
 /// One loadable segment.
 struct Load {
@@ -27,6 +34,16 @@ struct Load {
     vaddr: u64,
     filesz: u64,
     memsz: u64,
+    flags: u32,
+}
+
+/// What the checks give the boot.
+#[derive(Debug)]
+pub struct Image {
+    pub sha256: String,
+    /// The virtual ranges of the executable segments: where a firmware that
+    /// reached its fixed point is still running (adversarial A7).
+    pub executable: Vec<(u64, u64)>,
 }
 
 fn malformed(message: String) -> Stop {
@@ -41,8 +58,13 @@ fn u32_at(b: &[u8], at: usize) -> u32 {
     u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]])
 }
 
-/// `image_sha256` of `bytes`, once every check has passed.
-pub fn check(bytes: &[u8], memory: &Memory) -> Result<String, Stop> {
+/// True when `[a, a + alen)` and `[b, b + blen)` share a byte.
+fn overlaps(a: u64, alen: u64, b: u64, blen: u64) -> bool {
+    alen > 0 && blen > 0 && a < b + blen && b < a + alen
+}
+
+/// The checks, then the image.
+pub fn check(bytes: &[u8], memory: &Memory, boot_word: u32) -> Result<Image, Stop> {
     if bytes.len() < EHDR_LEN || &bytes[..4] != b"\x7fELF" {
         return Err(malformed("not an ELF file".into()));
     }
@@ -91,12 +113,13 @@ pub fn check(bytes: &[u8], memory: &Memory) -> Result<String, Stop> {
             paddr: field(3),
             filesz: field(4),
             memsz: field(5),
+            flags: u32_at(bytes, at + 24),
         });
     }
     if !loads.iter().any(|l| l.filesz > 0) {
         return Err(malformed("no PT_LOAD segment carries file bytes".into()));
     }
-    let inside = |r: &Region, address: u64, len: u64| r.holds(address, len);
+    let word = u64::from(boot_word);
     for l in &loads {
         if l.offset + l.filesz > bytes.len() as u64 {
             return Err(malformed(format!(
@@ -114,8 +137,8 @@ pub fn check(bytes: &[u8], memory: &Memory) -> Result<String, Stop> {
         // at the virtual one. Both must be the part's memory.
         for (what, address) in [("physical", l.paddr), ("virtual", l.vaddr)] {
             if l.memsz > 0
-                && !inside(&memory.flash, address, l.memsz)
-                && !inside(&memory.ram, address, l.memsz)
+                && !memory.flash.holds(address, l.memsz)
+                && !memory.ram.holds(address, l.memsz)
             {
                 return Err(Stop::refused(
                     "FirmwareOutsideMemory",
@@ -130,35 +153,56 @@ pub fn check(bytes: &[u8], memory: &Memory) -> Result<String, Stop> {
                     ),
                 ));
             }
+            if overlaps(address, l.filesz, word, 4) {
+                return Err(Stop::refused(
+                    "FirmwareLoadsBootWord",
+                    format!(
+                        "a PT_LOAD's file bytes at {what} address {address:#010x} cover the boot \
+                         word at {boot_word:#010x}: only code at its fixed point may write it"
+                    ),
+                ));
+            }
         }
     }
-    let mut image: Vec<&Load> = loads.iter().filter(|l| l.filesz > 0).collect();
+    let mut image: Vec<&Load> = loads.iter().filter(|l| l.memsz > 0).collect();
     image.sort_by_key(|l| l.paddr);
     for pair in image.windows(2) {
-        if pair[0].paddr + pair[0].filesz > pair[1].paddr {
+        if overlaps(pair[0].paddr, pair[0].memsz, pair[1].paddr, pair[1].memsz) {
             return Err(malformed(format!(
-                "PT_LOAD segments at {:#010x} and {:#010x} overlap",
+                "PT_LOAD segments at {:#010x} and {:#010x} overlap in memory",
                 pair[0].paddr, pair[1].paddr
             )));
         }
     }
     let mut hasher = Sha256::new();
-    for l in image {
+    for l in &image {
+        for v in [l.paddr, l.filesz, l.memsz] {
+            hasher.update((v as u32).to_le_bytes());
+        }
         hasher.update(&bytes[l.offset as usize..(l.offset + l.filesz) as usize]);
     }
-    Ok(hex(hasher.finalize()))
+    Ok(Image {
+        sha256: hex(hasher.finalize()),
+        executable: loads
+            .iter()
+            .filter(|l| l.flags & PF_X != 0 && l.memsz > 0)
+            .map(|l| (l.vaddr, l.vaddr + l.memsz))
+            .collect(),
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const WORD: u32 = 0x2000_0000;
+
     fn memory() -> Memory {
         aethelgard_twin::boot::memory().unwrap()
     }
 
     /// An ELF32 LE ARM executable whose segments are (paddr, vaddr, bytes, memsz).
-    pub(crate) fn elf(segments: &[(u32, u32, &[u8], u32)]) -> Vec<u8> {
+    fn elf(segments: &[(u32, u32, &[u8], u32)]) -> Vec<u8> {
         let mut b = vec![0u8; EHDR_LEN];
         b[..7].copy_from_slice(b"\x7fELF\x01\x01\x01");
         b[16..18].copy_from_slice(&ET_EXEC.to_le_bytes());
@@ -190,30 +234,44 @@ mod tests {
         b
     }
 
+    fn sha(bytes: &[u8]) -> String {
+        check(bytes, &memory(), WORD).unwrap().sha256
+    }
+
     fn kind(bytes: &[u8]) -> &'static str {
-        check(bytes, &memory()).unwrap_err().kind
+        check(bytes, &memory(), WORD).unwrap_err().kind
     }
 
     #[test]
-    fn a_flash_image_is_accepted_and_hashed_by_its_loaded_bytes() {
-        let a = elf(&[
-            (0x0800_0000, 0x0800_0000, b"abcd", 4),
-            (0x2000_0000, 0x2000_0000, b"", 8),
-        ]);
-        let sha = check(&a, &memory()).unwrap();
-        assert_eq!(sha, hex(Sha256::digest(b"abcd")));
-        // The same loaded bytes in a file with a longer tail hash the same.
+    fn the_image_hash_binds_bytes_addresses_and_sizes_but_not_the_rest_of_the_file() {
+        let a = elf(&[(0x0800_0000, 0x0800_0000, b"abcd", 4), (WORD, WORD, b"", 8)]);
+        let mut expected = Sha256::new();
+        for v in [0x0800_0000u32, 4, 4] {
+            expected.update(v.to_le_bytes());
+        }
+        expected.update(b"abcd");
+        for v in [WORD, 0, 8] {
+            expected.update(v.to_le_bytes());
+        }
+        assert_eq!(sha(&a), hex(expected.finalize()));
+        // A longer tail (symbols) does not change it.
         let mut b = a.clone();
         b.extend_from_slice(b"symbols");
-        assert_eq!(check(&b, &memory()).unwrap(), sha);
-        // Segments are hashed in physical-address order, not table order.
-        let c = elf(&[
-            (0x0800_0004, 0x0800_0004, b"ef", 2),
-            (0x0800_0000, 0x0800_0000, b"abcd", 4),
-        ]);
+        assert_eq!(sha(&b), sha(&a));
+        // Table order does not change it.
+        let c = elf(&[(WORD, WORD, b"", 8), (0x0800_0000, 0x0800_0000, b"abcd", 4)]);
+        assert_eq!(sha(&c), sha(&a));
+        // The same bytes at another address are another image (adversarial A5),
+        // and so is more zero-fill.
+        let moved = elf(&[(0x0800_1000, 0x0800_1000, b"abcd", 4), (WORD, WORD, b"", 8)]);
+        assert_ne!(sha(&moved), sha(&a));
+        let filled = elf(&[(0x0800_0000, 0x0800_0000, b"abcd", 8), (WORD, WORD, b"", 8)]);
+        assert_ne!(sha(&filled), sha(&a));
+        // Only executable segments are where the core may run.
+        let image = check(&a, &memory(), WORD).unwrap();
         assert_eq!(
-            check(&c, &memory()).unwrap(),
-            hex(Sha256::digest(b"abcdef"))
+            image.executable,
+            [(0x0800_0000, 0x0800_0004), (0x2000_0000, 0x2000_0008)]
         );
     }
 
@@ -238,16 +296,16 @@ mod tests {
         // A segment whose file bytes run past the end of the file.
         assert_eq!(kind(&good[..good.len() - 1]), "MalformedFirmware");
         // Nothing to load.
-        assert_eq!(
-            kind(&elf(&[(0x2000_0000, 0x2000_0000, b"", 4)])),
-            "MalformedFirmware"
-        );
+        assert_eq!(kind(&elf(&[(WORD, WORD, b"", 4)])), "MalformedFirmware");
         // More file bytes than memory.
         assert_eq!(
             kind(&elf(&[(0x0800_0000, 0x0800_0000, b"abcd", 2)])),
             "MalformedFirmware"
         );
-        // Overlapping images.
+    }
+
+    #[test]
+    fn overlapping_segments_are_refused_by_their_memory_not_their_file_bytes() {
         assert_eq!(
             kind(&elf(&[
                 (0x0800_0000, 0x0800_0000, b"abcd", 4),
@@ -255,6 +313,42 @@ mod tests {
             ])),
             "MalformedFirmware"
         );
+        // Adversarial A4: a zero-fill (memsz past filesz) over the next segment.
+        assert_eq!(
+            kind(&elf(&[
+                (0x0800_0000, 0x0800_0000, b"ab", 0x40),
+                (0x0800_0010, 0x0800_0010, b"cd", 2)
+            ])),
+            "MalformedFirmware"
+        );
+        // Adjacent is not overlapping.
+        sha(&elf(&[
+            (0x0800_0000, 0x0800_0000, b"ab", 4),
+            (0x0800_0004, 0x0800_0004, b"cd", 2),
+        ]));
+    }
+
+    #[test]
+    fn file_bytes_over_the_boot_word_are_refused() {
+        // Adversarial A1/A2: the magic loaded straight into the boot word.
+        let loaded = elf(&[
+            (0x0800_0000, 0x0800_0000, b"abcd", 4),
+            (WORD, WORD, &0x2100_B007u32.to_le_bytes(), 4),
+        ]);
+        assert_eq!(kind(&loaded), "FirmwareLoadsBootWord");
+        // Adversarial A1c: `.data` placed over it, copied in by the reset handler.
+        let copied = elf(&[(0x0800_0000, WORD, b"abcd", 4)]);
+        assert_eq!(kind(&copied), "FirmwareLoadsBootWord");
+        // The reference's boot section: memory but no file bytes, accepted.
+        sha(&elf(&[
+            (0x0800_0000, 0x0800_0000, b"abcd", 4),
+            (WORD, WORD, b"", 4),
+        ]));
+        // File bytes right after it are not over it.
+        sha(&elf(&[
+            (0x0800_0000, 0x0800_0000, b"abcd", 4),
+            (WORD + 4, WORD + 4, b"ab", 2),
+        ]));
     }
 
     #[test]
@@ -281,14 +375,10 @@ mod tests {
             ])),
             "FirmwareOutsideMemory"
         );
-        // The last word of RAM and of flash are inside.
-        check(
-            &elf(&[
-                (0x081F_FFFC, 0x081F_FFFC, b"abcd", 4),
-                (0x2001_FFFC, 0x2001_FFFC, b"", 4),
-            ]),
-            &memory(),
-        )
-        .unwrap();
+        // The last word of flash and of RAM are inside.
+        sha(&elf(&[
+            (0x081F_FFFC, 0x081F_FFFC, b"abcd", 4),
+            (0x2001_FFFC, 0x2001_FFFC, b"", 4),
+        ]));
     }
 }
