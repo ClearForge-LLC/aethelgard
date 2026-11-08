@@ -1138,13 +1138,18 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     s
 }
 
+/// A field's mask, as the oracle computes it.
+fn oracle_mask(width: u32, pos: u32) -> u32 {
+    ((1u32 << width) - 1) << pos
+}
+
 /// The oracle's expectation for one GPIO register: (mask, value).
 ///
 /// belt-and-suspenders: this restates the mask arithmetic of `emit_lib`'s
 /// field writes on purpose. The oracle must not read back what the crate
 /// under proof does (`INV-07`), so a slip in one copy is caught by the other.
 fn expect_field(acc: &mut BTreeMap<u32, (u32, u32)>, reg: u32, pos: u32, width: u32, value: u32) {
-    let mask = ((1u32 << width) - 1) << pos;
+    let mask = oracle_mask(width, pos);
     let e = acc.entry(reg).or_insert((0, 0));
     e.0 |= mask;
     e.1 |= value << pos;
@@ -1315,25 +1320,25 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         for (pin, p) in &on_port {
             let pf = &facts.pins[*pin];
             let (mode, otype, ospeed, pupd) = p.role.policy();
-            let mmask = ((1u32 << mw) - 1) << pf.moder;
+            let mmask = oracle_mask(mw, pf.moder);
             solved_mask |= mmask;
             let mut ready = vec![
                 format!(
                     "self.{field}[{}] & {:#010x} == {:#010x}",
                     g.otyper / 4,
-                    ((1u32 << tw) - 1) << pf.otyper,
+                    oracle_mask(tw, pf.otyper),
                     otype << pf.otyper
                 ),
                 format!(
                     "self.{field}[{}] & {:#010x} == {:#010x}",
                     g.ospeedr / 4,
-                    ((1u32 << sw) - 1) << pf.ospeedr,
+                    oracle_mask(sw, pf.ospeedr),
                     ospeed << pf.ospeedr
                 ),
                 format!(
                     "self.{field}[{}] & {:#010x} == {:#010x}",
                     g.pupdr / 4,
-                    ((1u32 << pw) - 1) << pf.pupdr,
+                    oracle_mask(pw, pf.pupdr),
                     pupd << pf.pupdr
                 ),
             ];
@@ -1347,7 +1352,7 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                 let afr = g.afr[pf.afr_index as usize] / 4;
                 ready.push(format!(
                     "self.{field}[{afr}] & {:#010x} == {:#010x}",
-                    ((1u32 << aw) - 1) << pf.afr,
+                    oracle_mask(aw, pf.afr),
                     p.af << pf.afr
                 ));
             }

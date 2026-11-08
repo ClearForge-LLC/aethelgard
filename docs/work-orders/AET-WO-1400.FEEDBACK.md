@@ -255,6 +255,8 @@ Furnace, on the merged tree (`59a7e16`): `cargo fmt --all -- --check` ok; `cargo
   - The root `Cargo.toml` gains `exclude = ["boards"]`, and `trybuild` and the board in `[workspace.dependencies]`.
   - The board is never a workspace member (`cargo metadata` lists the seven).
   - It builds for `thumbv7em-none-eabihf` in the isolated toolchain (S2), with dev build 0.07 s.
+- **The register door is sealed (adversarial E2, E3).** `Registers: sealed::Sealed`, and every method takes a `sealed::Token` that only the board crate can make. Firmware therefore can neither implement it nor call it around the typestates. Only the generated API and the in-crate harness can.
+- **`prove` detects vacuity (adversarial E1; ruled in session to fix in 1400).** `crates/aethelgard-cli/src/kani.rs` reads Kani's cover summary. On exit 0, any declared cover never reached is a fail with finding `cover_unsatisfied`, and two summaries are a `ToolError`. README contract rows for exit 1 and `prove` amended. Three tier-1 tests and one tier-2 seed.
 - **The typestates (F11, F12).**
   - Each solved pin has exactly one method, into its solved function: `into_i2c1_scl`, `into_output`. Each writes the role's full configuration, OTYPER, OSPEEDR, PUPDR and AFR or BSRR, then MODER last.
   - Port pins exist only from `GpioX<Clocked>::split`. A peripheral's `init` takes only its own configured pins, from `Clocked`.
@@ -273,7 +275,12 @@ Furnace, on the merged tree (`59a7e16`): `cargo fmt --all -- --check` ok; `cargo
     - every field the specification fixes for every solved pin (mode, type, speed, pull, AF) and the frame condition on every other pin's field and every other register;
     - RCC equal to before plus exactly the solved gates, word by word;
     - each peripheral enabled, `TIMINGR` one of the admitted speeds' values, SPI master.
-  - Every check is a `kani::assert` naming its rule. A `kani::cover!` marks the end of a complete schedule, and the scheduler asserts that it started every peripheral.
+  - After the adversarial pass, also:
+    - the chosen speed's exact `TIMINGR`;
+    - `CR1` and `CFG2` beyond their own bits;
+    - every BSRR write and output level, and that `write_byte` leaves outputs alone;
+    - every MODER transition: final mode only, once the pin's other fields are final (E4 to E7).
+  - Every check is a `kani::assert` naming its rule. Nine `kani::cover!`s mark each branch and the end of a complete schedule, and the scheduler asserts that it started every peripheral.
 - **The `rustfmt` problem, found and fixed.** `cargo fmt --all` reaches the board through svd-hal's path dev-dependency. That made the regeneration test and the gates' `fmt --check` contradict each other, and the regeneration test caught it on the first reformat.
   - An inner `#![rustfmt::skip]` is refused on 1.99.1 (`E0658: custom inner attributes are unstable`, measured).
   - So `src/lib.rs` is a shell already in rustfmt's form, holding `#[rustfmt::skip] mod board;` and `#[cfg(kani)] #[rustfmt::skip] mod proofs;`, and the generator alone owns those modules' bytes.
@@ -296,9 +303,9 @@ All three were measured on Furnace and in CI. CI is [run 42429539794](https://gi
 
 | Clause | Test | Furnace | `tools` (b62026b) |
 |---|---|---|---|
-| 3: misuse fails to compile, a valid driver compiles | `aethelgard-svd-hal/tests/board_ui.rs`: `pass/valid_driver` plus 9 `fail/` cases (below) | ok, 0.5 s warm | ok: all 9 then present passed under `--network none`. **R4 measured: trybuild's nested build runs offline in `tools`**, so clause 3 is accepted from `tools`, and `gates` runs it too |
+| 3: misuse fails to compile, a valid driver compiles | `aethelgard-svd-hal/tests/board_ui.rs`: `pass/valid_driver` plus 11 `fail/` cases (below) | ok, 0.5 s warm | ok: all 9 then present passed under `--network none`. **R4 measured: trybuild's nested build runs offline in `tools`**, so clause 3 is accepted from `tools`, and `gates` runs it too |
 | 4: regenerating twice is byte-identical | `aethelgard-svd-hal/tests/board.rs`: the whole committed tree equals the generator's output (missing, differing and extra files all reported); two generations equal; the negative control | ok | ok |
-| 5: Kani proves the generated block | `aethelgard-cli/tests/board_tier2.rs` (with-tools): `prove --crate boards/sentinel-01 --harness proofs::every_valid_sequence`, plus three seeded copies, run serially (3.5 GB each against the runner's 15 GiB) | board pass (≈70 s); seeds fail in 41–71 s; 250 s in all, peak RSS 3.53 GB | `ANSWER 1400-C5`: board `exit=0`, `findings: []`, 117.17 s; `seed-wrong-af` exit 1 `GpioB word 8: a solved pin's field is not what the specification fixes`, 68.08 s; `seed-no-clock` exit 1 `Spi1 accessed before RCC_APB2ENR bit 12 is set`, 118.23 s; `seed-past-block` exit 1 `register access past the end of its block`, 119.42 s. Every verdict has `landlock_abi 8`, `sockets_denied true` |
+| 5: Kani proves the generated block | `aethelgard-cli/tests/board_tier2.rs` (with-tools): `prove --crate boards/sentinel-01 --harness proofs::every_valid_sequence`, plus three seeded bugs and, since `a7f0b56`, a vacuous seed that must be `cover_unsatisfied`, run serially (3.5 GB each against the runner's 15 GiB) | board pass (≈70 s); seeds fail in 41–71 s; 250 s in all, peak RSS 3.53 GB | `ANSWER 1400-C5`: board `exit=0`, `findings: []`, 117.17 s; `seed-wrong-af` exit 1 `GpioB word 8: a solved pin's field is not what the specification fixes`, 68.08 s; `seed-no-clock` exit 1 `Spi1 accessed before RCC_APB2ENR bit 12 is set`, 118.23 s; `seed-past-block` exit 1 `register access past the end of its block`, 119.42 s. Every verdict has `landlock_abi 8`, `sockets_denied true` |
 
 **Clause 3 cases** (first diagnostic line; snapshots committed, regenerated with `TRYBUILD=overwrite` with the board, F7):
 
@@ -313,26 +320,79 @@ All three were measured on Furnace and in CI. CI is [run 42429539794](https://gi
 | `output_unconfigured`, chip select driven before it is an output | `E0599 no method named set_low … PA0<Unconfigured>` |
 | `forged_typestate`, a struct literal | `E0451 field _mode … is private` |
 | `foreign_speed`, firmware implementing the speed trait | `E0277 Turbo: i2c1_speed::sealed::Sealed` |
+| `foreign_registers`, firmware implementing `Registers` (E2) | `E0277 Fake: …sealed::Sealed is not satisfied` |
+| `raw_register_access`, firmware calling `Mmio::write` (E3) | `E0603 module sealed is private` |
 
-`bus_too_fast` was written while the ceiling was pending and joined `fail/` when 1202 merged. On `b62026b` CI ran the other eight. The final head's run, cited above, runs all nine.
+`bus_too_fast` was written while the ceiling was pending and joined `fail/` when 1202 merged. `foreign_registers` and `raw_register_access` came from the adversarial pass. On `b62026b` CI ran the first eight. The final head's run, cited above, runs all eleven.
 
 ### Adversarial pass (§5), by a fresh subagent on the frozen commit `b62026b`
 
-ADV_TABLE
+A fresh Opus subagent ran the pass in its own worktree, detached at `b62026b`, and changed nothing in it. Its scratch, every seed's log and every firmware snippet, is in `~/.cache/aet-1400-adv/` on Furnace. The lead spot-checked the s14 log and `prove` JSON (`UNREACHABLE`, `"verdict":"pass"`) and `fw/examples/a01_fake_registers.rs` before acting on the report.
+
+**Escaped at `b62026b`, all fixed in `a7f0b56`.** After each fix the lead re-ran the same seed through `aethelgard prove` (`scratchpad/seeds.py`, four in parallel in a 32 GB cgroup):
+
+| # | Attack (§5) | Severity | Fix | Re-run after the fix |
+|---|---|---|---|---|
+| E1 | `kani::assume(false)` in generated code: Kani exits 0 with `** 0 of 1 cover properties satisfied (1 unreachable)`, and `prove` said **pass**. The checker could not see vacuity (§7's class; ruled in session: fix the judge in 1400) | high | `prove`'s judge reads Kani's cover summary. On exit 0 with S < N, the verdict is a fail with finding `cover_unsatisfied` (README contract rows for exit 1 and `prove` amended). Two cover summaries are a `ToolError`. The generated harness covers every branch, nine in all: each speed, each start, each write, each output level, and the end. Tier 1: three new tests. Tier 2: a vacuous seed in `board_tier2.rs` | `e1-vacuous`: fail, `cover_unsatisfied` "** 6 of 9 … (3 unreachable)". `e1-partly-vacuous` (only Standard100k cut): fail, "** 7 of 9 … (2 unreachable)" |
+| E2 | Firmware implements `Registers` on a stand-in, so the typestates advance while the real part stays gated | high (`INV-02`) | `Registers: sealed::Sealed`, with `sealed` `pub(crate)` | trybuild `foreign_registers`: `E0277 Fake: …sealed::Sealed is not satisfied` |
+| E3 | Firmware calls `Mmio::write` directly: any register, any offset, around every typestate rule, with no further `unsafe` | high | Every `Registers` method takes a `sealed::Token` that only the board crate can make | trybuild `raw_register_access`: `E0603 module sealed is private` |
+| E4 | `Standard100k`'s `TIMINGR` replaced by another admitted mode's: proved | medium | The schedule records the chosen mode's `TIMINGR`, a generator literal and not the crate's constant, and `check_final` asserts equality | `e4-timingr-swap`: `I2c1 TIMINGR is not the chosen speed's` |
+| E5 | Extra bits set in I2C `CR1`, or SPI `CFG2` overwritten: proved | medium | Frame checks: `CR1` beyond its enable bit, `CFG2` beyond `MASTER` | `e5-i2c-cr1-extra`: `I2c1 CR1 changed beyond its enable bit`. `e5-spi-cfg2-overwrite`: `Spi1 CFG2 changed beyond MASTER` |
+| E6 | BSRR unconstrained: `set_high` drove low, the chip select started low, SPI `write_byte` toggled CS: all proved | medium | Every BSRR write may touch only a solved output's set or reset bit. `set_low` and `set_high` are checked against BSRR. An output may enter output mode only once its level is high. `write_byte` must leave every BSRR word unchanged | `e6-set-high-drives-low`: `PA0 set_high did not set it`. `e6-starts-low`: `PA0 entered its mode before its other fields were final`. `e6-spi-write-toggles-cs`: `SPI1 write_byte touched a GPIO BSRR` |
+| E7 | Only the final image was checked: a transient output glitch, and MODER set before AFR, both proved | low–medium | Every MODER write: a solved pin may move only to its final mode, only once OTYPER, OSPEEDR, PUPDR and AFR (or BSRR) are final. Unsolved pins' MODER fields never move | `e7-output-glitch`: `PA5's mode moved to one its role never takes`. `e7-moder-before-afr`: `PA5 entered its mode before its other fields were final` |
+| E8 | A second board (`boards/evil`, with a `build.rs` and a safe `Mmio::forged`), and the root's board path redirected to it: the shape checks and clause 4 stayed green, while clause 3 judged the wrong crate | medium | `boards_are_excluded_and_dependency_free` now pins `workspace.dependencies.sentinel-01-board.path` to `boards/sentinel-01`, refuses `build.rs`, `package.build` and `package.links` in any board, and requires the boards present to be exactly `["sentinel-01"]`, the ones clause 4 regenerates. `.gitignore` gains `/boards/*/target/` | Faults injected one at a time: `build.rs`, `package.build`, a redirected path and a second board are each caught |
+
+With every fix in, the unmodified board passes `prove` in 123.7 s, four in parallel.
+
+**Caught at `b62026b`, no change needed:**
+- `Default`, `Clone`, struct literals and a second `Rcc`: E0277, E0599, E0451.
+- Clocking a port twice, use after move, reconfiguring a pin: E0382, E0599.
+- Pins from the wrong peripheral: E0308.
+- `Mmio::new` without `unsafe`: E0133.
+- In the oracle: a clobbered field of another pin, a wrong OTYPER, OSPEEDR or PUPDR, an extra RCC bit, the wrong peripheral's register, SPI not master, `TIMINGR` written while enabled.
+- A loop longer than the unwind: `unwinding assertion loop 0`. Unwinding assertions are on, and `prove` passes no flag that turns them off.
+- The schedule's `assume`s mirror the type preconditions exactly. Every surviving path is a full permutation.
+
+**Determinism:** the agent found none of `HashMap`, an environment read, a clock, a path or a float in `generate`. `cargo fmt --all`, `clippy` and `test` write nothing into `boards/` (measured by snapshot).
+
+**What the proof cannot catch, by design** (the agent's s17 and s18): a register fact wrong in *both* emitters, such as `TIMINGR` at 0x14 or `I2C1EN` at bit 22. Both emitters read the same `Facts`, so the proof checks the crate against the generator's facts and policy, not against silicon.
+
+Those facts are guarded by the header hash, by the in-file `Address offset:` cross-check, and by the pinned-offset tests. The spike checked those against RM0433 and `stm32-metapac`. The SPI offsets and bits the agent found unpinned are now pinned too: `CR1` 0x00, `CFG2` 0x0C, `TXDR` 0x20, size 0x54, `APB2ENR` 0xF0, `BSRR` 0x18, `PE`/`SPE` bit 0, `MASTER` bit 22.
+
+**Latent, left unfixed (low: the header is hash-pinned and contains none of these shapes, which the agent measured):** the parser would accept, with a value C does not give:
+- a `#define` inside `#if 0` or inside a multi-line comment;
+- an octal-looking literal;
+- text after a comment on a `#define` line;
+- two fields on one line;
+- a field inside a comment.
+
+The agent's fix list goes with any future re-vendoring: strip block comments across lines, and refuse any `#if` other than the include guard and `__cplusplus`, any octal, and two fields on one line.
 
 ### Reduction pass (§5a) and mutants
 
-Reduction pass (diff): −7 net · 1 duplicate removed (the `I2C`/`SPI` prefixes, now derived from `Kind::header`) · 1 dead path removed (`PinUsedTwice`, unreachable behind `SolvedTopology::validate`'s `DuplicatePin`) · 2 protected kept (`CeilingTooLow` behind `validate`, and the oracle's restated mask arithmetic, both labelled `belt-and-suspenders`) · 0 findings below.
+Reduction pass (diff), over the build diff and again over the adversarial fixes: −7 net in the first pass and +5 net in the second (a helper replacing five copies) · 2 duplicates removed:
+- the `I2C`/`SPI` prefixes, now derived from `Kind::header`;
+- five inline copies of the oracle's field-mask arithmetic, now `oracle_mask`. The emitted bytes are unchanged, which the regeneration test confirms.
 
-Mutants, one per guard this work order adds (`scratchpad/mutants.py`, with each file restored). 13 of 13 are killed by their own suite:
+1 dead path removed: `PinUsedTwice`, unreachable behind `SolvedTopology::validate`'s `DuplicatePin`. 2 protected kept, both labelled `belt-and-suspenders`: `CeilingTooLow` behind `validate`, and the oracle restating `emit_lib`'s mask arithmetic, which `INV-07` requires. 0 findings below.
+
+Mutants, one per guard this work order adds (`scratchpad/mutants.py`, with each file restored), re-run on the final code. 14 of 14 are killed by their own suite:
 - the header hash check, the offset-comment cross-check, the `uint32_t`-only field check and the clock-gate uniqueness check (`--lib cmsis`);
 - the AF cross-check, the reserved-pin refusal, `validate`, the ceiling count and the ceiling filter (`--lib board`);
 - the regeneration compare, by bytes and by extra files (`--test board`);
-- the two new shape checks (`--test workspace_shape`). Each catches its fault unmutated: an extra `exclude` entry, and a `[dependencies]`, a `[target.*.dependencies]` or a `[build-dependencies]` table in the board. Each lets its fault through when mutated.
+- `prove`'s cover guard (`--test tools_tier1 prove`);
+- the two new shape checks (`--test workspace_shape`). Each catches its fault unmutated, and lets it through when mutated. The faults: an extra `exclude` entry; a `[dependencies]`, `[target.*.dependencies]` or `[build-dependencies]` table in the board; and, after E8, a `build.rs`, `package.build`, a redirected path and a second board.
+
+The generated harness's own checks are mutated by the 11 seeds above. The original three are in tier 2, plus the vacuous seed.
 
 ### Gates (build)
 
-GATES_BUILD
+Furnace, on the final merged tree (`cd88b67`, `origin/main` `6525506` merged):
+- `cargo fmt --all -- --check` ok;
+- `cargo clippy --workspace --all-targets --locked -- -D warnings` ok, and with `--features aethelgard-cli/with-tools`;
+- `cargo test --workspace --locked` ok: 396 passed, 0 failed, across 32 test targets, in 21.8 s, with inherited descriptors above 2 closed as `ci.yml` does.
+
+The generated board passes `clippy --all-targets -D warnings` by its own manifest, and builds for `thumbv7em-none-eabihf` in the isolated toolchain. Tier 2 is accepted from CI (below).
 
 ### Promote-or-needs-none pass over `AET-WO-1200`'s FEEDBACK (now on the base)
 
