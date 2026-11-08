@@ -298,6 +298,24 @@ These were measured with `kicad-cli` 10.0.7 and the image's libraries, in four `
   - **A jump into a hole,** which hung the call while Renode grew at about 55 MB/s. Closed by B1, the bounds in `RUL-13`.
 - **The residual (B2).** The boot word witnesses that the solved configuration happened and that the core kept executing in the firmware's own code. It does not witness that `main` returned.
 
+### 2.16 Read at source for `OQ-02` (2026-11-08, the architect's desk spike)
+
+Nothing was run. The pins are Renode `v1.17.0` (`ab721d88`, infrastructure `066a7f13`) and ngspice `ngspice-44.2` (`80d22fc8`). Every claim is cited in `docs/work-orders/AET-WO-2101.desk.md`.
+- **ngspice steps on the caller's thread.**
+  - `ngSpice_Init_Sync` takes three callbacks:
+    - `GetVSRCData` supplies a `V… external` source's value;
+    - `GetISRCData` does the same for a current source;
+    - `GetSyncData` fires on each accepted or rejected step. It can rewrite the next delta, or redo the step by returning 1.
+  - A plain `run` blocks the caller, and the callbacks fire on that same thread.
+  - Debian's 44.2 is built `--with-ngshared`.
+  - The manual's 5-parameter `GetSyncData` is stale; the header's has 7. So the lead in §8 holds, through inversion of control. The FFI still needs `unsafe`.
+- **Renode offers no external I2C hook.** External Control (TCP, a C client) carries ADC, GPIO, SPI, CAN and bus access. Co-simulation (TCP, or an in-process native library) is bus-mapped. Neither carries I2C, and the sandbox refuses sockets anyway.
+- **What does exist inside Renode:**
+  - `Mocks.DummyI2CSlave`, with Python handlers on `ReadRequested`, `DataReceived` and `TransmissionFinished`. Upstream uses this pattern in a test.
+  - C# compiled by Roslyn when it is `include`d.
+  - A stock `BME280` I2C model. TMP117 and TMP102 have none, and TMP108 is a stub.
+- **`STM32F7_I2C` never signals NACK.** An absent device leaves the transfer incomplete. A short read completes early. An empty receive queue reads 0. So a bus fault reaches the firmware only as a timeout, a short transfer or wrong data. The trace must record the measured rise time separately from what the firmware saw (§8).
+
 ## 3. Shape — one representation, two projections, one loop
 
 ```
@@ -504,6 +522,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-11-08 | §3, §4 | The twin's row: it emits the `.repl` from a `SolvedTopology` and `aethelgard-svd-hal`'s register facts, and never reads a `Specification`. `RUL-11` amended: KiCad's files move into their own `CC-BY-SA-4.0` crate | The `AET-WO-2100` spike was ruled on PR #56 (R6). Scotty set the licensing intent on 2026-11-08 |
 | 2026-11-08 | §2.14, §4 | Added §2.14, the `AET-WO-1302` measurements; P1 gate clause 1 holds. `RUL-03`: the gate judges copper by geometry, never by a net label, so consumers derive nets from copper | PR #60, A2 and A3 |
 | 2026-11-08 | §2.15, §4 | Added §2.15, the `AET-WO-2100` measurements. `RUL-13` amended for `simulate --firmware`: a 30 s wall bound and a 1 GiB resident cap on Renode, both measured. `RUL-11`'s split is done | PRs #56 and #62 |
+| 2026-11-08 | §2.16 | Added §2.16, the `OQ-02` desk spike read at source: ngspice's synchronous interface, Renode's I2C extension points, and the controller's fault surface | `AET-WO-2101`'s precondition (§8 leads) |
 
 New sections continue the sequence and never reuse a number.
 
