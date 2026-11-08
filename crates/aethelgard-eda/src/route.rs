@@ -189,15 +189,6 @@ pub struct Unroutable {
 
 // ---- geometry ----
 
-fn point(x: i64, y: i64) -> Rect {
-    Rect {
-        x0: x,
-        y0: y,
-        x1: x,
-        y1: y,
-    }
-}
-
 fn span(a: (i64, i64), b: (i64, i64)) -> Rect {
     Rect {
         x0: a.0.min(b.0),
@@ -230,7 +221,7 @@ impl Shape {
     }
     /// True when `p` is in the shape, edge included.
     fn holds(self, p: (i64, i64)) -> bool {
-        gap2(self.rect, point(p.0, p.1)) <= self.r * self.r
+        gap2(self.rect, Rect::point(p.0, p.1)) <= self.r * self.r
     }
 }
 
@@ -238,13 +229,7 @@ impl Pad {
     /// The box in which every point is inside the pad's copper, whatever its
     /// rounding: a track that ends here is joined to the pad.
     fn inner(&self) -> Rect {
-        let c = self.corner_nm;
-        Rect {
-            x0: self.rect.x0 + c,
-            y0: self.rect.y0 + c,
-            x1: self.rect.x1 - c,
-            y1: self.rect.y1 - c,
-        }
+        self.rect.grow(-self.corner_nm)
     }
 }
 
@@ -300,6 +285,14 @@ impl Grid {
         Grid::range(self.y0, self.ny, r.y0, r.y1)
             .flat_map(move |iy| xs.clone().map(move |ix| iy * self.nx + ix))
     }
+    /// The columns and rows `nodes` span: (first column, last, first row,
+    /// last).
+    fn span(&self, nodes: &[usize]) -> Option<(usize, usize, usize, usize)> {
+        let xs = nodes.iter().map(|&e| e % self.nx);
+        let ys = nodes.iter().map(|&e| e / self.nx);
+        Some((xs.clone().min()?, xs.max()?, ys.clone().min()?, ys.max()?))
+    }
+
     /// The neighbour of `n` in direction `d`: +x, -x, +y, -y.
     fn step(&self, n: usize, d: usize) -> Option<usize> {
         let (ix, iy) = (n % self.nx, n / self.nx);
@@ -316,9 +309,9 @@ impl Grid {
 /// Which nets may put copper at each node: free, one net, or none.
 fn claim(map: &mut [u32], grid: &Grid, shape: Shape, reach: i64, owner: u32) {
     let r = shape.r + reach;
-    for n in grid.nodes(shape.rect.grow_by(r)) {
+    for n in grid.nodes(shape.rect.grow(r)) {
         let (x, y) = grid.at(n);
-        if gap2(shape.rect, point(x, y)) < r * r {
+        if gap2(shape.rect, Rect::point(x, y)) < r * r {
             map[n] = match map[n] {
                 FREE => owner,
                 cur if cur == owner => cur,
@@ -328,24 +321,11 @@ fn claim(map: &mut [u32], grid: &Grid, shape: Shape, reach: i64, owner: u32) {
     }
 }
 
-trait Grow {
-    fn grow_by(self, d: i64) -> Rect;
-}
-impl Grow for Rect {
-    fn grow_by(self, d: i64) -> Rect {
-        Rect {
-            x0: self.x0 - d,
-            y0: self.y0 - d,
-            x1: self.x1 + d,
-            y1: self.y1 + d,
-        }
-    }
-}
-
 const TRACK_REACH: i64 = CLEARANCE_NM + WIDTH_NM / 2 + EPS_NM;
 const VIA_REACH: i64 = CLEARANCE_NM + VIA_NM / 2 + EPS_NM;
 /// Hole to hole, centre to centre, with the margin.
-const HOLE_REACH: i64 = DRILL_NM + HOLE_GAP_NM + EPS_NM;
+const HOLE_PITCH: i64 = DRILL_NM + HOLE_GAP_NM;
+const HOLE_REACH: i64 = HOLE_PITCH + EPS_NM;
 
 /// A pad of a net, by part and pad index.
 type PadRef = (usize, usize);
@@ -412,7 +392,7 @@ impl<'a> Router<'a> {
         let o = board.outline;
         for node in 0..n {
             let (x, y) = grid.at(node);
-            let edge = (x - o.x0).min(o.x1 - x).min(y - o.y0).min(o.y1 - y);
+            let edge = to_edge(o, (x, y));
             if edge < EDGE_NM + WIDTH_NM / 2 + EPS_NM {
                 track[0][node] = BLOCKED;
                 track[1][node] = BLOCKED;
@@ -436,21 +416,16 @@ impl<'a> Router<'a> {
                 claim(&mut via, &grid, shape, VIA_REACH, who);
             }
             // The pad field: on F.Cu, only inside a pad; no via near it.
-            let Some(field) = part
-                .pads
-                .iter()
-                .map(|p| p.rect)
-                .reduce(|a, b| a.union_of(b))
-            else {
+            let Some(field) = part.pads.iter().map(|p| p.rect).reduce(|a, b| a.union(b)) else {
                 continue;
             };
             for node in grid.nodes(field) {
                 let (x, y) = grid.at(node);
-                if !part.pads.iter().any(|p| p.rect.contains(point(x, y))) {
+                if !part.pads.iter().any(|p| p.rect.contains(Rect::point(x, y))) {
                     track[0][node] = BLOCKED;
                 }
             }
-            for node in grid.nodes(field.grow_by(VIA_NM / 2 + CLEARANCE_NM)) {
+            for node in grid.nodes(field.grow(VIA_NM / 2 + CLEARANCE_NM)) {
                 via[node] = BLOCKED;
             }
             for pad in &part.pads {
@@ -515,25 +490,22 @@ impl<'a> Router<'a> {
         }
     }
 
-    /// The net is being routed: its own corridors cost it nothing.
-    fn release(&mut self, net: usize) {
-        if !std::mem::replace(&mut self.released[net], true) {
-            for &(node, cost) in &self.corridors[net] {
-                self.pending[node] -= cost;
-            }
-            for &(node, cost) in &self.via_corridors[net] {
-                self.pending_via[node] -= cost;
-            }
+    /// Withdraws (`true`: the net is being routed, so its own corridors cost
+    /// it nothing) or restores (`false`: taken up) the net's corridors.
+    fn release(&mut self, net: usize, on: bool) {
+        if std::mem::replace(&mut self.released[net], on) == on {
+            return;
         }
-    }
-
-    fn unrelease(&mut self, net: usize) {
-        if std::mem::replace(&mut self.released[net], false) {
-            for &(node, cost) in &self.corridors[net] {
-                self.pending[node] += cost;
-            }
-            for &(node, cost) in &self.via_corridors[net] {
-                self.pending_via[node] += cost;
+        for (list, map) in [
+            (&self.corridors[net], &mut self.pending),
+            (&self.via_corridors[net], &mut self.pending_via),
+        ] {
+            for &(node, cost) in list {
+                map[node] = if on {
+                    map[node] - cost
+                } else {
+                    map[node] + cost
+                };
             }
         }
     }
@@ -558,11 +530,9 @@ impl<'a> Router<'a> {
                 continue;
             }
             let (x, y) = self.grid.at(a);
-            if let Some(&(j, _)) = laid
-                .iter()
-                .rev()
-                .find(|&&(_, (px, py))| gap2(point(px, py), point(x, y)) < HOLE_REACH * HOLE_REACH)
-            {
+            if let Some(&(j, _)) = laid.iter().rev().find(|&&(_, (px, py))| {
+                gap2(Rect::point(px, py), Rect::point(x, y)) < HOLE_REACH * HOLE_REACH
+            }) {
                 return Some((j, i + 1));
             }
             laid.push((i, (x, y)));
@@ -731,11 +701,7 @@ impl<'a> Router<'a> {
     fn window(&self, ends: &[usize], margin: Option<usize>) -> (usize, usize, usize, usize) {
         let all = (0, 0, self.grid.nx - 1, self.grid.ny - 1);
         let Some(m) = margin else { return all };
-        let xs = ends.iter().map(|&e| e % self.grid.nx);
-        let ys = ends.iter().map(|&e| e / self.grid.nx);
-        let (Some(x0), Some(x1), Some(y0), Some(y1)) =
-            (xs.clone().min(), xs.max(), ys.clone().min(), ys.max())
-        else {
+        let Some((x0, x1, y0, y1)) = self.grid.span(ends) else {
             return all;
         };
         (
@@ -816,41 +782,53 @@ impl<'a> Router<'a> {
                 }
                 (a, VIA_REACH, [true, true])
             };
-            let (x, y) = self.grid.at(at);
-            let here = point(x, y);
             // Every node where a blocker's track would stand in the way
             // costs more from now on: the contested node's shadow.
+            let hole = if la != lb { HOLE_REACH } else { 0 };
+            let (x, y) = self.grid.at(at);
             let shadow = reach + WIDTH_NM / 2;
-            for m in self.grid.nodes(here.grow_by(shadow)) {
-                let (mx, my) = self.grid.at(m);
-                if gap2(here, point(mx, my)) < shadow * shadow {
-                    for l in (0..2).filter(|&l| layers[l]) {
-                        self.history[l][m] += HISTORY_COST;
-                    }
+            out.extend(self.contest(Rect::point(x, y), shadow, reach, layers, net, hole));
+        }
+        out
+    }
+
+    /// Raises the history of every node within `shadow` of `here` on
+    /// `layers`, and names the nets but `skip` whose copper on those layers
+    /// is within `reach` of it, or whose via hole is within `hole`.
+    fn contest(
+        &mut self,
+        here: Rect,
+        shadow: i64,
+        reach: i64,
+        layers: [bool; 2],
+        skip: usize,
+        hole: i64,
+    ) -> BTreeSet<usize> {
+        for m in self.grid.nodes(here.grow(shadow)) {
+            let (mx, my) = self.grid.at(m);
+            if gap2(here, Rect::point(mx, my)) < shadow * shadow {
+                for l in (0..2).filter(|&l| layers[l]) {
+                    self.history[l][m] += HISTORY_COST;
                 }
             }
-            for (other, e) in self.edges.iter().enumerate() {
-                if other == net {
-                    continue;
-                }
-                let near = (0..2).filter(|&l| layers[l]).any(|l| {
-                    e[l].iter().any(|&(p, q)| {
-                        let r = reach + WIDTH_NM / 2;
-                        gap2(span(self.grid.at(p), self.grid.at(q)), here) < r * r
-                    })
-                });
-                if near {
-                    out.insert(other);
-                }
+        }
+        let mut out = BTreeSet::new();
+        for (other, e) in self.edges.iter().enumerate() {
+            let r = reach + WIDTH_NM / 2;
+            let near = (0..2).filter(|&l| layers[l]).any(|l| {
+                e[l].iter()
+                    .any(|&(p, q)| gap2(span(self.grid.at(p), self.grid.at(q)), here) < r * r)
+            });
+            if other != skip && near {
+                out.insert(other);
             }
-            for (&v, &other) in &self.vias {
-                let (vx, vy) = self.grid.at(v);
-                let d2 = gap2(point(vx, vy), here);
-                let copper = reach + VIA_NM / 2;
-                let hole = if la != lb { HOLE_REACH } else { 0 };
-                if other != net && (d2 < copper * copper || d2 < hole * hole) {
-                    out.insert(other);
-                }
+        }
+        for (&v, &other) in &self.vias {
+            let (vx, vy) = self.grid.at(v);
+            let d2 = gap2(Rect::point(vx, vy), here);
+            let copper = reach + VIA_NM / 2;
+            if other != skip && (d2 < copper * copper || d2 < hole * hole) {
+                out.insert(other);
             }
         }
         out
@@ -892,7 +870,7 @@ impl<'a> Router<'a> {
     fn claim_via(&mut self, net: usize, node: usize) {
         let (x, y) = self.grid.at(node);
         let shape = Shape {
-            rect: point(x, y),
+            rect: Rect::point(x, y),
             r: VIA_NM / 2,
         };
         let who = owner(net);
@@ -901,7 +879,7 @@ impl<'a> Router<'a> {
         }
         claim(&mut self.via, &self.grid, shape, VIA_REACH, who);
         let centre = Shape {
-            rect: point(x, y),
+            rect: Rect::point(x, y),
             r: 0,
         };
         claim(&mut self.via, &self.grid, centre, HOLE_REACH, BLOCKED);
@@ -911,7 +889,7 @@ impl<'a> Router<'a> {
     fn rip(&mut self, net: usize) {
         self.edges[net] = Default::default();
         self.vias.retain(|_, n| *n != net);
-        self.unrelease(net);
+        self.release(net, false);
         self.track = self.hard_track.clone();
         self.via = self.hard_via.clone();
         for other in 0..self.edges.len() {
@@ -956,10 +934,7 @@ impl<'a> Router<'a> {
             // The pad nearest the tree, then the first in order.
             let nx = self.grid.nx as i64;
             let near = |pad: &Pad| {
-                let (cx, cy) = (
-                    pad.rect.x0 + (pad.rect.x1 - pad.rect.x0) / 2,
-                    pad.rect.y0 + (pad.rect.y1 - pad.rect.y0) / 2,
-                );
+                let (cx, cy) = pad.rect.centre();
                 tree.iter()
                     .map(|&(_, n)| {
                         let (x, y) = self.grid.at(n);
@@ -983,14 +958,8 @@ impl<'a> Router<'a> {
                 )));
             }
             let set: BTreeSet<usize> = ends.iter().copied().collect();
-            let col = |e: &usize| (e % self.grid.nx) as i64;
-            let row = |e: &usize| (e / self.grid.nx) as i64;
-            let bx = (
-                ends.iter().map(col).min().unwrap_or(0),
-                ends.iter().map(col).max().unwrap_or(0),
-                ends.iter().map(row).min().unwrap_or(0),
-                ends.iter().map(row).max().unwrap_or(0),
-            );
+            let bx = self.grid.span(&ends).unwrap_or_default();
+            let bx = (bx.0 as i64, bx.1 as i64, bx.2 as i64, bx.3 as i64);
             let h = move |node: usize| {
                 let (x, y) = ((node as i64) % nx, (node as i64) / nx);
                 let dx = (bx.0 - x).max(x - bx.1).max(0);
@@ -1024,14 +993,7 @@ impl<'a> Router<'a> {
         let core = self.zone_core(net);
         let all: Vec<usize> = (0..core.len()).collect();
         let labels = components(&self.grid, &core, &all);
-        let mut size: BTreeMap<usize, usize> = BTreeMap::new();
-        for l in labels.iter().flatten() {
-            *size.entry(*l).or_default() += 1;
-        }
-        let main = size
-            .iter()
-            .max_by_key(|&(l, c)| (*c, Reverse(*l)))
-            .map(|(l, _)| *l);
+        let main = main_label(&labels);
         let zone: Vec<bool> = labels.iter().map(|l| l.is_some() && *l == main).collect();
         let mut joined: BTreeSet<usize> = BTreeSet::new();
         for &p in pads {
@@ -1073,14 +1035,7 @@ impl<'a> Router<'a> {
         let core = self.zone_core(ground);
         let labels = components(&self.grid, &core, &seeds);
         // The piece holding the most ground vias, then the first, is the zone.
-        let mut count: BTreeMap<usize, usize> = BTreeMap::new();
-        for l in labels.iter().flatten() {
-            *count.entry(*l).or_default() += 1;
-        }
-        let main = count
-            .iter()
-            .max_by_key(|&(l, c)| (*c, Reverse(*l)))
-            .map(|(l, _)| *l);
+        let main = main_label(&labels);
         if labels.iter().all(|l| l.is_some() && *l == main) {
             return None;
         }
@@ -1108,34 +1063,12 @@ impl<'a> Router<'a> {
             }
         }
         let reach = CLEARANCE_NM + MIN_THICKNESS_NM / 2 + EPS_NM + PITCH_NM;
-        let mut out = BTreeSet::new();
         let shadow = CLEARANCE_NM + MIN_THICKNESS_NM / 2 + WIDTH_NM / 2;
+        let mut out = BTreeSet::new();
         for &n in &fence {
             let (x, y) = self.grid.at(n);
-            let here = point(x, y);
-            for m in self.grid.nodes(here.grow_by(shadow)) {
-                let (mx, my) = self.grid.at(m);
-                if gap2(here, point(mx, my)) < shadow * shadow {
-                    self.history[1][m] += HISTORY_COST;
-                }
-            }
-            for (other, e) in self.edges.iter().enumerate() {
-                let r = reach + WIDTH_NM / 2;
-                if other != ground
-                    && e[1]
-                        .iter()
-                        .any(|&(p, q)| gap2(span(self.grid.at(p), self.grid.at(q)), here) < r * r)
-                {
-                    out.insert(other);
-                }
-            }
-            for (&v, &other) in &self.vias {
-                let (vx, vy) = self.grid.at(v);
-                let r = reach + VIA_NM / 2;
-                if other != ground && gap2(point(vx, vy), here) < r * r {
-                    out.insert(other);
-                }
-            }
+            let here = Rect::point(x, y);
+            out.extend(self.contest(here, shadow, reach, [false, true], ground, 0));
         }
         Some(out)
     }
@@ -1163,7 +1096,7 @@ impl<'a> Router<'a> {
                 .map(|(&n, _)| {
                     let (x, y) = self.grid.at(n);
                     Shape {
-                        rect: point(x, y),
+                        rect: Rect::point(x, y),
                         r: VIA_NM / 2,
                     }
                 }),
@@ -1203,7 +1136,7 @@ impl<'a> Router<'a> {
                     h + v != 2
                         || (h > 0 && v > 0)
                         || self.vias.contains_key(&n)
-                        || pads.iter().any(|r| r.contains(point(x, y)))
+                        || pads.iter().any(|r| r.contains(Rect::point(x, y)))
                 };
                 for &(a, b) in edges {
                     let stride = b - a;
@@ -1246,9 +1179,9 @@ fn corridor(grid: &Grid, field: Rect, pad: &Pad, half: i64, beyond: i64) -> Vec<
     if sides.iter().filter(|s| **s).count() != 1 {
         return Vec::new();
     }
-    let (cx, cy) = (r.x0 + (r.x1 - r.x0) / 2, r.y0 + (r.y1 - r.y0) / 2);
+    let (cx, cy) = r.centre();
     let reach = CORRIDOR_DEPTH * PITCH_NM + beyond;
-    let (h, w) = (half - 1, half - 1);
+    let h = half - 1;
     let (area, from) = match sides {
         [true, ..] => (
             Rect {
@@ -1270,18 +1203,18 @@ fn corridor(grid: &Grid, field: Rect, pad: &Pad, half: i64, beyond: i64) -> Vec<
         ),
         [_, _, true, _] => (
             Rect {
-                x0: cx - w,
+                x0: cx - h,
                 y0: field.y0 - reach,
-                x1: cx + w,
+                x1: cx + h,
                 y1: field.y0 - 1,
             },
             2,
         ),
         _ => (
             Rect {
-                x0: cx - w,
+                x0: cx - h,
                 y0: field.y1 + 1,
-                x1: cx + w,
+                x1: cx + h,
                 y1: field.y1 + reach,
             },
             3,
@@ -1302,6 +1235,11 @@ fn corridor(grid: &Grid, field: Rect, pad: &Pad, half: i64, beyond: i64) -> Vec<
         .collect()
 }
 
+/// How far a point inside `o` is from its nearest side.
+fn to_edge(o: Rect, (x, y): (i64, i64)) -> i64 {
+    (x - o.x0).min(o.x1 - x).min(y - o.y0).min(o.y1 - y)
+}
+
 /// See [`Router::zone_core`].
 fn zone_core(
     grid: &Grid,
@@ -1313,24 +1251,33 @@ fn zone_core(
     let mut core = vec![true; grid.len()];
     for (n, c) in core.iter_mut().enumerate() {
         let (x, y) = grid.at(n);
-        let edge = (x - outline.x0)
-            .min(outline.x1 - x)
-            .min(y - outline.y0)
-            .min(outline.y1 - y);
+        let edge = to_edge(outline, (x, y));
         if edge < EDGE_NM + MIN_THICKNESS_NM / 2 + EPS_NM {
             *c = false;
         }
     }
     for shape in tracks.chain(vias) {
         let r = shape.r + reach;
-        for n in grid.nodes(shape.rect.grow_by(r)) {
+        for n in grid.nodes(shape.rect.grow(r)) {
             let (x, y) = grid.at(n);
-            if gap2(shape.rect, point(x, y)) < r * r {
+            if gap2(shape.rect, Rect::point(x, y)) < r * r {
                 core[n] = false;
             }
         }
     }
     core
+}
+
+/// The label most often given, the lowest on a tie.
+fn main_label(labels: &[Option<usize>]) -> Option<usize> {
+    let mut count: BTreeMap<usize, usize> = BTreeMap::new();
+    for l in labels.iter().flatten() {
+        *count.entry(*l).or_default() += 1;
+    }
+    count
+        .iter()
+        .max_by_key(|&(l, c)| (*c, Reverse(*l)))
+        .map(|(l, _)| *l)
 }
 
 /// The connected parts of `core` holding each of `seeds`: a label per seed,
@@ -1363,20 +1310,6 @@ fn components(grid: &Grid, core: &[bool], seeds: &[usize]) -> Vec<Option<usize>>
         out.push(Some(label[s]));
     }
     out
-}
-
-trait Union {
-    fn union_of(self, o: Rect) -> Rect;
-}
-impl Union for Rect {
-    fn union_of(self, o: Rect) -> Rect {
-        Rect {
-            x0: self.x0.min(o.x0),
-            y0: self.y0.min(o.y0),
-            x1: self.x1.max(o.x1),
-            y1: self.y1.max(o.y1),
-        }
-    }
 }
 
 /// Each routed net's pads, in order: by reference, then pad number.
@@ -1434,7 +1367,7 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
     let mut ripups = 0;
     let zones = loop {
         while let Some(net) = queue.pop_front() {
-            r.release(net);
+            r.release(net, true);
             loop {
                 let p = &pads[&nets[net]];
                 let result = if Some(net) == ground {
@@ -1458,7 +1391,7 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
                 // Take the net and its blockers up; route the net again now,
                 // then the blockers, in their order.
                 r.rip(net);
-                r.release(net);
+                r.release(net, true);
                 queue.retain(|q| !by.contains(q));
                 for &b in by.iter().rev() {
                     r.rip(b);
@@ -1557,7 +1490,7 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
             what: format!("via {:?}", v.at),
             net: Some(&v.net),
             shape: Shape {
-                rect: point(v.at.0, v.at.1),
+                rect: Rect::point(v.at.0, v.at.1),
                 r: VIA_NM / 2,
             },
             layers: [true, true],
@@ -1585,17 +1518,12 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
         }
     }
     let o = board.outline;
-    let inner = Rect {
-        x0: o.x0 + EDGE_NM,
-        y0: o.y0 + EDGE_NM,
-        x1: o.x1 - EDGE_NM,
-        y1: o.y1 - EDGE_NM,
-    };
+    let inner = o.grow(-EDGE_NM);
     for item in all
         .iter()
         .filter(|i| i.what.starts_with("track") || i.what.starts_with("via"))
     {
-        if !inner.contains(item.shape.rect.grow_by(item.shape.r)) {
+        if !inner.contains(item.shape.rect.grow(item.shape.r)) {
             return Err(format!("{} is within {EDGE_NM} nm of the edge", item.what));
         }
     }
@@ -1609,8 +1537,8 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
     }
     for (i, a) in routed.vias.iter().enumerate() {
         for b in &routed.vias[i + 1..] {
-            let need = DRILL_NM + HOLE_GAP_NM;
-            if gap2(point(a.at.0, a.at.1), point(b.at.0, b.at.1)) < need * need {
+            let need = HOLE_PITCH;
+            if gap2(Rect::point(a.at.0, a.at.1), Rect::point(b.at.0, b.at.1)) < need * need {
                 return Err(format!("vias {:?} and {:?} are too close", a.at, b.at));
             }
         }
@@ -1647,7 +1575,11 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
             let joined = if j < first_seg {
                 // A pad: the track ends inside its copper.
                 let pad = &board.parts.iter().flat_map(|p| &p.pads).nth(j);
-                pad.is_some_and(|p| ends(s).iter().any(|&e| p.inner().contains(point(e.0, e.1))))
+                pad.is_some_and(|p| {
+                    ends(s)
+                        .iter()
+                        .any(|&e| p.inner().contains(Rect::point(e.0, e.1)))
+                })
             } else {
                 ends(s).iter().any(|&e| b.shape.holds(e))
                     || (j < first_via && {
@@ -1665,13 +1597,13 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
             }
         }
     }
-    let zone_layer = |net: &str| routed.zones.iter().find(|(n, _)| n == net).map(|(_, l)| *l);
+
     for (net, layer) in &routed.zones {
         if net != GROUND || *layer != Layer::B {
             return Err(format!("a zone on {net} {}", layer.name()));
         }
     }
-    if let Some(Layer::B) = zone_layer(GROUND) {
+    if !routed.zones.is_empty() {
         let core = zone_core(
             &grid,
             board.outline,
@@ -1688,7 +1620,7 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
                 .iter()
                 .filter(|v| v.net != GROUND)
                 .map(|v| Shape {
-                    rect: point(v.at.0, v.at.1),
+                    rect: Rect::point(v.at.0, v.at.1),
                     r: VIA_NM / 2,
                 }),
         );
@@ -1699,7 +1631,7 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
             .iter()
             .map(|&i| {
                 let (x, y) = routed.vias[i].at;
-                grid.nodes(point(x, y)).next().unwrap_or(usize::MAX)
+                grid.nodes(Rect::point(x, y)).next().unwrap_or(usize::MAX)
             })
             .collect();
         if seeds.contains(&usize::MAX) {
@@ -1726,7 +1658,6 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
             return Err(format!("via {:?} is not joined on both layers", v.at));
         }
     }
-    let pads = net_pads(board);
     let index: BTreeMap<PadRef, usize> = board
         .parts
         .iter()
@@ -1735,10 +1666,12 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
         .enumerate()
         .map(|(k, r)| (r, k))
         .collect();
+    // The nets the router routes: two or more pads, `unconnected-` aside.
+    let pads: BTreeMap<String, Vec<PadRef>> = net_pads(board)
+        .into_iter()
+        .filter(|(net, list)| list.len() > 1 && !net.starts_with(crate::parity::UNCONNECTED))
+        .collect();
     for (net, list) in &pads {
-        if list.len() < 2 || net.starts_with(crate::parity::UNCONNECTED) {
-            continue;
-        }
         let root = find(&mut parent, index[&list[0]]);
         for p in &list[1..] {
             if find(&mut parent, index[p]) != root {
@@ -1755,18 +1688,14 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
     }
     // Every track and via is a routed net's, joined to that net's pads:
     // no copper on a net no two pads carry, and none left floating.
-    let first_seg = all.len() - routed.segments.len() - routed.vias.len();
     for (k, item) in all.iter().enumerate().skip(first_seg) {
         let net = item.net.unwrap_or("");
-        let list = pads
-            .get(net)
-            .filter(|l| l.len() > 1 && !net.starts_with(crate::parity::UNCONNECTED))
-            .ok_or_else(|| {
-                format!(
-                    "{} is on `{net}`, which the router does not route",
-                    item.what
-                )
-            })?;
+        let list = pads.get(net).ok_or_else(|| {
+            format!(
+                "{} is on `{net}`, which the router does not route",
+                item.what
+            )
+        })?;
         if find(&mut parent, k) != find(&mut parent, index[&list[0]]) {
             return Err(format!(
                 "{} of `{net}` is joined to none of its pads",
@@ -1953,38 +1882,36 @@ mod tests {
 
     const MM: i64 = 1_000_000;
 
-    /// Two resistors whose nets cross (`AET-WO-1300` S4's case): both nets
-    /// routed, clear, and joined, one by a via pair.
-    #[test]
-    fn crossing_nets_are_routed_clear_and_joined() {
-        let r = |reference: &str, x: i64, a: &str, b: &str| Part {
+    /// An 0402-sized part at (x, 10 mm), pad 1 on `a` and pad 2 on `b`.
+    fn resistor(reference: &str, x: i64, a: &str, b: &str) -> Part {
+        let y = 10 * MM;
+        Part {
             reference: reference.into(),
             pads: vec![
                 pad(
                     "1",
                     Some(a),
-                    rect(
-                        x - 760_000,
-                        10 * MM - 320_000,
-                        x - 260_000,
-                        10 * MM + 320_000,
-                    ),
+                    rect(x - 760_000, y - 320_000, x - 260_000, y + 320_000),
                 ),
                 pad(
                     "2",
                     Some(b),
-                    rect(
-                        x + 260_000,
-                        10 * MM - 320_000,
-                        x + 760_000,
-                        10 * MM + 320_000,
-                    ),
+                    rect(x + 260_000, y - 320_000, x + 760_000, y + 320_000),
                 ),
             ],
-        };
+        }
+    }
+
+    /// Two resistors whose nets cross (`AET-WO-1300` S4's case): both nets
+    /// routed, clear, and joined, one by a via pair.
+    #[test]
+    fn crossing_nets_are_routed_clear_and_joined() {
         let board = Board {
             outline: rect(0, 0, 20 * MM, 20 * MM),
-            parts: vec![r("R1", 5 * MM, "/A", "/B"), r("R2", 15 * MM, "/B", "/A")],
+            parts: vec![
+                resistor("R1", 5 * MM, "/A", "/B"),
+                resistor("R2", 15 * MM, "/B", "/A"),
+            ],
         };
         let routed = route(&board).unwrap();
         assert!(!routed.segments.is_empty());
@@ -2061,8 +1988,8 @@ mod tests {
             ],
             ..Routed::default()
         };
-        assert!(ok(&vias(DRILL_NM + HOLE_GAP_NM)).is_ok());
-        assert!(ok(&vias(DRILL_NM + HOLE_GAP_NM - 1)).is_err());
+        assert!(ok(&vias(HOLE_PITCH)).is_ok());
+        assert!(ok(&vias(HOLE_PITCH - 1)).is_err());
         let slanted = Routed {
             segments: vec![seg("/A", Layer::F, (2 * MM, 2 * MM), (3 * MM, 3 * MM))],
             ..Routed::default()
@@ -2074,34 +2001,12 @@ mod tests {
     /// copper on one layer only, each leave the copper unjoined.
     #[test]
     fn connectivity_needs_the_zone_and_both_layers_of_a_via() {
-        let r = |reference: &str, x: i64| Part {
-            reference: reference.into(),
-            pads: vec![
-                pad(
-                    "1",
-                    Some(GROUND),
-                    rect(
-                        x - 760_000,
-                        10 * MM - 320_000,
-                        x - 260_000,
-                        10 * MM + 320_000,
-                    ),
-                ),
-                pad(
-                    "2",
-                    Some("/A"),
-                    rect(
-                        x + 260_000,
-                        10 * MM - 320_000,
-                        x + 760_000,
-                        10 * MM + 320_000,
-                    ),
-                ),
-            ],
-        };
         let board = Board {
             outline: rect(0, 0, 20 * MM, 20 * MM),
-            parts: vec![r("R1", 5 * MM), r("R2", 15 * MM)],
+            parts: vec![
+                resistor("R1", 5 * MM, GROUND, "/A"),
+                resistor("R2", 15 * MM, GROUND, "/A"),
+            ],
         };
         let routed = route(&board).unwrap();
         assert_eq!(routed.zones, vec![(GROUND.to_owned(), Layer::B)]);
@@ -2122,7 +2027,8 @@ mod tests {
         ] {
             fenced.segments.push(seg("/Z", Layer::B, a, b));
         }
-        assert!(connectivity(&board, &fenced).is_err());
+        let e = connectivity(&board, &fenced).unwrap_err();
+        assert!(e.contains("the zone does not reach"), "{e}");
         // A signal via with copper on F.Cu only.
         let mut dangling = routed.clone();
         dangling.vias.push(Via {

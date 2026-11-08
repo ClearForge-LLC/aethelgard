@@ -91,7 +91,7 @@ pub struct Rect {
 }
 
 impl Rect {
-    fn point(x: i64, y: i64) -> Rect {
+    pub(crate) fn point(x: i64, y: i64) -> Rect {
         Rect {
             x0: x,
             y0: y,
@@ -99,7 +99,7 @@ impl Rect {
             y1: y,
         }
     }
-    fn union(self, o: Rect) -> Rect {
+    pub(crate) fn union(self, o: Rect) -> Rect {
         Rect {
             x0: self.x0.min(o.x0),
             y0: self.y0.min(o.y0),
@@ -107,7 +107,7 @@ impl Rect {
             y1: self.y1.max(o.y1),
         }
     }
-    fn grow(self, d: i64) -> Rect {
+    pub(crate) fn grow(self, d: i64) -> Rect {
         Rect {
             x0: self.x0 - d,
             y0: self.y0 - d,
@@ -131,7 +131,7 @@ impl Rect {
     pub fn contains(self, o: Rect) -> bool {
         self.x0 <= o.x0 && self.y0 <= o.y0 && o.x1 <= self.x1 && o.y1 <= self.y1
     }
-    fn centre(self) -> (i64, i64) {
+    pub(crate) fn centre(self) -> (i64, i64) {
         (
             self.x0 + (self.x1 - self.x0) / 2,
             self.y0 + (self.y1 - self.y0) / 2,

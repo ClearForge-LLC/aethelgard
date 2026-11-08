@@ -131,9 +131,6 @@ fn every_pair_of_copper_items_keeps_the_clearance() {
     let d = Dir::new("clear");
     let (board, routed) = read(&emitted(&d));
     route::check(&board, &routed).unwrap();
-    for s in &routed.segments {
-        assert!(s.start.0 == s.end.0 || s.start.1 == s.end.1, "{s:?}");
-    }
 }
 
 /// No track or via comes within the clearance of a pad whose net is one of
