@@ -36,10 +36,12 @@ The register image `Image { rcc: [u32; 256], gpiob: [u32; 10], i2c1: [u32; 11] }
 - a GPIOB write before `GPIOBEN`, or an I2C1 write before `I2C1EN`, fails at the write (356, 361);
 - `TIMINGR` written while `PE` is set fails (366).
 
-The harness drives every sequence the typestate API admits for this topology:
-- both clock orders;
+The harness drives a chosen set of sequences, **not every interleaving the API admits**:
+- two orders: port clock then pins then the I2C clock, or the I2C clock then port clock then pins;
 - both admitted speeds;
 - 0–2 bytes written, `writes <= 2` assumed (443).
+
+Interleavings it does not drive include the I2C clock between PB8 and PB9, and PB9 before PB8. The oracle's checks are insensitive to order, except clock before write, which the types force. Its doc comment ("every call sequence") overstates this. The build's generated harness chooses the interleaving nondeterministically from the specification.
 
 It then checks the final state:
 - MODER and AFRH fields for PB8/PB9;
@@ -68,7 +70,16 @@ A `kani::cover!` marks the end (481). `#[kani::unwind(257)]` covers the 256-word
 
 The tier-2 test binary (`spike_1400_tier2`, libtest threads) runs the four in parallel in 54.09 s wall on Furnace, with peak RSS 2.3 GB for the largest process (`/usr/bin/time -f %M`). The one-at-a-time column is the earlier source, before `cargo fmt`; formatting changed no verdict.
 
-**CI, the second witness:** the `tools` job of this PR, `ANSWER 1400-S1:` lines. Run: CI_RUN.
+**CI, the second witness:** [run 42427459474](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42427459474), job `tools` (128568699413), on `df0ef5d`, inside the image pinned by `container/IMAGE`, with the four in parallel on a 4-CPU runner. Its `ANSWER 1400-S1:` lines give the same verdicts and findings as Furnace, and every one carries `"landlock_abi":8,"tcp_confined":true,"scoped":true,"sockets_denied":true`:
+
+| Board | Exit | Finding | Wall (s) |
+|---|---|---|---|
+| `good` | 0 | `[]` | 104.81 |
+| `bug_wrong_af` | 1 | `proof_failed`: `PB8/PB9 AFRH field is not AF4` | 85.18 |
+| `bug_no_clock` | 1 | `proof_failed`: `I2C1 written before RCC_APB1LENR.I2C1EN is set` | 103.42 |
+| `bug_past_block` | 1 | `proof_failed`: `register access past the end of its block` | 1.23 |
+
+`spike_1400_tier2`: `test result: ok. 4 passed` (23:58:05 to 23:59:50). `gates` passed in 1m35s and `tools` in 3m55s.
 
 **Bare `cargo kani`**, on a copy, for the raw lines (final run, `--harness proofs::<board>::every_valid_sequence --exact`):
 
@@ -97,7 +108,7 @@ The one `assume` (`writes <= 2`) bounds the byte count; no seed depends on it.
 | F1. In an edition-2024 crate, `assert!(cond, "literal")` reaches Kani's report only as "This is a placeholder message; Kani doesn't support message formatted at runtime". `prove`'s finding then names nothing. `kani::assert(cond, "literal")` reports the text | probe, first run | medium | tool behaviour | The generated harness uses `kani::assert` for every specification check, so each `proof_failed` finding names the rule | no |
 | F2. `==` on a `[u32; 256]` is a 1,024-iteration `memcmp` under CBMC, so it needs `unwind(1025)` or fails | probe, first run | low | tool behaviour | The generated harness compares register images word by word, with `unwind` sized to the largest block plus one | no |
 
-**What the proof covers, and what it does not.** It proves the typestate API's register effects over a harness-owned image, from any starting state, for every admitted sequence. It does not prove the silicon. `mmio`, at the real addresses, is never exercised; `architecture.md` §2.2 already says so. It does not prove the harness right either: the harness is the specification restated, and a wrong constant in it is a wrong proof. That is why `INV-07` puts it on the specification side.
+**What the proof covers, and what it does not.** It proves the typestate API's register effects over a harness-owned image, from any starting state, for the sequences listed above. It does not prove the silicon. `mmio`, at the real addresses, is never exercised; `architecture.md` §2.2 already says so. It does not prove the harness right either: the harness is the specification restated, and a wrong constant in it is a wrong proof. That is why `INV-07` puts it on the specification side.
 
 ### S2 Where the crate compiles
 
@@ -193,7 +204,7 @@ The speed ceiling is a **sealed** trait implemented only for speeds at or under 
 |---|---|---|---|---|---|
 | F11. The probe models what the gate names and no more. Real I2C pins also need open-drain (`OTYPER`), and the GPIO port's clock is itself a gate. The probe makes the port clock a typestate (`GpioB<Gated>` has no pins) and asserts it in the oracle. `OTYPER` is only held unchanged by the frame check | S1 | low | scope | The generator emits each pin's full configuration from the solved role (mode, AF, type, speed, pull), and the harness checks each field the specification fixes | no |
 | F12. `Board::take()` refuses a second call at run time (`Option`), not at compile time; `INV-02` cannot reach a singleton | S1 | info | design | Keep `take()`; document it as the one runtime check | no |
-| F13. In this toolchain libtest captures `io::stderr()` as well as `eprintln!`, so a passing tier-2 test hides any measurement it prints. A `/dev/stderr` handle opened as a file is not captured, which is how `ANSWER 1400-S1` reaches the log without a deliberate failure (0300b's route) | `spike_1400_tier2.rs` | info | CI technique | Reuse it in later spikes | no |
+| F13. libtest (1.99.1) captures `eprintln!`, so a passing tier-2 test hides a measurement printed that way. **Corrected after the first push:** the first version also claimed that `io::stderr()` is captured. That was not measured: those runs had fd 2 on `/dev/null` because of the builder's own shell loop. Re-measured with the loop fixed (`~/.cache/aet-1400-spike/cap-exp`), `io::stderr().write_all` and a `/dev/stderr` handle both reach the log, and only `eprintln!` is captured. The test as shipped uses the `/dev/stderr` handle, and CI shows its lines. Its doc comment repeats the wrong claim, and the file is deleted in the build | `spike_1400_tier2.rs` | info | CI technique | Write to `io::stderr()` or a `/dev/stderr` handle, never `eprintln!`, for `ANSWER` lines in a passing test | no |
 
 ## The `OQ-04` answer, for `architecture.md` §8
 
@@ -201,7 +212,7 @@ A Kani proof over a harness-owned register image, substituted for the base addre
 
 ## Gates
 
-Furnace, on the merged tree (`59a7e16`): `cargo fmt --all -- --check` ok; `cargo clippy --workspace --all-targets --locked -- -D warnings` ok, with `--features aethelgard-cli/with-tools` too; `cargo test --workspace --locked` ok, 309 passed and 0 failed across 29 test targets in 17.3 s, with inherited descriptors above 2 closed as `ci.yml` does. Both spike crates are `cargo fmt`-clean and pass `clippy --all-targets -D warnings` (`--manifest-path`). Tier 2 is accepted from CI: CI_RUN. The adversarial pass (§5) and the reduction pass (§5a) close the build half and are not run on a spike.
+Furnace, on the merged tree (`59a7e16`): `cargo fmt --all -- --check` ok; `cargo clippy --workspace --all-targets --locked -- -D warnings` ok, with `--features aethelgard-cli/with-tools` too; `cargo test --workspace --locked` ok, 309 passed and 0 failed across 29 test targets in 17.3 s, with inherited descriptors above 2 closed as `ci.yml` does. Both spike crates are `cargo fmt`-clean and pass `clippy --all-targets -D warnings` (`--manifest-path`). Tier 2 is accepted from CI: run 42427459474 on `df0ef5d`, `gates` and `tools` green. The adversarial pass (§5) and the reduction pass (§5a) close the build half and are not run on a spike.
 
 ## Promote-or-needs-none pass over `AET-WO-1200`'s FEEDBACK
 
