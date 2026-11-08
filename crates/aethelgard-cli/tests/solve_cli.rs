@@ -353,10 +353,13 @@ fn unreadable_input_is_exit_3_and_a_missing_flag_is_64() {
     assert_eq!(output.status.code(), Some(64));
 }
 
+/// An edit of the reference, the refusal kind, and its message.
+type CeilingCase = (fn(&mut Value), &'static str, &'static str);
+
 #[test]
 fn each_ceiling_refusal_is_exit_2_naming_the_bus() {
     let dir = Dir::new("ceilings");
-    let cases: [(fn(&mut Value), &str, &str); 3] = [
+    let cases: [CeilingCase; 3] = [
         (
             |d| {
                 d["net_constraints"]
