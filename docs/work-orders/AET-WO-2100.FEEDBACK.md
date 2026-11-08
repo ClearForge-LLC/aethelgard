@@ -366,7 +366,7 @@ The adversary's topology probe (`crates/aethelgard-twin/tests/adv_2100.rs`, in i
 - **Redundant, shown by mutant M11:** the 100 MIPS check. The expected instruction count is the twin's constant, so any other speed already fails the instruction witness.
 - **Protected and labelled `belt-and-suspenders:`:** the generator's and the judge's separate copies of the magic, the `MODER` values and the memory map (`INV-07`: the judge never reuses the generator's code), and the twin's only-an-SPI-is-added refusal (M15).
 
-**Mutants, one per guard this work order added, against the suite it lives in** (`mutants.py`, `~/.cache/aet-2100-spike/`): 19 run, 18 killed. Two survivors were handled:
+**Mutants, one per guard this work order added, against the suite it lives in** (`~/.cache/aet-2100-spike/build/mutants.py`, its output beside it): 19 run, 18 killed. Two survivors were handled:
 - **M11**, removed as redundant (above);
 - **M15**, which survives because every I2C and GPIO instance of the H753 header is stock; it is kept, labelled.
 
