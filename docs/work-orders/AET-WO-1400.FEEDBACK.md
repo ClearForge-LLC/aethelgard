@@ -1,11 +1,13 @@
 # AET-WO-1400 — FEEDBACK
 
-**Branch:** `wo/aet-1400-board-crate` · **Base:** `1b4fe5f` (the merge of PR #37), as the kickoff set it. `origin/main` at `7e3ce87` (AET-WO-0300d and its follow-up, #39 and #41) is merged in with a merge commit, `59a7e16`, before the first push, as the architect directed. It touches no file here. For the build, `origin/main` was merged three more times, each with a merge commit: `a87de62` (`3f3924e`, AET-WO-1200), the merge of `425347e` (AET-WO-1202), and the final one, recorded under Build. · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace (x86_64, kernel 7.0.0-38). · **Cadence:** spike, stopped and ruled on PR #42 (R1 to R4, in `~/.cache/aet-1400-ruling.md`, and the ceiling ruling: option 2, AET-WO-1202), then build. No §7 condition arose in either half:
+**Branch:** `wo/aet-1400-board-crate` · **Base:** `1b4fe5f` (the merge of PR #37), as the kickoff set it. `origin/main` at `7e3ce87` (AET-WO-0300d and its follow-up, #39 and #41) is merged in with a merge commit, `59a7e16`, before the first push, as the architect directed. It touches no file here. For the build, `origin/main` was merged three more times, each with a merge commit: `a87de62` (`3f3924e`, AET-WO-1200), the merge of `425347e` (AET-WO-1202), and the final one, recorded under Build. · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace (x86_64, kernel 7.0.0-38). · **Cadence:** spike, stopped and ruled on PR #42 (R1 to R4, in `~/.cache/aet-1400-ruling.md`, and the ceiling ruling: option 2, AET-WO-1202), then build. §7 in both halves:
 - no image change, no target added to the project, nothing under `container/` or `.github/`;
 - no `unsafe` in a workspace crate;
-- no vacuous proof, and no `assume` that excludes a seeded bug;
 - no harness taken from the crate under proof;
+- no `assume` that excludes a seeded bug;
 - no test skipped, ignored or weakened.
+
+The committed proof was never vacuous: its cover was satisfied at every head. But the adversarial pass (E1) showed that `prove` could not have told a vacuous harness from a real one. That is the §7 "vacuous proof" class. The ruling in session was to fix `prove`'s judge in 1400 rather than park, and that is done (Build, E1).
 
 Entry schema: `finding · where · severity · type · recommendation · decision-needed`.
 
@@ -299,13 +301,18 @@ In `crates/aethelgard-cli/tests/workspace_shape.rs`:
 
 ### Gate clauses
 
-All three were measured on Furnace and in CI. CI is [run 42429539794](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42429539794) on `b62026b`: `gates` 1m56s, `tools` 9m42s. CI_FINAL
+All three were measured on Furnace and in CI. The first CI run was [run 42429539794](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42429539794) on `b62026b`: `gates` 1m56s, `tools` 9m42s. **The final run, on the head with every adversarial fix, is [run 42433045643](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42433045643) on `748190a`: `gates` 1m28s, `tools` 17m44s, all green.** In its `tools` log:
+- clause 3: `valid_driver [should pass] ok` and 11 `[should fail to compile] ok`, under `--network none`;
+- clause 4: `the_committed_board_crate_is_exactly_the_generated_one`, `two_generations_are_byte_identical` and `a_hand_edited_harness_fails_the_comparison` all ok;
+- clause 5: the five `ANSWER 1400-C5` lines below.
+
+The commit after `748190a` changes this FEEDBACK only.
 
 | Clause | Test | Furnace | `tools` (b62026b) |
 |---|---|---|---|
-| 3: misuse fails to compile, a valid driver compiles | `aethelgard-svd-hal/tests/board_ui.rs`: `pass/valid_driver` plus 11 `fail/` cases (below) | ok, 0.5 s warm | ok: all 9 then present passed under `--network none`. **R4 measured: trybuild's nested build runs offline in `tools`**, so clause 3 is accepted from `tools`, and `gates` runs it too |
+| 3: misuse fails to compile, a valid driver compiles | `aethelgard-svd-hal/tests/board_ui.rs`: `pass/valid_driver` plus 11 `fail/` cases (below) | ok, 0.5 s warm | ok on `b62026b` (the 8 then present) and on `748190a` (all 11), under `--network none`. **R4 measured: trybuild's nested build runs offline in `tools`**, so clause 3 is accepted from `tools`, and `gates` runs it too |
 | 4: regenerating twice is byte-identical | `aethelgard-svd-hal/tests/board.rs`: the whole committed tree equals the generator's output (missing, differing and extra files all reported); two generations equal; the negative control | ok | ok |
-| 5: Kani proves the generated block | `aethelgard-cli/tests/board_tier2.rs` (with-tools): `prove --crate boards/sentinel-01 --harness proofs::every_valid_sequence`, plus three seeded bugs and, since `a7f0b56`, a vacuous seed that must be `cover_unsatisfied`, run serially (3.5 GB each against the runner's 15 GiB) | board pass (≈70 s); seeds fail in 41–71 s; 250 s in all, peak RSS 3.53 GB | `ANSWER 1400-C5`: board `exit=0`, `findings: []`, 117.17 s; `seed-wrong-af` exit 1 `GpioB word 8: a solved pin's field is not what the specification fixes`, 68.08 s; `seed-no-clock` exit 1 `Spi1 accessed before RCC_APB2ENR bit 12 is set`, 118.23 s; `seed-past-block` exit 1 `register access past the end of its block`, 119.42 s. Every verdict has `landlock_abi 8`, `sockets_denied true` |
+| 5: Kani proves the generated block | `aethelgard-cli/tests/board_tier2.rs` (with-tools): `prove --crate boards/sentinel-01 --harness proofs::every_valid_sequence`, plus three seeded bugs and, since `a7f0b56`, a vacuous seed that must be `cover_unsatisfied`, run serially (3.5 GB each against the runner's 15 GiB) | board pass (≈70 s); seeds fail in 41–71 s; 250 s in all, peak RSS 3.53 GB | `ANSWER 1400-C5` on `748190a`: board `exit=0`, `findings: []`, 209.39 s; `seed-wrong-af` exit 1 `GpioB word 8: a solved pin's field is not what the specification fixes`, 153.03 s; `seed-no-clock` exit 1 `Spi1 accessed before RCC_APB2ENR bit 12 is set`, 219.99 s; `seed-past-block` exit 1 `register access past the end of its block`, 222.34 s; `seed-vacuous` exit 1 `cover_unsatisfied` `** 6 of 9 cover properties satisfied (3 unreachable)`, 96.94 s. Every verdict has `landlock_abi 8`, `sockets_denied true`. On `b62026b`, before the stronger oracle, the board took 117 s |
 
 **Clause 3 cases** (first diagnostic line; snapshots committed, regenerated with `TRYBUILD=overwrite` with the board, F7):
 
