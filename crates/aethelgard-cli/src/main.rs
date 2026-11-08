@@ -10,6 +10,7 @@ mod kicad;
 mod mcp;
 mod renode;
 mod run;
+mod said;
 mod verdict;
 
 use std::ffi::OsString;

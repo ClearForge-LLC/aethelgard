@@ -168,6 +168,23 @@ pub fn solve_with_limit(
     specification_sha256: &str,
     node_limit: u64,
 ) -> Result<SolvedTopology, SolveError> {
+    let mut budget = Budget {
+        spent: 0,
+        limit: node_limit,
+    };
+    solve_inner(spec, table, specification_sha256, &mut budget, true)
+}
+
+/// The solver proper. `forced` switches the forced-instance check
+/// (`AET-WO-1201`); it is `false` only in the differential test, and `budget`
+/// is a parameter so that test can read the nodes spent.
+fn solve_inner(
+    spec: &Specification,
+    table: &PinTable,
+    specification_sha256: &str,
+    budget: &mut Budget,
+    forced: bool,
+) -> Result<SolvedTopology, SolveError> {
     spec.validate().map_err(SolveError::InvalidSpecification)?;
     let mut out = SolvedTopology {
         schema_version: 1,
@@ -186,18 +203,14 @@ pub fn solve_with_limit(
     }
 
     let model = Model::new(spec, table)?;
-    let mut budget = Budget {
-        spent: 0,
-        limit: node_limit,
-    };
     let all: Vec<usize> = (0..model.buses.len()).collect();
-    let mut search = Search::new(&model, all.clone());
-    let found = search.run(&mut budget);
+    let mut search = Search::new(&model, all.clone(), forced);
+    let found = search.run(budget);
     if let Some(pos) = search.exceeded {
         return Err(model.budget_error(&search, pos));
     }
     if !found {
-        return Err(model.minimal_set(all, &mut budget));
+        return Err(model.minimal_set(all, budget, forced));
     }
 
     for (pos, &b) in search.active.iter().enumerate() {
@@ -530,7 +543,7 @@ impl<'s, 't> Model<'s, 't> {
     /// Each bus alone: reserved pins and every hand pin honoured, no other
     /// bus's choices. A bus that fails here can never be placed.
     fn check_each_bus(&self) -> Result<(), SolveError> {
-        let alone = Search::new(self, (0..self.buses.len()).collect());
+        let alone = Search::new(self, (0..self.buses.len()).collect(), false);
         for (b, bus) in self.buses.iter().enumerate() {
             let mut reasons = Vec::new();
             let mut served = false;
@@ -583,12 +596,12 @@ impl<'s, 't> Model<'s, 't> {
     /// Deletion: drop each bus in document order if the rest stay
     /// infeasible. The set left is minimal (irreducible), not necessarily the
     /// smallest; it costs one search per bus, inside the same budget.
-    fn minimal_set(&self, mut set: Vec<usize>, budget: &mut Budget) -> SolveError {
+    fn minimal_set(&self, mut set: Vec<usize>, budget: &mut Budget, forced: bool) -> SolveError {
         let mut i = 0;
         while i < set.len() {
             let mut without = set.clone();
             without.remove(i);
-            let mut search = Search::new(self, without.clone());
+            let mut search = Search::new(self, without.clone(), forced);
             let found = search.run(budget);
             if let Some(pos) = search.exceeded {
                 return self.budget_error(&search, pos);
@@ -625,10 +638,12 @@ struct Search<'m, 's, 't> {
     budget: Budget,
     /// The position being placed when the budget ran out.
     exceeded: Option<usize>,
+    /// Whether `consistent` runs the forced-instance check.
+    forced: bool,
 }
 
 impl<'m, 's, 't> Search<'m, 's, 't> {
-    fn new(model: &'m Model<'s, 't>, active: Vec<usize>) -> Self {
+    fn new(model: &'m Model<'s, 't>, active: Vec<usize>, forced: bool) -> Self {
         let mut used = BTreeMap::new();
         let hand = active
             .iter()
@@ -648,6 +663,7 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
             chosen: vec![None; n],
             budget: Budget { spent: 0, limit: 0 },
             exceeded: None,
+            forced,
         }
     }
 
@@ -723,7 +739,40 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
                 signal_pins.push(pins.into_iter().collect());
             }
         }
-        matching(&signal_pins)
+        matching(&signal_pins) && (!self.forced || self.forced_instances(rest, &options))
+    }
+
+    /// The forced-instance check. For a kind whose unplaced buses are as many
+    /// as the instances any of them can still take, those buses use every one
+    /// of those instances, so each instance's every signal needs a pin of its
+    /// own. The rows are (instance, signal); a row may take any free pin that
+    /// some unplaced bus of the kind could give that signal on that instance.
+    /// A relaxation of the real choice, so it only prunes.
+    fn forced_instances(&self, rest: &[usize], options: &[Vec<&str>]) -> bool {
+        let mut rows: Vec<Vec<&str>> = Vec::new();
+        for kind in [Kind::I2c, Kind::Spi] {
+            let buses: Vec<usize> = (0..rest.len())
+                .filter(|&r| self.model.buses[rest[r]].kind == kind)
+                .collect();
+            let reachable: BTreeSet<&str> = buses
+                .iter()
+                .flat_map(|&r| options[r].iter().copied())
+                .collect();
+            if buses.is_empty() || buses.len() != reachable.len() {
+                continue;
+            }
+            for inst in reachable {
+                for k in 0..kind.signals().len() {
+                    let pins: BTreeSet<&str> = buses
+                        .iter()
+                        .filter(|&&r| options[r].contains(&inst))
+                        .flat_map(|&r| self.pins(&self.model.buses[rest[r]].signals[k], inst))
+                        .collect();
+                    rows.push(pins.into_iter().collect());
+                }
+            }
+        }
+        matching(&rows)
     }
 
     fn bus(&mut self, pos: usize) -> bool {
@@ -807,4 +856,311 @@ fn matching(options: &[Vec<&str>]) -> bool {
     }
     let mut owner = BTreeMap::new();
     (0..options.len()).all(|row| augment(row, options, &mut owner, &mut BTreeSet::new()))
+}
+
+/// `AET-WO-1201`: the forced-instance check only prunes. Random small tables
+/// and specifications are solved with the check and without it; the answers
+/// must be identical, except that a `BudgetExceeded` without it may be
+/// `Infeasible` with it.
+#[cfg(test)]
+mod differential {
+    use super::*;
+    use crate::{I2cBus, Mcu, NetConstraint, Pin, PinSource, SpiBus, SpiDevice, VoltageDomain};
+
+    const SPECS: u32 = 3000;
+    const LIMIT: u64 = 20_000;
+    const HASH: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const POOL: [&str; 14] = [
+        "PA0", "PA1", "PA2", "PA3", "PA4", "PA5", "PA6", "PA7", "PB0", "PB1", "PB2", "PB3", "PA13",
+        "PC14",
+    ];
+
+    /// xorshift64*, fixed seed: the same specifications on every host.
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        }
+        fn below(&mut self, n: usize) -> usize {
+            (self.next() >> 33) as usize % n
+        }
+        fn one_in(&mut self, n: usize) -> bool {
+            self.below(n) == 0
+        }
+    }
+
+    fn table(rng: &mut Rng) -> PinTable {
+        let pool = 6 + rng.below(POOL.len() - 5);
+        let mut afs: BTreeMap<&str, BTreeMap<String, u8>> = BTreeMap::new();
+        for (kind, count) in [(Kind::I2c, 4), (Kind::Spi, 6)] {
+            for n in 1..=count {
+                for sig in kind.signals() {
+                    // One in thirty signals is missing, so an instance is not offered.
+                    if rng.one_in(30) {
+                        continue;
+                    }
+                    for _ in 0..1 + rng.below(3) {
+                        let pin = POOL[rng.below(pool)];
+                        afs.entry(pin).or_default().insert(
+                            format!("{}{n}_{sig}", kind.prefix()),
+                            1 + rng.below(8) as u8,
+                        );
+                    }
+                }
+            }
+        }
+        PinTable {
+            part: "T".into(),
+            package: "T".into(),
+            source: PinSource {
+                repository: "t".into(),
+                commit: "t".into(),
+                files: BTreeMap::new(),
+            },
+            pins: POOL[..pool]
+                .iter()
+                .enumerate()
+                .map(|(i, name)| {
+                    let pin = Pin {
+                        position: i as u16 + 1,
+                        alternate_functions: afs.remove(name).unwrap_or_default(),
+                    };
+                    ((*name).to_owned(), pin)
+                })
+                .collect(),
+        }
+    }
+
+    fn signal(rng: &mut Rng, net: String, pool: usize) -> Signal {
+        // One in fourteen is a hand pin; one in forty of those is not in the table.
+        let pin = rng.one_in(14).then(|| {
+            if rng.one_in(40) {
+                "PZ9".to_owned()
+            } else {
+                POOL[rng.below(pool)].to_owned()
+            }
+        });
+        Signal { net, pin }
+    }
+
+    fn peripheral(rng: &mut Rng, kind: Kind) -> Option<String> {
+        rng.one_in(12)
+            .then(|| format!("{}{}", kind.prefix(), 1 + rng.below(4)))
+    }
+
+    fn spec(rng: &mut Rng, pool: usize) -> Specification {
+        let mut i2c_buses = Vec::new();
+        for i in 0..rng.below(5) {
+            let id = format!("I{i}");
+            i2c_buses.push(I2cBus {
+                peripheral: peripheral(rng, Kind::I2c),
+                speed_hz: 400_000,
+                pull_up_ohms: 2200,
+                domain: "D".into(),
+                sda: signal(rng, format!("{id}_sda"), pool),
+                scl: signal(rng, format!("{id}_scl"), pool),
+                id,
+            });
+        }
+        let mut spi_buses = Vec::new();
+        for i in 0..rng.below(8) {
+            let id = format!("S{i}");
+            spi_buses.push(SpiBus {
+                peripheral: peripheral(rng, Kind::Spi),
+                speed_hz: 1_000_000,
+                domain: "D".into(),
+                sck: signal(rng, format!("{id}_sck"), pool),
+                mosi: signal(rng, format!("{id}_mosi"), pool),
+                miso: signal(rng, format!("{id}_miso"), pool),
+                id,
+            });
+        }
+        let mut spi_devices = Vec::new();
+        if !spi_buses.is_empty() {
+            for i in 0..rng.below(4) {
+                let bus = spi_buses[rng.below(spi_buses.len())].id.clone();
+                spi_devices.push(SpiDevice {
+                    reference: format!("U{i}"),
+                    part: "F".into(),
+                    supply: "D".into(),
+                    bus,
+                    cs: signal(rng, format!("U{i}_cs"), pool),
+                });
+            }
+        }
+        let net_constraints = i2c_buses
+            .iter()
+            .flat_map(|b| [&b.sda.net, &b.scl.net])
+            .map(|net| NetConstraint {
+                net_name: net.clone(),
+                max_capacitance_femtofarads: 100_000,
+                max_rise_time_nanoseconds: 300,
+                impedance_ohms: None,
+            })
+            .collect();
+        Specification {
+            schema_version: 1,
+            project_name: "t".into(),
+            mcu: Mcu {
+                part: "T".into(),
+                supply: "D".into(),
+            },
+            voltage_domains: vec![VoltageDomain {
+                id: "D".into(),
+                nominal_millivolts: 3300,
+                tolerance_permille: 50,
+            }],
+            i2c_buses,
+            spi_buses,
+            i2c_devices: vec![],
+            spi_devices,
+            net_constraints,
+        }
+    }
+
+    fn run(
+        spec: &Specification,
+        table: &PinTable,
+        forced: bool,
+    ) -> (Result<SolvedTopology, SolveError>, u64) {
+        let mut budget = Budget {
+            spent: 0,
+            limit: LIMIT,
+        };
+        let out = solve_inner(spec, table, HASH, &mut budget, forced);
+        (out, budget.spent)
+    }
+
+    #[test]
+    fn the_forced_instance_check_only_prunes() {
+        let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+        // ok, infeasible, budget, other refusal; then budget -> infeasible.
+        let mut seen = [0u32; 4];
+        let (mut flipped, mut nodes_off, mut nodes_on) = (0u32, 0u64, 0u64);
+        let mut kinds = BTreeMap::new();
+        for n in 0..SPECS {
+            let table = table(&mut rng);
+            let pool = table.pins.len();
+            let spec = spec(&mut rng, pool);
+            let (off, spent_off) = run(&spec, &table, false);
+            let (on, spent_on) = run(&spec, &table, true);
+            nodes_off += spent_off;
+            nodes_on += spent_on;
+            assert!(spent_on <= spent_off, "spec {n}: the check added nodes");
+            match (&off, &on) {
+                (Err(SolveError::BudgetExceeded { .. }), Err(SolveError::Infeasible { .. })) => {
+                    flipped += 1;
+                }
+                _ => assert_eq!(off, on, "spec {n}: the check changed the answer"),
+            }
+            if let Err(e) = &off {
+                *kinds.entry(e.kind()).or_insert(0u32) += 1;
+            }
+            seen[match &off {
+                Ok(_) => 0,
+                Err(SolveError::Infeasible { .. }) => 1,
+                Err(SolveError::BudgetExceeded { .. }) => 2,
+                Err(_) => 3,
+            }] += 1;
+        }
+        eprintln!(
+            "differential: {SPECS} specs; without the check ok {}, infeasible {}, budget {}, other refusal {}; \
+             budget->infeasible {flipped}; nodes {nodes_off} without, {nodes_on} with",
+            seen[0], seen[1], seen[2], seen[3]
+        );
+        eprintln!("refusals: {kinds:?}");
+        // The generator must reach each outcome, or the test proves nothing.
+        assert!(
+            [0, 1, 3].iter().all(|&i| seen[i] >= 50),
+            "outcomes: {seen:?}"
+        );
+    }
+
+    /// The 1200 reproducers' shape on a synthetic table: six SPI buses, six
+    /// instances, and two instances whose only `MISO` is the same pin. Pin
+    /// matching unions over instances and instance matching ignores pins, so
+    /// both pass; the forced instances do not.
+    #[test]
+    fn a_shared_only_pin_is_refused_at_once_not_after_the_budget() {
+        let mut pins: BTreeMap<String, Pin> = BTreeMap::new();
+        let mut put = |name: String, af: String| {
+            let n = pins.len() as u16 + 1;
+            pins.entry(name)
+                .or_insert(Pin {
+                    position: n,
+                    alternate_functions: BTreeMap::new(),
+                })
+                .alternate_functions
+                .insert(af, 5);
+        };
+        for n in 1..=6 {
+            put(format!("PA{n}"), format!("SPI{n}_SCK"));
+            put(format!("PB{n}"), format!("SPI{n}_MOSI"));
+            let miso = if n <= 2 {
+                "PC0".to_owned()
+            } else {
+                format!("PC{n}")
+            };
+            put(miso, format!("SPI{n}_MISO"));
+        }
+        // The union of the MISO pins is six, so pin matching passes.
+        put("PC7".to_owned(), "SPI3_MISO".to_owned());
+        let table = PinTable {
+            part: "T".into(),
+            package: "T".into(),
+            source: PinSource {
+                repository: "t".into(),
+                commit: "t".into(),
+                files: BTreeMap::new(),
+            },
+            pins,
+        };
+        let mut rng = Rng(1);
+        let mut spec = spec(&mut rng, table.pins.len());
+        spec.i2c_buses.clear();
+        spec.net_constraints.clear();
+        spec.spi_devices.clear();
+        spec.spi_buses = (0..6)
+            .map(|i| {
+                let sig = |s: &str| Signal {
+                    net: format!("S{i}_{s}"),
+                    pin: None,
+                };
+                SpiBus {
+                    id: format!("S{i}"),
+                    peripheral: None,
+                    speed_hz: 1_000_000,
+                    domain: "D".into(),
+                    sck: sig("sck"),
+                    mosi: sig("mosi"),
+                    miso: sig("miso"),
+                }
+            })
+            .collect();
+        let (on, spent_on) = run(&spec, &table, true);
+        let (off, spent_off) = run(&spec, &table, false);
+        let Err(SolveError::Infeasible { buses }) = &on else {
+            panic!("with the check: {on:?}");
+        };
+        assert_eq!(buses.len(), 6);
+        eprintln!("shared-only-pin: {spent_on} nodes with, {spent_off} without ({off:?})");
+        assert!(spent_on < spent_off);
+        // Between the two, only the check finishes: the flip the work order allows.
+        let tight = |forced| {
+            let mut budget = Budget {
+                spent: 0,
+                limit: 300,
+            };
+            solve_inner(&spec, &table, HASH, &mut budget, forced)
+        };
+        assert!(matches!(tight(true), Err(SolveError::Infeasible { .. })));
+        assert!(matches!(
+            tight(false),
+            Err(SolveError::BudgetExceeded { .. })
+        ));
+    }
 }

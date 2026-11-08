@@ -217,5 +217,54 @@
       }
     }
   ],
-  "net_constraints": []
+  "net_constraints": [
+    {
+      "net_name": "i0_sda",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "i0_scl",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "i1_sda",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "i1_scl",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "i2_sda",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "i2_scl",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "i3_sda",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "i3_scl",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    }
+  ]
 }
