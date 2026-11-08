@@ -58,48 +58,6 @@ impl BoardRefusal {
     }
 }
 
-/// Why a schematic copied beside the board for parity is refused.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum SchematicRefusal {
-    #[error("the schematic is not one KiCad S-expression: {0}")]
-    Malformed(#[from] SexprError),
-    #[error("the schematic's top-level list is not `kicad_sch`")]
-    NotASchematic,
-    #[error(
-        "the schematic has a hierarchical sheet, which names a file the gate has not copied or hashed"
-    )]
-    Sheet,
-}
-
-impl SchematicRefusal {
-    pub fn kind(&self) -> &'static str {
-        match self {
-            Self::Malformed(_) | Self::NotASchematic => "MalformedSchematic",
-            Self::Sheet => "HierarchicalSchematic",
-        }
-    }
-}
-
-/// The schematic `check drc --schematic` judges parity against: one
-/// `kicad_sch` that the gate's reader and KiCad's read alike, with no
-/// `(sheet …)` anywhere, since a sheet makes KiCad read another file
-/// (`AET-WO-1300` A8). Nothing in it is a design rule; it is scanned only
-/// so that what parity judges is the file hashed.
-pub fn parity_schematic(text: &str) -> Result<(), SchematicRefusal> {
-    let root = sexpr::parse(text)?;
-    if root.head() != Some("kicad_sch") {
-        return Err(SchematicRefusal::NotASchematic);
-    }
-    let mut stack = vec![&root];
-    while let Some(item) = stack.pop() {
-        if item.head() == Some("sheet") {
-            return Err(SchematicRefusal::Sheet);
-        }
-        stack.extend(item.items().iter().filter(|c| matches!(c, Sx::List(_))));
-    }
-    Ok(())
-}
-
 /// A human name for an item that can carry a rule.
 fn name(item: &Sx, within: &str) -> Option<String> {
     let of = |s: String| {

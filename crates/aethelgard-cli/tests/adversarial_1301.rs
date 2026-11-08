@@ -389,3 +389,76 @@ fn attack_check_drc_refuses_a_board_only_footprint_before_any_tool_runs() {
     );
     assert_ne!(v["error"]["kind"], "MalformedBoard", "{v}");
 }
+
+/// The emitted reference board and schematic, as text.
+fn emitted(d: &Dir) -> (String, String) {
+    let r = json_line(&emit(&example("sentinel-01-minimal.json"), &d.0.join("o")));
+    let read = |k: &str| fs::read_to_string(r[k]["path"].as_str().unwrap()).unwrap();
+    (read("board"), read("schematic"))
+}
+
+/// `check drc --schematic` on texts, with no tool on PATH: a refusal must
+/// come before any tool runs.
+fn refused(d: &Dir, board: &str, sch: &str) -> (Option<i32>, Value) {
+    let empty = d.0.join("empty");
+    fs::create_dir_all(&empty).unwrap();
+    let (b, s) = (d.0.join("b.kicad_pcb"), d.0.join("s.kicad_sch"));
+    fs::write(&b, board).unwrap();
+    fs::write(&s, sch).unwrap();
+    let out = cli()
+        .env("PATH", &empty)
+        .args(["check", "drc", "--board"])
+        .arg(&b)
+        .arg("--schematic")
+        .arg(&s)
+        .output()
+        .unwrap();
+    (out.status.code(), json_line(&out))
+}
+
+/// Fixed (builder's F6, measured at 6b55cb3 in the tools image). KiCad's
+/// parity check accepts a pad marked `no_connect` whose net starts with the
+/// schematic's net and `_`. With `SPI_MOSI` renamed `I2C_SDA_X`, the MCU's
+/// SDA pad moved onto `/I2C_SDA_X` with `(pintype "bidirectional+no_connect")`
+/// passed parity with nothing beyond `unconnected_items` (65, as the
+/// unedited board). The gate now refuses a `no_connect` pad on a real net.
+#[test]
+fn attack_a_no_connect_pad_moved_onto_another_net_is_refused() {
+    let d = Dir::new("nc-pad");
+    let (board, sch) = emitted(&d);
+    let mcu = board.find("(footprint \"Package_QFP").unwrap();
+    let at = mcu + board[mcu..].find("(net \"/I2C_SDA\")").unwrap();
+    let moved = format!(
+        "{}(net \"/I2C_SDA_X\")\n\t\t\t(pintype \"bidirectional+no_connect\"){}",
+        &board[..at],
+        &board[at + "(net \"/I2C_SDA\")".len()..]
+    );
+    let (code, v) = refused(&d, &moved, &sch);
+    assert_eq!(code, Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "NoConnectPadOnNet", "{v}");
+}
+
+/// Fixed (builder's F7, measured at 6b55cb3). A rail named `unconnected-V`
+/// is a power net KiCad's parity check matches by prefix: U4's supply pad
+/// moved to `unconnected-V-cut`, off the rail, passed parity with nothing
+/// beyond `unconnected_items` (65 → 64). The emitter now refuses such a
+/// name, and the gate refuses a schematic whose label or value carries one.
+#[test]
+fn attack_a_rail_named_with_kicads_unconnected_prefix_is_refused() {
+    let d = Dir::new("nc-rail");
+    let spec = reference_spec()
+        .to_string()
+        .replace("\"VDD_3V3\"", "\"unconnected-V\"");
+    let file = d.0.join("spec.json");
+    fs::write(&file, spec).unwrap();
+    let out = emit(&file, &d.0.join("o"));
+    let v = json_line(&out);
+    assert_eq!(out.status.code(), Some(2), "{v}");
+    assert_eq!(v["error"]["kind"], "ReservedName", "{v}");
+    assert_eq!(v["error"]["id"], "unconnected-V", "{v}");
+
+    let (board, sch) = emitted(&d);
+    let (code, v) = refused(&d, &board, &sch.replace("\"VDD_3V3\"", "\"unconnected-V\""));
+    assert_eq!(code, Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "ReservedNetName", "{v}");
+}

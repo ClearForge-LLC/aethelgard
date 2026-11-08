@@ -377,7 +377,7 @@ fn check_kicad(
     let schematic = match schematic {
         Some(path) => {
             let copy = input::file(path, &scratch.tool.join(kicad::Check::Erc.copy_name()))?;
-            kicad::prepare_schematic(&copy.copy)?;
+            kicad::prepare_parity(&input.copy, &copy.copy)?;
             Some(copy)
         }
         None => None,

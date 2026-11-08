@@ -26,6 +26,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::library;
+use crate::parity;
 use crate::rules::FLOOR_NM;
 use crate::schematic::{self, Conn, EmitError, GND, Part};
 use crate::sexpr::{self, Sx, mm};
@@ -197,8 +198,10 @@ fn graphic_box(item: &Sx, reference: &str) -> Result<Rect, EmitError> {
         .grow(half))
 }
 
-/// A visible silkscreen text's box, over-estimated: every glyph as wide as
-/// 1.2 times the font height, plus the stroke all round.
+/// A visible silkscreen text's box: every glyph as wide as KiCad 10.0.7's
+/// widest, `m`, whose advance is 4/3 of the font width (measured by Gerber
+/// plot in the tools image, `AET-WO-1301` adversarial pass F3), plus the
+/// stroke all round.
 fn text_box(item: &Sx, text: &str, reference: &str) -> Result<Rect, EmitError> {
     let at = item
         .child("at")
@@ -218,7 +221,7 @@ fn text_box(item: &Sx, text: &str, reference: &str) -> Result<Rect, EmitError> {
         .and_then(sexpr::nm)
         .unwrap_or(h / 8);
     let chars = i64::try_from(text.chars().count()).unwrap_or(i64::MAX / 4);
-    let (mut hw, mut hh) = (chars.saturating_mul(w) * 6 / 10 + thick, h / 2 + thick);
+    let (mut hw, mut hh) = (chars.saturating_mul(w) * 2 / 3 + thick, h / 2 + thick);
     match at.arg(3).unwrap_or("0") {
         "0" | "180" => {}
         "90" | "270" => std::mem::swap(&mut hw, &mut hh),
@@ -306,6 +309,11 @@ pub(crate) fn pin_nets(part: &Part) -> Result<BTreeMap<String, String>, EmitErro
     let mut out = BTreeMap::new();
     for p in &pins {
         let net = match part.conns.get(&p.number) {
+            // KiCad's parity check matches an `unconnected-` net by prefix,
+            // so the gate refuses a schematic naming one (`parity`).
+            Some(Conn::Net(name) | Conn::Rail(name)) if name.starts_with(parity::UNCONNECTED) => {
+                return Err(EmitError::ReservedName(name.clone()));
+            }
             Some(Conn::Net(label)) => format!("/{}", escape(label)),
             Some(Conn::Rail(rail)) => escape(rail),
             Some(Conn::NoConnect) | None => {
@@ -639,8 +647,30 @@ fn footprint(project: &str, item: &Item<'_>, origin: (i64, i64)) -> Result<Sx, E
     Ok(Sx::List(out))
 }
 
+/// A reference as KiCad compares references: ASCII case folded, and the
+/// trailing number without its leading zeros (`U01` is `U1`). Two parts with
+/// one key are a duplicate to KiCad (adversarial pass F4).
+fn reference_key(reference: &str) -> String {
+    let upper = reference.to_ascii_uppercase();
+    let stem = upper.trim_end_matches(|c: char| c.is_ascii_digit());
+    let digits = upper[stem.len()..].trim_start_matches('0');
+    match (upper.len() > stem.len(), digits.is_empty()) {
+        (false, _) => upper,
+        (true, true) => format!("{stem}0"),
+        (true, false) => format!("{stem}{digits}"),
+    }
+}
+
 /// Each part's footprint, pads and geometry.
 fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
+    let mut keys = BTreeMap::new();
+    for part in parts {
+        if let Some(other) = keys.insert(reference_key(&part.reference), &part.reference) {
+            let mut pair = [other.as_str(), part.reference.as_str()];
+            pair.sort();
+            return Err(EmitError::DuplicateReference(pair.join(" and ")));
+        }
+    }
     let mut out = Vec::new();
     for part in parts {
         let fp = library::footprint(&part.footprint)?;

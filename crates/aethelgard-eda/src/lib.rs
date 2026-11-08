@@ -15,6 +15,7 @@
 pub mod board;
 pub mod bom;
 pub mod library;
+pub mod parity;
 pub mod pcb;
 pub mod rules;
 pub mod schematic;

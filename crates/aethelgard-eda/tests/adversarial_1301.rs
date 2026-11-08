@@ -7,6 +7,7 @@
 
 use aethelgard_eda::board::prepare;
 use aethelgard_eda::library;
+use aethelgard_eda::parity;
 use aethelgard_eda::pcb;
 use aethelgard_eda::rules::SETUP;
 
@@ -17,7 +18,9 @@ fn board_with(attr: &str) -> String {
     )
 }
 
-/// **Red until fixed.** KiCad's parity check skips a footprint whose
+/// Fixed: the parity gate (`parity::board`, run by `check drc --schematic`
+/// after `board::prepare`) refuses it; without `--schematic` the flag has
+/// no check to waive. KiCad's parity check skips a footprint whose
 /// attributes include `board_only`: it is never an extra footprint, and a
 /// second footprint under an existing reference is never a duplicate
 /// (`drc_test_provider_schematic_parity.cpp`). Measured on the emitted
@@ -25,18 +28,23 @@ fn board_with(attr: &str) -> String {
 /// second R5 valued `0R` with it, each judged with nothing beyond
 /// `unconnected_items` (65 → 67), verdict `fail` only because the board is
 /// unrouted. So real copper the schematic does not hold passes parity. The
-/// emitter never writes `board_only`; the gate should refuse it as it
-/// refuses `allow_missing_courtyard` (`board.rs` `waives`).
+/// emitter never writes `board_only`.
 #[test]
 fn attack_a_board_only_footprint_is_refused() {
-    assert!(prepare(&board_with("attr smd"), SETUP).is_ok());
+    let gate = |b: &str| {
+        prepare(b, SETUP)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+            .and_then(|()| parity::board(b).map_err(|e| e.to_string()))
+    };
+    assert!(gate(&board_with("attr smd")).is_ok());
     for attr in [
         "attr smd board_only",
         "attr board_only",
         "attr through_hole board_only exclude_from_bom",
     ] {
         assert!(
-            prepare(&board_with(attr), SETUP).is_err(),
+            gate(&board_with(attr)).is_err(),
             "({attr}) hides a footprint from parity"
         );
     }
@@ -49,7 +57,7 @@ fn attack_a_board_only_footprint_is_refused() {
 /// width, and 64 of them are 85.007 mm of ink, pen included.
 const SIXTY_FOUR_M_INK_NM: i64 = 85_007_000;
 
-/// **Red until fixed.** The placer's keep-out box takes every glyph as 1.2
+/// Fixed (glyphs at 4/3 of the font width). The placer's keep-out box takes every glyph as 1.2
 /// font widths, so a 64-byte reference of `m` is 77.1 mm wide to it and
 /// 85.0 mm on the board. Measured: the emitted boards of specifications
 /// whose device references are `U` + 63 × `m` (and `@`, 1.263 per glyph)
