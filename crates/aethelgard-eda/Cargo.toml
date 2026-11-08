@@ -1,13 +1,17 @@
 [package]
 name = "aethelgard-eda"
-description = "Aethelgard schematic, layout, bill of materials, and fabrication package emission."
+description = "Aethelgard schematic and bill-of-materials emission, and the design-rule files its KiCad gates write."
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+# The vendored KiCad library files in data/ stay CC-BY-SA 4.0 (ruled D1 on
+# PR #40); the designs emitted from them fall under KiCad's design exception.
+license = "(MIT OR Apache-2.0) AND CC-BY-SA-4.0"
 repository.workspace = true
 
 [dependencies]
 aethelgard-ir.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true

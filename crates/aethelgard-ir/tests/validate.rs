@@ -211,6 +211,16 @@ fn identifier_boundaries() {
         "VDD_3V3\u{200b}", // zero-width space
         "VDD\x7f",
         "caf\u{e9}",
+        // KiCad reads these as more than text (AET-WO-1300 S5, D6).
+        "/SDA",
+        "A/B",
+        "A{slash}B",
+        "{",
+        "}",
+        "${PROJECTNAME}",
+        "A$B",
+        "A[0..1]",
+        "]",
     ];
     for id in bad {
         let err = refusal(|s| s.project_name = id.into());
@@ -223,7 +233,8 @@ fn identifier_boundaries() {
         "!".into(),
         "~".into(),
         "+3V3".into(),
-        "/SDA".into(),
+        // Every other printable character, S-expression specials included.
+        "!\"#%&'()*+,-.:;<=>?@\\^_`|~".into(),
     ] {
         let mut spec = valid();
         spec.project_name = ok;

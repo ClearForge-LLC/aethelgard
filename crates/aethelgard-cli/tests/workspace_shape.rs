@@ -22,15 +22,17 @@ const MEMBERS: [&str; 7] = [
 
 const CHAOS: &str = "crates/aethelgard-chaos";
 const SVD_HAL: &str = "crates/aethelgard-svd-hal";
+const EDA: &str = "crates/aethelgard-eda";
 
 /// Every member but `ir` (first), `cli` (last), `chaos` (graduated in
-/// `AET-WO-0400`) and `svd-hal` (graduated in `AET-WO-1101`); the order is
-/// pinned by `members_are_exactly_the_seven_parts`.
+/// `AET-WO-0400`), `svd-hal` (graduated in `AET-WO-1101`) and `eda`
+/// (graduated in `AET-WO-1300`); the order is pinned by
+/// `members_are_exactly_the_seven_parts`.
 fn libraries() -> Vec<&'static str> {
     MEMBERS[1..6]
         .iter()
         .copied()
-        .filter(|m| *m != CHAOS && *m != SVD_HAL)
+        .filter(|m| ![CHAOS, SVD_HAL, EDA].contains(m))
         .collect()
 }
 
@@ -294,5 +296,66 @@ fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
                 "svd-hal dependency {name} is not from the workspace table"
             );
         }
+    }
+}
+
+/// `aethelgard-eda` holds the schematic emitter, the gate's rule files and
+/// the vendored KiCad 10.0.7 library items (`AET-WO-1300`, ruled D1 on PR
+/// #40), so it is no longer a re-export stub. Its files, manifest keys,
+/// licence and dependencies are fixed; the vendored files are named one by
+/// one, so none can be added or dropped unseen.
+#[test]
+fn eda_has_only_its_known_files_keys_and_dependencies() {
+    const DATA: [&str; 18] = [
+        "data/kicad-10.0.7/LICENSE.md",
+        "data/kicad-10.0.7/README.md",
+        "data/kicad-10.0.7/footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
+        "data/kicad-10.0.7/footprints/Package_LGA.pretty/Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering.kicad_mod",
+        "data/kicad-10.0.7/footprints/Package_QFP.pretty/LQFP-144_20x20mm_P0.5mm.kicad_mod",
+        "data/kicad-10.0.7/footprints/Package_SO.pretty/SOIC-8_5.3x5.3mm_P1.27mm.kicad_mod",
+        "data/kicad-10.0.7/footprints/Package_SON.pretty/WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm.kicad_mod",
+        "data/kicad-10.0.7/footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod",
+        "data/kicad-10.0.7/symbols/Device.kicad_symdir/C.kicad_sym",
+        "data/kicad-10.0.7/symbols/Device.kicad_symdir/R.kicad_sym",
+        "data/kicad-10.0.7/symbols/MCU_ST_STM32H7.kicad_symdir/STM32H753ZITx.kicad_sym",
+        "data/kicad-10.0.7/symbols/Memory_Flash.kicad_symdir/W25Q32JVSS.kicad_sym",
+        "data/kicad-10.0.7/symbols/Sensor.kicad_symdir/BME280.kicad_sym",
+        "data/kicad-10.0.7/symbols/Sensor_Temperature.kicad_symdir/TMP102xxDRL.kicad_sym",
+        "data/kicad-10.0.7/symbols/Sensor_Temperature.kicad_symdir/TMP117xxDRV.kicad_sym",
+        "data/kicad-10.0.7/symbols/power.kicad_symdir/+3V3.kicad_sym",
+        "data/kicad-10.0.7/symbols/power.kicad_symdir/GND.kicad_sym",
+        "data/kicad-10.0.7/symbols/power.kicad_symdir/PWR_FLAG.kicad_sym",
+    ];
+    for file in files(&root().join(EDA)) {
+        let allowed = file == "Cargo.toml"
+            || file == "README.md"
+            || (file.starts_with("src/") && file.ends_with(".rs"))
+            || (file.starts_with("tests/") && file.ends_with(".rs"))
+            || DATA.contains(&file.as_str());
+        assert!(allowed, "eda has a file outside the allowed set: {file}");
+    }
+    for file in DATA {
+        assert!(root().join(EDA).join(file).exists(), "missing {file}");
+    }
+    let eda = manifest(EDA);
+    for key in eda.keys() {
+        assert!(
+            ["package", "dependencies", "lints"].contains(&key.as_str()),
+            "eda sets [{key}]"
+        );
+    }
+    assert_eq!(
+        eda["package"]["license"].as_str(),
+        Some("(MIT OR Apache-2.0) AND CC-BY-SA-4.0")
+    );
+    let mut names = dependency_names(&eda);
+    names.sort();
+    assert_eq!(names, ["aethelgard-ir", "sha2", "thiserror"]);
+    for (name, dep) in eda["dependencies"].as_table().unwrap() {
+        assert_eq!(
+            dep.get("workspace").and_then(Value::as_bool),
+            Some(true),
+            "eda dependency {name} is not from the workspace table"
+        );
     }
 }
