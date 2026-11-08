@@ -330,6 +330,8 @@ pub(crate) fn pin_nets(part: &Part) -> Result<BTreeMap<String, String>, EmitErro
                 }
             }
         };
+        // belt-and-suspenders: no vendored symbol repeats a pin number (so no
+        // test reaches this), but one that did would give two pins one pad.
         if out.insert(p.number.clone(), net).is_some() {
             return Err(internal(
                 &part.reference,
@@ -898,8 +900,8 @@ mod tests {
             assert!(a.keep.contains(a.courtyard));
             for b in &l.placed[i + 1..] {
                 assert!(
-                    !a.keep.overlaps(b.keep),
-                    "{} meets {}",
+                    !a.keep.grow(GAP_NM).overlaps(b.keep),
+                    "{} is within {GAP_NM} nm of {}",
                     a.reference,
                     b.reference
                 );
@@ -968,6 +970,94 @@ mod tests {
             d2(at("C1"), at("U2")) < 4_000_000i64.pow(2),
             "C1 is not beside U2"
         );
+    }
+
+    /// What the emitter cannot name or measure is refused, never guessed.
+    #[test]
+    fn what_the_board_cannot_model_is_refused() {
+        let err = |r: Result<Layout, EmitError>| match r {
+            Err(EmitError::Internal(m)) => m,
+            other => panic!("{:?}", other.map(|l| l.placed.len())),
+        };
+        // An MCU with its supply pins open: KiCad names a stacked group of
+        // unconnected pins after one of them, which is not modelled.
+        let m = err(layout(&[part(MCU, LQFP, "U1", &[])]));
+        assert!(m.contains("stacked unconnected pin"), "{m}");
+        // A symbol pin with no pad in the footprint.
+        let mut small = mcu(&[]);
+        small.reference = "U9".into();
+        small.footprint = R0402.into();
+        let m = err(layout(&[mcu(&[]), small]));
+        assert!(m.contains("has no pad in"), "{m}");
+        let fp = |body: &str| sexpr::parse(&format!("(footprint \"x\" {body})")).unwrap();
+        for (body, want) in [
+            ("", "no courtyard"),
+            (
+                "(fp_circle (center 0 0) (end 1 0) (layer \"F.CrtYd\"))",
+                "does not measure",
+            ),
+            (
+                "(fp_rect (start -1 -1) (end 1 1) (layer \"F.CrtYd\")) (property \"Reference\" \"R\" (at 0 0 45) (layer \"F.SilkS\") (effects (font (size 1 1))))",
+                "at angle 45",
+            ),
+        ] {
+            match geometry(&fp(body), "R1") {
+                Err(EmitError::Internal(m)) => assert!(m.contains(want), "{body}: {m}"),
+                other => panic!("{body}: {other:?}"),
+            }
+        }
+        // A text turned 90 degrees is measured turned.
+        let g = geometry(
+            &fp("(fp_rect (start 0 0) (end 0.1 0.1) (layer \"F.CrtYd\")) (property \"Reference\" \"R\" (at 5 5 90) (layer \"F.SilkS\") (effects (font (size 1 1) (thickness 0.1))))"),
+            "R1234567890",
+        )
+        .unwrap();
+        assert!(g.keep.y1 - g.keep.y0 > g.keep.x1 - g.keep.x0, "{g:?}");
+    }
+
+    /// The reference text is part of the keep-out box, so a long one moves
+    /// the neighbours away.
+    #[test]
+    fn the_reference_text_widens_the_keep_out_box() {
+        let fp = library::footprint(R0402).unwrap();
+        let short = geometry(&fp, "R1").unwrap();
+        let long = geometry(&fp, "R_A_VERY_LONG_REFERENCE").unwrap();
+        assert!(
+            short.keep.y0 < short.courtyard.y0,
+            "the text sits above the courtyard"
+        );
+        assert!(long.keep.x1 - long.keep.x0 > 20_000_000, "{long:?}");
+        assert_eq!(short.courtyard, long.courtyard);
+    }
+
+    /// Two parts with one footprint get distinct UUIDs throughout.
+    #[test]
+    fn every_uuid_on_the_board_is_distinct() {
+        let bme = |r: &str| {
+            part(
+                "Sensor:BME280",
+                "Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering",
+                r,
+                &[
+                    ("1", Conn::Rail("GND".into())),
+                    ("7", Conn::Rail("GND".into())),
+                    ("2", Conn::Rail("VDD".into())),
+                    ("6", Conn::Rail("VDD".into())),
+                    ("8", Conn::Rail("VDD".into())),
+                    ("3", net("SDA")),
+                    ("4", net("SCL")),
+                    ("5", net("SDO")),
+                ],
+            )
+        };
+        let board = write("p", &[mcu(&[("34", net("SDA"))]), bme("U2"), bme("U3")]).unwrap();
+        let uuids: Vec<&str> = board
+            .match_indices("(uuid \"")
+            .map(|(i, m)| &board[i + m.len()..i + m.len() + 36])
+            .collect();
+        assert!(uuids.len() > 60, "{}", uuids.len());
+        let distinct: BTreeSet<&str> = uuids.iter().copied().collect();
+        assert_eq!(distinct.len(), uuids.len());
     }
 
     #[test]
