@@ -377,11 +377,50 @@ The agent's fix list goes with any future re-vendoring: strip block comments acr
 
 ### Reduction pass (§5a) and mutants
 
-Reduction pass (diff), over the build diff and again over the adversarial fixes: −7 net in the first pass and +5 net in the second (a helper replacing five copies) · 2 duplicates removed:
+**Scope.** Diff-sized, per the `reduction-pass` skill: everything this work order touched (`git diff origin/main...HEAD`), plus any copy of a fact it touched. It ran twice:
+- after the build, at `b6088b7`;
+- after the adversarial fixes, at `748190a`.
+
+The vendored header and the generated `boards/` tree are inputs and outputs, not code to reduce. A change to the generated tree comes only from the generator.
+
+**The four questions, over the diff:**
+
+| Question | Examined | Result |
+|---|---|---|
+| 1. Is any fact stated twice? | The `I2C`/`SPI` prefixes, in `peripheral_kind` and `Kind::header` | **Removed:** `peripheral_kind` now derives them from `Kind::header` |
+| | Field-mask arithmetic `((1 << w) - 1) << pos`, in `emit_lib`'s field writes, in `expect_field`, and five times in the MODER-ordering rule the adversarial fix added | **Removed** the five oracle-side copies, now one `oracle_mask`. **Kept** the `emit_lib` copy apart from the oracle on purpose (`INV-07`: the oracle must not read back the crate's arithmetic), labelled `belt-and-suspenders` at `expect_field` |
+| | Register offsets and bits: generator (from `cmsis`) versus the pinned-offset tests | Kept. The test is the independent witness the ruling asks for, not a copy |
+| | The I2C modes and their `TIMINGR` values | One home, `I2C_MODES`. The harness's chosen-speed literal is emitted from it, never read from the crate |
+| | Crate-name rules, pin-name rules, reserved pins | One home each: `crate_name_ok`, `split_pin`, and `aethelgard_ir::RESERVED_PINS` (imported, not restated) |
+| 2. Is anything unused? | `PinUsedTwice` and its two checks | **Removed:** unreachable behind `SolvedTopology::validate`'s `DuplicatePin`, which runs first |
+| | `Ceiling::NotSolved`, `generate_with_ceilings` | **Removed** when `i2c_ceilings` landed (`72c4ac2`); nothing called them |
+| | `CeilingTooLow` | **Kept**, labelled `belt-and-suspenders`. `validate` admits only 100, 400 and 1,000 kHz, so it cannot fire today; it refuses rather than emit a speed trait with no impls if that rule ever changes |
+| | `InvalidPin` beside `UnknownPin` | Kept: `split_pin` must parse the port and index before any table lookup, and a non-canonical name is a different refusal from an absent one |
+| 3. Could two mechanisms be one? | The regeneration test's `compare` and the negative control | Already one function used by both |
+| | Tier-2 seeds (`board_tier2.rs`) and the lead's `seeds.py` | Kept apart. Tier 2 is the standing CI regression (four seeds). `seeds.py` was the one-off re-run of the adversarial escapes and is not committed |
+| | `prove`'s cover check and the harness's in-harness asserts | Different jobs. Only the judge can see unreachable paths, so neither replaces the other |
+| 4. Is there a workaround for a problem that is gone? | The `#[rustfmt::skip]` module layout | Still needed: `cargo fmt --all` still reaches the board through the path dev-dependency (re-checked at `748190a`) |
+| | The serial mutex in `board_tier2.rs` | Still needed: about 3.5 GB per proof against the runner's 15 GiB |
+| | The spike's probes | **Removed:** `spike/` and `spike_1400_tier2.rs`, as ruled |
+
+**Proposals dropped** because they reduce no lines, copies or mechanisms:
+- renaming `emit_lib` to `emit_board`;
+- splitting `board.rs` into an emitter module and an oracle module.
+
+**Proof of no regression.** After each removal:
+- the svd-hal suite stayed green at `b6088b7`, and the workspace suite, 396 tests, at the final tree;
+- the regeneration test showed the emitted bytes unchanged;
+- every mutant of a surviving guard was still killed (below).
+
+**The FEEDBACK line:** Reduction pass (diff), over the build diff and again over the adversarial fixes: −7 net in the first pass and +5 net in the second (a helper replacing five copies) · 2 duplicates removed:
 - the `I2C`/`SPI` prefixes, now derived from `Kind::header`;
 - five inline copies of the oracle's field-mask arithmetic, now `oracle_mask`. The emitted bytes are unchanged, which the regeneration test confirms.
 
-1 dead path removed: `PinUsedTwice`, unreachable behind `SolvedTopology::validate`'s `DuplicatePin`. 2 protected kept, both labelled `belt-and-suspenders`: `CeilingTooLow` behind `validate`, and the oracle restating `emit_lib`'s mask arithmetic, which `INV-07` requires. 0 findings below.
+2 dead paths removed:
+- `PinUsedTwice`, unreachable behind `SolvedTopology::validate`'s `DuplicatePin`;
+- `Ceiling::NotSolved` with `generate_with_ceilings`, once `i2c_ceilings` landed. Its lines are not separable from the ceiling wiring in `72c4ac2`, so they are not in the net counts.
+
+ 2 protected kept, both labelled `belt-and-suspenders`: `CeilingTooLow` behind `validate`, and the oracle restating `emit_lib`'s mask arithmetic, which `INV-07` requires. 0 findings below.
 
 Mutants, one per guard this work order adds (`scratchpad/mutants.py`, with each file restored), re-run on the final code. 14 of 14 are killed by their own suite:
 - the header hash check, the offset-comment cross-check, the `uint32_t`-only field check and the clock-gate uniqueness check (`--lib cmsis`);
