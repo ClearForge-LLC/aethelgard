@@ -1,6 +1,6 @@
 # AET-WO-1300 — FEEDBACK
 
-**Branch:** `wo/aet-1300-schematic` · **Base:** `1b4fe5f` (PR #37), started early by the kickoff; `origin/main` merged at `3f3924e` (AET-WO-1200 #32, AET-WO-0300d #39/#41) by merge commit `bfb847f`, on the architect's notes · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Result:** spike answered below and STOPPED for the ruling. The build half has not started.
+**Branch:** `wo/aet-1300-schematic` · **Base:** `1b4fe5f` (PR #37), started early by the kickoff; `origin/main` merged at `3f3924e` (AET-WO-1200 #32, AET-WO-0300d #39/#41) by merge commit `bfb847f`, on the architect's notes · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Result:** spike answered and ruled on PR #40 (D1 to D10); §1 built under that ruling on the same branch, after merging `origin/main` at `425347e` (`4a3ea97`) and `23d0b55` (AET-WO-1201, AET-WO-1502 and the rulings in #46), each by merge commit.
 
 Entry schema: `finding · where · type · recommendation · decision-needed`.
 
@@ -332,3 +332,56 @@ On Furnace, at `d8066ec` with `origin/main` merged (`bfb847f`), every gate passe
 In CI, runs 42426631742, 42427541833, 42428065833 and 42428589322 are green in both `gates` and `tools`. The protected surfaces diff to empty against the merge base. The steering documents, `README.md`, `LICENSE-*`, `docs/inputs/**`, `container/` and `.github/workflows/` are untouched. The only paths added are `spike/1300/`, `crates/aethelgard-cli/tests/spike_1300.rs` and this file. The reduction pass and the adversarial pass belong to the build half.
 
 **Not started:** the build half (§1). `aethelgard-eda` is still the stub, and `check drc` still has no `--spec`. §6's promote-or-needs-none pass over `AET-WO-1200`'s FEEDBACK belongs to the build half's FEEDBACK, with the gates line.
+
+## Build (after the ruling on PR #40)
+
+**What was built, by ruling item.**
+
+- **D1, vendoring.** The symbols and footprints the emitter uses are copied byte for byte from KiCad's libraries at tag 10.0.7 into `crates/aethelgard-eda/data/kicad-10.0.7/`, with KiCad's `LICENSE.md` and a README naming the tag.
+  - At 10.0.7, `kicad-symbols` keeps each library as a `<Lib>.kicad_symdir/` directory, one file per symbol. The monolithic `.kicad_sym` files the image carries are build products the repository does not contain.
+  - So the per-symbol source files are vendored whole: 10 symbols, including `TMP102xxDRL`, the parent `TMP117xxDRV` extends. Six footprints come with them.
+  - Each file's git blob SHA, from GitLab's files API at ref 10.0.7, equals the blob SHA of the vendored bytes. `src/library.rs` checks every file's sha256 before any is used.
+  - `aethelgard-eda`'s licence is `(MIT OR Apache-2.0) AND CC-BY-SA-4.0`.
+- **D2:** `W25Q64JV` is drawn with `Memory_Flash:W25Q32JVSS`, Value `W25Q64JVSS`. Its bill-of-materials row carries the substitution note.
+- **D3:** every library configuration is a gate-written file in the scratch copy; no environment variable is set.
+  - `input.kicad_pro` holds the Default net class, the board minimum and ERC's library checks set to `ignore`, as one file. This follows `RUL-03` as amended, and it is the shape run 42427541833 measured.
+  - `input.kicad_dru` holds the same minimums as custom rules.
+  - `sym-lib-table` and `fp-lib-table` name the vendored libraries, which the gate copies into `lib/`.
+  - Embedded symbols drop `ki_fp_filters`.
+- **D4:** a board carrying a `(clearance …)` anywhere outside its top-level setup block is refused by name before any tool runs: exit 3, `LocalClearance`, `id` such as `pad 1 of footprint R7` or `zone on net GND`. So is an in-board net class (`BoardNetClass`) and a board that is not one KiCad S-expression (`MalformedBoard`, nesting past 256 included).
+- **D5:** the gate's setup block carries no clearance token, and the board minimum lives in its project. The row the spike did not run is a tier-2 test, `with_a_token_free_setup_the_project_step_is_load_bearing`. It asserts that a pad-local override escapes the gate's rules file under the board's own project, and is caught under the gate's. Its CI result is cited in the gates line below.
+- **D6:** `aethelgard-ir`'s identifier check refuses `/`, `{`, `}`, `$`, `[` and `]` (`REFUSED_IN_IDENTIFIERS`), with its tests and README row. No checked-in example or fixture broke.
+- **D7:** the schematic is written at format `20260306`.
+- **D9:** `aethelgard emit --file <spec> --out <dir>` validates, solves and emits `<project_name>.kicad_sch` and `<project_name>.bom.csv`. It is an MCP tool, `emit`; the tool-list tests and the CLI README are updated.
+- **`check drc` without `--spec`:** the same files, holding KiCad's defaults, and `"rules":"kicad-default"`. With `--spec`, `"rules":"specification"` and `specification_sha256`. DRC runs with `--refill-zones` (`RUL-03` as amended); the board is never saved.
+- **D8 and D10:** nothing to build here. `--schematic-parity` belongs to `1301` and `1302`.
+
+**§1.4, where each lives:**
+- ERC passes on the reference schematic: tier 2, `the_emitted_reference_schematic_passes_erc`.
+- Two regenerations are byte-identical: tier 1, `emit_writes_the_schematic_and_bom_and_two_runs_are_byte_identical`. That test runs two processes, writes into two directories and compares every byte.
+- S3's looser board is judged by the gate: tier 2, `a_board_whose_own_files_are_looser_is_judged_by_the_gate`, under `--spec` and without it. Tier 1 also checks every file the gate writes, and that no board-owned file reaches the judge: `the_gate_writes_every_rule_and_library_file_and_reads_none_from_the_board`, with a stand-in `kicad-cli`.
+- S5's names survive: tier 2, `identifiers_with_s_expression_characters_survive_kicad`. It covers every class, read back from ERC's verdict and KiCad's own netlist.
+
+| # | Finding | Where | Type | Recommendation | Decision-needed |
+|---|---|---|---|---|---|
+| B1 | **The specification declares no spacing, track-width or fabrication field**, so `--spec` cannot derive one. The gate uses one named engine floor, `rules::FLOOR_NM`: 0.2 mm clearance and board minimum, and a 0.2 mm minimum track width. These are KiCad's own defaults. Isolation between domains is bounded by each domain's spacing to ground, so one minimum covers it. A voltage-derived spacing (IPC-2221) was not built, because its values would come from memory, not a ruled source | `rules.rs` | gap in the specification | Add a fabrication-class or spacing field to the specification in a later work order, with a cited source for any voltage table | **yes** |
+| B2 | **KiCad writes `(connect_pads (clearance …))` on every zone it saves**, so D4 refuses every KiCad-authored board with a zone. Emitted boards must omit that token, and the zone clearance then falls to the board default | `board.rs`; D4 | consequence of a ruling | `1302` emits zones without it, and measures what KiCad does then | yes, for `1302` |
+| B3 | ST's pin table and KiCad's symbol name package pins 28 and 29 differently (`PC2`/`PC2_C`, `PC3`/`PC3_C`). The emitter therefore draws each solved pin at the pin table's **package position**, never by name match. A test pins `SPI_MISO` to `PC2` by hand, and another checks that every ST position is a symbol pin with the names agreeing but for those two | `schematic::emit`, `emit_tier1.rs` | measured here | none | no |
+| B4 | `emit` refuses a specification that uses a name the emitter needs for itself: `GND`, or `<ref>_SDO`, `<ref>_WP`, `<ref>_HOLD`, `<mcu>_VCAP1`/`2` (`ReservedName`). It refuses rather than renames, so a net's name is never changed behind the specification | `schematic.rs` | design | none, unless renaming is preferred | no |
+| B5 | Tests that gave `check drc` a non-board (`"x"`, or 16 MiB of NUL) now give it a minimal board, because the gate parses the copy before any tool runs. Each test still proves what it proved. The files are `descriptors_tier1.rs`, `lifecycle_tier1.rs` (×2), `mcp_tier1.rs` (×4), `sockets_tier1.rs` (its targets are now lines inside `(kicad_pcb …)`), and `tools_tier1.rs`'s byte-cap test (whitespace-padded to exactly 16 MiB) | tests | incidental input change | none | no |
+| B6 | `check drc`'s `input.sha256` stays the hash of the input's bytes. The copy KiCad judges has the gate's setup block in place of the board's, a function of those bytes alone. The CLI README says so | `kicad::prepare` | contract wording | none | no |
+| B7 | The vendored footprints are format `20260206`. The tier-2 test boards here are `20240108`, as the spike's were. `1301` chooses the emitted board version | data | for `1301` | `1301` measures `20260206` boards | no |
+| B8 | TMP117's `ALERT` (open collector) gets a no-connect, and WSON-6's exposed pad 7 has no symbol pin. Both matter at placement | `schematic.rs` | for `1301` | `1301` connects the exposed pad | no |
+| B9 | The vendored symbols are KiCad's source files, while the image carries libraries built from them, so the two could differ. Run 42427541833's `fixed` ERC with library tables raised no `lib_symbol_mismatch` against the image's symbols. That was the spike, not these files. The tier-2 ERC test judges the emitted schematic with these files embedded | D1 | residual | A later image work order could pin the image's library hashes against these | no |
+
+**AET-WO-1200's FEEDBACK, promote or needs none.** That work order was closed upward in #43, so only what this work order touches is listed:
+- **S4.1, `gpio`:** consumed. The emitter draws each SPI device's `cs` from `gpio`. Needs none.
+- **S1.7, byte-order keys:** they decide which pins the emitter draws, deterministically. Needs none.
+- **B7, the unrenamed tool-list test:** done here. `the_five_tools_come_from_the_tree` is now `the_tools_come_from_the_tree`, with seven names.
+- **All others:** needs none for this work order.
+
+ADVERSARIAL
+
+## Gates (build)
+
+GATES_BUILD
