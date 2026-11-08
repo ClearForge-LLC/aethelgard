@@ -268,10 +268,15 @@ fn zones(ctx: &Ctx, src: &Sx) -> Result<(), String> {
 fn schematic(
     ctx: &Ctx,
     values: [&str; 2],
+    strip_fp_filters: bool,
 ) -> Result<Option<(String, BTreeMap<String, Sx>)>, String> {
     let (ids, all) = super::s2::load(ctx)?;
     let mut syms = BTreeMap::new();
-    syms.insert("Device:R".to_owned(), all[&ids.r].clone());
+    let mut r_sym = all[&ids.r].clone();
+    if strip_fp_filters && let Some(items) = r_sym.items_mut() {
+        items.retain(|i| !(i.head() == Some("property") && i.arg(1) == Some("ki_fp_filters")));
+    }
+    syms.insert("Device:R".to_owned(), r_sym);
     let r = |reference: &str, value: &str, x: i64, one: &str, two: &str| Part {
         lib_id: "Device:R".into(),
         reference: reference.into(),
@@ -300,7 +305,7 @@ fn schematic(
 }
 
 fn routed(ctx: &Ctx, src: &Sx) -> Result<(), String> {
-    let Some((sch_text, _)) = schematic(ctx, ["10k", "10k"])? else {
+    let Some((sch_text, _)) = schematic(ctx, ["10k", "10k"], false)? else {
         return Ok(());
     };
     let dir = ctx.dir("s4-route")?;
@@ -408,7 +413,7 @@ fn routed(ctx: &Ctx, src: &Sx) -> Result<(), String> {
     use super::env::Treat;
     let emit = |r: Result<(Board, Vec<String>), String>| r.and_then(|(b, _)| b.emit());
     let with_fields = emit(build("R2", R_FP, path("R2"), nets, true, None))?;
-    let (sch_1k, _) = schematic(ctx, ["10k", "1k"])?.ok_or("no schematic")?;
+    let (sch_1k, _) = schematic(ctx, ["10k", "1k"], false)?.ok_or("no schematic")?;
     let bare = (
         a.trim_start_matches('/').to_owned(),
         bn.trim_start_matches('/').to_owned(),
@@ -518,6 +523,22 @@ fn routed(ctx: &Ctx, src: &Sx) -> Result<(), String> {
             Treat::Bare,
         ),
         (
+            "P13 fields + KICAD_CONFIG_HOME + severity ignore footprint_symbol_field_mismatch",
+            with_fields.clone(),
+            sch_text.clone(),
+            true,
+            Treat::ConfigHome,
+        ),
+        (
+            "P14 fields + KICAD_CONFIG_HOME, schematic symbol without ki_fp_filters",
+            with_fields.clone(),
+            schematic(ctx, ["10k", "10k"], true)?
+                .ok_or("no schematic")?
+                .0,
+            true,
+            Treat::ConfigHome,
+        ),
+        (
             "P10 fields + KICAD_CONFIG_HOME tables",
             with_fields,
             sch_text.clone(),
@@ -549,6 +570,27 @@ fn routed(ctx: &Ctx, src: &Sx) -> Result<(), String> {
                     "\"lib_footprint_issues\": \"ignore\", \"lib_footprint_mismatch\": \"ignore\"",
                 ),
             )?;
+        }
+        if name.starts_with("P13") {
+            write(
+                &d.join("s4.kicad_pro"),
+                &project(
+                    "s4",
+                    SPEC_MM,
+                    "\"footprint_symbol_field_mismatch\": \"ignore\"",
+                ),
+            )?;
+        }
+        if name.starts_with("P14") {
+            let (ran, f) = ctx.erc_env(&d.join("s4.kicad_sch"), &env)?;
+            answer(
+                "S4",
+                format!(
+                    "P14: its schematic's ERC under the same treatment: exit {}, findings {}",
+                    ran.code_text(),
+                    summary(&f)
+                ),
+            );
         }
         if name.starts_with("P12") {
             let (_, demo) = super::s3::demo_pro()?;
