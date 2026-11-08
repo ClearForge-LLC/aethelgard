@@ -1,6 +1,11 @@
 # AET-WO-1502 FEEDBACK
 
-**Result:** built; **§7 stop** on the tier-2 test (below). `gates` is green; `tools` fails on one test, which I did not weaken. One PR (#47), unmerged.
+**Result:** built. The first push stopped at §7 (the tier-2 test); the architect ruled and §1.1 is amended (below). One PR (#47), unmerged.
+
+## The stop and the ruling
+- Stop: the tier-2 test failed in `tools` (run 42431053542) because cargo's first `error:` line ends at `Updating crates.io index`; the missing package is on the next `error:` line. I did not weaken the test.
+- Ruling (`~/.cache/aet-1502-ruling.md`): the work order had the gap, not the code. **§1.1 amended:** `Style::Cargo` quotes every `error:` line in order, trimmed and sanitised, joined by ` | `; `Style::Renode` is unchanged (first `[ERROR]` line); the cap is 400 bytes for the whole quote (Renode keeps 240), `…` if cut; nothing to quote, no suffix. The tier-2 test stays as written.
+- Built: `said.rs` follows the amendment; unit tests cover two and three lines, the 400 cap landing inside the second line, and Renode unchanged; the tier-1 tests and the README follow. Mutant: joining with `""` fails 4 tests. The sections below describe the first build; where they say first line or 240, the amendment governs for cargo.
 
 ## What was built
 - `crates/aethelgard-cli/src/said.rs`: `first_error(text, Style)` and `suffix`. `Style::Cargo` = first trimmed line starting `error:`; `Style::Renode` = first line containing `[ERROR]`. Output is printable ASCII (every other byte `?`), cut to 240 bytes plus `…`.

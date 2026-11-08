@@ -1328,20 +1328,20 @@ fn message(report: &Value) -> &str {
 }
 
 #[test]
-fn prove_disagreement_quotes_the_tools_first_error_line() {
+fn prove_disagreement_quotes_every_error_line() {
     let tb = Dir::new("tb");
     kani_stub(
         &tb,
         Version::Good,
         1,
         "something odd\n",
-        "error: no matching package named `nope` found\nerror: second\n",
+        "error: failed to get index\nerror: no matching package named `nope` found\n",
     );
     let c = krate();
     let report = refused(&prove(&tb, &c.path, "h"), 5, "ToolError");
     assert!(
         message(&report)
-            .ends_with("; the tool said: error: no matching package named `nope` found"),
+            .ends_with("; the tool said: error: failed to get index | error: no matching package named `nope` found"),
         "{report}"
     );
 }
@@ -1386,7 +1386,7 @@ fn prove_quotes_a_hostile_line_as_short_printable_ascii() {
     assert!(said.starts_with("error: \"}\\?[2J??"), "{said}");
     assert!(said.ends_with('\u{2026}'));
     let body = said.strip_suffix('\u{2026}').unwrap();
-    assert_eq!(body.len(), 240);
+    assert_eq!(body.len(), 400);
     assert!(body.bytes().all(|b| (0x20..=0x7E).contains(&b)), "{said}");
     // One JSON line on stdout, however hostile the quote.
     assert_eq!(output.stdout.iter().filter(|b| **b == b'\n').count(), 1);
