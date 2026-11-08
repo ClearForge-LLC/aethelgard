@@ -1243,6 +1243,56 @@ fn failing_proof(stdout: &str, stderr: &str, kind: &str) {
 }
 
 #[test]
+fn prove_pass_with_every_cover_satisfied_is_pass() {
+    let tb = Dir::new("tb");
+    let out = format!(" ** 2 of 2 cover properties satisfied\n{KANI_PASS}");
+    kani_stub(&tb, Version::Good, 0, &out, "");
+    let c = krate();
+    let report = judged(&prove(&tb, &c.path, "h"), "pass", "prove");
+    assert_eq!(report["findings"], json!([]));
+}
+
+/// AET-WO-1400 adversarial E1: Kani exits 0 for a harness whose `assume` cuts
+/// every path, and only the cover summary shows it.
+#[test]
+fn prove_pass_with_an_unreachable_cover_is_cover_unsatisfied() {
+    for summary in [
+        " ** 0 of 1 cover properties satisfied (1 unreachable)",
+        " ** 1 of 2 cover properties satisfied (1 unsatisfiable)",
+        " ** 0 of 1 cover properties satisfied (1 undetermined)",
+    ] {
+        let tb = Dir::new("tb");
+        kani_stub(
+            &tb,
+            Version::Good,
+            0,
+            &format!("{summary}\n{KANI_PASS}"),
+            "",
+        );
+        let c = krate();
+        let report = judged(&prove(&tb, &c.path, "h"), "fail", "prove");
+        assert_eq!(report["tool"]["exit_code"], 0);
+        assert_eq!(finding_count(&report), 1, "{summary}");
+        assert_eq!(report["findings"][0]["kind"], "cover_unsatisfied");
+        assert!(
+            report["findings"][0]["message"]
+                .as_str()
+                .unwrap()
+                .starts_with(summary.trim()),
+            "{report}"
+        );
+    }
+}
+
+#[test]
+fn prove_pass_with_two_cover_summaries_is_tool_error() {
+    let two = format!(
+        " ** 1 of 1 cover properties satisfied\n ** 1 of 1 cover properties satisfied\n{KANI_PASS}"
+    );
+    untrusted_proof(0, &two, "");
+}
+
+#[test]
 fn prove_failed_verification_is_proof_failed() {
     failing_proof(KANI_FAIL, "", "proof_failed");
 }

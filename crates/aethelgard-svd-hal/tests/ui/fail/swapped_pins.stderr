@@ -1,0 +1,18 @@
+error[E0308]: arguments to this method are incorrect
+  --> tests/ui/fail/swapped_pins.rs:14:20
+   |
+14 |     let _bus = i2c.init::<Fast400k, _>(&mut r, sda, scl);
+   |                    ^^^^^^^^^^^^^^^^^^^         ---  --- expected `PB7<AlternateFunction<4>>`, found `PB6<AlternateFunction<4>>`
+   |                                                |
+   |                                                expected `PB6<AlternateFunction<4>>`, found `PB7<AlternateFunction<4>>`
+   |
+note: method defined here
+  --> $WORKSPACE/boards/sentinel-01/src/board.rs
+   |
+   |     pub fn init<S: i2c1_speed::AtMostCeiling, R: Registers>(
+   |            ^^^^
+help: swap these arguments
+   |
+14 -     let _bus = i2c.init::<Fast400k, _>(&mut r, sda, scl);
+14 +     let _bus = i2c.init::<Fast400k, _>(&mut r, scl, sda);
+   |

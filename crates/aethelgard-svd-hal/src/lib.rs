@@ -12,6 +12,9 @@ use aethelgard_ir::{Pin, PinSource, PinTable};
 use roxmltree::{Document, Node};
 use sha2::{Digest, Sha256};
 
+pub mod board;
+pub mod cmsis;
+
 #[cfg(test)]
 mod tests;
 

@@ -1,0 +1,7 @@
+error[E0599]: no method named `split` found for struct `sentinel_01_board::GpioB<Gated>` in the current scope
+ --> tests/ui/fail/ungated_port_clock.rs:6:29
+  |
+6 |     let _pins = board.gpiob.split();
+  |                             ^^^^^ method not found in `sentinel_01_board::GpioB<Gated>`
+  |
+  = note: the method was found for `sentinel_01_board::GpioB<Clocked>`
