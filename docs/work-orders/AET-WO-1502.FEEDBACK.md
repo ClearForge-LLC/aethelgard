@@ -1,6 +1,6 @@
 # AET-WO-1502 FEEDBACK
 
-**Result:** built; no §7 stop. One PR, unmerged.
+**Result:** built; **§7 stop** on the tier-2 test (below). `gates` is green; `tools` fails on one test, which I did not weaken. One PR (#47), unmerged.
 
 ## What was built
 - `crates/aethelgard-cli/src/said.rs`: `first_error(text, Style)` and `suffix`. `Style::Cargo` = first trimmed line starting `error:`; `Style::Renode` = first line containing `[ERROR]`. Output is printable ASCII (every other byte `?`), cut to 240 bytes plus `…`.
@@ -9,7 +9,8 @@
 
 ## Gates
 - `fmt`, `clippy -D warnings` (also with `--features with-tools`) and `cargo test --workspace` pass locally.
-- **Tier 2 was not run here** (no Kani on Furnace; the architect said CI's `tools` job proves it). It builds and lints. Its message assertions are only `error:` plus the package name, since I could not see whether the sandboxed cargo fails on `no matching package` or on a registry-unreachable error. If the `tools` job fails on the package name, that is the finding.
+- **§7 stop: tier-2 `prove_of_an_unresolvable_dependency_names_the_package` fails in CI's `tools` job** (run 42431053542). In the sandbox (no network) Kani's output is `{"kind":"ToolError","message":"cargo kani exited 1 but its output matches none, or more than one, of: failed proof, compile error, missing harness; the tool said: error: Failed to get cargo metadata.: `cargo metadata` exited with an error:     Updating crates.io index"}`. The helper did what §1.1 says (first `error:` line), but that line does not name the package; the cause (`no matching package named …` in 1400's F5, seen outside the sandbox) is not on it in the sandbox, where the registry is unreachable. Green needs either dropping the package-name assertion (a weakened test) or a different line-selection rule (a change to §1.1); both are the architect's call. Options: (a) accept `…Updating crates.io index` as the tier-2 evidence and assert only the `error:` prefix, which does not meet §3; (b) quote the last `error:` line, or the first `error:` line plus its indented continuation; (c) make the tier-2 crate fail to resolve without the network, e.g. a `path` dependency whose directory is missing, where cargo names the path. (c) needs no helper change and is my recommendation; I did not try it, as it changes the test's premise.
+- Tier 1 and the helper are green in CI's `gates` and locally. The earlier note that **tier 2 was not run here** stands (no Kani on Furnace; the architect said CI's `tools` job proves it). It builds and lints. Its message assertions are only `error:` plus the package name, since I could not see whether the sandboxed cargo fails on `no matching package` or on a registry-unreachable error. If the `tools` job fails on the package name, that is the finding.
 
 ## Decisions for the architect
 - D1: "the unrecognised arms" of `renode.rs` read as both the "CPU and a load error" arm and the "no CPU, no error" arm. Both quote.
