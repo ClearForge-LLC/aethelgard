@@ -5,7 +5,7 @@
 //! report: `name=ok` or `name=errno=N`. Run by the real CLI, it runs inside
 //! the real sandbox, so the results are what a hostile tool would get.
 //!
-//! A board whose first line is `mode=channels` asks instead for AET-WO-1600's
+//! A board with a `mode=channels` line asks instead for AET-WO-1600's
 //! non-socket channels and the capability state (`channels()`).
 
 #![forbid(unsafe_code)]
@@ -51,7 +51,7 @@ fn main() {
     }
     let board_path = args.last().unwrap_or_else(|| exit(99));
     let board = std::fs::read_to_string(board_path).unwrap_or_else(|_| exit(98));
-    if board.starts_with("mode=channels") {
+    if board.lines().any(|l| l == "mode=channels") {
         let victim = board
             .lines()
             .find_map(|l| l.strip_prefix("victim=")?.parse::<i32>().ok())

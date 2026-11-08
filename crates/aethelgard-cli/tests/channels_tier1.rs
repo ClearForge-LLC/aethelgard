@@ -69,7 +69,13 @@ fn inside() -> BTreeMap<String, String> {
     let board = dir.0.join("channels.kicad_pcb");
     // A process outside the sandbox, for the calls that take a pid.
     let mut victim = sleeper();
-    fs::write(&board, format!("mode=channels\nvictim={}\n", victim.id())).unwrap();
+    // A minimal board, because `check drc` parses the copy before any tool
+    // runs (AET-WO-1300 B5); the probe reads its lines inside it.
+    fs::write(
+        &board,
+        format!("(kicad_pcb\nmode=channels\nvictim={}\n)\n", victim.id()),
+    )
+    .unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
         .args(["check", "drc", "--board"])
         .arg(&board)
