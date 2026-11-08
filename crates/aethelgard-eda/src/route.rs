@@ -83,9 +83,6 @@ const CORRIDOR_COST: u32 = 2;
 /// Half a corridor's width: a foreign track centred nearer than this to the
 /// pad's axis blocks the pad's straight escape.
 const CORRIDOR_HALF_NM: i64 = CLEARANCE_NM + WIDTH_NM;
-/// How far beyond a pad field no other net's via may stand in a pad's
-/// corridor, so that pads side by side stagger their vias outward.
-const VIA_ESCAPE_NM: i64 = 1_000_000;
 
 const STEP_F: u32 = 2;
 const STEP_B: u32 = 6;
@@ -430,19 +427,6 @@ impl<'a> Router<'a> {
             }
             for pad in &part.pads {
                 if let Some(net) = pad.net.as_ref().and_then(|n| nets.binary_search(n).ok()) {
-                    // Near the field, no other net's via stands in the
-                    // pad's way out.
-                    let keep = corridor(&grid, field, pad, CORRIDOR_HALF_NM + VIA_NM / 2, 0);
-                    for (node, cost) in keep {
-                        let depth = CORRIDOR_DEPTH - i64::from(cost / CORRIDOR_COST);
-                        if depth * PITCH_NM < VIA_ESCAPE_NM {
-                            via[node] = match via[node] {
-                                FREE => owner(net),
-                                o if o == owner(net) => o,
-                                _ => BLOCKED,
-                            };
-                        }
-                    }
                     corridors[net].extend(corridor(&grid, field, pad, CORRIDOR_HALF_NM, 0));
                     via_corridors[net].extend(corridor(
                         &grid,
