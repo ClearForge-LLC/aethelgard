@@ -1,0 +1,87 @@
+# The README quickstart (AET-WO-1700), run byte for byte. The block between the
+# two marker comments is extracted and executed by `bash -euo pipefail` in an
+# empty directory on a runner with Docker and nothing of this repository's
+# toolchain. A quickstart nobody runs drifts.
+name: quickstart
+
+on:
+  pull_request:
+    paths:
+      - "README.md"
+      - ".github/workflows/quickstart.yml"
+  push:
+    branches: [main]
+    paths:
+      - "README.md"
+      - ".github/workflows/quickstart.yml"
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quickstart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Full history, so that the pinned commits can be tested for reachability.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Whole-line markers only, so a marker inside a code span cannot match.
+      - name: extract the quickstart block
+        run: |
+          set -euo pipefail
+          readme=README.md
+          begin='<!-- quickstart:begin -->'
+          end='<!-- quickstart:end -->'
+          [ "$(grep -cxF -- "$begin" "$readme")" -eq 1 ] || { echo "begin marker missing or repeated" >&2; exit 1; }
+          [ "$(grep -cxF -- "$end" "$readme")" -eq 1 ] || { echo "end marker missing or repeated" >&2; exit 1; }
+          [ "$(grep -nxF -- "$begin" "$readme" | cut -d: -f1)" -lt "$(grep -nxF -- "$end" "$readme" | cut -d: -f1)" ] || { echo "markers out of order" >&2; exit 1; }
+          if grep -q $'\r' "$readme"; then echo "README.md holds a carriage return" >&2; exit 1; fi
+          awk -v b="$begin" -v e="$end" '$0==e{on=0} on{print} $0==b{on=1}' "$readme" > "$RUNNER_TEMP/fenced.txt"
+          [ -s "$RUNNER_TEMP/fenced.txt" ] || { echo "the block is empty" >&2; exit 1; }
+          # Exactly one fenced bash block and nothing else between the markers.
+          [ "$(grep -c '^```' "$RUNNER_TEMP/fenced.txt")" -eq 2 ] || { echo "not exactly one fenced block" >&2; exit 1; }
+          [ "$(head -n1 "$RUNNER_TEMP/fenced.txt")" = '```bash' ] || { echo "the block is not a bash fence" >&2; exit 1; }
+          [ "$(tail -n1 "$RUNNER_TEMP/fenced.txt")" = '```' ] || { echo "text after the closing fence" >&2; exit 1; }
+          sed '1d;$d' "$RUNNER_TEMP/fenced.txt" > "$RUNNER_TEMP/quickstart.sh"
+          [ -s "$RUNNER_TEMP/quickstart.sh" ] || { echo "the fenced block is empty" >&2; exit 1; }
+          echo "extracted $(wc -l < "$RUNNER_TEMP/quickstart.sh") lines"
+
+      # The pins must be real history of main, not a branch that never merged.
+      - name: the pinned specification commit is on main
+        run: |
+          set -euo pipefail
+          commits=$(grep -oE 'aethelgard/[0-9a-f]{40}/' "$RUNNER_TEMP/quickstart.sh" | sort -u | cut -d/ -f2)
+          [ "$(wc -w <<< "$commits")" -eq 1 ] || { echo "expected exactly one pinned commit, got: $commits" >&2; exit 1; }
+          git merge-base --is-ancestor "$commits" origin/main || { echo "$commits is not reachable from origin/main" >&2; exit 1; }
+          echo "specification commit $commits is on main"
+
+      # No checkout in the run directory, and no toolchain on the path it uses.
+      - name: run it, as written
+        run: |
+          set -euo pipefail
+          d=$(mktemp -d)
+          cd "$d"
+          bash -euo pipefail "$RUNNER_TEMP/quickstart.sh" 2>&1 | tee "$RUNNER_TEMP/quickstart.out"
+          grep -qx 'quickstart ok' "$RUNNER_TEMP/quickstart.out"
+          ls "$d"
+
+      # The image's provenance. The engine image carries no
+      # org.opencontainers.image.revision label (AET-WO-1700 FEEDBACK), so the
+      # pin is tied to this repository by its source label; the digest-to-commit
+      # record is the publish job's run summary.
+      - name: the pinned image names this repository as its source
+        run: |
+          set -euo pipefail
+          image=$(grep -oE '^IMAGE=\S+' "$RUNNER_TEMP/quickstart.sh" | cut -d= -f2)
+          [ -n "$image" ] || { echo "no IMAGE in the block" >&2; exit 1; }
+          case "$image" in ghcr.io/clearforge-llc/aethelgard@sha256:*) ;; *) echo "image is not pinned by digest: $image" >&2; exit 1;; esac
+          src=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' "$image")
+          [ "$src" = "https://github.com/ClearForge-LLC/aethelgard" ] || { echo "unexpected source label: $src" >&2; exit 1; }
+          echo "$image source=$src"
