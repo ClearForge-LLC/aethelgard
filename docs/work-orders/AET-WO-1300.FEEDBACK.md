@@ -331,7 +331,7 @@ On Furnace, at `d8066ec` with `origin/main` merged (`bfb847f`), every gate passe
 
 In CI, runs 42426631742, 42427541833, 42428065833 and 42428589322 are green in both `gates` and `tools`. The protected surfaces diff to empty against the merge base. The steering documents, `README.md`, `LICENSE-*`, `docs/inputs/**`, `container/` and `.github/workflows/` are untouched. The only paths added are `spike/1300/`, `crates/aethelgard-cli/tests/spike_1300.rs` and this file. The reduction pass and the adversarial pass belong to the build half.
 
-**Not started:** the build half (§1). `aethelgard-eda` is still the stub, and `check drc` still has no `--spec`. §6's promote-or-needs-none pass over `AET-WO-1200`'s FEEDBACK belongs to the build half's FEEDBACK, with the gates line.
+**At the spike's close the build half had not started; it is the Build section below.** §6's promote-or-needs-none pass over `AET-WO-1200`'s FEEDBACK belongs to the build half's FEEDBACK, with the gates line.
 
 ## Build (after the ruling on PR #40)
 
@@ -349,7 +349,7 @@ In CI, runs 42426631742, 42427541833, 42428065833 and 42428589322 are green in b
   - `sym-lib-table` and `fp-lib-table` name the vendored libraries, which the gate copies into `lib/`.
   - Embedded symbols drop `ki_fp_filters`.
 - **D4:** a board carrying a `(clearance …)` anywhere outside its top-level setup block is refused by name before any tool runs: exit 3, `LocalClearance`, `id` such as `pad 1 of footprint R7` or `zone on net GND`. So is an in-board net class (`BoardNetClass`) and a board that is not one KiCad S-expression (`MalformedBoard`, nesting past 256 included).
-- **D5:** the gate's setup block carries no clearance token, and the board minimum lives in its project. The row the spike did not run is a tier-2 test, `with_a_token_free_setup_the_project_step_is_load_bearing`. It asserts that a pad-local override escapes the gate's rules file under the board's own project, and is caught under the gate's. Its CI result is cited in the gates line below.
+- **D5:** the gate's setup block carries no clearance token, and the board minimum lives in its project. The row the spike did not run is a tier-2 test, `with_a_token_free_setup_the_project_step_is_load_bearing`. It asserts that a pad-local override escapes the gate's rules file under the board's own project, and is caught under the gate's. Measured: the project step is load-bearing (Gates, below).
 - **D6:** `aethelgard-ir`'s identifier check refuses `/`, `{`, `}`, `$`, `[` and `]` (`REFUSED_IN_IDENTIFIERS`), with its tests and README row. No checked-in example or fixture broke.
 - **D7:** the schematic is written at format `20260306`.
 - **D9:** `aethelgard emit --file <spec> --out <dir>` validates, solves and emits `<project_name>.kicad_sch` and `<project_name>.bom.csv`. It is an MCP tool, `emit`; the tool-list tests and the CLI README are updated.
@@ -380,8 +380,50 @@ In CI, runs 42426631742, 42427541833, 42428065833 and 42428589322 are green in b
 - **B7, the unrenamed tool-list test:** done here. `the_five_tools_come_from_the_tree` is now `the_tools_come_from_the_tree`, with seven names.
 - **All others:** needs none for this work order.
 
-ADVERSARIAL
+## Adversarial pass (§5, full, on the rule injection)
+
+**How it was run.**
+- **Reviewer:** a fresh Opus subagent in an isolated worktree, at `b7b4e58`, given the code and the ruling, not the builder's conclusions.
+- **Measured, not inferred:** it ran real KiCad 10.0.7 in the tools image, which a local rootless podman on Furnace holds. That image's digest is `sha256:74f69bd3…`, exactly `container/IMAGE`. The builder checked the digest.
+- **Kept as regression tests:** its tests are `crates/aethelgard-eda/tests/adversarial_1300.rs` and `crates/aethelgard-cli/tests/adversarial_1300.rs`, adjusted to the fixes below. Every case it demonstrated now asserts the secure outcome.
+
+| # | Finding | Severity | Fixed by | Decision-needed |
+|---|---|---|---|---|
+| A1 | **The gate's reader and KiCad's disagreed in three ways**, so a board could hide its own setup block and pad clearances from the scan while KiCad honoured them. The verdict was **`pass`** with `"rules":"specification"` on a board with a 0.05 mm violation. The three ways (measured):<br>• KiCad skips a line whose first non-blank byte is `#`, so `#"` … `#"` lines made the rules a string to the gate only;<br>• KiCad reads NUL as whitespace, so `(\0setup …)` passed;<br>• KiCad keeps a `"` inside an atom (`(descr x"y) (clearance 0.01) (descr z"w)`).<br>Either hidden piece alone was still caught; the bypass needed both | **critical** (`INV-07`) | `sexpr::lexically_plain` refuses each construct (`INV-06`):<br>• a control or non-ASCII byte outside a string;<br>• a raw line break or control byte inside one;<br>• a `#` line;<br>• a `"` touching an atom.<br>`board` also refuses any list whose head is not a lowercase keyword. KiCad itself will not load an upper-case or quoted keyword, and the gate no longer relies on that | no |
+| A2 | Footprint tokens that **waive a check**: `net_tie_pad_groups` turned two clearance, a short and two mask bridges into nothing (measured; verdict `pass`), and `allow_soldermask_bridges` removed a mask bridge. `jumper_pad_groups`, `duplicate_pad_numbers_are_jumpers yes` and `allow_missing_courtyard` are the same kind (unmeasured) | high | All refused (`BoardWaiver`). The vendored footprints say `duplicate_pad_numbers_are_jumpers no`, which stays | **yes**: `RUL-03` names only `(clearance …)`; ratify the wider refusal |
+| A3 | Mask and paste margins (`solder_mask_margin`, `solder_paste_margin`) are not refused. They are the design's geometry, which DRC judges, not waivers | — | kept deliberately | yes, if they should be |
+| A4 | A reference starting with `#` (`#PWR001`, `#U9`) was emitted. KiCad treats it as a virtual symbol and drops it from its netlist and BOM (measured: 14 rows against the emitter's 15), and `#PWR001` collided with the emitter's own power symbol | medium (`INV-01`) | `emit` refuses it (`ReservedName`). `RUL-14` still admits `#`; whether to narrow it is the architect's | yes, low |
+| A5 | A 16 MiB board (the input cap) of `()` peaked at 663 MiB, and of `(a)` at 1.4 GiB | low–medium | `sexpr::MAX_TOKENS`, 1,000,000 tokens, refused past it. Peak RSS is now 40–92 MB for the worst 16 MiB boards, debug build, `/usr/bin/time` on Furnace. A board over the cap fails closed; this engine's boards have tens of parts | yes: raise the cap or stream the scan when boards grow |
+| A6 | A reference such as `=1+1` is a spreadsheet formula in the BOM's first cell | low | not changed: prefixing would alter the data `INV-01` ties to the specification. Recorded here | yes, low |
+| A7 | `(options (clearance outline))` on a custom pad was refused as a local clearance | low (it failed closed) | Allowed exactly for `outline` and `convexhull`; every other clearance, however spelled (`5e-2`, `.01`, `+0.01`), is refused | no |
+| A8 | Plausible, unmeasured: `check erc` does not scan the schematic, so a hierarchical sheet naming a file outside the scratch copy would be judged without being hashed. Landlock's read-only system paths include `/etc` | low (`INV-03`) | out of this work order's rule-injection scope | yes, for a later work order |
+| A9 | Plausible: `generator_version` is the crate version, so an emission depends on the engine's version as well as the specification | none | intended: a new engine may emit differently | no |
+
+**What it tried and the code withstood** (kept as tests):
+- the board's own `.kicad_pro` and `.kicad_dru` beside it, a `.kicad_dru` under another name, a symlinked board and project. None reaches the judge; the scratch listing is exactly the gate's files;
+- a setup, net class or padstack-layer clearance nested anywhere;
+- `\"` and `\\` escapes;
+- trailing data, a byte-order mark, a second top-level list;
+- deep nesting;
+- TOCTOU: the original is read once into a 0700 scratch directory, and only the copy is used;
+- emission under `env_clear`, other locales, time zones, `SOURCE_DATE_EPOCH`, working directories, out paths and specification layouts, which is byte-identical;
+- every identifier character `RUL-14` admits, through the `.kicad_sch` and the BOM, which RFC 4180 parses back to five fields per row;
+- project names `.`, `..`, `-` and `~`, which stay inside `--out`.
+
+**Mutation (diff-sized, one mutant per guard this work order added, 29):** every mutant fails its suite. That covers the reader's five lexical refusals and its depth and token caps; the board's clearance, net-class, waiver, odd-list and setup guards; the hash check; the dropping of `ki_fp_filters`; the identifier narrowing; the emitter's reserved names, `#` references, addresses and pin-by-position; the board minimum; the board preparation; `--refill-zones`; `O_NOFOLLOW`; and CSV quoting. Each run was in a `systemd-run --user --scope -p MemoryMax=32G` cgroup.
 
 ## Gates (build)
 
-GATES_BUILD
+All on Furnace at the PR's code head, `origin/main` `6525506` merged:
+- **Workspace gates:** pass. `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets --locked -- -D warnings`, with and without `--features aethelgard-cli/with-tools`; `cargo test --workspace --locked`.
+- **The `tools` job's steps in the pinned image**, run locally under rootless podman (`--network none`, `--pids-limit=-1`). Rootless podman's default PID limit makes the parallel tier-1 suite fail to spawn with `EAGAIN`; that is this harness, not the code:
+  - `cargo fmt`, `cargo clippy --features aethelgard-cli/with-tools` and `cargo test --features aethelgard-cli/with-tools` pass, 32 suites, exit 0.
+  - **Tier 2 there:**
+    - ERC on the emitted `sentinel-01`: `"verdict":"pass"`, no findings.
+    - The D5 row: the board's own project gave 0 clearance violations; the gate's project gave 1, "board minimum clearance 0.2000 mm". **So the project step is load-bearing**, as ruled, and the fallback (`clearance_min` in the gate's setup) is not needed.
+    - S3's loose board fails with one clearance finding, under both `specification` and `kicad-default`.
+    - The S5 names read back from KiCad's netlist unchanged: `/I2C(SDA)`, `VDD"3V3\`, `/CS"(0)`, `U(2)`, `U"3`, `U\4`, the title `p"(x)\#`.
+
+  This is a pre-check, not acceptance; CI's run is cited below.
+- **CI:** CIRUN
+- **Reduction pass (diff):** −51 net in the reduction commit · 5 duplicates removed (the specification reader, sha256 hex ×2, the reference counter, a one-use trait) · 1 dead constant removed · 0 protected kept · 0 findings below. It was run by the builder, not a fresh subagent, because the adversarial reviewer was already running.
