@@ -349,7 +349,7 @@ In CI, runs 42426631742, 42427541833, 42428065833 and 42428589322 are green in b
   - `sym-lib-table` and `fp-lib-table` name the vendored libraries, which the gate copies into `lib/`.
   - Embedded symbols drop `ki_fp_filters`.
 - **D4:** a board carrying a `(clearance …)` anywhere outside its top-level setup block is refused by name before any tool runs: exit 3, `LocalClearance`, `id` such as `pad 1 of footprint R7` or `zone on net GND`. So is an in-board net class (`BoardNetClass`) and a board that is not one KiCad S-expression (`MalformedBoard`, nesting past 256 included).
-- **D5:** the gate's setup block carries no clearance token, and the board minimum lives in its project. The row the spike did not run is a tier-2 test, `with_a_token_free_setup_the_project_step_is_load_bearing`. It asserts that a pad-local override escapes the gate's rules file under the board's own project, and is caught under the gate's. Measured: the project step is load-bearing (Gates, below).
+- **D5:** the gate's setup block carries no clearance token, and the board minimum lives in its project. The row the spike did not run is a tier-2 test, `with_a_token_free_setup_the_project_step_is_load_bearing`. It asserts that a pad-local override escapes the gate's rules file under the board's own project, and is caught under the gate's. Measured in CI run 42436232690: the project step is load-bearing (Gates, below).
 - **D6:** `aethelgard-ir`'s identifier check refuses `/`, `{`, `}`, `$`, `[` and `]` (`REFUSED_IN_IDENTIFIERS`), with its tests and README row. No checked-in example or fixture broke.
 - **D7:** the schematic is written at format `20260306`.
 - **D9:** `aethelgard emit --file <spec> --out <dir>` validates, solves and emits `<project_name>.kicad_sch` and `<project_name>.bom.csv`. It is an MCP tool, `emit`; the tool-list tests and the CLI README are updated.
@@ -425,5 +425,5 @@ All on Furnace at the PR's code head, `origin/main` `6525506` merged:
     - The S5 names read back from KiCad's netlist unchanged: `/I2C(SDA)`, `VDD"3V3\`, `/CS"(0)`, `U(2)`, `U"3`, `U\4`, the title `p"(x)\#`.
 
   This is a pre-check, not acceptance; CI's run is cited below.
-- **CI:** CIRUN
+- **CI:** [run 42436232690](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42436232690), commit `ccbec65`, the first push after the ruling: `gates` success, `tools` success (§3.3). Every suite is `ok`. Its log carries the same `AET-WO-1300` lines as the local run: ERC `pass` on the emitted `sentinel-01`; the D5 row 0 then 1 ("board minimum clearance 0.2000 mm"); the loose board failing under both rule sources; the names read back unchanged. §1.4 passes in `gates` and `tools` (§3.2).
 - **Reduction pass (diff):** −51 lines net in the reduction edits themselves (the tests added alongside them excluded) · 5 duplicates removed (the specification reader, sha256 hex ×2, the reference counter, a one-use trait) · 1 dead constant removed · 0 protected kept · 0 findings below. It was run by the builder, not a fresh subagent, because the adversarial reviewer was already running.
