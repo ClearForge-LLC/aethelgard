@@ -149,12 +149,13 @@ fn pidfd_calls_are_refused_inside_and_reach_the_kernel_outside() {
             .raw_os_error(),
         9
     );
-    assert_eq!(
-        pidfd_getfd(&plain, 0, PidfdGetfdFlags::empty())
-            .unwrap_err()
-            .raw_os_error(),
-        9
-    );
+    // Docker's default profile refuses pidfd_getfd without CAP_SYS_PTRACE
+    // (the spike's S5), so inside the image the control gets EPERM too; on a
+    // host it must reach the kernel.
+    let getfd = pidfd_getfd(&plain, 0, PidfdGetfdFlags::empty()).unwrap_err();
+    if !in_a_container() {
+        assert_eq!(getfd.raw_os_error(), 9);
+    }
     let got = inside();
     for call in ["pidfd_open", "pidfd_send_signal", "pidfd_getfd"] {
         assert_eq!(got[call], "errno=1", "{call}: {got:?}");
