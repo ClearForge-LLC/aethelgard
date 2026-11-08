@@ -262,17 +262,6 @@ impl Builder<'_> {
     }
 
     fn passive(&mut self, kind: char, value: String, one: Conn, two: Conn) {
-        self.passive_for(kind, value, one, two, None);
-    }
-
-    fn passive_for(
-        &mut self,
-        kind: char,
-        value: String,
-        one: Conn,
-        two: Conn,
-        decouples: Option<&str>,
-    ) {
         let reference = self.reference(kind);
         let (lib_id, footprint) = if kind == 'R' {
             (R, R_FOOTPRINT)
@@ -286,7 +275,7 @@ impl Builder<'_> {
             footprint: footprint.to_owned(),
             conns: BTreeMap::from([("1".into(), one), ("2".into(), two)]),
             note: None,
-            decouples: decouples.map(str::to_owned),
+            decouples: None,
         });
     }
 
@@ -310,7 +299,10 @@ impl Builder<'_> {
     fn decouple(&mut self, ic: &str, rail: &str, value: &str) {
         let r = self.rail(rail);
         let g = self.ground();
-        self.passive_for('C', value.to_owned(), r, g, Some(ic));
+        self.passive('C', value.to_owned(), r, g);
+        if let Some(cap) = self.parts.last_mut() {
+            cap.decouples = Some(ic.to_owned());
+        }
     }
 }
 

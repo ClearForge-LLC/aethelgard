@@ -778,14 +778,9 @@ pub(crate) fn write(project: &str, parts: &[Part]) -> Result<String, EmitError> 
     ];
     let mut order: Vec<usize> = (0..items.len()).collect();
     order.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference));
+    // `place` returns each item's placement at the item's index.
     for i in order {
-        let origin = layout
-            .placed
-            .iter()
-            .find(|p| p.reference == items[i].part.reference)
-            .map(|p| p.origin)
-            .ok_or_else(|| EmitError::Internal("a part was not placed".into()))?;
-        out.push(footprint(project, &items[i], origin)?);
+        out.push(footprint(project, &items[i], layout.placed[i].origin)?);
     }
     let o = layout.outline;
     out.push(Sx::List(vec![
