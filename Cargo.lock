@@ -15,6 +15,7 @@ name = "aethelgard-cli"
 version = "0.1.0"
 dependencies = [
  "aethelgard-ir",
+ "aethelgard-svd-hal",
  "clap",
  "io-uring",
  "landlock",

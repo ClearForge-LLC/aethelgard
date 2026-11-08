@@ -39,7 +39,14 @@ fn lists_the_five_tools_and_completes_two_calls() {
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert_eq!(
         names,
-        ["validate", "check_drc", "check_erc", "prove", "simulate"]
+        [
+            "validate",
+            "solve",
+            "check_drc",
+            "check_erc",
+            "prove",
+            "simulate"
+        ]
     );
     println!("{}", serde_json::to_string_pretty(&list["result"]).unwrap());
     for t in tools {

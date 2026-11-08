@@ -21,6 +21,7 @@ unsafe_code = "forbid"
 
 [workspace.dependencies]
 aethelgard-ir = { path = "crates/aethelgard-ir" }
+aethelgard-svd-hal = { path = "crates/aethelgard-svd-hal" }
 clap = { version = "4", features = ["derive"] }
 landlock = "0.4.7"
 rmcp = { version = "=3.7.0", default-features = false, features = ["server", "transport-io"] }
