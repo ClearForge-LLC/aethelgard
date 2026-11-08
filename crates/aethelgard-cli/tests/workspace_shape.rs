@@ -10,9 +10,10 @@ use std::path::{Path, PathBuf};
 
 use toml::{Table, Value};
 
-const MEMBERS: [&str; 7] = [
+const MEMBERS: [&str; 8] = [
     "crates/aethelgard-ir",
     "crates/aethelgard-eda",
+    "crates/aethelgard-kicad-lib",
     "crates/aethelgard-svd-hal",
     "crates/aethelgard-twin",
     "crates/aethelgard-chaos",
@@ -23,16 +24,17 @@ const MEMBERS: [&str; 7] = [
 const CHAOS: &str = "crates/aethelgard-chaos";
 const SVD_HAL: &str = "crates/aethelgard-svd-hal";
 const EDA: &str = "crates/aethelgard-eda";
+const KICAD_LIB: &str = "crates/aethelgard-kicad-lib";
 
 /// Every member but `ir` (first), `cli` (last), `chaos` (graduated in
-/// `AET-WO-0400`), `svd-hal` (graduated in `AET-WO-1101`) and `eda`
-/// (graduated in `AET-WO-1300`); the order is pinned by
-/// `members_are_exactly_the_seven_parts`.
+/// `AET-WO-0400`), `svd-hal` (graduated in `AET-WO-1101`), `eda`
+/// (graduated in `AET-WO-1300`) and `kicad-lib` (`AET-WO-1304`, a data crate);
+/// the order is pinned by `members_are_exactly_the_eight_parts`.
 fn libraries() -> Vec<&'static str> {
-    MEMBERS[1..6]
+    MEMBERS[1..7]
         .iter()
         .copied()
-        .filter(|m| ![CHAOS, SVD_HAL, EDA].contains(m))
+        .filter(|m| ![CHAOS, SVD_HAL, EDA, KICAD_LIB].contains(m))
         .collect()
 }
 
@@ -109,7 +111,7 @@ fn forbids_unsafe(file: &syn::File) -> bool {
 }
 
 #[test]
-fn members_are_exactly_the_seven_parts() {
+fn members_are_exactly_the_eight_parts() {
     let root = manifest("");
     let members: Vec<&str> = root["workspace"]["members"]
         .as_array()
@@ -309,13 +311,50 @@ fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
     }
 }
 
-/// `aethelgard-eda` holds the schematic emitter, the gate's rule files and
-/// the vendored KiCad 10.0.7 library items (`AET-WO-1300`, ruled D1 on PR
-/// #40), so it is no longer a re-export stub. Its files, manifest keys,
-/// licence and dependencies are fixed; the vendored files are named one by
-/// one, so none can be added or dropped unseen.
+/// `aethelgard-eda` holds the schematic emitter and the gate's rule files
+/// (`AET-WO-1300`). The vendored KiCad files moved out in `AET-WO-1304`, so
+/// it is `MIT OR Apache-2.0` and holds no `data/`. Its files, manifest keys,
+/// licence and dependencies are fixed.
 #[test]
 fn eda_has_only_its_known_files_keys_and_dependencies() {
+    for file in files(&root().join(EDA)) {
+        let allowed = file == "Cargo.toml"
+            || file == "README.md"
+            || (file.starts_with("src/") && file.ends_with(".rs"))
+            || (file.starts_with("tests/") && file.ends_with(".rs"));
+        assert!(allowed, "eda has a file outside the allowed set: {file}");
+    }
+    let eda = manifest(EDA);
+    for key in eda.keys() {
+        assert!(
+            ["package", "dependencies", "lints"].contains(&key.as_str()),
+            "eda sets [{key}]"
+        );
+    }
+    assert_eq!(
+        eda["package"]["license"].as_str(),
+        Some("MIT OR Apache-2.0")
+    );
+    let mut names = dependency_names(&eda);
+    names.sort();
+    assert_eq!(
+        names,
+        ["aethelgard-ir", "aethelgard-kicad-lib", "sha2", "thiserror"]
+    );
+    for (name, dep) in eda["dependencies"].as_table().unwrap() {
+        assert_eq!(
+            dep.get("workspace").and_then(Value::as_bool),
+            Some(true),
+            "eda dependency {name} is not from the workspace table"
+        );
+    }
+}
+
+/// `aethelgard-kicad-lib` holds KiCad 10.0.7's vendored files as bytes and
+/// nothing else (`AET-WO-1304`, `RUL-11`): its files are named one by one, it
+/// has no dependency, it is `CC-BY-SA-4.0`, and `src/lib.rs` is its only Rust.
+#[test]
+fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
     const DATA: [&str; 18] = [
         "data/kicad-10.0.7/LICENSE.md",
         "data/kicad-10.0.7/README.md",
@@ -336,37 +375,34 @@ fn eda_has_only_its_known_files_keys_and_dependencies() {
         "data/kicad-10.0.7/symbols/power.kicad_symdir/GND.kicad_sym",
         "data/kicad-10.0.7/symbols/power.kicad_symdir/PWR_FLAG.kicad_sym",
     ];
-    for file in files(&root().join(EDA)) {
-        let allowed = file == "Cargo.toml"
-            || file == "README.md"
-            || (file.starts_with("src/") && file.ends_with(".rs"))
-            || (file.starts_with("tests/") && file.ends_with(".rs"))
-            || DATA.contains(&file.as_str());
-        assert!(allowed, "eda has a file outside the allowed set: {file}");
-    }
-    for file in DATA {
-        assert!(root().join(EDA).join(file).exists(), "missing {file}");
-    }
-    let eda = manifest(EDA);
-    for key in eda.keys() {
+    let mut expected: Vec<&str> = DATA.to_vec();
+    expected.extend(["Cargo.toml", "README.md", "src/lib.rs"]);
+    expected.sort();
+    assert_eq!(files(&root().join(KICAD_LIB)), expected);
+    let kicad = manifest(KICAD_LIB);
+    for key in kicad.keys() {
         assert!(
-            ["package", "dependencies", "lints"].contains(&key.as_str()),
-            "eda sets [{key}]"
+            ["package", "lints"].contains(&key.as_str()),
+            "kicad-lib sets [{key}]"
         );
     }
-    assert_eq!(
-        eda["package"]["license"].as_str(),
-        Some("(MIT OR Apache-2.0) AND CC-BY-SA-4.0")
-    );
-    let mut names = dependency_names(&eda);
-    names.sort();
-    assert_eq!(names, ["aethelgard-ir", "sha2", "thiserror"]);
-    for (name, dep) in eda["dependencies"].as_table().unwrap() {
-        assert_eq!(
-            dep.get("workspace").and_then(Value::as_bool),
-            Some(true),
-            "eda dependency {name} is not from the workspace table"
-        );
+    assert_eq!(kicad["package"]["license"].as_str(), Some("CC-BY-SA-4.0"));
+    assert!(dependency_names(&kicad).is_empty());
+}
+
+/// No KiCad library file sits anywhere under `crates/` but in the data crate,
+/// so no crate can carry a share-alike file the licence fields do not show.
+#[test]
+fn kicad_library_files_live_only_in_the_data_crate() {
+    let crates = root().join("crates");
+    let data = format!("{KICAD_LIB}/data/");
+    for file in files(&crates) {
+        if file.ends_with(".kicad_mod") || file.ends_with(".kicad_sym") {
+            assert!(
+                format!("crates/{file}").starts_with(&data),
+                "a KiCad library file outside {KICAD_LIB}/data/: {file}"
+            );
+        }
     }
 }
 

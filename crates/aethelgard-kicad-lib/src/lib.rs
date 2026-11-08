@@ -1,0 +1,99 @@
+//! KiCad 10.0.7's vendored symbols, footprints and licence text, as bytes.
+//!
+//! Data only: no hashes, no parsing. `aethelgard-eda` pins each file's sha256
+//! and refuses a file that is missing, unpinned or altered (AET-WO-1304).
+
+#![no_std]
+#![forbid(unsafe_code)]
+
+/// Every vendored file: its path under `data/kicad-10.0.7/` and its bytes.
+pub const FILES: [(&str, &[u8]); 17] = [
+    (
+        "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Package_LGA.pretty/Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Package_LGA.pretty/Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Package_QFP.pretty/LQFP-144_20x20mm_P0.5mm.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Package_QFP.pretty/LQFP-144_20x20mm_P0.5mm.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Package_SON.pretty/WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Package_SON.pretty/WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Package_SO.pretty/SOIC-8_5.3x5.3mm_P1.27mm.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Package_SO.pretty/SOIC-8_5.3x5.3mm_P1.27mm.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod"
+        ),
+    ),
+    (
+        "symbols/Device.kicad_symdir/C.kicad_sym",
+        include_bytes!("../data/kicad-10.0.7/symbols/Device.kicad_symdir/C.kicad_sym"),
+    ),
+    (
+        "symbols/Device.kicad_symdir/R.kicad_sym",
+        include_bytes!("../data/kicad-10.0.7/symbols/Device.kicad_symdir/R.kicad_sym"),
+    ),
+    (
+        "symbols/MCU_ST_STM32H7.kicad_symdir/STM32H753ZITx.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/MCU_ST_STM32H7.kicad_symdir/STM32H753ZITx.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Memory_Flash.kicad_symdir/W25Q32JVSS.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Memory_Flash.kicad_symdir/W25Q32JVSS.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/power.kicad_symdir/+3V3.kicad_sym",
+        include_bytes!("../data/kicad-10.0.7/symbols/power.kicad_symdir/+3V3.kicad_sym"),
+    ),
+    (
+        "symbols/power.kicad_symdir/GND.kicad_sym",
+        include_bytes!("../data/kicad-10.0.7/symbols/power.kicad_symdir/GND.kicad_sym"),
+    ),
+    (
+        "symbols/power.kicad_symdir/PWR_FLAG.kicad_sym",
+        include_bytes!("../data/kicad-10.0.7/symbols/power.kicad_symdir/PWR_FLAG.kicad_sym"),
+    ),
+    (
+        "symbols/Sensor.kicad_symdir/BME280.kicad_sym",
+        include_bytes!("../data/kicad-10.0.7/symbols/Sensor.kicad_symdir/BME280.kicad_sym"),
+    ),
+    (
+        "symbols/Sensor_Temperature.kicad_symdir/TMP102xxDRL.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Sensor_Temperature.kicad_symdir/TMP102xxDRL.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Sensor_Temperature.kicad_symdir/TMP117xxDRV.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Sensor_Temperature.kicad_symdir/TMP117xxDRV.kicad_sym"
+        ),
+    ),
+    (
+        "LICENSE.md",
+        include_bytes!("../data/kicad-10.0.7/LICENSE.md"),
+    ),
+];
