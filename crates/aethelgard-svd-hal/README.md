@@ -56,7 +56,7 @@ The two modules carry `#[rustfmt::skip]`, because `cargo fmt --all` reaches the 
 
 Pin roles' output type, speed and pull are the generator's policy (`Role::policy`), not register facts. `I2C_TIMINGR` values and SPI frame settings are placeholders until a clock tree is solved.
 
-**Refusals** (`BoardError`, `kind()`): `InvalidCrateName`, `InvalidPin`, `UnknownPin`, `AssignmentMismatch` (a solved AF the pin table does not give that pin), `PinUsedTwice`, `UnsupportedPeripheral` (anything but `I2Cn` and `SPIn`), `UnsupportedSignal`, `IncompletePeripheral`, `CeilingMismatch`, `CeilingTooLow`, and the register errors.
+**Refusals** (`BoardError`, `kind()`): `InvalidCrateName`, `InvalidTopology` (`SolvedTopology::validate` refused it), `ReservedPin` (the solver's `RESERVED_PINS`: SWD and crystal pins), `InvalidPin`, `UnknownPin`, `AssignmentMismatch` (a solved AF the pin table does not give that pin), `PinUsedTwice`, `UnsupportedPeripheral` (anything but `I2Cn` and `SPIn`), `UnsupportedSignal`, `IncompletePeripheral`, `CeilingMismatch`, `CeilingTooLow`, and the register errors.
 
 **The I2C ceiling.** Until the solver's `i2c_ceilings` (`AET-WO-1202`) reaches the topology, `generate` emits every mode, and the generated trait says so. `generate_with_ceilings` takes them explicitly, and a unit test proves the filter with 400 kHz.
 

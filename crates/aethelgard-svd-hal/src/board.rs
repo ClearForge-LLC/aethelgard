@@ -18,7 +18,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
-use aethelgard_ir::{PinTable, SolvedTopology};
+use aethelgard_ir::{IrValidationError, PinTable, RESERVED_PINS, SolvedTopology};
 
 use crate::cmsis::{self, RegisterError, RegisterFacts};
 
@@ -27,6 +27,10 @@ use crate::cmsis::{self, RegisterError, RegisterFacts};
 pub enum BoardError {
     #[error("`{name}` is not a crate name: lowercase ASCII letters, digits and single `-`")]
     InvalidCrateName { name: String },
+    #[error("the solved topology is malformed: {0}")]
+    InvalidTopology(IrValidationError),
+    #[error("pin `{pin}` is reserved (debug or crystal) and is never emitted")]
+    ReservedPin { pin: String },
     #[error("pin `{pin}` is not a GPIO pin name (`P[A-K]` and 0 to 15)")]
     InvalidPin { pin: String },
     #[error("pin `{pin}` is not in the part's pin table")]
@@ -69,6 +73,8 @@ impl BoardError {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::InvalidCrateName { .. } => "InvalidCrateName",
+            Self::InvalidTopology(_) => "InvalidTopology",
+            Self::ReservedPin { .. } => "ReservedPin",
             Self::InvalidPin { .. } => "InvalidPin",
             Self::UnknownPin { .. } => "UnknownPin",
             Self::AssignmentMismatch { .. } => "AssignmentMismatch",
@@ -304,6 +310,16 @@ impl Plan {
             return Err(BoardError::InvalidCrateName {
                 name: crate_name.into(),
             });
+        }
+        solved.validate().map_err(BoardError::InvalidTopology)?;
+        let reserved = solved
+            .assignments
+            .values()
+            .map(|a| &a.pin)
+            .chain(solved.gpio.values())
+            .find(|p| RESERVED_PINS.contains(&p.as_str()));
+        if let Some(pin) = reserved {
+            return Err(BoardError::ReservedPin { pin: pin.clone() });
         }
         let mut pins: BTreeMap<String, PinPlan> = BTreeMap::new();
         let mut roles: BTreeMap<String, (Kind, BTreeMap<Role, Vec<String>>)> = BTreeMap::new();
@@ -1703,7 +1719,15 @@ mod tests {
 
         let mut s = solved();
         s.gpio.insert("CS2".into(), "PB6".into());
-        assert_eq!(kind(generate("b", &s, &t)), "PinUsedTwice");
+        assert_eq!(kind(generate("b", &s, &t)), "InvalidTopology");
+
+        let mut s = solved();
+        s.gpio.insert("SWDIO".into(), "PA13".into());
+        assert_eq!(kind(generate("b", &s, &t)), "ReservedPin");
+
+        let mut s = solved();
+        s.specification_sha256 = "x".into();
+        assert_eq!(kind(generate("b", &s, &t)), "InvalidTopology");
 
         let mut s = solved();
         s.gpio.insert("CS2".into(), "PB16".into());
