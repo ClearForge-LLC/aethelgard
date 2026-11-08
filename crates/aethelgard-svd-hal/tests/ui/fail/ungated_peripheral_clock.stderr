@@ -1,0 +1,7 @@
+error[E0599]: no method named `init` found for struct `sentinel_01_board::I2c1<Gated>` in the current scope
+  --> tests/ui/fail/ungated_peripheral_clock.rs:13:27
+   |
+13 |     let _bus = board.i2c1.init::<Fast400k, _>(&mut r, scl, sda);
+   |                           ^^^^ method not found in `sentinel_01_board::I2c1<Gated>`
+   |
+   = note: the method was found for `sentinel_01_board::I2c1<Clocked>`

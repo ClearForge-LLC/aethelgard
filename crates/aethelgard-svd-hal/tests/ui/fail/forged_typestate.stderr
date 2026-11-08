@@ -1,0 +1,5 @@
+error[E0451]: field `_mode` of struct `PB6` is private
+ --> tests/ui/fail/forged_typestate.rs:7:49
+  |
+7 |     let _scl: PB6<AlternateFunction<4>> = PB6 { _mode: PhantomData };
+  |                                                 ^^^^^ private field
