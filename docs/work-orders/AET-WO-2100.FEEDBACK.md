@@ -1,6 +1,6 @@
 # AET-WO-2100 — FEEDBACK
 
-**Branch:** `wo/aet-2100-twin-boot` · **Base:** `7fab0e1` (the merge of PR #55), as the kickoff set it · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace (x86_64, kernel 7.0.0-38, 20 CPUs). One Sonnet subagent measured S2's `cortex-m-rt` option, and the lead reproduced its sizes, licences, `unsafe` counts and boot before citing them. · **Cadence:** spike only. The build half has not started; it waits for the ruling.
+**Branch:** `wo/aet-2100-twin-boot` · **Base:** `7fab0e1` (the merge of PR #55), as the kickoff set it · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace (x86_64, kernel 7.0.0-38, 20 CPUs). One Sonnet subagent measured S2's `cortex-m-rt` option, and the lead reproduced its sizes, licences, `unsafe` counts and boot before citing them. · **Cadence:** spike, stopped and ruled on PR #56 (R1 to R6, in `~/.cache/aet-2100-ruling.md` and on the PR), then PR A (#57, the image's thumb target, merged; the `IMAGE` bump is #59, `89a3514`), then the build, below. `origin/main` at `89a3514` is merged in with a merge commit, `bc16a9b`.
 
 **The kits** (kickoff item 2):
 - **Renode 1.17.0:** `~/.cache/aet-0300a-renode/x/renode` (`--version`: `1.17.0+20260907gitf1dd1b4af`, .NET 8.0.12). `~/.cache/aet-0300a-renode/bin/renode` is a symlink to it. The kickoff names "AET-WO-1600's kit", but `~/.cache/aet-1600-adv/tools/renode` is a symlink to that work order's `probe.py` shim, not Renode. The real Renode is 0300a's.
@@ -33,6 +33,8 @@ Entry schema: `finding · where · severity · type · recommendation · decisio
 - `spike/2100/.gitignore`: the spike crates' `target/`.
 
 ## Spike
+
+The spike's files are cited as they stood at `0dacab8`, PR #56's spike head. The build deleted `spike/` (`d799405`).
 
 Unless a row says otherwise, every boot below runs `fw-bare` release, sha256 `bfd902aede164c10…` (Furnace build, the committed source), on `spike/2100/out/sentinel-01.repl`. The UART candidate is `--features uart`, sha256 `fd44ae463359ffd5…`. The S3 outputs in `out/s3/` were re-taken on these two ELFs after the last source edit. Renode is driven as `renode --disable-gui --console --plain -e "<commands>" </dev/null` with `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 DOTNET_EnableDiagnostics=0`.
 
@@ -255,3 +257,154 @@ The three spike crates pass `cargo fmt --check` and `cargo clippy --release -- -
 4. **S5 (F18, F17):** route A, the image change: one flag, +72 MB, its own publish. Or route B or C? And firmware identity by `image_sha256`.
 5. **S6 (F19):** flags on `simulate` with `--for`, and the bound on virtual time. Or a `boot` leaf?
 6. **F20:** the emitter in `svd-hal`, beside the board crate under one regeneration guard? Or in `aethelgard-twin`, with a new `twin → svd-hal` edge?
+
+## Build (after the ruling on PR #56)
+
+**Commits:**
+- `dc48cca`: the twin;
+- `d799405`: the firmware and `simulate --firmware`, with `spike/` deleted;
+- `8d4e87f`: the adversarial fixes and the reduction;
+- `3d92724`: the mutants;
+- `bc16a9b`: the merge of `origin/main`.
+
+**§7, held:**
+- no change under `container/` or `.github/` on this branch (`git diff origin/main HEAD -- container .github` is empty; PR A carried the one ruled `container/` change);
+- no `unsafe` in a workspace crate (the generator writes it as text into `boards/`);
+- no verdict on Renode's exit code;
+- no test skipped, ignored or weakened;
+- no licence outside `RUL-11` (option 1, nothing fetched).
+
+The protected surfaces diff to empty against `origin/main`: the steering documents, `README.md`, `LICENSE-*`, `docs/inputs/**` and `aethelgard-ir`. The board crate's API is unchanged; its tree gained `firmware/` and `sentinel-01.repl`, both generated.
+
+### What was built
+
+- **R6, `aethelgard-twin`:**
+  - **`platform::emit`** lowers a `SolvedTopology` to a `.repl`. It includes `stm32h753.repl` root-relatively, never redeclares a stock instance, and adds only an SPI instance Renode lacks, with `<P>_BASE` and `<P>_IRQn` from the header.
+  - **The stock table** (16 instances) and the three Renode files' hashes are pinned. A tier-2 test checks both against the installed Renode.
+  - **`boot`** is the judge's half: the memory from the header, the boot word and its magic, the fixed seed, the 100 ms bound, and `expected()`. That function computes the register image from the topology alone: each solved pin's `MODER` and `AFRL`/`AFRH` field, and each cold RCC register in full.
+  - **`cmsis`** gains two refusing shapes: `<NAME>_IRQn = <decimal>,` inside `IRQn_Type`, and a region's size from its base's comment. The header states DTCM's 128 KB only there.
+- **R1, `aethelgard-svd-hal` (one subagent, reviewed, reproduced):** `generate` also writes `firmware/` beside the board crate:
+  - a `global_asm!` reset handler that zeroes `.bss`, copies `.data`, enables the FPU (CPACR CP10/CP11, `dsb`, `isb`), then calls `main`;
+  - the exception table;
+  - `link.x`, from `FLASH_BANK1_BASE` to `FLASH_BANK2_BASE` and from `D1_DTCMRAM_BASE` with 128 KB, with the boot word first in RAM;
+  - a `.cargo/config.toml` that links with `-Tlink.x` and builds into the top-level `target/`, measured to need no build script;
+  - a `main` that uses only the board crate's API and ends at the boot word.
+
+  The emitted `sentinel-01.repl` is committed beside it. The regeneration guard covers every generated byte, with hand-edit controls for `firmware/src/main.rs` and the `.repl`, and checks the twin's magic and boot word against the generator's.
+- **R2 to R5, `simulate --platform --firmware --spec --for`:**
+  - **Before Renode is looked for**, it refuses five things: a platform that is not byte for byte the one emitted for the spec, or an `@` path (`PlatformNotEmitted`); an ELF that is not ELF32 LE `EM_ARM` `ET_EXEC` with a sound header table (`MalformedFirmware`); a `PT_LOAD` outside flash and RAM (`FirmwareOutsideMemory`); overlapping `PT_LOAD` memory; and file bytes over the boot word (`FirmwareLoadsBootWord`).
+  - **The boot** runs `emulation SetSeed 2100`, loads the platform and the ELF, zeroes the cold RCC registers and the boot word, sets `VectorTableOffset` to `FLASH_BANK1_BASE`, then `RunFor` the time.
+  - **The reads** come under `logLevel 3` between whole-line markers, as bare values only, with a stray `\r` tolerated. Then `peripherals`.
+  - **The judge** uses the three witnesses, plus a locked-peripheral warning (a fail), the listing naming every solved instance (else exit 5), the pinned Renode version (else exit 4), and the PC inside an executable segment.
+  - **`--for`** is an integer `ns`, `us` or `ms`, at most 100 ms and a multiple of 10 ns, so the instruction count is exact.
+  - **The verdict** carries `boot`, with `image_sha256`. The contract is in `crates/aethelgard-cli/README.md`, "Booting firmware".
+
+### Shape-check changes (roadmap §6: graduation is stated)
+
+In `crates/aethelgard-cli/tests/workspace_shape.rs`:
+- `aethelgard-twin` leaves `libraries()` and gets `twin_has_only_its_known_files_keys_and_dependencies`: files `Cargo.toml`, `src/*.rs` and `tests/*.rs`; dependencies `aethelgard-ir`, `aethelgard-svd-hal` and `thiserror` (the ruled edge); dev-dependency `serde_json`.
+- `svd_hal_has_only…` admits the dev-dependency `aethelgard-twin`, for the regeneration guard.
+- `boards_are_excluded_and_dependency_free` also checks `firmware/`:
+  - manifest keys `package`, `dependencies` and `profile` only;
+  - no `build` or `links` key and no `build.rs`;
+  - exactly one dependency, the board, at `path = ".."`.
+
+### §1.4, and where each clause runs
+
+| Clause | Test | Where |
+|---|---|---|
+| The platform loads with every solved peripheral listed | `twin_tier2::the_emitted_platform_loads_and_lists_every_solved_peripheral`, plus the per-boot listing check | `tools` |
+| The firmware boots to the observable | `twin_tier2::the_reference_firmware_boots_and_two_boots_agree`: built offline in the image, exit 0, word `0x2100b007`, 1,000,000 of 1,000,000 instructions, every register as expected | `tools` |
+| Two emissions are byte-identical | `aethelgard-twin` `two_emissions_are_byte_identical`; `svd-hal` `two_generations_are_byte_identical` (which now covers the `.repl` and `firmware/`) and the regeneration guard | `gates` and `tools` |
+| Two boots give the same observation | the same tier-2 test compares the two `boot` objects and listings | `tools` |
+
+Also in tier 2:
+- Renode's files match the pinned hashes and the stock table;
+- a 10 µs boot fails with `boot_word_missing`;
+- the A3 and A7 mutants fail (below).
+
+Tier 1 (`boot_tier1.rs`, 16 tests, `gates`) drives every branch of the judge through a stub that also refuses any command line without the boot's fixed parts.
+
+**Measured on Furnace in podman, `tools`' own steps** (`cargo test --workspace --all-targets --locked --features aethelgard-cli/with-tools --no-run`, then fmt, clippy and test under `--network none`, `CARGO_TARGET_DIR=/repo/target`):
+- **Before the bump:** on the pinned image with the target added (a local stand-in for #57), 554 passed and 0 failed at `d799405`. That includes `board_tier2`'s Kani proofs, 517 s: `prove` still judges the board directory with `firmware/` inside it.
+- **After the merge:** on the published `2df68259…` (`container/IMAGE` at `89a3514`), at `bc16a9b`: fmt ok; clippy `-D warnings` ok; 562 passed and 0 failed. `ANSWER 2100` lines: the firmware builds offline in 0.05 s; the platform passes; boots 1 and 2 pass and are identical (2.64 s and 2.58 s); the 10 µs boot fails; A3 and A7 fail.
+- **ELF identity in the build (F17):** the reference ELF's file hash differs between Furnace (`66a8a43a…`) and the image (`c9754946…`), while the image hash agrees; under the final address-bound definition both give `8d0e710e…`.
+
+### Adversarial pass (§5), by a fresh subagent (Opus) on the frozen commit `d799405`
+
+About 43 firmware, ELF and input variants went through the judged call, plus direct Renode probes and a 54-case topology probe of the twin. Evidence is in `~/.cache/aet-2100-adv/` (Furnace). The lead reproduced each critical and high finding on its own build before fixing it. After the fixes it predicted each outcome and reran the mutants (`~/.cache/aet-2100-adv/rerun.txt`):
+
+| id | target | attack | before (d799405) | after |
+|---|---|---|---|---|
+| A1 | 1 | `.aethelgard_boot` made loadable with the magic, `udf` instead of the write | **pass** (critical) | exit 3 `FirmwareLoadsBootWord` |
+| A2 | 1 | a 4-byte `PT_LOAD` holding the magic appended to a build that never writes it | **pass** (critical) | exit 3 `FirmwareLoadsBootWord` |
+| A1c | 1 | the word placed first in `.data`, so the reset handler copies it in | **pass** (critical) | exit 3 `FirmwareLoadsBootWord` |
+| A3 | 1 | flash linked at `0x08010000`: no vector table where the part boots; Renode guessed one | **pass** (critical) | fail: `boot_word_missing`, `cpu_halted`, `pc_outside_firmware`, `register_mismatch` |
+| A4 | 2 | a zero-fill (`memsz`) over `.text`; two ELFs differing in header order shared one hash and got opposite verdicts | pass and fail, one hash (high) | both exit 3 `MalformedFirmware` (overlap) |
+| A5 | 2 | `.rodata` moved by `0x1000`, same bytes: same hash, different verdict | fail with the reference's hash (high) | fail, its own hash |
+| A7 | 1 | a jump into the FMC bank (zero-filled mapped memory) after the word | **pass** (medium) | fail `pc_outside_firmware` |
+| A6 | 1 | a jump into a hole after the word: "This machine has aborted", and `RunFor` never returns | CLI hung; Renode at 10.47 GB RSS at 184 s (high) | **not fixed**: F21 |
+| A8 | 1 | `udf` or `bkpt` after the word (the fault handler parks) | pass | pass: the fixed point was reached (residual, F22) |
+| A9 | 1 | a log flood: 241,141 warnings in 10 ms | exit 5, output over 16 MiB (medium) | unchanged: F23 |
+| A10 | 1 | `wfi` after the word | exit 5 (ruled) | unchanged |
+| A11 | 1 | word first with no configuration; GPIOA or SPI1 before its clock; GPIOC touched; an extra clock; a clock re-disabled | fail each time | fail each time |
+| A13 | 1 | a clock outside the cold registers (DMA1, SYSCFG), DMA1 written without its clock | pass (low) | unchanged: F24 |
+| B1 | 2 | 6 in parallel plus 2 sequential, for the reference and for a firmware folding RNG, `system_flash_ro`, RTC, `CYCCNT` and SysTick into the registers | 8 of 8 identical, each | (no change needed) |
+| C1, C2 | 3 | SPI1/2/3/5/6, SPI4, I2C2–4, GPIOJ/K, two SPIs, AFRH pins; 24 malformed names | held: right base, IRQ, clock bit and gating; every malformed name refused | held |
+| C3 | 3 | a name the header lacks (SPI7) gave exit 70 | low | exit 2 |
+| C4 | 3 | the CLI never pinned Renode at run time, nor checked the listing | low | fixed: exit 4 for another version; exit 5 for a listing without a solved instance |
+| A17, A19 | reader | symlinks, FIFO, CRLF, `/dev/stdin`, TOCTOU; UART and semihosting injection of markers or values | held | held |
+| A18 | reader | `TMPDIR` with a space or `;` reaches the monitor's `@path` | exit 5 (low) | unchanged: F25 |
+
+The adversary's topology probe (`crates/aethelgard-twin/tests/adv_2100.rs`, in its frozen copy) was not adopted. Its refusal matrix overlaps `aethelgard-twin`'s `what_cannot_be_lowered_is_refused` and svd-hal's new `pin_names_are_read_strictly`.
+
+### Reduction pass (§5a) and mutants
+
+**Diff-sized.** The four questions over the diff:
+- **One fact stated twice:** two parsers of pin names. svd-hal's passed the digits to `parse::<u32>`, which accepted `PA+5` as PA5; the twin's was strict. Now there is one: svd-hal's `board::pin_name`, strict, with a test, which both wrap.
+- **Two mechanisms that were one:** two tier-2 boot helpers, and a reads-to-transcript conversion repeated in every tier-1 case.
+- **Redundant, shown by mutant M11:** the 100 MIPS check. The expected instruction count is the twin's constant, so any other speed already fails the instruction witness.
+- **Protected and labelled `belt-and-suspenders:`:** the generator's and the judge's separate copies of the magic, the `MODER` values and the memory map (`INV-07`: the judge never reuses the generator's code), and the twin's only-an-SPI-is-added refusal (M15).
+
+**Mutants, one per guard this work order added, against the suite it lives in** (`mutants.py`, `~/.cache/aet-2100-spike/`): 19 run, 18 killed. Two survivors were handled:
+- **M11**, removed as redundant (above);
+- **M15**, which survives because every I2C and GPIO instance of the H753 header is stock; it is kept, labelled.
+
+The killed ones:
+- boot-word coverage; overlap by `memsz`; the hash binding addresses;
+- the boot word zeroed; `VectorTableOffset`; the PC; the listing; the Renode pin;
+- the locked warning; more instructions than the run holds; the halt; the register compare;
+- the cold RCC judged in full; `pin_name`'s sign; whole instructions; the emitted-platform check; whole-line markers.
+
+### Gates (build)
+
+On `bc16a9b` on Furnace:
+- `cargo fmt --all -- --check` ok;
+- `cargo clippy --workspace --all-targets --locked -- -D warnings` ok, and with `--features aethelgard-cli/with-tools`;
+- `cargo test --workspace --locked`: 522 passed, 0 failed, across 42 test targets.
+
+Tier 2 is above. CI: CI_RESULT.
+
+Reduction pass (diff): −42 lines net (the pin parser −18, the speed check −7, the tier-2 boot helper −17; the tier-1 transcript helper about even) · 3 duplicates removed · 1 redundant check removed · 4 protected kept, labelled · 1 finding below (F30).
+
+### Findings (build)
+
+| finding | where | severity | type | recommendation | decision-needed |
+|---|---|---|---|---|---|
+| F21. **A6: an aborted machine hangs the call, and Renode's memory grows without bound.** A firmware that jumps into a hole after the word makes Renode log `[ERROR] cpu: CPU abort … Trying to execute code outside RAM or ROM` and `This machine has aborted`, and `emulation RunFor` never returns. Renode grew at about 55 MB/s, to 10.47 GB RSS at 184 s, until it was killed. `RUL-13` gives the CLI no timeout, and `mcp` passes the call on unbounded | `simulate --firmware`; `RUL-13` | high | host safety | Amend `RUL-13` for `simulate --firmware` only: a wall-clock bound proportional to `--for` and a memory cap on the Renode child, with the timeout a `cpu_aborted` fail. Not built here: it changes a ruling and the sandbox core (`run.rs`) | **yes** |
+| F22. **The residual of A1/A8: the boot word shows that some code of the firmware stored the magic, not that `main` finished.** A firmware that writes the word early and then faults passes, if its configuration is done: the register image and the instruction witness hold, and its fault handler is inside its own executable segment. Closing it needs the firmware's symbols, which the judge must not take from the artifact (`INV-07`) | the boot contract | medium | residual | Accept it, named: the twin witnesses that the solved configuration happened and the core kept running in the firmware's code. A stronger fixed point is a later contract, for example a sequence of words a fault handler cannot reproduce | **yes**: accept |
+| F23. A9: a firmware flooding the log, 241,141 warnings in 10 ms, makes the output exceed `RUL-13`'s 16 MiB, so the call is exit 5, never a verdict. That is the safe direction, but a locked-peripheral flood was due a `fail`. Renode collapses identical lines, so only varying ones flood | the reader | medium | verdict quality | A later work order: send the log to a file Renode writes, and read only the marker block from stdout | no |
+| F24. A13: only the RCC registers that gate a solved port or peripheral are cold-written and judged. A clock in another register (DMA1 in `AHB1ENR`) and writes to that peripheral pass, though on silicon they would be dropped while gated | the cold start | low | scope | Cold-write and judge every `RCC_*ENR` the header defines, when a work order needs it | no |
+| F25. A18: the scratch path (from `TMPDIR`) reaches the monitor's `@path` unquoted. A space or `;` in it is exit 5. Not caller input; the same in plain `simulate` since `AET-WO-0300` | `renode.rs` | low | robustness | Refuse a scratch path outside a safe character set, or quote it | no |
+| F26. **R4's `image_sha256` was amended in the build.** The ruled "PT_LOAD bytes in address order" gave one identity to two images (A4, A5). The built definition hashes, for every `PT_LOAD` with memory in physical-address order, its address, file size and memory size, each a `u32` LE, then its bytes. It stays path-independent (F17) | R4; the CLI README | medium | ruling amendment | Ratify the built definition | **yes** |
+| F27. **Four checks the ruling did not name were added**, each from the adversarial pass: `FirmwareLoadsBootWord`; overlapping `PT_LOAD` memory; `pc_outside_firmware`; and, for a boot, the pinned Renode version (exit 4) and the listing naming every solved instance (exit 5). The boot word is also zeroed and `VectorTableOffset` set before the run. None can fail a firmware that keeps the boot contract | R2, R5 | medium | scope, flagged | Ratify | **yes** |
+| F28. `twin_stop` maps a header name the topology needs and the header lacks to exit 2 (C3). A header that fails its own checks stays exit 70, a corrupted build | `main.rs` | info | correction | None | no |
+| F29. `cargo fmt --all` does not reach `boards/sentinel-01/firmware/` (it is no dependency of a member), so its formatting is the generator's alone, pinned by the guard | `firmware/` | info | note | None | no |
+| F30. The subagent's `cargo fmt --all` overlapped the lead's edits during the build. Nothing was lost (the lead re-read every file it adopted), but two agents ran a workspace-wide formatter in one tree | process | info | process | A builder subagent runs `cargo fmt -p <its crate>`, never `--all` | no |
+
+### Asked at the build
+
+1. **F21:** amend `RUL-13` for `simulate --firmware`, with a wall bound and a memory cap, and an abort as a `fail`?
+2. **F22:** accept the named residual of the boot word?
+3. **F26:** ratify `image_sha256` as built?
+4. **F27:** ratify the four added checks?
