@@ -59,12 +59,12 @@ enum Command {
         #[arg(long)]
         file: PathBuf,
     },
-    /// Validate and solve one Specification, then write its KiCad schematic and bill of materials into a directory.
+    /// Validate and solve one Specification, then write its KiCad schematic, bill of materials and placed board into a directory.
     Emit {
         /// The specification file.
         #[arg(long)]
         file: PathBuf,
-        /// The directory to write <project_name>.kicad_sch and <project_name>.bom.csv into; created if absent.
+        /// The directory to write <project_name>.kicad_sch, <project_name>.bom.csv and <project_name>.kicad_pcb into; created if absent.
         #[arg(long)]
         out: PathBuf,
     },
@@ -105,6 +105,9 @@ enum CheckCommand {
         /// Judge by the rules this specification implies; without it, by KiCad's defaults. Either way the gate writes every rule file itself.
         #[arg(long)]
         spec: Option<PathBuf>,
+        /// Also check the board against this .kicad_sch (KiCad's schematic parity). It is copied beside the board and judged with it.
+        #[arg(long)]
+        schematic: Option<PathBuf>,
     },
     /// KiCad's electrical rule check on a schematic (kicad-cli sch erc).
     Erc {
@@ -217,11 +220,21 @@ fn main() -> ExitCode {
         Command::Solve { file } => return solve(&file),
         Command::Emit { file, out } => return emit_design(&file, &out),
         Command::Check {
-            check: CheckCommand::Drc { board, spec },
-        } => check_kicad(kicad::Check::Drc, &board, spec.as_deref()),
+            check:
+                CheckCommand::Drc {
+                    board,
+                    spec,
+                    schematic,
+                },
+        } => check_kicad(
+            kicad::Check::Drc,
+            &board,
+            spec.as_deref(),
+            schematic.as_deref(),
+        ),
         Command::Check {
             check: CheckCommand::Erc { schematic },
-        } => check_kicad(kicad::Check::Erc, &schematic, None),
+        } => check_kicad(kicad::Check::Erc, &schematic, None, None),
         Command::Prove { crate_dir, harness } => prove(&crate_dir, &harness),
         Command::Simulate { platform } => simulate(&platform),
         Command::Mcp => return mcp::serve(),
@@ -335,6 +348,7 @@ fn check_kicad(
     check: kicad::Check,
     path: &Path,
     spec: Option<&Path>,
+    schematic: Option<&Path>,
 ) -> Result<verdict::Verdict, run::Stop> {
     let original = input::file_check(path)?;
     let (rules, spec_sha256) = match spec {
@@ -358,6 +372,16 @@ fn check_kicad(
     let scratch = Scratch::new()?;
     let input = input::file(&original, &scratch.tool.join(check.copy_name()))?;
     kicad::prepare(check, &input.copy, &scratch.tool, &rules)?;
+    // KiCad's parity check reads the schematic named like the board, beside
+    // it; the copy is scanned like the board before any tool runs.
+    let schematic = match schematic {
+        Some(path) => {
+            let copy = input::file(path, &scratch.tool.join(kicad::Check::Erc.copy_name()))?;
+            kicad::prepare_parity(&input.copy, &copy.copy)?;
+            Some(copy)
+        }
+        None => None,
+    };
     let tool = run::Tool::find("kicad-cli")?;
     let invocation = |args: Vec<OsString>, status: &str| run::Invocation {
         tool: &tool,
@@ -379,6 +403,9 @@ fn check_kicad(
     if matches!(check, kicad::Check::Drc) {
         args.push("--refill-zones".into());
     }
+    if schematic.is_some() {
+        args.push("--schematic-parity".into());
+    }
     args.push("-o".into());
     args.push(report.clone().into_os_string());
     args.push(input.copy.clone().into_os_string());
@@ -398,6 +425,10 @@ fn check_kicad(
     if matches!(check, kicad::Check::Drc) {
         v.rules = Some(rules.source.name());
         v.specification_sha256 = spec_sha256;
+        v.schematic = schematic.map(|s| verdict::InputReport {
+            path: s.original.display().to_string(),
+            sha256: s.sha256,
+        });
     }
     Ok(v)
 }
@@ -632,9 +663,10 @@ fn solved(
     }
 }
 
-/// `aethelgard emit --file --out`: solve as `solve` does, emit the schematic
-/// and bill of materials (`aethelgard_eda::schematic::emit`), and write them
-/// into `out` as `<project_name>.kicad_sch` and `<project_name>.bom.csv`.
+/// `aethelgard emit --file --out`: solve as `solve` does, emit the schematic,
+/// bill of materials and placed board (`aethelgard_eda::schematic::emit`),
+/// and write them into `out` as `<project_name>.kicad_sch`,
+/// `<project_name>.bom.csv` and `<project_name>.kicad_pcb`.
 fn emit_design(file: &Path, out: &Path) -> ExitCode {
     #[derive(Serialize)]
     struct Written {
@@ -648,6 +680,7 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
         specification_sha256: String,
         schematic: Written,
         bill_of_materials: Written,
+        board: Written,
     }
 
     let (spec, topology, table) = match solved(file) {
@@ -680,6 +713,7 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
     for (suffix, text) in [
         ("kicad_sch", &emission.schematic),
         ("bom.csv", &emission.bom),
+        ("kicad_pcb", &emission.board),
     ] {
         let path = out.join(format!("{}.{suffix}", spec.project_name));
         // A symlink is never followed and a FIFO never waited on: only a new
@@ -709,6 +743,10 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
             sha256: input::hex(<sha2::Sha256 as sha2::Digest>::digest(text.as_bytes())),
         });
     }
+    let board = written.pop().unwrap_or(Written {
+        path: String::new(),
+        sha256: String::new(),
+    });
     let bill_of_materials = written.pop().unwrap_or(Written {
         path: String::new(),
         sha256: String::new(),
@@ -724,6 +762,7 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
             specification_sha256: topology.specification_sha256.clone(),
             schematic,
             bill_of_materials,
+            board,
         },
         0,
     )
