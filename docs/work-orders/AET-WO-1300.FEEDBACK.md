@@ -17,7 +17,7 @@ Entry schema: `finding · where · type · recommendation · decision-needed`.
 They are compiled into one test, `crates/aethelgard-cli/tests/spike_1300.rs`, which is `#![cfg(feature = "with-tools")]` and pulls the probe in through `#[path]`. That way CI's `tools` job runs them inside the image pinned by `container/IMAGE`, under `--network none`, with no change to `container/` or `.github/workflows/`. Every measurement is an `ANSWER <Sn> …` line on the step's stderr, written past libtest's capture. A probe never panics; the test fails only on a harness error.
 
 - No `unsafe`, no new dependency (`serde_json` and `sha2` are already the CLI's), no Python, no Java.
-- Root `Cargo.toml` and `Cargo.lock` are unchanged.
+- Root `Cargo.toml` and `Cargo.lock` are unchanged relative to the merge base.
 - No fixture was added under `container/fixtures/`: every input is emitted by the probe at run time.
 - The build half deletes `spike/1300/` and the test hook.
 
@@ -128,11 +128,11 @@ The MCU symbol has 144 pins at 136 points (8 hidden, stacked). By type: 114 bidi
 
 ### S3 The gate's own rules
 
-**Answer:** a gate that overwrites the setup block, writes the project, and writes its own `.kicad_dru` makes DRC report the violation; without those steps it does not. **All three steps are load-bearing, each against a different loosening.** The three alone are not enough: a local clearance override written in the board defeats the gate's custom rule.
+**Answer:** a gate that overwrites the setup block, writes the project, and writes its own `.kicad_dru` makes DRC report the violation; without those steps it does not. **Two steps are load-bearing as measured: the `.kicad_dru`, and the setup overwrite. The project step is redundant with a gate setup that carries `clearance_min`.** The steps alone are not enough: a local clearance override written in the board defeats the gate's custom rule.
 
 - **The gate's `.kicad_dru` is the only step that catches loosening at net-class or rule level** (the board's own `.kicad_pro` net class, or its own `.kicad_dru`). In the matrix below, the violation appears exactly when that step is applied. The pattern is identical in runs 42426631742, 42427541833 and 42428065833 (`r3-none-*`).
 - **The setup block's `clearance_min` sets the board minimum, and it overrides the project's `min_clearance`.** Its `trace_clearance` decides nothing (the baselines). A pad or footprint carrying a local 0.05 mm clearance escapes the gate's custom rule, and only the board minimum catches it. So, with the board's own setup carrying `clearance_min 0.05`, a local override passes the gate's project and rules both: 0 violations (run 42428065833, `r3-pad-local-*-setup_loose-pro_gate-dru_gate`). Overwriting the setup catches it: 1 violation, "board minimum clearance 0.2000 mm".
-- **The `.kicad_pro`'s `min_clearance` is the board minimum when the setup block carries none.** In row `setup_plain`, the gate writes a setup with no clearance tokens, and its project catches the override.
+- **The `.kicad_pro`'s `min_clearance` is the board minimum only when the setup block carries none.** In row `setup_plain`, the gate writes a setup with no clearance tokens, and its project catches the override. With the gate's setup carrying `clearance_min 0.2`, removing the project step lets no measured board escape (row "gate / board's own / gate": 1 and 1). The project becomes load-bearing only under D5, a token-free gate setup. The row that would show it, `setup_plain` with the board's own project and the gate's rules, was not measured; that it escapes is inferred from `r3-read-*`.
 
 
 The board has two tracks, `NET_A` and `NET_B`, with a 0.1 mm gap. The specification says 0.2 mm; the board's own files say 0.05 mm:
@@ -181,7 +181,7 @@ All three report the gap as "board minimum clearance 0.2000 mm", and none report
 
 | # | Finding | Where | Type | Recommendation | Decision-needed |
 |---|---|---|---|---|---|
-| S3.1 | **Load-bearing:** the `.kicad_dru` step, for net-class and rule-level loosening. The setup overwrite, for the board minimum (its `clearance_min` beats the project's). The project's `min_clearance`, when the gate's setup carries none. Remove any one and some board escapes | matrix; round-3 table | measured | Keep all three. The gate writes a setup with no clearance tokens, and puts the board minimum in its project, so there is one place for it | no |
+| S3.1 | **Load-bearing, measured:** the `.kicad_dru` step, for net-class and rule-level loosening (matrix); and the setup overwrite, for the board minimum, because its `clearance_min` beats the project's (round 3, row "board's own / gate / gate": 0). **The project step is redundant** while the gate's setup carries `clearance_min`. It is load-bearing only if the gate writes a token-free setup, which is inferred and not measured (the `setup_plain` + board-own project row was not run) | matrix; round-3 table | measured | Keep all three steps (D5) | no |
 | S3.2 | **A local clearance override (pad or footprint) is judged only against the board minimum, never by the gate's custom rule.** With the minimum equal to the specification's smallest clearance, the override is still caught. But a per-net rule larger than the minimum, such as an isolation gap, would be escaped by a local override on that net's pads. That is §5.1's "rules embedded in a footprint", confirmed | round-3 table | measured | The gate also refuses or strips local `(clearance …)` on pads and footprints in its scratch copy. Refusing is `INV-06`'s shape; stripping is `INV-07`'s. The adversarial pass then covers net classes in the board, a `.kicad_pro` symlink and a renamed `.kicad_dru` | **yes**: refuse or strip, and whether zones' local clearances join them |
 | S3.3 | `aethelgard check drc` today judges by KiCad's defaults, because it copies only the board | `check drc` row | measured | `check drc --spec` replaces this in the build | no |
 
@@ -211,7 +211,7 @@ All from run 42427541833 (and run 42426631742), except where a row names run 424
      - footprint libraries in KiCad's configuration (`KICAD_CONFIG_HOME` here);
      - `ki_fp_filters` dropped from the schematic's embedded `Device:R`.
 
-     KiCad 10's parity check asks for that field in the footprint, but a footprint property of that name does not satisfy it. P13 shows that setting the check to `ignore` in the project does not silence it, and neither does it silence `lib_footprint_issues` (P9, P12). Those two checks do not honour the project's `rule_severities`, though `track_dangling` does (S3 `r3-read-*`).
+     KiCad 10's parity check asks for that field in the footprint, but a footprint property of that name does not satisfy it. P13 shows that setting the check to `ignore` in the project does not silence it, and neither does it silence `lib_footprint_issues` (P9, P12). Neither was silenced by `rule_severities` keyed by its report type (P9, P12, P13), while `track_dangling` was (S3 `r3-read-*`). The path works, so it is these keys, or these checks, that it does not reach.
      The cost: with the symbol library loaded, that schematic's ERC raises `lib_symbol_mismatch` ×2 (warning). Under S2's ERC-severities treatment, which ignores `lib_symbol_mismatch`, it would not.
 
 **What parity required** (rows P0–P14):
@@ -253,7 +253,7 @@ All from run 42427541833 (and run 42426631742), except where a row names run 424
 | S4.3 | DRC refills only with `--refill-zones`; KiCad's saved fills are not byte-deterministic (fresh UUIDs) | lead 3 rows | measured | Emit zones unfilled; the gate passes `--refill-zones`; never `--save-board` | no |
 | S4.4 | A Rust grid router's two-layer board passes DRC + parity: exit 0 with nothing reported (P14), and 0 unconnected with vias (P11) | P10, P11, P14 | measured | Adopt for `1302`; the prior is confirmed | yes: the shape above |
 | S4.5 | Parity matches footprints by reference, not path; it requires the library id, value, net names as KiCad writes them (`/` prefix for root-sheet labels) and every symbol field | P1–P7 | measured | Emitter rules for `1301` | no |
-| S4.6 | Passing parity needs a library configuration for DRC (S2.2). Severities cannot do it: `lib_footprint_issues` and `footprint_symbol_field_mismatch` ignore the project's `rule_severities` (P9, P12, P13). It also needs `ki_fp_filters` dropped from embedded symbols, which ERC then calls a `lib_symbol_mismatch` unless that check is ignored | P9–P14 | measured | ERC: the gate writes a project with the library checks ignored. DRC: the gate supplies footprint tables. Embedded symbols drop `ki_fp_filters` | **yes** |
+| S4.6 | Passing parity needs a library configuration for DRC (S2.2). Severities did not do it: `lib_footprint_issues` and `footprint_symbol_field_mismatch` were not silenced by `rule_severities` keyed by their report types (P9, P12, P13). It also needs `ki_fp_filters` dropped from embedded symbols, which ERC then calls a `lib_symbol_mismatch` unless that check is ignored | P9–P14 | measured | ERC: the gate writes a project with the library checks ignored. DRC: the gate supplies footprint tables. Embedded symbols drop `ki_fp_filters` | **yes** |
 
 ### S5 Escaping
 
@@ -296,7 +296,7 @@ Each name was emitted in every class, as the thing it becomes:
 - a reference and a part, as a Reference and a Value;
 - a project name, as the `instances` project and the title, one file per name.
 
-Names were read back from ERC's item descriptions and from the netlist, by node.
+Names were read back from ERC's item descriptions and from the netlist, by node. The specification's other identifiers (`bus.id`, `peripheral`, a signal's `pin`) never become schematic text, so they have nothing to round-trip.
 
 ## Decisions needed for the ruling (collected)
 
@@ -306,7 +306,7 @@ Names were read back from ERC's item descriptions and from the netlist, by node.
 | D2 | The W25Q64JV symbol | S1.1 | `Memory_Flash:W25Q32JVSS` with Value `W25Q64JVSS` |
 | D3 | How the gate gives ERC and DRC a library configuration | S2.2, S4.6 | ERC: a gate-written `.kicad_pro` that ignores the library checks. DRC: footprint tables, written by the gate (`KICAD_CONFIG_HOME` or project tables + project). Embedded symbols drop `ki_fp_filters` |
 | D4 | Local clearance overrides in the board under judgement | S3.2 | Refuse them (`INV-06`); include zone-local clearances |
-| D5 | The gate's setup block | S3.1 | Write a setup with no clearance tokens; the board minimum lives in the gate's `.kicad_pro` |
+| D5 | The gate's setup block | S3.1 | Write a setup with no clearance tokens, and put the board minimum in the gate's `.kicad_pro`, so there is one place for it. That makes the project step load-bearing; the build measures the row the spike did not |
 | D6 | Identifiers KiCad reinterprets: `/`, `{`, `}`, `$`, `[`, `]` | S5.2 | Narrow `RUL-14` for KiCad-bound identifiers |
 | D7 | The emitted format version | S2.4 | `20260306` |
 | D8 | The shape of `AET-WO-1301` and `1302` | S4 | As recommended in S4: Rust placement and a Rust grid router; zones unfilled; the gate runs `--refill-zones --schematic-parity` |
