@@ -165,7 +165,7 @@ None arose:
 
 ## Gates
 
-On Furnace at the PR's code head (the commit after `42a8402`, which records the board size past libtest's capture):
+On Furnace at the PR's code head, `6019921`:
 - **Workspace gates:** pass. `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets --locked -- -D warnings`, with and without `--features aethelgard-cli/with-tools`; `cargo test --workspace --locked`.
 - **The `tools` job's steps in the pinned image**, run locally under rootless podman (`--network none`, `--pids-limit=-1`), at `1bc7b6b`: `cargo fmt`, `cargo clippy --features aethelgard-cli/with-tools` and `cargo test --workspace --features aethelgard-cli/with-tools` all pass, 39 suites, exit 0. Its `AET-WO-1301` lines:
   - `sentinel-01` and the S5-names board: 65 `unconnected_items` each, beyond them `[]`;
@@ -173,7 +173,12 @@ On Furnace at the PR's code head (the commit after `42a8402`, which records the 
   - every mismatch row failing with its finding, and every adversarial refusal at exit 3.
 
   This is a pre-check; CI is the record.
-- **CI:** the first push's run is cited in the PR and below.
+- **CI:** [run 42447502489](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42447502489), commit `6019921`, the first push (PR #53): `gates` success, `tools` success, and `image` success in run 42447502480 (§3.3). In `tools`, all 39 suites are `ok`, and its log carries the same `AET-WO-1301` lines as the local run:
+  - `sentinel-01` and the S5-names board: 65 `unconnected_items` each, beyond them `[]`;
+  - the netlist oracle: 188 pins, 188 netted pads;
+  - the board: 44.7 × 39.9 mm.
+
+  §1.5 passes in `gates` and `tools` (§3.1). Every commit after `6019921` changes only this file.
 - **Reduction pass (diff):** −13 lines net · 1 duplicate removed (`write` re-finding each placement by reference, where `place` already returns them by index) · 1 dead path removed (`passive_for`, a second constructor that existed only to set `decouples`) · 1 protected kept (the duplicate-pin-number guard, labelled `belt-and-suspenders`) · 2 findings:
   - the test helpers `Dir`, `json_line`, `record` and the `drc` runners are copied across test binaries, kept because each binary compiles alone (as in 1300);
   - `parity`'s tree walk and `board.rs`'s are two walkers of one shape, but `board.rs` is outside this work order's fence, so they are reported, not merged.
