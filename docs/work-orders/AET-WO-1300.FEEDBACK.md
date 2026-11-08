@@ -407,6 +407,21 @@ In CI, runs 42426631742, 42427541833, 42428065833 and 42428589322 are green in b
 | A8 | Plausible, unmeasured: `check erc` does not scan the schematic, so a hierarchical sheet naming a file outside the scratch copy would be judged without being hashed. Landlock's read-only system paths include `/etc` | low (`INV-03`) | out of this work order's rule-injection scope | yes, for a later work order |
 | A9 | Plausible: `generator_version` is the crate version, so an emission depends on the engine's version as well as the specification | none | intended: a new engine may emit differently | no |
 
+**Status of every finding.** No finding is left open in the code.
+- **Closed by a fix, with a test:**
+  - A1, the reader mismatch;
+  - A2, refused as `BoardWaiver`;
+  - A4, `emit` refuses a leading `#`;
+  - A5, the token cap;
+  - A7, the custom-pad option allowed.
+- **Closed as a deliberate choice, stated above:**
+  - A3: margins are geometry;
+  - A6: formula-looking cells are documented, not rewritten;
+  - A9: the engine version is in the emission by intent.
+- **Recorded for a later work order, outside this one's rule-injection scope:** A8, hashing hierarchical sheets in `check erc`.
+
+Where the table says **decision-needed**, the builder asks the architect to ratify the fix already built, or to name another. These are not defects waiting on a fix. The same holds for B1, a floor built in place of a specification field the ruling did not add.
+
 **What it tried and the code withstood** (kept as tests):
 - the board's own `.kicad_pro` and `.kicad_dru` beside it, a `.kicad_dru` under another name, a symlinked board and project. None reaches the judge; the scratch listing is exactly the gate's files;
 - a setup, net class or padstack-layer clearance nested anywhere;
