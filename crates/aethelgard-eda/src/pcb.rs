@@ -27,6 +27,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::library;
 use crate::parity;
+use crate::route;
 use crate::rules::FLOOR_NM;
 use crate::schematic::{self, Conn, EmitError, GND, Part};
 use crate::sexpr::{self, Sx, mm};
@@ -40,6 +41,10 @@ pub const ORIGIN: (i64, i64) = (100_000_000, 100_000_000);
 /// The least distance between two parts' keep-out boxes (courtyard and
 /// silkscreen together).
 pub const GAP_NM: i64 = 500_000;
+/// The least distance between two ICs' keep-out boxes: room for the router
+/// between their pads (`AET-WO-1302`). At [`GAP_NM`], the reference board's
+/// U1 pad 34 and U4 pad 7 faced each other across one track's width.
+pub const IC_GAP_NM: i64 = 1_000_000;
 /// From the outermost keep-out box to the board edge.
 pub const MARGIN_NM: i64 = 2_000_000;
 /// The candidate positions' pitch.
@@ -86,7 +91,7 @@ pub struct Rect {
 }
 
 impl Rect {
-    fn point(x: i64, y: i64) -> Rect {
+    pub(crate) fn point(x: i64, y: i64) -> Rect {
         Rect {
             x0: x,
             y0: y,
@@ -94,7 +99,7 @@ impl Rect {
             y1: y,
         }
     }
-    fn union(self, o: Rect) -> Rect {
+    pub(crate) fn union(self, o: Rect) -> Rect {
         Rect {
             x0: self.x0.min(o.x0),
             y0: self.y0.min(o.y0),
@@ -102,7 +107,7 @@ impl Rect {
             y1: self.y1.max(o.y1),
         }
     }
-    fn grow(self, d: i64) -> Rect {
+    pub(crate) fn grow(self, d: i64) -> Rect {
         Rect {
             x0: self.x0 - d,
             y0: self.y0 - d,
@@ -126,7 +131,7 @@ impl Rect {
     pub fn contains(self, o: Rect) -> bool {
         self.x0 <= o.x0 && self.y0 <= o.y0 && o.x1 <= self.x1 && o.y1 <= self.y1
     }
-    fn centre(self) -> (i64, i64) {
+    pub(crate) fn centre(self) -> (i64, i64) {
         (
             self.x0 + (self.x1 - self.x0) / 2,
             self.y0 + (self.y1 - self.y0) / 2,
@@ -480,7 +485,14 @@ fn place(items: &[Item<'_>]) -> Result<Vec<Placed>, EmitError> {
                     .as_ref()
                     .map_or(ORIGIN, |p| p.courtyard.centre())
             });
-        let taken: Vec<Rect> = placed.iter().flatten().map(|p| p.keep).collect();
+        let taken: Vec<(Rect, i64)> = (0..items.len())
+            .filter_map(|j| {
+                let both = is_ic(items[j].part) && is_ic(item.part);
+                placed[j]
+                    .as_ref()
+                    .map(|p| (p.keep, if both { IC_GAP_NM } else { GAP_NM }))
+            })
+            .collect();
         let origin = spot(g, target, &taken)
             .ok_or_else(|| internal(&item.part.reference, "no free spot within a metre"))?;
         placed[i] = Some(Placed {
@@ -499,7 +511,7 @@ fn place(items: &[Item<'_>]) -> Result<Vec<Placed>, EmitError> {
 /// The first origin, in rings out from `target`, where `g`'s keep-out box
 /// clears every box in `taken` by [`GAP_NM`]. Within a ring, candidates go
 /// by squared distance, then y, then x.
-fn spot(g: Geometry, target: (i64, i64), taken: &[Rect]) -> Option<(i64, i64)> {
+fn spot(g: Geometry, target: (i64, i64), taken: &[(Rect, i64)]) -> Option<(i64, i64)> {
     let (cx, cy) = g.keep.centre();
     let snap = |v: i64| v.div_euclid(SNAP) * SNAP;
     for r in 0..=RINGS {
@@ -517,8 +529,8 @@ fn spot(g: Geometry, target: (i64, i64), taken: &[Rect]) -> Option<(i64, i64)> {
                 snap(target.0 + dx * STEP - cx),
                 snap(target.1 + dy * STEP - cy),
             );
-            let keep = g.keep.shift(origin).grow(GAP_NM);
-            if taken.iter().all(|t| !t.overlaps(keep)) {
+            let keep = g.keep.shift(origin);
+            if taken.iter().all(|&(t, gap)| !t.overlaps(keep.grow(gap))) {
                 return Some(origin);
             }
         }
@@ -779,10 +791,21 @@ pub(crate) fn write(project: &str, parts: &[Part]) -> Result<String, EmitError> 
     let mut order: Vec<usize> = (0..items.len()).collect();
     order.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference));
     // `place` returns each item's placement at the item's index.
+    let mut parts = Vec::new();
     for i in order {
-        out.push(footprint(project, &items[i], layout.placed[i].origin)?);
+        let fp = footprint(project, &items[i], layout.placed[i].origin)?;
+        parts.push(route::part_of(&fp).map_err(EmitError::Internal)?);
+        out.push(fp);
     }
     let o = layout.outline;
+    let board = route::Board { outline: o, parts };
+    let routed = route::route(&board).map_err(|e| match e.net.is_empty() {
+        true => EmitError::BoardUnroutable(e.why),
+        false => EmitError::Unroutable {
+            net: e.net,
+            why: e.why,
+        },
+    })?;
     out.push(Sx::List(vec![
         Sx::atom("gr_rect"),
         at_sx("start", (o.x0, o.y0)),
@@ -796,8 +819,78 @@ pub(crate) fn write(project: &str, parts: &[Part]) -> Result<String, EmitError> 
         Sx::List(vec![Sx::atom("layer"), Sx::str("Edge.Cuts")]),
         uuid_sx(&format!("{project}/outline")),
     ]));
+    out.extend(copper(project, &routed, o));
     out.push(Sx::node("embedded_fonts", &["no"]));
     Ok(sexpr::write(&Sx::List(out)))
+}
+
+/// The router's tracks, vias and unfilled zones as board items, each
+/// keyed by its content. A zone's outline is the board's; it carries no
+/// `connect_pads` clearance, which the gate refuses (`AET-WO-1300` B2), and
+/// no fill, which the gate's `--refill-zones` computes.
+fn copper(project: &str, routed: &route::Routed, o: Rect) -> Vec<Sx> {
+    let net = |n: &str| Sx::List(vec![Sx::atom("net"), Sx::str(n)]);
+    let layer = |l: route::Layer| Sx::List(vec![Sx::atom("layer"), Sx::str(l.name())]);
+    let mut out = Vec::new();
+    for s in &routed.segments {
+        out.push(Sx::List(vec![
+            Sx::atom("segment"),
+            at_sx("start", s.start),
+            at_sx("end", s.end),
+            Sx::node("width", &[&mm(route::WIDTH_NM)]),
+            layer(s.layer),
+            net(&s.net),
+            uuid_sx(&format!(
+                "{project}/segment/{}/{}/{} {} {} {}",
+                s.net,
+                s.layer.name(),
+                s.start.0,
+                s.start.1,
+                s.end.0,
+                s.end.1
+            )),
+        ]));
+    }
+    for v in &routed.vias {
+        out.push(Sx::List(vec![
+            Sx::atom("via"),
+            at_sx("at", v.at),
+            Sx::node("size", &[&mm(route::VIA_NM)]),
+            Sx::node("drill", &[&mm(route::DRILL_NM)]),
+            Sx::List(vec![Sx::atom("layers"), Sx::str("F.Cu"), Sx::str("B.Cu")]),
+            net(&v.net),
+            uuid_sx(&format!("{project}/via/{}/{} {}", v.net, v.at.0, v.at.1)),
+        ]));
+    }
+    for (n, l) in &routed.zones {
+        let corner = |x, y| Sx::node("xy", &[&mm(x), &mm(y)]);
+        out.push(Sx::List(vec![
+            Sx::atom("zone"),
+            net(n),
+            layer(*l),
+            uuid_sx(&format!("{project}/zone/{n}/{}", l.name())),
+            Sx::node("hatch", &["edge", "0.5"]),
+            Sx::node("min_thickness", &[&mm(route::MIN_THICKNESS_NM)]),
+            Sx::node("filled_areas_thickness", &["no"]),
+            Sx::List(vec![
+                Sx::atom("fill"),
+                Sx::node("thermal_gap", &["0.5"]),
+                Sx::node("thermal_bridge_width", &["0.5"]),
+                Sx::node("island_removal_mode", &["0"]),
+            ]),
+            Sx::List(vec![
+                Sx::atom("polygon"),
+                Sx::List(vec![
+                    Sx::atom("pts"),
+                    corner(o.x0, o.y0),
+                    corner(o.x1, o.y0),
+                    corner(o.x1, o.y1),
+                    corner(o.x0, o.y1),
+                ]),
+            ]),
+        ]));
+    }
+    out
 }
 
 #[cfg(test)]

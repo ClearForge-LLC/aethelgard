@@ -63,6 +63,10 @@ pub enum EmitError {
     ReservedName(String),
     #[error("`{0}` is used twice as a reference")]
     DuplicateReference(String),
+    #[error("the router cannot complete net `{net}`: {why}")]
+    Unroutable { net: String, why: String },
+    #[error("the router cannot complete the board: {0}")]
+    BoardUnroutable(String),
     #[error("{0}")]
     Internal(String),
 }
@@ -77,6 +81,7 @@ impl EmitError {
             Self::UnknownPin { .. } => "UnknownPin",
             Self::ReservedName(_) => "ReservedName",
             Self::DuplicateReference(_) => "DuplicateReference",
+            Self::Unroutable { .. } | Self::BoardUnroutable(_) => "Unroutable",
             Self::Internal(_) => "EmitterError",
         }
     }
@@ -89,8 +94,8 @@ impl EmitError {
             Self::UnsolvedNet(id) | Self::ReservedName(id) | Self::DuplicateReference(id) => {
                 Some(id)
             }
-            Self::UnknownPin { net, .. } => Some(net),
-            Self::Library(_) | Self::Internal(_) => None,
+            Self::UnknownPin { net, .. } | Self::Unroutable { net, .. } => Some(net),
+            Self::Library(_) | Self::BoardUnroutable(_) | Self::Internal(_) => None,
         }
     }
 }
