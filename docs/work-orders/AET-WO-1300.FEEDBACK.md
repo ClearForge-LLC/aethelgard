@@ -6,7 +6,7 @@ Entry schema: `finding · where · type · recommendation · decision-needed`.
 
 ## Spike
 
-**How the probe is built.** The probes are Rust under `spike/1300/`:
+**How the probe was built** (deleted by the build half, as ruled; it is at commit `44c1b60` under `spike/1300/`, read with `git show 44c1b60:spike/1300/<file>`). The probes were Rust under `spike/1300/`:
 - `sexpr.rs`, a reader and writer;
 - `kilib.rs`, library access with `extends` flattening;
 - `sch.rs`, the schematic emitter;
@@ -19,16 +19,16 @@ They are compiled into one test, `crates/aethelgard-cli/tests/spike_1300.rs`, wh
 - No `unsafe`, no new dependency (`serde_json` and `sha2` are already the CLI's), no Python, no Java.
 - Root `Cargo.toml` and `Cargo.lock` are unchanged relative to the merge base.
 - No fixture was added under `container/fixtures/`: every input is emitted by the probe at run time.
-- The build half deletes `spike/1300/` and the test hook.
+- The build half deleted `spike/1300/` and the test hook; the ANSWER records moved to `docs/work-orders/AET-WO-1300.repro/`.
 
-**Runs.** Each run's ANSWER lines are committed verbatim, so the record outlives the Actions logs. Each answer below cites the run that measured it.
+**Runs.** Each run's ANSWER lines are committed verbatim in `docs/work-orders/AET-WO-1300.repro/`, so the record outlives the Actions logs. Each answer below cites the run that measured it.
 
 | Run | Commit | Record |
 |---|---|---|
-| [42426631742](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42426631742) | `02d951d` | `spike/1300/results/run-42426631742.txt` |
-| [42427541833](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42427541833) | `985f607` | `spike/1300/results/run-42427541833.txt` |
-| [42428065833](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42428065833) | `aab865b` (includes the `main` merge) | `spike/1300/results/run-42428065833.txt` |
-| [42428589322](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42428589322) | `44c1b60` | `spike/1300/results/run-42428589322.txt` |
+| [42426631742](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42426631742) | `02d951d` | `docs/work-orders/AET-WO-1300.repro/run-42426631742.txt` |
+| [42427541833](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42427541833) | `985f607` | `docs/work-orders/AET-WO-1300.repro/run-42427541833.txt` |
+| [42428065833](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42428065833) | `aab865b` (includes the `main` merge) | `docs/work-orders/AET-WO-1300.repro/run-42428065833.txt` |
+| [42428589322](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42428589322) | `44c1b60` | `docs/work-orders/AET-WO-1300.repro/run-42428589322.txt` |
 
 Image: `kicad-cli` 10.0.7, libraries at `/usr/share/kicad/{symbols,footprints}`, with `KICAD10_*_DIR` unset (every run's `ENV` line).
 
@@ -60,7 +60,7 @@ The smallest honest substitute is `Memory_Flash:W25Q32JVSS` with its Value set t
 
 **Licence.**
 - **In the image:** no file. KiCad is not a dpkg package (`dpkg-query`: no packages match `kicad*`). `find / -ipath '*kicad*' -iname '*licen*'` outside `demos/` finds nothing (run 42427541833). The only licence files under `/usr/share/kicad` are the demo projects' own, such as `stickhub`'s CC BY-NC-SA 4.0 and `cm5_minima`'s CERN-OHL-S. Those are not the libraries' licence.
-- **Upstream:** `https://gitlab.com/kicad/libraries/kicad-symbols/-/raw/10.0.7/LICENSE.md`, byte-identical in `kicad-footprints`. 2101 bytes, sha256 `45d2bce75e5a4208f5afb01b8fb2c406e700371c4fe2b5f5cd5c443d46db4d8f`, fetched 2026-11-08 and kept as `spike/1300/results/kicad-libraries-LICENSE-10.0.7.md`. It reads:
+- **Upstream:** `https://gitlab.com/kicad/libraries/kicad-symbols/-/raw/10.0.7/LICENSE.md`, byte-identical in `kicad-footprints`. 2101 bytes, sha256 `45d2bce75e5a4208f5afb01b8fb2c406e700371c4fe2b5f5cd5c443d46db4d8f`, fetched 2026-11-08 and now vendored as `crates/aethelgard-eda/data/kicad-10.0.7/LICENSE.md`. It reads:
 
   > The KiCad libraries are licensed under the Creative Commons CC-BY-SA 4.0 License, with the following exception: *To the extent that the creation of electronic designs that use 'Licensed Material' can be considered to be 'Adapted Material', then the copyright holder waives article 3 of the license with respect to these designs and any generated files which use data provided as part of the 'Licensed Material'.*
   >

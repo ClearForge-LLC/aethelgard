@@ -345,7 +345,10 @@ fn check_kicad(
                 id: refusal.error.id,
                 message: refusal.error.message,
             })?;
-            (aethelgard_eda::rules::Rules::from_specification(&spec), Some(sha256))
+            (
+                aethelgard_eda::rules::Rules::from_specification(&spec),
+                Some(sha256),
+            )
         }
         None => (aethelgard_eda::rules::Rules::kicad_default(), None),
     };
@@ -369,14 +372,14 @@ fn check_kicad(
     let version = version(invocation(run::args(["version"]), "status-version"))?;
     let report = scratch.tool.join("report.json");
     let [noun, verb] = check.verb();
-    let mut args = run::args([
-        noun,
-        verb,
-        "--exit-code-violations",
-        "--format",
-        "json",
-        "-o",
-    ]);
+    let mut args = run::args([noun, verb, "--exit-code-violations", "--format", "json"]);
+    // Zones are emitted unfilled; KiCad fills them in memory to judge, and
+    // the board is never saved, because its saved fills are not
+    // deterministic (`RUL-03` as amended 2026-11-08).
+    if matches!(check, kicad::Check::Drc) {
+        args.push("--refill-zones".into());
+    }
+    args.push("-o".into());
     args.push(report.clone().into_os_string());
     args.push(input.copy.clone().into_os_string());
     let out = invocation(args, "status-run").run()?;
@@ -558,7 +561,7 @@ fn validate(file: Option<&Path>) -> ExitCode {
 /// 0). A specification the solver cannot realize is exit 2, with `claimants`.
 fn solve(file: &Path) -> ExitCode {
     match solved(file) {
-        Ok((_, topology)) => emit(&topology, 0),
+        Ok((_, topology, _)) => emit(&topology, 0),
         Err(code) => code,
     }
 }
@@ -596,7 +599,16 @@ fn read_spec(file: &Path) -> Result<(Specification, String), (Refusal, u8)> {
 
 /// Reads, validates, loads the pin table and solves. Every refusal is
 /// printed here; the caller gets its exit code.
-fn solved(file: &Path) -> Result<(Specification, aethelgard_ir::SolvedTopology), ExitCode> {
+fn solved(
+    file: &Path,
+) -> Result<
+    (
+        Specification,
+        aethelgard_ir::SolvedTopology,
+        aethelgard_ir::PinTable,
+    ),
+    ExitCode,
+> {
     #[derive(Serialize)]
     struct SolveRefusal {
         ok: bool,
@@ -625,7 +637,7 @@ fn solved(file: &Path) -> Result<(Specification, aethelgard_ir::SolvedTopology),
         }
     };
     match aethelgard_ir::solve(&spec, &table, &sha256) {
-        Ok(topology) => Ok((spec, topology)),
+        Ok(topology) => Ok((spec, topology, table)),
         Err(err) => Err(emit(
             &SolveRefusal {
                 ok: false,
@@ -659,11 +671,11 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
         bill_of_materials: Written,
     }
 
-    let (spec, topology) = match solved(file) {
+    let (spec, topology, table) = match solved(file) {
         Ok(solved) => solved,
         Err(code) => return code,
     };
-    let emission = match aethelgard_eda::schematic::emit(&spec, &topology) {
+    let emission = match aethelgard_eda::schematic::emit(&spec, &topology, &table) {
         Ok(e) => e,
         Err(err @ aethelgard_eda::schematic::EmitError::Library(_)) => {
             diagnose(&format!("the vendored library is unusable: {err}"));
@@ -698,7 +710,9 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
             .create(true)
             .truncate(true)
             .mode(0o644)
-            .custom_flags((rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32)
+            .custom_flags(
+                (rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32,
+            )
             .open(&path)
             .and_then(|f| {
                 if f.metadata()?.is_file() {

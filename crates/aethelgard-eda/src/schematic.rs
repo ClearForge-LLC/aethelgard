@@ -18,7 +18,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use aethelgard_ir::{Specification, SolvedTopology};
+use aethelgard_ir::{PinTable, SolvedTopology, Specification};
 use sha2::{Digest, Sha256};
 
 use crate::library::{self, LibraryError};
@@ -121,7 +121,9 @@ pub fn pins(sym: &Sx) -> Result<Vec<Pin>, String> {
         let body = parts.next().and_then(|b| b.parse::<u32>().ok());
         let unit = parts.next().and_then(|u| u.parse::<u32>().ok());
         let (Some(unit), Some(body)) = (unit, body) else {
-            return Err(format!("sub-symbol `{sub_name}` has no unit and body style"));
+            return Err(format!(
+                "sub-symbol `{sub_name}` has no unit and body style"
+            ));
         };
         if unit > 1 || body > 1 {
             continue;
@@ -312,8 +314,17 @@ fn mcu_conn(b: &mut Builder<'_>, name: &str) -> Option<Conn> {
     }
 }
 
-pub fn emit(spec: &Specification, solved: &SolvedTopology) -> Result<Emission, EmitError> {
-    if spec.mcu.part != "STM32H753ZITx" {
+/// Emits the schematic and bill of materials. `table` is the MCU's pin table
+/// the topology was solved against: each solved pin is drawn on the symbol
+/// pin whose number is the table's package position, so ST's data, not a
+/// name match, decides it (KiCad names pins 28 and 29 `PC2_C` and `PC3_C`
+/// where ST's table says `PC2` and `PC3`).
+pub fn emit(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+) -> Result<Emission, EmitError> {
+    if spec.mcu.part != "STM32H753ZITx" || table.part != spec.mcu.part {
         return Err(EmitError::UnknownPart {
             reference: "mcu".into(),
             part: spec.mcu.part.clone(),
@@ -338,7 +349,11 @@ pub fn emit(spec: &Specification, solved: &SolvedTopology) -> Result<Emission, E
         names.extend([bus.sda.net.clone(), bus.scl.net.clone()]);
     }
     for bus in &spec.spi_buses {
-        names.extend([bus.sck.net.clone(), bus.mosi.net.clone(), bus.miso.net.clone()]);
+        names.extend([
+            bus.sck.net.clone(),
+            bus.mosi.net.clone(),
+            bus.miso.net.clone(),
+        ]);
     }
     for d in &spec.spi_devices {
         names.insert(d.cs.net.clone());
@@ -382,12 +397,20 @@ pub fn emit(spec: &Specification, solved: &SolvedTopology) -> Result<Emission, E
         .map(|(net, a)| (net, &a.pin))
         .chain(solved.gpio.iter());
     for (net, pin) in solved_pins {
-        let p = by_name(&mcu_pins, pin)
-            .next()
-            .ok_or_else(|| EmitError::UnknownPin {
-                net: net.clone(),
-                pin: pin.clone(),
-            })?;
+        let unknown = || EmitError::UnknownPin {
+            net: net.clone(),
+            pin: pin.clone(),
+        };
+        let position = table
+            .pins
+            .get(pin)
+            .ok_or_else(unknown)?
+            .position
+            .to_string();
+        let p = mcu_pins
+            .iter()
+            .find(|p| p.number == position)
+            .ok_or_else(unknown)?;
         conns.insert(p.number.clone(), Conn::Net(net.clone()));
     }
     let mut vcaps: Vec<&Pin> = by_name(&mcu_pins, "VCAP").collect();
@@ -424,7 +447,10 @@ pub fn emit(spec: &Specification, solved: &SolvedTopology) -> Result<Emission, E
             .iter()
             .find(|x| x.id == d.bus)
             .ok_or_else(|| EmitError::Internal(format!("{}: no bus {}", d.reference, d.bus)))?;
-        let (sda, scl) = (Conn::Net(bus.sda.net.clone()), Conn::Net(bus.scl.net.clone()));
+        let (sda, scl) = (
+            Conn::Net(bus.sda.net.clone()),
+            Conn::Net(bus.scl.net.clone()),
+        );
         let rail = b.rail(&d.supply);
         let gnd = b.ground();
         let (lib_id, conns) = match d.part.as_str() {
@@ -640,7 +666,9 @@ fn outward(angle: i64) -> Result<(i64, i64), EmitError> {
         90 => Ok((0, 1)),
         180 => Ok((1, 0)),
         270 => Ok((0, -1)),
-        a => Err(EmitError::Internal(format!("pin angle {a} is not a multiple of 90"))),
+        a => Err(EmitError::Internal(format!(
+            "pin angle {a} is not a multiple of 90"
+        ))),
     }
 }
 
@@ -814,7 +842,9 @@ impl Sheet<'_> {
                 None => &Conn::NoConnect,
                 Some((_, c)) => c,
             };
-            if conns.iter().any(|(_, c)| c != &conn) || (!conns.is_empty() && conns.len() != group.len()) {
+            if conns.iter().any(|(_, c)| c != &conn)
+                || (!conns.is_empty() && conns.len() != group.len())
+            {
                 return Err(EmitError::Internal(format!(
                     "{}: stacked pins at one point disagree",
                     part.reference
@@ -927,7 +957,10 @@ fn write_sheet(
         .enumerate()
     {
         let e = extents[&p.reference];
-        let (cx, cy) = (x0 + cell.0 * (i as i64 % per_row), top + cell.1 * (i as i64 / per_row));
+        let (cx, cy) = (
+            x0 + cell.0 * (i as i64 % per_row),
+            top + cell.1 * (i as i64 / per_row),
+        );
         sheet.part(p, (snap(cx - e.0), snap(cy - e.1)))?;
     }
     let mut lib = vec![Sx::atom("lib_symbols")];
@@ -990,7 +1023,9 @@ mod tests {
         let sym = library::symbol("MCU_ST_STM32H7:STM32H753ZITx").unwrap();
         let pins = pins(&sym).unwrap();
         assert_eq!(pins.len(), 144);
-        for name in ["VDD", "VBAT", "VREF+", "PDR_ON", "VSS", "BOOT0", "VCAP", "PB8", "PB9"] {
+        for name in [
+            "VDD", "VBAT", "VREF+", "PDR_ON", "VSS", "BOOT0", "VCAP", "PB8", "PB9",
+        ] {
             assert!(pins.iter().any(|p| p.name == name), "{name}");
         }
         let vcap: Vec<&str> = by_name(&pins, "VCAP").map(|p| p.etype.as_str()).collect();
@@ -1000,14 +1035,55 @@ mod tests {
     #[test]
     fn device_pin_numbers_match_their_symbols() {
         for (id, expect) in [
-            ("Sensor:BME280", vec![("1", "GND"), ("2", "CSB"), ("3", "SDI"), ("4", "SCK"), ("5", "SDO"), ("6", "VDDIO"), ("7", "GND"), ("8", "VDD")]),
-            ("Sensor_Temperature:TMP117xxDRV", vec![("1", "SCL"), ("2", "GND"), ("3", "ALERT"), ("4", "ADD0"), ("5", "V+"), ("6", "SDA")]),
-            ("Memory_Flash:W25Q32JVSS", vec![("1", "~{CS}"), ("2", "DO/IO_{1}"), ("3", "~{WP}/IO_{2}"), ("4", "GND"), ("5", "DI/IO_{0}"), ("6", "CLK"), ("7", "~{HOLD}/~{RESET}/IO_{3}"), ("8", "VCC")]),
+            (
+                "Sensor:BME280",
+                vec![
+                    ("1", "GND"),
+                    ("2", "CSB"),
+                    ("3", "SDI"),
+                    ("4", "SCK"),
+                    ("5", "SDO"),
+                    ("6", "VDDIO"),
+                    ("7", "GND"),
+                    ("8", "VDD"),
+                ],
+            ),
+            (
+                "Sensor_Temperature:TMP117xxDRV",
+                vec![
+                    ("1", "SCL"),
+                    ("2", "GND"),
+                    ("3", "ALERT"),
+                    ("4", "ADD0"),
+                    ("5", "V+"),
+                    ("6", "SDA"),
+                ],
+            ),
+            (
+                "Memory_Flash:W25Q32JVSS",
+                vec![
+                    ("1", "~{CS}"),
+                    ("2", "DO/IO_{1}"),
+                    ("3", "~{WP}/IO_{2}"),
+                    ("4", "GND"),
+                    ("5", "DI/IO_{0}"),
+                    ("6", "CLK"),
+                    ("7", "~{HOLD}/~{RESET}/IO_{3}"),
+                    ("8", "VCC"),
+                ],
+            ),
         ] {
             let sym = library::symbol(id).unwrap();
-            let mut got: Vec<(String, String)> = pins(&sym).unwrap().into_iter().map(|p| (p.number, p.name)).collect();
+            let mut got: Vec<(String, String)> = pins(&sym)
+                .unwrap()
+                .into_iter()
+                .map(|p| (p.number, p.name))
+                .collect();
             got.sort();
-            let want: Vec<(String, String)> = expect.iter().map(|(n, m)| ((*n).into(), (*m).into())).collect();
+            let want: Vec<(String, String)> = expect
+                .iter()
+                .map(|(n, m)| ((*n).into(), (*m).into()))
+                .collect();
             assert_eq!(got, want, "{id}");
         }
     }

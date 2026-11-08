@@ -69,10 +69,7 @@ pub fn prepare(
         std::fs::write(&path, bytes).map_err(|e| scratch_error(&path, e))
     };
     match check {
-        Check::Erc => write(
-            &format!("{STEM}.kicad_pro"),
-            aethelgard_eda::rules::erc_project(STEM).as_bytes(),
-        ),
+        Check::Erc => write(&format!("{STEM}.kicad_pro"), rules.project(STEM).as_bytes()),
         Check::Drc => {
             let text = std::fs::read(copy)
                 .map_err(|e| scratch_error(copy, e))
@@ -93,16 +90,25 @@ pub fn prepare(
                 })?;
             std::fs::write(copy, board).map_err(|e| scratch_error(copy, e))?;
             write(&format!("{STEM}.kicad_pro"), rules.project(STEM).as_bytes())?;
-            write(&format!("{STEM}.kicad_dru"), rules.custom_rules().as_bytes())?;
+            write(
+                &format!("{STEM}.kicad_dru"),
+                rules.custom_rules().as_bytes(),
+            )?;
             let library = |e: aethelgard_eda::library::LibraryError| {
-                Stop::tool_error("aethelgard", format!("the vendored library is unusable: {e}"))
+                Stop::tool_error(
+                    "aethelgard",
+                    format!("the vendored library is unusable: {e}"),
+                )
             };
             for (path, bytes) in aethelgard_eda::library::files().map_err(library)? {
                 write(&format!("lib/{path}"), bytes)?;
             }
             let lib_dir = dir.join("lib");
             let lib_dir = lib_dir.to_str().ok_or_else(|| {
-                Stop::tool_error("aethelgard", "the temporary directory is not UTF-8".to_owned())
+                Stop::tool_error(
+                    "aethelgard",
+                    "the temporary directory is not UTF-8".to_owned(),
+                )
             })?;
             let (sym, fp) = aethelgard_eda::library::tables(lib_dir).map_err(library)?;
             write("sym-lib-table", sym.as_bytes())?;
@@ -114,7 +120,10 @@ pub fn prepare(
 fn scratch_error(path: &Path, e: std::io::Error) -> Stop {
     Stop::tool_error(
         "aethelgard",
-        format!("cannot write {} in the temporary directory: {e}", path.display()),
+        format!(
+            "cannot write {} in the temporary directory: {e}",
+            path.display()
+        ),
     )
 }
 

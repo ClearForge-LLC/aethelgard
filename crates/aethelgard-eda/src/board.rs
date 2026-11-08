@@ -214,7 +214,13 @@ mod tests {
 
     #[test]
     fn a_clearance_inside_setup_is_replaced_not_refused() {
-        assert!(prepare("(kicad_pcb (setup (clearance_min 0.05) (clearance 0.05)))", SETUP).is_ok());
+        assert!(
+            prepare(
+                "(kicad_pcb (setup (clearance_min 0.05) (clearance 0.05)))",
+                SETUP
+            )
+            .is_ok()
+        );
     }
 
     #[test]

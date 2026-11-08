@@ -16,36 +16,50 @@ pub const KICAD_TAG: &str = "10.0.7";
 
 /// Every vendored file: its path under `data/kicad-10.0.7/`, its sha256, and
 /// its bytes.
-const FILES: [(&str, &str, &[u8]); 17] = [
+type Vendored = (&'static str, &'static str, &'static [u8]);
+
+const FILES: [Vendored; 17] = [
     (
         "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
         "0403382fc4583ed510b461b1fa4a36dfaec6f4c0d9b1a67e6b0027837a54e1b5",
-        include_bytes!("../data/kicad-10.0.7/footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod"),
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod"
+        ),
     ),
     (
         "footprints/Package_LGA.pretty/Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering.kicad_mod",
         "14464b7a437e7efb0fa9947b89a7d3825242f3ed82d649fe2ca45fad5d3dda86",
-        include_bytes!("../data/kicad-10.0.7/footprints/Package_LGA.pretty/Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering.kicad_mod"),
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Package_LGA.pretty/Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering.kicad_mod"
+        ),
     ),
     (
         "footprints/Package_QFP.pretty/LQFP-144_20x20mm_P0.5mm.kicad_mod",
         "c56afb80b84306b4ae3639fdd270987fc47b46ee531bbae036cc2ee25f2cf165",
-        include_bytes!("../data/kicad-10.0.7/footprints/Package_QFP.pretty/LQFP-144_20x20mm_P0.5mm.kicad_mod"),
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Package_QFP.pretty/LQFP-144_20x20mm_P0.5mm.kicad_mod"
+        ),
     ),
     (
         "footprints/Package_SON.pretty/WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm.kicad_mod",
         "5b7efafe23ba0a80faf2aa5786e7ceed526eb3802b254bc28577f1fc06abb633",
-        include_bytes!("../data/kicad-10.0.7/footprints/Package_SON.pretty/WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm.kicad_mod"),
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Package_SON.pretty/WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm.kicad_mod"
+        ),
     ),
     (
         "footprints/Package_SO.pretty/SOIC-8_5.3x5.3mm_P1.27mm.kicad_mod",
         "cc86a7083c9df1c1bf808dfa469e913d446455fd7ab7a7941e18681b80e8b9b5",
-        include_bytes!("../data/kicad-10.0.7/footprints/Package_SO.pretty/SOIC-8_5.3x5.3mm_P1.27mm.kicad_mod"),
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Package_SO.pretty/SOIC-8_5.3x5.3mm_P1.27mm.kicad_mod"
+        ),
     ),
     (
         "footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod",
         "e05c7605248c220836f642ed1f526133edf0374acdfd5bb2631e58b4e377acfb",
-        include_bytes!("../data/kicad-10.0.7/footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod"),
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod"
+        ),
     ),
     (
         "symbols/Device.kicad_symdir/C.kicad_sym",
@@ -60,12 +74,16 @@ const FILES: [(&str, &str, &[u8]); 17] = [
     (
         "symbols/MCU_ST_STM32H7.kicad_symdir/STM32H753ZITx.kicad_sym",
         "257de01b80c04c8157fd1b617b5d045d9c8a4cf516ad9e1e23156f2ebe716e6b",
-        include_bytes!("../data/kicad-10.0.7/symbols/MCU_ST_STM32H7.kicad_symdir/STM32H753ZITx.kicad_sym"),
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/MCU_ST_STM32H7.kicad_symdir/STM32H753ZITx.kicad_sym"
+        ),
     ),
     (
         "symbols/Memory_Flash.kicad_symdir/W25Q32JVSS.kicad_sym",
         "49133cae4075c838798a68067881f10d0836a3316f7de485f334d92d71569550",
-        include_bytes!("../data/kicad-10.0.7/symbols/Memory_Flash.kicad_symdir/W25Q32JVSS.kicad_sym"),
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Memory_Flash.kicad_symdir/W25Q32JVSS.kicad_sym"
+        ),
     ),
     (
         "symbols/power.kicad_symdir/+3V3.kicad_sym",
@@ -90,12 +108,16 @@ const FILES: [(&str, &str, &[u8]); 17] = [
     (
         "symbols/Sensor_Temperature.kicad_symdir/TMP102xxDRL.kicad_sym",
         "ba51c59e932af56e44ae300fa8712a53ae1396d3af3f9ef7c609e665037b453f",
-        include_bytes!("../data/kicad-10.0.7/symbols/Sensor_Temperature.kicad_symdir/TMP102xxDRL.kicad_sym"),
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Sensor_Temperature.kicad_symdir/TMP102xxDRL.kicad_sym"
+        ),
     ),
     (
         "symbols/Sensor_Temperature.kicad_symdir/TMP117xxDRV.kicad_sym",
         "1d1a1427556c4e89fc7d30fcbd418120ebbe9c0b774cabda08843ac5f6742848",
-        include_bytes!("../data/kicad-10.0.7/symbols/Sensor_Temperature.kicad_symdir/TMP117xxDRV.kicad_sym"),
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Sensor_Temperature.kicad_symdir/TMP117xxDRV.kicad_sym"
+        ),
     ),
     (
         "LICENSE.md",
@@ -123,7 +145,7 @@ pub enum LibraryError {
 }
 
 /// The checked files, or the first that failed its hash; checked once.
-fn checked() -> Result<&'static [(&'static str, &'static str, &'static [u8])], LibraryError> {
+fn checked() -> Result<&'static [Vendored], LibraryError> {
     static CHECK: OnceLock<Result<(), LibraryError>> = OnceLock::new();
     CHECK
         .get_or_init(|| {
@@ -156,7 +178,8 @@ fn file(path: &str) -> Result<Option<(&'static str, &'static [u8])>, LibraryErro
 /// One symbol file's top-level `(symbol "name" …)`.
 fn raw_symbol(lib: &str, name: &str) -> Result<Sx, LibraryError> {
     let path = format!("symbols/{lib}.kicad_symdir/{name}.kicad_sym");
-    let (path, bytes) = file(&path)?.ok_or_else(|| LibraryError::NoSymbol(format!("{lib}:{name}")))?;
+    let (path, bytes) =
+        file(&path)?.ok_or_else(|| LibraryError::NoSymbol(format!("{lib}:{name}")))?;
     let text = std::str::from_utf8(bytes)
         .map_err(|_| LibraryError::Unparseable(path, sexpr::SexprError::NotUtf8(0)))?;
     let lib_file = sexpr::parse(text).map_err(|e| LibraryError::Unparseable(path, e))?;
@@ -184,7 +207,11 @@ fn flatten(lib: &str, name: &str, depth: usize) -> Result<Sx, LibraryError> {
         return Err(LibraryError::ExtendsTooDeep(format!("{lib}:{name}")));
     }
     let sym = raw_symbol(lib, name)?;
-    let Some(parent_name) = sym.child("extends").and_then(|e| e.arg(1)).map(str::to_owned) else {
+    let Some(parent_name) = sym
+        .child("extends")
+        .and_then(|e| e.arg(1))
+        .map(str::to_owned)
+    else {
         return Ok(sym);
     };
     let parent = flatten(lib, &parent_name, depth + 1)?;
@@ -206,7 +233,10 @@ fn flatten(lib: &str, name: &str, depth: usize) -> Result<Sx, LibraryError> {
         }
         let mut item = item.clone();
         if head == "symbol"
-            && let Some(rest) = item.arg(1).and_then(|s| s.strip_prefix(parent_name.as_str())).map(str::to_owned)
+            && let Some(rest) = item
+                .arg(1)
+                .and_then(|s| s.strip_prefix(parent_name.as_str()))
+                .map(str::to_owned)
             && let Some(items) = item.items_mut()
         {
             items[1] = Sx::str(format!("{name}{rest}"));
@@ -305,7 +335,10 @@ mod tests {
         );
         assert_eq!(tmp117.property("Value"), Some("TMP117xxDRV"));
         let subs: Vec<&str> = tmp117.children("symbol").filter_map(|s| s.arg(1)).collect();
-        assert!(subs.iter().all(|s| s.starts_with("TMP117xxDRV_")), "{subs:?}");
+        assert!(
+            subs.iter().all(|s| s.starts_with("TMP117xxDRV_")),
+            "{subs:?}"
+        );
         assert_eq!(crate::schematic::pins(&tmp117).unwrap().len(), 6);
     }
 
@@ -339,7 +372,9 @@ mod tests {
     #[test]
     fn the_tables_name_every_vendored_library() {
         let (sym, fp) = tables("/s/lib").unwrap();
-        assert!(sym.contains("(lib (name \"Device\") (type \"KiCad\") (uri \"/s/lib/symbols/Device.kicad_symdir\")"));
+        assert!(sym.contains(
+            "(lib (name \"Device\") (type \"KiCad\") (uri \"/s/lib/symbols/Device.kicad_symdir\")"
+        ));
         assert!(fp.contains("(uri \"/s/lib/footprints/Package_QFP.pretty\")"));
         assert_eq!(sym.matches("(lib ").count(), 6);
         assert_eq!(fp.matches("(lib ").count(), 6);

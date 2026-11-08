@@ -84,7 +84,12 @@ impl Rules {
         }
     }
 
-    /// The `.kicad_pro` for a board copied as `<stem>.kicad_pcb`.
+    /// The `.kicad_pro` for a copy named `<stem>`: the board minimum and the
+    /// Default net class for DRC, and ERC's library checks ignored. The
+    /// scratch copy holds the schematic alone, its symbols embedded, so there
+    /// is no library to compare against (ruled D3). The spike measured this
+    /// shape: KiCad 10.0.7 read the net class, `min_clearance` and
+    /// `rule_severities` from it (runs 42427541833 and 42428065833).
     pub fn project(&self, stem: &str) -> String {
         let clearance = mm(self.clearance_nm);
         let min_clearance = mm(self.board_minimum_nm());
@@ -99,6 +104,7 @@ impl Rules {
       "rule_severities": {{ }}
     }}
   }},
+  "erc": {{ "meta": {{ "version": 0 }}, "rule_severities": {{ "lib_symbol_issues": "ignore", "lib_symbol_mismatch": "ignore", "footprint_link_issues": "ignore" }} }},
   "meta": {{ "filename": "{stem}.kicad_pro", "version": 1 }},
   "net_settings": {{
     "classes": [
@@ -134,21 +140,6 @@ impl Rules {
 /// The `(setup …)` block the gate writes over the board's: no clearance
 /// token, so the gate's project holds the board minimum alone (D5).
 pub const SETUP: &str = "(setup\n\t\t(pad_to_mask_clearance 0)\n\t)";
-
-/// The `.kicad_pro` the gate writes beside a schematic it judges. ERC's
-/// library checks are ignored: the scratch copy holds the schematic alone,
-/// with its symbols embedded, so there is no library to compare against
-/// (ruled D3). This is the shape the spike measured clearing them (run
-/// 42427541833, treatment `Severities`).
-pub fn erc_project(stem: &str) -> String {
-    format!(
-        r#"{{
-  "erc": {{ "meta": {{ "version": 0 }}, "rule_severities": {{ "lib_symbol_issues": "ignore", "lib_symbol_mismatch": "ignore", "footprint_link_issues": "ignore" }} }},
-  "meta": {{ "filename": "{stem}.kicad_pro", "version": 1 }}
-}}
-"#
-    )
-}
 
 #[cfg(test)]
 mod tests {
@@ -190,11 +181,14 @@ mod tests {
 
     #[test]
     fn the_rules_file_is_balanced_s_expressions() {
-        for rules in [Rules::kicad_default(), Rules {
-            source: Source::Specification,
-            clearance_nm: FLOOR_NM,
-            min_track_width_nm: Some(FLOOR_NM),
-        }] {
+        for rules in [
+            Rules::kicad_default(),
+            Rules {
+                source: Source::Specification,
+                clearance_nm: FLOOR_NM,
+                min_track_width_nm: Some(FLOOR_NM),
+            },
+        ] {
             let wrapped = format!("(file {})", rules.custom_rules());
             assert!(crate::sexpr::parse(&wrapped).is_ok(), "{wrapped}");
         }

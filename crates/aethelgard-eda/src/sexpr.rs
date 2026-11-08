@@ -197,7 +197,10 @@ fn push(stack: &mut [Vec<Sx>], item: Sx) {
 
 /// The byte span `[start, end)` of each direct child list of the top-level
 /// list, and of the top-level list itself. Call after [`parse`] succeeded.
-pub fn top_level_spans(src: &str) -> Result<(Vec<(usize, usize)>, (usize, usize)), SexprError> {
+/// A byte range `[start, end)` of the source.
+pub type Span = (usize, usize);
+
+pub fn top_level_spans(src: &str) -> Result<(Vec<Span>, Span), SexprError> {
     let mut depth = 0usize;
     let mut open = 0;
     let mut root = (0, 0);
@@ -311,7 +314,11 @@ pub fn nm(text: &str) -> Option<i64> {
     if frac.len() > 6 || (whole.is_empty() && frac.is_empty()) {
         return None;
     }
-    let w: i64 = if whole.is_empty() { 0 } else { whole.parse().ok()? };
+    let w: i64 = if whole.is_empty() {
+        0
+    } else {
+        whole.parse().ok()?
+    };
     let f: i64 = if frac.is_empty() {
         0
     } else {
@@ -336,7 +343,10 @@ mod tests {
     fn refuses_what_is_not_one_balanced_list() {
         assert!(matches!(parse("(a))"), Err(SexprError::UnbalancedClose(3))));
         assert!(matches!(parse("(a"), Err(SexprError::Unclosed(1))));
-        assert!(matches!(parse("(a \"b)"), Err(SexprError::UnterminatedString(3))));
+        assert!(matches!(
+            parse("(a \"b)"),
+            Err(SexprError::UnterminatedString(3))
+        ));
         assert!(matches!(parse("(a) (b)"), Err(SexprError::NotOneList(2))));
         assert!(matches!(parse("a"), Err(SexprError::NotOneList(1))));
         assert!(matches!(parse(""), Err(SexprError::NotOneList(0))));
