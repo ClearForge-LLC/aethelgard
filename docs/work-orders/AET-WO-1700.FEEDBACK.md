@@ -1,6 +1,6 @@
 # AET-WO-1700 — FEEDBACK
 
-**Branch:** `wo/aet-1700-quickstart` · **Base:** `3d13f49` (PR #61) · **Builder:** Claude Code (Sonnet 5.5) as `forge` on Furnace · **Cadence:** build-only. **Result:** §1 built; no §7 stop. One deviation from §1.2, flagged as F1.
+**Branch:** `wo/aet-1700-quickstart` · **Base:** `3d13f49` (PR #61) · **Builder:** Claude Code (Sonnet 5.5) as `forge` on Furnace · **Cadence:** build-only. **Result:** §1 built; no §7 stop. One deviation from §1.2, flagged as F1 (accepted). Q1 (architect review, PR #63): the block body is one subshell starting `set -euo pipefail` and ending after `echo "quickstart ok"`.
 
 Entry schema: `finding · where · type · recommendation · decision-needed`.
 
@@ -30,6 +30,7 @@ Each is the workflow's own step scripts (extracted from the YAML) run by a local
 |---|---|
 | The real block | **pass**, every step, ends `quickstart ok` |
 | One check changed to expect `"verdict":"fail"` (the ERC check) | **fails**, step `run it, as written`, exit 1, after emit printed ok and ERC printed pass |
+| The ERC-expects-`fail` variant, extracted and run under plain `bash` (no `-e`, as a paste would run), after the subshell change (Q1) | **stops at the first failed check**: the subshell exits 1, `quickstart ok` is printed 0 times, and the invoking shell is still alive afterwards |
 | Both markers removed | **fails**, `begin marker missing or repeated` |
 | CRLF line endings throughout | **fails**, `begin marker missing or repeated` |
 | A second fenced `bash` block after the end marker, inside the markers | **fails**, `not exactly one fenced block` |
@@ -37,7 +38,7 @@ Each is the workflow's own step scripts (extracted from the YAML) run by a local
 ## Adversarial pass (§5)
 
 1. *Pass while ERC or DRC fails.* Every `ae` call is an assignment, so a nonzero exit stops the script under `-e`; each verdict is also grepped, and DRC's `"findings":[]` is checked. The refusal step asserts exit 2 exactly, then `PinClaimedTwice`, then the two claimants in order. The fail-expecting control above is the proof for ERC; DRC and `solve` are guarded by the same shape.
-2. *Run something other than the README's bytes.* Markers match whole lines only (`grep -x`), so a marker inside a code span or after text is not a marker and the count check fails; a repeated marker fails; CR fails; more or fewer than two fence lines fails; text before the opening or after the closing fence fails. The run step executes the file the extract step wrote, not a re-extraction. Run, not just reasoned: no markers, CRLF, second block. Reasoned only: marker in a code span.
+2. *Run something other than the README's bytes.* Markers match whole lines only (`grep -x`), so a marker inside a code span or after text is not a marker and the count check fails; a repeated marker fails; CR fails; more or fewer than two fence lines fails; text before the opening or after the closing fence fails. The run step executes the file the extract step wrote, not a re-extraction. Run, not just reasoned: no markers, CRLF, second block. A marker inside a code span (`Use \`<!-- quickstart:begin -->\` here.`) also fails: `begin marker missing or repeated`.
 3. *Depend on more than Docker, `bash`, `curl`, `sha256sum`.* See F2. The run directory is a fresh `mktemp -d` with no checkout and no Rust; the pinned-commit and source-label steps are separate steps.
 
 ## Reduction pass (§5a)

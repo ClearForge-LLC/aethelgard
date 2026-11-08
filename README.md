@@ -15,10 +15,12 @@ Generates a circuit board and the firmware that drives it from one specification
 
 ## Quickstart
 
-With only Docker, `bash`, `curl` and `sha256sum`: this block fetches the pinned reference specification, pulls the engine image by digest, and shows the reference board pass ERC and DRC and a doubly-assigned pin refused by name. CI runs exactly this block (`.github/workflows/quickstart.yml`), so it cannot drift.
+With only Docker, `bash`, `curl` and `sha256sum`: this block fetches the pinned reference specification, pulls the engine image by digest, and shows the reference board pass ERC and DRC and a doubly-assigned pin refused by name. CI runs exactly this block (`.github/workflows/quickstart.yml`), so it cannot drift. The block is one subshell with `set -euo pipefail`, so pasted into a terminal it stops at the first failed check and never closes your shell.
 
 <!-- quickstart:begin -->
 ```bash
+(
+set -euo pipefail
 IMAGE=ghcr.io/clearforge-llc/aethelgard@sha256:4c440a2d9e8ebcfbfc5ac49c0d10c7ca3b705a232e0c8895d1e98e0c7764234f
 SPEC=https://raw.githubusercontent.com/ClearForge-LLC/aethelgard/3d13f4922b0adddb2f761c3a814c53fcfec61ac8/examples/sentinel-01-minimal.json
 
@@ -54,6 +56,7 @@ rc=0; refused=$(ae solve --file double.json) || rc=$?; echo "$refused"
 grep -q '"kind":"PinClaimedTwice"' <<< "$refused"
 grep -q '"claimants":\["i2c_buses\[0\].sda","spi_devices\[0\].cs"\]' <<< "$refused"
 echo "quickstart ok"
+)
 ```
 <!-- quickstart:end -->
 
