@@ -99,12 +99,12 @@ jobs:
           done
           # Build the CLI from the unpacked packages alone, offline.
           un="$RUNNER_TEMP/unpacked"; rm -rf "$un"; mkdir -p "$un"
-          cfg=""
+          cfg=()
           for c in $crates; do
             tar -xzf "target/package/$c-0.1.0.crate" -C "$un"
-            cfg="$cfg --config patch.crates-io.$c.path=\"$un/$c-0.1.0\""
+            cfg+=(--config "patch.crates-io.$c.path='$un/$c-0.1.0'")
           done
-          eval cargo install --path "$un/aethelgard-cli-0.1.0" --locked --offline --root "$un/root" $cfg
+          cargo install --path "$un/aethelgard-cli-0.1.0" --locked --offline --root "$un/root" "${cfg[@]}"
           "$un/root/bin/aethelgard" validate < examples/sentinel-01-minimal.json
 
   # Tier 2: the tool subcommands against the real tools, inside the image
