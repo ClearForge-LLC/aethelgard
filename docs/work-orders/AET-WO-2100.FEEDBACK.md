@@ -265,7 +265,8 @@ The three spike crates pass `cargo fmt --check` and `cargo clippy --release -- -
 - `d799405`: the firmware and `simulate --firmware`, with `spike/` deleted;
 - `8d4e87f`: the adversarial fixes and the reduction;
 - `3d92724`: the mutants;
-- `bc16a9b`: the merge of `origin/main`.
+- `bc16a9b`: the merge of `origin/main`;
+- `d595d44`: B1 and B2, after the ruling on the build.
 
 **§7, held:**
 - no change under `container/` or `.github/` on this branch (`git diff origin/main HEAD -- container .github` is empty; PR A carried the one ruled `container/` change);
@@ -343,7 +344,7 @@ About 43 firmware, ELF and input variants went through the judged call, plus dir
 | A4 | 2 | a zero-fill (`memsz`) over `.text`; two ELFs differing in header order shared one hash and got opposite verdicts | pass and fail, one hash (high) | both exit 3 `MalformedFirmware` (overlap) |
 | A5 | 2 | `.rodata` moved by `0x1000`, same bytes: same hash, different verdict | fail with the reference's hash (high) | fail, its own hash |
 | A7 | 1 | a jump into the FMC bank (zero-filled mapped memory) after the word | **pass** (medium) | fail `pc_outside_firmware` |
-| A6 | 1 | a jump into a hole after the word: "This machine has aborted", and `RunFor` never returns | CLI hung; Renode at 10.47 GB RSS at 184 s (high) | **not fixed**: F21 |
+| A6 | 1 | a jump into a hole after the word: "This machine has aborted", and `RunFor` never returns | CLI hung; Renode at 10.47 GB RSS at 184 s (high) | **fixed by B1:** exit 1 `cpu_aborted` in 14.3 s on Furnace and 14.9 s in the image, killed at the 1 GiB cap |
 | A8 | 1 | `udf` or `bkpt` after the word (the fault handler parks) | pass | pass: the fixed point was reached (residual, F22) |
 | A9 | 1 | a log flood: 241,141 warnings in 10 ms | exit 5, output over 16 MiB (medium) | unchanged: F23 |
 | A10 | 1 | `wfi` after the word | exit 5 (ruled) | unchanged |
@@ -404,20 +405,60 @@ Reduction pass (diff): −42 lines net (the pin parser −18, the speed check �
 
 | finding | where | severity | type | recommendation | decision-needed |
 |---|---|---|---|---|---|
-| F21. **A6: an aborted machine hangs the call, and Renode's memory grows without bound.** A firmware that jumps into a hole after the word makes Renode log `[ERROR] cpu: CPU abort … Trying to execute code outside RAM or ROM` and `This machine has aborted`, and `emulation RunFor` never returns. Renode grew at about 55 MB/s, to 10.47 GB RSS at 184 s, until it was killed. `RUL-13` gives the CLI no timeout, and `mcp` passes the call on unbounded | `simulate --firmware`; `RUL-13` | high | host safety | Amend `RUL-13` for `simulate --firmware` only: a wall-clock bound proportional to `--for` and a memory cap on the Renode child, with the timeout a `cpu_aborted` fail. Not built here: it changes a ruling and the sandbox core (`run.rs`) | **yes** |
-| F22. **The residual of A1/A8: the boot word shows that some code of the firmware stored the magic, not that `main` finished.** A firmware that writes the word early and then faults passes, if its configuration is done: the register image and the instruction witness hold, and its fault handler is inside its own executable segment. Closing it needs the firmware's symbols, which the judge must not take from the artifact (`INV-07`) | the boot contract | medium | residual | Accept it, named: the twin witnesses that the solved configuration happened and the core kept running in the firmware's code. A stronger fixed point is a later contract, for example a sequence of words a fault handler cannot reproduce | **yes**: accept |
+| F21. **A6: an aborted machine hung the call, and Renode's memory grew without bound.** **Ruled B1 and fixed.** Renode logged `This machine has aborted`, `RunFor` never returned, and Renode grew at about 55 MB/s, to 10.47 GB RSS at 184 s. Now the reaper kills the tree at a 30 s wall bound or a 1 GiB resident cap, and the call is a named `fail`. Measurements below ("B1 and B2") | `simulate --firmware`; `RUL-13` as amended | high | host safety | Done | no (ruled B1) |
+| F22. **The residual of A1/A8:** the boot word witnesses that the solved configuration happened and that the core kept executing inside the firmware's own code, not that `main` returned. A firmware that writes it early and then faults into its own handler passes. **Ruled B2: accepted, named**, and now stated in one sentence in the CLI README's "Booting firmware" | the boot contract | medium | residual | Done | no (ruled B2) |
 | F23. A9: a firmware flooding the log, 241,141 warnings in 10 ms, makes the output exceed `RUL-13`'s 16 MiB, so the call is exit 5, never a verdict. That is the safe direction, but a locked-peripheral flood was due a `fail`. Renode collapses identical lines, so only varying ones flood | the reader | medium | verdict quality | A later work order: send the log to a file Renode writes, and read only the marker block from stdout | no |
 | F24. A13: only the RCC registers that gate a solved port or peripheral are cold-written and judged. A clock in another register (DMA1 in `AHB1ENR`) and writes to that peripheral pass, though on silicon they would be dropped while gated | the cold start | low | scope | Cold-write and judge every `RCC_*ENR` the header defines, when a work order needs it | no |
 | F25. A18: the scratch path (from `TMPDIR`) reaches the monitor's `@path` unquoted. A space or `;` in it is exit 5. Not caller input; the same in plain `simulate` since `AET-WO-0300` | `renode.rs` | low | robustness | Refuse a scratch path outside a safe character set, or quote it | no |
-| F26. **R4's `image_sha256` was amended in the build.** The ruled "PT_LOAD bytes in address order" gave one identity to two images (A4, A5). The built definition hashes, for every `PT_LOAD` with memory in physical-address order, its address, file size and memory size, each a `u32` LE, then its bytes. It stays path-independent (F17) | R4; the CLI README | medium | ruling amendment | Ratify the built definition | **yes** |
-| F27. **Four checks the ruling did not name were added**, each from the adversarial pass: `FirmwareLoadsBootWord`; overlapping `PT_LOAD` memory; `pc_outside_firmware`; and, for a boot, the pinned Renode version (exit 4) and the listing naming every solved instance (exit 5). The boot word is also zeroed and `VectorTableOffset` set before the run. None can fail a firmware that keeps the boot contract | R2, R5 | medium | scope, flagged | Ratify | **yes** |
+| F26. **`image_sha256` as built:** for every `PT_LOAD` with memory, in physical-address order, its address, file size and memory size (each a `u32` LE), then its bytes. R4's first wording gave one identity to two images (A4, A5). It is path-independent (F17, three checkout paths). **Ruled B3: ratified** | R4; the CLI README | medium | ruling amendment | Done | no (ruled B3) |
+| F27. **The added checks**, each from the adversarial pass: `FirmwareLoadsBootWord`; overlapping `PT_LOAD` memory; `pc_outside_firmware`; for a boot, the pinned Renode version (exit 4) and the listing naming every solved instance (exit 5); the boot word zeroed and `VectorTableOffset` set before the run. None can fail a firmware that keeps the boot contract. **Ruled B4: ratified** | R2, R5 | medium | scope | Done | no (ruled B4) |
 | F28. `twin_stop` maps a header name the topology needs and the header lacks to exit 2 (C3). A header that fails its own checks stays exit 70, a corrupted build | `main.rs` | info | correction | None | no |
 | F29. `cargo fmt --all` does not reach `boards/sentinel-01/firmware/` (it is no dependency of a member), so its formatting is the generator's alone, pinned by the guard | `firmware/` | info | note | None | no |
 | F30. The subagent's `cargo fmt --all` overlapped the lead's edits during the build. Nothing was lost (the lead re-read every file it adopted), but two agents ran a workspace-wide formatter in one tree | process | info | process | A builder subagent runs `cargo fmt -p <its crate>`, never `--all` | no |
 
-### Asked at the build
+### Asked at the build (ruled on PR #56, comment 6718943342)
 
-1. **F21:** amend `RUL-13` for `simulate --firmware`, with a wall bound and a memory cap, and an abort as a `fail`?
-2. **F22:** accept the named residual of the boot word?
-3. **F26:** ratify `image_sha256` as built?
-4. **F27:** ratify the four added checks?
+The ruling is saved verbatim at `~/.cache/aet-2100-spike/build/ruling-6718943342.json`.
+- **B1 (F21):** fixed before merge (below).
+- **B2 (F22):** the residual is accepted and stated in the README.
+- **B3 (F26):** ratified.
+- **B4 (F27):** ratified.
+- **F23, F24 and F25:** carried to roadmap §7 by the architect at close-out.
+- **F30:** becomes a roadmap §6 lesson.
+
+### B1 and B2 (after the ruling on the build)
+
+**The measurement.** The reference boot at `--for 100ms`, five runs each, came through the real call, `simulate --platform … --firmware … --spec … --for 100ms`. A poller (`~/.cache/aet-2100-spike/build/b1/poll.py`) sampled every 10 ms the summed `VmRSS` and the largest `VmHWM` of the call's whole process tree.
+
+| Where | Wall time | Peak tree RSS | Renode `VmHWM` |
+|---|---|---|---|
+| Furnace, release | 2.10–2.16 s | 392,620–394,392 KiB | 385,672–387,376 KiB |
+| tools image `2df68259…` | 2.54–2.59 s | 399,832–404,620 KiB | 387,976–392,540 KiB |
+
+The raw lines are in `b1/furnace-100ms.txt` and `b1/image-100ms.txt`.
+
+**The constants** (`renode::BOOT_BOUNDS`):
+- **Wall bound: 30 s.** The ruling's floor is 10 × 2.59 s, rounded up: 26 s. 30 s leaves room for CI, whose boots under parallel tests took up to 6.84 s (run 42459301466).
+- **Memory cap: 1 GiB (1,048,576 KiB).** The floor is 2 × 404,620 KiB = 809,240 KiB, about 791 MiB.
+- **No §7 stop:** 2 × the peak is 0.77 GiB, under 4 GiB.
+
+**The mechanism, measured, not assumed.** `RLIMIT_AS` is unusable. `prlimit --as=N renode --version` fails at 1, 4, 16 and 256 GiB, with `Failed to create CoreCLR, HRESULT: 0x80070008` and then `GC heap initialization failed with error 0x8007000E`. So the reaper does it:
+- it is the tool tree's unconfined parent and subreaper, and already polls every 20 ms;
+- with `--wall-ms` and `--rss-kib`, which only `Invocation::run_bounded` passes, it checks the wall clock each tick and the tree's summed `VmRSS` every fifth tick (100 ms, a `/proc` scan);
+- past either, it kills the tool's group and every descendant, then writes `ended bound=wall` or `ended bound=memory`;
+- `simulate --firmware` turns that into a `fail`: `wall_bound_exceeded`, `memory_cap_exceeded`, or `cpu_aborted` when the output holds `This machine has aborted`, with `tool.exit_code` `-1` and nothing read.
+
+**Scope.** `run.rs`'s `run` is unchanged (it calls the shared start with no bounds), so plain `simulate`, `prove` and `check` pass the reaper the same arguments as before. `git diff --stat` shows no existing test file changed: 1600's `channels_tier1`, `sockets_tier1`, `descriptors_tier1` and `lifecycle_tier1` pass as they were. The only test files touched are this work order's own `boot_tier1.rs` and `twin_tier2.rs`, each with new tests added.
+
+**The tests:**
+- **Tier 1** (`boot_tier1.rs`, now 19 tests) drives all three reasons through the stub:
+  - a stub holding about 1.3 GB in a shell variable is `memory_cap_exceeded` in under 30 s;
+  - the same after printing `This machine has aborted` is `cpu_aborted`;
+  - a stub that sleeps is `wall_bound_exceeded` at 30–35 s.
+- **Tier 2** (`twin_tier2.rs`): the A6 mutant (a jump to `0x0A000001` after the word) returns as `cpu_aborted` inside the bound plus 5 s. Measured at 14.92 s in the image (`ANSWER 2100: A6 hole`), and 14.31 s on Furnace with a peak tree RSS of 1,062,204 KiB: the cap plus one 100 ms poll's growth.
+
+**Gates, at `d595d44`:**
+- **Furnace:** fmt ok; clippy `-D warnings` ok, with and without `with-tools`; `cargo test --workspace --locked`: 525 passed, 0 failed, across 42 targets.
+- **The `tools` sequence in podman, on the published image:** fmt ok; clippy ok; 566 passed, 0 failed (`~/.cache/aet-2100-spike/build/tools-local3.log`).
+
+**B2.** The CLI README's "Booting firmware" states the residual as ruled. The boot word witnesses that the solved configuration happened and that the core kept executing inside the firmware's own code; it does not witness that `main` returned.
