@@ -706,3 +706,283 @@ fn with_a_token_free_setup_the_project_step_is_load_bearing() {
         "{counts:?}: the project step is not load-bearing; keep clearance_min in the setup block (D5)"
     );
 }
+
+// ---- AET-WO-1301: the placed board under schematic parity ----
+
+fn record_1301(line: &str) {
+    use std::io::Write;
+    let _ = std::io::stderr()
+        .lock()
+        .write_all(format!("AET-WO-1301 {line}\n").as_bytes());
+}
+
+/// `check drc --spec --schematic` on a board and schematic.
+fn drc_parity(board: &Path, sch: &Path, spec: &Path) -> Value {
+    let out = run(
+        &[
+            "check",
+            "drc",
+            "--board",
+            board.to_str().unwrap(),
+            "--spec",
+            spec.to_str().unwrap(),
+            "--schematic",
+            sch.to_str().unwrap(),
+        ],
+        None,
+    );
+    // The CLI exits 0 on a pass and 1 on a fail; anything else is no verdict.
+    let code = out.status.code().unwrap();
+    assert!(
+        code == 0 || code == 1,
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let v = verdict(&out, code);
+    assert_judged(&v, "drc", "kicad-cli", "10.0.7");
+    assert_eq!(v["rules"], "specification", "{v}");
+    v
+}
+
+/// The findings that are not `unconnected_items`, as `kind: message`.
+fn beyond_unconnected(v: &Value) -> Vec<String> {
+    v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["kind"] != "unconnected_items")
+        .map(|f| {
+            format!(
+                "{}: {}",
+                f["kind"].as_str().unwrap(),
+                f["message"].as_str().unwrap()
+            )
+        })
+        .collect()
+}
+
+/// §1.5 tier 2: on the reference specification's emitted board and
+/// schematic, the gate reports no parity finding and nothing but
+/// unconnected items, which routing (`AET-WO-1302`) removes. So does the
+/// board of 1300's S5 names, whose references and nets KiCad must quote.
+#[test]
+fn the_emitted_board_has_no_parity_finding_and_only_unconnected_items() {
+    let t = Temp::new("parity");
+    let reference = example_spec("sentinel-01-minimal.json");
+    let mut s5: Value = serde_json::from_slice(&fs::read(&reference).unwrap()).unwrap();
+    let mut text = serde_json::to_string(&s5).unwrap();
+    for (from, to) in [
+        ("sentinel-01", "p\"(x)\\#"),
+        ("VDD_3V3", "VDD\"3V3\\"),
+        ("I2C_SDA", "I2C(SDA)"),
+        ("FLASH_CS", "CS\"(0)"),
+        ("U2", "U(2)"),
+        ("U3", "U\"3"),
+        ("U4", "U\\4"),
+    ] {
+        text = text.replace(&format!("\"{from}\""), &serde_json::to_string(to).unwrap());
+    }
+    s5 = serde_json::from_str(&text).unwrap();
+    let s5_path = t.0.join("s5.json");
+    fs::write(&s5_path, serde_json::to_vec(&s5).unwrap()).unwrap();
+    for (name, spec) in [("sentinel-01", reference), ("s5-names", s5_path)] {
+        let r = emit_to(&spec, &t.0.join(name));
+        let board = PathBuf::from(r["board"]["path"].as_str().unwrap());
+        let sch = PathBuf::from(r["schematic"]["path"].as_str().unwrap());
+        let v = drc_parity(&board, &sch, &spec);
+        let unconnected = kinds(&v)
+            .iter()
+            .filter(|k| **k == "unconnected_items")
+            .count();
+        record_1301(&format!(
+            "{name}: exit {} with {} finding(s), {unconnected} unconnected_items, beyond them {:?}",
+            v["tool"]["exit_code"],
+            kinds(&v).len(),
+            beyond_unconnected(&v)
+        ));
+        assert_eq!(beyond_unconnected(&v), Vec::<String>::new(), "{name}");
+        assert!(
+            unconnected > 0,
+            "{name}: an unrouted board has unconnected items"
+        );
+        assert_eq!(v["schematic"]["sha256"], r["schematic"]["sha256"], "{name}");
+        assert_eq!(v["input"]["sha256"], r["board"]["sha256"], "{name}");
+    }
+}
+
+/// KiCad's own netlist of the emitted schematic is the oracle for net names:
+/// every pin's net there is its pad's net on the board, and no other pad
+/// carries one.
+#[test]
+fn every_pad_carries_the_net_kicads_netlist_gives_its_pin() {
+    use std::collections::BTreeMap;
+    let t = Temp::new("netlist");
+    let r = emit_to(&example_spec("sentinel-01-minimal.json"), &t.0);
+    let copy = t.0.join("readback.kicad_sch");
+    fs::copy(r["schematic"]["path"].as_str().unwrap(), &copy).unwrap();
+    let net = t.0.join("readback.net");
+    let out = Command::new("kicad-cli")
+        .args(["sch", "export", "netlist", "--format", "kicadsexpr", "-o"])
+        .arg(&net)
+        .arg(&copy)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let netlist = aethelgard_eda::sexpr::parse(&fs::read_to_string(&net).unwrap()).unwrap();
+    let mut kicad: BTreeMap<(String, String), String> = BTreeMap::new();
+    for n in netlist.child("nets").unwrap().children("net") {
+        let name = n.child("name").and_then(|x| x.arg(1)).unwrap();
+        for node in n.children("node") {
+            let at = |k: &str| node.child(k).and_then(|x| x.arg(1)).unwrap().to_owned();
+            kicad.insert((at("ref"), at("pin")), name.to_owned());
+        }
+    }
+    let board = aethelgard_eda::sexpr::parse(
+        &fs::read_to_string(r["board"]["path"].as_str().unwrap()).unwrap(),
+    )
+    .unwrap();
+    let mut ours: BTreeMap<(String, String), String> = BTreeMap::new();
+    for fp in board.children("footprint") {
+        let reference = fp.property("Reference").unwrap();
+        for pad in fp.children("pad") {
+            if let Some(n) = pad.child("net").and_then(|n| n.arg(1)) {
+                ours.insert(
+                    (reference.to_owned(), pad.arg(1).unwrap().to_owned()),
+                    n.to_owned(),
+                );
+            }
+        }
+    }
+    record_1301(&format!(
+        "netlist oracle: {} pins in KiCad's netlist, {} netted pads on the board",
+        kicad.len(),
+        ours.len()
+    ));
+    assert_eq!(ours, kicad);
+}
+
+/// Replaces the first item of `board` that `pick` matches, in tree order.
+fn mutate(board: &str, pick: &dyn Fn(&Sx, &str) -> Option<Sx>) -> String {
+    fn walk(sx: &mut Sx, within: &str, pick: &dyn Fn(&Sx, &str) -> Option<Sx>) -> bool {
+        let here = sx
+            .property("Reference")
+            .filter(|_| sx.head() == Some("footprint"))
+            .map(str::to_owned)
+            .unwrap_or_else(|| within.to_owned());
+        if let Some(new) = pick(sx, &here) {
+            *sx = new;
+            return true;
+        }
+        match sx.items_mut() {
+            Some(items) => items.iter_mut().any(|c| walk(c, &here, pick)),
+            None => false,
+        }
+    }
+    let mut root = aethelgard_eda::sexpr::parse(board).unwrap();
+    assert!(walk(&mut root, "", pick), "nothing to mutate");
+    aethelgard_eda::sexpr::write(&root)
+}
+
+use aethelgard_eda::sexpr::Sx;
+
+/// §5.2 as a regression: parity fails a board that does not match its
+/// schematic, each way it can differ, with exactly the finding KiCad names
+/// for it. The last row is ruling (a)'s ground: the exposed pad on GND,
+/// which has no symbol pin, is a parity finding.
+#[test]
+fn parity_fails_a_board_that_does_not_match_its_schematic() {
+    let t = Temp::new("mismatch");
+    let spec = example_spec("sentinel-01-minimal.json");
+    let r = emit_to(&spec, &t.0);
+    let board = fs::read_to_string(r["board"]["path"].as_str().unwrap()).unwrap();
+    let sch_text = fs::read_to_string(r["schematic"]["path"].as_str().unwrap()).unwrap();
+    let property = |name: &'static str, value: Option<&'static str>| {
+        move |sx: &Sx, fp: &str| -> Option<Sx> {
+            if fp != "C1" || sx.head() != Some("footprint") {
+                return None;
+            }
+            let mut out = sx.clone();
+            let items = out.items_mut()?;
+            let i = items
+                .iter()
+                .position(|c| c.head() == Some("property") && c.arg(1) == Some(name))?;
+            match value {
+                Some(v) => items[i].items_mut()?[2] = Sx::str(v),
+                None => {
+                    items.remove(i);
+                }
+            }
+            Some(out)
+        }
+    };
+    let renamed = |sx: &Sx, _: &str| -> Option<Sx> {
+        (sx.head() == Some("net") && sx.arg(1) == Some("/I2C_SDA"))
+            .then(|| Sx::List(vec![Sx::atom("net"), Sx::str("I2C_SDA")]))
+    };
+    let grounded_ep = |sx: &Sx, fp: &str| -> Option<Sx> {
+        if fp != "U3" || sx.head() != Some("pad") || sx.arg(1) != Some("7") {
+            return None;
+        }
+        let mut out = sx.clone();
+        out.items_mut()?
+            .push(Sx::List(vec![Sx::atom("net"), Sx::str("GND")]));
+        Some(out)
+    };
+    let rows: [(&str, String, String, &str); 5] = [
+        (
+            "value swapped",
+            mutate(&board, &property("Value", Some("2u3"))),
+            sch_text.clone(),
+            "footprint_symbol_mismatch",
+        ),
+        (
+            "field missing",
+            mutate(&board, &property("ki_keywords", None)),
+            sch_text.clone(),
+            "footprint_symbol_field_mismatch",
+        ),
+        (
+            "board net renamed",
+            mutate(&board, &renamed),
+            sch_text.clone(),
+            "net_conflict",
+        ),
+        (
+            "schematic net renamed",
+            board.clone(),
+            sch_text.replace("(label \"I2C_SDA\"", "(label \"I2C_SDX\""),
+            "net_conflict",
+        ),
+        (
+            "exposed pad on GND",
+            mutate(&board, &grounded_ep),
+            sch_text.clone(),
+            "net_conflict",
+        ),
+    ];
+    for (i, (name, b, s, kind)) in rows.into_iter().enumerate() {
+        let dir = t.0.join(format!("row{i}"));
+        fs::create_dir_all(&dir).unwrap();
+        let (bp, sp) = (dir.join("b.kicad_pcb"), dir.join("s.kicad_sch"));
+        fs::write(&bp, &b).unwrap();
+        fs::write(&sp, &s).unwrap();
+        let v = drc_parity(&bp, &sp, &spec);
+        let found = beyond_unconnected(&v);
+        record_1301(&format!("mismatch row {name}: {found:?}"));
+        assert!(
+            !found.is_empty(),
+            "{name}: parity passed a mismatched board"
+        );
+        assert!(
+            found.iter().all(|f| f.starts_with(&format!("{kind}:"))),
+            "{name}: {found:?}"
+        );
+        assert_eq!(v["verdict"], "fail");
+    }
+}

@@ -29,7 +29,7 @@ pub const VERSION: &str = "20260306";
 
 const GRID: i64 = 1_270_000;
 const STUB: i64 = 2 * GRID;
-const GND: &str = "GND";
+pub(crate) const GND: &str = "GND";
 const RAIL_SYMBOL: &str = "power:+3V3";
 const GND_SYMBOL: &str = "power:GND";
 const FLAG_SYMBOL: &str = "power:PWR_FLAG";
@@ -100,6 +100,7 @@ impl EmitError {
 pub struct Emission {
     pub schematic: String,
     pub bom: String,
+    pub board: String,
 }
 
 /// A symbol pin: library coordinates in nanometres, Y up.
@@ -160,22 +161,26 @@ pub fn pins(sym: &Sx) -> Result<Vec<Pin>, String> {
 
 /// What one pin is connected to.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Conn {
+pub(crate) enum Conn {
     Net(String),
     /// A rail, by domain id, or `GND`.
     Rail(String),
     NoConnect,
 }
 
+/// One symbol on the sheet and footprint on the board: the board emitter
+/// reads the same connections the sheet is drawn from.
 #[derive(Clone, Debug)]
-struct Part {
-    lib_id: &'static str,
-    reference: String,
-    value: String,
-    footprint: String,
+pub(crate) struct Part {
+    pub(crate) lib_id: &'static str,
+    pub(crate) reference: String,
+    pub(crate) value: String,
+    pub(crate) footprint: String,
     /// By pin number; pins absent here get a no-connect.
-    conns: BTreeMap<String, Conn>,
-    note: Option<&'static str>,
+    pub(crate) conns: BTreeMap<String, Conn>,
+    pub(crate) note: Option<&'static str>,
+    /// A decoupling capacitor's IC: the reference it was drawn for.
+    pub(crate) decouples: Option<String>,
 }
 
 /// A UUID derived from content: sha256 of a domain-separated key, the first
@@ -257,6 +262,17 @@ impl Builder<'_> {
     }
 
     fn passive(&mut self, kind: char, value: String, one: Conn, two: Conn) {
+        self.passive_for(kind, value, one, two, None);
+    }
+
+    fn passive_for(
+        &mut self,
+        kind: char,
+        value: String,
+        one: Conn,
+        two: Conn,
+        decouples: Option<&str>,
+    ) {
         let reference = self.reference(kind);
         let (lib_id, footprint) = if kind == 'R' {
             (R, R_FOOTPRINT)
@@ -270,6 +286,7 @@ impl Builder<'_> {
             footprint: footprint.to_owned(),
             conns: BTreeMap::from([("1".into(), one), ("2".into(), two)]),
             note: None,
+            decouples: decouples.map(str::to_owned),
         });
     }
 
@@ -290,10 +307,10 @@ impl Builder<'_> {
         Ok(Conn::Net(net))
     }
 
-    fn decouple(&mut self, rail: &str, value: &str) {
+    fn decouple(&mut self, ic: &str, rail: &str, value: &str) {
         let r = self.rail(rail);
         let g = self.ground();
-        self.passive('C', value.to_owned(), r, g);
+        self.passive_for('C', value.to_owned(), r, g, Some(ic));
     }
 }
 
@@ -314,7 +331,8 @@ fn mcu_conn(b: &mut Builder<'_>, name: &str) -> Option<Conn> {
     }
 }
 
-/// Emits the schematic and bill of materials. `table` is the MCU's pin table
+/// Emits the schematic, the bill of materials and the placed board
+/// ([`crate::pcb`]), all from one set of parts. `table` is the MCU's pin table
 /// the topology was solved against: each solved pin is drawn on the symbol
 /// pin whose number is the table's package position, so ST's data, not a
 /// name match, decides it (KiCad names pins 28 and 29 `PC2_C` and `PC3_C`
@@ -324,6 +342,20 @@ pub fn emit(
     solved: &SolvedTopology,
     table: &PinTable,
 ) -> Result<Emission, EmitError> {
+    let (parts, rails) = design(spec, solved, table)?;
+    Ok(Emission {
+        schematic: write_sheet(&spec.project_name, &parts, &rails)?,
+        bom: crate::bom::write(&parts.iter().map(BomRow::from).collect::<Vec<_>>()),
+        board: crate::pcb::write(&spec.project_name, &parts)?,
+    })
+}
+
+/// Every part and what each of its pins connects to, and every rail.
+fn design(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+) -> Result<(Vec<Part>, BTreeSet<String>), EmitError> {
     if spec.mcu.part != "STM32H753ZITx" || table.part != spec.mcu.part {
         return Err(EmitError::UnknownPart {
             reference: "mcu".into(),
@@ -417,7 +449,7 @@ pub fn emit(
         let g = b.ground();
         b.passive('C', "2u2".into(), Conn::Net(net), g);
     }
-    b.decouple(&spec.mcu.supply.clone(), "100n");
+    b.decouple(&mcu_ref, &spec.mcu.supply.clone(), "100n");
     b.parts.push(Part {
         lib_id: "MCU_ST_STM32H7:STM32H753ZITx",
         reference: mcu_ref,
@@ -425,6 +457,7 @@ pub fn emit(
         footprint: mcu_sym.property("Footprint").unwrap_or("").to_owned(),
         conns,
         note: None,
+        decouples: None,
     });
 
     // The I2C buses' pull-ups, then their devices.
@@ -514,7 +547,7 @@ pub fn emit(
             }
         };
         device(&mut b, &d.reference, lib_id, conns)?;
-        b.decouple(&d.supply, "100n");
+        b.decouple(&d.reference, &d.supply, "100n");
     }
     for d in &spec.spi_devices {
         let bus = spec
@@ -553,14 +586,9 @@ pub fn emit(
         ]
         .to_vec();
         device(&mut b, &d.reference, "Memory_Flash:W25Q32JVSS", conns)?;
-        b.decouple(&d.supply, "100n");
+        b.decouple(&d.reference, &d.supply, "100n");
     }
-    let rails = b.rails.clone();
-    let parts = b.parts;
-    Ok(Emission {
-        schematic: write_sheet(&spec.project_name, &parts, &rails)?,
-        bom: crate::bom::write(&parts.iter().map(BomRow::from).collect::<Vec<_>>()),
-    })
+    Ok((b.parts, b.rails))
 }
 
 /// A device's part, with the part's default footprint and the D2 note.
@@ -588,6 +616,7 @@ fn device(
         footprint: sym.property("Footprint").unwrap_or("").to_owned(),
         conns: conns.into_iter().map(|(n, c)| (n.to_owned(), c)).collect(),
         note,
+        decouples: None,
     });
     Ok(())
 }

@@ -9,7 +9,7 @@ The `aethelgard` binary. It is the contract every caller uses (`docs/architectur
 | `0` | `validate`: the specification is valid. `solve`: it was solved, and stdout is the `SolvedTopology`. A tool subcommand: the tool ran and its verdict is pass | none: stdout is the success report, the `SolvedTopology`, or the verdict |
 | `1` | A tool subcommand: the tool ran and its verdict is fail (violations found, the proof failed, a declared cover was never reached, the crate did not compile, the harness does not exist, the platform did not load). The input is at fault; the tool worked | none: stdout is the verdict |
 | `2` | Invalid specification: well-formed JSON of the wrong shape (unknown, missing or duplicate field, wrong type including deep nesting where a value was expected, negative or overflowing number), or a value `validate()` refuses. `solve` also: a part with no pin table, or a specification the solver cannot realize. `emit` also: what `solve` refuses, and a part with no vendored model, an address the part cannot take, a reference used twice, a net, rail or reference the emitter needs for itself, a net the solver did not place, or a pin the MCU's symbol lacks. `check drc --spec`: the specification refused as `validate` refuses it | `SchemaViolation`, or an `IrValidationError` variant name such as `InvalidIdentifier`, `NoVoltageDomain`, `UnknownDomain`, `DuplicateI2cAddress` or `ZeroNominalVoltage`; `InvalidIdentifier` also carries `error.path`. `solve` also: `UnknownPart`, or a `SolveError` kind (below), which carries `error.claimants`. `emit` also: `UnknownPart`, `UnsupportedAddress`, `DuplicateReference`, `ReservedName`, `UnsolvedNet`, `UnknownPin` (`id` the reference, net or name) |
-| `3` | Unreadable input. `validate`: the file or stdin cannot be read, is empty, is more than 16 MiB, or is not one JSON document (syntax error, trailing data, a byte-order mark). A tool subcommand: an input path that does not exist, cannot be read, or is not a regular file (not a directory, for `--crate`); a crate holding a symlink, a special file or a non-UTF-8 name; a Renode built-in path outside Renode's own tree; `InputTooLarge`: a copied file, or a crate's files together, of more than 16 MiB (16,777,216 bytes), or a crate of more than 4,096 files (counted after `target/` is skipped). The byte cap is enforced while copying, never by truncating. `check drc`: a board that is not one KiCad S-expression, or one that carries a rule of its own, refused before any tool runs: a local `(clearance …)` on a pad, a footprint or a zone, or a net class defined in the board (`AET-WO-1300` D4). `emit`: an `--out` that cannot be created, or a file there that is a symlink or not a regular file | `UnreadableInput`, `InputTooLarge`, `InvalidJson`; `MalformedBoard`, `LocalClearance`, `BoardNetClass` and `BoardWaiver` (`id` naming the carrier, such as `pad 1 of footprint R7`); `UnwritableOutput` |
+| `3` | Unreadable input. `validate`: the file or stdin cannot be read, is empty, is more than 16 MiB, or is not one JSON document (syntax error, trailing data, a byte-order mark). A tool subcommand: an input path that does not exist, cannot be read, or is not a regular file (not a directory, for `--crate`); a crate holding a symlink, a special file or a non-UTF-8 name; a Renode built-in path outside Renode's own tree; `InputTooLarge`: a copied file, or a crate's files together, of more than 16 MiB (16,777,216 bytes), or a crate of more than 4,096 files (counted after `target/` is skipped). The byte cap is enforced while copying, never by truncating. `check drc`: a board that is not one KiCad S-expression, or one that carries a rule of its own, refused before any tool runs: a local `(clearance …)` on a pad, a footprint or a zone, or a net class defined in the board (`AET-WO-1300` D4). `check drc --schematic`: a schematic that is not one flat KiCad schematic. `emit`: an `--out` that cannot be created, or a file there that is a symlink or not a regular file | `UnreadableInput`, `InputTooLarge`, `InvalidJson`; `MalformedBoard`, `LocalClearance`, `BoardNetClass` and `BoardWaiver` (`id` naming the carrier, such as `pad 1 of footprint R7`); `MalformedSchematic`, `HierarchicalSchematic`; `UnwritableOutput` |
 | `4` | The tool cannot be used: it is not on `PATH`, is not executable, will not report its version, or lacks an environment variable it needs; or the sandbox is unavailable. Never a verdict (`INV-06`) | `ToolMissing` (`id`: the tool), `ToolUnusable` (`id`: the tool, or the missing variable), `SandboxUnavailable` (`id`: `landlock`, `seccomp`, or `descriptors`) |
 | `5` | The tool ran but its output cannot be trusted as a verdict: killed by a signal, an exit code outside the ones measured for it, a missing, unparseable or oversized report or output, or two witnesses that disagree. When `prove` or `simulate` cannot recognise its tool's outcome, the message ends `; the tool said: <line>`, every `error:` line (Kani, cargo) or the first `[ERROR]` line (Renode), as printable ASCII, cut to 400 bytes for cargo or 240 for Renode; for cargo it is every `error:` line joined by `|`. Never read as pass or fail | `ToolError` (`id`: the tool) |
 | `64` | Usage error: unknown subcommand or flag, missing subcommand or required flag | `UsageError` |
@@ -69,15 +69,16 @@ The kinds, what `claimants` names for each, the search order, the reserved pins 
 aethelgard emit --file <path> --out <dir>
 ```
 
-Reads, validates and solves exactly as `solve` does, with the same refusals. It then emits the design with `aethelgard_eda::schematic::emit` and writes two files into `<dir>`, creating it if needed:
+Reads, validates and solves exactly as `solve` does, with the same refusals. It then emits the design with `aethelgard_eda::schematic::emit` and writes three files into `<dir>`, creating it if needed:
 
 - `<project_name>.kicad_sch`: a KiCad 10 schematic (format `20260306`) whose symbols are embedded from the vendored KiCad 10.0.7 library;
-- `<project_name>.bom.csv`: one CSV row per part (`Reference,Value,Footprint,Symbol,Note`, RFC 4180, CRLF), sorted by reference.
+- `<project_name>.bom.csv`: one CSV row per part (`Reference,Value,Footprint,Symbol,Note`, RFC 4180, CRLF), sorted by reference;
+- `<project_name>.kicad_pcb`: the placed board (format `20260206`), with every part's vendored footprint, each pad on its schematic net, and a rectangular outline. It has no tracks, vias or zones, so DRC reports its connections as `unconnected_items` until routing (`AET-WO-1302`). `crates/aethelgard-eda/README.md` gives the placement rules.
 
-Both files are byte-identical for the same specification. It prints one line, exit `0`:
+All three are byte-identical for the same specification. It prints one line, exit `0`:
 
 ```json
-{"ok":true,"project_name":"sentinel-01","specification_sha256":"<64 hex>","schematic":{"path":"/out/sentinel-01.kicad_sch","sha256":"<64 hex>"},"bill_of_materials":{"path":"/out/sentinel-01.bom.csv","sha256":"<64 hex>"}}
+{"ok":true,"project_name":"sentinel-01","specification_sha256":"<64 hex>","schematic":{"path":"/out/sentinel-01.kicad_sch","sha256":"<64 hex>"},"bill_of_materials":{"path":"/out/sentinel-01.bom.csv","sha256":"<64 hex>"},"board":{"path":"/out/sentinel-01.kicad_pcb","sha256":"<64 hex>"}}
 ```
 
 - **Parts with a model:**
@@ -92,7 +93,7 @@ Both files are byte-identical for the same specification. It prints one line, ex
 ## The tool subcommands
 
 ```
-aethelgard check drc --board <file.kicad_pcb> [--spec <specification.json>]
+aethelgard check drc --board <file.kicad_pcb> [--spec <specification.json>] [--schematic <file.kicad_sch>]
 aethelgard check erc --schematic <file.kicad_sch>
 aethelgard prove --crate <dir> --harness <name>
 aethelgard simulate --platform <file.repl | @path-inside-renode>
@@ -138,6 +139,8 @@ No rule is ever read from the input (`RUL-03` as amended, `INV-07`). KiCad keeps
 
 **Without it**, the same files hold KiCad's own defaults (a 0.2 mm Default net class, no board minimum, no track-width minimum), and the verdict says `"rules":"kicad-default"`.
 
+**With `--schematic`**, KiCad also checks the board against that schematic (`--schematic-parity`), and its `schematic_parity` findings are judged like every other finding. The schematic is copied and hashed as the board is, as `input.kicad_sch` beside the board's copy, where KiCad looks for it; the verdict carries `"schematic":{"path":…,"sha256":…}`. Before any tool runs, a schematic that is not one KiCad S-expression `kicad_sch` (read as strictly as a board) is refused (`MalformedSchematic`), and so is one with a hierarchical `(sheet …)` anywhere, since KiCad would read the file it names, which the gate never copied or hashed (`HierarchicalSchematic`). Without `--schematic`, nothing changes.
+
 DRC also runs with `--refill-zones`: zones are judged filled, and the board is never saved, because KiCad's saved fills are not deterministic. `check erc` writes only `input.kicad_pro`.
 
 ### The sandbox
@@ -178,7 +181,7 @@ Every KiCad finding is a fail, warnings included (ruled on PR #12): the pass cri
 - `input.path` is the canonical path of the input as given (for an `@` platform, the file inside Renode's tree); `input.sha256` is the hash of the input's bytes as copied. For `check drc` the tool then judges that copy with the gate's setup block written over the board's, a function of those bytes alone (above).
 - `tool.version` is the tool's own version line, exactly as printed; `tool.exit_code` is the exit code of the judging run.
 - `findings` is normalized to `{kind, severity, message, where}`. For KiCad, `kind` is the report's `type` (`clearance`, `track_dangling`, `pin_not_connected`, `label_dangling`, …), `severity` is `error` or `warning`, `message` is the report's `description`, and `where` lists the items it names. For `prove` and `simulate`, `kind` is one of the names in the table above, `severity` is `error`, and `where` is empty.
-- `check drc` and `check erc` also carry `included_severities` from the report; `check drc` carries `rules`, and with `--spec` `specification_sha256` (above); `prove` carries `harness`; `simulate` carries `machine`: `{"cpus":["cpu"],"peripherals":[{"name":"cpu","type":"CortexM"},…]}`.
+- `check drc` and `check erc` also carry `included_severities` from the report; `check drc` carries `rules`, with `--spec` `specification_sha256`, and with `--schematic` `schematic` (above); `prove` carries `harness`; `simulate` carries `machine`: `{"cpus":["cpu"],"peripherals":[{"name":"cpu","type":"CortexM"},…]}`.
 
 A verdict that cannot name its input's hash and its judge's version is never printed; the call refuses instead.
 

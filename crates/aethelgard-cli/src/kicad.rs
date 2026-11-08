@@ -117,6 +117,26 @@ pub fn prepare(
     }
 }
 
+/// Refuses a schematic copied in for parity that is not one flat KiCad
+/// schematic (`aethelgard_eda::board::parity_schematic`), exit 3.
+pub fn prepare_schematic(copy: &Path) -> Result<(), Stop> {
+    let refused = |kind: &'static str, message: String| Stop {
+        code: crate::EXIT_UNREADABLE,
+        kind,
+        id: None,
+        message,
+    };
+    let bytes = std::fs::read(copy).map_err(|e| scratch_error(copy, e))?;
+    let text = String::from_utf8(bytes).map_err(|_| {
+        refused(
+            "MalformedSchematic",
+            "the schematic is not UTF-8".to_owned(),
+        )
+    })?;
+    aethelgard_eda::board::parity_schematic(&text)
+        .map_err(|refusal| refused(refusal.kind(), refusal.to_string()))
+}
+
 fn scratch_error(path: &Path, e: std::io::Error) -> Stop {
     Stop::tool_error(
         "aethelgard",
