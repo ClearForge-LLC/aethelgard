@@ -426,4 +426,4 @@ All on Furnace at the PR's code head, `origin/main` `6525506` merged:
 
   This is a pre-check, not acceptance; CI's run is cited below.
 - **CI:** CIRUN
-- **Reduction pass (diff):** −51 net in the reduction commit · 5 duplicates removed (the specification reader, sha256 hex ×2, the reference counter, a one-use trait) · 1 dead constant removed · 0 protected kept · 0 findings below. It was run by the builder, not a fresh subagent, because the adversarial reviewer was already running.
+- **Reduction pass (diff):** −51 lines net in the reduction edits themselves (the tests added alongside them excluded) · 5 duplicates removed (the specification reader, sha256 hex ×2, the reference counter, a one-use trait) · 1 dead constant removed · 0 protected kept · 0 findings below. It was run by the builder, not a fresh subagent, because the adversarial reviewer was already running.
