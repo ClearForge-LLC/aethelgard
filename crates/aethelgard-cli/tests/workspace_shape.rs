@@ -21,6 +21,10 @@ const MEMBERS: [&str; 8] = [
     "crates/aethelgard-cli",
 ];
 
+/// The per-crate copies of the root licences (`AET-WO-1800`); the byte-identity
+/// check is `package_licences.rs`.
+const LICENCE_FILES: [&str; 2] = ["LICENSE-APACHE", "LICENSE-MIT"];
+
 const CHAOS: &str = "crates/aethelgard-chaos";
 const SVD_HAL: &str = "crates/aethelgard-svd-hal";
 const EDA: &str = "crates/aethelgard-eda";
@@ -181,8 +185,8 @@ fn library_crates_are_only_a_manifest_and_lib_rs() {
     for member in libraries() {
         assert_eq!(
             files(&root().join(member)),
-            ["Cargo.toml", "src/lib.rs"],
-            "{member} has files beyond Cargo.toml and src/lib.rs"
+            ["Cargo.toml", "README.md", "src/lib.rs"],
+            "{member} has files beyond Cargo.toml, README.md and src/lib.rs"
         );
         for key in manifest(member).keys() {
             assert!(
@@ -223,6 +227,7 @@ fn chaos_has_only_its_known_files_keys_and_dependencies() {
     for file in files(&root().join(CHAOS)) {
         let allowed = file == "Cargo.toml"
             || file == "README.md"
+            || LICENCE_FILES.contains(&file.as_str())
             || (file.starts_with("src/") && file.ends_with(".rs"))
             || (file.starts_with("tests/") && file.ends_with(".rs"))
             || (file.starts_with("tests/ui/") && file.ends_with(".stderr"));
@@ -268,6 +273,7 @@ fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
     for file in files(&root().join(SVD_HAL)) {
         let allowed = file == "Cargo.toml"
             || file == "README.md"
+            || LICENCE_FILES.contains(&file.as_str())
             || (file.starts_with("src/") && file.ends_with(".rs"))
             || (file.starts_with("tests/") && file.ends_with(".rs"))
             || (file.starts_with("tests/ui/") && file.ends_with(".stderr"))
@@ -311,6 +317,17 @@ fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
     );
     for key in ["dependencies", "dev-dependencies"] {
         for (name, dep) in svd[key].as_table().unwrap() {
+            if key == "dev-dependencies" && name == "aethelgard-twin" {
+                // `twin` depends on `svd-hal`, so a versioned dev-dependency
+                // back would make the first publish a cycle (AET-WO-1800).
+                // Cargo strips a dev-dependency that is path-only.
+                assert_eq!(
+                    dep.get("path").and_then(Value::as_str),
+                    Some("../aethelgard-twin")
+                );
+                assert!(dep.get("version").is_none() && dep.get("workspace").is_none());
+                continue;
+            }
             assert_eq!(
                 dep.get("workspace").and_then(Value::as_bool),
                 Some(true),
@@ -329,6 +346,7 @@ fn eda_has_only_its_known_files_keys_and_dependencies() {
     for file in files(&root().join(EDA)) {
         let allowed = file == "Cargo.toml"
             || file == "README.md"
+            || LICENCE_FILES.contains(&file.as_str())
             || (file.starts_with("src/") && file.ends_with(".rs"))
             || (file.starts_with("tests/") && file.ends_with(".rs"));
         assert!(allowed, "eda has a file outside the allowed set: {file}");
@@ -386,6 +404,7 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
     ];
     let mut expected: Vec<&str> = DATA.to_vec();
     expected.extend(["Cargo.toml", "README.md", "src/lib.rs"]);
+    expected.extend(LICENCE_FILES);
     expected.sort();
     assert_eq!(files(&root().join(KICAD_LIB)), expected);
     let kicad = manifest(KICAD_LIB);
@@ -424,6 +443,8 @@ fn kicad_library_files_live_only_in_the_data_crate() {
 fn twin_has_only_its_known_files_keys_and_dependencies() {
     for file in files(&root().join(TWIN)) {
         let allowed = file == "Cargo.toml"
+            || file == "README.md"
+            || LICENCE_FILES.contains(&file.as_str())
             || (file.starts_with("src/") && file.ends_with(".rs"))
             || (file.starts_with("tests/") && file.ends_with(".rs"));
         assert!(allowed, "twin has a file outside the allowed set: {file}");
