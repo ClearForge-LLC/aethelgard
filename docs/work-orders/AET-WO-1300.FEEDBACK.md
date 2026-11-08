@@ -1,6 +1,6 @@
 # AET-WO-1300 — FEEDBACK
 
-**Branch:** `wo/aet-1300-schematic` · **Base:** `1b4fe5f` (PR #37), started early by the kickoff; `origin/main` merged at `3f3924e` (AET-WO-1200 #32, AET-WO-0300d #39/#41) by merge commit `bfb847f`, on the architect's notes · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Result:** spike answered and ruled on PR #40 (D1 to D10); §1 built under that ruling on the same branch, after merging `origin/main` at `425347e` (`4a3ea97`) and `23d0b55` (AET-WO-1201, AET-WO-1502 and the rulings in #46), each by merge commit.
+**Branch:** `wo/aet-1300-schematic` · **Base:** `1b4fe5f` (PR #37), started early by the kickoff; `origin/main` merged at `3f3924e` (AET-WO-1200 #32, AET-WO-0300d #39/#41) by merge commit `bfb847f`, on the architect's notes · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Result:** spike answered and ruled on PR #40 (D1 to D10); §1 built under that ruling on the same branch, after merging `origin/main` at `425347e` (`4a3ea97`), `23d0b55` (AET-WO-1201, AET-WO-1502 and the rulings in #46), `6525506` and `3518ce8` (AET-WO-1400, #42; conflicts in the CLI README and `workspace_shape.rs` resolved keeping both sides), each by merge commit.
 
 Entry schema: `finding · where · type · recommendation · decision-needed`.
 
