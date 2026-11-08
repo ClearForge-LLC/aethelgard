@@ -447,12 +447,13 @@ mod tests {
     }
 
     #[test]
-    fn the_five_tools_come_from_the_tree() {
+    fn the_tools_come_from_the_tree() {
         assert_eq!(
             names(&Cli::command()),
             [
                 "validate",
                 "solve",
+                "emit",
                 "check_drc",
                 "check_erc",
                 "prove",
@@ -475,6 +476,11 @@ mod tests {
         assert_eq!(s["properties"]["crate"]["type"], "string");
         let validate = all.iter().find(|t| t.name == "validate").unwrap();
         assert!(validate.input_schema.get("required").is_none());
+        let emit = all.iter().find(|t| t.name == "emit").unwrap();
+        assert_eq!(emit.input_schema["required"], json!(["file", "out"]));
+        let drc = all.iter().find(|t| t.name == "check_drc").unwrap();
+        assert_eq!(drc.input_schema["required"], json!(["board"]));
+        assert_eq!(drc.input_schema["properties"]["spec"]["type"], "string");
         assert!(!validate.description.as_deref().unwrap().is_empty());
     }
 
@@ -494,7 +500,7 @@ mod tests {
             Some("A subcommand added by a test")
         );
         assert_eq!(t.input_schema["required"], json!(["thing"]));
-        assert_eq!(all.len(), 7);
+        assert_eq!(all.len(), 8);
     }
 
     #[test]

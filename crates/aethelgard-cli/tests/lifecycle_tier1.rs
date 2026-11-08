@@ -170,7 +170,7 @@ fn a_cli_told_a_dead_parents_pid_exits_70_and_starts_nothing() {
     .unwrap();
     fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
     let board = dir.0.join("b.kicad_pcb");
-    fs::write(&board, "x").unwrap();
+    fs::write(&board, "(kicad_pcb (version 20240108))\n").unwrap();
     let cli = |parent: &str| {
         let mut cmd = Command::new(BIN);
         cmd.args(["check", "drc", "--board"])
@@ -289,7 +289,7 @@ fn a_cli_without_the_variable_outlives_the_thread_that_started_it() {
     .unwrap();
     fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
     let board = dir.0.join("b.kicad_pcb");
-    fs::write(&board, "x").unwrap();
+    fs::write(&board, "(kicad_pcb (version 20240108))\n").unwrap();
     let mut cli = std::thread::spawn(move || {
         let cli = Command::new(BIN)
             .args(["check", "drc", "--board"])

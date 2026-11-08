@@ -16,7 +16,7 @@ mod verdict;
 use std::ffi::OsString;
 use std::fs::{self, DirBuilder, File};
 use std::io::{self, Read, Write};
-use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -59,6 +59,15 @@ enum Command {
         #[arg(long)]
         file: PathBuf,
     },
+    /// Validate and solve one Specification, then write its KiCad schematic and bill of materials into a directory.
+    Emit {
+        /// The specification file.
+        #[arg(long)]
+        file: PathBuf,
+        /// The directory to write <project_name>.kicad_sch and <project_name>.bom.csv into; created if absent.
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Run a KiCad check on a board or schematic and print its verdict.
     Check {
         #[command(subcommand)]
@@ -93,6 +102,9 @@ enum CheckCommand {
         /// The .kicad_pcb file.
         #[arg(long)]
         board: PathBuf,
+        /// Judge by the rules this specification implies; without it, by KiCad's defaults. Either way the gate writes every rule file itself.
+        #[arg(long)]
+        spec: Option<PathBuf>,
     },
     /// KiCad's electrical rule check on a schematic (kicad-cli sch erc).
     Erc {
@@ -203,12 +215,13 @@ fn main() -> ExitCode {
     let judged = match cli.command {
         Command::Validate { file } => return validate(file.as_deref()),
         Command::Solve { file } => return solve(&file),
+        Command::Emit { file, out } => return emit_design(&file, &out),
         Command::Check {
-            check: CheckCommand::Drc { board },
-        } => check_kicad(kicad::Check::Drc, &board),
+            check: CheckCommand::Drc { board, spec },
+        } => check_kicad(kicad::Check::Drc, &board, spec.as_deref()),
         Command::Check {
             check: CheckCommand::Erc { schematic },
-        } => check_kicad(kicad::Check::Erc, &schematic),
+        } => check_kicad(kicad::Check::Erc, &schematic, None),
         Command::Prove { crate_dir, harness } => prove(&crate_dir, &harness),
         Command::Simulate { platform } => simulate(&platform),
         Command::Mcp => return mcp::serve(),
@@ -318,11 +331,34 @@ fn version(inv: run::Invocation<'_>) -> Result<String, run::Stop> {
     }
 }
 
-fn check_kicad(check: kicad::Check, path: &Path) -> Result<verdict::Verdict, run::Stop> {
+fn check_kicad(
+    check: kicad::Check,
+    path: &Path,
+    spec: Option<&Path>,
+) -> Result<verdict::Verdict, run::Stop> {
     let original = input::file_check(path)?;
-    let tool = run::Tool::find("kicad-cli")?;
+    let (rules, spec_sha256) = match spec {
+        Some(file) => {
+            let (spec, sha256) = read_spec(Some(file)).map_err(|(refusal, code)| run::Stop {
+                code,
+                kind: refusal.error.kind,
+                id: refusal.error.id,
+                message: refusal.error.message,
+            })?;
+            (
+                aethelgard_eda::rules::Rules::from_specification(&spec),
+                Some(sha256),
+            )
+        }
+        None => (aethelgard_eda::rules::Rules::kicad_default(), None),
+    };
+    // The copy is scanned and prepared before the tool is looked for, so a
+    // board carrying its own rules is refused whatever is installed, and the
+    // bytes judged are the bytes scanned.
     let scratch = Scratch::new()?;
     let input = input::file(&original, &scratch.tool.join(check.copy_name()))?;
+    kicad::prepare(check, &input.copy, &scratch.tool, &rules)?;
+    let tool = run::Tool::find("kicad-cli")?;
     let invocation = |args: Vec<OsString>, status: &str| run::Invocation {
         tool: &tool,
         args,
@@ -336,14 +372,14 @@ fn check_kicad(check: kicad::Check, path: &Path) -> Result<verdict::Verdict, run
     let version = version(invocation(run::args(["version"]), "status-version"))?;
     let report = scratch.tool.join("report.json");
     let [noun, verb] = check.verb();
-    let mut args = run::args([
-        noun,
-        verb,
-        "--exit-code-violations",
-        "--format",
-        "json",
-        "-o",
-    ]);
+    let mut args = run::args([noun, verb, "--exit-code-violations", "--format", "json"]);
+    // Zones are emitted unfilled; KiCad fills them in memory to judge, and
+    // the board is never saved, because its saved fills are not
+    // deterministic (`RUL-03` as amended 2026-11-08).
+    if matches!(check, kicad::Check::Drc) {
+        args.push("--refill-zones".into());
+    }
+    args.push("-o".into());
     args.push(report.clone().into_os_string());
     args.push(input.copy.clone().into_os_string());
     let out = invocation(args, "status-run").run()?;
@@ -359,6 +395,10 @@ fn check_kicad(check: kicad::Check, path: &Path) -> Result<verdict::Verdict, run
         findings,
     );
     v.included_severities = Some(&kicad::SEVERITIES);
+    if matches!(check, kicad::Check::Drc) {
+        v.rules = Some(rules.source.name());
+        v.specification_sha256 = spec_sha256;
+    }
     Ok(v)
 }
 
@@ -480,27 +520,8 @@ fn simulate(platform: &Path) -> Result<verdict::Verdict, run::Stop> {
 }
 
 fn validate(file: Option<&Path>) -> ExitCode {
-    let input = match read_input(file) {
-        Ok(input) => input,
-        Err(refusal) => return emit(&refusal, EXIT_UNREADABLE),
-    };
-
-    let spec: Specification = match serde_json::from_slice(&input) {
-        Ok(spec) => spec,
-        // Well-formed JSON of the wrong shape is an invalid specification;
-        // anything that is not one JSON document is unreadable input.
-        Err(err) if err.classify() == Category::Data => {
-            let refusal = Refusal::new("SchemaViolation", None, err.to_string());
-            return emit(&refusal, EXIT_INVALID_SPEC);
-        }
-        Err(err) => {
-            let refusal = Refusal::new("InvalidJson", None, err.to_string());
-            return emit(&refusal, EXIT_UNREADABLE);
-        }
-    };
-
-    match spec.validate() {
-        Ok(()) => emit(
+    match read_spec(file) {
+        Ok((spec, _)) => emit(
             &ValidReport {
                 ok: true,
                 project_name: &spec.project_name,
@@ -509,10 +530,7 @@ fn validate(file: Option<&Path>) -> ExitCode {
             },
             0,
         ),
-        Err(err) => emit(
-            &Refusal::new(err.kind(), err.id(), err.to_string()).at(err.path()),
-            EXIT_INVALID_SPEC,
-        ),
+        Err((refusal, code)) => emit(&refusal, code),
     }
 }
 
@@ -520,6 +538,56 @@ fn validate(file: Option<&Path>) -> ExitCode {
 /// part's pin table, solve, and print the `SolvedTopology` on one line (exit
 /// 0). A specification the solver cannot realize is exit 2, with `claimants`.
 fn solve(file: &Path) -> ExitCode {
+    match solved(file) {
+        Ok((_, topology, _)) => emit(&topology, 0),
+        Err(code) => code,
+    }
+}
+
+/// Reads one `Specification` from a file, or stdin when `file` is `None`,
+/// under the input cap, and validates it. Returns it with the sha256 of the bytes as read, or the
+/// refusal and its exit code (2 or 3).
+fn read_spec(file: Option<&Path>) -> Result<(Specification, String), (Refusal, u8)> {
+    let input = read_input(file).map_err(|r| (r, EXIT_UNREADABLE))?;
+    // Well-formed JSON of the wrong shape is an invalid specification;
+    // anything that is not one JSON document is unreadable input.
+    let spec: Specification = serde_json::from_slice(&input).map_err(|err| {
+        if err.classify() == Category::Data {
+            (
+                Refusal::new("SchemaViolation", None, err.to_string()),
+                EXIT_INVALID_SPEC,
+            )
+        } else {
+            (
+                Refusal::new("InvalidJson", None, err.to_string()),
+                EXIT_UNREADABLE,
+            )
+        }
+    })?;
+    spec.validate().map_err(|err| {
+        (
+            Refusal::new(err.kind(), err.id(), err.to_string()).at(err.path()),
+            EXIT_INVALID_SPEC,
+        )
+    })?;
+    Ok((
+        spec,
+        input::hex(<sha2::Sha256 as sha2::Digest>::digest(&input)),
+    ))
+}
+
+/// Reads, validates, loads the pin table and solves. Every refusal is
+/// printed here; the caller gets its exit code.
+fn solved(
+    file: &Path,
+) -> Result<
+    (
+        Specification,
+        aethelgard_ir::SolvedTopology,
+        aethelgard_ir::PinTable,
+    ),
+    ExitCode,
+> {
     #[derive(Serialize)]
     struct SolveRefusal {
         ok: bool,
@@ -533,45 +601,23 @@ fn solve(file: &Path) -> ExitCode {
         message: String,
     }
 
-    let input = match read_input(Some(file)) {
-        Ok(input) => input,
-        Err(refusal) => return emit(&refusal, EXIT_UNREADABLE),
-    };
-    let spec: Specification = match serde_json::from_slice(&input) {
-        Ok(spec) => spec,
-        Err(err) if err.classify() == Category::Data => {
-            let refusal = Refusal::new("SchemaViolation", None, err.to_string());
-            return emit(&refusal, EXIT_INVALID_SPEC);
-        }
-        Err(err) => {
-            let refusal = Refusal::new("InvalidJson", None, err.to_string());
-            return emit(&refusal, EXIT_UNREADABLE);
-        }
-    };
-    if let Err(err) = spec.validate() {
-        let refusal = Refusal::new(err.kind(), err.id(), err.to_string()).at(err.path());
-        return emit(&refusal, EXIT_INVALID_SPEC);
-    }
+    let (spec, sha256) = read_spec(Some(file)).map_err(|(refusal, code)| emit(&refusal, code))?;
     let table = match aethelgard_svd_hal::pin_table(&spec.mcu.part) {
         Ok(table) => table,
         Err(err @ aethelgard_svd_hal::PinTableError::UnknownPart { .. }) => {
             let refusal = Refusal::new(err.kind(), Some(&spec.mcu.part), err.to_string());
-            return emit(&refusal, EXIT_INVALID_SPEC);
+            return Err(emit(&refusal, EXIT_INVALID_SPEC));
         }
         // The vendored table failed its own check: a corrupted build, not a
         // bad specification. Nothing on stdout, as for exit 70.
         Err(err) => {
             diagnose(&format!("the pin table is unusable: {err}"));
-            return ExitCode::from(EXIT_INTERNAL);
+            return Err(ExitCode::from(EXIT_INTERNAL));
         }
     };
-    let sha256 = <sha2::Sha256 as sha2::Digest>::digest(&input)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect::<String>();
     match aethelgard_ir::solve(&spec, &table, &sha256) {
-        Ok(topology) => emit(&topology, 0),
-        Err(err) => emit(
+        Ok(topology) => Ok((spec, topology, table)),
+        Err(err) => Err(emit(
             &SolveRefusal {
                 ok: false,
                 error: SolveRefusalBody {
@@ -582,8 +628,105 @@ fn solve(file: &Path) -> ExitCode {
                 },
             },
             EXIT_INVALID_SPEC,
-        ),
+        )),
     }
+}
+
+/// `aethelgard emit --file --out`: solve as `solve` does, emit the schematic
+/// and bill of materials (`aethelgard_eda::schematic::emit`), and write them
+/// into `out` as `<project_name>.kicad_sch` and `<project_name>.bom.csv`.
+fn emit_design(file: &Path, out: &Path) -> ExitCode {
+    #[derive(Serialize)]
+    struct Written {
+        path: String,
+        sha256: String,
+    }
+    #[derive(Serialize)]
+    struct EmitReport {
+        ok: bool,
+        project_name: String,
+        specification_sha256: String,
+        schematic: Written,
+        bill_of_materials: Written,
+    }
+
+    let (spec, topology, table) = match solved(file) {
+        Ok(solved) => solved,
+        Err(code) => return code,
+    };
+    let emission = match aethelgard_eda::schematic::emit(&spec, &topology, &table) {
+        Ok(e) => e,
+        Err(err @ aethelgard_eda::schematic::EmitError::Library(_)) => {
+            diagnose(&format!("the vendored library is unusable: {err}"));
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+        Err(err) => {
+            return emit(
+                &Refusal::new(err.kind(), err.id(), err.to_string()),
+                EXIT_INVALID_SPEC,
+            );
+        }
+    };
+    let unwritable = |message: String| {
+        emit(
+            &Refusal::new("UnwritableOutput", None, message),
+            EXIT_UNREADABLE,
+        )
+    };
+    if let Err(e) = DirBuilder::new().recursive(true).mode(0o755).create(out) {
+        return unwritable(format!("cannot create {}: {e}", out.display()));
+    }
+    let mut written = Vec::new();
+    for (suffix, text) in [
+        ("kicad_sch", &emission.schematic),
+        ("bom.csv", &emission.bom),
+    ] {
+        let path = out.join(format!("{}.{suffix}", spec.project_name));
+        // A symlink is never followed and a FIFO never waited on: only a new
+        // or existing regular file is written.
+        let opened = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o644)
+            .custom_flags(
+                (rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32,
+            )
+            .open(&path)
+            .and_then(|f| {
+                if f.metadata()?.is_file() {
+                    Ok(f)
+                } else {
+                    Err(io::Error::other("not a regular file"))
+                }
+            });
+        let result = opened.and_then(|mut f| f.write_all(text.as_bytes()));
+        if let Err(e) = result {
+            return unwritable(format!("cannot write {}: {e}", path.display()));
+        }
+        written.push(Written {
+            path: path.display().to_string(),
+            sha256: input::hex(<sha2::Sha256 as sha2::Digest>::digest(text.as_bytes())),
+        });
+    }
+    let bill_of_materials = written.pop().unwrap_or(Written {
+        path: String::new(),
+        sha256: String::new(),
+    });
+    let schematic = written.pop().unwrap_or(Written {
+        path: String::new(),
+        sha256: String::new(),
+    });
+    emit(
+        &EmitReport {
+            ok: true,
+            project_name: spec.project_name.clone(),
+            specification_sha256: topology.specification_sha256.clone(),
+            schematic,
+            bill_of_materials,
+        },
+        0,
+    )
 }
 
 /// Reads at most one byte past the limit, so oversized input is detected

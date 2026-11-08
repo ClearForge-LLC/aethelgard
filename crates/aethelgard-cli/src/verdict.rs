@@ -15,6 +15,12 @@ pub struct Verdict {
     pub sandbox: SandboxReport,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub included_severities: Option<&'static [&'static str]>,
+    /// `check drc` only: whose rules judged, `specification` or `kicad-default`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rules: Option<&'static str>,
+    /// `check drc --spec` only: the sha256 of the specification file as read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub specification_sha256: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub harness: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -105,6 +111,8 @@ impl Verdict {
             },
             sandbox,
             included_severities: None,
+            rules: None,
+            specification_sha256: None,
             harness: None,
             machine: None,
             findings,

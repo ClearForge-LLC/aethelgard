@@ -28,7 +28,7 @@ pub struct Input {
     pub sha256: String,
 }
 
-fn hex(digest: impl AsRef<[u8]>) -> String {
+pub fn hex(digest: impl AsRef<[u8]>) -> String {
     digest.as_ref().iter().map(|b| format!("{b:02x}")).collect()
 }
 

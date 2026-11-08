@@ -42,6 +42,7 @@ fn lists_the_five_tools_and_completes_two_calls() {
         [
             "validate",
             "solve",
+            "emit",
             "check_drc",
             "check_erc",
             "prove",
@@ -119,7 +120,7 @@ fn refusals_spawn_no_child_and_are_invalid_params() {
     let marker = dir.0.join("tool-ran");
     dir.stub_kicad(&format!(": > '{}'\nexec /bin/sleep 1", marker.display()));
     let board = dir.0.join("b.kicad_pcb");
-    fs::write(&board, "x").unwrap();
+    fs::write(&board, "(kicad_pcb (version 20240108))\n").unwrap();
     let mut c = dir.client();
     c.initialize();
     let bad = [
@@ -221,7 +222,7 @@ fn blocked_call(label: &str, secs: u32) -> (Scratch, Client, u64, Vec<u32>) {
     let dir = Scratch::new(label);
     dir.stub_kicad(&format!("exec /bin/sleep {secs}"));
     let board = dir.0.join("b.kicad_pcb");
-    fs::write(&board, "x").unwrap();
+    fs::write(&board, "(kicad_pcb (version 20240108))\n").unwrap();
     let mut c = dir.client();
     c.initialize();
     let id = c.start(
@@ -436,7 +437,7 @@ fn an_immediate_cancel_storm_leaves_no_process_and_no_directory() {
     let dir = Scratch::new("storm");
     dir.stub_kicad("exec /bin/sleep 306");
     let board = dir.0.join("b.kicad_pcb");
-    fs::write(&board, "x").unwrap();
+    fs::write(&board, "(kicad_pcb (version 20240108))\n").unwrap();
     let tmp = dir.0.join("tmp");
     fs::create_dir(&tmp).unwrap();
     let tb = dir.0.join("toolbox");
@@ -536,7 +537,7 @@ fn servers_sigkilled_while_calls_start_leave_nothing() {
     let dir = Scratch::new("parent-kill");
     dir.stub_kicad("exec /bin/sleep 309");
     let board = dir.0.join("b.kicad_pcb");
-    fs::write(&board, "x").unwrap();
+    fs::write(&board, "(kicad_pcb (version 20240108))\n").unwrap();
     let tmp = dir.0.join("tmp");
     fs::create_dir(&tmp).unwrap();
     let tb = dir.0.join("toolbox");
