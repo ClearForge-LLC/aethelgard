@@ -461,4 +461,10 @@ The raw lines are in `b1/furnace-100ms.txt` and `b1/image-100ms.txt`.
 - **Furnace:** fmt ok; clippy `-D warnings` ok, with and without `with-tools`; `cargo test --workspace --locked`: 525 passed, 0 failed, across 42 targets.
 - **The `tools` sequence in podman, on the published image:** fmt ok; clippy ok; 566 passed, 0 failed (`~/.cache/aet-2100-spike/build/tools-local3.log`).
 
+**CI on the B1 head** (`d77ed68`), green:
+- run [42462530608](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42462530608): `gates` 2 m 29 s and `tools` 18 m 0 s;
+- run [42462530605](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42462530605): `image`.
+
+In `tools`, 566 passed and 0 failed. All four new tests ran: the three tier-1 bounds and the tier-2 A6 boot. `ANSWER 2100: A6 hole: exit=Some(1) wall_s=31.62`, `cpu_aborted`: on the CI runner the wall bound came first, not the memory cap, so Renode's memory grew more slowly there than on Furnace. That is inside the bound plus 5 s, with 3.4 s to spare.
+
 **B2.** The CLI README's "Booting firmware" states the residual as ruled. The boot word witnesses that the solved configuration happened and that the core kept executing inside the firmware's own code; it does not witness that `main` returned.
