@@ -39,6 +39,94 @@ impl Check {
 
 const TOOL: &str = "kicad-cli";
 
+/// The stem the gate gives the copy and every file it writes beside it.
+pub const STEM: &str = "input";
+
+/// Prepares the scratch copy for judging (`RUL-03` as amended, `INV-07`).
+/// No rule is read from the input.
+///
+/// - **DRC:** the board's own rules are refused or replaced
+///   (`aethelgard_eda::board`). The gate then writes `input.kicad_pro` and
+///   `input.kicad_dru` from `rules`, plus project-local `sym-lib-table` and
+///   `fp-lib-table` naming the vendored libraries, which it copies into
+///   `lib/` (ruled D3 on PR #40).
+/// - **ERC:** the gate writes `input.kicad_pro`, which ignores the library
+///   checks.
+///
+/// A board carrying a rule of its own is refused with exit 3, before any tool
+/// runs.
+pub fn prepare(
+    check: Check,
+    copy: &Path,
+    dir: &Path,
+    rules: &aethelgard_eda::rules::Rules,
+) -> Result<(), Stop> {
+    let write = |name: &str, bytes: &[u8]| {
+        let path = dir.join(name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| scratch_error(&path, e))?;
+        }
+        std::fs::write(&path, bytes).map_err(|e| scratch_error(&path, e))
+    };
+    match check {
+        Check::Erc => write(&format!("{STEM}.kicad_pro"), rules.project(STEM).as_bytes()),
+        Check::Drc => {
+            let text = std::fs::read(copy)
+                .map_err(|e| scratch_error(copy, e))
+                .and_then(|bytes| {
+                    String::from_utf8(bytes).map_err(|_| Stop {
+                        code: crate::EXIT_UNREADABLE,
+                        kind: "MalformedBoard",
+                        id: None,
+                        message: "the board is not UTF-8".to_owned(),
+                    })
+                })?;
+            let board = aethelgard_eda::board::prepare(&text, aethelgard_eda::rules::SETUP)
+                .map_err(|refusal| Stop {
+                    code: crate::EXIT_UNREADABLE,
+                    kind: refusal.kind(),
+                    id: refusal.id().map(str::to_owned),
+                    message: refusal.to_string(),
+                })?;
+            std::fs::write(copy, board).map_err(|e| scratch_error(copy, e))?;
+            write(&format!("{STEM}.kicad_pro"), rules.project(STEM).as_bytes())?;
+            write(
+                &format!("{STEM}.kicad_dru"),
+                rules.custom_rules().as_bytes(),
+            )?;
+            let library = |e: aethelgard_eda::library::LibraryError| {
+                Stop::tool_error(
+                    "aethelgard",
+                    format!("the vendored library is unusable: {e}"),
+                )
+            };
+            for (path, bytes) in aethelgard_eda::library::files().map_err(library)? {
+                write(&format!("lib/{path}"), bytes)?;
+            }
+            let lib_dir = dir.join("lib");
+            let lib_dir = lib_dir.to_str().ok_or_else(|| {
+                Stop::tool_error(
+                    "aethelgard",
+                    "the temporary directory is not UTF-8".to_owned(),
+                )
+            })?;
+            let (sym, fp) = aethelgard_eda::library::tables(lib_dir).map_err(library)?;
+            write("sym-lib-table", sym.as_bytes())?;
+            write("fp-lib-table", fp.as_bytes())
+        }
+    }
+}
+
+fn scratch_error(path: &Path, e: std::io::Error) -> Stop {
+    Stop::tool_error(
+        "aethelgard",
+        format!(
+            "cannot write {} in the temporary directory: {e}",
+            path.display()
+        ),
+    )
+}
+
 /// The severities KiCad must report it included, and the only ones a finding may have.
 pub const SEVERITIES: [&str; 2] = ["error", "warning"];
 

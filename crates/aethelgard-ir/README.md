@@ -45,7 +45,7 @@ Returns the first refusal, in this order, and in document order within a step. `
 | # | Rule | Refusal (`id()`) |
 |---|---|---|
 | 1 | `schema_version` is 1 | `UnsupportedSchemaVersion` (none) |
-| 2 | Every identifier is 1 to 64 bytes of printable ASCII `0x21`–`0x7E` (`RUL-14`) | `InvalidIdentifier` (none; `path()`) |
+| 2 | Every identifier is 1 to 64 bytes of printable ASCII `0x21`–`0x7E`, none of them `/`, `{`, `}`, `$`, `[` or `]` (`RUL-14`; the six refused because KiCad reads them as more than text, `AET-WO-1300` D6) | `InvalidIdentifier` (none; `path()`) |
 | 3 | `voltage_domains` is not empty | `NoVoltageDomain` (none) |
 | 4 | Domains: unique ids, nominal voltage not 0, tolerance in 1..=500 | `DuplicateDomainId`, `ZeroNominalVoltage`, `ToleranceOutOfRange` (the id) |
 | 5 | `mcu.supply`, every bus `domain` and every device `supply` names a declared domain | `UnknownDomain` (the name) |

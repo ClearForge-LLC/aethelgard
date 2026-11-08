@@ -276,7 +276,9 @@ impl PinTable {
 pub enum IrValidationError {
     #[error("schema_version is {version}, not 1")]
     UnsupportedSchemaVersion { version: u32 },
-    #[error("`{path}` is not an identifier: 1 to 64 bytes of printable ASCII 0x21-0x7E")]
+    #[error(
+        "`{path}` is not an identifier: 1 to 64 bytes of printable ASCII 0x21-0x7E, none of them `/`, `{{`, `}}`, `$`, `[` or `]`"
+    )]
     InvalidIdentifier { path: String },
     #[error("voltage_domains is empty")]
     NoVoltageDomain,
@@ -415,9 +417,17 @@ impl IrValidationError {
 
 /// `RUL-14`: 1 to 64 bytes of printable ASCII `0x21`-`0x7E`. Whitespace, control
 /// characters and everything outside ASCII are refused, so two identifiers
-/// that look alike are the same bytes.
+/// that look alike are the same bytes. Six more are refused because KiCad
+/// reads them as more than text (`AET-WO-1300` S5, ruled D6 on PR #40): `/` is
+/// its sheet-path separator, `{` and `}` delimit its escape tokens and bus
+/// groups, `$` starts a text variable, and `[` and `]` a bus vector.
+pub const REFUSED_IN_IDENTIFIERS: [u8; 6] = *b"/{}$[]";
+
 fn identifier(value: &str, path: impl FnOnce() -> String) -> Result<(), IrValidationError> {
-    let ok = (1..=64).contains(&value.len()) && value.bytes().all(|b| (0x21..=0x7E).contains(&b));
+    let ok = (1..=64).contains(&value.len())
+        && value
+            .bytes()
+            .all(|b| (0x21..=0x7E).contains(&b) && !REFUSED_IN_IDENTIFIERS.contains(&b));
     if ok {
         Ok(())
     } else {

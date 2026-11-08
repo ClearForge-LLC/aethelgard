@@ -51,7 +51,7 @@ fn an_inherited_socket_refuses_the_call_and_the_tool_never_runs() {
     .unwrap();
     fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
     let board = dir.join("b.kicad_pcb");
-    fs::write(&board, "x").unwrap();
+    fs::write(&board, "(kicad_pcb (version 20240108))\n").unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
 

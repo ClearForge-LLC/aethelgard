@@ -1810,6 +1810,11 @@ fn board_file_exactly_at_the_byte_cap_is_accepted() {
     let tb = Dir::new("tb");
     Kicad::new(0, Some(drc_report(vec![]))).install(&tb);
     let b = board();
-    sparse(&b.path, CAP);
+    // A board the gate can read (its pre-scan parses the copy), padded with
+    // whitespace to exactly the cap.
+    let mut text = b"(kicad_pcb".to_vec();
+    text.resize(CAP as usize - 1, b' ');
+    text.push(b')');
+    fs::write(&b.path, &text).unwrap();
     judged(&drc(&tb, &b.path), "pass", "drc");
 }

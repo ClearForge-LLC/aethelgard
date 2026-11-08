@@ -415,3 +415,294 @@ fn mcp_simulate_loads_the_nucleo_board() {
     );
     mcp_judged(&r, 0, "pass");
 }
+
+// ---- AET-WO-1300 §1.4: the emitter and the gate's own rules, judged by KiCad ----
+
+fn example_spec(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples")
+        .join(name)
+}
+
+struct Temp(PathBuf);
+
+impl Temp {
+    fn new(tag: &str) -> Temp {
+        let d = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("aet-1300-{tag}"));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        Temp(d)
+    }
+}
+
+impl Drop for Temp {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// One line on the job's stderr, past libtest's capture, so the run log is
+/// the record of what KiCad said.
+fn record(line: &str) {
+    use std::io::Write;
+    let _ = std::io::stderr()
+        .lock()
+        .write_all(format!("AET-WO-1300 {line}\n").as_bytes());
+}
+
+fn emit_to(spec: &Path, out: &Path) -> Value {
+    let o = run(
+        &[
+            "emit",
+            "--file",
+            spec.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ],
+        None,
+    );
+    verdict(&o, 0)
+}
+
+#[test]
+fn the_emitted_reference_schematic_passes_erc() {
+    let t = Temp::new("erc");
+    let r = emit_to(&example_spec("sentinel-01-minimal.json"), &t.0);
+    let sch = r["schematic"]["path"].as_str().unwrap().to_owned();
+    let out = run(&["check", "erc", "--schematic", &sch], None);
+    record(&format!(
+        "erc on the emitted sentinel-01: {}",
+        String::from_utf8_lossy(&out.stdout).trim()
+    ));
+    let v = verdict(&out, 0);
+    assert_eq!(v["verdict"], "pass", "{v}");
+    assert_judged(&v, "erc", "kicad-cli", "10.0.7");
+}
+
+/// Every character `RUL-14` still admits that an S-expression must quote,
+/// and others, in every identifier class that reaches the schematic.
+#[test]
+fn identifiers_with_s_expression_characters_survive_kicad() {
+    let t = Temp::new("names");
+    let mut spec: Value =
+        serde_json::from_slice(&fs::read(example_spec("sentinel-01-minimal.json")).unwrap())
+            .unwrap();
+    let rename = |v: &mut Value, from: &str, to: &str| {
+        let text = serde_json::to_string(v).unwrap();
+        *v = serde_json::from_str(
+            &text.replace(&format!("\"{from}\""), &serde_json::to_string(to).unwrap()),
+        )
+        .unwrap();
+    };
+    let names = [
+        ("sentinel-01", "p\"(x)\\#"),
+        ("VDD_3V3", "VDD\"3V3\\"),
+        ("I2C_SDA", "I2C(SDA)"),
+        ("I2C_SCL", "I2C;SCL~"),
+        ("SPI_SCK", "SPI'SCK^"),
+        ("SPI_MOSI", "MO|SI,"),
+        ("SPI_MISO", "MI*SO?"),
+        ("FLASH_CS", "CS\"(0)"),
+        ("U2", "U(2)"),
+        ("U3", "U\"3"),
+        ("U4", "U\\4"),
+    ];
+    for (from, to) in names {
+        rename(&mut spec, from, to);
+    }
+    let spec_path = t.0.join("spec.json");
+    fs::write(&spec_path, serde_json::to_vec(&spec).unwrap()).unwrap();
+    let r = emit_to(&spec_path, &t.0.join("out"));
+    let sch = PathBuf::from(r["schematic"]["path"].as_str().unwrap());
+    let v = verdict(
+        &run(
+            &["check", "erc", "--schematic", sch.to_str().unwrap()],
+            None,
+        ),
+        0,
+    );
+    assert_eq!(v["verdict"], "pass", "{v}");
+    // Read every name back from KiCad's own netlist of the same file.
+    let copy = t.0.join("readback.kicad_sch");
+    fs::copy(&sch, &copy).unwrap();
+    let net = t.0.join("readback.net");
+    let out = Command::new("kicad-cli")
+        .args(["sch", "export", "netlist", "-o"])
+        .arg(&net)
+        .arg(&copy)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let netlist = aethelgard_eda::sexpr::parse(&fs::read_to_string(&net).unwrap()).unwrap();
+    let nets: Vec<&str> = netlist
+        .child("nets")
+        .unwrap()
+        .children("net")
+        .filter_map(|n| n.child("name").and_then(|x| x.arg(1)))
+        .collect();
+    let refs: Vec<&str> = netlist
+        .child("components")
+        .unwrap()
+        .children("comp")
+        .filter_map(|c| c.child("ref").and_then(|x| x.arg(1)))
+        .collect();
+    let title = netlist
+        .child("design")
+        .and_then(|d| d.child("sheet"))
+        .and_then(|s| s.child("title_block"))
+        .and_then(|t| t.child("title"))
+        .and_then(|t| t.arg(1));
+    record(&format!(
+        "names read back: nets {nets:?} refs {refs:?} title {title:?}"
+    ));
+    assert_eq!(title, Some("p\"(x)\\#"));
+    assert!(nets.contains(&"VDD\"3V3\\"), "{nets:?}");
+    for (_, to) in &names[2..8] {
+        // A root-sheet label's net is named `/<label>` (spike S4).
+        let want = format!("/{to}");
+        assert!(nets.contains(&want.as_str()), "{want} not in {nets:?}");
+    }
+    for (_, to) in &names[8..] {
+        assert!(refs.contains(to), "{to} not in {refs:?}");
+    }
+}
+
+/// S3's board: two tracks 0.1 mm apart, and its own setup block, project and
+/// rules file all saying 0.05 mm.
+const LOOSE: &str = "(kicad_pcb\n\t(version 20240108)\n\t(generator \"aethelgard\")\n\t(general (thickness 1.6) (legacy_teardrops no))\n\t(paper \"A4\")\n\t(layers (0 \"F.Cu\" signal) (31 \"B.Cu\" signal) (44 \"Edge.Cuts\" user))\n\t(setup (pad_to_mask_clearance 0) (trace_clearance 0.05) (clearance_min 0.05))\n\t(net 0 \"\")\n\t(net 1 \"NET_A\")\n\t(net 2 \"NET_B\")\n\t(gr_rect (start 100 100) (end 130 120) (stroke (width 0.1) (type default)) (fill none) (layer \"Edge.Cuts\"))\n\t(segment (start 105 110) (end 125 110) (width 0.25) (layer \"F.Cu\") (net 1))\n\t(segment (start 105 110.35) (end 125 110.35) (width 0.25) (layer \"F.Cu\") (net 2))\n)\n";
+
+#[test]
+fn a_board_whose_own_files_are_looser_is_judged_by_the_gate() {
+    let t = Temp::new("loose");
+    let board = t.0.join("loose.kicad_pcb");
+    fs::write(&board, LOOSE).unwrap();
+    let loose = aethelgard_eda::rules::Rules {
+        source: aethelgard_eda::rules::Source::Specification,
+        clearance_nm: 50_000,
+        min_track_width_nm: None,
+    };
+    fs::write(t.0.join("loose.kicad_pro"), loose.project("loose")).unwrap();
+    fs::write(t.0.join("loose.kicad_dru"), loose.custom_rules()).unwrap();
+    let spec = example_spec("sentinel-01-minimal.json");
+    for (args, rules) in [
+        (vec!["--spec", spec.to_str().unwrap()], "specification"),
+        (vec![], "kicad-default"),
+    ] {
+        let mut all = vec!["check", "drc", "--board", board.to_str().unwrap()];
+        all.extend(args);
+        let out = run(&all, None);
+        record(&format!(
+            "drc on the loose board, rules {rules}: {}",
+            String::from_utf8_lossy(&out.stdout).trim()
+        ));
+        let v = verdict(&out, 1);
+        assert_eq!(v["rules"], rules, "{v}");
+        assert_eq!(
+            kinds(&v).iter().filter(|k| **k == "clearance").count(),
+            1,
+            "{v}"
+        );
+    }
+}
+
+/// D5's row, measured (the spike did not run it): with the gate's setup
+/// carrying no clearance token, the project file sets the board minimum,
+/// which is all a locally overridden pad is judged against. With the board's
+/// own looser project the override escapes the gate's custom rules; with the
+/// gate's it is caught. So the project step is load-bearing. Raw
+/// `kicad-cli`, because the CLI itself refuses the override (D4).
+#[test]
+fn with_a_token_free_setup_the_project_step_is_load_bearing() {
+    let t = Temp::new("d5");
+    let mut fp = aethelgard_eda::library::footprint("Resistor_SMD:R_0402_1005Metric").unwrap();
+    use aethelgard_eda::sexpr::Sx;
+    if let Some(items) = fp.items_mut() {
+        items[1] = Sx::str("Resistor_SMD:R_0402_1005Metric");
+        items.retain(|i| {
+            !matches!(
+                i.head(),
+                Some("version" | "generator" | "generator_version")
+            )
+        });
+        items.insert(2, Sx::node("at", &["115", "112"]));
+        for item in items.iter_mut() {
+            if item.head() == Some("pad")
+                && let Some(pad) = item.items_mut()
+            {
+                pad.push(Sx::List(vec![
+                    Sx::atom("net"),
+                    Sx::atom("1"),
+                    Sx::str("NET_A"),
+                ]));
+                pad.push(Sx::node("clearance", &["0.05"]));
+            }
+        }
+    }
+    // Pad 1 is 0.64 mm tall at y 112: its top edge is at 111.68. A 0.25 mm
+    // NET_B track centred 0.225 mm above that leaves a 0.1 mm gap.
+    let footprint = aethelgard_eda::sexpr::write(&fp);
+    let board = LOOSE
+        .replace(
+            "(setup (pad_to_mask_clearance 0) (trace_clearance 0.05) (clearance_min 0.05))",
+            aethelgard_eda::rules::SETUP,
+        )
+        .replace(
+            "\t(segment (start 105 110) (end 125 110) (width 0.25) (layer \"F.Cu\") (net 1))\n\t(segment (start 105 110.35) (end 125 110.35) (width 0.25) (layer \"F.Cu\") (net 2))\n",
+            &format!("{footprint}\t(segment (start 110 111.455) (end 120 111.455) (width 0.25) (layer \"F.Cu\") (net 2))\n"),
+        );
+    let gate = aethelgard_eda::rules::Rules::from_specification(
+        &serde_json::from_slice(&fs::read(example_spec("sentinel-01-minimal.json")).unwrap())
+            .unwrap(),
+    );
+    let own = aethelgard_eda::rules::Rules {
+        source: aethelgard_eda::rules::Source::Specification,
+        clearance_nm: 50_000,
+        min_track_width_nm: None,
+    };
+    let mut counts = Vec::new();
+    for (name, project) in [("board's own project", &own), ("gate's project", &gate)] {
+        let dir = t.0.join(name.replace([' ', '\''], "_"));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("d5.kicad_pcb"), &board).unwrap();
+        fs::write(dir.join("d5.kicad_pro"), project.project("d5")).unwrap();
+        fs::write(dir.join("d5.kicad_dru"), gate.custom_rules()).unwrap();
+        let report = dir.join("report.json");
+        let out = Command::new("kicad-cli")
+            .args([
+                "pcb",
+                "drc",
+                "--exit-code-violations",
+                "--format",
+                "json",
+                "-o",
+            ])
+            .arg(&report)
+            .arg(dir.join("d5.kicad_pcb"))
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let doc: Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+        let clearance: Vec<&str> = doc["violations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["type"] == "clearance")
+            .map(|f| f["description"].as_str().unwrap())
+            .collect();
+        record(&format!(
+            "D5 row, token-free setup, gate rules file, {name}: exit {:?}, clearance violations {clearance:?}",
+            out.status.code()
+        ));
+        counts.push(clearance.len());
+    }
+    assert!(
+        counts[0] == 0 && counts[1] >= 1,
+        "{counts:?}: the project step is not load-bearing; keep clearance_min in the setup block (D5)"
+    );
+}

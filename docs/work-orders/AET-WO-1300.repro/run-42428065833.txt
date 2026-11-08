@@ -1,0 +1,411 @@
+# CI run 42428065833 (commit aab865b), job tools, step 'cargo test inside the image, tier 1 and tier 2': every ANSWER line, verbatim.
+ANSWER ENV kicad-cli=10.0.7 libs=/usr/share/kicad/symbols + /usr/share/kicad/footprints image=unnamed
+ANSWER ENV template /usr/share/kicad/template/sym-lib-table: 226 lines; head (sym_lib_table (version 7) (lib (name "4xxx") (type "KiCad") (uri "${KICAD10_SYMBOL_DIR}/4xxx.kicad_sym") (options "") (descr "4xxx series symbols"))
+ANSWER ENV template /usr/share/kicad/template/fp-lib-table: 158 lines; head (fp_lib_table (version 7) (lib (name "Audio_Module") (type "KiCad") (uri "${KICAD10_FOOTPRINT_DIR}/Audio_Module.pretty") (options "") (descr "Audio Module footprints"))
+ANSWER S1 symbol libraries: 223 .kicad_sym files, 0 .kicad_symdir dirs in /usr/share/kicad/symbols; footprint libraries: 155 .pretty in /usr/share/kicad/footprints
+ANSWER S1 Device library header: (kicad_symbol_lib 	(version 20251024) 	(generator "kicad_symbol_editor")
+ANSWER S1 provenance `dpkg-query -W -f '${Package} ${Version}\n' 'kicad*' 2>&1`: dpkg-query: no packages found matching kicad*
+ANSWER S1 provenance `ls /etc/dpkg/dpkg.cfg.d/ 2>&1; cat /etc/dpkg/dpkg.cfg.d/* 2>&1 | grep -v '^#' | grep -v '^$'`: docker / docker-apt-speedup / path-exclude /usr/share/doc/* / path-exclude /usr/share/doc/kde/HTML/*/* / path-exclude /usr/share/gnome/help/*/* / path-exclude /usr/share/info/* / path-exclude /usr/share/linda/* / path-exclude /usr/share/lintian/overrides/* / path-exclude /usr/share/locale/* / path-exclude /usr/share/man/* / path-exclude /usr/share/omf/*/*-*.emf / path-include /usr/share/doc/*/copyright / path-include /usr/share/doc/kde/HTML/C/* / path-include /usr/share/gnome/help/*/C/* / path-include /usr/share/locale/all_languages / path-include /usr/share/locale/currency/* / path-include /usr/share/locale/l10n/* / path-include /usr/share/locale/languages / path-include /usr/share/locale/locale.alias / path-include /usr/share/omf/*/*-C.emf / force-unsafe-io
+ANSWER S1 provenance `for p in $(dpkg-query -W -f '${Package}\n' 'kicad*' 2>/dev/null); do dpkg -L "$p" 2>/dev/null | grep -i -E 'copyright|licen|copying'; done`: (nothing)
+ANSWER S1 provenance `find / -xdev -ipath '*kicad*' \( -iname '*licen*' -o -iname copyright -o -iname 'copying*' \) -not -path '*/demos/*' 2>/dev/null`: (nothing)
+ANSWER S1 provenance `ls /usr/share/doc 2>&1 | grep -i kicad`: (nothing)
+ANSWER S1 symbol Sensor:BME280 (BME280): pins=8 Footprint="Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering" ki_fp_filters="*LGA*2.5x2.5mm*P0.65mm*Clockwise*" extends_flattened=ok
+ANSWER S1 symbol MCU_ST_STM32H7:STM32H743ZITx (STM32H743ZITx): pins=144 Footprint="Package_QFP:LQFP-144_20x20mm_P0.5mm" ki_fp_filters="LQFP*20x20mm*P0.5mm*" extends_flattened=ok
+ANSWER S1 symbol MCU_ST_STM32H7:STM32H753ZITx (STM32H753ZITx): pins=144 Footprint="Package_QFP:LQFP-144_20x20mm_P0.5mm" ki_fp_filters="LQFP*20x20mm*P0.5mm*" extends_flattened=ok
+ANSWER S1 symbol Sensor_Temperature:TMP117xxDRV (TMP117xxDRV): pins=6 Footprint="Package_SON:WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm" ki_fp_filters="WSON*1EP?2x2mm?P0.65mm?EP1x1.6mm*" extends_flattened=ok
+ANSWER S1 symbol Sensor_Temperature:TMP117xxYBG (TMP117xxYBG): pins=6 Footprint="Package_BGA:Texas_DSBGA-6_0.95x1.488mm_Layout2x3_P0.4mm" ki_fp_filters="Texas?DSBGA?6?0.95x1.488mm?Layout2x3?P0.4mm*" extends_flattened=ok
+ANSWER S1 symbol Memory_Flash:W25Q128JVE (W25Q128JVE): pins=9 Footprint="Package_SON:WSON-8-1EP_8x6mm_P1.27mm_EP3.4x4.3mm" ki_fp_filters="WSON*1EP*8x6mm*P1.27mm*" extends_flattened=ok
+ANSWER S1 symbol Memory_Flash:W25Q128JVP (W25Q128JVP): pins=9 Footprint="Package_SON:WSON-8-1EP_6x5mm_P1.27mm_EP3.4x4.3mm" ki_fp_filters="WSON*1EP*6x5mm*P1.27mm*EP3.4x4.3mm*" extends_flattened=ok
+ANSWER S1 symbol Memory_Flash:W25Q128JVS (W25Q128JVS): pins=8 Footprint="Package_SO:SOIC-8_5.3x5.3mm_P1.27mm" ki_fp_filters="*SOIC*5.3x5.3mm*P1.27mm*" extends_flattened=ok
+ANSWER S1 symbol Memory_Flash:W25Q16JVSS (W25Q16JVSS): pins=8 Footprint="Package_SO:SOIC-8_5.3x5.3mm_P1.27mm" ki_fp_filters="*SOIC*5.3x5.3mm*P1.27mm*" extends_flattened=ok
+ANSWER S1 symbol Memory_Flash:W25Q32JVSS (W25Q32JVSS): pins=8 Footprint="Package_SO:SOIC-8_5.3x5.3mm_P1.27mm" ki_fp_filters="*SOIC*5.3x5.3mm*P1.27mm*" extends_flattened=ok
+ANSWER S1 symbol Memory_Flash:W25Q32JVZP (W25Q32JVZP): pins=9 Footprint="Package_SON:WSON-8-1EP_6x5mm_P1.27mm_EP3.4x4.3mm" ki_fp_filters="WSON*1EP*6x5mm*P1.27mm*" extends_flattened=ok
+ANSWER S1 symbol matching W25Q64: NONE
+ANSWER S1 footprints Package_QFP:LQFP-144*: LQFP-144-1EP_20x20mm_P0.5mm_EP6.5x6.5mm, LQFP-144-1EP_20x20mm_P0.5mm_EP6.5x6.5mm_ThermalVias, LQFP-144_20x20mm_P0.5mm
+ANSWER S1 footprints Resistor_SMD:R_0402_*: R_0402_1005Metric, R_0402_1005Metric_Pad0.72x0.64mm_HandSolder
+ANSWER S1 footprints Resistor_SMD:R_0603_*: R_0603_1608Metric, R_0603_1608Metric_Pad0.98x0.95mm_HandSolder
+ANSWER S1 footprints Capacitor_SMD:C_0402_*: C_0402_1005Metric, C_0402_1005Metric_Pad0.74x0.62mm_HandSolder
+ANSWER S1 footprints Capacitor_SMD:C_0603_*: C_0603_1608Metric, C_0603_1608Metric_Pad1.08x0.95mm_HandSolder
+ANSWER S1 footprints Package_LGA:Bosch_LGA-8*: Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering, Bosch_LGA-8_2x2.5mm_P0.65mm_ClockwisePinNumbering, Bosch_LGA-8_3x3mm_P0.8mm_ClockwisePinNumbering
+ANSWER S1 footprints Package_SON:WSON-6*: WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm, WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm_ThermalVias, WSON-6-1EP_3x3mm_P0.95mm, WSON-6_1.5x1.5mm_P0.5mm
+ANSWER S1 Sensor:BME280 names footprint Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering: exists=true
+ANSWER S1 MCU_ST_STM32H7:STM32H743ZITx names footprint Package_QFP:LQFP-144_20x20mm_P0.5mm: exists=true
+ANSWER S1 MCU_ST_STM32H7:STM32H753ZITx names footprint Package_QFP:LQFP-144_20x20mm_P0.5mm: exists=true
+ANSWER S1 Sensor_Temperature:TMP117xxDRV names footprint Package_SON:WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm: exists=true
+ANSWER S1 Sensor_Temperature:TMP117xxYBG names footprint Package_BGA:Texas_DSBGA-6_0.95x1.488mm_Layout2x3_P0.4mm: exists=true
+ANSWER S1 Memory_Flash:W25Q128JVE names footprint Package_SON:WSON-8-1EP_8x6mm_P1.27mm_EP3.4x4.3mm: exists=true
+ANSWER S1 Memory_Flash:W25Q128JVP names footprint Package_SON:WSON-8-1EP_6x5mm_P1.27mm_EP3.4x4.3mm: exists=true
+ANSWER S1 Memory_Flash:W25Q128JVS names footprint Package_SO:SOIC-8_5.3x5.3mm_P1.27mm: exists=true
+ANSWER S1 Memory_Flash:W25Q16JVSS names footprint Package_SO:SOIC-8_5.3x5.3mm_P1.27mm: exists=true
+ANSWER S1 Memory_Flash:W25Q32JVSS names footprint Package_SO:SOIC-8_5.3x5.3mm_P1.27mm: exists=true
+ANSWER S1 Memory_Flash:W25Q32JVZP names footprint Package_SON:WSON-8-1EP_6x5mm_P1.27mm_EP3.4x4.3mm: exists=true
+ANSWER S1 licence file /usr/share/kicad/demos/stickhub/LICENSE.md: 21092 bytes sha256 9962b75e57113a5df84ba397cec20b8d937a6d5e86dc407471f505ac5a064d88
+ANSWER S1   (a demo project's licence, not the libraries'): # License
+ANSWER S1 licence file /usr/share/kicad/demos/cm5_minima/LICENSE.txt: 13419 bytes sha256 253ad3f89603e728abfa60c36fbcaf8225cf55c1eab12725f19fb3d74d647f3a
+ANSWER S1   (a demo project's licence, not the libraries'): CERN Open Hardware Licence Version 2 - Strongly Reciprocal
+ANSWER S1 licence file /usr/share/kicad/demos/tiny_tapeout/LICENSE.txt: 10174 bytes sha256 0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594
+ANSWER S1   (a demo project's licence, not the libraries'): 
+ANSWER S1 licence file /usr/share/kicad/demos/royalblue54L_feather/LICENSE: 8852 bytes sha256 6e471d647db50527d0c75ee5f1a55a74012ab177c73282bef0bdc7f6562b7ded
+ANSWER S1   (a demo project's licence, not the libraries'): CERN Open Hardware Licence Version 2 - Permissive
+ANSWER S1 licence file /usr/share/kicad/demos/jetson-agx-thor-baseboard/LICENSE: 11358 bytes sha256 c95bae1d1ce0235ecccd3560b772ec1efb97f348a79f0fbe0a634f0c2ccefe2c
+ANSWER S1   (a demo project's licence, not the libraries'): Apache License
+ANSWER S1 licence file /usr/share/kicad/demos/openair-max/LICENSE.txt: 20138 bytes sha256 28a9529c7d0bb4dc51f4bf5c116a3d16ef247a052f7591466768ddf563fd1cf5
+ANSWER S1   (a demo project's licence, not the libraries'): Attribution-ShareAlike 4.0 International
+ANSWER S1 library file /usr/share/kicad/symbols/Device.kicad_sym: sha256 d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d
+ANSWER S1 library file /usr/share/kicad/symbols/power.kicad_sym: sha256 dfd086b4029e347d7a0041744b684ba8dda351ba8d8f7838cc0cbaeb06c87b54
+ANSWER S1 library file /usr/share/kicad/symbols/Sensor.kicad_sym: sha256 38a3525933a1e648557dc9e4ccd218da96cc21954bb73629caed030fc179c7eb
+ANSWER S1 library file /usr/share/kicad/symbols/MCU_ST_STM32H7.kicad_sym: sha256 6f095b497a944f57015012ea26e0da0259957673919c15471d024330e9bbc249
+ANSWER S1 probe time 8185 ms
+ANSWER S2 MCU_ST_STM32H7:STM32H753ZITx: 144 pins at 136 points, hidden 8, by type {"bidirectional": 114, "input": 4, "passive": 8, "power_in": 16, "power_out": 2}
+ANSWER S2 naive: emitted 167502 bytes sha256 69f80dd67c5c87b49269e87721efb817d874dcc9662d38eb0959df983d38a60e (0 no_connect); second emission (inputs reversed) identical=true
+ANSWER S2 naive: kicad-cli sch erc exit 5, 583 ms, findings 163 [footprint_link_issuesx7(warning), lib_symbol_issuesx39(warning), pin_not_connectedx113(error), pin_not_drivenx1(error), pin_to_pinx1(error), power_pin_not_drivenx2(error)]
+ANSWER S2 naive:   e.g. power_pin_not_driven error: Input Power pin not driven by any Output Power pins ["Symbol #PWR002 Pin 1 [Power input, Line]"]
+ANSWER S2 naive:   e.g. power_pin_not_driven error: Input Power pin not driven by any Output Power pins ["Symbol #PWR001 Pin 1 [Power input, Line]"]
+ANSWER S2 naive:   e.g. pin_not_connected error: Pin not connected ["Symbol U1 Pin 25 [NRST, Input, Line]"]
+ANSWER S2 naive:   e.g. pin_not_driven error: Input pin not driven by any Output pins ["Symbol U1 Pin 25 [NRST, Input, Line]"]
+ANSWER S2 naive:   e.g. pin_not_connected error: Pin not connected ["Symbol U1 Pin 23 [PH0, Bidirectional, Line]"]
+ANSWER S2 naive:   e.g. pin_to_pin error: Pins of type Power output and Power output are connected ["Symbol U1 Pin 71 [VCAP, Power output, Line]", "Symbol U1 Pin 106 [VCAP, Power output, Line]"]
+ANSWER S2 naive:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR006 [+3V3]"]
+ANSWER S2 naive:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Symbol R1 [R]"]
+ANSWER S2 naive:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'Device' ["Symbol R1 [R]"]
+ANSWER S2 naive:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Package_LGA' ["Symbol U2 [BME280]"]
+ANSWER S2 naive: finding item uuids present in the emitted file: 164 of 164
+ANSWER S2 naive: aethelgard check erc exit 1: ok=false verdict="fail" exit_code=5 findings={"footprint_link_issues": 7, "lib_symbol_issues": 39, "pin_not_connected": 113, "pin_not_driven": 1, "pin_to_pin": 1, "power_pin_not_driven": 2}
+ANSWER S2 nc: emitted 177082 bytes sha256 b6d51c29cb6716829591b972b2a6ccb180fa3b5b16ab304e5aa48c52625ded9f (113 no_connect); second emission (inputs reversed) identical=true
+ANSWER S2 nc: kicad-cli sch erc exit 5, 402 ms, findings 49 [footprint_link_issuesx7(warning), lib_symbol_issuesx39(warning), pin_to_pinx1(error), power_pin_not_drivenx2(error)]
+ANSWER S2 nc:   e.g. power_pin_not_driven error: Input Power pin not driven by any Output Power pins ["Symbol #PWR002 Pin 1 [Power input, Line]"]
+ANSWER S2 nc:   e.g. power_pin_not_driven error: Input Power pin not driven by any Output Power pins ["Symbol #PWR001 Pin 1 [Power input, Line]"]
+ANSWER S2 nc:   e.g. pin_to_pin error: Pins of type Power output and Power output are connected ["Symbol U1 Pin 71 [VCAP, Power output, Line]", "Symbol U1 Pin 106 [VCAP, Power output, Line]"]
+ANSWER S2 nc:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR006 [+3V3]"]
+ANSWER S2 nc:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Symbol R1 [R]"]
+ANSWER S2 nc:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'Device' ["Symbol R1 [R]"]
+ANSWER S2 nc:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Package_LGA' ["Symbol U2 [BME280]"]
+ANSWER S2 nc: finding item uuids present in the emitted file: 50 of 50
+ANSWER S2 flags: emitted 174096 bytes sha256 17ab2507fd472780ca18fa5ff6df80d1eedc2416c349ac22c6e1468b90cf8698 (0 no_connect); second emission (inputs reversed) identical=true
+ANSWER S2 flags: kicad-cli sch erc exit 5, 402 ms, findings 166 [footprint_link_issuesx7(warning), lib_symbol_issuesx43(warning), pin_not_connectedx113(error), pin_not_drivenx1(error), pin_to_pinx1(error), pin_to_pinx1(warning)]
+ANSWER S2 flags:   e.g. pin_not_connected error: Pin not connected ["Symbol U1 Pin 25 [NRST, Input, Line]"]
+ANSWER S2 flags:   e.g. pin_not_driven error: Input pin not driven by any Output pins ["Symbol U1 Pin 25 [NRST, Input, Line]"]
+ANSWER S2 flags:   e.g. pin_not_connected error: Pin not connected ["Symbol U1 Pin 23 [PH0, Bidirectional, Line]"]
+ANSWER S2 flags:   e.g. pin_to_pin error: Pins of type Power output and Power output are connected ["Symbol U1 Pin 71 [VCAP, Power output, Line]", "Symbol U1 Pin 106 [VCAP, Power output, Line]"]
+ANSWER S2 flags:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #FLG001 [PWR_FLAG]"]
+ANSWER S2 flags:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR033 [+3V3]"]
+ANSWER S2 flags:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Symbol R1 [R]"]
+ANSWER S2 flags:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Package_LGA' ["Symbol U2 [BME280]"]
+ANSWER S2 flags:   e.g. pin_to_pin warning: Pins of type Bidirectional and Power output are connected ["Symbol U2 Pin 5 [SDO, Bidirectional, Line]", "Symbol #FLG002 Pin 1 [Power output, Line]"]
+ANSWER S2 flags: finding item uuids present in the emitted file: 168 of 168
+ANSWER S2 nc+flags: emitted 183676 bytes sha256 bd504d7811d522f3879d4ce973f68b2f0819627bb2c0559ec7e03d6f3e0a9031 (113 no_connect); second emission (inputs reversed) identical=true
+ANSWER S2 nc+flags: kicad-cli sch erc exit 5, 402 ms, findings 52 [footprint_link_issuesx7(warning), lib_symbol_issuesx43(warning), pin_to_pinx1(error), pin_to_pinx1(warning)]
+ANSWER S2 nc+flags:   e.g. pin_to_pin error: Pins of type Power output and Power output are connected ["Symbol U1 Pin 71 [VCAP, Power output, Line]", "Symbol U1 Pin 106 [VCAP, Power output, Line]"]
+ANSWER S2 nc+flags:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #FLG001 [PWR_FLAG]"]
+ANSWER S2 nc+flags:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR033 [+3V3]"]
+ANSWER S2 nc+flags:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Symbol R1 [R]"]
+ANSWER S2 nc+flags:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Package_LGA' ["Symbol U2 [BME280]"]
+ANSWER S2 nc+flags:   e.g. pin_to_pin warning: Pins of type Bidirectional and Power output are connected ["Symbol U2 Pin 5 [SDO, Bidirectional, Line]", "Symbol #FLG002 Pin 1 [Power output, Line]"]
+ANSWER S2 nc+flags: finding item uuids present in the emitted file: 54 of 54
+ANSWER S2 nc+flags: aethelgard check erc exit 1: ok=false verdict="fail" exit_code=5 findings={"footprint_link_issues": 7, "lib_symbol_issues": 43, "pin_to_pin": 2}
+ANSWER S2 nc+flags+vcap: emitted 185209 bytes sha256 d5948b37c834ba6fff0bd1740dacee3ff05b64bb087cf08b93844563a7836b4d (113 no_connect); second emission (inputs reversed) identical=true
+ANSWER S2 nc+flags+vcap: kicad-cli sch erc exit 5, 422 ms, findings 54 [footprint_link_issuesx7(warning), lib_symbol_issuesx44(warning), pin_to_pinx2(error), pin_to_pinx1(warning)]
+ANSWER S2 nc+flags+vcap:   e.g. pin_to_pin error: Pins of type Power output and Power output are connected ["Symbol #FLG100 Pin 1 [Power output, Line]", "Symbol U1 Pin 71 [VCAP, Power output, Line]"]
+ANSWER S2 nc+flags+vcap:   e.g. pin_to_pin error: Pins of type Power output and Power output are connected ["Symbol U1 Pin 71 [VCAP, Power output, Line]", "Symbol U1 Pin 106 [VCAP, Power output, Line]"]
+ANSWER S2 nc+flags+vcap:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #FLG001 [PWR_FLAG]"]
+ANSWER S2 nc+flags+vcap:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR033 [+3V3]"]
+ANSWER S2 nc+flags+vcap:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Symbol R1 [R]"]
+ANSWER S2 nc+flags+vcap:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Package_LGA' ["Symbol U2 [BME280]"]
+ANSWER S2 nc+flags+vcap: finding item uuids present in the emitted file: 57 of 57
+ANSWER S2 nc+flags+vcap: aethelgard check erc exit 1: ok=false verdict="fail" exit_code=5 findings={"footprint_link_issues": 7, "lib_symbol_issues": 44, "pin_to_pin": 3}
+ANSWER S2 netlist: 118 nets (5 named, the rest unconnected-*): ["/I2C_SCL(3)", "/I2C_SDA(3)", "/VCAP(3)", "GND(17)", "VDD_3V3(23)"]; components ["C1", "C2", "C3", "R1", "R2", "U1", "U2"]
+ANSWER S2 kicad-cli sch subcommands: Usage: kicad-cli sch [--help] {erc,export,upgrade} / Schematics / Optional arguments: / -h, --help  Shows help message and exits / Subcommands: / erc        Runs the Electrical Rules Check (ERC) on the schematic and creates a report / export     Export utilities (netlist, pdf, bom, etc) / upgrade    Upgrade the schematic file's format to the latest one
+ANSWER S2 kicad-cli sch upgrade exit 0: 185209 -> 197969 bytes, (version 20260306), identical=false, our uuids kept 409 of 409; stderr 
+ANSWER S2 fixed: VCAP pins ["106", "71"] on VCAP1/VCAP2 with C3/C4; SDO to GND through R3
+ANSWER S2 fixed: VCAP pins ["106", "71"] on VCAP1/VCAP2 with C3/C4; SDO to GND through R3
+ANSWER S2 fixed: emitted 188794 bytes sha256 90c9789a1fadcc161fc0c01ab4e369aae14e96bebaa215e8a8c933a80acbf6a0 (113 no_connect); second emission (inputs reversed) identical=true
+ANSWER S2 fixed: kicad-cli sch erc exit 5, 402 ms, findings 55 [footprint_link_issuesx9(warning), lib_symbol_issuesx46(warning)]
+ANSWER S2 fixed:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #FLG001 [PWR_FLAG]"]
+ANSWER S2 fixed:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR034 [+3V3]"]
+ANSWER S2 fixed:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Symbol R1 [R]"]
+ANSWER S2 fixed:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Package_LGA' ["Symbol U2 [BME280]"]
+ANSWER S2 fixed: finding item uuids present in the emitted file: 55 of 55
+ANSWER S2 fixed: aethelgard check erc exit 1: ok=false verdict="fail" exit_code=5 findings={"footprint_link_issues": 9, "lib_symbol_issues": 46}
+ANSWER S2 netlist: 120 nets (7 named, the rest unconnected-*): ["/I2C_SCL(3)", "/I2C_SDA(3)", "/SDO(2)", "/VCAP1(2)", "/VCAP2(2)", "GND(18)", "VDD_3V3(23)"]; components ["C1", "C2", "C3", "C4", "R1", "R2", "R3", "U1", "U2"]
+ANSWER S2 fixed [Bare]: kicad-cli sch erc exit 5, findings 55 [footprint_link_issuesx9(warning), lib_symbol_issuesx46(warning)]
+ANSWER S2 fixed [Bare]:   lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #FLG001 [PWR_FLAG]"]
+ANSWER S2 fixed [Bare]:   lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR034 [+3V3]"]
+ANSWER S2 fixed [Bare]:   lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR035 [GND]"]
+ANSWER S2 fixed [Tables]: kicad-cli sch erc exit 5, findings 55 [footprint_link_issuesx9(warning), lib_symbol_issuesx46(warning)]
+ANSWER S2 fixed [Tables]:   lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #FLG001 [PWR_FLAG]"]
+ANSWER S2 fixed [Tables]:   lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR034 [+3V3]"]
+ANSWER S2 fixed [Tables]:   lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR035 [GND]"]
+ANSWER S2 fixed [TablesPro]: kicad-cli sch erc exit 0, findings 0 []
+ANSWER S2 fixed [Severities]: kicad-cli sch erc exit 0, findings 0 []
+ANSWER S2 fixed [ConfigHome]: kicad-cli sch erc exit 0, findings 0 []
+ANSWER S2 fixed: VCAP pins ["106", "71"] on VCAP1/VCAP2 with C3/C4; SDO to GND through R3
+ANSWER S2 fixed: VCAP pins ["106", "71"] on VCAP1/VCAP2 with C3/C4; SDO to GND through R3
+ANSWER S2 fixed@20260306: emitted 188794 bytes sha256 2a53e8787bf3a46cf4f0feae05b713a337c727fd60e200f81e7e9e86eadabe10 (113 no_connect); second emission (inputs reversed) identical=true
+ANSWER S2 fixed@20260306: kicad-cli sch erc exit 5, 402 ms, findings 55 [footprint_link_issuesx9(warning), lib_symbol_issuesx46(warning)]
+ANSWER S2 fixed@20260306:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #FLG001 [PWR_FLAG]"]
+ANSWER S2 fixed@20260306:   e.g. lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR034 [+3V3]"]
+ANSWER S2 fixed@20260306:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Symbol R1 [R]"]
+ANSWER S2 fixed@20260306:   e.g. footprint_link_issues warning: The current configuration does not include the footprint library 'Package_LGA' ["Symbol U2 [BME280]"]
+ANSWER S2 fixed@20260306: finding item uuids present in the emitted file: 55 of 55
+ANSWER S2 fixed@20260306 [Bare]: kicad-cli sch erc exit 5, findings 55 [footprint_link_issuesx9(warning), lib_symbol_issuesx46(warning)]
+ANSWER S2 fixed@20260306 [Bare]:   lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #FLG001 [PWR_FLAG]"]
+ANSWER S2 fixed@20260306 [Bare]:   lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR034 [+3V3]"]
+ANSWER S2 fixed@20260306 [Bare]:   lib_symbol_issues warning: The current configuration does not include the symbol library 'power' ["Symbol #PWR035 [GND]"]
+ANSWER S2 fixed@20260306 [ConfigHome]: kicad-cli sch erc exit 0, findings 0 []
+ANSWER S2 demo schematics in the image: 115
+ANSWER S2 demo /usr/share/kicad/demos/cm5_minima/CM5.kicad_sch header: (kicad_sch (version 20250610) (generator "eeschema") (generator_version "9.99") (uuid "1b112ac5-701b-420f-be34-0e29a2cb55ca") (paper "A3")
+ANSWER S2 probe time 19060 ms
+ANSWER S3 board emitted twice identical=true; gap 0.1 mm between NET_A and NET_B; board's own rules 0.05 mm, specification 0.2 mm
+ANSWER S3 base-plain-setup-no-sidecars: exit 5, clearance violations 1, all 3 [clearancex1(error), track_danglingx2(warning)]
+ANSWER S3 base-plain-setup-no-sidecars:   Clearance violation ( clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 base-loose-setup-no-sidecars: exit 5, clearance violations 1, all 3 [clearancex1(error), track_danglingx2(warning)]
+ANSWER S3 base-loose-setup-no-sidecars:   Clearance violation ( clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 base-spec-setup-no-sidecars: exit 5, clearance violations 1, all 3 [clearancex1(error), track_danglingx2(warning)]
+ANSWER S3 base-spec-setup-no-sidecars:   Clearance violation ( clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 base-plain-setup-loose-pro: exit 5, clearance violations 0, all 2 [track_danglingx2(warning)]
+ANSWER S3 base-plain-setup-loose-dru: exit 5, clearance violations 0, all 2 [track_danglingx2(warning)]
+ANSWER S3 gate_setup_0_pro_0_dru_0_: exit 5, clearance violations 0, all 2 [track_danglingx2(warning)]
+ANSWER S3 gate_setup_1_pro_0_dru_0_: exit 5, clearance violations 0, all 2 [track_danglingx2(warning)]
+ANSWER S3 gate_setup_0_pro_1_dru_0_: exit 5, clearance violations 0, all 2 [track_danglingx2(warning)]
+ANSWER S3 gate_setup_1_pro_1_dru_0_: exit 5, clearance violations 0, all 2 [track_danglingx2(warning)]
+ANSWER S3 gate_setup_0_pro_0_dru_1_: exit 5, clearance violations 1, all 3 [clearancex1(error), track_danglingx2(warning)]
+ANSWER S3 gate_setup_0_pro_0_dru_1_:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 gate_setup_1_pro_0_dru_1_: exit 5, clearance violations 1, all 3 [clearancex1(error), track_danglingx2(warning)]
+ANSWER S3 gate_setup_1_pro_0_dru_1_:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 gate_setup_0_pro_1_dru_1_: exit 5, clearance violations 1, all 3 [clearancex1(error), track_danglingx2(warning)]
+ANSWER S3 gate_setup_0_pro_1_dru_1_:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 gate_setup_1_pro_1_dru_1_: exit 5, clearance violations 1, all 3 [clearancex1(error), track_danglingx2(warning)]
+ANSWER S3 gate_setup_1_pro_1_dru_1_:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 aethelgard check drc on the loose board with its own .kicad_pro and .kicad_dru beside it: exit 1: ok=false verdict="fail" exit_code=5 findings={"clearance": 1, "track_dangling": 2}
+ANSWER S3 fp-pad-default-gate-pro+dru: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 fp-pad-default-gate-pro+dru:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 fp-pad-local-0.05-gate-pro+dru: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 fp-pad-local-0.05-gate-pro+dru:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 fp-pad-local-0.05-gate-dru-only: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 fp-pad-local-0.05-gate-dru-only:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 fp-pad-local-0.05-gate-pro-only: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 fp-pad-local-0.05-gate-pro-only:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 fp-footprint-local-0.05-gate-pro+dru: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 fp-footprint-local-0.05-gate-pro+dru:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 fp-footprint-local-0.05-gate-dru-only: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 fp-footprint-local-0.05-gate-dru-only:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 fp-footprint-local-0.05-gate-pro-only: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 fp-footprint-local-0.05-gate-pro-only:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 round3: template /usr/share/kicad/demos/cm5_minima/CM5_MINIMA_3.kicad_pro: top keys ["board", "boards", "component_class_settings", "cvpcb", "erc", "libraries", "meta", "net_settings", "pcbnew", "schematic", "sheets", "text_variables", "time_domain_parameters"]; meta {"filename":"CM5_MINIMA_3.kicad_pro","version":3}; board.design_settings keys ["defaults", "diff_pair_dimensions", "drc_exclusions", "meta", "rule_severities", "rules", "teardrop_options", "teardrop_parameters", "track_widths", "tuning_pattern_settings", "via_dimensions", "zones_allow_external_fillets"]; design_settings.meta {"version":2}; rules.min_clearance 0.0; rule_severities has 58 keys; net_settings.meta {"version":5}
+ANSWER S3 r3-read-fmtA-round1: exit 5, clearance violations 1, all 1 [clearancex1(error)]
+ANSWER S3 r3-read-fmtA-round1:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-read-fmtB-no-meta: exit 5, clearance violations 1, all 1 [clearancex1(error)]
+ANSWER S3 r3-read-fmtB-no-meta:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-read-fmtD-demo: exit 5, clearance violations 1, all 1 [clearancex1(error)]
+ANSWER S3 r3-read-fmtD-demo:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-pad-local-fmtD-setup_spec-pro_gate-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-pad-local-fmtD-setup_spec-pro_gate-dru_gate:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-pad-local-fmtD-setup_loose-pro_gate-dru_gate: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-pad-local-fmtD-setup_plain-pro_gate-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-pad-local-fmtD-setup_plain-pro_gate-dru_gate:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-pad-local-fmtD-setup_spec-pro_own-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-pad-local-fmtD-setup_spec-pro_own-dru_gate:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-pad-local-fmtD-setup_spec-pro_gate-dru_own: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-pad-local-fmtD-setup_spec-pro_gate-dru_own:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-pad-local-fmtD-setup_loose-pro_own-dru_gate: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-pad-local-fmtD-setup_loose-pro_own-dru_own: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-pad-local-fmtA-setup_spec-pro_gate-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-pad-local-fmtA-setup_spec-pro_gate-dru_gate:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-pad-local-fmtA-setup_loose-pro_gate-dru_gate: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-pad-local-fmtA-setup_plain-pro_gate-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-pad-local-fmtA-setup_plain-pro_gate-dru_gate:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-pad-local-fmtA-setup_spec-pro_own-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-pad-local-fmtA-setup_spec-pro_own-dru_gate:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-pad-local-fmtA-setup_spec-pro_gate-dru_own: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-pad-local-fmtA-setup_spec-pro_gate-dru_own:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-pad-local-fmtA-setup_loose-pro_own-dru_gate: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-pad-local-fmtA-setup_loose-pro_own-dru_own: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-fp-local-fmtD-setup_spec-pro_gate-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-fp-local-fmtD-setup_spec-pro_gate-dru_gate:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-fp-local-fmtD-setup_loose-pro_gate-dru_gate: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-fp-local-fmtD-setup_plain-pro_gate-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-fp-local-fmtD-setup_plain-pro_gate-dru_gate:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-fp-local-fmtD-setup_spec-pro_own-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-fp-local-fmtD-setup_spec-pro_own-dru_gate:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-fp-local-fmtD-setup_spec-pro_gate-dru_own: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-fp-local-fmtD-setup_spec-pro_gate-dru_own:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-fp-local-fmtD-setup_loose-pro_own-dru_gate: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-fp-local-fmtD-setup_loose-pro_own-dru_own: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-fp-local-fmtA-setup_spec-pro_gate-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-fp-local-fmtA-setup_spec-pro_gate-dru_gate:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-fp-local-fmtA-setup_loose-pro_gate-dru_gate: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-fp-local-fmtA-setup_plain-pro_gate-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-fp-local-fmtA-setup_plain-pro_gate-dru_gate:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-fp-local-fmtA-setup_spec-pro_own-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-fp-local-fmtA-setup_spec-pro_own-dru_gate:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-fp-local-fmtA-setup_spec-pro_gate-dru_own: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-fp-local-fmtA-setup_spec-pro_gate-dru_own:   Clearance violation (board minimum clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-fp-local-fmtA-setup_loose-pro_own-dru_gate: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-fp-local-fmtA-setup_loose-pro_own-dru_own: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-none-fmtD-setup_spec-pro_gate-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-none-fmtD-setup_spec-pro_gate-dru_gate:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-none-fmtD-setup_loose-pro_gate-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-none-fmtD-setup_loose-pro_gate-dru_gate:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-none-fmtD-setup_plain-pro_gate-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-none-fmtD-setup_plain-pro_gate-dru_gate:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-none-fmtD-setup_spec-pro_own-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-none-fmtD-setup_spec-pro_own-dru_gate:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-none-fmtD-setup_spec-pro_gate-dru_own: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-none-fmtD-setup_loose-pro_own-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-none-fmtD-setup_loose-pro_own-dru_gate:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-none-fmtD-setup_loose-pro_own-dru_own: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-none-fmtA-setup_spec-pro_gate-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-none-fmtA-setup_spec-pro_gate-dru_gate:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-none-fmtA-setup_loose-pro_gate-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-none-fmtA-setup_loose-pro_gate-dru_gate:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-none-fmtA-setup_plain-pro_gate-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-none-fmtA-setup_plain-pro_gate-dru_gate:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-none-fmtA-setup_spec-pro_own-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-none-fmtA-setup_spec-pro_own-dru_gate:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-none-fmtA-setup_spec-pro_gate-dru_own: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-none-fmtA-setup_loose-pro_own-dru_gate: exit 5, clearance violations 1, all 4 [clearancex1(error), lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 r3-none-fmtA-setup_loose-pro_own-dru_gate:   Clearance violation (rule 'gate_spec_clearance' clearance 0.2000 mm; actual 0.1000 mm)
+ANSWER S3 r3-none-fmtA-setup_loose-pro_own-dru_own: exit 5, clearance violations 0, all 3 [lib_footprint_issuesx1(warning), track_danglingx1(warning), unconnected_itemsx1(error)]
+ANSWER S3 probe time 44151 ms
+ANSWER S4 `kicad-cli --help` exit 0: Usage: kicad-cli [--version] [--help] {fp,jobset,pcb,sch,sym,version} / Optional arguments: / -v, --version  prints version information and exits / -h, --help     Shows help message and exits / Subcommands: / fp            Footprint and Footprint Libraries / jobset        Jobset / pcb           PCB / sch           Schematics / sym           Symbol and Symbol Libraries / version       Reports the version info in various formats
+ANSWER S4 `kicad-cli pcb --help` exit 0: Usage: kicad-cli pcb [--help] {drc,export,import,render,upgrade} / PCB / Optional arguments: / -h, --help  Shows help message and exits / Subcommands: / drc        Runs the Design Rules Check (DRC) on the PCB and creates a report / export     Export utilities (Gerbers, drill, position files, etc) / import     Import a non-KiCad PCB file to KiCad format / render     Renders the PCB in 3D view to PNG or JPEG image / upgrade    Upgrade the board file's format to the latest one
+ANSWER S4 `kicad-cli pcb export --help` exit 0: Usage: pcb export [--help] {3dpdf,brep,drill,dxf,gencad,gerbers,glb,hpgl,ipc2581,ipcd356,odb,pdf,ply,pos,ps,stats,step,stl,stpz,svg,u3d,vrml,xao} / Export utilities (Gerbers, drill, position files, etc) / Optional arguments: / -h, --help  Shows help message and exits / Subcommands: / 3dpdf      Export PDF / brep       Export BREP / drill      Generate Drill Files / dxf        Generate a DXF from a list of layers / gencad     Export the PCB in Gencad format / gerbers    Plot multiple Gerbers for a PCB, including the ability to use stored board plot settings / glb        Export GLB (binary GLTF) / hpgl       No longer supported as of KiCad 10.0. / ipc2581    Export the PCB in IPC-2581 format / ipcd356    Generate IPC-D-356 netlist file / odb        Export the PCB in ODB++ format / pdf        Generate PDF from a list of layers / ply        Export PLY / pos        Generate Position File / ps         Generate Postscript from a list of layers / stats      Generate a board statistics report / step       Export STEP / stl        Export STL / stpz       Export STEPZ / svg        Generate SVG outputs of a given layer list / u3d        Export U3D / vrml       Export VRML / xao        Export XAO
+ANSWER S4 `kicad-cli pcb drc --help` exit 0: Usage: pcb drc [--help] [--output OUTPUT_FILE] [--define-var KEY=VALUE]... [--format FORMAT] [--all-track-errors] [--schematic-parity] [--units UNITS] [--severity-all] [--severity-error] [--severity-warning] [--severity-exclusions] [--exit-code-violations] [--refill-zones] [--save-board] INPUT_FILE / Runs the Design Rules Check (DRC) on the PCB and creates a report / Positional arguments: / INPUT_FILE              Input file / Optional arguments: / -h, --help              Shows help message and exits / -o, --output            Output file [nargs=0..1] [default: ""] / -D, --define-var        Overrides or adds project variables, can be used multiple times to declare multiple variables. / Use in the format of '--define-var key=value' or '-D key=value' [nargs=0..1] [default: {}] [may be repeated] / --format                Output file format, options: json, report [nargs=0..1] [default: "report"] / --all-track-errors      Report all errors for each track / --schematic-parity      Test for parity between PCB and schematic / --units                 Report units; valid options: in, mm, mils [nargs=0..1] [default: "mm"] / --severity-all          Report all DRC violations, this is equivalent to including all the other severity arguments / --severity-error        Report all DRC error level violations, this can be combined with the other severity arguments / --severity-warning      Report all DRC warning level violations, this can be combined with the other severity arguments / --severity-exclusions   Report all excluded DRC violations, this can be combined with the other severity arguments / --exit-code-violations  Return a nonzero exit code if DRC violations exist / --refill-zones          Refill zones before running DRC / --save-board            Save the board after DRC, must be used with --refill-zones
+ANSWER S4 `kicad-cli pcb import --help` exit 0: Usage: pcb import [--help] [--output OUTPUT_FILE] [--format FORMAT] [--report-format FORMAT] [--report-file FILE] INPUT_FILE / Import a non-KiCad PCB file to KiCad format / Positional arguments: / INPUT_FILE       Input file / Optional arguments: / -h, --help       Shows help message and exits / -o, --output     Output file [nargs=0..1] [default: ""] / --format         Input format hint: auto, pads, altium, eagle, cadstar, fabmaster, pcad, solidworks (default: auto) [nargs=0..1] [default: "auto"] / --report-format  Import report format: none, json, text (default: none) [nargs=0..1] [default: "none"] / --report-file    File path for import report (default: stdout) [nargs=0..1] [default: ""]
+ANSWER S4 lead 1: `dsn` in kicad-cli help=false, `specctra`=false, `ses`=false
+ANSWER S4 lead 3: pcb drc options mention refill=true, zone=true
+ANSWER S4 lead 2: pcbnew Python module files: ["/usr/lib/python3/dist-packages/pcbnew.py", "/usr/lib/python3/dist-packages/_pcbnew.so"] (not imported, RUL-12)
+ANSWER S4 lead 2: python3 on PATH: /usr/bin/python3
+ANSWER S4 lead 2: python on PATH: absent
+ANSWER S4 lead 2: java on PATH: absent
+ANSWER S4 lead 3: zone board emitted twice identical=true (no filled_polygon written)
+ANSWER S4 lead 3 [no flag]: exit 5, unconnected 1, findings 2 [lib_footprint_issuesx1(warning), unconnected_itemsx1(error)]; board file changed=false filled_polygon in file=false
+ANSWER S4 lead 3 [--refill-zones]: exit 5, unconnected 0, findings 1 [lib_footprint_issuesx1(warning)]; board file changed=false filled_polygon in file=false
+ANSWER S4 lead 3 [--refill-zones --save-board]: exit 5, unconnected 0, findings 1 [lib_footprint_issuesx1(warning)]; board file changed=true filled_polygon in file=true
+ANSWER S4 lead 3: two refills saved identical=false (sha256 99d5709774aa2fab / d5ce0dca9a0149ef)
+ANSWER S4 lead 3: 12 differing lines (of 299 / 299); first three: [(95, "(uuid \"2fc8c399-43c2-48b6-9eda-4928944f3235\")", "(uuid \"ec8fbda0-8d38-471e-bf6d-2685772a3099\")"), (106, "(uuid \"c52b3910-354a-46e5-89fa-bfbf80053246\")", "(uuid \"9981535a-2b78-4eb7-99f1-b82b8b76b464\")"), (118, "(uuid \"bfe75a45-0e51-44cb-bd0b-c4f2e776776f\")", "(uuid \"1cb5be67-cad3-423e-9004-fd97ec0fb63c\")")]
+ANSWER S4 parity: the schematic's nets as KiCad names them: ["/A", "/B"]
+ANSWER S4 parity: symbol fields the footprint lacks: [("Datasheet", ""), ("Description", "Resistor"), ("ki_keywords", "R res resistor"), ("ki_fp_filters", "R_*")]
+ANSWER S4 router: net /A: 5 segments, 0 vias, cost 124; net /B: 3 segments, 0 vias, cost 74; 8 segments, 0 vias; two emissions identical=true; nets "/A" "/B"
+ANSWER S4 router, F.Cu allowed only within 1.5 mm of each net's pads: net /A: 4 segments, 2 vias, cost 186; net /B: 6 segments, 2 vias, cost 168; 10 segments, 4 vias
+ANSWER S4 P0 matching: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 2 [footprint_symbol_field_mismatchx2(warning)]
+ANSWER S4 P0 matching:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R1"]
+ANSWER S4 P0 matching:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R2"]
+ANSWER S4 P0 matching:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R1"]
+ANSWER S4 P0 matching:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R2"]
+ANSWER S4 P1 board reference R9: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 3 [extra_footprintx1(warning), footprint_symbol_field_mismatchx1(warning), missing_footprintx1(warning)]
+ANSWER S4 P1 board reference R9:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R1"]
+ANSWER S4 P1 board reference R9:   missing_footprint warning: Missing footprint R2 (10k) []
+ANSWER S4 P1 board reference R9:   extra_footprint warning: Extra footprint ["Footprint R9"]
+ANSWER S4 P1 board reference R9:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R1"]
+ANSWER S4 P2 footprint lib id 0402 on 0603 copper: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 3 [footprint_symbol_field_mismatchx2(warning), footprint_symbol_mismatchx1(warning)]
+ANSWER S4 P2 footprint lib id 0402 on 0603 copper:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R1"]
+ANSWER S4 P2 footprint lib id 0402 on 0603 copper:   footprint_symbol_mismatch warning: Resistor_SMD:R_0402_1005Metric doesn't match footprint given by symbol (Resistor_SMD:R_0603_1608Metric) ["Footprint R2"]
+ANSWER S4 P2 footprint lib id 0402 on 0603 copper:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R2"]
+ANSWER S4 P2 footprint lib id 0402 on 0603 copper:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R1"]
+ANSWER S4 P3 board nets without the sheet prefix: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 6 [footprint_symbol_field_mismatchx2(warning), net_conflictx4(warning)]
+ANSWER S4 P3 board nets without the sheet prefix:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R1"]
+ANSWER S4 P3 board nets without the sheet prefix:   net_conflict warning: Pad net (A) doesn't match net given by schematic (/A) ["Pad 1 [A] of R1 on F.Cu"]
+ANSWER S4 P3 board nets without the sheet prefix:   net_conflict warning: Pad net (B) doesn't match net given by schematic (/B) ["Pad 2 [B] of R1 on F.Cu"]
+ANSWER S4 P3 board nets without the sheet prefix:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R2"]
+ANSWER S4 P4 R2 path names no symbol: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 2 [footprint_symbol_field_mismatchx2(warning)]
+ANSWER S4 P4 R2 path names no symbol:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R1"]
+ANSWER S4 P4 R2 path names no symbol:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R2"]
+ANSWER S4 P4 R2 path names no symbol:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R1"]
+ANSWER S4 P4 R2 path names no symbol:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R2"]
+ANSWER S4 P5 schematic R2 value 1k, board 10k: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 3 [footprint_symbol_field_mismatchx2(warning), footprint_symbol_mismatchx1(warning)]
+ANSWER S4 P5 schematic R2 value 1k, board 10k:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R1"]
+ANSWER S4 P5 schematic R2 value 1k, board 10k:   footprint_symbol_mismatch warning: Value (R2) doesn't match symbol value (10k) ["Footprint R2"]
+ANSWER S4 P5 schematic R2 value 1k, board 10k:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R2"]
+ANSWER S4 P5 schematic R2 value 1k, board 10k:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R1"]
+ANSWER S4 P6 no .kicad_pro beside the board: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 2 [footprint_symbol_field_mismatchx2(warning)]
+ANSWER S4 P6 no .kicad_pro beside the board:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R1"]
+ANSWER S4 P6 no .kicad_pro beside the board:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_keywords' in footprint ["Footprint R2"]
+ANSWER S4 P6 no .kicad_pro beside the board:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R1"]
+ANSWER S4 P6 no .kicad_pro beside the board:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R2"]
+ANSWER S4 P7 symbol fields copied to footprints: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 2 [footprint_symbol_field_mismatchx2(warning)]
+ANSWER S4 P7 symbol fields copied to footprints:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_fp_filters' in footprint ["Footprint R1"]
+ANSWER S4 P7 symbol fields copied to footprints:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_fp_filters' in footprint ["Footprint R2"]
+ANSWER S4 P7 symbol fields copied to footprints:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R1"]
+ANSWER S4 P7 symbol fields copied to footprints:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R2"]
+ANSWER S4 P8 fields + project fp-lib-table: exit 5, violations 0 [] (clearance 0), unconnected 0, parity 2 [footprint_symbol_field_mismatchx2(warning)]
+ANSWER S4 P8 fields + project fp-lib-table:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_fp_filters' in footprint ["Footprint R1"]
+ANSWER S4 P8 fields + project fp-lib-table:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_fp_filters' in footprint ["Footprint R2"]
+ANSWER S4 P9 fields + project severities: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 2 [footprint_symbol_field_mismatchx2(warning)]
+ANSWER S4 P9 fields + project severities:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_fp_filters' in footprint ["Footprint R1"]
+ANSWER S4 P9 fields + project severities:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_fp_filters' in footprint ["Footprint R2"]
+ANSWER S4 P9 fields + project severities:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R1"]
+ANSWER S4 P9 fields + project severities:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R2"]
+ANSWER S4 P12 fields + severities in the demo project's shape: exit 5, violations 2 [lib_footprint_issuesx2(warning)] (clearance 0), unconnected 0, parity 2 [footprint_symbol_field_mismatchx2(warning)]
+ANSWER S4 P12 fields + severities in the demo project's shape:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_fp_filters' in footprint ["Footprint R1"]
+ANSWER S4 P12 fields + severities in the demo project's shape:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_fp_filters' in footprint ["Footprint R2"]
+ANSWER S4 P12 fields + severities in the demo project's shape:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R1"]
+ANSWER S4 P12 fields + severities in the demo project's shape:   lib_footprint_issues warning: The current configuration does not include the footprint library 'Resistor_SMD' ["Footprint R2"]
+ANSWER S4 P10 fields + KICAD_CONFIG_HOME tables: exit 5, violations 0 [] (clearance 0), unconnected 0, parity 2 [footprint_symbol_field_mismatchx2(warning)]
+ANSWER S4 P10 fields + KICAD_CONFIG_HOME tables:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_fp_filters' in footprint ["Footprint R1"]
+ANSWER S4 P10 fields + KICAD_CONFIG_HOME tables:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_fp_filters' in footprint ["Footprint R2"]
+ANSWER S4 P11 forced vias, fields, KICAD_CONFIG_HOME: exit 5, violations 0 [] (clearance 0), unconnected 0, parity 2 [footprint_symbol_field_mismatchx2(warning)]
+ANSWER S4 P11 forced vias, fields, KICAD_CONFIG_HOME:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_fp_filters' in footprint ["Footprint R1"]
+ANSWER S4 P11 forced vias, fields, KICAD_CONFIG_HOME:   footprint_symbol_field_mismatch warning: Missing symbol field 'ki_fp_filters' in footprint ["Footprint R2"]
+ANSWER S4 probe time 24644 ms
+ANSWER S5 50 names x 6 classes emitted; our own reader re-parses the file: ok; identical on re-emission=true
+ANSWER S5 ERC exit 5, findings 341 [bus_to_net_conflictx3(error), label_danglingx86(error), lib_symbol_issuesx150(warning), pin_not_connectedx53(error), power_pin_not_drivenx46(error), unresolved_variablex3(error)]
+ANSWER S5 ERC bus_to_net_conflict error: Invalid connection between bus and net items ["Vertical Wire, length 2.54 mm", "Label 'L${X}'"]
+ANSWER S5 ERC unresolved_variable error: Unresolved text variable ["Symbol R${X} [R]"]
+ANSWER S5 ERC unresolved_variable error: Unresolved text variable ["Symbol R${X} [R]"]
+ANSWER S5 ERC unresolved_variable error: Unresolved text variable ["Symbol #PWR030 [+3V3]"]
+ANSWER S5 ERC bus_to_net_conflict error: Invalid connection between bus and net items ["Vertical Wire, length 2.54 mm", "Label 'LA{B}'"]
+ANSWER S5 ERC bus_to_net_conflict error: Invalid connection between bus and net items ["Vertical Wire, length 2.54 mm", "Label 'LA[0..1]'"]
+ANSWER S5 name "A!B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A\"B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A#B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A$B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A%B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A&B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A'B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A(B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A)B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A*B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A+B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A,B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A-B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A.B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A/B": label-erc ok label-net CHANGED to "/LA{slash}B" global-erc ok domain-net CHANGED to "DA{slash}B" ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A:B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A;B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A<B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A=B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A>B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A?B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A@B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A[B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A\\B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A]B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A^B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A_B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A`B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A{B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A|B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A}B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A~B": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "~{X}": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "^{X}": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "_{X}": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "${X}": label-erc ok label-net ok global-erc MISSING domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "${PROJECTNAME}": label-erc MISSING label-net CHANGED to "/L" global-erc MISSING domain-net CHANGED to "D" ref-erc ok ref+value-netlist value CHANGED to "V"
+ANSWER S5 name "A{slash}B": label-erc MISSING label-net ok global-erc MISSING domain-net ok ref-erc MISSING ref+value-netlist value CHANGED to "VA/B"
+ANSWER S5 name "A{backslash}B": label-erc MISSING label-net CHANGED to "/LA\\B" global-erc MISSING domain-net CHANGED to "DA\\B" ref-erc MISSING ref+value-netlist value CHANGED to "VA\\B"
+ANSWER S5 name "A{colon}B": label-erc MISSING label-net CHANGED to "/LA:B" global-erc MISSING domain-net CHANGED to "DA:B" ref-erc MISSING ref+value-netlist value CHANGED to "VA:B"
+ANSWER S5 name "A{brace}B": label-erc MISSING label-net CHANGED to "/LA{B" global-erc MISSING domain-net CHANGED to "DA{B" ref-erc MISSING ref+value-netlist value CHANGED to "VA{B"
+ANSWER S5 name "A{B}": label-erc ok label-net ok global-erc MISSING domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A[0..1]": label-erc ok label-net ok global-erc MISSING domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "\\\"": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "\\\\": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name ")(": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "9A": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 name "A//B": label-erc ok label-net CHANGED to "/LA{slash}{slash}B" global-erc ok domain-net CHANGED to "DA{slash}{slash}B" ref-erc ok ref+value-netlist ok
+ANSWER S5 name "/A": label-erc ok label-net CHANGED to "/L{slash}A" global-erc ok domain-net CHANGED to "D{slash}A" ref-erc ok ref+value-netlist ok
+ANSWER S5 name "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ": label-erc ok label-net ok global-erc ok domain-net ok ref-erc ok ref+value-netlist ok
+ANSWER S5 11 of 50 names changed or lost in some class
+ANSWER S5 project-name class: 49 of 50 files read back with title and R1 intact; failures ["\"${PROJECTNAME}\": title Some(\"T\") refs [(\"R1\", \"1k\")]"]
+ANSWER S5 probe time 20778 ms

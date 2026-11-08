@@ -59,7 +59,7 @@ fn the_s4_attack_set_is_refused_inside_the_sandbox() {
     fs::write(
         &board,
         format!(
-            "unix={}\nabstract={name}\ntcp={port}\ndgram={}\n",
+            "(kicad_pcb\nunix={}\nabstract={name}\ntcp={port}\ndgram={}\n)\n",
             path.display(),
             dgram_path.display()
         ),

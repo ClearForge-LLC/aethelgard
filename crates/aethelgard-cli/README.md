@@ -8,12 +8,12 @@ The `aethelgard` binary. It is the contract every caller uses (`docs/architectur
 |---|---|---|
 | `0` | `validate`: the specification is valid. `solve`: it was solved, and stdout is the `SolvedTopology`. A tool subcommand: the tool ran and its verdict is pass | none: stdout is the success report, the `SolvedTopology`, or the verdict |
 | `1` | A tool subcommand: the tool ran and its verdict is fail (violations found, the proof failed, a declared cover was never reached, the crate did not compile, the harness does not exist, the platform did not load). The input is at fault; the tool worked | none: stdout is the verdict |
-| `2` | Invalid specification: well-formed JSON of the wrong shape (unknown, missing or duplicate field, wrong type including deep nesting where a value was expected, negative or overflowing number), or a value `validate()` refuses. `solve` also: a part with no pin table, or a specification the solver cannot realize | `SchemaViolation`, or an `IrValidationError` variant name such as `InvalidIdentifier`, `NoVoltageDomain`, `UnknownDomain`, `DuplicateI2cAddress` or `ZeroNominalVoltage`; `InvalidIdentifier` also carries `error.path`. `solve` also: `UnknownPart`, or a `SolveError` kind (below), which carries `error.claimants` |
-| `3` | Unreadable input. `validate`: the file or stdin cannot be read, is empty, is more than 16 MiB, or is not one JSON document (syntax error, trailing data, a byte-order mark). A tool subcommand: an input path that does not exist, cannot be read, or is not a regular file (not a directory, for `--crate`); a crate holding a symlink, a special file or a non-UTF-8 name; a Renode built-in path outside Renode's own tree; `InputTooLarge`: a copied file, or a crate's files together, of more than 16 MiB (16,777,216 bytes), or a crate of more than 4,096 files (counted after `target/` is skipped). The byte cap is enforced while copying, never by truncating | `UnreadableInput`, `InputTooLarge`, `InvalidJson` |
+| `2` | Invalid specification: well-formed JSON of the wrong shape (unknown, missing or duplicate field, wrong type including deep nesting where a value was expected, negative or overflowing number), or a value `validate()` refuses. `solve` also: a part with no pin table, or a specification the solver cannot realize. `emit` also: what `solve` refuses, and a part with no vendored model, an address the part cannot take, a reference used twice, a net, rail or reference the emitter needs for itself, a net the solver did not place, or a pin the MCU's symbol lacks. `check drc --spec`: the specification refused as `validate` refuses it | `SchemaViolation`, or an `IrValidationError` variant name such as `InvalidIdentifier`, `NoVoltageDomain`, `UnknownDomain`, `DuplicateI2cAddress` or `ZeroNominalVoltage`; `InvalidIdentifier` also carries `error.path`. `solve` also: `UnknownPart`, or a `SolveError` kind (below), which carries `error.claimants`. `emit` also: `UnknownPart`, `UnsupportedAddress`, `DuplicateReference`, `ReservedName`, `UnsolvedNet`, `UnknownPin` (`id` the reference, net or name) |
+| `3` | Unreadable input. `validate`: the file or stdin cannot be read, is empty, is more than 16 MiB, or is not one JSON document (syntax error, trailing data, a byte-order mark). A tool subcommand: an input path that does not exist, cannot be read, or is not a regular file (not a directory, for `--crate`); a crate holding a symlink, a special file or a non-UTF-8 name; a Renode built-in path outside Renode's own tree; `InputTooLarge`: a copied file, or a crate's files together, of more than 16 MiB (16,777,216 bytes), or a crate of more than 4,096 files (counted after `target/` is skipped). The byte cap is enforced while copying, never by truncating. `check drc`: a board that is not one KiCad S-expression, or one that carries a rule of its own, refused before any tool runs: a local `(clearance …)` on a pad, a footprint or a zone, or a net class defined in the board (`AET-WO-1300` D4). `emit`: an `--out` that cannot be created, or a file there that is a symlink or not a regular file | `UnreadableInput`, `InputTooLarge`, `InvalidJson`; `MalformedBoard`, `LocalClearance`, `BoardNetClass` and `BoardWaiver` (`id` naming the carrier, such as `pad 1 of footprint R7`); `UnwritableOutput` |
 | `4` | The tool cannot be used: it is not on `PATH`, is not executable, will not report its version, or lacks an environment variable it needs; or the sandbox is unavailable. Never a verdict (`INV-06`) | `ToolMissing` (`id`: the tool), `ToolUnusable` (`id`: the tool, or the missing variable), `SandboxUnavailable` (`id`: `landlock`, `seccomp`, or `descriptors`) |
 | `5` | The tool ran but its output cannot be trusted as a verdict: killed by a signal, an exit code outside the ones measured for it, a missing, unparseable or oversized report or output, or two witnesses that disagree. When `prove` or `simulate` cannot recognise its tool's outcome, the message ends `; the tool said: <line>`, every `error:` line (Kani, cargo) or the first `[ERROR]` line (Renode), as printable ASCII, cut to 400 bytes for cargo or 240 for Renode; for cargo it is every `error:` line joined by `|`. Never read as pass or fail | `ToolError` (`id`: the tool) |
 | `64` | Usage error: unknown subcommand or flag, missing subcommand or required flag | `UsageError` |
-| `70` | Internal error: the report could not be written to stdout (for example, the reader closed the pipe), the parent-death signal could not be set, or the process that started this one is already gone (see the reaper below); or `solve`'s vendored pin table failed its own hash or parse check, which only a corrupted build can cause. Nothing is printed on stdout; the reason goes to stderr | none |
+| `70` | Internal error: the report could not be written to stdout (for example, the reader closed the pipe), the parent-death signal could not be set, or the process that started this one is already gone (see the reaper below); or `solve`'s vendored pin table, or `emit`'s vendored KiCad library, failed its own hash or parse check, which only a corrupted build can cause. Nothing is printed on stdout; the reason goes to stderr | none |
 
 A stdout closed by the caller (`>&-`) is not an exit-`70` case: the Rust runtime reopens a closed standard descriptor on `/dev/null` before `main` runs, so it behaves exactly like `>/dev/null`, and the exit code still reports the verdict.
 
@@ -63,10 +63,36 @@ A specification the solver cannot realize is exit `2`. The refusal envelope adds
 
 The kinds, what `claimants` names for each, the search order, the reserved pins and the check order are in `crates/aethelgard-ir/README.md`.
 
+## `emit`
+
+```
+aethelgard emit --file <path> --out <dir>
+```
+
+Reads, validates and solves exactly as `solve` does, with the same refusals. It then emits the design with `aethelgard_eda::schematic::emit` and writes two files into `<dir>`, creating it if needed:
+
+- `<project_name>.kicad_sch`: a KiCad 10 schematic (format `20260306`) whose symbols are embedded from the vendored KiCad 10.0.7 library;
+- `<project_name>.bom.csv`: one CSV row per part (`Reference,Value,Footprint,Symbol,Note`, RFC 4180, CRLF), sorted by reference.
+
+Both files are byte-identical for the same specification. It prints one line, exit `0`:
+
+```json
+{"ok":true,"project_name":"sentinel-01","specification_sha256":"<64 hex>","schematic":{"path":"/out/sentinel-01.kicad_sch","sha256":"<64 hex>"},"bill_of_materials":{"path":"/out/sentinel-01.bom.csv","sha256":"<64 hex>"}}
+```
+
+- **Parts with a model:**
+  - the MCU `STM32H753ZITx`;
+  - on I2C, `BME280` (address 118 or 119) and `TMP117` (72 to 75);
+  - on SPI, `W25Q64JV`, drawn with KiCad's `W25Q32JVSS` symbol, same SOIC-8 pinout, with the substitution noted in its bill-of-materials row.
+- **Refused:** any other part, address or name clash is refused (exit `2`), never approximated.
+- **Not overwritten unsafely:** an existing file is replaced only if it is a regular file; a symlink is never followed (exit `3`, `UnwritableOutput`).
+- **What the emitter adds:** pull-ups per I2C bus, decoupling, VCAP capacitors, strap resistors, `PWR_FLAG`s and no-connects. `crates/aethelgard-eda/README.md` describes them.
+- **Net names:** the schematic names each signal net by a local label, so KiCad names the net `/<net>`. A rail's net is its domain id, and ground is `GND`.
+
 ## The tool subcommands
 
 ```
-aethelgard check drc --board <file.kicad_pcb>
+aethelgard check drc --board <file.kicad_pcb> [--spec <specification.json>]
 aethelgard check erc --schematic <file.kicad_sch>
 aethelgard prove --crate <dir> --harness <name>
 aethelgard simulate --platform <file.repl | @path-inside-renode>
@@ -79,9 +105,40 @@ Each runs one external tool on one input and prints one verdict. They are **Linu
 1. **Checks the input path** (exit `3` if refused). It must be UTF-8, so the verdict can report it exactly. `--board`, `--schematic` and a `--platform` file must be regular files after following symlinks; `--crate` must be a directory. A `--platform` starting with `@` names a file inside Renode's own tree (the directory holding the real `renode` binary), as Renode's own `@` syntax does.
    `--harness` must be a Rust path: letters, digits, `_` and `::` (exit `64` otherwise).
 2. **Finds the tool** by searching the caller's `PATH` for `kicad-cli`, `renode`, or `cargo` and `cargo-kani` (exit `4`, `ToolMissing`, naming the first one absent). `prove` also needs `KANI_HOME` and `RUSTUP_HOME` set to existing directories, and `PATH` (exit `4`, `ToolUnusable`, naming the variable).
-3. **Copies the input** into a fresh private temporary directory and hashes the copy. The tool judges the copy, never the original, so the hash in the verdict is of exactly the bytes judged (`INV-03`), and nothing is written beside the input.
+3. **Copies the input** into a fresh private temporary directory and hashes the copy. The tool judges the copy, never the original, so the hash in the verdict is of exactly the bytes given (`INV-03`), and nothing is written beside the input. `check drc` and `check erc` then **prepare the copy** (below), and they do steps 3 and the preparation before step 2, so an input refused for what it carries is refused whatever is installed.
 4. **Asks the tool its version**, then **runs it**, each time in the sandbox below. A tool that will not report its version is exit `4`, `ToolUnusable`.
 5. **Reads two witnesses** (below), prints the verdict, and removes the temporary directory.
+
+### The gate's own rules (`check drc`, `check erc`)
+
+No rule is ever read from the input (`RUL-03` as amended, `INV-07`). KiCad keeps a board's rules in the board's own setup block and its project files. A DRC that read them would judge the board by rules the board chose. Before KiCad runs, the gate:
+
+- **Refuses a board that carries a rule of its own** (exit `3`, naming the carrier):
+  - a `(clearance …)` anywhere outside its top-level setup block, that is, on a pad, a footprint or a zone (`LocalClearance`). A custom pad's `(options (clearance outline))` is its shape and stays. KiCad judges a locally overridden item only against the board minimum, never by the gate's rules (`AET-WO-1300` S3);
+  - a net class defined in the board (`BoardNetClass`);
+  - a footprint token that waives a check for itself: `net_tie_pad_groups`, `jumper_pad_groups`, `duplicate_pad_numbers_are_jumpers yes`, `allow_missing_courtyard` or `allow_soldermask_bridges` (`BoardWaiver`). Mask and paste margins are the design's geometry and stay;
+  - a board that is not one KiCad S-expression, or that KiCad's reader could read differently from the gate's (`MalformedBoard`):
+    - a control or non-ASCII byte outside a string;
+    - a raw line break inside a string;
+    - a line starting with `#` (KiCad skips it as a comment);
+    - a `"` touching an atom;
+    - a list whose head is not a lowercase keyword;
+    - nesting deeper than 256, or more than 1,000,000 tokens.
+
+    Each of these was measured hiding a board's rules from a naive scan while KiCad honoured them (`AET-WO-1300` adversarial pass).
+- **Writes the setup block over the board's**, with no clearance token, so the board minimum has one source. Nothing else in the board changes.
+- **Writes `input.kicad_pro`, `input.kicad_dru`, `sym-lib-table` and `fp-lib-table`** beside the copy:
+  - `input.kicad_pro` holds the Default net class, the board minimum, and ERC's library checks set to `ignore`;
+  - `input.kicad_dru` holds the same minimums as custom rules;
+  - `sym-lib-table` and `fp-lib-table` name the vendored KiCad 10.0.7 libraries, which the gate copies into `lib/` beside them.
+
+  The board's own `.kicad_pro` and `.kicad_dru` are never copied. No environment variable is set.
+
+**With `--spec`**, the rules are what the specification implies, and the verdict says `"rules":"specification"` and carries the file's `specification_sha256`. The specification declares no spacing or fabrication field, so today that is the engine's floor: 0.2 mm clearance and board minimum, and a 0.2 mm minimum track width (`aethelgard_eda::rules::FLOOR_NM`).
+
+**Without it**, the same files hold KiCad's own defaults (a 0.2 mm Default net class, no board minimum, no track-width minimum), and the verdict says `"rules":"kicad-default"`.
+
+DRC also runs with `--refill-zones`: zones are judged filled, and the board is never saved, because KiCad's saved fills are not deterministic. `check erc` writes only `input.kicad_pro`.
 
 ### The sandbox
 
@@ -118,10 +175,10 @@ Every KiCad finding is a fail, warnings included (ruled on PR #12): the pass cri
 ```
 
 - `ok` is `true` exactly when the exit code is `0`; `verdict` is `pass` or `fail`; `check` is `drc`, `erc`, `prove` or `simulate`.
-- `input.path` is the canonical path of the input as given (for an `@` platform, the file inside Renode's tree); `input.sha256` is the hash of the copy the tool judged.
+- `input.path` is the canonical path of the input as given (for an `@` platform, the file inside Renode's tree); `input.sha256` is the hash of the input's bytes as copied. For `check drc` the tool then judges that copy with the gate's setup block written over the board's, a function of those bytes alone (above).
 - `tool.version` is the tool's own version line, exactly as printed; `tool.exit_code` is the exit code of the judging run.
 - `findings` is normalized to `{kind, severity, message, where}`. For KiCad, `kind` is the report's `type` (`clearance`, `track_dangling`, `pin_not_connected`, `label_dangling`, …), `severity` is `error` or `warning`, `message` is the report's `description`, and `where` lists the items it names. For `prove` and `simulate`, `kind` is one of the names in the table above, `severity` is `error`, and `where` is empty.
-- `check drc` and `check erc` also carry `included_severities` from the report; `prove` carries `harness`; `simulate` carries `machine`: `{"cpus":["cpu"],"peripherals":[{"name":"cpu","type":"CortexM"},…]}`.
+- `check drc` and `check erc` also carry `included_severities` from the report; `check drc` carries `rules`, and with `--spec` `specification_sha256` (above); `prove` carries `harness`; `simulate` carries `machine`: `{"cpus":["cpu"],"peripherals":[{"name":"cpu","type":"CortexM"},…]}`.
 
 A verdict that cannot name its input's hash and its judge's version is never printed; the call refuses instead.
 
@@ -152,7 +209,7 @@ Before it starts, it runs the trampoline's inherited-descriptor check. A descrip
 
 Generated at startup from the unbuilt `clap` command tree, never written by hand, so a new subcommand appears with no change to the `mcp` module (`INV-01`):
 
-- one tool per leaf subcommand, named by its path joined with `_`: `validate`, `solve`, `check_drc`, `check_erc`, `prove`, `simulate`. `help` and `mcp` are never tools;
+- one tool per leaf subcommand, named by its path joined with `_`: `validate`, `solve`, `emit`, `check_drc`, `check_erc`, `prove`, `simulate`. `help` and `mcp` are never tools;
 - the description is the subcommand's about text;
 - the input schema is an object with one **string** property per declared argument, keyed by its **long name** (`prove`'s directory is `crate`, not `crate_dir`), `required` exactly when `clap` requires it, and `additionalProperties` false.
 
@@ -184,4 +241,4 @@ A `notifications/cancelled` for a call kills its child; the CLI's reaper then en
 npx @modelcontextprotocol/inspector aethelgard mcp
 ```
 
-lists the six tools, and a `validate` call with `file` set to `examples/sentinel-01-minimal.json` returns `isError` false.
+lists the seven tools, and a `validate` call with `file` set to `examples/sentinel-01-minimal.json` returns `isError` false.
