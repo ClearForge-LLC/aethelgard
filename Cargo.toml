@@ -26,7 +26,7 @@ clap = { version = "4", features = ["derive"] }
 landlock = "0.4.7"
 rmcp = { version = "=3.7.0", default-features = false, features = ["server", "transport-io"] }
 roxmltree = "0.21"
-rustix = { version = "1.1.5", features = ["fs", "process"] }
+rustix = { version = "1.1.5", features = ["fs", "process", "thread"] }
 seccompiler = "0.5.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
