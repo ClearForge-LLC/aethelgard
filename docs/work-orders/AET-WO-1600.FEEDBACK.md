@@ -366,7 +366,7 @@ A fresh subagent (Opus) ran it on `53651ef`, on the Furnace host (ABI 8) and as 
 
 ### Calls each tool needs, after the build
 
-None of the refused or tested calls. The tier-2 suite gives 16/16 under the final filter and drop, in the image under podman, and in CI (below). `clone3` returns `ENOSYS`, and every tool falls back to `clone`.
+None of the refused or tested calls. The tier-2 suite gives 16/16 under the final filter and drop, in the image under podman, and in CI run 42440108553. `clone3` returns `ENOSYS`, and every tool falls back to `clone`.
 
 ### Whether the host can be named a supported boundary for tool subcommands
 
@@ -408,4 +408,5 @@ Kept as deliberate redundancy:
 - **Furnace, at the reduction commit:**
   - `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, and `cargo test --workspace --locked --no-fail-fast` all pass. `cargo test` was run with descriptors above 2 closed.
   - CI's own `tools` commands, inside the pinned image under rootless podman (`--pids-limit=-1`), also pass: 33 test binaries green, tier 2 16/16, `channels_tier1` 6/6, and AET-WO-1400's `board_tier2`.
-- **CI:** filled in from the run on this push (below).
+- **CI:** run [42440108553](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42440108553) at `93a4bda`: `gates` green and `tools` green, with tier 2 `16 passed` under the final filter and drop in Docker, and `channels_tier1` passing in both jobs. engine-image run 42440108574 green.
+- **The earlier red run:** 42436941586 at `53651ef`, see "The first push after the ruling was red".
