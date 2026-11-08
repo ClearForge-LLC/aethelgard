@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 
 use rustix::process::{
     Pid, PidfdFlags, PidfdGetfdFlags, Resource, Signal, getrlimit, pidfd_getfd, pidfd_open,
@@ -47,6 +47,15 @@ impl Drop for Dir {
     }
 }
 
+/// A process to point pid-taking calls at.
+fn sleeper() -> Child {
+    Command::new("/usr/bin/sleep")
+        .arg("30")
+        .stdin(Stdio::null())
+        .spawn()
+        .unwrap()
+}
+
 /// Runs the probe as `kicad-cli` under `check drc`; its findings by name.
 fn inside() -> BTreeMap<String, String> {
     let dir = Dir(std::env::temp_dir().join(format!(
@@ -59,11 +68,7 @@ fn inside() -> BTreeMap<String, String> {
     symlink(probe(), toolbox.join("kicad-cli")).unwrap();
     let board = dir.0.join("channels.kicad_pcb");
     // A process outside the sandbox, for the calls that take a pid.
-    let mut victim = Command::new("/usr/bin/sleep")
-        .arg("30")
-        .stdin(Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut victim = sleeper();
     fs::write(&board, format!("mode=channels\nvictim={}\n", victim.id())).unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
         .args(["check", "drc", "--board"])
@@ -142,11 +147,7 @@ fn unshare_is_refused_inside() {
 fn pidfd_calls_are_refused_inside_and_reach_the_kernel_outside() {
     // Outside: a pidfd for a child opens; on a plain descriptor the other two
     // reach the kernel and get EBADF (9), not EPERM.
-    let mut child = Command::new("/usr/bin/sleep")
-        .arg("30")
-        .stdin(Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut child = sleeper();
     pidfd_open(Pid::from_child(&child), PidfdFlags::empty()).unwrap();
     let _ = child.kill();
     let _ = child.wait();
@@ -229,11 +230,7 @@ fn the_tool_holds_no_capability() {
 /// signal scoping (the adversarial pass, F10).
 #[test]
 fn another_process_limits_and_affinity_are_refused_and_the_tools_own_are_not() {
-    let mut child = Command::new("/usr/bin/sleep")
-        .arg("30")
-        .stdin(Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut child = sleeper();
     let pid = Some(Pid::from_child(&child));
     prlimit(pid, Resource::Nofile, getrlimit(Resource::Nofile)).unwrap();
     sched_setaffinity(pid, &sched_getaffinity(None).unwrap()).unwrap();

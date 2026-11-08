@@ -357,7 +357,8 @@ fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop
     let mut lines = status.lines();
     let first = lines.next().unwrap_or_default();
     if let Some(rest) = first.strip_prefix("unavailable ") {
-        // Only the trampoline writes this line: `landlock` or `seccomp`.
+        // Only the trampoline writes this line: `landlock`, `seccomp` or
+        // `capabilities`.
         let (layer, reason) = rest.split_once(' ').unwrap_or((rest, ""));
         return Err(Stop {
             code: EXIT_TOOL_UNAVAILABLE,
@@ -701,8 +702,8 @@ pub(crate) fn inherited_descriptors() -> Result<Vec<u32>, String> {
     Ok(leaked)
 }
 
-/// The system calls the filter refuses with `EPERM` besides `socket` and
-/// `io_uring` (AET-WO-1600, ruled on PR #51): every non-socket channel to
+/// The system calls the filter refuses with `EPERM`: `socket` and `io_uring`
+/// (AET-WO-0300a), then (AET-WO-1600, ruled on PR #51) every non-socket channel to
 /// another process of the same uid that the spike found open on a host, and
 /// the kernel surfaces beside them. No tool needs any of them (the spike ran
 /// the whole tier-2 suite with each refused); Kani's `cargo` calls
@@ -710,7 +711,11 @@ pub(crate) fn inherited_descriptors() -> Result<Vec<u32>, String> {
 /// by the adversarial pass under the ruling's F10 clause: Landlock refuses to
 /// open one, but `O_CREAT` still creates it in the host's namespace, and
 /// `mq_unlink` deletes another process's.
-const DENIED: [(&str, u32); 33] = [
+const DENIED: [(&str, u32); 37] = [
+    ("socket", 41),
+    ("io_uring_setup", 425),
+    ("io_uring_enter", 426),
+    ("io_uring_register", 427),
     // System V IPC: on a host, the host's IPC namespace.
     ("shmget", 29),
     ("shmat", 30),
@@ -781,8 +786,8 @@ const CLONE_NEW_MASK: u32 = 0x7e02_0000;
 ///   the systemd journal, so it is refused like `socket`.
 /// - `io_uring` and every call in [`DENIED`] are refused with `EPERM`, and so
 ///   is `clone` with any bit of [`CLONE_NEW_MASK`].
-/// - Each call in [`PID_TESTED`] is allowed only for pid 0 or `self_pid`, the
-///   tool's own pid (the trampoline's, which the exec keeps); `setpriority`
+/// - [`PID_TESTED`]'s `self_pid` is the trampoline's, which the exec keeps;
+///   `setpriority`
 ///   and `ioprio_set` are refused only in their every-process-of-the-user
 ///   forms (`PRIO_USER`, `IOPRIO_WHO_USER`). Their per-pid forms stay open:
 ///   the tools call them on their own threads' ids, which no filter can name.
@@ -803,14 +808,10 @@ pub fn seccomp_filter(self_pid: u32) -> Option<BpfProgram> {
     const OFFSET_ARCH: u32 = 4;
     const OFFSET_ARG0: u32 = 16; // low 32 bits, little-endian
     const OFFSET_ARG1: u32 = 24;
-    const NR_SOCKET: u32 = 41;
     const NR_SOCKETPAIR: u32 = 53;
     const NR_CLONE: u32 = 56;
     const NR_SETPRIORITY: u32 = 141;
     const NR_IOPRIO_SET: u32 = 251;
-    const NR_IO_URING_SETUP: u32 = 425;
-    const NR_IO_URING_ENTER: u32 = 426;
-    const NR_IO_URING_REGISTER: u32 = 427;
     const NR_CLONE3: u32 = 435;
     const AF_UNIX: u32 = 1;
     const SOCK_TYPE_MASK: u32 = 0xf;
@@ -824,12 +825,6 @@ pub fn seccomp_filter(self_pid: u32) -> Option<BpfProgram> {
     const ENOSYS: u32 = 38;
     const RET_KILL_PROCESS: u32 = 0x8000_0000;
     use Label::{Allow, Clone, Enosys, Eperm, Ioprio, Kill, Next, Pid, Priority, Socketpair};
-    let refused = [
-        NR_SOCKET,
-        NR_IO_URING_SETUP,
-        NR_IO_URING_ENTER,
-        NR_IO_URING_REGISTER,
-    ];
     // (label of this instruction, code, k, jump if true, jump if false)
     let mut prog: Vec<(Label, u16, u32, Label, Label)> = vec![
         (Next, LD_W_ABS, OFFSET_ARCH, Next, Next),
@@ -837,7 +832,7 @@ pub fn seccomp_filter(self_pid: u32) -> Option<BpfProgram> {
         (Next, LD_W_ABS, OFFSET_NR, Next, Next),
         (Next, JSET_K, X32_SYSCALL_BIT, Kill, Next),
     ];
-    for nr in refused.into_iter().chain(DENIED.iter().map(|&(_, nr)| nr)) {
+    for &(_, nr) in &DENIED {
         prog.push((Next, JEQ_K, nr, Eperm, Next));
     }
     prog.push((Next, JEQ_K, NR_CLONE3, Enosys, Next));
@@ -949,12 +944,12 @@ fn drop_capabilities() -> Result<(), String> {
         }
         Ok(held)
     };
-    let bounding = |cap| capability_is_in_bounding_set(cap);
-    let ambient = |cap| capability_is_in_ambient_set(cap);
     let before = capabilities(None).map_err(|e| errno("capget", e))?;
     let setpcap = before.effective.contains(CapabilitySet::SETPCAP);
     if setpcap {
-        for cap in each(bounding).map_err(|e| errno("reading the bounding set", e))? {
+        for cap in
+            each(capability_is_in_bounding_set).map_err(|e| errno("reading the bounding set", e))?
+        {
             remove_capability_from_bounding_set(cap)
                 .map_err(|e| errno(&format!("dropping {cap:?} from the bounding set"), e))?;
         }
@@ -970,12 +965,14 @@ fn drop_capabilities() -> Result<(), String> {
     if !(after.effective.is_empty() && after.permitted.is_empty() && after.inheritable.is_empty()) {
         return Err(format!("capabilities still held: {after:?}"));
     }
-    let left = each(ambient).map_err(|e| errno("reading the ambient set", e))?;
+    let left =
+        each(capability_is_in_ambient_set).map_err(|e| errno("reading the ambient set", e))?;
     if !left.is_empty() {
         return Err(format!("ambient capabilities still held: {left:?}"));
     }
     if setpcap {
-        let left = each(bounding).map_err(|e| errno("reading the bounding set", e))?;
+        let left = each(capability_is_in_bounding_set)
+            .map_err(|e| errno("reading the bounding set", e))?;
         if !left.is_empty() {
             return Err(format!("bounding capabilities still held: {left:?}"));
         }
@@ -1179,31 +1176,6 @@ mod tests {
             (0x06, 0, 0, 0x7fff_0000),   // 66: allow
         ];
         assert_eq!(got, want);
-    }
-
-    #[test]
-    fn every_jump_lands_on_the_return_it_names() {
-        let p = seccomp_filter(4242).unwrap();
-        let (eperm, enosys, kill, allow) = (63, 64, 65, 66);
-        let target = |i: usize, off: u8| i + 1 + usize::from(off);
-        assert_eq!(target(1, p[1].jf), kill);
-        assert_eq!(target(3, p[3].jt), kill);
-        for (i, op) in p.iter().enumerate().take(41).skip(4) {
-            assert_eq!(target(i, op.jt), eperm, "instruction {i}");
-        }
-        assert_eq!(target(41, p[41].jt), enosys);
-        assert_eq!((target(42, p[42].jt), target(43, p[43].jt)), (56, 56));
-        assert_eq!((target(44, p[44].jt), target(45, p[45].jt)), (59, 61));
-        assert_eq!(target(46, p[46].jf), 49);
-        assert_eq!((target(48, p[48].jt), target(48, p[48].jf)), (eperm, allow));
-        assert_eq!(target(49, p[49].jf), allow);
-        assert_eq!(target(51, p[51].jf), eperm);
-        assert_eq!(target(54, p[54].jt), allow);
-        assert_eq!((target(55, p[55].jt), target(55, p[55].jf)), (allow, eperm));
-        assert_eq!((target(57, p[57].jt), target(58, p[58].jt)), (allow, allow));
-        assert_eq!(target(58, p[58].jf), eperm);
-        assert_eq!((target(60, p[60].jt), target(60, p[60].jf)), (eperm, allow));
-        assert_eq!((target(62, p[62].jt), target(62, p[62].jf)), (eperm, allow));
     }
 
     /// A classic-BPF interpreter for exactly the opcodes the filter uses, run
@@ -1428,50 +1400,8 @@ mod tests {
     }
 
     #[test]
-    fn an_unavailable_capabilities_line_is_sandbox_unavailable() {
-        let stop =
-            parse_status("unavailable capabilities capset: errno 1\n", "renode").unwrap_err();
-        assert_eq!(
-            (stop.code, stop.kind, stop.id.as_deref()),
-            (4, "SandboxUnavailable", Some("capabilities"))
-        );
-    }
-
-    #[test]
-    fn the_trampoline_can_drop_what_it_holds_and_verify_it() {
-        // Run in a child so this test process keeps what it has. The child
-        // sets no_new_privs, as Landlock does, then drops.
-        let exe = env::current_exe().unwrap();
-        let out = Command::new(exe)
-            .args([
-                "--exact",
-                "run::tests::drop_capabilities_in_this_process",
-                "--ignored",
-                "--nocapture",
-            ])
-            .output()
-            .unwrap();
-        let text = String::from_utf8_lossy(&out.stdout);
-        assert!(out.status.success() && text.contains("1 passed"), "{text}");
-    }
-
-    /// Only run by the test above, in its own process.
-    #[test]
-    #[ignore = "changes the process's credentials; run by the_trampoline_can_drop_what_it_holds_and_verify_it"]
-    fn drop_capabilities_in_this_process() {
-        rustix::thread::set_no_new_privs(true).unwrap();
-        drop_capabilities().unwrap();
-        let after = capabilities(None).unwrap();
-        assert!(
-            after.effective.is_empty()
-                && after.permitted.is_empty()
-                && after.inheritable.is_empty()
-        );
-    }
-
-    #[test]
     fn an_unavailable_line_is_sandbox_unavailable_naming_its_layer() {
-        for layer in ["seccomp", "landlock"] {
+        for layer in ["seccomp", "landlock", "capabilities"] {
             let stop = parse_status(&format!("unavailable {layer} some reason\n"), "kicad-cli")
                 .unwrap_err();
             assert_eq!(

@@ -209,20 +209,10 @@ fn channels(board: &Path, victim: Pid) -> Vec<(&'static str, String)> {
             result(pidfd_getfd(&plain, 0, PidfdGetfdFlags::empty())),
         ),
     ];
-    let open = match Command::new("/usr/bin/sleep")
-        .arg("30")
-        .stdin(Stdio::piped())
-        .spawn()
-    {
-        Ok(mut child) => {
-            let r = result(pidfd_open(Pid::from_child(&child), PidfdFlags::empty()));
-            let _ = child.kill();
-            let _ = child.wait();
-            r
-        }
-        Err(e) => format!("spawn-{}", result::<(), io::Error>(Err(e))),
-    };
-    v.push(("pidfd_open", open));
+    v.push((
+        "pidfd_open",
+        result(pidfd_open(victim, PidfdFlags::empty())),
+    ));
     let nofile = getrlimit(Resource::Nofile);
     v.push((
         "prlimit_self",
@@ -232,29 +222,22 @@ fn channels(board: &Path, victim: Pid) -> Vec<(&'static str, String)> {
         "prlimit_victim",
         result(prlimit(Some(victim), Resource::Nofile, nofile)),
     ));
-    match sched_getaffinity(None) {
-        Ok(cpus) => {
-            v.push(("setaffinity_self", result(sched_setaffinity(None, &cpus))));
-            v.push((
-                "setaffinity_victim",
-                result(sched_setaffinity(Some(victim), &cpus)),
-            ));
-        }
-        Err(e) => v.push(("getaffinity_self", format!("errno={}", e.raw_os_error()))),
-    }
-    let caps = match capabilities(None) {
-        Ok(c) => format!(
-            "eff:{:x} prm:{:x} inh:{:x} amb:{} bnd:{} nnp:{}",
-            c.effective.bits(),
-            c.permitted.bits(),
-            c.inheritable.bits(),
-            mask(capability_is_in_ambient_set),
-            mask(capability_is_in_bounding_set),
-            no_new_privs()
-                .map_or_else(|e| format!("errno={}", e.raw_os_error()), |b| b.to_string()),
-        ),
-        Err(e) => format!("errno={}", e.raw_os_error()),
-    };
+    let cpus = sched_getaffinity(None).unwrap_or_else(|_| exit(93));
+    v.push(("setaffinity_self", result(sched_setaffinity(None, &cpus))));
+    v.push((
+        "setaffinity_victim",
+        result(sched_setaffinity(Some(victim), &cpus)),
+    ));
+    let c = capabilities(None).unwrap_or_else(|_| exit(93));
+    let caps = format!(
+        "eff:{:x} prm:{:x} inh:{:x} amb:{} bnd:{} nnp:{}",
+        c.effective.bits(),
+        c.permitted.bits(),
+        c.inheritable.bits(),
+        mask(capability_is_in_ambient_set),
+        mask(capability_is_in_bounding_set),
+        no_new_privs().map_or_else(|e| format!("errno={}", e.raw_os_error()), |b| b.to_string()),
+    );
     v.push(("caps", caps));
     v
 }
