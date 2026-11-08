@@ -154,7 +154,8 @@ fn shifted(r: Rect, (x, y): (i64, i64)) -> Rect {
 
 /// By the emitter's own geometry, read back from the board it wrote: no two
 /// courtyards overlap, and each is inside the outline by the board-edge
-/// clearance. The board holds no tracks, vias or zones.
+/// clearance. The board holds no setup block and no net table; since
+/// `AET-WO-1302` it holds the router's tracks, vias and ground zone.
 #[test]
 fn no_courtyards_overlap_and_every_one_is_inside_the_outline() {
     let d = Dir::new("courtyards");
@@ -164,8 +165,11 @@ fn no_courtyards_overlap_and_every_one_is_inside_the_outline() {
         board.child("version").and_then(|v| v.arg(1)),
         Some("20260206")
     );
-    for head in ["segment", "via", "zone", "arc", "setup", "net"] {
+    for head in ["arc", "setup", "net"] {
         assert!(board.child(head).is_none(), "the board holds a `{head}`");
+    }
+    for head in ["segment", "via", "zone"] {
+        assert!(board.child(head).is_some(), "the board holds no `{head}`");
     }
     let edge = outline(&board);
     let inner = Rect {

@@ -17,6 +17,7 @@ pub mod bom;
 pub mod library;
 pub mod parity;
 pub mod pcb;
+pub mod route;
 pub mod rules;
 pub mod schematic;
 pub mod sexpr;

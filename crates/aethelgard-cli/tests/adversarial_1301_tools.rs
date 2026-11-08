@@ -390,12 +390,25 @@ fn kicad_parity_does_not_see_metadata_only_differences() {
     );
 }
 
+/// The board without the router's copper: the placed board these parity
+/// rows were measured on (`AET-WO-1301`). Parity does not read copper; on
+/// the routed board a mismatched pad also shorts the tracks that reach it
+/// (`AET-WO-1302`), which the routed check after the rows asserts.
+fn unrouted(board: &str) -> String {
+    let mut root = aethelgard_eda::sexpr::parse(board).unwrap();
+    if let Some(items) = root.items_mut() {
+        items.retain(|c| !matches!(c.head(), Some("segment" | "via" | "zone")));
+    }
+    aethelgard_eda::sexpr::write(&root)
+}
+
 /// Withstood: each board or schematic that differs from the other fails
 /// with exactly the finding kinds KiCad gave when measured.
 #[test]
 fn parity_fails_every_other_mismatch_with_kicads_finding() {
     let t = Temp::new("withstood");
-    let (board, sch, spec) = reference(&t);
+    let (routed, sch, spec) = reference(&t);
+    let board = unrouted(&routed);
     let set = |k: &[&str]| k.iter().map(|s| (*s).to_owned()).collect::<BTreeSet<_>>();
     let swap_pads = |f: &str| {
         let mut nets = f.match_indices("(net \"").map(|(i, _)| {
@@ -592,6 +605,19 @@ fn parity_fails_every_other_mismatch_with_kicads_finding() {
         assert_eq!(code, 1, "{name}: {v}");
         assert_eq!(beyond(&v), kinds, "{name}");
     }
+    // The routed board fails the same way, its copper adding findings.
+    let (code, v) = drc(
+        &t.0.join("routed"),
+        &edit_fp(&routed, "R1", swap_pads),
+        &sch,
+        &spec,
+    );
+    record(&format!(
+        "withstood pads swapped, routed: exit {code}, beyond {:?}",
+        beyond(&v)
+    ));
+    assert_eq!(code, 1, "{v}");
+    assert!(beyond(&v).contains("lib_footprint_mismatch"), "{v}");
     // Two unconnected pins on one KiCad name: measured at 6b55cb3 as KiCad's
     // `net_conflict`; the gate now refuses it before KiCad runs (F2's fix).
     let joined = board.replacen(
