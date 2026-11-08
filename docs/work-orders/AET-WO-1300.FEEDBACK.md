@@ -322,6 +322,14 @@ Names were read back from ERC's item descriptions and from the netlist, by node.
 - **`unsafe`, or a skipped, ignored or weakened test:** none.
 - **`sudo`, a system package, or a secret:** none, beyond the S25-minted push token. That token was minted per push, filled through `gh-write prep` from the transcript, and revoked after each use (HTTP 204 each time).
 
+## Flag-and-stop check (§7), build half
+
+None arose:
+- **A gate that reads a rule from the board under judgement:** the spike's finding above (today's `check drc` carried the board's setup block into the judge) is **closed**. The gate writes its own setup block, project, rules file and library tables, and refuses every board-carried rule (`LocalClearance`, `BoardNetClass`, `BoardWaiver`, and `MalformedBoard` for anything its reader and KiCad's could read differently). The adversarial pass's bypass (A1) is refused by tests that ran green in CI run 42436232690.
+- **Licence:** vendoring is the ruled D1, with the licence beside the files.
+- **Python, Java or an image change; `unsafe`; a skipped or weakened test; `sudo` or a secret:** none, beyond the push route. B5 lists the tests whose board input changed, and why each still proves what it proved.
+- **Non-deterministic emission:** none; two emissions are byte-identical, across processes, environments and runners.
+
 ## Gates (spike half)
 
 On Furnace, at `d8066ec` with `origin/main` merged (`bfb847f`), every gate passes (only this file changes after it):
@@ -426,4 +434,4 @@ All on Furnace at the PR's code head, `origin/main` `6525506` merged:
 
   This is a pre-check, not acceptance; CI's run is cited below.
 - **CI:** [run 42436232690](https://github.com/ClearForge-LLC/aethelgard/actions/runs/42436232690), commit `ccbec65`, the first push after the ruling: `gates` success, `tools` success (§3.3). Every suite is `ok`. Its log carries the same `AET-WO-1300` lines as the local run: ERC `pass` on the emitted `sentinel-01`; the D5 row 0 then 1 ("board minimum clearance 0.2000 mm"); the loose board failing under both rule sources; the names read back unchanged. §1.4 passes in `gates` and `tools` (§3.2).
-- **Reduction pass (diff):** −51 lines net in the reduction edits themselves (the tests added alongside them excluded) · 5 duplicates removed (the specification reader, sha256 hex ×2, the reference counter, a one-use trait) · 1 dead constant removed · 0 protected kept · 0 findings below. It was run by the builder, not a fresh subagent, because the adversarial reviewer was already running.
+- **Reduction pass (diff):** −51 lines net in the reduction edits themselves (the tests added alongside them excluded) · 5 duplicates removed (the specification reader, sha256 hex ×2, the reference counter, a one-use trait) · 1 dead constant removed · 0 protected kept · 1 finding below. It was run by the builder, not a fresh subagent, while the adversarial reviewer was already running, so **before** the adversarial fixes; they were not re-reduced. **Finding R1:** the fixes added a second string scanner. `sexpr::lexically_plain` and `tokens()` both state the string-escape rule (`\"`, `\\`, control bytes). Folding the lexical refusals into `tokens()` would remove the copy, but the reader is security core, proven by run 42436232690 and 29 mutants, so it is left for the next reduction pass rather than refactored after CI.
