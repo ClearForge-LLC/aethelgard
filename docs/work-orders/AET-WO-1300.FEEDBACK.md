@@ -298,7 +298,7 @@ Each name was emitted in every class, as the thing it becomes:
 
 Names were read back from ERC's item descriptions and from the netlist, by node. The specification's other identifiers (`bus.id`, `peripheral`, a signal's `pin`) never become schematic text, so they have nothing to round-trip.
 
-## Decisions needed for the ruling (collected)
+## Decisions needed for the ruling (collected at the spike; all ten ruled on PR #40)
 
 | # | Decision | From | Builder's recommendation |
 |---|---|---|---|
