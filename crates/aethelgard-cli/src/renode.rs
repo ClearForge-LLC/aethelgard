@@ -5,7 +5,7 @@
 //! of `There was an error executing command`. A CPU listed beside an `[ERROR]`
 //! log line is a failed load too (`platform_load_error`).
 
-use crate::run::{Output, Stop};
+use crate::run::{Bound, Bounds, Output, Stop};
 use crate::said::{self, Style};
 use crate::verdict::{Finding, Machine, Peripheral};
 
@@ -108,6 +108,54 @@ pub fn judge(code: i32, out: &Output) -> Result<(Vec<Finding>, Option<Machine>),
                 said::suffix(&text, Style::Renode)
             ),
         )),
+    }
+}
+
+/// The bounds on a boot's Renode tree (`RUL-13` as amended for `simulate
+/// --firmware`, ruled on PR #56, B1). The reference boot at `--for 100ms`,
+/// five runs each, took at most 2.16 s and 394,392 KiB of tree RSS on
+/// Furnace, and 2.59 s and 404,620 KiB in the tools image. The ruling asks at
+/// least 10x the slower wall time (26 s) and 2x the higher peak (791 MiB):
+/// 30 s, since CI's boots under parallel tests took up to 6.84 s, and 1 GiB.
+/// `RLIMIT_AS` cannot do this: CoreCLR will not start under any address-space
+/// limit, 256 GiB included (measured), so the reaper polls instead.
+pub const BOOT_BOUNDS: Bounds = Bounds {
+    wall: std::time::Duration::from_secs(30),
+    rss_kib: 1024 * 1024,
+};
+
+/// What Renode logs once its CPU has aborted; `RunFor` then never returns
+/// (adversarial A6).
+const ABORTED: &str = "This machine has aborted";
+
+/// The finding for a boot the reaper killed at a bound: `cpu_aborted` if
+/// Renode logged that its machine aborted, else the bound it exceeded.
+pub fn bounded(out: &Output, bound: Bound) -> Finding {
+    let text = out.text();
+    if let Some(line) = text.lines().find(|l| l.contains(ABORTED)) {
+        return Finding::plain(
+            "cpu_aborted",
+            format!(
+                "the machine aborted and the run never ended; killed at the {bound:?} bound: {}",
+                line.trim_matches(['\r', ' '])
+            ),
+        );
+    }
+    match bound {
+        Bound::Wall => Finding::plain(
+            "wall_bound_exceeded",
+            format!(
+                "the boot ran past the {} s wall-clock bound and was killed",
+                BOOT_BOUNDS.wall.as_secs()
+            ),
+        ),
+        Bound::Memory => Finding::plain(
+            "memory_cap_exceeded",
+            format!(
+                "Renode's resident memory passed the {} MiB cap and it was killed",
+                BOOT_BOUNDS.rss_kib / 1024
+            ),
+        ),
     }
 }
 

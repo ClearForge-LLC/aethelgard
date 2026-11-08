@@ -143,6 +143,12 @@ fn toolbox(stdout: &str) -> Dir {
 }
 
 fn toolbox_version(stdout: &str, version: &str) -> Dir {
+    toolbox_then(stdout, version, "")
+}
+
+/// As `toolbox`, with `then` run after the transcript is printed: the stub's
+/// way to overrun a bound.
+fn toolbox_then(stdout: &str, version: &str, then: &str) -> Dir {
     let tb = Dir::new("tb");
     let out = tb.write("renode.out", stdout.as_bytes());
     let body = format!(
@@ -153,6 +159,7 @@ case "$5" in
   *) exit 99;;
 esac
 /bin/cat '{out}'
+{then}
 "#,
         out = out.display()
     );
@@ -530,4 +537,44 @@ fn the_boot_flags_come_together_or_not_at_all() {
         let out = run(&tb.0, &args);
         assert_eq!(out.status.code(), Some(64), "{}", report(&out));
     }
+}
+
+/// A boot the reaper kills at a bound: the stub's output, then `then`.
+fn bounded(output: &str, then: &str) -> (Option<i32>, Value, std::time::Duration) {
+    let tb = toolbox_then(output, "Renode v1.17.0", then);
+    let input = Dir::new("in");
+    let fw = input.write("fw.elf", &elf());
+    let start = std::time::Instant::now();
+    let out = boot_with(&tb.0, &platform(), &fw, "10ms");
+    (out.status.code(), report(&out), start.elapsed())
+}
+
+/// About 1.3 GB held in a shell variable, past the 1 GiB cap.
+const HOG: &str = "x=$(/usr/bin/yes | /usr/bin/head -c 1300000000); /bin/sleep 60";
+
+#[test]
+fn a_boot_past_the_memory_cap_fails_and_names_it() {
+    let (code, v, took) = bounded("", HOG);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["memory_cap_exceeded"]);
+    assert_eq!(v["tool"]["exit_code"], -1);
+    assert!(v["boot"]["boot_word"]["observed"].is_null(), "{v}");
+    assert!(took.as_secs() < 30, "{took:?}");
+}
+
+#[test]
+fn an_aborted_machine_killed_at_a_bound_is_cpu_aborted() {
+    let log = "[08:06:18.9274] [ERROR] machine-0: This machine has aborted. Emulation cannot continue until this machine is removed.\n";
+    let (code, v, _) = bounded(log, HOG);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["cpu_aborted"]);
+}
+
+#[test]
+fn a_boot_past_the_wall_bound_fails_and_names_it() {
+    // The one slow test: the bound is 30 s (`renode::BOOT_BOUNDS`).
+    let (code, v, took) = bounded("", "/bin/sleep 60");
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["wall_bound_exceeded"]);
+    assert!(took.as_secs() >= 30 && took.as_secs() < 35, "{took:?}");
 }

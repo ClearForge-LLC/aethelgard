@@ -10,6 +10,8 @@
 //! - Two firmwares from the adversarial pass fail: one linked with no vector
 //!   table where the part boots (A3), one that leaves its own code after the
 //!   boot word (A7).
+//! - A firmware that aborts Renode's machine returns inside the wall bound
+//!   plus 5 s, as a `cpu_aborted` fail (A6; ruled on PR #56, B1).
 //!
 //! (Two emissions being byte-identical is tier 1: `aethelgard-twin`'s unit
 //! tests and the regeneration guard in `aethelgard-svd-hal`.) Each boot writes
@@ -319,4 +321,25 @@ fn a_core_that_leaves_the_firmware_after_the_boot_word_fails() {
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["pc_outside_firmware"], "{v}");
     assert_eq!(v["boot"]["boot_word"]["observed"], "0x2100b007");
+}
+
+#[test]
+fn an_aborted_machine_returns_inside_the_bound_as_cpu_aborted() {
+    // Adversarial A6: a jump into a hole after the word. Renode aborts the
+    // machine and `RunFor` never returns; before the bound, the call hung
+    // with Renode's memory growing about 55 MB/s.
+    let elf = mutant("hole", |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "    // No sleep: the judge requires",
+            "    unsafe { core::arch::asm!(\"ldr r0, =0x0A000001\", \"bx r0\", options(noreturn)) };\n    // No sleep: the judge requires",
+        );
+    });
+    let start = Instant::now();
+    let (code, v) = boot_elf("A6 hole", &elf, "10ms");
+    let took = start.elapsed();
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["cpu_aborted"], "{v}");
+    assert!(took.as_secs() < 30 + 5, "{took:?}");
 }

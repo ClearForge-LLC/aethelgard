@@ -732,13 +732,26 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         None => renode::commands(&input.copy),
     };
     let args = run::args(["--disable-gui", "--console", "--plain", "-e", &commands]);
-    let out = invocation(args, "status-run").run()?;
-    let code = out.code("renode")?;
-    let (findings, machine, observed) = match &plan {
-        Some(plan) => renode::judge_boot(code, &out, plan)?,
-        None => {
+    let run = invocation(args, "status-run");
+    // Only a boot is bounded (`RUL-13` as amended, PR #56 B1); a load is not.
+    let out = match &plan {
+        Some(_) => run.run_bounded(renode::BOOT_BOUNDS)?,
+        None => run.run()?,
+    };
+    let (code, (findings, machine, observed)) = match (&plan, &out.ended) {
+        // Killed at a bound: a fail that names it, with nothing read. A killed
+        // tool has no exit code, so the verdict records -1.
+        (Some(_), run::Ended::Bounded(bound)) => {
+            (-1, (vec![renode::bounded(&out, *bound)], None, None))
+        }
+        (Some(plan), _) => {
+            let code = out.code("renode")?;
+            (code, renode::judge_boot(code, &out, plan)?)
+        }
+        (None, _) => {
+            let code = out.code("renode")?;
             let (findings, machine) = renode::judge(code, &out)?;
-            (findings, machine, None)
+            (code, (findings, machine, None))
         }
     };
     let mut v = verdict::Verdict::new(
