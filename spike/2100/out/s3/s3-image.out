@@ -1,0 +1,58 @@
+[05:58:23.3207] [INFO] Loaded monitor commands from: /home/forge/.cache/aet-0300a-renode/x/scripts/monitor.py
+Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af)
+
+(monitor) $platform=@/home/forge/aethelgard-2100/spike/2100/out/sentinel-01.repl ;  $elf=@/home/forge/aethelgard-2100/spike/2100/fw-bare/target/thumbv7em-none-ea bihf/release/aet-2100-fw-bare;  include @/home/forge/aethelgard-2100/spike/2100/ run/s3-image.resc
+[05:58:23.3392] [INFO] Including script(s): /home/forge/aethelgard-2100/spike/2100/run/s3-image.resc
+[05:58:23.3458] [INFO] System bus created.
+[05:58:23.9572] [INFO] Pseudorandom Number Generator was created with seed: 1734961788
+[05:58:24.0316] [INFO] sysbus: Loading block of 64 bytes length at 0x8000000.
+[05:58:24.0332] [INFO] sysbus: Loading block of 1232 bytes length at 0x8000040.
+[05:58:24.0333] [INFO] sysbus: Loading block of 20 bytes length at 0x8000510.
+[05:58:24.0333] [INFO] sysbus: Loading block of 4 bytes length at 0x20000000.
+[05:58:24.0333] [INFO] sysbus: Loading block of 4 bytes length at 0x8000524.
+BEFORE
+0x00000000
+False
+0x00000000
+0x00000000
+0x00000000
+0x00000000
+0x00000000
+0x00000000
+0x00000000
+0x032807FF
+0xC0FE03FF
+0x00073033
+0x00000000
+0x00000000
+0x00000000
+0x00400000
+[05:58:24.1120] [INFO] cpu: Guessing VectorTableOffset value to be 0x8000000.
+[05:58:24.1174] [INFO] cpu: Setting initial values: PC = 0x8000041, SP = 0x20020000.
+[05:58:24.1185] [INFO] machine-0: Machine started.
+[05:58:24.1373] [WARNING] gpioPortB: Unhandled write to offset 0x4. Unhandled bits: [6] when writing value 0x40. Tags: OT6 (0x1).
+[05:58:24.1376] [WARNING] gpioPortB: Unhandled write to offset 0x4. Unhandled bits: [7] when writing value 0x80. Tags: OT7 (0x1).
+[05:58:24.1379] [WARNING] i2c1: Unhandled write to offset 0x10. Unhandled bits: [0-1, 4-6, 8, 13, 21-22] when writing value 0x602173. Tags: SCLL (0x73), SCLH (0x21), SCLDEL (0x6).
+[05:58:24.1416] [INFO] machine-0: Machine paused.
+AFTER
+0x2100B007
+True
+0x0000A801
+0x00000000
+0x00000001
+0x55500000
+0x0000A000
+0x00000000
+0x44000000
+0x032807FF
+0xC0FE03FF
+0x00073033
+0x00000001
+0x00000000
+0x00000001
+0x00400000
+0x80004ae
+0x00000000000F4240
+END
+Renode is quitting
+[05:58:24.3661] [INFO] machine-0: Disposed.

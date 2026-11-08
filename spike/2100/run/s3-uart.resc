@@ -1,0 +1,8 @@
+# AET-WO-2100 spike S3: the UART candidate. USART3's output goes to a file.
+mach create
+machine LoadPlatformDescription $platform
+sysbus LoadELF $elf
+usart3 CreateFileBackend $uartlog true
+emulation RunFor "0.01"
+sysbus ReadDoubleWord 0x20000000
+quit

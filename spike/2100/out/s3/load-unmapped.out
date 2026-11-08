@@ -1,0 +1,10 @@
+[06:07:59.1755] [INFO] Loaded monitor commands from: /home/forge/.cache/aet-0300a-renode/x/scripts/monitor.py
+Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af)
+
+(monitor) logLevel 3;  mach create;  machine LoadPlatformDescription @/home/forg e/aethelgard-2100/spike/2100/out/sentinel-01.repl;  sysbus LoadELF @/tmp/claude- 1001/-home-forge-aethelgard-2100/4049a257-3d0a-4af3-a7e2-3e2cf74236f2/scratchpad /badelf/fw/target/thumbv7em-none-eabihf/release/aet-2100-fw-bare;  emulation Run For "0.01";  echo "OBS";  sysbus ReadDoubleWord 0x20000000;  cpu PC;  cpu Execut edInstructions;  quit
+OBS
+0x00000000
+0xeffffffe
+0x0000000000000000
+Renode is quitting
+

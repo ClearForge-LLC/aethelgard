@@ -1,0 +1,16 @@
+# AET-WO-2100 spike, S1: a probe emitter, not the build's. Its own workspace,
+# so it never joins the repository's. The build deletes `spike/`.
+[package]
+name = "aet-2100-s1-emit"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+aethelgard-ir = { path = "../../../crates/aethelgard-ir" }
+aethelgard-svd-hal = { path = "../../../crates/aethelgard-svd-hal" }
+serde_json = "1"
+sha2 = "0.11"
+
+[workspace]

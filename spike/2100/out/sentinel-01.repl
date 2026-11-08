@@ -1,0 +1,7 @@
+using "platforms/cpus/stm32h753.repl"
+
+spi1: SPI.STM32H7_SPI @ {
+        sysbus 0x40013000;
+        rcc RegistrationPeripheralAlias.SPI1
+    }
+    IRQ -> nvic@35

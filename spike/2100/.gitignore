@@ -1,0 +1,3 @@
+# Build output of the spike crates (AET-WO-2100); the build deletes spike/.
+target/
+target-uart/

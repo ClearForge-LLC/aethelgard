@@ -1,0 +1,9 @@
+# AET-WO-2100 spike S3: does Renode's RCC gate a peripheral whose enable
+# bit is clear? Clear RCC_AHB4ENR, write GPIOA MODER, read it back.
+mach create
+machine LoadPlatformDescription $platform
+sysbus WriteDoubleWord 0x580244E0 0x0
+sysbus ReadDoubleWord 0x580244E0
+sysbus WriteDoubleWord 0x58020000 0x5
+sysbus ReadDoubleWord 0x58020000
+quit

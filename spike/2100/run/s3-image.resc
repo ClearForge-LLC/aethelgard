@@ -1,0 +1,46 @@
+# AET-WO-2100 spike S3: every candidate observable, read before and after a
+# fixed virtual time. $platform and $elf are set by the caller (-e).
+mach create
+machine LoadPlatformDescription $platform
+machine LoadPlatformDescriptionFromString "pa0led: Miscellaneous.LED @ gpioPortA 0"
+machine LoadPlatformDescriptionFromString "gpioPortA: { 0 -> pa0led@0 }"
+sysbus LoadELF $elf
+echo "BEFORE"
+sysbus ReadDoubleWord 0x20000000
+gpioPortA.pa0led State
+sysbus ReadDoubleWord 0x58020000
+sysbus ReadDoubleWord 0x58020004
+sysbus ReadDoubleWord 0x58020014
+sysbus ReadDoubleWord 0x58020020
+sysbus ReadDoubleWord 0x58020400
+sysbus ReadDoubleWord 0x58020404
+sysbus ReadDoubleWord 0x58020420
+sysbus ReadDoubleWord 0x580244E0
+sysbus ReadDoubleWord 0x580244E8
+sysbus ReadDoubleWord 0x580244F0
+sysbus ReadDoubleWord 0x40005400
+sysbus ReadDoubleWord 0x40005410
+sysbus ReadDoubleWord 0x40013000
+sysbus ReadDoubleWord 0x4001300C
+emulation RunFor "0.01"
+echo "AFTER"
+sysbus ReadDoubleWord 0x20000000
+gpioPortA.pa0led State
+sysbus ReadDoubleWord 0x58020000
+sysbus ReadDoubleWord 0x58020004
+sysbus ReadDoubleWord 0x58020014
+sysbus ReadDoubleWord 0x58020020
+sysbus ReadDoubleWord 0x58020400
+sysbus ReadDoubleWord 0x58020404
+sysbus ReadDoubleWord 0x58020420
+sysbus ReadDoubleWord 0x580244E0
+sysbus ReadDoubleWord 0x580244E8
+sysbus ReadDoubleWord 0x580244F0
+sysbus ReadDoubleWord 0x40005400
+sysbus ReadDoubleWord 0x40005410
+sysbus ReadDoubleWord 0x40013000
+sysbus ReadDoubleWord 0x4001300C
+cpu PC
+cpu ExecutedInstructions
+echo "END"
+quit

@@ -1,0 +1,29 @@
+[06:05:16.8896] [INFO] Loaded monitor commands from: /home/forge/.cache/aet-0300a-renode/x/scripts/monitor.py
+Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af)
+
+(monitor) $platform=@/home/forge/aethelgard-2100/spike/2100/out/sentinel-01.repl ;  $elf=@/home/forge/aethelgard-2100/spike/2100/fw-bare/target/thumbv7em-none-ea bihf/release/aet-2100-fw-bare;  $time="0.01";  include @/home/forge/aethelgard-2 100/spike/2100/run/s4-boot.resc
+OBSERVED
+0x2100B007
+0x80004ae
+0x00000000000F4240
+0x0000A801
+0x00000001
+0x55500000
+0x0000A000
+0x44000000
+0x00000001
+0x00000001
+UID
+0xD89241E8
+0x0BBBF929
+TIME
+Elapsed Virtual Time: 00:00:00.010000000
+Elapsed Host Time: 00:00:02.101614600
+Current load: 200.9618
+Cumulative load: 210.16146
+State: Idle
+Advance immediately: False
+Quantum: 00:00:00.000100000
+0x00000064
+Renode is quitting
+
