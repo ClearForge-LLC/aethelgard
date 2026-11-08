@@ -47,6 +47,66 @@ jobs:
           cat examples/invalid-zero-domain.json | cargo run -q -p aethelgard-cli -- validate || status=$?
           test "$status" -eq 2
 
+      # AET-WO-1800: every publishable crate packages, in dependency order, and
+      # the CLI builds from those packages alone. No token, no publish.
+      - name: package every publishable crate and build the CLI from the packages
+        run: |
+          set -euo pipefail
+          # Dependency order: cargo packages a path dependency's sibling from the
+          # same invocation, so this list is also the order docs/releasing.md publishes in.
+          crates="aethelgard-ir aethelgard-kicad-lib aethelgard-svd-hal aethelgard-eda aethelgard-twin aethelgard-chaos aethelgard-cli"
+          # The list must be exactly the workspace members that may publish.
+          want=$(cargo metadata --no-deps --format-version 1 --locked \
+            | jq -r '.packages[] | select(.publish != []) | .name' | sort | tr '\n' ' ')
+          have=$(printf '%s\n' $crates | sort | tr '\n' ' ')
+          test "$want" = "$have" || { echo "publishable set drifted: workspace [$want] vs step [$have]"; exit 1; }
+          args=""; for c in $crates; do args="$args -p $c"; done
+          rm -rf target/package
+          cargo package --locked $args
+          for c in $crates; do
+            crate="target/package/$c-0.1.0.crate"
+            files=$(tar -tzf "$crate" | grep -v '/$' | sed 's|^[^/]*/||')
+            size=$(stat -c %s "$crate")
+            test "$size" -lt $((10 * 1024 * 1024)) || { echo "$c: $size bytes is over the 10 MiB crates.io limit"; exit 1; }
+            # kicad-lib is CC-BY-SA-4.0: KiCad's LICENSE.md is its licence, and it carries neither MIT nor Apache.
+            need="README.md"
+            if [ "$c" = aethelgard-kicad-lib ]; then
+              need="$need data/kicad-10.0.7/LICENSE.md"
+              for f in LICENSE-MIT LICENSE-APACHE; do
+                if printf '%s\n' "$files" | grep -qxF "$f"; then echo "$c: $f must not be in the package"; exit 1; fi
+              done
+            else
+              need="$need LICENSE-MIT LICENSE-APACHE"
+            fi
+            if [ "$c" = aethelgard-svd-hal ]; then
+              need="$need data/st-cmsis-device-h7/LICENSE.md data/st-cmsis-device-h7/SOURCE.md data/st-open-pin-data/LICENSE data/st-open-pin-data/SOURCE.md"
+            fi
+            for f in $need; do
+              printf '%s\n' "$files" | grep -qxF "$f" || { echo "$c: licence or notice file $f is missing from the package"; exit 1; }
+            done
+            bad=$(printf '%s\n' "$files" | grep -E '(^|/)(target|\.git|boards)(/|$)' | head -1 || true)
+            test -z "$bad" || { echo "$c: forbidden path $bad in the package"; exit 1; }
+            # Every include_bytes!/include_str! target must be in the package.
+            for f in $(printf '%s\n' "$files" | grep -E '^src/.*\.rs$'); do
+              for t in $(tar -xzOf "$crate" "$c-0.1.0/$f" | tr -s ' \n' '  ' \
+                  | grep -oE 'include_(bytes|str)! ?\( ?"[^"]+"' | sed -E 's/^[^"]*"//; s/"$//'); do
+                norm=$(realpath -m --relative-to=/pkg "/pkg/$(dirname "$f")/$t")
+                printf '%s\n' "$files" | grep -qxF "$norm" \
+                  || { echo "$c: include target $t (from $f) is missing from the package"; exit 1; }
+              done
+            done
+            echo "ok $c: $size bytes, $(printf '%s\n' "$files" | wc -l) files"
+          done
+          # Build the CLI from the unpacked packages alone, offline.
+          un="$RUNNER_TEMP/unpacked"; rm -rf "$un"; mkdir -p "$un"
+          cfg=()
+          for c in $crates; do
+            tar -xzf "target/package/$c-0.1.0.crate" -C "$un"
+            cfg+=(--config "patch.crates-io.$c.path=\"$un/$c-0.1.0\"")
+          done
+          cargo install --path "$un/aethelgard-cli-0.1.0" --locked --offline --root "$un/root" "${cfg[@]}"
+          "$un/root/bin/aethelgard" validate < examples/sentinel-01-minimal.json
+
   # Tier 2: the tool subcommands against the real tools, inside the image
   # pinned by container/IMAGE (RUL-15). Crates are fetched and everything is
   # compiled with the network; every tool run happens under --network none.

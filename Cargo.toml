@@ -24,11 +24,11 @@ repository = "https://github.com/ClearForge-LLC/aethelgard"
 unsafe_code = "forbid"
 
 [workspace.dependencies]
-aethelgard-ir = { path = "crates/aethelgard-ir" }
-aethelgard-svd-hal = { path = "crates/aethelgard-svd-hal" }
-aethelgard-twin = { path = "crates/aethelgard-twin" }
-aethelgard-eda = { path = "crates/aethelgard-eda" }
-aethelgard-kicad-lib = { path = "crates/aethelgard-kicad-lib" }
+aethelgard-ir = { path = "crates/aethelgard-ir", version = "0.1.0" }
+aethelgard-svd-hal = { path = "crates/aethelgard-svd-hal", version = "0.1.0" }
+aethelgard-twin = { path = "crates/aethelgard-twin", version = "0.1.0" }
+aethelgard-eda = { path = "crates/aethelgard-eda", version = "0.1.0" }
+aethelgard-kicad-lib = { path = "crates/aethelgard-kicad-lib", version = "0.1.0" }
 clap = { version = "4", features = ["derive"] }
 landlock = "0.4.7"
 rmcp = { version = "=3.7.0", default-features = false, features = ["server", "transport-io"] }

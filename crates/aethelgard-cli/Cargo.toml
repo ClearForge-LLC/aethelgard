@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["embedded","hardware","cli","firmware","kicad"]
+categories = ["command-line-utilities","embedded"]
 
 [[bin]]
 name = "aethelgard"

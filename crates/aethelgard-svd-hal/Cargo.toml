@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["stm32","svd","hal","embedded"]
+categories = ["embedded","development-tools"]
 
 [dependencies]
 aethelgard-ir.workspace = true
@@ -14,7 +17,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 # The regeneration guard also covers the emitted platform (AET-WO-2100, R6).
-aethelgard-twin.workspace = true
+aethelgard-twin = { path = "../aethelgard-twin" }
 sentinel-01-board.workspace = true
 serde_json.workspace = true
 trybuild.workspace = true
