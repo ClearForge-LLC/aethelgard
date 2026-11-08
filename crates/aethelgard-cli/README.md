@@ -6,14 +6,14 @@ The `aethelgard` binary. It is the contract every caller uses (`docs/architectur
 
 | Code | Meaning | `error.kind` values |
 |---|---|---|
-| `0` | `validate`: the specification is valid. A tool subcommand: the tool ran and its verdict is pass | none: stdout is the success report or the verdict |
+| `0` | `validate`: the specification is valid. `solve`: it was solved, and stdout is the `SolvedTopology`. A tool subcommand: the tool ran and its verdict is pass | none: stdout is the success report, the `SolvedTopology`, or the verdict |
 | `1` | A tool subcommand: the tool ran and its verdict is fail (violations found, the proof failed, the crate did not compile, the harness does not exist, the platform did not load). The input is at fault; the tool worked | none: stdout is the verdict |
-| `2` | Invalid specification: well-formed JSON of the wrong shape (unknown, missing or duplicate field, wrong type including deep nesting where a value was expected, negative or overflowing number), or a value `validate()` refuses | `SchemaViolation`, or an `IrValidationError` variant name such as `InvalidIdentifier`, `NoVoltageDomain`, `UnknownDomain`, `DuplicateI2cAddress` or `ZeroNominalVoltage`; `InvalidIdentifier` also carries `error.path` |
+| `2` | Invalid specification: well-formed JSON of the wrong shape (unknown, missing or duplicate field, wrong type including deep nesting where a value was expected, negative or overflowing number), or a value `validate()` refuses. `solve` also: a part with no pin table, or a specification the solver cannot realize | `SchemaViolation`, or an `IrValidationError` variant name such as `InvalidIdentifier`, `NoVoltageDomain`, `UnknownDomain`, `DuplicateI2cAddress` or `ZeroNominalVoltage`; `InvalidIdentifier` also carries `error.path`. `solve` also: `UnknownPart`, or a `SolveError` kind (below), which carries `error.claimants` |
 | `3` | Unreadable input. `validate`: the file or stdin cannot be read, is empty, is more than 16 MiB, or is not one JSON document (syntax error, trailing data, a byte-order mark). A tool subcommand: an input path that does not exist, cannot be read, or is not a regular file (not a directory, for `--crate`); a crate holding a symlink, a special file or a non-UTF-8 name; a Renode built-in path outside Renode's own tree; `InputTooLarge`: a copied file, or a crate's files together, of more than 16 MiB (16,777,216 bytes), or a crate of more than 4,096 files (counted after `target/` is skipped). The byte cap is enforced while copying, never by truncating | `UnreadableInput`, `InputTooLarge`, `InvalidJson` |
 | `4` | The tool cannot be used: it is not on `PATH`, is not executable, will not report its version, or lacks an environment variable it needs; or the sandbox is unavailable. Never a verdict (`INV-06`) | `ToolMissing` (`id`: the tool), `ToolUnusable` (`id`: the tool, or the missing variable), `SandboxUnavailable` (`id`: `landlock`, `seccomp`, or `descriptors`) |
 | `5` | The tool ran but its output cannot be trusted as a verdict: killed by a signal, an exit code outside the ones measured for it, a missing, unparseable or oversized report or output, or two witnesses that disagree. Never read as pass or fail | `ToolError` (`id`: the tool) |
 | `64` | Usage error: unknown subcommand or flag, missing subcommand or required flag | `UsageError` |
-| `70` | Internal error: the report could not be written to stdout (for example, the reader closed the pipe), the parent-death signal could not be set, or the process that started this one is already gone (see the reaper below). Nothing is printed on stdout; the reason goes to stderr | none |
+| `70` | Internal error: the report could not be written to stdout (for example, the reader closed the pipe), the parent-death signal could not be set, or the process that started this one is already gone (see the reaper below); or `solve`'s vendored pin table failed its own hash or parse check, which only a corrupted build can cause. Nothing is printed on stdout; the reason goes to stderr | none |
 
 A stdout closed by the caller (`>&-`) is not an exit-`70` case: the Rust runtime reopens a closed standard descriptor on `/dev/null` before `main` runs, so it behaves exactly like `>/dev/null`, and the exit code still reports the verdict.
 
@@ -42,6 +42,26 @@ On refusal, exit `2` or `3`:
 `id` is the offending name exactly as written (nothing is trimmed; whitespace is refused as an invalid identifier), or `null` when the refusal names no single thing: `InvalidIdentifier` (the JSON path of the field, such as `i2c_buses[0].sda.net`, is in the optional `path` field, which exists for that kind only and is absent from every other refusal; `message` repeats it for humans), `UnsupportedSchemaVersion`, `NoVoltageDomain`, a whole-document error.
 
 Every key is required, including `peripheral`, `pin` and `impedance_ohms`, which are `null` when unset. The shape and the refusals, in check order, are in `crates/aethelgard-ir/README.md`. See `examples/` at the repository root.
+
+## `solve`
+
+```
+aethelgard solve --file <path>
+```
+
+Reads one `Specification` from the file, under the same 16 MiB cap and with the same exit `2` and `3` refusals as `validate`, and validates it. It then loads the pin table for `mcu.part` (exit `2`, `UnknownPart`, `id` the part, for any part but `STM32H753ZITx`), solves (`aethelgard_ir::solve`), and prints the `SolvedTopology` as one JSON line, exit `0`. `specification_sha256` is the sha256 of the file's bytes as read, so reformatting the file changes the hash and nothing else. It writes no file.
+
+```json
+{"schema_version":1,"specification_sha256":"9a42e84f…","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},…},"gpio":{"FLASH_CS":"PA0"}}
+```
+
+A specification the solver cannot realize is exit `2`. The refusal envelope adds `claimants`, an array naming who is in conflict:
+
+```json
+{"ok":false,"error":{"kind":"PinClaimedTwice","id":"PB9","claimants":["i2c_buses[0].sda","spi_devices[0].cs"],"message":"pin `PB9` is claimed by both `i2c_buses[0].sda` and `spi_devices[0].cs`"}}
+```
+
+The kinds, what `claimants` names for each, the search order, the reserved pins and the check order are in `crates/aethelgard-ir/README.md`.
 
 ## The tool subcommands
 
@@ -132,7 +152,7 @@ Before it starts, it runs the trampoline's inherited-descriptor check. A descrip
 
 Generated at startup from the unbuilt `clap` command tree, never written by hand, so a new subcommand appears with no change to the `mcp` module (`INV-01`):
 
-- one tool per leaf subcommand, named by its path joined with `_`: `validate`, `check_drc`, `check_erc`, `prove`, `simulate`. `help` and `mcp` are never tools;
+- one tool per leaf subcommand, named by its path joined with `_`: `validate`, `solve`, `check_drc`, `check_erc`, `prove`, `simulate`. `help` and `mcp` are never tools;
 - the description is the subcommand's about text;
 - the input schema is an object with one **string** property per declared argument, keyed by its **long name** (`prove`'s directory is `crate`, not `crate_dir`), `required` exactly when `clap` requires it, and `additionalProperties` false.
 
@@ -164,4 +184,4 @@ A `notifications/cancelled` for a call kills its child; the CLI's reaper then en
 npx @modelcontextprotocol/inspector aethelgard mcp
 ```
 
-lists the five tools, and a `validate` call with `file` set to `examples/sentinel-01-minimal.json` returns `isError` false.
+lists the six tools, and a `validate` call with `file` set to `examples/sentinel-01-minimal.json` returns `isError` false.
