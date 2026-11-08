@@ -92,7 +92,7 @@ No `HashMap`, no `unsafe`, and no clock in the new code. The ceiling is a pure f
 - **Reduction pass (diff):** nothing to remove · 0 duplicates removed · 0 dead paths · 0 protected · 1 finding: R1, below.
   - Run by the builder over the diff (about 150 lines of code), not by a fresh subagent.
   - **R1:** the three I2C mode speeds are now listed in `SolvedTopology::validate` and in `ceiling_hz`, and already were in `Specification::validate` (`UnsupportedI2cSpeed`). One constant would hold them, but `Specification::validate` is outside this work order's fence.
-- **CI:** first push of the build, below.
+- **CI**, first push of the build (`c760621`): `gates` and `tools` both green, https://github.com/ClearForge-LLC/aethelgard/actions/runs/42429273875. `gates` ran every §1.4 test in its debug profile. The engine-image workflow (`AET-WO-1501`) also ran on that push: `image` green, `publish` skipped (main only). The stop's first push (`ac9660d`) was green too.
 
 ## The §7 stop that preceded the ruling (first push, `ac9660d`)
 
