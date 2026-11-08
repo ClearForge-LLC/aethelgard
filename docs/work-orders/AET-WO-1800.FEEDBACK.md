@@ -6,26 +6,30 @@
 
 ## Acceptance
 
-Packages, from the gates step run locally and in CI (`.crate` size, file count). Each holds `LICENSE-MIT`, `LICENSE-APACHE` and `README.md`; kicad-lib holds `data/kicad-10.0.7/LICENSE.md`; svd-hal holds ST's `LICENSE.md`, `LICENSE` and both `SOURCE.md`.
+Packages, from the gates step run locally and in CI (`.crate` size, file count). Each but kicad-lib holds `LICENSE-MIT`, `LICENSE-APACHE` and `README.md`; kicad-lib (CC-BY-SA-4.0) holds `README.md` and KiCad's `data/kicad-10.0.7/LICENSE.md` and neither MIT nor Apache file, asserted by the step and by `package_licences.rs`; svd-hal holds ST's `LICENSE.md`, `LICENSE` and both `SOURCE.md`.
 
 | crate | bytes | files |
 |---|---|---|
-| aethelgard-ir | 38156 | 11 |
-| aethelgard-kicad-lib | 23619 | 26 |
-| aethelgard-svd-hal | 309803 | 44 |
-| aethelgard-eda | 73949 | 19 |
-| aethelgard-twin | 15348 | 11 |
-| aethelgard-chaos | 35480 | 20 |
-| aethelgard-cli | 173903 | 44 |
+| aethelgard-ir | 38152 | 11 |
+| aethelgard-kicad-lib | 19172 | 24 |
+| aethelgard-svd-hal | 309806 | 44 |
+| aethelgard-eda | 73950 | 19 |
+| aethelgard-twin | 15341 | 11 |
+| aethelgard-chaos | 35478 | 20 |
+| aethelgard-cli | 174045 | 44 |
 
 `cargo metadata`: `aethelgard-evolve` has `publish = []`; the board crates (`boards/sentinel-01`, its `firmware`) carry `publish = false` and are outside the workspace. The CLI built and ran (`validate` on the minimal example) from the unpacked packages with `--offline` and `patch.crates-io` pointing at them.
 
 ## Adversarial pass
 
-1. Excluding `data/st-cmsis-device-h7/stm32h753xx.h` from svd-hal: the step fails, naming the file (`couldn't read src/../data/.../stm32h753xx.h`, from cargo's own verification build; the step's include-target check is the second net).
-2. Dropping `version` from the `aethelgard-ir` path entry: the step fails (`failed to verify manifest` of aethelgard-eda).
-3. Reads outside a package directory: none at build or run time. `board/firmware.rs:171` and `board.rs:644` mention `../../../target` and `boards/` only inside emitted text. Tests in svd-hal reach `boards/` (a path dev-dependency, stripped when packaged); packaging never runs tests.
-4. Mutant of the licence test: one appended byte in `twin/LICENSE-MIT` fails it, naming the file.
+The packaging step is bash and `jq` only (no Python). Re-run on it:
+
+1. Excluding `data/st-cmsis-device-h7/stm32h753xx.h` from svd-hal: fails, naming the file (`couldn't read src/../data/.../stm32h753xx.h`, from cargo's verification build). Excluding ST's `data/st-open-pin-data/SOURCE.md` fails in the step: `aethelgard-svd-hal: licence or notice file data/st-open-pin-data/SOURCE.md is missing from the package`.
+2. Dropping `version` from the `aethelgard-ir` path entry: fails (`failed to verify manifest` of aethelgard-eda).
+3. Reads outside a package directory: none at build or run time. `board/firmware.rs:171` and `board.rs:644` mention `../../../target` and `boards/` only inside emitted text. svd-hal's tests reach `boards/` through a path dev-dependency, stripped when packaged; packaging never runs tests.
+4. Licence mutants: `LICENSE-MIT` removed from twin fails (`aethelgard-twin: licence or notice file LICENSE-MIT is missing from the package`); an MIT copy added to kicad-lib fails (`aethelgard-kicad-lib: LICENSE-MIT must not be in the package`); one appended byte in `twin/LICENSE-MIT` fails `package_licences.rs`.
+
+The first adversarial run after the rewrite showed the offline `cargo install` quoting was wrong in the committed step (an uncommitted fix had been lost to a `git reset`); fixed and the full step re-run green, ending in `aethelgard validate` on the packaged binary.
 
 ## Findings
 
