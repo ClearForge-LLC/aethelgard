@@ -1321,6 +1321,128 @@ fn prove_killed_by_sigkill_is_tool_error() {
     refused(&prove(&tb, &c.path, "h"), 5, "ToolError");
 }
 
+// ---------------------------------------------------------------- 10a. a ToolError says what the tool said (AET-WO-1502)
+
+fn message(report: &Value) -> &str {
+    report["error"]["message"].as_str().unwrap()
+}
+
+#[test]
+fn prove_disagreement_quotes_every_error_line() {
+    let tb = Dir::new("tb");
+    kani_stub(
+        &tb,
+        Version::Good,
+        1,
+        "something odd\n",
+        "error: failed to get index\nerror: no matching package named `nope` found\n",
+    );
+    let c = krate();
+    let report = refused(&prove(&tb, &c.path, "h"), 5, "ToolError");
+    assert!(
+        message(&report)
+            .ends_with("; the tool said: error: failed to get index | error: no matching package named `nope` found"),
+        "{report}"
+    );
+}
+
+#[test]
+fn prove_unexpected_exit_quotes_the_tools_error_line() {
+    let tb = Dir::new("tb");
+    kani_stub(&tb, Version::Good, 2, "error: boom\n", "");
+    let c = krate();
+    let report = refused(&prove(&tb, &c.path, "h"), 5, "ToolError");
+    assert_eq!(
+        message(&report),
+        "cargo kani exited 2, which is neither 0 nor 1; the tool said: error: boom",
+        "{report}"
+    );
+}
+
+#[test]
+fn prove_without_an_error_line_says_nothing_extra() {
+    let tb = Dir::new("tb");
+    kani_stub(
+        &tb,
+        Version::Good,
+        1,
+        "something odd\n",
+        "warning: not an error\n",
+    );
+    let c = krate();
+    let report = refused(&prove(&tb, &c.path, "h"), 5, "ToolError");
+    assert!(!message(&report).contains("the tool said"), "{report}");
+}
+
+#[test]
+fn prove_quotes_a_hostile_line_as_short_printable_ascii() {
+    let tb = Dir::new("tb");
+    let line = format!("error: \"}}\\\u{1b}[2J\u{e9}\t{}", "x".repeat(1000));
+    kani_stub(&tb, Version::Good, 1, &format!("{line}\n"), "");
+    let c = krate();
+    let output = prove(&tb, &c.path, "h");
+    let report = refused(&output, 5, "ToolError");
+    let said = message(&report).split_once("; the tool said: ").unwrap().1;
+    assert!(said.starts_with("error: \"}\\?[2J??"), "{said}");
+    assert!(said.ends_with('\u{2026}'));
+    let body = said.strip_suffix('\u{2026}').unwrap();
+    assert_eq!(body.len(), 400);
+    assert!(body.bytes().all(|b| (0x20..=0x7E).contains(&b)), "{said}");
+    // One JSON line on stdout, however hostile the quote.
+    assert_eq!(output.stdout.iter().filter(|b| **b == b'\n').count(), 1);
+}
+
+#[test]
+fn simulate_nonzero_exit_quotes_the_error_line() {
+    let tb = Dir::new("tb");
+    renode_stub(&tb, Version::Good, 1, "12:00 [ERROR] bad thing\n");
+    let p = input("p.repl", b"x\n");
+    let report = refused(&simulate(&tb, p.path.as_os_str()), 5, "ToolError");
+    assert_eq!(
+        message(&report),
+        "renode exited 1; the tool said: 12:00 [ERROR] bad thing",
+        "{report}"
+    );
+}
+
+#[test]
+fn simulate_unrecognised_output_quotes_the_error_line() {
+    let tb = Dir::new("tb");
+    renode_stub(
+        &tb,
+        Version::Good,
+        0,
+        "Available peripherals:\n  (machine-0)\n[ERROR] oops\n",
+    );
+    let p = input("p.repl", b"x\n");
+    let report = refused(&simulate(&tb, p.path.as_os_str()), 5, "ToolError");
+    assert!(
+        message(&report).ends_with("; the tool said: [ERROR] oops"),
+        "{report}"
+    );
+
+    renode_stub(
+        &tb,
+        Version::Good,
+        0,
+        &format!("{LOAD_ERROR}{CPU_LISTING}[ERROR] again\n"),
+    );
+    let report = refused(&simulate(&tb, p.path.as_os_str()), 5, "ToolError");
+    assert!(
+        message(&report).ends_with("; the tool said: [ERROR] again"),
+        "{report}"
+    );
+}
+
+#[test]
+fn simulate_without_an_error_line_says_nothing_extra() {
+    let tb = Dir::new("tb");
+    renode_stub(&tb, Version::Good, 1, CPU_LISTING);
+    let p = input("p.repl", b"x\n");
+    let report = refused(&simulate(&tb, p.path.as_os_str()), 5, "ToolError");
+    assert_eq!(message(&report), "renode exited 1", "{report}");
+}
+
 // ---------------------------------------------------------------- 11. the copy is judged
 
 const ORIGINAL: &[u8] = b"(kicad_pcb (version 20240108))\n";
