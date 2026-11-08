@@ -233,7 +233,7 @@ struct Builder<'a> {
 }
 
 impl Builder<'_> {
-    /// The next free `R<n>` or `C<n>`, skipping every reference the
+    /// The next free `U<n>`, `R<n>` or `C<n>`, skipping every reference the
     /// specification uses.
     fn reference(&mut self, prefix: char) -> String {
         let n = self.next.entry(prefix).or_insert(0);
@@ -372,17 +372,7 @@ pub fn emit(
     };
 
     // The MCU.
-    let mcu_ref = {
-        let mut n = 1;
-        loop {
-            let r = format!("U{n}");
-            if !b.used.contains(&r) {
-                b.used.insert(r.clone());
-                break r;
-            }
-            n += 1;
-        }
-    };
+    let mcu_ref = b.reference('U');
     let mcu_sym = library::symbol("MCU_ST_STM32H7:STM32H753ZITx")?;
     let mcu_pins = pins(&mcu_sym).map_err(EmitError::Internal)?;
     let mut conns = BTreeMap::new();
@@ -517,7 +507,7 @@ pub fn emit(
                 });
             }
         };
-        device(&mut b, d, lib_id, conns)?;
+        device(&mut b, &d.reference, lib_id, conns)?;
         b.decouple(&d.supply, "100n");
     }
     for d in &spec.spi_devices {
@@ -556,7 +546,7 @@ pub fn emit(
             ("8", rail),
         ]
         .to_vec();
-        device(&mut b, d, "Memory_Flash:W25Q32JVSS", conns)?;
+        device(&mut b, &d.reference, "Memory_Flash:W25Q32JVSS", conns)?;
         b.decouple(&d.supply, "100n");
     }
     let rails = b.rails.clone();
@@ -570,7 +560,7 @@ pub fn emit(
 /// A device's part, with the part's default footprint and the D2 note.
 fn device(
     b: &mut Builder<'_>,
-    d: &impl Device,
+    reference: &str,
     lib_id: &'static str,
     conns: Vec<(&str, Conn)>,
 ) -> Result<(), EmitError> {
@@ -587,27 +577,13 @@ fn device(
     };
     b.parts.push(Part {
         lib_id,
-        reference: d.reference().to_owned(),
+        reference: reference.to_owned(),
         value,
         footprint: sym.property("Footprint").unwrap_or("").to_owned(),
         conns: conns.into_iter().map(|(n, c)| (n.to_owned(), c)).collect(),
         note,
     });
     Ok(())
-}
-
-trait Device {
-    fn reference(&self) -> &str;
-}
-impl Device for aethelgard_ir::I2cDevice {
-    fn reference(&self) -> &str {
-        &self.reference
-    }
-}
-impl Device for aethelgard_ir::SpiDevice {
-    fn reference(&self) -> &str {
-        &self.reference
-    }
 }
 
 pub struct BomRow {

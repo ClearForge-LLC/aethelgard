@@ -522,3 +522,15 @@ fn every_connection_point_belongs_to_exactly_what_the_emitter_meant() {
         );
     }
 }
+
+/// A pin ST's table and KiCad's symbol name differently (`PC2` and `PC2_C`,
+/// package pin 28) is drawn by its position, so it is not refused.
+#[test]
+fn a_solved_pin_is_drawn_by_its_package_position() {
+    let d = Dir::new("pc2");
+    let mut spec = sentinel_spec();
+    spec["spi_buses"][0]["miso"]["pin"] = json!("PC2");
+    let r = json_line(&emit(&write_spec(&d, &spec), &d.0.join("o")), 0);
+    let text = fs::read_to_string(r["schematic"]["path"].as_str().unwrap()).unwrap();
+    assert!(text.contains("(label \"SPI_MISO\""), "no SPI_MISO label");
+}

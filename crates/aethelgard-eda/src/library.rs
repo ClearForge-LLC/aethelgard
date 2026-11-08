@@ -11,9 +11,6 @@ use sha2::{Digest, Sha256};
 
 use crate::sexpr::{self, Sx};
 
-/// The library's release, as the tools image carries it.
-pub const KICAD_TAG: &str = "10.0.7";
-
 /// Every vendored file: its path under `data/kicad-10.0.7/`, its sha256, and
 /// its bytes.
 type Vendored = (&'static str, &'static str, &'static [u8]);
@@ -144,26 +141,29 @@ pub enum LibraryError {
     ExtendsTooDeep(String),
 }
 
+/// The first file whose bytes do not hash to the sha256 recorded for them.
+fn verify(files: &[Vendored]) -> Result<(), LibraryError> {
+    for &(path, expected, bytes) in files {
+        let actual: String = Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        if actual != expected {
+            return Err(LibraryError::HashMismatch {
+                path,
+                expected,
+                actual,
+            });
+        }
+    }
+    Ok(())
+}
+
 /// The checked files, or the first that failed its hash; checked once.
 fn checked() -> Result<&'static [Vendored], LibraryError> {
     static CHECK: OnceLock<Result<(), LibraryError>> = OnceLock::new();
     CHECK
-        .get_or_init(|| {
-            for (path, expected, bytes) in FILES {
-                let actual: String = Sha256::digest(bytes)
-                    .iter()
-                    .map(|b| format!("{b:02x}"))
-                    .collect();
-                if actual != expected {
-                    return Err(LibraryError::HashMismatch {
-                        path,
-                        expected,
-                        actual,
-                    });
-                }
-            }
-            Ok(())
-        })
+        .get_or_init(|| verify(&FILES))
         .clone()
         .map(|()| &FILES[..])
 }
@@ -322,6 +322,16 @@ mod tests {
     #[test]
     fn every_vendored_file_matches_its_hash() {
         assert_eq!(files().unwrap().len(), FILES.len());
+    }
+
+    #[test]
+    fn a_file_that_does_not_match_its_hash_is_refused() {
+        let (path, expected, _) = FILES[0];
+        let tampered = [(path, expected, &b"(footprint)"[..])];
+        assert!(matches!(
+            verify(&tampered),
+            Err(LibraryError::HashMismatch { path: p, .. }) if p == path
+        ));
     }
 
     #[test]

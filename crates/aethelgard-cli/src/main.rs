@@ -339,7 +339,7 @@ fn check_kicad(
     let original = input::file_check(path)?;
     let (rules, spec_sha256) = match spec {
         Some(file) => {
-            let (spec, sha256) = read_spec(file).map_err(|(refusal, code)| run::Stop {
+            let (spec, sha256) = read_spec(Some(file)).map_err(|(refusal, code)| run::Stop {
                 code,
                 kind: refusal.error.kind,
                 id: refusal.error.id,
@@ -520,27 +520,8 @@ fn simulate(platform: &Path) -> Result<verdict::Verdict, run::Stop> {
 }
 
 fn validate(file: Option<&Path>) -> ExitCode {
-    let input = match read_input(file) {
-        Ok(input) => input,
-        Err(refusal) => return emit(&refusal, EXIT_UNREADABLE),
-    };
-
-    let spec: Specification = match serde_json::from_slice(&input) {
-        Ok(spec) => spec,
-        // Well-formed JSON of the wrong shape is an invalid specification;
-        // anything that is not one JSON document is unreadable input.
-        Err(err) if err.classify() == Category::Data => {
-            let refusal = Refusal::new("SchemaViolation", None, err.to_string());
-            return emit(&refusal, EXIT_INVALID_SPEC);
-        }
-        Err(err) => {
-            let refusal = Refusal::new("InvalidJson", None, err.to_string());
-            return emit(&refusal, EXIT_UNREADABLE);
-        }
-    };
-
-    match spec.validate() {
-        Ok(()) => emit(
+    match read_spec(file) {
+        Ok((spec, _)) => emit(
             &ValidReport {
                 ok: true,
                 project_name: &spec.project_name,
@@ -549,10 +530,7 @@ fn validate(file: Option<&Path>) -> ExitCode {
             },
             0,
         ),
-        Err(err) => emit(
-            &Refusal::new(err.kind(), err.id(), err.to_string()).at(err.path()),
-            EXIT_INVALID_SPEC,
-        ),
+        Err((refusal, code)) => emit(&refusal, code),
     }
 }
 
@@ -566,11 +544,13 @@ fn solve(file: &Path) -> ExitCode {
     }
 }
 
-/// Reads one `Specification` file as `validate` does, under its cap, and
-/// validates it. Returns it with the sha256 of the bytes as read, or the
+/// Reads one `Specification` from a file, or stdin when `file` is `None`,
+/// under the input cap, and validates it. Returns it with the sha256 of the bytes as read, or the
 /// refusal and its exit code (2 or 3).
-fn read_spec(file: &Path) -> Result<(Specification, String), (Refusal, u8)> {
-    let input = read_input(Some(file)).map_err(|r| (r, EXIT_UNREADABLE))?;
+fn read_spec(file: Option<&Path>) -> Result<(Specification, String), (Refusal, u8)> {
+    let input = read_input(file).map_err(|r| (r, EXIT_UNREADABLE))?;
+    // Well-formed JSON of the wrong shape is an invalid specification;
+    // anything that is not one JSON document is unreadable input.
     let spec: Specification = serde_json::from_slice(&input).map_err(|err| {
         if err.classify() == Category::Data {
             (
@@ -590,11 +570,10 @@ fn read_spec(file: &Path) -> Result<(Specification, String), (Refusal, u8)> {
             EXIT_INVALID_SPEC,
         )
     })?;
-    let sha256 = <sha2::Sha256 as sha2::Digest>::digest(&input)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect::<String>();
-    Ok((spec, sha256))
+    Ok((
+        spec,
+        input::hex(<sha2::Sha256 as sha2::Digest>::digest(&input)),
+    ))
 }
 
 /// Reads, validates, loads the pin table and solves. Every refusal is
@@ -622,7 +601,7 @@ fn solved(
         message: String,
     }
 
-    let (spec, sha256) = read_spec(file).map_err(|(refusal, code)| emit(&refusal, code))?;
+    let (spec, sha256) = read_spec(Some(file)).map_err(|(refusal, code)| emit(&refusal, code))?;
     let table = match aethelgard_svd_hal::pin_table(&spec.mcu.part) {
         Ok(table) => table,
         Err(err @ aethelgard_svd_hal::PinTableError::UnknownPart { .. }) => {
@@ -727,10 +706,7 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
         }
         written.push(Written {
             path: path.display().to_string(),
-            sha256: <sha2::Sha256 as sha2::Digest>::digest(text.as_bytes())
-                .iter()
-                .map(|b| format!("{b:02x}"))
-                .collect(),
+            sha256: input::hex(<sha2::Sha256 as sha2::Digest>::digest(text.as_bytes())),
         });
     }
     let bill_of_materials = written.pop().unwrap_or(Written {
