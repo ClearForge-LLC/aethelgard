@@ -673,6 +673,7 @@ fn solved() -> SolvedTopology {
         ]
         .into(),
         gpio: [("FLASH_CS".to_owned(), "PA0".to_owned())].into(),
+        i2c_ceilings: [("SENSORS".to_owned(), 400_000)].into(),
     }
 }
 
@@ -754,8 +755,8 @@ fn solved_round_trip_is_equal_and_byte_stable() {
 
 #[test]
 fn solved_serialization_is_sorted_whatever_the_input_order() {
-    let a = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"Z":"g","C":"c"}}"#;
-    let b = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"C":"c","Z":"g"}}"#;
+    let a = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"Z":"g","C":"c"},"i2c_ceilings":{"Y":100000,"B":400000}}"#;
+    let b = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"C":"c","Z":"g"},"i2c_ceilings":{"B":400000,"Y":100000}}"#;
     let a: SolvedTopology = serde_json::from_str(a).unwrap();
     let b: SolvedTopology = serde_json::from_str(b).unwrap();
     assert_eq!(
@@ -796,7 +797,7 @@ fn solved_serde_edge_cases_are_refused() {
 
 #[test]
 fn solved_repeated_assignment_key_is_refused() {
-    let json = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"N":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"N":{"pin":"x","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{}}"#;
+    let json = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"N":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"N":{"pin":"x","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{},"i2c_ceilings":{}}"#;
     let err = serde_json::from_str::<SolvedTopology>(json).unwrap_err();
     assert!(
         err.to_string().contains("duplicate assignment for net `N`"),
@@ -879,15 +880,89 @@ fn solved_refuses_a_pin_used_twice_across_or_within_gpio() {
 
 #[test]
 fn solved_refuses_a_repeated_or_missing_gpio() {
-    let json = r#"{"schema_version":1,"specification_sha256":"h","assignments":{},"gpio":{"N":"p","N":"q"}}"#;
+    let json = r#"{"schema_version":1,"specification_sha256":"h","assignments":{},"gpio":{"N":"p","N":"q"},"i2c_ceilings":{}}"#;
     let err = serde_json::from_str::<SolvedTopology>(json).unwrap_err();
     assert!(
         err.to_string().contains("duplicate assignment for net `N`"),
         "{err}"
     );
-    let json = r#"{"schema_version":1,"specification_sha256":"h","assignments":{}}"#;
+    let json =
+        r#"{"schema_version":1,"specification_sha256":"h","assignments":{},"i2c_ceilings":{}}"#;
     let err = serde_json::from_str::<SolvedTopology>(json).unwrap_err();
     assert!(err.to_string().contains("missing field `gpio`"), "{err}");
-    let json = r#"{"schema_version":1,"specification_sha256":"h","assignments":{},"gpio":{"N":4}}"#;
+    let json = r#"{"schema_version":1,"specification_sha256":"h","assignments":{},"gpio":{"N":4},"i2c_ceilings":{}}"#;
     assert!(serde_json::from_str::<SolvedTopology>(json).is_err());
+}
+
+// ---- SolvedTopology.i2c_ceilings (AET-WO-1202) ------------------------------
+
+#[test]
+fn solved_accepts_each_mode_and_refuses_any_other_ceiling() {
+    for hz in [100_000, 400_000, 1_000_000] {
+        let mut t = solved();
+        t.i2c_ceilings.insert("SENSORS".into(), hz);
+        assert_eq!(t.validate(), Ok(()), "{hz}");
+    }
+    for hz in [
+        0,
+        99_999,
+        100_001,
+        399_999,
+        400_001,
+        999_999,
+        1_000_001,
+        3_400_000,
+        u32::MAX,
+    ] {
+        let err = solved_refusal(|t| {
+            t.i2c_ceilings.insert("SENSORS".into(), hz);
+        });
+        assert_refusal(err, "InvalidCeiling", Some("SENSORS"));
+    }
+}
+
+#[test]
+fn solved_refuses_a_ceiling_key_that_is_not_an_identifier() {
+    let err = solved_refusal(|t| {
+        t.i2c_ceilings.insert("BUS 2".into(), 400_000);
+    });
+    assert_invalid_identifier(err, "i2c_ceilings.BUS 2");
+    // gpio is checked before the ceilings
+    let err = solved_refusal(|t| {
+        t.i2c_ceilings.insert("BUS 2".into(), 400_000);
+        t.gpio.insert("CS 2".into(), "PA1".into());
+    });
+    assert_invalid_identifier(err, "gpio.CS 2");
+}
+
+#[test]
+fn solved_refuses_a_repeated_or_missing_ceilings_map() {
+    let json = r#"{"schema_version":1,"specification_sha256":"h","assignments":{},"gpio":{},"i2c_ceilings":{"B":400000,"B":100000}}"#;
+    let err = serde_json::from_str::<SolvedTopology>(json).unwrap_err();
+    assert!(
+        err.to_string().contains("duplicate assignment for net `B`"),
+        "{err}"
+    );
+    let json = r#"{"schema_version":1,"specification_sha256":"h","assignments":{},"gpio":{}}"#;
+    let err = serde_json::from_str::<SolvedTopology>(json).unwrap_err();
+    assert!(
+        err.to_string().contains("missing field `i2c_ceilings`"),
+        "{err}"
+    );
+    let json = r#"{"schema_version":1,"specification_sha256":"h","assignments":{},"gpio":{},"i2c_ceilings":{"B":-1}}"#;
+    assert!(serde_json::from_str::<SolvedTopology>(json).is_err());
+}
+
+#[test]
+fn an_invalid_ceiling_is_refused_after_alternate_functions_and_before_duplicates() {
+    let err = solved_refusal(|t| {
+        t.i2c_ceilings.insert("SENSORS".into(), 1);
+        t.assignments.get_mut("I2C_SDA").unwrap().alternate_function = 16;
+    });
+    assert_eq!(err.kind(), "AlternateFunctionOutOfRange");
+    let err = solved_refusal(|t| {
+        t.i2c_ceilings.insert("SENSORS".into(), 1);
+        t.gpio.insert("FLASH_CS".into(), "PB9".into());
+    });
+    assert_eq!(err.kind(), "InvalidCeiling");
 }
