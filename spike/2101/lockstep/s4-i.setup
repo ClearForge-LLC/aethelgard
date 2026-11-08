@@ -1,0 +1,9 @@
+# S4 route i: DummyI2CSlave + the Python handler (fault 1 = withhold: the model pads zeros), the repeat firmware.
+logLevel 3
+emulation SetSeed 2101
+mach create "s4"
+machine LoadPlatformDescription @/repo/spike/2101/renode/i.repl
+include @/repo/spike/2101/renode/i-handler.py
+s3_setup "sysbus.i2c1.dummy"
+sysbus LoadELF @/repo/spike/2101/renode/fw-repeat.elf
+sysbus.cpu VectorTableOffset 0x08000000

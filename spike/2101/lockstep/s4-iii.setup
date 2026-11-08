@@ -1,0 +1,7 @@
+# S4 route iii: stock models only (I2C.BME280); the fault is the device's removal at run time.
+logLevel 3
+emulation SetSeed 2101
+mach create "s4"
+machine LoadPlatformDescription @/repo/spike/2101/renode/iii-present.repl
+sysbus LoadELF @/repo/spike/2101/renode/fw-repeat.elf
+sysbus.cpu VectorTableOffset 0x08000000

@@ -1,0 +1,81 @@
+# cmd: IMG=$(cat container/IMAGE); podman run --rm -v $PWD:/repo:Z -v ~/.cache/aet-2101:/cache:Z $IMG sh -c "cd /repo/spike/2101/ngspice; python3 s2.py; for m in clamp bkpt none; do for case in \"2200 7f 1\" \"47000 7f 1\" \"2200 55 0\" \"47000 55 0\"; do /cache/target-ng/release/s1c s2 \$m \$case; done; done"
+# a,b: .meas tran trise TRIG v(line) VAL=0.99 RISE=1 TARG v(line) VAL=2.31 RISE=1 (ngspice) and vector interpolation of the wrdata. Theory = 0.8473*R*C. window_peaks = max v(line) in each 2.5 us bit window.
+route=a R=2200 byte=7f ack=1 meas_rise_ns=186.4014 vector_rise_ns=186.4014 theory_ns=186.41 peak_v=3.3000 reached_70pct=True window_peaks=0.015,3.300,3.300,3.300,3.300,3.300,3.300,3.300,3.300
+   meas vs theory: -0.002% ; vs 300 ns ceiling: -113.6 ns (below)
+route=a R=47000 byte=7f ack=1 meas_rise_ns=3982.3000 vector_rise_ns=3982.2999 theory_ns=3982.31 peak_v=3.2532 reached_70pct=True window_peaks=0.001,1.360,2.160,2.631,2.907,3.069,3.164,3.220,3.253
+   meas vs theory: -0.000% ; vs 300 ns ceiling: +3682.3 ns (exceeds)
+route=a R=2200 byte=55 ack=0 meas_rise_ns=186.4014 vector_rise_ns=186.4014 theory_ns=186.41 peak_v=3.3000 reached_70pct=True window_peaks=0.015,3.300,3.300,3.300,3.300,3.300,3.300,3.300,3.300
+   meas vs theory: -0.002% ; vs 300 ns ceiling: -113.6 ns (below)
+route=a R=47000 byte=55 ack=0 meas_rise_ns=none vector_rise_ns=none theory_ns=3982.31 peak_v=1.3617 reached_70pct=False window_peaks=0.001,1.362,1.362,1.362,1.362,1.362,1.362,1.360,1.362
+route=b R=2200 byte=7f ack=1 meas_rise_ns=186.4014 vector_rise_ns=186.4014 theory_ns=186.41 peak_v=3.3000 reached_70pct=True window_peaks=0.015,3.300,3.300,3.300,3.300,3.300,3.300,3.300,3.300
+   meas vs theory: -0.002% ; vs 300 ns ceiling: -113.6 ns (below)
+route=b R=47000 byte=7f ack=1 meas_rise_ns=3982.3000 vector_rise_ns=3982.2999 theory_ns=3982.31 peak_v=3.2532 reached_70pct=True window_peaks=0.001,1.360,2.160,2.631,2.907,3.069,3.164,3.220,3.253
+   meas vs theory: -0.000% ; vs 300 ns ceiling: +3682.3 ns (exceeds)
+route=b R=2200 byte=55 ack=0 meas_rise_ns=186.4014 vector_rise_ns=186.4014 theory_ns=186.41 peak_v=3.3000 reached_70pct=True window_peaks=0.015,3.300,3.300,3.300,3.300,3.300,3.300,3.300,3.300
+   meas vs theory: -0.002% ; vs 300 ns ceiling: -113.6 ns (below)
+route=b R=47000 byte=55 ack=0 meas_rise_ns=none vector_rise_ns=none theory_ns=3982.31 peak_v=1.3617 reached_70pct=False window_peaks=0.001,1.362,1.362,1.362,1.362,1.362,1.362,1.360,1.362
+
+## route c (libngspice): vector_rise = linear interpolation in the host; log: = ngSpice_Command(meas ...) via SendChar. Theory 186.41 ns (2.2k), 3982.31 ns (47k). Ceiling 300 ns.
+mode=Clamp R=2200 byte=7f ack=1 points=4527 vsrc_calls=9059 sync_calls=9053 redo_flag=1 time_regress=0 clamps=24 loc_hist=[4526, 4527, 0, 0, 0, 0, 0, 0]
+peak_v=3.300000
+vector_rise_ns=186.4067 t30=2.577970e-6 t70=2.764376e-6
+meas rc=0
+log: stdout trise               =  1.864067e-07 targ=  2.764376e-06 trig=  2.577970e-06
+mode=Clamp R=47000 byte=7f ack=1 points=4527 vsrc_calls=9059 sync_calls=9053 redo_flag=1 time_regress=0 clamps=24 loc_hist=[4526, 4527, 0, 0, 0, 0, 0, 0]
+peak_v=3.253183
+vector_rise_ns=3982.2996 t30=4.175873e-6 t70=8.158173e-6
+meas rc=0
+log: stdout trise               =  3.982300e-06 targ=  8.158173e-06 trig=  4.175873e-06
+mode=Clamp R=2200 byte=55 ack=0 points=4577 vsrc_calls=9208 sync_calls=9174 redo_flag=22 time_regress=0 clamps=24 loc_hist=[4576, 4598, 0, 0, 0, 0, 0, 0]
+peak_v=3.299962
+vector_rise_ns=186.4067 t30=2.577970e-6 t70=2.764376e-6
+meas rc=0
+log: stdout trise               =  1.864067e-07 targ=  2.764376e-06 trig=  2.577970e-06
+mode=Clamp R=47000 byte=55 ack=0 points=4574 vsrc_calls=9198 sync_calls=9166 redo_flag=20 time_regress=0 clamps=24 loc_hist=[4573, 4593, 0, 0, 0, 0, 0, 0]
+peak_v=1.361526
+vector_rise=none
+meas rc=0
+log: stderr out of interval
+log: stdout meas tran trise TRIG v(line) VAL=0.99 RISE=1 TARG v(line) VAL=2.31 RISE=1 failed!
+mode=Bkpt R=2200 byte=7f ack=1 points=4590 vsrc_calls=9193 sync_calls=9183 redo_flag=5 time_regress=0 clamps=0 loc_hist=[4589, 4594, 0, 0, 0, 0, 0, 0]
+peak_v=3.300000
+vector_rise_ns=186.4014 t30=2.577961e-6 t70=2.764362e-6
+meas rc=0
+log: stdout trise               =  1.864014e-07 targ=  2.764362e-06 trig=  2.577961e-06
+mode=Bkpt R=47000 byte=7f ack=1 points=4590 vsrc_calls=9193 sync_calls=9183 redo_flag=5 time_regress=0 clamps=0 loc_hist=[4589, 4594, 0, 0, 0, 0, 0, 0]
+peak_v=3.253183
+vector_rise_ns=3982.3001 t30=4.175855e-6 t70=8.158155e-6
+meas rc=0
+log: stdout trise               =  3.982300e-06 targ=  8.158155e-06 trig=  4.175855e-06
+mode=Bkpt R=2200 byte=55 ack=0 points=4678 vsrc_calls=9462 sync_calls=9402 redo_flag=48 time_regress=0 clamps=0 loc_hist=[4677, 4725, 0, 0, 0, 0, 0, 0]
+peak_v=3.299962
+vector_rise_ns=186.4014 t30=2.577961e-6 t70=2.764362e-6
+meas rc=0
+log: stdout trise               =  1.864014e-07 targ=  2.764362e-06 trig=  2.577961e-06
+mode=Bkpt R=47000 byte=55 ack=0 points=4690 vsrc_calls=9486 sync_calls=9426 redo_flag=48 time_regress=0 clamps=0 loc_hist=[4689, 4737, 0, 0, 0, 0, 0, 0]
+peak_v=1.361723
+vector_rise=none
+meas rc=0
+log: stderr out of interval
+log: stdout meas tran trise TRIG v(line) VAL=0.99 RISE=1 TARG v(line) VAL=2.31 RISE=1 failed!
+mode=None R=2200 byte=7f ack=1 points=4510 vsrc_calls=9023 sync_calls=9018 redo_flag=0 time_regress=0 clamps=0 loc_hist=[4509, 4509, 0, 0, 0, 0, 0, 0]
+peak_v=3.300000
+vector_rise_ns=186.4087 t30=2.580102e-6 t70=2.766510e-6
+meas rc=0
+log: stdout trise               =  1.864087e-07 targ=  2.766510e-06 trig=  2.580102e-06
+mode=None R=47000 byte=7f ack=1 points=4510 vsrc_calls=9023 sync_calls=9018 redo_flag=0 time_regress=0 clamps=0 loc_hist=[4509, 4509, 0, 0, 0, 0, 0, 0]
+peak_v=3.253161
+vector_rise_ns=3982.2992 t30=4.177994e-6 t70=8.160293e-6
+meas rc=0
+log: stdout trise               =  3.982299e-06 targ=  8.160293e-06 trig=  4.177994e-06
+mode=None R=2200 byte=55 ack=0 points=4538 vsrc_calls=9126 sync_calls=9094 redo_flag=20 time_regress=0 clamps=0 loc_hist=[4537, 4557, 0, 0, 0, 0, 0, 0]
+peak_v=3.299961
+vector_rise_ns=186.4087 t30=2.580102e-6 t70=2.766510e-6
+meas rc=0
+log: stdout trise               =  1.864087e-07 targ=  2.766510e-06 trig=  2.580102e-06
+mode=None R=47000 byte=55 ack=0 points=4549 vsrc_calls=9156 sync_calls=9120 redo_flag=24 time_regress=0 clamps=0 loc_hist=[4548, 4572, 0, 0, 0, 0, 0, 0]
+peak_v=1.360700
+vector_rise=none
+meas rc=0
+log: stderr out of interval
+log: stdout meas tran trise TRIG v(line) VAL=0.99 RISE=1 TARG v(line) VAL=2.31 RISE=1 failed!

@@ -1,0 +1,40 @@
+# cmd: python3 -I lockstep/s4-summary.py ~/.cache/aet-2101/s4 <part1.log> <part2.log> <part3.log> | cut -d"|" -f1,2,6,7
+# The runs: lockstep/s4-matrix.sh (part 1: ioc at 1 ms, 100 us, 10 us; part 2: lib and pipe at the same, then a 1 us x 10 ms run that did not finish in 900 s), lockstep/s4-part3.sh (1 us and 10 us over 1 ms; route i), lockstep/s4-extra.sh (route iii), each run twice, in $IMAGE. Raw lines: out/s4-matrix-logs.txt.
+# Only the state-sequence hashes and the firmware counters are cited from these runs. Their wall times are not: Renode's monitor history grew across runs in one container and slowed every command (out/s4-history.txt). The timings are out/s4-timing.txt, with a fresh HOME per run.
+route backend quantum R | quanta | r1==r2 seq_sha256 | firmware at the span's end: attempted ok wrong timedout last_status (1 TXIS, 3 RXNE)
+ii ioc 1000000ns 2k2 | 10 | yes 96536361158d4e63 | 83 83 0 0 0
+ii ioc 1000000ns 47k | 10 | yes b88dae9b0196a6d7 | 43 9 0 34 3
+ii ioc 100000ns 2k2 | 100 | yes 29e7b964bdae29ef | 83 83 0 0 0
+ii ioc 100000ns 47k | 100 | yes 590fe06eb27f942a | 39 1 0 38 3
+ii ioc 10000ns 2k2 | 1000 | yes f9a6ca0a38b9c922 | 83 83 0 0 0
+ii ioc 10000ns 47k | 1000 | yes 849d62d38fa34ee9 | 39 1 0 38 3
+ii lib 1000000ns 2k2 | 10 | yes 2248933a8078ae5f | 83 83 0 0 0
+ii lib 1000000ns 47k | 10 | yes b1bfc0f557d85189 | 43 9 0 34 3
+ii lib 100000ns 2k2 | 100 | yes a7e95196dc8add2a | 83 83 0 0 0
+ii lib 100000ns 47k | 100 | yes f83942eabcf91e59 | 39 1 0 38 3
+ii lib 10000ns 2k2 | 1000 | yes 32fc53f359478c41 | 83 83 0 0 0
+ii lib 10000ns 47k | 1000 | yes 2d4615728f9a46d5 | 39 1 0 38 3
+ii pipe 1000000ns 2k2 | 10 | yes 2248933a8078ae5f | 83 83 0 0 0
+ii pipe 1000000ns 47k | 10 | yes b1bfc0f557d85189 | 43 9 0 34 3
+ii pipe 100000ns 2k2 | 100 | yes a7e95196dc8add2a | 83 83 0 0 0
+ii pipe 100000ns 47k | 100 | yes f83942eabcf91e59 | 39 1 0 38 3
+ii pipe 10000ns 2k2 | 1000 | yes 32fc53f359478c41 | 83 83 0 0 0
+ii pipe 10000ns 47k | 1000 | yes 2d4615728f9a46d5 | 39 1 0 38 3
+ii ioc 1000ns 2k2-1ms | 1000 | yes 30eece62d485c571 | 9 9 0 0 0
+ii lib 1000ns 2k2-1ms | 1000 | yes cc00c07673a04b13 | 9 9 0 0 0
+ii none 1000ns 2k2-1ms | 1000 | one run ccfe0644e8be544a | 9 9 0 0 0
+ii ioc 1000ns 47k-1ms | 1000 | yes 984bc560e05a220c | 4 1 0 3 3
+ii lib 1000ns 47k-1ms | 1000 | yes d6748214806329cf | 4 1 0 3 3
+ii none 1000ns 47k-1ms | 1000 | one run ccfe0644e8be544a | 9 9 0 0 0
+ii ioc 10000ns 2k2-1ms | 100 | yes 78a892a89f2f882b | 9 9 0 0 0
+ii lib 10000ns 2k2-1ms | 100 | yes e6d22f45ffcdf3dc | 9 9 0 0 0
+ii none 10000ns 2k2-1ms | 100 | one run 39a51701ffad1688 | 9 9 0 0 0
+ii ioc 10000ns 47k-1ms | 100 | yes a287a750cecb7268 | 4 1 0 3 3
+ii lib 10000ns 47k-1ms | 100 | yes 838f28c487d2c995 | 4 1 0 3 3
+ii none 10000ns 47k-1ms | 100 | one run 39a51701ffad1688 | 9 9 0 0 0
+i ioc 100000ns 2k2 | 100 | yes 29e7b964bdae29ef | 83 83 0 0 0
+i ioc 100000ns 47k | 100 | yes d490394d3bd9d24f | 83 1 82 0 0
+iii ioc 100000ns 2k2 | 100 | yes 29e7b964bdae29ef | 83 83 0 0 0
+iii ioc 100000ns 47k | 100 | yes bc8ed44cbe3827df | 39 1 0 38 1
+iii ioc 10000ns 2k2 | 1000 | yes f9a6ca0a38b9c922 | 83 83 0 0 0
+iii ioc 10000ns 47k | 1000 | yes 6f800994f5d50602 | 39 1 0 38 1

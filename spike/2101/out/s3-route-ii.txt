@@ -1,0 +1,128 @@
+# cmd: spike/2101/renode/run-renode.sh <cmdfile> | python3 -I summarize.py   (IMG=ghcr.io/clearforge-llc/aethelgard-tools@sha256:2df682591d4a653d9df8b5012b843a88ca6f4d90fe555ec04f46158272e21093; run-renode.sh = podman run --rm -i -e DOTNET_EnableDiagnostics=0 $IMG renode --disable-gui --console --plain, under timeout 120 + systemd-run MemoryMax=8G)
+
+## ii-normal.cmds (monitor commands: spike/2101/renode/ii-normal.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   include @/repo/spike/2101/renode/Sensor.cs
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/ii.repl
+#   sysbus LoadELF @/repo/spike/2101/renode/fw.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   sysbus WriteDoubleWord 0x20000100 1
+#   emulation RunFor "0.010000000"
+BLOCK t1-normal: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+NBLOCKS 1
+HASH 77b8e5c94279ec464d51a454da6652c249e3eaaf346cbee0656c58369de3395b
+LOG [11:29:57.1323] [INFO] Including script(s): /repo/spike/2101/renode/Sensor.cs
+
+## ii-nobytes.cmds (monitor commands: spike/2101/renode/ii-nobytes.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   include @/repo/spike/2101/renode/Sensor.cs
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/ii.repl
+#   sysbus LoadELF @/repo/spike/2101/renode/fw.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   sysbus.i2c1.sensor Fault 1
+#   sysbus WriteDoubleWord 0x20000100 1
+#   emulation RunFor "0.010000000"
+BLOCK t1-nobytes: magic=0x210153a5 status=3(TIMEOUT_RXNE) byte0=0x00 byte1=0x00 ISR_end=0x1 spins[txis,tc,rxne,stopf]=[0, 0, 20000, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000094
+NBLOCKS 1
+HASH 47991b98f40fa2777b11c081f65eafa0b14fe9e1d13930e42cd55f1cfb30e418
+LOG [11:29:59.7506] [INFO] Including script(s): /repo/spike/2101/renode/Sensor.cs
+
+## ii-corrupt.cmds (monitor commands: spike/2101/renode/ii-corrupt.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   include @/repo/spike/2101/renode/Sensor.cs
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/ii.repl
+#   sysbus LoadELF @/repo/spike/2101/renode/fw.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   sysbus.i2c1.sensor Fault 2
+#   sysbus WriteDoubleWord 0x20000100 1
+#   emulation RunFor "0.010000000"
+BLOCK t1-corrupt: magic=0x210153a5 status=0(OK) byte0=0x61 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+NBLOCKS 1
+HASH a9c200d4157ffd820ca3194e688d439732676d94227819ae8c57075e341bf04f
+LOG [11:30:02.3626] [INFO] Including script(s): /repo/spike/2101/renode/Sensor.cs
+
+## ii-short.cmds (monitor commands: spike/2101/renode/ii-short.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   include @/repo/spike/2101/renode/Sensor.cs
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/ii.repl
+#   sysbus LoadELF @/repo/spike/2101/renode/fw.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   sysbus.i2c1.sensor Fault 3
+#   sysbus WriteDoubleWord 0x20000104 2
+#   sysbus WriteDoubleWord 0x20000100 1
+#   emulation RunFor "0.010000000"
+BLOCK t1-short-nbytes2: magic=0x210153a5 status=3(TIMEOUT_RXNE) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 20000, 0] nbytes=2 seq=1 done=1 instr=1000000 pc=0x8000090
+NBLOCKS 1
+HASH d437b4c7d1639cdb34a1c963127120233ae723acbf40f98fc4fa2cf12b6c8e8c
+LOG [11:30:04.9890] [INFO] Including script(s): /repo/spike/2101/renode/Sensor.cs
+
+## ii-midrun.cmds (monitor commands: spike/2101/renode/ii-midrun.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   include @/repo/spike/2101/renode/Sensor.cs
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/ii.repl
+#   sysbus LoadELF @/repo/spike/2101/renode/fw.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   sysbus WriteDoubleWord 0x20000100 1
+#   emulation RunFor "0.010000000"
+#   sysbus.i2c1.sensor Fault 1
+#   sysbus WriteDoubleWord 0x20000100 2
+#   emulation RunFor "0.010000000"
+#   sysbus.i2c1.sensor Fault 2
+#   sysbus WriteDoubleWord 0x20000100 3
+#   emulation RunFor "0.010000000"
+#   sysbus.i2c1.sensor Fault 0
+#   sysbus WriteDoubleWord 0x20000100 4
+#   emulation RunFor "0.010000000"
+BLOCK t1-normal: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+BLOCK t2-nobytes: magic=0x210153a5 status=3(TIMEOUT_RXNE) byte0=0x00 byte1=0x00 ISR_end=0x1 spins[txis,tc,rxne,stopf]=[0, 0, 20000, 0] nbytes=1 seq=2 done=2 instr=2000000 pc=0x8000092
+BLOCK t3-corrupt: magic=0x210153a5 status=0(OK) byte0=0x61 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=3 done=3 instr=3000000 pc=0x8000090
+BLOCK t4-normal: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=4 done=4 instr=4000000 pc=0x8000094
+NBLOCKS 4
+HASH 8690a9809cf0e3a3a24bf0b1eb128336b5642d3bf412e94899f56788b5c61e73
+LOG [11:30:07.6156] [INFO] Including script(s): /repo/spike/2101/renode/Sensor.cs
+
+## repeat-ii-midrun.cmds (monitor commands: spike/2101/renode/repeat-ii-midrun.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   include @/repo/spike/2101/renode/Sensor.cs
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/ii.repl
+#   sysbus LoadELF @/repo/spike/2101/renode/fw-repeat.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   emulation RunFor "0.001000000"
+#   sysbus.i2c1.sensor Fault 1
+#   emulation RunFor "0.001000000"
+#   sysbus.i2c1.sensor Fault 2
+#   emulation RunFor "0.001000000"
+#   sysbus.i2c1.sensor Fault 0
+#   emulation RunFor "0.001000000"
+REPEAT q1-normal: magic=0x21015252 attempted=9 ok=9 wrong=0 timed_out=0 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=9 instr=100000 pc=0x8000184
+REPEAT q2-nobytes: magic=0x21015252 attempted=12 ok=9 wrong=0 timed_out=3 last_status=3(TIMEOUT_RXNE) last_byte=0x00 ISR_end=0x1 resets=3 alive=12 instr=200000 pc=0x80000de
+REPEAT q3-corrupt: magic=0x21015252 attempted=21 ok=9 wrong=8 timed_out=4 last_status=0(OK) last_byte=0x61 ISR_end=0x21 resets=4 alive=21 instr=300000 pc=0x8000184
+REPEAT q4-normal: magic=0x21015252 attempted=29 ok=17 wrong=8 timed_out=4 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=4 alive=29 instr=400000 pc=0x800018a
+NBLOCKS 4
+HASH b7edde7ce81e5e68ff6f5a910d4fbc60c5955b0fe81a61a54a94f421c0a902f4
+LOG [11:30:10.3444] [INFO] Including script(s): /repo/spike/2101/renode/Sensor.cs
+
+## repeat-noreset-ii-midrun.cmds (monitor commands: spike/2101/renode/repeat-noreset-ii-midrun.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   include @/repo/spike/2101/renode/Sensor.cs
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/ii.repl
+#   sysbus LoadELF @/repo/spike/2101/renode/fw-repeat-noreset.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   emulation RunFor "0.001000000"
+#   sysbus.i2c1.sensor Fault 1
+#   emulation RunFor "0.001000000"
+#   sysbus.i2c1.sensor Fault 0
+#   emulation RunFor "0.001000000"
+REPEAT q1-normal: magic=0x21015252 attempted=9 ok=9 wrong=0 timed_out=0 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=9 instr=100000 pc=0x8000168
+REPEAT q2-nobytes: magic=0x21015252 attempted=12 ok=9 wrong=0 timed_out=3 last_status=3(TIMEOUT_RXNE) last_byte=0x00 ISR_end=0x1 resets=0 alive=12 instr=200000 pc=0x80000de
+REPEAT q3-normal: magic=0x21015252 attempted=21 ok=17 wrong=0 timed_out=4 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=21 instr=300000 pc=0x8000168
+NBLOCKS 3
+HASH e4b78c50f0d955a2fd2a83f519dea911b241b4c07a2d491065eb087598a710ea
+LOG [11:30:13.0595] [INFO] Including script(s): /repo/spike/2101/renode/Sensor.cs

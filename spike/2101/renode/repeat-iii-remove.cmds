@@ -1,0 +1,39 @@
+logLevel 0
+emulation SetSeed 2101
+mach create "s3"
+machine LoadPlatformDescription @/repo/spike/2101/renode/iii-present.repl
+sysbus LoadELF @/repo/spike/2101/renode/fw-repeat.elf
+sysbus.cpu VectorTableOffset 0x08000000
+emulation RunFor "0.001000000"
+logLevel 3
+echo "BEGIN q1-present"
+include @/repo/spike/2101/renode/dump-repeat.resc
+echo "END"
+logLevel 0
+sysbus.i2c1 Unregister sysbus.i2c1.bme
+emulation RunFor "0.001000000"
+logLevel 3
+echo "BEGIN q2-removed"
+include @/repo/spike/2101/renode/dump-repeat.resc
+echo "END"
+logLevel 0
+emulation RunFor "0.001000000"
+logLevel 3
+echo "BEGIN q3-removed"
+include @/repo/spike/2101/renode/dump-repeat.resc
+echo "END"
+logLevel 0
+machine LoadPlatformDescriptionFromString "bme: I2C.BME280 @ i2c1 0x76"
+emulation RunFor "0.001000000"
+logLevel 3
+echo "BEGIN q4-readded"
+include @/repo/spike/2101/renode/dump-repeat.resc
+echo "END"
+logLevel 0
+emulation RunFor "0.001000000"
+logLevel 3
+echo "BEGIN q5-readded"
+include @/repo/spike/2101/renode/dump-repeat.resc
+echo "END"
+logLevel 0
+quit

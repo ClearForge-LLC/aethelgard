@@ -1,0 +1,2 @@
+# Cost-only: one read per quantum (the alive word).
+sysbus ReadDoubleWord 0x20000024

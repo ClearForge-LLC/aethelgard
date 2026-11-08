@@ -1,0 +1,17 @@
+# AET-WO-2101 S3 probe firmware. Outside the root workspace (own empty table),
+# zero dependencies. Not generated; a measurement probe.
+[package]
+name = "s3-probe-fw"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+
+[features]
+# repeat bin only: skip the PE=0/1 controller reset after a timed-out read (measures whether it is needed).
+no-reset = []

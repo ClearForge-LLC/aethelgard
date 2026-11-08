@@ -1,0 +1,6 @@
+# cmd: podman run --rm -v $PWD:/repo $IMAGE python3 /repo/spike/2101/ngspice/unsafe_count.py; grep -c unsafe on the S4 host and probe firmware (after the PM added ffi::vec_last for S4)
+TOTAL lines containing `unsafe`: 12 ; TOTAL lines inside unsafe regions: 82
+spike/2101/ngspice/src/bin/s1c.rs: lines containing `unsafe`: 0 (); total lines inside unsafe blocks/fns/extern blocks (incl. those): 0
+spike/2101/lockstep/src/main.rs: lines with the word unsafe (comments included): 1 of 594
+spike/2101/renode/fw/src/main.rs: lines with the word unsafe (comments included): 20 of 168
+spike/2101/renode/fw/src/bin/repeat.rs: lines with the word unsafe (comments included): 21 of 164

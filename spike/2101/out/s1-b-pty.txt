@@ -1,0 +1,18 @@
+# cmd: IMG=$(cat container/IMAGE); podman run --rm -v $PWD:/repo:Z $IMG sh -c "ngspice -p /tmp/d.cir < cmds; echo rc=\$?" (non-tty stdin), then the same under `script -qec \"ngspice -p -t dumb\" /dev/null`
+## non-tty stdin, -p:
+ERROR: (external)  no graphics interface;
+ please check if X-server is running,
+ or ngspice is compiled properly (see INSTALL)
+rc=139
+## non-tty stdin, -i:
+  quit
+could not find a valid modelname
+    Simulation interrupted due to error!
+
+rc=139
+## -s: reads the netlist from stdin (commands become netlist lines); no session
+## pty via script -qec (what s1_b.py uses):
+ERROR: (external)  no graphics interface;
+No. of Data Rows : 4527
+rc=0
+## alter vctl = pwl(...) -> PPerror syntax error (does not work); alter @vctl[pwl] = [ t v ... ] works, including a different point count; alter r1 = 47000 works.

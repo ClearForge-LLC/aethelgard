@@ -1,0 +1,10 @@
+# cmd: lockstep --renode-setup s4-ii.setup --reads s4.reads --fault-cmd 'sysbus.i2c1.sensor Fault {}' --quantum-ns 100000 --span-ns 10000000 --deck line-2k2.cir --spice ioc --out <run>  (in $IMAGE, from spike/2101/lockstep/s4-matrix.sh; the run's <run>.events.jsonl: first 5 records and last 2 of 84)
+# reads[] = the repeat firmware's result block: magic, attempted, ok, wrong, timed_out, last_status (3 = TIMEOUT_RXNE), last_byte, ISR, resets, alive
+{"kind":"analog.rise_time_measured","source":"ngspice","quantum":1,"t_virtual_ns":100000,"net":"line","rise_30_70_ns":186.4014,"ceiling_ns":300,"exceeds":false}
+{"kind":"firmware.observed","source":"renode","quantum":1,"t_virtual_ns":100000,"reads":["0x21015252","0x00000001","0x00000001","0x00000000","0x00000000","0x00000000","0x00000060","0x00000021","0x00000000","0x00000001"]}
+{"kind":"firmware.observed","source":"renode","quantum":2,"t_virtual_ns":200000,"reads":["0x21015252","0x00000002","0x00000002","0x00000000","0x00000000","0x00000000","0x00000060","0x00000021","0x00000000","0x00000002"]}
+{"kind":"firmware.observed","source":"renode","quantum":3,"t_virtual_ns":300000,"reads":["0x21015252","0x00000003","0x00000003","0x00000000","0x00000000","0x00000000","0x00000060","0x00000021","0x00000000","0x00000003"]}
+{"kind":"firmware.observed","source":"renode","quantum":4,"t_virtual_ns":400000,"reads":["0x21015252","0x00000004","0x00000004","0x00000000","0x00000000","0x00000000","0x00000060","0x00000021","0x00000000","0x00000004"]}
+...
+{"kind":"firmware.observed","source":"renode","quantum":98,"t_virtual_ns":9800000,"reads":["0x21015252","0x00000052","0x00000052","0x00000000","0x00000000","0x00000000","0x00000060","0x00000021","0x00000000","0x00000052"]}
+{"kind":"firmware.observed","source":"renode","quantum":99,"t_virtual_ns":9900000,"reads":["0x21015252","0x00000053","0x00000053","0x00000000","0x00000000","0x00000000","0x00000060","0x00000021","0x00000000","0x00000053"]}

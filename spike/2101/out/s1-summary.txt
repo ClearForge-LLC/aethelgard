@@ -1,0 +1,10 @@
+# cmd: python3 mkout.py (reads /scr/*.tsv; see s1-route-*.txt for each route's own command)
+S1 timing, run 1 (ms per transient), 1000 transients, R=2.2k, byte=i%256, ack 0, .tran 1n 22.5u 0 5n
+route	startup_ms	min	median	p95	max	total	run1==run2
+a	(n/a: per-process, in every transient)	9.401	9.996	10.442	11.707	10025.7	True
+b	4.793	5.215	5.926	6.383	7.764	5946.2	True
+c-clamp	1.152	3.936	4.065	4.288	10.035	4122.6	True
+c-bkpt	2.018	3.942	4.027	4.094	6.564	4043.7	True
+route a per-transient wrdata hashes == route b per-transient wrdata hashes (all 1000): True
+c-clamp vs c-bkpt per-transient hashes equal count: 0/1000 (differ: clamp and bkpt choose different step points)
+c vs a/b: raw-f64 hashes vs text hashes are not comparable; agreement is on rise time, see s2-rise.txt

@@ -1,0 +1,21 @@
+# cmd: podman run --rm -v $PWD:/repo -v ~/.cache/aet-2101:/cache $IMAGE bash /repo/spike/2101/probes/s5-lockstep.sh
+=== ioc sandboxed 
+quanta=100 quantum_ns=100000 span_ns=10000000 setup_s=2.428 loop_s=2.845 per_quantum_ms=28.4479 spice=ioc trise_ns=3982.2999
+SBX reaper-exit=0 status: sandbox abi=8|ended code=0|
+sandboxed   seq_sha256=590fe06eb27f942a203bc420183dfd460368c30825fb43b39085d760472463ca
+unsandboxed seq_sha256=590fe06eb27f942a203bc420183dfd460368c30825fb43b39085d760472463ca
+=== lib sandboxed 
+quanta=100 quantum_ns=100000 span_ns=10000000 setup_s=2.401 loop_s=4.110 per_quantum_ms=41.1026 spice=lib trise_ns=3982.3000
+SBX reaper-exit=0 status: sandbox abi=8|ended code=0|
+sandboxed   seq_sha256=f83942eabcf91e59cfec3d3d6a66332a39027cf348b27b313ea22045ee7867fb
+unsandboxed seq_sha256=f83942eabcf91e59cfec3d3d6a66332a39027cf348b27b313ea22045ee7867fb
+=== pipe sandboxed (with: --rw /tmp --rw /dev/ptmx --rw /dev/pts --rw /dev/null --rw /dev/tty)
+quanta=100 quantum_ns=100000 span_ns=10000000 setup_s=2.396 loop_s=4.724 per_quantum_ms=47.2391 spice=pipe trise_ns=3982.3000
+SBX reaper-exit=0 status: sandbox abi=8|ended code=0|
+sandboxed   seq_sha256=f83942eabcf91e59cfec3d3d6a66332a39027cf348b27b313ea22045ee7867fb
+unsandboxed seq_sha256=f83942eabcf91e59cfec3d3d6a66332a39027cf348b27b313ea22045ee7867fb
+=== pipe sandboxed with no extra grants
+thread 'main' (791) panicked at src/main.rs:125:56:
+spice: output ended before AET2101-SPICE-1; last lines: ["script: failed to create pseudo-terminal: Permission denied"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+SBX reaper-exit=0 status: sandbox abi=8|ended code=101|

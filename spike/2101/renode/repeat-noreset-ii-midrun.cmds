@@ -1,0 +1,28 @@
+logLevel 0
+emulation SetSeed 2101
+mach create "s3"
+include @/repo/spike/2101/renode/Sensor.cs
+machine LoadPlatformDescription @/repo/spike/2101/renode/ii.repl
+sysbus LoadELF @/repo/spike/2101/renode/fw-repeat-noreset.elf
+sysbus.cpu VectorTableOffset 0x08000000
+emulation RunFor "0.001000000"
+logLevel 3
+echo "BEGIN q1-normal"
+include @/repo/spike/2101/renode/dump-repeat.resc
+echo "END"
+logLevel 0
+sysbus.i2c1.sensor Fault 1
+emulation RunFor "0.001000000"
+logLevel 3
+echo "BEGIN q2-nobytes"
+include @/repo/spike/2101/renode/dump-repeat.resc
+echo "END"
+logLevel 0
+sysbus.i2c1.sensor Fault 0
+emulation RunFor "0.001000000"
+logLevel 3
+echo "BEGIN q3-normal"
+include @/repo/spike/2101/renode/dump-repeat.resc
+echo "END"
+logLevel 0
+quit

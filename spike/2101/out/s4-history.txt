@@ -1,0 +1,13 @@
+# cmd: podman run --rm -v $PWD:/repo -v ~/.cache/aet-2101:/cache $IMAGE bash /repo/spike/2101/lockstep/s4-history.sh
+== 1 fresh HOME
+loop_s=2.853 per_quantum_ms=28.5297
+    history: 1608 lines, 48 KiB; seq_sha256=590fe06eb27f942a
+== 2 same HOME, history as left by run 1
+loop_s=2.941 per_quantum_ms=29.4092
+    history: 3216 lines, 96 KiB; seq_sha256=590fe06eb27f942a
+== 3 200,000 lines added
+loop_s=11.345 per_quantum_ms=113.4462
+    history: 204824 lines, 6592 KiB; seq_sha256=590fe06eb27f942a
+== 4 history emptied
+loop_s=2.839 per_quantum_ms=28.3867
+    history: 1608 lines, 48 KiB; seq_sha256=590fe06eb27f942a

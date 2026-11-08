@@ -1,0 +1,144 @@
+# cmd: spike/2101/renode/determinism.sh <cmdfile>... (each 10 runs; image $IMG=ghcr.io/clearforge-llc/aethelgard-tools@sha256:2df682591d4a653d9df8b5012b843a88ca6f4d90fe555ec04f46158272e21093; see run-renode.sh for the exact podman line)
+=== iii-present.cmds
+BLOCK t1: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+NBLOCKS 1
+HASH 77b8e5c94279ec464d51a454da6652c249e3eaaf346cbee0656c58369de3395b
+DISTINCT_HASHES      10 77b8e5c94279ec464d51a454da6652c249e3eaaf346cbee0656c58369de3395b;
+WALL_s_per_run mean=1.97 min=1.93 max=2.00
+=== iii-absent.cmds
+BLOCK t1: magic=0x210153a5 status=1(TIMEOUT_TXIS) byte0=0x00 byte1=0x00 ISR_end=0x1 spins[txis,tc,rxne,stopf]=[20000, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000094
+NBLOCKS 1
+HASH a6e20ed6f1d4b629c19822c850bd96b6b2457408be692978b8e0dceb139ed1e6
+LOG [11:23:07.1214] [WARNING] i2c1: Unknown slave at address 118.
+DISTINCT_HASHES      10 a6e20ed6f1d4b629c19822c850bd96b6b2457408be692978b8e0dceb139ed1e6;
+WALL_s_per_run mean=1.99 min=1.96 max=2.07
+=== iii-remove.cmds
+BLOCK t1-present: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+BLOCK t2-after-unregister: magic=0x210153a5 status=1(TIMEOUT_TXIS) byte0=0x00 byte1=0x00 ISR_end=0x1 spins[txis,tc,rxne,stopf]=[20000, 0, 0, 0] nbytes=1 seq=2 done=2 instr=2000000 pc=0x8000092
+BLOCK t3-after-reregister: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=3 done=3 instr=3000000 pc=0x8000090
+NBLOCKS 3
+HASH 7e014b7af220bf1f47311fddf55bb1495fff321628e69680bb7ad048a79a00d3
+LOG [11:23:27.1657] [WARNING] i2c1: Unknown slave at address 118.
+DISTINCT_HASHES      10 7e014b7af220bf1f47311fddf55bb1495fff321628e69680bb7ad048a79a00d3;
+WALL_s_per_run mean=2.05 min=1.99 max=2.15
+=== i-normal.cmds
+BLOCK t1-normal: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+NBLOCKS 1
+HASH 77b8e5c94279ec464d51a454da6652c249e3eaaf346cbee0656c58369de3395b
+DISTINCT_HASHES      10 77b8e5c94279ec464d51a454da6652c249e3eaaf346cbee0656c58369de3395b;
+WALL_s_per_run mean=2.02 min=1.97 max=2.07
+=== i-withhold.cmds
+BLOCK t1-withhold: magic=0x210153a5 status=0(OK) byte0=0x00 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+NBLOCKS 1
+HASH 7b20527d4a9c36fda931298321e1e7b27f4e31c0a2670a126586c035914573a4
+DISTINCT_HASHES      10 7b20527d4a9c36fda931298321e1e7b27f4e31c0a2670a126586c035914573a4;
+WALL_s_per_run mean=2.02 min=1.97 max=2.07
+=== i-corrupt.cmds
+BLOCK t1-corrupt: magic=0x210153a5 status=0(OK) byte0=0x61 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+NBLOCKS 1
+HASH a9c200d4157ffd820ca3194e688d439732676d94227819ae8c57075e341bf04f
+DISTINCT_HASHES      10 a9c200d4157ffd820ca3194e688d439732676d94227819ae8c57075e341bf04f;
+WALL_s_per_run mean=2.04 min=2.02 max=2.08
+=== i-midrun.cmds
+BLOCK t1-normal: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+BLOCK t2-withhold: magic=0x210153a5 status=0(OK) byte0=0x00 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=2 done=2 instr=2000000 pc=0x8000094
+BLOCK t3-corrupt: magic=0x210153a5 status=0(OK) byte0=0x61 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=3 done=3 instr=3000000 pc=0x8000092
+BLOCK t4-normal-again: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=4 done=4 instr=4000000 pc=0x8000090
+NBLOCKS 4
+HASH 55ac87c4655cc61fa37ea9f66639fae4dedc9fdeba56a64d287da48ea0a1b5c2
+DISTINCT_HASHES      10 55ac87c4655cc61fa37ea9f66639fae4dedc9fdeba56a64d287da48ea0a1b5c2;
+WALL_s_per_run mean=2.14 min=2.02 max=2.39
+=== ii-normal.cmds
+BLOCK t1-normal: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+NBLOCKS 1
+HASH 77b8e5c94279ec464d51a454da6652c249e3eaaf346cbee0656c58369de3395b
+LOG [11:25:09.4591] [INFO] Including script(s): /repo/spike/2101/renode/Sensor.cs
+DISTINCT_HASHES      10 77b8e5c94279ec464d51a454da6652c249e3eaaf346cbee0656c58369de3395b;
+WALL_s_per_run mean=2.66 min=2.57 max=2.85
+=== ii-nobytes.cmds
+BLOCK t1-nobytes: magic=0x210153a5 status=3(TIMEOUT_RXNE) byte0=0x00 byte1=0x00 ISR_end=0x1 spins[txis,tc,rxne,stopf]=[0, 0, 20000, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000094
+NBLOCKS 1
+HASH 47991b98f40fa2777b11c081f65eafa0b14fe9e1d13930e42cd55f1cfb30e418
+LOG [11:25:36.0100] [INFO] Including script(s): /repo/spike/2101/renode/Sensor.cs
+DISTINCT_HASHES      10 47991b98f40fa2777b11c081f65eafa0b14fe9e1d13930e42cd55f1cfb30e418;
+WALL_s_per_run mean=2.65 min=2.59 max=2.70
+=== ii-corrupt.cmds
+BLOCK t1-corrupt: magic=0x210153a5 status=0(OK) byte0=0x61 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+NBLOCKS 1
+HASH a9c200d4157ffd820ca3194e688d439732676d94227819ae8c57075e341bf04f
+LOG [11:26:02.5685] [INFO] Including script(s): /repo/spike/2101/renode/Sensor.cs
+DISTINCT_HASHES      10 a9c200d4157ffd820ca3194e688d439732676d94227819ae8c57075e341bf04f;
+WALL_s_per_run mean=2.60 min=2.59 max=2.63
+=== ii-short.cmds
+BLOCK t1-short-nbytes2: magic=0x210153a5 status=3(TIMEOUT_RXNE) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 20000, 0] nbytes=2 seq=1 done=1 instr=1000000 pc=0x8000090
+NBLOCKS 1
+HASH d437b4c7d1639cdb34a1c963127120233ae723acbf40f98fc4fa2cf12b6c8e8c
+LOG [11:26:28.6449] [INFO] Including script(s): /repo/spike/2101/renode/Sensor.cs
+DISTINCT_HASHES      10 d437b4c7d1639cdb34a1c963127120233ae723acbf40f98fc4fa2cf12b6c8e8c;
+WALL_s_per_run mean=2.65 min=2.61 max=2.72
+=== ii-midrun.cmds
+BLOCK t1-normal: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+BLOCK t2-nobytes: magic=0x210153a5 status=3(TIMEOUT_RXNE) byte0=0x00 byte1=0x00 ISR_end=0x1 spins[txis,tc,rxne,stopf]=[0, 0, 20000, 0] nbytes=1 seq=2 done=2 instr=2000000 pc=0x8000092
+BLOCK t3-corrupt: magic=0x210153a5 status=0(OK) byte0=0x61 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=3 done=3 instr=3000000 pc=0x8000090
+BLOCK t4-normal: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=4 done=4 instr=4000000 pc=0x8000094
+NBLOCKS 4
+HASH 8690a9809cf0e3a3a24bf0b1eb128336b5642d3bf412e94899f56788b5c61e73
+LOG [11:26:55.1996] [INFO] Including script(s): /repo/spike/2101/renode/Sensor.cs
+DISTINCT_HASHES      10 8690a9809cf0e3a3a24bf0b1eb128336b5642d3bf412e94899f56788b5c61e73;
+WALL_s_per_run mean=2.66 min=2.63 max=2.71
+=== repeat-iii-remove.cmds
+REPEAT q1-present: magic=0x21015252 attempted=9 ok=9 wrong=0 timed_out=0 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=9 instr=100000 pc=0x8000184
+REPEAT q2-removed: magic=0x21015252 attempted=12 ok=9 wrong=0 timed_out=3 last_status=1(TIMEOUT_TXIS) last_byte=0x00 ISR_end=0x1 resets=3 alive=12 instr=200000 pc=0x80000a8
+REPEAT q3-removed: magic=0x21015252 attempted=16 ok=9 wrong=0 timed_out=7 last_status=1(TIMEOUT_TXIS) last_byte=0x00 ISR_end=0x1 resets=7 alive=16 instr=300000 pc=0x80000a4
+REPEAT q4-readded: magic=0x21015252 attempted=24 ok=16 wrong=0 timed_out=8 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=8 alive=24 instr=400000 pc=0x8000186
+REPEAT q5-readded: magic=0x21015252 attempted=33 ok=25 wrong=0 timed_out=8 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=8 alive=33 instr=500000 pc=0x800018a
+NBLOCKS 5
+HASH 8bab98097f6076ab18672a15d4a71a97de51f7c3791610fcd1e96464c55f3054
+LOG [11:27:22.7176] [WARNING] i2c1: Unknown slave at address 118.
+LOG [11:27:22.7176] [WARNING] i2c1: Unknown slave at address 118. (3)
+LOG [11:27:22.7346] [WARNING] i2c1: Unknown slave at address 118.
+LOG [11:27:22.7346] [WARNING] i2c1: Unknown slave at address 118. (3)
+DISTINCT_HASHES      10 8bab98097f6076ab18672a15d4a71a97de51f7c3791610fcd1e96464c55f3054;
+WALL_s_per_run mean=2.03 min=1.96 max=2.15
+=== repeat-noreset-iii-remove.cmds
+REPEAT q1-present: magic=0x21015252 attempted=9 ok=9 wrong=0 timed_out=0 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=9 instr=100000 pc=0x8000168
+REPEAT q2-removed: magic=0x21015252 attempted=12 ok=9 wrong=0 timed_out=3 last_status=1(TIMEOUT_TXIS) last_byte=0x00 ISR_end=0x1 resets=0 alive=12 instr=200000 pc=0x80000b2
+REPEAT q3-removed: magic=0x21015252 attempted=16 ok=9 wrong=0 timed_out=7 last_status=1(TIMEOUT_TXIS) last_byte=0x00 ISR_end=0x1 resets=0 alive=16 instr=300000 pc=0x80000b4
+REPEAT q4-readded: magic=0x21015252 attempted=24 ok=16 wrong=0 timed_out=8 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=24 instr=400000 pc=0x800015c
+REPEAT q5-readded: magic=0x21015252 attempted=33 ok=25 wrong=0 timed_out=8 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=33 instr=500000 pc=0x800015e
+NBLOCKS 5
+HASH b2adc5867c39561334ea117d41d34a3aa04387e7c750b34bc51c9a76a5c6a72c
+LOG [11:27:43.1859] [WARNING] i2c1: Unknown slave at address 118.
+LOG [11:27:43.1859] [WARNING] i2c1: Unknown slave at address 118. (3)
+LOG [11:27:43.2025] [WARNING] i2c1: Unknown slave at address 118.
+LOG [11:27:43.2025] [WARNING] i2c1: Unknown slave at address 118. (3)
+DISTINCT_HASHES      10 b2adc5867c39561334ea117d41d34a3aa04387e7c750b34bc51c9a76a5c6a72c;
+WALL_s_per_run mean=2.04 min=2.00 max=2.10
+=== repeat-i-midrun.cmds
+REPEAT q1-normal: magic=0x21015252 attempted=9 ok=9 wrong=0 timed_out=0 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=9 instr=100000 pc=0x8000184
+REPEAT q2-withhold: magic=0x21015252 attempted=17 ok=9 wrong=8 timed_out=0 last_status=0(OK) last_byte=0x00 ISR_end=0x21 resets=0 alive=17 instr=200000 pc=0x800018a
+REPEAT q3-corrupt: magic=0x21015252 attempted=25 ok=9 wrong=16 timed_out=0 last_status=0(OK) last_byte=0x61 ISR_end=0x21 resets=0 alive=25 instr=300000 pc=0x8000180
+REPEAT q4-normal: magic=0x21015252 attempted=34 ok=18 wrong=16 timed_out=0 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=34 instr=400000 pc=0x8000182
+NBLOCKS 4
+HASH 20c99ed463d4c6c661a8410c7e744fe0271bce8f4d94421f939279046420e4ce
+DISTINCT_HASHES      10 20c99ed463d4c6c661a8410c7e744fe0271bce8f4d94421f939279046420e4ce;
+WALL_s_per_run mean=2.02 min=1.99 max=2.06
+=== repeat-ii-midrun.cmds
+REPEAT q1-normal: magic=0x21015252 attempted=9 ok=9 wrong=0 timed_out=0 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=9 instr=100000 pc=0x8000184
+REPEAT q2-nobytes: magic=0x21015252 attempted=12 ok=9 wrong=0 timed_out=3 last_status=3(TIMEOUT_RXNE) last_byte=0x00 ISR_end=0x1 resets=3 alive=12 instr=200000 pc=0x80000de
+REPEAT q3-corrupt: magic=0x21015252 attempted=21 ok=9 wrong=8 timed_out=4 last_status=0(OK) last_byte=0x61 ISR_end=0x21 resets=4 alive=21 instr=300000 pc=0x8000184
+REPEAT q4-normal: magic=0x21015252 attempted=29 ok=17 wrong=8 timed_out=4 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=4 alive=29 instr=400000 pc=0x800018a
+NBLOCKS 4
+HASH b7edde7ce81e5e68ff6f5a910d4fbc60c5955b0fe81a61a54a94f421c0a902f4
+LOG [11:28:22.9547] [INFO] Including script(s): /repo/spike/2101/renode/Sensor.cs
+DISTINCT_HASHES      10 b7edde7ce81e5e68ff6f5a910d4fbc60c5955b0fe81a61a54a94f421c0a902f4;
+WALL_s_per_run mean=2.66 min=2.62 max=2.72
+=== repeat-noreset-ii-midrun.cmds
+REPEAT q1-normal: magic=0x21015252 attempted=9 ok=9 wrong=0 timed_out=0 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=9 instr=100000 pc=0x8000168
+REPEAT q2-nobytes: magic=0x21015252 attempted=12 ok=9 wrong=0 timed_out=3 last_status=3(TIMEOUT_RXNE) last_byte=0x00 ISR_end=0x1 resets=0 alive=12 instr=200000 pc=0x80000de
+REPEAT q3-normal: magic=0x21015252 attempted=21 ok=17 wrong=0 timed_out=4 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=21 instr=300000 pc=0x8000168
+NBLOCKS 3
+HASH e4b78c50f0d955a2fd2a83f519dea911b241b4c07a2d491065eb087598a710ea
+LOG [11:28:49.6797] [INFO] Including script(s): /repo/spike/2101/renode/Sensor.cs
+DISTINCT_HASHES      10 e4b78c50f0d955a2fd2a83f519dea911b241b4c07a2d491065eb087598a710ea;
+WALL_s_per_run mean=2.73 min=2.62 max=2.77

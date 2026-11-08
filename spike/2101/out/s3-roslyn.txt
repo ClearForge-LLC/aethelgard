@@ -1,0 +1,11 @@
+# cmd: for 5 runs each: time ./run-renode.sh <cmds> ; r0 = 'mach create; quit', r1 = 'mach create; include @Sensor.cs; quit'   (IMG=ghcr.io/clearforge-llc/aethelgard-tools@sha256:2df682591d4a653d9df8b5012b843a88ca6f4d90fe555ec04f46158272e21093)
+r0 run1 wall_s=1.003
+r0 run2 wall_s=1.020
+r0 run3 wall_s=1.040
+r0 run4 wall_s=1.053
+r0 run5 wall_s=1.047
+r1 run1 wall_s=1.700
+r1 run2 wall_s=1.698
+r1 run3 wall_s=1.682
+r1 run4 wall_s=1.701
+r1 run5 wall_s=1.702

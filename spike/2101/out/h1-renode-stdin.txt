@@ -1,0 +1,37 @@
+# cmd: podman run --rm -v spike/2101/probes:/w -w /opt/renode $IMAGE bash /w/h1-renode-stdin.sh  (IMAGE=ghcr.io/clearforge-llc/aethelgard-tools@sha256:2df682591d4a653d9df8b5012b843a88ca6f4d90fe555ec04f46158272e21093)
+1794136471.262 [11:14:31.2555] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+1794136471.276 Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af)
+1794136471.279 
+1794136471.281 (monitor) mach create
+1794136471.288 [11:14:31.2867] [INFO] System bus created.
+1794136472.498 (machine-0) machine LoadPlatformDescription @platforms/cpus/stm32h753.repl
+1794136473.135 [11:14:33.1320] [INFO] Pseudorandom Number Generator was created with seed: 930945247
+1794136475.501 (machine-0) echo "S-A"
+1794136475.510 S-A
+1794136475.513 (machine-0) emulation RunFor "0.000010000"
+1794136475.575 [11:14:35.5708] [INFO] cpu: Setting initial values: PC = 0x0, SP = 0x0.
+1794136475.579 [11:14:35.5727] [INFO] machine-0: Machine started.
+1794136475.585 [11:14:35.5834] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFFC, value 0x40000000.
+1794136475.587 [11:14:35.5835] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFF8, value 0x0.
+1794136475.589 [11:14:35.5835] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFF4, value 0x0.
+1794136475.591 [11:14:35.5835] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFF0, value 0x0.
+1794136475.592 [11:14:35.5835] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFEC, value 0x0.
+1794136475.593 [11:14:35.5835] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFE8, value 0x0.
+1794136475.594 [11:14:35.5835] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFE4, value 0x0.
+1794136475.596 [11:14:35.5835] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFE0, value 0x0.
+1794136475.597 [11:14:35.5914] [INFO] machine-0: Machine paused.
+1794136475.598 (machine-0) echo "S-B"
+1794136475.599 S-B
+1794136476.504 (machine-0) emulation GetTimeSourceInfo
+1794136476.508 Elapsed Virtual Time: 00:00:00.000010000
+1794136476.510 Elapsed Host Time: 00:00:00.016918400
+1794136476.512 Current load: 1691.84
+1794136476.513 Cumulative load: 1691.84
+1794136476.515 State: Idle
+1794136476.516 Advance immediately: False
+1794136476.517 Quantum: 00:00:00.000100000
+1794136476.519 (machine-0) echo "S-C"
+1794136476.520 S-C
+1794136477.507 (machine-0) quit
+1794136477.510 Renode is quitting
+1794136477.534 [11:14:37.5327] [INFO] machine-0: Disposed.

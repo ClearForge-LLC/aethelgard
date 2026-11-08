@@ -1,0 +1,122 @@
+# cmd: spike/2101/renode/run-renode.sh <cmdfile> | python3 -I summarize.py   (IMG=ghcr.io/clearforge-llc/aethelgard-tools@sha256:2df682591d4a653d9df8b5012b843a88ca6f4d90fe555ec04f46158272e21093; run-renode.sh = podman run --rm -i -e DOTNET_EnableDiagnostics=0 $IMG renode --disable-gui --console --plain, under timeout 120 + systemd-run MemoryMax=8G)
+
+## i-normal.cmds (monitor commands: spike/2101/renode/i-normal.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/i.repl
+#   include @/repo/spike/2101/renode/i-handler.py
+#   s3_setup "sysbus.i2c1.dummy"
+#   sysbus LoadELF @/repo/spike/2101/renode/fw.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   sysbus WriteDoubleWord 0x20000100 1
+#   emulation RunFor "0.010000000"
+BLOCK t1-normal: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+NBLOCKS 1
+HASH 77b8e5c94279ec464d51a454da6652c249e3eaaf346cbee0656c58369de3395b
+LOG [11:29:47.9321] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+
+## i-withhold.cmds (monitor commands: spike/2101/renode/i-withhold.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/i.repl
+#   include @/repo/spike/2101/renode/i-handler.py
+#   s3_setup "sysbus.i2c1.dummy"
+#   s3_fault 1
+#   sysbus LoadELF @/repo/spike/2101/renode/fw.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   sysbus WriteDoubleWord 0x20000100 1
+#   emulation RunFor "0.010000000"
+BLOCK t1-withhold: magic=0x210153a5 status=0(OK) byte0=0x00 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+NBLOCKS 1
+HASH 7b20527d4a9c36fda931298321e1e7b27f4e31c0a2670a126586c035914573a4
+LOG [11:29:49.9907] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+LOG [11:29:50.0030] [DEBUG] i2c1.dummy: Not enough data in buffer, filling rest with zeros.
+
+## i-corrupt.cmds (monitor commands: spike/2101/renode/i-corrupt.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/i.repl
+#   include @/repo/spike/2101/renode/i-handler.py
+#   s3_setup "sysbus.i2c1.dummy"
+#   s3_fault 2
+#   sysbus LoadELF @/repo/spike/2101/renode/fw.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   sysbus WriteDoubleWord 0x20000100 1
+#   emulation RunFor "0.010000000"
+BLOCK t1-corrupt: magic=0x210153a5 status=0(OK) byte0=0x61 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+NBLOCKS 1
+HASH a9c200d4157ffd820ca3194e688d439732676d94227819ae8c57075e341bf04f
+LOG [11:29:51.9872] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+
+## i-midrun.cmds (monitor commands: spike/2101/renode/i-midrun.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/i.repl
+#   include @/repo/spike/2101/renode/i-handler.py
+#   s3_setup "sysbus.i2c1.dummy"
+#   sysbus LoadELF @/repo/spike/2101/renode/fw.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   sysbus WriteDoubleWord 0x20000100 1
+#   emulation RunFor "0.010000000"
+#   s3_fault 1
+#   sysbus WriteDoubleWord 0x20000100 2
+#   emulation RunFor "0.010000000"
+#   s3_fault 2
+#   sysbus WriteDoubleWord 0x20000100 3
+#   emulation RunFor "0.010000000"
+#   s3_fault 0
+#   sysbus WriteDoubleWord 0x20000100 4
+#   emulation RunFor "0.010000000"
+BLOCK t1-normal: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+BLOCK t2-withhold: magic=0x210153a5 status=0(OK) byte0=0x00 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=2 done=2 instr=2000000 pc=0x8000094
+BLOCK t3-corrupt: magic=0x210153a5 status=0(OK) byte0=0x61 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=3 done=3 instr=3000000 pc=0x8000092
+BLOCK t4-normal-again: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=4 done=4 instr=4000000 pc=0x8000090
+NBLOCKS 4
+HASH 55ac87c4655cc61fa37ea9f66639fae4dedc9fdeba56a64d287da48ea0a1b5c2
+LOG [11:29:53.9673] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+LOG [11:29:53.9961] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+LOG [11:29:53.9961] [DEBUG] i2c1.dummy: Not enough data in buffer, filling rest with zeros.
+LOG [11:29:54.0023] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+LOG [11:29:54.0080] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+
+## repeat-i-midrun.cmds (monitor commands: spike/2101/renode/repeat-i-midrun.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/i.repl
+#   include @/repo/spike/2101/renode/i-handler.py
+#   s3_setup "sysbus.i2c1.dummy"
+#   sysbus LoadELF @/repo/spike/2101/renode/fw-repeat.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   emulation RunFor "0.001000000"
+#   s3_fault 1
+#   emulation RunFor "0.001000000"
+#   s3_fault 2
+#   emulation RunFor "0.001000000"
+#   s3_fault 0
+#   emulation RunFor "0.001000000"
+REPEAT q1-normal: magic=0x21015252 attempted=9 ok=9 wrong=0 timed_out=0 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=9 instr=100000 pc=0x8000184
+REPEAT q2-withhold: magic=0x21015252 attempted=17 ok=9 wrong=8 timed_out=0 last_status=0(OK) last_byte=0x00 ISR_end=0x21 resets=0 alive=17 instr=200000 pc=0x800018a
+REPEAT q3-corrupt: magic=0x21015252 attempted=25 ok=9 wrong=16 timed_out=0 last_status=0(OK) last_byte=0x61 ISR_end=0x21 resets=0 alive=25 instr=300000 pc=0x8000180
+REPEAT q4-normal: magic=0x21015252 attempted=34 ok=18 wrong=16 timed_out=0 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=34 instr=400000 pc=0x8000182
+NBLOCKS 4
+HASH 20c99ed463d4c6c661a8410c7e744fe0271bce8f4d94421f939279046420e4ce
+LOG [11:29:55.9556] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+LOG [11:29:55.9556] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0] (8)
+LOG [11:29:55.9859] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+LOG [11:29:55.9859] [DEBUG] i2c1.dummy: Not enough data in buffer, filling rest with zeros.
+LOG [11:29:55.9867] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+LOG [11:29:55.9867] [DEBUG] i2c1.dummy: Not enough data in buffer, filling rest with zeros.
+LOG [11:29:55.9868] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+LOG [11:29:55.9868] [DEBUG] i2c1.dummy: Not enough data in buffer, filling rest with zeros.
+LOG [11:29:55.9868] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+LOG [11:29:55.9868] [DEBUG] i2c1.dummy: Not enough data in buffer, filling rest with zeros.
+LOG [11:29:55.9869] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+LOG [11:29:55.9869] [DEBUG] i2c1.dummy: Not enough data in buffer, filling rest with zeros.
+LOG [11:29:55.9869] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+LOG [11:29:55.9869] [DEBUG] i2c1.dummy: Not enough data in buffer, filling rest with zeros.
+LOG [11:29:55.9870] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+LOG [11:29:55.9870] [DEBUG] i2c1.dummy: Not enough data in buffer, filling rest with zeros.
+LOG [11:29:55.9870] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+LOG [11:29:55.9870] [DEBUG] i2c1.dummy: Not enough data in buffer, filling rest with zeros.
+LOG [11:29:55.9906] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]
+LOG [11:29:55.9943] [DEBUG] i2c1.dummy: Received 1 bytes: [0xD0]

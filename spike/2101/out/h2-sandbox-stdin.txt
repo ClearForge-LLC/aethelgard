@@ -1,0 +1,28 @@
+# cmd: podman run --rm -v spike/2101/probes:/w -v ~/.cache/aet-2101:/cache $IMAGE bash /w/h2-sandbox-stdin.sh
+[11:15:20.4147] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af)
+
+(monitor) mach create
+[11:15:20.4457] [INFO] System bus created.
+(machine-0) machine LoadPlatformDescription @/opt/renode/platforms/cpus/stm32h753.repl
+[11:15:21.0311] [INFO] Pseudorandom Number Generator was created with seed: 1599095055
+(machine-0) emulation RunFor "0.000010000"
+[11:15:21.1457] [INFO] cpu: Setting initial values: PC = 0x0, SP = 0x0.
+[11:15:21.1477] [INFO] machine-0: Machine started.
+[11:15:21.1662] [INFO] machine-0: Machine paused.
+(machine-0) echo "S-B"
+S-B
+(machine-0) emulation GetTimeSourceInfo
+Elapsed Virtual Time: 00:00:00.000010000
+Elapsed Host Time: 00:00:00.016849700
+Current load: 1684.97
+Cumulative load: 1684.97
+State: Idle
+Advance immediately: False
+Quantum: 00:00:00.000100000
+(machine-0) echo "S-C"
+S-C
+(machine-0) quit
+Renode is quitting
+[11:15:21.2067] [INFO] machine-0: Disposed.
+SBX reaper-exit=0 status: sandbox abi=8|ended code=0|

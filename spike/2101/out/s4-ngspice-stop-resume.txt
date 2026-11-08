@@ -1,0 +1,74 @@
+# cmd: podman run --rm -v spike/2101/lockstep:/w $IMAGE bash /w/h4-stop-resume.sh
+source rc.cir
+stop when time > 2.5u
+tran 1n 22.5u 0 5n
+let n=length(time)-1
+print time[n] v(line)[n]
+echo Q1-END
+alter vctl dc = 0
+delete all
+stop when time > 5u
+resume
+let n=length(time)-1
+print time[n] v(line)[n]
+echo Q2-END
+delete all
+resume
+let n=length(time)-1
+print time[n] v(line)[n]
+meas tran trise TRIG v(line) VAL=0.99 RISE=1 TARG v(line) VAL=2.31 RISE=1
+quit
+ERROR: (external)  no graphics interface;
+ please check if X-server is running,
+ or ngspice is compiled properly (see INSTALL)
+ngspice 1 -> source rc.cir
+Note: No compatibility mode selected!
+Circuit: * s4 probe: one i2c line, pull-up r to 3.3 v, 100 pf, open-drain switch driven by vctl
+ngspice 2 -> stop when time > 2.5u
+ngspice 3 -> tran 1n 22.5u 0 5n
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+Using SPARSE 1.3 as Direct Linear Solver
+Initial Transient Solution
+--------------------------
+Node                                   Voltage
+----                                   -------
+vdd                                        3.3
+line                                 0.0149321
+ctl                                        3.3
+vctl#branch                                  0
+vdd#branch                         -0.00149321
+1 : condition met: stop  when time > 2.5e-06
+doAnalyses: pause requested
+tran simulation interrupted
+ngspice 4 -> let n=length(time)-1
+ngspice 5 -> print time[n] v(line)[n]
+time[n] = 2.500500e-06
+v(line)[n] = 1.493213e-02
+ngspice 6 -> echo Q1-END
+Q1-END
+ngspice 7 -> alter vctl dc = 0
+ngspice 8 -> delete all
+ngspice 9 -> stop when time > 5u
+ngspice 10 -> resume
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+2 : condition met: stop  when time > 5e-06
+doAnalyses: pause requested
+simulation interrupted
+ngspice 11 -> let n=length(time)-1
+ngspice 12 -> print time[n] v(line)[n]
+time[n] = 5.001622e-06
+v(line)[n] = 3.299962e+00
+ngspice 13 -> echo Q2-END
+Q2-END
+ngspice 14 -> delete all
+ngspice 15 -> resume
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+No. of Data Rows : 4514
+ngspice 16 -> let n=length(time)-1
+ngspice 17 -> print time[n] v(line)[n]
+time[n] = 2.250000e-05
+v(line)[n] = 3.300000e+00
+ngspice 18 -> <(line) VAL=0.99 RISE=1 TARG v(line) VAL=2.31 RISE=1
+trise               =  1.863972e-07 targ=  2.764879e-06 trig=  2.578482e-06
+ngspice 19 -> quit
+ngspice-44.2 done

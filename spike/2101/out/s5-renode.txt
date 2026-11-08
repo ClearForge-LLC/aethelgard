@@ -1,0 +1,43 @@
+# cmd: podman run --rm -v $PWD:/repo -v ~/.cache/aet-2101:/cache $IMAGE bash /repo/spike/2101/probes/s5-renode.sh i-normal.cmds i-withhold.cmds ii-normal.cmds ii-nobytes.cmds iii-present.cmds iii-absent.cmds
+=== i-normal.cmds  sandboxed_wall_s=1.98
+      1 SBX reaper-exit=0 status: sandbox abi=8|ended code=0|
+sandboxed   HASH 77b8e5c94279ec464d51a454da6652c249e3eaaf346cbee0656c58369de3395b
+unsandboxed HASH 77b8e5c94279ec464d51a454da6652c249e3eaaf346cbee0656c58369de3395b
+MATCH
+  workdir: 4096 .config
+  workdir: 4096 renode-8
+=== i-withhold.cmds  sandboxed_wall_s=1.94
+      1 SBX reaper-exit=0 status: sandbox abi=8|ended code=0|
+sandboxed   HASH 7b20527d4a9c36fda931298321e1e7b27f4e31c0a2670a126586c035914573a4
+unsandboxed HASH 7b20527d4a9c36fda931298321e1e7b27f4e31c0a2670a126586c035914573a4
+MATCH
+  workdir: 4096 .config
+  workdir: 4096 renode-74
+=== ii-normal.cmds  sandboxed_wall_s=2.57
+      1 SBX reaper-exit=0 status: sandbox abi=8|ended code=0|
+sandboxed   HASH 77b8e5c94279ec464d51a454da6652c249e3eaaf346cbee0656c58369de3395b
+unsandboxed HASH 77b8e5c94279ec464d51a454da6652c249e3eaaf346cbee0656c58369de3395b
+MATCH
+  workdir: 4096 .config
+  workdir: 4096 renode-139
+=== ii-nobytes.cmds  sandboxed_wall_s=2.63
+      1 SBX reaper-exit=0 status: sandbox abi=8|ended code=0|
+sandboxed   HASH 47991b98f40fa2777b11c081f65eafa0b14fe9e1d13930e42cd55f1cfb30e418
+unsandboxed HASH 47991b98f40fa2777b11c081f65eafa0b14fe9e1d13930e42cd55f1cfb30e418
+MATCH
+  workdir: 4096 .config
+  workdir: 4096 renode-211
+=== iii-present.cmds  sandboxed_wall_s=1.94
+      1 SBX reaper-exit=0 status: sandbox abi=8|ended code=0|
+sandboxed   HASH 77b8e5c94279ec464d51a454da6652c249e3eaaf346cbee0656c58369de3395b
+unsandboxed HASH 77b8e5c94279ec464d51a454da6652c249e3eaaf346cbee0656c58369de3395b
+MATCH
+  workdir: 4096 .config
+  workdir: 4096 renode-279
+=== iii-absent.cmds  sandboxed_wall_s=1.94
+      1 SBX reaper-exit=0 status: sandbox abi=8|ended code=0|
+sandboxed   HASH a6e20ed6f1d4b629c19822c850bd96b6b2457408be692978b8e0dceb139ed1e6
+unsandboxed HASH a6e20ed6f1d4b629c19822c850bd96b6b2457408be692978b8e0dceb139ed1e6
+MATCH
+  workdir: 4096 .config
+  workdir: 4096 renode-344

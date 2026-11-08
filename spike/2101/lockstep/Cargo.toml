@@ -1,0 +1,17 @@
+[package]
+name = "aet2101-lockstep"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# A spike probe outside the workspace (AET-WO-2101 S4): its own workspace, so
+# the root workspace does not claim it. No `unsafe` here; the only dependency is
+# the ng-probe crate beside it, whose ffi.rs holds the FFI's `unsafe`.
+[workspace]
+
+[[bin]]
+name = "lockstep"
+path = "src/main.rs"
+
+[dependencies]
+ng-probe = { path = "../ngspice" }

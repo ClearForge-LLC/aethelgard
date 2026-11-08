@@ -1,0 +1,36 @@
+logLevel 0
+emulation SetSeed 2101
+mach create "s3"
+machine LoadPlatformDescription @/repo/spike/2101/renode/i.repl
+include @/repo/spike/2101/renode/i-handler.py
+s3_setup "sysbus.i2c1.dummy"
+sysbus LoadELF @/repo/spike/2101/renode/fw-repeat.elf
+sysbus.cpu VectorTableOffset 0x08000000
+emulation RunFor "0.001000000"
+logLevel 3
+echo "BEGIN q1-normal"
+include @/repo/spike/2101/renode/dump-repeat.resc
+echo "END"
+logLevel 0
+s3_fault 1
+emulation RunFor "0.001000000"
+logLevel 3
+echo "BEGIN q2-withhold"
+include @/repo/spike/2101/renode/dump-repeat.resc
+echo "END"
+logLevel 0
+s3_fault 2
+emulation RunFor "0.001000000"
+logLevel 3
+echo "BEGIN q3-corrupt"
+include @/repo/spike/2101/renode/dump-repeat.resc
+echo "END"
+logLevel 0
+s3_fault 0
+emulation RunFor "0.001000000"
+logLevel 3
+echo "BEGIN q4-normal"
+include @/repo/spike/2101/renode/dump-repeat.resc
+echo "END"
+logLevel 0
+quit

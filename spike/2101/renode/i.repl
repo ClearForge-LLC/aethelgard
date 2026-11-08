@@ -1,0 +1,3 @@
+using "platforms/cpus/stm32h753.repl"
+
+dummy: Mocks.DummyI2CSlave @ i2c1 0x76

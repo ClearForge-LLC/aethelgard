@@ -1,0 +1,7 @@
+# cmd: grep -c unsafe renode/fw/src/main.rs renode/fw/src/bin/repeat.rs ; wc -l (probe is outside the workspace; RUL-12 'no unsafe' applies to workspace crates)
+renode/fw/src/main.rs:20
+renode/fw/src/bin/repeat.rs:21
+ 168 renode/fw/src/main.rs
+ 164 renode/fw/src/bin/repeat.rs
+ 332 total
+lines containing the keyword 'unsafe': main.rs 20, repeat.rs 21 (static mut result/control words, raw MMIO volatile access, naked-ish extern Reset, link_section/no_mangle attributes). Zero dependencies.

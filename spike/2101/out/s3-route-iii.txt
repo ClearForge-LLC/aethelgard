@@ -1,0 +1,110 @@
+# cmd: spike/2101/renode/run-renode.sh <cmdfile> | python3 -I summarize.py   (IMG=ghcr.io/clearforge-llc/aethelgard-tools@sha256:2df682591d4a653d9df8b5012b843a88ca6f4d90fe555ec04f46158272e21093; run-renode.sh = podman run --rm -i -e DOTNET_EnableDiagnostics=0 $IMG renode --disable-gui --console --plain, under timeout 120 + systemd-run MemoryMax=8G)
+
+## iii-present.cmds (monitor commands: spike/2101/renode/iii-present.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/iii-present.repl
+#   sysbus LoadELF @/repo/spike/2101/renode/fw.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   sysbus WriteDoubleWord 0x20000100 1
+#   emulation RunFor "0.010000000"
+BLOCK t1: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+NBLOCKS 1
+HASH 77b8e5c94279ec464d51a454da6652c249e3eaaf346cbee0656c58369de3395b
+
+## iii-absent.cmds (monitor commands: spike/2101/renode/iii-absent.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/iii-absent.repl
+#   sysbus LoadELF @/repo/spike/2101/renode/fw.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   sysbus WriteDoubleWord 0x20000100 1
+#   emulation RunFor "0.010000000"
+BLOCK t1: magic=0x210153a5 status=1(TIMEOUT_TXIS) byte0=0x00 byte1=0x00 ISR_end=0x1 spins[txis,tc,rxne,stopf]=[20000, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000094
+NBLOCKS 1
+HASH a6e20ed6f1d4b629c19822c850bd96b6b2457408be692978b8e0dceb139ed1e6
+LOG [11:29:37.6077] [WARNING] i2c1: Unknown slave at address 118.
+
+## iii-nbytes2.cmds (monitor commands: spike/2101/renode/iii-nbytes2.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/iii-present.repl
+#   sysbus LoadELF @/repo/spike/2101/renode/fw.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   sysbus WriteDoubleWord 0x20000104 2
+#   sysbus WriteDoubleWord 0x20000100 1
+#   emulation RunFor "0.010000000"
+BLOCK nbytes2: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=2 seq=1 done=1 instr=1000000 pc=0x8000092
+NBLOCKS 1
+HASH 373f609d18fa983b1c1e6ec91892074e4df1a34082ca40547fc6b7d91b5f5088
+LOG [11:29:39.6548] [WARNING] i2c1.bme: Unhandled read from offset 0xD1.
+
+## iii-remove.cmds (monitor commands: spike/2101/renode/iii-remove.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/iii-present.repl
+#   sysbus LoadELF @/repo/spike/2101/renode/fw.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   sysbus WriteDoubleWord 0x20000100 1
+#   emulation RunFor "0.010000000"
+#   sysbus.i2c1 Unregister sysbus.i2c1.bme
+#   sysbus WriteDoubleWord 0x20000100 2
+#   emulation RunFor "0.010000000"
+#   machine LoadPlatformDescriptionFromString "bme: I2C.BME280 @ i2c1 0x76"
+#   sysbus WriteDoubleWord 0x20000100 3
+#   emulation RunFor "0.010000000"
+BLOCK t1-present: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=1 done=1 instr=1000000 pc=0x8000090
+BLOCK t2-after-unregister: magic=0x210153a5 status=1(TIMEOUT_TXIS) byte0=0x00 byte1=0x00 ISR_end=0x1 spins[txis,tc,rxne,stopf]=[20000, 0, 0, 0] nbytes=1 seq=2 done=2 instr=2000000 pc=0x8000092
+BLOCK t3-after-reregister: magic=0x210153a5 status=0(OK) byte0=0x60 byte1=0x00 ISR_end=0x21 spins[txis,tc,rxne,stopf]=[0, 0, 0, 0] nbytes=1 seq=3 done=3 instr=3000000 pc=0x8000090
+NBLOCKS 3
+HASH 7e014b7af220bf1f47311fddf55bb1495fff321628e69680bb7ad048a79a00d3
+LOG [11:29:41.7234] [WARNING] i2c1: Unknown slave at address 118.
+
+## repeat-iii-remove.cmds (monitor commands: spike/2101/renode/repeat-iii-remove.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/iii-present.repl
+#   sysbus LoadELF @/repo/spike/2101/renode/fw-repeat.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   emulation RunFor "0.001000000"
+#   sysbus.i2c1 Unregister sysbus.i2c1.bme
+#   emulation RunFor "0.001000000"
+#   emulation RunFor "0.001000000"
+#   machine LoadPlatformDescriptionFromString "bme: I2C.BME280 @ i2c1 0x76"
+#   emulation RunFor "0.001000000"
+#   emulation RunFor "0.001000000"
+REPEAT q1-present: magic=0x21015252 attempted=9 ok=9 wrong=0 timed_out=0 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=9 instr=100000 pc=0x8000184
+REPEAT q2-removed: magic=0x21015252 attempted=12 ok=9 wrong=0 timed_out=3 last_status=1(TIMEOUT_TXIS) last_byte=0x00 ISR_end=0x1 resets=3 alive=12 instr=200000 pc=0x80000a8
+REPEAT q3-removed: magic=0x21015252 attempted=16 ok=9 wrong=0 timed_out=7 last_status=1(TIMEOUT_TXIS) last_byte=0x00 ISR_end=0x1 resets=7 alive=16 instr=300000 pc=0x80000a4
+REPEAT q4-readded: magic=0x21015252 attempted=24 ok=16 wrong=0 timed_out=8 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=8 alive=24 instr=400000 pc=0x8000186
+REPEAT q5-readded: magic=0x21015252 attempted=33 ok=25 wrong=0 timed_out=8 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=8 alive=33 instr=500000 pc=0x800018a
+NBLOCKS 5
+HASH 8bab98097f6076ab18672a15d4a71a97de51f7c3791610fcd1e96464c55f3054
+LOG [11:29:43.8518] [WARNING] i2c1: Unknown slave at address 118.
+LOG [11:29:43.8518] [WARNING] i2c1: Unknown slave at address 118. (3)
+LOG [11:29:43.8677] [WARNING] i2c1: Unknown slave at address 118.
+
+## repeat-noreset-iii-remove.cmds (monitor commands: spike/2101/renode/repeat-noreset-iii-remove.cmds)
+#   emulation SetSeed 2101
+#   mach create "s3"
+#   machine LoadPlatformDescription @/repo/spike/2101/renode/iii-present.repl
+#   sysbus LoadELF @/repo/spike/2101/renode/fw-repeat-noreset.elf
+#   sysbus.cpu VectorTableOffset 0x08000000
+#   emulation RunFor "0.001000000"
+#   sysbus.i2c1 Unregister sysbus.i2c1.bme
+#   emulation RunFor "0.001000000"
+#   emulation RunFor "0.001000000"
+#   machine LoadPlatformDescriptionFromString "bme: I2C.BME280 @ i2c1 0x76"
+#   emulation RunFor "0.001000000"
+#   emulation RunFor "0.001000000"
+REPEAT q1-present: magic=0x21015252 attempted=9 ok=9 wrong=0 timed_out=0 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=9 instr=100000 pc=0x8000168
+REPEAT q2-removed: magic=0x21015252 attempted=12 ok=9 wrong=0 timed_out=3 last_status=1(TIMEOUT_TXIS) last_byte=0x00 ISR_end=0x1 resets=0 alive=12 instr=200000 pc=0x80000b2
+REPEAT q3-removed: magic=0x21015252 attempted=16 ok=9 wrong=0 timed_out=7 last_status=1(TIMEOUT_TXIS) last_byte=0x00 ISR_end=0x1 resets=0 alive=16 instr=300000 pc=0x80000b4
+REPEAT q4-readded: magic=0x21015252 attempted=24 ok=16 wrong=0 timed_out=8 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=24 instr=400000 pc=0x800015c
+REPEAT q5-readded: magic=0x21015252 attempted=33 ok=25 wrong=0 timed_out=8 last_status=0(OK) last_byte=0x60 ISR_end=0x21 resets=0 alive=33 instr=500000 pc=0x800015e
+NBLOCKS 5
+HASH b2adc5867c39561334ea117d41d34a3aa04387e7c750b34bc51c9a76a5c6a72c
+LOG [11:29:45.9485] [WARNING] i2c1: Unknown slave at address 118.
+LOG [11:29:45.9485] [WARNING] i2c1: Unknown slave at address 118. (3)
+LOG [11:29:45.9676] [WARNING] i2c1: Unknown slave at address 118.
+LOG [11:29:45.9676] [WARNING] i2c1: Unknown slave at address 118. (3)

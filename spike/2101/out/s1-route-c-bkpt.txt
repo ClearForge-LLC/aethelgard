@@ -1,0 +1,24 @@
+# cmd: IMG=$(cat container/IMAGE); podman run ... $IMG s1c s1 bkpt 1000 /cache/ng-scratch/cbkptN.tsv  (x2; libngspice, ngSpice_SetBkpt at all 16 edges before each run)
+# routes file: c-bkpt
+run1 startup_ms=2.018
+run1 per-transient ms: min=3.942 median=4.027 p95=4.094 max=6.564 total=4043.7 (n=1000)
+run1 aggregate_sha256=70327c4a375ec96cf977a45de2ee8faad1cab522b8f6412a1a709fb2c9c1f193
+run2 startup_ms=2.140
+run2 per-transient ms: min=3.919 median=4.038 p95=4.150 max=6.661 total=4056.3 (n=1000)
+run2 aggregate_sha256=70327c4a375ec96cf977a45de2ee8faad1cab522b8f6412a1a709fb2c9c1f193
+run1==run2 per-transient hashes identical: True   distinct hashes in run1: 257/1000
+GetVSRCData calls/transient min/median/max: 9022/9074/9166  (mean 9079.8)
+GetSyncData calls/transient min/median/max: 9018/9056/9162  (mean 9061.0)
+accepted points/transient min/median/max: 4510/4524/4582
+GetSyncData calls with ngspice redo flag!=0 (rejected step redone by ngspice itself) per transient min/median/max: 0/10/20; transients with any: 996
+GetSyncData calls where time went backwards: total 0
+delta clamps applied by host per transient: min/max 0/0
+first 5 / last 3 per-transient (i, ns, sha256):
+  0	6563763	c102cffb3b09b80742b34a5b3240802e88606f62609cb4fe33532eaaea298751
+  1	5894426	775abf1691e4748c13ed76b5d2e7b8d6fccc85ef25a66c50ef243ca21b7e9e00
+  2	5826193	fd747901fa4ec0aa72e259af1738ced17232db8460a3268ad3d45adc1ac342fe
+  3	5828084	0297f205d215a5391a802d1dee58e5606ec3aba3f2c930c147d61f48e6d043d4
+  4	6107955	f9300b5166ba3f7aa194e498f72a16e3e0fe8816dbf4d2bcd583409ad13bdb00
+  997	4081956	c28c608460fe24020e0a62f4e61bdf94fa71d1a016b62fff7a455b0821ce9034
+  998	4038707	84dddfd8a3a23f7802a2bfaf86af08f15661bdd31d653a59f30de7aa15cc54ad
+  999	4076337	052a54a891fde013c7345cc662d3920f0ba918c98e064746da0c7f67926e7aac

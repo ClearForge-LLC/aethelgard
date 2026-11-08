@@ -1,0 +1,3 @@
+using "platforms/cpus/stm32h753.repl"
+
+bme: I2C.BME280 @ i2c1 0x76

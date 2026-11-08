@@ -1,0 +1,14 @@
+# cmd: see per-route files; all runs: renode/run-renode.sh <cmdfile> | python3 -I renode/summarize.py (IMG=ghcr.io/clearforge-llc/aethelgard-tools@sha256:2df682591d4a653d9df8b5012b843a88ca6f4d90fe555ec04f46158272e21093)
+route/mode                     firmware observes (single read, 10 ms virtual)                         10-run identical
+iii present (BME280)           OK byte 0x60 ISR 0x21                                                  y
+iii absent                     TIMEOUT_TXIS (20000 spins), ISR 0x1; log "Unknown slave at address 118" y
+iii removed at run time        Unregister mid-run -> TIMEOUT_TXIS; re-add via LoadPlatformDescriptionFromString -> OK  y
+i normal / withhold / corrupt  OK 0x60 / OK 0x00 (zero pad) / OK 0x61; never a timeout               y
+i mid-run (s3_fault N)         0x60 -> 0x00 -> 0x61 -> 0x60 across RunFor calls                        y
+ii normal                      OK 0x60                                                                y
+ii Fault 1 (no bytes)          TIMEOUT_RXNE                                                           y
+ii Fault 2 (corrupt)           OK 0x61                                                                y
+ii Fault 3 + NBYTES=2 (short)  byte0 0x60 then TIMEOUT_RXNE (early TC/STOPF)                          y
+ii mid-run (Fault N)           OK -> TIMEOUT_RXNE -> 0x61 -> OK                                       y
+wall per run: iii/i ~2.0 s, ii ~2.65 s (Roslyn include ~0.67 s: r0 1.04 s vs r1 1.70 s); base Renode+machine ~1.0 s; see s3-determinism.txt
+Identical hashes across routes: i-normal == iii-present == ii-normal; i-corrupt == ii-corrupt.

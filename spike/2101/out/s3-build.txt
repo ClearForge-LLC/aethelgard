@@ -1,0 +1,25 @@
+# cmd: podman run --rm --pids-limit=-1 -v /home/forge/aethelgard-2101:/repo:Z -v /home/forge/.cache/aet-2101:/cache:Z -e CARGO_HOME=/cache/cargo-home -e CARGO_TARGET_DIR=/cache/target-fw -w /repo/spike/2101/renode/fw $IMG cargo build --release --target thumbv7em-none-eabihf [--features no-reset]   (IMG=ghcr.io/clearforge-llc/aethelgard-tools@sha256:2df682591d4a653d9df8b5012b843a88ca6f4d90fe555ec04f46158272e21093)
+   Compiling s3-probe-fw v0.0.0 (/repo/spike/2101/renode/fw)
+    Finished `release` profile [optimized] target(s) in 0.04s
+544bf83ed7d729719558db5aaceb4e0f679c117805c20ecc20cdfa2d48fbec30  s3-probe-fw
+951ca2cd98dd3442fc5e79a4b5d30dd4595111af914355bc4de3979e6297e28f  repeat
+  [ 1] .vector_table     PROGBITS        08000000 010000 000040 00  AR  0   0  4
+  [ 2] .text             PROGBITS        08000040 010040 000136 00  AX  0   0  2
+  [ 4] .s3_result        NOBITS          20000000 020000 000040 00  WA  0   0  4
+  [ 5] .s3_ctl           NOBITS          20000100 020000 000010 00  WA  0   0  4
+--- no-reset
+   Compiling s3-probe-fw v0.0.0 (/repo/spike/2101/renode/fw)
+warning: variable does not need to be mutable
+   --> src/bin/repeat.rs:125:45
+    |
+125 |     let (mut att, mut ok, mut bad, mut tmo, mut rst) = (0u32, 0u32, 0u32, 0u32, 0u32);
+    |                                             ----^^^
+    |                                             |
+    |                                             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `s3-probe-fw` (bin "repeat") generated 1 warning (run `cargo fix --bin "repeat" -p s3-probe-fw` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 0.04s
+6b7536f3389a7cc7fa4e7185be4d5a49aa4370483ea59b3eab647a631f815c8d  /cache/target-fw/thumbv7em-none-eabihf/release/repeat
+--- unsafe: 'unsafe' appears on 20 lines of src/main.rs (168 total), 21 of src/bin/repeat.rs (164 total)

@@ -1,0 +1,18 @@
+# cmd: IMG=$(cat container/IMAGE); podman run ... $IMG python3 s1_a.py 1000 /scr/aN.tsv  (x2; ngspice -b per transient, wrdata numdgt=15 text hashed)
+# routes file: a
+run1 startup n/a
+run1 per-transient ms: min=9.401 median=9.996 p95=10.442 max=11.707 total=10025.7 (n=1000)
+run1 aggregate_sha256=933642a7530f2dc4789215b952259d77adc773333481ce220c13669c1d55069a
+run2 startup n/a
+run2 per-transient ms: min=10.041 median=10.445 p95=10.938 max=11.699 total=10500.1 (n=1000)
+run2 aggregate_sha256=933642a7530f2dc4789215b952259d77adc773333481ce220c13669c1d55069a
+run1==run2 per-transient hashes identical: True   distinct hashes in run1: 256/1000
+first 5 / last 3 per-transient (i, ns, sha256):
+  0	10735902	2a4e42d2b8fd6760456843f162fc431f4ba931a93e92a00e943e2b5a667beb64
+  1	9917186	bf65f77e60cdf3b4f6188c9fefa217df6f4fcaaff3d3c92c9e69c277586fd453
+  2	9576660	dc52014792a07aa7aa9fdcfdc1869618af32cb43db7bc37710a44709891bc9d2
+  3	9462930	7c0ff453211e16da15970ae916b5861c99a23e99b6b06b6570ee9041f02bf516
+  4	9890417	24cac81534ef1b456cf273c57b97f253896ba231067d7b99b7db4efeba3925ec
+  997	10236687	4d9c2ef972ea44f83acddedbcc644ee401bf1bedf99cc7ca50f2a4b5cea878da
+  998	10173360	6e7793e75e90fccd1fbebd529595c052e31093c63c67c45f0ff803b3a63e558d
+  999	10140388	5bb83697865452fcb13d1ca1e75cab02a776755ad8d2770328aea463b5110633

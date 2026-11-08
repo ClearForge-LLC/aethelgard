@@ -1,0 +1,12 @@
+sysbus ReadDoubleWord 536870912
+sysbus ReadDoubleWord 536870916
+sysbus ReadDoubleWord 536870920
+sysbus ReadDoubleWord 536870924
+sysbus ReadDoubleWord 536870928
+sysbus ReadDoubleWord 536870932
+sysbus ReadDoubleWord 536870936
+sysbus ReadDoubleWord 536870940
+sysbus ReadDoubleWord 536870944
+sysbus ReadDoubleWord 536870948
+sysbus.cpu ExecutedInstructions
+sysbus.cpu PC

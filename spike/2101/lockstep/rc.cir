@@ -1,0 +1,9 @@
+* S4 probe: one I2C line, pull-up R to 3.3 V, 100 pF, open-drain switch driven by Vctl
+.param rpu=2.2k
+Vdd vdd 0 dc 3.3
+Rpu vdd line {rpu}
+Cl line 0 100p
+Vctl ctl 0 dc 3.3
+S1 line 0 ctl 0 swm
+.model swm sw vt=1.65 vh=0 ron=10 roff=1e12
+.end

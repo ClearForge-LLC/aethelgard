@@ -1,0 +1,8 @@
+# S4 route ii: the run-time C# sensor (Fault 1 = no bytes: the firmware times out), the repeat firmware.
+logLevel 3
+emulation SetSeed 2101
+mach create "s4"
+include @/repo/spike/2101/renode/Sensor.cs
+machine LoadPlatformDescription @/repo/spike/2101/renode/ii.repl
+sysbus LoadELF @/repo/spike/2101/renode/fw-repeat.elf
+sysbus.cpu VectorTableOffset 0x08000000

@@ -1,0 +1,24 @@
+# cmd: IMG=$(cat container/IMAGE); podman run ... $IMG s1c s1 clamp 1000 /cache/ng-scratch/cclampN.tsv  (x2; libngspice, delta clamp in GetSyncData; raw f64 time+line hashed)
+# routes file: c-clamp
+run1 startup_ms=1.152
+run1 per-transient ms: min=3.936 median=4.065 p95=4.288 max=10.035 total=4122.6 (n=1000)
+run1 aggregate_sha256=58dedcee09944ac1b38adedea82af5aad101bc3587fde26f65435f919b26649a
+run2 startup_ms=2.166
+run2 per-transient ms: min=4.010 median=4.113 p95=4.178 max=6.531 total=4125.2 (n=1000)
+run2 aggregate_sha256=58dedcee09944ac1b38adedea82af5aad101bc3587fde26f65435f919b26649a
+run1==run2 per-transient hashes identical: True   distinct hashes in run1: 256/1000
+GetVSRCData calls/transient min/median/max: 9054/9130/9238  (mean 9133.7)
+GetSyncData calls/transient min/median/max: 9050/9116/9203  (mean 9116.1)
+accepted points/transient min/median/max: 4526/4554/4590
+GetSyncData calls with ngspice redo flag!=0 (rejected step redone by ngspice itself) per transient min/median/max: 0/9/25; transients with any: 996
+GetSyncData calls where time went backwards: total 0
+delta clamps applied by host per transient: min/max 24/24
+first 5 / last 3 per-transient (i, ns, sha256):
+  0	6340412	15b1198041237b8bc2fc6519f97c0e4d0b46dd6cc2969463054938f47eb5235d
+  1	5839656	7e32c5b29a027960972992ad0de73fe0baa51eb0e4653f43997970b2fb170417
+  2	5820381	afc894f5133a741d12c920ef09e44be40da7537229ec289da2fce89496c41b6e
+  3	5834340	76eae10229db4b2a875c6316ca4532ced8a642ca48909e1e1569fb27931363be
+  4	10035108	090f6be285130937ed5cbf9a8b60fb6ab220a3e17ad559ffd79ebf34a1b16019
+  997	4044876	5c5aa7e908f65520b512fa9ac4408449a7c8e1e840ba0758589de218e074ef4c
+  998	4067000	6106c4601e0ec9d7c9975aca5c124f30747909401eaaf39ca25140a9bfc2f143
+  999	4018322	aedc1c52dd562741df98b35f816918c378bdec7f9cd3c83c34543568644de245

@@ -1,0 +1,14 @@
+# cmd: podman run --rm -v spike/2101/probes:/w -v spike/2101/lockstep:/lockstep -v ~/.cache/aet-2101:/cache $IMAGE bash /w/s5-ngspice-diag.sh
+no-strace
+== a, with /tmp granted read-write (diagnostic: too broad to rule)
+trise               =  1.864014e-07 targ=  2.765362e-06 trig=  2.578961e-06
+SBX reaper-exit=0 status: sandbox abi=8|ended code=0|
+== a, with SPICE_SCRIPTS etc unchanged, /dev/null rw only
+tmpfile(): Permission denied
+SBX reaper-exit=0 status: sandbox abi=8|ended code=1|
+== b under pty, /tmp + /dev/ptmx + /dev/pts granted
+print length(time)
+SBX reaper-exit=0 status: sandbox abi=8|ended code=139|
+== b under pty, /dev/ptmx + /dev/pts only (no /tmp)
+script: cannot open /dev/null: Permission denied
+SBX reaper-exit=0 status: sandbox abi=8|ended code=1|

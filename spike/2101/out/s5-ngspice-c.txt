@@ -1,0 +1,26 @@
+# cmd: podman run --rm -v spike/2101/probes:/w -v spike/2101/lockstep:/lockstep -v ~/.cache/aet-2101:/cache $IMAGE bash /w/s5-ngspice-c.sh
+== c: s1c s2 bkpt 47000 7f 1 under the sandbox (no extra grants)
+mode=Bkpt R=47000 byte=7f ack=1 points=4590 vsrc_calls=9193 sync_calls=9183 redo_flag=5 time_regress=0 clamps=0 loc_hist=[4589, 4594, 0, 0, 0, 0, 0, 0]
+peak_v=3.253183
+vector_rise_ns=3982.3001 t30=4.175855e-6 t70=8.158155e-6
+meas rc=0
+log: stdout trise               =  3.982300e-06 targ=  8.158155e-06 trig=  4.175855e-06
+SBX reaper-exit=0 status: sandbox abi=8|ended code=0|
+== c: s1c s1 bkpt 1000 transients under the sandbox (timing)
+SBX reaper-exit=0 status: sandbox abi=8|ended code=0|
+wall_s=4.49824
+1001
+sum_transient_ms=4274.1
+70327c4a375ec96cf977a45de2ee8faad1cab522b8f6412a1a709fb2c9c1f193  -
+== c: the same 1000 unsandboxed, for the hash comparison
+70327c4a375ec96cf977a45de2ee8faad1cab522b8f6412a1a709fb2c9c1f193  -
+== b: pty, with /tmp, /dev/ptmx, /dev/pts, /dev/null and /dev/tty granted
+print length(time)
+ngspice 3 -> print length(time)
+length(time) = 4.547000e+03
+SBX reaper-exit=0 status: sandbox abi=8|ended code=0|
+== b: pty, with all of /dev read-write (diagnostic)
+print length(time)
+ngspice 6 -> print length(time)
+length(time) = 4.547000e+03
+SBX reaper-exit=0 status: sandbox abi=8|ended code=0|

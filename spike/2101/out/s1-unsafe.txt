@@ -1,0 +1,81 @@
+# cmd: IMG=$(cat container/IMAGE); podman run --rm -v $PWD:/repo:Z $IMG python3 /repo/spike/2101/ngspice/unsafe_count.py
+TOTAL lines containing `unsafe`: 11 ; TOTAL lines inside unsafe regions: 74
+spike/2101/ngspice/src/bin/s1c.rs: lines containing `unsafe`: 0 (); total lines inside unsafe blocks/fns/extern blocks (incl. those): 0
+spike/2101/ngspice/src/ffi.rs: lines containing `unsafe`: 11 (32,74,89,101,118,147,154,161,165,171,187); total lines inside unsafe blocks/fns/extern blocks (incl. those): 74
+   32: unsafe extern "C" {
+   33:     // header L372-373
+   34:     fn ngSpice_Init(
+   35:         printfcn: Option<SendChar>,
+   36:         statfcn: Option<SendStat>,
+   37:         ngexit: Option<ControlledExit>,
+   38:         sdata: *const c_void,
+   39:         sinitdata: *const c_void,
+   40:         bgtrun: *const c_void,
+   41:         user: *mut c_void,
+   42:     ) -> c_int;
+   43:     // header L386
+   44:     fn ngSpice_Init_Sync(
+   45:         v: Option<GetVSRCData>,
+   46:         i: Option<GetISRCData>,
+   47:         s: Option<GetSyncData>,
+   48:         ident: *mut c_int,
+   49:         user: *mut c_void,
+   50:     ) -> c_int;
+   51:     // header L391
+   52:     fn ngSpice_Command(cmd: *mut c_char) -> c_int;
+   53:     // header L395
+   54:     fn ngGet_Vec_Info(name: *mut c_char) -> *mut VectorInfo;
+   55:     // header L427 (array of C strings, NULL-terminated)
+   56:     fn ngSpice_Circ(circ: *mut *mut c_char) -> c_int;
+   57:     // header L452
+   58:     fn ngSpice_SetBkpt(t: c_double) -> bool;
+   59: }
+   74:     let st = unsafe { CStr::from_ptr(s) }.to_string_lossy().into_owned();
+   89:     unsafe {
+   90:         let h = &mut *(u as *mut H);
+   91:         let n = CStr::from_ptr(name).to_string_lossy();
+   92:         *val = h.vsrc(t, &n);
+   93:     }
+   101:     unsafe {
+   102:         let h = &mut *(u as *mut H);
+   103:         h.sync(t, &mut *d, old, redo, loc)
+   104:     }
+   118:         unsafe {
+   119:             let r = ngSpice_Init(
+   120:                 Some(send_char::<H>),
+   121:                 Some(send_stat),
+   122:                 Some(ctrl_exit),
+   123:                 std::ptr::null(),
+   124:                 std::ptr::null(),
+   125:                 std::ptr::null(),
+   126:                 hooks as *mut c_void,
+   127:             );
+   128:             if r != 0 {
+   129:                 return Err(format!("ngSpice_Init -> {r}"));
+   130:             }
+   131:             let r = ngSpice_Init_Sync(
+   132:                 Some(vsrc_cb::<H>),
+   133:                 Some(isrc_cb),
+   134:                 Some(sync_cb::<H>),
+   135:                 &mut *ident,
+   136:                 hooks as *mut c_void,
+   137:             );
+   138:             if r != 0 {
+   139:                 return Err(format!("ngSpice_Init_Sync -> {r}"));
+   140:             }
+   141:         }
+   147:         unsafe { &mut *self.hooks }
+   154:         let r = unsafe { ngSpice_Circ(p.as_mut_ptr()) };
+   161:         unsafe { ngSpice_Command(c.as_ptr() as *mut c_char) }
+   165:         unsafe { ngSpice_SetBkpt(t) }
+   171:         unsafe {
+   172:             let p = ngGet_Vec_Info(c.as_ptr() as *mut c_char);
+   173:             if p.is_null() || (*p).v_realdata.is_null() {
+   174:                 return None;
+   175:             }
+   176:             Some(std::slice::from_raw_parts((*p).v_realdata, (*p).v_length as usize).to_vec())
+   177:         }
+   187:         unsafe { drop(Box::from_raw(self.hooks)) }
+spike/2101/ngspice/src/lib.rs: lines containing `unsafe`: 0 (); total lines inside unsafe blocks/fns/extern blocks (incl. those): 0
+spike/2101/ngspice/src/pattern.rs: lines containing `unsafe`: 0 (); total lines inside unsafe blocks/fns/extern blocks (incl. those): 0
+spike/2101/ngspice/src/sha256.rs: lines containing `unsafe`: 0 (); total lines inside unsafe blocks/fns/extern blocks (incl. those): 0

@@ -1,0 +1,3 @@
+using "platforms/cpus/stm32h753.repl"
+
+sensor: I2C.S3Sensor @ i2c1 0x76

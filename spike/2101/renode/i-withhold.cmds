@@ -1,0 +1,17 @@
+logLevel 0
+emulation SetSeed 2101
+mach create "s3"
+machine LoadPlatformDescription @/repo/spike/2101/renode/i.repl
+include @/repo/spike/2101/renode/i-handler.py
+s3_setup "sysbus.i2c1.dummy"
+s3_fault 1
+sysbus LoadELF @/repo/spike/2101/renode/fw.elf
+sysbus.cpu VectorTableOffset 0x08000000
+sysbus WriteDoubleWord 0x20000100 1
+emulation RunFor "0.010000000"
+logLevel 3
+echo "BEGIN t1-withhold"
+include @/repo/spike/2101/renode/dump.resc
+echo "END"
+logLevel 0
+quit

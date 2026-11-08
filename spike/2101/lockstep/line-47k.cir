@@ -1,0 +1,10 @@
+* S4 analog net: one I2C line, pull-up 47k to 3.3 V, 100 pF, open-drain driver.
+* The driver repeats one byte window (22.5 us): low for one bit (2.5 us), then
+* released for 20 us, so each window carries one complete release edge.
+Vdd vdd 0 dc 3.3
+Rpu vdd line 47k
+Cl line 0 100p
+Vctl ctl 0 PULSE(0 3.3 0 1n 1n 2.5u 22.5u)
+S1 line 0 ctl 0 swm
+.model swm sw vt=1.65 vh=0 ron=10 roff=1e12
+.end
