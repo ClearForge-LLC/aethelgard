@@ -25,6 +25,22 @@ pub enum SolveError {
     InvalidSpecification(IrValidationError),
     #[error("the specification is for part `{spec}`, the pin table for `{table}`")]
     PartMismatch { spec: String, table: String },
+    #[error(
+        "I2C bus `{bus}` has no net constraint on `{net}`, so it has no rise time to bound its speed"
+    )]
+    MissingBusConstraint { bus: String, net: String },
+    #[error(
+        "I2C bus `{bus}` allows a rise time of {rise_time_ns} ns, slower than any I2C mode (1000 ns at most)"
+    )]
+    RiseTimeTooSlow { bus: String, rise_time_ns: u32 },
+    #[error(
+        "I2C bus `{bus}` runs at {speed_hz} Hz, above its rise-time ceiling of {ceiling_hz} Hz"
+    )]
+    BusTooFast {
+        bus: String,
+        speed_hz: u32,
+        ceiling_hz: u32,
+    },
     #[error("`{claimant}` names pin `{pin}`, which the pin table does not have")]
     UnknownPin { pin: String, claimant: String },
     #[error("`{claimant}` names pin `{pin}`, which is reserved (debug port or oscillator)")]
@@ -76,6 +92,9 @@ impl SolveError {
         match self {
             Self::InvalidSpecification(e) => e.kind(),
             Self::PartMismatch { .. } => "PartMismatch",
+            Self::MissingBusConstraint { .. } => "MissingBusConstraint",
+            Self::RiseTimeTooSlow { .. } => "RiseTimeTooSlow",
+            Self::BusTooFast { .. } => "BusTooFast",
             Self::UnknownPin { .. } => "UnknownPin",
             Self::ReservedPin { .. } => "ReservedPin",
             Self::UnknownPeripheral { .. } => "UnknownPeripheral",
@@ -98,7 +117,11 @@ impl SolveError {
             | Self::PinClaimedTwice { pin, .. } => Some(pin),
             Self::UnknownPeripheral { peripheral, .. }
             | Self::PeripheralClaimedTwice { peripheral, .. } => Some(peripheral),
-            Self::NoInstance { bus, .. } | Self::BudgetExceeded { bus, .. } => Some(bus),
+            Self::NoInstance { bus, .. }
+            | Self::BudgetExceeded { bus, .. }
+            | Self::MissingBusConstraint { bus, .. }
+            | Self::RiseTimeTooSlow { bus, .. }
+            | Self::BusTooFast { bus, .. } => Some(bus),
             Self::Infeasible { .. } | Self::NoFreePin { .. } => None,
         }
     }
@@ -116,7 +139,11 @@ impl SolveError {
             | Self::PeripheralClaimedTwice { first, second, .. } => {
                 vec![first.clone(), second.clone()]
             }
-            Self::NoInstance { bus, .. } | Self::BudgetExceeded { bus, .. } => vec![bus.clone()],
+            Self::NoInstance { bus, .. }
+            | Self::BudgetExceeded { bus, .. }
+            | Self::MissingBusConstraint { bus, .. }
+            | Self::RiseTimeTooSlow { bus, .. }
+            | Self::BusTooFast { bus, .. } => vec![bus.clone()],
             Self::Infeasible { buses } => buses.clone(),
         }
     }
@@ -147,8 +174,10 @@ pub fn solve_with_limit(
         specification_sha256: specification_sha256.to_owned(),
         assignments: BTreeMap::new(),
         gpio: BTreeMap::new(),
+        i2c_ceilings: BTreeMap::new(),
     };
     out.validate().map_err(SolveError::InvalidSpecification)?;
+    out.i2c_ceilings = i2c_ceilings(spec)?;
     if spec.mcu.part != table.part {
         return Err(SolveError::PartMismatch {
             spec: spec.mcu.part.clone(),
@@ -213,6 +242,69 @@ pub fn solve_with_limit(
     // checks; this refuses rather than emits if a change to it ever breaks one.
     out.validate().map_err(SolveError::InvalidSpecification)?;
     Ok(out)
+}
+
+/// The fastest I2C mode whose maximum rise time (NXP UM10204) is at least
+/// `rise_time_ns`, as its speed in Hz; `None` when it is slower than every mode.
+fn ceiling_hz(rise_time_ns: u32) -> Option<u32> {
+    match rise_time_ns {
+        0..=120 => Some(1_000_000),
+        121..=300 => Some(400_000),
+        301..=1000 => Some(100_000),
+        _ => None,
+    }
+}
+
+/// Each I2C bus's ceiling, from the stricter of its two lines' declared
+/// `max_rise_time_nanoseconds`, in document order. A line with no constraint
+/// refuses: nothing is defaulted (`INV-06`). Pull-up and capacitance are not
+/// read; that physics is the twin's.
+fn i2c_ceilings(spec: &Specification) -> Result<BTreeMap<String, u32>, SolveError> {
+    let mut out = BTreeMap::new();
+    for bus in &spec.i2c_buses {
+        let mut t_max = u32::MAX;
+        for net in [&bus.sda.net, &bus.scl.net] {
+            let Some(c) = spec.net_constraints.iter().find(|c| &c.net_name == net) else {
+                return Err(SolveError::MissingBusConstraint {
+                    bus: bus.id.clone(),
+                    net: net.clone(),
+                });
+            };
+            t_max = t_max.min(c.max_rise_time_nanoseconds);
+        }
+        let Some(ceiling) = ceiling_hz(t_max) else {
+            return Err(SolveError::RiseTimeTooSlow {
+                bus: bus.id.clone(),
+                rise_time_ns: t_max,
+            });
+        };
+        if bus.speed_hz > ceiling {
+            return Err(SolveError::BusTooFast {
+                bus: bus.id.clone(),
+                speed_hz: bus.speed_hz,
+                ceiling_hz: ceiling,
+            });
+        }
+        out.insert(bus.id.clone(), ceiling);
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ceiling_hz;
+
+    #[test]
+    fn the_mapping_at_each_boundary() {
+        assert_eq!(ceiling_hz(1), Some(1_000_000));
+        assert_eq!(ceiling_hz(120), Some(1_000_000));
+        assert_eq!(ceiling_hz(121), Some(400_000));
+        assert_eq!(ceiling_hz(300), Some(400_000));
+        assert_eq!(ceiling_hz(301), Some(100_000));
+        assert_eq!(ceiling_hz(1000), Some(100_000));
+        assert_eq!(ceiling_hz(1001), None);
+        assert_eq!(ceiling_hz(u32::MAX), None);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

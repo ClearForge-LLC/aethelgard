@@ -51,7 +51,7 @@ fn valid_example_exits_0() {
             "ok": true,
             "project_name": "sentinel-01",
             "voltage_domains": 1,
-            "net_constraints": 1
+            "net_constraints": 2
         })
     );
 }

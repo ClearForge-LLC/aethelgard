@@ -126,7 +126,8 @@ pub struct NetConstraint {
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
 /// the signals on an alternate function; `gpio` holds each net driven as a
-/// plain GPIO output (an SPI device's `cs`), net to pin.
+/// plain GPIO output (an SPI device's `cs`), net to pin. `i2c_ceilings` holds
+/// each I2C bus's maximum speed in Hz, keyed by bus id.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct SolvedTopology {
@@ -137,6 +138,8 @@ pub struct SolvedTopology {
     pub assignments: BTreeMap<String, PinAssignment>,
     #[serde(deserialize_with = "unique_keys")]
     pub gpio: BTreeMap<String, String>,
+    #[serde(deserialize_with = "unique_keys")]
+    pub i2c_ceilings: BTreeMap<String, u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -321,6 +324,8 @@ pub enum IrValidationError {
     MalformedSpecificationHash,
     #[error("net `{id}` has alternate_function {value}, above 15")]
     AlternateFunctionOutOfRange { id: String, value: u8 },
+    #[error("I2C bus `{id}` has a ceiling other than 100000, 400000 or 1000000 Hz")]
+    InvalidCeiling { id: String },
     #[error("net `{id}` is in both assignments and gpio")]
     NetAssignedTwice { id: String },
     #[error("pin `{id}` is assigned to more than one net")]
@@ -356,6 +361,7 @@ impl IrValidationError {
             Self::ZeroImpedance { .. } => "ZeroImpedance",
             Self::MalformedSpecificationHash => "MalformedSpecificationHash",
             Self::AlternateFunctionOutOfRange { .. } => "AlternateFunctionOutOfRange",
+            Self::InvalidCeiling { .. } => "InvalidCeiling",
             Self::NetAssignedTwice { .. } => "NetAssignedTwice",
             Self::DuplicatePin { .. } => "DuplicatePin",
         }
@@ -391,6 +397,7 @@ impl IrValidationError {
             | Self::ZeroRiseTime { id }
             | Self::ZeroImpedance { id }
             | Self::AlternateFunctionOutOfRange { id, .. }
+            | Self::InvalidCeiling { id }
             | Self::NetAssignedTwice { id }
             | Self::DuplicatePin { id } => Some(id),
         }
@@ -687,8 +694,9 @@ impl Specification {
 impl SolvedTopology {
     /// Refuses the first malformed value found: version, hash, identifiers (in
     /// `assignments` a net, then its `pin`, `peripheral`, `signal`; then in
-    /// `gpio` a net, then its pin; nets in sorted order), then alternate
-    /// functions, then a net in both maps, then a pin used twice across both.
+    /// `gpio` a net, then its pin; then each `i2c_ceilings` bus id; keys in
+    /// sorted order), then alternate functions, then ceilings, then a net in
+    /// both maps, then a pin used twice across both.
     pub fn validate(&self) -> Result<(), IrValidationError> {
         use IrValidationError as E;
 
@@ -711,12 +719,20 @@ impl SolvedTopology {
             identifier(net, || format!("gpio.{net}"))?;
             identifier(pin, || format!("gpio.{net}.pin"))?;
         }
+        for bus in self.i2c_ceilings.keys() {
+            identifier(bus, || format!("i2c_ceilings.{bus}"))?;
+        }
         for (net, a) in &self.assignments {
             if a.alternate_function > 15 {
                 return Err(E::AlternateFunctionOutOfRange {
                     id: net.clone(),
                     value: a.alternate_function,
                 });
+            }
+        }
+        for (bus, hz) in &self.i2c_ceilings {
+            if ![100_000, 400_000, 1_000_000].contains(hz) {
+                return Err(E::InvalidCeiling { id: bus.clone() });
             }
         }
         if let Some(net) = self.gpio.keys().find(|n| self.assignments.contains_key(*n)) {
