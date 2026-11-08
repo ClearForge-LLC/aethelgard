@@ -27,8 +27,12 @@ Every key is required. `peripheral`, `pin` and `impedance_ohms` may be `null`, b
   ],
   "spi_devices": [{ "reference": "U4", "part": "W25Q64JV", "supply": "VDD_3V3", "bus": "FLASH",
     "cs": { "net": "FLASH_CS", "pin": null } }],
-  "net_constraints": [{ "net_name": "I2C_SDA", "max_capacitance_femtofarads": 400000,
-    "max_rise_time_nanoseconds": 300, "impedance_ohms": null }]
+  "net_constraints": [
+    { "net_name": "I2C_SDA", "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300, "impedance_ohms": null },
+    { "net_name": "I2C_SCL", "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300, "impedance_ohms": null }
+  ]
 }
 ```
 
@@ -64,15 +68,17 @@ What the solver derives (`RUL-16`):
 - `schema_version` (1);
 - `specification_sha256` (64 lowercase hex digits);
 - `assignments`, a `BTreeMap` keyed by net, holding every bus signal on an alternate function, each value a `PinAssignment` (`pin`, `peripheral`, `signal`, `alternate_function`);
-- `gpio`, a `BTreeMap` from net to pin, holding every net driven as a plain GPIO output: today, each SPI device's `cs`. It records no direction, because every entry is an output.
+- `gpio`, a `BTreeMap` from net to pin, holding every net driven as a plain GPIO output: today, each SPI device's `cs`. It records no direction, because every entry is an output;
+- `i2c_ceilings`, a `BTreeMap` from I2C bus id to that bus's maximum speed in Hz (100,000, 400,000 or 1,000,000). It is empty when there are no I2C buses.
 
-A repeated key in `assignments` or `gpio` is refused when parsing, and every key is required. `SolvedTopology::validate` refuses, in this order:
+A repeated key in `assignments`, `gpio` or `i2c_ceilings` is refused when parsing, and every key is required. `SolvedTopology::validate` refuses, in this order:
 1. `UnsupportedSchemaVersion`;
 2. `MalformedSpecificationHash`;
-3. `InvalidIdentifier`: in `assignments`, the paths `assignments.<net>`, then `.pin`, `.peripheral`, `.signal`; then in `gpio`, `gpio.<net>`, then `gpio.<net>.pin`;
+3. `InvalidIdentifier`: in `assignments`, the paths `assignments.<net>`, then `.pin`, `.peripheral`, `.signal`; then in `gpio`, `gpio.<net>`, then `gpio.<net>.pin`; then `i2c_ceilings.<bus>`;
 4. `AlternateFunctionOutOfRange` (above 15; the net);
-5. `NetAssignedTwice` (a net in both maps; the net);
-6. `DuplicatePin` (a pin used twice anywhere across both maps; the pin).
+5. `InvalidCeiling` (a ceiling other than the three mode speeds; the bus id);
+6. `NetAssignedTwice` (a net in both maps; the net);
+7. `DuplicatePin` (a pin used twice anywhere across both maps; the pin).
 
 The CLI's `validate` accepts only a `Specification`.
 
@@ -99,6 +105,17 @@ A pure function: its output depends only on the specification, the table and the
 - Every bus signal takes an unreserved pin whose table entry carries `<instance>_<SIGNAL>`, with that entry's alternate function.
 - Every SPI device's `cs` takes any unreserved pin, as a plain GPIO output, recorded in `gpio`.
 - No pin is used twice. A hand-set `peripheral` or `pin` is fixed.
+
+### I2C ceilings (`AET-WO-1202`)
+
+Before the pin search, each I2C bus gets a ceiling from the rise time its board declares:
+1. `t_max` is the smaller `max_rise_time_nanoseconds` of the `net_constraints` entries for the bus's `sda.net` and `scl.net`.
+2. The ceiling is the fastest mode whose maximum rise time (NXP UM10204) is at least `t_max`:
+   - 1 MHz if `t_max` ≤ 120 ns;
+   - 400 kHz if ≤ 300 ns;
+   - 100 kHz if ≤ 1000 ns.
+
+Pull-up resistance and capacitance are not read; that physics is the twin's.
 
 ### The search order
 
@@ -130,6 +147,9 @@ Each check runs in document order: bus signals, then every `cs`. `kind()` is the
 | # | Check | Refusal | `claimants()` |
 |---|---|---|---|
 | 1 | `Specification::validate` passes, and the hash is 64 lowercase hex digits | `InvalidSpecification` (the inner kind) | none |
+| 1a | Every I2C line, SDA then SCL and bus by bus, has a net constraint (nothing is defaulted) | `MissingBusConstraint` (the message names the net) | the bus id |
+| | … its `t_max` is at most 1000 ns | `RiseTimeTooSlow` | the bus id |
+| | … and its `speed_hz` is at most its ceiling | `BusTooFast` | the bus id |
 | 2 | `mcu.part` is the table's part | `PartMismatch` | none |
 | 3 | Every hand pin is a key of the table (compared as a key, never by case) | `UnknownPin` | the signal |
 | | … and is not reserved | `ReservedPin` | the signal |

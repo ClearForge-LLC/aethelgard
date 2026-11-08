@@ -1,0 +1,5 @@
+# AET-WO-1501: the engine image's build context is the repository root.
+**/target/
+.git/
+docs/
+spike/

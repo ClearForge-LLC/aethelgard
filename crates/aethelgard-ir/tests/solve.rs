@@ -6,8 +6,8 @@
 use std::collections::BTreeMap;
 
 use aethelgard_ir::{
-    I2cBus, Mcu, Pin, PinSource, PinTable, RESERVED_PINS, Signal, SolveError, SolvedTopology,
-    Specification, SpiBus, SpiDevice, VoltageDomain, solve, solve_with_limit,
+    I2cBus, Mcu, NetConstraint, Pin, PinSource, PinTable, RESERVED_PINS, Signal, SolveError,
+    SolvedTopology, Specification, SpiBus, SpiDevice, VoltageDomain, solve, solve_with_limit,
 };
 
 const PART: &str = "TEST_PART";
@@ -106,11 +106,26 @@ fn device(reference: &str, bus: &str) -> SpiDevice {
     }
 }
 
+fn constraint(net: &str, rise_time_ns: u32) -> NetConstraint {
+    NetConstraint {
+        net_name: net.into(),
+        max_capacitance_femtofarads: 100_000,
+        max_rise_time_nanoseconds: rise_time_ns,
+        impedance_ohms: None,
+    }
+}
+
+/// Every I2C line gets a 300 ns constraint, so each bus's ceiling is 400 kHz,
+/// its declared speed, unless a test changes it.
 fn spec(
     i2c_buses: Vec<I2cBus>,
     spi_buses: Vec<SpiBus>,
     spi_devices: Vec<SpiDevice>,
 ) -> Specification {
+    let net_constraints = i2c_buses
+        .iter()
+        .flat_map(|b| [constraint(&b.sda.net, 300), constraint(&b.scl.net, 300)])
+        .collect();
     Specification {
         schema_version: 1,
         project_name: "t".into(),
@@ -127,7 +142,7 @@ fn spec(
         spi_buses,
         i2c_devices: vec![],
         spi_devices,
-        net_constraints: vec![],
+        net_constraints,
     }
 }
 
@@ -491,4 +506,138 @@ fn refusals_come_in_the_readme_order() {
     s.i2c_buses[0].peripheral = Some("I2C9".into());
     s.spi_buses[0].mosi.pin = Some("PB6".into());
     assert_eq!(refused(&s).kind(), "UnknownPeripheral");
+}
+
+// ---- I2C ceilings (AET-WO-1202) ---------------------------------------------
+
+/// One I2C bus at `speed_hz` whose two lines declare these rise times.
+fn i2c_spec(speed_hz: u32, sda_ns: u32, scl_ns: u32) -> Specification {
+    let mut s = spec(vec![i2c("I")], vec![], vec![]);
+    s.i2c_buses[0].speed_hz = speed_hz;
+    s.net_constraints = vec![constraint("I_SDA", sda_ns), constraint("I_SCL", scl_ns)];
+    s
+}
+
+#[test]
+fn each_i2c_bus_gets_its_ceiling_and_an_spi_only_spec_gets_none() {
+    let t = ok(&basic());
+    assert_eq!(t.i2c_ceilings, BTreeMap::from([("I".into(), 400_000)]));
+    let t = ok(&spec(vec![], vec![spi("S")], vec![]));
+    assert!(t.i2c_ceilings.is_empty());
+}
+
+#[test]
+fn the_ceiling_follows_the_mapping_at_each_boundary() {
+    for (ns, hz) in [
+        (120, 1_000_000),
+        (121, 400_000),
+        (300, 400_000),
+        (301, 100_000),
+        (1000, 100_000),
+    ] {
+        let t = ok(&i2c_spec(100_000, ns, ns));
+        assert_eq!(t.i2c_ceilings["I"], hz, "{ns} ns");
+    }
+}
+
+/// As ruled (WO §1.2, §5.3): the smaller declared rise time sets the ceiling.
+/// AET-WO-1202 FEEDBACK F1 argues the bus is as slow as its worse line, i.e.
+/// the larger value; if that is ruled, every assertion here inverts.
+#[test]
+fn the_stricter_line_sets_the_ceiling_whichever_it_is() {
+    assert_eq!(
+        ok(&i2c_spec(100_000, 120, 1000)).i2c_ceilings["I"],
+        1_000_000
+    );
+    assert_eq!(
+        ok(&i2c_spec(100_000, 1000, 120)).i2c_ceilings["I"],
+        1_000_000
+    );
+    // At 1 MHz, the stricter line (120 ns) beats the looser one (300 ns).
+    assert_eq!(
+        ok(&i2c_spec(1_000_000, 120, 300)).i2c_ceilings["I"],
+        1_000_000
+    );
+    assert_eq!(
+        ok(&i2c_spec(1_000_000, 300, 120)).i2c_ceilings["I"],
+        1_000_000
+    );
+}
+
+#[test]
+fn a_line_with_no_constraint_is_refused_naming_the_first_in_document_order() {
+    let mut s = i2c_spec(100_000, 300, 300);
+    s.net_constraints.clear();
+    let err = refused(&s);
+    assert_eq!(
+        err,
+        SolveError::MissingBusConstraint {
+            bus: "I".into(),
+            net: "I_SDA".into()
+        }
+    );
+    assert_eq!(err.kind(), "MissingBusConstraint");
+    assert_eq!(err.id(), Some("I"));
+    assert_eq!(err.claimants(), ["I"]);
+    // Only SCL missing: SCL is named; one line never stands for both.
+    let mut s = i2c_spec(100_000, 300, 300);
+    s.net_constraints.retain(|c| c.net_name == "I_SDA");
+    assert_eq!(
+        refused(&s),
+        SolveError::MissingBusConstraint {
+            bus: "I".into(),
+            net: "I_SCL".into()
+        }
+    );
+}
+
+#[test]
+fn a_rise_time_slower_than_every_mode_is_refused() {
+    let err = refused(&i2c_spec(100_000, 1001, 2000));
+    assert_eq!(
+        err,
+        SolveError::RiseTimeTooSlow {
+            bus: "I".into(),
+            rise_time_ns: 1001
+        }
+    );
+    assert_eq!(
+        err.to_string(),
+        "I2C bus `I` allows a rise time of 1001 ns, slower than any I2C mode (1000 ns at most)"
+    );
+}
+
+#[test]
+fn a_bus_above_its_ceiling_is_refused() {
+    let err = refused(&i2c_spec(1_000_000, 300, 300));
+    assert_eq!(err.kind(), "BusTooFast");
+    assert_eq!(
+        err.to_string(),
+        "I2C bus `I` runs at 1000000 Hz, above its rise-time ceiling of 400000 Hz"
+    );
+    // At its ceiling it solves.
+    assert_eq!(ok(&i2c_spec(400_000, 300, 300)).i2c_ceilings["I"], 400_000);
+}
+
+#[test]
+fn ceiling_refusals_come_before_the_pin_search_and_after_validation() {
+    // A spec the search could not place still refuses on its ceiling first.
+    let mut s = spec(vec![i2c("A"), i2c("B"), i2c("C"), i2c("D")], vec![], vec![]);
+    assert_eq!(refused(&s).kind(), "Infeasible");
+    s.net_constraints.retain(|c| c.net_name != "D_SCL");
+    assert_eq!(refused(&s).kind(), "MissingBusConstraint");
+    // An invalid spec still refuses on validation first.
+    s.net_constraints.clear();
+    s.voltage_domains[0].nominal_millivolts = 0;
+    assert_eq!(refused(&s).kind(), "ZeroNominalVoltage");
+}
+
+#[test]
+fn pull_up_and_capacitance_are_not_read() {
+    let mut s = i2c_spec(400_000, 300, 300);
+    s.i2c_buses[0].pull_up_ohms = 47_000;
+    for c in &mut s.net_constraints {
+        c.max_capacitance_femtofarads = u64::MAX;
+    }
+    assert_eq!(ok(&s).i2c_ceilings["I"], 400_000);
 }

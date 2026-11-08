@@ -80,7 +80,13 @@
   "net_constraints": [
     {
       "net_name": "I2C_SDA",
-      "max_capacitance_femtofarads": 400000,
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "I2C_SCL",
+      "max_capacitance_femtofarads": 100000,
       "max_rise_time_nanoseconds": 300,
       "impedance_ohms": null
     }

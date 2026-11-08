@@ -12,9 +12,11 @@ use aethelgard_ir::SolvedTopology;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-/// sha256 of the success line without its newline, measured by the spike.
-const REFERENCE_DIGEST: &str = "c7f59a497e8ed989e83491a3a55af2a86a076f06470c8ac13c64e987e561f0cd";
-const STRESS_DIGEST: &str = "759f41463aaf205dec2eed472c0929e38a300f749cfe51ff49f3937c23e4b578";
+/// sha256 of the success line without its newline. The spike measured
+/// `c7f59a49…` and `759f4146…`; `AET-WO-1202` added `i2c_ceilings` and the
+/// I2C line constraints to both inputs (old and new in its FEEDBACK).
+const REFERENCE_DIGEST: &str = "9e5b38ff615c734c23c7664486ee6d42476e4fdfd77be5243be4fc40a7991ec9";
+const STRESS_DIGEST: &str = "77fd96e2d59875ae631b26b2a55085b099779bc62ce7c206653f0eafbb828310";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -181,6 +183,8 @@ fn the_reference_solves_to_the_expected_pins() {
     assert_eq!(t.assignments["I2C_SDA"].peripheral, "I2C1");
     assert_eq!(t.assignments["SPI_SCK"].signal, "SPI1_SCK");
     assert_eq!(t.gpio["FLASH_CS"], "PA0");
+    // Both lines declare 300 ns: Fast-mode, 400 kHz, the bus's own speed.
+    assert_eq!(t.i2c_ceilings, [("SENSORS".to_owned(), 400_000)].into());
 }
 
 #[test]
@@ -190,6 +194,8 @@ fn the_stress_specification_solves_within_the_bound() {
     assert!(start.elapsed() < BOUND, "{:?}", start.elapsed());
     assert_eq!(t.assignments.len(), 20);
     assert_eq!(t.gpio.len(), 8);
+    assert_eq!(t.i2c_ceilings.len(), 4);
+    assert!(t.i2c_ceilings.values().all(|hz| *hz == 400_000));
 }
 
 #[test]
@@ -296,6 +302,13 @@ fn two_buses_on_one_hand_set_instance_are_refused() {
         second["sda"]["net"] = "OTHER_SDA".into();
         second["scl"]["net"] = "OTHER_SCL".into();
         d["i2c_buses"].as_array_mut().unwrap().push(second);
+        // The new bus's lines need constraints, or the ceiling check refuses first.
+        let sda = d["net_constraints"][0].clone();
+        for net in ["OTHER_SDA", "OTHER_SCL"] {
+            let mut c = sda.clone();
+            c["net_name"] = net.into();
+            d["net_constraints"].as_array_mut().unwrap().push(c);
+        }
         d["i2c_buses"][0]["peripheral"] = "I2C2".into();
         d["i2c_buses"][1]["peripheral"] = "I2C2".into();
     });
@@ -338,4 +351,44 @@ fn unreadable_input_is_exit_3_and_a_missing_flag_is_64() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(64));
+}
+
+/// An edit of the reference, the refusal kind, and its message.
+type CeilingCase = (fn(&mut Value), &'static str, &'static str);
+
+#[test]
+fn each_ceiling_refusal_is_exit_2_naming_the_bus() {
+    let dir = Dir::new("ceilings");
+    let cases: [CeilingCase; 3] = [
+        (
+            |d| {
+                d["net_constraints"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|c| c["net_name"] != "I2C_SCL");
+            },
+            "MissingBusConstraint",
+            "I2C bus `SENSORS` has no net constraint on `I2C_SCL`, so it has no rise time to bound its speed",
+        ),
+        (
+            |d| {
+                for c in d["net_constraints"].as_array_mut().unwrap() {
+                    c["max_rise_time_nanoseconds"] = 1001.into();
+                }
+            },
+            "RiseTimeTooSlow",
+            "I2C bus `SENSORS` allows a rise time of 1001 ns, slower than any I2C mode (1000 ns at most)",
+        ),
+        (
+            |d| d["i2c_buses"][0]["speed_hz"] = 1_000_000.into(),
+            "BusTooFast",
+            "I2C bus `SENSORS` runs at 1000000 Hz, above its rise-time ceiling of 400000 Hz",
+        ),
+    ];
+    for (edit, kind, message) in cases {
+        let report = refused(&edited(&dir, edit), kind);
+        assert_eq!(report["error"]["id"], "SENSORS", "{report}");
+        assert_eq!(report["error"]["claimants"], json!(["SENSORS"]), "{report}");
+        assert_eq!(report["error"]["message"], message, "{report}");
+    }
 }
