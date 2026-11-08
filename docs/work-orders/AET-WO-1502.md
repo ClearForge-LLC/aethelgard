@@ -19,7 +19,7 @@
 
 ## 1. Scope
 
-1. **One helper in the CLI.** It takes the tool's captured output and returns the first line that starts with `error:` (for Kani and cargo) or contains `[ERROR]` (for Renode), with these rules:
+1. **One helper in the CLI.** *Amended at the §7 stop on PR #47:* cargo's cause is often not on its first `error:` line. In Cargo style the helper therefore joins **every** line that starts with `error:`, in order, with ` | `, capped at 400 bytes. In Renode style it takes the first line that contains `[ERROR]`, capped at 240 bytes. The original text follows: it takes the tool's captured output and returns the first line that starts with `error:` (for Kani and cargo) or contains `[ERROR]` (for Renode), with these rules:
    - trimmed;
    - every byte outside printable ASCII `0x20`–`0x7E` replaced by `?`;
    - cut to 240 bytes, with `…` appended if it was cut;

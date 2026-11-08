@@ -9,3 +9,5 @@ aethelgard solve --file docs/work-orders/AET-WO-1200.repro/core-infeasible.json
 
 - `fuzz-natural-6spi.json` was found by random fuzzing, with no hand peripherals.
 - `core-infeasible.json` was built by hand.
+
+**Since `AET-WO-1202`** (2026-11-08), every I2C line needs a net constraint, so each line in both files now carries 100 pF and 300 ns. Without them, both refuse `MissingBusConstraint` before the search starts. **Since `AET-WO-1201`** (PR #48), both refuse `Infeasible` over the six SPI buses: 198 and 186 nodes, about 4 ms in a release build. Before it, both ran to the 10 M-node budget and refused `BudgetExceeded`, in 5.5 and 6.9 s.
