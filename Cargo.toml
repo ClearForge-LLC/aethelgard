@@ -25,6 +25,7 @@ unsafe_code = "forbid"
 [workspace.dependencies]
 aethelgard-ir = { path = "crates/aethelgard-ir" }
 aethelgard-svd-hal = { path = "crates/aethelgard-svd-hal" }
+aethelgard-twin = { path = "crates/aethelgard-twin" }
 aethelgard-eda = { path = "crates/aethelgard-eda" }
 clap = { version = "4", features = ["derive"] }
 landlock = "0.4.7"

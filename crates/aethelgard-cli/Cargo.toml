@@ -19,6 +19,7 @@ with-tools = []
 aethelgard-ir.workspace = true
 aethelgard-svd-hal.workspace = true
 aethelgard-eda.workspace = true
+aethelgard-twin.workspace = true
 clap.workspace = true
 landlock.workspace = true
 rmcp.workspace = true
