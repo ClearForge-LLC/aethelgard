@@ -1,0 +1,10 @@
+[package]
+name = "aethelgard-kicad-lib"
+description = "KiCad 10.0.7's vendored symbols, footprints and licence text, as bytes. Data only."
+version.workspace = true
+edition.workspace = true
+license = "CC-BY-SA-4.0"
+repository.workspace = true
+
+[lints]
+workspace = true
