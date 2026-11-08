@@ -62,7 +62,7 @@ spec.json
 
 ## CI run
 
-Run 42466864493 on PR #63 (head 435a12c), real Docker on `ubuntu-latest`: **green**. All four steps passed; the specification commit `3d13f4922b0adddb2f761c3a814c53fcfec61ac8` is on `main`; the image's source label is `https://github.com/ClearForge-LLC/aethelgard`. Output of `run it, as written` (lines cut at 700 bytes):
+Run 42467048676 on PR #63, head `3823451` (the subshell change), real Docker on `ubuntu-latest`: the `quickstart` job is **green** (50 s). On the same head `gates` (16m48s) and `image` (4m22s) pass; `tools` passes (45m12s). All four steps of `quickstart` passed; the specification commit `3d13f4922b0adddb2f761c3a814c53fcfec61ac8` is on `main`; the image's source label is `https://github.com/ClearForge-LLC/aethelgard`. Output of `run it, as written` (lines cut at 700 bytes):
 
 ```
 spec.json: OK
