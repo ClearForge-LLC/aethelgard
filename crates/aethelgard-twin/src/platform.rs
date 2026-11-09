@@ -12,8 +12,10 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 use aethelgard_ir::SolvedTopology;
+use aethelgard_ir::parts::I2cTarget;
 use aethelgard_svd_hal::cmsis::{self, RegisterFacts};
 
+use crate::model;
 use crate::{Kind, TwinError, kind, split_pin};
 
 /// The Renode release the stock table below was read from.
@@ -77,44 +79,152 @@ pub struct Instance {
     pub added: bool,
 }
 
-/// Every solved peripheral and port, with the name Renode lists it by.
-pub fn instances(topology: &SolvedTopology) -> Result<Vec<Instance>, TwinError> {
+/// Every solved peripheral and port, with the name Renode lists it by, then
+/// each modelled I2C device (`AET-WO-2202`), added by the emitted description.
+pub fn instances(
+    topology: &SolvedTopology,
+    devices: &[I2cTarget],
+) -> Result<Vec<Instance>, TwinError> {
     topology.validate().map_err(TwinError::InvalidTopology)?;
     let facts = cmsis::register_facts()?;
-    solved(topology)?
+    let mut out = solved(topology)?
         .iter()
         .map(|p| instance(p, &facts))
+        .collect::<Result<Vec<_>, _>>()?;
+    let (modelled, _) = split_devices(topology, devices)?;
+    out.extend(modelled.into_iter().map(|d| Instance {
+        peripheral: d.reference,
+        name: d.name,
+        model: short(d.model).to_owned(),
+        added: true,
+    }));
+    Ok(out)
+}
+
+/// One I2C device the emitted description declares.
+struct Modelled {
+    reference: String,
+    name: String,
+    model: &'static str,
+    /// Renode's name of the controller, such as `i2c1`.
+    bus: &'static str,
+    address: u8,
+}
+
+/// The devices whose part has a model, in name order, and the rest, in the
+/// order given. A name that cannot be a Renode identifier, or that a stock
+/// instance or another device already has, is refused: a duplicate
+/// registration breaks the load (`architecture.md` §2.9).
+fn split_devices<'d>(
+    topology: &SolvedTopology,
+    devices: &'d [I2cTarget],
+) -> Result<(Vec<Modelled>, Vec<&'d I2cTarget>), TwinError> {
+    let used = solved(topology)?;
+    let mut taken: BTreeSet<String> = STOCK.iter().map(|s| s.1.to_owned()).collect();
+    taken.extend(used.iter().map(|p| p.to_ascii_lowercase()));
+    let mut modelled = Vec::new();
+    let mut unmodelled = Vec::new();
+    for d in devices {
+        let name = d.reference.to_ascii_lowercase();
+        let ident = name.starts_with(|c: char| c.is_ascii_lowercase())
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+        if !ident || !taken.insert(name.clone()) {
+            return Err(TwinError::InvalidDeviceName {
+                reference: d.reference.clone(),
+            });
+        }
+        let Some(model) = model::model(&d.part) else {
+            unmodelled.push(d);
+            continue;
+        };
+        let bus = STOCK
+            .iter()
+            .find(|s| s.0 == d.peripheral && used.contains(&d.peripheral))
+            .filter(|s| s.2 == "I2C.STM32F7_I2C")
+            .ok_or_else(|| TwinError::DeviceOffBus {
+                reference: d.reference.clone(),
+                peripheral: d.peripheral.clone(),
+            })?;
+        modelled.push(Modelled {
+            reference: d.reference.clone(),
+            name,
+            model,
+            bus: bus.1,
+            address: d.address,
+        });
+    }
+    modelled.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok((modelled, unmodelled))
+}
+
+/// The `.repl` text for `topology`, with `devices` declared where the part
+/// has a model and listed as unmodelled where it has none.
+pub fn emit(topology: &SolvedTopology, devices: &[I2cTarget]) -> Result<String, TwinError> {
+    emit_faulted(topology, devices, &BTreeSet::new())
+}
+
+/// Each bus in `faulted` with the peripheral the topology solved it on. A
+/// faulted bus with no solved analog line is refused.
+fn faulted_peripherals(
+    topology: &SolvedTopology,
+    faulted: &BTreeSet<String>,
+) -> Result<Vec<(String, String)>, TwinError> {
+    faulted
+        .iter()
+        .map(|bus| {
+            topology
+                .analog_lines
+                .iter()
+                .find(|(_, line)| &line.bus == bus)
+                .and_then(|(net, _)| topology.assignments.get(net))
+                .map(|a| (bus.clone(), a.peripheral.clone()))
+                .ok_or_else(|| TwinError::UnknownFaultedBus { bus: bus.clone() })
+        })
         .collect()
 }
 
-/// The `.repl` text for `topology`.
-pub fn emit(topology: &SolvedTopology) -> Result<String, TwinError> {
-    emit_faulted(topology, &BTreeSet::new())
+/// The devices of `devices` that are not on a bus in `faulted`: what the
+/// platform declares, and so what Renode lists, after the analog pass.
+pub fn present(
+    topology: &SolvedTopology,
+    devices: &[I2cTarget],
+    faulted: &BTreeSet<String>,
+) -> Result<Vec<I2cTarget>, TwinError> {
+    let off = faulted_peripherals(topology, faulted)?;
+    Ok(devices
+        .iter()
+        .filter(|d| !off.iter().any(|(_, p)| *p == d.peripheral))
+        .cloned()
+        .collect())
 }
 
 /// The `.repl` text for `topology` with the analog pass's fault decision:
-/// each bus in `faulted` has its devices left out, which is how a bus fault
-/// reaches the firmware (`RUL-17`, `AET-WO-2101` route iii). The decision is
-/// written into the provenance comment, so a platform emitted without it
-/// differs from one emitted with it. A faulted bus that the topology did not
-/// solve is refused.
+/// each bus in `faulted` has its devices left out, modelled or not, which is
+/// how a bus fault reaches the firmware (`RUL-17`, `AET-WO-2101` route iii).
+/// The decision and the devices it leaves out are written into the
+/// provenance comment, so a platform emitted without it differs from one
+/// emitted with it.
 pub fn emit_faulted(
     topology: &SolvedTopology,
+    devices: &[I2cTarget],
     faulted: &BTreeSet<String>,
 ) -> Result<String, TwinError> {
-    let instances = instances(topology)?;
+    let instances = instances(topology, &[])?;
+    let kept = present(topology, devices, faulted)?;
+    let (modelled, unmodelled) = split_devices(topology, &kept)?;
     let mut omitted = Vec::new();
-    for bus in faulted {
-        let peripheral = topology
-            .analog_lines
+    for (bus, peripheral) in faulted_peripherals(topology, faulted)? {
+        let gone: Vec<String> = devices
             .iter()
-            .find(|(_, line)| &line.bus == bus)
-            .and_then(|(net, _)| topology.assignments.get(net))
-            .map(|a| a.peripheral.as_str())
-            .ok_or_else(|| TwinError::UnknownFaultedBus { bus: bus.clone() })?;
+            .filter(|d| d.peripheral == peripheral)
+            .map(|d| format!("{} ({})", d.reference, d.part))
+            .collect();
         omitted.push(format!(
             "\n// - Analog fault (AET-WO-2200): bus `{bus}` ({peripheral}) measured past its rise-time\n\
-             //   ceiling, so its devices are left out of this platform."
+             //   ceiling, so its devices are left out of this platform: {}.",
+            if gone.is_empty() { "none".to_owned() } else { gone.join(", ") }
         ));
     }
     let facts = cmsis::register_facts()?;
@@ -126,7 +236,22 @@ pub fn emit_faulted(
          //\n\
          // - Solved topology of specification sha256 `{spec}`.\n\
          // - Renode {RENODE_VERSION}: `{STOCK_FILE}` sha256 `{stock}`.\n\
-         // - Register facts: `{repo}` at `{commit}`, `{file}` sha256 `{sha}`.",
+         // - Register facts: `{repo}` at `{commit}`, `{file}` sha256 `{sha}`.\n\
+         // - Unmodelled I2C devices (no Renode {RENODE_VERSION} model): {unmodelled}.",
+        unmodelled = if unmodelled.is_empty() {
+            "none".to_owned()
+        } else {
+            unmodelled
+                .iter()
+                .map(|d| {
+                    format!(
+                        "{} ({}) at {} 0x{:02X}",
+                        d.reference, d.part, d.peripheral, d.address
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        },
         spec = topology.specification_sha256,
         stock = RENODE_FILES[2].1,
         repo = cmsis::REPOSITORY,
@@ -149,6 +274,18 @@ pub fn emit_faulted(
              {name}: {SPI_MODEL} @ {{\n        sysbus 0x{base:08X};\n        rcc RegistrationPeripheralAlias.{p}\n    }}\n    IRQ -> nvic@{irq}\n",
             p = i.peripheral,
             name = i.name,
+        );
+    }
+    for d in &modelled {
+        let _ = write!(
+            out,
+            "\n// {r}: Renode {RENODE_VERSION}'s `{m}`, at 0x{a:02X} on {bus}.\n\
+             {name}: {m} @ {bus} 0x{a:02X}\n",
+            r = d.reference,
+            m = d.model,
+            a = d.address,
+            bus = d.bus,
+            name = d.name,
         );
     }
     Ok(out)

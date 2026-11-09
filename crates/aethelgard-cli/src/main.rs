@@ -257,15 +257,23 @@ fn main() -> ExitCode {
             for_time,
         } => match (firmware, spec, for_time) {
             (Some(firmware), Some(spec), Some(virtual_ns)) => {
-                let topology = match solved(&spec) {
-                    Ok((_, topology, _)) => topology,
+                let (specification, topology) = match solved(&spec) {
+                    Ok((specification, topology, _)) => (specification, topology),
                     Err(code) => return code,
+                };
+                let devices = match aethelgard_ir::parts::i2c_targets(&specification, &topology) {
+                    Ok(devices) => devices,
+                    Err(err) => {
+                        let refusal = Refusal::new("DeviceNotPlaced", None, err.to_string());
+                        return emit(&refusal, EXIT_INVALID_SPEC);
+                    }
                 };
                 simulate(
                     &platform,
                     Some(Boot {
                         firmware,
                         topology,
+                        devices,
                         virtual_ns,
                     }),
                 )
@@ -569,6 +577,9 @@ fn prove(crate_dir: &Path, harness: &str) -> Result<verdict::Verdict, run::Stop>
 struct Boot {
     firmware: PathBuf,
     topology: aethelgard_ir::SolvedTopology,
+    /// The specification's I2C devices, on the peripherals the solution gave
+    /// their buses (`AET-WO-2202`).
+    devices: Vec<aethelgard_ir::parts::I2cTarget>,
     virtual_ns: u64,
 }
 
@@ -578,13 +589,13 @@ struct Ready {
     firmware: input::Input,
     image_sha256: String,
     executable: Vec<(u64, u64)>,
-    instances: Vec<(String, String)>,
     vector_table: u32,
     image: aethelgard_twin::boot::Image,
     boot_word: u32,
     specification_sha256: String,
     virtual_ns: u64,
     topology: aethelgard_ir::SolvedTopology,
+    devices: Vec<aethelgard_ir::parts::I2cTarget>,
 }
 
 /// The topology asks for what the twin cannot lower (exit 2), or the
@@ -623,7 +634,8 @@ fn ready(
         ));
     }
     let platform = input::file(platform, &scratch.tool.join("platform.repl"))?;
-    let emitted = aethelgard_twin::platform::emit(&boot.topology).map_err(twin_stop)?;
+    let emitted =
+        aethelgard_twin::platform::emit(&boot.topology, &boot.devices).map_err(twin_stop)?;
     let copied = fs::read(&platform.copy)
         .map_err(|e| run::Stop::unreadable(format!("cannot read the platform's copy: {e}")))?;
     if copied != emitted.as_bytes() {
@@ -642,12 +654,8 @@ fn ready(
     let memory = aethelgard_twin::boot::memory().map_err(twin_stop)?;
     let boot_word = aethelgard_twin::boot::boot_word().map_err(twin_stop)?;
     let checked = elf::check(&bytes, &memory, boot_word)?;
-    let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
-    let instances = aethelgard_twin::platform::instances(&boot.topology)
-        .map_err(twin_stop)?
-        .into_iter()
-        .map(|i| (i.name, i.model))
-        .collect();
+    let image =
+        aethelgard_twin::boot::expected(&boot.topology, &boot.devices).map_err(twin_stop)?;
     let vector_table =
         u32::try_from(memory.flash.start).expect("FLASH_BANK1_BASE is a 32-bit value");
     Ok((
@@ -656,13 +664,13 @@ fn ready(
             firmware,
             image_sha256: checked.sha256,
             executable: checked.executable,
-            instances,
             vector_table,
             image,
             boot_word,
             specification_sha256: boot.topology.specification_sha256.clone(),
             virtual_ns: boot.virtual_ns,
             topology: boot.topology,
+            devices: boot.devices,
         },
     ))
 }
@@ -731,17 +739,17 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         .as_ref()
         .zip(booted.as_ref())
         .map(|(r, booted)| renode::BootPlan {
-            platform: booted,
+            platform: &booted.path,
             firmware: &r.firmware.copy,
             virtual_ns: r.virtual_ns,
             boot_word: r.boot_word,
             vector_table: r.vector_table,
             image: &r.image,
             executable: &r.executable,
-            instances: &r.instances,
+            instances: &booted.instances,
         });
     if let (Some(r), Some((pass, booted))) = (&ready, &analog) {
-        booted_is_emitted(booted, &r.topology, pass)?;
+        booted_is_emitted(&booted.path, r, pass)?;
     }
     let commands = match &plan {
         Some(plan) => plan.commands(),
@@ -799,18 +807,36 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     Ok(v)
 }
 
+/// The platform the boot loads, and what Renode must list once it has.
+#[derive(Clone)]
+struct Booted {
+    path: PathBuf,
+    /// Every solved peripheral, and each device the fault decision left in.
+    instances: Vec<(String, String)>,
+}
+
 /// Measures every I2C line, then writes the platform the boot loads: the
-/// emission for the specification with the pass's fault decision. The
-/// bridge works in a directory of its own, so it can touch none of the
-/// copies Renode reads.
-fn analog_pass(r: &Ready, scratch: &Scratch) -> Result<(analog::Pass, PathBuf), run::Stop> {
+/// emission for the specification with the pass's fault decision, which
+/// declares no device on a faulted bus. The firmware still reads those
+/// devices, so the boot's expected reads keep them (`AET-WO-2202`'s judge
+/// then sees the timeout). The bridge works in a directory of its own, so
+/// it can touch none of the copies Renode reads.
+fn analog_pass(r: &Ready, scratch: &Scratch) -> Result<(analog::Pass, Booted), run::Stop> {
     let pass = analog::pass(
         &r.topology,
         &scratch.root.join("bridge"),
         &scratch.root.join("status-bridge"),
     )?;
-    let text =
-        aethelgard_twin::platform::emit_faulted(&r.topology, &pass.faulted()).map_err(twin_stop)?;
+    let faulted = pass.faulted();
+    let text = aethelgard_twin::platform::emit_faulted(&r.topology, &r.devices, &faulted)
+        .map_err(twin_stop)?;
+    let present =
+        aethelgard_twin::platform::present(&r.topology, &r.devices, &faulted).map_err(twin_stop)?;
+    let instances = aethelgard_twin::platform::instances(&r.topology, &present)
+        .map_err(twin_stop)?
+        .into_iter()
+        .map(|i| (i.name, i.model))
+        .collect();
     let booted = scratch.tool.join("platform-booted.repl");
     fs::write(&booted, text).map_err(|e| {
         run::Stop::tool_error(
@@ -818,19 +844,22 @@ fn analog_pass(r: &Ready, scratch: &Scratch) -> Result<(analog::Pass, PathBuf), 
             format!("cannot write the booted platform: {e}"),
         )
     })?;
-    Ok((pass, booted))
+    Ok((
+        pass,
+        Booted {
+            path: booted,
+            instances,
+        },
+    ))
 }
 
 /// `PlatformNotEmitted` for the file the boot loads: it must be the
 /// emission for the specification plus the fault decision as recorded in
 /// the verdict's `faults`, read again just before Renode starts.
-fn booted_is_emitted(
-    booted: &Path,
-    topology: &aethelgard_ir::SolvedTopology,
-    pass: &analog::Pass,
-) -> Result<(), run::Stop> {
-    let want =
-        aethelgard_twin::platform::emit_faulted(topology, &pass.faulted()).map_err(twin_stop)?;
+fn booted_is_emitted(booted: &Path, r: &Ready, pass: &analog::Pass) -> Result<(), run::Stop> {
+    let topology = &r.topology;
+    let want = aethelgard_twin::platform::emit_faulted(topology, &r.devices, &pass.faulted())
+        .map_err(twin_stop)?;
     let have = fs::read(booted)
         .map_err(|e| run::Stop::unreadable(format!("cannot read the booted platform: {e}")))?;
     if have != want.as_bytes() {
@@ -885,6 +914,46 @@ fn boot_report(
             })
             .collect(),
         unobservable: r.image.unobservable.clone(),
+        i2c: r
+            .image
+            .i2c
+            .checks
+            .iter()
+            .enumerate()
+            .map(|(i, c)| verdict::I2cReport {
+                reference: c.reference.clone(),
+                address: format!("{:#04x}", c.address),
+                register: format!("{:#04x}", c.register),
+                expected: format!("{:#x}", c.expected),
+                observed: observed.map(|o| format!("{:#x}", o.records[i].1)),
+                status: observed.map(|o| renode::status_name(o.records[i].0)),
+            })
+            .collect(),
+        i2c_witness: r
+            .image
+            .i2c
+            .witnesses
+            .iter()
+            .enumerate()
+            .map(|(i, w)| verdict::WitnessReport {
+                peripheral: w.peripheral.clone(),
+                reference: w.reference.clone(),
+                cr2: verdict::RegisterReport {
+                    name: format!("{}.CR2", w.peripheral),
+                    address: word(w.cr2_at),
+                    mask: word(w.cr2_mask()),
+                    expected: word(w.cr2_expected()),
+                    observed: observed.map(|o| word(o.controllers[i].0)),
+                },
+                txdr: verdict::RegisterReport {
+                    name: format!("{}.TXDR", w.peripheral),
+                    address: word(w.txdr_at),
+                    mask: word(0xFF),
+                    expected: word(w.txdr_expected()),
+                    observed: observed.map(|o| word(o.controllers[i].1)),
+                },
+            })
+            .collect(),
     }
 }
 

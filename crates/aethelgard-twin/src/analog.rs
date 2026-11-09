@@ -201,23 +201,31 @@ mod tests {
         assert_eq!(d[0].netlist[2], "R1 vdd line 2200");
     }
 
-    /// The fault decision reaches the platform text (`AET-WO-2200` §1.4.4),
-    /// and nothing else changes; no decision is today's platform.
+    /// The fault decision reaches the platform text (`AET-WO-2200` §1.4.4):
+    /// a faulted bus declares no device, modelled or not, and names those it
+    /// leaves out; nothing else changes, and no decision is today's platform.
     #[test]
-    fn a_faulted_bus_is_named_in_its_platform() {
+    fn a_faulted_bus_declares_no_device_and_names_them() {
         use std::collections::BTreeSet;
 
-        use crate::platform::{emit, emit_faulted};
+        use crate::platform::{emit, emit_faulted, present};
 
         let t = topology(|_| {});
-        let plain = emit(&t).unwrap();
-        assert_eq!(emit_faulted(&t, &BTreeSet::new()).unwrap(), plain);
-        let faulted = emit_faulted(&t, &BTreeSet::from(["SENSORS".to_owned()])).unwrap();
+        let devices = crate::tests::reference_devices();
+        let plain = emit(&t, &devices).unwrap();
+        assert!(plain.contains("\nu2: I2C.BME280 @ i2c1 0x76\n"), "{plain}");
+        assert_eq!(emit_faulted(&t, &devices, &BTreeSet::new()).unwrap(), plain);
+        let sensors = BTreeSet::from(["SENSORS".to_owned()]);
+        let faulted = emit_faulted(&t, &devices, &sensors).unwrap();
         let note = "// - Analog fault (AET-WO-2200): bus `SENSORS` (I2C1) measured past its rise-time\n\
-                    //   ceiling, so its devices are left out of this platform.\n";
+                    //   ceiling, so its devices are left out of this platform: U2 (BME280), U3 (TMP117).\n";
         assert!(faulted.contains(note), "{faulted}");
-        assert_eq!(faulted.replacen(note, "", 1), plain);
-        let err = emit_faulted(&t, &BTreeSet::from(["FLASH".to_owned()])).unwrap_err();
+        assert!(!faulted.contains("u2:"), "{faulted}");
+        // The rest is the platform with no device at all.
+        assert_eq!(faulted.replacen(note, "", 1), emit(&t, &[]).unwrap());
+        assert!(present(&t, &devices, &sensors).unwrap().is_empty());
+        assert_eq!(present(&t, &devices, &BTreeSet::new()).unwrap(), devices);
+        let err = emit_faulted(&t, &devices, &BTreeSet::from(["FLASH".to_owned()])).unwrap_err();
         assert_eq!(err.kind(), "UnknownFaultedBus");
     }
 

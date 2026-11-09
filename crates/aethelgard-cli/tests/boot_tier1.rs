@@ -78,7 +78,7 @@ fn elf() -> Vec<u8> {
 }
 
 /// The listing of the emitted platform's CPU and every solved peripheral.
-const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n";
+const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
 
 /// The reference topology's seven registers as a correct boot leaves them.
 const GOOD_REGISTERS: [&str; 7] = [
@@ -118,8 +118,18 @@ fn reads(word: &str, instructions: &str, mips: &str, registers: &[&str]) -> Vec<
         "0x8000010".to_owned(),
     ];
     v.extend(registers.iter().map(|r| (*r).to_owned()));
+    // U2's record: OK, then the BME280's identity.
+    v.extend(GOOD_RECORD.iter().map(|r| (*r).to_owned()));
+    // I2C1's CR2 and TXDR after that read, as measured on Renode 1.17.0.
+    v.extend(GOOD_CONTROLLER.iter().map(|r| (*r).to_owned()));
     v
 }
+
+/// `CR2` (`SADD` 0x76 << 1, `RD_WRN`, `NBYTES` 1, `AUTOEND`) and `TXDR` (0xD0).
+const GOOD_CONTROLLER: [&str; 2] = ["0x020104EC", "0x000000D0"];
+
+/// The record a firmware that read U2's ID register (0xD0) as 0x60 leaves.
+const GOOD_RECORD: [&str; 2] = ["0x22020000", "0x00000060"];
 
 /// A transcript with `log` before the reads.
 fn with(log: &str, word: &str, instructions: &str, mips: &str, registers: &[&str]) -> String {
@@ -156,7 +166,7 @@ fn toolbox_then(stdout: &str, version: &str, then: &str) -> Dir {
         r#"#!/bin/sh
 if [ "$1" = --version ]; then printf '{version}\n'; exit 0; fi
 case "$5" in
-  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; cpu VectorTableOffset 0x08000000; emulation RunFor \"0.010000000\"; logLevel 3; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; cpu VectorTableOffset 0x08000000; emulation RunFor \"0.010000000\"; logLevel 3; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 /bin/cat '{out}'
@@ -254,11 +264,14 @@ fn report(out: &Output) -> Value {
     serde_json::from_str(stdout).unwrap()
 }
 
+/// The kinds of the findings that fail a boot: everything but the `info`
+/// ones, which report what the twin could not check (`device_unmodelled`).
 fn kinds(v: &Value) -> Vec<String> {
     v["findings"]
         .as_array()
         .unwrap()
         .iter()
+        .filter(|f| f["severity"] != "info")
         .map(|f| f["kind"].as_str().unwrap().to_owned())
         .collect()
 }
@@ -779,7 +792,9 @@ fn variant(dir: &Dir, edits: &[(&str, &str)]) -> (PathBuf, PathBuf) {
         &[OsStr::new("solve"), OsStr::new("--file"), spec.as_os_str()],
     );
     let topology: aethelgard_ir::SolvedTopology = serde_json::from_value(report(&out)).unwrap();
-    let repl = aethelgard_twin::platform::emit(&topology).unwrap();
+    let specification: aethelgard_ir::Specification = serde_json::from_str(&text).unwrap();
+    let devices = aethelgard_ir::parts::i2c_targets(&specification, &topology).unwrap();
+    let repl = aethelgard_twin::platform::emit(&topology, &devices).unwrap();
     (spec, dir.write("platform.repl", repl.as_bytes()))
 }
 
@@ -817,7 +832,8 @@ done
     assert_eq!(v["verdict"], "fail");
     assert_eq!(v["tool"]["exit_code"], 0, "{v}");
     assert_eq!(kinds(&v), ["analog_rise_exceeds_ceiling"; 2]);
-    for f in v["findings"].as_array().unwrap() {
+    let analog = v["findings"].as_array().unwrap().iter();
+    for f in analog.filter(|f| f["kind"] == "analog_rise_exceeds_ceiling") {
         let m = f["message"].as_str().unwrap();
         // serde_json reads a float to within one ulp, so the last digit may move.
         assert!(m.contains("more than 13298.02770038764"), "{m}");
@@ -859,4 +875,245 @@ done
         v["faults"][0]["nets"],
         serde_json::json!(["I2C_SCL", "I2C_SDA"])
     );
+}
+
+// `AET-WO-2202`: the identity reads, judged from the part table.
+
+/// A boot that reached the fixed point with `record` in U2's record.
+fn with_record(record: [&str; 2]) -> String {
+    let mut r = reads(
+        "0x2100B007",
+        "0x00000000000F4240",
+        "0x00000064",
+        &GOOD_REGISTERS,
+    );
+    let n = r.len();
+    r[n - 4] = record[0].to_owned();
+    r[n - 3] = record[1].to_owned();
+    transcript("", &r.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
+/// A boot that reached the fixed point, with a good record and `controller`
+/// in I2C1's `CR2` and `TXDR`.
+fn with_controller(controller: [&str; 2]) -> String {
+    let mut r = reads(
+        "0x2100B007",
+        "0x00000000000F4240",
+        "0x00000064",
+        &GOOD_REGISTERS,
+    );
+    let n = r.len();
+    r[n - 2] = controller[0].to_owned();
+    r[n - 1] = controller[1].to_owned();
+    transcript("", &r.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
+fn finding<'a>(v: &'a Value, kind: &str) -> Option<&'a Value> {
+    v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["kind"] == kind)
+}
+
+#[test]
+fn a_passing_identity_read_passes_and_the_unmodelled_part_is_reported_as_info() {
+    let (code, v) = boot(&good());
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["verdict"], "pass");
+    assert_eq!(
+        v["boot"]["i2c"],
+        serde_json::json!([{
+            "reference": "U2", "address": "0x76", "register": "0xd0",
+            "expected": "0x60", "observed": "0x60", "status": "ok"
+        }])
+    );
+    // U3 (TMP117) is listed, not passed silently, and does not fail the run.
+    let f = finding(&v, "device_unmodelled").expect("U3 is reported");
+    assert_eq!(f["severity"], "info");
+    assert!(f["message"].as_str().unwrap().contains("U3 (TMP117)"));
+    assert_eq!(v["findings"].as_array().unwrap().len(), 1, "{v}");
+}
+
+#[test]
+fn a_value_that_is_not_the_part_tables_fails_as_an_identity_mismatch() {
+    for value in ["0x00000061", "0x00000000", "0x00000160", "0xFFFFFFFF"] {
+        let (code, v) = boot(&with_record(["0x22020000", value]));
+        assert_eq!(code, Some(1), "{value}: {v}");
+        let f = finding(&v, "i2c_identity_mismatch").unwrap_or_else(|| panic!("{value}: {v}"));
+        assert_eq!(f["severity"], "error");
+        assert!(f["message"].as_str().unwrap().contains("U2"), "{f}");
+        assert_eq!(v["boot"]["i2c"][0]["status"], "ok");
+    }
+}
+
+#[test]
+fn a_wait_that_expired_fails_as_a_timeout_naming_the_wait() {
+    for (status, stage, name) in [
+        ("0x22020001", "TXIS", "timeout_txis"),
+        ("0x22020002", "TC", "timeout_tc"),
+        ("0x22020003", "RXNE", "timeout_rxne"),
+        ("0x22020004", "STOPF", "timeout_stopf"),
+    ] {
+        // Even with the right value beside it: the status decides.
+        let (code, v) = boot(&with_record([status, "0x00000060"]));
+        assert_eq!(code, Some(1), "{stage}: {v}");
+        let f = finding(&v, "i2c_timeout").unwrap_or_else(|| panic!("{stage}: {v}"));
+        assert!(f["message"].as_str().unwrap().contains(stage), "{f}");
+        assert!(finding(&v, "i2c_identity_mismatch").is_none());
+        assert_eq!(v["boot"]["i2c"][0]["status"], name);
+    }
+}
+
+#[test]
+fn a_record_the_firmware_never_wrote_or_wrote_oddly_fails() {
+    // Adversarial 1: the judge fills every record with 0xFFFFFFFF before the
+    // run, so a skipped read, or one preloaded in the image, reads as the fill.
+    for record in [
+        ["0xFFFFFFFF", "0xFFFFFFFF"],
+        ["0xFFFFFFFF", "0x00000060"],
+        ["0x00000000", "0x00000060"],
+        ["0x22020005", "0x00000060"],
+        ["0x00000060", "0x22020000"],
+    ] {
+        let (code, v) = boot(&with_record(record));
+        assert_eq!(code, Some(1), "{record:?}: {v}");
+        assert!(
+            finding(&v, "i2c_record_invalid").is_some(),
+            "{record:?}: {v}"
+        );
+        assert_eq!(v["boot"]["i2c"][0]["status"], "invalid");
+    }
+}
+
+#[test]
+fn the_expected_value_is_the_tables_whatever_the_record_says_it_expects() {
+    // Adversarial 2: nothing the firmware writes names the expected value.
+    // The judge's side of the verdict is the table's 0x60 for every record.
+    let (_, v) = boot(&with_record(["0x22020000", "0x00000061"]));
+    assert_eq!(v["boot"]["i2c"][0]["expected"], "0x60");
+    assert_eq!(v["boot"]["i2c"][0]["observed"], "0x61");
+}
+
+#[test]
+fn a_record_is_not_judged_when_the_boot_word_is_missing() {
+    let r = reads(
+        "0x00000000",
+        "0x00000000000F4240",
+        "0x00000064",
+        &GOOD_REGISTERS,
+    );
+    let mut r = r;
+    let n = r.len();
+    r[n - 4] = "0xFFFFFFFF".into();
+    r[n - 3] = "0xFFFFFFFF".into();
+    let (code, v) = boot(&transcript(
+        "",
+        &r.iter().map(String::as_str).collect::<Vec<_>>(),
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    assert!(finding(&v, "boot_word_missing").is_some());
+    assert!(finding(&v, "i2c_record_invalid").is_none(), "{v}");
+    // The unmodelled device is still reported on a failed boot.
+    assert!(finding(&v, "device_unmodelled").is_some());
+}
+
+// `AET-WO-2202` W1: the record is the firmware's word; the controller is the
+// witness. The judge computes `CR2` and `TXDR` from the solved address and the
+// part table (0x76, read, 1 byte, AUTOEND; register 0xD0).
+
+#[test]
+fn a_controller_that_shows_the_read_passes_and_is_reported() {
+    let (code, v) = boot(&good());
+    assert_eq!(code, Some(0), "{v}");
+    let w = &v["boot"]["i2c_witness"][0];
+    assert_eq!(
+        (w["peripheral"].as_str(), w["reference"].as_str()),
+        (Some("I2C1"), Some("U2"))
+    );
+    assert_eq!(w["cr2"]["address"], "0x40005404");
+    assert_eq!(w["cr2"]["expected"], "0x020104ec");
+    assert_eq!(w["cr2"]["observed"], "0x020104ec");
+    assert_eq!(w["txdr"]["address"], "0x40005428");
+    assert_eq!(w["txdr"]["expected"], "0x000000d0");
+    // START is not stored once set, and bits outside the fields do not count.
+    let (code, v) = boot(&with_controller(["0x020124EC", "0x000001D0"]));
+    assert_eq!(code, Some(0), "{v}");
+}
+
+#[test]
+fn each_field_of_the_controller_state_fails_alone() {
+    for (cr2, txdr, field) in [
+        ("0x020104EE", "0x000000D0", "SADD reads 0xee, expected 0xec"),
+        ("0x020100EC", "0x000000D0", "RD_WRN reads 0x0, expected 0x1"),
+        ("0x020204EC", "0x000000D0", "NBYTES reads 0x2, expected 0x1"),
+        (
+            "0x000104EC",
+            "0x000000D0",
+            "AUTOEND reads 0x0, expected 0x1",
+        ),
+        ("0x020104EC", "0x000000D1", "TXDR reads 0xd1, expected 0xd0"),
+    ] {
+        let (code, v) = boot(&with_controller([cr2, txdr]));
+        assert_eq!(code, Some(1), "{field}: {v}");
+        assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{field}: {v}");
+        let f = finding(&v, "i2c_transaction_unwitnessed").unwrap();
+        let m = f["message"].as_str().unwrap();
+        assert!(
+            m.contains("U2") && m.contains("0x76") && m.contains("I2C1"),
+            "{m}"
+        );
+        assert!(m.contains(field), "{field}: {m}");
+        assert_eq!(f["severity"], "error");
+    }
+}
+
+#[test]
+fn a_forged_record_over_an_untouched_controller_fails_on_every_field() {
+    // OK and the table's value written with no transaction: CR2 and TXDR are 0.
+    let (code, v) = boot(&with_controller(["0x00000000", "0x00000000"]));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{v}");
+    let m = finding(&v, "i2c_transaction_unwitnessed").unwrap()["message"]
+        .as_str()
+        .unwrap();
+    for field in ["SADD", "RD_WRN", "NBYTES", "AUTOEND", "TXDR"] {
+        assert!(m.contains(field), "{field}: {m}");
+    }
+}
+
+#[test]
+fn the_controller_is_not_judged_for_a_record_that_claims_nothing() {
+    // A wait that expired leaves the controller wherever the failed transfer
+    // left it; `i2c_timeout` alone names the failure.
+    let mut r = reads(
+        "0x2100B007",
+        "0x00000000000F4240",
+        "0x00000064",
+        &GOOD_REGISTERS,
+    );
+    let n = r.len();
+    r[n - 4] = "0x22020001".into();
+    r[n - 2] = "0x00000000".into();
+    r[n - 1] = "0x00000000".into();
+    let (code, v) = boot(&transcript(
+        "",
+        &r.iter().map(String::as_str).collect::<Vec<_>>(),
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["i2c_timeout"], "{v}");
+    // Nor when the boot word is missing.
+    let mut r = reads(
+        "0x00000000",
+        "0x00000000000F4240",
+        "0x00000064",
+        &GOOD_REGISTERS,
+    );
+    let n = r.len();
+    r[n - 2] = "0x00000000".into();
+    let (_, v) = boot(&transcript(
+        "",
+        &r.iter().map(String::as_str).collect::<Vec<_>>(),
+    ));
+    assert!(finding(&v, "i2c_transaction_unwitnessed").is_none(), "{v}");
 }

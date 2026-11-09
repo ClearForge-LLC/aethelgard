@@ -1,0 +1,7 @@
+error[E0599]: no method named `transfer` found for struct `sentinel_01_board::I2c1<Clocked>` in the current scope
+  --> tests/ui/fail/transfer_before_enabled.rs:11:17
+   |
+11 |     let _ = bus.transfer(&mut r, 0x76, &[0xd0], &mut back);
+   |                 ^^^^^^^^ method not found in `sentinel_01_board::I2c1<Clocked>`
+   |
+   = note: the method was found for `sentinel_01_board::I2c1<Enabled<S>>`

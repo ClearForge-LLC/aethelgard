@@ -15,6 +15,7 @@
 
 pub mod analog;
 pub mod boot;
+pub mod model;
 pub mod platform;
 
 use aethelgard_ir::IrValidationError;
@@ -45,6 +46,15 @@ pub enum TwinError {
     },
     #[error("the fault decision names bus `{bus}`, which has no solved analog line")]
     UnknownFaultedBus { bus: String },
+    #[error(
+        "device `{reference}` cannot be a Renode name (a lower-case letter, then letters, digits or `_`) that no stock instance already has"
+    )]
+    InvalidDeviceName { reference: String },
+    #[error("device `{reference}` is on `{peripheral}`, which the solved topology does not use")]
+    DeviceOffBus {
+        reference: String,
+        peripheral: String,
+    },
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -59,6 +69,8 @@ impl TwinError {
             Self::NotInRenode { .. } => "NotInRenode",
             Self::AddressMismatch { .. } => "AddressMismatch",
             Self::UnknownFaultedBus { .. } => "UnknownFaultedBus",
+            Self::InvalidDeviceName { .. } => "InvalidDeviceName",
+            Self::DeviceOffBus { .. } => "DeviceOffBus",
             Self::Register(e) => e.kind(),
         }
     }

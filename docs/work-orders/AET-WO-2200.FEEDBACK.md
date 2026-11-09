@@ -213,3 +213,34 @@ The architect's review ruled every finding. Two changes were asked for in this P
 - F16 accepted.
 
 **Also in this push:** the unsafe scan now covers `bridge/tests/`, since integration tests are crates of their own, outside the root's deny.
+
+## Merge of `main` after `AET-WO-2202` (the architect flipped the merge order)
+
+`AET-WO-2202` merged first, at `b924367`. It declares every modelled I2C device in the emitted platform (U2, a BME280 at 0x76), makes the firmware read each one's identity, and adds the judge's `boot.i2c` records and `aethelgard-ir::parts`. `origin/main` is merged into this branch with a merge commit.
+
+**Conflicts, resolved by hand:**
+- `twin/src/lib.rs`: both sides' error variants are kept.
+- `boot_tier1.rs`, `twin_tier2.rs`: both sides' tests are kept.
+- `twin/src/platform.rs`: below.
+
+`Cargo.lock` and the goldens did not conflict. The solve digests are unchanged by 2202, and the committed `boards/sentinel-01/` is `main`'s, which the regeneration test confirms.
+
+**The device declarations go through `emit_faulted` (ruled F5, as amended):**
+- `platform::emit(topology, devices)` is `emit_faulted(topology, devices, ∅)`.
+- `platform::present(topology, devices, faulted)` is the devices not on a faulted bus. `emit_faulted` declares only those, so a faulted bus declares no device, modelled or not. Its header note names what it left out: `U2 (BME280), U3 (TMP117)`.
+- **The CLI:**
+  - writes the booted platform from the specification's devices and the recorded faults;
+  - expects Renode's listing to hold only the devices left in (`instances(topology, present(…))`, computed after the pass);
+  - keeps every modelled device's identity read in the boot's expectations. The firmware still performs the read, so 2202's judge reports what it saw.
+- `booted_is_emitted` re-derives from the devices as well.
+- **The acceptance test is now the whole of §3:** U2's own record at both resistances, run at `--for 100ms` so a timed-out read still reaches the boot word, as 2202's absent-device test does.
+
+**§3 on the merged tree**, in the tools image, by `p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes`:
+
+| Pull-up | `analog` | `faults` | `boot.i2c` (U2) | Verdict | Wall time per call |
+|---|---|---|---|---|---|
+| 2.2 kΩ | 186.40139798114484 ns on both lines, `complete`, under 300 | `[]` | `ok`, observed `0x60` | `pass`, exit 0. U3 is `device_unmodelled`, at info severity | 3.12–3.36 s |
+| 47 kΩ | 3,982.300059495949 ns on both lines, past 300 | `SENSORS`, nets `I2C_SCL` and `I2C_SDA`, `firmware_sees` the model's rendering | `timeout_txis`, observed `0x0` | `fail`, exit 1: `analog_rise_exceeds_ceiling` ×2, then `i2c_timeout` ("U2 at I2C address 0x76: the firmware's wait for TXIS expired…"). Renode lists no BME280 | 2.98–3.00 s |
+
+- **Each case ran twice:** `analog`, `faults` and `boot.i2c` were byte-identical as JSON text.
+- **The whole suite in the image after the merge:** 49 suites, **650 passed, 0 failed** (tier 1, tier 2, the bridge's tests). Host tier 1, fmt and clippy are green as well.
