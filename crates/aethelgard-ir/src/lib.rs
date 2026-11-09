@@ -145,6 +145,29 @@ pub struct SolvedTopology {
     pub i2c_ceilings: BTreeMap<String, u32>,
     #[serde(deserialize_with = "unique_keys")]
     pub analog_lines: BTreeMap<String, AnalogLine>,
+    /// Every I2C device of the specification, keyed by reference, on the
+    /// peripheral its bus was solved to (`AET-WO-2203`, `RUL-16`). Read it
+    /// through [`SolvedTopology::i2c_devices_in_order`].
+    #[serde(deserialize_with = "unique_keys")]
+    pub i2c_devices: BTreeMap<String, SolvedI2cDevice>,
+}
+
+/// One I2C device as the generators need it, copied by `solve` from the
+/// specification. A map keyed by reference sorts `U10` before `U3`, but the
+/// specification's order decides the generated firmware's read order and the
+/// judge's record offsets, so `index` keeps it: the indices of a topology are
+/// exactly `0..n`, each once.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SolvedI2cDevice {
+    /// Position in the specification's `i2c_devices`.
+    pub index: u32,
+    pub part: String,
+    /// The bus's id, a key of `i2c_ceilings`.
+    pub bus: String,
+    /// ST's name of the controller the bus was solved to, such as `I2C1`.
+    pub peripheral: String,
+    pub address: u8,
 }
 
 /// One I2C line as the analog model needs it, copied by `solve` from the
@@ -247,7 +270,8 @@ object_only!(
     NetConstraint,
     SolvedTopology,
     PinAssignment,
-    AnalogLine
+    AnalogLine,
+    SolvedI2cDevice
 );
 
 /// The pins of one part and package, built from a vendored vendor source and
@@ -358,6 +382,10 @@ pub enum IrValidationError {
     MissingAnalogLine { id: String },
     #[error("analog line `{id}` does not share one bus with exactly its own peripheral's lines")]
     AnalogBusMismatch { id: String },
+    #[error("i2c_devices indices are not exactly 0..n, each once (device `{id}`)")]
+    I2cDeviceIndex { id: String },
+    #[error("device `{id}` is on a peripheral other than the one its bus was solved to")]
+    I2cDevicePeripheral { id: String },
 }
 
 impl IrValidationError {
@@ -395,6 +423,8 @@ impl IrValidationError {
             Self::AnalogLineNotI2c { .. } => "AnalogLineNotI2c",
             Self::MissingAnalogLine { .. } => "MissingAnalogLine",
             Self::AnalogBusMismatch { .. } => "AnalogBusMismatch",
+            Self::I2cDeviceIndex { .. } => "I2cDeviceIndex",
+            Self::I2cDevicePeripheral { .. } => "I2cDevicePeripheral",
         }
     }
 
@@ -433,7 +463,9 @@ impl IrValidationError {
             | Self::DuplicatePin { id }
             | Self::AnalogLineNotI2c { id }
             | Self::MissingAnalogLine { id }
-            | Self::AnalogBusMismatch { id } => Some(id),
+            | Self::AnalogBusMismatch { id }
+            | Self::I2cDeviceIndex { id }
+            | Self::I2cDevicePeripheral { id } => Some(id),
         }
     }
 
@@ -771,6 +803,14 @@ impl SolvedTopology {
             identifier(net, || format!("analog_lines.{net}"))?;
             identifier(&line.bus, || format!("analog_lines.{net}.bus"))?;
         }
+        for (reference, d) in &self.i2c_devices {
+            identifier(reference, || format!("i2c_devices.{reference}"))?;
+            identifier(&d.part, || format!("i2c_devices.{reference}.part"))?;
+            identifier(&d.bus, || format!("i2c_devices.{reference}.bus"))?;
+            identifier(&d.peripheral, || {
+                format!("i2c_devices.{reference}.peripheral")
+            })?;
+        }
         for (net, a) in &self.assignments {
             if a.alternate_function > 15 {
                 return Err(E::AlternateFunctionOutOfRange {
@@ -798,7 +838,59 @@ impl SolvedTopology {
                 return Err(E::DuplicatePin { id: pin.clone() });
             }
         }
-        self.validate_analog_lines()
+        self.validate_analog_lines()?;
+        self.validate_i2c_devices()
+    }
+
+    /// Each device's address is one a specification may declare (0x08..=0x77,
+    /// inside 7 bits), its bus has a ceiling, its peripheral is the one the
+    /// bus's analog lines were solved to, and the indices are exactly `0..n`.
+    fn validate_i2c_devices(&self) -> Result<(), IrValidationError> {
+        use IrValidationError as E;
+
+        let mut seen = BTreeSet::new();
+        for (reference, d) in &self.i2c_devices {
+            if !(0x08..=0x77).contains(&d.address) {
+                return Err(E::I2cAddressOutOfRange {
+                    id: reference.clone(),
+                    value: d.address,
+                });
+            }
+            if !self.i2c_ceilings.contains_key(&d.bus) {
+                return Err(E::UnknownBus { id: d.bus.clone() });
+            }
+            let solved_to = self
+                .analog_lines
+                .iter()
+                .find(|(_, line)| line.bus == d.bus)
+                .and_then(|(net, _)| self.assignments.get(net));
+            if solved_to.map(|a| a.peripheral.as_str()) != Some(d.peripheral.as_str()) {
+                return Err(E::I2cDevicePeripheral {
+                    id: reference.clone(),
+                });
+            }
+            let in_range = usize::try_from(d.index).is_ok_and(|i| i < self.i2c_devices.len());
+            if !in_range || !seen.insert(d.index) {
+                return Err(E::I2cDeviceIndex {
+                    id: reference.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// The devices in the specification's order: `(reference, device)` by
+    /// `index`. Every consumer reads this, never the map, whose order is the
+    /// references' (`AET-WO-2203`). On a topology that passed
+    /// [`SolvedTopology::validate`] the indices are exactly `0..n`.
+    pub fn i2c_devices_in_order(&self) -> Vec<(&str, &SolvedI2cDevice)> {
+        let mut out: Vec<_> = self
+            .i2c_devices
+            .iter()
+            .map(|(r, d)| (r.as_str(), d))
+            .collect();
+        out.sort_by_key(|(_, d)| d.index);
+        out
     }
 
     fn validate_analog_lines(&self) -> Result<(), IrValidationError> {

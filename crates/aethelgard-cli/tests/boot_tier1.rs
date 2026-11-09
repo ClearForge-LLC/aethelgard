@@ -792,9 +792,7 @@ fn variant(dir: &Dir, edits: &[(&str, &str)]) -> (PathBuf, PathBuf) {
         &[OsStr::new("solve"), OsStr::new("--file"), spec.as_os_str()],
     );
     let topology: aethelgard_ir::SolvedTopology = serde_json::from_value(report(&out)).unwrap();
-    let specification: aethelgard_ir::Specification = serde_json::from_str(&text).unwrap();
-    let devices = aethelgard_ir::parts::i2c_targets(&specification, &topology).unwrap();
-    let repl = aethelgard_twin::platform::emit(&topology, &devices).unwrap();
+    let repl = aethelgard_twin::platform::emit(&topology).unwrap();
     (spec, dir.write("platform.repl", repl.as_bytes()))
 }
 

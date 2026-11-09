@@ -257,23 +257,15 @@ fn main() -> ExitCode {
             for_time,
         } => match (firmware, spec, for_time) {
             (Some(firmware), Some(spec), Some(virtual_ns)) => {
-                let (specification, topology) = match solved(&spec) {
-                    Ok((specification, topology, _)) => (specification, topology),
+                let topology = match solved(&spec) {
+                    Ok((_, topology, _)) => topology,
                     Err(code) => return code,
-                };
-                let devices = match aethelgard_ir::parts::i2c_targets(&specification, &topology) {
-                    Ok(devices) => devices,
-                    Err(err) => {
-                        let refusal = Refusal::new("DeviceNotPlaced", None, err.to_string());
-                        return emit(&refusal, EXIT_INVALID_SPEC);
-                    }
                 };
                 simulate(
                     &platform,
                     Some(Boot {
                         firmware,
                         topology,
-                        devices,
                         virtual_ns,
                     }),
                 )
@@ -577,9 +569,6 @@ fn prove(crate_dir: &Path, harness: &str) -> Result<verdict::Verdict, run::Stop>
 struct Boot {
     firmware: PathBuf,
     topology: aethelgard_ir::SolvedTopology,
-    /// The specification's I2C devices, on the peripherals the solution gave
-    /// their buses (`AET-WO-2202`).
-    devices: Vec<aethelgard_ir::parts::I2cTarget>,
     virtual_ns: u64,
 }
 
@@ -595,7 +584,6 @@ struct Ready {
     specification_sha256: String,
     virtual_ns: u64,
     topology: aethelgard_ir::SolvedTopology,
-    devices: Vec<aethelgard_ir::parts::I2cTarget>,
 }
 
 /// The topology asks for what the twin cannot lower (exit 2), or the
@@ -634,8 +622,7 @@ fn ready(
         ));
     }
     let platform = input::file(platform, &scratch.tool.join("platform.repl"))?;
-    let emitted =
-        aethelgard_twin::platform::emit(&boot.topology, &boot.devices).map_err(twin_stop)?;
+    let emitted = aethelgard_twin::platform::emit(&boot.topology).map_err(twin_stop)?;
     let copied = fs::read(&platform.copy)
         .map_err(|e| run::Stop::unreadable(format!("cannot read the platform's copy: {e}")))?;
     if copied != emitted.as_bytes() {
@@ -654,8 +641,7 @@ fn ready(
     let memory = aethelgard_twin::boot::memory().map_err(twin_stop)?;
     let boot_word = aethelgard_twin::boot::boot_word().map_err(twin_stop)?;
     let checked = elf::check(&bytes, &memory, boot_word)?;
-    let image =
-        aethelgard_twin::boot::expected(&boot.topology, &boot.devices).map_err(twin_stop)?;
+    let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
     let vector_table =
         u32::try_from(memory.flash.start).expect("FLASH_BANK1_BASE is a 32-bit value");
     Ok((
@@ -670,7 +656,6 @@ fn ready(
             specification_sha256: boot.topology.specification_sha256.clone(),
             virtual_ns: boot.virtual_ns,
             topology: boot.topology,
-            devices: boot.devices,
         },
     ))
 }
@@ -828,11 +813,8 @@ fn analog_pass(r: &Ready, scratch: &Scratch) -> Result<(analog::Pass, Booted), r
         &scratch.root.join("status-bridge"),
     )?;
     let faulted = pass.faulted();
-    let text = aethelgard_twin::platform::emit_faulted(&r.topology, &r.devices, &faulted)
-        .map_err(twin_stop)?;
-    let present =
-        aethelgard_twin::platform::present(&r.topology, &r.devices, &faulted).map_err(twin_stop)?;
-    let instances = aethelgard_twin::platform::instances(&r.topology, &present)
+    let text = aethelgard_twin::platform::emit_faulted(&r.topology, &faulted).map_err(twin_stop)?;
+    let instances = aethelgard_twin::platform::instances(&r.topology, &faulted)
         .map_err(twin_stop)?
         .into_iter()
         .map(|i| (i.name, i.model))
@@ -858,8 +840,8 @@ fn analog_pass(r: &Ready, scratch: &Scratch) -> Result<(analog::Pass, Booted), r
 /// the verdict's `faults`, read again just before Renode starts.
 fn booted_is_emitted(booted: &Path, r: &Ready, pass: &analog::Pass) -> Result<(), run::Stop> {
     let topology = &r.topology;
-    let want = aethelgard_twin::platform::emit_faulted(topology, &r.devices, &pass.faulted())
-        .map_err(twin_stop)?;
+    let want =
+        aethelgard_twin::platform::emit_faulted(topology, &pass.faulted()).map_err(twin_stop)?;
     let have = fs::read(booted)
         .map_err(|e| run::Stop::unreadable(format!("cannot read the booted platform: {e}")))?;
     if have != want.as_bytes() {

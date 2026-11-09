@@ -30,6 +30,11 @@ fn board_dir() -> PathBuf {
     root().join("boards/sentinel-01")
 }
 
+/// The parts the twin has a Renode model for.
+fn answers(part: &str) -> bool {
+    aethelgard_twin::model::model(part).is_some()
+}
+
 fn generated() -> BTreeMap<String, String> {
     let bytes = fs::read(root().join("examples/sentinel-01-minimal.json")).unwrap();
     let spec: Specification = serde_json::from_slice(&bytes).unwrap();
@@ -39,14 +44,12 @@ fn generated() -> BTreeMap<String, String> {
         .collect();
     let table = pin_table(&spec.mcu.part).unwrap();
     let solved = aethelgard_ir::solve(&spec, &table, &sha).unwrap();
-    // The devices come from the specification; the firmware reads the ones the
-    // twin can answer for, and the platform declares the same ones (`AET-WO-2202`).
-    let devices = aethelgard_ir::parts::i2c_targets(&spec, &solved).unwrap();
-    let answerable = aethelgard_twin::model::answerable(&devices);
-    let mut files = generate_with(CRATE, &solved, &table, &answerable).unwrap();
+    // The devices are the topology's; the firmware reads the ones the twin can
+    // answer for, and the platform declares the same ones (`AET-WO-2202`).
+    let mut files = generate_with(CRATE, &solved, &table, &answers).unwrap();
     files.insert(
         "sentinel-01.repl".to_owned(),
-        aethelgard_twin::platform::emit(&solved, &devices).unwrap(),
+        aethelgard_twin::platform::emit(&solved).unwrap(),
     );
     files
 }
@@ -248,8 +251,7 @@ fn the_firmware_follows_the_judges_record_layout() {
         .collect();
     let table = pin_table(&spec.mcu.part).unwrap();
     let solved = aethelgard_ir::solve(&spec, &table, &sha).unwrap();
-    let devices = aethelgard_ir::parts::i2c_targets(&spec, &solved).unwrap();
-    let plan = aethelgard_twin::boot::i2c(&devices).unwrap();
+    let plan = aethelgard_twin::boot::i2c(&solved).unwrap();
     assert_eq!(plan.checks.len(), 1);
     assert_eq!(plan.unmodelled.len(), 1);
     let c = &plan.checks[0];
