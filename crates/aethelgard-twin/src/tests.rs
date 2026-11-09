@@ -6,7 +6,7 @@ use crate::platform;
 
 /// The reference topology, as `aethelgard solve` gives it for
 /// `examples/sentinel-01-minimal.json`.
-const REFERENCE: &str = r#"{"schema_version":1,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000}}"#;
+pub(crate) const REFERENCE: &str = r#"{"schema_version":1,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}}}"#;
 
 fn reference() -> SolvedTopology {
     serde_json::from_str(REFERENCE).unwrap()
@@ -82,10 +82,23 @@ fn an_added_spi_takes_its_base_and_interrupt_from_the_header() {
 fn what_cannot_be_lowered_is_refused() {
     let kind = |t: SolvedTopology| platform::emit(&t, &[]).unwrap_err().kind();
     assert_eq!(
-        kind(edited("\"I2C1\"", "\"USART1\"")),
+        kind(edited("\"SPI1\"", "\"USART1\"")),
         "UnsupportedPeripheral"
     );
-    assert_eq!(kind(edited("\"I2C1\"", "\"I2C5\"")), "Undefined");
+    // Every I2C1 name, signals too: an analog line must stay an I2C line.
+    let t = SolvedTopology {
+        assignments: reference()
+            .assignments
+            .into_iter()
+            .map(|(net, mut a)| {
+                a.peripheral = a.peripheral.replace("I2C1", "I2C5");
+                a.signal = a.signal.replace("I2C1", "I2C5");
+                (net, a)
+            })
+            .collect(),
+        ..reference()
+    };
+    assert_eq!(kind(t), "Undefined");
     assert_eq!(kind(edited("\"PA0\"", "\"PZ0\"")), "InvalidPin");
     assert_eq!(
         kind(edited("\"schema_version\":1", "\"schema_version\":2")),
@@ -179,7 +192,7 @@ fn target(reference: &str, part: &str, address: u8) -> aethelgard_ir::parts::I2c
     }
 }
 
-fn reference_devices() -> Vec<aethelgard_ir::parts::I2cTarget> {
+pub(crate) fn reference_devices() -> Vec<aethelgard_ir::parts::I2cTarget> {
     vec![target("U2", "BME280", 0x76), target("U3", "TMP117", 0x48)]
 }
 

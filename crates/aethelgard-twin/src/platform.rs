@@ -162,8 +162,71 @@ fn split_devices<'d>(
 /// The `.repl` text for `topology`, with `devices` declared where the part
 /// has a model and listed as unmodelled where it has none.
 pub fn emit(topology: &SolvedTopology, devices: &[I2cTarget]) -> Result<String, TwinError> {
+    emit_faulted(topology, devices, &BTreeSet::new())
+}
+
+/// Each bus in `faulted` with the peripheral the topology solved it on. A
+/// faulted bus with no solved analog line is refused.
+fn faulted_peripherals(
+    topology: &SolvedTopology,
+    faulted: &BTreeSet<String>,
+) -> Result<Vec<(String, String)>, TwinError> {
+    faulted
+        .iter()
+        .map(|bus| {
+            topology
+                .analog_lines
+                .iter()
+                .find(|(_, line)| &line.bus == bus)
+                .and_then(|(net, _)| topology.assignments.get(net))
+                .map(|a| (bus.clone(), a.peripheral.clone()))
+                .ok_or_else(|| TwinError::UnknownFaultedBus { bus: bus.clone() })
+        })
+        .collect()
+}
+
+/// The devices of `devices` that are not on a bus in `faulted`: what the
+/// platform declares, and so what Renode lists, after the analog pass.
+pub fn present(
+    topology: &SolvedTopology,
+    devices: &[I2cTarget],
+    faulted: &BTreeSet<String>,
+) -> Result<Vec<I2cTarget>, TwinError> {
+    let off = faulted_peripherals(topology, faulted)?;
+    Ok(devices
+        .iter()
+        .filter(|d| !off.iter().any(|(_, p)| *p == d.peripheral))
+        .cloned()
+        .collect())
+}
+
+/// The `.repl` text for `topology` with the analog pass's fault decision:
+/// each bus in `faulted` has its devices left out, modelled or not, which is
+/// how a bus fault reaches the firmware (`RUL-17`, `AET-WO-2101` route iii).
+/// The decision and the devices it leaves out are written into the
+/// provenance comment, so a platform emitted without it differs from one
+/// emitted with it.
+pub fn emit_faulted(
+    topology: &SolvedTopology,
+    devices: &[I2cTarget],
+    faulted: &BTreeSet<String>,
+) -> Result<String, TwinError> {
     let instances = instances(topology, &[])?;
-    let (modelled, unmodelled) = split_devices(topology, devices)?;
+    let kept = present(topology, devices, faulted)?;
+    let (modelled, unmodelled) = split_devices(topology, &kept)?;
+    let mut omitted = Vec::new();
+    for (bus, peripheral) in faulted_peripherals(topology, faulted)? {
+        let gone: Vec<String> = devices
+            .iter()
+            .filter(|d| d.peripheral == peripheral)
+            .map(|d| format!("{} ({})", d.reference, d.part))
+            .collect();
+        omitted.push(format!(
+            "\n// - Analog fault (AET-WO-2200): bus `{bus}` ({peripheral}) measured past its rise-time\n\
+             //   ceiling, so its devices are left out of this platform: {}.",
+            if gone.is_empty() { "none".to_owned() } else { gone.join(", ") }
+        ));
+    }
     let facts = cmsis::register_facts()?;
     let mut out = String::new();
     let _ = writeln!(
@@ -196,6 +259,11 @@ pub fn emit(topology: &SolvedTopology, devices: &[I2cTarget]) -> Result<String, 
         file = cmsis::HEADER_FILE,
         sha = cmsis::HEADER_SHA256,
     );
+    for line in &omitted {
+        out.pop();
+        out.push_str(line);
+        out.push('\n');
+    }
     out.push_str("using \"platforms/cpus/stm32h753.repl\"\n");
     for i in instances.iter().filter(|i| i.added) {
         let base = facts.base(&i.peripheral)?;

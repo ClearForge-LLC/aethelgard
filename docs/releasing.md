@@ -27,6 +27,8 @@ Dependencies first. Each command is `cargo publish -p <crate> --locked`:
 
 `aethelgard-evolve` and the board crates are `publish = false`; do not publish them. No crate is published under the bare name `aethelgard`. After step 7, `cargo install aethelgard-cli` installs the `aethelgard` binary.
 
+`aethelgard-bridge` (`bridge/`) is never published: it is outside the workspace, `publish = false`, and links the tools image's `libngspice.so.0`, so it ships only in the engine image beside `aethelgard` (`AET-WO-2200`).
+
 ## If something goes wrong
 
 A published version cannot be deleted or overwritten. `cargo yank --version 0.1.0 <crate>` stops new projects from resolving it; existing lockfiles keep working. `cargo yank --undo --version 0.1.0 <crate>` reverses it. Fix the cause, bump the version in `[workspace.package]` and the `version` on the path entries in `[workspace.dependencies]`, and publish again from step 1 for every crate that changed.

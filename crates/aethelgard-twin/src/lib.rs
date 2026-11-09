@@ -7,9 +7,13 @@
 //! address and interrupt number comes from ST's header through
 //! `aethelgard-svd-hal`, and every stock Renode name from Renode's own files,
 //! pinned by hash in [`platform`].
+//!
+//! `AET-WO-2200` (`RUL-17`): [`analog`] writes each I2C line's netlist for the
+//! bridge to measure, and [`platform`] leaves a faulted bus's devices out.
 
 #![forbid(unsafe_code)]
 
+pub mod analog;
 pub mod boot;
 pub mod model;
 pub mod platform;
@@ -40,6 +44,8 @@ pub enum TwinError {
         renode: u32,
         header: u32,
     },
+    #[error("the fault decision names bus `{bus}`, which has no solved analog line")]
+    UnknownFaultedBus { bus: String },
     #[error(
         "device `{reference}` cannot be a Renode name (a lower-case letter, then letters, digits or `_`) that no stock instance already has"
     )]
@@ -62,6 +68,7 @@ impl TwinError {
             Self::UnsupportedPeripheral { .. } => "UnsupportedPeripheral",
             Self::NotInRenode { .. } => "NotInRenode",
             Self::AddressMismatch { .. } => "AddressMismatch",
+            Self::UnknownFaultedBus { .. } => "UnknownFaultedBus",
             Self::InvalidDeviceName { .. } => "InvalidDeviceName",
             Self::DeviceOffBus { .. } => "DeviceOffBus",
             Self::Register(e) => e.kind(),

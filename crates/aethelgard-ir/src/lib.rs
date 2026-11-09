@@ -128,7 +128,9 @@ pub struct NetConstraint {
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
 /// the signals on an alternate function; `gpio` holds each net driven as a
 /// plain GPIO output (an SPI device's `cs`), net to pin. `i2c_ceilings` holds
-/// each I2C bus's maximum speed in Hz, keyed by bus id.
+/// each I2C bus's maximum speed in Hz, keyed by bus id. `analog_lines` holds
+/// the analog facts of every solved I2C line, keyed by net, which the twin's
+/// analog model reads instead of the specification (`AET-WO-2200`, `RUL-16`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct SolvedTopology {
@@ -141,6 +143,22 @@ pub struct SolvedTopology {
     pub gpio: BTreeMap<String, String>,
     #[serde(deserialize_with = "unique_keys")]
     pub i2c_ceilings: BTreeMap<String, u32>,
+    #[serde(deserialize_with = "unique_keys")]
+    pub analog_lines: BTreeMap<String, AnalogLine>,
+}
+
+/// One I2C line as the analog model needs it, copied by `solve` from the
+/// specification: the bus's pull-up and its domain's nominal voltage, and
+/// the net constraint's capacitance and rise-time bound, which is the
+/// ceiling the measured rise is judged against (`AET-WO-1202`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct AnalogLine {
+    pub bus: String,
+    pub pull_up_ohms: u32,
+    pub capacitance_femtofarads: u64,
+    pub ceiling_ns: u32,
+    pub domain_millivolts: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -228,7 +246,8 @@ object_only!(
     SpiDevice,
     NetConstraint,
     SolvedTopology,
-    PinAssignment
+    PinAssignment,
+    AnalogLine
 );
 
 /// The pins of one part and package, built from a vendored vendor source and
@@ -333,6 +352,12 @@ pub enum IrValidationError {
     NetAssignedTwice { id: String },
     #[error("pin `{id}` is assigned to more than one net")]
     DuplicatePin { id: String },
+    #[error("analog_lines names `{id}`, which is no solved I2C line")]
+    AnalogLineNotI2c { id: String },
+    #[error("solved I2C line `{id}` has no entry in analog_lines")]
+    MissingAnalogLine { id: String },
+    #[error("analog line `{id}` does not share one bus with exactly its own peripheral's lines")]
+    AnalogBusMismatch { id: String },
 }
 
 impl IrValidationError {
@@ -367,6 +392,9 @@ impl IrValidationError {
             Self::InvalidCeiling { .. } => "InvalidCeiling",
             Self::NetAssignedTwice { .. } => "NetAssignedTwice",
             Self::DuplicatePin { .. } => "DuplicatePin",
+            Self::AnalogLineNotI2c { .. } => "AnalogLineNotI2c",
+            Self::MissingAnalogLine { .. } => "MissingAnalogLine",
+            Self::AnalogBusMismatch { .. } => "AnalogBusMismatch",
         }
     }
 
@@ -402,7 +430,10 @@ impl IrValidationError {
             | Self::AlternateFunctionOutOfRange { id, .. }
             | Self::InvalidCeiling { id }
             | Self::NetAssignedTwice { id }
-            | Self::DuplicatePin { id } => Some(id),
+            | Self::DuplicatePin { id }
+            | Self::AnalogLineNotI2c { id }
+            | Self::MissingAnalogLine { id }
+            | Self::AnalogBusMismatch { id } => Some(id),
         }
     }
 
@@ -705,9 +736,12 @@ impl Specification {
 impl SolvedTopology {
     /// Refuses the first malformed value found: version, hash, identifiers (in
     /// `assignments` a net, then its `pin`, `peripheral`, `signal`; then in
-    /// `gpio` a net, then its pin; then each `i2c_ceilings` bus id; keys in
-    /// sorted order), then alternate functions, then ceilings, then a net in
-    /// both maps, then a pin used twice across both.
+    /// `gpio` a net, then its pin; then each `i2c_ceilings` bus id; then in
+    /// `analog_lines` a net, then its bus; keys in sorted order), then
+    /// alternate functions, then ceilings, then a net in both maps, then a pin
+    /// used twice across both, then the analog lines: each key a solved I2C
+    /// line whose bus has a ceiling, no zero value, one bus per peripheral, and
+    /// every solved I2C line present.
     pub fn validate(&self) -> Result<(), IrValidationError> {
         use IrValidationError as E;
 
@@ -732,6 +766,10 @@ impl SolvedTopology {
         }
         for bus in self.i2c_ceilings.keys() {
             identifier(bus, || format!("i2c_ceilings.{bus}"))?;
+        }
+        for (net, line) in &self.analog_lines {
+            identifier(net, || format!("analog_lines.{net}"))?;
+            identifier(&line.bus, || format!("analog_lines.{net}.bus"))?;
         }
         for (net, a) in &self.assignments {
             if a.alternate_function > 15 {
@@ -760,6 +798,71 @@ impl SolvedTopology {
                 return Err(E::DuplicatePin { id: pin.clone() });
             }
         }
+        self.validate_analog_lines()
+    }
+
+    fn validate_analog_lines(&self) -> Result<(), IrValidationError> {
+        use IrValidationError as E;
+
+        // One bus per peripheral, and one peripheral per bus: the fault
+        // decision is keyed by bus, and the platform omits a peripheral's
+        // devices (adversarial A2).
+        let mut bus_of: BTreeMap<&str, &str> = BTreeMap::new();
+        let mut peripheral_of: BTreeMap<&str, &str> = BTreeMap::new();
+        for (net, line) in &self.analog_lines {
+            let id = || net.clone();
+            let assignment = self.assignments.get(net).filter(|a| is_i2c_line(a));
+            let Some(assignment) = assignment else {
+                return Err(E::AnalogLineNotI2c { id: id() });
+            };
+            if !self.i2c_ceilings.contains_key(&line.bus) {
+                return Err(E::UnknownBus {
+                    id: line.bus.clone(),
+                });
+            }
+            if line.pull_up_ohms == 0 {
+                return Err(E::ZeroPullUp { id: id() });
+            }
+            if line.capacitance_femtofarads == 0 {
+                return Err(E::ZeroCapacitance { id: id() });
+            }
+            if line.ceiling_ns == 0 {
+                return Err(E::ZeroRiseTime { id: id() });
+            }
+            if line.domain_millivolts == 0 {
+                return Err(E::ZeroNominalVoltage { id: id() });
+            }
+            let bus = *bus_of
+                .entry(assignment.peripheral.as_str())
+                .or_insert(line.bus.as_str());
+            let peripheral = *peripheral_of
+                .entry(line.bus.as_str())
+                .or_insert(assignment.peripheral.as_str());
+            if bus != line.bus || peripheral != assignment.peripheral {
+                return Err(E::AnalogBusMismatch { id: id() });
+            }
+        }
+        let missing = self
+            .assignments
+            .iter()
+            .find(|(net, a)| is_i2c_line(a) && !self.analog_lines.contains_key(*net));
+        if let Some((net, _)) = missing {
+            return Err(E::MissingAnalogLine { id: net.clone() });
+        }
         Ok(())
     }
+}
+
+/// An assignment to an I2C instance's SDA or SCL, as `solve` names them:
+/// peripheral `I2C<n>`, signal `I2C<n>_SDA` or `I2C<n>_SCL`.
+fn is_i2c_line(a: &PinAssignment) -> bool {
+    let numbered = a
+        .peripheral
+        .strip_prefix("I2C")
+        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+    let line = a
+        .signal
+        .strip_prefix(a.peripheral.as_str())
+        .is_some_and(|s| s == "_SDA" || s == "_SCL");
+    numbered && line
 }

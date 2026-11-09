@@ -5,7 +5,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{IrValidationError, PinAssignment, PinTable, Signal, SolvedTopology, Specification};
+use crate::{
+    AnalogLine, IrValidationError, PinAssignment, PinTable, Signal, SolvedTopology, Specification,
+};
 
 /// Never assigned, and refused as a hand pin: the SWD debug port (`PA13`
 /// SWDIO, `PA14` SWCLK), so the board can be programmed, and the oscillator
@@ -192,6 +194,7 @@ fn solve_inner(
         assignments: BTreeMap::new(),
         gpio: BTreeMap::new(),
         i2c_ceilings: BTreeMap::new(),
+        analog_lines: BTreeMap::new(),
     };
     out.validate().map_err(SolveError::InvalidSpecification)?;
     out.i2c_ceilings = i2c_ceilings(spec)?;
@@ -251,10 +254,38 @@ fn solve_inner(
         };
         out.gpio.insert(cs.net.to_owned(), pin.to_owned());
     }
+    out.analog_lines = analog_lines(spec);
     // belt-and-suspenders: the search already keeps every rule `validate`
     // checks; this refuses rather than emits if a change to it ever breaks one.
     out.validate().map_err(SolveError::InvalidSpecification)?;
     Ok(out)
+}
+
+/// Each I2C line's analog facts, copied from the specification (`AET-WO-2200`
+/// §1.1). `i2c_ceilings` has already refused a line with no constraint, and
+/// `validate` a bus on an undeclared domain, so every lookup finds its entry.
+fn analog_lines(spec: &Specification) -> BTreeMap<String, AnalogLine> {
+    let mut out = BTreeMap::new();
+    for bus in &spec.i2c_buses {
+        let domain = spec.voltage_domains.iter().find(|d| d.id == bus.domain);
+        for net in [&bus.sda.net, &bus.scl.net] {
+            let constraint = spec.net_constraints.iter().find(|c| &c.net_name == net);
+            let (Some(domain), Some(c)) = (domain, constraint) else {
+                continue;
+            };
+            out.insert(
+                net.clone(),
+                AnalogLine {
+                    bus: bus.id.clone(),
+                    pull_up_ohms: bus.pull_up_ohms,
+                    capacitance_femtofarads: c.max_capacitance_femtofarads,
+                    ceiling_ns: c.max_rise_time_nanoseconds,
+                    domain_millivolts: domain.nominal_millivolts,
+                },
+            );
+        }
+    }
+    out
 }
 
 /// The fastest I2C mode whose maximum rise time (NXP UM10204) is at least

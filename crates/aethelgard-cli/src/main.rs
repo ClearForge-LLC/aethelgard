@@ -4,6 +4,7 @@
 
 #![forbid(unsafe_code)]
 
+mod analog;
 mod elf;
 mod input;
 mod kani;
@@ -588,12 +589,13 @@ struct Ready {
     firmware: input::Input,
     image_sha256: String,
     executable: Vec<(u64, u64)>,
-    instances: Vec<(String, String)>,
     vector_table: u32,
     image: aethelgard_twin::boot::Image,
     boot_word: u32,
     specification_sha256: String,
     virtual_ns: u64,
+    topology: aethelgard_ir::SolvedTopology,
+    devices: Vec<aethelgard_ir::parts::I2cTarget>,
 }
 
 /// The topology asks for what the twin cannot lower (exit 2), or the
@@ -654,11 +656,6 @@ fn ready(
     let checked = elf::check(&bytes, &memory, boot_word)?;
     let image =
         aethelgard_twin::boot::expected(&boot.topology, &boot.devices).map_err(twin_stop)?;
-    let instances = aethelgard_twin::platform::instances(&boot.topology, &boot.devices)
-        .map_err(twin_stop)?
-        .into_iter()
-        .map(|i| (i.name, i.model))
-        .collect();
     let vector_table =
         u32::try_from(memory.flash.start).expect("FLASH_BANK1_BASE is a 32-bit value");
     Ok((
@@ -667,12 +664,13 @@ fn ready(
             firmware,
             image_sha256: checked.sha256,
             executable: checked.executable,
-            instances,
             vector_table,
             image,
             boot_word,
-            specification_sha256: boot.topology.specification_sha256,
+            specification_sha256: boot.topology.specification_sha256.clone(),
             virtual_ns: boot.virtual_ns,
+            topology: boot.topology,
+            devices: boot.devices,
         },
     ))
 }
@@ -687,6 +685,12 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             }
             None
         }
+    };
+    // The analog pre-pass runs before Renode is looked for, and its fault
+    // decision fixes the platform the boot loads (AET-WO-2200 §1.4).
+    let analog = match &ready {
+        Some((_, r)) => Some(analog_pass(r, &scratch)?),
+        None => None,
     };
     let tool = run::Tool::find("renode")?;
     let root = fs::canonicalize(&tool.path)
@@ -730,16 +734,23 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             format!("`{version}` is not the {pinned} the twin's platform is pinned to"),
         ));
     }
-    let plan = ready.as_ref().map(|r| renode::BootPlan {
-        platform: &input.copy,
-        firmware: &r.firmware.copy,
-        virtual_ns: r.virtual_ns,
-        boot_word: r.boot_word,
-        vector_table: r.vector_table,
-        image: &r.image,
-        executable: &r.executable,
-        instances: &r.instances,
-    });
+    let booted = analog.as_ref().map(|(_, booted)| booted.clone());
+    let plan = ready
+        .as_ref()
+        .zip(booted.as_ref())
+        .map(|(r, booted)| renode::BootPlan {
+            platform: &booted.path,
+            firmware: &r.firmware.copy,
+            virtual_ns: r.virtual_ns,
+            boot_word: r.boot_word,
+            vector_table: r.vector_table,
+            image: &r.image,
+            executable: &r.executable,
+            instances: &booted.instances,
+        });
+    if let (Some(r), Some((pass, booted))) = (&ready, &analog) {
+        booted_is_emitted(&booted.path, r, pass)?;
+    }
     let commands = match &plan {
         Some(plan) => plan.commands(),
         None => renode::commands(&input.copy),
@@ -767,6 +778,15 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             (code, (findings, machine, None))
         }
     };
+    // The analog findings first: they are the evidence the boot's effect follows.
+    let (analog, findings) = match analog {
+        Some((pass, _)) => {
+            let mut all = pass.findings;
+            all.extend(findings);
+            (Some((pass.analog, pass.faults)), all)
+        }
+        None => (None, findings),
+    };
     let mut v = verdict::Verdict::new(
         "simulate",
         &input,
@@ -780,7 +800,78 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     if let (Some(r), Some(plan)) = (&ready, &plan) {
         v.boot = Some(boot_report(r, plan, observed.as_ref()));
     }
+    if let Some((records, faults)) = analog {
+        v.analog = Some(records);
+        v.faults = Some(faults);
+    }
     Ok(v)
+}
+
+/// The platform the boot loads, and what Renode must list once it has.
+#[derive(Clone)]
+struct Booted {
+    path: PathBuf,
+    /// Every solved peripheral, and each device the fault decision left in.
+    instances: Vec<(String, String)>,
+}
+
+/// Measures every I2C line, then writes the platform the boot loads: the
+/// emission for the specification with the pass's fault decision, which
+/// declares no device on a faulted bus. The firmware still reads those
+/// devices, so the boot's expected reads keep them (`AET-WO-2202`'s judge
+/// then sees the timeout). The bridge works in a directory of its own, so
+/// it can touch none of the copies Renode reads.
+fn analog_pass(r: &Ready, scratch: &Scratch) -> Result<(analog::Pass, Booted), run::Stop> {
+    let pass = analog::pass(
+        &r.topology,
+        &scratch.root.join("bridge"),
+        &scratch.root.join("status-bridge"),
+    )?;
+    let faulted = pass.faulted();
+    let text = aethelgard_twin::platform::emit_faulted(&r.topology, &r.devices, &faulted)
+        .map_err(twin_stop)?;
+    let present =
+        aethelgard_twin::platform::present(&r.topology, &r.devices, &faulted).map_err(twin_stop)?;
+    let instances = aethelgard_twin::platform::instances(&r.topology, &present)
+        .map_err(twin_stop)?
+        .into_iter()
+        .map(|i| (i.name, i.model))
+        .collect();
+    let booted = scratch.tool.join("platform-booted.repl");
+    fs::write(&booted, text).map_err(|e| {
+        run::Stop::tool_error(
+            "aethelgard",
+            format!("cannot write the booted platform: {e}"),
+        )
+    })?;
+    Ok((
+        pass,
+        Booted {
+            path: booted,
+            instances,
+        },
+    ))
+}
+
+/// `PlatformNotEmitted` for the file the boot loads: it must be the
+/// emission for the specification plus the fault decision as recorded in
+/// the verdict's `faults`, read again just before Renode starts.
+fn booted_is_emitted(booted: &Path, r: &Ready, pass: &analog::Pass) -> Result<(), run::Stop> {
+    let topology = &r.topology;
+    let want = aethelgard_twin::platform::emit_faulted(topology, &r.devices, &pass.faulted())
+        .map_err(twin_stop)?;
+    let have = fs::read(booted)
+        .map_err(|e| run::Stop::unreadable(format!("cannot read the booted platform: {e}")))?;
+    if have != want.as_bytes() {
+        return Err(run::Stop::refused(
+            "PlatformNotEmitted",
+            format!(
+                "the platform the boot would load is not the emission for specification {} with the recorded fault decision",
+                topology.specification_sha256
+            ),
+        ));
+    }
+    Ok(())
 }
 
 fn boot_report(

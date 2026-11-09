@@ -391,6 +391,140 @@ fn an_aborted_machine_returns_inside_the_bound_as_cpu_aborted() {
     assert!(took.as_secs() < 30 + 5, "{took:?}");
 }
 
+/// `AET-WO-2200` §3, the P2 gate's clause 2, as one test: the reference
+/// specification at 2.2 kΩ passes, with U2 reading 0x60, and at 47 kΩ fails,
+/// with three separate records: the analog evidence (`analog`), the bridge's
+/// fault decision (`faults`), and the firmware's own observation, U2 timing
+/// out at TXIS (`boot.i2c`, `AET-WO-2202`'s judge). Each case runs twice with
+/// byte-identical records. The ns values are `AET-WO-2101` S2's.
+#[test]
+fn p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes() {
+    let spec_text = fs::read_to_string(spec()).unwrap();
+    assert_eq!(spec_text.matches("\"pull_up_ohms\": 2200").count(), 1);
+    let dir =
+        Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("aet-2200-t2-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    for (ohms, rise, tolerance, faulted) in
+        [(2200, 186.40, 0.05, false), (47_000, 3982.30, 0.5, true)]
+    {
+        let text = spec_text.replace(
+            "\"pull_up_ohms\": 2200",
+            &format!("\"pull_up_ohms\": {ohms}"),
+        );
+        let spec = dir.join(format!("spec-{ohms}.json"));
+        fs::write(&spec, &text).unwrap();
+        let (code, v) = aethelgard(&["solve", "--file", spec.to_str().unwrap()]);
+        assert_eq!(code, Some(0), "{v}");
+        let topology: SolvedTopology = serde_json::from_value(v).unwrap();
+        let specification: aethelgard_ir::Specification = serde_json::from_str(&text).unwrap();
+        let devices = aethelgard_ir::parts::i2c_targets(&specification, &topology).unwrap();
+        // The caller's platform is the unfaulted emission, U2 declared (F6).
+        let platform = dir.join(format!("platform-{ohms}.repl"));
+        let emitted = aethelgard_twin::platform::emit(&topology, &devices).unwrap();
+        assert!(emitted.contains("\nu2: I2C.BME280 @ i2c1 0x76\n"));
+        fs::write(&platform, emitted).unwrap();
+        let run = |n: u32| {
+            let start = Instant::now();
+            // 100 ms, so a timed-out read still reaches the boot word.
+            let (code, v) = aethelgard(&[
+                "simulate",
+                "--platform",
+                platform.to_str().unwrap(),
+                "--firmware",
+                firmware().to_str().unwrap(),
+                "--spec",
+                spec.to_str().unwrap(),
+                "--for",
+                "100ms",
+            ]);
+            answer(&format!(
+                "2200 {ohms} ohm run {n}: exit={code:?} wall_s={:.2} analog={} faults={} i2c={} findings={}",
+                start.elapsed().as_secs_f64(),
+                v["analog"],
+                v["faults"],
+                v["boot"]["i2c"],
+                v["findings"]
+            ));
+            (code, v)
+        };
+        let (code, v) = run(1);
+        let analog = v["analog"].as_array().unwrap_or_else(|| panic!("{v}"));
+        assert_eq!(analog.len(), 2, "{v}");
+        for line in analog {
+            let measured = line["rise_30_70_ns"].as_f64().unwrap();
+            assert!((measured - rise).abs() <= tolerance, "{ohms} ohm: {line}");
+            assert_eq!(line["ceiling_ns"], 300);
+            assert_eq!(line["complete"], true);
+            assert_eq!(line["exceeds"], faulted);
+            assert_eq!(line["bus"], "SENSORS");
+            assert_eq!(line["ngspice"], "44.2");
+        }
+        // The boot completed either way: the word is set and the core ran.
+        assert_eq!(v["boot"]["boot_word"]["observed"], "0x2100b007", "{v}");
+        assert_eq!(v["boot"]["instructions"]["observed"], 10_000_000);
+        let u2 = &v["boot"]["i2c"][0];
+        assert_eq!(u2["reference"], "U2", "{v}");
+        assert_eq!(u2["address"], "0x76");
+        assert_eq!(u2["expected"], "0x60");
+        let listed = v["machine"]["peripherals"].as_array().unwrap();
+        let bme = listed.iter().any(|p| p["type"] == "BME280");
+        let kinds: Vec<&str> = v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["severity"] == "error")
+            .map(|f| f["kind"].as_str().unwrap())
+            .collect();
+        if faulted {
+            assert_eq!(code, Some(1), "{v}");
+            assert_eq!(v["verdict"], "fail");
+            // The fault reached the platform: Renode built no BME280.
+            assert!(!bme, "{v}");
+            let faults = v["faults"].as_array().unwrap();
+            assert_eq!(faults.len(), 1, "{v}");
+            assert_eq!(faults[0]["kind"], "bridge.fault_state");
+            assert_eq!(faults[0]["bus"], "SENSORS");
+            // The firmware's observation, its own record: U2 timed out at TXIS.
+            assert_eq!(u2["status"], "timeout_txis", "{v}");
+            assert_eq!(
+                kinds,
+                [
+                    "analog_rise_exceeds_ceiling",
+                    "analog_rise_exceeds_ceiling",
+                    "i2c_timeout"
+                ],
+                "{v}"
+            );
+            for f in &v["findings"].as_array().unwrap()[..2] {
+                let m = f["message"].as_str().unwrap();
+                assert!(
+                    m.contains("`SENSORS`") && m.contains("300 ns ceiling") && m.contains("3982.3"),
+                    "{m}"
+                );
+            }
+        } else {
+            assert_eq!(code, Some(0), "{v}");
+            assert_eq!(v["verdict"], "pass");
+            assert_eq!(v["faults"], serde_json::json!([]));
+            assert!(bme, "{v}");
+            assert_eq!(
+                (&u2["status"], &u2["observed"]),
+                (&"ok".into(), &"0x60".into())
+            );
+            assert!(kinds.is_empty(), "{v}");
+        }
+        let (_, again) = run(2);
+        for record in ["analog", "faults"] {
+            assert_eq!(v[record].to_string(), again[record].to_string(), "{record}");
+        }
+        assert_eq!(
+            v["boot"]["i2c"].to_string(),
+            again["boot"]["i2c"].to_string()
+        );
+    }
+    let _ = fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn a_read_no_model_answers_fails_as_a_timeout_at_txis() {
     // AET-WO-2202: the firmware reads address 0x77, where the emitted platform

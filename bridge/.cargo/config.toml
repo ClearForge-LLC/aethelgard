@@ -1,0 +1,4 @@
+# Build beside the CLI, in the top-level target/: the CLI finds the bridge in
+# its own executable's directory (AET-WO-2200 §1.4).
+[build]
+target-dir = "../target"
