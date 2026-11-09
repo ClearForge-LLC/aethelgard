@@ -240,8 +240,7 @@ fn open_dir(dir: &Path) -> Result<OwnedFd, ArchiveError> {
 fn check_entries(dirfd: &OwnedFd, dir: &Path) -> Result<(), ArchiveError> {
     let io = |e: Errno| ArchiveError::io(dir, e.into());
     let mut bad = Vec::new();
-    let mut entries = Dir::read_from(dirfd).map_err(io)?;
-    while let Some(entry) = entries.next() {
+    for entry in Dir::read_from(dirfd).map_err(io)? {
         let entry = entry.map_err(io)?;
         let name = entry.file_name().to_string_lossy().into_owned();
         if name == "." || name == ".." {
