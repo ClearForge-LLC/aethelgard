@@ -13,7 +13,6 @@ use aethelgard_chaos::record::{BusLine, Line, Override, Reading, Record};
 use aethelgard_chaos::{Event, Header, Replayed, TraceWriter, replay_dir};
 use aethelgard_evolve::{Attribution, Domain, Rule, attribute};
 
-const SADD_U2: u32 = 0x76 << 1;
 const CR2_OK: u32 = 0x0201_04EC;
 
 fn reading(address: u32, mask: u32, expected: u32, observed: u32) -> Reading {
@@ -258,7 +257,7 @@ fn kinds(refs: &[aethelgard_evolve::EventRef]) -> Vec<u64> {
 }
 
 /// The wrong-address shape: U2 times out at TXIS, `CR2.SADD` holds 0x77.
-fn wrong_address(r: &mut Vec<Record>) {
+fn wrong_address(r: &mut [Record]) {
     replace(r, is_check, check("timeout_txis", 0));
     replace(r, is_witness, witness(0x0001_00EE, 0));
     replace(r, is_verdict, verdict(&[("i2c_timeout", 1)]));
