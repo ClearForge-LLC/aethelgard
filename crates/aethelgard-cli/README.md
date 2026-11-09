@@ -317,7 +317,7 @@ aethelgard replay --archive <dir>/<run id>
 ```json
 {"scenario":"pullup-47k","file":"scenarios/sentinel-01/pullup-47k.json","verdict":"fail","expect":"fail","matched":true,
  "findings":["analog_rise_exceeds_ceiling","i2c_timeout"],"expect_findings":["analog_rise_exceeds_ceiling","i2c_timeout"],
- "run_id":"011cc38d…","run":"<archive>/011cc38d…","state_sequence_hash":"5e94d7f1…","event_count":16,"trace_bytes":1295}
+ "run_id":"011cc38d…","run":"<archive>/011cc38d…","state_sequence_hash":"0483991c…","event_count":16,"trace_bytes":1335}
 ```
 
 `matched` is true when the verdict is the one the scenario expects and, for a failure, its finding kinds above `info` are exactly `expect_findings`: a scenario that fails for another reason, or for more, does not match. The last line is the summary, `{"ok":…,"verdict":…,"check":"campaign","scenarios":n,"matched":m,"virtual_time_ns":100000000,"trace_bytes":…}`, with exit `0` only when every scenario matched, and `1` otherwise. A tool that stops one scenario (exit `4` or `5`) stops the campaign with its refusal; runs already committed stay. A campaign therefore asserts what should fail.
@@ -329,7 +329,7 @@ aethelgard replay --archive <dir>/<run id>
 ```json
 {"ok":true,"check":"replay","run_id":"011cc38d…","scenario":"pullup-47k","verdict":"fail","expect":"fail","matched":true,
  "findings":[…],"expect_findings":[…],"artifacts":{"base":"…","firmware":"…","scenario":"…","specification":"…","topology":"…"},
- "event_count":16,"trace_bytes":1295,"state_sequence_hash":"5e94d7f1…"}
+ "event_count":16,"trace_bytes":1335,"state_sequence_hash":"0483991c…"}
 ```
 
 ## `mcp`

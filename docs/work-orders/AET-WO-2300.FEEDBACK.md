@@ -1,6 +1,6 @@
 # AET-WO-2300 — FEEDBACK
 
-**Branch:** `wo/aet-2300-campaign` · **Base:** `ad3321c` (`origin/main`, as the kickoff set it). `main` has since moved to `a702ed8`, which touches only `.gitignore` and `docs/roadmap.md` and merges cleanly, so it is not merged in. `AET-WO-2203` had not merged when the PR opened · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace. Two Sonnet subagents wrote tests from fixed commits in their own worktrees: `aethelgard-chaos/tests/campaign.rs` (69 tests) and `aethelgard-cli/tests/campaign_tier1.rs` (27 tests). The lead re-ran both and read the held-low, size-bound and float tests. A fresh Opus subagent ran the full adversarial pass on `1e26985`, in its own worktree, image container and caches. · **Cadence:** build-only. No §7 condition fired.
+**Branch:** `wo/aet-2300-campaign` · **Base:** `ad3321c` (`origin/main`, as the kickoff set it). `AET-WO-2203` merged first, at `fc8f9b5`, and `origin/main` is merged in with a merge commit (see "Merge of `main` after `AET-WO-2203`", at the end). Every number below is measured on the merged tree · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace. Two Sonnet subagents wrote tests from fixed commits in their own worktrees: `aethelgard-chaos/tests/campaign.rs` (69 tests) and `aethelgard-cli/tests/campaign_tier1.rs` (27 tests). The lead re-ran both and read the held-low, size-bound and float tests. A fresh Opus subagent ran the full adversarial pass on `1e26985`, in its own worktree, image container and caches. · **Cadence:** build-only. No §7 condition fired.
 
 **Where everything ran.** The pinned tools image `ghcr.io/clearforge-llc/aethelgard-tools@sha256:2df68259…` (`container/IMAGE`) under rootless podman, started with `podman run --memory 12g --memory-swap 12g`. The cap was read back from the container's own scope on every run: `memory.max` = 12884901888 (12 GiB); `memory.swap.max` = 12884901888, as 2200 F13 found. Renode 1.17.0, libngspice 44.2, Rust 1.99.1. Tier 1 also ran on the Furnace host. Nothing was installed; no `sudo`, system package or secret.
 
@@ -19,9 +19,9 @@ Entry schema for findings: `finding · where · severity · type · recommendati
 |---|---|---|
 | 1 | `p2_gate_clause_2_the_campaign_passes_2k2_and_fails_47k_as_each_expects` | exit 0. `pullup-2k2`: `pass`, expected `pass`, `matched`. `pullup-47k`: `fail` for exactly `analog_rise_exceeds_ceiling` and `i2c_timeout`, expected so, `matched`. Summary `matched: 2` |
 | 1 | `p2_gate_clause_2_the_47k_trace_shows_the_rise_the_fault_and_the_timeout_as_three_events` | read back through `replay_dir`: two kind-7 records, `rise_30_70_ps` **3,982,301** on both lines (the bridge's 3,982.300059 ns, rounded up), `ceiling_ps` 300,000, `complete` and `exceeds`; then one kind-9 `bridge.fault_state` on `SENSORS`, nets `I2C_SCL` and `I2C_SDA`; then U2's kind-12 identity read with status `timeout_txis`. Separate events, in that order. The verdict counts `analog_rise_exceeds_ceiling` ×2 and `i2c_timeout` ×1 |
-| 2 | `p2_gate_clause_3_replay_twice_is_identical_and_equals_the_committed_hash` | two `replay` calls print identical bytes, exit 0. Their hash equals the manifest's and the campaign line's: `5e94d7f1…a100bbe8` |
+| 2 | `p2_gate_clause_3_replay_twice_is_identical_and_equals_the_committed_hash` | two `replay` calls print identical bytes, exit 0. Their hash equals the manifest's and the campaign line's: `0483991c…076828fb8` |
 | 2 | `p2_gate_clause_3_a_one_byte_change_is_refused_even_with_the_manifest_resealed` | one flipped byte: `HashMismatch`, exit 3. The same kind of change with the manifest re-sealed around the new bytes (the rise's last byte, `trace_bytes` and `trace_sha256` recomputed, the committed hash kept): `ReplayDiverged`, exit 3, from the recomputed state-sequence hash |
-| 3 | `p2_gate_clause_3_the_same_campaign_twice_gives_identical_hashes_per_scenario` | a second campaign into a second archive: the same run ids, the same hashes (`c55fa061…` and `5e94d7f1…`), and byte-identical traces |
+| 3 | `p2_gate_clause_3_the_same_campaign_twice_gives_identical_hashes_per_scenario` | a second campaign into a second archive: the same run ids, the same hashes (`fcc9aa20…` and `0483991c…`), and byte-identical traces |
 
 Wall time per campaign of two scenarios: about 6.4 s (`time`, debug build).
 
@@ -31,12 +31,12 @@ Each scenario boots for 100 ms of virtual time (F4).
 
 | Run | Events | `trace.cbor` | `manifest.cbor` | Trace bytes per simulated second |
 |---|---|---|---|---|
-| `pullup-2k2` | 15 | 867 B | 94 B | 8,670 B/s |
-| `pullup-47k` | 16 | 1,295 B | 94 B | 12,950 B/s |
-| **The campaign** (2 runs, 0.2 s simulated) | 31 | **2,162 B** | 188 B | **10,810 B/s** |
+| `pullup-2k2` | 15 | 907 B | 94 B | 9,070 B/s |
+| `pullup-47k` | 16 | 1,335 B | 94 B | 13,350 B/s |
+| **The campaign** (2 runs, 0.2 s simulated) | 31 | **2,242 B** | 188 B | **11,210 B/s** |
 
 **Where the bytes go,** in the 47 kΩ trace:
-- the header: 221 B, of which the four artifact hashes are most;
+- the header: 261 B, of which the five artifact hashes are most;
 - the scenario: 105 B;
 - the topology: 71 B;
 - the two rises: 62 B;
@@ -233,3 +233,27 @@ A fresh Opus subagent attacked `1e26985` in its own worktree. It used its own po
   - `cargo test --workspace --features aethelgard-cli/with-tools`: **52 suites, 775 passed, 0 failed**, tier 1 and tier 2.
 - **Local, on the Furnace host** (no Renode, no libngspice, as in `gates`): `cargo test --workspace`, fmt and clippy are green.
 - **CI:** the PR's checks. This branch's last push carries this file, so CI's result is on the PR, not here.
+
+## Merge of `main` after `AET-WO-2203`
+
+The architect approved PR #74 and ratified F1 to F8 and F11 (a). `AET-WO-2203` merged first, at `fc8f9b5`: `SolvedTopology` carries `i2c_devices`, `parts::i2c_targets` is gone, and `solve` refuses `DeviceNotPlaced` itself. `origin/main` is merged into this branch with a merge commit (`77f664f`).
+
+- **The conflict** was in `main.rs`, at `Boot` and `Ready`. The `devices` fields are gone, as on `main`, and the campaign's `scenario` and `held` stay.
+- **The `i2c_targets` uses:** the campaign's own call (`campaign.rs::devices`) and its `DeviceNotPlaced` refusal are deleted. `platform::emit(&topology)` reads the devices from the topology, and `simulate` gets them there too, so nothing names `i2c_targets` or `I2cTarget` (2203's `the_interim_derivation_is_gone` passes).
+- **A rule of 2203's met one of this work order's.**
+  - 2203's guard `nothing_outside_solve_reads_devices_from_a_specification` forbids `aethelgard-chaos` naming `Specification` (`RUL-16`), and `Scenario::apply` did.
+  - The guard was not narrowed. `apply` moved to the runner, in the CLI's `campaign.rs`, with its six tests as that module's unit tests, unchanged but for the call form.
+  - `aethelgard-chaos` keeps the scenario format, the records and the run rules, and no longer depends on `aethelgard-ir`. `workspace_shape.rs` pins `rustix`, `serde`, `serde_json`, `sha2` and `thiserror`.
+  - F10's dependency list is superseded accordingly.
+- **Goldens, regenerated by the tools and compared:** none in this branch moved through the merge.
+  - The chaos golden trace and state hash (F1) pass unchanged.
+  - The solve digests and the board regeneration are `main`'s own, regenerated by 2203, and pass.
+  - `Cargo.lock` was regenerated by cargo (the `aethelgard-ir` edge from chaos removed), never by hand.
+- **The campaign's measured values moved, and the tier-2 tests read them rather than pin them:**
+  - the state-sequence hashes are now `fcc9aa20…` (2.2 kΩ) and `0483991c…` (47 kΩ), because the solved topology's bytes now include `i2c_devices`, and because the header gained A11's `base` artifact;
+  - each trace grew by 40 B, exactly that artifact;
+  - run ids are unchanged (`ebc69f79…`, `011cc38d…`), since the specification and the firmware are;
+  - the rise is still 3,982,301 ps.
+- **Gates on the merged tree:**
+  - the Furnace host: 52 suites, 720 passed; fmt and clippy are clean;
+  - the tools image (`memory.max` 12884901888, `pids.max` `max`, `--network none`) on `77f664f`: the bridge's tests, fmt and clippy with tier 2 are clean, and **54 suites, 787 passed, 0 failed**.
