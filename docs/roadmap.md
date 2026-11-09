@@ -184,7 +184,14 @@ P0 ──> P1 ──> P2 ──> P3
   - a rise over the ceiling removes that bus's devices from the platform.
 
   The P2 gate's 47 kΩ case fails with the measured 3,982 ns as evidence, and the 2.2 kΩ case passes. Archive replay is `2300`'s. Intent as first written: analog bridge: the extracted parasitics as an `ngspice` netlist for the designated nets, driven in lock-step with the digital run. If Renode's I2C model is transaction-level (`OQ-02`'s third lead), an analog fault reaches the firmware only as a controller error flag set by the bridge. The trace then records that flag as the bridge's verdict, never as an observed waveform.
-- `AET-WO-2300` — fault orchestrator: scenarios authored independently of the generated artifacts (`INV-07`), including a held-low data line, an oversized pull-up, a rail droop, and an interrupt storm; every campaign writes to the P0 archive.
+- `AET-WO-2203` — written 2026-11-09, build-only, cheap tier, carrying `AET-WO-2202` W2. `SolvedTopology` gains `i2c_devices`, and `parts::i2c_targets` is deleted, so no generator learns about devices from the `Specification` (`RUL-16`). No emitted byte changes.
+- `AET-WO-2300` — **written 2026-11-09**, strong tier, full adversarial pass. It closes P2:
+  - independent scenario files, with closed-world overrides on the specification;
+  - `aethelgard campaign`, which archives every record as integer-only CBOR events;
+  - `aethelgard replay`, which recomputes the state-sequence hash from the archive alone;
+  - `OQ-03` measured.
+
+  Dynamic faults (droop, interrupt storm) are split out as `AET-WO-2301`. Intent as first written: fault orchestrator: scenarios authored independently of the generated artifacts (`INV-07`), including a held-low data line, an oversized pull-up, a rail droop, and an interrupt storm; every campaign writes to the P0 archive.
 
 **Exit gate (to be refined by amendment after the `AET-WO-2100` spike, never weakened)**
 
@@ -325,6 +332,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | 2026-11-08 | §5 | The `OQ-02` desk spike is read at source. `AET-WO-2101`'s spike is written: three ngspice routes, three fault paths, lock-step by Renode monitor quanta. It stops for the architect's ruling and Scotty's ratification | `architecture.md` §8's leads |
 | 2026-11-09 | §5, §6 | `AET-WO-2101`'s spike ruled; Scotty ratified `OQ-02` (`architecture.md` `RUL-17`). `AET-WO-2200` (bridge and static fault) and `AET-WO-2202` (the firmware's I2C transaction) written | PR #66; Scotty, 2026-11-09 |
 | 2026-11-09 | §5, §7 | **P1's exit gate passed.** `AET-WO-1800` is reconciled, and all seven crates are published to crates.io at `0.1.0`, with the install verified from crates.io. The announcement waits for Scotty's word | PR #65; first publish |
+| 2026-11-09 | §5 | `AET-WO-2300` (the campaign, archive and replay that close P2) and `AET-WO-2203` (devices into `SolvedTopology`) written. Dynamic faults are split out as `2301` | `AET-WO-2200` and `2202` in review |
 
 ## 9. Provenance
 
