@@ -333,6 +333,28 @@ Nothing was run. The pins are Renode `v1.17.0` (`ab721d88`, infrastructure `066a
 - **The dynamic case is estimated, not measured.** A per-quantum log at 10 µs quanta would be about 100,000 events per simulated second, at 30 to 60 B each: 3 to 6 MB/s. The reader's 256 MiB bound would then hold 45 to 90 s of simulated time per run. `AET-WO-2301` measures it.
 - **`aethelgard-chaos` no longer depends on `aethelgard-ir`.** Applying a scenario's overrides to a `Specification` lives in the CLI's runner, so the chaos crate never names a `Specification` (`RUL-16`).
 
+### 2.18 Measurements from the AET-WO-3100 build (2026-11-09, Furnace and GitHub Actions)
+
+**Attribution from the archive (`AET-WO-3100`, PR #79).** The record is `docs/work-orders/AET-WO-3100.FEEDBACK.md`.
+- **Measured rises on the reference's I2C bus,** 30 to 70 %, against the 300 ns ceiling:
+
+  | Case | Rise |
+  |---|---|
+  | 2.2 kΩ | 186.40 ns |
+  | 3.3 kΩ | 279.60 ns |
+  | 3.9 kΩ | 330.44 ns |
+  | 4.7 kΩ | 398.23 ns |
+  | 10 kΩ | 847.30 ns |
+  | 47 kΩ | 3,982.30 ns |
+  | 100 kΩ | 8,472.98 ns |
+  | 220 pF at 2.2 kΩ | 410.09 ns |
+  | 470 pF on SDA at 2.2 kΩ | 876.11 ns |
+
+  The rise is linear in R × C to within the bridge's resolution. 3.3 kΩ passes with 7 % margin and 3.9 kΩ fails by 10 %.
+- **The confident wrong answer is real and measured.** Renode's controller leaves `CR2` holding the write phase and `TXDR` at 0 on any TXIS timeout, including the unmutated 47 kΩ run. Read without the transfer phase, every timeout looks like a firmware defect. Attribution counts `SADD` whenever `CR2` was written, `NBYTES` once the read phase began, and `TXDR` once the write phase ran (F2).
+- **Trace bytes with kind 15** (`OQ-03`, static): 993 B (2.2 kΩ) and 1,421 B (47 kΩ) per run at 100 ms, which is 86 B per run more than §2.17.
+- **`simulate --firmware` is unchanged by the trace format change:** byte-identical to `main` over four runs.
+
 ## 3. Shape — one representation, two projections, one loop
 
 ```
@@ -543,6 +565,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-11-08 | §2.16 | Added §2.16, the `OQ-02` desk spike read at source: ngspice's synchronous interface, Renode's I2C extension points, and the controller's fault surface | `AET-WO-2101`'s precondition (§8 leads) |
 | 2026-11-09 | §2.16, §4, §8 | Added `RUL-17`: the lock-step bridge, ruled on PR #66 and ratified by Scotty. `OQ-02` is closed. §2.16 corrected: an absent device leaves TXIS unset | `AET-WO-2101`'s measurements and the research pass of 2026-11-09 |
 | 2026-11-09 | §2.17, §4, §8 | Added §2.17, the `AET-WO-2300` measurements. `OQ-03` answered for static campaigns and narrowed to dynamic ones (`AET-WO-2301`). `RUL-16` scope note: the schematic emitter may read the specification | PRs #73 and #74; P2's exit gate |
+| 2026-11-09 | §2.18 | Added §2.18, the `AET-WO-3100` measurements: the rise sweep, the TXIS-timeout controller state that forces phase-gated evidence, and the trace bytes with kind 15 | PR #79 |
 
 New sections continue the sequence and never reuse a number.
 
