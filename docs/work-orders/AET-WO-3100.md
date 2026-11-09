@@ -130,3 +130,28 @@
 - Attribution needs a fact the archive does not carry, so a record kind or a campaign change would be needed. Report what and why; do not add it.
 - A seeded case cannot be made to fail the way its manifest says without changing the firmware generator or the judge.
 - A test that can only go green by being weakened.
+
+## 8. Amendment — ruling on S1 (2026-11-09)
+
+The first build stopped at §7 before writing code, correctly. The archive cannot join a symptom (kinds 12 and 13 name a device and a controller) to a bus (kinds 7 to 9 name a bus). The ruling is the builder's option (a), as one new record kind inside this work order. The full text is in this work order's FEEDBACK.
+
+- **Kind 15, `I2cBusSolved`,** written by `campaign` once per solved I2C bus, directly after kind 6.
+  - It carries `bus`, `peripheral` and `ceiling_ps`.
+  - `lines`: each line's signal, net, pin and alternate function.
+  - `devices`: each device's reference and address.
+
+  All of it comes from the `SolvedTopology` (`INV-07`, `RUL-16`).
+- **Run rules** in `check_run`, so `replay` and `attribute` both enforce them:
+  - exactly one kind 15 per bus;
+  - every `I2cCheck` and `I2cWitness` resolves to exactly one bus, at its address and controller;
+  - every analog net is a line of its bus.
+
+  A dropped or forged join is refused, never attributed. No rule may infer the bus from there being only one.
+- **The trace header goes from version 2 to 3,** and a version-2 trace is refused. The goldens are re-pinned, with the old and new values in FEEDBACK.
+- **§2's fence widens to exactly this:**
+  - `aethelgard-chaos`: kind 15, its rules and the version;
+  - `campaign`: writing kind 15.
+
+  `replay`'s logic, `simulate --firmware` (byte-identical, measured), the judge and the firmware generator stay read-only.
+- **§3.4's "a fault on another bus"** is a two-bus tier-1 archive. It is `indeterminate` *because the fault is elsewhere*.
+- **`OQ-03` is re-measured** with kind 15.
