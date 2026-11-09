@@ -1143,7 +1143,7 @@ fn reseal(run: &Path, edit: impl FnOnce(&mut aethelgard_chaos::Header)) -> (Dir,
     let new = dir.0.join(hex_of(&old.header.run_id));
     let mut w = TraceWriter::create(&new, &header).unwrap();
     for record in old.state.records {
-        let timestamp = if record.kind() >= 10 { 100_000_000 } else { 0 };
+        let timestamp = if record.before_boot() { 0 } else { 100_000_000 };
         w.append(&Event::Record { timestamp, record }).unwrap();
     }
     w.commit().unwrap();

@@ -15,7 +15,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
 use aethelgard_chaos::campaign::{self as rules, Scenario, ScenarioError};
-use aethelgard_chaos::record::{Line, Override, Reading, Record};
+use aethelgard_chaos::record::{BusLine, Line, Override, Reading, Record};
 use aethelgard_chaos::{Event, Header, TraceWriter};
 use aethelgard_ir::{SolvedTopology, Specification};
 use serde::Serialize;
@@ -367,6 +367,10 @@ fn run_one(
         crate::diagnose(&format!("cannot serialize a topology: {e}"));
         ExitCode::from(EXIT_INTERNAL)
     })?);
+    let buses = solved_buses(&p.topology).map_err(|m| {
+        crate::diagnose(&m);
+        ExitCode::from(EXIT_INTERNAL)
+    })?;
     let verdict = crate::simulate(
         &platform,
         Some(Boot {
@@ -407,6 +411,7 @@ fn run_one(
             topology_sha256,
         },
     ];
+    records.extend(buses);
     records.extend(records_of(&verdict).map_err(internal)?);
     // The run must pass the rules replay will judge it by before it is written.
     let summary = rules::check_run(&records)
@@ -426,11 +431,7 @@ fn run_one(
     let archived = (|| {
         let mut writer = TraceWriter::create(&dir, &header)?;
         for record in records {
-            let timestamp = if record.kind() >= aethelgard_chaos::record::FIRST_BOOT_KIND {
-                VIRTUAL_NS
-            } else {
-                0
-            };
+            let timestamp = if record.before_boot() { 0 } else { VIRTUAL_NS };
             writer.append(&Event::Record { timestamp, record })?;
         }
         writer.commit()
@@ -461,6 +462,71 @@ fn run_one(
         },
         ok,
     ))
+}
+
+/// Kind 15 for every solved I2C bus, sorted by bus (`AET-WO-3100` R1): its
+/// controller, its SCL and SDA lines and its devices, from the solved
+/// topology alone (`INV-07`, `RUL-16`). A topology whose lines, controller
+/// and devices do not agree is an internal error, never a guess.
+fn solved_buses(t: &SolvedTopology) -> Result<Vec<Record>, String> {
+    let mut lines: BTreeMap<&str, Vec<(&aethelgard_ir::PinAssignment, BusLine)>> = BTreeMap::new();
+    for (net, a) in &t.analog_lines {
+        let assignment = t
+            .assignments
+            .get(net)
+            .ok_or_else(|| format!("analog line `{net}` has no pin assignment"))?;
+        lines.entry(a.bus.as_str()).or_default().push((
+            assignment,
+            BusLine {
+                signal: assignment.signal.clone(),
+                net: net.clone(),
+                pin: assignment.pin.clone(),
+                alternate_function: assignment.alternate_function,
+                ceiling_ps: u64::from(a.ceiling_ns) * 1000,
+            },
+        ));
+    }
+    let mut out = Vec::new();
+    for (bus, mut pairs) in lines {
+        let peripheral = pairs[0].0.peripheral.clone();
+        if pairs.iter().any(|(a, _)| a.peripheral != peripheral) {
+            return Err(format!("bus `{bus}`'s lines are on two controllers"));
+        }
+        // SCL, then SDA, by the solver's signal names (`I2C1_SCL`).
+        let order = |l: &BusLine| l.signal.strip_prefix(peripheral.as_str()) != Some("_SCL");
+        pairs.sort_by_key(|(_, l)| order(l));
+        let devices: Vec<(String, u8)> = t
+            .i2c_devices
+            .iter()
+            .filter(|(_, d)| d.bus == bus)
+            .map(|(r, d)| {
+                if d.peripheral == peripheral {
+                    Ok((r.clone(), d.address))
+                } else {
+                    Err(format!(
+                        "device `{r}` is on bus `{bus}` but not on `{peripheral}`"
+                    ))
+                }
+            })
+            .collect::<Result<_, _>>()?;
+        out.push(Record::I2cBusSolved {
+            bus: bus.to_owned(),
+            peripheral,
+            lines: pairs.into_iter().map(|(_, l)| l).collect(),
+            devices,
+        });
+    }
+    if let Some((r, d)) = t
+        .i2c_devices
+        .iter()
+        .find(|(_, d)| !t.analog_lines.values().any(|a| a.bus == d.bus))
+    {
+        return Err(format!(
+            "device `{r}` is on bus `{}`, which has no solved line",
+            d.bus
+        ));
+    }
+    Ok(out)
 }
 
 fn hex_u64(s: &str) -> Result<u64, String> {

@@ -9,8 +9,9 @@ pub const TIME_UNIT: &str = "ns";
 /// The format version of the mirror record.
 pub const VERSION: u64 = 1;
 /// The format version of the trace header. 2 since `AET-WO-2300` added the
-/// campaign's event kinds 5 to 14 ([`Record`]).
-pub const TRACE_VERSION: u64 = 2;
+/// campaign's event kinds 5 to 14 ([`Record`]); 3 since `AET-WO-3100` added
+/// kind 15, the solved I2C bus, and the run rules that join to it.
+pub const TRACE_VERSION: u64 = 3;
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.
@@ -46,7 +47,7 @@ pub enum Event {
         scenario: String,
         detail: String,
     },
-    /// Kinds 5 to 14: a campaign run's records (`AET-WO-2300`).
+    /// Kinds 5 to 15: a campaign run's records (`AET-WO-2300`, `AET-WO-3100`).
     Record {
         timestamp: u64,
         record: Record,

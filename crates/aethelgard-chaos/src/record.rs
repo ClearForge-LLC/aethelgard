@@ -1,5 +1,5 @@
-//! A campaign run's records (`AET-WO-2300`): event kinds 5 to 14, one per
-//! record `aethelgard campaign` archives. Every field is an integer, a byte
+//! A campaign run's records (`AET-WO-2300`): event kinds 5 to 15, one per
+//! record `aethelgard campaign` archives (kind 15 since `AET-WO-3100`). Every field is an integer, a byte
 //! string, a text string or an array of them; nothing is a float or a map
 //! (`RUL-06`). An absent value is an empty array, a present one an array of
 //! one element.
@@ -10,10 +10,7 @@ use crate::event::{name_ok, text_ok};
 /// The first campaign kind; [`Record::kind`] is this plus the variant's index.
 pub const FIRST_KIND: u64 = 5;
 /// The last campaign kind.
-pub const LAST_KIND: u64 = 14;
-/// The first kind read at the boot's end; kinds before it are decided before
-/// the boot starts, at virtual time 0.
-pub const FIRST_BOOT_KIND: u64 = 10;
+pub const LAST_KIND: u64 = 15;
 
 /// One override a scenario applies to its specification (`AET-WO-2300` §1.1).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,6 +28,18 @@ pub enum Override {
 pub enum Line {
     Sda,
     Scl,
+}
+
+/// One line of a solved I2C bus, as kind 15 names it: the solver's signal
+/// (`I2C1_SCL`), its net, its pin and alternate function, and the net's
+/// rise-time ceiling, which `analog_lines` holds per net.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BusLine {
+    pub signal: String,
+    pub net: String,
+    pub pin: String,
+    pub alternate_function: u8,
+    pub ceiling_ps: u64,
 }
 
 /// A register as the boot read it: what the topology expects under `mask`,
@@ -117,6 +126,16 @@ pub enum Record {
     Verdict {
         pass: bool,
         findings: Vec<(String, String, u64)>,
+    },
+    /// Kind 15: one solved I2C bus, from the solved topology alone
+    /// (`AET-WO-3100` R1): its controller, its two lines, SCL then SDA, and
+    /// its devices by reference, sorted. It joins a device or a controller to
+    /// the bus kinds 7 to 9 name. Archived after kind 6, before any kind 7.
+    I2cBusSolved {
+        bus: String,
+        peripheral: String,
+        lines: Vec<BusLine>,
+        devices: Vec<(String, u8)>,
     },
 }
 
@@ -288,7 +307,23 @@ impl Record {
                 Self::I2cCheck { .. } => 7,
                 Self::I2cWitness { .. } => 8,
                 Self::Verdict { .. } => 9,
+                Self::I2cBusSolved { .. } => 10,
             }
+    }
+
+    /// Whether the record is decided before the boot starts, at virtual time
+    /// 0: the scenario, the topology, the solved buses, the analog records and
+    /// the bus faults. The rest are read at the boot's end.
+    pub fn before_boot(&self) -> bool {
+        matches!(
+            self,
+            Self::Scenario { .. }
+                | Self::Solved { .. }
+                | Self::I2cBusSolved { .. }
+                | Self::RiseMeasured { .. }
+                | Self::LineStuckHigh { .. }
+                | Self::BusFault { .. }
+        )
     }
 
     /// The payload after the kind and the timestamp.
@@ -401,6 +436,37 @@ impl Record {
                         .collect(),
                 ),
             ],
+            Self::I2cBusSolved {
+                bus,
+                peripheral,
+                lines,
+                devices,
+            } => vec![
+                t(bus),
+                t(peripheral),
+                Value::Array(
+                    lines
+                        .iter()
+                        .map(|l| {
+                            Value::Array(vec![
+                                t(&l.signal),
+                                t(&l.net),
+                                t(&l.pin),
+                                u(l.alternate_function.into()),
+                                u(l.ceiling_ps),
+                            ])
+                        })
+                        .collect(),
+                ),
+                Value::Array(
+                    devices
+                        .iter()
+                        .map(|(reference, address)| {
+                            Value::Array(vec![t(reference), u((*address).into())])
+                        })
+                        .collect(),
+                ),
+            ],
         }
     }
 
@@ -488,6 +554,40 @@ impl Record {
                     g.end()?;
                 }
                 Self::Verdict { pass, findings }
+            }
+            15 => {
+                let bus = f.text()?;
+                let peripheral = f.text()?;
+                let mut lines = Vec::new();
+                for item in f.array()? {
+                    let Value::Array(line) = item else {
+                        return None;
+                    };
+                    let mut g = Fields(line.iter());
+                    lines.push(BusLine {
+                        signal: g.text()?,
+                        net: g.text()?,
+                        pin: g.text()?,
+                        alternate_function: g.u8()?,
+                        ceiling_ps: g.uint()?,
+                    });
+                    g.end()?;
+                }
+                let mut devices = Vec::new();
+                for item in f.array()? {
+                    let Value::Array(pair) = item else {
+                        return None;
+                    };
+                    let mut g = Fields(pair.iter());
+                    devices.push((g.text()?, g.u8()?));
+                    g.end()?;
+                }
+                Self::I2cBusSolved {
+                    bus,
+                    peripheral,
+                    lines,
+                    devices,
+                }
             }
             _ => return None,
         };
@@ -616,6 +716,35 @@ impl Record {
                     Err("findings are not sorted and unique by kind and severity")
                 } else if *pass != findings.iter().all(|(_, s, _)| s == "info") {
                     Err("pass is not the absence of a finding above info")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::I2cBusSolved {
+                bus,
+                peripheral,
+                lines,
+                devices,
+            } => {
+                let ends = |l: &BusLine, line: &str| {
+                    l.signal.strip_prefix(peripheral.as_str()) == Some(line)
+                };
+                if !name_ok(bus) || !name_ok(peripheral) {
+                    Err("bus or peripheral name is not 1 to 64 printable ASCII bytes")
+                } else if !lines
+                    .iter()
+                    .all(|l| name_ok(&l.signal) && name_ok(&l.net) && name_ok(&l.pin))
+                {
+                    Err("a line's signal, net or pin is not 1 to 64 printable ASCII bytes")
+                } else if !(lines.len() == 2 && ends(&lines[0], "_SCL") && ends(&lines[1], "_SDA"))
+                {
+                    Err("a solved bus's lines are not its peripheral's SCL, then its SDA")
+                } else if lines[0].net == lines[1].net || lines[0].pin == lines[1].pin {
+                    Err("a solved bus's two lines share a net or a pin")
+                } else if !devices.iter().all(|(r, _)| name_ok(r))
+                    || !devices.windows(2).all(|w| w[0].0 < w[1].0)
+                {
+                    Err("a solved bus's devices are not sorted unique references")
                 } else {
                     Ok(())
                 }

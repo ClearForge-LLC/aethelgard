@@ -17,7 +17,7 @@ use serde::{Deserialize, Deserializer};
 use sha2::{Digest, Sha256};
 
 use crate::event::{Header, name_ok};
-use crate::record::{Line, Override, Record};
+use crate::record::{BusLine, Line, Override, Record};
 use crate::replay::State;
 
 /// The only scenario format version.
@@ -347,30 +347,33 @@ pub struct RunSummary {
 /// fault, measurement and verdict agrees with the evidence beside it. A run
 /// that fails any of these is refused with the reason.
 ///
-/// The order is: the scenario, the solved topology, the analog records
-/// (kinds 7 and 8), the bus faults, the boot's witnesses (kind 10, then 11,
-/// 12 and 13 in that order), and the verdict, last and once.
+/// The order is: the scenario, the solved topology, the solved I2C buses
+/// (kind 15, sorted by bus), the analog records (kinds 7 and 8), the bus
+/// faults, the boot's witnesses (kind 10, then 11, 12 and 13 in that order),
+/// and the verdict, last and once.
 pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     fn rank(r: &Record) -> u8 {
         match r {
             Record::Scenario { .. } => 0,
             Record::Solved { .. } => 1,
-            Record::RiseMeasured { .. } | Record::LineStuckHigh { .. } => 2,
-            Record::BusFault { .. } => 3,
-            Record::BootObserved { .. } => 4,
-            Record::RegisterObserved { .. } => 5,
-            Record::I2cCheck { .. } => 6,
-            Record::I2cWitness { .. } => 7,
-            Record::Verdict { .. } => 8,
+            Record::I2cBusSolved { .. } => 2,
+            Record::RiseMeasured { .. } | Record::LineStuckHigh { .. } => 3,
+            Record::BusFault { .. } => 4,
+            Record::BootObserved { .. } => 5,
+            Record::RegisterObserved { .. } => 6,
+            Record::I2cCheck { .. } => 7,
+            Record::I2cWitness { .. } => 8,
+            Record::Verdict { .. } => 9,
         }
     }
     let once = |n: u8| records.iter().filter(|r| rank(r) == n).count() == 1;
     if records.is_empty() || !records.windows(2).all(|w| rank(&w[0]) <= rank(&w[1])) {
         return Err("the records are not in the campaign's order");
     }
-    if !(once(0) && once(1) && once(4) && once(8)) {
+    if !(once(0) && once(1) && once(5) && once(9)) {
         return Err("a run holds exactly one scenario, topology, boot and verdict");
     }
+    check_joins(records)?;
     let Record::Scenario {
         name,
         expect_pass,
@@ -481,6 +484,99 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
         failing_kinds,
         matched,
     })
+}
+
+/// `AET-WO-3100` R2: every bus, net, device and controller the other records
+/// name is joined by exactly one solved bus (kind 15), so a dropped or forged
+/// join is refused here and never reaches attribution as a guess.
+fn check_joins(records: &[Record]) -> Result<(), &'static str> {
+    /// A kind 15's bus, peripheral, lines and devices.
+    type Solved<'a> = (&'a str, &'a str, &'a [BusLine], &'a [(String, u8)]);
+    let solved: Vec<Solved> = records
+        .iter()
+        .filter_map(|r| match r {
+            Record::I2cBusSolved {
+                bus,
+                peripheral,
+                lines,
+                devices,
+            } => Some((bus.as_str(), peripheral.as_str(), &lines[..], &devices[..])),
+            _ => None,
+        })
+        .collect();
+    if !solved.windows(2).all(|w| w[0].0 < w[1].0) {
+        return Err("the solved buses are not sorted by unique bus");
+    }
+    let bus = |id: &str| {
+        solved
+            .iter()
+            .find(|b| b.0 == id)
+            .ok_or("an analog record or a bus fault names a bus no kind 15 solves")
+    };
+    let line = |id: &str, net: &str| -> Result<&BusLine, &'static str> {
+        bus(id)?
+            .2
+            .iter()
+            .find(|l| l.net == net)
+            .ok_or("an analog record or a bus fault names a net that is not a line of its bus")
+    };
+    // Each device on exactly one bus: (bus's peripheral, address).
+    let mut device: BTreeMap<&str, (&str, u8)> = BTreeMap::new();
+    for (_, peripheral, _, devices) in &solved {
+        for (reference, address) in *devices {
+            if device
+                .insert(reference.as_str(), (*peripheral, *address))
+                .is_some()
+            {
+                return Err("a device is on two solved buses");
+            }
+        }
+    }
+    for r in records {
+        match r {
+            Record::RiseMeasured {
+                bus,
+                net,
+                ceiling_ps,
+                ..
+            }
+            | Record::LineStuckHigh {
+                bus,
+                net,
+                ceiling_ps,
+                ..
+            } => {
+                if line(bus, net)?.ceiling_ps != *ceiling_ps {
+                    return Err("an analog record's ceiling is not its solved line's");
+                }
+            }
+            Record::BusFault { bus, nets, .. } => {
+                for net in nets {
+                    line(bus, net)?;
+                }
+            }
+            Record::I2cCheck {
+                reference, address, ..
+            } => {
+                if device.get(reference.as_str()).map(|d| d.1) != Some(*address) {
+                    return Err("an identity read names no device of a solved bus at its address");
+                }
+            }
+            Record::I2cWitness {
+                peripheral,
+                reference,
+                ..
+            } => match device.get(reference.as_str()) {
+                None => return Err("a controller witness names no device of a solved bus"),
+                Some((p, _)) if p != peripheral => {
+                    return Err("a controller witness is not on its device's solved bus");
+                }
+                Some(_) => {}
+            },
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// The header artifacts of a campaign run, in the header's sorted order.
