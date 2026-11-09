@@ -374,6 +374,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | 2026-11-09 | §5, §7 | **P2's exit gate passed.** `AET-WO-2203` and `AET-WO-2300` reconciled. `AET-WO-2301` reserved with its carry-ins | PRs #73 and #74 |
 | 2026-11-09 | §5 | `AET-WO-3100` written: attribution, P3 gate clause 1 | P2's exit gate passed |
 | 2026-11-09 | §3, §4, §5 | **P4 added:** Sentinel-02, the flight controller, as intent with `AET-WO-4100` … `4500` reserved. Human-track: the Nucleo-H753ZI is ordered; custom boards are bought only when a gate needs one, so Sentinel-01's package is emitted but not ordered; announcements held until Scotty calls the build finished | Scotty, 2026-11-09: the drone direction, the purchase rule, ArduPilot accepted, selectable layer counts and more chip families in due time |
+| 2026-11-09 | §5 | `AET-WO-3100` amended (§8): the archive gains kind 15, `I2cBusSolved`, at trace version 3, because no record joined a symptom to its bus | The builder's §7 stop S1, before any code |
 
 ## 9. Provenance
 
