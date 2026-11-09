@@ -13,11 +13,11 @@
 
 #![forbid(unsafe_code)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use aethelgard_chaos::Replayed;
 use aethelgard_chaos::campaign::{self, HELD_LOW};
-use aethelgard_chaos::record::{BusLine, Reading, Record};
+use aethelgard_chaos::record::{BusLine, Reading, Record, split_pin};
 use aethelgard_svd_hal::cmsis::{self, RegisterError, RegisterFacts};
 
 /// The half a failing run is attributed to.
@@ -56,10 +56,11 @@ pub enum Rule {
     S2,
     /// The run passed.
     N1,
-    /// A failing finding has no archived event that shows it.
+    /// A failing finding has no archived event that shows it, or an event
+    /// shows a failure no finding names.
     I1,
     /// A line of the symptom's bus (or, for a symptom on no bus, of any bus)
-    /// is not measured exactly once, or there is no bus at all.
+    /// is not measured, the header cannot join the bus, or there is no bus.
     I2,
     /// The symptom's bus is measured healthy with no software evidence, and
     /// the only electrical fault is on another bus.
@@ -159,39 +160,37 @@ const MODE_BITS: u32 = 2;
 const AFSEL_BITS: u32 = 4;
 /// `TXDR`'s data byte.
 const TXDR_DATA: u32 = 0xFF;
+// belt-and-suspenders: the twin's judge states this too (RM0433 §11.4.1); a
+// pin with an alternate function is in alternate-function mode, so the mode a
+// line's pin must hold follows from kind 15, not from the reading.
+const MODE_AF: u32 = 0b10;
 
 fn field(pos: u32, bits: u32) -> u32 {
     ((1u32 << bits) - 1) << pos
 }
 
 /// A register field one bus owns: a register by name and address, the field's
-/// mask, and the value it must hold under that mask.
+/// mask, and the value it must hold under that mask, from kind 15 alone.
 #[derive(Clone, Debug)]
 struct Owned {
     name: String,
     address: u32,
     mask: u32,
-    want: Want,
+    want: u32,
 }
 
-#[derive(Clone, Copy, Debug)]
-enum Want {
-    /// A clock gate: the bit must be set.
-    Set,
-    /// A pin's mode: the reading's own expectation.
-    Expected,
-    /// A pin's alternate function, from kind 15.
-    Value(u32),
+/// What the ST header says of one solved bus: the register fields it owns
+/// (`AET-WO-3100` R5) and where its controller's `CR2` and `TXDR` are.
+struct Joined {
+    owned: Vec<Owned>,
+    cr2_at: u32,
+    txdr_at: u32,
 }
 
-/// The register fields a bus owns: its controller's clock gate, the gates of
-/// its pins' ports, and each pin's mode and alternate function (`AET-WO-3100`
-/// R5). Names and positions come from the header.
-fn owned(
-    f: &RegisterFacts,
-    peripheral: &str,
-    lines: &[BusLine],
-) -> Result<Vec<Owned>, RegisterError> {
+/// The fields a bus owns: its controller's clock gate, the gates of its pins'
+/// ports, and each pin's mode and alternate function. Names, addresses and
+/// positions come from the header.
+fn join(f: &RegisterFacts, peripheral: &str, lines: &[BusLine]) -> Result<Joined, RegisterError> {
     let rcc = f.base("RCC")?;
     let rcc_layout = f.layout("RCC")?;
     let gpio = f.layout("GPIO")?;
@@ -201,23 +200,23 @@ fn owned(
             address: rcc + rcc_layout.offset(&register, 0)?,
             name: format!("RCC.{register}"),
             mask: 1 << bit,
-            want: Want::Set,
+            want: 1 << bit,
         })
     };
-    let mut out = vec![gate(peripheral)?];
+    let mut owned = vec![gate(peripheral)?];
     for line in lines {
         let (port, index) = split_pin(&line.pin).ok_or_else(|| RegisterError::Undefined {
             name: format!("pin {}", line.pin),
         })?;
         let block = format!("GPIO{port}");
         let base = f.base(&block)?;
-        out.push(gate(&block)?);
+        owned.push(gate(&block)?);
         let mode = f.position(&format!("GPIO_MODER_MODE{index}_Pos"))?;
-        out.push(Owned {
+        owned.push(Owned {
             name: format!("{block}.MODER"),
             address: base + gpio.offset("MODER", 0)?,
             mask: field(mode, MODE_BITS),
-            want: Want::Expected,
+            want: MODE_AF << mode,
         });
         // AFRL holds pins 0 to 7 and AFRH 8 to 15: the header says which.
         let (half, word, pos) = match f.position(&format!("GPIO_AFRL_AFSEL{index}_Pos")) {
@@ -228,46 +227,36 @@ fn owned(
                 f.position(&format!("GPIO_AFRH_AFSEL{index}_Pos"))?,
             ),
         };
-        out.push(Owned {
+        owned.push(Owned {
             name: format!("{block}.{half}"),
             address: base + gpio.offset("AFR", word)?,
             mask: field(pos, AFSEL_BITS),
-            want: Want::Value(u32::from(line.alternate_function) << pos),
+            want: u32::from(line.alternate_function) << pos,
         });
     }
-    Ok(out)
-}
-
-/// `PB6` as (`B`, 6).
-fn split_pin(pin: &str) -> Option<(char, u32)> {
-    let mut chars = pin.chars();
-    let (Some('P'), Some(port)) = (chars.next(), chars.next()) else {
-        return None;
-    };
-    let digits = chars.as_str();
-    let ok = port.is_ascii_uppercase()
-        && !digits.is_empty()
-        && digits.len() <= 2
-        && digits.bytes().all(|b| b.is_ascii_digit());
-    ok.then(|| digits.parse().ok().map(|i| (port, i))).flatten()
+    let base = f.base(peripheral)?;
+    let i2c = f.layout("I2C")?;
+    Ok(Joined {
+        owned,
+        cr2_at: base + i2c.offset("CR2", 0)?,
+        txdr_at: base + i2c.offset("TXDR", 0)?,
+    })
 }
 
 /// Whether `owned`'s field in `reading` (of register `name`) is wrong, as a
-/// fact about the firmware: the register is the one named, the field is
-/// covered, observed, and differs from what it must hold. A reading whose own
-/// expectation disagrees with the solved value is no evidence either way.
+/// fact about the firmware: the register is the one named, at its address, the
+/// field is covered and observed, and differs from what it must hold. A
+/// reading whose own expectation disagrees with the solved value is no
+/// evidence either way.
 fn wrong(o: &Owned, name: &str, r: &Reading) -> bool {
     let Some(observed) = r.observed else {
         return false;
     };
-    if name != o.name || r.address != o.address || r.mask & o.mask != o.mask {
-        return false;
-    }
-    match o.want {
-        Want::Set => r.expected & o.mask == o.mask && observed & o.mask != o.mask,
-        Want::Expected => (observed ^ r.expected) & o.mask != 0,
-        Want::Value(v) => r.expected & o.mask == v && observed & o.mask != v,
-    }
+    name == o.name
+        && r.address == o.address
+        && r.mask & o.mask == o.mask
+        && r.expected & o.mask == o.want
+        && observed & o.mask != o.want
 }
 
 /// A register reading that differs from its expectation, under its mask.
@@ -281,13 +270,16 @@ struct Bus<'a> {
     id: &'a str,
     lines: &'a [BusLine],
     devices: &'a [(String, u8)],
-    owned: Vec<Owned>,
+    /// `None` when the header lacks a fact the bus names (a port or a pin it
+    /// does not have): the bus is then never measured healthy and owns nothing,
+    /// so its symptoms are `I2`, and no other bus's attribution is refused.
+    joined: Option<Joined>,
 }
 
-/// Where a symptom is.
+/// Where a symptom is: on a bus, for a device of it or not, or on the board.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Scope {
-    Bus(usize),
+enum Scope<'a> {
+    Bus(usize, Option<&'a str>),
     Board,
 }
 
@@ -304,6 +296,20 @@ const WROTE_TXDR: [&str; 4] = ["ok", "timeout_tc", "timeout_rxne", "timeout_stop
 /// Statuses whose record shows the read phase started, so `CR2` holds the
 /// read's `NBYTES`. Before it, `CR2` holds the write's.
 const READ_PHASE: [&str; 3] = ["ok", "timeout_rxne", "timeout_stopf"];
+/// The finding kinds that each select their own events, one finding each.
+const PER_EVENT: [&str; 11] = [
+    campaign::PAST_CEILING_FINDING,
+    campaign::STUCK_HIGH_FINDING,
+    campaign::HELD_LOW_FINDING,
+    "i2c_timeout",
+    "i2c_record_invalid",
+    "i2c_identity_mismatch",
+    "i2c_transaction_unwitnessed",
+    "register_mismatch",
+    "boot_word_missing",
+    "cpu_halted",
+    "locked_peripheral_access",
+];
 
 impl<'a> Run<'a> {
     fn bus_named(&self, id: &str) -> Option<usize> {
@@ -316,6 +322,7 @@ impl<'a> Run<'a> {
             .position(|b| b.devices.iter().any(|(r, _)| r == reference))
     }
 
+    /// The device's identity read: at most one, by R2.
     fn check_of(&self, reference: &str) -> Option<&'a Record> {
         self.records
             .iter()
@@ -337,28 +344,17 @@ impl<'a> Run<'a> {
         self.indices(|r| matches!(r, Record::RiseMeasured { bus, .. } if bus == id))
     }
 
-    /// No fault, and each of the bus's lines has exactly one measured rise,
-    /// complete and within its ceiling.
+    /// For a bus with no fault (`decide` asks only of those): the header knows
+    /// it, and each of its lines has its measured rise. R2 allows one per line,
+    /// and a rise past its ceiling, incomplete ones included, is a fault.
     fn healthy(&self, b: usize) -> bool {
         let bus = &self.buses[b];
-        self.faults(b).is_empty()
+        bus.joined.is_some()
             && bus.lines.iter().all(|line| {
-                let on_line: Vec<&Record> = self
-                    .records
-                    .iter()
-                    .filter(|r| {
-                        matches!(r, Record::RiseMeasured { bus: x, net, .. }
-                            if x == bus.id && *net == line.net)
-                    })
-                    .collect();
-                matches!(
-                    on_line.as_slice(),
-                    [Record::RiseMeasured {
-                        complete: true,
-                        exceeds: false,
-                        ..
-                    }]
-                )
+                self.records.iter().any(|r| {
+                    matches!(r, Record::RiseMeasured { bus: x, net, .. }
+                        if x == bus.id && *net == line.net)
+                })
             })
     }
 
@@ -368,10 +364,11 @@ impl<'a> Run<'a> {
             .collect()
     }
 
-    /// The controller witness on bus `b` disagrees with its solved device:
-    /// `SADD` always (both phases write it), `NBYTES` once the read phase
-    /// began, `TXDR` once the write phase ran. A witness whose own expectation
-    /// is not the solved address and register is no evidence.
+    /// A controller witness on bus `b` disagrees with its solved device:
+    /// `SADD` once the firmware wrote `CR2` (both phases write it), `NBYTES`
+    /// once the read phase began, `TXDR` once the write phase ran. A witness
+    /// not at its controller's registers, or whose own expectation is not the
+    /// solved address and register, is no evidence.
     fn witness_wrong(&self, b: usize, record: &Record) -> bool {
         let Record::I2cWitness {
             reference,
@@ -382,7 +379,11 @@ impl<'a> Run<'a> {
         else {
             return false;
         };
-        let Some((_, address)) = self.buses[b].devices.iter().find(|(r, _)| r == reference) else {
+        let bus = &self.buses[b];
+        let Some(joined) = &bus.joined else {
+            return false;
+        };
+        let Some((_, address)) = bus.devices.iter().find(|(r, _)| r == reference) else {
             return false;
         };
         let Some(Record::I2cCheck {
@@ -391,21 +392,22 @@ impl<'a> Run<'a> {
         else {
             return false;
         };
+        let fields = self.sadd | self.nbytes;
         let sadd_want = (u32::from(*address) << 1) << self.sadd.trailing_zeros();
-        let covered = cr2.mask & (self.sadd | self.nbytes) == self.sadd | self.nbytes
-            && txdr.mask & TXDR_DATA == TXDR_DATA;
-        if !covered
-            || cr2.expected & self.sadd != sadd_want
-            || txdr.expected & TXDR_DATA != u32::from(*register)
-        {
+        let sound = cr2.address == joined.cr2_at
+            && txdr.address == joined.txdr_at
+            && cr2.mask & fields == fields
+            && txdr.mask & TXDR_DATA == TXDR_DATA
+            && cr2.expected & self.sadd == sadd_want
+            && txdr.expected & TXDR_DATA == u32::from(*register);
+        if !sound {
             return false;
         }
         let status = status.as_deref().unwrap_or("");
-        let sadd = cr2.observed.is_some_and(|o| o & self.sadd != sadd_want);
+        let written = cr2.observed.filter(|o| o & fields != 0);
+        let sadd = written.is_some_and(|o| o & self.sadd != sadd_want);
         let nbytes = READ_PHASE.contains(&status)
-            && cr2
-                .observed
-                .is_some_and(|o| o & self.nbytes != cr2.expected & self.nbytes);
+            && written.is_some_and(|o| o & self.nbytes != cr2.expected & self.nbytes);
         let data = WROTE_TXDR.contains(&status)
             && txdr
                 .observed
@@ -415,13 +417,21 @@ impl<'a> Run<'a> {
 
     /// The fields of `reading` the bus owns that are wrong.
     fn owned_wrong(&self, b: usize, name: &str, reading: &Reading) -> bool {
-        self.buses[b].owned.iter().any(|o| wrong(o, name, reading))
+        self.buses[b]
+            .joined
+            .iter()
+            .flat_map(|j| &j.owned)
+            .any(|o| wrong(o, name, reading))
     }
 
-    /// Positive software evidence on bus `b`: a witness or an owned register.
-    fn software(&self, b: usize) -> Vec<usize> {
+    /// Positive software evidence on bus `b`: an owned register that is wrong,
+    /// and a witness that disagrees: only `device`'s, for a device's symptom,
+    /// since another device's transaction says nothing of this one's.
+    fn software(&self, b: usize, device: Option<&str>) -> Vec<usize> {
         self.indices(|r| match r {
-            Record::I2cWitness { .. } => self.witness_wrong(b, r),
+            Record::I2cWitness { reference, .. } => {
+                device.is_none_or(|d| d == reference) && self.witness_wrong(b, r)
+            }
             Record::RegisterObserved { name, reading } => self.owned_wrong(b, name, reading),
             _ => false,
         })
@@ -432,7 +442,7 @@ impl<'a> Run<'a> {
         let owned = self
             .buses
             .iter()
-            .flat_map(|b| &b.owned)
+            .flat_map(|b| b.joined.iter().flat_map(|j| &j.owned))
             .filter(|o| o.name == name && o.address == r.address)
             .fold(0, |m, o| m | o.mask);
         mismatch(r) & !owned
@@ -456,20 +466,20 @@ impl<'a> Run<'a> {
         })
     }
 
-    fn scope(&self, i: usize) -> Option<Scope> {
+    fn scope(&self, i: usize) -> Option<Scope<'a>> {
         Some(match &self.records[i] {
             Record::RiseMeasured { bus, .. }
             | Record::LineStuckHigh { bus, .. }
-            | Record::BusFault { bus, .. } => Scope::Bus(self.bus_named(bus)?),
+            | Record::BusFault { bus, .. } => Scope::Bus(self.bus_named(bus)?, None),
             Record::I2cCheck { reference, .. } | Record::I2cWitness { reference, .. } => {
-                Scope::Bus(self.bus_of_device(reference)?)
+                Scope::Bus(self.bus_of_device(reference)?, Some(reference.as_str()))
             }
             Record::RegisterObserved { name, reading } => {
                 let on: Vec<usize> = (0..self.buses.len())
                     .filter(|&b| self.owned_wrong(b, name, reading))
                     .collect();
                 match on.as_slice() {
-                    [b] if self.unowned(name, reading) == 0 => Scope::Bus(*b),
+                    [b] if self.unowned(name, reading) == 0 => Scope::Bus(*b, None),
                     _ => Scope::Board,
                 }
             }
@@ -553,10 +563,12 @@ impl<'a> Run<'a> {
             buses.iter().flat_map(|&b| self.faults(b)).collect()
         };
         match scope {
-            Scope::Bus(b) if faulted.contains(&b) => (Rule::E1, self.faults(b), self.software(b)),
-            Scope::Bus(b) if !self.healthy(b) => (Rule::I2, vec![self.buses[b].at], vec![]),
-            Scope::Bus(b) => {
-                let software = self.software(b);
+            Scope::Bus(b, _) if faulted.contains(&b) => {
+                (Rule::E1, self.faults(b), self.software(b, None))
+            }
+            Scope::Bus(b, _) if !self.healthy(b) => (Rule::I2, vec![self.buses[b].at], vec![]),
+            Scope::Bus(b, device) => {
+                let software = self.software(b, device);
                 if !software.is_empty() {
                     (Rule::S1, [software, self.rises(b)].concat(), vec![])
                 } else if !faulted.is_empty() {
@@ -611,7 +623,7 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
                 id: bus,
                 lines,
                 devices,
-                owned: owned(&f, peripheral, lines)?,
+                joined: join(&f, peripheral, lines).ok(),
             });
         }
     }
@@ -625,21 +637,35 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
     let Some(Record::Verdict { findings, .. }) = records.last() else {
         unreachable!("check_run puts the verdict last");
     };
+    // Each failing kind's count, summed over its severities above `info`.
+    let mut failing: BTreeMap<&str, u64> = BTreeMap::new();
+    for (kind, severity, count) in findings {
+        if severity != "info" {
+            *failing.entry(kind).or_default() += count;
+        }
+    }
 
     let mut symptoms = BTreeSet::new();
     let mut unexplained = BTreeSet::new();
-    for (kind, severity, count) in findings {
-        if severity == "info" {
-            continue;
-        }
+    for (&kind, &count) in &failing {
         match state.select(kind) {
             Some((events, exact))
-                if !events.is_empty() && (!exact || events.len() as u64 == *count) =>
+                if !events.is_empty() && (!exact || events.len() as u64 == count) =>
             {
                 symptoms.extend(events);
             }
             _ => {
-                unexplained.insert(kind.clone());
+                unexplained.insert(kind.to_owned());
+            }
+        }
+    }
+    // And the converse: an event that shows a failure the verdict does not
+    // name is unexplained too, so rewriting the verdict alone never moves the
+    // domain (`AET-WO-3100` adversarial A1).
+    for kind in PER_EVENT {
+        for i in state.select(kind).map(|s| s.0).unwrap_or_default() {
+            if !symptoms.contains(&i) {
+                unexplained.insert(format!("event {i}"));
             }
         }
     }
@@ -648,7 +674,8 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
     for &i in &symptoms {
         match state.scope(i) {
             Some(scope) => decided.push(state.decide(scope)),
-            // R2 joins every device and bus; a symptom with none is unexplained.
+            // belt-and-suspenders: R2 joins every bus and device, so `check_run`
+            // has refused a symptom with no bus; this keeps it explained, not a panic.
             None => {
                 unexplained.insert(format!("event {i}"));
             }
@@ -656,7 +683,7 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
     }
     let rules: BTreeSet<Rule> = decided.iter().map(|d| d.0).collect();
     let domains: BTreeSet<Domain> = rules.iter().map(|r| r.domain()).collect();
-    let rule = if summary.pass {
+    let rule = if summary.pass && unexplained.is_empty() {
         Rule::N1
     } else if !unexplained.is_empty() {
         Rule::I1
@@ -667,18 +694,11 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
     } else {
         *rules.first().expect("a failing run has a failing finding")
     };
+    // The evidence is the named rule's: I5 names both halves', I1 none.
     let mut evidence = BTreeSet::new();
     let mut masked = BTreeSet::new();
-    // An electrical or software run gathers every symptom's evidence (they
-    // share the domain); I5 gathers both halves; I2 to I4 only what decided
-    // them; I1 has none.
-    let gathers = |r: Rule| match rule {
-        Rule::I1 => false,
-        Rule::I2 | Rule::I3 | Rule::I4 => r == rule,
-        _ => true,
-    };
     for (r, e, m) in &decided {
-        if gathers(*r) {
+        if rule == Rule::I5 || *r == rule {
             evidence.extend(e.iter().copied());
         }
         masked.extend(m.iter().copied());
@@ -701,18 +721,4 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
         masked: refs(masked),
         unexplained: unexplained.into_iter().collect(),
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::split_pin;
-
-    #[test]
-    fn pins_split_into_port_and_index() {
-        assert_eq!(split_pin("PB6"), Some(('B', 6)));
-        assert_eq!(split_pin("PA15"), Some(('A', 15)));
-        for bad in ["B6", "Pb6", "PB", "PB123", "PB6x", "", "P"] {
-            assert_eq!(split_pin(bad), None, "{bad}");
-        }
-    }
 }

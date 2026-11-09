@@ -507,6 +507,49 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
     if !solved.windows(2).all(|w| w[0].0 < w[1].0) {
         return Err("the solved buses are not sorted by unique bus");
     }
+    // No net, pin or controller belongs to two buses, and no two devices on
+    // one bus share an address (`AET-WO-3100` adversarial A6).
+    let unique = |items: Vec<&str>| {
+        let n = items.len();
+        items.into_iter().collect::<BTreeSet<_>>().len() == n
+    };
+    let lines = || solved.iter().flat_map(|b| b.2.iter());
+    if !unique(lines().map(|l| l.net.as_str()).collect())
+        || !unique(lines().map(|l| l.pin.as_str()).collect())
+        || !unique(solved.iter().map(|b| b.1).collect())
+    {
+        return Err("two solved buses share a net, a pin or a controller");
+    }
+    if !solved.iter().all(|b| {
+        let addresses: BTreeSet<u8> = b.3.iter().map(|d| d.1).collect();
+        addresses.len() == b.3.len()
+    }) {
+        return Err("two devices on one solved bus share an address");
+    }
+    // One measurement per line, one identity read per device, one witness per
+    // device and per controller, as the campaign writes them (adversarial A2).
+    let mut seen: BTreeSet<(u8, &str, &str)> = BTreeSet::new();
+    for r in records {
+        let keys: Vec<(u8, &str, &str)> = match r {
+            Record::RiseMeasured { bus, net, .. } | Record::LineStuckHigh { bus, net, .. } => {
+                vec![(0, bus, net)]
+            }
+            Record::I2cCheck { reference, .. } => vec![(1, reference, "")],
+            Record::I2cWitness {
+                peripheral,
+                reference,
+                ..
+            } => vec![(2, reference, ""), (3, peripheral, "")],
+            _ => vec![],
+        };
+        for key in keys {
+            if !seen.insert(key) {
+                return Err(
+                    "a line measured twice, or a device read or witnessed twice, or a controller witnessed twice",
+                );
+            }
+        }
+    }
     let bus = |id: &str| {
         solved
             .iter()

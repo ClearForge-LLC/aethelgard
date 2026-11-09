@@ -852,7 +852,7 @@ pub fn attribute(dir: &Path) -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{HeldLow, Scenario, Specification, apply, picoseconds};
+    use super::{HeldLow, Record, Scenario, Specification, apply, picoseconds, solved_buses};
     use serde_json::{Value, json};
 
     fn spec() -> Specification {
@@ -969,6 +969,89 @@ mod tests {
         .unwrap();
         assert_eq!(held[0].net, "I2C_SCL");
         assert_eq!(s, before);
+    }
+
+    /// The reference board's solved topology, as `solve` gives it.
+    fn topology() -> aethelgard_ir::SolvedTopology {
+        serde_json::from_value(json!({
+            "schema_version": 1,
+            "specification_sha256": "acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1",
+            "assignments": {
+                "I2C_SCL": {"pin": "PB6", "peripheral": "I2C1", "signal": "I2C1_SCL", "alternate_function": 4},
+                "I2C_SDA": {"pin": "PB7", "peripheral": "I2C1", "signal": "I2C1_SDA", "alternate_function": 4}
+            },
+            "gpio": {},
+            "i2c_ceilings": {"SENSORS": 400000},
+            "analog_lines": {
+                "I2C_SCL": {"bus": "SENSORS", "pull_up_ohms": 2200, "capacitance_femtofarads": 100000, "ceiling_ns": 300, "domain_millivolts": 3300},
+                "I2C_SDA": {"bus": "SENSORS", "pull_up_ohms": 2200, "capacitance_femtofarads": 100000, "ceiling_ns": 250, "domain_millivolts": 3300}
+            },
+            "i2c_devices": {
+                "U2": {"index": 0, "part": "BME280", "bus": "SENSORS", "peripheral": "I2C1", "address": 118},
+                "U3": {"index": 1, "part": "TMP117", "bus": "SENSORS", "peripheral": "I2C1", "address": 72}
+            }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn kind_15_is_the_solved_bus_scl_first_with_each_lines_own_ceiling() {
+        let [
+            Record::I2cBusSolved {
+                bus,
+                peripheral,
+                lines,
+                devices,
+            },
+        ] = <[Record; 1]>::try_from(solved_buses(&topology()).unwrap()).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!((bus.as_str(), peripheral.as_str()), ("SENSORS", "I2C1"));
+        let got: Vec<(&str, &str, u64)> = lines
+            .iter()
+            .map(|l| (l.signal.as_str(), l.pin.as_str(), l.ceiling_ps))
+            .collect();
+        assert_eq!(
+            got,
+            [("I2C1_SCL", "PB6", 300_000), ("I2C1_SDA", "PB7", 250_000)]
+        );
+        assert_eq!(devices, [("U2".to_owned(), 0x76), ("U3".to_owned(), 0x48)]);
+    }
+
+    #[test]
+    fn scl_comes_first_even_when_its_net_sorts_after_sdas() {
+        let mut t = topology();
+        let a = t.assignments.remove("I2C_SCL").unwrap();
+        let l = t.analog_lines.remove("I2C_SCL").unwrap();
+        t.assignments.insert("Z_SCL".into(), a);
+        t.analog_lines.insert("Z_SCL".into(), l);
+        let [Record::I2cBusSolved { lines, .. }] =
+            <[Record; 1]>::try_from(solved_buses(&t).unwrap()).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(lines[0].net, "Z_SCL");
+        assert_eq!(lines[1].net, "I2C_SDA");
+    }
+
+    #[test]
+    fn a_topology_whose_lines_and_devices_disagree_is_refused_never_guessed() {
+        let refused = |edit: &dyn Fn(&mut aethelgard_ir::SolvedTopology)| {
+            let mut t = topology();
+            edit(&mut t);
+            solved_buses(&t).unwrap_err()
+        };
+        let e = refused(&|t| t.assignments.get_mut("I2C_SDA").unwrap().peripheral = "I2C2".into());
+        assert!(e.contains("two controllers"), "{e}");
+        let e = refused(&|t| t.i2c_devices.get_mut("U2").unwrap().peripheral = "I2C2".into());
+        assert!(e.contains("device `U2`"), "{e}");
+        let e = refused(&|t| t.i2c_devices.get_mut("U3").unwrap().bus = "NOPE".into());
+        assert!(e.contains("no solved line"), "{e}");
+        let e = refused(&|t| {
+            t.assignments.remove("I2C_SDA");
+        });
+        assert!(e.contains("no pin assignment"), "{e}");
     }
 
     /// A measured rise rounds up and a lower bound rounds down, so neither

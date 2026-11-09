@@ -9,6 +9,6 @@ Attribution from traces, and later mutation proposals. It never merges anything 
 - the failing events it explains;
 - the software evidence it set aside on a faulted bus.
 
-It first applies `aethelgard_chaos::campaign::check_archived`, the rules `replay` judges a run by, so a run whose joins are dropped or forged is refused, never attributed. It reads only the run's records and the vendored ST header, through `aethelgard-svd-hal`, for register names and field positions. It depends on `aethelgard-chaos` and `aethelgard-svd-hal` alone, never on `aethelgard-ir`, so it cannot name a `Specification` (`RUL-16`).
+It first applies `aethelgard_chaos::campaign::check_archived`, the rules `replay` judges a run by, so a run whose joins are dropped or forged is refused, never attributed. It reads only the run's records and the vendored ST header, through `aethelgard-svd-hal`, for register names and field positions. Its direct dependencies are `aethelgard-chaos` and `aethelgard-svd-hal` alone. `aethelgard-ir` is reached only through svd-hal, whose register facts name no `Specification`, so evolve cannot name one either (`RUL-16`).
 
 The rules, the symptom table and the output are in `crates/aethelgard-cli/README.md`, under `attribute`.

@@ -63,9 +63,18 @@ fn manifest() -> Manifest {
     m
 }
 
-/// `text` with `find` replaced, refused unless `find` occurs exactly once.
+/// `text` with `find` replaced, refused unless `find` occurs exactly once, in
+/// code: a match inside a `//` comment would patch the comment and leave the
+/// firmware as it was (adversarial A9).
 fn patch(name: &str, text: &str, m: &Mutant) -> Result<String, String> {
+    let in_comment = text
+        .lines()
+        .any(|l| l.contains(m.find.as_str()) && l.trim_start().starts_with("//"));
     match text.matches(m.find.as_str()).count() {
+        1 if in_comment => Err(format!(
+            "mutant `{name}`: `{}` occurs only in a comment in {}: this case is no longer seeded",
+            m.find, m.file
+        )),
         1 => Ok(text.replacen(m.find.as_str(), &m.replace, 1)),
         n => Err(format!(
             "mutant `{name}`: `{}` occurs {n} times in {}, not once: the generator changed, and this case is no longer seeded",
@@ -160,6 +169,10 @@ fn a_patch_that_matches_zero_or_two_times_is_refused_naming_the_mutant() {
             "{e}"
         );
     }
+    // The adversary's decoy: the code moved to a constant, the text kept in a comment.
+    let decoy = "    // i2c1.transfer(&mut r, 0x76,\n    i2c1.transfer(&mut r, ADDR, &[0xd0])\n";
+    let e = patch("wrong-address", decoy, &m).unwrap_err();
+    assert!(e.contains("only in a comment"), "{e}");
 }
 
 #[test]
@@ -299,9 +312,15 @@ mod tier2 {
                     .push(c.clone());
             }
             let mut out = Vec::new();
+            let mut images: BTreeMap<Vec<u8>, String> = BTreeMap::new();
             for (mutant, cases) in by_firmware {
                 let label = mutant.clone().unwrap_or_else(|| "unmutated".into());
                 let elf = firmware(&label, mutant.as_deref().map(|n| (n, &m.mutants[n])));
+                // Every mutant builds a firmware of its own: a patch that
+                // changed nothing the compiler keeps is not a seeded case (A9).
+                if let Some(other) = images.insert(fs::read(&elf).unwrap(), label.clone()) {
+                    panic!("{label} builds the same firmware as {other}");
+                }
                 let archive = scratch().join(&label).join("archive");
                 let mut args = vec!["campaign", "--scenarios"];
                 args.extend(cases.iter().map(|c| c.scenario.as_str()));

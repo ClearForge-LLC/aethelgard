@@ -354,7 +354,7 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 - `masked`, software evidence on an electrically faulted bus, listed and never used;
 - `unexplained`, failing finding kinds that no archived event shows.
 
-**Symptoms.** The verdict's finding kinds above `info` choose which events need explaining. They are never evidence, so a run whose finding kinds alone are rewritten does not change domain. Each kind selects its events, and the count must equal the finding's, or the kind is unexplained:
+**Symptoms.** The verdict's finding kinds above `info` choose which events need explaining. They are never evidence. Each kind selects its events, and the count must equal the finding's, summed over every severity above `info`, or the kind is unexplained. The converse holds too: an event that some kind below would select, but that no finding names, is unexplained as `event <index>`. So rewriting the verdict alone never moves a run's domain; at most it makes the run `I1`.
 
 | finding | its events |
 |---|---|
@@ -371,28 +371,28 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 
 **Where a symptom is.**
 - Kinds 7, 8 and 9 are on their bus.
-- Kinds 12 and 13 are on the bus whose kind 15 lists their device.
+- Kinds 12 and 13 are on the bus whose kind 15 lists their device, for that device.
 - Kind 11 is on a bus when it is wrong only in fields that bus owns. A bus owns its controller's clock gate, the gates of its pins' ports, and each pin's `MODER` and `AFR` field. Each name and position comes from the ST header, and the solved alternate function comes from kind 15.
 - Kind 10, and any kind 11 wrong elsewhere, is on the board.
 
-**Software evidence on a bus.**
-- The controller witness (kind 13) differs from its solved device.
-- `CR2.SADD` differs from the device's address shifted left by one. Both phases of the transfer write it.
+**Software evidence on a bus.** For a symptom of one device, only that device's own witness counts, since another device's transaction says nothing of this one's. The bus's owned registers count for every symptom on it.
+- The controller witness (kind 13) differs from its solved device. The witness must be read at its controller's `CR2` and `TXDR` addresses, from the header.
+- `CR2.SADD` differs from the device's address shifted left by one. Both phases of the transfer write it. It counts only when the firmware wrote `CR2`, i.e. `SADD` or `NBYTES` is not 0; a `CR2` at its reset value says nothing of an address.
 - `NBYTES` differs from the witness's own expectation. It counts only once the record's status shows the read phase began (`ok`, `timeout_rxne`, `timeout_stopf`): before that, `CR2` holds the write's `NBYTES`.
 - `TXDR`'s byte differs from the read's register. It counts only once the write phase ran (`ok`, `timeout_tc`, `timeout_rxne`, `timeout_stopf`): on a TXIS timeout `TXDR` was never written.
 - A witness whose own expectation is not the solved address and register is no evidence either way.
-- An owned register field is wrong.
+- An owned register field is wrong. A pin's `MODER` field must hold alternate-function mode and its `AFR` field kind 15's alternate function; both come from kind 15, never from the reading's own expectation, and a reading whose expectation disagrees is no evidence.
 
 **Software evidence on the board.** The boot word is missing, the core executed fewer instructions than expected, or a register is wrong outside every bus's fields.
 
-**A bus is measured healthy** when no kind 7 past its ceiling, no kind 8 and no kind 9 is on it, and each of its two lines has exactly one kind 7, complete and within its ceiling.
+**A bus is measured healthy** when no kind 7 past its ceiling, no kind 8 and no kind 9 is on it, each of its two lines has its kind 7 (R2 allows one per line), and the ST header knows its controller and pins. A bus whose port or controller the header lacks is never healthy and owns nothing, so its symptoms are `I2` and no other bus's attribution is refused.
 
 **The rules, closed and ordered.** Each symptom is decided by the first rule that holds for it:
 
 | rule | domain | holds when | evidence kinds |
 |---|---|---|---|
 | `E1` | electrical | the symptom's bus has a kind 7 past its ceiling, a kind 8 or a kind 9; its software evidence goes to `masked` | 7, 8, 9 |
-| `I2` | indeterminate | the symptom's bus is not measured healthy (a line unmeasured, or measured twice) | 15 |
+| `I2` | indeterminate | the symptom's bus is not measured healthy (a line unmeasured, or a bus the header cannot join) | 15 |
 | `S1` | software | the symptom's bus is measured healthy and has software evidence | 7, 11, 13 |
 | `I3` | indeterminate | the symptom's bus is measured healthy with no software evidence, and another bus is faulted | 7, 8, 9 |
 | `I4` | indeterminate | measured healthy, no software evidence, and no fault anywhere | 7 |
@@ -404,7 +404,7 @@ For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bu
 - An unexplained finding is `I1`, with no evidence and the kinds listed in `unexplained`.
 - Otherwise, if any symptom is indeterminate, the run is indeterminate by the lowest such rule, with that rule's evidence.
 - If symptoms are split between electrical and software, it is `I5`, with both halves' evidence: never averaged.
-- Otherwise the run takes the one domain, the lowest rule that decided any symptom, and every symptom's evidence.
+- Otherwise the run takes the one domain and the lowest rule that decided any symptom. Its evidence is that rule's alone, so every evidence kind is one the named rule allows. With `S1` and `S2` both deciding, the run is `S1`, and its `symptoms` still list the board's.
 
 Software is never concluded by eliminating electrical, nor electrical by eliminating software.
 

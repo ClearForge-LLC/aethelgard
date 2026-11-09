@@ -42,6 +42,24 @@ pub struct BusLine {
     pub ceiling_ps: u64,
 }
 
+/// A solved pin's port letter and index, `PB6` as (`B`, 6): `P`, one capital
+/// letter, then 0 to 15 in decimal with no leading zero, the form the solver
+/// names pins in. Anything else is not a pin.
+pub fn split_pin(pin: &str) -> Option<(char, u8)> {
+    let rest = pin.strip_prefix('P')?;
+    let mut chars = rest.chars();
+    let port = chars.next().filter(char::is_ascii_uppercase)?;
+    let digits = chars.as_str();
+    let canonical = matches!(digits.len(), 1 | 2)
+        && digits.bytes().all(|b| b.is_ascii_digit())
+        && !(digits.len() == 2 && digits.starts_with('0'));
+    let index: u8 = digits.parse().ok().filter(|_| canonical)?;
+    (index <= 15).then_some((port, index))
+}
+
+/// The highest alternate function a GPIO pin has (`AFSEL` is four bits).
+pub const MAX_ALTERNATE_FUNCTION: u8 = 15;
+
 /// A register as the boot read it: what the topology expects under `mask`,
 /// and what Renode read, absent when the boot was killed before the reads.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -741,6 +759,12 @@ impl Record {
                     Err("a solved bus's lines are not its peripheral's SCL, then its SDA")
                 } else if lines[0].net == lines[1].net || lines[0].pin == lines[1].pin {
                     Err("a solved bus's two lines share a net or a pin")
+                } else if !lines.iter().all(|l| {
+                    split_pin(&l.pin).is_some() && l.alternate_function <= MAX_ALTERNATE_FUNCTION
+                }) {
+                    Err(
+                        "a line's pin is not P, a port letter and 0 to 15, or its alternate function is over 15",
+                    )
                 } else if !devices.iter().all(|(r, _)| name_ok(r))
                     || !devices.windows(2).all(|w| w[0].0 < w[1].0)
                 {

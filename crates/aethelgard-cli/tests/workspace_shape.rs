@@ -437,9 +437,9 @@ fn twin_has_only_its_known_files_keys_and_dependencies() {
 /// only a manifest and `src/lib.rs`, depends only on `ir`, `serde` and
 /// `thiserror`), which retired with it, as the last stub. In their place: its
 /// files, manifest keys and dependencies are fixed. It reads archived runs
-/// (`aethelgard-chaos`) and the ST header (`aethelgard-svd-hal`), and never
-/// depends on `aethelgard-ir`, so it cannot name a `Specification`
-/// (`RUL-16`).
+/// (`aethelgard-chaos`) and the ST header (`aethelgard-svd-hal`), and has no
+/// direct dependency on `aethelgard-ir` (it reaches it only through svd-hal,
+/// whose API names no `Specification`), so it cannot name one (`RUL-16`).
 #[test]
 fn evolve_has_only_its_known_files_keys_and_dependencies() {
     for file in files(&root().join(EVOLVE)) {

@@ -184,7 +184,7 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 | 12 | an I2C identity read | `reference`, `address`, `register` (each ≤ 255), `expected`, `observed?`, `status?` (text) |
 | 13 | an I2C controller witness | `peripheral`, `reference`, `cr2` and `txdr` `reading`s |
 | 14 | the verdict | `pass`, `[[kind, severity, count]…]` (sorted, unique by kind and severity; `pass` exactly when every severity is `info`) |
-| 15 | a solved I2C bus (`AET-WO-3100`) | `bus`, `peripheral`, `[line…]`: exactly two, SCL then SDA, each `[signal, net, pin, alternate_function, ceiling_ps]` (`signal` is the peripheral's name then `_SCL` or `_SDA`; the two nets and pins differ), `[[reference, address]…]` (sorted, unique by reference) |
+| 15 | a solved I2C bus (`AET-WO-3100`) | `bus`, `peripheral`, `[line…]`: exactly two, SCL then SDA, each `[signal, net, pin, alternate_function, ceiling_ps]` (`signal` is the peripheral's name then `_SCL` or `_SDA`; the two nets and pins differ), `[[reference, address]…]` (sorted, unique by reference). A `pin` is `P`, a capital letter and 0 to 15 with no leading zero (`record::split_pin`); an `alternate_function` is at most 15 |
 
 Kinds 5 to 9 and 15 are at virtual time 0, decided before the boot
 (`Record::before_boot`); 10 to 14 at the boot's end. Kind 15 is written from
@@ -250,7 +250,7 @@ refuses:
   (kind 15), the analog records (7 and 8), the bus faults (9), the boot (10),
   the registers (11), the identity reads (12), the witnesses (13) and the
   verdict; or a run without exactly one scenario, topology, boot and verdict;
-- a broken join (`AET-WO-3100` R2): solved buses not sorted by unique bus; a
+- a broken join (`AET-WO-3100` R2, extended by its adversarial pass): solved buses not sorted by unique bus; two solved buses sharing a net, a pin or a controller; two devices at one address on one bus; a second kind 7 or 8 for one line, a second kind 12 for one device, or a second kind 13 for one device or one controller; a
   kind 7, 8 or 9 on a bus no kind 15 solves, or on a net that is not one of
   that bus's lines; a kind 7 or 8 whose `ceiling_ps` is not its line's; a
   device on two solved buses; an identity read whose reference is no solved

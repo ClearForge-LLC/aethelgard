@@ -777,6 +777,12 @@ fn good() -> Vec<Record> {
 
 /// Kind 15 for `bus` on `peripheral`, SCL then SDA, with a 300,000 ps ceiling.
 fn solved_bus(bus: &str, peripheral: &str, nets: [&str; 2], devices: &[(&str, u8)]) -> Record {
+    // Each controller on its own pins, so two solved buses never share one.
+    let pins = match peripheral {
+        "I2C1" => ["PB6", "PB7"],
+        "I2C2" => ["PF1", "PF0"],
+        _ => ["PH7", "PH8"],
+    };
     let line = |n: usize, suffix: &str, pin: &str| BusLine {
         signal: format!("{peripheral}{suffix}"),
         net: nets[n].into(),
@@ -787,7 +793,7 @@ fn solved_bus(bus: &str, peripheral: &str, nets: [&str; 2], devices: &[(&str, u8
     Record::I2cBusSolved {
         bus: bus.into(),
         peripheral: peripheral.into(),
-        lines: vec![line(0, "_SCL", "PB6"), line(1, "_SDA", "PB7")],
+        lines: vec![line(0, "_SCL", pins[0]), line(1, "_SDA", pins[1])],
         devices: devices.iter().map(|(r, a)| ((*r).into(), *a)).collect(),
     }
 }
@@ -913,8 +919,9 @@ fn a_fault_on_the_wrong_bus_is_refused() {
     let i = position(&r, |x| matches!(x, Record::BusFault { .. }));
     r[i] = on_bus(fault(vec![CAUSE], vec!["I2C_SCL", "I2C_SDA"]), "OTHER");
     assert_eq!(check_run(&r).unwrap_err(), NO_BUS);
-    // With OTHER solved too, the fault still names no measurement of its own.
-    r.insert(2, solved_bus("OTHER", "I2C2", ["I2C_SCL", "I2C_SDA"], &[]));
+    // With OTHER solved too, a fault on its own lines names no measurement.
+    r[i] = on_bus(fault(vec![CAUSE], vec!["O_SCL", "O_SDA"]), "OTHER");
+    r.insert(2, solved_bus("OTHER", "I2C2", ["O_SCL", "O_SDA"], &[]));
     assert_eq!(
         check_run(&r).unwrap_err(),
         "a bus fault names a net with no measurement past its ceiling"
@@ -1047,7 +1054,8 @@ fn a_held_low_fault_on_another_bus_is_refused() {
     let i = position(&r, |x| matches!(x, Record::BusFault { .. }));
     r[i] = on_bus(fault(vec![HELD_LOW], vec!["I2C_SDA"]), "OTHER");
     assert_eq!(check_run(&r).unwrap_err(), NO_BUS);
-    r.insert(2, solved_bus("OTHER", "I2C2", ["I2C_SCL", "I2C_SDA"], &[]));
+    r[i] = on_bus(fault(vec![HELD_LOW], vec!["O_SDA"]), "OTHER");
+    r.insert(2, solved_bus("OTHER", "I2C2", ["O_SCL", "O_SDA"], &[]));
     assert_eq!(
         check_run(&r).unwrap_err(),
         "a held-low fault names no held-low override of its bus"
@@ -1543,4 +1551,276 @@ mod archived {
             "a campaign run holds an event that is not a campaign record"
         );
     }
+}
+
+// ---- 7b. the adversarial pass and the mutation run (AET-WO-3100) ----
+
+fn bus_fields(r: &mut Record) -> (&mut Vec<BusLine>, &mut Vec<(String, u8)>) {
+    match r {
+        Record::I2cBusSolved { lines, devices, .. } => (lines, devices),
+        _ => panic!("not a solved bus"),
+    }
+}
+
+#[test]
+fn every_kind_15_field_rule_refuses_alone() {
+    let ok = solved_bus("SENSORS", "I2C1", ["I2C_SCL", "I2C_SDA"], &[("U2", 0x76)]);
+    let refused = |f: &dyn Fn(&mut Record)| {
+        let mut r = ok.clone();
+        f(&mut r);
+        r.check().unwrap_err()
+    };
+    let names = "bus or peripheral name is not 1 to 64 printable ASCII bytes";
+    let line_names = "a line's signal, net or pin is not 1 to 64 printable ASCII bytes";
+    let order = "a solved bus's lines are not its peripheral's SCL, then its SDA";
+    let pin =
+        "a line's pin is not P, a port letter and 0 to 15, or its alternate function is over 15";
+    let rename = |bus: bool| {
+        move |r: &mut Record| {
+            if let Record::I2cBusSolved {
+                bus: b,
+                peripheral: p,
+                ..
+            } = r
+            {
+                if bus {
+                    *b = "A B".into()
+                } else {
+                    *p = "A B".into()
+                }
+            }
+        }
+    };
+    assert_eq!(refused(&rename(true)), names);
+    assert_eq!(refused(&rename(false)), names);
+    assert_eq!(
+        refused(&|r| bus_fields(r).0[0].net = "A B".into()),
+        line_names
+    );
+    assert_eq!(
+        refused(&|r| bus_fields(r).0[1].signal = "I2C1 SDA".into()),
+        line_names
+    );
+    let third = |r: &mut Record| {
+        let l = bus_fields(r).0[1].clone();
+        bus_fields(r).0.push(BusLine {
+            net: "X".into(),
+            pin: "PB9".into(),
+            ..l
+        });
+    };
+    assert_eq!(refused(&third), order);
+    assert_eq!(
+        refused(&|r| bus_fields(r).0[1].signal = "I2C1_SCL".into()),
+        order
+    );
+    assert_eq!(
+        refused(&|r| bus_fields(r).0[1].pin = "PB6".into()),
+        "a solved bus's two lines share a net or a pin"
+    );
+    for bad in ["PB16", "PB06", "PZ", "SCL", "Pb6", "PB+5", "XB6"] {
+        assert_eq!(
+            refused(&|r| bus_fields(r).0[0].pin = bad.into()),
+            pin,
+            "{bad}"
+        );
+    }
+    assert_eq!(
+        refused(&|r| bus_fields(r).0[0].alternate_function = 16),
+        pin
+    );
+    let devices = "a solved bus's devices are not sorted unique references";
+    assert_eq!(refused(&|r| bus_fields(r).1[0].0 = "U 2".into()), devices);
+    assert_eq!(
+        refused(&|r| bus_fields(r).1.push(("U2".into(), 0x77))),
+        devices
+    );
+    // The bounds themselves are accepted.
+    let mut edge = ok.clone();
+    bus_fields(&mut edge).0[0].pin = "PK15".into();
+    bus_fields(&mut edge).0[0].alternate_function = 15;
+    bus_fields(&mut edge).0[1].pin = "PA0".into();
+    assert!(edge.check().is_ok());
+}
+
+#[test]
+fn split_pin_takes_only_the_solvers_form() {
+    use aethelgard_chaos::record::split_pin;
+    assert_eq!(split_pin("PB6"), Some(('B', 6)));
+    assert_eq!(split_pin("PA15"), Some(('A', 15)));
+    assert_eq!(split_pin("PK0"), Some(('K', 0)));
+    for bad in [
+        "B6", "Pb6", "PB", "PB123", "PB6x", "", "P", "PB16", "PB06", "PB+5", "QB6",
+    ] {
+        assert_eq!(split_pin(bad), None, "{bad}");
+    }
+}
+
+#[test]
+fn a_malformed_kind_15_payload_is_refused_by_the_reader() {
+    use aethelgard_chaos::cbor::Value as C;
+    let ok = solved_bus("SENSORS", "I2C1", ["I2C_SCL", "I2C_SDA"], &[("U2", 0x76)]);
+    let fields = ok.fields();
+    let edit = |f: &dyn Fn(&mut Vec<C>)| {
+        let mut v = fields.clone();
+        f(&mut v);
+        Record::from_fields(15, &v)
+    };
+    assert_eq!(edit(&|_| {}), Some(ok.clone()));
+    fn line(v: &mut [C]) -> &mut Vec<C> {
+        let C::Array(lines) = &mut v[2] else { panic!() };
+        let C::Array(l) = &mut lines[0] else { panic!() };
+        l
+    }
+    fn device(v: &mut [C]) -> &mut Vec<C> {
+        let C::Array(ds) = &mut v[3] else { panic!() };
+        let C::Array(d) = &mut ds[0] else { panic!() };
+        d
+    }
+    // A line or device that is not an array, a trailing field, a value over 255.
+    assert_eq!(
+        edit(&|v| if let C::Array(ls) = &mut v[2] {
+            ls[0] = C::Uint(1)
+        }),
+        None
+    );
+    assert_eq!(
+        edit(&|v| if let C::Array(ds) = &mut v[3] {
+            ds[0] = C::Uint(1)
+        }),
+        None
+    );
+    assert_eq!(edit(&|v| line(v).push(C::Uint(0))), None);
+    assert_eq!(edit(&|v| device(v).push(C::Uint(0))), None);
+    assert_eq!(edit(&|v| line(v)[3] = C::Uint(256)), None);
+    assert_eq!(edit(&|v| device(v)[1] = C::Uint(0x176)), None);
+    assert_eq!(
+        edit(&|v| {
+            line(v).pop();
+        }),
+        None
+    );
+    assert_eq!(edit(&|v| v.push(C::Uint(0))), None);
+}
+
+#[test]
+fn before_boot_is_exactly_the_records_at_virtual_time_0() {
+    let before: Vec<u64> = one_of_each()
+        .iter()
+        .filter(|r| r.before_boot())
+        .map(Record::kind)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    assert_eq!(before, [5, 6, 7, 8, 9, 15]);
+}
+
+#[test]
+fn a_measurement_on_an_unsolved_bus_or_net_is_refused_even_without_a_fault() {
+    let mut r = held_low_run();
+    // A rise on a bus no kind 15 solves.
+    let at = position(&r, |x| matches!(x, Record::BusFault { .. }));
+    r.insert(
+        at,
+        Record::RiseMeasured {
+            bus: "OTHER".into(),
+            net: "I2C_SCL".into(),
+            rise_30_70_ps: 1,
+            complete: true,
+            ceiling_ps: 300_000,
+            exceeds: false,
+        },
+    );
+    assert_eq!(check_run(&r).unwrap_err(), NO_BUS);
+    let mut r = held_low_run();
+    r.insert(
+        at,
+        Record::LineStuckHigh {
+            bus: "SENSORS".into(),
+            net: "ELSEWHERE".into(),
+            microvolts_at_release: 0,
+            ceiling_ps: 300_000,
+        },
+    );
+    assert_eq!(
+        check_run(&r).unwrap_err(),
+        "an analog record or a bus fault names a net that is not a line of its bus"
+    );
+}
+
+#[test]
+fn an_analog_ceiling_below_or_above_its_lines_is_refused() {
+    for ceiling in [299_999, 300_001] {
+        let mut r = good();
+        if let Record::I2cBusSolved { lines, .. } = at(&mut r, is_bus) {
+            lines[0].ceiling_ps = ceiling;
+        }
+        assert_eq!(
+            check_run(&r).unwrap_err(),
+            "an analog record's ceiling is not its solved line's"
+        );
+    }
+}
+
+#[test]
+fn every_net_of_a_bus_fault_must_be_a_line_of_its_bus() {
+    let mut r = good();
+    if let Record::BusFault { nets, .. } = at(&mut r, |x| matches!(x, Record::BusFault { .. })) {
+        *nets = vec!["I2C_SCL".into(), "ZZZ".into()];
+    }
+    assert_eq!(
+        check_run(&r).unwrap_err(),
+        "an analog record or a bus fault names a net that is not a line of its bus"
+    );
+}
+
+#[test]
+fn two_buses_sharing_a_net_a_pin_or_a_controller_are_refused() {
+    let why = "two solved buses share a net, a pin or a controller";
+    let mut r = good();
+    r.insert(3, solved_bus("Z", "I2C3", ["I2C_SDA", "Z_SDA"], &[]));
+    assert_eq!(check_run(&r).unwrap_err(), why);
+    let mut r = good();
+    r.insert(3, solved_bus("Z", "I2C1", ["Z_SCL", "Z_SDA"], &[]));
+    assert_eq!(check_run(&r).unwrap_err(), why);
+    let mut r = good();
+    let mut z = solved_bus("Z", "I2C3", ["Z_SCL", "Z_SDA"], &[]);
+    bus_fields(&mut z).0[0].pin = "PB7".into();
+    r.insert(3, z);
+    assert_eq!(check_run(&r).unwrap_err(), why);
+}
+
+#[test]
+fn two_devices_at_one_address_on_one_bus_are_refused() {
+    let mut r = good();
+    if let Record::I2cBusSolved { devices, .. } = at(&mut r, is_bus) {
+        devices.push(("U3".into(), 0x68));
+    }
+    assert_eq!(
+        check_run(&r).unwrap_err(),
+        "two devices on one solved bus share an address"
+    );
+}
+
+#[test]
+fn a_line_measured_twice_or_a_device_read_or_witnessed_twice_is_refused() {
+    let why = "a line measured twice, or a device read or witnessed twice, or a controller witnessed twice";
+    // A second rise for one line, with the verdict's count raised to match.
+    let mut r = good();
+    let i = position(&r, |x| matches!(x, Record::RiseMeasured { .. }));
+    let dup = r[i].clone();
+    r.insert(i, dup);
+    let last = r.len() - 1;
+    r[last] = verdict(false, &[(PAST, "error", 3), ("i2c_timeout", "error", 1)]);
+    assert_eq!(check_run(&r).unwrap_err(), why);
+    let mut r = good();
+    let i = position(&r, |x| matches!(x, Record::I2cCheck { .. }));
+    let dup = r[i].clone();
+    r.insert(i, dup);
+    assert_eq!(check_run(&r).unwrap_err(), why);
+    let mut r = with_witness("I2C1", "U2");
+    let i = position(&r, |x| matches!(x, Record::I2cWitness { .. }));
+    let dup = r[i].clone();
+    r.insert(i, dup);
+    assert_eq!(check_run(&r).unwrap_err(), why);
 }
