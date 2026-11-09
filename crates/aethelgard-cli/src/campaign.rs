@@ -35,6 +35,8 @@ pub const VIRTUAL_NS: u64 = aethelgard_twin::boot::MAX_VIRTUAL_NS;
 /// One scenario, read, applied and solved, ready to run.
 struct Prepared {
     path: PathBuf,
+    /// The base specification file's own bytes, as read.
+    base_sha256: [u8; 32],
     scenario: Scenario,
     specification_sha256: [u8; 32],
     topology: SolvedTopology,
@@ -51,38 +53,62 @@ fn digest(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
 }
 
-/// `base`, relative to the scenario file's directory: no absolute path, and
-/// once every symlink is resolved, a regular file inside the current directory.
-fn resolve_base(scenario: &Path, base: &str) -> Result<PathBuf, String> {
+/// The bytes of `base`, relative to the scenario file's directory: no
+/// absolute path, and a regular file inside the current directory once every
+/// symlink is resolved. The file is opened once, without following a symlink
+/// or blocking on a FIFO, and the open descriptor itself is checked and read,
+/// so nothing swapped in by name after the check is ever read (`AET-WO-2300`
+/// adversarial F2). Every refusal is exit 3: `(kind, message)`.
+fn read_base(scenario: &Path, base: &str) -> Result<Vec<u8>, (&'static str, String)> {
+    use rustix::fs::{Mode, OFlags};
+    let outside = |m: String| ("BaseOutsideRoot", m);
     let relative = Path::new(base);
     if relative
         .components()
         .any(|c| matches!(c, Component::RootDir | Component::Prefix(_)))
     {
-        return Err(format!("base `{base}` is absolute"));
+        return Err(outside(format!("base `{base}` is absolute")));
     }
     let root = std::env::current_dir()
         .and_then(fs::canonicalize)
-        .map_err(|e| format!("cannot resolve the current directory: {e}"))?;
+        .map_err(|e| outside(format!("cannot resolve the current directory: {e}")))?;
     let dir = scenario.parent().unwrap_or(Path::new("."));
-    let joined = if dir.as_os_str().is_empty() {
-        relative.to_path_buf()
-    } else {
-        dir.join(relative)
-    };
-    let resolved =
-        fs::canonicalize(&joined).map_err(|e| format!("cannot resolve base `{base}`: {e}"))?;
-    if !resolved.starts_with(&root) {
-        return Err(format!(
+    let resolved = fs::canonicalize(dir.join(relative))
+        .map_err(|e| outside(format!("cannot resolve base `{base}`: {e}")))?;
+    let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
+    let file = rustix::fs::open(&resolved, flags, Mode::empty())
+        .map(fs::File::from)
+        .map_err(|e| outside(format!("cannot open base `{base}`: {e}")))?;
+    // Where the descriptor really is, after any swap of a directory above it.
+    let opened = rustix::fd::AsRawFd::as_raw_fd(&file);
+    let opened = fs::read_link(format!("/proc/self/fd/{opened}"))
+        .map_err(|e| outside(format!("cannot read where base `{base}` was opened: {e}")))?;
+    if !opened.starts_with(&root) {
+        return Err(outside(format!(
             "base `{base}` resolves to {}, outside the current directory {}",
-            resolved.display(),
+            opened.display(),
             root.display()
+        )));
+    }
+    let meta = file
+        .metadata()
+        .map_err(|e| ("UnreadableInput", format!("cannot read base `{base}`: {e}")))?;
+    if !meta.is_file() {
+        return Err(outside(format!("base `{base}` is not a regular file")));
+    }
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(
+        &mut std::io::Read::take(file, crate::MAX_INPUT_BYTES + 1),
+        &mut bytes,
+    )
+    .map_err(|e| ("UnreadableInput", format!("cannot read base `{base}`: {e}")))?;
+    if bytes.len() as u64 > crate::MAX_INPUT_BYTES {
+        return Err((
+            "InputTooLarge",
+            format!("base `{base}` exceeds {} bytes", crate::MAX_INPUT_BYTES),
         ));
     }
-    if !resolved.is_file() {
-        return Err(format!("base `{base}` is not a regular file"));
-    }
-    Ok(resolved)
+    Ok(bytes)
 }
 
 /// Read, apply and solve one scenario; a refusal is printed and its code returned.
@@ -101,9 +127,12 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
             code,
         )
     })?;
-    let base = resolve_base(path, &scenario.base)
-        .map_err(|m| refuse("BaseOutsideRoot", Some(&scenario.name), m, EXIT_UNREADABLE))?;
-    let (mut spec, _) = crate::read_spec(Some(&base)).map_err(|(r, code)| emit(&r, code))?;
+    let base = read_base(path, &scenario.base)
+        .map_err(|(kind, m)| refuse(kind, Some(&scenario.name), m, EXIT_UNREADABLE))?;
+    let (mut spec, _) = crate::parse_spec(&base).map_err(|(mut r, code)| {
+        r.error.message = format!("scenario `{}`, base: {}", scenario.name, r.error.message);
+        emit(&r, code)
+    })?;
     let held = scenario.apply(&mut spec).map_err(|e| {
         refuse(
             e.kind,
@@ -124,6 +153,7 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
     let run_id = rules::run_id(&scenario.sha256, &specification_sha256, firmware_sha256);
     Ok(Prepared {
         path: path.to_path_buf(),
+        base_sha256: digest(&base),
         scenario,
         specification_sha256,
         topology,
@@ -289,6 +319,22 @@ fn run_one(
     )
     .map_err(stop)?;
     drop(scratch);
+    // The run id and the header name the firmware as first read; the boot
+    // judged its own copy. A file changed between the two is refused.
+    let booted = verdict.boot.as_ref().map(|b| b.firmware.sha256.as_str());
+    if booted != Some(hex(firmware_sha256).as_str()) {
+        return Err(refuse(
+            "FirmwareChanged",
+            Some(&p.scenario.name),
+            format!(
+                "{} changed while the campaign ran: the boot judged sha256 {}, the campaign read {}",
+                firmware.display(),
+                booted.unwrap_or("none"),
+                hex(firmware_sha256)
+            ),
+            EXIT_UNREADABLE,
+        ));
+    }
 
     let internal = |m: String| {
         crate::diagnose(&m);
@@ -309,6 +355,7 @@ fn run_one(
     let header = Header {
         run_id: p.run_id,
         artifacts: vec![
+            ("base".to_owned(), p.base_sha256),
             ("firmware".to_owned(), *firmware_sha256),
             ("scenario".to_owned(), p.scenario.sha256),
             ("specification".to_owned(), p.specification_sha256),
@@ -548,7 +595,26 @@ pub fn replay(dir: &Path) -> ExitCode {
         Ok(r) => r,
         Err(e) => return refuse(e.kind(), None, e.to_string(), EXIT_UNREADABLE),
     };
-    let summary = match rules::check_run(&replayed.state.records) {
+    // A run directory is named by its run id, so a run copied under another
+    // run's name is not that run (`AET-WO-2300` adversarial F3).
+    // `replay_dir` has refused a symlinked run directory, so its canonical
+    // name is its own (and `--archive .` from inside it works).
+    let named = fs::canonicalize(dir)
+        .ok()
+        .and_then(|d| d.file_name().map(std::ffi::OsStr::to_owned));
+    if named.as_deref() != Some(std::ffi::OsStr::new(&hex(replayed.header.run_id))) {
+        return refuse(
+            "RunIdMismatch",
+            Some(&hex(replayed.header.run_id)),
+            format!(
+                "{} holds run {}: a run directory is named by its run id",
+                dir.display(),
+                hex(replayed.header.run_id)
+            ),
+            EXIT_UNREADABLE,
+        );
+    }
+    let summary = match rules::check_archived(&replayed.header, &replayed.state) {
         Ok(s) => s,
         Err(reason) => {
             return refuse(

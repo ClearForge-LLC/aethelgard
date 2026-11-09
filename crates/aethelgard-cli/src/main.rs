@@ -1032,9 +1032,15 @@ fn solve(file: &Path) -> ExitCode {
 /// refusal and its exit code (2 or 3).
 fn read_spec(file: Option<&Path>) -> Result<(Specification, String), (Refusal, u8)> {
     let input = read_input(file).map_err(|r| (r, EXIT_UNREADABLE))?;
+    parse_spec(&input)
+}
+
+/// Parses and validates one `Specification` from bytes already read under the
+/// cap, as `read_spec` does.
+fn parse_spec(input: &[u8]) -> Result<(Specification, String), (Refusal, u8)> {
     // Well-formed JSON of the wrong shape is an invalid specification;
     // anything that is not one JSON document is unreadable input.
-    let spec: Specification = serde_json::from_slice(&input).map_err(|err| {
+    let spec: Specification = serde_json::from_slice(input).map_err(|err| {
         if err.classify() == Category::Data {
             (
                 Refusal::new("SchemaViolation", None, err.to_string()),
@@ -1055,7 +1061,7 @@ fn read_spec(file: Option<&Path>) -> Result<(Specification, String), (Refusal, u
     })?;
     Ok((
         spec,
-        input::hex(<sha2::Sha256 as sha2::Digest>::digest(&input)),
+        input::hex(<sha2::Sha256 as sha2::Digest>::digest(input)),
     ))
 }
 

@@ -16,8 +16,9 @@ use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use sha2::{Digest, Sha256};
 
-use crate::event::name_ok;
+use crate::event::{Header, name_ok};
 use crate::record::{Line, Override, Record};
+use crate::replay::State;
 
 /// The only scenario format version.
 pub const SCENARIO_VERSION: u32 = 1;
@@ -560,4 +561,45 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
         failing_kinds,
         matched,
     })
+}
+
+/// The header artifacts of a campaign run, in the header's sorted order.
+pub const ARTIFACTS: [&str; 5] = ["base", "firmware", "scenario", "specification", "topology"];
+
+/// Judge an archived campaign run, after the strict reader: it holds no
+/// event but campaign records, its header names exactly what its records
+/// name, and its `run_id` is the one those hashes give (`AET-WO-2300`
+/// adversarial F4, F5). Then [`check_run`].
+pub fn check_archived(header: &Header, state: &State) -> Result<RunSummary, &'static str> {
+    let raw = !state.registers.is_empty()
+        || !state.pins.is_empty()
+        || !state.interrupts.is_empty()
+        || !state.nets.is_empty()
+        || state.faults != 0;
+    if raw {
+        return Err("a campaign run holds an event that is not a campaign record");
+    }
+    let summary = check_run(&state.records)?;
+    let names: Vec<&str> = header.artifacts.iter().map(|(n, _)| n.as_str()).collect();
+    if names != ARTIFACTS {
+        return Err("the header's artifacts are not a campaign run's");
+    }
+    let hash = |i: usize| &header.artifacts[i].1;
+    let (
+        Record::Scenario { sha256, .. },
+        Record::Solved {
+            specification_sha256,
+            topology_sha256,
+        },
+    ) = (&state.records[0], &state.records[1])
+    else {
+        unreachable!("check_run puts the scenario and the topology first");
+    };
+    if hash(2) != sha256 || hash(3) != specification_sha256 || hash(4) != topology_sha256 {
+        return Err("the header's hashes are not the ones its records name");
+    }
+    if run_id(hash(2), hash(3), hash(1)) != header.run_id {
+        return Err("the run id is not the one its scenario, specification and firmware give");
+    }
+    Ok(summary)
 }

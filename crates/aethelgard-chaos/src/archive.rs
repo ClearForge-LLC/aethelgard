@@ -5,6 +5,9 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
+use rustix::fd::OwnedFd;
+use rustix::fs::{AtFlags, Dir, FileType, Mode, OFlags, openat, statat};
+use rustix::io::Errno;
 use sha2::{Digest, Sha256};
 
 use crate::ArchiveError;
@@ -212,30 +215,45 @@ pub struct Replayed {
     pub state: State,
 }
 
-fn read_all(path: &Path) -> Result<Vec<u8>, ArchiveError> {
+fn read_all(file: &mut File, path: &Path) -> Result<Vec<u8>, ArchiveError> {
     let mut bytes = Vec::new();
-    File::open(path)
-        .and_then(|mut f| f.read_to_end(&mut bytes))
+    file.read_to_end(&mut bytes)
         .map_err(|e| ArchiveError::io(path, e))?;
     Ok(bytes)
 }
 
-/// Check the directory's shape: a real directory holding only regular files
-/// named `trace.cbor`, `manifest.cbor` and optionally `mirror.cbor`
-/// and `mirror.cbor.tmp`.
-fn check_entries(dir: &Path) -> Result<(), ArchiveError> {
-    let meta = fs::symlink_metadata(dir).map_err(|e| ArchiveError::io(dir, e))?;
-    if !meta.file_type().is_dir() {
-        return Err(ArchiveError::UnexpectedEntry(format!(
-            "{} is not a real directory",
-            dir.display()
-        )));
-    }
+/// The run directory, opened once without following a symlink. Every check
+/// and every read after this goes through the descriptor, so nothing swapped
+/// in by name after the check is ever read (`AET-WO-2300` adversarial F1).
+fn open_dir(dir: &Path) -> Result<OwnedFd, ArchiveError> {
+    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    rustix::fs::open(dir, flags, Mode::empty()).map_err(|e| match e {
+        Errno::LOOP | Errno::NOTDIR => {
+            ArchiveError::UnexpectedEntry(format!("{} is not a real directory", dir.display()))
+        }
+        e => ArchiveError::io(dir, e.into()),
+    })
+}
+
+/// Check the directory's shape: only regular files named `trace.cbor`,
+/// `manifest.cbor` and optionally `mirror.cbor` and `mirror.cbor.tmp`.
+fn check_entries(dirfd: &OwnedFd, dir: &Path) -> Result<(), ArchiveError> {
+    let io = |e: Errno| ArchiveError::io(dir, e.into());
     let mut bad = Vec::new();
-    for entry in fs::read_dir(dir).map_err(|e| ArchiveError::io(dir, e))? {
-        let entry = entry.map_err(|e| ArchiveError::io(dir, e))?;
+    let mut entries = Dir::read_from(dirfd).map_err(io)?;
+    while let Some(entry) = entries.next() {
+        let entry = entry.map_err(io)?;
         let name = entry.file_name().to_string_lossy().into_owned();
-        let regular = entry.file_type().is_ok_and(|t| t.is_file());
+        if name == "." || name == ".." {
+            continue;
+        }
+        let kind = match entry.file_type() {
+            FileType::Unknown => statat(dirfd, entry.file_name(), AtFlags::SYMLINK_NOFOLLOW)
+                .map(|st| FileType::from_raw_mode(st.st_mode))
+                .map_err(io)?,
+            kind => kind,
+        };
+        let regular = kind == FileType::RegularFile;
         if !(regular && [TRACE, MANIFEST, MIRROR, MIRROR_TMP].contains(&name.as_str())) {
             bad.push(name);
         }
@@ -248,18 +266,39 @@ fn check_entries(dir: &Path) -> Result<(), ArchiveError> {
     }
 }
 
+/// `name` in the run directory, opened through its descriptor without
+/// following a symlink and without blocking on a FIFO, and checked to be a
+/// regular file on the open descriptor; `None` if it does not exist.
+fn open_entry(dirfd: &OwnedFd, dir: &Path, name: &str) -> Result<Option<File>, ArchiveError> {
+    let path = dir.join(name);
+    let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
+    let fd = match openat(dirfd, name, flags, Mode::empty()) {
+        Ok(fd) => fd,
+        Err(Errno::NOENT) => return Ok(None),
+        Err(Errno::LOOP) => return Err(ArchiveError::UnexpectedEntry(name.to_owned())),
+        Err(e) => return Err(ArchiveError::io(&path, e.into())),
+    };
+    let file = File::from(fd);
+    let meta = file.metadata().map_err(|e| ArchiveError::io(&path, e))?;
+    if !meta.is_file() {
+        return Err(ArchiveError::UnexpectedEntry(name.to_owned()));
+    }
+    Ok(Some(file))
+}
+
 /// Replay a run directory, refusing anything it cannot prove complete.
 pub fn replay_dir(dir: &Path) -> Result<Replayed, ArchiveError> {
-    // Components drop a trailing separator, which would make `lstat` follow a
-    // symlinked run directory.
+    // Components drop a trailing separator, which would make the open follow
+    // a symlinked run directory.
     let dir: PathBuf = dir.components().collect();
     let dir = dir.as_path();
-    check_entries(dir)?;
+    let dirfd = open_dir(dir)?;
+    check_entries(&dirfd, dir)?;
     let manifest_path = dir.join(MANIFEST);
-    if !manifest_path.exists() {
+    let Some(mut manifest_file) = open_entry(&dirfd, dir, MANIFEST)? else {
         return Err(ArchiveError::Uncommitted);
-    }
-    let manifest_bytes = read_all(&manifest_path)?;
+    };
+    let manifest_bytes = read_all(&mut manifest_file, &manifest_path)?;
     let value = cbor::decode_exact(&manifest_bytes)
         .map_err(|e| ArchiveError::MalformedManifest(e.to_string()))?;
     let manifest = Manifest::from_value(&value).map_err(|fault| match fault {
@@ -278,13 +317,13 @@ pub fn replay_dir(dir: &Path) -> Result<Replayed, ArchiveError> {
         });
     }
     let trace_path = dir.join(TRACE);
-    let actual = match fs::metadata(&trace_path) {
-        Ok(meta) => meta.len(),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err(ArchiveError::MissingTrace);
-        }
-        Err(e) => return Err(ArchiveError::io(&trace_path, e)),
+    let Some(mut trace_file) = open_entry(&dirfd, dir, TRACE)? else {
+        return Err(ArchiveError::MissingTrace);
     };
+    let actual = trace_file
+        .metadata()
+        .map_err(|e| ArchiveError::io(&trace_path, e))?
+        .len();
     // The length is checked before the file is read, so a trace the manifest
     // does not describe is never loaded.
     if actual < manifest.trace_bytes {
@@ -299,7 +338,7 @@ pub fn replay_dir(dir: &Path) -> Result<Replayed, ArchiveError> {
             actual,
         });
     }
-    let trace = read_all(&trace_path)?;
+    let trace = read_all(&mut trace_file, &trace_path)?;
     if <[u8; 32]>::from(Sha256::digest(&trace)) != manifest.trace_sha256 {
         return Err(ArchiveError::HashMismatch);
     }

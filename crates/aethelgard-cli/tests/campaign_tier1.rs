@@ -429,7 +429,11 @@ fn the_2k2_reference_scenario_passes_archives_and_replays_identically() {
     assert_eq!(r[0]["state_sequence_hash"], line["state_sequence_hash"]);
     assert_eq!(r[0]["event_count"], line["event_count"]);
     assert_eq!(r[0]["trace_bytes"], line["trace_bytes"]);
-    assert_eq!(r[0]["artifacts"].as_object().unwrap().len(), 4);
+    let artifacts: Vec<&String> = r[0]["artifacts"].as_object().unwrap().keys().collect();
+    assert_eq!(
+        artifacts,
+        ["base", "firmware", "scenario", "specification", "topology"]
+    );
 
     let second = replay(&tb.0, &run);
     assert_eq!(second.status.code(), Some(0));
@@ -958,8 +962,11 @@ fn an_extra_file_in_the_run_directory_is_refused() {
 fn a_synthetic_run_is_not_a_campaign_run() {
     let tb = toolbox(&good());
     let dir = Dir::new("synthetic");
-    let run = dir.0.join("run");
-    let mut w = TraceWriter::create(&run, &synthetic::header(7)).unwrap();
+    let header = synthetic::header(7);
+    let id: String = header.run_id.iter().map(|b| format!("{b:02x}")).collect();
+    // Named by its run id, so only what it holds is judged.
+    let run = dir.0.join(&id);
+    let mut w = TraceWriter::create(&run, &header).unwrap();
     let events: Vec<Event> = synthetic::events(7).take(20).collect();
     for e in &events {
         w.append(e).unwrap();
@@ -967,4 +974,8 @@ fn a_synthetic_run_is_not_a_campaign_run() {
     w.commit().unwrap();
     let out = replay(&tb.0, &run);
     expect_refusal(&out, 3, "NotACampaignRun");
+    // The same run under another name is not that run (adversarial F3).
+    let renamed = dir.0.join("run");
+    fs::rename(&run, &renamed).unwrap();
+    expect_refusal(&replay(&tb.0, &renamed), 3, "RunIdMismatch");
 }
