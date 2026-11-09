@@ -134,8 +134,10 @@ fn a_missing_clock_enable_fails() {
 fn a_write_past_the_block_fails() {
     fails_on(
         "seed-past-block",
-        "r.write(TOKEN, Block::I2c1, 0x28, u32::from(byte));",
-        "r.write(TOKEN, Block::I2c1, 0x2c, u32::from(byte));",
+        // `write_byte`'s write, named by its signature: `transfer` (AET-WO-2202)
+        // also writes TXDR with the same expression.
+        "r: &mut R, byte: u8) {\n        r.write(TOKEN, Block::I2c1, 0x28, u32::from(byte));",
+        "r: &mut R, byte: u8) {\n        r.write(TOKEN, Block::I2c1, 0x2c, u32::from(byte));",
         "proof_failed",
         "register access past the end of its block",
     );

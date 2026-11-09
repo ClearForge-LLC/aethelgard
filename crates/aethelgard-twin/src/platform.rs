@@ -95,7 +95,7 @@ pub fn instances(
     out.extend(modelled.into_iter().map(|d| Instance {
         peripheral: d.reference,
         name: d.name,
-        model: model::listed(d.model).to_owned(),
+        model: short(d.model).to_owned(),
         added: true,
     }));
     Ok(out)

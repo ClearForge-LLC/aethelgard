@@ -12,11 +12,6 @@ pub fn model(part: &str) -> Option<&'static str> {
     MODELS.iter().find(|m| m.0 == part).map(|m| m.1)
 }
 
-/// `I2C.BME280` is listed as `BME280`.
-pub fn listed(model: &str) -> &str {
-    model.rsplit('.').next().unwrap_or(model)
-}
-
 /// The devices of `devices` the twin can answer for: the ones whose part has
 /// a model. The generated firmware reads exactly these (`AET-WO-2202`), and
 /// the platform declares exactly these; the rest are listed as unmodelled.
