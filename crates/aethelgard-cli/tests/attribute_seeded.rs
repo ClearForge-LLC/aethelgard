@@ -258,6 +258,13 @@ mod tier2 {
             )
             .unwrap();
         }
+        // The scratch copy is its own workspace root, wherever the target
+        // directory is: CI's is inside the repository, under the root
+        // workspace, which does not list it (FEEDBACK F17).
+        let manifest = board.join("firmware/Cargo.toml");
+        let mut toml = fs::read_to_string(&manifest).unwrap();
+        toml.push_str("\n[workspace]\n");
+        fs::write(&manifest, toml).unwrap();
         let target = dir.join("target");
         let out = Command::new(env!("CARGO"))
             .args(["build", "--release", "--offline", "--locked"])

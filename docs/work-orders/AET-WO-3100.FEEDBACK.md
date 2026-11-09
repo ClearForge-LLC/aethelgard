@@ -231,6 +231,22 @@ Kind 15 costs 86 B per run on the reference board: one event, which is most of i
   - The judge does not judge the I2C records of a boot without its boot word. So such a run's timed-out read, if any, is "an event no finding names", and the run is `I1`.
   - No seeded run has one: `no-boot-word` reads its device successfully before skipping the boot word.
 
+- **F16 · `aethelgard-evolve` is publishable now · CI `gates`, the package step · high · packaging · human-track.**
+  - **Found** by CI on `72db430`, job 129325610077: `cargo package -p aethelgard-cli` failed with "no matching package named `aethelgard-evolve` found". The CLI now depends on evolve, which was `publish = false` and not in the step's crate list.
+  - **Fixed in this PR:**
+    - `publish = false` is removed;
+    - evolve carries byte-identical `LICENSE-MIT` and `LICENSE-APACHE` (`package_licences.rs` lists it; `workspace_shape.rs` allows the two files);
+    - it is in `ci.yml`'s `crates=` list and `docs/releasing.md`'s order after `aethelgard-chaos` and before `aethelgard-cli`, renumbered to 8 steps.
+  - **Measured.** I ran the step, extracted verbatim from `ci.yml`, on Furnace.
+    - Before the fix: exit 101 with the same error.
+    - After it: exit 0. Every crate packages (`aethelgard-evolve`: 25,083 B, 9 files), and the CLI built offline from the packages alone validates the example.
+  - **Human-track:** `aethelgard-evolve` is a new crate name, so its first crates.io publish, step 7 of `docs/releasing.md`, is Scotty's.
+- **F17 · Tier 2's scratch firmware fell under the root workspace when the target directory is inside the repository · `attribute_seeded.rs` · high · test harness.**
+  - **Found** by CI on `72db430`, job 129325610509: five tier-2 tests failed with "current package believes it is in a workspace when it is not". The job's `CARGO_TARGET_DIR` is `/repo/target`, so the scratch copy of the board, under `CARGO_TARGET_TMPDIR`, is inside the root workspace's directory.
+  - **Why I missed it.** My local runner put the target directory at `/cache/target`, outside the repository, so the same tests passed there.
+  - **Fixed in the test:** the scratch firmware manifest gets its own empty `[workspace]` table, so it is its own root wherever the target directory is.
+  - **Lesson:** reproduce the job's paths, not only its image. The runner for this re-run mounts the repository at `/repo`, with `CARGO_HOME` and `CARGO_TARGET_DIR` inside it, as the `tools` job does.
+
 ## Tests changed
 
 - **`aethelgard-chaos` `tests/archive.rs`:**
@@ -370,4 +386,8 @@ Each was proved with the suites green and a mutant of each guard it touched stil
 - **In the image, at `1fb3f5d`, the CI `tools` job's steps, offline:** the bridge's tests, `fmt`, `clippy` with `with-tools`, then `cargo test --workspace --features aethelgard-cli/with-tools`. 56 suites, **866 passed, 0 failed**, tier 2 included. Every seeded case was attributed as its manifest says (the table above).
   - The caps read back: `memory.max` 17179869184, `memory.swap.max` 0, `pids.max` `max`.
   - After `1fb3f5d`, only tests and the reduction changed. CI on the PR is the witness for the head.
+- **After CI's two findings on `72db430` (F16, F17), both reproduced first, then shown passing:**
+  - **The package step**, extracted verbatim from `ci.yml` and run on Furnace: exit 101 before, exit 0 after.
+  - **`attribute_seeded`**, in the CI `tools` job's own layout: repository at `/repo`, `CARGO_HOME=/repo/target/cargo-home`, `CARGO_TARGET_DIR=/repo/target`, `--network none`, and caps read back (16 GiB, swap 0, pids `max`). Before the fix, 4 passed and 5 failed with the workspace error. After it, 9 passed, the 22 cases attributed as seeded.
+  - fmt, clippy (`with-tools`) and the tier-1 workspace are clean: 799 passed, 0 failed.
 - **Reduction pass (diff):** −37 net · 4 duplicates removed · 0 dead paths removed in the pass (2 more by the A7 fix before it) · 3 protected kept · 4 findings above.
