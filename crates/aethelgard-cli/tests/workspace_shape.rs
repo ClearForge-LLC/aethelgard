@@ -221,7 +221,9 @@ fn ir_depends_on_no_other_member() {
 
 /// `aethelgard-chaos` holds the trace archive (`AET-WO-0400`), so it is no
 /// longer a re-export stub. It is held to a smaller rule instead: its files,
-/// its manifest keys and its dependencies are fixed.
+/// its manifest keys and its dependencies are fixed. `AET-WO-2300` added the
+/// scenario model, which reads and changes a `Specification`: so
+/// `aethelgard-ir`, `serde` and `serde_json`.
 #[test]
 fn chaos_has_only_its_known_files_keys_and_dependencies() {
     for file in files(&root().join(CHAOS)) {
@@ -242,7 +244,10 @@ fn chaos_has_only_its_known_files_keys_and_dependencies() {
     }
     let mut names = dependency_names(&chaos);
     names.sort();
-    assert_eq!(names, ["sha2", "thiserror"]);
+    assert_eq!(
+        names,
+        ["aethelgard-ir", "serde", "serde_json", "sha2", "thiserror"]
+    );
     for (name, dep) in chaos["dependencies"].as_table().unwrap() {
         assert_eq!(
             dep.get("workspace").and_then(Value::as_bool),

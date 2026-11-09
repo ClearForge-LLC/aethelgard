@@ -1,10 +1,12 @@
 //! Fault scenarios, the campaign runner, the trace archive, and verdicts; never suppresses a panic or a timeout (`docs/architecture.md` §3).
 //!
-//! This crate so far holds the trace archive (`RUL-06`, `INV-04`): a
-//! deterministic CBOR profile ([`cbor`]), a local append-only archive with a
-//! commit protocol ([`archive`]), a replay that refuses what it cannot prove
+//! This crate holds the trace archive (`RUL-06`, `INV-04`): a deterministic
+//! CBOR profile ([`cbor`]), a local append-only archive with a commit
+//! protocol ([`archive`]), a replay that refuses what it cannot prove
 //! complete ([`replay`]), and the optional remote mirror's credential
-//! boundary ([`mirror`]). See `README.md`.
+//! boundary ([`mirror`]). Since `AET-WO-2300` it also holds the campaign's
+//! records ([`record`]), the scenario model and the run rules ([`campaign`]).
+//! See `README.md`.
 
 #![forbid(unsafe_code)]
 
