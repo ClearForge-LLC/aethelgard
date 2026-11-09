@@ -54,7 +54,7 @@ Entry schema for findings: `finding · where · severity · type · recommendati
 | **trap-wrong-address-3k3** | seeded/pullup-3k3 | wrong-address | timeout | **software S1** | 3:7 4:7 14:13 | — |
 | wrong-register | pullup-2k2 | wrong-register | identity mismatch, unwitnessed | software S1 | 3:7 4:7 14:13 | — |
 | wrong-nbytes | pullup-2k2 | wrong-nbytes | identity mismatch, unwitnessed | software S1 | 3:7 4:7 14:13 | — |
-| i2c-clock-skipped | pullup-2k2 | i2c-clock-skipped | timeout, locked access, register | software S1 | 3:7 4:7 11:11 14:13 | — |
+| i2c-clock-skipped | pullup-2k2 | i2c-clock-skipped | timeout, locked access, register | software S1 | 3:7 4:7 11:11 | — |
 | scl-af-wrong | pullup-2k2 | scl-af-wrong | register | software S1 | 3:7 4:7 9:11 | — |
 | sda-af-wrong | pullup-2k2 | sda-af-wrong | register | software S1 | 3:7 4:7 9:11 | — |
 | scl-mode-output | pullup-2k2 | scl-mode-output | register | software S1 | 3:7 4:7 8:11 | — |
@@ -64,7 +64,7 @@ Entry schema for findings: `finding · where · severity · type · recommendati
 | unmutated-2k2 | pullup-2k2 | — | — | none N1 | — | — |
 
 Six tests in the file, all passing in the image:
-- **Tier 1:** the manifest's counts and traps; every mutant applies exactly once to the board as committed; a patch matching zero or two times is refused, naming the mutant; every unmutated case's scenario expects exactly its manifest findings.
+- **Tier 1:** the manifest's counts and traps; every mutant applies exactly once to the board as committed; a patch matching zero or two times, or only in a comment, is refused, naming the mutant; every unmutated case's scenario expects exactly its manifest findings.
 - **Tier 2:**
   - every case fails with exactly its manifest's findings, and every unmutated case's campaign line is `matched`;
   - `attribute` names the manifest's domain and rule for every case, with at least one evidence event for every failing case, each index in range and of a kind its rule allows;
@@ -209,6 +209,28 @@ Kind 15 costs 86 B per run on the reference board: one event, which is most of i
   - The runner writes 0 into the container's delegated `memory.swap.max` after start and reads all three caps back.
   - **Recommendation:** the global contract's podman line should say to write and read back `memory.swap.max`, not rely on `--memory-swap`.
 
+- **F12 · R2 extended by the adversarial pass · `aethelgard-chaos` `check_joins` · high · format rules · decision-needed (ratify).**
+  - **Refused beyond the ruling's R2:**
+    - a net, pin or controller shared by two solved buses;
+    - two devices at one address on one bus;
+    - a second kind 7 or 8 for one line;
+    - a second kind 12 for one device;
+    - a second kind 13 for one device or one controller.
+  - **The field rules of kind 15 also refuse:**
+    - a pin that is not `P`, a capital letter and 0 to 15 without a leading zero;
+    - an alternate function over 15.
+  - **Why:** A2, A3 and A6. Each is a forged or duplicated join that `replay` accepted and that drove attribution to a confident wrong answer or a refusal `replay` does not make.
+  - **Cost:** `campaign` writes nothing these refuse. They sit inside R4's "its field rules" and "R2's run rules", but they are more than R2 lists.
+- **F13 · Residual: `pc_outside_firmware` · `aethelgard-evolve` · low · residual (A14).**
+  - §1.2 lists "`pc` outside the firmware" as software evidence, but the firmware's executable segments are not archived. So a run whose only failure is `pc_outside_firmware` is `I1`, never `S2`.
+  - Archiving the segments would be a record change, so I did not add it (§7).
+- **F14 · Board software beside a faulted bus is `I3`, not `I5` (A11) · decision-needed.**
+  - A symptom on no bus, with board software evidence and a fault on some bus, is `I3`, "the fault is elsewhere". `I5`, "split between halves", describes it about as well.
+  - Both are indeterminate; only the id differs.
+- **F15 · A boot failure beside an unreported I2C failure is `I1` · `aethelgard-evolve` · low · consequence of A1's fix.**
+  - The judge does not judge the I2C records of a boot without its boot word. So such a run's timed-out read, if any, is "an event no finding names", and the run is `I1`.
+  - No seeded run has one: `no-boot-word` reads its device successfully before skipping the boot word.
+
 ## Tests changed
 
 - **`aethelgard-chaos` `tests/archive.rs`:**
@@ -239,16 +261,113 @@ Not touched: `simulate --firmware` (measured byte-identical), the judge (`renode
 
 ## Adversarial pass (full, §5)
 
-(pending)
+**Who and how.**
+- A fresh subagent on Opus, chosen because this is judgement work. It worked on a frozen copy at `038481f`, with the real archives from the probe campaign (Renode and the bridge, every seeded case).
+- It built 120 forged runs through the chaos writer. Each kept a consistent header and run id, so `replay` accepts it.
+- It also ran a 20,000-iteration random-mutation fuzz, the CLI on every forged directory twice, a filesystem attack script, and an strace.
+- **Harnesses and outputs:** `~/.cache/aet-3100-adv/` (`crates/aethelgard-evolve/tests/adv*.rs`, `notes/`).
+
+**What held at `038481f`, before any fix.**
+- All 25 real runs were attributed as seeded, both as archived and re-sealed.
+- No panic in 20,000 fuzz iterations: 15,285 accepted and 4,635 refused.
+- Two calls always gave the same bytes, on all 125 directories.
+- Exit was 0 for every determinate run and 1 for every indeterminate one.
+- strace shows only the run directory opened (`O_NOFOLLOW|O_DIRECTORY`), then the two files relative to it: no execve, no clone, no socket. The ST header is compiled in.
+- `replay`'s exact bytes and exit 3 for every filesystem attack: a symlinked directory or file (including one to `/dev/zero`), a FIFO trace or manifest (no hang), a 2 GiB sparse file, an extra file, a renamed run, truncation, one byte flipped.
+- **§5.1:** every drop or duplicate of analog events gave `I2` or a refusal, never a domain.
+  - "Fault one bus and fail another" gave `I5`, or `I3` when the other bus's symptom had no software evidence.
+  - A witness agreeing with a wrong address gave `I4` in every variant.
+- **§5.3:** removing either half's evidence gave `I2` or `I4`, never the other half.
+
+**What broke, and what was done.** Every fix is in `1fb3f5d`. Each has a tier-1 test in `crates/aethelgard-evolve/tests/attribute.rs` or `crates/aethelgard-chaos/tests/campaign.rs` §7b.
+
+| id | finding | severity | fix | test |
+|---|---|---|---|---|
+| A1 | **§5.2:** rewriting only the verdict moved the domain. A 3.3 kΩ wrong-address run with its verdict set to pass was `none`. A two-bus `I5` run with `i2c_timeout` dropped from the verdict was a confident `electrical`. Nothing caught "a failing event no finding names" | must-fix | **The converse rule.** Every event a per-event selector would pick, but that no failing finding selects, is `unexplained` as `event <index>`, and the run is `I1` | `a1_a_verdict_narrowed_or_passed_beside_a_failing_event_leaves_it_unexplained` |
+| A2 | **§5.1, duplicate:** a second kind 12 for U2 with status `ok`, or a second kind 13, turned an `I4` run into a confident `S1`. `check_of` took the first, and R2 allowed both | must-fix | **R2 extended in `check_joins`.** At most one kind 7 or 8 per line, one kind 12 per device, and one kind 13 per device and per controller, as `campaign` writes them. Refused by `replay` and `attribute` alike | `a_line_measured_twice_or_a_device_read_or_witnessed_twice_is_refused`, `a_second_read_or_witness_of_one_device_is_refused_never_attributed` |
+| A3 | A kind 15 pin or port the ST header lacks (`PB16`, `PZ6`, `SCL`, or an unrelated extra bus) made `attribute` exit 3 where `replay` exits 0. Also, `PB06` parsed as `PB6`, and alternate function 200 was accepted | must-fix | **Kind 15's field rules** (chaos, R4) now require a canonical pin (`P`, a capital letter, 0 to 15 without a leading zero: `record::split_pin`, now shared with evolve) and an alternate function of at most 15. **A bus the header still cannot join** (`PZ0`, `I2C9`) becomes unjoinable: never healthy, owning nothing, so its symptoms are `I2`. Nothing is refused that `replay` accepts | `every_kind_15_field_rule_refuses_alone`, `split_pin_takes_only_the_solvers_form`, `a3_a_bus_the_header_cannot_join_is_never_healthy_and_refuses_nothing_else` |
+| A4 | One device's witness (U3, a wrong register) "explained" another device's TXIS timeout (U2) on the same bus | should-fix | **For a device's symptom, only that device's witness counts.** The bus's owned registers count for every symptom | `a4_one_devices_witness_never_explains_another_devices_timeout` |
+| A5 | The witness's `CR2` and `TXDR` reading addresses were never checked | should-fix | **The witness must be at its controller's `CR2` and `TXDR`** (the header's base and `I2C` layout), or it is no evidence | `a5_a_witness_not_at_its_controllers_registers_is_no_evidence` |
+| A6 | R2 accepted a net, pin or controller shared by two buses, and two devices at one address on one bus | should-fix | **Refused in `check_joins`** | `two_buses_sharing_a_net_a_pin_or_a_controller_are_refused`, `two_devices_at_one_address_on_one_bus_are_refused` |
+| A7 | `MODER` trusted the reading's own expectation, while `AFR` used kind 15 | should-fix | **A line's pin must be in alternate-function mode** (`MODE_AF`, RM0433, `belt-and-suspenders:` as the twin's judge has it). Every owned field now has one solved value, and the `Want::Expected` mechanism is gone | `a7_the_mode_a_pin_must_hold_is_kind_15s_not_the_readings` |
+| A8 | `CR2` = 0 (never written) read as "`SADD` differs" | should-fix | **`SADD` counts only when `CR2` has a bit in `SADD` or `NBYTES`.** The real `i2c-clock-skipped` run's evidence is now the clock gate alone, still `S1` | `a_skipped_controller_clock_is_software_and_explains_the_locked_access` |
+| A10 | Counts were compared per (kind, severity), so one timeout event "explained" an error and a warning | note → fixed | **Summed per kind** over every severity above `info`, as `check_run` does | `a10_one_event_never_explains_a_finding_counted_at_two_severities` |
+| A15 | The fuzz found an `S1` run carrying kind 10 evidence, which S1 does not allow. A bus symptom and a boot symptom were both software, and every decided rule's evidence was gathered | should-fix | **The evidence is the named rule's alone** (`I5`: both halves). So every evidence kind is one the named rule allows, which the P3 gate test asserts | `a15_the_evidence_is_the_named_rules_alone` |
+| A9 | **§5.5:** a decoy passed tier 1. The real call was moved to a constant, and the `find` text was kept once, in a comment | note → fixed | Tier 1 refuses a `find` that falls on a `//` line. Tier 2 refuses two firmware builds with identical ELF bytes, so a patch the compiler drops is caught too | `a_patch_that_matches_zero_or_two_times_is_refused_naming_the_mutant` (the decoy is in it); `ran()` in tier 2 |
+| A11 | Software evidence on no bus plus a fault on any bus gives `I3`; `I5` would describe it better | note | **Kept: decision-needed.** Both are indeterminate, and only the id differs | — |
+| A12 | A clock gate shared by two buses (both on port B) gives `I4` on a healthy board | note | **Kept: conservative, not wrong** | `a_gate_two_buses_own_is_on_the_board_and_owned_so_indeterminate` |
+| A13 | Evolve reaches `aethelgard-ir` transitively through svd-hal, so "never on `aethelgard-ir`" was literally false | note → fixed | **Wording.** It has no *direct* dependency, and svd-hal's API names no `Specification`. Changed in the README and the shape test's comment | — |
+| A14 | §1.2's "`pc` outside the firmware" is not implemented, because the executable segments are not archived | note | **A residual.** `pc_outside_firmware` alone is `I1`. Archiving the segments would be a record change (§7), so it was not built | — |
+
+**§5.5, as specified.**
+- In the adversary's copy, a drift (`0x76` written `0x0076`) was refused: "occurs 0 times … the generator changed, and this case is no longer seeded". So was a duplicate ("occurs 2 times").
+- The decoy is now refused in tier 1 as well (A9).
+
+**Re-verified on the fixed tree (`1fb3f5d`).** Every real probe run gives the same domain and rule as before. The only change is that `i2c-clock-skipped`'s evidence drops the `CR2` = 0 witness (A8).
 
 ## Mutation testing (sized to the diff)
 
-(pending)
+**Who and how.**
+- A subagent on the default model, on frozen copies.
+- One or more mutants per guard this work order adds: the chaos record rules, `check_joins`, `TRACE_VERSION`, the campaign's `solved_buses` and timestamps, and every decision point in `aethelgard-evolve`.
+- Suites: chaos's and evolve's tests, plus the CLI's `campaign_tier1`, `attribute_seeded`, `workspace_shape` and its own unit tests.
+- **Table:** `~/.cache/aet-3100-mut/notes/MUTANTS.md` (round 1) and `~/.cache/aet-3100-mut2/notes/MUTANTS2.md` (round 2).
+
+**Round 1 (`038481f`).** 221 mutants, 110 survivors. Most were one-sided tests or untested paths: kind 15's field rules, the reader's kind-15 arm, the `Board` arms, the witness's coverage checks, and several selectors. Tests were added for them in `1fb3f5d`.
+
+**Round 2 (`1fb3f5d`).** 171 mutants: every round-1 survivor re-applied where its code still exists, plus every new guard. 126 killed, 45 survived:
+- **13 equivalent, redundant or dead, so kept as they are.** The examples are:
+  - `I2C_CR2_SADD_Pos` is 0;
+  - the name and address checks of `wrong` mask each other;
+  - the analog entries of `PER_EVENT` are already forced by `check_run`;
+  - the witness's per-device key is subsumed by its per-controller key;
+  - the `scope()` `None` arm is labelled `belt-and-suspenders:`.
+- **32 untested paths.** Tests were added for them in `f0023b1`:
+  - `PB007`;
+  - a controller shared on distinct pins;
+  - a rise and a stuck-high on one line;
+  - two witnesses on one controller;
+  - the converse rule for every per-event kind, and for two events of one kind;
+  - an invalid record claimed for a timeout;
+  - each part of a sound witness;
+  - an unobserved register;
+  - a register owned by the second bus;
+  - the partly covered field;
+  - the campaign's written timestamps, read back from `trace.cbor`.
+- **Spot-checked by me, not assumed.** Five of those mutants (the field coverage in `wrong`, the `CR2`-written filter on NBYTES, `register_mismatch` out of `PER_EVENT`, `b == 0` in `scope`, the per-controller witness key) each fail the new tests. One looked like a survivor at first, but it did not compile: the array length. Re-cut with the length kept, it is killed.
+- **Left untested, as notes:**
+  - the RCC range's exact boundaries, and `& reading.mask` in the locked-access selector (no register sits on the boundary);
+  - `cpu_halted` with the boot word present, which the judge refuses as untrusted before any verdict;
+  - a witness looked up on another bus, which the controller-address check already blocks.
 
 ## Reduction pass
 
-(pending)
+**Who and how.** A fresh subagent on a frozen copy at `1fb3f5d`, with the four questions over the diff. Its report is in `~/.cache/aet-3100-red/notes/REDUCTION.md`.
+
+**Applied** (commit `29398e7`):
+- one chaos test that was a strict subset of another;
+- two evolve tests that re-proved `check_archived` (kept: the one that proves it);
+- `reseal` and `resealed_records` merged into one helper;
+- `check_joins`'s two "all distinct" checks sharing one generic `unique`.
+
+Each was proved with the suites green and a mutant of each guard it touched still failing.
+
+**Rejected by me:**
+- **Making the P3 gate test's evidence-kind table call `Rule::evidence_kinds()`.** The gate would then take its oracle from the library it judges, which defeats the oracle (`INV-07`). The tier-2 table stays a separate statement.
+- **Dropping `removing_every_rise…`.** It is the named §5.3 elimination attack, so it stays.
+
+**Before the pass:** the A7 fix had already removed the `Want::Expected` mechanism and `healthy`'s dead fault, `complete` and `exceeds` checks (round-1 mutants V5a and V5e).
+
+**Findings, not changed:**
+- `PER_EVENT` repeats the kind names `select` matches on; one copy would need a table-driven `select`, a new abstraction.
+- The `Rule` doc comments and `evidence_kinds` repeat the README's rule table.
+- `cases.json` carries both `domain` and `rule`: kept as the manifest's independent oracle.
+- `solved_buses`'s guards overlap `check_joins` with different messages: the writer refuses before it writes.
 
 ## Gates
 
-(pending)
+- **On Furnace, at `f0023b1`:** `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings` are clean, and the whole tier-1 workspace passes.
+- **In the image, at `1fb3f5d`, the CI `tools` job's steps, offline:** the bridge's tests, `fmt`, `clippy` with `with-tools`, then `cargo test --workspace --features aethelgard-cli/with-tools`. 56 suites, **866 passed, 0 failed**, tier 2 included. Every seeded case was attributed as its manifest says (the table above).
+  - The caps read back: `memory.max` 17179869184, `memory.swap.max` 0, `pids.max` `max`.
+  - After `1fb3f5d`, only tests and the reduction changed. CI on the PR is the witness for the head.
+- **Reduction pass (diff):** −37 net · 4 duplicates removed · 0 dead paths removed in the pass (2 more by the A7 fix before it) · 3 protected kept · 4 findings above.
