@@ -2,7 +2,7 @@
 
 Generates a circuit board and the firmware that drives it from one specification, and refuses to call either finished until the pair has survived simulated electrical and software faults together, before any board is manufactured.
 
-**Status:** phase P1 of 4 is built; only its first crates.io publish is left. From one specification, `aethelgard` does five things:
+**Status:** phase P1 of 4 is complete, and the crates are published: `cargo install aethelgard-cli`. From one specification, `aethelgard` does five things:
 
 - solves the pin assignment;
 - emits a schematic and a placed, routed board that pass KiCad's ERC and DRC;
