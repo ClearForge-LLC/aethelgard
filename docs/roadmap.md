@@ -26,7 +26,7 @@ Project prefix is `AET`.
 ## 3. Critical path at a glance
 
 ```
-P0 ──> P1 ──> P2 ──> P3
+P0 ──> P1 ──> P2 ──> P3 ──> P4
 │       │
 │       └── AET-WO-1300 (board emitter) and AET-WO-1400 (board crate)
 │           run in parallel once AET-WO-1200 lands
@@ -37,11 +37,11 @@ P0 ──> P1 ──> P2 ──> P3
 - **Risk concentrates in two places.** `P2`'s lock-step bridge (`OQ-02`) is where a bug produces a simulation that runs but measures nothing, and `P3`'s attribution is where a bug produces a *confident wrong answer* about which half failed. Everything else fails loudly. Those two get the adversarial pass and the most review.
 - **What runs in parallel.** The trace schema and local archive (`AET-WO-0400`) depend only on the workspace, not on anything in P1. Within P1, the board emitter and the board crate both consume the solved graph and do not touch each other.
 - **Human-track, not code.** These are the most likely things to block delivery while everyone stares at code, so they are named here:
-  - A Nucleo-H753ZI development board (`architecture.md` `RUL-08`) has to be bought before the end of P2, so P3's simulated verdicts can be compared against one real board (northstar `NG-05`). `OQ-01` and `OQ-05` are ruled (`RUL-08`, `RUL-10`) and no longer block anything.
-  - A fabrication order and its budget are needed for the P3 gate; the gate is "package emitted and verified", but the northstar's scar section stays empty until a board exists.
+  - A Nucleo-H753ZI development board (`architecture.md` `RUL-08`) has to be bought before the end of P2, so P3's simulated verdicts can be compared against one real board (northstar `NG-05`). **Ordered 2026-11-09.** `OQ-01` and `OQ-05` are ruled (`RUL-08`, `RUL-10`) and no longer block anything.
+  - **Custom boards are bought only when a gate needs one, and the first is meant to be used** (Scotty, 2026-11-09). Sentinel-01's fabrication package is emitted and verified for the P3 gate, but not ordered. P3's bench comparison runs against the Nucleo. The first fabricated board is Sentinel-02, the flight controller (P4), bought when P4's gate needs it and flown in a prototype drone.
   - A Cloudflare R2 bucket and scoped credentials only if the optional mirror in `RUL-06` is wanted; nothing in any gate requires it.
   - **Crate names and the first publish.** `aethelgard` and every `aethelgard-*` member name were free on crates.io when checked (§8, the amendment that added this item). crates.io's usage policy (RFC 3463) removes crates that exist only to hold a name, so the names are claimed by the first real publish, not by placeholders. The first publish of a crate needs a crates.io token from Scotty's account, used once from his own machine; after that, crates.io trusted publishing lets CI release with no stored secret.
-  - **The announcement, after P1's launch-readiness clause passes, never before.** Channels, in order: This Week in Rust, the Rust Embedded and embassy Matrix rooms, the KiCad forum, Antmicro (whose STM32H753 Renode twin `RUL-08` builds on), and r/embedded. Show HN waits for the P2 gate, because an injected fault traced and blamed on the right half is the headline. Announcing a scaffold spends credibility the project cannot earn back.
+  - **The announcement, after P1's launch-readiness clause passes, never before.** Channels, in order: This Week in Rust, the Rust Embedded and embassy Matrix rooms, the KiCad forum, Antmicro (whose STM32H753 Renode twin `RUL-08` builds on), and r/embedded. Show HN waits for the P2 gate, because an injected fault traced and blamed on the right half is the headline. Announcing a scaffold spends credibility the project cannot earn back. **Held, 2026-11-09:** Scotty holds every announcement until he calls the build finished, whatever gate has passed.
 
 ## 4. Phase map
 
@@ -51,6 +51,7 @@ P0 ──> P1 ──> P2 ──> P3
 | P1 | One source, two projections | A specification produces a checked board and a board crate in which illegal hardware use fails to compile |
 | P2 | The twin and the faults | Generated firmware runs on the generated board model, and an injected electrical fault produces a replayable failure trace |
 | P3 | Attribution and evolution | A failure is attributed to the right half, a proposal fixes it, and a fabrication package for one reference probe is emitted |
+| P4 | Sentinel-02, the flight controller | A flight controller Aethelgard designed on a multi-layer board passes every gate, is fabricated, and flies a prototype drone on unmodified ArduPilot |
 
 ## 5. Sequenced work orders
 
@@ -219,6 +220,36 @@ P0 ──> P1 ──> P2 ──> P3
 - A fabrication package (Gerbers, bill of materials, placement file, firmware image) is emitted whose file hashes match the ones named in the passing verdict (`INV-03`).
 - The bench comparison's disagreements are written into `northstar.md` §2 as the project's first scar, by amendment, whatever they are.
 
+### P4 — Sentinel-02, the flight controller
+
+**Goal:** the first board Aethelgard designs for use: a flight controller, fabricated and flown in a prototype drone, so the first custom board pays for itself.
+**Depends on:** P3. Sentinel-01 stays the reference probe; Sentinel-02 is the first board that is bought. Added 2026-11-09 at Scotty's direction. Intent only, with reserved ids, to be scoped after P3.
+
+**Why a flight controller, and why one chip.**
+- The STM32H753 is a common flight-controller processor (the Pixhawk FMUv6X class), so `RUL-08`'s anchor, its Renode twin and the board crate carry over unchanged.
+- One microcontroller family, and no second processor on the board in v1. Single-processor H7 controllers fly well. A second family on the same board is a hole in the twin wherever Renode has no model of it. Renode ships none for the RP2350 (`architecture.md` §2.2).
+- An optional companion computer (a Raspberry Pi or Jetson, over MAVLink on a UART) is bought, never designed. It runs a general-purpose OS, which Aethelgard does not produce (`NG-01`).
+- **The flight stack is ArduPilot,** unmodified. Aethelgard designs and verifies the board, and generates the board's bring-up firmware and ArduPilot's board definition. It does not write a flight stack. ArduPilot runs on ChibiOS, a real-time OS that Aethelgard neither produces nor judges, so `NG-01` is untouched.
+
+**Work orders (intent)**
+
+- `AET-WO-4100` — **stackups.** A specification selects its layer count (2, 4 or 6) and its stackup. The router, the gate-written DRC rules (`RUL-03`) and the fabrication outputs follow it. Sentinel-01 regenerates byte-identical at 2 layers.
+- `AET-WO-4200` — **SPI devices end to end:** the part table, the solver, the board crate's typestates and Kani harness, the twin and a static SPI fault. It opens with a desk spike that reads Renode's SPI sensor models at source, because which IMUs it models is unverified.
+- `AET-WO-4300` — **flight I/O:** timer outputs able to drive ESCs (PWM and DShot timing), USB device, UARTs for a receiver and MAVLink, and the power input and regulator parts, each solved and gated.
+- `AET-WO-4400` — **ArduPilot's board definition (`hwdef.dat`) generated from the `SolvedTopology`** (`RUL-16`). Unmodified ArduPilot builds from it. Its pinout is checked against the specification by a check the generator does not compute (`INV-07`).
+- `AET-WO-4500` — **Sentinel-02:** the specification, every gate, a fault campaign that includes an SPI fault, and the fabrication package. Then fabrication (human-track: Scotty's purchase), then bring-up on the bench, then flight in this order: props off, tethered, free. Disagreements between simulation and the board go into `northstar.md` §2 as scars.
+
+**Exit gate (intent; refined after P3, never weakened)**
+
+- A two-layer specification regenerates byte-identical, and the same specification at four layers passes ERC and DRC with spec-derived rules.
+- Sentinel-02's specification passes ERC, DRC, the board crate's proofs, and a static fault campaign whose electrical and SPI faults are attributed correctly (`INV-05`).
+- The generated `hwdef.dat` builds unmodified ArduPilot, and the pinout check passes.
+- The fabricated board passes the bring-up firmware's checks, ArduPilot arms with the props off, and the board flies the prototype tethered, then free. Every disagreement with the twin is recorded.
+
+**Later, not yet a phase:** more microcontroller families.
+- **The RP2350 stays the planned second target** (`RUL-08`), because a second vendor keeps the IR from becoming one vendor's register map. It needs a hand-written Renode platform description first, because the twin is the point.
+- **Other STM32 families are cheaper:** ST's open pin data already covers them, and Renode models several.
+
 ## 6. Standing cadence
 
 Every work order inherits: spike first on anything novel, then stop for review; one pull request per work order, left unmerged for the architect; an adversarial pass before the feedback document; `FEEDBACK.md` findings promoted into these documents by amendment rather than left in the branch; and no number faked, a blocked measurement is reported as blocked with the harness that would produce it. Work-order structure itself is owned by the ClearForge `co-architect-work-order` skill.
@@ -342,6 +373,8 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | 2026-11-09 | §5, §7 | `AET-WO-2202` and `AET-WO-2200` reconciled. P2 gate clause 1 holds, and clause 2 holds short of the archived campaign. `2300` and `2203` launched | PRs #69 and #70 |
 | 2026-11-09 | §5, §7 | **P2's exit gate passed.** `AET-WO-2203` and `AET-WO-2300` reconciled. `AET-WO-2301` reserved with its carry-ins | PRs #73 and #74 |
 | 2026-11-09 | §5 | `AET-WO-3100` written: attribution, P3 gate clause 1 | P2's exit gate passed |
+| 2026-11-09 | §3, §4, §5 | **P4 added:** Sentinel-02, the flight controller, as intent with `AET-WO-4100` … `4500` reserved. Human-track: the Nucleo-H753ZI is ordered; custom boards are bought only when a gate needs one, so Sentinel-01's package is emitted but not ordered; announcements held until Scotty calls the build finished | Scotty, 2026-11-09: the drone direction, the purchase rule, ArduPilot accepted, selectable layer counts and more chip families in due time |
+| 2026-11-09 | §5 | `AET-WO-3100` amended (§8): the archive gains kind 15, `I2cBusSolved`, at trace version 3, because no record joined a symptom to its bus | The builder's §7 stop S1, before any code |
 
 ## 9. Provenance
 
