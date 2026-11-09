@@ -6,7 +6,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    AnalogLine, IrValidationError, PinAssignment, PinTable, Signal, SolvedTopology, Specification,
+    AnalogLine, IrValidationError, PinAssignment, PinTable, Signal, SolvedI2cDevice,
+    SolvedTopology, Specification,
 };
 
 /// Never assigned, and refused as a hand pin: the SWD debug port (`PA13`
@@ -77,6 +78,14 @@ pub enum SolveError {
     BudgetExceeded { bus: String, limit: u64 },
     #[error("`{claimant}` has no free pin left")]
     NoFreePin { claimant: String },
+    #[error(
+        "device `{reference}` is on bus `{bus}`, whose line `{net}` the solution does not place"
+    )]
+    DeviceNotPlaced {
+        reference: String,
+        bus: String,
+        net: String,
+    },
 }
 
 fn quoted(names: &[String]) -> String {
@@ -106,6 +115,7 @@ impl SolveError {
             Self::Infeasible { .. } => "Infeasible",
             Self::BudgetExceeded { .. } => "BudgetExceeded",
             Self::NoFreePin { .. } => "NoFreePin",
+            Self::DeviceNotPlaced { .. } => "DeviceNotPlaced",
         }
     }
 
@@ -124,6 +134,7 @@ impl SolveError {
             | Self::MissingBusConstraint { bus, .. }
             | Self::RiseTimeTooSlow { bus, .. }
             | Self::BusTooFast { bus, .. } => Some(bus),
+            Self::DeviceNotPlaced { reference, .. } => Some(reference),
             Self::Infeasible { .. } | Self::NoFreePin { .. } => None,
         }
     }
@@ -146,6 +157,7 @@ impl SolveError {
             | Self::MissingBusConstraint { bus, .. }
             | Self::RiseTimeTooSlow { bus, .. }
             | Self::BusTooFast { bus, .. } => vec![bus.clone()],
+            Self::DeviceNotPlaced { reference, .. } => vec![reference.clone()],
             Self::Infeasible { buses } => buses.clone(),
         }
     }
@@ -195,6 +207,7 @@ fn solve_inner(
         gpio: BTreeMap::new(),
         i2c_ceilings: BTreeMap::new(),
         analog_lines: BTreeMap::new(),
+        i2c_devices: BTreeMap::new(),
     };
     out.validate().map_err(SolveError::InvalidSpecification)?;
     out.i2c_ceilings = i2c_ceilings(spec)?;
@@ -255,6 +268,7 @@ fn solve_inner(
         out.gpio.insert(cs.net.to_owned(), pin.to_owned());
     }
     out.analog_lines = analog_lines(spec);
+    out.i2c_devices = i2c_devices(spec, &out)?;
     // belt-and-suspenders: the search already keeps every rule `validate`
     // checks; this refuses rather than emits if a change to it ever breaks one.
     out.validate().map_err(SolveError::InvalidSpecification)?;
@@ -286,6 +300,43 @@ fn analog_lines(spec: &Specification) -> BTreeMap<String, AnalogLine> {
         }
     }
     out
+}
+
+/// Every I2C device of `spec`, on the peripheral the solution gave its bus
+/// (the one that carries its `sda` net), with its place in the specification's
+/// order (`AET-WO-2203`). A bus the solution does not place is a refusal.
+fn i2c_devices(
+    spec: &Specification,
+    solved: &SolvedTopology,
+) -> Result<BTreeMap<String, SolvedI2cDevice>, SolveError> {
+    let mut out = BTreeMap::new();
+    for (index, d) in spec.i2c_devices.iter().enumerate() {
+        let bus = spec
+            .i2c_buses
+            .iter()
+            .find(|b| b.id == d.bus)
+            .expect("Specification::validate checked every device's bus");
+        let placed =
+            solved
+                .assignments
+                .get(&bus.sda.net)
+                .ok_or_else(|| SolveError::DeviceNotPlaced {
+                    reference: d.reference.clone(),
+                    bus: bus.id.clone(),
+                    net: bus.sda.net.clone(),
+                })?;
+        out.insert(
+            d.reference.clone(),
+            SolvedI2cDevice {
+                index: u32::try_from(index).expect("a specification has under 2^32 devices"),
+                part: d.part.clone(),
+                bus: d.bus.clone(),
+                peripheral: placed.peripheral.clone(),
+                address: d.address,
+            },
+        );
+    }
+    Ok(out)
 }
 
 /// The fastest I2C mode whose maximum rise time (NXP UM10204) is at least

@@ -11,8 +11,7 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
-use aethelgard_ir::SolvedTopology;
-use aethelgard_ir::parts::I2cTarget;
+use aethelgard_ir::{SolvedI2cDevice, SolvedTopology};
 use aethelgard_svd_hal::cmsis::{self, RegisterFacts};
 
 use crate::model;
@@ -80,18 +79,14 @@ pub struct Instance {
 }
 
 /// Every solved peripheral and port, with the name Renode lists it by, then
-/// each modelled I2C device (`AET-WO-2202`), added by the emitted description.
+/// each modelled I2C device (`AET-WO-2202`) of the topology that is not on a
+/// bus in `faulted`, added by the emitted description.
 pub fn instances(
     topology: &SolvedTopology,
-    devices: &[I2cTarget],
+    faulted: &BTreeSet<String>,
 ) -> Result<Vec<Instance>, TwinError> {
-    topology.validate().map_err(TwinError::InvalidTopology)?;
-    let facts = cmsis::register_facts()?;
-    let mut out = solved(topology)?
-        .iter()
-        .map(|p| instance(p, &facts))
-        .collect::<Result<Vec<_>, _>>()?;
-    let (modelled, _) = split_devices(topology, devices)?;
+    let mut out = stock_instances(topology)?;
+    let (modelled, _) = split_devices(topology, &present(topology, faulted)?)?;
     out.extend(modelled.into_iter().map(|d| Instance {
         peripheral: d.reference,
         name: d.name,
@@ -99,6 +94,16 @@ pub fn instances(
         added: true,
     }));
     Ok(out)
+}
+
+/// Every solved peripheral and port, with the name Renode lists it by.
+fn stock_instances(topology: &SolvedTopology) -> Result<Vec<Instance>, TwinError> {
+    topology.validate().map_err(TwinError::InvalidTopology)?;
+    let facts = cmsis::register_facts()?;
+    solved(topology)?
+        .iter()
+        .map(|p| instance(p, &facts))
+        .collect()
 }
 
 /// One I2C device the emitted description declares.
@@ -117,26 +122,26 @@ struct Modelled {
 /// registration breaks the load (`architecture.md` §2.9).
 fn split_devices<'d>(
     topology: &SolvedTopology,
-    devices: &'d [I2cTarget],
-) -> Result<(Vec<Modelled>, Vec<&'d I2cTarget>), TwinError> {
+    devices: &[Device<'d>],
+) -> Result<(Vec<Modelled>, Vec<Device<'d>>), TwinError> {
     let used = solved(topology)?;
     let mut taken: BTreeSet<String> = STOCK.iter().map(|s| s.1.to_owned()).collect();
     taken.extend(used.iter().map(|p| p.to_ascii_lowercase()));
     let mut modelled = Vec::new();
     let mut unmodelled = Vec::new();
-    for d in devices {
-        let name = d.reference.to_ascii_lowercase();
+    for &(reference, d) in devices {
+        let name = reference.to_ascii_lowercase();
         let ident = name.starts_with(|c: char| c.is_ascii_lowercase())
             && name
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
         if !ident || !taken.insert(name.clone()) {
             return Err(TwinError::InvalidDeviceName {
-                reference: d.reference.clone(),
+                reference: reference.to_owned(),
             });
         }
         let Some(model) = model::model(&d.part) else {
-            unmodelled.push(d);
+            unmodelled.push((reference, d));
             continue;
         };
         let bus = STOCK
@@ -144,11 +149,11 @@ fn split_devices<'d>(
             .find(|s| s.0 == d.peripheral && used.contains(&d.peripheral))
             .filter(|s| s.2 == "I2C.STM32F7_I2C")
             .ok_or_else(|| TwinError::DeviceOffBus {
-                reference: d.reference.clone(),
+                reference: reference.to_owned(),
                 peripheral: d.peripheral.clone(),
             })?;
         modelled.push(Modelled {
-            reference: d.reference.clone(),
+            reference: reference.to_owned(),
             name,
             model,
             bus: bus.1,
@@ -159,10 +164,10 @@ fn split_devices<'d>(
     Ok((modelled, unmodelled))
 }
 
-/// The `.repl` text for `topology`, with `devices` declared where the part
-/// has a model and listed as unmodelled where it has none.
-pub fn emit(topology: &SolvedTopology, devices: &[I2cTarget]) -> Result<String, TwinError> {
-    emit_faulted(topology, devices, &BTreeSet::new())
+/// The `.repl` text for `topology`, with its I2C devices declared where the
+/// part has a model and listed as unmodelled where it has none.
+pub fn emit(topology: &SolvedTopology) -> Result<String, TwinError> {
+    emit_faulted(topology, &BTreeSet::new())
 }
 
 /// Each bus in `faulted` with the peripheral the topology solved it on. A
@@ -185,18 +190,21 @@ fn faulted_peripherals(
         .collect()
 }
 
-/// The devices of `devices` that are not on a bus in `faulted`: what the
-/// platform declares, and so what Renode lists, after the analog pass.
-pub fn present(
-    topology: &SolvedTopology,
-    devices: &[I2cTarget],
+/// A device of the topology, by reference, as the topology orders them.
+type Device<'t> = (&'t str, &'t SolvedI2cDevice);
+
+/// The topology's devices that are not on a bus in `faulted`, in the
+/// specification's order: what the platform declares, and so what Renode
+/// lists, after the analog pass.
+pub fn present<'t>(
+    topology: &'t SolvedTopology,
     faulted: &BTreeSet<String>,
-) -> Result<Vec<I2cTarget>, TwinError> {
+) -> Result<Vec<Device<'t>>, TwinError> {
     let off = faulted_peripherals(topology, faulted)?;
-    Ok(devices
-        .iter()
-        .filter(|d| !off.iter().any(|(_, p)| *p == d.peripheral))
-        .cloned()
+    Ok(topology
+        .i2c_devices_in_order()
+        .into_iter()
+        .filter(|(_, d)| !off.iter().any(|(_, p)| *p == d.peripheral))
         .collect())
 }
 
@@ -208,18 +216,18 @@ pub fn present(
 /// emitted with it.
 pub fn emit_faulted(
     topology: &SolvedTopology,
-    devices: &[I2cTarget],
     faulted: &BTreeSet<String>,
 ) -> Result<String, TwinError> {
-    let instances = instances(topology, &[])?;
-    let kept = present(topology, devices, faulted)?;
+    let instances = stock_instances(topology)?;
+    let kept = present(topology, faulted)?;
     let (modelled, unmodelled) = split_devices(topology, &kept)?;
     let mut omitted = Vec::new();
     for (bus, peripheral) in faulted_peripherals(topology, faulted)? {
-        let gone: Vec<String> = devices
-            .iter()
-            .filter(|d| d.peripheral == peripheral)
-            .map(|d| format!("{} ({})", d.reference, d.part))
+        let gone: Vec<String> = topology
+            .i2c_devices_in_order()
+            .into_iter()
+            .filter(|(_, d)| d.peripheral == peripheral)
+            .map(|(reference, d)| format!("{reference} ({})", d.part))
             .collect();
         omitted.push(format!(
             "\n// - Analog fault (AET-WO-2200): bus `{bus}` ({peripheral}) measured past its rise-time\n\
@@ -243,10 +251,10 @@ pub fn emit_faulted(
         } else {
             unmodelled
                 .iter()
-                .map(|d| {
+                .map(|(reference, d)| {
                     format!(
-                        "{} ({}) at {} 0x{:02X}",
-                        d.reference, d.part, d.peripheral, d.address
+                        "{reference} ({}) at {} 0x{:02X}",
+                        d.part, d.peripheral, d.address
                     )
                 })
                 .collect::<Vec<_>>()

@@ -677,3 +677,42 @@ fn pull_up_and_capacitance_are_not_read() {
     }
     assert_eq!(ok(&s).i2c_ceilings["I"], 400_000);
 }
+
+/// `AET-WO-2203` §1.1: `solve` copies each device, on the peripheral its bus
+/// was solved to, and its place in the specification's order, which the map
+/// (sorted by reference: `U10` before `U3`) does not keep.
+#[test]
+fn devices_are_copied_with_their_peripheral_and_their_place_in_the_order() {
+    let mut s = basic();
+    let dev = |reference: &str, address: u8| aethelgard_ir::I2cDevice {
+        reference: reference.into(),
+        part: "BME280".into(),
+        supply: "VDD_3V3".into(),
+        bus: "I".into(),
+        address,
+    };
+    s.i2c_devices = vec![dev("U10", 0x76), dev("U3", 0x77), dev("U2", 0x40)];
+    let t = ok(&s);
+    t.validate().unwrap();
+    let peripheral = t.assignments["I_SDA"].peripheral.clone();
+    let got: Vec<(&str, u32, u8, &str)> = t
+        .i2c_devices_in_order()
+        .into_iter()
+        .map(|(r, d)| (r, d.index, d.address, d.peripheral.as_str()))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("U10", 0, 0x76, peripheral.as_str()),
+            ("U3", 1, 0x77, peripheral.as_str()),
+            ("U2", 2, 0x40, peripheral.as_str())
+        ]
+    );
+    assert_eq!(t.i2c_devices["U3"].bus, "I");
+    assert_eq!(t.i2c_devices["U3"].part, "BME280");
+}
+
+#[test]
+fn a_specification_with_no_device_solves_to_none() {
+    assert!(ok(&basic()).i2c_devices.is_empty());
+}

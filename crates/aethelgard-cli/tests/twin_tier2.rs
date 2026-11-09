@@ -69,13 +69,6 @@ fn aethelgard(args: &[&str]) -> (Option<i32>, Value) {
     (out.status.code(), value)
 }
 
-/// The reference specification's I2C devices, as the judge and the generator get them.
-fn devices() -> Vec<aethelgard_ir::parts::I2cTarget> {
-    let spec: aethelgard_ir::Specification =
-        serde_json::from_slice(&fs::read(spec()).unwrap()).unwrap();
-    aethelgard_ir::parts::i2c_targets(&spec, &topology()).unwrap()
-}
-
 fn topology() -> SolvedTopology {
     let (code, v) = aethelgard(&["solve", "--file", spec().to_str().unwrap()]);
     assert_eq!(code, Some(0), "{v}");
@@ -257,7 +250,9 @@ fn the_emitted_platform_loads_and_lists_every_solved_peripheral() {
         .iter()
         .map(|p| (p["name"].as_str().unwrap(), p["type"].as_str().unwrap()))
         .collect();
-    let solved = aethelgard_twin::platform::instances(&topology(), &devices()).unwrap();
+    let solved =
+        aethelgard_twin::platform::instances(&topology(), &std::collections::BTreeSet::new())
+            .unwrap();
     assert!(!solved.is_empty());
     for i in solved {
         assert!(
@@ -416,11 +411,9 @@ fn p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes() {
         let (code, v) = aethelgard(&["solve", "--file", spec.to_str().unwrap()]);
         assert_eq!(code, Some(0), "{v}");
         let topology: SolvedTopology = serde_json::from_value(v).unwrap();
-        let specification: aethelgard_ir::Specification = serde_json::from_str(&text).unwrap();
-        let devices = aethelgard_ir::parts::i2c_targets(&specification, &topology).unwrap();
         // The caller's platform is the unfaulted emission, U2 declared (F6).
         let platform = dir.join(format!("platform-{ohms}.repl"));
-        let emitted = aethelgard_twin::platform::emit(&topology, &devices).unwrap();
+        let emitted = aethelgard_twin::platform::emit(&topology).unwrap();
         assert!(emitted.contains("\nu2: I2C.BME280 @ i2c1 0x76\n"));
         fs::write(&platform, emitted).unwrap();
         let run = |n: u32| {
