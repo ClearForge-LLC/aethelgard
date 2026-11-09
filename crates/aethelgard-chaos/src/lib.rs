@@ -1,17 +1,21 @@
 //! Fault scenarios, the campaign runner, the trace archive, and verdicts; never suppresses a panic or a timeout (`docs/architecture.md` §3).
 //!
-//! This crate so far holds the trace archive (`RUL-06`, `INV-04`): a
-//! deterministic CBOR profile ([`cbor`]), a local append-only archive with a
-//! commit protocol ([`archive`]), a replay that refuses what it cannot prove
+//! This crate holds the trace archive (`RUL-06`, `INV-04`): a deterministic
+//! CBOR profile ([`cbor`]), a local append-only archive with a commit
+//! protocol ([`archive`]), a replay that refuses what it cannot prove
 //! complete ([`replay`]), and the optional remote mirror's credential
-//! boundary ([`mirror`]). See `README.md`.
+//! boundary ([`mirror`]). Since `AET-WO-2300` it also holds the campaign's
+//! records ([`record`]), the scenario model and the run rules ([`campaign`]).
+//! See `README.md`.
 
 #![forbid(unsafe_code)]
 
 pub mod archive;
+pub mod campaign;
 pub mod cbor;
 pub mod event;
 pub mod mirror;
+pub mod record;
 pub mod replay;
 pub mod synthetic;
 
@@ -80,6 +84,34 @@ pub enum ArchiveError {
 }
 
 impl ArchiveError {
+    /// The variant's name, as `aethelgard replay` reports a refusal.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Io { .. } => "Io",
+            Self::RunDirExists(_) => "RunDirExists",
+            Self::InvalidHeader(_) => "InvalidHeader",
+            Self::InvalidEvent { .. } => "InvalidEvent",
+            Self::UnexpectedEntry(_) => "UnexpectedEntry",
+            Self::Uncommitted => "Uncommitted",
+            Self::MissingTrace => "MissingTrace",
+            Self::MalformedManifest(_) => "MalformedManifest",
+            Self::MalformedHeader(_) => "MalformedHeader",
+            Self::UnknownVersion { .. } => "UnknownVersion",
+            Self::TraceTooLarge { .. } => "TraceTooLarge",
+            Self::Truncated { .. } => "Truncated",
+            Self::Extended { .. } => "Extended",
+            Self::HashMismatch => "HashMismatch",
+            Self::NotDeterministicCbor(_) => "NotDeterministicCbor",
+            Self::UnknownEventKind { .. } => "UnknownEventKind",
+            Self::MalformedEvent { .. } => "MalformedEvent",
+            Self::TimestampRegressed { .. } => "TimestampRegressed",
+            Self::EventCountMismatch { .. } => "EventCountMismatch",
+            Self::ReplayDiverged => "ReplayDiverged",
+            Self::MirrorBeforeCommit => "MirrorBeforeCommit",
+            Self::MirrorExists => "MirrorExists",
+        }
+    }
+
     pub(crate) fn io(path: &std::path::Path, source: io::Error) -> Self {
         Self::Io {
             path: path.display().to_string(),

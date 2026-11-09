@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use crate::ArchiveError;
 use crate::cbor::{self, Value};
 use crate::event::Event;
+use crate::record::Record;
 
 /// The state a trace folds into.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -16,6 +17,8 @@ pub struct State {
     pub interrupts: BTreeMap<u32, u64>,
     pub nets: BTreeMap<String, i64>,
     pub faults: u64,
+    /// A campaign run's records, in trace order (`AET-WO-2300`).
+    pub records: Vec<Record>,
 }
 
 impl State {
@@ -51,6 +54,13 @@ impl State {
             Event::FaultInjected { .. } => {
                 self.faults += 1;
                 Value::Array(vec![u(4), u(self.faults)])
+            }
+            // A record is its own change: the delta is its whole payload.
+            Event::Record { record, .. } => {
+                self.records.push(record.clone());
+                let mut items = vec![u(record.kind())];
+                items.extend(record.fields());
+                Value::Array(items)
             }
         }
     }

@@ -259,7 +259,9 @@ pub struct AnalogRecord {
 #[derive(Serialize)]
 pub struct FaultRecord {
     pub kind: &'static str,
-    pub source: &'static str,
+    /// `aethelgard` for a measured fault; `scenario <name>` for a line a
+    /// campaign scenario holds low (`AET-WO-2300`).
+    pub source: String,
     pub bus: String,
     pub fault: &'static str,
     /// Each distinct cause among the bus's lines.

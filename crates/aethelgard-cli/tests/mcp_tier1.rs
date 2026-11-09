@@ -46,7 +46,9 @@ fn lists_the_five_tools_and_completes_two_calls() {
             "check_drc",
             "check_erc",
             "prove",
-            "simulate"
+            "simulate",
+            "campaign",
+            "replay"
         ]
     );
     println!("{}", serde_json::to_string_pretty(&list["result"]).unwrap());

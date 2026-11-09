@@ -45,12 +45,17 @@ struct Leaf {
     about: String,
     path: Vec<String>,
     args: Vec<Arg>,
+    /// The subcommand prints one JSON line per record and then its verdict
+    /// ([`crate::LINE_PER_RECORD`]); every other prints exactly one line.
+    lines: bool,
 }
 
 struct Arg {
     long: String,
     help: String,
     required: bool,
+    /// Repeatable (`ArgAction::Append`): a non-empty array of strings, one token each.
+    many: bool,
 }
 
 /// Every leaf subcommand of `root` (an **unbuilt** command: a built one grows `help`
@@ -113,7 +118,7 @@ fn leaf(cmd: &Command, path: &[String]) -> Leaf {
             .get_long()
             .unwrap_or_else(|| panic!("tool {name}: argument `{id}` has no long name"));
         assert!(
-            matches!(arg.get_action(), ArgAction::Set),
+            matches!(arg.get_action(), ArgAction::Set | ArgAction::Append),
             "tool {name}: argument `{id}` is not a plain value (action {:?})",
             arg.get_action()
         );
@@ -121,10 +126,12 @@ fn leaf(cmd: &Command, path: &[String]) -> Leaf {
             long: long.to_owned(),
             help: arg.get_help().map(ToString::to_string).unwrap_or_default(),
             required: arg.is_required_set(),
+            many: matches!(arg.get_action(), ArgAction::Append),
         });
     }
     Leaf {
         about: cmd.get_about().map(ToString::to_string).unwrap_or_default(),
+        lines: crate::LINE_PER_RECORD.contains(&name.as_str()),
         name,
         path: path.to_vec(),
         args,
@@ -135,10 +142,12 @@ fn schema(leaf: &Leaf) -> JsonObject {
     let mut properties = serde_json::Map::new();
     let mut required = Vec::new();
     for a in &leaf.args {
-        properties.insert(
-            a.long.clone(),
-            json!({"type": "string", "description": a.help}),
-        );
+        let property = if a.many {
+            json!({"type": "array", "items": {"type": "string"}, "minItems": 1, "description": a.help})
+        } else {
+            json!({"type": "string", "description": a.help})
+        };
+        properties.insert(a.long.clone(), property);
         if a.required {
             required.push(Value::from(a.long.clone()));
         }
@@ -166,8 +175,9 @@ pub fn tools(root: &Command) -> Vec<Tool> {
 struct Refused(String);
 
 /// The child's argument vector: the subcommand path, then one `--<long>=<value>` token per
-/// argument, so a value starting with `-` can never be read as a flag. Only declared names, only
-/// string values, every required argument present, no NUL.
+/// argument, and per item of a repeatable one, so a value starting with `-` can never be read as a
+/// flag. Only declared names, only string values (a non-empty array of them for a repeatable
+/// argument), every required argument present, no NUL.
 fn argv(leaves: &[Leaf], tool: &str, given: &JsonObject) -> Result<Vec<OsString>, Refused> {
     let leaf = leaves
         .iter()
@@ -186,14 +196,32 @@ fn argv(leaves: &[Leaf], tool: &str, given: &JsonObject) -> Result<Vec<OsString>
                 return Err(Refused(format!("missing required argument `{}`", a.long)));
             }
             None => {}
-            Some(Value::String(v)) if v.contains('\0') => {
-                return Err(Refused(format!("argument `{}` contains NUL", a.long)));
+            Some(Value::Array(items)) if a.many && !items.is_empty() => {
+                for item in items {
+                    out.push(token(&a.long, item)?);
+                }
             }
-            Some(Value::String(v)) => out.push(format!("--{}={v}", a.long).into()),
-            Some(_) => return Err(Refused(format!("argument `{}` must be a string", a.long))),
+            Some(_) if a.many => {
+                return Err(Refused(format!(
+                    "argument `{}` must be a non-empty array of strings",
+                    a.long
+                )));
+            }
+            Some(v) => out.push(token(&a.long, v)?),
         }
     }
     Ok(out)
+}
+
+/// One `--<long>=<value>` token from a string with no NUL.
+fn token(long: &str, v: &Value) -> Result<OsString, Refused> {
+    match v {
+        Value::String(v) if v.contains('\0') => {
+            Err(Refused(format!("argument `{long}` contains NUL")))
+        }
+        Value::String(v) => Ok(format!("--{long}={v}").into()),
+        _ => Err(Refused(format!("argument `{long}` must be a string"))),
+    }
 }
 
 /// How a child ended, or why the call stopped reading.
@@ -267,8 +295,10 @@ async fn execute(exe: &PathBuf, args: &[OsString]) -> std::io::Result<Finished> 
 }
 
 /// Maps a finished child to the tool result. `isError` is false only for exit 0 or 1 with exactly
-/// one JSON object on stdout; a fail verdict is a successful call.
-fn result(done: &Finished) -> CallToolResult {
+/// one JSON object on stdout; a fail verdict is a successful call. With `lines`, stdout may hold
+/// one JSON object line per record before the verdict's: the last line is the verdict, and the
+/// lines before it are `records`.
+fn result(done: &Finished, lines: bool) -> CallToolResult {
     let error = |message: String| CallToolResult::error(vec![ContentBlock::text(message)]);
     let exit = done.code.map_or_else(
         || "was killed by a signal".to_owned(),
@@ -281,11 +311,21 @@ fn result(done: &Finished) -> CallToolResult {
     let line = done
         .stdout
         .strip_suffix(b"\n")
-        .filter(|l| !l.contains(&b'\n'));
-    let verdict = line
-        .and_then(|l| serde_json::from_slice::<Value>(l).ok())
-        .filter(Value::is_object);
-    let (Some(line), Some(verdict)) = (line, verdict) else {
+        .filter(|l| lines || !l.contains(&b'\n'));
+    let object = |l: &[u8]| {
+        serde_json::from_slice::<Value>(l)
+            .ok()
+            .filter(Value::is_object)
+    };
+    let mut objects = line
+        .map(|l| {
+            l.split(|b| *b == b'\n')
+                .map(object)
+                .collect::<Option<Vec<_>>>()
+        })
+        .unwrap_or_default();
+    let verdict = objects.as_mut().and_then(Vec::pop);
+    let (Some(line), Some(records), Some(verdict)) = (line, objects, verdict) else {
         let stderr = String::from_utf8_lossy(&done.stderr);
         return error(format!(
             "the child {exit} and stdout is not exactly one JSON object line; stderr: {}",
@@ -295,7 +335,11 @@ fn result(done: &Finished) -> CallToolResult {
     let mut r = CallToolResult::success(vec![ContentBlock::text(
         String::from_utf8_lossy(line).into_owned(),
     )]);
-    r.structured_content = Some(json!({"exit_code": done.code, "verdict": verdict}));
+    r.structured_content = Some(if lines {
+        json!({"exit_code": done.code, "verdict": verdict, "records": records})
+    } else {
+        json!({"exit_code": done.code, "verdict": verdict})
+    });
     r.is_error = Some(!matches!(done.code, Some(0 | 1)));
     r
 }
@@ -330,7 +374,10 @@ impl ServerHandler for Server {
             .map_err(|Refused(m)| ErrorData::invalid_params(m, None))?;
         tokio::select! {
             done = execute(&self.exe, &args) => match done {
-                Ok(done) => Ok(result(&done).into()),
+                Ok(done) => {
+                    let lines = self.leaves.iter().any(|l| l.name == request.name && l.lines);
+                    Ok(result(&done, lines).into())
+                }
                 Err(e) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                     "cannot run the child: {e}"
                 ))])
@@ -457,7 +504,9 @@ mod tests {
                 "check_drc",
                 "check_erc",
                 "prove",
-                "simulate"
+                "simulate",
+                "campaign",
+                "replay"
             ]
         );
     }
@@ -500,7 +549,7 @@ mod tests {
             Some("A subcommand added by a test")
         );
         assert_eq!(t.input_schema["required"], json!(["thing"]));
-        assert_eq!(all.len(), 8);
+        assert_eq!(all.len(), 10);
     }
 
     #[test]
@@ -599,6 +648,75 @@ mod tests {
         assert_eq!(v, ["validate"].map(OsString::from));
     }
 
+    /// `AET-WO-2300`: `--scenarios` repeats, so it is an array of strings, one token per item.
+    #[test]
+    fn a_repeatable_argument_is_an_array_with_one_token_per_item() {
+        let all = tools(&Cli::command());
+        let campaign = all.iter().find(|t| t.name == "campaign").unwrap();
+        let s = &campaign.input_schema;
+        assert_eq!(s["properties"]["scenarios"]["type"], "array");
+        assert_eq!(s["properties"]["scenarios"]["items"]["type"], "string");
+        assert_eq!(s["properties"]["scenarios"]["minItems"], 1);
+        assert_eq!(s["properties"]["firmware"]["type"], "string");
+        assert_eq!(s["required"], json!(["scenarios", "firmware", "archive"]));
+        let v = argv(
+            &real(),
+            "campaign",
+            &obj(json!({"scenarios": ["a.json", "--b"], "firmware": "f", "archive": "d"})),
+        )
+        .unwrap();
+        assert_eq!(
+            v,
+            [
+                "campaign",
+                "--scenarios=a.json",
+                "--scenarios=--b",
+                "--firmware=f",
+                "--archive=d"
+            ]
+            .map(OsString::from)
+        );
+        let l = real();
+        let refuse = |v: Value| argv(&l, "campaign", &obj(v)).unwrap_err().0;
+        let rest =
+            |scenarios: Value| json!({"scenarios": scenarios, "firmware": "f", "archive": "d"});
+        for bad in [json!("a.json"), json!([]), json!(null), json!({})] {
+            assert!(
+                refuse(rest(bad.clone())).contains("non-empty array"),
+                "{bad}"
+            );
+        }
+        assert!(refuse(rest(json!(["a", 1]))).contains("must be a string"));
+        assert!(refuse(rest(json!(["a\0"]))).contains("NUL"));
+        assert!(refuse(json!({"firmware": "f", "archive": "d"})).contains("missing required"));
+        let replay = real().into_iter().find(|l| l.name == "replay").unwrap();
+        assert!(!replay.lines && replay.args.iter().all(|a| !a.many));
+    }
+
+    /// Only a subcommand in `LINE_PER_RECORD` may print more than one line,
+    /// and then every line must be a JSON object; the last is the verdict.
+    #[test]
+    fn a_line_per_record_subcommand_returns_its_records_and_its_verdict() {
+        assert!(real().iter().find(|l| l.name == "campaign").unwrap().lines);
+        let two = b"{\"scenario\":\"a\"}\n{\"ok\":true,\"verdict\":\"pass\"}\n";
+        let r = view(&result(&done(Some(0), two), true));
+        assert_eq!(r["isError"], false);
+        assert_eq!(r["structuredContent"]["verdict"]["verdict"], "pass");
+        assert_eq!(
+            r["structuredContent"]["records"],
+            json!([{"scenario": "a"}])
+        );
+        let one = view(&result(&done(Some(1), b"{\"ok\":false}\n"), true));
+        assert_eq!(one["structuredContent"]["records"], json!([]));
+        for bad in [&b"{}\nnope\n"[..], b"{}\n\n{}\n", b"{}\n[]\n", b"", b"{}"] {
+            let r = view(&result(&done(Some(0), bad), true));
+            assert_eq!(r["isError"], true, "{bad:?}");
+            assert!(r.get("structuredContent").is_none(), "{bad:?}");
+        }
+        // The same two lines from any other tool are an error.
+        assert_eq!(view(&result(&done(Some(0), two), false))["isError"], true);
+    }
+
     #[test]
     fn a_value_starting_with_dashes_is_one_token_not_a_flag() {
         let v = argv(&real(), "validate", &obj(json!({"file": "--help"}))).unwrap();
@@ -663,7 +781,7 @@ mod tests {
             (Some(70), true),
             (None, true),
         ] {
-            let r = view(&result(&done(code, &with_nl)));
+            let r = view(&result(&done(code, &with_nl), false));
             assert_eq!(r["isError"], error, "{code:?}");
             assert_eq!(r["content"][0]["text"], std::str::from_utf8(line).unwrap());
             assert_eq!(r["structuredContent"]["exit_code"], json!(code));
@@ -684,7 +802,7 @@ mod tests {
             b"\n",
             b"{} \n\n",
         ] {
-            let r = view(&result(&done(Some(0), bad)));
+            let r = view(&result(&done(Some(0), bad), false));
             assert_eq!(r["isError"], true, "{bad:?}");
             assert!(r.get("structuredContent").is_none(), "{bad:?}");
             assert!(r["content"][0]["text"].as_str().unwrap().contains("diag"));
@@ -695,7 +813,7 @@ mod tests {
     fn a_capped_child_is_an_error_naming_the_cap() {
         let mut d = done(Some(0), b"{}\n");
         d.capped = Some("stdout exceeded the 1 MiB cap");
-        let r = view(&result(&d));
+        let r = view(&result(&d, false));
         assert_eq!(r["isError"], true);
         assert!(r["content"][0]["text"].as_str().unwrap().contains("1 MiB"));
     }
@@ -732,7 +850,7 @@ mod tests {
         .unwrap();
         assert!(d.capped.unwrap().contains("stdout"));
         assert!(d.stdout.len() <= MAX_STDOUT);
-        assert!(view(&result(&d))["isError"].as_bool().unwrap());
+        assert!(view(&result(&d, false))["isError"].as_bool().unwrap());
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -758,7 +876,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(d.code, None);
-        assert_eq!(view(&result(&d))["isError"], true);
+        assert_eq!(view(&result(&d, false))["isError"], true);
     }
 
     #[tokio::test(flavor = "current_thread")]

@@ -2,11 +2,15 @@
 //! array of the shape `README.md` states.
 
 use crate::cbor::Value;
+use crate::record::{self, Record};
 
-/// The only time unit version 1 admits.
+/// The only time unit the trace admits.
 pub const TIME_UNIT: &str = "ns";
-/// The format version of the trace header and the mirror record.
+/// The format version of the mirror record.
 pub const VERSION: u64 = 1;
+/// The format version of the trace header. 2 since `AET-WO-2300` added the
+/// campaign's event kinds 5 to 14 ([`Record`]).
+pub const TRACE_VERSION: u64 = 2;
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.
@@ -41,6 +45,11 @@ pub enum Event {
         timestamp: u64,
         scenario: String,
         detail: String,
+    },
+    /// Kinds 5 to 14: a campaign run's records (`AET-WO-2300`).
+    Record {
+        timestamp: u64,
+        record: Record,
     },
 }
 
@@ -87,7 +96,8 @@ impl Event {
             | Self::PinLevel { timestamp, .. }
             | Self::Interrupt { timestamp, .. }
             | Self::AnalogSample { timestamp, .. }
-            | Self::FaultInjected { timestamp, .. } => *timestamp,
+            | Self::FaultInjected { timestamp, .. }
+            | Self::Record { timestamp, .. } => *timestamp,
         }
     }
 
@@ -129,6 +139,7 @@ impl Event {
                     Ok(())
                 }
             }
+            Self::Record { record, .. } => record.check(),
         }
     }
 
@@ -172,6 +183,11 @@ impl Event {
             } => {
                 vec![u(4), u(*timestamp), t(scenario), t(detail)]
             }
+            Self::Record { timestamp, record } => {
+                let mut items = vec![u(record.kind()), u(*timestamp)];
+                items.extend(record.fields());
+                items
+            }
         };
         Value::Array(items)
     }
@@ -183,7 +199,7 @@ impl Event {
         let Some(kind) = items.first().and_then(uint) else {
             return malformed("event has no unsigned kind");
         };
-        if kind > 4 {
+        if kind > record::LAST_KIND {
             return Err(Fault::UnknownKind(kind));
         }
         let Some(timestamp) = items.get(1).and_then(uint) else {
@@ -226,6 +242,10 @@ impl Event {
                 },
                 _ => return malformed("fault fields have the wrong types"),
             },
+            (record::FIRST_KIND.., payload) => match Record::from_fields(kind, payload) {
+                Some(record) => Self::Record { timestamp, record },
+                None => return malformed("campaign record fields have the wrong types or length"),
+            },
             _ => return malformed("event payload has the wrong length"),
         };
         match event.check() {
@@ -266,7 +286,7 @@ impl Header {
             .collect();
         Value::Array(vec![
             Value::Text(TRACE_MAGIC.to_owned()),
-            Value::Uint(VERSION),
+            Value::Uint(TRACE_VERSION),
             Value::Bytes(self.run_id.to_vec()),
             Value::Text(TIME_UNIT.to_owned()),
             Value::Array(artifacts),
@@ -274,7 +294,7 @@ impl Header {
     }
 
     pub fn from_value(value: &Value) -> Result<Self, Fault> {
-        let items = envelope(value, TRACE_MAGIC, VERSION)?;
+        let items = envelope(value, TRACE_MAGIC, TRACE_VERSION)?;
         let [
             _,
             _,

@@ -10,12 +10,15 @@ use sha2::{Digest, Sha256};
 use common::*;
 
 /// sha256 of the golden `trace.cbor`. Changing it requires bumping the format
-/// version and saying why in FEEDBACK.
+/// version and saying why in FEEDBACK. It was `51c6193f…a896d` (trace
+/// version 1) until `AET-WO-2300` added the campaign's kinds; only the header's
+/// version byte changed, and setting it back to 1 gives that hash again.
 const GOLDEN_TRACE_SHA256: &str =
-    "51c6193f94ca0571a1c93e8f575af767161c70f1c0f167e79523eaeb9cca896d";
+    "e1d3921371b057fe426c71939eccb1339006907b1f87cede26e423c4843c86e8";
 /// The golden `state_hash`. Same rule. It was `535db225…adac4` (manifest
-/// version 1) until `AET-WO-0400a` made the chain hash each event's delta.
-const GOLDEN_STATE_HASH: &str = "af2d46bb1b30e472e73fc9109f69213a80f8537e35d8d9d18f08b2bffb7b4939";
+/// version 1) until `AET-WO-0400a` made the chain hash each event's delta,
+/// then `af2d46bb…b4939` until `AET-WO-2300` changed the header it starts from.
+const GOLDEN_STATE_HASH: &str = "eb6408eee6c621da2060be04f3df0597592958cb3ccac5db2b7af12977693edc";
 
 #[test]
 fn golden_trace_and_state_hash_are_pinned() {

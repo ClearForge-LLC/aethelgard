@@ -21,6 +21,7 @@ use std::fs;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::Path;
 
+use aethelgard_chaos::campaign;
 use aethelgard_ir::SolvedTopology;
 use aethelgard_twin::analog::{self, Deck};
 use serde_json::{Value, json};
@@ -78,17 +79,62 @@ pub fn bridge() -> Result<run::Tool, run::Stop> {
     }
 }
 
+/// Lines a campaign scenario holds low, and the scenario's name
+/// (`AET-WO-2300`). `simulate --firmware` passes none.
+pub struct Held<'a> {
+    pub scenario: &'a str,
+    pub lines: &'a [crate::campaign::HeldLow],
+}
+
 /// Measures every analog line of `topology` in `dir`, a directory of its own
-/// that only the bridge writes; `status` is the reaper's, outside it.
-pub fn pass(topology: &SolvedTopology, dir: &Path, status: &Path) -> Result<Pass, run::Stop> {
-    let decks = analog::decks(topology).map_err(crate::twin_stop)?;
+/// that only the bridge writes; `status` is the reaper's, outside it. A held
+/// line is not measured: the bridge's decision is the fault, from the
+/// scenario, without a measurement.
+pub fn pass(
+    topology: &SolvedTopology,
+    held: &Held<'_>,
+    dir: &Path,
+    status: &Path,
+) -> Result<Pass, run::Stop> {
+    let decks: Vec<Deck> = analog::decks(topology)
+        .map_err(crate::twin_stop)?
+        .into_iter()
+        .filter(|d| !held.lines.iter().any(|h| h.net == d.net))
+        .collect();
+    let mut pass = measure(&decks, dir, status)?;
+    for line in held.lines {
+        pass.findings.push(Finding::plain(
+            campaign::HELD_LOW_FINDING,
+            format!(
+                "bus `{}`: net `{}` is held low by scenario `{}`; the bus is faulted without a measurement",
+                line.bus, line.net, held.scenario
+            ),
+        ));
+        pass.faults.push(FaultRecord {
+            kind: "bridge.fault_state",
+            source: format!("scenario {}", held.scenario),
+            bus: line.bus.clone(),
+            fault: "absent",
+            from: vec![campaign::HELD_LOW],
+            nets: vec![line.net.clone()],
+            firmware_sees: RENDERING,
+        });
+    }
+    Ok(pass)
+}
+
+/// Runs the bridge on `decks`; with none, there is nothing to measure.
+fn measure(decks: &[Deck], dir: &Path, status: &Path) -> Result<Pass, run::Stop> {
+    if decks.is_empty() {
+        return Ok(judge(decks, &[]));
+    }
     let tool = bridge()?;
     fs::DirBuilder::new()
         .mode(0o700)
         .create(dir)
         .map_err(|e| run::Stop::tool_error(BRIDGE, format!("cannot create its directory: {e}")))?;
     let request = dir.join("request.json");
-    fs::write(&request, request_json(&decks).to_string())
+    fs::write(&request, request_json(decks).to_string())
         .map_err(|e| run::Stop::tool_error(BRIDGE, format!("cannot write its request: {e}")))?;
     let out = run::Invocation {
         tool: &tool,
@@ -113,8 +159,8 @@ pub fn pass(topology: &SolvedTopology, dir: &Path, status: &Path) -> Result<Pass
             ),
         ));
     }
-    let measured = answers(&decks, &stdout).map_err(|e| run::Stop::tool_error(BRIDGE, e))?;
-    Ok(judge(&decks, &measured))
+    let measured = answers(decks, &stdout).map_err(|e| run::Stop::tool_error(BRIDGE, e))?;
+    Ok(judge(decks, &measured))
 }
 
 fn request_json(decks: &[Deck]) -> Value {
@@ -218,7 +264,7 @@ fn judge(decks: &[Deck], answers: &[Answer]) -> Pass {
                 record.exceeds = rise > f64::from(ceiling);
                 record.exceeds.then(|| {
                     Finding::plain(
-                        "analog_rise_exceeds_ceiling",
+                        campaign::PAST_CEILING_FINDING,
                         format!(
                             "bus `{bus}`: net `{net}` rose from 30 % to 70 % in {rise} ns, past its {ceiling} ns ceiling"
                         ),
@@ -234,7 +280,7 @@ fn judge(decks: &[Deck], answers: &[Answer]) -> Pass {
                 record.rise_30_70_ns_lower_bound = Some(bound);
                 record.exceeds = true;
                 let f = Finding::plain(
-                    "analog_rise_exceeds_ceiling",
+                    campaign::PAST_CEILING_FINDING,
                     format!(
                         "bus `{bus}`: net `{net}` had not reached 70 % when the window ended: its 30 % to 70 % rise is more than {bound} ns (a lower bound), past its {ceiling} ns ceiling"
                     ),
@@ -246,7 +292,7 @@ fn judge(decks: &[Deck], answers: &[Answer]) -> Pass {
                 record.complete = false;
                 record.volts_at_release = Some(volts);
                 let f = Finding::plain(
-                    "analog_line_stuck_high",
+                    campaign::STUCK_HIGH_FINDING,
                     format!(
                         "bus `{bus}`: net `{net}` was at {volts} V when its driver released it, at or above 30 % of the rail: the driver cannot pull it low"
                     ),
@@ -273,7 +319,7 @@ fn judge(decks: &[Deck], answers: &[Answer]) -> Pass {
         .into_iter()
         .map(|(bus, nets, from)| FaultRecord {
             kind: "bridge.fault_state",
-            source: "aethelgard",
+            source: "aethelgard".to_owned(),
             bus,
             fault: "absent",
             from,
