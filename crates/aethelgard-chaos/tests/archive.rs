@@ -332,19 +332,23 @@ fn a_timestamp_of_u64_max_followed_by_another_event_is_refused() {
 
 #[test]
 fn an_unknown_version_is_refused() {
-    let mut trace = header_bytes();
-    // [magic, 1, ...] -> version byte is the one right after the magic text.
+    // [magic, version, ...] -> the version byte is the one right after the
+    // magic text. The trace's version is 2 since AET-WO-2300 added the
+    // campaign's kinds; 1 and 3 are refused.
     let at = 1 + 1 + "aethelgard-trace".len();
-    assert_eq!(trace[at], 0x01);
-    trace[at] = 0x02;
-    let dir = commit_raw("v2-trace", &trace, 0, [0; 32]);
-    assert!(matches!(
-        replay_dir(&dir),
-        Err(E::UnknownVersion {
-            item: "header",
-            found: 2
-        })
-    ));
+    for found in [1u8, 3] {
+        let mut trace = header_bytes();
+        assert_eq!(trace[at], 0x02);
+        trace[at] = found;
+        let dir = commit_raw(&format!("v{found}-trace"), &trace, 0, [0; 32]);
+        assert!(matches!(
+            replay_dir(&dir),
+            Err(E::UnknownVersion {
+                item: "header",
+                found: f
+            }) if f == u64::from(found)
+        ));
+    }
 
     let (dir, m) = write_run("v2-manifest", 0x0400, &events(5));
     let mut bytes = cbor::to_bytes(&m.to_value());
@@ -416,7 +420,8 @@ fn field_level_refusals_name_their_own_variant() {
     let bad_events: Vec<(&str, Vec<u8>)> = vec![
         (
             "unknown-kind",
-            cbor::to_bytes(&Value::Array(vec![Value::Uint(5), Value::Uint(0)])),
+            // 5 to 14 are the campaign's records since AET-WO-2300.
+            cbor::to_bytes(&Value::Array(vec![Value::Uint(15), Value::Uint(0)])),
         ),
         (
             "short-payload",
@@ -518,7 +523,7 @@ fn field_level_refusals_name_their_own_variant() {
             (
                 "unknown-kind",
                 Err(E::UnknownEventKind {
-                    kind: 5, index: 0, ..
+                    kind: 15, index: 0, ..
                 }),
             ) => {}
             ("float-microvolts", Err(E::NotDeterministicCbor(_))) => {}
@@ -549,7 +554,7 @@ fn a_header_with_unsorted_or_duplicate_artifacts_is_refused() {
             .collect();
         let header = Value::Array(vec![
             Value::Text("aethelgard-trace".into()),
-            Value::Uint(1),
+            Value::Uint(aethelgard_chaos::event::TRACE_VERSION),
             Value::Bytes(vec![0; 16]),
             Value::Text("ns".into()),
             Value::Array(artifacts),
@@ -765,6 +770,7 @@ fn report_encoded_sizes_and_write_throughput() {
             Event::Interrupt { .. } => 2,
             Event::AnalogSample { .. } => 3,
             Event::FaultInjected { .. } => 4,
+            Event::Record { .. } => unreachable!("the synthetic stream has no campaign record"),
         };
         by_kind[k].0 += 1;
         by_kind[k].1 += enc(e).len();

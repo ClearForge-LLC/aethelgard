@@ -9,9 +9,11 @@
 #![forbid(unsafe_code)]
 
 pub mod archive;
+pub mod campaign;
 pub mod cbor;
 pub mod event;
 pub mod mirror;
+pub mod record;
 pub mod replay;
 pub mod synthetic;
 
@@ -80,6 +82,34 @@ pub enum ArchiveError {
 }
 
 impl ArchiveError {
+    /// The variant's name, as `aethelgard replay` reports a refusal.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Io { .. } => "Io",
+            Self::RunDirExists(_) => "RunDirExists",
+            Self::InvalidHeader(_) => "InvalidHeader",
+            Self::InvalidEvent { .. } => "InvalidEvent",
+            Self::UnexpectedEntry(_) => "UnexpectedEntry",
+            Self::Uncommitted => "Uncommitted",
+            Self::MissingTrace => "MissingTrace",
+            Self::MalformedManifest(_) => "MalformedManifest",
+            Self::MalformedHeader(_) => "MalformedHeader",
+            Self::UnknownVersion { .. } => "UnknownVersion",
+            Self::TraceTooLarge { .. } => "TraceTooLarge",
+            Self::Truncated { .. } => "Truncated",
+            Self::Extended { .. } => "Extended",
+            Self::HashMismatch => "HashMismatch",
+            Self::NotDeterministicCbor(_) => "NotDeterministicCbor",
+            Self::UnknownEventKind { .. } => "UnknownEventKind",
+            Self::MalformedEvent { .. } => "MalformedEvent",
+            Self::TimestampRegressed { .. } => "TimestampRegressed",
+            Self::EventCountMismatch { .. } => "EventCountMismatch",
+            Self::ReplayDiverged => "ReplayDiverged",
+            Self::MirrorBeforeCommit => "MirrorBeforeCommit",
+            Self::MirrorExists => "MirrorExists",
+        }
+    }
+
     pub(crate) fn io(path: &std::path::Path, source: io::Error) -> Self {
         Self::Io {
             path: path.display().to_string(),

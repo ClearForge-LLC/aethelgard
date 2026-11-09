@@ -5,6 +5,7 @@
 #![forbid(unsafe_code)]
 
 mod analog;
+mod campaign;
 mod elf;
 mod input;
 mod kani;
@@ -37,6 +38,9 @@ const EXIT_INVALID_SPEC: u8 = 2;
 const EXIT_UNREADABLE: u8 = 3;
 const EXIT_TOOL_UNAVAILABLE: u8 = 4;
 const EXIT_TOOL_ERROR: u8 = 5;
+/// The subcommands that print one JSON line per record, then their verdict's
+/// line; every other prints exactly one. `mcp` reads this, not a name of its own.
+const LINE_PER_RECORD: [&str; 1] = ["campaign"];
 const EXIT_USAGE: u8 = 64;
 const EXIT_INTERNAL: u8 = 70;
 
@@ -104,6 +108,26 @@ enum Command {
         /// most 100ms, a whole number of 10 ns instructions. Needs --firmware.
         #[arg(long = "for", id = "for_time", value_name = "TIME", requires = "firmware", value_parser = virtual_time)]
         for_time: Option<u64>,
+    },
+    /// Run each fault scenario through simulate --firmware's path, archive every record of each run, and print one JSON line per scenario, then a summary.
+    Campaign {
+        /// The scenario files, run in the order given. Each names its base
+        /// specification relative to its own directory, inside the current
+        /// directory.
+        #[arg(long, required = true, num_args = 1.., action = clap::ArgAction::Append)]
+        scenarios: Vec<PathBuf>,
+        /// The firmware ELF every scenario boots.
+        #[arg(long)]
+        firmware: PathBuf,
+        /// The archive directory; each run is a new directory inside it, named by its run id.
+        #[arg(long)]
+        archive: PathBuf,
+    },
+    /// Replay one archived campaign run from its trace alone, and print its state-sequence hash.
+    Replay {
+        /// The run directory.
+        #[arg(long)]
+        archive: PathBuf,
     },
     /// Serve every other subcommand as an MCP tool on stdin and stdout.
     Mcp,
@@ -275,12 +299,20 @@ fn main() -> ExitCode {
                         topology,
                         devices,
                         virtual_ns,
+                        scenario: String::new(),
+                        held: Vec::new(),
                     }),
                 )
             }
             // clap's `requires` makes the three all-or-none.
             _ => simulate(&platform, None),
         },
+        Command::Campaign {
+            scenarios,
+            firmware,
+            archive,
+        } => return campaign::run(&scenarios, &firmware, &archive),
+        Command::Replay { archive } => return campaign::replay(&archive),
         Command::Mcp => return mcp::serve(),
     };
     match judged {
@@ -581,6 +613,10 @@ struct Boot {
     /// their buses (`AET-WO-2202`).
     devices: Vec<aethelgard_ir::parts::I2cTarget>,
     virtual_ns: u64,
+    /// The campaign scenario's name and the lines it holds low; `simulate
+    /// --firmware` has neither (`AET-WO-2300`).
+    scenario: String,
+    held: Vec<aethelgard_chaos::campaign::HeldLow>,
 }
 
 /// A boot ready to run: every input copied and checked, every expectation
@@ -596,6 +632,8 @@ struct Ready {
     virtual_ns: u64,
     topology: aethelgard_ir::SolvedTopology,
     devices: Vec<aethelgard_ir::parts::I2cTarget>,
+    scenario: String,
+    held: Vec<aethelgard_chaos::campaign::HeldLow>,
 }
 
 /// The topology asks for what the twin cannot lower (exit 2), or the
@@ -671,6 +709,8 @@ fn ready(
             virtual_ns: boot.virtual_ns,
             topology: boot.topology,
             devices: boot.devices,
+            scenario: boot.scenario,
+            held: boot.held,
         },
     ))
 }
@@ -822,8 +862,13 @@ struct Booted {
 /// then sees the timeout). The bridge works in a directory of its own, so
 /// it can touch none of the copies Renode reads.
 fn analog_pass(r: &Ready, scratch: &Scratch) -> Result<(analog::Pass, Booted), run::Stop> {
+    let held = analog::Held {
+        scenario: &r.scenario,
+        lines: &r.held,
+    };
     let pass = analog::pass(
         &r.topology,
+        &held,
         &scratch.root.join("bridge"),
         &scratch.root.join("status-bridge"),
     )?;
@@ -1026,6 +1071,18 @@ fn solved(
     ),
     ExitCode,
 > {
+    let (spec, sha256) = read_spec(Some(file)).map_err(|(refusal, code)| emit(&refusal, code))?;
+    let (topology, table) = solve_spec(&spec, &sha256)?;
+    Ok((spec, topology, table))
+}
+
+/// Loads the pin table and solves a validated specification whose bytes
+/// hash to `sha256`. Every refusal is printed here; the caller gets its
+/// exit code.
+fn solve_spec(
+    spec: &Specification,
+    sha256: &str,
+) -> Result<(aethelgard_ir::SolvedTopology, aethelgard_ir::PinTable), ExitCode> {
     #[derive(Serialize)]
     struct SolveRefusal {
         ok: bool,
@@ -1039,7 +1096,6 @@ fn solved(
         message: String,
     }
 
-    let (spec, sha256) = read_spec(Some(file)).map_err(|(refusal, code)| emit(&refusal, code))?;
     let table = match aethelgard_svd_hal::pin_table(&spec.mcu.part) {
         Ok(table) => table,
         Err(err @ aethelgard_svd_hal::PinTableError::UnknownPart { .. }) => {
@@ -1053,8 +1109,8 @@ fn solved(
             return Err(ExitCode::from(EXIT_INTERNAL));
         }
     };
-    match aethelgard_ir::solve(&spec, &table, &sha256) {
-        Ok(topology) => Ok((spec, topology, table)),
+    match aethelgard_ir::solve(spec, &table, sha256) {
+        Ok(topology) => Ok((topology, table)),
         Err(err) => Err(emit(
             &SolveRefusal {
                 ok: false,

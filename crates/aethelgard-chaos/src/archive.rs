@@ -23,7 +23,7 @@ pub const MIRROR_TMP: &str = "mirror.cbor.tmp";
 pub const MAX_TRACE_BYTES: u64 = 256 << 20;
 /// The longest encoded header item the reader will build.
 pub const MAX_HEADER_BYTES: usize = 1 << 20;
-/// The longest encoded event item the reader will build; the largest legal one is under 1,200.
+/// The longest encoded event item the reader will build, and the writer write.
 pub const MAX_EVENT_BYTES: usize = 4096;
 
 /// Decode the item at `offset`, looking at no more than `max` bytes. An item
@@ -158,10 +158,17 @@ impl TraceWriter {
         event
             .check()
             .map_err(|reason| ArchiveError::InvalidEvent { index, reason })?;
-        self.replayer.apply(event)?;
         let mut scratch = std::mem::take(&mut self.scratch);
         scratch.clear();
         cbor::encode(&event.to_value(), &mut scratch);
+        if scratch.len() > MAX_EVENT_BYTES {
+            self.scratch = scratch;
+            return Err(ArchiveError::InvalidEvent {
+                index,
+                reason: "event is over 4096 bytes",
+            });
+        }
+        self.replayer.apply(event)?;
         let result = self.put(&scratch);
         self.scratch = scratch;
         result
