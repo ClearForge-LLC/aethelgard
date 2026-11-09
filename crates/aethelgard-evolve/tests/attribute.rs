@@ -994,9 +994,9 @@ fn an_alternate_function_wrong_in_its_high_bit_or_on_afrh_is_software() {
 fn a_field_the_reading_covers_only_in_part_is_no_evidence() {
     let mut r = healthy();
     set_register(&mut r, "GPIOB.AFRL", |g| {
-        g.mask = 0x0300_0000;
-        g.expected = 0x0000_0000;
-        g.observed = Some(0x0100_0000);
+        g.mask = 0x0700_0000;
+        g.expected = 0x0400_0000;
+        g.observed = Some(0x0500_0000);
     });
     replace(&mut r, is_verdict, verdict(&[("register_mismatch", 1)]));
     assert_eq!(attributed(&r).rule, Rule::I4);
@@ -1281,4 +1281,136 @@ fn an_unexplained_finding_names_no_evidence_beside_a_decided_symptom() {
     );
     let a = attributed(&r);
     assert_eq!((a.rule, a.evidence.len()), (Rule::I1, 0));
+}
+
+#[test]
+fn every_kind_of_failing_event_the_verdict_omits_is_unexplained() {
+    // Each event shows a failure, and the verdict passes: every one is named.
+    type Edit = Box<dyn Fn(&mut Vec<Record>)>;
+    let cases: Vec<(&str, Edit)> = vec![
+        (
+            "invalid",
+            Box::new(|r| replace(r, is_check, check("invalid", 0))),
+        ),
+        (
+            "identity",
+            Box::new(|r| replace(r, is_check, check("ok", 0x61))),
+        ),
+        (
+            "unwitnessed",
+            Box::new(|r| replace(r, is_witness, witness(CR2_OK, 0xD1))),
+        ),
+        (
+            "register",
+            Box::new(|r| set_register(r, "GPIOA.MODER", |g| g.observed = Some(0))),
+        ),
+        (
+            "boot word",
+            Box::new(|r| replace(r, |x| matches!(x, Record::BootObserved { .. }), boot(0))),
+        ),
+        (
+            "halted",
+            Box::new(|r| {
+                replace(
+                    r,
+                    |x| matches!(x, Record::BootObserved { .. }),
+                    Record::BootObserved {
+                        image_sha256: [4; 32],
+                        boot_word: reading(0x2000_0000, u32::MAX, 0x2100_B007, 0x2100_B007),
+                        instructions_expected: 10_000_000,
+                        instructions_observed: Some(9_999_999),
+                        pc: Some(0x0800_0596),
+                    },
+                )
+            }),
+        ),
+        (
+            "locked",
+            Box::new(|r| set_register(r, "RCC.AHB4ENR", |g| g.observed = Some(0x1))),
+        ),
+    ];
+    for (name, edit) in cases {
+        let mut r = healthy();
+        edit(&mut r);
+        let a = attributed(&r);
+        assert_eq!(a.rule, Rule::I1, "{name}: {a:?}");
+        assert!(
+            a.unexplained.iter().all(|u| u.starts_with("event ")),
+            "{name}: {a:?}"
+        );
+    }
+    // Two such events of one kind are both named.
+    let mut r = healthy();
+    set_register(&mut r, "GPIOA.MODER", |g| g.observed = Some(0));
+    set_register(&mut r, "GPIOB.MODER", |g| g.observed = Some(0));
+    assert_eq!(attributed(&r).unexplained.len(), 2);
+}
+
+#[test]
+fn a_timeout_claimed_as_an_invalid_record_is_unexplained() {
+    let mut r = healthy();
+    wrong_address(&mut r);
+    replace(&mut r, is_verdict, verdict(&[("i2c_record_invalid", 1)]));
+    assert_eq!(attributed(&r).rule, Rule::I1);
+}
+
+#[test]
+fn each_part_of_a_sound_witness_is_required() {
+    let unwitnessed = |edit: &dyn Fn(&mut Reading, &mut Reading)| {
+        let mut r = healthy();
+        let mut w = witness(CR2_OK, 0xD1);
+        if let Record::I2cWitness { cr2, txdr, .. } = &mut w {
+            edit(cr2, txdr);
+        }
+        replace(&mut r, is_witness, w);
+        replace(
+            &mut r,
+            is_verdict,
+            verdict(&[("i2c_transaction_unwitnessed", 1)]),
+        );
+        attributed(&r).rule
+    };
+    assert_eq!(unwitnessed(&|_, _| {}), Rule::S1);
+    assert_eq!(
+        unwitnessed(&|_, t| t.address = 0x4000_5828 + 0x400),
+        Rule::I4
+    );
+    assert_eq!(unwitnessed(&|_, t| t.mask = 0x0F), Rule::I4);
+    // A CR2 reading that covers NBYTES but not SADD.
+    assert_eq!(
+        unwitnessed(&|c, _| {
+            c.mask = 0x02FF_0400;
+            c.expected = CR2_OK & 0x02FF_0400;
+            c.observed = Some((CR2_OK & 0x02FF_0400) | 0xEE);
+        }),
+        Rule::I4
+    );
+    // A CR2 at its reset value, after a completed read: NBYTES says nothing.
+    let mut r = healthy();
+    replace(&mut r, is_witness, witness(0, 0xD0));
+    replace(
+        &mut r,
+        is_verdict,
+        verdict(&[("i2c_transaction_unwitnessed", 1)]),
+    );
+    assert_eq!(attributed(&r).rule, Rule::I4);
+}
+
+#[test]
+fn a_register_with_nothing_observed_is_no_evidence() {
+    let mut r = healthy();
+    wrong_address(&mut r);
+    set_register(&mut r, "GPIOB.AFRL", |g| g.observed = None);
+    let a = attributed(&r);
+    assert_eq!(kinds(&a.evidence), [7, 7, 13]);
+}
+
+#[test]
+fn a_register_wrong_on_the_second_bus_is_that_buss_alone() {
+    let mut r = healthy();
+    add_aux(&mut r, true);
+    set_register(&mut r, "GPIOB.AFRL", |g| g.observed = Some(0x4500_0000));
+    replace(&mut r, is_verdict, verdict(&[("register_mismatch", 1)]));
+    let a = attributed(&r);
+    assert_eq!((a.rule, kinds(&a.evidence)), (Rule::S1, vec![7, 7, 11]));
 }

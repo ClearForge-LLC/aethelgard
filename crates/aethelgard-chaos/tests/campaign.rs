@@ -1606,7 +1606,7 @@ fn every_kind_15_field_rule_refuses_alone() {
         refused(&|r| bus_fields(r).0[1].pin = "PB6".into()),
         "a solved bus's two lines share a net or a pin"
     );
-    for bad in ["PB16", "PB06", "PZ", "SCL", "Pb6", "PB+5", "XB6"] {
+    for bad in ["PB16", "PB06", "PB007", "PZ", "SCL", "Pb6", "PB+5", "XB6"] {
         assert_eq!(
             refused(&|r| bus_fields(r).0[0].pin = bad.into()),
             pin,
@@ -1638,7 +1638,7 @@ fn split_pin_takes_only_the_solvers_form() {
     assert_eq!(split_pin("PA15"), Some(('A', 15)));
     assert_eq!(split_pin("PK0"), Some(('K', 0)));
     for bad in [
-        "B6", "Pb6", "PB", "PB123", "PB6x", "", "P", "PB16", "PB06", "PB+5", "QB6",
+        "B6", "Pb6", "PB", "PB123", "PB6x", "", "P", "PB16", "PB06", "PB007", "PB+5", "QB6",
     ] {
         assert_eq!(split_pin(bad), None, "{bad}");
     }
@@ -1811,4 +1811,67 @@ fn a_line_measured_twice_or_a_device_read_or_witnessed_twice_is_refused() {
     let dup = r[i].clone();
     r.insert(i, dup);
     assert_eq!(check_run(&r).unwrap_err(), why);
+}
+
+#[test]
+fn two_buses_on_one_controller_are_refused_even_on_their_own_pins() {
+    let mut r = good();
+    let mut z = solved_bus("Z", "I2C1", ["Z_SCL", "Z_SDA"], &[]);
+    bus_fields(&mut z).0[0].pin = "PH7".into();
+    bus_fields(&mut z).0[1].pin = "PH8".into();
+    r.insert(3, z);
+    assert_eq!(
+        check_run(&r).unwrap_err(),
+        "two solved buses share a net, a pin or a controller"
+    );
+}
+
+#[test]
+fn a_rise_and_a_stuck_high_on_one_line_are_two_measurements() {
+    let mut r = good();
+    let i = position(&r, |x| matches!(x, Record::RiseMeasured { .. }));
+    r.insert(
+        i + 2,
+        Record::LineStuckHigh {
+            bus: "SENSORS".into(),
+            net: "I2C_SCL".into(),
+            microvolts_at_release: 0,
+            ceiling_ps: 300_000,
+        },
+    );
+    let last = r.len() - 1;
+    r[last] = verdict(
+        false,
+        &[
+            (PAST, "error", 2),
+            ("analog_line_stuck_high", "error", 1),
+            ("i2c_timeout", "error", 1),
+        ],
+    );
+    assert_eq!(
+        check_run(&r).unwrap_err(),
+        "a line measured twice, or a device read or witnessed twice, or a controller witnessed twice"
+    );
+}
+
+#[test]
+fn two_witnesses_of_one_controller_are_refused_even_for_two_devices() {
+    let mut r = with_witness("I2C1", "U2");
+    if let Record::I2cBusSolved { devices, .. } = at(&mut r, is_bus) {
+        devices.push(("U3".into(), 0x48));
+    }
+    let last = r.len() - 1;
+    r.insert(
+        last,
+        Record::I2cWitness {
+            peripheral: "I2C1".into(),
+            reference: "U3".into(),
+            cr2: reading(Some(0)),
+            txdr: reading(Some(0)),
+        },
+    );
+    assert_eq!(
+        check_run(&r).unwrap_err(),
+        "a line measured twice, or a device read or witnessed twice, or a controller witnessed twice"
+    );
 }

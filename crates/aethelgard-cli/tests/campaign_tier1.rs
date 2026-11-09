@@ -1251,8 +1251,22 @@ fn attribute_names_the_47k_run_electrical_with_its_rises_and_fault() {
         .map(|e| e["kind"].as_u64().unwrap())
         .collect();
     assert_eq!(kinds, [7, 7, 9]);
-    // The campaign wrote kind 15 from the solved topology, right after kind 6.
+    // Every record decided before the boot is at virtual time 0, the rest at
+    // the boot's end.
+    let trace = fs::read(run.join("trace.cbor")).unwrap();
+    let (_, mut at) = cbor::decode_prefix(&trace, 0).unwrap();
+    let mut times = Vec::new();
+    while at < trace.len() {
+        let (item, next) = cbor::decode_prefix(&trace, at).unwrap();
+        times.push(Event::from_value(&item).unwrap().timestamp());
+        at = next;
+    }
     let records = aethelgard_chaos::replay_dir(&run).unwrap().state.records;
+    for (t, r) in times.iter().zip(&records) {
+        let want = if r.before_boot() { 0 } else { 100_000_000 };
+        assert_eq!(*t, want, "{r:?}");
+    }
+    // The campaign wrote kind 15 from the solved topology, right after kind 6.
     let Record::I2cBusSolved {
         bus,
         peripheral,
