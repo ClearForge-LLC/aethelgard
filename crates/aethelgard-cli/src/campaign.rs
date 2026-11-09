@@ -366,7 +366,11 @@ fn run_one(
     let archived = (|| {
         let mut writer = TraceWriter::create(&dir, &header)?;
         for record in records {
-            let timestamp = if rank_is_boot(&record) { VIRTUAL_NS } else { 0 };
+            let timestamp = if record.kind() >= aethelgard_chaos::record::FIRST_BOOT_KIND {
+                VIRTUAL_NS
+            } else {
+                0
+            };
             writer.append(&Event::Record { timestamp, record })?;
         }
         writer.commit()
@@ -397,19 +401,6 @@ fn run_one(
         },
         ok,
     ))
-}
-
-/// The analog records and faults are decided before the boot starts, at
-/// virtual time 0; the boot's witnesses and the verdict are read at its end.
-fn rank_is_boot(r: &Record) -> bool {
-    matches!(
-        r,
-        Record::BootObserved { .. }
-            | Record::RegisterObserved { .. }
-            | Record::I2cCheck { .. }
-            | Record::I2cWitness { .. }
-            | Record::Verdict { .. }
-    )
 }
 
 fn hex_u64(s: &str) -> Result<u64, String> {

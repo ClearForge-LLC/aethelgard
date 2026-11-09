@@ -11,6 +11,9 @@ use crate::event::{name_ok, text_ok};
 pub const FIRST_KIND: u64 = 5;
 /// The last campaign kind.
 pub const LAST_KIND: u64 = 14;
+/// The first kind read at the boot's end; kinds before it are decided before
+/// the boot starts, at virtual time 0.
+pub const FIRST_BOOT_KIND: u64 = 10;
 
 /// One override a scenario applies to its specification (`AET-WO-2300` §1.1).
 #[derive(Clone, Debug, PartialEq, Eq)]
