@@ -6,21 +6,49 @@ use crate::platform;
 
 /// The reference topology, as `aethelgard solve` gives it for
 /// `examples/sentinel-01-minimal.json`.
-pub(crate) const REFERENCE: &str = r#"{"schema_version":1,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}}}"#;
+pub(crate) const REFERENCE: &str = r#"{"schema_version":1,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}}}"#;
 
 fn reference() -> SolvedTopology {
     serde_json::from_str(REFERENCE).unwrap()
 }
 
+/// The reference with no I2C device.
+pub(crate) fn bare() -> SolvedTopology {
+    let mut t = reference();
+    t.i2c_devices.clear();
+    t
+}
+
+/// The reference with exactly `devices` as its I2C devices, `(reference,
+/// part, address)` in the order given, all on `I2C1`.
+pub(crate) fn with_devices(devices: &[(&str, &str, u8)]) -> SolvedTopology {
+    let mut t = bare();
+    for (index, &(reference, part, address)) in devices.iter().enumerate() {
+        t.i2c_devices.insert(
+            reference.to_owned(),
+            aethelgard_ir::SolvedI2cDevice {
+                index: u32::try_from(index).unwrap(),
+                part: part.to_owned(),
+                bus: "SENSORS".to_owned(),
+                peripheral: "I2C1".to_owned(),
+                address,
+            },
+        );
+    }
+    t
+}
+
 /// The reference with `edit` applied to its JSON text.
 fn edited(from: &str, to: &str) -> SolvedTopology {
     assert!(REFERENCE.contains(from), "{from}");
-    serde_json::from_str(&REFERENCE.replace(from, to)).unwrap()
+    let mut t: SolvedTopology = serde_json::from_str(&REFERENCE.replace(from, to)).unwrap();
+    t.i2c_devices.clear();
+    t
 }
 
 #[test]
 fn the_reference_platform_adds_spi1_and_names_every_solved_peripheral() {
-    let text = platform::emit(&reference(), &[]).unwrap();
+    let text = platform::emit(&bare()).unwrap();
     let declarations: Vec<&str> = text
         .lines()
         .filter(|l| !l.starts_with("//") && !l.starts_with(' ') && !l.is_empty())
@@ -37,11 +65,12 @@ fn the_reference_platform_adds_spi1_and_names_every_solved_peripheral() {
     assert!(text.ends_with(
         "spi1: SPI.STM32H7_SPI @ {\n        sysbus 0x40013000;\n        rcc RegistrationPeripheralAlias.SPI1\n    }\n    IRQ -> nvic@35\n"
     ));
-    let names: Vec<(String, bool)> = platform::instances(&reference(), &[])
-        .unwrap()
-        .into_iter()
-        .map(|i| (i.name, i.added))
-        .collect();
+    let names: Vec<(String, bool)> =
+        platform::instances(&bare(), &std::collections::BTreeSet::new())
+            .unwrap()
+            .into_iter()
+            .map(|i| (i.name, i.added))
+            .collect();
     assert_eq!(
         names,
         [
@@ -56,8 +85,8 @@ fn the_reference_platform_adds_spi1_and_names_every_solved_peripheral() {
 #[test]
 fn two_emissions_are_byte_identical() {
     assert_eq!(
-        platform::emit(&reference(), &[]).unwrap(),
-        platform::emit(&reference(), &[]).unwrap()
+        platform::emit(&bare()).unwrap(),
+        platform::emit(&bare()).unwrap()
     );
 }
 
@@ -65,7 +94,7 @@ fn two_emissions_are_byte_identical() {
 fn an_added_spi_takes_its_base_and_interrupt_from_the_header() {
     let f = cmsis::register_facts().unwrap();
     let t = edited("\"SPI1", "\"SPI2").clone();
-    let text = platform::emit(&t, &[]).unwrap();
+    let text = platform::emit(&t).unwrap();
     let block = format!(
         "spi2: SPI.STM32H7_SPI @ {{\n        sysbus 0x{:08X};\n        rcc RegistrationPeripheralAlias.SPI2\n    }}\n    IRQ -> nvic@{}\n",
         f.base("SPI2").unwrap(),
@@ -74,13 +103,13 @@ fn an_added_spi_takes_its_base_and_interrupt_from_the_header() {
     assert!(text.ends_with(&block), "{text}");
     // A solved SPI4 is Renode's own `spi4`, never declared twice (§2.9).
     let t = edited("\"SPI1", "\"SPI4");
-    let text = platform::emit(&t, &[]).unwrap();
+    let text = platform::emit(&t).unwrap();
     assert!(!text.contains("spi4:"), "{text}");
 }
 
 #[test]
 fn what_cannot_be_lowered_is_refused() {
-    let kind = |t: SolvedTopology| platform::emit(&t, &[]).unwrap_err().kind();
+    let kind = |t: SolvedTopology| platform::emit(&t).unwrap_err().kind();
     assert_eq!(
         kind(edited("\"SPI1\"", "\"USART1\"")),
         "UnsupportedPeripheral"
@@ -96,7 +125,7 @@ fn what_cannot_be_lowered_is_refused() {
                 (net, a)
             })
             .collect(),
-        ..reference()
+        ..bare()
     };
     assert_eq!(kind(t), "Undefined");
     assert_eq!(kind(edited("\"PA0\"", "\"PZ0\"")), "InvalidPin");
@@ -105,9 +134,13 @@ fn what_cannot_be_lowered_is_refused() {
         "InvalidTopology"
     );
     assert_eq!(
-        boot::expected(&edited("\"PA0\"", "\"PA16\""), &[])
-            .unwrap_err()
-            .kind(),
+        boot::expected(&{
+            let mut t = edited("\"PA0\"", "\"PA16\"");
+            t.i2c_devices.clear();
+            t
+        })
+        .unwrap_err()
+        .kind(),
         "InvalidPin"
     );
 }
@@ -147,7 +180,7 @@ fn reg(name: &str, address: u32, mask: u32, value: u32) -> Register {
 /// computed from the topology alone.
 #[test]
 fn the_reference_image_is_the_one_the_spike_read_back() {
-    let image = boot::expected(&reference(), &[]).unwrap();
+    let image = boot::expected(&bare()).unwrap();
     assert_eq!(
         image.registers,
         [
@@ -173,7 +206,12 @@ fn the_reference_image_is_the_one_the_spike_read_back() {
 
 #[test]
 fn a_pin_above_seven_lands_in_afrh() {
-    let image = boot::expected(&edited("\"PB7\"", "\"PB9\""), &[]).unwrap();
+    let image = boot::expected(&{
+        let mut t = edited("\"PB7\"", "\"PB9\"");
+        t.i2c_devices.clear();
+        t
+    })
+    .unwrap();
     assert!(
         image
             .registers
@@ -183,76 +221,46 @@ fn a_pin_above_seven_lands_in_afrh() {
     );
 }
 
-fn target(reference: &str, part: &str, address: u8) -> aethelgard_ir::parts::I2cTarget {
-    aethelgard_ir::parts::I2cTarget {
-        reference: reference.into(),
-        part: part.into(),
-        peripheral: "I2C1".into(),
-        address,
-    }
-}
-
-pub(crate) fn reference_devices() -> Vec<aethelgard_ir::parts::I2cTarget> {
-    vec![target("U2", "BME280", 0x76), target("U3", "TMP117", 0x48)]
-}
-
 #[test]
 fn a_modelled_device_is_declared_and_an_unmodelled_one_is_listed() {
-    let text = platform::emit(&reference(), &reference_devices()).unwrap();
+    let text = platform::emit(&reference()).unwrap();
     assert!(text.contains("\nu2: I2C.BME280 @ i2c1 0x76\n"), "{text}");
     assert!(!text.contains("u3:"), "{text}");
     assert!(
         text.contains("Unmodelled I2C devices (no Renode 1.17.0 model): U3 (TMP117) at I2C1 0x48."),
         "{text}"
     );
-    let none = platform::emit(&reference(), &[]).unwrap();
+    let none = platform::emit(&bare()).unwrap();
     assert!(none.contains("model): none."), "{none}");
-    let listed: Vec<(String, String)> = platform::instances(&reference(), &reference_devices())
-        .unwrap()
-        .into_iter()
-        .map(|i| (i.name, i.model))
-        .collect();
+    let listed: Vec<(String, String)> =
+        platform::instances(&reference(), &std::collections::BTreeSet::new())
+            .unwrap()
+            .into_iter()
+            .map(|i| (i.name, i.model))
+            .collect();
     assert!(listed.contains(&("u2".into(), "BME280".into())));
     assert!(!listed.iter().any(|(n, _)| n == "u3"));
-    assert_eq!(
-        text,
-        platform::emit(&reference(), &reference_devices()).unwrap()
-    );
+    assert_eq!(text, platform::emit(&reference()).unwrap());
 }
 
 #[test]
 fn a_device_that_would_break_the_load_is_refused() {
-    let kind = |d: Vec<aethelgard_ir::parts::I2cTarget>| {
-        platform::emit(&reference(), &d).unwrap_err().kind()
-    };
+    let kind = |d: &[(&str, &str, u8)]| platform::emit(&with_devices(d)).unwrap_err().kind();
     // A stock instance's name, a repeated name, and a name Renode cannot take.
+    assert_eq!(kind(&[("I2C1", "BME280", 0x76)]), "InvalidDeviceName");
     assert_eq!(
-        kind(vec![target("I2C1", "BME280", 0x76)]),
+        kind(&[("U2", "BME280", 0x76), ("u2", "BME280", 0x77)]),
         "InvalidDeviceName"
     );
-    assert_eq!(
-        kind(vec![
-            target("U2", "BME280", 0x76),
-            target("u2", "BME280", 0x77)
-        ]),
-        "InvalidDeviceName"
-    );
-    assert_eq!(
-        kind(vec![target("2U", "BME280", 0x76)]),
-        "InvalidDeviceName"
-    );
-    assert_eq!(
-        kind(vec![target("U 2", "TMP117", 0x48)]),
-        "InvalidDeviceName"
-    );
-    let mut off = target("U2", "BME280", 0x76);
-    off.peripheral = "I2C2".into();
-    assert_eq!(kind(vec![off]), "DeviceOffBus");
+    assert_eq!(kind(&[("2U", "BME280", 0x76)]), "InvalidDeviceName");
+    // A name that is no identifier at all is the topology's refusal, which
+    // comes first (`AET-WO-2203`: `validate` checks the keys).
+    assert_eq!(kind(&[("U 2", "TMP117", 0x48)]), "InvalidTopology");
 }
 
 #[test]
 fn the_judge_expects_the_part_table_s_values_in_records_after_the_boot_word() {
-    let image = boot::expected(&reference(), &reference_devices()).unwrap();
+    let image = boot::expected(&reference()).unwrap();
     let word = boot::boot_word().unwrap();
     assert_eq!(image.i2c.checks.len(), 1, "U3 has no model, so no read");
     let c = &image.i2c.checks[0];
@@ -276,7 +284,7 @@ fn the_judge_expects_the_part_table_s_values_in_records_after_the_boot_word() {
 
 #[test]
 fn no_devices_means_no_reads_and_nothing_unmodelled() {
-    let image = boot::expected(&reference(), &[]).unwrap();
+    let image = boot::expected(&bare()).unwrap();
     assert!(image.i2c.checks.is_empty() && image.i2c.unmodelled.is_empty());
 }
 
@@ -293,19 +301,21 @@ fn every_modelled_part_has_an_identity_so_no_device_passes_unchecked() {
 #[test]
 fn a_part_name_that_is_not_exactly_a_table_s_is_unmodelled_not_skipped() {
     // Adversarial 3: near-miss names fall to "unmodelled", which is reported.
-    let devices: Vec<_> = [
+    let parts = [
         "bme280",
         "BME280 ",
         "BME 280",
         "",
         "TMP117",
         "BME280\u{200b}",
-    ]
-    .iter()
-    .enumerate()
-    .map(|(i, part)| target(&format!("U{i}"), part, 0x40 + i as u8))
-    .collect();
-    let plan = boot::i2c(&devices).unwrap();
+    ];
+    let names: Vec<String> = (0..parts.len()).map(|i| format!("U{i}")).collect();
+    let devices: Vec<(&str, &str, u8)> = parts
+        .iter()
+        .enumerate()
+        .map(|(i, part)| (names[i].as_str(), *part, 0x40 + i as u8))
+        .collect();
+    let plan = boot::i2c(&with_devices(&devices)).unwrap();
     assert!(plan.checks.is_empty());
     assert_eq!(plan.unmodelled.len(), devices.len());
 }
@@ -335,7 +345,7 @@ const MEASURED_TXDR: u32 = 0xD0;
 
 #[test]
 fn the_controller_witness_is_computed_from_the_address_and_the_part_table() {
-    let image = boot::expected(&reference(), &reference_devices()).unwrap();
+    let image = boot::expected(&reference()).unwrap();
     let [w] = image.i2c.witnesses.as_slice() else {
         panic!("one bus, one witness");
     };
@@ -357,7 +367,7 @@ fn the_controller_witness_is_computed_from_the_address_and_the_part_table() {
 
 #[test]
 fn each_field_of_the_witness_is_judged_alone() {
-    let image = boot::expected(&reference(), &reference_devices()).unwrap();
+    let image = boot::expected(&reference()).unwrap();
     let w = &image.i2c.witnesses[0];
     // (the CR2 or TXDR the controller shows, the one field that must differ)
     let cases: [(u32, u32, &str, u32, u32); 5] = [
@@ -384,8 +394,8 @@ fn each_field_of_the_witness_is_judged_alone() {
 #[test]
 fn only_the_last_read_on_a_bus_is_witnessed() {
     // No second modelled part exists, so the same part twice stands for it.
-    let devices = vec![target("U2", "BME280", 0x76), target("U4", "BME280", 0x77)];
-    let image = boot::expected(&reference(), &devices).unwrap();
+    let devices = [("U2", "BME280", 0x76), ("U4", "BME280", 0x77)];
+    let image = boot::expected(&with_devices(&devices)).unwrap();
     assert_eq!(image.i2c.checks.len(), 2);
     let [w] = image.i2c.witnesses.as_slice() else {
         panic!()

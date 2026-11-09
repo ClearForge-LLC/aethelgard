@@ -2,15 +2,15 @@
 //!
 //! A scenario is a strict JSON file, authored apart from anything generated
 //! (`INV-07`): a name, the specification it starts from, what it expects, and
-//! closed-world overrides. [`Scenario::apply`] applies the overrides to a
-//! [`Specification`] and validates the result; it never touches a generated
-//! file. [`check_run`] is what `replay` judges a campaign run by, from its
-//! records alone.
+//! closed-world overrides. [`Scenario::parse`] reads it; the runner, in the
+//! CLI, applies the overrides to the specification, because nothing in this
+//! crate reads a `Specification` (`RUL-16`, `AET-WO-2203`). [`check_run`] and
+//! [`check_archived`] are what `replay` judges a campaign run by, from its
+//! header and records alone.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use aethelgard_ir::Specification;
 use serde::de::value::MapAccessDeserializer;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -44,7 +44,7 @@ pub struct ScenarioError {
 }
 
 impl ScenarioError {
-    fn new(kind: &'static str, id: Option<&str>, message: String) -> Self {
+    pub fn new(kind: &'static str, id: Option<&str>, message: String) -> Self {
         Self {
             kind,
             id: id.map(str::to_owned),
@@ -144,13 +144,6 @@ pub struct Scenario {
     pub overrides: Vec<Override>,
     /// The file's sha256.
     pub sha256: [u8; 32],
-}
-
-/// A line the scenario holds low: its bus and the line's net.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct HeldLow {
-    pub bus: String,
-    pub net: String,
 }
 
 fn schema(message: String) -> ScenarioError {
@@ -313,53 +306,6 @@ impl Scenario {
         })
     }
 
-    /// Apply the overrides to `spec` and validate the result. Returns the
-    /// lines held low. An id the specification does not have, or a result
-    /// the specification's own rules refuse, is refused (`INV-06`).
-    pub fn apply(&self, spec: &mut Specification) -> Result<Vec<HeldLow>, ScenarioError> {
-        let mut held = Vec::new();
-        for o in &self.overrides {
-            match o {
-                Override::PullUpOhms { bus, ohms } => {
-                    bus_of(spec, bus)?.pull_up_ohms = *ohms;
-                }
-                Override::MaxCapacitance { net, femtofarads } => {
-                    let c = spec
-                        .net_constraints
-                        .iter_mut()
-                        .find(|c| &c.net_name == net)
-                        .ok_or_else(|| {
-                            ScenarioError::new(
-                                "UnknownNet",
-                                Some(net),
-                                format!("the specification constrains no net `{net}`"),
-                            )
-                        })?;
-                    c.max_capacitance_femtofarads = *femtofarads;
-                }
-                Override::LineHeldLow { bus, line } => {
-                    let b = bus_of(spec, bus)?;
-                    let net = match line {
-                        Line::Sda => b.sda.net.clone(),
-                        Line::Scl => b.scl.net.clone(),
-                    };
-                    held.push(HeldLow {
-                        bus: bus.clone(),
-                        net,
-                    });
-                }
-            }
-        }
-        spec.validate().map_err(|e| {
-            ScenarioError::new(
-                e.kind(),
-                e.id(),
-                format!("the overrides leave the specification invalid: {e}"),
-            )
-        })?;
-        Ok(held)
-    }
-
     /// The scenario's record, the first of its run.
     pub fn record(&self) -> Record {
         Record::Scenario {
@@ -370,22 +316,6 @@ impl Scenario {
             overrides: self.overrides.clone(),
         }
     }
-}
-
-fn bus_of<'a>(
-    spec: &'a mut Specification,
-    bus: &str,
-) -> Result<&'a mut aethelgard_ir::I2cBus, ScenarioError> {
-    spec.i2c_buses
-        .iter_mut()
-        .find(|b| b.id == bus)
-        .ok_or_else(|| {
-            ScenarioError::new(
-                "UnknownBus",
-                Some(bus),
-                format!("the specification has no I2C bus `{bus}`"),
-            )
-        })
 }
 
 /// A run's id: a function of what it judged, so a second campaign over the

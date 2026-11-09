@@ -14,6 +14,7 @@
 //! twin, so the constant is written twice, and a test in `tests/board.rs`
 //! compares the two.
 
+use aethelgard_ir::SolvedTopology;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
@@ -119,10 +120,11 @@ pub(super) fn emit(
     plan: &Plan,
     f: &RegisterFacts,
     speeds: &Speeds,
-    devices: &[aethelgard_ir::parts::I2cTarget],
+    solved: &SolvedTopology,
+    answers: &dyn Fn(&str) -> bool,
 ) -> Result<BTreeMap<String, String>, BoardError> {
     let mem = memory(f)?;
-    let reads = reads(plan, devices)?;
+    let reads = reads(plan, solved, answers)?;
     let mut files = BTreeMap::new();
     files.insert("firmware/Cargo.toml".to_owned(), manifest(plan));
     files.insert("firmware/Cargo.lock".to_owned(), lock(plan));
@@ -265,20 +267,23 @@ struct Read {
     width: u8,
 }
 
-/// The identity reads, in the order the devices are given: one per device
-/// whose part has an identity. The caller passes the devices the twin can
-/// answer for (`aethelgard_twin::model::answerable`); this crate cannot
-/// depend on the twin. A device on a
+/// The identity reads, in the specification's order: one per device of the
+/// topology whose part has an identity and that `answers` accepts (the twin
+/// has a model for it; this crate cannot depend on the twin). A device on a
 /// peripheral the board does not have as an I2C bus is refused.
 fn reads(
     plan: &Plan,
-    devices: &[aethelgard_ir::parts::I2cTarget],
+    solved: &SolvedTopology,
+    answers: &dyn Fn(&str) -> bool,
 ) -> Result<Vec<Read>, BoardError> {
     let mut out = Vec::new();
-    for d in devices {
+    for (reference, d) in solved.i2c_devices_in_order() {
+        if !answers(&d.part) {
+            continue;
+        }
         if plan.peripherals.get(&d.peripheral).map(|p| p.kind) != Some(Kind::I2c) {
             return Err(BoardError::DeviceNotOnABus {
-                reference: d.reference.clone(),
+                reference: reference.to_owned(),
                 peripheral: d.peripheral.clone(),
             });
         }

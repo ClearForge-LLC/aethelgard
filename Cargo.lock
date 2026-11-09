@@ -6,7 +6,6 @@ version = 4
 name = "aethelgard-chaos"
 version = "0.1.0"
 dependencies = [
- "aethelgard-ir",
  "rustix",
  "serde",
  "serde_json",

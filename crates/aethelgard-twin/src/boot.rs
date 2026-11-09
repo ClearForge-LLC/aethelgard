@@ -17,7 +17,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use aethelgard_ir::SolvedTopology;
-use aethelgard_ir::parts::{self, I2cTarget};
+use aethelgard_ir::parts;
 use aethelgard_svd_hal::cmsis;
 
 use crate::{TwinError, kind, model, split_pin};
@@ -243,16 +243,16 @@ impl I2cCheck {
     }
 }
 
-/// The I2C reads a boot of `devices` must make and the devices it cannot
-/// check. The identity is the part table's; the device is modelled when
-/// [`model::model`] says so.
-pub fn i2c(devices: &[I2cTarget]) -> Result<I2cPlan, TwinError> {
+/// The I2C reads a boot of the topology's devices must make, in the
+/// specification's order, and the devices it cannot check. The identity is the
+/// part table's; the device is modelled when [`model::model`] says so.
+pub fn i2c(topology: &SolvedTopology) -> Result<I2cPlan, TwinError> {
     let base = boot_word()?;
     let mut plan = I2cPlan::default();
-    for d in devices {
+    for (reference, d) in topology.i2c_devices_in_order() {
         if model::model(&d.part).is_none() {
             plan.unmodelled.push(Unmodelled {
-                reference: d.reference.clone(),
+                reference: reference.to_owned(),
                 part: d.part.clone(),
                 address: d.address,
             });
@@ -267,10 +267,10 @@ pub fn i2c(devices: &[I2cTarget]) -> Result<I2cPlan, TwinError> {
             .and_then(|n| n.checked_add(RECORD_OFFSET))
             .and_then(|n| base.checked_add(n))
             .ok_or_else(|| TwinError::InvalidDeviceName {
-                reference: d.reference.clone(),
+                reference: reference.to_owned(),
             })?;
         plan.checks.push(I2cCheck {
-            reference: d.reference.clone(),
+            reference: reference.to_owned(),
             peripheral: d.peripheral.clone(),
             address: d.address,
             register: id.register,
@@ -350,9 +350,9 @@ const MODE_OUTPUT: u32 = 0b01;
 const MODE_AF: u32 = 0b10;
 
 /// The expected register image of `topology`.
-pub fn expected(topology: &SolvedTopology, devices: &[I2cTarget]) -> Result<Image, TwinError> {
+pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
     topology.validate().map_err(TwinError::InvalidTopology)?;
-    let i2c = i2c(devices)?;
+    let i2c = i2c(topology)?;
     let f = cmsis::register_facts()?;
     let gpio = f.layout("GPIO")?;
     let rcc = f.layout("RCC")?;

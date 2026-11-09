@@ -1,18 +1,18 @@
-//! `AET-WO-2300` §1.1 and §5: the scenario format, `Scenario::apply`, the
-//! campaign records through the archive, `check_run`, and `run_id`.
+//! `AET-WO-2300` §1.1 and §5: the scenario format, the campaign records
+//! through the archive, `check_run`, `check_archived`, and `run_id`. Applying a
+//! scenario to a specification is the CLI's (`src/campaign.rs`'s tests).
 
 mod common;
 
 use std::fs;
 
 use aethelgard_chaos::campaign::{
-    HELD_LOW, HeldLow, MAX_EXPECTED, MAX_OVERRIDES, Scenario, ScenarioError, check_run, run_id,
+    HELD_LOW, MAX_EXPECTED, MAX_OVERRIDES, Scenario, ScenarioError, check_run, run_id,
 };
 use aethelgard_chaos::cbor;
 use aethelgard_chaos::record::{Line, Override, Reading, Record};
 use aethelgard_chaos::synthetic;
 use aethelgard_chaos::{ArchiveError as E, Event, Manifest, TraceWriter, replay_dir};
-use aethelgard_ir::Specification;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -26,11 +26,6 @@ fn root(rel: &str) -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join(rel)
-}
-
-fn spec() -> Specification {
-    let bytes = fs::read(root("examples/sentinel-01-minimal.json")).unwrap();
-    serde_json::from_slice(&bytes).unwrap()
 }
 
 fn doc(overrides: Value, expect: &str, findings: Value) -> Vec<u8> {
@@ -326,94 +321,6 @@ fn an_empty_base_and_a_bad_id_are_refused() {
     assert_eq!(refused_kind(&pass_doc(o)), "SchemaViolation");
     let o = json!([{ "bus": "B".repeat(65), "pull_up_ohms": 1 }]);
     assert_eq!(refused_kind(&pass_doc(o)), "SchemaViolation");
-}
-
-// ---- 3. apply ----
-
-#[test]
-fn apply_sets_the_bus_pull_up() {
-    let mut s = spec();
-    assert_ne!(s.i2c_buses[0].pull_up_ohms, 47000);
-    let held = scenario_with(json!([{ "bus": "SENSORS", "pull_up_ohms": 47000 }]))
-        .apply(&mut s)
-        .unwrap();
-    assert!(held.is_empty());
-    let bus = s.i2c_buses.iter().find(|b| b.id == "SENSORS").unwrap();
-    assert_eq!(bus.pull_up_ohms, 47000);
-}
-
-#[test]
-fn apply_sets_the_net_capacitance() {
-    let mut s = spec();
-    let before = s.clone();
-    scenario_with(json!([{ "net": "I2C_SDA", "max_capacitance_femtofarads": 50000 }]))
-        .apply(&mut s)
-        .unwrap();
-    let c = |s: &Specification, n: &str| {
-        s.net_constraints
-            .iter()
-            .find(|c| c.net_name == n)
-            .unwrap()
-            .max_capacitance_femtofarads
-    };
-    assert_eq!(c(&s, "I2C_SDA"), 50000);
-    assert_eq!(c(&s, "I2C_SCL"), c(&before, "I2C_SCL"));
-}
-
-#[test]
-fn apply_refuses_an_unknown_bus() {
-    let mut s = spec();
-    let e = scenario_with(json!([{ "bus": "NOPE", "pull_up_ohms": 2200 }]))
-        .apply(&mut s)
-        .unwrap_err();
-    assert_eq!(e.kind, "UnknownBus");
-    assert_eq!(e.id.as_deref(), Some("NOPE"));
-    let e = scenario_with(json!([{ "bus": "NOPE", "line_held_low": "sda" }]))
-        .apply(&mut spec())
-        .unwrap_err();
-    assert_eq!(e.kind, "UnknownBus");
-}
-
-#[test]
-fn apply_refuses_an_unknown_net() {
-    let mut s = spec();
-    let e = scenario_with(json!([{ "net": "NOPE", "max_capacitance_femtofarads": 1 }]))
-        .apply(&mut s)
-        .unwrap_err();
-    assert_eq!(e.kind, "UnknownNet");
-    assert_eq!(e.id.as_deref(), Some("NOPE"));
-}
-
-#[test]
-fn apply_refuses_a_zero_pull_up_by_the_specifications_own_rule() {
-    let mut s = spec();
-    let e = scenario_with(json!([{ "bus": "SENSORS", "pull_up_ohms": 0 }]))
-        .apply(&mut s)
-        .unwrap_err();
-    assert_eq!(e.kind, "ZeroPullUp");
-    assert_eq!(e.id.as_deref(), Some("SENSORS"));
-}
-
-#[test]
-fn line_held_low_reports_the_line_and_leaves_the_spec_alone() {
-    let mut s = spec();
-    let before = s.clone();
-    let held = scenario_with(json!([{ "bus": "SENSORS", "line_held_low": "sda" }]))
-        .apply(&mut s)
-        .unwrap();
-    assert_eq!(
-        held,
-        vec![HeldLow {
-            bus: "SENSORS".into(),
-            net: "I2C_SDA".into()
-        }]
-    );
-    assert_eq!(s, before);
-    let held = scenario_with(json!([{ "bus": "SENSORS", "line_held_low": "scl" }]))
-        .apply(&mut s)
-        .unwrap();
-    assert_eq!(held[0].net, "I2C_SCL");
-    assert_eq!(s, before);
 }
 
 // ---- 4. every record variant through the archive ----

@@ -10,7 +10,6 @@ keywords = ["fault-injection","chaos","traces","hardware"]
 categories = ["development-tools::testing","embedded"]
 
 [dependencies]
-aethelgard-ir.workspace = true
 rustix.workspace = true
 serde.workspace = true
 serde_json.workspace = true

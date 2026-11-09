@@ -117,18 +117,19 @@ pub fn generate(
     solved: &SolvedTopology,
     table: &PinTable,
 ) -> Result<BTreeMap<String, String>, BoardError> {
-    generate_with(crate_name, solved, table, &[])
+    generate_with(crate_name, solved, table, &|_| false)
 }
 
 /// [`generate`], and the reference firmware also reads the identity register
-/// of each of `devices` whose part has an identity and a model the twin can
-/// answer (`AET-WO-2202`). The devices come from the specification
-/// (`aethelgard_ir::parts::i2c_targets`); the topology does not carry them.
+/// of each of the topology's I2C devices (`SolvedTopology::i2c_devices`,
+/// `AET-WO-2203`) whose part has an identity and for which `answers` says the
+/// twin has a model (`AET-WO-2202`). This crate cannot depend on the twin, so
+/// the caller passes `aethelgard_twin::model::model(part).is_some()`.
 pub fn generate_with(
     crate_name: &str,
     solved: &SolvedTopology,
     table: &PinTable,
-    devices: &[aethelgard_ir::parts::I2cTarget],
+    answers: &dyn Fn(&str) -> bool,
 ) -> Result<BTreeMap<String, String>, BoardError> {
     let plan = Plan::new(crate_name, solved, table)?;
     let i2c: Vec<String> = plan
@@ -168,7 +169,13 @@ pub fn generate_with(
         "src/proofs.rs".to_owned(),
         emit_proofs(&plan, &facts, &speeds),
     );
-    files.extend(firmware::emit(&plan, &register_facts, &speeds, devices)?);
+    files.extend(firmware::emit(
+        &plan,
+        &register_facts,
+        &speeds,
+        solved,
+        answers,
+    )?);
     Ok(files)
 }
 
@@ -2146,6 +2153,7 @@ mod tests {
             gpio: BTreeMap::from([("CS".into(), "PA0".into())]),
             i2c_ceilings: BTreeMap::from([("BUS".into(), 400_000)]),
             analog_lines: analog_lines(&[("SCL", "BUS"), ("SDA", "BUS")]),
+            i2c_devices: BTreeMap::new(),
         }
     }
 

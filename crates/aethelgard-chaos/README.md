@@ -10,7 +10,8 @@ boots each scenario is `aethelgard campaign`, in the CLI, because it runs
 `simulate --firmware`'s own path.
 
 `sha2`, `thiserror`, `rustix` (for the reader's descriptor-relative opens),
-and for scenarios `aethelgard-ir`, `serde` and `serde_json` are used. There is no CBOR crate: the encoder and the strict
+and for scenarios `serde` and `serde_json` are used. Nothing here reads a
+`Specification` (`RUL-16`): the CLI applies a scenario's overrides. There is no CBOR crate: the encoder and the strict
 decoder are `src/cbor.rs`.
 
 ## The profile
@@ -208,7 +209,7 @@ apart from anything generated (`INV-07`):
 - `expect` is `pass` or `fail`. A failing scenario names the finding kinds it
   fails with in `expect_findings`; a passing one names none
   (`ExpectContradiction`).
-- `Scenario::apply` sets the bus's `pull_up_ohms` or the net constraint's
+- The runner (`aethelgard campaign`) sets the bus's `pull_up_ohms` or the net constraint's
   `max_capacitance_femtofarads` in the specification, refusing an id it does
   not have (`UnknownBus`, `UnknownNet`), then validates the result: an
   override that leaves the specification invalid is refused with

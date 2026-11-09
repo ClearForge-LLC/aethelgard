@@ -1,6 +1,6 @@
 use aethelgard_ir::{
     AnalogLine, I2cBus, I2cDevice, IrValidationError as E, Mcu, NetConstraint, PinAssignment,
-    Signal, SolvedTopology, Specification, SpiBus, SpiDevice, VoltageDomain,
+    Signal, SolvedI2cDevice, SolvedTopology, Specification, SpiBus, SpiDevice, VoltageDomain,
 };
 
 fn sig(net: &str) -> Signal {
@@ -690,6 +690,22 @@ fn solved() -> SolvedTopology {
             ("I2C_SDA".to_owned(), analog_line()),
         ]
         .into(),
+        // `U10` sorts before `U3`, so the map's order is not the index order.
+        i2c_devices: [
+            ("U3".to_owned(), device(0, 0x48)),
+            ("U10".to_owned(), device(1, 0x76)),
+        ]
+        .into(),
+    }
+}
+
+fn device(index: u32, address: u8) -> SolvedI2cDevice {
+    SolvedI2cDevice {
+        index,
+        part: "BME280".into(),
+        bus: "SENSORS".into(),
+        peripheral: "I2C1".into(),
+        address,
     }
 }
 
@@ -781,8 +797,8 @@ fn solved_round_trip_is_equal_and_byte_stable() {
 
 #[test]
 fn solved_serialization_is_sorted_whatever_the_input_order() {
-    let a = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"Z":"g","C":"c"},"i2c_ceilings":{"Y":100000,"B":400000},"analog_lines":{}}"#;
-    let b = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"C":"c","Z":"g"},"i2c_ceilings":{"B":400000,"Y":100000},"analog_lines":{}}"#;
+    let a = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"Z":"g","C":"c"},"i2c_ceilings":{"Y":100000,"B":400000},"analog_lines":{},"i2c_devices":{}}"#;
+    let b = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"C":"c","Z":"g"},"i2c_ceilings":{"B":400000,"Y":100000},"analog_lines":{},"i2c_devices":{}}"#;
     let a: SolvedTopology = serde_json::from_str(a).unwrap();
     let b: SolvedTopology = serde_json::from_str(b).unwrap();
     assert_eq!(
@@ -1123,6 +1139,97 @@ fn solved_refuses_a_repeated_missing_or_malformed_analog_map() {
     assert!(
         err.to_string()
             .contains("duplicate assignment for net `I2C_SDA`"),
+        "{err}"
+    );
+}
+
+// ---- SolvedTopology.i2c_devices (AET-WO-2203 §1.1) ---------------------------
+
+#[test]
+fn devices_come_out_in_index_order_not_reference_order() {
+    let t = solved();
+    let refs: Vec<&str> = t.i2c_devices.keys().map(String::as_str).collect();
+    assert_eq!(refs, ["U10", "U3"]);
+    let order: Vec<&str> = t.i2c_devices_in_order().iter().map(|d| d.0).collect();
+    assert_eq!(order, ["U3", "U10"]);
+}
+
+#[test]
+fn solved_refuses_a_device_address_outside_the_range() {
+    for address in [0x00, 0x07, 0x78, 0x80, 0xFF] {
+        let err = solved_refusal(|t| t.i2c_devices.get_mut("U3").unwrap().address = address);
+        assert_eq!(
+            err,
+            E::I2cAddressOutOfRange {
+                id: "U3".into(),
+                value: address
+            }
+        );
+    }
+}
+
+#[test]
+fn solved_refuses_a_device_on_an_unknown_bus_or_the_wrong_peripheral() {
+    let err = solved_refusal(|t| t.i2c_devices.get_mut("U3").unwrap().bus = "NOPE".into());
+    assert_refusal(err, "UnknownBus", Some("NOPE"));
+    let err = solved_refusal(|t| t.i2c_devices.get_mut("U3").unwrap().peripheral = "I2C2".into());
+    assert_refusal(err, "I2cDevicePeripheral", Some("U3"));
+}
+
+#[test]
+fn solved_refuses_a_key_or_field_that_is_not_an_identifier() {
+    let err = solved_refusal(|t| {
+        let d = t.i2c_devices.remove("U3").unwrap();
+        t.i2c_devices.insert("U 3".into(), d);
+    });
+    assert_invalid_identifier(err, "i2c_devices.U 3");
+    let err = solved_refusal(|t| t.i2c_devices.get_mut("U3").unwrap().part = "".into());
+    assert_invalid_identifier(err, "i2c_devices.U3.part");
+}
+
+#[test]
+fn solved_refuses_indices_that_are_not_exactly_zero_to_n() {
+    // Repeated, out of range, and a gap are each ambiguous about the order.
+    for (a, b) in [(0, 0), (1, 1), (0, 2), (1, 2), (5, 6)] {
+        let err = solved_refusal(|t| {
+            t.i2c_devices.get_mut("U3").unwrap().index = a;
+            t.i2c_devices.get_mut("U10").unwrap().index = b;
+        });
+        assert_eq!(err.kind(), "I2cDeviceIndex", "{a} {b}");
+    }
+}
+
+#[test]
+fn solved_refuses_a_missing_or_repeated_device() {
+    let mut doc = solved_json();
+    doc.as_object_mut().unwrap().remove("i2c_devices");
+    assert!(
+        parse_solved(&doc)
+            .unwrap_err()
+            .contains("missing field `i2c_devices`")
+    );
+    let mut doc = solved_json();
+    doc["i2c_devices"]["U3"]["extra"] = 1.into();
+    assert!(parse_solved(&doc).unwrap_err().contains("unknown field"));
+    let mut doc = solved_json();
+    doc["i2c_devices"]["U3"]
+        .as_object_mut()
+        .unwrap()
+        .remove("index");
+    assert!(
+        parse_solved(&doc)
+            .unwrap_err()
+            .contains("missing field `index`")
+    );
+    let text = solved_json().to_string();
+    let entry =
+        r#""U3":{"address":72,"bus":"SENSORS","index":0,"part":"BME280","peripheral":"I2C1"}"#;
+    assert!(text.contains(entry), "{text}");
+    let twice = text.replace(entry, &format!("{entry},{entry}"));
+    let err = serde_json::from_str::<SolvedTopology>(&twice).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("duplicate assignment for net `U3`"),
         "{err}"
     );
 }

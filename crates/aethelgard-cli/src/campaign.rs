@@ -14,8 +14,8 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
-use aethelgard_chaos::campaign::{self as rules, HeldLow, Scenario};
-use aethelgard_chaos::record::{Reading, Record};
+use aethelgard_chaos::campaign::{self as rules, Scenario, ScenarioError};
+use aethelgard_chaos::record::{Line, Override, Reading, Record};
 use aethelgard_chaos::{Event, Header, TraceWriter};
 use aethelgard_ir::{SolvedTopology, Specification};
 use serde::Serialize;
@@ -40,7 +40,6 @@ struct Prepared {
     scenario: Scenario,
     specification_sha256: [u8; 32],
     topology: SolvedTopology,
-    devices: Vec<aethelgard_ir::parts::I2cTarget>,
     held: Vec<HeldLow>,
     run_id: [u8; 16],
 }
@@ -111,6 +110,78 @@ fn read_base(scenario: &Path, base: &str) -> Result<Vec<u8>, (&'static str, Stri
     Ok(bytes)
 }
 
+/// A line the scenario holds low: its bus and the line's net.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HeldLow {
+    pub bus: String,
+    pub net: String,
+}
+
+/// Apply a scenario's overrides to `spec` and validate the result; return
+/// the lines it holds low. The runner does this, not `aethelgard-chaos`,
+/// which never reads a `Specification` (`RUL-16`). An id the specification
+/// does not have, or a result the specification's own rules refuse, is
+/// refused (`INV-06`).
+fn apply(scenario: &Scenario, spec: &mut Specification) -> Result<Vec<HeldLow>, ScenarioError> {
+    let mut held = Vec::new();
+    for o in &scenario.overrides {
+        match o {
+            Override::PullUpOhms { bus, ohms } => {
+                bus_of(spec, bus)?.pull_up_ohms = *ohms;
+            }
+            Override::MaxCapacitance { net, femtofarads } => {
+                let c = spec
+                    .net_constraints
+                    .iter_mut()
+                    .find(|c| &c.net_name == net)
+                    .ok_or_else(|| {
+                        ScenarioError::new(
+                            "UnknownNet",
+                            Some(net),
+                            format!("the specification constrains no net `{net}`"),
+                        )
+                    })?;
+                c.max_capacitance_femtofarads = *femtofarads;
+            }
+            Override::LineHeldLow { bus, line } => {
+                let b = bus_of(spec, bus)?;
+                let net = match line {
+                    Line::Sda => b.sda.net.clone(),
+                    Line::Scl => b.scl.net.clone(),
+                };
+                held.push(HeldLow {
+                    bus: bus.clone(),
+                    net,
+                });
+            }
+        }
+    }
+    spec.validate().map_err(|e| {
+        ScenarioError::new(
+            e.kind(),
+            e.id(),
+            format!("the overrides leave the specification invalid: {e}"),
+        )
+    })?;
+    Ok(held)
+}
+
+fn bus_of<'a>(
+    spec: &'a mut Specification,
+    bus: &str,
+) -> Result<&'a mut aethelgard_ir::I2cBus, ScenarioError> {
+    spec.i2c_buses
+        .iter_mut()
+        .find(|b| b.id == bus)
+        .ok_or_else(|| {
+            ScenarioError::new(
+                "UnknownBus",
+                Some(bus),
+                format!("the specification has no I2C bus `{bus}`"),
+            )
+        })
+}
+
 /// Read, apply and solve one scenario; a refusal is printed and its code returned.
 fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode> {
     let bytes = read_input(Some(path)).map_err(|r| emit(&r, EXIT_UNREADABLE))?;
@@ -133,7 +204,7 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         r.error.message = format!("scenario `{}`, base: {}", scenario.name, r.error.message);
         emit(&r, code)
     })?;
-    let held = scenario.apply(&mut spec).map_err(|e| {
+    let held = apply(&scenario, &mut spec).map_err(|e| {
         refuse(
             e.kind,
             e.id.as_deref(),
@@ -149,7 +220,6 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
     })?;
     let specification_sha256 = digest(&overridden);
     let (topology, _) = crate::solve_spec(&spec, &hex(specification_sha256))?;
-    let devices = devices(&spec, &topology)?;
     let run_id = rules::run_id(&scenario.sha256, &specification_sha256, firmware_sha256);
     Ok(Prepared {
         path: path.to_path_buf(),
@@ -157,18 +227,9 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         scenario,
         specification_sha256,
         topology,
-        devices,
         held,
         run_id,
     })
-}
-
-fn devices(
-    spec: &Specification,
-    topology: &SolvedTopology,
-) -> Result<Vec<aethelgard_ir::parts::I2cTarget>, ExitCode> {
-    aethelgard_ir::parts::i2c_targets(spec, topology)
-        .map_err(|e| refuse("DeviceNotPlaced", None, e.to_string(), EXIT_INVALID_SPEC))
 }
 
 #[derive(Serialize)]
@@ -294,8 +355,8 @@ fn run_one(
     };
     let scratch = Scratch::new().map_err(stop)?;
     let platform = scratch.tool.join("platform.repl");
-    let text = aethelgard_twin::platform::emit(&p.topology, &p.devices)
-        .map_err(|e| stop(crate::twin_stop(e)))?;
+    let text =
+        aethelgard_twin::platform::emit(&p.topology).map_err(|e| stop(crate::twin_stop(e)))?;
     fs::write(&platform, text).map_err(|e| {
         stop(run::Stop::tool_error(
             "aethelgard",
@@ -311,7 +372,6 @@ fn run_one(
         Some(Boot {
             firmware: firmware.to_path_buf(),
             topology: p.topology,
-            devices: p.devices,
             virtual_ns: VIRTUAL_NS,
             scenario: p.scenario.name.clone(),
             held: p.held,
@@ -643,7 +703,124 @@ pub fn replay(dir: &Path) -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::picoseconds;
+    use super::{HeldLow, Scenario, Specification, apply, picoseconds};
+    use serde_json::{Value, json};
+
+    fn spec() -> Specification {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/sentinel-01-minimal.json"
+        );
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+
+    fn scenario_with(overrides: Value) -> Scenario {
+        let doc = json!({"schema_version": 1, "name": "t", "base": "b.json",
+            "expect": "pass", "expect_findings": [], "overrides": overrides});
+        Scenario::parse(&serde_json::to_vec(&doc).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn apply_sets_the_bus_pull_up() {
+        let mut s = spec();
+        assert_ne!(s.i2c_buses[0].pull_up_ohms, 47000);
+        let held = apply(
+            &scenario_with(json!([{ "bus": "SENSORS", "pull_up_ohms": 47000 }])),
+            &mut s,
+        )
+        .unwrap();
+        assert!(held.is_empty());
+        let bus = s.i2c_buses.iter().find(|b| b.id == "SENSORS").unwrap();
+        assert_eq!(bus.pull_up_ohms, 47000);
+    }
+
+    #[test]
+    fn apply_sets_the_net_capacitance() {
+        let mut s = spec();
+        let before = s.clone();
+        apply(
+            &scenario_with(json!([{ "net": "I2C_SDA", "max_capacitance_femtofarads": 50000 }])),
+            &mut s,
+        )
+        .unwrap();
+        let c = |s: &Specification, n: &str| {
+            s.net_constraints
+                .iter()
+                .find(|c| c.net_name == n)
+                .unwrap()
+                .max_capacitance_femtofarads
+        };
+        assert_eq!(c(&s, "I2C_SDA"), 50000);
+        assert_eq!(c(&s, "I2C_SCL"), c(&before, "I2C_SCL"));
+    }
+
+    #[test]
+    fn apply_refuses_an_unknown_bus() {
+        let mut s = spec();
+        let e = apply(
+            &scenario_with(json!([{ "bus": "NOPE", "pull_up_ohms": 2200 }])),
+            &mut s,
+        )
+        .unwrap_err();
+        assert_eq!(e.kind, "UnknownBus");
+        assert_eq!(e.id.as_deref(), Some("NOPE"));
+        let e = apply(
+            &scenario_with(json!([{ "bus": "NOPE", "line_held_low": "sda" }])),
+            &mut spec(),
+        )
+        .unwrap_err();
+        assert_eq!(e.kind, "UnknownBus");
+    }
+
+    #[test]
+    fn apply_refuses_an_unknown_net() {
+        let mut s = spec();
+        let e = apply(
+            &scenario_with(json!([{ "net": "NOPE", "max_capacitance_femtofarads": 1 }])),
+            &mut s,
+        )
+        .unwrap_err();
+        assert_eq!(e.kind, "UnknownNet");
+        assert_eq!(e.id.as_deref(), Some("NOPE"));
+    }
+
+    #[test]
+    fn apply_refuses_a_zero_pull_up_by_the_specifications_own_rule() {
+        let mut s = spec();
+        let e = apply(
+            &scenario_with(json!([{ "bus": "SENSORS", "pull_up_ohms": 0 }])),
+            &mut s,
+        )
+        .unwrap_err();
+        assert_eq!(e.kind, "ZeroPullUp");
+        assert_eq!(e.id.as_deref(), Some("SENSORS"));
+    }
+
+    #[test]
+    fn line_held_low_reports_the_line_and_leaves_the_spec_alone() {
+        let mut s = spec();
+        let before = s.clone();
+        let held = apply(
+            &scenario_with(json!([{ "bus": "SENSORS", "line_held_low": "sda" }])),
+            &mut s,
+        )
+        .unwrap();
+        assert_eq!(
+            held,
+            vec![HeldLow {
+                bus: "SENSORS".into(),
+                net: "I2C_SDA".into()
+            }]
+        );
+        assert_eq!(s, before);
+        let held = apply(
+            &scenario_with(json!([{ "bus": "SENSORS", "line_held_low": "scl" }])),
+            &mut s,
+        )
+        .unwrap();
+        assert_eq!(held[0].net, "I2C_SCL");
+        assert_eq!(s, before);
+    }
 
     /// A measured rise rounds up and a lower bound rounds down, so neither
     /// crosses a whole-nanosecond ceiling in the wrong direction.
