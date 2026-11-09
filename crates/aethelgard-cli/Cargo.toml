@@ -20,6 +20,7 @@ with-tools = []
 
 [dependencies]
 aethelgard-chaos.workspace = true
+aethelgard-evolve.workspace = true
 aethelgard-ir.workspace = true
 aethelgard-svd-hal.workspace = true
 aethelgard-eda.workspace = true

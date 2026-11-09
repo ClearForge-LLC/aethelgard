@@ -506,7 +506,8 @@ mod tests {
                 "prove",
                 "simulate",
                 "campaign",
-                "replay"
+                "replay",
+                "attribute"
             ]
         );
     }

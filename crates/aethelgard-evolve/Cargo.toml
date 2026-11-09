@@ -11,7 +11,8 @@ categories = ["development-tools"]
 publish = false
 
 [dependencies]
-aethelgard-ir.workspace = true
+aethelgard-chaos.workspace = true
+aethelgard-svd-hal.workspace = true
 
 [lints]
 workspace = true

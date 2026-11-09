@@ -705,12 +705,13 @@ struct Replayed {
     state_sequence_hash: String,
 }
 
-/// `aethelgard replay --archive <run dir>`: the strict reader, then the
-/// campaign's run rules, from the run directory alone.
-pub fn replay(dir: &Path) -> ExitCode {
+/// `replay`'s checks, in its order: the strict reader, the run directory's
+/// name, then the campaign's run rules. `attribute` applies exactly these
+/// (`AET-WO-3100` §1.3); a refusal is printed and its code returned.
+fn checked(dir: &Path) -> Result<(aethelgard_chaos::Replayed, rules::RunSummary), ExitCode> {
     let replayed = match aethelgard_chaos::replay_dir(dir) {
         Ok(r) => r,
-        Err(e) => return refuse(e.kind(), None, e.to_string(), EXIT_UNREADABLE),
+        Err(e) => return Err(refuse(e.kind(), None, e.to_string(), EXIT_UNREADABLE)),
     };
     // A run directory is named by its run id, so a run copied under another
     // run's name is not that run (`AET-WO-2300` adversarial F3).
@@ -720,7 +721,7 @@ pub fn replay(dir: &Path) -> ExitCode {
         .ok()
         .and_then(|d| d.file_name().map(std::ffi::OsStr::to_owned));
     if named.as_deref() != Some(std::ffi::OsStr::new(&hex(replayed.header.run_id))) {
-        return refuse(
+        return Err(refuse(
             "RunIdMismatch",
             Some(&hex(replayed.header.run_id)),
             format!(
@@ -729,18 +730,25 @@ pub fn replay(dir: &Path) -> ExitCode {
                 hex(replayed.header.run_id)
             ),
             EXIT_UNREADABLE,
-        );
+        ));
     }
-    let summary = match rules::check_archived(&replayed.header, &replayed.state) {
-        Ok(s) => s,
-        Err(reason) => {
-            return refuse(
-                "NotACampaignRun",
-                None,
-                format!("{}: {reason}", dir.display()),
-                EXIT_UNREADABLE,
-            );
-        }
+    match rules::check_archived(&replayed.header, &replayed.state) {
+        Ok(summary) => Ok((replayed, summary)),
+        Err(reason) => Err(refuse(
+            "NotACampaignRun",
+            None,
+            format!("{}: {reason}", dir.display()),
+            EXIT_UNREADABLE,
+        )),
+    }
+}
+
+/// `aethelgard replay --archive <run dir>`: the strict reader, then the
+/// campaign's run rules, from the run directory alone.
+pub fn replay(dir: &Path) -> ExitCode {
+    let (replayed, summary) = match checked(dir) {
+        Ok(run) => run,
+        Err(code) => return code,
     };
     emit(
         &Replayed {
@@ -764,6 +772,81 @@ pub fn replay(dir: &Path) -> ExitCode {
             state_sequence_hash: hex(replayed.manifest.state_hash),
         },
         0,
+    )
+}
+
+#[derive(Serialize)]
+struct EventLine {
+    index: u64,
+    kind: u64,
+}
+
+#[derive(Serialize)]
+struct Attributed {
+    ok: bool,
+    check: &'static str,
+    run_id: String,
+    state_sequence_hash: String,
+    domain: &'static str,
+    rule: &'static str,
+    evidence: Vec<EventLine>,
+    symptoms: Vec<EventLine>,
+    masked: Vec<EventLine>,
+    unexplained: Vec<String>,
+}
+
+/// `aethelgard attribute --archive <run dir>`: `replay`'s checks, then
+/// `aethelgard_evolve::attribute`, from the run directory alone. Exit 0 for
+/// `electrical`, `software` or `none`, 1 for `indeterminate`.
+pub fn attribute(dir: &Path) -> ExitCode {
+    use aethelgard_evolve::{AttributeError, Domain};
+    let (replayed, _) = match checked(dir) {
+        Ok(run) => run,
+        Err(code) => return code,
+    };
+    let a = match aethelgard_evolve::attribute(&replayed) {
+        Ok(a) => a,
+        // `checked` has applied the same rules, so this is not reached.
+        Err(AttributeError::NotACampaignRun(reason)) => {
+            return refuse(
+                "NotACampaignRun",
+                None,
+                format!("{}: {reason}", dir.display()),
+                EXIT_UNREADABLE,
+            );
+        }
+        Err(AttributeError::RegisterFacts(e)) => {
+            return refuse(
+                e.kind(),
+                None,
+                format!("{}: a register fact the run names: {e}", dir.display()),
+                EXIT_UNREADABLE,
+            );
+        }
+    };
+    let lines = |v: Vec<aethelgard_evolve::EventRef>| {
+        v.into_iter()
+            .map(|e| EventLine {
+                index: e.index,
+                kind: e.kind,
+            })
+            .collect()
+    };
+    let determinate = a.domain != Domain::Indeterminate;
+    emit(
+        &Attributed {
+            ok: determinate,
+            check: "attribute",
+            run_id: hex(a.run_id),
+            state_sequence_hash: hex(a.state_hash),
+            domain: a.domain.name(),
+            rule: a.rule.id(),
+            evidence: lines(a.evidence),
+            symptoms: lines(a.symptoms),
+            masked: lines(a.masked),
+            unexplained: a.unexplained,
+        },
+        if determinate { 0 } else { EXIT_FAIL },
     )
 }
 

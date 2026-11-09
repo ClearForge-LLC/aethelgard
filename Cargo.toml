@@ -27,6 +27,7 @@ unsafe_code = "forbid"
 [workspace.dependencies]
 aethelgard-ir = { path = "crates/aethelgard-ir", version = "0.1.0" }
 aethelgard-chaos = { path = "crates/aethelgard-chaos", version = "0.1.0" }
+aethelgard-evolve = { path = "crates/aethelgard-evolve", version = "0.1.0" }
 aethelgard-svd-hal = { path = "crates/aethelgard-svd-hal", version = "0.1.0" }
 aethelgard-twin = { path = "crates/aethelgard-twin", version = "0.1.0" }
 aethelgard-eda = { path = "crates/aethelgard-eda", version = "0.1.0" }

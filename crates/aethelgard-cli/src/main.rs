@@ -129,6 +129,12 @@ enum Command {
         #[arg(long)]
         archive: PathBuf,
     },
+    /// Attribute one archived campaign run to the electrical or the software half, from its trace alone, naming the rule and the evidence events.
+    Attribute {
+        /// The run directory.
+        #[arg(long)]
+        archive: PathBuf,
+    },
     /// Serve every other subcommand as an MCP tool on stdin and stdout.
     Mcp,
 }
@@ -305,6 +311,7 @@ fn main() -> ExitCode {
             archive,
         } => return campaign::run(&scenarios, &firmware, &archive),
         Command::Replay { archive } => return campaign::replay(&archive),
+        Command::Attribute { archive } => return campaign::attribute(&archive),
         Command::Mcp => return mcp::serve(),
     };
     match judged {

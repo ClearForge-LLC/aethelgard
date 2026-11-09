@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "name": "pullup-10k",
+  "base": "../../../examples/sentinel-01-minimal.json",
+  "expect": "fail",
+  "expect_findings": [
+    "analog_rise_exceeds_ceiling",
+    "i2c_timeout"
+  ],
+  "overrides": [
+    {
+      "bus": "SENSORS",
+      "pull_up_ohms": 10000
+    }
+  ]
+}

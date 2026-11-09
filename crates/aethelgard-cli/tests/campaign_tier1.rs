@@ -14,6 +14,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use aethelgard_chaos::cbor;
+use aethelgard_chaos::record::Record;
 use aethelgard_chaos::{Event, Manifest, TraceWriter, synthetic};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -1173,4 +1174,205 @@ fn a_run_with_a_consistently_resealed_but_changed_header_is_not_a_campaign_run()
     });
     // Trace hash, byte count and state hash all agree; only the run id does not.
     expect_refusal(&replay(&tb.0, &new), 3, "NotACampaignRun");
+}
+
+// 7. `attribute` (`AET-WO-3100` §1.3).
+
+fn attribute(tools: &Path, run: &Path) -> Output {
+    run_cli(
+        &cli(None),
+        tools,
+        &root(),
+        &[os("attribute"), os("--archive"), run.as_os_str()],
+    )
+}
+
+/// `run`'s records, edited and re-sealed through the chaos writer under the
+/// original header, in a fresh directory named by the run id.
+fn resealed_records(run: &Path, edit: impl FnOnce(&mut Vec<Record>)) -> (Dir, PathBuf) {
+    let old = aethelgard_chaos::replay_dir(run).unwrap();
+    let mut records = old.state.records;
+    edit(&mut records);
+    let dir = Dir::new("resealed-records");
+    let new = dir.0.join(hex_of(&old.header.run_id));
+    let mut w = TraceWriter::create(&new, &old.header).unwrap();
+    for record in records {
+        let timestamp = if record.before_boot() { 0 } else { 100_000_000 };
+        w.append(&Event::Record { timestamp, record }).unwrap();
+    }
+    w.commit().unwrap();
+    (dir, new)
+}
+
+#[test]
+fn attribute_names_a_passing_run_none_twice_in_identical_bytes() {
+    let (tb, _work, run) = a_run();
+    let first = attribute(&tb.0, &run);
+    let a = refusal(&first);
+    assert_eq!(first.status.code(), Some(0), "{a}");
+    assert_eq!(
+        (&a["ok"], &a["check"], &a["domain"], &a["rule"]),
+        (
+            &json!(true),
+            &json!("attribute"),
+            &json!("none"),
+            &json!("N1")
+        )
+    );
+    for key in ["evidence", "symptoms", "masked", "unexplained"] {
+        assert_eq!(a[key], json!([]), "{key}");
+    }
+    let r = refusal(&replay(&tb.0, &run));
+    assert_eq!(a["run_id"], r["run_id"]);
+    assert_eq!(a["state_sequence_hash"], r["state_sequence_hash"]);
+    assert_eq!(attribute(&tb.0, &run).stdout, first.stdout);
+}
+
+#[test]
+fn attribute_names_the_47k_run_electrical_with_its_rises_and_fault() {
+    let tb = toolbox(&faulted());
+    let work = Work::new();
+    let archive = Dir::new("archive");
+    let out = campaign(
+        &cli(Some(BRIDGE_BY_PULL_UP)),
+        &tb.0,
+        &root(),
+        &["scenarios/sentinel-01/pullup-47k.json"],
+        &work.firmware,
+        &archive.0.join("a"),
+    );
+    assert_eq!(out.status.code(), Some(0), "{:?}", lines(&out));
+    let run = PathBuf::from(lines(&out)[0]["run"].as_str().unwrap());
+    let got = attribute(&tb.0, &run);
+    let a = refusal(&got);
+    assert_eq!(got.status.code(), Some(0), "{a}");
+    assert_eq!(
+        (&a["domain"], &a["rule"]),
+        (&json!("electrical"), &json!("E1"))
+    );
+    let kinds: Vec<u64> = a["evidence"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["kind"].as_u64().unwrap())
+        .collect();
+    assert_eq!(kinds, [7, 7, 9]);
+    // The campaign wrote kind 15 from the solved topology, right after kind 6.
+    let records = aethelgard_chaos::replay_dir(&run).unwrap().state.records;
+    let Record::I2cBusSolved {
+        bus,
+        peripheral,
+        lines,
+        devices,
+    } = &records[2]
+    else {
+        panic!("{:?}", records[2]);
+    };
+    assert_eq!((bus.as_str(), peripheral.as_str()), ("SENSORS", "I2C1"));
+    let lines: Vec<(&str, &str, &str, u8, u64)> = lines
+        .iter()
+        .map(|l| {
+            (
+                l.signal.as_str(),
+                l.net.as_str(),
+                l.pin.as_str(),
+                l.alternate_function,
+                l.ceiling_ps,
+            )
+        })
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            ("I2C1_SCL", "I2C_SCL", "PB6", 4, 300_000),
+            ("I2C1_SDA", "I2C_SDA", "PB7", 4, 300_000)
+        ]
+    );
+    assert_eq!(devices, &[("U2".to_owned(), 0x76), ("U3".to_owned(), 0x48)]);
+}
+
+#[test]
+fn an_indeterminate_run_exits_1_with_its_unexplained_finding_named() {
+    let (tb, _work, run) = a_run();
+    let (_dir, forged) = resealed_records(&run, |r| {
+        let last = r.len() - 1;
+        r[last] = Record::Verdict {
+            pass: false,
+            findings: vec![("renode_error_log".into(), "error".into(), 1)],
+        };
+    });
+    let out = attribute(&tb.0, &forged);
+    let a = refusal(&out);
+    assert_eq!(out.status.code(), Some(1), "{a}");
+    assert_eq!(
+        (&a["ok"], &a["domain"], &a["rule"], &a["unexplained"]),
+        (
+            &json!(false),
+            &json!("indeterminate"),
+            &json!("I1"),
+            &json!(["renode_error_log"])
+        )
+    );
+}
+
+#[test]
+fn attribute_refuses_whatever_replay_refuses_with_the_same_bytes_and_code() {
+    let (tb, _work, run) = a_run();
+    let same = |dir: &Path, kind: &str| {
+        let (a, r) = (attribute(&tb.0, dir), replay(&tb.0, dir));
+        assert_eq!(a.stdout, r.stdout, "{kind}");
+        assert_eq!(a.status.code(), r.status.code(), "{kind}");
+        expect_refusal(&a, 3, kind);
+    };
+    let scratch = Dir::new("refusals");
+    same(&scratch.0.join("absent"), "Io");
+    // A one-byte change, and a run copied under another name.
+    let copy = |label: &str| {
+        let to = scratch.0.join(label).join(run.file_name().unwrap());
+        fs::create_dir_all(&to).unwrap();
+        for name in ["trace.cbor", "manifest.cbor"] {
+            fs::copy(run.join(name), to.join(name)).unwrap();
+        }
+        to
+    };
+    let flipped = copy("flip");
+    let mut trace = fs::read(flipped.join("trace.cbor")).unwrap();
+    let at = find(&trace, &INSTRUCTION_COUNT_CBOR) + 4;
+    trace[at] ^= 1;
+    fs::write(flipped.join("trace.cbor"), &trace).unwrap();
+    same(&flipped, "HashMismatch");
+    let renamed = scratch.0.join("renamed");
+    fs::rename(copy("rename"), &renamed).unwrap();
+    same(&renamed, "RunIdMismatch");
+    let extra = copy("extra");
+    fs::write(extra.join("notes.txt"), b"x").unwrap();
+    same(&extra, "UnexpectedEntry");
+    // A forged join: kind 15 dropped and the run re-sealed.
+    let (_d, no_join) = resealed_records(&run, |r| {
+        r.retain(|x| !matches!(x, Record::I2cBusSolved { .. }));
+    });
+    same(&no_join, "NotACampaignRun");
+}
+
+#[test]
+fn attribute_needs_nothing_but_the_run_directory() {
+    let (tb, _work, run) = a_run();
+    let before = attribute(&tb.0, &run);
+    // Another working directory, an empty PATH, and the run moved elsewhere.
+    let elsewhere = Dir::new("elsewhere");
+    let moved = elsewhere.0.join(run.file_name().unwrap());
+    fs::create_dir_all(&moved).unwrap();
+    for name in ["trace.cbor", "manifest.cbor"] {
+        fs::copy(run.join(name), moved.join(name)).unwrap();
+    }
+    let empty = Dir::new("empty-path");
+    let after = run_cli(
+        &cli(None),
+        &empty.0,
+        &empty.0,
+        &[os("attribute"), os("--archive"), moved.as_os_str()],
+    );
+    assert_eq!(after.status.code(), Some(0));
+    assert_eq!(after.stdout, before.stdout);
+    let _ = tb;
 }

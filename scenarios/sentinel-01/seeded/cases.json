@@ -1,0 +1,293 @@
+{
+  "schema_version": 1,
+  "about": "AET-WO-3100 \u00a71.4: the seeded set. Each case is a scenario run against the generated firmware, unmutated or with one named mutant applied to a scratch copy of boards/sentinel-01. A mutant's `find` must occur exactly once in its `file`, or the test refuses it. `findings` are the case's failing finding kinds; `domain` and `rule` are what `aethelgard attribute` must name.",
+  "mutants": {
+    "wrong-address": {
+      "why": "the BME280 read addresses 0x77, not the solved 0x76",
+      "file": "firmware/src/main.rs",
+      "find": "i2c1.transfer(&mut r, 0x76,",
+      "replace": "i2c1.transfer(&mut r, 0x77,"
+    },
+    "wrong-register": {
+      "why": "the identity read asks for register 0xd1, not the part table's 0xd0",
+      "file": "firmware/src/main.rs",
+      "find": "&[0xd0], &mut buf0",
+      "replace": "&[0xd1], &mut buf0"
+    },
+    "wrong-nbytes": {
+      "why": "the identity read reads two bytes, not the part table's one",
+      "file": "firmware/src/main.rs",
+      "find": "let mut buf0 = [0u8; 1];",
+      "replace": "let mut buf0 = [0u8; 2];"
+    },
+    "i2c-clock-skipped": {
+      "why": "enable_i2c1 leaves RCC_APB1LENR bit 21 clear",
+      "file": "src/board.rs",
+      "find": "Block::Rcc, 0x0e8, |v| v | 0x00200000",
+      "replace": "Block::Rcc, 0x0e8, |v| v"
+    },
+    "scl-af-wrong": {
+      "why": "PB6 (SCL) is put on AF5, not the solved AF4",
+      "file": "src/board.rs",
+      "find": "(v & !0x0f000000) | 0x04000000",
+      "replace": "(v & !0x0f000000) | 0x05000000"
+    },
+    "sda-af-wrong": {
+      "why": "PB7 (SDA) is put on AF5, not the solved AF4",
+      "file": "src/board.rs",
+      "find": "(v & !0xf0000000) | 0x40000000",
+      "replace": "(v & !0xf0000000) | 0x50000000"
+    },
+    "scl-mode-output": {
+      "why": "PB6 (SCL) is put in output mode, not alternate function",
+      "file": "src/board.rs",
+      "find": "Block::GpioB, 0x00, |v| (v & !0x00003000) | 0x00002000",
+      "replace": "Block::GpioB, 0x00, |v| (v & !0x00003000) | 0x00001000"
+    },
+    "gpiob-clock-skipped": {
+      "why": "enable_gpiob leaves RCC_AHB4ENR bit 1 clear",
+      "file": "src/board.rs",
+      "find": "Block::Rcc, 0x0e0, |v| v | 0x00000002",
+      "replace": "Block::Rcc, 0x0e0, |v| v"
+    },
+    "no-boot-word": {
+      "why": "the fixed point writes 0, not the boot word",
+      "file": "firmware/src/main.rs",
+      "find": "write_volatile(BOOT_MAGIC)",
+      "replace": "write_volatile(0)"
+    }
+  },
+  "cases": [
+    {
+      "name": "pullup-3k9",
+      "scenario": "scenarios/sentinel-01/seeded/pullup-3k9.json",
+      "mutant": null,
+      "domain": "electrical",
+      "rule": "E1",
+      "findings": [
+        "analog_rise_exceeds_ceiling",
+        "i2c_timeout"
+      ]
+    },
+    {
+      "name": "pullup-4k7",
+      "scenario": "scenarios/sentinel-01/seeded/pullup-4k7.json",
+      "mutant": null,
+      "domain": "electrical",
+      "rule": "E1",
+      "findings": [
+        "analog_rise_exceeds_ceiling",
+        "i2c_timeout"
+      ]
+    },
+    {
+      "name": "pullup-10k",
+      "scenario": "scenarios/sentinel-01/seeded/pullup-10k.json",
+      "mutant": null,
+      "domain": "electrical",
+      "rule": "E1",
+      "findings": [
+        "analog_rise_exceeds_ceiling",
+        "i2c_timeout"
+      ]
+    },
+    {
+      "name": "pullup-47k",
+      "scenario": "scenarios/sentinel-01/pullup-47k.json",
+      "mutant": null,
+      "domain": "electrical",
+      "rule": "E1",
+      "findings": [
+        "analog_rise_exceeds_ceiling",
+        "i2c_timeout"
+      ]
+    },
+    {
+      "name": "pullup-100k",
+      "scenario": "scenarios/sentinel-01/seeded/pullup-100k.json",
+      "mutant": null,
+      "domain": "electrical",
+      "rule": "E1",
+      "findings": [
+        "analog_rise_exceeds_ceiling",
+        "i2c_timeout"
+      ]
+    },
+    {
+      "name": "cap-220p-2k2",
+      "scenario": "scenarios/sentinel-01/seeded/cap-220p-2k2.json",
+      "mutant": null,
+      "domain": "electrical",
+      "rule": "E1",
+      "findings": [
+        "analog_rise_exceeds_ceiling",
+        "i2c_timeout"
+      ]
+    },
+    {
+      "name": "cap-470p-sda-2k2",
+      "scenario": "scenarios/sentinel-01/seeded/cap-470p-sda-2k2.json",
+      "mutant": null,
+      "domain": "electrical",
+      "rule": "E1",
+      "findings": [
+        "analog_rise_exceeds_ceiling",
+        "i2c_timeout"
+      ]
+    },
+    {
+      "name": "held-low-sda",
+      "scenario": "scenarios/sentinel-01/seeded/held-low-sda.json",
+      "mutant": null,
+      "domain": "electrical",
+      "rule": "E1",
+      "findings": [
+        "i2c_line_held_low",
+        "i2c_timeout"
+      ]
+    },
+    {
+      "name": "held-low-scl",
+      "scenario": "scenarios/sentinel-01/seeded/held-low-scl.json",
+      "mutant": null,
+      "domain": "electrical",
+      "rule": "E1",
+      "findings": [
+        "i2c_line_held_low",
+        "i2c_timeout"
+      ]
+    },
+    {
+      "name": "trap-wrong-address-47k",
+      "scenario": "scenarios/sentinel-01/pullup-47k.json",
+      "mutant": "wrong-address",
+      "domain": "electrical",
+      "rule": "E1",
+      "findings": [
+        "analog_rise_exceeds_ceiling",
+        "i2c_timeout"
+      ]
+    },
+    {
+      "name": "wrong-address-2k2",
+      "scenario": "scenarios/sentinel-01/pullup-2k2.json",
+      "mutant": "wrong-address",
+      "domain": "software",
+      "rule": "S1",
+      "findings": [
+        "i2c_timeout"
+      ]
+    },
+    {
+      "name": "trap-wrong-address-3k3",
+      "scenario": "scenarios/sentinel-01/seeded/pullup-3k3.json",
+      "mutant": "wrong-address",
+      "domain": "software",
+      "rule": "S1",
+      "findings": [
+        "i2c_timeout"
+      ]
+    },
+    {
+      "name": "wrong-register",
+      "scenario": "scenarios/sentinel-01/pullup-2k2.json",
+      "mutant": "wrong-register",
+      "domain": "software",
+      "rule": "S1",
+      "findings": [
+        "i2c_identity_mismatch",
+        "i2c_transaction_unwitnessed"
+      ]
+    },
+    {
+      "name": "wrong-nbytes",
+      "scenario": "scenarios/sentinel-01/pullup-2k2.json",
+      "mutant": "wrong-nbytes",
+      "domain": "software",
+      "rule": "S1",
+      "findings": [
+        "i2c_identity_mismatch",
+        "i2c_transaction_unwitnessed"
+      ]
+    },
+    {
+      "name": "i2c-clock-skipped",
+      "scenario": "scenarios/sentinel-01/pullup-2k2.json",
+      "mutant": "i2c-clock-skipped",
+      "domain": "software",
+      "rule": "S1",
+      "findings": [
+        "i2c_timeout",
+        "locked_peripheral_access",
+        "register_mismatch"
+      ]
+    },
+    {
+      "name": "scl-af-wrong",
+      "scenario": "scenarios/sentinel-01/pullup-2k2.json",
+      "mutant": "scl-af-wrong",
+      "domain": "software",
+      "rule": "S1",
+      "findings": [
+        "register_mismatch"
+      ]
+    },
+    {
+      "name": "sda-af-wrong",
+      "scenario": "scenarios/sentinel-01/pullup-2k2.json",
+      "mutant": "sda-af-wrong",
+      "domain": "software",
+      "rule": "S1",
+      "findings": [
+        "register_mismatch"
+      ]
+    },
+    {
+      "name": "scl-mode-output",
+      "scenario": "scenarios/sentinel-01/pullup-2k2.json",
+      "mutant": "scl-mode-output",
+      "domain": "software",
+      "rule": "S1",
+      "findings": [
+        "register_mismatch"
+      ]
+    },
+    {
+      "name": "gpiob-clock-skipped",
+      "scenario": "scenarios/sentinel-01/pullup-2k2.json",
+      "mutant": "gpiob-clock-skipped",
+      "domain": "software",
+      "rule": "S1",
+      "findings": [
+        "locked_peripheral_access",
+        "register_mismatch"
+      ]
+    },
+    {
+      "name": "no-boot-word",
+      "scenario": "scenarios/sentinel-01/pullup-2k2.json",
+      "mutant": "no-boot-word",
+      "domain": "software",
+      "rule": "S2",
+      "findings": [
+        "boot_word_missing"
+      ]
+    },
+    {
+      "name": "trap-unmutated-3k3",
+      "scenario": "scenarios/sentinel-01/seeded/pullup-3k3.json",
+      "mutant": null,
+      "domain": "none",
+      "rule": "N1",
+      "findings": []
+    },
+    {
+      "name": "unmutated-2k2",
+      "scenario": "scenarios/sentinel-01/pullup-2k2.json",
+      "mutant": null,
+      "domain": "none",
+      "rule": "N1",
+      "findings": []
+    }
+  ]
+}
