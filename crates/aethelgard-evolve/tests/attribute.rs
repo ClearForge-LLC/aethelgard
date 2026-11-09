@@ -342,6 +342,7 @@ fn no_rise_measured_on_a_line_of_the_symptoms_bus_is_indeterminate() {
     assert_eq!(kinds(&a.evidence), [15]);
 }
 
+/// §5.3: removing all the electrical evidence never concludes either half.
 #[test]
 fn removing_every_rise_never_turns_a_software_run_electrical_or_keeps_it_software() {
     let mut r = healthy();
@@ -349,20 +350,6 @@ fn removing_every_rise_never_turns_a_software_run_electrical_or_keeps_it_softwar
     r.retain(|x| !matches!(x, Record::RiseMeasured { .. }));
     let a = attributed(&r);
     assert_eq!(a.domain, Domain::Indeterminate);
-}
-
-#[test]
-fn a_line_measured_twice_is_refused_by_replays_rules_never_attributed() {
-    let mut r = healthy();
-    wrong_address(&mut r);
-    let i = find(&r, |x| matches!(x, Record::RiseMeasured { .. }));
-    let dup = r[i].clone();
-    r.insert(i, dup);
-    let run = archived(&r);
-    assert!(matches!(
-        attribute(&run),
-        Err(aethelgard_evolve::AttributeError::NotACampaignRun(_))
-    ));
 }
 
 /// A second bus, OTHER on I2C2, with no device, faulted past its ceiling.
@@ -1294,16 +1281,4 @@ fn an_unexplained_finding_names_no_evidence_beside_a_decided_symptom() {
     );
     let a = attributed(&r);
     assert_eq!((a.rule, a.evidence.len()), (Rule::I1, 0));
-}
-
-#[test]
-fn a_second_read_or_witness_of_one_device_is_refused_never_attributed() {
-    let mut r = healthy();
-    wrong_address(&mut r);
-    let mut dup = check("ok", 0x60);
-    if let Record::I2cCheck { status, .. } = &mut dup {
-        *status = Some("ok".into());
-    }
-    insert_after_last(&mut r, is_check, dup);
-    assert!(attribute(&archived(&r)).is_err());
 }

@@ -1134,16 +1134,23 @@ fn a_manifest_that_is_a_fifo_is_refused_without_hanging() {
     expect_refusal(&out, 3, "UnexpectedEntry");
 }
 
-/// Rewrite the run `run` under `header` into a fresh directory named by the
-/// original run id, with every record and so the state hash recomputed.
-fn reseal(run: &Path, edit: impl FnOnce(&mut aethelgard_chaos::Header)) -> (Dir, PathBuf) {
+/// Rewrite the run `run` into a fresh directory named by the original run id,
+/// its header and its records edited first, with every record and so the state
+/// hash recomputed.
+fn reseal(
+    run: &Path,
+    edit_header: impl FnOnce(&mut aethelgard_chaos::Header),
+    edit_records: impl FnOnce(&mut Vec<Record>),
+) -> (Dir, PathBuf) {
     let old = aethelgard_chaos::replay_dir(run).unwrap();
     let mut header = old.header.clone();
-    edit(&mut header);
+    edit_header(&mut header);
+    let mut records = old.state.records;
+    edit_records(&mut records);
     let dir = Dir::new("resealed");
     let new = dir.0.join(hex_of(&old.header.run_id));
     let mut w = TraceWriter::create(&new, &header).unwrap();
-    for record in old.state.records {
+    for record in records {
         let timestamp = if record.before_boot() { 0 } else { 100_000_000 };
         w.append(&Event::Record { timestamp, record }).unwrap();
     }
@@ -1154,7 +1161,7 @@ fn reseal(run: &Path, edit: impl FnOnce(&mut aethelgard_chaos::Header)) -> (Dir,
 #[test]
 fn a_run_resealed_with_the_same_header_replays_so_the_next_test_is_not_vacuous() {
     let (tb, _work, run) = a_run();
-    let (_dir, new) = reseal(&run, |_| {});
+    let (_dir, new) = reseal(&run, |_| {}, |_| {});
     let original = lines(&replay(&tb.0, &run));
     let again = replay(&tb.0, &new);
     let again = lines(&again);
@@ -1168,10 +1175,14 @@ fn a_run_resealed_with_the_same_header_replays_so_the_next_test_is_not_vacuous()
 #[test]
 fn a_run_with_a_consistently_resealed_but_changed_header_is_not_a_campaign_run() {
     let (tb, _work, run) = a_run();
-    let (_dir, new) = reseal(&run, |h| {
-        let firmware = h.artifacts.iter_mut().find(|(n, _)| n == "firmware");
-        firmware.unwrap().1[0] ^= 1;
-    });
+    let (_dir, new) = reseal(
+        &run,
+        |h| {
+            let firmware = h.artifacts.iter_mut().find(|(n, _)| n == "firmware");
+            firmware.unwrap().1[0] ^= 1;
+        },
+        |_| {},
+    );
     // Trace hash, byte count and state hash all agree; only the run id does not.
     expect_refusal(&replay(&tb.0, &new), 3, "NotACampaignRun");
 }
@@ -1185,23 +1196,6 @@ fn attribute(tools: &Path, run: &Path) -> Output {
         &root(),
         &[os("attribute"), os("--archive"), run.as_os_str()],
     )
-}
-
-/// `run`'s records, edited and re-sealed through the chaos writer under the
-/// original header, in a fresh directory named by the run id.
-fn resealed_records(run: &Path, edit: impl FnOnce(&mut Vec<Record>)) -> (Dir, PathBuf) {
-    let old = aethelgard_chaos::replay_dir(run).unwrap();
-    let mut records = old.state.records;
-    edit(&mut records);
-    let dir = Dir::new("resealed-records");
-    let new = dir.0.join(hex_of(&old.header.run_id));
-    let mut w = TraceWriter::create(&new, &old.header).unwrap();
-    for record in records {
-        let timestamp = if record.before_boot() { 0 } else { 100_000_000 };
-        w.append(&Event::Record { timestamp, record }).unwrap();
-    }
-    w.commit().unwrap();
-    (dir, new)
 }
 
 #[test]
@@ -1294,13 +1288,17 @@ fn attribute_names_the_47k_run_electrical_with_its_rises_and_fault() {
 #[test]
 fn an_indeterminate_run_exits_1_with_its_unexplained_finding_named() {
     let (tb, _work, run) = a_run();
-    let (_dir, forged) = resealed_records(&run, |r| {
-        let last = r.len() - 1;
-        r[last] = Record::Verdict {
-            pass: false,
-            findings: vec![("renode_error_log".into(), "error".into(), 1)],
-        };
-    });
+    let (_dir, forged) = reseal(
+        &run,
+        |_| {},
+        |r| {
+            let last = r.len() - 1;
+            r[last] = Record::Verdict {
+                pass: false,
+                findings: vec![("renode_error_log".into(), "error".into(), 1)],
+            };
+        },
+    );
     let out = attribute(&tb.0, &forged);
     let a = refusal(&out);
     assert_eq!(out.status.code(), Some(1), "{a}");
@@ -1348,9 +1346,11 @@ fn attribute_refuses_whatever_replay_refuses_with_the_same_bytes_and_code() {
     fs::write(extra.join("notes.txt"), b"x").unwrap();
     same(&extra, "UnexpectedEntry");
     // A forged join: kind 15 dropped and the run re-sealed.
-    let (_d, no_join) = resealed_records(&run, |r| {
-        r.retain(|x| !matches!(x, Record::I2cBusSolved { .. }));
-    });
+    let (_d, no_join) = reseal(
+        &run,
+        |_| {},
+        |r| r.retain(|x| !matches!(x, Record::I2cBusSolved { .. })),
+    );
     same(&no_join, "NotACampaignRun");
 }
 

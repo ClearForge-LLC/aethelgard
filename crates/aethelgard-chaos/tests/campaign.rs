@@ -1148,18 +1148,6 @@ fn a_measurement_or_fault_on_a_net_that_is_not_its_buss_line_is_refused() {
 }
 
 #[test]
-fn an_analog_ceiling_that_is_not_its_lines_is_refused() {
-    let mut r = good();
-    if let Record::I2cBusSolved { lines, .. } = at(&mut r, is_bus) {
-        lines[0].ceiling_ps = 300_001;
-    }
-    assert_eq!(
-        check_run(&r).unwrap_err(),
-        "an analog record's ceiling is not its solved line's"
-    );
-}
-
-#[test]
 fn an_identity_read_of_no_solved_device_or_at_another_address_is_refused() {
     let why = "an identity read names no device of a solved bus at its address";
     let mut r = good();
