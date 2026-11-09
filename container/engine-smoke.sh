@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# container/engine-smoke.sh: proves the engine image's aethelgard binary works
-# on real inputs (INV-03), under --network none. Same shape as smoke.sh: each
-# check is a command with an exact expected exit code; the first failure exits
-# 1 naming the check.
+# container/engine-smoke.sh: proves the engine image's aethelgard binary, and
+# the analog bridge beside it, work on real inputs (INV-03), under --network
+# none. Same shape as smoke.sh: each check is a command with an exact expected
+# exit code; the first failure exits 1 naming the check.
 #
 #   docker run --rm -i --network none -v "$PWD/container:/container:ro" \
 #     -v "$PWD/examples:/examples:ro" IMAGE bash /container/engine-smoke.sh
@@ -39,6 +39,13 @@ contains validate.invalid "ZeroNominalVoltage"
 expect drc.clean 0 "$A" check drc --board "$FIX/drc-clean.kicad_pcb"
 expect drc.violation 1 "$A" check drc --board "$FIX/drc-violation.kicad_pcb"
 contains drc.violation '"verdict":"fail"'
+
+# The analog bridge (AET-WO-2200): beside the CLI, where the CLI looks for it,
+# and measuring the reference line at 2.2 kOhm as AET-WO-2101 S2 did. The
+# request is the one simulate --firmware writes for I2C_SCL.
+[ -x "$(dirname "$(command -v "$A")")/aethelgard-bridge" ] || fail bridge "not beside $A"
+expect bridge.measure 0 aethelgard-bridge "$FIX/bridge-request.json"
+contains bridge.measure '"net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.401'
 
 # mcp over a pipe: initialize, then tools/list; closing stdin ends the server.
 {

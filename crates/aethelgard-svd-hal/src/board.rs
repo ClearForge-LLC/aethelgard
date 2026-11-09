@@ -1757,7 +1757,7 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aethelgard_ir::PinAssignment;
+    use aethelgard_ir::{AnalogLine, PinAssignment};
 
     fn table() -> PinTable {
         crate::pin_table("STM32H753ZITx").unwrap()
@@ -1783,7 +1783,23 @@ mod tests {
             ]),
             gpio: BTreeMap::from([("CS".into(), "PA0".into())]),
             i2c_ceilings: BTreeMap::from([("BUS".into(), 400_000)]),
+            analog_lines: analog_lines(&[("SCL", "BUS"), ("SDA", "BUS")]),
         }
+    }
+
+    /// Each (net, bus) as the reference line's analog facts (`AET-WO-2200`).
+    fn analog_lines(lines: &[(&str, &str)]) -> BTreeMap<String, AnalogLine> {
+        let line = |bus: &str| AnalogLine {
+            bus: bus.into(),
+            pull_up_ohms: 2200,
+            capacitance_femtofarads: 100_000,
+            ceiling_ns: 300,
+            domain_millivolts: 3300,
+        };
+        lines
+            .iter()
+            .map(|(net, bus)| ((*net).to_owned(), line(bus)))
+            .collect()
     }
 
     fn kind(result: Result<BTreeMap<String, String>, BoardError>) -> &'static str {
@@ -1824,7 +1840,10 @@ mod tests {
     fn ceilings_must_number_the_i2c_peripherals_and_the_lowest_applies() {
         let mut s = solved();
         s.i2c_ceilings.clear();
-        assert_eq!(kind(generate("b", &s, &table())), "CeilingMismatch");
+        // Since AET-WO-2200 an I2C line with no bus ceiling is refused by
+        // `validate`, before the generator looks: each solved I2C line has an
+        // analog line, whose bus must have a ceiling.
+        assert_eq!(kind(generate("b", &s, &table())), "InvalidTopology");
         let mut s = solved();
         s.i2c_ceilings.insert("OTHER".into(), 100_000);
         assert_eq!(kind(generate("b", &s, &table())), "CeilingMismatch");
@@ -1835,6 +1854,7 @@ mod tests {
         s.assignments
             .insert("SDA2".into(), assign("PB11", "I2C2", "I2C2_SDA", 4));
         s.i2c_ceilings = BTreeMap::from([("A".into(), 1_000_000), ("B".into(), 100_000)]);
+        s.analog_lines = analog_lines(&[("SCL", "A"), ("SDA", "A"), ("SCL2", "B"), ("SDA2", "B")]);
         let files = generate("b", &s, &table()).unwrap();
         let board = &files["src/board.rs"];
         for m in ["i2c1_speed", "i2c2_speed"] {
@@ -1865,11 +1885,13 @@ mod tests {
 
         let mut s = solved();
         s.assignments.remove("SDA");
+        s.analog_lines.remove("SDA");
         assert_eq!(kind(generate("b", &s, &t)), "IncompletePeripheral");
 
         let mut s = solved();
         s.assignments
             .insert("SDA2".into(), assign("PB9", "I2C1", "I2C1_SDA", 4));
+        s.analog_lines = analog_lines(&[("SCL", "BUS"), ("SDA", "BUS"), ("SDA2", "BUS")]);
         assert_eq!(kind(generate("b", &s, &t)), "IncompletePeripheral");
 
         let mut s = solved();

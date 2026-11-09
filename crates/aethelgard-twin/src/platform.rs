@@ -89,7 +89,34 @@ pub fn instances(topology: &SolvedTopology) -> Result<Vec<Instance>, TwinError> 
 
 /// The `.repl` text for `topology`.
 pub fn emit(topology: &SolvedTopology) -> Result<String, TwinError> {
+    emit_faulted(topology, &BTreeSet::new())
+}
+
+/// The `.repl` text for `topology` with the analog pass's fault decision:
+/// each bus in `faulted` has its devices left out, which is how a bus fault
+/// reaches the firmware (`RUL-17`, `AET-WO-2101` route iii). The decision is
+/// written into the provenance comment, so a platform emitted without it
+/// differs from one emitted with it. A faulted bus that the topology did not
+/// solve is refused.
+pub fn emit_faulted(
+    topology: &SolvedTopology,
+    faulted: &BTreeSet<String>,
+) -> Result<String, TwinError> {
     let instances = instances(topology)?;
+    let mut omitted = Vec::new();
+    for bus in faulted {
+        let peripheral = topology
+            .analog_lines
+            .iter()
+            .find(|(_, line)| &line.bus == bus)
+            .and_then(|(net, _)| topology.assignments.get(net))
+            .map(|a| a.peripheral.as_str())
+            .ok_or_else(|| TwinError::UnknownFaultedBus { bus: bus.clone() })?;
+        omitted.push(format!(
+            "\n// - Analog fault (AET-WO-2200): bus `{bus}` ({peripheral}) measured past its rise-time\n\
+             //   ceiling, so its devices are left out of this platform."
+        ));
+    }
     let facts = cmsis::register_facts()?;
     let mut out = String::new();
     let _ = writeln!(
@@ -107,6 +134,11 @@ pub fn emit(topology: &SolvedTopology) -> Result<String, TwinError> {
         file = cmsis::HEADER_FILE,
         sha = cmsis::HEADER_SHA256,
     );
+    for line in &omitted {
+        out.pop();
+        out.push_str(line);
+        out.push('\n');
+    }
     out.push_str("using \"platforms/cpus/stm32h753.repl\"\n");
     for i in instances.iter().filter(|i| i.added) {
         let base = facts.base(&i.peripheral)?;

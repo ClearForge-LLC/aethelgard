@@ -22,6 +22,10 @@ jobs:
 
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # The analog bridge is outside the workspace (AET-WO-2200). Neither check
+      # links, so both run here without libngspice; its tests run in `tools`.
+      - run: cargo fmt --manifest-path bridge/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path bridge/Cargo.toml --all-targets --locked -- -D warnings
       # The CLI refuses a tool call that inherits a descriptor above 2 without
       # close-on-exec (B2); this host's runner leaks two (B7). The caller
       # must not leak, so the step prints what it inherited, then closes every
@@ -125,6 +129,14 @@ jobs:
 
       - name: fetch crates and build, with the network
         run: $RUN "$(cat container/IMAGE)" cargo test --workspace --all-targets --locked --features aethelgard-cli/with-tools --no-run
+
+      # AET-WO-2200: the bridge builds into target/debug/, beside the aethelgard
+      # binary the tier-2 tests run, because the CLI looks for it there.
+      - name: build the analog bridge and its tests, with the network
+        run: $RUN "$(cat container/IMAGE)" bash -c "cargo build --manifest-path bridge/Cargo.toml --locked && cargo test --manifest-path bridge/Cargo.toml --locked --no-run"
+
+      - name: test the analog bridge inside the image
+        run: $RUN --network none "$(cat container/IMAGE)" cargo test --manifest-path bridge/Cargo.toml --locked --offline
 
       - name: cargo fmt inside the image
         run: $RUN --network none "$(cat container/IMAGE)" cargo fmt --all -- --check

@@ -31,6 +31,12 @@ pub struct Verdict {
     /// `simulate --firmware` only: what the boot was judged by.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub boot: Option<Boot>,
+    /// `simulate --firmware` only: the analog pre-pass's measurements and its
+    /// fault decision, each its own record, apart from `boot` (`AET-WO-2200`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub analog: Option<Vec<AnalogRecord>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub faults: Option<Vec<FaultRecord>>,
     pub findings: Vec<Finding>,
 }
 
@@ -178,7 +184,38 @@ impl Verdict {
             harness: None,
             machine: None,
             boot: None,
+            analog: None,
+            faults: None,
             findings,
         }
     }
+}
+
+/// One I2C line's rise time as the bridge measured it (`AET-WO-2200`): the
+/// evidence. Nothing in it comes from the firmware or from Renode.
+#[derive(Serialize)]
+pub struct AnalogRecord {
+    pub kind: &'static str,
+    pub source: &'static str,
+    pub bus: String,
+    pub net: String,
+    pub rise_30_70_ns: f64,
+    pub ceiling_ns: u32,
+    pub exceeds: bool,
+    pub method: &'static str,
+    pub ngspice: &'static str,
+}
+
+/// The decision a measurement past its ceiling forces on its bus, and what the
+/// firmware is given to see of it, labelled as the model's rendering.
+#[derive(Serialize)]
+pub struct FaultRecord {
+    pub kind: &'static str,
+    pub source: &'static str,
+    pub bus: String,
+    pub fault: &'static str,
+    pub from: &'static str,
+    /// The bus's lines past their ceiling.
+    pub nets: Vec<String>,
+    pub firmware_sees: &'static str,
 }

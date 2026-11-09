@@ -6,8 +6,9 @@
 use std::collections::BTreeMap;
 
 use aethelgard_ir::{
-    I2cBus, Mcu, NetConstraint, Pin, PinSource, PinTable, RESERVED_PINS, Signal, SolveError,
-    SolvedTopology, Specification, SpiBus, SpiDevice, VoltageDomain, solve, solve_with_limit,
+    AnalogLine, I2cBus, Mcu, NetConstraint, Pin, PinSource, PinTable, RESERVED_PINS, Signal,
+    SolveError, SolvedTopology, Specification, SpiBus, SpiDevice, VoltageDomain, solve,
+    solve_with_limit,
 };
 
 const PART: &str = "TEST_PART";
@@ -524,6 +525,41 @@ fn each_i2c_bus_gets_its_ceiling_and_an_spi_only_spec_gets_none() {
     assert_eq!(t.i2c_ceilings, BTreeMap::from([("I".into(), 400_000)]));
     let t = ok(&spec(vec![], vec![spi("S")], vec![]));
     assert!(t.i2c_ceilings.is_empty());
+}
+
+/// `AET-WO-2200` §1.1: each I2C line carries its bus's pull-up and domain
+/// voltage and its own constraint's capacitance and rise-time bound, keyed by
+/// net; an SPI line carries none.
+#[test]
+fn each_i2c_line_gets_its_analog_facts_from_the_specification() {
+    let mut s = spec(vec![i2c("I"), i2c("J")], vec![spi("S")], vec![]);
+    s.i2c_buses[1].pull_up_ohms = 47_000;
+    s.net_constraints[1].max_capacitance_femtofarads = 250_000;
+    s.net_constraints[2].max_rise_time_nanoseconds = 1000;
+    s.i2c_buses[1].speed_hz = 100_000;
+    s.voltage_domains[0].nominal_millivolts = 1800;
+    let t = ok(&s);
+    let line = |bus: &str, ohms, ff, ns| AnalogLine {
+        bus: bus.into(),
+        pull_up_ohms: ohms,
+        capacitance_femtofarads: ff,
+        ceiling_ns: ns,
+        domain_millivolts: 1800,
+    };
+    assert_eq!(
+        t.analog_lines,
+        BTreeMap::from([
+            ("I_SDA".into(), line("I", 2200, 100_000, 300)),
+            ("I_SCL".into(), line("I", 2200, 250_000, 300)),
+            ("J_SDA".into(), line("J", 47_000, 100_000, 1000)),
+            ("J_SCL".into(), line("J", 47_000, 100_000, 300)),
+        ])
+    );
+    assert!(
+        ok(&spec(vec![], vec![spi("S")], vec![]))
+            .analog_lines
+            .is_empty()
+    );
 }
 
 #[test]

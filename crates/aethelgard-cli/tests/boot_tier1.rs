@@ -10,6 +10,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::Value;
@@ -168,8 +169,48 @@ esac
     tb
 }
 
+/// A bridge stub that measures both reference lines well inside their
+/// 300 ns ceiling, as the real bridge does at 2.2 kΩ.
+const PASSING_BRIDGE: &str = r#"#!/bin/sh
+printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.4}' '{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","rise_30_70_ns":186.4}'
+"#;
+
+/// The CLI, hard-linked into a directory of its own beside a stub
+/// `aethelgard-bridge` with body `bridge`, or with no bridge at all: the
+/// CLI runs the bridge from its own directory (`AET-WO-2200` §1.4), and the
+/// pre-pass runs before every boot. One directory per distinct stub.
+fn cli(bridge: Option<&'static str>) -> PathBuf {
+    static MADE: Mutex<Vec<(Option<&'static str>, PathBuf)>> = Mutex::new(Vec::new());
+    let mut made = MADE.lock().unwrap();
+    if let Some((_, path)) = made.iter().find(|(b, _)| *b == bridge) {
+        return path.clone();
+    }
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "aet-2200-cli-{}-{}",
+        std::process::id(),
+        made.len()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let me = dir.join("aethelgard");
+    if fs::hard_link(env!("CARGO_BIN_EXE_aethelgard"), &me).is_err() {
+        fs::copy(env!("CARGO_BIN_EXE_aethelgard"), &me).unwrap();
+    }
+    if let Some(body) = bridge {
+        let stub = dir.join("aethelgard-bridge");
+        fs::write(&stub, body).unwrap();
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    made.push((bridge, me.clone()));
+    me
+}
+
 fn run(path: &Path, args: &[&OsStr]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+    run_cli(&cli(Some(PASSING_BRIDGE)), path, args)
+}
+
+fn run_cli(cli: &Path, path: &Path, args: &[&OsStr]) -> Output {
+    Command::new(cli)
         .args(args)
         .env_clear()
         .env("PATH", path)
@@ -577,4 +618,136 @@ fn a_boot_past_the_wall_bound_fails_and_names_it() {
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["wall_bound_exceeded"]);
     assert!(took.as_secs() >= 30 && took.as_secs() < 35, "{took:?}");
+}
+
+// ---- The analog pre-pass (AET-WO-2200 §1.4), with a stub bridge -----------
+
+/// The `renode` stub, which also exits 98 when the platform it is given does
+/// (`faulted`) or does not carry the analog fault decision.
+fn platform_checking_toolbox(faulted: bool) -> Dir {
+    let check =
+        r#"p=$(printf '%s' "$5" | /bin/sed -n 's/.*LoadPlatformDescription @\([^;]*\);.*/\1/p')"#;
+    let then = if faulted {
+        format!("{check}\n/bin/grep -q 'bus `SENSORS` (I2C1) measured past' \"$p\" || exit 98")
+    } else {
+        format!("{check}\n/bin/grep -q 'Analog fault' \"$p\" && exit 98\nexit 0")
+    };
+    toolbox_then(&good(), "Renode v1.17.0", &then)
+}
+
+fn pre_pass(bridge: Option<&'static str>, faulted: bool) -> (Option<i32>, Value) {
+    let tb = platform_checking_toolbox(faulted);
+    let input = Dir::new("in");
+    let fw = input.write("fw.elf", &elf());
+    let out = run_cli(
+        &cli(bridge),
+        &tb.0,
+        &[
+            OsStr::new("simulate"),
+            OsStr::new("--platform"),
+            platform().as_os_str(),
+            OsStr::new("--firmware"),
+            fw.as_os_str(),
+            OsStr::new("--spec"),
+            spec().as_os_str(),
+            OsStr::new("--for"),
+            OsStr::new("10ms"),
+        ],
+    );
+    (out.status.code(), report(&out))
+}
+
+#[test]
+fn each_line_is_recorded_apart_from_the_boot_and_no_fault_leaves_the_platform_as_emitted() {
+    let (code, v) = pre_pass(Some(PASSING_BRIDGE), false);
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["verdict"], "pass", "{v}");
+    let analog = v["analog"].as_array().unwrap();
+    assert_eq!(analog.len(), 2, "{v}");
+    for (record, net) in analog.iter().zip(["I2C_SCL", "I2C_SDA"]) {
+        assert_eq!(record["kind"], "analog.rise_time_measured");
+        assert_eq!(record["source"], "ngspice");
+        assert_eq!(record["net"], net);
+        assert_eq!(record["bus"], "SENSORS");
+        assert_eq!(record["rise_30_70_ns"], 186.4);
+        assert_eq!(record["ceiling_ns"], 300);
+        assert_eq!(record["exceeds"], false);
+    }
+    assert_eq!(v["faults"], serde_json::json!([]));
+    assert!(v["boot"].is_object() && v["boot"].get("analog").is_none());
+}
+
+#[test]
+fn a_line_past_its_ceiling_fails_names_its_bus_and_reaches_the_platform() {
+    const SLOW_SCL: &str = r#"#!/bin/sh
+printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":3982.3}' '{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","rise_30_70_ns":186.4}'
+"#;
+    let (code, v) = pre_pass(Some(SLOW_SCL), true);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(v["verdict"], "fail");
+    // The stub's own check passed: the booted platform names the fault.
+    assert_eq!(v["tool"]["exit_code"], 0, "{v}");
+    assert_eq!(kinds(&v), ["analog_rise_exceeds_ceiling"]);
+    let finding = v["findings"][0]["message"].as_str().unwrap();
+    for part in ["`SENSORS`", "`I2C_SCL`", "3982.3 ns", "300 ns ceiling"] {
+        assert!(finding.contains(part), "{finding}");
+    }
+    assert_eq!(v["analog"][0]["exceeds"], true);
+    assert_eq!(v["analog"][1]["exceeds"], false);
+    let faults = v["faults"].as_array().unwrap();
+    assert_eq!(faults.len(), 1);
+    assert_eq!(faults[0]["kind"], "bridge.fault_state");
+    assert_eq!(faults[0]["bus"], "SENSORS");
+    assert_eq!(faults[0]["nets"], serde_json::json!(["I2C_SCL"]));
+    assert_eq!(faults[0]["from"], "analog.rise_time_measured > ceiling_ns");
+    let sees = faults[0]["firmware_sees"].as_str().unwrap();
+    assert!(sees.contains("model's rendering") && sees.contains("not a measured waveform"));
+    // The firmware's observation is its own record, still judged.
+    assert_eq!(v["boot"]["boot_word"]["observed"], "0x2100b007", "{v}");
+}
+
+#[test]
+fn a_missing_bridge_is_bridge_unavailable_before_renode() {
+    let (code, v) = pre_pass(None, false);
+    assert_eq!(code, Some(4), "{v}");
+    assert_eq!(v["error"]["kind"], "bridge_unavailable");
+    assert_eq!(v["error"]["id"], "aethelgard-bridge");
+}
+
+#[test]
+fn a_bridge_that_fails_or_answers_wrong_stops_the_call() {
+    const STUBS: [&str; 6] = [
+        // Fails, with a correct line first.
+        "#!/bin/sh\nprintf '%s\\n' '{\"method\":\"interpolated\",\"net\":\"I2C_SCL\",\"ngspice\":\"44.2\",\"rise_30_70_ns\":186.4}' '{\"net\":\"I2C_SDA\",\"error\":\"rise_incomplete\",\"message\":\"m\"}'\nexit 1\n",
+        // One line short, exit 0.
+        "#!/bin/sh\nprintf '%s\\n' '{\"method\":\"interpolated\",\"net\":\"I2C_SCL\",\"ngspice\":\"44.2\",\"rise_30_70_ns\":186.4}'\n",
+        // Nothing at all.
+        "#!/bin/sh\nexit 0\n",
+        // Killed by a signal.
+        "#!/bin/sh\nkill -9 $$\n",
+        // Another ngspice.
+        "#!/bin/sh\nprintf '%s\\n' '{\"method\":\"interpolated\",\"net\":\"I2C_SCL\",\"ngspice\":\"45\",\"rise_30_70_ns\":186.4}' '{\"method\":\"interpolated\",\"net\":\"I2C_SDA\",\"ngspice\":\"45\",\"rise_30_70_ns\":186.4}'\n",
+        // The nets swapped.
+        "#!/bin/sh\nprintf '%s\\n' '{\"method\":\"interpolated\",\"net\":\"I2C_SDA\",\"ngspice\":\"44.2\",\"rise_30_70_ns\":186.4}' '{\"method\":\"interpolated\",\"net\":\"I2C_SCL\",\"ngspice\":\"44.2\",\"rise_30_70_ns\":186.4}'\n",
+    ];
+    for stub in STUBS {
+        let (code, v) = pre_pass(Some(stub), false);
+        assert_eq!(code, Some(5), "{stub}: {v}");
+        assert_eq!(v["error"]["kind"], "ToolError", "{stub}: {v}");
+        assert_eq!(v["error"]["id"], "aethelgard-bridge", "{stub}: {v}");
+    }
+}
+
+/// The bridge works in a directory of its own: it can write neither the
+/// copies Renode will read nor the scratch root around them.
+#[test]
+fn the_bridge_cannot_write_what_renode_reads() {
+    const WRITER: &str = r#"#!/bin/sh
+for f in ../tool/firmware.elf ../tool/platform.repl ../tool/new ../status-bridge.x; do
+  if ( : > "$f" ) 2>/dev/null; then exit 7; fi
+done
+printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.4}' '{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","rise_30_70_ns":186.4}'
+"#;
+    let (code, v) = pre_pass(Some(WRITER), false);
+    assert_eq!(code, Some(0), "{v}");
 }

@@ -505,7 +505,7 @@ fn boards_are_excluded_and_dependency_free() {
         .iter()
         .map(|v| v.as_str().unwrap())
         .collect();
-    assert_eq!(exclude, ["boards"]);
+    assert_eq!(exclude, ["boards", "bridge"]);
     // The trybuild suite judges the board the regeneration test owns, and no
     // other (adversarial E8).
     assert_eq!(
@@ -573,4 +573,184 @@ fn boards_are_excluded_and_dependency_free() {
     }
     // Exactly the boards `aethelgard-svd-hal/tests/board.rs` regenerates.
     assert_eq!(boards, ["sentinel-01"]);
+}
+
+/// The analog bridge (`AET-WO-2200`, `RUL-17`) is excluded with the boards, so
+/// the workspace's `forbid(unsafe_code)` does not reach it. In its place: the
+/// crate root denies `unsafe_code`, the one `allow` sits on `mod ffi`, the
+/// keyword `unsafe` appears in `src/ffi.rs` and nowhere else, and the crate
+/// depends on `serde_json` alone and is never published.
+#[test]
+fn the_bridge_keeps_its_unsafe_in_ffi_alone() {
+    let dir = root().join("bridge");
+    let manifest: Table = fs::read_to_string(dir.join("Cargo.toml"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(
+        !manifest.contains_key("workspace"),
+        "bridge sets [workspace]"
+    );
+    assert_eq!(manifest["package"]["publish"].as_bool(), Some(false));
+    assert_eq!(dependency_names(&manifest), ["serde_json"]);
+    for key in ["dev-dependencies", "build-dependencies", "target"] {
+        assert!(!manifest.contains_key(key), "bridge sets [{key}]");
+    }
+
+    let main = fs::read_to_string(dir.join("src/main.rs")).unwrap();
+    let file = syn::parse_file(&main).unwrap();
+    let denies = file.attrs.iter().any(|attr| {
+        attr.path().is_ident("deny")
+            && attr
+                .parse_args::<syn::Ident>()
+                .is_ok_and(|ident| ident == "unsafe_code")
+    });
+    assert!(denies, "bridge/src/main.rs does not deny unsafe_code");
+    let allowed: Vec<String> = file
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            syn::Item::Mod(m) => Some(m),
+            _ => None,
+        })
+        .filter(|m| {
+            m.attrs.iter().any(|attr| {
+                attr.path().is_ident("allow")
+                    && attr
+                        .parse_args::<syn::Ident>()
+                        .is_ok_and(|ident| ident == "unsafe_code")
+            })
+        })
+        .map(|m| m.ident.to_string())
+        .collect();
+    assert_eq!(allowed, ["ffi"]);
+    // That allow is the only one: an allow on a function would override the deny.
+    assert_eq!(main.matches("allow(unsafe_code)").count(), 1);
+
+    let mut with_unsafe = Vec::new();
+    let sources = files(&dir.join("src"))
+        .into_iter()
+        .map(|f| format!("src/{f}"))
+        .chain(["build.rs".to_owned()]);
+    for name in sources {
+        let text = fs::read_to_string(dir.join(&name)).unwrap();
+        if name != "src/main.rs" {
+            assert!(!text.contains("unsafe_code"), "{name} names unsafe_code");
+        }
+        if has_unsafe_keyword(&text) {
+            with_unsafe.push(name);
+        }
+    }
+    assert_eq!(with_unsafe, ["src/ffi.rs"]);
+}
+
+/// The vendored header and licence are the bytes `SOURCE.md` pins (`AET-WO-2200`
+/// §1.3), so `ffi.rs` and the header cannot drift together unseen.
+#[test]
+fn the_vendored_ngspice_files_are_the_pinned_ones() {
+    use sha2::{Digest, Sha256};
+
+    let dir = root().join("bridge/vendor/ngspice-44.2");
+    let source = fs::read_to_string(dir.join("SOURCE.md")).unwrap();
+    let mut files = files(&dir);
+    files.retain(|f| f != "SOURCE.md");
+    assert_eq!(files, ["COPYING", "sharedspice.h"]);
+    for name in files {
+        let digest = Sha256::digest(fs::read(dir.join(&name)).unwrap());
+        let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        let row = source
+            .lines()
+            .find(|l| l.starts_with(&format!("| `{name}` |")))
+            .unwrap_or_else(|| panic!("SOURCE.md has no row for {name}"));
+        assert!(row.contains(&format!("`{hex}`")), "{name} is {hex}: {row}");
+    }
+}
+
+/// The keyword `unsafe` outside comments and string literals. `unsafe_code`
+/// is another identifier, so it does not count.
+fn has_unsafe_keyword(src: &str) -> bool {
+    let b = src.as_bytes();
+    let mut code = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i..].starts_with(b"//") {
+            while i < b.len() && b[i] != b'\n' {
+                i += 1;
+            }
+        } else if b[i..].starts_with(b"/*") {
+            i += 2;
+            while i < b.len() && !b[i..].starts_with(b"*/") {
+                i += 1;
+            }
+            i += 2;
+        } else if let Some(hashes) = raw_string_at(b, i) {
+            let close: Vec<u8> = std::iter::once(b'"')
+                .chain(std::iter::repeat_n(b'#', hashes))
+                .collect();
+            i += 2 + hashes;
+            while i < b.len() && !b[i..].starts_with(&close) {
+                i += 1;
+            }
+            i += close.len();
+        } else if b[i] == b'\'' && b.get(i + 1) == Some(&b'\\') {
+            // An escaped char literal such as '\'' or '\\'.
+            i += 3;
+            while i < b.len() && b[i] != b'\'' {
+                i += 1;
+            }
+            i += 1;
+        } else if b[i] == b'\'' && b.get(i + 2) == Some(&b'\'') {
+            i += 3;
+        } else if b[i] == b'"' {
+            i += 1;
+            while i < b.len() && b[i] != b'"' {
+                i += if b[i] == b'\\' { 2 } else { 1 };
+            }
+            i += 1;
+        } else {
+            code.push(b[i]);
+            i += 1;
+            continue;
+        }
+        // What was skipped still separates the words around it.
+        code.push(b' ');
+    }
+    let code = String::from_utf8_lossy(&code);
+    code.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .any(|w| w == "unsafe")
+}
+
+/// `r"`, `r#"`, `r##"` … starting a raw string at `i`, as its count of `#`,
+/// also after a `b` or `c` prefix; not `r#type`, a raw identifier, nor an `r`
+/// ending a word.
+fn raw_string_at(b: &[u8], i: usize) -> Option<usize> {
+    let word = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+    let start = match i.checked_sub(1).map(|p| b[p]) {
+        Some(b'b' | b'c') => i - 1,
+        _ => i,
+    };
+    if b[i] != b'r' || (start > 0 && word(b[start - 1])) {
+        return None;
+    }
+    let hashes = b[i + 1..].iter().take_while(|&&c| c == b'#').count();
+    (b.get(i + 1 + hashes) == Some(&b'"')).then_some(hashes)
+}
+
+#[test]
+fn the_unsafe_scan_sees_only_code() {
+    assert!(has_unsafe_keyword("fn f() { unsafe { g() } }"));
+    assert!(has_unsafe_keyword("unsafe extern \"C\" {}"));
+    assert!(!has_unsafe_keyword("#![deny(unsafe_code)]"));
+    assert!(!has_unsafe_keyword(
+        "// unsafe\n/* unsafe */ let s = \"unsafe\";"
+    ));
+    assert!(!has_unsafe_keyword("let s = r#\"unsafe \"x\"\"#;"));
+    assert!(has_unsafe_keyword("let q = b'\"'; unsafe {}"));
+    assert!(has_unsafe_keyword("let q = '\\''; fn f<'a>() {} unsafe {}"));
+    assert!(has_unsafe_keyword("pub r#type: u8, for\"x\"; unsafe {}"));
+    // Adversarial A7: a raw byte string ending in a backslash.
+    assert!(has_unsafe_keyword(
+        "let _ = br\"\\\"; unsafe { f() } let _ = \"\";"
+    ));
+    assert!(has_unsafe_keyword("let _ = cr#\"x\"#; unsafe {}"));
 }

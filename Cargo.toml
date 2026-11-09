@@ -10,9 +10,10 @@ members = [
     "crates/aethelgard-evolve",
     "crates/aethelgard-cli",
 ]
-# Generated board crates (AET-WO-1400): never members, so the workspace's
-# lints and `forbid(unsafe_code)` do not reach their `mmio` module (RUL-04).
-exclude = ["boards"]
+# Generated board crates (AET-WO-1400) and the analog bridge (AET-WO-2200):
+# never members, so the workspace's lints and `forbid(unsafe_code)` do not reach
+# a board's `mmio` module (RUL-04) or the bridge's `ffi` module (RUL-17).
+exclude = ["boards", "bridge"]
 
 [workspace.package]
 version = "0.1.0"

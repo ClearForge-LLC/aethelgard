@@ -343,3 +343,104 @@ fn an_aborted_machine_returns_inside_the_bound_as_cpu_aborted() {
     assert_eq!(kinds(&v), ["cpu_aborted"], "{v}");
     assert!(took.as_secs() < 30 + 5, "{took:?}");
 }
+
+/// `AET-WO-2200` §3, the P2 gate's clause 2, analog half, as one test: the
+/// reference specification at 2.2 kΩ passes and at 47 kΩ fails, each run
+/// twice with byte-identical `analog` and `faults` arrays. The ns values are
+/// `AET-WO-2101` S2's, measured with libngspice 44.2 in this image.
+#[test]
+fn p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes() {
+    let spec_text = fs::read_to_string(spec()).unwrap();
+    assert_eq!(spec_text.matches("\"pull_up_ohms\": 2200").count(), 1);
+    let dir =
+        Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("aet-2200-t2-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    for (ohms, rise, tolerance, faulted) in
+        [(2200, 186.40, 0.05, false), (47_000, 3982.30, 0.5, true)]
+    {
+        let spec = dir.join(format!("spec-{ohms}.json"));
+        fs::write(
+            &spec,
+            spec_text.replace(
+                "\"pull_up_ohms\": 2200",
+                &format!("\"pull_up_ohms\": {ohms}"),
+            ),
+        )
+        .unwrap();
+        let (code, v) = aethelgard(&["solve", "--file", spec.to_str().unwrap()]);
+        assert_eq!(code, Some(0), "{v}");
+        let topology: SolvedTopology = serde_json::from_value(v).unwrap();
+        let platform = dir.join(format!("platform-{ohms}.repl"));
+        fs::write(
+            &platform,
+            aethelgard_twin::platform::emit(&topology).unwrap(),
+        )
+        .unwrap();
+        let run = |n: u32| {
+            let start = Instant::now();
+            let (code, v) = aethelgard(&[
+                "simulate",
+                "--platform",
+                platform.to_str().unwrap(),
+                "--firmware",
+                firmware().to_str().unwrap(),
+                "--spec",
+                spec.to_str().unwrap(),
+                "--for",
+                "10ms",
+            ]);
+            answer(&format!(
+                "2200 {ohms} ohm run {n}: exit={code:?} wall_s={:.2} analog={} faults={} findings={}",
+                start.elapsed().as_secs_f64(),
+                v["analog"],
+                v["faults"],
+                v["findings"]
+            ));
+            (code, v)
+        };
+        let (code, v) = run(1);
+        let analog = v["analog"].as_array().unwrap_or_else(|| panic!("{v}"));
+        assert_eq!(analog.len(), 2, "{v}");
+        for line in analog {
+            let measured = line["rise_30_70_ns"].as_f64().unwrap();
+            assert!((measured - rise).abs() <= tolerance, "{ohms} ohm: {line}");
+            assert_eq!(line["ceiling_ns"], 300);
+            assert_eq!(line["exceeds"], faulted);
+            assert_eq!(line["bus"], "SENSORS");
+            assert_eq!(line["ngspice"], "44.2");
+        }
+        // The firmware's observation is its own record: the boot witnesses
+        // hold whether or not the bus faulted (before AET-WO-2202 lands, the
+        // firmware talks to no device).
+        assert_eq!(v["boot"]["boot_word"]["observed"], "0x2100b007", "{v}");
+        assert_eq!(v["boot"]["instructions"]["observed"], 1_000_000);
+        if faulted {
+            // A faulted bus's BME280 is not in the platform Renode built
+            // (vacuous until AET-WO-2202 declares devices: FEEDBACK F5).
+            let listed = v["machine"]["peripherals"].as_array().unwrap();
+            assert!(!listed.iter().any(|p| p["type"] == "BME280"), "{v}");
+            assert_eq!(code, Some(1), "{v}");
+            assert_eq!(v["verdict"], "fail");
+            let faults = v["faults"].as_array().unwrap();
+            assert_eq!(faults.len(), 1, "{v}");
+            assert_eq!(faults[0]["kind"], "bridge.fault_state");
+            assert_eq!(faults[0]["bus"], "SENSORS");
+            for f in v["findings"].as_array().unwrap() {
+                assert_eq!(f["kind"], "analog_rise_exceeds_ceiling", "{v}");
+                let m = f["message"].as_str().unwrap();
+                assert!(
+                    m.contains("`SENSORS`") && m.contains("300 ns ceiling") && m.contains("3982.3"),
+                    "{m}"
+                );
+            }
+        } else {
+            assert_eq!(code, Some(0), "{v}");
+            assert_eq!(v["verdict"], "pass");
+            assert_eq!(v["faults"], serde_json::json!([]));
+        }
+        let (_, again) = run(2);
+        assert_eq!(v["analog"].to_string(), again["analog"].to_string());
+        assert_eq!(v["faults"].to_string(), again["faults"].to_string());
+    }
+    let _ = fs::remove_dir_all(&dir);
+}

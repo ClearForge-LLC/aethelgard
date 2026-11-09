@@ -1,6 +1,6 @@
 use aethelgard_ir::{
-    I2cBus, I2cDevice, IrValidationError as E, Mcu, NetConstraint, PinAssignment, Signal,
-    SolvedTopology, Specification, SpiBus, SpiDevice, VoltageDomain,
+    AnalogLine, I2cBus, I2cDevice, IrValidationError as E, Mcu, NetConstraint, PinAssignment,
+    Signal, SolvedTopology, Specification, SpiBus, SpiDevice, VoltageDomain,
 };
 
 fn sig(net: &str) -> Signal {
@@ -685,6 +685,21 @@ fn solved() -> SolvedTopology {
         .into(),
         gpio: [("FLASH_CS".to_owned(), "PA0".to_owned())].into(),
         i2c_ceilings: [("SENSORS".to_owned(), 400_000)].into(),
+        analog_lines: [
+            ("I2C_SCL".to_owned(), analog_line()),
+            ("I2C_SDA".to_owned(), analog_line()),
+        ]
+        .into(),
+    }
+}
+
+fn analog_line() -> AnalogLine {
+    AnalogLine {
+        bus: "SENSORS".into(),
+        pull_up_ohms: 2200,
+        capacitance_femtofarads: 100_000,
+        ceiling_ns: 300,
+        domain_millivolts: 3300,
     }
 }
 
@@ -766,8 +781,8 @@ fn solved_round_trip_is_equal_and_byte_stable() {
 
 #[test]
 fn solved_serialization_is_sorted_whatever_the_input_order() {
-    let a = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"Z":"g","C":"c"},"i2c_ceilings":{"Y":100000,"B":400000}}"#;
-    let b = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"C":"c","Z":"g"},"i2c_ceilings":{"B":400000,"Y":100000}}"#;
+    let a = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"Z":"g","C":"c"},"i2c_ceilings":{"Y":100000,"B":400000},"analog_lines":{}}"#;
+    let b = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"C":"c","Z":"g"},"i2c_ceilings":{"B":400000,"Y":100000},"analog_lines":{}}"#;
     let a: SolvedTopology = serde_json::from_str(a).unwrap();
     let b: SolvedTopology = serde_json::from_str(b).unwrap();
     assert_eq!(
@@ -976,4 +991,138 @@ fn an_invalid_ceiling_is_refused_after_alternate_functions_and_before_duplicates
         t.gpio.insert("FLASH_CS".into(), "PB9".into());
     });
     assert_eq!(err.kind(), "InvalidCeiling");
+}
+
+// ---- SolvedTopology.analog_lines (AET-WO-2200 §1.1) -------------------------
+
+#[test]
+fn solved_refuses_a_zero_analog_value() {
+    type Edit = fn(&mut AnalogLine);
+    let zero: [(&str, Edit); 4] = [
+        ("ZeroPullUp", |l| l.pull_up_ohms = 0),
+        ("ZeroCapacitance", |l| l.capacitance_femtofarads = 0),
+        ("ZeroRiseTime", |l| l.ceiling_ns = 0),
+        ("ZeroNominalVoltage", |l| l.domain_millivolts = 0),
+    ];
+    for (kind, edit) in zero {
+        let err = solved_refusal(|t| edit(t.analog_lines.get_mut("I2C_SDA").unwrap()));
+        assert_refusal(err, kind, Some("I2C_SDA"));
+    }
+    // Huge values are the bridge's to measure or refuse, not validate's.
+    let mut t = solved();
+    let line = t.analog_lines.get_mut("I2C_SDA").unwrap();
+    line.pull_up_ohms = u32::MAX;
+    line.capacitance_femtofarads = u64::MAX;
+    line.ceiling_ns = u32::MAX;
+    line.domain_millivolts = u32::MAX;
+    assert_eq!(t.validate(), Ok(()));
+}
+
+#[test]
+fn solved_refuses_an_analog_key_that_is_no_solved_i2c_line() {
+    // Not assigned at all, a GPIO net, and an assignment that is not an I2C line.
+    let err = solved_refusal(|t| {
+        t.analog_lines.insert("NOWHERE".into(), analog_line());
+    });
+    assert_refusal(err, "AnalogLineNotI2c", Some("NOWHERE"));
+    let err = solved_refusal(|t| {
+        t.analog_lines.insert("FLASH_CS".into(), analog_line());
+    });
+    assert_refusal(err, "AnalogLineNotI2c", Some("FLASH_CS"));
+    for (peripheral, signal) in [
+        ("SPI1", "SPI1_SCK"),
+        ("I2C1", "I2C1_SMBA"),
+        ("I2C", "I2C_SDA"),
+        ("I2C1", "I2C2_SDA"),
+    ] {
+        let err = solved_refusal(|t| {
+            let a = t.assignments.get_mut("I2C_SDA").unwrap();
+            a.peripheral = peripheral.into();
+            a.signal = signal.into();
+        });
+        assert_refusal(err, "AnalogLineNotI2c", Some("I2C_SDA"));
+    }
+}
+
+#[test]
+fn solved_refuses_a_missing_analog_line_or_a_bus_without_a_ceiling() {
+    let err = solved_refusal(|t| {
+        t.analog_lines.remove("I2C_SCL");
+    });
+    assert_refusal(err, "MissingAnalogLine", Some("I2C_SCL"));
+    let err = solved_refusal(|t| {
+        t.analog_lines.get_mut("I2C_SCL").unwrap().bus = "OTHER".into();
+    });
+    assert_refusal(err, "UnknownBus", Some("OTHER"));
+    let err = solved_refusal(|t| {
+        t.i2c_ceilings.insert("OTHER".into(), 400_000);
+        t.analog_lines.get_mut("I2C_SCL").unwrap().bus = "OTHER".into();
+    });
+    assert_refusal(err, "AnalogBusMismatch", Some("I2C_SDA"));
+    // Adversarial A2: two peripherals' lines under one bus name.
+    let err = solved_refusal(|t| {
+        for (net, pin, signal) in [("B_SCL", "PB10", "I2C2_SCL"), ("B_SDA", "PB11", "I2C2_SDA")] {
+            let mut a = t.assignments["I2C_SCL"].clone();
+            a.pin = pin.into();
+            a.peripheral = "I2C2".into();
+            a.signal = signal.into();
+            t.assignments.insert(net.into(), a);
+            t.analog_lines.insert(net.into(), analog_line());
+        }
+    });
+    // `B_SCL` sorts first and claims the bus for I2C2.
+    assert_refusal(err, "AnalogBusMismatch", Some("I2C_SCL"));
+    let err = solved_refusal(|t| {
+        t.analog_lines.get_mut("I2C_SCL").unwrap().bus = "BUS 2".into();
+    });
+    assert_invalid_identifier(err, "analog_lines.I2C_SCL.bus");
+}
+
+#[test]
+fn solved_refuses_a_repeated_missing_or_malformed_analog_map() {
+    let mut doc = solved_json();
+    doc.as_object_mut().unwrap().remove("analog_lines");
+    assert!(
+        parse_solved(&doc)
+            .unwrap_err()
+            .contains("missing field `analog_lines`")
+    );
+    for field in [
+        "bus",
+        "pull_up_ohms",
+        "capacitance_femtofarads",
+        "ceiling_ns",
+        "domain_millivolts",
+    ] {
+        let mut doc = solved_json();
+        doc["analog_lines"]["I2C_SDA"]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        let err = parse_solved(&doc).unwrap_err();
+        assert!(err.contains(&format!("missing field `{field}`")), "{err}");
+    }
+    for bad in [
+        serde_json::json!(-1),
+        serde_json::json!(1.5),
+        serde_json::json!("2200"),
+        serde_json::json!(null),
+    ] {
+        let mut doc = solved_json();
+        doc["analog_lines"]["I2C_SDA"]["pull_up_ohms"] = bad;
+        assert!(parse_solved(&doc).is_err());
+    }
+    let mut doc = solved_json();
+    doc["analog_lines"]["I2C_SDA"]["extra"] = 1.into();
+    assert!(parse_solved(&doc).unwrap_err().contains("unknown field"));
+    let text = solved_json().to_string();
+    let line = r#""I2C_SDA":{"bus":"SENSORS","capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300,"pull_up_ohms":2200}"#;
+    assert!(text.contains(line), "{text}");
+    let twice = text.replace(line, &format!("{line},{line}"));
+    let err = serde_json::from_str::<SolvedTopology>(&twice).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("duplicate assignment for net `I2C_SDA`"),
+        "{err}"
+    );
 }

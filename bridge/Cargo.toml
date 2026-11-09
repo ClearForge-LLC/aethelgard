@@ -1,0 +1,18 @@
+[package]
+name = "aethelgard-bridge"
+description = "Aethelgard's analog bridge: libngspice in-process, the only unsafe in the repository outside the board crates (RUL-17)."
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ClearForge-LLC/aethelgard"
+# Never published (docs/releasing.md): it links the image's libngspice.so.0.
+publish = false
+# Excluded by the root, as boards/ is, so the workspace's forbid(unsafe_code)
+# does not reach its ffi module (RUL-17, AET-WO-2200 L2).
+
+[[bin]]
+name = "aethelgard-bridge"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
