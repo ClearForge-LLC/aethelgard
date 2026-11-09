@@ -21,6 +21,7 @@ use std::fs;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::Path;
 
+use aethelgard_chaos::campaign;
 use aethelgard_ir::SolvedTopology;
 use aethelgard_twin::analog::{self, Deck};
 use serde_json::{Value, json};
@@ -82,7 +83,7 @@ pub fn bridge() -> Result<run::Tool, run::Stop> {
 /// (`AET-WO-2300`). `simulate --firmware` passes none.
 pub struct Held<'a> {
     pub scenario: &'a str,
-    pub lines: &'a [aethelgard_chaos::campaign::HeldLow],
+    pub lines: &'a [campaign::HeldLow],
 }
 
 /// Measures every analog line of `topology` in `dir`, a directory of its own
@@ -103,7 +104,7 @@ pub fn pass(
     let mut pass = measure(&decks, dir, status)?;
     for line in held.lines {
         pass.findings.push(Finding::plain(
-            aethelgard_chaos::campaign::HELD_LOW_FINDING,
+            campaign::HELD_LOW_FINDING,
             format!(
                 "bus `{}`: net `{}` is held low by scenario `{}`; the bus is faulted without a measurement",
                 line.bus, line.net, held.scenario
@@ -114,7 +115,7 @@ pub fn pass(
             source: format!("scenario {}", held.scenario),
             bus: line.bus.clone(),
             fault: "absent",
-            from: vec![aethelgard_chaos::campaign::HELD_LOW],
+            from: vec![campaign::HELD_LOW],
             nets: vec![line.net.clone()],
             firmware_sees: RENDERING,
         });
@@ -263,7 +264,7 @@ fn judge(decks: &[Deck], answers: &[Answer]) -> Pass {
                 record.exceeds = rise > f64::from(ceiling);
                 record.exceeds.then(|| {
                     Finding::plain(
-                        "analog_rise_exceeds_ceiling",
+                        campaign::PAST_CEILING_FINDING,
                         format!(
                             "bus `{bus}`: net `{net}` rose from 30 % to 70 % in {rise} ns, past its {ceiling} ns ceiling"
                         ),
@@ -279,7 +280,7 @@ fn judge(decks: &[Deck], answers: &[Answer]) -> Pass {
                 record.rise_30_70_ns_lower_bound = Some(bound);
                 record.exceeds = true;
                 let f = Finding::plain(
-                    "analog_rise_exceeds_ceiling",
+                    campaign::PAST_CEILING_FINDING,
                     format!(
                         "bus `{bus}`: net `{net}` had not reached 70 % when the window ended: its 30 % to 70 % rise is more than {bound} ns (a lower bound), past its {ceiling} ns ceiling"
                     ),
@@ -291,7 +292,7 @@ fn judge(decks: &[Deck], answers: &[Answer]) -> Pass {
                 record.complete = false;
                 record.volts_at_release = Some(volts);
                 let f = Finding::plain(
-                    "analog_line_stuck_high",
+                    campaign::STUCK_HIGH_FINDING,
                     format!(
                         "bus `{bus}`: net `{net}` was at {volts} V when its driver released it, at or above 30 % of the rail: the driver cannot pull it low"
                     ),

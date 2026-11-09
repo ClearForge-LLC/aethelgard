@@ -649,3 +649,23 @@ pub fn replay(dir: &Path) -> ExitCode {
         0,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::picoseconds;
+
+    /// A measured rise rounds up and a lower bound rounds down, so neither
+    /// crosses a whole-nanosecond ceiling in the wrong direction.
+    #[test]
+    fn a_rise_rounds_up_and_a_lower_bound_rounds_down() {
+        assert_eq!(picoseconds(3982.300059495949, true), Ok(3_982_301));
+        assert_eq!(picoseconds(3982.300059495949, false), Ok(3_982_300));
+        // Just past a 300 ns ceiling stays past it; exactly at it stays at it.
+        assert_eq!(picoseconds(300.0001, true), Ok(300_001));
+        assert_eq!(picoseconds(300.0, true), Ok(300_000));
+        assert_eq!(picoseconds(13298.0277, false), Ok(13_298_027));
+        for bad in [f64::NAN, f64::INFINITY, -1.0, 1e30] {
+            assert!(picoseconds(bad, true).is_err(), "{bad}");
+        }
+    }
+}

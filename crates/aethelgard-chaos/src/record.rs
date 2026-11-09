@@ -13,7 +13,7 @@ pub const FIRST_KIND: u64 = 5;
 pub const LAST_KIND: u64 = 14;
 
 /// One override a scenario applies to its specification (`AET-WO-2300` §1.1).
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Override {
     /// `[0, bus, ohms]`.
     PullUpOhms { bus: String, ohms: u32 },
@@ -24,19 +24,10 @@ pub enum Override {
 }
 
 /// One line of an I2C bus.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Line {
     Sda,
     Scl,
-}
-
-impl Line {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Sda => "sda",
-            Self::Scl => "scl",
-        }
-    }
 }
 
 /// A register as the boot read it: what the topology expects under `mask`,

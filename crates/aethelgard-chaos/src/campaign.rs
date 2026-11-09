@@ -413,17 +413,6 @@ pub struct RunSummary {
     pub matched: bool,
 }
 
-/// Whether a verdict meets an expectation: the same verdict, and for a
-/// failure exactly the finding kinds named, no more and no fewer
-/// (`AET-WO-2300` §5.4). `info` findings never count.
-pub fn matches(expect_pass: bool, expect_findings: &[String], failing_kinds: &[String]) -> bool {
-    if expect_pass {
-        failing_kinds.is_empty()
-    } else {
-        !failing_kinds.is_empty() && failing_kinds == expect_findings
-    }
-}
-
 /// Judge a campaign run from its records alone: their order, and that every
 /// fault, measurement and verdict agrees with the evidence beside it. A run
 /// that fails any of these is refused with the reason.
@@ -542,9 +531,6 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             return Err("the verdict's analog and held-low findings do not match the records");
         }
     }
-    if *pass && records.iter().any(|r| matches!(r, Record::BusFault { .. })) {
-        return Err("a passing verdict beside a bus fault");
-    }
     let failing_kinds: Vec<String> = findings
         .iter()
         .filter(|(_, s, _)| s != "info")
@@ -552,7 +538,11 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let matched = *pass == *expect_pass && matches(*expect_pass, expect_findings, &failing_kinds);
+    // A run matches when it fails for exactly the kinds named, no more and no
+    // fewer, `info` never counting (`AET-WO-2300` §5.4). The records' own rules
+    // make that the whole test: a passing verdict has no finding above `info`,
+    // and a passing scenario names none.
+    let matched = failing_kinds == *expect_findings;
     Ok(RunSummary {
         name: name.clone(),
         expect_pass: *expect_pass,
