@@ -8,10 +8,10 @@ The repository `README.md`'s `## Quickstart` runs `emit`, `check erc`, `check dr
 
 | Code | Meaning | `error.kind` values |
 |---|---|---|
-| `0` | `validate`: the specification is valid. `solve`: it was solved, and stdout is the `SolvedTopology`. A tool subcommand: the tool ran and its verdict is pass. `campaign`: every scenario's verdict matched its expectation. `replay`: the run replayed to its committed hash | none: stdout is the success report, the `SolvedTopology`, or the verdict |
-| `1` | A tool subcommand: the tool ran and its verdict is fail (violations found, the proof failed, a declared cover was never reached, the crate did not compile, the harness does not exist, the platform did not load). The input is at fault; the tool worked. `campaign`: every scenario ran and was archived, and at least one verdict did not match its expectation | none: stdout is the verdict |
+| `0` | `validate`: the specification is valid. `solve`: it was solved, and stdout is the `SolvedTopology`. A tool subcommand: the tool ran and its verdict is pass. `campaign`: every scenario's verdict matched its expectation. `replay`: the run replayed to its committed hash. `attribute`: the run is attributed `electrical`, `software` or `none` | none: stdout is the success report, the `SolvedTopology`, or the verdict |
+| `1` | A tool subcommand: the tool ran and its verdict is fail (violations found, the proof failed, a declared cover was never reached, the crate did not compile, the harness does not exist, the platform did not load). The input is at fault; the tool worked. `campaign`: every scenario ran and was archived, and at least one verdict did not match its expectation. `attribute`: the run is `indeterminate` | none: stdout is the verdict, or the attribution |
 | `2` | Invalid specification: well-formed JSON of the wrong shape (unknown, missing or duplicate field, wrong type including deep nesting where a value was expected, negative or overflowing number), or a value `validate()` refuses. `solve` also: a part with no pin table, or a specification the solver cannot realize. `emit` also: what `solve` refuses, and a part with no vendored model, an address the part cannot take, a reference used twice, a net, rail or reference the emitter needs for itself, a net the solver did not place, a pin the MCU's symbol lacks, or a board the router cannot complete. `check drc --spec`: the specification refused as `validate` refuses it. `simulate --firmware`: the specification refused as `solve` refuses it, or a solved topology the twin cannot lower to a platform | `SchemaViolation`, or an `IrValidationError` variant name such as `InvalidIdentifier`, `NoVoltageDomain`, `UnknownDomain`, `DuplicateI2cAddress` or `ZeroNominalVoltage`; `InvalidIdentifier` also carries `error.path`. `solve` also: `UnknownPart`, or a `SolveError` kind (below), which carries `error.claimants`. `emit` also: `UnknownPart`, `UnsupportedAddress`, `DuplicateReference` (also two references KiCad takes for one, differing only in case or in a leading zero: `u2` and `U2`, `U01` and `U1`), `ReservedName` (also a net or rail starting `unconnected-`), `UnsolvedNet`, `UnknownPin`, `Unroutable` (`id` the reference, net or name; for `Unroutable`, the net the router could not complete, empty when the board as a whole is refused). `simulate --firmware` also: `UnsupportedPeripheral`, `NotInRenode`, `InvalidPin`, `AddressMismatch`. `campaign` (below): a scenario's `SchemaViolation`, `UnsupportedSchemaVersion`, `ExpectContradiction`, `DuplicateOverride`, `UnknownBus`, `UnknownNet`, `DuplicateScenario`, and what `solve` refuses of the overridden specification |
-| `3` | Unreadable input. `validate`: the file or stdin cannot be read, is empty, is more than 16 MiB, or is not one JSON document (syntax error, trailing data, a byte-order mark). A tool subcommand: an input path that does not exist, cannot be read, or is not a regular file (not a directory, for `--crate`); a crate holding a symlink, a special file or a non-UTF-8 name; a Renode built-in path outside Renode's own tree; `InputTooLarge`: a copied file, or a crate's files together, of more than 16 MiB (16,777,216 bytes), or a crate of more than 4,096 files (counted after `target/` is skipped). The byte cap is enforced while copying, never by truncating. `check drc`: a board that is not one KiCad S-expression, or one that carries a rule of its own, refused before any tool runs: a local `(clearance …)` on a pad, a footprint or a zone, or a net class defined in the board (`AET-WO-1300` D4). `check drc --schematic`: a schematic that is not one flat KiCad schematic, or a schematic or board carrying what would pass parity unmatched (below). `emit`: an `--out` that cannot be created, or a file there that is a symlink or not a regular file. `simulate --firmware`, before Renode is looked for: a `--platform` that is not byte for byte the platform `aethelgard-twin` emits for `--spec`, or an `@` path; a firmware that is not ELF32 little-endian `EM_ARM` `ET_EXEC` with a sound program header table; a `PT_LOAD` whose physical or virtual range is outside the part's flash or RAM, two `PT_LOAD`s whose memory overlaps, or file bytes over the boot word at either address (below) | `UnreadableInput`, `InputTooLarge`, `InvalidJson`; `campaign`: `BaseOutsideRoot`, `RunExists`, `UnwritableOutput`, `ArchiveWriteFailed`; `campaign` also `FirmwareChanged`; `replay`: every `aethelgard-chaos` archive refusal by its own name (`HashMismatch`, `ReplayDiverged`, `UnexpectedEntry`, …), `RunIdMismatch` and `NotACampaignRun`; `MalformedBoard`, `LocalClearance`, `BoardNetClass` and `BoardWaiver` (`id` naming the carrier, such as `pad 1 of footprint R7`); `MalformedSchematic`, `HierarchicalSchematic`, `ReservedNetName`, `BoardOnlyFootprint`, `NoConnectPadOnNet`, `SharedUnconnectedNet`; `UnwritableOutput`; `PlatformNotEmitted`, `MalformedFirmware` (overlapping memory included), `FirmwareOutsideMemory`, `FirmwareLoadsBootWord` |
+| `3` | Unreadable input. `validate`: the file or stdin cannot be read, is empty, is more than 16 MiB, or is not one JSON document (syntax error, trailing data, a byte-order mark). A tool subcommand: an input path that does not exist, cannot be read, or is not a regular file (not a directory, for `--crate`); a crate holding a symlink, a special file or a non-UTF-8 name; a Renode built-in path outside Renode's own tree; `InputTooLarge`: a copied file, or a crate's files together, of more than 16 MiB (16,777,216 bytes), or a crate of more than 4,096 files (counted after `target/` is skipped). The byte cap is enforced while copying, never by truncating. `check drc`: a board that is not one KiCad S-expression, or one that carries a rule of its own, refused before any tool runs: a local `(clearance …)` on a pad, a footprint or a zone, or a net class defined in the board (`AET-WO-1300` D4). `check drc --schematic`: a schematic that is not one flat KiCad schematic, or a schematic or board carrying what would pass parity unmatched (below). `emit`: an `--out` that cannot be created, or a file there that is a symlink or not a regular file. `simulate --firmware`, before Renode is looked for: a `--platform` that is not byte for byte the platform `aethelgard-twin` emits for `--spec`, or an `@` path; a firmware that is not ELF32 little-endian `EM_ARM` `ET_EXEC` with a sound program header table; a `PT_LOAD` whose physical or virtual range is outside the part's flash or RAM, two `PT_LOAD`s whose memory overlaps, or file bytes over the boot word at either address (below) | `UnreadableInput`, `InputTooLarge`, `InvalidJson`; `campaign`: `BaseOutsideRoot`, `RunExists`, `UnwritableOutput`, `ArchiveWriteFailed`; `campaign` also `FirmwareChanged`; `replay` and `attribute`: every `aethelgard-chaos` archive refusal by its own name (`HashMismatch`, `ReplayDiverged`, `UnexpectedEntry`, …), `RunIdMismatch` and `NotACampaignRun`; `attribute` also `Undefined` or `MalformedSource`, a register fact the run names that the ST header lacks; `MalformedBoard`, `LocalClearance`, `BoardNetClass` and `BoardWaiver` (`id` naming the carrier, such as `pad 1 of footprint R7`); `MalformedSchematic`, `HierarchicalSchematic`, `ReservedNetName`, `BoardOnlyFootprint`, `NoConnectPadOnNet`, `SharedUnconnectedNet`; `UnwritableOutput`; `PlatformNotEmitted`, `MalformedFirmware` (overlapping memory included), `FirmwareOutsideMemory`, `FirmwareLoadsBootWord` |
 | `4` | The tool cannot be used: it is not on `PATH`, is not executable, will not report its version, or lacks an environment variable it needs; for `simulate --firmware`, a Renode other than the 1.17.0 the twin's platform is pinned to; or the sandbox is unavailable. Never a verdict (`INV-06`) | `ToolMissing` (`id`: the tool), `ToolUnusable` (`id`: the tool, or the missing variable), `SandboxUnavailable` (`id`: `landlock`, `seccomp`, or `descriptors`); `simulate --firmware`: `BridgeUnavailable` (`id`: `aethelgard-bridge`) when the bridge is not beside the `aethelgard` binary |
 | `5` | The tool ran but its output cannot be trusted as a verdict: killed by a signal, an exit code outside the ones measured for it, a missing, unparseable or oversized report or output, or two witnesses that disagree. When `prove` or `simulate` cannot recognise its tool's outcome, the message ends `; the tool said: <line>`, every `error:` line (Kani, cargo) or the first `[ERROR]` line (Renode), as printable ASCII, cut to 400 bytes for cargo or 240 for Renode; for cargo it is every `error:` line joined by `|`. Never read as pass or fail | `ToolError` (`id`: the tool) |
 | `64` | Usage error: unknown subcommand or flag, missing subcommand or required flag. `simulate`: `--firmware`, `--spec` and `--for` given other than all together, or a `--for` that is not an integer without a leading zero then `ns`, `us` or `ms`, is above 100 ms, or is not a multiple of 10 ns | `UsageError` |
@@ -332,6 +332,87 @@ aethelgard replay --archive <dir>/<run id>
  "event_count":16,"trace_bytes":1335,"state_sequence_hash":"0483991c…"}
 ```
 
+## `attribute`
+
+`AET-WO-3100`, the P3 gate's first clause: one archived campaign run attributed to the electrical half or the software half, with the rule that decided it and the archive events that prove it (`INV-05`).
+
+```
+aethelgard attribute --archive <archive>/<run id>
+```
+
+It first applies exactly `replay`'s checks, in `replay`'s order, and refuses whatever `replay` refuses with the same line and exit code. Then `aethelgard_evolve::attribute` reads the run's records and the vendored ST header through `aethelgard-svd-hal`. It reads no other file, starts no process, needs no tool on `PATH`, and two calls on one run print the same bytes. It prints one line, exit `0` for `electrical`, `software` or `none` and `1` for `indeterminate`:
+
+```json
+{"ok":true,"check":"attribute","run_id":"…","state_sequence_hash":"…","domain":"software","rule":"S1",
+ "evidence":[{"index":3,"kind":7},{"index":4,"kind":7},{"index":14,"kind":13}],
+ "symptoms":[{"index":13,"kind":12}],"masked":[],"unexplained":[]}
+```
+
+`index` is the event's position in `trace.cbor` (the header is not an event), and `kind` is its kind (`crates/aethelgard-chaos/README.md`). The record holds:
+- `symptoms`, the failing events;
+- `evidence`, the events that prove the cause;
+- `masked`, software evidence on an electrically faulted bus, listed and never used;
+- `unexplained`, failing finding kinds that no archived event shows.
+
+**Symptoms.** The verdict's finding kinds above `info` choose which events need explaining. They are never evidence. Each kind selects its events, and the count must equal the finding's, summed over every severity above `info`, or the kind is unexplained. The converse holds too: an event that some kind below would select, but that no finding names, is unexplained as `event <index>`. So rewriting the verdict alone never moves a run's domain; at most it makes the run `I1`.
+
+| finding | its events |
+|---|---|
+| `analog_rise_exceeds_ceiling` | kind 7 past its ceiling |
+| `analog_line_stuck_high` | kind 8 |
+| `i2c_line_held_low` | kind 9 caused by `scenario.line_held_low` |
+| `i2c_timeout`, `i2c_record_invalid` | kind 12 whose status is a `timeout_…`, or `invalid` |
+| `i2c_identity_mismatch` | kind 12 whose status is `ok` and whose value is not the part table's |
+| `i2c_transaction_unwitnessed` | kind 13 whose read's status is `ok` and whose `CR2` or `TXDR` differs from its expectation |
+| `register_mismatch` | kind 11 that differs from its expectation under its mask |
+| `boot_word_missing`, `cpu_halted` | kind 10 without the boot word, or with fewer instructions than expected |
+| `locked_peripheral_access` | kind 11 in RCC with an expected enable bit clear, at least one: the same fact, archived (the count is not compared, since the judge reports one finding for any number of accesses) |
+| anything else (`renode_error_log`, a reaper bound, `pc_outside_firmware`: executable segments are not archived) | none: unexplained |
+
+**Where a symptom is.**
+- Kinds 7, 8 and 9 are on their bus.
+- Kinds 12 and 13 are on the bus whose kind 15 lists their device, for that device.
+- Kind 11 is on a bus when it is wrong only in fields that bus owns. A bus owns its controller's clock gate, the gates of its pins' ports, and each pin's `MODER` and `AFR` field. Each name and position comes from the ST header, and the solved alternate function comes from kind 15.
+- Kind 10, and any kind 11 wrong elsewhere, is on the board.
+
+**Software evidence on a bus.** For a symptom of one device, only that device's own witness counts, since another device's transaction says nothing of this one's. The bus's owned registers count for every symptom on it.
+- The controller witness (kind 13) differs from its solved device. The witness must be read at its controller's `CR2` and `TXDR` addresses, from the header.
+- `CR2.SADD` differs from the device's address shifted left by one. Both phases of the transfer write it. It counts only when the firmware wrote `CR2`, i.e. `SADD` or `NBYTES` is not 0; a `CR2` at its reset value says nothing of an address.
+- `NBYTES` differs from the witness's own expectation. It counts only once the record's status shows the read phase began (`ok`, `timeout_rxne`, `timeout_stopf`): before that, `CR2` holds the write's `NBYTES`.
+- `TXDR`'s byte differs from the read's register. It counts only once the write phase ran (`ok`, `timeout_tc`, `timeout_rxne`, `timeout_stopf`): on a TXIS timeout `TXDR` was never written.
+- A witness whose own expectation is not the solved address and register is no evidence either way.
+- An owned register field is wrong. A pin's `MODER` field must hold alternate-function mode and its `AFR` field kind 15's alternate function; both come from kind 15, never from the reading's own expectation, and a reading whose expectation disagrees is no evidence.
+
+**Software evidence on the board.** The boot word is missing, the core executed fewer instructions than expected, or a register is wrong outside every bus's fields.
+
+**A bus is measured healthy** when no kind 7 past its ceiling, no kind 8 and no kind 9 is on it, each of its two lines has its kind 7 (R2 allows one per line), and the ST header knows its controller and pins. A bus whose port or controller the header lacks is never healthy and owns nothing, so its symptoms are `I2` and no other bus's attribution is refused.
+
+**The rules, closed and ordered.** Each symptom is decided by the first rule that holds for it:
+
+| rule | domain | holds when | evidence kinds |
+|---|---|---|---|
+| `E1` | electrical | the symptom's bus has a kind 7 past its ceiling, a kind 8 or a kind 9; its software evidence goes to `masked` | 7, 8, 9 |
+| `I2` | indeterminate | the symptom's bus is not measured healthy (a line unmeasured, or a bus the header cannot join) | 15 |
+| `S1` | software | the symptom's bus is measured healthy and has software evidence | 7, 11, 13 |
+| `I3` | indeterminate | the symptom's bus is measured healthy with no software evidence, and another bus is faulted | 7, 8, 9 |
+| `I4` | indeterminate | measured healthy, no software evidence, and no fault anywhere | 7 |
+
+For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bus not measured healthy, gives `I2`. Then board software evidence gives `S2` (software; evidence kinds 7, 10, 11), and none gives `I4`.
+
+**The run.**
+- A passing verdict is `none`, rule `N1`.
+- An unexplained finding is `I1`, with no evidence and the kinds listed in `unexplained`.
+- Otherwise, if any symptom is indeterminate, the run is indeterminate by the lowest such rule, with that rule's evidence.
+- If symptoms are split between electrical and software, it is `I5`, with both halves' evidence: never averaged.
+- Otherwise the run takes the one domain and the lowest rule that decided any symptom. Its evidence is that rule's alone, so every evidence kind is one the named rule allows. With `S1` and `S2` both deciding, the run is `S1`, and its `symptoms` still list the board's.
+
+Software is never concluded by eliminating electrical, nor electrical by eliminating software.
+
+**The seeded set** is `scenarios/sentinel-01/seeded/cases.json`. It holds 20 failing cases, 10 in each domain, and two passing ones.
+- The electrical cases are scenarios run against the generated firmware.
+- The software cases are named exact-once patches of `boards/sentinel-01`, built from a scratch copy by `tests/attribute_seeded.rs`. A patch that matches zero or two times fails that test, and so does a generator change.
+- The trap: a wrong device address fails with `i2c_timeout` at TXIS, as a 47 kΩ pull-up does. It is `software` with 3.3 kΩ (measured inside the ceiling), and `electrical` with 47 kΩ, with the witness in `masked`.
+
 ## `mcp`
 
 `aethelgard mcp` serves the other subcommands as [Model Context Protocol](https://modelcontextprotocol.io) tools on stdin and stdout (`RUL-10`, built on `rmcp` 3.7.0 with its `server` and `transport-io` features only). It takes no arguments, listens on no socket, holds no credential, and exits `0` when stdin closes. Stdout carries protocol messages and nothing else; diagnostics go to stderr. It is not a tool itself and adds no tool behaviour.
@@ -342,7 +423,7 @@ Before it starts, it runs the trampoline's inherited-descriptor check. A descrip
 
 Generated at startup from the unbuilt `clap` command tree, never written by hand, so a new subcommand appears with no change to the `mcp` module (`INV-01`):
 
-- one tool per leaf subcommand, named by its path joined with `_`: `validate`, `solve`, `emit`, `check_drc`, `check_erc`, `prove`, `simulate` (whose optional `firmware`, `spec` and `for` are the boot), `campaign` and `replay`. `help` and `mcp` are never tools;
+- one tool per leaf subcommand, named by its path joined with `_`: `validate`, `solve`, `emit`, `check_drc`, `check_erc`, `prove`, `simulate` (whose optional `firmware`, `spec` and `for` are the boot), `campaign`, `replay` and `attribute`. `help` and `mcp` are never tools;
 - the description is the subcommand's about text;
 - the input schema is an object with one **string** property per declared argument, keyed by its **long name** (`prove`'s directory is `crate`, not `crate_dir`), `required` exactly when `clap` requires it, and `additionalProperties` false. A repeatable argument (`campaign`'s `scenarios`) is a non-empty **array of strings** instead.
 

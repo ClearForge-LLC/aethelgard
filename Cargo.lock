@@ -19,6 +19,7 @@ version = "0.1.0"
 dependencies = [
  "aethelgard-chaos",
  "aethelgard-eda",
+ "aethelgard-evolve",
  "aethelgard-ir",
  "aethelgard-svd-hal",
  "aethelgard-twin",
@@ -50,7 +51,8 @@ dependencies = [
 name = "aethelgard-evolve"
 version = "0.1.0"
 dependencies = [
- "aethelgard-ir",
+ "aethelgard-chaos",
+ "aethelgard-svd-hal",
 ]
 
 [[package]]

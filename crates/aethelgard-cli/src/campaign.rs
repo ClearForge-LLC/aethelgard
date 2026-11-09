@@ -15,7 +15,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
 use aethelgard_chaos::campaign::{self as rules, Scenario, ScenarioError};
-use aethelgard_chaos::record::{Line, Override, Reading, Record};
+use aethelgard_chaos::record::{BusLine, Line, Override, Reading, Record};
 use aethelgard_chaos::{Event, Header, TraceWriter};
 use aethelgard_ir::{SolvedTopology, Specification};
 use serde::Serialize;
@@ -367,6 +367,10 @@ fn run_one(
         crate::diagnose(&format!("cannot serialize a topology: {e}"));
         ExitCode::from(EXIT_INTERNAL)
     })?);
+    let buses = solved_buses(&p.topology).map_err(|m| {
+        crate::diagnose(&m);
+        ExitCode::from(EXIT_INTERNAL)
+    })?;
     let verdict = crate::simulate(
         &platform,
         Some(Boot {
@@ -407,6 +411,7 @@ fn run_one(
             topology_sha256,
         },
     ];
+    records.extend(buses);
     records.extend(records_of(&verdict).map_err(internal)?);
     // The run must pass the rules replay will judge it by before it is written.
     let summary = rules::check_run(&records)
@@ -426,11 +431,7 @@ fn run_one(
     let archived = (|| {
         let mut writer = TraceWriter::create(&dir, &header)?;
         for record in records {
-            let timestamp = if record.kind() >= aethelgard_chaos::record::FIRST_BOOT_KIND {
-                VIRTUAL_NS
-            } else {
-                0
-            };
+            let timestamp = if record.before_boot() { 0 } else { VIRTUAL_NS };
             writer.append(&Event::Record { timestamp, record })?;
         }
         writer.commit()
@@ -461,6 +462,71 @@ fn run_one(
         },
         ok,
     ))
+}
+
+/// Kind 15 for every solved I2C bus, sorted by bus (`AET-WO-3100` R1): its
+/// controller, its SCL and SDA lines and its devices, from the solved
+/// topology alone (`INV-07`, `RUL-16`). A topology whose lines, controller
+/// and devices do not agree is an internal error, never a guess.
+fn solved_buses(t: &SolvedTopology) -> Result<Vec<Record>, String> {
+    let mut lines: BTreeMap<&str, Vec<(&aethelgard_ir::PinAssignment, BusLine)>> = BTreeMap::new();
+    for (net, a) in &t.analog_lines {
+        let assignment = t
+            .assignments
+            .get(net)
+            .ok_or_else(|| format!("analog line `{net}` has no pin assignment"))?;
+        lines.entry(a.bus.as_str()).or_default().push((
+            assignment,
+            BusLine {
+                signal: assignment.signal.clone(),
+                net: net.clone(),
+                pin: assignment.pin.clone(),
+                alternate_function: assignment.alternate_function,
+                ceiling_ps: u64::from(a.ceiling_ns) * 1000,
+            },
+        ));
+    }
+    let mut out = Vec::new();
+    for (bus, mut pairs) in lines {
+        let peripheral = pairs[0].0.peripheral.clone();
+        if pairs.iter().any(|(a, _)| a.peripheral != peripheral) {
+            return Err(format!("bus `{bus}`'s lines are on two controllers"));
+        }
+        // SCL, then SDA, by the solver's signal names (`I2C1_SCL`).
+        let order = |l: &BusLine| l.signal.strip_prefix(peripheral.as_str()) != Some("_SCL");
+        pairs.sort_by_key(|(_, l)| order(l));
+        let devices: Vec<(String, u8)> = t
+            .i2c_devices
+            .iter()
+            .filter(|(_, d)| d.bus == bus)
+            .map(|(r, d)| {
+                if d.peripheral == peripheral {
+                    Ok((r.clone(), d.address))
+                } else {
+                    Err(format!(
+                        "device `{r}` is on bus `{bus}` but not on `{peripheral}`"
+                    ))
+                }
+            })
+            .collect::<Result<_, _>>()?;
+        out.push(Record::I2cBusSolved {
+            bus: bus.to_owned(),
+            peripheral,
+            lines: pairs.into_iter().map(|(_, l)| l).collect(),
+            devices,
+        });
+    }
+    if let Some((r, d)) = t
+        .i2c_devices
+        .iter()
+        .find(|(_, d)| !t.analog_lines.values().any(|a| a.bus == d.bus))
+    {
+        return Err(format!(
+            "device `{r}` is on bus `{}`, which has no solved line",
+            d.bus
+        ));
+    }
+    Ok(out)
 }
 
 fn hex_u64(s: &str) -> Result<u64, String> {
@@ -639,12 +705,13 @@ struct Replayed {
     state_sequence_hash: String,
 }
 
-/// `aethelgard replay --archive <run dir>`: the strict reader, then the
-/// campaign's run rules, from the run directory alone.
-pub fn replay(dir: &Path) -> ExitCode {
+/// `replay`'s checks, in its order: the strict reader, the run directory's
+/// name, then the campaign's run rules. `attribute` applies exactly these
+/// (`AET-WO-3100` §1.3); a refusal is printed and its code returned.
+fn checked(dir: &Path) -> Result<(aethelgard_chaos::Replayed, rules::RunSummary), ExitCode> {
     let replayed = match aethelgard_chaos::replay_dir(dir) {
         Ok(r) => r,
-        Err(e) => return refuse(e.kind(), None, e.to_string(), EXIT_UNREADABLE),
+        Err(e) => return Err(refuse(e.kind(), None, e.to_string(), EXIT_UNREADABLE)),
     };
     // A run directory is named by its run id, so a run copied under another
     // run's name is not that run (`AET-WO-2300` adversarial F3).
@@ -654,7 +721,7 @@ pub fn replay(dir: &Path) -> ExitCode {
         .ok()
         .and_then(|d| d.file_name().map(std::ffi::OsStr::to_owned));
     if named.as_deref() != Some(std::ffi::OsStr::new(&hex(replayed.header.run_id))) {
-        return refuse(
+        return Err(refuse(
             "RunIdMismatch",
             Some(&hex(replayed.header.run_id)),
             format!(
@@ -663,18 +730,25 @@ pub fn replay(dir: &Path) -> ExitCode {
                 hex(replayed.header.run_id)
             ),
             EXIT_UNREADABLE,
-        );
+        ));
     }
-    let summary = match rules::check_archived(&replayed.header, &replayed.state) {
-        Ok(s) => s,
-        Err(reason) => {
-            return refuse(
-                "NotACampaignRun",
-                None,
-                format!("{}: {reason}", dir.display()),
-                EXIT_UNREADABLE,
-            );
-        }
+    match rules::check_archived(&replayed.header, &replayed.state) {
+        Ok(summary) => Ok((replayed, summary)),
+        Err(reason) => Err(refuse(
+            "NotACampaignRun",
+            None,
+            format!("{}: {reason}", dir.display()),
+            EXIT_UNREADABLE,
+        )),
+    }
+}
+
+/// `aethelgard replay --archive <run dir>`: the strict reader, then the
+/// campaign's run rules, from the run directory alone.
+pub fn replay(dir: &Path) -> ExitCode {
+    let (replayed, summary) = match checked(dir) {
+        Ok(run) => run,
+        Err(code) => return code,
     };
     emit(
         &Replayed {
@@ -701,9 +775,84 @@ pub fn replay(dir: &Path) -> ExitCode {
     )
 }
 
+#[derive(Serialize)]
+struct EventLine {
+    index: u64,
+    kind: u64,
+}
+
+#[derive(Serialize)]
+struct Attributed {
+    ok: bool,
+    check: &'static str,
+    run_id: String,
+    state_sequence_hash: String,
+    domain: &'static str,
+    rule: &'static str,
+    evidence: Vec<EventLine>,
+    symptoms: Vec<EventLine>,
+    masked: Vec<EventLine>,
+    unexplained: Vec<String>,
+}
+
+/// `aethelgard attribute --archive <run dir>`: `replay`'s checks, then
+/// `aethelgard_evolve::attribute`, from the run directory alone. Exit 0 for
+/// `electrical`, `software` or `none`, 1 for `indeterminate`.
+pub fn attribute(dir: &Path) -> ExitCode {
+    use aethelgard_evolve::{AttributeError, Domain};
+    let (replayed, _) = match checked(dir) {
+        Ok(run) => run,
+        Err(code) => return code,
+    };
+    let a = match aethelgard_evolve::attribute(&replayed) {
+        Ok(a) => a,
+        // `checked` has applied the same rules, so this is not reached.
+        Err(AttributeError::NotACampaignRun(reason)) => {
+            return refuse(
+                "NotACampaignRun",
+                None,
+                format!("{}: {reason}", dir.display()),
+                EXIT_UNREADABLE,
+            );
+        }
+        Err(AttributeError::RegisterFacts(e)) => {
+            return refuse(
+                e.kind(),
+                None,
+                format!("{}: a register fact the run names: {e}", dir.display()),
+                EXIT_UNREADABLE,
+            );
+        }
+    };
+    let lines = |v: Vec<aethelgard_evolve::EventRef>| {
+        v.into_iter()
+            .map(|e| EventLine {
+                index: e.index,
+                kind: e.kind,
+            })
+            .collect()
+    };
+    let determinate = a.domain != Domain::Indeterminate;
+    emit(
+        &Attributed {
+            ok: determinate,
+            check: "attribute",
+            run_id: hex(a.run_id),
+            state_sequence_hash: hex(a.state_hash),
+            domain: a.domain.name(),
+            rule: a.rule.id(),
+            evidence: lines(a.evidence),
+            symptoms: lines(a.symptoms),
+            masked: lines(a.masked),
+            unexplained: a.unexplained,
+        },
+        if determinate { 0 } else { EXIT_FAIL },
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{HeldLow, Scenario, Specification, apply, picoseconds};
+    use super::{HeldLow, Record, Scenario, Specification, apply, picoseconds, solved_buses};
     use serde_json::{Value, json};
 
     fn spec() -> Specification {
@@ -820,6 +969,89 @@ mod tests {
         .unwrap();
         assert_eq!(held[0].net, "I2C_SCL");
         assert_eq!(s, before);
+    }
+
+    /// The reference board's solved topology, as `solve` gives it.
+    fn topology() -> aethelgard_ir::SolvedTopology {
+        serde_json::from_value(json!({
+            "schema_version": 1,
+            "specification_sha256": "acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1",
+            "assignments": {
+                "I2C_SCL": {"pin": "PB6", "peripheral": "I2C1", "signal": "I2C1_SCL", "alternate_function": 4},
+                "I2C_SDA": {"pin": "PB7", "peripheral": "I2C1", "signal": "I2C1_SDA", "alternate_function": 4}
+            },
+            "gpio": {},
+            "i2c_ceilings": {"SENSORS": 400000},
+            "analog_lines": {
+                "I2C_SCL": {"bus": "SENSORS", "pull_up_ohms": 2200, "capacitance_femtofarads": 100000, "ceiling_ns": 300, "domain_millivolts": 3300},
+                "I2C_SDA": {"bus": "SENSORS", "pull_up_ohms": 2200, "capacitance_femtofarads": 100000, "ceiling_ns": 250, "domain_millivolts": 3300}
+            },
+            "i2c_devices": {
+                "U2": {"index": 0, "part": "BME280", "bus": "SENSORS", "peripheral": "I2C1", "address": 118},
+                "U3": {"index": 1, "part": "TMP117", "bus": "SENSORS", "peripheral": "I2C1", "address": 72}
+            }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn kind_15_is_the_solved_bus_scl_first_with_each_lines_own_ceiling() {
+        let [
+            Record::I2cBusSolved {
+                bus,
+                peripheral,
+                lines,
+                devices,
+            },
+        ] = <[Record; 1]>::try_from(solved_buses(&topology()).unwrap()).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!((bus.as_str(), peripheral.as_str()), ("SENSORS", "I2C1"));
+        let got: Vec<(&str, &str, u64)> = lines
+            .iter()
+            .map(|l| (l.signal.as_str(), l.pin.as_str(), l.ceiling_ps))
+            .collect();
+        assert_eq!(
+            got,
+            [("I2C1_SCL", "PB6", 300_000), ("I2C1_SDA", "PB7", 250_000)]
+        );
+        assert_eq!(devices, [("U2".to_owned(), 0x76), ("U3".to_owned(), 0x48)]);
+    }
+
+    #[test]
+    fn scl_comes_first_even_when_its_net_sorts_after_sdas() {
+        let mut t = topology();
+        let a = t.assignments.remove("I2C_SCL").unwrap();
+        let l = t.analog_lines.remove("I2C_SCL").unwrap();
+        t.assignments.insert("Z_SCL".into(), a);
+        t.analog_lines.insert("Z_SCL".into(), l);
+        let [Record::I2cBusSolved { lines, .. }] =
+            <[Record; 1]>::try_from(solved_buses(&t).unwrap()).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(lines[0].net, "Z_SCL");
+        assert_eq!(lines[1].net, "I2C_SDA");
+    }
+
+    #[test]
+    fn a_topology_whose_lines_and_devices_disagree_is_refused_never_guessed() {
+        let refused = |edit: &dyn Fn(&mut aethelgard_ir::SolvedTopology)| {
+            let mut t = topology();
+            edit(&mut t);
+            solved_buses(&t).unwrap_err()
+        };
+        let e = refused(&|t| t.assignments.get_mut("I2C_SDA").unwrap().peripheral = "I2C2".into());
+        assert!(e.contains("two controllers"), "{e}");
+        let e = refused(&|t| t.i2c_devices.get_mut("U2").unwrap().peripheral = "I2C2".into());
+        assert!(e.contains("device `U2`"), "{e}");
+        let e = refused(&|t| t.i2c_devices.get_mut("U3").unwrap().bus = "NOPE".into());
+        assert!(e.contains("no solved line"), "{e}");
+        let e = refused(&|t| {
+            t.assignments.remove("I2C_SDA");
+        });
+        assert!(e.contains("no pin assignment"), "{e}");
     }
 
     /// A measured rise rounds up and a lower bound rounds down, so neither

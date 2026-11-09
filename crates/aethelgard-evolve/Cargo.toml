@@ -6,12 +6,12 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "README.md"
-keywords = ["aethelgard"]
-categories = ["development-tools"]
-publish = false
+keywords = ["attribution","traces","hardware","embedded"]
+categories = ["development-tools","embedded"]
 
 [dependencies]
-aethelgard-ir.workspace = true
+aethelgard-chaos.workspace = true
+aethelgard-svd-hal.workspace = true
 
 [lints]
 workspace = true

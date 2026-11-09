@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "name": "pullup-3k3",
+  "base": "../../../examples/sentinel-01-minimal.json",
+  "expect": "pass",
+  "expect_findings": [],
+  "overrides": [
+    {
+      "bus": "SENSORS",
+      "pull_up_ohms": 3300
+    }
+  ]
+}

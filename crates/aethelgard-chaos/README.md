@@ -62,7 +62,7 @@ leaves behind; it must not orphan a committed run).
     | 2 | interrupt | `line` ≤ 1023 |
     | 3 | analog sample | `net` (text), `microvolts` (any `i64`) |
     | 4 | fault injected | `scenario` (text), `detail` (text) |
-    | 5–14 | a campaign record | see "Campaign records" |
+    | 5–15 | a campaign record | see "Campaign records" |
 
     Pin, net and scenario names are 1 to 64 bytes of `0x21`–`0x7E` (`RUL-14`).
     `detail` is 0 to 1,024 bytes of `0x20`–`0x7E`. An unknown kind, or a payload
@@ -75,8 +75,10 @@ leaves behind; it must not orphan a committed run).
 
 ## Version rule
 
-The trace header carries version 2 (`AET-WO-2300` added kinds 5 to 14; the
-golden trace's bytes changed in that one header byte only). The mirror record
+The trace header carries version 3 (`AET-WO-2300` added kinds 5 to 14 at
+version 2, and `AET-WO-3100` kind 15 and the run rules that join to it at
+version 3; each time the golden trace's bytes changed in that one header byte
+only). A version-2 trace is refused, not read under version 3's rules. The mirror record
 carries version 1, and the manifest version 2 (`AET-WO-0400a` changed what
 `state_hash` means, the trace's bytes not at all). A reader refuses any other
 version (`UnknownVersion`), judged before the item's shape. A change to the
@@ -162,8 +164,9 @@ before writing its own, so a crash between the two never orphans the run
 
 ## Campaign records
 
-Kinds 5 to 14 (`src/record.rs`) are the records `aethelgard campaign` archives
-for one scenario's run, in this order. Every field is an unsigned or negative
+Kinds 5 to 15 (`src/record.rs`) are the records `aethelgard campaign` archives
+for one scenario's run, in the order of "The run rules" below: kind 15 comes
+after kind 6, the rest by number. Every field is an unsigned or negative
 integer, a byte string, a text string, or an array of them: no float, no map.
 A flag is 0 or 1. An optional value is an array of zero or one element. A
 `reading` is `[address, mask, expected, observed?]`, each a `u32`. The writer
@@ -181,9 +184,13 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 | 12 | an I2C identity read | `reference`, `address`, `register` (each ≤ 255), `expected`, `observed?`, `status?` (text) |
 | 13 | an I2C controller witness | `peripheral`, `reference`, `cr2` and `txdr` `reading`s |
 | 14 | the verdict | `pass`, `[[kind, severity, count]…]` (sorted, unique by kind and severity; `pass` exactly when every severity is `info`) |
+| 15 | a solved I2C bus (`AET-WO-3100`) | `bus`, `peripheral`, `[line…]`: exactly two, SCL then SDA, each `[signal, net, pin, alternate_function, ceiling_ps]` (`signal` is the peripheral's name then `_SCL` or `_SDA`; the two nets and pins differ), `[[reference, address]…]` (sorted, unique by reference). A `pin` is `P`, a capital letter and 0 to 15 with no leading zero (`record::split_pin`); an `alternate_function` is at most 15 |
 
-Kinds 5 to 9 are at virtual time 0, decided before the boot; 10 to 14 at the
-boot's end. The bridge's nanoseconds become picoseconds in the CLI: a measured
+Kinds 5 to 9 and 15 are at virtual time 0, decided before the boot
+(`Record::before_boot`); 10 to 14 at the boot's end. Kind 15 is written from
+the solved topology alone (`i2c_devices`, `assignments`, `analog_lines`),
+never from the firmware or the specification; `ceiling_ps` is per line because
+`analog_lines` holds each net's own rise-time ceiling. The bridge's nanoseconds become picoseconds in the CLI: a measured
 rise rounds up, so a rise past its whole-nanosecond ceiling stays past it; a
 lower bound rounds down; volts round to the nearest microvolt.
 
@@ -239,8 +246,16 @@ not the one its scenario, specification and firmware give. Then
 `campaign::check_run`, which the campaign also applies before it writes a run,
 refuses:
 
-- records out of the order above, or a run without exactly one scenario,
-  topology, boot and verdict;
+- records out of the order: the scenario, the topology, the solved buses
+  (kind 15), the analog records (7 and 8), the bus faults (9), the boot (10),
+  the registers (11), the identity reads (12), the witnesses (13) and the
+  verdict; or a run without exactly one scenario, topology, boot and verdict;
+- a broken join (`AET-WO-3100` R2, extended by its adversarial pass): solved buses not sorted by unique bus; two solved buses sharing a net, a pin or a controller; two devices at one address on one bus; a second kind 7 or 8 for one line, a second kind 12 for one device, or a second kind 13 for one device or one controller; a
+  kind 7, 8 or 9 on a bus no kind 15 solves, or on a net that is not one of
+  that bus's lines; a kind 7 or 8 whose `ceiling_ps` is not its line's; a
+  device on two solved buses; an identity read whose reference is no solved
+  device at its address; a witness whose reference is no solved device, or
+  whose `peripheral` is not that device's bus's;
 - a bus fault naming a net with no measurement past its ceiling (or stuck
   high), a measurement past its ceiling that faulted no bus, a held-low fault
   without its override, or an override without its fault;

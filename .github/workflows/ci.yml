@@ -58,7 +58,7 @@ jobs:
           set -euo pipefail
           # Dependency order: cargo packages a path dependency's sibling from the
           # same invocation, so this list is also the order docs/releasing.md publishes in.
-          crates="aethelgard-ir aethelgard-kicad-lib aethelgard-svd-hal aethelgard-eda aethelgard-twin aethelgard-chaos aethelgard-cli"
+          crates="aethelgard-ir aethelgard-kicad-lib aethelgard-svd-hal aethelgard-eda aethelgard-twin aethelgard-chaos aethelgard-evolve aethelgard-cli"
           # The list must be exactly the workspace members that may publish.
           want=$(cargo metadata --no-deps --format-version 1 --locked \
             | jq -r '.packages[] | select(.publish != []) | .name' | sort | tr '\n' ' ')

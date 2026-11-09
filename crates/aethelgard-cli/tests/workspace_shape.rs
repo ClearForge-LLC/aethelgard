@@ -1,9 +1,9 @@
 //! The mechanical half of the `INV-01` dependency direction and the `unsafe`
 //! forbid: every member opts into the workspace lints and states the forbid at
-//! its root, the five library crates declare nothing and depend only on the
-//! allowed crates, and `aethelgard-ir` depends on no other member. A library
-//! crate is exactly a manifest and a `src/lib.rs`, so no other target or
-//! module can hide a declaration from the check.
+//! its root, `aethelgard-ir` depends on no other member, and each library
+//! crate's files, manifest keys and dependencies are fixed by its own test
+//! below. The re-export stub checks retired when the last stub,
+//! `aethelgard-evolve`, graduated in `AET-WO-3100`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -30,21 +30,7 @@ const SVD_HAL: &str = "crates/aethelgard-svd-hal";
 const EDA: &str = "crates/aethelgard-eda";
 const TWIN: &str = "crates/aethelgard-twin";
 const KICAD_LIB: &str = "crates/aethelgard-kicad-lib";
-
-/// Every member but `ir` (first), `cli` (last), `chaos` (graduated in
-/// `AET-WO-0400`), `svd-hal` (graduated in `AET-WO-1101`), `eda`
-/// (graduated in `AET-WO-1300`), `kicad-lib` (`AET-WO-1304`, a data crate)
-/// and `twin` (graduated in `AET-WO-2100`); the order is pinned by
-/// `members_are_exactly_the_eight_parts`.
-fn libraries() -> Vec<&'static str> {
-    MEMBERS[1..7]
-        .iter()
-        .copied()
-        .filter(|m| ![CHAOS, SVD_HAL, EDA, KICAD_LIB, TWIN].contains(m))
-        .collect()
-}
-
-const LIBRARY_DEPENDENCIES: [&str; 3] = ["aethelgard-ir", "serde", "thiserror"];
+const EVOLVE: &str = "crates/aethelgard-evolve";
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -165,47 +151,6 @@ fn no_member_has_a_build_script() {
             manifest(member)["package"].get("build").is_none(),
             "{member} sets package.build"
         );
-    }
-}
-
-#[test]
-fn library_crates_declare_nothing_and_only_re_export() {
-    for member in libraries() {
-        for item in crate_root(member).items {
-            assert!(
-                matches!(item, syn::Item::Use(_)),
-                "{member} declares something other than a re-export"
-            );
-        }
-    }
-}
-
-#[test]
-fn library_crates_are_only_a_manifest_and_lib_rs() {
-    for member in libraries() {
-        assert_eq!(
-            files(&root().join(member)),
-            ["Cargo.toml", "README.md", "src/lib.rs"],
-            "{member} has files beyond Cargo.toml, README.md and src/lib.rs"
-        );
-        for key in manifest(member).keys() {
-            assert!(
-                ["package", "dependencies", "lints"].contains(&key.as_str()),
-                "{member} sets [{key}]"
-            );
-        }
-    }
-}
-
-#[test]
-fn library_crates_depend_only_on_allowed_crates() {
-    for member in libraries() {
-        for name in dependency_names(&manifest(member)) {
-            assert!(
-                LIBRARY_DEPENDENCIES.contains(&name.as_str()),
-                "{member} depends on {name}"
-            );
-        }
     }
 }
 
@@ -484,6 +429,43 @@ fn twin_has_only_its_known_files_keys_and_dependencies() {
                 "twin dependency {name} is not from the workspace table"
             );
         }
+    }
+}
+
+/// `aethelgard-evolve` holds attribution (`AET-WO-3100`), so it is no longer
+/// a re-export stub. It leaves the three stub checks (declares nothing, is
+/// only a manifest and `src/lib.rs`, depends only on `ir`, `serde` and
+/// `thiserror`), which retired with it, as the last stub. In their place: its
+/// files, manifest keys and dependencies are fixed. It reads archived runs
+/// (`aethelgard-chaos`) and the ST header (`aethelgard-svd-hal`), and has no
+/// direct dependency on `aethelgard-ir` (it reaches it only through svd-hal,
+/// whose API names no `Specification`), so it cannot name one (`RUL-16`).
+#[test]
+fn evolve_has_only_its_known_files_keys_and_dependencies() {
+    for file in files(&root().join(EVOLVE)) {
+        let allowed = file == "Cargo.toml"
+            || file == "README.md"
+            || LICENCE_FILES.contains(&file.as_str())
+            || (file.starts_with("src/") && file.ends_with(".rs"))
+            || (file.starts_with("tests/") && file.ends_with(".rs"));
+        assert!(allowed, "evolve has a file outside the allowed set: {file}");
+    }
+    let evolve = manifest(EVOLVE);
+    for key in evolve.keys() {
+        assert!(
+            ["package", "dependencies", "lints"].contains(&key.as_str()),
+            "evolve sets [{key}]"
+        );
+    }
+    let mut names = dependency_names(&evolve);
+    names.sort();
+    assert_eq!(names, ["aethelgard-chaos", "aethelgard-svd-hal"]);
+    for (name, dep) in evolve["dependencies"].as_table().unwrap() {
+        assert_eq!(
+            dep.get("workspace").and_then(Value::as_bool),
+            Some(true),
+            "evolve dependency {name} is not from the workspace table"
+        );
     }
 }
 

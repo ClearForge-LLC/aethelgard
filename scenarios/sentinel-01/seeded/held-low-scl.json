@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "name": "held-low-scl",
+  "base": "../../../examples/sentinel-01-minimal.json",
+  "expect": "fail",
+  "expect_findings": [
+    "i2c_line_held_low",
+    "i2c_timeout"
+  ],
+  "overrides": [
+    {
+      "bus": "SENSORS",
+      "pull_up_ohms": 2200
+    },
+    {
+      "bus": "SENSORS",
+      "line_held_low": "scl"
+    }
+  ]
+}
