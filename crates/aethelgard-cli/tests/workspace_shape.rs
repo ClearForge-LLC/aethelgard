@@ -445,6 +445,7 @@ fn evolve_has_only_its_known_files_keys_and_dependencies() {
     for file in files(&root().join(EVOLVE)) {
         let allowed = file == "Cargo.toml"
             || file == "README.md"
+            || LICENCE_FILES.contains(&file.as_str())
             || (file.starts_with("src/") && file.ends_with(".rs"))
             || (file.starts_with("tests/") && file.ends_with(".rs"));
         assert!(allowed, "evolve has a file outside the allowed set: {file}");

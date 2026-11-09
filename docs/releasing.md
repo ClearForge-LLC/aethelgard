@@ -23,9 +23,10 @@ Dependencies first. Each command is `cargo publish -p <crate> --locked`:
 4. `aethelgard-eda`
 5. `aethelgard-twin`
 6. `aethelgard-chaos`
-7. `aethelgard-cli`
+7. `aethelgard-evolve`
+8. `aethelgard-cli`
 
-`aethelgard-evolve` and the board crates are `publish = false`; do not publish them. No crate is published under the bare name `aethelgard`. After step 7, `cargo install aethelgard-cli` installs the `aethelgard` binary.
+The board crates are `publish = false`; do not publish them. No crate is published under the bare name `aethelgard`. After step 8, `cargo install aethelgard-cli` installs the `aethelgard` binary.
 
 `aethelgard-bridge` (`bridge/`) is never published: it is outside the workspace, `publish = false`, and links the tools image's `libngspice.so.0`, so it ships only in the engine image beside `aethelgard` (`AET-WO-2200`).
 

@@ -1,6 +1,6 @@
 # aethelgard-evolve
 
-Attribution from traces, and later mutation proposals. It never merges anything and never bypasses a gate (`docs/architecture.md` §3, `RUL-07`). `publish = false`.
+Attribution from traces, and later mutation proposals. It never merges anything and never bypasses a gate (`docs/architecture.md` §3, `RUL-07`). It is published, because `aethelgard-cli` depends on it (`docs/releasing.md`).
 
 `attribute(&Replayed) -> Attribution` (`AET-WO-3100`, `INV-05`) is a pure function from one archived campaign run to one attribution record. The record holds:
 - the domain: `electrical`, `software`, `none` or `indeterminate`;
