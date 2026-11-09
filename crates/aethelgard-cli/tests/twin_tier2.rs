@@ -298,6 +298,11 @@ fn the_reference_firmware_boots_and_two_boots_agree() {
         .collect();
     assert_eq!(unmodelled.len(), 1, "{first}");
     assert_eq!(unmodelled[0]["severity"], "info");
+    // W1: the controller shows the read the record claims.
+    let w = &b["i2c_witness"][0];
+    assert_eq!(w["cr2"]["observed"], "0x020104ec");
+    assert_eq!(w["cr2"]["observed"], w["cr2"]["expected"]);
+    assert_eq!(w["txdr"]["observed"], "0x000000d0");
     assert!(
         unmodelled[0]["message"]
             .as_str()
@@ -529,7 +534,12 @@ fn a_firmware_that_skips_the_read_or_its_record_cannot_pass() {
     });
     let (code, v) = boot_elf("skip the read", &skip, "10ms");
     assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["i2c_identity_mismatch"], "{v}");
+    // The record carries 0, and no transaction left the controller in a state.
+    assert_eq!(
+        kinds(&v),
+        ["i2c_identity_mismatch", "i2c_transaction_unwitnessed"],
+        "{v}"
+    );
     assert_eq!(v["boot"]["i2c"][0]["observed"], "0x0");
 
     let unwritten = mutant("no-record", |d| {
@@ -544,4 +554,45 @@ fn a_firmware_that_skips_the_read_or_its_record_cannot_pass() {
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["i2c_record_invalid"], "{v}");
     assert_eq!(v["boot"]["i2c"][0]["status"], "invalid");
+}
+
+#[test]
+fn a_forged_record_without_a_transaction_fails_on_the_controller_state() {
+    // AET-WO-2202 W1: the firmware writes STATUS_OK and the table's 0x60 and
+    // never calls `transfer`. The record is perfect; the controller was never
+    // touched, so CR2 and TXDR read their reset values.
+    let forged = mutant("forged", |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "let mut buf0 = [0u8; 1];",
+            "let mut buf0 = [0x60u8; 1];",
+        );
+        edit(
+            d,
+            "src/main.rs",
+            "i2c1.transfer(&mut r, 0x76, &[0xd0], &mut buf0)",
+            "Ok::<usize, I2cError>(1)",
+        );
+    });
+    let (code, v) = boot_elf("forged record", &forged, "10ms");
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{v}");
+    assert_eq!(v["boot"]["i2c"][0]["status"], "ok");
+    assert_eq!(v["boot"]["i2c"][0]["observed"], "0x60");
+    assert_eq!(v["boot"]["i2c_witness"][0]["cr2"]["observed"], "0x00000000");
+    let f = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["kind"] == "i2c_transaction_unwitnessed")
+        .unwrap();
+    let m = f["message"].as_str().unwrap();
+    assert!(
+        m.contains("U2") && m.contains("0x76") && m.contains("I2C1"),
+        "{m}"
+    );
+    for field in ["SADD", "RD_WRN", "NBYTES", "AUTOEND", "TXDR"] {
+        assert!(m.contains(field), "{field}: {m}");
+    }
 }

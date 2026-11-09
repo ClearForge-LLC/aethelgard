@@ -301,6 +301,7 @@ fn a_part_name_that_is_not_exactly_a_table_s_is_unmodelled_not_skipped() {
 fn a_two_byte_identity_is_judged_whole_and_most_significant_byte_first() {
     let c = boot::I2cCheck {
         reference: "U3".into(),
+        peripheral: "I2C1".into(),
         address: 0x48,
         register: 0x0F,
         width: 2,
@@ -312,4 +313,69 @@ fn a_two_byte_identity_is_judged_whole_and_most_significant_byte_first() {
     assert_eq!(c.judge(boot::STATUS_OK, 0x0117), Pass);
     assert_eq!(c.judge(boot::STATUS_OK, 0x1701), Mismatch);
     assert_eq!(c.judge(boot::STATUS_OK, 0x17), Mismatch);
+}
+
+/// The reference boot's controller state, as measured on Renode 1.17.0 after
+/// the generated read: `I2C1.CR2` and `I2C1.TXDR`.
+const MEASURED_CR2: u32 = 0x0201_04EC;
+const MEASURED_TXDR: u32 = 0xD0;
+
+#[test]
+fn the_controller_witness_is_computed_from_the_address_and_the_part_table() {
+    let image = boot::expected(&reference(), &reference_devices()).unwrap();
+    let [w] = image.i2c.witnesses.as_slice() else {
+        panic!("one bus, one witness");
+    };
+    assert_eq!(
+        (w.peripheral.as_str(), w.reference.as_str(), w.check),
+        ("I2C1", "U2", 0)
+    );
+    assert_eq!((w.cr2_at, w.txdr_at), (0x4000_5404, 0x4000_5428));
+    assert_eq!(w.cr2_mask(), 0x02FF_07FF);
+    assert_eq!(w.cr2_expected(), MEASURED_CR2);
+    assert_eq!(w.txdr_expected(), MEASURED_TXDR);
+    assert!(w.differing(MEASURED_CR2, MEASURED_TXDR).is_empty());
+    // START is not stored once set, and bits outside the fields do not count.
+    assert!(
+        w.differing(MEASURED_CR2 | 1 << 13 | 1 << 11, MEASURED_TXDR | 0x100)
+            .is_empty()
+    );
+}
+
+#[test]
+fn each_field_of_the_witness_is_judged_alone() {
+    let image = boot::expected(&reference(), &reference_devices()).unwrap();
+    let w = &image.i2c.witnesses[0];
+    // (the CR2 or TXDR the controller shows, the one field that must differ)
+    let cases: [(u32, u32, &str, u32, u32); 5] = [
+        (MEASURED_CR2 ^ 0x2, MEASURED_TXDR, "SADD", 0xEC, 0xEE),
+        (MEASURED_CR2 & !(1 << 10), MEASURED_TXDR, "RD_WRN", 1, 0),
+        (
+            MEASURED_CR2 & !(0xFF << 16) | 2 << 16,
+            MEASURED_TXDR,
+            "NBYTES",
+            1,
+            2,
+        ),
+        (MEASURED_CR2 & !(1 << 25), MEASURED_TXDR, "AUTOEND", 1, 0),
+        (MEASURED_CR2, 0xD1, "TXDR", 0xD0, 0xD1),
+    ];
+    for (cr2, txdr, name, expected, got) in cases {
+        assert_eq!(w.differing(cr2, txdr), [(name, expected, got)], "{name}");
+    }
+    // A controller no transaction touched shows all five.
+    let names: Vec<&str> = w.differing(0, 0).iter().map(|d| d.0).collect();
+    assert_eq!(names, ["SADD", "RD_WRN", "NBYTES", "AUTOEND", "TXDR"]);
+}
+
+#[test]
+fn only_the_last_read_on_a_bus_is_witnessed() {
+    // No second modelled part exists, so the same part twice stands for it.
+    let devices = vec![target("U2", "BME280", 0x76), target("U4", "BME280", 0x77)];
+    let image = boot::expected(&reference(), &devices).unwrap();
+    assert_eq!(image.i2c.checks.len(), 2);
+    let [w] = image.i2c.witnesses.as_slice() else {
+        panic!()
+    };
+    assert_eq!((w.reference.as_str(), w.check, w.address), ("U4", 1, 0x77));
 }

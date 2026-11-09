@@ -838,6 +838,31 @@ fn boot_report(
                 status: observed.map(|o| renode::status_name(o.records[i].0)),
             })
             .collect(),
+        i2c_witness: r
+            .image
+            .i2c
+            .witnesses
+            .iter()
+            .enumerate()
+            .map(|(i, w)| verdict::WitnessReport {
+                peripheral: w.peripheral.clone(),
+                reference: w.reference.clone(),
+                cr2: verdict::RegisterReport {
+                    name: format!("{}.CR2", w.peripheral),
+                    address: word(w.cr2_at),
+                    mask: word(w.cr2_mask()),
+                    expected: word(w.cr2_expected()),
+                    observed: observed.map(|o| word(o.controllers[i].0)),
+                },
+                txdr: verdict::RegisterReport {
+                    name: format!("{}.TXDR", w.peripheral),
+                    address: word(w.txdr_at),
+                    mask: word(0xFF),
+                    expected: word(w.txdr_expected()),
+                    observed: observed.map(|o| word(o.controllers[i].1)),
+                },
+            })
+            .collect(),
     }
 }
 

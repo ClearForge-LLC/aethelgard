@@ -119,8 +119,13 @@ fn reads(word: &str, instructions: &str, mips: &str, registers: &[&str]) -> Vec<
     v.extend(registers.iter().map(|r| (*r).to_owned()));
     // U2's record: OK, then the BME280's identity.
     v.extend(GOOD_RECORD.iter().map(|r| (*r).to_owned()));
+    // I2C1's CR2 and TXDR after that read, as measured on Renode 1.17.0.
+    v.extend(GOOD_CONTROLLER.iter().map(|r| (*r).to_owned()));
     v
 }
+
+/// `CR2` (`SADD` 0x76 << 1, `RD_WRN`, `NBYTES` 1, `AUTOEND`) and `TXDR` (0xD0).
+const GOOD_CONTROLLER: [&str; 2] = ["0x020104EC", "0x000000D0"];
 
 /// The record a firmware that read U2's ID register (0xD0) as 0x60 leaves.
 const GOOD_RECORD: [&str; 2] = ["0x22020000", "0x00000060"];
@@ -598,8 +603,23 @@ fn with_record(record: [&str; 2]) -> String {
         &GOOD_REGISTERS,
     );
     let n = r.len();
-    r[n - 2] = record[0].to_owned();
-    r[n - 1] = record[1].to_owned();
+    r[n - 4] = record[0].to_owned();
+    r[n - 3] = record[1].to_owned();
+    transcript("", &r.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
+/// A boot that reached the fixed point, with a good record and `controller`
+/// in I2C1's `CR2` and `TXDR`.
+fn with_controller(controller: [&str; 2]) -> String {
+    let mut r = reads(
+        "0x2100B007",
+        "0x00000000000F4240",
+        "0x00000064",
+        &GOOD_REGISTERS,
+    );
+    let n = r.len();
+    r[n - 2] = controller[0].to_owned();
+    r[n - 1] = controller[1].to_owned();
     transcript("", &r.iter().map(String::as_str).collect::<Vec<_>>())
 }
 
@@ -700,8 +720,8 @@ fn a_record_is_not_judged_when_the_boot_word_is_missing() {
     );
     let mut r = r;
     let n = r.len();
-    r[n - 2] = "0xFFFFFFFF".into();
-    r[n - 1] = "0xFFFFFFFF".into();
+    r[n - 4] = "0xFFFFFFFF".into();
+    r[n - 3] = "0xFFFFFFFF".into();
     let (code, v) = boot(&transcript(
         "",
         &r.iter().map(String::as_str).collect::<Vec<_>>(),
@@ -711,4 +731,104 @@ fn a_record_is_not_judged_when_the_boot_word_is_missing() {
     assert!(finding(&v, "i2c_record_invalid").is_none(), "{v}");
     // The unmodelled device is still reported on a failed boot.
     assert!(finding(&v, "device_unmodelled").is_some());
+}
+
+// `AET-WO-2202` W1: the record is the firmware's word; the controller is the
+// witness. The judge computes `CR2` and `TXDR` from the solved address and the
+// part table (0x76, read, 1 byte, AUTOEND; register 0xD0).
+
+#[test]
+fn a_controller_that_shows_the_read_passes_and_is_reported() {
+    let (code, v) = boot(&good());
+    assert_eq!(code, Some(0), "{v}");
+    let w = &v["boot"]["i2c_witness"][0];
+    assert_eq!(
+        (w["peripheral"].as_str(), w["reference"].as_str()),
+        (Some("I2C1"), Some("U2"))
+    );
+    assert_eq!(w["cr2"]["address"], "0x40005404");
+    assert_eq!(w["cr2"]["expected"], "0x020104ec");
+    assert_eq!(w["cr2"]["observed"], "0x020104ec");
+    assert_eq!(w["txdr"]["address"], "0x40005428");
+    assert_eq!(w["txdr"]["expected"], "0x000000d0");
+    // START is not stored once set, and bits outside the fields do not count.
+    let (code, v) = boot(&with_controller(["0x020124EC", "0x000001D0"]));
+    assert_eq!(code, Some(0), "{v}");
+}
+
+#[test]
+fn each_field_of_the_controller_state_fails_alone() {
+    for (cr2, txdr, field) in [
+        ("0x020104EE", "0x000000D0", "SADD reads 0xee, expected 0xec"),
+        ("0x020100EC", "0x000000D0", "RD_WRN reads 0x0, expected 0x1"),
+        ("0x020204EC", "0x000000D0", "NBYTES reads 0x2, expected 0x1"),
+        (
+            "0x000104EC",
+            "0x000000D0",
+            "AUTOEND reads 0x0, expected 0x1",
+        ),
+        ("0x020104EC", "0x000000D1", "TXDR reads 0xd1, expected 0xd0"),
+    ] {
+        let (code, v) = boot(&with_controller([cr2, txdr]));
+        assert_eq!(code, Some(1), "{field}: {v}");
+        assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{field}: {v}");
+        let f = finding(&v, "i2c_transaction_unwitnessed").unwrap();
+        let m = f["message"].as_str().unwrap();
+        assert!(
+            m.contains("U2") && m.contains("0x76") && m.contains("I2C1"),
+            "{m}"
+        );
+        assert!(m.contains(field), "{field}: {m}");
+        assert_eq!(f["severity"], "error");
+    }
+}
+
+#[test]
+fn a_forged_record_over_an_untouched_controller_fails_on_every_field() {
+    // OK and the table's value written with no transaction: CR2 and TXDR are 0.
+    let (code, v) = boot(&with_controller(["0x00000000", "0x00000000"]));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{v}");
+    let m = finding(&v, "i2c_transaction_unwitnessed").unwrap()["message"]
+        .as_str()
+        .unwrap();
+    for field in ["SADD", "RD_WRN", "NBYTES", "AUTOEND", "TXDR"] {
+        assert!(m.contains(field), "{field}: {m}");
+    }
+}
+
+#[test]
+fn the_controller_is_not_judged_for_a_record_that_claims_nothing() {
+    // A wait that expired leaves the controller wherever the failed transfer
+    // left it; `i2c_timeout` alone names the failure.
+    let mut r = reads(
+        "0x2100B007",
+        "0x00000000000F4240",
+        "0x00000064",
+        &GOOD_REGISTERS,
+    );
+    let n = r.len();
+    r[n - 4] = "0x22020001".into();
+    r[n - 2] = "0x00000000".into();
+    r[n - 1] = "0x00000000".into();
+    let (code, v) = boot(&transcript(
+        "",
+        &r.iter().map(String::as_str).collect::<Vec<_>>(),
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["i2c_timeout"], "{v}");
+    // Nor when the boot word is missing.
+    let mut r = reads(
+        "0x00000000",
+        "0x00000000000F4240",
+        "0x00000064",
+        &GOOD_REGISTERS,
+    );
+    let n = r.len();
+    r[n - 2] = "0x00000000".into();
+    let (_, v) = boot(&transcript(
+        "",
+        &r.iter().map(String::as_str).collect::<Vec<_>>(),
+    ));
+    assert!(finding(&v, "i2c_transaction_unwitnessed").is_none(), "{v}");
 }

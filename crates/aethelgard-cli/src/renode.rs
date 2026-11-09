@@ -217,6 +217,16 @@ impl BootPlan<'_> {
                 ));
             }
         }
+        for (i, w) in self.image.i2c.witnesses.iter().enumerate() {
+            reads.push((
+                format!("sysbus ReadDoubleWord {:#010x}", w.cr2_at),
+                Read::Controller(i, 0),
+            ));
+            reads.push((
+                format!("sysbus ReadDoubleWord {:#010x}", w.txdr_at),
+                Read::Controller(i, 1),
+            ));
+        }
         reads
     }
 
@@ -279,6 +289,8 @@ enum Read {
     Register(usize),
     /// Check `.0`'s record: word 0 is the status, word 1 the value.
     Record(usize, u8),
+    /// Witness `.0`'s controller: word 0 is `CR2`, word 1 `TXDR`.
+    Controller(usize, u8),
 }
 
 /// A boot's findings, the listing, and what the reads gave.
@@ -293,6 +305,8 @@ pub struct Observed {
     pub registers: Vec<u32>,
     /// Each identity check's (status, value) words.
     pub records: Vec<(u32, u32)>,
+    /// Each bus witness's controller (`CR2`, `TXDR`) words.
+    pub controllers: Vec<(u32, u32)>,
 }
 
 /// A bare hexadecimal value, the whole line: `0x2100B007`. Anything else on
@@ -368,6 +382,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         pc: 0,
         registers: vec![0; plan.image.registers.len()],
         records: vec![(0, 0); plan.image.i2c.checks.len()],
+        controllers: vec![(0, 0); plan.image.i2c.witnesses.len()],
     };
     for ((cmd, read), line) in reads.iter().zip(between) {
         let v = value(line).ok_or_else(|| {
@@ -393,6 +408,8 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             Read::Register(i) => observed.registers[i] = word()?,
             Read::Record(i, 0) => observed.records[i].0 = word()?,
             Read::Record(i, _) => observed.records[i].1 = word()?,
+            Read::Controller(i, 0) => observed.controllers[i].0 = word()?,
+            Read::Controller(i, _) => observed.controllers[i].1 = word()?,
         }
     }
     let (cpus, peripherals) = listing(&lines[end + 1..]);
@@ -491,6 +508,14 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         for (c, &(status, value)) in plan.image.i2c.checks.iter().zip(&observed.records) {
             findings.extend(i2c_finding(c, status, value));
         }
+        // A record that claims the read completed is checked against the
+        // controller, which only a transaction leaves in that state
+        // (`AET-WO-2202` W1). A record that says a wait expired claims nothing.
+        for (w, &(cr2, txdr)) in plan.image.i2c.witnesses.iter().zip(&observed.controllers) {
+            if observed.records[w.check].0 == aethelgard_twin::boot::STATUS_OK {
+                findings.extend(witness_finding(w, cr2, txdr));
+            }
+        }
     }
     for d in &plan.image.i2c.unmodelled {
         findings.push(Finding::info(
@@ -540,6 +565,29 @@ fn i2c_finding(c: &aethelgard_twin::boot::I2cCheck, status: u32, value: u32) -> 
             ),
         )),
     }
+}
+
+/// The finding for a bus whose controller does not show the transaction its
+/// last record claims, naming the device and each field that differs.
+fn witness_finding(w: &aethelgard_twin::boot::I2cWitness, cr2: u32, txdr: u32) -> Option<Finding> {
+    let differing = w.differing(cr2, txdr);
+    if differing.is_empty() {
+        return None;
+    }
+    let fields: Vec<String> = differing
+        .iter()
+        .map(|(name, expected, got)| format!("{name} reads {got:#x}, expected {expected:#x}"))
+        .collect();
+    Some(Finding::plain(
+        "i2c_transaction_unwitnessed",
+        format!(
+            "{} at I2C address {:#04x}: the record says the read completed, but {}'s state after the run does not show it ({}): CR2 {cr2:#010x}, TXDR {txdr:#04x}",
+            w.reference,
+            w.address,
+            w.peripheral,
+            fields.join("; ")
+        ),
+    ))
 }
 
 /// How a record's status reads in the verdict.

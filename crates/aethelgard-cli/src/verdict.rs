@@ -53,6 +53,17 @@ pub struct Boot {
     pub unobservable: Vec<String>,
     /// One per identity read the judge expects (`AET-WO-2202`).
     pub i2c: Vec<I2cReport>,
+    /// The controller state that witnesses the last read on each bus.
+    pub i2c_witness: Vec<WitnessReport>,
+}
+
+/// A bus controller's `CR2` and `TXDR` after the run, against the expectation.
+#[derive(Serialize)]
+pub struct WitnessReport {
+    pub peripheral: String,
+    pub reference: String,
+    pub cr2: RegisterReport,
+    pub txdr: RegisterReport,
 }
 
 /// One identity read: what the part table says, and what the firmware's record held.
