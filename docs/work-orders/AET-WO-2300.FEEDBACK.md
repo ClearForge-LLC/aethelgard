@@ -211,3 +211,25 @@ A fresh Opus subagent attacked `1e26985` in its own worktree. It used its own po
   - Recommendation: Furnace's podman recipe passes `--pids-limit -1` (or an init), and the contract reads `pids.max` back beside `memory.max`.
 - **F13 · The faulted platform's header comment calls a held-low bus "measured past its rise-time ceiling" · `aethelgard-twin` `emit_faulted` · low · outside the fence.** The archive and the verdict say `scenario.line_held_low` correctly; only the `.repl` comment is wrong. Recommendation: `emit_faulted` takes the cause, in a later twin work order.
 - **F14 · `FirmwareChanged` has no test · the CLI · low · mutation gap.** The firmware is hashed once for the run id and the header, and the boot hashes its own copy. A file changed between the two is refused. No test can change the file mid-campaign from inside the sandboxed stub, so the check stands on review alone, as 2200's F16 did.
+
+## Gates
+
+- **Reduction pass (diff):** −24 net · 2 duplicates removed · 3 dead paths removed · 0 protected kept · 0 findings below.
+  - **Duplicates:**
+    - the analog finding kinds are now `aethelgard-chaos` constants, used by the pre-pass and the run rules alike;
+    - which records are read at the boot's end is now one constant, `record::FIRST_BOOT_KIND`.
+  - **Dead paths:**
+    - `check_run`'s "passing verdict beside a bus fault", which the verdict counts already force (adversary's K8);
+    - the `matches` function and its two conjuncts, which `Record::check`'s rules make equivalent to `failing_kinds == expect_findings` (K9, K10);
+    - `Line::name` and two unused `Ord` derives.
+  - **Proof:** the suites stayed green, and the one comparison left was mutated (`matched = true`): 4 tests kill it.
+  - **Considered, not cut:**
+    - `ScenarioLine` and `Replayed` share fields, but they are two output contracts;
+    - `FirmwareChanged` is untested (F14), and kept as a guard.
+- **Local, in the tools image** (`--network none`; `memory.max` 12884901888, `pids.max` `max`), at `00db795`:
+  - the bridge's tests pass;
+  - `cargo fmt --all -- --check` is clean;
+  - `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -D warnings` is clean;
+  - `cargo test --workspace --features aethelgard-cli/with-tools`: **52 suites, 775 passed, 0 failed**, tier 1 and tier 2.
+- **Local, on the Furnace host** (no Renode, no libngspice, as in `gates`): `cargo test --workspace`, fmt and clippy are green.
+- **CI:** the PR's checks. This branch's last push carries this file, so CI's result is on the PR, not here.
