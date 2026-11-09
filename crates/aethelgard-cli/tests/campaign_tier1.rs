@@ -979,3 +979,198 @@ fn a_synthetic_run_is_not_a_campaign_run() {
     fs::rename(&run, &renamed).unwrap();
     expect_refusal(&replay(&tb.0, &renamed), 3, "RunIdMismatch");
 }
+
+// 6. Gaps found by the adversarial pass and the mutation run.
+
+/// As `run_cli`, but a child that has not exited in 20 s is killed and the
+/// test fails: a FIFO that is opened for reading must never hang the tool.
+fn run_guarded(cli: &Path, path: &Path, cwd: &Path, args: &[&OsStr]) -> Output {
+    let mut child = Command::new(cli)
+        .args(args)
+        .current_dir(cwd)
+        .env_clear()
+        .env("PATH", path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let start = std::time::Instant::now();
+    loop {
+        if child.try_wait().unwrap().is_some() {
+            return child.wait_with_output().unwrap();
+        }
+        if start.elapsed() > std::time::Duration::from_secs(20) {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("the tool did not return in 20 s: a FIFO hung it");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+fn mkfifo(path: &Path) {
+    let status = Command::new("mkfifo").arg(path).status().unwrap();
+    assert!(status.success(), "mkfifo {}", path.display());
+}
+
+fn hex_of(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[test]
+fn an_absolute_base_inside_the_current_directory_is_still_refused() {
+    let tb = toolbox(&good());
+    let work = Work::new();
+    let inside = work.cwd().join("spec.json");
+    assert!(inside.is_file());
+    work.dir.write(
+        "s.json",
+        scenario_with_base(inside.to_str().unwrap()).as_bytes(),
+    );
+    let out = work.campaign(&cli(Some(BRIDGE_BY_PULL_UP)), &tb.0, &["s.json"]);
+    expect_refusal(&out, 3, "BaseOutsideRoot");
+    assert!(work.runs().is_empty());
+}
+
+#[test]
+fn a_base_that_is_a_directory_is_refused() {
+    let tb = toolbox(&good());
+    let work = Work::new();
+    fs::create_dir(work.cwd().join("subdir")).unwrap();
+    for (i, base) in ["subdir", "."].into_iter().enumerate() {
+        let name = format!("s{i}.json");
+        work.dir.write(&name, scenario_with_base(base).as_bytes());
+        let out = work.campaign(&cli(Some(BRIDGE_BY_PULL_UP)), &tb.0, &[&name]);
+        expect_refusal(&out, 3, "BaseOutsideRoot");
+    }
+    assert!(work.runs().is_empty());
+}
+
+#[test]
+fn a_base_that_is_a_fifo_is_refused_without_hanging() {
+    let tb = toolbox(&good());
+    let work = Work::new();
+    mkfifo(&work.cwd().join("base.fifo"));
+    work.dir
+        .write("s.json", scenario_with_base("base.fifo").as_bytes());
+    let c = cli(Some(BRIDGE_BY_PULL_UP));
+    let mut args = vec![os("campaign"), os("--scenarios"), os("s.json")];
+    args.extend([
+        os("--firmware"),
+        work.firmware.as_os_str(),
+        os("--archive"),
+        work.archive.as_os_str(),
+    ]);
+    let out = run_guarded(&c, &tb.0, work.cwd(), &args);
+    expect_refusal(&out, 3, "BaseOutsideRoot");
+    assert!(work.runs().is_empty());
+}
+
+#[test]
+fn a_campaign_with_one_matching_and_one_unmatched_scenario_exits_1() {
+    let tb = toolbox(&good());
+    let work = Work::new();
+    work.dir.write(
+        "ok.json",
+        scenario("ok", "pass", &[], json_of(PULL_UP_2K2)).as_bytes(),
+    );
+    // Passes at 2k2, so its expectation of a failure is not met.
+    work.dir.write(
+        "bad.json",
+        scenario("bad", "fail", &["i2c_timeout"], json_of(PULL_UP_2K2)).as_bytes(),
+    );
+    let out = work.campaign(
+        &cli(Some(BRIDGE_BY_PULL_UP)),
+        &tb.0,
+        &["ok.json", "bad.json"],
+    );
+    let all = lines(&out);
+    assert_eq!(out.status.code(), Some(1), "{all:?} {:?}", out.stderr);
+    assert_eq!(all.len(), 3, "{all:?}");
+    assert_eq!(all[0]["scenario"], "ok");
+    assert_eq!(all[0]["matched"], true);
+    assert_eq!(all[1]["scenario"], "bad");
+    assert_eq!(all[1]["matched"], false);
+    assert_eq!(all[2]["check"], "campaign");
+    assert_eq!(all[2]["scenarios"], 2);
+    assert_eq!(all[2]["matched"], 1);
+    assert_eq!(all[2]["ok"], false);
+    assert_eq!(work.runs().len(), 2);
+}
+
+#[test]
+fn a_run_directory_that_is_a_symlink_to_a_real_run_is_refused() {
+    let (tb, work, run) = a_run();
+    let link = work.cwd().join("linked-run");
+    std::os::unix::fs::symlink(&run, &link).unwrap();
+    // The real run replays; the link to it does not.
+    assert_eq!(replay(&tb.0, &run).status.code(), Some(0));
+    expect_refusal(&replay(&tb.0, &link), 3, "UnexpectedEntry");
+}
+
+#[test]
+fn a_trace_that_is_a_symlink_to_an_identical_copy_is_refused() {
+    let (tb, _work, run) = a_run();
+    let outside = Dir::new("outside");
+    let copy = outside.write("trace.cbor", &fs::read(run.join("trace.cbor")).unwrap());
+    fs::remove_file(run.join("trace.cbor")).unwrap();
+    std::os::unix::fs::symlink(&copy, run.join("trace.cbor")).unwrap();
+    expect_refusal(&replay(&tb.0, &run), 3, "UnexpectedEntry");
+}
+
+#[test]
+fn a_manifest_that_is_a_fifo_is_refused_without_hanging() {
+    let (tb, _work, run) = a_run();
+    fs::remove_file(run.join("manifest.cbor")).unwrap();
+    mkfifo(&run.join("manifest.cbor"));
+    let out = run_guarded(
+        &cli(None),
+        &tb.0,
+        &root(),
+        &[os("replay"), os("--archive"), run.as_os_str()],
+    );
+    expect_refusal(&out, 3, "UnexpectedEntry");
+}
+
+/// Rewrite the run `run` under `header` into a fresh directory named by the
+/// original run id, with every record and so the state hash recomputed.
+fn reseal(run: &Path, edit: impl FnOnce(&mut aethelgard_chaos::Header)) -> (Dir, PathBuf) {
+    let old = aethelgard_chaos::replay_dir(run).unwrap();
+    let mut header = old.header.clone();
+    edit(&mut header);
+    let dir = Dir::new("resealed");
+    let new = dir.0.join(hex_of(&old.header.run_id));
+    let mut w = TraceWriter::create(&new, &header).unwrap();
+    for record in old.state.records {
+        let timestamp = if record.kind() >= 10 { 100_000_000 } else { 0 };
+        w.append(&Event::Record { timestamp, record }).unwrap();
+    }
+    w.commit().unwrap();
+    (dir, new)
+}
+
+#[test]
+fn a_run_resealed_with_the_same_header_replays_so_the_next_test_is_not_vacuous() {
+    let (tb, _work, run) = a_run();
+    let (_dir, new) = reseal(&run, |_| {});
+    let original = lines(&replay(&tb.0, &run));
+    let again = replay(&tb.0, &new);
+    let again = lines(&again);
+    assert_eq!(again[0]["ok"], true, "{again:?}");
+    assert_eq!(
+        again[0]["state_sequence_hash"],
+        original[0]["state_sequence_hash"]
+    );
+}
+
+#[test]
+fn a_run_with_a_consistently_resealed_but_changed_header_is_not_a_campaign_run() {
+    let (tb, _work, run) = a_run();
+    let (_dir, new) = reseal(&run, |h| {
+        let firmware = h.artifacts.iter_mut().find(|(n, _)| n == "firmware");
+        firmware.unwrap().1[0] ^= 1;
+    });
+    // Trace hash, byte count and state hash all agree; only the run id does not.
+    expect_refusal(&replay(&tb.0, &new), 3, "NotACampaignRun");
+}

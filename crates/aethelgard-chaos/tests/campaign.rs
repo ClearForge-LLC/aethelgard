@@ -1177,3 +1177,275 @@ fn any_one_bit_of_any_input_changes_the_run_id() {
         }
     }
 }
+
+// ---- 9. gaps found by the adversarial pass and the mutation run ----
+
+#[test]
+fn an_expected_finding_kind_that_is_not_a_name_is_refused() {
+    for bad in ["has space", "", &"k".repeat(65)] {
+        let bytes = doc(json!([]), "fail", json!([bad]));
+        assert_eq!(refused_kind(&bytes), "SchemaViolation", "kind {bad:?}");
+    }
+    assert!(Scenario::parse(&doc(json!([]), "fail", json!(["fine_kind"]))).is_ok());
+}
+
+fn record_bytes(record: Record) -> Vec<u8> {
+    cbor::to_bytes(
+        &Event::Record {
+            timestamp: 0,
+            record,
+        }
+        .to_value(),
+    )
+}
+
+#[test]
+fn the_reader_applies_the_record_field_rules_the_writer_does() {
+    let rise_with = |bus: &str| Record::RiseMeasured {
+        bus: bus.into(),
+        net: "N".into(),
+        rise_30_70_ps: 100,
+        complete: true,
+        ceiling_ps: 300_000,
+        exceeds: false,
+    };
+    let cases: Vec<(&str, Record)> = vec![
+        ("rd-rise-65", rise_with(&"B".repeat(65))),
+        ("rd-rise-space", rise_with("has space")),
+        (
+            "rd-scenario-name",
+            Record::Scenario {
+                name: "bad name".into(),
+                sha256: [0; 32],
+                expect_pass: true,
+                expect_findings: vec![],
+                overrides: vec![],
+            },
+        ),
+        ("rd-fault-from", fault(vec![], vec!["A"])),
+        (
+            "rd-i2c-ref",
+            Record::I2cCheck {
+                reference: "bad ref".into(),
+                address: 0x68,
+                register: 0x75,
+                expected: 0x71,
+                observed: None,
+                status: None,
+            },
+        ),
+        (
+            "rd-verdict-unsorted",
+            verdict(false, &[("b", "error", 1), ("a", "error", 1)]),
+        ),
+    ];
+    for (name, record) in cases {
+        // The writer refuses each of these ...
+        assert!(
+            matches!(
+                append_one(name, record.clone()),
+                Err(E::InvalidEvent { .. })
+            ),
+            "{name}: writer"
+        );
+        // ... and so does the reader, on the same bytes.
+        let r = raw_with_event(&format!("{name}-raw"), record_bytes(record));
+        assert!(
+            matches!(r, Err(E::MalformedEvent { index: 0, .. })),
+            "{name}: reader gave {r:?}"
+        );
+    }
+}
+
+#[test]
+fn a_kind_7_event_with_an_extra_trailing_field_is_refused() {
+    let mut value = Event::Record {
+        timestamp: 0,
+        record: rise(true, 100, false),
+    }
+    .to_value();
+    let cbor::Value::Array(items) = &mut value else {
+        panic!()
+    };
+    items.push(cbor::Value::Uint(0));
+    let r = raw_with_event("k7-extra", cbor::to_bytes(&value));
+    assert!(
+        matches!(r, Err(E::MalformedEvent { index: 0, .. })),
+        "{r:?}"
+    );
+}
+
+#[test]
+fn a_kind_7_complete_flag_of_2_is_refused() {
+    let mut value = Event::Record {
+        timestamp: 0,
+        record: rise(true, 100, false),
+    }
+    .to_value();
+    let cbor::Value::Array(items) = &mut value else {
+        panic!()
+    };
+    // [kind, timestamp, bus, net, rise, complete, ceiling, exceeds]
+    assert_eq!(items[5], cbor::Value::Uint(1));
+    items[5] = cbor::Value::Uint(2);
+    let r = raw_with_event("k7-flag2", cbor::to_bytes(&value));
+    assert!(
+        matches!(r, Err(E::MalformedEvent { index: 0, .. })),
+        "{r:?}"
+    );
+}
+
+// ---- 10. check_archived ----
+
+mod archived {
+    use super::*;
+    use aethelgard_chaos::Header;
+    use aethelgard_chaos::campaign::{ARTIFACTS, check_archived};
+
+    const SCEN: [u8; 32] = [1; 32];
+    const SPEC: [u8; 32] = [2; 32];
+    const TOPO: [u8; 32] = [3; 32];
+    const FW: [u8; 32] = [4; 32];
+    const BASE: [u8; 32] = [5; 32];
+
+    fn header() -> Header {
+        let hashes = [BASE, FW, SCEN, SPEC, TOPO];
+        Header {
+            run_id: run_id(&SCEN, &SPEC, &FW),
+            artifacts: ARTIFACTS
+                .iter()
+                .zip(hashes)
+                .map(|(n, h)| ((*n).to_owned(), h))
+                .collect(),
+        }
+    }
+
+    fn records() -> Vec<Record> {
+        vec![
+            Record::Scenario {
+                name: "ok".into(),
+                sha256: SCEN,
+                expect_pass: true,
+                expect_findings: vec![],
+                overrides: vec![],
+            },
+            Record::Solved {
+                specification_sha256: SPEC,
+                topology_sha256: TOPO,
+            },
+            Record::BootObserved {
+                image_sha256: FW,
+                boot_word: reading(Some(0x12)),
+                instructions_expected: 10,
+                instructions_observed: Some(10),
+                pc: Some(0),
+            },
+            Record::RegisterObserved {
+                name: "R".into(),
+                reading: reading(Some(0x12)),
+            },
+            verdict(true, &[]),
+        ]
+    }
+
+    fn replayed(name: &str, header: &Header, raw_write: bool) -> aethelgard_chaos::Replayed {
+        let dir = scratch(name).join("run");
+        let mut w = TraceWriter::create(&dir, header).unwrap();
+        if raw_write {
+            w.append(&write(0, 0x4000_0000, 1)).unwrap();
+        }
+        for r in records() {
+            let timestamp = if r.kind() < 10 { 0 } else { 100_000_000 };
+            w.append(&Event::Record {
+                timestamp,
+                record: r,
+            })
+            .unwrap();
+        }
+        w.commit().unwrap();
+        replay_dir(&dir).unwrap()
+    }
+
+    fn judged(name: &str, header: &Header, raw_write: bool) -> Result<(), &'static str> {
+        let r = replayed(name, header, raw_write);
+        check_archived(&r.header, &r.state).map(|_| ())
+    }
+
+    #[test]
+    fn a_consistent_run_is_ok_and_matched() {
+        let r = replayed("ca-ok", &header(), false);
+        let summary = check_archived(&r.header, &r.state).unwrap();
+        assert!(summary.matched && summary.pass);
+    }
+
+    #[test]
+    fn a_header_scenario_hash_that_differs_from_the_record_is_refused() {
+        let mut h = header();
+        h.artifacts[2].1 = [9; 32];
+        h.run_id = run_id(&[9; 32], &SPEC, &FW);
+        assert_eq!(
+            judged("ca-scen", &h, false).unwrap_err(),
+            "the header's hashes are not the ones its records name"
+        );
+    }
+
+    #[test]
+    fn a_header_topology_hash_that_differs_from_the_record_is_refused() {
+        let mut h = header();
+        h.artifacts[4].1 = [9; 32];
+        assert_eq!(
+            judged("ca-topo", &h, false).unwrap_err(),
+            "the header's hashes are not the ones its records name"
+        );
+    }
+
+    #[test]
+    fn a_header_specification_hash_that_differs_from_the_record_is_refused() {
+        let mut h = header();
+        h.artifacts[3].1 = [9; 32];
+        h.run_id = run_id(&SCEN, &[9; 32], &FW);
+        assert_eq!(
+            judged("ca-spec", &h, false).unwrap_err(),
+            "the header's hashes are not the ones its records name"
+        );
+    }
+
+    #[test]
+    fn a_zeroed_run_id_is_refused() {
+        let mut h = header();
+        h.run_id = [0; 16];
+        assert_eq!(
+            judged("ca-zero", &h, false).unwrap_err(),
+            "the run id is not the one its scenario, specification and firmware give"
+        );
+    }
+
+    #[test]
+    fn a_changed_firmware_artifact_no_longer_matches_the_run_id() {
+        let mut h = header();
+        h.artifacts[1].1 = [9; 32];
+        assert_eq!(
+            judged("ca-fw", &h, false).unwrap_err(),
+            "the run id is not the one its scenario, specification and firmware give"
+        );
+    }
+
+    #[test]
+    fn a_missing_or_extra_artifact_is_refused() {
+        let why = "the header's artifacts are not a campaign run's";
+        let mut h = header();
+        h.artifacts.remove(0);
+        assert_eq!(judged("ca-missing", &h, false).unwrap_err(), why);
+        let mut h = header();
+        h.artifacts.push(("zzz".into(), [7; 32]));
+        assert_eq!(judged("ca-extra", &h, false).unwrap_err(), why);
+    }
+
+    #[test]
+    fn a_raw_register_write_among_the_records_is_refused() {
+        assert_eq!(
+            judged("ca-raw", &header(), true).unwrap_err(),
+            "a campaign run holds an event that is not a campaign record"
+        );
+    }
+}

@@ -9,8 +9,8 @@ model** and the **campaign's records and run rules** (below); the loop that
 boots each scenario is `aethelgard campaign`, in the CLI, because it runs
 `simulate --firmware`'s own path.
 
-`sha2`, `thiserror`, and for scenarios `aethelgard-ir`, `serde` and
-`serde_json` are used. There is no CBOR crate: the encoder and the strict
+`sha2`, `thiserror`, `rustix` (for the reader's descriptor-relative opens),
+and for scenarios `aethelgard-ir`, `serde` and `serde_json` are used. There is no CBOR crate: the encoder and the strict
 decoder are `src/cbor.rs`.
 
 ## The profile
@@ -36,7 +36,11 @@ RFC 8949 §4.2.1 core deterministic encoding, restricted further.
 
 A run directory holds exactly `trace.cbor` and `manifest.cbor`, and optionally
 `mirror.cbor` and `mirror.cbor.tmp`. Each is a regular file. Anything else, a
-symlink or a leftover `manifest.cbor.tmp` included, is refused. Replay reads
+symlink or a leftover `manifest.cbor.tmp` included, is refused. The reader
+opens the directory once (`O_DIRECTORY | O_NOFOLLOW`), lists it and opens each
+file through that descriptor (`O_NOFOLLOW | O_NONBLOCK`), and checks and reads
+the open file: a name swapped for a symlink or a FIFO after the listing is
+refused, never followed or waited on (`AET-WO-2300`). Replay reads
 neither mirror file (`mirror.cbor.tmp` is what a crash in the mirror step
 leaves behind; it must not orphan a committed run).
 
@@ -225,9 +229,14 @@ archive is refused as existing: the archive is append-only.
 
 ## The run rules
 
-`campaign::check_run` is what `aethelgard replay` judges a campaign run by,
-after the strict reader, from the records alone. The campaign applies it too,
-before it writes a run. It refuses:
+`campaign::check_archived` is what `aethelgard replay` judges an archived
+campaign run by, after the strict reader. It refuses a run holding any event
+but campaign records, and a header whose `artifacts` are not exactly `base`,
+`firmware`, `scenario`, `specification` and `topology`, whose scenario,
+specification and topology hashes are not the records', or whose `run_id` is
+not the one its scenario, specification and firmware give. Then
+`campaign::check_run`, which the campaign also applies before it writes a run,
+refuses:
 
 - records out of the order above, or a run without exactly one scenario,
   topology, boot and verdict;
@@ -236,7 +245,7 @@ before it writes a run. It refuses:
   without its override, or an override without its fault;
 - a verdict whose count of `analog_rise_exceeds_ceiling`,
   `analog_line_stuck_high` or `i2c_line_held_low` findings differs from those
-  records, or a passing verdict beside a bus fault.
+  records (so a passing verdict beside a bus fault, too).
 
 So a run cannot replay as passing, or without its analog evidence, unless its
 manifest is re-sealed and its records rewritten consistently: which is the

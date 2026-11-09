@@ -61,18 +61,19 @@ Each scenario boots for 100 ms of virtual time (F4).
      - `Record::check` holds the field rules, which the writer and the reader both apply. Among them: `exceeds` must equal `!complete || rise > ceiling`; nets and findings are sorted; `pass` holds exactly when every finding is `info`.
      - The fold keeps the records as `State::records`. A record's delta in the chain is its whole payload.
    - **The writer refuses an event over 4,096 encoded bytes.** The reader always did. No kind before this one could reach the bound, so the writer never checked.
+   - **The reader opens the run directory once and reads every file through it** (`rustix`'s `openat`, `O_NOFOLLOW | O_NONBLOCK`), after the adversary raced a symlink and a FIFO past its by-name checks (A1).
    - **Trace header version 2** (F1).
    - **`src/campaign.rs`:**
      - `Scenario::parse`: strict, object-only, duplicate keys refused, closed-world overrides, bounded at 32 overrides and 16 expected kinds;
      - `Scenario::apply`: sets the field, refuses an unknown id, then runs the specification's own `validate`;
      - `run_id`;
      - `matches`;
-     - `check_run`, the run rules `replay` judges by.
+     - `check_run`, the run rules, and `check_archived`, which `replay` adds for the header and for any event that is not a campaign record.
    - **`ArchiveError::kind`**, so the CLI can report a refusal by its variant name.
    - **README:** "Campaign records", "Scenarios", "The run rules", and the version and state-hash notes.
 2. **The CLI**
    - **`campaign`** (`src/campaign.rs`). It prepares every scenario before anything runs: read, parse, resolve `base` inside the current directory, read the specification as `validate` does, apply, serialize, hash, solve. Then each scenario runs through `crate::simulate` unchanged, with the lines it holds low, at 100 ms. The verdict's records are mapped to integers, judged by `check_run`, and written to `<archive>/<run id>` and committed. Only then is the line printed. The summary line follows, exit 0 or 1.
-   - **`replay`**: `replay_dir`, then `check_run`, then one line. It creates no scratch directory and starts no process.
+   - **`replay`**: `replay_dir`; the directory's name must be its header's run id (`RunIdMismatch`); then `check_archived` and `check_run`; then one line. It creates no scratch directory and starts no process.
    - **`analog::pass`** takes `Held`. A held line is left out of the bridge's request, and the bridge is not run when no line is left. The held line gets an `i2c_line_held_low` finding, and a `bridge.fault_state` whose `source` is `scenario <name>` and whose cause is `scenario.line_held_low`. `FaultRecord.source` became a `String`; `simulate`'s value is still `"aethelgard"`.
    - **`solve_spec`**, split out of `solved()`, so a specification that is not a file can be solved with the same refusals.
    - **MCP** (F5). The README has a new "`campaign` and `replay`" section, with the exit-code rows and the MCP notes.
@@ -116,14 +117,15 @@ Each scenario boots for 100 ms of virtual time (F4).
   - §1.1 lists `{schema_version, name, base, overrides}`. §1.2 then needs `expect`, and §5.4 needs the finding kinds a scenario expects.
   - A failing scenario matches only when its finding kinds above `info` equal `expect_findings` exactly, so a fail for another reason, or for more reasons, is a mismatch. A passing scenario names none (`ExpectContradiction`).
   - `info` findings, such as U3's `device_unmodelled`, never count.
-- **F8 · `base` must resolve inside the current directory · the CLI `resolve_base` · low · design · decision-needed (ratify).**
+- **F8 · `base` must resolve inside the current directory · the CLI `read_base` · low · design · decision-needed (ratify).**
   - The reference scenarios must reach `examples/sentinel-01-minimal.json` without a copy (`INV-01`), so `..` cannot be refused outright.
   - The rule:
     - `base` is relative to the scenario file;
     - it must not be absolute;
     - once every symlink is resolved, it must be a regular file under the canonical current directory;
-    - it is then read through `validate`'s reader.
-  - So a campaign runs from the repository root, as CI's `-w /repo` does.
+    - it is opened once (`O_NOFOLLOW | O_NONBLOCK`), and the open descriptor's real path (`/proc/self/fd`), its type and its bytes are what is checked and read (adversarial A2);
+    - its bytes are parsed by `validate`'s parser, and their sha256 is the header's `base` artifact (A11).
+  - So a campaign runs from the repository root, as CI's `-w /repo` does. Run from `/`, "inside" admits anything the user can read, which is the user's own choice (A10).
   - A generated file is not a specification: a `.repl` is `InvalidJson` and a solved topology is `SchemaViolation` (tier 1).
 - **F9 · Picoseconds from the bridge's nanoseconds round up for a rise, down for a lower bound · the CLI `picoseconds` · low · design.**
   - `Record::check` requires `exceeds` to equal the integer comparison. Rounding up keeps a rise past a whole-nanosecond ceiling past it. Rounding down keeps a lower bound a lower bound.
@@ -158,3 +160,54 @@ Edges, each named:
 - **`Cargo.lock`:** regenerated by cargo, never by hand.
 
 Nothing of `AET-WO-2203`'s fence was touched. Its call sites of `parts::i2c_targets` in `main.rs` are unchanged, and the campaign calls `i2c_targets` the same way, in `campaign.rs::devices`. If 2203 merges first, that call moves with it.
+
+## Adversarial pass (full, §5)
+
+A fresh Opus subagent attacked `1e26985` in its own worktree. It used its own podman containers (`memory.max` read back 12884901888 on each) and its own caches under `~/.cache/aet-2300-adv/`, where its scripts, probes and archives remain. It ran the real bridge and Renode for 15 scenarios beyond the two references, and one mutant per guard this work order adds. The lead reproduced nothing by hand; each fix below has its own test, and the dispositions are the lead's.
+
+| | Finding (measured) | Severity | Disposition |
+|---|---|---|---|
+| A1 | **Replay race.** Swapping `trace.cbor` for a symlink to an identical copy outside the run directory, between the entry check and the read: 32 of 200 replays read the outside file and said `ok`. Swapping `manifest.cbor` for a FIFO: 48 of 300 replays hung. §5.3, reached. | should-fix | **Fixed.** The directory is opened once with `O_DIRECTORY \| O_NOFOLLOW`. It is listed through that descriptor, and each file is opened with `openat(…, O_NOFOLLOW \| O_NONBLOCK)` and checked and read on that descriptor. Tier 1: a symlinked run directory, a symlinked trace and a FIFO manifest are refused promptly. **Re-measured by the lead with the adversary's racers, on the fixed build:** 0 of 300 replays opened the outside file (each was `UnexpectedEntry`, or read the real file), and 0 of 300 hung on the FIFO. |
+| A2 | **Campaign base race.** Flipping `spec.json` between a file and a symlink outside the current directory, between the check and the read: 89 of 1,000 campaigns solved the outside specification. A FIFO hung 20 of 300. | should-fix | **Fixed** (F8): one open, `O_NOFOLLOW \| O_NONBLOCK`; the descriptor's own path, type and bytes are what is checked and read. **Re-measured with the same racer on the fixed build:** 0 of 1,000 campaigns solved the outside specification. 824 were `BaseOutsideRoot`; 176 read the inside file and stopped at its own `UnknownBus`. |
+| A3 | **A run copied under another run's name** replayed `ok`, as the other run, with no forgery. | should-fix | **Fixed:** `RunIdMismatch`. |
+| A4 | **Header disagreeing with records** (firmware hash zeroed, `run_id` zeroed, a 2,200 Ω override under the 47 kΩ hash), re-sealed: accepted. | should-fix | **Fixed:** `check_archived` ties the header's hashes to the records and `run_id` to the hashes. |
+| A5 | **Raw kind-0 and kind-4 events** inside a campaign run, re-sealed: accepted, and not shown by `replay`. | note | **Fixed:** `check_archived` refuses any event that is not a campaign record. |
+| A6 | Two traces differing only in timestamps share one state hash. | note | **By design** (0400a: timestamps are outside the chain). For the architect, with F2: §1.3's "excluding wall-clock fields" does not say virtual time is excluded. |
+| A7 | Reorder, drop, float, flip, one byte, unsealed: each refused (`HashMismatch`, `Truncated`, `NotDeterministicCbor`). Re-sealed: a flipped pass bit, every finding at `info`, `exceeds` 0, a dropped rise, a fault before its rise, two verdicts, and a held-low fault without its override are each refused. Accepted when re-sealed: swapping the two rise records, and a fully consistent rewrite to pass, which then reads `matched: false`. | held | The manifest proves integrity, not authenticity (0400 residual). After A3 to A5, a re-sealed forgery must also be internally consistent. |
+| A8 | Can the campaign itself misstate a result? 15 real scenarios: 1 Ω (stuck high, 3,000,000 µV), `u32::MAX` Ω and `u64::MAX` fF (lower bound 19,999,999 ps), 1 fF, SDA held, both held, SDA held at 47 kΩ, and expectation variants. Plus a brute force of the rounding for ceilings 1 to 100,000 ns. | held | Each run matched what `simulate` decided, each replayed, and no rounding counterexample was found. |
+| A9 | Scenario schema: unknown or duplicate keys at both levels, `null` in an unused key, positional arrays, floats, strings, `4.7e4`, negatives, 0, overflow, version `1.0`, a BOM, trailing bytes, names, ids, 33 overrides, contradictions. | held | Each refused with its kind. A 400-digit number is `InvalidJson` (exit 3). |
+| A10 | Base escapes, static: absolute paths, `..` to `/etc`, `/dev/zero`, `/proc/self/environ`, an outward symlink, a FIFO, a directory, NUL, empty, not a specification, the scenario itself. | held | Each refused. F8's note on running from `/`. A refusal from the base's parser now names the scenario. |
+| A11 | The archive recorded the overridden specification's hash (`fd9146dd…`), a re-serialization, and nowhere the base file's own hash (`acd60081…`, the one `solve` prints). | should-fix | **Fixed:** the header's `base` artifact. |
+| A12 | Expectations are kind sets: a fault on one line or on two, caused by 47 kΩ or by `u64::MAX` fF, all match `[analog_rise_exceeds_ceiling, i2c_timeout]`. An `info` kind can never be expected. | note | **Decision-needed** (F11 below). |
+| A13 | SIGKILL during the second scenario: the first run is committed and replays; no second directory is left; no `/tmp` entry is left. A re-run is `RunExists`, with no resume. | held | — |
+| A14 | MCP: wrong types are `-32602`. A flag-looking item stays one token (`--scenarios=--archive=/etc`). A real call returns `records` and the verdict. `campaign` over MCP can create an archive anywhere the server user can write, as `emit --out` already can. | note | — |
+| A15 | In a container whose PID 1 never reaps, each campaign or `simulate` leaves about two defunct helpers. They fill podman's default `pids.max` of 2048. | note | F12 below. The lead met the same thing: `mcp_tier1` failed with `EAGAIN` until the runner lifted the pids limit. |
+| A16 | `simulate --firmware` on the 2.2 kΩ and 47 kΩ specifications at 100 ms, this branch against `main` `ad3321c`: byte-identical JSON. | held | §2's fence holds. |
+| — | Reasoned, not measured: a held-low line's platform comment, written by `twin::platform::emit_faulted`, still says "measured past its rise-time ceiling". | note | Outside the fence: F13. |
+
+**Mutation, one mutant per guard this build adds** (the adversary's run): 64 mutants, 52 killed. Of the 12 survivors:
+- **Nine were test gaps, each now closed by a test:**
+  - P6: an expected kind that is not a name;
+  - B1: an absolute base inside the current directory;
+  - B3: a directory or FIFO base;
+  - B6: one matched and one unmatched scenario;
+  - B7: the rounding direction, now a unit test in `campaign.rs`;
+  - R19: a trailing field;
+  - R20: a flag of 2;
+  - the reader-side name and field rules.
+- **Three were equivalent or unreachable, and the reduction pass removed them:**
+  - K8, "a passing verdict beside a bus fault": the verdict counts already force it;
+  - K9 and K10, the `pass == expect_pass` and non-empty conjuncts. With `Record::check`'s rules, matching is exactly `failing_kinds == expect_findings`.
+
+  The lead's own mutant of that one comparison (`matched = true`) is killed by four tests.
+
+## More findings, from the adversarial pass
+
+- **F11 · Expectations name finding kinds, not counts or nets · `aethelgard-chaos` · low · design · decision-needed.** A regression that moves a fault from one line to two, or changes its cause, still matches (A12). Options: (a) accept, since kinds are what §5.4 asks; (b) add optional `expect_counts`. Recommendation: (a) for P2. Counts belong with `AET-WO-2301`'s dynamic faults, where one scenario can fault many times.
+- **F12 · Runs leave defunct helpers when PID 1 does not reap, and podman's default `pids.max` of 2048 is then reached · Furnace practice · low · measured.**
+  - The lead's runner hit it as `EAGAIN` across `mcp_tier1` until it ran with `--pids-limit -1` (read back as `pids.max` = `max`). It then ran 50 suites, 740 passed.
+  - GitHub's Docker sets no pids limit, which is why CI never met it.
+  - The helpers are the reaper's and guardian's own children, orphaned to PID 1 by design.
+  - Recommendation: Furnace's podman recipe passes `--pids-limit -1` (or an init), and the contract reads `pids.max` back beside `memory.max`.
+- **F13 · The faulted platform's header comment calls a held-low bus "measured past its rise-time ceiling" · `aethelgard-twin` `emit_faulted` · low · outside the fence.** The archive and the verdict say `scenario.line_held_low` correctly; only the `.repl` comment is wrong. Recommendation: `emit_faulted` takes the cause, in a later twin work order.
+- **F14 · `FirmwareChanged` has no test · the CLI · low · mutation gap.** The firmware is hashed once for the run id and the header, and the boot hashes its own copy. A file changed between the two is refused. No test can change the file mid-campaign from inside the sandboxed stub, so the check stands on review alone, as 2200's F16 did.
