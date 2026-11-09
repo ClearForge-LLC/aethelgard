@@ -98,7 +98,11 @@ impl Ngspice {
             return Err(format!("`{cmd}` returned {r}: {log:?}"));
         }
         let failed = log.iter().any(|l| l.ends_with("failed!"));
-        match ffi::vector(result)? {
+        let read = ffi::vector(result)?;
+        // A failed `meas` leaves no vector, and asking for one prints an
+        // error that would otherwise be read as the next command's.
+        host::take_log();
+        match read {
             Some(v) if v.len() == 1 && !failed && v[0].is_finite() => Ok(Some(v[0])),
             None if failed => Ok(None),
             other => Err(format!("`meas` left {other:?} with log {log:?}")),
@@ -122,7 +126,7 @@ impl CoSimulation for Ngspice {
     fn instantiate(&mut self, model: &[String]) -> Result<(), String> {
         host::clear_sources();
         self.inputs.clear();
-        if self.loaded {
+        if std::mem::take(&mut self.loaded) {
             self.run("remcirc")?;
             self.run("destroy all")?;
         }

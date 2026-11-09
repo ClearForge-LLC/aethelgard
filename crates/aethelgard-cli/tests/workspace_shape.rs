@@ -628,9 +628,14 @@ fn the_bridge_keeps_its_unsafe_in_ffi_alone() {
     assert_eq!(main.matches("allow(unsafe_code)").count(), 1);
 
     let mut with_unsafe = Vec::new();
-    let sources = files(&dir.join("src"))
+    // Integration tests are crates of their own, outside the root's deny.
+    let sources = ["src", "tests"]
         .into_iter()
-        .map(|f| format!("src/{f}"))
+        .flat_map(|d| {
+            files(&dir.join(d))
+                .into_iter()
+                .map(move |f| format!("{d}/{f}"))
+        })
         .chain(["build.rs".to_owned()]);
     for name in sources {
         let text = fs::read_to_string(dir.join(&name)).unwrap();

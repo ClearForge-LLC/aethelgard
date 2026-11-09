@@ -2,16 +2,21 @@
 //! time with libngspice in this process (`RUL-17`, `AET-WO-2200` §1.3). The
 //! CLI runs it as a sandboxed tool, beside its own executable.
 //!
-//! For each line of the request, in order, stdout gets one JSON line:
-//! - measured: `{"method":"interpolated","net":…,"ngspice":"44.2","rise_30_70_ns":…}`;
-//! - not measured: `{"error":<kind>,"message":…,"net":…}`.
+//! For each line of the request, in order, stdout gets one JSON line, one of
+//! three outcomes of the design (ruled F7 (b) on PR #70):
+//! - risen: `{"method":"interpolated","net":…,"ngspice":"44.2","rise_30_70_ns":…}`;
+//! - still rising when the window ended:
+//!   `{"complete":false,"method":"interpolated","net":…,"ngspice":"44.2","rise_30_70_ns_lower_bound":…}`;
+//! - never low when released: `{"method":"interpolated","net":…,"ngspice":"44.2","volts_at_release":…}`;
 //!
+//! or, when the bridge itself fails on it, `{"error":<kind>,"message":…,"net":…}`.
 //! A refused request or an unusable library gets one line, `{"error":…,"message":…}`.
-//! Exit: 0 every line measured; 1 a line not measured; 2 the request refused;
-//! 3 the library unusable.
+//! Exit: 0 every line has an outcome; 1 the bridge failed on a line; 2 the
+//! request refused; 3 the library unusable.
 //!
-//! The rise is the bridge's own interpolation of the points ngspice accepted,
-//! and it must agree with ngspice's `meas` to 0.01 ns; disagreement is an error.
+//! The outcome is the bridge's own interpolation of the points ngspice
+//! accepted, and ngspice's `meas` must agree: the same rise to 0.01 ns, or no
+//! rise at all. Disagreement is an error.
 
 #![deny(unsafe_code)]
 
@@ -30,6 +35,7 @@ use std::process::ExitCode;
 
 use serde_json::{Value, json};
 
+use measure::Outcome;
 use solver::{CoSimulation, NGSPICE, Ngspice};
 
 /// The largest disagreement allowed between the two methods, in ns.
@@ -51,12 +57,7 @@ fn main() -> ExitCode {
     let mut all = true;
     for line in &lines {
         let record = match measure_line(&mut spice, line) {
-            Ok(ns) => json!({
-                "net": line.net,
-                "rise_30_70_ns": ns,
-                "method": "interpolated",
-                "ngspice": NGSPICE,
-            }),
+            Ok(outcome) => record(&line.net, outcome),
             Err((kind, message)) => {
                 all = false;
                 json!({ "net": line.net, "error": kind, "message": message })
@@ -85,7 +86,29 @@ fn read(path: &std::ffi::OsStr) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-fn measure_line(spice: &mut Ngspice, line: &request::Line) -> Result<f64, (&'static str, String)> {
+/// The line the CLI reads for one outcome; every time is in ns.
+fn record(net: &str, outcome: Outcome) -> Value {
+    let mut v = json!({ "net": net, "method": "interpolated", "ngspice": NGSPICE });
+    let fields = v.as_object_mut().expect("an object");
+    match outcome {
+        Outcome::Complete { seconds, .. } => {
+            fields.insert("rise_30_70_ns".into(), json!(seconds * 1e9));
+        }
+        Outcome::Incomplete { lower_bound, .. } => {
+            fields.insert("complete".into(), json!(false));
+            fields.insert("rise_30_70_ns_lower_bound".into(), json!(lower_bound * 1e9));
+        }
+        Outcome::StuckHigh { volts } => {
+            fields.insert("volts_at_release".into(), json!(volts));
+        }
+    }
+    v
+}
+
+fn measure_line(
+    spice: &mut Ngspice,
+    line: &request::Line,
+) -> Result<Outcome, (&'static str, String)> {
     let solver = |e: String| ("solver_failed", e);
     spice.instantiate(&line.netlist).map_err(solver)?;
     spice
@@ -105,7 +128,6 @@ fn measure_line(spice: &mut Ngspice, line: &request::Line) -> Result<f64, (&'sta
     let v = spice.get_output(&line.probe).map_err(solver)?;
     let own = measure::rise(&time, &v, line.release, line.low, line.high)
         .map_err(|e| (e.kind(), e.message()))?;
-    let own_ns = own.seconds * 1e9;
     let meas = spice
         .meas(
             "aethelgard_rise",
@@ -115,12 +137,25 @@ fn measure_line(spice: &mut Ngspice, line: &request::Line) -> Result<f64, (&'sta
             &format!("{}p", line.release_ps),
         )
         .map_err(solver)?;
-    agreed(own_ns, meas)
+    agreed(own, meas)
 }
 
-/// The interpolated rise, when ngspice's `meas` (in seconds) found one
-/// within [`AGREEMENT_NS`] of it.
-fn agreed(own_ns: f64, meas: Option<f64>) -> Result<f64, (&'static str, String)> {
+/// The interpolated outcome, when ngspice's `meas` (in seconds) agrees: the
+/// same rise within [`AGREEMENT_NS`], or, for a line that did not rise, none.
+fn agreed(own: Outcome, meas: Option<f64>) -> Result<Outcome, (&'static str, String)> {
+    let Outcome::Complete { seconds, .. } = own else {
+        return match meas {
+            None => Ok(own),
+            Some(m) => Err((
+                "methods_disagree",
+                format!(
+                    "the interpolation found no rise ({own:?}) and ngspice's meas {} ns",
+                    m * 1e9
+                ),
+            )),
+        };
+    };
+    let own_ns = seconds * 1e9;
     let Some(meas_s) = meas else {
         return Err((
             "methods_disagree",
@@ -136,7 +171,7 @@ fn agreed(own_ns: f64, meas: Option<f64>) -> Result<f64, (&'static str, String)>
             format!("the interpolation gives {own_ns} ns and ngspice's meas {meas_ns} ns"),
         ));
     }
-    Ok(own_ns)
+    Ok(own)
 }
 
 /// `value / 10^scale` as a decimal with no trailing zeros: 990000 µV is `0.99`.
@@ -164,15 +199,59 @@ fn fatal(code: u8, kind: &str, message: &str) -> ExitCode {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn the_two_methods_must_agree_to_0_01_ns() {
-        use super::agreed;
-        assert_eq!(agreed(186.4014, Some(186.4014e-9)), Ok(186.4014));
-        assert!(agreed(186.40, Some(186.409e-9)).is_ok());
+    fn the_two_methods_must_agree_to_0_01_ns_or_both_find_no_rise() {
+        use super::{Outcome, agreed};
+        let rise = |ns: f64| Outcome::Complete {
+            seconds: ns * 1e-9,
+            t_low: 0.0,
+        };
+        assert_eq!(
+            agreed(rise(186.4014), Some(186.4014e-9)),
+            Ok(rise(186.4014))
+        );
+        assert!(agreed(rise(186.40), Some(186.409e-9)).is_ok());
         for meas in [None, Some(186.42e-9), Some(f64::NAN), Some(186.39e-9)] {
-            let err = agreed(186.40, meas).unwrap_err();
+            let err = agreed(rise(186.40), meas).unwrap_err();
             assert_eq!(err.0, "methods_disagree", "{meas:?}");
         }
-        assert!(agreed(f64::NAN, Some(186.40e-9)).is_err());
+        assert!(agreed(rise(f64::NAN), Some(186.40e-9)).is_err());
+        for none in [
+            Outcome::StuckHigh { volts: 1.65 },
+            Outcome::Incomplete {
+                lower_bound: 1e-6,
+                peak_volts: 2.0,
+            },
+        ] {
+            assert_eq!(agreed(none, None), Ok(none));
+            assert_eq!(
+                agreed(none, Some(186.4e-9)).unwrap_err().0,
+                "methods_disagree"
+            );
+        }
+    }
+
+    #[test]
+    fn each_outcome_is_its_documented_line() {
+        use super::{Outcome, record};
+        let text = |o| record("N", o).to_string();
+        assert_eq!(
+            text(Outcome::Complete {
+                seconds: 1.5e-9,
+                t_low: 0.0
+            }),
+            r#"{"method":"interpolated","net":"N","ngspice":"44.2","rise_30_70_ns":1.5}"#
+        );
+        assert_eq!(
+            text(Outcome::Incomplete {
+                lower_bound: 2e-6,
+                peak_volts: 2.0
+            }),
+            r#"{"complete":false,"method":"interpolated","net":"N","ngspice":"44.2","rise_30_70_ns_lower_bound":2000.0}"#
+        );
+        assert_eq!(
+            text(Outcome::StuckHigh { volts: 1.65 }),
+            r#"{"method":"interpolated","net":"N","ngspice":"44.2","volts_at_release":1.65}"#
+        );
     }
 
     #[test]

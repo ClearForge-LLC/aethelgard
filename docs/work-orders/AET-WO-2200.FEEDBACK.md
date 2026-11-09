@@ -1,6 +1,6 @@
 # AET-WO-2200 — FEEDBACK
 
-**Branch:** `wo/aet-2200-analog-bridge` · **Base:** `ec218d9` (`origin/main`, as the kickoff set it; `main` had not moved when the PR opened, so nothing is merged in) · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace (x86_64, kernel 7.0.0-38, 20 CPUs). One Sonnet subagent wrote the header signature test (`bridge/src/header.rs`); the lead re-ran it and fixed the mismatch it found in `ffi.rs` (F2). A fresh Opus subagent ran the full adversarial pass, in its own worktree on the build's commit. · **Cadence:** build-only, with one measurement stop (§7), which did not fire.
+**Branch:** `wo/aet-2200-analog-bridge` · **Base:** `ec218d9` (`origin/main`, as the kickoff set it; `main` had not moved when the PR opened, so nothing is merged in) · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace (x86_64, kernel 7.0.0-38, 20 CPUs). One Sonnet subagent wrote the header signature test (`bridge/src/header.rs`); the lead re-ran it and fixed the mismatch it found in `ffi.rs` (F2). A fresh Opus subagent ran the full adversarial pass, in its own worktree on the build's commit. · **Cadence:** build-only, with one measurement stop (§7), which did not fire. Reviewed on PR #70; the two changes the review asked for are built in the same PR ("Amendments after review", at the end).
 
 **Where everything ran.** The pinned tools image `ghcr.io/clearforge-llc/aethelgard-tools@sha256:2df68259…` (`container/IMAGE`) under rootless podman, capped with `podman run --memory 12g --memory-swap 12g` (2101 F17). The cap was read back from the container's own scope: `memory.max` = 12884901888 (12 GiB). `memory.swap.max` also read 12884901888, so under cgroup v2 `--memory-swap` equal to `--memory` did not hold swap at zero, as it does under v1 (F13): `libngspice0` 44.2 (`44.2+ds-1`, banner `** ngspice-44.2 shared library`), Renode 1.17.0, Rust 1.99.1. Tier 1 also ran on the Furnace host. Nothing was installed.
 
@@ -115,7 +115,7 @@ Nothing of `AET-WO-2202`'s fence was touched except shared test files (`twin/src
 - **F10 · `meas` stores its result rounded to 7 significant figures · ngspice 44.2 · low · measured.**
   - The vector `meas` leaves holds `1.864014e-07`, not the full double. The 0.01 ns agreement check therefore has 0.0001 ns of `meas` rounding at 186 ns and 0.001 ns at 3,982 ns.
   - Near the window's 20 µs limit the rounding approaches the tolerance, and a near-limit line could be refused as `methods_disagree`. That fails closed.
-- **F11 · `cargo install aethelgard-cli` gives a CLI with no bridge · releasing · info.** Outside the engine image, `simulate --firmware` is now `bridge_unavailable` (exit 4). `docs/releasing.md` says the bridge ships only in the engine image. The README's quickstart does not use `--firmware`.
+- **F11 · `cargo install aethelgard-cli` gives a CLI with no bridge · releasing · info.** Outside the engine image, `simulate --firmware` is now `BridgeUnavailable` (exit 4). `docs/releasing.md` says the bridge ships only in the engine image. The README's quickstart does not use `--firmware`.
 - **F12 · `cargo build --manifest-path bridge/Cargo.toml` without `CARGO_TARGET_DIR` builds into `bridge/target/` · repository hygiene · low.** That directory is not in `.gitignore`, which is outside the fence. `bridge/.cargo/config.toml` puts a build run from inside `bridge/` in the top-level `target/`, beside the CLI. CI and the engine image always set `CARGO_TARGET_DIR`. Recommendation: add `/bridge/target/` to `.gitignore` at the next docs pass.
 - **F13 · `podman run --memory-swap X` with `--memory X` leaves `memory.swap.max` at X under cgroup v2, not 0 · Furnace practice · low · measured.** Read back from `libpod-<id>.scope` (above). The memory cap holds. A container can still swap up to X more. Recommendation for Furnace's contract: read `memory.swap.max` as well, and pass `--memory-swap` as the memory value plus 0 explicitly if podman offers that, or accept swap.
 - **F14 · Hand-written topologies can still carry values a specification never yields · `validate` · low · backlog.** The CLI only ever solves a specification, so neither of these is reachable through it (adversarial A8):
@@ -173,3 +173,43 @@ One open item: `cast_mut()` passes `char*` that ngspice is not expected to write
   - its own layer is exactly `usr/local/bin/aethelgard` and `usr/local/bin/aethelgard-bridge`;
   - `engine-smoke.sh` passes, `bridge.measure` included.
 - **CI:** below, once the PR runs.
+
+## Amendments after review (PR #70)
+
+The architect's review ruled every finding. Two changes were asked for in this PR, and both are built.
+
+**F7, option (b): what the design does to a line is a fault, never a stop.**
+- **The bridge** reports one of three outcomes per line, each with exit 0:
+  - a rise, `rise_30_70_ns`;
+  - a rise still unfinished when the window ended, `complete: false` with `rise_30_70_ns_lower_bound`;
+  - a line never low, `volts_at_release`.
+- **The bound** is the window left after the 30 % crossing, or after the release if the line never got there. A charging line slows as it rises, so its 30–70 % rise takes longer than its 0–30 % rise did, and an unfinished rise is at least 4/7 of the 20 µs after the release: 11.4 µs, past any I2C ceiling.
+- **The cross-check** still holds: ngspice's `meas` must agree, the same rise to 0.01 ns or no rise at all.
+- **Exit 1** now means only that the bridge failed on a line (`methods_disagree`, `solver_failed`, `early_return`, unreadable vectors).
+- **The CLI** records an unfinished rise as `analog.rise_time_measured` with `complete: false` and the bound, fails with `analog_rise_exceeds_ceiling` stating it as a lower bound, and faults the bus. A line never low is an `analog.line_stuck_high` record, fails with `analog_line_stuck_high`, and faults the bus.
+- **`faults[].from`** lists each distinct cause on the bus. Exit 5 is only for a bridge that fails.
+- **A bridge bug the change exposed, and fixed:** asking ngspice for a vector a failed `meas` never made prints `Error: vector … not found!`. That line was then read as the next command's error, so the line after an unfinished rise failed. `Ngspice::meas` now drains the log after its read.
+- **The A6 edges, measured with the real bridge in the image** (`bridge/tests/edges.rs`, tools job; each line alone equals it among the others):
+
+| Line | Outcome |
+|---|---|
+| 2.2 kΩ, 100 pF | rise 186.40139798114484 ns |
+| 47 kΩ, 400 pF | unfinished, `rise_30_70_ns_lower_bound` 13,298.0277 ns |
+| 10 Ω, 100 pF | stuck high, 1.65 V at release (the 10 Ω pull-up against the switch's 10 Ω) |
+| 47 kΩ, 350 pF (checked by hand) | rise 13,938.05 ns, the adversary's figure |
+
+- **The same two edges at tier 1:** `boot_tier1.rs` `a_rise_unfinished_in_the_window_or_a_line_stuck_high_is_a_fault` runs `simulate --firmware` on specifications at 47 kΩ / 400 pF and at 10 Ω, with a stub bridge answering what the real one does. Each is a `fail` with exit 1, with the records, findings and fault above, and a booted platform that carries the fault.
+- **One fact the test met:** `serde_json` without its `float_roundtrip` feature reads a float to within one ulp. So the CLI records 13298.027700387644 where the bridge wrote …645. Both are deterministic, so `INV-04` is unaffected.
+
+**F8:** the refusal is `BridgeUnavailable`, in the CLI, its README and the tier-1 test.
+
+**The other rulings, recorded:**
+- F1 and F6 ratified as built.
+- F5: this PR merges first, and `AET-WO-2202` wires its device declarations through `emit_faulted`.
+- F9 and F11 accepted.
+- F12: `.gitignore`, in the architect's next docs pass.
+- F13 goes to Scotty.
+- F14, F15 and F17 go to a hardening work order.
+- F16 accepted.
+
+**Also in this push:** the unsafe scan now covers `bridge/tests/`, since integration tests are crates of their own, outside the root's deny.

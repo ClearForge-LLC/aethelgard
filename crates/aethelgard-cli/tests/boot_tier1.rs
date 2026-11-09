@@ -636,6 +636,15 @@ fn platform_checking_toolbox(faulted: bool) -> Dir {
 }
 
 fn pre_pass(bridge: Option<&'static str>, faulted: bool) -> (Option<i32>, Value) {
+    pre_pass_on(bridge, faulted, &spec(), &platform())
+}
+
+fn pre_pass_on(
+    bridge: Option<&'static str>,
+    faulted: bool,
+    spec: &Path,
+    platform: &Path,
+) -> (Option<i32>, Value) {
     let tb = platform_checking_toolbox(faulted);
     let input = Dir::new("in");
     let fw = input.write("fw.elf", &elf());
@@ -645,11 +654,11 @@ fn pre_pass(bridge: Option<&'static str>, faulted: bool) -> (Option<i32>, Value)
         &[
             OsStr::new("simulate"),
             OsStr::new("--platform"),
-            platform().as_os_str(),
+            platform.as_os_str(),
             OsStr::new("--firmware"),
             fw.as_os_str(),
             OsStr::new("--spec"),
-            spec().as_os_str(),
+            spec.as_os_str(),
             OsStr::new("--for"),
             OsStr::new("10ms"),
         ],
@@ -699,7 +708,10 @@ printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_3
     assert_eq!(faults[0]["kind"], "bridge.fault_state");
     assert_eq!(faults[0]["bus"], "SENSORS");
     assert_eq!(faults[0]["nets"], serde_json::json!(["I2C_SCL"]));
-    assert_eq!(faults[0]["from"], "analog.rise_time_measured > ceiling_ns");
+    assert_eq!(
+        faults[0]["from"],
+        serde_json::json!(["analog.rise_time_measured > ceiling_ns"])
+    );
     let sees = faults[0]["firmware_sees"].as_str().unwrap();
     assert!(sees.contains("model's rendering") && sees.contains("not a measured waveform"));
     // The firmware's observation is its own record, still judged.
@@ -707,10 +719,10 @@ printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_3
 }
 
 #[test]
-fn a_missing_bridge_is_bridge_unavailable_before_renode() {
+fn a_missing_bridge_is_refused_before_renode() {
     let (code, v) = pre_pass(None, false);
     assert_eq!(code, Some(4), "{v}");
-    assert_eq!(v["error"]["kind"], "bridge_unavailable");
+    assert_eq!(v["error"]["kind"], "BridgeUnavailable");
     assert_eq!(v["error"]["id"], "aethelgard-bridge");
 }
 
@@ -718,7 +730,7 @@ fn a_missing_bridge_is_bridge_unavailable_before_renode() {
 fn a_bridge_that_fails_or_answers_wrong_stops_the_call() {
     const STUBS: [&str; 6] = [
         // Fails, with a correct line first.
-        "#!/bin/sh\nprintf '%s\\n' '{\"method\":\"interpolated\",\"net\":\"I2C_SCL\",\"ngspice\":\"44.2\",\"rise_30_70_ns\":186.4}' '{\"net\":\"I2C_SDA\",\"error\":\"rise_incomplete\",\"message\":\"m\"}'\nexit 1\n",
+        "#!/bin/sh\nprintf '%s\\n' '{\"method\":\"interpolated\",\"net\":\"I2C_SCL\",\"ngspice\":\"44.2\",\"rise_30_70_ns\":186.4}' '{\"net\":\"I2C_SDA\",\"error\":\"methods_disagree\",\"message\":\"m\"}'\nexit 1\n",
         // One line short, exit 0.
         "#!/bin/sh\nprintf '%s\\n' '{\"method\":\"interpolated\",\"net\":\"I2C_SCL\",\"ngspice\":\"44.2\",\"rise_30_70_ns\":186.4}'\n",
         // Nothing at all.
@@ -750,4 +762,101 @@ printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_3
 "#;
     let (code, v) = pre_pass(Some(WRITER), false);
     assert_eq!(code, Some(0), "{v}");
+}
+
+/// The reference specification with each (from, to) replaced everywhere, and
+/// the platform `aethelgard-twin` emits for it, in `dir`.
+fn variant(dir: &Dir, edits: &[(&str, &str)]) -> (PathBuf, PathBuf) {
+    let mut text = fs::read_to_string(spec()).unwrap();
+    for (from, to) in edits {
+        assert!(text.contains(from), "{from}");
+        text = text.replace(from, to);
+    }
+    let spec = dir.write("spec.json", text.as_bytes());
+    let out = run_cli(
+        &cli(None),
+        &dir.0,
+        &[OsStr::new("solve"), OsStr::new("--file"), spec.as_os_str()],
+    );
+    let topology: aethelgard_ir::SolvedTopology = serde_json::from_value(report(&out)).unwrap();
+    let repl = aethelgard_twin::platform::emit(&topology).unwrap();
+    (spec, dir.write("platform.repl", repl.as_bytes()))
+}
+
+/// Ruled F7 (b) on PR #70, on the adversary's A6 edges: a bus too slow to
+/// finish rising in the window, and a pull-up the driver cannot overcome,
+/// are faults of the design with a `fail` verdict, never exit 5. The stub
+/// answers what the real bridge answers for each in the tools image
+/// (`bridge/tests/edges.rs`).
+#[test]
+fn a_rise_unfinished_in_the_window_or_a_line_stuck_high_is_a_fault() {
+    const SLOW: &str = r#"#!/bin/sh
+for n in I2C_SCL I2C_SDA; do
+  printf '{"complete":false,"method":"interpolated","net":"%s","ngspice":"44.2","rise_30_70_ns_lower_bound":13298.027700387645}\n' $n
+done
+"#;
+    const STUCK: &str = r#"#!/bin/sh
+for n in I2C_SCL I2C_SDA; do
+  printf '{"method":"interpolated","net":"%s","ngspice":"44.2","volts_at_release":1.6500000000000004}\n' $n
+done
+"#;
+    let dir = Dir::new("a6");
+    // 47 kΩ and 400 pF.
+    let (spec, platform) = variant(
+        &dir,
+        &[
+            ("\"pull_up_ohms\": 2200", "\"pull_up_ohms\": 47000"),
+            (
+                "\"max_capacitance_femtofarads\": 100000",
+                "\"max_capacitance_femtofarads\": 400000",
+            ),
+        ],
+    );
+    let (code, v) = pre_pass_on(Some(SLOW), true, &spec, &platform);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(v["verdict"], "fail");
+    assert_eq!(v["tool"]["exit_code"], 0, "{v}");
+    assert_eq!(kinds(&v), ["analog_rise_exceeds_ceiling"; 2]);
+    for f in v["findings"].as_array().unwrap() {
+        let m = f["message"].as_str().unwrap();
+        // serde_json reads a float to within one ulp, so the last digit may move.
+        assert!(m.contains("more than 13298.02770038764"), "{m}");
+        assert!(
+            m.contains("ns (a lower bound), past its 300 ns ceiling"),
+            "{m}"
+        );
+    }
+    for line in v["analog"].as_array().unwrap() {
+        assert_eq!(line["kind"], "analog.rise_time_measured");
+        assert_eq!(line["complete"], false);
+        assert_eq!(line["exceeds"], true);
+        let bound = line["rise_30_70_ns_lower_bound"].as_f64().unwrap();
+        assert!((bound - 13298.0277).abs() < 1e-3, "{line}");
+        assert!(line.get("rise_30_70_ns").is_none(), "{line}");
+    }
+    assert_eq!(
+        v["faults"][0]["from"],
+        serde_json::json!(["analog.rise_time_measured > ceiling_ns"])
+    );
+
+    // A 10 Ω pull-up against the driver's 10 Ω.
+    let (spec, platform) = variant(&dir, &[("\"pull_up_ohms\": 2200", "\"pull_up_ohms\": 10")]);
+    let (code, v) = pre_pass_on(Some(STUCK), true, &spec, &platform);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(v["verdict"], "fail");
+    assert_eq!(kinds(&v), ["analog_line_stuck_high"; 2]);
+    for line in v["analog"].as_array().unwrap() {
+        assert_eq!(line["kind"], "analog.line_stuck_high");
+        assert_eq!(line["complete"], false);
+        let volts = line["volts_at_release"].as_f64().unwrap();
+        assert!((volts - 1.65).abs() < 1e-9, "{line}");
+    }
+    assert_eq!(
+        v["faults"][0]["from"],
+        serde_json::json!(["analog.line_stuck_high"])
+    );
+    assert_eq!(
+        v["faults"][0]["nets"],
+        serde_json::json!(["I2C_SCL", "I2C_SDA"])
+    );
 }
