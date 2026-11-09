@@ -26,6 +26,22 @@ use crate::cmsis::{self, RegisterError, RegisterFacts};
 /// What the firmware writes to the boot word at its fixed point.
 pub const BOOT_MAGIC: u32 = 0x2100_B007;
 
+// belt-and-suspenders: the judge holds its own copy of the record layout and
+// the statuses (`aethelgard_twin::boot`), so what a record must hold never
+// comes from the generator (`INV-07`); tests/board.rs checks that they agree.
+/// The first record's place after the boot word, in bytes.
+pub const RECORD_OFFSET: u32 = 4;
+/// One record: the status word, then the value word.
+pub const RECORD_BYTES: u32 = 8;
+/// What a failed or impossible transfer leaves in a record, as the judge's fill.
+pub const RECORD_UNSET: u32 = 0xFFFF_FFFF;
+/// The statuses, by the wait that expired.
+pub const STATUS_OK: u32 = 0x2202_0000;
+pub const STATUS_TXIS: u32 = 0x2202_0001;
+pub const STATUS_TC: u32 = 0x2202_0002;
+pub const STATUS_RXNE: u32 = 0x2202_0003;
+pub const STATUS_STOP: u32 = 0x2202_0004;
+
 /// The memory the linker script describes, from the header.
 struct Memory {
     flash_origin: u32,
@@ -103,14 +119,19 @@ pub(super) fn emit(
     plan: &Plan,
     f: &RegisterFacts,
     speeds: &Speeds,
+    devices: &[aethelgard_ir::parts::I2cTarget],
 ) -> Result<BTreeMap<String, String>, BoardError> {
     let mem = memory(f)?;
+    let reads = reads(plan, devices)?;
     let mut files = BTreeMap::new();
     files.insert("firmware/Cargo.toml".to_owned(), manifest(plan));
     files.insert("firmware/Cargo.lock".to_owned(), lock(plan));
     files.insert("firmware/.cargo/config.toml".to_owned(), config(plan));
     files.insert("firmware/link.x".to_owned(), linker(plan, &mem));
-    files.insert("firmware/src/main.rs".to_owned(), main_rs(plan, speeds));
+    files.insert(
+        "firmware/src/main.rs".to_owned(),
+        main_rs(plan, speeds, &reads),
+    );
     Ok(files)
 }
 
@@ -235,7 +256,46 @@ fn highest(speeds: &Speeds, peripheral: &str) -> &'static str {
     I2C_MODES[*admitted.last().expect("a ceiling admits a mode")].0
 }
 
-fn main_rs(plan: &Plan, speeds: &Speeds) -> String {
+/// One identity read the firmware makes.
+struct Read {
+    /// The I2C peripheral's field, `i2c1`.
+    bus: String,
+    address: u8,
+    register: u8,
+    width: u8,
+}
+
+/// The identity reads, in the order the devices are given: one per device
+/// whose part has an identity. The caller passes the devices the twin can
+/// answer for (`aethelgard_twin::model::answerable`); this crate cannot
+/// depend on the twin. A device on a
+/// peripheral the board does not have as an I2C bus is refused.
+fn reads(
+    plan: &Plan,
+    devices: &[aethelgard_ir::parts::I2cTarget],
+) -> Result<Vec<Read>, BoardError> {
+    let mut out = Vec::new();
+    for d in devices {
+        if plan.peripherals.get(&d.peripheral).map(|p| p.kind) != Some(Kind::I2c) {
+            return Err(BoardError::DeviceNotOnABus {
+                reference: d.reference.clone(),
+                peripheral: d.peripheral.clone(),
+            });
+        }
+        let Some(id) = aethelgard_ir::parts::identity(&d.part) else {
+            continue;
+        };
+        out.push(Read {
+            bus: d.peripheral.to_ascii_lowercase(),
+            address: d.address,
+            register: id.register,
+            width: id.width,
+        });
+    }
+    Ok(out)
+}
+
+fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     let krate = ident(&plan.crate_name);
     let mut s = String::from(
         "//! The reference firmware for one solved topology: the runtime, then `main`,\n//! which puts every solved pin in its role, starts every solved peripheral\n//! through the board crate's API and writes the boot word.\n//!\n",
@@ -259,7 +319,61 @@ fn main_rs(plan: &Plan, speeds: &Speeds) -> String {
             imports.push(format!("{}_speed", name.to_ascii_lowercase()));
         }
     }
+    if !reads.is_empty() {
+        imports.push("I2cError".to_owned());
+    }
     imports.push("mmio::Mmio".to_owned());
+    let (first, stride) = (RECORD_OFFSET / 4, RECORD_BYTES / 4);
+    let n_words = first as usize + stride as usize * reads.len();
+    let boot_static = if reads.is_empty() {
+        "static mut AETHELGARD_BOOT: u32 = 0;".to_owned()
+    } else {
+        format!(
+            "// The boot word, then one record per identity read: the status, then the\n\
+             // value (`aethelgard_twin::boot`, `RECORD_OFFSET`). One array, so the first\n\
+             // word is the boot word whatever the linker orders.\n\
+             static mut AETHELGARD_BOOT: [u32; {n_words}] = [0; {n_words}];"
+        )
+    };
+    let records = if reads.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "/// What a record holds when the read finished: the judge's constants,\n\
+             /// `aethelgard_twin::boot::STATUS_*`.\n\
+             const STATUS_OK: u32 = {ok:#010x};\n\
+             const STATUS_TXIS: u32 = {txis:#010x};\n\
+             const STATUS_TC: u32 = {tc:#010x};\n\
+             const STATUS_RXNE: u32 = {rxne:#010x};\n\
+             const STATUS_STOP: u32 = {stop:#010x};\n\
+             /// What a transfer that could not run leaves, the judge's own fill.\n\
+             const RECORD_UNSET: u32 = {unset:#010x};\n\
+             \n\
+             /// Record `index`: the status word, then the value word, after the boot word.\n\
+             fn record(index: usize, status: u32, value: u32) {{\n    \
+             let base = (&raw mut AETHELGARD_BOOT).cast::<u32>();\n    \
+             // SAFETY: two words of the array above, which `link.x` placed in RAM; the\n    \
+             // only code that writes them.\n    \
+             unsafe {{\n        \
+             base.add({first} + {stride} * index).write_volatile(status);\n        \
+             base.add({v} + {stride} * index).write_volatile(value);\n    \
+             }}\n\
+             }}\n\
+             \n",
+            ok = STATUS_OK,
+            txis = STATUS_TXIS,
+            tc = STATUS_TC,
+            rxne = STATUS_RXNE,
+            stop = STATUS_STOP,
+            unset = RECORD_UNSET,
+            v = first + 1,
+        )
+    };
+    let boot_ptr = if reads.is_empty() {
+        "(&raw mut AETHELGARD_BOOT)"
+    } else {
+        "(&raw mut AETHELGARD_BOOT).cast::<u32>()"
+    };
     let _ = write!(
         s,
         "#![no_std]\n\
@@ -277,8 +391,9 @@ fn main_rs(plan: &Plan, speeds: &Speeds) -> String {
          /// The observable word: the first word of RAM (`link.x`, `.aethelgard_boot`).\n\
          #[unsafe(link_section = \".aethelgard_boot\")]\n\
          #[unsafe(no_mangle)]\n\
-         static mut AETHELGARD_BOOT: u32 = 0;\n\
+         {boot_static}\n\
          \n\
+         {records}\
          unsafe extern \"C\" {{\n    \
          fn Reset() -> !;\n\
          }}\n\
@@ -345,6 +460,8 @@ fn main_rs(plan: &Plan, speeds: &Speeds) -> String {
          mut rcc,\n",
         imports = imports.join(", "),
         magic = BOOT_MAGIC,
+        boot_static = boot_static,
+        records = records,
     );
     for port in &plan.ports {
         let _ = writeln!(s, "        {},", port_field(*port));
@@ -382,9 +499,14 @@ fn main_rs(plan: &Plan, speeds: &Speeds) -> String {
         let args = args.join(", ");
         match p.kind {
             Kind::I2c => {
+                let bind = if reads.iter().any(|r| r.bus == f) {
+                    format!("mut {f}")
+                } else {
+                    format!("_{f}")
+                };
                 let _ = writeln!(
                     s,
-                    "    let _{f} = {f}.init::<{f}_speed::{}, _>(&mut r, {args});",
+                    "    let {bind} = {f}.init::<{f}_speed::{}, _>(&mut r, {args});",
                     highest(speeds, name)
                 );
             }
@@ -393,21 +515,44 @@ fn main_rs(plan: &Plan, speeds: &Speeds) -> String {
             }
         }
     }
-    s.push_str(
+    for (k, read) in reads.iter().enumerate() {
+        let _ = write!(
+            s,
+            "    let mut buf{k} = [0u8; {w}];\n    \
+             let (status, value) = match {bus}.transfer(&mut r, {a:#04x}, &[{reg:#04x}], &mut buf{k}) {{\n        \
+             Ok(_) => (\n            \
+             STATUS_OK,\n            \
+             buf{k}.iter().fold(0u32, |v, &b| (v << 8) | u32::from(b)),\n        \
+             ),\n        \
+             Err(I2cError::Txis) => (STATUS_TXIS, 0),\n        \
+             Err(I2cError::Tc) => (STATUS_TC, 0),\n        \
+             Err(I2cError::Rxne) => (STATUS_RXNE, 0),\n        \
+             Err(I2cError::Stop) => (STATUS_STOP, 0),\n        \
+             Err(I2cError::Length) => (RECORD_UNSET, RECORD_UNSET),\n    \
+             }};\n    \
+             record({k}, status, value);\n",
+            w = read.width,
+            bus = read.bus,
+            a = read.address,
+            reg = read.register,
+        );
+    }
+    let _ = write!(
+        s,
         "    // SAFETY: a word only this line writes, in RAM the linker script placed.\n    \
-         unsafe { (&raw mut AETHELGARD_BOOT).write_volatile(BOOT_MAGIC) };\n    \
+         unsafe {{ {boot_ptr}.write_volatile(BOOT_MAGIC) }};\n    \
          // No sleep: the judge requires instructions executed to equal MIPS x time.\n    \
-         loop {\n        \
+         loop {{\n        \
          core::hint::spin_loop();\n    \
-         }\n\
-         }\n\
+         }}\n\
+         }}\n\
          \n\
          #[panic_handler]\n\
-         fn panic(_: &PanicInfo) -> ! {\n    \
-         loop {\n        \
+         fn panic(_: &PanicInfo) -> ! {{\n    \
+         loop {{\n        \
          core::hint::spin_loop();\n    \
-         }\n\
-         }\n",
+         }}\n\
+         }}\n"
     );
     s
 }

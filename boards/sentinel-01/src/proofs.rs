@@ -466,3 +466,110 @@ fn every_valid_sequence() {
     check_final(&before, &img, i2c1_timingr);
     kani::cover!(true, "the end of a complete schedule is reachable");
 }
+
+/// I2c1's registers as a transfer may touch them, in order. `stage` is 0 before
+/// the first START, 1 in the write phase, 2 in the read phase, 3 after the
+/// flags are cleared.
+struct I2c1Spy {
+    stage: u8,
+    isr_reads: u32,
+    bytes_written: usize,
+}
+
+impl sealed::Sealed for I2c1Spy {}
+
+impl Registers for I2c1Spy {
+    fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {
+        kani::assert(block == Block::I2c1, "a I2c1 transfer read another block");
+        if offset == 0x18 {
+            kani::assert(self.stage >= 1, "ISR polled before the START");
+            self.isr_reads += 1;
+            kani::any()
+        } else if offset == 0x24 {
+            kani::assert(self.stage == 2, "RXDR read outside the read phase");
+            kani::any()
+        } else {
+            kani::assert(false, "a I2c1 transfer read a register it does not own");
+            0
+        }
+    }
+    fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {
+        kani::assert(block == Block::I2c1, "a I2c1 transfer wrote another block");
+        if offset == 0x04 {
+            kani::assert(value & 0x00002000 != 0, "CR2 written without START");
+            if value & 0x00000400 != 0 {
+                kani::assert(self.stage <= 1, "the read phase did not follow the write phase");
+                kani::assert(value & 0x02000000 != 0, "a read ends without AUTOEND");
+                kani::assert(
+                    self.stage == 0 || self.isr_reads as usize > self.bytes_written,
+                    "the read phase began without waiting for TC",
+                );
+                self.stage = 2;
+            } else {
+                kani::assert(self.stage == 0, "the write phase is not first");
+                self.stage = 1;
+            }
+        } else if offset == 0x28 {
+            kani::assert(self.stage == 1, "TXDR written outside the write phase");
+            self.bytes_written += 1;
+        } else if offset == 0x1c {
+            kani::assert(self.stage >= 1, "flags cleared before the START");
+            kani::assert(value == 0x00000020 | 0x00000010, "ICR cleared more than STOPCF and NACKCF");
+            self.stage = 3;
+        } else {
+            kani::assert(false, "a I2c1 transfer wrote a register it does not own");
+        }
+    }
+}
+
+/// A transfer of any address, up to two bytes each way and any answers, with
+/// each wait bounded at two reads of `ISR`: touches only I2c1, in order, within
+/// the bound, and ends in the result its phases imply.
+#[kani::proof]
+#[kani::unwind(6)]
+fn i2c1_transfer_is_bounded_and_ordered() {
+    let mut img = Image {
+        rcc: kani::any(),
+        gpioa: kani::any(),
+        gpiob: kani::any(),
+        i2c1: kani::any(),
+        spi1: kani::any(),
+    };
+    let board = Board::take().unwrap();
+    let mut rcc = board.rcc;
+    let gpiob = rcc.enable_gpiob(&mut img, board.gpiob).split();
+    let pb6 = gpiob.pb6.into_i2c1_scl(&mut img);
+    let pb7 = gpiob.pb7.into_i2c1_sda(&mut img);
+    let mut bus = rcc
+        .enable_i2c1(&mut img, board.i2c1)
+        .init::<i2c1_speed::Standard100k, _>(&mut img, pb6, pb7);
+    let mut spy = I2c1Spy { stage: 0, isr_reads: 0, bytes_written: 0 };
+    let (wl, rl): (usize, usize) = (kani::any(), kani::any());
+    kani::assume(wl <= 2 && rl <= 2);
+    let out: [u8; 2] = kani::any();
+    let mut back = [0u8; 2];
+    let spins = 2;
+    let result = bus.transfer_within(&mut spy, kani::any(), &out[..wl], &mut back[..rl], spins);
+    let waits = wl + usize::from(wl > 0 && rl > 0) + rl + usize::from(wl + rl > 0);
+    kani::assert(
+        spy.isr_reads as usize <= waits * spins as usize,
+        "a wait read ISR more often than its bound",
+    );
+    kani::assert((wl + rl == 0) == (spy.stage == 0), "a transfer of nothing touched a register, or one of something did not");
+    if wl + rl > 0 {
+        kani::assert(spy.stage == 3, "a transfer did not end by clearing its flags");
+    }
+    match result {
+        Ok(n) => {
+            kani::assert(n == rl && spy.bytes_written == wl, "Ok without every byte moved");
+            kani::cover!(wl > 0 && rl > 0, "I2c1 wrote, then read");
+            kani::cover!(wl > 0 && rl == 0, "I2c1 wrote only");
+            kani::cover!(wl == 0 && rl > 0, "I2c1 read only");
+        }
+        Err(I2cError::Txis) => kani::cover!(true, "I2c1 timed out waiting for TXIS"),
+        Err(I2cError::Tc) => kani::cover!(true, "I2c1 timed out waiting for TC"),
+        Err(I2cError::Rxne) => kani::cover!(true, "I2c1 timed out waiting for RXNE"),
+        Err(I2cError::Stop) => kani::cover!(true, "I2c1 timed out waiting for STOPF"),
+        Err(I2cError::Length) => kani::assert(false, "a transfer of at most two bytes was refused as too long"),
+    }
+}

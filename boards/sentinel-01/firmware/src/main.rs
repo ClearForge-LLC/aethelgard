@@ -14,7 +14,7 @@
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 
-use sentinel_01_board::{Board, i2c1_speed, mmio::Mmio};
+use sentinel_01_board::{Board, i2c1_speed, I2cError, mmio::Mmio};
 
 /// What the fixed point writes: `aethelgard_twin::boot::BOOT_MAGIC`, the
 /// judge's constant. Neither RAM's reset value nor any register's.
@@ -23,7 +23,31 @@ const BOOT_MAGIC: u32 = 0x2100b007;
 /// The observable word: the first word of RAM (`link.x`, `.aethelgard_boot`).
 #[unsafe(link_section = ".aethelgard_boot")]
 #[unsafe(no_mangle)]
-static mut AETHELGARD_BOOT: u32 = 0;
+// The boot word, then one record per identity read: the status, then the
+// value (`aethelgard_twin::boot`, `RECORD_OFFSET`). One array, so the first
+// word is the boot word whatever the linker orders.
+static mut AETHELGARD_BOOT: [u32; 3] = [0; 3];
+
+/// What a record holds when the read finished: the judge's constants,
+/// `aethelgard_twin::boot::STATUS_*`.
+const STATUS_OK: u32 = 0x22020000;
+const STATUS_TXIS: u32 = 0x22020001;
+const STATUS_TC: u32 = 0x22020002;
+const STATUS_RXNE: u32 = 0x22020003;
+const STATUS_STOP: u32 = 0x22020004;
+/// What a transfer that could not run leaves, the judge's own fill.
+const RECORD_UNSET: u32 = 0xffffffff;
+
+/// Record `index`: the status word, then the value word, after the boot word.
+fn record(index: usize, status: u32, value: u32) {
+    let base = (&raw mut AETHELGARD_BOOT).cast::<u32>();
+    // SAFETY: two words of the array above, which `link.x` placed in RAM; the
+    // only code that writes them.
+    unsafe {
+        base.add(1 + 2 * index).write_volatile(status);
+        base.add(2 + 2 * index).write_volatile(value);
+    }
+}
 
 unsafe extern "C" {
     fn Reset() -> !;
@@ -109,10 +133,23 @@ extern "C" fn main() -> ! {
     let pa7 = gpioa.pa7.into_spi1_mosi(&mut r);
     let pb6 = gpiob.pb6.into_i2c1_scl(&mut r);
     let pb7 = gpiob.pb7.into_i2c1_sda(&mut r);
-    let _i2c1 = i2c1.init::<i2c1_speed::Fast400k, _>(&mut r, pb6, pb7);
+    let mut i2c1 = i2c1.init::<i2c1_speed::Fast400k, _>(&mut r, pb6, pb7);
     let _spi1 = spi1.init(&mut r, pa5, pa7, pa6);
+    let mut buf0 = [0u8; 1];
+    let (status, value) = match i2c1.transfer(&mut r, 0x76, &[0xd0], &mut buf0) {
+        Ok(_) => (
+            STATUS_OK,
+            buf0.iter().fold(0u32, |v, &b| (v << 8) | u32::from(b)),
+        ),
+        Err(I2cError::Txis) => (STATUS_TXIS, 0),
+        Err(I2cError::Tc) => (STATUS_TC, 0),
+        Err(I2cError::Rxne) => (STATUS_RXNE, 0),
+        Err(I2cError::Stop) => (STATUS_STOP, 0),
+        Err(I2cError::Length) => (RECORD_UNSET, RECORD_UNSET),
+    };
+    record(0, status, value);
     // SAFETY: a word only this line writes, in RAM the linker script placed.
-    unsafe { (&raw mut AETHELGARD_BOOT).write_volatile(BOOT_MAGIC) };
+    unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_MAGIC) };
     // No sleep: the judge requires instructions executed to equal MIPS x time.
     loop {
         core::hint::spin_loop();

@@ -49,6 +49,13 @@ pub enum BoardError {
     },
     #[error("peripheral `{peripheral}` is not one this generator emits (I2Cn, SPIn)")]
     UnsupportedPeripheral { peripheral: String },
+    #[error(
+        "device `{reference}` is on `{peripheral}`, which is not an I2C peripheral of this board"
+    )]
+    DeviceNotOnABus {
+        reference: String,
+        peripheral: String,
+    },
     #[error("signal `{signal}` is not a role of `{peripheral}`")]
     UnsupportedSignal { peripheral: String, signal: String },
     #[error("`{peripheral}` has its `{role}` signal {count} times; it needs exactly one")]
@@ -81,6 +88,7 @@ impl BoardError {
             Self::UnknownPin { .. } => "UnknownPin",
             Self::AssignmentMismatch { .. } => "AssignmentMismatch",
             Self::UnsupportedPeripheral { .. } => "UnsupportedPeripheral",
+            Self::DeviceNotOnABus { .. } => "DeviceNotOnABus",
             Self::UnsupportedSignal { .. } => "UnsupportedSignal",
             Self::IncompletePeripheral { .. } => "IncompletePeripheral",
             Self::CeilingMismatch { .. } => "CeilingMismatch",
@@ -108,6 +116,19 @@ pub fn generate(
     crate_name: &str,
     solved: &SolvedTopology,
     table: &PinTable,
+) -> Result<BTreeMap<String, String>, BoardError> {
+    generate_with(crate_name, solved, table, &[])
+}
+
+/// [`generate`], and the reference firmware also reads the identity register
+/// of each of `devices` whose part has an identity and a model the twin can
+/// answer (`AET-WO-2202`). The devices come from the specification
+/// (`aethelgard_ir::parts::i2c_targets`); the topology does not carry them.
+pub fn generate_with(
+    crate_name: &str,
+    solved: &SolvedTopology,
+    table: &PinTable,
+    devices: &[aethelgard_ir::parts::I2cTarget],
 ) -> Result<BTreeMap<String, String>, BoardError> {
     let plan = Plan::new(crate_name, solved, table)?;
     let i2c: Vec<String> = plan
@@ -147,8 +168,139 @@ pub fn generate(
         "src/proofs.rs".to_owned(),
         emit_proofs(&plan, &facts, &speeds),
     );
-    files.extend(firmware::emit(&plan, &register_facts, &speeds)?);
+    files.extend(firmware::emit(&plan, &register_facts, &speeds, devices)?);
     Ok(files)
+}
+
+/// The items every I2C peripheral's transfer shares (`AET-WO-2202`, ruled on
+/// the I2C read path, F1): the bound on a wait, the typed refusals, and the
+/// bounded poll. Additive: nothing above them changes.
+const I2C_SHARED: &str = "/// The most reads of `ISR` any one wait of a transfer makes before it gives up.\n\
+pub const I2C_WAIT_SPINS: u32 = 20_000;\n\
+\n\
+/// Why a transfer gave up. A wait that expires names where; a transfer never\n\
+/// panics and never waits without a bound.\n\
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]\n\
+pub enum I2cError {\n    \
+    /// More than 255 bytes in a direction: `NBYTES` is eight bits.\n    \
+    Length,\n    \
+    /// `TXIS` never rose: the address went unanswered.\n    \
+    Txis,\n    \
+    /// `TC` never rose after the last byte written, before a repeated start.\n    \
+    Tc,\n    \
+    /// `RXNE` never rose: a byte of the read did not arrive.\n    \
+    Rxne,\n    \
+    /// `STOPF` never rose after the last byte.\n    \
+    Stop,\n\
+}\n\
+\n\
+/// Reads `ISR` at most `spins` times for any bit of `mask`.\n\
+fn i2c_wait<R: Registers>(r: &mut R, block: Block, isr: usize, mask: u32, spins: u32) -> bool {\n    \
+    let mut n = 0;\n    \
+    while n < spins {\n        \
+        if r.read(TOKEN, block, isr) & mask != 0 {\n            \
+            return true;\n        \
+        }\n        \
+        n += 1;\n    \
+    }\n    \
+    false\n\
+}\n\
+\n";
+
+/// One I2C peripheral's bounded transfer: write `N` bytes, then read `M`
+/// after a repeated start, or only write, or only read.
+fn emit_transfer(w: &mut String, name: &str, i: &I2cFacts, txdr: u32) {
+    let t = type_name(name);
+    let m = name.to_ascii_lowercase();
+    let bit = |pos: u32| format!("{:#010x}", 1u32 << pos);
+    let _ = writeln!(
+        w,
+        "impl<S: {m}_speed::AtMostCeiling> {t}<Enabled<S>> {{\n    \
+             /// Writes `write`, then, if `read` is not empty, reads it back after a repeated\n    \
+             /// start; or only writes; or only reads. Every wait is bounded by\n    \
+             /// [`I2C_WAIT_SPINS`]. Returns the bytes read, or the wait that expired.\n    \
+             pub fn transfer<R: Registers>(\n        \
+                 &mut self,\n        \
+                 r: &mut R,\n        \
+                 address: u8,\n        \
+                 write: &[u8],\n        \
+                 read: &mut [u8],\n    \
+             ) -> Result<usize, I2cError> {{\n        \
+                 self.transfer_within(r, address, write, read, I2C_WAIT_SPINS)\n    \
+             }}\n\
+             \n    \
+             /// [`Self::transfer`] with its own bound on each wait, so the proof can use a\n    \
+             /// small one.\n    \
+             #[doc(hidden)]\n    \
+             pub fn transfer_within<R: Registers>(\n        \
+                 &mut self,\n        \
+                 r: &mut R,\n        \
+                 address: u8,\n        \
+                 write: &[u8],\n        \
+                 read: &mut [u8],\n        \
+                 spins: u32,\n    \
+             ) -> Result<usize, I2cError> {{\n        \
+                 let (Ok(nw), Ok(nr)) = (u8::try_from(write.len()), u8::try_from(read.len())) else {{\n            \
+                     return Err(I2cError::Length);\n        \
+                 }};\n        \
+                 if nw == 0 && nr == 0 {{\n            \
+                     return Ok(0);\n        \
+                 }}\n        \
+                 let sadd = u32::from(address) << {sadd};\n        \
+                 let mut fail = None;\n        \
+                 let mut got = 0;\n        \
+                 if nw > 0 {{\n            \
+                     let end = if nr == 0 {{ {autoend} }} else {{ 0 }};\n            \
+                     r.write(TOKEN, Block::{t}, {cr2:#04x}, sadd | (u32::from(nw) << {nbytes}) | {start} | end);\n            \
+                     for &byte in write {{\n                \
+                         if !i2c_wait(r, Block::{t}, {isr:#04x}, {txis}, spins) {{\n                    \
+                             fail = Some(I2cError::Txis);\n                    \
+                             break;\n                \
+                         }}\n                \
+                         r.write(TOKEN, Block::{t}, {txdr:#04x}, u32::from(byte));\n            \
+                     }}\n            \
+                     if fail.is_none() && nr > 0 && !i2c_wait(r, Block::{t}, {isr:#04x}, {tc}, spins) {{\n                \
+                         fail = Some(I2cError::Tc);\n            \
+                     }}\n        \
+                 }}\n        \
+                 if fail.is_none() && nr > 0 {{\n            \
+                     r.write(TOKEN, Block::{t}, {cr2:#04x}, sadd | {rd_wrn} | (u32::from(nr) << {nbytes}) | {start} | {autoend});\n            \
+                     for slot in read.iter_mut() {{\n                \
+                         if !i2c_wait(r, Block::{t}, {isr:#04x}, {rxne}, spins) {{\n                    \
+                             fail = Some(I2cError::Rxne);\n                    \
+                             break;\n                \
+                         }}\n                \
+                         *slot = u8::try_from(r.read(TOKEN, Block::{t}, {rxdr:#04x}) & 0xFF).unwrap_or(0);\n                \
+                         got += 1;\n            \
+                     }}\n        \
+                 }}\n        \
+                 if fail.is_none() && !i2c_wait(r, Block::{t}, {isr:#04x}, {stopf}, spins) {{\n            \
+                     fail = Some(I2cError::Stop);\n        \
+                 }}\n        \
+                 r.write(TOKEN, Block::{t}, {icr:#04x}, {stopcf} | {nackcf});\n        \
+                 match fail {{\n            \
+                     None => Ok(got),\n            \
+                     Some(e) => Err(e),\n        \
+                 }}\n    \
+             }}\n\
+             }}\n",
+        sadd = i.sadd + 1,
+        autoend = bit(i.autoend),
+        cr2 = i.cr2,
+        nbytes = i.nbytes,
+        start = bit(i.start),
+        isr = i.isr,
+        txis = bit(i.txis),
+        txdr = txdr,
+        tc = bit(i.tc),
+        rd_wrn = bit(i.rd_wrn),
+        rxne = bit(i.rxne),
+        rxdr = i.rxdr,
+        stopf = bit(i.stopf),
+        icr = i.icr,
+        stopcf = bit(i.stopcf),
+        nackcf = bit(i.nackcf),
+    );
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -459,6 +611,29 @@ struct PeriphFacts {
     /// SPI only: `CFG2.MASTER`.
     master: Option<u32>,
     txdr: u32,
+    /// I2C only: the registers and bits of a transfer.
+    i2c: Option<I2cFacts>,
+}
+
+/// The I2Cv2 registers (RM0433 §48.7) and bit positions a transfer uses, all
+/// read from the header.
+#[derive(Debug, Clone)]
+struct I2cFacts {
+    cr2: u32,
+    isr: u32,
+    icr: u32,
+    rxdr: u32,
+    sadd: u32,
+    rd_wrn: u32,
+    nbytes: u32,
+    start: u32,
+    autoend: u32,
+    txis: u32,
+    tc: u32,
+    rxne: u32,
+    stopf: u32,
+    stopcf: u32,
+    nackcf: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -572,6 +747,26 @@ impl Facts {
                     config,
                     master,
                     txdr: layout.offset("TXDR", 0)?,
+                    i2c: match p.kind {
+                        Kind::I2c => Some(I2cFacts {
+                            cr2: layout.offset("CR2", 0)?,
+                            isr: layout.offset("ISR", 0)?,
+                            icr: layout.offset("ICR", 0)?,
+                            rxdr: layout.offset("RXDR", 0)?,
+                            sadd: f.position("I2C_CR2_SADD_Pos")?,
+                            rd_wrn: f.position("I2C_CR2_RD_WRN_Pos")?,
+                            nbytes: f.position("I2C_CR2_NBYTES_Pos")?,
+                            start: f.position("I2C_CR2_START_Pos")?,
+                            autoend: f.position("I2C_CR2_AUTOEND_Pos")?,
+                            txis: f.position("I2C_ISR_TXIS_Pos")?,
+                            tc: f.position("I2C_ISR_TC_Pos")?,
+                            rxne: f.position("I2C_ISR_RXNE_Pos")?,
+                            stopf: f.position("I2C_ISR_STOPF_Pos")?,
+                            stopcf: f.position("I2C_ICR_STOPCF_Pos")?,
+                            nackcf: f.position("I2C_ICR_NACKCF_Pos")?,
+                        }),
+                        Kind::Spi => None,
+                    },
                 },
             );
         }
@@ -857,6 +1052,9 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         }
         let _ = writeln!(w, "}}\n");
     }
+    if !speeds.is_empty() {
+        w.push_str(I2C_SHARED);
+    }
     // Pins.
     for (pin, p) in &plan.pins {
         let pf = &facts.pins[pin];
@@ -1046,6 +1244,9 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
              }}\n",
             txdr = pf.txdr
         );
+        if let Some(i) = &pf.i2c {
+            emit_transfer(w, name, i, pf.txdr);
+        }
     }
     // RCC.
     let _ = writeln!(
@@ -1751,7 +1952,168 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          }}",
         timingr_args.concat()
     );
+    emit_transfer_proofs(w, plan, facts, speeds);
     s
+}
+
+/// The proof over each I2C peripheral's transfer (`AET-WO-2202`, ruled on the
+/// I2C read path, F1), on the harness-owned register image: a transfer
+/// touches only that peripheral's registers, in the order of a transfer, and
+/// polls `ISR` no more than its bound allows. The environment is
+/// nondeterministic: every `ISR` read and every `RXDR` read returns any word.
+fn emit_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts, speeds: &Speeds) {
+    for (name, p) in plan.peripherals.iter().filter(|(_, p)| p.kind == Kind::I2c) {
+        let (pf, i) = (&facts.peripherals[name], &facts.peripherals[name].i2c);
+        let Some(i) = i else { continue };
+        let t = type_name(name);
+        let m = name.to_ascii_lowercase();
+        let bit = |pos: u32| format!("{:#010x}", 1u32 << pos);
+        let (_, admitted) = &speeds[name];
+        let mode = I2C_MODES[admitted[0]].0;
+        let pins: Vec<String> = p.pins.values().map(|n| pin_field(n)).collect();
+        let ports: BTreeSet<char> = p.pins.values().map(|n| plan.pins[n].port).collect();
+        let mut blocks: Vec<String> = vec!["rcc".into()];
+        blocks.extend(plan.ports.iter().map(|p| port_field(*p)));
+        blocks.extend(plan.peripherals.keys().map(|n| n.to_ascii_lowercase()));
+        let _ = writeln!(
+            w,
+            "\n\
+             /// {t}'s registers as a transfer may touch them, in order. `stage` is 0 before\n\
+             /// the first START, 1 in the write phase, 2 in the read phase, 3 after the\n\
+             /// flags are cleared.\n\
+             struct {t}Spy {{\n    \
+                 stage: u8,\n    \
+                 isr_reads: u32,\n    \
+                 bytes_written: usize,\n\
+             }}\n\
+             \n\
+             impl sealed::Sealed for {t}Spy {{}}\n\
+             \n\
+             impl Registers for {t}Spy {{\n    \
+                 fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {{\n        \
+                     kani::assert(block == Block::{t}, \"a {t} transfer read another block\");\n        \
+                     if offset == {isr:#04x} {{\n            \
+                         kani::assert(self.stage >= 1, \"ISR polled before the START\");\n            \
+                         self.isr_reads += 1;\n            \
+                         kani::any()\n        \
+                     }} else if offset == {rxdr:#04x} {{\n            \
+                         kani::assert(self.stage == 2, \"RXDR read outside the read phase\");\n            \
+                         kani::any()\n        \
+                     }} else {{\n            \
+                         kani::assert(false, \"a {t} transfer read a register it does not own\");\n            \
+                         0\n        \
+                     }}\n    \
+                 }}\n    \
+                 fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n        \
+                     kani::assert(block == Block::{t}, \"a {t} transfer wrote another block\");\n        \
+                     if offset == {cr2:#04x} {{\n            \
+                         kani::assert(value & {start} != 0, \"CR2 written without START\");\n            \
+                         if value & {rd_wrn} != 0 {{\n                \
+                             kani::assert(self.stage <= 1, \"the read phase did not follow the write phase\");\n                \
+                             kani::assert(value & {autoend} != 0, \"a read ends without AUTOEND\");\n                \
+                             kani::assert(\n                    \
+                                 self.stage == 0 || self.isr_reads as usize > self.bytes_written,\n                    \
+                                 \"the read phase began without waiting for TC\",\n                \
+                             );\n                \
+                             self.stage = 2;\n            \
+                         }} else {{\n                \
+                             kani::assert(self.stage == 0, \"the write phase is not first\");\n                \
+                             self.stage = 1;\n            \
+                         }}\n        \
+                     }} else if offset == {txdr:#04x} {{\n            \
+                         kani::assert(self.stage == 1, \"TXDR written outside the write phase\");\n            \
+                         self.bytes_written += 1;\n        \
+                     }} else if offset == {icr:#04x} {{\n            \
+                         kani::assert(self.stage >= 1, \"flags cleared before the START\");\n            \
+                         kani::assert(value == {stopcf} | {nackcf}, \"ICR cleared more than STOPCF and NACKCF\");\n            \
+                         self.stage = 3;\n        \
+                     }} else {{\n            \
+                         kani::assert(false, \"a {t} transfer wrote a register it does not own\");\n        \
+                     }}\n    \
+                 }}\n\
+             }}\n\
+             \n\
+             /// A transfer of any address, up to two bytes each way and any answers, with\n\
+             /// each wait bounded at two reads of `ISR`: touches only {t}, in order, within\n\
+             /// the bound, and ends in the result its phases imply.\n\
+             #[kani::proof]\n\
+             #[kani::unwind(6)]\n\
+             fn {m}_transfer_is_bounded_and_ordered() {{\n    \
+                 let mut img = Image {{",
+            isr = i.isr,
+            rxdr = i.rxdr,
+            cr2 = i.cr2,
+            txdr = pf.txdr,
+            icr = i.icr,
+            start = bit(i.start),
+            rd_wrn = bit(i.rd_wrn),
+            autoend = bit(i.autoend),
+            stopcf = bit(i.stopcf),
+            nackcf = bit(i.nackcf),
+        );
+        for b in &blocks {
+            let _ = writeln!(w, "        {b}: kani::any(),");
+        }
+        let _ = writeln!(
+            w,
+            "    }};\n    \
+             let board = Board::take().unwrap();\n    \
+             let mut rcc = board.rcc;"
+        );
+        for port in &ports {
+            let f = port_field(*port);
+            let _ = writeln!(
+                w,
+                "    let {f} = rcc.enable_{f}(&mut img, board.{f}).split();"
+            );
+        }
+        for pin in p.pins.values() {
+            let f = pin_field(pin);
+            let _ = writeln!(
+                w,
+                "    let {f} = {port}.{f}.{method}(&mut img);",
+                port = port_field(plan.pins[pin].port),
+                method = method(&plan.pins[pin])
+            );
+        }
+        let _ = writeln!(
+            w,
+            "    let mut bus = rcc\n        \
+                 .enable_{m}(&mut img, board.{m})\n        \
+                 .init::<{m}_speed::{mode}, _>(&mut img, {args});\n    \
+             let mut spy = {t}Spy {{ stage: 0, isr_reads: 0, bytes_written: 0 }};\n    \
+             let (wl, rl): (usize, usize) = (kani::any(), kani::any());\n    \
+             kani::assume(wl <= 2 && rl <= 2);\n    \
+             let out: [u8; 2] = kani::any();\n    \
+             let mut back = [0u8; 2];\n    \
+             let spins = 2;\n    \
+             let result = bus.transfer_within(&mut spy, kani::any(), &out[..wl], &mut back[..rl], spins);\n    \
+             let waits = wl + usize::from(wl > 0 && rl > 0) + rl + usize::from(wl + rl > 0);\n    \
+             kani::assert(\n        \
+                 spy.isr_reads as usize <= waits * spins as usize,\n        \
+                 \"a wait read ISR more often than its bound\",\n    \
+             );\n    \
+             kani::assert((wl + rl == 0) == (spy.stage == 0), \"a transfer of nothing touched a register, or one of something did not\");\n    \
+             if wl + rl > 0 {{\n        \
+                 kani::assert(spy.stage == 3, \"a transfer did not end by clearing its flags\");\n    \
+             }}\n    \
+             match result {{\n        \
+                 Ok(n) => {{\n            \
+                     kani::assert(n == rl && spy.bytes_written == wl, \"Ok without every byte moved\");\n            \
+                     kani::cover!(wl > 0 && rl > 0, \"{t} wrote, then read\");\n            \
+                     kani::cover!(wl > 0 && rl == 0, \"{t} wrote only\");\n            \
+                     kani::cover!(wl == 0 && rl > 0, \"{t} read only\");\n        \
+                 }}\n        \
+                 Err(I2cError::Txis) => kani::cover!(true, \"{t} timed out waiting for TXIS\"),\n        \
+                 Err(I2cError::Tc) => kani::cover!(true, \"{t} timed out waiting for TC\"),\n        \
+                 Err(I2cError::Rxne) => kani::cover!(true, \"{t} timed out waiting for RXNE\"),\n        \
+                 Err(I2cError::Stop) => kani::cover!(true, \"{t} timed out waiting for STOPF\"),\n        \
+                 Err(I2cError::Length) => kani::assert(false, \"a transfer of at most two bytes was refused as too long\"),\n    \
+             }}\n\
+             }}",
+            args = pins.join(", "),
+        );
+    }
 }
 
 #[cfg(test)]

@@ -132,6 +132,37 @@ pub mod i2c1_speed {
     }
 }
 
+/// The most reads of `ISR` any one wait of a transfer makes before it gives up.
+pub const I2C_WAIT_SPINS: u32 = 20_000;
+
+/// Why a transfer gave up. A wait that expires names where; a transfer never
+/// panics and never waits without a bound.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum I2cError {
+    /// More than 255 bytes in a direction: `NBYTES` is eight bits.
+    Length,
+    /// `TXIS` never rose: the address went unanswered.
+    Txis,
+    /// `TC` never rose after the last byte written, before a repeated start.
+    Tc,
+    /// `RXNE` never rose: a byte of the read did not arrive.
+    Rxne,
+    /// `STOPF` never rose after the last byte.
+    Stop,
+}
+
+/// Reads `ISR` at most `spins` times for any bit of `mask`.
+fn i2c_wait<R: Registers>(r: &mut R, block: Block, isr: usize, mask: u32, spins: u32) -> bool {
+    let mut n = 0;
+    while n < spins {
+        if r.read(TOKEN, block, isr) & mask != 0 {
+            return true;
+        }
+        n += 1;
+    }
+    false
+}
+
 /// `PA0`, net `FLASH_CS`: a GPIO output.
 pub struct PA0<M> {
     _mode: PhantomData<M>,
@@ -303,6 +334,76 @@ impl I2c1<Clocked> {
 impl<S: i2c1_speed::AtMostCeiling> I2c1<Enabled<S>> {
     pub fn write_byte<R: Registers>(&mut self, r: &mut R, byte: u8) {
         r.write(TOKEN, Block::I2c1, 0x28, u32::from(byte));
+    }
+}
+
+impl<S: i2c1_speed::AtMostCeiling> I2c1<Enabled<S>> {
+    /// Writes `write`, then, if `read` is not empty, reads it back after a repeated
+    /// start; or only writes; or only reads. Every wait is bounded by
+    /// [`I2C_WAIT_SPINS`]. Returns the bytes read, or the wait that expired.
+    pub fn transfer<R: Registers>(
+        &mut self,
+        r: &mut R,
+        address: u8,
+        write: &[u8],
+        read: &mut [u8],
+    ) -> Result<usize, I2cError> {
+        self.transfer_within(r, address, write, read, I2C_WAIT_SPINS)
+    }
+
+    /// [`Self::transfer`] with its own bound on each wait, so the proof can use a
+    /// small one.
+    #[doc(hidden)]
+    pub fn transfer_within<R: Registers>(
+        &mut self,
+        r: &mut R,
+        address: u8,
+        write: &[u8],
+        read: &mut [u8],
+        spins: u32,
+    ) -> Result<usize, I2cError> {
+        let (Ok(nw), Ok(nr)) = (u8::try_from(write.len()), u8::try_from(read.len())) else {
+            return Err(I2cError::Length);
+        };
+        if nw == 0 && nr == 0 {
+            return Ok(0);
+        }
+        let sadd = u32::from(address) << 1;
+        let mut fail = None;
+        let mut got = 0;
+        if nw > 0 {
+            let end = if nr == 0 { 0x02000000 } else { 0 };
+            r.write(TOKEN, Block::I2c1, 0x04, sadd | (u32::from(nw) << 16) | 0x00002000 | end);
+            for &byte in write {
+                if !i2c_wait(r, Block::I2c1, 0x18, 0x00000002, spins) {
+                    fail = Some(I2cError::Txis);
+                    break;
+                }
+                r.write(TOKEN, Block::I2c1, 0x28, u32::from(byte));
+            }
+            if fail.is_none() && nr > 0 && !i2c_wait(r, Block::I2c1, 0x18, 0x00000040, spins) {
+                fail = Some(I2cError::Tc);
+            }
+        }
+        if fail.is_none() && nr > 0 {
+            r.write(TOKEN, Block::I2c1, 0x04, sadd | 0x00000400 | (u32::from(nr) << 16) | 0x00002000 | 0x02000000);
+            for slot in read.iter_mut() {
+                if !i2c_wait(r, Block::I2c1, 0x18, 0x00000004, spins) {
+                    fail = Some(I2cError::Rxne);
+                    break;
+                }
+                *slot = u8::try_from(r.read(TOKEN, Block::I2c1, 0x24) & 0xFF).unwrap_or(0);
+                got += 1;
+            }
+        }
+        if fail.is_none() && !i2c_wait(r, Block::I2c1, 0x18, 0x00000020, spins) {
+            fail = Some(I2cError::Stop);
+        }
+        r.write(TOKEN, Block::I2c1, 0x1c, 0x00000020 | 0x00000010);
+        match fail {
+            None => Ok(got),
+            Some(e) => Err(e),
+        }
     }
 }
 

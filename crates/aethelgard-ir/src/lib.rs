@@ -10,6 +10,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod parts;
 mod solve;
 
 pub use solve::{NODE_LIMIT, RESERVED_PINS, SolveError, solve, solve_with_limit};

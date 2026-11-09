@@ -256,15 +256,23 @@ fn main() -> ExitCode {
             for_time,
         } => match (firmware, spec, for_time) {
             (Some(firmware), Some(spec), Some(virtual_ns)) => {
-                let topology = match solved(&spec) {
-                    Ok((_, topology, _)) => topology,
+                let (specification, topology) = match solved(&spec) {
+                    Ok((specification, topology, _)) => (specification, topology),
                     Err(code) => return code,
+                };
+                let devices = match aethelgard_ir::parts::i2c_targets(&specification, &topology) {
+                    Ok(devices) => devices,
+                    Err(err) => {
+                        let refusal = Refusal::new("DeviceNotPlaced", None, err.to_string());
+                        return emit(&refusal, EXIT_INVALID_SPEC);
+                    }
                 };
                 simulate(
                     &platform,
                     Some(Boot {
                         firmware,
                         topology,
+                        devices,
                         virtual_ns,
                     }),
                 )
@@ -568,6 +576,9 @@ fn prove(crate_dir: &Path, harness: &str) -> Result<verdict::Verdict, run::Stop>
 struct Boot {
     firmware: PathBuf,
     topology: aethelgard_ir::SolvedTopology,
+    /// The specification's I2C devices, on the peripherals the solution gave
+    /// their buses (`AET-WO-2202`).
+    devices: Vec<aethelgard_ir::parts::I2cTarget>,
     virtual_ns: u64,
 }
 
@@ -621,7 +632,8 @@ fn ready(
         ));
     }
     let platform = input::file(platform, &scratch.tool.join("platform.repl"))?;
-    let emitted = aethelgard_twin::platform::emit(&boot.topology).map_err(twin_stop)?;
+    let emitted =
+        aethelgard_twin::platform::emit(&boot.topology, &boot.devices).map_err(twin_stop)?;
     let copied = fs::read(&platform.copy)
         .map_err(|e| run::Stop::unreadable(format!("cannot read the platform's copy: {e}")))?;
     if copied != emitted.as_bytes() {
@@ -640,8 +652,9 @@ fn ready(
     let memory = aethelgard_twin::boot::memory().map_err(twin_stop)?;
     let boot_word = aethelgard_twin::boot::boot_word().map_err(twin_stop)?;
     let checked = elf::check(&bytes, &memory, boot_word)?;
-    let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
-    let instances = aethelgard_twin::platform::instances(&boot.topology)
+    let image =
+        aethelgard_twin::boot::expected(&boot.topology, &boot.devices).map_err(twin_stop)?;
+    let instances = aethelgard_twin::platform::instances(&boot.topology, &boot.devices)
         .map_err(twin_stop)?
         .into_iter()
         .map(|i| (i.name, i.model))
@@ -810,6 +823,21 @@ fn boot_report(
             })
             .collect(),
         unobservable: r.image.unobservable.clone(),
+        i2c: r
+            .image
+            .i2c
+            .checks
+            .iter()
+            .enumerate()
+            .map(|(i, c)| verdict::I2cReport {
+                reference: c.reference.clone(),
+                address: format!("{:#04x}", c.address),
+                register: format!("{:#04x}", c.register),
+                expected: format!("{:#x}", c.expected),
+                observed: observed.map(|o| format!("{:#x}", o.records[i].1)),
+                status: observed.map(|o| renode::status_name(o.records[i].0)),
+            })
+            .collect(),
     }
 }
 
