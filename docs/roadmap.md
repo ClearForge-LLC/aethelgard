@@ -208,7 +208,7 @@ P0 ──> P1 ──> P2 ──> P3
 
 **Work orders (intent)**
 
-- `AET-WO-3100` — attribution: from a failing trace, classify electrical versus software with the evidence span recorded, tested against a seeded set where the true cause is known.
+- `AET-WO-3100` — **written 2026-11-09**, build-only, strong tier, full adversarial pass. Attribution from the archive alone: `aethelgard attribute` names `electrical`, `software`, `none` or `indeterminate`, with the deciding rule and the evidence events. Software requires a measured-healthy bus *and* positive software evidence, never elimination. Seeded set: electrical cases as scenarios, software cases as exact-once firmware mutants built by the test, and the trap (a wrong address with a passing 3.3 kΩ pull-up) that shares `i2c_timeout` with 47 kΩ. Intent as first written: attribution: from a failing trace, classify electrical versus software with the evidence span recorded, tested against a seeded set where the true cause is known.
 - `AET-WO-3200` — spike, then build: the proposal loop under `RUL-07`, with the proposer chosen by `OQ-06`.
 - `AET-WO-3300` — the reference probe, `Sentinel-01`: specification, full gate run, fabrication package, and a bench comparison against the physical development board that records where simulation and reality disagreed.
 
@@ -341,6 +341,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | 2026-11-09 | §5 | `AET-WO-2300` (the campaign, archive and replay that close P2) and `AET-WO-2203` (devices into `SolvedTopology`) written. Dynamic faults are split out as `2301` | `AET-WO-2200` and `2202` in review |
 | 2026-11-09 | §5, §7 | `AET-WO-2202` and `AET-WO-2200` reconciled. P2 gate clause 1 holds, and clause 2 holds short of the archived campaign. `2300` and `2203` launched | PRs #69 and #70 |
 | 2026-11-09 | §5, §7 | **P2's exit gate passed.** `AET-WO-2203` and `AET-WO-2300` reconciled. `AET-WO-2301` reserved with its carry-ins | PRs #73 and #74 |
+| 2026-11-09 | §5 | `AET-WO-3100` written: attribution, P3 gate clause 1 | P2's exit gate passed |
 
 ## 9. Provenance
 
