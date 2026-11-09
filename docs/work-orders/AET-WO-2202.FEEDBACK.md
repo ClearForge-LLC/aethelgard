@@ -57,11 +57,30 @@ The record is the firmware's account of the transfer, so the judge's job is to l
 1. **Pass a read without the transaction.**
    - *Preload the record.* The judge writes `0xFFFFFFFF` to both words of every record after `LoadELF`, as it does the boot word (`BootPlan::commands`), so bytes loaded from the image are overwritten. A record the firmware never writes reads as the fill and fails `i2c_record_invalid`. Tier 1: `a_record_the_firmware_never_wrote_or_wrote_oddly_fails` (fill, status 0, an unknown status, swapped words). Tier 2, on Renode: `a_firmware_that_skips_the_read_or_its_record_cannot_pass`.
    - *Skip the read.* The buffer stays zero: status OK with value 0 is an `i2c_identity_mismatch`.
-   - *Written but not performed.* **Not closed (named residual).** A firmware that writes `STATUS_OK` and `0x60` without calling `transfer` passes. Measured on Renode 1.17.0 after the reference boot: `I2C1.CR2 = 0x020104EC` (`AUTOEND`, `NBYTES` 1, `RD_WRN`, `SADD` 0x76 << 1) and `I2C1.TXDR = 0xD0`, both stored, so a post-run read of them, computed from the address, the register and the width in the part table, would witness the last transaction on each bus independently of the record. I did not add it: it is a further round on a safeguard that works, not a failing invariant (`INV-07` holds: nothing the judge expects comes from the generator), and it renumbers every register in the boot tests. **Backlog item for the architect.**
+   - *Written but not performed.* The first build left this open: a firmware that writes `STATUS_OK` and `0x60` without calling `transfer` passed. I measured the witness (`I2C1.CR2 = 0x020104EC`, `I2C1.TXDR = 0xD0` after the reference boot, both stored by Renode) and proposed it as backlog; the architect's review made it blocking (W1) and it is built, below.
 2. **Make the judge accept a value taken from the firmware.** Nothing the firmware writes names the expected value: `I2cCheck.expected` is `aethelgard_ir::parts::identity(part).value`. Tier 1: `the_expected_value_is_the_tables_whatever_the_record_says…` (0x61 observed, 0x60 expected). Width 2: `a_two_byte_identity_is_judged_whole_and_most_significant_byte_first`.
 3. **Hide an unmodelled device.** A part is modelled only on an exact match (`bme280`, `BME280 `, `BME 280`, empty and a zero-width-space name are all `device_unmodelled`; unit test). `device_unmodelled` is reported on every boot that reaches the judge, including a failed one (`a_record_is_not_judged_when_the_boot_word_is_missing`), and in the platform's header comment. A modelled part with no identity would be declared and never read or reported; none exists today, and `every_modelled_part_has_an_identity…` makes adding one a failing test. A bounded kill (`wall_bound_exceeded`, `cpu_aborted`) reads nothing, so it reports no unmodelled device: those verdicts are already `fail`.
 
 **Mutants (one each, against the proof they live in).** Five mutants of the generated board crate were run through `aethelgard prove --harness i2c1_transfer_is_bounded_and_ordered` in the tools image; all five fail: the bound (`n <= spins`) `proof_failed`; the `TC` wait removed `proof_failed` ("began without waiting for TC", added after a first run showed this mutant caught only by a cover); a read of `Block::Rcc` `proof_failed`; `ICR` not cleared `proof_failed`; a timeout returned as `Ok` `proof_failed`.
+
+## W1 The controller-state witness (architect's review of PR #69, blocking; built)
+
+After the run the judge reads `<bus>.CR2` and `<bus>.TXDR` for the last identity read on each bus. The expectation comes from the solved address, the part table and the header, never from the firmware (`INV-07`):
+- `SADD` = address << 1 (the 10-bit field), `RD_WRN` = 1, `NBYTES` = the identity's width, `AUTOEND` = 1, and `TXDR` = the identity register. `START` (not stored once set) and every other bit are outside the masks.
+- It is judged only when that record's status is OK, i.e. when the firmware claims the read completed. A record that says a wait expired claims nothing, and `i2c_timeout` alone names the failure. The same holds when the boot word is missing.
+- A difference is `i2c_transaction_unwitnessed`, naming the device, its address and the bus, and each differing field with its expected and observed value. `boot.i2c_witness` in the verdict lists both registers (address, mask, expected, observed).
+- The two reads are appended after the records, so the register list and its indices did not change: the "renumbering" the review accepted as a cost was avoided.
+- `CR2.SADD` (10 bits) and `CR2.NBYTES` (8) widths are stated in `boot.rs` from RM0433 §48.7.2, labelled `belt-and-suspenders:`, because the header reader does not evaluate the `_Msk` shifts and `aethelgard-svd-hal`'s `cmsis.rs` is outside the fence; the positions come from the header.
+
+**Tests.** Tier 1: unit tests for the expectation (it equals the measured `0x020104EC`/`0xD0`; each of the five fields differs alone; a controller no transaction touched differs in all five; only the last read on a bus is witnessed) and `boot_tier1` cases per field (`SADD`, `RD_WRN`, `NBYTES`, `AUTOEND`, `TXDR`) with the message naming the field, a forged record over an untouched controller, the not-judged cases and the pass with `START` and stray bits set. Tier 2, on Renode: `a_forged_record_without_a_transaction_fails_on_the_controller_state` (the firmware writes `STATUS_OK` and `0x60` and never calls `transfer`; the only finding is `i2c_transaction_unwitnessed`, all five fields named), and the skipped-read test now also fails it.
+
+**Mutants (one each, tier-1 suites).** The witness judged whatever the record claims → `the_controller_is_not_judged_for_a_record_that_claims_nothing` fails; `AUTOEND` dropped from the expectation and the comparison → three tests fail; the witness taken for the first read on a bus instead of the last → `only_the_last_read_on_a_bus_is_witnessed` fails. (The third mutant first survived because `rustfmt` had split the line my `sed` matched, so it was not applied; it was reapplied and killed.)
+
+**Residual, recorded as the review asks.** Only the last transaction on each bus is witnessed by controller state. Today each bus has one modelled device. A bus with two needs a per-transaction witness (a later work order).
+
+## W2 Carried: `parts::i2c_targets` is interim
+
+Per the review, `i2c_targets(&Specification, &SolvedTopology)` is interim (F2). Once this PR and `AET-WO-2200` merge, the device list moves into `SolvedTopology` as `i2c_devices` (`RUL-16`: every derived fact lives there, so the generators never see the specification) and `i2c_targets` is deleted. The architect is writing that as a small work order. `platform::emit`, `platform::instances`, `boot::expected` and `board::generate_with` take the list today and would take the topology alone then.
 
 ## F5 Other findings
 
@@ -72,7 +91,7 @@ The record is the firmware's account of the transfer, so the judge's job is to l
 
 ## Reduction pass (diff)
 
-−6 lines net · 1 duplicate removed (`model::listed` repeated `platform::short`) · 0 dead paths removed · 2 protected kept (the record layout and statuses, labelled) · 0 findings beyond the above.
+−6 lines net at the first close (1 duplicate removed: `model::listed` repeated `platform::short`); for W1: nothing to remove, the witness adds one labelled constant pair and no copy of a fact (its field positions are the header's, its expectation the table's) · 3 protected kept (the record layout and statuses, and the two field widths, labelled) · 0 findings beyond the above.
 
 ## Gates
 
