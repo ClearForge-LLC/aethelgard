@@ -16,7 +16,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use aethelgard_ir::Specification;
-use aethelgard_svd_hal::board::generate;
+use aethelgard_svd_hal::board::generate_with;
 use aethelgard_svd_hal::pin_table;
 use sha2::{Digest, Sha256};
 
@@ -39,10 +39,14 @@ fn generated() -> BTreeMap<String, String> {
         .collect();
     let table = pin_table(&spec.mcu.part).unwrap();
     let solved = aethelgard_ir::solve(&spec, &table, &sha).unwrap();
-    let mut files = generate(CRATE, &solved, &table).unwrap();
+    // The devices come from the specification; the firmware reads the ones the
+    // twin can answer for, and the platform declares the same ones (`AET-WO-2202`).
+    let devices = aethelgard_ir::parts::i2c_targets(&spec, &solved).unwrap();
+    let answerable = aethelgard_twin::model::answerable(&devices);
+    let mut files = generate_with(CRATE, &solved, &table, &answerable).unwrap();
     files.insert(
         "sentinel-01.repl".to_owned(),
-        aethelgard_twin::platform::emit(&solved).unwrap(),
+        aethelgard_twin::platform::emit(&solved, &devices).unwrap(),
     );
     files
 }
@@ -189,4 +193,73 @@ fn the_firmware_follows_the_judges_boot_contract() {
     // Nothing else of the firmware's reaches the host or another crate.
     assert!(!files["firmware/Cargo.toml"].contains("build ="));
     assert!(!files.contains_key("firmware/build.rs"));
+}
+
+/// `AET-WO-2202`: the record layout and the statuses are written twice, by the
+/// firmware's generator and by the judge, independently. They must agree, and
+/// the firmware must read exactly the devices the judge will check.
+#[test]
+fn the_firmware_follows_the_judges_record_layout() {
+    use aethelgard_twin::boot::{
+        RECORD_BYTES, RECORD_OFFSET, RECORD_UNSET, STATUS_OK, STATUS_RXNE, STATUS_STOP, STATUS_TC,
+        STATUS_TXIS,
+    };
+    let files = generated();
+    let main = &files["firmware/src/main.rs"];
+    for (name, v) in [
+        ("STATUS_OK", STATUS_OK),
+        ("STATUS_TXIS", STATUS_TXIS),
+        ("STATUS_TC", STATUS_TC),
+        ("STATUS_RXNE", STATUS_RXNE),
+        ("STATUS_STOP", STATUS_STOP),
+        ("RECORD_UNSET", RECORD_UNSET),
+    ] {
+        assert!(
+            main.contains(&format!("const {name}: u32 = {v:#010x};")),
+            "{name}"
+        );
+    }
+    // The array holds the boot word, then one record per read.
+    let words = (RECORD_OFFSET + RECORD_BYTES) / 4;
+    assert!(
+        main.contains(&format!(
+            "static mut AETHELGARD_BOOT: [u32; {words}] = [0; {words}];"
+        )),
+        "one read: {words} words"
+    );
+    assert!(main.contains(&format!(
+        "base.add({} + {} * index)",
+        RECORD_OFFSET / 4,
+        RECORD_BYTES / 4
+    )));
+    assert!(main.contains(&format!(
+        "base.add({} + {} * index)",
+        RECORD_OFFSET / 4 + 1,
+        RECORD_BYTES / 4
+    )));
+
+    // Exactly the judge's checks are read: BME280 at 0x76, register 0xD0, one
+    // byte; the TMP117 is unmodelled and has no read.
+    let bytes = fs::read(root().join("examples/sentinel-01-minimal.json")).unwrap();
+    let spec: Specification = serde_json::from_slice(&bytes).unwrap();
+    let sha: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let table = pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &sha).unwrap();
+    let devices = aethelgard_ir::parts::i2c_targets(&spec, &solved).unwrap();
+    let plan = aethelgard_twin::boot::i2c(&devices).unwrap();
+    assert_eq!(plan.checks.len(), 1);
+    assert_eq!(plan.unmodelled.len(), 1);
+    let c = &plan.checks[0];
+    assert!(
+        main.contains(&format!(
+            "i2c1.transfer(&mut r, {:#04x}, &[{:#04x}], &mut buf0)",
+            c.address, c.register
+        )),
+        "{main}"
+    );
+    assert!(main.contains(&format!("[0u8; {}]", c.width)));
+    assert_eq!(main.matches(".transfer(").count(), plan.checks.len());
 }

@@ -209,6 +209,24 @@ impl BootPlan<'_> {
                 Read::Register(i),
             ));
         }
+        for (i, c) in self.image.i2c.checks.iter().enumerate() {
+            for (at, word) in [(c.status_at, 0), (c.value_at, 1)] {
+                reads.push((
+                    format!("sysbus ReadDoubleWord {at:#010x}"),
+                    Read::Record(i, word),
+                ));
+            }
+        }
+        for (i, w) in self.image.i2c.witnesses.iter().enumerate() {
+            reads.push((
+                format!("sysbus ReadDoubleWord {:#010x}", w.cr2_at),
+                Read::Controller(i, 0),
+            ));
+            reads.push((
+                format!("sysbus ReadDoubleWord {:#010x}", w.txdr_at),
+                Read::Controller(i, 1),
+            ));
+        }
         reads
     }
 
@@ -235,6 +253,17 @@ impl BootPlan<'_> {
             "sysbus WriteDoubleWord {:#010x} 0x0",
             self.boot_word
         ));
+        // The same for every record: only the firmware's code may fill one,
+        // so a record that was preloaded in the image, or never written, reads
+        // as the judge left it (`AET-WO-2202` adversarial 1).
+        for check in &self.image.i2c.checks {
+            for at in [check.status_at, check.value_at] {
+                c.push(format!(
+                    "sysbus WriteDoubleWord {at:#010x} {:#010x}",
+                    aethelgard_twin::boot::RECORD_UNSET
+                ));
+            }
+        }
         c.push(format!("cpu VectorTableOffset {:#010x}", self.vector_table));
         c.push(format!(
             "emulation RunFor \"{}.{:09}\"",
@@ -258,6 +287,10 @@ enum Read {
     Mips,
     Pc,
     Register(usize),
+    /// Check `.0`'s record: word 0 is the status, word 1 the value.
+    Record(usize, u8),
+    /// Witness `.0`'s controller: word 0 is `CR2`, word 1 `TXDR`.
+    Controller(usize, u8),
 }
 
 /// A boot's findings, the listing, and what the reads gave.
@@ -270,6 +303,10 @@ pub struct Observed {
     pub mips: u64,
     pub pc: u32,
     pub registers: Vec<u32>,
+    /// Each identity check's (status, value) words.
+    pub records: Vec<(u32, u32)>,
+    /// Each bus witness's controller (`CR2`, `TXDR`) words.
+    pub controllers: Vec<(u32, u32)>,
 }
 
 /// A bare hexadecimal value, the whole line: `0x2100B007`. Anything else on
@@ -344,6 +381,8 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         mips: 0,
         pc: 0,
         registers: vec![0; plan.image.registers.len()],
+        records: vec![(0, 0); plan.image.i2c.checks.len()],
+        controllers: vec![(0, 0); plan.image.i2c.witnesses.len()],
     };
     for ((cmd, read), line) in reads.iter().zip(between) {
         let v = value(line).ok_or_else(|| {
@@ -367,6 +406,10 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             Read::Mips => observed.mips = v,
             Read::Pc => observed.pc = word()?,
             Read::Register(i) => observed.registers[i] = word()?,
+            Read::Record(i, 0) => observed.records[i].0 = word()?,
+            Read::Record(i, _) => observed.records[i].1 = word()?,
+            Read::Controller(i, 0) => observed.controllers[i].0 = word()?,
+            Read::Controller(i, _) => observed.controllers[i].1 = word()?,
         }
     }
     let (cpus, peripherals) = listing(&lines[end + 1..]);
@@ -458,9 +501,104 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             ));
         }
     }
+    // The identity reads. A record is only meaningful once the firmware has
+    // reached its fixed point, which it does after writing every record;
+    // before that `boot_word_missing` already says the run failed.
+    if booted {
+        for (c, &(status, value)) in plan.image.i2c.checks.iter().zip(&observed.records) {
+            findings.extend(i2c_finding(c, status, value));
+        }
+        // A record that claims the read completed is checked against the
+        // controller, which only a transaction leaves in that state
+        // (`AET-WO-2202` W1). A record that says a wait expired claims nothing.
+        for (w, &(cr2, txdr)) in plan.image.i2c.witnesses.iter().zip(&observed.controllers) {
+            if observed.records[w.check].0 == aethelgard_twin::boot::STATUS_OK {
+                findings.extend(witness_finding(w, cr2, txdr));
+            }
+        }
+    }
+    for d in &plan.image.i2c.unmodelled {
+        findings.push(Finding::info(
+            "device_unmodelled",
+            format!(
+                "{} ({}) at I2C address {:#04x} has no Renode {} model, so its identity was not read",
+                d.reference,
+                d.part,
+                d.address,
+                aethelgard_twin::platform::RENODE_VERSION
+            ),
+        ));
+    }
     Ok((
         findings,
         Some(Machine { cpus, peripherals }),
         Some(observed),
     ))
+}
+
+/// The finding for one identity record, or none when the read passed. The
+/// expectation is the check's, which comes from the part table, never from
+/// the firmware (`INV-07`).
+fn i2c_finding(c: &aethelgard_twin::boot::I2cCheck, status: u32, value: u32) -> Option<Finding> {
+    use aethelgard_twin::boot::Outcome;
+    let who = format!("{} at I2C address {:#04x}", c.reference, c.address);
+    match c.judge(status, value) {
+        Outcome::Pass => None,
+        Outcome::Mismatch => Some(Finding::plain(
+            "i2c_identity_mismatch",
+            format!(
+                "{who}: register {:#04x} read {value:#x}, the part table says {:#x}",
+                c.register, c.expected
+            ),
+        )),
+        Outcome::Timeout(stage) => Some(Finding::plain(
+            "i2c_timeout",
+            format!(
+                "{who}: the firmware's wait for {stage} expired reading register {:#04x} (expected {:#x})",
+                c.register, c.expected
+            ),
+        )),
+        Outcome::Invalid => Some(Finding::plain(
+            "i2c_record_invalid",
+            format!(
+                "{who}: the record reads status {status:#010x} and value {value:#010x}, which no completed or timed-out transfer writes"
+            ),
+        )),
+    }
+}
+
+/// The finding for a bus whose controller does not show the transaction its
+/// last record claims, naming the device and each field that differs.
+fn witness_finding(w: &aethelgard_twin::boot::I2cWitness, cr2: u32, txdr: u32) -> Option<Finding> {
+    let differing = w.differing(cr2, txdr);
+    if differing.is_empty() {
+        return None;
+    }
+    let fields: Vec<String> = differing
+        .iter()
+        .map(|(name, expected, got)| format!("{name} reads {got:#x}, expected {expected:#x}"))
+        .collect();
+    Some(Finding::plain(
+        "i2c_transaction_unwitnessed",
+        format!(
+            "{} at I2C address {:#04x}: the record says the read completed, but {}'s state after the run does not show it ({}): CR2 {cr2:#010x}, TXDR {txdr:#04x}",
+            w.reference,
+            w.address,
+            w.peripheral,
+            fields.join("; ")
+        ),
+    ))
+}
+
+/// How a record's status reads in the verdict.
+pub fn status_name(status: u32) -> &'static str {
+    use aethelgard_twin::boot::{STATUS_OK, STATUS_RXNE, STATUS_STOP, STATUS_TC, STATUS_TXIS};
+    match status {
+        STATUS_OK => "ok",
+        STATUS_TXIS => "timeout_txis",
+        STATUS_TC => "timeout_tc",
+        STATUS_RXNE => "timeout_rxne",
+        STATUS_STOP => "timeout_stopf",
+        _ => "invalid",
+    }
 }

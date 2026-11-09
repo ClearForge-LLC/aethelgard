@@ -51,6 +51,32 @@ pub struct Boot {
     pub boot_word: Word,
     pub registers: Vec<RegisterReport>,
     pub unobservable: Vec<String>,
+    /// One per identity read the judge expects (`AET-WO-2202`).
+    pub i2c: Vec<I2cReport>,
+    /// The controller state that witnesses the last read on each bus.
+    pub i2c_witness: Vec<WitnessReport>,
+}
+
+/// A bus controller's `CR2` and `TXDR` after the run, against the expectation.
+#[derive(Serialize)]
+pub struct WitnessReport {
+    pub peripheral: String,
+    pub reference: String,
+    pub cr2: RegisterReport,
+    pub txdr: RegisterReport,
+}
+
+/// One identity read: what the part table says, and what the firmware's record held.
+#[derive(Serialize)]
+pub struct I2cReport {
+    pub reference: String,
+    pub address: String,
+    pub register: String,
+    pub expected: String,
+    pub observed: Option<String>,
+    /// `ok`, `timeout_txis`, `timeout_tc`, `timeout_rxne`, `timeout_stopf` or `invalid`;
+    /// `null` until Renode has read the record.
+    pub status: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -142,11 +168,21 @@ impl Finding {
             location: Vec::new(),
         }
     }
+
+    /// A finding of severity `info`, which does not fail the verdict. Used for
+    /// what the twin could not check, so it is reported and never passed
+    /// silently (`AET-WO-2202` §1.2).
+    pub fn info(kind: &str, message: String) -> Self {
+        Self {
+            severity: "info".to_owned(),
+            ..Self::plain(kind, message)
+        }
+    }
 }
 
 impl Verdict {
-    /// A verdict is pass exactly when it has no finding; the caller decides
-    /// that only after both witnesses agreed.
+    /// A verdict is pass exactly when it has no finding above severity `info`;
+    /// the caller decides that only after both witnesses agreed.
     pub fn new(
         check: &'static str,
         input: &Input,
@@ -156,7 +192,9 @@ impl Verdict {
         sandbox: SandboxReport,
         findings: Vec<Finding>,
     ) -> Self {
-        let pass = findings.is_empty();
+        // Only the boot path makes an `info` finding (KiCad's severities are
+        // `error` and `warning`, which `kicad` refuses to widen).
+        let pass = findings.iter().all(|f| f.severity == "info");
         Self {
             ok: pass,
             verdict: if pass { "pass" } else { "fail" },

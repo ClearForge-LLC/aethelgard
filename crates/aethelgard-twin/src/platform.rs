@@ -12,8 +12,10 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 use aethelgard_ir::SolvedTopology;
+use aethelgard_ir::parts::I2cTarget;
 use aethelgard_svd_hal::cmsis::{self, RegisterFacts};
 
+use crate::model;
 use crate::{Kind, TwinError, kind, split_pin};
 
 /// The Renode release the stock table below was read from.
@@ -77,19 +79,91 @@ pub struct Instance {
     pub added: bool,
 }
 
-/// Every solved peripheral and port, with the name Renode lists it by.
-pub fn instances(topology: &SolvedTopology) -> Result<Vec<Instance>, TwinError> {
+/// Every solved peripheral and port, with the name Renode lists it by, then
+/// each modelled I2C device (`AET-WO-2202`), added by the emitted description.
+pub fn instances(
+    topology: &SolvedTopology,
+    devices: &[I2cTarget],
+) -> Result<Vec<Instance>, TwinError> {
     topology.validate().map_err(TwinError::InvalidTopology)?;
     let facts = cmsis::register_facts()?;
-    solved(topology)?
+    let mut out = solved(topology)?
         .iter()
         .map(|p| instance(p, &facts))
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    let (modelled, _) = split_devices(topology, devices)?;
+    out.extend(modelled.into_iter().map(|d| Instance {
+        peripheral: d.reference,
+        name: d.name,
+        model: short(d.model).to_owned(),
+        added: true,
+    }));
+    Ok(out)
 }
 
-/// The `.repl` text for `topology`.
-pub fn emit(topology: &SolvedTopology) -> Result<String, TwinError> {
-    let instances = instances(topology)?;
+/// One I2C device the emitted description declares.
+struct Modelled {
+    reference: String,
+    name: String,
+    model: &'static str,
+    /// Renode's name of the controller, such as `i2c1`.
+    bus: &'static str,
+    address: u8,
+}
+
+/// The devices whose part has a model, in name order, and the rest, in the
+/// order given. A name that cannot be a Renode identifier, or that a stock
+/// instance or another device already has, is refused: a duplicate
+/// registration breaks the load (`architecture.md` §2.9).
+fn split_devices<'d>(
+    topology: &SolvedTopology,
+    devices: &'d [I2cTarget],
+) -> Result<(Vec<Modelled>, Vec<&'d I2cTarget>), TwinError> {
+    let used = solved(topology)?;
+    let mut taken: BTreeSet<String> = STOCK.iter().map(|s| s.1.to_owned()).collect();
+    taken.extend(used.iter().map(|p| p.to_ascii_lowercase()));
+    let mut modelled = Vec::new();
+    let mut unmodelled = Vec::new();
+    for d in devices {
+        let name = d.reference.to_ascii_lowercase();
+        let ident = name.starts_with(|c: char| c.is_ascii_lowercase())
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+        if !ident || !taken.insert(name.clone()) {
+            return Err(TwinError::InvalidDeviceName {
+                reference: d.reference.clone(),
+            });
+        }
+        let Some(model) = model::model(&d.part) else {
+            unmodelled.push(d);
+            continue;
+        };
+        let bus = STOCK
+            .iter()
+            .find(|s| s.0 == d.peripheral && used.contains(&d.peripheral))
+            .filter(|s| s.2 == "I2C.STM32F7_I2C")
+            .ok_or_else(|| TwinError::DeviceOffBus {
+                reference: d.reference.clone(),
+                peripheral: d.peripheral.clone(),
+            })?;
+        modelled.push(Modelled {
+            reference: d.reference.clone(),
+            name,
+            model,
+            bus: bus.1,
+            address: d.address,
+        });
+    }
+    modelled.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok((modelled, unmodelled))
+}
+
+/// The `.repl` text for `topology`, with `devices` declared where the part
+/// has a model and listed as unmodelled where it has none.
+pub fn emit(topology: &SolvedTopology, devices: &[I2cTarget]) -> Result<String, TwinError> {
+    let instances = instances(topology, &[])?;
+    let (modelled, unmodelled) = split_devices(topology, devices)?;
     let facts = cmsis::register_facts()?;
     let mut out = String::new();
     let _ = writeln!(
@@ -99,7 +173,22 @@ pub fn emit(topology: &SolvedTopology) -> Result<String, TwinError> {
          //\n\
          // - Solved topology of specification sha256 `{spec}`.\n\
          // - Renode {RENODE_VERSION}: `{STOCK_FILE}` sha256 `{stock}`.\n\
-         // - Register facts: `{repo}` at `{commit}`, `{file}` sha256 `{sha}`.",
+         // - Register facts: `{repo}` at `{commit}`, `{file}` sha256 `{sha}`.\n\
+         // - Unmodelled I2C devices (no Renode {RENODE_VERSION} model): {unmodelled}.",
+        unmodelled = if unmodelled.is_empty() {
+            "none".to_owned()
+        } else {
+            unmodelled
+                .iter()
+                .map(|d| {
+                    format!(
+                        "{} ({}) at {} 0x{:02X}",
+                        d.reference, d.part, d.peripheral, d.address
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        },
         spec = topology.specification_sha256,
         stock = RENODE_FILES[2].1,
         repo = cmsis::REPOSITORY,
@@ -117,6 +206,18 @@ pub fn emit(topology: &SolvedTopology) -> Result<String, TwinError> {
              {name}: {SPI_MODEL} @ {{\n        sysbus 0x{base:08X};\n        rcc RegistrationPeripheralAlias.{p}\n    }}\n    IRQ -> nvic@{irq}\n",
             p = i.peripheral,
             name = i.name,
+        );
+    }
+    for d in &modelled {
+        let _ = write!(
+            out,
+            "\n// {r}: Renode {RENODE_VERSION}'s `{m}`, at 0x{a:02X} on {bus}.\n\
+             {name}: {m} @ {bus} 0x{a:02X}\n",
+            r = d.reference,
+            m = d.model,
+            a = d.address,
+            bus = d.bus,
+            name = d.name,
         );
     }
     Ok(out)

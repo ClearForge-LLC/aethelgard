@@ -238,8 +238,19 @@ The reader removes a stray `\r` at either end of a line, matches each marker as 
         "instructions":{"expected":1000000,"observed":1000000},"pc":"0x08000490",
         "boot_word":{"address":"0x20000000","expected":"0x2100b007","observed":"0x2100b007"},
         "registers":[{"name":"GPIOA.MODER","address":"0x58020000","mask":"0x0000fc03","expected":"0x0000a801","observed":"0x0000a801"},…],
-        "unobservable":["GPIOB.OTYPER","I2C1.TIMINGR"]}
+        "unobservable":["GPIOB.OTYPER","I2C1.TIMINGR"],
+        "i2c":[{"reference":"U2","address":"0x76","register":"0xd0","expected":"0x60","observed":"0x60","status":"ok"}]}
 ```
+
+**The I2C identity reads** (`AET-WO-2202`). The specification's I2C devices are placed on the peripheral their bus was solved to (`aethelgard_ir::parts::i2c_targets`). For each device whose part has a Renode 1.17.0 model (today the BME280, `I2C.BME280`) the emitted platform declares the model at its bus and address, and the reference firmware reads the part's identity register once, through the board crate's bounded `transfer`, before it writes the boot word.
+- **The record.** Each read leaves two words after the boot word, in device order: a status (`0x22020000` OK, or the wait that expired: `…01` TXIS, `…02` TC, `…03` RXNE, `…04` STOPF), then the bytes read, first byte most significant. Before the run the judge writes `0xFFFFFFFF` to every record word, as it does the boot word, so a record the firmware never wrote reads as that fill.
+- **The expectation** is the part table in `aethelgard-ir` (`parts::identity`: BME280 register `0xD0`, `0x60`; TMP117 register `0x0F`, `0x0117`), never anything the firmware wrote.
+- **Findings:** `i2c_identity_mismatch` (status OK, another value), `i2c_timeout` (naming the wait), `i2c_record_invalid` (a record no transfer writes: the fill, or another word). A record is judged only once the boot word is set; before that `boot_word_missing` already says the run failed.
+- **`device_unmodelled`** has severity `info`: the device's part has no model in the twin (the TMP117 has none in Renode 1.17.0), so its identity was not read. It is reported on every boot and does not make the verdict `fail`; it also appears in the platform's header comment.
+
+- **The controller witness** (`AET-WO-2202` W1). The record is the firmware's account, so for the last identity read on each bus the judge also reads the controller's `CR2` and `TXDR` after the run, which Renode 1.17.0 stores. The expectation is computed from the solved address, the part table and the header (`SADD` = address << 1, `RD_WRN` = 1, `NBYTES` = the identity's width, `AUTOEND` set, `TXDR` = the identity register; `START` and every other bit are ignored) and is judged only when that record claims the read completed. A difference is `i2c_transaction_unwitnessed`, naming the device and each field. The verdict's `boot.i2c_witness` lists both registers with their addresses, masks, expected and observed values.
+
+**Named residual** (`AET-WO-2202` W1): only the last transaction on each bus is witnessed by controller state. Today each bus has one modelled device; a bus with two needs a per-transaction witness.
 
 Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a load error. `firmware.image_sha256` is the sha256, over every `PT_LOAD` with memory in physical-address order, of its physical address, file size and memory size (each a `u32` little-endian) and then its file bytes: the memory image Renode builds. It is the firmware's identity, because the file's own hash also covers symbol names, which Cargo derives from the checkout path.
 
