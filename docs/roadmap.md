@@ -174,8 +174,16 @@ P0 ──> P1 ──> P2 ──> P3
   - **The `thumbv7em` target goes in the image** (PR #57, first). The architect then bumps `container/IMAGE`.
   - **The twin owns the `.repl` emitter** and depends on `aethelgard-svd-hal`.
   - **The boot is bounded** at 30 s and 1 GiB (B1, `RUL-13` amended). The boot word's residual is named (B2).
-- `AET-WO-2101` — **spike written 2026-11-08** (strong tier). The architect's desk spike is done (`AET-WO-2101.desk.md`, `architecture.md` §2.16). Spike, then build: decide the lock-step transport (`OQ-02`) by measuring the surviving candidates on one I2C transaction, starting with `libngspice` behind a process boundary. It begins from an architect's desk spike, which reads the remaining leads in `architecture.md` §8 at source. That spike opens with Argon's measurement: the wall-clock cost of 1,000 synchronous ngspice transients, each one I2C byte window long. `architecture.md` §2.7 already shows that the stock I2C model cannot carry a fault flag, so the spike also chooses how a fault reaches the firmware. **Split from `AET-WO-2100` at Argon's review of `main` at 9818c4f,** so that the risk the critical path names (§3) gets its own work order and its own adversarial pass.
-- `AET-WO-2200` — analog bridge: the extracted parasitics as an `ngspice` netlist for the designated nets, driven in lock-step with the digital run. If Renode's I2C model is transaction-level (`OQ-02`'s third lead), an analog fault reaches the firmware only as a controller error flag set by the bridge. The trace then records that flag as the bridge's verdict, never as an observed waveform.
+- `AET-WO-2101` — **spike ruled on PR #66 (`RUL-17`); `OQ-02` ratified by Scotty 2026-11-09.** The PR closes unmerged, because builds delete `spike/`. Strong tier. The architect's desk spike is done (`AET-WO-2101.desk.md`, `architecture.md` §2.16). Spike, then build: decide the lock-step transport (`OQ-02`) by measuring the surviving candidates on one I2C transaction, starting with `libngspice` behind a process boundary. It begins from an architect's desk spike, which reads the remaining leads in `architecture.md` §8 at source. That spike opens with Argon's measurement: the wall-clock cost of 1,000 synchronous ngspice transients, each one I2C byte window long. `architecture.md` §2.7 already shows that the stock I2C model cannot carry a fault flag, so the spike also chooses how a fault reaches the firmware. **Split from `AET-WO-2100` at Argon's review of `main` at 9818c4f,** so that the risk the critical path names (§3) gets its own work order and its own adversarial pass.
+- `AET-WO-2202` — written 2026-11-09, build-only, cheap tier, in parallel with `2200`. It closes the P2 gate's first clause.
+  - The generated firmware reads each modelled I2C device's identity register once, and the judge checks the value against an `aethelgard-ir` part-identity table (`INV-07`).
+  - Today that is the BME280 at 0x76 reading 0x60. A part with no Renode model (TMP117) is reported as `device_unmodelled`, never passed silently.
+- `AET-WO-2200` — **written 2026-11-09**, build-only, strong tier, full adversarial pass. The bridge (`RUL-17`), plus the static rise-time fault in `simulate --firmware`:
+  - `SolvedTopology.analog_lines` carries each I2C line's pull-up, capacitance and ceiling;
+  - the twin emits the netlists, and `aethelgard-bridge` measures each rise time;
+  - a rise over the ceiling removes that bus's devices from the platform.
+
+  The P2 gate's 47 kΩ case fails with the measured 3,982 ns as evidence, and the 2.2 kΩ case passes. Archive replay is `2300`'s. Intent as first written: analog bridge: the extracted parasitics as an `ngspice` netlist for the designated nets, driven in lock-step with the digital run. If Renode's I2C model is transaction-level (`OQ-02`'s third lead), an analog fault reaches the firmware only as a controller error flag set by the bridge. The trace then records that flag as the bridge's verdict, never as an observed waveform.
 - `AET-WO-2300` — fault orchestrator: scenarios authored independently of the generated artifacts (`INV-07`), including a held-low data line, an oversized pull-up, a rail droop, and an interrupt storm; every campaign writes to the P0 archive.
 
 **Exit gate (to be refined by amendment after the `AET-WO-2100` spike, never weakened)**
@@ -240,6 +248,7 @@ Three rules added at Argon's review, each learned from a work order that ran wit
 | `AET-WO-1501` | cheap | targeted: the published image still passes smoke under `--network none` | packaging, inside `RUL-15`'s existing publish path |
 | `AET-WO-1600` | strong | full | the host sandbox is a trust boundary, in hand-assembled BPF |
 | `AET-WO-2100` | cheap once `AET-WO-1100` lands | targeted | platform emission is text generation, checked by Renode itself |
+| `AET-WO-2202` | cheap | targeted, on the judge | fully specified; one read per modelled device, judged against a table |
 | `AET-WO-2101`, `AET-WO-2200`, `AET-WO-2300` | strong | full | `OQ-02` is where a simulation runs but measures nothing (§3) |
 | `AET-WO-3100` … `AET-WO-3300` | strong | full | attribution is where a bug becomes a confident wrong answer (§3) |
 
@@ -313,6 +322,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | 2026-11-08 | §5, §7 | `AET-WO-1700` reconciled. **P1's exit gate: every clause holds except the crates.io half of the launch clause,** which needs Scotty's crates.io token for the first publish (§3) | PR #63 |
 | 2026-11-08 | §5 | `AET-WO-1800` written: publish readiness | the crates.io half of the launch clause |
 | 2026-11-08 | §5 | The `OQ-02` desk spike is read at source. `AET-WO-2101`'s spike is written: three ngspice routes, three fault paths, lock-step by Renode monitor quanta. It stops for the architect's ruling and Scotty's ratification | `architecture.md` §8's leads |
+| 2026-11-09 | §5, §6 | `AET-WO-2101`'s spike ruled; Scotty ratified `OQ-02` (`architecture.md` `RUL-17`). `AET-WO-2200` (bridge and static fault) and `AET-WO-2202` (the firmware's I2C transaction) written | PR #66; Scotty, 2026-11-09 |
 
 ## 9. Provenance
 
