@@ -230,3 +230,24 @@ fn the_crafted_16_8_mb_event_is_refused() {
         Err(E::MalformedEvent { reason, .. }) if reason == "event is over 4096 bytes"
     ));
 }
+
+/// Review A11.3: a second scenario, topology, boot or verdict record is refused
+/// when it is folded, before it is stored.
+#[test]
+fn a_second_once_only_record_is_refused_at_fold_time() {
+    use aethelgard_chaos::record::Record;
+    let verdict = |t| Event::Record {
+        timestamp: t,
+        record: Record::Verdict {
+            pass: true,
+            findings: vec![],
+        },
+    };
+    let mut replayer = Replayer::new(&header_bytes());
+    replayer.apply(&verdict(0)).unwrap();
+    assert!(matches!(
+        replayer.apply(&verdict(1)),
+        Err(E::DuplicateRecord { index: 1, kind: 14 })
+    ));
+    assert_eq!(replayer.state().records.len(), 1);
+}

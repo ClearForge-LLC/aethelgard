@@ -67,6 +67,8 @@ pub enum ArchiveError {
         offset: usize,
         kind: u64,
     },
+    #[error("event {index} is a second record of kind {kind}; a run holds one of each")]
+    DuplicateRecord { index: u64, kind: u64 },
     #[error("event {index} at byte {offset} is malformed: {reason}")]
     MalformedEvent {
         index: u64,
@@ -107,6 +109,7 @@ impl ArchiveError {
             Self::NotDeterministicCbor(_) => "NotDeterministicCbor",
             Self::UnknownEventKind { .. } => "UnknownEventKind",
             Self::MalformedEvent { .. } => "MalformedEvent",
+            Self::DuplicateRecord { .. } => "DuplicateRecord",
             Self::TimestampRegressed { .. } => "TimestampRegressed",
             Self::EventCountMismatch { .. } => "EventCountMismatch",
             Self::ReplayDiverged => "ReplayDiverged",
