@@ -260,12 +260,14 @@ pub fn expected_boundary(paths: &[PathBuf]) -> (bool, Option<&'static str>) {
         }
         let ancestors = real.ancestors().skip(1).all(|a| {
             let m = std::fs::metadata(a).unwrap();
-            m.uid() == 0 && (m.mode() & 0o022 == 0 || m.mode() & 0o1000 != 0)
+            let writable = m.mode() & 0o002 != 0 || (m.mode() & 0o020 != 0 && m.gid() != 0);
+            m.uid() == 0 && (!writable || m.mode() & 0o1000 != 0)
         });
         let out = Command::new("find")
             .arg(&real)
             .args([
-                "!", "-type", "l", "(", "!", "-uid", "0", "-o", "-perm", "/022", ")",
+                "!", "-type", "l", "(", "!", "-uid", "0", "-o", "-perm", "-002", "-o", "(",
+                "-perm", "-020", "!", "-gid", "0", ")", ")",
             ])
             .args(["-print", "-quit"])
             .output()

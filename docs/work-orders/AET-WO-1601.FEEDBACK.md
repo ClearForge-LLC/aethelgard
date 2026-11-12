@@ -193,7 +193,7 @@ Entry schema: `finding · where · severity · type · recommendation`.
 As built for review, `true` claimed more than the run showed in two cases the CLI can see for itself: A1 and R4. Now `uid_boundary` is `true` only when all of these hold. Otherwise it is `false`, and `uid_boundary_unmet` names the first that failed:
 1. `tool_uid`: the trampoline switched to 65534:65533 and read it back.
 2. `user_namespace`: `/proc/self/uid_map` is exactly `0 0 4294967295`.
-3. `toolchain`: every read-grant path beyond the system set (`/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, `/etc`, `/proc`, `/dev`) is root's and writable by no group or other, all the way down. Links are not followed. Each ancestor of its real path must also be root's, unwritable or sticky.
+3. `toolchain`: every read-grant path beyond the system set (`/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, `/etc`, `/proc`, `/dev`) passes, all the way down, the rule the image check shares (the architect's addendum). An entry is unsafe if it is not owned by uid 0, is writable by others, or is writable by a group other than gid 0; links are skipped. Each ancestor of the real path must pass the same rule or be sticky. On the pinned image, `find /opt /usr -xdev` with that rule prints exactly the 144 `/opt/kani` entries (re-measured by the builder).
 
 **Where it is built:**
 - conditions 2 and 3 are checked by the CLI in `Invocation::start`, after each run, once per path per process (`run.rs`, `initial_user_namespace` and `toolchain_clean`);
@@ -213,7 +213,7 @@ As built for review, `true` claimed more than the run showed in two cases the CL
 
 **One difference from the ruling's expectation.** In CI's `tools` job the bridge runs from `/repo/target/debug`, and `/repo` is the runner's checkout, owned by the runner's uid. That uid could replace the bridge, so `simulate` and `campaign` say `toolchain` there, not `true`. The same holds in the local podman layout (`/repo` 0775). It is the truth the rule was asked to tell. In the engine image the bridge sits in `/usr/local/bin`, a system directory.
 
-**The tests follow the truth through an oracle written apart from the CLI** (`tests/common`, `expected_boundary`): root, the uid map, and `find … ! -type l ( ! -uid 0 -o -perm /022 )` beneath each path, with each ancestor's owner and mode.
+**The tests follow the truth through an oracle written apart from the CLI** (`tests/common`, `expected_boundary`): root, the uid map, and `find … ! -type l ( ! -uid 0 -o -perm -002 -o ( -perm -020 ! -gid 0 ) )` beneath each path, with each ancestor's owner, group and mode.
 - `verify_binds_the_reference_…` checks every gate against it.
 - `as_root_a_third_uid_cannot_change_what_build_reads` checks `build`'s verdict.
 - In tier 1: `uid_boundary_is_true_exactly_…` checks the stub; a new `a_toolbox_another_user_could_write_makes_uid_boundary_false` makes the toolbox 0775 (`toolchain` as initial root); and `campaign_tier1` checks that a line is `true` exactly when it names no unmet condition.

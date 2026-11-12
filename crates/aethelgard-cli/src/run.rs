@@ -301,11 +301,15 @@ fn identity_map(map: &str) -> bool {
     map.split_whitespace().collect::<Vec<_>>() == ["0", "0", "4294967295"]
 }
 
-/// Whether an entry may stand in a toolchain: root's and writable by no group
-/// or other. An ancestor of a granted path may also be a sticky directory,
-/// such as `/tmp`, where no one but root can rename what root put.
-fn entry_ok(uid: u32, mode: u32, ancestor: bool) -> bool {
-    uid == 0 && (mode & 0o022 == 0 || (ancestor && mode & 0o1000 != 0))
+/// Whether an entry may stand in a toolchain, by the rule the image check
+/// shares (`AET-WO-1602`, ruled on PR #96): owned by uid 0, not writable by
+/// others, and writable by its group only when that group is gid 0, which
+/// grants nothing beyond root. An ancestor of a granted path may also be a
+/// sticky directory, such as `/tmp`, where no one but root can rename what
+/// root put.
+fn entry_ok(uid: u32, gid: u32, mode: u32, ancestor: bool) -> bool {
+    let writable = mode & 0o002 != 0 || (mode & 0o020 != 0 && gid != 0);
+    uid == 0 && (!writable || (ancestor && mode & 0o1000 != 0))
 }
 
 /// Whether `dir`, a path a tool's read grant adds beyond [`SYSTEM_DIRS`],
@@ -330,8 +334,9 @@ fn toolchain_clean(dir: &Path) -> bool {
         return clean;
     }
     let ok = |p: &Path, ancestor: bool| {
-        fs::symlink_metadata(p)
-            .is_ok_and(|m| m.file_type().is_symlink() || entry_ok(m.uid(), m.mode(), ancestor))
+        fs::symlink_metadata(p).is_ok_and(|m| {
+            m.file_type().is_symlink() || entry_ok(m.uid(), m.gid(), m.mode(), ancestor)
+        })
     };
     let mut clean = real.ancestors().skip(1).all(|a| ok(a, true));
     let mut stack = vec![real.clone()];
@@ -349,7 +354,7 @@ fn toolchain_clean(dir: &Path) -> bool {
             match entry.metadata() {
                 Ok(m) if m.is_dir() => stack.push(entry.path()),
                 Ok(m) if m.file_type().is_symlink() => {}
-                Ok(m) => clean &= entry_ok(m.uid(), m.mode(), false),
+                Ok(m) => clean &= entry_ok(m.uid(), m.gid(), m.mode(), false),
                 Err(_) => clean = false,
             }
         }
@@ -1621,13 +1626,20 @@ mod tests {
         assert!(!identity_map("0 1001 1\n1 165536 65536\n"));
         assert!(!identity_map("0 0 65536\n"));
         assert!(!identity_map("0 0 4294967295\n1 1 1\n"));
-        assert!(entry_ok(0, 0o40755, false));
-        assert!(!entry_ok(0, 0o40775, false));
-        assert!(!entry_ok(0, 0o40757, false));
-        assert!(!entry_ok(1001, 0o40755, false));
-        assert!(entry_ok(0, 0o41777, true), "a sticky ancestor such as /tmp");
+        assert!(entry_ok(0, 0, 0o40755, false));
         assert!(
-            !entry_ok(0, 0o41777, false),
+            entry_ok(0, 0, 0o40775, false),
+            "root's group writing grants nothing"
+        );
+        assert!(!entry_ok(0, 50, 0o40775, false), "another group writing");
+        assert!(!entry_ok(0, 0, 0o40757, false));
+        assert!(!entry_ok(1001, 0, 0o40755, false));
+        assert!(
+            entry_ok(0, 0, 0o41777, true),
+            "a sticky ancestor such as /tmp"
+        );
+        assert!(
+            !entry_ok(0, 0, 0o41777, false),
             "a sticky directory in a toolchain"
         );
         assert!(
@@ -1647,7 +1659,8 @@ mod tests {
             let find = std::process::Command::new("find")
                 .arg(&home)
                 .args([
-                    "!", "-type", "l", "(", "!", "-uid", "0", "-o", "-perm", "/022", ")",
+                    "!", "-type", "l", "(", "!", "-uid", "0", "-o", "-perm", "-002", "-o", "(",
+                    "-perm", "-020", "!", "-gid", "0", ")", ")",
                 ])
                 .args(["-print", "-quit"])
                 .output()
