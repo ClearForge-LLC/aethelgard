@@ -47,8 +47,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use aethelgard_ir::Specification;
-
 use crate::pcb::escape;
 use crate::route::{self, Board, CLEARANCE_NM, DRILL_NM, Routed, VIA_NM, WIDTH_NM};
 use crate::sexpr::{self, Sx};
@@ -419,33 +417,37 @@ pub fn board_net(label: &str) -> String {
     format!("/{}", escape(label))
 }
 
-/// Every I2C line of `spec`, bus by bus in document order, SDA then SCL,
-/// bounded on a board `read` accepted.
+/// One I2C bus as the bound needs it: its lines' specification net names,
+/// its rail's, and its declared devices' references. The caller builds it
+/// from the solved topology (`RUL-16`: this module never reads the
+/// specification's device list).
+#[derive(Clone, Debug)]
+pub struct Bus<'a> {
+    pub id: &'a str,
+    pub sda: &'a str,
+    pub scl: &'a str,
+    /// The voltage domain's id, which names the rail net.
+    pub domain: &'a str,
+    pub devices: BTreeSet<&'a str>,
+}
+
+/// Every I2C line of `buses`, bus by bus, SDA then SCL, bounded on a board
+/// `read` accepted.
 ///
-/// The parts on a line are classified from the specification and the
-/// board alone: a declared I2C device of the bus (each of its pads on the
-/// line is a pin); a pull-up (a part with exactly two copper pads, the
-/// other on the bus's rail; copper only); and exactly one other part, the
-/// controller (each of its pads on the line is a pin). Any further part is
-/// refused, because its capacitance is not known. Every pad's copper is
-/// counted, pins included: `Ci` is the part's, not the land's.
-pub fn bound(
-    board: &Board,
-    routed: &Routed,
-    spec: &Specification,
-) -> Result<Vec<LineBound>, Refused> {
+/// The parts on a line are classified from the bus and the board alone: a
+/// declared I2C device of the bus (each of its pads on the line is a pin);
+/// a pull-up (a part with exactly two copper pads, the other on the bus's
+/// rail; copper only); and exactly one other part, the controller (each of
+/// its pads on the line is a pin). Any further part is refused, because its
+/// capacitance is not known. Every pad's copper is counted, pins included:
+/// `Ci` is the part's, not the land's.
+pub fn bound(board: &Board, routed: &Routed, buses: &[Bus<'_>]) -> Result<Vec<LineBound>, Refused> {
     let mut out = Vec::new();
-    for bus in &spec.i2c_buses {
-        let devices: BTreeSet<&str> = spec
-            .declared_i2c_devices()
-            .iter()
-            .filter(|d| d.bus == bus.id)
-            .map(|d| d.reference.as_str())
-            .collect();
-        let rail = escape(&bus.domain);
+    for bus in buses {
+        let rail = escape(bus.domain);
         let mut controllers = BTreeSet::new();
-        for net in [&bus.sda.net, &bus.scl.net] {
-            let line = line(board, routed, &bus.id, net, &rail, &devices)?;
+        for net in [bus.sda, bus.scl] {
+            let line = line(board, routed, bus.id, net, &rail, &bus.devices)?;
             controllers.insert(line.controller.clone());
             out.push(line);
         }
@@ -582,4 +584,146 @@ fn line(
         pins,
         controller: controller.to_owned(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// ε0 · ε_r in fF/nm, from CODATA's value (not its upper bound).
+    const EPS: f64 = 8.854_187_818_8e-6 * 5.4;
+    const PI: f64 = std::f64::consts::PI;
+
+    /// The shell around a prism, in nm³, with true π.
+    fn shell_f(area: f64, perimeter: f64, c: f64, s: f64) -> f64 {
+        c * (perimeter * s + PI * s * s)
+            + 2.0 * area * s
+            + PI / 2.0 * perimeter * s * s
+            + 4.0 / 3.0 * PI * s * s * s
+    }
+
+    fn ff(volume: f64) -> f64 {
+        let s = CLEARANCE_NM as f64;
+        EPS * volume / (s * s)
+    }
+
+    /// The integer constant bounds its formula from above, and by less than
+    /// one femtofarad plus the slack of π's and ε0's upper bounds.
+    fn pinned(name: &str, constant: u64, exact: f64) {
+        let c = constant as f64;
+        assert!(c >= exact, "{name}: {c} under {exact}");
+        assert!(
+            c - exact < 1.0 + exact * 1e-6,
+            "{name}: {c} over {exact} by 1 fF or more"
+        );
+    }
+
+    /// §1.4: each derived constant against its formula, and against the
+    /// values the §1.3 measurement used, so a change to a router constant
+    /// re-derives it here and fails loudly.
+    #[test]
+    fn each_constant_is_its_formula_rounded_up() {
+        let (s, c, w) = (CLEARANCE_NM as f64, COPPER_NM as f64, WIDTH_NM as f64);
+        let per_nm = 2.0 * c * s + 2.0 * w * s + PI * s * s;
+        pinned("PER_MM_FF", PER_MM_FF, ff(per_nm * 1e6));
+        let r = w / 2.0;
+        pinned(
+            "SEGMENT_FF",
+            SEGMENT_FF,
+            ff(shell_f(PI * r * r, 2.0 * PI * r, c, s)),
+        );
+        let r = VIA_NM as f64 / 2.0;
+        pinned(
+            "VIA_FF",
+            VIA_FF,
+            ff(shell_f(PI * r * r, 2.0 * PI * r, VIA_HEIGHT_NM as f64, s)),
+        );
+        for (pw, ph) in [
+            (300_000, 1_475_000),
+            (540_000, 640_000),
+            (1, 1),
+            (5_000_000, 3_000_000),
+        ] {
+            let rect = crate::pcb::Rect {
+                x0: 7,
+                y0: -3,
+                x1: 7 + pw,
+                y1: -3 + ph,
+            };
+            let (a, p) = ((pw * ph) as f64, 2.0 * (pw + ph) as f64);
+            pinned("pad_ff", pad_ff(rect).unwrap(), ff(shell_f(a, p, c, s)));
+        }
+        assert_eq!(
+            (PER_MM_FF, SEGMENT_FF, VIA_FF, PIN_FF),
+            (280, 124, 1519, 10_000),
+            "a constant moved: re-measure §1.3 before changing this line"
+        );
+    }
+
+    /// The prism formula is Steiner's for a box, `2(ab+bc+ca)s + π(a+b+c)s² +
+    /// (4/3)π s³`.
+    #[test]
+    fn the_prism_shell_is_steiners_formula_for_a_box() {
+        let (a, b, c, s) = (540_000.0, 640_000.0, 70_000.0, 200_000.0);
+        let steiner = 2.0 * (a * b + b * c + c * a) * s
+            + PI * (a + b + c) * s * s
+            + 4.0 / 3.0 * PI * s * s * s;
+        let prism = shell_f(a * b, 2.0 * (a + b), c, s);
+        assert!((steiner - prism).abs() < 1e-6 * steiner);
+        // The integer shell, with π from above, is at least the exact one.
+        let d = D as f64;
+        let integer = shell(Base::boxed(540_000, 640_000).unwrap(), 70_000, 200_000).unwrap();
+        assert!(integer as f64 / d >= prism);
+    }
+
+    fn agm(mut a: f64, mut b: f64) -> f64 {
+        for _ in 0..64 {
+            (a, b) = ((a + b) / 2.0, (a * b).sqrt());
+        }
+        a
+    }
+
+    /// The complete elliptic integral of the first kind, `K(k)`.
+    fn k(k: f64) -> f64 {
+        PI / (2.0 * agm(1.0, (1.0 - k * k).sqrt()))
+    }
+
+    /// The bound dominates the exact solutions it must: a zero-thickness
+    /// coplanar strip of width `W` between ground planes at `S` on both
+    /// sides, in a medium of `ε_max` everywhere (conformal mapping, exact:
+    /// `4 ε K(k)/K(k')`, `k = W / (W + 2S)`), and a via's barrel inside a
+    /// coaxial ground at `S` (`2π ε / ln((R + S)/R)` per length). Both are
+    /// geometries in which every foreign conductor is at least `S` away, so
+    /// the trial bounds them; a bound below either would be a defect.
+    #[test]
+    fn the_bound_dominates_the_exact_solutions_of_its_class() {
+        let (w, s) = (WIDTH_NM as f64, CLEARANCE_NM as f64);
+        let kk = w / (w + 2.0 * s);
+        let cpw_per_mm = 4.0 * EPS * k(kk) / k((1.0 - kk * kk).sqrt()) * 1e6;
+        assert!(PER_MM_FF as f64 >= cpw_per_mm, "{cpw_per_mm}");
+        let r = VIA_NM as f64 / 2.0;
+        let coax = 2.0 * PI * EPS / ((r + s) / r).ln() * VIA_HEIGHT_NM as f64;
+        assert!(VIA_FF as f64 >= coax, "{coax}");
+        // The side of the via's shell alone already dominates the coax.
+        let side = ff((2.0 * PI * r * s + PI * s * s) * VIA_HEIGHT_NM as f64);
+        assert!(side >= coax, "{side} {coax}");
+    }
+
+    #[test]
+    fn a_pad_too_large_to_compute_is_none_not_a_wrap() {
+        let huge = crate::pcb::Rect {
+            x0: i64::MIN,
+            y0: 0,
+            x1: i64::MAX,
+            y1: 1,
+        };
+        assert_eq!(pad_ff(huge), None);
+        let inverted = crate::pcb::Rect {
+            x0: 5,
+            y0: 0,
+            x1: 0,
+            y1: 1,
+        };
+        assert_eq!(pad_ff(inverted), None);
+    }
 }

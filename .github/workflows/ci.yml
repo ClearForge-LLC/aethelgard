@@ -130,7 +130,9 @@ jobs:
       # (committed proposals' shape). The floor stays exact.
       # 71: plus 4 from AET-WO-3301 in board_tier2.rs (build at two paths,
       # prove --spec provenance, verify 2k2 twice with --against, verify 47k).
-      TIER2_MIN: "71"
+      # 72: plus 1 from AET-WO-1305 in board_tier2.rs (a board swapped in
+      # verify's scratch before extract is a BindingMismatch).
+      TIER2_MIN: "72"
       RUN: >-
         docker run --rm -v ${{ github.workspace }}:/repo -w /repo
         -e CARGO_HOME=/repo/target/cargo-home -e CARGO_TARGET_DIR=/repo/target

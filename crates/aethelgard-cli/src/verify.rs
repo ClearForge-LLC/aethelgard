@@ -283,6 +283,10 @@ fn expectations(
             e("the parity schematic", "/schematic/sha256", w.sch),
             e("the specification", "/specification_sha256", w.spec),
         ],
+        "extract" => vec![
+            e("the board", "/input/sha256", w.pcb),
+            e("the specification", "/specification_sha256", w.spec),
+        ],
         "prove" => vec![
             e("the board crate", "/input/sha256", w.board),
             e("the harness", "/harness", harness),
@@ -551,9 +555,9 @@ fn args(items: &[&dyn AsRef<std::ffi::OsStr>]) -> Vec<OsString> {
     items.iter().map(|i| (**i).as_ref().to_owned()).collect()
 }
 
-/// ERC, DRC with parity, `prove` of every harness, `build`, `simulate
-/// --firmware` and the campaign, in that order, each bound to the generated
-/// hashes. A refusal or a binding mismatch stops the run.
+/// ERC, DRC with parity, `extract`, `prove` of every harness, `build`,
+/// `simulate --firmware` and the campaign, in that order, each bound to the
+/// generated hashes. A refusal or a binding mismatch stops the run.
 fn run_gates(
     report: &mut Report,
     p: &Paths,
@@ -579,6 +583,13 @@ fn run_gates(
     )?;
     bound("drc", &drc, want, "", "")?;
     report.gates.push(gate_report("drc", None, &drc));
+
+    let extract = gate(
+        "extract",
+        args(&[&"extract", &"--board", &p.pcb, &"--spec", &p.spec]),
+    )?;
+    bound("extract", &extract, want, "", "")?;
+    report.gates.push(gate_report("extract", None, &extract));
 
     if want.harnesses.is_empty() {
         report.findings.push(Finding {
@@ -768,6 +779,10 @@ mod tests {
                 json!({"input": {"sha256": "pcb"}, "schematic": {"sha256": "sch"}, "specification_sha256": "spec"}),
             ),
             (
+                "extract",
+                json!({"input": {"sha256": "pcb"}, "specification_sha256": "spec"}),
+            ),
+            (
                 "prove",
                 json!({"input": {"sha256": "board"}, "harness": "proofs::h", "harness_provenance": "generated"}),
             ),
@@ -802,7 +817,7 @@ mod tests {
                 fields += 1;
             }
         }
-        assert_eq!(fields, 11);
+        assert_eq!(fields, 13);
         let firmware: Vec<_> = expectations("simulate", &w, "elf", "")
             .into_iter()
             .map(|(_, p, want)| (p, want))

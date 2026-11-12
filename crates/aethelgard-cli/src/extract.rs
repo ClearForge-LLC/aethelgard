@@ -117,8 +117,26 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
             EXIT_UNREADABLE,
         );
     };
+    // The buses from the specification, each with the devices the solved
+    // topology places on it (`RUL-16`).
+    let buses: Vec<bound::Bus<'_>> = spec
+        .i2c_buses
+        .iter()
+        .map(|b| bound::Bus {
+            id: &b.id,
+            sda: &b.sda.net,
+            scl: &b.scl.net,
+            domain: &b.domain,
+            devices: topology
+                .i2c_devices
+                .iter()
+                .filter(|(_, d)| d.bus == b.id)
+                .map(|(r, _)| r.as_str())
+                .collect(),
+        })
+        .collect();
     let lines =
-        match bound::read(text).and_then(|(board, routed)| bound::bound(&board, &routed, &spec)) {
+        match bound::read(text).and_then(|(board, routed)| bound::bound(&board, &routed, &buses)) {
             Ok(l) => l,
             Err(r) => return refuse(r.kind, r.message, EXIT_UNREADABLE),
         };
