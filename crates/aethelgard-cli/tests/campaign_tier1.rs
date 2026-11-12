@@ -903,7 +903,7 @@ fn replaying_a_missing_directory_is_refused() {
     let out = replay(&tb.0, &dir.0.join("absent"));
     let v = refusal(&out);
     assert_eq!(out.status.code(), Some(3), "{v}");
-    assert!(v["error"]["kind"].is_string(), "{v}");
+    assert_eq!(v["error"]["kind"], "Io", "{v}");
 }
 
 /// The offset of the first run of `needle` in `hay`.
