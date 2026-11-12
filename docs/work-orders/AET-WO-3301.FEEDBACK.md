@@ -215,7 +215,22 @@ Entry schema for findings: `finding · where · severity · type · recommendati
 
 ## Mutation testing (sized to the diff)
 
-<!-- filled -->
+**Who and how.**
+- A default-model subagent applied one mutant to each guard this work order adds, on a frozen copy at `e19a7d1`, against the suites the guard lives in.
+- Tier-2 mutants ran in the image, with the caps read back: `memory.max` 17179869184, `memory.swap.max` 0.
+- **Report:** `~/.cache/aet-3301-mut/REPORT.md`.
+
+**Result:** 22 mutants; 17 killed at first and 5 survived. Each survivor was then dealt with:
+- **M21 and M22** (`build` passes on exit 0 alone, or reads exit 101 alone as a design fail) were a real tier-1 gap. The outcome is now `classify(code, build-finished)`, and `only_both_witnesses_agreeing_is_a_build_or_a_failure` kills both.
+- **M3** (allow `..` in a written path) survived because the kernel refuses anyway, with another message. The tier-1 test now asserts the refusal names the path rule.
+- **M5** (drop `!kind.is_file()` in `diff`) is equivalent: `same()` is already false for anything but a regular file. The check was removed (reduction).
+- **M2 and M4** (`O_NOFOLLOW` on `--out`, `O_EXCL` on each file) guard only against a concurrent writer between the emptiness check and the write. No deterministic test reaches them, so they are kept as the race guards they are.
+
+**Killed at first** (with the killing test):
+- M1 (non-empty `--out`), M6 (missing files), M7 (the crate-hash format), M11 (provenance), M13 and M14 (the binding table): the unit tests.
+- M8, M9 and M10 (`build`'s refusals), M12 (`prove --spec` before tools), M15 (the scenario base) and M16 (`--against`): `generate_tier1.rs`.
+- M17 (the campaign gate's rule), M18 (`cover_count`) and M19 (the strip): tier 2, `board_tier2.rs`.
+- M20 (the copy check): `firmware::` unit tests.
 
 ## Reduction pass
 
