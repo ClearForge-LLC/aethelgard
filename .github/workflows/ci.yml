@@ -116,7 +116,9 @@ jobs:
   # compiled with the network; every tool run happens under --network none.
   tools:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 90, not 60: AET-WO-3200 F17 measured this job at 45 min of the 60, and 3200
+    # adds about 8 min. Splitting tier 2 into two jobs is backlog.
+    timeout-minutes: 90
     env:
       TIER2_MIN: "64"
       RUN: >-

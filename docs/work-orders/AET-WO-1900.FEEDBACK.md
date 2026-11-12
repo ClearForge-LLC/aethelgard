@@ -92,3 +92,7 @@ Triage, for `roadmap.md` §7.1 (the architect updates it):
 - `AET-WO-2301`: A7.5, A7.6; the witness observable; F23.
 - `AET-WO-1204`: emitter-owned name collisions (3c); 2200 F14.
 - `AET-WO-1601`: 1300 A8; 2100 F25.
+
+## Architect's addition: the `tools` job timeout
+
+`.github/workflows/ci.yml`: `tools` `timeout-minutes` 60 → 90, with a comment naming `AET-WO-3200` F17 (measured 45 min of 60; 3200 adds about 8 min). Not run: it takes effect on the next CI run. Splitting tier 2 into two jobs is backlog, not this work order; `roadmap.md` §7.1 needs a row for it (owner: the architect's choice).
