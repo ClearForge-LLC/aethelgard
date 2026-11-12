@@ -272,3 +272,31 @@ Reported, not removed:
 ## The fence
 
 `git diff --stat cbc0a7b` (`main`, merged in): `run.rs`, `main.rs`, `kicad.rs`, the CLI README; `README.md` (the quickstart only), `ci.yml` (`TIER2_MIN` only); tests; this FEEDBACK. Outside the literal fence, forced by §1.2: `verify.rs`, `campaign.rs` (the `uid_boundary` fields) and `firmware.rs` (F7). No `Dockerfile`, image, workflow besides `ci.yml`, generated file or steering document changed; the one protected file touched is `README.md`'s quickstart block (F4). No `unsafe`. No new dependency: `rustix`'s `fs`, `process` and `thread` features were already on.
+
+## §3, acceptance
+
+| item | where it is shown |
+|---|---|
+| §1.1's table, each prediction beside its result | §1.1 above (`spike/PREDICTIONS.md` was written before the runs) |
+| In the image, B1–B4 with the CLI as root, the tools as 65534 and the racer a third uid, each fail to change what the tool reads; `verify` says `uid_boundary: true` for every gate | C2 (all four held, `true`). Automated in tier 2: `as_root_a_third_uid_cannot_change_what_build_reads` (B1, B2) and `verify_binds_the_reference_…` (every gate `true`) |
+| Root against root still wins, and the verdict says `false` | C1b wins, but says `true`: see F1 (decision-needed). The `false` witness is C3b and the host |
+| On Furnace as `forge`, the verdict says `false` | tier 1 on the host: `uid_boundary_is_true_exactly_when_the_tool_ran_under_the_tool_uid` |
+| A planted ancestor configuration is not read, or is refused with the new error | `/tmp` is no ancestor: tier 2 `a_cargo_configuration_another_uid_plants_in_tmp_is_not_read` (uid 4242's plant, which would break the link, is not read); `TMPDIR=/tmp` is exit 4 `ScratchUnsafe` (tier 1) |
+| A scratch path with a space or `;` is exit 4 before any tool runs | tier 1 `a_scratch_path_with_a_space_or_a_semicolon_…` |
+| A hierarchical sheet is refused before ERC | tier 1 `a_schematic_naming_a_hierarchical_sheet_…` |
+| A tool past `RLIMIT_FSIZE` is exit 5; the reference passes under the cap | tier 1 `a_tool_writing_past_the_file_size_cap_is_a_tool_error`; adversarial A11 (rustc); tier 2 passes in full under the cap |
+| The gates pass; `gates`, `tools`, `image` and the quickstart green in CI | local below; CI on the PR |
+
+## Gates
+
+At `788d4f2` (code). Every later commit changes this FEEDBACK only.
+- **Host, as `forge`:** `cargo fmt --all -- --check` ok; `cargo clippy --workspace --all-targets -- -D warnings` ok; `cargo test --workspace --no-fail-fast` gave 908 passed, 0 failed.
+- **Image, as root, the `tools` job's steps, offline:**
+  - bridge tests ok, `fmt` ok;
+  - clippy with `with-tools` ok;
+  - `cargo test --workspace --features aethelgard-cli/with-tools --no-fail-fast`: **976 passed, 0 failed**;
+  - **canary `tier2_tests_passed=73`, floor 73**;
+  - caps `memory.max` 17179869184, `memory.swap.max` 0, `pids.max` `max` (`aet1601-tools4`).
+- **`container/engine-smoke.sh`**, run as root in the image with this branch's `aethelgard` and `aethelgard-bridge` first on `PATH`: all checks passed.
+- **The quickstart's tool calls**, in its `--user` shape with `-e HOME=/work`, pass on both the README's pinned engine image and this branch's binary (F4).
+- **`origin/main` merged** with merge commits: `cbc0a7b` (docs) and `0249824` (`AET-WO-1205`). Merged cleanly; the gates above ran after both.
