@@ -323,14 +323,17 @@ Reported, not removed:
 
 ## Gates
 
-At `788d4f2` (code). Every later commit changes this FEEDBACK only.
-- **Host, as `forge`:** `cargo fmt --all -- --check` ok; `cargo clippy --workspace --all-targets -- -D warnings` ok; `cargo test --workspace --no-fail-fast` gave 908 passed, 0 failed.
+At `de2401d`: the code, with `main` at `b227c12` merged in. Every later commit changes this FEEDBACK only.
+- **Host, as `forge`:** `cargo fmt --all -- --check` ok; `cargo clippy --workspace --all-targets -- -D warnings` ok; `cargo test --workspace --no-fail-fast` gave 910 passed, 0 failed.
 - **Image, as root, the `tools` job's steps, offline:**
   - bridge tests ok, `fmt` ok;
   - clippy with `with-tools` ok;
-  - `cargo test --workspace --features aethelgard-cli/with-tools --no-fail-fast`: **976 passed, 0 failed**;
+  - `cargo test --workspace --features aethelgard-cli/with-tools --no-fail-fast`: **978 passed, 0 failed**;
   - **canary `tier2_tests_passed=73`, floor 73**;
-  - caps `memory.max` 17179869184, `memory.swap.max` 0, `pids.max` `max` (`aet1601-tools4`).
-- **`container/engine-smoke.sh`**, run as root in the image with this branch's `aethelgard` and `aethelgard-bridge` first on `PATH`: all checks passed.
+  - caps `memory.max` 17179869184, `memory.swap.max` 0, `pids.max` `max` (`aet1601-tools6`).
+
+  Under rootless podman every gate there says `false`, `user_namespace`, as the oracle requires.
+- **`container/engine-smoke.sh`**, run as root in the image with this branch's binaries first on `PATH`: all checks passed.
 - **The quickstart's tool calls**, in its `--user` shape with `-e HOME=/work`, pass on both the README's pinned engine image and this branch's binary (F4).
-- **`origin/main` merged** with merge commits: `cbc0a7b` (docs) and `0249824` (`AET-WO-1205`). Merged cleanly; the gates above ran after both.
+- **CI on the reviewed head `7adb923`:** `gates`, `image`, `quickstart` and `tools` all green; `tools` took 47 m under CI's rootful Docker. The ruling's change is checked by the PR's next run.
+- **`origin/main` merged** with merge commits: `cbc0a7b`, `0249824` (`AET-WO-1205`) and `b227c12`, each clean.
