@@ -156,6 +156,16 @@ fn a_scratch_base_another_user_could_write_is_refused() {
     let below = a_dir(&open, "below", 0o700);
     let v = refused(&erc(&tb, &sch, Some(&below), None), 4, "ScratchUnsafe");
     assert_eq!(v["error"]["id"], open.display().to_string(), "{v}");
+    if root() {
+        // As root: a base another uid owns, and one the tool uid cannot pass.
+        let theirs = a_dir(&base.0, "theirs", 0o755);
+        std::os::unix::fs::chown(&theirs, Some(4242), Some(4242)).unwrap();
+        let v = refused(&erc(&tb, &sch, Some(&theirs), None), 4, "ScratchUnsafe");
+        assert_eq!(v["error"]["id"], theirs.display().to_string(), "{v}");
+        let shut = a_dir(&base.0, "shut", 0o700);
+        let v = refused(&erc(&tb, &sch, Some(&shut), None), 4, "ScratchUnsafe");
+        assert_eq!(v["error"]["id"], shut.display().to_string(), "{v}");
+    }
     // A base that is not there is not made.
     let gone = base.0.join("gone");
     refused(&erc(&tb, &sch, Some(&gone), None), 4, "ScratchUnsafe");

@@ -257,6 +257,11 @@ fn gate_report(name: &'static str, harness: Option<String>, ran: &Ran) -> Gate {
     }
 }
 
+/// The campaign's `uid_boundary`: true only when every run line says `true`.
+fn every_run_separated(runs: &[Value]) -> bool {
+    runs.iter().all(|line| line["uid_boundary"] == true)
+}
+
 fn not_run(name: &'static str) -> Gate {
     Gate {
         gate: name,
@@ -704,7 +709,7 @@ fn run_gates(
         });
     }
     let mut g = gate_report("campaign", None, &ran);
-    g.uid_boundary = Some(runs.iter().all(|line| line["uid_boundary"] == true));
+    g.uid_boundary = Some(every_run_separated(runs));
     // The design must survive every scenario: each run's own verdict is
     // `pass`, and the campaign matched every expectation. A scenario that
     // expects a fail can never let `verify` pass (`AET-WO-3301` §3.2).
@@ -753,6 +758,40 @@ fn run_gates(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// `uid_boundary` is the gate's own `sandbox.uid_boundary`, and true only
+    /// when that is the JSON `true`; a gate that did not run has none; the
+    /// campaign's is true only when every run's is (`AET-WO-1601` §1.2).
+    #[test]
+    fn each_gate_names_the_uid_boundary_its_own_verdict_reports() {
+        let ran = |v: Value| Ran {
+            code: 0,
+            lines: vec![v],
+        };
+        let boundary = |v: Value| gate_report("erc", None, &ran(v)).uid_boundary;
+        assert_eq!(
+            boundary(json!({"sandbox": {"uid_boundary": true}})),
+            Some(true)
+        );
+        assert_eq!(
+            boundary(json!({"sandbox": {"uid_boundary": false}})),
+            Some(false)
+        );
+        assert_eq!(
+            boundary(json!({"sandbox": {"uid_boundary": "true"}})),
+            Some(false)
+        );
+        assert_eq!(boundary(json!({"sandbox": {}})), Some(false));
+        assert_eq!(boundary(json!({"uid_boundary": true})), Some(false));
+        assert_eq!(not_run("build").uid_boundary, None);
+        let t = json!({"uid_boundary": true});
+        assert!(every_run_separated(&[t.clone(), t.clone()]));
+        assert!(!every_run_separated(&[
+            t.clone(),
+            json!({"uid_boundary": false})
+        ]));
+        assert!(!every_run_separated(&[t, json!({})]));
+    }
 
     fn want() -> Want<'static> {
         Want {
