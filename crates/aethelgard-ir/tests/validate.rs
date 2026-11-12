@@ -1,3 +1,7 @@
+mod common;
+
+use common::devs;
+
 use aethelgard_ir::{
     AnalogLine, I2cBus, I2cDevice, IrValidationError as E, Mcu, NetConstraint, PinAssignment,
     Signal, SolvedI2cDevice, SolvedTopology, Specification, SpiBus, SpiDevice, VoltageDomain,
@@ -11,19 +15,18 @@ fn sig(net: &str) -> Signal {
 }
 
 fn valid() -> Specification {
-    Specification {
-        schema_version: 1,
-        project_name: "sentinel-01".into(),
-        mcu: Mcu {
-            part: "STM32H753ZITx".into(),
-            supply: "VDD_3V3".into(),
-        },
-        voltage_domains: vec![VoltageDomain {
+    // The device lists are private to the crate (`AET-WO-1204`), so the
+    // fixture is built from the JSON the type reads.
+    let json = serde_json::json!({
+        "schema_version": 1,
+        "project_name": "sentinel-01",
+        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into() },
+        "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,
             tolerance_permille: 50,
         }],
-        i2c_buses: vec![I2cBus {
+        "i2c_buses": [I2cBus {
             id: "SENSORS".into(),
             peripheral: None,
             speed_hz: 400_000,
@@ -32,7 +35,7 @@ fn valid() -> Specification {
             sda: sig("I2C_SDA"),
             scl: sig("I2C_SCL"),
         }],
-        spi_buses: vec![SpiBus {
+        "spi_buses": [SpiBus {
             id: "FLASH".into(),
             peripheral: None,
             speed_hz: 20_000_000,
@@ -41,7 +44,7 @@ fn valid() -> Specification {
             mosi: sig("SPI_MOSI"),
             miso: sig("SPI_MISO"),
         }],
-        i2c_devices: vec![
+        "i2c_devices": [
             I2cDevice {
                 reference: "U2".into(),
                 part: "BME280".into(),
@@ -57,20 +60,21 @@ fn valid() -> Specification {
                 address: 72,
             },
         ],
-        spi_devices: vec![SpiDevice {
+        "spi_devices": [SpiDevice {
             reference: "U4".into(),
             part: "W25Q64JV".into(),
             supply: "VDD_3V3".into(),
             bus: "FLASH".into(),
             cs: sig("FLASH_CS"),
         }],
-        net_constraints: vec![NetConstraint {
+        "net_constraints": [NetConstraint {
             net_name: "I2C_SDA".into(),
             max_capacitance_femtofarads: 400_000,
             max_rise_time_nanoseconds: 300,
             impedance_ohms: None,
         }],
-    }
+    });
+    serde_json::from_value(json).expect("the fixture is a specification")
 }
 
 fn refusal(mutate: impl FnOnce(&mut Specification)) -> E {
@@ -101,8 +105,8 @@ fn empty_lists_other_than_domains_are_valid() {
     let mut spec = valid();
     spec.i2c_buses.clear();
     spec.spi_buses.clear();
-    spec.i2c_devices.clear();
-    spec.spi_devices.clear();
+    devs(&mut spec).i2c.clear();
+    devs(&mut spec).spi.clear();
     spec.net_constraints.clear();
     assert_eq!(spec.validate(), Ok(()));
 }
@@ -168,26 +172,26 @@ fn refuses_invalid_identifiers_at_every_path() {
             s.spi_buses[0].miso.pin = Some("".into())
         }),
         ("i2c_devices[1].reference", |s| {
-            s.i2c_devices[1].reference = "".into()
+            devs(s).i2c[1].reference = "".into()
         }),
-        ("i2c_devices[0].part", |s| s.i2c_devices[0].part = "".into()),
+        ("i2c_devices[0].part", |s| devs(s).i2c[0].part = "".into()),
         ("i2c_devices[0].supply", |s| {
-            s.i2c_devices[0].supply = "".into()
+            devs(s).i2c[0].supply = "".into()
         }),
-        ("i2c_devices[0].bus", |s| s.i2c_devices[0].bus = "".into()),
+        ("i2c_devices[0].bus", |s| devs(s).i2c[0].bus = "".into()),
         ("spi_devices[0].reference", |s| {
-            s.spi_devices[0].reference = "".into()
+            devs(s).spi[0].reference = "".into()
         }),
-        ("spi_devices[0].part", |s| s.spi_devices[0].part = "".into()),
+        ("spi_devices[0].part", |s| devs(s).spi[0].part = "".into()),
         ("spi_devices[0].supply", |s| {
-            s.spi_devices[0].supply = "".into()
+            devs(s).spi[0].supply = "".into()
         }),
-        ("spi_devices[0].bus", |s| s.spi_devices[0].bus = "".into()),
+        ("spi_devices[0].bus", |s| devs(s).spi[0].bus = "".into()),
         ("spi_devices[0].cs.net", |s| {
-            s.spi_devices[0].cs.net = "".into()
+            devs(s).spi[0].cs.net = "".into()
         }),
         ("spi_devices[0].cs.pin", |s| {
-            s.spi_devices[0].cs.pin = Some("".into())
+            devs(s).spi[0].cs.pin = Some("".into())
         }),
         ("net_constraints[0].net_name", |s| {
             s.net_constraints[0].net_name = "".into()
@@ -246,7 +250,7 @@ fn identifier_boundaries() {
 fn first_invalid_identifier_wins_in_key_order() {
     let err = refusal(|s| {
         s.net_constraints[0].net_name = "".into();
-        s.spi_devices[0].cs.net = "".into();
+        devs(s).spi[0].cs.net = "".into();
         s.i2c_buses[0].scl.pin = Some("".into());
     });
     assert_invalid_identifier(err, "i2c_buses[0].scl.pin");
@@ -317,8 +321,8 @@ fn refuses_unknown_domain_at_each_use() {
         |s| s.mcu.supply = "NOPE".into(),
         |s| s.i2c_buses[0].domain = "NOPE".into(),
         |s| s.spi_buses[0].domain = "NOPE".into(),
-        |s| s.i2c_devices[0].supply = "NOPE".into(),
-        |s| s.spi_devices[0].supply = "NOPE".into(),
+        |s| devs(s).i2c[0].supply = "NOPE".into(),
+        |s| devs(s).spi[0].supply = "NOPE".into(),
     ];
     for mutate in cases {
         assert_refusal(refusal(mutate), "UnknownDomain", Some("NOPE"));
@@ -349,12 +353,12 @@ fn refuses_a_bus_off_the_mcu_rail() {
 fn refuses_a_device_off_its_buss_rail() {
     let err = refusal(|s| {
         with_second_domain(s);
-        s.i2c_devices[1].supply = "VDD_1V8".into();
+        devs(s).i2c[1].supply = "VDD_1V8".into();
     });
     assert_refusal(err, "SupplyMismatch", Some("U3"));
     let err = refusal(|s| {
         with_second_domain(s);
-        s.spi_devices[0].supply = "VDD_1V8".into();
+        devs(s).spi[0].supply = "VDD_1V8".into();
     });
     assert_refusal(err, "SupplyMismatch", Some("U4"));
 }
@@ -363,8 +367,8 @@ fn refuses_a_device_off_its_buss_rail() {
 fn a_device_with_an_unknown_bus_is_left_to_step_nine() {
     let err = refusal(|s| {
         with_second_domain(s);
-        s.i2c_devices[0].bus = "NOPE".into();
-        s.i2c_devices[0].supply = "VDD_1V8".into();
+        devs(s).i2c[0].bus = "NOPE".into();
+        devs(s).i2c[0].supply = "VDD_1V8".into();
     });
     assert_refusal(err, "UnknownBus", Some("NOPE"));
 }
@@ -411,26 +415,36 @@ fn refuses_unsupported_i2c_speed_zero_pull_up_and_zero_spi_speed() {
 
 #[test]
 fn refuses_duplicate_reference_across_both_lists() {
-    let err = refusal(|s| s.spi_devices[0].reference = "U2".into());
+    let err = refusal(|s| devs(s).spi[0].reference = "U2".into());
     assert_refusal(err, "DuplicateReference", Some("U2"));
-    let err = refusal(|s| s.i2c_devices[1].reference = "U2".into());
+    let err = refusal(|s| devs(s).i2c[1].reference = "U2".into());
     assert_refusal(err, "DuplicateReference", Some("U2"));
 }
 
 #[test]
+fn references_that_differ_only_in_case_are_duplicates() {
+    // KiCad's ERC refuses them (`AET-WO-1204`); the error names both spellings.
+    let err = refusal(|s| devs(s).i2c[1].reference = "u2".into());
+    assert_refusal(err.clone(), "DuplicateReference", Some("u2"));
+    assert!(err.to_string().contains("`U2`"), "{err}");
+    let err = refusal(|s| devs(s).spi[0].reference = "u3".into());
+    assert_refusal(err, "DuplicateReference", Some("u3"));
+}
+
+#[test]
 fn refuses_unknown_bus_and_a_bus_of_the_wrong_kind() {
-    let err = refusal(|s| s.i2c_devices[0].bus = "NOPE".into());
+    let err = refusal(|s| devs(s).i2c[0].bus = "NOPE".into());
     assert_refusal(err, "UnknownBus", Some("NOPE"));
-    let err = refusal(|s| s.i2c_devices[0].bus = "FLASH".into());
+    let err = refusal(|s| devs(s).i2c[0].bus = "FLASH".into());
     assert_refusal(err, "UnknownBus", Some("FLASH"));
-    let err = refusal(|s| s.spi_devices[0].bus = "SENSORS".into());
+    let err = refusal(|s| devs(s).spi[0].bus = "SENSORS".into());
     assert_refusal(err, "UnknownBus", Some("SENSORS"));
 }
 
 #[test]
 fn refuses_i2c_address_out_of_range_and_duplicate_on_a_bus() {
     for value in [0, 7, 0x78, 255] {
-        let err = refusal(|s| s.i2c_devices[0].address = value);
+        let err = refusal(|s| devs(s).i2c[0].address = value);
         assert_eq!(
             err,
             E::I2cAddressOutOfRange {
@@ -442,10 +456,10 @@ fn refuses_i2c_address_out_of_range_and_duplicate_on_a_bus() {
     }
     for value in [0x08, 0x77] {
         let mut spec = valid();
-        spec.i2c_devices[0].address = value;
+        devs(&mut spec).i2c[0].address = value;
         assert_eq!(spec.validate(), Ok(()));
     }
-    let err = refusal(|s| s.i2c_devices[1].address = 118);
+    let err = refusal(|s| devs(s).i2c[1].address = 118);
     assert_eq!(
         err,
         E::DuplicateI2cAddress {
@@ -464,8 +478,8 @@ fn same_i2c_address_on_two_buses_is_valid() {
     second.sda.net = "I2C2_SDA".into();
     second.scl.net = "I2C2_SCL".into();
     spec.i2c_buses.push(second);
-    spec.i2c_devices[1].bus = "OTHER".into();
-    spec.i2c_devices[1].address = 118;
+    devs(&mut spec).i2c[1].bus = "OTHER".into();
+    devs(&mut spec).i2c[1].address = 118;
     assert_eq!(spec.validate(), Ok(()));
 }
 
@@ -473,7 +487,7 @@ fn same_i2c_address_on_two_buses_is_valid() {
 fn refuses_a_net_declared_twice_across_buses_and_cs() {
     let err = refusal(|s| s.i2c_buses[0].scl.net = "I2C_SDA".into());
     assert_refusal(err, "DuplicateNetName", Some("I2C_SDA"));
-    let err = refusal(|s| s.spi_devices[0].cs.net = "SPI_SCK".into());
+    let err = refusal(|s| devs(s).spi[0].cs.net = "SPI_SCK".into());
     assert_refusal(err, "DuplicateNetName", Some("SPI_SCK"));
     let err = refusal(|s| s.spi_buses[0].miso.net = "I2C_SCL".into());
     assert_refusal(err, "DuplicateNetName", Some("I2C_SCL"));
@@ -481,7 +495,7 @@ fn refuses_a_net_declared_twice_across_buses_and_cs() {
 
 #[test]
 fn refuses_a_signal_net_named_like_a_domain() {
-    let err = refusal(|s| s.spi_devices[0].cs.net = "VDD_3V3".into());
+    let err = refusal(|s| devs(s).spi[0].cs.net = "VDD_3V3".into());
     assert_refusal(err, "NetShadowsDomain", Some("VDD_3V3"));
 }
 
@@ -526,18 +540,18 @@ fn checks_run_in_table_order() {
     // Step 5 before step 6.
     let err = refusal(|s| {
         s.spi_buses[0].id = "SENSORS".into();
-        s.i2c_devices[0].supply = "NOPE".into();
+        devs(s).i2c[0].supply = "NOPE".into();
     });
     assert_eq!(err.kind(), "UnknownDomain");
     // Step 9 before step 10.
     let err = refusal(|s| {
-        s.i2c_devices[0].bus = "NOPE".into();
-        s.i2c_devices[1].address = 0;
+        devs(s).i2c[0].bus = "NOPE".into();
+        devs(s).i2c[1].address = 0;
     });
     assert_eq!(err.kind(), "UnknownBus");
     // Step 11 before step 12.
     let err = refusal(|s| {
-        s.spi_devices[0].cs.net = "SPI_SCK".into();
+        devs(s).spi[0].cs.net = "SPI_SCK".into();
         s.net_constraints[0].net_name = "NOPE".into();
     });
     assert_eq!(err.kind(), "DuplicateNetName");
@@ -576,10 +590,10 @@ fn round_trip_is_equal_and_byte_stable() {
 #[test]
 fn document_order_is_preserved_and_unsorted_input_is_accepted() {
     let mut spec = valid();
-    spec.i2c_devices.reverse();
+    devs(&mut spec).i2c.reverse();
     let json = serde_json::to_string(&spec).unwrap();
     let back: Specification = serde_json::from_str(&json).unwrap();
-    assert_eq!(back.i2c_devices[0].reference, "U3");
+    assert_eq!(back.declared_i2c_devices()[0].reference, "U3");
     assert_eq!(back.validate(), Ok(()));
     assert_eq!(serde_json::to_string(&back).unwrap(), json);
 }
@@ -955,9 +969,13 @@ fn solved_refuses_a_repeated_or_missing_gpio() {
 
 #[test]
 fn solved_accepts_each_mode_and_refuses_any_other_ceiling() {
-    for hz in [100_000, 400_000, 1_000_000] {
+    // Each mode with a rise-time bound that derives it (`AET-WO-1204`).
+    for (hz, ns) in [(100_000, 1000), (400_000, 300), (1_000_000, 120)] {
         let mut t = solved();
         t.i2c_ceilings.insert("SENSORS".into(), hz);
+        for line in t.analog_lines.values_mut() {
+            line.ceiling_ns = ns;
+        }
         assert_eq!(t.validate(), Ok(()), "{hz}");
     }
     for hz in [
@@ -976,6 +994,75 @@ fn solved_accepts_each_mode_and_refuses_any_other_ceiling() {
         });
         assert_refusal(err, "InvalidCeiling", Some("SENSORS"));
     }
+}
+
+// ---- A hand-written topology holds only the ceiling `solve` derives
+// (AET-WO-1204; AET-WO-2200 F14) ----------------------------------------------
+
+fn assert_not_derived(err: E, bus: &str, ceiling_hz: u32, derived_hz: Option<u32>) {
+    assert_eq!(
+        err,
+        E::CeilingNotDerived {
+            bus: bus.into(),
+            ceiling_hz,
+            derived_hz
+        },
+        "{err}"
+    );
+    assert_eq!(err.kind(), "CeilingNotDerived");
+    assert_eq!(err.id(), Some(bus));
+}
+
+#[test]
+fn solved_refuses_a_rise_time_slower_than_every_mode() {
+    // F14: `ceiling_ns: u32::MAX` validated; `solve` refuses it (`RiseTimeTooSlow`).
+    let err = solved_refusal(|t| {
+        for line in t.analog_lines.values_mut() {
+            line.ceiling_ns = u32::MAX;
+        }
+    });
+    assert_not_derived(err, "SENSORS", 400_000, None);
+    // `solve` takes the smallest bound of the two lines, so one slow line
+    // beside a 300 ns line still derives 400 kHz.
+    let mut t = solved();
+    t.analog_lines.get_mut("I2C_SDA").unwrap().ceiling_ns = 1001;
+    assert_eq!(t.validate(), Ok(()));
+}
+
+#[test]
+fn solved_refuses_a_ceiling_faster_or_slower_than_its_lines_derive() {
+    let err = solved_refusal(|t| {
+        for line in t.analog_lines.values_mut() {
+            line.ceiling_ns = 120;
+        }
+    });
+    assert_not_derived(err, "SENSORS", 400_000, Some(1_000_000));
+    let err = solved_refusal(|t| {
+        t.i2c_ceilings.insert("SENSORS".into(), 1_000_000);
+    });
+    assert_not_derived(err, "SENSORS", 1_000_000, Some(400_000));
+}
+
+#[test]
+fn solved_derives_the_ceiling_from_the_smallest_bound_of_the_bus() {
+    // One line at 120 ns and one at 300 ns: the smallest bound decides, as in
+    // `solve`, so the bus derives 1 MHz and a 400 kHz ceiling is refused.
+    let mut t = solved();
+    t.analog_lines.get_mut("I2C_SDA").unwrap().ceiling_ns = 120;
+    t.i2c_ceilings.insert("SENSORS".into(), 1_000_000);
+    assert_eq!(t.validate(), Ok(()));
+    let err = solved_refusal(|t| {
+        t.analog_lines.get_mut("I2C_SDA").unwrap().ceiling_ns = 120;
+    });
+    assert_not_derived(err, "SENSORS", 400_000, Some(1_000_000));
+}
+
+#[test]
+fn solved_refuses_a_ceiling_for_a_bus_with_no_line() {
+    let err = solved_refusal(|t| {
+        t.i2c_ceilings.insert("EXTRA".into(), 400_000);
+    });
+    assert_not_derived(err, "EXTRA", 400_000, None);
 }
 
 #[test]
@@ -1252,11 +1339,11 @@ fn solved_refuses_a_missing_or_repeated_device() {
 #[test]
 fn refuses_names_that_differ_only_in_case() {
     // The review's A10.1 inputs: `emit` accepted both and `check erc` refused them.
-    let err = refusal(|s| s.spi_devices[0].cs.net = "gnd".into());
+    let err = refusal(|s| devs(s).spi[0].cs.net = "gnd".into());
     assert_refusal(err, "NetShadowsDomain", Some("gnd"));
-    let err = refusal(|s| s.spi_devices[0].cs.net = "i2c_scl".into());
+    let err = refusal(|s| devs(s).spi[0].cs.net = "i2c_scl".into());
     assert_refusal(err, "DuplicateNetName", Some("i2c_scl"));
-    let err = refusal(|s| s.spi_devices[0].cs.net = "vdd_3v3".into());
+    let err = refusal(|s| devs(s).spi[0].cs.net = "vdd_3v3".into());
     assert_refusal(err, "NetShadowsDomain", Some("vdd_3v3"));
 }
 

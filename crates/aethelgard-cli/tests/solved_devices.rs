@@ -66,10 +66,14 @@ fn the_interim_derivation_is_gone() {
     }
 }
 
+/// The readers of a specification's devices are fenced by the compiler since
+/// `AET-WO-1204`: private fields, two accessors, a `clippy.toml` per runner
+/// (`aethelgard-ir/tests/rul16_fence.rs`). What stays here is the coarser
+/// rule that the crates which generate or judge from a topology never name the
+/// `Specification` type at all.
 #[test]
-fn nothing_outside_solve_reads_devices_from_a_specification() {
-    // The crates that generate or judge from a topology never name the
-    // `Specification` type at all (`RUL-16`) ...
+fn the_generators_never_name_a_specification() {
+    // `RUL-16`:
     for krate in ["aethelgard-svd-hal", "aethelgard-twin", "aethelgard-chaos"] {
         for (path, text) in sources(&crates().join(krate).join("src")) {
             for (n, line) in code(&text) {
@@ -81,47 +85,21 @@ fn nothing_outside_solve_reads_devices_from_a_specification() {
             }
         }
     }
-    // ... and no crate but `ir` and `eda` reads `.i2c_devices` off anything
-    // called a specification. The CLI holds the `Specification` it parsed,
-    // so it is the one a quiet reader would be added to.
-    for krate in [
-        "aethelgard-svd-hal",
-        "aethelgard-twin",
-        "aethelgard-chaos",
-        "aethelgard-cli",
-    ] {
-        for dir in ["src", "tests"] {
-            for (path, text) in sources(&crates().join(krate).join(dir)) {
-                if path.ends_with("solved_devices.rs") {
-                    continue;
-                }
-                for (n, line) in code(&text) {
-                    for held in ["spec", "specification", "spec()", "specification()"] {
-                        assert!(
-                            !line.contains(&format!("{held}.i2c_devices")),
-                            "{}:{n} reads a specification's devices: {line}",
-                            path.display()
-                        );
-                    }
-                }
-            }
-        }
-    }
 }
 
-/// `aethelgard-eda`'s schematic and layout read the specification: they are
-/// design intent, not a generator of the firmware or the platform, and are
-/// outside `AET-WO-2203`'s fence. Pinned at exactly these readers, so a third
-/// one fails here and goes to the architect (FEEDBACK).
+/// `aethelgard-eda` draws declared intent, not a generator of the firmware or
+/// the platform, so it carries no `clippy.toml` fence (`RUL-16`, 2026-11-09).
+/// Pinned at the one file that calls the accessors, so a second reader goes
+/// to the architect (FEEDBACK).
 #[test]
-fn the_eda_readers_are_exactly_the_known_two() {
-    let mut readers = Vec::new();
+fn the_eda_reader_is_exactly_the_schematic() {
+    let mut readers = std::collections::BTreeSet::new();
     for (path, text) in sources(&crates().join("aethelgard-eda").join("src")) {
         for (_, line) in code(&text) {
-            if line.contains(".i2c_devices") {
-                readers.push(path.file_name().unwrap().to_string_lossy().into_owned());
+            if line.contains(".declared_i2c_devices(") || line.contains(".declared_spi_devices(") {
+                readers.insert(path.file_name().unwrap().to_string_lossy().into_owned());
             }
         }
     }
-    assert_eq!(readers, ["schematic.rs", "schematic.rs"]);
+    assert_eq!(readers.into_iter().collect::<Vec<_>>(), ["schematic.rs"]);
 }
