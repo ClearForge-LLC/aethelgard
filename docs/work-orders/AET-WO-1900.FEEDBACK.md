@@ -47,6 +47,7 @@ A second scenario, topology, boot or verdict record is refused while folding (`D
 |---|---|
 | A7.1 | Not this work order's (`AET-WO-1204`). |
 | A7.2, A7.3 | Items 2 and 1. |
+| A7.4 (ruling 2) | The floor of 100 failed on CI (61 descendants seen on the shared runner; CI image job on `3ee5de0`). Non-vacuity is the property, so the assertion is now `seen >= 1`; the mutant (a sampler that records nothing) still fails it. |
 | A7.4 | Real; fixed for the storm test. `servers_sigkilled_while_calls_start_leave_nothing` passes an empty `seen` on purpose and relies on the `TMPDIR` marker, so its "any process started" is still unproven. Backlog, low. |
 | A7.5 | Verified at source: the test's `allowed` table duplicates `Rule::evidence_kinds`, and kind 7 is allowed for S1 and S2. Tightening it means choosing the exact evidence per case: a design call, not small. Backlog, `AET-WO-2301`. |
 | A7.6 | Verified: 23 scenario files in `seeded/`; no indeterminate case end to end. Data, not small. Backlog, `AET-WO-2301`. |
