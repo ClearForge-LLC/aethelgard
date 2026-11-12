@@ -11,6 +11,7 @@ use std::process::ExitCode;
 
 use aethelgard_eda::extract::{self as bound, CONDITIONS, LineBound};
 use serde::Serialize;
+use serde_json::{Value, json};
 
 use crate::verdict::InputReport;
 use crate::{EXIT_FAIL, EXIT_INVALID_SPEC, EXIT_UNREADABLE, Refusal};
@@ -29,33 +30,8 @@ struct Report {
     specification_sha256: String,
     capacitance: &'static str,
     conditions: &'static [&'static str],
-    lines: Vec<Line>,
+    lines: Vec<Value>,
     findings: Vec<Finding>,
-}
-
-#[derive(Serialize)]
-struct Line {
-    net: String,
-    board_net: String,
-    bus: String,
-    verdict: &'static str,
-    c_bound_femtofarads: u64,
-    declared_femtofarads: u64,
-    terms: Terms,
-    length_nm: u64,
-    segments: u64,
-    via_count: u64,
-    pad_count: u64,
-    pins: Vec<String>,
-    pull_ups: Vec<String>,
-}
-
-#[derive(Serialize)]
-struct Terms {
-    trace: u64,
-    vias: u64,
-    pads: u64,
-    pins: u64,
 }
 
 #[derive(Serialize)]
@@ -65,31 +41,17 @@ struct Finding {
     message: String,
 }
 
-fn line(b: LineBound, declared: u64) -> Line {
-    Line {
-        verdict: if b.c_bound_femtofarads <= declared {
-            "pass"
-        } else {
-            "fail"
-        },
-        declared_femtofarads: declared,
-        terms: Terms {
-            trace: b.terms.trace,
-            vias: b.terms.vias,
-            pads: b.terms.pads,
-            pins: b.terms.pins,
-        },
-        net: b.net,
-        board_net: b.board_net,
-        bus: b.bus,
-        c_bound_femtofarads: b.c_bound_femtofarads,
-        length_nm: b.length_nm,
-        segments: b.segments,
-        via_count: b.via_count,
-        pad_count: b.pad_count,
-        pins: b.pins,
-        pull_ups: b.pull_ups,
-    }
+/// One line of the verdict: the bound with its terms, and the judgement.
+fn line(b: LineBound, declared: u64) -> Value {
+    let t = &b.terms;
+    json!({
+        "net": b.net, "board_net": b.board_net, "bus": b.bus,
+        "verdict": if b.c_bound_femtofarads <= declared { "pass" } else { "fail" },
+        "c_bound_femtofarads": b.c_bound_femtofarads, "declared_femtofarads": declared,
+        "terms": {"trace": t.trace, "vias": t.vias, "pads": t.pads, "pins": t.pins},
+        "length_nm": b.length_nm, "segments": b.segments, "via_count": b.via_count,
+        "pad_count": b.pad_count, "pins": b.pins, "pull_ups": b.pull_ups,
+    })
 }
 
 /// `aethelgard extract --board <pcb> --spec <spec>`.
@@ -124,14 +86,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     };
     let lines = match bound::read(text).and_then(|read| bound::bound(&read, &wanted)) {
         Ok(l) => l,
-        Err(r) => {
-            let code = if r.invalid_spec {
-                EXIT_INVALID_SPEC
-            } else {
-                EXIT_UNREADABLE
-            };
-            return refuse(r.kind, r.message, code);
-        }
+        Err(r) => return refuse(r.kind, r.message, EXIT_UNREADABLE),
     };
     let mut out = Vec::new();
     for b in lines {
@@ -147,19 +102,19 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     }
     let findings: Vec<Finding> = out
         .iter()
-        .filter(|l| l.verdict == "fail")
+        .filter(|l| l["verdict"] == "fail")
         .map(|l| Finding {
             kind: "capacitance_over_declared_bound",
             severity: "error",
             message: format!(
                 "`{}`: bound {} fF (trace {}, vias {}, pads {}, pins {}) exceeds the declared {} fF",
-                l.net,
-                l.c_bound_femtofarads,
-                l.terms.trace,
-                l.terms.vias,
-                l.terms.pads,
-                l.terms.pins,
-                l.declared_femtofarads
+                l["net"].as_str().unwrap_or_default(),
+                l["c_bound_femtofarads"],
+                l["terms"]["trace"],
+                l["terms"]["vias"],
+                l["terms"]["pads"],
+                l["terms"]["pins"],
+                l["declared_femtofarads"]
             ),
         })
         .collect();

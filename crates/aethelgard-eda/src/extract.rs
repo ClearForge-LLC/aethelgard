@@ -124,11 +124,6 @@ const _: () = assert!(DRILL_NM <= VIA_NM);
 /// clears π's 113 twice, and the 4 and 3 of `W²/4` and `4/3`.
 const D: u128 = PI_DEN * PI_DEN * 12;
 
-/// `⌈a / b⌉`.
-const fn ceil_div(a: u128, b: u128) -> u128 {
-    a.div_ceil(b)
-}
-
 const fn mul(a: u128, b: u128) -> Option<u128> {
     a.checked_mul(b)
 }
@@ -200,7 +195,7 @@ pub const fn shell(base: Base, c: u128, s: u128) -> Option<u128> {
     let Some(t4) = mul(ps2, PI_NUM) else {
         return None;
     };
-    let t4 = ceil_div(t4, 2 * PI_DEN);
+    let t4 = t4.div_ceil(2 * PI_DEN);
     // (4/3)·π·s³ · D = 4·355·113·4·s³
     let Some(t5) = mul(s3, 4 * PI_NUM * PI_DEN * 4) else {
         return None;
@@ -218,32 +213,11 @@ pub const fn femtofarads(volume_d: u128) -> Option<u64> {
         return None;
     };
     let den = EPS0_DEN * EPS_R_DEN * D * S * S;
-    let ff = ceil_div(a, den);
+    let ff = a.div_ceil(den);
     if ff > u64::MAX as u128 {
         return None;
     }
     Some(ff as u64)
-}
-
-const fn must(v: Option<u64>) -> u64 {
-    match v {
-        Some(v) => v,
-        None => panic!("a derived constant overflowed"),
-    }
-}
-
-const fn must_base(v: Option<Base>) -> Base {
-    match v {
-        Some(v) => v,
-        None => panic!("a derived base overflowed"),
-    }
-}
-
-const fn must_vol(v: Option<u128>) -> u128 {
-    match v {
-        Some(v) => v,
-        None => panic!("a derived volume overflowed"),
-    }
 }
 
 /// The per-length bound, femtofarads per millimetre of a track's length,
@@ -253,21 +227,23 @@ const fn must_vol(v: Option<u128>) -> u128 {
 pub const PER_MM_FF: u64 = {
     let (c, w) = (COPPER_NM as u128, WIDTH_NM as u128);
     let per_nm = (2 * c * S + 2 * w * S) * D + S * S * PI_NUM * PI_DEN * 12;
-    must(femtofarads(per_nm * 1_000_000))
+    femtofarads(per_nm * 1_000_000).expect("the per-length bound fits")
 };
 
 /// Each track's two round ends: the shell of a track of length 0, a disk of
 /// diameter `WIDTH_NM`, `COPPER_NM` high.
 pub const SEGMENT_FF: u64 = {
-    let base = must_base(Base::disk(WIDTH_NM as u128 / 2));
-    must(femtofarads(must_vol(shell(base, COPPER_NM as u128, S))))
+    let base = Base::disk(WIDTH_NM as u128 / 2).expect("a track's ends fit");
+    let shell = shell(base, COPPER_NM as u128, S).expect("a track's ends fit");
+    femtofarads(shell).expect("a track's ends fit")
 };
 
 /// One via: its checked disk, diameter `VIA_NM`, through `VIA_HEIGHT_NM`.
 /// The barrel and both pads lie inside it.
 pub const VIA_FF: u64 = {
-    let base = must_base(Base::disk(VIA_NM as u128 / 2));
-    must(femtofarads(must_vol(shell(base, VIA_HEIGHT_NM as u128, S))))
+    let base = Base::disk(VIA_NM as u128 / 2).expect("a via fits");
+    let shell = shell(base, VIA_HEIGHT_NM as u128, S).expect("a via fits");
+    femtofarads(shell).expect("a via fits")
 };
 
 const _: () = assert!(WIDTH_NM % 2 == 0 && VIA_NM % 2 == 0);
@@ -281,27 +257,21 @@ pub fn pad_ff(rect: crate::pcb::Rect) -> Option<u64> {
 }
 
 /// A refusal: a named kind and a message. No estimate follows one.
-/// `invalid_spec` marks one the specification causes (exit 2), not the board.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Refused {
     pub kind: &'static str,
     pub message: String,
-    pub invalid_spec: bool,
 }
 
 fn refused(kind: &'static str, message: impl Into<String>) -> Refused {
     Refused {
         kind,
         message: message.into(),
-        invalid_spec: false,
     }
 }
 
 fn invalid(e: &crate::schematic::EmitError) -> Refused {
-    Refused {
-        invalid_spec: true,
-        ..refused(e.kind(), e.to_string())
-    }
+    refused(e.kind(), e.to_string())
 }
 
 /// The four terms of one line's bound, femtofarads, each rounded up.
@@ -621,9 +591,6 @@ pub fn read(text: &str) -> Result<ReadBoard, Refused> {
                     ));
                 }
             }
-            "gr_rect" if on_copper(item) => {
-                return Err(unmodelled("a `gr_rect` on a copper layer".into()));
-            }
             "gr_rect" | "segment" | "via" | "zone" | "general" => {
                 for child in item.items().iter().skip(1) {
                     bounded(child, head)?;
@@ -724,17 +691,17 @@ pub fn lines(
                         .count()
                         == 1
                     && part.conns.len() == 2;
+                // belt-and-suspenders: today's generator puts no passive but
+                // the pull-up on an I2C line; a later one that does (a series
+                // resistor, a capacitor) must not have it counted as copper.
                 if passive && !pull_up {
-                    return Err(Refused {
-                        invalid_spec: true,
-                        ..refused(
-                            "UnmodelledPart",
-                            format!(
-                                "the design puts {} on `{net}`, and its capacitance is not known",
-                                part.reference
-                            ),
-                        )
-                    });
+                    return Err(refused(
+                        "UnmodelledPart",
+                        format!(
+                            "the design puts {} on `{net}`, and its capacitance is not known",
+                            part.reference
+                        ),
+                    ));
                 }
                 roles.insert(
                     part.reference.clone(),

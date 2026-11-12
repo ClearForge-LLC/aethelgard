@@ -464,6 +464,19 @@ fn what_the_reader_does_not_model_is_refused() {
             "BoardThickness",
         ),
         ("huge", huge, "BoardTooLarge"),
+        (
+            "general_twice",
+            insert("\t(general (thickness 0.2))"),
+            unmodelled,
+        ),
+        (
+            "footprint_unknown_child",
+            once(
+                "\t\t(attr ",
+                "\t\t(fp_circle (center 0 0) (end 0.1 0) (layer \"F.SilkS\"))\n\t\t(attr ",
+            ),
+            unmodelled,
+        ),
         ("garbage", "(kicad_pcb (".to_owned(), "BoardUnreadable"),
     ] {
         assert_ne!(board, text, "{label}: the edit did not apply");
@@ -481,6 +494,14 @@ fn what_the_reader_does_not_model_is_refused() {
 #[test]
 fn the_parts_on_a_line_are_the_designs() {
     let text = reference();
+    // R1's pad on SDA, numbered 3: its copper is where the design's pad 2 is.
+    let r1 = text.find("(property \"Reference\" \"R1\"").unwrap();
+    let pad = r1 + text[r1..].find("(pad \"2\"").unwrap();
+    let renumbered = format!(
+        "{}(pad \"3\"{}",
+        &text[..pad],
+        &text[pad + "(pad \"2\"".len()..]
+    );
     for (label, board, kind) in [
         (
             "renamed",
@@ -491,6 +512,7 @@ fn the_parts_on_a_line_are_the_designs() {
             ),
             "DeviceNotOnLine",
         ),
+        ("pads", renumbered, "PartMismatch"),
         (
             "value",
             text.replacen(
@@ -528,4 +550,12 @@ fn the_parts_on_a_line_are_the_designs() {
     let (code, v) = extract("line", text, renamed.to_str().unwrap());
     assert_eq!(code, 3, "{v}");
     assert_eq!(refused(&v), "LineNotOnBoard");
+
+    // A specification `solve` accepts and the design refuses is exit 2.
+    let address = spec_with("address", |v| {
+        v["i2c_devices"][0]["address"] = 80.into();
+    });
+    let (code, v) = extract("address", text, address.to_str().unwrap());
+    assert_eq!(code, 2, "{v}");
+    assert_eq!(refused(&v), "UnsupportedAddress");
 }
