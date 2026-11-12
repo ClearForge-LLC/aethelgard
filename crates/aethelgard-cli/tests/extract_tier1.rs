@@ -111,6 +111,8 @@ fn the_reference_passes_with_every_term() {
     assert_eq!(code, 0, "{v}");
     assert_eq!(v["verdict"], "pass");
     assert_eq!(v["check"], "extract");
+    // It runs no tool, so it claims no tool and no sandbox (F13, settled at the `AET-WO-1601` merge).
+    assert!(v.get("tool").is_none() && v.get("sandbox").is_none(), "{v}");
     assert_eq!(
         v["capacitance"],
         "upper bound estimated from routed geometry"

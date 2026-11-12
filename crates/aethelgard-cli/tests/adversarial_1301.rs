@@ -290,7 +290,8 @@ fn the_board_does_not_depend_on_key_order_locale_or_environment() {
     );
     let board = |spec: &Path, out: &str, env: &[(&str, &str)]| {
         let mut c = cli();
-        c.env_clear();
+        c.env_clear()
+            .env("HOME", std::env::var_os("HOME").unwrap_or_default());
         for (k, v) in env {
             c.env(k, v);
         }

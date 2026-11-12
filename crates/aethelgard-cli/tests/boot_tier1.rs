@@ -223,6 +223,7 @@ fn run_cli(cli: &Path, path: &Path, args: &[&OsStr]) -> Output {
     Command::new(cli)
         .args(args)
         .env_clear()
+        .env("HOME", std::env::var_os("HOME").unwrap_or_default())
         .env("PATH", path)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

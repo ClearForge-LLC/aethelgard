@@ -140,6 +140,40 @@ pub fn prepare_parity(board: &Path, schematic: &Path) -> Result<(), Stop> {
     aethelgard_eda::parity::board(&text).map_err(refused)
 }
 
+/// Refuses, exit 3 and before any tool runs, a schematic copied in for ERC
+/// that names a hierarchical sheet: KiCad would read the file the sheet names,
+/// which the gate has neither copied nor hashed (`AET-WO-1300` A8,
+/// `AET-WO-1601` §1.5). The copy is read with the reader parity uses, which
+/// refuses every byte sequence it and KiCad might read differently, so a
+/// schematic it cannot read is refused too: a sheet could hide in it. The
+/// emitter never writes a sheet.
+pub fn refuse_sheets(schematic: &Path) -> Result<(), Stop> {
+    use aethelgard_eda::parity::ParityRefusal;
+    use aethelgard_eda::sexpr::{self, Sx};
+    let refused = |r: ParityRefusal| Stop {
+        code: crate::EXIT_UNREADABLE,
+        kind: r.kind(),
+        id: None,
+        message: r.to_string(),
+    };
+    let bytes = std::fs::read(schematic).map_err(|e| scratch_error(schematic, e))?;
+    let text = String::from_utf8(bytes).map_err(|_| Stop {
+        code: crate::EXIT_UNREADABLE,
+        kind: "MalformedSchematic",
+        id: None,
+        message: "the schematic is not UTF-8".to_owned(),
+    })?;
+    let root = sexpr::parse(&text).map_err(|e| refused(ParityRefusal::Malformed(e)))?;
+    let mut stack = vec![&root];
+    while let Some(item) = stack.pop() {
+        if item.head() == Some("sheet") {
+            return Err(refused(ParityRefusal::Sheet));
+        }
+        stack.extend(item.items().iter().filter(|c| matches!(c, Sx::List(_))));
+    }
+    Ok(())
+}
+
 fn scratch_error(path: &Path, e: std::io::Error) -> Stop {
     Stop::tool_error(
         "aethelgard",

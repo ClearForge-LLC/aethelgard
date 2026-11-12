@@ -77,6 +77,14 @@ struct Gate {
     verdict: &'static str,
     exit_code: Option<i32>,
     tool_version: Option<String>,
+    /// Whether the gate's tools ran under the separate uid (`AET-WO-1601`
+    /// §1.2), as the gate's own verdict says; null when it did not run, and
+    /// for `extract`, which runs no tool. For the campaign, true only when
+    /// every run says so.
+    uid_boundary: Option<bool>,
+    /// When `uid_boundary` is false, the first condition that failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    uid_boundary_unmet: Option<String>,
     /// The sha256 the gate reports for what it judged, equal to the generated one.
     input_sha256: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -245,11 +253,20 @@ fn gate_report(name: &'static str, harness: Option<String>, ran: &Ran) -> Gate {
         },
         exit_code: Some(ran.code),
         tool_version: v["tool"]["version"].as_str().map(str::to_owned),
+        uid_boundary: Some(v["sandbox"]["uid_boundary"] == true),
+        uid_boundary_unmet: v["sandbox"]["uid_boundary_unmet"]
+            .as_str()
+            .map(str::to_owned),
         input_sha256: v["input"]["sha256"].as_str().map(str::to_owned),
         harness_provenance: v["harness_provenance"].as_str().map(str::to_owned),
         cover_count: v["cover_count"].as_u64(),
         findings: v["findings"].as_array().cloned().unwrap_or_default(),
     }
+}
+
+/// The campaign's `uid_boundary`: true only when every run line says `true`.
+fn every_run_separated(runs: &[Value]) -> bool {
+    runs.iter().all(|line| line["uid_boundary"] == true)
 }
 
 fn not_run(name: &'static str) -> Gate {
@@ -259,6 +276,8 @@ fn not_run(name: &'static str) -> Gate {
         verdict: "not_run",
         exit_code: None,
         tool_version: None,
+        uid_boundary: None,
+        uid_boundary_unmet: None,
         input_sha256: None,
         harness_provenance: None,
         cover_count: None,
@@ -589,7 +608,11 @@ fn run_gates(
         args(&[&"extract", &"--board", &p.pcb, &"--spec", &p.spec]),
     )?;
     bound("extract", &extract, want, "", "")?;
-    report.gates.push(gate_report("extract", None, &extract));
+    // `extract` runs no external tool, so its verdict has no `sandbox` and no
+    // uid boundary to report: null, never a value it did not measure.
+    let mut g = gate_report("extract", None, &extract);
+    g.uid_boundary = None;
+    report.gates.push(g);
 
     if want.harnesses.is_empty() {
         report.findings.push(Finding {
@@ -709,6 +732,10 @@ fn run_gates(
         });
     }
     let mut g = gate_report("campaign", None, &ran);
+    g.uid_boundary = Some(every_run_separated(runs));
+    g.uid_boundary_unmet = runs
+        .iter()
+        .find_map(|line| line["uid_boundary_unmet"].as_str().map(str::to_owned));
     // The design must survive every scenario: each run's own verdict is
     // `pass`, and the campaign matched every expectation. A scenario that
     // expects a fail can never let `verify` pass (`AET-WO-3301` §3.2).
@@ -757,6 +784,40 @@ fn run_gates(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// `uid_boundary` is the gate's own `sandbox.uid_boundary`, and true only
+    /// when that is the JSON `true`; a gate that did not run has none; the
+    /// campaign's is true only when every run's is (`AET-WO-1601` §1.2).
+    #[test]
+    fn each_gate_names_the_uid_boundary_its_own_verdict_reports() {
+        let ran = |v: Value| Ran {
+            code: 0,
+            lines: vec![v],
+        };
+        let boundary = |v: Value| gate_report("erc", None, &ran(v)).uid_boundary;
+        assert_eq!(
+            boundary(json!({"sandbox": {"uid_boundary": true}})),
+            Some(true)
+        );
+        assert_eq!(
+            boundary(json!({"sandbox": {"uid_boundary": false}})),
+            Some(false)
+        );
+        assert_eq!(
+            boundary(json!({"sandbox": {"uid_boundary": "true"}})),
+            Some(false)
+        );
+        assert_eq!(boundary(json!({"sandbox": {}})), Some(false));
+        assert_eq!(boundary(json!({"uid_boundary": true})), Some(false));
+        assert_eq!(not_run("build").uid_boundary, None);
+        let t = json!({"uid_boundary": true});
+        assert!(every_run_separated(&[t.clone(), t.clone()]));
+        assert!(!every_run_separated(&[
+            t.clone(),
+            json!({"uid_boundary": false})
+        ]));
+        assert!(!every_run_separated(&[t, json!({})]));
+    }
 
     fn want() -> Want<'static> {
         Want {

@@ -357,6 +357,7 @@ fn withstood_emission_ignores_env_locale_time_cwd_and_spec_layout() {
         let o = d.0.join(out);
         let r = cli()
             .env_clear()
+            .env("HOME", std::env::var_os("HOME").unwrap_or_default())
             .envs(env.iter().copied())
             .current_dir(cwd)
             .args([
