@@ -141,3 +141,8 @@
 - **Wording (`RUL-19`).**
   - `proposal.json` and FEEDBACK say the rise is "computed from declared values". `predicted_rise_ps` is the field name.
   - A proposal is evidence about the specification, not the board.
+
+## 9. Amendment after the build (2026-11-12, F1 and F2)
+
+- **§3.4 reads:** every pull-up case, and every capacitance case that a pull-up at or above the floor can fix, gives a proposal whose re-gate passes. The others give a below-floor `NoProposal` with the numbers in `sizing`. The 390 pF case is one: its 726 Ω target is under the 967 Ω floor, and less capacitance, the only real fix, is a value the gates judge, never a lever (`INV-07`).
+- **Exit 6** is a generator report, for `propose` alone (`RUL-10`, amended).
