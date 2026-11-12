@@ -180,6 +180,7 @@ jobs:
         run: |
           docker push "$TAG"
           digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$TAG")
+          [[ "$digest" =~ ^ghcr\.io/clearforge-llc/aethelgard@sha256:[0-9a-f]{64}$ ]] || { echo "no digest to hand the quickstart: $digest" >&2; exit 1; }
           echo "image=$digest" >> "$GITHUB_OUTPUT"
           echo "Published \`$digest\` from \`$GITHUB_SHA\`." >> "$GITHUB_STEP_SUMMARY"
 

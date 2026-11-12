@@ -251,3 +251,31 @@ fn a_second_once_only_record_is_refused_at_fold_time() {
     ));
     assert_eq!(replayer.state().records.len(), 1);
 }
+
+/// Adversarial pass of AET-WO-1900: records are folded into memory, so their
+/// count is bounded, not only the trace's bytes.
+#[test]
+fn a_run_over_the_record_bound_is_refused_while_folding() {
+    use aethelgard_chaos::record::{Reading, Record};
+    use aethelgard_chaos::replay::MAX_RECORDS;
+    let reg = |t| Event::Record {
+        timestamp: t,
+        record: Record::RegisterObserved {
+            name: "A".into(),
+            reading: Reading {
+                address: 0,
+                mask: 0,
+                expected: 0,
+                observed: None,
+            },
+        },
+    };
+    let mut replayer = Replayer::new(&header_bytes());
+    for i in 0..MAX_RECORDS as u64 {
+        replayer.apply(&reg(i)).unwrap();
+    }
+    assert!(matches!(
+        replayer.apply(&reg(MAX_RECORDS as u64)),
+        Err(E::TooManyRecords { limit, .. }) if limit == MAX_RECORDS
+    ));
+}

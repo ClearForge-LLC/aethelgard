@@ -67,6 +67,8 @@ pub enum ArchiveError {
         offset: usize,
         kind: u64,
     },
+    #[error("event {index} is over the {limit}-record bound on a run")]
+    TooManyRecords { index: u64, limit: usize },
     #[error("event {index} is a second record of kind {kind}; a run holds one of each")]
     DuplicateRecord { index: u64, kind: u64 },
     #[error("event {index} at byte {offset} is malformed: {reason}")]
@@ -110,6 +112,7 @@ impl ArchiveError {
             Self::UnknownEventKind { .. } => "UnknownEventKind",
             Self::MalformedEvent { .. } => "MalformedEvent",
             Self::DuplicateRecord { .. } => "DuplicateRecord",
+            Self::TooManyRecords { .. } => "TooManyRecords",
             Self::TimestampRegressed { .. } => "TimestampRegressed",
             Self::EventCountMismatch { .. } => "EventCountMismatch",
             Self::ReplayDiverged => "ReplayDiverged",

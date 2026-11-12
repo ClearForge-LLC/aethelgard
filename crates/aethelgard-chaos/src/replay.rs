@@ -68,6 +68,11 @@ impl State {
 
 /// The wire kinds of the records a run holds exactly once: scenario, topology,
 /// boot, verdict.
+/// The most records a run may fold. A campaign run holds a few dozen; the cap
+/// bounds the memory the fold builds, which the 256 MiB trace bound does not
+/// (a 10-byte record costs about 350 bytes of state).
+pub const MAX_RECORDS: usize = 65_536;
+
 const ONCE_KINDS: [u64; 4] = [5, 6, 10, 14];
 
 /// The incremental fold. The writer and the reader both drive it, so a
@@ -104,6 +109,12 @@ impl Replayer {
         self.last_timestamp = event.timestamp();
         // A run holds exactly one scenario, topology, boot and verdict
         // (`check_run`); refuse a second here, before it is stored.
+        if matches!(event, Event::Record { .. }) && self.state.records.len() >= MAX_RECORDS {
+            return Err(ArchiveError::TooManyRecords {
+                index: self.count,
+                limit: MAX_RECORDS,
+            });
+        }
         if let Event::Record { record, .. } = event
             && let Some(slot) = ONCE_KINDS.iter().position(|k| *k == record.kind())
         {

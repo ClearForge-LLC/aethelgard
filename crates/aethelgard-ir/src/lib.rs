@@ -533,6 +533,16 @@ impl Specification {
             return Err(E::NoVoltageDomain);
         }
         // 4
+        let mut folded_ids = BTreeSet::new();
+        for domain in &self.voltage_domains {
+            let id = &domain.id;
+            // Power names that differ only in case (or from the emitter's `GND`)
+            // are refused by KiCad's ERC, as the net rule in step 11 is.
+            let folded = id.to_lowercase();
+            if (folded == "gnd" && id != "GND") || !folded_ids.insert(folded) {
+                return Err(E::DuplicateDomainId { id: id.clone() });
+            }
+        }
         let mut domains = BTreeSet::new();
         for domain in &self.voltage_domains {
             let id = &domain.id;

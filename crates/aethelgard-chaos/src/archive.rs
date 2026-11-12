@@ -24,9 +24,9 @@ pub const MIRROR_TMP: &str = "mirror.cbor.tmp";
 /// A manifest declaring a longer trace is refused before the trace is read
 /// (`OQ-03` revisits the number when P2 measures real volume).
 pub const MAX_TRACE_BYTES: u64 = 256 << 20;
-/// The longest encoded header item the reader will build.
 /// The most a manifest may be: it holds a handful of integers and a hash.
 pub const MAX_MANIFEST_BYTES: u64 = 1 << 20;
+/// The longest encoded header item the reader will build.
 pub const MAX_HEADER_BYTES: usize = 1 << 20;
 /// The longest encoded event item the reader will build, and the writer write.
 pub const MAX_EVENT_BYTES: usize = 4096;

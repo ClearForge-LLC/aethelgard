@@ -137,6 +137,7 @@ Reader (`replay_dir`) checks in this order, each refusal its own
 | Trace length equals `trace_bytes` (checked before the file is read) | `Truncated` / `Extended` |
 | Trace sha256 equals `trace_sha256` | `HashMismatch` |
 | Header and events decode; a header item is at most 1 MiB and an event item at most 4,096 encoded bytes, checked before the item's nested values are built | `NotDeterministicCbor` (with offset), `MalformedHeader`, `UnknownVersion`, `UnknownEventKind`, `MalformedEvent`, `TimestampRegressed` |
+| (while folding) at most 65,536 records | `TooManyRecords` |
 | (while folding) no second scenario, topology, boot or verdict record | `DuplicateRecord` |
 | Event count equals `event_count` | `EventCountMismatch` |
 | Replayed state hash equals `state_hash` | `ReplayDiverged` |

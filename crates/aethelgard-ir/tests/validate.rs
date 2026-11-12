@@ -1259,3 +1259,20 @@ fn refuses_names_that_differ_only_in_case() {
     let err = refusal(|s| s.spi_devices[0].cs.net = "vdd_3v3".into());
     assert_refusal(err, "NetShadowsDomain", Some("vdd_3v3"));
 }
+
+#[test]
+fn refuses_voltage_domains_that_differ_only_in_case() {
+    // Adversarial pass of AET-WO-1900: power names fold like net names do.
+    let err = refusal(|s| {
+        let mut d = s.voltage_domains[0].clone();
+        d.id = "vdd_3v3".into();
+        s.voltage_domains.push(d);
+    });
+    assert_refusal(err, "DuplicateDomainId", Some("vdd_3v3"));
+    let err = refusal(|s| {
+        let mut d = s.voltage_domains[0].clone();
+        d.id = "gnd".into();
+        s.voltage_domains.push(d);
+    });
+    assert_refusal(err, "DuplicateDomainId", Some("gnd"));
+}

@@ -55,7 +55,7 @@ Returns the first refusal, in this order, and in document order within a step. `
 | 8 | References are unique across both device lists | `DuplicateReference` (the reference) |
 | 9 | A device's `bus` names a bus of its own kind | `UnknownBus` (the name) |
 | 10 | An I2C address is in `0x08..=0x77` and unique on its bus | `I2cAddressOutOfRange`, `DuplicateI2cAddress` (the device reference) |
-| 11 | A net is declared by exactly one signal across every bus and every `cs`, and no signal net has a voltage domain's id (compared with case folded), and none differs from `GND` only in case | `DuplicateNetName`, `NetShadowsDomain` (the net) |
+| 11 | A net is declared by exactly one signal across every bus and every `cs`, and no signal net has a voltage domain's id (compared with case folded),, none differs from `GND` only in case, and voltage domain ids are compared the same way (`DuplicateDomainId`) | `DuplicateNetName`, `NetShadowsDomain` (the net) |
 | 12 | Net constraints: unique `net_name`; each names a declared signal net or a voltage domain id; capacitance, rise time and impedance are not 0 | `DuplicateNetConstraint`, `UnknownNet`, `ZeroCapacitance`, `ZeroRiseTime`, `ZeroImpedance` (the net) |
 
 Step 2 walks the identifiers in this order: `project_name`; `mcu.part`, `mcu.supply`; `voltage_domains[i].id`; each I2C bus (`id`, `peripheral` if set, `domain`, then `sda` and `scl`: `net`, `pin` if set); each SPI bus (the same, with `sck`, `mosi`, `miso`); each I2C device (`reference`, `part`, `supply`, `bus`); each SPI device (the same, then `cs.net`, `cs.pin` if set); `net_constraints[i].net_name`. Nothing is trimmed or case-folded, so ids that differ only in whitespace are refused, not matched.
