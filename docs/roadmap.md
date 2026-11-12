@@ -120,6 +120,8 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 - `AET-WO-1200` — **merged (PR #32)**, spike then build: the constraint solver (`RUL-02`, whose prior is now a pure-Rust search), as `solve` in `aethelgard-ir` and `aethelgard solve` in the CLI. The spike measures Z3 only if the search exceeds 1 s on a stress specification. It also settles how `SolvedTopology` records a GPIO-driven chip select, which has no alternate function. The spike measures solve time on the chosen part's full pin table for the search and for SMT. It records both numbers in `architecture.md` §2 by amendment before the build half starts, and it shows two solves of the same specification returning the same assignment.
 - `AET-WO-1201` — **merged (PR #48)**, build-only, reserved at review of PR #32, cheap tier: the forced-instance check proposed by `AET-WO-1200`'s adversarial reviewer. When the buses left of a kind equal that kind's placeable instances, every instance is forced, so pin matching runs over (instance, signal) rows. It can only prune, so a differential test over fuzzed specifications, with and without the check, must show no change except `BudgetExceeded` becoming `Infeasible`. Its inputs are the reproducers in `docs/work-orders/AET-WO-1200.repro/`. It closes `AET-WO-1200` A1 and revisits A2, `BudgetExceeded` sharing exit 2.
 - `AET-WO-1202` — **merged (PR #44)**, written at the ruling on `AET-WO-1400`'s build question (PR #42), strong tier, built by the 1200 session: `SolvedTopology` gains `i2c_ceilings`, each I2C bus's maximum speed, the fastest UM10204 mode whose rise-time limit is at least the bus's declared `max_rise_time`. The solver refuses `MissingBusConstraint`, `RiseTimeTooSlow` and `BusTooFast`. The pull-up and capacitance physics stays with the twin, so the P2 gate's 47 kΩ specification still solves. Amended at the §1.3 stop on PR #44, which also found that the reference's declared 400 pF could not meet its own 300 ns. `AET-WO-1400`'s clause-3 speed snippet consumes it, because `RUL-16` keeps the generator off the `Specification`.
+- `AET-WO-1203` — **written 2026-11-12** (Mythos review A2, B2), build-only, cheap tier, targeted adversarial pass. Static I2C electrical rules in `solve`, each a named refusal by UM10204 mode: the pull-up floor from sink current (3 mA Sm/Fm, 20 mA Fm+) at the bus's rail, and the bus-capacitance limit (400 pF Sm/Fm, 550 pF Fm+). One public function per rule, so `AET-WO-3200`'s proposer cites the gate's constant and keeps no copy. A 24 Ω pull-up no longer solves.
+- `AET-WO-1900` — **written 2026-11-12** (Mythos review A5, A6, A7, A10.1, A11, A12.2, B5, B8), build-only, cheap tier: evidence gaps. A tier-2 canary, the missing-key test over every key, the quickstart against `main`'s own image with its revision label, the DRC rules label `engine-floor`, case-colliding labels refused at `validate`, the manifest read capped, relative `PATH` entries refused, the I2C witness's forgeability measured, a README status test, and the review's unverified test notes checked.
 - `AET-WO-1300` — **merged (PR #40)**, spike ruled on PR #40 (vendored KiCad libraries, every rule and library file gate-written, local clearances refused, `RUL-14` narrowed, `aethelgard emit` adopted), built: the schematic emitter, and the gate's own DRC rules (`check drc --spec`). It emits `.kicad_sch` and the bill of materials, and passes `kicad-cli sch erc --exit-code-violations`. The spike answers two questions:
   - how the board is to be placed and routed headless (split below);
   - how to prove that DRC applies the gate's own rule files, not the emitter's (`RUL-03` as amended).
@@ -210,8 +212,11 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 **Work orders (intent)**
 
 - `AET-WO-3100` — **merged (PR #79)**, build-only, strong tier, full adversarial pass. Attribution from the archive alone: `aethelgard attribute` names `electrical`, `software`, `none` or `indeterminate`, with the deciding rule and the evidence events. Software requires a measured-healthy bus *and* positive software evidence, never elimination. Seeded set: electrical cases as scenarios, software cases as exact-once firmware mutants built by the test, and the trap (a wrong address with a passing 3.3 kΩ pull-up) that shares `i2c_timeout` with 47 kΩ. Intent as first written: attribution: from a failing trace, classify electrical versus software with the evidence span recorded, tested against a seeded set where the true cause is known.
-- `AET-WO-3200` — **written 2026-11-12**, build-only (`OQ-06` is ruled as `RUL-18`, so no spike is needed), strong tier, full adversarial pass. `aethelgard propose` turns an archived run into one of three outcomes: a pull-up proposal from a closed rules table (E12, 0.8 headroom, the UM10204 floor), a generator bug report for a software attribution, or a stated refusal. Every proposal is re-gated, and the 47 kΩ proposal sits on a draft branch, unmerged. Intent as first written: spike, then build: the proposal loop under `RUL-07`, with the proposer chosen by `OQ-06`.
+- `AET-WO-3200` — **written 2026-11-12**, build-only (`OQ-06` is ruled as `RUL-18`, so no spike is needed), strong tier, full adversarial pass. `aethelgard propose` turns an archived run into one of three outcomes: a pull-up proposal from a closed rules table (E12, 0.8 headroom, the UM10204 floor), a generator bug report for a software attribution, or a stated refusal. Every proposal is re-gated, and the 47 kΩ proposal sits on a draft branch, unmerged. **Amended 2026-11-12 before kickoff** (review A8.11, A8.12, B2): the floor comes from `AET-WO-1203`'s rule, and `evolve` exposes the attribution join publicly for the generator report. Intent as first written: spike, then build: the proposal loop under `RUL-07`, with the proposer chosen by `OQ-06`.
 - `AET-WO-3300` — the reference probe, `Sentinel-01`: specification, full gate run, fabrication package, and a bench comparison against the physical development board that records where simulation and reality disagreed.
+- `AET-WO-3301` — **reserved 2026-11-12** (Mythos review A3, A4, B1), strong tier: `aethelgard generate` writes the board crate, firmware and platform the README promises; `aethelgard verify --spec` regenerates everything into scratch, runs every gate on exactly those bytes, and prints one verdict naming every artifact hash and gate result (`RUL-19`). `prove` reports whether the harness is the generated one. It precedes `3300`, whose fabrication clause needs that verdict, and it closes the P0 "deliberate gap" (`build`).
+- `AET-WO-3302` — **reserved 2026-11-12** (Mythos review, roadmap order): the Nucleo-H753ZI bench comparison, run as soon as the board arrives and before `3200`'s proposals are trusted. It is split from `3300` so the only evidence about the declared-value gap (`RUL-19`) comes early. Human-track: Scotty's hands on the board.
+- **Extraction, first step** (Mythos review B3): a capacitance estimate from routed length plus each pin's capacitance, judged against the declared bound, before `3300`. Full `AET-WO-1303` before `4500`.
 
 **Exit gate (intent; refined after the P2 spike, never weakened)**
 
@@ -223,7 +228,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 ### P4 — Sentinel-02, the flight controller
 
 **Goal:** the first board Aethelgard designs for use: a flight controller, fabricated and flown in a prototype drone, so the first custom board pays for itself.
-**Depends on:** P3. Sentinel-01 stays the reference probe; Sentinel-02 is the first board that is bought. Added 2026-11-09 at Scotty's direction. Intent only, with reserved ids, to be scoped after P3.
+**Depends on:** P3, and `AET-WO-2301` (dynamic faults, with a rail-droop spike: the power model a flight controller's brownouts need; Mythos review, 2026-11-12). `4200` (SPI) now comes before `4100` (stackups), because every P4 clause needs SPI and only the last needs four layers. Sentinel-01 stays the reference probe; Sentinel-02 is the first board that is bought. Added 2026-11-09 at Scotty's direction. Intent only, with reserved ids, to be scoped after P3.
 
 **Why a flight controller, and why one chip.**
 - The STM32H753 is a common flight-controller processor (the Pixhawk FMUv6X class), so `RUL-08`'s anchor, its Renode twin and the board crate carry over unchanged.
@@ -233,8 +238,8 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 
 **Work orders (intent)**
 
-- `AET-WO-4100` — **stackups.** A specification selects its layer count (2, 4 or 6) and its stackup. The router, the gate-written DRC rules (`RUL-03`) and the fabrication outputs follow it. Sentinel-01 regenerates byte-identical at 2 layers.
 - `AET-WO-4200` — **SPI devices end to end:** the part table, the solver, the board crate's typestates and Kani harness, the twin and a static SPI fault. It opens with a desk spike that reads Renode's SPI sensor models at source, because which IMUs it models is unverified.
+- `AET-WO-4100` — **stackups.** A specification selects its layer count (2, 4 or 6) and its stackup. The router, the gate-written DRC rules (`RUL-03`) and the fabrication outputs follow it. Sentinel-01 regenerates byte-identical at 2 layers.
 - `AET-WO-4300` — **flight I/O:** timer outputs able to drive ESCs (PWM and DShot timing), USB device, UARTs for a receiver and MAVLink, and the power input and regulator parts, each solved and gated.
 - `AET-WO-4400` — **ArduPilot's board definition (`hwdef.dat`) generated from the `SolvedTopology`** (`RUL-16`). Unmodified ArduPilot builds from it. Its pinout is checked against the specification by a check the generator does not compute (`INV-07`).
 - `AET-WO-4500` — **Sentinel-02:** the specification, every gate, a fault campaign that includes an SPI fault, and the fabrication package. Then fabrication (human-track: Scotty's purchase), then bring-up on the bench, then flight in this order: props off, tethered, free. Disagreements between simulation and the board go into `northstar.md` §2 as scars.
@@ -327,14 +332,50 @@ Rows of **number as built → what it actually was → what the roadmap had plan
 | `AET-WO-1501` | **merged (PR #36):** the engine image is built `FROM` the tools image's digest, with the source bind-mounted, not copied. It is smoke-tested under `--network none`, and only `main` publishes it, from the job that smoke-tested it. The architect's review caught a `COPY` layer that had shipped the source | none; split from `AET-WO-1500` |
 | `AET-WO-0300b` | **merged (PR #18):** a CPU listed beside an `[ERROR]` line fails the load, and every tool input copy is capped at 16 MiB, with 4,096 files for a crate. Measured that Renode 1.17.0 never logs a platform failure at `[ERROR]`, so that check is a backstop (`architecture.md` §2.9). The first cheap-builder pilot: one session, 22 minutes, CI green on the first push, and no high or medium adversarial finding. `AET-WO-1500`'s second precondition is met | none; Argon's red-team findings RT-02 and RT-04 |
 | `AET-WO-0400` | **merged (PR #21):** the trace archive in a hand-written strict CBOR codec, a commit protocol proven by SIGKILL tests, replay with a state-hash chain, and the mirror's credential boundary. `aethelgard-chaos` graduated from the stub checks. Golden constants were computed on Furnace and reproduced in `gates` (`architecture.md` §2.10). It satisfies the P0 gate's fifth clause and the mirror half of its sixth. Second cheap-builder pilot: one session, 24 minutes, CI green on the first push | Argon drafts: `AET-WO-0004`, R2-primary, Cap'n Proto |
-| `AET-WO-0400a` | inserted at review of PR #21, written: adversarial findings 1, 2 and 3 | none; `AET-WO-0400`'s adversarial pass |
+| `AET-WO-0400a` | inserted at review of PR #21, **merged** (relied on by passed gates; row corrected 2026-11-12, review A8.10): adversarial findings 1, 2 and 3 | none; `AET-WO-0400`'s adversarial pass |
 | **P0 gate** | **passed.** Planned: `0100`, `0200`, `0300`, `0400`. Inserted: `0300a`, `0300b`. All six merged, and every gate clause is owned by merged work. `0400a` is a post-gate refinement. The one deliberate gap is still the `build` subcommand (see the `0300` row) | the plan's four work orders |
 | `AET-WO-1100` … `AET-WO-1400` | reserved, `1200` and `1400` now spike-then-build. `1100` written build-only, and `1101` split from it for the pin table, after the architect's licence check. `1300` split into `1300`, `1301` and `1302` at Argon's review, because a DRC that must exit 0 needs a placed and routed board | Argon drafts: `AET-WO-1001` … `AET-WO-1004` |
-| `AET-WO-1500` | written, build-only: the `mcp` subcommand of the CLI binary, moved from P0 to P1. The image half was split out as `1501` | Argon drafts: part of `AET-WO-0003`, a separate server crate |
+| `AET-WO-1500` | **merged** (row corrected 2026-11-12, review A8.10), build-only: the `mcp` subcommand of the CLI binary, moved from P0 to P1. The image half was split out as `1501` | Argon drafts: part of `AET-WO-0003`, a separate server crate |
 | `AET-WO-2100` … `AET-WO-2300` | reserved as intent pending the `OQ-02` spike. `2101` split from `2100` at Argon's review to hold that spike | Argon drafts: `AET-WO-2001` … `AET-WO-2003`, fully scoped |
 | `AET-WO-3100` … `AET-WO-3300` | reserved as intent | Argon drafts: `AET-WO-3001` … `AET-WO-3003`, fully scoped |
 
 Run a reconciliation audit at every phase boundary: count what was planned, what merged, and what did not, and confirm the gap is deliberate.
+
+### 7.1 Backlog: every carried item has an owner
+
+Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row leaves this table only when its owner merges it, or it is ruled won't-fix with a reason.
+
+| Item | From | Owner |
+|---|---|---|
+| Static I2C electrical rules (pull-up floor, bus capacitance) | review A2, B2 | `AET-WO-1203` |
+| `DeviceNotPlaced` unreachable | 2203 F3 | `AET-WO-1203` (it touches `solve`) |
+| DRC rules label over-claims (`engine-floor`); a specification rules field | 1300 B1, review A5 | `AET-WO-1900` (label); `AET-WO-4100` (field) |
+| Engine image revision label and its reachability check | 1700 F1, review A6 | `AET-WO-1900` |
+| KiCad's licence text in the image | 1300 D10 | `AET-WO-1900` |
+| `opt-level` for `aethelgard-eda` in the dev profile | 1302 B9 | `AET-WO-1900` |
+| Duplicated `decimal` | 2200 F17 | `AET-WO-1900` |
+| Held-low `.repl` comment says "measured" | 2300 F13 | `AET-WO-1900` |
+| `FirmwareChanged` has no test | 2300 F14 | `AET-WO-1900` |
+| 1300 A6, A8; 1301 A5; 2100 F23–F25; 2200 F11, F14 | the work orders' FEEDBACK | `AET-WO-1900` triages each: fix if small, else name an owner here |
+| Tier-2 canary; missing-key test; quickstart on `main`; README status test | review A6, A7, B5, B8 | `AET-WO-1900` |
+| Manifest read uncapped; relative `PATH` entries; case-colliding labels | review A11.2, A12.2, A10.1 | `AET-WO-1900` |
+| I2C witness forgeable by a hand-written firmware | review A11.1 | `AET-WO-1900` measures; the fix goes to `2301` if it needs a new observable |
+| Review's unverified test notes (A7.4–A7.7, A10 notes) | review | `AET-WO-1900` verifies |
+| State folded before the run rules bound it | review A11.3 | `AET-WO-1900` if small, else `2301` |
+| Generation in the CLI; `verify`; verdict binding; harness provenance | review A3, A4, B1 | `AET-WO-3301` |
+| Bench comparison early | review | `AET-WO-3302` |
+| Extraction, first step, then full | review A1, B3; `1303` | before `3300`; `AET-WO-1303` before `4500` |
+| Status-to-phase table in one place | 3100 F2 | `AET-WO-2301` |
+| `pc_outside_firmware` needs the executable segments archived | 3100 F13 | `AET-WO-2301` |
+| Only the last transaction per bus is witnessed | 2202 | `AET-WO-2301` |
+| Bridge identity handshake | 2200 F15 | `AET-WO-2301` |
+| Engine and tool versions in the archive header; record kinds renamed from "measured" | review B4, `RUL-19` | `AET-WO-2301` (its trace version bump) |
+| Analog deck's fixed 400 kHz window labelled | review A10.4 | `AET-WO-2301` |
+| Type-level `RUL-16` fence replacing the grep test | review A7.1, B6 | `AET-WO-1204`, reserved: the next IR work order |
+| `RLIMIT_FSIZE` for tool scratch | review A12.1 | `AET-WO-1601`, reserved: the next sandbox work order |
+| Escape planning for congested routing | 1302 B10 | `AET-WO-4100` |
+| Parts table as data | review B7 | the opening of `AET-WO-4200` |
+| MCP path confinement (`--root`) | review A10.2 | Scotty's second opinion; until then the trust model in `architecture.md` §6 |
 
 ## 8. Amendments
 
@@ -378,6 +419,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | 2026-11-09 | §5 | `AET-WO-3100` amended (§8): the archive gains kind 15, `I2cBusSolved`, at trace version 3, because no record joined a symptom to its bus | The builder's §7 stop S1, before any code |
 | 2026-11-09 | §3, §5, §7 | `AET-WO-3100` reconciled. **P3 gate clause 1 holds.** Human-track: `aethelgard-evolve`'s first publish | PR #79 |
 | 2026-11-12 | §5 | `OQ-06` ruled as `RUL-18` (Scotty: option C, with software attributions as generator bug reports). `AET-WO-3200` written as build-only | Scotty, 2026-11-12 |
+| 2026-11-12 | §5, §7, §7.1 | The Mythos 5.2 review folded in (`docs/reviews/`): `AET-WO-1203` and `AET-WO-1900` written; `AET-WO-3301` (`generate`, `verify`) and `AET-WO-3302` (bench comparison, early) reserved; extraction's first step scheduled before `3300`; `AET-WO-3200` amended before kickoff; P4 depends on `2301`, and `4200` precedes `4100`; §7.1 backlog with an owner per item; two §7 rows corrected | The Mythos 5.2 review of 2026-11-12 and the architect's response |
 
 ## 9. Provenance
 
