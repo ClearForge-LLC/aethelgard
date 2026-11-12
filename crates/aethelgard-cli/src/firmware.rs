@@ -116,21 +116,63 @@ fn messages(stdout: &[u8]) -> Messages {
     m
 }
 
-/// Every unit cargo built came from the copy: a path dependency outside the
-/// crate, a `[patch]` or a `paths` override is code the crate hash does not
-/// cover (`RUL-04`).
-fn built_from_the_copy(m: &Messages, copy: &Path) -> Result<(), Stop> {
+/// The sources cargo's dep-info for `exe` lists (`<exe>.d`, written beside
+/// it): every file any unit read, `#[path]` modules and `include_bytes!`
+/// targets included, the toolchain's own excluded. A space inside a path is
+/// written `\ `.
+fn dep_info(exe: &Path) -> Result<Vec<PathBuf>, Stop> {
+    let mut d = exe.as_os_str().to_owned();
+    d.push(".d");
+    let text = fs::read_to_string(&d).map_err(|e| {
+        Stop::tool_error(
+            "cargo",
+            format!("cargo wrote no dep-info beside the ELF ({e})"),
+        )
+    })?;
+    let Some((_, deps)) = text.lines().next().and_then(|l| l.split_once(": ")) else {
+        return Err(Stop::tool_error(
+            "cargo",
+            "cargo's dep-info names no source".to_owned(),
+        ));
+    };
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut chars = deps.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' if chars.peek() == Some(&' ') => current.push(chars.next().unwrap_or(' ')),
+            ' ' => {
+                if !current.is_empty() {
+                    out.push(PathBuf::from(std::mem::take(&mut current)));
+                }
+            }
+            c => current.push(c),
+        }
+    }
+    if !current.is_empty() {
+        out.push(PathBuf::from(current));
+    }
+    Ok(out)
+}
+
+/// Every unit cargo built came from the copy, and read only the copy's
+/// files: a path dependency outside the crate, a `[patch]` or `paths`
+/// override, a `#[path]` module, an `include_bytes!` or a `[lib] path`
+/// outside it is code the crate hash does not cover (`RUL-04`, adversarial
+/// B5).
+fn built_from_the_copy(m: &Messages, sources: &[PathBuf], copy: &Path) -> Result<(), Stop> {
     let canonical = fs::canonicalize(copy).unwrap_or_else(|_| copy.to_path_buf());
     match m
         .manifests
         .iter()
+        .chain(sources)
         .find(|p| !p.starts_with(copy) && !p.starts_with(&canonical))
     {
         None => Ok(()),
         Some(outside) => Err(Stop::refused(
             "CrateHasDependency",
             format!(
-                "cargo built {}, which is outside the crate; a board crate has no dependencies (RUL-04)",
+                "cargo built from {}, which is outside the crate; a board crate has no dependencies (RUL-04)",
                 outside.display()
             ),
         )),
@@ -236,8 +278,9 @@ pub fn build(crate_dir: &Path, out: &Path) -> Result<verdict::Verdict, Stop> {
     let m = messages(&ran.stdout);
     let (findings, elf) = match (code, m.finished) {
         (0, Some(true)) => {
-            built_from_the_copy(&m, &input.copy)?;
-            (Vec::new(), Some(artifact(&m, &target)?))
+            let elf = artifact(&m, &target)?;
+            built_from_the_copy(&m, &dep_info(&elf)?, &input.copy)?;
+            (Vec::new(), Some(elf))
         }
         (101, Some(false)) => {
             let line = said::first_error(&String::from_utf8_lossy(&ran.stderr), Style::Cargo)
@@ -290,11 +333,49 @@ mod tests {
         let copy = Path::new("/s/crate");
         let m = messages(BUILT.as_bytes());
         assert_eq!(m.finished, Some(true));
-        assert!(built_from_the_copy(&m, copy).is_ok());
+        let inside = [PathBuf::from("/s/crate/src/lib.rs")];
+        assert!(built_from_the_copy(&m, &inside, copy).is_ok());
         let outside = BUILT.replace("/s/crate/Cargo.toml", "/opt/rustup/evil-dep/Cargo.toml");
-        let e = built_from_the_copy(&messages(outside.as_bytes()), copy).unwrap_err();
+        let e = built_from_the_copy(&messages(outside.as_bytes()), &inside, copy).unwrap_err();
         assert_eq!(e.kind, "CrateHasDependency");
         assert!(e.message.contains("/opt/rustup/evil-dep"), "{}", e.message);
+        // A source read from outside through a manifest inside the copy: a
+        // `#[path]` module, an `include_bytes!`, a `[lib] path`.
+        let read = [
+            inside[0].clone(),
+            PathBuf::from("/opt/rustup/evil/inject.rs"),
+        ];
+        let e = built_from_the_copy(&m, &read, copy).unwrap_err();
+        assert!(
+            e.message.contains("/opt/rustup/evil/inject.rs"),
+            "{}",
+            e.message
+        );
+    }
+
+    /// Cargo's dep-info, as measured: the output, then every source, with a
+    /// space in a path escaped.
+    #[test]
+    fn dep_info_lists_every_source() {
+        let dir = std::env::temp_dir().join(format!("aet-3301-depinfo-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("fw");
+        fs::write(
+            dir.join("fw.d"),
+            "/t/fw: /x/inject.rs /s/crate/firmware/src/main.rs /s/my\\ dir/lib.rs\n\n/x/inject.rs:\n",
+        )
+        .unwrap();
+        assert_eq!(
+            dep_info(&exe).unwrap(),
+            [
+                PathBuf::from("/x/inject.rs"),
+                PathBuf::from("/s/crate/firmware/src/main.rs"),
+                PathBuf::from("/s/my dir/lib.rs"),
+            ]
+        );
+        fs::remove_file(dir.join("fw.d")).unwrap();
+        assert_eq!(dep_info(&exe).unwrap_err().kind, "ToolError");
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     /// Adversarial B7: no `build-finished` (cargo could not load its
