@@ -17,9 +17,11 @@ use sha2::{Digest, Sha256};
 /// I2C line constraints to both inputs (old and new in its FEEDBACK), and
 /// `AET-WO-2200` added `analog_lines` (`9e5b38ff…` and `77fd96e2…` before;
 /// old and new in its FEEDBACK), and `AET-WO-2203` added `i2c_devices`
-/// (`1b98f4c6…` and `d5f27416…` before; old and new in its FEEDBACK).
-const REFERENCE_DIGEST: &str = "d684cd6ddd6788ba4617118ec624a199de0040ca0f25131b6f0f810ccd10084f";
-const STRESS_DIGEST: &str = "dd192c61982451df5c39fc522d10b598568748e5558b2f6a7aca587eaad9a4e6";
+/// (`1b98f4c6…` and `d5f27416…` before; old and new in its FEEDBACK), and
+/// `AET-WO-1205` added `i2c_speeds` and made the version 2 (`d684cd6d…` and
+/// `dd192c61…` before; old and new in its FEEDBACK).
+const REFERENCE_DIGEST: &str = "c655bf2ee3097e37be0268ddf688a879345c9a80e9b3de59441c5a981c3f6701";
+const STRESS_DIGEST: &str = "6eda552cadd0a1d7a6338ab758d0de431f03315ebfb9cf99948e86cbbbef10ed";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -188,6 +190,8 @@ fn the_reference_solves_to_the_expected_pins() {
     assert_eq!(t.gpio["FLASH_CS"], "PA0");
     // Both lines declare 300 ns: Fast-mode, 400 kHz, the bus's own speed.
     assert_eq!(t.i2c_ceilings, [("SENSORS".to_owned(), 400_000)].into());
+    assert_eq!(t.i2c_speeds, [("SENSORS".to_owned(), 400_000)].into());
+    assert_eq!(t.schema_version, 2);
 }
 
 #[test]

@@ -111,7 +111,7 @@ pub mod i2c1_speed {
         pub trait Sealed {}
     }
 
-    /// The speeds at or under `I2C1`'s solved rise-time ceiling of 400000 Hz.
+    /// The speeds at or under `I2C1`'s declared speed of 400000 Hz.
     /// Sealed: firmware cannot admit another.
     pub trait AtMostCeiling: sealed::Sealed {
         const TIMINGR: u32;
