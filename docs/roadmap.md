@@ -121,6 +121,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 - `AET-WO-1201` — **merged (PR #48)**, build-only, reserved at review of PR #32, cheap tier: the forced-instance check proposed by `AET-WO-1200`'s adversarial reviewer. When the buses left of a kind equal that kind's placeable instances, every instance is forced, so pin matching runs over (instance, signal) rows. It can only prune, so a differential test over fuzzed specifications, with and without the check, must show no change except `BudgetExceeded` becoming `Infeasible`. Its inputs are the reproducers in `docs/work-orders/AET-WO-1200.repro/`. It closes `AET-WO-1200` A1 and revisits A2, `BudgetExceeded` sharing exit 2.
 - `AET-WO-1202` — **merged (PR #44)**, written at the ruling on `AET-WO-1400`'s build question (PR #42), strong tier, built by the 1200 session: `SolvedTopology` gains `i2c_ceilings`, each I2C bus's maximum speed, the fastest UM10204 mode whose rise-time limit is at least the bus's declared `max_rise_time`. The solver refuses `MissingBusConstraint`, `RiseTimeTooSlow` and `BusTooFast`. The pull-up and capacitance physics stays with the twin, so the P2 gate's 47 kΩ specification still solves. Amended at the §1.3 stop on PR #44, which also found that the reference's declared 400 pF could not meet its own 300 ns. `AET-WO-1400`'s clause-3 speed snippet consumes it, because `RUL-16` keeps the generator off the `Specification`.
 - `AET-WO-1203` — **merged (PR #83)** (Mythos review A2, B2), build-only, cheap tier, targeted adversarial pass. Static I2C electrical rules in `solve`, each a named refusal by UM10204 mode: the pull-up floor from sink current (3 mA Sm/Fm, 20 mA Fm+) at the bus's rail, and the bus-capacitance limit (400 pF Sm/Fm, 550 pF Fm+). One public function per rule, so `AET-WO-3200`'s proposer cites the gate's constant and keeps no copy. A 24 Ω pull-up no longer solves.
+- `AET-WO-1204` — **written** (Mythos review A7.1, B6; `AET-WO-2200` F14; `AET-WO-1900` adversarial 3c), build-only, cheap tier, targeted adversarial pass. `RUL-16` becomes a compiled fence: a specification's device lists are private to `aethelgard-ir`, read through two accessors that a crate-local clippy `disallowed-methods` forbids in `cli`, `svd-hal` and `twin`, with a guard test against a silently stale path. `SolvedTopology::validate` re-derives each I2C ceiling from its lines. Emitter-owned names and device references fold case.
 - `AET-WO-1900` — **merged (PR #87)** (Mythos review A5, A6, A7, A10.1, A11, A12.2, B5, B8), build-only, cheap tier: evidence gaps. A tier-2 canary, the missing-key test over every key, the quickstart against `main`'s own image with its revision label, the DRC rules label `engine-floor`, case-colliding labels refused at `validate`, the manifest read capped, relative `PATH` entries refused, the I2C witness's forgeability measured, a README status test, and the review's unverified test notes checked.
 - `AET-WO-1300` — **merged (PR #40)**, spike ruled on PR #40 (vendored KiCad libraries, every rule and library file gate-written, local clearances refused, `RUL-14` narrowed, `aethelgard emit` adopted), built: the schematic emitter, and the gate's own DRC rules (`check drc --spec`). It emits `.kicad_sch` and the bill of materials, and passes `kicad-cli sch erc --exit-code-violations`. The spike answers two questions:
   - how the board is to be placed and routed headless (split below);
@@ -363,7 +364,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 1300 A8 (`check erc` and hierarchical sheets); 2100 F25 (`TMPDIR` with a space or `;`) | the work orders' FEEDBACK | `AET-WO-1601` |
 | 2100 F23 (a log flood exits 5) | 2100 | `AET-WO-2301` |
 | 2100 F24 (cold-write every `RCC_*ENR`) | 2100 | the first work order that solves a peripheral outside the cold registers (P4) |
-| 2200 F14 (hand-written topologies); emitter-owned names differing in case (1900 adversarial 3c) | 2200, 1900 | `AET-WO-1204` |
+| 2200 F14 (hand-written topologies); emitter-owned names differing in case (1900 adversarial 3c) | 2200, 1900 | `AET-WO-1204` (written; F14 ruled there: ceilings re-derived, static electrical rules on a hand-written topology left for a ruling) |
 | Tier-2 canary; missing-key test; quickstart on `main`; README status test | review A6, A7, B5, B8 | **done (PR #87)** |
 | Manifest read uncapped; relative `PATH` entries; case-colliding labels | review A11.2, A12.2, A10.1 | **done (PR #87)** |
 | I2C witness forgeable by a hand-written firmware | review A11.1 | **measured: it passes** (PR #87). `AET-WO-2301` adds an observable a plain write cannot set and inverts the pinning test |
@@ -378,7 +379,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | Bridge identity handshake | 2200 F15 | `AET-WO-2301` |
 | Engine and tool versions in the archive header; record kinds renamed from "measured" | review B4, `RUL-19` | `AET-WO-2301` (its trace version bump) |
 | Analog deck's fixed 400 kHz window labelled | review A10.4 | `AET-WO-2301` |
-| Type-level `RUL-16` fence replacing the grep test | review A7.1, B6 | `AET-WO-1204`, reserved: the next IR work order |
+| Type-level `RUL-16` fence replacing the grep test | review A7.1, B6 | `AET-WO-1204` (written) |
 | `RLIMIT_FSIZE` for tool scratch | review A12.1 | `AET-WO-1601`, reserved: the next sandbox work order |
 | Escape planning for congested routing | 1302 B10 | `AET-WO-4100` |
 | Parts table as data | review B7 | the opening of `AET-WO-4200` |
@@ -432,6 +433,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-12 | §5, §7, §7.1 | The Mythos 5.2 review folded in (`docs/reviews/`): `AET-WO-1203` and `AET-WO-1900` written; `AET-WO-3301` (`generate`, `verify`) and `AET-WO-3302` (bench comparison, early) reserved; extraction's first step scheduled before `3300`; `AET-WO-3200` amended before kickoff; P4 depends on `2301`, and `4200` precedes `4100`; §7.1 backlog with an owner per item; two §7 rows corrected | The Mythos 5.2 review of 2026-11-12 and the architect's response |
 | 2026-11-12 | §5, §7, §7.1 | `AET-WO-1203` reconciled; `AET-WO-3301` (`generate`, `build`, `verify`, harness provenance) written | PR #83; the Mythos review A3, A4, B1 |
 | 2026-11-12 | §5, §7, §7.1 | `AET-WO-3200` and `AET-WO-1900` reconciled. **P3 gate clause 2 holds.** The quickstart now runs on `main`'s own image. The backlog is updated with `1900`'s triage, and the 0.2.0 bump, path-independent ELFs and splitting tier 2 are added | PRs #86, #87, #88 |
+| 2026-11-12 | §5, §7.1 | `AET-WO-1204` written: `RUL-16` as a compiled fence, `2200` F14 ruled, case folding at the emitter | the Mythos review A7.1, B6 |
 
 ## 9. Provenance
 
