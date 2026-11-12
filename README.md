@@ -37,7 +37,8 @@ curl -fsSL -o spec.json "$SPEC"
 echo "acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1  spec.json" | sha256sum -c -
 
 docker pull -q "$IMAGE"
-ae() { docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work "$IMAGE" aethelgard "$@"; }
+# HOME is the run directory, so the CLI's scratch is private to you (AET-WO-1601).
+ae() { docker run --rm --user "$(id -u):$(id -g)" -e HOME=/work -v "$PWD:/work" -w /work "$IMAGE" aethelgard "$@"; }
 
 # Emit the schematic, bill of materials and routed board (exit 0).
 emit=$(ae emit --file spec.json --out out); echo "$emit"

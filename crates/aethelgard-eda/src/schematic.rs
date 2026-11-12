@@ -33,8 +33,8 @@ pub(crate) const GND: &str = "GND";
 const RAIL_SYMBOL: &str = "power:+3V3";
 const GND_SYMBOL: &str = "power:GND";
 const FLAG_SYMBOL: &str = "power:PWR_FLAG";
-const R: &str = "Device:R";
-const C: &str = "Device:C";
+pub(crate) const R: &str = "Device:R";
+pub(crate) const C: &str = "Device:C";
 const R_FOOTPRINT: &str = "Resistor_SMD:R_0402_1005Metric";
 const C_FOOTPRINT: &str = "Capacitor_SMD:C_0402_1005Metric";
 
@@ -412,7 +412,7 @@ pub fn emit(
 }
 
 /// Every part and what each of its pins connects to, and every rail.
-fn design(
+pub(crate) fn design(
     spec: &Specification,
     solved: &SolvedTopology,
     table: &PinTable,

@@ -22,7 +22,7 @@ use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::os::unix::process::{CommandExt, ExitStatusExt, parent_id};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio, exit};
@@ -33,15 +33,21 @@ use landlock::{
     ABI, Access, AccessFs, AccessNet, CompatLevel, Compatible, LandlockStatus, Ruleset,
     RulesetAttr, RulesetCreatedAttr, RulesetStatus, Scope, path_beneath_rules,
 };
+use std::os::fd::{AsFd, BorrowedFd};
+
+use rustix::fs::{
+    AtFlags, CWD, Dir, FileType, Mode, OFlags, fchmod, fchown, fstat, openat, statat,
+};
 use rustix::io::Errno;
 use rustix::process::{
-    Pid, Signal, WaitOptions, getpid, kill_process, kill_process_group, set_child_subreaper,
-    waitpid,
+    Gid, Pid, Resource, Rlimit, Signal, Uid, WaitOptions, geteuid, getpid, kill_process,
+    kill_process_group, set_child_subreaper, setrlimit, waitpid,
 };
 use rustix::thread::{
     CapabilitySet, CapabilitySets, capabilities, capability_is_in_ambient_set,
     capability_is_in_bounding_set, clear_ambient_capability_set, no_new_privs,
-    remove_capability_from_bounding_set, set_capabilities,
+    remove_capability_from_bounding_set, set_capabilities, set_thread_groups, set_thread_res_gid,
+    set_thread_res_uid,
 };
 use seccompiler::{BpfProgram, apply_filter, sock_filter};
 
@@ -67,6 +73,24 @@ pub const MAX_CAPTURE: usize = 16 * 1024 * 1024;
 
 /// Read-only for every tool: the system's executables, libraries and config.
 const SYSTEM_DIRS: [&str; 6] = ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc"];
+
+/// The uid and gid every tool runs under when the CLI's effective uid is 0
+/// (`AET-WO-1601` §1.2): `nobody` and `nogroup`. Measured, not chosen: the
+/// analog bridge's libngspice reads `getpwuid(getuid())->pw_dir` unchecked, so
+/// it dies under any uid without a passwd entry (65533 and 65520 measured), and
+/// the pinned image lists only 0, 1000 (`kicad`, a login user) and 65534.
+pub const TOOL_UID: u32 = 65534;
+/// The gid every tool runs under when the CLI runs as root, and the group of
+/// the directories only it and root may enter. Not 65534: `sync` and `_apt`
+/// have that as their primary group in the image (adversarial F2). 65533 is
+/// no passwd entry's group and has no group entry, so no other process holds
+/// it, and no tool looks the group up (tier 2 runs every tool under it).
+pub const TOOL_GID: u32 = 65533;
+
+/// `RLIMIT_FSIZE`, soft and hard, for every tool (`AET-WO-1601` §1.6, review
+/// A12.1). A file a tool leaves at this size is the witness that it was cut
+/// off, whatever the tool's own exit status says.
+pub const MAX_TOOL_FILE: u64 = 64 * 1024 * 1024;
 
 /// A refusal: the call stops here and prints `{"ok":false,"error":…}`.
 #[derive(Debug)]
@@ -118,6 +142,16 @@ impl Stop {
             code: EXIT_TOOL_UNAVAILABLE,
             kind: "ToolUnusable",
             id: Some(id.to_owned()),
+            message,
+        }
+    }
+    /// A required sandbox layer that cannot be enforced: exit 4,
+    /// `SandboxUnavailable`, never a run without it (`INV-06`).
+    pub fn sandbox(layer: &str, message: String) -> Self {
+        Self {
+            code: EXIT_TOOL_UNAVAILABLE,
+            kind: "SandboxUnavailable",
+            id: Some(layer.to_owned()),
             message,
         }
     }
@@ -204,19 +238,129 @@ pub struct SandboxReport {
     /// seccomp filter. Always true: the filter is required, so no verdict
     /// exists without it.
     pub sockets_denied: bool,
+    /// True only when all three hold (`AET-WO-1601` §1.2, ruled on PR #96,
+    /// `RUL-19`): the tool ran under [`TOOL_UID`] and [`TOOL_GID`], switched
+    /// to and read back by the trampoline; the CLI's root is the initial user
+    /// namespace's; and every path its read grant adds beyond the system set
+    /// is root's and writable by no group or other. False otherwise, and
+    /// `uid_boundary_unmet` names the first that failed.
+    pub uid_boundary: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uid_boundary_unmet: Option<Unmet>,
+}
+
+/// The first condition of `uid_boundary` that did not hold.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Unmet {
+    /// The tool ran as the caller, because the CLI did not run as root.
+    ToolUid,
+    /// The CLI's root is not the initial namespace's: under rootless podman
+    /// the namespace's owner can reach every process in it (`AET-WO-1601` R4).
+    UserNamespace,
+    /// A path the tool may read, beyond the system directories, is not root's
+    /// alone (`AET-WO-1601` A1: Kani's kit in the pinned image).
+    Toolchain,
 }
 
 impl SandboxReport {
     /// Filesystem rights are required and everything else is requested
     /// best-effort, so what was enforced follows from the effective ABI.
-    fn from_abi(landlock_abi: i32) -> Self {
+    fn from_abi(landlock_abi: i32, uid_boundary: bool) -> Self {
         Self {
             landlock_abi,
             tcp_confined: landlock_abi >= 4,
             scoped: landlock_abi >= 6,
             sockets_denied: true,
+            uid_boundary,
+            uid_boundary_unmet: (!uid_boundary).then_some(Unmet::ToolUid),
         }
     }
+
+    /// `uid_boundary` false for `unmet`, unless an earlier condition already
+    /// failed. A verdict with several tools takes each tool's report.
+    pub fn unmet(&mut self, unmet: Option<Unmet>) {
+        if self.uid_boundary && unmet.is_some() {
+            self.uid_boundary = false;
+            self.uid_boundary_unmet = unmet;
+        }
+    }
+}
+
+/// The CLI's user namespace is the initial one: its uid map is the identity
+/// over every uid (`0 0 4294967295`), which only the initial namespace, or one
+/// the real root made, can have. Read once per process.
+fn initial_user_namespace() -> bool {
+    static INITIAL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *INITIAL.get_or_init(|| {
+        fs::read_to_string("/proc/self/uid_map").is_ok_and(|map| identity_map(&map))
+    })
+}
+
+fn identity_map(map: &str) -> bool {
+    map.split_whitespace().collect::<Vec<_>>() == ["0", "0", "4294967295"]
+}
+
+/// Whether an entry may stand in a toolchain, by the rule the image check
+/// shares (`AET-WO-1602`, ruled on PR #96): owned by uid 0, not writable by
+/// others, and writable by its group only when that group is gid 0, which
+/// grants nothing beyond root. An ancestor of a granted path may also be a
+/// sticky directory, such as `/tmp`, where no one but root can rename what
+/// root put.
+fn entry_ok(uid: u32, gid: u32, mode: u32, ancestor: bool) -> bool {
+    let writable = mode & 0o002 != 0 || (mode & 0o020 != 0 && gid != 0);
+    uid == 0 && (!writable || (ancestor && mode & 0o1000 != 0))
+}
+
+/// Whether `dir`, a path a tool's read grant adds beyond [`SYSTEM_DIRS`],
+/// `/proc` and `/dev`, is root's alone: every ancestor of its real path, and
+/// everything beneath it, links not followed (ruled on PR #96, condition 3).
+/// Checked once per path per process.
+fn toolchain_clean(dir: &Path) -> bool {
+    static SEEN: std::sync::Mutex<std::collections::BTreeMap<PathBuf, bool>> =
+        std::sync::Mutex::new(std::collections::BTreeMap::new());
+    let Ok(real) = fs::canonicalize(dir) else {
+        return false;
+    };
+    let exempt = SYSTEM_DIRS
+        .iter()
+        .chain(&["/proc", "/dev"])
+        .any(|s| real.starts_with(s));
+    if exempt {
+        return true;
+    }
+    let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(&clean) = seen.get(&real) {
+        return clean;
+    }
+    let ok = |p: &Path, ancestor: bool| {
+        fs::symlink_metadata(p).is_ok_and(|m| {
+            m.file_type().is_symlink() || entry_ok(m.uid(), m.gid(), m.mode(), ancestor)
+        })
+    };
+    let mut clean = real.ancestors().skip(1).all(|a| ok(a, true));
+    let mut stack = vec![real.clone()];
+    while clean && let Some(d) = stack.pop() {
+        clean = ok(&d, false);
+        let Ok(entries) = fs::read_dir(&d) else {
+            clean = false;
+            break;
+        };
+        for entry in entries {
+            let Ok(entry) = entry else {
+                clean = false;
+                break;
+            };
+            match entry.metadata() {
+                Ok(m) if m.is_dir() => stack.push(entry.path()),
+                Ok(m) if m.file_type().is_symlink() => {}
+                Ok(m) => clean &= entry_ok(m.uid(), m.gid(), m.mode(), false),
+                Err(_) => clean = false,
+            }
+        }
+    }
+    seen.insert(real, clean);
+    clean
 }
 
 /// How a tool run ended.
@@ -317,6 +461,17 @@ impl Invocation<'_> {
         let me = env::current_exe().map_err(|e| {
             Stop::tool_error(self.tool.name, format!("cannot find this executable: {e}"))
         })?;
+        if geteuid().is_root() {
+            hand_over(self.workdir).map_err(|e| {
+                Stop::sandbox(
+                    "uid",
+                    format!(
+                        "cannot hand {} to the tool uid: {e}",
+                        self.workdir.display()
+                    ),
+                )
+            })?;
+        }
         let mut cmd = Command::new(me);
         cmd.arg(REAPER_ARG)
             .arg(CLI_PID_ARG)
@@ -373,6 +528,26 @@ impl Invocation<'_> {
                 ),
                 _ => stop,
             })?;
+        // A tool cut off at the cap may have exited on its own terms (a child
+        // killed by SIGXFSZ under cargo, or EFBIG handled): its output then
+        // cannot be read as pass or fail (AET-WO-1601 §1.6).
+        if let Some(file) = at_the_cap(self.workdir) {
+            return Err(Stop::tool_error(
+                self.tool.name,
+                format!(
+                    "{} reached the {MAX_TOOL_FILE}-byte file-size cap (RLIMIT_FSIZE)",
+                    file.display()
+                ),
+            ));
+        }
+        let mut sandbox = sandbox;
+        if sandbox.uid_boundary {
+            if !initial_user_namespace() {
+                sandbox.unmet(Some(Unmet::UserNamespace));
+            } else if !self.read_only.iter().all(|p| toolchain_clean(p)) {
+                sandbox.unmet(Some(Unmet::Toolchain));
+            }
+        }
         Ok(Output {
             ended,
             stdout,
@@ -405,27 +580,148 @@ fn capture(mut pipe: impl Read + Send + 'static) -> thread::JoinHandle<Option<Ve
     })
 }
 
+/// The mode a root CLI's `workdir` has once the tool uid owns it: root's,
+/// writable by [`TOOL_GID`] alone, and sticky, so the tool uid can create
+/// entries but cannot rename or remove one root made (`AET-WO-1601` §1.2).
+const HANDED_OVER: u32 = 0o1770;
+
+/// As root, hands `workdir` to the tool uid the first time a tool runs in it
+/// (`AET-WO-1601` §1.2). Until then it is root's alone (0700), and everything
+/// in it is the CLI's: the hashed copies and the files the CLI wrote beside
+/// them. Those are sealed (files 0444, directories 0555), all by descriptor
+/// and never following a link; then the directory becomes root's, group
+/// [`TOOL_GID`], mode [`HANDED_OVER`]. A later call on the same directory
+/// finds it handed over and touches nothing in it: the tool uid has had it
+/// since, so root acts there by no path.
+fn hand_over(workdir: &Path) -> Result<(), String> {
+    let dir = openat(
+        CWD,
+        workdir,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|e| errno("open", e))?;
+    let st = fstat(&dir).map_err(|e| errno("stat", e))?;
+    let perm = st.st_mode & 0o7777;
+    match (st.st_uid, st.st_gid, perm) {
+        (0, TOOL_GID, HANDED_OVER) => Ok(()),
+        (0, 0, 0o700) => {
+            seal(dir.as_fd(), 0)?;
+            fchown(&dir, None, Some(Gid::from_raw(TOOL_GID))).map_err(|e| errno("chown", e))?;
+            fchmod(&dir, Mode::from_raw_mode(HANDED_OVER)).map_err(|e| errno("chmod", e))
+        }
+        (uid, gid, mode) => Err(format!(
+            "it is {uid}:{gid} mode {mode:o}, neither the CLI's own nor handed over"
+        )),
+    }
+}
+
+/// As root, makes `dir`, which the CLI made and no tool has had, a directory
+/// the tool uid may add to but not change: root's, group [`TOOL_GID`], mode
+/// [`HANDED_OVER`]. [`seal`] keeps that mode. `prove` marks the crate's root
+/// so, where cargo writes the `Cargo.lock` a crate without one needs
+/// (adversarial F4a: sealed 0555, every such `prove` became exit 5).
+pub fn add_only(dir: &Path) -> io::Result<()> {
+    let fd = openat(
+        CWD,
+        dir,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )?;
+    fchown(&fd, None, Some(Gid::from_raw(TOOL_GID)))?;
+    fchmod(&fd, Mode::from_raw_mode(HANDED_OVER))?;
+    Ok(())
+}
+
+/// Seals everything below `dir` read-only, by descriptor. Every entry must be
+/// root's, and a file or a directory: nothing else has had the directory yet,
+/// and the CLI copies no link. A directory [`add_only`] marked keeps its mode.
+fn seal(dir: BorrowedFd<'_>, depth: usize) -> Result<(), String> {
+    if depth > 64 {
+        return Err("the copy is more than 64 directories deep".to_owned());
+    }
+    let mut names = Vec::new();
+    for entry in Dir::read_from(dir).map_err(|e| errno("read a directory", e))? {
+        let entry = entry.map_err(|e| errno("read a directory", e))?;
+        let name = entry.file_name().to_owned();
+        if name.as_bytes() != b"." && name.as_bytes() != b".." {
+            names.push(name);
+        }
+    }
+    for name in names {
+        let shown = String::from_utf8_lossy(name.as_bytes()).into_owned();
+        let st = statat(dir, name.as_c_str(), AtFlags::SYMLINK_NOFOLLOW)
+            .map_err(|e| errno(&format!("stat {shown}"), e))?;
+        if st.st_uid != 0 {
+            return Err(format!("{shown} is not root's before any tool ran"));
+        }
+        let (flags, mode) = match FileType::from_raw_mode(st.st_mode) {
+            FileType::Directory => (OFlags::DIRECTORY, 0o555),
+            FileType::RegularFile => (OFlags::NONBLOCK | OFlags::NOCTTY, 0o444),
+            _ => return Err(format!("{shown} is not a file or a directory")),
+        };
+        let fd = openat(
+            dir,
+            name.as_c_str(),
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | flags,
+            Mode::empty(),
+        )
+        .map_err(|e| errno(&format!("open {shown}"), e))?;
+        let opened = fstat(&fd).map_err(|e| errno(&format!("stat {shown}"), e))?;
+        if mode == 0o555 {
+            seal(fd.as_fd(), depth + 1)?;
+            if (opened.st_gid, opened.st_mode & 0o7777) == (TOOL_GID, HANDED_OVER) {
+                continue;
+            }
+        }
+        fchmod(&fd, Mode::from_raw_mode(mode)).map_err(|e| errno(&format!("chmod {shown}"), e))?;
+    }
+    Ok(())
+}
+
+/// A regular file under `dir` at [`MAX_TOOL_FILE`] bytes or more: what a write
+/// cut off by `RLIMIT_FSIZE` leaves. Links are not followed.
+fn at_the_cap(dir: &Path) -> Option<PathBuf> {
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for entry in fs::read_dir(&d).into_iter().flatten().flatten() {
+            let Ok(meta) = entry.metadata() else { continue };
+            if meta.is_dir() {
+                stack.push(entry.path());
+            } else if meta.is_file() && meta.len() >= MAX_TOOL_FILE {
+                return Some(entry.path());
+            }
+        }
+    }
+    None
+}
+
 /// The status file holds one line about the sandbox, then one about how the
-/// tool ended: `sandbox abi=8` then `ended code=0` or `ended signal=9`;
+/// tool ended: `sandbox abi=8 uid_boundary=1` then `ended code=0` or `ended signal=9`;
 /// or a single `unavailable …` or `spawn-error …` line.
 fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop> {
     let mut lines = status.lines();
     let first = lines.next().unwrap_or_default();
     if let Some(rest) = first.strip_prefix("unavailable ") {
-        // Only the trampoline writes this line: `landlock`, `seccomp` or
-        // `capabilities`.
+        // Only the trampoline writes this line: `descriptors`, `uid`,
+        // `landlock`, `seccomp`, `capabilities` or `fsize`.
         let (layer, reason) = rest.split_once(' ').unwrap_or((rest, ""));
-        return Err(Stop {
-            code: EXIT_TOOL_UNAVAILABLE,
-            kind: "SandboxUnavailable",
-            id: Some(layer.to_owned()),
-            message: format!("the required {layer} sandbox layer cannot be enforced: {reason}"),
-        });
+        return Err(Stop::sandbox(
+            layer,
+            format!("the required {layer} sandbox layer cannot be enforced: {reason}"),
+        ));
     }
     let sandbox = first
         .strip_prefix("sandbox abi=")
-        .and_then(|abi| abi.parse().ok())
-        .map(SandboxReport::from_abi)
+        .and_then(|rest| rest.split_once(" uid_boundary="))
+        .and_then(|(abi, uid)| {
+            let uid_boundary = match uid {
+                "1" => true,
+                "0" => false,
+                _ => return None,
+            };
+            Some(SandboxReport::from_abi(abi.parse().ok()?, uid_boundary))
+        })
         .ok_or_else(|| Stop::tool_error(tool, "the reaper reported no sandbox".to_owned()))?;
     let second = lines.next().unwrap_or_default();
     if let Some(reason) = second.strip_prefix("spawn-error ") {
@@ -778,7 +1074,15 @@ pub fn confine_main(args: &[OsString]) -> ! {
             exit(0);
         }
     }
-    let sandbox = match confine(&internal.read_only, &internal.read_write) {
+    // As root, the tool runs under its own uid (AET-WO-1601 §1.2), set here,
+    // before Landlock and the filter, while this process is single-threaded.
+    // There is no fallback to root: a switch that fails refuses the call.
+    let separate = geteuid().is_root();
+    if separate && let Err(reason) = separate_uid() {
+        let _ = writeln!(status, "unavailable uid {reason}");
+        exit(0);
+    }
+    let abi = match confine(&internal.read_only, &internal.read_write) {
         Ok(s) => s,
         Err(reason) => {
             let _ = writeln!(status, "unavailable landlock {reason}");
@@ -798,7 +1102,24 @@ pub fn confine_main(args: &[OsString]) -> ! {
         let _ = writeln!(status, "unavailable capabilities {e}");
         exit(0);
     }
-    let _ = writeln!(status, "sandbox abi={}", sandbox.landlock_abi);
+    // Soft and hard alike, so the tool cannot raise it (AET-WO-1601 §1.6).
+    let cap = Rlimit {
+        current: Some(MAX_TOOL_FILE),
+        maximum: Some(MAX_TOOL_FILE),
+    };
+    if let Err(e) = setrlimit(Resource::Fsize, cap) {
+        let _ = writeln!(
+            status,
+            "unavailable fsize setrlimit: errno {}",
+            e.raw_os_error()
+        );
+        exit(0);
+    }
+    let _ = writeln!(
+        status,
+        "sandbox abi={abi} uid_boundary={}",
+        u8::from(separate)
+    );
     let (program, tool_args) = internal
         .tool
         .split_first()
@@ -1071,35 +1392,16 @@ pub fn seccomp_filter(_self_pid: u32) -> Option<BpfProgram> {
 /// 2. Clears the ambient set.
 /// 3. Clears the effective, permitted and inheritable sets.
 /// 4. Verifies that those four sets are empty and `no_new_privs` is set
-///    (Landlock and the filter both set it), and that the bounding set is empty
-///    if step 1 ran.
+///    (Landlock and the filter both set it). Step 1 verifies itself.
 ///
-/// Any failure is an error, and the call refuses (`INV-06`).
+/// Any failure is an error, and the call refuses (`INV-06`). A trampoline
+/// that started as root emptied the bounding set in [`separate_uid`], before
+/// the uid change took `CAP_SETPCAP` away.
 fn drop_capabilities() -> Result<(), String> {
-    let errno = |what: &str, e: Errno| format!("{what}: errno {}", e.raw_os_error());
-    // Capability numbers run from 0 to the kernel's last; past it, EINVAL.
-    let each = |test: fn(CapabilitySet) -> rustix::io::Result<bool>| {
-        let mut held = Vec::new();
-        for n in 0..64 {
-            let cap = CapabilitySet::from_bits_retain(1 << n);
-            match test(cap) {
-                Ok(true) => held.push(cap),
-                Ok(false) => {}
-                Err(Errno::INVAL) if n > 0 => break,
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(held)
-    };
     let before = capabilities(None).map_err(|e| errno("capget", e))?;
     let setpcap = before.effective.contains(CapabilitySet::SETPCAP);
     if setpcap {
-        for cap in
-            each(capability_is_in_bounding_set).map_err(|e| errno("reading the bounding set", e))?
-        {
-            remove_capability_from_bounding_set(cap)
-                .map_err(|e| errno(&format!("dropping {cap:?} from the bounding set"), e))?;
-        }
+        empty_bounding_set()?;
     }
     clear_ambient_capability_set().map_err(|e| errno("clearing the ambient set", e))?;
     let none = CapabilitySets {
@@ -1112,17 +1414,10 @@ fn drop_capabilities() -> Result<(), String> {
     if !(after.effective.is_empty() && after.permitted.is_empty() && after.inheritable.is_empty()) {
         return Err(format!("capabilities still held: {after:?}"));
     }
-    let left =
-        each(capability_is_in_ambient_set).map_err(|e| errno("reading the ambient set", e))?;
+    let left = each_capability(capability_is_in_ambient_set)
+        .map_err(|e| errno("reading the ambient set", e))?;
     if !left.is_empty() {
         return Err(format!("ambient capabilities still held: {left:?}"));
-    }
-    if setpcap {
-        let left = each(capability_is_in_bounding_set)
-            .map_err(|e| errno("reading the bounding set", e))?;
-        if !left.is_empty() {
-            return Err(format!("bounding capabilities still held: {left:?}"));
-        }
     }
     match no_new_privs() {
         Ok(true) => Ok(()),
@@ -1131,10 +1426,89 @@ fn drop_capabilities() -> Result<(), String> {
     }
 }
 
+fn errno(what: &str, e: Errno) -> String {
+    format!("{what}: errno {}", e.raw_os_error())
+}
+
+/// Every capability `test` says is held. Capability numbers run from 0 to the
+/// kernel's last; past it, `EINVAL`.
+fn each_capability(
+    test: fn(CapabilitySet) -> rustix::io::Result<bool>,
+) -> rustix::io::Result<Vec<CapabilitySet>> {
+    let mut held = Vec::new();
+    for n in 0..64 {
+        let cap = CapabilitySet::from_bits_retain(1 << n);
+        match test(cap) {
+            Ok(true) => held.push(cap),
+            Ok(false) => {}
+            Err(Errno::INVAL) if n > 0 => break,
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(held)
+}
+
+/// Empties the bounding set, then reads it back; needs `CAP_SETPCAP` effective.
+fn empty_bounding_set() -> Result<(), String> {
+    let read = || {
+        each_capability(capability_is_in_bounding_set)
+            .map_err(|e| errno("reading the bounding set", e))
+    };
+    for cap in read()? {
+        remove_capability_from_bounding_set(cap)
+            .map_err(|e| errno(&format!("dropping {cap:?} from the bounding set"), e))?;
+    }
+    match read()? {
+        left if left.is_empty() => Ok(()),
+        left => Err(format!("bounding capabilities still held: {left:?}")),
+    }
+}
+
+/// The trampoline, started as root, becomes [`TOOL_UID`] and [`TOOL_GID`]
+/// with no supplementary group (`AET-WO-1601` §1.2), then reads every id back
+/// from the kernel. The bounding set is emptied first: the uid change clears
+/// the effective set, and `CAP_SETPCAP` with it. Each call is the thread's own
+/// system call (`rustix::thread`), and this process has one thread here.
+fn separate_uid() -> Result<(), String> {
+    empty_bounding_set()?;
+    let (uid, gid) = (Uid::from_raw(TOOL_UID), Gid::from_raw(TOOL_GID));
+    set_thread_groups(&[]).map_err(|e| errno("setgroups", e))?;
+    set_thread_res_gid(gid, gid, gid).map_err(|e| errno("setresgid", e))?;
+    set_thread_res_uid(uid, uid, uid).map_err(|e| errno("setresuid", e))?;
+    let status = fs::read_to_string("/proc/thread-self/status")
+        .map_err(|e| format!("cannot read back the ids: {e}"))?;
+    ids_are_the_tool_s(&status)
+}
+
+/// `/proc/<pid>/status` says the real, effective, saved and filesystem uid
+/// and gid are all the tool's, and there is no supplementary group.
+fn ids_are_the_tool_s(status: &str) -> Result<(), String> {
+    let field = |name: &str| {
+        status
+            .lines()
+            .find_map(|l| l.strip_prefix(name))
+            .map(|v| v.split_whitespace().collect::<Vec<_>>())
+            .ok_or_else(|| format!("no {name} line in the read-back"))
+    };
+    let uid = TOOL_UID.to_string();
+    let gid = TOOL_GID.to_string();
+    let (uids, gids, groups) = (field("Uid:")?, field("Gid:")?, field("Groups:")?);
+    if uids.len() != 4 || uids.iter().any(|u| *u != uid) {
+        return Err(format!("uids read back as {uids:?}"));
+    }
+    if gids.len() != 4 || gids.iter().any(|g| *g != gid) {
+        return Err(format!("gids read back as {gids:?}"));
+    }
+    if !groups.is_empty() {
+        return Err(format!("supplementary groups read back as {groups:?}"));
+    }
+    Ok(())
+}
+
 /// Applies Landlock to this process: filesystem rights through ABI 3 are
 /// required; where the kernel can, TCP bind and connect are denied (ABI 4+)
 /// and signals and abstract Unix sockets are scoped to the tool (ABI 6+).
-fn confine(read_only: &[PathBuf], read_write: &[PathBuf]) -> Result<SandboxReport, String> {
+fn confine(read_only: &[PathBuf], read_write: &[PathBuf]) -> Result<i32, String> {
     let fs_rights = AccessFs::from_all(ABI::V3);
     let status = Ruleset::default()
         .set_compatibility(CompatLevel::HardRequirement)
@@ -1155,9 +1529,7 @@ fn confine(read_only: &[PathBuf], read_write: &[PathBuf]) -> Result<SandboxRepor
     };
     match status.ruleset {
         RulesetStatus::NotEnforced => Err("the ruleset was not enforced".to_owned()),
-        RulesetStatus::PartiallyEnforced | RulesetStatus::FullyEnforced => {
-            Ok(SandboxReport::from_abi(abi))
-        }
+        RulesetStatus::PartiallyEnforced | RulesetStatus::FullyEnforced => Ok(abi),
     }
 }
 
@@ -1241,6 +1613,219 @@ mod tests {
         });
         assert_eq!(code, 70);
         assert!(calls > 1, "returned on the first NotFound");
+    }
+
+    /// The three conditions (ruled on PR #96): the identity map is the only
+    /// initial namespace; an entry is clean only when root's and writable by
+    /// no group or other (a sticky ancestor allowed); a path a user owns is
+    /// never clean, a system directory is not walked; and the first failed
+    /// condition is the one named.
+    #[test]
+    fn uid_boundary_holds_only_when_all_three_conditions_do() {
+        assert!(identity_map("         0          0 4294967295\n"));
+        assert!(!identity_map("0 1001 1\n1 165536 65536\n"));
+        assert!(!identity_map("0 0 65536\n"));
+        assert!(!identity_map("0 0 4294967295\n1 1 1\n"));
+        assert!(entry_ok(0, 0, 0o40755, false));
+        assert!(
+            entry_ok(0, 0, 0o40775, false),
+            "root's group writing grants nothing"
+        );
+        assert!(!entry_ok(0, 50, 0o40775, false), "another group writing");
+        assert!(!entry_ok(0, 0, 0o40757, false));
+        assert!(!entry_ok(1001, 0, 0o40755, false));
+        assert!(
+            entry_ok(0, 0, 0o41777, true),
+            "a sticky ancestor such as /tmp"
+        );
+        assert!(
+            !entry_ok(0, 0, 0o41777, false),
+            "a sticky directory in a toolchain"
+        );
+        assert!(
+            toolchain_clean(Path::new("/usr/bin")),
+            "the system set is not walked"
+        );
+        let mine = env::temp_dir().join(format!("aet-1601-clean-{}", std::process::id()));
+        fs::create_dir_all(&mine).unwrap();
+        assert_eq!(toolchain_clean(&mine), geteuid().is_root());
+        fs::remove_dir_all(&mine).unwrap();
+        // Where the kit and the toolchain are set (the image), the walk agrees
+        // with `find` (in the pinned image, Kani's kit is uid 1001's: A1).
+        for var in ["KANI_HOME", "RUSTUP_HOME"] {
+            let Some(home) = env::var_os(var) else {
+                continue;
+            };
+            let find = std::process::Command::new("find")
+                .arg(&home)
+                .args([
+                    "!", "-type", "l", "(", "!", "-uid", "0", "-o", "-perm", "-002", "-o", "(",
+                    "-perm", "-020", "!", "-gid", "0", ")", ")",
+                ])
+                .args(["-print", "-quit"])
+                .output()
+                .unwrap();
+            assert_eq!(
+                toolchain_clean(Path::new(&home)),
+                find.stdout.is_empty(),
+                "{var}"
+            );
+        }
+        let mut s = SandboxReport::from_abi(6, true);
+        assert_eq!((s.uid_boundary, s.uid_boundary_unmet), (true, None));
+        s.unmet(None);
+        assert!(s.uid_boundary);
+        s.unmet(Some(Unmet::UserNamespace));
+        s.unmet(Some(Unmet::Toolchain));
+        assert_eq!(
+            (s.uid_boundary, s.uid_boundary_unmet),
+            (false, Some(Unmet::UserNamespace))
+        );
+        let s = SandboxReport::from_abi(6, false);
+        assert_eq!(s.uid_boundary_unmet, Some(Unmet::ToolUid));
+        let json = serde_json::to_value(s).unwrap();
+        assert_eq!(json["uid_boundary_unmet"], "tool_uid");
+    }
+
+    /// `uid_boundary` is read only from the trampoline's own line, and only
+    /// as `0` or `1`; anything else is no sandbox report at all.
+    #[test]
+    fn the_status_line_says_uid_boundary_exactly() {
+        let ended = "\nended code=0\n";
+        let sandbox = |first: &str| parse_status(&format!("{first}{ended}"), "t").map(|r| r.0);
+        assert!(
+            sandbox("sandbox abi=6 uid_boundary=1")
+                .unwrap()
+                .uid_boundary
+        );
+        assert!(
+            !sandbox("sandbox abi=6 uid_boundary=0")
+                .unwrap()
+                .uid_boundary
+        );
+        for bad in [
+            "sandbox abi=6",
+            "sandbox abi=6 uid_boundary=",
+            "sandbox abi=6 uid_boundary=true",
+            "sandbox abi=6 uid_boundary=2",
+            "sandbox abi=6 uid_boundary=1 x",
+            "sandbox abi=x uid_boundary=1",
+            "sandbox uid_boundary=1 abi=6",
+        ] {
+            let stop = sandbox(bad).unwrap_err();
+            assert_eq!(stop.kind, "ToolError", "{bad}");
+        }
+        let stop = parse_status("unavailable uid setresuid: errno 1\n", "t").unwrap_err();
+        assert_eq!((stop.code, stop.kind), (4, "SandboxUnavailable"));
+        assert_eq!(stop.id.as_deref(), Some("uid"));
+    }
+
+    /// The read-back accepts only every id the tool's and no group at all.
+    #[test]
+    fn the_read_back_needs_all_four_ids_and_no_group() {
+        let status = |uid: &str, gid: &str, groups: &str| {
+            format!("Name:\tx\nUid:\t{uid}\nGid:\t{gid}\nGroups:\t{groups}\n")
+        };
+        let four = |id: u32| [id; 4].map(|i| i.to_string()).join("\t");
+        let (u, g) = (four(TOOL_UID), four(TOOL_GID));
+        assert!(ids_are_the_tool_s(&status(&u, &g, "")).is_ok());
+        let one_off = |id: u32, at: usize| {
+            let mut ids = [
+                id.to_string(),
+                id.to_string(),
+                id.to_string(),
+                id.to_string(),
+            ];
+            ids[at] = "0".to_owned();
+            ids.join("\t")
+        };
+        for (uid, gid, groups) in [
+            (one_off(TOOL_UID, 3), g.clone(), String::new()),
+            (one_off(TOOL_UID, 0), g.clone(), String::new()),
+            (u.clone(), one_off(TOOL_GID, 2), String::new()),
+            (u.clone(), g.clone(), "0".to_owned()),
+            (u.clone(), g.clone(), TOOL_GID.to_string()),
+            (u.clone(), u.clone(), String::new()),
+            (
+                [TOOL_UID; 3].map(|i| i.to_string()).join("\t"),
+                g.clone(),
+                String::new(),
+            ),
+        ] {
+            assert!(
+                ids_are_the_tool_s(&status(&uid, &gid, &groups)).is_err(),
+                "{uid} / {gid} / {groups}"
+            );
+        }
+        assert!(ids_are_the_tool_s(&format!("Uid:\t{u}\n")).is_err());
+    }
+
+    /// As root (tier 1 in the image), a directory is handed over once: its
+    /// entries sealed and the directory made root's, group [`TOOL_GID`],
+    /// mode [`HANDED_OVER`]; an entry not root's before then refuses the
+    /// hand-over; a second call changes nothing. As a user there is nothing
+    /// to hand over, and the CLI never calls it.
+    #[test]
+    fn a_directory_is_handed_over_once_and_only_if_root_made_everything_in_it() {
+        use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+        if !geteuid().is_root() {
+            return;
+        }
+        let base = env::temp_dir().join(format!("aet-1601-handover-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let make = |name: &str| {
+            let d = base.join(name);
+            fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(&d)
+                .unwrap();
+            fs::set_permissions(&d, fs::Permissions::from_mode(0o700)).unwrap();
+            fs::create_dir(d.join("crate")).unwrap();
+            fs::write(d.join("crate/lib.rs"), b"x").unwrap();
+            d
+        };
+        let mode = |p: &Path| fs::symlink_metadata(p).unwrap().mode() & 0o7777;
+        let ok = make("ok");
+        hand_over(&ok).unwrap();
+        let meta = fs::metadata(&ok).unwrap();
+        assert_eq!(
+            (meta.uid(), meta.gid(), mode(&ok)),
+            (0, TOOL_GID, HANDED_OVER)
+        );
+        assert_eq!(mode(&ok.join("crate")), 0o555);
+        assert_eq!(mode(&ok.join("crate/lib.rs")), 0o444);
+        // A second call finds it handed over and seals nothing new.
+        fs::write(ok.join("later"), b"y").unwrap();
+        hand_over(&ok).unwrap();
+        assert_eq!(mode(&ok.join("later")), 0o644);
+        // A directory the CLI made add-only keeps its mode; its files are sealed.
+        let marked = make("marked");
+        add_only(&marked.join("crate")).unwrap();
+        hand_over(&marked).unwrap();
+        let crate_dir = fs::metadata(marked.join("crate")).unwrap();
+        assert_eq!(
+            (
+                crate_dir.uid(),
+                crate_dir.gid(),
+                mode(&marked.join("crate"))
+            ),
+            (0, TOOL_GID, HANDED_OVER)
+        );
+        assert_eq!(mode(&marked.join("crate/lib.rs")), 0o444);
+        // The CLI copies no link, so a link in the directory refuses the hand-over.
+        let linked = make("linked");
+        std::os::unix::fs::symlink("/etc/passwd", linked.join("crate/link")).unwrap();
+        assert!(
+            hand_over(&linked)
+                .unwrap_err()
+                .contains("not a file or a directory")
+        );
+        let theirs = make("theirs");
+        std::os::unix::fs::chown(theirs.join("crate/lib.rs"), Some(4242), None).unwrap();
+        assert!(hand_over(&theirs).unwrap_err().contains("not root's"));
+        assert_eq!(mode(&theirs), 0o700, "a refused directory was handed over");
+        fs::remove_dir_all(&base).unwrap();
     }
 
     /// The filter as an exact instruction sequence: any edit to it must show

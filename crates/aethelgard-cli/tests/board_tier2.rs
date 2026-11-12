@@ -9,6 +9,8 @@
 
 #![cfg(feature = "with-tools")]
 
+mod common;
+
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -433,6 +435,7 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
         [
             ("erc", "pass"),
             ("drc", "pass"),
+            ("extract", "pass"),
             ("prove", "pass"),
             ("prove", "pass"),
             ("build", "pass"),
@@ -440,10 +443,24 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
             ("campaign", "pass"),
         ]
     );
+    // Each gate's boundary is what its tools' read grants make it (ruled on
+    // PR #96): in the pinned image, Kani's kit is uid 1001's, so `prove` says
+    // `toolchain`; under rootless podman every gate says `user_namespace`.
     for g in v["gates"].as_array().unwrap() {
         if g["gate"] == "prove" {
             assert_eq!(g["harness_provenance"], "generated");
         }
+        // `AET-WO-1305`: extract is bound to the generated board, and runs no
+        // tool, so it has no uid boundary to report (null, never a value).
+        if g["gate"] == "extract" {
+            assert_eq!(g["input_sha256"], v["files"]["kicad/sentinel-01.kicad_pcb"]);
+            assert_eq!(g["uid_boundary"], Value::Null, "{g}");
+            assert!(g.get("uid_boundary_unmet").is_none(), "{g}");
+            continue;
+        }
+        let (holds, unmet) = common::expected_boundary(&gate_reads(g["gate"].as_str().unwrap()));
+        assert_eq!(g["uid_boundary"], holds, "{g}");
+        assert_eq!(g["uid_boundary_unmet"].as_str(), unmet, "{g}");
     }
     // The ELF is the one `build` gives for the committed board anywhere.
     let elf = dir.join("reference.elf");
@@ -509,4 +526,231 @@ fn verify_fails_the_47k_pull_up_with_the_campaigns_findings() {
         "{v}"
     );
     assert_eq!(v["campaign"][0]["verdict"], "fail");
+}
+
+/// The paths each gate's tools add to their read grant beyond the system set,
+/// as the CLI grants them.
+fn gate_reads(gate: &str) -> Vec<PathBuf> {
+    let var = |name: &str| PathBuf::from(std::env::var_os(name).expect(name));
+    let bridge = Path::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let mut reads = Vec::new();
+    match gate {
+        "erc" | "drc" => reads.extend(common::tool_dirs("kicad-cli")),
+        "prove" => {
+            reads.extend(common::tool_dirs("cargo"));
+            reads.extend(common::tool_dirs("cargo-kani"));
+            reads.extend([var("KANI_HOME"), var("RUSTUP_HOME")]);
+        }
+        "build" => {
+            reads.extend(common::tool_dirs("cargo"));
+            reads.push(var("RUSTUP_HOME"));
+        }
+        "simulate" | "campaign" => {
+            reads.extend(common::tool_dirs("renode"));
+            reads.push(bridge);
+        }
+        other => panic!("no read grant known for gate {other}"),
+    }
+    reads
+}
+
+/// The generated board's ELF, built by `aethelgard build` from a fresh copy.
+fn reference_elf(label: &str) -> String {
+    let base = std::env::temp_dir().join(format!("aet-1601-{label}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    copy_tree(&board(), &base.join("board"));
+    let (_, bytes) = build(&base.join("board"), &base.join("reference.elf"));
+    fs::remove_dir_all(&base).unwrap();
+    sha(&bytes)
+}
+
+/// `AET-WO-1601` §3 (B1, B2 automated): as root, `build` runs cargo under the
+/// tool uid on a root-owned copy. While it runs, a third uid (4242) tries, as
+/// soon as the copy is hashed (`status-version` appears), to overwrite the
+/// firmware's source in the copy and to plant a cargo configuration in the
+/// tool's `HOME`, again and again until `build` ends. Every attempt is
+/// refused, and the ELF is the reference's. Root only: a user cannot be
+/// another uid.
+#[test]
+fn as_root_a_third_uid_cannot_change_what_build_reads() {
+    use std::os::unix::process::CommandExt;
+    assert!(
+        rustix::process::geteuid().is_root(),
+        "tier 2 runs as root in the image (ci.yml `tools`)"
+    );
+    let want = reference_elf("third-uid-ref");
+    let base = std::env::temp_dir().join(format!("aet-1601-third-uid-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    copy_tree(&board(), &base.join("board"));
+    let elf = base.join("raced.elf");
+    let cli = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["build", "--crate"])
+        .arg(base.join("board"))
+        .arg("--out")
+        .arg(&elf)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let scratch = format!("/var/lib/aethelgard/aethelgard-{}-", cli.id());
+    let attempt = |script: &str| {
+        Command::new("/bin/sh")
+            .args(["-c", script])
+            .uid(4242)
+            .gid(4242)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    let (mut tries, mut refused) = (0, 0);
+    let mut cli = Some(cli);
+    let mut out = None;
+    while let Some(mut child) = cli.take() {
+        if let Some(status) = child.try_wait().unwrap() {
+            let mut stdout = String::new();
+            std::io::Read::read_to_string(&mut child.stdout.take().unwrap(), &mut stdout).unwrap();
+            out = Some((status.code(), stdout));
+            break;
+        }
+        let roots: Vec<PathBuf> = fs::read_dir("/var/lib/aethelgard")
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.to_str().is_some_and(|s| s.starts_with(&scratch)))
+            .collect();
+        for root in roots.iter().filter(|r| r.join("status-version").exists()) {
+            let main = root.join("tool/crate/firmware/src/main.rs");
+            let home = root.join("tool");
+            for script in [
+                format!("echo 'compile_error!(\"raced\");' > '{}'", main.display()),
+                format!(
+                    "mkdir -p '{h}/.cargo' && echo '[build]' > '{h}/.cargo/config.toml'",
+                    h = home.display()
+                ),
+                format!("mv '{m}' '{m}.aside'", m = main.display()),
+            ] {
+                let o = attempt(&script);
+                assert!(!o.status.success(), "uid 4242 succeeded: {script}");
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                if stderr.contains("Permission denied") {
+                    refused += 1;
+                } else {
+                    // Only the CLI's own clean-up may beat an attempt.
+                    assert!(!root.exists(), "not refused, not gone: {script}: {stderr}");
+                    continue;
+                }
+                tries += 1;
+            }
+        }
+        cli = Some(child);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let (code, stdout) = out.unwrap();
+    let v = one(&stdout);
+    assert_eq!(code, Some(0), "{v}");
+    let (holds, unmet) = common::expected_boundary(&gate_reads("build"));
+    assert_eq!(v["sandbox"]["uid_boundary"], holds, "{v}");
+    assert_eq!(v["sandbox"]["uid_boundary_unmet"].as_str(), unmet, "{v}");
+    assert_eq!(v["elf"]["sha256"], want, "{v}");
+    assert_eq!(sha(&fs::read(&elf).unwrap()), want);
+    assert!(
+        tries > 0 && refused == tries,
+        "{refused} of {tries} attempts refused"
+    );
+    fs::remove_dir_all(&base).unwrap();
+}
+
+/// `AET-WO-3301` F13, closed: a cargo configuration another uid plants in
+/// `/tmp` is no longer an ancestor of any tool's working directory, so
+/// `build` neither reads it nor fails on it. The planted file would break the
+/// link if cargo read it. Root only, to plant it as another uid.
+#[test]
+fn a_cargo_configuration_another_uid_plants_in_tmp_is_not_read() {
+    assert!(
+        rustix::process::geteuid().is_root(),
+        "tier 2 runs as root in the image (ci.yml `tools`)"
+    );
+    let want = reference_elf("planted-ref");
+    let planted = Path::new("/tmp/.cargo");
+    fs::create_dir(planted).expect("no /tmp/.cargo before the test");
+    struct Remove<'a>(&'a Path);
+    impl Drop for Remove<'_> {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(self.0);
+        }
+    }
+    let _remove = Remove(planted);
+    let config = planted.join("config.toml");
+    fs::write(
+        &config,
+        "[target.thumbv7em-none-eabihf]\nrustflags = [\"-C\", \"link-arg=--planted-by-another-uid\"]\n",
+    )
+    .unwrap();
+    std::os::unix::fs::chown(planted, Some(4242), Some(4242)).unwrap();
+    std::os::unix::fs::chown(&config, Some(4242), Some(4242)).unwrap();
+    assert_eq!(reference_elf("planted"), want);
+}
+
+/// `AET-WO-1305` §3.5: a board swapped in `verify`'s own scratch after DRC
+/// copied it, and before `extract` reads it, is refused by the extract gate:
+/// `BindingMismatch`, exit 5, naming `extract`. The swap is timed by DRC's
+/// own copy of the board reaching the board's length; DRC itself judges
+/// the generated bytes, so `extract` is the first gate to see the swap.
+#[test]
+fn verify_refuses_a_board_swapped_before_extract() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    // A scratch base the CLI accepts (`AET-WO-1601` §1.4), removed on drop.
+    let private = common::private_tmp("1305-swap");
+    let tmp = private.0.clone();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["verify", "--spec", SPEC])
+        .current_dir(root())
+        .env("TMPDIR", &tmp)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    let mut swapped = false;
+    while !swapped && child.try_wait().unwrap().is_none() {
+        assert!(start.elapsed().as_secs() < 600, "verify ran 10 minutes");
+        let dirs: Vec<PathBuf> = fs::read_dir(&tmp)
+            .map(|r| {
+                r.filter_map(|e| Some(e.ok()?.path().join("tool")))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let ours = dirs
+            .iter()
+            .map(|d| d.join("tree/kicad/sentinel-01.kicad_pcb"))
+            .find(|p| p.is_file());
+        let drc = dirs
+            .iter()
+            .map(|d| d.join("input.kicad_pcb"))
+            .find(|p| p.is_file());
+        if let (Some(ours), Some(drc)) = (ours, drc) {
+            let bytes = fs::read(&ours).unwrap();
+            // DRC's copy is the board plus what `kicad::prepare` writes into
+            // it, so at the board's length or more, DRC has read it all.
+            if fs::metadata(&drc).is_ok_and(|m| m.len() >= bytes.len() as u64) {
+                let next = ours.with_extension("swap");
+                let mut other = bytes;
+                other.push(b'\n');
+                fs::write(&next, other).unwrap();
+                fs::rename(&next, &ours).unwrap();
+                swapped = true;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    let out = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let v = one(&stdout);
+    assert!(swapped, "verify ended before DRC copied the board: {v}");
+    assert_eq!(out.status.code(), Some(5), "{v}");
+    assert_eq!(v["error"]["kind"], "BindingMismatch", "{v}");
+    assert_eq!(v["error"]["id"], "extract", "{v}");
 }

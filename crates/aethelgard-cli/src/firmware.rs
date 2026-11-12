@@ -126,15 +126,17 @@ fn messages(stdout: &[u8]) -> Messages {
 /// it): every file any unit read, `#[path]` modules and `include_bytes!`
 /// targets included, the toolchain's own excluded. A space inside a path is
 /// written `\ `.
-fn dep_info(exe: &Path) -> Result<Vec<PathBuf>, Stop> {
+fn dep_info(target: &Path, exe: &Path) -> Result<Vec<PathBuf>, Stop> {
     let mut d = exe.as_os_str().to_owned();
     d.push(".d");
-    let text = fs::read_to_string(&d).map_err(|e| {
-        Stop::tool_error(
-            "cargo",
-            format!("cargo wrote no dep-info beside the ELF ({e})"),
-        )
-    })?;
+    let text = read_beneath(target, Path::new(&d), MAX_INPUT_BYTES)
+        .and_then(|bytes| String::from_utf8(bytes).map_err(std::io::Error::other))
+        .map_err(|e| {
+            Stop::tool_error(
+                "cargo",
+                format!("cargo wrote no dep-info beside the ELF ({e})"),
+            )
+        })?;
     let Some((_, deps)) = text.lines().next().and_then(|l| l.split_once(": ")) else {
         return Err(Stop::tool_error(
             "cargo",
@@ -208,18 +210,52 @@ fn classify(code: i32, finished: Option<bool>) -> Option<bool> {
     }
 }
 
-/// The one executable cargo reports, which must be a regular file inside
-/// `target`.
-fn artifact(m: &Messages, target: &Path) -> Result<PathBuf, Stop> {
+/// Reads a file cargo wrote under `target`, at most `cap` bytes and one
+/// more. As root, `target` belongs to the tool uid (`AET-WO-1601` §1.2), and
+/// root must not read through a path that uid chose: the file is resolved
+/// beneath `target` alone, with no `..`, no symlink at any component and no
+/// magic link, and must be a regular file.
+fn read_beneath(target: &Path, file: &Path, cap: u64) -> std::io::Result<Vec<u8>> {
+    use rustix::fs::{CWD, Mode, OFlags, ResolveFlags, openat, openat2};
+    let rel = file
+        .strip_prefix(target)
+        .map_err(|_| std::io::Error::other("not in the target directory"))?;
+    let dir = openat(
+        CWD,
+        target,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )?;
+    let fd = openat2(
+        &dir,
+        rel,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+        Mode::empty(),
+        ResolveFlags::BENEATH | ResolveFlags::NO_SYMLINKS | ResolveFlags::NO_MAGICLINKS,
+    )?;
+    let file = fs::File::from(fd);
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::other("not a regular file"));
+    }
+    let mut bytes = Vec::new();
+    file.take(cap + 1).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+/// The one executable cargo reports, which must be a regular file beneath
+/// `target`, and its bytes.
+fn artifact(m: &Messages, target: &Path) -> Result<(PathBuf, Vec<u8>), Stop> {
     match m.executables.as_slice() {
-        [one] if one.starts_with(target) && one.is_file() => Ok(one.clone()),
-        [one] => Err(Stop::tool_error(
-            "cargo",
-            format!(
-                "cargo reported the executable {}, which is not a file in its target directory",
-                one.display()
-            ),
-        )),
+        [one] => match read_beneath(target, one, MAX_INPUT_BYTES) {
+            Ok(bytes) => Ok((one.clone(), bytes)),
+            Err(e) => Err(Stop::tool_error(
+                "cargo",
+                format!(
+                    "cargo reported the executable {}, which is not a regular file beneath its target directory: {e}",
+                    one.display()
+                ),
+            )),
+        },
         many => Err(Stop::tool_error(
             "cargo",
             format!(
@@ -230,12 +266,9 @@ fn artifact(m: &Messages, target: &Path) -> Result<PathBuf, Stop> {
     }
 }
 
-/// Copies the built ELF to `out`, which must not exist, and returns its sha256.
-fn deliver(elf: &Path, out: &Path) -> Result<String, Stop> {
-    let mut bytes = Vec::new();
-    fs::File::open(elf)
-        .and_then(|f| f.take(MAX_INPUT_BYTES + 1).read_to_end(&mut bytes))
-        .map_err(|e| Stop::tool_error("cargo", format!("cannot read the built ELF: {e}")))?;
+/// Writes the built ELF's bytes to `out`, which must not exist, and returns
+/// their sha256.
+fn deliver(bytes: &[u8], out: &Path) -> Result<String, Stop> {
     if bytes.len() as u64 > MAX_INPUT_BYTES {
         return Err(Stop::tool_error(
             "cargo",
@@ -249,9 +282,9 @@ fn deliver(elf: &Path, out: &Path) -> Result<String, Stop> {
         .mode(0o644)
         .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
         .open(out)
-        .and_then(|mut f| f.write_all(&bytes))
+        .and_then(|mut f| f.write_all(bytes))
         .map_err(|e| unwritable(out, &e.to_string()))?;
-    Ok(input::hex(<sha2::Sha256 as sha2::Digest>::digest(&bytes)))
+    Ok(input::hex(<sha2::Sha256 as sha2::Digest>::digest(bytes)))
 }
 
 fn unwritable(out: &Path, why: &str) -> Stop {
@@ -307,9 +340,9 @@ pub fn build(crate_dir: &Path, out: &Path) -> Result<verdict::Verdict, Stop> {
     let m = messages(&ran.stdout);
     let (findings, elf) = match classify(code, m.finished) {
         Some(true) => {
-            let elf = artifact(&m, &target)?;
-            built_from_the_copy(&m, &dep_info(&elf)?, &input.copy)?;
-            (Vec::new(), Some(elf))
+            let (elf, bytes) = artifact(&m, &target)?;
+            built_from_the_copy(&m, &dep_info(&target, &elf)?, &input.copy)?;
+            (Vec::new(), Some(bytes))
         }
         Some(false) => {
             let line = said::first_error(&String::from_utf8_lossy(&ran.stderr), Style::Cargo)
@@ -427,6 +460,32 @@ mod tests {
         );
     }
 
+    /// As root, `target` is the tool uid's: a link or a `..` it planted is
+    /// never followed (`AET-WO-1601` §1.2).
+    #[test]
+    fn a_file_is_read_beneath_target_only() {
+        use std::os::unix::fs::symlink;
+        let base = std::env::temp_dir().join(format!("aet-1601-beneath-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let target = base.join("target");
+        fs::create_dir_all(target.join("release")).unwrap();
+        fs::write(target.join("release/fw"), b"elf").unwrap();
+        fs::write(base.join("secret"), b"not cargo's").unwrap();
+        symlink(base.join("secret"), target.join("release/linked")).unwrap();
+        symlink(target.join("release"), target.join("dirlink")).unwrap();
+        let read = |p: &str| read_beneath(&target, &target.join(p), 16);
+        assert_eq!(read("release/fw").unwrap(), b"elf");
+        assert!(read("release/linked").is_err(), "a final symlink");
+        assert!(read("dirlink/fw").is_err(), "a symlinked directory");
+        assert!(
+            read("release/../../secret").is_err(),
+            "a `..` out of target"
+        );
+        assert!(read("release").is_err(), "a directory");
+        assert!(read_beneath(&target, &base.join("secret"), 16).is_err());
+        fs::remove_dir_all(&base).unwrap();
+    }
+
     /// Cargo's dep-info, as measured: the output, then every source, with a
     /// space in a path escaped.
     #[test]
@@ -440,7 +499,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            dep_info(&exe).unwrap(),
+            dep_info(&dir, &exe).unwrap(),
             [
                 PathBuf::from("/x/inject.rs"),
                 PathBuf::from("/s/crate/firmware/src/main.rs"),
@@ -448,7 +507,7 @@ mod tests {
             ]
         );
         fs::remove_file(dir.join("fw.d")).unwrap();
-        assert_eq!(dep_info(&exe).unwrap_err().kind, "ToolError");
+        assert_eq!(dep_info(&dir, &exe).unwrap_err().kind, "ToolError");
         fs::remove_dir_all(&dir).unwrap();
     }
 }

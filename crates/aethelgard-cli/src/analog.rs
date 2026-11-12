@@ -45,6 +45,8 @@ pub struct Pass {
     pub analog: Vec<AnalogRecord>,
     pub faults: Vec<FaultRecord>,
     pub findings: Vec<Finding>,
+    /// The bridge's sandbox, when it ran: its `uid_boundary` joins the boot's.
+    pub sandbox: Option<run::SandboxReport>,
 }
 
 impl Pass {
@@ -160,7 +162,9 @@ fn measure(decks: &[Deck], dir: &Path, status: &Path) -> Result<Pass, run::Stop>
         ));
     }
     let measured = answers(decks, &stdout).map_err(|e| run::Stop::tool_error(BRIDGE, e))?;
-    Ok(judge(decks, &measured))
+    let mut pass = judge(decks, &measured);
+    pass.sandbox = Some(out.sandbox);
+    Ok(pass)
 }
 
 fn request_json(decks: &[Deck]) -> Value {
@@ -331,6 +335,7 @@ fn judge(decks: &[Deck], answers: &[Answer]) -> Pass {
         analog: analog_records,
         faults,
         findings,
+        sandbox: None,
     }
 }
 

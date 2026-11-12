@@ -505,6 +505,7 @@ mod tests {
                 "generate",
                 "build",
                 "verify",
+                "extract",
                 "check_drc",
                 "check_erc",
                 "prove",
@@ -555,7 +556,7 @@ mod tests {
             Some("A subcommand added by a test")
         );
         assert_eq!(t.input_schema["required"], json!(["thing"]));
-        assert_eq!(all.len(), 15);
+        assert_eq!(all.len(), 16);
     }
 
     #[test]
