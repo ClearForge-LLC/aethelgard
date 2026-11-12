@@ -64,6 +64,7 @@ jobs:
           file: container/engine.Dockerfile
           build-args: TOOLS_IMAGE=${{ steps.base.outputs.tools_image }}
           tags: ${{ env.IMAGE }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
           load: true
           cache-from: type=gha,scope=engine-image
           cache-to: type=gha,mode=max,scope=engine-image
@@ -121,6 +122,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      image: ${{ steps.push.outputs.image }}
     env:
       TAG: ghcr.io/clearforge-llc/aethelgard:${{ github.sha }}
     steps:
@@ -146,8 +149,17 @@ jobs:
           file: container/engine.Dockerfile
           build-args: TOOLS_IMAGE=${{ steps.base.outputs.tools_image }}
           tags: ${{ env.TAG }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
           load: true
           cache-from: type=gha,scope=engine-image
+
+      # Review A6 / AET-WO-1700 F1: the image must say which commit built it, so the
+      # quickstart below can refuse an image that is not this one.
+      - name: the image carries this commit as its revision
+        run: |
+          rev=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$TAG")
+          [ "$rev" = "$GITHUB_SHA" ] || { echo "revision label '$rev' is not $GITHUB_SHA" >&2; exit 1; }
+          echo "revision=$rev"
 
       # The image pushed is the image smoke-tested here, not a rebuild of it.
       - name: smoke the image about to be published
@@ -164,7 +176,21 @@ jobs:
 
       # CI never writes to the repository.
       - name: push and record the digest
+        id: push
         run: |
           docker push "$TAG"
           digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$TAG")
+          echo "image=$digest" >> "$GITHUB_OUTPUT"
           echo "Published \`$digest\` from \`$GITHUB_SHA\`." >> "$GITHUB_STEP_SUMMARY"
+
+  # AET-WO-1900 (review A6, 1700 F1): the README's quickstart, run against the
+  # image this very push published, not the one the README pins. The README's
+  # pinned digest stays the user-facing one; the roadmap bumps it at each phase
+  # close. quickstart.yml asserts the image's revision label is this commit.
+  quickstart:
+    needs: publish
+    permissions:
+      contents: read
+    uses: ./.github/workflows/quickstart.yml
+    with:
+      image: ${{ needs.publish.outputs.image }}
