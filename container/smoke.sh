@@ -121,4 +121,14 @@ is_line rustup.thumbv7em "thumbv7em-none-eabihf"
 cmp -s /usr/share/kicad/LICENSE.md /container/KICAD-LICENSE.md || fail kicad-licence "/usr/share/kicad/LICENSE.md is missing or differs from container/KICAD-LICENSE.md"
 pass kicad-licence
 
+# 10. Every file and directory under /opt and /usr is root's, writable by no
+# other user, and writable by no group but root's (AET-WO-1601 A1; AET-WO-1602).
+# A tool another uid can replace would make a verdict's uid_boundary claim more
+# than the run shows. Group write for gid 0 grants nothing beyond root (the
+# base image's empty /usr/share/man/man* are root:root 0775). Symbolic links
+# are skipped: their own mode is not used for access.
+unsafe=$(find /opt /usr -xdev ! -type l \( ! -uid 0 -o -perm -0002 -o \( -perm -0020 ! -gid 0 \) \) -print 2>&1 | head -5)
+[ -z "$unsafe" ] || fail toolchain-ownership "not root's, or writable by group or other: $unsafe"
+pass toolchain-ownership
+
 echo "smoke: all checks passed"
