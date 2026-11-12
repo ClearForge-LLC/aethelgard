@@ -590,12 +590,17 @@ fn as_root_a_third_uid_cannot_change_what_build_reads() {
                 ),
                 format!("mv '{m}' '{m}.aside'", m = main.display()),
             ] {
-                tries += 1;
                 let o = attempt(&script);
                 assert!(!o.status.success(), "uid 4242 succeeded: {script}");
-                if String::from_utf8_lossy(&o.stderr).contains("Permission denied") {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                if stderr.contains("Permission denied") {
                     refused += 1;
+                } else {
+                    // Only the CLI's own clean-up may beat an attempt.
+                    assert!(!root.exists(), "not refused, not gone: {script}: {stderr}");
+                    continue;
                 }
+                tries += 1;
             }
         }
         cli = Some(child);
