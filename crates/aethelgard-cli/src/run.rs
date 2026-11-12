@@ -80,8 +80,12 @@ const SYSTEM_DIRS: [&str; 6] = ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc
 /// it dies under any uid without a passwd entry (65533 and 65520 measured), and
 /// the pinned image lists only 0, 1000 (`kicad`, a login user) and 65534.
 pub const TOOL_UID: u32 = 65534;
-/// See [`TOOL_UID`].
-pub const TOOL_GID: u32 = 65534;
+/// The gid every tool runs under when the CLI runs as root, and the group of
+/// the directories only it and root may enter. Not 65534: `sync` and `_apt`
+/// have that as their primary group in the image (adversarial F2). 65533 is
+/// no passwd entry's group and has no group entry, so no other process holds
+/// it, and no tool looks the group up (tier 2 runs every tool under it).
+pub const TOOL_GID: u32 = 65533;
 
 /// `RLIMIT_FSIZE`, soft and hard, for every tool (`AET-WO-1601` §1.6, review
 /// A12.1). A file a tool leaves at this size is the witness that it was cut
@@ -138,6 +142,16 @@ impl Stop {
             code: EXIT_TOOL_UNAVAILABLE,
             kind: "ToolUnusable",
             id: Some(id.to_owned()),
+            message,
+        }
+    }
+    /// A required sandbox layer that cannot be enforced: exit 4,
+    /// `SandboxUnavailable`, never a run without it (`INV-06`).
+    pub fn sandbox(layer: &str, message: String) -> Self {
+        Self {
+            code: EXIT_TOOL_UNAVAILABLE,
+            kind: "SandboxUnavailable",
+            id: Some(layer.to_owned()),
             message,
         }
     }
@@ -345,9 +359,12 @@ impl Invocation<'_> {
         })?;
         if geteuid().is_root() {
             hand_over(self.workdir).map_err(|e| {
-                Stop::tool_error(
-                    self.tool.name,
-                    format!("cannot hand {} to the tool: {e}", self.workdir.display()),
+                Stop::sandbox(
+                    "uid",
+                    format!(
+                        "cannot hand {} to the tool uid: {e}",
+                        self.workdir.display()
+                    ),
                 )
             })?;
         }
@@ -487,8 +504,26 @@ fn hand_over(workdir: &Path) -> Result<(), String> {
     }
 }
 
+/// As root, makes `dir`, which the CLI made and no tool has had, a directory
+/// the tool uid may add to but not change: root's, group [`TOOL_GID`], mode
+/// [`HANDED_OVER`]. [`seal`] keeps that mode. `prove` marks the crate's root
+/// so, where cargo writes the `Cargo.lock` a crate without one needs
+/// (adversarial F4a: sealed 0555, every such `prove` became exit 5).
+pub fn add_only(dir: &Path) -> io::Result<()> {
+    let fd = openat(
+        CWD,
+        dir,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )?;
+    fchown(&fd, None, Some(Gid::from_raw(TOOL_GID)))?;
+    fchmod(&fd, Mode::from_raw_mode(HANDED_OVER))?;
+    Ok(())
+}
+
 /// Seals everything below `dir` read-only, by descriptor. Every entry must be
-/// root's: nothing else has had the directory yet. Links are left as links.
+/// root's: nothing else has had the directory yet. Links are left as links,
+/// and a directory [`add_only`] marked keeps its mode.
 fn seal(dir: BorrowedFd<'_>, depth: usize) -> Result<(), String> {
     if depth > 64 {
         return Err("the copy is more than 64 directories deep".to_owned());
@@ -527,6 +562,9 @@ fn seal(dir: BorrowedFd<'_>, depth: usize) -> Result<(), String> {
         }
         if mode == 0o555 {
             seal(fd.as_fd(), depth + 1)?;
+            if (opened.st_gid, opened.st_mode & 0o7777) == (TOOL_GID, HANDED_OVER) {
+                continue;
+            }
         }
         fchmod(&fd, Mode::from_raw_mode(mode)).map_err(|e| errno(&format!("chmod {shown}"), e))?;
     }
@@ -1515,22 +1553,38 @@ mod tests {
         let status = |uid: &str, gid: &str, groups: &str| {
             format!("Name:\tx\nUid:\t{uid}\nGid:\t{gid}\nGroups:\t{groups}\n")
         };
-        let t = "65534\t65534\t65534\t65534";
-        assert!(ids_are_the_tool_s(&status(t, t, "")).is_ok());
+        let four = |id: u32| [id; 4].map(|i| i.to_string()).join("\t");
+        let (u, g) = (four(TOOL_UID), four(TOOL_GID));
+        assert!(ids_are_the_tool_s(&status(&u, &g, "")).is_ok());
+        let one_off = |id: u32, at: usize| {
+            let mut ids = [
+                id.to_string(),
+                id.to_string(),
+                id.to_string(),
+                id.to_string(),
+            ];
+            ids[at] = "0".to_owned();
+            ids.join("\t")
+        };
         for (uid, gid, groups) in [
-            ("65534\t65534\t65534\t0", t, ""),
-            ("0\t65534\t65534\t65534", t, ""),
-            (t, "65534\t65534\t0\t65534", ""),
-            (t, t, "0"),
-            (t, t, "65534"),
-            ("65534\t65534\t65534", t, ""),
+            (one_off(TOOL_UID, 3), g.clone(), String::new()),
+            (one_off(TOOL_UID, 0), g.clone(), String::new()),
+            (u.clone(), one_off(TOOL_GID, 2), String::new()),
+            (u.clone(), g.clone(), "0".to_owned()),
+            (u.clone(), g.clone(), TOOL_GID.to_string()),
+            (u.clone(), u.clone(), String::new()),
+            (
+                [TOOL_UID; 3].map(|i| i.to_string()).join("\t"),
+                g.clone(),
+                String::new(),
+            ),
         ] {
             assert!(
-                ids_are_the_tool_s(&status(uid, gid, groups)).is_err(),
+                ids_are_the_tool_s(&status(&uid, &gid, &groups)).is_err(),
                 "{uid} / {gid} / {groups}"
             );
         }
-        assert!(ids_are_the_tool_s("Uid:\t65534\t65534\t65534\t65534\n").is_err());
+        assert!(ids_are_the_tool_s(&format!("Uid:\t{u}\n")).is_err());
     }
 
     /// As root (tier 1 in the image), a directory is handed over once: its
@@ -1572,6 +1626,20 @@ mod tests {
         fs::write(ok.join("later"), b"y").unwrap();
         hand_over(&ok).unwrap();
         assert_eq!(mode(&ok.join("later")), 0o644);
+        // A directory the CLI made add-only keeps its mode; its files are sealed.
+        let marked = make("marked");
+        add_only(&marked.join("crate")).unwrap();
+        hand_over(&marked).unwrap();
+        let crate_dir = fs::metadata(marked.join("crate")).unwrap();
+        assert_eq!(
+            (
+                crate_dir.uid(),
+                crate_dir.gid(),
+                mode(&marked.join("crate"))
+            ),
+            (0, TOOL_GID, HANDED_OVER)
+        );
+        assert_eq!(mode(&marked.join("crate/lib.rs")), 0o444);
         let theirs = make("theirs");
         std::os::unix::fs::chown(theirs.join("crate/lib.rs"), Some(4242), None).unwrap();
         assert!(hand_over(&theirs).unwrap_err().contains("not root's"));

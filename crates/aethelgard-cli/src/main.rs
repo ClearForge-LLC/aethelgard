@@ -636,8 +636,16 @@ impl Scratch {
             // The tool uid may pass through to its own directory, and no one
             // else may (AET-WO-1601 §1.2). The directory is new and its parent
             // is writable by root alone, so no one can have swapped it.
-            std::os::unix::fs::lchown(&scratch.root, None, Some(run::TOOL_GID)).map_err(fail)?;
-            fs::set_permissions(&scratch.root, fs::Permissions::from_mode(0o710)).map_err(fail)?;
+            let unavailable = |e: io::Error| {
+                run::Stop::sandbox(
+                    "uid",
+                    format!("cannot give the tool uid its way into scratch: {e}"),
+                )
+            };
+            std::os::unix::fs::lchown(&scratch.root, None, Some(run::TOOL_GID))
+                .map_err(unavailable)?;
+            fs::set_permissions(&scratch.root, fs::Permissions::from_mode(0o710))
+                .map_err(unavailable)?;
         }
         DirBuilder::new()
             .mode(0o700)
@@ -838,6 +846,14 @@ fn prove(
     // The copy, as copied and before Kani touches it, against the generated
     // crate: every file, none missing and none extra (`AET-WO-3301` §1.4).
     let provenance = provenance(&input.copy, generated.as_ref())?;
+    // Cargo writes the Cargo.lock a crate without one needs into the crate's
+    // root, so as root that one directory takes new files from the tool uid;
+    // nothing in it can be changed (AET-WO-1601 adversarial F4a).
+    if rustix::process::geteuid().is_root() {
+        run::add_only(&input.copy).map_err(|e| {
+            run::Stop::sandbox("uid", format!("cannot open the crate to its lockfile: {e}"))
+        })?;
+    }
     let mut read_only = cargo.dirs();
     read_only.extend(cargo_kani.dirs());
     read_only.push(PathBuf::from(&kani_home));

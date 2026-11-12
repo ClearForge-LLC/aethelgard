@@ -16,6 +16,7 @@ use serde_json::Value;
 
 const BIN: &str = env!("CARGO_BIN_EXE_aethelgard");
 const TOOL_UID: u32 = 65534;
+const TOOL_GID: u32 = 65533;
 const CAP: u64 = 64 * 1024 * 1024;
 
 fn root() -> bool {
@@ -227,10 +228,10 @@ if /bin/mv "$in" "$in.aside" 2>/dev/null; then echo "rename=yes" >> "$said"; els
         assert_eq!(
             lines,
             [
-                format!("ids={TOOL_UID} {TOOL_UID} {TOOL_UID}"),
+                format!("ids={TOOL_UID} {TOOL_GID} {TOOL_GID}"),
                 "copy=0 444".to_owned(),
-                format!("home=0 {TOOL_UID} 1770"),
-                format!("root=0 {TOOL_UID} 710"),
+                format!("home=0 {TOOL_GID} 1770"),
+                format!("root=0 {TOOL_GID} 710"),
                 "write=no".to_owned(),
                 "rename=no".to_owned(),
             ]
