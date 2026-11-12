@@ -47,7 +47,7 @@ struct Line {
     via_count: u64,
     pad_count: u64,
     pins: Vec<String>,
-    controller: String,
+    pull_ups: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -88,7 +88,7 @@ fn line(b: LineBound, declared: u64) -> Line {
         via_count: b.via_count,
         pad_count: b.pad_count,
         pins: b.pins,
-        controller: b.controller,
+        pull_ups: b.pull_ups,
     }
 }
 
@@ -98,8 +98,8 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         Ok(s) => s,
         Err((r, code)) => return crate::emit(&r, code),
     };
-    let topology = match crate::solve_spec(&spec, &spec_sha256) {
-        Ok((t, _)) => t,
+    let (topology, table) = match crate::solve_spec(&spec, &spec_sha256) {
+        Ok(t) => t,
         Err(code) => return code,
     };
     let bytes = match crate::read_input(Some(board_path)) {
@@ -117,29 +117,22 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
             EXIT_UNREADABLE,
         );
     };
-    // The buses from the specification, each with the devices the solved
-    // topology places on it (`RUL-16`).
-    let buses: Vec<bound::Bus<'_>> = spec
-        .i2c_buses
-        .iter()
-        .map(|b| bound::Bus {
-            id: &b.id,
-            sda: &b.sda.net,
-            scl: &b.scl.net,
-            domain: &b.domain,
-            devices: topology
-                .i2c_devices
-                .iter()
-                .filter(|(_, d)| d.bus == b.id)
-                .map(|(r, _)| r.as_str())
-                .collect(),
-        })
-        .collect();
-    let lines =
-        match bound::read(text).and_then(|(board, routed)| bound::bound(&board, &routed, &buses)) {
-            Ok(l) => l,
-            Err(r) => return refuse(r.kind, r.message, EXIT_UNREADABLE),
-        };
+    // Each line and the parts the specification's design puts on it.
+    let wanted = match bound::lines(&spec, &topology, &table) {
+        Ok(l) => l,
+        Err(r) => return refuse(r.kind, r.message, EXIT_INVALID_SPEC),
+    };
+    let lines = match bound::read(text).and_then(|read| bound::bound(&read, &wanted)) {
+        Ok(l) => l,
+        Err(r) => {
+            let code = if r.invalid_spec {
+                EXIT_INVALID_SPEC
+            } else {
+                EXIT_UNREADABLE
+            };
+            return refuse(r.kind, r.message, code);
+        }
+    };
     let mut out = Vec::new();
     for b in lines {
         // `solve` refused a line with no constraint (`MissingBusConstraint`).

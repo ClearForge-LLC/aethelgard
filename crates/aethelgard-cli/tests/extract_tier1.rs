@@ -137,8 +137,8 @@ fn the_reference_passes_with_every_term() {
         assert_eq!(line["segments"], segments);
         assert_eq!(line["via_count"], vias);
         assert_eq!(line["pad_count"], 4);
-        assert_eq!(line["controller"], "U1");
         assert_eq!(line["pins"].as_array().unwrap().len(), 3);
+        assert_eq!(line["pull_ups"].as_array().unwrap().len(), 1);
     }
     assert_eq!(v["findings"], Value::Array(vec![]));
 }
@@ -322,66 +322,210 @@ fn a_longer_route_raises_the_trace_term_by_the_per_length_bound() {
     eprintln!("ANSWER 1305: doubled={doubled} exact={exact} clearance_refused={clearance}");
 }
 
-/// What the bound does not model is refused, never left out.
+/// What the bound does not model, or could read otherwise than KiCad, is
+/// refused before any estimate (the adversarial pass's classes A, C3, C4
+/// and E8): a repeated child (KiCad reads the last, `route::read` the
+/// first), a child or item the reader does not model, a value count other
+/// than the reader's, a pad with no copper layer or another shape, copper
+/// outside pads, tracks and vias, and a coordinate too large to square.
 #[test]
-fn copper_the_bound_does_not_model_is_refused() {
+fn what_the_reader_does_not_model_is_refused() {
     let text = reference();
     let tail = text.rfind("\t(embedded_fonts").unwrap();
     let insert = |item: &str| format!("{}{item}\n{}", &text[..tail], &text[tail..]);
+    let once = |from: &str, to: &str| text.replacen(from, to, 1);
+    let outline = text.find("(gr_rect\n\t\t(start ").unwrap() + "(gr_rect\n\t\t".len();
+    let huge = format!(
+        "{}(start -9000000 0){}",
+        &text[..outline],
+        &text[outline + text[outline..].find(')').unwrap() + 1..]
+    );
+    let unmodelled = "UnmodelledCopper";
     for (label, board, kind) in [
         (
             "arc",
             insert(
                 "\t(arc (start 90 90) (mid 91 91) (end 92 90) (width 0.2) (layer \"F.Cu\") (net \"/I2C_SDA\"))",
             ),
-            "UnmodelledCopper",
+            unmodelled,
         ),
         (
-            "gr",
+            "gr_line",
             insert(
                 "\t(gr_line (start 90 90) (end 92 90) (stroke (width 0.2) (type solid)) (layer \"B.Cu\"))",
             ),
-            "UnmodelledCopper",
+            unmodelled,
         ),
         (
-            "fp",
-            text.replacen(
+            "setup",
+            insert("\t(setup (stackup (layer \"F.Cu\" (type \"copper\") (thickness 0.105))))"),
+            unmodelled,
+        ),
+        (
+            "fp_copper",
+            once(
                 "\t\t(attr ",
                 "\t\t(fp_rect (start 0 0) (end 0.1 0.1) (layer \"F.Cu\"))\n\t\t(attr ",
-                1,
             ),
-            "UnmodelledCopper",
+            unmodelled,
+        ),
+        (
+            "segment_width_twice",
+            once(
+                "\t\t(width 0.2)\n\t\t(layer",
+                "\t\t(width 0.2)\n\t\t(width 2)\n\t\t(layer",
+            ),
+            unmodelled,
+        ),
+        (
+            "segment_width_arity",
+            once(
+                "\t\t(width 0.2)\n\t\t(layer",
+                "\t\t(width 0.2 2)\n\t\t(layer",
+            ),
+            unmodelled,
+        ),
+        (
+            "via_size_twice",
+            once("(size 0.6)", "(size 0.6)\n\t\t(size 2.4)"),
+            unmodelled,
+        ),
+        (
+            "via_padstack",
+            once(
+                "(size 0.6)",
+                "(size 0.6)\n\t\t(padstack (mode front_inner_back) (layer \"B.Cu\" (size 2.4)))",
+            ),
+            unmodelled,
+        ),
+        (
+            "pad_no_layers",
+            once("\t\t\t(layers \"F.Cu\" \"F.Mask\" \"F.Paste\")\n", ""),
+            unmodelled,
+        ),
+        (
+            "pad_user_layer",
+            once(
+                "(layers \"F.Cu\" \"F.Mask\" \"F.Paste\")",
+                "(layers \"TOP\" \"F.Mask\" \"F.Paste\")",
+            ),
+            unmodelled,
+        ),
+        (
+            "pad_circle",
+            once("smd roundrect", "smd circle"),
+            unmodelled,
+        ),
+        (
+            "pad_drill_offset",
+            once(
+                "(layers \"F.Cu\" \"F.Mask\" \"F.Paste\")",
+                "(layers \"F.Cu\" \"F.Mask\" \"F.Paste\")\n\t\t\t(drill 0 (offset 0 2.5))",
+            ),
+            unmodelled,
+        ),
+        (
+            "footprint_at_twice",
+            once("\t\t(descr ", "\t\t(at 0 0)\n\t\t(descr "),
+            unmodelled,
+        ),
+        (
+            "property_twice",
+            once(
+                "\t\t(attr ",
+                "\t\t(property \"Value\" \"100n\")\n\t\t(attr ",
+            ),
+            unmodelled,
+        ),
+        (
+            "thickness_twice",
+            once("(thickness 1.6)", "(thickness 1.6)\n\t\t(thickness 0.2)"),
+            unmodelled,
+        ),
+        (
+            "zone_fill",
+            once(
+                "\t\t(min_thickness 0.25)",
+                "\t\t(min_thickness 0.25)\n\t\t(filled_polygon (layer \"B.Cu\") (pts (xy 0 0) (xy 1 0) (xy 1 1)))",
+            ),
+            unmodelled,
+        ),
+        (
+            "zone_clearance",
+            once(
+                "\t\t(min_thickness 0.25)",
+                "\t\t(min_thickness 0.25)\n\t\t(connect_pads (clearance 0.01))",
+            ),
+            unmodelled,
         ),
         (
             "thickness",
-            text.replacen("(thickness 1.6)", "(thickness 1.0)", 1),
+            once("(thickness 1.6)", "(thickness 1.0)"),
             "BoardThickness",
         ),
+        ("huge", huge, "BoardTooLarge"),
         ("garbage", "(kicad_pcb (".to_owned(), "BoardUnreadable"),
     ] {
         assert_ne!(board, text, "{label}: the edit did not apply");
         let (code, v) = extract(label, &board, SPEC);
         assert_eq!(code, 3, "{label}: {v}");
-        assert_eq!(refused(&v), kind, "{label}");
+        assert_eq!(refused(&v), kind, "{label}: {v}");
     }
 }
 
-/// The parts on a line are the declared devices, the pull-ups and exactly
-/// one controller; a part the specification does not account for, or a
-/// declared device with no pad on the line, is refused.
+/// The parts on each line are exactly the specification's design: each by
+/// reference, footprint and value, each with exactly its pads there (the
+/// adversarial pass's class B). A part renamed, a pull-up given another
+/// value, a declared device missing, or a part the specification does not
+/// put there is refused.
 #[test]
-fn the_parts_on_a_line_are_accounted_for() {
+fn the_parts_on_a_line_are_the_designs() {
+    let text = reference();
+    for (label, board, kind) in [
+        (
+            "renamed",
+            text.replacen(
+                "(property \"Reference\" \"R1\"",
+                "(property \"Reference\" \"C99\"",
+                1,
+            ),
+            "DeviceNotOnLine",
+        ),
+        (
+            "value",
+            text.replacen(
+                "(property \"Value\" \"2k2\"",
+                "(property \"Value\" \"100n\"",
+                1,
+            ),
+            "PartMismatch",
+        ),
+    ] {
+        assert_ne!(board, text, "{label}: the edit did not apply");
+        let (code, v) = extract(label, &board, SPEC);
+        assert_eq!(code, 3, "{label}: {v}");
+        assert_eq!(refused(&v), kind, "{label}: {v}");
+    }
+
     let missing = spec_with("missing", |v| {
         v["i2c_devices"][1]["reference"] = "U9".into();
     });
-    let (code, v) = extract("missing", reference(), missing.to_str().unwrap());
+    let (code, v) = extract("missing", text, missing.to_str().unwrap());
     assert_eq!(code, 3, "{v}");
     assert_eq!(refused(&v), "DeviceNotOnLine");
 
     let unaccounted = spec_with("unaccounted", |v| {
         v["i2c_devices"].as_array_mut().unwrap().pop();
     });
-    let (code, v) = extract("unaccounted", reference(), unaccounted.to_str().unwrap());
+    let (code, v) = extract("unaccounted", text, unaccounted.to_str().unwrap());
     assert_eq!(code, 3, "{v}");
     assert_eq!(refused(&v), "UnmodelledPart");
+
+    let renamed = spec_with("line", |v| {
+        v["i2c_buses"][0]["sda"]["net"] = "I2C_DATA".into();
+        v["net_constraints"][0]["net_name"] = "I2C_DATA".into();
+    });
+    let (code, v) = extract("line", text, renamed.to_str().unwrap());
+    assert_eq!(code, 3, "{v}");
+    assert_eq!(refused(&v), "LineNotOnBoard");
 }

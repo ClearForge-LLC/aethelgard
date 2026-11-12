@@ -42,13 +42,19 @@
 //! Every division rounds up. The result is integer femtofarads.
 //!
 //! **What it is not:** a field solver, an estimate of the typical value, or
-//! any claim about resistance or inductance. It bounds the board's copper
-//! as drawn; [`CONDITIONS`] lists what it assumes of the fabricated board.
+//! any claim about resistance or inductance. It bounds the bare board's
+//! copper as [`read`] reads it (a reader that refuses whatever KiCad could
+//! read otherwise), plus each pin's `Ci`. Part bodies, solder and a part's
+//! terminations above its pads are outside it; [`CONDITIONS`] states that
+//! scope and what the bound assumes of the fabricated board.
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use aethelgard_ir::{PinTable, SolvedTopology, Specification};
+
 use crate::pcb::escape;
 use crate::route::{self, Board, CLEARANCE_NM, DRILL_NM, Routed, VIA_NM, WIDTH_NM};
+use crate::schematic::Conn;
 use crate::sexpr::{self, Sx};
 
 /// π from above: 355/113 = 3.14159292… > π.
@@ -68,7 +74,10 @@ pub const EPS0_DEN: u128 = 10_000_000_000_000_000;
 /// 5,4") and Bungard's FR4 data sheet (IPC 4101A: "Permittivity, spec
 /// maximum, A. @ 1 MHz 5.4"). Air (1), solder mask and every typical FR-4
 /// value lie below it, and `C` cannot fall when `ε` rises anywhere, so one
-/// bound covers the whole space.
+/// bound covers the board and the air around it. A part's body (a ceramic
+/// resistor's, near 10) is not covered: part bodies are outside the scope
+/// ([`CONDITIONS`]). The maximum is specified at 1 MHz; IPC gives none
+/// below it.
 pub const EPS_R_NUM: u128 = 54;
 pub const EPS_R_DEN: u128 = 10;
 
@@ -93,11 +102,11 @@ pub const PIN_FF: u64 = 10_000;
 
 /// What the bound assumes of the fabricated board and its parts.
 pub const CONDITIONS: &[&str] = &[
-    "laminate and solder mask relative permittivity at most 5.4 (IPC-4101 FR-4 maximum at 1 MHz)",
-    "finished copper at most 70 um thick; finished board at most 2.0 mm thick",
+    "scope: the bare board's copper and each I2C pin's Ci; part bodies, solder and terminations above the pads are not included",
+    "laminate and solder mask relative permittivity at most 5.4 (the IPC-4101 FR-4 maximum, specified at 1 MHz)",
+    "finished copper at most 70 um thick; finished board from 0.34 mm to 2.0 mm thick",
     "zone fill keeps the board's clearance (the DRC gate refills and judges it)",
     "every I2C pin at most UM10204's Ci of 10 pF; no multiplexer or switch on the line",
-    "conductors not in the board file (a part's terminals above its pads) are not modelled",
     "neighbouring nets are static while the line rises",
 ];
 
@@ -105,7 +114,8 @@ pub const CONDITIONS: &[&str] = &[
 const S: u128 = CLEARANCE_NM as u128;
 
 // The other layer's copper is beyond the shell: the dielectric between the
-// two copper layers is thicker than `S`.
+// two copper layers is thicker than `S`, at the declared thickness and at
+// the stated minimum (0.34 mm = 2 × 70 µm + 0.2 mm, which leaves exactly `S`).
 const _: () = assert!(BOARD_THICKNESS_NM - 2 * COPPER_NM > CLEARANCE_NM);
 // A via's barrel lies inside its checked disk.
 const _: () = assert!(DRILL_NM <= VIA_NM);
@@ -271,16 +281,26 @@ pub fn pad_ff(rect: crate::pcb::Rect) -> Option<u64> {
 }
 
 /// A refusal: a named kind and a message. No estimate follows one.
+/// `invalid_spec` marks one the specification causes (exit 2), not the board.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Refused {
     pub kind: &'static str,
     pub message: String,
+    pub invalid_spec: bool,
 }
 
 fn refused(kind: &'static str, message: impl Into<String>) -> Refused {
     Refused {
         kind,
         message: message.into(),
+        invalid_spec: false,
+    }
+}
+
+fn invalid(e: &crate::schematic::EmitError) -> Refused {
+    Refused {
+        invalid_spec: true,
+        ..refused(e.kind(), e.to_string())
     }
 }
 
@@ -311,13 +331,29 @@ pub struct LineBound {
     pub pad_count: u64,
     /// Pads counted at `Ci`, as `<reference>.<pad>`.
     pub pins: Vec<String>,
-    /// The one part on the line that is neither a declared device nor a
-    /// pull-up: the controller.
-    pub controller: String,
+    /// The line's pull-ups, by reference: copper only.
+    pub pull_ups: Vec<String>,
 }
+
+/// The largest coordinate or size the reader accepts, so that every
+/// distance `route::check` squares fits in an `i64`.
+pub const MAX_COORD_NM: i64 = 250_000_000;
 
 fn copper_layer(name: &str) -> bool {
     name.ends_with(".Cu")
+}
+
+/// A pad layer by KiCad's canonical name (a user name such as `TOP` could
+/// stand for a copper layer the reader would not see as one).
+fn canonical_layer(name: &str) -> bool {
+    let Some((side, kind)) = name.split_once('.') else {
+        return false;
+    };
+    matches!(side, "F" | "B" | "*")
+        && matches!(
+            kind,
+            "Cu" | "Mask" | "Paste" | "SilkS" | "Fab" | "CrtYd" | "Adhes"
+        )
 }
 
 /// True when `item` or any list inside it names a copper layer.
@@ -333,31 +369,269 @@ fn on_copper(item: &Sx) -> bool {
     item.items().iter().any(on_copper)
 }
 
-/// The top-level items that hold no copper geometry, whatever they name.
-const NO_GEOMETRY: &[&str] = &[
+/// For each item `read` judges: the children it may hold, each with the
+/// number of plain arguments it takes (`None`: any), and whether it may
+/// repeat. Derived from the boards the generator writes and the vendored
+/// footprints. Anything else is refused: KiCad reads a repeated child's
+/// last value where `route::read` reads its first, and a child `route`
+/// does not read (a padstack, a drill offset, a fill) is copper or rule
+/// the bound would not see.
+fn allowed(parent: &str) -> Option<&'static [(&'static str, Option<usize>, bool)]> {
+    Some(match parent {
+        "general" => &[
+            ("thickness", Some(1), false),
+            ("legacy_teardrops", None, false),
+        ],
+        "segment" => &[
+            ("start", Some(2), false),
+            ("end", Some(2), false),
+            ("width", Some(1), false),
+            ("layer", Some(1), false),
+            ("net", Some(1), false),
+            ("uuid", Some(1), false),
+        ],
+        "via" => &[
+            ("at", Some(2), false),
+            ("size", Some(1), false),
+            ("drill", Some(1), false),
+            ("layers", Some(2), false),
+            ("net", Some(1), false),
+            ("uuid", Some(1), false),
+        ],
+        "pad" => &[
+            ("at", None, false),
+            ("size", Some(2), false),
+            ("layers", None, false),
+            ("net", Some(1), false),
+            ("roundrect_rratio", Some(1), false),
+            ("property", None, false),
+            ("zone_connect", Some(1), false),
+            ("uuid", Some(1), false),
+        ],
+        "zone" => &[
+            ("net", Some(1), false),
+            ("layer", Some(1), false),
+            ("uuid", Some(1), false),
+            ("hatch", Some(2), false),
+            ("min_thickness", Some(1), false),
+            ("filled_areas_thickness", Some(1), false),
+            ("fill", Some(0), false),
+            ("polygon", Some(0), false),
+        ],
+        "fill" => &[
+            ("thermal_gap", Some(1), false),
+            ("thermal_bridge_width", Some(1), false),
+            ("island_removal_mode", Some(1), false),
+        ],
+        "polygon" => &[("pts", Some(0), false)],
+        "pts" => &[("xy", Some(2), true)],
+        _ => return None,
+    })
+}
+
+/// The children a footprint may hold besides `pad` (judged by `allowed`),
+/// and whether each may repeat. A repeated `property` must name a different
+/// property each time.
+const FOOTPRINT: &[(&str, bool)] = &[
+    ("at", false),
+    ("layer", false),
+    ("uuid", false),
+    ("path", false),
+    ("sheetname", false),
+    ("sheetfile", false),
+    ("descr", false),
+    ("tags", false),
+    ("attr", false),
+    ("duplicate_pad_numbers_are_jumpers", false),
+    ("embedded_fonts", false),
+    ("model", false),
+    ("property", true),
+    ("fp_line", true),
+    ("fp_rect", true),
+    ("fp_poly", true),
+    ("fp_text", true),
+    ("pad", true),
+];
+
+/// Top-level items `read` accepts; each but `footprint`, `segment`, `via`
+/// and `zone` at most once. Any other item is refused, so no copper or rule
+/// reaches KiCad that the bound has not read.
+const TOP: &[&str] = &[
     "version",
     "generator",
     "generator_version",
     "general",
     "paper",
-    "title_block",
     "layers",
-    "setup",
-    "property",
-    "net",
+    "gr_rect",
     "embedded_fonts",
+    "footprint",
+    "segment",
+    "via",
+    "zone",
 ];
 
+fn unmodelled(what: String) -> Refused {
+    refused("UnmodelledCopper", what)
+}
+
+/// Every coordinate and size a geometry child gives is within
+/// [`MAX_COORD_NM`].
+fn bounded(item: &Sx, what: &str) -> Result<(), Refused> {
+    if !matches!(item.head(), Some("at" | "start" | "end" | "size" | "xy")) {
+        return Ok(());
+    }
+    for a in item.items()[1..].iter().filter_map(Sx::text) {
+        if sexpr::nm(a).is_some_and(|v| v.abs() > MAX_COORD_NM) {
+            return Err(refused(
+                "BoardTooLarge",
+                format!("{what}: `{a}` mm is beyond {MAX_COORD_NM} nm"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Judges one item's children against `allowed`, recursively.
+fn strict(item: &Sx, what: &str) -> Result<(), Refused> {
+    let parent = item.head().unwrap_or("");
+    let Some(rules) = allowed(parent) else {
+        return Ok(());
+    };
+    let mut seen = BTreeSet::new();
+    for child in item.items().iter().skip(1).filter(|c| c.head().is_some()) {
+        let head = child.head().unwrap_or("");
+        let Some(&(_, arity, repeats)) = rules.iter().find(|r| r.0 == head) else {
+            return Err(unmodelled(format!(
+                "{what} has `{head}`, which the bound does not read"
+            )));
+        };
+        if !repeats && !seen.insert(head) {
+            return Err(unmodelled(format!("{what} has `{head}` twice")));
+        }
+        let args = child.items()[1..]
+            .iter()
+            .filter(|a| a.text().is_some())
+            .count();
+        if arity.is_some_and(|n| n != args) {
+            return Err(unmodelled(format!("{what}: `{head}` has {args} values")));
+        }
+        bounded(child, what)?;
+        strict(child, what)?;
+    }
+    Ok(())
+}
+
+/// A footprint's children, its pads' (each with `layers` by canonical name, and a `rect` or
+/// `roundrect` shape, the two the bound boxes exactly), and no copper but
+/// its pads. Returns its library id and `Value`.
+fn footprint(fp: &Sx) -> Result<(String, (String, String)), Refused> {
+    let reference = fp.property("Reference").unwrap_or("?").to_owned();
+    let what = format!("footprint {reference}");
+    let mut seen = BTreeSet::new();
+    let mut properties = BTreeSet::new();
+    for child in fp.items().iter().skip(1).filter(|c| c.head().is_some()) {
+        let head = child.head().unwrap_or("");
+        let Some(&(_, repeats)) = FOOTPRINT.iter().find(|r| r.0 == head) else {
+            return Err(unmodelled(format!(
+                "{what} has `{head}`, which the bound does not read"
+            )));
+        };
+        if !repeats && !seen.insert(head) {
+            return Err(unmodelled(format!("{what} has `{head}` twice")));
+        }
+        if head == "property" && !properties.insert(child.arg(1).unwrap_or("")) {
+            return Err(unmodelled(format!(
+                "{what} has property {:?} twice",
+                child.arg(1)
+            )));
+        }
+        bounded(child, &what)?;
+        match head {
+            "pad" => {
+                let pad = format!("{what} pad {}", child.arg(1).unwrap_or("?"));
+                let canonical = child.child("layers").is_some_and(|l| {
+                    l.items()[1..]
+                        .iter()
+                        .all(|n| n.text().is_some_and(canonical_layer))
+                });
+                if !canonical {
+                    return Err(unmodelled(format!(
+                        "{pad} has no `layers`, or names a layer by other than its canonical name"
+                    )));
+                }
+                if !matches!(child.arg(3), Some("rect" | "roundrect")) {
+                    return Err(unmodelled(format!("{pad} has shape {:?}", child.arg(3))));
+                }
+                strict(child, &pad)?;
+            }
+            // A footprint's own `layer` names its side.
+            "layer" => {}
+            _ if on_copper(child) => {
+                return Err(unmodelled(format!("{what} has `{head}` on a copper layer")));
+            }
+            _ => {}
+        }
+    }
+    let lib = fp.arg(1).unwrap_or("").to_owned();
+    let value = fp.property("Value").unwrap_or("").to_owned();
+    Ok((reference, (lib, value)))
+}
+
+/// A board as `read` accepted it: the board and copper as `route` reads
+/// them, and each footprint's library id and `Value`, by reference.
+pub struct ReadBoard {
+    pub board: Board,
+    pub routed: Routed,
+    pub footprints: BTreeMap<String, (String, String)>,
+}
+
 /// Reads a `.kicad_pcb` text and refuses, before any estimate, a board the
-/// bound does not hold for: unparseable; another thickness; copper that
-/// `route::read` would not see (an arc, a graphic or text on copper, copper
-/// in a footprint other than its pads); copper whose labels disagree with
-/// its connections (`route::connectivity`); or copper closer than
-/// [`CLEARANCE_NM`] to another net's (`route::check`).
-pub fn read(text: &str) -> Result<(Board, Routed), Refused> {
+/// bound does not hold for or could misread: unparseable; another
+/// thickness; an item, child, repeated child or value count the reader does
+/// not model (KiCad reads a repeated child's last value, `route::read` its
+/// first); a coordinate beyond [`MAX_COORD_NM`]; copper outside pads,
+/// tracks, vias and the zone; two footprints with one reference; net
+/// labels that disagree with the copper's connections (`route::connectivity`);
+/// or copper closer than [`CLEARANCE_NM`] to another net's (`route::check`).
+pub fn read(text: &str) -> Result<ReadBoard, Refused> {
     let board = sexpr::parse(text).map_err(|e| refused("BoardUnreadable", e.to_string()))?;
     if board.head() != Some("kicad_pcb") {
         return Err(refused("BoardUnreadable", "not a kicad_pcb"));
+    }
+    let mut once = BTreeSet::new();
+    let mut footprints = BTreeMap::new();
+    for item in board.items().iter().skip(1) {
+        let head = item.head().unwrap_or("");
+        if !TOP.contains(&head) {
+            return Err(unmodelled(format!(
+                "a top-level `{head}`, which the bound does not read"
+            )));
+        }
+        if !matches!(head, "footprint" | "segment" | "via" | "zone") && !once.insert(head) {
+            return Err(unmodelled(format!("a second top-level `{head}`")));
+        }
+        match head {
+            "footprint" => {
+                let (reference, identity) = footprint(item)?;
+                if footprints.insert(reference.clone(), identity).is_some() {
+                    return Err(refused(
+                        "UnmodelledPart",
+                        format!("two footprints are {reference}"),
+                    ));
+                }
+            }
+            "gr_rect" if on_copper(item) => {
+                return Err(unmodelled("a `gr_rect` on a copper layer".into()));
+            }
+            "gr_rect" | "segment" | "via" | "zone" | "general" => {
+                for child in item.items().iter().skip(1) {
+                    bounded(child, head)?;
+                }
+                strict(item, head)?;
+            }
+            _ => {}
+        }
     }
     let thickness = board
         .child("general")
@@ -372,44 +646,14 @@ pub fn read(text: &str) -> Result<(Board, Routed), Refused> {
             ),
         ));
     }
-    for item in board.items().iter().skip(1) {
-        let head = item.head().unwrap_or("");
-        match head {
-            "segment" | "via" | "zone" => {}
-            "footprint" => {
-                let reference = item.property("Reference").unwrap_or("?");
-                if let Some(other) = item
-                    .items()
-                    .iter()
-                    .skip(1)
-                    // A footprint's own `layer` names its side.
-                    .find(|c| !matches!(c.head(), Some("pad" | "layer")) && on_copper(c))
-                {
-                    return Err(refused(
-                        "UnmodelledCopper",
-                        format!(
-                            "{reference} has `{}` on a copper layer, which the bound does not model",
-                            other.head().unwrap_or("?")
-                        ),
-                    ));
-                }
-            }
-            h if NO_GEOMETRY.contains(&h) => {}
-            h if on_copper(item) => {
-                return Err(refused(
-                    "UnmodelledCopper",
-                    format!(
-                        "a top-level `{h}` is on a copper layer, which the bound does not model"
-                    ),
-                ));
-            }
-            _ => {}
-        }
-    }
     let (board, routed) = route::read(&board).map_err(|e| refused("BoardUnreadable", e))?;
     route::connectivity(&board, &routed).map_err(|e| refused("NetLabelsDisagree", e))?;
     route::check(&board, &routed).map_err(|e| refused("ClearanceViolated", e))?;
-    Ok((board, routed))
+    Ok(ReadBoard {
+        board,
+        routed,
+        footprints,
+    })
 }
 
 /// The board's name for a specification label (`pcb`'s own mapping).
@@ -417,51 +661,107 @@ pub fn board_net(label: &str) -> String {
     format!("/{}", escape(label))
 }
 
-/// One I2C bus as the bound needs it: its lines' specification net names,
-/// its rail's, and its declared devices' references. The caller builds it
-/// from the solved topology (`RUL-16`: this module never reads the
-/// specification's device list).
-#[derive(Clone, Debug)]
-pub struct Bus<'a> {
-    pub id: &'a str,
-    pub sda: &'a str,
-    pub scl: &'a str,
-    /// The voltage domain's id, which names the rail net.
-    pub domain: &'a str,
-    pub devices: BTreeSet<&'a str>,
+/// What one part on one line is, from the specification's own design.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Role {
+    footprint: String,
+    value: String,
+    /// The part's pads on the line, by number.
+    pads: BTreeSet<String>,
+    /// A pin part (counted at `Ci`), or the bus's pull-up (copper only).
+    pin: bool,
 }
 
-/// Every I2C line of `buses`, bus by bus, SDA then SCL, bounded on a board
-/// `read` accepted.
-///
-/// The parts on a line are classified from the bus and the board alone: a
-/// declared I2C device of the bus (each of its pads on the line is a pin);
-/// a pull-up (a part with exactly two copper pads, the other on the bus's
-/// rail; copper only); and exactly one other part, the controller (each of
-/// its pads on the line is a pin). Any further part is refused, because its
-/// capacitance is not known. Every pad's copper is counted, pins included:
-/// `Ci` is the part's, not the land's.
-pub fn bound(board: &Board, routed: &Routed, buses: &[Bus<'_>]) -> Result<Vec<LineBound>, Refused> {
+/// One I2C line and every part the specification puts on it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Line {
+    net: String,
+    bus: String,
+    parts: BTreeMap<String, Role>,
+}
+
+/// Each I2C line of `spec`, bus by bus in document order, SDA then SCL,
+/// with the parts the generator's design puts on it (`schematic::design`,
+/// from the specification and its solved topology: `RUL-16`). A part is a
+/// pin part when it is not a passive (the MCU and the declared devices),
+/// and a pull-up when it is the resistor between the line and the bus's
+/// rail. A passive that is not a pull-up is refused: its capacitance is
+/// not known.
+pub fn lines(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+) -> Result<Vec<Line>, Refused> {
+    let (parts, _) = crate::schematic::design(spec, solved, table).map_err(|e| invalid(&e))?;
     let mut out = Vec::new();
-    for bus in buses {
-        let rail = escape(bus.domain);
-        let mut controllers = BTreeSet::new();
-        for net in [bus.sda, bus.scl] {
-            let line = line(board, routed, bus.id, net, &rail, &bus.devices)?;
-            controllers.insert(line.controller.clone());
-            out.push(line);
-        }
-        if controllers.len() != 1 {
-            return Err(refused(
-                "UnmodelledPart",
-                format!(
-                    "bus `{}`: its lines have different controllers {controllers:?}",
-                    bus.id
-                ),
-            ));
+    for bus in &spec.i2c_buses {
+        for net in [&bus.sda.net, &bus.scl.net] {
+            let on = board_net(net);
+            let mut roles = BTreeMap::new();
+            for part in &parts {
+                let pin_nets = crate::pcb::pin_nets(part).map_err(|e| invalid(&e))?;
+                let pads: BTreeSet<String> = pin_nets
+                    .into_iter()
+                    .filter(|(_, n)| *n == on)
+                    .map(|(p, _)| p)
+                    .collect();
+                if pads.is_empty() {
+                    continue;
+                }
+                let passive =
+                    part.lib_id == crate::schematic::R || part.lib_id == crate::schematic::C;
+                let pull_up = part.lib_id == crate::schematic::R
+                    && part
+                        .conns
+                        .values()
+                        .filter(|c| **c == Conn::Net(net.clone()))
+                        .count()
+                        == 1
+                    && part
+                        .conns
+                        .values()
+                        .filter(|c| **c == Conn::Rail(bus.domain.clone()))
+                        .count()
+                        == 1
+                    && part.conns.len() == 2;
+                if passive && !pull_up {
+                    return Err(Refused {
+                        invalid_spec: true,
+                        ..refused(
+                            "UnmodelledPart",
+                            format!(
+                                "the design puts {} on `{net}`, and its capacitance is not known",
+                                part.reference
+                            ),
+                        )
+                    });
+                }
+                roles.insert(
+                    part.reference.clone(),
+                    Role {
+                        footprint: part.footprint.clone(),
+                        value: part.value.clone(),
+                        pads,
+                        pin: !passive,
+                    },
+                );
+            }
+            out.push(Line {
+                net: net.clone(),
+                bus: bus.id.clone(),
+                parts: roles,
+            });
         }
     }
     Ok(out)
+}
+
+/// Every line of `lines`, bounded on a board `read` accepted. The parts on
+/// each line must be exactly the design's: each by reference, footprint and
+/// `Value`, each with exactly the design's pads on the line. Every pad's
+/// copper is counted, pins included: `Ci` is the part's, not the land's.
+pub fn bound(read: &ReadBoard, lines: &[Line]) -> Result<Vec<LineBound>, Refused> {
+    lines.iter().map(|l| line(read, l)).collect()
 }
 
 fn overflow(net: &str) -> Refused {
@@ -471,74 +771,69 @@ fn overflow(net: &str) -> Refused {
     )
 }
 
-fn line(
-    board: &Board,
-    routed: &Routed,
-    bus: &str,
-    net: &str,
-    rail: &str,
-    devices: &BTreeSet<&str>,
-) -> Result<LineBound, Refused> {
+fn line(read: &ReadBoard, want: &Line) -> Result<LineBound, Refused> {
+    let (board, routed, net) = (&read.board, &read.routed, want.net.as_str());
     let board_net = board_net(net);
-    let on = |n: &Option<String>| n.as_deref() == Some(board_net.as_str());
-    // Each part with a pad on the line, and its pads there.
-    let mut parts: BTreeMap<&str, (usize, Vec<&route::Pad>)> = BTreeMap::new();
-    for (i, part) in board.parts.iter().enumerate() {
-        let here: Vec<&route::Pad> = part.pads.iter().filter(|p| on(&p.net)).collect();
+    let mut on_board: BTreeMap<&str, Vec<&route::Pad>> = BTreeMap::new();
+    for part in &board.parts {
+        let here: Vec<&route::Pad> = part
+            .pads
+            .iter()
+            .filter(|p| p.net.as_deref() == Some(board_net.as_str()))
+            .collect();
         if !here.is_empty() {
-            if parts.contains_key(part.reference.as_str()) {
-                return Err(refused(
-                    "UnmodelledPart",
-                    format!("`{net}`: two footprints are {}", part.reference),
-                ));
-            }
-            parts.insert(&part.reference, (i, here));
+            on_board.insert(&part.reference, here);
         }
     }
-    if parts.is_empty() {
+    if on_board.is_empty() {
         return Err(refused(
             "LineNotOnBoard",
             format!("`{net}` ({board_net}) has no pad on the board"),
         ));
     }
-    for d in devices {
-        if !parts.contains_key(d) {
+    for reference in want.parts.keys() {
+        if !on_board.contains_key(reference.as_str()) {
             return Err(refused(
                 "DeviceNotOnLine",
-                format!("{d} is declared on bus `{bus}` but has no pad on `{net}`"),
+                format!(
+                    "the specification puts {reference} on `{net}`, but the board has none of its pads there"
+                ),
             ));
         }
     }
-    let pull_up = |i: usize| {
-        let pads = &board.parts[i].pads;
-        pads.len() == 2
-            && pads.iter().filter(|p| on(&p.net)).count() == 1
-            && pads.iter().any(|p| p.net.as_deref() == Some(rail))
-    };
-    let others: Vec<&str> = parts
-        .iter()
-        .filter(|(r, (i, _))| !devices.contains(*r) && !pull_up(*i))
-        .map(|(r, _)| *r)
-        .collect();
-    let [controller] = others[..] else {
-        return Err(refused(
-            "UnmodelledPart",
-            format!(
-                "`{net}`: expected exactly one part besides the declared devices and pull-ups, found {others:?}"
-            ),
-        ));
-    };
-
     let mut terms = Terms::default();
-    let mut pins = Vec::new();
-    let mut pad_count = 0u64;
-    for (reference, (i, pads)) in &parts {
-        let is_pin = !pull_up(*i);
+    let (mut pins, mut pull_ups, mut pad_count) = (Vec::new(), Vec::new(), 0u64);
+    for (reference, pads) in &on_board {
+        let Some(role) = want.parts.get(*reference) else {
+            return Err(refused(
+                "UnmodelledPart",
+                format!(
+                    "{reference} has a pad on `{net}`, but the specification puts no {reference} there"
+                ),
+            ));
+        };
+        let identity = read.footprints.get(*reference);
+        let numbers: BTreeSet<String> = pads.iter().map(|p| p.number.clone()).collect();
+        if identity != Some(&(role.footprint.clone(), role.value.clone()))
+            || numbers != role.pads
+            || numbers.len() != pads.len()
+        {
+            return Err(refused(
+                "PartMismatch",
+                format!(
+                    "{reference} on `{net}` is {identity:?} with pads {numbers:?}; the specification's is ({:?}, {:?}) with pads {:?}",
+                    role.footprint, role.value, role.pads
+                ),
+            ));
+        }
+        if !role.pin {
+            pull_ups.push((*reference).to_owned());
+        }
         for pad in pads {
             let ff = pad_ff(pad.rect).ok_or_else(|| overflow(net))?;
             terms.pads = terms.pads.checked_add(ff).ok_or_else(|| overflow(net))?;
             pad_count += 1;
-            if is_pin {
+            if role.pin {
                 pins.push(format!("{reference}.{}", pad.number));
                 terms.pins = terms
                     .pins
@@ -574,7 +869,7 @@ fn line(
     Ok(LineBound {
         net: net.to_owned(),
         board_net,
-        bus: bus.to_owned(),
+        bus: want.bus.clone(),
         c_bound_femtofarads: total,
         terms,
         length_nm: u64::try_from(length).map_err(|_| overflow(net))?,
@@ -582,7 +877,7 @@ fn line(
         via_count,
         pad_count,
         pins,
-        controller: controller.to_owned(),
+        pull_ups,
     })
 }
 
