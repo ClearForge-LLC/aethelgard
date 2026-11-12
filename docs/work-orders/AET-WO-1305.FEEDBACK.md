@@ -86,8 +86,8 @@ The adversarial pass re-derived every constant with exact rationals and got the 
 - **`verify`** on the reference passes, with `extract` between DRC and `prove`. Its `input_sha256` is the generated board's (`board_tier2.rs`, verify 2k2).
 - **A swapped board is a `BindingMismatch`** (`verify_refuses_a_board_swapped_before_extract`, tier 2). The swap goes into `verify`'s scratch once DRC's own copy is whole; result exit 5, `id` `extract`.
 - **Gates:**
-  - host: fmt, clippy (with and without `with-tools`), and `cargo test --workspace`, 905 passed;
-  - image, at aaef9e9: the CI `tools` job's steps, in order, in the pinned image (`container/IMAGE`, `2df68259…`) under rootless podman 5.7, `--network none` for every step after the build. fmt, clippy with `with-tools`, and the bridge's tests passed. `cargo test --workspace --features aethelgard-cli/with-tools` passed 972 tests with 0 failures, and the tier-2 canary counted 72, which is `TIER2_MIN` (71 + 1, the swap test). Caps: `--memory 16g --memory-swap 16g --pids-limit -1`, then 0 written into the container's `memory.swap.max`. Read back on the test container: `memory.max` 17179869184, `memory.swap.max` 0, `pids.max` max. Three short containers exited before the reader found them;
+  - host: fmt, clippy (with and without `with-tools`), and `cargo test --workspace`, 905 passed, at fd06f13;
+  - image, at fd06f13 (the code pushed; only FEEDBACK follows it): the CI `tools` job's steps, in order, in the pinned image (`container/IMAGE`, `2df68259…`) under rootless podman 5.7, `--network none` for every step after the build. fmt, clippy with `with-tools`, and the bridge's tests passed. `cargo test --workspace --features aethelgard-cli/with-tools` passed 972 tests with 0 failures, and the tier-2 canary counted 72, which is `TIER2_MIN` (71 + 1, the swap test). Caps: `--memory 16g --memory-swap 16g --pids-limit -1`, then 0 written into the container's `memory.swap.max`. Read back on the test container: `memory.max` 17179869184, `memory.swap.max` 0, `pids.max` max. Three short containers exited before the reader found them;
   - CI: runs on the PR; not yet observed when this was written.
 
 ## Mutation (sized to the diff, one mutant each, scratch clone `~/.cache/aet-1305-mut`)
@@ -95,7 +95,9 @@ The adversarial pass re-derived every constant with exact rationals and got the 
 - **First round (18 mutants, at b9bcbf9).** 14 were killed. The 4 survivors were the pull-up rail condition, `LineNotOnBoard`, two controllers on one bus, and the per-length ceiling. All were killed by added tests, which the redesign below then replaced.
 - **After the adversarial fixes (20 mutants of the new guards).** 14 were killed. One more was a false kill: the mutant failed to compile, and the rewritten mutant is killed. That left five survivors:
   - two needed tests, both added: an unknown footprint child, and a pad set other than the design's. A third test came from the false kill: a second top-level item;
-  - two were dead code, removed by the reduction pass: the `gr_rect`-on-copper arm, which `route::read`'s "no outline" and the second-`gr_rect` refusal already cover, and the `invalid_spec` branch;
+  - two looked dead and were removed by the reduction pass:
+    - the `invalid_spec` branch, which is dead;
+    - the `gr_rect`-on-copper arm. **It was not dead.** I judged it covered by `route::read`'s "no outline" and the second-`gr_rect` refusal, but it was the only guard on the outline's own children. The review before push found it: a second `(layer "F.Cu")` on the outline passed `extract`, and KiCad reads a repeated child's last value. The outline now has an allowlist like every other item `read` accepts (`gr_rect`, `stroke`), with a regression (`outline_layer_twice`), and its mutant is killed. Every top-level item that carries geometry is now covered by `allowed` or `footprint`;
   - one is unreachable with today's generator and is labelled `belt-and-suspenders:`: a design passive on a line other than the pull-up.
 - **After the reduction:** the two guards it moved (the line's `<=` and `femtofarads`' ceiling) are both killed.
 - **The `verify` binding** is killed by `every_bound_field_of_every_gate_is_checked`.
@@ -118,11 +120,14 @@ Findings are in `~/.cache/aet-1305-adv/FINDINGS.md`, with inputs under `~/.cache
 ## Reduction pass (diff)
 
 1. **A fact stated twice.** The CLI's `Line` and `Terms` structs restated `LineBound` field by field; the verdict line is now built once from `LineBound`. Three `must*` helpers restated `Option::expect`, and `ceil_div` restated `div_ceil`. All removed.
-2. **Unused.** The `gr_rect`-on-copper arm and the `invalid_spec` field and branch are unreachable (mutation pass above). Both removed. The unknown-passive refusal is unreachable today and kept as labelled redundancy.
+2. **Unused.**
+   - The `invalid_spec` field and branch were unreachable, and are removed.
+   - The `gr_rect`-on-copper arm was removed as unreachable, but it was load-bearing (mutation section above). The guard is restored as an allowlist for the outline's children, so the reduction regressed and was then repaired before the push.
+   - The unknown-passive refusal is unreachable today and kept as labelled redundancy.
 3. **Two mechanisms that could be one.** None found: `copper_layer` and `canonical_layer` answer different questions.
 4. **A workaround for a gone problem.** None.
 
-Reduction pass (diff): −78 lines net in source · 4 duplicates removed · 2 dead paths removed · 1 protected kept · 2 findings below (F5, F6)
+Reduction pass (diff): −69 lines net in source (after the outline's allowlist) · 4 duplicates removed · 1 dead path removed · 1 removal found load-bearing and replaced by an allowlist · 1 protected kept · 2 findings below (F5, F6)
 
 ## Findings and gaps
 
