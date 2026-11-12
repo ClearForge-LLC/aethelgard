@@ -66,7 +66,11 @@ jobs:
           test "$want" = "$have" || { echo "publishable set drifted: workspace [$want] vs step [$have]"; exit 1; }
           args=""; for c in $crates; do args="$args -p $c"; done
           rm -rf target/package
-          cargo package --locked $args
+          # --no-verify (AET-WO-3200 F18, ruled 2026-11-12): 0.1.0 of each crate is
+          # on crates.io, so cargo's verify build resolves a sibling to the published
+          # 0.1.0, which lacks any API added since. The build below, offline from the
+          # unpacked packages alone with every sibling patched to them, is the check.
+          cargo package --locked --no-verify $args
           for c in $crates; do
             crate="target/package/$c-0.1.0.crate"
             files=$(tar -tzf "$crate" | grep -v '/$' | sed 's|^[^/]*/||')

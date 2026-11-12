@@ -1,6 +1,6 @@
 # AET-WO-3200 — FEEDBACK
 
-**Branch:** `wo/aet-3200-propose` · **Base:** `bf869b4` (`origin/main`, as the kickoff set it). MERGE-NOTE · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace, as project manager. A fresh Opus subagent ran the full adversarial pass, and a default-model subagent ran the diff-sized mutation run, each on a frozen copy in its own worktree. · **Cadence:** build-only. No §7 condition fired (see "§7, held").
+**Branch:** `wo/aet-3200-propose` · **Base:** `bf869b4` (`origin/main`, as the kickoff set it). `AET-WO-1203` merged to `main` as `402fa6f`. `origin/main` is merged in with a merge commit (`e1317ab`), and every number below is from the merged tree (see "Merge of `main` after `AET-WO-1203`") · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace, as project manager. A fresh Opus subagent ran the full adversarial pass, and a default-model subagent ran the diff-sized mutation run, each on a frozen copy in its own worktree. · **Cadence:** build-only. No §7 condition fired (see "§7, held").
 
 **Where everything ran.**
 - **Tier 1:** on Furnace, in a capped user scope.
@@ -30,7 +30,7 @@ Entry schema for findings: `finding · where · severity · type · recommendati
 | ceiling × 0.8 | 240,000 ps | 300,000 ps × 8/10 |
 | `R_target` | ≈ 2,832 Ω | 2,832 Ω (2,832.5, rounded down) |
 | E12 | 2.7 kΩ | 2,700 Ω |
-| `Rp_min` | ≈ 967 Ω | 967 Ω (FLOOR-NOTE) |
+| `Rp_min` | ≈ 967 Ω | 967 Ω, from `aethelgard_ir::electrical::i2c_pull_up_floor_ohms(400_000, 3_300)` |
 | `predicted_rise_ps` | about 229 ns | 228,771 ps (rounded up) |
 
 **The diff** from the run's effective specification (the reference with the scenario's 47 kΩ override) to `proposed-spec.json` is that one field, 47,000 → 2,700, checked field by field in tier 1 (`campaign_tier1.rs` §8) and in tier 2. Against the reference specification on `main` (2,200 Ω) it is also one field. The reference is not touched.
@@ -66,7 +66,7 @@ Each case's expected answer is stated in the test (`want()` in `attribute_seeded
 | pullup-47k | E1 | proposal 2,700 Ω | 0 | ″ |
 | pullup-100k | E1 | proposal 2,700 Ω | 0 | ″ |
 | cap-220p-2k2 | E1 | proposal 1,200 Ω | 0 | `R_target` 1,287; re-gated (sha `aa4d7c62…`): rise 223,682 against 223,685 predicted |
-| **cap-470p-sda-2k2** | E1 | **no proposal: below the floor** | 1 | `R_target` 602 Ω; E12 560 Ω < `Rp_min` 967 Ω. F1 |
+| **cap-390p-sda-2k2** (was `cap-470p-sda-2k2` before `AET-WO-1203`) | E1 | **no proposal: below the floor** | 1 | SDA 726,978 ps; `R_target` 726 Ω; E12 680 Ω < `Rp_min` 967 Ω. F1 |
 | held-low-sda | E1 | no rule: model slot | 1 | `no rule; RUL-18 model proposer slot` |
 | held-low-scl | E1 | no rule: model slot | 1 | ″ |
 | trap-wrong-address-47k | E1 (witness masked) | proposal 2,700 Ω | 0 | F4 |
@@ -111,21 +111,25 @@ No generator report contains a specification change, and no `proposed-spec.json`
      - the `Rules` table.
    - It gains no dependency and no copy of the floor.
 2. **The CLI.**
-   - **`aethelgard propose`** (`src/propose.rs`), with the checks of §1.3, the floor from `aethelgard_ir::electrical` FLOOR-NOTE, and output written only into an empty or absent `--out`.
+   - **`aethelgard propose`** (`src/propose.rs`), with the checks of §1.3, the floor from `aethelgard_ir::electrical::i2c_pull_up_floor_ohms` (no copy anywhere), and output written only into an empty or absent `--out`.
    - **`campaign.rs`:** `read_scenario`, `effective` and `apply_overrides` were extracted from `prepare` and `apply` (F7).
    - **`mcp.rs`:** exit 6 is a successful call (F2).
    - **README:** a `## propose` section, the exit-code table, and the refusal kinds.
-3. **Tests:** `evolve/tests/propose.rs` (15), `campaign_tier1.rs` §8 (6), and `attribute_seeded.rs` (two tier-2 tests, plus the `want()` table, `regate()` and `every_gate()`).
+3. **Tests:**
+   - `evolve/tests/propose.rs`: 26;
+   - `campaign_tier1.rs` §8: 9;
+   - `attribute_seeded.rs`: two tier-2 tests, with the `want()` table, `regate()` and `every_gate()`, and one tier-1 test of committed proposals.
 
 ## Findings and the forks taken
 
 **Decision-needed:**
 
 - **F1 · A capacitance case no pull-up can fix proposes nothing, against §3.4's wording · `Rules`, `want()` · high · work-order conflict · decision-needed.**
-  - §3.4 says every pull-up and capacitance case gives a proposal whose re-gate passes. §1.2 says nothing is proposed when no E12 value lies in `[Rp_min, R_target]`. For `cap-470p-sda-2k2` the two cannot both hold.
-  - **Measured:** SDA 876,105 ps at 2.2 kΩ gives `R_target` = 2,200 × 240,000 / 876,105 = 602 Ω. The E12 value is 560 Ω, under `Rp_min` 967 Ω.
+  - §3.4 says every pull-up and capacitance case gives a proposal whose re-gate passes. §1.2 says nothing is proposed when no E12 value lies in `[Rp_min, R_target]`. For the 390 pF case (and the 470 pF case it replaced) the two cannot both hold.
+  - **Measured, on the merged tree:** `cap-390p-sda-2k2` has SDA at 726,978 ps with 2.2 kΩ, so `R_target` = 2,200 × 240,000 / 726,978 = 726 Ω. The E12 value is 680 Ω, under `Rp_min` 967 Ω.
+  - **Before the merge,** `cap-470p-sda-2k2` gave the same refusal: SDA 876,105 ps, `R_target` 602 Ω, E12 560 Ω.
   - **Followed:** §1.2, the floor. The test asserts no proposal, with the numbers in `proposal.json`'s `sizing`. Neither the floor nor the 0.8 was touched.
-  - **`AET-WO-1203`'s 390 pF replacement does the same.** At about 727 ns, `R_target` is 726 Ω and E12 gives 680 Ω. Even with no headroom it would be about 908 Ω, still under the floor. The only electrical fix is less capacitance, which `INV-07` forbids as a lever.
+  - Even with no headroom, `R_target` would be 2,200 × 300,000 / 726,978 = 907 Ω, still under the floor. The only electrical fix is less capacitance, which `INV-07` forbids as a lever.
   - **Recommendation:** amend §3.4 to "every pull-up case, and every capacitance case a pull-up at or above the floor can fix, gives a proposal whose re-gate passes; the others give a below-floor refusal with the numbers". Optionally, seed one capacitance case that is fixable. `cap-220p-2k2` already is: it proposes 1.2 kΩ and re-gates.
 - **F2 · Exit codes: 0 proposal, 1 no proposal, 6 generator report · `main.rs`, `mcp.rs`, README · medium · contract · decision-needed.**
   - `RUL-10`'s table has two non-refusal codes, 0 and 1. Codes 2 to 5 mean a refusal or a tool error, so the third outcome needs a new code.
@@ -177,6 +181,12 @@ No generator report contains a specification change, and no `proposed-spec.json`
   - A passing board proof takes about 200 s there (`ANSWER 1400-C5 … board … wall_s=198.59`). The re-gate adds two proofs, one per distinct proposed specification, plus two firmware builds and two campaigns: about 8 minutes.
   - The proposal branch's committed proposal reuses the 2.7 kΩ re-gate, so it adds no proof.
   - `ci.yml` is outside this work order's fence. **Recommendation:** raise `timeout-minutes` for `tools`, or split tier 2 into two jobs.
+- **F18 · The `gates` package step verified the CLI against crates.io's 0.1.0 · `.github/workflows/ci.yml` · high · CI, ruled.**
+  - **Found** on the merged tree, by running the step verbatim from `ci.yml` on Furnace: exit 101, `E0432 unresolved import aethelgard_ir::electrical`, while verifying `aethelgard-cli`.
+  - **Cause:** 0.1.0 of every crate is published on crates.io. `cargo package`'s verify build resolves a sibling to the published 0.1.0, which lacks `AET-WO-1203`'s module and evolve's `propose`. `main` passed only because its CLI did not yet call either.
+  - **Ruled 2026-11-12 (architect):** `cargo package --locked --no-verify`, in this PR, with the reason beside the line. The step's second half is the check: it builds the CLI offline from the unpacked packages, with every sibling patched to them, and validates the example.
+  - **Measured:** the step fails (exit 101) without the change and passes (exit 0) with it; every crate packages, and the CLI built from the packages validates the example.
+  - **The architect owns the version bump to 0.2.0** at the next release, which retires the collision.
 - **F16 · `gh-write pr` has no draft flag · Furnace · medium · human-track, ruled.**
   - **Ruled 2026-11-12 (architect, option 1):** the proposal PR (§3.3) is opened as a normal PR titled "PROPOSAL (do not merge): …", based on `wo/aet-3200-propose`, and the architect converts it to a draft on GitHub.
   - **Recommendation:** furnace777 adds a `--draft` flag to `gh-write pr`.
@@ -207,13 +217,14 @@ No generator report contains a specification change, and no `proposed-spec.json`
   - `src/mcp.rs`, exit 6;
 - the CLI and evolve READMEs;
 - tests;
-- this FEEDBACK.
+- this FEEDBACK;
+- one line of `.github/workflows/ci.yml`, by the architect's ruling (F18).
 
 **Not touched:**
 - `aethelgard-chaos`, `aethelgard-ir` and every generator;
 - the judge (`renode.rs`, `aethelgard-twin`), `simulate --firmware` and `cli/src/analog.rs`;
 - `replay`'s and `attribute`'s output: byte-identical on all 22 probe runs (measured twice, before and after the reduction pass);
-- `boards/`, `scenarios/`, `.github/`, the steering documents and `AET-WO-3200.md`.
+- `boards/`, `scenarios/`, the steering documents and `AET-WO-3200.md`.
 
 
 ## Adversarial pass (full, §5)
@@ -297,6 +308,33 @@ No generator report contains a specification change, and no `proposed-spec.json`
 - The test helpers `names`, `hex_of` and `sha_hex` exist in two test crates.
 
 
+## Merge of `main` after `AET-WO-1203`
+
+The architect reported `AET-WO-1203` merged as `402fa6f`, and directed: merge `origin/main` with a merge commit, replace the interim floor, and note the seeded case's new name.
+- **The history.** Nothing had been pushed, so the branch was rebuilt and no commit on it carries the interim floor:
+  - `cefbdeb`, the evolve work, on `bf869b4`;
+  - the merge commit `e1317ab`;
+  - `d9e561f`, the CLI, tests and docs, with the real call.
+
+  Until the merge, the CLI's floor was a labelled `AET-3200-INTERIM` stand-in. It was never pushed, and it lives only in the local ref `backup/aet-3200-pre-merge`. `git log wo/aet-3200-propose -S AET-3200-INTERIM` is empty.
+- **The floor, one definition.** `propose` calls `aethelgard_ir::electrical::i2c_pull_up_floor_ohms(speed_hz, domain_millivolts)` with the bus's declared `speed_hz` and its rail. `solve`'s `i2c_electrical` passes the same two values (the bus's `speed_hz` and its domain's `nominal_millivolts`, which is `analog_lines`' `domain_millivolts`). Neither evolve nor the CLI keeps a copy.
+  - The stand-in also differed from the merged function at or below 2 V, where the merged one uses a 2 mA sink. The swap mattered.
+  - **The boundary is tested** on adversarial B1's specification (400 kHz, 120 ns ceilings): `solve` takes 967 Ω, `proposal.json`'s `rp_min_ohms`, and refuses 966 Ω with `PullUpBelowSinkFloor`.
+- **The seeded case is now `cap-390p-sda-2k2`** (`AET-WO-1203` §1.3). `want()` names it, and it still gives a below-floor refusal (F1). Its SDA rise, measured here for the first time (1203 scaled it), is 726,978 ps, against 1203's scaled 726.97 ns.
+- **A run whose specification `solve` now refuses is refused by `propose`,** which re-derives the topology before anything is written. The old 3100 probe run of `cap-470p-sda-2k2` is refused with `BusCapacitanceOverLimit`, exit 2.
+- **Only conflict:** `campaign_tier1.rs`, where both sides appended tests at the end. Both were kept.
+
 ## Gates
 
-GATES
+All on the merged tree.
+- **On Furnace:**
+  - `gates`' steps from `ci.yml`: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` (no `with-tools`), the bridge's fmt, and the two example validations. All clean.
+  - The package step, verbatim from `ci.yml`: exit 0. Every crate packages, and the CLI built offline from the packages validates the example. F18 covers the step before the change.
+  - Clippy with `with-tools` is clean too.
+- **In the image, the CI `tools` job's steps** in its own layout, offline: the bridge's tests, `fmt`, `clippy` with `with-tools`, then `cargo test --workspace --features aethelgard-cli/with-tools`.
+  - **920 passed, 0 failed,** in 57 suites, tier 2 included, on `d9e561f`.
+  - The caps were read back: `memory.max` 17179869184, `memory.swap.max` 0, `pids.max` `max`.
+  - Before the merge, at `021a1d2`: 909 passed, 0 failed.
+- **Determinism of the committed run** (F11): the 11 unmutated seeded runs have identical run ids across two separate image runs.
+- **CI on the PR is the witness for the head.**
+- **Reduction pass (diff):** −31 net · 6 duplicates removed · 3 dead paths removed (the reduction pass), plus 1 in `outside_run` after the adversarial fix · 0 protected in scope (the test oracles kept on purpose) · 6 findings above (R1, R3, and the four not changed).
