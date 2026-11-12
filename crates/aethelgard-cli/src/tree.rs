@@ -44,9 +44,9 @@ pub fn write(out: &Path, files: &BTreeMap<String, String>) -> Result<(), Stop> {
     )
     .map_err(|e| unwritable(format!("cannot open {}: {e}", out.display())))?;
     // Empty as opened: the check is on the descriptor written through.
-    let mut entries = rustix::fs::Dir::read_from(&root)
+    let entries = rustix::fs::Dir::read_from(&root)
         .map_err(|e| unwritable(format!("cannot read {}: {e}", out.display())))?;
-    while let Some(entry) = entries.next() {
+    for entry in entries {
         let entry = entry.map_err(|e| unwritable(format!("cannot read {}: {e}", out.display())))?;
         let name = entry.file_name().to_bytes();
         if name != b"." && name != b".." {
