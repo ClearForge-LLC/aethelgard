@@ -482,6 +482,13 @@ fn an_immediate_cancel_storm_leaves_no_process_and_no_directory() {
     stop.store(true, Ordering::Relaxed);
     let seen = sampler.join().unwrap();
 
+    // Review A7.4: a sampler that saw nothing would make the check vacuous. 500 calls
+    // measured 1,214 to 1,285 descendants; the floor is far below that.
+    assert!(
+        seen.len() >= 100,
+        "the sampler saw only {} descendants",
+        seen.len()
+    );
     nothing_left(&tmp, &seen, &format!("storm: calls={CALLS}"));
 }
 
