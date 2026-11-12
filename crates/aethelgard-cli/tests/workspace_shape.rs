@@ -164,6 +164,32 @@ fn ir_depends_on_no_other_member() {
     }
 }
 
+/// `RUL-16` is a compiled fence (`AET-WO-1204`): a `clippy.toml` in `cli`,
+/// `svd-hal` and `twin` disallows the specification's device accessors, and
+/// `eda` is exempt. A fifth member depending on `aethelgard-ir` would sit
+/// outside it, so the dependants are fixed here, dev and build dependencies
+/// included (`dependency_names` reads all three tables).
+#[test]
+fn the_members_depending_on_ir_are_exactly_the_four_the_fence_knows() {
+    let dependants: Vec<&str> = MEMBERS
+        .into_iter()
+        .filter(|m| {
+            dependency_names(&manifest(m))
+                .iter()
+                .any(|n| n == "aethelgard-ir")
+        })
+        .collect();
+    assert_eq!(
+        dependants,
+        [
+            "crates/aethelgard-eda",
+            "crates/aethelgard-svd-hal",
+            "crates/aethelgard-twin",
+            "crates/aethelgard-cli"
+        ]
+    );
+}
+
 /// `aethelgard-chaos` holds the trace archive (`AET-WO-0400`), so it is no
 /// longer a re-export stub. It is held to a smaller rule instead: its files,
 /// its manifest keys and its dependencies are fixed. `AET-WO-2300` added the
@@ -175,6 +201,7 @@ fn ir_depends_on_no_other_member() {
 fn chaos_has_only_its_known_files_keys_and_dependencies() {
     for file in files(&root().join(CHAOS)) {
         let allowed = file == "Cargo.toml"
+            || file == "clippy.toml"
             || file == "README.md"
             || LICENCE_FILES.contains(&file.as_str())
             || (file.starts_with("src/") && file.ends_with(".rs"))
@@ -224,6 +251,7 @@ fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
     ];
     for file in files(&root().join(SVD_HAL)) {
         let allowed = file == "Cargo.toml"
+            || file == "clippy.toml"
             || file == "README.md"
             || LICENCE_FILES.contains(&file.as_str())
             || (file.starts_with("src/") && file.ends_with(".rs"))
@@ -394,6 +422,7 @@ fn kicad_library_files_live_only_in_the_data_crate() {
 fn twin_has_only_its_known_files_keys_and_dependencies() {
     for file in files(&root().join(TWIN)) {
         let allowed = file == "Cargo.toml"
+            || file == "clippy.toml"
             || file == "README.md"
             || LICENCE_FILES.contains(&file.as_str())
             || (file.starts_with("src/") && file.ends_with(".rs"))

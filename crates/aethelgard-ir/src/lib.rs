@@ -34,8 +34,13 @@ pub struct Specification {
     pub voltage_domains: Vec<VoltageDomain>,
     pub i2c_buses: Vec<I2cBus>,
     pub spi_buses: Vec<SpiBus>,
-    pub i2c_devices: Vec<I2cDevice>,
-    pub spi_devices: Vec<SpiDevice>,
+    /// Private (`RUL-16`, `AET-WO-1204`): read through
+    /// [`Specification::declared_i2c_devices`], which a runner's `clippy.toml`
+    /// disallows.
+    i2c_devices: Vec<I2cDevice>,
+    /// Private as `i2c_devices` is; read through
+    /// [`Specification::declared_spi_devices`].
+    spi_devices: Vec<SpiDevice>,
     pub net_constraints: Vec<NetConstraint>,
 }
 
@@ -345,8 +350,10 @@ pub enum IrValidationError {
     ZeroPullUp { id: String },
     #[error("SPI bus `{id}` has speed_hz 0")]
     ZeroSpiSpeed { id: String },
-    #[error("device reference `{id}` appears more than once")]
-    DuplicateReference { id: String },
+    #[error(
+        "device reference `{id}` appears more than once, in any case (first spelled `{first}`)"
+    )]
+    DuplicateReference { id: String, first: String },
     #[error("`{id}` is not a bus of the device's kind")]
     UnknownBus { id: String },
     #[error("device `{id}` has I2C address {value}, outside 0x08..=0x77")]
@@ -387,6 +394,15 @@ pub enum IrValidationError {
     I2cDeviceIndex { id: String },
     #[error("device `{id}` is on a peripheral other than the one its bus was solved to")]
     I2cDevicePeripheral { id: String },
+    #[error(
+        "I2C bus `{bus}` has ceiling {ceiling_hz} Hz, but its analog lines derive {}",
+        derived_hz.map_or_else(|| "no mode (rise time slower than every mode, or no lines)".to_owned(), |hz| format!("{hz} Hz"))
+    )]
+    CeilingNotDerived {
+        bus: String,
+        ceiling_hz: u32,
+        derived_hz: Option<u32>,
+    },
 }
 
 impl IrValidationError {
@@ -426,6 +442,7 @@ impl IrValidationError {
             Self::AnalogBusMismatch { .. } => "AnalogBusMismatch",
             Self::I2cDeviceIndex { .. } => "I2cDeviceIndex",
             Self::I2cDevicePeripheral { .. } => "I2cDevicePeripheral",
+            Self::CeilingNotDerived { .. } => "CeilingNotDerived",
         }
     }
 
@@ -447,7 +464,7 @@ impl IrValidationError {
             | Self::UnsupportedI2cSpeed { id, .. }
             | Self::ZeroPullUp { id }
             | Self::ZeroSpiSpeed { id }
-            | Self::DuplicateReference { id }
+            | Self::DuplicateReference { id, .. }
             | Self::UnknownBus { id }
             | Self::I2cAddressOutOfRange { id, .. }
             | Self::DuplicateI2cAddress { id, .. }
@@ -467,6 +484,7 @@ impl IrValidationError {
             | Self::AnalogBusMismatch { id }
             | Self::I2cDeviceIndex { id }
             | Self::I2cDevicePeripheral { id } => Some(id),
+            Self::CeilingNotDerived { bus, .. } => Some(bus),
         }
     }
 
@@ -513,6 +531,20 @@ fn signal_identifiers(signal: &Signal, path: &str) -> Result<(), IrValidationErr
 }
 
 impl Specification {
+    /// The I2C devices the specification declares, in document order. The
+    /// runners that consume a `SolvedTopology` must not read this (`RUL-16`):
+    /// `cli`, `svd-hal` and `twin` each carry a `clippy.toml` that disallows
+    /// it. The schematic draws declared intent, so `aethelgard-eda` may.
+    pub fn declared_i2c_devices(&self) -> &[I2cDevice] {
+        &self.i2c_devices
+    }
+
+    /// The SPI devices the specification declares, in document order; fenced
+    /// as [`Specification::declared_i2c_devices`] is.
+    pub fn declared_spi_devices(&self) -> &[SpiDevice] {
+        &self.spi_devices
+    }
+
     /// Refuses the first malformed value found, in the order of
     /// `crates/aethelgard-ir/README.md`, and in document order within each step.
     /// It does not check that a part, peripheral or pin exists, nor that two
@@ -641,16 +673,19 @@ impl Specification {
             }
         }
         // 8
-        let mut references = BTreeSet::new();
+        // Folded like the nets of step 11: KiCad's ERC refuses references
+        // that differ only in case (`AET-WO-1204`).
+        let mut references = BTreeMap::new();
         let all_references = self
             .i2c_devices
             .iter()
             .map(|d| &d.reference)
             .chain(self.spi_devices.iter().map(|d| &d.reference));
         for reference in all_references {
-            if !references.insert(reference.as_str()) {
+            if let Some(first) = references.insert(reference.to_lowercase(), reference.as_str()) {
                 return Err(E::DuplicateReference {
                     id: reference.clone(),
+                    first: first.to_owned(),
                 });
             }
         }
@@ -958,6 +993,46 @@ impl SolvedTopology {
             .find(|(net, a)| is_i2c_line(a) && !self.analog_lines.contains_key(*net));
         if let Some((net, _)) = missing {
             return Err(E::MissingAnalogLine { id: net.clone() });
+        }
+        // A hand-written topology holds only the ceiling `solve` derives
+        // (`AET-WO-1204`): the mapping of the smallest rise-time bound among
+        // the bus's own lines, and no ceiling for a bus with no line.
+        for (bus, &ceiling_hz) in &self.i2c_ceilings {
+            // `solve` takes the smaller bound of both lines, so a bus holds
+            // exactly its SDA and its SCL: a half-bus would derive from one.
+            let mut sda_scl = [0usize; 2];
+            for (net, _) in self.analog_lines.iter().filter(|(_, l)| &l.bus == bus) {
+                match self
+                    .assignments
+                    .get(net)
+                    .map(|a| a.signal.rsplit('_').next())
+                {
+                    Some(Some("SDA")) => sda_scl[0] += 1,
+                    Some(Some("SCL")) => sda_scl[1] += 1,
+                    _ => {}
+                }
+            }
+            if sda_scl != [1, 1] {
+                return Err(E::CeilingNotDerived {
+                    bus: bus.clone(),
+                    ceiling_hz,
+                    derived_hz: None,
+                });
+            }
+            let slowest = self
+                .analog_lines
+                .values()
+                .filter(|line| &line.bus == bus)
+                .map(|line| line.ceiling_ns)
+                .min();
+            let derived_hz = slowest.and_then(electrical::ceiling_hz);
+            if derived_hz != Some(ceiling_hz) {
+                return Err(E::CeilingNotDerived {
+                    bus: bus.clone(),
+                    ceiling_hz,
+                    derived_hz,
+                });
+            }
         }
         Ok(())
     }

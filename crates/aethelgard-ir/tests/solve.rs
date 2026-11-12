@@ -5,6 +5,10 @@
 
 use std::collections::BTreeMap;
 
+mod common;
+
+use common::devs;
+
 use aethelgard_ir::{
     AnalogLine, I2cBus, Mcu, NetConstraint, Pin, PinSource, PinTable, RESERVED_PINS, Signal,
     SolveError, SolvedTopology, Specification, SpiBus, SpiDevice, VoltageDomain, solve,
@@ -123,28 +127,28 @@ fn spec(
     spi_buses: Vec<SpiBus>,
     spi_devices: Vec<SpiDevice>,
 ) -> Specification {
-    let net_constraints = i2c_buses
+    let net_constraints: Vec<NetConstraint> = i2c_buses
         .iter()
         .flat_map(|b| [constraint(&b.sda.net, 300), constraint(&b.scl.net, 300)])
         .collect();
-    Specification {
-        schema_version: 1,
-        project_name: "t".into(),
-        mcu: Mcu {
-            part: PART.into(),
-            supply: "VDD_3V3".into(),
-        },
-        voltage_domains: vec![VoltageDomain {
+    // The device lists are private to the crate (`AET-WO-1204`), so the
+    // specification is built from the JSON it reads.
+    let json = serde_json::json!({
+        "schema_version": 1,
+        "project_name": "t",
+        "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into() },
+        "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,
             tolerance_permille: 50,
         }],
-        i2c_buses,
-        spi_buses,
-        i2c_devices: vec![],
-        spi_devices,
-        net_constraints,
-    }
+        "i2c_buses": i2c_buses,
+        "spi_buses": spi_buses,
+        "i2c_devices": [],
+        "spi_devices": spi_devices,
+        "net_constraints": net_constraints,
+    });
+    serde_json::from_value(json).expect("the fixture is a specification")
 }
 
 /// One I2C bus, one SPI bus with one device.
@@ -233,7 +237,7 @@ fn reserved_pins_are_the_debug_port_and_the_oscillators() {
 fn a_hand_pin_on_each_reserved_pin_refuses() {
     for pin in RESERVED_PINS {
         let mut s = basic();
-        s.spi_devices[0].cs.pin = Some(pin.into());
+        devs(&mut s).spi[0].cs.pin = Some(pin.into());
         assert_eq!(
             refused(&s),
             SolveError::ReservedPin {
@@ -249,7 +253,7 @@ fn hand_values_are_kept() {
     let mut s = basic();
     s.i2c_buses[0].sda.pin = Some("PB9".into());
     s.spi_buses[0].peripheral = Some("SPI3".into());
-    s.spi_devices[0].cs.pin = Some("PA1".into());
+    devs(&mut s).spi[0].cs.pin = Some("PA1".into());
     let t = ok(&s);
     assert_eq!(pin_of(&t, "I_SDA"), "PB9");
     assert_eq!(t.assignments["S_SCK"].peripheral, "SPI3");
@@ -260,7 +264,7 @@ fn hand_values_are_kept() {
 #[test]
 fn a_hand_cs_pin_is_not_given_to_a_bus() {
     let mut s = basic();
-    s.spi_devices[0].cs.pin = Some("PB7".into());
+    devs(&mut s).spi[0].cs.pin = Some("PB7".into());
     let t = ok(&s);
     assert_eq!(pin_of(&t, "I_SDA"), "PB9");
     assert_eq!(t.gpio["U1_CS"], "PB7");
@@ -270,7 +274,7 @@ fn a_hand_cs_pin_is_not_given_to_a_bus() {
 fn a_pin_claimed_twice_names_both_claimants_in_document_order() {
     let mut s = basic();
     s.i2c_buses[0].sda.pin = Some("PB9".into());
-    s.spi_devices[0].cs.pin = Some("PB9".into());
+    devs(&mut s).spi[0].cs.pin = Some("PB9".into());
     let err = refused(&s);
     assert_eq!(err.kind(), "PinClaimedTwice");
     assert_eq!(err.id(), Some("PB9"));
@@ -345,7 +349,7 @@ fn a_bus_no_instance_can_serve_says_why_for_each_instance() {
 
     let mut s = basic();
     s.spi_buses[0].peripheral = Some("SPI2".into());
-    s.spi_devices[0].cs.pin = Some("PB13".into());
+    devs(&mut s).spi[0].cs.pin = Some("PB13".into());
     assert_eq!(
         refused(&s).to_string(),
         "no instance can serve bus `S`: SPI2: every pin for `SPI2_SCK` is held by hand \
@@ -468,7 +472,7 @@ fn a_cs_with_no_free_pin_left_is_refused() {
 #[test]
 fn an_invalid_specification_hash_or_part_is_refused_before_the_search() {
     let mut s = basic();
-    s.spi_devices[0].cs.net = "I_SDA".into();
+    devs(&mut s).spi[0].cs.net = "I_SDA".into();
     let err = refused(&s);
     assert_eq!(err.kind(), "DuplicateNetName");
     assert!(matches!(err, SolveError::InvalidSpecification(_)));
@@ -793,7 +797,7 @@ fn devices_are_copied_with_their_peripheral_and_their_place_in_the_order() {
         bus: "I".into(),
         address,
     };
-    s.i2c_devices = vec![dev("U10", 0x76), dev("U3", 0x77), dev("U2", 0x40)];
+    devs(&mut s).i2c = vec![dev("U10", 0x76), dev("U3", 0x77), dev("U2", 0x40)];
     let t = ok(&s);
     t.validate().unwrap();
     let peripheral = t.assignments["I_SDA"].peripheral.clone();
