@@ -26,13 +26,18 @@ pub fn i2c_mode(speed_hz: u32) -> I2cMode {
     }
 }
 
-/// Output low level, in millivolts, for a rail above 2 V (UM10204 table 10,
-/// VOL1).
+/// Output low level, in millivolts, for a rail above 2 V (UM10204 rev. 7
+/// table 10, VOL1: at most 0.4 V at 3 mA sink current, VDD > 2 V).
 const VOL_MILLIVOLTS: u64 = 400;
-/// A rail at or below this reads VOL as 0.2 × VDD (table 10, VOL3).
+/// A rail at or below this reads VOL as 0.2 × VDD (table 10, VOL2: at most
+/// 0.2 × VDD at 2 mA sink current, VDD ≤ 2 V).
 const LOW_RAIL_MILLIVOLTS: u64 = 2000;
+/// The sink current at VOL2, in microamperes. Table 10 gives it for Fast-mode
+/// and Fast-mode Plus; the Standard-mode column is unspecified ("-"), so
+/// Standard-mode takes the Fast-mode row (ruling on `AET-WO-1203` F1).
+const LOW_RAIL_SINK_MICROAMPS: u64 = 2_000;
 
-/// The sink current a driver must carry at VOL, in microamperes (table 10:
+/// The sink current a driver must carry at VOL1, in microamperes (table 10:
 /// IOL 3 mA for Standard-mode and Fast-mode, 20 mA for Fast-mode Plus).
 fn sink_microamps(mode: I2cMode) -> u64 {
     match mode {
@@ -41,24 +46,31 @@ fn sink_microamps(mode: I2cMode) -> u64 {
     }
 }
 
-/// The least pull-up, in ohms, whose sink current stays within the mode's
-/// IOL: `ceil((VDD − VOL) / IOL)` (UM10204 §7.1, equation 1). A rail of 0
-/// gives 0; `validate` refuses such a rail before this is asked.
+/// The least pull-up, in ohms, whose sink current stays within the driver's
+/// rating: `ceil((VDD − VOL) / IOL)` (UM10204 §7.1, equation 2).
+///
+/// - VDD above 2 V: VOL is 0.4 V and IOL is 3 mA (Standard-mode, Fast-mode)
+///   or 20 mA (Fast-mode Plus).
+/// - VDD at most 2 V: VOL is 0.2 × VDD and IOL is 2 mA, in every mode.
+///
+/// A rail of 0 gives 0; `validate` refuses such a rail before this is asked.
 pub fn i2c_pull_up_floor_ohms(speed_hz: u32, domain_millivolts: u32) -> u32 {
     let vdd = u64::from(domain_millivolts);
-    let iol = sink_microamps(i2c_mode(speed_hz));
     // mV / µA × 1000 = Ω. Scaled by 5 so 0.2 × VDD stays exact.
-    let drop_x5 = if vdd <= LOW_RAIL_MILLIVOLTS {
-        4 * vdd
+    let (drop_x5, iol) = if vdd <= LOW_RAIL_MILLIVOLTS {
+        (4 * vdd, LOW_RAIL_SINK_MICROAMPS)
     } else {
-        5 * (vdd - VOL_MILLIVOLTS)
+        (
+            5 * (vdd - VOL_MILLIVOLTS),
+            sink_microamps(i2c_mode(speed_hz)),
+        )
     };
-    let den = 5 * iol;
     let num = drop_x5 * 1000;
-    u32::try_from(num.div_ceil(den)).expect("a u32 rail over at least 3 mA fits a u32")
+    let den = 5 * iol;
+    u32::try_from(num.div_ceil(den)).expect("a u32 rail over at least 2 mA fits a u32")
 }
 
-/// The bus capacitance limit, in femtofarads (UM10204 table 10: Cb 400 pF
+/// The bus capacitance limit, in femtofarads (UM10204 table 11: Cb 400 pF
 /// for Standard-mode and Fast-mode, 550 pF for Fast-mode Plus).
 pub fn i2c_bus_capacitance_limit_femtofarads(speed_hz: u32) -> u64 {
     match i2c_mode(speed_hz) {
@@ -81,14 +93,22 @@ mod tests {
     }
 
     #[test]
-    fn the_floor_for_each_mode_at_1v8_and_3v3() {
+    fn the_floor_for_each_mode_at_1v8_2v_and_3v3() {
         // (speed, rail mV, floor Ω)
         let table = [
-            (100_000, 1800, 480), // 0.2 × 1.8 V = 360 mV; 1440 mV / 3 mA
-            (100_000, 3300, 967), // 2900 mV / 3 mA = 966.67
-            (400_000, 1800, 480),
+            // At or below 2 V: 0.2 × VDD at 2 mA, in every mode.
+            (100_000, 1800, 720), // 1440 mV / 2 mA
+            (400_000, 1800, 720),
+            (1_000_000, 1800, 720),
+            (100_000, 2000, 800), // 1600 mV / 2 mA
+            (400_000, 2000, 800),
+            (1_000_000, 2000, 800),
+            // Above 2 V: 0.4 V at 3 / 3 / 20 mA.
+            (100_000, 2001, 534), // 1601 mV / 3 mA = 533.67
+            (400_000, 2001, 534),
+            (1_000_000, 2001, 81), // 1601 mV / 20 mA = 80.05
+            (100_000, 3300, 967),  // 2900 mV / 3 mA = 966.67
             (400_000, 3300, 967),
-            (1_000_000, 1800, 72),  // 1440 mV / 20 mA
             (1_000_000, 3300, 145), // 2900 mV / 20 mA
         ];
         for (speed, mv, want) in table {
@@ -101,12 +121,9 @@ mod tests {
     }
 
     #[test]
-    fn the_floor_at_the_2v_boundary_and_the_extremes() {
-        // 2.0 V uses 0.2 × VDD: 1600 mV / 3 mA = 533.33; 2.001 V uses 400 mV.
-        assert_eq!(i2c_pull_up_floor_ohms(400_000, 2000), 534);
-        assert_eq!(i2c_pull_up_floor_ohms(400_000, 2001), 534);
+    fn the_floor_at_the_extremes() {
         assert_eq!(i2c_pull_up_floor_ohms(400_000, 0), 0);
-        assert_eq!(i2c_pull_up_floor_ohms(400_000, 400), 107);
+        assert_eq!(i2c_pull_up_floor_ohms(400_000, 400), 160); // 320 mV / 2 mA
         assert_eq!(i2c_pull_up_floor_ohms(400_000, u32::MAX), 1_431_655_632);
     }
 

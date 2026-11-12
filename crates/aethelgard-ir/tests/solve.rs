@@ -724,12 +724,14 @@ fn the_pull_up_floor_follows_the_bus_rail_and_mode() {
         refused(&with_pull_up(1_000_000, 144)).kind(),
         "PullUpBelowSinkFloor"
     );
-    // 1.8 V reads VOL as 0.2 x VDD: 480 ohms.
-    let mut s = with_pull_up(400_000, 480);
-    s.voltage_domains[0].nominal_millivolts = 1800;
-    ok(&s);
-    s.i2c_buses[0].pull_up_ohms = 479;
-    assert_eq!(refused(&s).kind(), "PullUpBelowSinkFloor");
+    // 1.8 V reads VOL as 0.2 x VDD at 2 mA, in every mode: 720 ohms.
+    for speed in [100_000, 400_000, 1_000_000] {
+        let mut s = with_pull_up(speed, 720);
+        s.voltage_domains[0].nominal_millivolts = 1800;
+        ok(&s);
+        s.i2c_buses[0].pull_up_ohms = 719;
+        assert_eq!(refused(&s).kind(), "PullUpBelowSinkFloor", "{speed}");
+    }
 }
 
 fn with_capacitance(speed_hz: u32, sda_ff: u64, scl_ff: u64) -> Specification {
