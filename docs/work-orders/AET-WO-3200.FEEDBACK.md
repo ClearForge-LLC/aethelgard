@@ -181,6 +181,8 @@ No generator report contains a specification change, and no `proposed-spec.json`
   - A passing board proof takes about 200 s there (`ANSWER 1400-C5 … board … wall_s=198.59`). The re-gate adds two proofs, one per distinct proposed specification, plus two firmware builds and two campaigns: about 8 minutes.
   - The proposal branch's committed proposal reuses the 2.7 kΩ re-gate, so it adds no proof.
   - `ci.yml` is outside this work order's fence. **Recommendation:** raise `timeout-minutes` for `tools`, or split tier 2 into two jobs.
+  - **Measured on PR #86** (run 43202082866, head `0b9bd8c`): `tools` passed in 54 min, 9 more than `main`'s 45.
+  - **Answered by `AET-WO-1900`,** which set the timeout to 90 minutes. That is kept through the merge.
 - **F18 · The `gates` package step verified the CLI against crates.io's 0.1.0 · `.github/workflows/ci.yml` · high · CI, ruled.**
   - **Found** on the merged tree, by running the step verbatim from `ci.yml` on Furnace: exit 101, `E0432 unresolved import aethelgard_ir::electrical`, while verifying `aethelgard-cli`.
   - **Cause:** 0.1.0 of every crate is published on crates.io. `cargo package`'s verify build resolves a sibling to the published 0.1.0, which lacks `AET-WO-1203`'s module and evolve's `propose`. `main` passed only because its CLI did not yet call either.
@@ -323,6 +325,27 @@ The architect reported `AET-WO-1203` merged as `402fa6f`, and directed: merge `o
 - **The seeded case is now `cap-390p-sda-2k2`** (`AET-WO-1203` §1.3). `want()` names it, and it still gives a below-floor refusal (F1). Its SDA rise, measured here for the first time (1203 scaled it), is 726,978 ps, against 1203's scaled 726.97 ns.
 - **A run whose specification `solve` now refuses is refused by `propose`,** which re-derives the topology before anything is written. The old 3100 probe run of `cap-470p-sda-2k2` is refused with `BusCapacitanceOverLimit`, exit 2.
 - **Only conflict:** `campaign_tier1.rs`, where both sides appended tests at the end. Both were kept.
+
+## Merge of `main` after `AET-WO-1900`
+
+The architect reported `AET-WO-1900` merged as `89d4fb7`, and PR #86 conflicting with `main`. The directions (`~/.cache/aet-3200-merge.txt`): merge `origin/main` with a merge commit, keep both sides exactly, and raise the tier-2 canary by this work order's tests.
+- **The merge commit** is `28711f7`.
+- **The one conflict** was in `campaign_tier1.rs`, where both sides appended tests after the same test (1900's `FirmwareChanged` test; this work order's §8). Both blocks were kept as written.
+  - 1900's change to `replaying_a_missing_directory_is_refused`, which now expects `Io`, merged without conflict.
+  - Checked by diff: against `main` the file only gains this work order's lines, and against this branch's previous head it differs by 1900's lines alone.
+- **`ci.yml`:**
+  - 1900's 90-minute `tools` timeout is kept (it answers F17), and F18's `--no-verify` line merged cleanly.
+  - **`TIER2_MIN` goes from 64 to 67,** with a comment naming this work order.
+- **Why 67, not 66.** The canary sums the passing tests of seven test binaries. 1900 pinned it to exactly the 64 `#[test]` in those seven files, with zero slack (1900 FEEDBACK, adversarial 1).
+  - This work order adds three `#[test]` to one of them, `attribute_seeded.rs`. Two are tier-2: `p3_gate_clause_2_propose_answers_every_seeded_case_as_its_rule_says` and `every_committed_proposal_reruns_to_its_own_bytes_and_regates`. The third is a tier-1 test the canary counts too, because it is in the same binary: `every_committed_proposal_is_pull_up_changes_named_for_its_scenario`.
+  - Counting gives 67 on the merged tree: 23 + 14 + 5 + 5 + 12 + 6 + 2. A floor of 66 would leave one test of slack, so a dropped test would pass unseen.
+  - **Decision-needed (ratify):** whether "the number of tier-2 tests your PR adds" meant the two tier-2 tests or the canary's three.
+- **Measured on the merged tree:**
+  - fmt and both clippies (with and without `with-tools`) are clean;
+  - tier 1 on Furnace: 858 passed, 0 failed;
+  - the CI `tools` job's steps in the image, in CI's layout: **933 passed, 0 failed,** in 58 suites;
+  - the canary's own `awk`, run on that log, counts **67**, the new floor exactly;
+  - the caps read back as `memory.max` 17179869184, `memory.swap.max` 0 and `pids.max` `max`.
 
 ## Gates
 
