@@ -66,7 +66,11 @@ jobs:
           test "$want" = "$have" || { echo "publishable set drifted: workspace [$want] vs step [$have]"; exit 1; }
           args=""; for c in $crates; do args="$args -p $c"; done
           rm -rf target/package
-          cargo package --locked $args
+          # --no-verify (AET-WO-3200 F18, ruled 2026-11-12): 0.1.0 of each crate is
+          # on crates.io, so cargo's verify build resolves a sibling to the published
+          # 0.1.0, which lacks any API added since. The build below, offline from the
+          # unpacked packages alone with every sibling patched to them, is the check.
+          cargo package --locked --no-verify $args
           for c in $crates; do
             crate="target/package/$c-0.1.0.crate"
             files=$(tar -tzf "$crate" | grep -v '/$' | sed 's|^[^/]*/||')
@@ -120,7 +124,11 @@ jobs:
     # adds about 8 min. Splitting tier 2 into two jobs is backlog.
     timeout-minutes: 90
     env:
-      TIER2_MIN: "64"
+      # 64 (AET-WO-1900), plus 3 from AET-WO-3200 in attribute_seeded.rs: two
+      # tier-2 tests (propose on every seeded case and the re-gate; committed
+      # proposals re-run to their bytes) and one tier-1 test the canary counts too
+      # (committed proposals' shape). The floor stays exact.
+      TIER2_MIN: "67"
       RUN: >-
         docker run --rm -v ${{ github.workspace }}:/repo -w /repo
         -e CARGO_HOME=/repo/target/cargo-home -e CARGO_TARGET_DIR=/repo/target

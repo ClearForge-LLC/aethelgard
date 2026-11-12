@@ -294,8 +294,8 @@ async fn execute(exe: &PathBuf, args: &[OsString]) -> std::io::Result<Finished> 
     })
 }
 
-/// Maps a finished child to the tool result. `isError` is false only for exit 0 or 1 with exactly
-/// one JSON object on stdout; a fail verdict is a successful call. With `lines`, stdout may hold
+/// Maps a finished child to the tool result. `isError` is false only for exit 0, 1 or `propose`'s 6
+/// (a generator report) with exactly one JSON object on stdout; a fail verdict is a successful call. With `lines`, stdout may hold
 /// one JSON object line per record before the verdict's: the last line is the verdict, and the
 /// lines before it are `records`.
 fn result(done: &Finished, lines: bool) -> CallToolResult {
@@ -340,7 +340,8 @@ fn result(done: &Finished, lines: bool) -> CallToolResult {
     } else {
         json!({"exit_code": done.code, "verdict": verdict})
     });
-    r.is_error = Some(!matches!(done.code, Some(0 | 1)));
+    let report = i32::from(crate::EXIT_GENERATOR_REPORT);
+    r.is_error = Some(!matches!(done.code, Some(c) if c == 0 || c == 1 || c == report));
     r
 }
 
@@ -507,7 +508,8 @@ mod tests {
                 "simulate",
                 "campaign",
                 "replay",
-                "attribute"
+                "attribute",
+                "propose"
             ]
         );
     }
@@ -550,7 +552,7 @@ mod tests {
             Some("A subcommand added by a test")
         );
         assert_eq!(t.input_schema["required"], json!(["thing"]));
-        assert_eq!(all.len(), 11);
+        assert_eq!(all.len(), 12);
     }
 
     #[test]
@@ -768,7 +770,7 @@ mod tests {
     }
 
     #[test]
-    fn exit_0_and_1_are_successful_calls_and_others_are_errors() {
+    fn exit_0_1_and_6_are_successful_calls_and_others_are_errors() {
         let line = br#"{"ok":false,"verdict":"fail"}"#;
         let with_nl = [line.as_slice(), b"\n"].concat();
         for (code, error) in [
@@ -778,6 +780,8 @@ mod tests {
             (Some(3), true),
             (Some(4), true),
             (Some(5), true),
+            (Some(6), false),
+            (Some(7), true),
             (Some(64), true),
             (Some(70), true),
             (None, true),

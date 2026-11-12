@@ -11,6 +11,7 @@ mod input;
 mod kani;
 mod kicad;
 mod mcp;
+mod propose;
 mod renode;
 mod run;
 mod said;
@@ -38,6 +39,9 @@ const EXIT_INVALID_SPEC: u8 = 2;
 const EXIT_UNREADABLE: u8 = 3;
 const EXIT_TOOL_UNAVAILABLE: u8 = 4;
 const EXIT_TOOL_ERROR: u8 = 5;
+/// `propose`: the run's failure is a generator defect, and a generator report
+/// was written (`AET-WO-3200`).
+const EXIT_GENERATOR_REPORT: u8 = 6;
 /// The subcommands that print one JSON line per record, then their verdict's
 /// line; every other prints exactly one. `mcp` reads this, not a name of its own.
 const LINE_PER_RECORD: [&str; 1] = ["campaign"];
@@ -134,6 +138,18 @@ enum Command {
         /// The run directory.
         #[arg(long)]
         archive: PathBuf,
+    },
+    /// Propose a specification change for one archived campaign run, from its attribution, and write it (or a generator report, or why nothing is proposed) into an empty directory. Never applies a change or edits a gate.
+    Propose {
+        /// The run directory.
+        #[arg(long)]
+        archive: PathBuf,
+        /// The scenario file the run ran: the same bytes, with its base resolved as campaign resolves it.
+        #[arg(long)]
+        scenario: PathBuf,
+        /// The directory to write proposal.json, and proposed-spec.json or generator-report.json, into; it must be empty or absent.
+        #[arg(long)]
+        out: PathBuf,
     },
     /// Serve every other subcommand as an MCP tool on stdin and stdout.
     Mcp,
@@ -312,6 +328,11 @@ fn main() -> ExitCode {
         } => return campaign::run(&scenarios, &firmware, &archive),
         Command::Replay { archive } => return campaign::replay(&archive),
         Command::Attribute { archive } => return campaign::attribute(&archive),
+        Command::Propose {
+            archive,
+            scenario,
+            out,
+        } => return propose::propose(&archive, &scenario, &out),
         Command::Mcp => return mcp::serve(),
     };
     match judged {

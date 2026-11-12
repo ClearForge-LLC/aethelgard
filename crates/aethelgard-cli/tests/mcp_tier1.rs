@@ -49,7 +49,8 @@ fn lists_the_five_tools_and_completes_two_calls() {
             "simulate",
             "campaign",
             "replay",
-            "attribute"
+            "attribute",
+            "propose"
         ]
     );
     println!("{}", serde_json::to_string_pretty(&list["result"]).unwrap());

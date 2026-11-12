@@ -1412,6 +1412,565 @@ fn a_pull_up_below_the_sink_floor_in_an_override_is_refused_before_any_run() {
     }
 }
 
+// 8. `propose` (`AET-WO-3200` §1.3, §3.4 and §3.5), with the stub tools.
+
+fn propose(tools: &Path, cwd: &Path, run: &Path, scenario: &str, out: &Path) -> Output {
+    run_cli(
+        &cli(None),
+        tools,
+        cwd,
+        &[
+            os("propose"),
+            os("--archive"),
+            run.as_os_str(),
+            os("--scenario"),
+            os(scenario),
+            os("--out"),
+            out.as_os_str(),
+        ],
+    )
+}
+
+const S47: &str = "s47.json";
+
+/// The 47 kOhm run, archived from a work directory holding the scenario it ran.
+fn a_47k_run() -> (Dir, Work, PathBuf) {
+    let tb = toolbox(&faulted());
+    let work = Work::new();
+    let findings = ["analog_rise_exceeds_ceiling", "i2c_timeout"];
+    let text = scenario("p47", "fail", &findings, json_of(PULL_UP_47K));
+    work.dir.write(S47, text.as_bytes());
+    let out = work.campaign(&cli(Some(BRIDGE_BY_PULL_UP)), &tb.0, &[S47]);
+    assert_eq!(out.status.code(), Some(0), "{:?}", lines(&out));
+    let run = work.runs().pop().unwrap();
+    (tb, work, run)
+}
+
+fn read_json(path: &Path) -> Value {
+    serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
+}
+
+#[test]
+fn propose_on_the_47k_run_changes_only_the_pull_up_to_2700_in_identical_bytes_twice() {
+    let (tb, work, run) = a_47k_run();
+    // The bus fault the CLI's analog pass wrote names the cause evolve's rule
+    // reads, so the rule and the writer cannot drift apart unseen.
+    let records = aethelgard_chaos::replay_dir(&run).unwrap().state.records;
+    assert!(
+        records
+            .iter()
+            .any(|r| matches!(r, Record::BusFault { from, .. }
+        if from == &[aethelgard_evolve::propose::PAST_CEILING_CAUSE.to_owned()]))
+    );
+
+    let first = work.dir.0.join("p1");
+    let out = propose(&tb.0, work.cwd(), &run, S47, &first);
+    let line = refusal(&out);
+    assert_eq!(out.status.code(), Some(0), "{line}");
+    assert_eq!(
+        (
+            &line["ok"],
+            &line["check"],
+            &line["outcome"],
+            &line["proposer"]
+        ),
+        (
+            &json!(true),
+            &json!("propose"),
+            &json!("proposal"),
+            &json!("rules")
+        )
+    );
+    assert_eq!(names(&first), ["proposal.json", "proposed-spec.json"]);
+    let p = read_json(&first.join("proposal.json"));
+    assert_eq!(
+        p["changes"],
+        json!([{"bus": "SENSORS", "pull_up_ohms": 2700}])
+    );
+    let s = &p["sizing"][0];
+    assert_eq!(
+        [
+            &s["r_now_ohms"],
+            &s["rise_worst_ps"],
+            &s["ceiling_ps"],
+            &s["r_target_ohms"],
+            &s["rp_min_ohms"],
+            &s["e12_ohms"],
+            &s["predicted_rise_ps"]
+        ],
+        [
+            &json!(47_000),
+            // The stub bridge's 3,982.3 ns.
+            &json!(3_982_300),
+            &json!(300_000),
+            &json!(2832),
+            &json!(967),
+            &json!(2700),
+            &json!(228_771)
+        ]
+    );
+    assert_eq!(
+        (&p["attribution"]["domain"], &p["attribution"]["rule"]),
+        (&json!("electrical"), &json!("E1"))
+    );
+    assert_eq!(p["attribution"]["masked"], json!([]));
+    assert!(
+        p["note"]
+            .as_str()
+            .unwrap()
+            .contains("computed from declared values")
+    );
+    let r = refusal(&replay(&tb.0, &run));
+    assert_eq!(p["run_id"], r["run_id"]);
+    assert_eq!(p["state_sequence_hash"], r["state_sequence_hash"]);
+    assert_eq!(p["schema_version"], 1);
+    // Each hash is the run's own artifact of that name, and the base's is the
+    // file's.
+    for (key, artifact) in [
+        ("base_sha256", "base"),
+        ("specification_sha256", "specification"),
+        ("topology_sha256", "topology"),
+    ] {
+        assert_eq!(p[key], r["artifacts"][artifact], "{key}");
+    }
+    assert_eq!(p["scenario"]["sha256"], r["artifacts"]["scenario"]);
+    assert_eq!(
+        p["base_sha256"],
+        json!(hex_of(&Sha256::digest(spec_bytes())))
+    );
+    // The line names each file it wrote, with its sha256.
+    for name in ["proposal.json", "proposed-spec.json"] {
+        let bytes = fs::read(first.join(name)).unwrap();
+        assert_eq!(
+            line["files"][name],
+            json!(hex_of(&Sha256::digest(&bytes))),
+            "{name}"
+        );
+    }
+    assert_eq!(line["files"].as_object().unwrap().len(), 2);
+
+    // The changes are the scenario override form, and that form holds only
+    // a pull-up: the other two overrides describe faults (review A8.11).
+    let as_scenario = json!({"schema_version": 1, "name": "x", "base": "b",
+        "expect": "pass", "expect_findings": [], "overrides": p["changes"]});
+    let parsed =
+        aethelgard_chaos::campaign::Scenario::parse(as_scenario.to_string().as_bytes()).unwrap();
+    assert!(
+        parsed
+            .overrides
+            .iter()
+            .all(|o| matches!(o, aethelgard_chaos::record::Override::PullUpOhms { .. }))
+    );
+
+    // The proposed specification is the run's effective one with that one
+    // field changed, and its hash is the one proposal.json names.
+    let spec_bytes_out = fs::read(first.join("proposed-spec.json")).unwrap();
+    assert_eq!(
+        p["proposed_specification_sha256"],
+        json!(hex_of(&Sha256::digest(&spec_bytes_out)))
+    );
+    let mut effective: Value = serde_json::from_slice(&spec_bytes()).unwrap();
+    let buses = effective["i2c_buses"].as_array_mut().unwrap();
+    let sensors = buses.iter_mut().find(|b| b["id"] == "SENSORS").unwrap();
+    sensors["pull_up_ohms"] = json!(2700);
+    let proposed: Value = serde_json::from_slice(&spec_bytes_out).unwrap();
+    assert_eq!(proposed, effective);
+    let v = run_cli(
+        &cli(None),
+        &tb.0,
+        work.cwd(),
+        &[
+            os("validate"),
+            os("--file"),
+            first.join("proposed-spec.json").as_os_str(),
+        ],
+    );
+    assert_eq!(v.status.code(), Some(0));
+
+    // Again, into another directory, with an empty PATH: the same bytes.
+    let second = work.dir.0.join("p2");
+    let empty = Dir::new("empty-path");
+    let again = propose(&empty.0, work.cwd(), &run, S47, &second);
+    assert_eq!(again.status.code(), Some(0));
+    for name in ["proposal.json", "proposed-spec.json"] {
+        assert_eq!(
+            fs::read(first.join(name)).unwrap(),
+            fs::read(second.join(name)).unwrap(),
+            "{name}"
+        );
+    }
+    let mut a = refusal(&again);
+    a["out"] = line["out"].clone();
+    assert_eq!(a, line);
+}
+
+#[test]
+fn propose_on_a_passing_or_indeterminate_run_proposes_nothing_and_names_the_rule() {
+    let (tb, work, run) = a_run();
+    let out_dir = work.dir.0.join("p");
+    let out = propose(&tb.0, work.cwd(), &run, "s.json", &out_dir);
+    let line = refusal(&out);
+    assert_eq!(out.status.code(), Some(1), "{line}");
+    assert_eq!(
+        (&line["ok"], &line["outcome"]),
+        (&json!(false), &json!("no_proposal"))
+    );
+    assert_eq!(names(&out_dir), ["proposal.json"]);
+    let p = read_json(&out_dir.join("proposal.json"));
+    assert_eq!(p["changes"], json!([]));
+    assert!(p["reason"].as_str().unwrap().contains("N1"), "{p}");
+
+    // An indeterminate run, through the chaos writer (§3.4).
+    let (_d, forged) = reseal(
+        &run,
+        |_| {},
+        |r| {
+            let last = r.len() - 1;
+            r[last] = Record::Verdict {
+                pass: false,
+                findings: vec![("renode_error_log".into(), "error".into(), 1)],
+            };
+        },
+    );
+    let out_dir = work.dir.0.join("q");
+    let out = propose(&tb.0, work.cwd(), &forged, "s.json", &out_dir);
+    assert_eq!(out.status.code(), Some(1));
+    let p = read_json(&out_dir.join("proposal.json"));
+    assert_eq!(
+        (&p["outcome"], &p["attribution"]["rule"]),
+        (&json!("no_proposal"), &json!("I1"))
+    );
+    assert!(p["reason"].as_str().unwrap().contains("INV-05"), "{p}");
+}
+
+#[test]
+fn propose_on_a_software_run_writes_a_generator_report_and_no_specification() {
+    let (tb, work, run) = a_run();
+    let (_d, forged) = reseal(
+        &run,
+        |_| {},
+        |r| {
+            for x in r.iter_mut() {
+                if let Record::BootObserved { boot_word, .. } = x {
+                    boot_word.observed = Some(0);
+                }
+            }
+            let last = r.len() - 1;
+            r[last] = Record::Verdict {
+                pass: false,
+                findings: vec![("boot_word_missing".into(), "error".into(), 1)],
+            };
+        },
+    );
+    let out_dir = work.dir.0.join("g");
+    let out = propose(&tb.0, work.cwd(), &forged, "s.json", &out_dir);
+    let line = refusal(&out);
+    assert_eq!(out.status.code(), Some(6), "{line}");
+    assert_eq!(line["outcome"], "generator_report");
+    assert_eq!(names(&out_dir), ["generator-report.json", "proposal.json"]);
+    let g = read_json(&out_dir.join("generator-report.json"));
+    assert_eq!(g["rule"], "S2");
+    assert_eq!(g["generators"], json!(["firmware"]));
+    assert_eq!(g["expectations"][0]["what"], "boot_word");
+    assert_eq!(g["expectations"][0]["observed"], "0x00000000");
+    let p = read_json(&out_dir.join("proposal.json"));
+    assert_eq!(
+        (&p["changes"], &p["proposed_specification_sha256"]),
+        (&json!([]), &Value::Null)
+    );
+}
+
+#[test]
+fn propose_refuses_a_scenario_or_base_that_is_not_the_runs_and_writes_nothing() {
+    let (tb, work, run) = a_47k_run();
+    let refused = |scenario: &str, kind: &str, label: &str| {
+        let out_dir = work.dir.0.join(label);
+        expect_refusal(
+            &propose(&tb.0, work.cwd(), &run, scenario, &out_dir),
+            3,
+            kind,
+        );
+        assert!(!out_dir.exists(), "{label} wrote {}", out_dir.display());
+    };
+    // Another scenario: same overrides, another name, so other bytes.
+    let findings = ["analog_rise_exceeds_ceiling", "i2c_timeout"];
+    let other = scenario("other", "fail", &findings, json_of(PULL_UP_47K));
+    work.dir.write("other.json", other.as_bytes());
+    refused("other.json", "ScenarioMismatch", "a");
+    // The run's scenario, with its base edited after the run.
+    let base = work.dir.0.join("spec.json");
+    let mut edited = spec_bytes();
+    edited.push(b'\n');
+    fs::write(&base, &edited).unwrap();
+    refused(S47, "BaseChanged", "b");
+    fs::write(&base, spec_bytes()).unwrap();
+    // A base outside the current directory, as campaign refuses it.
+    let away = Dir::new("away");
+    away.write(S47, &fs::read(work.dir.0.join(S47)).unwrap());
+    let out_dir = away.0.join("c");
+    expect_refusal(
+        &propose(
+            &tb.0,
+            &root(),
+            &run,
+            away.0.join(S47).to_str().unwrap(),
+            &out_dir,
+        ),
+        3,
+        "BaseOutsideRoot",
+    );
+    // The same two files copied elsewhere are the same run's.
+    away.write("spec.json", &spec_bytes());
+    let out = propose(&tb.0, &away.0, &run, S47, &out_dir);
+    assert_eq!(out.status.code(), Some(0), "{:?}", lines(&out));
+}
+
+#[test]
+fn propose_refuses_a_run_replay_refuses_or_a_topology_the_run_did_not_have() {
+    let (tb, work, run) = a_47k_run();
+    // A one-byte change: replay's refusal, byte for byte.
+    let flipped = Dir::new("flip");
+    let to = flipped.0.join(run.file_name().unwrap());
+    fs::create_dir_all(&to).unwrap();
+    for name in ["trace.cbor", "manifest.cbor"] {
+        fs::copy(run.join(name), to.join(name)).unwrap();
+    }
+    let mut trace = fs::read(to.join("trace.cbor")).unwrap();
+    let at = find(&trace, &INSTRUCTION_COUNT_CBOR) + 4;
+    trace[at] ^= 1;
+    fs::write(to.join("trace.cbor"), &trace).unwrap();
+    let out = propose(&tb.0, work.cwd(), &to, S47, &work.dir.0.join("x"));
+    assert_eq!(out.stdout, replay(&tb.0, &to).stdout);
+    expect_refusal(&out, 3, "HashMismatch");
+    // Kind 15 and its rises re-sealed with a tighter SCL ceiling: a run replay
+    // accepts, whose join is not the one its topology gives.
+    let (_d, forged) = reseal(
+        &run,
+        |_| {},
+        |r| {
+            for x in r.iter_mut() {
+                match x {
+                    Record::I2cBusSolved { lines, .. } => lines[0].ceiling_ps = 250_000,
+                    Record::RiseMeasured {
+                        net, ceiling_ps, ..
+                    } if net == "I2C_SCL" => *ceiling_ps = 250_000,
+                    _ => {}
+                }
+            }
+        },
+    );
+    assert_eq!(refusal(&replay(&tb.0, &forged))["ok"], true);
+    let out_dir = work.dir.0.join("y");
+    expect_refusal(
+        &propose(&tb.0, work.cwd(), &forged, S47, &out_dir),
+        3,
+        "TopologyChanged",
+    );
+    assert!(!out_dir.exists());
+}
+
+#[test]
+fn propose_writes_only_into_an_empty_or_absent_directory_never_through_a_symlink() {
+    let (tb, work, run) = a_47k_run();
+    let full = work.dir.0.join("full");
+    fs::create_dir_all(&full).unwrap();
+    fs::write(full.join("keep.txt"), b"x").unwrap();
+    expect_refusal(
+        &propose(&tb.0, work.cwd(), &run, S47, &full),
+        3,
+        "UnwritableOutput",
+    );
+    assert_eq!(names(&full), ["keep.txt"]);
+    let file = work.dir.write("a-file", b"x");
+    expect_refusal(
+        &propose(&tb.0, work.cwd(), &run, S47, &file),
+        3,
+        "UnwritableOutput",
+    );
+    let target = work.dir.0.join("target-dir");
+    fs::create_dir_all(&target).unwrap();
+    let link = work.dir.0.join("link");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    expect_refusal(
+        &propose(&tb.0, work.cwd(), &run, S47, &link),
+        3,
+        "UnwritableOutput",
+    );
+    assert!(names(&target).is_empty());
+    // An empty directory is written into.
+    let empty = work.dir.0.join("empty");
+    fs::create_dir_all(&empty).unwrap();
+    let out = propose(&tb.0, work.cwd(), &run, S47, &empty);
+    assert_eq!(out.status.code(), Some(0));
+}
+
+#[test]
+fn a_generator_report_names_each_generator_once_in_order() {
+    // On the measured healthy bus: the I2C clock gate and SCL's alternate
+    // function left wrong (the board crate's), and the address wrong (the
+    // firmware's).
+    let (tb, work, run) = a_run();
+    let (_d, forged) = reseal(
+        &run,
+        |_| {},
+        |r| {
+            for x in r.iter_mut() {
+                match x {
+                    Record::RegisterObserved { name, reading } if name == "RCC.APB1LENR" => {
+                        reading.observed = Some(0)
+                    }
+                    Record::RegisterObserved { name, reading } if name == "GPIOB.AFRL" => {
+                        reading.observed = Some(0x4500_0000)
+                    }
+                    Record::I2cCheck {
+                        status, observed, ..
+                    } => {
+                        *status = Some("timeout_txis".into());
+                        *observed = None;
+                    }
+                    Record::I2cWitness { cr2, txdr, .. } => {
+                        cr2.observed = Some(0x0001_00EE);
+                        txdr.observed = Some(0);
+                    }
+                    _ => {}
+                }
+            }
+            let last = r.len() - 1;
+            r[last] = Record::Verdict {
+                pass: false,
+                findings: vec![
+                    ("i2c_timeout".into(), "error".into(), 1),
+                    ("locked_peripheral_access".into(), "error".into(), 1),
+                    ("register_mismatch".into(), "error".into(), 2),
+                ],
+            };
+        },
+    );
+    let a = refusal(&attribute(&tb.0, &forged));
+    assert_eq!(a["rule"], "S1", "{a}");
+    let out_dir = work.dir.0.join("g2");
+    let out = propose(&tb.0, work.cwd(), &forged, "s.json", &out_dir);
+    assert_eq!(out.status.code(), Some(6), "{:?}", lines(&out));
+    let g = read_json(&out_dir.join("generator-report.json"));
+    assert_eq!(g["generators"], json!(["board_crate", "firmware"]));
+    let got: Vec<(&str, &str, &str, &str)> = g["expectations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| {
+            (
+                e["generator"].as_str().unwrap(),
+                e["what"].as_str().unwrap(),
+                e["solved"].as_str().unwrap(),
+                e["observed"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("board_crate", "GPIOB.AFRL", "0x04000000", "0x05000000"),
+            ("board_crate", "RCC.APB1LENR", "0x00200000", "0x00000000"),
+            ("firmware", "I2C1.CR2", "0x000000ec", "0x000000ee"),
+        ]
+    );
+}
+
+/// A bridge stub that measures both lines at 500.1 ns.
+const BRIDGE_500NS: &str = r#"#!/bin/sh
+printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":500.1}' '{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","rise_30_70_ns":500.1}'
+"#;
+
+/// Adversarial B1: a 400 kHz bus whose 120 ns rise ceiling would allow
+/// 1 MHz. The floor is judged at the bus's declared speed, 967 ohms at 3.3 V,
+/// never at the 20 mA floor of the speed the ceiling allows (145 ohms).
+#[test]
+fn the_floor_is_judged_at_the_buss_declared_speed_not_its_ceilings() {
+    let tb = toolbox(&faulted());
+    let work = Work::new();
+    let mut spec: Value = serde_json::from_slice(&spec_bytes()).unwrap();
+    for c in spec["net_constraints"].as_array_mut().unwrap() {
+        c["max_rise_time_nanoseconds"] = json!(120);
+    }
+    assert_eq!(spec["i2c_buses"][0]["speed_hz"], 400_000);
+    work.dir.write("spec.json", spec.to_string().as_bytes());
+    let findings = ["analog_rise_exceeds_ceiling", "i2c_timeout"];
+    let text = scenario("fast-ceiling", "fail", &findings, json_of(PULL_UP_2K2));
+    work.dir.write("s.json", text.as_bytes());
+    let out = work.campaign(&cli(Some(BRIDGE_500NS)), &tb.0, &["s.json"]);
+    assert_eq!(out.status.code(), Some(0), "{:?}", lines(&out));
+    let run = work.runs().pop().unwrap();
+    let solved = run_cli(
+        &cli(None),
+        &tb.0,
+        work.cwd(),
+        &[os("solve"), os("--file"), os("spec.json")],
+    );
+    assert_eq!(refusal(&solved)["i2c_ceilings"]["SENSORS"], 1_000_000);
+    let out_dir = work.dir.0.join("p");
+    let out = propose(&tb.0, work.cwd(), &run, "s.json", &out_dir);
+    assert_eq!(out.status.code(), Some(1), "{:?}", lines(&out));
+    let p = read_json(&out_dir.join("proposal.json"));
+    // 2,200 × 96,000 / 500,100 = 422 ohms: below the 967 ohm floor.
+    let s = &p["sizing"][0];
+    assert_eq!(
+        (&p["outcome"], &s["rp_min_ohms"], &s["r_target_ohms"]),
+        (&json!("no_proposal"), &json!(967), &json!(422))
+    );
+    // The floor proposals are held to is the gate's: `solve` takes a pull-up
+    // at `rp_min_ohms` on this bus and refuses one ohm less.
+    for (ohms, code) in [(967, 0), (966, 2)] {
+        spec["i2c_buses"][0]["pull_up_ohms"] = json!(ohms);
+        work.dir.write("edge.json", spec.to_string().as_bytes());
+        let out = run_cli(
+            &cli(None),
+            &tb.0,
+            work.cwd(),
+            &[os("solve"), os("--file"), os("edge.json")],
+        );
+        assert_eq!(out.status.code(), Some(code), "{ohms}: {:?}", lines(&out));
+        if code == 2 {
+            assert_eq!(refusal(&out)["error"]["kind"], "PullUpBelowSinkFloor");
+        }
+    }
+}
+
+/// Adversarial B3: an `--out` inside the run directory is refused, and the
+/// run still replays.
+#[test]
+fn propose_never_writes_into_the_run_it_reads() {
+    let (tb, work, run) = a_47k_run();
+    for inside in [run.join("proposal"), run.join("a/b"), run.clone()] {
+        expect_refusal(
+            &propose(&tb.0, work.cwd(), &run, S47, &inside),
+            3,
+            "UnwritableOutput",
+        );
+    }
+    // Through a symlink that resolves into the run, too.
+    let link = work.dir.0.join("into-run");
+    std::os::unix::fs::symlink(&run, &link).unwrap();
+    expect_refusal(
+        &propose(&tb.0, work.cwd(), &run, S47, &link.join("p")),
+        3,
+        "UnwritableOutput",
+    );
+    // A path with no existing ancestor to judge it by is not shown outside.
+    expect_refusal(
+        &propose(&tb.0, work.cwd(), &run, S47, Path::new("absent/..")),
+        3,
+        "UnwritableOutput",
+    );
+    assert_eq!(names(&run), ["manifest.cbor", "trace.cbor"]);
+    assert_eq!(refusal(&replay(&tb.0, &run))["ok"], true);
+    // A new directory beside the run, in the same archive, is outside it.
+    let beside = run.parent().unwrap().join("proposals-beside");
+    assert_eq!(
+        propose(&tb.0, work.cwd(), &run, S47, &beside).status.code(),
+        Some(0)
+    );
+}
+
 // 2300 F14: `FirmwareChanged` was untested because nothing inside the sandbox can
 // change the file. The test process can: it is outside the sandbox. The boot reads
 // the firmware before its analog pass, so the window is between one scenario's

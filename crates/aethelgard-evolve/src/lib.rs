@@ -15,6 +15,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+pub mod propose;
+
 use aethelgard_chaos::Replayed;
 use aethelgard_chaos::campaign::{self, HELD_LOW};
 use aethelgard_chaos::record::{BusLine, Reading, Record, split_pin};
@@ -133,6 +135,88 @@ pub struct Attribution {
     pub masked: Vec<EventRef>,
     /// Failing finding kinds no archived event shows (rule `I1`), sorted.
     pub unexplained: Vec<String>,
+}
+
+/// One field of a register or of a controller witness, read through the join
+/// attribution uses: what the solved topology fixes it to, what the run
+/// observed under the same mask, and whether attribution counts it as
+/// evidence. `register` is named as the ST header names it (`RCC.APB1LENR`,
+/// `GPIOB.AFRL`, `I2C1.CR2`), or `boot_word`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Field {
+    pub register: String,
+    pub address: u32,
+    pub mask: u32,
+    pub solved: u32,
+    pub observed: Option<u32>,
+    pub wrong: bool,
+}
+
+/// What one archive event says.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum View {
+    /// Kind 7.
+    Rise {
+        net: String,
+        rise_ps: u64,
+        complete: bool,
+        ceiling_ps: u64,
+        exceeds: bool,
+    },
+    /// Kind 8.
+    StuckHigh { net: String },
+    /// Kind 9: its causes, as the analog pass names them, and its nets.
+    BusFault {
+        from: Vec<String>,
+        nets: Vec<String>,
+    },
+    /// Kind 10.
+    Boot {
+        boot_word: Field,
+        instructions_expected: u64,
+        instructions_observed: Option<u64>,
+    },
+    /// Kind 11, or kind 13 with its device: each field the join gives a
+    /// solved value. A witness that is no evidence either way has none.
+    Fields {
+        device: Option<String>,
+        fields: Vec<Field>,
+    },
+    /// Any other kind.
+    Other,
+}
+
+/// One event of a run with its bus and what it says. The bus is where
+/// `attribute` puts the event's symptom: a register is on a bus only when it
+/// is wrong in that bus's fields alone, and on none (`None`) otherwise, even
+/// when it is also evidence on a bus.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Evidence {
+    pub event: EventRef,
+    pub bus: Option<String>,
+    pub view: View,
+}
+
+/// A measured rise (kind 7) of one line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rise {
+    pub rise_ps: u64,
+    pub complete: bool,
+}
+
+/// One line of a solved bus (kind 15), with every rise the run measured on it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LineRises {
+    pub net: String,
+    pub ceiling_ps: u64,
+    pub rises: Vec<Rise>,
+}
+
+/// One solved bus (kind 15) and its lines' measured rises.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SolvedBus {
+    pub bus: String,
+    pub lines: Vec<LineRises>,
 }
 
 /// Why a run cannot be attributed at all.
@@ -268,6 +352,7 @@ struct Bus<'a> {
     /// The kind 15's event index.
     at: usize,
     id: &'a str,
+    peripheral: &'a str,
     lines: &'a [BusLine],
     devices: &'a [(String, u8)],
     /// `None` when the header lacks a fact the bus names (a port or a pin it
@@ -370,6 +455,14 @@ impl<'a> Run<'a> {
     /// not at its controller's registers, or whose own expectation is not the
     /// solved address and register, is no evidence.
     fn witness_wrong(&self, b: usize, record: &Record) -> bool {
+        self.witness_fields(b, record)
+            .is_some_and(|f| f.iter().any(|f| f.wrong))
+    }
+
+    /// A sound witness's `SADD`, `NBYTES` and `TXDR` fields, each with its
+    /// solved value, its observed value and whether it counts as evidence
+    /// ([`Self::witness_wrong`]); `None` for a witness that is no evidence.
+    fn witness_fields(&self, b: usize, record: &Record) -> Option<[Field; 3]> {
         let Record::I2cWitness {
             reference,
             cr2,
@@ -377,20 +470,16 @@ impl<'a> Run<'a> {
             ..
         } = record
         else {
-            return false;
+            return None;
         };
         let bus = &self.buses[b];
-        let Some(joined) = &bus.joined else {
-            return false;
-        };
-        let Some((_, address)) = bus.devices.iter().find(|(r, _)| r == reference) else {
-            return false;
-        };
+        let joined = bus.joined.as_ref()?;
+        let (_, address) = bus.devices.iter().find(|(r, _)| r == reference)?;
         let Some(Record::I2cCheck {
             register, status, ..
         }) = self.check_of(reference)
         else {
-            return false;
+            return None;
         };
         let fields = self.sadd | self.nbytes;
         let sadd_want = (u32::from(*address) << 1) << self.sadd.trailing_zeros();
@@ -401,7 +490,7 @@ impl<'a> Run<'a> {
             && cr2.expected & self.sadd == sadd_want
             && txdr.expected & TXDR_DATA == u32::from(*register);
         if !sound {
-            return false;
+            return None;
         }
         let status = status.as_deref().unwrap_or("");
         let written = cr2.observed.filter(|o| o & fields != 0);
@@ -412,7 +501,19 @@ impl<'a> Run<'a> {
             && txdr
                 .observed
                 .is_some_and(|o| o & TXDR_DATA != u32::from(*register));
-        sadd || nbytes || data
+        let at = |name: &str, r: &Reading, mask: u32, solved: u32, wrong: bool| Field {
+            register: format!("{}.{name}", bus.peripheral),
+            address: r.address,
+            mask,
+            solved,
+            observed: r.observed.map(|o| o & mask),
+            wrong,
+        };
+        Some([
+            at("CR2", cr2, self.sadd, sadd_want, sadd),
+            at("CR2", cr2, self.nbytes, cr2.expected & self.nbytes, nbytes),
+            at("TXDR", txdr, TXDR_DATA, u32::from(*register), data),
+        ])
     }
 
     /// The fields of `reading` the bus owns that are wrong.
@@ -600,10 +701,10 @@ impl<'a> Run<'a> {
     }
 }
 
-/// Attribute one archived campaign run. The run is first judged by exactly
-/// the rules `replay` applies after its reader ([`campaign::check_archived`]),
-/// so a forged join or a broken record order is refused, never attributed.
-pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
+/// The run, judged by exactly the rules `replay` applies after its reader
+/// ([`campaign::check_archived`]), with every solved bus joined to the ST
+/// header; and whether its verdict passed.
+fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
     let summary = campaign::check_archived(&run.header, &run.state)
         .map_err(AttributeError::NotACampaignRun)?;
     let records = run.state.records.as_slice();
@@ -621,6 +722,7 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
             buses.push(Bus {
                 at,
                 id: bus,
+                peripheral,
                 lines,
                 devices,
                 joined: join(&f, peripheral, lines).ok(),
@@ -634,6 +736,170 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
         nbytes: field(f.position("I2C_CR2_NBYTES_Pos")?, NBYTES_BITS),
         rcc: (rcc, rcc + f.layout("RCC")?.size),
     };
+    Ok((state, summary.pass))
+}
+
+/// A read-only view of one run through the join attribution uses
+/// (`AET-WO-3200` §8, review A8.12): for an event, its bus, and for a
+/// register or witness event, the solved value against the observed one.
+/// `attribute` itself does not use it, so its output is unchanged.
+pub struct RunView<'a>(Run<'a>);
+
+/// The view of `run`, judged first as [`attribute`] judges it.
+pub fn view(run: &Replayed) -> Result<RunView<'_>, AttributeError> {
+    joined(run).map(|(state, _)| RunView(state))
+}
+
+impl RunView<'_> {
+    /// What event `e` says; `None` when the run has no event `e` of that kind.
+    pub fn event(&self, e: EventRef) -> Option<Evidence> {
+        let run = &self.0;
+        let i = usize::try_from(e.index).ok()?;
+        let record = run.records.get(i).filter(|r| r.kind() == e.kind)?;
+        let bus_of = |b: usize| run.buses[b].id.to_owned();
+        let bus = match run.scope(i) {
+            Some(Scope::Bus(b, _)) => Some(bus_of(b)),
+            _ => None,
+        };
+        let view = match record {
+            Record::RiseMeasured {
+                net,
+                rise_30_70_ps,
+                complete,
+                ceiling_ps,
+                exceeds,
+                ..
+            } => View::Rise {
+                net: net.clone(),
+                rise_ps: *rise_30_70_ps,
+                complete: *complete,
+                ceiling_ps: *ceiling_ps,
+                exceeds: *exceeds,
+            },
+            Record::LineStuckHigh { net, .. } => View::StuckHigh { net: net.clone() },
+            Record::BusFault { from, nets, .. } => View::BusFault {
+                from: from.clone(),
+                nets: nets.clone(),
+            },
+            Record::BootObserved {
+                boot_word,
+                instructions_expected,
+                instructions_observed,
+                ..
+            } => View::Boot {
+                boot_word: Field {
+                    register: "boot_word".to_owned(),
+                    address: boot_word.address,
+                    mask: boot_word.mask,
+                    solved: boot_word.expected,
+                    observed: boot_word.observed,
+                    wrong: boot_word.observed != Some(boot_word.expected),
+                },
+                instructions_expected: *instructions_expected,
+                instructions_observed: *instructions_observed,
+            },
+            Record::RegisterObserved { name, reading } => {
+                let mut fields: Vec<Field> = run
+                    .buses
+                    .iter()
+                    .flat_map(|b| b.joined.iter().flat_map(|j| &j.owned))
+                    .filter(|o| {
+                        o.name == *name
+                            && o.address == reading.address
+                            && reading.mask & o.mask == o.mask
+                    })
+                    .map(|o| Field {
+                        register: o.name.clone(),
+                        address: o.address,
+                        mask: o.mask,
+                        solved: o.want,
+                        observed: reading.observed.map(|v| v & o.mask),
+                        wrong: wrong(o, name, reading),
+                    })
+                    .collect();
+                // Two pins on one port own its one gate: say it once.
+                let mut seen = Vec::new();
+                fields.retain(|f| {
+                    let new = !seen.contains(f);
+                    seen.push(f.clone());
+                    new
+                });
+                let unowned = run.unowned(name, reading);
+                if unowned != 0 {
+                    fields.push(Field {
+                        register: name.clone(),
+                        address: reading.address,
+                        mask: unowned,
+                        solved: reading.expected & unowned,
+                        observed: reading.observed.map(|v| v & unowned),
+                        wrong: true,
+                    });
+                }
+                View::Fields {
+                    device: None,
+                    fields,
+                }
+            }
+            Record::I2cWitness { reference, .. } => View::Fields {
+                device: Some(reference.clone()),
+                fields: run
+                    .bus_of_device(reference)
+                    .and_then(|b| run.witness_fields(b, record))
+                    .map(Vec::from)
+                    .unwrap_or_default(),
+            },
+            _ => View::Other,
+        };
+        Some(Evidence {
+            event: e,
+            bus,
+            view,
+        })
+    }
+
+    /// Every solved bus, in the run's order, with each line's measured rises.
+    pub fn buses(&self) -> Vec<SolvedBus> {
+        let run = &self.0;
+        run.buses
+            .iter()
+            .map(|b| SolvedBus {
+                bus: b.id.to_owned(),
+                lines: b
+                    .lines
+                    .iter()
+                    .map(|line| LineRises {
+                        net: line.net.clone(),
+                        ceiling_ps: line.ceiling_ps,
+                        rises: run
+                            .records
+                            .iter()
+                            .filter_map(|r| match r {
+                                Record::RiseMeasured {
+                                    bus,
+                                    net,
+                                    rise_30_70_ps,
+                                    complete,
+                                    ..
+                                } if bus == b.id && *net == line.net => Some(Rise {
+                                    rise_ps: *rise_30_70_ps,
+                                    complete: *complete,
+                                }),
+                                _ => None,
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
+}
+
+/// Attribute one archived campaign run. The run is first judged by exactly
+/// the rules `replay` applies after its reader ([`campaign::check_archived`]),
+/// so a forged join or a broken record order is refused, never attributed.
+pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
+    let (state, pass) = joined(run)?;
+    let records = state.records;
     let Some(Record::Verdict { findings, .. }) = records.last() else {
         unreachable!("check_run puts the verdict last");
     };
@@ -683,7 +949,7 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
     }
     let rules: BTreeSet<Rule> = decided.iter().map(|d| d.0).collect();
     let domains: BTreeSet<Domain> = rules.iter().map(|r| r.domain()).collect();
-    let rule = if summary.pass && unexplained.is_empty() {
+    let rule = if pass && unexplained.is_empty() {
         Rule::N1
     } else if !unexplained.is_empty() {
         Rule::I1

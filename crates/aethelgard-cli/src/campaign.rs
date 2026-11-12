@@ -44,11 +44,11 @@ struct Prepared {
     run_id: [u8; 16],
 }
 
-fn refuse(kind: &'static str, id: Option<&str>, message: String, code: u8) -> ExitCode {
+pub(crate) fn refuse(kind: &'static str, id: Option<&str>, message: String, code: u8) -> ExitCode {
     emit(&Refusal::new(kind, id, message), code)
 }
 
-fn digest(bytes: &[u8]) -> [u8; 32] {
+pub(crate) fn digest(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
 }
 
@@ -58,7 +58,7 @@ fn digest(bytes: &[u8]) -> [u8; 32] {
 /// or blocking on a FIFO, and the open descriptor itself is checked and read,
 /// so nothing swapped in by name after the check is ever read (`AET-WO-2300`
 /// adversarial F2). Every refusal is exit 3: `(kind, message)`.
-fn read_base(scenario: &Path, base: &str) -> Result<Vec<u8>, (&'static str, String)> {
+pub(crate) fn read_base(scenario: &Path, base: &str) -> Result<Vec<u8>, (&'static str, String)> {
     use rustix::fs::{Mode, OFlags};
     let outside = |m: String| ("BaseOutsideRoot", m);
     let relative = Path::new(base);
@@ -123,8 +123,18 @@ pub struct HeldLow {
 /// does not have, or a result the specification's own rules refuse, is
 /// refused (`INV-06`).
 fn apply(scenario: &Scenario, spec: &mut Specification) -> Result<Vec<HeldLow>, ScenarioError> {
+    apply_overrides(&scenario.overrides, spec)
+}
+
+/// [`apply`]'s path for any list of overrides: `propose` applies a
+/// proposal's changes through it (`AET-WO-3200` §1.3), so a proposed
+/// specification is made exactly as a scenario's is.
+pub(crate) fn apply_overrides(
+    overrides: &[Override],
+    spec: &mut Specification,
+) -> Result<Vec<HeldLow>, ScenarioError> {
     let mut held = Vec::new();
-    for o in &scenario.overrides {
+    for o in overrides {
         match o {
             Override::PullUpOhms { bus, ohms } => {
                 bus_of(spec, bus)?.pull_up_ohms = *ohms;
@@ -184,8 +194,32 @@ fn bus_of<'a>(
 
 /// Read, apply and solve one scenario; a refusal is printed and its code returned.
 fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode> {
+    let scenario = read_scenario(path)?;
+    let base = read_base(path, &scenario.base)
+        .map_err(|(kind, m)| refuse(kind, Some(&scenario.name), m, EXIT_UNREADABLE))?;
+    let Effective {
+        held,
+        specification_sha256,
+        topology,
+        ..
+    } = effective(&scenario, &base)?;
+    let run_id = rules::run_id(&scenario.sha256, &specification_sha256, firmware_sha256);
+    Ok(Prepared {
+        path: path.to_path_buf(),
+        base_sha256: digest(&base),
+        scenario,
+        specification_sha256,
+        topology,
+        held,
+        run_id,
+    })
+}
+
+/// One scenario file, read and parsed as `campaign` reads it; a refusal is
+/// printed and its code returned.
+pub(crate) fn read_scenario(path: &Path) -> Result<Scenario, ExitCode> {
     let bytes = read_input(Some(path)).map_err(|r| emit(&r, EXIT_UNREADABLE))?;
-    let scenario = Scenario::parse(&bytes).map_err(|e| {
+    Scenario::parse(&bytes).map_err(|e| {
         let code = if e.kind == "InvalidJson" {
             EXIT_UNREADABLE
         } else {
@@ -197,14 +231,28 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
             format!("{}: {e}", path.display()),
             code,
         )
-    })?;
-    let base = read_base(path, &scenario.base)
-        .map_err(|(kind, m)| refuse(kind, Some(&scenario.name), m, EXIT_UNREADABLE))?;
-    let (mut spec, _) = crate::parse_spec(&base).map_err(|(mut r, code)| {
+    })
+}
+
+/// A scenario's effective specification: its base with its overrides, as
+/// `campaign` judges it, with that specification's hash and its solved
+/// topology.
+pub(crate) struct Effective {
+    pub spec: Specification,
+    pub held: Vec<HeldLow>,
+    pub specification_sha256: [u8; 32],
+    pub topology: SolvedTopology,
+}
+
+/// Apply `scenario`'s overrides to its base's bytes, then serialize, hash
+/// and solve, as `campaign` does before a run; a refusal is printed and its
+/// code returned.
+pub(crate) fn effective(scenario: &Scenario, base: &[u8]) -> Result<Effective, ExitCode> {
+    let (mut spec, _) = crate::parse_spec(base).map_err(|(mut r, code)| {
         r.error.message = format!("scenario `{}`, base: {}", scenario.name, r.error.message);
         emit(&r, code)
     })?;
-    let held = apply(&scenario, &mut spec).map_err(|e| {
+    let held = apply(scenario, &mut spec).map_err(|e| {
         refuse(
             e.kind,
             e.id.as_deref(),
@@ -220,15 +268,11 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
     })?;
     let specification_sha256 = digest(&overridden);
     let (topology, _) = crate::solve_spec(&spec, &hex(specification_sha256))?;
-    let run_id = rules::run_id(&scenario.sha256, &specification_sha256, firmware_sha256);
-    Ok(Prepared {
-        path: path.to_path_buf(),
-        base_sha256: digest(&base),
-        scenario,
+    Ok(Effective {
+        spec,
+        held,
         specification_sha256,
         topology,
-        held,
-        run_id,
     })
 }
 
@@ -468,7 +512,7 @@ fn run_one(
 /// controller, its SCL and SDA lines and its devices, from the solved
 /// topology alone (`INV-07`, `RUL-16`). A topology whose lines, controller
 /// and devices do not agree is an internal error, never a guess.
-fn solved_buses(t: &SolvedTopology) -> Result<Vec<Record>, String> {
+pub(crate) fn solved_buses(t: &SolvedTopology) -> Result<Vec<Record>, String> {
     let mut lines: BTreeMap<&str, Vec<(&aethelgard_ir::PinAssignment, BusLine)>> = BTreeMap::new();
     for (net, a) in &t.analog_lines {
         let assignment = t
@@ -708,7 +752,9 @@ struct Replayed {
 /// `replay`'s checks, in its order: the strict reader, the run directory's
 /// name, then the campaign's run rules. `attribute` applies exactly these
 /// (`AET-WO-3100` §1.3); a refusal is printed and its code returned.
-fn checked(dir: &Path) -> Result<(aethelgard_chaos::Replayed, rules::RunSummary), ExitCode> {
+pub(crate) fn checked(
+    dir: &Path,
+) -> Result<(aethelgard_chaos::Replayed, rules::RunSummary), ExitCode> {
     let replayed = match aethelgard_chaos::replay_dir(dir) {
         Ok(r) => r,
         Err(e) => return Err(refuse(e.kind(), None, e.to_string(), EXIT_UNREADABLE)),
