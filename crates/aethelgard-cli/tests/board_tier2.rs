@@ -9,6 +9,8 @@
 
 #![cfg(feature = "with-tools")]
 
+mod common;
+
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -440,14 +442,16 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
             ("campaign", "pass"),
         ]
     );
-    // Tier 2 runs as root in the image, so every gate's tools ran under the
-    // tool uid (AET-WO-1601 §1.2); as a user, none did.
-    let separate = rustix::process::geteuid().is_root();
+    // Each gate's boundary is what its tools' read grants make it (ruled on
+    // PR #96): in the pinned image, Kani's kit is uid 1001's, so `prove` says
+    // `toolchain`; under rootless podman every gate says `user_namespace`.
     for g in v["gates"].as_array().unwrap() {
         if g["gate"] == "prove" {
             assert_eq!(g["harness_provenance"], "generated");
         }
-        assert_eq!(g["uid_boundary"], separate, "{g}");
+        let (holds, unmet) = common::expected_boundary(&gate_reads(g["gate"].as_str().unwrap()));
+        assert_eq!(g["uid_boundary"], holds, "{g}");
+        assert_eq!(g["uid_boundary_unmet"].as_str(), unmet, "{g}");
     }
     // The ELF is the one `build` gives for the committed board anywhere.
     let elf = dir.join("reference.elf");
@@ -513,6 +517,35 @@ fn verify_fails_the_47k_pull_up_with_the_campaigns_findings() {
         "{v}"
     );
     assert_eq!(v["campaign"][0]["verdict"], "fail");
+}
+
+/// The paths each gate's tools add to their read grant beyond the system set,
+/// as the CLI grants them.
+fn gate_reads(gate: &str) -> Vec<PathBuf> {
+    let var = |name: &str| PathBuf::from(std::env::var_os(name).expect(name));
+    let bridge = Path::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let mut reads = Vec::new();
+    match gate {
+        "erc" | "drc" => reads.extend(common::tool_dirs("kicad-cli")),
+        "prove" => {
+            reads.extend(common::tool_dirs("cargo"));
+            reads.extend(common::tool_dirs("cargo-kani"));
+            reads.extend([var("KANI_HOME"), var("RUSTUP_HOME")]);
+        }
+        "build" => {
+            reads.extend(common::tool_dirs("cargo"));
+            reads.push(var("RUSTUP_HOME"));
+        }
+        "simulate" | "campaign" => {
+            reads.extend(common::tool_dirs("renode"));
+            reads.push(bridge);
+        }
+        other => panic!("no read grant known for gate {other}"),
+    }
+    reads
 }
 
 /// The generated board's ELF, built by `aethelgard build` from a fresh copy.
@@ -609,7 +642,9 @@ fn as_root_a_third_uid_cannot_change_what_build_reads() {
     let (code, stdout) = out.unwrap();
     let v = one(&stdout);
     assert_eq!(code, Some(0), "{v}");
-    assert_eq!(v["sandbox"]["uid_boundary"], true, "{v}");
+    let (holds, unmet) = common::expected_boundary(&gate_reads("build"));
+    assert_eq!(v["sandbox"]["uid_boundary"], holds, "{v}");
+    assert_eq!(v["sandbox"]["uid_boundary_unmet"].as_str(), unmet, "{v}");
     assert_eq!(v["elf"]["sha256"], want, "{v}");
     assert_eq!(sha(&fs::read(&elf).unwrap()), want);
     assert!(

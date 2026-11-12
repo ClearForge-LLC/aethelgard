@@ -81,6 +81,9 @@ struct Gate {
     /// §1.2), as the gate's own verdict says; null when it did not run. For
     /// the campaign, true only when every run says so.
     uid_boundary: Option<bool>,
+    /// When `uid_boundary` is false, the first condition that failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    uid_boundary_unmet: Option<String>,
     /// The sha256 the gate reports for what it judged, equal to the generated one.
     input_sha256: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -250,6 +253,9 @@ fn gate_report(name: &'static str, harness: Option<String>, ran: &Ran) -> Gate {
         exit_code: Some(ran.code),
         tool_version: v["tool"]["version"].as_str().map(str::to_owned),
         uid_boundary: Some(v["sandbox"]["uid_boundary"] == true),
+        uid_boundary_unmet: v["sandbox"]["uid_boundary_unmet"]
+            .as_str()
+            .map(str::to_owned),
         input_sha256: v["input"]["sha256"].as_str().map(str::to_owned),
         harness_provenance: v["harness_provenance"].as_str().map(str::to_owned),
         cover_count: v["cover_count"].as_u64(),
@@ -270,6 +276,7 @@ fn not_run(name: &'static str) -> Gate {
         exit_code: None,
         tool_version: None,
         uid_boundary: None,
+        uid_boundary_unmet: None,
         input_sha256: None,
         harness_provenance: None,
         cover_count: None,
@@ -710,6 +717,9 @@ fn run_gates(
     }
     let mut g = gate_report("campaign", None, &ran);
     g.uid_boundary = Some(every_run_separated(runs));
+    g.uid_boundary_unmet = runs
+        .iter()
+        .find_map(|line| line["uid_boundary_unmet"].as_str().map(str::to_owned));
     // The design must survive every scenario: each run's own verdict is
     // `pass`, and the campaign matched every expectation. A scenario that
     // expects a fail can never let `verify` pass (`AET-WO-3301` §3.2).

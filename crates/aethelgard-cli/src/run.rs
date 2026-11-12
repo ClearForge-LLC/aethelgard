@@ -22,7 +22,7 @@ use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::os::unix::process::{CommandExt, ExitStatusExt, parent_id};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio, exit};
@@ -238,11 +238,29 @@ pub struct SandboxReport {
     /// seccomp filter. Always true: the filter is required, so no verdict
     /// exists without it.
     pub sockets_denied: bool,
-    /// The tool ran under [`TOOL_UID`], switched to and read back by the
-    /// trampoline, because the CLI ran as root (`AET-WO-1601` §1.2, `RUL-19`).
-    /// False otherwise: then a process of the caller's uid can change what
-    /// the tool reads (`AET-WO-3301` F1).
+    /// True only when all three hold (`AET-WO-1601` §1.2, ruled on PR #96,
+    /// `RUL-19`): the tool ran under [`TOOL_UID`] and [`TOOL_GID`], switched
+    /// to and read back by the trampoline; the CLI's root is the initial user
+    /// namespace's; and every path its read grant adds beyond the system set
+    /// is root's and writable by no group or other. False otherwise, and
+    /// `uid_boundary_unmet` names the first that failed.
     pub uid_boundary: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uid_boundary_unmet: Option<Unmet>,
+}
+
+/// The first condition of `uid_boundary` that did not hold.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Unmet {
+    /// The tool ran as the caller, because the CLI did not run as root.
+    ToolUid,
+    /// The CLI's root is not the initial namespace's: under rootless podman
+    /// the namespace's owner can reach every process in it (`AET-WO-1601` R4).
+    UserNamespace,
+    /// A path the tool may read, beyond the system directories, is not root's
+    /// alone (`AET-WO-1601` A1: Kani's kit in the pinned image).
+    Toolchain,
 }
 
 impl SandboxReport {
@@ -255,8 +273,89 @@ impl SandboxReport {
             scoped: landlock_abi >= 6,
             sockets_denied: true,
             uid_boundary,
+            uid_boundary_unmet: (!uid_boundary).then_some(Unmet::ToolUid),
         }
     }
+
+    /// `uid_boundary` false for `unmet`, unless an earlier condition already
+    /// failed. A verdict with several tools takes each tool's report.
+    pub fn unmet(&mut self, unmet: Option<Unmet>) {
+        if self.uid_boundary && unmet.is_some() {
+            self.uid_boundary = false;
+            self.uid_boundary_unmet = unmet;
+        }
+    }
+}
+
+/// The CLI's user namespace is the initial one: its uid map is the identity
+/// over every uid (`0 0 4294967295`), which only the initial namespace, or one
+/// the real root made, can have. Read once per process.
+fn initial_user_namespace() -> bool {
+    static INITIAL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *INITIAL.get_or_init(|| {
+        fs::read_to_string("/proc/self/uid_map").is_ok_and(|map| identity_map(&map))
+    })
+}
+
+fn identity_map(map: &str) -> bool {
+    map.split_whitespace().collect::<Vec<_>>() == ["0", "0", "4294967295"]
+}
+
+/// Whether an entry may stand in a toolchain: root's and writable by no group
+/// or other. An ancestor of a granted path may also be a sticky directory,
+/// such as `/tmp`, where no one but root can rename what root put.
+fn entry_ok(uid: u32, mode: u32, ancestor: bool) -> bool {
+    uid == 0 && (mode & 0o022 == 0 || (ancestor && mode & 0o1000 != 0))
+}
+
+/// Whether `dir`, a path a tool's read grant adds beyond [`SYSTEM_DIRS`],
+/// `/proc` and `/dev`, is root's alone: every ancestor of its real path, and
+/// everything beneath it, links not followed (ruled on PR #96, condition 3).
+/// Checked once per path per process.
+fn toolchain_clean(dir: &Path) -> bool {
+    static SEEN: std::sync::Mutex<std::collections::BTreeMap<PathBuf, bool>> =
+        std::sync::Mutex::new(std::collections::BTreeMap::new());
+    let Ok(real) = fs::canonicalize(dir) else {
+        return false;
+    };
+    let exempt = SYSTEM_DIRS
+        .iter()
+        .chain(&["/proc", "/dev"])
+        .any(|s| real.starts_with(s));
+    if exempt {
+        return true;
+    }
+    let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(&clean) = seen.get(&real) {
+        return clean;
+    }
+    let ok = |p: &Path, ancestor: bool| {
+        fs::symlink_metadata(p)
+            .is_ok_and(|m| m.file_type().is_symlink() || entry_ok(m.uid(), m.mode(), ancestor))
+    };
+    let mut clean = real.ancestors().skip(1).all(|a| ok(a, true));
+    let mut stack = vec![real.clone()];
+    while clean && let Some(d) = stack.pop() {
+        clean = ok(&d, false);
+        let Ok(entries) = fs::read_dir(&d) else {
+            clean = false;
+            break;
+        };
+        for entry in entries {
+            let Ok(entry) = entry else {
+                clean = false;
+                break;
+            };
+            match entry.metadata() {
+                Ok(m) if m.is_dir() => stack.push(entry.path()),
+                Ok(m) if m.file_type().is_symlink() => {}
+                Ok(m) => clean &= entry_ok(m.uid(), m.mode(), false),
+                Err(_) => clean = false,
+            }
+        }
+    }
+    seen.insert(real, clean);
+    clean
 }
 
 /// How a tool run ended.
@@ -435,6 +534,14 @@ impl Invocation<'_> {
                     file.display()
                 ),
             ));
+        }
+        let mut sandbox = sandbox;
+        if sandbox.uid_boundary {
+            if !initial_user_namespace() {
+                sandbox.unmet(Some(Unmet::UserNamespace));
+            } else if !self.read_only.iter().all(|p| toolchain_clean(p)) {
+                sandbox.unmet(Some(Unmet::Toolchain));
+            }
         }
         Ok(Output {
             ended,
@@ -1501,6 +1608,50 @@ mod tests {
         });
         assert_eq!(code, 70);
         assert!(calls > 1, "returned on the first NotFound");
+    }
+
+    /// The three conditions (ruled on PR #96): the identity map is the only
+    /// initial namespace; an entry is clean only when root's and writable by
+    /// no group or other (a sticky ancestor allowed); a path a user owns is
+    /// never clean, a system directory is not walked; and the first failed
+    /// condition is the one named.
+    #[test]
+    fn uid_boundary_holds_only_when_all_three_conditions_do() {
+        assert!(identity_map("         0          0 4294967295\n"));
+        assert!(!identity_map("0 1001 1\n1 165536 65536\n"));
+        assert!(!identity_map("0 0 65536\n"));
+        assert!(!identity_map("0 0 4294967295\n1 1 1\n"));
+        assert!(entry_ok(0, 0o40755, false));
+        assert!(!entry_ok(0, 0o40775, false));
+        assert!(!entry_ok(0, 0o40757, false));
+        assert!(!entry_ok(1001, 0o40755, false));
+        assert!(entry_ok(0, 0o41777, true), "a sticky ancestor such as /tmp");
+        assert!(
+            !entry_ok(0, 0o41777, false),
+            "a sticky directory in a toolchain"
+        );
+        assert!(
+            toolchain_clean(Path::new("/usr/bin")),
+            "the system set is not walked"
+        );
+        let mine = env::temp_dir().join(format!("aet-1601-clean-{}", std::process::id()));
+        fs::create_dir_all(&mine).unwrap();
+        assert_eq!(toolchain_clean(&mine), geteuid().is_root());
+        fs::remove_dir_all(&mine).unwrap();
+        let mut s = SandboxReport::from_abi(6, true);
+        assert_eq!((s.uid_boundary, s.uid_boundary_unmet), (true, None));
+        s.unmet(None);
+        assert!(s.uid_boundary);
+        s.unmet(Some(Unmet::UserNamespace));
+        s.unmet(Some(Unmet::Toolchain));
+        assert_eq!(
+            (s.uid_boundary, s.uid_boundary_unmet),
+            (false, Some(Unmet::UserNamespace))
+        );
+        let s = SandboxReport::from_abi(6, false);
+        assert_eq!(s.uid_boundary_unmet, Some(Unmet::ToolUid));
+        let json = serde_json::to_value(s).unwrap();
+        assert_eq!(json["uid_boundary_unmet"], "tool_uid");
     }
 
     /// `uid_boundary` is read only from the trampoline's own line, and only

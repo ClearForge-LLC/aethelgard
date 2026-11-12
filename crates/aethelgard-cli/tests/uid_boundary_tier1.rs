@@ -223,8 +223,10 @@ if /bin/mv "$in" "$in.aside" 2>/dev/null; then echo "rename=yes" >> "$said"; els
     assert_eq!(out.status.code(), Some(1), "{v}");
     let lines = said(&v);
     let me = rustix::process::geteuid().as_raw();
+    let (holds, unmet) = common::expected_boundary(std::slice::from_ref(&tb));
+    assert_eq!(v["sandbox"]["uid_boundary"], holds, "{v}");
+    assert_eq!(v["sandbox"]["uid_boundary_unmet"].as_str(), unmet, "{v}");
     if root() {
-        assert_eq!(v["sandbox"]["uid_boundary"], true, "{v}");
         assert_eq!(
             lines,
             [
@@ -237,9 +239,37 @@ if /bin/mv "$in" "$in.aside" 2>/dev/null; then echo "rename=yes" >> "$said"; els
             ]
         );
     } else {
-        assert_eq!(v["sandbox"]["uid_boundary"], false, "{v}");
+        assert_eq!(unmet, Some("tool_uid"));
         assert!(lines[0].starts_with(&format!("ids={me} ")), "{lines:?}");
     }
+}
+
+/// A toolbox another user could write: as the initial namespace's root,
+/// `uid_boundary` is false with `toolchain`, though the tool did run under the
+/// tool uid (ruled on PR #96, condition 3). The control is clean.
+#[test]
+fn a_toolbox_another_user_could_write_makes_uid_boundary_false() {
+    let dir = Scratch::new("uid-toolchain");
+    let tb = toolbox(&dir, "");
+    let sch = schematic(&dir, FLAT);
+    let boundary = |tb: &Path| {
+        let v = json(&erc(tb, &sch, None, None));
+        (
+            v["sandbox"]["uid_boundary"].clone(),
+            v["sandbox"]["uid_boundary_unmet"].clone(),
+        )
+    };
+    let want = |(holds, unmet): (bool, Option<&str>)| (Value::from(holds), Value::from(unmet));
+    assert_eq!(
+        boundary(&tb),
+        want(common::expected_boundary(std::slice::from_ref(&tb)))
+    );
+    fs::set_permissions(&tb, fs::Permissions::from_mode(0o775)).unwrap();
+    let dirty = common::expected_boundary(std::slice::from_ref(&tb));
+    if common::initial_root() {
+        assert_eq!(dirty, (false, Some("toolchain")));
+    }
+    assert_eq!(boundary(&tb), want(dirty));
 }
 
 #[test]

@@ -398,12 +398,16 @@ fn the_2k2_reference_scenario_passes_archives_and_replays_identically() {
     assert_eq!(line["matched"], true);
     assert_eq!(line["findings"], json!([]));
     assert_eq!(line["expect_findings"], json!([]));
-    // The boot's tools ran under the tool uid exactly when this is root (AET-WO-1601).
+    // The boot's boundary names why it is false, and as a user it always is
+    // (AET-WO-1601, PR #96).
     assert_eq!(
-        line["uid_boundary"],
-        rustix::process::geteuid().is_root(),
+        line["uid_boundary"] == true,
+        line["uid_boundary_unmet"].is_null(),
         "{line}"
     );
+    if !rustix::process::geteuid().is_root() {
+        assert_eq!(line["uid_boundary_unmet"], "tool_uid", "{line}");
+    }
     assert_eq!(summary["ok"], true);
     assert_eq!(summary["verdict"], "pass");
     assert_eq!(summary["check"], "campaign");

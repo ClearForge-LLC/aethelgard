@@ -1109,6 +1109,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         }
     };
     // The analog findings first: they are the evidence the boot's effect follows.
+    let bridge = analog.as_ref().and_then(|(pass, _)| pass.sandbox);
     let (analog, findings) = match analog {
         Some((pass, _)) => {
             let mut all = pass.findings;
@@ -1126,6 +1127,10 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         out.sandbox,
         findings,
     );
+    // The bridge's tools are this verdict's too (AET-WO-1601, PR #96).
+    if let Some(bridge) = bridge {
+        v.sandbox.unmet(bridge.uid_boundary_unmet);
+    }
     v.machine = machine;
     if let (Some(r), Some(plan)) = (&ready, &plan) {
         v.boot = Some(boot_report(r, plan, observed.as_ref()));
