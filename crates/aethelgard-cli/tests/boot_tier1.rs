@@ -630,7 +630,10 @@ fn a_boot_past_the_wall_bound_fails_and_names_it() {
     let (code, v, took) = bounded("", "/bin/sleep 60");
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["wall_bound_exceeded"]);
-    assert!(took.as_secs() >= 30 && took.as_secs() < 35, "{took:?}");
+    // The bound is 30 s and the stub sleeps 60 s, so any upper limit below
+    // 60 s shows the bound killed it; the slack covers teardown on a loaded
+    // runner (35.29 s was measured on CI).
+    assert!(took.as_secs() >= 30 && took.as_secs() < 50, "{took:?}");
 }
 
 // ---- The analog pre-pass (AET-WO-2200 §1.4), with a stub bridge -----------
