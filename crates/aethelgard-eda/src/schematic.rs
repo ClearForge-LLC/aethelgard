@@ -236,38 +236,100 @@ const STRAP: u32 = 10_000;
 struct Builder<'a> {
     spec: &'a Specification,
     parts: Vec<Part>,
-    used: BTreeSet<String>,
+    used: Taken,
     next: BTreeMap<char, u32>,
     rails: BTreeSet<String>,
-    names: BTreeSet<String>,
+    names: Taken,
+}
+
+/// Names claimed so far, keyed by their ASCII-folded spelling, each holding
+/// the spelling that claimed it. KiCad's ERC refuses labels and references
+/// that differ only in case (`AET-WO-1204`), so two spellings of one folded
+/// name collide; the names themselves are emitted as written.
+#[derive(Default)]
+struct Taken(BTreeMap<String, String>);
+
+impl Taken {
+    fn of(names: impl IntoIterator<Item = String>) -> Self {
+        Self(
+            names
+                .into_iter()
+                .map(|n| (n.to_ascii_lowercase(), n))
+                .collect(),
+        )
+    }
+
+    /// The spelling that already holds `name`'s folded form, if any.
+    fn holder(&self, name: &str) -> Option<&str> {
+        self.0.get(&name.to_ascii_lowercase()).map(String::as_str)
+    }
+
+    /// Claims `name`; `Err(holder)` when its folded form is taken, by
+    /// the same spelling or another.
+    fn claim(&mut self, name: &str) -> Result<(), String> {
+        match self.0.entry(name.to_ascii_lowercase()) {
+            std::collections::btree_map::Entry::Occupied(e) => Err(e.get().clone()),
+            std::collections::btree_map::Entry::Vacant(e) => {
+                e.insert(name.to_owned());
+                Ok(())
+            }
+        }
+    }
+}
+
+/// The refusal for a claim that failed. Another spelling of the name names
+/// both, as `pcb`'s pair check does (`a and b`): KiCad's ERC refuses the pair.
+fn collision(name: &str, holder: String, refuse: fn(String) -> EmitError) -> EmitError {
+    if holder == name {
+        refuse(holder)
+    } else {
+        refuse(format!("{name} and {holder}"))
+    }
 }
 
 impl Builder<'_> {
     /// The next free `U<n>`, `R<n>` or `C<n>`, skipping every reference the
-    /// specification uses.
-    fn reference(&mut self, prefix: char) -> String {
+    /// specification spells that way. A specification reference that differs
+    /// from it only in case is refused (`DuplicateReference`), never skipped.
+    fn reference(&mut self, prefix: char) -> Result<String, EmitError> {
         let n = self.next.entry(prefix).or_insert(0);
         loop {
             *n += 1;
             let r = format!("{prefix}{n}");
-            if !self.used.contains(&r) {
-                self.used.insert(r.clone());
-                return r;
+            match self.used.holder(&r) {
+                Some(holder) if holder == r => {}
+                Some(holder) => {
+                    return Err(collision(
+                        &r,
+                        holder.to_owned(),
+                        EmitError::DuplicateReference,
+                    ));
+                }
+                None => {
+                    self.used.claim(&r).expect("holder was None");
+                    return Ok(r);
+                }
             }
         }
     }
 
     /// An emitter-chosen net, refused if the specification already uses the
-    /// name for something else.
+    /// name, in any case, for something else.
     fn own_net(&mut self, name: String) -> Result<String, EmitError> {
-        if !self.names.insert(name.clone()) {
-            return Err(EmitError::ReservedName(name));
-        }
+        self.names
+            .claim(&name)
+            .map_err(|holder| collision(&name, holder, EmitError::ReservedName))?;
         Ok(name)
     }
 
-    fn passive(&mut self, kind: char, value: String, one: Conn, two: Conn) {
-        let reference = self.reference(kind);
+    fn passive(
+        &mut self,
+        kind: char,
+        value: String,
+        one: Conn,
+        two: Conn,
+    ) -> Result<(), EmitError> {
+        let reference = self.reference(kind)?;
         let (lib_id, footprint) = if kind == 'R' {
             (R, R_FOOTPRINT)
         } else {
@@ -282,6 +344,7 @@ impl Builder<'_> {
             note: None,
             decouples: None,
         });
+        Ok(())
     }
 
     fn rail(&mut self, domain: &str) -> Conn {
@@ -297,17 +360,18 @@ impl Builder<'_> {
     /// A bidirectional pin strapped to a rail, through a resistor.
     fn strap(&mut self, reference: &str, pin: &str, rail: Conn) -> Result<Conn, EmitError> {
         let net = self.own_net(format!("{reference}_{pin}"))?;
-        self.passive('R', ohms(STRAP), Conn::Net(net.clone()), rail);
+        self.passive('R', ohms(STRAP), Conn::Net(net.clone()), rail)?;
         Ok(Conn::Net(net))
     }
 
-    fn decouple(&mut self, ic: &str, rail: &str, value: &str) {
+    fn decouple(&mut self, ic: &str, rail: &str, value: &str) -> Result<(), EmitError> {
         let r = self.rail(rail);
         let g = self.ground();
-        self.passive('C', value.to_owned(), r, g);
+        self.passive('C', value.to_owned(), r, g)?;
         if let Some(cap) = self.parts.last_mut() {
             cap.decouples = Some(ic.to_owned());
         }
+        Ok(())
     }
 }
 
@@ -360,12 +424,12 @@ fn design(
             known: "STM32H753ZITx",
         });
     }
-    let mut used = BTreeSet::new();
+    let mut used = Taken::default();
     for r in spec
-        .i2c_devices
+        .declared_i2c_devices()
         .iter()
         .map(|d| &d.reference)
-        .chain(spec.spi_devices.iter().map(|d| &d.reference))
+        .chain(spec.declared_spi_devices().iter().map(|d| &d.reference))
     {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
         // flag) and drops it from the netlist and BOM, and the emitter names its
@@ -373,30 +437,29 @@ fn design(
         if r.starts_with('#') {
             return Err(EmitError::ReservedName(r.clone()));
         }
-        if !used.insert(r.clone()) {
-            return Err(EmitError::DuplicateReference(r.clone()));
-        }
+        used.claim(r)
+            .map_err(|holder| collision(r, holder, EmitError::DuplicateReference))?;
     }
     // Every name the specification gives a net or a rail; an emitter net may
     // not take one.
-    let mut names: BTreeSet<String> = spec.voltage_domains.iter().map(|d| d.id.clone()).collect();
+    let mut spelled: Vec<String> = spec.voltage_domains.iter().map(|d| d.id.clone()).collect();
     for bus in &spec.i2c_buses {
-        names.extend([bus.sda.net.clone(), bus.scl.net.clone()]);
+        spelled.extend([bus.sda.net.clone(), bus.scl.net.clone()]);
     }
     for bus in &spec.spi_buses {
-        names.extend([
+        spelled.extend([
             bus.sck.net.clone(),
             bus.mosi.net.clone(),
             bus.miso.net.clone(),
         ]);
     }
-    for d in &spec.spi_devices {
-        names.insert(d.cs.net.clone());
+    for d in spec.declared_spi_devices() {
+        spelled.push(d.cs.net.clone());
     }
-    if names.contains(GND) {
-        return Err(EmitError::ReservedName(GND.into()));
-    }
-    names.insert(GND.into());
+    let mut names = Taken::of(spelled);
+    names
+        .claim(GND)
+        .map_err(|holder| collision(GND, holder, EmitError::ReservedName))?;
     let mut b = Builder {
         spec,
         parts: Vec::new(),
@@ -407,7 +470,7 @@ fn design(
     };
 
     // The MCU.
-    let mcu_ref = b.reference('U');
+    let mcu_ref = b.reference('U')?;
     let mcu_sym = library::symbol("MCU_ST_STM32H7:STM32H753ZITx")?;
     let mcu_pins = pins(&mcu_sym).map_err(EmitError::Internal)?;
     let mut conns = BTreeMap::new();
@@ -444,9 +507,9 @@ fn design(
         let net = b.own_net(format!("{mcu_ref}_VCAP{}", i + 1))?;
         conns.insert(p.number.clone(), Conn::Net(net.clone()));
         let g = b.ground();
-        b.passive('C', "2u2".into(), Conn::Net(net), g);
+        b.passive('C', "2u2".into(), Conn::Net(net), g)?;
     }
-    b.decouple(&mcu_ref, &spec.mcu.supply.clone(), "100n");
+    b.decouple(&mcu_ref, &spec.mcu.supply.clone(), "100n")?;
     b.parts.push(Part {
         lib_id: "MCU_ST_STM32H7:STM32H753ZITx",
         reference: mcu_ref,
@@ -464,10 +527,10 @@ fn design(
                 return Err(EmitError::UnsolvedNet(net.clone()));
             }
             let r = b.rail(&bus.domain);
-            b.passive('R', ohms(bus.pull_up_ohms), r, Conn::Net(net.clone()));
+            b.passive('R', ohms(bus.pull_up_ohms), r, Conn::Net(net.clone()))?;
         }
     }
-    for d in &spec.i2c_devices {
+    for d in spec.declared_i2c_devices() {
         let bus = spec
             .i2c_buses
             .iter()
@@ -544,9 +607,9 @@ fn design(
             }
         };
         device(&mut b, &d.reference, lib_id, conns)?;
-        b.decouple(&d.reference, &d.supply, "100n");
+        b.decouple(&d.reference, &d.supply, "100n")?;
     }
-    for d in &spec.spi_devices {
+    for d in spec.declared_spi_devices() {
         let bus = spec
             .spi_buses
             .iter()
@@ -583,7 +646,7 @@ fn design(
         ]
         .to_vec();
         device(&mut b, &d.reference, "Memory_Flash:W25Q32JVSS", conns)?;
-        b.decouple(&d.reference, &d.supply, "100n");
+        b.decouple(&d.reference, &d.supply, "100n")?;
     }
     Ok((b.parts, b.rails))
 }

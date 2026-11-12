@@ -222,6 +222,38 @@ fn a_net_the_emitter_would_use_is_refused_by_name() {
     assert_eq!(v["error"]["kind"], "ReservedName", "{v}");
 }
 
+/// `AET-WO-1204` §1.3: names that differ only in case are refused, each error
+/// naming both spellings. KiCad's ERC refuses such a pair.
+#[test]
+fn names_that_differ_only_in_case_from_the_emitters_are_refused() {
+    let d = Dir::new("fold");
+    let refused = |spec: &Value| json_line(&emit(&write_spec(&d, spec), &d.0.join("o")), 2);
+    let has_both = |v: &Value, field: &str, a: &str, b: &str| {
+        let text = v["error"][field].as_str().unwrap().to_owned();
+        assert!(text.contains(a) && text.contains(b), "{a} / {b}: {v}");
+        assert!(!d.0.join("o").exists(), "nothing is written for a refusal");
+    };
+    // A signal net beside the emitter's own `U1_VCAP1`.
+    let mut spec = sentinel_spec();
+    spec["spi_devices"][0]["cs"]["net"] = json!("u1_vcap1");
+    let v = refused(&spec);
+    assert_eq!(v["error"]["kind"], "ReservedName", "{v}");
+    has_both(&v, "id", "u1_vcap1", "U1_VCAP1");
+    // A device reference beside the MCU's `U1`.
+    let mut spec = sentinel_spec();
+    spec["i2c_devices"][1]["reference"] = json!("u1");
+    let v = refused(&spec);
+    assert_eq!(v["error"]["kind"], "DuplicateReference", "{v}");
+    has_both(&v, "id", "u1", "U1");
+    // `U2` beside `u2`: `validate` refuses it, naming the first spelling.
+    let mut spec = sentinel_spec();
+    spec["i2c_devices"][1]["reference"] = json!("u2");
+    let v = refused(&spec);
+    assert_eq!(v["error"]["kind"], "DuplicateReference", "{v}");
+    assert_eq!(v["error"]["id"], "u2", "{v}");
+    has_both(&v, "message", "u2", "U2");
+}
+
 #[test]
 fn an_invalid_specification_is_refused_as_validate_refuses_it() {
     let d = Dir::new("invalid");
