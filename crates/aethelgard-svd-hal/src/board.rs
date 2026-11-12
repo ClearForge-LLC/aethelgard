@@ -2275,13 +2275,15 @@ mod tests {
         let mut s = solved();
         s.assignments.remove("SDA");
         s.analog_lines.remove("SDA");
-        assert_eq!(kind(generate("b", &s, &t)), "IncompletePeripheral");
+        // A bus without its SDA or SCL line is refused by `validate` since
+        // `AET-WO-1204`, before the generator looks.
+        assert_eq!(kind(generate("b", &s, &t)), "InvalidTopology");
 
         let mut s = solved();
         s.assignments
             .insert("SDA2".into(), assign("PB9", "I2C1", "I2C1_SDA", 4));
         s.analog_lines = analog_lines(&[("SCL", "BUS"), ("SDA", "BUS"), ("SDA2", "BUS")]);
-        assert_eq!(kind(generate("b", &s, &t)), "IncompletePeripheral");
+        assert_eq!(kind(generate("b", &s, &t)), "InvalidTopology");
 
         let mut s = solved();
         s.gpio.insert("CS2".into(), "PB6".into());

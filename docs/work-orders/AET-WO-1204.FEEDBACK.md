@@ -46,6 +46,7 @@ No topology a test got from `solve` moved, no committed generated file changed, 
 | `ir/tests/validate.rs` `solved()` | SDA line carried signal `I2C1_SCL` | `I2C1_SDA` (a fixture slip; the B1 rule counts lines by signal) |
 | `validate::solved_accepts_each_mode_and_refuses_any_other_ceiling` | ceilings 100k / 400k / 1M over lines of 300 ns | lines of 1000 / 300 / 120 ns respectively |
 | `svd-hal/src/board.rs` tests (three) | ceilings set to 100k / 1M / `A`,`B` over lines of 300 ns | `set_ceiling` sets the bound that derives the ceiling |
+| `svd-hal` `what_the_generator_cannot_emit_is_refused` (two cases: an I2C bus without its SDA, and with a second SDA) | expect `IncompletePeripheral` | expect `InvalidTopology` (the exactly-one-SDA-one-SCL rule of adversarial B1 refuses first; the cases remain refused) |
 | `svd-hal` `ceilings_must_number_the_i2c_peripherals...` | a ceiling for bus `OTHER` expects `CeilingMismatch` | expects `InvalidTopology` (validate refuses a bus with no line first) |
 
 No chaos or propose path builds a deliberately underived ceiling (none mutates `i2c_ceilings`; the suite is green).
@@ -67,7 +68,7 @@ No chaos or propose path builds a deliberately underived ceiling (none mutates `
 ## Reduction pass
 
 - `solve.rs`'s private `ceiling_hz` and its test moved, not duplicated.
-- **Now unreachable, outside the fence, not touched:** `svd-hal`'s `BoardError::CeilingMismatch` (`board.rs`). `validate` now guarantees one ceiling per I2C bus and one bus per peripheral, so the count check cannot fail on a validated topology. Backlog: delete it with its variant and kind.
+- **Now unreachable, outside the fence, not touched:** `svd-hal`'s `BoardError::CeilingMismatch` (`board.rs`), and its `IncompletePeripheral` for an I2C bus missing or doubling a line (still reachable for SPI). `validate` now guarantees one ceiling per I2C bus and one bus per peripheral, so the count check cannot fail on a validated topology. Backlog: delete it with its variant and kind.
 - `Taken` replaces two `BTreeSet`s plus an exact-duplicate branch; nothing else was added to `eda`.
 
 ## Gaps and backlog
