@@ -217,7 +217,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 - `AET-WO-3300` — the reference probe, `Sentinel-01`: specification, full gate run, fabrication package, and a bench comparison against the physical development board that records where simulation and reality disagreed.
 - `AET-WO-3301` — **merged (PR #91)** (Mythos review A3, A4, B1), build-only, strong tier, full adversarial pass: `aethelgard generate` writes the board crate, firmware and platform the README promises; `aethelgard verify --spec` regenerates everything into scratch, runs every gate on exactly those bytes, and prints one verdict naming every artifact hash and gate result (`RUL-19`). `prove` reports whether the harness is the generated one. It precedes `3300`, whose fabrication clause needs that verdict, and it closes the P0 "deliberate gap" (`build`).
 - `AET-WO-3302` — **reserved 2026-11-12** (Mythos review, roadmap order): the Nucleo-H753ZI bench comparison, run as soon as the board arrives and before `3200`'s proposals are trusted. It is split from `3300` so the only evidence about the declared-value gap (`RUL-19`) comes early. Human-track: Scotty's hands on the board.
-- `AET-WO-1205` — **written 2026-11-12** (`AET-WO-1204` §1.2 gap, ruled by the architect with Scotty's delegation), build-only, cheap tier, targeted adversarial pass. `SolvedTopology` carries each I2C bus's declared speed (solved schema version 2); `validate` holds a hand-written topology to the floor and the capacitance limit at that speed; the board generator admits only the modes at or under the declared speed, not the ceiling.
+- `AET-WO-1205` — **merged (PR #94)** (`AET-WO-1204` §1.2 gap, ruled by the architect with Scotty's delegation), build-only, cheap tier, targeted adversarial pass. `SolvedTopology` carries each I2C bus's declared speed (solved schema version 2); `validate` holds a hand-written topology to the floor and the capacitance limit at that speed; the board generator admits only the modes at or under the declared speed, not the ceiling.
 - `AET-WO-1601` — **written 2026-11-12** (`AET-WO-3301` F1 and F13; 1300 A8; 2100 F25; review A12.1), spike then build, strong tier, full adversarial pass. **Gates `AET-WO-3300`.** On Linux the boundary against a racing process is the uid, so: tools run under a separate unprivileged uid when the CLI runs as root (as in the image); every verdict discloses `uid_boundary`; a scratch root no other uid can plant configuration into; scratch paths in a safe character set; `check erc` refuses hierarchical sheets; `RLIMIT_FSIZE` on tool scratch. The deployment half (a dedicated uid on Furnace) is the operator's.
 - **Extraction, first step** (Mythos review B3): a capacitance estimate from routed length plus each pin's capacitance, judged against the declared bound, before `3300`. Full `AET-WO-1303` before `4500`.
 
@@ -231,7 +231,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 ### P4 — Sentinel-02, the flight controller
 
 **Goal:** the first board Aethelgard designs for use: a flight controller, fabricated and flown in a prototype drone, so the first custom board pays for itself.
-**Depends on:** P3, and `AET-WO-2301` (dynamic faults, with a rail-droop spike: the power model a flight controller's brownouts need; Mythos review, 2026-11-12). `4200` (SPI) now comes before `4100` (stackups), because every P4 clause needs SPI and only the last needs four layers. Sentinel-01 stays the reference probe; Sentinel-02 is the first board that is bought. Added 2026-11-09 at Scotty's direction. Intent only, with reserved ids, to be scoped after P3.
+**Depends on:** P3, and `AET-WO-2301` (dynamic faults, with a rail-droop spike: the power model a flight controller's brownouts need; Mythos review, 2026-11-12). `4200` (SPI) now comes before `4100` (stackups), because every P4 clause needs SPI and only the last needs four layers. **Confirmed by Scotty 2026-11-12:** `2301`, then `4200`, then `4100`; a flight controller's risk is in brownouts, sensor buses and timing under fault, and stackups matter only at fabrication. Sentinel-01 stays the reference probe; Sentinel-02 is the first board that is bought. Added 2026-11-09 at Scotty's direction. Intent only, with reserved ids, to be scoped after P3.
 
 **Why a flight controller, and why one chip.**
 - The STM32H753 is a common flight-controller processor (the Pixhawk FMUv6X class), so `RUL-08`'s anchor, its Renode twin and the board crate carry over unchanged.
@@ -390,12 +390,16 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | The same-uid race in a gate's scratch (`3301` F1), and a planted ancestor `.cargo` (`3301` F13) | `AET-WO-3301` | `AET-WO-1601` (written); gates `AET-WO-3300` |
 | `svd-hal`'s unreachable `CeilingMismatch` and I2C `IncompletePeripheral` | `1204` reduction | the next work order that owns `svd-hal`'s generator |
 | The emitter refuses a specification reference (`r1`, `c1`) that folds onto its own `R1` or `C1`; skipping to the next free folded name would serve the person better | `1204` review | the next work order that owns `aethelgard-eda`'s schematic |
-| A hand-written `SolvedTopology` is not held to the pull-up floor or the capacitance limit: it does not carry the bus's declared speed | `1204` §1.2 | `AET-WO-1205` (written; ruled 2026-11-12) |
+| A hand-written `SolvedTopology` is not held to the pull-up floor or the capacitance limit: it does not carry the bus's declared speed | `1204` §1.2 | **merged (PR #94)**: `i2c_speeds`, solved schema version 2 |
 | The verdict names cargo's version, not `rustc -vV`'s release, so a caller's `RUSTUP_TOOLCHAIN` could give two ELFs under one version string | `3301` L1 | the next work order that owns `build` |
 | The `verify` campaign gate's entry carries no tool version (Renode's is in `simulate`'s) | `3301` L3 | the next work order that owns `verify` |
 | `--against` compares files, so an extra empty directory is not reported | `3301` L4 | the next work order that owns `verify` |
 | `.gitignore` anchors only `/target/`; add `/crates/*/target/` | `3301` F16 | **done** (the `3301` reconciliation) |
 | `propose::write_out` is a third copy of `tree::write`'s write discipline | `3301` R2 | the next work order that owns `propose` |
+| `IrValidationError` and `SolveError` both carry `BusTooFast`, `PullUpBelowSinkFloor` and `BusCapacitanceOverLimit`; keep one set | `1205` F1 | the next work order that owns `aethelgard-ir`'s `solve` |
+| `propose` reads the declared speed from the specification; `i2c_speeds` now carries it in the topology (`RUL-16` tidying) | `1205` review | the next work order that owns `propose` |
+| `aethelgard mcp --root DIR`: every path flag confined to one directory | review A10.2; Scotty 2026-11-12 | **deferred by Scotty's ruling:** folded in with the deployment half of the uid boundary (`AET-WO-1601` §1.3), where a dedicated uid makes it a boundary |
+| `gh-write` with a `--draft` flag | `3200` F16 | **won't build** (Scotty 2026-11-12): the architect converts a proposal PR in one call. Revisit if proposal PRs become frequent (the P4 evolve loop) |
 | Split the `tools` job's tier 2 into two jobs | 3200 F17 | backlog: when `tools` passes 75 of its 90 minutes |
 | MCP path confinement (`--root`) | review A10.2 | Scotty's second opinion; until then the trust model in `architecture.md` §6 |
 
@@ -448,6 +452,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-12 | §5, §7.1 | `AET-WO-1204` reconciled (merged, PR #90); `AET-WO-1601` written from `AET-WO-3301` F1: the boundary is the uid; it gates `3300` | PRs #90, #91 |
 | 2026-11-12 | §5, §7.1 | `AET-WO-1205` written: the declared I2C speed in `SolvedTopology` | `AET-WO-1204` FEEDBACK |
 | 2026-11-12 | §5, §7, §7.1 | `AET-WO-3301` reconciled: `generate`, `build` and `verify` merged; the P0 gap (`build`) is closed; its F1 is `RUL-19` (4)'s residual until `AET-WO-1601` | PR #91 |
+| 2026-11-12 | §5, §7.1 | `AET-WO-1205` reconciled (merged, PR #94). Scotty's rulings of 2026-11-12 recorded: the P4 order confirmed, `--root` deferred to the uid boundary's deployment half, no `--draft` | PR #94; Scotty, 2026-11-12 |
 
 ## 9. Provenance
 
