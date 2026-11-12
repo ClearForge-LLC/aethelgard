@@ -787,3 +787,23 @@ fn the_dev_profile_optimises_the_router_crate() {
         .and_then(|e| e.get("opt-level"));
     assert_eq!(level, Some(&Value::Integer(2)));
 }
+
+/// `AET-WO-1900` (2200 F17): the bridge may depend on `serde_json` alone, so it
+/// cannot share the twin's decimal formatter. The two copies are held equal
+/// here, body for body, so neither can drift.
+#[test]
+fn the_bridge_and_the_twin_format_decimals_with_one_function() {
+    fn decimal_fn(path: &str) -> String {
+        let text = fs::read_to_string(root().join(path)).unwrap();
+        let from = text
+            .find("fn decimal(")
+            .unwrap_or_else(|| panic!("{path} has no `fn decimal(`"));
+        let len = text[from..].find("\n}\n").expect("the function ends");
+        text[from..from + len].to_owned()
+    }
+    assert_eq!(
+        decimal_fn("bridge/src/main.rs"),
+        decimal_fn("crates/aethelgard-twin/src/analog.rs"),
+        "the two `decimal` functions differ"
+    );
+}
