@@ -35,7 +35,7 @@ Each tool ran under `setpriv --reuid=U --regid=U --clear-groups`, with `HOME` an
 | the analog bridge (libngspice) | runs | **SIGSEGV (139)** | rc 0; output byte-identical to root's |
 | `ngspice -v` | runs | rc 0 | rc 0 |
 
-**Why 65533 failed (S7).** Under every uid with no passwd entry (65533 and 65520 measured), the bridge dies. `strace` shows NSS looking the uid up in `/etc/passwd`, then `/etc/userdb`, `/run/userdb`, `/run/host/userdb`, `/usr/local/lib/userdb` and `/usr/lib/userdb`, each `ENOENT`, and then `SIGSEGV` at address `0x20`, which is `pw_dir` in a NULL `struct passwd`. libngspice reads `getpwuid(getuid())->pw_dir` without checking. Uids 65534 (`nobody`) and 1000 (`kicad`) pass.
+**Why uid 65533 failed (S7).** (65533 is now the tool *gid*, which no lookup needs: A3.) Under every uid with no passwd entry (65533 and 65520 measured), the bridge dies. `strace` shows NSS looking the uid up in `/etc/passwd`, then `/etc/userdb`, `/run/userdb`, `/run/host/userdb`, `/usr/local/lib/userdb` and `/usr/lib/userdb`, each `ENOENT`, and then `SIGSEGV` at address `0x20`, which is `pw_dir` in a NULL `struct passwd`. libngspice reads `getpwuid(getuid())->pw_dir` without checking. Uids 65534 (`nobody`) and 1000 (`kicad`) pass.
 
 **No tool writes to its own installation** (S8). In every trace, the only refused writes outside `HOME` were KiCad's fontconfig cache opens above. That is not a §7 stop.
 
@@ -102,9 +102,9 @@ Covers are the two proofs' (`every_valid_sequence`, `i2c1_transfer_is_bounded_an
   - becomes uid 65534, gid 65533, with `set_thread_res_gid` and `set_thread_res_uid`;
   - reads all four uids, all four gids and `Groups:` back from `/proc/thread-self/status`.
 
-  Any failure is `SandboxUnavailable`, `id` `uid`, exit 4: there is no run as root. `drop_capabilities` then also checks that the bounding set is empty after a switch. The status line is `sandbox abi=N uid_boundary=0|1`, and `uid_boundary` is read from that line alone, never from a uid comparison. A CLI started as 65534 says `false`.
+  Any failure is `SandboxUnavailable`, `id` `uid`, exit 4: there is no run as root. `empty_bounding_set` reads the set back after emptying it, on both the root path and `drop_capabilities`' own. The status line is `sandbox abi=N uid_boundary=0|1`, and `uid_boundary` is read from that line alone, never from a uid comparison. A CLI started as 65534 says `false`.
 - **Root-owned copy, tool-writable directory** (`run.rs`, `hand_over` and `seal`). The first tool run in a root CLI's work directory seals everything the CLI put there (files 0444, directories 0555). It works by descriptor: `openat` with `O_NOFOLLOW`, then `fchmod`. Anything but a root-owned file or directory refuses the hand-over (the CLI copies no link). It then makes the directory root's, group 65533, mode 1770. A later run finds it handed over and touches nothing. The call directory is root:65533 0710 (`main.rs`). The bridge's own directory goes through the same hand-over. For `prove`, the crate copy's root directory is made the same before the hand-over (`run::add_only`), because cargo writes a missing `Cargo.lock` there (adversarial A2). A failed chown, chmod or hand-over is `SandboxUnavailable`, `id` `uid`, exit 4 (adversarial A6).
-- **`uid_boundary`** is in every verdict's `sandbox` object (`SandboxReport`). It is on every gate entry of `verify` (`null` for a gate that did not run; the campaign's is `true` only when every run line says so) and on every `campaign` run line.
+- **`uid_boundary`** is in every verdict's `sandbox` object (`SandboxReport`), with `uid_boundary_unmet` when it is false (the architect's ruling, below). It is on every gate entry of `verify` (`null` for a gate that did not run; the campaign's is `true` only when every run line says so) and on every `campaign` run line.
 - **§1.4, the scratch base** (`main.rs`, `scratch_base`). The base is `TMPDIR` if set (it must exist); otherwise `/var/lib/aethelgard` as root and `$HOME/.cache/aethelgard` as a user, made if missing. Every ancestor of its real path must be a directory owned by root or the effective uid, writable by no group or other, and (as root) searchable by others. The path must be in `[A-Za-z0-9/._-]`. Anything else is `ScratchUnsafe`, exit 4, naming the directory, before any tool runs.
 - **§1.5** (`kicad.rs`, `refuse_sheets`). `check erc` reads its copy with `aethelgard-eda`'s strict reader. Any `(sheet …)` is `HierarchicalSchematic`, exit 3, the same kind parity uses; a schematic that reader refuses is `MalformedSchematic`, exit 3. Both happen before the tool is looked for.
 - **§1.6, `RLIMIT_FSIZE` 64 MiB**, soft and hard (`run.rs`). After every run, a regular file at the cap anywhere in the work directory makes the call `ToolError`, exit 5. Cut off itself, a tool dies by `SIGXFSZ` (exit 5 as before).
@@ -127,14 +127,14 @@ Entry schema: `finding · where · severity · type · recommendation`.
 
 **Decision-needed:**
 
-- **A1 · The pinned tools image's Kani kit belongs to uid 1001 · `container/Dockerfile` (outside the fence) · high · decision-needed. This is the first thing to read.**
+- **A1 · The pinned tools image's Kani kit belongs to uid 1001 · `container/Dockerfile` (outside the fence) · high · ruled on PR #96: not a stop. `uid_boundary` now says `false`, `toolchain`, for `prove` in this image, and the `Dockerfile` fix is the architect's `AET-WO-1602`.**
   - Measured by the adversarial pass and re-checked by the builder. Everything under `/opt/kani/kani-0.68.0/` but its top two directories is `1001:1001`: 144 entries, `bin/cbmc` and `bin/kani-driver` among them. The Dockerfile untars as root and runs `chmod -R a+rX`, never `chown`. Nothing else under `/opt` or `/usr` belongs to anyone but root.
   - As uid 1001 in the image, the adversary swapped `kani-driver` for a stub that hands `--version` to the real driver. `prove` of a harness that begins `kani::assert(false, …)` went from exit 1 `proof_failed` to **exit 0, pass, `uid_boundary: true`**, with the same input sha.
   - So §5.1's "reach the toolchain" breaks for one uid in the published image. No process runs as 1001 there unless one is added, but the image's first `useradd` gets 1001, which is the README deployment section's own suggestion of a separate client uid.
   - **Not a §7 stop, by my reading.** §7 names four conditions, none of them this one, and B1–B4 held as posed in the second configuration. The fix is outside the fence (3301 F1 is the precedent for a measured break with no in-fence fix). Both in-fence mitigations (refusing `prove`, or reporting `false` for it) would change a §3 result in the pinned image, which is a ruling, not a build step. **READY rests on this reading; the architect may rule it a stop.**
   - **Recommendation:** `tar --no-same-owner` (or `chown -R root:root /opt/kani`) in `container/Dockerfile`, a new pinned image, and an image check that `find /opt /usr -xdev ! -uid 0` prints nothing. The README now says `uid_boundary` excludes no one who can write the toolchain, and names the check.
 
-- **F1 · §3's "re-run as root against root … the verdict says `false`" cannot happen · §3 · medium · decision-needed.**
+- **F1 · §3's "re-run as root against root … the verdict says `false`" cannot happen · §3 · medium · accepted on PR #96: root against root wins and says `true`.**
   - §1.2 makes a root CLI always run its tools as 65534, with no fallback. So no verdict from a root CLI says `false`.
   - Re-run root against root (C1b), every race still wins, as predicted, and the verdict says `true`. That is the truth §1.2 defines (the tool did run as 65534): the boundary never claimed to hold against root.
   - The `false` witness is C3b: the same CLI as a non-root uid in the image, raced by its own uid. All four broke, and every gate says `false`. The host row agrees (tier 1 as `forge`: `uid_boundary_is_true_exactly_when_the_tool_ran_under_the_tool_uid`).
@@ -179,7 +179,7 @@ Entry schema: `finding · where · severity · type · recommendation`.
 
 - **R1 · A process holding gid 65533 outside the sandbox** (only root can grant it, as primary or supplementary group) cannot change the input copy. It can rewrite what the tool writes and plant files in the tool's `HOME` and in `prove`'s add-only crate root, and so decide the verdict. Measured at b09ab98 (adversarial re-test): a `.cargo/config.toml` aliasing `kani` to a planted crate passed a proof of `false` (exit 0, `true`); a planted `build.rs` ran as the tool; a planted `rust-toolchain.toml` or garbage `Cargo.lock` was read (exit 5). The same alias already worked from the tool's `HOME`. Every such plant as uid 4242 was refused. The README says the holder can decide the verdict.
 - **R5 · A tool that ignores `SIGXFSZ` and deletes the file it was cut off on** is judged on what it reports (a stub measured `build_failed`, exit 1). It can turn a cut-off into the crate's `fail`, never a pass. rustc does not do this: killed by `SIGXFSZ`, it leaves its object at exactly 67108864 bytes, and `build` ends exit 5 (an 80 MiB static, measured).
-- **R4 · Under rootless podman, the user who owns the user namespace** (`forge` on Furnace) can reach every container process (adversarial A5). During a live `prove`, a host `forge` process went through `/proc/<cbmc>/cwd`, created a file in `tool/` and appended to the sealed `src/proofs.rs`, and the verdict said `true`. On Furnace, then, `true` excludes no `forge` process: not an agent session, not an MCP client running as `forge`. CI's rootful Docker has no such owner.
+- **R4 · Under rootless podman, the user who owns the user namespace** (now an honest `false`, `user_namespace`: the ruling below) (`forge` on Furnace) can reach every container process (adversarial A5). During a live `prove`, a host `forge` process went through `/proc/<cbmc>/cwd`, created a file in `tool/` and appended to the sealed `src/proofs.rs`, and the verdict said `true`. On Furnace, then, `true` excludes no `forge` process: not an agent session, not an MCP client running as `forge`. CI's rootful Docker has no such owner.
 - **R2 · Root can always race** (C1b).
 - **R3 · A non-root CLI gives `uid_boundary: false`** and a same-uid process wins (C3b). The deployment section says how to get a boundary without root. The verdict then still says `false`, an under-claim, which `RUL-19` prefers.
 
@@ -187,6 +187,40 @@ Entry schema: `finding · where · severity · type · recommendation`.
 
 - **D1 · `docs/architecture.md` §6** says a tool's scratch is under the system temporary directory and `RLIMIT_FSIZE` is backlog. Both changed here (§1.4, §1.6), and the uid boundary is new to §6's list of what every tool runs with.
 - **D2 · `RUL-19` (4) and the `verify` residual** in §6 can now name `uid_boundary`. A root CLI closes the 3301 F1 window to every uid but root and 65534.
+
+## The architect's ruling on PR #96: `uid_boundary` true only when all three hold
+
+As built for review, `true` claimed more than the run showed in two cases the CLI can see for itself: A1 and R4. Now `uid_boundary` is `true` only when all of these hold. Otherwise it is `false`, and `uid_boundary_unmet` names the first that failed:
+1. `tool_uid`: the trampoline switched to 65534:65533 and read it back.
+2. `user_namespace`: `/proc/self/uid_map` is exactly `0 0 4294967295`.
+3. `toolchain`: every read-grant path beyond the system set (`/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, `/etc`, `/proc`, `/dev`) is root's and writable by no group or other, all the way down. Links are not followed. Each ancestor of its real path must also be root's, unwritable or sticky.
+
+**Where it is built:**
+- conditions 2 and 3 are checked by the CLI in `Invocation::start`, after each run, once per path per process (`run.rs`, `initial_user_namespace` and `toolchain_clean`);
+- a verdict takes the first failure among its tools: `simulate` ANDs in the bridge's report (`analog::Pass::sandbox`);
+- `campaign` run lines and `verify`'s gate entries carry `uid_boundary_unmet`.
+
+**The cost, measured in the image** by walking the same paths with `find`: `/opt/cargo/bin` 5 entries in 3 ms; `/opt/rustup` 383 in 4 ms; `/opt/kani` 146 in 3 ms; `/opt/renode` 2,024 in 10 ms; the bridge's `target/debug` 22,352 in 49 ms. Each gate process walks each of its paths once. The ancestor check stops a walk before it starts when an ancestor fails, as `/repo` does below.
+
+**What it says, as measured:**
+
+| where | erc, drc | prove | build | simulate, campaign |
+|---|---|---|---|---|
+| Furnace, rootless podman, as root | `false` `user_namespace` | `false` `user_namespace` | `false` `user_namespace` | `false` `user_namespace` |
+| CI's `tools` job (rootful Docker, root): the PR's own run is the record | `true` | `false` `toolchain` (Kani's kit, A1) | `true` | **`false` `toolchain`** |
+| the engine image as root (the bridge in `/usr/local/bin`) | `true` | `false` `toolchain` | `true` | `true` |
+| any user | `false` `tool_uid` | `false` `tool_uid` | `false` `tool_uid` | `false` `tool_uid` |
+
+**One difference from the ruling's expectation.** In CI's `tools` job the bridge runs from `/repo/target/debug`, and `/repo` is the runner's checkout, owned by the runner's uid. That uid could replace the bridge, so `simulate` and `campaign` say `toolchain` there, not `true`. The same holds in the local podman layout (`/repo` 0775). It is the truth the rule was asked to tell. In the engine image the bridge sits in `/usr/local/bin`, a system directory.
+
+**The tests follow the truth through an oracle written apart from the CLI** (`tests/common`, `expected_boundary`): root, the uid map, and `find … ! -type l ( ! -uid 0 -o -perm /022 )` beneath each path, with each ancestor's owner and mode.
+- `verify_binds_the_reference_…` checks every gate against it.
+- `as_root_a_third_uid_cannot_change_what_build_reads` checks `build`'s verdict.
+- In tier 1: `uid_boundary_is_true_exactly_…` checks the stub; a new `a_toolbox_another_user_could_write_makes_uid_boundary_false` makes the toolbox 0775 (`toolchain` as initial root); and `campaign_tier1` checks that a line is `true` exactly when it names no unmet condition.
+- A unit test checks the uid-map parser, the entry rule (sticky only for ancestors) and the precedence. Where `KANI_HOME` and `RUSTUP_HOME` are set, it also checks that the walk agrees with `find`: in the pinned image, `/opt/kani` is not clean and `/opt/rustup` is.
+- Rootless podman reaches only `user_namespace`, so the `toolchain` rows rest on that unit cross-check locally and on the PR's CI run.
+
+**C2's B1–B4 still hold.** They were re-run at `788d4f2`, with the reductions, gid 65533, the add-only crate root and both merges of `main` (`~/.cache/aet-1601/adv/out/HEAD`, `C2h`). The no-racer control gave ELF `2d9ee2641f6e0a1b6e48f1637cefe4fa01cab3f97849a1dd074474c879fe0d2f` and covers 9, 7: `AET-WO-1205` left the reference ELF unchanged. As uid 4242, B1 to B4 all held, each with the reference ELF, covers 9, 7 and `verify` exit 0, and every attempt was `Permission denied`. The ruling changes only what is reported, not what is enforced.
 
 ## Adversarial pass (full, §5)
 
@@ -220,7 +254,7 @@ A default-model subagent ran one mutant per guard this WO adds, on frozen copies
   - M24 (campaign line `uid_boundary`): `campaign_tier1` asserts it.
 - **Round 2** (`b09ab98`): N1–N8 for the fixes, plus M10 and M24 again. N1–N3, N5, N6, N8, M10 and M24 were killed; N5 by all six real-Kani `prove` tests.
 - **Survivors:**
-  - **M6** (the bounding-set re-check after the switch) and **M11** (the seal's dev/inode re-check): both removed by the reduction pass, below. After that removal, M5 (deleting `empty_bounding_set` from `separate_uid`) would have survived. It is now killed by a direct test (`the_trampoline_leaves_the_tool_its_ids_and_no_capability_at_all`, `CapBnd` zero as the tool reads it), re-run in the image by the builder.
+  - **M6** (the bounding-set re-check after the switch): relocated by the reduction pass, not removed. The read-back now ends `empty_bounding_set`, and a mutant deleting it would still survive: a successful `PR_CAPBSET_DROP` cannot leave the bit set, so it is a verify step with nothing to catch. **M11** (the seal's dev/inode re-check): removed, since only root can swap an entry in a 0700 root directory. After the M6 move, M5 (deleting `empty_bounding_set` from `separate_uid`) would have survived. It is now killed by a direct test (`the_trampoline_leaves_the_tool_its_ids_and_no_capability_at_all`, `CapBnd` zero as the tool reads it), re-run in the image by the builder.
   - **N4** (a failed hand-over reported as `ToolError` rather than `SandboxUnavailable`): no tier-1 path can make the hand-over fail. The adversary measured it (A6).
   - **N7** (`read_beneath`'s regular-file check): near-equivalent, since a directory still fails at `read_to_end` (`EISDIR`). A FIFO is the case it exists for; the adversary's A4 FIFO variant was refused with no hang.
 - **Containers:** every mutation container read back `memory.max` 17179869184, `memory.swap.max` 0, `pids.max` `max`.
