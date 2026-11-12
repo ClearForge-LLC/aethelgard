@@ -1,6 +1,6 @@
 # AET-WO-1305 — FEEDBACK
 
-**Branch:** `wo/aet-1305-extract-bound` · **Base:** `b227c12`; `origin/main` 05edb43 (`AET-WO-1602`) merged in as 67f5dc3 · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Cadence:** build-only, with the §1.3 measurement first.
+**Branch:** `wo/aet-1305-extract-bound` · **Base:** `b227c12`; `origin/main` 05edb43 (`AET-WO-1602`) merged in as 67f5dc3, and dbf2cba (the new tools image pin) as 315e469 · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Cadence:** build-only, with the §1.3 measurement first.
 
 Entry schema: `finding · where · type · recommendation · decision-needed`.
 
@@ -90,6 +90,26 @@ The adversarial pass re-derived every constant with exact rationals and got the 
   - image, at fd06f13 (the code pushed; only FEEDBACK follows it): the CI `tools` job's steps, in order, in the pinned image (`container/IMAGE`, `2df68259…`) under rootless podman 5.7, `--network none` for every step after the build. fmt, clippy with `with-tools`, and the bridge's tests passed. `cargo test --workspace --features aethelgard-cli/with-tools` passed 972 tests with 0 failures, and the tier-2 canary counted 72, which is `TIER2_MIN` (71 + 1, the swap test). Caps: `--memory 16g --memory-swap 16g --pids-limit -1`, then 0 written into the container's `memory.swap.max`. Read back on the test container: `memory.max` 17179869184, `memory.swap.max` 0, `pids.max` max. Three short containers exited before the reader found them;
   - CI: runs on the PR; not yet observed when this was written.
 
+## The architect's check on PR #99: is every foreign conductor at least S from the line?
+
+**Ruling recorded:** F1 is ratified. The Dirichlet-principle shell bound supersedes §1.1's closed forms. F6 goes to its own WO, a shared strict KiCad reader.
+
+**The check:** `ψ` must be 0 on every foreign conductor, so every other net's copper must be at least `S` from the line, including pads of other nets inside the same footprint.
+- **`route::check` judges it.**
+  - `items` (`crates/aethelgard-eda/src/route.rs:1446-1484`) pushes every pad of every part, each footprint's own pads included, then every track and via.
+  - `check` (`route.rs:1490-1503`) compares every pair on a shared layer whose nets differ. A pad with no net differs from everything, and nothing exempts two pads of the same part.
+  - `extract::read` runs it before any estimate, so a violation is `ClearanceViolated`, naming both items, and never a number.
+- **Test:** `a_foreign_pad_closer_than_the_clearance_to_a_line_is_refused`. Two foreign pads were each moved to 0.15 mm from an I2C pad in the same footprint: U1 pad 138 beside SDA's pad 137 at the MCU's 0.5 mm pitch, and U2 pad 2 (VDD) beside SDA's pad 3 on the BME280. Both are refused as `ClearanceViolated`, naming both pads.
+- **The reference's smallest foreign gap to each line**, measured by an independent geometry in `the_references_smallest_foreign_gap_to_each_line_is_at_least_the_clearance` (pads as boxes, tracks as segments 0.2 mm wide, vias as 0.6 mm disks, shared layers only):
+
+  | Line | Smallest gap to another net's copper | Between |
+  |---|---|---|
+  | `I2C_SDA` | **200,000 nm** (= `S`) | U1 pad 137 and U1 pad 136 (`/I2C_SCL`) |
+  | `I2C_SCL` | **200,000 nm** (= `S`) | U1 pad 136 and U1 pad 135 (`unconnected-(U1-PB5-Pad135)`, a floating pad) |
+
+  Both are footprint-internal pairs at the MCU's pitch, exactly `S` apart. The trial potential is 0 for `d ≥ S`, so a conductor at exactly `S` is covered. A floating conductor is covered as well (it may take any constant, and 0 is one).
+- **What `route::check` does not see:** the zone fill. That remains condition 4: the DRC gate's refill, measured at a 500,499 nm minimum gap by the adversarial pass, and a fill in the file is refused.
+
 ## Mutation (sized to the diff, one mutant each, scratch clone `~/.cache/aet-1305-mut`)
 
 - **First round (18 mutants, at b9bcbf9).** 14 were killed. The 4 survivors were the pull-up rail condition, `LineNotOnBoard`, two controllers on one bus, and the per-length ceiling. All were killed by added tests, which the redesign below then replaced.
@@ -133,12 +153,12 @@ Reduction pass (diff): −69 lines net in source (after the outline's allowlist)
 
 | # | Finding | Where | Type | Recommendation | Decision-needed |
 |---|---|---|---|---|---|
-| **F1** | **The trace, via and pad terms are one variational bound, not the WO's cited closed forms.** The WO names Wadell's coplanar form, a via form with an antipad, and a parallel-plate pad term with a cited fringing factor (§1.1, §1.4). Those are approximations, not bounds. My own derivation, not a citation: the conformal-map partial-capacitance method for a strip over a plane relaxes the potential's continuity across the slots, so it can only lower the minimum energy, which makes it a lower bound. A fringing factor would need its own source to bound. A citable closed form that does bound exists: Chew eq. 7.1.48, with a trial potential whose energy is Steiner's formula. So I did not read §7 item 2 as met. §1.4's "fringing factor" constant does not exist. The bound dominates the exact coplanar and coaxial solutions (test). The adversarial pass raised this as D8 | `aethelgard_eda::extract` | fork | accept the variational bound as the §1.1 terms, or name the closed form wanted | **yes** |
+| **F1** | **Ruled on PR #99: ratified.** **The trace, via and pad terms are one variational bound, not the WO's cited closed forms.** The WO names Wadell's coplanar form, a via form with an antipad, and a parallel-plate pad term with a cited fringing factor (§1.1, §1.4). Those are approximations, not bounds. My own derivation, not a citation: the conformal-map partial-capacitance method for a strip over a plane relaxes the potential's continuity across the slots, so it can only lower the minimum energy, which makes it a lower bound. A fringing factor would need its own source to bound. A citable closed form that does bound exists: Chew eq. 7.1.48, with a trial potential whose energy is Steiner's formula. So I did not read §7 item 2 as met. §1.4's "fringing factor" constant does not exist. The bound dominates the exact coplanar and coaxial solutions (test). The adversarial pass raised this as D8 | `aethelgard_eda::extract` | fork | accept the variational bound as the §1.1 terms, or name the closed form wanted | **yes** |
 | **F2** | **Pins' lands are counted as copper as well as at `Ci`.** The WO counts the pad term only for pads that are not device pins. `Ci` is the part's capacitance, not the land's, and leaving the lands out is §5.2's "pad left out". It adds 1,145 fF to SDA's bound on the reference | `line` | fork | accept | no |
 | **F3** | **Copper at most 70 µm, and a board from 0.34 to 2.0 mm, are stated conditions, not cited values.** The board declares neither | `CONDITIONS` | condition | `AET-WO-3300`'s fabrication package declares both, so the condition becomes a fabrication instruction | yes (for 3300) |
 | **F4** | **The scope is the bare board's copper plus `Ci`.** Part bodies (a ceramic resistor body near εr 10; the adversarial pass estimates up to about +353 fF per pull-up pad, as an estimate, not a measurement), solder and terminations above the pads are excluded, and the verdict's first condition says so. An "assembled-part" term would need part geometry the board file does not carry | `CONDITIONS`, README | scope | decide whether `1303` in full adds an assembled-part term | **yes** |
 | **F5** | **Fence: `extract` reads `schematic` and `pcb`, not only `route`.** Parts are classified from `schematic::design`, since only the specification's design says what R1 or U1 is. Four visibility-only edits in generator files, with no emitted byte changed (the reference board's sha256 is `7b9b0e3d…2070` before and after): `pcb::escape` → `pub(crate)`; `schematic::design`, `R` and `C` → `pub(crate)`. The RUL-16 fence holds: `extract` never calls the device accessors, and `solved_devices.rs` still pins `schematic.rs` as eda's only reader | `pcb.rs:294`, `schematic.rs:36-37,415` | fence deviation | accept, or name another home for the classification | **yes** |
-| **F6** | **`Sx::child` takes the first match, and KiCad the last, so other gates misread boards too.** The adversarial pass's `dup_thickness` (a second `(thickness 0.2)`) passed `check drc` as well as the old `extract`. Every reader of `.kicad_pcb` through `child()` is open to the same class. Outside this fence: reported, not fixed | `sexpr.rs:105`; `check drc`'s board reader | gap | a backlog WO: one strict reader shared by every gate reading a board (`extract::read`'s walk is a starting point) | yes (scope) |
+| **F6** | **Ruled on PR #99: its own WO.** **`Sx::child` takes the first match, and KiCad the last, so other gates misread boards too.** The adversarial pass's `dup_thickness` (a second `(thickness 0.2)`) passed `check drc` as well as the old `extract`. Every reader of `.kicad_pcb` through `child()` is open to the same class. Outside this fence: reported, not fixed | `sexpr.rs:105`; `check drc`'s board reader | gap | a backlog WO: one strict reader shared by every gate reading a board (`extract::read`'s walk is a starting point) | yes (scope) |
 | F7 | My first build called `declared_i2c_devices` from eda's `extract`; `solved_devices.rs`'s fence test caught it at the first workspace run. The classification moved to the design | — | process | none | no |
 | F8 | `extract` refuses a board declaring a thickness other than 1.6 mm, the generator's value; the bound is derived for it | `read` | scope | none | no |
 | F9 | A specification with no I2C bus passes with `lines: []`: nothing exceeds a bound. Documented in the README (adversarial E7) | CLI | wording | none | no |

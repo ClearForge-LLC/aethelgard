@@ -567,3 +567,117 @@ fn the_parts_on_a_line_are_the_designs() {
     assert_eq!(code, 2, "{v}");
     assert_eq!(refused(&v), "UnsupportedAddress");
 }
+
+/// The architect's check on PR #99: the bound needs every foreign conductor
+/// at least the clearance from the line, pads of other nets inside the same
+/// footprint included. `route::check` judges every pair of copper items of
+/// different nets on a shared layer, pads of one part included
+/// (`route.rs` `items` and `check`), and `read` runs it before any
+/// estimate. Here a foreign pad moved to 0.15 mm from an I2C pad in the
+/// same footprint, the MCU's 0.5 mm-pitch pins and the BME280's pads, is
+/// refused naming both pads.
+#[test]
+fn a_foreign_pad_closer_than_the_clearance_to_a_line_is_refused() {
+    let text = reference();
+    for (label, part, from, to, line_pad, foreign_pad) in [
+        (
+            "mcu",
+            "U1",
+            "(at -5.75 -10.6625)",
+            "(at -5.7 -10.6625)",
+            "U1 pad 137",
+            "U1 pad 138",
+        ),
+        (
+            "sensor",
+            "U2",
+            "(at -0.325 -1.025 90)",
+            "(at -0.2 -1.025 90)",
+            "U2 pad 3",
+            "U2 pad 2",
+        ),
+    ] {
+        let start = text
+            .find(&format!("(property \"Reference\" \"{part}\""))
+            .unwrap();
+        let at = start + text[start..].find(from).unwrap();
+        let board = format!("{}{to}{}", &text[..at], &text[at + from.len()..]);
+        let (code, v) = extract(label, &board, SPEC);
+        assert_eq!(code, 3, "{label}: {v}");
+        assert_eq!(refused(&v), "ClearanceViolated", "{label}: {v}");
+        let message = v["error"]["message"].as_str().unwrap();
+        assert!(
+            message.contains(line_pad) && message.contains(foreign_pad),
+            "{label}: {message}"
+        );
+    }
+}
+
+/// The smallest gap from each I2C line's copper to any other net's copper
+/// on a shared layer, on the reference, measured here independently of
+/// `route::check`: pads as their boxes, tracks as segments `WIDTH_NM` wide,
+/// vias as disks `VIA_NM` across. Every gap is at least the clearance the
+/// bound's trial potential falls to 0 within (recorded in FEEDBACK).
+#[test]
+fn the_references_smallest_foreign_gap_to_each_line_is_at_least_the_clearance() {
+    use aethelgard_eda::extract;
+    use aethelgard_eda::route::{CLEARANCE_NM, Layer, VIA_NM, WIDTH_NM};
+    let read = extract::read(reference()).unwrap();
+    // (net, layers [F, B], box, radius, name)
+    let mut items = Vec::new();
+    for part in &read.board.parts {
+        for p in &part.pads {
+            let r = p.rect;
+            items.push((
+                p.net.clone(),
+                [true, false],
+                (r.x0, r.y0, r.x1, r.y1),
+                0,
+                format!("{} pad {}", part.reference, p.number),
+            ));
+        }
+    }
+    for s in &read.routed.segments {
+        let (x0, x1) = (s.start.0.min(s.end.0), s.start.0.max(s.end.0));
+        let (y0, y1) = (s.start.1.min(s.end.1), s.start.1.max(s.end.1));
+        let on = [s.layer == Layer::F, s.layer == Layer::B];
+        items.push((
+            Some(s.net.clone()),
+            on,
+            (x0, y0, x1, y1),
+            WIDTH_NM / 2,
+            "track".to_owned(),
+        ));
+    }
+    for v in &read.routed.vias {
+        let b = (v.at.0, v.at.1, v.at.0, v.at.1);
+        items.push((
+            Some(v.net.clone()),
+            [true, true],
+            b,
+            VIA_NM / 2,
+            "via".to_owned(),
+        ));
+    }
+    for net in ["/I2C_SDA", "/I2C_SCL"] {
+        let mut best = (f64::MAX, String::new());
+        for a in items.iter().filter(|i| i.0.as_deref() == Some(net)) {
+            for b in items.iter().filter(|i| i.0.as_deref() != Some(net)) {
+                if !((a.1[0] && b.1[0]) || (a.1[1] && b.1[1])) {
+                    continue;
+                }
+                let dx = (a.2.0 - b.2.2).max(b.2.0 - a.2.2).max(0) as f64;
+                let dy = (a.2.1 - b.2.3).max(b.2.1 - a.2.3).max(0) as f64;
+                let gap = (dx * dx + dy * dy).sqrt() - (a.3 + b.3) as f64;
+                if gap < best.0 {
+                    best = (gap, format!("{} to {} ({:?})", a.4, b.4, b.0));
+                }
+            }
+        }
+        eprintln!(
+            "ANSWER 1305 smallest foreign gap {net}: {:.0} nm, {}",
+            best.0, best.1
+        );
+        assert!(best.0 >= CLEARANCE_NM as f64, "{net}: {best:?}");
+    }
+}
