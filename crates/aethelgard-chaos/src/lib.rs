@@ -49,6 +49,8 @@ pub enum ArchiveError {
     MalformedHeader(String),
     #[error("unknown format version {found} in {item}")]
     UnknownVersion { item: &'static str, found: u64 },
+    #[error("manifest.cbor is over the {limit}-byte bound")]
+    ManifestTooLarge { limit: u64 },
     #[error("the manifest declares a trace of {declared} bytes, over the {limit}-byte bound")]
     TraceTooLarge { declared: u64, limit: u64 },
     #[error("trace is {actual} bytes, the manifest committed {expected}")]
@@ -97,6 +99,7 @@ impl ArchiveError {
             Self::MalformedManifest(_) => "MalformedManifest",
             Self::MalformedHeader(_) => "MalformedHeader",
             Self::UnknownVersion { .. } => "UnknownVersion",
+            Self::ManifestTooLarge { .. } => "ManifestTooLarge",
             Self::TraceTooLarge { .. } => "TraceTooLarge",
             Self::Truncated { .. } => "Truncated",
             Self::Extended { .. } => "Extended",

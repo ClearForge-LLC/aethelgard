@@ -130,6 +130,7 @@ Reader (`replay_dir`) checks in this order, each refusal its own
 | Run directory is a real directory; entries are only the three names, regular files | `UnexpectedEntry` |
 | `manifest.cbor` present | `Uncommitted` |
 | `trace.cbor` present | `MissingTrace` |
+| `manifest.cbor` is at most 1 MiB (read through `take`) | `ManifestTooLarge` |
 | Manifest decodes under the profile | `MalformedManifest` |
 | Manifest version is 2 | `UnknownVersion` |
 | Manifest's `trace_bytes` is at most 256 MiB | `TraceTooLarge` |
