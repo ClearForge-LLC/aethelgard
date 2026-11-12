@@ -103,7 +103,7 @@ Covers are the two proofs' (`every_valid_sequence`, `i2c1_transfer_is_bounded_an
   - reads all four uids, all four gids and `Groups:` back from `/proc/thread-self/status`.
 
   Any failure is `SandboxUnavailable`, `id` `uid`, exit 4: there is no run as root. `drop_capabilities` then also checks that the bounding set is empty after a switch. The status line is `sandbox abi=N uid_boundary=0|1`, and `uid_boundary` is read from that line alone, never from a uid comparison. A CLI started as 65534 says `false`.
-- **Root-owned copy, tool-writable directory** (`run.rs`, `hand_over` and `seal`). The first tool run in a root CLI's work directory seals everything the CLI put there (files 0444, directories 0555). It works by descriptor: `openat` with `O_NOFOLLOW`, a dev/inode check, `fchmod`, and links are left alone. It then makes the directory root's, group 65533, mode 1770. A later run finds it handed over and touches nothing. The call directory is root:65533 0710 (`main.rs`). The bridge's own directory goes through the same hand-over. For `prove`, the crate copy's root directory is made the same before the hand-over (`run::add_only`), because cargo writes a missing `Cargo.lock` there (adversarial A2). A failed chown, chmod or hand-over is `SandboxUnavailable`, `id` `uid`, exit 4 (adversarial A6).
+- **Root-owned copy, tool-writable directory** (`run.rs`, `hand_over` and `seal`). The first tool run in a root CLI's work directory seals everything the CLI put there (files 0444, directories 0555). It works by descriptor: `openat` with `O_NOFOLLOW`, then `fchmod`. Anything but a root-owned file or directory refuses the hand-over (the CLI copies no link). It then makes the directory root's, group 65533, mode 1770. A later run finds it handed over and touches nothing. The call directory is root:65533 0710 (`main.rs`). The bridge's own directory goes through the same hand-over. For `prove`, the crate copy's root directory is made the same before the hand-over (`run::add_only`), because cargo writes a missing `Cargo.lock` there (adversarial A2). A failed chown, chmod or hand-over is `SandboxUnavailable`, `id` `uid`, exit 4 (adversarial A6).
 - **`uid_boundary`** is in every verdict's `sandbox` object (`SandboxReport`). It is on every gate entry of `verify` (`null` for a gate that did not run; the campaign's is `true` only when every run line says so) and on every `campaign` run line.
 - **§1.4, the scratch base** (`main.rs`, `scratch_base`). The base is `TMPDIR` if set (it must exist); otherwise `/var/lib/aethelgard` as root and `$HOME/.cache/aethelgard` as a user, made if missing. Every ancestor of its real path must be a directory owned by root or the effective uid, writable by no group or other, and (as root) searchable by others. The path must be in `[A-Za-z0-9/._-]`. Anything else is `ScratchUnsafe`, exit 4, naming the directory, before any tool runs.
 - **§1.5** (`kicad.rs`, `refuse_sheets`). `check erc` reads its copy with `aethelgard-eda`'s strict reader. Any `(sheet …)` is `HierarchicalSchematic`, exit 3, the same kind parity uses; a schematic that reader refuses is `MalformedSchematic`, exit 3. Both happen before the tool is looked for.
@@ -177,7 +177,8 @@ Entry schema: `finding · where · severity · type · recommendation`.
 
 **Residuals, stated in the README:**
 
-- **R1 · A process running as 65534 outside the sandbox** can plant configuration in the tool's `HOME` (C2b B2 broke) and in `prove`'s add-only crate root, and rewrite what the tool writes, but not its input copy. Under Docker only root can start one: every tool runs under Landlock, seccomp and its own reaper.
+- **R1 · A process holding gid 65533 outside the sandbox** (only root can grant it, as primary or supplementary group) cannot change the input copy. It can rewrite what the tool writes and plant files in the tool's `HOME` and in `prove`'s add-only crate root, and so decide the verdict. Measured at b09ab98 (adversarial re-test): a `.cargo/config.toml` aliasing `kani` to a planted crate passed a proof of `false` (exit 0, `true`); a planted `build.rs` ran as the tool; a planted `rust-toolchain.toml` or garbage `Cargo.lock` was read (exit 5). The same alias already worked from the tool's `HOME`. Every such plant as uid 4242 was refused. The README says the holder can decide the verdict.
+- **R5 · A tool that ignores `SIGXFSZ` and deletes the file it was cut off on** is judged on what it reports (a stub measured `build_failed`, exit 1). It can turn a cut-off into the crate's `fail`, never a pass. rustc does not do this: killed by `SIGXFSZ`, it leaves its object at exactly 67108864 bytes, and `build` ends exit 5 (an 80 MiB static, measured).
 - **R4 · Under rootless podman, the user who owns the user namespace** (`forge` on Furnace) can reach every container process (adversarial A5). During a live `prove`, a host `forge` process went through `/proc/<cbmc>/cwd`, created a file in `tool/` and appended to the sealed `src/proofs.rs`, and the verdict said `true`. On Furnace, then, `true` excludes no `forge` process: not an agent session, not an MCP client running as `forge`. CI's rootful Docker has no such owner.
 - **R2 · Root can always race** (C1b).
 - **R3 · A non-root CLI gives `uid_boundary: false`** and a same-uid process wins (C3b). The deployment section says how to get a boundary without root. The verdict then still says `false`, an under-claim, which `RUL-19` prefers.
@@ -186,6 +187,62 @@ Entry schema: `finding · where · severity · type · recommendation`.
 
 - **D1 · `docs/architecture.md` §6** says a tool's scratch is under the system temporary directory and `RLIMIT_FSIZE` is backlog. Both changed here (§1.4, §1.6), and the uid boundary is new to §6's list of what every tool runs with.
 - **D2 · `RUL-19` (4) and the `verify` residual** in §6 can now name `uid_boundary`. A root CLI closes the 3301 F1 window to every uid but root and 65534.
+
+## Adversarial pass (full, §5)
+
+**Who and how.**
+- A fresh Opus subagent, chosen because this is judgement work, on a frozen copy at `858a2df` (`~/.cache/aet-1601-adv/repo`). It was resumed once on the fixes, at `b09ab98` (`repo2`).
+- Every run was in the pinned image as root, through the capped runner. Some one-command containers exited before their caps were read (`CAPS NOT READ`); every long container read back `memory.max` 17179869184 and `memory.swap.max` 0.
+- **Report:** `~/.cache/aet-1601-adv/FINDINGS.md`, with harnesses in `h/` and evidence in `out/`. It changed no code.
+
+| id | §5 | attack | result at `858a2df` | fix | re-test at `b09ab98` |
+|---|---|---|---|---|---|
+| A1 | 1 | as uid 1001, replace Kani's `kani-driver` (the kit is 1001's in the image) | **broke**: a proof of `false` passed, `true` | none here: `Dockerfile` (A1 above) | documented; README names the check |
+| A2 | 4 | `prove` on a crate without `Cargo.lock` (the `kani-*` fixtures) | **broke**: exit 5 where the base gave pass, `proof_failed`, `compile_error`; 6 tier-2 tests red | `prove`'s crate root add-only (`run::add_only`) | **held**: JSON identical to the base but for `uid_boundary` |
+| A3 | 1, 2 | plant B2 as `_apt` (42:65534), `sync` (4:65534), 4242 with group 65534 | **broke**: ELF `e678e904`, pass, `true` | tool gid 65533 | **held**: all `EACCES`, reference ELF; a holder of 65533 lands (R1) |
+| A4 | 1 | as the tool uid, leave a link where cargo's ELF is; a `target/../..` path | **broke**: root delivered `/root/secret` 0644 | `read_beneath` (F7), which landed after the freeze | **held**: five variants (link, `..`, hard link, FIFO, linked dir), exit 5, nothing delivered |
+| A5 | 1 | host `forge` against a rootless podman container | residual: through `/proc/<cbmc>/cwd` it wrote `tool/` and the sealed copy, `true` | none: rootless podman | documented (R4) |
+| A6 | 3 | drop `CAP_CHOWN`, or map only root | exit 5 where the README says 4 | `Stop::sandbox("uid", …)` | **held**: exit 4 `uid` for SETUID, SETGID, SETPCAP, CHOWN and root-only mapping; FOWNER dropped still switches, so `true` |
+| A7 | 1 | uid 4242 during a live `prove`: scratch, call dir, `tool/`, copy, `/proc/<cbmc>/{root,cwd,fd,environ,maps,mem}`, `ptrace`, `kill`, toolchain dirs | held: `EACCES`/`EPERM` everywhere | — | — |
+| A8 | 2 | `TMPDIR`/`HOME`: space, `;`, newline, link to `/tmp`, `/tmp`, group-writable, foreign-owned, no o+x, missing, relative, unset | held: exit 4 naming the right directory, before any tool | — | — |
+| A9 | 3 | make `uid_boundary` lie: forge the status line, an empty campaign, setuid re-entry | held: the tool cannot write the status file; `all()` cannot be vacuous here; `no_new_privs` | — | — |
+| A10 | 4 | every other verdict, base against new: ERC/DRC fixtures, generated ERC/DRC with `--spec --schematic`, both `simulate` loads, two `verify --scenarios`, runs as uid 1000 | held: identical but for `uid_boundary` (DRC uuids KiCad mints each run predate this WO). Of the image's 134 KiCad demo and template schematics, 20 are now `HierarchicalSchematic` (by design) and none `MalformedSchematic` | — | — |
+| A11 | 1 | the file-size cap on a real tool: an 80 MiB static in firmware | — | — | **held**: exit 5 naming the `.rcgu.o`; a deleting tool is R5 |
+
+**Not covered by the adversary:** the full tier 2 (the builder's own run, under Gates); B1–B4 through `verify` after the fixes (B2 against `build` only; the builder's C2 and C2b cover `verify` at `858a2df`'s design with gid 65534, and A3 re-tests the gid change); Kani, cbmc, KiCad or Renode driven to the cap; any host run as `forge` (tier 1 on the host is the builder's).
+
+## Mutation testing (sized to the diff)
+
+A default-model subagent ran one mutant per guard this WO adds, on frozen copies (`~/.cache/aet-1601-mut/RESULTS.md`), restored every file and `diff -r`'d `src` clean against a pristine export.
+- **Round 1** (`bd389fe`): 24 mutants, 18 killed. It found a test bug: as root, the `below` base (0700) was refused for its own mode, so the root-only cases never ran, masking M15 and M17. Fixed (0711 as root), and both were killed in its probe.
+- **Kills added for the survivors:**
+  - M10 (the seal's not-root's refusal): the hand-over unit test;
+  - M24 (campaign line `uid_boundary`): `campaign_tier1` asserts it.
+- **Round 2** (`b09ab98`): N1–N8 for the fixes, plus M10 and M24 again. N1–N3, N5, N6, N8, M10 and M24 were killed; N5 by all six real-Kani `prove` tests.
+- **Survivors:**
+  - **M6** (the bounding-set re-check after the switch) and **M11** (the seal's dev/inode re-check): both removed by the reduction pass, below. After that removal, M5 (deleting `empty_bounding_set` from `separate_uid`) would have survived. It is now killed by a direct test (`the_trampoline_leaves_the_tool_its_ids_and_no_capability_at_all`, `CapBnd` zero as the tool reads it), re-run in the image by the builder.
+  - **N4** (a failed hand-over reported as `ToolError` rather than `SandboxUnavailable`): no tier-1 path can make the hand-over fail. The adversary measured it (A6).
+  - **N7** (`read_beneath`'s regular-file check): near-equivalent, since a directory still fails at `read_to_end` (`EISDIR`). A FIFO is the case it exists for; the adversary's A4 FIFO variant was refused with no hang.
+- **Containers:** every mutation container read back `memory.max` 17179869184, `memory.swap.max` 0, `pids.max` `max`.
+
+## Reduction pass
+
+A fresh default-model subagent read the diff (`cbc0a7b..b09ab98`), proposal-only. The builder applied these:
+- the bounding-set read-back now lives once, in `empty_bounding_set`. `drop_capabilities` lost its `separated` parameter (M6);
+- the seal's dev/inode re-check is gone (M11). The directory is root's 0700 until the hand-over, so only root could swap an entry;
+- the seal's link arm is gone: a link refuses the hand-over (tested);
+- `parse_status` builds its refusal with `Stop::sandbox`, and its stale comment now names every layer;
+- the scratch base is made by `DirBuilder::recursive`, not a hand-rolled loop;
+- five dead `HOME` lines go from tests that set `TMPDIR`, and two dead probe lines from the cap test;
+- the README states the failure rule and the toolchain check once each.
+
+Reported, not removed:
+- the copies of the tool ids and of the 0711/0700 choice in three test files, since tests cannot import from a bin crate (one copy in `common` is the floor);
+- `scratch_base`'s doc restating the README rule;
+- the seal's `st_uid != 0` refusal and `depth > 64`, both unreachable under 0700 but tested or cheap;
+- the merged `ParityRefusal → Stop` closures in `kicad.rs` (a helper would be a new layer).
+
+`Reduction pass (diff): −34 lines net · 2 duplicates removed · 3 dead paths removed · 0 protected kept · 5 findings above`
 
 ## Tests changed
 
