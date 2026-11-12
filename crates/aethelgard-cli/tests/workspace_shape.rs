@@ -772,3 +772,18 @@ fn the_tools_image_carries_kicads_library_licence() {
         "the smoke does not check it"
     );
 }
+
+/// `AET-WO-1900` (1302 B9): the dev profile optimises `aethelgard-eda`, whose
+/// router the suites run in debug builds.
+#[test]
+fn the_dev_profile_optimises_the_router_crate() {
+    let text = fs::read_to_string(root().join("Cargo.toml")).unwrap();
+    let table: Table = text.parse().unwrap();
+    let level = table
+        .get("profile")
+        .and_then(|p| p.get("dev"))
+        .and_then(|d| d.get("package"))
+        .and_then(|p| p.get("aethelgard-eda"))
+        .and_then(|e| e.get("opt-level"));
+    assert_eq!(level, Some(&Value::Integer(2)));
+}

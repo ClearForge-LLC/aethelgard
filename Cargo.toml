@@ -49,3 +49,9 @@ trybuild = "1.0.122"
 # trybuild suite only. A path outside `members` stays outside the workspace.
 sentinel-01-board = { path = "boards/sentinel-01" }
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "io-std", "process", "signal", "io-util", "sync", "time"] }
+
+# The router and placer run in debug builds in every test (1302 B9): about 6 to
+# 7 times faster at opt-level 2, with debug assertions kept. Dev builds only; the
+# release profile and every generated file are untouched.
+[profile.dev.package.aethelgard-eda]
+opt-level = 2
