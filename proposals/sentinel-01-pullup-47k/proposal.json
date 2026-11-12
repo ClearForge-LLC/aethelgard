@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "outcome": "proposal",
+  "proposer": "rules",
+  "reason": null,
+  "run_id": "f793560649caeaa37fe21ea780f4340a",
+  "state_sequence_hash": "edacdfde5ce759b55468bcfd64bbf5e0c5283a83b588776793f8b35f3e3b3364",
+  "scenario": {
+    "name": "pullup-47k",
+    "sha256": "bad949d855a5f41e3b96b2252e56896681bda7d3d2377444eecf6d9dffbe3768"
+  },
+  "base_sha256": "acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1",
+  "specification_sha256": "380874007a3250de03d8d5029a4b9a083c9f03e1e9ccc4ea9d4673e5326168a6",
+  "topology_sha256": "3d3d0a812cb56bdf1fff77bb94756c0e921b80b99803307b75ee5ce2f3577c82",
+  "attribution": {
+    "domain": "electrical",
+    "rule": "E1",
+    "evidence": [
+      {
+        "index": 3,
+        "kind": 7
+      },
+      {
+        "index": 4,
+        "kind": 7
+      },
+      {
+        "index": 5,
+        "kind": 9
+      }
+    ],
+    "masked": []
+  },
+  "changes": [
+    {
+      "bus": "SENSORS",
+      "pull_up_ohms": 2700
+    }
+  ],
+  "sizing": [
+    {
+      "bus": "SENSORS",
+      "r_now_ohms": 47000,
+      "binding_net": "I2C_SCL",
+      "rise_worst_ps": 3982301,
+      "ceiling_ps": 300000,
+      "headroom": "8/10",
+      "r_target_ohms": 2832,
+      "rp_min_ohms": 967,
+      "e12_ohms": 2700,
+      "predicted_rise_ps": 228771
+    }
+  ],
+  "proposed_specification_sha256": "54aaef1cd634ecbedd4b51c545271b2691c520c476b25f7516f4d03dd0c252bc",
+  "note": "A proposal is evidence about the specification, not the board. Every rise here is computed from declared values: ngspice arithmetic on the specification's pull-up and its max_capacitance bound, not a measurement of a routed board (RUL-19)."
+}
