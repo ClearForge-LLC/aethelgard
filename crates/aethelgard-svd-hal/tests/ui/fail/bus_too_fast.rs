@@ -1,5 +1,5 @@
-//! Gate: I2C1 at 1 MHz, above sentinel-01's solved rise-time ceiling of 400 kHz
-//! (`i2c_ceilings`, AET-WO-1202).
+//! Gate: I2C1 at 1 MHz, above sentinel-01's declared speed of 400 kHz
+//! (`i2c_speeds`, AET-WO-1205).
 use sentinel_01_board::Board;
 use sentinel_01_board::i2c1_speed::FastPlus1M;
 use sentinel_01_board::mmio::Mmio;

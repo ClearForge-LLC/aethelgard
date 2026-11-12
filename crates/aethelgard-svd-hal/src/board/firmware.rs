@@ -251,11 +251,11 @@ fn linker(plan: &Plan, m: &Memory) -> String {
     s
 }
 
-/// The highest I2C mode a peripheral's ceiling admits.
+/// The highest I2C mode a peripheral's declared speed admits.
 fn highest(speeds: &Speeds, peripheral: &str) -> &'static str {
     // `generate` gives every I2C peripheral an entry with a non-empty list.
     let (_, admitted) = &speeds[peripheral];
-    I2C_MODES[*admitted.last().expect("a ceiling admits a mode")].0
+    I2C_MODES[*admitted.last().expect("a declared speed admits a mode")].0
 }
 
 /// One identity read the firmware makes.

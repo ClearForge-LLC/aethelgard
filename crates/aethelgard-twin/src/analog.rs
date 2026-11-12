@@ -187,14 +187,15 @@ mod tests {
     fn values_reach_the_deck_as_written() {
         let d = decks(&topology(|l| {
             l.pull_up_ohms = 47_000;
-            l.capacitance_femtofarads = u64::MAX;
+            // The largest a topology may now carry at 400 kHz (`AET-WO-1205`).
+            l.capacitance_femtofarads = 400_000;
             l.domain_millivolts = 1801;
         }))
         .unwrap();
         let sda = &d[1].netlist;
         assert_eq!(sda[1], "Vdd vdd 0 dc 1.801");
         assert_eq!(sda[2], "R1 vdd line 47000");
-        assert_eq!(sda[3], "C1 line 0 18446744073709551615f");
+        assert_eq!(sda[3], "C1 line 0 400000f");
         assert_eq!(sda[5], ".model swm sw vt=0.9005 vh=0 ron=10 roff=1e12");
         assert_eq!((d[1].low_uv, d[1].high_uv), (540_300, 1_260_700));
         // The other line is untouched.

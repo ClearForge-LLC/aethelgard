@@ -65,21 +65,23 @@ Step 2 walks the identifiers in this order: `project_name`; `mcu.part`, `mcu.sup
 ## `SolvedTopology`
 
 What the solver derives (`RUL-16`):
-- `schema_version` (1);
+- `schema_version` (2; a version-1 file is refused as `UnsupportedSchemaVersion`, whether or not it has `i2c_speeds`);
 - `specification_sha256` (64 lowercase hex digits);
 - `assignments`, a `BTreeMap` keyed by net, holding every bus signal on an alternate function, each value a `PinAssignment` (`pin`, `peripheral`, `signal`, `alternate_function`);
 - `gpio`, a `BTreeMap` from net to pin, holding every net driven as a plain GPIO output: today, each SPI device's `cs`. It records no direction, because every entry is an output;
-- `i2c_ceilings`, a `BTreeMap` from I2C bus id to that bus's maximum speed in Hz (100,000, 400,000 or 1,000,000). It is empty when there are no I2C buses.
+- `i2c_ceilings`, a `BTreeMap` from I2C bus id to that bus's maximum speed in Hz (100,000, 400,000 or 1,000,000). It is empty when there are no I2C buses;
+- `i2c_speeds`, a `BTreeMap` from I2C bus id to the speed the specification declared for it (`speed_hz`), under the same keys as `i2c_ceilings` (`AET-WO-1205`). Required under version 2, never defaulted.
 
-A repeated key in `assignments`, `gpio` or `i2c_ceilings` is refused when parsing, and every key is required. `SolvedTopology::validate` refuses, in this order:
+A repeated key in `assignments`, `gpio`, `i2c_ceilings` or `i2c_speeds` is refused when parsing, and every key is required. `SolvedTopology::validate` refuses, in this order:
 1. `UnsupportedSchemaVersion`;
 2. `MalformedSpecificationHash`;
-3. `InvalidIdentifier`: in `assignments`, the paths `assignments.<net>`, then `.pin`, `.peripheral`, `.signal`; then in `gpio`, `gpio.<net>`, then `gpio.<net>.pin`; then `i2c_ceilings.<bus>`;
+3. `InvalidIdentifier`: in `assignments`, the paths `assignments.<net>`, then `.pin`, `.peripheral`, `.signal`; then in `gpio`, `gpio.<net>`, then `gpio.<net>.pin`; then `i2c_ceilings.<bus>`, then `i2c_speeds.<bus>`;
 4. `AlternateFunctionOutOfRange` (above 15; the net);
 5. `InvalidCeiling` (a ceiling other than the three mode speeds; the bus id);
 6. `NetAssignedTwice` (a net in both maps; the net);
 7. `DuplicatePin` (a pin used twice anywhere across both maps; the pin);
-8. the analog lines, then `CeilingNotDerived` (a ceiling that is not what `solve` derives from the bus's own lines: `electrical::ceiling_hz` of the smallest `ceiling_ns` among them; a bus with no line, or a bound slower than every mode, derives nothing; the bus id) (`AET-WO-1204`).
+8. the analog lines, then `CeilingNotDerived` (a ceiling that is not what `solve` derives from the bus's own lines: `electrical::ceiling_hz` of the smallest `ceiling_ns` among them; a bus with no line, or a bound slower than every mode, derives nothing; the bus id) (`AET-WO-1204`);
+9. the declared speeds (`AET-WO-1205`): `SpeedBusMismatch` (the key sets of `i2c_speeds` and `i2c_ceilings` differ; the stray bus), then per bus `UnsupportedI2cSpeed` (not 100, 400 or 1,000 kHz), `BusTooFast` (above its ceiling), `PullUpBelowSinkFloor` and `BusCapacitanceOverLimit`, each line held to `electrical::i2c_pull_up_floor_ohms` and `i2c_bus_capacitance_limit_femtofarads` at the declared speed, with the names `solve` uses.
 
 A specification's device lists are private to this crate (`RUL-16`, `AET-WO-1204`). Read them through `Specification::declared_i2c_devices` and `declared_spi_devices`; `cli`, `svd-hal` and `twin` carry a `clippy.toml` that disallows both.
 
