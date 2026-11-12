@@ -230,3 +230,52 @@ fn the_crafted_16_8_mb_event_is_refused() {
         Err(E::MalformedEvent { reason, .. }) if reason == "event is over 4096 bytes"
     ));
 }
+
+/// Review A11.3: a second scenario, topology, boot or verdict record is refused
+/// when it is folded, before it is stored.
+#[test]
+fn a_second_once_only_record_is_refused_at_fold_time() {
+    use aethelgard_chaos::record::Record;
+    let verdict = |t| Event::Record {
+        timestamp: t,
+        record: Record::Verdict {
+            pass: true,
+            findings: vec![],
+        },
+    };
+    let mut replayer = Replayer::new(&header_bytes());
+    replayer.apply(&verdict(0)).unwrap();
+    assert!(matches!(
+        replayer.apply(&verdict(1)),
+        Err(E::DuplicateRecord { index: 1, kind: 14 })
+    ));
+    assert_eq!(replayer.state().records.len(), 1);
+}
+
+/// Adversarial pass of AET-WO-1900: records are folded into memory, so their
+/// count is bounded, not only the trace's bytes.
+#[test]
+fn a_run_over_the_record_bound_is_refused_while_folding() {
+    use aethelgard_chaos::record::{Reading, Record};
+    use aethelgard_chaos::replay::MAX_RECORDS;
+    let reg = |t| Event::Record {
+        timestamp: t,
+        record: Record::RegisterObserved {
+            name: "A".into(),
+            reading: Reading {
+                address: 0,
+                mask: 0,
+                expected: 0,
+                observed: None,
+            },
+        },
+    };
+    let mut replayer = Replayer::new(&header_bytes());
+    for i in 0..MAX_RECORDS as u64 {
+        replayer.apply(&reg(i)).unwrap();
+    }
+    assert!(matches!(
+        replayer.apply(&reg(MAX_RECORDS as u64)),
+        Err(E::TooManyRecords { limit, .. }) if limit == MAX_RECORDS
+    ));
+}

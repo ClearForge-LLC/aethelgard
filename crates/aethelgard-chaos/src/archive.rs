@@ -24,6 +24,8 @@ pub const MIRROR_TMP: &str = "mirror.cbor.tmp";
 /// A manifest declaring a longer trace is refused before the trace is read
 /// (`OQ-03` revisits the number when P2 measures real volume).
 pub const MAX_TRACE_BYTES: u64 = 256 << 20;
+/// The most a manifest may be: it holds a handful of integers and a hash.
+pub const MAX_MANIFEST_BYTES: u64 = 1 << 20;
 /// The longest encoded header item the reader will build.
 pub const MAX_HEADER_BYTES: usize = 1 << 20;
 /// The longest encoded event item the reader will build, and the writer write.
@@ -222,6 +224,21 @@ fn read_all(file: &mut File, path: &Path) -> Result<Vec<u8>, ArchiveError> {
     Ok(bytes)
 }
 
+/// The manifest, read through `take`: a sparse multi-gigabyte file is refused,
+/// never allocated (review A11.2).
+fn read_manifest(file: &mut File, path: &Path) -> Result<Vec<u8>, ArchiveError> {
+    let mut bytes = Vec::new();
+    file.take(MAX_MANIFEST_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| ArchiveError::io(path, e))?;
+    if bytes.len() as u64 > MAX_MANIFEST_BYTES {
+        return Err(ArchiveError::ManifestTooLarge {
+            limit: MAX_MANIFEST_BYTES,
+        });
+    }
+    Ok(bytes)
+}
+
 /// The run directory, opened once without following a symlink. Every check
 /// and every read after this goes through the descriptor, so nothing swapped
 /// in by name after the check is ever read (`AET-WO-2300` adversarial F1).
@@ -297,7 +314,7 @@ pub fn replay_dir(dir: &Path) -> Result<Replayed, ArchiveError> {
     let Some(mut manifest_file) = open_entry(&dirfd, dir, MANIFEST)? else {
         return Err(ArchiveError::Uncommitted);
     };
-    let manifest_bytes = read_all(&mut manifest_file, &manifest_path)?;
+    let manifest_bytes = read_manifest(&mut manifest_file, &manifest_path)?;
     let value = cbor::decode_exact(&manifest_bytes)
         .map_err(|e| ArchiveError::MalformedManifest(e.to_string()))?;
     let manifest = Manifest::from_value(&value).map_err(|fault| match fault {

@@ -482,6 +482,13 @@ fn an_immediate_cancel_storm_leaves_no_process_and_no_directory() {
     stop.store(true, Ordering::Relaxed);
     let seen = sampler.join().unwrap();
 
+    // Review A7.4: non-vacuity is the property, so the floor is one descendant. The
+    // count varies with runner speed: 1,214 to 1,285 on Furnace, 61 on CI.
+    assert!(
+        !seen.is_empty(),
+        "the sampler saw only {} descendants",
+        seen.len()
+    );
     nothing_left(&tmp, &seen, &format!("storm: calls={CALLS}"));
 }
 

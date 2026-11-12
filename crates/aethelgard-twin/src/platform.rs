@@ -230,8 +230,8 @@ pub fn emit_faulted(
             .map(|(reference, d)| format!("{reference} ({})", d.part))
             .collect();
         omitted.push(format!(
-            "\n// - Analog fault (AET-WO-2200): bus `{bus}` ({peripheral}) measured past its rise-time\n\
-             //   ceiling, so its devices are left out of this platform: {}.",
+            "\n// - Analog fault (AET-WO-2200): bus `{bus}` ({peripheral}) is faulted by the analog pass,\n\
+             //   so its devices are left out of this platform: {}.",
             if gone.is_empty() { "none".to_owned() } else { gone.join(", ") }
         ));
     }

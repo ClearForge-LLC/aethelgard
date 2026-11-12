@@ -334,6 +334,26 @@ fn reading(observed: Option<u32>) -> Reading {
     }
 }
 
+/// The passing verdict, likewise archived alone.
+fn passing_verdict() -> Record {
+    Record::Verdict {
+        pass: true,
+        findings: vec![("device_unmodelled".into(), "info".into(), 1)],
+    }
+}
+
+/// The boot with every reading absent: a run holds one boot (A11.3), so it is
+/// archived in a run of its own.
+fn absent_boot() -> Record {
+    Record::BootObserved {
+        image_sha256: [5; 32],
+        boot_word: reading(None),
+        instructions_expected: 1000,
+        instructions_observed: None,
+        pc: None,
+    }
+}
+
 fn one_of_each() -> Vec<Record> {
     vec![
         Record::Scenario {
@@ -397,13 +417,6 @@ fn one_of_each() -> Vec<Record> {
             instructions_observed: Some(999),
             pc: Some(0x0800_0100),
         },
-        Record::BootObserved {
-            image_sha256: [5; 32],
-            boot_word: reading(None),
-            instructions_expected: 1000,
-            instructions_observed: None,
-            pc: None,
-        },
         Record::RegisterObserved {
             name: "RCC_CR".into(),
             reading: reading(Some(0)),
@@ -437,10 +450,6 @@ fn one_of_each() -> Vec<Record> {
                 ("device_unmodelled".into(), "info".into(), 1),
             ],
         },
-        Record::Verdict {
-            pass: true,
-            findings: vec![("device_unmodelled".into(), "info".into(), 1)],
-        },
         solved_bus("SENSORS", "I2C1", ["I2C_SCL", "I2C_SDA"], &[("U2", 0x76)]),
         solved_bus("S2", "I2C2", ["N_SCL", "N_SDA"], &[]),
     ]
@@ -469,6 +478,13 @@ fn every_record_variant_round_trips_through_the_archive() {
     // Kinds 5 through 15 are all present.
     let kinds: std::collections::BTreeSet<u64> = records.iter().map(Record::kind).collect();
     assert_eq!(kinds, (5..=15).collect());
+    for (name, lone) in [
+        ("records-roundtrip-absent-boot", vec![absent_boot()]),
+        ("records-roundtrip-passing-verdict", vec![passing_verdict()]),
+    ] {
+        let (dir, _) = write_run(name, 7, &as_events(lone.clone()));
+        assert_eq!(replay_dir(&dir).unwrap().state.records, lone);
+    }
 }
 
 #[test]

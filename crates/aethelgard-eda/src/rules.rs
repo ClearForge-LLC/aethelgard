@@ -39,7 +39,7 @@ pub enum Source {
 impl Source {
     pub fn name(self) -> &'static str {
         match self {
-            Source::Specification => "specification",
+            Source::Specification => "engine-floor",
             Source::KicadDefault => "kicad-default",
         }
     }
@@ -152,6 +152,7 @@ mod tests {
             clearance_nm: FLOOR_NM,
             min_track_width_nm: Some(FLOOR_NM),
         };
+        assert_eq!(spec.source.name(), "engine-floor");
         let pro = spec.project("input");
         assert!(pro.contains("\"min_clearance\": 0.2,"));
         assert!(pro.contains("\"min_track_width\": 0.2 "));

@@ -1818,3 +1818,30 @@ fn board_file_exactly_at_the_byte_cap_is_accepted() {
     fs::write(&b.path, &text).unwrap();
     judged(&drc(&tb, &b.path), "pass", "drc");
 }
+
+/// Review A12.2: a relative `PATH` entry (here `.`, and an empty one) is
+/// refused, even when the tool sits in it.
+#[test]
+fn a_relative_path_entry_is_refused() {
+    for path in [".", ":/nonexistent", "tb-rel"] {
+        let tb = Dir::new("tb");
+        tb.script("kicad-cli", "exit 0");
+        let b = board();
+        let output = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+            .args([o("check"), o("drc"), o("--board"), o(&b.path)])
+            .current_dir(&tb.0)
+            .env_clear()
+            .env("PATH", path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        let r = refused(&output, 4, "ToolUnusable");
+        assert_eq!(r["error"]["id"], "kicad-cli", "{r}");
+        assert!(
+            r["error"]["message"].as_str().unwrap().contains("absolute"),
+            "{r}"
+        );
+    }
+}

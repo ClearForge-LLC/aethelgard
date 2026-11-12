@@ -903,7 +903,7 @@ fn replaying_a_missing_directory_is_refused() {
     let out = replay(&tb.0, &dir.0.join("absent"));
     let v = refusal(&out);
     assert_eq!(out.status.code(), Some(3), "{v}");
-    assert!(v["error"]["kind"].is_string(), "{v}");
+    assert_eq!(v["error"]["kind"], "Io", "{v}");
 }
 
 /// The offset of the first run of `needle` in `hay`.
@@ -1410,4 +1410,60 @@ fn a_pull_up_below_the_sink_floor_in_an_override_is_refused_before_any_run() {
         );
         assert_eq!(v["error"]["id"], "SENSORS", "{v}");
     }
+}
+
+// 2300 F14: `FirmwareChanged` was untested because nothing inside the sandbox can
+// change the file. The test process can: it is outside the sandbox. The boot reads
+// the firmware before its analog pass, so the window is between one scenario's
+// boot and the next, and a bridge stub that sleeps holds the campaign there.
+
+const BRIDGE_SLOW: &str = r#"#!/bin/sh
+/bin/sleep 3
+if /bin/grep -q 'line 47000' "$1"; then rise=3982.3; else rise=186.4; fi
+printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":'$rise'}' '{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","rise_30_70_ns":'$rise'}'
+"#;
+
+#[test]
+fn a_firmware_changed_while_the_campaign_runs_is_refused() {
+    let tb = toolbox(&good());
+    let work = Work::new();
+    let archive = Dir::new("archive");
+    let child = Command::new(cli(Some(BRIDGE_SLOW)))
+        .args([
+            os("campaign"),
+            os("--scenarios"),
+            os("scenarios/sentinel-01/pullup-2k2.json"),
+            os("scenarios/sentinel-01/pullup-47k.json"),
+            os("--firmware"),
+            work.firmware.as_os_str(),
+            os("--archive"),
+            archive.0.join("a").as_os_str(),
+        ])
+        .current_dir(root())
+        .env_clear()
+        .env("PATH", &tb.0)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // The first scenario has read the firmware, and its bridge is asleep for
+    // three seconds; the second scenario boots the changed file.
+    std::thread::sleep(std::time::Duration::from_millis(1200));
+    fs::write(&work.firmware, elf_at(0x0800_0000, &[1u8; 64], 40)).unwrap();
+    let out = child.wait_with_output().unwrap();
+    let all = lines(&out);
+    assert_eq!(out.status.code(), Some(3), "{all:?}");
+    assert_eq!(all.len(), 2, "{all:?}");
+    assert_eq!(all[0]["scenario"], "pullup-2k2");
+    let v = &all[1];
+    assert_eq!(v["error"]["kind"], "FirmwareChanged", "{v}");
+    assert_eq!(v["error"]["id"], "pullup-47k", "{v}");
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("changed while the campaign ran"),
+        "{v}"
+    );
 }

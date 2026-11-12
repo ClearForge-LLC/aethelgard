@@ -748,3 +748,62 @@ fn the_unsafe_scan_sees_only_code() {
     ));
     assert!(has_unsafe_keyword("let _ = cr#\"x\"#; unsafe {}"));
 }
+
+/// `AET-WO-1900` (1300 D10): the tools image carries KiCad's library licence
+/// text. The file is the one vendored in `aethelgard-kicad-lib`, byte for byte,
+/// the Dockerfile copies it beside the libraries and the smoke checks it there.
+#[test]
+fn the_tools_image_carries_kicads_library_licence() {
+    let r = root();
+    let vendored = fs::read(r.join(KICAD_LIB).join("data/kicad-10.0.7/LICENSE.md")).unwrap();
+    let shipped = fs::read(r.join("container/KICAD-LICENSE.md"))
+        .expect("container/KICAD-LICENSE.md is the licence the image copies");
+    assert_eq!(shipped, vendored, "not the vendored licence text");
+    let dockerfile = fs::read_to_string(r.join("container/Dockerfile")).unwrap();
+    assert!(
+        dockerfile
+            .lines()
+            .any(|l| l == "COPY KICAD-LICENSE.md /usr/share/kicad/LICENSE.md"),
+        "container/Dockerfile does not copy the licence beside the libraries"
+    );
+    let smoke = fs::read_to_string(r.join("container/smoke.sh")).unwrap();
+    assert!(
+        smoke.contains("/usr/share/kicad/LICENSE.md"),
+        "the smoke does not check it"
+    );
+}
+
+/// `AET-WO-1900` (1302 B9): the dev profile optimises `aethelgard-eda`, whose
+/// router the suites run in debug builds.
+#[test]
+fn the_dev_profile_optimises_the_router_crate() {
+    let text = fs::read_to_string(root().join("Cargo.toml")).unwrap();
+    let table: Table = text.parse().unwrap();
+    let level = table
+        .get("profile")
+        .and_then(|p| p.get("dev"))
+        .and_then(|d| d.get("package"))
+        .and_then(|p| p.get("aethelgard-eda"))
+        .and_then(|e| e.get("opt-level"));
+    assert_eq!(level, Some(&Value::Integer(2)));
+}
+
+/// `AET-WO-1900` (2200 F17): the bridge may depend on `serde_json` alone, so it
+/// cannot share the twin's decimal formatter. The two copies are held equal
+/// here, body for body, so neither can drift.
+#[test]
+fn the_bridge_and_the_twin_format_decimals_with_one_function() {
+    fn decimal_fn(path: &str) -> String {
+        let text = fs::read_to_string(root().join(path)).unwrap();
+        let from = text
+            .find("fn decimal(")
+            .unwrap_or_else(|| panic!("{path} has no `fn decimal(`"));
+        let len = text[from..].find("\n}\n").expect("the function ends");
+        text[from..from + len].to_owned()
+    }
+    assert_eq!(
+        decimal_fn("bridge/src/main.rs"),
+        decimal_fn("crates/aethelgard-twin/src/analog.rs"),
+        "the two `decimal` functions differ"
+    );
+}

@@ -533,6 +533,16 @@ impl Specification {
             return Err(E::NoVoltageDomain);
         }
         // 4
+        let mut folded_ids = BTreeSet::new();
+        for domain in &self.voltage_domains {
+            let id = &domain.id;
+            // Power names that differ only in case (or from the emitter's `GND`)
+            // are refused by KiCad's ERC, as the net rule in step 11 is.
+            let folded = id.to_lowercase();
+            if (folded == "gnd" && id != "GND") || !folded_ids.insert(folded) {
+                return Err(E::DuplicateDomainId { id: id.clone() });
+            }
+        }
         let mut domains = BTreeSet::new();
         for domain in &self.voltage_domains {
             let id = &domain.id;
@@ -676,6 +686,10 @@ impl Specification {
             }
         }
         // 11
+        // Names are compared with case folded: KiCad's ERC refuses labels that
+        // differ only in case (`similar_labels`, `similar_label_and_power`).
+        let folded_domains: BTreeSet<String> = domains.iter().map(|d| d.to_lowercase()).collect();
+        let mut folded_nets = BTreeSet::new();
         let mut nets = BTreeSet::new();
         let signals = self
             .i2c_buses
@@ -689,10 +703,13 @@ impl Specification {
             .chain(self.spi_devices.iter().map(|d| &d.cs));
         for signal in signals {
             let net = &signal.net;
-            if !nets.insert(net.as_str()) {
+            let folded = net.to_lowercase();
+            if !folded_nets.insert(folded.clone()) {
                 return Err(E::DuplicateNetName { id: net.clone() });
             }
-            if domains.contains(net.as_str()) {
+            nets.insert(net.as_str());
+            // `GND` is the power name the emitter adds to every schematic.
+            if folded_domains.contains(&folded) || (folded == "gnd" && net != "GND") {
                 return Err(E::NetShadowsDomain { id: net.clone() });
             }
         }
