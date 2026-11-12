@@ -47,7 +47,7 @@ grep -q '"ok":true' <<< "$emit"
 erc=$(ae check erc --schematic out/sentinel-01.kicad_sch); echo "$erc"
 grep -q '"verdict":"pass"' <<< "$erc"
 
-# DRC on the board, judged by the rules the specification implies, with schematic parity.
+# DRC on the board, judged by the engine's floor rules (the specification declares none yet), with schematic parity.
 drc=$(ae check drc --board out/sentinel-01.kicad_pcb --spec spec.json --schematic out/sentinel-01.kicad_sch); echo "$drc"
 grep -q '"verdict":"pass"' <<< "$drc"
 grep -q '"findings":\[\]' <<< "$drc"

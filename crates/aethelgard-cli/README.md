@@ -138,7 +138,7 @@ No rule is ever read from the input (`RUL-03` as amended, `INV-07`). KiCad keeps
 
   The board's own `.kicad_pro` and `.kicad_dru` are never copied. No environment variable is set.
 
-**With `--spec`**, the rules are what the specification implies, and the verdict says `"rules":"specification"` and carries the file's `specification_sha256`. The specification declares no spacing or fabrication field, so today that is the engine's floor: 0.2 mm clearance and board minimum, and a 0.2 mm minimum track width (`aethelgard_eda::rules::FLOOR_NM`).
+**With `--spec`**, the rules are the engine's floor until a specification rules field exists (AET-WO-4100), and the verdict says `"rules":"engine-floor"` and carries the file's `specification_sha256`. The specification declares no spacing or fabrication field, so today that is the engine's floor: 0.2 mm clearance and board minimum, and a 0.2 mm minimum track width (`aethelgard_eda::rules::FLOOR_NM`).
 
 **Without it**, the same files hold KiCad's own defaults (a 0.2 mm Default net class, no board minimum, no track-width minimum), and the verdict says `"rules":"kicad-default"`.
 

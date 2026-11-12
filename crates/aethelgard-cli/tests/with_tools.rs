@@ -740,7 +740,7 @@ fn drc_parity(board: &Path, sch: &Path, spec: &Path) -> Value {
     );
     let v = verdict(&out, code);
     assert_judged(&v, "drc", "kicad-cli", "10.0.7");
-    assert_eq!(v["rules"], "specification", "{v}");
+    assert_eq!(v["rules"], "engine-floor", "{v}");
     v
 }
 
