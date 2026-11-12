@@ -107,11 +107,12 @@ const I2C_MODES: [(&str, u32, u32); 3] = [
 
 /// The board crate for `crate_name`, from `solved`.
 ///
-/// The I2C speeds each peripheral admits come from `solved.i2c_ceilings`
-/// (`AET-WO-1202`), keyed by bus id. The topology does not say which
-/// peripheral serves which bus, so the generator needs one ceiling per I2C
-/// peripheral and gives every I2C peripheral the lowest of them: exact for one
-/// bus, and never above any bus's ceiling for more.
+/// The I2C speeds each peripheral admits come from `solved.i2c_speeds`, the
+/// speed each bus's specification declared (`AET-WO-1205`), keyed by bus id;
+/// `i2c_ceilings` (`AET-WO-1202`) is only counted against the peripherals. The
+/// topology does not say which peripheral serves which bus, so the generator
+/// gives every I2C peripheral the lowest declared speed: exact for one bus, and
+/// never above any bus's declared speed for more.
 pub fn generate(
     crate_name: &str,
     solved: &SolvedTopology,
@@ -145,7 +146,7 @@ pub fn generate_with(
         });
     }
     let mut speeds = BTreeMap::new();
-    if let Some(&hz) = solved.i2c_ceilings.values().min() {
+    if let Some(&hz) = solved.i2c_speeds.values().min() {
         let admitted: Vec<usize> = (0..I2C_MODES.len())
             .filter(|&i| I2C_MODES[i].1 <= hz)
             .collect();
@@ -1025,7 +1026,7 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     // Speeds.
     for (name, (hz, admitted)) in speeds {
         let note = format!(
-            "/// The speeds at or under `{name}`'s solved rise-time ceiling of {hz} Hz.\n\
+            "/// The speeds at or under `{name}`'s declared speed of {hz} Hz.\n\
              /// Sealed: firmware cannot admit another."
         );
         let _ = writeln!(
@@ -2144,7 +2145,7 @@ mod tests {
     /// Sentinel-01's solved topology, written out.
     fn solved() -> SolvedTopology {
         SolvedTopology {
-            schema_version: 1,
+            schema_version: 2,
             specification_sha256: "0".repeat(64),
             assignments: BTreeMap::from([
                 ("SCL".into(), assign("PB6", "I2C1", "I2C1_SCL", 4)),
@@ -2152,6 +2153,7 @@ mod tests {
             ]),
             gpio: BTreeMap::from([("CS".into(), "PA0".into())]),
             i2c_ceilings: BTreeMap::from([("BUS".into(), 400_000)]),
+            i2c_speeds: BTreeMap::from([("BUS".into(), 400_000)]),
             analog_lines: analog_lines(&[("SCL", "BUS"), ("SDA", "BUS")]),
             i2c_devices: BTreeMap::new(),
         }
@@ -2174,7 +2176,8 @@ mod tests {
 
     /// A bus's ceiling with the rise-time bound that derives it, on every one
     /// of its lines: `SolvedTopology::validate` holds a hand-written topology
-    /// to the ceiling `solve` derives (`AET-WO-1204`).
+    /// to the ceiling `solve` derives (`AET-WO-1204`). The bus is declared at
+    /// its ceiling; `set_speed` lowers it.
     fn set_ceiling(s: &mut SolvedTopology, bus: &str, hz: u32) {
         let ns = match hz {
             100_000 => 1000,
@@ -2182,9 +2185,14 @@ mod tests {
             _ => 120,
         };
         s.i2c_ceilings.insert(bus.into(), hz);
+        s.i2c_speeds.insert(bus.into(), hz);
         for line in s.analog_lines.values_mut().filter(|l| l.bus == bus) {
             line.ceiling_ns = ns;
         }
+    }
+
+    fn set_speed(s: &mut SolvedTopology, bus: &str, hz: u32) {
+        s.i2c_speeds.insert(bus.into(), hz);
     }
 
     fn kind(result: Result<BTreeMap<String, String>, BoardError>) -> &'static str {
@@ -2222,6 +2230,25 @@ mod tests {
     }
 
     #[test]
+    fn the_declared_speed_not_the_ceiling_decides_the_admitted_modes() {
+        // AET-WO-1205: a 100 kHz bus under a 400 kHz ceiling admits only
+        // Standard100k, and the harness drives only that speed.
+        let mut s = solved();
+        set_speed(&mut s, "BUS", 100_000);
+        let files = generate("b", &s, &table()).unwrap();
+        assert_eq!(admitted(&files), vec!["Standard100k"]);
+        let proofs = &files["src/proofs.rs"];
+        for (mode, _, _) in I2C_MODES {
+            assert_eq!(
+                proofs.contains(&format!("i2c1_speed::{mode},")),
+                mode == "Standard100k",
+                "{mode}"
+            );
+        }
+        assert!(files["src/board.rs"].contains("declared speed of 100000 Hz"));
+    }
+
+    #[test]
     fn ceilings_must_number_the_i2c_peripherals_and_the_lowest_applies() {
         let mut s = solved();
         s.i2c_ceilings.clear();
@@ -2241,6 +2268,7 @@ mod tests {
         s.assignments
             .insert("SDA2".into(), assign("PB11", "I2C2", "I2C2_SDA", 4));
         s.i2c_ceilings = BTreeMap::new();
+        s.i2c_speeds = BTreeMap::new();
         s.analog_lines = analog_lines(&[("SCL", "A"), ("SDA", "A"), ("SCL2", "B"), ("SDA2", "B")]);
         set_ceiling(&mut s, "A", 1_000_000);
         set_ceiling(&mut s, "B", 100_000);

@@ -212,16 +212,22 @@ fn solve_inner(
 ) -> Result<SolvedTopology, SolveError> {
     spec.validate().map_err(SolveError::InvalidSpecification)?;
     let mut out = SolvedTopology {
-        schema_version: 1,
+        schema_version: crate::SOLVED_SCHEMA_VERSION,
         specification_sha256: specification_sha256.to_owned(),
         assignments: BTreeMap::new(),
         gpio: BTreeMap::new(),
         i2c_ceilings: BTreeMap::new(),
+        i2c_speeds: BTreeMap::new(),
         analog_lines: BTreeMap::new(),
         i2c_devices: BTreeMap::new(),
     };
     out.validate().map_err(SolveError::InvalidSpecification)?;
     out.i2c_ceilings = i2c_ceilings(spec)?;
+    out.i2c_speeds = spec
+        .i2c_buses
+        .iter()
+        .map(|b| (b.id.clone(), b.speed_hz))
+        .collect();
     i2c_electrical(spec)?;
     if spec.mcu.part != table.part {
         return Err(SolveError::PartMismatch {
