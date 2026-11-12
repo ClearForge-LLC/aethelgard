@@ -59,7 +59,10 @@ fn digests() -> Vec<(&'static str, String)> {
     ]
 }
 
-/// Taken from the code before the move (`i2c_targets` in the caller).
+/// Taken from the code before the move (`i2c_targets` in the caller). The
+/// "platform faulted" digest was re-taken in `AET-WO-1900` (2300 F13), which
+/// reworded the faulted platform's provenance comment and nothing else: the old
+/// digest was `35509f30…1073`.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
@@ -71,7 +74,7 @@ const BEFORE: [(&str, &str); 4] = [
     ),
     (
         "platform faulted",
-        "35509f3050c9c727bf173c5abb0a1780cf235c36287e7720dd822d5c01d41073",
+        "2ccc0e8d5a63073ebf96e75f7a7955887b03a123fc0e05757ba178b48af6c75b",
     ),
     (
         "boot image",

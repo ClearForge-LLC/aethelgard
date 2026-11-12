@@ -644,7 +644,7 @@ fn platform_checking_toolbox(faulted: bool) -> Dir {
     let check =
         r#"p=$(printf '%s' "$5" | /bin/sed -n 's/.*LoadPlatformDescription @\([^;]*\);.*/\1/p')"#;
     let then = if faulted {
-        format!("{check}\n/bin/grep -q 'bus `SENSORS` (I2C1) measured past' \"$p\" || exit 98")
+        format!("{check}\n/bin/grep -q 'bus `SENSORS` (I2C1) is faulted by the analog pass' \"$p\" || exit 98")
     } else {
         format!("{check}\n/bin/grep -q 'Analog fault' \"$p\" && exit 98\nexit 0")
     };
