@@ -49,6 +49,8 @@ pub enum ArchiveError {
     MalformedHeader(String),
     #[error("unknown format version {found} in {item}")]
     UnknownVersion { item: &'static str, found: u64 },
+    #[error("manifest.cbor is over the {limit}-byte bound")]
+    ManifestTooLarge { limit: u64 },
     #[error("the manifest declares a trace of {declared} bytes, over the {limit}-byte bound")]
     TraceTooLarge { declared: u64, limit: u64 },
     #[error("trace is {actual} bytes, the manifest committed {expected}")]
@@ -65,6 +67,10 @@ pub enum ArchiveError {
         offset: usize,
         kind: u64,
     },
+    #[error("event {index} is over the {limit}-record bound on a run")]
+    TooManyRecords { index: u64, limit: usize },
+    #[error("event {index} is a second record of kind {kind}; a run holds one of each")]
+    DuplicateRecord { index: u64, kind: u64 },
     #[error("event {index} at byte {offset} is malformed: {reason}")]
     MalformedEvent {
         index: u64,
@@ -97,6 +103,7 @@ impl ArchiveError {
             Self::MalformedManifest(_) => "MalformedManifest",
             Self::MalformedHeader(_) => "MalformedHeader",
             Self::UnknownVersion { .. } => "UnknownVersion",
+            Self::ManifestTooLarge { .. } => "ManifestTooLarge",
             Self::TraceTooLarge { .. } => "TraceTooLarge",
             Self::Truncated { .. } => "Truncated",
             Self::Extended { .. } => "Extended",
@@ -104,6 +111,8 @@ impl ArchiveError {
             Self::NotDeterministicCbor(_) => "NotDeterministicCbor",
             Self::UnknownEventKind { .. } => "UnknownEventKind",
             Self::MalformedEvent { .. } => "MalformedEvent",
+            Self::DuplicateRecord { .. } => "DuplicateRecord",
+            Self::TooManyRecords { .. } => "TooManyRecords",
             Self::TimestampRegressed { .. } => "TimestampRegressed",
             Self::EventCountMismatch { .. } => "EventCountMismatch",
             Self::ReplayDiverged => "ReplayDiverged",

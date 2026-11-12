@@ -333,7 +333,7 @@ ls "$d" | grep -q loose && exit 88
         ),
         0,
     );
-    assert_eq!(v["rules"], "specification", "{v}");
+    assert_eq!(v["rules"], "engine-floor", "{v}");
     assert_eq!(v["specification_sha256"].as_str().unwrap().len(), 64);
     assert_eq!(v["input"]["sha256"], sha256_hex(LOOSE_BOARD.as_bytes()));
 

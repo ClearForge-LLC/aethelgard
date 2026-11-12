@@ -66,6 +66,15 @@ impl State {
     }
 }
 
+/// The wire kinds of the records a run holds exactly once: scenario, topology,
+/// boot, verdict.
+/// The most records a run may fold. A campaign run holds a few dozen; the cap
+/// bounds the memory the fold builds, which the 256 MiB trace bound does not
+/// (a 10-byte record costs about 350 bytes of state).
+pub const MAX_RECORDS: usize = 65_536;
+
+const ONCE_KINDS: [u64; 4] = [5, 6, 10, 14];
+
 /// The incremental fold. The writer and the reader both drive it, so a
 /// trace's `state_hash` is computed one way only.
 pub struct Replayer {
@@ -74,6 +83,9 @@ pub struct Replayer {
     count: u64,
     last_timestamp: u64,
     scratch: Vec<u8>,
+    /// Which of the once-only record kinds (scenario, topology, boot, verdict)
+    /// have been folded in.
+    once_seen: [bool; 4],
 }
 
 impl Replayer {
@@ -85,6 +97,7 @@ impl Replayer {
             count: 0,
             last_timestamp: 0,
             scratch: Vec::new(),
+            once_seen: [false; 4],
         }
     }
 
@@ -94,6 +107,25 @@ impl Replayer {
             return Err(ArchiveError::TimestampRegressed { index: self.count });
         }
         self.last_timestamp = event.timestamp();
+        // A run holds exactly one scenario, topology, boot and verdict
+        // (`check_run`); refuse a second here, before it is stored.
+        if matches!(event, Event::Record { .. }) && self.state.records.len() >= MAX_RECORDS {
+            return Err(ArchiveError::TooManyRecords {
+                index: self.count,
+                limit: MAX_RECORDS,
+            });
+        }
+        if let Event::Record { record, .. } = event
+            && let Some(slot) = ONCE_KINDS.iter().position(|k| *k == record.kind())
+        {
+            if self.once_seen[slot] {
+                return Err(ArchiveError::DuplicateRecord {
+                    index: self.count,
+                    kind: record.kind(),
+                });
+            }
+            self.once_seen[slot] = true;
+        }
         let delta = self.state.apply(event);
         self.scratch.clear();
         cbor::encode(&delta, &mut self.scratch);

@@ -216,9 +216,11 @@ mod tests {
         assert_eq!(emit_faulted(&t, &BTreeSet::new()).unwrap(), plain);
         let sensors = BTreeSet::from(["SENSORS".to_owned()]);
         let faulted = emit_faulted(&t, &sensors).unwrap();
-        let note = "// - Analog fault (AET-WO-2200): bus `SENSORS` (I2C1) measured past its rise-time\n\
-                    //   ceiling, so its devices are left out of this platform: U2 (BME280), U3 (TMP117).\n";
+        let note = "// - Analog fault (AET-WO-2200): bus `SENSORS` (I2C1) is faulted by the analog pass,\n\
+                    //   so its devices are left out of this platform: U2 (BME280), U3 (TMP117).\n";
         assert!(faulted.contains(note), "{faulted}");
+        // 2300 F13: a held-low bus is not "measured" past anything.
+        assert!(!faulted.contains("measured"), "{faulted}");
         assert!(!faulted.contains("u2:"), "{faulted}");
         // The rest is the platform with no device at all.
         let mut none = t.clone();

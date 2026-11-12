@@ -723,3 +723,36 @@ fn a_forged_record_without_a_transaction_fails_on_the_controller_state() {
         assert!(m.contains(field), "{field}: {m}");
     }
 }
+
+#[test]
+fn a_firmware_that_writes_the_witness_registers_by_hand_passes_today_a_named_residual() {
+    // AET-WO-1900 §1.10 (review A11.1), measured: the same forged record as
+    // above, and now also the reference boot's final `CR2` (0x020104EC) and
+    // `TXDR` (0xD0) written straight to I2C1 (base 0x40005400, CR2 +0x04, TXDR
+    // +0x28), with no call to `transfer`. Renode stores both writes, so the
+    // judge passes it. This test pins that, as 1301's A5 test does for KiCad:
+    // it turns red when `AET-WO-2301` adds an observable a plain write cannot
+    // set, and must then be inverted, not deleted.
+    let forged = mutant("forged-regs", |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "let mut buf0 = [0u8; 1];",
+            "let mut buf0 = [0x60u8; 1];",
+        );
+        edit(
+            d,
+            "src/main.rs",
+            "i2c1.transfer(&mut r, 0x76, &[0xd0], &mut buf0)",
+            "{ unsafe { core::ptr::write_volatile(0x4000_5404 as *mut u32, 0x0201_04EC); core::ptr::write_volatile(0x4000_5428 as *mut u32, 0xD0); } Ok::<usize, I2cError>(1) }",
+        );
+    });
+    let (code, v) = boot_elf("forged record and registers", &forged, "10ms");
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["verdict"], "pass", "{v}");
+    assert_eq!(v["boot"]["i2c_witness"][0]["cr2"]["observed"], "0x020104ec");
+    assert_eq!(
+        v["boot"]["i2c_witness"][0]["txdr"]["observed"],
+        "0x000000d0"
+    );
+}

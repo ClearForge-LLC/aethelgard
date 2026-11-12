@@ -142,7 +142,18 @@ impl Tool {
     /// Searches the caller's `PATH`, in order, for an executable `name`.
     pub fn find(name: &'static str) -> Result<Self, Stop> {
         let path_var = env::var_os("PATH").unwrap_or_default();
+        if path_var.is_empty() {
+            return Err(Stop::missing(name));
+        }
         for dir in env::split_paths(&path_var) {
+            // A relative entry (an empty one is the working directory) would run
+            // whatever the caller happens to stand beside (review A12.2).
+            if !dir.is_absolute() {
+                return Err(Stop::unusable(
+                    name,
+                    format!("PATH entry {:?} is not an absolute path", dir),
+                ));
+            }
             let candidate = dir.join(name);
             let Ok(meta) = fs::metadata(&candidate) else {
                 continue;
@@ -156,14 +167,10 @@ impl Tool {
                     format!("{} is not executable", candidate.display()),
                 ));
             }
-            let path = if candidate.is_absolute() {
-                candidate
-            } else {
-                env::current_dir()
-                    .map_err(|e| Stop::unusable(name, e.to_string()))?
-                    .join(candidate)
-            };
-            return Ok(Self { name, path });
+            return Ok(Self {
+                name,
+                path: candidate,
+            });
         }
         Err(Stop::missing(name))
     }

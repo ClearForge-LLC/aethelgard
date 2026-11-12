@@ -800,3 +800,18 @@ fn report_encoded_sizes_and_write_throughput() {
     replay_dir(&dir).unwrap();
     eprintln!("PLUMBING replay: {:.3} s", start.elapsed().as_secs_f64());
 }
+
+#[test]
+fn a_two_mebibyte_manifest_is_refused_by_name() {
+    let (dir, _m) = write_run("huge-manifest", 0x0400, &events(5));
+    // Sparse: 2 MiB of length, no 2 MiB of disk.
+    let f = fs::OpenOptions::new()
+        .write(true)
+        .open(dir.join("manifest.cbor"))
+        .unwrap();
+    f.set_len(2 << 20).unwrap();
+    assert!(matches!(
+        replay_dir(&dir),
+        Err(E::ManifestTooLarge { limit }) if limit == 1 << 20
+    ));
+}

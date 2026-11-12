@@ -59,3 +59,8 @@ RUN cargo install --locked kani-verifier --version 0.68.0 \
  && cargo kani setup --use-local-bundle /tmp/kani.tar.gz \
  && rm /tmp/kani.tar.gz \
  && chmod -R a+rX /opt/rustup /opt/cargo /opt/kani
+
+# KiCad's library licence text (CC-BY-SA-4.0 with KiCad's design exception),
+# beside the libraries it covers. The file is byte-identical to the copy
+# vendored in aethelgard-kicad-lib (AET-WO-1300 D10, AET-WO-1900).
+COPY KICAD-LICENSE.md /usr/share/kicad/LICENSE.md

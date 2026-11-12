@@ -17,6 +17,15 @@ on:
   schedule:
     - cron: "17 5 * * 1"
   workflow_dispatch:
+  # Called by engine-image.yml on every push to main, with the image that run
+  # published (AET-WO-1900): the block then runs against that image.
+  workflow_call:
+    inputs:
+      image:
+        description: "ghcr.io/clearforge-llc/aethelgard@sha256:<digest> of this commit's image; empty runs the README's own pin"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -61,6 +70,24 @@ jobs:
           [ "$(wc -w <<< "$commits")" -eq 1 ] || { echo "expected exactly one pinned commit, got: $commits" >&2; exit 1; }
           git merge-base --is-ancestor "$commits" origin/main || { echo "$commits is not reachable from origin/main" >&2; exit 1; }
           echo "specification commit $commits is on main"
+
+      # On a push to main the block runs against the image built from this very
+      # commit, not the README's pin: the IMAGE line is replaced, exactly once,
+      # and the image must name this commit in its revision label.
+      - name: test this commit's image, not the README's pin
+        if: inputs.image != ''
+        env:
+          MAIN_IMAGE: ${{ inputs.image }}
+        run: |
+          set -euo pipefail
+          [[ "$MAIN_IMAGE" =~ ^ghcr\.io/clearforge-llc/aethelgard@sha256:[0-9a-f]{64}$ ]] || { echo "not a digest of the engine image: $MAIN_IMAGE" >&2; exit 1; }
+          [ "$(grep -c '^IMAGE=' "$RUNNER_TEMP/quickstart.sh")" -eq 1 ] || { echo "the block must hold exactly one IMAGE= line" >&2; exit 1; }
+          sed -i "s|^IMAGE=.*|IMAGE=$MAIN_IMAGE|" "$RUNNER_TEMP/quickstart.sh"
+          grep -qxF "IMAGE=$MAIN_IMAGE" "$RUNNER_TEMP/quickstart.sh" || { echo "the IMAGE line was not replaced" >&2; exit 1; }
+          docker pull -q "$MAIN_IMAGE"
+          rev=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$MAIN_IMAGE")
+          [ "$rev" = "$GITHUB_SHA" ] || { echo "image revision '$rev' is not this commit $GITHUB_SHA" >&2; exit 1; }
+          echo "testing $MAIN_IMAGE built from $rev"
 
       # No checkout in the run directory, and no toolchain on the path it uses.
       - name: run it, as written

@@ -612,12 +612,27 @@ fn unknown_field_in_each_struct_is_refused() {
 #[test]
 fn missing_key_in_each_struct_is_refused() {
     for pointer in OBJECT_POINTERS {
-        let mut doc = spec_json();
-        let object = doc.pointer_mut(pointer).unwrap().as_object_mut().unwrap();
-        let key = object.keys().next().unwrap().clone();
-        object.remove(&key);
-        let err = parse(&doc).unwrap_err();
-        assert!(err.contains("missing field"), "{pointer}: {err}");
+        let keys: Vec<String> = spec_json()
+            .pointer(pointer)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        for key in keys {
+            let mut doc = spec_json();
+            doc.pointer_mut(pointer)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .remove(&key);
+            let err = parse(&doc).unwrap_err();
+            assert!(
+                err.contains(&format!("missing field `{key}`")),
+                "{pointer} without {key}: {err}"
+            );
+        }
     }
 }
 
@@ -1232,4 +1247,32 @@ fn solved_refuses_a_missing_or_repeated_device() {
             .contains("duplicate assignment for net `U3`"),
         "{err}"
     );
+}
+
+#[test]
+fn refuses_names_that_differ_only_in_case() {
+    // The review's A10.1 inputs: `emit` accepted both and `check erc` refused them.
+    let err = refusal(|s| s.spi_devices[0].cs.net = "gnd".into());
+    assert_refusal(err, "NetShadowsDomain", Some("gnd"));
+    let err = refusal(|s| s.spi_devices[0].cs.net = "i2c_scl".into());
+    assert_refusal(err, "DuplicateNetName", Some("i2c_scl"));
+    let err = refusal(|s| s.spi_devices[0].cs.net = "vdd_3v3".into());
+    assert_refusal(err, "NetShadowsDomain", Some("vdd_3v3"));
+}
+
+#[test]
+fn refuses_voltage_domains_that_differ_only_in_case() {
+    // Adversarial pass of AET-WO-1900: power names fold like net names do.
+    let err = refusal(|s| {
+        let mut d = s.voltage_domains[0].clone();
+        d.id = "vdd_3v3".into();
+        s.voltage_domains.push(d);
+    });
+    assert_refusal(err, "DuplicateDomainId", Some("vdd_3v3"));
+    let err = refusal(|s| {
+        let mut d = s.voltage_domains[0].clone();
+        d.id = "gnd".into();
+        s.voltage_domains.push(d);
+    });
+    assert_refusal(err, "DuplicateDomainId", Some("gnd"));
 }

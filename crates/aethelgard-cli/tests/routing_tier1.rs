@@ -305,15 +305,32 @@ fn the_routers_judges_refuse_orphan_and_relabelled_copper() {
     let (b, r) = read(&board);
     route::check(&b, &r).unwrap();
     route::connectivity(&b, &r).unwrap();
-    for (name, edited) in [
-        ("loop", format!("{}{ring}{}", &board[..at], &board[at..])),
-        ("stub", format!("{}{stub}{}", &board[..at], &board[at..])),
-        ("stray", format!("{}{stray}{}", &board[..at], &board[at..])),
-        ("relabelled", relabelled),
+    // Each edit is refused for its own reason (review A7.7), not for any reason.
+    for (name, edited, why) in [
+        (
+            "loop",
+            format!("{}{ring}{}", &board[..at], &board[at..]),
+            "is joined to none of its pads",
+        ),
+        (
+            "stub",
+            format!("{}{stub}{}", &board[..at], &board[at..]),
+            "unconnected-(U3-ALERT-Pad3)`, which the router does not route",
+        ),
+        (
+            "stray",
+            format!("{}{stray}{}", &board[..at], &board[at..]),
+            "`/NOPE`, which the router does not route",
+        ),
+        ("relabelled", relabelled, "is within 200000 nm of track"),
     ] {
         assert_ne!(edited, board, "{name}");
         let (b, r) = read(&edited);
         let judged = route::check(&b, &r).and_then(|_| route::connectivity(&b, &r));
-        assert!(judged.is_err(), "{name}: accepted");
+        let err = judged.expect_err(&format!("{name}: accepted"));
+        assert!(
+            err.contains(why),
+            "{name}: refused for another reason: {err}"
+        );
     }
 }

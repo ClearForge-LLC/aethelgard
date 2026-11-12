@@ -109,7 +109,7 @@ Each runs one external tool on one input and prints one verdict. They are **Linu
 
 1. **Checks the input path** (exit `3` if refused). It must be UTF-8, so the verdict can report it exactly. `--board`, `--schematic` and a `--platform` file must be regular files after following symlinks; `--crate` must be a directory. A `--platform` starting with `@` names a file inside Renode's own tree (the directory holding the real `renode` binary), as Renode's own `@` syntax does.
    `--harness` must be a Rust path: letters, digits, `_` and `::` (exit `64` otherwise).
-2. **Finds the tool** by searching the caller's `PATH` for `kicad-cli`, `renode`, or `cargo` and `cargo-kani` (exit `4`, `ToolMissing`, naming the first one absent). `prove` also needs `KANI_HOME` and `RUSTUP_HOME` set to existing directories, and `PATH` (exit `4`, `ToolUnusable`, naming the variable).
+2. **Finds the tool** by searching the caller's `PATH` (every entry must be absolute: a relative or empty one is exit `4`, `ToolUnusable`, naming the tool) for `kicad-cli`, `renode`, or `cargo` and `cargo-kani` (exit `4`, `ToolMissing`, naming the first one absent). `prove` also needs `KANI_HOME` and `RUSTUP_HOME` set to existing directories, and `PATH` (exit `4`, `ToolUnusable`, naming the variable).
 3. **Copies the input** into a fresh private temporary directory and hashes the copy. The tool judges the copy, never the original, so the hash in the verdict is of exactly the bytes given (`INV-03`), and nothing is written beside the input. `check drc` and `check erc` then **prepare the copy** (below), and they do steps 3 and the preparation before step 2, so an input refused for what it carries is refused whatever is installed.
 4. **Asks the tool its version**, then **runs it**, each time in the sandbox below. A tool that will not report its version is exit `4`, `ToolUnusable`.
 5. **Reads two witnesses** (below), prints the verdict, and removes the temporary directory.
@@ -139,7 +139,7 @@ No rule is ever read from the input (`RUL-03` as amended, `INV-07`). KiCad keeps
 
   The board's own `.kicad_pro` and `.kicad_dru` are never copied. No environment variable is set.
 
-**With `--spec`**, the rules are what the specification implies, and the verdict says `"rules":"specification"` and carries the file's `specification_sha256`. The specification declares no spacing or fabrication field, so today that is the engine's floor: 0.2 mm clearance and board minimum, and a 0.2 mm minimum track width (`aethelgard_eda::rules::FLOOR_NM`).
+**With `--spec`**, the rules are the engine's floor until a specification rules field exists (AET-WO-4100), and the verdict says `"rules":"engine-floor"` and carries the file's `specification_sha256`. The specification declares no spacing or fabrication field, so today that is the engine's floor: 0.2 mm clearance and board minimum, and a 0.2 mm minimum track width (`aethelgard_eda::rules::FLOOR_NM`).
 
 **Without it**, the same files hold KiCad's own defaults (a 0.2 mm Default net class, no board minimum, no track-width minimum), and the verdict says `"rules":"kicad-default"`.
 
@@ -252,6 +252,8 @@ The reader removes a stray `\r` at either end of a line, matches each marker as 
 - **The controller witness** (`AET-WO-2202` W1). The record is the firmware's account, so for the last identity read on each bus the judge also reads the controller's `CR2` and `TXDR` after the run, which Renode 1.17.0 stores. The expectation is computed from the solved address, the part table and the header (`SADD` = address << 1, `RD_WRN` = 1, `NBYTES` = the identity's width, `AUTOEND` set, `TXDR` = the identity register; `START` and every other bit are ignored) and is judged only when that record claims the read completed. A difference is `i2c_transaction_unwitnessed`, naming the device and each field. The verdict's `boot.i2c_witness` lists both registers with their addresses, masks, expected and observed values.
 
 **Named residual** (`AET-WO-2202` W1): only the last transaction on each bus is witnessed by controller state. Today each bus has one modelled device; a bus with two needs a per-transaction witness.
+
+**Named residual** (`AET-WO-1900` A11.1, measured): the controller witness guards a mistaken generated firmware, not a hostile one. A hand-written firmware that writes the record and also stores the reference boot's final `CR2` (`0x020104EC`) and `TXDR` (`0xD0`) straight to `I2C1`, calling no `transfer`, is stored by Renode 1.17.0 and judged `pass` (`twin_tier2::a_firmware_that_writes_the_witness_registers_by_hand_passes_today_a_named_residual`). An observable a plain write cannot set is left to `AET-WO-2301`.
 
 Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a load error. `firmware.image_sha256` is the sha256, over every `PT_LOAD` with memory in physical-address order, of its physical address, file size and memory size (each a `u32` little-endian) and then its file bytes: the memory image Renode builds. It is the firmware's identity, because the file's own hash also covers symbol names, which Cargo derives from the checkout path.
 
