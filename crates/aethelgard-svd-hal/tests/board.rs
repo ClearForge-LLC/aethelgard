@@ -15,12 +15,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use aethelgard_cli::generate;
 use aethelgard_ir::Specification;
-use aethelgard_svd_hal::board::generate_with;
 use aethelgard_svd_hal::pin_table;
 use sha2::{Digest, Sha256};
-
-const CRATE: &str = "sentinel-01-board";
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -30,11 +28,8 @@ fn board_dir() -> PathBuf {
     root().join("boards/sentinel-01")
 }
 
-/// The parts the twin has a Renode model for.
-fn answers(part: &str) -> bool {
-    aethelgard_twin::model::model(part).is_some()
-}
-
+/// The `board/` part of what `aethelgard generate` writes, through the one
+/// composition function the CLI uses (`AET-WO-3301` §1.5).
 fn generated() -> BTreeMap<String, String> {
     let bytes = fs::read(root().join("examples/sentinel-01-minimal.json")).unwrap();
     let spec: Specification = serde_json::from_slice(&bytes).unwrap();
@@ -44,14 +39,12 @@ fn generated() -> BTreeMap<String, String> {
         .collect();
     let table = pin_table(&spec.mcu.part).unwrap();
     let solved = aethelgard_ir::solve(&spec, &table, &sha).unwrap();
-    // The devices are the topology's; the firmware reads the ones the twin can
-    // answer for, and the platform declares the same ones (`AET-WO-2202`).
-    let mut files = generate_with(CRATE, &solved, &table, &answers).unwrap();
-    files.insert(
-        "sentinel-01.repl".to_owned(),
-        aethelgard_twin::platform::emit(&solved).unwrap(),
-    );
-    files
+    let prefix = format!("{}/", generate::BOARD_DIR);
+    generate::tree(&spec, &solved, &table)
+        .unwrap()
+        .into_iter()
+        .filter_map(|(path, text)| Some((path.strip_prefix(&prefix)?.to_owned(), text)))
+        .collect()
 }
 
 /// Every regular file under `dir`, relative, with `/` separators. `target/`
