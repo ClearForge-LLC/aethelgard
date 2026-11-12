@@ -465,6 +465,14 @@ fn what_the_reader_does_not_model_is_refused() {
         ),
         ("huge", huge, "BoardTooLarge"),
         (
+            "outline_layer_twice",
+            once(
+                "\t\t(layer \"Edge.Cuts\")\n",
+                "\t\t(layer \"Edge.Cuts\")\n\t\t(layer \"F.Cu\")\n",
+            ),
+            unmodelled,
+        ),
+        (
             "general_twice",
             insert("\t(general (thickness 0.2))"),
             unmodelled,
