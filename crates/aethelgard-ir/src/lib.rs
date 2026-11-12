@@ -130,11 +130,17 @@ pub struct NetConstraint {
     pub impedance_ohms: Option<u32>,
 }
 
+/// The `schema_version` of a [`SolvedTopology`]. Version 2 added `i2c_speeds`
+/// (`AET-WO-1205`); a version-1 file is refused, never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 2;
+
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
 /// the signals on an alternate function; `gpio` holds each net driven as a
 /// plain GPIO output (an SPI device's `cs`), net to pin. `i2c_ceilings` holds
-/// each I2C bus's maximum speed in Hz, keyed by bus id. `analog_lines` holds
+/// each I2C bus's maximum speed in Hz, keyed by bus id, and `i2c_speeds` the
+/// speed the specification declared for it, under the same keys
+/// (`AET-WO-1205`). `analog_lines` holds
 /// the analog facts of every solved I2C line, keyed by net, which the twin's
 /// analog model reads instead of the specification (`AET-WO-2200`, `RUL-16`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -149,6 +155,8 @@ pub struct SolvedTopology {
     pub gpio: BTreeMap<String, String>,
     #[serde(deserialize_with = "unique_keys")]
     pub i2c_ceilings: BTreeMap<String, u32>,
+    #[serde(deserialize_with = "unique_keys")]
+    pub i2c_speeds: BTreeMap<String, u32>,
     #[serde(deserialize_with = "unique_keys")]
     pub analog_lines: BTreeMap<String, AnalogLine>,
     /// Every I2C device of the specification, keyed by reference, on the
@@ -274,11 +282,83 @@ object_only!(
     I2cDevice,
     SpiDevice,
     NetConstraint,
-    SolvedTopology,
     PinAssignment,
     AnalogLine,
     SolvedI2cDevice
 );
+
+/// The wire form of a [`SolvedTopology`]. It differs in one field: `i2c_speeds`
+/// may be absent, so that a version-1 file (which has none) reaches
+/// `validate` and is refused as `UnsupportedSchemaVersion`, not as a missing
+/// key (`AET-WO-1205`, `INV-06`).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SolvedWire {
+    schema_version: u32,
+    specification_sha256: String,
+    #[serde(deserialize_with = "unique_keys")]
+    assignments: BTreeMap<String, PinAssignment>,
+    #[serde(deserialize_with = "unique_keys")]
+    gpio: BTreeMap<String, String>,
+    #[serde(deserialize_with = "unique_keys")]
+    i2c_ceilings: BTreeMap<String, u32>,
+    #[serde(default, deserialize_with = "unique_keys_some")]
+    i2c_speeds: Option<BTreeMap<String, u32>>,
+    #[serde(deserialize_with = "unique_keys")]
+    analog_lines: BTreeMap<String, AnalogLine>,
+    #[serde(deserialize_with = "unique_keys")]
+    i2c_devices: BTreeMap<String, SolvedI2cDevice>,
+}
+
+fn unique_keys_some<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<BTreeMap<String, u32>>, D::Error> {
+    unique_keys(deserializer).map(Some)
+}
+
+impl Serialize for SolvedTopology {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        SolvedTopology::serialize(self, serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SolvedTopology {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ObjectVisitor;
+
+        impl<'de> Visitor<'de> for ObjectVisitor {
+            type Value = SolvedTopology;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a SolvedTopology object")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<SolvedTopology, A::Error> {
+                let w = SolvedWire::deserialize(MapAccessDeserializer::new(map))?;
+                // A missing `i2c_speeds` is read as empty only under another
+                // version, which `validate` refuses first; under the current
+                // one it is a missing key, never a default.
+                let i2c_speeds = match w.i2c_speeds {
+                    Some(m) => m,
+                    None if w.schema_version != SOLVED_SCHEMA_VERSION => BTreeMap::new(),
+                    None => return Err(serde::de::Error::missing_field("i2c_speeds")),
+                };
+                Ok(SolvedTopology {
+                    schema_version: w.schema_version,
+                    specification_sha256: w.specification_sha256,
+                    assignments: w.assignments,
+                    gpio: w.gpio,
+                    i2c_ceilings: w.i2c_ceilings,
+                    i2c_speeds,
+                    analog_lines: w.analog_lines,
+                    i2c_devices: w.i2c_devices,
+                })
+            }
+        }
+
+        deserializer.deserialize_map(ObjectVisitor)
+    }
+}
 
 /// The pins of one part and package, built from a vendored vendor source and
 /// never read from a user, so it is `Serialize` and not `Deserialize`.
@@ -324,8 +404,8 @@ impl PinTable {
 /// One variant per refusal. Each names what `id()` returns, or nothing.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum IrValidationError {
-    #[error("schema_version is {version}, not 1")]
-    UnsupportedSchemaVersion { version: u32 },
+    #[error("schema_version is {version}, not {expected}")]
+    UnsupportedSchemaVersion { version: u32, expected: u32 },
     #[error(
         "`{path}` is not an identifier: 1 to 64 bytes of printable ASCII 0x21-0x7E, none of them `/`, `{{`, `}}`, `$`, `[` or `]`"
     )]
@@ -403,6 +483,35 @@ pub enum IrValidationError {
         ceiling_hz: u32,
         derived_hz: Option<u32>,
     },
+    #[error("`i2c_speeds` and `i2c_ceilings` do not name the same buses: `{id}` is in only one")]
+    SpeedBusMismatch { id: String },
+    /// Same name and meaning as `SolveError::BusTooFast`.
+    #[error(
+        "I2C bus `{bus}` runs at {speed_hz} Hz, above its rise-time ceiling of {ceiling_hz} Hz"
+    )]
+    BusTooFast {
+        bus: String,
+        speed_hz: u32,
+        ceiling_hz: u32,
+    },
+    /// Same name and meaning as `SolveError::PullUpBelowSinkFloor`.
+    #[error(
+        "I2C bus `{bus}` has a pull-up of {pull_up_ohms} ohms, below the {floor_ohms} ohm floor its rail and mode set (UM10204 sink current)"
+    )]
+    PullUpBelowSinkFloor {
+        bus: String,
+        pull_up_ohms: u32,
+        floor_ohms: u32,
+    },
+    /// Same name and meaning as `SolveError::BusCapacitanceOverLimit`.
+    #[error(
+        "I2C line `{net}` has a capacitance of {capacitance_femtofarads} fF, over its bus's limit of {limit_femtofarads} fF (UM10204)"
+    )]
+    BusCapacitanceOverLimit {
+        net: String,
+        capacitance_femtofarads: u64,
+        limit_femtofarads: u64,
+    },
 }
 
 impl IrValidationError {
@@ -443,6 +552,10 @@ impl IrValidationError {
             Self::I2cDeviceIndex { .. } => "I2cDeviceIndex",
             Self::I2cDevicePeripheral { .. } => "I2cDevicePeripheral",
             Self::CeilingNotDerived { .. } => "CeilingNotDerived",
+            Self::SpeedBusMismatch { .. } => "SpeedBusMismatch",
+            Self::BusTooFast { .. } => "BusTooFast",
+            Self::PullUpBelowSinkFloor { .. } => "PullUpBelowSinkFloor",
+            Self::BusCapacitanceOverLimit { .. } => "BusCapacitanceOverLimit",
         }
     }
 
@@ -483,8 +596,12 @@ impl IrValidationError {
             | Self::MissingAnalogLine { id }
             | Self::AnalogBusMismatch { id }
             | Self::I2cDeviceIndex { id }
-            | Self::I2cDevicePeripheral { id } => Some(id),
-            Self::CeilingNotDerived { bus, .. } => Some(bus),
+            | Self::I2cDevicePeripheral { id }
+            | Self::SpeedBusMismatch { id } => Some(id),
+            Self::CeilingNotDerived { bus, .. }
+            | Self::BusTooFast { bus, .. }
+            | Self::PullUpBelowSinkFloor { bus, .. } => Some(bus),
+            Self::BusCapacitanceOverLimit { net, .. } => Some(net),
         }
     }
 
@@ -556,6 +673,7 @@ impl Specification {
         if self.schema_version != 1 {
             return Err(E::UnsupportedSchemaVersion {
                 version: self.schema_version,
+                expected: 1,
             });
         }
         // 2
@@ -830,9 +948,10 @@ impl SolvedTopology {
     pub fn validate(&self) -> Result<(), IrValidationError> {
         use IrValidationError as E;
 
-        if self.schema_version != 1 {
+        if self.schema_version != SOLVED_SCHEMA_VERSION {
             return Err(E::UnsupportedSchemaVersion {
                 version: self.schema_version,
+                expected: SOLVED_SCHEMA_VERSION,
             });
         }
         let hash = self.specification_sha256.as_bytes();
@@ -851,6 +970,9 @@ impl SolvedTopology {
         }
         for bus in self.i2c_ceilings.keys() {
             identifier(bus, || format!("i2c_ceilings.{bus}"))?;
+        }
+        for bus in self.i2c_speeds.keys() {
+            identifier(bus, || format!("i2c_speeds.{bus}"))?;
         }
         for (net, line) in &self.analog_lines {
             identifier(net, || format!("analog_lines.{net}"))?;
@@ -1032,6 +1154,62 @@ impl SolvedTopology {
                     ceiling_hz,
                     derived_hz,
                 });
+            }
+        }
+        self.validate_i2c_speeds()
+    }
+
+    /// The declared speeds (`AET-WO-1205`): the same buses as the ceilings,
+    /// each a speed a specification may declare and at most its ceiling, then
+    /// each line of the bus held to the pull-up floor and capacitance limit
+    /// `solve` applies at that speed (`AET-WO-1203`).
+    fn validate_i2c_speeds(&self) -> Result<(), IrValidationError> {
+        use IrValidationError as E;
+
+        let stray = self
+            .i2c_speeds
+            .keys()
+            .find(|b| !self.i2c_ceilings.contains_key(*b))
+            .or_else(|| {
+                self.i2c_ceilings
+                    .keys()
+                    .find(|b| !self.i2c_speeds.contains_key(*b))
+            });
+        if let Some(bus) = stray {
+            return Err(E::SpeedBusMismatch { id: bus.clone() });
+        }
+        for (bus, &speed_hz) in &self.i2c_speeds {
+            if ![100_000, 400_000, 1_000_000].contains(&speed_hz) {
+                return Err(E::UnsupportedI2cSpeed {
+                    id: bus.clone(),
+                    value: speed_hz,
+                });
+            }
+            let ceiling_hz = self.i2c_ceilings[bus];
+            if speed_hz > ceiling_hz {
+                return Err(E::BusTooFast {
+                    bus: bus.clone(),
+                    speed_hz,
+                    ceiling_hz,
+                });
+            }
+            let limit = electrical::i2c_bus_capacitance_limit_femtofarads(speed_hz);
+            for (net, line) in self.analog_lines.iter().filter(|(_, l)| &l.bus == bus) {
+                let floor = electrical::i2c_pull_up_floor_ohms(speed_hz, line.domain_millivolts);
+                if line.pull_up_ohms < floor {
+                    return Err(E::PullUpBelowSinkFloor {
+                        bus: bus.clone(),
+                        pull_up_ohms: line.pull_up_ohms,
+                        floor_ohms: floor,
+                    });
+                }
+                if line.capacitance_femtofarads > limit {
+                    return Err(E::BusCapacitanceOverLimit {
+                        net: net.clone(),
+                        capacitance_femtofarads: line.capacitance_femtofarads,
+                        limit_femtofarads: limit,
+                    });
+                }
             }
         }
         Ok(())

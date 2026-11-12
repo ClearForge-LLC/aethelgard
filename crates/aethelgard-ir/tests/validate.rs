@@ -705,7 +705,7 @@ fn assignment(pin: &str, af: u8) -> PinAssignment {
 
 fn solved() -> SolvedTopology {
     SolvedTopology {
-        schema_version: 1,
+        schema_version: 2,
         specification_sha256: HASH.into(),
         assignments: [
             ("I2C_SCL".to_owned(), assignment("PB8", 4)),
@@ -718,6 +718,7 @@ fn solved() -> SolvedTopology {
         .into(),
         gpio: [("FLASH_CS".to_owned(), "PA0".to_owned())].into(),
         i2c_ceilings: [("SENSORS".to_owned(), 400_000)].into(),
+        i2c_speeds: [("SENSORS".to_owned(), 400_000)].into(),
         analog_lines: [
             ("I2C_SCL".to_owned(), analog_line()),
             ("I2C_SDA".to_owned(), analog_line()),
@@ -766,8 +767,11 @@ fn valid_solved_topology_passes() {
 
 #[test]
 fn solved_refuses_version_and_hash() {
-    let err = solved_refusal(|t| t.schema_version = 2);
-    assert_refusal(err, "UnsupportedSchemaVersion", None);
+    // Version 1 is the file before `i2c_speeds` (`AET-WO-1205`).
+    for version in [0, 1, 3] {
+        let err = solved_refusal(|t| t.schema_version = version);
+        assert_refusal(err, "UnsupportedSchemaVersion", None);
+    }
     for hash in [
         "",
         &HASH[..63],
@@ -830,8 +834,8 @@ fn solved_round_trip_is_equal_and_byte_stable() {
 
 #[test]
 fn solved_serialization_is_sorted_whatever_the_input_order() {
-    let a = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"Z":"g","C":"c"},"i2c_ceilings":{"Y":100000,"B":400000},"analog_lines":{},"i2c_devices":{}}"#;
-    let b = r#"{"schema_version":1,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"C":"c","Z":"g"},"i2c_ceilings":{"B":400000,"Y":100000},"analog_lines":{},"i2c_devices":{}}"#;
+    let a = r#"{"schema_version":2,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"Z":"g","C":"c"},"i2c_ceilings":{"Y":100000,"B":400000},"i2c_speeds":{"Y":100000,"B":400000},"analog_lines":{},"i2c_devices":{}}"#;
+    let b = r#"{"schema_version":2,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"C":"c","Z":"g"},"i2c_ceilings":{"B":400000,"Y":100000},"i2c_speeds":{"B":400000,"Y":100000},"analog_lines":{},"i2c_devices":{}}"#;
     let a: SolvedTopology = serde_json::from_str(a).unwrap();
     let b: SolvedTopology = serde_json::from_str(b).unwrap();
     assert_eq!(
@@ -977,6 +981,7 @@ fn solved_accepts_each_mode_and_refuses_any_other_ceiling() {
     for (hz, ns) in [(100_000, 1000), (400_000, 300), (1_000_000, 120)] {
         let mut t = solved();
         t.i2c_ceilings.insert("SENSORS".into(), hz);
+        t.i2c_speeds.insert("SENSORS".into(), hz);
         for line in t.analog_lines.values_mut() {
             line.ceiling_ns = ns;
         }
@@ -1142,11 +1147,12 @@ fn solved_refuses_a_zero_analog_value() {
         let err = solved_refusal(|t| edit(t.analog_lines.get_mut("I2C_SDA").unwrap()));
         assert_refusal(err, kind, Some("I2C_SDA"));
     }
-    // Huge values are the bridge's to measure or refuse, not validate's.
+    // Huge values are the bridge's to measure or refuse, not validate's, but
+    // capacitance now has the declared speed's limit (`AET-WO-1205`).
     let mut t = solved();
     let line = t.analog_lines.get_mut("I2C_SDA").unwrap();
     line.pull_up_ohms = u32::MAX;
-    line.capacitance_femtofarads = u64::MAX;
+    line.capacitance_femtofarads = 400_000;
     line.ceiling_ns = u32::MAX;
     line.domain_millivolts = u32::MAX;
     assert_eq!(t.validate(), Ok(()));
@@ -1378,4 +1384,173 @@ fn refuses_voltage_domains_that_differ_only_in_case() {
         s.voltage_domains.push(d);
     });
     assert_refusal(err, "DuplicateDomainId", Some("gnd"));
+}
+
+// ---- SolvedTopology.i2c_speeds (AET-WO-1205) --------------------------------
+
+fn set_line_pull_up(t: &mut SolvedTopology, ohms: u32) {
+    for line in t.analog_lines.values_mut() {
+        line.pull_up_ohms = ohms;
+    }
+}
+
+#[test]
+fn a_version_1_file_is_refused_by_version_not_by_a_missing_key() {
+    let mut v = solved_json();
+    v["schema_version"] = 1.into();
+    v.as_object_mut().unwrap().remove("i2c_speeds");
+    let t: SolvedTopology = serde_json::from_value(v).unwrap();
+    assert_refusal(t.validate().unwrap_err(), "UnsupportedSchemaVersion", None);
+    // Under the current version the key is required, never defaulted.
+    let mut v = solved_json();
+    v.as_object_mut().unwrap().remove("i2c_speeds");
+    let err = serde_json::from_value::<SolvedTopology>(v).unwrap_err();
+    assert!(
+        err.to_string().contains("missing field `i2c_speeds`"),
+        "{err}"
+    );
+    // A repeated key is refused like every keyed collection.
+    let json = r#"{"schema_version":2,"specification_sha256":"h","assignments":{},"gpio":{},"i2c_ceilings":{},"i2c_speeds":{"B":400000,"B":100000},"analog_lines":{},"i2c_devices":{}}"#;
+    assert!(serde_json::from_str::<SolvedTopology>(json).is_err());
+}
+
+#[test]
+fn solved_refuses_a_speed_key_missing_or_extra() {
+    let err = solved_refusal(|t| {
+        t.i2c_speeds.clear();
+    });
+    assert_refusal(err, "SpeedBusMismatch", Some("SENSORS"));
+    let err = solved_refusal(|t| {
+        t.i2c_speeds.insert("EXTRA".into(), 100_000);
+    });
+    assert_refusal(err, "SpeedBusMismatch", Some("EXTRA"));
+    let err = solved_refusal(|t| {
+        t.i2c_speeds.insert("BUS 2".into(), 100_000);
+    });
+    assert_invalid_identifier(err, "i2c_speeds.BUS 2");
+}
+
+#[test]
+fn solved_refuses_a_speed_no_mode_admits_or_above_the_ceiling() {
+    for hz in [
+        0,
+        1,
+        99_999,
+        100_001,
+        399_999,
+        1_000_001,
+        1_500_000,
+        u32::MAX,
+    ] {
+        let err = solved_refusal(|t| {
+            t.i2c_speeds.insert("SENSORS".into(), hz);
+        });
+        assert_refusal(err, "UnsupportedI2cSpeed", Some("SENSORS"));
+    }
+    // 1 MHz under the 400 kHz ceiling.
+    let err = solved_refusal(|t| {
+        t.i2c_speeds.insert("SENSORS".into(), 1_000_000);
+    });
+    assert_eq!(
+        err,
+        E::BusTooFast {
+            bus: "SENSORS".into(),
+            speed_hz: 1_000_000,
+            ceiling_hz: 400_000
+        }
+    );
+    assert_eq!(err.kind(), "BusTooFast");
+    // Below the ceiling is fine.
+    let mut t = solved();
+    t.i2c_speeds.insert("SENSORS".into(), 100_000);
+    assert_eq!(t.validate(), Ok(()));
+}
+
+#[test]
+fn solved_holds_the_pull_up_to_the_floor_at_the_declared_speed() {
+    // 3.3 V, 400 kHz: ceil(2900 / 3 mA) = 967 ohms.
+    let err = solved_refusal(|t| set_line_pull_up(t, 966));
+    assert_eq!(
+        err,
+        E::PullUpBelowSinkFloor {
+            bus: "SENSORS".into(),
+            pull_up_ohms: 966,
+            floor_ohms: 967
+        }
+    );
+    assert_eq!(err.kind(), "PullUpBelowSinkFloor");
+    assert_eq!(err.id(), Some("SENSORS"));
+    let mut t = solved();
+    set_line_pull_up(&mut t, 967);
+    assert_eq!(t.validate(), Ok(()));
+    // One line alone below the floor refuses.
+    let err = solved_refusal(|t| t.analog_lines.get_mut("I2C_SCL").unwrap().pull_up_ohms = 966);
+    assert_refusal(err, "PullUpBelowSinkFloor", Some("SENSORS"));
+    // The floor follows the declared speed, not the ceiling: at 1 MHz it is
+    // 20 mA, ceil(2900 / 20 mA) = 145 ohms, so 144 refuses and 145 passes.
+    let at_1m = |t: &mut SolvedTopology, ohms| {
+        t.i2c_ceilings.insert("SENSORS".into(), 1_000_000);
+        t.i2c_speeds.insert("SENSORS".into(), 1_000_000);
+        for line in t.analog_lines.values_mut() {
+            line.ceiling_ns = 120;
+            line.pull_up_ohms = ohms;
+        }
+    };
+    let err = solved_refusal(|t| at_1m(t, 144));
+    assert_refusal(err, "PullUpBelowSinkFloor", Some("SENSORS"));
+    let mut t = solved();
+    at_1m(&mut t, 145);
+    assert_eq!(t.validate(), Ok(()));
+    // A rail at the 2 V boundary reads 0.2 x VDD at 2 mA: ceil(1600 / 2 mA) = 800.
+    // One millivolt above it is VOL 0.4 V at 3 mA: ceil(1601 / 3 mA) = 534.
+    for (mv, ohms, ok) in [
+        (2000, 799, false),
+        (2000, 800, true),
+        (2001, 533, false),
+        (2001, 534, true),
+    ] {
+        let mut t = solved();
+        for line in t.analog_lines.values_mut() {
+            line.domain_millivolts = mv;
+            line.pull_up_ohms = ohms;
+        }
+        assert_eq!(t.validate().is_ok(), ok, "{mv} mV {ohms} ohm");
+    }
+}
+
+#[test]
+fn solved_holds_the_capacitance_to_the_limit_at_the_declared_speed() {
+    let err = solved_refusal(|t| {
+        t.analog_lines
+            .get_mut("I2C_SDA")
+            .unwrap()
+            .capacitance_femtofarads = 400_001
+    });
+    assert_eq!(
+        err,
+        E::BusCapacitanceOverLimit {
+            net: "I2C_SDA".into(),
+            capacitance_femtofarads: 400_001,
+            limit_femtofarads: 400_000
+        }
+    );
+    assert_eq!(err.kind(), "BusCapacitanceOverLimit");
+    assert_eq!(err.id(), Some("I2C_SDA"));
+    let mut t = solved();
+    t.analog_lines
+        .get_mut("I2C_SDA")
+        .unwrap()
+        .capacitance_femtofarads = 400_000;
+    assert_eq!(t.validate(), Ok(()));
+    // At 1 MHz the limit is 550 pF.
+    for (pf, ok) in [(550_000, true), (550_001, false)] {
+        let mut t = solved();
+        t.i2c_ceilings.insert("SENSORS".into(), 1_000_000);
+        t.i2c_speeds.insert("SENSORS".into(), 1_000_000);
+        for line in t.analog_lines.values_mut() {
+            line.ceiling_ns = 120;
+            line.capacitance_femtofarads = pf;
+        }
+        assert_eq!(t.validate().is_ok(), ok, "{pf} fF");
+    }
 }

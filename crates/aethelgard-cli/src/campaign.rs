@@ -1020,7 +1020,7 @@ mod tests {
     /// The reference board's solved topology, as `solve` gives it.
     fn topology() -> aethelgard_ir::SolvedTopology {
         serde_json::from_value(json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "specification_sha256": "acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1",
             "assignments": {
                 "I2C_SCL": {"pin": "PB6", "peripheral": "I2C1", "signal": "I2C1_SCL", "alternate_function": 4},
@@ -1028,6 +1028,7 @@ mod tests {
             },
             "gpio": {},
             "i2c_ceilings": {"SENSORS": 400000},
+            "i2c_speeds": {"SENSORS": 400000},
             "analog_lines": {
                 "I2C_SCL": {"bus": "SENSORS", "pull_up_ohms": 2200, "capacitance_femtofarads": 100000, "ceiling_ns": 300, "domain_millivolts": 3300},
                 "I2C_SDA": {"bus": "SENSORS", "pull_up_ohms": 2200, "capacitance_femtofarads": 100000, "ceiling_ns": 250, "domain_millivolts": 3300}
