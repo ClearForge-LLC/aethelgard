@@ -45,6 +45,11 @@ fn exit_and_child_faults(mut child: Child) -> (Option<i32>, u64) {
 
 /// Runs the reaper with `pid_args` before its other arguments, on a tool that creates `marker`.
 fn reaper(dir: &Path, pid_args: &[&str], marker: &Path) -> (Option<i32>, u64) {
+    // As root the tool runs as the tool uid (AET-WO-1601 §1.2), and this test
+    // starts the reaper directly, without the CLI's hand-over of the directory.
+    if rustix::process::geteuid().is_root() {
+        std::os::unix::fs::chown(dir, Some(65534), Some(65534)).unwrap();
+    }
     let mut args: Vec<OsString> = vec![REAPER.into()];
     args.extend(pid_args.iter().map(OsString::from));
     args.extend(["--status".into(), dir.join("status").into()]);

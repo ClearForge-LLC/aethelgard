@@ -1037,7 +1037,13 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         args,
         // .NET would otherwise try to open its diagnostic IPC socket, which the
         // seccomp filter refuses; this removes even the attempt (PR #15, S2-F).
-        env: vec![("DOTNET_EnableDiagnostics", "0".into())],
+        // W^X's double mapping truncates a memfd to 2 TiB, which RLIMIT_FSIZE
+        // refuses with SIGXFSZ; without it Renode starts under the cap
+        // (AET-WO-1601 §1.6, measured; FEEDBACK).
+        env: vec![
+            ("DOTNET_EnableDiagnostics", "0".into()),
+            ("DOTNET_EnableWriteXorExecute", "0".into()),
+        ],
         workdir: &scratch.tool,
         cwd: scratch.tool.clone(),
         status: scratch.root.join(status),
