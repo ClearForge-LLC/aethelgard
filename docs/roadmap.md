@@ -217,6 +217,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 - `AET-WO-3300` — the reference probe, `Sentinel-01`: specification, full gate run, fabrication package, and a bench comparison against the physical development board that records where simulation and reality disagreed.
 - `AET-WO-3301` — **written 2026-11-12** (Mythos review A3, A4, B1), build-only, strong tier, full adversarial pass: `aethelgard generate` writes the board crate, firmware and platform the README promises; `aethelgard verify --spec` regenerates everything into scratch, runs every gate on exactly those bytes, and prints one verdict naming every artifact hash and gate result (`RUL-19`). `prove` reports whether the harness is the generated one. It precedes `3300`, whose fabrication clause needs that verdict, and it closes the P0 "deliberate gap" (`build`).
 - `AET-WO-3302` — **reserved 2026-11-12** (Mythos review, roadmap order): the Nucleo-H753ZI bench comparison, run as soon as the board arrives and before `3200`'s proposals are trusted. It is split from `3300` so the only evidence about the declared-value gap (`RUL-19`) comes early. Human-track: Scotty's hands on the board.
+- `AET-WO-1205` — **written 2026-11-12** (`AET-WO-1204` §1.2 gap, ruled by the architect with Scotty's delegation), build-only, cheap tier, targeted adversarial pass. `SolvedTopology` carries each I2C bus's declared speed (solved schema version 2); `validate` holds a hand-written topology to the floor and the capacitance limit at that speed; the board generator admits only the modes at or under the declared speed, not the ceiling.
 - `AET-WO-1601` — **written 2026-11-12** (`AET-WO-3301` F1 and F13; 1300 A8; 2100 F25; review A12.1), spike then build, strong tier, full adversarial pass. **Gates `AET-WO-3300`.** On Linux the boundary against a racing process is the uid, so: tools run under a separate unprivileged uid when the CLI runs as root (as in the image); every verdict discloses `uid_boundary`; a scratch root no other uid can plant configuration into; scratch paths in a safe character set; `check erc` refuses hierarchical sheets; `RLIMIT_FSIZE` on tool scratch. The deployment half (a dedicated uid on Furnace) is the operator's.
 - **Extraction, first step** (Mythos review B3): a capacitance estimate from routed length plus each pin's capacitance, judged against the declared bound, before `3300`. Full `AET-WO-1303` before `4500`.
 
@@ -389,7 +390,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | The same-uid race in a gate's scratch (`3301` F1), and a planted ancestor `.cargo` (`3301` F13) | `AET-WO-3301` | `AET-WO-1601` (written); gates `AET-WO-3300` |
 | `svd-hal`'s unreachable `CeilingMismatch` and I2C `IncompletePeripheral` | `1204` reduction | the next work order that owns `svd-hal`'s generator |
 | The emitter refuses a specification reference (`r1`, `c1`) that folds onto its own `R1` or `C1`; skipping to the next free folded name would serve the person better | `1204` review | the next work order that owns `aethelgard-eda`'s schematic |
-| A hand-written `SolvedTopology` is not held to the pull-up floor or the capacitance limit: it does not carry the bus's declared speed | `1204` §1.2 | **ruling needed** (schema change); Scotty's second opinion |
+| A hand-written `SolvedTopology` is not held to the pull-up floor or the capacitance limit: it does not carry the bus's declared speed | `1204` §1.2 | `AET-WO-1205` (written; ruled 2026-11-12) |
 | Split the `tools` job's tier 2 into two jobs | 3200 F17 | backlog: when `tools` passes 75 of its 90 minutes |
 | MCP path confinement (`--root`) | review A10.2 | Scotty's second opinion; until then the trust model in `architecture.md` §6 |
 
@@ -440,6 +441,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-12 | §5, §7, §7.1 | `AET-WO-3200` and `AET-WO-1900` reconciled. **P3 gate clause 2 holds.** The quickstart now runs on `main`'s own image. The backlog is updated with `1900`'s triage, and the 0.2.0 bump, path-independent ELFs and splitting tier 2 are added | PRs #86, #87, #88 |
 | 2026-11-12 | §5, §7.1 | `AET-WO-1204` written: `RUL-16` as a compiled fence, `2200` F14 ruled, case folding at the emitter | the Mythos review A7.1, B6 |
 | 2026-11-12 | §5, §7.1 | `AET-WO-1204` reconciled (merged, PR #90); `AET-WO-1601` written from `AET-WO-3301` F1: the boundary is the uid; it gates `3300` | PRs #90, #91 |
+| 2026-11-12 | §5, §7.1 | `AET-WO-1205` written: the declared I2C speed in `SolvedTopology` | `AET-WO-1204` FEEDBACK |
 
 ## 9. Provenance
 
