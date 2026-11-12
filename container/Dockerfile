@@ -37,7 +37,8 @@ RUN apt-get update \
 RUN curl -fsSLo /tmp/renode.tar.gz https://github.com/renode/renode/releases/download/v1.17.0/renode-1.17.0.linux-portable.tar.gz \
  && echo "4ba7c68b59e2447f188ef4b4b112fcccd2802582c460beedceb63b84e5605a5f  /tmp/renode.tar.gz" | sha256sum -c - \
  && mkdir -p /opt/renode \
- && tar -xzf /tmp/renode.tar.gz -C /opt/renode --strip-components=1 \
+ && tar -xzf /tmp/renode.tar.gz -C /opt/renode --strip-components=1 --no-same-owner \
+ && chmod -R go-w /opt/renode \
  && ln -s /opt/renode/renode /usr/local/bin/renode \
  && rm /tmp/renode.tar.gz
 
@@ -52,13 +53,17 @@ RUN curl -fsSLo /tmp/rustup-init https://static.rust-lang.org/rustup/archive/1.2
 
 # Kani 0.68.0: the driver from crates.io (cargo checks the registry checksum)
 # and its backend from the release bundle checked here, installed now so
-# nothing is fetched on first run (architecture.md §5).
+# nothing is fetched on first run (architecture.md §5). The bundle unpacks with
+# its builder's uid (1001), so every toolchain tree is made root's and writable
+# by no one else in this same step (AET-WO-1601 A1: a tool's uid boundary means
+# nothing if another uid can replace the tool; smoke.sh check 10).
 RUN cargo install --locked kani-verifier --version 0.68.0 \
  && curl -fsSLo /tmp/kani.tar.gz https://github.com/model-checking/kani/releases/download/kani-0.68.0/kani-0.68.0-x86_64-unknown-linux-gnu.tar.gz \
  && echo "32e2b484d73ede0bbf64a2cf0879c4259422497d8aec4ee67d448de9ae7843d3  /tmp/kani.tar.gz" | sha256sum -c - \
  && cargo kani setup --use-local-bundle /tmp/kani.tar.gz \
  && rm /tmp/kani.tar.gz \
- && chmod -R a+rX /opt/rustup /opt/cargo /opt/kani
+ && chown -R root:root /opt/rustup /opt/cargo /opt/kani \
+ && chmod -R a+rX,go-w /opt/rustup /opt/cargo /opt/kani
 
 # KiCad's library licence text (CC-BY-SA-4.0 with KiCad's design exception),
 # beside the libraries it covers. The file is byte-identical to the copy
