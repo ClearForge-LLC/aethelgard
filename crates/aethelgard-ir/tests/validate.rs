@@ -612,12 +612,27 @@ fn unknown_field_in_each_struct_is_refused() {
 #[test]
 fn missing_key_in_each_struct_is_refused() {
     for pointer in OBJECT_POINTERS {
-        let mut doc = spec_json();
-        let object = doc.pointer_mut(pointer).unwrap().as_object_mut().unwrap();
-        let key = object.keys().next().unwrap().clone();
-        object.remove(&key);
-        let err = parse(&doc).unwrap_err();
-        assert!(err.contains("missing field"), "{pointer}: {err}");
+        let keys: Vec<String> = spec_json()
+            .pointer(pointer)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        for key in keys {
+            let mut doc = spec_json();
+            doc.pointer_mut(pointer)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .remove(&key);
+            let err = parse(&doc).unwrap_err();
+            assert!(
+                err.contains(&format!("missing field `{key}`")),
+                "{pointer} without {key}: {err}"
+            );
+        }
     }
 }
 
