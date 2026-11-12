@@ -709,7 +709,11 @@ fn solved() -> SolvedTopology {
         specification_sha256: HASH.into(),
         assignments: [
             ("I2C_SCL".to_owned(), assignment("PB8", 4)),
-            ("I2C_SDA".to_owned(), assignment("PB9", 4)),
+            ("I2C_SDA".to_owned(), {
+                let mut sda = assignment("PB9", 4);
+                sda.signal = "I2C1_SDA".into();
+                sda
+            }),
         ]
         .into(),
         gpio: [("FLASH_CS".to_owned(), "PA0".to_owned())].into(),
@@ -1055,6 +1059,18 @@ fn solved_derives_the_ceiling_from_the_smallest_bound_of_the_bus() {
         t.analog_lines.get_mut("I2C_SDA").unwrap().ceiling_ns = 120;
     });
     assert_not_derived(err, "SENSORS", 400_000, Some(1_000_000));
+}
+
+#[test]
+fn solved_refuses_a_half_bus_whose_one_line_would_set_the_ceiling() {
+    // Adversarial B1: only SDA at 100 ns, so the ceiling would derive 1 MHz
+    // from one line where `solve` reads both.
+    let mut t = solved();
+    t.assignments.remove("I2C_SCL");
+    t.analog_lines.remove("I2C_SCL");
+    t.analog_lines.get_mut("I2C_SDA").unwrap().ceiling_ns = 100;
+    t.i2c_ceilings.insert("SENSORS".into(), 1_000_000);
+    assert_not_derived(t.validate().unwrap_err(), "SENSORS", 1_000_000, None);
 }
 
 #[test]

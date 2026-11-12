@@ -998,6 +998,27 @@ impl SolvedTopology {
         // (`AET-WO-1204`): the mapping of the smallest rise-time bound among
         // the bus's own lines, and no ceiling for a bus with no line.
         for (bus, &ceiling_hz) in &self.i2c_ceilings {
+            // `solve` takes the smaller bound of both lines, so a bus holds
+            // exactly its SDA and its SCL: a half-bus would derive from one.
+            let mut sda_scl = [0usize; 2];
+            for (net, _) in self.analog_lines.iter().filter(|(_, l)| &l.bus == bus) {
+                match self
+                    .assignments
+                    .get(net)
+                    .map(|a| a.signal.rsplit('_').next())
+                {
+                    Some(Some("SDA")) => sda_scl[0] += 1,
+                    Some(Some("SCL")) => sda_scl[1] += 1,
+                    _ => {}
+                }
+            }
+            if sda_scl != [1, 1] {
+                return Err(E::CeilingNotDerived {
+                    bus: bus.clone(),
+                    ceiling_hz,
+                    derived_hz: None,
+                });
+            }
             let slowest = self
                 .analog_lines
                 .values()

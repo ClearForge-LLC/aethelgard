@@ -87,6 +87,29 @@ fn the_generators_never_name_a_specification() {
     }
 }
 
+/// A `clippy.toml` fence can be switched off by an `#[allow]` of its lint, and
+/// `forbid` cannot stop that here: clap's derives emit `allow(clippy::style)`,
+/// which `forbid` refuses (`AET-WO-1204` adversarial A1). So no source file of
+/// a fenced crate may name the lint at all.
+#[test]
+fn no_fenced_crate_allows_the_disallowed_methods_lint() {
+    let lint = ["disallowed", "methods"].join("_");
+    for krate in ["aethelgard-cli", "aethelgard-svd-hal", "aethelgard-twin"] {
+        for dir in ["src", "tests"] {
+            for (path, text) in sources(&crates().join(krate).join(dir)) {
+                if path.ends_with("solved_devices.rs") {
+                    continue;
+                }
+                assert!(
+                    !text.contains(&lint),
+                    "{} names the `{lint}` lint, which is the RUL-16 fence",
+                    path.display()
+                );
+            }
+        }
+    }
+}
+
 /// `aethelgard-eda` draws declared intent, not a generator of the firmware or
 /// the platform, so it carries no `clippy.toml` fence (`RUL-16`, 2026-11-09).
 /// Pinned at the one file that calls the accessors, so a second reader goes
