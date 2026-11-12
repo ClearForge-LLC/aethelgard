@@ -193,6 +193,30 @@ impl Drop for Scratch {
     }
 }
 
+/// A directory the CLI accepts as `TMPDIR` (`AET-WO-1601` §1.4), under the
+/// base it uses itself when `TMPDIR` is unset: `/var/lib/aethelgard` as root,
+/// `$HOME/.cache/aethelgard` otherwise, so no other user can write any of its
+/// ancestors. As root it is searchable by the tool uid. Removed on drop.
+pub fn private_tmp(label: &str) -> Scratch {
+    use std::os::unix::fs::DirBuilderExt;
+    let root = rustix::process::geteuid().is_root();
+    let (base, mode) = if root {
+        (PathBuf::from("/var/lib/aethelgard"), 0o711)
+    } else {
+        let home = std::env::var_os("HOME").expect("HOME is set");
+        (PathBuf::from(home).join(".cache/aethelgard"), 0o700)
+    };
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(mode)
+        .create(&base)
+        .unwrap();
+    let p = base.join(format!("tests-{}-{label}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&p);
+    std::fs::DirBuilder::new().mode(mode).create(&p).unwrap();
+    Scratch(p)
+}
+
 /// Polls until the condition holds or a deadline passes.
 pub fn eventually(what: &str, mut cond: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(30);

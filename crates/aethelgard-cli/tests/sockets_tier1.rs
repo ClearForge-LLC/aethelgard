@@ -69,6 +69,7 @@ fn the_s4_attack_set_is_refused_inside_the_sandbox() {
         .args(["check", "drc", "--board"])
         .arg(&board)
         .env_clear()
+        .env("HOME", std::env::var_os("HOME").unwrap_or_default())
         .env("PATH", &toolbox)
         .stdin(Stdio::null())
         .output()

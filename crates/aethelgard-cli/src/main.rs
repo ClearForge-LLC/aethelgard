@@ -23,7 +23,7 @@ mod verify;
 use std::ffi::OsString;
 use std::fs::{self, DirBuilder, File};
 use std::io::{self, Read, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -452,8 +452,139 @@ fn harness_name(s: &str) -> Result<String, String> {
     }
 }
 
+/// Where a root CLI keeps scratch when `TMPDIR` is not set (`AET-WO-1601` §1.4).
+const ROOT_SCRATCH: &str = "/var/lib/aethelgard";
+
+/// Where any other CLI keeps scratch when `TMPDIR` is not set, under `HOME`.
+const USER_SCRATCH: &str = ".cache/aethelgard";
+
+/// `ScratchUnsafe`, exit 4: no tool runs in a scratch directory that breaks
+/// the rule (`AET-WO-1601` §1.4, `INV-06`).
+fn scratch_unsafe(id: &Path, message: String) -> run::Stop {
+    run::Stop {
+        code: EXIT_TOOL_UNAVAILABLE,
+        kind: "ScratchUnsafe",
+        id: Some(id.display().to_string()),
+        message,
+    }
+}
+
+/// The directory every call's scratch directory is made in (`AET-WO-1601`
+/// §1.4): `TMPDIR` if it is set, which must exist; otherwise
+/// [`ROOT_SCRATCH`] for root and `$HOME/`[`USER_SCRATCH`] for anyone else,
+/// created if missing. Cargo and rustup read configuration from every
+/// ancestor of a tool's working directory (FEEDBACK §1.1, S9 and S10), so the
+/// base and each of its ancestors must be a directory owned by root or by this
+/// process's effective uid and writable by no group and no other user: a
+/// file another uid could create there could be read as configuration.
+/// `/tmp` breaks the rule. As root, each must also be searchable by others,
+/// or the tool uid could not reach its own directory. The real path must be
+/// spelled in `[A-Za-z0-9/._-]` alone, so no tool's command language (the
+/// Renode monitor's `@path`) reads a space or a `;` in it (`AET-WO-2100` F25).
+/// Anything else is refused; nothing else is tried.
+fn scratch_base() -> Result<PathBuf, run::Stop> {
+    let euid = rustix::process::geteuid();
+    let root = euid.is_root();
+    let base = match std::env::var_os("TMPDIR").filter(|v| !v.is_empty()) {
+        Some(tmpdir) => PathBuf::from(tmpdir),
+        None => {
+            let base = if root {
+                PathBuf::from(ROOT_SCRATCH)
+            } else {
+                match std::env::var_os("HOME").map(PathBuf::from) {
+                    Some(home) if home.is_absolute() => home.join(USER_SCRATCH),
+                    _ => {
+                        return Err(scratch_unsafe(
+                            Path::new("HOME"),
+                            "neither TMPDIR nor an absolute HOME is set, so there is no private place for scratch"
+                                .to_owned(),
+                        ));
+                    }
+                }
+            };
+            // Root's base lives in /var/lib, which must exist; a user's needs
+            // `~/.cache` too.
+            let (mode, make) = if root {
+                (0o711, vec![base.clone()])
+            } else {
+                let cache = base.parent().map(Path::to_path_buf).unwrap_or_default();
+                (0o700, vec![cache, base.clone()])
+            };
+            for dir in make {
+                match DirBuilder::new().mode(mode).create(&dir) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+                    Err(e) => {
+                        return Err(scratch_unsafe(
+                            &dir,
+                            format!("cannot create {}: {e}", dir.display()),
+                        ));
+                    }
+                }
+            }
+            base
+        }
+    };
+    let real = fs::canonicalize(&base)
+        .map_err(|e| scratch_unsafe(&base, format!("{}: {e}", base.display())))?;
+    if !real
+        .as_os_str()
+        .as_encoded_bytes()
+        .iter()
+        .all(|b| b.is_ascii_alphanumeric() || b"/._-".contains(b))
+    {
+        return Err(scratch_unsafe(
+            &real,
+            format!(
+                "{} holds a character outside [A-Za-z0-9/._-], which a tool's command language could read as its own",
+                real.display()
+            ),
+        ));
+    }
+    for dir in real.ancestors() {
+        let meta = fs::symlink_metadata(dir)
+            .map_err(|e| scratch_unsafe(dir, format!("{}: {e}", dir.display())))?;
+        let mode = meta.permissions().mode();
+        let why = if !meta.is_dir() {
+            Some("is not a directory".to_owned())
+        } else if meta.uid() != 0 && meta.uid() != euid.as_raw() {
+            Some(format!(
+                "belongs to uid {}, neither root nor this user",
+                meta.uid()
+            ))
+        } else if mode & 0o022 != 0 {
+            Some(format!(
+                "is writable by its group or by others (mode {:o})",
+                mode & 0o7777
+            ))
+        } else if root && mode & 0o001 == 0 {
+            Some(format!(
+                "cannot be searched by the tool uid {} (mode {:o})",
+                run::TOOL_UID,
+                mode & 0o7777
+            ))
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            return Err(scratch_unsafe(
+                dir,
+                format!(
+                    "scratch would live under {}, and {} {why}: another user could plant configuration a tool reads. Set TMPDIR to a directory only you or root can write",
+                    real.display(),
+                    dir.display()
+                ),
+            ));
+        }
+    }
+    Ok(real)
+}
+
 /// The call's private temporary directory: `root/status-*` for the reaper,
-/// `root/tool/` for everything the tool may write. Removed on drop.
+/// `root/tool/` for everything the tool may write. Removed on drop. As root,
+/// `root` is root's with group [`run::TOOL_GID`] and mode 0710, so the tool
+/// uid alone can pass through it, and `tool/` is root's (0700) until a tool
+/// first runs in it (`run::Invocation`, `AET-WO-1601` §1.2).
 struct Scratch {
     root: PathBuf,
     tool: PathBuf,
@@ -461,11 +592,12 @@ struct Scratch {
 
 impl Scratch {
     fn new() -> Result<Self, run::Stop> {
+        let base = scratch_base()?;
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let root = std::env::temp_dir().join(format!("aethelgard-{}-{nanos}", std::process::id()));
+        let root = base.join(format!("aethelgard-{}-{nanos}", std::process::id()));
         let fail = |e: io::Error| {
             run::Stop::tool_error(
                 "aethelgard",
@@ -500,6 +632,13 @@ impl Scratch {
             tool: root.join("tool"),
             root,
         };
+        if rustix::process::geteuid().is_root() {
+            // The tool uid may pass through to its own directory, and no one
+            // else may (AET-WO-1601 §1.2). The directory is new and its parent
+            // is writable by root alone, so no one can have swapped it.
+            std::os::unix::fs::lchown(&scratch.root, None, Some(run::TOOL_GID)).map_err(fail)?;
+            fs::set_permissions(&scratch.root, fs::Permissions::from_mode(0o710)).map_err(fail)?;
+        }
         DirBuilder::new()
             .mode(0o700)
             .create(&scratch.tool)
@@ -555,6 +694,9 @@ fn check_kicad(
     // bytes judged are the bytes scanned.
     let scratch = Scratch::new()?;
     let input = input::file(&original, &scratch.tool.join(check.copy_name()))?;
+    if matches!(check, kicad::Check::Erc) {
+        kicad::refuse_sheets(&input.copy)?;
+    }
     kicad::prepare(check, &input.copy, &scratch.tool, &rules)?;
     // KiCad's parity check reads the schematic named like the board, beside
     // it; the copy is scanned like the board before any tool runs.

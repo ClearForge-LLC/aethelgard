@@ -33,15 +33,21 @@ use landlock::{
     ABI, Access, AccessFs, AccessNet, CompatLevel, Compatible, LandlockStatus, Ruleset,
     RulesetAttr, RulesetCreatedAttr, RulesetStatus, Scope, path_beneath_rules,
 };
+use std::os::fd::{AsFd, BorrowedFd};
+
+use rustix::fs::{
+    AtFlags, CWD, Dir, FileType, Mode, OFlags, fchmod, fchown, fstat, openat, statat,
+};
 use rustix::io::Errno;
 use rustix::process::{
-    Pid, Signal, WaitOptions, getpid, kill_process, kill_process_group, set_child_subreaper,
-    waitpid,
+    Gid, Pid, Resource, Rlimit, Signal, Uid, WaitOptions, geteuid, getpid, kill_process,
+    kill_process_group, set_child_subreaper, setrlimit, waitpid,
 };
 use rustix::thread::{
     CapabilitySet, CapabilitySets, capabilities, capability_is_in_ambient_set,
     capability_is_in_bounding_set, clear_ambient_capability_set, no_new_privs,
-    remove_capability_from_bounding_set, set_capabilities,
+    remove_capability_from_bounding_set, set_capabilities, set_thread_groups, set_thread_res_gid,
+    set_thread_res_uid,
 };
 use seccompiler::{BpfProgram, apply_filter, sock_filter};
 
@@ -67,6 +73,20 @@ pub const MAX_CAPTURE: usize = 16 * 1024 * 1024;
 
 /// Read-only for every tool: the system's executables, libraries and config.
 const SYSTEM_DIRS: [&str; 6] = ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc"];
+
+/// The uid and gid every tool runs under when the CLI's effective uid is 0
+/// (`AET-WO-1601` §1.2): `nobody` and `nogroup`. Measured, not chosen: the
+/// analog bridge's libngspice reads `getpwuid(getuid())->pw_dir` unchecked, so
+/// it dies under any uid without a passwd entry (65533 and 65520 measured), and
+/// the pinned image lists only 0, 1000 (`kicad`, a login user) and 65534.
+pub const TOOL_UID: u32 = 65534;
+/// See [`TOOL_UID`].
+pub const TOOL_GID: u32 = 65534;
+
+/// `RLIMIT_FSIZE`, soft and hard, for every tool (`AET-WO-1601` §1.6, review
+/// A12.1). A file a tool leaves at this size is the witness that it was cut
+/// off, whatever the tool's own exit status says.
+pub const MAX_TOOL_FILE: u64 = 64 * 1024 * 1024;
 
 /// A refusal: the call stops here and prints `{"ok":false,"error":…}`.
 #[derive(Debug)]
@@ -204,17 +224,23 @@ pub struct SandboxReport {
     /// seccomp filter. Always true: the filter is required, so no verdict
     /// exists without it.
     pub sockets_denied: bool,
+    /// The tool ran under [`TOOL_UID`], switched to and read back by the
+    /// trampoline, because the CLI ran as root (`AET-WO-1601` §1.2, `RUL-19`).
+    /// False otherwise: then a process of the caller's uid can change what
+    /// the tool reads (`AET-WO-3301` F1).
+    pub uid_boundary: bool,
 }
 
 impl SandboxReport {
     /// Filesystem rights are required and everything else is requested
     /// best-effort, so what was enforced follows from the effective ABI.
-    fn from_abi(landlock_abi: i32) -> Self {
+    fn from_abi(landlock_abi: i32, uid_boundary: bool) -> Self {
         Self {
             landlock_abi,
             tcp_confined: landlock_abi >= 4,
             scoped: landlock_abi >= 6,
             sockets_denied: true,
+            uid_boundary,
         }
     }
 }
@@ -317,6 +343,14 @@ impl Invocation<'_> {
         let me = env::current_exe().map_err(|e| {
             Stop::tool_error(self.tool.name, format!("cannot find this executable: {e}"))
         })?;
+        if geteuid().is_root() {
+            hand_over(self.workdir).map_err(|e| {
+                Stop::tool_error(
+                    self.tool.name,
+                    format!("cannot hand {} to the tool: {e}", self.workdir.display()),
+                )
+            })?;
+        }
         let mut cmd = Command::new(me);
         cmd.arg(REAPER_ARG)
             .arg(CLI_PID_ARG)
@@ -373,6 +407,18 @@ impl Invocation<'_> {
                 ),
                 _ => stop,
             })?;
+        // A tool cut off at the cap may have exited on its own terms (a child
+        // killed by SIGXFSZ under cargo, or EFBIG handled): its output then
+        // cannot be read as pass or fail (AET-WO-1601 §1.6).
+        if let Some(file) = at_the_cap(self.workdir) {
+            return Err(Stop::tool_error(
+                self.tool.name,
+                format!(
+                    "{} reached the {MAX_TOOL_FILE}-byte file-size cap (RLIMIT_FSIZE)",
+                    file.display()
+                ),
+            ));
+        }
         Ok(Output {
             ended,
             stdout,
@@ -405,8 +451,107 @@ fn capture(mut pipe: impl Read + Send + 'static) -> thread::JoinHandle<Option<Ve
     })
 }
 
+/// The mode a root CLI's `workdir` has once the tool uid owns it: root's,
+/// writable by [`TOOL_GID`] alone, and sticky, so the tool uid can create
+/// entries but cannot rename or remove one root made (`AET-WO-1601` §1.2).
+const HANDED_OVER: u32 = 0o1770;
+
+/// As root, hands `workdir` to the tool uid the first time a tool runs in it
+/// (`AET-WO-1601` §1.2). Until then it is root's alone (0700), and everything
+/// in it is the CLI's: the hashed copies and the files the CLI wrote beside
+/// them. Those are sealed (files 0444, directories 0555), all by descriptor
+/// and never following a link; then the directory becomes root's, group
+/// [`TOOL_GID`], mode [`HANDED_OVER`]. A later call on the same directory
+/// finds it handed over and touches nothing in it: the tool uid has had it
+/// since, so root acts there by no path.
+fn hand_over(workdir: &Path) -> Result<(), String> {
+    let dir = openat(
+        CWD,
+        workdir,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|e| errno("open", e))?;
+    let st = fstat(&dir).map_err(|e| errno("stat", e))?;
+    let perm = st.st_mode & 0o7777;
+    match (st.st_uid, st.st_gid, perm) {
+        (0, TOOL_GID, HANDED_OVER) => Ok(()),
+        (0, 0, 0o700) => {
+            seal(dir.as_fd(), 0)?;
+            fchown(&dir, None, Some(Gid::from_raw(TOOL_GID))).map_err(|e| errno("chown", e))?;
+            fchmod(&dir, Mode::from_raw_mode(HANDED_OVER)).map_err(|e| errno("chmod", e))
+        }
+        (uid, gid, mode) => Err(format!(
+            "it is {uid}:{gid} mode {mode:o}, neither the CLI's own nor handed over"
+        )),
+    }
+}
+
+/// Seals everything below `dir` read-only, by descriptor. Every entry must be
+/// root's: nothing else has had the directory yet. Links are left as links.
+fn seal(dir: BorrowedFd<'_>, depth: usize) -> Result<(), String> {
+    if depth > 64 {
+        return Err("the copy is more than 64 directories deep".to_owned());
+    }
+    let mut names = Vec::new();
+    for entry in Dir::read_from(dir).map_err(|e| errno("read a directory", e))? {
+        let entry = entry.map_err(|e| errno("read a directory", e))?;
+        let name = entry.file_name().to_owned();
+        if name.as_bytes() != b"." && name.as_bytes() != b".." {
+            names.push(name);
+        }
+    }
+    for name in names {
+        let shown = String::from_utf8_lossy(name.as_bytes()).into_owned();
+        let st = statat(dir, name.as_c_str(), AtFlags::SYMLINK_NOFOLLOW)
+            .map_err(|e| errno(&format!("stat {shown}"), e))?;
+        if st.st_uid != 0 {
+            return Err(format!("{shown} is not root's before any tool ran"));
+        }
+        let (flags, mode) = match FileType::from_raw_mode(st.st_mode) {
+            FileType::Symlink => continue,
+            FileType::Directory => (OFlags::DIRECTORY, 0o555),
+            FileType::RegularFile => (OFlags::NONBLOCK | OFlags::NOCTTY, 0o444),
+            _ => return Err(format!("{shown} is not a file, directory or link")),
+        };
+        let fd = openat(
+            dir,
+            name.as_c_str(),
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | flags,
+            Mode::empty(),
+        )
+        .map_err(|e| errno(&format!("open {shown}"), e))?;
+        let opened = fstat(&fd).map_err(|e| errno(&format!("stat {shown}"), e))?;
+        if (opened.st_dev, opened.st_ino) != (st.st_dev, st.st_ino) {
+            return Err(format!("{shown} changed while it was sealed"));
+        }
+        if mode == 0o555 {
+            seal(fd.as_fd(), depth + 1)?;
+        }
+        fchmod(&fd, Mode::from_raw_mode(mode)).map_err(|e| errno(&format!("chmod {shown}"), e))?;
+    }
+    Ok(())
+}
+
+/// A regular file under `dir` at [`MAX_TOOL_FILE`] bytes or more: what a write
+/// cut off by `RLIMIT_FSIZE` leaves. Links are not followed.
+fn at_the_cap(dir: &Path) -> Option<PathBuf> {
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for entry in fs::read_dir(&d).into_iter().flatten().flatten() {
+            let Ok(meta) = entry.metadata() else { continue };
+            if meta.is_dir() {
+                stack.push(entry.path());
+            } else if meta.is_file() && meta.len() >= MAX_TOOL_FILE {
+                return Some(entry.path());
+            }
+        }
+    }
+    None
+}
+
 /// The status file holds one line about the sandbox, then one about how the
-/// tool ended: `sandbox abi=8` then `ended code=0` or `ended signal=9`;
+/// tool ended: `sandbox abi=8 uid_boundary=1` then `ended code=0` or `ended signal=9`;
 /// or a single `unavailable …` or `spawn-error …` line.
 fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop> {
     let mut lines = status.lines();
@@ -424,8 +569,15 @@ fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop
     }
     let sandbox = first
         .strip_prefix("sandbox abi=")
-        .and_then(|abi| abi.parse().ok())
-        .map(SandboxReport::from_abi)
+        .and_then(|rest| rest.split_once(" uid_boundary="))
+        .and_then(|(abi, uid)| {
+            let uid_boundary = match uid {
+                "1" => true,
+                "0" => false,
+                _ => return None,
+            };
+            Some(SandboxReport::from_abi(abi.parse().ok()?, uid_boundary))
+        })
         .ok_or_else(|| Stop::tool_error(tool, "the reaper reported no sandbox".to_owned()))?;
     let second = lines.next().unwrap_or_default();
     if let Some(reason) = second.strip_prefix("spawn-error ") {
@@ -778,7 +930,15 @@ pub fn confine_main(args: &[OsString]) -> ! {
             exit(0);
         }
     }
-    let sandbox = match confine(&internal.read_only, &internal.read_write) {
+    // As root, the tool runs under its own uid (AET-WO-1601 §1.2), set here,
+    // before Landlock and the filter, while this process is single-threaded.
+    // There is no fallback to root: a switch that fails refuses the call.
+    let separate = geteuid().is_root();
+    if separate && let Err(reason) = separate_uid() {
+        let _ = writeln!(status, "unavailable uid {reason}");
+        exit(0);
+    }
+    let abi = match confine(&internal.read_only, &internal.read_write) {
         Ok(s) => s,
         Err(reason) => {
             let _ = writeln!(status, "unavailable landlock {reason}");
@@ -794,11 +954,28 @@ pub fn confine_main(args: &[OsString]) -> ! {
         exit(0);
     }
     // Required too (INV-06): a tool never starts holding a capability.
-    if let Err(e) = drop_capabilities() {
+    if let Err(e) = drop_capabilities(separate) {
         let _ = writeln!(status, "unavailable capabilities {e}");
         exit(0);
     }
-    let _ = writeln!(status, "sandbox abi={}", sandbox.landlock_abi);
+    // Soft and hard alike, so the tool cannot raise it (AET-WO-1601 §1.6).
+    let cap = Rlimit {
+        current: Some(MAX_TOOL_FILE),
+        maximum: Some(MAX_TOOL_FILE),
+    };
+    if let Err(e) = setrlimit(Resource::Fsize, cap) {
+        let _ = writeln!(
+            status,
+            "unavailable fsize setrlimit: errno {}",
+            e.raw_os_error()
+        );
+        exit(0);
+    }
+    let _ = writeln!(
+        status,
+        "sandbox abi={abi} uid_boundary={}",
+        u8::from(separate)
+    );
     let (program, tool_args) = internal
         .tool
         .split_first()
@@ -1075,31 +1252,15 @@ pub fn seccomp_filter(_self_pid: u32) -> Option<BpfProgram> {
 ///    if step 1 ran.
 ///
 /// Any failure is an error, and the call refuses (`INV-06`).
-fn drop_capabilities() -> Result<(), String> {
-    let errno = |what: &str, e: Errno| format!("{what}: errno {}", e.raw_os_error());
-    // Capability numbers run from 0 to the kernel's last; past it, EINVAL.
-    let each = |test: fn(CapabilitySet) -> rustix::io::Result<bool>| {
-        let mut held = Vec::new();
-        for n in 0..64 {
-            let cap = CapabilitySet::from_bits_retain(1 << n);
-            match test(cap) {
-                Ok(true) => held.push(cap),
-                Ok(false) => {}
-                Err(Errno::INVAL) if n > 0 => break,
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(held)
-    };
+///
+/// `separated` says the trampoline started as root and switched to
+/// [`TOOL_UID`]: [`separate_uid`] emptied the bounding set while it still
+/// could, so it is checked here even though `CAP_SETPCAP` is gone.
+fn drop_capabilities(separated: bool) -> Result<(), String> {
     let before = capabilities(None).map_err(|e| errno("capget", e))?;
     let setpcap = before.effective.contains(CapabilitySet::SETPCAP);
     if setpcap {
-        for cap in
-            each(capability_is_in_bounding_set).map_err(|e| errno("reading the bounding set", e))?
-        {
-            remove_capability_from_bounding_set(cap)
-                .map_err(|e| errno(&format!("dropping {cap:?} from the bounding set"), e))?;
-        }
+        empty_bounding_set()?;
     }
     clear_ambient_capability_set().map_err(|e| errno("clearing the ambient set", e))?;
     let none = CapabilitySets {
@@ -1112,13 +1273,13 @@ fn drop_capabilities() -> Result<(), String> {
     if !(after.effective.is_empty() && after.permitted.is_empty() && after.inheritable.is_empty()) {
         return Err(format!("capabilities still held: {after:?}"));
     }
-    let left =
-        each(capability_is_in_ambient_set).map_err(|e| errno("reading the ambient set", e))?;
+    let left = each_capability(capability_is_in_ambient_set)
+        .map_err(|e| errno("reading the ambient set", e))?;
     if !left.is_empty() {
         return Err(format!("ambient capabilities still held: {left:?}"));
     }
-    if setpcap {
-        let left = each(capability_is_in_bounding_set)
+    if setpcap || separated {
+        let left = each_capability(capability_is_in_bounding_set)
             .map_err(|e| errno("reading the bounding set", e))?;
         if !left.is_empty() {
             return Err(format!("bounding capabilities still held: {left:?}"));
@@ -1131,10 +1292,84 @@ fn drop_capabilities() -> Result<(), String> {
     }
 }
 
+fn errno(what: &str, e: Errno) -> String {
+    format!("{what}: errno {}", e.raw_os_error())
+}
+
+/// Every capability `test` says is held. Capability numbers run from 0 to the
+/// kernel's last; past it, `EINVAL`.
+fn each_capability(
+    test: fn(CapabilitySet) -> rustix::io::Result<bool>,
+) -> rustix::io::Result<Vec<CapabilitySet>> {
+    let mut held = Vec::new();
+    for n in 0..64 {
+        let cap = CapabilitySet::from_bits_retain(1 << n);
+        match test(cap) {
+            Ok(true) => held.push(cap),
+            Ok(false) => {}
+            Err(Errno::INVAL) if n > 0 => break,
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(held)
+}
+
+/// Empties the bounding set; needs `CAP_SETPCAP` effective.
+fn empty_bounding_set() -> Result<(), String> {
+    for cap in each_capability(capability_is_in_bounding_set)
+        .map_err(|e| errno("reading the bounding set", e))?
+    {
+        remove_capability_from_bounding_set(cap)
+            .map_err(|e| errno(&format!("dropping {cap:?} from the bounding set"), e))?;
+    }
+    Ok(())
+}
+
+/// The trampoline, started as root, becomes [`TOOL_UID`] and [`TOOL_GID`]
+/// with no supplementary group (`AET-WO-1601` §1.2), then reads every id back
+/// from the kernel. The bounding set is emptied first: the uid change clears
+/// the effective set, and `CAP_SETPCAP` with it. Each call is the thread's own
+/// system call (`rustix::thread`), and this process has one thread here.
+fn separate_uid() -> Result<(), String> {
+    empty_bounding_set()?;
+    let (uid, gid) = (Uid::from_raw(TOOL_UID), Gid::from_raw(TOOL_GID));
+    set_thread_groups(&[]).map_err(|e| errno("setgroups", e))?;
+    set_thread_res_gid(gid, gid, gid).map_err(|e| errno("setresgid", e))?;
+    set_thread_res_uid(uid, uid, uid).map_err(|e| errno("setresuid", e))?;
+    let status = fs::read_to_string("/proc/thread-self/status")
+        .map_err(|e| format!("cannot read back the ids: {e}"))?;
+    ids_are_the_tool_s(&status)
+}
+
+/// `/proc/<pid>/status` says the real, effective, saved and filesystem uid
+/// and gid are all the tool's, and there is no supplementary group.
+fn ids_are_the_tool_s(status: &str) -> Result<(), String> {
+    let field = |name: &str| {
+        status
+            .lines()
+            .find_map(|l| l.strip_prefix(name))
+            .map(|v| v.split_whitespace().collect::<Vec<_>>())
+            .ok_or_else(|| format!("no {name} line in the read-back"))
+    };
+    let uid = TOOL_UID.to_string();
+    let gid = TOOL_GID.to_string();
+    let (uids, gids, groups) = (field("Uid:")?, field("Gid:")?, field("Groups:")?);
+    if uids.len() != 4 || uids.iter().any(|u| *u != uid) {
+        return Err(format!("uids read back as {uids:?}"));
+    }
+    if gids.len() != 4 || gids.iter().any(|g| *g != gid) {
+        return Err(format!("gids read back as {gids:?}"));
+    }
+    if !groups.is_empty() {
+        return Err(format!("supplementary groups read back as {groups:?}"));
+    }
+    Ok(())
+}
+
 /// Applies Landlock to this process: filesystem rights through ABI 3 are
 /// required; where the kernel can, TCP bind and connect are denied (ABI 4+)
 /// and signals and abstract Unix sockets are scoped to the tool (ABI 6+).
-fn confine(read_only: &[PathBuf], read_write: &[PathBuf]) -> Result<SandboxReport, String> {
+fn confine(read_only: &[PathBuf], read_write: &[PathBuf]) -> Result<i32, String> {
     let fs_rights = AccessFs::from_all(ABI::V3);
     let status = Ruleset::default()
         .set_compatibility(CompatLevel::HardRequirement)
@@ -1155,9 +1390,7 @@ fn confine(read_only: &[PathBuf], read_write: &[PathBuf]) -> Result<SandboxRepor
     };
     match status.ruleset {
         RulesetStatus::NotEnforced => Err("the ruleset was not enforced".to_owned()),
-        RulesetStatus::PartiallyEnforced | RulesetStatus::FullyEnforced => {
-            Ok(SandboxReport::from_abi(abi))
-        }
+        RulesetStatus::PartiallyEnforced | RulesetStatus::FullyEnforced => Ok(abi),
     }
 }
 

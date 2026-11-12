@@ -290,6 +290,8 @@ struct ScenarioLine {
     state_sequence_hash: String,
     event_count: u64,
     trace_bytes: u64,
+    /// The boot's tools ran under the separate uid (`AET-WO-1601` §1.2).
+    uid_boundary: bool,
 }
 
 #[derive(Serialize)]
@@ -427,6 +429,7 @@ fn run_one(
     )
     .map_err(stop)?;
     drop(scratch);
+    let uid_boundary = verdict.sandbox.uid_boundary;
     // The run id and the header name the firmware as first read; the boot
     // judged its own copy. A file changed between the two is refused.
     let booted = verdict.boot.as_ref().map(|b| b.firmware.sha256.as_str());
@@ -503,6 +506,7 @@ fn run_one(
             state_sequence_hash: hex(archived.state_hash),
             event_count: archived.event_count,
             trace_bytes: archived.trace_bytes,
+            uid_boundary,
         },
         ok,
     ))

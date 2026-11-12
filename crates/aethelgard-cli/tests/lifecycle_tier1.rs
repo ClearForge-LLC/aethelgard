@@ -61,6 +61,7 @@ fn reaper(dir: &Path, pid_args: &[&str], marker: &Path) -> (Option<i32>, u64) {
     let child = Command::new(BIN)
         .args(args)
         .env_clear()
+        .env("HOME", std::env::var_os("HOME").unwrap_or_default())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -158,9 +159,9 @@ fn a_missing_or_malformed_cli_pid_is_refused_with_64() {
 fn a_cli_told_a_dead_parents_pid_exits_70_and_starts_nothing() {
     let dir = Scratch::new("cli-dead-parent");
     let tb = dir.0.join("toolbox");
-    let tmp = dir.0.join("tmp");
+    let private = common::private_tmp(&format!("{}", line!()));
+    let tmp = private.0.clone();
     fs::create_dir_all(&tb).unwrap();
-    fs::create_dir(&tmp).unwrap();
     let marker = dir.0.join("ran");
     let stub = tb.join("kicad-cli");
     fs::write(
@@ -176,6 +177,7 @@ fn a_cli_told_a_dead_parents_pid_exits_70_and_starts_nothing() {
         cmd.args(["check", "drc", "--board"])
             .arg(&board)
             .env_clear()
+            .env("HOME", std::env::var_os("HOME").unwrap_or_default())
             .env("PATH", &tb)
             .env("TMPDIR", &tmp)
             .env(PARENT_PID_VAR, parent)
@@ -272,9 +274,9 @@ fn a_guardian_waits_for_its_directory_and_exits_0_when_its_parent_removes_it() {
 fn a_cli_without_the_variable_outlives_the_thread_that_started_it() {
     let dir = Scratch::new("cli-thread");
     let tb = dir.0.join("toolbox");
-    let tmp = dir.0.join("tmp");
+    let private = common::private_tmp(&format!("{}", line!()));
+    let tmp = private.0.clone();
     fs::create_dir_all(&tb).unwrap();
-    fs::create_dir(&tmp).unwrap();
     // Slow to report its version, then a clean DRC report: a pass.
     let report = r#"{"$schema":"https://schemas.kicad.org/drc.v1.json","coordinate_units":"mm","date":"x","ignored_checks":[],"included_severities":["error","warning"],"kicad_version":"10.0.7","source":"b","violations":[],"unconnected_items":[],"schematic_parity":[]}"#;
     let stub = tb.join("kicad-cli");
@@ -295,6 +297,7 @@ fn a_cli_without_the_variable_outlives_the_thread_that_started_it() {
             .args(["check", "drc", "--board"])
             .arg(&board)
             .env_clear()
+            .env("HOME", std::env::var_os("HOME").unwrap_or_default())
             .env("PATH", &tb)
             .env("TMPDIR", &tmp)
             .stdin(Stdio::null())

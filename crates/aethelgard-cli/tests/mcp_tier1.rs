@@ -211,7 +211,9 @@ impl Scratch {
     fn client(&self) -> Client {
         let tb = self.0.join("toolbox");
         Client::spawn(|cmd| {
-            cmd.env_clear().env("PATH", &tb);
+            cmd.env_clear()
+                .env("HOME", std::env::var_os("HOME").unwrap_or_default())
+                .env("PATH", &tb);
         })
     }
 }
@@ -445,11 +447,14 @@ fn an_immediate_cancel_storm_leaves_no_process_and_no_directory() {
     dir.stub_kicad("exec /bin/sleep 306");
     let board = dir.0.join("b.kicad_pcb");
     fs::write(&board, "(kicad_pcb (version 20240108))\n").unwrap();
-    let tmp = dir.0.join("tmp");
-    fs::create_dir(&tmp).unwrap();
+    let private = common::private_tmp(&format!("{}", line!()));
+    let tmp = private.0.clone();
     let tb = dir.0.join("toolbox");
     let mut c = Client::spawn(|cmd| {
-        cmd.env_clear().env("PATH", &tb).env("TMPDIR", &tmp);
+        cmd.env_clear()
+            .env("HOME", std::env::var_os("HOME").unwrap_or_default())
+            .env("PATH", &tb)
+            .env("TMPDIR", &tmp);
     });
     c.initialize();
     let server = c.pid();
@@ -552,12 +557,15 @@ fn servers_sigkilled_while_calls_start_leave_nothing() {
     dir.stub_kicad("exec /bin/sleep 309");
     let board = dir.0.join("b.kicad_pcb");
     fs::write(&board, "(kicad_pcb (version 20240108))\n").unwrap();
-    let tmp = dir.0.join("tmp");
-    fs::create_dir(&tmp).unwrap();
+    let private = common::private_tmp(&format!("{}", line!()));
+    let tmp = private.0.clone();
     let tb = dir.0.join("toolbox");
     for i in 0..SERVERS {
         let mut c = Client::spawn(|cmd| {
-            cmd.env_clear().env("PATH", &tb).env("TMPDIR", &tmp);
+            cmd.env_clear()
+                .env("HOME", std::env::var_os("HOME").unwrap_or_default())
+                .env("PATH", &tb)
+                .env("TMPDIR", &tmp);
         });
         c.initialize();
         for _ in 0..BURST {

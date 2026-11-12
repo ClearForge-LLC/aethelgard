@@ -105,6 +105,7 @@ fn the_routed_board_is_byte_identical_and_a_function_of_its_pads() {
         let r = json_line(
             &cli()
                 .env_clear()
+                .env("HOME", std::env::var_os("HOME").unwrap_or_default())
                 .envs(env)
                 .current_dir(dir)
                 .args(["emit", "--file", spec.to_str().unwrap(), "--out"])

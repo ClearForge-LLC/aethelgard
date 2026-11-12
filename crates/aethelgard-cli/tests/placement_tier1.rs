@@ -112,6 +112,7 @@ fn emit_writes_the_board_and_two_runs_are_byte_identical() {
         let r = json_line(
             &cli()
                 .env_clear()
+                .env("HOME", std::env::var_os("HOME").unwrap_or_default())
                 .envs(env)
                 .current_dir(dir)
                 .args(["emit", "--file", spec.to_str().unwrap(), "--out"])
