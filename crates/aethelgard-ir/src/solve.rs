@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     AnalogLine, IrValidationError, PinAssignment, PinTable, Signal, SolvedI2cDevice,
-    SolvedTopology, Specification,
+    SolvedTopology, Specification, electrical,
 };
 
 /// Never assigned, and refused as a hand pin: the SWD debug port (`PA13`
@@ -44,6 +44,22 @@ pub enum SolveError {
         speed_hz: u32,
         ceiling_hz: u32,
     },
+    #[error(
+        "I2C bus `{bus}` has a pull-up of {pull_up_ohms} ohms, below the {floor_ohms} ohm floor its rail and mode set (UM10204 sink current)"
+    )]
+    PullUpBelowSinkFloor {
+        bus: String,
+        pull_up_ohms: u32,
+        floor_ohms: u32,
+    },
+    #[error(
+        "I2C line `{net}` has a capacitance of {capacitance_femtofarads} fF, over its bus's limit of {limit_femtofarads} fF (UM10204)"
+    )]
+    BusCapacitanceOverLimit {
+        net: String,
+        capacitance_femtofarads: u64,
+        limit_femtofarads: u64,
+    },
     #[error("`{claimant}` names pin `{pin}`, which the pin table does not have")]
     UnknownPin { pin: String, claimant: String },
     #[error("`{claimant}` names pin `{pin}`, which is reserved (debug port or oscillator)")]
@@ -78,14 +94,6 @@ pub enum SolveError {
     BudgetExceeded { bus: String, limit: u64 },
     #[error("`{claimant}` has no free pin left")]
     NoFreePin { claimant: String },
-    #[error(
-        "device `{reference}` is on bus `{bus}`, whose line `{net}` the solution does not place"
-    )]
-    DeviceNotPlaced {
-        reference: String,
-        bus: String,
-        net: String,
-    },
 }
 
 fn quoted(names: &[String]) -> String {
@@ -106,6 +114,8 @@ impl SolveError {
             Self::MissingBusConstraint { .. } => "MissingBusConstraint",
             Self::RiseTimeTooSlow { .. } => "RiseTimeTooSlow",
             Self::BusTooFast { .. } => "BusTooFast",
+            Self::PullUpBelowSinkFloor { .. } => "PullUpBelowSinkFloor",
+            Self::BusCapacitanceOverLimit { .. } => "BusCapacitanceOverLimit",
             Self::UnknownPin { .. } => "UnknownPin",
             Self::ReservedPin { .. } => "ReservedPin",
             Self::UnknownPeripheral { .. } => "UnknownPeripheral",
@@ -115,7 +125,6 @@ impl SolveError {
             Self::Infeasible { .. } => "Infeasible",
             Self::BudgetExceeded { .. } => "BudgetExceeded",
             Self::NoFreePin { .. } => "NoFreePin",
-            Self::DeviceNotPlaced { .. } => "DeviceNotPlaced",
         }
     }
 
@@ -133,8 +142,9 @@ impl SolveError {
             | Self::BudgetExceeded { bus, .. }
             | Self::MissingBusConstraint { bus, .. }
             | Self::RiseTimeTooSlow { bus, .. }
-            | Self::BusTooFast { bus, .. } => Some(bus),
-            Self::DeviceNotPlaced { reference, .. } => Some(reference),
+            | Self::BusTooFast { bus, .. }
+            | Self::PullUpBelowSinkFloor { bus, .. } => Some(bus),
+            Self::BusCapacitanceOverLimit { net, .. } => Some(net),
             Self::Infeasible { .. } | Self::NoFreePin { .. } => None,
         }
     }
@@ -156,8 +166,9 @@ impl SolveError {
             | Self::BudgetExceeded { bus, .. }
             | Self::MissingBusConstraint { bus, .. }
             | Self::RiseTimeTooSlow { bus, .. }
-            | Self::BusTooFast { bus, .. } => vec![bus.clone()],
-            Self::DeviceNotPlaced { reference, .. } => vec![reference.clone()],
+            | Self::BusTooFast { bus, .. }
+            | Self::PullUpBelowSinkFloor { bus, .. } => vec![bus.clone()],
+            Self::BusCapacitanceOverLimit { net, .. } => vec![net.clone()],
             Self::Infeasible { buses } => buses.clone(),
         }
     }
@@ -211,6 +222,7 @@ fn solve_inner(
     };
     out.validate().map_err(SolveError::InvalidSpecification)?;
     out.i2c_ceilings = i2c_ceilings(spec)?;
+    i2c_electrical(spec)?;
     if spec.mcu.part != table.part {
         return Err(SolveError::PartMismatch {
             spec: spec.mcu.part.clone(),
@@ -268,7 +280,7 @@ fn solve_inner(
         out.gpio.insert(cs.net.to_owned(), pin.to_owned());
     }
     out.analog_lines = analog_lines(spec);
-    out.i2c_devices = i2c_devices(spec, &out)?;
+    out.i2c_devices = i2c_devices(spec, &out);
     // belt-and-suspenders: the search already keeps every rule `validate`
     // checks; this refuses rather than emits if a change to it ever breaks one.
     out.validate().map_err(SolveError::InvalidSpecification)?;
@@ -304,11 +316,8 @@ fn analog_lines(spec: &Specification) -> BTreeMap<String, AnalogLine> {
 
 /// Every I2C device of `spec`, on the peripheral the solution gave its bus
 /// (the one that carries its `sda` net), with its place in the specification's
-/// order (`AET-WO-2203`). A bus the solution does not place is a refusal.
-fn i2c_devices(
-    spec: &Specification,
-    solved: &SolvedTopology,
-) -> Result<BTreeMap<String, SolvedI2cDevice>, SolveError> {
+/// order (`AET-WO-2203`). The search places every bus, so each device's `sda` net is assigned.
+fn i2c_devices(spec: &Specification, solved: &SolvedTopology) -> BTreeMap<String, SolvedI2cDevice> {
     let mut out = BTreeMap::new();
     for (index, d) in spec.i2c_devices.iter().enumerate() {
         let bus = spec
@@ -316,15 +325,10 @@ fn i2c_devices(
             .iter()
             .find(|b| b.id == d.bus)
             .expect("Specification::validate checked every device's bus");
-        let placed =
-            solved
-                .assignments
-                .get(&bus.sda.net)
-                .ok_or_else(|| SolveError::DeviceNotPlaced {
-                    reference: d.reference.clone(),
-                    bus: bus.id.clone(),
-                    net: bus.sda.net.clone(),
-                })?;
+        let placed = solved
+            .assignments
+            .get(&bus.sda.net)
+            .expect("the search places every bus");
         out.insert(
             d.reference.clone(),
             SolvedI2cDevice {
@@ -336,7 +340,7 @@ fn i2c_devices(
             },
         );
     }
-    Ok(out)
+    out
 }
 
 /// The fastest I2C mode whose maximum rise time (NXP UM10204) is at least
@@ -383,6 +387,45 @@ fn i2c_ceilings(spec: &Specification) -> Result<BTreeMap<String, u32>, SolveErro
         out.insert(bus.id.clone(), ceiling);
     }
     Ok(out)
+}
+
+/// The two static electrical rules (`AET-WO-1203`), after the ceilings: each
+/// bus's pull-up against the sink-current floor at its rail, then each line's
+/// declared capacitance against its bus's limit. Both come from
+/// [`crate::electrical`]; `validate` has already refused an undeclared rail
+/// and `i2c_ceilings` a line with no constraint.
+fn i2c_electrical(spec: &Specification) -> Result<(), SolveError> {
+    for bus in &spec.i2c_buses {
+        let domain = spec
+            .voltage_domains
+            .iter()
+            .find(|d| d.id == bus.domain)
+            .expect("Specification::validate checked every bus's domain");
+        let floor = electrical::i2c_pull_up_floor_ohms(bus.speed_hz, domain.nominal_millivolts);
+        if bus.pull_up_ohms < floor {
+            return Err(SolveError::PullUpBelowSinkFloor {
+                bus: bus.id.clone(),
+                pull_up_ohms: bus.pull_up_ohms,
+                floor_ohms: floor,
+            });
+        }
+        let limit = electrical::i2c_bus_capacitance_limit_femtofarads(bus.speed_hz);
+        for net in [&bus.sda.net, &bus.scl.net] {
+            let c = spec
+                .net_constraints
+                .iter()
+                .find(|c| &c.net_name == net)
+                .expect("i2c_ceilings checked every I2C line's constraint");
+            if c.max_capacitance_femtofarads > limit {
+                return Err(SolveError::BusCapacitanceOverLimit {
+                    net: net.clone(),
+                    capacitance_femtofarads: c.max_capacitance_femtofarads,
+                    limit_femtofarads: limit,
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

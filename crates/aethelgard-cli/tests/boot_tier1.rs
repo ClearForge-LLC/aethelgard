@@ -630,7 +630,10 @@ fn a_boot_past_the_wall_bound_fails_and_names_it() {
     let (code, v, took) = bounded("", "/bin/sleep 60");
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["wall_bound_exceeded"]);
-    assert!(took.as_secs() >= 30 && took.as_secs() < 35, "{took:?}");
+    // The bound is 30 s and the stub sleeps 60 s, so any upper limit below
+    // 60 s shows the bound killed it; the slack covers teardown on a loaded
+    // runner (35.29 s was measured on CI).
+    assert!(took.as_secs() >= 30 && took.as_secs() < 50, "{took:?}");
 }
 
 // ---- The analog pre-pass (AET-WO-2200 §1.4), with a stub bridge -----------
@@ -853,8 +856,11 @@ done
         serde_json::json!(["analog.rise_time_measured > ceiling_ns"])
     );
 
-    // A 10 Ω pull-up against the driver's 10 Ω.
-    let (spec, platform) = variant(&dir, &[("\"pull_up_ohms\": 2200", "\"pull_up_ohms\": 10")]);
+    // `AET-WO-1203`: `solve` now refuses the 10 Ω pull-up this case once used
+    // (below the 967 Ω floor), so the specification is the lowest that
+    // solves. The stub answers what the real bridge answers for a 10 Ω
+    // pull-up (`bridge/tests/edges.rs`); the judgement under test is the same.
+    let (spec, platform) = variant(&dir, &[("\"pull_up_ohms\": 2200", "\"pull_up_ohms\": 967")]);
     let (code, v) = pre_pass_on(Some(STUCK), true, &spec, &platform);
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(v["verdict"], "fail");

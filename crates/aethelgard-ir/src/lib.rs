@@ -10,6 +10,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod electrical;
 pub mod parts;
 mod solve;
 
