@@ -83,13 +83,13 @@ Covers are the two proofs' (`every_valid_sequence`, `i2c1_transfer_is_bounded_an
 | C1: CLI root, racer root, unmodified `366e8fd` | all four broke; no key | **broke** `897184e4` | **broke** 1, 1 | **broke** `e678e904` | **broke**: fails on `bad.elf` while bound to `2d9ee264` | no key |
 | C3: CLI and racer uid 1001 (`--userns=keep-id --user 1001:1001`), unmodified | all four broke | **broke** `897184e4` | **broke** 1, 1 | **broke** `e678e904` | **broke** | no key |
 | **C2: CLI root, tools 65534, racer uid 4242, this branch** | **all four held**; every attempt `EACCES`; `true` everywhere | **held** `2d9ee264` | **held** 9, 7 | **held** `2d9ee264` | **held**: passes | `true`, every gate |
-| C2b: as C2, racer uid 65534 (the tool uid) | B1, B3, B4 held; B2 broke (stated residual) | **held** `2d9ee264` *(see note)* | **held** 9, 7 | **broke** `e678e904`: a plant in the tool's `HOME` | **held** | `true` |
+| C2b: as C2, racer uid 65534 (the tool uid) | B1, B3, B4 held; B2 broke (stated residual) | **held** `2d9ee264` | **held** 9, 7 | **broke** `e678e904`: a plant in the tool's `HOME` | **held** | `true` |
 | C1b: CLI root, this branch, racer root | all four broke; `true` | **broke** `897184e4` | **broke** 1, 1 | **broke** `e678e904` | **broke** | `true` |
 | C3b: CLI and racer uid 1001, this branch | all four broke; `false` | **broke** `897184e4` | **broke** 1, 1 | **broke** `e678e904` | **broke** | `false`, every gate |
 
 - **C2 is not vacuous.** uid 4242 cannot list `/var/lib/aethelgard` (0711), so it found each scratch path in `/proc/*/cmdline`, then failed on every attempt, 200 times per gate and mode. For example: `…/tool/crate/firmware/src/main.rs: Permission denied` and `mv: cannot stat '…/tool/crate': Permission denied` (`C2/R1.racer.log`); `mkdir: cannot create directory '/var/lib/aethelgard/aethelgard-…': Permission denied` (`C2/R2.racer.log`).
 - **C2b shows the sticky directory at work.** As 65534 the racer passes the call directory (group 65534). Each write to the copy was `Permission denied` (root-owned 0444), and each `mv` of the crate aside was refused (sticky 1770). B2's plant succeeded, because the tool's `HOME` is the directory the tool uid must write. That is the residual stated in the README.
-- **C2b R1** was re-run after its first run was stopped by my own concurrent rebuild of the shared binary (`cannot run gate build: No such file or directory`, kept as `R1-stopped-by-rebuild.json`). *Re-run: pending.*
+- **C2b R1** was re-run after its first run was stopped by my own concurrent rebuild of the shared binary (`cannot run gate build: No such file or directory`, kept as `R1-stopped-by-rebuild.json`). The re-run held: ELF `2d9ee264`, covers 9 and 7, `true`, 0 successful attempts. Writes were `Permission denied`; `mv` of the crate aside was `Operation not permitted` (the sticky bit).
 - **C3 first ran as root by mistake.** `--userns=keep-id` alone left the image's `root` user. That run is kept as `C3-was-root.log` and is not counted.
 
 **The second configuration holds on all four** (§1.1's must), so there is no §7 stop.
@@ -204,4 +204,4 @@ Entry schema: `finding · where · severity · type · recommendation`.
 
 ## The fence
 
-`git diff --stat cbc0a7b` (`main`, merged in): `run.rs`, `main.rs`, `kicad.rs`, the CLI README; `README.md` (the quickstart only), `ci.yml` (`TIER2_MIN` only); tests; this FEEDBACK. Outside the literal fence, forced by §1.2: `verify.rs`, `campaign.rs` (the `uid_boundary` fields) and `firmware.rs` (F7). No `Dockerfile`, image, workflow besides `ci.yml`, generated file or protected document changed. No `unsafe`. No new dependency: `rustix`'s `fs`, `process` and `thread` features were already on.
+`git diff --stat cbc0a7b` (`main`, merged in): `run.rs`, `main.rs`, `kicad.rs`, the CLI README; `README.md` (the quickstart only), `ci.yml` (`TIER2_MIN` only); tests; this FEEDBACK. Outside the literal fence, forced by §1.2: `verify.rs`, `campaign.rs` (the `uid_boundary` fields) and `firmware.rs` (F7). No `Dockerfile`, image, workflow besides `ci.yml`, generated file or steering document changed; the one protected file touched is `README.md`'s quickstart block (F4). No `unsafe`. No new dependency: `rustix`'s `fs`, `process` and `thread` features were already on.
