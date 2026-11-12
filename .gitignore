@@ -7,3 +7,5 @@
 # The bridge (AET-WO-2200) builds into the top-level target/ (bridge/.cargo/config.toml);
 # this catches a build run from inside bridge/ with another target dir.
 /bridge/target/
+# A host run with a relative CARGO_TARGET_DIR writes under a crate (AET-WO-3301 F16).
+/crates/*/target/
