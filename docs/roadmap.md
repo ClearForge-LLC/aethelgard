@@ -219,7 +219,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 - `AET-WO-3302` — **reserved 2026-11-12** (Mythos review, roadmap order): the Nucleo-H753ZI bench comparison, run as soon as the board arrives and before `3200`'s proposals are trusted. It is split from `3300` so the only evidence about the declared-value gap (`RUL-19`) comes early. Human-track: Scotty's hands on the board.
 - `AET-WO-1205` — **merged (PR #94)** (`AET-WO-1204` §1.2 gap, ruled by the architect with Scotty's delegation), build-only, cheap tier, targeted adversarial pass. `SolvedTopology` carries each I2C bus's declared speed (solved schema version 2); `validate` holds a hand-written topology to the floor and the capacitance limit at that speed; the board generator admits only the modes at or under the declared speed, not the ceiling.
 - `AET-WO-1601` — **written 2026-11-12** (`AET-WO-3301` F1 and F13; 1300 A8; 2100 F25; review A12.1), spike then build, strong tier, full adversarial pass. **Gates `AET-WO-3300`.** On Linux the boundary against a racing process is the uid, so: tools run under a separate unprivileged uid when the CLI runs as root (as in the image); every verdict discloses `uid_boundary`; a scratch root no other uid can plant configuration into; scratch paths in a safe character set; `check erc` refuses hierarchical sheets; `RLIMIT_FSIZE` on tool scratch. The deployment half (a dedicated uid on Furnace) is the operator's.
-- **Extraction, first step** (Mythos review B3): a capacitance estimate from routed length plus each pin's capacitance, judged against the declared bound, before `3300`. Full `AET-WO-1303` before `4500`.
+- `AET-WO-1305` — **written 2026-11-12** (Mythos review B3, extraction's first step), build-only, strong tier, full adversarial pass. **Gates `AET-WO-3300`** with `1601`. `aethelgard extract --board --spec` reads the routed board through `route::read` and `connectivity`, bounds each I2C line's capacitance from above (trace at the stackup's most capacitive geometry, vias, pads, and UM10204's maximum `Ci` per pin), and judges the bound against the declared bound; `verify` runs it as a gate. A bound at or under the declared value means the campaign's declared-value rise time bounds the board's. Full `AET-WO-1303` stays before `4500`.
 
 **Exit gate (intent; refined after the P2 spike, never weakened)**
 
@@ -374,7 +374,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | State folded before the run rules bound it | review A11.3 | **done (PR #87)**: once-only records refused at fold time, `MAX_RECORDS` 65,536. `AET-WO-2301` measures fold memory (about 35 × wire size) and raises or streams it for per-quantum logs |
 | Generation in the CLI; `verify`; verdict binding; harness provenance | review A3, A4, B1 | **merged (PR #91)**: `generate`, `build`, `verify`, `prove --spec` with `harness_provenance` and `cover_count` |
 | Bench comparison early | review | `AET-WO-3302` |
-| Extraction, first step, then full | review A1, B3; `1303` | before `3300`; `AET-WO-1303` before `4500` |
+| Extraction, first step, then full | review A1, B3; `1303` | `AET-WO-1305` (written), before `3300`; `AET-WO-1303` before `4500` |
 | Status-to-phase table in one place | 3100 F2 | `AET-WO-2301` |
 | `pc_outside_firmware` needs the executable segments archived | 3100 F13 | `AET-WO-2301` |
 | Only the last transaction per bus is witnessed | 2202 | `AET-WO-2301` |
@@ -453,6 +453,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-12 | §5, §7.1 | `AET-WO-1205` written: the declared I2C speed in `SolvedTopology` | `AET-WO-1204` FEEDBACK |
 | 2026-11-12 | §5, §7, §7.1 | `AET-WO-3301` reconciled: `generate`, `build` and `verify` merged; the P0 gap (`build`) is closed; its F1 is `RUL-19` (4)'s residual until `AET-WO-1601` | PR #91 |
 | 2026-11-12 | §5, §7.1 | `AET-WO-1205` reconciled (merged, PR #94). Scotty's rulings of 2026-11-12 recorded: the P4 order confirmed, `--root` deferred to the uid boundary's deployment half, no `--draft` | PR #94; Scotty, 2026-11-12 |
+| 2026-11-12 | §5, §7.1 | `AET-WO-1305` written: extraction's first step, an upper bound on each I2C line's capacitance from the routed board; it gates `3300` with `1601` | the Mythos review B3 |
 
 ## 9. Provenance
 
