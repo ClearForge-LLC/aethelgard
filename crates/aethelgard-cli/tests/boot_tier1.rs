@@ -853,8 +853,11 @@ done
         serde_json::json!(["analog.rise_time_measured > ceiling_ns"])
     );
 
-    // A 10 Ω pull-up against the driver's 10 Ω.
-    let (spec, platform) = variant(&dir, &[("\"pull_up_ohms\": 2200", "\"pull_up_ohms\": 10")]);
+    // `AET-WO-1203`: `solve` now refuses the 10 Ω pull-up this case once used
+    // (below the 967 Ω floor), so the specification is the lowest that
+    // solves. The stub answers what the real bridge answers for a 10 Ω
+    // pull-up (`bridge/tests/edges.rs`); the judgement under test is the same.
+    let (spec, platform) = variant(&dir, &[("\"pull_up_ohms\": 2200", "\"pull_up_ohms\": 967")]);
     let (code, v) = pre_pass_on(Some(STUCK), true, &spec, &platform);
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(v["verdict"], "fail");
