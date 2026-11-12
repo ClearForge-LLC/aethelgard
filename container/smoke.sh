@@ -117,4 +117,8 @@ pass libngspice
 expect rustup.thumbv7em 0 rustup target list --installed --toolchain 1.99.1
 is_line rustup.thumbv7em "thumbv7em-none-eabihf"
 
+# 9. KiCad's library licence text sits beside the libraries (AET-WO-1900, 1300 D10).
+cmp -s /usr/share/kicad/LICENSE.md /container/KICAD-LICENSE.md || fail kicad-licence "/usr/share/kicad/LICENSE.md is missing or differs from container/KICAD-LICENSE.md"
+pass kicad-licence
+
 echo "smoke: all checks passed"

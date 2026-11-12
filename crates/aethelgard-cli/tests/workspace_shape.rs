@@ -748,3 +748,27 @@ fn the_unsafe_scan_sees_only_code() {
     ));
     assert!(has_unsafe_keyword("let _ = cr#\"x\"#; unsafe {}"));
 }
+
+/// `AET-WO-1900` (1300 D10): the tools image carries KiCad's library licence
+/// text. The file is the one vendored in `aethelgard-kicad-lib`, byte for byte,
+/// the Dockerfile copies it beside the libraries and the smoke checks it there.
+#[test]
+fn the_tools_image_carries_kicads_library_licence() {
+    let r = root();
+    let vendored = fs::read(r.join(KICAD_LIB).join("data/kicad-10.0.7/LICENSE.md")).unwrap();
+    let shipped = fs::read(r.join("container/KICAD-LICENSE.md"))
+        .expect("container/KICAD-LICENSE.md is the licence the image copies");
+    assert_eq!(shipped, vendored, "not the vendored licence text");
+    let dockerfile = fs::read_to_string(r.join("container/Dockerfile")).unwrap();
+    assert!(
+        dockerfile
+            .lines()
+            .any(|l| l == "COPY KICAD-LICENSE.md /usr/share/kicad/LICENSE.md"),
+        "container/Dockerfile does not copy the licence beside the libraries"
+    );
+    let smoke = fs::read_to_string(r.join("container/smoke.sh")).unwrap();
+    assert!(
+        smoke.contains("/usr/share/kicad/LICENSE.md"),
+        "the smoke does not check it"
+    );
+}
