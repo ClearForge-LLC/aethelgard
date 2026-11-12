@@ -179,8 +179,7 @@ fn a_patch_that_matches_zero_or_two_times_is_refused_naming_the_mutant() {
 fn every_unmutated_case_is_a_scenario_whose_own_expectation_is_the_manifests() {
     let m = manifest();
     for c in m.cases.iter().filter(|c| c.mutant.is_none()) {
-        let s: serde_json::Value =
-            serde_json::from_slice(&fs::read(root().join(&c.scenario)).unwrap()).unwrap();
+        let s = read_json(&root().join(&c.scenario));
         let mut expect: Vec<String> = serde_json::from_value(s["expect_findings"].clone()).unwrap();
         expect.sort();
         assert_eq!(expect, c.findings, "{}", c.name);
@@ -202,6 +201,106 @@ fn every_unmutated_case_is_a_scenario_whose_own_expectation_is_the_manifests() {
             m.cases.iter().any(|c| c.scenario == path),
             "{path} is no case's"
         );
+    }
+}
+
+fn read_json(path: &Path) -> serde_json::Value {
+    serde_json::from_slice(&fs::read(path).unwrap())
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+fn sha_hex(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Every scenario file under `scenarios/`, relative to the root.
+fn scenario_files() -> Vec<String> {
+    let mut out = Vec::new();
+    let mut stack = vec![root().join("scenarios")];
+    while let Some(d) = stack.pop() {
+        for e in fs::read_dir(&d).unwrap() {
+            let path = e.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|x| x == "json") {
+                let rel = path.strip_prefix(root()).unwrap().to_str().unwrap();
+                out.push(rel.to_owned());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// The one scenario file whose bytes hash to `sha`.
+fn scenario_with_sha(sha: &str) -> String {
+    let found: Vec<String> = scenario_files()
+        .into_iter()
+        .filter(|f| sha_hex(&fs::read(root().join(f)).unwrap()) == sha)
+        .collect();
+    assert_eq!(found.len(), 1, "scenario sha256 {sha}: {found:?}");
+    found.into_iter().next().unwrap()
+}
+
+/// `AET-WO-3200` §1.4, the half that needs no tool, so it runs in `gates`
+/// too: every committed proposal is a proposal of pull-up changes only, the
+/// proposed specification is the file `proposal.json` names and validates,
+/// its scenario is in the tree, and its directory is named
+/// `<project>-<scenario name>`. The tier-2 test re-runs it to its bytes.
+#[test]
+fn every_committed_proposal_is_pull_up_changes_named_for_its_scenario() {
+    let Ok(entries) = fs::read_dir(root().join("proposals")) else {
+        return;
+    };
+    for entry in entries {
+        let dir = entry.unwrap().path();
+        let mut names: Vec<String> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            ["proposal.json", "proposed-spec.json"],
+            "{}",
+            dir.display()
+        );
+        let p = read_json(&dir.join("proposal.json"));
+        assert_eq!(
+            (&p["schema_version"], &p["outcome"], &p["proposer"]),
+            (&1.into(), &"proposal".into(), &"rules".into()),
+            "{}",
+            dir.display()
+        );
+        let changes = p["changes"].as_array().unwrap();
+        assert!(!changes.is_empty());
+        for c in changes {
+            let mut keys: Vec<&String> = c.as_object().unwrap().keys().collect();
+            keys.sort();
+            assert_eq!(keys, ["bus", "pull_up_ohms"], "{}", dir.display());
+        }
+        let spec = fs::read(dir.join("proposed-spec.json")).unwrap();
+        assert_eq!(p["proposed_specification_sha256"], sha_hex(&spec).as_str());
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+            .args(["validate", "--file"])
+            .arg(dir.join("proposed-spec.json"))
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", dir.display());
+        let scenario = scenario_with_sha(p["scenario"]["sha256"].as_str().unwrap());
+        let named = read_json(&root().join(&scenario));
+        assert_eq!(named["name"], p["scenario"]["name"]);
+        let project: serde_json::Value = serde_json::from_slice(&spec).unwrap();
+        let want = format!(
+            "{}-{}",
+            project["project_name"].as_str().unwrap(),
+            named["name"].as_str().unwrap()
+        );
+        assert_eq!(dir.file_name().unwrap().to_str().unwrap(), want);
     }
 }
 
@@ -242,10 +341,24 @@ mod tier2 {
         }
     }
 
+    /// Where the unmutated firmware is built: one fixed path, because the
+    /// board crate is a path dependency and cargo hashes its absolute path
+    /// into the ELF's symbol names. So the firmware's sha256, and with it every
+    /// run id, is the same wherever the repository is, and a committed
+    /// proposal's run id can be reproduced (`AET-WO-3200` §1.4).
+    /// It is a literal, not `temp_dir()`, so `TMPDIR` cannot move it. Two
+    /// tier-2 runs on one machine at once share it, and collide.
+    fn reference_firmware_dir() -> PathBuf {
+        PathBuf::from("/tmp/aethelgard-reference-firmware")
+    }
+
     /// The firmware of `mutant` (none: the generated firmware as committed),
     /// built offline from a scratch copy of the board.
     fn firmware(label: &str, mutant: Option<(&str, &Mutant)>) -> PathBuf {
-        let dir = scratch().join(label);
+        let dir = match mutant {
+            None => reference_firmware_dir(),
+            Some(_) => scratch().join(label),
+        };
         let _ = fs::remove_dir_all(&dir);
         let board = dir.join("board");
         copy_tree(&root().join(BOARD), &board);
@@ -282,13 +395,7 @@ mod tier2 {
     }
 
     fn aethelgard(args: &[&str]) -> (Option<i32>, Vec<u8>) {
-        let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
-            .args(args)
-            .current_dir(root())
-            .stdin(Stdio::null())
-            .output()
-            .unwrap();
-        (out.status.code(), out.stdout)
+        aethelgard_in(&root(), args)
     }
 
     fn json_lines(bytes: &[u8]) -> Vec<Value> {
@@ -349,9 +456,7 @@ mod tier2 {
                     assert_eq!(code, Some(0), "{label}: {lines:?}");
                 }
                 for c in cases {
-                    let scenario: Value =
-                        serde_json::from_slice(&fs::read(root().join(&c.scenario)).unwrap())
-                            .unwrap();
+                    let scenario = read_json(&root().join(&c.scenario));
                     let line = lines
                         .iter()
                         .find(|l| l["scenario"] == scenario["name"])
@@ -512,5 +617,447 @@ mod tier2 {
                 r.line["trace_bytes"], r.line["event_count"]
             ));
         }
+    }
+
+    // ---- `AET-WO-3200`: `propose` on every seeded run, and the re-gate ----
+
+    /// An `ANSWER 3200` line on `/dev/stderr`, for FEEDBACK.
+    fn note(line: &str) {
+        let mut log = OpenOptions::new().append(true).open("/dev/stderr").unwrap();
+        log.write_all(format!("ANSWER 3200: {line}\n").as_bytes())
+            .unwrap();
+    }
+
+    /// What `propose` must answer for each case, stated here and never read
+    /// from the tool (`INV-07`).
+    #[derive(Debug)]
+    enum Want {
+        /// A proposal of exactly this pull-up on `SENSORS`, which re-gates.
+        Proposal(u64),
+        /// A generator report naming the generator the mutant's file is in.
+        Report,
+        /// No rule: a held line is a board fault no value fixes.
+        ModelSlot,
+        /// A rule matched, but no E12 value lies at or above the floor.
+        BelowFloor,
+        /// A passing run: attribution precedes mutation (`INV-05`).
+        Inv05,
+    }
+
+    fn want(c: &Case) -> Want {
+        match (c.domain.as_str(), c.name.as_str()) {
+            ("software", _) => Want::Report,
+            ("none", _) => Want::Inv05,
+            _ if c.findings.iter().any(|f| f == "i2c_line_held_low") => Want::ModelSlot,
+            // R_target = R × 240,000 / rise ≈ 2,832 Ω for every pull-up case,
+            // the 47 kOhm trap included (E1 masks its wrong address).
+            (
+                _,
+                "pullup-3k9"
+                | "pullup-4k7"
+                | "pullup-10k"
+                | "pullup-47k"
+                | "pullup-100k"
+                | "trap-wrong-address-47k",
+            ) => Want::Proposal(2700),
+            // 2,200 × 240,000 / 410,089 ≈ 1,287 Ω.
+            (_, "cap-220p-2k2") => Want::Proposal(1200),
+            // 390 pF on SDA at 2.2 kOhm (AET-WO-1203's replacement for the
+            // 470 pF case): about 727 ns, so R_target ≈ 726 Ω and E12 gives
+            // 680 Ω, under the 967 Ω floor.
+            (_, "cap-390p-sda-2k2") => Want::BelowFloor,
+            (_, n) => panic!("case `{n}` has no expected proposal: state it here"),
+        }
+    }
+
+    fn aethelgard_in(cwd: &Path, args: &[&str]) -> (Option<i32>, Vec<u8>) {
+        let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+            .args(args)
+            .current_dir(cwd)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        (out.status.code(), out.stdout)
+    }
+
+    fn names(dir: &Path) -> Vec<String> {
+        let mut v: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// `propose` on `r`'s run into a fresh `out`, from the repository root.
+    fn propose(r: &Ran, out: &Path) -> (Option<i32>, Value) {
+        let _ = fs::remove_dir_all(out);
+        let (code, stdout) = aethelgard(&[
+            "propose",
+            "--archive",
+            r.run.to_str().unwrap(),
+            "--scenario",
+            &r.case.scenario,
+            "--out",
+            out.to_str().unwrap(),
+        ]);
+        (code, json_lines(&stdout).pop().unwrap())
+    }
+
+    /// Where each case's proposal is written, by case name: a fixed path, so
+    /// the output a committed proposal is taken from can be found.
+    fn proposals_out() -> PathBuf {
+        Path::new(env!("CARGO_TARGET_TMPDIR")).join("aet-3200-proposals")
+    }
+
+    #[test]
+    fn p3_gate_clause_2_propose_answers_every_seeded_case_as_its_rule_says() {
+        let m = manifest();
+        for r in ran() {
+            let name = &r.case.name;
+            let out = proposals_out().join(name);
+            let (code, line) = propose(r, &out);
+            let p = read_json(&out.join("proposal.json"));
+            note(&format!(
+                "propose {name} exit={code:?} outcome={} changes={} sizing={} reason={}",
+                p["outcome"], p["changes"], p["sizing"], p["reason"]
+            ));
+            // Twice: the same bytes (§3.5).
+            let again = scratch().join("again").join(name);
+            assert_eq!(propose(r, &again).0, code, "{name}");
+            assert_eq!(names(&again), names(&out), "{name}");
+            for f in names(&out) {
+                assert_eq!(
+                    fs::read(out.join(&f)).unwrap(),
+                    fs::read(again.join(&f)).unwrap(),
+                    "{name}: {f}"
+                );
+            }
+            match want(&r.case) {
+                Want::Proposal(ohms) => {
+                    assert_eq!(code, Some(0), "{name}: {line}");
+                    assert_eq!(names(&out), ["proposal.json", "proposed-spec.json"]);
+                    assert_eq!(
+                        p["changes"],
+                        serde_json::json!([{"bus": "SENSORS", "pull_up_ohms": ohms}]),
+                        "{name}"
+                    );
+                    // The trap's wrong address is masked by the fault, and
+                    // the proposal says so: its re-gate, on regenerated
+                    // firmware, cannot speak to the firmware that failed.
+                    let masked = p["attribution"]["masked"].as_array().unwrap();
+                    assert_eq!(
+                        masked
+                            .iter()
+                            .map(|e| e["kind"].as_u64().unwrap())
+                            .collect::<Vec<_>>(),
+                        if r.case.mutant.is_some() {
+                            vec![13]
+                        } else {
+                            vec![]
+                        },
+                        "{name}"
+                    );
+                    regate(&out, &r.run);
+                }
+                Want::Report => {
+                    assert_eq!(code, Some(6), "{name}: {line}");
+                    assert_eq!(names(&out), ["generator-report.json", "proposal.json"]);
+                    // The generator the mutant's file belongs to: an oracle
+                    // the manifest states, independent of the tool.
+                    let file = &m.mutants[r.case.mutant.as_ref().unwrap()].file;
+                    let generator = if file.starts_with("firmware/") {
+                        "firmware"
+                    } else {
+                        assert_eq!(file, "src/board.rs");
+                        "board_crate"
+                    };
+                    let g = read_json(&out.join("generator-report.json"));
+                    assert_eq!(g["generators"], serde_json::json!([generator]), "{name}");
+                    assert_eq!(g["rule"], r.case.rule.as_str(), "{name}");
+                    assert_eq!(p["changes"], serde_json::json!([]), "{name}");
+                }
+                Want::ModelSlot => {
+                    assert_eq!(code, Some(1), "{name}: {line}");
+                    assert_eq!(names(&out), ["proposal.json"]);
+                    assert_eq!(p["reason"], "no rule; RUL-18 model proposer slot", "{name}");
+                }
+                Want::BelowFloor => {
+                    assert_eq!(code, Some(1), "{name}: {line}");
+                    assert_eq!(names(&out), ["proposal.json"]);
+                    let s = &p["sizing"][0];
+                    assert!(
+                        s["e12_ohms"].as_u64().unwrap() < s["rp_min_ohms"].as_u64().unwrap(),
+                        "{name}: {p}"
+                    );
+                    assert!(p["reason"].as_str().unwrap().contains("floor"), "{name}");
+                }
+                Want::Inv05 => {
+                    assert_eq!(code, Some(1), "{name}: {line}");
+                    assert_eq!(names(&out), ["proposal.json"]);
+                    let reason = p["reason"].as_str().unwrap();
+                    assert!(reason.contains("N1") && reason.contains("INV-05"), "{name}");
+                }
+            }
+        }
+    }
+
+    /// A committed proposal (`proposals/*/`) re-runs from the scenario its
+    /// `proposal.json` names to its own bytes, and re-gates, so it cannot
+    /// drift from the tool or slip past the gates (`AET-WO-3200` §1.4).
+    #[test]
+    fn every_committed_proposal_reruns_to_its_own_bytes_and_regates() {
+        let Ok(entries) = fs::read_dir(root().join("proposals")) else {
+            note("committed proposals: none in this tree");
+            return;
+        };
+        for entry in entries {
+            let committed = entry.unwrap().path();
+            let p = read_json(&committed.join("proposal.json"));
+            let scenario = scenario_with_sha(p["scenario"]["sha256"].as_str().unwrap());
+            let r = ran()
+                .iter()
+                .find(|r| r.case.mutant.is_none() && r.case.scenario == scenario)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{}: no unmutated seeded case runs {scenario}",
+                        committed.display()
+                    )
+                });
+            let out = scratch()
+                .join("committed")
+                .join(committed.file_name().unwrap());
+            let (code, line) = propose(r, &out);
+            assert_eq!(code, Some(0), "{line}");
+            assert_eq!(names(&out), names(&committed), "{}", committed.display());
+            for f in names(&committed) {
+                assert_eq!(
+                    fs::read(out.join(&f)).unwrap(),
+                    fs::read(committed.join(&f)).unwrap(),
+                    "{}: {f} is not what propose writes",
+                    committed.display()
+                );
+            }
+            regate(&committed, &r.run);
+            note(&format!(
+                "committed proposal {} reruns byte-identical and re-gates",
+                committed.display()
+            ));
+        }
+    }
+
+    const CRATE: &str = "sentinel-01-board";
+    const HARNESS: &str = "proofs::every_valid_sequence";
+
+    /// The re-gate runs, by the proposed specification's sha256: each distinct
+    /// specification is judged once.
+    static REGATED: std::sync::Mutex<BTreeMap<String, PathBuf>> =
+        std::sync::Mutex::new(BTreeMap::new());
+
+    /// `AET-WO-3200` §1.4: the proposal in `dir` through every gate a
+    /// specification passes, then the checks that it passed for the right
+    /// reason (§5.5) against the run that failed.
+    fn regate(dir: &Path, failing: &Path) {
+        let p = read_json(&dir.join("proposal.json"));
+        let bytes = fs::read(dir.join("proposed-spec.json")).unwrap();
+        let sha = sha_hex(&bytes);
+        assert_eq!(p["proposed_specification_sha256"], sha.as_str());
+        let run = {
+            let mut done = REGATED.lock().unwrap_or_else(|e| e.into_inner());
+            match done.get(&sha) {
+                Some(run) => run.clone(),
+                None => {
+                    let run = every_gate(&sha, &bytes);
+                    done.insert(sha.clone(), run.clone());
+                    run
+                }
+            }
+        };
+        let passed = replay_dir(&run).unwrap().state.records;
+        let failed = replay_dir(failing).unwrap().state.records;
+        // The same solved buses, lines, ceilings and devices: the proposal
+        // kept everything the gates judge, and changed only the pull-up.
+        let solved = |r: &[Record]| -> Vec<Record> {
+            r.iter()
+                .filter(|x| matches!(x, Record::I2cBusSolved { .. }))
+                .cloned()
+                .collect()
+        };
+        assert_eq!(solved(&passed), solved(&failed), "{}", dir.display());
+        // Every device the failing run read is read, and answers.
+        let reads = |r: &[Record]| -> Vec<(String, Option<String>)> {
+            r.iter()
+                .filter_map(|x| match x {
+                    Record::I2cCheck {
+                        reference, status, ..
+                    } => Some((reference.clone(), status.clone())),
+                    _ => None,
+                })
+                .collect()
+        };
+        let (now, then) = (reads(&passed), reads(&failed));
+        assert!(!now.is_empty(), "the re-gate run read no device");
+        assert_eq!(
+            now.iter().map(|x| &x.0).collect::<Vec<_>>(),
+            then.iter().map(|x| &x.0).collect::<Vec<_>>()
+        );
+        assert!(now.iter().all(|x| x.1.as_deref() == Some("ok")), "{now:?}");
+        // Each binding line's rise, computed from declared values, within 2 %
+        // of its predicted rise.
+        for s in p["sizing"].as_array().unwrap() {
+            within_2_percent(dir, &sha, &passed, s);
+        }
+    }
+
+    fn within_2_percent(dir: &Path, sha: &str, passed: &[Record], s: &Value) {
+        let (net, predicted) = (
+            s["binding_net"].as_str().unwrap(),
+            s["predicted_rise_ps"].as_u64().unwrap(),
+        );
+        let rise = passed
+            .iter()
+            .find_map(|x| match x {
+                Record::RiseMeasured {
+                    net: n,
+                    rise_30_70_ps,
+                    complete: true,
+                    exceeds: false,
+                    ..
+                } if n == net => Some(*rise_30_70_ps),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no complete rise within its ceiling on {net}"));
+        note(&format!(
+            "regate {} spec={sha} {net} rise_30_70_ps={rise} predicted_rise_ps={predicted} off_by_ps={}",
+            dir.display(),
+            rise.abs_diff(predicted)
+        ));
+        assert!(
+            rise.abs_diff(predicted) * 50 <= predicted,
+            "{net}: {rise} ps is more than 2 % from the predicted {predicted} ps"
+        );
+    }
+
+    /// Prove one board crate at a time: each proof peaks at about 3.5 GB.
+    static ONE_PROOF: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Every gate on one specification: `validate`, `solve`, `emit`, ERC, DRC
+    /// with schematic parity, the board crate generated the way the
+    /// repository's tests generate it (`aethelgard generate` is `AET-WO-3301`)
+    /// and proved, then a campaign of one `expect: pass` scenario on the
+    /// firmware generated with it, whose run `attribute` names `N1`. Returns
+    /// that run.
+    fn every_gate(sha: &str, bytes: &[u8]) -> PathBuf {
+        let dir = scratch().join(format!("regate-{}", &sha[..12]));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("proposed-spec.json"), bytes).unwrap();
+        let ok = |args: &[&str]| -> Value {
+            let (code, stdout) = aethelgard_in(&dir, args);
+            let v = json_lines(&stdout).pop().unwrap();
+            assert_eq!(code, Some(0), "{args:?}: {v}");
+            note(&format!("regate {sha} {}: exit 0", args[..2].join(" ")));
+            v
+        };
+        ok(&["validate", "--file", "proposed-spec.json"]);
+        ok(&["solve", "--file", "proposed-spec.json"]);
+        ok(&["emit", "--file", "proposed-spec.json", "--out", "kicad"]);
+        let spec: aethelgard_ir::Specification = serde_json::from_slice(bytes).unwrap();
+        let sch = format!("kicad/{}.kicad_sch", spec.project_name);
+        let pcb = format!("kicad/{}.kicad_pcb", spec.project_name);
+        assert_eq!(
+            ok(&["check", "erc", "--schematic", &sch])["verdict"],
+            "pass"
+        );
+        let drc = ok(&[
+            "check",
+            "drc",
+            "--board",
+            &pcb,
+            "--spec",
+            "proposed-spec.json",
+            "--schematic",
+            &sch,
+        ]);
+        assert_eq!(drc["verdict"], "pass");
+
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let solved = aethelgard_ir::solve(&spec, &table, sha).unwrap();
+        let answers = |part: &str| aethelgard_twin::model::model(part).is_some();
+        let files =
+            aethelgard_svd_hal::board::generate_with(CRATE, &solved, &table, &answers).unwrap();
+        let board = dir.join("board");
+        for (path, text) in &files {
+            let to = board.join(path);
+            fs::create_dir_all(to.parent().unwrap()).unwrap();
+            fs::write(&to, text).unwrap();
+        }
+        {
+            let _one = ONE_PROOF.lock().unwrap_or_else(|e| e.into_inner());
+            let v = ok(&[
+                "prove",
+                "--crate",
+                board.to_str().unwrap(),
+                "--harness",
+                HARNESS,
+            ]);
+            assert_eq!(v["verdict"], "pass");
+        }
+
+        // The firmware generated with the crate, built as the seeded set's is.
+        let manifest = board.join("firmware/Cargo.toml");
+        let mut toml = fs::read_to_string(&manifest).unwrap();
+        toml.push_str("\n[workspace]\n");
+        fs::write(&manifest, toml).unwrap();
+        let target = dir.join("target");
+        let built = Command::new(env!("CARGO"))
+            .args(["build", "--release", "--offline", "--locked"])
+            .current_dir(board.join("firmware"))
+            .env("CARGO_TARGET_DIR", &target)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(
+            built.status.success(),
+            "{}",
+            String::from_utf8_lossy(&built.stderr)
+        );
+        let elf = target.join("thumbv7em-none-eabihf/release/sentinel-01-board-firmware");
+
+        let scenario = serde_json::json!({
+            "schema_version": 1,
+            "name": format!("regate-{}", &sha[..12]),
+            "base": "proposed-spec.json",
+            "expect": "pass",
+            "expect_findings": [],
+            "overrides": [],
+        });
+        fs::write(dir.join("regate.json"), scenario.to_string()).unwrap();
+        let (code, stdout) = aethelgard_in(
+            &dir,
+            &[
+                "campaign",
+                "--scenarios",
+                "regate.json",
+                "--firmware",
+                elf.to_str().unwrap(),
+                "--archive",
+                "archive",
+            ],
+        );
+        let lines = json_lines(&stdout);
+        assert_eq!(code, Some(0), "{lines:?}");
+        assert_eq!(lines[0]["matched"], true, "{lines:?}");
+        let run = dir.join(lines[0]["run"].as_str().unwrap());
+        let (code, stdout) = attribute(&run);
+        let a = &json_lines(&stdout)[0];
+        assert_eq!(code, Some(0), "{a}");
+        assert_eq!(
+            (&a["domain"], &a["rule"]),
+            (&"none".into(), &"N1".into()),
+            "{a}"
+        );
+        note(&format!("regate {sha}: campaign matched, attribute N1"));
+        run
     }
 }
