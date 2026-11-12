@@ -88,6 +88,8 @@ struct Messages {
     finished: Option<bool>,
     manifests: Vec<PathBuf>,
     executables: Vec<PathBuf>,
+    /// The package of each build script cargo ran.
+    build_scripts: Vec<String>,
 }
 
 fn messages(stdout: &[u8]) -> Messages {
@@ -95,6 +97,7 @@ fn messages(stdout: &[u8]) -> Messages {
         finished: None,
         manifests: Vec::new(),
         executables: Vec::new(),
+        build_scripts: Vec::new(),
     };
     for line in String::from_utf8_lossy(stdout).lines() {
         let Ok(message) = serde_json::from_str::<serde_json::Value>(line) else {
@@ -102,6 +105,9 @@ fn messages(stdout: &[u8]) -> Messages {
         };
         match message["reason"].as_str() {
             Some("build-finished") => m.finished = message["success"].as_bool(),
+            Some("build-script-executed") => m
+                .build_scripts
+                .push(message["package_id"].as_str().unwrap_or("?").to_owned()),
             Some("compiler-artifact") => {
                 if let Some(manifest) = message["manifest_path"].as_str() {
                     m.manifests.push(PathBuf::from(manifest));
@@ -156,27 +162,40 @@ fn dep_info(exe: &Path) -> Result<Vec<PathBuf>, Stop> {
 }
 
 /// Every unit cargo built came from the copy, and read only the copy's
-/// files: a path dependency outside the crate, a `[patch]` or `paths`
-/// override, a `#[path]` module, an `include_bytes!` or a `[lib] path`
-/// outside it is code the crate hash does not cover (`RUL-04`, adversarial
-/// B5).
+/// files, each path resolved (`..` and symlinks) before it is compared: a
+/// path dependency outside the crate, a `[patch]` or `paths` override, a
+/// `#[path]` module, an `include_bytes!` or a `[lib] path` outside it is code
+/// the crate hash does not cover (`RUL-04`, adversarial B5). No build script
+/// may run: a board crate has none, and one reads what dep-info never lists.
+/// Linker inputs named in rustflags are not in dep-info; they can come only
+/// from what the sandbox lets cargo read (FEEDBACK F12).
 fn built_from_the_copy(m: &Messages, sources: &[PathBuf], copy: &Path) -> Result<(), Stop> {
-    let canonical = fs::canonicalize(copy).unwrap_or_else(|_| copy.to_path_buf());
-    match m
-        .manifests
-        .iter()
-        .chain(sources)
-        .find(|p| !p.starts_with(copy) && !p.starts_with(&canonical))
-    {
-        None => Ok(()),
-        Some(outside) => Err(Stop::refused(
-            "CrateHasDependency",
-            format!(
-                "cargo built from {}, which is outside the crate; a board crate has no dependencies (RUL-04)",
-                outside.display()
-            ),
-        )),
+    let refuse = |message: String| Err(Stop::refused("CrateHasDependency", message));
+    if let Some(package) = m.build_scripts.first() {
+        return refuse(format!(
+            "cargo ran a build script of {package}; a board crate has none (RUL-04)"
+        ));
     }
+    let root = fs::canonicalize(copy)
+        .map_err(|e| Stop::tool_error("cargo", format!("cannot resolve the copy: {e}")))?;
+    for path in m.manifests.iter().chain(sources) {
+        match fs::canonicalize(path) {
+            Ok(resolved) if resolved.starts_with(&root) => {}
+            Ok(resolved) => {
+                return refuse(format!(
+                    "cargo built from {}, which is outside the crate; a board crate has no dependencies (RUL-04)",
+                    resolved.display()
+                ));
+            }
+            Err(e) => {
+                return refuse(format!(
+                    "cargo built from {}, which cannot be resolved ({e})",
+                    path.display()
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The one executable cargo reports, which must be a regular file inside
@@ -321,35 +340,62 @@ pub fn build(crate_dir: &Path, out: &Path) -> Result<verdict::Verdict, Stop> {
 mod tests {
     use super::*;
 
-    const BUILT: &str = r#"{"reason":"compiler-artifact","manifest_path":"/s/crate/Cargo.toml","executable":null}
-{"reason":"compiler-artifact","manifest_path":"/s/crate/firmware/Cargo.toml","executable":"/s/target/fw"}
-{"reason":"build-finished","success":true}
-"#;
-
-    /// Adversarial B5: a unit built from a manifest outside the copy is a
-    /// dependency the crate hash does not cover, whatever the lockfile says.
+    /// Adversarial B5: a unit built from a manifest outside the copy, a
+    /// source read from outside it (spelled absolute or through `..`), and a
+    /// build script are each refused, whatever the lockfile says.
     #[test]
-    fn a_unit_built_from_outside_the_copy_is_refused() {
-        let copy = Path::new("/s/crate");
-        let m = messages(BUILT.as_bytes());
+    fn a_unit_or_source_from_outside_the_copy_and_a_build_script_are_refused() {
+        let base = std::env::temp_dir().join(format!("aet-3301-outside-{}", std::process::id()));
+        let copy = base.join("crate");
+        fs::create_dir_all(copy.join("src")).unwrap();
+        fs::create_dir_all(base.join("evil")).unwrap();
+        for f in ["Cargo.toml", "src/lib.rs"] {
+            fs::write(copy.join(f), "").unwrap();
+        }
+        fs::write(base.join("evil/inject.rs"), "").unwrap();
+        let built = format!(
+            "{{\"reason\":\"compiler-artifact\",\"manifest_path\":\"{}\",\"executable\":null}}\n{{\"reason\":\"build-finished\",\"success\":true}}\n",
+            copy.join("Cargo.toml").display()
+        );
+        let m = messages(built.as_bytes());
         assert_eq!(m.finished, Some(true));
-        let inside = [PathBuf::from("/s/crate/src/lib.rs")];
-        assert!(built_from_the_copy(&m, &inside, copy).is_ok());
-        let outside = BUILT.replace("/s/crate/Cargo.toml", "/opt/rustup/evil-dep/Cargo.toml");
-        let e = built_from_the_copy(&messages(outside.as_bytes()), &inside, copy).unwrap_err();
+        let inside = [copy.join("src/lib.rs")];
+        assert!(built_from_the_copy(&m, &inside, &copy).is_ok());
+        for outside in [
+            base.join("evil/inject.rs"),
+            copy.join("src/../../evil/inject.rs"),
+        ] {
+            let read = [inside[0].clone(), outside.clone()];
+            let e = built_from_the_copy(&m, &read, &copy).unwrap_err();
+            assert_eq!(e.kind, "CrateHasDependency", "{}", outside.display());
+            assert!(e.message.contains("evil/inject.rs"), "{}", e.message);
+        }
+        let other = built.replace(
+            &copy.join("Cargo.toml").display().to_string(),
+            &base.join("evil/inject.rs").display().to_string(),
+        );
+        let e = built_from_the_copy(&messages(other.as_bytes()), &inside, &copy).unwrap_err();
         assert_eq!(e.kind, "CrateHasDependency");
-        assert!(e.message.contains("/opt/rustup/evil-dep"), "{}", e.message);
-        // A source read from outside through a manifest inside the copy: a
-        // `#[path]` module, an `include_bytes!`, a `[lib] path`.
-        let read = [
-            inside[0].clone(),
-            PathBuf::from("/opt/rustup/evil/inject.rs"),
-        ];
-        let e = built_from_the_copy(&m, &read, copy).unwrap_err();
-        assert!(
-            e.message.contains("/opt/rustup/evil/inject.rs"),
-            "{}",
-            e.message
+        let script = format!(
+            "{built}{{\"reason\":\"build-script-executed\",\"package_id\":\"path+file:///x#evil@0.0.0\"}}\n"
+        );
+        let e = built_from_the_copy(&messages(script.as_bytes()), &inside, &copy).unwrap_err();
+        assert!(e.message.contains("build script"), "{}", e.message);
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    /// Adversarial B7: no `build-finished` (cargo could not load its
+    /// configuration) is not a finished build of either kind.
+    #[test]
+    fn build_finished_is_read_and_its_absence_is_none() {
+        assert_eq!(
+            messages(b"{\"reason\":\"build-finished\",\"success\":false}\n").finished,
+            Some(false)
+        );
+        assert_eq!(messages(b"").finished, None);
+        assert_eq!(
+            messages(b"error: could not load Cargo configuration\n").finished,
+            None
         );
     }
 
@@ -376,20 +422,5 @@ mod tests {
         fs::remove_file(dir.join("fw.d")).unwrap();
         assert_eq!(dep_info(&exe).unwrap_err().kind, "ToolError");
         fs::remove_dir_all(&dir).unwrap();
-    }
-
-    /// Adversarial B7: no `build-finished` (cargo could not load its
-    /// configuration) is not a finished build of either kind.
-    #[test]
-    fn build_finished_is_read_and_its_absence_is_none() {
-        assert_eq!(
-            messages(b"{\"reason\":\"build-finished\",\"success\":false}\n").finished,
-            Some(false)
-        );
-        assert_eq!(messages(b"").finished, None);
-        assert_eq!(
-            messages(b"error: could not load Cargo configuration\n").finished,
-            None
-        );
     }
 }
