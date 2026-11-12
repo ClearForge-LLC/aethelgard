@@ -7,6 +7,7 @@
 mod analog;
 mod campaign;
 mod elf;
+mod firmware;
 mod input;
 mod kani;
 mod kicad;
@@ -15,7 +16,9 @@ mod propose;
 mod renode;
 mod run;
 mod said;
+mod tree;
 mod verdict;
+mod verify;
 
 use std::ffi::OsString;
 use std::fs::{self, DirBuilder, File};
@@ -78,6 +81,37 @@ enum Command {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Validate and solve one Specification, then write everything it produces into an empty or absent directory: kicad/ (as emit writes it), and board/, the board crate with its firmware crate in board/firmware/ and the Renode platform board/<project_name>.repl. Starts no process.
+    Generate {
+        /// The specification file.
+        #[arg(long)]
+        spec: PathBuf,
+        /// The directory to write into; it must be empty or absent.
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Build a board crate's firmware/ crate offline for the part, in the sandbox, and print the verdict with the ELF's sha256.
+    Build {
+        /// The board crate directory, holding firmware/. It is copied, minus a
+        /// top-level target/, and the copy is built.
+        #[arg(long = "crate")]
+        crate_dir: PathBuf,
+        /// Where to write the ELF; it must not exist.
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Regenerate everything from one Specification into scratch, run every gate on exactly those bytes, and print one verdict naming every artifact's hash and every gate's result.
+    Verify {
+        /// The specification file.
+        #[arg(long)]
+        spec: PathBuf,
+        /// Fault scenarios whose base is --spec, run as campaign runs them.
+        #[arg(long, num_args = 1.., action = clap::ArgAction::Append)]
+        scenarios: Vec<PathBuf>,
+        /// First compare this directory with the generated tree, byte for byte; any difference fails and no gate runs.
+        #[arg(long)]
+        against: Option<PathBuf>,
+    },
     /// Run a KiCad check on a board or schematic and print its verdict.
     Check {
         #[command(subcommand)]
@@ -93,6 +127,11 @@ enum Command {
         /// It must name exactly one harness.
         #[arg(long, value_parser = harness_name)]
         harness: String,
+        /// The specification the crate is judged against: the verdict's
+        /// harness_provenance is `generated` only when the crate is byte for
+        /// byte the board crate `generate` writes for it.
+        #[arg(long)]
+        spec: Option<PathBuf>,
     },
     /// Load a platform in Renode, list the machine it built, and print the verdict.
     Simulate {
@@ -279,6 +318,13 @@ fn main() -> ExitCode {
         Command::Validate { file } => return validate(file.as_deref()),
         Command::Solve { file } => return solve(&file),
         Command::Emit { file, out } => return emit_design(&file, &out),
+        Command::Generate { spec, out } => return generate_tree(&spec, &out),
+        Command::Build { crate_dir, out } => firmware::build(&crate_dir, &out),
+        Command::Verify {
+            spec,
+            scenarios,
+            against,
+        } => return verify::verify(&spec, &scenarios, against.as_deref()),
         Command::Check {
             check:
                 CheckCommand::Drc {
@@ -295,7 +341,11 @@ fn main() -> ExitCode {
         Command::Check {
             check: CheckCommand::Erc { schematic },
         } => check_kicad(kicad::Check::Erc, &schematic, None, None),
-        Command::Prove { crate_dir, harness } => prove(&crate_dir, &harness),
+        Command::Prove {
+            crate_dir,
+            harness,
+            spec,
+        } => prove(&crate_dir, &harness, spec.as_deref()),
         Command::Simulate {
             platform,
             firmware,
@@ -340,14 +390,17 @@ fn main() -> ExitCode {
             let code = if v.ok { 0 } else { EXIT_FAIL };
             emit(&v, code)
         }
-        Err(stop) => {
-            let code = stop.code;
-            emit(
-                &Refusal::new(stop.kind, stop.id.as_deref(), stop.message),
-                code,
-            )
-        }
+        Err(stop) => stopped(stop),
     }
+}
+
+/// Prints a `Stop` as the refusal it is and returns its exit code.
+fn stopped(stop: run::Stop) -> ExitCode {
+    let code = stop.code;
+    emit(
+        &Refusal::new(stop.kind, stop.id.as_deref(), stop.message),
+        code,
+    )
 }
 
 /// `--for`: an integer, no leading zero, then `ns`, `us` or `ms`; at most the
@@ -564,8 +617,75 @@ fn check_kicad(
     Ok(v)
 }
 
-fn prove(crate_dir: &Path, harness: &str) -> Result<verdict::Verdict, run::Stop> {
+/// The board crate `generate` writes for the specification in `file`, its
+/// paths relative to the crate; every refusal as a `Stop`, with `solve`'s and
+/// `generate`'s kinds and codes.
+fn generated_board(file: &Path) -> Result<std::collections::BTreeMap<String, String>, run::Stop> {
+    let (spec, sha256) = read_spec(Some(file)).map_err(|(refusal, code)| run::Stop {
+        code,
+        kind: refusal.error.kind,
+        id: refusal.error.id,
+        message: refusal.error.message,
+    })?;
+    let invalid = |kind: &'static str, id: Option<&str>, message: String| run::Stop {
+        code: EXIT_INVALID_SPEC,
+        kind,
+        id: id.map(str::to_owned),
+        message,
+    };
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).map_err(|err| match err {
+        aethelgard_svd_hal::PinTableError::UnknownPart { .. } => {
+            invalid(err.kind(), Some(&spec.mcu.part), err.to_string())
+        }
+        _ => run::Stop {
+            code: EXIT_INTERNAL,
+            kind: err.kind(),
+            id: None,
+            message: format!("the pin table is unusable: {err}"),
+        },
+    })?;
+    let topology = aethelgard_ir::solve(&spec, &table, &sha256)
+        .map_err(|err| invalid(err.kind(), err.id(), err.to_string()))?;
+    let files =
+        aethelgard_cli::generate::tree(&spec, &topology, &table).map_err(|err| run::Stop {
+            code: if err.internal() {
+                EXIT_INTERNAL
+            } else {
+                EXIT_INVALID_SPEC
+            },
+            kind: err.kind(),
+            id: err.id().map(str::to_owned),
+            message: err.to_string(),
+        })?;
+    Ok(tree::subtree(
+        &files,
+        &format!("{}/", aethelgard_cli::generate::BOARD_DIR),
+    ))
+}
+
+/// `generated` when the crate copied at `copy` is byte for byte `generated`
+/// (every file, none missing and none extra); `supplied` otherwise, and
+/// always without `--spec` (`AET-WO-3301` §1.4). The whole crate, not only
+/// `src/proofs.rs`: a harness file that matches while the code it proves was
+/// rewired is not the generated harness.
+fn provenance(
+    copy: &Path,
+    generated: Option<&std::collections::BTreeMap<String, String>>,
+) -> Result<&'static str, run::Stop> {
+    Ok(match generated {
+        Some(board) if tree::diff(copy, board, &[])?.is_empty() => "generated",
+        _ => "supplied",
+    })
+}
+
+fn prove(
+    crate_dir: &Path,
+    harness: &str,
+    spec: Option<&Path>,
+) -> Result<verdict::Verdict, run::Stop> {
     input::dir_check(crate_dir)?;
+    // A --spec that cannot be generated is refused before any tool is looked for.
+    let generated = spec.map(generated_board).transpose()?;
     let cargo = run::Tool::find("cargo")?;
     let cargo_kani = run::Tool::find("cargo-kani")?;
     let kani_home = run::required_var("KANI_HOME", true)?;
@@ -573,6 +693,9 @@ fn prove(crate_dir: &Path, harness: &str) -> Result<verdict::Verdict, run::Stop>
     let path_var = run::required_var("PATH", false)?;
     let scratch = Scratch::new()?;
     let input = input::crate_dir(crate_dir, &scratch.tool.join("crate"))?;
+    // The copy, as copied and before Kani touches it, against the generated
+    // crate: every file, none missing and none extra (`AET-WO-3301` §1.4).
+    let provenance = provenance(&input.copy, generated.as_ref())?;
     let mut read_only = cargo.dirs();
     read_only.extend(cargo_kani.dirs());
     read_only.push(PathBuf::from(&kani_home));
@@ -622,6 +745,8 @@ fn prove(crate_dir: &Path, harness: &str) -> Result<verdict::Verdict, run::Stop>
         findings,
     );
     v.harness = Some(harness.to_owned());
+    v.harness_provenance = Some(provenance);
+    v.cover_count = Some(kani::cover_count(&out));
     Ok(v)
 }
 
@@ -1247,6 +1372,77 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
     )
 }
 
+/// Everything `generate` writes for a solved specification, and the sha256
+/// of the topology. Every refusal is printed here; the caller gets its exit
+/// code.
+fn generated(
+    spec: &Specification,
+    topology: &aethelgard_ir::SolvedTopology,
+    table: &aethelgard_ir::PinTable,
+) -> Result<(std::collections::BTreeMap<String, String>, String), ExitCode> {
+    let files = match aethelgard_cli::generate::tree(spec, topology, table) {
+        Ok(files) => files,
+        Err(err) if err.internal() => {
+            diagnose(&format!("a vendored generator input is unusable: {err}"));
+            return Err(ExitCode::from(EXIT_INTERNAL));
+        }
+        Err(err) => {
+            return Err(emit(
+                &Refusal::new(err.kind(), err.id(), err.to_string()),
+                EXIT_INVALID_SPEC,
+            ));
+        }
+    };
+    match serde_json::to_vec(topology) {
+        Ok(bytes) => Ok((files, tree::sha256(&bytes))),
+        Err(err) => {
+            diagnose(&format!("cannot serialize the topology: {err}"));
+            Err(ExitCode::from(EXIT_INTERNAL))
+        }
+    }
+}
+
+/// `aethelgard generate --spec --out`: solve as `solve` does, then write
+/// every file `aethelgard_cli::generate::tree` gives under `out`, which must
+/// be empty or absent (`AET-WO-3301` §1.1). Nothing else is written and no
+/// process is started.
+fn generate_tree(file: &Path, out: &Path) -> ExitCode {
+    #[derive(Serialize)]
+    struct GenerateReport {
+        ok: bool,
+        project_name: String,
+        specification_sha256: String,
+        topology_sha256: String,
+        /// Every file written, by its path under `--out`, with its sha256.
+        files: std::collections::BTreeMap<String, String>,
+    }
+
+    let (spec, topology, table) = match solved(file) {
+        Ok(solved) => solved,
+        Err(code) => return code,
+    };
+    let (files, topology_sha256) = match generated(&spec, &topology, &table) {
+        Ok(generated) => generated,
+        Err(code) => return code,
+    };
+    if let Err(stop) = tree::write(out, &files) {
+        return stopped(stop);
+    }
+    emit(
+        &GenerateReport {
+            ok: true,
+            project_name: spec.project_name.clone(),
+            specification_sha256: topology.specification_sha256.clone(),
+            topology_sha256,
+            files: files
+                .iter()
+                .map(|(path, text)| (path.clone(), tree::sha256(text.as_bytes())))
+                .collect(),
+        },
+        0,
+    )
+}
+
 /// Reads at most one byte past the limit, so oversized input is detected
 /// without being held in memory.
 fn read_input(file: Option<&Path>) -> Result<Vec<u8>, Refusal> {
@@ -1296,4 +1492,56 @@ fn emit(report: &impl Serialize, code: u8) -> ExitCode {
 /// Diagnostics go to stderr; a closed stderr is not worth a panic.
 fn diagnose(message: &str) {
     let _ = writeln!(io::stderr(), "aethelgard: {message}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    /// `AET-WO-3301` §1.4 in tier 1: the committed board is the generated
+    /// crate for the reference; a copy whose harness is hand-written, whose
+    /// code is rewired under an unchanged harness, or with a file added is
+    /// `supplied`; and without `--spec` every crate is `supplied`.
+    #[test]
+    fn provenance_is_generated_only_for_the_generated_crate() {
+        let spec = root().join("examples/sentinel-01-minimal.json");
+        let board = generated_board(&spec).unwrap();
+        let committed = root().join("boards/sentinel-01");
+        assert_eq!(provenance(&committed, Some(&board)).unwrap(), "generated");
+        assert_eq!(provenance(&committed, None).unwrap(), "supplied");
+
+        let copy = std::env::temp_dir().join(format!("aet-3301-provenance-{}", std::process::id()));
+        for (file, from, to) in [
+            (
+                "src/proofs.rs",
+                "kani::cover!(",
+                "kani::assume(false); kani::cover!(",
+            ),
+            ("src/board.rs", "pub fn ", "pub(crate) fn "),
+            ("src/extra.rs", "", ""),
+        ] {
+            let _ = fs::remove_dir_all(&copy);
+            tree::write(&copy, &board).unwrap();
+            assert_eq!(provenance(&copy, Some(&board)).unwrap(), "generated");
+            let path = copy.join(file);
+            let text = fs::read_to_string(&path).unwrap_or_default();
+            let edited = if from.is_empty() {
+                "// added\n".to_owned()
+            } else {
+                text.replacen(from, to, 1)
+            };
+            assert_ne!(text, edited, "{file}");
+            fs::write(&path, edited).unwrap();
+            assert_eq!(
+                provenance(&copy, Some(&board)).unwrap(),
+                "supplied",
+                "{file}"
+            );
+        }
+        fs::remove_dir_all(&copy).unwrap();
+    }
 }

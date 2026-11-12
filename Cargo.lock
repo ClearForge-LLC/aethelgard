@@ -72,6 +72,7 @@ version = "0.1.0"
 name = "aethelgard-svd-hal"
 version = "0.1.0"
 dependencies = [
+ "aethelgard-cli",
  "aethelgard-ir",
  "aethelgard-twin",
  "roxmltree",

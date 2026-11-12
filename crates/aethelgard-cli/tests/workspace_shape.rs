@@ -289,6 +289,7 @@ fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
     assert_eq!(
         table("dev-dependencies"),
         [
+            "aethelgard-cli",
             "aethelgard-twin",
             "sentinel-01-board",
             "serde_json",
@@ -297,13 +298,17 @@ fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
     );
     for key in ["dependencies", "dev-dependencies"] {
         for (name, dep) in svd[key].as_table().unwrap() {
-            if key == "dev-dependencies" && name == "aethelgard-twin" {
-                // `twin` depends on `svd-hal`, so a versioned dev-dependency
-                // back would make the first publish a cycle (AET-WO-1800).
-                // Cargo strips a dev-dependency that is path-only.
+            if key == "dev-dependencies"
+                && ["aethelgard-twin", "aethelgard-cli"].contains(&name.as_str())
+            {
+                // `twin` and the CLI depend on `svd-hal`, so a versioned
+                // dev-dependency back would make the first publish a cycle
+                // (AET-WO-1800). Cargo strips a dev-dependency that is
+                // path-only. The CLI's is the regeneration test's composition
+                // function (AET-WO-3301 §1.5).
                 assert_eq!(
                     dep.get("path").and_then(Value::as_str),
-                    Some("../aethelgard-twin")
+                    Some(format!("../{name}").as_str())
                 );
                 assert!(dep.get("version").is_none() && dep.get("workspace").is_none());
                 continue;

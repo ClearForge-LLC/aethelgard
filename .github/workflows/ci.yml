@@ -128,7 +128,9 @@ jobs:
       # tier-2 tests (propose on every seeded case and the re-gate; committed
       # proposals re-run to their bytes) and one tier-1 test the canary counts too
       # (committed proposals' shape). The floor stays exact.
-      TIER2_MIN: "67"
+      # 71: plus 4 from AET-WO-3301 in board_tier2.rs (build at two paths,
+      # prove --spec provenance, verify 2k2 twice with --against, verify 47k).
+      TIER2_MIN: "71"
       RUN: >-
         docker run --rm -v ${{ github.workspace }}:/repo -w /repo
         -e CARGO_HOME=/repo/target/cargo-home -e CARGO_TARGET_DIR=/repo/target

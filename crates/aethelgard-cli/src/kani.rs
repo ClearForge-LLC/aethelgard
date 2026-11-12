@@ -164,3 +164,14 @@ pub fn judge(code: i32, out: &Output, harness: &str) -> Result<Vec<Finding>, Sto
         )),
     }
 }
+
+/// The cover properties Kani reported for the harness, from its cover
+/// summary; 0 when it printed none (`AET-WO-3301` §1.4). [`judge`] has
+/// already refused more than one summary.
+pub fn cover_count(out: &Output) -> u32 {
+    out.text()
+        .lines()
+        .map(str::trim)
+        .find_map(covers)
+        .map_or(0, |(_, total)| total)
+}

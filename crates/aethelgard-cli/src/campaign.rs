@@ -583,7 +583,7 @@ fn hex_u32(s: &str) -> Result<u32, String> {
     u32::try_from(hex_u64(s)?).map_err(|_| format!("`{s}` is over 32 bits"))
 }
 
-fn sha(s: &str) -> Result<[u8; 32], String> {
+pub(crate) fn sha(s: &str) -> Result<[u8; 32], String> {
     let bytes: Result<Vec<u8>, _> = (0..s.len())
         .step_by(2)
         .map(|i| s.get(i..i + 2).and_then(|b| u8::from_str_radix(b, 16).ok()))

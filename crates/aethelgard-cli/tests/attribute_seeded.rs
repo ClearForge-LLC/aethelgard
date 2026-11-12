@@ -341,24 +341,13 @@ mod tier2 {
         }
     }
 
-    /// Where the unmutated firmware is built: one fixed path, because the
-    /// board crate is a path dependency and cargo hashes its absolute path
-    /// into the ELF's symbol names. So the firmware's sha256, and with it every
-    /// run id, is the same wherever the repository is, and a committed
-    /// proposal's run id can be reproduced (`AET-WO-3200` §1.4).
-    /// It is a literal, not `temp_dir()`, so `TMPDIR` cannot move it. Two
-    /// tier-2 runs on one machine at once share it, and collide.
-    fn reference_firmware_dir() -> PathBuf {
-        PathBuf::from("/tmp/aethelgard-reference-firmware")
-    }
-
     /// The firmware of `mutant` (none: the generated firmware as committed),
-    /// built offline from a scratch copy of the board.
+    /// built by `aethelgard build` from a scratch copy of the board. `build`
+    /// strips symbols, so its ELF is the same wherever the copy is
+    /// (`AET-WO-3301`, `AET-WO-3200` F11): the unmutated firmware's sha256,
+    /// and with it every run id, reproduces at any path.
     fn firmware(label: &str, mutant: Option<(&str, &Mutant)>) -> PathBuf {
-        let dir = match mutant {
-            None => reference_firmware_dir(),
-            Some(_) => scratch().join(label),
-        };
+        let dir = scratch().join(label);
         let _ = fs::remove_dir_all(&dir);
         let board = dir.join("board");
         copy_tree(&root().join(BOARD), &board);
@@ -371,27 +360,21 @@ mod tier2 {
             )
             .unwrap();
         }
-        // The scratch copy is its own workspace root, wherever the target
-        // directory is: CI's is inside the repository, under the root
-        // workspace, which does not list it (FEEDBACK F17).
-        let manifest = board.join("firmware/Cargo.toml");
-        let mut toml = fs::read_to_string(&manifest).unwrap();
-        toml.push_str("\n[workspace]\n");
-        fs::write(&manifest, toml).unwrap();
-        let target = dir.join("target");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--release", "--offline", "--locked"])
-            .current_dir(board.join("firmware"))
-            .env("CARGO_TARGET_DIR", &target)
-            .stdin(Stdio::null())
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
+        let elf = dir.join("firmware.elf");
+        let (code, stdout) = aethelgard(&[
+            "build",
+            "--crate",
+            board.to_str().unwrap(),
+            "--out",
+            elf.to_str().unwrap(),
+        ]);
+        assert_eq!(
+            code,
+            Some(0),
             "{label}: {}",
-            String::from_utf8_lossy(&out.stderr)
+            String::from_utf8_lossy(&stdout)
         );
-        target.join("thumbv7em-none-eabihf/release/sentinel-01-board-firmware")
+        elf
     }
 
     fn aethelgard(args: &[&str]) -> (Option<i32>, Vec<u8>) {
@@ -846,7 +829,6 @@ mod tier2 {
         }
     }
 
-    const CRATE: &str = "sentinel-01-board";
     const HARNESS: &str = "proofs::every_valid_sequence";
 
     /// The re-gate runs, by the proposed specification's sha256: each distinct
@@ -941,12 +923,11 @@ mod tier2 {
     /// Prove one board crate at a time: each proof peaks at about 3.5 GB.
     static ONE_PROOF: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    /// Every gate on one specification: `validate`, `solve`, `emit`, ERC, DRC
-    /// with schematic parity, the board crate generated the way the
-    /// repository's tests generate it (`aethelgard generate` is `AET-WO-3301`)
-    /// and proved, then a campaign of one `expect: pass` scenario on the
-    /// firmware generated with it, whose run `attribute` names `N1`. Returns
-    /// that run.
+    /// Every gate on one specification: `validate`, `solve`, `generate`, ERC, DRC
+    /// with schematic parity on what `aethelgard generate` writes, the board
+    /// crate proved with `--spec` (its harness `generated`), then a campaign
+    /// of one `expect: pass` scenario on the firmware `aethelgard build`
+    /// builds from it, whose run `attribute` names `N1`. Returns that run.
     fn every_gate(sha: &str, bytes: &[u8]) -> PathBuf {
         let dir = scratch().join(format!("regate-{}", &sha[..12]));
         let _ = fs::remove_dir_all(&dir);
@@ -961,10 +942,12 @@ mod tier2 {
         };
         ok(&["validate", "--file", "proposed-spec.json"]);
         ok(&["solve", "--file", "proposed-spec.json"]);
-        ok(&["emit", "--file", "proposed-spec.json", "--out", "kicad"]);
+        // Everything the specification produces, as `aethelgard generate`
+        // writes it (`AET-WO-3301`; `AET-WO-3200` F12).
+        ok(&["generate", "--spec", "proposed-spec.json", "--out", "gen"]);
         let spec: aethelgard_ir::Specification = serde_json::from_slice(bytes).unwrap();
-        let sch = format!("kicad/{}.kicad_sch", spec.project_name);
-        let pcb = format!("kicad/{}.kicad_pcb", spec.project_name);
+        let sch = format!("gen/kicad/{}.kicad_sch", spec.project_name);
+        let pcb = format!("gen/kicad/{}.kicad_pcb", spec.project_name);
         assert_eq!(
             ok(&["check", "erc", "--schematic", &sch])["verdict"],
             "pass"
@@ -980,49 +963,24 @@ mod tier2 {
             &sch,
         ]);
         assert_eq!(drc["verdict"], "pass");
-
-        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
-        let solved = aethelgard_ir::solve(&spec, &table, sha).unwrap();
-        let answers = |part: &str| aethelgard_twin::model::model(part).is_some();
-        let files =
-            aethelgard_svd_hal::board::generate_with(CRATE, &solved, &table, &answers).unwrap();
-        let board = dir.join("board");
-        for (path, text) in &files {
-            let to = board.join(path);
-            fs::create_dir_all(to.parent().unwrap()).unwrap();
-            fs::write(&to, text).unwrap();
-        }
         {
             let _one = ONE_PROOF.lock().unwrap_or_else(|e| e.into_inner());
             let v = ok(&[
                 "prove",
                 "--crate",
-                board.to_str().unwrap(),
+                "gen/board",
                 "--harness",
                 HARNESS,
+                "--spec",
+                "proposed-spec.json",
             ]);
             assert_eq!(v["verdict"], "pass");
+            assert_eq!(v["harness_provenance"], "generated");
         }
-
         // The firmware generated with the crate, built as the seeded set's is.
-        let manifest = board.join("firmware/Cargo.toml");
-        let mut toml = fs::read_to_string(&manifest).unwrap();
-        toml.push_str("\n[workspace]\n");
-        fs::write(&manifest, toml).unwrap();
-        let target = dir.join("target");
-        let built = Command::new(env!("CARGO"))
-            .args(["build", "--release", "--offline", "--locked"])
-            .current_dir(board.join("firmware"))
-            .env("CARGO_TARGET_DIR", &target)
-            .stdin(Stdio::null())
-            .output()
-            .unwrap();
-        assert!(
-            built.status.success(),
-            "{}",
-            String::from_utf8_lossy(&built.stderr)
-        );
-        let elf = target.join("thumbv7em-none-eabihf/release/sentinel-01-board-firmware");
+        let built = ok(&["build", "--crate", "gen/board", "--out", "firmware.elf"]);
+        assert_eq!(built["verdict"], "pass");
+        let elf = dir.join("firmware.elf");
 
         let scenario = serde_json::json!({
             "schema_version": 1,
