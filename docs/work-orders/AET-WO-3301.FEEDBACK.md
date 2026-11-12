@@ -271,6 +271,6 @@ All on the head after the merge of `main` at `795c3cf` (merged as `00908a5`; doc
   - `cargo test --workspace --features aethelgard-cli/with-tools`: **942 passed, 0 failed**, in 23 min 38 s wall on Furnace;
   - the canary's awk over the log: `tier2_tests_passed=71`, exactly the new floor;
   - caps read back from the test container's scope: `memory.max` 17179869184, `memory.swap.max` 0, `pids.max` `max`. Two short steps (`fmt`, the bridge's tests) exited before the reader polled them.
-- **CI time:** the four new tier-2 tests took 441 s in the image on Furnace, three `verify` runs at about 140 s each. CI's runner is slower: 3200 F17 measured a proof at about 200 s there against 46 s here. Expect `tools` to grow by roughly 10 to 15 minutes, inside its 90.
+- **CI time:** the four new tier-2 tests took 441 s in the image on Furnace, three `verify` runs at about 140 s each. CI's runner is slower: 3200 F17 measured one board proof at about 200 s there. Expect `tools` to grow by roughly 10 to 15 minutes, inside its 90.
 - **CI on the PR is the witness for the head.**
 - **Reduction pass (diff):** −32 net (−72 proposed; R2's −40 is outside the fence) · 3 duplicates removed · 1 dead path removed (M5's redundant check, after mutation) · 0 protected kept · 9 findings above (R2 and eight not changed).
