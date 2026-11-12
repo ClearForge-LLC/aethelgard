@@ -230,7 +230,8 @@ fn build(board: &Path, elf: &Path) -> (Value, Vec<u8>) {
 }
 
 /// `AET-WO-3200` F11, closed: the same crate built at two paths of different
-/// lengths gives one sha256, and the verdict names it.
+/// lengths gives one sha256, and the verdict names it. Then what `build`
+/// refuses, end to end.
 #[test]
 fn build_gives_one_sha256_at_two_paths() {
     let base = std::env::temp_dir().join(format!("aet-3301-paths-{}", std::process::id()));
@@ -243,6 +244,75 @@ fn build_gives_one_sha256_at_two_paths() {
     copy_tree(&board(), &b);
     let (va, ea) = build(&a, &base.join("a.elf"));
     let (vb, eb) = build(&b, &base.join("b.elf"));
+
+    // End to end, what `build` refuses (adversarial B5, B7): a build script,
+    // a source read from outside the crate, each exit 3 with no ELF; and a
+    // cargo configuration cargo cannot load, exit 5, not a design fail.
+    let refused = |label: &str, edit: &dyn Fn(&Path), code: i32, kind: &str| {
+        let dir = base.join(label);
+        copy_tree(&board(), &dir);
+        edit(&dir);
+        let elf = base.join(format!("{label}.elf"));
+        let (got, stdout) = aethelgard(&[
+            "build",
+            "--crate",
+            dir.to_str().unwrap(),
+            "--out",
+            elf.to_str().unwrap(),
+        ]);
+        let v = one(&stdout);
+        assert_eq!(got, Some(code), "{label}: {v}");
+        assert_eq!(v["error"]["kind"], kind, "{label}: {v}");
+        assert!(!elf.exists(), "{label}: an ELF was written");
+        v
+    };
+    let append = |file: &Path, text: &str| {
+        let mut f = OpenOptions::new().append(true).open(file).unwrap();
+        f.write_all(text.as_bytes()).unwrap();
+    };
+    refused(
+        "build-script",
+        &|d| {
+            fs::write(d.join("build.rs"), "fn main() {}\n").unwrap();
+            let manifest = d.join("Cargo.toml");
+            let text = fs::read_to_string(&manifest).unwrap();
+            fs::write(
+                &manifest,
+                text.replacen(
+                    "publish = false",
+                    "publish = false\nbuild = \"build.rs\"",
+                    1,
+                ),
+            )
+            .unwrap();
+        },
+        3,
+        "CrateHasDependency",
+    );
+    let v = refused(
+        "outside-source",
+        &|d| {
+            append(
+                &d.join("src/lib.rs"),
+                "\npub static OUTSIDE: &[u8] = include_bytes!(\"/etc/passwd\");\n",
+            )
+        },
+        3,
+        "CrateHasDependency",
+    );
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("/etc/passwd"),
+        "{v}"
+    );
+    refused(
+        "bad-config",
+        &|d| append(&d.join("firmware/.cargo/config.toml"), "\nnot toml [[\n"),
+        5,
+        "ToolError",
+    );
     fs::remove_dir_all(&base).unwrap();
     assert_eq!(sha(&ea), sha(&eb));
     assert_eq!(va["elf"]["sha256"], sha(&ea));
