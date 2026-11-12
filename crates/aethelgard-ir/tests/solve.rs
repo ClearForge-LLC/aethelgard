@@ -668,14 +668,114 @@ fn ceiling_refusals_come_before_the_pin_search_and_after_validation() {
     assert_eq!(refused(&s).kind(), "ZeroNominalVoltage");
 }
 
+/// A pull-up far above the floor and a capacitance at the limit leave the
+/// ceiling to the rise time alone (`AET-WO-1203`: the rules only refuse).
 #[test]
-fn pull_up_and_capacitance_are_not_read() {
+fn pull_up_and_capacitance_within_the_rules_do_not_move_the_ceiling() {
     let mut s = i2c_spec(400_000, 300, 300);
     s.i2c_buses[0].pull_up_ohms = 47_000;
     for c in &mut s.net_constraints {
-        c.max_capacitance_femtofarads = u64::MAX;
+        c.max_capacitance_femtofarads = 400_000;
     }
     assert_eq!(ok(&s).i2c_ceilings["I"], 400_000);
+}
+
+fn with_pull_up(speed_hz: u32, ohms: u32) -> Specification {
+    let mut s = i2c_spec(speed_hz, 120, 120);
+    s.i2c_buses[0].pull_up_ohms = ohms;
+    s
+}
+
+/// `AET-WO-1203` §3: at 3.3 V and 400 kHz, 966 ohms is refused and 967 solves.
+#[test]
+fn the_pull_up_floor_at_3v3_and_400khz() {
+    assert_eq!(
+        refused(&with_pull_up(400_000, 966)),
+        SolveError::PullUpBelowSinkFloor {
+            bus: "I".into(),
+            pull_up_ohms: 966,
+            floor_ohms: 967
+        }
+    );
+    ok(&with_pull_up(400_000, 967));
+    ok(&basic());
+}
+
+/// The review's A2 inputs.
+#[test]
+fn the_reviews_24_50_and_100_ohm_pull_ups_are_refused() {
+    for ohms in [24, 50, 100] {
+        let err = refused(&with_pull_up(400_000, ohms));
+        assert_eq!(err.kind(), "PullUpBelowSinkFloor", "{ohms}");
+        assert_eq!(err.id(), Some("I"));
+        assert_eq!(err.claimants(), vec!["I".to_owned()]);
+    }
+    assert_eq!(
+        refused(&with_pull_up(400_000, 24)).to_string(),
+        "I2C bus `I` has a pull-up of 24 ohms, below the 967 ohm floor its rail and mode set (UM10204 sink current)"
+    );
+}
+
+#[test]
+fn the_pull_up_floor_follows_the_bus_rail_and_mode() {
+    // Fast-mode Plus sinks 20 mA: 145 ohms at 3.3 V.
+    ok(&with_pull_up(1_000_000, 145));
+    assert_eq!(
+        refused(&with_pull_up(1_000_000, 144)).kind(),
+        "PullUpBelowSinkFloor"
+    );
+    // 1.8 V reads VOL as 0.2 x VDD: 480 ohms.
+    let mut s = with_pull_up(400_000, 480);
+    s.voltage_domains[0].nominal_millivolts = 1800;
+    ok(&s);
+    s.i2c_buses[0].pull_up_ohms = 479;
+    assert_eq!(refused(&s).kind(), "PullUpBelowSinkFloor");
+}
+
+fn with_capacitance(speed_hz: u32, sda_ff: u64, scl_ff: u64) -> Specification {
+    let mut s = i2c_spec(speed_hz, 120, 120);
+    s.net_constraints[0].max_capacitance_femtofarads = sda_ff;
+    s.net_constraints[1].max_capacitance_femtofarads = scl_ff;
+    s
+}
+
+/// `AET-WO-1203` §3: 400 pF solves at 400 kHz and 401 pF is refused; 550 pF
+/// solves at 1 MHz.
+#[test]
+fn the_capacitance_limit_per_mode() {
+    ok(&with_capacitance(400_000, 400_000, 400_000));
+    assert_eq!(
+        refused(&with_capacitance(400_000, 401_000, 100_000)),
+        SolveError::BusCapacitanceOverLimit {
+            net: "I_SDA".into(),
+            capacitance_femtofarads: 401_000,
+            limit_femtofarads: 400_000
+        }
+    );
+    let err = refused(&with_capacitance(100_000, 100_000, 401_000));
+    assert_eq!(err.id(), Some("I_SCL"));
+    ok(&with_capacitance(1_000_000, 550_000, 550_000));
+    assert_eq!(
+        refused(&with_capacitance(1_000_000, 550_001, 1)).kind(),
+        "BusCapacitanceOverLimit"
+    );
+    assert_eq!(
+        refused(&with_capacitance(400_000, u64::MAX, 1)).kind(),
+        "BusCapacitanceOverLimit"
+    );
+}
+
+/// The rules sit after the ceilings and before the pin search.
+#[test]
+fn the_electrical_rules_come_after_the_ceilings() {
+    let mut s = with_pull_up(1_000_000, 24);
+    for c in &mut s.net_constraints {
+        c.max_rise_time_nanoseconds = 300;
+    }
+    assert_eq!(refused(&s).kind(), "BusTooFast");
+    let mut s = with_pull_up(400_000, 24);
+    s.net_constraints[0].max_capacitance_femtofarads = 500_000;
+    assert_eq!(refused(&s).kind(), "PullUpBelowSinkFloor");
 }
 
 /// `AET-WO-2203` §1.1: `solve` copies each device, on the peripheral its bus

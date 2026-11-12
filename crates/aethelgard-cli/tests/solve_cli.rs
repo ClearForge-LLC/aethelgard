@@ -362,7 +362,7 @@ type CeilingCase = (fn(&mut Value), &'static str, &'static str);
 #[test]
 fn each_ceiling_refusal_is_exit_2_naming_the_bus() {
     let dir = Dir::new("ceilings");
-    let cases: [CeilingCase; 3] = [
+    let cases: [CeilingCase; 4] = [
         (
             |d| {
                 d["net_constraints"]
@@ -387,6 +387,11 @@ fn each_ceiling_refusal_is_exit_2_naming_the_bus() {
             "BusTooFast",
             "I2C bus `SENSORS` runs at 1000000 Hz, above its rise-time ceiling of 400000 Hz",
         ),
+        (
+            |d| d["i2c_buses"][0]["pull_up_ohms"] = 24.into(),
+            "PullUpBelowSinkFloor",
+            "I2C bus `SENSORS` has a pull-up of 24 ohms, below the 967 ohm floor its rail and mode set (UM10204 sink current)",
+        ),
     ];
     for (edit, kind, message) in cases {
         let report = refused(&edited(&dir, edit), kind);
@@ -394,4 +399,21 @@ fn each_ceiling_refusal_is_exit_2_naming_the_bus() {
         assert_eq!(report["error"]["claimants"], json!(["SENSORS"]), "{report}");
         assert_eq!(report["error"]["message"], message, "{report}");
     }
+}
+
+#[test]
+fn a_line_over_the_bus_capacitance_limit_is_refused_by_net() {
+    let dir = Dir::new("cap-limit");
+    let report = refused(
+        &edited(&dir, |d| {
+            for c in d["net_constraints"].as_array_mut().unwrap() {
+                if c["net_name"] == "I2C_SDA" {
+                    c["max_capacitance_femtofarads"] = 401_000.into();
+                }
+            }
+        }),
+        "BusCapacitanceOverLimit",
+    );
+    assert_eq!(report["error"]["id"], "I2C_SDA", "{report}");
+    assert_eq!(report["error"]["claimants"], json!(["I2C_SDA"]), "{report}");
 }

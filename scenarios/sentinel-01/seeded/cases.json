@@ -125,8 +125,8 @@
       ]
     },
     {
-      "name": "cap-470p-sda-2k2",
-      "scenario": "scenarios/sentinel-01/seeded/cap-470p-sda-2k2.json",
+      "name": "cap-390p-sda-2k2",
+      "scenario": "scenarios/sentinel-01/seeded/cap-390p-sda-2k2.json",
       "mutant": null,
       "domain": "electrical",
       "rule": "E1",

@@ -150,6 +150,8 @@ Each check runs in document order: bus signals, then every `cs`. `kind()` is the
 | 1a | Every I2C line, SDA then SCL and bus by bus, has a net constraint (nothing is defaulted) | `MissingBusConstraint` (the message names the net) | the bus id |
 | | … its `t_max` is at most 1000 ns | `RiseTimeTooSlow` | the bus id |
 | | … and its `speed_hz` is at most its ceiling | `BusTooFast` | the bus id |
+| 1b | Each bus's `pull_up_ohms` is at least `aethelgard_ir::electrical::i2c_pull_up_floor_ohms(speed_hz, rail)` (UM10204 sink current), the rail being its domain's `nominal_millivolts` | `PullUpBelowSinkFloor` | the bus id |
+| | … and each line's `max_capacitance_femtofarads` is at most `i2c_bus_capacitance_limit_femtofarads(speed_hz)`, SDA then SCL | `BusCapacitanceOverLimit` | the net |
 | 2 | `mcu.part` is the table's part | `PartMismatch` | none |
 | 3 | Every hand pin is a key of the table (compared as a key, never by case) | `UnknownPin` | the signal |
 | | … and is not reserved | `ReservedPin` | the signal |
