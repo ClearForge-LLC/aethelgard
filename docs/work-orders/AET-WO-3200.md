@@ -122,3 +122,22 @@
 - Applying the change cannot go through `campaign`'s override path without changing that path's behaviour.
 - The re-gate of the 2.7 kΩ proposal fails, or its rise is more than 2 % from prediction. Report the numbers; do not tune the 0.8.
 - A test that can only go green by being weakened.
+
+## 8. Amendment before kickoff (2026-11-12, from the Mythos 5.2 review)
+
+- **The override form (review A8.11).**
+  - Three override forms exist: `pull_up_ohms`, `max_capacitance_femtofarads` and `line_held_low`.
+  - §1.1's "and nothing else today" means the proposer may emit only `{"bus", "pull_up_ohms"}`. The other two forms describe a fault, never a fix.
+  - A test proves the proposer cannot emit either of them.
+- **The join (review A8.12).**
+  - `Attribution` carries only `EventRef`s, and 3100's bus join is private to `evolve`.
+  - Inside this work order's fence, `evolve` exposes a read-only view: for an evidence event, its bus, and for a witness or register event, the solved expectation and the observed reading. The generator report reads from it.
+  - `attribute`'s output does not change. Measure it byte for byte.
+- **The floor is the gate's (review A2, B2).**
+  - `Rp_min` is `aethelgard_ir::electrical::i2c_pull_up_floor_ohms(speed_hz, domain_millivolts)` from `AET-WO-1203`, called by the CLI and handed to the proposer as an integer. `evolve` keeps no copy and gains no `aethelgard-ir` dependency.
+  - If `AET-WO-1203` has not merged when you need it, build everything else first, then merge `main` when it lands.
+  - The re-gate's `solve` then refuses any proposal below the floor, so the floor is enforced twice from one definition.
+- **The re-gate and generation (review A3).** `aethelgard generate` does not exist yet (`AET-WO-3301`). The re-gate of §1.4 generates the board crate and firmware the way the repository's tests do today. Record that in FEEDBACK as a residual that `3301` removes.
+- **Wording (`RUL-19`).**
+  - `proposal.json` and FEEDBACK say the rise is "computed from declared values". `predicted_rise_ps` is the field name.
+  - A proposal is evidence about the specification, not the board.

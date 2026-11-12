@@ -2,15 +2,15 @@
 
 Generates a circuit board and the firmware that drives it from one specification, and refuses to call either finished until the pair has survived simulated electrical and software faults together, before any board is manufactured.
 
-**Status:** phase P1 of 4 is complete, and the crates are published: `cargo install aethelgard-cli`. From one specification, `aethelgard` does five things:
+**Status:** phases P0 to P2 are complete, and P3 (attribution and evolution) is under way: attribution has merged. The crates are published (`cargo install aethelgard-cli`, version 0.1.0, which predates P2's commands). From one specification, `aethelgard` does five things:
 
 - solves the pin assignment;
 - emits a schematic and a placed, routed board that pass KiCad's ERC and DRC;
-- generates a typestate board crate whose register effects Kani proves;
+- generates a typestate board crate whose register effects Kani proves (today through the repository's test harness; `aethelgard generate` is `AET-WO-3301`);
 - boots generated firmware in Renode;
 - serves all of this over MCP.
 
-P2 has started: analog co-simulation and fault injection. The code is licensed `MIT OR Apache-2.0` (see `LICENSE-MIT` and `LICENSE-APACHE`). KiCad's vendored symbols and footprints, in `crates/aethelgard-kicad-lib`, stay `CC-BY-SA-4.0`. Boards emitted from them carry no obligation.
+P2 added analog co-simulation, fault campaigns, an archive that replays, and `attribute`, which names the electrical or software half a failure belongs to. **Its rise times are computed by ngspice from the specification's declared pull-up and capacitance bound, not measured on the routed board** (`docs/architecture.md` `RUL-19`); extraction from the board is scheduled before any fabrication package is called verified. The code is licensed `MIT OR Apache-2.0` (see `LICENSE-MIT` and `LICENSE-APACHE`). KiCad's vendored symbols and footprints, in `crates/aethelgard-kicad-lib`, stay `CC-BY-SA-4.0`. Boards emitted from them carry no obligation.
 
 ## Where to go
 
