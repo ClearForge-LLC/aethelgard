@@ -7,6 +7,7 @@
 mod analog;
 mod campaign;
 mod elf;
+mod extract;
 mod firmware;
 mod input;
 mod kani;
@@ -111,6 +112,15 @@ enum Command {
         /// First compare this directory with the generated tree, byte for byte; any difference fails and no gate runs.
         #[arg(long)]
         against: Option<PathBuf>,
+    },
+    /// Bound each I2C line's capacitance from above from a routed board's copper, and judge each bound against the specification's declared bound. Runs no tool.
+    Extract {
+        /// The routed .kicad_pcb file.
+        #[arg(long)]
+        board: PathBuf,
+        /// The specification whose I2C lines are judged.
+        #[arg(long)]
+        spec: PathBuf,
     },
     /// Run a KiCad check on a board or schematic and print its verdict.
     Check {
@@ -325,6 +335,7 @@ fn main() -> ExitCode {
             scenarios,
             against,
         } => return verify::verify(&spec, &scenarios, against.as_deref()),
+        Command::Extract { board, spec } => return extract::extract(&board, &spec),
         Command::Check {
             check:
                 CheckCommand::Drc {

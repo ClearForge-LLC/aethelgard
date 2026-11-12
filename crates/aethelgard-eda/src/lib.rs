@@ -14,6 +14,7 @@
 
 pub mod board;
 pub mod bom;
+pub mod extract;
 pub mod library;
 pub mod parity;
 pub mod pcb;

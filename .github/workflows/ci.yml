@@ -132,7 +132,9 @@ jobs:
       # prove --spec provenance, verify 2k2 twice with --against, verify 47k).
       # 73: plus 2 from AET-WO-1601 in board_tier2.rs (a third uid cannot change
       # what build reads; another uid's /tmp/.cargo is not read).
-      TIER2_MIN: "73"
+      # 74: plus 1 from AET-WO-1305 in board_tier2.rs (a board swapped in
+      # verify's scratch before extract is a BindingMismatch).
+      TIER2_MIN: "74"
       RUN: >-
         docker run --rm -v ${{ github.workspace }}:/repo -w /repo
         -e CARGO_HOME=/repo/target/cargo-home -e CARGO_TARGET_DIR=/repo/target

@@ -46,6 +46,7 @@ fn lists_the_five_tools_and_completes_two_calls() {
             "generate",
             "build",
             "verify",
+            "extract",
             "check_drc",
             "check_erc",
             "prove",
