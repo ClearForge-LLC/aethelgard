@@ -1,0 +1,8 @@
+# RUL-16 (AET-WO-1204): a runner reads a SolvedTopology, never the
+# specification's device lists. aethelgard-eda draws declared intent and has no
+# such file. The guard test crates/aethelgard-ir/tests/rul16_fence.rs pins
+# these two paths against the accessors.
+disallowed-methods = [
+  { path = "aethelgard_ir::Specification::declared_i2c_devices", reason = "RUL-16: read the SolvedTopology (i2c_devices_in_order), not the specification's device list" },
+  { path = "aethelgard_ir::Specification::declared_spi_devices", reason = "RUL-16: read the SolvedTopology, not the specification's device list" },
+]

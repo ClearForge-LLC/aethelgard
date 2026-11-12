@@ -2172,6 +2172,21 @@ mod tests {
             .collect()
     }
 
+    /// A bus's ceiling with the rise-time bound that derives it, on every one
+    /// of its lines: `SolvedTopology::validate` holds a hand-written topology
+    /// to the ceiling `solve` derives (`AET-WO-1204`).
+    fn set_ceiling(s: &mut SolvedTopology, bus: &str, hz: u32) {
+        let ns = match hz {
+            100_000 => 1000,
+            400_000 => 300,
+            _ => 120,
+        };
+        s.i2c_ceilings.insert(bus.into(), hz);
+        for line in s.analog_lines.values_mut().filter(|l| l.bus == bus) {
+            line.ceiling_ns = ns;
+        }
+    }
+
     fn kind(result: Result<BTreeMap<String, String>, BoardError>) -> &'static str {
         result.unwrap_err().kind()
     }
@@ -2192,7 +2207,7 @@ mod tests {
             (1_000_000, vec!["Standard100k", "Fast400k", "FastPlus1M"]),
         ] {
             let mut s = solved();
-            s.i2c_ceilings.insert("BUS".into(), hz);
+            set_ceiling(&mut s, "BUS", hz);
             let files = generate("b", &s, &table()).unwrap();
             assert_eq!(admitted(&files), modes, "{hz}");
             // The harness drives exactly the admitted speeds.
@@ -2216,15 +2231,19 @@ mod tests {
         assert_eq!(kind(generate("b", &s, &table())), "InvalidTopology");
         let mut s = solved();
         s.i2c_ceilings.insert("OTHER".into(), 100_000);
-        assert_eq!(kind(generate("b", &s, &table())), "CeilingMismatch");
+        // A ceiling for a bus with no analog line is refused by `validate`
+        // since `AET-WO-1204`, before the generator counts them.
+        assert_eq!(kind(generate("b", &s, &table())), "InvalidTopology");
         // Two buses: each peripheral gets the lower ceiling.
         let mut s = solved();
         s.assignments
             .insert("SCL2".into(), assign("PB10", "I2C2", "I2C2_SCL", 4));
         s.assignments
             .insert("SDA2".into(), assign("PB11", "I2C2", "I2C2_SDA", 4));
-        s.i2c_ceilings = BTreeMap::from([("A".into(), 1_000_000), ("B".into(), 100_000)]);
+        s.i2c_ceilings = BTreeMap::new();
         s.analog_lines = analog_lines(&[("SCL", "A"), ("SDA", "A"), ("SCL2", "B"), ("SDA2", "B")]);
+        set_ceiling(&mut s, "A", 1_000_000);
+        set_ceiling(&mut s, "B", 100_000);
         let files = generate("b", &s, &table()).unwrap();
         let board = &files["src/board.rs"];
         for m in ["i2c1_speed", "i2c2_speed"] {
@@ -2256,13 +2275,15 @@ mod tests {
         let mut s = solved();
         s.assignments.remove("SDA");
         s.analog_lines.remove("SDA");
-        assert_eq!(kind(generate("b", &s, &t)), "IncompletePeripheral");
+        // A bus without its SDA or SCL line is refused by `validate` since
+        // `AET-WO-1204`, before the generator looks.
+        assert_eq!(kind(generate("b", &s, &t)), "InvalidTopology");
 
         let mut s = solved();
         s.assignments
             .insert("SDA2".into(), assign("PB9", "I2C1", "I2C1_SDA", 4));
         s.analog_lines = analog_lines(&[("SCL", "BUS"), ("SDA", "BUS"), ("SDA2", "BUS")]);
-        assert_eq!(kind(generate("b", &s, &t)), "IncompletePeripheral");
+        assert_eq!(kind(generate("b", &s, &t)), "InvalidTopology");
 
         let mut s = solved();
         s.gpio.insert("CS2".into(), "PB6".into());
@@ -2332,7 +2353,7 @@ mod tests {
         assert!(main.contains("let pb6 = gpiob.pb6.into_i2c1_scl(&mut r);"));
         assert!(main.contains("use b::{Board, i2c1_speed, mmio::Mmio};"));
         let mut s = solved();
-        s.i2c_ceilings.insert("BUS".into(), 1_000_000);
+        set_ceiling(&mut s, "BUS", 1_000_000);
         let files = generate("b", &s, &table()).unwrap();
         assert!(files["firmware/src/main.rs"].contains("i2c1_speed::FastPlus1M, _"));
         // The memory map is the header's, and no file of the firmware runs host code.

@@ -52,7 +52,7 @@ Returns the first refusal, in this order, and in document order within a step. `
 | 5a | Every bus `domain` equals `mcu.supply`, and every device `supply` equals its bus's `domain` (one rail; level shifting is unscoped). A device naming no bus is left to step 9 | `SupplyMismatch` (the bus id or device reference) |
 | 6 | Bus ids are unique across both bus lists | `DuplicateBusId` (the id) |
 | 7 | An I2C `speed_hz` is 100000, 400000 or 1000000, and `pull_up_ohms` is not 0. An SPI `speed_hz` is not 0 | `UnsupportedI2cSpeed`, `ZeroPullUp`, `ZeroSpiSpeed` (the bus id) |
-| 8 | References are unique across both device lists | `DuplicateReference` (the reference) |
+| 8 | References are unique across both device lists, compared with case folded | `DuplicateReference` (the reference; the message names the first spelling) |
 | 9 | A device's `bus` names a bus of its own kind | `UnknownBus` (the name) |
 | 10 | An I2C address is in `0x08..=0x77` and unique on its bus | `I2cAddressOutOfRange`, `DuplicateI2cAddress` (the device reference) |
 | 11 | A net is declared by exactly one signal across every bus and every `cs`, and no signal net has a voltage domain's id (compared with case folded),, none differs from `GND` only in case, and voltage domain ids are compared the same way (`DuplicateDomainId`) | `DuplicateNetName`, `NetShadowsDomain` (the net) |
@@ -78,7 +78,10 @@ A repeated key in `assignments`, `gpio` or `i2c_ceilings` is refused when parsin
 4. `AlternateFunctionOutOfRange` (above 15; the net);
 5. `InvalidCeiling` (a ceiling other than the three mode speeds; the bus id);
 6. `NetAssignedTwice` (a net in both maps; the net);
-7. `DuplicatePin` (a pin used twice anywhere across both maps; the pin).
+7. `DuplicatePin` (a pin used twice anywhere across both maps; the pin);
+8. the analog lines, then `CeilingNotDerived` (a ceiling that is not what `solve` derives from the bus's own lines: `electrical::ceiling_hz` of the smallest `ceiling_ns` among them; a bus with no line, or a bound slower than every mode, derives nothing; the bus id) (`AET-WO-1204`).
+
+A specification's device lists are private to this crate (`RUL-16`, `AET-WO-1204`). Read them through `Specification::declared_i2c_devices` and `declared_spi_devices`; `cli`, `svd-hal` and `twin` carry a `clippy.toml` that disallows both.
 
 The CLI's `validate` accepts only a `Specification`.
 

@@ -26,6 +26,19 @@ pub fn i2c_mode(speed_hz: u32) -> I2cMode {
     }
 }
 
+/// The fastest I2C mode whose maximum rise time (NXP UM10204) is at least
+/// `rise_time_ns`, as its speed in Hz; `None` when it is slower than every mode.
+/// `solve` derives a bus's ceiling with it and `SolvedTopology::validate`
+/// re-derives the same (`AET-WO-1204`), so the two share this one function.
+pub fn ceiling_hz(rise_time_ns: u32) -> Option<u32> {
+    match rise_time_ns {
+        0..=120 => Some(1_000_000),
+        121..=300 => Some(400_000),
+        301..=1000 => Some(100_000),
+        _ => None,
+    }
+}
+
 /// Output low level, in millivolts, for a rail above 2 V (UM10204 rev. 7
 /// table 10, VOL1: at most 0.4 V at 3 mA sink current, VDD > 2 V).
 const VOL_MILLIVOLTS: u64 = 400;
@@ -82,6 +95,18 @@ pub fn i2c_bus_capacitance_limit_femtofarads(speed_hz: u32) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_ceiling_mapping_at_each_boundary() {
+        assert_eq!(ceiling_hz(1), Some(1_000_000));
+        assert_eq!(ceiling_hz(120), Some(1_000_000));
+        assert_eq!(ceiling_hz(121), Some(400_000));
+        assert_eq!(ceiling_hz(300), Some(400_000));
+        assert_eq!(ceiling_hz(301), Some(100_000));
+        assert_eq!(ceiling_hz(1000), Some(100_000));
+        assert_eq!(ceiling_hz(1001), None);
+        assert_eq!(ceiling_hz(u32::MAX), None);
+    }
 
     #[test]
     fn modes_at_each_boundary() {

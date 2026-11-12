@@ -343,17 +343,6 @@ fn i2c_devices(spec: &Specification, solved: &SolvedTopology) -> BTreeMap<String
     out
 }
 
-/// The fastest I2C mode whose maximum rise time (NXP UM10204) is at least
-/// `rise_time_ns`, as its speed in Hz; `None` when it is slower than every mode.
-fn ceiling_hz(rise_time_ns: u32) -> Option<u32> {
-    match rise_time_ns {
-        0..=120 => Some(1_000_000),
-        121..=300 => Some(400_000),
-        301..=1000 => Some(100_000),
-        _ => None,
-    }
-}
-
 /// Each I2C bus's ceiling, from the stricter of its two lines' declared
 /// `max_rise_time_nanoseconds`, in document order. A line with no constraint
 /// refuses: nothing is defaulted (`INV-06`). Pull-up and capacitance are not
@@ -371,7 +360,7 @@ fn i2c_ceilings(spec: &Specification) -> Result<BTreeMap<String, u32>, SolveErro
             };
             t_max = t_max.min(c.max_rise_time_nanoseconds);
         }
-        let Some(ceiling) = ceiling_hz(t_max) else {
+        let Some(ceiling) = electrical::ceiling_hz(t_max) else {
             return Err(SolveError::RiseTimeTooSlow {
                 bus: bus.id.clone(),
                 rise_time_ns: t_max,
@@ -426,23 +415,6 @@ fn i2c_electrical(spec: &Specification) -> Result<(), SolveError> {
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ceiling_hz;
-
-    #[test]
-    fn the_mapping_at_each_boundary() {
-        assert_eq!(ceiling_hz(1), Some(1_000_000));
-        assert_eq!(ceiling_hz(120), Some(1_000_000));
-        assert_eq!(ceiling_hz(121), Some(400_000));
-        assert_eq!(ceiling_hz(300), Some(400_000));
-        assert_eq!(ceiling_hz(301), Some(100_000));
-        assert_eq!(ceiling_hz(1000), Some(100_000));
-        assert_eq!(ceiling_hz(1001), None);
-        assert_eq!(ceiling_hz(u32::MAX), None);
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
