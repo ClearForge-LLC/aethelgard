@@ -45,4 +45,4 @@ The subagent could not break any of the three targets. It swept 100 kHz, 400 kHz
 
 ## Gates
 
-GATES_PLACEHOLDER
+Run in the pinned image (`container/IMAGE`, digest `2df68259…`) under rootless podman, `--memory 16g --memory-swap 16g --pids-limit -1`, swap then set to 0; read back: `memory.max=17179869184 memory.swap.max=0 pids.max=max`. The CI tools job's steps, at `b75f5dc`: bridge build and tests, `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked --offline --features aethelgard-cli/with-tools -- -D warnings`, `cargo test --workspace --locked --offline --features aethelgard-cli/with-tools --no-fail-fast`: **56 suites, 882 passed, 0 failed.** The first run, at `00c406b`, had one failure (F6, fixed). The seeded set (`attribute_seeded`, tier 2) and the regeneration guards pass with no change to any committed generated file, so no emitted byte moved (§7). CI on the PR: see the PR.
