@@ -398,6 +398,12 @@ fn the_2k2_reference_scenario_passes_archives_and_replays_identically() {
     assert_eq!(line["matched"], true);
     assert_eq!(line["findings"], json!([]));
     assert_eq!(line["expect_findings"], json!([]));
+    // The boot's tools ran under the tool uid exactly when this is root (AET-WO-1601).
+    assert_eq!(
+        line["uid_boundary"],
+        rustix::process::geteuid().is_root(),
+        "{line}"
+    );
     assert_eq!(summary["ok"], true);
     assert_eq!(summary["verdict"], "pass");
     assert_eq!(summary["check"], "campaign");

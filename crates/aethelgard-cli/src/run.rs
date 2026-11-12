@@ -1533,6 +1533,52 @@ mod tests {
         assert!(ids_are_the_tool_s("Uid:\t65534\t65534\t65534\t65534\n").is_err());
     }
 
+    /// As root (tier 1 in the image), a directory is handed over once: its
+    /// entries sealed and the directory made root's, group [`TOOL_GID`],
+    /// mode [`HANDED_OVER`]; an entry not root's before then refuses the
+    /// hand-over; a second call changes nothing. As a user there is nothing
+    /// to hand over, and the CLI never calls it.
+    #[test]
+    fn a_directory_is_handed_over_once_and_only_if_root_made_everything_in_it() {
+        use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+        if !geteuid().is_root() {
+            return;
+        }
+        let base = env::temp_dir().join(format!("aet-1601-handover-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let make = |name: &str| {
+            let d = base.join(name);
+            fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(&d)
+                .unwrap();
+            fs::set_permissions(&d, fs::Permissions::from_mode(0o700)).unwrap();
+            fs::create_dir(d.join("crate")).unwrap();
+            fs::write(d.join("crate/lib.rs"), b"x").unwrap();
+            d
+        };
+        let mode = |p: &Path| fs::symlink_metadata(p).unwrap().mode() & 0o7777;
+        let ok = make("ok");
+        hand_over(&ok).unwrap();
+        let meta = fs::metadata(&ok).unwrap();
+        assert_eq!(
+            (meta.uid(), meta.gid(), mode(&ok)),
+            (0, TOOL_GID, HANDED_OVER)
+        );
+        assert_eq!(mode(&ok.join("crate")), 0o555);
+        assert_eq!(mode(&ok.join("crate/lib.rs")), 0o444);
+        // A second call finds it handed over and seals nothing new.
+        fs::write(ok.join("later"), b"y").unwrap();
+        hand_over(&ok).unwrap();
+        assert_eq!(mode(&ok.join("later")), 0o644);
+        let theirs = make("theirs");
+        std::os::unix::fs::chown(theirs.join("crate/lib.rs"), Some(4242), None).unwrap();
+        assert!(hand_over(&theirs).unwrap_err().contains("not root's"));
+        assert_eq!(mode(&theirs), 0o700, "a refused directory was handed over");
+        fs::remove_dir_all(&base).unwrap();
+    }
+
     /// The filter as an exact instruction sequence: any edit to it must show
     /// up here (ruled on PR #15, extended by AET-WO-1600). (code, jt, jf, k),
     /// with 4242 standing for the tool's pid.

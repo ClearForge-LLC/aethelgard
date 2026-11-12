@@ -153,7 +153,7 @@ fn a_scratch_base_another_user_could_write_is_refused() {
     let open = a_dir(&base.0, "open", 0o770);
     let v = refused(&erc(&tb, &sch, Some(&open), None), 4, "ScratchUnsafe");
     assert_eq!(v["error"]["id"], open.display().to_string(), "{v}");
-    let below = a_dir(&open, "below", 0o700);
+    let below = a_dir(&open, "below", if root() { 0o711 } else { 0o700 });
     let v = refused(&erc(&tb, &sch, Some(&below), None), 4, "ScratchUnsafe");
     assert_eq!(v["error"]["id"], open.display().to_string(), "{v}");
     if root() {
