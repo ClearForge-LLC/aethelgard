@@ -216,7 +216,7 @@ As built for review, `true` claimed more than the run showed in two cases the CL
 **The tests follow the truth through an oracle written apart from the CLI** (`tests/common`, `expected_boundary`): root, the uid map, and `find … ! -type l ( ! -uid 0 -o -perm -002 -o ( -perm -020 ! -gid 0 ) )` beneath each path, with each ancestor's owner, group and mode.
 - `verify_binds_the_reference_…` checks every gate against it.
 - `as_root_a_third_uid_cannot_change_what_build_reads` checks `build`'s verdict.
-- In tier 1: `uid_boundary_is_true_exactly_…` checks the stub; a new `a_toolbox_another_user_could_write_makes_uid_boundary_false` makes the toolbox 0775 (`toolchain` as initial root); and `campaign_tier1` checks that a line is `true` exactly when it names no unmet condition.
+- In tier 1: `uid_boundary_is_true_exactly_…` checks the stub; a new `a_toolbox_another_user_could_write_makes_uid_boundary_false` makes the toolbox 0777 (`toolchain` as initial root; 0775 root:root is clean under the gid-0 rule, which CI caught at `cf3506a`); and `campaign_tier1` checks that a line is `true` exactly when it names no unmet condition.
 - A unit test checks the uid-map parser, the entry rule (sticky only for ancestors) and the precedence. Where `KANI_HOME` and `RUSTUP_HOME` are set, it also checks that the walk agrees with `find`: in the pinned image, `/opt/kani` is not clean and `/opt/rustup` is.
 - Rootless podman reaches only `user_namespace`, so the `toolchain` rows rest on that unit cross-check locally and on the PR's CI run.
 
@@ -335,5 +335,6 @@ At `de2401d`: the code, with `main` at `b227c12` merged in. Every later commit c
   Under rootless podman every gate there says `false`, `user_namespace`, as the oracle requires.
 - **`container/engine-smoke.sh`**, run as root in the image with this branch's binaries first on `PATH`: all checks passed.
 - **The quickstart's tool calls**, in its `--user` shape with `-e HOME=/work`, pass on both the README's pinned engine image and this branch's binary (F4).
-- **CI on the reviewed head `7adb923`:** `gates`, `image`, `quickstart` and `tools` all green; `tools` took 47 m under CI's rootful Docker. The ruling's change is checked by the PR's next run.
+- **CI on the reviewed head `7adb923`:** `gates`, `image`, `quickstart` and `tools` all green; `tools` took 47 m under CI's rootful Docker.
+- **CI on `cf3506a` (the ruling's change):** `gates`, `image` and `quickstart` green. In `tools`, every test that ran passed against the oracle under real root, `board_tier2`'s per-gate check included, but one failed: `a_toolbox_another_user_could_write_makes_uid_boundary_false` made the toolbox 0775, which the gid-0 addendum rightly calls clean as root:root. The test now uses 0777. The next head's run is the record.
 - **`origin/main` merged** with merge commits: `cbc0a7b`, `0249824` (`AET-WO-1205`) and `b227c12`, each clean.

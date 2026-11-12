@@ -244,7 +244,7 @@ if /bin/mv "$in" "$in.aside" 2>/dev/null; then echo "rename=yes" >> "$said"; els
     }
 }
 
-/// A toolbox another user could write: as the initial namespace's root,
+/// A toolbox others could write (0777): as the initial namespace's root,
 /// `uid_boundary` is false with `toolchain`, though the tool did run under the
 /// tool uid (ruled on PR #96, condition 3). The control is clean.
 #[test]
@@ -264,7 +264,9 @@ fn a_toolbox_another_user_could_write_makes_uid_boundary_false() {
         boundary(&tb),
         want(common::expected_boundary(std::slice::from_ref(&tb)))
     );
-    fs::set_permissions(&tb, fs::Permissions::from_mode(0o775)).unwrap();
+    // Writable by others: root's own group writing would grant nothing
+    // (the architect's addendum), so 0775 here would still be clean.
+    fs::set_permissions(&tb, fs::Permissions::from_mode(0o777)).unwrap();
     let dirty = common::expected_boundary(std::slice::from_ref(&tb));
     if common::initial_root() {
         assert_eq!(dirty, (false, Some("toolchain")));
