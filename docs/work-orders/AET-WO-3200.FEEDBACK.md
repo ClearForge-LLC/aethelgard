@@ -52,7 +52,13 @@ Entry schema for findings: `finding · where · severity · type · recommendati
 
 ### §3.3: the proposal branch
 
-PROPOSAL-BRANCH
+- **Branch:** `proposal/sentinel-01-pullup-47k`, one commit on this work order's head. It adds `proposals/sentinel-01-pullup-47k/proposal.json` (sha256 `e84ac739…d917`) and `proposed-spec.json` (sha256 `54aaef1c…52bc`).
+- **Where the files come from.** Both were written by `aethelgard propose`, inside the tier-2 test in the image, on the `pullup-47k` run (run id `f793560649caeaa37fe21ea780f4340a`), and copied unedited.
+  - The merged tree's run wrote byte-identical files.
+  - On that branch, in the image, `every_committed_proposal_reruns_to_its_own_bytes_and_regates` re-ran `propose` to the same bytes and re-gated: "committed proposal … reruns byte-identical and re-gates".
+  - Its tier-1 half checks the shape and the name.
+- **The reference specification on `main` is not touched.**
+- **The PR:** opened by the F7 route as a normal PR titled "PROPOSAL (do not merge): …", based on `wo/aet-3200-propose`, so CI runs the re-gate on exactly those bytes. Per F16 (ruled), the architect converts it to a draft, reviews it and closes it. It is never merged.
 
 ### §3.4: the other outcomes, on 3100's seeded runs
 
