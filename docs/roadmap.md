@@ -205,12 +205,12 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 ### P3 — Attribution and evolution
 
 **Goal:** a failure is blamed on the right half with evidence, a proposed fix is regenerated and re-gated, and a fabrication package is emitted for one reference probe.
-**Depends on:** P2. `OQ-06` ruled before `AET-WO-3200`. Human-track: a physical development board and a fabrication budget (§3).
+**Depends on:** P2. `OQ-06` is ruled (`RUL-18`, 2026-11-12). Human-track: a physical development board and a fabrication budget (§3).
 
 **Work orders (intent)**
 
 - `AET-WO-3100` — **merged (PR #79)**, build-only, strong tier, full adversarial pass. Attribution from the archive alone: `aethelgard attribute` names `electrical`, `software`, `none` or `indeterminate`, with the deciding rule and the evidence events. Software requires a measured-healthy bus *and* positive software evidence, never elimination. Seeded set: electrical cases as scenarios, software cases as exact-once firmware mutants built by the test, and the trap (a wrong address with a passing 3.3 kΩ pull-up) that shares `i2c_timeout` with 47 kΩ. Intent as first written: attribution: from a failing trace, classify electrical versus software with the evidence span recorded, tested against a seeded set where the true cause is known.
-- `AET-WO-3200` — spike, then build: the proposal loop under `RUL-07`, with the proposer chosen by `OQ-06`.
+- `AET-WO-3200` — **written 2026-11-12**, build-only (`OQ-06` is ruled as `RUL-18`, so no spike is needed), strong tier, full adversarial pass. `aethelgard propose` turns an archived run into one of three outcomes: a pull-up proposal from a closed rules table (E12, 0.8 headroom, the UM10204 floor), a generator bug report for a software attribution, or a stated refusal. Every proposal is re-gated, and the 47 kΩ proposal sits on a draft branch, unmerged. Intent as first written: spike, then build: the proposal loop under `RUL-07`, with the proposer chosen by `OQ-06`.
 - `AET-WO-3300` — the reference probe, `Sentinel-01`: specification, full gate run, fabrication package, and a bench comparison against the physical development board that records where simulation and reality disagreed.
 
 **Exit gate (intent; refined after the P2 spike, never weakened)**
@@ -377,6 +377,7 @@ Run a reconciliation audit at every phase boundary: count what was planned, what
 | 2026-11-09 | §3, §4, §5 | **P4 added:** Sentinel-02, the flight controller, as intent with `AET-WO-4100` … `4500` reserved. Human-track: the Nucleo-H753ZI is ordered; custom boards are bought only when a gate needs one, so Sentinel-01's package is emitted but not ordered; announcements held until Scotty calls the build finished | Scotty, 2026-11-09: the drone direction, the purchase rule, ArduPilot accepted, selectable layer counts and more chip families in due time |
 | 2026-11-09 | §5 | `AET-WO-3100` amended (§8): the archive gains kind 15, `I2cBusSolved`, at trace version 3, because no record joined a symptom to its bus | The builder's §7 stop S1, before any code |
 | 2026-11-09 | §3, §5, §7 | `AET-WO-3100` reconciled. **P3 gate clause 1 holds.** Human-track: `aethelgard-evolve`'s first publish | PR #79 |
+| 2026-11-12 | §5 | `OQ-06` ruled as `RUL-18` (Scotty: option C, with software attributions as generator bug reports). `AET-WO-3200` written as build-only | Scotty, 2026-11-12 |
 
 ## 9. Provenance
 
