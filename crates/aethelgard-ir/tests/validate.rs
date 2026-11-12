@@ -1554,3 +1554,31 @@ fn solved_holds_the_capacitance_to_the_limit_at_the_declared_speed() {
         assert_eq!(t.validate().is_ok(), ok, "{pf} fF");
     }
 }
+
+#[test]
+fn the_floor_and_the_limit_follow_the_declared_speed_not_the_ceiling() {
+    // A 1 MHz ceiling over a 400 kHz bus: the floor is the 3 mA one (967 ohms),
+    // not the 20 mA one (145), and the limit is 400 pF, not 550 pF.
+    let under_1m = |t: &mut SolvedTopology| {
+        t.i2c_ceilings.insert("SENSORS".into(), 1_000_000);
+        for line in t.analog_lines.values_mut() {
+            line.ceiling_ns = 120;
+        }
+    };
+    let err = solved_refusal(|t| {
+        under_1m(t);
+        set_line_pull_up(t, 500);
+    });
+    assert_refusal(err, "PullUpBelowSinkFloor", Some("SENSORS"));
+    let err = solved_refusal(|t| {
+        under_1m(t);
+        t.analog_lines
+            .get_mut("I2C_SDA")
+            .unwrap()
+            .capacitance_femtofarads = 550_000;
+    });
+    assert_refusal(err, "BusCapacitanceOverLimit", Some("I2C_SDA"));
+    let mut t = solved();
+    under_1m(&mut t);
+    assert_eq!(t.validate(), Ok(()));
+}
