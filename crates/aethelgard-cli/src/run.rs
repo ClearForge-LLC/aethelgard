@@ -1638,6 +1638,26 @@ mod tests {
         fs::create_dir_all(&mine).unwrap();
         assert_eq!(toolchain_clean(&mine), geteuid().is_root());
         fs::remove_dir_all(&mine).unwrap();
+        // Where the kit and the toolchain are set (the image), the walk agrees
+        // with `find` (in the pinned image, Kani's kit is uid 1001's: A1).
+        for var in ["KANI_HOME", "RUSTUP_HOME"] {
+            let Some(home) = env::var_os(var) else {
+                continue;
+            };
+            let find = std::process::Command::new("find")
+                .arg(&home)
+                .args([
+                    "!", "-type", "l", "(", "!", "-uid", "0", "-o", "-perm", "/022", ")",
+                ])
+                .args(["-print", "-quit"])
+                .output()
+                .unwrap();
+            assert_eq!(
+                toolchain_clean(Path::new(&home)),
+                find.stdout.is_empty(),
+                "{var}"
+            );
+        }
         let mut s = SandboxReport::from_abi(6, true);
         assert_eq!((s.uid_boundary, s.uid_boundary_unmet), (true, None));
         s.unmet(None);
