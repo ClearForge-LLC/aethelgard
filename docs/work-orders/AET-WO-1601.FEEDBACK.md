@@ -132,7 +132,8 @@ Entry schema: `finding · where · severity · type · recommendation`.
   - As uid 1001 in the image, the adversary swapped `kani-driver` for a stub that hands `--version` to the real driver. `prove` of a harness that begins `kani::assert(false, …)` went from exit 1 `proof_failed` to **exit 0, pass, `uid_boundary: true`**, with the same input sha.
   - So §5.1's "reach the toolchain" breaks for one uid in the published image. No process runs as 1001 there unless one is added, but the image's first `useradd` gets 1001, which is the README deployment section's own suggestion of a separate client uid.
   - **Not a §7 stop, by my reading.** §7 names four conditions, none of them this one, and B1–B4 held as posed in the second configuration. The fix is outside the fence (3301 F1 is the precedent for a measured break with no in-fence fix). Both in-fence mitigations (refusing `prove`, or reporting `false` for it) would change a §3 result in the pinned image, which is a ruling, not a build step. **READY rests on this reading; the architect may rule it a stop.**
-  - **Recommendation:** `tar --no-same-owner` (or `chown -R root:root /opt/kani`) in `container/Dockerfile`, a new pinned image, and an image check that `find /opt /usr -xdev ! -uid 0` prints nothing. The README now says `uid_boundary` excludes no one who can write the toolchain, and names the check.
+  - **Since fixed on `main`** by `AET-WO-1602`: the image `c69ff9bc`, merged here with `dbf2cba`, has a root-owned toolchain, and `find /opt /usr -xdev` with the shared rule prints nothing there.
+  - **Recommendation (as made):** `tar --no-same-owner` (or `chown -R root:root /opt/kani`) in `container/Dockerfile`, a new pinned image, and an image check that `find /opt /usr -xdev ! -uid 0` prints nothing. The README now says `uid_boundary` excludes no one who can write the toolchain, and names the check.
 
 - **F1 · §3's "re-run as root against root … the verdict says `false`" cannot happen · §3 · medium · accepted on PR #96: root against root wins and says `true`.**
   - §1.2 makes a root CLI always run its tools as 65534, with no fallback. So no verdict from a root CLI says `false`.
@@ -202,13 +203,14 @@ As built for review, `true` claimed more than the run showed in two cases the CL
 
 **The cost, measured in the image** by walking the same paths with `find`: `/opt/cargo/bin` 5 entries in 3 ms; `/opt/rustup` 383 in 4 ms; `/opt/kani` 146 in 3 ms; `/opt/renode` 2,024 in 10 ms; the bridge's `target/debug` 22,352 in 49 ms. Each gate process walks each of its paths once. The ancestor check stops a walk before it starts when an ancestor fails, as `/repo` does below.
 
-**What it says.** The Furnace row is measured (tier 1 and tier 2 in the image). The CI row is the oracle's prediction, which the PR's `tools` run then checks. The engine-image row is a prediction that no run here checks: rootless podman reaches `user_namespace` first.
+**What it says.** The Furnace row is measured (tier 1 and tier 2 in the image). The CI rows are the oracle's prediction, which the PR's `tools` run then checks; the oracle reads the image itself, so no expectation is written in for `prove`. On `c69ff9bc`, `find /opt /usr -xdev` with the shared rule prints nothing (re-measured by the builder), so `prove` says `true`. The engine-image row is a prediction that no run here checks: rootless podman reaches `user_namespace` first.
 
 | where | erc, drc | prove | build | simulate, campaign |
 |---|---|---|---|---|
 | Furnace, rootless podman, as root | `false` `user_namespace` | `false` `user_namespace` | `false` `user_namespace` | `false` `user_namespace` |
-| CI's `tools` job (rootful Docker, root), predicted | `true` | `false` `toolchain` (Kani's kit, A1) | `true` | **`false` `toolchain`** |
-| the engine image as root (the bridge in `/usr/local/bin`), predicted | `true` | `false` `toolchain` | `true` | `true` |
+| CI's `tools` job (rootful Docker, root), image `2df68259` (before `AET-WO-1602`), predicted and seen | `true` | `false` `toolchain` (Kani's kit, A1) | `true` | **`false` `toolchain`** |
+| CI's `tools` job, image `c69ff9bc` (`AET-WO-1602`'s root-owned toolchain), predicted | `true` | `true` | `true` | **`false` `toolchain`** |
+| the engine image as root on `c69ff9bc` (the bridge in `/usr/local/bin`), predicted | `true` | `true` | `true` | `true` |
 | any user | `false` `tool_uid` | `false` `tool_uid` | `false` `tool_uid` | `false` `tool_uid` |
 
 **One difference from the ruling's expectation.** In CI's `tools` job the bridge runs from `/repo/target/debug`, and `/repo` is the runner's checkout, owned by the runner's uid. That uid could replace the bridge, so `simulate` and `campaign` say `toolchain` there, not `true`. The same holds in the local podman layout (`/repo` 0775). It is the truth the rule was asked to tell. In the engine image the bridge sits in `/usr/local/bin`, a system directory.
@@ -323,18 +325,22 @@ Reported, not removed:
 
 ## Gates
 
-At `de2401d`: the code, with `main` at `b227c12` merged in. Every later commit changes this FEEDBACK only.
+At `d45691f`: the code, with `main` at `dbf2cba` merged in, in the new pinned tools image `c69ff9bc` (`AET-WO-1602`). Every later commit changes this FEEDBACK only.
 - **Host, as `forge`:** `cargo fmt --all -- --check` ok; `cargo clippy --workspace --all-targets -- -D warnings` ok; `cargo test --workspace --no-fail-fast` gave 910 passed, 0 failed.
-- **Image, as root, the `tools` job's steps, offline:**
+- **Image `c69ff9bc`, as root, the `tools` job's steps** (a networked build, then offline):
   - bridge tests ok, `fmt` ok;
   - clippy with `with-tools` ok;
   - `cargo test --workspace --features aethelgard-cli/with-tools --no-fail-fast`: **978 passed, 0 failed**;
   - **canary `tier2_tests_passed=73`, floor 73**;
-  - caps `memory.max` 17179869184, `memory.swap.max` 0, `pids.max` `max` (`aet1601-tools6`).
+  - caps `memory.max` 17179869184, `memory.swap.max` 0, `pids.max` `max` (`aet1601-tools7`).
 
-  Under rootless podman every gate there says `false`, `user_namespace`, as the oracle requires.
-- **`container/engine-smoke.sh`**, run as root in the image with this branch's binaries first on `PATH`: all checks passed.
+  Under rootless podman every gate says `false`, `user_namespace`, as the oracle requires.
+- **`container/engine-smoke.sh`**, run as root in that image with this branch's binaries first on `PATH`: all checks passed.
 - **The quickstart's tool calls**, in its `--user` shape with `-e HOME=/work`, pass on both the README's pinned engine image and this branch's binary (F4).
-- **CI on the reviewed head `7adb923`:** `gates`, `image`, `quickstart` and `tools` all green; `tools` took 47 m under CI's rootful Docker.
-- **CI on `cf3506a` (the ruling's change):** `gates`, `image` and `quickstart` green. In `tools`, every test that ran passed against the oracle under real root, `board_tier2`'s per-gate check included, but one failed: `a_toolbox_another_user_could_write_makes_uid_boundary_false` made the toolbox 0775, which the gid-0 addendum rightly calls clean as root:root. The test now uses 0777. The next head's run is the record.
-- **`origin/main` merged** with merge commits: `cbc0a7b`, `0249824` (`AET-WO-1205`) and `b227c12`, each clean.
+- **CI:**
+  - on `7adb923`: all four jobs green;
+  - on `cf3506a`: `tools` red on the one stale test (0775 root:root is clean under the gid-0 addendum), fixed;
+  - on `c730163`: `gates`, `image` and `quickstart` green.
+
+  The run on this head is the record.
+- **`origin/main` merged** with merge commits: `cbc0a7b`, `0249824` (`AET-WO-1205`), `b227c12`, `05edb43` (`AET-WO-1602`) and `dbf2cba` (the new pin), each clean.
