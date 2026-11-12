@@ -130,6 +130,10 @@ pub struct NetConstraint {
     pub impedance_ohms: Option<u32>,
 }
 
+/// The I2C speeds, in Hz, a bus may declare or have as its ceiling: Standard-mode,
+/// Fast-mode and Fast-mode Plus.
+const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
+
 /// The `schema_version` of a [`SolvedTopology`]. Version 2 added `i2c_speeds`
 /// (`AET-WO-1205`); a version-1 file is refused, never defaulted (`INV-06`).
 pub const SOLVED_SCHEMA_VERSION: u32 = 2;
@@ -775,7 +779,7 @@ impl Specification {
         }
         // 7
         for bus in &self.i2c_buses {
-            if ![100_000, 400_000, 1_000_000].contains(&bus.speed_hz) {
+            if !I2C_SPEEDS_HZ.contains(&bus.speed_hz) {
                 return Err(E::UnsupportedI2cSpeed {
                     id: bus.id.clone(),
                     value: bus.speed_hz,
@@ -995,7 +999,7 @@ impl SolvedTopology {
             }
         }
         for (bus, hz) in &self.i2c_ceilings {
-            if ![100_000, 400_000, 1_000_000].contains(hz) {
+            if !I2C_SPEEDS_HZ.contains(hz) {
                 return Err(E::InvalidCeiling { id: bus.clone() });
             }
         }
@@ -1179,7 +1183,7 @@ impl SolvedTopology {
             return Err(E::SpeedBusMismatch { id: bus.clone() });
         }
         for (bus, &speed_hz) in &self.i2c_speeds {
-            if ![100_000, 400_000, 1_000_000].contains(&speed_hz) {
+            if !I2C_SPEEDS_HZ.contains(&speed_hz) {
                 return Err(E::UnsupportedI2cSpeed {
                     id: bus.clone(),
                     value: speed_hz,
