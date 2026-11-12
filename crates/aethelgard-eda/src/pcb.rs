@@ -291,7 +291,7 @@ pub fn geometry(fp: &Sx, reference: &str) -> Result<Geometry, EmitError> {
 
 /// KiCad's escaping of a net name (`EscapeString`, `CTX_NETNAME`): `/` is
 /// `{slash}`, line breaks are dropped.
-fn escape(s: &str) -> String {
+pub(crate) fn escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
