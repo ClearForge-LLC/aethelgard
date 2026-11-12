@@ -202,13 +202,13 @@ As built for review, `true` claimed more than the run showed in two cases the CL
 
 **The cost, measured in the image** by walking the same paths with `find`: `/opt/cargo/bin` 5 entries in 3 ms; `/opt/rustup` 383 in 4 ms; `/opt/kani` 146 in 3 ms; `/opt/renode` 2,024 in 10 ms; the bridge's `target/debug` 22,352 in 49 ms. Each gate process walks each of its paths once. The ancestor check stops a walk before it starts when an ancestor fails, as `/repo` does below.
 
-**What it says, as measured:**
+**What it says.** The Furnace row is measured (tier 1 and tier 2 in the image). The CI row is the oracle's prediction, which the PR's `tools` run then checks. The engine-image row is a prediction that no run here checks: rootless podman reaches `user_namespace` first.
 
 | where | erc, drc | prove | build | simulate, campaign |
 |---|---|---|---|---|
 | Furnace, rootless podman, as root | `false` `user_namespace` | `false` `user_namespace` | `false` `user_namespace` | `false` `user_namespace` |
-| CI's `tools` job (rootful Docker, root): the PR's own run is the record | `true` | `false` `toolchain` (Kani's kit, A1) | `true` | **`false` `toolchain`** |
-| the engine image as root (the bridge in `/usr/local/bin`) | `true` | `false` `toolchain` | `true` | `true` |
+| CI's `tools` job (rootful Docker, root), predicted | `true` | `false` `toolchain` (Kani's kit, A1) | `true` | **`false` `toolchain`** |
+| the engine image as root (the bridge in `/usr/local/bin`), predicted | `true` | `false` `toolchain` | `true` | `true` |
 | any user | `false` `tool_uid` | `false` `tool_uid` | `false` `tool_uid` | `false` `tool_uid` |
 
 **One difference from the ruling's expectation.** In CI's `tools` job the bridge runs from `/repo/target/debug`, and `/repo` is the runner's checkout, owned by the runner's uid. That uid could replace the bridge, so `simulate` and `campaign` say `toolchain` there, not `true`. The same holds in the local podman layout (`/repo` 0775). It is the truth the rule was asked to tell. In the engine image the bridge sits in `/usr/local/bin`, a system directory.
