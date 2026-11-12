@@ -80,6 +80,7 @@ fn inside() -> BTreeMap<String, String> {
         .args(["check", "drc", "--board"])
         .arg(&board)
         .env_clear()
+        .env("HOME", std::env::var_os("HOME").unwrap_or_default())
         .env("PATH", &toolbox)
         .stdin(Stdio::null())
         .output()

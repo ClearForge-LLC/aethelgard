@@ -45,6 +45,11 @@ fn exit_and_child_faults(mut child: Child) -> (Option<i32>, u64) {
 
 /// Runs the reaper with `pid_args` before its other arguments, on a tool that creates `marker`.
 fn reaper(dir: &Path, pid_args: &[&str], marker: &Path) -> (Option<i32>, u64) {
+    // As root the tool runs as the tool uid (AET-WO-1601 §1.2), and this test
+    // starts the reaper directly, without the CLI's hand-over of the directory.
+    if rustix::process::geteuid().is_root() {
+        std::os::unix::fs::chown(dir, Some(65534), Some(65534)).unwrap();
+    }
     let mut args: Vec<OsString> = vec![REAPER.into()];
     args.extend(pid_args.iter().map(OsString::from));
     args.extend(["--status".into(), dir.join("status").into()]);
@@ -158,9 +163,9 @@ fn a_missing_or_malformed_cli_pid_is_refused_with_64() {
 fn a_cli_told_a_dead_parents_pid_exits_70_and_starts_nothing() {
     let dir = Scratch::new("cli-dead-parent");
     let tb = dir.0.join("toolbox");
-    let tmp = dir.0.join("tmp");
+    let private = common::private_tmp(&format!("{}", line!()));
+    let tmp = private.0.clone();
     fs::create_dir_all(&tb).unwrap();
-    fs::create_dir(&tmp).unwrap();
     let marker = dir.0.join("ran");
     let stub = tb.join("kicad-cli");
     fs::write(
@@ -272,9 +277,9 @@ fn a_guardian_waits_for_its_directory_and_exits_0_when_its_parent_removes_it() {
 fn a_cli_without_the_variable_outlives_the_thread_that_started_it() {
     let dir = Scratch::new("cli-thread");
     let tb = dir.0.join("toolbox");
-    let tmp = dir.0.join("tmp");
+    let private = common::private_tmp(&format!("{}", line!()));
+    let tmp = private.0.clone();
     fs::create_dir_all(&tb).unwrap();
-    fs::create_dir(&tmp).unwrap();
     // Slow to report its version, then a clean DRC report: a pass.
     let report = r#"{"$schema":"https://schemas.kicad.org/drc.v1.json","coordinate_units":"mm","date":"x","ignored_checks":[],"included_severities":["error","warning"],"kicad_version":"10.0.7","source":"b","violations":[],"unconnected_items":[],"schematic_parity":[]}"#;
     let stub = tb.join("kicad-cli");

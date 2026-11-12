@@ -193,6 +193,94 @@ impl Drop for Scratch {
     }
 }
 
+/// A directory the CLI accepts as `TMPDIR` (`AET-WO-1601` §1.4), under the
+/// base it uses itself when `TMPDIR` is unset: `/var/lib/aethelgard` as root,
+/// `$HOME/.cache/aethelgard` otherwise, so no other user can write any of its
+/// ancestors. As root it is searchable by the tool uid. Removed on drop.
+pub fn private_tmp(label: &str) -> Scratch {
+    use std::os::unix::fs::DirBuilderExt;
+    let root = rustix::process::geteuid().is_root();
+    let (base, mode) = if root {
+        (PathBuf::from("/var/lib/aethelgard"), 0o711)
+    } else {
+        let home = std::env::var_os("HOME").expect("HOME is set");
+        (PathBuf::from(home).join(".cache/aethelgard"), 0o700)
+    };
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(mode)
+        .create(&base)
+        .unwrap();
+    let p = base.join(format!("tests-{}-{label}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&p);
+    std::fs::DirBuilder::new().mode(mode).create(&p).unwrap();
+    Scratch(p)
+}
+
+/// The CLI's euid is 0 and its uid map is the initial namespace's identity.
+pub fn initial_root() -> bool {
+    rustix::process::geteuid().is_root()
+        && std::fs::read_to_string("/proc/self/uid_map")
+            .is_ok_and(|m| m.split_whitespace().collect::<Vec<_>>() == ["0", "0", "4294967295"])
+}
+
+/// The directories a tool found on `PATH` adds to its read grant: where it
+/// was found and, through any link, where it lives.
+pub fn tool_dirs(name: &str) -> Vec<PathBuf> {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let found = std::env::split_paths(&path)
+        .map(|d| d.join(name))
+        .find(|p| p.is_file())
+        .unwrap_or_else(|| panic!("{name} is not on PATH"));
+    let real = std::fs::canonicalize(&found).unwrap();
+    vec![
+        found.parent().unwrap().to_path_buf(),
+        real.parent().unwrap().to_path_buf(),
+    ]
+}
+
+/// What `sandbox.uid_boundary` and `uid_boundary_unmet` must say for a tool
+/// whose read grant adds `paths` (ruled on PR #96), worked out apart from the
+/// CLI: `find` beneath each path, and each ancestor's owner and mode.
+pub fn expected_boundary(paths: &[PathBuf]) -> (bool, Option<&'static str>) {
+    use std::os::unix::fs::MetadataExt;
+    if !rustix::process::geteuid().is_root() {
+        return (false, Some("tool_uid"));
+    }
+    if !initial_root() {
+        return (false, Some("user_namespace"));
+    }
+    let clean = |p: &PathBuf| {
+        let real = std::fs::canonicalize(p).unwrap();
+        let system = [
+            "/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc", "/proc", "/dev",
+        ];
+        if system.iter().any(|s| real.starts_with(s)) {
+            return true;
+        }
+        let ancestors = real.ancestors().skip(1).all(|a| {
+            let m = std::fs::metadata(a).unwrap();
+            let writable = m.mode() & 0o002 != 0 || (m.mode() & 0o020 != 0 && m.gid() != 0);
+            m.uid() == 0 && (!writable || m.mode() & 0o1000 != 0)
+        });
+        let out = Command::new("find")
+            .arg(&real)
+            .args([
+                "!", "-type", "l", "(", "!", "-uid", "0", "-o", "-perm", "-002", "-o", "(",
+                "-perm", "-020", "!", "-gid", "0", ")", ")",
+            ])
+            .args(["-print", "-quit"])
+            .output()
+            .unwrap();
+        ancestors && out.status.success() && out.stdout.is_empty()
+    };
+    if paths.iter().all(clean) {
+        (true, None)
+    } else {
+        (false, Some("toolchain"))
+    }
+}
+
 /// Polls until the condition holds or a deadline passes.
 pub fn eventually(what: &str, mut cond: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(30);
