@@ -88,7 +88,7 @@ Covers are the two proofs' (`every_valid_sequence`, `i2c1_transfer_is_bounded_an
 | C3b: CLI and racer uid 1001, this branch | all four broke; `false` | **broke** `897184e4` | **broke** 1, 1 | **broke** `e678e904` | **broke** | `false`, every gate |
 
 - **C2 is not vacuous.** uid 4242 cannot list `/var/lib/aethelgard` (0711), so it found each scratch path in `/proc/*/cmdline`, then failed on every attempt, 200 times per gate and mode. For example: `…/tool/crate/firmware/src/main.rs: Permission denied` and `mv: cannot stat '…/tool/crate': Permission denied` (`C2/R1.racer.log`); `mkdir: cannot create directory '/var/lib/aethelgard/aethelgard-…': Permission denied` (`C2/R2.racer.log`).
-- **C2b shows the sticky directory at work.** As 65534 the racer passes the call directory (group 65534). Each write to the copy was `Permission denied` (root-owned 0444), and each `mv` of the crate aside was refused (sticky 1770). B2's plant succeeded, because the tool's `HOME` is the directory the tool uid must write. That is the residual stated in the README.
+- **C2b shows the sticky directory at work.** (C2 and C2b ran with the tool gid still 65534; the adversary's A3 then moved it to 65533 and re-tested B2.) As 65534 the racer passes the call directory (group 65534). Each write to the copy was `Permission denied` (root-owned 0444), and each `mv` of the crate aside was refused (sticky 1770). B2's plant succeeded, because the tool's `HOME` is the directory the tool uid must write. That is the residual stated in the README.
 - **C2b R1** was re-run after its first run was stopped by my own concurrent rebuild of the shared binary (`cannot run gate build: No such file or directory`, kept as `R1-stopped-by-rebuild.json`). The re-run held: ELF `2d9ee264`, covers 9 and 7, `true`, 0 successful attempts. Writes were `Permission denied`; `mv` of the crate aside was `Operation not permitted` (the sticky bit).
 - **C3 first ran as root by mistake.** `--userns=keep-id` alone left the image's `root` user. That run is kept as `C3-was-root.log` and is not counted.
 
@@ -254,7 +254,8 @@ Reported, not removed:
   - sheets, nested sheets and a schematic the reader refuses are exit 3; the emitted schematic passes;
   - past the cap, a child cut off and the tool cut off are both exit 5; the cap is soft and hard and cannot be raised.
 - **New, unit:**
-  - `run.rs`: the status line's `uid_boundary` is exactly `0` or `1`; the read-back needs all four ids and no group; the hand-over is once, and refused if an entry is not root's (root only).
+  - `run.rs`: the status line's `uid_boundary` is exactly `0` or `1`; the read-back needs all four ids and no group; the hand-over is once, keeps an add-only directory, and is refused for an entry that is not root's or is a link (root only).
+  - tier 1, `the_trampoline_leaves_the_tool_its_ids_and_no_capability_at_all`: the trampoline started as the reaper starts it, on a tool reading its own `/proc/self/status`. As root: uid 65534, gid 65533, no group, every capability set zero, the bounding set included. As a user: its own ids and no capability.
   - `verify.rs`: each gate's `uid_boundary` is its own verdict's; the campaign's is an AND.
   - `firmware.rs`: reading beneath `target`.
 - **New, tier 2** (`board_tier2.rs`, counted; `TIER2_MIN` 71 → 73 with the reason beside it):
@@ -265,7 +266,7 @@ Reported, not removed:
   - a `campaign_tier1` test asserts the run line's `uid_boundary`;
   - `lifecycle_tier1`'s direct-reaper helper hands its directory to 65534 when root, since it bypasses the CLI's hand-over.
 - **Changed for §1.4, not weakened:**
-  - the 19 tier-1 call sites that clear the environment now pass the test's own `HOME` through, without which a user CLI has nowhere private;
+  - 14 tier-1 call sites that clear the environment and set no `TMPDIR` now pass the test's own `HOME` through, without which a user CLI has nowhere private;
   - `lifecycle_tier1` and `mcp_tier1` take their observed `TMPDIR` from `common::private_tmp`, under the same base, instead of `/tmp`.
 
 ## The fence
