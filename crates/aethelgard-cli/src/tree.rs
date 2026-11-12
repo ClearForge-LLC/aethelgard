@@ -170,7 +170,8 @@ pub fn diff(
             seen.insert(child.clone());
             match files.get(&child) {
                 None => out.push(Difference::Extra(child)),
-                Some(text) if !kind.is_file() || !same(&entry.path(), text.as_bytes())? => {
+                // `same` is false for anything but a regular file.
+                Some(text) if !same(&entry.path(), text.as_bytes())? => {
                     out.push(Difference::Differs(child));
                 }
                 Some(_) => {}
@@ -293,6 +294,11 @@ mod tests {
             let _ = fs::remove_dir_all(&out);
             let e = write(&out, &BTreeMap::from([(bad.to_owned(), String::new())])).unwrap_err();
             assert_eq!(e.kind, "UnwritableOutput", "{bad}");
+            assert!(
+                e.message.contains("is not a relative path"),
+                "{bad}: {}",
+                e.message
+            );
         }
         assert!(!out.parent().unwrap().join("escape").exists());
         for p in [&dir, &target, &out] {

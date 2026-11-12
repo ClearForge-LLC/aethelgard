@@ -198,6 +198,16 @@ fn built_from_the_copy(m: &Messages, sources: &[PathBuf], copy: &Path) -> Result
     Ok(())
 }
 
+/// The build's outcome from its two witnesses: `Some(true)` built,
+/// `Some(false)` the crate failed to build, `None` neither (`ToolError`).
+fn classify(code: i32, finished: Option<bool>) -> Option<bool> {
+    match (code, finished) {
+        (0, Some(true)) => Some(true),
+        (101, Some(false)) => Some(false),
+        _ => None,
+    }
+}
+
 /// The one executable cargo reports, which must be a regular file inside
 /// `target`.
 fn artifact(m: &Messages, target: &Path) -> Result<PathBuf, Stop> {
@@ -295,22 +305,23 @@ pub fn build(crate_dir: &Path, out: &Path) -> Result<verdict::Verdict, Stop> {
     // 101 is every cargo failure, a configuration it cannot load included, so
     // only 101 with a build that finished unsuccessfully is the crate's fault.
     let m = messages(&ran.stdout);
-    let (findings, elf) = match (code, m.finished) {
-        (0, Some(true)) => {
+    let (findings, elf) = match classify(code, m.finished) {
+        Some(true) => {
             let elf = artifact(&m, &target)?;
             built_from_the_copy(&m, &dep_info(&elf)?, &input.copy)?;
             (Vec::new(), Some(elf))
         }
-        (101, Some(false)) => {
+        Some(false) => {
             let line = said::first_error(&String::from_utf8_lossy(&ran.stderr), Style::Cargo)
                 .unwrap_or_else(|| "the crate did not build".to_owned());
             (vec![Finding::plain("build_failed", line)], None)
         }
-        (other, finished) => {
+        None => {
             return Err(Stop::tool_error(
                 "cargo",
                 format!(
-                    "cargo exited {other} with build-finished {finished:?}, which is neither a build nor a failed one{}",
+                    "cargo exited {code} with build-finished {:?}, which is neither a build nor a failed one{}",
+                    m.finished,
                     said::suffix(&ran.text(), Style::Cargo)
                 ),
             ));
@@ -382,6 +393,23 @@ mod tests {
         let e = built_from_the_copy(&messages(script.as_bytes()), &inside, &copy).unwrap_err();
         assert!(e.message.contains("build script"), "{}", e.message);
         fs::remove_dir_all(&base).unwrap();
+    }
+
+    /// Adversarial B7 and mutants M21, M22: only both witnesses agreeing is a
+    /// build or a failed one.
+    #[test]
+    fn only_both_witnesses_agreeing_is_a_build_or_a_failure() {
+        assert_eq!(classify(0, Some(true)), Some(true));
+        assert_eq!(classify(101, Some(false)), Some(false));
+        for (code, finished) in [
+            (0, None),
+            (0, Some(false)),
+            (101, None),
+            (101, Some(true)),
+            (1, Some(false)),
+        ] {
+            assert_eq!(classify(code, finished), None, "{code} {finished:?}");
+        }
     }
 
     /// Adversarial B7: no `build-finished` (cargo could not load its
