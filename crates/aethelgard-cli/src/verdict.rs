@@ -26,6 +26,18 @@ pub struct Verdict {
     pub schematic: Option<InputReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub harness: Option<String>,
+    /// `prove` only (`AET-WO-3301` §1.4): `generated` when the crate copied is
+    /// byte for byte the board crate `generate` writes for `--spec`, else
+    /// `supplied`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub harness_provenance: Option<&'static str>,
+    /// `prove` only: the cover properties Kani reported for the harness, 0
+    /// when it reported none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cover_count: Option<u32>,
+    /// `build` only: the ELF written, and its sha256.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub elf: Option<InputReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub machine: Option<Machine>,
     /// `simulate --firmware` only: what the boot was judged by.
@@ -220,6 +232,9 @@ impl Verdict {
             specification_sha256: None,
             schematic: None,
             harness: None,
+            harness_provenance: None,
+            cover_count: None,
+            elf: None,
             machine: None,
             boot: None,
             analog: None,

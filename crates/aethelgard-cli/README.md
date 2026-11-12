@@ -8,12 +8,12 @@ The repository `README.md`'s `## Quickstart` runs `emit`, `check erc`, `check dr
 
 | Code | Meaning | `error.kind` values |
 |---|---|---|
-| `0` | `validate`: the specification is valid. `solve`: it was solved, and stdout is the `SolvedTopology`. A tool subcommand: the tool ran and its verdict is pass. `campaign`: every scenario's verdict matched its expectation. `replay`: the run replayed to its committed hash. `attribute`: the run is attributed `electrical`, `software` or `none`. `propose`: a proposal was written | none: stdout is the success report, the `SolvedTopology`, or the verdict |
-| `1` | A tool subcommand: the tool ran and its verdict is fail (violations found, the proof failed, a declared cover was never reached, the crate did not compile, the harness does not exist, the platform did not load). The input is at fault; the tool worked. `campaign`: every scenario ran and was archived, and at least one verdict did not match its expectation. `attribute`: the run is `indeterminate`. `propose`: nothing is proposed, and `proposal.json` says why | none: stdout is the verdict, the attribution, or `propose`'s line |
+| `0` | `validate`: the specification is valid. `solve`: it was solved, and stdout is the `SolvedTopology`. A tool subcommand: the tool ran and its verdict is pass. `campaign`: every scenario's verdict matched its expectation. `replay`: the run replayed to its committed hash. `attribute`: the run is attributed `electrical`, `software` or `none`. `propose`: a proposal was written. `generate`: the tree was written. `verify`: every gate passed | none: stdout is the success report, the `SolvedTopology`, or the verdict |
+| `1` | A tool subcommand: the tool ran and its verdict is fail (violations found, the proof failed, a declared cover was never reached, the crate did not compile, the harness does not exist, the platform did not load). The input is at fault; the tool worked. `campaign`: every scenario ran and was archived, and at least one verdict did not match its expectation. `attribute`: the run is `indeterminate`. `propose`: nothing is proposed, and `proposal.json` says why. `build`: the crate did not build (`build_failed`). `verify`: a gate's verdict is fail, or `--against` differs from the generated tree | none: stdout is the verdict, the attribution, or `propose`'s line |
 | `2` | Invalid specification: well-formed JSON of the wrong shape (unknown, missing or duplicate field, wrong type including deep nesting where a value was expected, negative or overflowing number), or a value `validate()` refuses. `solve` also: a part with no pin table, or a specification the solver cannot realize. `emit` also: what `solve` refuses, and a part with no vendored model, an address the part cannot take, a reference used twice, a net, rail or reference the emitter needs for itself, a net the solver did not place, a pin the MCU's symbol lacks, or a board the router cannot complete. `check drc --spec`: the specification refused as `validate` refuses it. `simulate --firmware`: the specification refused as `solve` refuses it, or a solved topology the twin cannot lower to a platform | `SchemaViolation`, or an `IrValidationError` variant name such as `InvalidIdentifier`, `NoVoltageDomain`, `UnknownDomain`, `DuplicateI2cAddress` or `ZeroNominalVoltage`; `InvalidIdentifier` also carries `error.path`. `solve` also: `UnknownPart`, or a `SolveError` kind (below), which carries `error.claimants`. `emit` also: `UnknownPart`, `UnsupportedAddress`, `DuplicateReference` (also two references KiCad takes for one, differing only in case or in a leading zero: `u2` and `U2`, `U01` and `U1`), `ReservedName` (also a net or rail starting `unconnected-`), `UnsolvedNet`, `UnknownPin`, `Unroutable` (`id` the reference, net or name; for `Unroutable`, the net the router could not complete, empty when the board as a whole is refused). `simulate --firmware` also: `UnsupportedPeripheral`, `NotInRenode`, `InvalidPin`, `AddressMismatch`. `campaign` (below): a scenario's `SchemaViolation`, `UnsupportedSchemaVersion`, `ExpectContradiction`, `DuplicateOverride`, `UnknownBus`, `UnknownNet`, `DuplicateScenario`, and what `solve` refuses of the overridden specification |
-| `3` | Unreadable input. `validate`: the file or stdin cannot be read, is empty, is more than 16 MiB, or is not one JSON document (syntax error, trailing data, a byte-order mark). A tool subcommand: an input path that does not exist, cannot be read, or is not a regular file (not a directory, for `--crate`); a crate holding a symlink, a special file or a non-UTF-8 name; a Renode built-in path outside Renode's own tree; `InputTooLarge`: a copied file, or a crate's files together, of more than 16 MiB (16,777,216 bytes), or a crate of more than 4,096 files (counted after `target/` is skipped). The byte cap is enforced while copying, never by truncating. `check drc`: a board that is not one KiCad S-expression, or one that carries a rule of its own, refused before any tool runs: a local `(clearance …)` on a pad, a footprint or a zone, or a net class defined in the board (`AET-WO-1300` D4). `check drc --schematic`: a schematic that is not one flat KiCad schematic, or a schematic or board carrying what would pass parity unmatched (below). `emit`: an `--out` that cannot be created, or a file there that is a symlink or not a regular file. `simulate --firmware`, before Renode is looked for: a `--platform` that is not byte for byte the platform `aethelgard-twin` emits for `--spec`, or an `@` path; a firmware that is not ELF32 little-endian `EM_ARM` `ET_EXEC` with a sound program header table; a `PT_LOAD` whose physical or virtual range is outside the part's flash or RAM, two `PT_LOAD`s whose memory overlaps, or file bytes over the boot word at either address (below) | `UnreadableInput`, `InputTooLarge`, `InvalidJson`; `campaign`: `BaseOutsideRoot`, `RunExists`, `UnwritableOutput`, `ArchiveWriteFailed`; `campaign` also `FirmwareChanged`; `replay`, `attribute` and `propose`: every `aethelgard-chaos` archive refusal by its own name (`HashMismatch`, `ReplayDiverged`, `UnexpectedEntry`, …), `RunIdMismatch` and `NotACampaignRun`; `attribute` also `Undefined` or `MalformedSource`, a register fact the run names that the ST header lacks; `propose` also what `campaign` refuses of the scenario's file or base, `ScenarioMismatch`, `BaseChanged`, `TopologyChanged` and `UnwritableOutput`; `MalformedBoard`, `LocalClearance`, `BoardNetClass` and `BoardWaiver` (`id` naming the carrier, such as `pad 1 of footprint R7`); `MalformedSchematic`, `HierarchicalSchematic`, `ReservedNetName`, `BoardOnlyFootprint`, `NoConnectPadOnNet`, `SharedUnconnectedNet`; `UnwritableOutput`; `PlatformNotEmitted`, `MalformedFirmware` (overlapping memory included), `FirmwareOutsideMemory`, `FirmwareLoadsBootWord` |
+| `3` | Unreadable input. `validate`: the file or stdin cannot be read, is empty, is more than 16 MiB, or is not one JSON document (syntax error, trailing data, a byte-order mark). A tool subcommand: an input path that does not exist, cannot be read, or is not a regular file (not a directory, for `--crate`); a crate holding a symlink, a special file or a non-UTF-8 name; a Renode built-in path outside Renode's own tree; `InputTooLarge`: a copied file, or a crate's files together, of more than 16 MiB (16,777,216 bytes), or a crate of more than 4,096 files (counted after `target/` is skipped). The byte cap is enforced while copying, never by truncating. `check drc`: a board that is not one KiCad S-expression, or one that carries a rule of its own, refused before any tool runs: a local `(clearance …)` on a pad, a footprint or a zone, or a net class defined in the board (`AET-WO-1300` D4). `check drc --schematic`: a schematic that is not one flat KiCad schematic, or a schematic or board carrying what would pass parity unmatched (below). `emit`: an `--out` that cannot be created, or a file there that is a symlink or not a regular file. `simulate --firmware`, before Renode is looked for: a `--platform` that is not byte for byte the platform `aethelgard-twin` emits for `--spec`, or an `@` path; a firmware that is not ELF32 little-endian `EM_ARM` `ET_EXEC` with a sound program header table; a `PT_LOAD` whose physical or virtual range is outside the part's flash or RAM, two `PT_LOAD`s whose memory overlaps, or file bytes over the boot word at either address (below) | `UnreadableInput`, `InputTooLarge`, `InvalidJson`; `campaign`: `BaseOutsideRoot`, `RunExists`, `UnwritableOutput`, `ArchiveWriteFailed`; `campaign` also `FirmwareChanged`; `replay`, `attribute` and `propose`: every `aethelgard-chaos` archive refusal by its own name (`HashMismatch`, `ReplayDiverged`, `UnexpectedEntry`, …), `RunIdMismatch` and `NotACampaignRun`; `attribute` also `Undefined` or `MalformedSource`, a register fact the run names that the ST header lacks; `propose` also what `campaign` refuses of the scenario's file or base, `ScenarioMismatch`, `BaseChanged`, `TopologyChanged` and `UnwritableOutput`; `MalformedBoard`, `LocalClearance`, `BoardNetClass` and `BoardWaiver` (`id` naming the carrier, such as `pad 1 of footprint R7`); `MalformedSchematic`, `HierarchicalSchematic`, `ReservedNetName`, `BoardOnlyFootprint`, `NoConnectPadOnNet`, `SharedUnconnectedNet`; `UnwritableOutput`; `PlatformNotEmitted`, `MalformedFirmware` (overlapping memory included), `FirmwareOutsideMemory`, `FirmwareLoadsBootWord`; `build`: `CrateHasDependency`, `NotABoardCrate`, `UnwritableOutput`; `verify`: `ScenarioBaseMismatch` |
 | `4` | The tool cannot be used: it is not on `PATH`, is not executable, will not report its version, or lacks an environment variable it needs; for `simulate --firmware`, a Renode other than the 1.17.0 the twin's platform is pinned to; or the sandbox is unavailable. Never a verdict (`INV-06`) | `ToolMissing` (`id`: the tool), `ToolUnusable` (`id`: the tool, or the missing variable), `SandboxUnavailable` (`id`: `landlock`, `seccomp`, or `descriptors`); `simulate --firmware`: `BridgeUnavailable` (`id`: `aethelgard-bridge`) when the bridge is not beside the `aethelgard` binary |
-| `5` | The tool ran but its output cannot be trusted as a verdict: killed by a signal, an exit code outside the ones measured for it, a missing, unparseable or oversized report or output, or two witnesses that disagree. When `prove` or `simulate` cannot recognise its tool's outcome, the message ends `; the tool said: <line>`, every `error:` line (Kani, cargo) or the first `[ERROR]` line (Renode), as printable ASCII, cut to 400 bytes for cargo or 240 for Renode; for cargo it is every `error:` line joined by `|`. Never read as pass or fail | `ToolError` (`id`: the tool) |
+| `5` | The tool ran but its output cannot be trusted as a verdict: killed by a signal, an exit code outside the ones measured for it, a missing, unparseable or oversized report or output, or two witnesses that disagree. When `prove` or `simulate` cannot recognise its tool's outcome, the message ends `; the tool said: <line>`, every `error:` line (Kani, cargo) or the first `[ERROR]` line (Renode), as printable ASCII, cut to 400 bytes for cargo or 240 for Renode; for cargo it is every `error:` line joined by `|`. Never read as pass or fail | `ToolError` (`id`: the tool); `verify`: `BindingMismatch` (`id`: the gate), a gate that judged bytes other than the generated ones |
 | `6` | `propose` only: the run's failure is a generator defect, and `generator-report.json` was written beside `proposal.json`. MCP reports it as a successful call, as it does `0` and `1` | none: stdout is `propose`'s line |
 | `64` | Usage error: unknown subcommand or flag, missing subcommand or required flag. `simulate`: `--firmware`, `--spec` and `--for` given other than all together, or a `--for` that is not an integer without a leading zero then `ns`, `us` or `ms`, is above 100 ms, or is not a multiple of 10 ns | `UsageError` |
 | `70` | Internal error: the report could not be written to stdout (for example, the reader closed the pipe), the parent-death signal could not be set, or the process that started this one is already gone (see the reaper below); or `solve`'s vendored pin table, or `emit`'s vendored KiCad library, failed its own hash or parse check, which only a corrupted build can cause. Nothing is printed on stdout; the reason goes to stderr | none |
@@ -93,12 +93,32 @@ All three are byte-identical for the same specification. It prints one line, exi
 - **What the emitter adds:** pull-ups per I2C bus, decoupling, VCAP capacitors, strap resistors, `PWR_FLAG`s and no-connects. `crates/aethelgard-eda/README.md` describes them.
 - **Net names:** the schematic names each signal net by a local label, so KiCad names the net `/<net>`. A rail's net is its domain id, and ground is `GND`.
 
+## `generate`
+
+```
+aethelgard generate --spec <path> --out <dir>
+```
+
+Reads, validates and solves exactly as `solve` does, with the same refusals, then writes everything the specification produces under `<dir>`, which must be empty or absent (`AET-WO-3301` §1.1):
+
+- `kicad/`: the schematic, bill of materials and board, exactly as `emit` writes them;
+- `board/`: the board crate `<project_name>-board` (`aethelgard_svd_hal::board::generate_with`, reading each I2C device the twin has a model for), its firmware crate in `board/firmware/`, and the Renode platform `board/<project_name>.repl` (`aethelgard_twin::platform::emit`).
+
+`board/` is what `boards/<project_name>/` holds: from `examples/sentinel-01-minimal.json`, `generate` reproduces `boards/sentinel-01/**` and `emit`'s three files byte for byte. One function, `aethelgard_cli::generate::tree`, composes the generators; the regeneration test of `boards/` calls it too, so the two cannot drift. Nothing else is written and no process is started. Every directory and file is created through a descriptor of its parent, never through a symlink and never over anything that exists: a `<dir>` that is not empty, is a file or is a symlink is refused, exit `3`, `UnwritableOutput`. It prints one line, exit `0`:
+
+```json
+{"ok":true,"project_name":"sentinel-01","specification_sha256":"<64 hex>","topology_sha256":"<64 hex>","files":{"board/Cargo.lock":"<64 hex>",…,"kicad/sentinel-01.kicad_sch":"<64 hex>"}}
+```
+
+`topology_sha256` is the sha256 of the topology as `solve` prints it, without the newline: the hash `campaign` records.
+
 ## The tool subcommands
 
 ```
 aethelgard check drc --board <file.kicad_pcb> [--spec <specification.json>] [--schematic <file.kicad_sch>]
 aethelgard check erc --schematic <file.kicad_sch>
-aethelgard prove --crate <dir> --harness <name>
+aethelgard prove --crate <dir> --harness <name> [--spec <specification.json>]
+aethelgard build --crate <board-dir> --out <file.elf>
 aethelgard simulate --platform <file.repl | @path-inside-renode>
 aethelgard simulate --platform <emitted.repl> --firmware <elf> --spec <specification.json> --for <time>
 ```
@@ -196,7 +216,7 @@ Every KiCad finding is a fail, warnings included (ruled on PR #12): the pass cri
 - `input.path` is the canonical path of the input as given (for an `@` platform, the file inside Renode's tree); `input.sha256` is the hash of the input's bytes as copied. For `check drc` the tool then judges that copy with the gate's setup block written over the board's, a function of those bytes alone (above).
 - `tool.version` is the tool's own version line, exactly as printed; `tool.exit_code` is the exit code of the judging run.
 - `findings` is normalized to `{kind, severity, message, where}`. For KiCad, `kind` is the report's `type` (`clearance`, `track_dangling`, `pin_not_connected`, `label_dangling`, …), `severity` is `error` or `warning`, `message` is the report's `description`, and `where` lists the items it names. For `prove` and `simulate`, `kind` is one of the names in the table above, `severity` is `error`, and `where` is empty.
-- `check drc` and `check erc` also carry `included_severities` from the report; `check drc` carries `rules`, with `--spec` `specification_sha256`, and with `--schematic` `schematic` (above); `prove` carries `harness`; `simulate` carries `machine`: `{"cpus":["cpu"],"peripherals":[{"name":"cpu","type":"CortexM"},…]}`, and with `--firmware` also `boot` (below).
+- `check drc` and `check erc` also carry `included_severities` from the report; `check drc` carries `rules`, with `--spec` `specification_sha256`, and with `--schematic` `schematic` (above); `prove` carries `harness` (the name), `harness_provenance` and `cover_count` (below); `build` carries `elf`, `{"path","sha256"}` of the ELF written; `simulate` carries `machine`: `{"cpus":["cpu"],"peripherals":[{"name":"cpu","type":"CortexM"},…]}`, and with `--firmware` also `boot` (below).
 
 A verdict that cannot name its input's hash and its judge's version is never printed; the call refuses instead.
 
@@ -282,9 +302,25 @@ The verdict carries the pass beside `boot`, never inside it: at 47 kΩ the refer
            "from":["analog.rise_time_measured > ceiling_ns"],"nets":["I2C_SCL","I2C_SDA"],"firmware_sees":"…"}]
 ```
 
+### Harness provenance (`prove`)
+
+Each gate binds only its own input (`RUL-19` (2)): `prove` judges the crate it is handed, and a crate's own harness can pass vacuously. So every `prove` verdict says which it judged (`AET-WO-3301` §1.4):
+
+- `harness_provenance` is `generated` when `--spec` is given and the crate as copied is byte for byte the board crate `generate` writes for that specification: every file, none missing and none extra (a top-level `target/` is not part of a crate). Otherwise, and always without `--spec`, it is `supplied`. The whole crate is compared, not only `src/proofs.rs`, because an unchanged harness over rewired code is not the generated proof.
+- `cover_count` is the number of cover properties Kani reported for the harness, `0` when it reported none.
+- A `--spec` that `solve` or `generate` refuses is refused as they refuse it, before any tool is looked for.
+
+### Building firmware (`build`)
+
+`build --crate <dir> --out <file>` builds the firmware ELF of a board crate: `<dir>` is the board crate `generate` writes, whose `firmware/` crate depends on it by `path = ".."`. The crate is copied and checked before any tool is looked for: it must hold `firmware/Cargo.toml` (else exit `3`, `NotABoardCrate`), and neither `Cargo.lock` nor `firmware/Cargo.lock` may name a package with a `source`, a registry or git dependency (exit `3`, `CrateHasDependency`, `RUL-04`). `--out` must not exist (exit `3`, `UnwritableOutput`).
+
+Cargo then runs in the sandbox, as `prove` runs it: `cargo build --release --offline --locked --target thumbv7em-none-eabihf --config profile.release.strip="symbols" --message-format=json-render-diagnostics` in the copy's `firmware/`, with only `RUSTUP_HOME`, `PATH`, `CARGO_TARGET_DIR` and, when the caller set it, `RUSTUP_TOOLCHAIN` (exit `4` naming `RUSTUP_HOME` or `PATH` if unset). Exit `0` with exactly one executable reported is a pass: the ELF is written to `--out` and named in `elf`. Exit `101` with an `error:` line is a fail, `build_failed`; anything else is `ToolError`.
+
+**The ELF is the same wherever the crate is.** Cargo hashes a path dependency's absolute path into every symbol name, so an unstripped build differs by path in `.strtab` alone (`AET-WO-3200` F11). `--remap-path-prefix` does not reach those hashes; stripping does, and it leaves every loaded segment, so `simulate`'s `image_sha256`, unchanged (both measured). The strip is on cargo's own command line, which neither the crate's manifest nor its `.cargo/config.toml` overrides.
+
 ### The crate hash
 
-`prove`'s `input.sha256` covers the crate's file tree. For every regular file beneath the crate directory, except under a top-level `target/` directory, take the line `<sha256 of the file, lowercase hex>  <path relative to the crate, with / separators>\n`. Sort the lines by path, byte order, and hash their concatenation. A crate holding a symlink, a special file or a name that is not UTF-8 is refused with exit `3`. The same tree, minus `target/`, is what is copied and judged.
+`prove`'s and `build`'s `input.sha256` covers the crate's file tree. For every regular file beneath the crate directory, except under a top-level `target/` directory, take the line `<sha256 of the file, lowercase hex>  <path relative to the crate, with / separators>\n`. Sort the lines by path, byte order, and hash their concatenation. A crate holding a symlink, a special file or a name that is not UTF-8 is refused with exit `3`. The same tree, minus `target/`, is what is copied and judged.
 
 ### Running it
 
@@ -459,6 +495,38 @@ It prints one line, and exits `0` with a proposal, `6` with a generator report, 
 
 It reads the run directory, the scenario and its base, and the vendored pin table and ST header; it starts no process. A proposal is evidence about the specification, not the board, and the gates judge it like any other specification: `tests/attribute_seeded.rs` takes each `proposed-spec.json` through `validate`, `solve`, `emit`, ERC, DRC with schematic parity, the generated board crate's proof, and a campaign whose run `attribute` names `N1`. A proposal committed under `proposals/` re-runs to its own bytes there.
 
+## `verify`
+
+```
+aethelgard verify --spec <path> [--scenarios <file>...] [--against <dir>]
+```
+
+One verdict that binds a specification to every artifact it produced (`INV-01`, `INV-03`, `RUL-19` (2), `AET-WO-3301` §1.3). Only `verify` binds a pair; every other gate binds only its own input.
+
+1. **Generate in memory.** Read, validate and solve `--spec` as `solve` does, and generate the tree as `generate` does. Every hash the verdict names comes from these bytes.
+2. **Check the scenarios.** Each is read as `campaign` reads it, and its `base` must be byte for byte `--spec` (exit `3`, `ScenarioBaseMismatch`).
+3. **`--against <dir>`**: compare `<dir>` with the tree byte for byte (`board/target/` is skipped, as a crate's `target/` is; a symlink is never followed and is a difference). Any differing, missing or extra file is a fail, exit `1`, with one finding each (`against_differs`, `against_missing`, `against_extra`, the path first in `message`), and no gate runs. This is `INV-01`'s "regenerate and diff", runnable by a user.
+4. **Run every gate on the tree**, written into a guarded scratch directory, each as this binary's own subcommand: `check erc` on the schematic; `check drc --spec --schematic` on the board; `prove --spec` on the board crate, once for each harness of its `src/proofs.rs`; `build`; `simulate --firmware` with the generated platform for `100ms`; and, with `--scenarios`, `campaign` over them with that ELF into a scratch archive.
+5. **Bind each gate to the bytes.** The hash each gate reports for what it judged must be the generated one: the schematic, the board, the parity schematic and the specification (ERC, DRC); the crate hash of `board/`, and `harness_provenance` `generated` (`prove`, `build`); the platform, the ELF `build` reported and the specification (`simulate`); and each run id, recomputed from the scenario, `--spec` with its overrides and the ELF (`campaign`). Anything else is exit `5`, `BindingMismatch`, naming the gate: a file swapped in scratch, or a gate that judged other bytes, is never named in a verdict.
+
+A gate that refuses stops `verify` with the gate's own `kind`, `id` and exit code, its `message` prefixed with the gate's name (`INV-06`). Otherwise it prints one line, exit `0` when every gate passed and `1` when any failed:
+
+```json
+{"ok":true,"verdict":"pass","check":"verify","engine_version":"0.1.0","project_name":"sentinel-01",
+ "specification_sha256":"<64 hex>","topology_sha256":"<64 hex>","files":{"board/Cargo.lock":"<64 hex>",…},
+ "against":"identical","elf_sha256":"<64 hex>","rise_times":"computed from declared values",
+ "gates":[{"gate":"erc","verdict":"pass","exit_code":0,"tool_version":"10.0.7","input_sha256":"<64 hex>","findings":[]},…,
+          {"gate":"prove","harness":"proofs::every_valid_sequence","verdict":"pass",…,"harness_provenance":"generated","cover_count":9,"findings":[]},…],
+ "campaign":[{"scenario":"pullup-2k2","verdict":"pass","expect":"pass","matched":true,"findings":[],"run_id":"<32 hex>","state_sequence_hash":"<64 hex>"}],
+ "findings":[]}
+```
+
+- A gate after a failed `build` is `not_run`, with `exit_code` `null`.
+- **The campaign gate passes only if every run's own verdict is `pass` and matched.** A scenario that expects a fail can never let `verify` pass: the 47 kΩ scenario's campaign exits `0`, but `verify` fails with its findings (`analog_rise_exceeds_ceiling`, `i2c_timeout`).
+- `rise_times` says what the analog records are (`RUL-19` (1)): computed from the declared pull-up and capacitance, never measured on a board.
+- The verdict names no path in scratch, so two runs on the same inputs print the same bytes.
+- `verify` takes as long as its gates: about 2 minutes 15 seconds for the reference with one scenario, inside the tools image on Furnace, most of it the two proofs.
+
 ## `mcp`
 
 `aethelgard mcp` serves the other subcommands as [Model Context Protocol](https://modelcontextprotocol.io) tools on stdin and stdout (`RUL-10`, built on `rmcp` 3.7.0 with its `server` and `transport-io` features only). It takes no arguments, listens on no socket, holds no credential, and exits `0` when stdin closes. Stdout carries protocol messages and nothing else; diagnostics go to stderr. It is not a tool itself and adds no tool behaviour.
@@ -469,7 +537,7 @@ Before it starts, it runs the trampoline's inherited-descriptor check. A descrip
 
 Generated at startup from the unbuilt `clap` command tree, never written by hand, so a new subcommand appears with no change to the `mcp` module (`INV-01`):
 
-- one tool per leaf subcommand, named by its path joined with `_`: `validate`, `solve`, `emit`, `check_drc`, `check_erc`, `prove`, `simulate` (whose optional `firmware`, `spec` and `for` are the boot), `campaign`, `replay` and `attribute`. `help` and `mcp` are never tools;
+- one tool per leaf subcommand, named by its path joined with `_`: `validate`, `solve`, `emit`, `generate`, `build`, `verify` (whose `scenarios` is repeatable and optional), `check_drc`, `check_erc`, `prove` (whose optional `spec` gives `harness_provenance`), `simulate` (whose optional `firmware`, `spec` and `for` are the boot), `campaign`, `replay`, `attribute` and `propose`. `help` and `mcp` are never tools;
 - the description is the subcommand's about text;
 - the input schema is an object with one **string** property per declared argument, keyed by its **long name** (`prove`'s directory is `crate`, not `crate_dir`), `required` exactly when `clap` requires it, and `additionalProperties` false. A repeatable argument (`campaign`'s `scenarios`) is a non-empty **array of strings** instead.
 

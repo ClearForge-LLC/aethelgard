@@ -502,6 +502,9 @@ mod tests {
                 "validate",
                 "solve",
                 "emit",
+                "generate",
+                "build",
+                "verify",
                 "check_drc",
                 "check_erc",
                 "prove",
@@ -523,7 +526,7 @@ mod tests {
         assert_eq!(s["type"], "object");
         let mut keys: Vec<_> = s["properties"].as_object().unwrap().keys().collect();
         keys.sort();
-        assert_eq!(keys, ["crate", "harness"]);
+        assert_eq!(keys, ["crate", "harness", "spec"]);
         assert_eq!(s["required"], json!(["crate", "harness"]));
         assert_eq!(s["properties"]["crate"]["type"], "string");
         let validate = all.iter().find(|t| t.name == "validate").unwrap();
@@ -552,7 +555,7 @@ mod tests {
             Some("A subcommand added by a test")
         );
         assert_eq!(t.input_schema["required"], json!(["thing"]));
-        assert_eq!(all.len(), 12);
+        assert_eq!(all.len(), 15);
     }
 
     #[test]

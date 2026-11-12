@@ -16,7 +16,11 @@ sha2.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-# The regeneration guard also covers the emitted platform (AET-WO-2100, R6).
+# The regeneration guard calls `aethelgard generate`'s composition function
+# (AET-WO-3301 §1.5). Path-only, as for `aethelgard-twin`: the CLI depends on
+# this crate, so a versioned dev-dependency back would make a publish a cycle.
+aethelgard-cli = { path = "../aethelgard-cli" }
+# The firmware's boot contract and record layout are checked against the judge's.
 aethelgard-twin = { path = "../aethelgard-twin" }
 sentinel-01-board.workspace = true
 serde_json.workspace = true
