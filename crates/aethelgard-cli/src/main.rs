@@ -502,26 +502,14 @@ fn scratch_base() -> Result<PathBuf, run::Stop> {
                     }
                 }
             };
-            // Root's base lives in /var/lib, which must exist; a user's needs
-            // `~/.cache` too.
-            let (mode, make) = if root {
-                (0o711, vec![base.clone()])
-            } else {
-                let cache = base.parent().map(Path::to_path_buf).unwrap_or_default();
-                (0o700, vec![cache, base.clone()])
-            };
-            for dir in make {
-                match DirBuilder::new().mode(mode).create(&dir) {
-                    Ok(()) => {}
-                    Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
-                    Err(e) => {
-                        return Err(scratch_unsafe(
-                            &dir,
-                            format!("cannot create {}: {e}", dir.display()),
-                        ));
-                    }
-                }
-            }
+            let mode = if root { 0o711 } else { 0o700 };
+            DirBuilder::new()
+                .recursive(true)
+                .mode(mode)
+                .create(&base)
+                .map_err(|e| {
+                    scratch_unsafe(&base, format!("cannot create {}: {e}", base.display()))
+                })?;
             base
         }
     };

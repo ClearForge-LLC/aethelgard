@@ -522,8 +522,8 @@ pub fn add_only(dir: &Path) -> io::Result<()> {
 }
 
 /// Seals everything below `dir` read-only, by descriptor. Every entry must be
-/// root's: nothing else has had the directory yet. Links are left as links,
-/// and a directory [`add_only`] marked keeps its mode.
+/// root's, and a file or a directory: nothing else has had the directory yet,
+/// and the CLI copies no link. A directory [`add_only`] marked keeps its mode.
 fn seal(dir: BorrowedFd<'_>, depth: usize) -> Result<(), String> {
     if depth > 64 {
         return Err("the copy is more than 64 directories deep".to_owned());
@@ -544,10 +544,9 @@ fn seal(dir: BorrowedFd<'_>, depth: usize) -> Result<(), String> {
             return Err(format!("{shown} is not root's before any tool ran"));
         }
         let (flags, mode) = match FileType::from_raw_mode(st.st_mode) {
-            FileType::Symlink => continue,
             FileType::Directory => (OFlags::DIRECTORY, 0o555),
             FileType::RegularFile => (OFlags::NONBLOCK | OFlags::NOCTTY, 0o444),
-            _ => return Err(format!("{shown} is not a file, directory or link")),
+            _ => return Err(format!("{shown} is not a file or a directory")),
         };
         let fd = openat(
             dir,
@@ -557,9 +556,6 @@ fn seal(dir: BorrowedFd<'_>, depth: usize) -> Result<(), String> {
         )
         .map_err(|e| errno(&format!("open {shown}"), e))?;
         let opened = fstat(&fd).map_err(|e| errno(&format!("stat {shown}"), e))?;
-        if (opened.st_dev, opened.st_ino) != (st.st_dev, st.st_ino) {
-            return Err(format!("{shown} changed while it was sealed"));
-        }
         if mode == 0o555 {
             seal(fd.as_fd(), depth + 1)?;
             if (opened.st_gid, opened.st_mode & 0o7777) == (TOOL_GID, HANDED_OVER) {
@@ -595,15 +591,13 @@ fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop
     let mut lines = status.lines();
     let first = lines.next().unwrap_or_default();
     if let Some(rest) = first.strip_prefix("unavailable ") {
-        // Only the trampoline writes this line: `landlock`, `seccomp` or
-        // `capabilities`.
+        // Only the trampoline writes this line: `descriptors`, `uid`,
+        // `landlock`, `seccomp`, `capabilities` or `fsize`.
         let (layer, reason) = rest.split_once(' ').unwrap_or((rest, ""));
-        return Err(Stop {
-            code: EXIT_TOOL_UNAVAILABLE,
-            kind: "SandboxUnavailable",
-            id: Some(layer.to_owned()),
-            message: format!("the required {layer} sandbox layer cannot be enforced: {reason}"),
-        });
+        return Err(Stop::sandbox(
+            layer,
+            format!("the required {layer} sandbox layer cannot be enforced: {reason}"),
+        ));
     }
     let sandbox = first
         .strip_prefix("sandbox abi=")
@@ -992,7 +986,7 @@ pub fn confine_main(args: &[OsString]) -> ! {
         exit(0);
     }
     // Required too (INV-06): a tool never starts holding a capability.
-    if let Err(e) = drop_capabilities(separate) {
+    if let Err(e) = drop_capabilities() {
         let _ = writeln!(status, "unavailable capabilities {e}");
         exit(0);
     }
@@ -1286,15 +1280,12 @@ pub fn seccomp_filter(_self_pid: u32) -> Option<BpfProgram> {
 /// 2. Clears the ambient set.
 /// 3. Clears the effective, permitted and inheritable sets.
 /// 4. Verifies that those four sets are empty and `no_new_privs` is set
-///    (Landlock and the filter both set it), and that the bounding set is empty
-///    if step 1 ran.
+///    (Landlock and the filter both set it). Step 1 verifies itself.
 ///
-/// Any failure is an error, and the call refuses (`INV-06`).
-///
-/// `separated` says the trampoline started as root and switched to
-/// [`TOOL_UID`]: [`separate_uid`] emptied the bounding set while it still
-/// could, so it is checked here even though `CAP_SETPCAP` is gone.
-fn drop_capabilities(separated: bool) -> Result<(), String> {
+/// Any failure is an error, and the call refuses (`INV-06`). A trampoline
+/// that started as root emptied the bounding set in [`separate_uid`], before
+/// the uid change took `CAP_SETPCAP` away.
+fn drop_capabilities() -> Result<(), String> {
     let before = capabilities(None).map_err(|e| errno("capget", e))?;
     let setpcap = before.effective.contains(CapabilitySet::SETPCAP);
     if setpcap {
@@ -1315,13 +1306,6 @@ fn drop_capabilities(separated: bool) -> Result<(), String> {
         .map_err(|e| errno("reading the ambient set", e))?;
     if !left.is_empty() {
         return Err(format!("ambient capabilities still held: {left:?}"));
-    }
-    if setpcap || separated {
-        let left = each_capability(capability_is_in_bounding_set)
-            .map_err(|e| errno("reading the bounding set", e))?;
-        if !left.is_empty() {
-            return Err(format!("bounding capabilities still held: {left:?}"));
-        }
     }
     match no_new_privs() {
         Ok(true) => Ok(()),
@@ -1352,15 +1336,20 @@ fn each_capability(
     Ok(held)
 }
 
-/// Empties the bounding set; needs `CAP_SETPCAP` effective.
+/// Empties the bounding set, then reads it back; needs `CAP_SETPCAP` effective.
 fn empty_bounding_set() -> Result<(), String> {
-    for cap in each_capability(capability_is_in_bounding_set)
-        .map_err(|e| errno("reading the bounding set", e))?
-    {
+    let read = || {
+        each_capability(capability_is_in_bounding_set)
+            .map_err(|e| errno("reading the bounding set", e))
+    };
+    for cap in read()? {
         remove_capability_from_bounding_set(cap)
             .map_err(|e| errno(&format!("dropping {cap:?} from the bounding set"), e))?;
     }
-    Ok(())
+    match read()? {
+        left if left.is_empty() => Ok(()),
+        left => Err(format!("bounding capabilities still held: {left:?}")),
+    }
 }
 
 /// The trampoline, started as root, becomes [`TOOL_UID`] and [`TOOL_GID`]
@@ -1640,6 +1629,14 @@ mod tests {
             (0, TOOL_GID, HANDED_OVER)
         );
         assert_eq!(mode(&marked.join("crate/lib.rs")), 0o444);
+        // The CLI copies no link, so a link in the directory refuses the hand-over.
+        let linked = make("linked");
+        std::os::unix::fs::symlink("/etc/passwd", linked.join("crate/link")).unwrap();
+        assert!(
+            hand_over(&linked)
+                .unwrap_err()
+                .contains("not a file or a directory")
+        );
         let theirs = make("theirs");
         std::os::unix::fs::chown(theirs.join("crate/lib.rs"), Some(4242), None).unwrap();
         assert!(hand_over(&theirs).unwrap_err().contains("not root's"));

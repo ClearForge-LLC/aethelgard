@@ -292,9 +292,7 @@ fn the_emitted_schematic_names_no_sheet() {
 fn a_tool_writing_past_the_file_size_cap_is_a_tool_error() {
     let dir = Scratch::new("uid-fsize");
     let child = format!(
-        r#"echo "fsize=$(ulimit -f) hard=$(ulimit -H -f)" >> "$said"
-if (ulimit -f unlimited) 2>/dev/null; then echo raised >> "$said"; fi
-/usr/bin/yes | /usr/bin/head -c {} > "$HOME/big""#,
+        r#"/usr/bin/yes | /usr/bin/head -c {} > "$HOME/big""#,
         CAP + 1
     );
     let tb = toolbox(&dir, &child);
@@ -325,4 +323,74 @@ while :; do printf '%s' "$s"; done > "$HOME/big""#,
         message.contains("file-size cap") || message.contains("signal 25"),
         "{v}"
     );
+}
+
+/// The trampoline itself, started the way the reaper starts it, on a tool
+/// that reads its own ids and capability sets from `/proc/self/status`: as
+/// root, uid 65534, gid 65533, no group, and every set empty, the bounding
+/// set included (emptied before the switch took `CAP_SETPCAP`); as a user,
+/// its own ids and no capability.
+#[test]
+fn the_trampoline_leaves_the_tool_its_ids_and_no_capability_at_all() {
+    let dir = Scratch::new("uid-caps");
+    let out = dir.0.join("caps");
+    if root() {
+        std::os::unix::fs::chown(&dir.0, Some(TOOL_UID), Some(TOOL_GID)).unwrap();
+    }
+    let mut args: Vec<std::ffi::OsString> = vec![
+        "--aethelgard-internal-reaper".into(),
+        "--cli-pid".into(),
+        std::process::id().to_string().into(),
+        "--status".into(),
+        dir.0.join("status").into(),
+    ];
+    for d in ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc", "/proc"] {
+        args.extend(["--ro".into(), d.into()]);
+    }
+    args.extend(["--rw".into(), dir.0.clone().into(), "--".into()]);
+    args.extend([
+        "/bin/sh".into(),
+        "-c".into(),
+        "/usr/bin/grep -E '^(Uid|Gid|Groups|CapInh|CapPrm|CapEff|CapBnd|CapAmb):' /proc/self/status > \"$0\""
+            .into(),
+        out.clone().into(),
+    ]);
+    let status = Command::new(BIN)
+        .args(args)
+        .env_clear()
+        .stdin(Stdio::null())
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+    let sandbox = fs::read_to_string(dir.0.join("status")).unwrap();
+    let got = fs::read_to_string(&out).unwrap_or_else(|e| panic!("{e}: {sandbox}"));
+    let field = |name: &str| {
+        got.lines()
+            .find_map(|l| l.strip_prefix(name))
+            .unwrap_or_else(|| panic!("{name} in {got}"))
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let zero = "0000000000000000";
+    for set in ["CapInh:", "CapPrm:", "CapEff:", "CapAmb:"] {
+        assert_eq!(field(set), zero, "{set} {got}");
+    }
+    if root() {
+        assert!(sandbox.contains("uid_boundary=1"), "{sandbox}");
+        assert_eq!(
+            field("Uid:"),
+            format!("{TOOL_UID} {TOOL_UID} {TOOL_UID} {TOOL_UID}")
+        );
+        assert_eq!(
+            field("Gid:"),
+            format!("{TOOL_GID} {TOOL_GID} {TOOL_GID} {TOOL_GID}")
+        );
+        assert_eq!(field("Groups:"), "");
+        assert_eq!(field("CapBnd:"), zero, "{got}");
+    } else {
+        assert!(sandbox.contains("uid_boundary=0"), "{sandbox}");
+        let me = rustix::process::geteuid().as_raw();
+        assert!(field("Uid:").starts_with(&format!("{me} ")), "{got}");
+    }
 }

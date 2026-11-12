@@ -451,10 +451,7 @@ fn an_immediate_cancel_storm_leaves_no_process_and_no_directory() {
     let tmp = private.0.clone();
     let tb = dir.0.join("toolbox");
     let mut c = Client::spawn(|cmd| {
-        cmd.env_clear()
-            .env("HOME", std::env::var_os("HOME").unwrap_or_default())
-            .env("PATH", &tb)
-            .env("TMPDIR", &tmp);
+        cmd.env_clear().env("PATH", &tb).env("TMPDIR", &tmp);
     });
     c.initialize();
     let server = c.pid();
@@ -562,10 +559,7 @@ fn servers_sigkilled_while_calls_start_leave_nothing() {
     let tb = dir.0.join("toolbox");
     for i in 0..SERVERS {
         let mut c = Client::spawn(|cmd| {
-            cmd.env_clear()
-                .env("HOME", std::env::var_os("HOME").unwrap_or_default())
-                .env("PATH", &tb)
-                .env("TMPDIR", &tmp);
+            cmd.env_clear().env("PATH", &tb).env("TMPDIR", &tmp);
         });
         c.initialize();
         for _ in 0..BURST {
