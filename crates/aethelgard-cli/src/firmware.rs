@@ -6,14 +6,18 @@
 //! on a copy, in the sandbox, with an empty environment but for `RUSTUP_HOME`,
 //! `PATH`, `CARGO_TARGET_DIR` and, when the caller set it, `RUSTUP_TOOLCHAIN`.
 //!
-//! **Path independence (`AET-WO-3200` F11).** Cargo hashes a path
-//! dependency's absolute path into every symbol name, so the same crate built
-//! at two paths gives two files that differ only in `.strtab`.
-//! `--remap-path-prefix` does not reach those hashes (measured). The build
-//! therefore strips symbols, with `--config profile.release.strip="symbols"`
-//! on cargo's own command line, which a crate's manifest or its
-//! `.cargo/config.toml` cannot override. The loaded image, which is what
-//! `simulate` judges (`image_sha256`), is unchanged by the strip (measured).
+//! **Path independence (`AET-WO-3200` F11), for the generated crate.** Cargo
+//! hashes a path dependency's absolute path into every symbol name, so the
+//! same crate built at two paths gives two files that differ only in
+//! `.strtab`. `--remap-path-prefix` does not reach those hashes (measured).
+//! The build therefore strips symbols, with
+//! `--config profile.release.strip="symbols"` on cargo's own command line,
+//! which the crate's manifest profile does not override (measured). A
+//! supplied crate can still make its ELF path-dependent: rustflags in its
+//! `.cargo/config.toml` come after the profile's strip, and its code can
+//! embed `env!("CARGO_MANIFEST_DIR")` (adversarial B6). The loaded image,
+//! which is what `simulate` judges (`image_sha256`), is unchanged by the
+//! strip (measured).
 
 use std::ffi::OsString;
 use std::fs;
@@ -77,21 +81,66 @@ fn dependency_free(copy: &Path) -> Result<(), Stop> {
     Ok(())
 }
 
-/// The one executable cargo reports, which must be a regular file inside
-/// `target`.
-fn artifact(stdout: &[u8], target: &Path) -> Result<PathBuf, Stop> {
-    let mut found = Vec::new();
+/// What cargo's JSON messages say: whether the build finished and succeeded
+/// (`build-finished`), every manifest a unit was built from, and every
+/// executable.
+struct Messages {
+    finished: Option<bool>,
+    manifests: Vec<PathBuf>,
+    executables: Vec<PathBuf>,
+}
+
+fn messages(stdout: &[u8]) -> Messages {
+    let mut m = Messages {
+        finished: None,
+        manifests: Vec::new(),
+        executables: Vec::new(),
+    };
     for line in String::from_utf8_lossy(stdout).lines() {
         let Ok(message) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
-        if message["reason"] == "compiler-artifact"
-            && let Some(exe) = message["executable"].as_str()
-        {
-            found.push(PathBuf::from(exe));
+        match message["reason"].as_str() {
+            Some("build-finished") => m.finished = message["success"].as_bool(),
+            Some("compiler-artifact") => {
+                if let Some(manifest) = message["manifest_path"].as_str() {
+                    m.manifests.push(PathBuf::from(manifest));
+                }
+                if let Some(exe) = message["executable"].as_str() {
+                    m.executables.push(PathBuf::from(exe));
+                }
+            }
+            _ => {}
         }
     }
-    match found.as_slice() {
+    m
+}
+
+/// Every unit cargo built came from the copy: a path dependency outside the
+/// crate, a `[patch]` or a `paths` override is code the crate hash does not
+/// cover (`RUL-04`).
+fn built_from_the_copy(m: &Messages, copy: &Path) -> Result<(), Stop> {
+    let canonical = fs::canonicalize(copy).unwrap_or_else(|_| copy.to_path_buf());
+    match m
+        .manifests
+        .iter()
+        .find(|p| !p.starts_with(copy) && !p.starts_with(&canonical))
+    {
+        None => Ok(()),
+        Some(outside) => Err(Stop::refused(
+            "CrateHasDependency",
+            format!(
+                "cargo built {}, which is outside the crate; a board crate has no dependencies (RUL-04)",
+                outside.display()
+            ),
+        )),
+    }
+}
+
+/// The one executable cargo reports, which must be a regular file inside
+/// `target`.
+fn artifact(m: &Messages, target: &Path) -> Result<PathBuf, Stop> {
+    match m.executables.as_slice() {
         [one] if one.starts_with(target) && one.is_file() => Ok(one.clone()),
         [one] => Err(Stop::tool_error(
             "cargo",
@@ -181,26 +230,25 @@ pub fn build(crate_dir: &Path, out: &Path) -> Result<verdict::Verdict, Stop> {
     let version = crate::version(invocation(run::args(["--version"]), "status-version"))?;
     let ran = invocation(cargo_args(), "status-run").run()?;
     let code = ran.code("cargo")?;
-    let (findings, elf) = match code {
-        0 => {
-            let built = artifact(&ran.stdout, &target)?;
-            (Vec::new(), Some(built))
+    // Two witnesses: cargo's exit code and its `build-finished` message. Exit
+    // 101 is every cargo failure, a configuration it cannot load included, so
+    // only 101 with a build that finished unsuccessfully is the crate's fault.
+    let m = messages(&ran.stdout);
+    let (findings, elf) = match (code, m.finished) {
+        (0, Some(true)) => {
+            built_from_the_copy(&m, &input.copy)?;
+            (Vec::new(), Some(artifact(&m, &target)?))
         }
-        // Cargo's one failure code. Its `error:` lines are the second witness.
-        101 => match said::first_error(&String::from_utf8_lossy(&ran.stderr), Style::Cargo) {
-            Some(line) => (vec![Finding::plain("build_failed", line)], None),
-            None => {
-                return Err(Stop::tool_error(
-                    "cargo",
-                    "cargo exited 101 but printed no error line".to_owned(),
-                ));
-            }
-        },
-        other => {
+        (101, Some(false)) => {
+            let line = said::first_error(&String::from_utf8_lossy(&ran.stderr), Style::Cargo)
+                .unwrap_or_else(|| "the crate did not build".to_owned());
+            (vec![Finding::plain("build_failed", line)], None)
+        }
+        (other, finished) => {
             return Err(Stop::tool_error(
                 "cargo",
                 format!(
-                    "cargo exited {other}, which is neither 0 nor 101{}",
+                    "cargo exited {other} with build-finished {finished:?}, which is neither a build nor a failed one{}",
                     said::suffix(&ran.text(), Style::Cargo)
                 ),
             ));
@@ -224,4 +272,43 @@ pub fn build(crate_dir: &Path, out: &Path) -> Result<verdict::Verdict, Stop> {
         });
     }
     Ok(v)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BUILT: &str = r#"{"reason":"compiler-artifact","manifest_path":"/s/crate/Cargo.toml","executable":null}
+{"reason":"compiler-artifact","manifest_path":"/s/crate/firmware/Cargo.toml","executable":"/s/target/fw"}
+{"reason":"build-finished","success":true}
+"#;
+
+    /// Adversarial B5: a unit built from a manifest outside the copy is a
+    /// dependency the crate hash does not cover, whatever the lockfile says.
+    #[test]
+    fn a_unit_built_from_outside_the_copy_is_refused() {
+        let copy = Path::new("/s/crate");
+        let m = messages(BUILT.as_bytes());
+        assert_eq!(m.finished, Some(true));
+        assert!(built_from_the_copy(&m, copy).is_ok());
+        let outside = BUILT.replace("/s/crate/Cargo.toml", "/opt/rustup/evil-dep/Cargo.toml");
+        let e = built_from_the_copy(&messages(outside.as_bytes()), copy).unwrap_err();
+        assert_eq!(e.kind, "CrateHasDependency");
+        assert!(e.message.contains("/opt/rustup/evil-dep"), "{}", e.message);
+    }
+
+    /// Adversarial B7: no `build-finished` (cargo could not load its
+    /// configuration) is not a finished build of either kind.
+    #[test]
+    fn build_finished_is_read_and_its_absence_is_none() {
+        assert_eq!(
+            messages(b"{\"reason\":\"build-finished\",\"success\":false}\n").finished,
+            Some(false)
+        );
+        assert_eq!(messages(b"").finished, None);
+        assert_eq!(
+            messages(b"error: could not load Cargo configuration\n").finished,
+            None
+        );
+    }
 }
