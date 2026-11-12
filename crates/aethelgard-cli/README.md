@@ -252,6 +252,8 @@ The reader removes a stray `\r` at either end of a line, matches each marker as 
 
 **Named residual** (`AET-WO-2202` W1): only the last transaction on each bus is witnessed by controller state. Today each bus has one modelled device; a bus with two needs a per-transaction witness.
 
+**Named residual** (`AET-WO-1900` A11.1, measured): the controller witness guards a mistaken generated firmware, not a hostile one. A hand-written firmware that writes the record and also stores the reference boot's final `CR2` (`0x020104EC`) and `TXDR` (`0xD0`) straight to `I2C1`, calling no `transfer`, is stored by Renode 1.17.0 and judged `pass` (`twin_tier2::a_firmware_that_writes_the_witness_registers_by_hand_passes_today_a_named_residual`). An observable a plain write cannot set is left to `AET-WO-2301`.
+
 Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a load error. `firmware.image_sha256` is the sha256, over every `PT_LOAD` with memory in physical-address order, of its physical address, file size and memory size (each a `u32` little-endian) and then its file bytes: the memory image Renode builds. It is the firmware's identity, because the file's own hash also covers symbol names, which Cargo derives from the checkout path.
 
 ### The analog pre-pass (`simulate --firmware`)
