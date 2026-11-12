@@ -2006,9 +2006,10 @@ fn a_firmware_changed_while_the_campaign_runs_is_refused() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    // The first scenario has read the firmware, and its bridge is asleep for
-    // three seconds; the second scenario boots the changed file.
-    std::thread::sleep(std::time::Duration::from_millis(1200));
+    // Once the first scenario's bridge is asleep, its boot has read the
+    // firmware; the second scenario boots the changed file. A fixed delay
+    // raced the boot on a slow runner (PR #89's first `gates` run).
+    wait_for_the_slow_bridge(child.id());
     fs::write(&work.firmware, elf_at(0x0800_0000, &[1u8; 64], 40)).unwrap();
     let out = child.wait_with_output().unwrap();
     let all = lines(&out);
@@ -2025,4 +2026,52 @@ fn a_firmware_changed_while_the_campaign_runs_is_refused() {
             .contains("changed while the campaign ran"),
         "{v}"
     );
+}
+
+/// Waits until `BRIDGE_SLOW`'s `/bin/sleep 3` runs below `pid`. The sandbox
+/// refuses `unshare`, so the campaign's processes are visible in `/proc`.
+fn wait_for_the_slow_bridge(pid: u32) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    loop {
+        for entry in fs::read_dir("/proc").unwrap().flatten() {
+            let Ok(p) = entry.file_name().to_string_lossy().parse::<u32>() else {
+                continue;
+            };
+            let Ok(cmdline) = fs::read(format!("/proc/{p}/cmdline")) else {
+                continue;
+            };
+            if cmdline == b"/bin/sleep\x003\x00" && descends_from(p, pid) {
+                return;
+            }
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the first scenario's bridge never started"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+fn descends_from(mut p: u32, ancestor: u32) -> bool {
+    // `/proc/<pid>/stat` is `pid (comm) state ppid …`, and `comm` may hold
+    // spaces or parentheses, so the fields are read after the last `)`.
+    let parent = |p: u32| -> Option<u32> {
+        let stat = fs::read_to_string(format!("/proc/{p}/stat")).ok()?;
+        stat.rsplit_once(')')?
+            .1
+            .split_whitespace()
+            .nth(1)?
+            .parse()
+            .ok()
+    };
+    while let Some(q) = parent(p) {
+        if q == ancestor {
+            return true;
+        }
+        if q <= 1 {
+            return false;
+        }
+        p = q;
+    }
+    false
 }
