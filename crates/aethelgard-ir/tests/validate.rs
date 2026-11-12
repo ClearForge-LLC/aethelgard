@@ -1248,3 +1248,14 @@ fn solved_refuses_a_missing_or_repeated_device() {
         "{err}"
     );
 }
+
+#[test]
+fn refuses_names_that_differ_only_in_case() {
+    // The review's A10.1 inputs: `emit` accepted both and `check erc` refused them.
+    let err = refusal(|s| s.spi_devices[0].cs.net = "gnd".into());
+    assert_refusal(err, "NetShadowsDomain", Some("gnd"));
+    let err = refusal(|s| s.spi_devices[0].cs.net = "i2c_scl".into());
+    assert_refusal(err, "DuplicateNetName", Some("i2c_scl"));
+    let err = refusal(|s| s.spi_devices[0].cs.net = "vdd_3v3".into());
+    assert_refusal(err, "NetShadowsDomain", Some("vdd_3v3"));
+}
