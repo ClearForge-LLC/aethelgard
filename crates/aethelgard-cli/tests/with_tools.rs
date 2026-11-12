@@ -591,7 +591,7 @@ fn a_board_whose_own_files_are_looser_is_judged_by_the_gate() {
     fs::write(t.0.join("loose.kicad_dru"), loose.custom_rules()).unwrap();
     let spec = example_spec("sentinel-01-minimal.json");
     for (args, rules) in [
-        (vec!["--spec", spec.to_str().unwrap()], "specification"),
+        (vec!["--spec", spec.to_str().unwrap()], "engine-floor"),
         (vec![], "kicad-default"),
     ] {
         let mut all = vec!["check", "drc", "--board", board.to_str().unwrap()];

@@ -723,3 +723,27 @@ fn a_forged_record_without_a_transaction_fails_on_the_controller_state() {
         assert!(m.contains(field), "{field}: {m}");
     }
 }
+
+#[test]
+fn a_firmware_that_writes_the_witness_registers_by_hand_is_measured() {
+    // AET-WO-1900 §1.10 (review A11.1): the same forged record as above, and
+    // now also the reference boot's final `CR2` (0x020104EC) and `TXDR`
+    // (0xD0) written straight to I2C1 (base 0x40005400, CR2 +0x04, TXDR
+    // +0x28), with no call to `transfer`. The measurement is the verdict.
+    let forged = mutant("forged-regs", |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "let mut buf0 = [0u8; 1];",
+            "let mut buf0 = [0x60u8; 1];",
+        );
+        edit(
+            d,
+            "src/main.rs",
+            "i2c1.transfer(&mut r, 0x76, &[0xd0], &mut buf0)",
+            "{ unsafe { core::ptr::write_volatile(0x4000_5404 as *mut u32, 0x0201_04EC); core::ptr::write_volatile(0x4000_5428 as *mut u32, 0xD0); } Ok::<usize, I2cError>(1) }",
+        );
+    });
+    let (code, v) = boot_elf("forged record and registers", &forged, "10ms");
+    answer(&format!("A11.1 measurement: exit={code:?} verdict={v}"));
+}
