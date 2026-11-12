@@ -27,8 +27,12 @@ fn scratch(label: &str) -> PathBuf {
 
 /// Runs the binary from the repository root; `no_tools` empties `PATH`.
 fn run(args: &[&str], no_tools: bool) -> (Option<i32>, Value) {
+    run_in(&root(), args, no_tools)
+}
+
+fn run_in(cwd: &Path, args: &[&str], no_tools: bool) -> (Option<i32>, Value) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_aethelgard"));
-    cmd.args(args).current_dir(root()).stdin(Stdio::null());
+    cmd.args(args).current_dir(cwd).stdin(Stdio::null());
     if no_tools {
         cmd.env("PATH", "");
     }
@@ -311,7 +315,14 @@ fn verify_refuses_a_scenario_whose_base_is_not_the_specification() {
     scenario["base"] = "base.json".into();
     let file = dir.join("scenario.json");
     fs::write(&file, scenario.to_string()).unwrap();
-    let (code, v) = run(&["verify", "--spec", SPEC, "--scenarios", s(&file)], true);
+    // From the scenario's own directory, so its base is inside the working
+    // directory wherever the target directory is.
+    let spec = root().join(SPEC);
+    let (code, v) = run_in(
+        &dir,
+        &["verify", "--spec", s(&spec), "--scenarios", "scenario.json"],
+        true,
+    );
     assert_eq!(code, Some(3), "{v}");
     assert_eq!(v["error"]["kind"], "ScenarioBaseMismatch");
     assert_eq!(v["error"]["id"], "pullup-2k2");

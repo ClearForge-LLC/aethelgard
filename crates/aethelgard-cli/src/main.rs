@@ -390,14 +390,17 @@ fn main() -> ExitCode {
             let code = if v.ok { 0 } else { EXIT_FAIL };
             emit(&v, code)
         }
-        Err(stop) => {
-            let code = stop.code;
-            emit(
-                &Refusal::new(stop.kind, stop.id.as_deref(), stop.message),
-                code,
-            )
-        }
+        Err(stop) => stopped(stop),
     }
+}
+
+/// Prints a `Stop` as the refusal it is and returns its exit code.
+fn stopped(stop: run::Stop) -> ExitCode {
+    let code = stop.code;
+    emit(
+        &Refusal::new(stop.kind, stop.id.as_deref(), stop.message),
+        code,
+    )
 }
 
 /// `--for`: an integer, no leading zero, then `ns`, `us` or `ms`; at most the
@@ -1369,6 +1372,36 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
     )
 }
 
+/// Everything `generate` writes for a solved specification, and the sha256
+/// of the topology. Every refusal is printed here; the caller gets its exit
+/// code.
+fn generated(
+    spec: &Specification,
+    topology: &aethelgard_ir::SolvedTopology,
+    table: &aethelgard_ir::PinTable,
+) -> Result<(std::collections::BTreeMap<String, String>, String), ExitCode> {
+    let files = match aethelgard_cli::generate::tree(spec, topology, table) {
+        Ok(files) => files,
+        Err(err) if err.internal() => {
+            diagnose(&format!("a vendored generator input is unusable: {err}"));
+            return Err(ExitCode::from(EXIT_INTERNAL));
+        }
+        Err(err) => {
+            return Err(emit(
+                &Refusal::new(err.kind(), err.id(), err.to_string()),
+                EXIT_INVALID_SPEC,
+            ));
+        }
+    };
+    match serde_json::to_vec(topology) {
+        Ok(bytes) => Ok((files, tree::sha256(&bytes))),
+        Err(err) => {
+            diagnose(&format!("cannot serialize the topology: {err}"));
+            Err(ExitCode::from(EXIT_INTERNAL))
+        }
+    }
+}
+
 /// `aethelgard generate --spec --out`: solve as `solve` does, then write
 /// every file `aethelgard_cli::generate::tree` gives under `out`, which must
 /// be empty or absent (`AET-WO-3301` §1.1). Nothing else is written and no
@@ -1388,31 +1421,12 @@ fn generate_tree(file: &Path, out: &Path) -> ExitCode {
         Ok(solved) => solved,
         Err(code) => return code,
     };
-    let files = match aethelgard_cli::generate::tree(&spec, &topology, &table) {
-        Ok(files) => files,
-        Err(err) if err.internal() => {
-            diagnose(&format!("a vendored generator input is unusable: {err}"));
-            return ExitCode::from(EXIT_INTERNAL);
-        }
-        Err(err) => {
-            return emit(
-                &Refusal::new(err.kind(), err.id(), err.to_string()),
-                EXIT_INVALID_SPEC,
-            );
-        }
-    };
-    let topology_sha256 = match serde_json::to_vec(&topology) {
-        Ok(bytes) => tree::sha256(&bytes),
-        Err(err) => {
-            diagnose(&format!("cannot serialize the topology: {err}"));
-            return ExitCode::from(EXIT_INTERNAL);
-        }
+    let (files, topology_sha256) = match generated(&spec, &topology, &table) {
+        Ok(generated) => generated,
+        Err(code) => return code,
     };
     if let Err(stop) = tree::write(out, &files) {
-        return emit(
-            &Refusal::new(stop.kind, stop.id.as_deref(), stop.message),
-            stop.code,
-        );
+        return stopped(stop);
     }
     emit(
         &GenerateReport {

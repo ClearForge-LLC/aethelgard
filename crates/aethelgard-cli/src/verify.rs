@@ -31,13 +31,13 @@ use std::process::{Command, ExitCode, Stdio};
 use serde::Serialize;
 use serde_json::Value;
 
-use aethelgard_cli::generate::{self, BOARD_DIR, KICAD_DIR};
+use aethelgard_cli::generate::{BOARD_DIR, KICAD_DIR};
 
 use crate::campaign;
 use crate::input::hex;
-use crate::run::{self, Stop};
+use crate::run;
 use crate::tree::{self, Difference};
-use crate::{EXIT_FAIL, EXIT_INTERNAL, EXIT_INVALID_SPEC, EXIT_TOOL_ERROR, EXIT_UNREADABLE};
+use crate::{EXIT_FAIL, EXIT_INTERNAL, EXIT_TOOL_ERROR, EXIT_UNREADABLE};
 
 /// The virtual time `simulate` boots for: the campaign's.
 const BOOT_TIME: &str = "100ms";
@@ -129,10 +129,6 @@ fn refuse(kind: &str, id: Option<&str>, message: String, code: u8) -> ExitCode {
         },
         code,
     )
-}
-
-fn stop(s: Stop) -> ExitCode {
-    refuse(s.kind, s.id.as_deref(), s.message, s.code)
 }
 
 fn mismatch(gate: &str, what: &str, want: &str, have: Option<&str>) -> ExitCode {
@@ -382,20 +378,9 @@ pub fn verify(spec_path: &Path, scenarios: &[PathBuf], against: Option<&Path>) -
         Ok(s) => s,
         Err(code) => return code,
     };
-    let files = match generate::tree(&spec, &topology, &table) {
-        Ok(f) => f,
-        Err(e) if e.internal() => {
-            crate::diagnose(&format!("a vendored generator input is unusable: {e}"));
-            return ExitCode::from(EXIT_INTERNAL);
-        }
-        Err(e) => return refuse(e.kind(), e.id(), e.to_string(), EXIT_INVALID_SPEC),
-    };
-    let topology_sha256 = match serde_json::to_vec(&topology) {
-        Ok(t) => tree::sha256(&t),
-        Err(e) => {
-            crate::diagnose(&format!("cannot serialize the topology: {e}"));
-            return ExitCode::from(EXIT_INTERNAL);
-        }
+    let (files, topology_sha256) = match crate::generated(&spec, &topology, &table) {
+        Ok(generated) => generated,
+        Err(code) => return code,
     };
     let hashes: BTreeMap<String, String> = files
         .iter()
@@ -458,11 +443,11 @@ pub fn verify(spec_path: &Path, scenarios: &[PathBuf], against: Option<&Path>) -
     // every difference, and no gate runs.
     if let Some(dir) = against {
         if let Err(s) = crate::input::dir_check(dir) {
-            return stop(s);
+            return crate::stopped(s);
         }
         let differences = match tree::diff(dir, &files, &[&format!("{BOARD_DIR}/target")]) {
             Ok(d) => d,
-            Err(s) => return stop(s),
+            Err(s) => return crate::stopped(s),
         };
         if !differences.is_empty() {
             report.against = Some("differs");
@@ -481,11 +466,11 @@ pub fn verify(spec_path: &Path, scenarios: &[PathBuf], against: Option<&Path>) -
 
     let scratch = match crate::Scratch::new() {
         Ok(s) => s,
-        Err(s) => return stop(s),
+        Err(s) => return crate::stopped(s),
     };
     let root = scratch.tool.join("tree");
     if let Err(s) = tree::write(&root, &files) {
-        return stop(s);
+        return crate::stopped(s);
     }
     // `parse_spec` accepted the bytes, so they are UTF-8.
     let spec_text = String::from_utf8_lossy(&bytes).into_owned();
@@ -494,7 +479,7 @@ pub fn verify(spec_path: &Path, scenarios: &[PathBuf], against: Option<&Path>) -
         &spec_dir,
         &BTreeMap::from([("specification.json".to_owned(), spec_text)]),
     ) {
-        return stop(s);
+        return crate::stopped(s);
     }
     let spec_copy = spec_dir.join("specification.json");
 
@@ -562,24 +547,8 @@ struct Want<'a> {
     harnesses: Vec<String>,
 }
 
-fn args(items: &[&dyn AsRefOs]) -> Vec<OsString> {
-    items.iter().map(|i| i.os()).collect()
-}
-
-trait AsRefOs {
-    fn os(&self) -> OsString;
-}
-
-impl AsRefOs for &str {
-    fn os(&self) -> OsString {
-        OsString::from(*self)
-    }
-}
-
-impl AsRefOs for OsString {
-    fn os(&self) -> OsString {
-        self.clone()
-    }
+fn args(items: &[&dyn AsRef<std::ffi::OsStr>]) -> Vec<OsString> {
+    items.iter().map(|i| (**i).as_ref().to_owned()).collect()
 }
 
 /// ERC, DRC with parity, `prove` of every harness, `build`, `simulate
@@ -683,7 +652,14 @@ fn run_gates(
         p.archive.clone(),
     ]);
     let ran = gate("campaign", a)?;
-    let firmware = elf_bytes(&elf)?;
+    let firmware = campaign::sha(&elf).map_err(|m| {
+        refuse(
+            "ToolError",
+            Some("aethelgard"),
+            format!("gate `build` reported a bad hash: {m}"),
+            EXIT_TOOL_ERROR,
+        )
+    })?;
     let runs = &ran.lines[..ran.lines.len().saturating_sub(1)];
     if runs.len() != expected.len() {
         return Err(refuse(
@@ -764,28 +740,6 @@ fn run_gates(
     report.gates.push(g);
     report.campaign = Some(out);
     Ok(())
-}
-
-/// The ELF's sha256 as 32 bytes, from the hex `build` reported.
-fn elf_bytes(hex_sha: &str) -> Result<[u8; 32], ExitCode> {
-    let mut out = [0u8; 32];
-    let ok = hex_sha.len() == 64
-        && hex_sha.is_ascii()
-        && out.iter_mut().enumerate().all(|(i, b)| {
-            u8::from_str_radix(&hex_sha[2 * i..2 * i + 2], 16)
-                .map(|v| *b = v)
-                .is_ok()
-        });
-    if ok {
-        Ok(out)
-    } else {
-        Err(refuse(
-            "ToolError",
-            Some("aethelgard"),
-            format!("gate `build` reported `{hex_sha}`, which is not a sha256"),
-            EXIT_TOOL_ERROR,
-        ))
-    }
 }
 
 #[cfg(test)]
