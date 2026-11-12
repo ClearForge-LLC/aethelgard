@@ -263,6 +263,16 @@ They were re-proved on the branch head with the same suites, all green.
   - `parse_spec` and `elf.rs` hash beside `tree::sha256`, as they did before this work order.
 - **Not a copy:** `emit`'s writer, which allows an existing directory and overwrites its own three names.
 
+## Merge of `main` after `AET-WO-1204`
+
+`origin/main` at `8c570c3` (PR #90) was merged in with a merge commit (`9cf3b31`), with no conflict; `workspace_shape.rs` took both sides.
+- **`RUL-16`'s fence holds.** `clippy -D warnings` is clean in the CLI, `svd-hal` and `twin` under their new `clippy.toml` fences, with and without `with-tools`. This work order adds no reader of a specification's device lists outside `eda`: `generate::tree` hands the specification only to `eda`'s emitter.
+- **The reference is unchanged.** On the merged head, `generate` writes the same 14 files, `board/` is still byte-identical to `boards/sentinel-01`, and the topology hash is still `d684cd6d…`.
+- **Rerun on the merged head:**
+  - fmt and clippy: clean;
+  - tier 1 on Furnace: 887 passed, 0 failed;
+  - the image's `tools` steps: 953 passed, 0 failed, the canary at exactly 71, and the test container's caps read back (`memory.max` 17179869184, `memory.swap.max` 0, `pids.max` `max`).
+
 ## Gates
 
 All on the head after the merge of `main` at `795c3cf` (merged as `00908a5`; docs and the `FirmwareChanged` test-race fix only, no conflict). The numbers are from `0199639`; later commits change this FEEDBACK only.
