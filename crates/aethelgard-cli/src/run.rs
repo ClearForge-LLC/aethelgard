@@ -1476,6 +1476,63 @@ mod tests {
         assert!(calls > 1, "returned on the first NotFound");
     }
 
+    /// `uid_boundary` is read only from the trampoline's own line, and only
+    /// as `0` or `1`; anything else is no sandbox report at all.
+    #[test]
+    fn the_status_line_says_uid_boundary_exactly() {
+        let ended = "\nended code=0\n";
+        let sandbox = |first: &str| parse_status(&format!("{first}{ended}"), "t").map(|r| r.0);
+        assert!(
+            sandbox("sandbox abi=6 uid_boundary=1")
+                .unwrap()
+                .uid_boundary
+        );
+        assert!(
+            !sandbox("sandbox abi=6 uid_boundary=0")
+                .unwrap()
+                .uid_boundary
+        );
+        for bad in [
+            "sandbox abi=6",
+            "sandbox abi=6 uid_boundary=",
+            "sandbox abi=6 uid_boundary=true",
+            "sandbox abi=6 uid_boundary=2",
+            "sandbox abi=6 uid_boundary=1 x",
+            "sandbox abi=x uid_boundary=1",
+            "sandbox uid_boundary=1 abi=6",
+        ] {
+            let stop = sandbox(bad).unwrap_err();
+            assert_eq!(stop.kind, "ToolError", "{bad}");
+        }
+        let stop = parse_status("unavailable uid setresuid: errno 1\n", "t").unwrap_err();
+        assert_eq!((stop.code, stop.kind), (4, "SandboxUnavailable"));
+        assert_eq!(stop.id.as_deref(), Some("uid"));
+    }
+
+    /// The read-back accepts only every id the tool's and no group at all.
+    #[test]
+    fn the_read_back_needs_all_four_ids_and_no_group() {
+        let status = |uid: &str, gid: &str, groups: &str| {
+            format!("Name:\tx\nUid:\t{uid}\nGid:\t{gid}\nGroups:\t{groups}\n")
+        };
+        let t = "65534\t65534\t65534\t65534";
+        assert!(ids_are_the_tool_s(&status(t, t, "")).is_ok());
+        for (uid, gid, groups) in [
+            ("65534\t65534\t65534\t0", t, ""),
+            ("0\t65534\t65534\t65534", t, ""),
+            (t, "65534\t65534\t0\t65534", ""),
+            (t, t, "0"),
+            (t, t, "65534"),
+            ("65534\t65534\t65534", t, ""),
+        ] {
+            assert!(
+                ids_are_the_tool_s(&status(uid, gid, groups)).is_err(),
+                "{uid} / {gid} / {groups}"
+            );
+        }
+        assert!(ids_are_the_tool_s("Uid:\t65534\t65534\t65534\t65534\n").is_err());
+    }
+
     /// The filter as an exact instruction sequence: any edit to it must show
     /// up here (ruled on PR #15, extended by AET-WO-1600). (code, jt, jf, k),
     /// with 4242 standing for the tool's pid.
