@@ -1390,3 +1390,24 @@ fn attribute_needs_nothing_but_the_run_directory() {
     assert_eq!(after.stdout, before.stdout);
     let _ = tb;
 }
+
+/// `AET-WO-1203` §3, the review's A2 inputs: a pull-up below the sink floor is
+/// a `solve` refusal, so a scenario's override of it never reaches a run.
+#[test]
+fn a_pull_up_below_the_sink_floor_in_an_override_is_refused_before_any_run() {
+    for ohms in [24, 50, 100] {
+        let body = scenario(
+            "low",
+            "pass",
+            &[],
+            json!([{"bus": "SENSORS", "pull_up_ohms": ohms}]),
+        );
+        let v = refused_before_running(
+            &[("low.json", body)],
+            &["low.json"],
+            2,
+            "PullUpBelowSinkFloor",
+        );
+        assert_eq!(v["error"]["id"], "SENSORS", "{v}");
+    }
+}

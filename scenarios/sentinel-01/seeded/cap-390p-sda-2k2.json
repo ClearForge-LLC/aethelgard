@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "name": "cap-470p-sda-2k2",
+  "name": "cap-390p-sda-2k2",
   "base": "../../../examples/sentinel-01-minimal.json",
   "expect": "fail",
   "expect_findings": [
@@ -14,7 +14,7 @@
     },
     {
       "net": "I2C_SDA",
-      "max_capacitance_femtofarads": 470000
+      "max_capacitance_femtofarads": 390000
     }
   ]
 }
