@@ -403,7 +403,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | `gh-write` with a `--draft` flag | `3200` F16 | **won't build** (Scotty 2026-11-12): the architect converts a proposal PR in one call. Revisit if proposal PRs become frequent (the P4 evolve loop) |
 | `Sx::child` takes the first match where KiCad takes the last; `check drc` passed a board with a second `thickness` | `1305` F6 | `AET-WO-1306`: one strict KiCad reader for every gate, before `3300` |
 | A dedicated uid for `aethelgard` on Furnace, so `uid_boundary` holds there | `1601` §1.3, R4 | **the operator's** (the CLI README's deployment section) |
-| Split the `tools` job's tier 2 into two jobs | 3200 F17 | backlog: when `tools` passes 75 of its 90 minutes |
+| Split the `tools` job's tier 2 (3200 F17) | 3200 F17; Scotty 2026-11-13 | `AET-WO-1907` (written): four shards, balanced by measured weight, under 15 minutes, every test assigned exactly once |
 | MCP path confinement (`--root`) | review A10.2 | Scotty's second opinion; until then the trust model in `architecture.md` §6 |
 
 ## 8. Amendments
@@ -459,6 +459,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-12 | §5, §7.1 | `AET-WO-1305` written: extraction's first step, an upper bound on each I2C line's capacitance from the routed board; it gates `3300` with `1601` | the Mythos review B3 |
 | 2026-11-12 | §5, §7.1 | `AET-WO-1601`, `AET-WO-1602` and `AET-WO-1305` reconciled: P3's two prerequisites for `3300` are met, apart from `AET-WO-1306` (a strict shared reader), added before it | PRs #96, #97, #98, #99 |
 | 2026-11-12 | §5 | `AET-WO-3300` written: the fabrication package, emitted only by a passing `verify` and named in its verdict (P3 gate clause 3) | `AET-WO-3301`, `1305` F3 |
+| 2026-11-13 | §7.1 | `AET-WO-1907` written at Scotty's direction: CI's `tools` job in four test-level shards (`board_tier2.rs` alone was 26 of 47 minutes), under 15 minutes | PR #99's `tools` run, measured |
 
 ## 9. Provenance
 
