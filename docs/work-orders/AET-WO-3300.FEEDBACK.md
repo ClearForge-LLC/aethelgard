@@ -8,7 +8,7 @@
   - **D3:** both fab flags require `--scenarios`.
   - **D5:** the four-run fab test is split into three, `TIER2_MIN` is 79, the tests are weighed, and `ci/SHARDS` is set.
   - **The F20 wording.**
-- **One part of D5 cannot be met as worded (D6).**
+- **One part of D5 could not be met as worded (D6).** Scotty ruled on it on 2026-11-13: the colocated shard's 640 s is accepted.
 
 What follows is the report as first written, with each ruled point updated in place.
 
@@ -25,7 +25,7 @@ Entry schema: `finding · where · type · recommendation · decision-needed`.
 
 ## Decisions (ruled on PR #103, comment 6847104688)
 
-- **D6 (F23), new: no shard count gives every shard ≤ 600 planned seconds.**
+- **D6 (F23): no shard count gives every shard ≤ 600 planned seconds.** *Ruled by Scotty, 2026-11-13: accept 640 s for the colocated shard. `ci/SHARDS` stays 8; every other shard plans 599 s, and on CI the colocated shard took 12 m 0 s.*
   - `ci/colocate.tsv` keeps `attribute_seeded`'s 12 tests in one shard, planned at 640 s (`AET-WO-1907`: measured at 641 s together). That shard is 640 s at every count.
   - At 8 shards every other shard plans 599 s, and 8 is the smallest count at which they all do. 7 shards give 691 s each.
   - `ci/colocate.tsv` is outside my fence, so `ci/SHARDS` is 8.
@@ -183,7 +183,7 @@ The package is not committed. These hashes are the record:
 | F16 | Two guards have no mutant any suite kills: the export's ELF and board `BindingMismatch` checks. A test would need a swap race inside `verify`'s scratch, as 1305's extract test does | test gap | backlog, or accept as stated | no |
 | F17 | `holes()` and `pours()` are shape checks of KiCad's own output, not parsers. The adversary showed inputs KiCad never writes that pass them: a hit without X, an undefined `T2` in the body, a later region's `G37`. Other date notations (`2026/11/13`, an epoch) also pass `strip_clock`. The guard against a date left in is tier 2's two-run, two-path identity | residual | none now (scope test) | no |
 | **F22** | Five shards over 15 minutes | CI | D5 | ruled: split, `ci/SHARDS` 8 |
-| **F23** | No shard count reaches ≤ 600 planned seconds while `attribute_seeded` is colocated at 640 s | CI | D6 | **yes** |
+| **F23** | No shard count reaches ≤ 600 planned seconds while `attribute_seeded` is colocated at 640 s | CI | D6 | ruled (Scotty): 640 s accepted |
 | F18 | An extra empty subdirectory in a package still reads `identical` under `--against-fab`, as `--against` treats a tree | residual | none | no |
 | F19 | **Protected documents this build makes stale** (for the architect's reconciliation): `README.md:13`, "extraction from the board is scheduled before any fabrication package is called verified"; `docs/architecture.md:404`, where §3 puts "fabrication package emission" in `aethelgard-eda` (the export is the CLI's `fab` module, and eda holds only the notes' text); `RUL-19` (2), "the P3 fabrication clause waits for it" and "waits for `1601` as well"; and the `roadmap.md:405` backlog row about refilled zones and the stackup, which this WO answers | doc | the architect updates them | yes (reconciliation) |
 | F20 | **FAB-NOTES states copper, thickness and permittivity twice:** under Stackup, and again in `extract`'s conditions printed verbatim. And "No board has been made from it" stops being true once a board is ordered | reduction / wording | **wording ruled and applied:** "Emitting this package made no board, and nothing in it was tested on hardware." The duplicate statement stays: Stackup is the fabricator's instruction, and the conditions are `extract`'s own words | done |
