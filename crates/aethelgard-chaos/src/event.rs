@@ -48,7 +48,8 @@ pub enum Event {
         scenario: String,
         detail: String,
     },
-    /// Kinds 5 to 15: a campaign run's records (`AET-WO-2300`, `AET-WO-3100`).
+    /// Kinds 5 to 20: a campaign run's records (`AET-WO-2300`, `AET-WO-3100`,
+    /// `AET-WO-2301`).
     Record {
         timestamp: u64,
         record: Record,

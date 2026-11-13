@@ -75,10 +75,11 @@ leaves behind; it must not orphan a committed run).
 
 ## Version rule
 
-The trace header carries version 3 (`AET-WO-2300` added kinds 5 to 14 at
-version 2, and `AET-WO-3100` kind 15 and the run rules that join to it at
-version 3; each time the golden trace's bytes changed in that one header byte
-only). A version-2 trace is refused, not read under version 3's rules. The mirror record
+The trace header carries version 4 (`AET-WO-2300` added kinds 5 to 14 at
+version 2, `AET-WO-3100` kind 15 and the run rules that join to it at
+version 3, and `AET-WO-2301` kinds 16 to 20, a declared supply droop, at
+version 4; each time the golden trace's bytes changed in that one header byte
+only). An older trace is refused, not read under version 4's rules. The mirror record
 carries version 1, and the manifest version 2 (`AET-WO-0400a` changed what
 `state_hash` means, the trace's bytes not at all). A reader refuses any other
 version (`UnknownVersion`), judged before the item's shape. A change to the
@@ -167,9 +168,8 @@ before writing its own, so a crash between the two never orphans the run
 
 ## Campaign records
 
-Kinds 5 to 15 (`src/record.rs`) are the records `aethelgard campaign` archives
-for one scenario's run, in the order of "The run rules" below: kind 15 comes
-after kind 6, the rest by number. Every field is an unsigned or negative
+Kinds 5 to 20 (`src/record.rs`) are the records `aethelgard campaign` archives
+for one scenario's run, in the order of "The run rules" below. Every field is an unsigned or negative
 integer, a byte string, a text string, or an array of them: no float, no map.
 A flag is 0 or 1. An optional value is an array of zero or one element. A
 `reading` is `[address, mask, expected, observed?]`, each a `u32`. The writer
@@ -188,9 +188,15 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 | 13 | an I2C controller witness | `peripheral`, `reference`, `cr2` and `txdr` `reading`s |
 | 14 | the verdict | `pass`, `[[kind, severity, count]…]` (sorted, unique by kind and severity; `pass` exactly when every severity is `info`) |
 | 15 | a solved I2C bus (`AET-WO-3100`) | `bus`, `peripheral`, `[line…]`: exactly two, SCL then SDA, each `[signal, net, pin, alternate_function, ceiling_ps]` (`signal` is the peripheral's name then `_SCL` or `_SDA`; the two nets and pins differ), `[[reference, address]…]` (sorted, unique by reference). A `pin` is `P`, a capital letter and 0 to 15 with no leading zero (`record::split_pin`); an `alternate_function` is at most 15 |
+| 16 | `analog.rail_declared` (`AET-WO-2301`) | the droop's own values (`domain`, `floor_millivolts`, `start_ns`, `fall_ns`, `hold_ns`, `rise_ns`, `source_milliohms`, `load_milliamps`, `bor_level`), then the domain's `nominal_millivolts` and `tolerance_permille` and the emitter's `decoupling_picofarads`: everything the rail is computed from |
+| 17 | `analog.rail_crossing_computed` | `domain`, `level` (`VBOR3_falling`…), `microvolts`, `at_ps`, `falling`: one crossing ngspice computed |
+| 18 | `bridge.reset_rendered` | `at_ns`, `released`, `[cause…]` (sorted threshold names), `rendering` (the monitor recipe that stood in for the supervisor: the model's rendering, never a measured reset) |
+| 19 | `firmware.observed` | `at_ns`, then the boot word's, the identity record's status and value, and the witness's `CR2` and `TXDR` `reading`s, read at the recovery bound after a release |
+| 20 | expected counts | `[[kind, count]…]` (sorted, unique), only when the scenario declares `expect_counts` |
 
-Kinds 5 to 9 and 15 are at virtual time 0, decided before the boot
-(`Record::before_boot`); 10 to 14 at the boot's end. Kind 15 is written from
+Kinds 5 to 9, 15, 16 and 20 are at virtual time 0, decided before the boot
+(`Record::before_boot`); 17 to 19 at their own time (`Record::timestamp`); 10
+to 14 at the boot's end. Kind 15 is written from
 the solved topology alone (`i2c_devices`, `assignments`, `analog_lines`),
 never from the firmware or the specification; `ceiling_ps` is per line because
 `analog_lines` holds each net's own rise-time ceiling. The bridge's nanoseconds become picoseconds in the CLI: a measured
@@ -208,12 +214,17 @@ apart from anything generated (`INV-07`):
  "overrides": [{"bus": "SENSORS", "pull_up_ohms": 47000}]}
 ```
 
-- Every key is required and no other is allowed, at either level; a duplicate
-  key, a positional array or `null` in a key an override does not use is
-  refused. `schema_version` is 1. `name` is 1 to 64 bytes of `0x21`–`0x7E`.
+- Every key is required (but `expect_counts`) and no other is allowed, at
+  either level; a duplicate key, a positional array or `null` in a key an
+  override does not use is refused. `schema_version` is 1 or 2; only 2 admits
+  `droop` and `expect_counts` (`AET-WO-2301`), and a version-1 file reads as
+  it always did. `name` is 1 to 64 bytes of `0x21`–`0x7E`.
 - An override is exactly `{bus, pull_up_ohms}` (a `u32`),
   `{net, max_capacitance_femtofarads}` (a `u64`), or `{bus, line_held_low}`
-  (`"sda"` or `"scl"`). Two overrides of one thing are refused
+    (`"sda"` or `"scl"`), or, in version 2, `{droop: {domain, floor_millivolts,
+  start_ns, fall_ns, hold_ns, rise_ns, source_milliohms, load_milliamps,
+  bor_level}}`, every field required and bounded. Two overrides of one thing,
+  or two droops, are refused
   (`DuplicateOverride`); at most 32 overrides and 16 expected kinds, so the
   scenario's record fits the event bound.
 - `expect` is `pass` or `fail`. A failing scenario names the finding kinds it
@@ -228,10 +239,20 @@ apart from anything generated (`INV-07`):
   without measuring (its finding is `i2c_line_held_low`, its fault's cause
   `scenario.line_held_low`).
 
+**A droop** (`AET-WO-2301`, ruled on PR #107) changes nothing in the
+specification. The runner resolves it to the MCU's supply (`DroopNotMcuSupply`
+otherwise), that domain's nominal and tolerance and the emitter's decoupling,
+and `campaign::check_droop` refuses (`DroopRefused`) a rail floor or resting
+level inside an active threshold's band or hysteresis region, a floor held
+less than 10 R·C, and a droop whose effects run past the boot. The table and
+the rule that turns crossings into resets are `power` (DS12117 Rev 7, Table 26,
+provisional).
+
 **A run matches its scenario** when its verdict is the one expected and, for
 a failure, the set of finding kinds above `info` equals `expect_findings`
 exactly: a scenario that fails for another reason, or for more reasons, does
-not match (`AET-WO-2300` §5.4).
+not match (`AET-WO-2300` §5.4). With `expect_counts`, each named kind's count
+(any severity, 0 if absent) must also be exactly the one declared.
 
 **`run_id`** is the first 16 bytes of
 `sha256("aethelgard-run\0" ‖ scenario sha256 ‖ specification sha256 ‖ firmware sha256)`,
@@ -249,10 +270,21 @@ not the one its scenario, specification and firmware give. Then
 `campaign::check_run`, which the campaign also applies before it writes a run,
 refuses:
 
-- records out of the order: the scenario, the topology, the solved buses
-  (kind 15), the analog records (7 and 8), the bus faults (9), the boot (10),
-  the registers (11), the identity reads (12), the witnesses (13) and the
-  verdict; or a run without exactly one scenario, topology, boot and verdict;
+- records out of the order: the scenario, its expected counts (20), the
+  topology, the solved buses (kind 15), the analog records (7 and 8), the bus
+  faults (9), the declared rail (16), the droop's crossings, resets and
+  observations (17 to 19) in time order, the boot (10), the registers (11),
+  the identity reads (12), the witnesses (13) and the verdict; or a run
+  without exactly one scenario, topology, boot and verdict;
+- a droop's records that do not follow from it (`AET-WO-2301`): kinds 16 to 19
+  without a droop override, or kind 16 not equal to it; a threshold's level
+  not crossed exactly once falling and once rising, within 10 R·C of the
+  source's ramps, when the declared rail floor is below it, or crossed when it
+  is not; resets that are not `power::schedule` of the crossings with their
+  fixed renderings; not one observation per release at the recovery bound (a
+  boot killed before its reads has none); an observation whose readings are
+  not the boot's own; `brownout_reset` (info), `brownout_unrecovered` (error)
+  or `rail_below_tolerance` (info) counts that the records do not give;
 - a broken join (`AET-WO-3100` R2, extended by its adversarial pass): solved buses not sorted by unique bus; two solved buses sharing a net, a pin or a controller; two devices at one address on one bus; a second kind 7 or 8 for one line, a second kind 12 for one device, or a second kind 13 for one device or one controller; a
   kind 7, 8 or 9 on a bus no kind 15 solves, or on a net that is not one of
   that bus's lines; a kind 7 or 8 whose `ceiling_ps` is not its line's; a
