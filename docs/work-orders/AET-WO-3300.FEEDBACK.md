@@ -104,7 +104,9 @@ None of these files reads an environment variable or `SOURCE_DATE_EPOCH`. `commo
 - **`uid_boundary`** is `false` with `user_namespace`, as every gate's is under rootless podman (`AET-WO-1601`).
 - **Every `fab.files` hash equals the sha256 of the file written.**
 - **Three hashes match the spike:** the ELF is `2d9ee264…`, the reference firmware of `AET-WO-3301`; the drill (`a045ab03…`) and placement (`5056acf6…`) files are the spike's D1 and P0.
-- **Environment:** the hashes of `MANIFEST.json` and of the verdict are this environment's (D2). Under CI's Docker, where `uid_boundary` differs, those two differ, and the other 14 files do not.
+- **Environment:** the hashes of `MANIFEST.json` and of the verdict are this environment's (D2). Every local run had `uid_boundary: false`.
+  - **A prediction, not observed:** under CI's Docker, where the boundary can hold, those two hashes differ and the other 14 files do not.
+  - CI's tools job is the first run of the export under a held uid boundary. Its tier-2 test asserts only that `fab.uid_boundary` equals the DRC gate's, whatever value that is.
 
 The package is not committed. These hashes are the record:
 
@@ -154,23 +156,33 @@ The package is not committed. These hashes are the record:
 | F16 | Two guards have no mutant any suite kills: the export's ELF and board `BindingMismatch` checks. A test would need a swap race inside `verify`'s scratch, as 1305's extract test does | test gap | backlog, or accept as stated | no |
 | F17 | `holes()` and `pours()` are shape checks of KiCad's own output, not parsers. The adversary showed inputs KiCad never writes that pass them: a hit without X, an undefined `T2` in the body, a later region's `G37`. Other date notations (`2026/11/13`, an epoch) also pass `strip_clock`. The guard against a date left in is tier 2's two-run, two-path identity | residual | none now (scope test) | no |
 | F18 | An extra empty subdirectory in a package still reads `identical` under `--against-fab`, as `--against` treats a tree | residual | none | no |
+| F19 | **Protected documents this build makes stale** (for the architect's reconciliation): `README.md:13`, "extraction from the board is scheduled before any fabrication package is called verified"; `docs/architecture.md:404`, where §3 puts "fabrication package emission" in `aethelgard-eda` (the export is the CLI's `fab` module, and eda holds only the notes' text); `RUL-19` (2), "the P3 fabrication clause waits for it" and "waits for `1601` as well"; and the `roadmap.md:405` backlog row about refilled zones and the stackup, which this WO answers | doc | the architect updates them | yes (reconciliation) |
+| F20 | **FAB-NOTES states copper, thickness and permittivity twice:** under Stackup, and again in `extract`'s conditions printed verbatim. And "No board has been made from it" stops being true once a board is ordered | reduction / wording | one statement from `extract::CONDITIONS`; say "No board made from it was tested by aethelgard" | no |
+| F21 | **`fab::LAYERS` and `fab::describe` both map each layer:** the first to KiCad's file suffix, the second to its description | reduction | fold the description into `LAYERS` | no |
 
 
 ## Adversarial pass on the build (fresh subagent, Opus, full)
 
-The brief was to break it, with §5's three items and the ruling's three attacks on the stripping. It ran against a binary snapshotted from commit 9eb58a3 in the pinned image, with 14 verify runs, a racer as a third uid, and 3 million fuzzed headers. Its evidence is in `~/.cache/aet-3300-adv/`. Every finding marked fixed was then re-run by the builder against a binary built from a271a73 (`scripts/rerun.sh`, `logs/rerun-*.out`).
+The brief was to break it, with §5's three items and the ruling's three attacks on the stripping. It ran against a binary snapshotted from commit 9eb58a3 in the pinned image, with runs A to M of `verify`, a racer as a third uid, and 3 million fuzzed headers. Its evidence is in `~/.cache/aet-3300-adv/`.
+
+The builder then re-ran its attacks I and G, and its static and race controls, against a binary built from a271a73 (`scripts/rerun2.sh`, `logs/rerun2-*.out`), with each exit code captured directly:
+- **I:** exit 3, `UnwritableOutput`, nothing written.
+- **G:** exit 5, `ToolError`, placement row 12, nothing written.
+- **Pre-filled directory, symlink at D, and a symlink swapped in during the gates:** each exit 3, nothing written.
+- **A symlinked path component:** exit 0, 15 files (path semantics).
+- **The positive control and M** (`scripts/rerun.sh`, `logs/rerun-A.out`): the same flags give `identical`; without `--scenarios`, only `MANIFEST.json` differs.
 
 | attack | found | severity | now |
 |---|---|---|---|
 | **§5.2 two runs disagree** | `MANIFEST.json` differs between a run as root under rootless podman and one as uid 1000: only `verdict_sha256`, via each gate's `uid_boundary_unmet`. FAB-NOTES' re-check command had no `--scenarios`, so it failed on a genuine package. Varying the path, `TMPDIR`, `TZ`, cwd, umask 077 and `SOURCE_DATE_EPOCH` changed nothing | must-fix (ruling) | **D2.** The manifest records the scenarios, and the instruction names the same arguments and sandbox. Re-run: the same flags give `identical`; without `--scenarios`, only `MANIFEST.json` differs, as documented |
-| **§5.1 another uid** | uid 65534 pre-created an empty `--fab-out` it owned; root's run wrote into it and the racer replaced F.Cu afterwards | should-fix | **fixed** (F11). Re-run: `UnwritableOutput` before any gate, nothing written |
+| **§5.1 another uid** | uid 65534 pre-created an empty `--fab-out` it owned; root's run wrote into it and the racer replaced F.Cu afterwards | should-fix | **fixed** (F11). Re-run: exit 3, `UnwritableOutput`, before any gate, nothing written |
 | §5.1 same uid | appending to the ELF after the manifest lands; a planted `MANIFEST.json` leaves a complete-looking package (exit 3, no verdict) | residual | `RUL-19` (4): a process of the caller's uid is not a boundary. No verdict names those bytes |
 | §5.1 static | a pre-filled directory, a symlink at D, a symlink swapped in during the gates: each exit 3, nothing written. 47 kΩ: `not_written`, D never created | none | — |
 | **§5.3 words** | FAB-NOTES listed a subset of the bound's conditions as "the conditions"; it said the Gerbers came from "the copy the gate judged" (it is a second copy with that hash); the README showed the failed-gate `fab` without its null fields | should-fix | **fixed:** `extract::CONDITIONS` printed verbatim, the copy reworded, the README corrected. No claim of hardware testing or measurement was found |
 | §4a a date left in | 1.59 million accepted mutations of the real header, each losing exactly lines 2 and 9. Other date notations pass and are kept | residual | F17 |
 | §4b a stripped line not a date | none: both lines must match the exact shape | none | — |
 | §4c a crafted specification | a dated net name passes every gate and then fails closed at export; `G04*%` is escaped by KiCad; nothing reaches line 2 or 9 | residual | F14 |
-| other: placement | a reference `U"4,X` passed and wrote a `pos.csv` with shifted columns | should-fix | **fixed** (F15). Re-run: exit 5 at row 12, nothing written |
+| other: placement | a reference `U"4,X` passed and wrote a `pos.csv` with shifted columns | should-fix | **fixed** (F15). Re-run: exit 5, `ToolError` at row 12, nothing written |
 | other: shape checks | `holes()` and `pours()` accept inputs KiCad never writes | residual | F17 |
 
 **Its disclosures:** it ran `git diff` twice (read-only) against the brief, and it used `mv` where the removal check blocked `rm`.
@@ -186,11 +198,19 @@ There was one mutant per guard this WO adds, run against the suite the guard liv
 - **`placement_rows`:** the quote inside a field, the plain fields.
 - **`--against`'s `not_written`.**
 
-**21 of 21 killed:**
+Two more were added at the close:
+- `strip_clock`'s complete-lines check;
+- the placement header.
+
+**23 of 23 killed:**
 - One `pours` mutant first survived. A test case was added (a `G37` with no `G36`), and it was then killed.
 - The owner mutant survives on the host, where tests run as `forge`. It is killed as root in the image, where CI runs tier 1.
 
-The two binding checks in F16 have no mutant any suite can kill.
+**Guards with no mutant run, because no suite could kill one without a race or a broken tool** (F16):
+- the export's ELF and board `BindingMismatch` checks;
+- the second `fab_out_usable` call just before the write;
+- `read_output`'s regular-file and size checks;
+- `weaker`, which picks the weakest sandbox report of the three exports.
 
 ## Adversarial pass on the §7 claim, before the ruling (fresh subagent): not falsified
 
@@ -225,7 +245,9 @@ The brief was to falsify the stop, not to confirm it: make KiCad 10.0.7 write a 
 
 ## Reduction pass (diff)
 
-2 duplicates removed · 0 dead paths · 0 protected kept · 0 findings:
+**Run twice:** after the first build, and again over the final diff at a271a73. That made 2 duplicates removed · 0 dead paths · 0 protected kept · 2 findings (F20, F21: recorded, not changed, because changing them now would stale the probe's hashes and the tools run).
+
+The two duplicates removed:
 - the `kicad-cli version` guard, which `strip_clock`'s line-1 and creator-line pins already enforce;
 - a runtime check that the notes list the package's files, now asserted once in tier 2.
 
