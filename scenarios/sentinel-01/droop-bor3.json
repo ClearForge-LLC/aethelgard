@@ -1,0 +1,23 @@
+{
+  "schema_version": 2,
+  "name": "droop-bor3",
+  "base": "../../examples/sentinel-01-minimal.json",
+  "expect": "pass",
+  "expect_findings": [],
+  "expect_counts": { "brownout_reset": 1, "brownout_unrecovered": 0, "rail_below_tolerance": 1 },
+  "overrides": [
+    {
+      "droop": {
+        "domain": "VDD_3V3",
+        "floor_millivolts": 2400,
+        "start_ns": 1000000,
+        "fall_ns": 20000,
+        "hold_ns": 200000,
+        "rise_ns": 20000,
+        "source_milliohms": 500,
+        "load_milliamps": 100,
+        "bor_level": 3
+      }
+    }
+  ]
+}

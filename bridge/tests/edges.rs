@@ -39,10 +39,13 @@ fn bridge(request: &Path) -> Vec<Value> {
         .unwrap();
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert_eq!(out.status.code(), Some(0), "{stdout}");
-    stdout
+    let mut lines = stdout
         .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap());
+    // The identity line comes first in every mode (AET-WO-2200 F15).
+    let identity = lines.next().unwrap();
+    assert_eq!(identity["bridge"], "aethelgard-bridge", "{identity}");
+    lines.collect()
 }
 
 #[test]

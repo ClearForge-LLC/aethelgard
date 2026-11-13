@@ -22,6 +22,8 @@ use std::os::unix::fs::DirBuilderExt;
 use std::path::Path;
 
 use aethelgard_chaos::campaign;
+use aethelgard_chaos::power::{self, Crossing};
+use aethelgard_chaos::record::Droop;
 use aethelgard_ir::SolvedTopology;
 use aethelgard_twin::analog::{self, Deck};
 use serde_json::{Value, json};
@@ -55,6 +57,58 @@ impl Pass {
     pub fn faulted(&self) -> BTreeSet<String> {
         self.faults.iter().map(|f| f.bus.clone()).collect()
     }
+}
+
+/// The digest of the bridge's build inputs that this CLI expects its bridge
+/// to name (`bridge/build.rs`): for `Cargo.toml`, `Cargo.lock`, `build.rs`,
+/// then every file in `src/` by name, each one's path, a NUL, its length as 8
+/// bytes little-endian, and its bytes. It is a constant, not read from
+/// `bridge/` at build time, because a published CLI carries no file outside
+/// its own package; a test recomputes it from the bridge's files on disk, so
+/// an edit to the bridge fails the build's tests until this is updated with it.
+pub const BRIDGE_SOURCE_SHA256: &str =
+    "91e72fcc04983c3a872db8306c525deb3d9b1321dbb3311c24f7318b515dcebb";
+
+/// The bridge's first line (`AET-WO-2200` F15): its name, version and the
+/// digest of the sources it was built from, which must be the ones this CLI
+/// was built with. A stale bridge, one from another tree, or one that says
+/// anything else first is refused (`BridgeMismatch`, exit 4) before any of
+/// its answer is read; the rest of its stdout is returned.
+pub fn identified(stdout: &str) -> Result<&str, run::Stop> {
+    let (first, rest) = stdout.split_once('\n').unwrap_or((stdout, ""));
+    let mismatch = |message: String| run::Stop {
+        code: crate::EXIT_TOOL_UNAVAILABLE,
+        kind: "BridgeMismatch",
+        id: Some(BRIDGE.to_owned()),
+        message,
+    };
+    let want = BRIDGE_SOURCE_SHA256;
+    let v: Value = serde_json::from_str(first).map_err(|_| {
+        mismatch(format!(
+            "its first line is not its identity: `{}`",
+            first.escape_debug()
+        ))
+    })?;
+    let o = v.as_object().filter(|o| o.len() == 3).ok_or_else(|| {
+        mismatch(format!(
+            "its identity is not three fields: `{}`",
+            first.escape_debug()
+        ))
+    })?;
+    let field = |k: &str| o.get(k).and_then(Value::as_str);
+    if field("bridge") != Some(BRIDGE) || field("version").is_none() {
+        return Err(mismatch(format!(
+            "it does not name itself: `{}`",
+            first.escape_debug()
+        )));
+    }
+    if field("source_sha256") != Some(want) {
+        return Err(mismatch(format!(
+            "it was built from sources {}, not the {want} this CLI was built with: rebuild it",
+            field("source_sha256").unwrap_or("(none)")
+        )));
+    }
+    Ok(rest)
 }
 
 /// The bridge beside this executable, or `BridgeUnavailable` (exit 4).
@@ -151,6 +205,7 @@ fn measure(decks: &[Deck], dir: &Path, status: &Path) -> Result<Pass, run::Stop>
     .run_bounded(crate::renode::BOOT_BOUNDS)?;
     let code = out.code(BRIDGE)?;
     let stdout = String::from_utf8_lossy(&out.stdout);
+    let stdout = identified(&stdout)?;
     if code != 0 {
         return Err(run::Stop::tool_error(
             BRIDGE,
@@ -161,10 +216,410 @@ fn measure(decks: &[Deck], dir: &Path, status: &Path) -> Result<Pass, run::Stop>
             ),
         ));
     }
-    let measured = answers(decks, &stdout).map_err(|e| run::Stop::tool_error(BRIDGE, e))?;
+    let measured = answers(decks, stdout).map_err(|e| run::Stop::tool_error(BRIDGE, e))?;
     let mut pass = judge(decks, &measured);
     pass.sandbox = Some(out.sandbox);
     Ok(pass)
+}
+
+/// A declared droop, with what the runner resolved for it: the domain's
+/// nominal and tolerance, and the emitter's decoupling on it (ruled D7).
+#[derive(Clone, Debug)]
+pub struct Rail {
+    pub droop: Droop,
+    pub nominal_millivolts: u32,
+    pub tolerance_permille: u32,
+    pub decoupling_picofarads: u64,
+}
+
+/// The rail ngspice computed: every crossing of the active thresholds'
+/// levels, in time order, and the rail's minimum.
+pub struct Solved {
+    pub crossings: Vec<Crossing>,
+    pub minimum_microvolts: u64,
+    pub sandbox: run::SandboxReport,
+}
+
+/// Solves `rail` once with the bridge (`--rail`, ruled D1), over `span_ns`,
+/// in `dir`, a directory of its own; `status` is the reaper's. The request
+/// is integers only; every answer line is checked and anything else stops
+/// the call (`INV-06`).
+pub fn rail(rail: &Rail, span_ns: u64, dir: &Path, status: &Path) -> Result<Solved, run::Stop> {
+    let tool = bridge()?;
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .create(dir)
+        .map_err(|e| run::Stop::tool_error(BRIDGE, format!("cannot create its directory: {e}")))?;
+    let d = &rail.droop;
+    let levels = power::levels(d.bor_level);
+    let request = dir.join("rail.json");
+    let body = json!({
+        "domain": d.domain,
+        "nominal_microvolts": u64::from(rail.nominal_millivolts) * 1000,
+        "floor_microvolts": u64::from(d.floor_millivolts) * 1000,
+        "start_ns": d.start_ns,
+        "fall_ns": d.fall_ns,
+        "hold_ns": d.hold_ns,
+        "rise_ns": d.rise_ns,
+        "source_milliohms": d.source_milliohms,
+        "load_microamps": u64::from(d.load_milliamps) * 1000,
+        "decoupling_picofarads": rail.decoupling_picofarads,
+        "span_ns": span_ns,
+        "levels": levels.iter().map(|(name, uv)| json!({"name": name, "microvolts": uv})).collect::<Vec<_>>(),
+    });
+    fs::write(&request, body.to_string())
+        .map_err(|e| run::Stop::tool_error(BRIDGE, format!("cannot write its request: {e}")))?;
+    let out = run::Invocation {
+        tool: &tool,
+        args: vec!["--rail".into(), request.into_os_string()],
+        env: Vec::new(),
+        workdir: dir,
+        cwd: dir.to_path_buf(),
+        status: status.to_path_buf(),
+        read_only: tool.dirs(),
+        read_write: Vec::new(),
+    }
+    .run_bounded(crate::renode::BOOT_BOUNDS)?;
+    let code = out.code(BRIDGE)?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stdout = identified(&stdout)?;
+    let fail = |m: String| run::Stop::tool_error(BRIDGE, m);
+    if code != 0 {
+        return Err(fail(format!(
+            "exited {code} solving the rail: {} {}",
+            stdout.trim(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
+    let (crossings, minimum_microvolts) = rail_answer(stdout, &levels).map_err(fail)?;
+    Ok(Solved {
+        crossings,
+        minimum_microvolts,
+        sandbox: out.sandbox,
+    })
+}
+
+/// The bridge's rail answer: crossing lines in time order, each of a
+/// requested level at its requested value, then one closing line.
+fn rail_answer(stdout: &str, levels: &[(String, u64)]) -> Result<(Vec<Crossing>, u64), String> {
+    let lines: Vec<&str> = stdout.lines().collect();
+    let Some((last, crossing_lines)) = lines.split_last() else {
+        return Err("the rail answer is empty".to_owned());
+    };
+    let parse = |l: &str| -> Result<serde_json::Map<String, Value>, String> {
+        match serde_json::from_str::<Value>(l) {
+            Ok(Value::Object(o)) => Ok(o),
+            _ => Err(format!("`{}` is not a JSON object", l.escape_debug())),
+        }
+    };
+    let end = parse(last)?;
+    let minimum = match (
+        end.len(),
+        end.get("rail"),
+        end.get("minimum_microvolts").and_then(Value::as_u64),
+        end.get("accepted_points").and_then(Value::as_u64),
+    ) {
+        (3, Some(Value::String(s)), Some(m), Some(_)) if s == "solved" => m,
+        _ => return Err(format!("`{last}` is not the rail's closing line")),
+    };
+    let mut out = Vec::new();
+    for l in crossing_lines {
+        let o = parse(l)?;
+        let text = |k: &str| o.get(k).and_then(Value::as_str);
+        let level = text("level").ok_or_else(|| format!("`{l}` names no level"))?;
+        let uv = o.get("microvolts").and_then(Value::as_u64);
+        let at_ps = o.get("at_ps").and_then(Value::as_u64);
+        let falling = o.get("falling").and_then(Value::as_bool);
+        let ok = o.len() == 6
+            && text("method") == Some("interpolated")
+            && text("ngspice") == Some(NGSPICE)
+            && levels.iter().any(|(n, v)| n == level && Some(*v) == uv);
+        let (true, Some(microvolts), Some(at_ps), Some(falling)) = (ok, uv, at_ps, falling) else {
+            return Err(format!("`{l}` is not a crossing of a requested level"));
+        };
+        out.push(Crossing {
+            level: level.to_owned(),
+            microvolts,
+            at_ps,
+            falling,
+        });
+    }
+    if !out.windows(2).all(|w| w[0].at_ps <= w[1].at_ps) {
+        return Err("the crossings are not in time order".to_owned());
+    }
+    // A declared sag crosses a level at most twice; more is a rail that
+    // dithers across it, which `check_droop` keeps scenarios from asking for
+    // (`AET-WO-2301` adversarial F4), and is never read as resets.
+    for (name, _) in levels {
+        if out.iter().filter(|c| &c.level == name).count() > 2 {
+            return Err(format!("the rail crossed `{name}` more than twice"));
+        }
+    }
+    Ok((out, minimum))
+}
+
+/// The boot of a droop scenario: the bridge owns Renode as its child
+/// (`--renode`, ruled D1), with Renode's own arguments, environment and
+/// grants; Renode's output is the bridge's after its identity line, read
+/// through [`crate::renode::LOG_FILTER`].
+pub fn boot(inv: &run::Invocation<'_>, renode: &Path) -> Result<run::Output, run::Stop> {
+    let tool = bridge()?;
+    let mut args: Vec<std::ffi::OsString> = vec!["--renode".into(), renode.as_os_str().into()];
+    args.extend(inv.args.iter().cloned());
+    let mut read_only = inv.read_only.clone();
+    read_only.extend(tool.dirs());
+    let mut out = run::Invocation {
+        tool: &tool,
+        args,
+        env: inv.env.clone(),
+        workdir: inv.workdir,
+        cwd: inv.cwd.clone(),
+        status: inv.status.clone(),
+        read_only,
+        read_write: inv.read_write.clone(),
+    }
+    .run_bounded_filtered(crate::renode::BOOT_BOUNDS, crate::renode::LOG_FILTER)?;
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    let rest = identified(&text)?.as_bytes().to_vec();
+    out.stdout = rest;
+    Ok(out)
+}
+
+/// What a probe must read for the firmware to have recovered: the boot word,
+/// the first identity check's status OK and expected value, and the first
+/// witness's `CR2` and `TXDR` at the final block's masks (`AET-WO-2301`
+/// adversarial F1: the record alone is the firmware's own claim). A reading
+/// the image has no check or witness for has a mask of 0 and is vacuous.
+fn recovered_words(
+    image: &aethelgard_twin::boot::Image,
+    boot_word: u32,
+    probe: Option<&crate::renode::Probe>,
+) -> (
+    [crate::verdict::Word; 3],
+    [crate::verdict::RegisterReport; 2],
+) {
+    use crate::verdict::{RegisterReport, Word, word};
+    let check = image.i2c.checks.first();
+    let w = |address: u32, expected: u32, observed: Option<u32>| Word {
+        address: word(address),
+        expected: word(expected),
+        observed: observed.map(word),
+    };
+    let words = [
+        w(
+            boot_word,
+            aethelgard_twin::boot::BOOT_MAGIC,
+            probe.map(|p| p.boot_word),
+        ),
+        w(
+            check.map_or(0, |c| c.status_at),
+            check.map_or(0, |_| aethelgard_twin::boot::STATUS_OK),
+            probe.map(|p| p.record.map_or(0, |r| r.0)),
+        ),
+        w(
+            check.map_or(0, |c| c.value_at),
+            check.map_or(0, |c| c.expected),
+            probe.map(|p| p.record.map_or(0, |r| r.1)),
+        ),
+    ];
+    let witness = image.i2c.witnesses.first();
+    let reg = |name: &str, address: u32, mask: u32, expected: u32, observed: Option<u32>| {
+        RegisterReport {
+            name: name.to_owned(),
+            address: word(address),
+            mask: word(mask),
+            expected: word(expected),
+            observed: observed.map(word),
+        }
+    };
+    let controller = probe.map(|p| p.controller.unwrap_or((0, 0)));
+    let regs = match witness {
+        Some(wi) => [
+            reg(
+                &format!("{}.CR2", wi.peripheral),
+                wi.cr2_at,
+                wi.cr2_mask(),
+                wi.cr2_expected(),
+                controller.map(|c| c.0),
+            ),
+            reg(
+                &format!("{}.TXDR", wi.peripheral),
+                wi.txdr_at,
+                0xFF,
+                wi.txdr_expected(),
+                controller.map(|c| c.1),
+            ),
+        ],
+        None => [
+            reg("CR2", 0, 0, 0, controller.map(|c| c.0)),
+            reg("TXDR", 0, 0, 0, controller.map(|c| c.1)),
+        ],
+    };
+    (words, regs)
+}
+
+/// Whether a word reads as expected under its mask.
+fn as_expected(r: &crate::verdict::RegisterReport) -> bool {
+    let n = |s: &str| u32::from_str_radix(s.trim_start_matches("0x"), 16).ok();
+    match (
+        r.observed.as_deref().and_then(n),
+        n(&r.expected),
+        n(&r.mask),
+    ) {
+        (Some(o), Some(e), Some(m)) => o & m == e & m,
+        _ => false,
+    }
+}
+
+/// A droop's records and findings (`AET-WO-2301` §2.2, §2.3): the declared
+/// rail, ngspice's crossings, the rendered resets, each release's probe;
+/// `brownout_reset` (info) per reset, `brownout_unrecovered` per reset the
+/// firmware did not recover from within the bound (or never released, or
+/// whose probe a killed boot never read), and `rail_below_tolerance` (info)
+/// when the rail left the domain's tolerance. `probes` is `None` when the
+/// boot was killed at a bound.
+pub fn droop_report(
+    rail: &Rail,
+    solved: &Solved,
+    resets: &[power::Reset],
+    probes: Option<&[crate::renode::Probe]>,
+    image: &aethelgard_twin::boot::Image,
+    boot_word: u32,
+) -> (crate::verdict::DroopReport, Vec<Finding>) {
+    use crate::verdict::{CrossingReport, DroopReport, ObservedReport, RailReport, ResetReport};
+    let d = &rail.droop;
+    let mut findings = Vec::new();
+    let mut reports = Vec::new();
+    for r in resets {
+        let cause = r.cause.join(", ");
+        reports.push(ResetReport {
+            kind: "bridge.reset_rendered",
+            source: "bridge",
+            at_ns: r.asserted_ns,
+            released: false,
+            cause: r.cause.clone(),
+            rendering: power::ASSERT_RENDERING,
+        });
+        findings.push(Finding::info(
+            campaign::RESET_FINDING,
+            match r.released_ns {
+                Some(at) => format!(
+                    "{cause} held the part in reset from {} ns to {at} ns: the model's rendering of the supervisor, not a measured reset",
+                    r.asserted_ns
+                ),
+                None => format!("{cause} held the part in reset from {} ns to the run's end", r.asserted_ns),
+            },
+        ));
+        if let Some(at) = r.released_ns {
+            reports.push(ResetReport {
+                kind: "bridge.reset_rendered",
+                source: "bridge",
+                at_ns: at,
+                released: true,
+                cause: r.cause.clone(),
+                rendering: power::RELEASE_RENDERING,
+            });
+        } else {
+            findings.push(Finding::plain(
+                campaign::UNRECOVERED_FINDING,
+                format!(
+                    "{cause} never released the reset asserted at {} ns",
+                    r.asserted_ns
+                ),
+            ));
+        }
+    }
+    let mut observed = Vec::new();
+    let releases: Vec<u64> = resets.iter().filter_map(|r| r.released_ns).collect();
+    for (k, at) in releases.iter().enumerate() {
+        let probe_at = at + power::RECOVERY_BOUND_NS;
+        let Some(probe) = probes.map(|p| p.get(k)) else {
+            findings.push(Finding::plain(
+                campaign::UNRECOVERED_FINDING,
+                format!("the boot was killed before the read at {probe_at} ns, after the release at {at} ns"),
+            ));
+            continue;
+        };
+        let ([boot, status, value], [cr2, txdr]) = recovered_words(image, boot_word, probe);
+        let ok = [&boot, &status, &value]
+            .iter()
+            .all(|w| w.observed.as_deref() == Some(w.expected.as_str()))
+            && as_expected(&cr2)
+            && as_expected(&txdr);
+        if !ok {
+            findings.push(Finding::plain(
+                campaign::UNRECOVERED_FINDING,
+                format!(
+                                        "{} ns after the release at {at} ns the firmware had not recovered: boot word {}, status {}, value {}, CR2 {}, TXDR {}",
+                    power::RECOVERY_BOUND_NS,
+                    boot.observed.as_deref().unwrap_or("unread"),
+                    status.observed.as_deref().unwrap_or("unread"),
+                    value.observed.as_deref().unwrap_or("unread"),
+                    cr2.observed.as_deref().unwrap_or("unread"),
+                    txdr.observed.as_deref().unwrap_or("unread")
+                ),
+            ));
+        }
+        observed.push(ObservedReport {
+            kind: "firmware.observed",
+            source: "renode",
+            at_ns: probe_at,
+            boot_word: boot,
+            status,
+            value,
+            cr2,
+            txdr,
+        });
+    }
+    // belt-and-suspenders: `check_droop` refused a rail whose levels are not
+    // stated before any run; a floor of 0 here would only add the finding.
+    let (floor, _) = campaign::rail_levels(d, rail.nominal_millivolts).unwrap_or((0, 0));
+    let tolerance_floor =
+        campaign::tolerance_floor_uv(rail.nominal_millivolts, rail.tolerance_permille);
+    if floor < tolerance_floor {
+        findings.push(Finding::info(
+            campaign::BELOW_TOLERANCE_FINDING,
+            format!(
+                "domain `{}`: the declared droop takes the rail to {floor} µV, below its tolerance, {tolerance_floor} µV",
+                d.domain
+            ),
+        ));
+    }
+    let report = DroopReport {
+        rail: RailReport {
+            kind: "analog.rail_declared",
+            source: "scenario",
+            domain: d.domain.clone(),
+            nominal_millivolts: rail.nominal_millivolts,
+            tolerance_permille: rail.tolerance_permille,
+            floor_millivolts: d.floor_millivolts,
+            start_ns: d.start_ns,
+            fall_ns: d.fall_ns,
+            hold_ns: d.hold_ns,
+            rise_ns: d.rise_ns,
+            source_milliohms: d.source_milliohms,
+            load_milliamps: d.load_milliamps,
+            decoupling_picofarads: rail.decoupling_picofarads,
+            bor_level: d.bor_level,
+            minimum_microvolts: solved.minimum_microvolts,
+            thresholds: "DS12117 Rev 7 Table 26, typical (provisional: read from a mirror, AET-WO-2301 F1)",
+        },
+        crossings: solved
+            .crossings
+            .iter()
+            .map(|c| CrossingReport {
+                kind: "analog.rail_crossing_computed",
+                source: "ngspice",
+                level: c.level.clone(),
+                microvolts: c.microvolts,
+                at_ps: c.at_ps,
+                falling: c.falling,
+            })
+            .collect(),
+        resets: reports,
+        observed,
+    };
+    (report, findings)
 }
 
 fn request_json(decks: &[Deck]) -> Value {
@@ -341,7 +796,123 @@ fn judge(decks: &[Deck], answers: &[Answer]) -> Pass {
 
 #[cfg(test)]
 mod tests {
+    use sha2::{Digest, Sha256};
+
     use super::*;
+
+    /// `AET-WO-2200` F15: the digest this CLI expects is the one the bridge's
+    /// build script computes from the bridge's files as they are now; an edit
+    /// to the bridge fails here until [`BRIDGE_SOURCE_SHA256`] moves with it.
+    #[test]
+    fn the_expected_bridge_digest_is_the_bridges_build_inputs_now() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bridge");
+        let mut files = vec![
+            "Cargo.toml".to_owned(),
+            "Cargo.lock".to_owned(),
+            "build.rs".to_owned(),
+        ];
+        let mut src: Vec<String> = fs::read_dir(root.join("src"))
+            .unwrap()
+            .map(|e| format!("src/{}", e.unwrap().file_name().to_str().unwrap()))
+            .collect();
+        src.sort();
+        files.extend(src);
+        let mut h = Sha256::new();
+        for f in &files {
+            let bytes = fs::read(root.join(f)).unwrap();
+            h.update(f.as_bytes());
+            h.update([0u8]);
+            h.update((bytes.len() as u64).to_le_bytes());
+            h.update(&bytes);
+        }
+        assert_eq!(
+            crate::input::hex(<[u8; 32]>::from(h.finalize())),
+            BRIDGE_SOURCE_SHA256,
+            "the bridge changed: update BRIDGE_SOURCE_SHA256"
+        );
+    }
+
+    /// A stale or impostor bridge is refused before any of its answer is read.
+    #[test]
+    fn a_bridge_that_does_not_name_this_trees_sources_first_is_refused() {
+        let me = BRIDGE_SOURCE_SHA256;
+        let ok =
+            format!(r#"{{"bridge":"aethelgard-bridge","source_sha256":"{me}","version":"0.1.0"}}"#);
+        assert_eq!(identified(&format!("{ok}\nrest\n")).unwrap(), "rest\n");
+        let refused = [
+            String::new(),
+            "rest".to_owned(),
+            ok.replace(me, &"0".repeat(64)),
+            ok.replace("aethelgard-bridge", "aethelgard-bridgf"),
+            ok.replace(r#","version":"0.1.0""#, ""),
+            ok.replace('}', r#","extra":1}"#),
+            format!("rest\n{ok}"),
+        ];
+        for r in refused {
+            let e = identified(&format!("{r}\n")).unwrap_err();
+            assert_eq!(
+                (e.kind, e.code),
+                ("BridgeMismatch", crate::EXIT_TOOL_UNAVAILABLE),
+                "{r}"
+            );
+        }
+    }
+
+    /// `AET-WO-2301`: a rail answer is crossings of requested levels at their
+    /// requested values, in time order, then one closing line.
+    #[test]
+    fn a_rail_answer_is_requested_crossings_in_order_then_the_close() {
+        let levels = power::levels(3);
+        let c = |level: &str, uv: u64, at: u64, falling: bool| {
+            format!(
+                r#"{{"at_ps":{at},"falling":{falling},"level":"{level}","method":"interpolated","microvolts":{uv},"ngspice":"44.2"}}"#
+            )
+        };
+        let end = r#"{"accepted_points":100027,"minimum_microvolts":2350000,"rail":"solved"}"#;
+        let good = [
+            c("VBOR3_rising", 2_700_000, 1_012_422_222, true),
+            c("VBOR3_falling", 2_610_000, 1_014_422_222, true),
+            end.to_owned(),
+        ]
+        .join("\n");
+        let (crossings, min) = rail_answer(&good, &levels).unwrap();
+        assert_eq!((crossings.len(), min), (2, 2_350_000));
+        let refused = [
+            String::new(),
+            c("VBOR3_falling", 2_610_000, 1, true),
+            [c("VBOR2_falling", 2_310_000, 1, true), end.to_owned()].join("\n"),
+            [c("VBOR3_falling", 2_600_000, 1, true), end.to_owned()].join("\n"),
+            [
+                c("VBOR3_falling", 2_610_000, 2, true),
+                c("VBOR3_rising", 2_700_000, 1, true),
+                end.to_owned(),
+            ]
+            .join("\n"),
+            [
+                c("VBOR3_falling", 2_610_000, 1, true).replace("44.2", "45"),
+                end.to_owned(),
+            ]
+            .join("\n"),
+            [
+                c("VBOR3_falling", 2_610_000, 1, true).replace('}', r#","x":1}"#),
+                end.to_owned(),
+            ]
+            .join("\n"),
+            [end.to_owned(), end.to_owned()].join("\n"),
+            end.replace("solved", "done"),
+            // A level crossed three times is a dithering rail (adversarial F4).
+            [
+                c("VBOR3_falling", 2_610_000, 1, true),
+                c("VBOR3_falling", 2_610_000, 2, false),
+                c("VBOR3_falling", 2_610_000, 3, true),
+                end.to_owned(),
+            ]
+            .join("\n"),
+        ];
+        for r in refused {
+            assert!(rail_answer(&r, &levels).is_err(), "accepted: {r}");
+        }
+    }
 
     fn decks() -> Vec<Deck> {
         let topology: SolvedTopology = serde_json::from_str(

@@ -86,13 +86,34 @@ impl Ngspice {
         high: &str,
         from: &str,
     ) -> Result<Option<f64>, String> {
-        if ffi::vector(result)?.is_some() {
-            return Err(format!("a vector `{result}` exists before the measurement"));
-        }
         let cmd = format!(
             "meas tran {result} TRIG v({probe}) VAL={low} TD={from} RISE=1 TARG v({probe}) VAL={high} TD={from} RISE=1"
         );
-        let r = ffi::command(&cmd)?;
+        self.read_meas(result, &cmd)
+    }
+
+    /// ngspice's own `meas` of the time `probe` crosses `level` (a decimal in
+    /// volts) for the `count`-th time in the given direction, in seconds;
+    /// `None` when ngspice reports there is no such crossing.
+    pub fn meas_when(
+        &mut self,
+        result: &str,
+        probe: &str,
+        level: &str,
+        falling: bool,
+        count: usize,
+    ) -> Result<Option<f64>, String> {
+        let edge = if falling { "FALL" } else { "RISE" };
+        let cmd = format!("meas tran {result} WHEN v({probe})={level} {edge}={count}");
+        self.read_meas(result, &cmd)
+    }
+
+    /// Runs one `meas` command and reads its result vector.
+    fn read_meas(&mut self, result: &str, cmd: &str) -> Result<Option<f64>, String> {
+        if ffi::vector(result)?.is_some() {
+            return Err(format!("a vector `{result}` exists before the measurement"));
+        }
+        let r = ffi::command(cmd)?;
         let (log, _) = host::take_log();
         if r != 0 || host::exit().is_some() {
             return Err(format!("`{cmd}` returned {r}: {log:?}"));

@@ -13,6 +13,8 @@ use std::process::{Command, Output, Stdio};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+mod common;
+
 use serde_json::Value;
 
 struct Dir(PathBuf);
@@ -208,7 +210,7 @@ fn cli(bridge: Option<&'static str>) -> PathBuf {
     }
     if let Some(body) = bridge {
         let stub = dir.join("aethelgard-bridge");
-        fs::write(&stub, body).unwrap();
+        fs::write(&stub, common::identified_stub(body)).unwrap();
         fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
     }
     made.push((bridge, me.clone()));

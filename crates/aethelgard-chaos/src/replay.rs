@@ -66,14 +66,14 @@ impl State {
     }
 }
 
-/// The wire kinds of the records a run holds exactly once: scenario, topology,
-/// boot, verdict.
+/// The wire kinds of the records a run holds at most once: scenario, topology,
+/// boot, verdict, the declared rail and the expected counts.
 /// The most records a run may fold. A campaign run holds a few dozen; the cap
 /// bounds the memory the fold builds, which the 256 MiB trace bound does not
 /// (a 10-byte record costs about 350 bytes of state).
 pub const MAX_RECORDS: usize = 65_536;
 
-const ONCE_KINDS: [u64; 4] = [5, 6, 10, 14];
+const ONCE_KINDS: [u64; 6] = [5, 6, 10, 14, 16, 20];
 
 /// The incremental fold. The writer and the reader both drive it, so a
 /// trace's `state_hash` is computed one way only.
@@ -85,7 +85,7 @@ pub struct Replayer {
     scratch: Vec<u8>,
     /// Which of the once-only record kinds (scenario, topology, boot, verdict)
     /// have been folded in.
-    once_seen: [bool; 4],
+    once_seen: [bool; 6],
 }
 
 impl Replayer {
@@ -97,7 +97,7 @@ impl Replayer {
             count: 0,
             last_timestamp: 0,
             scratch: Vec::new(),
-            once_seen: [false; 4],
+            once_seen: [false; 6],
         }
     }
 
