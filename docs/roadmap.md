@@ -113,6 +113,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 
   **It breaks today's examples on purpose.** The same PR rewrites both, keeping their file names so the `gates` step needs no change, and the P0 gate's `validate` clause holds on the new shape.
 - `AET-WO-1101` — written, build-only: the microcontroller's pin table.
+- `AET-WO-1102` — **written 2026-11-13** (`AET-WO-3300` F14, F15), spike then build, cheap tier, targeted adversarial pass. Every printable character in every kind of identifier is run through every output (KiCad files, both CSVs, Gerber attributes, the drill file, the firmware, the Renode platform, the archive, and the package's file names), and `RUL-14` is narrowed to the set every output carries unchanged, plus a refusal of date and time shapes, so `validate` refuses what the export refused only after every gate had passed.
   - **The source.** It vendors ST's BSD-3-Clause `STM32_open_pin_data` files for the STM32H753ZI, pinned by commit and sha256 with ST's notice (`architecture.md` §2.8). The pin and alternate-function tables are not in the SVD, which has neither (`architecture.md` §2.1).
   - **The parse.** `aethelgard-svd-hal` parses the files into an IR pin table. That graduates the crate from the stub checks, with a pure-Rust XML parser as its one new dependency.
   - **The golden facts.** 114 I/O pins, and PB8 carries `I2C1_SCL` on AF4.
@@ -403,7 +404,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | `gh-write` with a `--draft` flag | `3200` F16 | **won't build** (Scotty 2026-11-12): the architect converts a proposal PR in one call. Revisit if proposal PRs become frequent (the P4 evolve loop) |
 | `Sx::child` takes the first match where KiCad takes the last; `check drc` passed a board with a second `thickness` | `1305` F6 | `AET-WO-1306`: **merged (PR #101)** |
 | `check drc` judges a refilled scratch copy, so a caller's saved zone fill and `stackup` reach a fabricator unjudged (`extract` refuses both) | `1306` F9 | `AET-WO-3300`: the package's Gerbers carry zones KiCad refilled, and `FAB-NOTES.md` states the stackup: **merged (PR #103)** |
-| A specification's own identifiers can put a date or a quote into a tool's output (a net named `2026-11-13`; a reference `U"4,X`); the export refuses both, exit 5 | `3300` F14, F15 | identifier validation in `aethelgard-ir`, the next work order that owns `validate` |
+| A specification's own identifiers can put a date or a quote into a tool's output (a net named `2026-11-13`; a reference `U"4,X`); the export refuses both, exit 5 | `3300` F14, F15 | `AET-WO-1102` (written 2026-11-13): `RUL-14` narrowed by measuring every character through every output |
 | The export's ELF and board `BindingMismatch` guards have no killing test (a swap race in `verify`'s scratch, as `1305`'s extract test does) | `3300` F16 | the next work order that touches `verify` |
 | `fab::LAYERS` and `fab::describe` both map each layer; fold the description into `LAYERS` | `3300` F21 | the next work order that touches the fab module (nit) |
 | A dedicated uid for `aethelgard` on Furnace, so `uid_boundary` holds there | `1601` §1.3, R4 | **the operator's** (the CLI README's deployment section) |
@@ -468,6 +469,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-13 | §5, §7.1 | `AET-WO-1306` reconciled (merged, PR #101): one strict KiCad reader for every gate, with its §7.1 stop ruled (F1, F2, F3, F15). `3300`'s prerequisites are all met. The duplicate `--root` backlog row is removed; Scotty's deferral stands | PR #101 |
 | 2026-11-13 | §7.1 | `AET-WO-1907` reconciled (merged, PR #104): CI's `tools` job in five shards, 13 m 41 s at the slowest. Five, not four, by the architect's ruling at the measurement; the shard logic is bash and awk (`RUL-12`) | PR #104 |
 | 2026-11-13 | §5, §7.1 | `AET-WO-3300` reconciled (merged, PR #103). **P3 gate clauses 1, 2 and 3 hold; clause 4 (the bench comparison, `3302`) waits for the Nucleo.** `RUL-03` amended with the one exception to passing a tool's output through unchanged (ratified by Scotty). README status and `RUL-19` (2) brought current. CI's tools job is eight shards | PR #103; Scotty, 2026-11-13 |
+| 2026-11-13 | §5, §7.1 | `AET-WO-1102` written: identifiers narrowed by measurement, from `3300` F14 and F15 | `AET-WO-3300` FEEDBACK |
 
 ## 9. Provenance
 
