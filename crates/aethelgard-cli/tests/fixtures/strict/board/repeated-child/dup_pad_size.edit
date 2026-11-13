@@ -1,0 +1,22 @@
+# class: repeated-child
+# note: a pad's second size, 0.54 x 4 mm (A6)
+# main: drc 1 fail; drc-parity 1 fail; extract 3 UnmodelledCopper
+# drc: 3 MalformedBoard kicad_pcb/footprint[7]/pad[2]
+# drc-parity: 3 MalformedBoard kicad_pcb/footprint[7]/pad[2]
+# extract: 3 MalformedBoard kicad_pcb/footprint[7]/pad[2]
+@@ find
+		(pad "2" smd roundrect
+			(at 0.51 0)
+			(size 0.54 0.64)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+@@ replace
+		(pad "2" smd roundrect
+			(at 0.51 0)
+			(size 0.54 0.64)
+			(size 0.54 4)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+@@ end

@@ -1,0 +1,19 @@
+# class: connectivity
+# note: a segment with no net
+# main: drc 1 fail; drc-parity 1 fail; extract 3 BoardUnreadable
+# drc: 1 fail
+# drc-parity: 1 fail
+# extract: 3 BoardUnreadable
+@@ find
+	)
+	(embedded_fonts no)
+@@ replace
+	)
+	(segment
+		(start 74 115)
+		(end 80 115)
+		(width 0.2)
+		(layer "B.Cu")
+	)
+	(embedded_fonts no)
+@@ end

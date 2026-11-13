@@ -1,0 +1,21 @@
+# class: unmodelled-item
+# note: a track arc on copper extract does not model
+# main: drc 1 fail; drc-parity 1 fail; extract 3 UnmodelledCopper
+# drc: 1 fail
+# drc-parity: 1 fail
+# extract: 3 UnmodelledCopper
+@@ find
+	)
+	(embedded_fonts no)
+@@ replace
+	)
+	(arc
+		(start 74 115)
+		(mid 75 114)
+		(end 76 115)
+		(width 0.2)
+		(layer "B.Cu")
+		(net "/I2C_SDA")
+	)
+	(embedded_fonts no)
+@@ end

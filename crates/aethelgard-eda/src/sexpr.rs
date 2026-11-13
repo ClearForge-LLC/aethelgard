@@ -4,7 +4,11 @@
 //! A string is double-quoted; inside it `\"` and `\\` are escapes, and `\n`,
 //! `\r`, `\t` are read as controls. That is all the quoting KiCad's reader
 //! needs, and all [`quote`] writes (`AET-WO-1300` S5: every character
-//! `RUL-14` admits survives it).
+//! `RUL-14` admits survives it). Every other escape is refused: KiCad
+//! 10.0.7's lexer (`DSNLEXER::NextTok`) reads `\a \b \f \v` as controls,
+//! `\xHH` as hex, `\ooo` as octal and keeps the backslash before anything
+//! else, so `"no\137connect"` is `no_connect` to it (`AET-WO-1306`
+//! adversarial pass).
 
 use std::fmt::Write as _;
 
@@ -47,6 +51,10 @@ pub enum SexprError {
     ForbiddenByte(usize),
     #[error("a string starting at byte {0} holds a raw line break or control byte")]
     ControlInString(usize),
+    #[error(
+        "a string starting at byte {0} holds an escape other than `\\\"` `\\\\` `\\n` `\\r` `\\t`; KiCad decodes the others (octal, hex, `\\a` …) or keeps the backslash"
+    )]
+    Escape(usize),
     #[error("the line at byte {0} starts with `#`, which KiCad skips as a comment")]
     CommentLine(usize),
     #[error("a `\"` at byte {0} touches an atom, which KiCad reads as one token")]
@@ -174,7 +182,8 @@ fn tokens(src: &str) -> impl Iterator<Item = Result<Token<'_>, SexprError>> {
                             b'n' => b'\n',
                             b'r' => b'\r',
                             b't' => b'\t',
-                            other => other,
+                            b'"' | b'\\' => e,
+                            _ => return Some(Err(SexprError::Escape(start))),
                         }
                     } else if b == b'"' {
                         break;
@@ -410,6 +419,22 @@ mod tests {
         assert!(matches!(parse("(a) (b)"), Err(SexprError::NotOneList(2))));
         assert!(matches!(parse("a"), Err(SexprError::NotOneList(1))));
         assert!(matches!(parse(""), Err(SexprError::NotOneList(0))));
+    }
+
+    #[test]
+    fn only_the_escapes_both_readers_decode_alike_are_read() {
+        assert_eq!(
+            parse("(a \"q\\\"b\\\\c\\nd\\re\\tf\")").unwrap().arg(1),
+            Some("q\"b\\c\nd\re\tf")
+        );
+        for bad in [
+            "\\137", "\\x2d", "\\a", "\\b", "\\f", "\\v", "\\k", "\\0", "\\e",
+        ] {
+            let text = format!("(a \"no{bad}connect\")");
+            assert!(matches!(parse(&text), Err(SexprError::Escape(3))), "{text}");
+        }
+        // An atom has no escapes, in either reader.
+        assert_eq!(parse("(a b\\c)").unwrap().arg(1), Some("b\\c"));
     }
 
     #[test]

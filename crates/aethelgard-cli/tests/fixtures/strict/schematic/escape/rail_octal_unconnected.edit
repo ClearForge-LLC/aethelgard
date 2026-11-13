@@ -1,0 +1,275 @@
+# class: escape
+# note: the 3V3 rail renamed "unconnected\055V": KiCad's netlist names it unconnected-V (adversarial B1)
+# main: erc 0 pass; drc-parity 1 fail
+# erc: 3 MalformedSchematic
+# drc-parity: 3 MalformedSchematic
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 50.8 9.144 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 50.8 9.144 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 25.4 62.484 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 25.4 62.484 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 25.4 57.404 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 25.4 57.404 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 45.72 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 45.72 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 48.26 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 48.26 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 50.8 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 50.8 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 53.34 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 53.34 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 55.88 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 55.88 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 58.42 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 58.42 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 60.96 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 60.96 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 63.5 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 63.5 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 66.04 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 66.04 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 68.58 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 68.58 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 71.12 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 71.12 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 73.66 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 73.66 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 76.2 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 76.2 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 78.74 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 78.74 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 180.34 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 180.34 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 215.9 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 215.9 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 251.46 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 251.46 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 287.02 34.544 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 287.02 34.544 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 109.22 80.264 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 109.22 80.264 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 144.78 80.264 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 144.78 80.264 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 215.9 92.964 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 215.9 92.964 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 251.46 92.964 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 251.46 92.964 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 287.02 80.264 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 287.02 80.264 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 292.1 80.264 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 292.1 80.264 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 307.34 105.664 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 307.34 105.664 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 119.38 125.984 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 119.38 125.984 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 154.94 125.984 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 154.94 125.984 0)
+@@ end

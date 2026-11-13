@@ -754,3 +754,38 @@ fn verify_refuses_a_board_swapped_before_extract() {
     assert_eq!(v["error"]["kind"], "BindingMismatch", "{v}");
     assert_eq!(v["error"]["id"], "extract", "{v}");
 }
+
+/// `AET-WO-1306` §3, with KiCad: every corpus file the strict reader
+/// accepts gets, from `check drc`, `check drc --spec --schematic` and
+/// `check erc`, exactly the verdict its file states (measured against main's
+/// binary in the pinned image; the file's `main:` line). Refusals are tier 1
+/// (`strict_tier1.rs`). A board KiCad and the gate read alike keeps its
+/// verdict: the gaps against §3's "refused by every gate" are in FEEDBACK.
+#[test]
+fn every_corpus_file_the_reader_accepts_gets_its_stated_kicad_verdict() {
+    use common::corpus;
+    let scratch = common::private_tmp("1306-corpus");
+    let (board, schematic) = corpus::reference(&scratch.0);
+    let mut ran = 0;
+    for case in corpus::cases(&board, &schematic) {
+        for e in case
+            .expect
+            .iter()
+            .filter(|e| e.code != 3 && e.gate != "extract")
+        {
+            let (code, v) = corpus::gate(&case, &e.gate, &scratch.0, (&board, &schematic), None);
+            let (what, id) = corpus::outcome(&v);
+            assert_eq!(
+                (code, what, id),
+                (e.code, e.what.clone(), e.id.clone()),
+                "{}/{} {}: {v}",
+                case.class,
+                case.name,
+                e.gate
+            );
+            ran += 1;
+        }
+    }
+    eprintln!("ANSWER 1306: {ran} KiCad verdicts as stated");
+    assert!(ran > 0);
+}

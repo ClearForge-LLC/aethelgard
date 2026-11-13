@@ -2,6 +2,8 @@
 //! `INV-07`): every rule it carries is refused or replaced, and nothing else
 //! in it changes.
 //!
+//! - The board is read by [`crate::strict`] first (`AET-WO-1306`), and every
+//!   judgement below reads that tree.
 //! - A `(clearance …)` anywhere outside the top-level `(setup …)` block is
 //!   refused by name: a pad's, a footprint's, or a zone's (inside its
 //!   `connect_pads`). KiCad judges a locally overridden item only against the
@@ -12,7 +14,8 @@
 //!   beats the project's, is replaced by the gate's ([`crate::rules::SETUP`]).
 //!   A board without one gets it.
 
-use crate::sexpr::{self, SexprError, Sx};
+use crate::sexpr::{self, SexprError};
+use crate::strict::{self, Node, Tree};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BoardRefusal {
@@ -20,6 +23,8 @@ pub enum BoardRefusal {
     Malformed(#[from] SexprError),
     #[error("the board's top-level list is not `kicad_pcb`")]
     NotABoard,
+    #[error("{0}")]
+    Strict(strict::Refusal),
     #[error("the board has {0} `setup` blocks; KiCad reads one")]
     SetupTwice(usize),
     #[error(
@@ -36,6 +41,16 @@ pub enum BoardRefusal {
     Waiver(String),
 }
 
+impl From<strict::Refusal> for BoardRefusal {
+    fn from(r: strict::Refusal) -> Self {
+        match r {
+            strict::Refusal::Unreadable(_, e) => Self::Malformed(e),
+            strict::Refusal::NotThisKind(_) => Self::NotABoard,
+            r => Self::Strict(r),
+        }
+    }
+}
+
 impl BoardRefusal {
     /// The refusal's `kind` in the CLI's envelope.
     pub fn kind(&self) -> &'static str {
@@ -43,23 +58,26 @@ impl BoardRefusal {
             Self::Malformed(_) | Self::NotABoard | Self::SetupTwice(_) | Self::OddList(_) => {
                 "MalformedBoard"
             }
+            Self::Strict(r) => r.kind(),
             Self::LocalClearance(_) => "LocalClearance",
             Self::NetClass(_) => "BoardNetClass",
             Self::Waiver(_) => "BoardWaiver",
         }
     }
 
-    /// What carried the refused rule, such as `pad 1 of footprint R1`.
+    /// What carried the refused rule, such as `pad 1 of footprint R7`, or the
+    /// path to the node the strict reader refused.
     pub fn id(&self) -> Option<&str> {
         match self {
             Self::LocalClearance(at) | Self::NetClass(at) | Self::Waiver(at) => Some(at),
+            Self::Strict(r) => r.id(),
             _ => None,
         }
     }
 }
 
 /// A human name for an item that can carry a rule.
-fn name(item: &Sx, within: &str) -> Option<String> {
+fn name(item: &Node<'_>, within: &str) -> Result<Option<String>, BoardRefusal> {
     let of = |s: String| {
         if within.is_empty() {
             s
@@ -67,37 +85,32 @@ fn name(item: &Sx, within: &str) -> Option<String> {
             format!("{s} of {within}")
         }
     };
-    match item.head()? {
-        "footprint" | "module" => {
+    Ok(match item.head() {
+        Some("footprint" | "module") => {
             let reference = item
-                .property("Reference")
-                .or_else(|| {
-                    item.children("fp_text")
-                        .find(|t| t.arg(1) == Some("reference"))
-                        .and_then(|t| t.arg(2))
-                })
+                .field("Reference")?
                 .or_else(|| item.arg(1))
                 .unwrap_or("?");
             Some(of(format!("footprint {reference}")))
         }
-        "pad" => Some(of(format!("pad {}", item.arg(1).unwrap_or("?")))),
-        "zone" => {
+        Some("pad") => Some(of(format!("pad {}", item.arg(1).unwrap_or("?")))),
+        Some("zone") => {
             let net = item
-                .child("net_name")
+                .one("net_name")?
                 .and_then(|n| n.arg(1))
                 .filter(|n| !n.is_empty())
                 .map_or_else(|| "with no net".to_owned(), |n| format!("on net {n}"));
             Some(of(format!("zone {net}")))
         }
         _ => None,
-    }
+    })
 }
 
 /// A footprint token that excuses its items from a check (measured on KiCad
 /// 10.0.7 by the adversarial pass: `net_tie_pad_groups` turned two clearance,
 /// a short and two mask bridges into nothing). Mask and paste margins are not
 /// here: they are the design's geometry, which DRC then judges.
-fn waives(item: &Sx) -> bool {
+fn waives(item: &Node<'_>) -> bool {
     let yes = || item.arg(1) == Some("yes");
     match item.head() {
         Some("net_tie_pad_groups" | "jumper_pad_groups") => true,
@@ -106,32 +119,36 @@ fn waives(item: &Sx) -> bool {
             | "allow_missing_courtyard"
             | "allow_soldermask_bridges",
         ) => yes(),
-        Some("attr") => item.items()[1..].iter().any(|a| {
-            matches!(
-                a.text(),
-                Some("allow_missing_courtyard" | "allow_soldermask_bridges")
-            )
-        }),
+        Some("attr") => item
+            .texts()
+            .any(|a| matches!(a, "allow_missing_courtyard" | "allow_soldermask_bridges")),
         _ => false,
     }
 }
 
-/// Refuses a board carrying any rule of its own, then writes `setup` over its
-/// setup block. The result differs from `text` only there.
+/// Reads the board strictly: the tree every gate after it reads.
+pub fn read(text: &str) -> Result<Tree, BoardRefusal> {
+    Ok(strict::board(text)?)
+}
+
+/// [`read`], then [`prepare_read`].
 pub fn prepare(text: &str, setup: &str) -> Result<String, BoardRefusal> {
-    let root = sexpr::parse(text)?;
-    if root.head() != Some("kicad_pcb") {
-        return Err(BoardRefusal::NotABoard);
-    }
+    prepare_read(&read(text)?, text, setup)
+}
+
+/// Refuses a board carrying any rule of its own, judged on `tree` (the
+/// strict reading of `text`), then writes `setup` over its setup block. The
+/// result differs from `text` only there.
+pub fn prepare_read(tree: &Tree, text: &str, setup: &str) -> Result<String, BoardRefusal> {
+    let root = tree.root();
     // Depth-first, in document order, without recursion. The top-level
     // setup block is skipped: the gate replaces it whole.
-    let mut stack: Vec<(&Sx, String)> = root
-        .items()
-        .iter()
-        .rev()
-        .filter(|c| matches!(c, Sx::List(_)) && c.head() != Some("setup"))
+    let mut stack: Vec<(Node<'_>, String)> = root
+        .lists()
+        .filter(|c| c.head() != Some("setup"))
         .map(|c| (c, String::new()))
         .collect();
+    stack.reverse();
     while let Some((item, within)) = stack.pop() {
         // What carries the item, for a refusal's `id`.
         let at = || {
@@ -144,18 +161,19 @@ pub fn prepare(text: &str, setup: &str) -> Result<String, BoardRefusal> {
         // KiCad's keywords are lowercase atoms; a quoted, upper-case or
         // missing head is refused rather than guessed at (`CLEARANCE`, or
         // `("clearance" …)`, measured: KiCad will not load them).
-        if !matches!(item.items().first(), Some(Sx::Atom(a)) if !a.bytes().any(|b| b.is_ascii_uppercase()))
+        if !item
+            .head()
+            .is_some_and(|a| !a.bytes().any(|b| b.is_ascii_uppercase()))
         {
             return Err(BoardRefusal::OddList(at()));
         }
-        let here = name(item, &within).unwrap_or_else(|| within.clone());
+        let here = name(&item, &within)?.unwrap_or_else(|| within.clone());
         match item.head() {
             // Every clearance is a rule but a custom pad's shape option,
             // `(clearance outline)` or `(clearance convexhull)`, which stays. Any
             // other value, whatever its spelling, is refused.
             Some("clearance")
-                if !(item.items().len() == 2
-                    && matches!(item.arg(1), Some("outline" | "convexhull"))) =>
+                if !(item.len() == 2 && matches!(item.arg(1), Some("outline" | "convexhull"))) =>
             {
                 return Err(BoardRefusal::LocalClearance(at()));
             }
@@ -163,20 +181,19 @@ pub fn prepare(text: &str, setup: &str) -> Result<String, BoardRefusal> {
                 let class = item.arg(1).unwrap_or("?");
                 return Err(BoardRefusal::NetClass(format!("net class {class}")));
             }
-            Some(token) if waives(item) => {
+            Some(token) if waives(&item) => {
                 return Err(BoardRefusal::Waiver(format!("{} ({token})", at())));
             }
             _ => {}
         }
-        for child in item.items().iter().rev() {
-            if matches!(child, Sx::List(_)) {
-                stack.push((child, here.clone()));
-            }
+        let children: Vec<_> = item.lists().collect();
+        for child in children.into_iter().rev() {
+            stack.push((child, here.clone()));
         }
     }
     let (spans, (_, root_end)) = sexpr::top_level_spans(text)?;
-    let lists = root.items().iter().filter(|c| matches!(c, Sx::List(_)));
-    let setups: Vec<(usize, usize)> = lists
+    let setups: Vec<(usize, usize)> = root
+        .lists()
         .zip(spans)
         .filter(|(c, _)| c.head() == Some("setup"))
         .map(|(_, span)| span)
@@ -225,8 +242,8 @@ mod tests {
     #[test]
     fn a_board_without_setup_gets_the_gates() {
         let out = prepare("(kicad_pcb (version 20240108))\n", SETUP).unwrap();
-        let parsed = sexpr::parse(&out).unwrap();
-        assert_eq!(parsed.children("setup").count(), 1);
+        let parsed = strict::board(&out).unwrap();
+        assert_eq!(parsed.root().all("setup").count(), 1);
         assert!(out.starts_with("(kicad_pcb (version 20240108)\t(setup"));
     }
 

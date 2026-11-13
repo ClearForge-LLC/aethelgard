@@ -835,7 +835,7 @@ fn p1_gate_clause_1_the_reference_board_passes_erc_and_drc_with_no_finding() {
         // §3.2: the numbers, from the board as written; the rip-ups from
         // routing its pads again, which lays the same copper.
         let (pads, routed) = aethelgard_eda::route::read(
-            &aethelgard_eda::sexpr::parse(&fs::read_to_string(&board).unwrap()).unwrap(),
+            &aethelgard_eda::strict::board(&fs::read_to_string(&board).unwrap()).unwrap(),
         )
         .unwrap();
         let again = aethelgard_eda::route::route(&pads).unwrap();

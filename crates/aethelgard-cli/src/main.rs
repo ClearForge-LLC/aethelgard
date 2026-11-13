@@ -704,16 +704,17 @@ fn check_kicad(
     if matches!(check, kicad::Check::Erc) {
         kicad::refuse_sheets(&input.copy)?;
     }
-    kicad::prepare(check, &input.copy, &scratch.tool, &rules)?;
+    let board = kicad::prepare(check, &input.copy, &scratch.tool, &rules)?;
     // KiCad's parity check reads the schematic named like the board, beside
-    // it; the copy is scanned like the board before any tool runs.
-    let schematic = match schematic {
-        Some(path) => {
+    // it; the copy is scanned like the board before any tool runs, and the
+    // board is judged on the strict reading `prepare` made of it.
+    let schematic = match (schematic, &board) {
+        (Some(path), Some(board)) => {
             let copy = input::file(path, &scratch.tool.join(kicad::Check::Erc.copy_name()))?;
-            kicad::prepare_parity(&input.copy, &copy.copy)?;
+            kicad::prepare_parity(board, &copy.copy)?;
             Some(copy)
         }
-        None => None,
+        _ => None,
     };
     let tool = run::Tool::find("kicad-cli")?;
     let invocation = |args: Vec<OsString>, status: &str| run::Invocation {

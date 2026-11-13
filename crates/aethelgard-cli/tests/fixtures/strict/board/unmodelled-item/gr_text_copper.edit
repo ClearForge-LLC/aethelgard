@@ -1,0 +1,17 @@
+# class: unmodelled-item
+# note: a gr_text on copper
+# main: drc 0 pass; drc-parity 0 pass; extract 3 UnmodelledCopper
+# drc: 0 pass
+# drc-parity: 0 pass
+# extract: 3 UnmodelledCopper
+@@ find
+	)
+	(embedded_fonts no)
+@@ replace
+	)
+	(gr_text "X"
+		(at 75 115 0)
+		(layer "F.Cu")
+	)
+	(embedded_fonts no)
+@@ end

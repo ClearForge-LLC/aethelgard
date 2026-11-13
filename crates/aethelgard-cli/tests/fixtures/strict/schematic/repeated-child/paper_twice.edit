@@ -1,0 +1,11 @@
+# class: repeated-child
+# note: the top-level page size given twice
+# main: erc 0 pass; drc-parity 0 pass
+# erc: 3 MalformedSchematic kicad_sch
+# drc-parity: 3 MalformedSchematic kicad_sch
+@@ find
+	(paper "A0")
+@@ replace
+	(paper "A0")
+	(paper "A4")
+@@ end

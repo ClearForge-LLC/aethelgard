@@ -1,0 +1,20 @@
+# class: connectivity
+# note: a floating copper island labelled with a line's net
+# main: drc 1 fail; drc-parity 1 fail; extract 3 NetLabelsDisagree
+# drc: 1 fail
+# drc-parity: 1 fail
+# extract: 3 NetLabelsDisagree
+@@ find
+	)
+	(embedded_fonts no)
+@@ replace
+	)
+	(segment
+		(start 74 115)
+		(end 80 115)
+		(width 0.2)
+		(layer "B.Cu")
+		(net "/I2C_SDA")
+	)
+	(embedded_fonts no)
+@@ end
