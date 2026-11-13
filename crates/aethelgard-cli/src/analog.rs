@@ -27,7 +27,6 @@ use aethelgard_chaos::record::Droop;
 use aethelgard_ir::SolvedTopology;
 use aethelgard_twin::analog::{self, Deck};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 
 use crate::run;
 use crate::verdict::{AnalogRecord, FaultRecord, Finding};
@@ -60,47 +59,15 @@ impl Pass {
     }
 }
 
-/// The bridge's sources, in the order its build script hashes them
-/// (`bridge/build.rs`): `Cargo.toml`, `Cargo.lock`, `build.rs`, then every
-/// file in `src/` by name. A test pins this list to the directory.
-pub const BRIDGE_SOURCES: [(&str, &[u8]); 11] = [
-    ("Cargo.toml", include_bytes!("../../../bridge/Cargo.toml")),
-    ("Cargo.lock", include_bytes!("../../../bridge/Cargo.lock")),
-    ("build.rs", include_bytes!("../../../bridge/build.rs")),
-    ("src/ffi.rs", include_bytes!("../../../bridge/src/ffi.rs")),
-    (
-        "src/header.rs",
-        include_bytes!("../../../bridge/src/header.rs"),
-    ),
-    ("src/host.rs", include_bytes!("../../../bridge/src/host.rs")),
-    ("src/main.rs", include_bytes!("../../../bridge/src/main.rs")),
-    (
-        "src/measure.rs",
-        include_bytes!("../../../bridge/src/measure.rs"),
-    ),
-    ("src/rail.rs", include_bytes!("../../../bridge/src/rail.rs")),
-    (
-        "src/request.rs",
-        include_bytes!("../../../bridge/src/request.rs"),
-    ),
-    (
-        "src/solver.rs",
-        include_bytes!("../../../bridge/src/solver.rs"),
-    ),
-];
-
-/// The digest the bridge built from [`BRIDGE_SOURCES`] names itself by: for
-/// each file, its path, a NUL, its length as 8 bytes little-endian, its bytes.
-pub fn bridge_source_sha256() -> String {
-    let mut h = Sha256::new();
-    for (path, bytes) in BRIDGE_SOURCES {
-        h.update(path.as_bytes());
-        h.update([0u8]);
-        h.update((bytes.len() as u64).to_le_bytes());
-        h.update(bytes);
-    }
-    crate::input::hex(<[u8; 32]>::from(h.finalize()))
-}
+/// The digest of the bridge's build inputs that this CLI expects its bridge
+/// to name (`bridge/build.rs`): for `Cargo.toml`, `Cargo.lock`, `build.rs`,
+/// then every file in `src/` by name, each one's path, a NUL, its length as 8
+/// bytes little-endian, and its bytes. It is a constant, not read from
+/// `bridge/` at build time, because a published CLI carries no file outside
+/// its own package; a test recomputes it from the bridge's files on disk, so
+/// an edit to the bridge fails the build's tests until this is updated with it.
+pub const BRIDGE_SOURCE_SHA256: &str =
+    "91e72fcc04983c3a872db8306c525deb3d9b1321dbb3311c24f7318b515dcebb";
 
 /// The bridge's first line (`AET-WO-2200` F15): its name, version and the
 /// digest of the sources it was built from, which must be the ones this CLI
@@ -115,7 +82,7 @@ pub fn identified(stdout: &str) -> Result<&str, run::Stop> {
         id: Some(BRIDGE.to_owned()),
         message,
     };
-    let want = bridge_source_sha256();
+    let want = BRIDGE_SOURCE_SHA256;
     let v: Value = serde_json::from_str(first).map_err(|_| {
         mismatch(format!(
             "its first line is not its identity: `{}`",
@@ -135,7 +102,7 @@ pub fn identified(stdout: &str) -> Result<&str, run::Stop> {
             first.escape_debug()
         )));
     }
-    if field("source_sha256") != Some(want.as_str()) {
+    if field("source_sha256") != Some(want) {
         return Err(mismatch(format!(
             "it was built from sources {}, not the {want} this CLI was built with: rebuild it",
             field("source_sha256").unwrap_or("(none)")
@@ -827,14 +794,17 @@ fn judge(decks: &[Deck], answers: &[Answer]) -> Pass {
 
 #[cfg(test)]
 mod tests {
+    use sha2::{Digest, Sha256};
+
     use super::*;
 
-    /// `AET-WO-2200` F15: the files the CLI hashes are exactly the bridge's
-    /// build inputs, so a bridge source added later cannot escape the check.
+    /// `AET-WO-2200` F15: the digest this CLI expects is the one the bridge's
+    /// build script computes from the bridge's files as they are now; an edit
+    /// to the bridge fails here until [`BRIDGE_SOURCE_SHA256`] moves with it.
     #[test]
-    fn the_bridge_sources_hashed_are_exactly_its_build_inputs() {
+    fn the_expected_bridge_digest_is_the_bridges_build_inputs_now() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bridge");
-        let mut want = vec![
+        let mut files = vec![
             "Cargo.toml".to_owned(),
             "Cargo.lock".to_owned(),
             "build.rs".to_owned(),
@@ -844,29 +814,33 @@ mod tests {
             .map(|e| format!("src/{}", e.unwrap().file_name().to_str().unwrap()))
             .collect();
         src.sort();
-        want.extend(src);
-        let have: Vec<&str> = BRIDGE_SOURCES.iter().map(|(p, _)| *p).collect();
-        assert_eq!(have, want);
-        for (p, bytes) in BRIDGE_SOURCES {
-            assert_eq!(
-                fs::read(root.join(p)).unwrap(),
-                bytes,
-                "{p} changed since the build"
-            );
+        files.extend(src);
+        let mut h = Sha256::new();
+        for f in &files {
+            let bytes = fs::read(root.join(f)).unwrap();
+            h.update(f.as_bytes());
+            h.update([0u8]);
+            h.update((bytes.len() as u64).to_le_bytes());
+            h.update(&bytes);
         }
+        assert_eq!(
+            crate::input::hex(<[u8; 32]>::from(h.finalize())),
+            BRIDGE_SOURCE_SHA256,
+            "the bridge changed: update BRIDGE_SOURCE_SHA256"
+        );
     }
 
     /// A stale or impostor bridge is refused before any of its answer is read.
     #[test]
     fn a_bridge_that_does_not_name_this_trees_sources_first_is_refused() {
-        let me = bridge_source_sha256();
+        let me = BRIDGE_SOURCE_SHA256;
         let ok =
             format!(r#"{{"bridge":"aethelgard-bridge","source_sha256":"{me}","version":"0.1.0"}}"#);
         assert_eq!(identified(&format!("{ok}\nrest\n")).unwrap(), "rest\n");
         let refused = [
             String::new(),
             "rest".to_owned(),
-            ok.replace(&me, &"0".repeat(64)),
+            ok.replace(me, &"0".repeat(64)),
             ok.replace("aethelgard-bridge", "aethelgard-bridgf"),
             ok.replace(r#","version":"0.1.0""#, ""),
             ok.replace('}', r#","extra":1}"#),
