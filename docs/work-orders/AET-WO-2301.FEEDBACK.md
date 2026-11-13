@@ -106,7 +106,7 @@ Everything below was written after the runs. The predictions above are unchanged
 
 ### What the spike added (a build deletes all of it)
 
-- `spike/2301/img.sh`: the runner (pinned image, `--memory 12g --memory-swap 12g --pids-limit -1`, swap zeroed and the caps read back into `out/caps.log` before the command may start), and `rerun.sh` (F13's re-runs).
+- `spike/2301/img.sh`: the runner (pinned image, `--memory 12g --memory-swap 12g --pids-limit -1`, swap zeroed and the caps read back into `out/caps.log` before the command may start), and `rerun.sh` and `rerun2.sh` (the re-runs of F13, and of P2.6 with the nudge).
 - `spike/2301/renode/`: `drive.py` (P1 and P3: Renode's monitor on a piped stdin, the CLI's own boot prefix, reads between whole-line sentinels), `all.sh`, `summary.py`.
 - `spike/2301/ngspice/`: `AET-WO-2101`'s `ng-probe` crate, copied from its spike branch less its two unused modules (the hand-declared libngspice FFI; its only `unsafe`).
 - `spike/2301/lockstep/`: the P2 and P4 owner (`lockstep`: modes `rail`, `lockstep`, `schedule`, `replay`; no `unsafe`; depends on `ng-probe` and, by path, on the real `aethelgard-chaos` writer and reader), and its run scripts.
@@ -139,9 +139,9 @@ The probe boots the generated firmware with the CLI's exact boot prefix (capture
 | Means | What the firmware observes | Boots again | I2C read resumes | `ExecutedInstructions` at 20 ms |
 |---|---|---|---|---|
 | control (re-arm only) | nothing: boot word stays 0 | — | — | 2,000,000 (= MIPS × 20 ms) |
-| `machine Reset` | **locks up**: Renode re-guesses `VTOR` = `0x00000000` (the ITCM, not the ELF), PC `0xEFFFFFFE` | **no** | no | 0 |
+| `machine Reset` | **locks up**: `VTOR` reads `0x00000000` and stays there, PC `0xEFFFFFFE`, no instruction executes | **no** | no | 0 |
 | `machine Reset` + `VTOR` and cold writes re-applied | boot word and OK `0x60` again | yes, by +20 µs | yes, OK `0x60` | 1,000,000: **the counter restarts at the reset** |
-| `cpu Reset` | the same | yes, +20 µs | yes | 1,000,000 (restarts too) |
+| `cpu Reset` | `VTOR` also reads `0x00000000` right after, then `0x08000000` by 20 ms, and the firmware reboots | yes, +20 µs | yes | 1,000,000 (restarts too) |
 | held: `machine Reset` + `VTOR`/cold + `cpu IsHalted true`, 1 ms, `cpu IsHalted false` | 0 instructions while held; after release PC = reset vector `0x08000040`, but **the first `RunFor` after the release executes nothing** | yes, +30 µs | yes | 899,000: 9 ms less the first 10 µs segment |
 | held, with a 10 ns `RunFor` right after the release (`held-halted-nudge`) | only the 10 ns segment is lost | yes, +20 µs | yes | 900,000 |
 | held by `CPUWAIT` (`cpu OnGPIO 4096`) | release leaves `IsHalted` True until a sync point; two segments lost | yes, +40 µs | yes | 898,000 |
@@ -180,10 +180,16 @@ Lock-step (`ioc`): Renode is the owner's child; at each boundary Renode runs the
 | bor3 | lock-step 1 µs, 10 ms | 15.2 s | 1,015 → 1,228 µs | 1,241 µs | — |
 | dip, between | lock-step 1 µs, 10 ms | 16.1 s | 1,005 → 1,007 µs | 1,020 µs | — |
 | bor3 | lock-step 1 µs, 100 ms | **802 s** (separate lines; F15) · **54.4 s** with one repeated line per quantum | 1,015 → 1,228 µs | 1,241 µs | — |
-| tolerance, bor3, pdr, dip | **schedule, 100 ms** | **1.98 to 2.06 s** (ngspice 0.10 s, Renode start 1.7 s) | at ngspice's crossings, to 10 ns: bor3 1,014.43 → 1,227.98 µs; dip 1,004.63 → 1,006.98 µs | after the release segment | yes, all four |
+| tolerance, bor3, pdr, dip | **schedule, 100 ms** | **1.98 to 2.06 s** (ngspice 0.10 s, Renode start 1.7 s) | at ngspice's crossings, to 10 ns: bor3 1,014.43 → 1,227.98 µs; dip 1,004.63 → 1,006.98 µs | first run: only after the next segment (below); **with the nudge, by the probe at release + 30 µs in all three droop cases** | yes, all four, in both runs |
 
 - **Lock-step costs 1.4 ms per quantum here, not 2101's 9 ms**, with one read per quantum, the history at `/dev/null`, and the log off stdout, over 10,000 quanta. Past that the cost per quantum grows with the commands sent, even with the history at `/dev/null` (F15); one repeated line per quantum removes the growth.
-- **The release artefact shows in both modes.** In lock-step the quantum after a release executes nothing (10 µs, or 1 µs). In the schedule the next segment does; in the run above it was the 100 µs probe segment, so the final count is 100 µs short. A 10 ns `RunFor` after each release bounds it (P1, `held-halted-nudge`).
+- **The release artefact showed in both modes in the first matrix.** In lock-step the quantum after a release executed nothing (10 µs, or 1 µs). In the schedule the next segment did not run either; there it was the 100 µs probe segment, so the dip was held for about 102 µs and the final count came out 100 µs short.
+- **With the 10 ns nudge after each release, both modes were run again** (`out/p26-matrix-nudge.jsonl`, under the gated runner).
+  - The schedule's probe at release + 30 µs reads the boot word and OK in the bor3, pdr and dip cases.
+  - The final instruction count is MIPS × (100 ms − release) less one instruction (bor3: 9,877,201 against 9,877,202).
+  - Lock-step re-sees the boot word 20 µs after the release at 10 µs quanta (bor3 1,250 µs, pdr 1,630 µs), and 12 µs after it at 1 µs.
+  - Every pair of runs is byte-identical in its traces.
+  - **The recommended configuration (schedule plus nudge) is therefore measured end to end, not composed.**
 
 ### P3 — measured (`out/p1-p3-summary.txt`)
 
@@ -213,16 +219,16 @@ From the bor3 lock-step at 10 µs over 100 ms, three traces written by the real 
 | `logFile` alone | stdout 24,411,338 B at 10 ms, against 24,463,614 B without it: the console keeps printing. |
 | `logFile` + `logLevel 3 console` | stdout 14,851 B, marker block intact; the file 24,654,509 B (191,220 lines) at 10 ms. |
 | The flood's rate | 19,100 to 19,600 lines and 2.35 to 2.58 MB per virtual ms, 129 B a line. Renode does not collapse them. |
-| At 100 ms, under the rebuilt sandbox | **the file stops at exactly 67,108,864 B; Renode dies of SIGXFSZ** (reaper status `ended signal=25`); stdout has **no marker block**. The cap is reached at about 27 virtual ms. |
+| At 100 ms, under the rebuilt sandbox | **the file stops at exactly 67,108,864 B; Renode dies of SIGXFSZ** (reaper status `ended signal=25`); stdout has **no marker block**. The cap is reached at about 27 virtual ms. That the CLI would then exit 5 is REASONED from `run.rs` (`at_the_cap`, L533–542); the CLI was not run with a log file. |
 | Stream reader, no file, console at its default level | exit 0 at 100 ms: 255,042,464 B and 1,993,870 lines through the reader, marker block intact, reader peak RSS 11.3 MB, 6.3 s. At 300 ms: 766 MB through, 11.2 MB RSS, 14 s. |
-| At 1,000 ms | Renode's own RSS passes the 1 GiB bound and the reaper kills it (`ended bound=memory`), which the CLI already reports as `memory_cap_exceeded`, a verdict. Renode's RSS grows with the flood: 430 MB at 10 ms, 600 MB at 100 ms, 877 MB at 300 ms. |
+| At 1,000 ms | Renode's own RSS passes the 1 GiB bound and the reaper kills it (`ended bound=memory`, measured). That the CLI reports this as `memory_cap_exceeded`, a verdict, is REASONED from `renode.rs` `bounded()`, not run. Renode's RSS grows with the flood: 430 MB at 10 ms, 600 MB at 100 ms, 877 MB at 300 ms. |
 | `locked_peripheral` | Counted from the stream: 1,993,441 at 100 ms. **The count differs run to run under a flood** (191.0k to 193.7k at 10 ms) while `ExecutedInstructions` is identical (F10). |
 
 ## The spike's table: each prediction beside its result
 
 | id | Predicted | Result | Held? |
 |---|---|---|---|
-| P1.1 | `machine Reset` alone: `VTOR` re-guessed `0x08000000`, reboots | `VTOR` re-guessed **`0x00000000`** (ITCM); PC `0xEFFFFFFE`; never reboots | **no** |
+| P1.1 | `machine Reset` alone: `VTOR` re-guessed `0x08000000`, reboots | `VTOR` reads **`0x00000000`** and stays; PC `0xEFFFFFFE`; never reboots | **no** |
 | P1.2 | + `VTOR` and cold writes: reboots, reads equal the first boot's | reboots by +20 µs; boot word, record and registers equal; `ExecutedInstructions` restarts | yes |
 | P1.3 | `cpu Reset`: reboots, read OK | reboots by +20 µs, OK `0x60` | yes |
 | P1.4 | held by `IsHalted`: 0 instructions while held, reboots after | yes, but the first `RunFor` after the release executes nothing | partly |
@@ -247,7 +253,7 @@ From the bor3 lock-step at 10 µs over 100 ms, three traces written by the real 
 | P4.4 | crossings only < 1 KB per droop | 309 B (lock-step), 237 B (schedule) | yes |
 | P4.5 | real reader within 20 % of P4.3 | 22 % above for records | **no**, narrowly |
 | P5.1 | `logFile` alone leaves the flood on stdout; `logLevel 3 console` removes it | exactly so | yes |
-| P5.2 | ≈ 24k lines, 3 MB per ms; the file hits 64 MiB at 100 ms; exit 5 | 19.1 to 19.6k lines, 2.35 to 2.58 MB per ms; the cap at ≈ 27 ms; **SIGXFSZ, no marker block** | yes in outcome, numbers ≈ 20 % lower |
+| P5.2 | ≈ 24k lines, 3 MB per ms; the file hits 64 MiB at 100 ms; exit 5 | 19.1 to 19.6k lines, 2.35 to 2.58 MB per ms; the cap at ≈ 27 ms; **SIGXFSZ, no marker block**; exit 5 REASONED, not run | yes in outcome, numbers ≈ 20 % lower |
 | P5.3 | a stream reader returns whatever the flood | to 300 ms with 11 MB of reader RSS; at 1 s Renode's own 1 GiB bound, a verdict | yes |
 
 ## Recommendations, one per question
@@ -272,8 +278,8 @@ From the bor3 lock-step at 10 µs over 100 ms, three traces written by the real 
 - Per-quantum records cost 3.1 MB/s on the wire and about 428 B each in the fold, and pass `MAX_RECORDS` at 0.66 s; that is not recommended.
 
 **P5 → the bridge, which owns Renode, reads Renode's stdout as a stream.** It keeps the marker block and a per-kind count of log lines in bounded memory, with no log file. It reports the counts and the first line of each kind.
-- A log file is **not** the answer as worded. The sandbox's 64 MiB `RLIMIT_FSIZE` kills Renode at about 27 virtual ms of flood, and the marker block is lost, exit 5 as before.
-- With the stream, a flood reaches a verdict up to the point where Renode's own memory passes 1 GiB, about 0.3 to 1 s of flood, and past it the bound's verdict, `memory_cap_exceeded`.
+- A log file is **not** the answer as worded. The sandbox's 64 MiB `RLIMIT_FSIZE` kills Renode at about 27 virtual ms of flood, and the marker block is lost (measured); the CLI would exit 5 as before (REASONED from `run.rs`).
+- With the stream, a flood reaches a verdict up to the point where Renode's own memory passes 1 GiB, about 0.3 to 1 s of flood (measured), and past it the bound's verdict, `memory_cap_exceeded` (REASONED from `renode.rs`).
 - The monitor history goes to `/dev/null` through Renode's own `history-path` setting (`ShellProvider.cs` L33), measured in every run here; no symlink is needed. That alone does not stop the monitor slowing (F15): a bridge that sends Renode many commands sends repeated lines.
 
 ## §7 checked
@@ -287,7 +293,7 @@ From the bor3 lock-step at 10 µs over 100 ms, three traces written by the real 
 
 - **F1 · DS12117 was read from a third-party mirror of Rev 7 (2019), and RM0433 not at all · source · medium · provenance · decision-needed (D10).** st.com and two distributors hung from Furnace; other mirrors return bot-check pages, which were not worked around. The values above are Rev 7's; the current revision was not opened.
 - **F2 · The BOR level is unknown · the part's option bytes · high · gap · decision-needed (D2).** §3.5.2 of DS12117 says the three BOR thresholds are configured through option bytes. The specification does not declare one, the generated firmware writes none, Renode models none, and the delivered default (RM0433) was not found.
-- **F3 · `machine Reset` re-guesses `VTOR` as `0x00000000` and the core locks up · Renode 1.17.0 `CortexM.InitPCAndSP` · high for the build · measured.** The guess takes the first non-empty section on the bus, which on this platform is the ITCM at 0, not the ELF. The CLI's own `cpu VectorTableOffset` (`AET-WO-2100` A3) must be re-applied after every reset, with the cold writes.
+- **F3 · After `machine Reset` alone, `VTOR` reads `0x00000000` and the core never runs · Renode 1.17.0 · high for the build · measured; cause not established.** After `cpu Reset`, `VTOR` also reads 0 at once, yet reads `0x08000000` by 20 ms and the firmware reboots. Both paths clear `vtorInitialized` and re-guess in `CortexM.InitPCAndSP` (L1063–1110), so the source read here does not explain the difference. Re-applying the CLI's own `cpu VectorTableOffset` (`AET-WO-2100` A3) and the cold writes after the reset makes `machine Reset` boot (measured), and the build does that.
 - **F4 · `ExecutedInstructions` restarts at every reset · Renode 1.17.0 · medium · measured · decision-needed (D5).** The judge's "instructions = MIPS × time" cannot hold across a reset as written.
 - **F5 · A release takes effect at the end of the next `RunFor`, whatever its length · Renode 1.17.0 · medium · measured.** By `IsHalted`, one segment is lost; by `CPUWAIT`, two. A 10 ns `RunFor` right after the release bounds the loss to 10 ns (`held-halted-nudge`).
 - **F6 · Renode renders neither a PVD, a BOR nor a reset's cause · `stm32h7.repl` L728–746, `STM32H7_RCC.cs` L672–702 · info · read and measured.** `PWR` is a Python stub with constant reads, and `RSR` reads `0x00FE0000` after every reset. Raising EXTI line 16 changes nothing.
@@ -297,7 +303,7 @@ From the bor3 lock-step at 10 µs over 100 ms, three traces written by the real 
 - **F10 · Under a log flood, the count of locked-peripheral warnings differs run to run · Renode 1.17.0 · medium · `INV-04` for the finding's message · measured by the subagent.** 191.0k to 193.7k at 10 ms, with `ExecutedInstructions` identical. The `locked_peripheral_access` finding prints the count. Cause not found.
 - **F11 · Lock-step costs 1.4 ms per quantum, not 9 ms, over the first 10,000 quanta · supersedes `AET-WO-2101` S4 · info · measured.** One read per quantum, the history at `/dev/null`, the log off stdout. 10 µs × 100 ms = 14 to 15 s. It grows after that (F15).
 - **F12 · ngspice caps its step at the print step when no `TMAX` is given · the deck · low · measured.** `.tran 10n 100m` accepts 10 million points (8.3 s); a 1 µs cap gives the same crossings to 0.001 ns in 0.16 s.
-- **F13 · The spike's first runner read the caps after the container started; six short containers ended before it read them · `spike/2301/img.sh` · low · process · fixed.** By timestamp they are quick builds, a smoke run and one start that failed at once (`/usr/bin/time` is not in the image). The runner logged no command, so this cannot be proved. The runner now holds the command until swap is zeroed and the caps are read back, and logs the command beside them. P1, P2, P2.6, P4 and the nudge case were re-run under it, each container with its caps and command logged: every P1 hash, every P2 and P2.6 line, and every P4 event count equal the first runs, apart from wall times (`out/*-rerun.*`, `out/p1-held-halted-nudge.txt`). The P5 subagent's containers went through the first runner; their caps lines are in `out/caps.log` without commands.
+- **F13 · The spike's first runner read the caps after the container started; six short containers ended before it read them · `spike/2301/img.sh` · low · process · fixed.** By timestamp they are quick builds, a smoke run and one start that failed at once (`/usr/bin/time` is not in the image). The runner logged no command, so this cannot be proved. The runner now holds the command until swap is zeroed and the caps are read back, and logs the command beside them. P1, P2, P2.6, P4 and the nudge case were re-run under it, each container with its caps and command logged: every P1 hash, every P2 and P2.6 line, and every P4 event count equal the first runs, apart from wall times (`out/*-rerun.*`, `out/p1-held-halted-nudge.txt`). The P5 subagent's containers went through the first runner, and two of the six unread entries (19:34, 19:35) fall in its window. P5's three headline runs (the CLI at 100 ms, the file at 100 ms, the stream at 100 ms) were therefore re-run through the gated runner, with the same outcomes: exit 5; file at 67,108,864 B, SIGXFSZ, no marker block; stream exit 0, marker block, 11.3 MB of reader RSS (`out/p5-rerun-gated.txt`). The stream's byte count differed from the first run (255,010,238 against 255,042,464), as F10 would predict.
 - **F14 · P1 and P2.6 boot `boards/sentinel-01/sentinel-01.repl`, not the CLI's emitted copy · probe · low.** It is the same generated file, which the regeneration test pins. The P5 subagent did the same.
 - **F15 · Renode's monitor still slows with every distinct command when its history file is `/dev/null` · AntShell at `ca49bd32` (Renode 1.17.0's pin) · high for any per-quantum lock-step · measured, cause read at source.**
   - `Shell.HandleCommand` adds each command to an in-memory list and then rewrites the whole list to `history-path` (`AntShell/Shell.cs` L213–217; `CommandHistory.cs` L33–40, L180–188). `/dev/null` makes the write cheap but not the enumeration, so the cost per command grows with the commands so far.

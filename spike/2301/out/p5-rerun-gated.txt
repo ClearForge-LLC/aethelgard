@@ -1,0 +1,22 @@
+# cmd: spike/2301/rerun2.sh, its three P5 steps through the gated runner (img.sh); full outputs on Furnace under ~/.cache/aet-2301/rerun2-p5-*.txt
+## cli.sh 100ms
+# cmd: spike/2301/img.sh -- /cache/target/release/aethelgard simulate --platform boards/sentinel-01/sentinel-01.repl --firmware /cache/target/thumbv7em-none-eabihf/release/p5-flood --spec examples/sentinel-01-minimal.json --for 100ms
+exit=5
+wall_ms=6804
+stdout_bytes=99 stderr_bytes=0
+{"ok":false,"error":{"kind":"ToolError","id":"renode","message":"output exceeded 16777216 bytes"}}
+
+
+## sbx.sh rerun2-q1-100 100 1 (logFile + logLevel 3 console)
+reaper_exit=0 wall_ms=3411 peak_renode_rss_kib=469148
+status: sandbox abi=8 uid_boundary=1|ended signal=25|
+stdout_bytes=1660 stderr_bytes=0 logfile_bytes=67108864
+logfile_lines=520493
+
+## STREAM=1 sbx.sh rerun2-stream-100 100 2
+ "exit": 0,
+ "stdout_bytes": 255010238,
+ "stdout_lines": 1993618,
+ "begin_markers": 1,
+ "end_markers": 1,
+ "reader_peak_rss_kib": 11284,

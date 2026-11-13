@@ -300,6 +300,13 @@ fn assert_reset() -> Vec<String> {
     c
 }
 
+/// The release, then a 10 ns `RunFor`: a release takes effect only at the end
+/// of the next `RunFor`, so the nudge bounds the loss to 10 ns (P1, F5).
+const NUDGE_NS: u64 = 10;
+fn release() -> Vec<String> {
+    vec!["cpu IsHalted false".to_owned(), run_for(NUDGE_NS)]
+}
+
 fn run_for(ns: u64) -> String {
     format!(
         "emulation RunFor \"{}.{:09}\"",
@@ -426,6 +433,8 @@ struct Ioc {
     delay_ns: u64,
     held: bool,
     release_at: Option<u64>,
+    /// ns of the next quantum already run by a release's nudge.
+    nudged: u64,
     last_boot: Option<String>,
     actions: Vec<String>,
     since: Instant,
@@ -445,7 +454,7 @@ impl Ioc {
         if let Some(r) = self.renode.as_mut() {
             // 1. Renode runs the quantum that ends here; one word is read.
             let got = r.exec(&[
-                run_for(self.q_ns),
+                run_for(self.q_ns - std::mem::take(&mut self.nudged)),
                 format!("sysbus ReadDoubleWord {BOOT_WORD:#010x}"),
             ]);
             let boot = got.first().cloned().unwrap_or_default();
@@ -482,7 +491,8 @@ impl Ioc {
             if self.held && self.release_at.is_some_and(|at| t_ns >= at) {
                 self.held = false;
                 self.release_at = None;
-                cmds = vec!["cpu IsHalted false".to_owned()];
+                cmds = release();
+                self.nudged = NUDGE_NS;
                 self.actions
                     .push(format!("{t_ns} bridge reset_released v={v:.4}"));
                 if let Some(tr) = self.traces.as_mut() {
@@ -586,6 +596,7 @@ fn ioc_mode(a: &[String]) {
         delay_ns: c.release_delay_ns,
         held: false,
         release_at: None,
+        nudged: 0,
         last_boot: None,
         actions: Vec::new(),
         since: Instant::now(),
@@ -702,13 +713,9 @@ fn schedule_mode(a: &[String]) {
     for (on, off) in &resets {
         events.push((*on, assert_reset(), format!("reset_asserted@{on}")));
         if *off < span_ns {
-            events.push((
-                *off,
-                vec!["cpu IsHalted false".to_owned()],
-                format!("reset_released@{off}"),
-            ));
-            // A read 100 µs after the release, for the recovery.
-            events.push((*off + 100_000, vec![], format!("probe@{}", off + 100_000)));
+            events.push((*off, release(), format!("reset_released@{off}")));
+            // A read 30 µs after the release, for the recovery (P1: 20 µs).
+            events.push((*off + 30_000, vec![], format!("probe@{}", off + 30_000)));
         }
     }
     let t1 = Instant::now();
@@ -732,6 +739,9 @@ fn schedule_mode(a: &[String]) {
         if !cmds.is_empty() {
             r.exec(cmds);
             traces.event(now, label, "bridge", 0);
+            if label.starts_with("reset_released") {
+                now += NUDGE_NS;
+            }
         }
     }
     let fin = r.exec(
