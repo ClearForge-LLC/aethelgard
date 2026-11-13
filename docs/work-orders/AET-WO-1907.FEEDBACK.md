@@ -1,14 +1,32 @@
 # AET-WO-1907 — FEEDBACK
 
+**Status: built to every §3 item except the 15-minute line.** Four shards run, the guard and canary pass, the totals match; the slowest shard is 16 m 30 s. See Result and the decision there.
+
 **Branch:** `wo/aet-1907-ci-shards` · **Base:** `72af687` (`origin/main`, carrying `AET-WO-1306` and the docs PR), merged by a merge commit · **Builder:** Claude Code (Sonnet 5.5) as `forge` on Furnace, as project manager · **Cadence:** measure (§1.1), build, targeted adversarial pass by a fresh subagent.
 
 **Fence kept:** `.github/workflows/ci.yml`, the new `ci/` directory, and this file. No test, crate or image change.
 
 ## Result
 
-- **Furnace, all four shards locally, the pinned image, one after another:** 419 s, 458 s, 500 s and 566 s. Together they passed **1,004 tests**, and the single-job baseline on the same commit passed **1,004** (bridge 1 + workspace 1,003 names with one name in two binaries). The aggregate printed `tier2_tests_passed=74 floor=74` on that tree.
-- **CI is the final measurement.** The per-shard wall times from CI are in the PR description, because they exist only after the push. Read them there; they are not in this file.
-- **The failure cases of §3 are shown by `ci/test-shard.sh`** (26 fixture checks, run in the `tools` aggregate on every PR). Each refuses: a test in no shard, a test in two, a shard that lists nothing, a name run once though listed in two binaries, an empty or malformed list, a benchmark, one test fewer than assigned, a shard that passes while running nothing, a failed test, a missing shard, a tier-2 sum under the floor, and tier-2 tests that silently stop.
+- **Furnace, all four shards locally, before the merge of `AET-WO-1306`, the pinned image, one after another:** 419 s, 458 s, 500 s and 566 s. Together they passed **1,004 tests**, and the single-job baseline on the same commit passed **1,004** (bridge 1 + workspace 1,003 names with one name in two binaries). The aggregate printed `tier2_tests_passed=74 floor=74` on that tree.
+- **CI on PR #104 (job start to job end), two runs.** The single job took about 47 minutes on PR #99. Every run was green: guard ok, 1,019 passes for 1,019 listed occurrences (1,018 names), tier-2 sum 75 = `TIER2_MIN`.
+
+| shard | run 1 (`80c21b1`, LPT on Furnace weights) | run 2 (`91679a6`, CI-scaled weights, `attribute_seeded` kept whole) |
+|---|---|---|
+| 0 | 15 m 14 s | 16 m 27 s |
+| 1 | 12 m 28 s | 15 m 48 s |
+| 2 | 18 m 48 s | 14 m 40 s |
+| 3 | 15 m 46 s | 16 m 30 s |
+
+  Test step alone, run 2: 13 m 45 s, 13 m 31 s, 12 m 04 s, 14 m 10 s. Before it, every shard spends about 2 m 25 s on setup: image pull 46 to 72 s, crate fetch and build 70 to 78 s, bridge 4 s; shard 0 adds fmt and clippy, 25 s.
+- **The slowest shard is not under 15 minutes. It is not one test.** The longest single test takes about 6 minutes on CI, far under the §7 12-minute line. The sum of every shard's `finished in` is 3,203 s (822, 809, 723, 849 in run 2), so a perfect split gives 801 s, 13.35 minutes, plus 2.4 minutes of setup: **about 15.9 minutes at best.** The §1.4 rebalance was tried once, and it moved the spread (14 m 40 s to 16 m 30 s) without reaching the line. I did not try a second one, since the arithmetic says it cannot.
+- **Where the time is.** `board_tier2` is 1,630 CI-seconds, serial: its heavy tests take a `Mutex` (`ONE_AT_A_TIME`, `board_tier2.rs:25`), so its tests do not overlap even with 20 cores (859 s in parallel against 872 s alone on Furnace). `attribute_seeded` overlaps (12 tests in 641 s together, 861 s when split four ways). The rest is about 700 s of small binaries, run one after another.
+- **Decision needed (the architect's).** Under the 15-minute line with four shards would need one of these. None is in this work order's fence:
+  1. **A fifth shard**, or a runner with more than 4 vCPU, against the 15-minute line (about 13 minutes with five).
+  2. **Running `board_tier2` beside the other binaries in one shard**, which would overlap its serial work. I did not build this: several tier-1 tests read `/proc` for surviving processes (`mcp_tier1.rs:409`, `tools_tier1.rs:1664`) and `board_tier2.rs:618` lists `/var/lib/aethelgard`, so tests in separate binaries that never ran at once would run at once. That is the §7 condition "sharding changes a test's result" waiting to happen.
+  3. **Accept about 16 minutes**, 3 times faster than the 47-minute job, with `timeout-minutes: 30` on each shard.
+  4. **`actions/cache` on `target`** could save part of the 70 s build. I did not try it: even a free restore leaves 14.7 to 15.2 minutes at perfect balance, and the run 1 and 2 spreads show about 1.5 minutes of imbalance that a cache does not fix.
+- **The failure cases of §3 are shown by `ci/test-shard.sh`** (29 fixture checks, run in the `tools` aggregate on every PR). Each refuses: a test in no shard, a test in two, a shard that lists nothing, a name run once though listed in two binaries, an empty or malformed list, a benchmark, one test fewer than assigned, a shard that passes while running nothing, a failed test, a missing shard, a tier-2 sum under the floor, and tier-2 tests that silently stop.
 
 ## §1.1 Measurement
 
@@ -81,4 +99,4 @@ Removed: `plan.sha256` (written, uploaded and compared, but the byte-identical `
 - **`TIER2_RE` is a copy** of the old awk's alternation, in `shard.sh`. It must stay in step with the tier-2 files, as the old awk did.
 - **A list line the parser does not know fails `plan` in all four shards.** Cargo replays warnings from a cached build into stderr, so a future warning would do it; clippy's `-D warnings` keeps it clean now. Fail closed, by design (INV-06).
 - **No `actions/cache`.** The target directory is 3 GB against a build of about a minute.
-- **A rebalance** from CI's own per-test times, if one shard runs long, is one more pass over `ci/test-weights.tsv`; the PR description says whether it was needed.
+- **A rebalance** was done once (run 2): weights are scaled by `CI_SCALE` 1.8 (every tier-2 test measured on CI took 1.7 to 1.9 times Furnace's alone-time), and `ci/colocate.tsv` keeps `attribute_seeded` whole. A further one needs per-test CI times, which a libtest `--report-time` run would give.
