@@ -1209,6 +1209,9 @@ fn every_admitted_identifier_character_survives_every_output() {
         );
     }
     let text = |name: &str| String::from_utf8(files[&format!("{project}{name}")].clone()).unwrap();
+    // Every difference is collected, so one run names every damaged output
+    // and character (the spike's table, measured in CI), and then fails.
+    let mut damage: Vec<String> = vec![];
     // The BOM: one CRLF row per part, the reference its first field. No
     // admitted reference holds `,` or `"`, so a plain split reads it.
     let bom = text(".bom.csv");
@@ -1218,37 +1221,41 @@ fn every_admitted_identifier_character_survives_every_output() {
         .map(|l| l.split(',').next().unwrap())
         .collect();
     for r in &refs {
-        assert!(col0.contains(&r.as_str()), "{r} not in the BOM: {col0:?}");
+        if !col0.contains(&r.as_str()) {
+            damage.push(format!("{r} is not in the BOM: {col0:?}"));
+        }
     }
-    // The placement file: KiCad quotes the reference, and each row has the
-    // header's seven columns.
+    // The placement file: KiCad quotes the reference.
     let pos = text("-pos.csv");
     for r in &refs {
-        assert!(
-            pos.lines().any(|l| l.starts_with(&format!("\"{r}\","))),
-            "{r} not in the placement file:\n{pos}"
-        );
+        if !pos.lines().any(|l| l.starts_with(&format!("\"{r}\","))) {
+            damage.push(format!("{r} is not in the placement file:\n{pos}"));
+        }
     }
     // The Gerbers: every net's attribute, byte for byte; every reference
-    // somewhere.
+    // somewhere. What KiCad wrote is printed, whatever the outcome.
     let gerbers: Vec<String> = files
         .iter()
         .filter(|(n, _)| n.rsplit('.').next().is_some_and(|e| e.starts_with('g')))
         .map(|(_, b)| String::from_utf8_lossy(b).into_owned())
         .collect();
     assert!(!gerbers.is_empty());
+    let written: std::collections::BTreeSet<&str> = gerbers
+        .iter()
+        .flat_map(|g| g.lines())
+        .filter(|l| l.starts_with("%TO.N,"))
+        .collect();
+    eprintln!("AET-WO-1102 gerber net attributes: {written:?}");
     for net in nets.iter().chain([&domain, &"GND".to_owned()]) {
         let want = format!("%TO.N,{net}*%");
-        assert!(
-            gerbers.iter().any(|g| g.contains(&want)),
-            "no Gerber carries {want}"
-        );
+        if !gerbers.iter().any(|g| g.contains(&want)) {
+            damage.push(format!("no Gerber carries {want}"));
+        }
     }
     for r in &refs {
-        assert!(
-            gerbers.iter().any(|g| g.contains(r.as_str())),
-            "no Gerber carries {r}"
-        );
+        if !gerbers.iter().any(|g| g.contains(r.as_str())) {
+            damage.push(format!("no Gerber carries {r}"));
+        }
     }
     // The drill file: every net it names is one of ours, whole.
     let known: Vec<&str> = nets
@@ -1259,14 +1266,24 @@ fn every_admitted_identifier_character_survives_every_output() {
         .collect();
     for line in text(".drl").lines() {
         if let Some(at) = line.find("TO.N,") {
+            eprintln!("AET-WO-1102 drill net attribute: {line:?}");
             let name = line[at + 5..].trim_end_matches(['*', '%']);
-            assert!(known.contains(&name), "the drill file names `{name}`");
+            if !known.contains(&name) {
+                damage.push(format!("the drill file names `{name}`"));
+            }
         }
     }
     // The manifest and the verdict name the project and the scenario.
     let manifest: Value = serde_json::from_slice(&files["MANIFEST.json"]).unwrap();
-    assert_eq!(manifest["project"], project);
-    assert_eq!(manifest["scenarios"][0]["scenario"], scenario_name.as_str());
-    assert_eq!(v["campaign"][0]["scenario"], scenario_name.as_str(), "{v}");
+    if manifest["project"] != project {
+        damage.push(format!("the manifest names {}", manifest["project"]));
+    }
+    if manifest["scenarios"][0]["scenario"] != scenario_name.as_str() {
+        damage.push("the manifest names another scenario".into());
+    }
+    if v["campaign"][0]["scenario"] != scenario_name.as_str() {
+        damage.push("the verdict names another scenario".into());
+    }
+    assert!(damage.is_empty(), "{}", damage.join("\n"));
     fs::remove_dir_all(&base).unwrap();
 }
