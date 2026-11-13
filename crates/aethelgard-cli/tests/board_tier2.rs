@@ -936,6 +936,17 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
     ] {
         assert!(notes.contains(want), "{want}");
     }
+    // The notes describe every other file, and only those.
+    let described: Vec<&str> = notes
+        .lines()
+        .filter_map(|l| l.strip_prefix("- `")?.split('`').next())
+        .collect();
+    let others: Vec<&str> = names
+        .iter()
+        .copied()
+        .filter(|n| *n != "FAB-NOTES.md" && *n != "MANIFEST.json")
+        .collect();
+    assert_eq!(described, others);
 
     // §1.3: the package re-derived matches; one changed byte in every file
     // and one extra file fail, naming each.

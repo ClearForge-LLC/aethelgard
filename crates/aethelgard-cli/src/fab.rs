@@ -144,15 +144,9 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
         read_only: tool.dirs(),
         read_write: Vec::new(),
     };
+    // Reported, not compared: `strip_clock` refuses a Gerber from any other
+    // version, which KiCad writes into line 1 and the creator line.
     let version = crate::version(invocation(run::args(["version"]), "status-version"))?;
-    if version != KICAD_VERSION {
-        return Err(Stop::tool_error(
-            TOOL,
-            format!(
-                "`{TOOL} version` printed {version}; the package is defined for {KICAD_VERSION}"
-            ),
-        ));
-    }
     let mut out_dir = scratch.tool.clone().into_os_string();
     out_dir.push("/");
     let layers: Vec<&str> = LAYERS.iter().map(|(l, ..)| *l).collect();
@@ -246,17 +240,6 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
         files: &described,
     });
     files.insert(NOTES.to_owned(), notes.into_bytes());
-    // Every file the notes describe is in the package, and no other.
-    let mut named: Vec<&str> = described.iter().map(|(n, _)| n.as_str()).collect();
-    named.push(NOTES);
-    named.sort_unstable();
-    let have: Vec<&str> = files.keys().map(String::as_str).collect();
-    if named != have {
-        return Err(Stop::tool_error(
-            "aethelgard",
-            format!("the notes describe {named:?}, the package holds {have:?}"),
-        ));
-    }
     Ok(Exported {
         files,
         tool_version: version,
@@ -647,6 +630,7 @@ mod tests {
         assert!(pours(poured, "GND"));
         assert!(!pours(poured, "VDD_3V3"));
         assert!(!pours(b"%TO.N,GND*%\nX1Y1D03*\n", "GND"));
+        assert!(!pours(b"%TO.N,GND*%\nX1Y1D03*\nG37*\n", "GND"));
         assert!(!pours(b"%TO.N,GND*%\nG36*\nX1Y1D02*\n", "GND"));
         assert!(!pours(b"G36*\n%TO.N,GND*%\nG37*\n", "GND"));
     }
@@ -680,6 +664,26 @@ mod tests {
         assert_eq!(v["files"]["a"], tree::sha256(b"1"));
         assert_eq!(v["files"].as_object().unwrap().len(), 2);
         assert!(m.ends_with(b"}\n"));
+    }
+
+    /// Condition 6 rests on this: a drilled pad, or a pad with two drills,
+    /// is refused; an SMD pad is not.
+    #[test]
+    fn a_drilled_pad_is_refused() {
+        let board = |pad: &str| {
+            aethelgard_eda::strict::board(&format!(
+                "(kicad_pcb (version 20260206) (generator \"t\") (footprint \"t\" (layer \"F.Cu\") (at 0 0) {pad}))"
+            ))
+            .unwrap()
+        };
+        let smd = "(pad \"1\" smd rect (at 0 0) (size 1 1) (layers \"F.Cu\"))";
+        assert!(no_drilled_pad(&board(smd)).is_ok());
+        let drilled =
+            "(pad \"1\" thru_hole circle (at 0 0) (size 1 1) (drill 0.5) (layers \"*.Cu\"))";
+        assert!(no_drilled_pad(&board(drilled)).is_err());
+        let npth =
+            "(pad \"\" np_thru_hole circle (at 0 0) (size 1 1) (drill 1) (layers \"F.Mask\"))";
+        assert!(no_drilled_pad(&board(npth)).is_err());
     }
 
     #[test]
