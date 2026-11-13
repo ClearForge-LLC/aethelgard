@@ -1170,7 +1170,8 @@ fn every_admitted_identifier_character_survives_every_output() {
     let scenario = serde_json::json!({
         "schema_version": 1,
         "name": scenario_name,
-        // Only a relative `base` is accepted (`BaseOutsideRoot`), next to the scenario.
+        // Only a relative `base` inside the current directory is accepted
+        // (`BaseOutsideRoot`): here, next to the scenario.
         "base": "spec.json",
         "expect": "pass",
         "expect_findings": [],
@@ -1180,15 +1181,24 @@ fn every_admitted_identifier_character_survives_every_output() {
     fs::write(&scenario_path, serde_json::to_vec(&scenario).unwrap()).unwrap();
     let pkg = base.join("pkg");
 
-    let (code, stdout) = aethelgard(&[
-        "verify",
-        "--spec",
-        spec_path.to_str().unwrap(),
-        "--scenarios",
-        scenario_path.to_str().unwrap(),
-        "--fab-out",
-        pkg.to_str().unwrap(),
-    ]);
+    // A scenario's `base` is confined to the current directory, so this run
+    // starts in the directory that holds the specification (`aethelgard()`
+    // starts in the repository root).
+    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args([
+            "verify",
+            "--spec",
+            "spec.json",
+            "--scenarios",
+            "scenario.json",
+            "--fab-out",
+            pkg.to_str().unwrap(),
+        ])
+        .current_dir(&base)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let (code, stdout) = (out.status.code(), String::from_utf8(out.stdout).unwrap());
     let v = one(&stdout);
     assert_eq!(code, Some(0), "{v}");
     assert_eq!(v["verdict"], "pass", "{v}");
