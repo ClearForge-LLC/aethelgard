@@ -1101,8 +1101,9 @@ fn rename_value(v: &mut Value, from: &str, to: &str) {
 /// punctuation character or a digit of its own, and the six sort in the
 /// order the router needs; the six cover all 87. The domain id, each bus
 /// id and the scenario name carry as many as fit in 64 bytes. A reference is
-/// a Renode identifier (the 63 of `[A-Za-z0-9_]`, three references of 21,
-/// each behind a letter), and the project name a crate name (`a-z0-9-`).
+/// a Renode identifier: three of four bytes, each holding `_`, and every
+/// letter and digit is in the nets. The project name is a crate name, with
+/// all of `a-z0-9-`.
 #[test]
 fn every_admitted_identifier_character_survives_every_output() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
@@ -1127,17 +1128,11 @@ fn every_admitted_identifier_character_survives_every_output() {
     let sensors = format!("B1{}", slice(10, 60));
     let flash = format!("B2{}", slice(30, 80));
     let scenario_name = format!("S{}", slice(0, 60));
-    let renode: Vec<char> = ('0'..='9')
-        .chain('A'..='Z')
-        .chain('a'..='z')
-        .chain(['_'])
-        .collect();
-    assert_eq!(renode.len(), 63);
-    let refs: Vec<String> = ["U", "V", "W"]
-        .iter()
-        .zip(renode.chunks(21))
-        .map(|(p, c)| format!("{p}{}", c.iter().collect::<String>()))
-        .collect();
+    // A reference's text is drawn on the silkscreen, and a 22-byte one overlaps
+    // its own part's outline (DRC `silk_overlap`, CI run 43510641685), so the
+    // references are short. Their letters and digits are the nets' too; `_` is
+    // the one character only a reference admits beyond them.
+    let refs: Vec<String> = ["Ua_9", "Vb_8", "Wc_7"].map(String::from).to_vec();
     let project = "abcdefghijklmnopqrstuvwxyz0123456789-x";
 
     let mut spec: Value = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
