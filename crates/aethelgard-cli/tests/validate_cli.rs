@@ -106,6 +106,61 @@ fn invalid_identifier_exits_2_with_a_path_in_the_message() {
     assert_eq!(report["error"]["path"], "i2c_buses[0].sda.net");
 }
 
+/// `AET-WO-1102` §1.3: every refused character and both clock shapes, in a
+/// net (the base set), the project name (a crate name) and a reference (a
+/// Renode identifier), each refused by `validate` by its path before any gate
+/// runs. `generate` refuses the last two itself, so this is `INV-06`.
+#[test]
+fn every_refused_character_and_shape_is_refused_by_its_path() {
+    let base: Value =
+        serde_json::from_slice(&std::fs::read(example("sentinel-01-minimal.json")).unwrap())
+            .unwrap();
+    let refused = |doc: &Value, path: &str| {
+        let output = run(&["validate"], doc.to_string().as_bytes());
+        let report = assert_refused(&output, 2, "InvalidIdentifier");
+        assert_eq!(report["error"]["path"], path, "{report}");
+    };
+    let cases: Vec<String> = ["/", "{", "}", "$", "[", "]", "\"", "%", "*", ",", "\\"]
+        .iter()
+        .map(|c| format!("AB{c}CD"))
+        .chain(["AB2026-11-13CD".to_owned(), "AB12:34:56CD".to_owned()])
+        .collect();
+    for id in &cases {
+        let mut doc = base.clone();
+        doc["i2c_buses"][0]["sda"]["net"] = id.as_str().into();
+        refused(&doc, "i2c_buses[0].sda.net");
+        // A project name and a reference are narrower still, so these fail too.
+        let mut doc = base.clone();
+        doc["project_name"] = id.to_lowercase().into();
+        refused(&doc, "project_name");
+        let mut doc = base.clone();
+        doc["spi_devices"][0]["reference"] = id.as_str().into();
+        refused(&doc, "spi_devices[0].reference");
+    }
+    // What `generate` refuses and `validate` once passed (3300 F14, F15).
+    for (path, edit) in [
+        ("project_name", "My_Board"),
+        ("project_name", "sentinel_01"),
+        ("i2c_devices[0].reference", "U-2"),
+        ("i2c_devices[0].reference", "U+2"),
+    ] {
+        let mut doc = base.clone();
+        match path {
+            "project_name" => doc["project_name"] = edit.into(),
+            _ => doc["i2c_devices"][0]["reference"] = edit.into(),
+        }
+        refused(&doc, path);
+    }
+    // And KiCad's own `+3V3` and a net with every other character stay valid.
+    let mut doc = base.clone();
+    doc["i2c_buses"][0]["sda"]["net"] = "+3V3-(Net#1)!;'~^|".into();
+    doc["net_constraints"][0]["net_name"] = "+3V3-(Net#1)!;'~^|".into();
+    assert_eq!(
+        run(&["validate"], doc.to_string().as_bytes()).status.code(),
+        Some(0)
+    );
+}
+
 #[test]
 fn path_is_absent_from_every_other_refusal() {
     let output = run(&["validate"], br#"{"project_name":"p"}"#);

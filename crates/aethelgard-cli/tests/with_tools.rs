@@ -479,8 +479,10 @@ fn the_emitted_reference_schematic_passes_erc() {
     assert_judged(&v, "erc", "kicad-cli", "10.0.7");
 }
 
-/// Every character `RUL-14` still admits that an S-expression must quote,
-/// and others, in every identifier class that reaches the schematic.
+/// Every character `RUL-14` still admits in a net or domain that an
+/// S-expression must quote, and others, in every identifier class that
+/// reaches the schematic (`AET-WO-1102`: the project name and the references
+/// are narrower now, `p-x` and `U_2`; `"` is refused everywhere).
 #[test]
 fn identifiers_with_s_expression_characters_survive_kicad() {
     let t = Temp::new("names");
@@ -495,17 +497,17 @@ fn identifiers_with_s_expression_characters_survive_kicad() {
         .unwrap();
     };
     let names = [
-        ("sentinel-01", "p\"(x)\\#"),
-        ("VDD_3V3", "VDD\"3V3\\"),
+        ("sentinel-01", "p-x"),
+        ("VDD_3V3", "VDD'3V3^"),
         ("I2C_SDA", "I2C(SDA)"),
         ("I2C_SCL", "I2C;SCL~"),
         ("SPI_SCK", "SPI'SCK^"),
-        ("SPI_MOSI", "MO|SI,"),
-        ("SPI_MISO", "MI*SO?"),
-        ("FLASH_CS", "CS\"(0)"),
-        ("U2", "U(2)"),
-        ("U3", "U\"3"),
-        ("U4", "U\\4"),
+        ("SPI_MOSI", "MO|SI!"),
+        ("SPI_MISO", "MI+SO?"),
+        ("FLASH_CS", "CS@(0)"),
+        ("U2", "U_2"),
+        ("U3", "U_3"),
+        ("U4", "U_4"),
     ];
     for (from, to) in names {
         rename(&mut spec, from, to);
@@ -561,8 +563,8 @@ fn identifiers_with_s_expression_characters_survive_kicad() {
     record(&format!(
         "names read back: nets {nets:?} refs {refs:?} title {title:?}"
     ));
-    assert_eq!(title, Some("p\"(x)\\#"));
-    assert!(nets.contains(&"VDD\"3V3\\"), "{nets:?}");
+    assert_eq!(title, Some("p-x"));
+    assert!(nets.contains(&"VDD'3V3^"), "{nets:?}");
     for (_, to) in &names[2..8] {
         // A root-sheet label's net is named `/<label>` (spike S4).
         let want = format!("/{to}");
@@ -787,13 +789,13 @@ fn p1_gate_clause_1_the_reference_board_passes_erc_and_drc_with_no_finding() {
     )
     .unwrap();
     for (from, to) in [
-        ("sentinel-01", "p\"(x)\\#"),
-        ("VDD_3V3", "VDD\"3V3\\"),
+        ("sentinel-01", "p-x"),
+        ("VDD_3V3", "VDD'3V3^"),
         ("I2C_SDA", "I2C(SDA)"),
-        ("FLASH_CS", "CS\"(0)"),
-        ("U2", "U(2)"),
-        ("U3", "U\"3"),
-        ("U4", "U\\4"),
+        ("FLASH_CS", "CS@(0)"),
+        ("U2", "U_2"),
+        ("U3", "U_3"),
+        ("U4", "U_4"),
     ] {
         text = text.replace(&format!("\"{from}\""), &serde_json::to_string(to).unwrap());
     }
