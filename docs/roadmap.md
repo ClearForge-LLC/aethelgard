@@ -404,7 +404,9 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | `Sx::child` takes the first match where KiCad takes the last; `check drc` passed a board with a second `thickness` | `1305` F6 | `AET-WO-1306`: **merged (PR #101)** |
 | `check drc` judges a refilled scratch copy, so a caller's saved zone fill and `stackup` reach a fabricator unjudged (`extract` refuses both) | `1306` F9 | `AET-WO-3300`: the package's Gerbers carry zones KiCad refilled, and `FAB-NOTES.md` states the stackup |
 | A dedicated uid for `aethelgard` on Furnace, so `uid_boundary` holds there | `1601` §1.3, R4 | **the operator's** (the CLI README's deployment section) |
-| Split the `tools` job's tier 2 (3200 F17) | 3200 F17; Scotty 2026-11-13 | `AET-WO-1907` (written): four shards, balanced by measured weight, under 15 minutes, every test assigned exactly once |
+| Split the `tools` job's tier 2 (3200 F17) | 3200 F17; Scotty 2026-11-13 | `AET-WO-1907`: **merged (PR #104)**. Five shards (`ci/SHARDS`), slowest 13 m 41 s, against 51 minutes for one job. Four could not reach 15 (a balanced split is about 15.9 minutes, from 2.4 minutes of setup per shard), so the architect ruled five; Scotty's goal was the 15 minutes |
+| A new tier-2 test takes the shard plan's 0.2 s default weight until its time is added to `ci/test-weights.tsv`; re-balance or add a shard before the slowest nears 15 minutes | `1907` review | the work order that adds the test (`3300` first) |
+| Three `ci/test-shard.sh` refusal fixtures print the runner awk's `\.` warning instead of their reason; they check the exit code, not the reason | `1907` review | the next work order that touches `ci/` (nit) |
 
 ## 8. Amendments
 
@@ -461,6 +463,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-12 | §5 | `AET-WO-3300` written: the fabrication package, emitted only by a passing `verify` and named in its verdict (P3 gate clause 3) | `AET-WO-3301`, `1305` F3 |
 | 2026-11-13 | §7.1 | `AET-WO-1907` written at Scotty's direction: CI's `tools` job in four test-level shards (`board_tier2.rs` alone was 26 of 47 minutes), under 15 minutes | PR #99's `tools` run, measured |
 | 2026-11-13 | §5, §7.1 | `AET-WO-1306` reconciled (merged, PR #101): one strict KiCad reader for every gate, with its §7.1 stop ruled (F1, F2, F3, F15). `3300`'s prerequisites are all met. The duplicate `--root` backlog row is removed; Scotty's deferral stands | PR #101 |
+| 2026-11-13 | §7.1 | `AET-WO-1907` reconciled (merged, PR #104): CI's `tools` job in five shards, 13 m 41 s at the slowest. Five, not four, by the architect's ruling at the measurement; the shard logic is bash and awk (`RUL-12`) | PR #104 |
 
 ## 9. Provenance
 
