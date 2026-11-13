@@ -194,7 +194,11 @@ fn methods(module: &str, head: &str) -> Vec<String> {
     let end = body.find("\n}\n").unwrap();
     body[..end]
         .lines()
-        .filter_map(|l| l.trim().strip_prefix("pub fn "))
+        .filter_map(|l| {
+            let l = l.trim();
+            l.strip_prefix("pub fn ")
+                .or_else(|| l.strip_prefix("pub(crate) fn "))
+        })
         .map(|l| l.split(['(', '<']).next().unwrap().to_owned())
         .collect()
 }
@@ -297,8 +301,7 @@ fn the_lookups_are_pinned_by_path_and_by_name() {
     assert_eq!(
         methods("aethelgard-eda/src/strict.rs", "impl<'a> Node<'a> {"),
         [
-            "head", "arg", "last", "len", "is_empty", "texts", "path", "lists", "all", "one",
-            "named", "field"
+            "head", "arg", "last", "len", "texts", "lists", "all", "one", "named", "field"
         ],
         "a method was added to `Node`: it must not resolve a repeat first-or-last"
     );

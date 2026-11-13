@@ -663,23 +663,13 @@ impl<'a> Node<'a> {
     }
 
     /// The number of elements, head included.
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.sx.items().len()
-    }
-
-    /// True for a list with nothing in it, `()`.
-    pub fn is_empty(&self) -> bool {
-        self.sx.items().is_empty()
     }
 
     /// Every atom and string after the head.
     pub fn texts(&self) -> impl Iterator<Item = &'a str> + 'a {
         self.sx.items().iter().skip(1).filter_map(Sx::text)
-    }
-
-    /// Where this node sits, such as `kicad_pcb/footprint[3]/pad[2]`.
-    pub fn path(&self) -> &str {
-        &self.path
     }
 
     /// Every list inside this one, in order. A list's path segment is its

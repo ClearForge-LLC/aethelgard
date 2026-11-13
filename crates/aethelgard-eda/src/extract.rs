@@ -425,8 +425,8 @@ fn allowed(parent: &str) -> Option<&'static [(&'static str, Option<usize>, bool)
 }
 
 /// The children a footprint may hold besides `pad` (judged by `allowed`),
-/// and whether each may repeat. A repeated `property` must name a different
-/// property each time.
+/// and whether each may repeat (a field named twice was refused by the strict
+/// reader).
 const FOOTPRINT: &[(&str, bool)] = &[
     ("at", false),
     ("layer", false),
