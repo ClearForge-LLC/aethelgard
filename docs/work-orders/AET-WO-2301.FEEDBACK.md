@@ -498,13 +498,13 @@ No forged-archive path to a false pass was found. Five findings, all fixed and e
 - No scenario field reaches `--renode`'s argv.
 - A killed boot, a never-released reset, the severities and `expect_counts` hold.
 
-## Tier-2 tests added (`campaign_tier2.rs`; `TIER2_MIN` 79 → 82)
+## Tier-2 tests added (`campaign_tier2.rs`; `TIER2_MIN` 79 → 82, and 83 after `main` merged `AET-WO-1102` at 80)
 
 | Test | Alone, Furnace, pinned image |
 |---|---|
-| `the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay` | 12.95 s |
+| `the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay` | 13.02 s |
 | `renodes_reset_recipe_is_pinned_step_by_step` (F3, F5: `machine Reset` alone never reboots; the recipe reboots; a release without the nudge executes nothing in its first segment) | 7.34 s |
-| `a_flooding_firmware_reaches_a_verdict_and_its_message_is_the_same_twice` (F23, F10: exit 1 with `locked_peripheral_access` and `renode_log_flood`, the two runs' findings identical) | 7.03 s |
+| `a_flooding_firmware_reaches_a_verdict_and_its_message_is_the_same_twice` (F23, F10: exit 1 with `locked_peripheral_access` and `renode_log_flood`, the two runs' findings identical) | 7.15 s |
 
 **Wall time per reference scenario**: both together 4.5 s in one campaign (about 2.2 s each, 1.7 s of it Renode's start). Every existing tier-2 binary passed on the build: `with_tools` 23, `twin_tier2` 14, `board_tier2` 17, `attribute_seeded` 12, `adversarial_1301_tools` 6, `adversarial_1302_tools` 2, and `campaign_tier2` 8.
 
@@ -550,3 +550,9 @@ Under the schedule, a droop adds its declared rail, its crossings, its resets an
     - 22, the re-fall merge: equivalent whenever a later rise overwrites the stale release;
     - 26, the zero-volt floor: equality was untested.
   - Both have a test now (`a_refall_inside_trsttempo_with_no_later_rise_is_never_released`, `a_drop_exactly_equal_to_the_floor_is_refused`), and each kills its mutant (re-run). 26 of 26.
+
+## Merged with `main` at `315ce1b` (`AET-WO-1102`, PR #106)
+
+- Merged with a merge commit; the one conflict was `TIER2_MIN`, now 83: `main`'s 80 plus this work order's 3, both comments kept.
+- `AET-WO-1102`'s narrower identifiers: `read_scenario` checks a scenario's name with `check_identifier`. Every identifier the two droop scenarios carry (their names, the droop's domain `VDD_3V3`, and the five `expect_counts` kinds) passes `check_identifier(Plain)`, pinned by `the_droop_scenarios_carry_only_identifiers_the_base_set_admits`. A droop's domain must also equal the MCU's supply, an identifier the specification's own validation has checked.
+- On the merged tree: fmt and clippy clean; `cargo test --workspace` 66 suites, 1,062 passed, 0 failed; `campaign_tier2` 8 of 8, its three new tests re-timed alone for `ci/test-weights.tsv` (13.02, 7.34, 7.15 s).

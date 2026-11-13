@@ -2394,3 +2394,33 @@ fn a_droop_boot_killed_at_a_bound_is_a_verdict_and_replays() {
     let r = lines(&replay(&tb.0, &run));
     assert_eq!(r[0]["verdict"], "fail", "{r:?}");
 }
+
+/// `AET-WO-1102` merged under `AET-WO-2301`: every identifier the two reference
+/// droop scenarios carry passes `check_identifier`: the scenario's name (which
+/// `read_scenario` checks), the droop's domain, and each `expect_counts` kind.
+#[test]
+fn the_droop_scenarios_carry_only_identifiers_the_base_set_admits() {
+    use aethelgard_ir::{IdentifierKind, check_identifier};
+    for file in ["droop-tolerated.json", "droop-bor3.json"] {
+        let v: Value = serde_json::from_slice(
+            &fs::read(root().join("scenarios/sentinel-01").join(file)).unwrap(),
+        )
+        .unwrap();
+        let mut ids = vec![
+            v["name"].as_str().unwrap().to_owned(),
+            v["overrides"][0]["droop"]["domain"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+        ];
+        ids.extend(v["expect_counts"].as_object().unwrap().keys().cloned());
+        assert_eq!(ids.len(), 5, "{file}");
+        for id in ids {
+            assert_eq!(
+                check_identifier(IdentifierKind::Plain, &id),
+                Ok(()),
+                "{file}: {id}"
+            );
+        }
+    }
+}
