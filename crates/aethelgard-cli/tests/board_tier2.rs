@@ -1075,3 +1075,220 @@ fn verify_fab_out_writes_nothing_when_a_gate_fails() {
     );
     fs::remove_dir_all(&dir).unwrap();
 }
+
+/// Replaces every string value equal to `from` in `v` with `to`.
+fn rename_value(v: &mut Value, from: &str, to: &str) {
+    match v {
+        Value::String(s) if s == from => *s = to.to_owned(),
+        Value::Array(a) => a.iter_mut().for_each(|x| rename_value(x, from, to)),
+        Value::Object(m) => m.values_mut().for_each(|x| rename_value(x, from, to)),
+        _ => {}
+    }
+}
+
+/// `AET-WO-1102` §1.3, and the image half of the §1.1 spike (the architect's
+/// ruling on PR #106): one specification carries every character `RUL-14`
+/// admits in the positions of every kind, and `verify --scenarios --fab-out`
+/// passes it. Then every output the run writes carries each identifier
+/// byte for byte: the schematic and board (read back by the gates), the BOM,
+/// the placement file, each Gerber's net attributes, the drill file, the file
+/// names, the manifest, and the verdict. A character an output damages makes
+/// this test fail at that assertion, and is then added to the base set's
+/// refusals with the failing output named in the work order's FEEDBACK.
+///
+/// The base set is 83 characters (`0x21`-`0x7E` but `/ { } $ [ ] " % * , \`). A net
+/// carries 13 or 14 of them in ASCII order, so each starts and ends with a
+/// punctuation character or a digit of its own, and the six sort in the
+/// order the router needs; the six cover all 83. The domain id, each bus
+/// id and the scenario name carry as many as fit in 64 bytes. A reference is
+/// a Renode identifier: three of four bytes, each holding `_`, and every
+/// letter and digit is in the nets. The project name is a crate name, with
+/// all of `a-z0-9-`.
+#[test]
+fn every_admitted_identifier_character_survives_every_output() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let admitted: Vec<char> = (0x21u8..=0x7e)
+        .filter(|b| !aethelgard_ir::REFUSED_IN_IDENTIFIERS.contains(b))
+        .map(char::from)
+        .collect();
+    assert_eq!(admitted.len(), 83);
+    let slice = |from: usize, to: usize| admitted[from..to].iter().collect::<String>();
+    let nets: Vec<String> = admitted
+        .chunks(14)
+        .enumerate()
+        .map(|(i, c)| {
+            // Net names are unique after case folding, and chunks 2 and 4 are
+            // the upper and lower case of one run of letters: end chunk 4 on a digit.
+            let tail = if i == 4 { "0" } else { "" };
+            format!("{}{tail}", c.iter().collect::<String>())
+        })
+        .collect();
+    assert_eq!(nets.len(), 6);
+    let domain = format!("V{}", slice(0, 62));
+    let sensors = format!("B1{}", slice(10, 60));
+    let flash = format!("B2{}", slice(30, 80));
+    let scenario_name = format!("S{}", slice(0, 60));
+    // A reference's text is drawn on the silkscreen, and a 22-byte one overlaps
+    // its own part's outline (DRC `silk_overlap`, CI run 43510641685), so the
+    // references are short. Their letters and digits are the nets' too; `_` is
+    // the one character only a reference admits beyond them.
+    let refs: Vec<String> = ["Ua_9", "Vb_8", "Wc_7"].map(String::from).to_vec();
+    let project = "abcdefghijklmnopqrstuvwxyz0123456789-x";
+
+    let mut spec: Value = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
+    for (from, to) in [
+        ("sentinel-01", project),
+        ("VDD_3V3", &domain),
+        ("SENSORS", &sensors),
+        ("FLASH", &flash),
+        // The router completes nets in name order and cannot complete this
+        // board in every order (`Unroutable` for a plain `N0`..`N5` in the
+        // reference's own pairing), so the new names keep the reference's
+        // order: FLASH_CS < I2C_SCL < I2C_SDA < SPI_MISO < SPI_MOSI < SPI_SCK.
+        ("FLASH_CS", &nets[0]),
+        ("I2C_SCL", &nets[1]),
+        ("I2C_SDA", &nets[2]),
+        ("SPI_MISO", &nets[3]),
+        ("SPI_MOSI", &nets[4]),
+        ("SPI_SCK", &nets[5]),
+        ("U2", &refs[0]),
+        ("U3", &refs[1]),
+        ("U4", &refs[2]),
+    ] {
+        rename_value(&mut spec, from, to);
+    }
+    let base = std::env::temp_dir().join(format!("aet-1102-names-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    fs::create_dir_all(&base).unwrap();
+    let spec_path = base.join("spec.json");
+    fs::write(&spec_path, serde_json::to_vec(&spec).unwrap()).unwrap();
+    let scenario = serde_json::json!({
+        "schema_version": 1,
+        "name": scenario_name,
+        // Only a relative `base` inside the current directory is accepted
+        // (`BaseOutsideRoot`): here, next to the scenario.
+        "base": "spec.json",
+        "expect": "pass",
+        "expect_findings": [],
+        "overrides": [{ "bus": sensors, "pull_up_ohms": 2200 }],
+    });
+    let scenario_path = base.join("scenario.json");
+    fs::write(&scenario_path, serde_json::to_vec(&scenario).unwrap()).unwrap();
+    let pkg = base.join("pkg");
+
+    // A scenario's `base` is confined to the current directory, so this run
+    // starts in the directory that holds the specification (`aethelgard()`
+    // starts in the repository root).
+    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args([
+            "verify",
+            "--spec",
+            "spec.json",
+            "--scenarios",
+            "scenario.json",
+            "--fab-out",
+            pkg.to_str().unwrap(),
+        ])
+        .current_dir(&base)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let (code, stdout) = (out.status.code(), String::from_utf8(out.stdout).unwrap());
+    let v = one(&stdout);
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["verdict"], "pass", "{v}");
+    assert_eq!(v["fab"]["status"], "written", "{v}");
+    assert_eq!(v["campaign"][0]["verdict"], "pass", "{v}");
+
+    let files = package_files(&pkg);
+    // File names: every file but the two notes starts with the project name.
+    for name in files.keys() {
+        assert!(
+            name == "FAB-NOTES.md" || name == "MANIFEST.json" || name.starts_with(project),
+            "{name}"
+        );
+    }
+    let text = |name: &str| String::from_utf8(files[&format!("{project}{name}")].clone()).unwrap();
+    // Every difference is collected, so one run names every damaged output
+    // and character (the spike's table, measured in CI), and then fails.
+    let mut damage: Vec<String> = vec![];
+    // The BOM: one CRLF row per part, the reference its first field. No
+    // admitted reference holds `,` or `"`, so a plain split reads it.
+    let bom = text(".bom.csv");
+    let col0: Vec<&str> = bom
+        .split("\r\n")
+        .filter(|l| !l.is_empty())
+        .map(|l| l.split(',').next().unwrap())
+        .collect();
+    for r in &refs {
+        if !col0.contains(&r.as_str()) {
+            damage.push(format!("{r} is not in the BOM: {col0:?}"));
+        }
+    }
+    // The placement file: KiCad quotes the reference.
+    let pos = text("-pos.csv");
+    for r in &refs {
+        if !pos.lines().any(|l| l.starts_with(&format!("\"{r}\","))) {
+            damage.push(format!("{r} is not in the placement file:\n{pos}"));
+        }
+    }
+    // The Gerbers: every net's attribute, byte for byte; every reference
+    // somewhere. What KiCad wrote is printed, whatever the outcome.
+    let gerbers: Vec<String> = files
+        .iter()
+        .filter(|(n, _)| n.rsplit('.').next().is_some_and(|e| e.starts_with('g')))
+        .map(|(_, b)| String::from_utf8_lossy(b).into_owned())
+        .collect();
+    assert!(!gerbers.is_empty());
+    let written: std::collections::BTreeSet<&str> = gerbers
+        .iter()
+        .flat_map(|g| g.lines())
+        .filter(|l| l.starts_with("%TO.N,"))
+        .collect();
+    eprintln!("AET-WO-1102 gerber net attributes: {written:?}");
+    // KiCad writes a signal net as `/<net>`; a rail and GND are global, bare.
+    let wanted = nets
+        .iter()
+        .map(|n| format!("/{n}"))
+        .chain([domain.clone(), "GND".to_owned()]);
+    for net in wanted {
+        let want = format!("%TO.N,{net}*%");
+        if !gerbers.iter().any(|g| g.contains(&want)) {
+            damage.push(format!("no Gerber carries {want}"));
+        }
+    }
+    for r in &refs {
+        if !gerbers.iter().any(|g| g.contains(r.as_str())) {
+            damage.push(format!("no Gerber carries {r}"));
+        }
+    }
+    // The drill file: every net it names is one of ours, whole.
+    let known: Vec<&str> = nets
+        .iter()
+        .chain([&domain])
+        .map(String::as_str)
+        .chain(["GND"])
+        .collect();
+    for line in text(".drl").lines() {
+        if let Some(at) = line.find("TO.N,") {
+            eprintln!("AET-WO-1102 drill net attribute: {line:?}");
+            let name = line[at + 5..].trim_end_matches(['*', '%']);
+            if !known.contains(&name) {
+                damage.push(format!("the drill file names `{name}`"));
+            }
+        }
+    }
+    // The manifest and the verdict name the project and the scenario.
+    let manifest: Value = serde_json::from_slice(&files["MANIFEST.json"]).unwrap();
+    if manifest["project"] != project {
+        damage.push(format!("the manifest names {}", manifest["project"]));
+    }
+    if manifest["scenarios"][0]["scenario"] != scenario_name.as_str() {
+        damage.push("the manifest names another scenario".into());
+    }
+    if v["campaign"][0]["scenario"] != scenario_name.as_str() {
+        damage.push("the verdict names another scenario".into());
+    }
+    assert!(damage.is_empty(), "{}", damage.join("\n"));
+    fs::remove_dir_all(&base).unwrap();
+}

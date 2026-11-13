@@ -783,6 +783,21 @@ fn an_unknown_scenario_key_is_refused() {
     );
 }
 
+/// `AET-WO-1102`: a scenario's name is an identifier. Each of these reached
+/// the verdict, the archive and `MANIFEST.json` before; now none runs.
+#[test]
+fn a_scenario_name_that_is_no_identifier_is_refused_before_a_run() {
+    for name in ["a\"b", "a/b", "a$b", "a{b}", "2026-11-13", "x12:34:56y"] {
+        let s = scenario(name, "pass", &[], json_of(PULL_UP_2K2));
+        let v = refused_before_running(&[("s.json", s)], &["s.json"], 2, "SchemaViolation");
+        let message = v["error"]["message"].as_str().unwrap();
+        assert!(
+            message.contains("is not an identifier"),
+            "{name}: {message}"
+        );
+    }
+}
+
 #[test]
 fn an_unknown_override_key_is_refused() {
     let s = scenario(

@@ -202,6 +202,8 @@ fn refuses_invalid_identifiers_at_every_path() {
     }
 }
 
+/// The base set, on a field of kind `Plain` (`mcu.part`): everything a base
+/// identifier must refuse, one value each, and what it must admit.
 #[test]
 fn identifier_boundaries() {
     let bad = [
@@ -225,24 +227,99 @@ fn identifier_boundaries() {
         "A$B",
         "A[0..1]",
         "]",
+        // KiCad does not escape it in a placement row (AET-WO-3300 F15).
+        "U\"4,X",
+        "\"",
+        // KiCad rewrites these four in a Gerber net attribute (AET-WO-1102, CI).
+        "A%B",
+        "A*B",
+        "A,B",
+        "A\\B",
+        // A date or a time of day, anywhere inside (AET-WO-3300 F14).
+        "2026-11-13",
+        "N2026-11-13X",
+        "12:34:56",
+        "AB12:34:56CD",
     ];
     for id in bad {
-        let err = refusal(|s| s.project_name = id.into());
-        assert_invalid_identifier(err, "project_name");
+        let err = refusal(|s| s.mcu.part = id.into());
+        assert_invalid_identifier(err, "mcu.part");
     }
     let long = "a".repeat(65);
-    assert_invalid_identifier(refusal(|s| s.project_name = long), "project_name");
+    assert_invalid_identifier(refusal(|s| s.mcu.part = long), "mcu.part");
     for ok in [
         "a".repeat(64),
         "!".into(),
         "~".into(),
         "+3V3".into(),
-        // Every other printable character, S-expression specials included.
-        "!\"#%&'()*+,-.:;<=>?@\\^_`|~".into(),
+        "Net-(U1-Pad3)".into(),
+        // Every other printable character, S-expression specials included,
+        // but `"`.
+        "!#&'()+-.:;<=>?@^_`|~".into(),
+        // Not shaped like a date or a time: too few digits, or a break.
+        "2026-11-1".into(),
+        "202-11-13".into(),
+        "12:34:5".into(),
+        "12:3456".into(),
+        "1234-56_78".into(),
     ] {
         let mut spec = valid();
-        spec.project_name = ok;
+        spec.mcu.part = ok;
         assert_eq!(spec.validate(), Ok(()));
+    }
+}
+
+/// `AET-WO-1102`: the project name is a crate name, and a device reference
+/// is a Renode identifier, each refused at `validate` as `generate` refuses
+/// it; the message names the rule broken.
+#[test]
+fn project_names_and_references_have_their_own_shapes() {
+    for id in [
+        "Sentinel",
+        "sentinel_01",
+        "1sentinel",
+        "-sentinel",
+        "sentinel-",
+        "a--b",
+        "a.b",
+        "a+b",
+        ".",
+        "~",
+    ] {
+        let err = refusal(|s| s.project_name = id.into());
+        assert_invalid_identifier(err.clone(), "project_name");
+        assert!(err.to_string().contains("crate name"), "{err}");
+    }
+    // `generate` names the board crate `<project>-board`: 59 bytes is refused there.
+    let long = refusal(|s| s.project_name = "a".repeat(59));
+    assert_invalid_identifier(long, "project_name");
+    for ok in ["sentinel-01", "a", "a1-b2", &"a".repeat(58)] {
+        let mut spec = valid();
+        spec.project_name = ok.into();
+        assert_eq!(spec.validate(), Ok(()), "{ok}");
+    }
+    for id in [
+        "U-2", "U.2", "2U", "_U", "U\"4", "U+2", "U 2", "#U2", "U:2", "U2,",
+    ] {
+        let err = refusal(|s| devs(s).i2c[0].reference = id.into());
+        assert_invalid_identifier(err.clone(), "i2c_devices[0].reference");
+        // The base set speaks first for a `"` or a space; the shape for the rest.
+        let said = err.to_string();
+        assert!(
+            said.contains("Renode identifier") || said.contains("printable ASCII"),
+            "{said}"
+        );
+        let err = refusal(|s| devs(s).spi[0].reference = id.into());
+        assert_invalid_identifier(err, "spi_devices[0].reference");
+    }
+    for ok in ["U2", "u_2", "Ab_9", "S", "R_FLASH_0"] {
+        let mut spec = valid();
+        devs(&mut spec).i2c[0].reference = ok.into();
+        assert_eq!(spec.validate(), Ok(()), "{ok}");
+        let mut spec = valid();
+        // The SPI device is `U4`; "U2" would be a duplicate of the I2C one.
+        devs(&mut spec).spi[0].reference = format!("S{ok}");
+        assert_eq!(spec.validate(), Ok(()), "{ok}");
     }
 }
 

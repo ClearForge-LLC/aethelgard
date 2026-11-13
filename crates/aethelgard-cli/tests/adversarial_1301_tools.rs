@@ -204,12 +204,15 @@ fn attack_a_board_only_footprint_does_not_pass_parity() {
 /// **Red until fixed.** KiCad accepts a pad net that starts with
 /// `unconnected-` and with the schematic's net for the pin, so two pins the
 /// schematic leaves unconnected can share one net when one's KiCad name is a
-/// prefix of the other's. `RUL-14` admits `)` in a reference: devices `T`
-/// and `T-ALERT-Pad3)` name their ALERT pins `unconnected-(T-ALERT-Pad3)`
-/// and `unconnected-(T-ALERT-Pad3)-ALERT-Pad3)`. Measured: with T's pad 3 on
-/// the second name, nothing beyond `unconnected_items` (72 → 73, the join
-/// awaiting a track). The gate could refuse an `unconnected-` net on more
-/// than one pad, which KiCad never names so.
+/// prefix of the other's. That prefix needed `)` in a reference, which
+/// `RUL-14` no longer admits (`AET-WO-1102`: a reference is a letter, then
+/// letters, digits and `_`), so devices `T` and `T_ALERT_Pad3` name their
+/// ALERT pins `unconnected-(T-ALERT-Pad3)` and
+/// `unconnected-(T_ALERT_Pad3-ALERT-Pad3)`, and the test joins them by name.
+/// Measured with the old reference: with T's pad 3 on the second name,
+/// nothing beyond `unconnected_items` (72 → 73, the join awaiting a track).
+/// The gate could refuse an `unconnected-` net on more than one pad, which
+/// KiCad never names so.
 #[test]
 fn attack_two_unconnected_pins_joined_on_one_net_do_not_pass_parity() {
     let t = Temp::new("nc-join");
@@ -220,7 +223,7 @@ fn attack_two_unconnected_pins_joined_on_one_net_do_not_pass_parity() {
         .as_array_mut()
         .unwrap()
         .push(serde_json::json!({
-            "reference": "T-ALERT-Pad3)", "part": "TMP117", "supply": "VDD_3V3",
+            "reference": "T_ALERT_Pad3", "part": "TMP117", "supply": "VDD_3V3",
             "bus": "SENSORS", "address": 73
         }));
     let spec = t.0.join("spec.json");
@@ -230,9 +233,10 @@ fn attack_two_unconnected_pins_joined_on_one_net_do_not_pass_parity() {
     let (board, sch) = (read("board"), read("schematic"));
     let (code, v) = drc(&t.0.join("emitted"), &board, &sch, &spec);
     assert!(passes_parity(code, &v), "the emitted board: {v}");
+    // T's ALERT pad moves onto the other device's `unconnected-` net.
     let joined = board.replace(
         "(net \"unconnected-(T-ALERT-Pad3)\")",
-        "(net \"unconnected-(T-ALERT-Pad3)-ALERT-Pad3)\")",
+        "(net \"unconnected-(T_ALERT_Pad3-ALERT-Pad3)\")",
     );
     assert_ne!(joined, board);
     let (code, v) = drc(&t.0.join("joined"), &joined, &sch, &spec);

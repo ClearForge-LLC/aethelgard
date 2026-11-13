@@ -130,6 +130,7 @@ tests/with_tools.rs	simulate_fails_a_platform_that_does_not_load	1.13
 tests/with_tools.rs	simulate_loads_the_reference_board	1.70
 tests/with_tools.rs	the_emitted_reference_schematic_passes_erc	1.75
 tests/with_tools.rs	with_a_token_free_setup_the_project_step_is_load_bearing	1.05
+tests/board_tier2.rs	every_admitted_identifier_character_survives_every_output	248.00
 tests/board_tier2.rs	every_corpus_file_the_reader_accepts_gets_its_stated_kicad_verdict	37.18
 tests/board_tier2.rs	verify_fab_out_writes_the_package_its_verdict_names_at_any_path	247.70
 tests/board_tier2.rs	verify_fab_out_writes_nothing_when_a_gate_fails	122.85

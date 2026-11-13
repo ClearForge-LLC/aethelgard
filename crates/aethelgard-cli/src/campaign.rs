@@ -17,7 +17,7 @@ use std::process::ExitCode;
 use aethelgard_chaos::campaign::{self as rules, Scenario, ScenarioError};
 use aethelgard_chaos::record::{BusLine, Line, Override, Reading, Record};
 use aethelgard_chaos::{Event, Header, TraceWriter};
-use aethelgard_ir::{SolvedTopology, Specification};
+use aethelgard_ir::{IdentifierKind, SolvedTopology, Specification, check_identifier};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -285,7 +285,7 @@ fn resolve_droop(
 /// printed and its code returned.
 pub(crate) fn read_scenario(path: &Path) -> Result<Scenario, ExitCode> {
     let bytes = read_input(Some(path)).map_err(|r| emit(&r, EXIT_UNREADABLE))?;
-    Scenario::parse(&bytes).map_err(|e| {
+    let scenario = Scenario::parse(&bytes).map_err(|e| {
         let code = if e.kind == "InvalidJson" {
             EXIT_UNREADABLE
         } else {
@@ -297,7 +297,23 @@ pub(crate) fn read_scenario(path: &Path) -> Result<Scenario, ExitCode> {
             format!("{}: {e}", path.display()),
             code,
         )
-    })
+    })?;
+    // `AET-WO-1102`: a scenario's name is an identifier like any other, and it
+    // reaches the verdict, the archive and `MANIFEST.json`. `aethelgard-chaos`
+    // may not depend on `aethelgard-ir` (`workspace_shape`), so the CLI checks.
+    if let Err(rule) = check_identifier(IdentifierKind::Plain, &scenario.name) {
+        return Err(refuse(
+            "SchemaViolation",
+            None,
+            format!(
+                "{}: scenario name `{}` is not an identifier: {rule}",
+                path.display(),
+                scenario.name.escape_debug()
+            ),
+            EXIT_INVALID_SPEC,
+        ));
+    }
+    Ok(scenario)
 }
 
 /// A scenario's effective specification: its base with its overrides, as
