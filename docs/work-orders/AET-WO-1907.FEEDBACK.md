@@ -1,6 +1,6 @@
 # AET-WO-1907 — FEEDBACK
 
-**Status: five shards (`ci/SHARDS`), ruled by the architect on 2026-11-13 after two four-shard runs missed the 15-minute line.** The five-shard CI run is in Result.
+**Status: built to every §3 item. Five shards (`ci/SHARDS`, ruled by the architect on 2026-11-13 after two four-shard runs missed the 15-minute line); the slowest is 13 m 41 s on CI.**
 
 **Branch:** `wo/aet-1907-ci-shards` · **Base:** `72af687` (`origin/main`, carrying `AET-WO-1306` and the docs PR), merged by a merge commit · **Builder:** Claude Code (Sonnet 5.5) as `forge` on Furnace, as project manager · **Cadence:** measure (§1.1), build, targeted adversarial pass by a fresh subagent.
 
@@ -11,15 +11,20 @@
 - **Furnace, all the shards locally, before the merge of `AET-WO-1306`, the pinned image, one after another:** 419 s, 458 s, 500 s and 566 s. Together they passed **1,004 tests**, and the single-job baseline on the same commit passed **1,004** (bridge 1 + workspace 1,003 names with one name in two binaries). The aggregate printed `tier2_tests_passed=74 floor=74` on that tree.
 - **CI on PR #104 (job start to job end), two runs.** The single job took about 47 minutes on PR #99. Every run was green: guard ok, 1,019 passes for 1,019 listed occurrences (1,018 names), tier-2 sum 75 = `TIER2_MIN`.
 
-| shard | run 1 (`80c21b1`, LPT on Furnace weights) | run 2 (`91679a6`, CI-scaled weights, `attribute_seeded` kept whole) |
-|---|---|---|
-| 0 | 15 m 14 s | 16 m 27 s |
-| 1 | 12 m 28 s | 15 m 48 s |
-| 2 | 18 m 48 s | 14 m 40 s |
-| 3 | 15 m 46 s | 16 m 30 s |
+| shard | run 1: 4 shards (`80c21b1`, LPT on Furnace weights) | run 2: 4 shards (`91679a6`, CI-scaled weights, `attribute_seeded` kept whole) | run 3: **5 shards** (`bbfe6e7`, the same weights) |
+|---|---|---|---|
+| 0 | 15 m 14 s | 16 m 27 s | 11 m 01 s |
+| 1 | 12 m 28 s | 15 m 48 s | **13 m 41 s** (holds `attribute_seeded`) |
+| 2 | 18 m 48 s | 14 m 40 s | 11 m 58 s |
+| 3 | 15 m 46 s | 16 m 30 s | 11 m 17 s |
+| 4 | | | 9 m 28 s |
+| slowest | 18 m 48 s | 16 m 30 s | **13 m 41 s** |
 
-  Test step alone, run 2: 13 m 45 s, 13 m 31 s, 12 m 04 s, 14 m 10 s. Before it, every shard spends about 2 m 25 s on setup: image pull 46 to 72 s, crate fetch and build 70 to 78 s, bridge 4 s; shard 0 adds fmt and clippy, 25 s.
-- **The slowest shard is not under 15 minutes. It is not one test.** The longest single test takes about 6 minutes on CI, far under the §7 12-minute line. The sum of every shard's `finished in` is 3,203 s (822, 809, 723, 849 in run 2), so a perfect split gives 801 s, 13.35 minutes, plus 2.4 minutes of setup: **about 15.9 minutes at best.** The §1.4 rebalance was tried once, and it moved the spread (14 m 40 s to 16 m 30 s) without reaching the line. I did not try a second one, since the arithmetic says it cannot.
+  **Run 3 meets the goal: every shard is under 15 minutes, the slowest by 1 m 19 s.** All eight jobs were green: `gates` 7 m 48 s, `shards` 13 s, the aggregate `tools` 8 s. The aggregate printed `tools_total_passed=1019 names=1018` (the list has 1,019 occurrences; the baseline of 1,004 on the base commit plus the 15 tests `AET-WO-1306` brought) and `tier2_tests_passed=75 floor=75`. The prediction was about 13.2 minutes at the slowest; shard 1 is 0.5 minute over it because `attribute_seeded`'s 12 tests, kept whole, are one 11-minute block, and the other four shards finish in 9.5 to 12 minutes.
+  **Headroom: 1 m 19 s at the slowest shard**, and the spread is 4 minutes, so a further balance gain is possible by splitting `attribute_seeded` again (it would cost the overlap) or by a sixth shard (`ci/SHARDS`, one line). `AET-WO-3300` adds tier-2 tests; each new `board_tier2` test is serial CI time, so measure it and re-balance, or add a shard, before the slowest shard nears 15 minutes.
+
+  Run 2, test step alone: 13 m 45 s, 13 m 31 s, 12 m 04 s, 14 m 10 s. Before it, every shard spends about 2 m 25 s on setup: image pull 46 to 72 s, crate fetch and build 70 to 78 s, bridge 4 s; shard 0 adds fmt and clippy, 25 s.
+- **Four shards could not reach it, and it was not one test.** The longest single test takes about 6 minutes on CI, far under the §7 12-minute line. The sum of every shard's `finished in` was 3,203 s (822, 809, 723, 849 in run 2), so a perfect four-way split gives 801 s, 13.35 minutes, plus 2.4 minutes of setup: about 15.9 minutes at best. The §1.4 rebalance was tried once, and it moved the spread (14 m 40 s to 16 m 30 s) without reaching the line.
 - **Where the time is.** `board_tier2` is 1,630 CI-seconds, serial: its heavy tests take a `Mutex` (`ONE_AT_A_TIME`, `board_tier2.rs:25`), so its tests do not overlap even with 20 cores (859 s in parallel against 872 s alone on Furnace). `attribute_seeded` overlaps (12 tests in 641 s together, 861 s when split four ways). The rest is about 700 s of small binaries, run one after another.
 - **Why five (architect's ruling, 2026-11-13 06:00 UTC).** Scotty set the goal at under 15 minutes; four shards were the means. The two runs prove the arithmetic: a perfect four-way split is 13.35 minutes of tests plus about 2.4 minutes of setup, about 15.9 minutes, so four cannot do it. Five gives about 53.5 / 5 = 10.7 minutes of tests plus 2.5 of setup, about 13.2 minutes. The shard count is one constant, `ci/SHARDS`, read by the `shards` job (it makes the matrix), by `ci/shard.sh plan` and by the aggregate; a sixth is a one-line change. The guard, the canary and the selftest work for any count (the selftest runs 4, 5 and 7).
 - **Considered and not done.** Running `board_tier2` beside the other binaries (two lanes, two containers on one 4-core runner) would overlap its serial work, and I built it and started to validate it. The architect ruled it out: two test containers at once change the conditions every tier-2 test runs under (CPU, memory, timing), which is the §7 result-changes-under-sharding risk, and each shard keeps today's caps and environment. It is reverted and not in the PR. `actions/cache` on `target` was not tried: it cannot close a 0.9-minute gap alone.
