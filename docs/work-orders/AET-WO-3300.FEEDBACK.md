@@ -1,10 +1,36 @@
 # AET-WO-3300 — FEEDBACK
 
-**Branch:** `wo/aet-3300-fab-package` · **Base:** `origin/main` 8f04772 (`AET-WO-1306`) · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Cadence:** spike (§1.1, as amended 2026-11-13 on `claude/argon-repo-docs-synthesis-rjrb0d`), then build.
+**Branch:** `wo/aet-3300-fab-package` · **Base:** `origin/main` 8f04772 (`AET-WO-1306`); `origin/main` 72af687 (docs PR #102, which carries the §1.1 amendment) merged in as 4013e3d · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Cadence:** spike (§1.1, as amended 2026-11-13), a §7.1 stop, the architect's ruling (a) on PR #103, then build.
 
-**Outcome: STOPPED in the spike, on §7.1.** KiCad 10.0.7 cannot be made to write deterministic Gerbers with its own options. Every Gerber layer carries two lines from the wall clock. No option, environment variable or advanced setting removes or fixes them: the spike measured this, and KiCad's source at tag 10.0.7 confirms it. Everything else the package needs is deterministic, measured: the drill file (with KiCad's own `--excellon-min-header`), the placement CSV, and the zone refill. Without the two clock lines, every Gerber byte is identical across two runs at each of two paths. No code is written. §1.1 forbids post-processing KiCad's files without the architect's ruling, and that ruling is the one decision needed (F1).
+**Outcome: READY FOR REVIEW.**
+- **The spike stopped on §7.1.** KiCad 10.0.7 writes the wall clock into two lines of every Gerber, and none of its own options removes them (F1).
+- **The architect ruled (a)** (PR #103, comment 6843504048): delete exactly those two lines, line-exact. The build follows the ruling's nine conditions, with one correction to condition 1, which needs confirming (D1).
+- **The package:** `verify --fab-out D` writes it only when every gate passes, and the verdict names every file's sha256 under `fab`. `--against-fab D` derives the package again and names every file that differs.
+- **The reference probe passes,** with identical bytes and verdicts at two paths. The 47 kΩ scenario writes nothing.
+- **Process:**
+  - a fresh subagent ran the full adversarial pass on the code; its must-fix and should-fix items are fixed or ruled out below;
+  - every new guard was mutated once, and every mutant was killed;
+  - the CLAUDE.md gates and the tools job pass (§Gates).
 
 Entry schema: `finding · where · type · recommendation · decision-needed`.
+
+## Decisions needed first
+
+- **D1 (F3): the outline's creator line is line 8, not line 9.**
+  - Ruling condition 1 says line 9, because my spike table said "line 2 and line 9" for every layer. I had diffed F.Cu alone.
+  - In fact KiCad writes no `%TF.FilePolarity` into the Edge.Cuts header, so its creator line is line 8, which the first image run of the build found.
+  - As built, each layer's position is pinned as measured in `fab::LAYERS`: 9 for eight layers, 8 for Edge.Cuts. A second committed real header (`tests/fixtures/fab/kicad-10.0.7-Edge_Cuts-header.gm1`) pins it, and each layer is refused at the other's position.
+  - Everything else in conditions 1 and 2 holds as written. **Confirm the correction**, or name another rule.
+- **D2 (F4): `MANIFEST.json`'s `verdict_sha256` binds the run's environment and arguments.**
+  - The verdict states every gate's sandbox (`uid_boundary_unmet`), so a run as root under rootless podman, a run as uid 1000, and CI's Docker each print a different verdict. The same holds for other `--scenarios` or `--against` arguments.
+  - So `--against-fab` from another environment names `MANIFEST.json` as differing while the other 14 files match. The adversarial pass measured this: runs A and D differ only in `verdict_sha256`.
+  - As built, `--against-fab` stays byte-exact (§3: one changed byte in any file fails), and this is documented. The manifest now records the scenarios (name and sha256), and FAB-NOTES' re-check instruction says to use the same arguments.
+  - **Alternative:** have `--against-fab` compare `verdict_sha256` separately and report it apart from the files. Choose.
+- **D3 (F5): `--fab-out` without `--scenarios` writes a package.** §1.2 makes the scenarios optional, so the build allows it, and FAB-NOTES claims no campaign. `INV-03` names the fault campaign among the three gates of "verified", though. **Should `--fab-out` require `--scenarios`?**
+- **D4 (F6): the manifest and the verdict cannot name each other's hashes.** §1.2 asks for both. As built:
+  - the verdict's `fab.files` names every file, `MANIFEST.json` included;
+  - `MANIFEST.json` names the sha256 of the verdict the same call prints without the fab flags. That is the printed verdict without its final `,"fab":{…}`, since `against_fab` and `fab` are serialized last.
+  - Tier 2 checks the relation exactly. **Confirm.**
 
 ## §1.1 The determinism table
 
@@ -37,42 +63,136 @@ Entry schema: `finding · where · type · recommendation · decision-needed`.
 - **`place_file_exporter.cpp:229` and `:311`:** the ASCII position file and the report are dated, and the CSV is not.
 - **`common/string_utils.cpp:819-821`:** `GetISO8601CurrentDateTime` is `wxDateTime::Now()`.
 
-None of these files reads an environment variable or `SOURCE_DATE_EPOCH`. `common/advanced_config.cpp` has no key about dates or reproducibility. `--board-plot-params` reads the board's plot settings, and none of those is a date. So no KiCad 10.0.7 option makes the Gerbers deterministic: **§7.1.**
+None of these files reads an environment variable or `SOURCE_DATE_EPOCH`. `common/advanced_config.cpp` has no key about dates or reproducibility. `--board-plot-params` reads the board's plot settings, and none of those is a date. So no KiCad 10.0.7 option makes the Gerbers deterministic: **§7.1**, ruled on PR #103 (F1).
 
 **Also observed.**
 - Every export writes `input.kicad_prl` and `.config/kicad/10.0/*.json` into the workdir (the tool's `HOME`). That is where the sandbox already confines KiCad, and none of it is an output.
 - `%TF.ProjectId,input,696e7075-742e-46b6-9963-61645f706362,rev?*%` names the copy's stem. Its GUID is the stem's bytes (`696e7075742e` is `input.`), so it does not depend on the path.
 
-## Decision needed first (F1): may the package's Gerbers drop KiCad's two clock lines?
+## The ruling, condition by condition (PR #103)
 
-**Recommendation: rule (a).**
+| # | condition | where it holds |
+|---|---|---|
+| 1 | Line-exact: line 2 `%TF.CreationDate,<ISO 8601 with offset>*%`, the creator line `G04 Created by KiCad (PCBNEW 10.0.7) date <YYYY-MM-DD hh:mm:ss>*`, each once and at its place, deleted and never rewritten | `fab::strip_clock`: exact shapes, line 1 `%TF.GenerationSoftware,KiCad,Pcbnew,10.0.7*%` pinned too. The creator line is line 9, or 8 for Edge.Cuts (D1) |
+| 2 | Any departure is `ToolError` exit 5 with nothing written: a missing or moved line, a second dated line anywhere, another version | `strip_clock` refuses all of these. It also refuses any other line holding `CreationDate`, `Created by`, `dddd-dd-dd` or `dd:dd:dd`, a non-ASCII file, and a `\r`. The package is written only after every file is derived |
+| 3 | A tier-1 test pins the rule on a committed real header and on each departure | `fab::tests`: `a_real_header_loses_exactly_its_two_clock_lines` (F.Cu and Edge.Cuts headers, the first 20 lines KiCad wrote in the spike) and `every_departure_from_the_measured_header_is_refused` (17 departures) |
+| 4 | FAB-NOTES says the Gerbers are KiCad 10.0.7's output from the prepared copy with `--check-zones`, with the two creation-date lines removed | `aethelgard_eda::fab::notes`, "What this package is"; asserted in eda's tests and tier 2 |
+| 5 | No job file; FAB-NOTES states the stackup | the package has no `.gbrjob`; "Stackup" |
+| 6 | `--excellon-min-header`; FAB-NOTES: every hole a plated 0.3 mm via, metric, decimal | the statement is backed by checks: no pad of the strict reading has a drill (`no_drilled_pad`), and the drill file is metric, with exactly one tool `T1C0.300` and one hit per via (`holes`) |
+| 7 | `pos --format csv --units mm --side both` | as given. Each row is also checked (`placement_rows`, adversarial G) |
+| 8 | A test fails if B.Cu has no `G36`/`G37` region under `%TO.N,GND*%` | at run time, for every zone the strict reading declares (`pours`, exit 5); in tier 2 on the package's B.Cu; in unit tests |
+| 9 | F2 only if measured path-independent | **not taken.** It would have renamed the gate's prepared files inside the export, and it changes only the cosmetic `TF.ProjectId,input`. The package's file names carry the project anyway |
 
-- **(a) A strict, line-exact removal of the clock, and nothing else.** For each Gerber layer, line 2 must match `%TF.CreationDate,<ISO 8601 with offset>*%` and line 9 must match `G04 Created by KiCad (PCBNEW 10.0.7) date <YYYY-MM-DD hh:mm:ss>*`. Each must occur exactly once in the file, at those places, and the remaining bytes must carry no other date. Both lines are deleted, not rewritten.
-  - Any departure is a `ToolError`, exit 5, never a package. The rule is pinned by a test against KiCad's actual output, so a KiCad bump that moves a line fails loudly.
-  - `TF.CreationDate` is an optional standard attribute and `G04` is a comment, so the result is still a conforming X2 Gerber, measured identical across paths and runs.
-  - The verdict's `fab` hashes are the hashes of the bytes written, so `INV-03`'s "hashes equal files" holds exactly.
-  - The job file (`.gbrjob`) is left out of the package. It is not a layer, and `FAB-NOTES.md` states the stackup.
-- **(b) A fixed clock for KiCad** (a `libfaketime` preload). It adds a binary to the image and an `LD_PRELOAD` inside the sandbox, which the empty environment exists to exclude. Not recommended.
-- **(c) Hash the Gerbers with the clock lines masked.** The verdict would then name hashes that are not the files' hashes, against the clause's own text. Not recommended.
-- **(d) Our own Gerber writer from the strict reading.** It would have to fill zones the way KiCad's DRC fills them, which is the copper DRC judged. Too large, and a second source of copper. Not recommended.
+## §3 acceptance
 
-**What the ruling unblocks, already decided by measurement** (§1.1's "choose and record why"):
-- **Drill:** `kicad-cli pcb export drill --excellon-min-header`. It is KiCad's own option and needs no post-processing (D1). The minimal header omits the plating comment, so `FAB-NOTES.md` would state that every hole is a plated via of 0.3 mm (`route::DRILL_NM`). If the architect prefers the full header, the same rule as (a) applies to its two dated lines instead.
-- **Placement:** `kicad-cli pcb export pos --format csv --units mm --side both` (P0), because it is deterministic as measured and is the format assemblers read. Our own writer from the strict reader would be byte-stable too, but it would be a second reading of footprint positions with nothing gained.
-- **Gerbers:** exported from the gate's prepared copy with `--check-zones` (the amendment). Z0 shows the flag is load-bearing, so the build pins the B.Cu pour.
+| §3 line | evidence |
+|---|---|
+| §1.1's table in FEEDBACK, predictions beside results | above (written before any code; predictions in `~/.cache/aet-3300/spike/PREDICTIONS.md`, timestamped before the runs) |
+| `verify … --fab-out` passes and writes the package; `fab` hashes equal the files' sha256 | tier 2 `verify_fab_out_writes_the_package_its_verdict_names_at_any_path`; the reference probe below |
+| two runs at two paths give identical bytes | the same test (`a` against `a-much/longer/path/b`: identical verdict lines and identical files); the probe below |
+| `--against-fab` passes, and one changed byte in any file fails, naming it | the same test: `identical` then, after one byte flipped in each of the 15 files and one extra file, `differs`, with 15 `against_differs` and 1 `against_extra`, each naming its file |
+| the 47 kΩ scenario fails and writes nothing | tier 2 `verify_fab_out_writes_nothing_when_a_gate_fails`: exit 1, `fab.status` `not_written`, the directory still empty |
+| the firmware is the ELF the campaign ran; the BOM is `emit`'s | the package's ELF is read back and bound to `elf_sha256`, which `simulate` and the campaign's run id are bound to (`BindingMismatch` otherwise). Tier 2 asserts `fab.files[<project>.elf] == elf_sha256` and that the BOM equals `emit`'s file byte for byte |
+| FAB-NOTES states F3's conditions, the stackup and the rule minima, and is regenerated byte-identically | eda's `the_notes_state_every_condition_the_bound_rests_on`, which checks every one of `extract::CONDITIONS` verbatim; tier 2's two-path identity |
+| the gates pass; `gates`, `tools` and `image` green in CI | §Gates |
+
+## §1.4 The reference probe
+
+`aethelgard verify --spec examples/sentinel-01-minimal.json --scenarios scenarios/sentinel-01/pullup-2k2.json --fab-out <dir>` ran at 4013e3d in the pinned image (`c69ff9bc`), as root under rootless podman with `TMPDIR` unset, at two paths: `/probe/a` and `/var/lib/x/a-much/deeper/path/b`.
+- **Both exit 0.** The two verdict lines are byte-identical (sha256 `8dffc623a1159c5826c67b3fce7c9d19b579a36be7a14652938a65a6af1bbc9f`), and so are the two packages (`diff -r`).
+- **`fab`:** `status` `written`, `tool_version` `10.0.7`, `board_sha256` `7b9b0e3d…2070` (the generated board).
+- **`uid_boundary`** is `false` with `user_namespace`, as every gate's is under rootless podman (`AET-WO-1601`).
+- **Every `fab.files` hash equals the sha256 of the file written.**
+- **Three hashes match the spike:** the ELF is `2d9ee264…`, the reference firmware of `AET-WO-3301`; the drill (`a045ab03…`) and placement (`5056acf6…`) files are the spike's D1 and P0.
+- **Environment:** the hashes of `MANIFEST.json` and of the verdict are this environment's (D2). Under CI's Docker, where `uid_boundary` differs, those two differ, and the other 14 files do not.
+
+The package is not committed. These hashes are the record:
+
+| file | bytes | sha256 |
+|---|---|---|
+| `FAB-NOTES.md` | 4,253 | `e77ca25bda5333da49e33541c3aba5edf5aaf5a36b41dfaab3045d72fe221cea` |
+| `MANIFEST.json` | 1,823 | `f1369a96e4de2654f5299f76d30bb680560378dfb56a4a4685b038a026db3d79` |
+| `sentinel-01-B_Cu.gbl` | 40,806 | `09b4ef31443814cd075146d335327c598433329be4d6f0b3fcd94a715af48293` |
+| `sentinel-01-B_Mask.gbs` | 347 | `8506d631dae979f7d6457a62d8824d82ad058d25b3fa680aa8bedb4c7db39bc4` |
+| `sentinel-01-B_Paste.gbp` | 342 | `0d3db1fa132062fd09981dccb423680a458f024a145d0923b3c34fa271525be0` |
+| `sentinel-01-B_Silkscreen.gbo` | 343 | `c33d6c7655263578ed865ab787c5ff4d141f3a821500e9293b7492099005c09e` |
+| `sentinel-01-Edge_Cuts.gm1` | 496 | `7ef00338d9e4f167bf906a744eec7b07a83209da8c6121def43db1cf1ac4aedb` |
+| `sentinel-01-F_Cu.gtl` | 31,686 | `70de7722c0de56ea09973a50d882487d6270400ebefa2668702c733f7247d4d0` |
+| `sentinel-01-F_Mask.gts` | 6,583 | `403c2deffb199e076006a9ca32374176396a0929e9c8e2f2eb34ec3613370557` |
+| `sentinel-01-F_Paste.gtp` | 6,679 | `db3e59d1e40086af8764c3d6aa05b467868f1292a6f74a6c99fd02872e17ab1b` |
+| `sentinel-01-F_Silkscreen.gto` | 19,507 | `4b313e3d2df325d20ff2f43619c8052d25b142565380d678ae3c9c7629e2869b` |
+| `sentinel-01-pos.csv` | 1,115 | `5056acf6332b35ce64cd0845e2abf17cd7bd7a74a6ed11d72642e89c5e21ad73` |
+| `sentinel-01.bom.csv` | 1,046 | `5ae3521299618066d99bb66ec45d7014f260a43edcc0487076ae7008e26a8799` |
+| `sentinel-01.drl` | 1,059 | `a045ab03f8c0e00d787687f9e4a3a9144a2830864b7e7a665ff9faae85a7bc8d` |
+| `sentinel-01.elf` | 131,776 | `2d9ee2641f6e0a1b6e48f1637cefe4fa01cab3f97849a1dd074474c879fe0d2f` |
+
+
+## Forks taken
+
+| # | fork · where | why |
+|---|---|---|
+| F7 | **Fence: `tree.rs` and `strict_fence.rs`.** `tree::write` takes any ordered `(name, bytes)` sequence and `tree::diff` any byte map: two signature changes, with every existing caller unchanged. `strict_fence.rs` gives the two new modules roles (`eda/src/fab.rs` Other, `cli/src/fab.rs` Gate) | the package carries a binary ELF and must write `MANIFEST.json` last; a second writer would duplicate `tree::write`'s descriptor discipline |
+| F8 | **The export runs in `verify`'s process**, not as a subcommand. Its tool version and sandbox report go into `fab` (`tool_version`, `uid_boundary` being the weakest of the three exports, `uid_boundary_unmet`), not into `gates` | §2: every existing verdict is unchanged apart from the new `fab` key; there is no new subcommand |
+| F9 | **A missing pour, a drilled pad or a bad drill or placement file is exit 5 (`ToolError`), not exit 1** | each means KiCad's output is not what the package states; the gates already passed the design |
+| F10 | `--fab-out` and `--against-fab` exclude each other (clap, exit 64). Each may be combined with `--against`, whose result is part of the verdict the manifest names. A differing `--against` gives `not_written`/`not_derived` (adversarial review) | |
+| F11 | **An existing `--fab-out` must be the caller's and writable by no group or other**, checked before the gates and again just before the write (adversarial A1). On a host with umask 002, a directory made with `mkdir` is refused; an absent one is created by the write | the rule scratch already follows (§6) |
+| F12 | **Not taken: a `kicad-cli version` guard.** `strip_clock` pins 10.0.7 in line 1 and the creator line of every Gerber, so a version guard was a duplicate (reduction pass). The version is still reported in `fab.tool_version` | |
+| F13 | **The package is flat**, every file named after the project: `<project>-<KiCad layer suffix>`, `<project>.drl`, `<project>-pos.csv`, `<project>.bom.csv`, `<project>.elf`, `FAB-NOTES.md`, `MANIFEST.json` | what a fab house uploads |
 
 ## Findings
 
 | # | finding · where | type | recommendation | decision-needed |
 |---|---|---|---|---|
-| **F1** | **KiCad 10.0.7 writes the wall clock into every Gerber (2 lines) and the job file (1 line), with no option to stop it.** Measured G0–G2; read at source. `GERBER_plotter.cpp` `StartPlot`, `gbr_metadata.cpp` | §7.1 stop | rule (a) above | **yes** |
-| F2 | **Build fork, for after the ruling.** The copy is named `input.kicad_pcb`, so `TF.ProjectId` and every file name say `input`. Naming the export's copy `<project>.kicad_pcb` would make the Gerbers name the project, with a GUID that is still path-independent (it is derived from the name). To be measured before relying on it | design | name the copy after the project in the export only; `check drc`'s copy name is unchanged | no |
+| **F1** | **KiCad 10.0.7 writes the wall clock into every Gerber (2 lines) and the job file (1 line), with no option to stop it.** §1.1; read at source | §7.1 stop | **ruled (a)** on PR #103 | done |
+| F2 | Naming the export's copy after the project (spike F2) | design | not taken (condition 9) | no |
+| **F3** | The outline's creator line is line 8 | correction | D1 | **yes** |
+| **F4** | `verdict_sha256` binds the environment and the arguments | design | D2 | **yes** |
+| **F5** | `--fab-out` without `--scenarios` | scope | D3 | **yes** |
+| **F6** | The manifest/verdict cycle | design | D4 | **yes** |
+| F14 | **A specification's own text can put a date into a Gerber.** A net named `2026-11-13` passes every gate; the export then refuses (exit 5, "line N carries a date or a time of day (a name from the specification can put one there)"). It fails closed, but the place to refuse is identifier validation | residual | backlog: narrow `RUL-14`'s identifiers (no date shapes, no `"`) so the generator never emits them | no |
+| F15 | **KiCad does not escape `"` in a placement row** (adversarial G: a reference `U"4,X` shifted every later column). Now refused at export, exit 5. As with F14, the real home is identifier validation | fixed / backlog | as F14 | no |
+| F16 | Two guards have no mutant any suite kills: the export's ELF and board `BindingMismatch` checks. A test would need a swap race inside `verify`'s scratch, as 1305's extract test does | test gap | backlog, or accept as stated | no |
+| F17 | `holes()` and `pours()` are shape checks of KiCad's own output, not parsers. The adversary showed inputs KiCad never writes that pass them: a hit without X, an undefined `T2` in the body, a later region's `G37`. Other date notations (`2026/11/13`, an epoch) also pass `strip_clock`. The guard against a date left in is tier 2's two-run, two-path identity | residual | none now (scope test) | no |
+| F18 | An extra empty subdirectory in a package still reads `identical` under `--against-fab`, as `--against` treats a tree | residual | none | no |
 
-**Evidence (not committed):** `~/.cache/aet-3300/spike/`, holding `PREDICTIONS.md` (written before the runs), `spike.sh`, `out/<config>/<A|B>-<n>/` (every file KiCad wrote, and the logs), and the probe crate.
 
-**Not done, because of the stop:** §1.2 to §1.4, the reference probe, and an adversarial pass on code, since there is none. `TIER2_MIN` is unchanged, because no test was added.
+## Adversarial pass on the build (fresh subagent, Opus, full)
 
-## Adversarial pass (fresh subagent, against the §7 claim): not falsified
+The brief was to break it, with §5's three items and the ruling's three attacks on the stripping. It ran against a binary snapshotted from commit 9eb58a3 in the pinned image, with 14 verify runs, a racer as a third uid, and 3 million fuzzed headers. Its evidence is in `~/.cache/aet-3300-adv/`. Every finding marked fixed was then re-run by the builder against a binary built from a271a73 (`scripts/rerun.sh`, `logs/rerun-*.out`).
+
+| attack | found | severity | now |
+|---|---|---|---|
+| **§5.2 two runs disagree** | `MANIFEST.json` differs between a run as root under rootless podman and one as uid 1000: only `verdict_sha256`, via each gate's `uid_boundary_unmet`. FAB-NOTES' re-check command had no `--scenarios`, so it failed on a genuine package. Varying the path, `TMPDIR`, `TZ`, cwd, umask 077 and `SOURCE_DATE_EPOCH` changed nothing | must-fix (ruling) | **D2.** The manifest records the scenarios, and the instruction names the same arguments and sandbox. Re-run: the same flags give `identical`; without `--scenarios`, only `MANIFEST.json` differs, as documented |
+| **§5.1 another uid** | uid 65534 pre-created an empty `--fab-out` it owned; root's run wrote into it and the racer replaced F.Cu afterwards | should-fix | **fixed** (F11). Re-run: `UnwritableOutput` before any gate, nothing written |
+| §5.1 same uid | appending to the ELF after the manifest lands; a planted `MANIFEST.json` leaves a complete-looking package (exit 3, no verdict) | residual | `RUL-19` (4): a process of the caller's uid is not a boundary. No verdict names those bytes |
+| §5.1 static | a pre-filled directory, a symlink at D, a symlink swapped in during the gates: each exit 3, nothing written. 47 kΩ: `not_written`, D never created | none | — |
+| **§5.3 words** | FAB-NOTES listed a subset of the bound's conditions as "the conditions"; it said the Gerbers came from "the copy the gate judged" (it is a second copy with that hash); the README showed the failed-gate `fab` without its null fields | should-fix | **fixed:** `extract::CONDITIONS` printed verbatim, the copy reworded, the README corrected. No claim of hardware testing or measurement was found |
+| §4a a date left in | 1.59 million accepted mutations of the real header, each losing exactly lines 2 and 9. Other date notations pass and are kept | residual | F17 |
+| §4b a stripped line not a date | none: both lines must match the exact shape | none | — |
+| §4c a crafted specification | a dated net name passes every gate and then fails closed at export; `G04*%` is escaped by KiCad; nothing reaches line 2 or 9 | residual | F14 |
+| other: placement | a reference `U"4,X` passed and wrote a `pos.csv` with shifted columns | should-fix | **fixed** (F15). Re-run: exit 5 at row 12, nothing written |
+| other: shape checks | `holes()` and `pours()` accept inputs KiCad never writes | residual | F17 |
+
+**Its disclosures:** it ran `git diff` twice (read-only) against the brief, and it used `mv` where the removal check blocked `rm`.
+
+## Mutation (sized to the diff)
+
+There was one mutant per guard this WO adds, run against the suite the guard lives in, on a copy of the tree (`~/.cache/aet-3300/mut`):
+- **`strip_clock`:** line 1, line 2's shape, the creator line's shape, the creator line's index, other dated lines (`CreationDate`/`Created by`, then `dated()`, then its time branch), `\r`, ASCII.
+- **`pours`:** the `G36` requirement.
+- **`holes`:** the tool table, the hit count, `METRIC`.
+- **`no_drilled_pad`.**
+- **`fab_out_usable`:** non-empty, not a directory, the owner, the mode.
+- **`placement_rows`:** the quote inside a field, the plain fields.
+- **`--against`'s `not_written`.**
+
+**21 of 21 killed:**
+- One `pours` mutant first survived. A test case was added (a `G37` with no `G36`), and it was then killed.
+- The owner mutant survives on the host, where tests run as `forge`. It is killed as root in the image, where CI runs tier 1.
+
+The two binding checks in F16 have no mutant any suite can kill.
+
+## Adversarial pass on the §7 claim, before the ruling (fresh subagent): not falsified
 
 The brief was to falsify the stop, not to confirm it: make KiCad 10.0.7 write a byte-identical Gerber at two paths and two times by KiCad's own means. External clocks and editing the output were out of bounds. It used its own copies of the prepared boards and the same capped runner. Each config ran twice at each of two paths, more than 1.2 s apart, and every file came out with 4 distinct hashes (`~/.cache/aet-3300/adv/out/<cfg>.summary`).
 
@@ -91,6 +211,30 @@ The brief was to falsify the stop, not to confirm it: make KiCad 10.0.7 write a 
 
 ## Gates
 
-- **Host:** `cargo fmt --all -- --check` passes. `cargo clippy --workspace --all-targets -- -D warnings` passes. `cargo test --workspace` passes, 936 tests with 0 failed, with `TMPDIR` a 0700 directory under `~/.cache`. A first run with `TMPDIR` in the session scratchpad under `/tmp` failed two `adversarial_1300` tests: 1601 refuses scratch under `/tmp`, as the kickoff says. That was the environment, not the diff.
-- **Tier 2 / CI:** no code changed, so `gates`, `tools` and `image` run on the PR as they do on main.
-- **Reduction pass (diff):** −3 rows net · 1 duplicate removed (F2–F4 restated "What the ruling unblocks") · 0 dead paths · 0 protected kept · 0 findings.
+- **Host, at 4013e3d:**
+  - `cargo fmt --all -- --check` passes.
+  - `cargo clippy --workspace --all-targets -- -D warnings` passes.
+  - `cargo test --workspace` passes: 953 tests, 0 failed, with `TMPDIR` a 0700 directory under `~/.cache`. Since `AET-WO-1601`, scratch under `/tmp` is refused; a first spike-time run that put `TMPDIR` in the session scratchpad failed two `adversarial_1300` tests for that reason.
+- **The CI tools job, reproduced in the pinned image at 4013e3d** (rootless podman, `--memory 16g --memory-swap 16g --pids-limit -1`, then 0 written to `memory.swap.max`; read back `memory.max=17179869184`, `memory.swap.max=0`, `pids.max=max`; `TMPDIR` unset; no edits during the run):
+  - build, the bridge's tests, fmt, and clippy with tier 2 all pass;
+  - `cargo test --workspace --features aethelgard-cli/with-tools` passes: 1,025 tests, 0 failed;
+  - **the tier-2 canary counts 77, and the floor is now 77.** `TIER2_MIN` was 75 and rises by exactly the two tier-2 tests added in `board_tier2.rs`, with a comment in `ci.yml`.
+  - The two containers that ran in under a second (the bridge's tests and fmt) ended before the cap watcher could read their cgroup.
+  - An earlier run, before the adversarial fixes, failed one assertion of the new tier-2 test: FAB-NOTES names the removed lines in prose, and the test searched every file instead of the Gerbers alone. The test was fixed.
+- **CI on the PR:** see the PR's checks. A green CI is not live acceptance.
+
+## Reduction pass (diff)
+
+2 duplicates removed · 0 dead paths · 0 protected kept · 0 findings:
+- the `kicad-cli version` guard, which `strip_clock`'s line-1 and creator-line pins already enforce;
+- a runtime check that the notes list the package's files, now asserted once in tier 2.
+
+The spike-time FEEDBACK's rows that restated "What the ruling unblocks" were cut earlier.
+
+**Evidence (not committed):**
+- the spike: `~/.cache/aet-3300/spike/`;
+- the adversarial pass on the §7 claim: `~/.cache/aet-3300/adv/`;
+- the adversarial pass on the code, with the builder's re-runs: `~/.cache/aet-3300-adv/`;
+- mutation: `~/.cache/aet-3300/mut/`;
+- the reference probe: `~/.cache/aet-3300/probe-final/`;
+- the runner: `~/.cache/aet-3300/img.sh`.
