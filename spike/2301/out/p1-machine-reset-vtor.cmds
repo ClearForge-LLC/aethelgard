@@ -1,0 +1,880 @@
+logFile @/tmp/aet2301-home-ls05junn/renode.log
+logLevel 3 console
+emulation SetSeed 2100
+mach create
+machine LoadPlatformDescription @/repo/boards/sentinel-01/sentinel-01.repl
+sysbus LoadELF @/cache/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware
+sysbus WriteDoubleWord 0x580244e0 0x0
+sysbus WriteDoubleWord 0x580244e8 0x0
+sysbus WriteDoubleWord 0x580244f0 0x0
+sysbus WriteDoubleWord 0x20000000 0x0
+sysbus WriteDoubleWord 0x20000004 0xffffffff
+sysbus WriteDoubleWord 0x20000008 0xffffffff
+cpu VectorTableOffset 0x08000000
+emulation RunFor "0.010000000"
+echo "AET2301-BEGIN-0"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+cpu IsHalted
+cpu VectorTableOffset
+sysbus ReadDoubleWord 0x580244d0
+sysbus ReadDoubleWord 0xe000e200
+sysbus ReadDoubleWord 0xe000e010
+sysbus ReadDoubleWord 0x58024804
+sysbus ReadDoubleWord 0x40005404
+echo "AET2301-END-0"
+sysbus WriteDoubleWord 0x20000000 0x0
+sysbus WriteDoubleWord 0x20000004 0xffffffff
+sysbus WriteDoubleWord 0x20000008 0xffffffff
+echo "AET2301-BEGIN-1"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+cpu IsHalted
+cpu VectorTableOffset
+sysbus ReadDoubleWord 0x580244d0
+sysbus ReadDoubleWord 0xe000e200
+sysbus ReadDoubleWord 0xe000e010
+sysbus ReadDoubleWord 0x58024804
+sysbus ReadDoubleWord 0x40005404
+echo "AET2301-END-1"
+machine Reset
+sysbus WriteDoubleWord 0x580244e0 0x0
+sysbus WriteDoubleWord 0x580244e8 0x0
+sysbus WriteDoubleWord 0x580244f0 0x0
+cpu VectorTableOffset 0x08000000
+echo "AET2301-BEGIN-2"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+cpu IsHalted
+cpu VectorTableOffset
+sysbus ReadDoubleWord 0x580244d0
+sysbus ReadDoubleWord 0xe000e200
+sysbus ReadDoubleWord 0xe000e010
+sysbus ReadDoubleWord 0x58024804
+sysbus ReadDoubleWord 0x40005404
+echo "AET2301-END-2"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-3"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-3"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-4"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-4"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-5"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-5"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-6"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-6"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-7"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-7"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-8"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-8"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-9"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-9"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-10"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-10"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-11"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-11"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-12"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-12"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-13"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-13"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-14"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-14"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-15"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-15"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-16"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-16"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-17"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-17"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-18"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-18"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-19"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-19"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-20"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-20"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-21"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-21"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-22"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-22"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-23"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-23"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-24"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-24"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-25"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-25"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-26"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-26"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-27"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-27"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-28"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-28"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-29"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-29"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-30"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-30"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-31"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-31"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-32"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-32"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-33"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-33"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-34"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-34"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-35"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-35"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-36"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-36"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-37"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-37"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-38"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-38"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-39"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-39"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-40"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-40"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-41"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-41"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-42"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-42"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-43"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-43"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-44"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-44"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-45"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-45"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-46"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-46"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-47"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-47"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-48"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-48"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-49"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-49"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-50"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-50"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-51"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-51"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-52"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-52"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-53"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-53"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-54"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-54"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-55"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-55"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-56"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-56"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-57"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-57"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-58"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-58"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-59"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-59"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-60"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-60"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-61"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-61"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-62"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-62"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-63"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-63"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-64"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-64"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-65"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-65"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-66"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-66"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-67"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-67"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-68"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-68"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-69"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-69"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-70"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-70"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-71"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-71"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-72"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-72"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-73"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-73"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-74"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-74"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-75"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-75"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-76"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-76"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-77"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-77"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-78"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-78"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-79"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-79"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-80"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-80"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-81"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-81"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-82"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-82"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-83"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-83"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-84"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-84"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-85"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-85"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-86"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-86"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-87"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-87"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-88"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-88"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-89"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-89"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-90"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-90"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-91"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-91"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-92"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-92"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-93"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-93"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-94"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-94"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-95"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-95"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-96"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-96"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-97"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-97"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-98"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-98"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-99"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-99"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-100"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-100"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-101"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-101"
+emulation RunFor "0.000010000"
+echo "AET2301-BEGIN-102"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+echo "AET2301-END-102"
+emulation RunFor "0.009000000"
+echo "AET2301-BEGIN-103"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+cpu ExecutedInstructions
+cpu PC
+cpu IsHalted
+cpu VectorTableOffset
+sysbus ReadDoubleWord 0x580244d0
+sysbus ReadDoubleWord 0xe000e200
+sysbus ReadDoubleWord 0xe000e010
+sysbus ReadDoubleWord 0x58024804
+sysbus ReadDoubleWord 0x40005404
+echo "AET2301-END-103"
+quit

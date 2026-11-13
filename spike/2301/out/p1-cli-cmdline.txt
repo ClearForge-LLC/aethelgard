@@ -1,0 +1,33 @@
+# cmd: argv of the renode process under 'aethelgard campaign --scenarios scenarios/sentinel-01/pullup-2k2.json' (read from /proc, image c69ff9bc, at e3e3cd2), argv[8] split at '; '
+emulation SetSeed 2100
+mach create
+machine LoadPlatformDescription @/var/lib/aethelgard/aethelgard-3-1794597980019148869/tool/platform-booted.repl
+sysbus LoadELF @/var/lib/aethelgard/aethelgard-3-1794597980019148869/tool/firmware.elf
+sysbus WriteDoubleWord 0x580244e0 0x0
+sysbus WriteDoubleWord 0x580244e8 0x0
+sysbus WriteDoubleWord 0x580244f0 0x0
+sysbus WriteDoubleWord 0x20000000 0x0
+sysbus WriteDoubleWord 0x20000004 0xffffffff
+sysbus WriteDoubleWord 0x20000008 0xffffffff
+cpu VectorTableOffset 0x08000000
+emulation RunFor "0.100000000"
+logLevel 3
+echo "AETHELGARD-BOOT-BEGIN"
+sysbus ReadDoubleWord 0x20000000
+cpu ExecutedInstructions
+cpu PerformanceInMips
+cpu PC
+sysbus ReadDoubleWord 0x58020000
+sysbus ReadDoubleWord 0x58020020
+sysbus ReadDoubleWord 0x58020400
+sysbus ReadDoubleWord 0x58020420
+sysbus ReadDoubleWord 0x580244e0
+sysbus ReadDoubleWord 0x580244e8
+sysbus ReadDoubleWord 0x580244f0
+sysbus ReadDoubleWord 0x20000004
+sysbus ReadDoubleWord 0x20000008
+sysbus ReadDoubleWord 0x40005404
+sysbus ReadDoubleWord 0x40005428
+echo "AETHELGARD-BOOT-END"
+peripherals
+quit

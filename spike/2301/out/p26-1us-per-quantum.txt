@@ -1,0 +1,8 @@
+# cmd: per-quantum wall time from the 'Machine resumed' host timestamps in ~/.cache/aet-2301/p26/bor3-1us-100ms/renode.log (mean over the next 1,000 quanta)
+quantum 1000: 1.308 ms per quantum
+quantum 10000: 1.815 ms per quantum
+quantum 20000: 2.750 ms per quantum
+quantum 40000: 5.086 ms per quantum
+quantum 60000: 8.982 ms per quantum
+quantum 80000: 13.524 ms per quantum
+quantum 98000: 17.145 ms per quantum

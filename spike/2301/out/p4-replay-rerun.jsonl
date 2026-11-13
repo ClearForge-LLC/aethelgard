@@ -1,0 +1,13 @@
+# cmd: spike/2301/img.sh -- bash /repo/spike/2301/lockstep/p4-replay.sh   (re-run, gated)
+{"dir":"/cache/p26/sched-tolerance-r1/trace-samples","events":0,"records":0,"vmhwm_kib":5732,"replay_s":0.000}
+{"dir":"/cache/p26/sched-tolerance-r1/trace-samples","events":0,"records":0,"vmhwm_kib":5732,"replay_s":0.000}
+{"dir":"/cache/p26/sched-tolerance-r1/trace-samples","events":0,"records":0,"vmhwm_kib":5720,"replay_s":0.000}
+{"dir":"/cache/p26/bor3-10us-r1/trace-events","events":8,"records":8,"vmhwm_kib":5532,"replay_s":0.000}
+{"dir":"/cache/p26/bor3-10us-r1/trace-events","events":8,"records":8,"vmhwm_kib":5704,"replay_s":0.000}
+{"dir":"/cache/p26/bor3-10us-r1/trace-events","events":8,"records":8,"vmhwm_kib":5544,"replay_s":0.000}
+{"dir":"/cache/p26/bor3-10us-r1/trace-samples","events":10000,"records":0,"vmhwm_kib":5904,"replay_s":0.002}
+{"dir":"/cache/p26/bor3-10us-r1/trace-samples","events":10000,"records":0,"vmhwm_kib":5808,"replay_s":0.002}
+{"dir":"/cache/p26/bor3-10us-r1/trace-samples","events":10000,"records":0,"vmhwm_kib":5808,"replay_s":0.002}
+{"dir":"/cache/p26/bor3-10us-r1/trace-records","events":10000,"records":10000,"vmhwm_kib":9916,"replay_s":0.005}
+{"dir":"/cache/p26/bor3-10us-r1/trace-records","events":10000,"records":10000,"vmhwm_kib":9912,"replay_s":0.005}
+{"dir":"/cache/p26/bor3-10us-r1/trace-records","events":10000,"records":10000,"vmhwm_kib":9980,"replay_s":0.004}

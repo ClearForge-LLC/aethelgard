@@ -1,0 +1,6 @@
+# cmd: spike/2301/img.sh -- /cache/target/release/aethelgard simulate --platform boards/sentinel-01/sentinel-01.repl --firmware /cache/target/thumbv7em-none-eabihf/release/p5-flood --spec examples/sentinel-01-minimal.json --for 10ms
+exit=5
+wall_ms=2700
+stdout_bytes=99 stderr_bytes=0
+{"ok":false,"error":{"kind":"ToolError","id":"renode","message":"output exceeded 16777216 bytes"}}
+

@@ -1,0 +1,13 @@
+[package]
+name = "ng-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Outside the root workspace on purpose (RUL-12: no unsafe in any workspace crate).
+[workspace]
+
+[dependencies]
+
+[lib]
+path = "src/lib.rs"
