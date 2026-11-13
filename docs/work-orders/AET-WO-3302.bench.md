@@ -106,3 +106,18 @@ C0G capacitor per line = 100 pF − C_bench, rounded to a stock value: ____ pF.
 | 2.2 kΩ | 186.4 ns | | |
 | 2.7 kΩ | 228.8 ns | | |
 | 47 kΩ | 3.98 µs | | |
+
+## B7. Optional, for `AET-WO-2301` D2: the delivered brownout level
+
+`AET-WO-2301`'s brownout model needs the part's BOR level, which the option bytes set. No document we hold states the delivered default. Read it once:
+- **Register:** `FLASH_OPTSR_CUR` at `0x5200201C`. This is RM0433's FLASH base `0x52002000` plus `0x1C`; check the address in RM0433 before trusting the bits.
+- **Command:** `probe-rs read --chip STM32H753ZITx b32 0x5200201C 1`.
+- **Field:** `BOR_LEV` is bits [3:2]:
+  - `00` is BOR off, so only POR/PDR, about 1.62 V;
+  - `01` is level 1;
+  - `10` is level 2;
+  - `11` is level 3.
+
+Raw: ________ · BOR_LEV: ________
+
+This is evidence for the specification field (D2 (b)), not a default the engine assumes.
