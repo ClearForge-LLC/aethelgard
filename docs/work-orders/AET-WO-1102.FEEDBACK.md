@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-1102-identifier-set` · **Base:** `origin/main` e3e3cd2 · **Builder:** Claude (Sonnet 5.5), targeted adversarial pass by a fresh subagent.
 
-**Outcome:** stopped on §7.3 at the first push (§1–§3 below); the architect's ruling on PR #106 then said build, and §4 on is the build. The image half of the spike is measured by CI, through the tier-2 test, not by a local `podman` run (ruling item 4).
+**Outcome:** stopped on §7.3 at the first push (§1–§3 below); the architect's ruling on PR #106 then said build, and §4 on is the build, green on CI (§8). The image half of the spike is measured by CI, through the tier-2 test, not by a local `podman` run (ruling item 4).
 
 Entry schema: `finding · where · type · recommendation · decision-needed`.
 
@@ -140,3 +140,16 @@ A signal net is written `/<net>` (KiCad's own prefix); a rail and `GND` are writ
 **Ruling applied** (item 4: add exactly those characters, name the output): the base set refuses `% * , \` as well, **11 characters in all**: `/ { } $ [ ] " % * , \`, named by the Gerber net attribute for the last four. The admitted set is 83 characters. The tier-2 test now sends all 83 and asserts `%TO.N,/<net>*%`.
 
 **Still unmeasured, and why:** the predictions about the Gerber's component attributes (`%TO.C,<ref>`) were not asserted precisely (the test checks that a reference appears in some Gerber). Reference text longer than a few bytes overlaps its silkscreen (the `1301` backlog item: wide references), so the tier-2 references are four bytes and carry `_` only; their letters and digits are in the nets.
+
+## 8. Gates and CI
+
+- **Local:** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings` and `cargo test --workspace` pass (tier 1; tier 2 needs the image, which CI runs).
+- **CI run 43518552803 on 28131d1: green.** `tier2_tests_passed=80 floor=80` (`TIER2_MIN` 79 to 80), `tools_total_passed=1045`. Per shard, the job's wall time and its `cargo test` step:
+
+  | Shard | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+  |---|---|---|---|---|---|---|---|---|
+  | job | 11:51 | 14:41 | 13:27 | 6:34 | 13:58 | 12:44 | 15:04 | 14:39 |
+  | `cargo test` | 9.7 min | 12.5 | 11.1 | 4.5 | 11.7 | 10.5 | 12.8 | 12.2 |
+
+  **Shard 6's job ran 15 m 04 s, over the 15 minutes the goal names, if the whole job is what counts; its test step is 12.8 min, and the rest is the pull (0.7 min), the crate fetch (1.3 min) and the sharding step.** The new test ran in shard 3 (4.5 min), the lightest, and took about 130 to 190 s on CI, so it is not the cause. The weight in `ci/test-weights.tsv` (248.00) is still the estimate in §4, about twice the observed time (CI scale 1.8 puts the test near 100 s alone on Furnace): re-balancing on the measured time is a backlog item, not done here, because a changed weight moves tests between shards and shard 6 sits at the edge.
+- **Mutation testing, sized to the diff** (the guards this WO adds): not run with a mutant per guard. Each refused character and shape has a tier-1 case that fails if the table drops it (`identifier_boundaries`, `project_names_and_references_have_their_own_shapes`, `every_refused_character_and_shape_is_refused_by_its_path`), and the tier-2 test fails on CI if a character is added back (it did, on `% * , \`). That is the evidence, stated as such.
