@@ -20,7 +20,8 @@
 
 use std::collections::BTreeMap;
 
-use crate::sexpr::{self, SexprError, Sx};
+use crate::sexpr::SexprError;
+use crate::strict::{self, Node, Tree};
 
 /// KiCad's prefix for the net of a pin the schematic leaves unconnected.
 pub const UNCONNECTED: &str = "unconnected-";
@@ -31,6 +32,8 @@ pub enum ParityRefusal {
     Malformed(#[from] SexprError),
     #[error("the schematic's top-level list is not `kicad_sch`")]
     NotASchematic,
+    #[error("{0}")]
+    Strict(strict::Refusal),
     #[error(
         "the schematic has a hierarchical sheet, which names a file the gate has not copied or hashed"
     )]
@@ -47,10 +50,21 @@ pub enum ParityRefusal {
     SharedUnconnectedNet(String),
 }
 
+impl From<strict::Refusal> for ParityRefusal {
+    fn from(r: strict::Refusal) -> Self {
+        match r {
+            strict::Refusal::Unreadable(_, e) => Self::Malformed(e),
+            strict::Refusal::NotThisKind(_) => Self::NotASchematic,
+            r => Self::Strict(r),
+        }
+    }
+}
+
 impl ParityRefusal {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::Malformed(_) | Self::NotASchematic => "MalformedSchematic",
+            Self::Strict(r) => r.kind(),
             Self::Sheet => "HierarchicalSchematic",
             Self::ReservedNetName(_) => "ReservedNetName",
             Self::BoardOnly(_) => "BoardOnlyFootprint",
@@ -65,65 +79,76 @@ impl ParityRefusal {
             | Self::BoardOnly(id)
             | Self::NoConnectPad(id)
             | Self::SharedUnconnectedNet(id) => Some(id),
+            Self::Strict(r) => r.id(),
             _ => None,
         }
     }
 }
 
-/// Every list in `root`, depth first, without recursion.
-fn lists(root: &Sx) -> impl Iterator<Item = &Sx> {
+/// Every list in `root`, `root` included, depth first, without recursion.
+pub(crate) fn lists<'a>(root: Node<'a>) -> impl Iterator<Item = Node<'a>> {
     let mut stack = vec![root];
     std::iter::from_fn(move || {
         let item = stack.pop()?;
-        stack.extend(item.items().iter().filter(|c| matches!(c, Sx::List(_))));
+        let children: Vec<_> = item.lists().collect();
+        stack.extend(children);
         Some(item)
     })
 }
 
-/// The schematic parity is judged against: one `kicad_sch` that the gate's
-/// reader and KiCad's read alike, with no `(sheet …)` anywhere, since KiCad
-/// would read the file a sheet names (`AET-WO-1300` A8), and no label or
-/// `Value` that KiCad would name a net `unconnected-…` by.
-pub fn schematic(text: &str) -> Result<(), ParityRefusal> {
-    let root = sexpr::parse(text)?;
-    if root.head() != Some("kicad_sch") {
-        return Err(ParityRefusal::NotASchematic);
+/// Reads a schematic strictly ([`strict::schematic`]) and refuses one with a
+/// `(sheet …)` anywhere, since KiCad would read the file a sheet names, which
+/// the gate has neither copied nor hashed (`AET-WO-1300` A8, `AET-WO-1601`
+/// §1.5). `check erc` runs this alone; parity runs [`schematic`].
+pub fn flat(text: &str) -> Result<Tree, ParityRefusal> {
+    let tree = strict::schematic(text)?;
+    if lists(tree.root()).any(|item| item.head() == Some("sheet")) {
+        return Err(ParityRefusal::Sheet);
     }
-    for item in lists(&root) {
+    Ok(tree)
+}
+
+/// The schematic parity is judged against: one `kicad_sch` that the gate's
+/// reader and KiCad's read alike, with no `(sheet …)` anywhere ([`flat`]),
+/// and no label or `Value` that KiCad would name a net `unconnected-…` by.
+pub fn schematic(text: &str) -> Result<Tree, ParityRefusal> {
+    let tree = flat(text)?;
+    for item in lists(tree.root()) {
         let named = match item.head() {
-            Some("sheet") => return Err(ParityRefusal::Sheet),
             Some("label" | "global_label" | "hierarchical_label") => item.arg(1),
-            Some("property") if item.arg(1) == Some("Value") => item.arg(2),
+            Some("property") => match item.named() {
+                Some(("Value", value)) => value,
+                _ => None,
+            },
             _ => None,
         };
         if let Some(name) = named.filter(|n| n.starts_with(UNCONNECTED)) {
             return Err(ParityRefusal::ReservedNetName(name.to_owned()));
         }
     }
-    Ok(())
+    Ok(tree)
 }
 
-/// The board under parity: no `board_only` footprint, no `no_connect` pad
-/// on a net other than an `unconnected-` one, and no `unconnected-` net on
-/// two pads. Call after `board::prepare` accepted it.
-pub fn board(text: &str) -> Result<(), ParityRefusal> {
-    let root = sexpr::parse(text)?;
+/// The board under parity, as the strict reader read it: no `board_only`
+/// footprint, no `no_connect` pad on a net other than an `unconnected-` one,
+/// and no `unconnected-` net on two pads.
+pub fn board(tree: &Tree) -> Result<(), ParityRefusal> {
     let mut unconnected: BTreeMap<&str, usize> = BTreeMap::new();
-    for fp in root.children("footprint") {
-        let reference = fp.property("Reference").unwrap_or("?");
-        if fp.children("attr").any(|a| {
-            a.items()[1..]
-                .iter()
-                .any(|x| x.text() == Some("board_only"))
-        }) {
+    for fp in tree
+        .root()
+        .lists()
+        .filter(|c| matches!(c.head(), Some("footprint" | "module")))
+    {
+        let reference = fp.field("Reference")?.unwrap_or("?");
+        if fp.all("attr").any(|a| a.texts().any(|x| x == "board_only")) {
             return Err(ParityRefusal::BoardOnly(format!("footprint {reference}")));
         }
-        for pad in lists(fp).filter(|i| i.head() == Some("pad")) {
-            let Some(net) = pad.child("net").and_then(|n| n.items().last()?.text()) else {
+        for pad in lists(fp.clone()).filter(|i| i.head() == Some("pad")) {
+            let Some(net) = pad.one("net")?.and_then(|n| n.last()) else {
                 continue;
             };
             let no_connect = pad
-                .child("pintype")
+                .one("pintype")?
                 .and_then(|p| p.arg(1))
                 .is_some_and(|t| t.contains("no_connect"));
             if net.starts_with(UNCONNECTED) {
@@ -147,14 +172,21 @@ pub fn board(text: &str) -> Result<(), ParityRefusal> {
 mod tests {
     use super::*;
 
+    fn board(text: &str) -> Result<(), ParityRefusal> {
+        super::board(&strict::board(text).unwrap())
+    }
+
     #[test]
     fn a_flat_schematic_passes_and_a_sheet_anywhere_is_refused() {
-        assert_eq!(schematic("(kicad_sch (version 1) (label \"A\"))"), Ok(()));
+        assert!(schematic("(kicad_sch (version 1) (label \"A\"))").is_ok());
         assert_eq!(
-            schematic("(kicad_sch (x (sheet (at 0 0))))"),
-            Err(ParityRefusal::Sheet)
+            schematic("(kicad_sch (x (sheet (at 0 0))))").err(),
+            Some(ParityRefusal::Sheet)
         );
-        assert_eq!(schematic("(kicad_pcb)"), Err(ParityRefusal::NotASchematic));
+        assert_eq!(
+            schematic("(kicad_pcb)").err(),
+            Some(ParityRefusal::NotASchematic)
+        );
         assert!(matches!(
             schematic("(kicad_sch"),
             Err(ParityRefusal::Malformed(_))
@@ -168,13 +200,17 @@ mod tests {
             "(kicad_sch (global_label \"unconnected-(U1-PA0-Pad34)\"))",
             "(kicad_sch (symbol (property \"Value\" \"unconnected-V\")))",
         ] {
-            let e = schematic(text).unwrap_err();
+            let e = schematic(text).err().unwrap();
             assert_eq!(e.kind(), "ReservedNetName", "{text}");
         }
-        assert_eq!(
-            schematic("(kicad_sch (symbol (property \"Description\" \"unconnected-x\")))"),
-            Ok(())
+        assert!(
+            schematic("(kicad_sch (symbol (property \"Description\" \"unconnected-x\")))").is_ok()
         );
+        // KiCad reads a bare `private` as a flag before the field's name.
+        let e = schematic("(kicad_sch (symbol (property private \"Value\" \"unconnected-V\")))")
+            .err()
+            .unwrap();
+        assert_eq!(e.kind(), "ReservedNetName");
     }
 
     #[test]
@@ -203,6 +239,13 @@ mod tests {
             let e = board(&fp(body)).unwrap_err();
             assert_eq!((e.kind(), e.id()), (kind, Some(id)), "{body}");
         }
+        // KiCad 5's `module` is a footprint to KiCad 10 (`T_module`).
+        let e = board("(kicad_pcb (module \"R:R\" (fp_text reference \"R8\" (at 0 0)) (attr smd board_only)))")
+            .unwrap_err();
+        assert_eq!(
+            (e.kind(), e.id()),
+            ("BoardOnlyFootprint", Some("footprint R8"))
+        );
         for body in [
             "(attr smd)",
             "(pad \"1\" smd rect (net \"unconnected-(R7-Pad1)\") (pintype \"passive+no_connect\"))",

@@ -1,0 +1,22 @@
+# class: unmodelled-shape
+# note: a circle pad; extract boxes rect and roundrect only
+# main: drc 1 fail; drc-parity 1 fail; extract 3 UnmodelledCopper
+# drc: 1 fail
+# drc-parity: 1 fail
+# extract: 3 UnmodelledCopper
+@@ find
+		)
+		(pad "2" smd roundrect
+			(at 0.51 0)
+			(size 0.54 0.64)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+@@ replace
+		)
+		(pad "2" smd circle
+			(at 0.51 0)
+			(size 1.0 0.3)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(net "/I2C_SDA")
+@@ end

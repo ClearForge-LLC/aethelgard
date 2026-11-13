@@ -1,0 +1,20 @@
+# class: unread-child
+# note: a stackup with 105 um copper and er 10; check drc replaces setup, extract's model refuses it (C4)
+# main: drc 0 pass; drc-parity 0 pass; extract 3 UnmodelledCopper
+# drc: 0 pass
+# drc-parity: 0 pass
+# extract: 3 UnmodelledCopper
+@@ find
+	(paper "A4")
+	(layers
+@@ replace
+	(paper "A4")
+	(setup
+		(stackup
+			(layer "F.Cu" (type "copper") (thickness 0.105))
+			(layer "dielectric 1" (type "core") (thickness 0.05) (material "FR4") (epsilon_r 10) (loss_tangent 0.02))
+			(layer "B.Cu" (type "copper") (thickness 0.105))
+		)
+	)
+	(layers
+@@ end

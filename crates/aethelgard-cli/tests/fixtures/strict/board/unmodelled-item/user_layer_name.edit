@@ -1,0 +1,25 @@
+# class: unmodelled-item
+# note: F.Cu renamed TOP and a gr_rect on TOP (F10)
+# main: drc 5 ToolError kicad-cli; drc-parity 5 ToolError kicad-cli; extract 3 UnmodelledCopper
+# drc: 5 ToolError kicad-cli
+# drc-parity: 5 ToolError kicad-cli
+# extract: 3 UnmodelledCopper
+@@ find
+		(0 "F.Cu" signal)
+@@ replace
+		(0 "F.Cu" signal "TOP")
+@@ end
+@@ find
+	)
+	(embedded_fonts no)
+@@ replace
+	)
+	(gr_rect
+		(start 94.5 87.5)
+		(end 97 88.5)
+		(stroke (width 0.1) (type solid))
+		(fill yes)
+		(layer "TOP")
+	)
+	(embedded_fonts no)
+@@ end

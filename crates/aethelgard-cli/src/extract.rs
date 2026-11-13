@@ -86,7 +86,12 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     };
     let lines = match bound::read(text).and_then(|read| bound::bound(&read, &wanted)) {
         Ok(l) => l,
-        Err(r) => return refuse(r.kind, r.message, EXIT_UNREADABLE),
+        Err(r) => {
+            return crate::emit(
+                &Refusal::new(r.kind, r.id.as_deref(), r.message),
+                EXIT_UNREADABLE,
+            );
+        }
     };
     let mut out = Vec::new();
     for b in lines {

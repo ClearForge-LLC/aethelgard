@@ -1,0 +1,12 @@
+# class: field-spelling
+# note: parseSchField folds a mandatory field name case-insensitively, so KiCad reads "VALUE" as the power symbol's Value and names the net unconnected-GND; parity compared "Value" exactly
+# main: erc 1 fail; drc-parity 0 pass
+# erc: 3 MalformedSchematic kicad_sch/symbol[1]/property[2]
+# drc-parity: 3 MalformedSchematic kicad_sch/symbol[1]/property[2]
+@@ find
+		(property "Value" "GND"
+			(at 25.4 16.51 0)
+@@ replace
+		(property "VALUE" "unconnected-GND"
+			(at 25.4 16.51 0)
+@@ end

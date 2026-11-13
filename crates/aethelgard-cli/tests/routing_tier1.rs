@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 use aethelgard_eda::route::{self, Layer};
-use aethelgard_eda::sexpr;
+use aethelgard_eda::strict;
 use serde_json::Value;
 
 fn example(name: &str) -> PathBuf {
@@ -75,7 +75,7 @@ fn emitted(d: &Dir) -> String {
 }
 
 fn read(board: &str) -> (route::Board, route::Routed) {
-    route::read(&sexpr::parse(board).unwrap()).unwrap()
+    route::read(&strict::board(board).unwrap()).unwrap()
 }
 
 /// Two processes, in different environments, working directories and out

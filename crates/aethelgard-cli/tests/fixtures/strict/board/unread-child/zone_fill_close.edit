@@ -1,0 +1,26 @@
+# class: unread-child
+# note: a saved zone fill 10 um from SDA; DRC refills, so only extract's model refuses it (C3)
+# main: drc 0 pass; drc-parity 0 pass; extract 3 UnmodelledCopper
+# drc: 0 pass
+# drc-parity: 0 pass
+# extract: 3 UnmodelledCopper
+@@ find
+			)
+		)
+	)
+	(embedded_fonts no)
+@@ replace
+			)
+		)
+		(filled_polygon
+			(layer "B.Cu")
+			(pts
+				(xy 94.0 88.11)
+				(xy 97.5 88.11)
+				(xy 97.5 89.0)
+				(xy 94.0 89.0)
+			)
+		)
+	)
+	(embedded_fonts no)
+@@ end

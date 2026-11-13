@@ -1,0 +1,14 @@
+# class: escape
+# note: a power symbol's field named "\126alue", Value to KiCad, with value unconnected-GND (adversarial B3)
+# main: erc 1 fail; drc-parity 0 pass
+# erc: 3 MalformedSchematic
+# drc-parity: 3 MalformedSchematic
+@@ find
+		)
+		(property "Value" "GND"
+			(at 25.4 16.51 0)
+@@ replace
+		)
+		(property "\126alue" "unconnected-GND"
+			(at 25.4 16.51 0)
+@@ end

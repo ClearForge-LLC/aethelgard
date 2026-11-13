@@ -1,0 +1,18 @@
+# class: keyword
+# note: a list whose head is a quoted string is not a keyword to KiCad; 1305's walk skipped it
+# main: drc 3 MalformedBoard; drc-parity 3 MalformedBoard; extract 0 pass
+# drc: 3 MalformedBoard
+# drc-parity: 3 MalformedBoard
+# extract: 3 UnmodelledCopper
+@@ find
+			(size 0.54 0.64)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+@@ replace
+			("size" 0.54 4)
+			(size 0.54 0.64)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+@@ end

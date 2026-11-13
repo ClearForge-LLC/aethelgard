@@ -1,0 +1,19 @@
+# class: unmodelled-shape
+# note: a pad on *.Cu: not a front SMD pad
+# main: drc 1 fail; drc-parity 1 fail; extract 3 BoardUnreadable
+# drc: 1 fail
+# drc-parity: 1 fail
+# extract: 3 BoardUnreadable
+@@ find
+			(at 0.51 0)
+			(size 0.54 0.64)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+@@ replace
+			(at 0.51 0)
+			(size 0.54 0.64)
+			(layers "*.Cu" "F.Mask")
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+@@ end

@@ -55,7 +55,8 @@ use aethelgard_ir::{PinTable, SolvedTopology, Specification};
 use crate::pcb::escape;
 use crate::route::{self, Board, CLEARANCE_NM, DRILL_NM, Routed, VIA_NM, WIDTH_NM};
 use crate::schematic::Conn;
-use crate::sexpr::{self, Sx};
+use crate::sexpr;
+use crate::strict::{self, Node};
 
 /// π from above: 355/113 = 3.14159292… > π.
 pub const PI_NUM: u128 = 355;
@@ -260,13 +261,32 @@ pub fn pad_ff(rect: crate::pcb::Rect) -> Option<u64> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Refused {
     pub kind: &'static str,
+    /// The path to the refused node, when the strict reader refused one.
+    pub id: Option<String>,
     pub message: String,
 }
 
 fn refused(kind: &'static str, message: impl Into<String>) -> Refused {
     Refused {
         kind,
+        id: None,
         message: message.into(),
+    }
+}
+
+/// The strict reader's refusal: an unreadable file or another kind is
+/// `BoardUnreadable`, as before it; anything else is its own
+/// `MalformedBoard`, naming the path.
+fn malformed(r: strict::Refusal) -> Refused {
+    match r {
+        strict::Refusal::Unreadable(..) | strict::Refusal::NotThisKind(_) => {
+            refused("BoardUnreadable", r.to_string())
+        }
+        r => Refused {
+            kind: r.kind(),
+            id: r.id().map(str::to_owned),
+            message: r.to_string(),
+        },
     }
 }
 
@@ -327,25 +347,21 @@ fn canonical_layer(name: &str) -> bool {
 }
 
 /// True when `item` or any list inside it names a copper layer.
-fn on_copper(item: &Sx) -> bool {
-    if matches!(item.head(), Some("layer" | "layers"))
-        && item.items()[1..]
-            .iter()
-            .filter_map(Sx::text)
-            .any(copper_layer)
-    {
+fn on_copper(item: &Node<'_>) -> bool {
+    if matches!(item.head(), Some("layer" | "layers")) && item.texts().any(copper_layer) {
         return true;
     }
-    item.items().iter().any(on_copper)
+    item.lists().any(|c| on_copper(&c))
 }
 
 /// For each item `read` judges: the children it may hold, each with the
 /// number of plain arguments it takes (`None`: any), and whether it may
 /// repeat. Derived from the boards the generator writes and the vendored
-/// footprints. Anything else is refused: KiCad reads a repeated child's
-/// last value where `route::read` reads its first, and a child `route`
-/// does not read (a padstack, a drill offset, a fill) is copper or rule
-/// the bound would not see.
+/// footprints. Anything else is refused: a child `route` does not read (a
+/// padstack, a drill offset, a fill) is copper or rule the bound would not
+/// see. A repeated child KiCad holds once was already refused by the strict
+/// reader (`AET-WO-1306`); the flags here refuse what KiCad may repeat but
+/// the bound reads once.
 fn allowed(parent: &str) -> Option<&'static [(&'static str, Option<usize>, bool)]> {
     Some(match parent {
         "general" => &[
@@ -409,8 +425,8 @@ fn allowed(parent: &str) -> Option<&'static [(&'static str, Option<usize>, bool)
 }
 
 /// The children a footprint may hold besides `pad` (judged by `allowed`),
-/// and whether each may repeat. A repeated `property` must name a different
-/// property each time.
+/// and whether each may repeat (a field named twice was refused by the strict
+/// reader).
 const FOOTPRINT: &[(&str, bool)] = &[
     ("at", false),
     ("layer", false),
@@ -456,11 +472,11 @@ fn unmodelled(what: String) -> Refused {
 
 /// Every coordinate and size a geometry child gives is within
 /// [`MAX_COORD_NM`].
-fn bounded(item: &Sx, what: &str) -> Result<(), Refused> {
+fn bounded(item: &Node<'_>, what: &str) -> Result<(), Refused> {
     if !matches!(item.head(), Some("at" | "start" | "end" | "size" | "xy")) {
         return Ok(());
     }
-    for a in item.items()[1..].iter().filter_map(Sx::text) {
+    for a in item.texts() {
         if sexpr::nm(a).is_some_and(|v| v.abs() > MAX_COORD_NM) {
             return Err(refused(
                 "BoardTooLarge",
@@ -471,15 +487,23 @@ fn bounded(item: &Sx, what: &str) -> Result<(), Refused> {
     Ok(())
 }
 
+/// Each child list's keyword. A list KiCad would not read as a keyword (a
+/// quoted or missing head) is refused, not skipped.
+fn keyword<'a>(child: &Node<'a>, what: &str) -> Result<&'a str, Refused> {
+    child
+        .head()
+        .ok_or_else(|| unmodelled(format!("{what} holds a list with no keyword")))
+}
+
 /// Judges one item's children against `allowed`, recursively.
-fn strict(item: &Sx, what: &str) -> Result<(), Refused> {
+fn modelled(item: &Node<'_>, what: &str) -> Result<(), Refused> {
     let parent = item.head().unwrap_or("");
     let Some(rules) = allowed(parent) else {
         return Ok(());
     };
     let mut seen = BTreeSet::new();
-    for child in item.items().iter().skip(1).filter(|c| c.head().is_some()) {
-        let head = child.head().unwrap_or("");
+    for child in item.lists() {
+        let head = keyword(&child, what)?;
         let Some(&(_, arity, repeats)) = rules.iter().find(|r| r.0 == head) else {
             return Err(unmodelled(format!(
                 "{what} has `{head}`, which the bound does not read"
@@ -488,29 +512,26 @@ fn strict(item: &Sx, what: &str) -> Result<(), Refused> {
         if !repeats && !seen.insert(head) {
             return Err(unmodelled(format!("{what} has `{head}` twice")));
         }
-        let args = child.items()[1..]
-            .iter()
-            .filter(|a| a.text().is_some())
-            .count();
+        let args = child.texts().count();
         if arity.is_some_and(|n| n != args) {
             return Err(unmodelled(format!("{what}: `{head}` has {args} values")));
         }
-        bounded(child, what)?;
-        strict(child, what)?;
+        bounded(&child, what)?;
+        modelled(&child, what)?;
     }
     Ok(())
 }
 
 /// A footprint's children, its pads' (each with `layers` by canonical name, and a `rect` or
 /// `roundrect` shape, the two the bound boxes exactly), and no copper but
-/// its pads. Returns its library id and `Value`.
-fn footprint(fp: &Sx) -> Result<(String, (String, String)), Refused> {
-    let reference = fp.property("Reference").unwrap_or("?").to_owned();
+/// its pads. Returns its library id and `Value`. A field named twice was
+/// refused by the strict reader.
+fn footprint(fp: &Node<'_>) -> Result<(String, (String, String)), Refused> {
+    let reference = fp.field("Reference").map_err(malformed)?.unwrap_or("?");
     let what = format!("footprint {reference}");
     let mut seen = BTreeSet::new();
-    let mut properties = BTreeSet::new();
-    for child in fp.items().iter().skip(1).filter(|c| c.head().is_some()) {
-        let head = child.head().unwrap_or("");
+    for child in fp.lists() {
+        let head = keyword(&child, &what)?;
         let Some(&(_, repeats)) = FOOTPRINT.iter().find(|r| r.0 == head) else {
             return Err(unmodelled(format!(
                 "{what} has `{head}`, which the bound does not read"
@@ -519,21 +540,14 @@ fn footprint(fp: &Sx) -> Result<(String, (String, String)), Refused> {
         if !repeats && !seen.insert(head) {
             return Err(unmodelled(format!("{what} has `{head}` twice")));
         }
-        if head == "property" && !properties.insert(child.arg(1).unwrap_or("")) {
-            return Err(unmodelled(format!(
-                "{what} has property {:?} twice",
-                child.arg(1)
-            )));
-        }
-        bounded(child, &what)?;
+        bounded(&child, &what)?;
         match head {
             "pad" => {
                 let pad = format!("{what} pad {}", child.arg(1).unwrap_or("?"));
-                let canonical = child.child("layers").is_some_and(|l| {
-                    l.items()[1..]
-                        .iter()
-                        .all(|n| n.text().is_some_and(canonical_layer))
-                });
+                let canonical = child
+                    .one("layers")
+                    .map_err(malformed)?
+                    .is_some_and(|l| l.texts().all(canonical_layer));
                 if !canonical {
                     return Err(unmodelled(format!(
                         "{pad} has no `layers`, or names a layer by other than its canonical name"
@@ -542,19 +556,23 @@ fn footprint(fp: &Sx) -> Result<(String, (String, String)), Refused> {
                 if !matches!(child.arg(3), Some("rect" | "roundrect")) {
                     return Err(unmodelled(format!("{pad} has shape {:?}", child.arg(3))));
                 }
-                strict(child, &pad)?;
+                modelled(&child, &pad)?;
             }
             // A footprint's own `layer` names its side.
             "layer" => {}
-            _ if on_copper(child) => {
+            _ if on_copper(&child) => {
                 return Err(unmodelled(format!("{what} has `{head}` on a copper layer")));
             }
             _ => {}
         }
     }
     let lib = fp.arg(1).unwrap_or("").to_owned();
-    let value = fp.property("Value").unwrap_or("").to_owned();
-    Ok((reference, (lib, value)))
+    let value = fp
+        .field("Value")
+        .map_err(malformed)?
+        .unwrap_or("")
+        .to_owned();
+    Ok((reference.to_owned(), (lib, value)))
 }
 
 /// A board as `read` accepted it: the board and copper as `route` reads
@@ -567,21 +585,19 @@ pub struct ReadBoard {
 
 /// Reads a `.kicad_pcb` text and refuses, before any estimate, a board the
 /// bound does not hold for or could misread: unparseable; another
-/// thickness; an item, child, repeated child or value count the reader does
-/// not model (KiCad reads a repeated child's last value, `route::read` its
-/// first); a coordinate beyond [`MAX_COORD_NM`]; copper outside pads,
+/// thickness; what the strict reader refuses (`MalformedBoard`); an item,
+/// child, headless list, repeated child or value count the bound does not
+/// model; a coordinate beyond [`MAX_COORD_NM`]; copper outside pads,
 /// tracks, vias and the zone; two footprints with one reference; net
 /// labels that disagree with the copper's connections (`route::connectivity`);
 /// or copper closer than [`CLEARANCE_NM`] to another net's (`route::check`).
 pub fn read(text: &str) -> Result<ReadBoard, Refused> {
-    let board = sexpr::parse(text).map_err(|e| refused("BoardUnreadable", e.to_string()))?;
-    if board.head() != Some("kicad_pcb") {
-        return Err(refused("BoardUnreadable", "not a kicad_pcb"));
-    }
+    let tree = strict::board(text).map_err(malformed)?;
+    let board = tree.root();
     let mut once = BTreeSet::new();
     let mut footprints = BTreeMap::new();
-    for item in board.items().iter().skip(1) {
-        let head = item.head().unwrap_or("");
+    for item in board.lists() {
+        let head = keyword(&item, "the board")?;
         if !TOP.contains(&head) {
             return Err(unmodelled(format!(
                 "a top-level `{head}`, which the bound does not read"
@@ -592,7 +608,7 @@ pub fn read(text: &str) -> Result<ReadBoard, Refused> {
         }
         match head {
             "footprint" => {
-                let (reference, identity) = footprint(item)?;
+                let (reference, identity) = footprint(&item)?;
                 if footprints.insert(reference.clone(), identity).is_some() {
                     return Err(refused(
                         "UnmodelledPart",
@@ -601,17 +617,19 @@ pub fn read(text: &str) -> Result<ReadBoard, Refused> {
                 }
             }
             "gr_rect" | "segment" | "via" | "zone" | "general" => {
-                for child in item.items().iter().skip(1) {
-                    bounded(child, head)?;
+                for child in item.lists() {
+                    bounded(&child, head)?;
                 }
-                strict(item, head)?;
+                modelled(&item, head)?;
             }
             _ => {}
         }
     }
     let thickness = board
-        .child("general")
-        .and_then(|g| g.child("thickness"))
+        .one("general")
+        .and_then(|g| g.map(|g| g.one("thickness")).transpose())
+        .map_err(malformed)?
+        .flatten()
         .and_then(|t| t.arg(1))
         .and_then(sexpr::nm);
     if thickness != Some(BOARD_THICKNESS_NM) {
@@ -622,7 +640,7 @@ pub fn read(text: &str) -> Result<ReadBoard, Refused> {
             ),
         ));
     }
-    let (board, routed) = route::read(&board).map_err(|e| refused("BoardUnreadable", e))?;
+    let (board, routed) = route::read(&tree).map_err(|e| refused("BoardUnreadable", e))?;
     route::connectivity(&board, &routed).map_err(|e| refused("NetLabelsDisagree", e))?;
     route::check(&board, &routed).map_err(|e| refused("ClearanceViolated", e))?;
     Ok(ReadBoard {

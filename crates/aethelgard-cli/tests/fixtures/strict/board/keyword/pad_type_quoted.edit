@@ -1,0 +1,31 @@
+# class: keyword
+# note: R1 pad 2 typed "smd", quoted: parsePAD reads the type as a keyword token and KiCad will not load the board; main's extract read the text smd and passed it (adversarial B6)
+# main: drc 5 ToolError kicad-cli; drc-parity 5 ToolError kicad-cli; extract 0 pass
+# drc: 3 MalformedBoard kicad_pcb/footprint[7]/pad[2]
+# drc-parity: 3 MalformedBoard kicad_pcb/footprint[7]/pad[2]
+# extract: 3 MalformedBoard kicad_pcb/footprint[7]/pad[2]
+@@ find
+			(size 0.54 0.64)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(roundrect_rratio 0.25)
+			(net "VDD_3V3")
+		)
+		(pad "2" smd roundrect
+			(at 0.51 0)
+			(size 0.54 0.64)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+@@ replace
+			(size 0.54 0.64)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(roundrect_rratio 0.25)
+			(net "VDD_3V3")
+		)
+		(pad "2" "smd" roundrect
+			(at 0.51 0)
+			(size 0.54 0.64)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+@@ end

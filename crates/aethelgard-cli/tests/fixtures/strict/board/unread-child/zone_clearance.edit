@@ -1,0 +1,16 @@
+# class: unread-child
+# note: a zone's connect_pads clearance: check drc refuses it as LocalClearance (C3)
+# main: drc 3 LocalClearance zone with no net; drc-parity 3 LocalClearance zone with no net; extract 3 UnmodelledCopper
+# drc: 3 LocalClearance zone with no net
+# drc-parity: 3 LocalClearance zone with no net
+# extract: 3 UnmodelledCopper
+@@ find
+		(hatch edge 0.5)
+		(min_thickness 0.25)
+@@ replace
+		(hatch edge 0.5)
+		(connect_pads
+			(clearance 0.01)
+		)
+		(min_thickness 0.25)
+@@ end

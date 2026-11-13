@@ -1,0 +1,14 @@
+# class: repeated-child
+# note: a segment's second (net "GND"): KiCad reads GND
+# main: drc 0 pass; drc-parity 0 pass; extract 3 UnmodelledCopper
+# drc: 3 MalformedBoard kicad_pcb/segment[53]
+# drc-parity: 3 MalformedBoard kicad_pcb/segment[53]
+# extract: 3 MalformedBoard kicad_pcb/segment[53]
+@@ find
+		(net "/I2C_SDA")
+		(uuid "b68a5112-091e-8df2-be3c-a77c3fc42072")
+@@ replace
+		(net "/I2C_SDA")
+		(net "GND")
+		(uuid "b68a5112-091e-8df2-be3c-a77c3fc42072")
+@@ end
