@@ -2090,3 +2090,170 @@ fn descends_from(mut p: u32, ancestor: u32) -> bool {
     }
     false
 }
+
+// ---------------------------------------------------------------- AET-WO-2301
+
+/// A bridge stub for a droop run: `--rail` answers the `droop-bor3` crossings
+/// measured in the pinned image, `--renode` runs the given Renode as its
+/// child, and anything else is the 2.2 kOhm line pass.
+const DROOP_BRIDGE: &str = r#"#!/bin/sh
+if [ "$1" = --rail ]; then
+  printf '%s\n' \
+    '{"at_ps":1012422222,"falling":true,"level":"VBOR3_rising","method":"interpolated","microvolts":2700000,"ngspice":"44.2"}' \
+    '{"at_ps":1014422222,"falling":true,"level":"VBOR3_falling","method":"interpolated","microvolts":2610000,"ngspice":"44.2"}' \
+    '{"at_ps":1225977778,"falling":false,"level":"VBOR3_falling","method":"interpolated","microvolts":2610000,"ngspice":"44.2"}' \
+    '{"at_ps":1227977778,"falling":false,"level":"VBOR3_rising","method":"interpolated","microvolts":2700000,"ngspice":"44.2"}' \
+    '{"accepted_points":100027,"minimum_microvolts":2350000,"rail":"solved"}'
+  exit 0
+fi
+if [ "$1" = --renode ]; then shift; exec "$@"; fi
+printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.4}' '{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","rise_30_70_ns":186.4}'
+"#;
+
+/// A `renode` stub for a droop boot: it refuses (exit 98) anything but
+/// `--disable-gui --console --plain -e <one line>`, refuses (exit 99) a command line without the rendered reset and its
+/// probe, and prints the probe `probe` then a boot that ran 9,877,201
+/// instructions after the release.
+fn droop_toolbox(probe: [&str; 3]) -> Dir {
+    let tb = Dir::new("tb-droop");
+    let mut reads = boot_reads(GOOD_RECORD);
+    reads[1] = "0x000000000096B6D1".to_owned();
+    let mut out = format!(
+        "AETHELGARD-PROBE-BEGIN-0\n{}\n{}\n{}\nAETHELGARD-PROBE-END-0\n",
+        probe[0], probe[1], probe[2]
+    );
+    out.push_str(&transcript(
+        &reads.iter().map(String::as_str).collect::<Vec<_>>(),
+        CPU_LISTING,
+    ));
+    let out = tb.write("renode.out", out.as_bytes());
+    let body = format!(
+        r#"#!/bin/sh
+if [ "$1" = --version ]; then printf 'Renode v1.17.0\n'; exit 0; fi
+[ $# = 5 ] || exit 98
+case "$5" in
+  *"emulation RunFor \"0.001014430\"; machine Reset; "*"cpu IsHalted true; "*"emulation RunFor \"0.000213550\"; cpu IsHalted false; emulation RunFor \"0.000000010\"; emulation RunFor \"0.000099990\"; logLevel 3; echo \"AETHELGARD-PROBE-BEGIN-0\""*) ;;
+  *) exit 99;;
+esac
+/bin/cat '{out}'
+"#,
+        out = out.display()
+    );
+    let stub = tb.write("renode", body.as_bytes());
+    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    tb
+}
+
+/// `AET-WO-2301` §2.1, §2.4: a droop scenario runs the whole path (the rail,
+/// the schedule, the bridge owning Renode) and Renode is handed one `-e`
+/// command line, so its monitor history is one line whatever the schedule.
+#[test]
+fn a_droop_scenario_renders_its_reset_through_the_bridge_in_one_command_line() {
+    let tb = droop_toolbox(["0x2100B007", "0x22020000", "0x00000060"]);
+    let work = Work::new();
+    let archive = Dir::new("archive");
+    let out = campaign(
+        &cli(Some(DROOP_BRIDGE)),
+        &tb.0,
+        &root(),
+        &["scenarios/sentinel-01/droop-bor3.json"],
+        &work.firmware,
+        &archive.0.join("a"),
+    );
+    let all = lines(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{all:?} {:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(all[0]["scenario"], "droop-bor3");
+    assert_eq!(all[0]["matched"], true, "{all:?}");
+    // The stub exits 98 unless handed exactly `--disable-gui --console
+    // --plain -e <one line>`: Renode's history is that one line.
+    let run = PathBuf::from(all[0]["run"].as_str().unwrap());
+    let r = replay(&tb.0, &run);
+    assert_eq!(
+        r.status.code(),
+        Some(0),
+        "{:?}",
+        String::from_utf8_lossy(&r.stdout)
+    );
+}
+
+/// A firmware that has not rewritten its boot word at the recovery bound
+/// fails the run (`brownout_unrecovered`), and replay agrees with the verdict.
+#[test]
+fn a_firmware_that_does_not_recover_in_the_bound_fails_and_replays() {
+    let tb = droop_toolbox(["0x00000000", "0xFFFFFFFF", "0xFFFFFFFF"]);
+    let work = Work::new();
+    let archive = Dir::new("archive");
+    let out = campaign(
+        &cli(Some(DROOP_BRIDGE)),
+        &tb.0,
+        &root(),
+        &["scenarios/sentinel-01/droop-bor3.json"],
+        &work.firmware,
+        &archive.0.join("a"),
+    );
+    let all = lines(&out);
+    assert_eq!(out.status.code(), Some(1), "{all:?}");
+    assert_eq!(all[0]["verdict"], "fail");
+    assert_eq!(all[0]["matched"], false);
+    assert_eq!(all[0]["findings"], json!(["brownout_unrecovered"]));
+    let run = PathBuf::from(all[0]["run"].as_str().unwrap());
+    let r = lines(&replay(&tb.0, &run));
+    assert_eq!(r[0]["verdict"], "fail", "{r:?}");
+    assert_eq!(r[0]["matched"], false);
+    // No rule attributes a brownout: it is never blamed on either half.
+    let a = run_cli(
+        &cli(None),
+        &tb.0,
+        &root(),
+        &[os("attribute"), os("--archive"), run.as_os_str()],
+    );
+    let v = lines(&a);
+    assert_eq!(a.status.code(), Some(1), "{v:?}");
+    assert_eq!(v[0]["domain"], "indeterminate", "{v:?}");
+    assert_eq!(
+        v[0]["unexplained"],
+        json!(["brownout_unrecovered"]),
+        "{v:?}"
+    );
+}
+
+/// `AET-WO-2200` F15: a bridge built from other sources, or one that does not
+/// name itself first, is refused before any of its answer is read (exit 4).
+#[test]
+fn a_stale_or_impostor_bridge_is_refused() {
+    let tb = toolbox(&good());
+    let work = Work::new();
+    for first in [
+        r#"{"bridge":"aethelgard-bridge","source_sha256":"0000000000000000000000000000000000000000000000000000000000000000","version":"0.1.0"}"#,
+        r#"{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.4}"#,
+    ] {
+        let dir = Dir::new("impostor");
+        let me = dir.0.join("aethelgard");
+        fs::copy(env!("CARGO_BIN_EXE_aethelgard"), &me).unwrap();
+        let stub = dir.write(
+            "aethelgard-bridge",
+            format!(
+                "#!/bin/sh\necho '{first}'\n{}",
+                BRIDGE_BY_PULL_UP.split_once('\n').unwrap().1
+            )
+            .as_bytes(),
+        );
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        let archive = Dir::new("archive");
+        let out = campaign(
+            &me,
+            &tb.0,
+            &root(),
+            &["scenarios/sentinel-01/pullup-2k2.json"],
+            &work.firmware,
+            &archive.0.join("a"),
+        );
+        let v = expect_refusal(&out, 4, "BridgeMismatch");
+        assert_eq!(v["error"]["id"], "aethelgard-bridge");
+    }
+}
