@@ -2096,6 +2096,14 @@ mod tests {
             ))
             .is_ok()
         );
+        // A second outline is refused, not resolved to the first.
+        assert!(
+            read(&board(
+                "(gr_rect (start 0 0) (end 50 50) (layer \"Edge.Cuts\"))"
+            ))
+            .unwrap_err()
+            .contains("2 outlines")
+        );
         for copper in [
             "(segment (start 1 1) (end 2 1) (width 0.25) (layer \"F.Cu\") (net \"/A\"))",
             "(segment (start 1 1) (end 2 1) (width 0.2) (layer \"In1.Cu\") (net \"/A\"))",

@@ -231,6 +231,13 @@ mod tests {
             let e = board(&fp(body)).unwrap_err();
             assert_eq!((e.kind(), e.id()), (kind, Some(id)), "{body}");
         }
+        // KiCad 5's `module` is a footprint to KiCad 10 (`T_module`).
+        let e = board("(kicad_pcb (module \"R:R\" (fp_text reference \"R8\" (at 0 0)) (attr smd board_only)))")
+            .unwrap_err();
+        assert_eq!(
+            (e.kind(), e.id()),
+            ("BoardOnlyFootprint", Some("footprint R8"))
+        );
         for body in [
             "(attr smd)",
             "(pad \"1\" smd rect (net \"unconnected-(R7-Pad1)\") (pintype \"passive+no_connect\"))",

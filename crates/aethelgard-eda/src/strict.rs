@@ -18,11 +18,13 @@
 //!   resolved first-or-last;
 //! - a field named twice: a footprint's `property` and its legacy
 //!   `fp_text reference`/`fp_text value` set one field, compared exactly as
-//!   `FOOTPRINT::GetField` does; a symbol's mandatory fields are folded
-//!   case-insensitively, as `parseSchField` does;
+//!   `FOOTPRINT::GetField` does; a symbol's too;
 //! - a schematic field spelling a mandatory name otherwise than KiCad's
-//!   canonical one (`"VALUE"`): KiCad reads it as the mandatory field, and a
-//!   gate comparing names exactly would not.
+//!   canonical one (`"VALUE"`): `parseSchField` folds a mandatory name
+//!   case-insensitively, so KiCad reads it as the mandatory field, and a
+//!   gate comparing names exactly would not. With every mandatory name
+//!   canonical, exact comparison is KiCad's, so a symbol's fields need no
+//!   folding to be found twice.
 //!
 //! Each refusal is `MalformedBoard` or `MalformedSchematic` and names the
 //! path to the node (`INV-06`).
@@ -139,8 +141,8 @@ enum Fields {
     /// `property "Name"`, plus `fp_text reference` and `fp_text value`,
     /// compared exactly (`FOOTPRINT::GetField`).
     Footprint,
-    /// `property "Name"`, mandatory names folded case-insensitively
-    /// (`parseSchField`).
+    /// `property "Name"`, compared exactly: a mandatory name KiCad would
+    /// fold (`parseSchField`) is refused by its spelling first.
     Symbol,
 }
 
@@ -552,30 +554,16 @@ fn judge(node: &Node<'_>, rule: &Rule) -> Result<(), Refusal> {
             _ => None,
         };
         let Some(name) = name else { continue };
-        let key = match rule.fields {
-            Fields::Symbol => fold(&name),
-            _ => name.clone(),
-        };
-        if fields.contains(&key) {
+        if fields.contains(&name) {
             return Err(Refusal::FieldTwice {
                 kind: node.kind,
                 path: node.path.clone(),
                 name,
             });
         }
-        fields.push(key);
+        fields.push(name);
     }
     Ok(())
-}
-
-/// A field's name as `parseSchField` compares it: a mandatory name in any
-/// case is that field.
-fn fold(name: &str) -> String {
-    let lower = name.to_lowercase();
-    MANDATORY
-        .iter()
-        .find(|m| m.to_lowercase() == lower)
-        .map_or_else(|| name.to_owned(), |m| (*m).to_owned())
 }
 
 /// A schematic `property` spelling a mandatory field otherwise than its
@@ -743,6 +731,9 @@ mod tests {
         assert!(
             matches!(r, Refusal::Repeated { ref first, ref child, .. } if first == "layer" && child == "layers")
         );
+        // A zone inside a footprint is judged as one on the board.
+        let r = refused("(kicad_pcb (footprint \"R\" (zone (net_name \"A\") (net_name \"B\"))))");
+        assert_eq!(r.id(), Some("kicad_pcb/footprint[1]/zone[1]"));
         // A second general section sets the thickness again.
         refused("(kicad_pcb (general (thickness 1.6)) (general (thickness 0.2)))");
     }
@@ -768,12 +759,27 @@ mod tests {
     }
 
     #[test]
-    fn a_symbol_field_is_folded_and_spelled_as_kicad_reads_it() {
+    fn a_symbol_field_is_spelled_as_kicad_reads_it_and_named_once() {
         let r =
             schematic("(kicad_sch (symbol (property \"Value\" \"a\") (property \"VALUE\" \"b\")))")
                 .err()
                 .unwrap();
         assert_eq!(r.kind(), "MalformedSchematic");
+        assert!(
+            matches!(
+                r,
+                Refusal::FieldSpelling {
+                    canonical: "Value",
+                    ..
+                }
+            ),
+            "{r:?}"
+        );
+        let r =
+            schematic("(kicad_sch (symbol (property \"Value\" \"a\") (property \"Value\" \"b\")))")
+                .err()
+                .unwrap();
+        assert!(matches!(r, Refusal::FieldTwice { .. }), "{r:?}");
         let r =
             schematic("(kicad_sch (symbol (lib_id \"x\") (property \"value\" \"unconnected-x\")))")
                 .err()
@@ -816,5 +822,22 @@ mod tests {
         let x = tree.root().one("x").unwrap().unwrap();
         assert!(matches!(x.one("y"), Err(Refusal::Ambiguous { .. })));
         assert_eq!(x.all("y").count(), 2);
+        // A footprint no rule reaches still never gives one of two fields.
+        let tree = board(
+            "(kicad_pcb (x (footprint \"R\" (property \"Reference\" \"A\") (fp_text reference \"B\"))))",
+        )
+        .unwrap();
+        let fp = tree
+            .root()
+            .one("x")
+            .unwrap()
+            .unwrap()
+            .one("footprint")
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            fp.field("Reference"),
+            Err(Refusal::FieldTwice { .. })
+        ));
     }
 }

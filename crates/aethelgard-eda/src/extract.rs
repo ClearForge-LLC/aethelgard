@@ -357,10 +357,11 @@ fn on_copper(item: &Node<'_>) -> bool {
 /// For each item `read` judges: the children it may hold, each with the
 /// number of plain arguments it takes (`None`: any), and whether it may
 /// repeat. Derived from the boards the generator writes and the vendored
-/// footprints. Anything else is refused: KiCad reads a repeated child's
-/// last value where `route::read` reads its first, and a child `route`
-/// does not read (a padstack, a drill offset, a fill) is copper or rule
-/// the bound would not see.
+/// footprints. Anything else is refused: a child `route` does not read (a
+/// padstack, a drill offset, a fill) is copper or rule the bound would not
+/// see. A repeated child KiCad holds once was already refused by the strict
+/// reader (`AET-WO-1306`); the flags here refuse what KiCad may repeat but
+/// the bound reads once.
 fn allowed(parent: &str) -> Option<&'static [(&'static str, Option<usize>, bool)]> {
     Some(match parent {
         "general" => &[
@@ -584,9 +585,9 @@ pub struct ReadBoard {
 
 /// Reads a `.kicad_pcb` text and refuses, before any estimate, a board the
 /// bound does not hold for or could misread: unparseable; another
-/// thickness; an item, child, repeated child or value count the reader does
-/// not model (KiCad reads a repeated child's last value, `route::read` its
-/// first); a coordinate beyond [`MAX_COORD_NM`]; copper outside pads,
+/// thickness; what the strict reader refuses (`MalformedBoard`); an item,
+/// child, headless list, repeated child or value count the bound does not
+/// model; a coordinate beyond [`MAX_COORD_NM`]; copper outside pads,
 /// tracks, vias and the zone; two footprints with one reference; net
 /// labels that disagree with the copper's connections (`route::connectivity`);
 /// or copper closer than [`CLEARANCE_NM`] to another net's (`route::check`).
