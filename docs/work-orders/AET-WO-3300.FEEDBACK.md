@@ -1,6 +1,6 @@
 # AET-WO-3300 — FEEDBACK
 
-**Branch:** `wo/aet-3300-fab-package` · **Base:** `origin/main` 8f04772 (`AET-WO-1306`); `origin/main` 72af687 (docs PR #102, which carries the §1.1 amendment) merged in as 4013e3d · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Cadence:** spike (§1.1, as amended 2026-11-13), a §7.1 stop, the architect's ruling (a) on PR #103, then build.
+**Branch:** `wo/aet-3300-fab-package` · **Base:** `origin/main` 8f04772 (`AET-WO-1306`); `origin/main` 72af687 (docs PR #102, which carries the §1.1 amendment) merged in as 4013e3d, and 3355286 (`AET-WO-1907`, PR #104: the tools job in five shards) as e32f1ef · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Cadence:** spike (§1.1, as amended 2026-11-13), a §7.1 stop, the architect's ruling (a) on PR #103, then build.
 
 **Outcome: READY FOR REVIEW.**
 - **The spike stopped on §7.1.** KiCad 10.0.7 writes the wall clock into two lines of every Gerber, and none of its own options removes them (F1).
@@ -27,6 +27,12 @@ Entry schema: `finding · where · type · recommendation · decision-needed`.
   - As built, `--against-fab` stays byte-exact (§3: one changed byte in any file fails), and this is documented. The manifest now records the scenarios (name and sha256), and FAB-NOTES' re-check instruction says to use the same arguments.
   - **Alternative:** have `--against-fab` compare `verdict_sha256` separately and report it apart from the files. Choose.
 - **D3 (F5): `--fab-out` without `--scenarios` writes a package.** §1.2 makes the scenarios optional, so the build allows it, and FAB-NOTES claims no campaign. `INV-03` names the fault campaign among the three gates of "verified", though. **Should `--fab-out` require `--scenarios`?**
+- **D5 (F22): five shards no longer hold the tools job under 15 minutes.**
+  - This WO adds about 620 s of tier-2 load measured on Furnace, about 1,120 s on CI.
+  - The plan is as balanced as the load allows: 896 s planned for the shard holding the 2k2 fab test alone, 876 s for each of the other four.
+  - On CI (run 43384150507, at c9fb6de), the shard jobs took 18 m 44 s, 17 m 41 s, 15 m 46 s, 13 m 23 s and 16 m 34 s.
+  - Splitting the 2k2 test would move the plan's maximum by about 16 s, because the limit is the total load.
+  - `ci/SHARDS` is outside my fence. **Set it to 6?**
 - **D4 (F6): the manifest and the verdict cannot name each other's hashes.** §1.2 asks for both. As built:
   - the verdict's `fab.files` names every file, `MANIFEST.json` included;
   - `MANIFEST.json` names the sha256 of the verdict the same call prints without the fab flags. That is the printed verdict without its final `,"fab":{…}`, since `against_fab` and `fab` are serialized last.
@@ -155,6 +161,7 @@ The package is not committed. These hashes are the record:
 | F15 | **KiCad does not escape `"` in a placement row** (adversarial G: a reference `U"4,X` shifted every later column). Now refused at export, exit 5. As with F14, the real home is identifier validation | fixed / backlog | as F14 | no |
 | F16 | Two guards have no mutant any suite kills: the export's ELF and board `BindingMismatch` checks. A test would need a swap race inside `verify`'s scratch, as 1305's extract test does | test gap | backlog, or accept as stated | no |
 | F17 | `holes()` and `pours()` are shape checks of KiCad's own output, not parsers. The adversary showed inputs KiCad never writes that pass them: a hit without X, an undefined `T2` in the body, a later region's `G37`. Other date notations (`2026/11/13`, an epoch) also pass `strip_clock`. The guard against a date left in is tier 2's two-run, two-path identity | residual | none now (scope test) | no |
+| **F22** | Five shards over 15 minutes | CI | D5 | **yes** |
 | F18 | An extra empty subdirectory in a package still reads `identical` under `--against-fab`, as `--against` treats a tree | residual | none | no |
 | F19 | **Protected documents this build makes stale** (for the architect's reconciliation): `README.md:13`, "extraction from the board is scheduled before any fabrication package is called verified"; `docs/architecture.md:404`, where §3 puts "fabrication package emission" in `aethelgard-eda` (the export is the CLI's `fab` module, and eda holds only the notes' text); `RUL-19` (2), "the P3 fabrication clause waits for it" and "waits for `1601` as well"; and the `roadmap.md:405` backlog row about refilled zones and the stackup, which this WO answers | doc | the architect updates them | yes (reconciliation) |
 | F20 | **FAB-NOTES states copper, thickness and permittivity twice:** under Stackup, and again in `extract`'s conditions printed verbatim. And "No board has been made from it" stops being true once a board is ordered | reduction / wording | one statement from `extract::CONDITIONS`; say "No board made from it was tested by aethelgard" | no |
@@ -241,7 +248,32 @@ The brief was to falsify the stop, not to confirm it: make KiCad 10.0.7 write a 
   - **the tier-2 canary counts 77, and the floor is now 77.** `TIER2_MIN` was 75 and rises by exactly the two tier-2 tests added in `board_tier2.rs`, with a comment in `ci.yml`.
   - The two containers that ran in under a second (the bridge's tests and fmt) ended before the cap watcher could read their cgroup.
   - An earlier run, before the adversarial fixes, failed one assertion of the new tier-2 test: FAB-NOTES names the removed lines in prose, and the test searched every file instead of the Gerbers alone. The test was fixed.
-- **CI on the PR:** see the PR's checks. A green CI is not live acceptance.
+- **CI on the PR:** every check is green at c9fb6de (after main's sharded CI was merged in; run 43384150507):
+  - `gates` 8 m 55 s, `image` 4 m 30 s, `shards` 5 s;
+  - the five `tools-shard` jobs:
+
+    | shard | tests | job | test step |
+    |---|---|---|---|
+    | 0 | 257 | 18 m 44 s | 15 m 47 s |
+    | 1 | 1, the 2k2 fab test (four `verify` runs of 227–230 s each) | 17 m 41 s | 15 m 17 s |
+    | 2 | 265 | 15 m 46 s | 13 m 31 s |
+    | 3 | 254 | 13 m 23 s | 11 m 17 s |
+    | 4 | 260 | 16 m 34 s | 14 m 23 s |
+
+  - the `tools` aggregate: `ANSWER tools_total_passed=1038 names=1037` and `ANSWER tier2_tests_passed=77 floor=77`.
+
+  Before the merge, 0943d8c's single `tools` job passed in 56 m 45 s. That was the first CI run of the fab tests under CI's Docker. A green CI is not live acceptance.
+- **The shard plan (`AET-WO-1907`):**
+  - `TIER2_MIN` 77 now sits in the `tools` aggregate job's env, with its comment.
+  - The six new tests are in `ci/test-weights.tsv`, each measured alone in the pinned image on Furnace:
+
+    | test | seconds |
+    |---|---|
+    | `verify_fab_out_writes_the_package_its_verdict_names_at_any_path` | 497.59 |
+    | `verify_fab_out_writes_nothing_when_a_gate_fails` | 122.85 |
+    | the four in `fab_tier1.rs` | 2.92–4.37 each |
+
+  - With them, `ci/shard.sh plan` gives 876, 896, 876, 876 and 876 planned seconds (D5).
 
 ## Reduction pass (diff)
 
