@@ -22,6 +22,14 @@
 //!
 //! The verdict names no scratch path, so two runs on one specification give
 //! byte-identical verdicts.
+//!
+//! **The fabrication package (`AET-WO-3300`).** With `--fab-out D`, and only
+//! when every gate passed, [`crate::fab`] exports the package and `verify`
+//! writes it into `D` before printing the verdict, which names every file's
+//! sha256 under `fab`. `MANIFEST.json` names the sha256 of the verdict line
+//! the same call prints without `--fab-out`; that line is this verdict
+//! without its final `fab` key. `--against-fab D` derives the package the
+//! same way and compares it with `D`.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -34,6 +42,7 @@ use serde_json::Value;
 use aethelgard_cli::generate::{BOARD_DIR, KICAD_DIR};
 
 use crate::campaign;
+use crate::fab;
 use crate::input::hex;
 use crate::run;
 use crate::tree::{self, Difference};
@@ -66,6 +75,89 @@ struct Report {
     #[serde(skip_serializing_if = "Option::is_none")]
     campaign: Option<Vec<Run>>,
     findings: Vec<Finding>,
+    /// `--against-fab`: whether the directory matched the package. With
+    /// `fab`, always the last keys, so the verdict without them is the line
+    /// a call without the fab flags prints (the manifest's `verdict_sha256`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    against_fab: Option<&'static str>,
+    /// `--fab-out` or `--against-fab`: the package.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fab: Option<FabReport>,
+}
+
+/// `--fab-out D` writes the package into `D`; `--against-fab D` compares it.
+pub enum FabMode {
+    Write(PathBuf),
+    Compare(PathBuf),
+}
+
+#[derive(Serialize)]
+struct FabReport {
+    /// `written` (`--fab-out`, every gate passed), `derived` (`--against-fab`),
+    /// or `not_written` / `not_derived` when a gate failed: nothing is written.
+    status: &'static str,
+    /// `kicad-cli`'s version, as the export ran it.
+    tool_version: Option<String>,
+    /// Whether every export ran under the separate uid (`AET-WO-1601`).
+    uid_boundary: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    uid_boundary_unmet: Option<run::Unmet>,
+    /// The sha256 of the board the export copied, equal to the generated one.
+    board_sha256: Option<String>,
+    /// Every file of the package, `MANIFEST.json` included, by sha256.
+    files: BTreeMap<String, String>,
+    /// `--against-fab`: every file that differs, is missing or is extra.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    differences: Vec<Finding>,
+}
+
+impl FabReport {
+    fn none(status: &'static str) -> Self {
+        Self {
+            status,
+            tool_version: None,
+            uid_boundary: None,
+            uid_boundary_unmet: None,
+            board_sha256: None,
+            files: BTreeMap::new(),
+            differences: Vec::new(),
+        }
+    }
+}
+
+/// `--fab-out` must be an empty directory or absent. One that exists must be
+/// the caller's and writable by no group or other, or another uid could
+/// replace the package after the verdict names it (adversarial A1). Checked
+/// before any gate runs and again just before the write; `tree::write`
+/// checks emptiness once more through the descriptor it writes through.
+/// Nothing is created here.
+fn fab_out_usable(dir: &Path) -> Result<(), run::Stop> {
+    use std::os::unix::fs::MetadataExt;
+    let unusable = |m: String| run::Stop::refused("UnwritableOutput", m);
+    match std::fs::symlink_metadata(dir) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(unusable(format!("cannot read {}: {e}", dir.display()))),
+        Ok(meta) if !meta.is_dir() => Err(unusable(format!(
+            "{} exists and is not a directory",
+            dir.display()
+        ))),
+        Ok(meta)
+            if meta.uid() != rustix::process::geteuid().as_raw() || meta.mode() & 0o022 != 0 =>
+        {
+            Err(unusable(format!(
+                "{} is not this user's alone: it must be owned by the caller and writable by no group or other",
+                dir.display()
+            )))
+        }
+        Ok(_) => match std::fs::read_dir(dir).map(|mut d| d.next()) {
+            Ok(None) => Ok(()),
+            Ok(Some(_)) => Err(unusable(format!(
+                "{} is not empty: the package is written only into an empty or absent directory",
+                dir.display()
+            ))),
+            Err(e) => Err(unusable(format!("cannot read {}: {e}", dir.display()))),
+        },
+    }
 }
 
 #[derive(Serialize)]
@@ -383,12 +475,18 @@ fn os(p: &Path) -> OsString {
 /// specification's hash, with `--spec` as its base.
 struct Expected {
     path: PathBuf,
+    name: String,
     scenario: [u8; 32],
     specification: [u8; 32],
 }
 
 /// `aethelgard verify --spec <file> [--scenarios <file>...] [--against <dir>]`.
-pub fn verify(spec_path: &Path, scenarios: &[PathBuf], against: Option<&Path>) -> ExitCode {
+pub fn verify(
+    spec_path: &Path,
+    scenarios: &[PathBuf],
+    against: Option<&Path>,
+    fab_mode: Option<&FabMode>,
+) -> ExitCode {
     let bytes = match crate::read_input(Some(spec_path)) {
         Ok(b) => b,
         Err(r) => return crate::emit(&r, EXIT_UNREADABLE),
@@ -425,6 +523,8 @@ pub fn verify(spec_path: &Path, scenarios: &[PathBuf], against: Option<&Path>) -
         gates: Vec::new(),
         campaign: None,
         findings: Vec::new(),
+        against_fab: None,
+        fab: None,
     };
 
     // Every scenario must start from exactly `--spec`, or its campaign would
@@ -457,13 +557,25 @@ pub fn verify(spec_path: &Path, scenarios: &[PathBuf], against: Option<&Path>) -
         };
         expected.push(Expected {
             path: path.clone(),
+            name: scenario.name.clone(),
             scenario: scenario.sha256,
             specification: effective.specification_sha256,
         });
     }
 
+    // An unusable `--fab-out` or `--against-fab` is refused before any gate.
+    let fab_checked = match fab_mode {
+        Some(FabMode::Write(dir)) => fab_out_usable(dir),
+        Some(FabMode::Compare(dir)) => crate::input::dir_check(dir),
+        None => Ok(()),
+    };
+    if let Err(s) = fab_checked {
+        return crate::stopped(s);
+    }
+
     // `--against` first: a directory that is not the tree fails, naming
-    // every difference, and no gate runs.
+    // every difference, and no gate runs; with a fab flag, nothing is
+    // written or compared, and the verdict says so.
     if let Some(dir) = against {
         if let Err(s) = crate::input::dir_check(dir) {
             return crate::stopped(s);
@@ -482,6 +594,9 @@ pub fn verify(spec_path: &Path, scenarios: &[PathBuf], against: Option<&Path>) -
                     message: describe(d),
                 })
                 .collect();
+            if let Some(mode) = fab_mode {
+                not_packaged(&mut report, mode);
+            }
             return crate::emit(&report, EXIT_FAIL);
         }
         report.against = Some("identical");
@@ -539,8 +654,131 @@ pub fn verify(spec_path: &Path, scenarios: &[PathBuf], against: Option<&Path>) -
     }
     report.ok = report.findings.is_empty() && report.gates.iter().all(|g| g.verdict == "pass");
     report.verdict = if report.ok { "pass" } else { "fail" };
+    if let Some(mode) = fab_mode {
+        let elf_sha256 = report.elf_sha256.clone().unwrap_or_default();
+        let bound = fab::Bound {
+            project: &project,
+            spec: &spec,
+            specification_sha256: &spec_sha256,
+            board: &root.join(&pcb),
+            board_sha256: &hashes[&pcb],
+            elf: &scratch.tool.join("firmware.elf"),
+            elf_sha256: &elf_sha256,
+            bom: files[&format!("{KICAD_DIR}/{project}.bom.csv")].as_bytes(),
+        };
+        let scenarios: Vec<fab::Scenario> = expected
+            .iter()
+            .map(|e| fab::Scenario {
+                scenario: e.name.clone(),
+                sha256: hex(e.scenario),
+            })
+            .collect();
+        if let Err(code) = package(&mut report, mode, &bound, &scenarios) {
+            return code;
+        }
+    }
     let code = if report.ok { 0 } else { EXIT_FAIL };
     crate::emit(&report, code)
+}
+
+/// A run that failed writes and compares nothing, and says so.
+fn not_packaged(report: &mut Report, mode: &FabMode) {
+    let (status, against) = match mode {
+        FabMode::Write(_) => ("not_written", None),
+        FabMode::Compare(_) => ("not_derived", Some("not_compared")),
+    };
+    report.fab = Some(FabReport::none(status));
+    report.against_fab = against;
+}
+
+/// The package, once every gate has passed: derived, named in `report.fab`,
+/// then written into `--fab-out` (the manifest last) or compared with
+/// `--against-fab`. A failed run writes nothing and says so. A refusal
+/// writes nothing and prints no verdict.
+fn package(
+    report: &mut Report,
+    mode: &FabMode,
+    bound: &fab::Bound<'_>,
+    scenarios: &[fab::Scenario],
+) -> Result<(), ExitCode> {
+    if !report.ok {
+        not_packaged(report, mode);
+        return Ok(());
+    }
+    let exported = fab::derive(bound).map_err(crate::stopped)?;
+    // The verdict as a call without the fab flags prints it.
+    let line = serde_json::to_string(&*report).map_err(|e| {
+        crate::diagnose(&format!("cannot serialize the verdict: {e}"));
+        ExitCode::from(EXIT_INTERNAL)
+    })?;
+    let manifest = fab::manifest(
+        &fab::Named {
+            project: &report.project_name,
+            specification_sha256: &report.specification_sha256,
+            topology_sha256: &report.topology_sha256,
+            scenarios,
+            verdict_line: &line,
+        },
+        &exported.files,
+    );
+    let mut files: BTreeMap<String, String> = exported
+        .files
+        .iter()
+        .map(|(name, bytes)| (name.clone(), tree::sha256(bytes)))
+        .collect();
+    files.insert(fab::MANIFEST.to_owned(), tree::sha256(&manifest));
+    let mut fab_report = FabReport {
+        status: "derived",
+        tool_version: Some(exported.tool_version.clone()),
+        uid_boundary: Some(exported.sandbox.uid_boundary),
+        uid_boundary_unmet: exported.sandbox.uid_boundary_unmet,
+        board_sha256: Some(bound.board_sha256.to_owned()),
+        files,
+        differences: Vec::new(),
+    };
+    match mode {
+        FabMode::Write(dir) => {
+            fab_out_usable(dir).map_err(crate::stopped)?;
+            let ordered = exported
+                .files
+                .iter()
+                .map(|(n, b)| (n.as_str(), b.as_slice()))
+                .chain([(fab::MANIFEST, manifest.as_slice())]);
+            tree::write(dir, ordered).map_err(|mut s| {
+                s.message = format!(
+                    "{}; {} may hold part of the package, and no verdict names it",
+                    s.message,
+                    dir.display()
+                );
+                crate::stopped(s)
+            })?;
+            fab_report.status = "written";
+        }
+        FabMode::Compare(dir) => {
+            let mut package = exported.files;
+            package.insert(fab::MANIFEST.to_owned(), manifest);
+            let differences = tree::diff(dir, &package, &[]).map_err(crate::stopped)?;
+            report.against_fab = Some(if differences.is_empty() {
+                "identical"
+            } else {
+                "differs"
+            });
+            if !differences.is_empty() {
+                report.ok = false;
+                report.verdict = "fail";
+            }
+            fab_report.differences = differences
+                .iter()
+                .map(|d| Finding {
+                    kind: d.kind(),
+                    severity: "error",
+                    message: describe(d).replace("generated", "derived"),
+                })
+                .collect();
+        }
+    }
+    report.fab = Some(fab_report);
+    Ok(())
 }
 
 fn describe(d: &Difference) -> String {

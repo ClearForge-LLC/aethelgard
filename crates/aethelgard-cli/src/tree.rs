@@ -18,14 +18,19 @@ fn unwritable(message: String) -> Stop {
     Stop::refused("UnwritableOutput", message)
 }
 
-/// Writes `files` under `out`, which must be an empty directory or absent.
+/// Writes `files` under `out`, in the order given, into a directory that
+/// must be empty or absent. Text or bytes, from a map or a list: the fab
+/// package writes its manifest last (`AET-WO-3300`).
 ///
 /// Every directory and file is created relative to a descriptor of its
 /// parent, never followed through a symlink and never opened if it exists:
 /// directories with `mkdirat`, files with `O_CREAT | O_EXCL | O_NOFOLLOW`. So
 /// nothing is written outside `out` and nothing that exists is overwritten,
 /// whatever another process does to `out` meanwhile.
-pub fn write(out: &Path, files: &BTreeMap<String, String>) -> Result<(), Stop> {
+pub fn write<K: AsRef<str>, V: AsRef<[u8]>>(
+    out: &Path,
+    files: impl IntoIterator<Item = (K, V)>,
+) -> Result<(), Stop> {
     match fs::symlink_metadata(out) {
         Ok(meta) if meta.is_dir() => {}
         Ok(_) => {
@@ -58,6 +63,7 @@ pub fn write(out: &Path, files: &BTreeMap<String, String>) -> Result<(), Stop> {
     }
     let mut dirs: BTreeMap<String, OwnedFd> = BTreeMap::new();
     for (path, text) in files {
+        let path = path.as_ref();
         let parts: Vec<&str> = path.split('/').collect();
         if parts
             .iter()
@@ -99,7 +105,7 @@ pub fn write(out: &Path, files: &BTreeMap<String, String>) -> Result<(), Stop> {
         )
         .map_err(|e| unwritable(format!("cannot create {path}: {e}")))?;
         fs::File::from(fd)
-            .write_all(text.as_bytes())
+            .write_all(text.as_ref())
             .map_err(|e| unwritable(format!("cannot write {path}: {e}")))?;
     }
     Ok(())
@@ -131,9 +137,9 @@ impl Difference {
 /// `board/target`) is not read, as a crate's `target/` is not part of it.
 /// Symlinks are never followed: one is a difference. More than
 /// [`MAX_CRATE_FILES`] entries is refused, never truncated.
-pub fn diff(
+pub fn diff<T: AsRef<[u8]>>(
     dir: &Path,
-    files: &BTreeMap<String, String>,
+    files: &BTreeMap<String, T>,
     skip: &[&str],
 ) -> Result<Vec<Difference>, Stop> {
     let mut seen = BTreeSet::new();
@@ -171,7 +177,7 @@ pub fn diff(
             match files.get(&child) {
                 None => out.push(Difference::Extra(child)),
                 // `same` is false for anything but a regular file.
-                Some(text) if !same(&entry.path(), text.as_bytes())? => {
+                Some(text) if !same(&entry.path(), text.as_ref())? => {
                     out.push(Difference::Differs(child));
                 }
                 Some(_) => {}
