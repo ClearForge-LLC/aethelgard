@@ -35,6 +35,13 @@ accepts "guard: the plan passes" "${py[@]}" guard 4 "$tmp/entries.tsv" "$tmp/pla
 [ "$(cat "$tmp/plan"/shard-*.tsv | wc -l)" -eq 10 ] && ok "plan: 10 distinct names (a name in two binaries is one unit)" || bad "plan: unit count"
 grep -q "shared	2" "$tmp/plan"/shard-*.tsv && ok "plan: the shared name carries 2 occurrences" || bad "plan: occurrences"
 
+# A co-located binary stays whole in one shard.
+printf 'tests/board_tier2.rs\t30\n' >"$tmp/colocate.tsv"
+accepts "plan: a co-located binary" "${py[@]}" assign 4 "$tmp/weights.tsv" "$tmp/entries.tsv" "$tmp/plan2" 0 "$tmp/colocate.tsv"
+n=$(grep -l "^ws	v1	" "$tmp/plan2"/shard-*.tsv | wc -l); m=$(cat $(grep -l "^ws	v1	" "$tmp/plan2"/shard-*.tsv) | grep -c "^ws	\(v1\|v2\|shared2\)	")
+[ "$n" = 1 ] && [ "$m" = 3 ] && ok "plan: the co-located binary's three tests are in one shard" || bad "plan: co-location"
+accepts "guard: the co-located plan passes" "${py[@]}" guard 4 "$tmp/entries.tsv" "$tmp/plan2"
+
 # Each failure, in a copy of the good plan.
 break_plan() { rm -rf "$tmp/p"; cp -r "$tmp/plan" "$tmp/p"; }
 

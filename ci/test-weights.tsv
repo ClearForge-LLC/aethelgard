@@ -1,4 +1,4 @@
-# AET-WO-1907 §1.1: binary<TAB>test<TAB>seconds, each test run alone on Furnace in the pinned image (docs/work-orders/AET-WO-1907.FEEDBACK.md).
+# AET-WO-1907 §1.1: binary<TAB>test<TAB>seconds, each test run alone on Furnace in the pinned image (shard.py scales them to CI by CI_SCALE).
 # A test not listed here gets DEFAULT_WEIGHT in ci/shard.py.
 tests/adversarial_1301.rs	a_schematic_that_is_the_board_a_directory_or_a_fifo_is_refused	0.02
 tests/adversarial_1301.rs	attack_a_board_only_footprint_is_refused	0.00

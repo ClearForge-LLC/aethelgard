@@ -12,8 +12,8 @@ FEATURES=(--locked --offline --features aethelgard-cli/with-tools)
 BRIDGE=(--manifest-path bridge/Cargo.toml --locked --offline)
 # Canary files (AET-WO-1900): the tier-2 test binaries, as cargo prints them.
 TIER2_RE='^tests/(with_tools|twin_tier2|board_tier2|campaign_tier2|attribute_seeded|adversarial_1301_tools|adversarial_1302_tools)\.rs$'
-# Fixed work shard 0 does besides tests (bridge fmt + clippy), in seconds, from FEEDBACK §1.1.
-BASE0=${SHARD0_FIXED_SECONDS:-30}
+# Fixed work shard 0 does besides tests (bridge fmt + clippy), in seconds, measured on CI: the two steps took 25 s.
+BASE0=${SHARD0_FIXED_SECONDS:-25}
 
 cmd=${1:?plan or run}
 out=${2:?output directory}
@@ -28,7 +28,7 @@ plan)
   cargo test "${BRIDGE[@]}" -- --list >"$out/list-bridge.log" 2>&1 \
     || { cat "$out/list-bridge.log"; echo "shard: the bridge test list failed" >&2; exit 1; }
   { "${py[@]}" parse ws "$out/list-ws.log"; "${py[@]}" parse bridge "$out/list-bridge.log"; } >"$out/entries.tsv"
-  "${py[@]}" assign "$n" "$here/test-weights.tsv" "$out/entries.tsv" "$out" "$BASE0"
+  "${py[@]}" assign "$n" "$here/test-weights.tsv" "$out/entries.tsv" "$out" "$BASE0" "$here/colocate.tsv"
   "${py[@]}" guard "$n" "$out/entries.tsv" "$out"
   ;;
 run)

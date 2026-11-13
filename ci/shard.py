@@ -10,8 +10,8 @@ and the shard must see as many passes as there are occurrences.
 
 Subcommands (each exits nonzero, printing why, on any refusal; INV-06):
   parse SUITE LOG            a `cargo test -- --list` log -> entries on stdout
-  assign N WEIGHTS ENTRIES OUTDIR [BASE0]
-                             LPT assignment -> OUTDIR/shard-K.tsv
+  assign N WEIGHTS ENTRIES OUTDIR [BASE0 [COLOCATE]]
+                             LPT assignment, a co-located binary's tests as one block -> OUTDIR/shard-K.tsv
   guard N ENTRIES OUTDIR     the four lists are disjoint and their union is the list
   names SHARDFILE SUITE      the names a shard runs in a suite, one per line
   result K SHARDFILE WSLOG BRIDGELOG TIER2_RE
@@ -22,7 +22,10 @@ import os
 import re
 import sys
 
-DEFAULT_WEIGHT = 1.0  # seconds, for a test the weights file does not know (stated, not hidden)
+DEFAULT_WEIGHT = 0.2  # CI seconds, for a test the weights file does not know (stated, not hidden)
+# ci/test-weights.tsv holds each test's time alone on Furnace; CI's runners took 1.7 to 1.9
+# times as long on every tier-2 test measured there (AET-WO-1907 FEEDBACK, first CI run).
+CI_SCALE = 1.8
 SUITES = ("ws", "bridge")
 
 
@@ -108,7 +111,7 @@ def keys_of(entries):
     return keys
 
 
-def assign(n, weights_path, entries_path, outdir, base0=0.0):
+def assign(n, weights_path, entries_path, outdir, base0=0.0, colocate_path=None):
     if n < 1:
         die("need at least one shard")
     entries = load_entries(entries_path)
@@ -118,17 +121,34 @@ def assign(n, weights_path, entries_path, outdir, base0=0.0):
             weights[(b, t)] = float(sec)
         except ValueError:
             die("%s: %r is not seconds" % (weights_path, sec))
+    # A binary whose tests overlap when run together (they share the runner's cores) is
+    # kept whole: its tests are one block of the stated CI seconds, so splitting it does not
+    # lose the overlap. A binary whose tests take a mutex in the test file needs no such rule.
+    block = {}
+    if colocate_path:
+        colocate = {b: float(sec) for b, sec in read_tsv(colocate_path, 2)}
+        for s, b, t in entries:
+            if b in colocate:
+                block.setdefault((s, t), b)
     weight = {}
     for s, b, t in entries:
-        weight[(s, t)] = weight.get((s, t), 0.0) + weights.get((b, t), DEFAULT_WEIGHT)
+        if (s, t) in block:
+            continue
+        weight[(s, t)] = weight.get((s, t), 0.0) + (
+            weights[(b, t)] * CI_SCALE if (b, t) in weights else DEFAULT_WEIGHT)
+    members = {}
+    for key, b in block.items():
+        members.setdefault(b, []).append(key)
+    units = [(sorted(keys), colocate[b]) for b, keys in sorted(members.items())]
+    units += [([key], w) for key, w in weight.items()]
     occ = keys_of(entries)
     load = [0.0] * n
     load[0] = float(base0)
     shards = [[] for _ in range(n)]
-    for key in sorted(weight, key=lambda k: (-weight[k], k[0], k[1])):
+    for keys, w in sorted(units, key=lambda u: (-u[1], u[0][0])):
         i = min(range(n), key=lambda j: (load[j], j))
-        load[i] += weight[key]
-        shards[i].append(key)
+        load[i] += w
+        shards[i].extend(keys)
     os.makedirs(outdir, exist_ok=True)
     for i, keys in enumerate(shards):
         body = "".join("%s\t%s\t%d\n" % (s, t, occ[(s, t)]) for s, t in sorted(keys))
@@ -291,7 +311,8 @@ def main(argv):
             for row in parse(a[0], a[1]):
                 print("\t".join(row))
         elif cmd == "assign":
-            assign(int(a[0]), a[1], a[2], a[3], float(a[4]) if len(a) > 4 else 0.0)
+            assign(int(a[0]), a[1], a[2], a[3], float(a[4]) if len(a) > 4 else 0.0,
+                   a[5] if len(a) > 5 else None)
         elif cmd == "guard":
             guard(int(a[0]), a[1], a[2])
         elif cmd == "names":
