@@ -252,10 +252,13 @@ fn a_device_that_would_break_the_load_is_refused() {
         kind(&[("U2", "BME280", 0x76), ("u2", "BME280", 0x77)]),
         "InvalidDeviceName"
     );
-    assert_eq!(kind(&[("2U", "BME280", 0x76)]), "InvalidDeviceName");
-    // A name that is no identifier at all is the topology's refusal, which
-    // comes first (`AET-WO-2203`: `validate` checks the keys).
+    // A name that is no identifier at all, or that Renode cannot take (a
+    // leading digit, `-`), is the topology's refusal, which comes first
+    // (`AET-WO-2203`: `validate` checks the keys; `AET-WO-1102`: a reference
+    // has Renode's shape there).
     assert_eq!(kind(&[("U 2", "TMP117", 0x48)]), "InvalidTopology");
+    assert_eq!(kind(&[("2U", "BME280", 0x76)]), "InvalidTopology");
+    assert_eq!(kind(&[("U-2", "BME280", 0x76)]), "InvalidTopology");
 }
 
 #[test]
