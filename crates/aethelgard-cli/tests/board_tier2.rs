@@ -1170,7 +1170,8 @@ fn every_admitted_identifier_character_survives_every_output() {
     let scenario = serde_json::json!({
         "schema_version": 1,
         "name": scenario_name,
-        "base": spec_path.to_str().unwrap(),
+        // Only a relative `base` is accepted (`BaseOutsideRoot`), next to the scenario.
+        "base": "spec.json",
         "expect": "pass",
         "expect_findings": [],
         "overrides": [{ "bus": sensors, "pull_up_ohms": 2200 }],
