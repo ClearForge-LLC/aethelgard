@@ -197,7 +197,8 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
   - `OQ-03` measured.
 
   Dynamic faults (droop, interrupt storm) are split out as `AET-WO-2301`. Intent as first written: fault orchestrator: scenarios authored independently of the generated artifacts (`INV-07`), including a held-low data line, an oversized pull-up, a rail droop, and an interrupt storm; every campaign writes to the P0 archive.
-- `AET-WO-2301` — reserved, strong tier: dynamic faults (rail droop, interrupt storm) with in-run lock-step. It measures `OQ-03`'s dynamic case from its first per-quantum log. **Carried in:** expectations by count as well as kind (`AET-WO-2300` F11); Renode history to `/dev/null` (`AET-WO-2200` L6); and only the last transaction on each bus is witnessed (`AET-WO-2202`).
+- `AET-WO-2301` — **written 2026-11-13**, spike then stop then build, strong tier, full adversarial pass. A rail droop as a scenario fault, run in lock-step (`2101`'s `ioc` route, the bridge owning Renode): ngspice computes the rail, the bridge renders a reset or PVD as the model's rendering, Renode shows the firmware's effect, and the archive records each separately. The spike answers how Renode 1.17.0 can render a brownout, what the rail model declares, what an interrupt storm means for firmware that takes no interrupt (storms may be deferred to P4's IMU), `OQ-03`'s dynamic volume, and the log flood (`2100` F23). **Carried in:** expectations by count (`2300` F11), Renode history to `/dev/null` (`2200` L6), the bridge handshake (`2200` F15), the analog window label (review A10.4).
+- `AET-WO-2204` — **reserved 2026-11-13**, strong tier: the I2C witness a firmware cannot forge (review A11.1: an observable a plain write cannot set, and the pinning test inverted), one witness per transaction (`2202`), the status-to-phase table in one place (`3100` F2), the executable segments archived for `pc_outside_firmware` (`3100` F13), and engine and tool versions in the archive header with record kinds renamed from "measured" (review B4), and the seeded set's exact evidence per case with an indeterminate case end to end (review A7.5, A7.6). Its own trace version bump; it may run beside `2301`'s spike.
 
 **Exit gate: passed 2026-11-09, as reconciled in §7.** Every clause below is owned by merged work.
 
@@ -371,17 +372,17 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2200 F14 (hand-written topologies); emitter-owned names differing in case (1900 adversarial 3c) | 2200, 1900 | **merged (PR #90)**: ceilings re-derived, a half-bus refused, emitter names and references fold case |
 | Tier-2 canary; missing-key test; quickstart on `main`; README status test | review A6, A7, B5, B8 | **done (PR #87)** |
 | Manifest read uncapped; relative `PATH` entries; case-colliding labels | review A11.2, A12.2, A10.1 | **done (PR #87)** |
-| I2C witness forgeable by a hand-written firmware | review A11.1 | **measured: it passes** (PR #87). `AET-WO-2301` adds an observable a plain write cannot set and inverts the pinning test |
-| Review's unverified test notes (A7.4–A7.7, A10 notes) | review | verified by `1900`: A7.4 and A7.7 fixed; A7.5 and A7.6 to `AET-WO-2301` |
+| I2C witness forgeable by a hand-written firmware | review A11.1 | **measured: it passes** (PR #87). `AET-WO-2204` adds an observable a plain write cannot set and inverts the pinning test |
+| Review's unverified test notes (A7.4–A7.7, A10 notes) | review | verified by `1900`: A7.4 and A7.7 fixed; A7.5 and A7.6 to `AET-WO-2204`, which changes the witness evidence attribution reads |
 | State folded before the run rules bound it | review A11.3 | **done (PR #87)**: once-only records refused at fold time, `MAX_RECORDS` 65,536. `AET-WO-2301` measures fold memory (about 35 × wire size) and raises or streams it for per-quantum logs |
 | Generation in the CLI; `verify`; verdict binding; harness provenance | review A3, A4, B1 | **merged (PR #91)**: `generate`, `build`, `verify`, `prove --spec` with `harness_provenance` and `cover_count` |
 | Bench comparison early | review | `AET-WO-3302` |
 | Extraction, first step, then full | review A1, B3; `1303` | **first step merged (PR #99)**; `AET-WO-1303` before `4500` |
-| Status-to-phase table in one place | 3100 F2 | `AET-WO-2301` |
-| `pc_outside_firmware` needs the executable segments archived | 3100 F13 | `AET-WO-2301` |
-| Only the last transaction per bus is witnessed | 2202 | `AET-WO-2301` |
+| Status-to-phase table in one place | 3100 F2 | `AET-WO-2204` |
+| `pc_outside_firmware` needs the executable segments archived | 3100 F13 | `AET-WO-2204` |
+| Only the last transaction per bus is witnessed | 2202 | `AET-WO-2204` |
 | Bridge identity handshake | 2200 F15 | `AET-WO-2301` |
-| Engine and tool versions in the archive header; record kinds renamed from "measured" | review B4, `RUL-19` | `AET-WO-2301` (its trace version bump) |
+| Engine and tool versions in the archive header; record kinds renamed from "measured" | review B4, `RUL-19` | `AET-WO-2204` (its trace version bump) |
 | Analog deck's fixed 400 kHz window labelled | review A10.4 | `AET-WO-2301` |
 | Type-level `RUL-16` fence replacing the grep test | review A7.1, B6 | **merged (PR #90)**: private device lists, a crate-local clippy `disallowed-methods` in `cli`, `svd-hal` and `twin`, and a guard test against a stale path |
 | `RLIMIT_FSIZE` for tool scratch | review A12.1 | **merged (PR #96)**: 64 MiB, exit 5 |
@@ -470,6 +471,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-13 | §7.1 | `AET-WO-1907` reconciled (merged, PR #104): CI's `tools` job in five shards, 13 m 41 s at the slowest. Five, not four, by the architect's ruling at the measurement; the shard logic is bash and awk (`RUL-12`) | PR #104 |
 | 2026-11-13 | §5, §7.1 | `AET-WO-3300` reconciled (merged, PR #103). **P3 gate clauses 1, 2 and 3 hold; clause 4 (the bench comparison, `3302`) waits for the Nucleo.** `RUL-03` amended with the one exception to passing a tool's output through unchanged (ratified by Scotty). README status and `RUL-19` (2) brought current. CI's tools job is eight shards | PR #103; Scotty, 2026-11-13 |
 | 2026-11-13 | §5, §7.1 | `AET-WO-1102` written: identifiers narrowed by measurement, from `3300` F14 and F15 | `AET-WO-3300` FEEDBACK |
+| 2026-11-13 | §5, §7.1 | `AET-WO-2301` written (spike, stop, build: a rail droop in lock-step); `AET-WO-2204` reserved for the I2C witness and the archive's trace hygiene, which 2301's carry-ins split into | `AET-WO-2101` S4–S7; the Mythos review |
 
 ## 9. Provenance
 
