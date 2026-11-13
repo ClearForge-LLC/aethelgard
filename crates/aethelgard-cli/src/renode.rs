@@ -293,23 +293,31 @@ impl BootPlan<'_> {
     /// that only the firmware's code can set them again.
     fn assert_reset(&self) -> Vec<String> {
         let mut c = vec!["machine Reset".to_owned()];
-        c.extend(self.cold_and_vtor());
+        c.extend(self.cold());
+        c.push(self.vtor());
         c.push("cpu IsHalted true".to_owned());
         c.extend(self.rearm());
         c
     }
 
-    fn cold_and_vtor(&self) -> Vec<String> {
-        let mut c: Vec<String> = self
-            .image
+    /// The cold RCC writes, as the part's reset leaves those registers.
+    fn cold(&self) -> Vec<String> {
+        self.image
             .cold
             .iter()
             .map(|r| format!("sysbus WriteDoubleWord {:#010x} 0x0", r.address))
-            .collect();
-        c.push(format!("cpu VectorTableOffset {:#010x}", self.vector_table));
-        c
+            .collect()
     }
 
+    /// The core takes its vector table where the part boots, not where Renode
+    /// guesses it from the ELF (adversarial A3; after a reset, `AET-WO-2301` F3).
+    fn vtor(&self) -> String {
+        format!("cpu VectorTableOffset {:#010x}", self.vector_table)
+    }
+
+    /// Only the firmware's code may set the boot word (adversarial A1, A2), or
+    /// fill a record, so one preloaded in the image, or never written, reads as
+    /// the judge left it (`AET-WO-2202` adversarial 1).
     fn rearm(&self) -> Vec<String> {
         let mut c = vec![format!(
             "sysbus WriteDoubleWord {:#010x} 0x0",
@@ -390,28 +398,9 @@ impl BootPlan<'_> {
             ),
             format!("sysbus LoadELF @{}", self.firmware.display()),
         ];
-        for r in &self.image.cold {
-            c.push(format!("sysbus WriteDoubleWord {:#010x} 0x0", r.address));
-        }
-        // Only the firmware's code may set the boot word (adversarial A1, A2),
-        // and the core takes its vector table where the part boots, not where
-        // Renode guesses it from the ELF (adversarial A3).
-        c.push(format!(
-            "sysbus WriteDoubleWord {:#010x} 0x0",
-            self.boot_word
-        ));
-        // The same for every record: only the firmware's code may fill one,
-        // so a record that was preloaded in the image, or never written, reads
-        // as the judge left it (`AET-WO-2202` adversarial 1).
-        for check in &self.image.i2c.checks {
-            for at in [check.status_at, check.value_at] {
-                c.push(format!(
-                    "sysbus WriteDoubleWord {at:#010x} {:#010x}",
-                    aethelgard_twin::boot::RECORD_UNSET
-                ));
-            }
-        }
-        c.push(format!("cpu VectorTableOffset {:#010x}", self.vector_table));
+        c.extend(self.cold());
+        c.extend(self.rearm());
+        c.push(self.vtor());
         if self.resets.is_empty() {
             c.push(run_for(self.virtual_ns));
         } else {

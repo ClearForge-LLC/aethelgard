@@ -571,6 +571,8 @@ pub fn droop_report(
             txdr,
         });
     }
+    // belt-and-suspenders: `check_droop` refused a rail whose levels are not
+    // stated before any run; a floor of 0 here would only add the finding.
     let (floor, _) = campaign::rail_levels(d, rail.nominal_millivolts).unwrap_or((0, 0));
     let tolerance_floor =
         campaign::tolerance_floor_uv(rail.nominal_millivolts, rail.tolerance_permille);

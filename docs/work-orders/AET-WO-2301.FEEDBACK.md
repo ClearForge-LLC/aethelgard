@@ -532,6 +532,7 @@ Under the schedule, a droop adds its declared rail, its crossings, its resets an
 - The bridge: fmt and clippy clean, 27 tests passing.
 - **Adversarial pass:** above.
 - **Reduction pass (diff):** −3,622 lines net for `spike/2301/` · 1 duplicate removed (the tolerance floor, computed in the chaos rule and in the CLI's report, now one function) · 2 dead paths removed (the log filter's unreachable "no filter" branch in `line()`, and the console-level constant once A2 removed the probes' level change) · 0 protected kept · 1 finding (B8, the identity recipe in three places, kept and pinned by a test).
+- **Reduction pass (diff), by a fresh subagent over the build** (read-only, proposals checked by the lead): −11 lines net (24 added, 35 removed) · 1 duplicate removed (`BootPlan::commands()` restated the cold writes, the re-arm and the vector table that the droop's recipe holds; it now composes `cold()`, `rearm()` and `vtor()`, and the static command line stays byte-identical, shown by the tier-1 stubs that pin it and by §3 re-run) · 1 dead item removed (`SCENARIO_VERSION`, which nothing read) · 1 protected kept (the droop report's `unwrap_or((0, 0))`, now labelled `belt-and-suspenders`) · 2 findings, not cuts: the droop's fields are mapped from the chaos types to the verdict's reports and back to records (about 45 lines), which only a change to the verdict's JSON shape would merge; and two comments in `aethelgard-twin`'s tests still point at the deleted `spike/`, outside this fence.
 
 ## After the adversarial fixes
 

@@ -21,11 +21,9 @@ use crate::power::{self, Band};
 use crate::record::{BusLine, Droop, Line, Override, Reading, Record};
 use crate::replay::State;
 
-/// The scenario format version. 2 since `AET-WO-2301`, which admits the
-/// `droop` override and `expect_counts`; a version 1 file parses as before
-/// and may use neither.
-pub const SCENARIO_VERSION: u32 = 2;
-/// The versions read: 1 (static scenarios, unchanged) and 2.
+/// The scenario format versions read: 1 (static scenarios, unchanged) and 2,
+/// since `AET-WO-2301`, which admits the `droop` override and `expect_counts`;
+/// a version 1 file may use neither.
 pub const SCENARIO_VERSIONS: [u32; 2] = [1, 2];
 /// At most this many overrides, so the scenario record stays inside the
 /// reader's 4,096-byte event bound.
