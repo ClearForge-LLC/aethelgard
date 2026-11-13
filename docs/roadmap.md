@@ -410,7 +410,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | A reference named for a Renode instance the platform's stock list omits (`nvic`, `sysbus`, `usart1`…) or a platform keyword (`using`, `init`) may redeclare it in the `.repl` (inferred, not run) | `1102` A3 | `AET-WO-2204` (it touches the platform): read the pinned platform's whole name set |
 | A project name that is a Windows reserved device name (`con`, `prn`, `aux`, `nul`, `com1`–`com9`, `lpt1`–`lpt9`) writes files Windows cannot open | `1102` A7 | the next identifier work order: refuse them in any case |
 | The router completes nets in name order, so a net's name alone can make `generate` fail with `Unroutable` | `1102` §4.4, A6 | the next work order that owns the router |
-| **CI headroom:** with eight shards the slowest ran 15:04 and then about 16 minutes (PR #106) | `1102` §8 | **next:** rebalance `ci/test-weights.tsv` from CI-measured times, or a ninth shard; before the next tier-2-heavy merge |
+| **CI headroom:** with eight shards the slowest ran 15:04 and then about 16 minutes (PR #106) | `1102` §8 | `AET-WO-1908` (written 2026-11-13): weights refitted from CI's own times, slowest shard under 13 minutes on three consecutive runs |
 | A tool spawned under the sandbox cannot open `/dev/null` (`Stdio::null()` fails with `EACCES`); the bridge inherits stdio | `2301` B2 | the next sandbox work order: grant `/dev/null` or keep inherited stdio as the rule |
 | The CLI's README documents only version-1 scenarios (`droop`, `expect_counts`, `schema_version` 2 are in the chaos README) | `2301` B13 | the next work order that touches the CLI README |
 | The export's ELF and board `BindingMismatch` guards have no killing test (a swap race in `verify`'s scratch, as `1305`'s extract test does) | `3300` F16 | the next work order that touches `verify` |
@@ -482,6 +482,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-13 | §5 | `AET-WO-3302` written: the bench comparison, P3 gate clause 4; the board arrived | Scotty, 2026-11-13 |
 | 2026-11-13 | §5, §7.1 | `AET-WO-1102` reconciled (merged, PR #106): `RUL-14` narrowed by measurement into one `check_identifier`; its adversarial residuals and the CI headroom given owners | PR #106 |
 | 2026-11-13 | §5, §7.1 | `AET-WO-2301` reconciled (merged, PR #107): a declared droop by the schedule, trace version 4; `OQ-03` answered for declared droops subject to D8; the `RUL-17` amendment proposed for Scotty's ratification; `2204`'s scope grows by `2301` D9, B4 and B10 | PR #107 |
+| 2026-11-13 | §7.1 | `AET-WO-1908` written: CI weights refitted from CI's own times, for headroom under 15 minutes | PRs #106, #107's shard times |
 
 ## 9. Provenance
 
