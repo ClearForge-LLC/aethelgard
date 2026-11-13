@@ -331,3 +331,65 @@ From the bor3 lock-step at 10 µs over 100 ms, three traces written by the real 
 - **Adversarial pass:** at the build, by a fresh subagent, as the kickoff sets it. This PR is the spike only.
 - **Reduction pass (diff):** −162 lines net (two files of 158 lines, three lines in `levels()`, two `mod` lines less one comment) · 0 duplicates removed · 3 dead paths removed (`ng-probe`'s `pattern.rs` and `sha256.rs`, unused by this owner, and a no-op filter in `levels()`) · 0 protected kept · 1 finding: the CLI's boot prefix (the cold registers, `VTOR`, the re-arm) is restated in `renode/drive.py`, `lockstep/src/main.rs` and the P5 scripts, in two languages. It is kept, because the build deletes `spike/` whole; a build that drives Renode itself takes it from `renode.rs` `BootPlan` alone.
 - **`git diff --stat e3e3cd2 -- . ':!spike/2301' ':!docs/work-orders/AET-WO-2301.FEEDBACK.md'`** is empty before the merge of `origin/main`.
+
+
+---
+
+# The build (§2), to the architect's ruling on PR #107 (2026-11-13)
+
+**The spike is deleted** (`spike/2301/`, as ruled). Its outputs were committed at `a451cd1`; their sha256 there (first 16 hex, `git show a451cd1:<path> | sha256sum`), so the table above stays checkable:
+  - `caps.log` `f0bf896fa321afbd…`
+  - `p1-cli-cmdline.txt` `bfecc7bd44de6d34…`
+  - `p1-held-halted-nudge.txt` `6e94d0346ad38cf7…`
+  - `p1-machine-reset-vtor.cmds` `2baf5f0aeabb04f7…`
+  - `p1-p3-summary-rerun.txt` `8bc85b122059a0ed…`
+  - `p1-p3-summary.txt` `f8a62f11e532703d…`
+  - `p26-1us-per-quantum.txt` `1e04da8c1ef67969…`
+  - `p26-bor3-1us-100ms.json` `9303d8ee993fc922…`
+  - `p26-matrix.jsonl` `a147f2a1b90be42d…`
+  - `p26-matrix-nudge.jsonl` `36fce435e9ad51cb…`
+  - `p26-matrix-rerun.jsonl` `7a4452dc8f96b3a5…`
+  - `p26-oneline-1us-100ms.json` `0415f3c6d4bd3740…`
+  - `p26-oneline.txt` `de9b4af175b2cbfe…`
+  - `p2-matrix.jsonl` `e03b89ddd0f7308b…`
+  - `p2-matrix-rerun.jsonl` `d8b8cebec1d565a8…`
+  - `p2-summary.txt` `06ae2f7a076033b1…`
+  - `p4-replay.jsonl` `22481c2b91948222…`
+  - `p4-replay-rerun.jsonl` `869d681a4a88813a…`
+  - `p5-b-sandbox-logfile.txt` `1bc3f50f72b9907c…`
+  - `p5-cli-100ms.txt` `1e9dbaade14d45de…`
+  - `p5-cli-10ms.txt` `9a92563f47a010e1…`
+  - `p5-c-rates.txt` `cb7c42576365f9e8…`
+  - `p5-d-stream.txt` `84267c4ca6537111…`
+  - `p5-rerun-gated.txt` `6de9deaa53454981…`
+
+## Before any code: measured
+
+**D6, the FIFO: it fails, by Renode's own code.** A FIFO at the `logFile` path is renamed to `<path>.1` and a fresh regular file is written in its place; a reader on the FIFO got 0 bytes (`~/.cache/aet-2301/d6/fifo.sh`, in the pinned image, capped). The cause is `SequencedFilePath.Validate` (`Emulator/Main/Utilities/FilePath.cs` at `066a7f13`): any existing file at the path (`File.Exists` is true for a FIFO) is moved aside before `File.Open(…, FileMode.Create)`. No sandbox setting changes that. So, as ruled, the log stays on stdout and is read as a stream, and the adversarial pass attacks F8.
+
+**The hinge: a sandboxed tool that runs libngspice in-process and Renode as its child, under today's sandbox** (uid boundary, Landlock, seccomp, `RLIMIT_FSIZE`, through `e3e3cd2`'s own reaper and trampoline, bounds 30 s / 1 GiB; `~/.cache/aet-2301/hinge/hinge.sh`). It runs: the bor3 schedule in 2.05 s, with the same final reads as unsandboxed (instructions `0x96B6D1`). Three conditions, each measured by its failure first:
+- **No `/dev/null`.** Rust's `Stdio::null()`, and `output()`'s null stdin, open `/dev/null`, which the sandbox does not grant. Every such spawn failed with `EACCES` before any exec, `/bin/bash` included; Python's `subprocess`, which inherits stdin, spawned Renode. The bridge spawns Renode with stdin, stdout and stderr inherited.
+- **`TMPDIR` and `HOME` passed through.** With the environment cleared, Renode died at start (`/tmp/renode-74` denied). The bridge passes its environment through.
+- **`DOTNET_EnableWriteXorExecute=0`**, as `simulate` sets (`AET-WO-1601` §1.6): without it Renode dies of SIGXFSZ.
+
+**History.** An `-e` boot writes one history line, the whole command line, to `$HOME/.config/renode/history` (measured, fresh `HOME`). `history-path = /dev/null` cannot be written under the sandbox (no `/dev/null` grant). Under the schedule the monitor gets one `-e` line per boot, so the history is one line in the tool's own scratch and grows with nothing. §2.4's "100,000 commands do not grow memory" test is therefore replaced by a test that the droop boot hands Renode exactly one command line (F15 is time, not memory, and moot here); flagged below.
+
+**Baseline for §3.** `main`'s CLI and bridge (`e3e3cd2`, sha256 `23baa038…` and `381c8e9c…`) ran every static scenario (the two reference and nine seeded files), replayed every run, and booted `simulate --firmware` once, before any build. The build is compared against that (below).
+
+## Predictions for the two reference scenarios, written before they run
+
+Both start from `examples/sentinel-01-minimal.json` with the reference firmware, `VDD_3V3` at 3,300 mV ± 50 ‰, a 0.5 Ω source and a 100 mA load, decoupling 400 nF from the emitter's rule, the sag starting at 1 ms with a 20 µs fall, 200 µs at the floor and a 20 µs rise, BOR level 3.
+
+| | `droop-tolerated` (floor 3,200 mV) | `droop-bor3` (floor 2,400 mV) |
+|---|---|---|
+| Rail floor (floor − I·R) | 3,150 mV: inside tolerance (≥ 3,135) | 2,350 mV: below `VBOR3` falling (max 2.68 V), above `VBOR0` rising (max 1.71 V) |
+| Crossings, ngspice | none | `VBOR3` falling (2.61 V) at 1,014,422.2 ns; rising (2.70 V) at 1,227,977.8 ns |
+| Reset rendered | none | asserted at 1,014,430 ns, released at 1,227,980 ns (rounded up to 10 ns), then the 10 ns nudge |
+| Recovery | — | boot word and OK `0x60` at the probe, release + 100 µs |
+| Instructions expected (D5) | 10,000,000 | 9,877,201 |
+| Verdict, findings | pass; no `brownout_reset` | pass; `brownout_reset` (info) 1; `rail_below_tolerance` (info) 1 |
+| Trace bytes | about 1.1 KB | about 1.4 to 1.6 KB |
+| Wall, in the image | about 3 s | about 3 s |
+| Two runs | byte-identical; replay matches | byte-identical; replay matches |
+
+**A droop outside tolerance but above every BOR threshold (§2.3 states no verdict for it): decided here as a pass with an `info` finding, `rail_below_tolerance`.** The part runs (DS12117: 1.62 V to 3.6 V), nothing resets, and the firmware is judged as it is; the finding states that the rail left the domain's declared tolerance, so a scenario can expect it by count.
