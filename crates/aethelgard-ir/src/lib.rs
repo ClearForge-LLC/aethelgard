@@ -641,8 +641,10 @@ pub enum IdentifierKind {
 /// refuses at export (`AET-WO-3300` F14).
 pub const REFUSED_IN_IDENTIFIERS: [u8; 7] = *b"/{}$[]\"";
 
+/// `generate` names the board crate `<project>-board`, and a crate name is at most 64 bytes.
+const PROJECT_MAX: usize = 58;
 const BASE_RULE: &str = "1 to 64 bytes of printable ASCII 0x21-0x7E, none of them `/`, `{`, `}`, `$`, `[`, `]` or `\"`, and no date shape (4 digits, `-`, 2 digits, `-`, 2 digits) or time shape (2 digits, `:`, 2 digits, `:`, 2 digits)";
-const PROJECT_RULE: &str = "a project name is a crate name: `a-z`, `0-9` and `-` only, starting with a letter, not ending with `-`, with no `--`";
+const PROJECT_RULE: &str = "a project name is a crate name: 1 to 58 bytes of `a-z`, `0-9` and `-`, starting with a letter, not ending with `-`, with no `--` (`generate` names the board crate `<project>-board`, at most 64 bytes)";
 const REFERENCE_RULE: &str =
     "a device reference is a Renode identifier: a letter, then letters, digits and `_`";
 
@@ -659,9 +661,10 @@ fn clock_shape(value: &[u8]) -> bool {
     shaped(b"dddd-dd-dd") || shaped(b"dd:dd:dd")
 }
 
-/// The rule `value` breaks as an identifier of `kind`, or `None`. The base
-/// set is checked first, so a message names the broadest rule broken.
-fn broken_rule(kind: IdentifierKind, value: &str) -> Option<&'static str> {
+/// `RUL-14`'s one table: `Err` is the rule `value` breaks as an identifier of
+/// `kind`. The base set is checked first, so a message names the broadest
+/// rule broken. [`identifier`] and the scenario reader both call it.
+pub fn check_identifier(kind: IdentifierKind, value: &str) -> Result<(), &'static str> {
     let bytes = value.as_bytes();
     let base = (1..=64).contains(&bytes.len())
         && bytes
@@ -669,33 +672,29 @@ fn broken_rule(kind: IdentifierKind, value: &str) -> Option<&'static str> {
             .all(|b| (0x21..=0x7E).contains(b) && !REFUSED_IN_IDENTIFIERS.contains(b))
         && !clock_shape(bytes);
     if !base {
-        return Some(BASE_RULE);
+        return Err(BASE_RULE);
     }
-    match kind {
-        IdentifierKind::Plain => None,
-        IdentifierKind::Project => {
-            let ok = bytes[0].is_ascii_lowercase()
+    let (ok, rule) = match kind {
+        IdentifierKind::Plain => return Ok(()),
+        IdentifierKind::Project => (
+            bytes.len() <= PROJECT_MAX
+                && bytes[0].is_ascii_lowercase()
                 && !value.ends_with('-')
                 && !value.contains("--")
                 && bytes
                     .iter()
-                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-');
-            (!ok).then_some(PROJECT_RULE)
-        }
-        IdentifierKind::Reference => {
-            let ok = bytes[0].is_ascii_alphabetic()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-'),
+            PROJECT_RULE,
+        ),
+        IdentifierKind::Reference => (
+            bytes[0].is_ascii_alphabetic()
                 && bytes
                     .iter()
-                    .all(|b| b.is_ascii_alphanumeric() || *b == b'_');
-            (!ok).then_some(REFERENCE_RULE)
-        }
-    }
-}
-
-/// `RUL-14`, for callers that hold no path: `Err` is the rule broken. The one
-/// table; [`identifier`] and the scenario reader both call it.
-pub fn check_identifier(kind: IdentifierKind, value: &str) -> Result<(), &'static str> {
-    broken_rule(kind, value).map_or(Ok(()), Err)
+                    .all(|b| b.is_ascii_alphanumeric() || *b == b'_'),
+            REFERENCE_RULE,
+        ),
+    };
+    if ok { Ok(()) } else { Err(rule) }
 }
 
 fn identifier(

@@ -285,7 +285,10 @@ fn project_names_and_references_have_their_own_shapes() {
         assert_invalid_identifier(err.clone(), "project_name");
         assert!(err.to_string().contains("crate name"), "{err}");
     }
-    for ok in ["sentinel-01", "a", "a1-b2", &"a".repeat(64)] {
+    // `generate` names the board crate `<project>-board`: 59 bytes is refused there.
+    let long = refusal(|s| s.project_name = "a".repeat(59));
+    assert_invalid_identifier(long, "project_name");
+    for ok in ["sentinel-01", "a", "a1-b2", &"a".repeat(58)] {
         let mut spec = valid();
         spec.project_name = ok.into();
         assert_eq!(spec.validate(), Ok(()), "{ok}");

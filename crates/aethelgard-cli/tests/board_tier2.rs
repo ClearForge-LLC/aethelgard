@@ -1097,8 +1097,9 @@ fn rename_value(v: &mut Value, from: &str, to: &str) {
 /// refusals with the failing output named in the work order's FEEDBACK.
 ///
 /// The base set is 87 characters (`0x21`-`0x7E` but `/ { } $ [ ] "`). A net
-/// carries 15 or 16 of them in order, behind a letter and a digit that keep
-/// its first character plain; six nets cover all 87. The domain id, each bus
+/// carries 14 or 15 of them in ASCII order, so each starts and ends with a
+/// punctuation character or a digit of its own, and the six sort in the
+/// order the router needs; the six cover all 87. The domain id, each bus
 /// id and the scenario name carry as many as fit in 64 bytes. A reference is
 /// a Renode identifier (the 63 of `[A-Za-z0-9_]`, three references of 21,
 /// each behind a letter), and the project name a crate name (`a-z0-9-`).
@@ -1114,7 +1115,12 @@ fn every_admitted_identifier_character_survives_every_output() {
     let nets: Vec<String> = admitted
         .chunks(15)
         .enumerate()
-        .map(|(i, c)| format!("N{i}{}", c.iter().collect::<String>()))
+        .map(|(i, c)| {
+            // Net names are unique after case folding, and chunks 2 and 4 are
+            // the upper and lower case of one run of letters: end chunk 4 on a digit.
+            let tail = if i == 4 { "0" } else { "" };
+            format!("{}{tail}", c.iter().collect::<String>())
+        })
         .collect();
     assert_eq!(nets.len(), 6);
     let domain = format!("V{}", slice(0, 62));
