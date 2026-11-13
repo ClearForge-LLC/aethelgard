@@ -213,17 +213,17 @@ fn attack_a_reference_in_the_emitters_hash_namespace_is_emitted() {
     }
 }
 
-/// Every identifier character RUL-14 admits in a net (`AET-WO-1102`: 87, the
+/// Every identifier character RUL-14 admits in a net (`AET-WO-1102`: 83, the
 /// base set), and the narrower shapes of a project name and a reference: the
 /// schematic parses back to the same names and every BOM row reads back to
 /// five fields.
 #[test]
 fn withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom() {
     let admitted: String = (0x21u8..=0x7e)
-        .filter(|b| !b"/{}$[]\"".contains(b))
+        .filter(|b| !aethelgard_ir::REFUSED_IN_IDENTIFIERS.contains(b))
         .map(char::from)
         .collect();
-    assert_eq!(admitted.len(), 87);
+    assert_eq!(admitted.len(), 83);
     let (a, b) = admitted.split_at(44);
     let mut spec = sentinel();
     spec["project_name"] = json!("p-1-board");
@@ -235,7 +235,7 @@ fn withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom
     spec["i2c_buses"][0]["scl"]["net"] = json!(format!("N{b}"));
     spec["net_constraints"][0]["net_name"] = json!(format!("N{a}"));
     spec["net_constraints"][1]["net_name"] = json!(format!("N{b}"));
-    spec["spi_devices"][0]["cs"]["net"] = json!("\\(;#");
+    spec["spi_devices"][0]["cs"]["net"] = json!("@(;#");
     let d = Dir::new("names");
     let (out, o) = emit(&spec, &d.0, "o");
     let v = json_line(&out);
@@ -254,7 +254,7 @@ fn withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom
         assert!(refs.contains(&r), "{r} not in {refs:?}");
     }
     let labels: Vec<&str> = sch.children("label").filter_map(|l| l.arg(1)).collect();
-    for n in [format!("N{a}"), format!("N{b}"), "\\(;#".into()] {
+    for n in [format!("N{a}"), format!("N{b}"), "@(;#".into()] {
         assert!(labels.contains(&n.as_str()), "{n} not in labels");
     }
     let title = sch

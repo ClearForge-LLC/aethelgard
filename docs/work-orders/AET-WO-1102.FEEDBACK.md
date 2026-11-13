@@ -108,3 +108,35 @@ Not run by the subagent (no tools): Gerber, drill, Renode load. CI's tier-2 test
 ## 6. Reduction pass
 
 `broken_rule` was folded into `check_identifier` (one function, not two). `plain` is kept: it makes the 37 base-set call sites one word each. `REFUSED_IN_IDENTIFIERS` stays `pub` (the tier-1 tests read it). Nothing else added by this diff can go without a refusal returning.
+
+## 7. The image half, measured by CI (the tier-2 test), against the predictions
+
+Five CI runs of the tier-2 test (`every_admitted_identifier_character_survives_every_output`), each stopped by one thing, in order. The first four are not about a character; the fifth is.
+
+| Run | Stopped by | What it was |
+|---|---|---|
+| 43504783426 | `BaseOutsideRoot`: an absolute scenario `base` | my test: the base is confined to the current directory |
+| 43508329650 | the same, relative but outside `/repo` | my test: the run now starts in the specification's directory |
+| 43510641685 | DRC `silk_overlap`: the 22-byte reference's text overlaps its own silkscreen | layout, not a character: the references are four bytes (`Ua_9`, `Vb_8`, `Wc_7`) |
+| 43513000687 | every gate passed; the Gerber lacked `%TO.N,<net>*%` | the measurement below |
+
+**What the run passed with all 87 characters** (the first set, `0x21`-`0x7E` but `/ { } $ [ ] "`): `validate`, `generate`, ERC, DRC (once the references were short), `extract`, both `prove` runs, the firmware `build`, `simulate` (the Renode platform loads with these project, reference and bus names), the campaign, and the fabrication package. The BOM, the placement file, the file names, the manifest and the verdict carried every identifier byte for byte.
+
+**What KiCad 10.0.7 does to a Gerber X2 net attribute** (printed by the test from run 43515330170):
+
+| Character | Gerber writes | Prediction (§1) | Result |
+|---|---|---|---|
+| `%` | `\u0025` | damaged | **confirmed** |
+| `*` | `\u002A` | damaged | **confirmed** |
+| `,` | `\u002C` | damaged | **confirmed** |
+| `\` | `\u005C` | damaged | **confirmed** |
+| `!` `#` `&` `'` `(` `)` `+` `-` `.` `:` `;` `<` `=` `>` `?` `@` `^` `_` `` ` `` `\|` `~`, digits, letters | unchanged | undamaged in a net or reference | **confirmed** |
+| `"` | not tried here; `AET-WO-3300` F15 | damaged in the placement file | already refused |
+| `:` `<` `>` `\|` `?` | unchanged in a net | predicted damaged for the project only (Windows file name) | **confirmed moot**: a project name is `a-z0-9-` by its crate-name rule |
+| `.` `+` `@` `!` … in a project name | not applicable | predicted Cargo-name damage | **confirmed**: `generate` already refused them (§2) |
+
+A signal net is written `/<net>` (KiCad's own prefix); a rail and `GND` are written bare. The drill file carries no net attribute. The placement file, the BOM and the file names were not damaged by any admitted character.
+
+**Ruling applied** (item 4: add exactly those characters, name the output): the base set refuses `% * , \` as well, **11 characters in all**: `/ { } $ [ ] " % * , \`, named by the Gerber net attribute for the last four. The admitted set is 83 characters. The tier-2 test now sends all 83 and asserts `%TO.N,/<net>*%`.
+
+**Still unmeasured, and why:** the predictions about the Gerber's component attributes (`%TO.C,<ref>`) were not asserted precisely (the test checks that a reference appears in some Gerber). Reference text longer than a few bytes overlaps its silkscreen (the `1301` backlog item: wide references), so the tier-2 references are four bytes and carry `_` only; their letters and digits are in the nets.

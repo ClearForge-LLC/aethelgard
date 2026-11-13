@@ -120,7 +120,7 @@ fn every_refused_character_and_shape_is_refused_by_its_path() {
         let report = assert_refused(&output, 2, "InvalidIdentifier");
         assert_eq!(report["error"]["path"], path, "{report}");
     };
-    let cases: Vec<String> = ["/", "{", "}", "$", "[", "]", "\""]
+    let cases: Vec<String> = ["/", "{", "}", "$", "[", "]", "\"", "%", "*", ",", "\\"]
         .iter()
         .map(|c| format!("AB{c}CD"))
         .chain(["AB2026-11-13CD".to_owned(), "AB12:34:56CD".to_owned()])
@@ -153,8 +153,8 @@ fn every_refused_character_and_shape_is_refused_by_its_path() {
     }
     // And KiCad's own `+3V3` and a net with every other character stay valid.
     let mut doc = base.clone();
-    doc["i2c_buses"][0]["sda"]["net"] = "+3V3-(Net#1)!,;'~^|".into();
-    doc["net_constraints"][0]["net_name"] = "+3V3-(Net#1)!,;'~^|".into();
+    doc["i2c_buses"][0]["sda"]["net"] = "+3V3-(Net#1)!;'~^|".into();
+    doc["net_constraints"][0]["net_name"] = "+3V3-(Net#1)!;'~^|".into();
     assert_eq!(
         run(&["validate"], doc.to_string().as_bytes()).status.code(),
         Some(0)

@@ -498,13 +498,13 @@ fn identifiers_with_s_expression_characters_survive_kicad() {
     };
     let names = [
         ("sentinel-01", "p-x"),
-        ("VDD_3V3", "VDD'3V3\\"),
+        ("VDD_3V3", "VDD'3V3^"),
         ("I2C_SDA", "I2C(SDA)"),
         ("I2C_SCL", "I2C;SCL~"),
         ("SPI_SCK", "SPI'SCK^"),
-        ("SPI_MOSI", "MO|SI,"),
-        ("SPI_MISO", "MI*SO?"),
-        ("FLASH_CS", "CS\\(0)"),
+        ("SPI_MOSI", "MO|SI!"),
+        ("SPI_MISO", "MI+SO?"),
+        ("FLASH_CS", "CS@(0)"),
         ("U2", "U_2"),
         ("U3", "U_3"),
         ("U4", "U_4"),
@@ -564,7 +564,7 @@ fn identifiers_with_s_expression_characters_survive_kicad() {
         "names read back: nets {nets:?} refs {refs:?} title {title:?}"
     ));
     assert_eq!(title, Some("p-x"));
-    assert!(nets.contains(&"VDD'3V3\\"), "{nets:?}");
+    assert!(nets.contains(&"VDD'3V3^"), "{nets:?}");
     for (_, to) in &names[2..8] {
         // A root-sheet label's net is named `/<label>` (spike S4).
         let want = format!("/{to}");
@@ -790,9 +790,9 @@ fn p1_gate_clause_1_the_reference_board_passes_erc_and_drc_with_no_finding() {
     .unwrap();
     for (from, to) in [
         ("sentinel-01", "p-x"),
-        ("VDD_3V3", "VDD'3V3\\"),
+        ("VDD_3V3", "VDD'3V3^"),
         ("I2C_SDA", "I2C(SDA)"),
-        ("FLASH_CS", "CS\\(0)"),
+        ("FLASH_CS", "CS@(0)"),
         ("U2", "U_2"),
         ("U3", "U_3"),
         ("U4", "U_4"),

@@ -230,6 +230,11 @@ fn identifier_boundaries() {
         // KiCad does not escape it in a placement row (AET-WO-3300 F15).
         "U\"4,X",
         "\"",
+        // KiCad rewrites these four in a Gerber net attribute (AET-WO-1102, CI).
+        "A%B",
+        "A*B",
+        "A,B",
+        "A\\B",
         // A date or a time of day, anywhere inside (AET-WO-3300 F14).
         "2026-11-13",
         "N2026-11-13X",
@@ -250,7 +255,7 @@ fn identifier_boundaries() {
         "Net-(U1-Pad3)".into(),
         // Every other printable character, S-expression specials included,
         // but `"`.
-        "!#%&'()*+,-.:;<=>?@\\^_`|~".into(),
+        "!#&'()+-.:;<=>?@^_`|~".into(),
         // Not shaped like a date or a time: too few digits, or a break.
         "2026-11-1".into(),
         "202-11-13".into(),

@@ -1096,10 +1096,10 @@ fn rename_value(v: &mut Value, from: &str, to: &str) {
 /// this test fail at that assertion, and is then added to the base set's
 /// refusals with the failing output named in the work order's FEEDBACK.
 ///
-/// The base set is 87 characters (`0x21`-`0x7E` but `/ { } $ [ ] "`). A net
-/// carries 14 or 15 of them in ASCII order, so each starts and ends with a
+/// The base set is 83 characters (`0x21`-`0x7E` but `/ { } $ [ ] " % * , \`). A net
+/// carries 13 or 14 of them in ASCII order, so each starts and ends with a
 /// punctuation character or a digit of its own, and the six sort in the
-/// order the router needs; the six cover all 87. The domain id, each bus
+/// order the router needs; the six cover all 83. The domain id, each bus
 /// id and the scenario name carry as many as fit in 64 bytes. A reference is
 /// a Renode identifier: three of four bytes, each holding `_`, and every
 /// letter and digit is in the nets. The project name is a crate name, with
@@ -1108,13 +1108,13 @@ fn rename_value(v: &mut Value, from: &str, to: &str) {
 fn every_admitted_identifier_character_survives_every_output() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let admitted: Vec<char> = (0x21u8..=0x7e)
-        .filter(|b| !b"/{}$[]\"".contains(b))
+        .filter(|b| !aethelgard_ir::REFUSED_IN_IDENTIFIERS.contains(b))
         .map(char::from)
         .collect();
-    assert_eq!(admitted.len(), 87);
+    assert_eq!(admitted.len(), 83);
     let slice = |from: usize, to: usize| admitted[from..to].iter().collect::<String>();
     let nets: Vec<String> = admitted
-        .chunks(15)
+        .chunks(14)
         .enumerate()
         .map(|(i, c)| {
             // Net names are unique after case folding, and chunks 2 and 4 are
@@ -1246,7 +1246,12 @@ fn every_admitted_identifier_character_survives_every_output() {
         .filter(|l| l.starts_with("%TO.N,"))
         .collect();
     eprintln!("AET-WO-1102 gerber net attributes: {written:?}");
-    for net in nets.iter().chain([&domain, &"GND".to_owned()]) {
+    // KiCad writes a signal net as `/<net>`; a rail and GND are global, bare.
+    let wanted = nets
+        .iter()
+        .map(|n| format!("/{n}"))
+        .chain([domain.clone(), "GND".to_owned()]);
+    for net in wanted {
         let want = format!("%TO.N,{net}*%");
         if !gerbers.iter().any(|g| g.contains(&want)) {
             damage.push(format!("no Gerber carries {want}"));

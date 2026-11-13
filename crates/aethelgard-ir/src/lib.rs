@@ -636,14 +636,16 @@ pub enum IdentifierKind {
 /// `0x21`-`0x7E`, so two identifiers that look alike are the same bytes.
 /// Refused beyond that, each measured: `/`, `{`, `}`, `$`, `[` and `]`, which
 /// KiCad reads as more than text (`AET-WO-1300` D6); `"`, which KiCad does not
-/// escape in a placement row (`AET-WO-3300` F15); and a date shape `dddd-dd-dd`
+/// escape in a placement row (`AET-WO-3300` F15); `%`, `*`, `,` and `\`, which
+/// KiCad rewrites as `\u0025`, `\u002A`, `\u002C` and `\u005C` in a Gerber net
+/// attribute (measured in CI, `AET-WO-1102` FEEDBACK §7); and a date shape `dddd-dd-dd`
 /// or a time shape `dd:dd:dd` anywhere inside, which KiCad's clock-line check
 /// refuses at export (`AET-WO-3300` F14).
-pub const REFUSED_IN_IDENTIFIERS: [u8; 7] = *b"/{}$[]\"";
+pub const REFUSED_IN_IDENTIFIERS: [u8; 11] = *b"/{}$[]\"%*,\\";
 
 /// `generate` names the board crate `<project>-board`, and a crate name is at most 64 bytes.
 const PROJECT_MAX: usize = 58;
-const BASE_RULE: &str = "1 to 64 bytes of printable ASCII 0x21-0x7E, none of them `/`, `{`, `}`, `$`, `[`, `]` or `\"`, and no date shape (4 digits, `-`, 2 digits, `-`, 2 digits) or time shape (2 digits, `:`, 2 digits, `:`, 2 digits)";
+const BASE_RULE: &str = "1 to 64 bytes of printable ASCII 0x21-0x7E, none of them `/`, `{`, `}`, `$`, `[`, `]`, `\"`, `%`, `*`, `,` or `\\`, and no date shape (4 digits, `-`, 2 digits, `-`, 2 digits) or time shape (2 digits, `:`, 2 digits, `:`, 2 digits)";
 const PROJECT_RULE: &str = "a project name is a crate name: 1 to 58 bytes of `a-z`, `0-9` and `-`, starting with a letter, not ending with `-`, with no `--` (`generate` names the board crate `<project>-board`, at most 64 bytes)";
 const REFERENCE_RULE: &str =
     "a device reference is a Renode identifier: a letter, then letters, digits and `_`";
