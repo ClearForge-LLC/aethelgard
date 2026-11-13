@@ -1,0 +1,15 @@
+# A test fixture, not a workspace member and not shipped: a firmware that floods
+# Renode's log (AET-WO-2100 F23, AET-WO-2301 F10). Its own `[workspace]` keeps the
+# repository root from claiming it; no dependencies and no build script.
+[package]
+name = "aet-flood-fixture"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[workspace]
+
+[profile.release]
+panic = "abort"
+opt-level = "s"

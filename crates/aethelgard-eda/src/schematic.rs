@@ -460,7 +460,8 @@ fn picofarads(value: &str) -> Option<u64> {
     }
     let scale = 10u64.pow(u32::try_from(frac.len()).ok()?);
     let n: u64 = format!("{whole}{frac}").parse().ok()?;
-    n.checked_mul(unit)?.checked_div(scale).filter(|_| (n * unit) % scale == 0)
+    let total = n.checked_mul(unit)?;
+    total.is_multiple_of(scale).then_some(total / scale)
 }
 
 /// Every part and what each of its pins connects to, and every rail.

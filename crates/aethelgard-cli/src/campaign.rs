@@ -254,13 +254,23 @@ fn resolve_droop(
         .voltage_domains
         .iter()
         .find(|d| d.id == droop.domain)
-        .ok_or_else(|| refuse("UnknownDomain", format!("the specification has no domain `{}`", droop.domain)))?;
+        .ok_or_else(|| {
+            refuse(
+                "UnknownDomain",
+                format!("the specification has no domain `{}`", droop.domain),
+            )
+        })?;
     let table = aethelgard_svd_hal::pin_table(&spec.mcu.part)
         .map_err(|e| refuse(e.kind(), format!("the pin table is unusable: {e}")))?;
     let decoupling = aethelgard_eda::schematic::decoupling_picofarads(spec, topology, &table)
         .map_err(|e| refuse(e.kind(), format!("the emitter's decoupling: {e}")))?;
     let decoupling_picofarads = decoupling.get(&droop.domain).copied().unwrap_or(0);
-    rules::check_droop(droop, domain.nominal_millivolts, decoupling_picofarads, VIRTUAL_NS)?;
+    rules::check_droop(
+        droop,
+        domain.nominal_millivolts,
+        decoupling_picofarads,
+        VIRTUAL_NS,
+    )?;
     Ok(crate::analog::Rail {
         droop: droop.clone(),
         nominal_millivolts: domain.nominal_millivolts,
@@ -513,12 +523,10 @@ fn run_one(
     };
     let mut records = vec![p.scenario.record()];
     records.extend(p.scenario.counts_record());
-    records.extend([
-        Record::Solved {
-            specification_sha256: p.specification_sha256,
-            topology_sha256,
-        },
-    ]);
+    records.extend([Record::Solved {
+        specification_sha256: p.specification_sha256,
+        topology_sha256,
+    }]);
     records.extend(buses);
     records.extend(records_of(&verdict).map_err(internal)?);
     // The run must pass the rules replay will judge it by before it is written.

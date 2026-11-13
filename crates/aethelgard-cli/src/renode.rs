@@ -145,7 +145,11 @@ pub const LOG_FILTER: LogFilter = LogFilter {
 fn log_text(line: &str) -> &str {
     let line = line.trim();
     match line.strip_prefix('[').and_then(|r| r.split_once("] ")) {
-        Some((stamp, rest)) if stamp.bytes().all(|b| b.is_ascii_digit() || b == b':' || b == b'.') => {
+        Some((stamp, rest))
+            if stamp
+                .bytes()
+                .all(|b| b.is_ascii_digit() || b == b':' || b == b'.') =>
+        {
             rest.trim()
         }
         _ => line,
@@ -590,7 +594,10 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         ));
     }
     if let Some(line) = lines.iter().find(|l| l.contains(LOG_ERROR)) {
-        findings.push(Finding::plain("renode_error_log", log_text(line).to_owned()));
+        findings.push(Finding::plain(
+            "renode_error_log",
+            log_text(line).to_owned(),
+        ));
     }
     // The count of such lines differs run to run under a flood (`AET-WO-2301`
     // F10), and Renode's timestamp always does: neither is in the message.
@@ -755,10 +762,7 @@ pub fn probes(out: &Output, plan: &BootPlan<'_>) -> Result<Vec<Probe>, Stop> {
 
 fn probes_in(text: &str, plan: &BootPlan<'_>) -> Result<Vec<Probe>, Stop> {
     let untrusted = |what: String| {
-        Stop::tool_error(
-            TOOL,
-            format!("{what}{}", said::suffix(text, Style::Renode)),
-        )
+        Stop::tool_error(TOOL, format!("{what}{}", said::suffix(text, Style::Renode)))
     };
     let lines = clean_lines(text);
     let releases: Vec<u64> = plan.resets.iter().filter_map(|r| r.released_ns).collect();
@@ -776,12 +780,18 @@ fn probes_in(text: &str, plan: &BootPlan<'_>) -> Result<Vec<Probe>, Stop> {
     let mut out = Vec::new();
     for (k, release) in releases.iter().enumerate() {
         let find = |m: String| -> Result<usize, Stop> {
-            match (0..lines.len()).filter(|&i| lines[i] == m).collect::<Vec<_>>()[..] {
+            match (0..lines.len())
+                .filter(|&i| lines[i] == m)
+                .collect::<Vec<_>>()[..]
+            {
                 [i] => Ok(i),
                 _ => Err(untrusted(format!("renode did not print `{m}` once"))),
             }
         };
-        let (b, e) = (find(format!("{PROBE_BEGIN}{k}"))?, find(format!("{PROBE_END}{k}"))?);
+        let (b, e) = (
+            find(format!("{PROBE_BEGIN}{k}"))?,
+            find(format!("{PROBE_END}{k}"))?,
+        );
         let between = lines.get(b + 1..e).unwrap_or_default();
         if e < b || between.len() != reads.len() {
             return Err(untrusted(format!(
@@ -794,7 +804,12 @@ fn probes_in(text: &str, plan: &BootPlan<'_>) -> Result<Vec<Probe>, Stop> {
         for (cmd, line) in reads.iter().zip(between) {
             let v = value(line)
                 .and_then(|v| u32::try_from(v).ok())
-                .ok_or_else(|| untrusted(format!("probe {k}: `{cmd}` read `{}`, not a word", line.escape_debug())))?;
+                .ok_or_else(|| {
+                    untrusted(format!(
+                        "probe {k}: `{cmd}` read `{}`, not a word",
+                        line.escape_debug()
+                    ))
+                })?;
             words.push(v);
         }
         out.push(Probe {
@@ -830,7 +845,10 @@ mod tests {
         aethelgard_twin::boot::expected(&topology).unwrap()
     }
 
-    fn plan<'a>(image: &'a aethelgard_twin::boot::Image, resets: &'a [power::Reset]) -> BootPlan<'a> {
+    fn plan<'a>(
+        image: &'a aethelgard_twin::boot::Image,
+        resets: &'a [power::Reset],
+    ) -> BootPlan<'a> {
         BootPlan {
             platform: std::path::Path::new("/w/platform.repl"),
             firmware: std::path::Path::new("/w/firmware.elf"),
@@ -901,7 +919,13 @@ mod tests {
         // writes and the vector table follow it.
         let after = droop.split("machine Reset; ").nth(1).unwrap();
         assert!(after.starts_with("sysbus WriteDoubleWord"));
-        assert!(after.split("; cpu IsHalted true").next().unwrap().ends_with("cpu VectorTableOffset 0x08000000"));
+        assert!(
+            after
+                .split("; cpu IsHalted true")
+                .next()
+                .unwrap()
+                .ends_with("cpu VectorTableOffset 0x08000000")
+        );
         assert_eq!(droop.matches("emulation RunFor \"0.000000010\"").count(), 1);
         assert_eq!(plan(&image, &resets).instructions(), 9_877_201);
         assert_eq!(plan(&image, &[]).instructions(), 10_000_000);

@@ -25,9 +25,9 @@ use aethelgard_chaos::campaign;
 use aethelgard_chaos::power::{self, Crossing};
 use aethelgard_chaos::record::Droop;
 use aethelgard_ir::SolvedTopology;
-use sha2::{Digest, Sha256};
 use aethelgard_twin::analog::{self, Deck};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::run;
 use crate::verdict::{AnalogRecord, FaultRecord, Finding};
@@ -68,13 +68,25 @@ pub const BRIDGE_SOURCES: [(&str, &[u8]); 11] = [
     ("Cargo.lock", include_bytes!("../../../bridge/Cargo.lock")),
     ("build.rs", include_bytes!("../../../bridge/build.rs")),
     ("src/ffi.rs", include_bytes!("../../../bridge/src/ffi.rs")),
-    ("src/header.rs", include_bytes!("../../../bridge/src/header.rs")),
+    (
+        "src/header.rs",
+        include_bytes!("../../../bridge/src/header.rs"),
+    ),
     ("src/host.rs", include_bytes!("../../../bridge/src/host.rs")),
     ("src/main.rs", include_bytes!("../../../bridge/src/main.rs")),
-    ("src/measure.rs", include_bytes!("../../../bridge/src/measure.rs")),
+    (
+        "src/measure.rs",
+        include_bytes!("../../../bridge/src/measure.rs"),
+    ),
     ("src/rail.rs", include_bytes!("../../../bridge/src/rail.rs")),
-    ("src/request.rs", include_bytes!("../../../bridge/src/request.rs")),
-    ("src/solver.rs", include_bytes!("../../../bridge/src/solver.rs")),
+    (
+        "src/request.rs",
+        include_bytes!("../../../bridge/src/request.rs"),
+    ),
+    (
+        "src/solver.rs",
+        include_bytes!("../../../bridge/src/solver.rs"),
+    ),
 ];
 
 /// The digest the bridge built from [`BRIDGE_SOURCES`] names itself by: for
@@ -104,14 +116,24 @@ pub fn identified(stdout: &str) -> Result<&str, run::Stop> {
         message,
     };
     let want = bridge_source_sha256();
-    let v: Value = serde_json::from_str(first)
-        .map_err(|_| mismatch(format!("its first line is not its identity: `{}`", first.escape_debug())))?;
+    let v: Value = serde_json::from_str(first).map_err(|_| {
+        mismatch(format!(
+            "its first line is not its identity: `{}`",
+            first.escape_debug()
+        ))
+    })?;
     let o = v.as_object().filter(|o| o.len() == 3).ok_or_else(|| {
-        mismatch(format!("its identity is not three fields: `{}`", first.escape_debug()))
+        mismatch(format!(
+            "its identity is not three fields: `{}`",
+            first.escape_debug()
+        ))
     })?;
     let field = |k: &str| o.get(k).and_then(Value::as_str);
     if field("bridge") != Some(BRIDGE) || field("version").is_none() {
-        return Err(mismatch(format!("it does not name itself: `{}`", first.escape_debug())));
+        return Err(mismatch(format!(
+            "it does not name itself: `{}`",
+            first.escape_debug()
+        )));
     }
     if field("source_sha256") != Some(want.as_str()) {
         return Err(mismatch(format!(
@@ -324,7 +346,12 @@ fn rail_answer(stdout: &str, levels: &[(String, u64)]) -> Result<(Vec<Crossing>,
         }
     };
     let end = parse(last)?;
-    let minimum = match (end.len(), end.get("rail"), end.get("minimum_microvolts").and_then(Value::as_u64), end.get("accepted_points").and_then(Value::as_u64)) {
+    let minimum = match (
+        end.len(),
+        end.get("rail"),
+        end.get("minimum_microvolts").and_then(Value::as_u64),
+        end.get("accepted_points").and_then(Value::as_u64),
+    ) {
         (3, Some(Value::String(s)), Some(m), Some(_)) if s == "solved" => m,
         _ => return Err(format!("`{last}` is not the rail's closing line")),
     };
@@ -400,7 +427,11 @@ fn recovered_words(
         observed: observed.map(word),
     };
     [
-        w(boot_word, aethelgard_twin::boot::BOOT_MAGIC, probe.map(|p| p.boot_word)),
+        w(
+            boot_word,
+            aethelgard_twin::boot::BOOT_MAGIC,
+            probe.map(|p| p.boot_word),
+        ),
         w(
             check.map_or(0, |c| c.status_at),
             check.map_or(0, |_| aethelgard_twin::boot::STATUS_OK),
@@ -408,7 +439,7 @@ fn recovered_words(
         ),
         w(
             check.map_or(0, |c| c.value_at),
-            check.map_or(0, |c| c.expected as u32),
+            check.map_or(0, |c| c.expected),
             probe.map(|p| p.record.map_or(0, |r| r.1)),
         ),
     ]
@@ -465,7 +496,10 @@ pub fn droop_report(
         } else {
             findings.push(Finding::plain(
                 campaign::UNRECOVERED_FINDING,
-                format!("{cause} never released the reset asserted at {} ns", r.asserted_ns),
+                format!(
+                    "{cause} never released the reset asserted at {} ns",
+                    r.asserted_ns
+                ),
             ));
         }
     }
@@ -506,8 +540,8 @@ pub fn droop_report(
         });
     }
     let (floor, _) = campaign::rail_levels(d, rail.nominal_millivolts).unwrap_or((0, 0));
-    let tolerance_floor =
-        u64::from(rail.nominal_millivolts) * u64::from(1000u32.saturating_sub(rail.tolerance_permille));
+    let tolerance_floor = u64::from(rail.nominal_millivolts)
+        * u64::from(1000u32.saturating_sub(rail.tolerance_permille));
     if floor < tolerance_floor {
         findings.push(Finding::info(
             campaign::BELOW_TOLERANCE_FINDING,
@@ -735,7 +769,11 @@ mod tests {
     #[test]
     fn the_bridge_sources_hashed_are_exactly_its_build_inputs() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bridge");
-        let mut want = vec!["Cargo.toml".to_owned(), "Cargo.lock".to_owned(), "build.rs".to_owned()];
+        let mut want = vec![
+            "Cargo.toml".to_owned(),
+            "Cargo.lock".to_owned(),
+            "build.rs".to_owned(),
+        ];
         let mut src: Vec<String> = fs::read_dir(root.join("src"))
             .unwrap()
             .map(|e| format!("src/{}", e.unwrap().file_name().to_str().unwrap()))
@@ -745,7 +783,11 @@ mod tests {
         let have: Vec<&str> = BRIDGE_SOURCES.iter().map(|(p, _)| *p).collect();
         assert_eq!(have, want);
         for (p, bytes) in BRIDGE_SOURCES {
-            assert_eq!(fs::read(root.join(p)).unwrap(), bytes, "{p} changed since the build");
+            assert_eq!(
+                fs::read(root.join(p)).unwrap(),
+                bytes,
+                "{p} changed since the build"
+            );
         }
     }
 
@@ -753,7 +795,8 @@ mod tests {
     #[test]
     fn a_bridge_that_does_not_name_this_trees_sources_first_is_refused() {
         let me = bridge_source_sha256();
-        let ok = format!(r#"{{"bridge":"aethelgard-bridge","source_sha256":"{me}","version":"0.1.0"}}"#);
+        let ok =
+            format!(r#"{{"bridge":"aethelgard-bridge","source_sha256":"{me}","version":"0.1.0"}}"#);
         assert_eq!(identified(&format!("{ok}\nrest\n")).unwrap(), "rest\n");
         let refused = [
             String::new(),
@@ -766,7 +809,11 @@ mod tests {
         ];
         for r in refused {
             let e = identified(&format!("{r}\n")).unwrap_err();
-            assert_eq!((e.kind, e.code), ("BridgeMismatch", crate::EXIT_TOOL_UNAVAILABLE), "{r}");
+            assert_eq!(
+                (e.kind, e.code),
+                ("BridgeMismatch", crate::EXIT_TOOL_UNAVAILABLE),
+                "{r}"
+            );
         }
     }
 
@@ -776,7 +823,9 @@ mod tests {
     fn a_rail_answer_is_requested_crossings_in_order_then_the_close() {
         let levels = power::levels(3);
         let c = |level: &str, uv: u64, at: u64, falling: bool| {
-            format!(r#"{{"at_ps":{at},"falling":{falling},"level":"{level}","method":"interpolated","microvolts":{uv},"ngspice":"44.2"}}"#)
+            format!(
+                r#"{{"at_ps":{at},"falling":{falling},"level":"{level}","method":"interpolated","microvolts":{uv},"ngspice":"44.2"}}"#
+            )
         };
         let end = r#"{"accepted_points":100027,"minimum_microvolts":2350000,"rail":"solved"}"#;
         let good = [
@@ -792,9 +841,22 @@ mod tests {
             c("VBOR3_falling", 2_610_000, 1, true),
             [c("VBOR2_falling", 2_310_000, 1, true), end.to_owned()].join("\n"),
             [c("VBOR3_falling", 2_600_000, 1, true), end.to_owned()].join("\n"),
-            [c("VBOR3_falling", 2_610_000, 2, true), c("VBOR3_rising", 2_700_000, 1, true), end.to_owned()].join("\n"),
-            [c("VBOR3_falling", 2_610_000, 1, true).replace("44.2", "45"), end.to_owned()].join("\n"),
-            [c("VBOR3_falling", 2_610_000, 1, true).replace('}', r#","x":1}"#), end.to_owned()].join("\n"),
+            [
+                c("VBOR3_falling", 2_610_000, 2, true),
+                c("VBOR3_rising", 2_700_000, 1, true),
+                end.to_owned(),
+            ]
+            .join("\n"),
+            [
+                c("VBOR3_falling", 2_610_000, 1, true).replace("44.2", "45"),
+                end.to_owned(),
+            ]
+            .join("\n"),
+            [
+                c("VBOR3_falling", 2_610_000, 1, true).replace('}', r#","x":1}"#),
+                end.to_owned(),
+            ]
+            .join("\n"),
             [end.to_owned(), end.to_owned()].join("\n"),
             end.replace("solved", "done"),
         ];

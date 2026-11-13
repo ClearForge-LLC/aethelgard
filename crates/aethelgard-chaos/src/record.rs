@@ -629,7 +629,13 @@ impl Record {
                 microvolts,
                 at_ps,
                 falling,
-            } => vec![t(domain), t(level), u(*microvolts), u(*at_ps), flag(*falling)],
+            } => vec![
+                t(domain),
+                t(level),
+                u(*microvolts),
+                u(*at_ps),
+                flag(*falling),
+            ],
             Self::ResetRendered {
                 at_ns,
                 released,
@@ -641,7 +647,12 @@ impl Record {
                 boot_word,
                 status,
                 value,
-            } => vec![u(*at_ns), reading(boot_word), reading(status), reading(value)],
+            } => vec![
+                u(*at_ns),
+                reading(boot_word),
+                reading(status),
+                reading(value),
+            ],
             Self::ExpectedCounts { counts } => vec![Value::Array(
                 counts
                     .iter()

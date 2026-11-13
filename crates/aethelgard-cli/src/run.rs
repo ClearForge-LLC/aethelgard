@@ -1698,7 +1698,11 @@ mod tests {
         let text: &[u8] = b"[1] [WARNING] a\nvalue 0x1\n[2] [INFO] b";
         for split in 0..text.len() {
             let (a, b) = text.split_at(split);
-            assert_eq!(read(Some(FILTER), &[a, b]), Some((text.to_vec(), 0)), "{split}");
+            assert_eq!(
+                read(Some(FILTER), &[a, b]),
+                Some((text.to_vec(), 0)),
+                "{split}"
+            );
         }
         assert_eq!(read(None, &[text]), Some((text.to_vec(), 0)));
     }

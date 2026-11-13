@@ -1126,7 +1126,9 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             image: &r.image,
             executable: &r.executable,
             instances: &booted.instances,
-            resets: droop.as_ref().map_or(&[][..], |(_, _, resets)| resets.as_slice()),
+            resets: droop
+                .as_ref()
+                .map_or(&[][..], |(_, _, resets)| resets.as_slice()),
         });
     if let (Some(r), Some((pass, booted))) = (&ready, &analog) {
         booted_is_emitted(&booted.path, r, pass)?;

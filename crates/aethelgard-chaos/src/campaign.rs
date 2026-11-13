@@ -307,7 +307,9 @@ fn droop_from(v: serde_json::Value) -> Result<Droop, ScenarioError> {
     ];
     for ((key, lo, hi), v) in DROOP_BOUNDS.iter().zip(values) {
         if !(*lo..=*hi).contains(&v) {
-            return Err(schema(format!("droop `{key}` is not from {lo} to {hi}: {v}")));
+            return Err(schema(format!(
+                "droop `{key}` is not from {lo} to {hi}: {v}"
+            )));
         }
     }
     let narrow = |v: u64| u32::try_from(v).expect("bounded above");
@@ -517,8 +519,8 @@ impl Scenario {
             .map(override_from)
             .collect::<Result<Vec<_>, _>>()?;
         let mut expect_counts = raw.expect_counts.unwrap_or_default();
-        let v2_only = overrides.iter().any(|o| matches!(o, Override::Droop(_)))
-            || !expect_counts.is_empty();
+        let v2_only =
+            overrides.iter().any(|o| matches!(o, Override::Droop(_))) || !expect_counts.is_empty();
         if v2_only && raw.schema_version < 2 {
             return Err(schema(
                 "a droop override and expect_counts need schema_version 2".to_owned(),
@@ -813,7 +815,8 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
 /// A reading as the judge sees it: observed, and equal to the expected
 /// value under the mask.
 fn reads_as_expected(r: &Reading) -> bool {
-    r.observed.is_some_and(|o| o & r.mask == r.expected & r.mask)
+    r.observed
+        .is_some_and(|o| o & r.mask == r.expected & r.mask)
 }
 
 /// The droop's records against the scenario and against each other, and the
@@ -842,7 +845,12 @@ fn check_droop_records(
             nominal_millivolts,
             tolerance_permille,
             decoupling_picofarads,
-        } => Some((droop, *nominal_millivolts, *tolerance_permille, *decoupling_picofarads)),
+        } => Some((
+            droop,
+            *nominal_millivolts,
+            *tolerance_permille,
+            *decoupling_picofarads,
+        )),
         _ => None,
     });
     let crossings: Vec<power::Crossing> = records
@@ -885,7 +893,9 @@ fn check_droop_records(
                 value,
             } => Some((
                 *at_ns,
-                reads_as_expected(boot_word) && reads_as_expected(status) && reads_as_expected(value),
+                reads_as_expected(boot_word)
+                    && reads_as_expected(status)
+                    && reads_as_expected(value),
             )),
             _ => None,
         })
@@ -895,7 +905,11 @@ fn check_droop_records(
             if !(crossings.is_empty() && resets.is_empty() && observed.is_empty()) {
                 return Err("a run without a droop holds a droop's records");
             }
-            return Ok([(RESET_FINDING, 0), (UNRECOVERED_FINDING, 0), (BELOW_TOLERANCE_FINDING, 0)]);
+            return Ok([
+                (RESET_FINDING, 0),
+                (UNRECOVERED_FINDING, 0),
+                (BELOW_TOLERANCE_FINDING, 0),
+            ]);
         }
         (Some(d), Some(r)) => (d, r),
         _ => return Err("a droop override and its declared rail do not come together"),
@@ -909,14 +923,21 @@ fn check_droop_records(
     {
         return Err("a crossing names another domain");
     }
-    let (floor, _) = rail_levels(droop, nominal).ok_or("the declared rail's drop reaches its floor")?;
+    let (floor, _) =
+        rail_levels(droop, nominal).ok_or("the declared rail's drop reaches its floor")?;
     let settle_ps = tau_ns(droop.source_milliohms, decoupling)
         .saturating_mul(10)
         .saturating_mul(1000);
     let ps = |ns: u64| ns.saturating_mul(1000);
-    let fall = (ps(droop.start_ns), ps(droop.start_ns + droop.fall_ns).saturating_add(settle_ps));
+    let fall = (
+        ps(droop.start_ns),
+        ps(droop.start_ns + droop.fall_ns).saturating_add(settle_ps),
+    );
     let rise_from = droop.start_ns + droop.fall_ns + droop.hold_ns;
-    let rise = (ps(rise_from), ps(rise_from + droop.rise_ns).saturating_add(settle_ps));
+    let rise = (
+        ps(rise_from),
+        ps(rise_from + droop.rise_ns).saturating_add(settle_ps),
+    );
     for (name, uv) in power::levels(droop.bor_level) {
         let here: Vec<&power::Crossing> = crossings.iter().filter(|c| c.level == name).collect();
         let within = |c: &power::Crossing, (a, b): (u64, u64)| a < c.at_ps && c.at_ps <= b;
@@ -931,7 +952,16 @@ fn check_droop_records(
             return Err("a threshold's crossings do not follow from the declared rail");
         }
     }
-    if crossings.len() != crossings.iter().filter(|c| power::levels(droop.bor_level).iter().any(|(n, _)| *n == c.level)).count() {
+    if crossings.len()
+        != crossings
+            .iter()
+            .filter(|c| {
+                power::levels(droop.bor_level)
+                    .iter()
+                    .any(|(n, _)| *n == c.level)
+            })
+            .count()
+    {
         return Err("a crossing names a level no active threshold has");
     }
     let schedule = power::schedule(droop.bor_level, &crossings)?;
