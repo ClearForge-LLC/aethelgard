@@ -271,7 +271,23 @@ The brief was to falsify the stop, not to confirm it: make KiCad 10.0.7 write a 
   - **the tier-2 canary counts 77, and the floor is now 77.** `TIER2_MIN` was 75 and rises by exactly the two tier-2 tests added in `board_tier2.rs`, with a comment in `ci.yml`.
   - The two containers that ran in under a second (the bridge's tests and fmt) ended before the cap watcher could read their cgroup.
   - An earlier run, before the adversarial fixes, failed one assertion of the new tier-2 test: FAB-NOTES names the removed lines in prose, and the test searched every file instead of the Gerbers alone. The test was fixed.
-- **CI on the PR after the rulings:** pending at this commit; the next commit records it, with each shard's time.
+- **CI on the PR after the rulings: every check is green at 29332a7, and every shard is under 15 minutes** (run 43394837472):
+  - `gates` 6 m 59 s, `image` 4 m 26 s, `shards` 11 s.
+  - The eight `tools-shard` jobs ran the plan above:
+
+    | shard | tests | planned | job | test step | holds |
+    |---|---|---|---|---|---|
+    | 0 | 146 | 599 s | 12 m 9 s | 9 m 37 s | |
+    | 1 | 12 | 640 s | 12 m 0 s | 9 m 55 s | `attribute_seeded`, colocated (D6) |
+    | 2 | 146 | 599 s | 11 m 10 s | 8 m 53 s | |
+    | 3 | 146 | 599 s | 10 m 9 s | 8 m 9 s | `verify_fab_out_writes_the_package_its_verdict_names_at_any_path` |
+    | 4 | 146 | 599 s | 12 m 29 s | 10 m 7 s | `verify_against_fab_names_every_changed_and_extra_file` |
+    | 5 | 150 | 599 s | 9 m 40 s | 7 m 35 s | `verify_against_fab_finds_the_package_it_wrote_identical` |
+    | 6 | 148 | 599 s | 11 m 23 s | 9 m 6 s | |
+    | 7 | 146 | 599 s | 13 m 34 s | 11 m 26 s | `verify_fab_out_writes_nothing_when_a_gate_fails` |
+
+  - The `tools` aggregate (8 s): `ANSWER tools_total_passed=1041 names=1040` and `ANSWER tier2_tests_passed=79 floor=79`.
+  - The slowest job is 13 m 34 s. Before the rulings it was 18 m 44 s (five shards, below).
 - **CI before the rulings:** every check was green at c9fb6de (after main's sharded CI was merged in; run 43384150507):
   - `gates` 8 m 55 s, `image` 4 m 30 s, `shards` 5 s;
   - the five `tools-shard` jobs:
