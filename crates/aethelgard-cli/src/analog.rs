@@ -730,6 +730,79 @@ fn judge(decks: &[Deck], answers: &[Answer]) -> Pass {
 mod tests {
     use super::*;
 
+    /// `AET-WO-2200` F15: the files the CLI hashes are exactly the bridge's
+    /// build inputs, so a bridge source added later cannot escape the check.
+    #[test]
+    fn the_bridge_sources_hashed_are_exactly_its_build_inputs() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bridge");
+        let mut want = vec!["Cargo.toml".to_owned(), "Cargo.lock".to_owned(), "build.rs".to_owned()];
+        let mut src: Vec<String> = fs::read_dir(root.join("src"))
+            .unwrap()
+            .map(|e| format!("src/{}", e.unwrap().file_name().to_str().unwrap()))
+            .collect();
+        src.sort();
+        want.extend(src);
+        let have: Vec<&str> = BRIDGE_SOURCES.iter().map(|(p, _)| *p).collect();
+        assert_eq!(have, want);
+        for (p, bytes) in BRIDGE_SOURCES {
+            assert_eq!(fs::read(root.join(p)).unwrap(), bytes, "{p} changed since the build");
+        }
+    }
+
+    /// A stale or impostor bridge is refused before any of its answer is read.
+    #[test]
+    fn a_bridge_that_does_not_name_this_trees_sources_first_is_refused() {
+        let me = bridge_source_sha256();
+        let ok = format!(r#"{{"bridge":"aethelgard-bridge","source_sha256":"{me}","version":"0.1.0"}}"#);
+        assert_eq!(identified(&format!("{ok}\nrest\n")).unwrap(), "rest\n");
+        let refused = [
+            String::new(),
+            "rest".to_owned(),
+            ok.replace(&me, &"0".repeat(64)),
+            ok.replace("aethelgard-bridge", "aethelgard-bridgf"),
+            ok.replace(r#","version":"0.1.0""#, ""),
+            ok.replace('}', r#","extra":1}"#),
+            format!("rest\n{ok}"),
+        ];
+        for r in refused {
+            let e = identified(&format!("{r}\n")).unwrap_err();
+            assert_eq!((e.kind, e.code), ("BridgeMismatch", crate::EXIT_TOOL_UNAVAILABLE), "{r}");
+        }
+    }
+
+    /// `AET-WO-2301`: a rail answer is crossings of requested levels at their
+    /// requested values, in time order, then one closing line.
+    #[test]
+    fn a_rail_answer_is_requested_crossings_in_order_then_the_close() {
+        let levels = power::levels(3);
+        let c = |level: &str, uv: u64, at: u64, falling: bool| {
+            format!(r#"{{"at_ps":{at},"falling":{falling},"level":"{level}","method":"interpolated","microvolts":{uv},"ngspice":"44.2"}}"#)
+        };
+        let end = r#"{"accepted_points":100027,"minimum_microvolts":2350000,"rail":"solved"}"#;
+        let good = [
+            c("VBOR3_rising", 2_700_000, 1_012_422_222, true),
+            c("VBOR3_falling", 2_610_000, 1_014_422_222, true),
+            end.to_owned(),
+        ]
+        .join("\n");
+        let (crossings, min) = rail_answer(&good, &levels).unwrap();
+        assert_eq!((crossings.len(), min), (2, 2_350_000));
+        let refused = [
+            String::new(),
+            c("VBOR3_falling", 2_610_000, 1, true),
+            [c("VBOR2_falling", 2_310_000, 1, true), end.to_owned()].join("\n"),
+            [c("VBOR3_falling", 2_600_000, 1, true), end.to_owned()].join("\n"),
+            [c("VBOR3_falling", 2_610_000, 2, true), c("VBOR3_rising", 2_700_000, 1, true), end.to_owned()].join("\n"),
+            [c("VBOR3_falling", 2_610_000, 1, true).replace("44.2", "45"), end.to_owned()].join("\n"),
+            [c("VBOR3_falling", 2_610_000, 1, true).replace('}', r#","x":1}"#), end.to_owned()].join("\n"),
+            [end.to_owned(), end.to_owned()].join("\n"),
+            end.replace("solved", "done"),
+        ];
+        for r in refused {
+            assert!(rail_answer(&r, &levels).is_err(), "accepted: {r}");
+        }
+    }
+
     fn decks() -> Vec<Deck> {
         let topology: SolvedTopology = serde_json::from_str(
             r#"{"schema_version":2,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":47000,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":47000,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}}}"#,

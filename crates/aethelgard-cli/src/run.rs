@@ -1678,6 +1678,62 @@ where
 
 #[cfg(test)]
 mod tests {
+    const FILTER: LogFilter = LogFilter {
+        budget: 64,
+        keep: &["aborted", "locked"],
+    };
+
+    fn read(filter: Option<LogFilter>, chunks: &[&[u8]]) -> Option<(Vec<u8>, u64)> {
+        let mut f = Filtered::new(filter);
+        for c in chunks {
+            f.push(c);
+        }
+        f.finish()
+    }
+
+    /// `AET-WO-2301` P5: what fits the budget is kept byte for byte, however
+    /// it arrives, so a run that fits is read exactly as without the filter.
+    #[test]
+    fn under_its_budget_the_filter_keeps_every_byte() {
+        let text: &[u8] = b"[1] [WARNING] a\nvalue 0x1\n[2] [INFO] b";
+        for split in 0..text.len() {
+            let (a, b) = text.split_at(split);
+            assert_eq!(read(Some(FILTER), &[a, b]), Some((text.to_vec(), 0)), "{split}");
+        }
+        assert_eq!(read(None, &[text]), Some((text.to_vec(), 0)));
+    }
+
+    /// Past the budget a log line is counted and dropped, unless it is the
+    /// first to name a kept kind; every other line is kept, in order.
+    #[test]
+    fn past_its_budget_log_lines_are_counted_and_the_first_of_each_kept_kind_stays() {
+        let head = format!("{}\n", "x".repeat(70));
+        let tail = "[t] [WARNING] noise\nAETHELGARD-BOOT-BEGIN\n[t] [WARNING] locked 1\n0x2100B007\n[t] [WARNING] locked 2\n[t] [ERROR] aborted\n[t] [WARNING] noise\nAETHELGARD-BOOT-END";
+        let (kept, dropped) = read(Some(FILTER), &[head.as_bytes(), tail.as_bytes()]).unwrap();
+        let want = format!(
+            "{head}AETHELGARD-BOOT-BEGIN\n[t] [WARNING] locked 1\n0x2100B007\n[t] [ERROR] aborted\nAETHELGARD-BOOT-END"
+        );
+        assert_eq!(String::from_utf8(kept).unwrap(), want);
+        assert_eq!(dropped, 3);
+        // The same bytes one at a time give the same reading.
+        let all = format!("{head}{tail}");
+        let bytes: Vec<&[u8]> = all.as_bytes().chunks(1).collect();
+        assert_eq!(read(Some(FILTER), &bytes).unwrap().1, 3);
+    }
+
+    /// Without a filter, and with one for lines it keeps, the cap still holds.
+    #[test]
+    fn the_capture_cap_holds_with_and_without_the_filter() {
+        let big = vec![b'v'; MAX_CAPTURE + 1];
+        assert_eq!(read(None, &[&big]), None);
+        assert_eq!(read(Some(FILTER), &[&big]), None);
+        let mut lines = Vec::new();
+        while lines.len() <= MAX_CAPTURE {
+            lines.extend_from_slice(b"0x1\n");
+        }
+        assert_eq!(read(Some(FILTER), &[&lines]), None);
+    }
+
     use std::collections::BTreeMap;
 
     use super::*;

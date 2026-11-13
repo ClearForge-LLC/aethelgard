@@ -230,19 +230,17 @@ fn run_for(ns: u64) -> String {
 
 impl BootPlan<'_> {
     /// The instructions the core executes in the run: MIPS × time, or, after
-    /// a rendered reset, MIPS × the time since the last release, because
-    /// Renode's count restarts at a reset (ruled D5; `AET-WO-2301` F4). The
-    /// ruling said "less the nudge"; measured in this `-e` composition, the
-    /// nudge's 10 ns run their instruction (9,877,202 for `droop-bor3`, as
-    /// P1's nudge case ran exactly 900,000), so nothing is subtracted. A reset
-    /// never released executes nothing after it.
+    /// a rendered reset, MIPS × the time since the last release less the
+    /// nudge (ruled D5; `AET-WO-2301` F4, F5): Renode's count restarts at a
+    /// reset, and the release takes effect at the nudge's end. A reset never
+    /// released executes nothing after it.
     pub fn instructions(&self) -> u64 {
         let ran_from = match self.resets.last() {
             None => 0,
             Some(power::Reset {
                 released_ns: Some(at),
                 ..
-            }) => *at,
+            }) => at + power::NUDGE_NS,
             Some(_) => return 0,
         };
         aethelgard_twin::boot::MIPS * self.virtual_ns.saturating_sub(ran_from) / 1000
@@ -356,7 +354,7 @@ impl BootPlan<'_> {
             let Some(release) = r.released_ns else { break };
             at(&mut c, release);
             c.push("cpu IsHalted false".to_owned());
-            c.push(run_for(power::NUDGE_NS));
+            // The nudge (F5): the release takes effect at its end.
             at(&mut c, release + power::NUDGE_NS);
             at(&mut c, release + power::RECOVERY_BOUND_NS);
             c.push("logLevel 3".to_owned());
@@ -752,14 +750,17 @@ pub struct Probe {
 /// A boot killed at a bound has read none; its probes are absent, never
 /// guessed.
 pub fn probes(out: &Output, plan: &BootPlan<'_>) -> Result<Vec<Probe>, Stop> {
-    let text = out.text();
+    probes_in(&out.text(), plan)
+}
+
+fn probes_in(text: &str, plan: &BootPlan<'_>) -> Result<Vec<Probe>, Stop> {
     let untrusted = |what: String| {
         Stop::tool_error(
             TOOL,
-            format!("{what}{}", said::suffix(&text, Style::Renode)),
+            format!("{what}{}", said::suffix(text, Style::Renode)),
         )
     };
-    let lines = clean_lines(&text);
+    let lines = clean_lines(text);
     let releases: Vec<u64> = plan.resets.iter().filter_map(|r| r.released_ns).collect();
     let sentinels = lines
         .iter()
@@ -814,5 +815,125 @@ pub fn status_name(status: u32) -> &'static str {
         STATUS_RXNE => "timeout_rxne",
         STATUS_STOP => "timeout_stopf",
         _ => "invalid",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn image() -> aethelgard_twin::boot::Image {
+        let topology: aethelgard_ir::SolvedTopology = serde_json::from_str(
+            r#"{"schema_version":2,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}}}"#,
+        )
+        .unwrap();
+        aethelgard_twin::boot::expected(&topology).unwrap()
+    }
+
+    fn plan<'a>(image: &'a aethelgard_twin::boot::Image, resets: &'a [power::Reset]) -> BootPlan<'a> {
+        BootPlan {
+            platform: std::path::Path::new("/w/platform.repl"),
+            firmware: std::path::Path::new("/w/firmware.elf"),
+            virtual_ns: 100_000_000,
+            boot_word: 0x2000_0000,
+            vector_table: 0x0800_0000,
+            image,
+            executable: &[],
+            instances: &[],
+            resets,
+        }
+    }
+
+    fn bor3() -> Vec<power::Reset> {
+        vec![power::Reset {
+            asserted_ns: 1_014_430,
+            released_ns: Some(1_227_980),
+            cause: vec!["VBOR3".to_owned()],
+        }]
+    }
+
+    #[test]
+    fn a_log_line_loses_its_host_timestamp_and_nothing_else() {
+        assert_eq!(
+            log_text("[21:06:58.1004] [WARNING] sysbus: Tried to write a locked peripheral"),
+            "[WARNING] sysbus: Tried to write a locked peripheral"
+        );
+        assert_eq!(log_text("  plain  "), "plain");
+        assert_eq!(log_text("[WARNING] x"), "[WARNING] x");
+    }
+
+    /// `AET-WO-2301` D1, D4, F3, F5: the droop's schedule is the measured
+    /// recipe, at the schedule's times, and a static boot's commands are
+    /// unchanged by it.
+    #[test]
+    fn a_droop_boot_runs_the_measured_recipe_at_the_schedules_times() {
+        let image = image();
+        let resets = bor3();
+        let droop = plan(&image, &resets).commands();
+        let static_ = plan(&image, &[]).commands();
+        assert!(static_.contains("emulation RunFor \"0.100000000\"; logLevel 3"));
+        assert!(!static_.contains("machine Reset"));
+        let rec = |at: u32| format!("sysbus WriteDoubleWord {at:#010x} 0xffffffff");
+        let check = &image.i2c.checks[0];
+        let want = [
+            "cpu VectorTableOffset 0x08000000".to_owned(),
+            "emulation RunFor \"0.001014430\"".to_owned(),
+            "machine Reset".to_owned(),
+        ]
+        .join("; ");
+        assert!(droop.contains(&want), "{droop}");
+        let rest = [
+            "cpu IsHalted true".to_owned(),
+            "sysbus WriteDoubleWord 0x20000000 0x0".to_owned(),
+            rec(check.status_at),
+            rec(check.value_at),
+            "emulation RunFor \"0.000213550\"".to_owned(),
+            "cpu IsHalted false".to_owned(),
+            "emulation RunFor \"0.000000010\"".to_owned(),
+            "emulation RunFor \"0.000099990\"".to_owned(),
+            "logLevel 3".to_owned(),
+            "echo \"AETHELGARD-PROBE-BEGIN-0\"".to_owned(),
+        ]
+        .join("; ");
+        assert!(droop.contains(&rest), "{droop}");
+        assert!(droop.contains("echo \"AETHELGARD-PROBE-END-0\"; logLevel 1; emulation RunFor \"0.098672020\"; logLevel 3"));
+        // After `machine Reset` alone the core never runs (F3): the cold
+        // writes and the vector table follow it.
+        let after = droop.split("machine Reset; ").nth(1).unwrap();
+        assert!(after.starts_with("sysbus WriteDoubleWord"));
+        assert!(after.split("; cpu IsHalted true").next().unwrap().ends_with("cpu VectorTableOffset 0x08000000"));
+        assert_eq!(droop.matches("emulation RunFor \"0.000000010\"").count(), 1);
+        assert_eq!(plan(&image, &resets).instructions(), 9_877_201);
+        assert_eq!(plan(&image, &[]).instructions(), 10_000_000);
+    }
+
+    #[test]
+    fn a_probe_is_read_only_between_its_own_whole_line_markers() {
+        let image = image();
+        let resets = bor3();
+        let p = plan(&image, &resets);
+        let good = "x\nAETHELGARD-PROBE-BEGIN-0\n0x2100B007\n0x22020000\n0x00000060\nAETHELGARD-PROBE-END-0\n";
+        assert_eq!(
+            probes_in(good, &p).unwrap(),
+            [Probe {
+                at_ns: 1_327_980,
+                boot_word: 0x2100_B007,
+                record: Some((0x2202_0000, 0x60)),
+            }]
+        );
+        let refused = [
+            "",
+            "AETHELGARD-PROBE-BEGIN-0\n0x2100B007\n0x22020000\nAETHELGARD-PROBE-END-0\n",
+            "AETHELGARD-PROBE-BEGIN-0\n0x2100B007\n0x22020000\n0x60 0x61\nAETHELGARD-PROBE-END-0\n",
+            // An echoed command's tail read as a value (`AET-WO-2301` F8).
+            "AETHELGARD-PROBE-BEGIN-0\n0x2100B007\n0x22020000\n0x20000008\"\nAETHELGARD-PROBE-END-0\n",
+            "AETHELGARD-PROBE-BEGIN-0\n0x2100B007\n0x22020000\n[WARNING] 0x60\nAETHELGARD-PROBE-END-0\n",
+            "AETHELGARD-PROBE-BEGIN-0\n0x2100B007\n0x22020000\n0x00000060\nAETHELGARD-PROBE-END-0\nAETHELGARD-PROBE-BEGIN-1\n",
+            "AETHELGARD-PROBE-END-0\n0x2100B007\n0x22020000\n0x00000060\nAETHELGARD-PROBE-BEGIN-0\n",
+            "AETHELGARD-PROBE-BEGIN-0\n0x1FFFFFFFF\n0x22020000\n0x00000060\nAETHELGARD-PROBE-END-0\n",
+        ];
+        for r in refused {
+            assert!(probes_in(r, &p).is_err(), "accepted: {r:?}");
+        }
     }
 }
