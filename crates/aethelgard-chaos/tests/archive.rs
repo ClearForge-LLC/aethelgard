@@ -333,13 +333,14 @@ fn a_timestamp_of_u64_max_followed_by_another_event_is_refused() {
 #[test]
 fn an_unknown_version_is_refused() {
     // [magic, version, ...] -> the version byte is the one right after the
-    // magic text. The trace's version is 3 since AET-WO-3100 added kind 15
-    // (2 since AET-WO-2300 added the campaign's kinds); 1, 2 and 4 are refused,
-    // so a version-2 trace never replays under version 3's rules (INV-06).
+    // magic text. The trace's version is 4 since AET-WO-2301 added kinds 16 to
+    // 20 (3 since AET-WO-3100 added kind 15, 2 since AET-WO-2300 added the
+    // campaign's kinds); 1, 2, 3 and 5 are refused, so an older trace never
+    // replays under version 4's rules (INV-06).
     let at = 1 + 1 + "aethelgard-trace".len();
-    for found in [1u8, 2, 4] {
+    for found in [1u8, 2, 3, 5] {
         let mut trace = header_bytes();
-        assert_eq!(trace[at], 0x03);
+        assert_eq!(trace[at], 0x04);
         trace[at] = found;
         let dir = commit_raw(&format!("v{found}-trace"), &trace, 0, [0; 32]);
         assert!(matches!(
@@ -421,8 +422,8 @@ fn field_level_refusals_name_their_own_variant() {
     let bad_events: Vec<(&str, Vec<u8>)> = vec![
         (
             "unknown-kind",
-            // 5 to 15 are the campaign's records since AET-WO-3100.
-            cbor::to_bytes(&Value::Array(vec![Value::Uint(16), Value::Uint(0)])),
+            // 5 to 20 are the campaign's records since AET-WO-2301.
+            cbor::to_bytes(&Value::Array(vec![Value::Uint(21), Value::Uint(0)])),
         ),
         (
             "short-payload",
@@ -524,7 +525,7 @@ fn field_level_refusals_name_their_own_variant() {
             (
                 "unknown-kind",
                 Err(E::UnknownEventKind {
-                    kind: 16, index: 0, ..
+                    kind: 21, index: 0, ..
                 }),
             ) => {}
             ("float-microvolts", Err(E::NotDeterministicCbor(_))) => {}

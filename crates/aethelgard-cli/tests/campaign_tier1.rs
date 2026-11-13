@@ -16,6 +16,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use aethelgard_chaos::cbor;
 use aethelgard_chaos::record::Record;
 use aethelgard_chaos::{Event, Manifest, TraceWriter, synthetic};
+mod common;
+
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -212,7 +214,7 @@ fn cli(bridge: Option<&'static str>) -> PathBuf {
     }
     if let Some(body) = bridge {
         let stub = dir.join("aethelgard-bridge");
-        fs::write(&stub, body).unwrap();
+        fs::write(&stub, common::identified_stub(body)).unwrap();
         fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
     }
     made.push((bridge, me.clone()));
