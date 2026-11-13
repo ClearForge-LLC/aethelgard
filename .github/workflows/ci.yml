@@ -119,21 +119,37 @@ jobs:
   # pinned by container/IMAGE (RUL-15). Crates are fetched and everything is
   # compiled with the network; every tool run happens under --network none.
   #
-  # AET-WO-1907: the job's tests run in four shards, balanced by measured weight
+  # AET-WO-1907: the job's tests run in shards (ci/SHARDS), balanced by measured weight
   # (ci/test-weights.tsv), so each finishes in under 15 minutes. Each shard lists
   # every test from the code (ci/shard.sh plan), assigns them with the same
-  # deterministic rule, and a guard fails the run unless the four lists are
+  # deterministic rule, and a guard fails the run unless the lists are
   # disjoint and their union is the list. The aggregate below, named `tools` so a
   # required check of that name still means "all of tier 2", is green only when
-  # all four shards ran exactly what they were assigned and the canary floor holds.
+  # all the shards ran exactly what they were assigned and the canary floor holds.
+  # The number of shards is one constant, ci/SHARDS: this job turns it into the matrix,
+  # ci/shard.sh plan reads it, and the aggregate reads it.
+  shards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.n.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: n
+        run: |
+          n=$(tr -d '[:space:]' < ci/SHARDS)
+          case $n in ''|*[!0-9]*|0) echo "ci/SHARDS must hold a positive integer" >&2; exit 1;; esac
+          echo "matrix=[$(seq -s, 0 $((n - 1)))]" >> "$GITHUB_OUTPUT"
+
   tools-shard:
     name: tools-shard (${{ matrix.shard }})
+    needs: shards
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: ${{ fromJSON(needs.shards.outputs.matrix) }}
     env:
       RUN: >-
         docker run --rm -v ${{ github.workspace }}:/repo -w /repo
@@ -161,10 +177,10 @@ jobs:
         if: matrix.shard == 0
         run: $RUN --network none "$(cat container/IMAGE)" cargo clippy --workspace --all-targets --locked --offline --features aethelgard-cli/with-tools -- -D warnings
 
-      # The full test list, the four-way assignment and the guard (ci/shard.sh).
+      # The full test list, the assignment and the guard (ci/shard.sh).
       # The bridge's tests are in the list, so they are assigned like any other.
       - name: list every test, assign the shards, run the guard
-        run: $RUN --network none "$(cat container/IMAGE)" bash ci/shard.sh plan target/ci-shard 4
+        run: $RUN --network none "$(cat container/IMAGE)" bash ci/shard.sh plan target/ci-shard
 
       - name: cargo test inside the image, this shard's tests
         run: $RUN --network none "$(cat container/IMAGE)" bash ci/shard.sh run target/ci-shard ${{ matrix.shard }}
@@ -222,8 +238,8 @@ jobs:
       # Kani, Renode or KiCad test run. The shards count the tests that passed in
       # the tier-2 test binaries (the regexp is TIER2_RE in ci/shard.sh); this sums
       # them across the shards, prints the count, and fails under the pinned floor.
-      # The same step checks that the four shards ran one plan, each exactly what
+      # The same step checks that the shards ran one plan, each exactly what
       # it was assigned, and that every listed test passed once.
       # Raise TIER2_MIN with the tier-2 tests; never lower it to pass.
       - name: the tier-2 canary, and the guard across the shards
-        run: python3 -I ci/shard.py aggregate shards 4 "$TIER2_MIN"
+        run: bash ci/shard.sh aggregate shards "$(tr -d '[:space:]' < ci/SHARDS)" "$TIER2_MIN"

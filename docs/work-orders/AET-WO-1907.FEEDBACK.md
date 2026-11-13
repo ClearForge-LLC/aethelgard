@@ -1,6 +1,6 @@
 # AET-WO-1907 — FEEDBACK
 
-**Status: built to every §3 item except the 15-minute line.** Four shards run, the guard and canary pass, the totals match; the slowest shard is 16 m 30 s. See Result and the decision there.
+**Status: five shards (`ci/SHARDS`), ruled by the architect on 2026-11-13 after two four-shard runs missed the 15-minute line.** The five-shard CI run is in Result.
 
 **Branch:** `wo/aet-1907-ci-shards` · **Base:** `72af687` (`origin/main`, carrying `AET-WO-1306` and the docs PR), merged by a merge commit · **Builder:** Claude Code (Sonnet 5.5) as `forge` on Furnace, as project manager · **Cadence:** measure (§1.1), build, targeted adversarial pass by a fresh subagent.
 
@@ -8,7 +8,7 @@
 
 ## Result
 
-- **Furnace, all four shards locally, before the merge of `AET-WO-1306`, the pinned image, one after another:** 419 s, 458 s, 500 s and 566 s. Together they passed **1,004 tests**, and the single-job baseline on the same commit passed **1,004** (bridge 1 + workspace 1,003 names with one name in two binaries). The aggregate printed `tier2_tests_passed=74 floor=74` on that tree.
+- **Furnace, all the shards locally, before the merge of `AET-WO-1306`, the pinned image, one after another:** 419 s, 458 s, 500 s and 566 s. Together they passed **1,004 tests**, and the single-job baseline on the same commit passed **1,004** (bridge 1 + workspace 1,003 names with one name in two binaries). The aggregate printed `tier2_tests_passed=74 floor=74` on that tree.
 - **CI on PR #104 (job start to job end), two runs.** The single job took about 47 minutes on PR #99. Every run was green: guard ok, 1,019 passes for 1,019 listed occurrences (1,018 names), tier-2 sum 75 = `TIER2_MIN`.
 
 | shard | run 1 (`80c21b1`, LPT on Furnace weights) | run 2 (`91679a6`, CI-scaled weights, `attribute_seeded` kept whole) |
@@ -21,12 +21,10 @@
   Test step alone, run 2: 13 m 45 s, 13 m 31 s, 12 m 04 s, 14 m 10 s. Before it, every shard spends about 2 m 25 s on setup: image pull 46 to 72 s, crate fetch and build 70 to 78 s, bridge 4 s; shard 0 adds fmt and clippy, 25 s.
 - **The slowest shard is not under 15 minutes. It is not one test.** The longest single test takes about 6 minutes on CI, far under the §7 12-minute line. The sum of every shard's `finished in` is 3,203 s (822, 809, 723, 849 in run 2), so a perfect split gives 801 s, 13.35 minutes, plus 2.4 minutes of setup: **about 15.9 minutes at best.** The §1.4 rebalance was tried once, and it moved the spread (14 m 40 s to 16 m 30 s) without reaching the line. I did not try a second one, since the arithmetic says it cannot.
 - **Where the time is.** `board_tier2` is 1,630 CI-seconds, serial: its heavy tests take a `Mutex` (`ONE_AT_A_TIME`, `board_tier2.rs:25`), so its tests do not overlap even with 20 cores (859 s in parallel against 872 s alone on Furnace). `attribute_seeded` overlaps (12 tests in 641 s together, 861 s when split four ways). The rest is about 700 s of small binaries, run one after another.
-- **Decision needed (the architect's).** Under the 15-minute line with four shards would need one of these. None is in this work order's fence:
-  1. **A fifth shard**, or a runner with more than 4 vCPU, against the 15-minute line (about 13 minutes with five).
-  2. **Running `board_tier2` beside the other binaries in one shard**, which would overlap its serial work. I did not build this: several tier-1 tests read `/proc` for surviving processes (`mcp_tier1.rs:409`, `tools_tier1.rs:1664`) and `board_tier2.rs:618` lists `/var/lib/aethelgard`, so tests in separate binaries that never ran at once would run at once. That is the §7 condition "sharding changes a test's result" waiting to happen.
-  3. **Accept about 16 minutes**, 3 times faster than the 47-minute job, with `timeout-minutes: 30` on each shard.
-  4. **`actions/cache` on `target`** could save part of the 70 s build. I did not try it: even a free restore leaves 14.7 to 15.2 minutes at perfect balance, and the run 1 and 2 spreads show about 1.5 minutes of imbalance that a cache does not fix.
-- **The failure cases of §3 are shown by `ci/test-shard.sh`** (29 fixture checks, run in the `tools` aggregate on every PR). Each refuses: a test in no shard, a test in two, a shard that lists nothing, a name run once though listed in two binaries, an empty or malformed list, a benchmark, one test fewer than assigned, a shard that passes while running nothing, a failed test, a missing shard, a tier-2 sum under the floor, and tier-2 tests that silently stop.
+- **Why five (architect's ruling, 2026-11-13 06:00 UTC).** Scotty set the goal at under 15 minutes; four shards were the means. The two runs prove the arithmetic: a perfect four-way split is 13.35 minutes of tests plus about 2.4 minutes of setup, about 15.9 minutes, so four cannot do it. Five gives about 53.5 / 5 = 10.7 minutes of tests plus 2.5 of setup, about 13.2 minutes. The shard count is one constant, `ci/SHARDS`, read by the `shards` job (it makes the matrix), by `ci/shard.sh plan` and by the aggregate; a sixth is a one-line change. The guard, the canary and the selftest work for any count (the selftest runs 4, 5 and 7).
+- **Considered and not done.** Running `board_tier2` beside the other binaries (two lanes, two containers on one 4-core runner) would overlap its serial work, and I built it and started to validate it. The architect ruled it out: two test containers at once change the conditions every tier-2 test runs under (CPU, memory, timing), which is the §7 result-changes-under-sharding risk, and each shard keeps today's caps and environment. It is reverted and not in the PR. `actions/cache` on `target` was not tried: it cannot close a 0.9-minute gap alone.
+- **Note for `AET-WO-3300`:** it will add tier-2 tests. The aggregate fails if the floor is not raised with them, and the new tests take the default weight until measured; raise `TIER2_MIN` and add their times to `ci/test-weights.tsv`.
+- **The failure cases of §3 are shown by `ci/test-shard.sh`** (29 fixture checks, run in the `tools` aggregate on every PR, for 4, 5 and 7 shards: 87 checks; each refuses in the `tools` aggregate on every PR). Each refuses: a test in no shard, a test in two, a shard that lists nothing, a name run once though listed in two binaries, an empty or malformed list, a benchmark, one test fewer than assigned, a shard that passes while running nothing, a failed test, a missing shard, a tier-2 sum under the floor, and tier-2 tests that silently stop.
 
 ## §1.1 Measurement
 
@@ -57,17 +55,24 @@
 
 The sum of the measured tests alone is 1,965 s. A test missing from the file gets 1 s (`DEFAULT_WEIGHT`, `ci/shard.py`); the unmeasured remainder is about 880 fast tests.
 
-**Furnace against CI.** The architect's CI figures for the same binaries, `board_tier2` 1,551 s and `attribute_seeded` 560 s, are 1.8 times Furnace's 859 s and 309 s. Applied to the slowest single test, 308 s on Furnace, that is about 560 s on CI, under the 12-minute §7 line (720 s). The weights are Furnace's alone-times. Tests in one binary of one shard run in parallel, so the plan's sum is a balance, not a prediction of wall time. Running all four shards, the sum of weights per shard is 731 s; the measured Furnace wall times were 419 to 566 s, a ratio of 0.57 to 0.77.
+**Furnace against CI.** The architect's CI figures for the same binaries, `board_tier2` 1,551 s and `attribute_seeded` 560 s, are 1.8 times Furnace's 859 s and 309 s. Applied to the slowest single test, 308 s on Furnace, that is about 560 s on CI, under the 12-minute §7 line (720 s). The weights are Furnace's alone-times. Tests in one binary of one shard run in parallel, so the plan's sum is a balance, not a prediction of wall time. Running all the shards, the sum of weights per shard is 731 s; the measured Furnace wall times were 419 to 566 s, a ratio of 0.57 to 0.77.
 
 ## What was built
 
-- `ci/shard.sh` — `plan` lists every test of the job from the code (`cargo test --workspace … -- --list` and the bridge's), assigns, and runs the guard; `run K` runs shard K.
-- `ci/shard.py` — the pure functions: `parse`, `assign` (LPT, heaviest first onto the lightest shard, ties by lowest index; sort key a total order, so every shard computes the same plan: checked with three `PYTHONHASHSEED` values), `guard`, `result`, `aggregate`. Python 3 is in the image; `jq` is not.
-- `ci/test-weights.tsv`, `ci/test-shard.sh`.
-- `ci.yml`: the `tools` job is now `tools-shard` (matrix 0 to 3, `fail-fast: false`, each shard pulls the image, builds, builds the bridge, and plans) and an aggregate **`tools`**. Shard 0 alone runs fmt and clippy. The bridge is built in every shard, because the tier-2 tests look for it beside `aethelgard`; its tests are in the list and sharded like any other.
+- `ci/shard.sh` — `plan` lists every test of the job from the code (`cargo test --workspace … -- --list` and the bridge's), assigns, and runs the guard; `run K` runs shard K. It also holds the pure functions, in bash and awk: `parse`, `assign` (LPT, heaviest first onto the lightest shard; `sort` with explicit keys makes the order total, ties go to the lowest shard index, so every shard computes the same plan), `guard`, `names`, `result`, `aggregate`.
+- `ci/SHARDS` (the shard count), `ci/colocate.tsv` (`attribute_seeded` kept whole: its 12 tests overlap, 641 s together on CI against 861 s split), `ci/test-weights.tsv` (Furnace alone-times, scaled by `CI_SCALE` 1.8 to CI seconds), `ci/test-shard.sh`.
+- `ci.yml`: the `tools` job is now `tools-shard` (a matrix from `ci/SHARDS`, `fail-fast: false`, each shard pulls the image, builds, builds the bridge, and plans) and an aggregate **`tools`**. Shard 0 alone runs fmt and clippy. The bridge is built in every shard, because the tier-2 tests look for it beside `aethelgard`; its tests are in the list and sharded like any other.
 - **The unit is the test name, per suite.** `--exact` matches by name in every binary of the suite, so a name in two binaries (one exists: `an_invalid_specification_is_refused_as_validate_refuses_it`) runs in the same shard, and the shard must see as many passes as the list has occurrences. `-p <pkg>` was ruled out: it recompiled serde and syn (a different feature build), and `--test <bin>` is ambiguous (`adversarial_1300` and `adversarial_1301` are in both `aethelgard-cli` and `aethelgard-eda`). Running the executables directly was ruled out: `firmware.rs:317` reads `RUSTUP_TOOLCHAIN`, which cargo passes down.
-- **Each shard checks its own run.** `result` requires passes equal to the assignment, per suite, and fails on any failed or ignored test, and on an empty assignment. The `--exact` list is never empty (an empty one would run everything). The aggregate checks all four shards left a result, saw the same list (byte-identical), partition it (the guard re-run over their own `shard.tsv`), and passed exactly what was listed; then it sums the tier-2 passes against `TIER2_MIN`.
+- **Each shard checks its own run.** `result` requires passes equal to the assignment, per suite, and fails on any failed or ignored test, and on an empty assignment. The `--exact` list is never empty (an empty one would run everything). The aggregate checks all the shards left a result, saw the same list (byte-identical), partition it (the guard re-run over their own `shard.tsv`), and passed exactly what was listed; then it sums the tier-2 passes against `TIER2_MIN`.
 - **The canary** keeps its regexp (`TIER2_RE` in `shard.sh`, the old awk's alternation) and its floor, now 75 with `AET-WO-1306`. The comment history of `TIER2_MIN` is intact.
+
+## The port to bash and awk (architect's ruling, 2026-11-13)
+
+`ci/shard.sh` first held a helper `ci/shard.py` (Python 3, from the image). The architect ruled it out: `RUL-12` (`docs/architecture.md`) says shell is for container build and CI glue only, and since 2026-11-12 no Python is generated or kept anywhere; the image shipping `python3` does not make Python a layer of this repository. It was ported to bash plus awk, `sort` and the coreutils, with the `TIER2_MIN` canary's awk as the precedent, and deleted. Everything the shards hand the aggregate is TSV or `key=value` text, not JSON. The `shards` job builds the matrix with `seq`.
+
+- **What was checked after the port.** `ci/test-shard.sh` drives the same functions through `shard.sh` and passes 87 checks (4, 5 and 7 shards) under mawk (the image's `awk`) and gawk (the host's). On the real list in the image the port plans the same 651 s per shard as the Python did, twice over with an identical file (deterministic).
+- **A trap met.** `awk -v log=…` fails in awk, since `log` is a function name. The variable is `lf`.
+- **The adversarial pass on the port** (a second, fresh subagent, run on both awks) held on every attack. Fixed from it: the tier-2 regexp uses `[.]` (gawk reads `\.` as `.`), the guard prints one message, and the aggregate checks each shard's expected count against its own list. Left as harmless: a `trap RETURN` temp directory leaks when `aggregate` dies.
 
 ## Branch protection (§1.3, §7)
 
@@ -92,11 +97,11 @@ Other findings, taken: `upload-artifact` gets `overwrite: true` (a re-run of fai
 
 ## Reduction pass
 
-Removed: `plan.sha256` (written, uploaded and compared, but the byte-identical `entries.tsv` and the re-run guard already prove it); the old `plan.sha256.run` copy; the old single-job canary step and `awk` (replaced by `shard.py`); the 90-minute timeout and its "splitting is backlog" comment; the separate bridge-test step (the bridge's tests are in the list). Kept: the guard run in both the shard (`plan`) and the aggregate, because the shard proves its own list and the aggregate proves the four agree.
+Removed: `ci/shard.py` and every use of Python (the port above); `plan.sha256` (written, uploaded and compared, but the byte-identical `entries.tsv` and the re-run guard already prove it); the old `plan.sha256.run` copy; the old single-job canary step and `awk` (replaced by `shard.py`); the 90-minute timeout and its "splitting is backlog" comment; the separate bridge-test step (the bridge's tests are in the list). Kept: the guard run in both the shard (`plan`) and the aggregate, because the shard proves its own list and the aggregate proves the four agree.
 
 ## Open and backlog
 
 - **`TIER2_RE` is a copy** of the old awk's alternation, in `shard.sh`. It must stay in step with the tier-2 files, as the old awk did.
-- **A list line the parser does not know fails `plan` in all four shards.** Cargo replays warnings from a cached build into stderr, so a future warning would do it; clippy's `-D warnings` keeps it clean now. Fail closed, by design (INV-06).
+- **A list line the parser does not know fails `plan` in every shard.** Cargo replays warnings from a cached build into stderr, so a future warning would do it; clippy's `-D warnings` keeps it clean now. Fail closed, by design (INV-06).
 - **No `actions/cache`.** The target directory is 3 GB against a build of about a minute.
 - **A rebalance** was done once (run 2): weights are scaled by `CI_SCALE` 1.8 (every tier-2 test measured on CI took 1.7 to 1.9 times Furnace's alone-time), and `ci/colocate.tsv` keeps `attribute_seeded` whole. A further one needs per-test CI times, which a libtest `--report-time` run would give.
