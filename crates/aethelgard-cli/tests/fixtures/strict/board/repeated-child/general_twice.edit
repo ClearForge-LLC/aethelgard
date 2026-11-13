@@ -1,0 +1,12 @@
+# class: repeated-child
+# note: a second top-level general section; KiCad parses both and keeps the second thickness
+# main: drc 0 pass; drc-parity 0 pass; extract 3 UnmodelledCopper
+# drc: 3 MalformedBoard kicad_pcb
+# drc-parity: 3 MalformedBoard kicad_pcb
+# extract: 3 MalformedBoard kicad_pcb
+@@ find
+	(paper "A4")
+@@ replace
+	(general (thickness 0.2))
+	(paper "A4")
+@@ end

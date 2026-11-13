@@ -1,0 +1,11 @@
+# class: escape
+# note: two pins on one unconnected- net, the second spelt with \055 (adversarial, held by KiCad's parity on main)
+# main: drc 1 fail; drc-parity 1 fail; extract 0 pass
+# drc: 3 MalformedBoard
+# drc-parity: 3 MalformedBoard
+# extract: 3 BoardUnreadable
+@@ find
+			(net "unconnected-(U1-PE2-Pad1)")
+@@ replace
+			(net "unconnected\055(U3-ALERT-Pad3)")
+@@ end

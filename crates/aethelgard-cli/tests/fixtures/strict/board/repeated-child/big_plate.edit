@@ -1,0 +1,16 @@
+# class: repeated-child
+# note: a second start, end and width on an F.Cu SDA segment: KiCad reads a 40 mm wide plate (AET-WO-1305 A3)
+# main: drc 1 fail; drc-parity 1 fail; extract 3 UnmodelledCopper
+# drc: 3 MalformedBoard kicad_pcb/segment[40]
+# drc-parity: 3 MalformedBoard kicad_pcb/segment[40]
+# extract: 3 MalformedBoard kicad_pcb/segment[40]
+@@ find
+		(end 95.5 81.875)
+		(width 0.2)
+@@ replace
+		(start 94.8 78)
+		(end 95.5 81.875)
+		(end 94.8 114.5)
+		(width 0.2)
+		(width 40)
+@@ end

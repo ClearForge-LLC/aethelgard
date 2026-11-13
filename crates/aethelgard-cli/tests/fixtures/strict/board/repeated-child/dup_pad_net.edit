@@ -1,0 +1,18 @@
+# class: repeated-child
+# note: a pad's second (net "GND"): KiCad puts the pad on GND (A8)
+# main: drc 1 fail; drc-parity 1 fail; extract 3 UnmodelledCopper
+# drc: 3 MalformedBoard kicad_pcb/footprint[7]/pad[2]
+# drc-parity: 3 MalformedBoard kicad_pcb/footprint[7]/pad[2]
+# extract: 3 MalformedBoard kicad_pcb/footprint[7]/pad[2]
+@@ find
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+		)
+		(embedded_fonts no)
+@@ replace
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+			(net "GND")
+		)
+		(embedded_fonts no)
+@@ end

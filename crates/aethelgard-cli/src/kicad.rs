@@ -53,14 +53,16 @@ pub const STEM: &str = "input";
 /// - **ERC:** the gate writes `input.kicad_pro`, which ignores the library
 ///   checks.
 ///
-/// A board carrying a rule of its own is refused with exit 3, before any tool
-/// runs.
+/// A board carrying a rule of its own, or one the strict reader refuses
+/// (`aethelgard_eda::strict`, `AET-WO-1306`), is refused with exit 3, before
+/// any tool runs. For DRC, returns the strict reading of the copy, which
+/// parity then reads; nothing re-parses it.
 pub fn prepare(
     check: Check,
     copy: &Path,
     dir: &Path,
     rules: &aethelgard_eda::rules::Rules,
-) -> Result<(), Stop> {
+) -> Result<Option<aethelgard_eda::strict::Tree>, Stop> {
     let write = |name: &str, bytes: &[u8]| {
         let path = dir.join(name);
         if let Some(parent) = path.parent() {
@@ -69,7 +71,10 @@ pub fn prepare(
         std::fs::write(&path, bytes).map_err(|e| scratch_error(&path, e))
     };
     match check {
-        Check::Erc => write(&format!("{STEM}.kicad_pro"), rules.project(STEM).as_bytes()),
+        Check::Erc => {
+            write(&format!("{STEM}.kicad_pro"), rules.project(STEM).as_bytes())?;
+            Ok(None)
+        }
         Check::Drc => {
             let text = std::fs::read(copy)
                 .map_err(|e| scratch_error(copy, e))
@@ -81,13 +86,16 @@ pub fn prepare(
                         message: "the board is not UTF-8".to_owned(),
                     })
                 })?;
-            let board = aethelgard_eda::board::prepare(&text, aethelgard_eda::rules::SETUP)
-                .map_err(|refusal| Stop {
-                    code: crate::EXIT_UNREADABLE,
-                    kind: refusal.kind(),
-                    id: refusal.id().map(str::to_owned),
-                    message: refusal.to_string(),
-                })?;
+            let refused = |refusal: aethelgard_eda::board::BoardRefusal| Stop {
+                code: crate::EXIT_UNREADABLE,
+                kind: refusal.kind(),
+                id: refusal.id().map(str::to_owned),
+                message: refusal.to_string(),
+            };
+            let tree = aethelgard_eda::board::read(&text).map_err(refused)?;
+            let board =
+                aethelgard_eda::board::prepare_read(&tree, &text, aethelgard_eda::rules::SETUP)
+                    .map_err(refused)?;
             std::fs::write(copy, board).map_err(|e| scratch_error(copy, e))?;
             write(&format!("{STEM}.kicad_pro"), rules.project(STEM).as_bytes())?;
             write(
@@ -112,66 +120,52 @@ pub fn prepare(
             })?;
             let (sym, fp) = aethelgard_eda::library::tables(lib_dir).map_err(library)?;
             write("sym-lib-table", sym.as_bytes())?;
-            write("fp-lib-table", fp.as_bytes())
+            write("fp-lib-table", fp.as_bytes())?;
+            Ok(Some(tree))
         }
     }
 }
 
 /// Refuses, exit 3, a schematic copied in for parity that is not one flat
 /// KiCad schematic, and a board carrying what would let KiCad's parity check
-/// pass it unmatched (`aethelgard_eda::parity`). `board` is the prepared
-/// copy, which `prepare` has already read as UTF-8 and accepted.
-pub fn prepare_parity(board: &Path, schematic: &Path) -> Result<(), Stop> {
-    let read = |path: &Path| std::fs::read(path).map_err(|e| scratch_error(path, e));
-    let refused = |r: aethelgard_eda::parity::ParityRefusal| Stop {
-        code: crate::EXIT_UNREADABLE,
-        kind: r.kind(),
-        id: r.id().map(str::to_owned),
-        message: r.to_string(),
-    };
-    let text = String::from_utf8(read(schematic)?).map_err(|_| Stop {
-        code: crate::EXIT_UNREADABLE,
-        kind: "MalformedSchematic",
-        id: None,
-        message: "the schematic is not UTF-8".to_owned(),
-    })?;
-    aethelgard_eda::parity::schematic(&text).map_err(refused)?;
-    let text = String::from_utf8_lossy(&read(board)?).into_owned();
-    aethelgard_eda::parity::board(&text).map_err(refused)
+/// pass it unmatched (`aethelgard_eda::parity`). `board` is the strict
+/// reading of the board's copy that `prepare` accepted.
+pub fn prepare_parity(board: &aethelgard_eda::strict::Tree, schematic: &Path) -> Result<(), Stop> {
+    let text = read_schematic(schematic)?;
+    aethelgard_eda::parity::schematic(&text).map_err(parity_refused)?;
+    aethelgard_eda::parity::board(board).map_err(parity_refused)
 }
 
 /// Refuses, exit 3 and before any tool runs, a schematic copied in for ERC
 /// that names a hierarchical sheet: KiCad would read the file the sheet names,
 /// which the gate has neither copied nor hashed (`AET-WO-1300` A8,
-/// `AET-WO-1601` §1.5). The copy is read with the reader parity uses, which
-/// refuses every byte sequence it and KiCad might read differently, so a
-/// schematic it cannot read is refused too: a sheet could hide in it. The
-/// emitter never writes a sheet.
+/// `AET-WO-1601` §1.5). The copy is read by the strict reader, so a schematic
+/// it cannot read, or could read otherwise than KiCad, is refused too: a sheet
+/// could hide in it. The emitter never writes a sheet.
 pub fn refuse_sheets(schematic: &Path) -> Result<(), Stop> {
-    use aethelgard_eda::parity::ParityRefusal;
-    use aethelgard_eda::sexpr::{self, Sx};
-    let refused = |r: ParityRefusal| Stop {
-        code: crate::EXIT_UNREADABLE,
-        kind: r.kind(),
-        id: None,
-        message: r.to_string(),
-    };
-    let bytes = std::fs::read(schematic).map_err(|e| scratch_error(schematic, e))?;
-    let text = String::from_utf8(bytes).map_err(|_| Stop {
+    let text = read_schematic(schematic)?;
+    aethelgard_eda::parity::flat(&text)
+        .map(drop)
+        .map_err(parity_refused)
+}
+
+fn read_schematic(path: &Path) -> Result<String, Stop> {
+    let bytes = std::fs::read(path).map_err(|e| scratch_error(path, e))?;
+    String::from_utf8(bytes).map_err(|_| Stop {
         code: crate::EXIT_UNREADABLE,
         kind: "MalformedSchematic",
         id: None,
         message: "the schematic is not UTF-8".to_owned(),
-    })?;
-    let root = sexpr::parse(&text).map_err(|e| refused(ParityRefusal::Malformed(e)))?;
-    let mut stack = vec![&root];
-    while let Some(item) = stack.pop() {
-        if item.head() == Some("sheet") {
-            return Err(refused(ParityRefusal::Sheet));
-        }
-        stack.extend(item.items().iter().filter(|c| matches!(c, Sx::List(_))));
+    })
+}
+
+fn parity_refused(r: aethelgard_eda::parity::ParityRefusal) -> Stop {
+    Stop {
+        code: crate::EXIT_UNREADABLE,
+        kind: r.kind(),
+        id: r.id().map(str::to_owned),
+        message: r.to_string(),
     }
-    Ok(())
 }
 
 fn scratch_error(path: &Path, e: std::io::Error) -> Stop {

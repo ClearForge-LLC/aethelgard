@@ -39,6 +39,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
 use crate::pcb::Rect;
 use crate::rules::FLOOR_NM;
 use crate::sexpr::{self, Sx};
+use crate::strict::{self, Tree};
 
 /// The grid's pitch.
 pub const PITCH_NM: i64 = 125_000;
@@ -1692,36 +1693,50 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
 
 // ---- reading a board ----
 
-fn nm_at(item: &Sx, i: usize, what: &str) -> Result<i64, String> {
+fn nm_at(item: &strict::Node<'_>, i: usize, what: &str) -> Result<i64, String> {
     item.arg(i)
         .and_then(sexpr::nm)
         .ok_or_else(|| format!("{what}: unreadable `{:?}`", item.head()))
 }
 
-fn xy_of(item: Option<&Sx>, what: &str) -> Result<(i64, i64), String> {
+fn xy_of(item: Option<strict::Node<'_>>, what: &str) -> Result<(i64, i64), String> {
     let item = item.ok_or_else(|| format!("{what}: missing coordinates"))?;
-    Ok((nm_at(item, 1, what)?, nm_at(item, 2, what)?))
+    Ok((nm_at(&item, 1, what)?, nm_at(&item, 2, what)?))
+}
+
+/// The child `head` of `item`, read by [`strict::Node::one`]: two are refused.
+fn one<'a>(item: &strict::Node<'a>, head: &str) -> Result<Option<strict::Node<'a>>, String> {
+    item.one(head).map_err(|e| e.to_string())
+}
+
+/// A placed footprint this engine built (`pcb`), judged by the strict
+/// reader, then read by [`part`].
+pub fn part_of(fp: &Sx) -> Result<Part, String> {
+    let tree = strict::footprint(fp).map_err(|e| e.to_string())?;
+    let fp = one(&tree.root(), "footprint")?.ok_or("no footprint")?;
+    part(&fp)
 }
 
 /// A placed footprint's copper pads, in board coordinates. Only front SMD
 /// pads at a right angle, rectangular or rounded, are modelled; anything
 /// else is refused, never approximated.
-pub fn part_of(fp: &Sx) -> Result<Part, String> {
-    let reference = fp.property("Reference").unwrap_or("?").to_owned();
-    let at = fp
-        .child("at")
-        .ok_or_else(|| format!("{reference}: no `at`"))?;
+pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
+    let reference = fp
+        .field("Reference")
+        .map_err(|e| e.to_string())?
+        .unwrap_or("?")
+        .to_owned();
+    let at = one(fp, "at")?.ok_or_else(|| format!("{reference}: no `at`"))?;
     if at.arg(3).is_some_and(|a| a != "0") {
         return Err(format!("{reference} is rotated"));
     }
     let origin = xy_of(Some(at), &reference)?;
     let mut pads = Vec::new();
-    for pad in fp.children("pad") {
+    for pad in fp.all("pad") {
         let number = pad.arg(1).unwrap_or("").to_owned();
         let what = format!("{reference} pad {number}");
-        let layers: Vec<&str> = pad
-            .child("layers")
-            .map(|l| l.items()[1..].iter().filter_map(Sx::text).collect())
+        let layers: Vec<&str> = one(&pad, "layers")?
+            .map(|l| l.texts().collect())
             .unwrap_or_default();
         let copper: Vec<&str> = layers
             .iter()
@@ -1734,10 +1749,11 @@ pub fn part_of(fp: &Sx) -> Result<Part, String> {
         if pad.arg(2) != Some("smd") || copper != ["F.Cu"] {
             return Err(format!("{what} is not a front SMD pad"));
         }
-        let pat = pad.child("at");
+        let pat = one(&pad, "at")?;
+        let angle = pat.as_ref().and_then(|a| a.arg(3)).unwrap_or("0");
         let (px, py) = xy_of(pat, &what)?;
-        let (mut w, mut h) = xy_of(pad.child("size"), &what)?;
-        match pat.and_then(|a| a.arg(3)).unwrap_or("0") {
+        let (mut w, mut h) = xy_of(one(&pad, "size")?, &what)?;
+        match angle {
             "0" | "180" => {}
             "90" | "270" => std::mem::swap(&mut w, &mut h),
             a => return Err(format!("{what} is at angle {a}")),
@@ -1745,8 +1761,7 @@ pub fn part_of(fp: &Sx) -> Result<Part, String> {
         let corner = match pad.arg(3) {
             Some("rect") => 0,
             Some("roundrect") => {
-                let ratio = pad
-                    .child("roundrect_rratio")
+                let ratio = one(&pad, "roundrect_rratio")?
                     .and_then(|r| r.arg(1))
                     .and_then(sexpr::nm)
                     .ok_or_else(|| format!("{what}: no `roundrect_rratio`"))?;
@@ -1758,7 +1773,7 @@ pub fn part_of(fp: &Sx) -> Result<Part, String> {
         let (cx, cy) = (origin.0 + px, origin.1 + py);
         pads.push(Pad {
             number,
-            net: pad.child("net").and_then(|n| n.arg(1)).map(str::to_owned),
+            net: one(&pad, "net")?.and_then(|n| n.arg(1)).map(str::to_owned),
             rect: Rect {
                 x0: cx - w / 2,
                 y0: cy - h / 2,
@@ -1771,70 +1786,77 @@ pub fn part_of(fp: &Sx) -> Result<Part, String> {
     Ok(Part { reference, pads })
 }
 
-fn layer_of(item: &Sx, what: &str) -> Result<Layer, String> {
-    match item.child("layer").and_then(|l| l.arg(1)) {
+fn layer_of(item: &strict::Node<'_>, what: &str) -> Result<Layer, String> {
+    match one(item, "layer")?.and_then(|l| l.arg(1)) {
         Some("F.Cu") => Ok(Layer::F),
         Some("B.Cu") => Ok(Layer::B),
         other => Err(format!("{what} on layer {other:?}")),
     }
 }
 
-/// A board as written: its outline and pads, and its copper. Tracks and
-/// vias must be the router's own sizes.
-pub fn read(board: &Sx) -> Result<(Board, Routed), String> {
-    let edge = board
-        .children("gr_rect")
-        .find(|r| r.child("layer").and_then(|l| l.arg(1)) == Some("Edge.Cuts"))
-        .ok_or("no outline")?;
+/// A board as the strict reader read it: its outline and pads, and its
+/// copper. Tracks and vias must be the router's own sizes; the outline is
+/// the one `Edge.Cuts` rectangle.
+pub fn read(tree: &Tree) -> Result<(Board, Routed), String> {
+    let board = tree.root();
+    let mut edges = Vec::new();
+    for r in board.all("gr_rect") {
+        if one(&r, "layer")?.and_then(|l| l.arg(1)) == Some("Edge.Cuts") {
+            edges.push(r);
+        }
+    }
+    let edge = match edges.as_slice() {
+        [edge] => edge,
+        [] => return Err("no outline".to_owned()),
+        _ => return Err(format!("{} outlines", edges.len())),
+    };
     let (a, b) = (
-        xy_of(edge.child("start"), "outline")?,
-        xy_of(edge.child("end"), "outline")?,
+        xy_of(one(edge, "start")?, "outline")?,
+        xy_of(one(edge, "end")?, "outline")?,
     );
     let parts = board
-        .children("footprint")
-        .map(part_of)
+        .all("footprint")
+        .map(|fp| part(&fp))
         .collect::<Result<Vec<_>, _>>()?;
-    let net = |item: &Sx, what: &str| {
-        item.child("net")
+    let net = |item: &strict::Node<'_>, what: &str| {
+        one(item, "net")?
             .and_then(|n| n.arg(1))
             .map(str::to_owned)
             .ok_or_else(|| format!("{what} has no net"))
     };
     let mut routed = Routed::default();
-    for s in board.children("segment") {
-        let width = s
-            .child("width")
-            .map(|w| nm_at(w, 1, "segment"))
+    for s in board.all("segment") {
+        let width = one(&s, "width")?
+            .map(|w| nm_at(&w, 1, "segment"))
             .transpose()?;
         if width != Some(WIDTH_NM) {
             return Err(format!("a segment {width:?} wide"));
         }
         routed.segments.push(Segment {
-            net: net(s, "a segment")?,
-            layer: layer_of(s, "a segment")?,
-            start: xy_of(s.child("start"), "segment")?,
-            end: xy_of(s.child("end"), "segment")?,
+            net: net(&s, "a segment")?,
+            layer: layer_of(&s, "a segment")?,
+            start: xy_of(one(&s, "start")?, "segment")?,
+            end: xy_of(one(&s, "end")?, "segment")?,
         });
     }
-    for v in board.children("via") {
-        let size = v.child("size").map(|w| nm_at(w, 1, "via")).transpose()?;
-        let drill = v.child("drill").map(|w| nm_at(w, 1, "via")).transpose()?;
-        let layers: Vec<&str> = v
-            .child("layers")
-            .map(|l| l.items()[1..].iter().filter_map(Sx::text).collect())
+    for v in board.all("via") {
+        let size = one(&v, "size")?.map(|w| nm_at(&w, 1, "via")).transpose()?;
+        let drill = one(&v, "drill")?.map(|w| nm_at(&w, 1, "via")).transpose()?;
+        let layers: Vec<&str> = one(&v, "layers")?
+            .map(|l| l.texts().collect())
             .unwrap_or_default();
         if size != Some(VIA_NM) || drill != Some(DRILL_NM) || layers != ["F.Cu", "B.Cu"] {
             return Err(format!("a via {size:?}/{drill:?} on {layers:?}"));
         }
         routed.vias.push(Via {
-            net: net(v, "a via")?,
-            at: xy_of(v.child("at"), "via")?,
+            net: net(&v, "a via")?,
+            at: xy_of(one(&v, "at")?, "via")?,
         });
     }
-    for z in board.children("zone") {
+    for z in board.all("zone") {
         routed
             .zones
-            .push((net(z, "a zone")?, layer_of(z, "a zone")?));
+            .push((net(&z, "a zone")?, layer_of(&z, "a zone")?));
     }
     routed.segments.sort();
     routed.vias.sort();
@@ -2029,7 +2051,7 @@ mod tests {
     #[test]
     fn reading_refuses_what_the_router_does_not_model() {
         let fp = |at: &str, pad: &str| {
-            sexpr::parse(&format!(
+            crate::sexpr::parse(&format!(
                 "(footprint \"x\" (at {at}) (property \"Reference\" \"R1\") {pad})"
             ))
             .unwrap()
@@ -2063,7 +2085,7 @@ mod tests {
             assert!(e.contains(want), "{pad}: {e}");
         }
         let board = |copper: &str| {
-            sexpr::parse(&format!(
+            strict::board(&format!(
                 "(kicad_pcb (gr_rect (start 0 0) (end 10 10) (layer \"Edge.Cuts\")) {copper})"
             ))
             .unwrap()
@@ -2073,6 +2095,14 @@ mod tests {
                 "(segment (start 1 1) (end 2 1) (width 0.2) (layer \"F.Cu\") (net \"/A\"))"
             ))
             .is_ok()
+        );
+        // A second outline is refused, not resolved to the first.
+        assert!(
+            read(&board(
+                "(gr_rect (start 0 0) (end 50 50) (layer \"Edge.Cuts\"))"
+            ))
+            .unwrap_err()
+            .contains("2 outlines")
         );
         for copper in [
             "(segment (start 1 1) (end 2 1) (width 0.25) (layer \"F.Cu\") (net \"/A\"))",

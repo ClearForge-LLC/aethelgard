@@ -1,0 +1,12 @@
+# class: field-twice
+# note: KiCad 10.0.7 sets the footprint's Reference from a legacy fp_text reference (parseFOOTPRINT_unchecked, T_fp_text), keeping the last: KiCad reads J1, a reader of the property reads U1
+# main: drc 0 pass; drc-parity 1 fail; extract 0 pass
+# drc: 3 MalformedBoard kicad_pcb/footprint[12]
+# drc-parity: 3 MalformedBoard kicad_pcb/footprint[12]
+# extract: 3 MalformedBoard kicad_pcb/footprint[12]
+@@ find
+		(property "Value" "STM32H753ZITx"
+@@ replace
+		(fp_text reference "J1" (at 0 0) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))
+		(property "Value" "STM32H753ZITx"
+@@ end

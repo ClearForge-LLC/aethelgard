@@ -1,0 +1,13 @@
+# class: repeated-child
+# note: parseSchematicSymbol sets lib_id per occurrence; the second wins
+# main: erc 0 pass; drc-parity 0 pass
+# erc: 3 MalformedSchematic kicad_sch/symbol[1]
+# drc-parity: 3 MalformedSchematic kicad_sch/symbol[1]
+@@ find
+		(lib_id "power:GND")
+		(at 25.4 12.7 0)
+@@ replace
+		(lib_id "power:GND")
+		(lib_id "power:+3V3")
+		(at 25.4 12.7 0)
+@@ end

@@ -1,0 +1,11 @@
+# class: control
+# note: F.Cu given the user name TOP in the layer table alone: every gate passes it (F10, the control)
+# main: drc 0 pass; drc-parity 0 pass; extract 0 pass
+# drc: 0 pass
+# drc-parity: 0 pass
+# extract: 0 pass
+@@ find
+		(0 "F.Cu" signal)
+@@ replace
+		(0 "F.Cu" signal "TOP")
+@@ end

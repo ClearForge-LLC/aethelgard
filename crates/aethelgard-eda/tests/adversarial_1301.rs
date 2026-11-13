@@ -35,7 +35,10 @@ fn attack_a_board_only_footprint_is_refused() {
         prepare(b, SETUP)
             .map(|_| ())
             .map_err(|e| e.to_string())
-            .and_then(|()| parity::board(b).map_err(|e| e.to_string()))
+            .and_then(|()| {
+                let tree = aethelgard_eda::strict::board(b).map_err(|e| e.to_string())?;
+                parity::board(&tree).map_err(|e| e.to_string())
+            })
     };
     assert!(gate(&board_with("attr smd")).is_ok());
     for attr in [

@@ -1,0 +1,26 @@
+# class: escape
+# note: a filled fp_rect in R1 on layer "F\056Cu", F.Cu to KiCad: main's extract passed with SDA's bound unchanged (adversarial B4)
+# main: drc 1 fail; drc-parity 1 fail; extract 0 pass
+# drc: 3 MalformedBoard
+# drc-parity: 3 MalformedBoard
+# extract: 3 BoardUnreadable
+@@ find
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+		)
+		(embedded_fonts no)
+@@ replace
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+		)
+		(fp_rect
+			(start 0.24 -0.32)
+			(end 2.6 0.32)
+			(stroke (width 0) (type solid))
+			(fill yes)
+			(layer "F\056Cu")
+			(net "/I2C_SDA")
+			(uuid "00000000-0000-4000-8000-0000000000cc")
+		)
+		(embedded_fonts no)
+@@ end

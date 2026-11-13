@@ -326,8 +326,8 @@ fn a_longer_route_raises_the_trace_term_by_the_per_length_bound() {
 
 /// What the bound does not model, or could read otherwise than KiCad, is
 /// refused before any estimate (the adversarial pass's classes A, C3, C4
-/// and E8): a repeated child (KiCad reads the last, `route::read` the
-/// first), a child or item the reader does not model, a value count other
+/// and E8): a repeated child (KiCad reads the last; the strict reader
+/// refuses it, `AET-WO-1306`), a child or item the reader does not model, a value count other
 /// than the reader's, a pad with no copper layer or another shape, copper
 /// outside pads, tracks and vias, and a coordinate too large to square.
 #[test]
@@ -343,6 +343,10 @@ fn what_the_reader_does_not_model_is_refused() {
         &text[outline + text[outline..].find(')').unwrap() + 1..]
     );
     let unmodelled = "UnmodelledCopper";
+    // AET-WO-1306 §1.1: a child KiCad holds once, given twice, is the strict
+    // reader's refusal, typed `MalformedBoard` and naming its path; it was
+    // `UnmodelledCopper` when this walk was extract's own.
+    let malformed = "MalformedBoard";
     for (label, board, kind) in [
         (
             "arc",
@@ -377,7 +381,7 @@ fn what_the_reader_does_not_model_is_refused() {
                 "\t\t(width 0.2)\n\t\t(layer",
                 "\t\t(width 0.2)\n\t\t(width 2)\n\t\t(layer",
             ),
-            unmodelled,
+            malformed,
         ),
         (
             "segment_width_arity",
@@ -390,7 +394,7 @@ fn what_the_reader_does_not_model_is_refused() {
         (
             "via_size_twice",
             once("(size 0.6)", "(size 0.6)\n\t\t(size 2.4)"),
-            unmodelled,
+            malformed,
         ),
         (
             "via_padstack",
@@ -429,7 +433,7 @@ fn what_the_reader_does_not_model_is_refused() {
         (
             "footprint_at_twice",
             once("\t\t(descr ", "\t\t(at 0 0)\n\t\t(descr "),
-            unmodelled,
+            malformed,
         ),
         (
             "property_twice",
@@ -437,12 +441,12 @@ fn what_the_reader_does_not_model_is_refused() {
                 "\t\t(attr ",
                 "\t\t(property \"Value\" \"100n\")\n\t\t(attr ",
             ),
-            unmodelled,
+            malformed,
         ),
         (
             "thickness_twice",
             once("(thickness 1.6)", "(thickness 1.6)\n\t\t(thickness 0.2)"),
-            unmodelled,
+            malformed,
         ),
         (
             "zone_fill",
@@ -472,12 +476,12 @@ fn what_the_reader_does_not_model_is_refused() {
                 "\t\t(layer \"Edge.Cuts\")\n",
                 "\t\t(layer \"Edge.Cuts\")\n\t\t(layer \"F.Cu\")\n",
             ),
-            unmodelled,
+            malformed,
         ),
         (
             "general_twice",
             insert("\t(general (thickness 0.2))"),
-            unmodelled,
+            malformed,
         ),
         (
             "footprint_unknown_child",

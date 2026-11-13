@@ -1,0 +1,20 @@
+# class: unread-child
+# note: an SMD pad's drill offset moves its copper (A7)
+# main: drc 1 fail; drc-parity 1 fail; extract 3 UnmodelledCopper
+# drc: 1 fail
+# drc-parity: 1 fail
+# extract: 3 UnmodelledCopper
+@@ find
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+		)
+		(embedded_fonts no)
+@@ replace
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+			(drill 0
+				(offset 0 2.5)
+			)
+		)
+		(embedded_fonts no)
+@@ end

@@ -1,0 +1,14 @@
+# class: repeated-child
+# note: a second (thickness 0.2): KiCad reads 0.2 mm; main's check drc passed it (A9, F6)
+# main: drc 0 pass; drc-parity 0 pass; extract 3 UnmodelledCopper
+# drc: 3 MalformedBoard kicad_pcb/general[1]
+# drc-parity: 3 MalformedBoard kicad_pcb/general[1]
+# extract: 3 MalformedBoard kicad_pcb/general[1]
+@@ find
+		(thickness 1.6)
+		(legacy_teardrops no)
+@@ replace
+		(thickness 1.6)
+		(thickness 0.2)
+		(legacy_teardrops no)
+@@ end

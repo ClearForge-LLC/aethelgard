@@ -1,0 +1,18 @@
+# class: unread-child
+# note: a pad with no layers (A10)
+# main: drc 1 fail; drc-parity 1 fail; extract 3 UnmodelledCopper
+# drc: 1 fail
+# drc-parity: 1 fail
+# extract: 3 UnmodelledCopper
+@@ find
+			(at 0.51 0)
+			(size 0.54 0.64)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+@@ replace
+			(at 0.51 0)
+			(size 0.54 0.64)
+			(roundrect_rratio 0.25)
+			(net "/I2C_SDA")
+@@ end
