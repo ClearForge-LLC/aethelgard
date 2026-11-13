@@ -292,3 +292,5 @@ pub fn eventually(what: &str, mut cond: impl FnMut() -> bool) {
     }
     panic!("timed out waiting for: {what}");
 }
+
+pub mod corpus;

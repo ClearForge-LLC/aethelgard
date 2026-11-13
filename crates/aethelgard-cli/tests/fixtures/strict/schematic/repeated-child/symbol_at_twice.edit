@@ -1,0 +1,13 @@
+# class: repeated-child
+# note: a placed symbol's position given twice; KiCad keeps the second
+# main: erc 1 fail; drc-parity 0 pass
+# erc: 3 MalformedSchematic kicad_sch/symbol[1]
+# drc-parity: 3 MalformedSchematic kicad_sch/symbol[1]
+@@ find
+		(lib_id "power:GND")
+		(at 25.4 12.7 0)
+@@ replace
+		(lib_id "power:GND")
+		(at 25.4 12.7 0)
+		(at 80 80 0)
+@@ end

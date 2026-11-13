@@ -1,0 +1,20 @@
+# class: unmodelled-item
+# note: a filled gr_rect on F.Cu: copper extract does not model
+# main: drc 0 pass; drc-parity 0 pass; extract 3 UnmodelledCopper
+# drc: 0 pass
+# drc-parity: 0 pass
+# extract: 3 UnmodelledCopper
+@@ find
+	)
+	(embedded_fonts no)
+@@ replace
+	)
+	(gr_rect
+		(start 74 114)
+		(end 75 115)
+		(stroke (width 0.1) (type solid))
+		(fill yes)
+		(layer "F.Cu")
+	)
+	(embedded_fonts no)
+@@ end

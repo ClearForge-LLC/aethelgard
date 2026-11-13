@@ -1,0 +1,13 @@
+# class: field-twice
+# note: a legacy fp_text value after the Value property: KiCad reads BMP280, a reader of the property reads BME280
+# main: drc 0 pass; drc-parity 1 fail; extract 0 pass
+# drc: 3 MalformedBoard kicad_pcb/footprint[13]
+# drc-parity: 3 MalformedBoard kicad_pcb/footprint[13]
+# extract: 3 MalformedBoard kicad_pcb/footprint[13]
+@@ find
+		(property "Value" "BME280"
+@@ replace
+		(property "Value" "BME280" (at 0 0 0) (layer "F.Fab") (effects (font (size 1 1) (thickness 0.15))))
+		(fp_text value "BMP280" (at 0 0) (layer "F.Fab") (effects (font (size 1 1) (thickness 0.15))))
+		(property "Value_was" "BME280"
+@@ end

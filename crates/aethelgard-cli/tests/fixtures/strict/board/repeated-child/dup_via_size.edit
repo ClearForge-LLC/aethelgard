@@ -1,0 +1,18 @@
+# class: repeated-child
+# note: a via's second (size 2.4) (A4)
+# main: drc 1 fail; drc-parity 1 fail; extract 3 UnmodelledCopper
+# drc: 3 MalformedBoard kicad_pcb/via[10]
+# drc-parity: 3 MalformedBoard kicad_pcb/via[10]
+# extract: 3 MalformedBoard kicad_pcb/via[10]
+@@ find
+		(at 94.75 88)
+		(size 0.6)
+		(drill 0.3)
+		(layers "F.Cu" "B.Cu")
+@@ replace
+		(at 94.75 88)
+		(size 0.6)
+		(size 2.4)
+		(drill 0.3)
+		(layers "F.Cu" "B.Cu")
+@@ end

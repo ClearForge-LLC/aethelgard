@@ -134,7 +134,9 @@ jobs:
       # what build reads; another uid's /tmp/.cargo is not read).
       # 74: plus 1 from AET-WO-1305 in board_tier2.rs (a board swapped in
       # verify's scratch before extract is a BindingMismatch).
-      TIER2_MIN: "74"
+      # 75: plus 1 from AET-WO-1306 in board_tier2.rs (every corpus file the
+      # strict reader accepts gets its stated KiCad verdict).
+      TIER2_MIN: "75"
       RUN: >-
         docker run --rm -v ${{ github.workspace }}:/repo -w /repo
         -e CARGO_HOME=/repo/target/cargo-home -e CARGO_TARGET_DIR=/repo/target

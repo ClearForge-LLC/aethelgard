@@ -1,0 +1,31 @@
+# class: parts
+# note: R1 renamed C99, value 100n (B1)
+# main: drc 0 pass; drc-parity 1 fail; extract 3 DeviceNotOnLine
+# drc: 0 pass
+# drc-parity: 1 fail
+# extract: 3 DeviceNotOnLine
+@@ find
+		(property "Reference" "R1"
+			(at 0 -1.17 0)
+			(layer "F.SilkS")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "2k2"
+@@ replace
+		(property "Reference" "C99"
+			(at 0 -1.17 0)
+			(layer "F.SilkS")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "100n"
+@@ end

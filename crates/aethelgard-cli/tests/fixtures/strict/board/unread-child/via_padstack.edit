@@ -1,0 +1,22 @@
+# class: unread-child
+# note: a via padstack with a 2.4 mm B.Cu layer: KiCad reads it, extract's model does not (A5)
+# main: drc 1 fail; drc-parity 1 fail; extract 3 UnmodelledCopper
+# drc: 1 fail
+# drc-parity: 1 fail
+# extract: 3 UnmodelledCopper
+@@ find
+		(net "/I2C_SDA")
+		(uuid "75a92571-c2c1-8ecd-bf4a-c5f6be5cf77c")
+@@ replace
+		(net "/I2C_SDA")
+		(padstack
+			(mode front_inner_back)
+			(layer "Inner"
+				(size 0.6)
+			)
+			(layer "B.Cu"
+				(size 2.4)
+			)
+		)
+		(uuid "75a92571-c2c1-8ecd-bf4a-c5f6be5cf77c")
+@@ end

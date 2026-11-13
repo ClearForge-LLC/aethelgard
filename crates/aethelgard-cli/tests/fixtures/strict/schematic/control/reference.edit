@@ -1,0 +1,5 @@
+# class: control
+# note: the reference schematic, unchanged
+# main: erc 0 pass; drc-parity 0 pass
+# erc: 0 pass
+# drc-parity: 0 pass

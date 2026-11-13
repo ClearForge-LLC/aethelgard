@@ -1,0 +1,18 @@
+# class: repeated-child
+# note: parsePCB_TRACK sets a track's layers from either `layer` or `layers`; the second wins
+# main: drc 1 fail; drc-parity 1 fail; extract 3 UnmodelledCopper
+# drc: 3 MalformedBoard kicad_pcb/segment[53]
+# drc-parity: 3 MalformedBoard kicad_pcb/segment[53]
+# extract: 3 MalformedBoard kicad_pcb/segment[53]
+@@ find
+		(start 94.75 88)
+		(end 96.625 88)
+		(width 0.2)
+		(layer "B.Cu")
+@@ replace
+		(start 94.75 88)
+		(end 96.625 88)
+		(width 0.2)
+		(layer "B.Cu")
+		(layers "F.Cu")
+@@ end

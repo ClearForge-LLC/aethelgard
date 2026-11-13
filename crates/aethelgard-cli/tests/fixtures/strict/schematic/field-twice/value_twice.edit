@@ -1,0 +1,11 @@
+# class: field-twice
+# note: a placed symbol's mandatory Value given twice; KiCad replaces it with the second
+# main: erc 0 pass; drc-parity 0 pass
+# erc: 3 MalformedSchematic kicad_sch/symbol[1]
+# drc-parity: 3 MalformedSchematic kicad_sch/symbol[1]
+@@ find
+		(property "Reference" "#PWR001"
+@@ replace
+		(property "Value" "VDD_3V3")
+		(property "Reference" "#PWR001"
+@@ end
