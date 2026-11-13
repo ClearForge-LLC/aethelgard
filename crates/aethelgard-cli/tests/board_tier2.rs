@@ -789,3 +789,289 @@ fn every_corpus_file_the_reader_accepts_gets_its_stated_kicad_verdict() {
     eprintln!("ANSWER 1306: {ran} KiCad verdicts as stated");
     assert!(ran > 0);
 }
+
+/// Every regular file directly in `dir`, with its bytes.
+fn package_files(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    fs::read_dir(dir)
+        .unwrap()
+        .map(|e| {
+            let e = e.unwrap();
+            assert!(e.file_type().unwrap().is_file(), "{:?}", e.path());
+            (
+                e.file_name().into_string().unwrap(),
+                fs::read(e.path()).unwrap(),
+            )
+        })
+        .collect()
+}
+
+/// `verify` of the reference with the 2.2 kΩ scenario and `flag <dir>`.
+fn fab_verify(dir: &Path, flag: &str) -> (Option<i32>, String) {
+    aethelgard(&[
+        "verify",
+        "--spec",
+        SPEC,
+        "--scenarios",
+        "scenarios/sentinel-01/pullup-2k2.json",
+        flag,
+        dir.to_str().unwrap(),
+    ])
+}
+
+/// A fresh package from one `--fab-out` run under `label`: the scratch base,
+/// the package directory, its verdict and its files.
+fn fab_package(
+    label: &str,
+) -> (
+    PathBuf,
+    PathBuf,
+    Value,
+    std::collections::BTreeMap<String, Vec<u8>>,
+) {
+    let base = std::env::temp_dir().join(format!("aet-3300-{label}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    let dir = base.join("pkg");
+    let (code, out) = fab_verify(&dir, "--fab-out");
+    let v = one(&out);
+    assert_eq!(code, Some(0), "{v}");
+    let package = package_files(&dir);
+    (base, dir, v, package)
+}
+
+/// `AET-WO-3300` §3, the reference probe: `verify --fab-out` with the 2.2 kΩ
+/// scenario passes and writes the package; the verdict's `fab` hashes equal
+/// the files' sha256; two runs at two paths print the same verdict and write
+/// the same bytes; the ELF is the one the campaign ran and the BOM is
+/// `emit`'s; the manifest names the verdict the call prints without
+/// `--fab-out`; B.Cu carries the GND pour and no Gerber carries KiCad's
+/// clock (ruling on PR #103). `--against-fab` is the next two tests (split
+/// by ruling D5, so each fits a shard).
+#[test]
+fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let base = std::env::temp_dir().join(format!("aet-3300-fab-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    let a = base.join("a");
+    let b = base.join("a-much/longer/path/b");
+    let run = fab_verify;
+    let (code, first) = run(&a, "--fab-out");
+    let v = one(&first);
+    assert_eq!(code, Some(0), "{v}");
+    let (code, second) = run(&b, "--fab-out");
+    assert_eq!(code, Some(0), "{second}");
+    assert_eq!(
+        first, second,
+        "two runs at two paths print different verdicts"
+    );
+    let package = package_files(&a);
+    assert_eq!(package, package_files(&b), "two runs wrote different bytes");
+
+    assert_eq!(v["verdict"], "pass");
+    let fab = &v["fab"];
+    assert_eq!(fab["status"], "written");
+    assert_eq!(fab["tool_version"], "10.0.7");
+    assert_eq!(
+        fab["board_sha256"],
+        v["files"]["kicad/sentinel-01.kicad_pcb"]
+    );
+    let drc = v["gates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["gate"] == "drc")
+        .unwrap();
+    assert_eq!(fab["uid_boundary"], drc["uid_boundary"], "{fab}");
+    // The verdict names every file written, and only those, by their bytes.
+    let named: std::collections::BTreeMap<String, String> = fab["files"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .map(|(k, h)| (k.clone(), h.as_str().unwrap().to_owned()))
+        .collect();
+    let hashed: std::collections::BTreeMap<String, String> = package
+        .iter()
+        .map(|(k, bytes)| (k.clone(), sha(bytes)))
+        .collect();
+    assert_eq!(named, hashed);
+    let mut names: Vec<&str> = package.keys().map(String::as_str).collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        [
+            "FAB-NOTES.md",
+            "MANIFEST.json",
+            "sentinel-01-B_Cu.gbl",
+            "sentinel-01-B_Mask.gbs",
+            "sentinel-01-B_Paste.gbp",
+            "sentinel-01-B_Silkscreen.gbo",
+            "sentinel-01-Edge_Cuts.gm1",
+            "sentinel-01-F_Cu.gtl",
+            "sentinel-01-F_Mask.gts",
+            "sentinel-01-F_Paste.gtp",
+            "sentinel-01-F_Silkscreen.gto",
+            "sentinel-01-pos.csv",
+            "sentinel-01.bom.csv",
+            "sentinel-01.drl",
+            "sentinel-01.elf",
+        ]
+    );
+    // The firmware is the ELF `build` gave, `simulate` booted and the
+    // campaign's run was named by (verify binds the run id to it).
+    assert_eq!(named["sentinel-01.elf"], v["elf_sha256"].as_str().unwrap());
+    assert_eq!(v["campaign"][0]["verdict"], "pass");
+    // The BOM is `emit`'s, byte for byte.
+    let emitted = base.join("emit");
+    let (code, out) = aethelgard(&["emit", "--file", SPEC, "--out", emitted.to_str().unwrap()]);
+    assert_eq!(code, Some(0), "{out}");
+    assert_eq!(
+        package["sentinel-01.bom.csv"],
+        fs::read(emitted.join("sentinel-01.bom.csv")).unwrap()
+    );
+    // The manifest: every other file, and the verdict without its `fab` key,
+    // which is the line the same call prints without `--fab-out`.
+    let manifest: Value = serde_json::from_slice(&package["MANIFEST.json"]).unwrap();
+    let line = first.trim_end();
+    let without = format!("{}}}", &line[..line.rfind(",\"fab\":").unwrap()]);
+    assert_eq!(manifest["verdict_sha256"], sha(without.as_bytes()));
+    assert_eq!(manifest["specification_sha256"], v["specification_sha256"]);
+    assert_eq!(manifest["topology_sha256"], v["topology_sha256"]);
+    let scenario = fs::read(root().join("scenarios/sentinel-01/pullup-2k2.json")).unwrap();
+    assert_eq!(
+        manifest["scenarios"],
+        serde_json::json!([{"scenario": "pullup-2k2", "sha256": sha(&scenario)}])
+    );
+    let mut listed = named.clone();
+    listed.remove("MANIFEST.json");
+    assert_eq!(manifest["files"], serde_json::to_value(&listed).unwrap());
+    // Condition 8: B.Cu carries a region of the GND zone. No Gerber carries
+    // KiCad's clock lines.
+    let bcu = String::from_utf8(package["sentinel-01-B_Cu.gbl"].clone()).unwrap();
+    assert!(bcu.contains("%TO.N,GND*%\nG36*\n") && bcu.contains("\nG37*\n"));
+    // FAB-NOTES.md names the two removed lines in prose, so only the Gerbers
+    // are searched.
+    for (name, bytes) in package.iter().filter(|(n, _)| n.contains(".g")) {
+        let text = String::from_utf8_lossy(bytes);
+        assert!(
+            !text.contains("CreationDate") && !text.contains("Created by"),
+            "{name}"
+        );
+    }
+    let notes = String::from_utf8(package["FAB-NOTES.md"].clone()).unwrap();
+    for want in [
+        "70 um",
+        "0.34 mm to 2 mm",
+        "FR-4",
+        "plated via, drilled 0.3 mm",
+        "acd60081",
+    ] {
+        assert!(notes.contains(want), "{want}");
+    }
+    // The notes describe every other file, and only those.
+    let described: Vec<&str> = notes
+        .lines()
+        .filter_map(|l| l.strip_prefix("- `")?.split('`').next())
+        .collect();
+    let others: Vec<&str> = names
+        .iter()
+        .copied()
+        .filter(|n| *n != "FAB-NOTES.md" && *n != "MANIFEST.json")
+        .collect();
+    assert_eq!(described, others);
+    fs::remove_dir_all(&base).unwrap();
+}
+
+/// §1.3: `--against-fab` on a package `--fab-out` wrote derives it again
+/// and finds it identical, naming the same files (ruling D5, split out).
+#[test]
+fn verify_against_fab_finds_the_package_it_wrote_identical() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let (base, dir, v, _) = fab_package("against-same");
+    let (code, out) = fab_verify(&dir, "--against-fab");
+    let w = one(&out);
+    assert_eq!(code, Some(0), "{w}");
+    assert_eq!(w["against_fab"], "identical");
+    assert_eq!(w["fab"]["status"], "derived");
+    assert_eq!(w["fab"]["files"], v["fab"]["files"]);
+    assert!(w["fab"].get("differences").is_none(), "{w}");
+    fs::remove_dir_all(&base).unwrap();
+}
+
+/// §1.3 and §3: one changed byte in every file of a package, and one extra
+/// file, fail `--against-fab` with exit 1, naming each (ruling D5, split out).
+#[test]
+fn verify_against_fab_names_every_changed_and_extra_file() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let (base, a, _, package) = fab_package("against-changed");
+    for (name, bytes) in &package {
+        let mut changed = bytes.clone();
+        changed[bytes.len() / 2] ^= 0x01;
+        fs::write(a.join(name), changed).unwrap();
+    }
+    fs::write(a.join("extra.gbr"), "").unwrap();
+    let (code, out) = fab_verify(&a, "--against-fab");
+    let w = one(&out);
+    assert_eq!(code, Some(1), "{w}");
+    assert_eq!(w["verdict"], "fail");
+    assert_eq!(w["against_fab"], "differs");
+    let mut found: Vec<(String, String)> = w["fab"]["differences"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| {
+            (
+                d["kind"].as_str().unwrap().to_owned(),
+                d["message"]
+                    .as_str()
+                    .unwrap()
+                    .split(' ')
+                    .next()
+                    .unwrap()
+                    .to_owned(),
+            )
+        })
+        .collect();
+    found.sort();
+    let mut want: Vec<(String, String)> = package
+        .keys()
+        .map(|n| ("against_differs".to_owned(), n.clone()))
+        .collect();
+    want.push(("against_extra".to_owned(), "extra.gbr".to_owned()));
+    want.sort();
+    assert_eq!(found, want);
+    assert_eq!(found.len(), 16);
+    fs::remove_dir_all(&base).unwrap();
+}
+
+/// §3: the 47 kΩ scenario fails `verify`, and nothing is written into
+/// `--fab-out`; the verdict says so.
+#[test]
+fn verify_fab_out_writes_nothing_when_a_gate_fails() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = std::env::temp_dir().join(format!("aet-3300-fab-47k-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let (code, stdout) = aethelgard(&[
+        "verify",
+        "--spec",
+        SPEC,
+        "--scenarios",
+        "scenarios/sentinel-01/pullup-47k.json",
+        "--fab-out",
+        dir.to_str().unwrap(),
+    ]);
+    let v = one(&stdout);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(v["verdict"], "fail");
+    assert_eq!(v["fab"]["status"], "not_written");
+    assert_eq!(v["fab"]["files"], serde_json::json!({}));
+    assert_eq!(
+        fs::read_dir(&dir).unwrap().count(),
+        0,
+        "a failing run wrote into --fab-out"
+    );
+    fs::remove_dir_all(&dir).unwrap();
+}

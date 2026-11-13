@@ -637,6 +637,28 @@ mod tests {
         );
     }
 
+    /// `AET-WO-3300`: the fabrication package is two optional flags on
+    /// `verify`, so the tool keeps its name and only `--spec` is required.
+    #[test]
+    fn verify_takes_the_fabrication_package_as_optional_flags() {
+        let leaf = real().into_iter().find(|l| l.name == "verify").unwrap();
+        let args: Vec<(&str, bool)> = leaf
+            .args
+            .iter()
+            .map(|a| (a.long.as_str(), a.required))
+            .collect();
+        assert_eq!(
+            args,
+            [
+                ("spec", true),
+                ("scenarios", false),
+                ("against", false),
+                ("fab-out", false),
+                ("against-fab", false)
+            ]
+        );
+    }
+
     #[test]
     fn argv_builds_one_token_per_argument() {
         let v = argv(

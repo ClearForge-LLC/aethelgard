@@ -216,7 +216,13 @@ jobs:
       # verify's scratch before extract is a BindingMismatch).
       # 75: plus 1 from AET-WO-1306 in board_tier2.rs (every corpus file the
       # strict reader accepts gets its stated KiCad verdict).
-      TIER2_MIN: "75"
+      # 77: plus 2 from AET-WO-3300 in board_tier2.rs (verify --fab-out writes
+      # the package its verdict names at two paths, with --against-fab; the
+      # 47k scenario writes nothing).
+      # 79: plus 2 more from AET-WO-3300 (ruling D5 on PR #103): the four-run
+      # fab test split into three (two-path write; --against-fab identical;
+      # --against-fab naming every changed and extra file).
+      TIER2_MIN: "79"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
