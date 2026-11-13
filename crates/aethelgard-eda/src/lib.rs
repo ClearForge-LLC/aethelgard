@@ -9,12 +9,14 @@
 //!   checked against its sha256 before use.
 //! - [`rules`] and [`board`]: the design rules the gate judges by, and the
 //!   board under judgement stripped of every rule it carries (`INV-07`).
+//! - [`fab`]: the text of a fabrication package's `FAB-NOTES.md` (`AET-WO-3300`).
 
 #![forbid(unsafe_code)]
 
 pub mod board;
 pub mod bom;
 pub mod extract;
+pub mod fab;
 pub mod library;
 pub mod parity;
 pub mod pcb;
