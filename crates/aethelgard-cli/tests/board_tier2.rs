@@ -805,14 +805,47 @@ fn package_files(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
         .collect()
 }
 
+/// `verify` of the reference with the 2.2 kΩ scenario and `flag <dir>`.
+fn fab_verify(dir: &Path, flag: &str) -> (Option<i32>, String) {
+    aethelgard(&[
+        "verify",
+        "--spec",
+        SPEC,
+        "--scenarios",
+        "scenarios/sentinel-01/pullup-2k2.json",
+        flag,
+        dir.to_str().unwrap(),
+    ])
+}
+
+/// A fresh package from one `--fab-out` run under `label`: the scratch base,
+/// the package directory, its verdict and its files.
+fn fab_package(
+    label: &str,
+) -> (
+    PathBuf,
+    PathBuf,
+    Value,
+    std::collections::BTreeMap<String, Vec<u8>>,
+) {
+    let base = std::env::temp_dir().join(format!("aet-3300-{label}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    let dir = base.join("pkg");
+    let (code, out) = fab_verify(&dir, "--fab-out");
+    let v = one(&out);
+    assert_eq!(code, Some(0), "{v}");
+    let package = package_files(&dir);
+    (base, dir, v, package)
+}
+
 /// `AET-WO-3300` §3, the reference probe: `verify --fab-out` with the 2.2 kΩ
 /// scenario passes and writes the package; the verdict's `fab` hashes equal
 /// the files' sha256; two runs at two paths print the same verdict and write
 /// the same bytes; the ELF is the one the campaign ran and the BOM is
 /// `emit`'s; the manifest names the verdict the call prints without
 /// `--fab-out`; B.Cu carries the GND pour and no Gerber carries KiCad's
-/// clock (ruling on PR #103); `--against-fab` passes on the package, and one
-/// changed byte in every file fails, naming each.
+/// clock (ruling on PR #103). `--against-fab` is the next two tests (split
+/// by ruling D5, so each fits a shard).
 #[test]
 fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
@@ -820,17 +853,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
     let _ = fs::remove_dir_all(&base);
     let a = base.join("a");
     let b = base.join("a-much/longer/path/b");
-    let run = |dir: &Path, flag: &str| {
-        aethelgard(&[
-            "verify",
-            "--spec",
-            SPEC,
-            "--scenarios",
-            "scenarios/sentinel-01/pullup-2k2.json",
-            flag,
-            dir.to_str().unwrap(),
-        ])
-    };
+    let run = fab_verify;
     let (code, first) = run(&a, "--fab-out");
     let v = one(&first);
     assert_eq!(code, Some(0), "{v}");
@@ -954,22 +977,38 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         .filter(|n| *n != "FAB-NOTES.md" && *n != "MANIFEST.json")
         .collect();
     assert_eq!(described, others);
+    fs::remove_dir_all(&base).unwrap();
+}
 
-    // §1.3: the package re-derived matches; one changed byte in every file
-    // and one extra file fail, naming each.
-    let (code, out) = run(&a, "--against-fab");
+/// §1.3: `--against-fab` on a package `--fab-out` wrote derives it again
+/// and finds it identical, naming the same files (ruling D5, split out).
+#[test]
+fn verify_against_fab_finds_the_package_it_wrote_identical() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let (base, dir, v, _) = fab_package("against-same");
+    let (code, out) = fab_verify(&dir, "--against-fab");
     let w = one(&out);
     assert_eq!(code, Some(0), "{w}");
     assert_eq!(w["against_fab"], "identical");
     assert_eq!(w["fab"]["status"], "derived");
     assert_eq!(w["fab"]["files"], v["fab"]["files"]);
+    assert!(w["fab"].get("differences").is_none(), "{w}");
+    fs::remove_dir_all(&base).unwrap();
+}
+
+/// §1.3 and §3: one changed byte in every file of a package, and one extra
+/// file, fail `--against-fab` with exit 1, naming each (ruling D5, split out).
+#[test]
+fn verify_against_fab_names_every_changed_and_extra_file() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let (base, a, _, package) = fab_package("against-changed");
     for (name, bytes) in &package {
         let mut changed = bytes.clone();
         changed[bytes.len() / 2] ^= 0x01;
         fs::write(a.join(name), changed).unwrap();
     }
     fs::write(a.join("extra.gbr"), "").unwrap();
-    let (code, out) = run(&a, "--against-fab");
+    let (code, out) = fab_verify(&a, "--against-fab");
     let w = one(&out);
     assert_eq!(code, Some(1), "{w}");
     assert_eq!(w["verdict"], "fail");
@@ -999,6 +1038,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
     want.push(("against_extra".to_owned(), "extra.gbr".to_owned()));
     want.sort();
     assert_eq!(found, want);
+    assert_eq!(found.len(), 16);
     fs::remove_dir_all(&base).unwrap();
 }
 

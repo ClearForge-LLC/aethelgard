@@ -67,8 +67,8 @@ every other file is the same.
 It was emitted by a passing `aethelgard verify`: every gate that verdict
 names passed on the design generated from the specification, and these
 files were made from that design. The gates judged the design, not these
-files. It claims nothing beyond that verdict. No board has been made from
-it, and nothing in it was tested on hardware.
+files. It claims nothing beyond that verdict. Emitting this package made
+no board, and nothing in it was tested on hardware.
 
 The Gerbers are KiCad {kicad}'s output (`kicad-cli pcb export gerbers
 --check-zones`), exported from a copy of the generated board with the
@@ -168,7 +168,7 @@ mod tests {
             "emitted by a passing `aethelgard verify`",
             "The gates judged the design, not these\nfiles.",
             "names every other file of this package by sha256",
-            "nothing in it was tested on hardware",
+            "Emitting this package made\nno board, and nothing in it was tested on hardware.",
         ] {
             assert!(text.contains(want), "missing {want:?}");
         }

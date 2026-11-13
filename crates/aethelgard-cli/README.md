@@ -589,6 +589,7 @@ What it assumes of the fabricated board, which the board file does not state:
 
 ```
 aethelgard verify --spec <path> [--scenarios <file>...] [--against <dir>] [--fab-out <dir> | --against-fab <dir>]
+# --fab-out and --against-fab each require --scenarios
 ```
 
 One verdict that binds a specification to every artifact it produced (`INV-01`, `INV-03`, `RUL-19` (2), `AET-WO-3301` §1.3). Only `verify` binds a pair; every other gate binds only its own input.
@@ -622,7 +623,7 @@ A gate that refuses stops `verify` with the gate's own `kind`, `id` and exit cod
 
 ### The fabrication package (`--fab-out`, `--against-fab`)
 
-`AET-WO-3300`, ruled on PR #103. Only when every gate has passed, `verify` exports the package and writes it into `--fab-out <dir>`. The directory must be empty or absent. If it exists, it must be the caller's and writable by no group or other, or another uid could replace the package after the verdict names it. It is checked before any gate runs and again just before the package is written, and `tree::write` checks emptiness once more through the descriptor it writes through (exit `3`, `UnwritableOutput`). Nothing is created before that. The flat package, named after the project:
+`AET-WO-3300`, ruled on PR #103. Both flags require `--scenarios` (ruling D3): `INV-03` counts the fault campaign among the gates of "verified", so a call without it is a usage error, exit `64`, before anything is read. Only when every gate has passed, `verify` exports the package and writes it into `--fab-out <dir>`. The directory must be empty or absent. If it exists, it must be the caller's and writable by no group or other, or another uid could replace the package after the verdict names it. It is checked before any gate runs and again just before the package is written, and `tree::write` checks emptiness once more through the descriptor it writes through (exit `3`, `UnwritableOutput`). Nothing is created before that. The flat package, named after the project:
 
 | File | What it is |
 |---|---|
@@ -666,7 +667,7 @@ A gate that refuses stops `verify` with the gate's own `kind`, `id` and exit cod
 - `against_fab` is `identical`, or `differs` with exit `1`. In that case `fab.differences` names every file that differs, is missing or is extra (`against_differs`, `against_missing`, `against_extra`, the name first in `message`).
 - `fab.status` is `derived`.
 - With a failed gate, `against_fab` is `not_compared` and `fab.status` is `not_derived`.
-- `--fab-out` and `--against-fab` exclude each other (exit `64`). Either may be combined with `--against`, which is part of the verdict the manifest names.
+- `--fab-out` and `--against-fab` exclude each other, and each requires `--scenarios` (exit `64`). Either may be combined with `--against`, which is part of the verdict the manifest names.
 
 Two runs on one specification and the same scenarios, at any paths, print the same verdict and write the same bytes: the verdict names no path.
 

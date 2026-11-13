@@ -11,6 +11,7 @@ use std::process::{Command, Stdio};
 use serde_json::Value;
 
 const SPEC: &str = "examples/sentinel-01-minimal.json";
+const SCENARIO: &str = "scenarios/sentinel-01/pullup-2k2.json";
 
 fn root() -> PathBuf {
     fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
@@ -57,7 +58,15 @@ fn an_unusable_fab_out_is_refused_before_any_gate_and_left_untouched() {
     let link = scratch("link");
     std::os::unix::fs::symlink(&target, &link).unwrap();
     for dir in [&used, &file, &link] {
-        let (code, v) = run(&["verify", "--spec", SPEC, "--fab-out", s(dir)]);
+        let (code, v) = run(&[
+            "verify",
+            "--spec",
+            SPEC,
+            "--scenarios",
+            SCENARIO,
+            "--fab-out",
+            s(dir),
+        ]);
         assert_eq!(code, Some(3), "{}: {v}", dir.display());
         assert_eq!(v["ok"], false);
         assert_eq!(v["error"]["kind"], "UnwritableOutput", "{v}");
@@ -79,20 +88,38 @@ fn an_unusable_fab_out_is_refused_before_any_gate_and_left_untouched() {
 #[test]
 fn a_run_that_cannot_pass_creates_nothing_and_the_flags_exclude_each_other() {
     let absent = scratch("absent");
-    let (code, v) = run(&["verify", "--spec", SPEC, "--fab-out", s(&absent)]);
+    let (code, v) = run(&[
+        "verify",
+        "--spec",
+        SPEC,
+        "--scenarios",
+        SCENARIO,
+        "--fab-out",
+        s(&absent),
+    ]);
     assert_eq!(code, Some(4), "{v}");
     assert!(
         !absent.exists(),
         "--fab-out was created by a run that stopped"
     );
 
-    let (code, v) = run(&["verify", "--spec", SPEC, "--against-fab", s(&absent)]);
+    let (code, v) = run(&[
+        "verify",
+        "--spec",
+        SPEC,
+        "--scenarios",
+        SCENARIO,
+        "--against-fab",
+        s(&absent),
+    ]);
     assert_eq!(code, Some(3), "{v}");
 
     let (code, v) = run(&[
         "verify",
         "--spec",
         SPEC,
+        "--scenarios",
+        SCENARIO,
         "--fab-out",
         s(&absent),
         "--against-fab",
@@ -112,14 +139,30 @@ fn a_fab_out_another_uid_could_write_is_refused() {
     fs::create_dir_all(&dir).unwrap();
     for mode in [0o775, 0o757] {
         fs::set_permissions(&dir, fs::Permissions::from_mode(mode)).unwrap();
-        let (code, v) = run(&["verify", "--spec", SPEC, "--fab-out", s(&dir)]);
+        let (code, v) = run(&[
+            "verify",
+            "--spec",
+            SPEC,
+            "--scenarios",
+            SCENARIO,
+            "--fab-out",
+            s(&dir),
+        ]);
         assert_eq!(code, Some(3), "{mode:o}: {v}");
         assert_eq!(v["error"]["kind"], "UnwritableOutput");
     }
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
     if rustix::process::geteuid().is_root() {
         std::os::unix::fs::chown(&dir, Some(65534), None).unwrap();
-        let (code, v) = run(&["verify", "--spec", SPEC, "--fab-out", s(&dir)]);
+        let (code, v) = run(&[
+            "verify",
+            "--spec",
+            SPEC,
+            "--scenarios",
+            SCENARIO,
+            "--fab-out",
+            s(&dir),
+        ]);
         assert_eq!(code, Some(3), "{v}");
         assert_eq!(v["error"]["kind"], "UnwritableOutput");
     }
@@ -137,6 +180,8 @@ fn a_tree_that_differs_writes_no_package_and_says_so() {
         "verify",
         "--spec",
         SPEC,
+        "--scenarios",
+        SCENARIO,
         "--against",
         s(&tree),
         "--fab-out",
@@ -150,6 +195,8 @@ fn a_tree_that_differs_writes_no_package_and_says_so() {
         "verify",
         "--spec",
         SPEC,
+        "--scenarios",
+        SCENARIO,
         "--against",
         s(&tree),
         "--against-fab",
@@ -159,4 +206,18 @@ fn a_tree_that_differs_writes_no_package_and_says_so() {
     assert_eq!(v["fab"]["status"], "not_derived");
     assert_eq!(v["against_fab"], "not_compared");
     fs::remove_dir_all(&tree).unwrap();
+}
+
+/// Ruling D3 on PR #103: `INV-03` counts the fault campaign among the gates
+/// of "verified", so each fab flag requires `--scenarios`; without it the
+/// call is a usage error, exit 64, and nothing is created.
+#[test]
+fn each_fab_flag_requires_scenarios() {
+    let absent = scratch("no-scenarios");
+    for flag in ["--fab-out", "--against-fab"] {
+        let (code, v) = run(&["verify", "--spec", SPEC, flag, s(&absent)]);
+        assert_eq!(code, Some(64), "{flag}: {v}");
+        assert_eq!(v["error"]["kind"], "UsageError", "{flag}: {v}");
+        assert!(!absent.exists(), "{flag}");
+    }
 }

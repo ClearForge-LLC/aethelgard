@@ -113,11 +113,11 @@ enum Command {
         /// First compare this directory with the generated tree, byte for byte; any difference fails and no gate runs.
         #[arg(long)]
         against: Option<PathBuf>,
-        /// Only if every gate passes, write the fabrication package (Gerbers, drill, placement, BOM, firmware ELF, FAB-NOTES.md, MANIFEST.json) into this directory, which must be empty or absent; the verdict names every file's sha256.
-        #[arg(long, conflicts_with = "against_fab")]
+        /// Requires --scenarios (INV-03 counts the fault campaign). Only if every gate passes, write the fabrication package (Gerbers, drill, placement, BOM, firmware ELF, FAB-NOTES.md, MANIFEST.json) into this directory, which must be empty or absent; the verdict names every file's sha256.
+        #[arg(long, conflicts_with = "against_fab", requires = "scenarios")]
         fab_out: Option<PathBuf>,
-        /// Derive the fabrication package again and compare it with this directory, file by file; any file that differs, is missing or is extra fails.
-        #[arg(long)]
+        /// Requires --scenarios. Derive the fabrication package again and compare it with this directory, file by file; any file that differs, is missing or is extra fails.
+        #[arg(long, requires = "scenarios")]
         against_fab: Option<PathBuf>,
     },
     /// Bound each I2C line's capacitance from above from a routed board's copper, and judge each bound against the specification's declared bound. Runs no tool.

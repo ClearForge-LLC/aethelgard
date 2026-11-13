@@ -2,7 +2,16 @@
 
 **Branch:** `wo/aet-3300-fab-package` · **Base:** `origin/main` 8f04772 (`AET-WO-1306`); `origin/main` 72af687 (docs PR #102, which carries the §1.1 amendment) merged in as 4013e3d, and 3355286 (`AET-WO-1907`, PR #104: the tools job in five shards) as e32f1ef · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Cadence:** spike (§1.1, as amended 2026-11-13), a §7.1 stop, the architect's ruling (a) on PR #103, then build.
 
-**Outcome: READY FOR REVIEW.**
+**Outcome: READY FOR REVIEW**, with the architect's rulings on D1–D5 applied (PR #103, comment 6847104688):
+- **Confirmed as built:** D1 (the outline's creator line is line 8), D2 (`verdict_sha256` stays byte-exact) and D4 (the manifest names the verdict without its `fab` key).
+- **Applied:**
+  - **D3:** both fab flags require `--scenarios`.
+  - **D5:** the four-run fab test is split into three, `TIER2_MIN` is 79, the tests are weighed, and `ci/SHARDS` is set.
+  - **The F20 wording.**
+- **One part of D5 cannot be met as worded (D6).**
+
+What follows is the report as first written, with each ruled point updated in place.
+
 - **The spike stopped on §7.1.** KiCad 10.0.7 writes the wall clock into two lines of every Gerber, and none of its own options removes them (F1).
 - **The architect ruled (a)** (PR #103, comment 6843504048): delete exactly those two lines, line-exact. The build follows the ruling's nine conditions, with one correction to condition 1, which needs confirming (D1).
 - **The package:** `verify --fab-out D` writes it only when every gate passes, and the verdict names every file's sha256 under `fab`. `--against-fab D` derives the package again and names every file that differs.
@@ -14,26 +23,38 @@
 
 Entry schema: `finding · where · type · recommendation · decision-needed`.
 
-## Decisions needed first
+## Decisions (ruled on PR #103, comment 6847104688)
 
-- **D1 (F3): the outline's creator line is line 8, not line 9.**
+- **D6 (F23), new: no shard count gives every shard ≤ 600 planned seconds.**
+  - `ci/colocate.tsv` keeps `attribute_seeded`'s 12 tests in one shard, planned at 640 s (`AET-WO-1907`: measured at 641 s together). That shard is 640 s at every count.
+  - At 8 shards every other shard plans 599 s, and 8 is the smallest count at which they all do. 7 shards give 691 s each.
+  - `ci/colocate.tsv` is outside my fence, so `ci/SHARDS` is 8.
+  - Accept 640 s for the colocated shard, or rule on the colocation. The acceptance line, every shard under 15 minutes on CI, is reported under Gates.
+
+The five decisions as they were put, each with its ruling:
+
+
+- **D1 (F3): the outline's creator line is line 8, not line 9.** *Ruled: confirmed.*
   - Ruling condition 1 says line 9, because my spike table said "line 2 and line 9" for every layer. I had diffed F.Cu alone.
   - In fact KiCad writes no `%TF.FilePolarity` into the Edge.Cuts header, so its creator line is line 8, which the first image run of the build found.
   - As built, each layer's position is pinned as measured in `fab::LAYERS`: 9 for eight layers, 8 for Edge.Cuts. A second committed real header (`tests/fixtures/fab/kicad-10.0.7-Edge_Cuts-header.gm1`) pins it, and each layer is refused at the other's position.
   - Everything else in conditions 1 and 2 holds as written. **Confirm the correction**, or name another rule.
-- **D2 (F4): `MANIFEST.json`'s `verdict_sha256` binds the run's environment and arguments.**
+- **D2 (F4): `MANIFEST.json`'s `verdict_sha256` binds the run's environment and arguments.** *Ruled: keep it byte-exact, as built.*
   - The verdict states every gate's sandbox (`uid_boundary_unmet`), so a run as root under rootless podman, a run as uid 1000, and CI's Docker each print a different verdict. The same holds for other `--scenarios` or `--against` arguments.
   - So `--against-fab` from another environment names `MANIFEST.json` as differing while the other 14 files match. The adversarial pass measured this: runs A and D differ only in `verdict_sha256`.
   - As built, `--against-fab` stays byte-exact (§3: one changed byte in any file fails), and this is documented. The manifest now records the scenarios (name and sha256), and FAB-NOTES' re-check instruction says to use the same arguments.
   - **Alternative:** have `--against-fab` compare `verdict_sha256` separately and report it apart from the files. Choose.
-- **D3 (F5): `--fab-out` without `--scenarios` writes a package.** §1.2 makes the scenarios optional, so the build allows it, and FAB-NOTES claims no campaign. `INV-03` names the fault campaign among the three gates of "verified", though. **Should `--fab-out` require `--scenarios`?**
-- **D5 (F22): five shards no longer hold the tools job under 15 minutes.**
+- **D3 (F5): `--fab-out` without `--scenarios` writes a package.** *Ruled: both flags require `--scenarios`. Applied: clap `requires = "scenarios"` on `--fab-out` and `--against-fab`, a usage error with exit 64 before anything is read or created, pinned by tier 1 `each_fab_flag_requires_scenarios`. The other tier-1 calls now pass `--scenarios`, and the README says so.* §1.2 makes the scenarios optional, so the build allows it, and FAB-NOTES claims no campaign. `INV-03` names the fault campaign among the three gates of "verified", though. **Should `--fab-out` require `--scenarios`?**
+- **D5 (F22): five shards no longer hold the tools job under 15 minutes.** *Ruled: split the test, then size the shards.*
+  - *Applied, split:* `verify_fab_out_writes_the_package_its_verdict_names_at_any_path` (two `--fab-out` runs at two paths, with every content assertion), `verify_against_fab_finds_the_package_it_wrote_identical`, and `verify_against_fab_names_every_changed_and_extra_file`.
+  - *Applied, sizing:* each test holds `ONE_AT_A_TIME` and has its own scratch, and each is weighed alone; `TIER2_MIN` is 79; `ci/SHARDS` is 8 (D6).
+  - *As first reported:*
   - This WO adds about 620 s of tier-2 load measured on Furnace, about 1,120 s on CI.
   - The plan is as balanced as the load allows: 896 s planned for the shard holding the 2k2 fab test alone, 876 s for each of the other four.
   - On CI (run 43384150507, at c9fb6de), the shard jobs took 18 m 44 s, 17 m 41 s, 15 m 46 s, 13 m 23 s and 16 m 34 s.
   - Splitting the 2k2 test would move the plan's maximum by about 16 s, because the limit is the total load.
   - `ci/SHARDS` is outside my fence. **Set it to 6?**
-- **D4 (F6): the manifest and the verdict cannot name each other's hashes.** §1.2 asks for both. As built:
+- **D4 (F6): the manifest and the verdict cannot name each other's hashes.** *Ruled: confirmed.* §1.2 asks for both. As built:
   - the verdict's `fab.files` names every file, `MANIFEST.json` included;
   - `MANIFEST.json` names the sha256 of the verdict the same call prints without the fab flags. That is the printed verdict without its final `,"fab":{…}`, since `against_fab` and `fab` are serialized last.
   - Tier 2 checks the relation exactly. **Confirm.**
@@ -96,7 +117,7 @@ None of these files reads an environment variable or `SOURCE_DATE_EPOCH`. `commo
 | §1.1's table in FEEDBACK, predictions beside results | above (written before any code; predictions in `~/.cache/aet-3300/spike/PREDICTIONS.md`, timestamped before the runs) |
 | `verify … --fab-out` passes and writes the package; `fab` hashes equal the files' sha256 | tier 2 `verify_fab_out_writes_the_package_its_verdict_names_at_any_path`; the reference probe below |
 | two runs at two paths give identical bytes | the same test (`a` against `a-much/longer/path/b`: identical verdict lines and identical files); the probe below |
-| `--against-fab` passes, and one changed byte in any file fails, naming it | the same test: `identical` then, after one byte flipped in each of the 15 files and one extra file, `differs`, with 15 `against_differs` and 1 `against_extra`, each naming its file |
+| `--against-fab` passes, and one changed byte in any file fails, naming it | tier 2 `verify_against_fab_finds_the_package_it_wrote_identical` (`identical`, `derived`, the same `files`) and `verify_against_fab_names_every_changed_and_extra_file` (one byte flipped in each of the 15 files and one extra file: `differs`, with 15 `against_differs` and 1 `against_extra`, each naming its file), split by ruling D5 |
 | the 47 kΩ scenario fails and writes nothing | tier 2 `verify_fab_out_writes_nothing_when_a_gate_fails`: exit 1, `fab.status` `not_written`, the directory still empty |
 | the firmware is the ELF the campaign ran; the BOM is `emit`'s | the package's ELF is read back and bound to `elf_sha256`, which `simulate` and the campaign's run id are bound to (`BindingMismatch` otherwise). Tier 2 asserts `fab.files[<project>.elf] == elf_sha256` and that the BOM equals `emit`'s file byte for byte |
 | FAB-NOTES states F3's conditions, the stackup and the rule minima, and is regenerated byte-identically | eda's `the_notes_state_every_condition_the_bound_rests_on`, which checks every one of `extract::CONDITIONS` verbatim; tier 2's two-path identity |
@@ -104,11 +125,11 @@ None of these files reads an environment variable or `SOURCE_DATE_EPOCH`. `commo
 
 ## §1.4 The reference probe
 
-`aethelgard verify --spec examples/sentinel-01-minimal.json --scenarios scenarios/sentinel-01/pullup-2k2.json --fab-out <dir>` ran at 4013e3d in the pinned image (`c69ff9bc`), as root under rootless podman with `TMPDIR` unset, at two paths: `/probe/a` and `/var/lib/x/a-much/deeper/path/b`.
-- **Both exit 0.** The two verdict lines are byte-identical (sha256 `8dffc623a1159c5826c67b3fce7c9d19b579a36be7a14652938a65a6af1bbc9f`), and so are the two packages (`diff -r`).
+`aethelgard verify --spec examples/sentinel-01-minimal.json --scenarios scenarios/sentinel-01/pullup-2k2.json --fab-out <dir>` ran in the pinned image on the final tree (re-run after the F20 wording; first run at 4013e3d) (`c69ff9bc`), as root under rootless podman with `TMPDIR` unset, at two paths: `/probe/a` and `/var/lib/x/a-much/deeper/path/b`.
+- **Both exit 0.** The two verdict lines are byte-identical (sha256 `29b035dda77a2d690af22d4c14478cefb9003a55da9263fb6581900bf06278a9`), and so are the two packages (`diff -r`).
 - **`fab`:** `status` `written`, `tool_version` `10.0.7`, `board_sha256` `7b9b0e3d…2070` (the generated board).
 - **`uid_boundary`** is `false` with `user_namespace`, as every gate's is under rootless podman (`AET-WO-1601`).
-- **Every `fab.files` hash equals the sha256 of the file written.**
+- **Every `fab.files` hash equals the sha256 of the file written.** The re-run changed only `FAB-NOTES.md` (the F20 sentence) and so `MANIFEST.json`; the other 13 files are byte-identical to the first run's.
 - **Three hashes match the spike:** the ELF is `2d9ee264…`, the reference firmware of `AET-WO-3301`; the drill (`a045ab03…`) and placement (`5056acf6…`) files are the spike's D1 and P0.
 - **Environment:** the hashes of `MANIFEST.json` and of the verdict are this environment's (D2). Every local run had `uid_boundary: false`.
   - **A prediction, not observed:** under CI's Docker, where the boundary can hold, those two hashes differ and the other 14 files do not.
@@ -118,8 +139,8 @@ The package is not committed. These hashes are the record:
 
 | file | bytes | sha256 |
 |---|---|---|
-| `FAB-NOTES.md` | 4,253 | `e77ca25bda5333da49e33541c3aba5edf5aaf5a36b41dfaab3045d72fe221cea` |
-| `MANIFEST.json` | 1,823 | `f1369a96e4de2654f5299f76d30bb680560378dfb56a4a4685b038a026db3d79` |
+| `FAB-NOTES.md` | 4,258 | `67137e10592fcfd3c29086614f0742e16984ec556ac37bd0c0a9980acb17c7ae` |
+| `MANIFEST.json` | 1,823 | `c640247d080ff67477054cf6ae0d68b94677e4ff93905591840ffda5c497ffe9` |
 | `sentinel-01-B_Cu.gbl` | 40,806 | `09b4ef31443814cd075146d335327c598433329be4d6f0b3fcd94a715af48293` |
 | `sentinel-01-B_Mask.gbs` | 347 | `8506d631dae979f7d6457a62d8824d82ad058d25b3fa680aa8bedb4c7db39bc4` |
 | `sentinel-01-B_Paste.gbp` | 342 | `0d3db1fa132062fd09981dccb423680a458f024a145d0923b3c34fa271525be0` |
@@ -161,10 +182,11 @@ The package is not committed. These hashes are the record:
 | F15 | **KiCad does not escape `"` in a placement row** (adversarial G: a reference `U"4,X` shifted every later column). Now refused at export, exit 5. As with F14, the real home is identifier validation | fixed / backlog | as F14 | no |
 | F16 | Two guards have no mutant any suite kills: the export's ELF and board `BindingMismatch` checks. A test would need a swap race inside `verify`'s scratch, as 1305's extract test does | test gap | backlog, or accept as stated | no |
 | F17 | `holes()` and `pours()` are shape checks of KiCad's own output, not parsers. The adversary showed inputs KiCad never writes that pass them: a hit without X, an undefined `T2` in the body, a later region's `G37`. Other date notations (`2026/11/13`, an epoch) also pass `strip_clock`. The guard against a date left in is tier 2's two-run, two-path identity | residual | none now (scope test) | no |
-| **F22** | Five shards over 15 minutes | CI | D5 | **yes** |
+| **F22** | Five shards over 15 minutes | CI | D5 | ruled: split, `ci/SHARDS` 8 |
+| **F23** | No shard count reaches ≤ 600 planned seconds while `attribute_seeded` is colocated at 640 s | CI | D6 | **yes** |
 | F18 | An extra empty subdirectory in a package still reads `identical` under `--against-fab`, as `--against` treats a tree | residual | none | no |
 | F19 | **Protected documents this build makes stale** (for the architect's reconciliation): `README.md:13`, "extraction from the board is scheduled before any fabrication package is called verified"; `docs/architecture.md:404`, where §3 puts "fabrication package emission" in `aethelgard-eda` (the export is the CLI's `fab` module, and eda holds only the notes' text); `RUL-19` (2), "the P3 fabrication clause waits for it" and "waits for `1601` as well"; and the `roadmap.md:405` backlog row about refilled zones and the stackup, which this WO answers | doc | the architect updates them | yes (reconciliation) |
-| F20 | **FAB-NOTES states copper, thickness and permittivity twice:** under Stackup, and again in `extract`'s conditions printed verbatim. And "No board has been made from it" stops being true once a board is ordered | reduction / wording | one statement from `extract::CONDITIONS`; say "No board made from it was tested by aethelgard" | no |
+| F20 | **FAB-NOTES states copper, thickness and permittivity twice:** under Stackup, and again in `extract`'s conditions printed verbatim. And "No board has been made from it" stops being true once a board is ordered | reduction / wording | **wording ruled and applied:** "Emitting this package made no board, and nothing in it was tested on hardware." The duplicate statement stays: Stackup is the fabricator's instruction, and the conditions are `extract`'s own words | done |
 | F21 | **`fab::LAYERS` and `fab::describe` both map each layer:** the first to KiCad's file suffix, the second to its description | reduction | fold the description into `LAYERS` | no |
 
 
@@ -209,7 +231,7 @@ Two more were added at the close:
 - `strip_clock`'s complete-lines check;
 - the placement header.
 
-**23 of 23 killed:**
+**25 of 25 killed.** These include the two `requires = "scenarios"` guards of ruling D3, each killed by `each_fab_flag_requires_scenarios`:
 - One `pours` mutant first survived. A test case was added (a `G37` with no `G36`), and it was then killed.
 - The owner mutant survives on the host, where tests run as `forge`. It is killed as root in the image, where CI runs tier 1.
 
@@ -238,6 +260,7 @@ The brief was to falsify the stop, not to confirm it: make KiCad 10.0.7 write a 
 
 ## Gates
 
+- **Host, on the final tree:** fmt and clippy are clean, and `cargo test --workspace` passes 954 tests with 0 failed.
 - **Host, at 4013e3d:**
   - `cargo fmt --all -- --check` passes.
   - `cargo clippy --workspace --all-targets -- -D warnings` passes.
@@ -248,7 +271,8 @@ The brief was to falsify the stop, not to confirm it: make KiCad 10.0.7 write a 
   - **the tier-2 canary counts 77, and the floor is now 77.** `TIER2_MIN` was 75 and rises by exactly the two tier-2 tests added in `board_tier2.rs`, with a comment in `ci.yml`.
   - The two containers that ran in under a second (the bridge's tests and fmt) ended before the cap watcher could read their cgroup.
   - An earlier run, before the adversarial fixes, failed one assertion of the new tier-2 test: FAB-NOTES names the removed lines in prose, and the test searched every file instead of the Gerbers alone. The test was fixed.
-- **CI on the PR:** every check is green at c9fb6de (after main's sharded CI was merged in; run 43384150507):
+- **CI on the PR after the rulings:** pending at this commit; the next commit records it, with each shard's time.
+- **CI before the rulings:** every check was green at c9fb6de (after main's sharded CI was merged in; run 43384150507):
   - `gates` 8 m 55 s, `image` 4 m 30 s, `shards` 5 s;
   - the five `tools-shard` jobs:
 
@@ -263,9 +287,23 @@ The brief was to falsify the stop, not to confirm it: make KiCad 10.0.7 write a 
   - the `tools` aggregate: `ANSWER tools_total_passed=1038 names=1037` and `ANSWER tier2_tests_passed=77 floor=77`.
 
   Before the merge, 0943d8c's single `tools` job passed in 56 m 45 s. That was the first CI run of the fab tests under CI's Docker. A green CI is not live acceptance.
-- **The shard plan (`AET-WO-1907`):**
-  - `TIER2_MIN` 77 now sits in the `tools` aggregate job's env, with its comment.
-  - The six new tests are in `ci/test-weights.tsv`, each measured alone in the pinned image on Furnace:
+- **The shard plan after ruling D5:**
+  - `TIER2_MIN` is 79, in the `tools` aggregate job's env, with its comment.
+  - Each new or changed test was weighed alone in the pinned image on Furnace and written to `ci/test-weights.tsv`, replacing the old line:
+
+    | test | seconds |
+    |---|---|
+    | `verify_fab_out_writes_the_package_its_verdict_names_at_any_path` | 247.70 |
+    | `verify_against_fab_finds_the_package_it_wrote_identical` | 246.21 |
+    | `verify_against_fab_names_every_changed_and_extra_file` | 246.36 |
+    | the five in `fab_tier1.rs` | 0.07–4.41 each |
+
+  - `ci/shard.sh assign` on this tree's test list (1,040 names; base 25 s for shard 0; the colocation file as committed) gives these maxima by count: 6 shards, 806 s; 7, 691 s; **8, 640 s for the colocated shard and 599 s for every other**; 9, 640/525 s.
+  - `ci/SHARDS` is 8 (D6). The three split tests land on shards 3, 4 and 5.
+  - **Locally, in the pinned image** (CI's shape, before the push): `cargo test --workspace --features aethelgard-cli/with-tools` passes, 1,028 tests and 0 failed; the tier-2 count is 79, at the floor of 79.
+- **The shard plan before the rulings (`AET-WO-1907`, five shards):**
+  - `TIER2_MIN` 77 sat in the `tools` aggregate job's env, with its comment.
+  - The six new tests were in `ci/test-weights.tsv`, each measured alone in the pinned image on Furnace:
 
     | test | seconds |
     |---|---|
