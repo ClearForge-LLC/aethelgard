@@ -16,6 +16,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use aethelgard_chaos::cbor;
 use aethelgard_chaos::record::Record;
 use aethelgard_chaos::{Event, Manifest, TraceWriter, synthetic};
+mod common;
+
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -212,7 +214,7 @@ fn cli(bridge: Option<&'static str>) -> PathBuf {
     }
     if let Some(body) = bridge {
         let stub = dir.join("aethelgard-bridge");
-        fs::write(&stub, body).unwrap();
+        fs::write(&stub, common::identified_stub(body)).unwrap();
         fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
     }
     made.push((bridge, me.clone()));
@@ -2102,4 +2104,323 @@ fn descends_from(mut p: u32, ancestor: u32) -> bool {
         p = q;
     }
     false
+}
+
+// ---------------------------------------------------------------- AET-WO-2301
+
+/// A bridge stub for a droop run: `--rail` answers the `droop-bor3` crossings
+/// measured in the pinned image, `--renode` runs the given Renode as its
+/// child, and anything else is the 2.2 kOhm line pass.
+const DROOP_BRIDGE: &str = r#"#!/bin/sh
+if [ "$1" = --rail ]; then
+  printf '%s\n' \
+    '{"at_ps":1012422222,"falling":true,"level":"VBOR3_rising","method":"interpolated","microvolts":2700000,"ngspice":"44.2"}' \
+    '{"at_ps":1014422222,"falling":true,"level":"VBOR3_falling","method":"interpolated","microvolts":2610000,"ngspice":"44.2"}' \
+    '{"at_ps":1225977778,"falling":false,"level":"VBOR3_falling","method":"interpolated","microvolts":2610000,"ngspice":"44.2"}' \
+    '{"at_ps":1227977778,"falling":false,"level":"VBOR3_rising","method":"interpolated","microvolts":2700000,"ngspice":"44.2"}' \
+    '{"accepted_points":100027,"minimum_microvolts":2350000,"rail":"solved"}'
+  exit 0
+fi
+if [ "$1" = --renode ]; then shift; exec "$@"; fi
+printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.4}' '{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","rise_30_70_ns":186.4}'
+"#;
+
+/// A `renode` stub for a droop boot: it refuses (exit 98) anything but
+/// `--disable-gui --console --plain -e <one line>`, refuses (exit 99) a command line without the rendered reset and its
+/// probe, and prints the probe `probe` then a boot that ran 9,877,201
+/// instructions after the release.
+fn droop_toolbox(probe: [&str; 5]) -> Dir {
+    droop_toolbox_then(probe, "")
+}
+
+/// As [`droop_toolbox`], running `then` after its output.
+fn droop_toolbox_then(probe: [&str; 5], then: &str) -> Dir {
+    let tb = Dir::new("tb-droop");
+    let mut reads = boot_reads(GOOD_RECORD);
+    reads[1] = "0x000000000096B6D1".to_owned();
+    let mut out = format!(
+        "AETHELGARD-PROBE-BEGIN-0\n{}\nAETHELGARD-PROBE-END-0\n",
+        probe.join("\n")
+    );
+    out.push_str(&transcript(
+        &reads.iter().map(String::as_str).collect::<Vec<_>>(),
+        CPU_LISTING,
+    ));
+    let out = tb.write("renode.out", out.as_bytes());
+    let body = format!(
+        r#"#!/bin/sh
+if [ "$1" = --version ]; then printf 'Renode v1.17.0\n'; exit 0; fi
+[ $# = 5 ] || exit 98
+case "$5" in
+  *"emulation RunFor \"0.001014430\"; machine Reset; "*"cpu IsHalted true; "*"emulation RunFor \"0.000213550\"; cpu IsHalted false; emulation RunFor \"0.000000010\"; emulation RunFor \"0.000099990\"; echo \"AETHELGARD-PROBE-BEGIN-0\""*) ;;
+  *) exit 99;;
+esac
+/bin/cat '{out}'
+{then}
+"#,
+        out = out.display()
+    );
+    let stub = tb.write("renode", body.as_bytes());
+    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    tb
+}
+
+/// `AET-WO-2301` §2.1, §2.4: a droop scenario runs the whole path (the rail,
+/// the schedule, the bridge owning Renode) and Renode is handed one `-e`
+/// command line, so its monitor history is one line whatever the schedule.
+#[test]
+fn a_droop_scenario_renders_its_reset_through_the_bridge_in_one_command_line() {
+    let tb = droop_toolbox([
+        "0x2100B007",
+        "0x22020000",
+        "0x00000060",
+        GOOD_CONTROLLER[0],
+        GOOD_CONTROLLER[1],
+    ]);
+    let work = Work::new();
+    let archive = Dir::new("archive");
+    let out = campaign(
+        &cli(Some(DROOP_BRIDGE)),
+        &tb.0,
+        &root(),
+        &["scenarios/sentinel-01/droop-bor3.json"],
+        &work.firmware,
+        &archive.0.join("a"),
+    );
+    let all = lines(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{all:?} {:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(all[0]["scenario"], "droop-bor3");
+    assert_eq!(all[0]["matched"], true, "{all:?}");
+    // The stub exits 98 unless handed exactly `--disable-gui --console
+    // --plain -e <one line>`: Renode's history is that one line.
+    let run = PathBuf::from(all[0]["run"].as_str().unwrap());
+    let r = replay(&tb.0, &run);
+    assert_eq!(
+        r.status.code(),
+        Some(0),
+        "{:?}",
+        String::from_utf8_lossy(&r.stdout)
+    );
+}
+
+/// A firmware that has not rewritten its boot word at the recovery bound
+/// fails the run (`brownout_unrecovered`), and replay agrees with the verdict.
+#[test]
+fn a_firmware_that_does_not_recover_in_the_bound_fails_and_replays() {
+    let tb = droop_toolbox([
+        "0x00000000",
+        "0xFFFFFFFF",
+        "0xFFFFFFFF",
+        "0x00000000",
+        "0x00000000",
+    ]);
+    let work = Work::new();
+    let archive = Dir::new("archive");
+    let out = campaign(
+        &cli(Some(DROOP_BRIDGE)),
+        &tb.0,
+        &root(),
+        &["scenarios/sentinel-01/droop-bor3.json"],
+        &work.firmware,
+        &archive.0.join("a"),
+    );
+    let all = lines(&out);
+    assert_eq!(out.status.code(), Some(1), "{all:?}");
+    assert_eq!(all[0]["verdict"], "fail");
+    assert_eq!(all[0]["matched"], false);
+    assert_eq!(all[0]["findings"], json!(["brownout_unrecovered"]));
+    let run = PathBuf::from(all[0]["run"].as_str().unwrap());
+    let r = lines(&replay(&tb.0, &run));
+    assert_eq!(r[0]["verdict"], "fail", "{r:?}");
+    assert_eq!(r[0]["matched"], false);
+    // No rule attributes a brownout: it is never blamed on either half.
+    let a = run_cli(
+        &cli(None),
+        &tb.0,
+        &root(),
+        &[os("attribute"), os("--archive"), run.as_os_str()],
+    );
+    let v = lines(&a);
+    assert_eq!(a.status.code(), Some(1), "{v:?}");
+    assert_eq!(v[0]["domain"], "indeterminate", "{v:?}");
+    assert_eq!(
+        v[0]["unexplained"],
+        json!(["brownout_unrecovered"]),
+        "{v:?}"
+    );
+}
+
+/// `AET-WO-2200` F15: a bridge built from other sources, or one that does not
+/// name itself first, is refused before any of its answer is read (exit 4).
+#[test]
+fn a_stale_or_impostor_bridge_is_refused() {
+    let tb = toolbox(&good());
+    let work = Work::new();
+    for first in [
+        r#"{"bridge":"aethelgard-bridge","source_sha256":"0000000000000000000000000000000000000000000000000000000000000000","version":"0.1.0"}"#,
+        r#"{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.4}"#,
+    ] {
+        let dir = Dir::new("impostor");
+        let me = dir.0.join("aethelgard");
+        fs::copy(env!("CARGO_BIN_EXE_aethelgard"), &me).unwrap();
+        let stub = dir.write(
+            "aethelgard-bridge",
+            format!(
+                "#!/bin/sh\necho '{first}'\n{}",
+                BRIDGE_BY_PULL_UP.split_once('\n').unwrap().1
+            )
+            .as_bytes(),
+        );
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        let archive = Dir::new("archive");
+        let out = campaign(
+            &me,
+            &tb.0,
+            &root(),
+            &["scenarios/sentinel-01/pullup-2k2.json"],
+            &work.firmware,
+            &archive.0.join("a"),
+        );
+        let v = expect_refusal(&out, 4, "BridgeMismatch");
+        assert_eq!(v["error"]["id"], "aethelgard-bridge");
+    }
+}
+
+/// `AET-WO-2301` adversarial F1: a firmware that writes its boot word and an
+/// OK record before it has talked to the bus has not recovered. The probe
+/// reads the controller, which only a transfer sets after a reset.
+#[test]
+fn a_record_that_claims_ok_without_the_controller_showing_a_transfer_is_unrecovered() {
+    let tb = droop_toolbox([
+        "0x2100B007",
+        "0x22020000",
+        "0x00000060",
+        "0x00000000",
+        "0x00000000",
+    ]);
+    let work = Work::new();
+    let archive = Dir::new("archive");
+    let out = campaign(
+        &cli(Some(DROOP_BRIDGE)),
+        &tb.0,
+        &root(),
+        &["scenarios/sentinel-01/droop-bor3.json"],
+        &work.firmware,
+        &archive.0.join("a"),
+    );
+    let all = lines(&out);
+    assert_eq!(out.status.code(), Some(1), "{all:?}");
+    assert_eq!(all[0]["findings"], json!(["brownout_unrecovered"]));
+    let run = PathBuf::from(all[0]["run"].as_str().unwrap());
+    assert_eq!(lines(&replay(&tb.0, &run))[0]["verdict"], "fail");
+}
+
+/// `AET-WO-2301` D3 and the runner's droop rules: a droop off the MCU's
+/// supply, or one whose rail floor lies in a threshold's band, is refused
+/// (exit 2) before any run starts or anything is archived.
+#[test]
+fn a_droop_the_runner_cannot_render_is_refused_before_any_run() {
+    let tb = toolbox(&good());
+    for (domain, floor, kind) in [
+        ("VDD_OTHER", 2400, "DroopNotMcuSupply"),
+        ("VDD_3V3", 2660, "DroopRefused"),
+    ] {
+        let work = Work::new();
+        let doc = json!({
+            "schema_version": 2,
+            "name": "d",
+            "base": "spec.json",
+            "expect": "pass",
+            "expect_findings": [],
+            "overrides": [{"droop": {
+                "domain": domain, "floor_millivolts": floor, "start_ns": 1000000,
+                "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
+                "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3
+            }}],
+        });
+        work.dir.write("d.json", doc.to_string().as_bytes());
+        let out = campaign(
+            &cli(Some(DROOP_BRIDGE)),
+            &tb.0,
+            &work.dir.0,
+            &["d.json"],
+            &work.firmware,
+            &work.archive,
+        );
+        expect_refusal(&out, 2, kind);
+        assert!(!work.archive.exists(), "{kind}: an archive was made");
+    }
+}
+
+/// A droop boot the reaper kills at its memory cap is a verdict, not an
+/// error: the cap's finding, and the release's probe never read counted as
+/// unrecovered; replay agrees.
+#[test]
+fn a_droop_boot_killed_at_a_bound_is_a_verdict_and_replays() {
+    let hog = "x=$(/usr/bin/yes | /usr/bin/head -c 1300000000); /bin/sleep 60";
+    let tb = droop_toolbox_then(
+        [
+            "0x2100B007",
+            "0x22020000",
+            "0x00000060",
+            GOOD_CONTROLLER[0],
+            GOOD_CONTROLLER[1],
+        ],
+        hog,
+    );
+    // The stub prints its transcript, then hogs: the reaper's kill discards it.
+    let work = Work::new();
+    let archive = Dir::new("archive");
+    let out = campaign(
+        &cli(Some(DROOP_BRIDGE)),
+        &tb.0,
+        &root(),
+        &["scenarios/sentinel-01/droop-bor3.json"],
+        &work.firmware,
+        &archive.0.join("a"),
+    );
+    let all = lines(&out);
+    assert_eq!(out.status.code(), Some(1), "{all:?}");
+    assert_eq!(
+        all[0]["findings"],
+        json!(["brownout_unrecovered", "memory_cap_exceeded"])
+    );
+    let run = PathBuf::from(all[0]["run"].as_str().unwrap());
+    let r = lines(&replay(&tb.0, &run));
+    assert_eq!(r[0]["verdict"], "fail", "{r:?}");
+}
+
+/// `AET-WO-1102` merged under `AET-WO-2301`: every identifier the two reference
+/// droop scenarios carry passes `check_identifier`: the scenario's name (which
+/// `read_scenario` checks), the droop's domain, and each `expect_counts` kind.
+#[test]
+fn the_droop_scenarios_carry_only_identifiers_the_base_set_admits() {
+    use aethelgard_ir::{IdentifierKind, check_identifier};
+    for file in ["droop-tolerated.json", "droop-bor3.json"] {
+        let v: Value = serde_json::from_slice(
+            &fs::read(root().join("scenarios/sentinel-01").join(file)).unwrap(),
+        )
+        .unwrap();
+        let mut ids = vec![
+            v["name"].as_str().unwrap().to_owned(),
+            v["overrides"][0]["droop"]["domain"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+        ];
+        ids.extend(v["expect_counts"].as_object().unwrap().keys().cloned());
+        assert_eq!(ids.len(), 5, "{file}");
+        for id in ids {
+            assert_eq!(
+                check_identifier(IdentifierKind::Plain, &id),
+                Ok(()),
+                "{file}: {id}"
+            );
+        }
+    }
 }

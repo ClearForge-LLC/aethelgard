@@ -392,6 +392,7 @@ fn main() -> ExitCode {
                         virtual_ns,
                         scenario: String::new(),
                         held: Vec::new(),
+                        rail: None,
                     }),
                 )
             }
@@ -933,6 +934,8 @@ struct Boot {
     /// --firmware` has neither (`AET-WO-2300`).
     scenario: String,
     held: Vec<campaign::HeldLow>,
+    /// A campaign scenario's declared droop (`AET-WO-2301`); `None` otherwise.
+    rail: Option<analog::Rail>,
 }
 
 /// A boot ready to run: every input copied and checked, every expectation
@@ -949,6 +952,7 @@ struct Ready {
     topology: aethelgard_ir::SolvedTopology,
     scenario: String,
     held: Vec<campaign::HeldLow>,
+    rail: Option<analog::Rail>,
 }
 
 /// The topology asks for what the twin cannot lower (exit 2), or the
@@ -1023,6 +1027,7 @@ fn ready(
             topology: boot.topology,
             scenario: boot.scenario,
             held: boot.held,
+            rail: boot.rail,
         },
     ))
 }
@@ -1092,6 +1097,22 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             format!("`{version}` is not the {pinned} the twin's platform is pinned to"),
         ));
     }
+    // A declared droop: the rail is solved once, before the boot, and its
+    // crossings become the resets the boot renders (`AET-WO-2301`, ruled D1).
+    let droop = match ready.as_ref().and_then(|r| r.rail.as_ref()) {
+        Some(rail) => {
+            let solved = analog::rail(
+                rail,
+                ready.as_ref().map_or(0, |r| r.virtual_ns),
+                &scratch.root.join("rail"),
+                &scratch.root.join("status-rail"),
+            )?;
+            let resets = aethelgard_chaos::power::schedule(rail.droop.bor_level, &solved.crossings)
+                .map_err(|e| run::Stop::tool_error(analog::BRIDGE, e.to_owned()))?;
+            Some((rail, solved, resets))
+        }
+        None => None,
+    };
     let booted = analog.as_ref().map(|(_, booted)| booted.clone());
     let plan = ready
         .as_ref()
@@ -1105,6 +1126,9 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             image: &r.image,
             executable: &r.executable,
             instances: &booted.instances,
+            resets: droop
+                .as_ref()
+                .map_or(&[][..], |(_, _, resets)| resets.as_slice()),
         });
     if let (Some(r), Some((pass, booted))) = (&ready, &analog) {
         booted_is_emitted(&booted.path, r, pass)?;
@@ -1116,9 +1140,12 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     let args = run::args(["--disable-gui", "--console", "--plain", "-e", &commands]);
     let run = invocation(args, "status-run");
     // Only a boot is bounded (`RUL-13` as amended, PR #56 B1); a load is not.
-    let out = match &plan {
-        Some(_) => run.run_bounded(renode::BOOT_BOUNDS)?,
-        None => run.run()?,
+    // A boot's log is read through the filter, so a flood reaches a verdict;
+    // a droop's boot is the bridge's, which owns Renode as its child.
+    let out = match (&plan, &droop) {
+        (Some(_), Some(_)) => analog::boot(&run, &tool.path)?,
+        (Some(_), None) => run.run_bounded_filtered(renode::BOOT_BOUNDS, renode::LOG_FILTER)?,
+        (None, _) => run.run()?,
     };
     let (code, (findings, machine, observed)) = match (&plan, &out.ended) {
         // Killed at a bound: a fail that names it, with nothing read. A killed
@@ -1146,6 +1173,27 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         }
         None => (None, findings),
     };
+    // The droop's records and findings, after the boot's (`AET-WO-2301`).
+    let mut findings = findings;
+    let droop_report = match (&droop, &ready, &plan) {
+        (Some((rail, solved, resets)), Some(r), Some(plan)) => {
+            let probes = match out.ended {
+                run::Ended::Bounded(_) => None,
+                _ => Some(renode::probes(&out, plan)?),
+            };
+            let (report, more) = analog::droop_report(
+                rail,
+                solved,
+                resets,
+                probes.as_deref(),
+                &r.image,
+                r.boot_word,
+            );
+            findings.extend(more);
+            Some((solved, report))
+        }
+        _ => None,
+    };
     let mut v = verdict::Verdict::new(
         "simulate",
         &input,
@@ -1166,6 +1214,10 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     if let Some((records, faults)) = analog {
         v.analog = Some(records);
         v.faults = Some(faults);
+    }
+    if let Some((solved, report)) = droop_report {
+        v.droop = Some(report);
+        v.sandbox.unmet(solved.sandbox.uid_boundary_unmet);
     }
     Ok(v)
 }

@@ -49,7 +49,81 @@ pub struct Verdict {
     pub analog: Option<Vec<AnalogRecord>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub faults: Option<Vec<FaultRecord>>,
+    /// A campaign droop only (`AET-WO-2301`): the declared rail, ngspice's
+    /// crossings, the resets the bridge rendered and what Renode read after
+    /// each release, each its own record with its source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub droop: Option<DroopReport>,
     pub findings: Vec<Finding>,
+}
+
+/// A droop's records, as `campaign` archives them (kinds 16 to 19).
+#[derive(Serialize)]
+pub struct DroopReport {
+    pub rail: RailReport,
+    pub crossings: Vec<CrossingReport>,
+    pub resets: Vec<ResetReport>,
+    pub observed: Vec<ObservedReport>,
+}
+
+/// `analog.rail_declared`: every value the rail was computed from.
+#[derive(Serialize)]
+pub struct RailReport {
+    pub kind: &'static str,
+    pub source: &'static str,
+    pub domain: String,
+    pub nominal_millivolts: u32,
+    pub tolerance_permille: u32,
+    pub floor_millivolts: u32,
+    pub start_ns: u64,
+    pub fall_ns: u64,
+    pub hold_ns: u64,
+    pub rise_ns: u64,
+    pub source_milliohms: u32,
+    pub load_milliamps: u32,
+    pub decoupling_picofarads: u64,
+    pub bor_level: u8,
+    /// The rail's lowest value, as ngspice computed it.
+    pub minimum_microvolts: u64,
+    /// Where the thresholds come from (`AET-WO-2301` D4, provisional on F1).
+    pub thresholds: &'static str,
+}
+
+/// `analog.rail_crossing_computed`.
+#[derive(Serialize)]
+pub struct CrossingReport {
+    pub kind: &'static str,
+    pub source: &'static str,
+    pub level: String,
+    pub microvolts: u64,
+    pub at_ps: u64,
+    pub falling: bool,
+}
+
+/// `bridge.reset_rendered`: the model's rendering, never a measured reset.
+#[derive(Serialize)]
+pub struct ResetReport {
+    pub kind: &'static str,
+    pub source: &'static str,
+    pub at_ns: u64,
+    pub released: bool,
+    pub cause: Vec<String>,
+    pub rendering: &'static str,
+}
+
+/// `firmware.observed` at the recovery bound after a release.
+#[derive(Serialize)]
+pub struct ObservedReport {
+    pub kind: &'static str,
+    pub source: &'static str,
+    pub at_ns: u64,
+    pub boot_word: Word,
+    pub status: Word,
+    pub value: Word,
+    /// The controller's state, which only a transfer sets after a reset
+    /// (`AET-WO-2301` adversarial F1).
+    pub cr2: RegisterReport,
+    pub txdr: RegisterReport,
 }
 
 /// A boot's inputs, its expectations and what Renode read (`AET-WO-2100`).
@@ -239,6 +313,7 @@ impl Verdict {
             boot: None,
             analog: None,
             faults: None,
+            droop: None,
             findings,
         }
     }

@@ -320,13 +320,17 @@ fn run(dir: &Path, scenario_path: &Path, out: &Path) -> Result<ExitCode, ExitCod
         Record::Scenario {
             sha256, overrides, ..
         },
-        Record::Solved {
+        Some(Record::Solved {
             specification_sha256,
             topology_sha256,
-        },
-    ) = (&records[0], &records[1])
+        }),
+    ) = (
+        &records[0],
+        // The topology follows the scenario and its expected counts, if any.
+        records.iter().find(|r| matches!(r, Record::Solved { .. })),
+    )
     else {
-        unreachable!("check_run puts the scenario and the topology first");
+        unreachable!("check_run puts the scenario first and holds one topology");
     };
 
     let scenario = read_scenario(scenario_path)?;

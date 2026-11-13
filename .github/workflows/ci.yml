@@ -224,7 +224,10 @@ jobs:
       # --against-fab naming every changed and extra file).
       # 80: plus 1 from AET-WO-1102 (`every_admitted_identifier_character_survives_every_output`:
       # one specification carrying every admitted identifier character through verify --fab-out).
-      TIER2_MIN: "80"
+      # 83: plus 3 from AET-WO-2301 in campaign_tier2.rs (the two reference
+      # droops twice, byte-identical, replayed; Renode's reset recipe pinned
+      # step by step; a flooding firmware reaches a verdict, twice the same).
+      TIER2_MIN: "83"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

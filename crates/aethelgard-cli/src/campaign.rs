@@ -41,6 +41,7 @@ struct Prepared {
     specification_sha256: [u8; 32],
     topology: SolvedTopology,
     held: Vec<HeldLow>,
+    rail: Option<crate::analog::Rail>,
     run_id: [u8; 16],
 }
 
@@ -164,6 +165,9 @@ pub(crate) fn apply_overrides(
                     net,
                 });
             }
+            // A droop changes no value of the specification: the runner
+            // resolves and checks it against the domain (`resolve_droop`).
+            Override::Droop(_) => {}
         }
     }
     spec.validate().map_err(|e| {
@@ -198,11 +202,22 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
     let base = read_base(path, &scenario.base)
         .map_err(|(kind, m)| refuse(kind, Some(&scenario.name), m, EXIT_UNREADABLE))?;
     let Effective {
+        spec,
         held,
         specification_sha256,
         topology,
-        ..
     } = effective(&scenario, &base)?;
+    let rail = match scenario.droop() {
+        Some(d) => Some(resolve_droop(d, &spec, &topology).map_err(|e| {
+            refuse(
+                e.kind,
+                e.id.as_deref(),
+                format!("scenario `{}`: {e}", scenario.name),
+                EXIT_INVALID_SPEC,
+            )
+        })?),
+        None => None,
+    };
     let run_id = rules::run_id(&scenario.sha256, &specification_sha256, firmware_sha256);
     Ok(Prepared {
         path: path.to_path_buf(),
@@ -211,7 +226,58 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         specification_sha256,
         topology,
         held,
+        rail,
         run_id,
+    })
+}
+
+/// A droop's domain, nominal, tolerance and decoupling, resolved against the
+/// effective specification, then checked against the supervisor's table
+/// (ruled D3, D7). Only the MCU's own supply can be drooped: its supervisor is
+/// the one the campaign renders. Every refusal is the scenario's (exit 2).
+fn resolve_droop(
+    droop: &aethelgard_chaos::record::Droop,
+    spec: &Specification,
+    topology: &SolvedTopology,
+) -> Result<crate::analog::Rail, ScenarioError> {
+    let refuse = |kind: &'static str, m: String| ScenarioError::new(kind, Some(&droop.domain), m);
+    if droop.domain != spec.mcu.supply {
+        return Err(refuse(
+            "DroopNotMcuSupply",
+            format!(
+                "the droop is on `{}`, not the MCU's supply `{}`",
+                droop.domain, spec.mcu.supply
+            ),
+        ));
+    }
+    // belt-and-suspenders: the specification's own validation makes the MCU's
+    // supply one of its domains; a domain missing here is refused, not unwrapped.
+    let domain = spec
+        .voltage_domains
+        .iter()
+        .find(|d| d.id == droop.domain)
+        .ok_or_else(|| {
+            refuse(
+                "UnknownDomain",
+                format!("the specification has no domain `{}`", droop.domain),
+            )
+        })?;
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part)
+        .map_err(|e| refuse(e.kind(), format!("the pin table is unusable: {e}")))?;
+    let decoupling = aethelgard_eda::schematic::decoupling_picofarads(spec, topology, &table)
+        .map_err(|e| refuse(e.kind(), format!("the emitter's decoupling: {e}")))?;
+    let decoupling_picofarads = decoupling.get(&droop.domain).copied().unwrap_or(0);
+    rules::check_droop(
+        droop,
+        domain.nominal_millivolts,
+        decoupling_picofarads,
+        VIRTUAL_NS,
+    )?;
+    Ok(crate::analog::Rail {
+        droop: droop.clone(),
+        nominal_millivolts: domain.nominal_millivolts,
+        tolerance_permille: u32::from(domain.tolerance_permille),
+        decoupling_picofarads,
     })
 }
 
@@ -443,6 +509,7 @@ fn run_one(
             virtual_ns: VIRTUAL_NS,
             scenario: p.scenario.name.clone(),
             held: p.held,
+            rail: p.rail,
         }),
     )
     .map_err(stop)?;
@@ -472,13 +539,12 @@ fn run_one(
         crate::diagnose(&m);
         ExitCode::from(EXIT_INTERNAL)
     };
-    let mut records = vec![
-        p.scenario.record(),
-        Record::Solved {
-            specification_sha256: p.specification_sha256,
-            topology_sha256,
-        },
-    ];
+    let mut records = vec![p.scenario.record()];
+    records.extend(p.scenario.counts_record());
+    records.extend([Record::Solved {
+        specification_sha256: p.specification_sha256,
+        topology_sha256,
+    }]);
     records.extend(buses);
     records.extend(records_of(&verdict).map_err(internal)?);
     // The run must pass the rules replay will judge it by before it is written.
@@ -499,7 +565,7 @@ fn run_one(
     let archived = (|| {
         let mut writer = TraceWriter::create(&dir, &header)?;
         for record in records {
-            let timestamp = if record.before_boot() { 0 } else { VIRTUAL_NS };
+            let timestamp = record.timestamp(VIRTUAL_NS);
             writer.append(&Event::Record { timestamp, record })?;
         }
         writer.commit()
@@ -596,6 +662,68 @@ pub(crate) fn solved_buses(t: &SolvedTopology) -> Result<Vec<Record>, String> {
             d.bus
         ));
     }
+    Ok(out)
+}
+
+/// Kinds 16 to 19 from a droop's report, the crossings, resets and
+/// observations merged in the time order replay checks (`AET-WO-2301`).
+fn droop_records(d: &crate::verdict::DroopReport) -> Result<Vec<Record>, String> {
+    let r = &d.rail;
+    let mut out = vec![Record::RailDeclared {
+        droop: aethelgard_chaos::record::Droop {
+            domain: r.domain.clone(),
+            floor_millivolts: r.floor_millivolts,
+            start_ns: r.start_ns,
+            fall_ns: r.fall_ns,
+            hold_ns: r.hold_ns,
+            rise_ns: r.rise_ns,
+            source_milliohms: r.source_milliohms,
+            load_milliamps: r.load_milliamps,
+            bor_level: r.bor_level,
+        },
+        nominal_millivolts: r.nominal_millivolts,
+        tolerance_permille: r.tolerance_permille,
+        decoupling_picofarads: r.decoupling_picofarads,
+    }];
+    let mut timed: Vec<((u64, u8), Record)> = Vec::new();
+    for c in &d.crossings {
+        timed.push((
+            (c.at_ps, 0),
+            Record::RailCrossing {
+                domain: r.domain.clone(),
+                level: c.level.clone(),
+                microvolts: c.microvolts,
+                at_ps: c.at_ps,
+                falling: c.falling,
+            },
+        ));
+    }
+    for x in &d.resets {
+        timed.push((
+            (x.at_ns.saturating_mul(1000), 1),
+            Record::ResetRendered {
+                at_ns: x.at_ns,
+                released: x.released,
+                cause: x.cause.clone(),
+                rendering: x.rendering.to_owned(),
+            },
+        ));
+    }
+    for o in &d.observed {
+        timed.push((
+            (o.at_ns.saturating_mul(1000), 2),
+            Record::FirmwareObserved {
+                at_ns: o.at_ns,
+                boot_word: word(&o.boot_word)?,
+                status: word(&o.status)?,
+                value: word(&o.value)?,
+                cr2: reading(&o.cr2)?,
+                txdr: reading(&o.txdr)?,
+            },
+        ));
+    }
+    timed.sort_by_key(|(k, _)| *k);
+    out.extend(timed.into_iter().map(|(_, r)| r));
     Ok(out)
 }
 
@@ -709,6 +837,9 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
             nets,
             firmware_sees: f.firmware_sees.to_owned(),
         });
+    }
+    if let Some(d) = &v.droop {
+        out.extend(droop_records(d)?);
     }
     let boot = v
         .boot

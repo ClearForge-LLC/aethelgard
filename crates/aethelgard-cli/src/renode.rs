@@ -5,7 +5,9 @@
 //! of `There was an error executing command`. A CPU listed beside an `[ERROR]`
 //! log line is a failed load too (`platform_load_error`).
 
-use crate::run::{Bound, Bounds, Output, Stop};
+use aethelgard_chaos::power;
+
+use crate::run::{Bound, Bounds, LogFilter, Output, Stop};
 use crate::said::{self, Style};
 use crate::verdict::{Finding, Machine, Peripheral};
 
@@ -128,6 +130,32 @@ pub const BOOT_BOUNDS: Bounds = Bounds {
 /// (adversarial A6).
 const ABORTED: &str = "This machine has aborted";
 
+/// A boot's stdout is read through this (`AET-WO-2100` F23, `AET-WO-2301` P5):
+/// a run whose output fits 8 MiB is read byte for byte; past that, Renode's
+/// log lines are counted and dropped, but the first of each kind the judge
+/// reads is kept, so a firmware flooding the log still reaches a verdict.
+pub const LOG_FILTER: LogFilter = LogFilter {
+    budget: 8 * 1024 * 1024,
+    keep: &[ABORTED, LOAD_ERROR, LOG_ERROR, LOCKED[0], LOCKED[1]],
+};
+
+/// A log line without Renode's host timestamp (`[21:06:58.1004] `), which
+/// differs run to run and so never belongs in a finding (`INV-04`,
+/// `AET-WO-2301` F10).
+fn log_text(line: &str) -> &str {
+    let line = line.trim();
+    match line.strip_prefix('[').and_then(|r| r.split_once("] ")) {
+        Some((stamp, rest))
+            if stamp
+                .bytes()
+                .all(|b| b.is_ascii_digit() || b == b':' || b == b'.') =>
+        {
+            rest.trim()
+        }
+        _ => line,
+    }
+}
+
 /// The finding for a boot the reaper killed at a bound: `cpu_aborted` if
 /// Renode logged that its machine aborted, else the bound it exceeded.
 pub fn bounded(out: &Output, bound: Bound) -> Finding {
@@ -184,12 +212,40 @@ pub struct BootPlan<'a> {
     pub executable: &'a [(u64, u64)],
     /// Every solved peripheral as the listing must name it: (name, model).
     pub instances: &'a [(String, String)],
+    /// The resets a declared droop renders, in time order; empty for every
+    /// other boot (`AET-WO-2301`).
+    pub resets: &'a [power::Reset],
+}
+
+/// The sentinels around the read after a release (`AET-WO-2301` §2.3), one
+/// pair per release, numbered from 0; each is matched as a whole line.
+const PROBE_BEGIN: &str = "AETHELGARD-PROBE-BEGIN-";
+const PROBE_END: &str = "AETHELGARD-PROBE-END-";
+
+fn run_for(ns: u64) -> String {
+    format!(
+        "emulation RunFor \"{}.{:09}\"",
+        ns / 1_000_000_000,
+        ns % 1_000_000_000
+    )
 }
 
 impl BootPlan<'_> {
-    /// The instructions a core that never stopped executes in the run.
+    /// The instructions the core executes in the run: MIPS × time, or, after
+    /// a rendered reset, MIPS × the time since the last release less the
+    /// nudge (ruled D5; `AET-WO-2301` F4, F5): Renode's count restarts at a
+    /// reset, and the release takes effect at the nudge's end. A reset never
+    /// released executes nothing after it.
     pub fn instructions(&self) -> u64 {
-        aethelgard_twin::boot::MIPS * self.virtual_ns / 1000
+        let ran_from = match self.resets.last() {
+            None => 0,
+            Some(power::Reset {
+                released_ns: Some(at),
+                ..
+            }) => at + power::NUDGE_NS,
+            Some(_) => return 0,
+        };
+        aethelgard_twin::boot::MIPS * self.virtual_ns.saturating_sub(ran_from) / 1000
     }
 
     /// Every read, in order, as the monitor command and what it reads.
@@ -230,9 +286,108 @@ impl BootPlan<'_> {
         reads
     }
 
+    /// The monitor commands a declared droop's reset is rendered with
+    /// ([`power::ASSERT_RENDERING`]): `machine Reset`, which alone never boots
+    /// again (`AET-WO-2301` F3), then the cold writes and the vector table
+    /// re-applied, the core held, and the boot word and records re-armed so
+    /// that only the firmware's code can set them again.
+    fn assert_reset(&self) -> Vec<String> {
+        let mut c = vec!["machine Reset".to_owned()];
+        c.extend(self.cold());
+        c.push(self.vtor());
+        c.push("cpu IsHalted true".to_owned());
+        c.extend(self.rearm());
+        c
+    }
+
+    /// The cold RCC writes, as the part's reset leaves those registers.
+    fn cold(&self) -> Vec<String> {
+        self.image
+            .cold
+            .iter()
+            .map(|r| format!("sysbus WriteDoubleWord {:#010x} 0x0", r.address))
+            .collect()
+    }
+
+    /// The core takes its vector table where the part boots, not where Renode
+    /// guesses it from the ELF (adversarial A3; after a reset, `AET-WO-2301` F3).
+    fn vtor(&self) -> String {
+        format!("cpu VectorTableOffset {:#010x}", self.vector_table)
+    }
+
+    /// Only the firmware's code may set the boot word (adversarial A1, A2), or
+    /// fill a record, so one preloaded in the image, or never written, reads as
+    /// the judge left it (`AET-WO-2202` adversarial 1).
+    fn rearm(&self) -> Vec<String> {
+        let mut c = vec![format!(
+            "sysbus WriteDoubleWord {:#010x} 0x0",
+            self.boot_word
+        )];
+        for check in &self.image.i2c.checks {
+            for at in [check.status_at, check.value_at] {
+                c.push(format!(
+                    "sysbus WriteDoubleWord {at:#010x} {:#010x}",
+                    aethelgard_twin::boot::RECORD_UNSET
+                ));
+            }
+        }
+        c
+    }
+
+    /// The reads of a probe: the boot word, the first identity record's
+    /// status and value, then the first witness's `CR2` and `TXDR`: the
+    /// record is the firmware's own claim, the controller is what a transfer
+    /// on the bus leaves (`AET-WO-2301` adversarial F1).
+    fn probe_reads(&self) -> Vec<String> {
+        let mut c = vec![format!("sysbus ReadDoubleWord {:#010x}", self.boot_word)];
+        if let Some(check) = self.image.i2c.checks.first() {
+            for at in [check.status_at, check.value_at] {
+                c.push(format!("sysbus ReadDoubleWord {at:#010x}"));
+            }
+        }
+        if let Some(w) = self.image.i2c.witnesses.first() {
+            for at in [w.cr2_at, w.txdr_at] {
+                c.push(format!("sysbus ReadDoubleWord {at:#010x}"));
+            }
+        }
+        c
+    }
+
+    /// The droop's schedule as monitor commands, from virtual time 0 to the
+    /// run's end: each reset asserted at its time, released at its time with
+    /// the nudge, and probed at the recovery bound (ruled D1, D4).
+    fn droop_schedule(&self) -> Vec<String> {
+        let mut c = Vec::new();
+        let mut now = 0u64;
+        let mut at = |c: &mut Vec<String>, t: u64| {
+            if t > now {
+                c.push(run_for(t - now));
+                now = t;
+            }
+        };
+        for (k, r) in self.resets.iter().enumerate() {
+            at(&mut c, r.asserted_ns);
+            c.extend(self.assert_reset());
+            let Some(release) = r.released_ns else { break };
+            at(&mut c, release);
+            c.push("cpu IsHalted false".to_owned());
+            // The nudge (F5): the release takes effect at its end.
+            at(&mut c, release + power::NUDGE_NS);
+            at(&mut c, release + power::RECOVERY_BOUND_NS);
+            // The console's level is not changed around a probe: a change
+            // drops the log lines still queued (`AET-WO-2301` adversarial F2).
+            c.push(format!("echo \"{PROBE_BEGIN}{k}\""));
+            c.extend(self.probe_reads());
+            c.push(format!("echo \"{PROBE_END}{k}\""));
+        }
+        at(&mut c, self.virtual_ns);
+        c
+    }
+
     /// The monitor commands: a fixed seed, the platform, the firmware, the
     /// cold RCC, a fixed virtual time, then the reads between sentinels under
     /// `logLevel 3`, then the listing. Both paths are this CLI's own copies.
+    /// With a droop, the fixed virtual time is the droop's schedule instead.
     pub fn commands(&self) -> String {
         let mut c = vec![
             format!("emulation SetSeed {}", aethelgard_twin::boot::SEED),
@@ -243,33 +398,14 @@ impl BootPlan<'_> {
             ),
             format!("sysbus LoadELF @{}", self.firmware.display()),
         ];
-        for r in &self.image.cold {
-            c.push(format!("sysbus WriteDoubleWord {:#010x} 0x0", r.address));
+        c.extend(self.cold());
+        c.extend(self.rearm());
+        c.push(self.vtor());
+        if self.resets.is_empty() {
+            c.push(run_for(self.virtual_ns));
+        } else {
+            c.extend(self.droop_schedule());
         }
-        // Only the firmware's code may set the boot word (adversarial A1, A2),
-        // and the core takes its vector table where the part boots, not where
-        // Renode guesses it from the ELF (adversarial A3).
-        c.push(format!(
-            "sysbus WriteDoubleWord {:#010x} 0x0",
-            self.boot_word
-        ));
-        // The same for every record: only the firmware's code may fill one,
-        // so a record that was preloaded in the image, or never written, reads
-        // as the judge left it (`AET-WO-2202` adversarial 1).
-        for check in &self.image.i2c.checks {
-            for at in [check.status_at, check.value_at] {
-                c.push(format!(
-                    "sysbus WriteDoubleWord {at:#010x} {:#010x}",
-                    aethelgard_twin::boot::RECORD_UNSET
-                ));
-            }
-        }
-        c.push(format!("cpu VectorTableOffset {:#010x}", self.vector_table));
-        c.push(format!(
-            "emulation RunFor \"{}.{:09}\"",
-            self.virtual_ns / 1_000_000_000,
-            self.virtual_ns % 1_000_000_000
-        ));
         c.push("logLevel 3".to_owned());
         c.push(format!("echo \"{BEGIN}\""));
         c.extend(self.reads().into_iter().map(|(cmd, _)| cmd));
@@ -442,20 +578,29 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         )));
     }
     let mut findings = Vec::new();
-    if let Some(line) = lines.iter().find(|l| l.contains(LOG_ERROR)) {
-        findings.push(Finding::plain("renode_error_log", line.trim().to_owned()));
+    if out.dropped_log_lines > 0 {
+        findings.push(Finding::info(
+            "renode_log_flood",
+            format!(
+                "Renode's output passed {} MiB; its log lines past that were counted and dropped, the first of each kind the judge reads kept",
+                LOG_FILTER.budget / (1024 * 1024)
+            ),
+        ));
     }
-    let locked: Vec<&&str> = lines
-        .iter()
-        .filter(|l| LOCKED.iter().any(|w| l.contains(w)))
-        .collect();
-    if let Some(first) = locked.first() {
+    if let Some(line) = lines.iter().find(|l| l.contains(LOG_ERROR)) {
+        findings.push(Finding::plain(
+            "renode_error_log",
+            log_text(line).to_owned(),
+        ));
+    }
+    // The count of such lines differs run to run under a flood (`AET-WO-2301`
+    // F10), and Renode's timestamp always does: neither is in the message.
+    if let Some(first) = lines.iter().find(|l| LOCKED.iter().any(|w| l.contains(w))) {
         findings.push(Finding::plain(
             "locked_peripheral_access",
             format!(
-                "{} access(es) to a peripheral whose clock was off; the first: {}",
-                locked.len(),
-                first.trim()
+                "one or more accesses to a peripheral whose clock was off; the first: {}",
+                log_text(first)
             ),
         ));
     }
@@ -591,6 +736,99 @@ fn witness_finding(w: &aethelgard_twin::boot::I2cWitness, cr2: u32, txdr: u32) -
 }
 
 /// How a record's status reads in the verdict.
+/// What a probe read after a release (`AET-WO-2301` §2.3): the boot word,
+/// then the first identity record's status and value, if the image has one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Probe {
+    pub at_ns: u64,
+    pub boot_word: u32,
+    pub record: Option<(u32, u32)>,
+    /// The first witness's `CR2` and `TXDR`, if the image has one.
+    pub controller: Option<(u32, u32)>,
+}
+
+/// Each release's probe, read between its own whole-line sentinels: exactly
+/// one pair per release and none other, and between them exactly the
+/// probe's reads, each a bare value (`value`), or the output is not trusted.
+/// A boot killed at a bound has read none; its probes are absent, never
+/// guessed.
+pub fn probes(out: &Output, plan: &BootPlan<'_>) -> Result<Vec<Probe>, Stop> {
+    probes_in(&out.text(), plan)
+}
+
+fn probes_in(text: &str, plan: &BootPlan<'_>) -> Result<Vec<Probe>, Stop> {
+    let untrusted = |what: String| {
+        Stop::tool_error(TOOL, format!("{what}{}", said::suffix(text, Style::Renode)))
+    };
+    let lines = clean_lines(text);
+    let releases: Vec<u64> = plan.resets.iter().filter_map(|r| r.released_ns).collect();
+    let sentinels = lines
+        .iter()
+        .filter(|l| l.starts_with(PROBE_BEGIN) || l.starts_with(PROBE_END))
+        .count();
+    if sentinels != 2 * releases.len() {
+        return Err(untrusted(format!(
+            "renode printed {sentinels} probe markers for {} releases",
+            releases.len()
+        )));
+    }
+    let reads = plan.probe_reads();
+    let mut out = Vec::new();
+    for (k, release) in releases.iter().enumerate() {
+        let find = |m: String| -> Result<usize, Stop> {
+            match (0..lines.len())
+                .filter(|&i| lines[i] == m)
+                .collect::<Vec<_>>()[..]
+            {
+                [i] => Ok(i),
+                _ => Err(untrusted(format!("renode did not print `{m}` once"))),
+            }
+        };
+        let (b, e) = (
+            find(format!("{PROBE_BEGIN}{k}"))?,
+            find(format!("{PROBE_END}{k}"))?,
+        );
+        // A whole Renode log line inside the block is the log, not a read: the
+        // console keeps its level through a probe (F2). Anything else that
+        // is not a bare value is refused below.
+        let between: Vec<&str> = lines
+            .get(b + 1..e)
+            .unwrap_or_default()
+            .iter()
+            .copied()
+            .filter(|l| !l.starts_with('['))
+            .collect();
+        if e < b || between.len() != reads.len() {
+            return Err(untrusted(format!(
+                "probe {k}: {} lines between its markers, not the {} reads",
+                between.len(),
+                reads.len()
+            )));
+        }
+        let mut words = Vec::new();
+        for (cmd, line) in reads.iter().zip(between) {
+            let v = value(line)
+                .and_then(|v| u32::try_from(v).ok())
+                .ok_or_else(|| {
+                    untrusted(format!(
+                        "probe {k}: `{cmd}` read `{}`, not a word",
+                        line.escape_debug()
+                    ))
+                })?;
+            words.push(v);
+        }
+        let check = usize::from(!plan.image.i2c.checks.is_empty());
+        out.push(Probe {
+            at_ns: release + power::RECOVERY_BOUND_NS,
+            boot_word: words[0],
+            record: (check == 1).then(|| (words[1], words[2])),
+            controller: (!plan.image.i2c.witnesses.is_empty())
+                .then(|| (words[1 + 2 * check], words[2 + 2 * check])),
+        });
+    }
+    Ok(out)
+}
+
 pub fn status_name(status: u32) -> &'static str {
     use aethelgard_twin::boot::{STATUS_OK, STATUS_RXNE, STATUS_STOP, STATUS_TC, STATUS_TXIS};
     match status {
@@ -600,5 +838,178 @@ pub fn status_name(status: u32) -> &'static str {
         STATUS_RXNE => "timeout_rxne",
         STATUS_STOP => "timeout_stopf",
         _ => "invalid",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn image() -> aethelgard_twin::boot::Image {
+        let topology: aethelgard_ir::SolvedTopology = serde_json::from_str(
+            r#"{"schema_version":2,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}}}"#,
+        )
+        .unwrap();
+        aethelgard_twin::boot::expected(&topology).unwrap()
+    }
+
+    fn plan<'a>(
+        image: &'a aethelgard_twin::boot::Image,
+        resets: &'a [power::Reset],
+    ) -> BootPlan<'a> {
+        BootPlan {
+            platform: std::path::Path::new("/w/platform.repl"),
+            firmware: std::path::Path::new("/w/firmware.elf"),
+            virtual_ns: 100_000_000,
+            boot_word: 0x2000_0000,
+            vector_table: 0x0800_0000,
+            image,
+            executable: &[],
+            instances: &[],
+            resets,
+        }
+    }
+
+    fn bor3() -> Vec<power::Reset> {
+        vec![power::Reset {
+            asserted_ns: 1_014_430,
+            released_ns: Some(1_227_980),
+            cause: vec!["VBOR3".to_owned()],
+        }]
+    }
+
+    #[test]
+    fn a_log_line_loses_its_host_timestamp_and_nothing_else() {
+        assert_eq!(
+            log_text("[21:06:58.1004] [WARNING] sysbus: Tried to write a locked peripheral"),
+            "[WARNING] sysbus: Tried to write a locked peripheral"
+        );
+        assert_eq!(log_text("  plain  "), "plain");
+        assert_eq!(log_text("[WARNING] x"), "[WARNING] x");
+    }
+
+    /// `AET-WO-2301` D1, D4, F3, F5: the droop's schedule is the measured
+    /// recipe, at the schedule's times, and a static boot's commands are
+    /// unchanged by it.
+    #[test]
+    fn a_droop_boot_runs_the_measured_recipe_at_the_schedules_times() {
+        let image = image();
+        let resets = bor3();
+        let droop = plan(&image, &resets).commands();
+        let static_ = plan(&image, &[]).commands();
+        assert!(static_.contains("emulation RunFor \"0.100000000\"; logLevel 3"));
+        assert!(!static_.contains("machine Reset"));
+        let rec = |at: u32| format!("sysbus WriteDoubleWord {at:#010x} 0xffffffff");
+        let check = &image.i2c.checks[0];
+        let want = [
+            "cpu VectorTableOffset 0x08000000".to_owned(),
+            "emulation RunFor \"0.001014430\"".to_owned(),
+            "machine Reset".to_owned(),
+        ]
+        .join("; ");
+        assert!(droop.contains(&want), "{droop}");
+        let rest = [
+            "cpu IsHalted true".to_owned(),
+            "sysbus WriteDoubleWord 0x20000000 0x0".to_owned(),
+            rec(check.status_at),
+            rec(check.value_at),
+            "emulation RunFor \"0.000213550\"".to_owned(),
+            "cpu IsHalted false".to_owned(),
+            "emulation RunFor \"0.000000010\"".to_owned(),
+            "emulation RunFor \"0.000099990\"".to_owned(),
+            "echo \"AETHELGARD-PROBE-BEGIN-0\"".to_owned(),
+        ]
+        .join("; ");
+        assert!(droop.contains(&rest), "{droop}");
+        assert!(droop.contains(
+            "echo \"AETHELGARD-PROBE-END-0\"; emulation RunFor \"0.098672020\"; logLevel 3"
+        ));
+        // After `machine Reset` alone the core never runs (F3): the cold
+        // writes and the vector table follow it.
+        let after = droop.split("machine Reset; ").nth(1).unwrap();
+        assert!(after.starts_with("sysbus WriteDoubleWord"));
+        assert!(
+            after
+                .split("; cpu IsHalted true")
+                .next()
+                .unwrap()
+                .ends_with("cpu VectorTableOffset 0x08000000")
+        );
+        assert_eq!(droop.matches("emulation RunFor \"0.000000010\"").count(), 1);
+        assert_eq!(plan(&image, &resets).instructions(), 9_877_201);
+        assert_eq!(plan(&image, &[]).instructions(), 10_000_000);
+    }
+
+    #[test]
+    fn a_probe_is_read_only_between_its_own_whole_line_markers() {
+        let image = image();
+        let resets = bor3();
+        let p = plan(&image, &resets);
+        let block = |rows: &[&str]| {
+            format!(
+                "x\nAETHELGARD-PROBE-BEGIN-0\n{}\nAETHELGARD-PROBE-END-0\n",
+                rows.join("\n")
+            )
+        };
+        let good = [
+            "0x2100B007",
+            "0x22020000",
+            "0x00000060",
+            "0x020104EC",
+            "0x000000D0",
+        ];
+        let want = [Probe {
+            at_ns: 1_327_980,
+            boot_word: 0x2100_B007,
+            record: Some((0x2202_0000, 0x60)),
+            controller: Some((0x0201_04EC, 0xD0)),
+        }];
+        assert_eq!(probes_in(&block(&good), &p).unwrap(), want);
+        // A whole Renode log line inside the block is the log, not a read
+        // (the console keeps its level through a probe, adversarial F2).
+        let mut logged = good.to_vec();
+        logged.insert(
+            2,
+            "[21:06:58.1004] [WARNING] sysbus: Tried to write a locked peripheral",
+        );
+        assert_eq!(probes_in(&block(&logged), &p).unwrap(), want);
+        let refused = [
+            String::new(),
+            block(&good[..4]),
+            block(&[
+                "0x2100B007",
+                "0x22020000",
+                "0x60 0x61",
+                "0x020104EC",
+                "0x000000D0",
+            ]),
+            // An echoed command's tail read as a value (`AET-WO-2301` F8).
+            block(&[
+                "0x2100B007",
+                "0x22020000",
+                "0x20000008\"",
+                "0x020104EC",
+                "0x000000D0",
+            ]),
+            block(&[
+                "0x2100B007",
+                "0x22020000",
+                " [WARNING] 0x60",
+                "0x020104EC",
+                "0x000000D0",
+            ]),
+            format!("{}AETHELGARD-PROBE-BEGIN-1\n", block(&good)),
+            "AETHELGARD-PROBE-END-0\n0x2100B007\nAETHELGARD-PROBE-BEGIN-0\n".to_owned(),
+            block(&[
+                "0x1FFFFFFFF",
+                "0x22020000",
+                "0x00000060",
+                "0x020104EC",
+                "0x000000D0",
+            ]),
+        ];
+        for r in refused {
+            assert!(probes_in(&r, &p).is_err(), "accepted: {r:?}");
+        }
     }
 }

@@ -294,3 +294,39 @@ pub fn eventually(what: &str, mut cond: impl FnMut() -> bool) {
 }
 
 pub mod corpus;
+
+/// The identity line the bridge built from this tree prints first
+/// (`AET-WO-2200` F15, `bridge/build.rs`): the same recipe, recomputed here
+/// from the files on disk, so a stub bridge can be the one the CLI expects.
+pub fn bridge_identity() -> String {
+    use sha2::{Digest, Sha256};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bridge");
+    let mut files = vec![
+        "Cargo.toml".to_owned(),
+        "Cargo.lock".to_owned(),
+        "build.rs".to_owned(),
+    ];
+    let mut src: Vec<String> = std::fs::read_dir(root.join("src"))
+        .unwrap()
+        .map(|e| format!("src/{}", e.unwrap().file_name().to_str().unwrap()))
+        .collect();
+    src.sort();
+    files.extend(src);
+    let mut h = Sha256::new();
+    for f in &files {
+        let bytes = std::fs::read(root.join(f)).unwrap();
+        h.update(f.as_bytes());
+        h.update([0u8]);
+        h.update((bytes.len() as u64).to_le_bytes());
+        h.update(&bytes);
+    }
+    let hex: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    format!(r#"{{"bridge":"aethelgard-bridge","source_sha256":"{hex}","version":"0.1.0"}}"#)
+}
+
+/// A stub bridge's body with the identity line printed first, after its
+/// `#!` line, so every stub is the bridge this CLI was built against.
+pub fn identified_stub(body: &str) -> String {
+    let (shebang, rest) = body.split_once('\n').unwrap_or((body, ""));
+    format!("{shebang}\necho '{}'\n{rest}", bridge_identity())
+}

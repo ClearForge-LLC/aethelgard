@@ -1,5 +1,6 @@
-//! A campaign run's records (`AET-WO-2300`): event kinds 5 to 15, one per
-//! record `aethelgard campaign` archives (kind 15 since `AET-WO-3100`). Every field is an integer, a byte
+//! A campaign run's records (`AET-WO-2300`): event kinds 5 to 20, one per
+//! record `aethelgard campaign` archives (kind 15 since `AET-WO-3100`; 16 to
+//! 20, a declared supply droop, since `AET-WO-2301`). Every field is an integer, a byte
 //! string, a text string or an array of them; nothing is a float or a map
 //! (`RUL-06`). An absent value is an empty array, a present one an array of
 //! one element.
@@ -10,7 +11,7 @@ use crate::event::{name_ok, text_ok};
 /// The first campaign kind; [`Record::kind`] is this plus the variant's index.
 pub const FIRST_KIND: u64 = 5;
 /// The last campaign kind.
-pub const LAST_KIND: u64 = 15;
+pub const LAST_KIND: u64 = 20;
 
 /// One override a scenario applies to its specification (`AET-WO-2300` §1.1).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -21,6 +22,34 @@ pub enum Override {
     MaxCapacitance { net: String, femtofarads: u64 },
     /// `[2, bus, line]`, `line` 0 for SDA and 1 for SCL.
     LineHeldLow { bus: String, line: Line },
+    /// `[3, domain, floor_mv, start_ns, fall_ns, hold_ns, rise_ns,
+    /// source_milliohms, load_milliamps, bor_level]` (`AET-WO-2301`).
+    Droop(Droop),
+}
+
+/// A declared sag of a voltage domain's source (`AET-WO-2301` P2, ruled D2
+/// and D7): from the domain's nominal down to `floor_millivolts` and back,
+/// through `source_milliohms` into the emitter's decoupling, with a constant
+/// `load_milliamps`; `bor_level` is the part's option-byte BOR level, declared
+/// because nothing else states it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Droop {
+    pub domain: String,
+    pub floor_millivolts: u32,
+    pub start_ns: u64,
+    pub fall_ns: u64,
+    pub hold_ns: u64,
+    pub rise_ns: u64,
+    pub source_milliohms: u32,
+    pub load_milliamps: u32,
+    pub bor_level: u8,
+}
+
+impl Droop {
+    /// The I·R drop the load makes across the source, in µV.
+    pub fn drop_microvolts(&self) -> u64 {
+        u64::from(self.load_milliamps) * u64::from(self.source_milliohms)
+    }
 }
 
 /// One line of an I2C bus.
@@ -155,6 +184,50 @@ pub enum Record {
         lines: Vec<BusLine>,
         devices: Vec<(String, u8)>,
     },
+    /// Kind 16: the declared rail (`AET-WO-2301`, ruled D8): every value the
+    /// rail was computed from, so the waveform is re-derivable from the trace.
+    /// The droop's own values, then the domain's nominal and tolerance and the
+    /// decoupling the emitter places on it.
+    RailDeclared {
+        droop: Droop,
+        nominal_millivolts: u32,
+        tolerance_permille: u32,
+        decoupling_picofarads: u64,
+    },
+    /// Kind 17: `analog.rail_crossing_computed`, one crossing of one
+    /// threshold's level, computed by ngspice from the declared values.
+    RailCrossing {
+        domain: String,
+        level: String,
+        microvolts: u64,
+        at_ps: u64,
+        falling: bool,
+    },
+    /// Kind 18: `bridge.reset_rendered`, a reset asserted or released: the
+    /// model's rendering of the supervisor, never a measured reset. Renode
+    /// models no BOR, PVD or reset cause; `rendering` names the monitor
+    /// commands that stood in for it.
+    ResetRendered {
+        at_ns: u64,
+        released: bool,
+        cause: Vec<String>,
+        rendering: String,
+    },
+    /// Kind 19: `firmware.observed` after a release, at the recovery bound:
+    /// the boot word, the identity read's two words, and the controller's
+    /// `CR2` and `TXDR`, which only a transfer on the bus sets after a reset
+    /// (`AET-WO-2301` adversarial F1), as Renode read them.
+    FirmwareObserved {
+        at_ns: u64,
+        boot_word: Reading,
+        status: Reading,
+        value: Reading,
+        cr2: Reading,
+        txdr: Reading,
+    },
+    /// Kind 20: the scenario's `expect_counts`, sorted by kind, archived only
+    /// when it declares them.
+    ExpectedCounts { counts: Vec<(String, u64)> },
 }
 
 fn u(n: u64) -> Value {
@@ -282,7 +355,42 @@ fn override_value(o: &Override) -> Value {
                 Line::Scl => 1,
             }),
         ],
+        Override::Droop(d) => {
+            let mut v = vec![u(3)];
+            v.extend(droop_fields(d));
+            v
+        }
     })
+}
+
+fn droop_fields(d: &Droop) -> Vec<Value> {
+    vec![
+        t(&d.domain),
+        u(d.floor_millivolts.into()),
+        u(d.start_ns),
+        u(d.fall_ns),
+        u(d.hold_ns),
+        u(d.rise_ns),
+        u(d.source_milliohms.into()),
+        u(d.load_milliamps.into()),
+        u(d.bor_level.into()),
+    ]
+}
+
+impl Fields<'_> {
+    fn droop(&mut self) -> Option<Droop> {
+        Some(Droop {
+            domain: self.text()?,
+            floor_millivolts: self.u32()?,
+            start_ns: self.uint()?,
+            fall_ns: self.uint()?,
+            hold_ns: self.uint()?,
+            rise_ns: self.uint()?,
+            source_milliohms: self.u32()?,
+            load_milliamps: self.u32()?,
+            bor_level: self.u8()?,
+        })
+    }
 }
 
 fn override_from(v: &Value) -> Option<Override> {
@@ -305,6 +413,7 @@ fn override_from(v: &Value) -> Option<Override> {
                 _ => return None,
             },
         },
+        3 => Override::Droop(f.droop()?),
         _ => return None,
     };
     f.end()?;
@@ -326,7 +435,24 @@ impl Record {
                 Self::I2cWitness { .. } => 8,
                 Self::Verdict { .. } => 9,
                 Self::I2cBusSolved { .. } => 10,
+                Self::RailDeclared { .. } => 11,
+                Self::RailCrossing { .. } => 12,
+                Self::ResetRendered { .. } => 13,
+                Self::FirmwareObserved { .. } => 14,
+                Self::ExpectedCounts { .. } => 15,
             }
+    }
+
+    /// The virtual time a record is archived at: 0 for what is decided
+    /// before the boot, its own time for the droop's crossings, resets and
+    /// observations, and `end_ns` for what the boot's end reads.
+    pub fn timestamp(&self, end_ns: u64) -> u64 {
+        match self {
+            Self::RailCrossing { at_ps, .. } => at_ps / 1000,
+            Self::ResetRendered { at_ns, .. } | Self::FirmwareObserved { at_ns, .. } => *at_ns,
+            _ if self.before_boot() => 0,
+            _ => end_ns,
+        }
     }
 
     /// Whether the record is decided before the boot starts, at virtual time
@@ -341,6 +467,8 @@ impl Record {
                 | Self::RiseMeasured { .. }
                 | Self::LineStuckHigh { .. }
                 | Self::BusFault { .. }
+                | Self::RailDeclared { .. }
+                | Self::ExpectedCounts { .. }
         )
     }
 
@@ -485,6 +613,60 @@ impl Record {
                         .collect(),
                 ),
             ],
+            Self::RailDeclared {
+                droop,
+                nominal_millivolts,
+                tolerance_permille,
+                decoupling_picofarads,
+            } => {
+                let mut v = droop_fields(droop);
+                v.extend([
+                    u((*nominal_millivolts).into()),
+                    u((*tolerance_permille).into()),
+                    u(*decoupling_picofarads),
+                ]);
+                v
+            }
+            Self::RailCrossing {
+                domain,
+                level,
+                microvolts,
+                at_ps,
+                falling,
+            } => vec![
+                t(domain),
+                t(level),
+                u(*microvolts),
+                u(*at_ps),
+                flag(*falling),
+            ],
+            Self::ResetRendered {
+                at_ns,
+                released,
+                cause,
+                rendering,
+            } => vec![u(*at_ns), flag(*released), texts(cause), t(rendering)],
+            Self::FirmwareObserved {
+                at_ns,
+                boot_word,
+                status,
+                value,
+                cr2,
+                txdr,
+            } => vec![
+                u(*at_ns),
+                reading(boot_word),
+                reading(status),
+                reading(value),
+                reading(cr2),
+                reading(txdr),
+            ],
+            Self::ExpectedCounts { counts } => vec![Value::Array(
+                counts
+                    .iter()
+                    .map(|(kind, n)| Value::Array(vec![t(kind), u(*n)]))
+                    .collect(),
+            )],
         }
     }
 
@@ -607,6 +789,45 @@ impl Record {
                     devices,
                 }
             }
+            16 => Self::RailDeclared {
+                droop: f.droop()?,
+                nominal_millivolts: f.u32()?,
+                tolerance_permille: f.u32()?,
+                decoupling_picofarads: f.uint()?,
+            },
+            17 => Self::RailCrossing {
+                domain: f.text()?,
+                level: f.text()?,
+                microvolts: f.uint()?,
+                at_ps: f.uint()?,
+                falling: f.flag()?,
+            },
+            18 => Self::ResetRendered {
+                at_ns: f.uint()?,
+                released: f.flag()?,
+                cause: f.texts()?,
+                rendering: f.text()?,
+            },
+            19 => Self::FirmwareObserved {
+                at_ns: f.uint()?,
+                boot_word: f.reading()?,
+                status: f.reading()?,
+                value: f.reading()?,
+                cr2: f.reading()?,
+                txdr: f.reading()?,
+            },
+            20 => {
+                let mut counts = Vec::new();
+                for item in f.array()? {
+                    let Value::Array(pair) = item else {
+                        return None;
+                    };
+                    let mut g = Fields(pair.iter());
+                    counts.push((g.text()?, g.uint()?));
+                    g.end()?;
+                }
+                Self::ExpectedCounts { counts }
+            }
             _ => return None,
         };
         f.end()?;
@@ -641,6 +862,7 @@ impl Record {
                         name_ok(bus)
                     }
                     Override::MaxCapacitance { net, .. } => name_ok(net),
+                    Override::Droop(d) => name_ok(&d.domain),
                 });
                 if !ids_ok {
                     return Err("an override's id is not 1 to 64 printable ASCII bytes");
@@ -769,6 +991,50 @@ impl Record {
                     || !devices.windows(2).all(|w| w[0].0 < w[1].0)
                 {
                     Err("a solved bus's devices are not sorted unique references")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::RailDeclared {
+                droop,
+                nominal_millivolts,
+                decoupling_picofarads,
+                ..
+            } => {
+                if !name_ok(&droop.domain) {
+                    Err("a droop's domain is not 1 to 64 printable ASCII bytes")
+                } else if droop.floor_millivolts >= *nominal_millivolts
+                    || *decoupling_picofarads == 0
+                {
+                    Err("a declared rail's floor is not below its nominal, or it has no decoupling")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::RailCrossing { domain, level, .. } => {
+                if name_ok(domain) && name_ok(level) {
+                    Ok(())
+                } else {
+                    Err("a crossing's domain or level is not 1 to 64 printable ASCII bytes")
+                }
+            }
+            Self::ResetRendered {
+                cause, rendering, ..
+            } => {
+                if cause.is_empty() || !names(cause) || !sorted(cause) {
+                    Err("a reset's causes are not sorted unique threshold names")
+                } else if !text_ok(rendering, 1, 1024) {
+                    Err("a reset's rendering is not 1 to 1024 printable ASCII bytes")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::FirmwareObserved { .. } => Ok(()),
+            Self::ExpectedCounts { counts } => {
+                if counts.is_empty() || !counts.iter().all(|(k, _)| name_ok(k)) {
+                    Err("expected counts are not one or more finding kinds")
+                } else if !counts.windows(2).all(|w| w[0].0 < w[1].0) {
+                    Err("expected counts are not sorted unique by kind")
                 } else {
                     Ok(())
                 }
