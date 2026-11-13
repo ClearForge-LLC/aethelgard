@@ -227,7 +227,10 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
     holes(&drill, routed.vias.len())
         .map_err(|m| Stop::tool_error(TOOL, format!("the drill file: {m}")))?;
     files.insert(format!("{}.drl", b.project), drill);
-    files.insert(format!("{}-pos.csv", b.project), read_output(TOOL, &pos)?);
+    let placement = read_output(TOOL, &pos)?;
+    placement_rows(&placement)
+        .map_err(|m| Stop::tool_error(TOOL, format!("the placement file: {m}")))?;
+    files.insert(format!("{}-pos.csv", b.project), placement);
     files.insert(format!("{}.bom.csv", b.project), b.bom.to_vec());
     files.insert(format!("{}.elf", b.project), elf);
 
@@ -399,7 +402,10 @@ pub fn strip_clock(raw: &[u8], creator: usize) -> Result<Vec<u8>, String> {
             continue;
         }
         if line.contains("CreationDate") || line.contains("Created by") || dated(line) {
-            return Err(format!("line {} carries a date", i + 1));
+            return Err(format!(
+                "line {} carries a date or a time of day (a name from the specification can put one there)",
+                i + 1
+            ));
         }
         out.extend_from_slice(line.as_bytes());
     }
@@ -466,31 +472,78 @@ pub fn holes(drill: &[u8], vias: usize) -> Result<(), String> {
     Ok(())
 }
 
+/// KiCad writes each placement row's reference, value and package in quotes
+/// without escaping a quote inside them, so a name holding `"` shifts every
+/// later column (adversarial). Every row must be three quoted fields with no
+/// quote inside, then four unquoted ones; commas inside quotes are CSV's own.
+pub fn placement_rows(csv: &[u8]) -> Result<(), String> {
+    let text = std::str::from_utf8(csv).map_err(|_| "it is not UTF-8".to_owned())?;
+    let mut lines = text.lines();
+    if lines.next() != Some("Ref,Val,Package,PosX,PosY,Rot,Side") {
+        return Err("its header is not KiCad's CSV header".to_owned());
+    }
+    for (n, row) in lines.enumerate() {
+        let bad = || {
+            format!(
+                "row {} is not three quoted fields and four plain ones",
+                n + 1
+            )
+        };
+        let mut rest = row;
+        for _ in 0..3 {
+            let inner = rest.strip_prefix('"').ok_or_else(bad)?;
+            let end = inner.find('"').ok_or_else(bad)?;
+            rest = inner[end + 1..].strip_prefix(',').ok_or_else(bad)?;
+        }
+        let plain: Vec<&str> = rest.split(',').collect();
+        if plain.len() != 4 || plain.iter().any(|f| f.is_empty() || f.contains('"')) {
+            return Err(bad());
+        }
+    }
+    Ok(())
+}
+
 /// `MANIFEST.json`: every other file's sha256, the specification's and the
-/// topology's, and the sha256 of the verdict line the same `verify` call
-/// prints without `--fab-out` or `--against-fab`.
+/// topology's, the scenarios the run was given, and the sha256 of the
+/// verdict line the same `verify` call prints without `--fab-out` or
+/// `--against-fab`. That verdict carries each gate's sandbox report, so a run
+/// under another uid or user namespace prints another (adversarial A2).
 #[derive(Serialize)]
 struct Manifest<'a> {
     project: &'a str,
     specification_sha256: &'a str,
     topology_sha256: &'a str,
+    /// Each `--scenarios` file, in the order given: its name and sha256.
+    scenarios: &'a [Scenario],
     verdict_sha256: String,
     files: BTreeMap<&'a str, String>,
 }
 
+/// One scenario the emitting run was given.
+#[derive(Serialize)]
+pub struct Scenario {
+    pub scenario: String,
+    pub sha256: String,
+}
+
+/// What the manifest names beside the files.
+pub struct Named<'a> {
+    pub project: &'a str,
+    pub specification_sha256: &'a str,
+    pub topology_sha256: &'a str,
+    pub scenarios: &'a [Scenario],
+    /// The verdict line the same call prints without the fab flags.
+    pub verdict_line: &'a str,
+}
+
 /// The manifest's bytes.
-pub fn manifest(
-    project: &str,
-    specification_sha256: &str,
-    topology_sha256: &str,
-    verdict_line: &str,
-    files: &BTreeMap<String, Vec<u8>>,
-) -> Vec<u8> {
+pub fn manifest(n: &Named<'_>, files: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
     let m = Manifest {
-        project,
-        specification_sha256,
-        topology_sha256,
-        verdict_sha256: tree::sha256(verdict_line.as_bytes()),
+        project: n.project,
+        specification_sha256: n.specification_sha256,
+        topology_sha256: n.topology_sha256,
+        scenarios: n.scenarios,
+        verdict_sha256: tree::sha256(n.verdict_line.as_bytes()),
         files: files
             .iter()
             .map(|(name, bytes)| (name.as_str(), tree::sha256(bytes)))
@@ -652,13 +705,46 @@ mod tests {
     }
 
     #[test]
+    fn a_placement_row_with_a_quote_inside_a_field_is_refused() {
+        let ok = "Ref,Val,Package,PosX,PosY,Rot,Side\n\"U4\",\"W25Q64JVSS\",\"SOIC-8\",82.55,-108.4,0.0,top\n";
+        assert_eq!(placement_rows(ok.as_bytes()), Ok(()));
+        let comma = ok.replace("W25Q64JVSS", "A,B");
+        assert_eq!(placement_rows(comma.as_bytes()), Ok(()));
+        for bad in [
+            ok.replace("\"U4\"", "\"U\"4,X\""),
+            ok.replace("\"U4\"", "U4"),
+            ok.replace(",top", ",top,x"),
+            ok.replace(",top", ""),
+            ok.replace(",0.0,", ",\"0\","),
+            ok.replace("Ref,", "Reference,"),
+        ] {
+            assert!(placement_rows(bad.as_bytes()).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
     fn the_manifest_is_byte_stable_and_names_every_file() {
         let files = BTreeMap::from([
             ("b".to_owned(), b"2".to_vec()),
             ("a".to_owned(), b"1".to_vec()),
         ]);
-        let m = manifest("p", "s", "t", "{\"ok\":true}", &files);
-        assert_eq!(m, manifest("p", "s", "t", "{\"ok\":true}", &files));
+        let scenarios = [Scenario {
+            scenario: "s1".to_owned(),
+            sha256: "ab".to_owned(),
+        }];
+        let named = Named {
+            project: "p",
+            specification_sha256: "s",
+            topology_sha256: "t",
+            scenarios: &scenarios,
+            verdict_line: "{\"ok\":true}",
+        };
+        let m = manifest(&named, &files);
+        assert_eq!(m, manifest(&named, &files));
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&m).unwrap()["scenarios"],
+            serde_json::json!([{"scenario": "s1", "sha256": "ab"}])
+        );
         let v: serde_json::Value = serde_json::from_slice(&m).unwrap();
         assert_eq!(v["verdict_sha256"], tree::sha256(b"{\"ok\":true}"));
         assert_eq!(v["files"]["a"], tree::sha256(b"1"));

@@ -912,6 +912,11 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
     assert_eq!(manifest["verdict_sha256"], sha(without.as_bytes()));
     assert_eq!(manifest["specification_sha256"], v["specification_sha256"]);
     assert_eq!(manifest["topology_sha256"], v["topology_sha256"]);
+    let scenario = fs::read(root().join("scenarios/sentinel-01/pullup-2k2.json")).unwrap();
+    assert_eq!(
+        manifest["scenarios"],
+        serde_json::json!([{"scenario": "pullup-2k2", "sha256": sha(&scenario)}])
+    );
     let mut listed = named.clone();
     listed.remove("MANIFEST.json");
     assert_eq!(manifest["files"], serde_json::to_value(&listed).unwrap());
@@ -919,7 +924,9 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
     // KiCad's clock lines.
     let bcu = String::from_utf8(package["sentinel-01-B_Cu.gbl"].clone()).unwrap();
     assert!(bcu.contains("%TO.N,GND*%\nG36*\n") && bcu.contains("\nG37*\n"));
-    for (name, bytes) in &package {
+    // FAB-NOTES.md names the two removed lines in prose, so only the Gerbers
+    // are searched.
+    for (name, bytes) in package.iter().filter(|(n, _)| n.contains(".g")) {
         let text = String::from_utf8_lossy(bytes);
         assert!(
             !text.contains("CreationDate") && !text.contains("Created by"),
@@ -1003,6 +1010,10 @@ fn verify_fab_out_writes_nothing_when_a_gate_fails() {
     let dir = std::env::temp_dir().join(format!("aet-3300-fab-47k-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+    }
     let (code, stdout) = aethelgard(&[
         "verify",
         "--spec",

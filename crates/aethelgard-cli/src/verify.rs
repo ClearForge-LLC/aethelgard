@@ -125,10 +125,14 @@ impl FabReport {
     }
 }
 
-/// `--fab-out` must be an empty directory or absent; checked before any gate
-/// runs, and again, through the descriptor written through, by `tree::write`.
+/// `--fab-out` must be an empty directory or absent. One that exists must be
+/// the caller's and writable by no group or other, or another uid could
+/// replace the package after the verdict names it (adversarial A1). Checked
+/// before any gate runs and again just before the write; `tree::write`
+/// checks emptiness once more through the descriptor it writes through.
 /// Nothing is created here.
 fn fab_out_usable(dir: &Path) -> Result<(), run::Stop> {
+    use std::os::unix::fs::MetadataExt;
     let unusable = |m: String| run::Stop::refused("UnwritableOutput", m);
     match std::fs::symlink_metadata(dir) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -137,6 +141,14 @@ fn fab_out_usable(dir: &Path) -> Result<(), run::Stop> {
             "{} exists and is not a directory",
             dir.display()
         ))),
+        Ok(meta)
+            if meta.uid() != rustix::process::geteuid().as_raw() || meta.mode() & 0o022 != 0 =>
+        {
+            Err(unusable(format!(
+                "{} is not this user's alone: it must be owned by the caller and writable by no group or other",
+                dir.display()
+            )))
+        }
         Ok(_) => match std::fs::read_dir(dir).map(|mut d| d.next()) {
             Ok(None) => Ok(()),
             Ok(Some(_)) => Err(unusable(format!(
@@ -463,6 +475,7 @@ fn os(p: &Path) -> OsString {
 /// specification's hash, with `--spec` as its base.
 struct Expected {
     path: PathBuf,
+    name: String,
     scenario: [u8; 32],
     specification: [u8; 32],
 }
@@ -544,6 +557,7 @@ pub fn verify(
         };
         expected.push(Expected {
             path: path.clone(),
+            name: scenario.name.clone(),
             scenario: scenario.sha256,
             specification: effective.specification_sha256,
         });
@@ -560,7 +574,8 @@ pub fn verify(
     }
 
     // `--against` first: a directory that is not the tree fails, naming
-    // every difference, and no gate runs.
+    // every difference, and no gate runs; with a fab flag, nothing is
+    // written or compared, and the verdict says so.
     if let Some(dir) = against {
         if let Err(s) = crate::input::dir_check(dir) {
             return crate::stopped(s);
@@ -579,6 +594,9 @@ pub fn verify(
                     message: describe(d),
                 })
                 .collect();
+            if let Some(mode) = fab_mode {
+                not_packaged(&mut report, mode);
+            }
             return crate::emit(&report, EXIT_FAIL);
         }
         report.against = Some("identical");
@@ -648,7 +666,14 @@ pub fn verify(
             elf_sha256: &elf_sha256,
             bom: files[&format!("{KICAD_DIR}/{project}.bom.csv")].as_bytes(),
         };
-        if let Err(code) = package(&mut report, mode, &bound) {
+        let scenarios: Vec<fab::Scenario> = expected
+            .iter()
+            .map(|e| fab::Scenario {
+                scenario: e.name.clone(),
+                sha256: hex(e.scenario),
+            })
+            .collect();
+        if let Err(code) = package(&mut report, mode, &bound, &scenarios) {
             return code;
         }
     }
@@ -656,18 +681,28 @@ pub fn verify(
     crate::emit(&report, code)
 }
 
+/// A run that failed writes and compares nothing, and says so.
+fn not_packaged(report: &mut Report, mode: &FabMode) {
+    let (status, against) = match mode {
+        FabMode::Write(_) => ("not_written", None),
+        FabMode::Compare(_) => ("not_derived", Some("not_compared")),
+    };
+    report.fab = Some(FabReport::none(status));
+    report.against_fab = against;
+}
+
 /// The package, once every gate has passed: derived, named in `report.fab`,
 /// then written into `--fab-out` (the manifest last) or compared with
 /// `--against-fab`. A failed run writes nothing and says so. A refusal
 /// writes nothing and prints no verdict.
-fn package(report: &mut Report, mode: &FabMode, bound: &fab::Bound<'_>) -> Result<(), ExitCode> {
+fn package(
+    report: &mut Report,
+    mode: &FabMode,
+    bound: &fab::Bound<'_>,
+    scenarios: &[fab::Scenario],
+) -> Result<(), ExitCode> {
     if !report.ok {
-        let (status, against) = match mode {
-            FabMode::Write(_) => ("not_written", None),
-            FabMode::Compare(_) => ("not_derived", Some("not_compared")),
-        };
-        report.fab = Some(FabReport::none(status));
-        report.against_fab = against;
+        not_packaged(report, mode);
         return Ok(());
     }
     let exported = fab::derive(bound).map_err(crate::stopped)?;
@@ -677,10 +712,13 @@ fn package(report: &mut Report, mode: &FabMode, bound: &fab::Bound<'_>) -> Resul
         ExitCode::from(EXIT_INTERNAL)
     })?;
     let manifest = fab::manifest(
-        &report.project_name,
-        &report.specification_sha256,
-        &report.topology_sha256,
-        &line,
+        &fab::Named {
+            project: &report.project_name,
+            specification_sha256: &report.specification_sha256,
+            topology_sha256: &report.topology_sha256,
+            scenarios,
+            verdict_line: &line,
+        },
         &exported.files,
     );
     let mut files: BTreeMap<String, String> = exported
@@ -700,6 +738,7 @@ fn package(report: &mut Report, mode: &FabMode, bound: &fab::Bound<'_>) -> Resul
     };
     match mode {
         FabMode::Write(dir) => {
+            fab_out_usable(dir).map_err(crate::stopped)?;
             let ordered = exported
                 .files
                 .iter()
@@ -707,7 +746,7 @@ fn package(report: &mut Report, mode: &FabMode, bound: &fab::Bound<'_>) -> Resul
                 .chain([(fab::MANIFEST, manifest.as_slice())]);
             tree::write(dir, ordered).map_err(|mut s| {
                 s.message = format!(
-                    "{}; the package in {} is incomplete and no verdict names it",
+                    "{}; {} may hold part of the package, and no verdict names it",
                     s.message,
                     dir.display()
                 );

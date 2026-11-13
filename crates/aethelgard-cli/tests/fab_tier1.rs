@@ -101,3 +101,62 @@ fn a_run_that_cannot_pass_creates_nothing_and_the_flags_exclude_each_other() {
     assert_eq!(code, Some(64), "{v}");
     assert!(!absent.exists());
 }
+
+/// Adversarial A1: an existing `--fab-out` that another uid could write is
+/// refused before any gate: group- or other-writable, or (as root, where a
+/// test can make one) owned by another uid.
+#[test]
+fn a_fab_out_another_uid_could_write_is_refused() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = scratch("shared");
+    fs::create_dir_all(&dir).unwrap();
+    for mode in [0o775, 0o757] {
+        fs::set_permissions(&dir, fs::Permissions::from_mode(mode)).unwrap();
+        let (code, v) = run(&["verify", "--spec", SPEC, "--fab-out", s(&dir)]);
+        assert_eq!(code, Some(3), "{mode:o}: {v}");
+        assert_eq!(v["error"]["kind"], "UnwritableOutput");
+    }
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+    if rustix::process::geteuid().is_root() {
+        std::os::unix::fs::chown(&dir, Some(65534), None).unwrap();
+        let (code, v) = run(&["verify", "--spec", SPEC, "--fab-out", s(&dir)]);
+        assert_eq!(code, Some(3), "{v}");
+        assert_eq!(v["error"]["kind"], "UnwritableOutput");
+    }
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// `--against` that differs fails before any gate; with `--fab-out` the
+/// verdict says nothing was written, and nothing is.
+#[test]
+fn a_tree_that_differs_writes_no_package_and_says_so() {
+    let tree = scratch("against-empty");
+    fs::create_dir_all(&tree).unwrap();
+    let out = scratch("against-out");
+    let (code, v) = run(&[
+        "verify",
+        "--spec",
+        SPEC,
+        "--against",
+        s(&tree),
+        "--fab-out",
+        s(&out),
+    ]);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(v["against"], "differs");
+    assert_eq!(v["fab"]["status"], "not_written");
+    assert!(!out.exists());
+    let (code, v) = run(&[
+        "verify",
+        "--spec",
+        SPEC,
+        "--against",
+        s(&tree),
+        "--against-fab",
+        s(&tree),
+    ]);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(v["fab"]["status"], "not_derived");
+    assert_eq!(v["against_fab"], "not_compared");
+    fs::remove_dir_all(&tree).unwrap();
+}
