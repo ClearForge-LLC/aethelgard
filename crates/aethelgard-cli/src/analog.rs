@@ -924,6 +924,14 @@ mod tests {
             .join("\n"),
             [end.to_owned(), end.to_owned()].join("\n"),
             end.replace("solved", "done"),
+            // A level crossed three times is a dithering rail (adversarial F4).
+            [
+                c("VBOR3_falling", 2_610_000, 1, true),
+                c("VBOR3_falling", 2_610_000, 2, false),
+                c("VBOR3_falling", 2_610_000, 3, true),
+                end.to_owned(),
+            ]
+            .join("\n"),
         ];
         for r in refused {
             assert!(rail_answer(&r, &levels).is_err(), "accepted: {r}");

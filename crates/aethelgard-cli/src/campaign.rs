@@ -250,6 +250,8 @@ fn resolve_droop(
             ),
         ));
     }
+        // belt-and-suspenders: the specification's own validation makes the MCU's
+    // supply one of its domains; a domain missing here is refused, not unwrapped.
     let domain = spec
         .voltage_domains
         .iter()

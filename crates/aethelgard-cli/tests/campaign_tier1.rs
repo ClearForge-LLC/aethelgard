@@ -2115,6 +2115,11 @@ printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_3
 /// probe, and prints the probe `probe` then a boot that ran 9,877,201
 /// instructions after the release.
 fn droop_toolbox(probe: [&str; 5]) -> Dir {
+    droop_toolbox_then(probe, "")
+}
+
+/// As [`droop_toolbox`], running `then` after its output.
+fn droop_toolbox_then(probe: [&str; 5], then: &str) -> Dir {
     let tb = Dir::new("tb-droop");
     let mut reads = boot_reads(GOOD_RECORD);
     reads[1] = "0x000000000096B6D1".to_owned();
@@ -2136,6 +2141,7 @@ case "$5" in
   *) exit 99;;
 esac
 /bin/cat '{out}'
+{then}
 "#,
         out = out.display()
     );
@@ -2297,4 +2303,79 @@ fn a_record_that_claims_ok_without_the_controller_showing_a_transfer_is_unrecove
     assert_eq!(all[0]["findings"], json!(["brownout_unrecovered"]));
     let run = PathBuf::from(all[0]["run"].as_str().unwrap());
     assert_eq!(lines(&replay(&tb.0, &run))[0]["verdict"], "fail");
+}
+
+/// `AET-WO-2301` D3 and the runner's droop rules: a droop off the MCU's
+/// supply, or one whose rail floor lies in a threshold's band, is refused
+/// (exit 2) before any run starts or anything is archived.
+#[test]
+fn a_droop_the_runner_cannot_render_is_refused_before_any_run() {
+    let tb = toolbox(&good());
+    for (domain, floor, kind) in [
+        ("VDD_OTHER", 2400, "DroopNotMcuSupply"),
+        ("VDD_3V3", 2660, "DroopRefused"),
+    ] {
+        let work = Work::new();
+        let doc = json!({
+            "schema_version": 2,
+            "name": "d",
+            "base": "spec.json",
+            "expect": "pass",
+            "expect_findings": [],
+            "overrides": [{"droop": {
+                "domain": domain, "floor_millivolts": floor, "start_ns": 1000000,
+                "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
+                "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3
+            }}],
+        });
+        work.dir.write("d.json", doc.to_string().as_bytes());
+        let out = campaign(
+            &cli(Some(DROOP_BRIDGE)),
+            &tb.0,
+            &work.dir.0,
+            &["d.json"],
+            &work.firmware,
+            &work.archive,
+        );
+        expect_refusal(&out, 2, kind);
+        assert!(!work.archive.exists(), "{kind}: an archive was made");
+    }
+}
+
+/// A droop boot the reaper kills at its memory cap is a verdict, not an
+/// error: the cap's finding, and the release's probe never read counted as
+/// unrecovered; replay agrees.
+#[test]
+fn a_droop_boot_killed_at_a_bound_is_a_verdict_and_replays() {
+    let hog = "x=$(/usr/bin/yes | /usr/bin/head -c 1300000000); /bin/sleep 60";
+    let tb = droop_toolbox_then(
+        [
+            "0x2100B007",
+            "0x22020000",
+            "0x00000060",
+            GOOD_CONTROLLER[0],
+            GOOD_CONTROLLER[1],
+        ],
+        hog,
+    );
+    // The stub prints its transcript, then hogs: the reaper's kill discards it.
+    let work = Work::new();
+    let archive = Dir::new("archive");
+    let out = campaign(
+        &cli(Some(DROOP_BRIDGE)),
+        &tb.0,
+        &root(),
+        &["scenarios/sentinel-01/droop-bor3.json"],
+        &work.firmware,
+        &archive.0.join("a"),
+    );
+    let all = lines(&out);
+    assert_eq!(out.status.code(), Some(1), "{all:?}");
+    assert_eq!(
+        all[0]["findings"],
+        json!(["brownout_unrecovered", "memory_cap_exceeded"])
+    );
+    let run = PathBuf::from(all[0]["run"].as_str().unwrap());
+    let r = lines(&replay(&tb.0, &run));
+    assert_eq!(r[0]["verdict"], "fail", "{r:?}");
 }

@@ -1514,3 +1514,98 @@ fn an_observation_whose_readings_are_not_the_boots_own_is_refused() {
         );
     }
 }
+
+/// The reference run with the solved bus, U2's identity check and I2C1's
+/// witness, and an observation whose controller readings are the witness's.
+fn run_with_check() -> Vec<Record> {
+    use aethelgard_chaos::record::BusLine;
+    let line = |signal: &str, net: &str, pin: &str| BusLine {
+        signal: signal.into(),
+        net: net.into(),
+        pin: pin.into(),
+        alternate_function: 4,
+        ceiling_ps: 300_000,
+    };
+    let cr2 = reading(0x4000_5404, 0x03FF_67FF, 0x0201_04EC, Some(0x0201_04EC));
+    let txdr = reading(0x4000_5428, 0xFF, 0xD0, Some(0xD0));
+    let mut r = run();
+    let solved = index(&r, |x| matches!(x, Record::Solved { .. }));
+    r.insert(
+        solved + 1,
+        Record::I2cBusSolved {
+            bus: "SENSORS".into(),
+            peripheral: "I2C1".into(),
+            lines: vec![
+                line("I2C1_SCL", "I2C_SCL", "PB6"),
+                line("I2C1_SDA", "I2C_SDA", "PB7"),
+            ],
+            devices: vec![("U2".into(), 0x76)],
+        },
+    );
+    let o = index(&r, |x| matches!(x, Record::FirmwareObserved { .. }));
+    if let Record::FirmwareObserved {
+        cr2: c, txdr: t, ..
+    } = &mut r[o]
+    {
+        *c = cr2.clone();
+        *t = txdr.clone();
+    }
+    let v = r.len() - 1;
+    r.insert(
+        v,
+        Record::I2cCheck {
+            reference: "U2".into(),
+            address: 0x76,
+            register: 0xD0,
+            expected: 0x60,
+            observed: Some(0x60),
+            status: Some("ok".into()),
+        },
+    );
+    r.insert(
+        v + 1,
+        Record::I2cWitness {
+            peripheral: "I2C1".into(),
+            reference: "U2".into(),
+            cr2,
+            txdr,
+        },
+    );
+    r
+}
+
+/// `AET-WO-2301` adversarial F5, with a check and a witness in the run: the
+/// observation's value is the check's expectation, and its `CR2` and `TXDR`
+/// are the witness's own address, mask and expectation.
+#[test]
+fn an_observations_value_and_controller_are_pinned_to_the_check_and_the_witness() {
+    assert!(check_run(&run_with_check()).is_ok_and(|s| s.matched));
+    let mutations: [fn(&mut Record); 3] = [
+        |r| {
+            if let Record::FirmwareObserved { value, .. } = r {
+                value.expected = 0x61;
+                value.observed = Some(0x61);
+            }
+        },
+        |r| {
+            if let Record::FirmwareObserved { cr2, .. } = r {
+                cr2.mask = 0;
+            }
+        },
+        |r| {
+            if let Record::FirmwareObserved { txdr, .. } = r {
+                txdr.address = 0x4000_5400;
+            }
+        },
+    ];
+    for (i, m) in mutations.iter().enumerate() {
+        let mut r = run_with_check();
+        let k = index(&r, |x| matches!(x, Record::FirmwareObserved { .. }));
+        m(&mut r[k]);
+        assert_eq!(
+            check_run(&r).map(|_| ()),
+            Err("an observation's readings are not the boot's own"),
+            "mutation {i}"
+        );
+    }
+}
