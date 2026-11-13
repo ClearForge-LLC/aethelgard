@@ -528,7 +528,7 @@ Under the schedule, a droop adds its declared rail, its crossings, its resets an
 
 ## Gates (build)
 
-- `cargo fmt --all -- --check` is clean. `cargo clippy --workspace --all-targets -- -D warnings` is clean. `cargo test --workspace`: 66 suites, 1,053 passed, 0 failed, all in the pinned image.
+- `cargo fmt --all -- --check` is clean. `cargo clippy --workspace --all-targets -- -D warnings` is clean. `cargo test --workspace`: 66 suites, 1,058 passed, 0 failed, all in the pinned image (after the mutation pass's two tests).
 - The bridge: fmt and clippy clean, 27 tests passing.
 - **Adversarial pass:** above.
 - **Reduction pass (diff):** −3,622 lines net for `spike/2301/` · 1 duplicate removed (the tolerance floor, computed in the chaos rule and in the CLI's report, now one function) · 2 dead paths removed (the log filter's unreachable "no filter" branch in `line()`, and the console-level constant once A2 removed the probes' level change) · 0 protected kept · 1 finding (B8, the identity recipe in three places, kept and pinned by a test).
@@ -543,3 +543,9 @@ Under the schedule, a droop adds its declared rail, its crossings, its resets an
   - `b2` to `b4` and the extremes `e1` to `e3` pass and match.
 - **§3 again on the fixed build:** every static run identical to `main`'s but for the version byte, and the static `simulate` verdict byte-identical.
 - **Every tier-2 binary** passed again on the fixes, `campaign_tier2` 8 of 8 (its droop test now asserts `CR2` `0x020104EC` and `TXDR` `0xD0` at the probe).
+- **Mutation pass, sized to the diff** (a Sonnet subagent, its own worktree at `cf1c0dd`, one mutant per new guard, against the chaos suite, the CLI's unit tests and `campaign_tier1`; diffs and outputs in `~/.cache/aet-2301-mut/out/`).
+  - 26 guards: the identity check; the rail answer's two refusals; recovery's controller words; the probe's sentinel count and log-line skip; the D5 nudge in the rule and in the composition; the filter's budget and keep-once; `check_droop`'s band, hysteresis region, 10 τ and span; the droop's crossings, resets and observation times; A5's value and witness pins; the droop severities; `expect_counts`; the schedule's re-fall merge and `tRSTTEMPO`; `DroopNotMcuSupply`; the bridge's scaled tolerance; and the zero-volt floor.
+  - 24 were killed at once. Two survived:
+    - 22, the re-fall merge: equivalent whenever a later rise overwrites the stale release;
+    - 26, the zero-volt floor: equality was untested.
+  - Both have a test now (`a_refall_inside_trsttempo_with_no_later_rise_is_never_released`, `a_drop_exactly_equal_to_the_floor_is_refused`), and each kills its mutant (re-run). 26 of 26.

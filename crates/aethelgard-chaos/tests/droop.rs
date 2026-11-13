@@ -1609,3 +1609,38 @@ fn an_observations_value_and_controller_are_pinned_to_the_check_and_the_witness(
         );
     }
 }
+
+/// Mutation pass, guard 22: a re-fall inside BOR0's temporization with no rise
+/// after it holds the reset to the run's end; the first rise's pending release
+/// must not close it while the rail is low.
+#[test]
+fn a_refall_inside_trsttempo_with_no_later_rise_is_never_released() {
+    let c = |level: &str, uv: u64, at_ns: u64, falling: bool| Crossing {
+        level: level.into(),
+        microvolts: uv,
+        at_ps: at_ns * 1000,
+        falling,
+    };
+    let r = power::schedule(
+        0,
+        &[
+            c("VBOR0_falling", 1_620_000, 100_000, true),
+            c("VBOR0_rising", 1_670_000, 200_000, false),
+            c("VBOR0_falling", 1_620_000, 300_000, true),
+        ],
+    )
+    .unwrap();
+    assert_eq!(r.len(), 1, "{r:?}");
+    assert_eq!(r[0].released_ns, None, "{r:?}");
+}
+
+/// Mutation pass, guard 26: a load whose I·R drop equals the floor takes the
+/// rail to 0 V, which is no rail: refused, as a larger drop is.
+#[test]
+fn a_drop_exactly_equal_to_the_floor_is_refused() {
+    // 100 mA through 500 mΩ is 50 mV: the floor itself.
+    let d = with(|d| d.floor_millivolts = 50);
+    assert_eq!(rail_levels(&d, NOMINAL_MV), None);
+    let m = refusal(&d, NOMINAL_MV, DECOUPLING_PF, SPAN_NS);
+    assert!(m.contains("reaches the floor"), "{m}");
+}
