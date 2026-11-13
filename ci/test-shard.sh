@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # AET-WO-1907 §3: the guard fails each run it exists to fail. Fixtures only; no cargo, no image.
 set -uo pipefail
-export LC_ALL=C
+export LC_ALL=C PYTHONDONTWRITEBYTECODE=1
 here=$(cd "$(dirname "$0")" && pwd)
 py=(python3 -I "$here/shard.py")
 tmp=$(mktemp -d)
