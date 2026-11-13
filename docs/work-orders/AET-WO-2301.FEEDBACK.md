@@ -393,3 +393,70 @@ Both start from `examples/sentinel-01-minimal.json` with the reference firmware,
 | Two runs | byte-identical; replay matches | byte-identical; replay matches |
 
 **A droop outside tolerance but above every BOR threshold (§2.3 states no verdict for it): decided here as a pass with an `info` finding, `rail_below_tolerance`.** The part runs (DS12117: 1.62 V to 3.6 V), nothing resets, and the firmware is judged as it is; the finding states that the rail left the domain's declared tolerance, so a scenario can expect it by count.
+
+## What was built
+
+**The flow (D1, the schedule).** `campaign` reads a scenario's `droop` override, resolves its domain (the MCU's supply only), nominal, tolerance and the emitter's decoupling, and refuses it if `check_droop` does (D3). `simulate`'s path then:
+1. runs the static I2C pre-pass and its `PlatformNotEmitted` re-check, unchanged;
+2. runs the bridge once with `--rail`, which solves the declared rail with libngspice and answers every crossing of the active thresholds' levels;
+3. turns the crossings into resets with `aethelgard_chaos::power::schedule`. This one function is the D4 rule; the campaign composes with it, and replay judges with it;
+4. composes one Renode `-e` command line with those resets (`renode.rs`, `BootPlan::commands`);
+5. runs the bridge with `--renode`, which owns Renode as its child, with stdio and environment inherited.
+
+The CLI judges exactly the commands it composed, so a record cannot name an action Renode never ran (§5.3). The static path is untouched, except that its boot output now goes through the log filter.
+
+**Records (trace version 3 → 4), each naming its source.** Kind 16 `analog.rail_declared` (source `scenario`): every value the rail is computed from, so replay can re-derive it (D8). Kind 17 `analog.rail_crossing_computed` (`ngspice`). Kind 18 `bridge.reset_rendered` (`bridge`): the model's rendering, with the monitor recipe as its text (`power::ASSERT_RENDERING`, `RELEASE_RENDERING`). Kind 19 `firmware.observed` (`renode`), at the recovery bound after each release. Kind 20, the scenario's `expect_counts`. A static run emits none of them.
+
+**Run rules (`check_run`).**
+- Kinds 16 to 19 come only with a droop, and kind 16 equals the override.
+- A threshold's level is crossed exactly when the declared rail floor (floor − I·R) is below it: once falling within the source's fall plus 10 τ, and once rising within its rise plus 10 τ, at the table's typical value. This is checked from the declared values alone.
+- The rendered resets are exactly `power::schedule` of the crossings, each with its fixed rendering.
+- Each release has exactly one observation, at the recovery bound, unless the boot was killed before its reads.
+- The verdict holds `brownout_reset` (info) once per reset, `brownout_unrecovered` (error) once per probe that did not show the boot word and the OK identity read, and `rail_below_tolerance` (info) when the floor is below the domain's tolerance.
+- `expect_counts` must match exactly.
+
+**Scenario version 2.** It admits `droop` (domain, floor mV, start, fall, hold and rise in ns, source mΩ, load mA, `bor_level` 0 to 3, every field required and bounded at parse, §5.4) and `expect_counts` (duplicate keys refused). Version 1 files parse as before.
+
+**The table (D4, D10).** `aethelgard_chaos::power`: `VBOR0` to `VBOR3` (min, typ, max for each edge), `tRSTTEMPO`, the 10 ns grid and nudge, and the 100 µs recovery bound, with its source named in one `SOURCE` constant: DS12117 Rev 7, Table 26, from a mirror, provisional on F1.
+
+**Other.**
+- The bridge's identity line: name, version, and the sha256 of its build inputs (`bridge/build.rs`). The CLI recomputes the digest from `include_bytes!` of the same files and refuses any other bridge with `BridgeMismatch`, exit 4 (2200 F15).
+- A log filter for every boot (F23): the first 8 MiB byte for byte, then Renode log lines counted and dropped, except the first of each kind the judge reads. A dropped line adds the `info` finding `renode_log_flood`.
+- F10: the `locked_peripheral_access` message carries no count, and no finding carries Renode's host timestamp (the `renode_error_log` message did too).
+- `aethelgard_eda::schematic::decoupling_picofarads` (D7): the emitter's decoupling per rail, read from the parts it places.
+
+**Outside the listed modules, flagged.**
+- `main.rs`: `simulate` gains the droop dispatch and the filtered boot.
+- `propose.rs`: it found the topology at index 1; with kind 20 it is found by kind.
+- `aethelgard-eda`: the one function above.
+- `aethelgard-evolve` is untouched. On a failing droop run, `attribute` answers `indeterminate` (I1) with `brownout_unrecovered` unexplained, exit 1, and never blames either half (tested).
+
+## Deviations from the ruling, each measured
+
+- **D6, the log, as ruled once the FIFO failed.** The log stays on stdout and is read as a stream. That stream is the CLI's capture with the filter above; the probe and the final reads are whole value lines between whole-line sentinels under `logLevel 3`.
+- **D5 holds as ruled, and the build first got it wrong.** The first composition emitted the 10 ns nudge twice, so Renode ran 10 ns past the schedule and the count came out as MIPS × (time since release) with nothing subtracted. A unit test caught the duplicate. Emitted once, the boot ran 9,877,201 instructions: MIPS × (100 ms − 1,227,980 ns) less the nudge's one instruction, as ruled.
+- **The rail's agreement tolerance is 0.51 ns, not 0.01 ns.** ngspice 44.2's `meas … WHEN` reports whole nanoseconds (1,014,422.000 where the accepted points give 1,014,422.222). The crossing times archived are always the bridge's own interpolation; `meas` only has to agree with them to within its rounding.
+- **History.** `history-path = /dev/null` cannot be written under the sandbox. Under the schedule Renode gets one `-e` line, so its history is that one line in the tool's own scratch. A tier-1 test pins that a droop boot hands Renode exactly `--disable-gui --console --plain -e <one line>`, in place of §2.4's 100,000-command test (F15 is time, not memory; moot under the schedule).
+
+## Measured, at the build
+
+**§3, static runs against `main` (`~/.cache/aet-2301/baseline/`, `compare.py`).** `main`'s CLI and bridge, and the build's, ran the two reference and nine seeded static scenarios, replayed every run, and booted `simulate --firmware` once:
+- every campaign line is identical apart from the run's path and state hash;
+- every one of the 11 traces is identical but for one byte, the trace version, 3 → 4, at offset 18;
+- every replay line is identical apart from the state hash;
+- the `simulate` verdict is byte-identical.
+
+The golden test now also asserts that setting the version byte back to 3 gives version 3's golden trace hash (`a2d551d1…`).
+
+**The two reference scenarios, in the pinned image (against the predictions above).**
+
+| | Predicted | Measured |
+|---|---|---|
+| `droop-tolerated` | pass; no crossing, no reset; ~1.1 KB; ~3 s | pass, matched; no crossing, no reset; 1,133 B; with `droop-bor3`, 4.5 s for both |
+| `droop-bor3` crossings | 2.61 V at 1,014,422.2 ns falling, 2.70 V at 1,227,977.8 ns rising | the same, to the ps: 1,014,422,222 and 1,227,977,778 (and 2.70 V falling at 1,012,422,222, 2.61 V rising at 1,225,977,778) |
+| `droop-bor3` reset | asserted 1,014,430 ns, released 1,227,980 ns | the same |
+| `droop-bor3` recovery | boot word and OK `0x60` at release + 100 µs | the same, at 1,327,980 ns |
+| `droop-bor3` instructions | 9,877,201 | 9,877,201 (after the duplicate nudge was removed; see above) |
+| `droop-bor3` verdict | pass; `brownout_reset` 1, `rail_below_tolerance` 1 (info) | the same, matched with its `expect_counts` |
+| `droop-bor3` trace | 1.4 to 1.6 KB | 1,644 B: a little over |
+| Two runs | byte-identical; replay matches | byte-identical traces; replay matched |
