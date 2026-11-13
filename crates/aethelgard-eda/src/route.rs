@@ -1713,7 +1713,7 @@ fn one<'a>(item: &strict::Node<'a>, head: &str) -> Result<Option<strict::Node<'a
 /// reader, then read by [`part`].
 pub fn part_of(fp: &Sx) -> Result<Part, String> {
     let tree = strict::footprint(fp).map_err(|e| e.to_string())?;
-    let fp = tree.root().lists().next().ok_or("no footprint")?;
+    let fp = one(&tree.root(), "footprint")?.ok_or("no footprint")?;
     part(&fp)
 }
 

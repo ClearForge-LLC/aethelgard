@@ -33,6 +33,7 @@ pub const SPEC: &str = "examples/sentinel-01-minimal.json";
 /// The classes a corpus file may name, by kind.
 pub const BOARD_CLASSES: &[&str] = &[
     "repeated-child",
+    "escape",
     "field-twice",
     "keyword",
     "unread-child",
@@ -43,8 +44,14 @@ pub const BOARD_CLASSES: &[&str] = &[
     "coordinate",
     "control",
 ];
-pub const SCHEMATIC_CLASSES: &[&str] =
-    &["repeated-child", "field-twice", "field-spelling", "control"];
+pub const SCHEMATIC_CLASSES: &[&str] = &[
+    "repeated-child",
+    "field-twice",
+    "field-spelling",
+    "escape",
+    "private-flag",
+    "control",
+];
 
 /// One gate's expected outcome.
 #[derive(Clone, Debug)]

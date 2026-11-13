@@ -29,11 +29,73 @@ const LOOKUPS: &[&str] = &[
     ".items(",
     ".items_mut(",
 ];
-/// What turns KiCad text into a raw tree: any `sexpr::` path or import
-/// naming `parse` (or a glob, which would import it).
-fn parses(text: &str) -> Vec<&str> {
-    text.lines()
-        .filter(|l| l.contains("sexpr::") && (l.contains("parse") || l.contains("sexpr::*")))
+/// The code as one line of single-spaced tokens, so a statement split over
+/// lines reads as one.
+fn flat(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The module's statements: its flattened code cut at `;`, `{` and `}`.
+fn statements(text: &str) -> Vec<String> {
+    let flat = flat(text);
+    flat.split([';', '{', '}']).map(str::to_owned).collect()
+}
+
+/// What could turn KiCad text into a raw tree: a path to `sexpr::parse`, an
+/// import of `sexpr` under another name, a glob, or `parse` or `as` inside a
+/// grouped import from `sexpr` (`AET-WO-1306` adversarial F2: `use
+/// crate::sexpr as raw;` passed a line-by-line scan). Read on the
+/// flattened code, so a multi-line `use` is one.
+fn parses(text: &str) -> Vec<String> {
+    let flat = flat(text).replace(":: ", "::").replace(" ::", "::");
+    let mut found = Vec::new();
+    for (at, _) in flat.match_indices("sexpr") {
+        let rest = &flat[at + "sexpr".len()..];
+        let group = rest
+            .strip_prefix("::{")
+            .and_then(|g| g.split_once('}'))
+            .map(|(g, _)| g);
+        let bad = rest.starts_with("::parse")
+            || rest.starts_with(" as ")
+            || rest.starts_with("::*")
+            || group.is_some_and(|g| {
+                g.split([',', ' '])
+                    .any(|w| matches!(w, "parse" | "as" | "*"))
+            });
+        if bad {
+            found.push(flat[at..(at + 40).min(flat.len())].to_owned());
+        }
+    }
+    found
+}
+
+/// A statement that takes one item from a `Node`'s children by position or
+/// by search: one of several, chosen first or last, which is what `one`
+/// refuses (`AET-WO-1306` adversarial F1: `pad.all("net").next()` passed
+/// the type and the name scan).
+const PICKS: &[&str] = &[
+    ".next()",
+    ".last()",
+    ".nth(",
+    ".find(",
+    ".find_map(",
+    ".position(",
+    ".rposition(",
+    ".max_by",
+    ".min_by",
+    ".skip(",
+    ".take(",
+    ".step_by(",
+    ".rev()",
+];
+
+fn picks(text: &str) -> Vec<String> {
+    statements(text)
+        .into_iter()
+        .filter(|st| {
+            let from = [".all(", ".lists("].iter().filter_map(|t| st.find(t)).min();
+            from.is_some_and(|i| PICKS.iter().any(|p| st[i..].contains(p)))
+        })
         .collect()
 }
 
@@ -161,6 +223,13 @@ fn every_module_is_known_and_reads_kicad_files_only_as_its_role_allows() {
             .filter(|t| text.contains(t))
             .collect();
         let parses = parses(&text);
+        if *role == Role::Gate {
+            let picks = picks(&text);
+            assert!(
+                picks.is_empty(),
+                "{module} takes one of a node's children by position or search: {picks:?}"
+            );
+        }
         match role {
             Role::Sexpr | Role::Vendored | Role::Strict => {}
             Role::Gate | Role::Other => {
@@ -229,7 +298,7 @@ fn the_lookups_are_pinned_by_path_and_by_name() {
         methods("aethelgard-eda/src/strict.rs", "impl<'a> Node<'a> {"),
         [
             "head", "arg", "last", "len", "is_empty", "texts", "path", "lists", "all", "one",
-            "field"
+            "named", "field"
         ],
         "a method was added to `Node`: it must not resolve a repeat first-or-last"
     );

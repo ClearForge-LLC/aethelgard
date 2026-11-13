@@ -94,6 +94,12 @@ pub enum Refusal {
         name: String,
         canonical: &'static str,
     },
+    #[error("{path} quotes its keyword {word:?}, which KiCad does not read as one")]
+    Quoted {
+        kind: Kind,
+        path: String,
+        word: String,
+    },
     #[error("{path} has `{child}` twice where the reader takes exactly one")]
     Ambiguous {
         kind: Kind,
@@ -109,6 +115,7 @@ impl Refusal {
             Self::Repeated { kind, .. }
             | Self::FieldTwice { kind, .. }
             | Self::FieldSpelling { kind, .. }
+            | Self::Quoted { kind, .. }
             | Self::Ambiguous { kind, .. } => *kind,
         }
     }
@@ -129,6 +136,7 @@ impl Refusal {
             Self::Repeated { path, .. }
             | Self::FieldTwice { path, .. }
             | Self::FieldSpelling { path, .. }
+            | Self::Quoted { path, .. }
             | Self::Ambiguous { path, .. } => Some(path),
         }
     }
@@ -159,6 +167,11 @@ struct Rule {
     node: &'static [&'static str],
     once: &'static [&'static [&'static str]],
     fields: Fields,
+    /// Positions that must be bare atoms: KiCad reads a keyword there, and a
+    /// quoted string is not one (`parsePAD` reads `smd` or `roundrect` as
+    /// tokens, and will not load `"smd"`, which a reader of text takes as
+    /// `smd`).
+    keywords: &'static [usize],
 }
 
 const B: Kind = Kind::Board;
@@ -184,6 +197,7 @@ const RULES: &[Rule] = &[
             &["embedded_fonts"],
         ],
         fields: Fields::None,
+        keywords: &[],
     },
     // parseGeneralSection.
     Rule {
@@ -192,6 +206,7 @@ const RULES: &[Rule] = &[
         node: &["general"],
         once: &[&["thickness"], &["legacy_teardrops"]],
         fields: Fields::None,
+        keywords: &[],
     },
     // parsePCB_TRACK: `layer` and `layers` both set the track's layers.
     Rule {
@@ -210,6 +225,7 @@ const RULES: &[Rule] = &[
             &["locked"],
         ],
         fields: Fields::None,
+        keywords: &[],
     },
     // parsePCB_VIA.
     Rule {
@@ -243,6 +259,7 @@ const RULES: &[Rule] = &[
             &["back_post_machining"],
         ],
         fields: Fields::None,
+        keywords: &[],
     },
     // parsePCB_SHAPE, as far as a `gr_rect` goes.
     Rule {
@@ -261,6 +278,7 @@ const RULES: &[Rule] = &[
             &["net"],
         ],
         fields: Fields::None,
+        keywords: &[],
     },
     Rule {
         kind: B,
@@ -268,6 +286,7 @@ const RULES: &[Rule] = &[
         node: &["stroke"],
         once: &[&["width"], &["type"], &["color"]],
         fields: Fields::None,
+        keywords: &[],
     },
     // parseFOOTPRINT_unchecked. `module` is KiCad 5's name for it.
     Rule {
@@ -307,6 +326,7 @@ const RULES: &[Rule] = &[
             &["component_classes"],
         ],
         fields: Fields::Footprint,
+        keywords: &[],
     },
     // parsePAD. A pad's `property` sets its one fabrication property.
     Rule {
@@ -352,6 +372,7 @@ const RULES: &[Rule] = &[
             &["back_post_machining"],
         ],
         fields: Fields::None,
+        keywords: &[2, 3],
     },
     // parseZONE. A zone's `polygon` and `filled_polygon` are appended.
     Rule {
@@ -376,6 +397,7 @@ const RULES: &[Rule] = &[
             &["locked"],
         ],
         fields: Fields::None,
+        keywords: &[],
     },
     Rule {
         kind: B,
@@ -383,6 +405,7 @@ const RULES: &[Rule] = &[
         node: &["connect_pads"],
         once: &[&["clearance"]],
         fields: Fields::None,
+        keywords: &[],
     },
     Rule {
         kind: B,
@@ -406,6 +429,7 @@ const RULES: &[Rule] = &[
             &["island_area_min"],
         ],
         fields: Fields::None,
+        keywords: &[],
     },
     // ParseSchematic.
     Rule {
@@ -423,6 +447,7 @@ const RULES: &[Rule] = &[
             &["embedded_fonts"],
         ],
         fields: Fields::None,
+        keywords: &[],
     },
     // parseSchematicSymbol: a placed symbol.
     Rule {
@@ -447,6 +472,7 @@ const RULES: &[Rule] = &[
             &["instances"],
         ],
         fields: Fields::Symbol,
+        keywords: &[],
     },
     // parseLibSymbol: a symbol in the schematic's own library, and its
     // units, whose fields name nets too (a power symbol's `Value`).
@@ -456,6 +482,7 @@ const RULES: &[Rule] = &[
         node: &["symbol"],
         once: &[],
         fields: Fields::Symbol,
+        keywords: &[],
     },
 ];
 
@@ -530,6 +557,15 @@ fn check(tree: &Tree) -> Result<(), Refusal> {
 }
 
 fn judge(node: &Node<'_>, rule: &Rule) -> Result<(), Refusal> {
+    for &i in rule.keywords {
+        if let Some(Sx::Str(word)) = node.sx.items().get(i) {
+            return Err(Refusal::Quoted {
+                kind: node.kind,
+                path: node.path.clone(),
+                word: word.clone(),
+            });
+        }
+    }
     let mut seen: BTreeMap<usize, &str> = BTreeMap::new();
     let mut fields: Vec<String> = Vec::new();
     for child in node.lists() {
@@ -545,7 +581,9 @@ fn judge(node: &Node<'_>, rule: &Rule) -> Result<(), Refusal> {
             });
         }
         let name = match (rule.fields, head) {
-            (Fields::Footprint | Fields::Symbol, "property") => child.arg(1).map(str::to_owned),
+            (Fields::Footprint | Fields::Symbol, "property") => {
+                child.named().map(|(n, _)| n.to_owned())
+            }
             (Fields::Footprint, "fp_text") => match child.arg(1) {
                 Some("reference") => Some("Reference".to_owned()),
                 Some("value") => Some("Value".to_owned()),
@@ -572,7 +610,7 @@ fn spelling(node: &Node<'_>) -> Result<(), Refusal> {
     if node.head() != Some("property") {
         return Ok(());
     }
-    let Some(name) = node.arg(1) else {
+    let Some((name, _)) = node.named() else {
         return Ok(());
     };
     let lower = name.to_lowercase();
@@ -684,6 +722,20 @@ impl<'a> Node<'a> {
         Ok(first)
     }
 
+    /// A `(property …)`'s name and value as KiCad reads them. In a schematic,
+    /// `parseSchField` takes a bare `private` before the name as a flag
+    /// (`T_private`); a quoted `"private"` is a name. A board's parser has
+    /// no such flag.
+    pub fn named(&self) -> Option<(&'a str, Option<&'a str>)> {
+        let items = self.sx.items();
+        let skip = usize::from(
+            self.kind == Kind::Schematic
+                && matches!(items.get(1), Some(Sx::Atom(a)) if a == "private"),
+        );
+        let name = items.get(1 + skip).and_then(Sx::text)?;
+        Some((name, items.get(2 + skip).and_then(Sx::text)))
+    }
+
     /// A footprint's field `name` (`property`, or the legacy `fp_text`
     /// form of `Reference` and `Value`): one value, never one of several.
     pub fn field(&self, name: &str) -> Result<Option<&'a str>, Refusal> {
@@ -731,6 +783,10 @@ mod tests {
         assert!(
             matches!(r, Refusal::Repeated { ref first, ref child, .. } if first == "layer" && child == "layers")
         );
+        // A pad's type and shape are keywords to KiCad.
+        let r = refused("(kicad_pcb (footprint \"R\" (pad \"1\" \"smd\" rect)))");
+        assert!(matches!(r, Refusal::Quoted { .. }), "{r:?}");
+        refused("(kicad_pcb (footprint \"R\" (pad \"1\" smd \"roundrect\")))");
         // A zone inside a footprint is judged as one on the board.
         let r = refused("(kicad_pcb (footprint \"R\" (zone (net_name \"A\") (net_name \"B\"))))");
         assert_eq!(r.id(), Some("kicad_pcb/footprint[1]/zone[1]"));
@@ -800,6 +856,27 @@ mod tests {
             )
             .is_ok()
         );
+        // `private` is a flag before the name, not the name.
+        let r = schematic("(kicad_sch (symbol (property private \"VALUE\" \"x\")))")
+            .err()
+            .unwrap();
+        assert!(
+            matches!(
+                r,
+                Refusal::FieldSpelling {
+                    canonical: "Value",
+                    ..
+                }
+            ),
+            "{r:?}"
+        );
+        let r = schematic(
+            "(kicad_sch (symbol (property \"Value\" \"a\") (property private \"Value\" \"b\")))",
+        )
+        .err()
+        .unwrap();
+        assert!(matches!(r, Refusal::FieldTwice { .. }), "{r:?}");
+        assert!(schematic("(kicad_sch (symbol (property \"private\" \"x\")))").is_ok());
         let r = schematic("(kicad_sch (symbol (lib_id \"a\") (lib_id \"b\")))")
             .err()
             .unwrap();

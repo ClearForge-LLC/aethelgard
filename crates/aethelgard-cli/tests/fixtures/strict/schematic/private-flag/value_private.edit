@@ -1,0 +1,14 @@
+# class: private-flag
+# note: (property private "Value" "unconnected-GND"): parseSchField reads a bare private as a flag before the name; main's parity took `private` as the name (adversarial B3)
+# main: erc 1 fail; drc-parity 0 pass
+# erc: 1 fail
+# drc-parity: 3 ReservedNetName unconnected-GND
+@@ find
+		)
+		(property "Value" "GND"
+			(at 25.4 16.51 0)
+@@ replace
+		)
+		(property private "Value" "unconnected-GND"
+			(at 25.4 16.51 0)
+@@ end

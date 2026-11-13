@@ -116,7 +116,10 @@ pub fn schematic(text: &str) -> Result<Tree, ParityRefusal> {
     for item in lists(tree.root()) {
         let named = match item.head() {
             Some("label" | "global_label" | "hierarchical_label") => item.arg(1),
-            Some("property") if item.arg(1) == Some("Value") => item.arg(2),
+            Some("property") => match item.named() {
+                Some(("Value", value)) => value,
+                _ => None,
+            },
             _ => None,
         };
         if let Some(name) = named.filter(|n| n.starts_with(UNCONNECTED)) {
@@ -203,6 +206,11 @@ mod tests {
         assert!(
             schematic("(kicad_sch (symbol (property \"Description\" \"unconnected-x\")))").is_ok()
         );
+        // KiCad reads a bare `private` as a flag before the field's name.
+        let e = schematic("(kicad_sch (symbol (property private \"Value\" \"unconnected-V\")))")
+            .err()
+            .unwrap();
+        assert_eq!(e.kind(), "ReservedNetName");
     }
 
     #[test]

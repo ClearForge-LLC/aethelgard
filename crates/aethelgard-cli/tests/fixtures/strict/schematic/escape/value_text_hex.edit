@@ -1,0 +1,14 @@
+# class: escape
+# note: as value_text_octal, spelt \x2d (adversarial B3)
+# main: erc 1 fail; drc-parity 0 pass
+# erc: 3 MalformedSchematic
+# drc-parity: 3 MalformedSchematic
+@@ find
+		)
+		(property "Value" "GND"
+			(at 25.4 16.51 0)
+@@ replace
+		)
+		(property "Value" "unconnected\x2dGND"
+			(at 25.4 16.51 0)
+@@ end

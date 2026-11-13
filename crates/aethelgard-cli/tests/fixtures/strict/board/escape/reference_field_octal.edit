@@ -1,0 +1,52 @@
+# class: escape
+# note: a second Reference field named "R\145ference" (adversarial B5)
+# main: drc 0 pass; drc-parity 1 fail; extract 0 pass
+# drc: 3 MalformedBoard
+# drc-parity: 3 MalformedBoard
+# extract: 3 BoardUnreadable
+@@ find
+		(property "Reference" "R1"
+			(at 0 -1.17 0)
+			(layer "F.SilkS")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "2k2"
+			(at 0 1.17 0)
+			(layer "F.Fab")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+@@ replace
+		(property "Reference" "R1"
+			(at 0 -1.17 0)
+			(layer "F.SilkS")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "R\145ference" "R9"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "00000000-0000-4000-8000-0000000000bb")
+			(effects (font (size 1 1) (thickness 0.15)))
+		)
+		(property "Value" "2k2"
+			(at 0 1.17 0)
+			(layer "F.Fab")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+@@ end

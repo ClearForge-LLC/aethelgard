@@ -140,7 +140,14 @@ fn the_corpus_is_1305s_and_its_schematic_counterparts_by_class() {
             }
         }
     }
-    for class in ["repeated-child", "field-twice", "control"] {
+    // An escape KiCad decodes otherwise (`\\137`, `\\x5f`) is refused by
+    // every gate, before any path exists (the adversarial pass's B1-B5).
+    for case in cases.iter().filter(|c| c.class == "escape") {
+        for e in &case.expect {
+            assert_eq!(e.code, 3, "{}/{} {}", case.class, case.name, e.gate);
+        }
+    }
+    for class in ["repeated-child", "field-twice", "escape", "control"] {
         assert!(
             cases.iter().any(|c| !c.board && c.class == class),
             "no schematic {class}"
