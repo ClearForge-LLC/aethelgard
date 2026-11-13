@@ -259,13 +259,13 @@ run() {
   mapfile -t br < <(names "$shard" bridge)
   if [ "${#ws[@]}" -gt 0 ]; then
     set +e
-    cargo test --workspace "${FEATURES[@]}" -- --exact "${ws[@]}" 2>&1 | tee "$out/test-ws.log"
+    RUSTC_BOOTSTRAP=1 cargo test --workspace "${FEATURES[@]}" -- -Z unstable-options --report-time --exact "${ws[@]}" 2>&1 | tee "$out/test-ws.log"
     [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
     set -e
   fi
   if [ "${#br[@]}" -gt 0 ]; then
     set +e
-    cargo test "${BRIDGE[@]}" -- --exact "${br[@]}" 2>&1 | tee "$out/test-bridge.log"
+    RUSTC_BOOTSTRAP=1 cargo test "${BRIDGE[@]}" -- -Z unstable-options --report-time --exact "${br[@]}" 2>&1 | tee "$out/test-bridge.log"
     [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
     set -e
   fi
