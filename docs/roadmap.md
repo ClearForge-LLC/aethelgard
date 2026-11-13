@@ -113,7 +113,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 
   **It breaks today's examples on purpose.** The same PR rewrites both, keeping their file names so the `gates` step needs no change, and the P0 gate's `validate` clause holds on the new shape.
 - `AET-WO-1101` — written, build-only: the microcontroller's pin table.
-- `AET-WO-1102` — **written 2026-11-13** (`AET-WO-3300` F14, F15), spike then build, cheap tier, targeted adversarial pass. Every printable character in every kind of identifier is run through every output (KiCad files, both CSVs, Gerber attributes, the drill file, the firmware, the Renode platform, the archive, and the package's file names), and `RUL-14` is narrowed to the set every output carries unchanged, plus a refusal of date and time shapes, so `validate` refuses what the export refused only after every gate had passed.
+- `AET-WO-1102` — **merged (PR #106)**, spike then build, cheap tier, targeted adversarial pass. `RUL-14` narrowed by measurement: one `check_identifier` with a base set (11 refused characters and the date and time shapes) and per-kind shapes (a project name is a crate name; a device reference is a Renode identifier). `validate` refuses what `generate` refused. Every admitted character was carried through every output by a tier-2 test in CI; KiCad's Gerber escaping of `% * , \` was measured there and those four are refused so every output stays byte-for-byte.
   - **The source.** It vendors ST's BSD-3-Clause `STM32_open_pin_data` files for the STM32H753ZI, pinned by commit and sha256 with ST's notice (`architecture.md` §2.8). The pin and alternate-function tables are not in the SVD, which has neither (`architecture.md` §2.1).
   - **The parse.** `aethelgard-svd-hal` parses the files into an IR pin table. That graduates the crate from the stub checks, with a pure-Rust XML parser as its one new dependency.
   - **The golden facts.** 114 I/O pins, and PB8 carries `I2C1_SCL` on AF4.
@@ -405,7 +405,12 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | `gh-write` with a `--draft` flag | `3200` F16 | **won't build** (Scotty 2026-11-12): the architect converts a proposal PR in one call. Revisit if proposal PRs become frequent (the P4 evolve loop) |
 | `Sx::child` takes the first match where KiCad takes the last; `check drc` passed a board with a second `thickness` | `1305` F6 | `AET-WO-1306`: **merged (PR #101)** |
 | `check drc` judges a refilled scratch copy, so a caller's saved zone fill and `stackup` reach a fabricator unjudged (`extract` refuses both) | `1306` F9 | `AET-WO-3300`: the package's Gerbers carry zones KiCad refilled, and `FAB-NOTES.md` states the stackup: **merged (PR #103)** |
-| A specification's own identifiers can put a date or a quote into a tool's output (a net named `2026-11-13`; a reference `U"4,X`); the export refuses both, exit 5 | `3300` F14, F15 | `AET-WO-1102` (written 2026-11-13): `RUL-14` narrowed by measuring every character through every output |
+| A specification's own identifiers can put a date or a quote into a tool's output (a net named `2026-11-13`; a reference `U"4,X`); the export refuses both, exit 5 | `3300` F14, F15 | `AET-WO-1102`: **merged (PR #106)** |
+| `validate` passes names `generate` refuses with the solved topology or the emitter's names: a reference equal to a solved peripheral (`i2c1`), a reference differing only in case from an emitter's (`u1` against `U1`), a net named `GND`, `unconnected-…` or an emitter's net | `1102` A2, A4, A5 | the next work order that owns `validate` (each is refused by `generate` before any output) |
+| A reference named for a Renode instance the platform's stock list omits (`nvic`, `sysbus`, `usart1`…) or a platform keyword (`using`, `init`) may redeclare it in the `.repl` (inferred, not run) | `1102` A3 | `AET-WO-2204` (it touches the platform): read the pinned platform's whole name set |
+| A project name that is a Windows reserved device name (`con`, `prn`, `aux`, `nul`, `com1`–`com9`, `lpt1`–`lpt9`) writes files Windows cannot open | `1102` A7 | the next identifier work order: refuse them in any case |
+| The router completes nets in name order, so a net's name alone can make `generate` fail with `Unroutable` | `1102` §4.4, A6 | the next work order that owns the router |
+| **CI headroom:** with eight shards the slowest ran 15:04 and then about 16 minutes (PR #106) | `1102` §8 | **next:** rebalance `ci/test-weights.tsv` from CI-measured times, or a ninth shard; before the next tier-2-heavy merge |
 | The export's ELF and board `BindingMismatch` guards have no killing test (a swap race in `verify`'s scratch, as `1305`'s extract test does) | `3300` F16 | the next work order that touches `verify` |
 | `fab::LAYERS` and `fab::describe` both map each layer; fold the description into `LAYERS` | `3300` F21 | the next work order that touches the fab module (nit) |
 | A dedicated uid for `aethelgard` on Furnace, so `uid_boundary` holds there | `1601` §1.3, R4 | **the operator's** (the CLI README's deployment section) |
@@ -473,6 +478,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-13 | §5, §7.1 | `AET-WO-1102` written: identifiers narrowed by measurement, from `3300` F14 and F15 | `AET-WO-3300` FEEDBACK |
 | 2026-11-13 | §5, §7.1 | `AET-WO-2301` written (spike, stop, build: a rail droop in lock-step); `AET-WO-2204` reserved for the I2C witness and the archive's trace hygiene, which 2301's carry-ins split into | `AET-WO-2101` S4–S7; the Mythos review |
 | 2026-11-13 | §5 | `AET-WO-3302` written: the bench comparison, P3 gate clause 4; the board arrived | Scotty, 2026-11-13 |
+| 2026-11-13 | §5, §7.1 | `AET-WO-1102` reconciled (merged, PR #106): `RUL-14` narrowed by measurement into one `check_identifier`; its adversarial residuals and the CI headroom given owners | PR #106 |
 
 ## 9. Provenance
 
