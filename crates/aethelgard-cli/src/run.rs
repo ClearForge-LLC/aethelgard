@@ -393,6 +393,21 @@ pub struct Output {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
     pub sandbox: SandboxReport,
+    /// Log lines a [`LogFilter`] dropped from stdout; 0 without one.
+    pub dropped_log_lines: u64,
+}
+
+/// A bounded reading of a tool's stdout for a tool whose log can flood it
+/// (`AET-WO-2100` F23, `AET-WO-2301` P5): every byte up to `budget` is kept
+/// as written, so a run that fits is read exactly as without a filter. Past
+/// the budget, a log line (one that starts with `[`, Renode's timestamp) is
+/// counted and dropped, except the first after the budget that contains each
+/// of `keep`; every other line is kept. What is kept is still capped at
+/// [`MAX_CAPTURE`].
+#[derive(Clone, Copy)]
+pub struct LogFilter {
+    pub budget: usize,
+    pub keep: &'static [&'static str],
 }
 
 impl Output {
@@ -448,16 +463,21 @@ pub struct Invocation<'a> {
 impl Invocation<'_> {
     /// Runs the tool through the reaper and waits for it.
     pub fn run(&self) -> Result<Output, Stop> {
-        self.start(None)
+        self.start(None, None)
     }
 
     /// As `run`, with the reaper killing the tool's tree past `bounds`, which
     /// it then reports as `Ended::Bounded`.
     pub fn run_bounded(&self, bounds: Bounds) -> Result<Output, Stop> {
-        self.start(Some(bounds))
+        self.start(Some(bounds), None)
     }
 
-    fn start(&self, bounds: Option<Bounds>) -> Result<Output, Stop> {
+    /// As [`run_bounded`](Self::run_bounded), reading stdout through `filter`.
+    pub fn run_bounded_filtered(&self, bounds: Bounds, filter: LogFilter) -> Result<Output, Stop> {
+        self.start(Some(bounds), Some(filter))
+    }
+
+    fn start(&self, bounds: Option<Bounds>, filter: Option<LogFilter>) -> Result<Output, Stop> {
         let me = env::current_exe().map_err(|e| {
             Stop::tool_error(self.tool.name, format!("cannot find this executable: {e}"))
         })?;
@@ -505,15 +525,15 @@ impl Invocation<'_> {
         let mut child = cmd.spawn().map_err(|e| {
             Stop::tool_error(self.tool.name, format!("cannot start the reaper: {e}"))
         })?;
-        let stdout = capture(child.stdout.take().expect("piped stdout"));
-        let stderr = capture(child.stderr.take().expect("piped stderr"));
+        let stdout = capture(child.stdout.take().expect("piped stdout"), filter);
+        let stderr = capture(child.stderr.take().expect("piped stderr"), None);
         let reaper = child.wait();
         let stdout = stdout.join().expect("stdout reader");
         let stderr = stderr.join().expect("stderr reader");
         let reaper = reaper.map_err(|e| {
             Stop::tool_error(self.tool.name, format!("waiting for the reaper: {e}"))
         })?;
-        let (Some(stdout), Some(stderr)) = (stdout, stderr) else {
+        let (Some((stdout, dropped_log_lines)), Some((stderr, _))) = (stdout, stderr) else {
             return Err(Stop::tool_error(
                 self.tool.name,
                 format!("output exceeded {MAX_CAPTURE} bytes"),
@@ -553,6 +573,7 @@ impl Invocation<'_> {
             stdout,
             stderr,
             sandbox,
+            dropped_log_lines,
         })
     }
 }
@@ -560,24 +581,123 @@ impl Invocation<'_> {
 /// Reads a pipe to its end, keeping at most `MAX_CAPTURE` bytes. Past that it
 /// keeps draining, so the tool never blocks on a full pipe, and yields `None`.
 /// A tool that prints forever is ended by the caller's timeout (`RUL-13`).
-fn capture(mut pipe: impl Read + Send + 'static) -> thread::JoinHandle<Option<Vec<u8>>> {
+/// With a filter, what is kept is [`Filtered`]'s, with the dropped count.
+fn capture(
+    mut pipe: impl Read + Send + 'static,
+    filter: Option<LogFilter>,
+) -> thread::JoinHandle<Option<(Vec<u8>, u64)>> {
     thread::spawn(move || {
-        let mut buf = Vec::new();
-        let mut overflow = false;
+        let mut kept = Filtered::new(filter);
         let mut chunk = [0u8; 64 * 1024];
         loop {
             match pipe.read(&mut chunk) {
-                Ok(0) => return (!overflow).then_some(buf),
-                Ok(n) if overflow || buf.len() + n > MAX_CAPTURE => {
-                    overflow = true;
-                    buf = Vec::new();
-                }
-                Ok(n) => buf.extend_from_slice(&chunk[..n]),
+                Ok(0) => return kept.finish(),
+                Ok(n) => kept.push(&chunk[..n]),
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-                Err(_) => return (!overflow).then_some(buf),
+                Err(_) => return kept.finish(),
             }
         }
     })
+}
+
+/// The bytes a capture keeps: all of them without a filter; with one, every
+/// whole line until the budget, then [`LogFilter`]'s rule line by line.
+struct Filtered {
+    filter: Option<LogFilter>,
+    buf: Vec<u8>,
+    /// A line not yet ended by a newline, once past the budget.
+    partial: Vec<u8>,
+    kept_once: Vec<bool>,
+    dropped: u64,
+    overflow: bool,
+}
+
+impl Filtered {
+    fn new(filter: Option<LogFilter>) -> Self {
+        let keep = filter.map_or(0, |f| f.keep.len());
+        Self {
+            filter,
+            buf: Vec::new(),
+            partial: Vec::new(),
+            kept_once: vec![false; keep],
+            dropped: 0,
+            overflow: false,
+        }
+    }
+
+    fn keep(&mut self, bytes: &[u8]) {
+        if self.overflow || self.buf.len() + bytes.len() > MAX_CAPTURE {
+            self.overflow = true;
+            self.buf = Vec::new();
+        } else {
+            self.buf.extend_from_slice(bytes);
+        }
+    }
+
+    fn push(&mut self, mut bytes: &[u8]) {
+        let Some(filter) = self.filter else {
+            return self.keep(bytes);
+        };
+        while !bytes.is_empty() {
+            if self.partial.is_empty() && self.buf.len() < filter.budget {
+                // Under the budget, whole chunks up to the next line end.
+                let take = match bytes.iter().position(|&b| b == b'\n') {
+                    Some(i) => i + 1,
+                    None => bytes.len(),
+                };
+                let (now, rest) = bytes.split_at(take);
+                self.keep(now);
+                bytes = rest;
+                continue;
+            }
+            match bytes.iter().position(|&b| b == b'\n') {
+                Some(i) => {
+                    self.partial.extend_from_slice(&bytes[..=i]);
+                    bytes = &bytes[i + 1..];
+                    self.line();
+                }
+                None => {
+                    // A line longer than the cap is an overflow, not a hang.
+                    if self.partial.len() + bytes.len() > MAX_CAPTURE {
+                        self.overflow = true;
+                        self.partial.clear();
+                    } else {
+                        self.partial.extend_from_slice(bytes);
+                    }
+                    bytes = &[];
+                }
+            }
+        }
+    }
+
+    /// One whole line past the budget.
+    fn line(&mut self) {
+        let line = std::mem::take(&mut self.partial);
+        let Some(filter) = self.filter else {
+            return self.keep(&line);
+        };
+        if !line.starts_with(b"[") {
+            return self.keep(&line);
+        }
+        let text = String::from_utf8_lossy(&line);
+        if let Some(i) = filter
+            .keep
+            .iter()
+            .enumerate()
+            .position(|(i, k)| !self.kept_once[i] && text.contains(k))
+        {
+            self.kept_once[i] = true;
+            return self.keep(&line);
+        }
+        self.dropped += 1;
+    }
+
+    fn finish(mut self) -> Option<(Vec<u8>, u64)> {
+        if !self.partial.is_empty() {
+            self.line();
+        }
+        (!self.overflow).then_some((self.buf, self.dropped))
+    }
 }
 
 /// The mode a root CLI's `workdir` has once the tool uid owns it: root's,

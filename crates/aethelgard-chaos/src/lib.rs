@@ -15,6 +15,7 @@ pub mod campaign;
 pub mod cbor;
 pub mod event;
 pub mod mirror;
+pub mod power;
 pub mod record;
 pub mod replay;
 pub mod synthetic;

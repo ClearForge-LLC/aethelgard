@@ -22,7 +22,10 @@ use std::os::unix::fs::DirBuilderExt;
 use std::path::Path;
 
 use aethelgard_chaos::campaign;
+use aethelgard_chaos::power::{self, Crossing};
+use aethelgard_chaos::record::Droop;
 use aethelgard_ir::SolvedTopology;
+use sha2::{Digest, Sha256};
 use aethelgard_twin::analog::{self, Deck};
 use serde_json::{Value, json};
 
@@ -55,6 +58,68 @@ impl Pass {
     pub fn faulted(&self) -> BTreeSet<String> {
         self.faults.iter().map(|f| f.bus.clone()).collect()
     }
+}
+
+/// The bridge's sources, in the order its build script hashes them
+/// (`bridge/build.rs`): `Cargo.toml`, `Cargo.lock`, `build.rs`, then every
+/// file in `src/` by name. A test pins this list to the directory.
+pub const BRIDGE_SOURCES: [(&str, &[u8]); 11] = [
+    ("Cargo.toml", include_bytes!("../../../bridge/Cargo.toml")),
+    ("Cargo.lock", include_bytes!("../../../bridge/Cargo.lock")),
+    ("build.rs", include_bytes!("../../../bridge/build.rs")),
+    ("src/ffi.rs", include_bytes!("../../../bridge/src/ffi.rs")),
+    ("src/header.rs", include_bytes!("../../../bridge/src/header.rs")),
+    ("src/host.rs", include_bytes!("../../../bridge/src/host.rs")),
+    ("src/main.rs", include_bytes!("../../../bridge/src/main.rs")),
+    ("src/measure.rs", include_bytes!("../../../bridge/src/measure.rs")),
+    ("src/rail.rs", include_bytes!("../../../bridge/src/rail.rs")),
+    ("src/request.rs", include_bytes!("../../../bridge/src/request.rs")),
+    ("src/solver.rs", include_bytes!("../../../bridge/src/solver.rs")),
+];
+
+/// The digest the bridge built from [`BRIDGE_SOURCES`] names itself by: for
+/// each file, its path, a NUL, its length as 8 bytes little-endian, its bytes.
+pub fn bridge_source_sha256() -> String {
+    let mut h = Sha256::new();
+    for (path, bytes) in BRIDGE_SOURCES {
+        h.update(path.as_bytes());
+        h.update([0u8]);
+        h.update((bytes.len() as u64).to_le_bytes());
+        h.update(bytes);
+    }
+    crate::input::hex(<[u8; 32]>::from(h.finalize()))
+}
+
+/// The bridge's first line (`AET-WO-2200` F15): its name, version and the
+/// digest of the sources it was built from, which must be the ones this CLI
+/// was built with. A stale bridge, one from another tree, or one that says
+/// anything else first is refused (`BridgeMismatch`, exit 4) before any of
+/// its answer is read; the rest of its stdout is returned.
+pub fn identified(stdout: &str) -> Result<&str, run::Stop> {
+    let (first, rest) = stdout.split_once('\n').unwrap_or((stdout, ""));
+    let mismatch = |message: String| run::Stop {
+        code: crate::EXIT_TOOL_UNAVAILABLE,
+        kind: "BridgeMismatch",
+        id: Some(BRIDGE.to_owned()),
+        message,
+    };
+    let want = bridge_source_sha256();
+    let v: Value = serde_json::from_str(first)
+        .map_err(|_| mismatch(format!("its first line is not its identity: `{}`", first.escape_debug())))?;
+    let o = v.as_object().filter(|o| o.len() == 3).ok_or_else(|| {
+        mismatch(format!("its identity is not three fields: `{}`", first.escape_debug()))
+    })?;
+    let field = |k: &str| o.get(k).and_then(Value::as_str);
+    if field("bridge") != Some(BRIDGE) || field("version").is_none() {
+        return Err(mismatch(format!("it does not name itself: `{}`", first.escape_debug())));
+    }
+    if field("source_sha256") != Some(want.as_str()) {
+        return Err(mismatch(format!(
+            "it was built from sources {}, not the {want} this CLI was built with: rebuild it",
+            field("source_sha256").unwrap_or("(none)")
+        )));
+    }
+    Ok(rest)
 }
 
 /// The bridge beside this executable, or `BridgeUnavailable` (exit 4).
@@ -151,6 +216,7 @@ fn measure(decks: &[Deck], dir: &Path, status: &Path) -> Result<Pass, run::Stop>
     .run_bounded(crate::renode::BOOT_BOUNDS)?;
     let code = out.code(BRIDGE)?;
     let stdout = String::from_utf8_lossy(&out.stdout);
+    let stdout = identified(&stdout)?;
     if code != 0 {
         return Err(run::Stop::tool_error(
             BRIDGE,
@@ -161,10 +227,331 @@ fn measure(decks: &[Deck], dir: &Path, status: &Path) -> Result<Pass, run::Stop>
             ),
         ));
     }
-    let measured = answers(decks, &stdout).map_err(|e| run::Stop::tool_error(BRIDGE, e))?;
+    let measured = answers(decks, stdout).map_err(|e| run::Stop::tool_error(BRIDGE, e))?;
     let mut pass = judge(decks, &measured);
     pass.sandbox = Some(out.sandbox);
     Ok(pass)
+}
+
+/// A declared droop, with what the runner resolved for it: the domain's
+/// nominal and tolerance, and the emitter's decoupling on it (ruled D7).
+#[derive(Clone, Debug)]
+pub struct Rail {
+    pub droop: Droop,
+    pub nominal_millivolts: u32,
+    pub tolerance_permille: u32,
+    pub decoupling_picofarads: u64,
+}
+
+/// The rail ngspice computed: every crossing of the active thresholds'
+/// levels, in time order, and the rail's minimum.
+pub struct Solved {
+    pub crossings: Vec<Crossing>,
+    pub minimum_microvolts: u64,
+    pub sandbox: run::SandboxReport,
+}
+
+/// Solves `rail` once with the bridge (`--rail`, ruled D1), over `span_ns`,
+/// in `dir`, a directory of its own; `status` is the reaper's. The request
+/// is integers only; every answer line is checked and anything else stops
+/// the call (`INV-06`).
+pub fn rail(rail: &Rail, span_ns: u64, dir: &Path, status: &Path) -> Result<Solved, run::Stop> {
+    let tool = bridge()?;
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .create(dir)
+        .map_err(|e| run::Stop::tool_error(BRIDGE, format!("cannot create its directory: {e}")))?;
+    let d = &rail.droop;
+    let levels = power::levels(d.bor_level);
+    let request = dir.join("rail.json");
+    let body = json!({
+        "domain": d.domain,
+        "nominal_microvolts": u64::from(rail.nominal_millivolts) * 1000,
+        "floor_microvolts": u64::from(d.floor_millivolts) * 1000,
+        "start_ns": d.start_ns,
+        "fall_ns": d.fall_ns,
+        "hold_ns": d.hold_ns,
+        "rise_ns": d.rise_ns,
+        "source_milliohms": d.source_milliohms,
+        "load_microamps": u64::from(d.load_milliamps) * 1000,
+        "decoupling_picofarads": rail.decoupling_picofarads,
+        "span_ns": span_ns,
+        "levels": levels.iter().map(|(name, uv)| json!({"name": name, "microvolts": uv})).collect::<Vec<_>>(),
+    });
+    fs::write(&request, body.to_string())
+        .map_err(|e| run::Stop::tool_error(BRIDGE, format!("cannot write its request: {e}")))?;
+    let out = run::Invocation {
+        tool: &tool,
+        args: vec!["--rail".into(), request.into_os_string()],
+        env: Vec::new(),
+        workdir: dir,
+        cwd: dir.to_path_buf(),
+        status: status.to_path_buf(),
+        read_only: tool.dirs(),
+        read_write: Vec::new(),
+    }
+    .run_bounded(crate::renode::BOOT_BOUNDS)?;
+    let code = out.code(BRIDGE)?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stdout = identified(&stdout)?;
+    let fail = |m: String| run::Stop::tool_error(BRIDGE, m);
+    if code != 0 {
+        return Err(fail(format!(
+            "exited {code} solving the rail: {} {}",
+            stdout.trim(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
+    let (crossings, minimum_microvolts) = rail_answer(stdout, &levels).map_err(fail)?;
+    Ok(Solved {
+        crossings,
+        minimum_microvolts,
+        sandbox: out.sandbox,
+    })
+}
+
+/// The bridge's rail answer: crossing lines in time order, each of a
+/// requested level at its requested value, then one closing line.
+fn rail_answer(stdout: &str, levels: &[(String, u64)]) -> Result<(Vec<Crossing>, u64), String> {
+    let lines: Vec<&str> = stdout.lines().collect();
+    let Some((last, crossing_lines)) = lines.split_last() else {
+        return Err("the rail answer is empty".to_owned());
+    };
+    let parse = |l: &str| -> Result<serde_json::Map<String, Value>, String> {
+        match serde_json::from_str::<Value>(l) {
+            Ok(Value::Object(o)) => Ok(o),
+            _ => Err(format!("`{}` is not a JSON object", l.escape_debug())),
+        }
+    };
+    let end = parse(last)?;
+    let minimum = match (end.len(), end.get("rail"), end.get("minimum_microvolts").and_then(Value::as_u64), end.get("accepted_points").and_then(Value::as_u64)) {
+        (3, Some(Value::String(s)), Some(m), Some(_)) if s == "solved" => m,
+        _ => return Err(format!("`{last}` is not the rail's closing line")),
+    };
+    let mut out = Vec::new();
+    for l in crossing_lines {
+        let o = parse(l)?;
+        let text = |k: &str| o.get(k).and_then(Value::as_str);
+        let level = text("level").ok_or_else(|| format!("`{l}` names no level"))?;
+        let uv = o.get("microvolts").and_then(Value::as_u64);
+        let at_ps = o.get("at_ps").and_then(Value::as_u64);
+        let falling = o.get("falling").and_then(Value::as_bool);
+        let ok = o.len() == 6
+            && text("method") == Some("interpolated")
+            && text("ngspice") == Some(NGSPICE)
+            && levels.iter().any(|(n, v)| n == level && Some(*v) == uv);
+        let (true, Some(microvolts), Some(at_ps), Some(falling)) = (ok, uv, at_ps, falling) else {
+            return Err(format!("`{l}` is not a crossing of a requested level"));
+        };
+        out.push(Crossing {
+            level: level.to_owned(),
+            microvolts,
+            at_ps,
+            falling,
+        });
+    }
+    if !out.windows(2).all(|w| w[0].at_ps <= w[1].at_ps) {
+        return Err("the crossings are not in time order".to_owned());
+    }
+    Ok((out, minimum))
+}
+
+/// The boot of a droop scenario: the bridge owns Renode as its child
+/// (`--renode`, ruled D1), with Renode's own arguments, environment and
+/// grants; Renode's output is the bridge's after its identity line, read
+/// through [`crate::renode::LOG_FILTER`].
+pub fn boot(inv: &run::Invocation<'_>, renode: &Path) -> Result<run::Output, run::Stop> {
+    let tool = bridge()?;
+    let mut args: Vec<std::ffi::OsString> = vec!["--renode".into(), renode.as_os_str().into()];
+    args.extend(inv.args.iter().cloned());
+    let mut read_only = inv.read_only.clone();
+    read_only.extend(tool.dirs());
+    let mut out = run::Invocation {
+        tool: &tool,
+        args,
+        env: inv.env.clone(),
+        workdir: inv.workdir,
+        cwd: inv.cwd.clone(),
+        status: inv.status.clone(),
+        read_only,
+        read_write: inv.read_write.clone(),
+    }
+    .run_bounded_filtered(crate::renode::BOOT_BOUNDS, crate::renode::LOG_FILTER)?;
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    let rest = identified(&text)?.as_bytes().to_vec();
+    out.stdout = rest;
+    Ok(out)
+}
+
+/// The words a probe must read for the firmware to have recovered: the boot
+/// word, then the first identity check's status OK and expected value. An
+/// image without a check has only the boot word to show (masks of 0 then
+/// make its record's two readings vacuous).
+fn recovered_words(
+    image: &aethelgard_twin::boot::Image,
+    boot_word: u32,
+    probe: Option<&crate::renode::Probe>,
+) -> [crate::verdict::Word; 3] {
+    use crate::verdict::{Word, word};
+    let check = image.i2c.checks.first();
+    let w = |address: u32, expected: u32, observed: Option<u32>| Word {
+        address: word(address),
+        expected: word(expected),
+        observed: observed.map(word),
+    };
+    [
+        w(boot_word, aethelgard_twin::boot::BOOT_MAGIC, probe.map(|p| p.boot_word)),
+        w(
+            check.map_or(0, |c| c.status_at),
+            check.map_or(0, |_| aethelgard_twin::boot::STATUS_OK),
+            probe.map(|p| p.record.map_or(0, |r| r.0)),
+        ),
+        w(
+            check.map_or(0, |c| c.value_at),
+            check.map_or(0, |c| c.expected as u32),
+            probe.map(|p| p.record.map_or(0, |r| r.1)),
+        ),
+    ]
+}
+
+/// A droop's records and findings (`AET-WO-2301` §2.2, §2.3): the declared
+/// rail, ngspice's crossings, the rendered resets, each release's probe;
+/// `brownout_reset` (info) per reset, `brownout_unrecovered` per reset the
+/// firmware did not recover from within the bound (or never released, or
+/// whose probe a killed boot never read), and `rail_below_tolerance` (info)
+/// when the rail left the domain's tolerance. `probes` is `None` when the
+/// boot was killed at a bound.
+pub fn droop_report(
+    rail: &Rail,
+    solved: &Solved,
+    resets: &[power::Reset],
+    probes: Option<&[crate::renode::Probe]>,
+    image: &aethelgard_twin::boot::Image,
+    boot_word: u32,
+) -> (crate::verdict::DroopReport, Vec<Finding>) {
+    use crate::verdict::{CrossingReport, DroopReport, ObservedReport, RailReport, ResetReport};
+    let d = &rail.droop;
+    let mut findings = Vec::new();
+    let mut reports = Vec::new();
+    for r in resets {
+        let cause = r.cause.join(", ");
+        reports.push(ResetReport {
+            kind: "bridge.reset_rendered",
+            source: "bridge",
+            at_ns: r.asserted_ns,
+            released: false,
+            cause: r.cause.clone(),
+            rendering: power::ASSERT_RENDERING,
+        });
+        findings.push(Finding::info(
+            campaign::RESET_FINDING,
+            match r.released_ns {
+                Some(at) => format!(
+                    "{cause} held the part in reset from {} ns to {at} ns: the model's rendering of the supervisor, not a measured reset",
+                    r.asserted_ns
+                ),
+                None => format!("{cause} held the part in reset from {} ns to the run's end", r.asserted_ns),
+            },
+        ));
+        if let Some(at) = r.released_ns {
+            reports.push(ResetReport {
+                kind: "bridge.reset_rendered",
+                source: "bridge",
+                at_ns: at,
+                released: true,
+                cause: r.cause.clone(),
+                rendering: power::RELEASE_RENDERING,
+            });
+        } else {
+            findings.push(Finding::plain(
+                campaign::UNRECOVERED_FINDING,
+                format!("{cause} never released the reset asserted at {} ns", r.asserted_ns),
+            ));
+        }
+    }
+    let mut observed = Vec::new();
+    let releases: Vec<u64> = resets.iter().filter_map(|r| r.released_ns).collect();
+    for (k, at) in releases.iter().enumerate() {
+        let probe_at = at + power::RECOVERY_BOUND_NS;
+        let Some(probe) = probes.map(|p| p.get(k)) else {
+            findings.push(Finding::plain(
+                campaign::UNRECOVERED_FINDING,
+                format!("the boot was killed before the read at {probe_at} ns, after the release at {at} ns"),
+            ));
+            continue;
+        };
+        let [boot, status, value] = recovered_words(image, boot_word, probe);
+        let ok = [&boot, &status, &value]
+            .iter()
+            .all(|w| w.observed.as_deref() == Some(w.expected.as_str()));
+        if !ok {
+            findings.push(Finding::plain(
+                campaign::UNRECOVERED_FINDING,
+                format!(
+                    "{} ns after the release at {at} ns the firmware had not recovered: boot word {}, status {}, value {}",
+                    power::RECOVERY_BOUND_NS,
+                    boot.observed.as_deref().unwrap_or("unread"),
+                    status.observed.as_deref().unwrap_or("unread"),
+                    value.observed.as_deref().unwrap_or("unread")
+                ),
+            ));
+        }
+        observed.push(ObservedReport {
+            kind: "firmware.observed",
+            source: "renode",
+            at_ns: probe_at,
+            boot_word: boot,
+            status,
+            value,
+        });
+    }
+    let (floor, _) = campaign::rail_levels(d, rail.nominal_millivolts).unwrap_or((0, 0));
+    let tolerance_floor =
+        u64::from(rail.nominal_millivolts) * u64::from(1000u32.saturating_sub(rail.tolerance_permille));
+    if floor < tolerance_floor {
+        findings.push(Finding::info(
+            campaign::BELOW_TOLERANCE_FINDING,
+            format!(
+                "domain `{}`: the declared droop takes the rail to {floor} µV, below its tolerance, {tolerance_floor} µV",
+                d.domain
+            ),
+        ));
+    }
+    let report = DroopReport {
+        rail: RailReport {
+            kind: "analog.rail_declared",
+            source: "scenario",
+            domain: d.domain.clone(),
+            nominal_millivolts: rail.nominal_millivolts,
+            tolerance_permille: rail.tolerance_permille,
+            floor_millivolts: d.floor_millivolts,
+            start_ns: d.start_ns,
+            fall_ns: d.fall_ns,
+            hold_ns: d.hold_ns,
+            rise_ns: d.rise_ns,
+            source_milliohms: d.source_milliohms,
+            load_milliamps: d.load_milliamps,
+            decoupling_picofarads: rail.decoupling_picofarads,
+            bor_level: d.bor_level,
+            minimum_microvolts: solved.minimum_microvolts,
+            thresholds: "DS12117 Rev 7 Table 26, typical (provisional: read from a mirror, AET-WO-2301 F1)",
+        },
+        crossings: solved
+            .crossings
+            .iter()
+            .map(|c| CrossingReport {
+                kind: "analog.rail_crossing_computed",
+                source: "ngspice",
+                level: c.level.clone(),
+                microvolts: c.microvolts,
+                at_ps: c.at_ps,
+                falling: c.falling,
+            })
+            .collect(),
+        resets: reports,
+        observed,
+    };
+    (report, findings)
 }
 
 fn request_json(decks: &[Deck]) -> Value {

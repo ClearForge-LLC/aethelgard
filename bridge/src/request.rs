@@ -255,7 +255,11 @@ fn stimulus(o: &Map<String, Value>, stop_ps: u64) -> Result<Pwl, String> {
     Ok(Pwl { points: out })
 }
 
-fn object<'a>(v: &'a Value, what: &str, keys: &[&str]) -> Result<&'a Map<String, Value>, String> {
+pub(crate) fn object<'a>(
+    v: &'a Value,
+    what: &str,
+    keys: &[&str],
+) -> Result<&'a Map<String, Value>, String> {
     let o = v
         .as_object()
         .ok_or_else(|| format!("{what} is not an object"))?;
@@ -268,7 +272,7 @@ fn object<'a>(v: &'a Value, what: &str, keys: &[&str]) -> Result<&'a Map<String,
     Ok(o)
 }
 
-fn string(o: &Map<String, Value>, key: &str) -> Result<String, String> {
+pub(crate) fn string(o: &Map<String, Value>, key: &str) -> Result<String, String> {
     o[key]
         .as_str()
         .map(str::to_owned)
@@ -289,7 +293,7 @@ fn name(o: &Map<String, Value>, key: &str) -> Result<String, String> {
     }
 }
 
-fn integer(o: &Map<String, Value>, key: &str) -> Result<u64, String> {
+pub(crate) fn integer(o: &Map<String, Value>, key: &str) -> Result<u64, String> {
     o[key]
         .as_u64()
         .ok_or_else(|| format!("`{key}` is not a non-negative integer"))

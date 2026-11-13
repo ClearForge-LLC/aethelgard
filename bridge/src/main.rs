@@ -1,3 +1,13 @@
+//! Every invocation prints the identity line first, `{"bridge":"aethelgard-bridge",
+//! "source_sha256":…,"version":…}`, and flushes it: `source_sha256` is the digest
+//! of the bridge's own source that `build.rs` computed (its header gives the
+//! recipe), so the CLI can refuse a bridge that is not the one it was built with.
+//!
+//! `aethelgard-bridge --rail <request.json>` solves one declared supply droop
+//! (see `rail`); `aethelgard-bridge --renode <executable> [args…]` runs
+//! Renode as the bridge's child, with the bridge's own stdin, stdout, stderr and
+//! environment, and exits as it exits (128 + the signal, if it was killed).
+//!
 //! `aethelgard-bridge <request.json>`: measures each I2C line's 30 %–70 % rise
 //! time with libngspice in this process (`RUL-17`, `AET-WO-2200` §1.3). The
 //! CLI runs it as a sandboxed tool, beside its own executable.
@@ -26,6 +36,7 @@ mod ffi;
 mod header;
 mod host;
 mod measure;
+mod rail;
 mod request;
 mod solver;
 
@@ -40,11 +51,42 @@ use solver::{CoSimulation, NGSPICE, Ngspice};
 
 /// The largest disagreement allowed between the two methods, in ns.
 const AGREEMENT_NS: f64 = 0.01;
+/// The same for a rail crossing. Measured in `AET-WO-2301`: ngspice 44.2's
+/// `meas … WHEN` reports a crossing time to the whole nanosecond (1014422.000
+/// where the straight line through the two accepted points gives 1014422.222),
+/// so the two can differ by up to 0.5 ns by that rounding alone; 0.01 ns more
+/// is the old tolerance on top.
+const RAIL_AGREEMENT_NS: f64 = 0.5 + AGREEMENT_NS;
+
+/// The first line of stdout in every mode.
+fn identity() -> String {
+    json!({
+        "bridge": "aethelgard-bridge",
+        "source_sha256": env!("AETHELGARD_BRIDGE_SOURCE_SHA256"),
+        "version": env!("CARGO_PKG_VERSION"),
+    })
+    .to_string()
+}
+
+const USAGE: &str = "usage: aethelgard-bridge <request.json> | --rail <request.json> | --renode <absolute executable> [args...]";
 
 fn main() -> ExitCode {
+    if emit_text(&identity()).is_err() {
+        return ExitCode::from(3);
+    }
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    match args.first().and_then(|a| a.to_str()) {
+        Some("--rail") => {
+            let [_, path] = args.as_slice() else {
+                return fatal(2, "usage", USAGE);
+            };
+            return run_rail(path);
+        }
+        Some("--renode") => return run_renode(&args[1..]),
+        _ => {}
+    }
     let [path] = args.as_slice() else {
-        return fatal(2, "usage", "usage: aethelgard-bridge <request.json>");
+        return fatal(2, "usage", USAGE);
     };
     let lines = match read(path).and_then(|b| request::parse(&b)) {
         Ok(lines) => lines,
@@ -72,6 +114,160 @@ fn main() -> ExitCode {
         }
     }
     ExitCode::from(if all { 0 } else { 1 })
+}
+
+/// A refusal of the request is exit 2, an unusable library 3, a failure of
+/// ngspice or of the agreement between the two methods 1.
+fn run_rail(path: &std::ffi::OsStr) -> ExitCode {
+    let rail = match read(path).and_then(|b| rail::parse(&b)) {
+        Ok(rail) => rail,
+        Err(e) => return fatal(2, "request_refused", &e),
+    };
+    let mut spice = match Ngspice::start() {
+        Ok(s) => s,
+        Err(e) => return fatal(3, "ngspice_unusable", &e),
+    };
+    let lines = match solve_rail(&mut spice, &rail) {
+        Ok(lines) => lines,
+        Err((kind, message)) => return fatal(1, kind, &message),
+    };
+    if host::exit().is_some() {
+        return ExitCode::from(3);
+    }
+    for line in &lines {
+        if emit(line).is_err() {
+            return ExitCode::from(3);
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// Every output line of a solved rail, none of them written until ngspice's
+/// `meas` has agreed with the interpolation on every crossing.
+fn solve_rail(
+    spice: &mut Ngspice,
+    rail: &rail::Rail,
+) -> Result<Vec<Value>, (&'static str, String)> {
+    let solver = |e: String| ("solver_failed", e);
+    let span = rail.span_ns as f64 * 1e-9;
+    spice.instantiate(&rail.deck()).map_err(solver)?;
+    let step = spice.do_step(0.0, span).map_err(solver)?;
+    if step.early_return {
+        return Err((
+            "early_return",
+            format!(
+                "the transient stopped at {} s, before {span} s",
+                step.last_successful_time
+            ),
+        ));
+    }
+    let time = spice.get_output("time").map_err(solver)?;
+    let v = spice.get_output("rail").map_err(solver)?;
+    if time.len() != v.len() || v.is_empty() || v.iter().any(|x| !x.is_finite()) {
+        return Err((
+            "solver_failed",
+            format!("{} times and {} values", time.len(), v.len()),
+        ));
+    }
+    let mut found = Vec::new();
+    let mut counter = 0;
+    for (i, level) in rail.levels.iter().enumerate() {
+        let volts = level.microvolts as f64 / 1e6;
+        let text = decimal(level.microvolts, 6);
+        let all = rail::crossings(&time, &v, volts, i);
+        for falling in [true, false] {
+            let mine: Vec<_> = all.iter().filter(|c| c.falling == falling).collect();
+            // The k-th crossing of each direction, then one more than there are.
+            for k in 1..=mine.len() + 1 {
+                counter += 1;
+                let name = format!("aethelgard_w{counter}");
+                let meas = spice
+                    .meas_when(&name, "rail", &text, falling, k)
+                    .map_err(solver)?;
+                let dir = if falling { "falling" } else { "rising" };
+                let Some(own) = mine.get(k - 1) else {
+                    if let Some(m) = meas {
+                        return Err((
+                            "methods_disagree",
+                            format!(
+                                "`{}`: the interpolation found {} {dir} crossings and ngspice's meas a {k}th at {} ns",
+                                level.name,
+                                mine.len(),
+                                m * 1e9
+                            ),
+                        ));
+                    }
+                    continue;
+                };
+                // Written so that a NaN on either side disagrees.
+                let agree = meas.is_some_and(|m| (own.time - m).abs() * 1e9 <= RAIL_AGREEMENT_NS);
+                if !agree {
+                    return Err((
+                        "methods_disagree",
+                        format!(
+                            "`{}`, {dir} crossing {k}: the interpolation gives {} ns and ngspice's meas {meas:?} s",
+                            level.name,
+                            own.time * 1e9
+                        ),
+                    ));
+                }
+            }
+        }
+        found.extend(all);
+    }
+    found.sort_by(|a, b| a.time.total_cmp(&b.time).then(a.level.cmp(&b.level)));
+    let mut lines: Vec<Value> = found
+        .iter()
+        .map(|c| {
+            let level = &rail.levels[c.level];
+            json!({
+                "at_ps": rail::picoseconds(c.time),
+                "falling": c.falling,
+                "level": level.name,
+                "method": "interpolated",
+                "microvolts": level.microvolts,
+                "ngspice": NGSPICE,
+            })
+        })
+        .collect();
+    let min = v.iter().copied().fold(f64::INFINITY, f64::min);
+    lines.push(json!({
+        "accepted_points": v.len(),
+        "minimum_microvolts": (min * 1e6).round() as i64,
+        "rail": "solved",
+    }));
+    Ok(lines)
+}
+
+/// Renode is the bridge's child: the same stdin, stdout, stderr and
+/// environment, with no `/dev/null` anywhere, which the CLI's sandbox does not
+/// grant. The bridge neither reads nor alters what the child prints.
+fn run_renode(args: &[std::ffi::OsString]) -> ExitCode {
+    use std::os::unix::process::ExitStatusExt;
+
+    let Some((exe, rest)) = args.split_first() else {
+        return fatal(2, "usage", USAGE);
+    };
+    if !std::path::Path::new(exe).is_absolute() {
+        return fatal(
+            2,
+            "request_refused",
+            "the executable is not an absolute path",
+        );
+    }
+    match std::process::Command::new(exe).args(rest).status() {
+        Ok(status) => match (status.code(), status.signal()) {
+            (Some(code), _) => ExitCode::from(code as u8),
+            (None, Some(signal)) => ExitCode::from((128 + signal) as u8),
+            (None, None) => ExitCode::from(1),
+        },
+        // As a shell's "cannot execute": distinct from a refusal or a library fault.
+        Err(e) => fatal(
+            126,
+            "spawn_failed",
+            &format!("cannot run the executable: {e}"),
+        ),
+    }
 }
 
 fn read(path: &std::ffi::OsStr) -> Result<Vec<u8>, String> {
@@ -186,8 +382,12 @@ fn decimal(value: u64, scale: u32) -> String {
 }
 
 fn emit(record: &Value) -> std::io::Result<()> {
+    emit_text(&record.to_string())
+}
+
+fn emit_text(line: &str) -> std::io::Result<()> {
     let mut out = std::io::stdout().lock();
-    writeln!(out, "{record}")?;
+    writeln!(out, "{line}")?;
     out.flush()
 }
 
@@ -251,6 +451,23 @@ mod tests {
         assert_eq!(
             text(Outcome::StuckHigh { volts: 1.65 }),
             r#"{"method":"interpolated","net":"N","ngspice":"44.2","volts_at_release":1.65}"#
+        );
+    }
+
+    #[test]
+    fn the_identity_line_is_the_documented_one() {
+        let line = super::identity();
+        let (head, rest) =
+            line.split_at(r#"{"bridge":"aethelgard-bridge","source_sha256":""#.len());
+        assert_eq!(head, r#"{"bridge":"aethelgard-bridge","source_sha256":""#);
+        let (hex, tail) = rest.split_at(64);
+        assert!(
+            hex.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        );
+        assert_eq!(
+            tail,
+            format!(r#"","version":"{}"}}"#, env!("CARGO_PKG_VERSION"))
         );
     }
 

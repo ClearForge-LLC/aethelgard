@@ -5,7 +5,9 @@
 //! of `There was an error executing command`. A CPU listed beside an `[ERROR]`
 //! log line is a failed load too (`platform_load_error`).
 
-use crate::run::{Bound, Bounds, Output, Stop};
+use aethelgard_chaos::power;
+
+use crate::run::{Bound, Bounds, LogFilter, Output, Stop};
 use crate::said::{self, Style};
 use crate::verdict::{Finding, Machine, Peripheral};
 
@@ -128,6 +130,28 @@ pub const BOOT_BOUNDS: Bounds = Bounds {
 /// (adversarial A6).
 const ABORTED: &str = "This machine has aborted";
 
+/// A boot's stdout is read through this (`AET-WO-2100` F23, `AET-WO-2301` P5):
+/// a run whose output fits 8 MiB is read byte for byte; past that, Renode's
+/// log lines are counted and dropped, but the first of each kind the judge
+/// reads is kept, so a firmware flooding the log still reaches a verdict.
+pub const LOG_FILTER: LogFilter = LogFilter {
+    budget: 8 * 1024 * 1024,
+    keep: &[ABORTED, LOAD_ERROR, LOG_ERROR, LOCKED[0], LOCKED[1]],
+};
+
+/// A log line without Renode's host timestamp (`[21:06:58.1004] `), which
+/// differs run to run and so never belongs in a finding (`INV-04`,
+/// `AET-WO-2301` F10).
+fn log_text(line: &str) -> &str {
+    let line = line.trim();
+    match line.strip_prefix('[').and_then(|r| r.split_once("] ")) {
+        Some((stamp, rest)) if stamp.bytes().all(|b| b.is_ascii_digit() || b == b':' || b == b'.') => {
+            rest.trim()
+        }
+        _ => line,
+    }
+}
+
 /// The finding for a boot the reaper killed at a bound: `cpu_aborted` if
 /// Renode logged that its machine aborted, else the bound it exceeded.
 pub fn bounded(out: &Output, bound: Bound) -> Finding {
@@ -184,12 +208,44 @@ pub struct BootPlan<'a> {
     pub executable: &'a [(u64, u64)],
     /// Every solved peripheral as the listing must name it: (name, model).
     pub instances: &'a [(String, String)],
+    /// The resets a declared droop renders, in time order; empty for every
+    /// other boot (`AET-WO-2301`).
+    pub resets: &'a [power::Reset],
+}
+
+/// The sentinels around the read after a release (`AET-WO-2301` §2.3), one
+/// pair per release, numbered from 0; each is matched as a whole line.
+const PROBE_BEGIN: &str = "AETHELGARD-PROBE-BEGIN-";
+const PROBE_END: &str = "AETHELGARD-PROBE-END-";
+/// Renode's console level at start (measured: `INFO`), restored after a probe.
+const CONSOLE_LEVEL: &str = "logLevel 1";
+
+fn run_for(ns: u64) -> String {
+    format!(
+        "emulation RunFor \"{}.{:09}\"",
+        ns / 1_000_000_000,
+        ns % 1_000_000_000
+    )
 }
 
 impl BootPlan<'_> {
-    /// The instructions a core that never stopped executes in the run.
+    /// The instructions the core executes in the run: MIPS × time, or, after
+    /// a rendered reset, MIPS × the time since the last release, because
+    /// Renode's count restarts at a reset (ruled D5; `AET-WO-2301` F4). The
+    /// ruling said "less the nudge"; measured in this `-e` composition, the
+    /// nudge's 10 ns run their instruction (9,877,202 for `droop-bor3`, as
+    /// P1's nudge case ran exactly 900,000), so nothing is subtracted. A reset
+    /// never released executes nothing after it.
     pub fn instructions(&self) -> u64 {
-        aethelgard_twin::boot::MIPS * self.virtual_ns / 1000
+        let ran_from = match self.resets.last() {
+            None => 0,
+            Some(power::Reset {
+                released_ns: Some(at),
+                ..
+            }) => *at,
+            Some(_) => return 0,
+        };
+        aethelgard_twin::boot::MIPS * self.virtual_ns.saturating_sub(ran_from) / 1000
     }
 
     /// Every read, in order, as the monitor command and what it reads.
@@ -230,9 +286,93 @@ impl BootPlan<'_> {
         reads
     }
 
+    /// The monitor commands a declared droop's reset is rendered with
+    /// ([`power::ASSERT_RENDERING`]): `machine Reset`, which alone never boots
+    /// again (`AET-WO-2301` F3), then the cold writes and the vector table
+    /// re-applied, the core held, and the boot word and records re-armed so
+    /// that only the firmware's code can set them again.
+    fn assert_reset(&self) -> Vec<String> {
+        let mut c = vec!["machine Reset".to_owned()];
+        c.extend(self.cold_and_vtor());
+        c.push("cpu IsHalted true".to_owned());
+        c.extend(self.rearm());
+        c
+    }
+
+    fn cold_and_vtor(&self) -> Vec<String> {
+        let mut c: Vec<String> = self
+            .image
+            .cold
+            .iter()
+            .map(|r| format!("sysbus WriteDoubleWord {:#010x} 0x0", r.address))
+            .collect();
+        c.push(format!("cpu VectorTableOffset {:#010x}", self.vector_table));
+        c
+    }
+
+    fn rearm(&self) -> Vec<String> {
+        let mut c = vec![format!(
+            "sysbus WriteDoubleWord {:#010x} 0x0",
+            self.boot_word
+        )];
+        for check in &self.image.i2c.checks {
+            for at in [check.status_at, check.value_at] {
+                c.push(format!(
+                    "sysbus WriteDoubleWord {at:#010x} {:#010x}",
+                    aethelgard_twin::boot::RECORD_UNSET
+                ));
+            }
+        }
+        c
+    }
+
+    /// The reads of a probe: the boot word, then the first identity record's
+    /// status and value.
+    fn probe_reads(&self) -> Vec<String> {
+        let mut c = vec![format!("sysbus ReadDoubleWord {:#010x}", self.boot_word)];
+        if let Some(check) = self.image.i2c.checks.first() {
+            for at in [check.status_at, check.value_at] {
+                c.push(format!("sysbus ReadDoubleWord {at:#010x}"));
+            }
+        }
+        c
+    }
+
+    /// The droop's schedule as monitor commands, from virtual time 0 to the
+    /// run's end: each reset asserted at its time, released at its time with
+    /// the nudge, and probed at the recovery bound (ruled D1, D4).
+    fn droop_schedule(&self) -> Vec<String> {
+        let mut c = Vec::new();
+        let mut now = 0u64;
+        let mut at = |c: &mut Vec<String>, t: u64| {
+            if t > now {
+                c.push(run_for(t - now));
+                now = t;
+            }
+        };
+        for (k, r) in self.resets.iter().enumerate() {
+            at(&mut c, r.asserted_ns);
+            c.extend(self.assert_reset());
+            let Some(release) = r.released_ns else { break };
+            at(&mut c, release);
+            c.push("cpu IsHalted false".to_owned());
+            c.push(run_for(power::NUDGE_NS));
+            at(&mut c, release + power::NUDGE_NS);
+            at(&mut c, release + power::RECOVERY_BOUND_NS);
+            c.push("logLevel 3".to_owned());
+            c.push(format!("echo \"{PROBE_BEGIN}{k}\""));
+            c.extend(self.probe_reads());
+            c.push(format!("echo \"{PROBE_END}{k}\""));
+            c.push(CONSOLE_LEVEL.to_owned());
+        }
+        at(&mut c, self.virtual_ns);
+        c
+    }
+
     /// The monitor commands: a fixed seed, the platform, the firmware, the
     /// cold RCC, a fixed virtual time, then the reads between sentinels under
     /// `logLevel 3`, then the listing. Both paths are this CLI's own copies.
+    /// With a droop, the fixed virtual time is the droop's schedule instead.
     pub fn commands(&self) -> String {
         let mut c = vec![
             format!("emulation SetSeed {}", aethelgard_twin::boot::SEED),
@@ -265,11 +405,11 @@ impl BootPlan<'_> {
             }
         }
         c.push(format!("cpu VectorTableOffset {:#010x}", self.vector_table));
-        c.push(format!(
-            "emulation RunFor \"{}.{:09}\"",
-            self.virtual_ns / 1_000_000_000,
-            self.virtual_ns % 1_000_000_000
-        ));
+        if self.resets.is_empty() {
+            c.push(run_for(self.virtual_ns));
+        } else {
+            c.extend(self.droop_schedule());
+        }
         c.push("logLevel 3".to_owned());
         c.push(format!("echo \"{BEGIN}\""));
         c.extend(self.reads().into_iter().map(|(cmd, _)| cmd));
@@ -442,20 +582,26 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         )));
     }
     let mut findings = Vec::new();
-    if let Some(line) = lines.iter().find(|l| l.contains(LOG_ERROR)) {
-        findings.push(Finding::plain("renode_error_log", line.trim().to_owned()));
+    if out.dropped_log_lines > 0 {
+        findings.push(Finding::info(
+            "renode_log_flood",
+            format!(
+                "Renode's output passed {} MiB; its log lines past that were counted and dropped, the first of each kind the judge reads kept",
+                LOG_FILTER.budget / (1024 * 1024)
+            ),
+        ));
     }
-    let locked: Vec<&&str> = lines
-        .iter()
-        .filter(|l| LOCKED.iter().any(|w| l.contains(w)))
-        .collect();
-    if let Some(first) = locked.first() {
+    if let Some(line) = lines.iter().find(|l| l.contains(LOG_ERROR)) {
+        findings.push(Finding::plain("renode_error_log", log_text(line).to_owned()));
+    }
+    // The count of such lines differs run to run under a flood (`AET-WO-2301`
+    // F10), and Renode's timestamp always does: neither is in the message.
+    if let Some(first) = lines.iter().find(|l| LOCKED.iter().any(|w| l.contains(w))) {
         findings.push(Finding::plain(
             "locked_peripheral_access",
             format!(
-                "{} access(es) to a peripheral whose clock was off; the first: {}",
-                locked.len(),
-                first.trim()
+                "one or more accesses to a peripheral whose clock was off; the first: {}",
+                log_text(first)
             ),
         ));
     }
@@ -591,6 +737,74 @@ fn witness_finding(w: &aethelgard_twin::boot::I2cWitness, cr2: u32, txdr: u32) -
 }
 
 /// How a record's status reads in the verdict.
+/// What a probe read after a release (`AET-WO-2301` §2.3): the boot word,
+/// then the first identity record's status and value, if the image has one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Probe {
+    pub at_ns: u64,
+    pub boot_word: u32,
+    pub record: Option<(u32, u32)>,
+}
+
+/// Each release's probe, read between its own whole-line sentinels: exactly
+/// one pair per release and none other, and between them exactly the
+/// probe's reads, each a bare value (`value`), or the output is not trusted.
+/// A boot killed at a bound has read none; its probes are absent, never
+/// guessed.
+pub fn probes(out: &Output, plan: &BootPlan<'_>) -> Result<Vec<Probe>, Stop> {
+    let text = out.text();
+    let untrusted = |what: String| {
+        Stop::tool_error(
+            TOOL,
+            format!("{what}{}", said::suffix(&text, Style::Renode)),
+        )
+    };
+    let lines = clean_lines(&text);
+    let releases: Vec<u64> = plan.resets.iter().filter_map(|r| r.released_ns).collect();
+    let sentinels = lines
+        .iter()
+        .filter(|l| l.starts_with(PROBE_BEGIN) || l.starts_with(PROBE_END))
+        .count();
+    if sentinels != 2 * releases.len() {
+        return Err(untrusted(format!(
+            "renode printed {sentinels} probe markers for {} releases",
+            releases.len()
+        )));
+    }
+    let reads = plan.probe_reads();
+    let mut out = Vec::new();
+    for (k, release) in releases.iter().enumerate() {
+        let find = |m: String| -> Result<usize, Stop> {
+            match (0..lines.len()).filter(|&i| lines[i] == m).collect::<Vec<_>>()[..] {
+                [i] => Ok(i),
+                _ => Err(untrusted(format!("renode did not print `{m}` once"))),
+            }
+        };
+        let (b, e) = (find(format!("{PROBE_BEGIN}{k}"))?, find(format!("{PROBE_END}{k}"))?);
+        let between = lines.get(b + 1..e).unwrap_or_default();
+        if e < b || between.len() != reads.len() {
+            return Err(untrusted(format!(
+                "probe {k}: {} lines between its markers, not the {} reads",
+                between.len(),
+                reads.len()
+            )));
+        }
+        let mut words = Vec::new();
+        for (cmd, line) in reads.iter().zip(between) {
+            let v = value(line)
+                .and_then(|v| u32::try_from(v).ok())
+                .ok_or_else(|| untrusted(format!("probe {k}: `{cmd}` read `{}`, not a word", line.escape_debug())))?;
+            words.push(v);
+        }
+        out.push(Probe {
+            at_ns: release + power::RECOVERY_BOUND_NS,
+            boot_word: words[0],
+            record: (words.len() == 3).then(|| (words[1], words[2])),
+        });
+    }
+    Ok(out)
+}
+
 pub fn status_name(status: u32) -> &'static str {
     use aethelgard_twin::boot::{STATUS_OK, STATUS_RXNE, STATUS_STOP, STATUS_TC, STATUS_TXIS};
     match status {

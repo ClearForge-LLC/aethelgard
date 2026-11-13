@@ -411,6 +411,58 @@ pub fn emit(
     })
 }
 
+/// The decoupling capacitance the emitter places on each rail, in pF, keyed
+/// by domain: every part `design` marks as decoupling an IC, summed by the
+/// rail it connects (`AET-WO-2301`, ruled D7: a droop's rail is computed with
+/// the decoupling the board will carry, not a restated value). A value the
+/// emitter writes that this cannot read is an error, never a guess.
+pub fn decoupling_picofarads(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+) -> Result<BTreeMap<String, u64>, EmitError> {
+    let (parts, _) = design(spec, solved, table)?;
+    let mut out: BTreeMap<String, u64> = BTreeMap::new();
+    for p in parts.iter().filter(|p| p.decouples.is_some()) {
+        let pf = picofarads(&p.value).ok_or_else(|| {
+            EmitError::Internal(format!(
+                "{}'s value `{}` is not a capacitance this reads",
+                p.reference, p.value
+            ))
+        })?;
+        for c in p.conns.values() {
+            if let Conn::Rail(r) = c
+                && r != GND
+            {
+                let sum = out.entry(r.clone()).or_default();
+                *sum = sum.checked_add(pf).ok_or_else(|| {
+                    EmitError::Internal(format!("rail `{r}`'s decoupling overflows"))
+                })?;
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// A capacitor value as the emitter writes it, `100n` or `2u2`, in pF.
+fn picofarads(value: &str) -> Option<u64> {
+    let i = value.find(['p', 'n', 'u'])?;
+    let (whole, rest) = value.split_at(i);
+    let unit: u64 = match &rest[..1] {
+        "p" => 1,
+        "n" => 1_000,
+        _ => 1_000_000,
+    };
+    let frac = &rest[1..];
+    let digits = |d: &str| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit());
+    if !digits(whole) || !(frac.is_empty() || digits(frac)) || frac.len() > 3 {
+        return None;
+    }
+    let scale = 10u64.pow(u32::try_from(frac.len()).ok()?);
+    let n: u64 = format!("{whole}{frac}").parse().ok()?;
+    n.checked_mul(unit)?.checked_div(scale).filter(|_| (n * unit) % scale == 0)
+}
+
 /// Every part and what each of its pins connects to, and every rail.
 pub(crate) fn design(
     spec: &Specification,
@@ -1066,6 +1118,17 @@ fn write_sheet(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn capacitor_values_read_as_the_emitter_writes_them() {
+        use super::picofarads;
+        assert_eq!(picofarads("100n"), Some(100_000));
+        assert_eq!(picofarads("2u2"), Some(2_200_000));
+        assert_eq!(picofarads("10p"), Some(10));
+        for bad in ["", "n", "100", "1x", "1n5n", "1.5n", "1u2345"] {
+            assert_eq!(picofarads(bad), None, "{bad}");
+        }
+    }
+
     use super::*;
 
     #[test]
