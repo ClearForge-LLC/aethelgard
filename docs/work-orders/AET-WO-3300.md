@@ -52,6 +52,11 @@ Then choose how the placement file is made, and record why:
 
 If no deterministic Gerber output is reachable with KiCad 10.0.7's options, that is a §7 stop. Do not post-process KiCad's files without the architect's ruling.
 
+*Amended 2026-11-13 (`AET-WO-1306` F9):* the generated board's zones carry no fill, and `check drc` judges a scratch copy whose setup and rules come from the specification (`RUL-03`), with zones refilled. So the Gerbers must plot the copper DRC judged:
+- export from the gate's prepared copy (the specification's setup and rules), never from the emitter's file as written;
+- refill with KiCad's own `--check-zones`;
+- in the spike, show that the refill is deterministic (twice, two paths), and that the copper layers carry the filled zones. A copper layer with no pour where the board declares a zone fails the run.
+
 ### 1.2 `aethelgard verify --spec S [--scenarios …] --fab-out D`
 
 - Every gate runs as today. **Only if every gate passes**, `verify` writes the package into `D`. `D` must be empty or absent, and is written through descriptors, as `generate` writes (`AET-WO-3301`'s `tree::write`).
