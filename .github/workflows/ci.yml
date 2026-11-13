@@ -118,11 +118,91 @@ jobs:
   # Tier 2: the tool subcommands against the real tools, inside the image
   # pinned by container/IMAGE (RUL-15). Crates are fetched and everything is
   # compiled with the network; every tool run happens under --network none.
-  tools:
+  #
+  # AET-WO-1907: the job's tests run in shards (ci/SHARDS), balanced by measured weight
+  # (ci/test-weights.tsv), so each finishes in under 15 minutes. Each shard lists
+  # every test from the code (ci/shard.sh plan), assigns them with the same
+  # deterministic rule, and a guard fails the run unless the lists are
+  # disjoint and their union is the list. The aggregate below, named `tools` so a
+  # required check of that name still means "all of tier 2", is green only when
+  # all the shards ran exactly what they were assigned and the canary floor holds.
+  # The number of shards is one constant, ci/SHARDS: this job turns it into the matrix,
+  # ci/shard.sh plan reads it, and the aggregate reads it.
+  shards:
     runs-on: ubuntu-latest
-    # 90, not 60: AET-WO-3200 F17 measured this job at 45 min of the 60, and 3200
-    # adds about 8 min. Splitting tier 2 into two jobs is backlog.
-    timeout-minutes: 90
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.n.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: n
+        run: |
+          n=$(tr -d '[:space:]' < ci/SHARDS)
+          case $n in ''|*[!0-9]*|0) echo "ci/SHARDS must hold a positive integer" >&2; exit 1;; esac
+          echo "matrix=[$(seq -s, 0 $((n - 1)))]" >> "$GITHUB_OUTPUT"
+
+  tools-shard:
+    name: tools-shard (${{ matrix.shard }})
+    needs: shards
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.shards.outputs.matrix) }}
+    env:
+      RUN: >-
+        docker run --rm -v ${{ github.workspace }}:/repo -w /repo
+        -e CARGO_HOME=/repo/target/cargo-home -e CARGO_TARGET_DIR=/repo/target
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: pull the tools image by its pinned digest
+        run: docker pull "$(cat container/IMAGE)"
+
+      - name: fetch crates and build, with the network
+        run: $RUN "$(cat container/IMAGE)" cargo test --workspace --all-targets --locked --features aethelgard-cli/with-tools --no-run
+
+      # AET-WO-2200: the bridge builds into target/debug/, beside the aethelgard
+      # binary the tier-2 tests run, because the CLI looks for it there. Every
+      # shard needs it; only shard 0 runs its fmt and clippy.
+      - name: build the analog bridge and its tests, with the network
+        run: $RUN "$(cat container/IMAGE)" bash -c "cargo build --manifest-path bridge/Cargo.toml --locked && cargo test --manifest-path bridge/Cargo.toml --locked --no-run"
+
+      - name: cargo fmt inside the image
+        if: matrix.shard == 0
+        run: $RUN --network none "$(cat container/IMAGE)" cargo fmt --all -- --check
+
+      - name: cargo clippy inside the image, tier 2 included
+        if: matrix.shard == 0
+        run: $RUN --network none "$(cat container/IMAGE)" cargo clippy --workspace --all-targets --locked --offline --features aethelgard-cli/with-tools -- -D warnings
+
+      # The full test list, the assignment and the guard (ci/shard.sh).
+      # The bridge's tests are in the list, so they are assigned like any other.
+      - name: list every test, assign the shards, run the guard
+        run: $RUN --network none "$(cat container/IMAGE)" bash ci/shard.sh plan target/ci-shard
+
+      - name: cargo test inside the image, this shard's tests
+        run: $RUN --network none "$(cat container/IMAGE)" bash ci/shard.sh run target/ci-shard ${{ matrix.shard }}
+
+      - name: keep what the aggregate checks
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shard-${{ matrix.shard }}
+          path: |
+            target/ci-shard/result.txt
+            target/ci-shard/entries.tsv
+            target/ci-shard/shard.tsv
+          if-no-files-found: ignore
+          overwrite: true
+          retention-days: 7
+
+  tools:
+    needs: tools-shard
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       # 64 (AET-WO-1900), plus 3 from AET-WO-3200 in attribute_seeded.rs: two
       # tier-2 tests (propose on every seeded case and the re-gate; committed
@@ -137,47 +217,29 @@ jobs:
       # 75: plus 1 from AET-WO-1306 in board_tier2.rs (every corpus file the
       # strict reader accepts gets its stated KiCad verdict).
       TIER2_MIN: "75"
-      RUN: >-
-        docker run --rm -v ${{ github.workspace }}:/repo -w /repo
-        -e CARGO_HOME=/repo/target/cargo-home -e CARGO_TARGET_DIR=/repo/target
     steps:
+      # A shard that was skipped or cancelled is not a pass.
+      - name: every shard job succeeded
+        run: test "${{ needs.tools-shard.result }}" = success
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: pull the tools image by its pinned digest
-        run: docker pull "$(cat container/IMAGE)"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: shard-*
+          path: shards
 
-      - name: fetch crates and build, with the network
-        run: $RUN "$(cat container/IMAGE)" cargo test --workspace --all-targets --locked --features aethelgard-cli/with-tools --no-run
-
-      # AET-WO-2200: the bridge builds into target/debug/, beside the aethelgard
-      # binary the tier-2 tests run, because the CLI looks for it there.
-      - name: build the analog bridge and its tests, with the network
-        run: $RUN "$(cat container/IMAGE)" bash -c "cargo build --manifest-path bridge/Cargo.toml --locked && cargo test --manifest-path bridge/Cargo.toml --locked --no-run"
-
-      - name: test the analog bridge inside the image
-        run: $RUN --network none "$(cat container/IMAGE)" cargo test --manifest-path bridge/Cargo.toml --locked --offline
-
-      - name: cargo fmt inside the image
-        run: $RUN --network none "$(cat container/IMAGE)" cargo fmt --all -- --check
-
-      - name: cargo clippy inside the image, tier 2 included
-        run: $RUN --network none "$(cat container/IMAGE)" cargo clippy --workspace --all-targets --locked --offline --features aethelgard-cli/with-tools -- -D warnings
-
-      - name: cargo test inside the image, tier 1 and tier 2
-        run: |
-          set -o pipefail
-          $RUN --network none "$(cat container/IMAGE)" cargo test --workspace --locked --offline --features aethelgard-cli/with-tools 2>&1 | tee "$RUNNER_TEMP/tools-test.log"
+      # The guard fails each run it exists to fail (AET-WO-1907 §3), on fixtures.
+      - name: the guard's own test
+        run: bash ci/test-shard.sh
 
       # AET-WO-1900 (review A7.3): all of tier 2 sits behind `#![cfg(feature = "with-tools")]`,
       # so a dropped flag or a skipped suite would leave this job green with no
-      # Kani, Renode or KiCad test run. Count the tests that passed in the
-      # tier-2 test binaries, print the count, and fail under the pinned floor.
+      # Kani, Renode or KiCad test run. The shards count the tests that passed in
+      # the tier-2 test binaries (the regexp is TIER2_RE in ci/shard.sh); this sums
+      # them across the shards, prints the count, and fails under the pinned floor.
+      # The same step checks that the shards ran one plan, each exactly what
+      # it was assigned, and that every listed test passed once.
       # Raise TIER2_MIN with the tier-2 tests; never lower it to pass.
-      - name: the tier-2 canary
-        run: |
-          set -euo pipefail
-          n=$(awk '/^ +Running / { file = $2; next }
-                   /^test result: / && file ~ /^tests\/(with_tools|twin_tier2|board_tier2|campaign_tier2|attribute_seeded|adversarial_1301_tools|adversarial_1302_tools)\.rs$/ { n += $4 }
-                   END { print n + 0 }' "$RUNNER_TEMP/tools-test.log")
-          echo "ANSWER tier2_tests_passed=$n floor=$TIER2_MIN"
-          [ "$n" -ge "$TIER2_MIN" ] || { echo "only $n tier-2 tests passed, the floor is $TIER2_MIN" >&2; exit 1; }
+      - name: the tier-2 canary, and the guard across the shards
+        run: bash ci/shard.sh aggregate shards "$(tr -d '[:space:]' < ci/SHARDS)" "$TIER2_MIN"

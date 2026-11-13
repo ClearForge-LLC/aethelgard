@@ -1,0 +1,3 @@
+# binary<TAB>CI seconds: tests kept in one shard because they overlap when run together.
+# attribute_seeded: 12 tests took 641 s together on CI (run 2, shard 1) against 861 s split four ways.
+tests/attribute_seeded.rs	640
