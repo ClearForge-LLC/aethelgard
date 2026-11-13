@@ -654,7 +654,7 @@ impl Filtered {
                 Some(i) => {
                     self.partial.extend_from_slice(&bytes[..=i]);
                     bytes = &bytes[i + 1..];
-                    self.line();
+                    self.line(filter);
                 }
                 None => {
                     // A line longer than the cap is an overflow, not a hang.
@@ -671,11 +671,8 @@ impl Filtered {
     }
 
     /// One whole line past the budget.
-    fn line(&mut self) {
+    fn line(&mut self, filter: LogFilter) {
         let line = std::mem::take(&mut self.partial);
-        let Some(filter) = self.filter else {
-            return self.keep(&line);
-        };
         if !line.starts_with(b"[") {
             return self.keep(&line);
         }
@@ -693,8 +690,9 @@ impl Filtered {
     }
 
     fn finish(mut self) -> Option<(Vec<u8>, u64)> {
-        if !self.partial.is_empty() {
-            self.line();
+        // Only a filter fills `partial`.
+        if let Some(filter) = self.filter.filter(|_| !self.partial.is_empty()) {
+            self.line(filter);
         }
         (!self.overflow).then_some((self.buf, self.dropped))
     }

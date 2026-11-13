@@ -348,6 +348,11 @@ pub fn rail_levels(droop: &Droop, nominal_millivolts: u32) -> Option<(u64, u64)>
     ))
 }
 
+/// The domain's tolerance floor in µV: its nominal less its tolerance.
+pub fn tolerance_floor_uv(nominal_millivolts: u32, tolerance_permille: u32) -> u64 {
+    u64::from(nominal_millivolts) * u64::from(1000u32.saturating_sub(tolerance_permille))
+}
+
 /// The time after which nothing a droop causes can still happen: its sag
 /// ends, the rail settles (10 τ), BOR0's temporization runs, the release's
 /// nudge, the recovery bound, and the grid's rounding on both edges.
@@ -406,6 +411,21 @@ pub fn check_droop(
             return Err(refuse(format!(
                 "the resting rail, {rest} µV, is not above {}'s falling band",
                 t.name
+            )));
+        }
+        // The rail's floor must lie clear of the threshold's whole hysteresis
+        // region, from the falling band's minimum to the rising band's
+        // maximum: inside it the part's behaviour is not stated, and near a
+        // level ngspice computes, the rail's ringing dithers across it
+        // (`AET-WO-2301` adversarial F4).
+        let region = [t.falling_uv[0], 0, t.rising_uv[2]];
+        if power::band(floor, region) == Band::Inside
+            && power::band(floor, t.falling_uv) != Band::Inside
+        {
+            return Err(refuse(format!(
+                "the rail floor, {floor} µV, lies inside {}'s hysteresis region {:?} µV, near the levels ngspice computes",
+                t.name,
+                [region[0], region[2]]
             )));
         }
         match power::band(floor, t.falling_uv) {
@@ -816,6 +836,55 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
 /// `AET-WO-3100` R2: every bus, net, device and controller the other records
 /// name is joined by exactly one solved bus (kind 15), so a dropped or forged
 /// join is refused here and never reaches attribution as a guess.
+/// Each observation's readings are the boot's own (`AET-WO-2301` adversarial
+/// F5): the boot word's address and expectation, the identity read's
+/// expected value and the witness's `CR2` and `TXDR`, each at the mask the
+/// boot record judges it by; the record's status and value are full words.
+/// Replay trusts no expectation an observation could carry for itself.
+fn check_observed_against_the_boot(records: &[Record]) -> Result<(), &'static str> {
+    let boot = records.iter().find_map(|r| match r {
+        Record::BootObserved { boot_word, .. } => Some(boot_word),
+        _ => None,
+    });
+    let check = records.iter().find_map(|r| match r {
+        Record::I2cCheck { expected, .. } => Some(*expected),
+        _ => None,
+    });
+    let witness = records.iter().find_map(|r| match r {
+        Record::I2cWitness { cr2, txdr, .. } => Some((cr2, txdr)),
+        _ => None,
+    });
+    let same = |a: &Reading, b: &Reading| {
+        (a.address, a.mask, a.expected) == (b.address, b.mask, b.expected)
+    };
+    let vacuous = |r: &Reading| r.mask == 0;
+    for r in records {
+        let Record::FirmwareObserved {
+            boot_word,
+            status,
+            value,
+            cr2,
+            txdr,
+            ..
+        } = r
+        else {
+            continue;
+        };
+        let ok = boot.is_some_and(|b| same(boot_word, b))
+            && status.mask == u32::MAX
+            && value.mask == u32::MAX
+            && check.is_none_or(|v| u64::from(value.expected) == v)
+            && match witness {
+                Some((c, t)) => same(cr2, c) && same(txdr, t),
+                None => vacuous(cr2) && vacuous(txdr),
+            };
+        if !ok {
+            return Err("an observation's readings are not the boot's own");
+        }
+    }
+    Ok(())
+}
+
 /// A reading as the judge sees it: observed, and equal to the expected
 /// value under the mask.
 fn reads_as_expected(r: &Reading) -> bool {
@@ -895,15 +964,18 @@ fn check_droop_records(
                 boot_word,
                 status,
                 value,
+                cr2,
+                txdr,
             } => Some((
                 *at_ns,
-                reads_as_expected(boot_word)
-                    && reads_as_expected(status)
-                    && reads_as_expected(value),
+                [boot_word, status, value, cr2, txdr]
+                    .iter()
+                    .all(|r| reads_as_expected(r)),
             )),
             _ => None,
         })
         .collect();
+    check_observed_against_the_boot(records)?;
     let (droop, (rail, nominal, tolerance, decoupling)) = match (droop, declared) {
         (None, None) => {
             if !(crossings.is_empty() && resets.is_empty() && observed.is_empty()) {
@@ -1007,7 +1079,7 @@ fn check_droop_records(
     };
     let unrecovered =
         unrecovered_probes + schedule.iter().filter(|r| r.released_ns.is_none()).count() as u64;
-    let tolerance_floor = u64::from(nominal) * u64::from(1000u32.saturating_sub(tolerance));
+    let tolerance_floor = tolerance_floor_uv(nominal, tolerance);
     Ok([
         (RESET_FINDING, schedule.len() as u64),
         (UNRECOVERED_FINDING, unrecovered),

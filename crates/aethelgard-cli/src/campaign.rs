@@ -699,6 +699,8 @@ fn droop_records(d: &crate::verdict::DroopReport) -> Result<Vec<Record>, String>
                 boot_word: word(&o.boot_word)?,
                 status: word(&o.status)?,
                 value: word(&o.value)?,
+                cr2: reading(&o.cr2)?,
+                txdr: reading(&o.txdr)?,
             },
         ));
     }

@@ -120,6 +120,10 @@ pub struct ObservedReport {
     pub boot_word: Word,
     pub status: Word,
     pub value: Word,
+    /// The controller's state, which only a transfer sets after a reset
+    /// (`AET-WO-2301` adversarial F1).
+    pub cr2: RegisterReport,
+    pub txdr: RegisterReport,
 }
 
 /// A boot's inputs, its expectations and what Renode read (`AET-WO-2100`).

@@ -51,12 +51,16 @@ use solver::{CoSimulation, NGSPICE, Ngspice};
 
 /// The largest disagreement allowed between the two methods, in ns.
 const AGREEMENT_NS: f64 = 0.01;
-/// The same for a rail crossing. Measured in `AET-WO-2301`: ngspice 44.2's
-/// `meas … WHEN` reports a crossing time to the whole nanosecond (1014422.000
-/// where the straight line through the two accepted points gives 1014422.222),
-/// so the two can differ by up to 0.5 ns by that rounding alone; 0.01 ns more
-/// is the old tolerance on top.
-const RAIL_AGREEMENT_NS: f64 = 0.5 + AGREEMENT_NS;
+
+/// How far ngspice's `meas … WHEN` may lie from the interpolation, in ns, at
+/// a crossing `seconds` into the run: ngspice prints it to 7 significant
+/// digits (`AET-WO-2301` adversarial F3: 1,014,422.000 ns where the accepted
+/// points give 1,014,422.222, and 20,014,420 where they give 20,014,422.2), so
+/// half a unit of the 7th digit, plus the I2C path's 0.01 ns.
+fn rail_agreement_ns(seconds: f64) -> f64 {
+    let unit = 10f64.powi(seconds.abs().log10().floor() as i32 - 6);
+    unit / 2.0 * 1e9 + AGREEMENT_NS
+}
 
 /// The first line of stdout in every mode.
 fn identity() -> String {
@@ -200,7 +204,8 @@ fn solve_rail(
                     continue;
                 };
                 // Written so that a NaN on either side disagrees.
-                let agree = meas.is_some_and(|m| (own.time - m).abs() * 1e9 <= RAIL_AGREEMENT_NS);
+                let agree =
+                    meas.is_some_and(|m| (own.time - m).abs() * 1e9 <= rail_agreement_ns(own.time));
                 if !agree {
                     return Err((
                         "methods_disagree",
@@ -398,6 +403,16 @@ fn fatal(code: u8, kind: &str, message: &str) -> ExitCode {
 
 #[cfg(test)]
 mod tests {
+    /// `AET-WO-2301` adversarial F3: `meas` prints 7 significant digits, so
+    /// the tolerance is half a unit of the 7th digit at the crossing's time.
+    #[test]
+    fn the_rail_agreement_follows_meas_precision() {
+        let ns = super::rail_agreement_ns;
+        assert!((ns(1.014e-3) - 0.51).abs() < 1e-9);
+        assert!((ns(20.01e-3) - 5.01).abs() < 1e-9);
+        assert!((ns(99.9e-3) - 5.01).abs() < 1e-9);
+    }
+
     #[test]
     fn the_two_methods_must_agree_to_0_01_ns_or_both_find_no_rise() {
         use super::{Outcome, agreed};

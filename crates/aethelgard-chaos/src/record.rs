@@ -214,12 +214,16 @@ pub enum Record {
         rendering: String,
     },
     /// Kind 19: `firmware.observed` after a release, at the recovery bound:
-    /// the boot word and the identity read's two words, as Renode read them.
+    /// the boot word, the identity read's two words, and the controller's
+    /// `CR2` and `TXDR`, which only a transfer on the bus sets after a reset
+    /// (`AET-WO-2301` adversarial F1), as Renode read them.
     FirmwareObserved {
         at_ns: u64,
         boot_word: Reading,
         status: Reading,
         value: Reading,
+        cr2: Reading,
+        txdr: Reading,
     },
     /// Kind 20: the scenario's `expect_counts`, sorted by kind, archived only
     /// when it declares them.
@@ -647,11 +651,15 @@ impl Record {
                 boot_word,
                 status,
                 value,
+                cr2,
+                txdr,
             } => vec![
                 u(*at_ns),
                 reading(boot_word),
                 reading(status),
                 reading(value),
+                reading(cr2),
+                reading(txdr),
             ],
             Self::ExpectedCounts { counts } => vec![Value::Array(
                 counts
@@ -805,6 +813,8 @@ impl Record {
                 boot_word: f.reading()?,
                 status: f.reading()?,
                 value: f.reading()?,
+                cr2: f.reading()?,
+                txdr: f.reading()?,
             },
             20 => {
                 let mut counts = Vec::new();

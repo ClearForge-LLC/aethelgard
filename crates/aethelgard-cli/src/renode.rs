@@ -221,8 +221,6 @@ pub struct BootPlan<'a> {
 /// pair per release, numbered from 0; each is matched as a whole line.
 const PROBE_BEGIN: &str = "AETHELGARD-PROBE-BEGIN-";
 const PROBE_END: &str = "AETHELGARD-PROBE-END-";
-/// Renode's console level at start (measured: `INFO`), restored after a probe.
-const CONSOLE_LEVEL: &str = "logLevel 1";
 
 fn run_for(ns: u64) -> String {
     format!(
@@ -328,12 +326,19 @@ impl BootPlan<'_> {
         c
     }
 
-    /// The reads of a probe: the boot word, then the first identity record's
-    /// status and value.
+    /// The reads of a probe: the boot word, the first identity record's
+    /// status and value, then the first witness's `CR2` and `TXDR`: the
+    /// record is the firmware's own claim, the controller is what a transfer
+    /// on the bus leaves (`AET-WO-2301` adversarial F1).
     fn probe_reads(&self) -> Vec<String> {
         let mut c = vec![format!("sysbus ReadDoubleWord {:#010x}", self.boot_word)];
         if let Some(check) = self.image.i2c.checks.first() {
             for at in [check.status_at, check.value_at] {
+                c.push(format!("sysbus ReadDoubleWord {at:#010x}"));
+            }
+        }
+        if let Some(w) = self.image.i2c.witnesses.first() {
+            for at in [w.cr2_at, w.txdr_at] {
                 c.push(format!("sysbus ReadDoubleWord {at:#010x}"));
             }
         }
@@ -361,11 +366,11 @@ impl BootPlan<'_> {
             // The nudge (F5): the release takes effect at its end.
             at(&mut c, release + power::NUDGE_NS);
             at(&mut c, release + power::RECOVERY_BOUND_NS);
-            c.push("logLevel 3".to_owned());
+            // The console's level is not changed around a probe: a change
+            // drops the log lines still queued (`AET-WO-2301` adversarial F2).
             c.push(format!("echo \"{PROBE_BEGIN}{k}\""));
             c.extend(self.probe_reads());
             c.push(format!("echo \"{PROBE_END}{k}\""));
-            c.push(CONSOLE_LEVEL.to_owned());
         }
         at(&mut c, self.virtual_ns);
         c
@@ -749,6 +754,8 @@ pub struct Probe {
     pub at_ns: u64,
     pub boot_word: u32,
     pub record: Option<(u32, u32)>,
+    /// The first witness's `CR2` and `TXDR`, if the image has one.
+    pub controller: Option<(u32, u32)>,
 }
 
 /// Each release's probe, read between its own whole-line sentinels: exactly
@@ -792,7 +799,16 @@ fn probes_in(text: &str, plan: &BootPlan<'_>) -> Result<Vec<Probe>, Stop> {
             find(format!("{PROBE_BEGIN}{k}"))?,
             find(format!("{PROBE_END}{k}"))?,
         );
-        let between = lines.get(b + 1..e).unwrap_or_default();
+        // A whole Renode log line inside the block is the log, not a read: the
+        // console keeps its level through a probe (F2). Anything else that
+        // is not a bare value is refused below.
+        let between: Vec<&str> = lines
+            .get(b + 1..e)
+            .unwrap_or_default()
+            .iter()
+            .copied()
+            .filter(|l| !l.starts_with('['))
+            .collect();
         if e < b || between.len() != reads.len() {
             return Err(untrusted(format!(
                 "probe {k}: {} lines between its markers, not the {} reads",
@@ -812,10 +828,13 @@ fn probes_in(text: &str, plan: &BootPlan<'_>) -> Result<Vec<Probe>, Stop> {
                 })?;
             words.push(v);
         }
+        let check = usize::from(!plan.image.i2c.checks.is_empty());
         out.push(Probe {
             at_ns: release + power::RECOVERY_BOUND_NS,
             boot_word: words[0],
-            record: (words.len() == 3).then(|| (words[1], words[2])),
+            record: (check == 1).then(|| (words[1], words[2])),
+            controller: (!plan.image.i2c.witnesses.is_empty())
+                .then(|| (words[1 + 2 * check], words[2 + 2 * check])),
         });
     }
     Ok(out)
@@ -909,12 +928,13 @@ mod tests {
             "cpu IsHalted false".to_owned(),
             "emulation RunFor \"0.000000010\"".to_owned(),
             "emulation RunFor \"0.000099990\"".to_owned(),
-            "logLevel 3".to_owned(),
             "echo \"AETHELGARD-PROBE-BEGIN-0\"".to_owned(),
         ]
         .join("; ");
         assert!(droop.contains(&rest), "{droop}");
-        assert!(droop.contains("echo \"AETHELGARD-PROBE-END-0\"; logLevel 1; emulation RunFor \"0.098672020\"; logLevel 3"));
+        assert!(droop.contains(
+            "echo \"AETHELGARD-PROBE-END-0\"; emulation RunFor \"0.098672020\"; logLevel 3"
+        ));
         // After `machine Reset` alone the core never runs (F3): the cold
         // writes and the vector table follow it.
         let after = droop.split("machine Reset; ").nth(1).unwrap();
@@ -936,28 +956,71 @@ mod tests {
         let image = image();
         let resets = bor3();
         let p = plan(&image, &resets);
-        let good = "x\nAETHELGARD-PROBE-BEGIN-0\n0x2100B007\n0x22020000\n0x00000060\nAETHELGARD-PROBE-END-0\n";
-        assert_eq!(
-            probes_in(good, &p).unwrap(),
-            [Probe {
-                at_ns: 1_327_980,
-                boot_word: 0x2100_B007,
-                record: Some((0x2202_0000, 0x60)),
-            }]
+        let block = |rows: &[&str]| {
+            format!(
+                "x\nAETHELGARD-PROBE-BEGIN-0\n{}\nAETHELGARD-PROBE-END-0\n",
+                rows.join("\n")
+            )
+        };
+        let good = [
+            "0x2100B007",
+            "0x22020000",
+            "0x00000060",
+            "0x020104EC",
+            "0x000000D0",
+        ];
+        let want = [Probe {
+            at_ns: 1_327_980,
+            boot_word: 0x2100_B007,
+            record: Some((0x2202_0000, 0x60)),
+            controller: Some((0x0201_04EC, 0xD0)),
+        }];
+        assert_eq!(probes_in(&block(&good), &p).unwrap(), want);
+        // A whole Renode log line inside the block is the log, not a read
+        // (the console keeps its level through a probe, adversarial F2).
+        let mut logged = good.to_vec();
+        logged.insert(
+            2,
+            "[21:06:58.1004] [WARNING] sysbus: Tried to write a locked peripheral",
         );
+        assert_eq!(probes_in(&block(&logged), &p).unwrap(), want);
         let refused = [
-            "",
-            "AETHELGARD-PROBE-BEGIN-0\n0x2100B007\n0x22020000\nAETHELGARD-PROBE-END-0\n",
-            "AETHELGARD-PROBE-BEGIN-0\n0x2100B007\n0x22020000\n0x60 0x61\nAETHELGARD-PROBE-END-0\n",
+            String::new(),
+            block(&good[..4]),
+            block(&[
+                "0x2100B007",
+                "0x22020000",
+                "0x60 0x61",
+                "0x020104EC",
+                "0x000000D0",
+            ]),
             // An echoed command's tail read as a value (`AET-WO-2301` F8).
-            "AETHELGARD-PROBE-BEGIN-0\n0x2100B007\n0x22020000\n0x20000008\"\nAETHELGARD-PROBE-END-0\n",
-            "AETHELGARD-PROBE-BEGIN-0\n0x2100B007\n0x22020000\n[WARNING] 0x60\nAETHELGARD-PROBE-END-0\n",
-            "AETHELGARD-PROBE-BEGIN-0\n0x2100B007\n0x22020000\n0x00000060\nAETHELGARD-PROBE-END-0\nAETHELGARD-PROBE-BEGIN-1\n",
-            "AETHELGARD-PROBE-END-0\n0x2100B007\n0x22020000\n0x00000060\nAETHELGARD-PROBE-BEGIN-0\n",
-            "AETHELGARD-PROBE-BEGIN-0\n0x1FFFFFFFF\n0x22020000\n0x00000060\nAETHELGARD-PROBE-END-0\n",
+            block(&[
+                "0x2100B007",
+                "0x22020000",
+                "0x20000008\"",
+                "0x020104EC",
+                "0x000000D0",
+            ]),
+            block(&[
+                "0x2100B007",
+                "0x22020000",
+                " [WARNING] 0x60",
+                "0x020104EC",
+                "0x000000D0",
+            ]),
+            format!("{}AETHELGARD-PROBE-BEGIN-1\n", block(&good)),
+            "AETHELGARD-PROBE-END-0\n0x2100B007\nAETHELGARD-PROBE-BEGIN-0\n".to_owned(),
+            block(&[
+                "0x1FFFFFFFF",
+                "0x22020000",
+                "0x00000060",
+                "0x020104EC",
+                "0x000000D0",
+            ]),
         ];
         for r in refused {
-            assert!(probes_in(r, &p).is_err(), "accepted: {r:?}");
+            assert!(probes_in(&r, &p).is_err(), "accepted: {r:?}");
         }
     }
 }

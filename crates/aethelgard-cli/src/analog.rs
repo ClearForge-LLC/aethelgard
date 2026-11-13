@@ -380,6 +380,14 @@ fn rail_answer(stdout: &str, levels: &[(String, u64)]) -> Result<(Vec<Crossing>,
     if !out.windows(2).all(|w| w[0].at_ps <= w[1].at_ps) {
         return Err("the crossings are not in time order".to_owned());
     }
+    // A declared sag crosses a level at most twice; more is a rail that
+    // dithers across it, which `check_droop` keeps scenarios from asking for
+    // (`AET-WO-2301` adversarial F4), and is never read as resets.
+    for (name, _) in levels {
+        if out.iter().filter(|c| &c.level == name).count() > 2 {
+            return Err(format!("the rail crossed `{name}` more than twice"));
+        }
+    }
     Ok((out, minimum))
 }
 
@@ -410,23 +418,27 @@ pub fn boot(inv: &run::Invocation<'_>, renode: &Path) -> Result<run::Output, run
     Ok(out)
 }
 
-/// The words a probe must read for the firmware to have recovered: the boot
-/// word, then the first identity check's status OK and expected value. An
-/// image without a check has only the boot word to show (masks of 0 then
-/// make its record's two readings vacuous).
+/// What a probe must read for the firmware to have recovered: the boot word,
+/// the first identity check's status OK and expected value, and the first
+/// witness's `CR2` and `TXDR` at the final block's masks (`AET-WO-2301`
+/// adversarial F1: the record alone is the firmware's own claim). A reading
+/// the image has no check or witness for has a mask of 0 and is vacuous.
 fn recovered_words(
     image: &aethelgard_twin::boot::Image,
     boot_word: u32,
     probe: Option<&crate::renode::Probe>,
-) -> [crate::verdict::Word; 3] {
-    use crate::verdict::{Word, word};
+) -> (
+    [crate::verdict::Word; 3],
+    [crate::verdict::RegisterReport; 2],
+) {
+    use crate::verdict::{RegisterReport, Word, word};
     let check = image.i2c.checks.first();
     let w = |address: u32, expected: u32, observed: Option<u32>| Word {
         address: word(address),
         expected: word(expected),
         observed: observed.map(word),
     };
-    [
+    let words = [
         w(
             boot_word,
             aethelgard_twin::boot::BOOT_MAGIC,
@@ -442,7 +454,54 @@ fn recovered_words(
             check.map_or(0, |c| c.expected),
             probe.map(|p| p.record.map_or(0, |r| r.1)),
         ),
-    ]
+    ];
+    let witness = image.i2c.witnesses.first();
+    let reg = |name: &str, address: u32, mask: u32, expected: u32, observed: Option<u32>| {
+        RegisterReport {
+            name: name.to_owned(),
+            address: word(address),
+            mask: word(mask),
+            expected: word(expected),
+            observed: observed.map(word),
+        }
+    };
+    let controller = probe.map(|p| p.controller.unwrap_or((0, 0)));
+    let regs = match witness {
+        Some(wi) => [
+            reg(
+                &format!("{}.CR2", wi.peripheral),
+                wi.cr2_at,
+                wi.cr2_mask(),
+                wi.cr2_expected(),
+                controller.map(|c| c.0),
+            ),
+            reg(
+                &format!("{}.TXDR", wi.peripheral),
+                wi.txdr_at,
+                0xFF,
+                wi.txdr_expected(),
+                controller.map(|c| c.1),
+            ),
+        ],
+        None => [
+            reg("CR2", 0, 0, 0, controller.map(|c| c.0)),
+            reg("TXDR", 0, 0, 0, controller.map(|c| c.1)),
+        ],
+    };
+    (words, regs)
+}
+
+/// Whether a word reads as expected under its mask.
+fn as_expected(r: &crate::verdict::RegisterReport) -> bool {
+    let n = |s: &str| u32::from_str_radix(s.trim_start_matches("0x"), 16).ok();
+    match (
+        r.observed.as_deref().and_then(n),
+        n(&r.expected),
+        n(&r.mask),
+    ) {
+        (Some(o), Some(e), Some(m)) => o & m == e & m,
+        _ => false,
+    }
 }
 
 /// A droop's records and findings (`AET-WO-2301` §2.2, §2.3): the declared
@@ -514,19 +573,23 @@ pub fn droop_report(
             ));
             continue;
         };
-        let [boot, status, value] = recovered_words(image, boot_word, probe);
+        let ([boot, status, value], [cr2, txdr]) = recovered_words(image, boot_word, probe);
         let ok = [&boot, &status, &value]
             .iter()
-            .all(|w| w.observed.as_deref() == Some(w.expected.as_str()));
+            .all(|w| w.observed.as_deref() == Some(w.expected.as_str()))
+            && as_expected(&cr2)
+            && as_expected(&txdr);
         if !ok {
             findings.push(Finding::plain(
                 campaign::UNRECOVERED_FINDING,
                 format!(
-                    "{} ns after the release at {at} ns the firmware had not recovered: boot word {}, status {}, value {}",
+                                        "{} ns after the release at {at} ns the firmware had not recovered: boot word {}, status {}, value {}, CR2 {}, TXDR {}",
                     power::RECOVERY_BOUND_NS,
                     boot.observed.as_deref().unwrap_or("unread"),
                     status.observed.as_deref().unwrap_or("unread"),
-                    value.observed.as_deref().unwrap_or("unread")
+                    value.observed.as_deref().unwrap_or("unread"),
+                    cr2.observed.as_deref().unwrap_or("unread"),
+                    txdr.observed.as_deref().unwrap_or("unread")
                 ),
             ));
         }
@@ -537,11 +600,13 @@ pub fn droop_report(
             boot_word: boot,
             status,
             value,
+            cr2,
+            txdr,
         });
     }
     let (floor, _) = campaign::rail_levels(d, rail.nominal_millivolts).unwrap_or((0, 0));
-    let tolerance_floor = u64::from(rail.nominal_millivolts)
-        * u64::from(1000u32.saturating_sub(rail.tolerance_permille));
+    let tolerance_floor =
+        campaign::tolerance_floor_uv(rail.nominal_millivolts, rail.tolerance_permille);
     if floor < tolerance_floor {
         findings.push(Finding::info(
             campaign::BELOW_TOLERANCE_FINDING,

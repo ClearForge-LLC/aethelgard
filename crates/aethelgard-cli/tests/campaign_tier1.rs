@@ -2114,13 +2114,13 @@ printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_3
 /// `--disable-gui --console --plain -e <one line>`, refuses (exit 99) a command line without the rendered reset and its
 /// probe, and prints the probe `probe` then a boot that ran 9,877,201
 /// instructions after the release.
-fn droop_toolbox(probe: [&str; 3]) -> Dir {
+fn droop_toolbox(probe: [&str; 5]) -> Dir {
     let tb = Dir::new("tb-droop");
     let mut reads = boot_reads(GOOD_RECORD);
     reads[1] = "0x000000000096B6D1".to_owned();
     let mut out = format!(
-        "AETHELGARD-PROBE-BEGIN-0\n{}\n{}\n{}\nAETHELGARD-PROBE-END-0\n",
-        probe[0], probe[1], probe[2]
+        "AETHELGARD-PROBE-BEGIN-0\n{}\nAETHELGARD-PROBE-END-0\n",
+        probe.join("\n")
     );
     out.push_str(&transcript(
         &reads.iter().map(String::as_str).collect::<Vec<_>>(),
@@ -2132,7 +2132,7 @@ fn droop_toolbox(probe: [&str; 3]) -> Dir {
 if [ "$1" = --version ]; then printf 'Renode v1.17.0\n'; exit 0; fi
 [ $# = 5 ] || exit 98
 case "$5" in
-  *"emulation RunFor \"0.001014430\"; machine Reset; "*"cpu IsHalted true; "*"emulation RunFor \"0.000213550\"; cpu IsHalted false; emulation RunFor \"0.000000010\"; emulation RunFor \"0.000099990\"; logLevel 3; echo \"AETHELGARD-PROBE-BEGIN-0\""*) ;;
+  *"emulation RunFor \"0.001014430\"; machine Reset; "*"cpu IsHalted true; "*"emulation RunFor \"0.000213550\"; cpu IsHalted false; emulation RunFor \"0.000000010\"; emulation RunFor \"0.000099990\"; echo \"AETHELGARD-PROBE-BEGIN-0\""*) ;;
   *) exit 99;;
 esac
 /bin/cat '{out}'
@@ -2149,7 +2149,13 @@ esac
 /// command line, so its monitor history is one line whatever the schedule.
 #[test]
 fn a_droop_scenario_renders_its_reset_through_the_bridge_in_one_command_line() {
-    let tb = droop_toolbox(["0x2100B007", "0x22020000", "0x00000060"]);
+    let tb = droop_toolbox([
+        "0x2100B007",
+        "0x22020000",
+        "0x00000060",
+        GOOD_CONTROLLER[0],
+        GOOD_CONTROLLER[1],
+    ]);
     let work = Work::new();
     let archive = Dir::new("archive");
     let out = campaign(
@@ -2185,7 +2191,13 @@ fn a_droop_scenario_renders_its_reset_through_the_bridge_in_one_command_line() {
 /// fails the run (`brownout_unrecovered`), and replay agrees with the verdict.
 #[test]
 fn a_firmware_that_does_not_recover_in_the_bound_fails_and_replays() {
-    let tb = droop_toolbox(["0x00000000", "0xFFFFFFFF", "0xFFFFFFFF"]);
+    let tb = droop_toolbox([
+        "0x00000000",
+        "0xFFFFFFFF",
+        "0xFFFFFFFF",
+        "0x00000000",
+        "0x00000000",
+    ]);
     let work = Work::new();
     let archive = Dir::new("archive");
     let out = campaign(
@@ -2256,4 +2268,33 @@ fn a_stale_or_impostor_bridge_is_refused() {
         let v = expect_refusal(&out, 4, "BridgeMismatch");
         assert_eq!(v["error"]["id"], "aethelgard-bridge");
     }
+}
+
+/// `AET-WO-2301` adversarial F1: a firmware that writes its boot word and an
+/// OK record before it has talked to the bus has not recovered. The probe
+/// reads the controller, which only a transfer sets after a reset.
+#[test]
+fn a_record_that_claims_ok_without_the_controller_showing_a_transfer_is_unrecovered() {
+    let tb = droop_toolbox([
+        "0x2100B007",
+        "0x22020000",
+        "0x00000060",
+        "0x00000000",
+        "0x00000000",
+    ]);
+    let work = Work::new();
+    let archive = Dir::new("archive");
+    let out = campaign(
+        &cli(Some(DROOP_BRIDGE)),
+        &tb.0,
+        &root(),
+        &["scenarios/sentinel-01/droop-bor3.json"],
+        &work.firmware,
+        &archive.0.join("a"),
+    );
+    let all = lines(&out);
+    assert_eq!(out.status.code(), Some(1), "{all:?}");
+    assert_eq!(all[0]["findings"], json!(["brownout_unrecovered"]));
+    let run = PathBuf::from(all[0]["run"].as_str().unwrap());
+    assert_eq!(lines(&replay(&tb.0, &run))[0]["verdict"], "fail");
 }

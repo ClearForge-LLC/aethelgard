@@ -343,8 +343,12 @@ fn a_rail_floor_inside_the_active_falling_band_is_refused_at_both_ends() {
         let m = refusal(&unloaded(mv, 3), NOMINAL_MV, DECOUPLING_PF, SPAN_NS);
         assert!(m.contains("lies inside VBOR3's falling band"), "{mv}: {m}");
     }
-    // One mV outside, either side: below it crosses, above it does not.
-    for mv in [2539, 2681] {
+    // One mV below, it crosses; above the band it is inside VBOR3's
+    // hysteresis region up to the rising band's maximum, 2780 mV
+    // (adversarial F4), and one mV above that it does not cross.
+    let m = refusal(&unloaded(2681, 3), NOMINAL_MV, DECOUPLING_PF, SPAN_NS);
+    assert!(m.contains("hysteresis region"), "{m}");
+    for mv in [2539, 2781] {
         assert_eq!(
             check(&unloaded(mv, 3), NOMINAL_MV, DECOUPLING_PF, SPAN_NS),
             Ok(()),
@@ -356,7 +360,8 @@ fn a_rail_floor_inside_the_active_falling_band_is_refused_at_both_ends() {
 #[test]
 fn the_rail_floor_is_the_floor_less_the_loads_drop() {
     // 2640 mV is inside the band; 100 mA through 500 mΩ takes the rail to
-    // 2590 mV, still inside; 2740 mV less 50 mV is 2690 mV, above it.
+    // 2590 mV, still inside; 2840 mV less 50 mV is 2790 mV, above VBOR3's
+    // whole hysteresis region.
     let m = refusal(
         &with(|d| d.floor_millivolts = 2640),
         NOMINAL_MV,
@@ -364,7 +369,7 @@ fn the_rail_floor_is_the_floor_less_the_loads_drop() {
         SPAN_NS,
     );
     assert!(m.contains("2590000 µV"), "{m}");
-    let above = with(|d| d.floor_millivolts = 2740);
+    let above = with(|d| d.floor_millivolts = 2840);
     assert_eq!(check(&above, NOMINAL_MV, DECOUPLING_PF, SPAN_NS), Ok(()));
 }
 
@@ -388,11 +393,15 @@ fn a_crossed_threshold_whose_rising_band_holds_the_resting_rail_is_refused() {
     assert_eq!(check(&reference(), 2840, DECOUPLING_PF, SPAN_NS), Ok(()));
 }
 
+/// `AET-WO-2301` adversarial F4: a floor between the falling band and the
+/// rising level sits where the rail's ringing dithers across a level ngspice
+/// computes, so it is refused as inside the hysteresis region.
 #[test]
-fn a_rising_band_only_matters_for_a_threshold_the_floor_crosses() {
-    // The floor stays above VBOR3's falling band, so the rising band is moot.
-    let d = unloaded(2700, 3);
-    assert_eq!(check(&d, 2780, DECOUPLING_PF, SPAN_NS), Ok(()));
+fn a_floor_between_the_falling_band_and_the_rising_band_is_refused() {
+    for mv in [2690, 2700, 2780] {
+        let m = refusal(&unloaded(mv, 3), NOMINAL_MV, DECOUPLING_PF, SPAN_NS);
+        assert!(m.contains("VBOR3's hysteresis region"), "{mv}: {m}");
+    }
 }
 
 #[test]
@@ -451,7 +460,10 @@ fn observation(at_ns: u64, status: u32) -> Record {
         at_ns,
         boot_word: reading(0x2000_0000, u32::MAX, 0x2100_B007, Some(0x2100_B007)),
         status: reading(0x2000_0004, u32::MAX, 0x2202_0000, Some(status)),
-        value: reading(0x2000_0008, 0xff, 0x60, Some(0x60)),
+        value: reading(0x2000_0008, u32::MAX, 0x60, Some(0x60)),
+        // The run has no witness record: the controller's readings are vacuous.
+        cr2: reading(0, 0, 0, Some(0)),
+        txdr: reading(0, 0, 0, Some(0)),
     }
 }
 
@@ -523,6 +535,8 @@ fn every_new_record_kind_round_trips_and_checks() {
             boot_word: reading(1, 2, 3, None),
             status: reading(4, 5, 6, None),
             value: reading(7, 8, 9, None),
+            cr2: reading(10, 11, 12, None),
+            txdr: reading(13, 14, 15, Some(16)),
         },
         Record::ExpectedCounts {
             counts: vec![("a".into(), 0), ("b".into(), u64::MAX)],
@@ -1457,4 +1471,46 @@ fn a_refall_after_bor0s_temporization_ends_is_a_second_reset() {
     .unwrap();
     assert_eq!(r.len(), 2);
     assert_eq!(r[0].released_ns, Some(200_000 + t));
+}
+
+/// `AET-WO-2301` adversarial F5: replay pins each observation's readings to
+/// the boot's own, so a re-sealed archive cannot declare an observation
+/// recovered by giving it a mask of 0 or its own expectation.
+#[test]
+fn an_observation_whose_readings_are_not_the_boots_own_is_refused() {
+    let at = |r: &[Record]| index(r, |x| matches!(x, Record::FirmwareObserved { .. }));
+    let mutations: [fn(&mut Record); 4] = [
+        |r| {
+            if let Record::FirmwareObserved { boot_word, .. } = r {
+                boot_word.mask = 0;
+            }
+        },
+        |r| {
+            if let Record::FirmwareObserved { boot_word, .. } = r {
+                boot_word.expected = 0;
+                boot_word.observed = Some(0);
+            }
+        },
+        |r| {
+            if let Record::FirmwareObserved { status, .. } = r {
+                status.mask = 0;
+                status.observed = Some(0x2202_0001);
+            }
+        },
+        |r| {
+            if let Record::FirmwareObserved { value, .. } = r {
+                value.mask = 0xff;
+            }
+        },
+    ];
+    for (i, m) in mutations.iter().enumerate() {
+        let mut r = run();
+        let k = at(&r);
+        m(&mut r[k]);
+        assert_eq!(
+            check_run(&r).map(|_| ()),
+            Err("an observation's readings are not the boot's own"),
+            "mutation {i}"
+        );
+    }
 }
