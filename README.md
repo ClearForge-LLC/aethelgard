@@ -6,11 +6,11 @@ Generates a circuit board and the firmware that drives it from one specification
 
 - solves the pin assignment;
 - emits a schematic and a placed, routed board that pass KiCad's ERC and DRC;
-- generates a typestate board crate whose register effects Kani proves (today through the repository's test harness; `aethelgard generate` is `AET-WO-3301`);
+- generates a typestate board crate whose register effects Kani proves (`aethelgard generate` writes it; `aethelgard verify` proves the generated harness);
 - boots generated firmware in Renode;
 - serves all of this over MCP.
 
-P2 added analog co-simulation, fault campaigns, an archive that replays, and `attribute`, which names the electrical or software half a failure belongs to. **Its rise times are computed by ngspice from the specification's declared pull-up and capacitance bound, not measured on the routed board** (`docs/architecture.md` `RUL-19`); extraction from the board is scheduled before any fabrication package is called verified. The code is licensed `MIT OR Apache-2.0` (see `LICENSE-MIT` and `LICENSE-APACHE`). KiCad's vendored symbols and footprints, in `crates/aethelgard-kicad-lib`, stay `CC-BY-SA-4.0`. Boards emitted from them carry no obligation.
+P2 added analog co-simulation, fault campaigns, an archive that replays, and `attribute`, which names the electrical or software half a failure belongs to. **Its rise times are computed by ngspice from the specification's declared pull-up and capacitance bound, not measured on the routed board** (`docs/architecture.md` `RUL-19`); P3 added `extract`, an upper bound on each I2C line's capacitance read from the routed board and judged against that declared bound, as a gate of `aethelgard verify`; `verify --fab-out` writes the reference probe's fabrication package only when every gate passes, and its verdict names every file's hash. No board has been made from it; the bench comparison waits for the development board. The code is licensed `MIT OR Apache-2.0` (see `LICENSE-MIT` and `LICENSE-APACHE`). KiCad's vendored symbols and footprints, in `crates/aethelgard-kicad-lib`, stay `CC-BY-SA-4.0`. Boards emitted from them carry no obligation.
 
 ## Where to go
 
