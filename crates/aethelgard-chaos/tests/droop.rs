@@ -560,7 +560,7 @@ fn a_new_kind_with_a_short_or_long_or_mistyped_payload_is_not_a_record() {
             None
         );
         let mut mistyped = fields.clone();
-        mistyped[0] = Value::Text("x".into());
+        mistyped[0] = Value::Neg(1);
         assert_eq!(Record::from_fields(r.kind(), &mistyped), None);
     }
     assert_eq!(Record::from_fields(21, &[]), None);

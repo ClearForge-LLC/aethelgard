@@ -150,8 +150,8 @@ pub fn on_grid(ps: u64) -> u64 {
 /// 10 ns grid. A crossing of an unknown level is an error.
 pub fn schedule(bor_level: u8, crossings: &[Crossing]) -> Result<Vec<Reset>, &'static str> {
     let active = active(bor_level);
-    // (time ns, threshold index, goes low) for every edge that matters.
-    let mut edges: Vec<(u64, usize, bool)> = Vec::new();
+    // Each threshold's edges in time order: (time ns, goes low).
+    let mut edges: Vec<Vec<(u64, bool)>> = vec![Vec::new(); active.len()];
     for c in crossings {
         let (i, t) = active
             .iter()
@@ -169,42 +169,62 @@ pub fn schedule(bor_level: u8, crossings: &[Crossing]) -> Result<Vec<Reset>, &'s
         if c.microvolts != want {
             return Err("a crossing's level is not the table's typical value");
         }
-        if falling_level && c.falling {
-            edges.push((on_grid(c.at_ps), i, true));
-        } else if !falling_level && !c.falling {
-            let delay = if t.name == BOR[0].name {
-                T_RSTTEMPO_NS
-            } else {
-                0
-            };
-            let at = on_grid(c.at_ps)
-                .checked_add(delay)
-                .ok_or("a release time overflows")?;
-            edges.push((at, i, false));
+        if falling_level == c.falling {
+            edges[i].push((on_grid(c.at_ps), c.falling));
         }
     }
-    // A release that lands with a fall at the same time keeps the reset: lows first.
-    edges.sort_by_key(|&(at, i, low)| (at, !low, i));
-    let mut low = vec![false; active.len()];
+    // Each threshold's low intervals: low from a fall; a rise clears it at the
+    // rise (BOR0: `tRSTTEMPO` later) unless it falls again first, when the
+    // interval goes on (`AET-WO-2301` adversarial: a stale release).
+    let mut intervals: Vec<(u64, Option<u64>, usize)> = Vec::new();
+    for (i, e) in edges.iter_mut().enumerate() {
+        e.sort();
+        let delay = if active[i].name == BOR[0].name {
+            T_RSTTEMPO_NS
+        } else {
+            0
+        };
+        let mut open: Option<u64> = None;
+        let mut clear: Option<u64> = None;
+        for &(at, falls) in e.iter() {
+            match (falls, open, clear) {
+                (true, None, _) => open = Some(at),
+                (true, Some(_), Some(c)) if at > c => {
+                    intervals.push((open.take().expect("open"), Some(c), i));
+                    open = Some(at);
+                    clear = None;
+                }
+                (true, Some(_), _) => clear = None,
+                (false, Some(_), _) => {
+                    clear = Some(at.checked_add(delay).ok_or("a release time overflows")?);
+                }
+                (false, None, _) => {}
+            }
+        }
+        if let Some(start) = open {
+            intervals.push((start, clear, i));
+        }
+    }
+    // The part is held while any threshold is low: the union of the intervals.
+    intervals.sort_by_key(|&(start, end, i)| (start, end.is_none(), end, i));
     let mut out: Vec<Reset> = Vec::new();
-    for (at, i, goes_low) in edges {
-        let was_held = low.iter().any(|&l| l);
-        low[i] = goes_low;
-        let held = low.iter().any(|&l| l);
-        match (was_held, held) {
-            (false, true) => out.push(Reset {
-                asserted_ns: at,
-                released_ns: None,
-                cause: vec![active[i].name.to_owned()],
-            }),
-            (true, true) if goes_low => {
-                let r = out.last_mut().expect("a reset is held");
-                if !r.cause.iter().any(|c| c == active[i].name) {
-                    r.cause.push(active[i].name.to_owned());
+    for (start, end, i) in intervals {
+        let name = active[i].name.to_owned();
+        match out.last_mut() {
+            Some(r) if r.released_ns.is_none_or(|rel| start <= rel) => {
+                r.released_ns = match (r.released_ns, end) {
+                    (Some(a), Some(b)) => Some(a.max(b)),
+                    _ => None,
+                };
+                if !r.cause.contains(&name) {
+                    r.cause.push(name);
                 }
             }
-            (true, false) => out.last_mut().expect("a reset is held").released_ns = Some(at),
-            _ => {}
+            _ => out.push(Reset {
+                asserted_ns: start,
+                released_ns: end,
+                cause: vec![name],
+            }),
         }
     }
     for r in &mut out {

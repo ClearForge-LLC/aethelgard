@@ -341,7 +341,11 @@ pub fn rail_levels(droop: &Droop, nominal_millivolts: u32) -> Option<(u64, u64)>
     let drop = droop.drop_microvolts();
     let floor = u64::from(droop.floor_millivolts) * 1000;
     let rest = u64::from(nominal_millivolts) * 1000;
-    Some((floor.checked_sub(drop)?, rest.checked_sub(drop)?))
+    // A drop that takes the rail to 0 V is no rail at all: refused.
+    Some((
+        floor.checked_sub(drop).filter(|f| *f > 0)?,
+        rest.checked_sub(drop)?,
+    ))
 }
 
 /// The time after which nothing a droop causes can still happen: its sag
