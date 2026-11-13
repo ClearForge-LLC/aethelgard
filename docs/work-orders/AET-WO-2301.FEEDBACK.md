@@ -460,3 +460,73 @@ The golden test now also asserts that setting the version byte back to 3 gives v
 | `droop-bor3` verdict | pass; `brownout_reset` 1, `rail_below_tolerance` 1 (info) | the same, matched with its `expect_counts` |
 | `droop-bor3` trace | 1.4 to 1.6 KB | 1,644 B: a little over |
 | Two runs | byte-identical; replay matches | byte-identical traces; replay matched |
+
+## Findings (build)
+
+- **B1 · Renode renames a FIFO at the `logFile` path and writes a regular file · Renode 1.17.0 `SequencedFilePath.Validate` · medium · measured · D6 settled by it.** No sandbox setting changes it; the log stays on stdout behind the filter.
+- **B2 · A Rust tool cannot `spawn` with `Stdio::null()` inside the sandbox · `run.rs` grants no `/dev/null` · medium · measured.** Every such spawn fails with `EACCES`, `/bin/sh` included. The bridge inherits stdio. Any later tool that spawns under the sandbox must do the same, or the sandbox must grant `/dev/null`, which is a decision for the architect, not this build.
+- **B3 · ngspice's `meas … WHEN` reports whole nanoseconds · ngspice 44.2 · low · measured.** The rail's two methods agree to 0.51 ns, not 0.01 ns; the archived time is the bridge's interpolation.
+- **B4 · §2.2's "the analog deck's fixed 400 kHz window is labelled in its record" and architecture §2.19's record-kind rename are not built · decision-needed.** Both put new text into the static analog records (kind 7, and kind 9's `from`) and the static verdict, and §3 and §7 forbid a static record or verdict from changing. Neither is in §4's acceptance. Recommendation: label the window and rename the kinds together in a work order that is allowed to change static records, with one trace version bump.
+- **B5 · The D4 schedule released BOR0 on a stale edge · `power::schedule` · high · found by the chaos tests, fixed.** A re-fall inside `tRSTTEMPO` left the first rise's delayed release in force: the reset was released while the rail was low. It is now computed per threshold as intervals, a re-fall before a pending release extending the interval, then their union (`droop.rs`, `a_refall_before_bor0s_temporization_ends_keeps_one_reset_released_later`).
+- **B6 · The first composition emitted the release nudge twice · `renode.rs` · high · found by a unit test, fixed.** Renode ran 10 ns past the schedule and probed 10 ns late; the instruction rule then looked like it contradicted D5. With the nudge once, D5 holds as ruled (9,877,201).
+- **B7 · `propose` assumed the topology was the run's second record · `propose.rs` (outside the fence) · medium · fixed.** Kind 20 now sits there in a scenario with expected counts; it is found by kind, as `check_archived` now does.
+- **B8 · The bridge identity's recipe lives in three places · `bridge/build.rs`, `analog.rs` (`BRIDGE_SOURCES`), the tests' `common::bridge_identity` · low · reduction finding, kept.** A test pins the CLI's file list to the bridge's directory and to the bytes on disk; the tests' copy exists because an integration test cannot reach the binary's internals.
+- **B9 · The bridge identity is a stale-build check, not authentication · `analog.rs` · low · by design, recorded.** Any program that prints the public identity line passes; that is the trusted-binary assumption every tool here makes (2200 F15). `bridge/.cargo/config.toml` is not hashed; it sets only `target-dir`.
+- **B10 · The static boot's `RunFor; logLevel 3` tail can drop log lines still queued · Renode 1.17.0, `main`'s composition · medium · measured by the adversarial pass (A2), not changed here.** Renode prints its log asynchronously, and the level filter applies at print time: through a pipe, 165 to 183 queued lines were lost at a `logLevel 3`, varying run to run. A `locked_peripheral_access` or `renode_error_log` line emitted just before the reads can be lost. The droop's probes no longer change the level (A2's fix); the static tail is `main`'s and §3 forbids changing it here. Recommendation: a later work order keeps one console level through the reads and lets the judge skip whole log lines, as the probes now do.
+- **B11 · An intermittent `cannot start the reaper: No such file or directory` was seen only while the shared target directory was being rebuilt under a running test · the tier-2 agent's runs · low · not reproduced.** Three clean reruns and every later run passed. If it appears on CI with no concurrent build, it is a real defect in how `run.rs` finds its own executable.
+
+## Adversarial pass (full, a fresh Opus subagent, on a frozen copy at `2a22774`)
+
+No forged-archive path to a false pass was found. Five findings, all fixed and each pinned by a test; the attack harness is in `~/.cache/aet-2301-adv/` on Furnace.
+
+| | Finding | Severity | Fix | Pinned by |
+|---|---|---|---|---|
+| A1 | A droop passed while the I2C read resumed long after the bound: a firmware that wrote its OK record and boot word first, then talked to the bus about 1 ms later (`fw-late`). The probe read only the firmware's own claim. | high, measured | The probe also reads the first witness's `CR2` and `TXDR`, which only a transfer sets after a reset, judged at the final block's masks; kind 19 carries them. The same firmware now fails `brownout_unrecovered` (re-run on the fix). | tier-1 `a_record_that_claims_ok_without_the_controller_showing_a_transfer_is_unrecovered`; tier-2 asserts `CR2` `0x020104EC`, `TXDR` `0xD0` |
+| A2 | Renode drops queued log lines at a `logLevel` change; the probes changed it twice. | medium, measured | No level change around a probe; whole log lines inside its sentinels are skipped, anything else not a bare value is refused. The static tail is B10. | `a_probe_is_read_only_between_its_own_whole_line_markers` |
+| A3 | A valid droop at or after 10 ms could not run: `meas` prints 7 significant digits (10 ns past 10 ms). | medium, measured | The agreement tolerance is half a unit of `meas`'s 7th digit at the crossing's time, plus 0.01 ns. The 20 ms case now solves. | `the_rail_agreement_follows_meas_precision` |
+| A4 | A floor between the falling band and the rising level passed `check_droop` but could not be archived: the rail's ringing dithered across the level (up to 4,506 crossings). | low to medium, measured | `check_droop` refuses a rail floor anywhere in an active threshold's hysteresis region (falling minimum to rising maximum); `rail_answer` refuses a level crossed more than twice. | `a_floor_between_the_falling_band_and_the_rising_band_is_refused` |
+| A5 | Replay trusted each observation's own mask and expectation. | low, reasoned | Replay pins the boot word to the boot record, status and value to full words and the identity check's value, and `CR2`/`TXDR` to the witness record. | `an_observation_whose_readings_are_not_the_boots_own_is_refused` |
+
+**Held, with the attempt.**
+- D3's edges: 2,540 mV is refused, 2,539 mV passes.
+- A deep BOR0 droop at level 0, and the PDR path at level 3 (a 1.0 V floor), both pass and replay.
+- Resource extremes inside the bounds (1 mΩ, 10 A, step ramps) reach verdicts in about 2.3 s.
+- F8: the `-e` echo is one line, printed before emulation, and every address in it is followed by `;` or `"`, so no fragment is a whole-line value; an extra or split line inside a block fails the exact count or `value()`, exit 5, never a false value.
+- A flood during a droop boot gives a verdict, where `main` gave exit 5.
+- No scenario field reaches `--renode`'s argv.
+- A killed boot, a never-released reset, the severities and `expect_counts` hold.
+
+## Tier-2 tests added (`campaign_tier2.rs`; `TIER2_MIN` 79 → 82)
+
+| Test | Alone, Furnace, pinned image |
+|---|---|
+| `the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay` | 12.95 s |
+| `renodes_reset_recipe_is_pinned_step_by_step` (F3, F5: `machine Reset` alone never reboots; the recipe reboots; a release without the nudge executes nothing in its first segment) | 7.34 s |
+| `a_flooding_firmware_reaches_a_verdict_and_its_message_is_the_same_twice` (F23, F10: exit 1 with `locked_peripheral_access` and `renode_log_flood`, the two runs' findings identical) | 7.03 s |
+
+**Wall time per reference scenario**: both together 4.5 s in one campaign (about 2.2 s each, 1.7 s of it Renode's start). Every existing tier-2 binary passed on the build: `with_tools` 23, `twin_tier2` 14, `board_tier2` 17, `attribute_seeded` 12, `adversarial_1301_tools` 6, `adversarial_1302_tools` 2, and `campaign_tier2` 8.
+
+## `OQ-03`, dynamic: answered (subject to D8)
+
+Under the schedule, a droop adds its declared rail, its crossings, its resets and an observation per release to the run's records: 140 B for `droop-tolerated` (1,133 B against `pullup-2k2`'s 993 B with the same base) and 651 B for `droop-bor3` (1,644 B), whatever the run's virtual time. Nothing per quantum exists to record, so nothing is sampled, and `MAX_RECORDS` stays 65,536. Whether that reading is "not sampling" is D8, Scotty's.
+
+## Decisions, as built
+
+- **D1:** built as ruled. `RUL-17`'s dynamic clause goes to Scotty for ratification.
+- **D2:** a declared scenario field; a droop without `bor_level` is refused.
+- **D3:** typical values; `check_droop` refuses a floor or recovery in a band, and, after A4, in the whole hysteresis region.
+- **D4:** release at the rising crossing, plus `tRSTTEMPO` after BOR0 only, then the 10 ns nudge, with the values in one table (`power.rs`) marked provisional on F1.
+- **D5:** built as ruled (B6).
+- **D6:** the FIFO measured and failed (B1); the stream with the filter.
+- **D7:** built as ruled.
+- **D8 and D10:** pending Scotty. The build records the waveform's parameters (kind 16), as the ruling asked, and carries Rev 7's provenance in the table, the verdict (`thresholds`) and here.
+- **D9:** not this build (`AET-WO-2204`).
+- **Storms:** deferred, not built.
+- **B4 is new and decision-needed:** the 400 kHz label and the kind rename.
+
+## Gates (build)
+
+- `cargo fmt --all -- --check` is clean. `cargo clippy --workspace --all-targets -- -D warnings` is clean. `cargo test --workspace`: 66 suites, 1,053 passed, 0 failed, all in the pinned image.
+- The bridge: fmt and clippy clean, 27 tests passing.
+- **Adversarial pass:** above.
+- **Reduction pass (diff):** −3,622 lines net for `spike/2301/` · 1 duplicate removed (the tolerance floor, computed in the chaos rule and in the CLI's report, now one function) · 2 dead paths removed (the log filter's unreachable "no filter" branch in `line()`, and the console-level constant once A2 removed the probes' level change) · 0 protected kept · 1 finding (B8, the identity recipe in three places, kept and pinned by a test).
