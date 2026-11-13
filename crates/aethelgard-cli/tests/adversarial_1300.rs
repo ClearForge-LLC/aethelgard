@@ -213,27 +213,29 @@ fn attack_a_reference_in_the_emitters_hash_namespace_is_emitted() {
     }
 }
 
-/// Every identifier character RUL-14 admits, in the project name, the
-/// references and the nets: the schematic parses back to the same names
-/// and every BOM row reads back to five fields.
+/// Every identifier character RUL-14 admits in a net (`AET-WO-1102`: 87, the
+/// base set), and the narrower shapes of a project name and a reference: the
+/// schematic parses back to the same names and every BOM row reads back to
+/// five fields.
 #[test]
 fn withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom() {
     let admitted: String = (0x21u8..=0x7e)
-        .filter(|b| !b"/{}$[]".contains(b))
+        .filter(|b| !b"/{}$[]\"".contains(b))
         .map(char::from)
         .collect();
-    assert_eq!(admitted.len(), 88);
+    assert_eq!(admitted.len(), 87);
     let (a, b) = admitted.split_at(44);
     let mut spec = sentinel();
-    spec["project_name"] = json!(format!("p{}", &a[..40]));
-    spec["i2c_devices"][0]["reference"] = json!(format!("U{a}"));
-    spec["i2c_devices"][1]["reference"] = json!(format!("U{b}"));
-    spec["spi_devices"][0]["reference"] = json!("U\"\\,\"");
+    spec["project_name"] = json!("p-1-board");
+    let refs_in = ["U_a1", "Ub2", "S_c3"];
+    spec["i2c_devices"][0]["reference"] = json!(refs_in[0]);
+    spec["i2c_devices"][1]["reference"] = json!(refs_in[1]);
+    spec["spi_devices"][0]["reference"] = json!(refs_in[2]);
     spec["i2c_buses"][0]["sda"]["net"] = json!(format!("N{a}"));
     spec["i2c_buses"][0]["scl"]["net"] = json!(format!("N{b}"));
     spec["net_constraints"][0]["net_name"] = json!(format!("N{a}"));
     spec["net_constraints"][1]["net_name"] = json!(format!("N{b}"));
-    spec["spi_devices"][0]["cs"]["net"] = json!("\\\"(;#");
+    spec["spi_devices"][0]["cs"]["net"] = json!("\\(;#");
     let d = Dir::new("names");
     let (out, o) = emit(&spec, &d.0, "o");
     let v = json_line(&out);
@@ -248,11 +250,11 @@ fn withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom
         .children("symbol")
         .filter_map(|s| s.property("Reference"))
         .collect();
-    for r in [format!("U{a}"), format!("U{b}"), "U\"\\,\"".into()] {
-        assert!(refs.contains(&r.as_str()), "{r} not in {refs:?}");
+    for r in refs_in {
+        assert!(refs.contains(&r), "{r} not in {refs:?}");
     }
     let labels: Vec<&str> = sch.children("label").filter_map(|l| l.arg(1)).collect();
-    for n in [format!("N{a}"), format!("N{b}"), "\\\"(;#".into()] {
+    for n in [format!("N{a}"), format!("N{b}"), "\\(;#".into()] {
         assert!(labels.contains(&n.as_str()), "{n} not in labels");
     }
     let title = sch
@@ -265,8 +267,8 @@ fn withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom
     let rows = parse_csv(&bom);
     assert!(rows.iter().all(|r| r.len() == 5), "{rows:?}");
     let col0: Vec<&str> = rows.iter().map(|r| r[0].as_str()).collect();
-    for r in [format!("U{a}"), format!("U{b}"), "U\"\\,\"".into()] {
-        assert!(col0.contains(&r.as_str()), "{r} not in {col0:?}");
+    for r in refs_in {
+        assert!(col0.contains(&r), "{r} not in {col0:?}");
     }
 }
 
@@ -301,20 +303,21 @@ fn parse_csv(text: &str) -> Vec<Vec<String>> {
     rows
 }
 
+/// A project name of dots, `-` or `~` once reached `emit` and was written
+/// as a file name inside the output directory. `AET-WO-1102`: `validate`
+/// refuses each, by path, before `emit` writes anything.
 #[test]
-fn withstood_dot_project_names_stay_inside_out() {
+fn withstood_dot_project_names_are_refused_before_emit_writes() {
     let d = Dir::new("dots");
     for name in [".", "..", "...", "-", "~"] {
         let mut spec = sentinel();
         spec["project_name"] = json!(name);
         let (out, o) = emit(&spec, &d.0, "o");
         let v = json_line(&out);
-        assert_eq!(out.status.code(), Some(0), "{name}: {v}");
-        assert!(o.join(format!("{name}.kicad_sch")).is_file(), "{name}");
-        assert_eq!(
-            Path::new(v["schematic"]["path"].as_str().unwrap()).parent(),
-            Some(o.as_path())
-        );
+        assert_eq!(out.status.code(), Some(2), "{name}: {v}");
+        assert_eq!(v["error"]["kind"], "InvalidIdentifier", "{v}");
+        assert_eq!(v["error"]["path"], "project_name", "{v}");
+        assert!(!o.exists(), "{name}: emit wrote {o:?}");
     }
 }
 

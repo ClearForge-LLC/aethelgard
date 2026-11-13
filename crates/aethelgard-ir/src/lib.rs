@@ -396,9 +396,9 @@ impl PinTable {
     /// `pins.<key>.<signal>`.
     pub fn validate(&self) -> Result<(), IrValidationError> {
         for (name, pin) in &self.pins {
-            identifier(name, || format!("pins.{name}"))?;
+            plain(name, || format!("pins.{name}"))?;
             for signal in pin.alternate_functions.keys() {
-                identifier(signal, || format!("pins.{name}.{signal}"))?;
+                plain(signal, || format!("pins.{name}.{signal}"))?;
             }
         }
         Ok(())
@@ -410,10 +410,8 @@ impl PinTable {
 pub enum IrValidationError {
     #[error("schema_version is {version}, not {expected}")]
     UnsupportedSchemaVersion { version: u32, expected: u32 },
-    #[error(
-        "`{path}` is not an identifier: 1 to 64 bytes of printable ASCII 0x21-0x7E, none of them `/`, `{{`, `}}`, `$`, `[` or `]`"
-    )]
-    InvalidIdentifier { path: String },
+    #[error("`{path}` is not an identifier: {rule}")]
+    InvalidIdentifier { path: String, rule: &'static str },
     #[error("voltage_domains is empty")]
     NoVoltageDomain,
     #[error("voltage domain id `{id}` appears more than once")]
@@ -613,41 +611,115 @@ impl IrValidationError {
     /// `i2c_buses[0].sda.net`.
     pub fn path(&self) -> Option<&str> {
         match self {
-            Self::InvalidIdentifier { path } => Some(path),
+            Self::InvalidIdentifier { path, .. } => Some(path),
             _ => None,
         }
     }
 }
 
-/// `RUL-14`: 1 to 64 bytes of printable ASCII `0x21`-`0x7E`. Whitespace, control
-/// characters and everything outside ASCII are refused, so two identifiers
-/// that look alike are the same bytes. Six more are refused because KiCad
-/// reads them as more than text (`AET-WO-1300` S5, ruled D6 on PR #40): `/` is
-/// its sheet-path separator, `{` and `}` delimit its escape tokens and bus
-/// groups, `$` starts a text variable, and `[` and `]` a bus vector.
-pub const REFUSED_IN_IDENTIFIERS: [u8; 6] = *b"/{}$[]";
+/// What an identifier names, which decides the shape on top of the base set
+/// (`RUL-14`, `AET-WO-1102`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentifierKind {
+    /// A voltage domain id, net, bus id, pin, peripheral, signal, part, or
+    /// scenario name: the base set alone.
+    Plain,
+    /// `project_name`: also a Cargo crate name, which `generate` requires
+    /// (`InvalidCrateName`).
+    Project,
+    /// A device reference, I2C or SPI: also a Renode identifier, which the
+    /// platform requires (`InvalidDeviceName`).
+    Reference,
+}
 
-fn identifier(value: &str, path: impl FnOnce() -> String) -> Result<(), IrValidationError> {
-    let ok = (1..=64).contains(&value.len())
-        && value
-            .bytes()
-            .all(|b| (0x21..=0x7E).contains(&b) && !REFUSED_IN_IDENTIFIERS.contains(&b));
-    if ok {
-        Ok(())
-    } else {
-        Err(IrValidationError::InvalidIdentifier { path: path() })
+/// The base set, for every kind: 1 to 64 bytes of printable ASCII
+/// `0x21`-`0x7E`, so two identifiers that look alike are the same bytes.
+/// Refused beyond that, each measured: `/`, `{`, `}`, `$`, `[` and `]`, which
+/// KiCad reads as more than text (`AET-WO-1300` D6); `"`, which KiCad does not
+/// escape in a placement row (`AET-WO-3300` F15); and a date shape `dddd-dd-dd`
+/// or a time shape `dd:dd:dd` anywhere inside, which KiCad's clock-line check
+/// refuses at export (`AET-WO-3300` F14).
+pub const REFUSED_IN_IDENTIFIERS: [u8; 7] = *b"/{}$[]\"";
+
+const BASE_RULE: &str = "1 to 64 bytes of printable ASCII 0x21-0x7E, none of them `/`, `{`, `}`, `$`, `[`, `]` or `\"`, and no date shape (4 digits, `-`, 2 digits, `-`, 2 digits) or time shape (2 digits, `:`, 2 digits, `:`, 2 digits)";
+const PROJECT_RULE: &str = "a project name is a crate name: `a-z`, `0-9` and `-` only, starting with a letter, not ending with `-`, with no `--`";
+const REFERENCE_RULE: &str =
+    "a device reference is a Renode identifier: a letter, then letters, digits and `_`";
+
+/// Whether `value` holds `dddd-dd-dd` or `dd:dd:dd` (`d` an ASCII digit) anywhere.
+fn clock_shape(value: &[u8]) -> bool {
+    let shaped = |shape: &[u8]| {
+        value.windows(shape.len()).any(|w| {
+            w.iter().zip(shape).all(|(b, s)| match s {
+                b'd' => b.is_ascii_digit(),
+                _ => b == s,
+            })
+        })
+    };
+    shaped(b"dddd-dd-dd") || shaped(b"dd:dd:dd")
+}
+
+/// The rule `value` breaks as an identifier of `kind`, or `None`. The base
+/// set is checked first, so a message names the broadest rule broken.
+fn broken_rule(kind: IdentifierKind, value: &str) -> Option<&'static str> {
+    let bytes = value.as_bytes();
+    let base = (1..=64).contains(&bytes.len())
+        && bytes
+            .iter()
+            .all(|b| (0x21..=0x7E).contains(b) && !REFUSED_IN_IDENTIFIERS.contains(b))
+        && !clock_shape(bytes);
+    if !base {
+        return Some(BASE_RULE);
     }
+    match kind {
+        IdentifierKind::Plain => None,
+        IdentifierKind::Project => {
+            let ok = bytes[0].is_ascii_lowercase()
+                && !value.ends_with('-')
+                && !value.contains("--")
+                && bytes
+                    .iter()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-');
+            (!ok).then_some(PROJECT_RULE)
+        }
+        IdentifierKind::Reference => {
+            let ok = bytes[0].is_ascii_alphabetic()
+                && bytes
+                    .iter()
+                    .all(|b| b.is_ascii_alphanumeric() || *b == b'_');
+            (!ok).then_some(REFERENCE_RULE)
+        }
+    }
+}
+
+/// `RUL-14`, for callers that hold no path: `Err` is the rule broken. The one
+/// table; [`identifier`] and the scenario reader both call it.
+pub fn check_identifier(kind: IdentifierKind, value: &str) -> Result<(), &'static str> {
+    broken_rule(kind, value).map_or(Ok(()), Err)
+}
+
+fn identifier(
+    kind: IdentifierKind,
+    value: &str,
+    path: impl FnOnce() -> String,
+) -> Result<(), IrValidationError> {
+    check_identifier(kind, value)
+        .map_err(|rule| IrValidationError::InvalidIdentifier { path: path(), rule })
+}
+
+fn plain(value: &str, path: impl FnOnce() -> String) -> Result<(), IrValidationError> {
+    identifier(IdentifierKind::Plain, value, path)
 }
 
 fn optional_identifier(
     value: &Option<String>,
     path: impl FnOnce() -> String,
 ) -> Result<(), IrValidationError> {
-    value.as_deref().map_or(Ok(()), |v| identifier(v, path))
+    value.as_deref().map_or(Ok(()), |v| plain(v, path))
 }
 
 fn signal_identifiers(signal: &Signal, path: &str) -> Result<(), IrValidationError> {
-    identifier(&signal.net, || format!("{path}.net"))?;
+    plain(&signal.net, || format!("{path}.net"))?;
     optional_identifier(&signal.pin, || format!("{path}.pin"))
 }
 
@@ -895,46 +967,52 @@ impl Specification {
 
     /// Step 2, in the order the README lists.
     fn identifiers(&self) -> Result<(), IrValidationError> {
-        identifier(&self.project_name, || "project_name".into())?;
-        identifier(&self.mcu.part, || "mcu.part".into())?;
-        identifier(&self.mcu.supply, || "mcu.supply".into())?;
+        identifier(IdentifierKind::Project, &self.project_name, || {
+            "project_name".into()
+        })?;
+        plain(&self.mcu.part, || "mcu.part".into())?;
+        plain(&self.mcu.supply, || "mcu.supply".into())?;
         for (i, domain) in self.voltage_domains.iter().enumerate() {
-            identifier(&domain.id, || format!("voltage_domains[{i}].id"))?;
+            plain(&domain.id, || format!("voltage_domains[{i}].id"))?;
         }
         for (i, bus) in self.i2c_buses.iter().enumerate() {
             let at = format!("i2c_buses[{i}]");
-            identifier(&bus.id, || format!("{at}.id"))?;
+            plain(&bus.id, || format!("{at}.id"))?;
             optional_identifier(&bus.peripheral, || format!("{at}.peripheral"))?;
-            identifier(&bus.domain, || format!("{at}.domain"))?;
+            plain(&bus.domain, || format!("{at}.domain"))?;
             signal_identifiers(&bus.sda, &format!("{at}.sda"))?;
             signal_identifiers(&bus.scl, &format!("{at}.scl"))?;
         }
         for (i, bus) in self.spi_buses.iter().enumerate() {
             let at = format!("spi_buses[{i}]");
-            identifier(&bus.id, || format!("{at}.id"))?;
+            plain(&bus.id, || format!("{at}.id"))?;
             optional_identifier(&bus.peripheral, || format!("{at}.peripheral"))?;
-            identifier(&bus.domain, || format!("{at}.domain"))?;
+            plain(&bus.domain, || format!("{at}.domain"))?;
             signal_identifiers(&bus.sck, &format!("{at}.sck"))?;
             signal_identifiers(&bus.mosi, &format!("{at}.mosi"))?;
             signal_identifiers(&bus.miso, &format!("{at}.miso"))?;
         }
         for (i, device) in self.i2c_devices.iter().enumerate() {
             let at = format!("i2c_devices[{i}]");
-            identifier(&device.reference, || format!("{at}.reference"))?;
-            identifier(&device.part, || format!("{at}.part"))?;
-            identifier(&device.supply, || format!("{at}.supply"))?;
-            identifier(&device.bus, || format!("{at}.bus"))?;
+            identifier(IdentifierKind::Reference, &device.reference, || {
+                format!("{at}.reference")
+            })?;
+            plain(&device.part, || format!("{at}.part"))?;
+            plain(&device.supply, || format!("{at}.supply"))?;
+            plain(&device.bus, || format!("{at}.bus"))?;
         }
         for (i, device) in self.spi_devices.iter().enumerate() {
             let at = format!("spi_devices[{i}]");
-            identifier(&device.reference, || format!("{at}.reference"))?;
-            identifier(&device.part, || format!("{at}.part"))?;
-            identifier(&device.supply, || format!("{at}.supply"))?;
-            identifier(&device.bus, || format!("{at}.bus"))?;
+            identifier(IdentifierKind::Reference, &device.reference, || {
+                format!("{at}.reference")
+            })?;
+            plain(&device.part, || format!("{at}.part"))?;
+            plain(&device.supply, || format!("{at}.supply"))?;
+            plain(&device.bus, || format!("{at}.bus"))?;
             signal_identifiers(&device.cs, &format!("{at}.cs"))?;
         }
         for (i, net) in self.net_constraints.iter().enumerate() {
-            identifier(&net.net_name, || format!("net_constraints[{i}].net_name"))?;
+            plain(&net.net_name, || format!("net_constraints[{i}].net_name"))?;
         }
         Ok(())
     }
@@ -963,30 +1041,32 @@ impl SolvedTopology {
             return Err(E::MalformedSpecificationHash);
         }
         for (net, a) in &self.assignments {
-            identifier(net, || format!("assignments.{net}"))?;
-            identifier(&a.pin, || format!("assignments.{net}.pin"))?;
-            identifier(&a.peripheral, || format!("assignments.{net}.peripheral"))?;
-            identifier(&a.signal, || format!("assignments.{net}.signal"))?;
+            plain(net, || format!("assignments.{net}"))?;
+            plain(&a.pin, || format!("assignments.{net}.pin"))?;
+            plain(&a.peripheral, || format!("assignments.{net}.peripheral"))?;
+            plain(&a.signal, || format!("assignments.{net}.signal"))?;
         }
         for (net, pin) in &self.gpio {
-            identifier(net, || format!("gpio.{net}"))?;
-            identifier(pin, || format!("gpio.{net}.pin"))?;
+            plain(net, || format!("gpio.{net}"))?;
+            plain(pin, || format!("gpio.{net}.pin"))?;
         }
         for bus in self.i2c_ceilings.keys() {
-            identifier(bus, || format!("i2c_ceilings.{bus}"))?;
+            plain(bus, || format!("i2c_ceilings.{bus}"))?;
         }
         for bus in self.i2c_speeds.keys() {
-            identifier(bus, || format!("i2c_speeds.{bus}"))?;
+            plain(bus, || format!("i2c_speeds.{bus}"))?;
         }
         for (net, line) in &self.analog_lines {
-            identifier(net, || format!("analog_lines.{net}"))?;
-            identifier(&line.bus, || format!("analog_lines.{net}.bus"))?;
+            plain(net, || format!("analog_lines.{net}"))?;
+            plain(&line.bus, || format!("analog_lines.{net}.bus"))?;
         }
         for (reference, d) in &self.i2c_devices {
-            identifier(reference, || format!("i2c_devices.{reference}"))?;
-            identifier(&d.part, || format!("i2c_devices.{reference}.part"))?;
-            identifier(&d.bus, || format!("i2c_devices.{reference}.bus"))?;
-            identifier(&d.peripheral, || {
+            identifier(IdentifierKind::Reference, reference, || {
+                format!("i2c_devices.{reference}")
+            })?;
+            plain(&d.part, || format!("i2c_devices.{reference}.part"))?;
+            plain(&d.bus, || format!("i2c_devices.{reference}.bus"))?;
+            plain(&d.peripheral, || {
                 format!("i2c_devices.{reference}.peripheral")
             })?;
         }
