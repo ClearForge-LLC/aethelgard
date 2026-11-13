@@ -560,6 +560,8 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
         boot_word,
         status,
         value,
+        cr2,
+        txdr,
     } = observed[0]
     else {
         unreachable!()
@@ -568,6 +570,10 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
     assert_eq!(boot_word.observed, Some(0x2100_b007));
     assert_eq!(status.observed, Some(0x2202_0000));
     assert_eq!(value.observed, Some(0x60));
+    // The controller shows the transfer, not only the firmware's own record
+    // (adversarial F1): SADD 0x76 << 1, RD_WRN, NBYTES 1, AUTOEND; TXDR 0xD0.
+    assert_eq!(cr2.observed, Some(0x0201_04EC));
+    assert_eq!(txdr.observed, Some(0xD0));
     let Some(Record::BootObserved {
         instructions_expected,
         instructions_observed,
