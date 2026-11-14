@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "parts": [
+    {
+      "part": "BME280",
+      "bus": {
+        "i2c": {
+          "addresses": [
+            "0x76",
+            "0x77"
+          ]
+        }
+      },
+      "identity": {
+        "write": "0xD0",
+        "read": 1,
+        "value": "0x60"
+      },
+      "supply_millivolts": {
+        "min": 1710,
+        "max": 3600
+      },
+      "renode": "I2C.BME280",
+      "citations": {
+        "bus": {
+          "document": "Bosch Sensortec BST-BME280-DS001-24",
+          "revision": "1.24 (2024-02-20)",
+          "section": "6.2 (SDO to GND 0x76, to VDDIO 0x77)",
+          "sha256": "a2ccdb449fec94380742fe8eec851a11d9bd4142252d332b34682b4deecd7d89"
+        },
+        "identity": {
+          "document": "Bosch Sensortec BST-BME280-DS001-24",
+          "revision": "1.24 (2024-02-20)",
+          "section": "5.4.1 and table 18 (id, register 0xD0, 0x60)",
+          "sha256": "a2ccdb449fec94380742fe8eec851a11d9bd4142252d332b34682b4deecd7d89"
+        },
+        "supply": {
+          "document": "Bosch Sensortec BST-BME280-DS001-24",
+          "revision": "1.24 (2024-02-20)",
+          "section": "1.1, table 1 (VDD 1.71 to 3.6 V)",
+          "sha256": "a2ccdb449fec94380742fe8eec851a11d9bd4142252d332b34682b4deecd7d89"
+        }
+      }
+    },
+    {
+      "part": "ICM20948",
+      "bus": {
+        "spi": {
+          "modes": [
+            0,
+            3
+          ],
+          "max_clock_hz": 7000000
+        }
+      },
+      "identity": {
+        "write": "0x80",
+        "read": 1,
+        "value": "0xEA"
+      },
+      "supply_millivolts": {
+        "min": 1710,
+        "max": 3600
+      },
+      "renode": "Sensors.ICM20948",
+      "citations": {
+        "bus": {
+          "document": "TDK InvenSense DS-000189 ICM-20948",
+          "revision": "1.6 (2024-03-12)",
+          "section": "6.5 (SCLK at most 7 MHz; data latched on the rising edge, so modes 0 and 3)",
+          "sha256": "0588625f4f1d6d27382a4322f48073dc0ce569e537c63786b13aab3eeb76b718"
+        },
+        "identity": {
+          "document": "TDK InvenSense DS-000189 ICM-20948",
+          "revision": "1.6 (2024-03-12)",
+          "section": "8.1 (WHO_AM_I, bank 0 address 0x00, 0xEA) and 6.5 (first bit 1 is a read)",
+          "sha256": "0588625f4f1d6d27382a4322f48073dc0ce569e537c63786b13aab3eeb76b718"
+        },
+        "supply": {
+          "document": "TDK InvenSense DS-000189 ICM-20948",
+          "revision": "1.6 (2024-03-12)",
+          "section": "3.4 (VDD 1.71 to 3.6 V; VDDIO is 1.71 to 1.95 V)",
+          "sha256": "0588625f4f1d6d27382a4322f48073dc0ce569e537c63786b13aab3eeb76b718"
+        }
+      }
+    },
+    {
+      "part": "TMP117",
+      "bus": {
+        "i2c": {
+          "addresses": [
+            "0x48",
+            "0x49",
+            "0x4A",
+            "0x4B"
+          ]
+        }
+      },
+      "identity": {
+        "write": "0x0F",
+        "read": 2,
+        "value": "0x0117"
+      },
+      "supply_millivolts": {
+        "min": 1800,
+        "max": 5500
+      },
+      "renode": null,
+      "citations": {
+        "bus": {
+          "document": "Texas Instruments SNOSD82D TMP117",
+          "revision": "D (2022-09)",
+          "section": "7.5.3.1.2, table 7-2 (ADD0 to GND, V+, SDA, SCL: 0x48 to 0x4B)",
+          "sha256": "78212e91e478035a91165397a8de8a90bfc776759dc445243c033537f0c4b789"
+        },
+        "identity": {
+          "document": "Texas Instruments SNOSD82D TMP117",
+          "revision": "D (2022-09)",
+          "section": "7.6.11 (Device_ID, register 0x0F, reset 0x0117; Rev[3:0] reads 0 at reset)",
+          "sha256": "78212e91e478035a91165397a8de8a90bfc776759dc445243c033537f0c4b789"
+        },
+        "supply": {
+          "document": "Texas Instruments SNOSD82D TMP117",
+          "revision": "D (2022-09)",
+          "section": "6.3 (V+ 1.8 to 5.5 V)",
+          "sha256": "78212e91e478035a91165397a8de8a90bfc776759dc445243c033537f0c4b789"
+        }
+      }
+    },
+    {
+      "part": "W25Q64JV",
+      "bus": {
+        "spi": {
+          "modes": [
+            0,
+            3
+          ],
+          "max_clock_hz": 104000000
+        }
+      },
+      "identity": {
+        "write": "0x9F",
+        "read": 3,
+        "value": "0xEF4017"
+      },
+      "supply_millivolts": {
+        "min": 2700,
+        "max": 3600
+      },
+      "renode": "SPI.GenericSpiFlash",
+      "citations": {
+        "bus": {
+          "document": "Winbond W25Q64JV",
+          "revision": "J (2018-03-27)",
+          "section": "6.1 (modes 0 and 3) and 9.6 (FR 104 MHz at 2.7 to 3.0 V, 133 MHz at 3.0 to 3.6 V)",
+          "sha256": "452d906c3be0da077fd751a2b8aa062629caf6081f8dd1eda04880854ce7c8f9"
+        },
+        "identity": {
+          "document": "Winbond W25Q64JV",
+          "revision": "J (2018-03-27)",
+          "section": "8.1 (Read JEDEC ID 9Fh: EFh, then 4017h for the IQ/JQ parts)",
+          "sha256": "452d906c3be0da077fd751a2b8aa062629caf6081f8dd1eda04880854ce7c8f9"
+        },
+        "supply": {
+          "document": "Winbond W25Q64JV",
+          "revision": "J (2018-03-27)",
+          "section": "9.2 (VCC 2.7 to 3.6 V)",
+          "sha256": "452d906c3be0da077fd751a2b8aa062629caf6081f8dd1eda04880854ce7c8f9"
+        }
+      }
+    }
+  ]
+}

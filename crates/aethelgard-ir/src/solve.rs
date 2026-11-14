@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     AnalogLine, IrValidationError, PinAssignment, PinTable, Signal, SolvedI2cDevice,
-    SolvedTopology, Specification, electrical,
+    SolvedSpiDevice, SolvedTopology, Specification, electrical,
 };
 
 /// Never assigned, and refused as a hand pin: the SWD debug port (`PA13`
@@ -220,6 +220,7 @@ fn solve_inner(
         i2c_speeds: BTreeMap::new(),
         analog_lines: BTreeMap::new(),
         i2c_devices: BTreeMap::new(),
+        spi_devices: BTreeMap::new(),
     };
     out.validate().map_err(SolveError::InvalidSpecification)?;
     out.i2c_ceilings = i2c_ceilings(spec)?;
@@ -287,6 +288,7 @@ fn solve_inner(
     }
     out.analog_lines = analog_lines(spec);
     out.i2c_devices = i2c_devices(spec, &out);
+    out.spi_devices = spi_devices(spec, &out);
     // belt-and-suspenders: the search already keeps every rule `validate`
     // checks; this refuses rather than emits if a change to it ever breaks one.
     out.validate().map_err(SolveError::InvalidSpecification)?;
@@ -343,6 +345,36 @@ fn i2c_devices(spec: &Specification, solved: &SolvedTopology) -> BTreeMap<String
                 bus: d.bus.clone(),
                 peripheral: placed.peripheral.clone(),
                 address: d.address,
+            },
+        );
+    }
+    out
+}
+
+/// Every SPI device of `spec`, on the peripheral the solution gave its bus
+/// (the one that carries its `sck` net), with its chip select's net and its
+/// place in the specification's order (`AET-WO-4200`). The search places every
+/// bus and every chip select, so each lookup finds its entry.
+fn spi_devices(spec: &Specification, solved: &SolvedTopology) -> BTreeMap<String, SolvedSpiDevice> {
+    let mut out = BTreeMap::new();
+    for (index, d) in spec.spi_devices.iter().enumerate() {
+        let bus = spec
+            .spi_buses
+            .iter()
+            .find(|b| b.id == d.bus)
+            .expect("Specification::validate checked every device's bus");
+        let placed = solved
+            .assignments
+            .get(&bus.sck.net)
+            .expect("the search places every bus");
+        out.insert(
+            d.reference.clone(),
+            SolvedSpiDevice {
+                index: u32::try_from(index).expect("a specification has under 2^32 devices"),
+                part: d.part.clone(),
+                bus: d.bus.clone(),
+                peripheral: placed.peripheral.clone(),
+                cs: d.cs.net.clone(),
             },
         );
     }

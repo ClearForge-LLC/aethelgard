@@ -69,7 +69,11 @@ def commands(c):
     cmds += ["cpu VectorTableOffset 0x08000000"]
     cmds += [f"logLevel -1 {s}" for s in c.get("levels", [])]
     cmds += c.get("pre", [])
-    cmds += [run_for(c.get("for_ns", 100_000_000))]
+    if c.get("schedule"):
+        # A droop-shaped schedule (s7.py): RunFor segments, `machine Reset`, releases.
+        cmds += c["schedule"]
+    else:
+        cmds += [run_for(c.get("for_ns", 100_000_000))]
     reads = [("boot", f"sysbus ReadDoubleWord {BOOT:#010x}"), ("instr", "cpu ExecutedInstructions"),
              ("pc", "cpu PC"), ("icsr", "sysbus ReadDoubleWord 0xe000ed04")]
     reads += [(f"reg{a:08x}", f"sysbus ReadDoubleWord {a:#010x}") for a in REGS]

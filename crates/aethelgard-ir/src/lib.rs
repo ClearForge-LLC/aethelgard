@@ -135,8 +135,9 @@ pub struct NetConstraint {
 const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 
 /// The `schema_version` of a [`SolvedTopology`]. Version 2 added `i2c_speeds`
-/// (`AET-WO-1205`); a version-1 file is refused, never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 2;
+/// (`AET-WO-1205`), version 3 `spi_devices` (`AET-WO-4200`); an older file is
+/// refused, never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 3;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -168,6 +169,12 @@ pub struct SolvedTopology {
     /// through [`SolvedTopology::i2c_devices_in_order`].
     #[serde(deserialize_with = "unique_keys")]
     pub i2c_devices: BTreeMap<String, SolvedI2cDevice>,
+    /// Every SPI device of the specification, keyed by reference, on the
+    /// peripheral its bus was solved to, with its chip select's net, a key of
+    /// `gpio` (`AET-WO-4200`, `RUL-16`). Read it through
+    /// [`SolvedTopology::spi_devices_in_order`].
+    #[serde(deserialize_with = "unique_keys")]
+    pub spi_devices: BTreeMap<String, SolvedSpiDevice>,
 }
 
 /// One I2C device as the generators need it, copied by `solve` from the
@@ -186,6 +193,23 @@ pub struct SolvedI2cDevice {
     /// ST's name of the controller the bus was solved to, such as `I2C1`.
     pub peripheral: String,
     pub address: u8,
+}
+
+/// One SPI device as the generators need it, copied by `solve` from the
+/// specification, with `index` its place in the specification's order, as
+/// [`SolvedI2cDevice`] has. Its chip select is the `gpio` entry of `cs`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SolvedSpiDevice {
+    /// Position in the specification's `spi_devices`.
+    pub index: u32,
+    pub part: String,
+    /// The bus's id.
+    pub bus: String,
+    /// ST's name of the controller the bus was solved to, such as `SPI1`.
+    pub peripheral: String,
+    /// The net of the device's chip select.
+    pub cs: String,
 }
 
 /// One I2C line as the analog model needs it, copied by `solve` from the
@@ -288,7 +312,8 @@ object_only!(
     NetConstraint,
     PinAssignment,
     AnalogLine,
-    SolvedI2cDevice
+    SolvedI2cDevice,
+    SolvedSpiDevice
 );
 
 /// The wire form of a [`SolvedTopology`]. It differs in one field: `i2c_speeds`
@@ -312,11 +337,13 @@ struct SolvedWire {
     analog_lines: BTreeMap<String, AnalogLine>,
     #[serde(deserialize_with = "unique_keys")]
     i2c_devices: BTreeMap<String, SolvedI2cDevice>,
+    #[serde(default, deserialize_with = "unique_keys_some")]
+    spi_devices: Option<BTreeMap<String, SolvedSpiDevice>>,
 }
 
-fn unique_keys_some<'de, D: Deserializer<'de>>(
+fn unique_keys_some<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
     deserializer: D,
-) -> Result<Option<BTreeMap<String, u32>>, D::Error> {
+) -> Result<Option<BTreeMap<String, V>>, D::Error> {
     unique_keys(deserializer).map(Some)
 }
 
@@ -347,6 +374,12 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     None if w.schema_version != SOLVED_SCHEMA_VERSION => BTreeMap::new(),
                     None => return Err(serde::de::Error::missing_field("i2c_speeds")),
                 };
+                // The same for `spi_devices`, which version 3 added.
+                let spi_devices = match w.spi_devices {
+                    Some(m) => m,
+                    None if w.schema_version != SOLVED_SCHEMA_VERSION => BTreeMap::new(),
+                    None => return Err(serde::de::Error::missing_field("spi_devices")),
+                };
                 Ok(SolvedTopology {
                     schema_version: w.schema_version,
                     specification_sha256: w.specification_sha256,
@@ -356,6 +389,7 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     i2c_speeds,
                     analog_lines: w.analog_lines,
                     i2c_devices: w.i2c_devices,
+                    spi_devices,
                 })
             }
         }
@@ -476,6 +510,21 @@ pub enum IrValidationError {
     I2cDeviceIndex { id: String },
     #[error("device `{id}` is on a peripheral other than the one its bus was solved to")]
     I2cDevicePeripheral { id: String },
+    #[error("spi_devices indices are not exactly 0..n, each once (device `{id}`)")]
+    SpiDeviceIndex { id: String },
+    #[error("SPI device `{id}` is not on a solved SPI peripheral")]
+    SpiDevicePeripheral { id: String },
+    #[error("SPI device `{id}`'s chip select net is not a solved GPIO")]
+    SpiDeviceSelect { id: String },
+    #[error(
+        "device reference `{id}` collides with `{with}`, a name the Renode platform would declare for another device or bus (`AET-WO-4200` D7)"
+    )]
+    ReferenceCollision { id: String, with: String },
+    #[error("parts table{}: {reason}", part.as_ref().map(|p| format!(" entry `{p}`")).unwrap_or_default())]
+    PartsTable {
+        part: Option<String>,
+        reason: String,
+    },
     #[error(
         "I2C bus `{bus}` has ceiling {ceiling_hz} Hz, but its analog lines derive {}",
         derived_hz.map_or_else(|| "no mode (rise time slower than every mode, or no lines)".to_owned(), |hz| format!("{hz} Hz"))
@@ -553,6 +602,11 @@ impl IrValidationError {
             Self::AnalogBusMismatch { .. } => "AnalogBusMismatch",
             Self::I2cDeviceIndex { .. } => "I2cDeviceIndex",
             Self::I2cDevicePeripheral { .. } => "I2cDevicePeripheral",
+            Self::SpiDeviceIndex { .. } => "SpiDeviceIndex",
+            Self::SpiDevicePeripheral { .. } => "SpiDevicePeripheral",
+            Self::SpiDeviceSelect { .. } => "SpiDeviceSelect",
+            Self::ReferenceCollision { .. } => "ReferenceCollision",
+            Self::PartsTable { .. } => "PartsTableInvalid",
             Self::CeilingNotDerived { .. } => "CeilingNotDerived",
             Self::SpeedBusMismatch { .. } => "SpeedBusMismatch",
             Self::BusTooFast { .. } => "BusTooFast",
@@ -599,7 +653,12 @@ impl IrValidationError {
             | Self::AnalogBusMismatch { id }
             | Self::I2cDeviceIndex { id }
             | Self::I2cDevicePeripheral { id }
+            | Self::SpiDeviceIndex { id }
+            | Self::SpiDevicePeripheral { id }
+            | Self::SpiDeviceSelect { id }
+            | Self::ReferenceCollision { id, .. }
             | Self::SpeedBusMismatch { id } => Some(id),
+            Self::PartsTable { part, .. } => part.as_deref(),
             Self::CeilingNotDerived { bus, .. }
             | Self::BusTooFast { bus, .. }
             | Self::PullUpBelowSinkFloor { bus, .. } => Some(bus),
@@ -649,7 +708,7 @@ const BASE_RULE: &str = "1 to 64 bytes of printable ASCII 0x21-0x7E, none of the
 const PROJECT_RULE: &str = "a project name is a crate name: 1 to 58 bytes of `a-z`, `0-9` and `-`, starting with a letter, not ending with `-`, with no `--` (`generate` names the board crate `<project>-board`, at most 64 bytes)";
 const REFERENCE_RULE: &str =
     "a device reference is a Renode identifier: a letter, then letters, digits and `_`";
-const RESERVED_RULE: &str = "a device reference may not be a name the Renode platform already holds, in any case: a stock instance, `machine`, `sysbus` or a `.repl` keyword (`RESERVED_REFERENCES`)";
+const RESERVED_RULE: &str = "a device reference may not be a name the Renode platform already holds, in any case: a stock instance, `machine`, `sysbus`, a `.repl` keyword, or an SPI bus's multiplexer `spi1mux` to `spi6mux` (`RESERVED_REFERENCES`)";
 
 /// The names a device reference may not take, compared on its ASCII-lowercase
 /// form (`AET-WO-2204` D5, `RUL-14`). The emitter declares each modelled device
@@ -664,9 +723,11 @@ const RESERVED_RULE: &str = "a device reference may not be a name the Renode pla
 /// (`86b2c2c5...b231c`) and `stm32h7.repl` (`b85cb4af...251e`); `machine` and
 /// `sysbus`, which `CreationDriver.cs` declares first; and the keywords of
 /// `Grammar.cs` (`using`, `new`, `as`, `preinit`, `init`, `reset`, `local`,
-/// `true`, `false`, `none`, `empty`) lowercased. The tier-1 test
-/// `aethelgard-twin/tests/reserved_names.rs` parses the pinned files and
-/// asserts this list equal to that set, so the list moves only with the pin.
+/// `true`, `false`, `none`, `empty`) lowercased; and the multiplexer the
+/// emitter declares on each SPI controller, `spi1mux` to `spi6mux`
+/// (`AET-WO-4200` D7). The tier-1 test `aethelgard-twin/tests/reserved_names.rs`
+/// parses the pinned files and asserts this list equal to that set and the
+/// emitter's mux names, so the list moves only with the pin or the emitter.
 pub const RESERVED_REFERENCES: &[&str] = &[
     "adc3",
     "as",
@@ -714,7 +775,13 @@ pub const RESERVED_REFERENCES: &[&str] = &[
     "rng",
     "rtc",
     "sdmmc",
+    "spi1mux",
+    "spi2mux",
+    "spi3mux",
     "spi4",
+    "spi4mux",
+    "spi5mux",
+    "spi6mux",
     "sram1",
     "sram2",
     "sram3",
@@ -853,7 +920,16 @@ impl Specification {
     /// `crates/aethelgard-ir/README.md`, and in document order within each step.
     /// It does not check that a part, peripheral or pin exists, nor that two
     /// signals ask for one pin: both need the pin table (`AET-WO-1200`).
+    ///
+    /// Its last step reads the embedded parts table (`AET-WO-4200` D3): a
+    /// malformed table is refused here, as JSON with a nonzero exit, never as
+    /// a panic later.
     pub fn validate(&self) -> Result<(), IrValidationError> {
+        self.validate_declared()?;
+        parts::table().map(|_| ())
+    }
+
+    fn validate_declared(&self) -> Result<(), IrValidationError> {
         use IrValidationError as E;
 
         // 1
@@ -980,20 +1056,12 @@ impl Specification {
         // 8
         // Folded like the nets of step 11: KiCad's ERC refuses references
         // that differ only in case (`AET-WO-1204`).
-        let mut references = BTreeMap::new();
-        let all_references = self
-            .i2c_devices
-            .iter()
-            .map(|d| &d.reference)
-            .chain(self.spi_devices.iter().map(|d| &d.reference));
-        for reference in all_references {
-            if let Some(first) = references.insert(reference.to_lowercase(), reference.as_str()) {
-                return Err(E::DuplicateReference {
-                    id: reference.clone(),
-                    first: first.to_owned(),
-                });
-            }
-        }
+        references_distinct(
+            self.i2c_devices
+                .iter()
+                .map(|d| d.reference.as_str())
+                .chain(self.spi_devices.iter().map(|d| d.reference.as_str())),
+        )?;
         // 9
         for device in &self.i2c_devices {
             if !i2c_ids.contains(device.bus.as_str()) {
@@ -1129,6 +1197,44 @@ impl Specification {
     }
 }
 
+/// Refuses two references equal in any case (`DuplicateReference`), and a
+/// reference whose lowercased name plus `_memory`, the name the emitter gives
+/// a modelled flash's array, is a reserved name or another reference
+/// (`AET-WO-4200` D7). A reference equal to an emitted bus name (`spi1mux`) is
+/// in [`RESERVED_REFERENCES`], refused by the identifier rule.
+fn references_distinct<'r>(all: impl Iterator<Item = &'r str>) -> Result<(), IrValidationError> {
+    let mut references: BTreeMap<String, &str> = BTreeMap::new();
+    for reference in all {
+        if let Some(first) = references.insert(reference.to_lowercase(), reference) {
+            return Err(IrValidationError::DuplicateReference {
+                id: reference.to_owned(),
+                first: first.to_owned(),
+            });
+        }
+    }
+    for (lowered, reference) in &references {
+        let memory = format!("{lowered}{MEMORY_SUFFIX}");
+        let with = match references.get(&memory) {
+            Some(other) => Some((*other).to_owned()),
+            None => RESERVED_REFERENCES
+                .binary_search(&memory.as_str())
+                .is_ok()
+                .then_some(memory),
+        };
+        if let Some(with) = with {
+            return Err(IrValidationError::ReferenceCollision {
+                id: (*reference).to_owned(),
+                with,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// What the emitter appends to a device's lowercased reference to name the
+/// memory array a modelled flash keeps (`AET-WO-4200` D7).
+pub const MEMORY_SUFFIX: &str = "_memory";
+
 impl SolvedTopology {
     /// Refuses the first malformed value found: version, hash, identifiers (in
     /// `assignments` a net, then its `pin`, `peripheral`, `signal`; then in
@@ -1181,6 +1287,23 @@ impl SolvedTopology {
                 format!("i2c_devices.{reference}.peripheral")
             })?;
         }
+        for (reference, d) in &self.spi_devices {
+            identifier(IdentifierKind::Reference, reference, || {
+                format!("spi_devices.{reference}")
+            })?;
+            plain(&d.part, || format!("spi_devices.{reference}.part"))?;
+            plain(&d.bus, || format!("spi_devices.{reference}.bus"))?;
+            plain(&d.peripheral, || {
+                format!("spi_devices.{reference}.peripheral")
+            })?;
+            plain(&d.cs, || format!("spi_devices.{reference}.cs"))?;
+        }
+        references_distinct(
+            self.i2c_devices
+                .keys()
+                .chain(self.spi_devices.keys())
+                .map(String::as_str),
+        )?;
         for (net, a) in &self.assignments {
             if a.alternate_function > 15 {
                 return Err(E::AlternateFunctionOutOfRange {
@@ -1209,7 +1332,54 @@ impl SolvedTopology {
             }
         }
         self.validate_analog_lines()?;
-        self.validate_i2c_devices()
+        self.validate_i2c_devices()?;
+        self.validate_spi_devices()?;
+        parts::table().map(|_| ())
+    }
+
+    /// Each SPI device is on a peripheral some solved signal is on, an `SPIn`;
+    /// its chip select's net is a solved GPIO; and the indices are exactly
+    /// `0..n`.
+    fn validate_spi_devices(&self) -> Result<(), IrValidationError> {
+        use IrValidationError as E;
+
+        let mut seen = BTreeSet::new();
+        for (reference, d) in &self.spi_devices {
+            let solved = d.peripheral.starts_with("SPI")
+                && self
+                    .assignments
+                    .values()
+                    .any(|a| a.peripheral == d.peripheral);
+            if !solved {
+                return Err(E::SpiDevicePeripheral {
+                    id: reference.clone(),
+                });
+            }
+            if !self.gpio.contains_key(&d.cs) {
+                return Err(E::SpiDeviceSelect {
+                    id: reference.clone(),
+                });
+            }
+            let in_range = usize::try_from(d.index).is_ok_and(|i| i < self.spi_devices.len());
+            if !in_range || !seen.insert(d.index) {
+                return Err(E::SpiDeviceIndex {
+                    id: reference.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// The SPI devices in the specification's order, as
+    /// [`SolvedTopology::i2c_devices_in_order`] orders the I2C ones.
+    pub fn spi_devices_in_order(&self) -> Vec<(&str, &SolvedSpiDevice)> {
+        let mut out: Vec<_> = self
+            .spi_devices
+            .iter()
+            .map(|(r, d)| (r.as_str(), d))
+            .collect();
+        out.sort_by_key(|(_, d)| d.index);
+        out
     }
 
     /// Each device's address is one a specification may declare (0x08..=0x77,
