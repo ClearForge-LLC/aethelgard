@@ -297,7 +297,7 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
 
 ### The analog pre-pass (`simulate --firmware`)
 
-`AET-WO-2200` (`RUL-17`). Before Renode is looked for, each I2C line of the solved topology is measured, and the measurement decides the platform the boot loads:
+`AET-WO-2200` (`RUL-17`). Before Renode is looked for, each I2C line of the solved topology has its rise computed from the declared values (`RUL-19` (1)), and the result decides the platform the boot loads:
 
 1. `aethelgard-twin::analog` writes one netlist per line from the topology's `analog_lines`: the pull-up from the domain's rail, the line's capacitance, and the open-drain driver, released once in a 22.5 µs window (`AET-WO-2101` S2).
 2. `aethelgard-bridge`, found **beside the `aethelgard` binary** (`BridgeUnavailable`, exit `4`, if it is not), measures each line's 30 %–70 % rise with libngspice 44.2 in its own process. It runs as a sandboxed tool like Renode, with the same 30 s and 1 GiB bounds, in a directory of its own, so it can write none of the copies Renode reads. Its rise time is its own interpolation of the points ngspice accepted, and it must agree with ngspice's `meas` to 0.01 ns.
@@ -311,13 +311,14 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
 
 A bridge that exits nonzero, is killed, or answers anything but one of the three outcomes per line, in order, is `ToolError` (exit `5`, `id` `aethelgard-bridge`): no line is ever read as unfaulted. Exit `5` means the bridge itself failed, never the design.
 
-The verdict carries the pass beside `boot`, never inside it: at 47 kΩ the reference gives three separate records, the measured rise (`analog`), the decision (`faults`) and U2's TXIS timeout (`boot.i2c`). The firmware sees a faulted bus only as its devices' absence, which Renode 1.17.0 renders as a TXIS timeout because it models no NACK; `firmware_sees` says so.
+The verdict carries the pass beside `boot`, never inside it: at 47 kΩ the reference gives three separate records, the rise computed from the declared values (`analog`, `RUL-19` (1)), the decision (`faults`) and U2's TXIS timeout (`boot.i2c`). The firmware sees a faulted bus only as its devices' absence, which Renode 1.17.0 renders as a TXIS timeout because it models no NACK; `firmware_sees` says so.
 
 ```json
-"analog":[{"kind":"analog.rise_time_measured","source":"ngspice","bus":"SENSORS","net":"I2C_SCL","complete":true,
-           "rise_30_70_ns":3982.300059495949,"ceiling_ns":300,"exceeds":true,"method":"interpolated","ngspice":"44.2"},…],
+"analog":[{"kind":"analog.rise_time_computed","source":"ngspice","bus":"SENSORS","net":"I2C_SCL","complete":true,
+           "rise_30_70_ns":3982.300059495949,"ceiling_ns":300,"exceeds":true,"method":"interpolated","ngspice":"44.2",
+           "deck_hz":400000,"declared_hz":400000},…],
 "faults":[{"kind":"bridge.fault_state","source":"aethelgard","bus":"SENSORS","fault":"absent",
-           "from":["analog.rise_time_measured > ceiling_ns"],"nets":["I2C_SCL","I2C_SDA"],"firmware_sees":"…"}]
+           "from":["analog.rise_time_computed > ceiling_ns"],"nets":["I2C_SCL","I2C_SDA"],"firmware_sees":"…"}]
 ```
 
 ### Harness provenance (`prove`)
@@ -378,7 +379,7 @@ aethelgard replay --archive <dir>/<run id>
 **`campaign`** first reads the firmware's hash and every scenario: it parses, applies, validates and solves each one, and refuses (`DuplicateScenario`) two that would name one run. It creates `--archive` if absent and refuses a run directory that already exists (`RunExists`). Any refusal is printed before anything runs. Then, for each scenario in the order given:
 
 1. It writes the platform `aethelgard-twin` emits for the overridden specification and runs exactly `simulate --firmware`'s path on it, with the same sandbox, bridge, bounds and judge, booting for **100 ms**, the longest `--for` admits, so a timed-out read still reaches the boot word. A held-low line (`line_held_low`) is not sent to the bridge: its bus is faulted without a measurement, with `i2c_line_held_low` and a `bridge.fault_state` whose `source` is `scenario <name>`.
-2. It archives every record of the verdict, as integer-only CBOR events, in a new run directory `<archive>/<run id>`: the scenario's sha256 and overrides, the overridden specification's and the solved topology's sha256, each `analog.rise_time_measured` (`rise_30_70_ps`, `complete`) and `analog.line_stuck_high`, each `bridge.fault_state`, the boot's witnesses, every register, each I2C identity read and controller witness, and the verdict. The header's `artifacts` are the `base` file's, the `firmware`'s, the `scenario`'s, the overridden `specification`'s and the `topology`'s hashes. A firmware whose bytes changed between the campaign's read and the boot's copy is refused (`FirmwareChanged`, exit `3`). The run is committed before its line is printed.
+2. It archives every record of the verdict, as integer-only CBOR events, in a new run directory `<archive>/<run id>`: the scenario's sha256 and overrides, the overridden specification's and the solved topology's sha256, each `analog.rise_time_computed` (`rise_30_70_ps`, `complete`) and `analog.line_stuck_high`, each `bridge.fault_state`, the boot's witnesses, every register, each I2C identity read and controller witness, and the verdict. The header's `artifacts` are the `base` file's, the `firmware`'s, the `scenario`'s, the overridden `specification`'s and the `topology`'s hashes. Its `tools` name what judged the run, each as the tool reported it: `aethelgard` (this CLI's version), `renode` (the `build:` line of `renode --version`; a boot whose Renode names none is refused, exit `4`), and, when the bridge ran, `aethelgard-bridge` (its identity digest) and `ngspice` (as its answers name it) (`AET-WO-2205` §1.1). Kind 10 archives the executable segments the judge placed the core's `pc` against. A firmware whose bytes changed between the campaign's read and the boot's copy is refused (`FirmwareChanged`, exit `3`). The run is committed before its line is printed.
 3. It prints one line:
 
 ```json
@@ -394,11 +395,12 @@ Each run line carries its boot's `uid_boundary` and, when it is `false`, `uid_bo
 
 **`run_id`** is a function of the scenario's, the overridden specification's and the firmware's hashes, so the same campaign twice names the same runs, with the same state-sequence hash: into one archive the second is `RunExists`, since the archive is append-only.
 
-**`replay`** reads one run directory through `aethelgard-chaos`'s strict reader and nothing else: no solver, no tool, no scratch directory, no file outside the run directory, no network. It recomputes the state-sequence hash, the chain `crates/aethelgard-chaos/README.md` defines over every event's payload (no timestamp, no wall-clock field), and refuses a run whose hash differs from its manifest's (`ReplayDiverged`), and every other refusal of that reader by its name, with exit `3`. The reader opens the run directory once and reads every file through it, never following a symlink or opening a FIFO. A directory not named by the run id its header holds is `RunIdMismatch` (exit `3`): a run copied under another run's name is not that run. It then judges the records (`NotACampaignRun`, exit `3`): no event but campaign records, a header whose hashes and run id are the ones its records give, the records' order, and that every fault, measurement and verdict agrees with the evidence beside it. It prints one line, exit `0`, and two replays of one run print the same bytes:
+**`replay`** reads one run directory through `aethelgard-chaos`'s strict reader and nothing else: no solver, no tool, no scratch directory, no file outside the run directory, no network. It recomputes the state-sequence hash, the chain `crates/aethelgard-chaos/README.md` defines over every event's payload (no timestamp, no wall-clock field), and refuses a run whose hash differs from its manifest's (`ReplayDiverged`), and every other refusal of that reader by its name, with exit `3`. The reader opens the run directory once and reads every file through it, never following a symlink or opening a FIFO. A directory not named by the run id its header holds is `RunIdMismatch` (exit `3`): a run copied under another run's name is not that run. It then judges the records (`NotACampaignRun`, exit `3`): no event but campaign records, a header whose hashes and run id are the ones its records give and whose `tools` are the ones that ran (each reported, never compared with this host's), the records' order, and that every fault, measurement and verdict agrees with the evidence beside it. It prints one line, exit `0`, and two replays of one run print the same bytes:
 
 ```json
 {"ok":true,"check":"replay","run_id":"011cc38d…","scenario":"pullup-47k","verdict":"fail","expect":"fail","matched":true,
  "findings":[…],"expect_findings":[…],"artifacts":{"base":"…","firmware":"…","scenario":"…","specification":"…","topology":"…"},
+ "tools":{"aethelgard":"0.1.0","aethelgard-bridge":"91e72fcc…","ngspice":"44.2","renode":"1.17.0+20260907gitf1dd1b4af"},
  "event_count":16,"trace_bytes":1335,"state_sequence_hash":"0483991c…"}
 ```
 
@@ -453,19 +455,19 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 
 **Software evidence on the board.** The boot word is missing, the core executed fewer instructions than expected, or a register is wrong outside every bus's fields.
 
-**A bus is measured healthy** when no kind 7 past its ceiling, no kind 8 and no kind 9 is on it, each of its two lines has its kind 7 (R2 allows one per line), and the ST header knows its controller and pins. A bus whose port or controller the header lacks is never healthy and owns nothing, so its symptoms are `I2` and no other bus's attribution is refused.
+**A bus is computed healthy** (its rises are computed from the declared values, `RUL-19` (1)) when no kind 7 past its ceiling, no kind 8 and no kind 9 is on it, each of its two lines has its kind 7 (R2 allows one per line), and the ST header knows its controller and pins. A bus whose port or controller the header lacks is never healthy and owns nothing, so its symptoms are `I2` and no other bus's attribution is refused.
 
 **The rules, closed and ordered.** Each symptom is decided by the first rule that holds for it:
 
 | rule | domain | holds when | evidence kinds |
 |---|---|---|---|
 | `E1` | electrical | the symptom's bus has a kind 7 past its ceiling, a kind 8 or a kind 9; its software evidence goes to `masked` | 7, 8, 9 |
-| `I2` | indeterminate | the symptom's bus is not measured healthy (a line unmeasured, or a bus the header cannot join) | 15 |
-| `S1` | software | the symptom's bus is measured healthy and has software evidence | 7, 11, 13 |
-| `I3` | indeterminate | the symptom's bus is measured healthy with no software evidence, and another bus is faulted | 7, 8, 9 |
-| `I4` | indeterminate | measured healthy, no software evidence, and no fault anywhere | 7 |
+| `I2` | indeterminate | the symptom's bus is not computed healthy (a line with no computed rise, or a bus the header cannot join) | 15 |
+| `S1` | software | the symptom's bus is computed healthy and has software evidence | 7, 11, 13 |
+| `I3` | indeterminate | the symptom's bus is computed healthy with no software evidence, and another bus is faulted | 7, 8, 9 |
+| `I4` | indeterminate | computed healthy, no software evidence, and no fault anywhere | 7 |
 
-For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bus not measured healthy, gives `I2`. Then board software evidence gives `S2` (software; evidence kinds 7, 10, 11), and none gives `I4`.
+For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bus not computed healthy, gives `I2`. Then board software evidence gives `S2` (software; evidence kinds 7, 10, 11), and none gives `I4`.
 
 **The run.**
 - A passing verdict is `none`, rule `N1`.
@@ -476,10 +478,11 @@ For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bu
 
 Software is never concluded by eliminating electrical, nor electrical by eliminating software.
 
-**The seeded set** is `scenarios/sentinel-01/seeded/cases.json`. It holds 20 failing cases, 10 in each domain, and two passing ones.
+**The seeded set** is `scenarios/sentinel-01/seeded/cases.json` (schema version 2). It holds 21 failing cases (10 electrical, 11 software), one indeterminate case and two passing ones. Each case states the exact `[index, kind]` events `attribute` must name as `evidence` and as `masked`, and the test asserts them exactly (`AET-WO-2205` §1.6). Each evidence kind must be one of `aethelgard_evolve::Rule::evidence_kinds` for the case's rule. The indices move when the trace gains records: whoever moves them re-derives them from `attribute` and explains each changed row in their FEEDBACK.
 - The electrical cases are scenarios run against the generated firmware.
 - The software cases are named exact-once patches of `boards/sentinel-01`, built from a scratch copy by `tests/attribute_seeded.rs`. A patch that matches zero or two times fails that test, and so does a generator change.
-- The trap: a wrong device address fails with `i2c_timeout` at TXIS, as a 47 kΩ pull-up does. It is `software` with 3.3 kΩ (measured inside the ceiling), and `electrical` with 47 kΩ, with the witness in `masked`.
+- The trap: a wrong device address fails with `i2c_timeout` at TXIS, as a 47 kΩ pull-up does. It is `software` with 3.3 kΩ (computed inside the ceiling), and `electrical` with 47 kΩ, with the witness in `masked`.
+- The indeterminate trap, `trap-indeterminate-leave-47k`: a core that leaves the firmware after its boot word (`leave-firmware`, `software S2` at 2.2 kΩ), on the 47 kΩ bus fault (`electrical E1` alone). Two real causes: it is `I3`, evidence exactly the bus fault's `3:7 4:7 5:9`, and `propose` refuses to mutate (`INV-05`).
 
 ## `propose`
 

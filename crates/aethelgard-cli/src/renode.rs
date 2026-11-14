@@ -845,7 +845,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
     let inside = plan.executable.iter().any(|&(s, e)| pc >= s && pc < e);
     if !inside {
         findings.push(Finding::plain(
-            "pc_outside_firmware",
+            aethelgard_chaos::campaign::PC_OUTSIDE_FINDING,
             format!(
                 "the core ended at {:#010x}, outside every executable segment of the firmware",
                 observed.pc
@@ -875,7 +875,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         let rewritten = on.is_some_and(|i| observed.loops[i] != intact);
         if inside && (on.is_none() || rewritten) {
             findings.push(Finding::plain(
-                "pc_not_on_self_loop",
+                aethelgard_chaos::campaign::SELF_LOOP_FINDING,
                 if rewritten {
                     format!(
                         "the core ended at {:#010x}, on a `yield; b.n` self-loop of the firmware that the machine no longer holds",
@@ -1118,6 +1118,22 @@ fn probes_in(text: &str, dropped: bool, plan: &BootPlan<'_>) -> Result<Vec<Probe
         });
     }
     Ok(out)
+}
+
+/// The build `renode --version` names on its `build:` line, as Renode prints
+/// it (`1.17.0+20260907gitf1dd1b4af` in the pinned image): `None` unless
+/// exactly one such line holds 1 to 256 printable ASCII bytes and no space.
+pub fn build(version_stdout: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(version_stdout);
+    let mut builds = text
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("build:"))
+        .map(str::trim);
+    let build = builds.next()?;
+    let ok = builds.next().is_none()
+        && (1..=aethelgard_chaos::event::MAX_TOOL_VERSION_BYTES).contains(&build.len())
+        && build.bytes().all(|b| (0x21..=0x7e).contains(&b));
+    ok.then(|| build.to_owned())
 }
 
 /// How a record's status reads in the verdict.
