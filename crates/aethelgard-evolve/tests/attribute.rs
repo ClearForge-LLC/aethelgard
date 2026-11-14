@@ -404,7 +404,7 @@ fn other_bus_faulted(r: &mut Vec<Record>) {
 #[test]
 fn a_fault_on_another_bus_is_indeterminate_because_the_fault_is_elsewhere() {
     // R7: two buses through the chaos writer. U2 times out on SENSORS, which is
-    // measured healthy (its rises are present); the only fault is on OTHER.
+    // computed healthy (its rises are present); the only fault is on OTHER.
     let mut r = healthy();
     replace(&mut r, is_check, check("timeout_txis", 0));
     replace(&mut r, is_witness, witness(Some(&[])));
@@ -749,7 +749,7 @@ fn insert_after_last(r: &mut Vec<Record>, pred: impl Fn(&Record) -> bool, record
 }
 
 /// A second bus, AUX on I2C2 (pins PF1 and PF0), sorted before SENSORS, with
-/// U5 at 0x40; measured healthy when `measured`.
+/// U5 at 0x40; computed healthy when `measured`.
 fn add_aux(r: &mut Vec<Record>, measured: bool) {
     let at = find(r, |x| matches!(x, Record::I2cBusSolved { .. }));
     r.insert(
@@ -857,7 +857,7 @@ fn a3_a_bus_the_header_cannot_join_is_never_healthy_and_refuses_nothing_else() {
     wrong_register(&mut r);
     unjoinable(&mut r);
     assert_eq!(attributed(&r).rule, Rule::S1);
-    // A symptom on the board needs every bus measured healthy: I2.
+    // A symptom on the board needs every bus computed healthy: I2.
     let mut r = healthy();
     replace(
         &mut r,
