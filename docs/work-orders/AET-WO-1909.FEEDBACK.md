@@ -123,6 +123,7 @@ The originals go red, at `board_tier2.rs:405` and `:504` of `cfafdb4`.
 | run | commit | plan | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | suite test-step s | slowest | spread | `tier2_tests_passed` |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 (43570762262) | `ad432a3` | provisional block weights | 8:23 | 9:58 | 11:24 | 8:41 | 9:15 | 8:08 | 8:49 | 10:50 | 3,471 | 11:24 | 3:16 | 90 (floor 90) |
+| 2 (43573333731), counted 1 of 3 | `af2ec01` | refitted | 8:09 | 9:58 | 12:10 | 9:37 | 8:29 | 10:49 | 10:26 | 8:35 | 3,684 | 12:10 | 4:01 | 90 (floor 90) |
 __CI_ROWS__
 
 - **Run 1 measured the blocks in one process** (libtest's `finished in`): `attribute_seeded` 473.4 s, `against_fab_tier2` 562.2 s, `verify_2k2_tier2` 404.6 s, `verify_47k_tier2` 197.3 s, `campaign_tier2` 36.9 s.
