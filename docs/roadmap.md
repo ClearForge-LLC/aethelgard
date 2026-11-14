@@ -206,7 +206,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
   - **Records.** Trace version 5; kind 19 is on device lines too.
   - **Tests and CI.** `TIER2_MIN` is 91. CI on `b93f7bf`: 14 checks green, slowest shard 15:38.
   - **Open after it.** A2 and A3 are named residuals; A4 waits for P4's IMU work order; A5 goes to `aethelgard-eda`; B4 to `2205`.
-- `AET-WO-2205` — **written 2026-11-14**, build with one stop (the seeded set's evidence table), strong tier, targeted adversarial pass;, from `2204`'s split: the archive's hygiene and attribution's evidence. Engine and tool versions in the archive header and record kinds renamed from "measured" (review B4), the analog deck's 400 kHz window labelled (review A10.4, `2301` B4), the status-to-phase table in one place (`3100` F2), the executable segments archived for `pc_outside_firmware` (`3100` F13), and the seeded set's exact evidence per case with an indeterminate case end to end (review A7.5, A7.6). Also `power::SOURCE` to DS12117 Rev 10 (`2301` D10) and the droop's witness report slimmed (`2204` B4). One trace version bump, 5 to 6. `3100` F2 may already be closed by `2204`'s removal of the `CR2`/`TXDR` evidence; the build checks first. Launch waits for Furnace's weekly usage reset.
+- `AET-WO-2205` — **written 2026-11-14**, build with one stop (the seeded set's evidence table), strong tier, targeted adversarial pass, from `2204`'s split: the archive's hygiene and attribution's evidence. Engine and tool versions in the archive header and record kinds renamed from "measured" (review B4), the analog deck's 400 kHz window labelled (review A10.4, `2301` B4), the status-to-phase table in one place (`3100` F2), the executable segments archived for `pc_outside_firmware` (`3100` F13), and the seeded set's exact evidence per case with an indeterminate case end to end (review A7.5, A7.6). Also `power::SOURCE` to DS12117 Rev 10 (`2301` D10) and the droop's witness report slimmed (`2204` B4). One trace version bump, 5 to 6. `3100` F2 may already be closed by `2204`'s removal of the `CR2`/`TXDR` evidence; the build checks first. **Launched 2026-11-14** beside `1909` and `4200`.
 
 **Exit gate: passed 2026-11-09, as reconciled in §7.** Every clause below is owned by merged work.
 
@@ -252,8 +252,8 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 
 **Work orders (intent)**
 
-- `AET-WO-4200` — **written 2026-11-14** (spike, stop, build; strong tier, full adversarial pass). **SPI devices end to end:** the part table, the solver, the board crate's typestates and Kani harness, the twin and a static SPI fault. It opens with a desk spike that reads Renode's SPI sensor models at source, because which IMUs it models is unverified. Grounds: the reference already declares `U4` (W25Q64JV) on SPI bus `FLASH`, and the twin adds `spi1`, but no model sits behind it and the firmware makes no SPI transfer. It also builds the parts table as data (review B7) and an SPI witness under `2204`'s rule.
-- `AET-WO-4100` — **stackups.** A specification selects its layer count (2, 4 or 6) and its stackup. The router, the gate-written DRC rules (`RUL-03`) and the fabrication outputs follow it. Sentinel-01 regenerates byte-identical at 2 layers.
+- `AET-WO-4200` — **written 2026-11-14** (spike, stop, build; strong tier, full adversarial pass). **SPI devices end to end:** the part table, the solver, the board crate's typestates and Kani harness, the twin and a static SPI fault. It opens with a desk spike that reads Renode's SPI sensor models at source, because which IMUs it models is unverified. Grounds: the reference already declares `U4` (W25Q64JV) on SPI bus `FLASH`, and the twin adds `spi1`, but no model sits behind it and the firmware makes no SPI transfer. It also builds the parts table as data (review B7) and an SPI witness under `2204`'s rule. **Spike launched 2026-11-14.**
+- `AET-WO-4100` — **written 2026-11-14** (spike, stop, build; strong tier, full adversarial pass). **Stackups.** A specification selects its layer count (2, 4 or 6) and its stackup. The router, the gate-written DRC rules (`RUL-03`) and the fabrication outputs follow it. Sentinel-01 regenerates byte-identical at 2 layers. Grounds: the specification declares no board, and two layers are literals in `pcb`, `route`, `fab` and the CLI's Gerber list. Extraction's trial is valid only while every foreign conductor lies a clearance away, which an inner plane under an outer track breaks; the spike derives a bound for a near plane or stops. It also takes the specification rules field (1300 B1) and escape planning (1302 B10). Its spike runs beside `4200`'s build.
 - `AET-WO-4300` — **flight I/O:** timer outputs able to drive ESCs (PWM and DShot timing), USB device, UARTs for a receiver and MAVLink, and the power input and regulator parts, each solved and gated.
 - `AET-WO-4400` — **ArduPilot's board definition (`hwdef.dat`) generated from the `SolvedTopology`** (`RUL-16`). Unmodified ArduPilot builds from it. Its pinout is checked against the specification by a check the generator does not compute (`INV-07`).
 - `AET-WO-4500` — **Sentinel-02:** the specification, every gate, a fault campaign that includes an SPI fault, and the fabrication package. Then fabrication (human-track: Scotty's purchase), then bring-up on the bench, then flight in this order: props off, tethered, free. Disagreements between simulation and the board go into `northstar.md` §2 as scars.
@@ -367,7 +367,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 |---|---|---|
 | Static I2C electrical rules (pull-up floor, bus capacitance) | review A2, B2 | `AET-WO-1203`: **merged (PR #83)** |
 | `DeviceNotPlaced` unreachable | 2203 F3 | `AET-WO-1203`: **removed (PR #83)** |
-| DRC rules label over-claims (`engine-floor`); a specification rules field | 1300 B1, review A5 | label **done (PR #87)**; field `AET-WO-4100` |
+| DRC rules label over-claims (`engine-floor`); a specification rules field | 1300 B1, review A5 | label **done (PR #87)**; field `AET-WO-4100` §1 S2 (written 2026-11-14) |
 | Engine image revision label and its reachability check | 1700 F1, review A6 | **done (PR #87)** |
 | KiCad's licence text in the image | 1300 D10 | **done (PR #87)** |
 | `opt-level` for `aethelgard-eda` in the dev profile | 1302 B9 | **done (PR #87)** |
@@ -400,7 +400,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | Analog deck's fixed 400 kHz window labelled | review A10.4 | `AET-WO-2301` |
 | Type-level `RUL-16` fence replacing the grep test | review A7.1, B6 | **merged (PR #90)**: private device lists, a crate-local clippy `disallowed-methods` in `cli`, `svd-hal` and `twin`, and a guard test against a stale path |
 | `RLIMIT_FSIZE` for tool scratch | review A12.1 | **merged (PR #96)**: 64 MiB, exit 5 |
-| Escape planning for congested routing | 1302 B10 | `AET-WO-4100` |
+| Escape planning for congested routing | 1302 B10 | `AET-WO-4100` §1 S3 (written 2026-11-14) |
 | Parts table as data | review B7 | `AET-WO-4200` §1 S3 (written 2026-11-14) |
 | Version bump to 0.2.0, which retires the published-0.1.0 collision (`--no-verify`, 3200 F18); `aethelgard-evolve`'s first publish | 3200 F18, 3100 F16 | the architect, at the next release; Scotty publishes `aethelgard-evolve` first |
 | Path-independent firmware ELFs | 3200 F11 | **merged (PR #91)**: symbols stripped; one sha256 at any path, `image_sha256` unchanged |
@@ -505,6 +505,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-14 | §7.1 | `AET-WO-1909` written (census, stop, build): a CI reduction pass that keeps every guarded failure, at Scotty's request | Scotty, 2026-11-14; `1908` FEEDBACK |
 | 2026-11-14 | §5, §7.1 | `AET-WO-2205` written (build, one stop): header versions, "computed" record names, the 400 kHz label, executable segments archived, the seeded set's exact evidence and an indeterminate case, `power::SOURCE` to Rev 10; trace version 6 | review B4, A7.5, A7.6, A10.4; `3100` F2, F13; `2301` B4, D10; `2204` B4 |
 | 2026-11-14 | §5 | `AET-WO-4200` written (spike, stop, build): SPI end to end, the parts table as data, an SPI witness, a static SPI fault; P4 begins | Scotty, 2026-11-12 (order); review B7 |
+| 2026-11-14 | §5, §7.1 | `AET-WO-4100` written (spike, stop, build): stackups at 2, 4 and 6 layers, the specification rules field, extraction's bound over a near plane, escape planning. `2205` and `4200` marked launched | Scotty, 2026-11-12 (order); Scotty, 2026-11-14 (spend the week's remainder on parallel builders) |
 
 ## 9. Provenance
 
