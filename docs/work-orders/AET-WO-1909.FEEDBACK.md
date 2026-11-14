@@ -160,6 +160,7 @@ Runs 2 to 4 were all green, every shard under 20 minutes (slowest 12:10, 11:59, 
 | run | commit | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | suite test-step s | slowest | spread | `tier2_tests_passed` |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 5 (43581095451), counted 1 of 3 | `f23bc52` | 12:26 | 13:59 | 10:04 | 9:33 | 14:11 | 10:40 | 9:45 | 11:57 | 4,470 | 14:11 | 4:38 | 90 (floor 90) |
+| 6 (43582335978), counted 2 of 3 | `04191e5` | 9:38 | 11:50 | 11:41 | 12:13 | 10:24 | 10:28 | 7:59 | 9:54 | 4,031 | 12:13 | 4:14 | 90 (floor 90) |
 __CI_ROWS2__
 
 __CI_RESULT2__
