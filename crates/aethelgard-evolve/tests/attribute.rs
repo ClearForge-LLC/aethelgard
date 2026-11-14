@@ -51,13 +51,17 @@ fn solved(
 }
 
 fn rise(bus: &str, net: &str, ps: u64) -> Record {
-    Record::RiseMeasured {
+    Record::RiseComputed {
         bus: bus.into(),
         net: net.into(),
         rise_30_70_ps: ps,
         complete: true,
         ceiling_ps: 300_000,
         exceeds: ps > 300_000,
+        window: aethelgard_chaos::record::Window {
+            deck_hz: 400_000,
+            declared_hz: 400_000,
+        },
     }
 }
 
@@ -66,7 +70,7 @@ fn fault(bus: &str, nets: &[&str]) -> Record {
         bus: bus.into(),
         fault: "absent".into(),
         source: "aethelgard".into(),
-        from: vec!["analog.rise_time_measured > ceiling_ns".into()],
+        from: vec!["analog.rise_time_computed > ceiling_ns".into()],
         nets: nets.iter().map(|n| (*n).into()).collect(),
         firmware_sees: "absent".into(),
     }
@@ -160,6 +164,7 @@ fn boot(word: u32) -> Record {
         instructions_expected: 10_000_000,
         instructions_observed: Some(10_000_000),
         pc: Some(0x0800_0596),
+        executable: vec![(0, 0x1000_0000)],
     }
 }
 
@@ -250,6 +255,10 @@ fn archived(records: &[Record]) -> Replayed {
             ("specification".into(), *specification_sha256),
             ("topology".into(), *topology_sha256),
         ],
+        tools: aethelgard_chaos::campaign::tools_of(records)
+            .iter()
+            .map(|n| ((*n).to_owned(), "test".to_owned()))
+            .collect(),
     };
     let mut w = TraceWriter::create(&dir, &header).unwrap();
     for record in records.iter().cloned() {
@@ -294,7 +303,7 @@ fn faulted_sensors(r: &mut Vec<Record>) {
     for net in ["I2C_SCL", "I2C_SDA"] {
         let i = find(
             r,
-            |x| matches!(x, Record::RiseMeasured { bus, net: n, .. } if bus == "SENSORS" && n == net),
+            |x| matches!(x, Record::RiseComputed { bus, net: n, .. } if bus == "SENSORS" && n == net),
         );
         r[i] = rise("SENSORS", net, 3_982_301);
     }
@@ -303,7 +312,7 @@ fn faulted_sensors(r: &mut Vec<Record>) {
         |x| {
             matches!(
                 x,
-                Record::RiseMeasured { .. } | Record::LineStuckHigh { .. }
+                Record::RiseComputed { .. } | Record::LineStuckHigh { .. }
             )
         },
         fault("SENSORS", &["I2C_SCL", "I2C_SDA"]),
@@ -362,7 +371,7 @@ fn a_txis_timeout_with_nothing_logged_is_indeterminate_not_software() {
 fn no_rise_measured_on_a_line_of_the_symptoms_bus_is_indeterminate() {
     let mut r = healthy();
     wrong_register(&mut r);
-    r.retain(|x| !matches!(x, Record::RiseMeasured { net, .. } if net == "I2C_SDA"));
+    r.retain(|x| !matches!(x, Record::RiseComputed { net, .. } if net == "I2C_SDA"));
     let a = attributed(&r);
     assert_eq!((a.domain, a.rule), (Domain::Indeterminate, Rule::I2));
     assert_eq!(kinds(&a.evidence), [15]);
@@ -373,7 +382,7 @@ fn no_rise_measured_on_a_line_of_the_symptoms_bus_is_indeterminate() {
 fn removing_every_rise_never_turns_a_software_run_electrical_or_keeps_it_software() {
     let mut r = healthy();
     wrong_register(&mut r);
-    r.retain(|x| !matches!(x, Record::RiseMeasured { .. }));
+    r.retain(|x| !matches!(x, Record::RiseComputed { .. }));
     let a = attributed(&r);
     assert_eq!(a.domain, Domain::Indeterminate);
 }
@@ -385,7 +394,7 @@ fn other_bus_faulted(r: &mut Vec<Record>) {
         at,
         solved("OTHER", "I2C2", ["O_SCL", "O_SDA"], ["PF1", "PF0"], &[]),
     );
-    let i = find(r, |x| matches!(x, Record::RiseMeasured { .. }));
+    let i = find(r, |x| matches!(x, Record::RiseComputed { .. }));
     r.insert(i, rise("OTHER", "O_SCL", 900_000));
     r.insert(i + 1, rise("OTHER", "O_SDA", 900_000));
     let after = find(r, |x| matches!(x, Record::BootObserved { .. }));
@@ -412,7 +421,7 @@ fn a_fault_on_another_bus_is_indeterminate_because_the_fault_is_elsewhere() {
         .evidence
         .iter()
         .map(|e| match &r[e.index as usize] {
-            Record::RiseMeasured { bus, .. } | Record::BusFault { bus, .. } => bus.as_str(),
+            Record::RiseComputed { bus, .. } | Record::BusFault { bus, .. } => bus.as_str(),
             other => panic!("{other:?}"),
         })
         .collect();
@@ -616,6 +625,44 @@ fn a_register_no_bus_owns_is_board_software_only_when_every_bus_is_healthy() {
     assert_eq!(a.domain, Domain::Indeterminate);
 }
 
+/// `3100` F13, `AET-WO-2205` §1.5: kind 10 archives the executable
+/// segments, so a core that ended outside them is software evidence on
+/// healthy buses (`S2`), never by elimination.
+#[test]
+fn a_core_outside_the_archived_segments_is_software_on_healthy_buses() {
+    let mut r = healthy();
+    let outside = |pc: u32, executable: Vec<(u32, u32)>| Record::BootObserved {
+        image_sha256: [4; 32],
+        boot_word: reading(0x2000_0000, u32::MAX, 0x2100_B007, 0x2100_B007),
+        instructions_expected: 10_000_000,
+        instructions_observed: Some(10_000_000),
+        pc: Some(pc),
+        executable,
+    };
+    let segments = vec![(0x0800_0000, 0x0800_1000)];
+    replace(
+        &mut r,
+        |x| matches!(x, Record::BootObserved { .. }),
+        outside(0x7000_0000, segments.clone()),
+    );
+    replace(&mut r, is_verdict, verdict(&[("pc_outside_firmware", 1)]));
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S2));
+    assert_eq!(kinds(&a.evidence), [7, 7, 10]);
+    assert_eq!(kinds(&a.symptoms), [10]);
+    // A faulted bus elsewhere: the boot is not on it, so the fault is elsewhere.
+    other_bus_faulted(&mut r);
+    replace(
+        &mut r,
+        is_verdict,
+        verdict(&[
+            ("analog_rise_exceeds_ceiling", 2),
+            ("pc_outside_firmware", 1),
+        ]),
+    );
+    assert_eq!(attributed(&r).domain, Domain::Indeterminate);
+}
+
 #[test]
 fn a_missing_boot_word_is_software_on_healthy_buses_and_never_by_elimination() {
     let mut r = healthy();
@@ -629,7 +676,7 @@ fn a_missing_boot_word_is_software_on_healthy_buses_and_never_by_elimination() {
     assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S2));
     assert_eq!(kinds(&a.evidence), [7, 7, 10]);
     // With no bus measured, nothing says the electrical layer is healthy.
-    r.retain(|x| !matches!(x, Record::RiseMeasured { .. }));
+    r.retain(|x| !matches!(x, Record::RiseComputed { .. }));
     assert_eq!(attributed(&r).rule, Rule::I2);
     // With a faulted bus, the boot is not on it: the fault is elsewhere.
     let mut r = healthy();
@@ -657,7 +704,7 @@ fn a_held_low_line_is_electrical_by_its_fault() {
             line: Line::Sda,
         });
     }
-    r.retain(|x| !matches!(x, Record::RiseMeasured { net, .. } if net == "I2C_SDA"));
+    r.retain(|x| !matches!(x, Record::RiseComputed { net, .. } if net == "I2C_SDA"));
     let at = find(&r, |x| matches!(x, Record::BootObserved { .. }));
     r.insert(
         at,
@@ -716,7 +763,7 @@ fn add_aux(r: &mut Vec<Record>, measured: bool) {
         ),
     );
     if measured {
-        let i = find(r, |x| matches!(x, Record::RiseMeasured { .. }));
+        let i = find(r, |x| matches!(x, Record::RiseComputed { .. }));
         r.insert(i, rise("AUX", "A_SCL", 186_402));
         r.insert(i + 1, rise("AUX", "A_SDA", 186_402));
     }
@@ -801,7 +848,7 @@ fn a3_a_bus_the_header_cannot_join_is_never_healthy_and_refuses_nothing_else() {
             at + 1,
             solved("ZZZ", "I2C9", ["Z_SCL", "Z_SDA"], ["PZ0", "PZ1"], &[]),
         );
-        let i = find(r, |x| matches!(x, Record::RiseMeasured { .. }));
+        let i = find(r, |x| matches!(x, Record::RiseComputed { .. }));
         r.insert(i + 2, rise("ZZZ", "Z_SCL", 186_402));
         r.insert(i + 3, rise("ZZZ", "Z_SDA", 186_402));
     };
@@ -1071,7 +1118,7 @@ fn a_gate_two_buses_own_is_on_the_board_and_owned_so_indeterminate() {
         at,
         solved("AUX", "I2C2", ["A_SCL", "A_SDA"], ["PB10", "PB11"], &[]),
     );
-    let i = find(&r, |x| matches!(x, Record::RiseMeasured { .. }));
+    let i = find(&r, |x| matches!(x, Record::RiseComputed { .. }));
     r.insert(i, rise("AUX", "A_SCL", 186_402));
     r.insert(i + 1, rise("AUX", "A_SDA", 186_402));
     set_register(&mut r, "RCC.AHB4ENR", |g| g.observed = Some(0x1));
@@ -1103,8 +1150,8 @@ fn a_register_wrong_inside_and_outside_a_buss_fields_is_on_the_board() {
 #[test]
 fn a_line_stuck_high_and_an_incomplete_rise_are_electrical() {
     let mut r = healthy();
-    r.retain(|x| !matches!(x, Record::RiseMeasured { net, .. } if net == "I2C_SDA"));
-    let i = find(&r, |x| matches!(x, Record::RiseMeasured { .. }));
+    r.retain(|x| !matches!(x, Record::RiseComputed { net, .. } if net == "I2C_SDA"));
+    let i = find(&r, |x| matches!(x, Record::RiseComputed { .. }));
     r.insert(
         i + 1,
         Record::LineStuckHigh {
@@ -1112,6 +1159,10 @@ fn a_line_stuck_high_and_an_incomplete_rise_are_electrical() {
             net: "I2C_SDA".into(),
             microvolts_at_release: 1_500_000,
             ceiling_ps: 300_000,
+            window: aethelgard_chaos::record::Window {
+                deck_hz: 400_000,
+                declared_hz: 400_000,
+            },
         },
     );
     r.insert(i + 2, fault("SENSORS", &["I2C_SDA"]));
@@ -1129,14 +1180,18 @@ fn a_line_stuck_high_and_an_incomplete_rise_are_electrical() {
     assert_eq!((a.rule, kinds(&a.evidence)), (Rule::E1, vec![8, 9]));
 
     let mut r = healthy();
-    let i = find(&r, |x| matches!(x, Record::RiseMeasured { .. }));
-    r[i] = Record::RiseMeasured {
+    let i = find(&r, |x| matches!(x, Record::RiseComputed { .. }));
+    r[i] = Record::RiseComputed {
         bus: "SENSORS".into(),
         net: "I2C_SCL".into(),
         rise_30_70_ps: 200_000,
         complete: false,
         ceiling_ps: 300_000,
         exceeds: true,
+        window: aethelgard_chaos::record::Window {
+            deck_hz: 400_000,
+            declared_hz: 400_000,
+        },
     };
     r.insert(i + 2, fault("SENSORS", &["I2C_SCL"]));
     replace(&mut r, is_check, check("timeout_txis", 0));
@@ -1183,6 +1238,7 @@ fn each_finding_selects_only_the_events_that_show_it() {
             instructions_expected: 10_000_000,
             instructions_observed: Some(9_999_999),
             pc: Some(0x0800_0596),
+            executable: vec![(0, 0x1000_0000)],
         },
     );
     replace(
@@ -1229,7 +1285,7 @@ fn a_board_symptom_names_its_rule_and_evidence() {
         !matches!(
             x,
             Record::I2cBusSolved { .. }
-                | Record::RiseMeasured { .. }
+                | Record::RiseComputed { .. }
                 | Record::I2cCheck { .. }
                 | Record::I2cWitness { .. }
         )
@@ -1354,6 +1410,7 @@ fn every_kind_of_failing_event_the_verdict_omits_is_unexplained() {
                         instructions_expected: 10_000_000,
                         instructions_observed: Some(9_999_999),
                         pc: Some(0x0800_0596),
+                        executable: vec![(0, 0x1000_0000)],
                     },
                 )
             }),

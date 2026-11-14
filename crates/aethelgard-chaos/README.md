@@ -179,7 +179,7 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 |---|---|---|
 | 5 | scenario | `name`, `sha256` (32 bytes, of the file), `expect_pass`, `[finding kind…]` (sorted; empty exactly when `expect_pass`), `[override…]`: `[0, bus, ohms]`, `[1, net, femtofarads]` or `[2, bus, line]` (0 SDA, 1 SCL) |
 | 6 | solved | `specification_sha256`, `topology_sha256` (32 bytes each) |
-| 7 | `analog.rise_time_measured` | `bus`, `net`, `rise_30_70_ps`, `complete`, `ceiling_ps`, `exceeds` (which must equal `!complete \|\| rise > ceiling`) |
+| 7 | `analog.rise_time_computed` | `bus`, `net`, `rise_30_70_ps`, `complete`, `ceiling_ps`, `exceeds` (which must equal `!complete \|\| rise > ceiling`) |
 | 8 | `analog.line_stuck_high` | `bus`, `net`, `microvolts_at_release`, `ceiling_ps` |
 | 9 | `bridge.fault_state` | `bus`, `fault`, `source` (1–128 bytes), `[cause…]`, `[net…]` (sorted), `firmware_sees` (0–1,024 bytes) |
 | 10 | the boot | `image_sha256`, the boot word's `reading`, `instructions_expected`, `instructions_observed?`, `pc?` |

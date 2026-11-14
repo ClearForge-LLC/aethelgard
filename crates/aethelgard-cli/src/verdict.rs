@@ -55,6 +55,11 @@ pub struct Verdict {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub droop: Option<DroopReport>,
     pub findings: Vec<Finding>,
+    /// `simulate --firmware` only: each tool that judged the boot and the
+    /// version it reported, for a campaign's archive header (`AET-WO-2205`
+    /// §1.1). Not part of the verdict's JSON.
+    #[serde(skip)]
+    pub tools: Vec<(&'static str, String)>,
 }
 
 /// A droop's records, as `campaign` archives them (kinds 16 to 19).
@@ -85,7 +90,7 @@ pub struct RailReport {
     pub bor_level: u8,
     /// The rail's lowest value, as ngspice computed it.
     pub minimum_microvolts: u64,
-    /// Where the thresholds come from (`AET-WO-2301` D4, provisional on F1).
+    /// Where the thresholds come from (`AET-WO-2301` D4; Rev 10 since `AET-WO-2205`).
     pub thresholds: &'static str,
 }
 
@@ -123,8 +128,9 @@ pub struct ObservedReport {
     /// What Renode logged for the first identity read's device from the
     /// release to this read: only a transfer the controller runs calls the
     /// model (`AET-WO-2301` adversarial F1, `AET-WO-2204`). `null` when the
-    /// boot has no identity read.
-    pub witness: Option<WitnessReport>,
+    /// boot has no identity read, or the log could not be read whole. The
+    /// lines kind 19 archives, and nothing else (`AET-WO-2205` §1.8).
+    pub witness: Option<Vec<String>>,
 }
 
 /// A boot's inputs, its expectations and what Renode read (`AET-WO-2100`).
@@ -151,6 +157,11 @@ pub struct Boot {
     /// `ICSR` after the run: `VECTACTIVE` [8:0] is 0 when the core is in
     /// thread mode (`AET-WO-2204` D3).
     pub icsr: Option<String>,
+    /// The firmware's executable segments, `[start, end)` at their physical
+    /// address, that the judge placed `pc` against: kind 10 archives them
+    /// (`AET-WO-2205` §1.5). Not part of the verdict's JSON.
+    #[serde(skip)]
+    pub executable: Vec<(u64, u64)>,
 }
 
 /// One identity read's witness: the device model's whole log lines the judge
@@ -346,15 +357,17 @@ impl Verdict {
             faults: None,
             droop: None,
             findings,
+            tools: Vec::new(),
         }
     }
 }
 
-/// One I2C line's rise time as the bridge measured it (`AET-WO-2200`): the
-/// evidence. Nothing in it comes from the firmware or from Renode.
+/// One I2C line's rise time as the bridge computed it from the declared
+/// values (`AET-WO-2200`, `RUL-19` (1)): the evidence. Nothing in it comes
+/// from the firmware or from Renode.
 #[derive(Serialize)]
 pub struct AnalogRecord {
-    /// `analog.rise_time_measured`, or `analog.line_stuck_high` for a line
+    /// `analog.rise_time_computed`, or `analog.line_stuck_high` for a line
     /// at or above 30 % when its driver released it.
     pub kind: &'static str,
     pub source: &'static str,
@@ -373,6 +386,11 @@ pub struct AnalogRecord {
     pub exceeds: bool,
     pub method: &'static str,
     pub ngspice: &'static str,
+    /// The deck's window: one byte at this bit rate, 400 kHz for every bus
+    /// (`AET-WO-2205` §1.3, review A10.4).
+    pub deck_hz: u32,
+    /// The bus's declared speed, beside it.
+    pub declared_hz: u32,
 }
 
 /// The decision a measurement past its ceiling forces on its bus, and what the

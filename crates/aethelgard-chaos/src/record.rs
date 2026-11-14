@@ -89,6 +89,26 @@ pub fn split_pin(pin: &str) -> Option<(char, u8)> {
 /// The highest alternate function a GPIO pin has (`AFSEL` is four bits).
 pub const MAX_ALTERNATE_FUNCTION: u8 = 15;
 
+/// The deck an analog record was computed in (`AET-WO-2205` §1.3, review
+/// A10.4): one byte window at the deck's fixed bit rate, whatever the bus's
+/// declared speed, stated beside it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Window {
+    /// The deck's bit rate: 400 kHz for every bus.
+    pub deck_hz: u32,
+    /// The bus's declared maximum speed, from the solved topology.
+    pub declared_hz: u32,
+}
+
+/// The most executable segments kind 10 carries; the CLI refuses a firmware
+/// with more.
+pub const MAX_EXECUTABLE_SEGMENTS: usize = 16;
+
+/// Whether `pc` is in one of `executable`'s `[start, end)` ranges.
+pub fn inside(executable: &[(u32, u32)], pc: u32) -> bool {
+    executable.iter().any(|&(s, e)| pc >= s && pc < e)
+}
+
 /// A register as the boot read it: what the topology expects under `mask`,
 /// and what Renode read, absent when the boot was killed before the reads.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -116,22 +136,25 @@ pub enum Record {
         specification_sha256: [u8; 32],
         topology_sha256: [u8; 32],
     },
-    /// Kind 7: `analog.rise_time_measured`. With `complete` false, the rise
+    /// Kind 7: `analog.rise_time_computed`, by ngspice from the declared
+    /// pull-up and capacitance (`RUL-19` (1)). With `complete` false, the rise
     /// is a lower bound.
-    RiseMeasured {
+    RiseComputed {
         bus: String,
         net: String,
         rise_30_70_ps: u64,
         complete: bool,
         ceiling_ps: u64,
         exceeds: bool,
+        window: Window,
     },
-    /// Kind 8: `analog.line_stuck_high`.
+    /// Kind 8: `analog.line_stuck_high`, computed as kind 7 is.
     LineStuckHigh {
         bus: String,
         net: String,
         microvolts_at_release: i64,
         ceiling_ps: u64,
+        window: Window,
     },
     /// Kind 9: `bridge.fault_state`.
     BusFault {
@@ -142,13 +165,19 @@ pub enum Record {
         nets: Vec<String>,
         firmware_sees: String,
     },
-    /// Kind 10: the boot's witnesses (`firmware.observed`).
+    /// Kind 10: the boot's witnesses (`firmware.observed`), and the
+    /// firmware's executable segments the judge placed `pc` against
+    /// (`AET-WO-2205` §1.5).
     BootObserved {
         image_sha256: [u8; 32],
         boot_word: Reading,
         instructions_expected: u64,
         instructions_observed: Option<u64>,
         pc: Option<u32>,
+        /// `[start, end)` at each segment's physical address, which is its
+        /// virtual one (`AET-WO-2204`), sorted, at most
+        /// [`MAX_EXECUTABLE_SEGMENTS`].
+        executable: Vec<(u32, u32)>,
     },
     /// Kind 11: one solved register after the boot.
     RegisterObserved { name: String, reading: Reading },
@@ -277,6 +306,10 @@ fn witness_lines_ok(v: &[String]) -> bool {
 /// cutting it here cannot make it match.
 pub const MAX_WITNESS_LINES: usize = 16;
 
+fn window_value(w: &Window) -> Value {
+    Value::Array(vec![u(w.deck_hz.into()), u(w.declared_hz.into())])
+}
+
 fn reading(r: &Reading) -> Value {
     Value::Array(vec![
         u(r.address.into()),
@@ -362,6 +395,15 @@ impl<'a> Fields<'a> {
         let v = inner.texts()?;
         inner.end()?;
         Some(Some(v))
+    }
+    fn window(&mut self) -> Option<Window> {
+        let mut w = Fields(self.array()?.iter());
+        let window = Window {
+            deck_hz: w.u32()?,
+            declared_hz: w.u32()?,
+        };
+        w.end()?;
+        Some(window)
     }
     fn reading(&mut self) -> Option<Reading> {
         let mut r = Fields(self.array()?.iter());
@@ -456,13 +498,23 @@ fn override_from(v: &Value) -> Option<Override> {
     Some(o)
 }
 
+impl Window {
+    fn check(&self) -> Result<(), &'static str> {
+        if self.deck_hz > 0 && self.declared_hz > 0 {
+            Ok(())
+        } else {
+            Err("a window's deck and declared speeds are not both above 0")
+        }
+    }
+}
+
 impl Record {
     pub fn kind(&self) -> u64 {
         FIRST_KIND
             + match self {
                 Self::Scenario { .. } => 0,
                 Self::Solved { .. } => 1,
-                Self::RiseMeasured { .. } => 2,
+                Self::RiseComputed { .. } => 2,
                 Self::LineStuckHigh { .. } => 3,
                 Self::BusFault { .. } => 4,
                 Self::BootObserved { .. } => 5,
@@ -500,7 +552,7 @@ impl Record {
             Self::Scenario { .. }
                 | Self::Solved { .. }
                 | Self::I2cBusSolved { .. }
-                | Self::RiseMeasured { .. }
+                | Self::RiseComputed { .. }
                 | Self::LineStuckHigh { .. }
                 | Self::BusFault { .. }
                 | Self::RailDeclared { .. }
@@ -531,13 +583,14 @@ impl Record {
                 Value::Bytes(specification_sha256.to_vec()),
                 Value::Bytes(topology_sha256.to_vec()),
             ],
-            Self::RiseMeasured {
+            Self::RiseComputed {
                 bus,
                 net,
                 rise_30_70_ps,
                 complete,
                 ceiling_ps,
                 exceeds,
+                window,
             } => vec![
                 t(bus),
                 t(net),
@@ -545,17 +598,20 @@ impl Record {
                 flag(*complete),
                 u(*ceiling_ps),
                 flag(*exceeds),
+                window_value(window),
             ],
             Self::LineStuckHigh {
                 bus,
                 net,
                 microvolts_at_release,
                 ceiling_ps,
+                window,
             } => vec![
                 t(bus),
                 t(net),
                 Value::from_i64(*microvolts_at_release),
                 u(*ceiling_ps),
+                window_value(window),
             ],
             Self::BusFault {
                 bus,
@@ -578,12 +634,19 @@ impl Record {
                 instructions_expected,
                 instructions_observed,
                 pc,
+                executable,
             } => vec![
                 Value::Bytes(image_sha256.to_vec()),
                 reading(boot_word),
                 u(*instructions_expected),
                 opt(*instructions_observed),
                 opt(pc.map(u64::from)),
+                Value::Array(
+                    executable
+                        .iter()
+                        .map(|&(s, e)| Value::Array(vec![u(s.into()), u(e.into())]))
+                        .collect(),
+                ),
             ],
             Self::RegisterObserved { name, reading: r } => vec![t(name), reading(r)],
             Self::I2cCheck {
@@ -734,19 +797,21 @@ impl Record {
                 specification_sha256: f.hash()?,
                 topology_sha256: f.hash()?,
             },
-            7 => Self::RiseMeasured {
+            7 => Self::RiseComputed {
                 bus: f.text()?,
                 net: f.text()?,
                 rise_30_70_ps: f.uint()?,
                 complete: f.flag()?,
                 ceiling_ps: f.uint()?,
                 exceeds: f.flag()?,
+                window: f.window()?,
             },
             8 => Self::LineStuckHigh {
                 bus: f.text()?,
                 net: f.text()?,
                 microvolts_at_release: f.int()?,
                 ceiling_ps: f.uint()?,
+                window: f.window()?,
             },
             9 => Self::BusFault {
                 bus: f.text()?,
@@ -762,6 +827,18 @@ impl Record {
                 instructions_expected: f.uint()?,
                 instructions_observed: f.opt()?,
                 pc: f.opt_u32()?,
+                executable: {
+                    let mut v = Vec::new();
+                    for item in f.array()? {
+                        let Value::Array(pair) = item else {
+                            return None;
+                        };
+                        let mut g = Fields(pair.iter());
+                        v.push((g.u32()?, g.u32()?));
+                        g.end()?;
+                    }
+                    v
+                },
             },
             11 => Self::RegisterObserved {
                 name: f.text()?,
@@ -921,25 +998,28 @@ impl Record {
                 Ok(())
             }
             Self::Solved { .. } => Ok(()),
-            Self::RiseMeasured {
+            Self::RiseComputed {
                 bus,
                 net,
                 rise_30_70_ps,
                 complete,
                 ceiling_ps,
                 exceeds,
+                window,
             } => {
                 if !name_ok(bus) || !name_ok(net) {
                     Err("bus or net name is not 1 to 64 printable ASCII bytes")
                 } else if *exceeds != (!complete || rise_30_70_ps > ceiling_ps) {
                     Err("exceeds is not the rise against the ceiling")
                 } else {
-                    Ok(())
+                    window.check()
                 }
             }
-            Self::LineStuckHigh { bus, net, .. } => {
+            Self::LineStuckHigh {
+                bus, net, window, ..
+            } => {
                 if name_ok(bus) && name_ok(net) {
-                    Ok(())
+                    window.check()
                 } else {
                     Err("bus or net name is not 1 to 64 printable ASCII bytes")
                 }
@@ -964,7 +1044,15 @@ impl Record {
                     Ok(())
                 }
             }
-            Self::BootObserved { .. } => Ok(()),
+            Self::BootObserved { executable, .. } => {
+                let ordered = executable.iter().all(|&(s, e)| s < e)
+                    && executable.windows(2).all(|w| w[0].1 <= w[1].0);
+                if executable.len() > MAX_EXECUTABLE_SEGMENTS || !ordered {
+                    Err("executable segments are not at most 16 sorted, disjoint, nonempty ranges")
+                } else {
+                    Ok(())
+                }
+            }
             Self::RegisterObserved { name, .. } => {
                 if name_ok(name) {
                     Ok(())

@@ -681,8 +681,12 @@ impl Drop for Scratch {
 /// that will not say is unusable (exit 4).
 fn version(inv: run::Invocation<'_>) -> Result<String, run::Stop> {
     let name = inv.tool.name;
-    let out = inv.run()?;
-    match (out.ended, out.first_line()) {
+    version_of(name, &inv.run()?)
+}
+
+/// The first line of a tool's `--version` output, which must have exited 0.
+fn version_of(name: &str, out: &run::Output) -> Result<String, run::Stop> {
+    match (&out.ended, out.first_line()) {
         (run::Ended::Code(0), Some(v)) => Ok(v),
         (ended, _) => Err(run::Stop::unusable(
             name,
@@ -1103,7 +1107,8 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         a.extend(run::args(rest));
         a
     };
-    let version = version(invocation(with_config(&["--version"]), "status-version"))?;
+    let reported = invocation(with_config(&["--version"]), "status-version").run()?;
+    let version = version_of("renode", &reported)?;
     // The stock table and the boot's measured facts are Renode 1.17.0's;
     // another Renode is a fact the twin does not have (`INV-06`).
     let pinned = format!("Renode v{}", aethelgard_twin::platform::RENODE_VERSION);
@@ -1113,6 +1118,13 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             format!("`{version}` is not the {pinned} the twin's platform is pinned to"),
         ));
     }
+    // A boot's archive names the build Renode reported (`AET-WO-2205` §1.1).
+    let build = match &ready {
+        Some(_) => Some(renode::build(&reported.stdout).ok_or_else(|| {
+            run::Stop::unusable("renode", "`renode --version` named no build".to_owned())
+        })?),
+        None => None,
+    };
     // A declared droop: the rail is solved once, before the boot, and its
     // crossings become the resets the boot renders (`AET-WO-2301`, ruled D1).
     let droop = match ready.as_ref().and_then(|r| r.rail.as_ref()) {
@@ -1182,6 +1194,10 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     };
     // The analog findings first: they are the evidence the boot's effect follows.
     let bridge = analog.as_ref().and_then(|(pass, _)| pass.sandbox);
+    let mut tools: Vec<(&'static str, String)> = analog
+        .as_ref()
+        .map(|(pass, _)| pass.tools.clone())
+        .unwrap_or_default();
     let (analog, findings) = match analog {
         Some((pass, _)) => {
             let mut all = pass.findings;
@@ -1228,6 +1244,12 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     if let (Some(r), Some(plan)) = (&ready, &plan) {
         v.boot = Some(boot_report(r, plan, observed.as_ref()));
     }
+    // What judged the boot, as each tool reported it (`AET-WO-2205` §1.1).
+    if let Some(build) = build {
+        v.tools
+            .push(("aethelgard", env!("CARGO_PKG_VERSION").to_owned()));
+        v.tools.push(("renode", build));
+    }
     if let Some((records, faults)) = analog {
         v.analog = Some(records);
         v.faults = Some(faults);
@@ -1235,7 +1257,23 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     if let Some((solved, report)) = droop_report {
         v.droop = Some(report);
         v.sandbox.unmet(solved.sandbox.uid_boundary_unmet);
+        tools.extend(solved.tools.iter().cloned());
     }
+    // One bridge ran each step: a step that named another version is a
+    // stop, never a choice between them.
+    tools.sort();
+    tools.dedup();
+    if let Some(w) = tools.windows(2).find(|w| w[0].0 == w[1].0) {
+        return Err(run::Stop::tool_error(
+            w[0].0,
+            format!(
+                "reported two versions in one run: `{}`, `{}`",
+                w[0].1, w[1].1
+            ),
+        ));
+    }
+    v.tools.extend(tools);
+    v.tools.sort();
     Ok(v)
 }
 
@@ -1380,6 +1418,7 @@ fn boot_report(
             })
             .collect(),
         icsr: observed.map(|o| word(o.icsr)),
+        executable: plan.executable.to_vec(),
     }
 }
 

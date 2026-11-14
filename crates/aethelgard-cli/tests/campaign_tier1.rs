@@ -174,6 +174,15 @@ fn faulted() -> String {
 /// line without the boot's fixed parts (the seed and a 100 ms RunFor
 /// among them), and prints `stdout`.
 fn toolbox(stdout: &str) -> Dir {
+    toolbox_built(stdout, BUILD)
+}
+
+/// The build line the stubs' `--version` prints, as the pinned image's
+/// Renode prints its own (`AET-WO-2205` §1.1).
+const BUILD: &str = "1.17.0+20260907gitf1dd1b4af";
+
+/// As [`toolbox`], with Renode reporting `build` as its build.
+fn toolbox_built(stdout: &str, build: &str) -> Dir {
     let tb = Dir::new("tb");
     let out = tb.write("renode.out", stdout.as_bytes());
     let body = format!(
@@ -181,7 +190,7 @@ fn toolbox(stdout: &str) -> Dir {
 [ "$1" = --config ] || exit 97
 /bin/grep -qx 'use-synchronous-logging = true' "$2" || exit 97
 /bin/grep -qx 'log-timestamps-type = Host' "$2" || exit 97
-if [ "$3" = --version ]; then printf 'Renode v1.17.0\n'; exit 0; fi
+if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: {build}\n'; exit 0; fi
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
   "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
@@ -189,7 +198,8 @@ case "$7" in
 esac
 /bin/cat '{out}'
 "#,
-        out = out.display()
+        out = out.display(),
+        build = build,
     );
     let stub = tb.write("renode", body.as_bytes());
     fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
@@ -394,6 +404,74 @@ fn strings(v: &Value, key: &str) -> Vec<String> {
 }
 
 // 1. The reference scenarios.
+
+/// `AET-WO-2205` §1.1: the header names the tools that judged the run, each
+/// as the tool reported it, never a constant. A Renode stub that prints
+/// another build line puts that build in the archive, and `replay` reports
+/// it without requiring it equal to anything on the replaying host.
+#[test]
+fn the_header_names_the_renode_build_the_stub_printed_and_replay_reports_it() {
+    let tb = toolbox_built(&good(), "9.9.9+20991231gitdeadbeef0");
+    let work = Work::new();
+    let archive = Dir::new("archive");
+    let out = campaign(
+        &cli(Some(BRIDGE_BY_PULL_UP)),
+        &tb.0,
+        &root(),
+        &["scenarios/sentinel-01/pullup-2k2.json"],
+        &work.firmware,
+        &archive.0.join("a"),
+    );
+    let all = lines(&out);
+    assert_eq!(out.status.code(), Some(0), "{all:?} {:?}", out.stderr);
+    let run = PathBuf::from(all[0]["run"].as_str().unwrap());
+    let header = aethelgard_chaos::replay_dir(&run).unwrap().header;
+    let identity: Value = serde_json::from_str(&common::bridge_identity()).unwrap();
+    let want = [
+        ("aethelgard", env!("CARGO_PKG_VERSION")),
+        (
+            "aethelgard-bridge",
+            identity["source_sha256"].as_str().unwrap(),
+        ),
+        ("ngspice", "44.2"),
+        ("renode", "9.9.9+20991231gitdeadbeef0"),
+    ];
+    let got: Vec<(&str, &str)> = header
+        .tools
+        .iter()
+        .map(|(n, v)| (n.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(got, want);
+    let r = lines(&replay(&tb.0, &run));
+    assert_eq!(r[0]["ok"], true, "{r:?}");
+    let reported: Vec<(String, String)> = r[0]["tools"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .map(|(n, v)| (n.clone(), v.as_str().unwrap().to_owned()))
+        .collect();
+    assert_eq!(reported, header.tools);
+
+    // A Renode that names no build is not one a boot can be archived by.
+    let tb = toolbox_built(&good(), "");
+    let refused = campaign(
+        &cli(Some(BRIDGE_BY_PULL_UP)),
+        &tb.0,
+        &root(),
+        &["scenarios/sentinel-01/pullup-2k2.json"],
+        &work.firmware,
+        &archive.0.join("b"),
+    );
+    let r = lines(&refused);
+    assert_eq!(refused.status.code(), Some(4), "{r:?}");
+    assert!(
+        r.last().unwrap()["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("named no build"),
+        "{r:?}"
+    );
+}
 
 #[test]
 fn the_2k2_reference_scenario_passes_archives_and_replays_identically() {
@@ -1799,7 +1877,7 @@ fn propose_refuses_a_run_replay_refuses_or_a_topology_the_run_did_not_have() {
             for x in r.iter_mut() {
                 match x {
                     Record::I2cBusSolved { lines, .. } => lines[0].ceiling_ps = 250_000,
-                    Record::RiseMeasured {
+                    Record::RiseComputed {
                         net, ceiling_ps, ..
                     } if net == "I2C_SCL" => *ceiling_ps = 250_000,
                     _ => {}
@@ -2191,7 +2269,7 @@ fn droop_toolbox_then(probe: [&str; 3], witness: Witness, then: &str) -> Dir {
     let body = format!(
         r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
-if [ "$3" = --version ]; then printf 'Renode v1.17.0\n'; exit 0; fi
+if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: {build}\n'; exit 0; fi
 [ $# = 7 ] || exit 98
 case "$7" in
   *"emulation RunFor \"0.001014430\"; machine Reset; "*"cpu IsHalted true; "*"emulation RunFor \"0.000213550\"; cpu IsHalted false; echo \"AETHELGARD-RELEASE-0\"; emulation RunFor \"0.000000010\"; emulation RunFor \"0.000099990\"; echo \"AETHELGARD-PROBE-BEGIN-0\""*) ;;
@@ -2200,7 +2278,8 @@ esac
 /bin/cat '{out}'
 {then}
 "#,
-        out = out.display()
+        out = out.display(),
+        build = BUILD,
     );
     let stub = tb.write("renode", body.as_bytes());
     fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();

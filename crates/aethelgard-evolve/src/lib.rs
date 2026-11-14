@@ -171,11 +171,14 @@ pub enum View {
         from: Vec<String>,
         nets: Vec<String>,
     },
-    /// Kind 10.
+    /// Kind 10: with whether the core ended outside every executable
+    /// segment the record archives (`AET-WO-2205` §1.5).
     Boot {
         boot_word: Field,
         instructions_expected: u64,
         instructions_observed: Option<u64>,
+        pc: Option<u32>,
+        pc_outside: bool,
     },
     /// Kind 11, or kind 13 with its device: each field the join gives a
     /// solved value. A witness that is no evidence either way has none.
@@ -198,14 +201,14 @@ pub struct Evidence {
     pub view: View,
 }
 
-/// A measured rise (kind 7) of one line.
+/// A computed rise (kind 7) of one line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rise {
     pub rise_ps: u64,
     pub complete: bool,
 }
 
-/// One line of a solved bus (kind 15), with every rise the run measured on it.
+/// One line of a solved bus (kind 15), with every rise the run computed for it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LineRises {
     pub net: String,
@@ -213,7 +216,7 @@ pub struct LineRises {
     pub rises: Vec<Rise>,
 }
 
-/// One solved bus (kind 15) and its lines' measured rises.
+/// One solved bus (kind 15) and its lines' computed rises.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SolvedBus {
     pub bus: String,
@@ -422,7 +425,7 @@ impl<'a> Run<'a> {
     fn faults(&self, b: usize) -> Vec<usize> {
         let id = self.buses[b].id;
         self.indices(|r| match r {
-            Record::RiseMeasured { bus, exceeds, .. } => bus == id && *exceeds,
+            Record::RiseComputed { bus, exceeds, .. } => bus == id && *exceeds,
             Record::LineStuckHigh { bus, .. } | Record::BusFault { bus, .. } => bus == id,
             _ => false,
         })
@@ -430,7 +433,7 @@ impl<'a> Run<'a> {
 
     fn rises(&self, b: usize) -> Vec<usize> {
         let id = self.buses[b].id;
-        self.indices(|r| matches!(r, Record::RiseMeasured { bus, .. } if bus == id))
+        self.indices(|r| matches!(r, Record::RiseComputed { bus, .. } if bus == id))
     }
 
     /// For a bus with no fault (`decide` asks only of those): the header knows
@@ -441,7 +444,7 @@ impl<'a> Run<'a> {
         bus.joined.is_some()
             && bus.lines.iter().all(|line| {
                 self.records.iter().any(|r| {
-                    matches!(r, Record::RiseMeasured { bus: x, net, .. }
+                    matches!(r, Record::RiseComputed { bus: x, net, .. }
                         if x == bus.id && *net == line.net)
                 })
             })
@@ -587,6 +590,7 @@ impl<'a> Run<'a> {
             } => {
                 boot_word.observed != Some(boot_word.expected)
                     || instructions_observed.is_some_and(|n| n < *instructions_expected)
+                    || pc_outside(r)
             }
             Record::RegisterObserved { name, reading } => self.unowned(name, reading) != 0,
             _ => false,
@@ -595,7 +599,7 @@ impl<'a> Run<'a> {
 
     fn scope(&self, i: usize) -> Option<Scope<'a>> {
         Some(match &self.records[i] {
-            Record::RiseMeasured { bus, .. }
+            Record::RiseComputed { bus, .. }
             | Record::LineStuckHigh { bus, .. }
             | Record::BusFault { bus, .. } => Scope::Bus(self.bus_named(bus)?, None),
             Record::I2cCheck { reference, .. } | Record::I2cWitness { reference, .. } => {
@@ -620,7 +624,7 @@ impl<'a> Run<'a> {
         let status_is = |r: &Record, f: &dyn Fn(&str) -> bool| matches!(r, Record::I2cCheck { status: Some(s), .. } if f(s));
         let events = match kind {
             campaign::PAST_CEILING_FINDING => {
-                self.indices(|r| matches!(r, Record::RiseMeasured { exceeds: true, .. }))
+                self.indices(|r| matches!(r, Record::RiseComputed { exceeds: true, .. }))
             }
             campaign::STUCK_HIGH_FINDING => {
                 self.indices(|r| matches!(r, Record::LineStuckHigh { .. }))
@@ -654,6 +658,7 @@ impl<'a> Run<'a> {
                 matches!(r, Record::BootObserved { boot_word, .. }
                     if boot_word.observed != Some(boot_word.expected))
             }),
+            campaign::PC_OUTSIDE_FINDING => self.indices(pc_outside),
             "cpu_halted" => self.indices(|r| {
                 matches!(r, Record::BootObserved { instructions_expected, instructions_observed, .. }
                     if instructions_observed.is_some_and(|n| n < *instructions_expected))
@@ -727,6 +732,13 @@ impl<'a> Run<'a> {
     }
 }
 
+/// Kind 10 with its `pc` outside every executable segment it archives: the
+/// core ran where the firmware put no code (`AET-WO-2205` §1.5, `3100` F13).
+fn pc_outside(r: &Record) -> bool {
+    matches!(r, Record::BootObserved { pc: Some(pc), executable, .. }
+        if !aethelgard_chaos::record::inside(executable, *pc))
+}
+
 /// The run, judged by exactly the rules `replay` applies after its reader
 /// ([`campaign::check_archived`]), with every solved bus joined to the ST
 /// header; and whether its verdict passed.
@@ -785,7 +797,7 @@ impl RunView<'_> {
             _ => None,
         };
         let view = match record {
-            Record::RiseMeasured {
+            Record::RiseComputed {
                 net,
                 rise_30_70_ps,
                 complete,
@@ -808,8 +820,11 @@ impl RunView<'_> {
                 boot_word,
                 instructions_expected,
                 instructions_observed,
+                pc,
                 ..
             } => View::Boot {
+                pc: *pc,
+                pc_outside: pc_outside(record),
                 boot_word: Field {
                     register: "boot_word".to_owned(),
                     address: boot_word.address,
@@ -880,7 +895,7 @@ impl RunView<'_> {
         })
     }
 
-    /// Every solved bus, in the run's order, with each line's measured rises.
+    /// Every solved bus, in the run's order, with each line's computed rises.
     pub fn buses(&self) -> Vec<SolvedBus> {
         let run = &self.0;
         run.buses
@@ -897,7 +912,7 @@ impl RunView<'_> {
                             .records
                             .iter()
                             .filter_map(|r| match r {
-                                Record::RiseMeasured {
+                                Record::RiseComputed {
                                     bus,
                                     net,
                                     rise_30_70_ps,

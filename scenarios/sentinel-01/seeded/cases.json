@@ -55,6 +55,12 @@
       "file": "firmware/src/main.rs",
       "find": "write_volatile(BOOT_MAGIC)",
       "replace": "write_volatile(0)"
+    },
+    "leave-firmware": {
+      "why": "after writing the boot word, the core jumps into the FMC bank at 0x70000000, plain zero-filled memory outside every executable segment (AET-WO-2205 \u00a71.5; twin_tier2's adversarial A7)",
+      "file": "firmware/src/main.rs",
+      "find": "unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_MAGIC) };",
+      "replace": "unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_MAGIC) };\n    unsafe { core::arch::asm!(\"ldr r0, =0x70000001\", \"bx r0\", options(noreturn)) };"
     }
   },
   "cases": [
@@ -288,6 +294,16 @@
       "domain": "none",
       "rule": "N1",
       "findings": []
+    },
+    {
+      "name": "leave-firmware",
+      "scenario": "scenarios/sentinel-01/pullup-2k2.json",
+      "mutant": "leave-firmware",
+      "domain": "software",
+      "rule": "S2",
+      "findings": [
+        "pc_outside_firmware"
+      ]
     }
   ]
 }

@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 
 use crate::event::{Header, name_ok};
 use crate::power::{self, Band};
-use crate::record::{BusLine, Droop, Line, Override, Reading, Record};
+use crate::record::{self, BusLine, Droop, Line, Override, Reading, Record};
 use crate::replay::State;
 
 /// The scenario format versions read: 1 (static scenarios, unchanged) and 2,
@@ -45,6 +45,9 @@ pub const UNRECOVERED_FINDING: &str = "brownout_unrecovered";
 /// A droop whose rail left the domain's declared tolerance (`info`).
 pub const BELOW_TOLERANCE_FINDING: &str = "rail_below_tolerance";
 pub const STUCK_HIGH_FINDING: &str = "analog_line_stuck_high";
+/// The boot judge's finding for a core that ended outside every executable
+/// segment of the firmware, which kind 10 archives (`AET-WO-2205` §1.5).
+pub const PC_OUTSIDE_FINDING: &str = "pc_outside_firmware";
 
 /// A scenario refused, with the kind `aethelgard` reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -650,7 +653,7 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             Record::ExpectedCounts { .. } => 1,
             Record::Solved { .. } => 2,
             Record::I2cBusSolved { .. } => 3,
-            Record::RiseMeasured { .. } | Record::LineStuckHigh { .. } => 4,
+            Record::RiseComputed { .. } | Record::LineStuckHigh { .. } => 4,
             Record::BusFault { .. } => 5,
             Record::RailDeclared { .. } => 6,
             Record::RailCrossing { .. }
@@ -706,7 +709,7 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     let mut needed: BTreeMap<&str, u64> = BTreeMap::new();
     for r in records {
         match r {
-            Record::RiseMeasured {
+            Record::RiseComputed {
                 bus,
                 net,
                 exceeds: true,
@@ -784,6 +787,15 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             .map(|(_, _, n)| *n)
             .sum()
     };
+    // The boot's `pc` against the segments kind 10 archives: the verdict
+    // names a core outside the firmware exactly when they place it there.
+    let outside = records.iter().any(|r| {
+        matches!(r, Record::BootObserved { pc: Some(pc), executable, .. }
+            if !record::inside(executable, *pc))
+    });
+    if count(PC_OUTSIDE_FINDING) != u64::from(outside) {
+        return Err("the verdict's pc_outside_firmware does not match the boot's pc and segments");
+    }
     let droop_counts = check_droop_records(records, overrides)?;
     for (kind, want) in droop_counts {
         if any_severity(kind) != want {
@@ -1132,7 +1144,7 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
     let mut seen: BTreeSet<(u8, &str, &str)> = BTreeSet::new();
     for r in records {
         let keys: Vec<(u8, &str, &str)> = match r {
-            Record::RiseMeasured { bus, net, .. } | Record::LineStuckHigh { bus, net, .. } => {
+            Record::RiseComputed { bus, net, .. } | Record::LineStuckHigh { bus, net, .. } => {
                 vec![(0, bus, net)]
             }
             Record::I2cCheck { reference, .. } => vec![(1, reference, "")],
@@ -1172,7 +1184,7 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
     }
     for r in records {
         match r {
-            Record::RiseMeasured {
+            Record::RiseComputed {
                 bus,
                 net,
                 ceiling_ps,
@@ -1239,6 +1251,31 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
 /// The header artifacts of a campaign run, in the header's sorted order.
 pub const ARTIFACTS: [&str; 5] = ["base", "firmware", "scenario", "specification", "topology"];
 
+/// The header's tool names (`AET-WO-2205` §1.1): the engine and Renode judge
+/// every run; the bridge and its ngspice only a run that computed a line or
+/// a rail (kinds 7, 8 or 16), since the bridge runs only then.
+pub const ENGINE: &str = "aethelgard";
+pub const RENODE: &str = "renode";
+pub const BRIDGE: &str = "aethelgard-bridge";
+pub const NGSPICE: &str = "ngspice";
+
+/// The tools a campaign run's header names, sorted.
+pub fn tools_of(records: &[Record]) -> &'static [&'static str] {
+    let bridge = records.iter().any(|r| {
+        matches!(
+            r,
+            Record::RiseComputed { .. }
+                | Record::LineStuckHigh { .. }
+                | Record::RailDeclared { .. }
+        )
+    });
+    if bridge {
+        &[ENGINE, BRIDGE, NGSPICE, RENODE]
+    } else {
+        &[ENGINE, RENODE]
+    }
+}
+
 /// Judge an archived campaign run, after the strict reader: it holds no
 /// event but campaign records, its header names exactly what its records
 /// name, and its `run_id` is the one those hashes give (`AET-WO-2300`
@@ -1256,6 +1293,10 @@ pub fn check_archived(header: &Header, state: &State) -> Result<RunSummary, &'st
     let names: Vec<&str> = header.artifacts.iter().map(|(n, _)| n.as_str()).collect();
     if names != ARTIFACTS {
         return Err("the header's artifacts are not a campaign run's");
+    }
+    let tools: Vec<&str> = header.tools.iter().map(|(n, _)| n.as_str()).collect();
+    if tools != tools_of(&state.records) {
+        return Err("the header's tools are not the ones its records say judged the run");
     }
     let hash = |i: usize| &header.artifacts[i].1;
     // The topology follows the scenario, and its expected counts if any.

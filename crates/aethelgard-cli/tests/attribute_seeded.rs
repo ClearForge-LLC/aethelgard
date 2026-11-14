@@ -472,7 +472,7 @@ mod tier2 {
             }
             // Every measured rise, recorded (FEEDBACK, §1.4).
             for record in replay_dir(&r.run).unwrap().state.records {
-                if let Record::RiseMeasured {
+                if let Record::RiseComputed {
                     net,
                     rise_30_70_ps,
                     complete,
@@ -899,7 +899,7 @@ mod tier2 {
         let rise = passed
             .iter()
             .find_map(|x| match x {
-                Record::RiseMeasured {
+                Record::RiseComputed {
                     net: n,
                     rise_30_70_ps,
                     complete: true,

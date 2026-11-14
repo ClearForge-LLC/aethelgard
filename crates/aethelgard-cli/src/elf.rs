@@ -41,8 +41,10 @@ struct Load {
 #[derive(Debug)]
 pub struct Image {
     pub sha256: String,
-    /// The virtual ranges of the executable segments: where a firmware that
-    /// reached its fixed point is still running (adversarial A7).
+    /// The ranges of the executable segments, at their physical address,
+    /// which is their virtual one: where a firmware that reached its fixed
+    /// point is still running (adversarial A7), sorted by address, at most
+    /// [`aethelgard_chaos::record::MAX_EXECUTABLE_SEGMENTS`].
     pub executable: Vec<(u64, u64)>,
     /// Every `yield; b.n` self-loop in the executable segments' file bytes,
     /// what Renode loads (`AET-WO-2204` D3), at most [`MAX_SELF_LOOPS`]. The
@@ -214,6 +216,21 @@ pub fn check(bytes: &[u8], memory: &Memory, boot_word: u32) -> Result<Image, Sto
             )
         })
         .collect();
+    // Disjoint, since no two segments overlap in memory (above).
+    let mut executable: Vec<(u64, u64)> = loads
+        .iter()
+        .filter(|l| l.flags & PF_X != 0 && l.memsz > 0)
+        .map(|l| (l.paddr, l.paddr + l.memsz))
+        .collect();
+    executable.sort_unstable();
+    // Kind 10 archives them (`AET-WO-2205` §1.5).
+    if executable.len() > aethelgard_chaos::record::MAX_EXECUTABLE_SEGMENTS {
+        return Err(malformed(format!(
+            "the firmware has {} executable segments, more than {}",
+            executable.len(),
+            aethelgard_chaos::record::MAX_EXECUTABLE_SEGMENTS
+        )));
+    }
     if self_loops.len() > MAX_SELF_LOOPS {
         return Err(malformed(format!(
             "the executable segments hold {} `yield; b.n` self-loops, more than {MAX_SELF_LOOPS}",
@@ -222,11 +239,7 @@ pub fn check(bytes: &[u8], memory: &Memory, boot_word: u32) -> Result<Image, Sto
     }
     Ok(Image {
         sha256: hex(hasher.finalize()),
-        executable: loads
-            .iter()
-            .filter(|l| l.flags & PF_X != 0 && l.memsz > 0)
-            .map(|l| (l.paddr, l.paddr + l.memsz))
-            .collect(),
+        executable,
         self_loops,
     })
 }

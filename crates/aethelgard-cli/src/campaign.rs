@@ -15,7 +15,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
 use aethelgard_chaos::campaign::{self as rules, Scenario, ScenarioError};
-use aethelgard_chaos::record::{BusLine, Line, Override, Reading, Record};
+use aethelgard_chaos::record::{BusLine, Line, Override, Reading, Record, Window};
 use aethelgard_chaos::{Event, Header, TraceWriter};
 use aethelgard_ir::{IdentifierKind, SolvedTopology, Specification, check_identifier};
 use serde::Serialize;
@@ -560,6 +560,11 @@ fn run_one(
             ("specification".to_owned(), p.specification_sha256),
             ("topology".to_owned(), topology_sha256),
         ],
+        tools: verdict
+            .tools
+            .iter()
+            .map(|(n, v)| ((*n).to_owned(), v.clone()))
+            .collect(),
     };
     let dir = archive.join(hex(p.run_id));
     let archived = (|| {
@@ -717,11 +722,7 @@ fn droop_records(d: &crate::verdict::DroopReport) -> Result<Vec<Record>, String>
                 boot_word: word(&o.boot_word)?,
                 status: word(&o.status)?,
                 value: word(&o.value)?,
-                witness: o
-                    .witness
-                    .as_ref()
-                    .and_then(|w| w.observed.as_deref())
-                    .map(archived_lines),
+                witness: o.witness.as_deref().map(archived_lines),
             },
         ));
     }
@@ -791,7 +792,7 @@ fn word(w: &Word) -> Result<Reading, String> {
     })
 }
 
-/// Picoseconds from the bridge's nanoseconds. A measured rise rounds up, so
+/// Picoseconds from the bridge's nanoseconds. A computed rise rounds up, so
 /// a rise past its whole-nanosecond ceiling stays past it in picoseconds; a
 /// lower bound rounds down, so it stays a lower bound.
 fn picoseconds(ns: f64, up: bool) -> Result<u64, String> {
@@ -811,26 +812,32 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
     let mut out = Vec::new();
     for a in v.analog.as_deref().unwrap_or_default() {
         let ceiling_ps = u64::from(a.ceiling_ns) * 1000;
+        let window = Window {
+            deck_hz: a.deck_hz,
+            declared_hz: a.declared_hz,
+        };
         let record = match (
             a.rise_30_70_ns,
             a.rise_30_70_ns_lower_bound,
             a.volts_at_release,
         ) {
-            (Some(rise), None, None) => Record::RiseMeasured {
+            (Some(rise), None, None) => Record::RiseComputed {
                 bus: a.bus.clone(),
                 net: a.net.clone(),
                 rise_30_70_ps: picoseconds(rise, true)?,
                 complete: a.complete,
                 ceiling_ps,
                 exceeds: a.exceeds,
+                window,
             },
-            (None, Some(bound), None) => Record::RiseMeasured {
+            (None, Some(bound), None) => Record::RiseComputed {
                 bus: a.bus.clone(),
                 net: a.net.clone(),
                 rise_30_70_ps: picoseconds(bound, false)?,
                 complete: a.complete,
                 ceiling_ps,
                 exceeds: a.exceeds,
+                window,
             },
             (None, None, Some(volts)) => {
                 let uv = (volts * 1e6).round();
@@ -844,6 +851,7 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
                     #[allow(clippy::cast_possible_truncation)]
                     microvolts_at_release: uv as i64,
                     ceiling_ps,
+                    window,
                 }
             }
             _ => return Err(format!("analog record on `{}` has no single value", a.net)),
@@ -875,6 +883,14 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
         instructions_expected: boot.instructions.expected,
         instructions_observed: boot.instructions.observed,
         pc: boot.pc.as_deref().map(hex_u32).transpose()?,
+        executable: boot
+            .executable
+            .iter()
+            .map(|&(s, e)| match (u32::try_from(s), u32::try_from(e)) {
+                (Ok(s), Ok(e)) => Ok((s, e)),
+                _ => Err(format!("segment [{s:#x}, {e:#x}) is not in 32 bits")),
+            })
+            .collect::<Result<_, String>>()?,
     });
     for r in &boot.registers {
         out.push(Record::RegisterObserved {
@@ -932,6 +948,9 @@ struct Replayed {
     findings: Vec<String>,
     expect_findings: Vec<String>,
     artifacts: BTreeMap<String, String>,
+    /// The tools that judged the run, as the archive names them; never
+    /// required equal to this host's (`AET-WO-2205` §1.1).
+    tools: BTreeMap<String, String>,
     event_count: u64,
     trace_bytes: u64,
     state_sequence_hash: String,
@@ -1001,6 +1020,7 @@ pub fn replay(dir: &Path) -> ExitCode {
                 .iter()
                 .map(|(n, h)| (n.clone(), hex(h)))
                 .collect(),
+            tools: replayed.header.tools.iter().cloned().collect(),
             event_count: replayed.manifest.event_count,
             trace_bytes: replayed.manifest.trace_bytes,
             state_sequence_hash: hex(replayed.manifest.state_hash),
@@ -1311,7 +1331,7 @@ mod tests {
         assert!(e.contains("no pin assignment"), "{e}");
     }
 
-    /// A measured rise rounds up and a lower bound rounds down, so neither
+    /// A computed rise rounds up and a lower bound rounds down, so neither
     /// crosses a whole-nanosecond ceiling in the wrong direction.
     #[test]
     fn a_rise_rounds_up_and_a_lower_bound_rounds_down() {

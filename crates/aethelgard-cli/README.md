@@ -314,10 +314,10 @@ A bridge that exits nonzero, is killed, or answers anything but one of the three
 The verdict carries the pass beside `boot`, never inside it: at 47 kΩ the reference gives three separate records, the measured rise (`analog`), the decision (`faults`) and U2's TXIS timeout (`boot.i2c`). The firmware sees a faulted bus only as its devices' absence, which Renode 1.17.0 renders as a TXIS timeout because it models no NACK; `firmware_sees` says so.
 
 ```json
-"analog":[{"kind":"analog.rise_time_measured","source":"ngspice","bus":"SENSORS","net":"I2C_SCL","complete":true,
+"analog":[{"kind":"analog.rise_time_computed","source":"ngspice","bus":"SENSORS","net":"I2C_SCL","complete":true,
            "rise_30_70_ns":3982.300059495949,"ceiling_ns":300,"exceeds":true,"method":"interpolated","ngspice":"44.2"},…],
 "faults":[{"kind":"bridge.fault_state","source":"aethelgard","bus":"SENSORS","fault":"absent",
-           "from":["analog.rise_time_measured > ceiling_ns"],"nets":["I2C_SCL","I2C_SDA"],"firmware_sees":"…"}]
+           "from":["analog.rise_time_computed > ceiling_ns"],"nets":["I2C_SCL","I2C_SDA"],"firmware_sees":"…"}]
 ```
 
 ### Harness provenance (`prove`)
@@ -378,7 +378,7 @@ aethelgard replay --archive <dir>/<run id>
 **`campaign`** first reads the firmware's hash and every scenario: it parses, applies, validates and solves each one, and refuses (`DuplicateScenario`) two that would name one run. It creates `--archive` if absent and refuses a run directory that already exists (`RunExists`). Any refusal is printed before anything runs. Then, for each scenario in the order given:
 
 1. It writes the platform `aethelgard-twin` emits for the overridden specification and runs exactly `simulate --firmware`'s path on it, with the same sandbox, bridge, bounds and judge, booting for **100 ms**, the longest `--for` admits, so a timed-out read still reaches the boot word. A held-low line (`line_held_low`) is not sent to the bridge: its bus is faulted without a measurement, with `i2c_line_held_low` and a `bridge.fault_state` whose `source` is `scenario <name>`.
-2. It archives every record of the verdict, as integer-only CBOR events, in a new run directory `<archive>/<run id>`: the scenario's sha256 and overrides, the overridden specification's and the solved topology's sha256, each `analog.rise_time_measured` (`rise_30_70_ps`, `complete`) and `analog.line_stuck_high`, each `bridge.fault_state`, the boot's witnesses, every register, each I2C identity read and controller witness, and the verdict. The header's `artifacts` are the `base` file's, the `firmware`'s, the `scenario`'s, the overridden `specification`'s and the `topology`'s hashes. A firmware whose bytes changed between the campaign's read and the boot's copy is refused (`FirmwareChanged`, exit `3`). The run is committed before its line is printed.
+2. It archives every record of the verdict, as integer-only CBOR events, in a new run directory `<archive>/<run id>`: the scenario's sha256 and overrides, the overridden specification's and the solved topology's sha256, each `analog.rise_time_computed` (`rise_30_70_ps`, `complete`) and `analog.line_stuck_high`, each `bridge.fault_state`, the boot's witnesses, every register, each I2C identity read and controller witness, and the verdict. The header's `artifacts` are the `base` file's, the `firmware`'s, the `scenario`'s, the overridden `specification`'s and the `topology`'s hashes. A firmware whose bytes changed between the campaign's read and the boot's copy is refused (`FirmwareChanged`, exit `3`). The run is committed before its line is printed.
 3. It prints one line:
 
 ```json

@@ -351,6 +351,7 @@ fn absent_boot() -> Record {
         instructions_expected: 1000,
         instructions_observed: None,
         pc: None,
+        executable: vec![(0, 0x1000_0000)],
     }
 }
 
@@ -380,33 +381,45 @@ fn one_of_each() -> Vec<Record> {
             specification_sha256: [2; 32],
             topology_sha256: [3; 32],
         },
-        Record::RiseMeasured {
+        Record::RiseComputed {
             bus: "SENSORS".into(),
             net: "I2C_SDA".into(),
             rise_30_70_ps: 450_000,
             complete: true,
             ceiling_ps: 300_000,
             exceeds: true,
+            window: aethelgard_chaos::record::Window {
+                deck_hz: 400_000,
+                declared_hz: 400_000,
+            },
         },
-        Record::RiseMeasured {
+        Record::RiseComputed {
             bus: "SENSORS".into(),
             net: "I2C_SCL".into(),
             rise_30_70_ps: 100,
             complete: false,
             ceiling_ps: 300_000,
             exceeds: true,
+            window: aethelgard_chaos::record::Window {
+                deck_hz: 400_000,
+                declared_hz: 400_000,
+            },
         },
         Record::LineStuckHigh {
             bus: "SENSORS".into(),
             net: "I2C_SDA".into(),
             microvolts_at_release: -123_456,
             ceiling_ps: 300_000,
+            window: aethelgard_chaos::record::Window {
+                deck_hz: 400_000,
+                declared_hz: 400_000,
+            },
         },
         Record::BusFault {
             bus: "SENSORS".into(),
             fault: "stuck".into(),
             source: "analog bridge".into(),
-            from: vec!["analog.rise_time_measured > ceiling_ns".into()],
+            from: vec!["analog.rise_time_computed > ceiling_ns".into()],
             nets: vec!["I2C_SCL".into(), "I2C_SDA".into()],
             firmware_sees: "timeout".into(),
         },
@@ -416,6 +429,7 @@ fn one_of_each() -> Vec<Record> {
             instructions_expected: 1000,
             instructions_observed: Some(999),
             pc: Some(0x0800_0100),
+            executable: vec![(0, 0x1000_0000)],
         },
         Record::RegisterObserved {
             name: "RCC_CR".into(),
@@ -527,13 +541,17 @@ fn refused(name: &str, record: Record) -> &'static str {
 }
 
 fn rise(complete: bool, rise: u64, exceeds: bool) -> Record {
-    Record::RiseMeasured {
+    Record::RiseComputed {
         bus: "B".into(),
         net: "N".into(),
         rise_30_70_ps: rise,
         complete,
         ceiling_ps: 300_000,
         exceeds,
+        window: aethelgard_chaos::record::Window {
+            deck_hz: 400_000,
+            declared_hz: 400_000,
+        },
     }
 }
 
@@ -695,11 +713,15 @@ fn raw_with_event(name: &str, item: Vec<u8>) -> Result<(), E> {
     replay_dir(&dir).map(|_| ())
 }
 
-/// `[7, 0, "A", "B", <rise>, 1, 300000, 0]`
+/// `[7, 0, "A", "B", <rise>, 1, 300000, 0, [400000, 400000]]`
 fn kind7_with(rise: &[u8]) -> Vec<u8> {
-    let mut item = vec![0x88, 0x07, 0x00, 0x61, b'A', 0x61, b'B'];
+    let mut item = vec![0x89, 0x07, 0x00, 0x61, b'A', 0x61, b'B'];
     item.extend(rise);
     item.extend([0x01, 0x1a, 0x00, 0x04, 0x93, 0xe0, 0x00]);
+    // The window (`AET-WO-2205` §1.3): 400000 is 0x00061a80.
+    item.extend([
+        0x82, 0x1a, 0x00, 0x06, 0x1a, 0x80, 0x1a, 0x00, 0x06, 0x1a, 0x80,
+    ]);
     item
 }
 
@@ -736,16 +758,20 @@ fn a_map_where_the_rise_belongs_is_not_deterministic_cbor() {
 
 // ---- 7. check_run ----
 
-const CAUSE: &str = "analog.rise_time_measured > ceiling_ns";
+const CAUSE: &str = "analog.rise_time_computed > ceiling_ns";
 
 fn good() -> Vec<Record> {
-    let rise = |net: &str| Record::RiseMeasured {
+    let rise = |net: &str| Record::RiseComputed {
         bus: "SENSORS".into(),
         net: net.into(),
         rise_30_70_ps: 450_000,
         complete: true,
         ceiling_ps: 300_000,
         exceeds: true,
+        window: aethelgard_chaos::record::Window {
+            deck_hz: 400_000,
+            declared_hz: 400_000,
+        },
     };
     vec![
         Record::Scenario {
@@ -772,6 +798,7 @@ fn good() -> Vec<Record> {
             instructions_expected: 10,
             instructions_observed: Some(10),
             pc: Some(0),
+            executable: vec![(0, 0x1000_0000)],
         },
         Record::RegisterObserved {
             name: "R".into(),
@@ -931,7 +958,7 @@ fn records_out_of_order_are_refused() {
 #[test]
 fn a_fault_with_no_analog_record_is_refused() {
     let mut r = good();
-    r.retain(|x| !matches!(x, Record::RiseMeasured { .. }));
+    r.retain(|x| !matches!(x, Record::RiseComputed { .. }));
     assert_eq!(
         check_run(&r).unwrap_err(),
         "a bus fault names a net with no measurement past its ceiling"
@@ -1053,7 +1080,7 @@ fn held_low_run() -> Vec<Record> {
     r.retain(|x| {
         !matches!(
             x,
-            Record::RiseMeasured { .. } | Record::BusFault { .. } | Record::Verdict { .. }
+            Record::RiseComputed { .. } | Record::BusFault { .. } | Record::Verdict { .. }
         )
     });
     let Record::Scenario {
@@ -1340,13 +1367,17 @@ fn record_bytes(record: Record) -> Vec<u8> {
 
 #[test]
 fn the_reader_applies_the_record_field_rules_the_writer_does() {
-    let rise_with = |bus: &str| Record::RiseMeasured {
+    let rise_with = |bus: &str| Record::RiseComputed {
         bus: bus.into(),
         net: "N".into(),
         rise_30_70_ps: 100,
         complete: true,
         ceiling_ps: 300_000,
         exceeds: false,
+        window: aethelgard_chaos::record::Window {
+            deck_hz: 400_000,
+            declared_hz: 400_000,
+        },
     };
     let cases: Vec<(&str, Record)> = vec![
         ("rd-rise-65", rise_with(&"B".repeat(65))),
@@ -1456,6 +1487,10 @@ mod archived {
                 .zip(hashes)
                 .map(|(n, h)| ((*n).to_owned(), h))
                 .collect(),
+            tools: vec![
+                ("aethelgard".into(), "0.1.0".into()),
+                ("renode".into(), "1.17.0+20260907gitf1dd1b4af".into()),
+            ],
         }
     }
 
@@ -1478,6 +1513,7 @@ mod archived {
                 instructions_expected: 10,
                 instructions_observed: Some(10),
                 pc: Some(0),
+                executable: vec![(0, 0x1000_0000)],
             },
             Record::RegisterObserved {
                 name: "R".into(),
@@ -1508,6 +1544,95 @@ mod archived {
     fn judged(name: &str, header: &Header, raw_write: bool) -> Result<(), &'static str> {
         let r = replayed(name, header, raw_write);
         check_archived(&r.header, &r.state).map(|_| ())
+    }
+
+    #[test]
+    fn the_header_names_the_engine_and_renode_and_the_bridge_only_when_it_ran() {
+        const TOOLS: &str = "the header's tools are not the ones its records say judged the run";
+        let tool = |n: &str| (n.to_owned(), "v".to_owned());
+        // `records()` computed no line: no bridge and no ngspice.
+        for tools in [
+            vec![],
+            vec![tool("aethelgard")],
+            vec![tool("renode")],
+            vec![
+                tool("aethelgard"),
+                tool("aethelgard-bridge"),
+                tool("ngspice"),
+                tool("renode"),
+            ],
+            vec![tool("aethelgard"), tool("qemu"), tool("renode")],
+        ] {
+            let mut h = header();
+            h.tools = tools.clone();
+            assert_eq!(
+                judged("ca-tools", &h, false).unwrap_err(),
+                TOOLS,
+                "{tools:?}"
+            );
+        }
+        // Any version passes: replay does not compare them with this host's.
+        let mut h = header();
+        h.tools = vec![
+            ("aethelgard".into(), "99.0.0".into()),
+            ("renode".into(), "0.0.1+forged".into()),
+        ];
+        judged("ca-tools-any", &h, false).unwrap();
+        // A computed line brings the bridge and its ngspice.
+        let mut lines = records();
+        lines.insert(
+            2,
+            solved_bus("SENSORS", "I2C1", ["I2C_SCL", "I2C_SDA"], &[]),
+        );
+        assert_eq!(
+            aethelgard_chaos::campaign::tools_of(&lines),
+            ["aethelgard", "renode"]
+        );
+        lines.insert(
+            3,
+            Record::RiseComputed {
+                bus: "SENSORS".into(),
+                net: "I2C_SCL".into(),
+                rise_30_70_ps: 1,
+                complete: true,
+                ceiling_ps: 300_000,
+                exceeds: false,
+                window: aethelgard_chaos::record::Window {
+                    deck_hz: 400_000,
+                    declared_hz: 400_000,
+                },
+            },
+        );
+        assert_eq!(
+            aethelgard_chaos::campaign::tools_of(&lines),
+            ["aethelgard", "aethelgard-bridge", "ngspice", "renode"]
+        );
+    }
+
+    #[test]
+    fn a_header_whose_tools_are_unsorted_or_not_printable_is_not_written() {
+        for tools in [
+            vec![("renode", "v"), ("aethelgard", "v")],
+            vec![("aethelgard", "v"), ("aethelgard", "w")],
+            vec![("aethelgard", "")],
+            vec![("aethelgard", "v\n")],
+            vec![("aethelgard", "é")],
+            vec![("", "v")],
+        ] {
+            let mut h = header();
+            h.tools = tools
+                .iter()
+                .map(|(n, v)| ((*n).to_owned(), (*v).to_owned()))
+                .collect();
+            let dir = scratch("ca-tools-bad").join("run");
+            assert!(
+                matches!(TraceWriter::create(&dir, &h), Err(E::InvalidHeader(_))),
+                "{tools:?}"
+            );
+        }
+        let mut h = header();
+        h.tools = vec![("aethelgard".into(), "v".repeat(257))];
+        assert!(TraceWriter::create(&scratch("ca-tools-long").join("run"), &h).is_err());
     }
 
     #[test]
@@ -1758,13 +1883,17 @@ fn a_measurement_on_an_unsolved_bus_or_net_is_refused_even_without_a_fault() {
     let at = position(&r, |x| matches!(x, Record::BusFault { .. }));
     r.insert(
         at,
-        Record::RiseMeasured {
+        Record::RiseComputed {
             bus: "OTHER".into(),
             net: "I2C_SCL".into(),
             rise_30_70_ps: 1,
             complete: true,
             ceiling_ps: 300_000,
             exceeds: false,
+            window: aethelgard_chaos::record::Window {
+                deck_hz: 400_000,
+                declared_hz: 400_000,
+            },
         },
     );
     assert_eq!(check_run(&r).unwrap_err(), NO_BUS);
@@ -1776,6 +1905,10 @@ fn a_measurement_on_an_unsolved_bus_or_net_is_refused_even_without_a_fault() {
             net: "ELSEWHERE".into(),
             microvolts_at_release: 0,
             ceiling_ps: 300_000,
+            window: aethelgard_chaos::record::Window {
+                deck_hz: 400_000,
+                declared_hz: 400_000,
+            },
         },
     );
     assert_eq!(
@@ -1843,7 +1976,7 @@ fn a_line_measured_twice_or_a_device_read_or_witnessed_twice_is_refused() {
     let why = "a line measured twice, or a device read or witnessed twice";
     // A second rise for one line, with the verdict's count raised to match.
     let mut r = good();
-    let i = position(&r, |x| matches!(x, Record::RiseMeasured { .. }));
+    let i = position(&r, |x| matches!(x, Record::RiseComputed { .. }));
     let dup = r[i].clone();
     r.insert(i, dup);
     let last = r.len() - 1;
@@ -1877,7 +2010,7 @@ fn two_buses_on_one_controller_are_refused_even_on_their_own_pins() {
 #[test]
 fn a_rise_and_a_stuck_high_on_one_line_are_two_measurements() {
     let mut r = good();
-    let i = position(&r, |x| matches!(x, Record::RiseMeasured { .. }));
+    let i = position(&r, |x| matches!(x, Record::RiseComputed { .. }));
     r.insert(
         i + 2,
         Record::LineStuckHigh {
@@ -1885,6 +2018,10 @@ fn a_rise_and_a_stuck_high_on_one_line_are_two_measurements() {
             net: "I2C_SCL".into(),
             microvolts_at_release: 0,
             ceiling_ps: 300_000,
+            window: aethelgard_chaos::record::Window {
+                deck_hz: 400_000,
+                declared_hz: 400_000,
+            },
         },
     );
     let last = r.len() - 1;
@@ -1956,4 +2093,119 @@ fn a_witness_device_must_end_with_its_references_lowercased() {
         check_run(&r).unwrap_err(),
         "a witness's model path is not its device's emitted name"
     );
+}
+
+// AET-WO-2205: the header's tools, kind 10's segments, kinds 7 and 8's window.
+
+const PC_OUTSIDE: &str =
+    "the verdict's pc_outside_firmware does not match the boot's pc and segments";
+
+/// `good()` with its boot's `pc` and segments set, and the verdict's
+/// `pc_outside_firmware` count.
+fn with_pc(pc: u32, executable: Vec<(u32, u32)>, finding: bool) -> Vec<Record> {
+    let mut r = good();
+    for x in &mut r {
+        if let Record::BootObserved {
+            pc: p,
+            executable: e,
+            ..
+        } = x
+        {
+            (*p, *e) = (Some(pc), executable.clone());
+        }
+    }
+    let last = r.len() - 1;
+    let mut findings = vec![
+        (PAST, "error", 2),
+        ("device_unmodelled", "info", 1),
+        ("i2c_timeout", "error", 1),
+    ];
+    if finding {
+        findings.push(("pc_outside_firmware", "error", 1));
+        findings.sort();
+    }
+    r[last] = verdict(false, &findings);
+    r
+}
+
+#[test]
+fn pc_outside_firmware_is_exactly_a_pc_outside_the_archived_segments() {
+    let segs = vec![(0x0800_0000, 0x0800_2000), (0x2000_0000, 0x2000_0100)];
+    // Inside, no finding; outside, the finding: both agree.
+    check_run(&with_pc(0x0800_1000, segs.clone(), false)).unwrap();
+    check_run(&with_pc(0x7000_0000, segs.clone(), true)).unwrap();
+    // The end of a segment is outside it.
+    check_run(&with_pc(0x0800_2000, segs.clone(), true)).unwrap();
+    // A finding the segments do not show, and a pc outside with no finding.
+    assert_eq!(
+        check_run(&with_pc(0x0800_1000, segs.clone(), true)).unwrap_err(),
+        PC_OUTSIDE
+    );
+    assert_eq!(
+        check_run(&with_pc(0x7000_0000, segs, false)).unwrap_err(),
+        PC_OUTSIDE
+    );
+    // No segment at all: every pc is outside.
+    check_run(&with_pc(0x0800_1000, vec![], true)).unwrap();
+}
+
+#[test]
+fn kind_10s_segments_and_kind_7s_window_are_checked_on_write_and_read() {
+    let boot = |executable: Vec<(u32, u32)>| Record::BootObserved {
+        image_sha256: [4; 32],
+        boot_word: reading(Some(0x12)),
+        instructions_expected: 10,
+        instructions_observed: Some(10),
+        pc: Some(0),
+        executable,
+    };
+    assert!(boot(vec![(0, 1), (1, 2)]).check().is_ok());
+    assert!(
+        boot((0..16).map(|k| (2 * k, 2 * k + 1)).collect())
+            .check()
+            .is_ok()
+    );
+    for bad in [
+        vec![(1, 1)],
+        vec![(2, 1)],
+        vec![(4, 8), (0, 2)],
+        vec![(0, 4), (2, 8)],
+        (0..17).map(|k| (2 * k, 2 * k + 1)).collect(),
+    ] {
+        assert_eq!(
+            boot(bad.clone()).check().unwrap_err(),
+            "executable segments are not at most 16 sorted, disjoint, nonempty ranges",
+            "{bad:?}"
+        );
+    }
+    let rise = |deck_hz, declared_hz| Record::RiseComputed {
+        bus: "B".into(),
+        net: "N".into(),
+        rise_30_70_ps: 1,
+        complete: true,
+        ceiling_ps: 300_000,
+        exceeds: false,
+        window: aethelgard_chaos::record::Window {
+            deck_hz,
+            declared_hz,
+        },
+    };
+    assert!(rise(400_000, 100_000).check().is_ok());
+    for (d, b) in [(0, 400_000), (400_000, 0)] {
+        assert_eq!(
+            rise(d, b).check().unwrap_err(),
+            "a window's deck and declared speeds are not both above 0"
+        );
+    }
+    // Both round-trip through the profile.
+    for r in [
+        rise(400_000, 100_000),
+        boot(vec![(0x0800_0000, 0x0800_2000)]),
+    ] {
+        let ev = Event::Record {
+            timestamp: 0,
+            record: r,
+        };
+        assert_eq!(Event::from_value(&ev.to_value()).unwrap(), ev);
+    }
 }

@@ -43,13 +43,17 @@ fn line(suffix: &str, net: &str, pin: &str) -> BusLine {
 }
 
 fn rise(net: &str, ps: u64) -> Record {
-    Record::RiseMeasured {
+    Record::RiseComputed {
         bus: "SENSORS".into(),
         net: net.into(),
         rise_30_70_ps: ps,
         complete: true,
         ceiling_ps: 300_000,
         exceeds: ps > 300_000,
+        window: aethelgard_chaos::record::Window {
+            deck_hz: 400_000,
+            declared_hz: 400_000,
+        },
     }
 }
 
@@ -151,6 +155,7 @@ fn boot(word: u32) -> Record {
         instructions_expected: 10_000_000,
         instructions_observed: Some(10_000_000),
         pc: Some(0x0800_0596),
+        executable: vec![(0, 0x1000_0000)],
     }
 }
 
@@ -205,7 +210,7 @@ fn replace(r: &mut [Record], pred: impl Fn(&Record) -> bool, with: Record) {
 }
 
 fn is_rise_on(net: &'static str) -> impl Fn(&Record) -> bool {
-    move |x| matches!(x, Record::RiseMeasured { net: n, .. } if n == net)
+    move |x| matches!(x, Record::RiseComputed { net: n, .. } if n == net)
 }
 
 /// The bus's lines measured at `scl` and `sda` picoseconds; each line past
@@ -270,6 +275,10 @@ fn archived(records: &[Record]) -> Replayed {
             ("specification".into(), *specification_sha256),
             ("topology".into(), *topology_sha256),
         ],
+        tools: aethelgard_chaos::campaign::tools_of(records)
+            .iter()
+            .map(|n| ((*n).to_owned(), "test".to_owned()))
+            .collect(),
     };
     let mut w = TraceWriter::create(&dir, &header).unwrap();
     for record in records.iter().cloned() {
@@ -433,13 +442,17 @@ fn the_binding_line_is_the_least_ceiling_over_rise_not_the_slowest() {
     replace(
         &mut r,
         is_rise_on("I2C_SDA"),
-        Record::RiseMeasured {
+        Record::RiseComputed {
             bus: "SENSORS".into(),
             net: "I2C_SDA".into(),
             rise_30_70_ps: 280_000,
             complete: true,
             ceiling_ps: 250_000,
             exceeds: true,
+            window: aethelgard_chaos::record::Window {
+                deck_hz: 400_000,
+                declared_hz: 400_000,
+            },
         },
     );
     let at = find(&r, |x| matches!(x, Record::BusFault { .. }));
@@ -507,6 +520,10 @@ fn a_stuck_high_line_an_incomplete_rise_or_a_fault_of_another_cause_has_no_rule(
             net: "I2C_SDA".into(),
             microvolts_at_release: 1_500_000,
             ceiling_ps: 300_000,
+            window: aethelgard_chaos::record::Window {
+                deck_hz: 400_000,
+                declared_hz: 400_000,
+            },
         },
     );
     r.insert(i + 2, fault(&["I2C_SDA"], "analog.line_stuck_high"));
@@ -533,7 +550,7 @@ fn a_stuck_high_line_an_incomplete_rise_or_a_fault_of_another_cause_has_no_rule(
     let mut r = healthy(47_000);
     rises(&mut r, 3_982_301, 3_982_301);
     let i = find(&r, is_rise_on("I2C_SCL"));
-    if let Record::RiseMeasured { complete, .. } = &mut r[i] {
+    if let Record::RiseComputed { complete, .. } = &mut r[i] {
         *complete = false;
     }
     let (a, answer) = ask(&r, 47_000);
@@ -544,7 +561,7 @@ fn a_stuck_high_line_an_incomplete_rise_or_a_fault_of_another_cause_has_no_rule(
     // cause list is refused by the archive's reader.)
     for from in [
         vec![PAST_CEILING_CAUSE.to_owned(), campaign::HELD_LOW.to_owned()],
-        vec!["analog.rise_time_measured".to_owned()],
+        vec!["analog.rise_time_computed".to_owned()],
     ] {
         let mut r = healthy(47_000);
         rises(&mut r, 3_982_301, 3_982_301);
@@ -728,7 +745,7 @@ fn an_indeterminate_or_passing_run_proposes_nothing_and_names_its_rule() {
     // I2: the faulted bus's rises dropped, so nothing is measured.
     let mut r = healthy(47_000);
     rises(&mut r, 3_982_301, 3_982_301);
-    r.retain(|x| !matches!(x, Record::RiseMeasured { .. } | Record::BusFault { .. }));
+    r.retain(|x| !matches!(x, Record::RiseComputed { .. } | Record::BusFault { .. }));
     replace(
         &mut r,
         |x| matches!(x, Record::Verdict { .. }),
@@ -1231,8 +1248,42 @@ fn boot_ev(word_ok: bool, observed: Option<u64>) -> Evidence {
             },
             instructions_expected: 10_000_000,
             instructions_observed: observed,
+            pc: Some(0x0800_0100),
+            pc_outside: false,
         },
     }
+}
+
+/// `AET-WO-2205` §1.5: a core that ended outside the firmware is a firmware
+/// report of exactly that, beside nothing else the boot met.
+#[test]
+fn a_core_outside_the_firmware_is_a_firmware_report_of_where_it_ended() {
+    let mut e = boot_ev(true, Some(10_000_000));
+    let View::Boot { pc, pc_outside, .. } = &mut e.view else {
+        unreachable!()
+    };
+    (*pc, *pc_outside) = (Some(0x7000_0000), true);
+    let answer = hand(Rule::S2, &[e], &[], &BTreeMap::new());
+    let Outcome::GeneratorReport(g) = &answer.outcome else {
+        panic!("{answer:?}")
+    };
+    let got: Vec<_> = g
+        .expectations
+        .iter()
+        .map(|x| {
+            (
+                x.generator,
+                x.what.as_str(),
+                x.address,
+                x.solved,
+                x.observed,
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        [(Generator::Firmware, "pc_inside_firmware", None, 1, Some(0))]
+    );
 }
 
 #[test]
@@ -1302,13 +1353,17 @@ fn the_view_reads_every_field_of_a_rise_a_stuck_line_a_boot_and_a_witness() {
         *instructions_observed = Some(7);
     }
     let i = find(&r, is_rise_on("I2C_SDA"));
-    r[i] = Record::RiseMeasured {
+    r[i] = Record::RiseComputed {
         bus: "SENSORS".into(),
         net: "I2C_SDA".into(),
         rise_30_70_ps: 200_000,
         complete: false,
         ceiling_ps: 300_000,
         exceeds: true,
+        window: aethelgard_chaos::record::Window {
+            deck_hz: 400_000,
+            declared_hz: 400_000,
+        },
     };
     let b = find(&r, |x| matches!(x, Record::BootObserved { .. }));
     r.insert(b, fault(&["I2C_SDA"], PAST_CEILING_CAUSE));
@@ -1352,6 +1407,7 @@ fn the_view_reads_every_field_of_a_rise_a_stuck_line_a_boot_and_a_witness() {
         boot_word,
         instructions_expected,
         instructions_observed,
+        ..
     } = &boot.view
     else {
         panic!("{boot:?}")
@@ -1396,6 +1452,10 @@ fn the_view_reads_every_field_of_a_rise_a_stuck_line_a_boot_and_a_witness() {
             net: "I2C_SDA".into(),
             microvolts_at_release: 1_500_000,
             ceiling_ps: 300_000,
+            window: aethelgard_chaos::record::Window {
+                deck_hz: 400_000,
+                declared_hz: 400_000,
+            },
         },
     );
     r.insert(i + 2, fault(&["I2C_SDA"], "analog.line_stuck_high"));
@@ -1550,20 +1610,24 @@ fn on_two_buses_the_view_puts_each_event_and_rise_on_its_own_bus() {
             devices: vec![("U5".into(), 0x40)],
         },
     );
-    let i = find(&r, |x| matches!(x, Record::RiseMeasured { .. }));
+    let i = find(&r, |x| matches!(x, Record::RiseComputed { .. }));
     for (n, (net, ps)) in [("A_SCL", 111_111), ("A_SDA", 222_222)]
         .into_iter()
         .enumerate()
     {
         r.insert(
             i + n,
-            Record::RiseMeasured {
+            Record::RiseComputed {
                 bus: "AUX".into(),
                 net: net.into(),
                 rise_30_70_ps: ps,
                 complete: true,
                 ceiling_ps: 300_000,
                 exceeds: false,
+                window: aethelgard_chaos::record::Window {
+                    deck_hz: 400_000,
+                    declared_hz: 400_000,
+                },
             },
         );
     }
