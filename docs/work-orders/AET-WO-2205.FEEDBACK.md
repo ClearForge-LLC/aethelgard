@@ -151,5 +151,5 @@ What the table shows that the `allowed` test did not:
 
 ## Gates (at `3d12877`)
 
-`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (with and without `with-tools`), `cargo test --workspace`: green on Furnace. Tier 2 (`attribute_seeded`, `campaign_tier2`, `twin_tier2`) in the image: __T2__. CI: __CI__.
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (with and without `with-tools`), `cargo test --workspace`: green on Furnace. Tier 2 in the image, the suites this work order touches: `attribute_seeded` 12 passed (327 s, the new case included), `campaign_tier2` 8 passed, `twin_tier2` 22 passed (`~/.cache/aet-2205/t2-1.log`). CI: on the PR (every suite, eight shards).
 
