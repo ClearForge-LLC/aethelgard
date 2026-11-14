@@ -749,3 +749,114 @@ fn every_admitted_identifier_character_survives_every_output() {
     assert!(damage.is_empty(), "{}", damage.join("\n"));
     fs::remove_dir_all(&base).unwrap();
 }
+
+const FOUR: &str = "crates/aethelgard-cli/tests/fixtures/four-layer.json";
+const FOUR_SCENARIO: &str = "crates/aethelgard-cli/tests/fixtures/four-layer-pullup.json";
+
+/// `verify` of the 4-layer fixture with its 2.2 kΩ scenario and `flag <dir>`.
+fn four_verify(dir: &Path, flag: &str) -> (Option<i32>, String) {
+    aethelgard(&[
+        "verify",
+        "--spec",
+        FOUR,
+        "--scenarios",
+        FOUR_SCENARIO,
+        flag,
+        dir.to_str().unwrap(),
+    ])
+}
+
+/// `AET-WO-4100` §2.6 and §4: the 4-layer fixture (OSH Park's stackup, ruled
+/// D2) passes every gate, DRC with schematic parity among them, by the
+/// specification's rules; `--fab-out` writes both inner Gerbers, each
+/// carrying its plane's region and no clock line; `FAB-NOTES.md` states the
+/// layer order, each plane's net and every dielectric with its source; and
+/// `--against-fab` derives the package again identical.
+#[test]
+fn four_layer_fixture_passes_every_gate_and_its_package_holds() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let base = std::env::temp_dir().join(format!("aet-4100-four-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    let dir = base.join("pkg");
+    let (code, out) = four_verify(&dir, "--fab-out");
+    let v = one(&out);
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["verdict"], "pass");
+    for g in v["gates"].as_array().unwrap() {
+        assert_eq!(g["verdict"], "pass", "{g}");
+    }
+    let package = package_files(&dir);
+    for (name, net) in [
+        ("sentinel-01-4l-In1_Cu.g1", "GND"),
+        ("sentinel-01-4l-In2_Cu.g2", "VDD_3V3"),
+    ] {
+        let text = String::from_utf8(package[name].clone()).unwrap();
+        assert!(
+            text.contains(&format!("%TO.N,{net}*%\nG36*\n")),
+            "{name} carries no {net} region"
+        );
+        assert!(!text.contains("CreationDate") && !text.contains("Created by"));
+    }
+    assert!(package.keys().all(|n| !n.contains("gbrjob")));
+    let notes = String::from_utf8(package["FAB-NOTES.md"].clone()).unwrap();
+    for want in [
+        "- 4 copper layers, top to bottom, joined only by through vias:\n",
+        "  - In1.Cu: plane, net GND\n",
+        "  - In2.Cu: plane, net VDD_3V3\n",
+        "  - F.Cu to In1.Cu: 0.179 mm (OSH Park 4-layer",
+        "  - In1.Cu to In2.Cu: 0.891 mm (OSH Park 4-layer",
+        "rounded down; every maximum, rounded up.",
+        "Finished board from 1.25 mm to 1.851 mm thick.",
+        "Finished copper at most 70 um thick on each layer.",
+        "- `sentinel-01-4l-In1_Cu.g1`: Gerber, inner copper layer 1",
+    ] {
+        assert!(notes.contains(want), "{want}");
+    }
+    let manifest: Value = serde_json::from_slice(&package["MANIFEST.json"]).unwrap();
+    assert!(manifest["files"].get("sentinel-01-4l-In2_Cu.g2").is_some());
+    let (code, again) = four_verify(&dir, "--against-fab");
+    let w = one(&again);
+    assert_eq!(code, Some(0), "{w}");
+    assert_eq!(w["against_fab"], "identical");
+    fs::remove_dir_all(&base).unwrap();
+}
+
+/// `AET-WO-4100` §5.4: a package missing an inner Gerber, and one whose
+/// `FAB-NOTES.md` states a stackup the specification does not, fail
+/// `--against-fab`, naming each file.
+#[test]
+fn against_fab_names_a_missing_inner_layer_and_a_stackup_that_lies() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let base = std::env::temp_dir().join(format!("aet-4100-lie-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    let dir = base.join("pkg");
+    let (code, out) = four_verify(&dir, "--fab-out");
+    assert_eq!(code, Some(0), "{out}");
+    fs::remove_file(dir.join("sentinel-01-4l-In2_Cu.g2")).unwrap();
+    let notes = fs::read_to_string(dir.join("FAB-NOTES.md")).unwrap();
+    let lie = notes.replace("F.Cu to In1.Cu: 0.179 mm", "F.Cu to In1.Cu: 0.25 mm");
+    assert_ne!(lie, notes);
+    fs::write(dir.join("FAB-NOTES.md"), lie).unwrap();
+    let (code, again) = four_verify(&dir, "--against-fab");
+    let w = one(&again);
+    assert_eq!(code, Some(1), "{w}");
+    assert_eq!(w["against_fab"], "differs");
+    let named: Vec<String> = w["fab"]["differences"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["message"].as_str().unwrap().to_owned())
+        .collect();
+    assert!(
+        named
+            .iter()
+            .any(|m| m.starts_with("sentinel-01-4l-In2_Cu.g2")),
+        "{named:?}"
+    );
+    assert!(
+        named.iter().any(|m| m.starts_with("FAB-NOTES.md")),
+        "{named:?}"
+    );
+    assert_eq!(named.len(), 2, "{named:?}");
+    fs::remove_dir_all(&base).unwrap();
+}

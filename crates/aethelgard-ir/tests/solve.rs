@@ -18,6 +18,9 @@ use aethelgard_ir::{
 const PART: &str = "TEST_PART";
 const HASH: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
+/// The reference specification's declared board (`examples/sentinel-01-minimal.json`).
+const BOARD: &str = r#"{"copper_layers": 2, "layers": [{"name": "F.Cu", "role": "signal", "net": null}, {"name": "B.Cu", "role": "signal", "net": null}], "stackup": {"finished_thickness_um": {"nominal": 1600, "min": 340, "max": 2000, "source": "AET-WO-1305 conditions: 1.6 mm declared; 0.34 mm = 2 x 70 um + 0.2 mm; 2.0 mm = 1.6 mm + 25 %"}, "dielectrics": [{"between": ["F.Cu", "B.Cu"], "min_thickness_um": 200, "source": "implied: the finished minimum 340 um less twice the copper maximum 70 um"}], "copper_max_um": {"value": 70, "source": "AET-WO-1305 condition: twice KiCad's default 35 um (2 oz)"}, "relative_permittivity_max_permille": {"value": 5400, "source": "the IPC-4101 FR-4 maximum, specified at 1 MHz"}}, "rules": {"clearance_um": 200, "track_width_um": 200, "via_drill_um": 300, "via_diameter_um": 600}}"#;
+
 /// `(pin, [(signal, af)])`. Each reserved pin carries a signal the search
 /// would otherwise take first, so a reserved pin assigned would show.
 fn table_of(pins: &[(&str, &[(&str, u8)])]) -> PinTable {
@@ -134,8 +137,9 @@ fn spec(
     // The device lists are private to the crate (`AET-WO-1204`), so the
     // specification is built from the JSON it reads.
     let json = serde_json::json!({
-        "schema_version": 1,
+        "schema_version": 2,
         "project_name": "t",
+        "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
         "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into() },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),

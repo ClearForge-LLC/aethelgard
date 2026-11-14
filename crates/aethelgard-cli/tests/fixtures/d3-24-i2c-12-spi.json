@@ -1,0 +1,566 @@
+{
+  "schema_version": 2,
+  "project_name": "d3-24-i2c-12-spi",
+  "mcu": {
+    "part": "STM32H753ZITx",
+    "supply": "VDD_3V3"
+  },
+  "voltage_domains": [
+    {
+      "id": "VDD_3V3",
+      "nominal_millivolts": 3300,
+      "tolerance_permille": 50
+    }
+  ],
+  "i2c_buses": [
+    {
+      "id": "B0",
+      "peripheral": null,
+      "speed_hz": 400000,
+      "pull_up_ohms": 2200,
+      "domain": "VDD_3V3",
+      "sda": {
+        "net": "SDA0",
+        "pin": null
+      },
+      "scl": {
+        "net": "SCL0",
+        "pin": null
+      }
+    },
+    {
+      "id": "B1",
+      "peripheral": null,
+      "speed_hz": 400000,
+      "pull_up_ohms": 2200,
+      "domain": "VDD_3V3",
+      "sda": {
+        "net": "SDA1",
+        "pin": null
+      },
+      "scl": {
+        "net": "SCL1",
+        "pin": null
+      }
+    },
+    {
+      "id": "B2",
+      "peripheral": null,
+      "speed_hz": 400000,
+      "pull_up_ohms": 2200,
+      "domain": "VDD_3V3",
+      "sda": {
+        "net": "SDA2",
+        "pin": null
+      },
+      "scl": {
+        "net": "SCL2",
+        "pin": null
+      }
+    },
+    {
+      "id": "B3",
+      "peripheral": null,
+      "speed_hz": 400000,
+      "pull_up_ohms": 2200,
+      "domain": "VDD_3V3",
+      "sda": {
+        "net": "SDA3",
+        "pin": null
+      },
+      "scl": {
+        "net": "SCL3",
+        "pin": null
+      }
+    }
+  ],
+  "spi_buses": [
+    {
+      "id": "F0",
+      "peripheral": null,
+      "speed_hz": 20000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "SCK0",
+        "pin": null
+      },
+      "mosi": {
+        "net": "MOSI0",
+        "pin": null
+      },
+      "miso": {
+        "net": "MISO0",
+        "pin": null
+      }
+    },
+    {
+      "id": "F1",
+      "peripheral": null,
+      "speed_hz": 20000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "SCK1",
+        "pin": null
+      },
+      "mosi": {
+        "net": "MOSI1",
+        "pin": null
+      },
+      "miso": {
+        "net": "MISO1",
+        "pin": null
+      }
+    },
+    {
+      "id": "F2",
+      "peripheral": null,
+      "speed_hz": 20000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "SCK2",
+        "pin": null
+      },
+      "mosi": {
+        "net": "MOSI2",
+        "pin": null
+      },
+      "miso": {
+        "net": "MISO2",
+        "pin": null
+      }
+    },
+    {
+      "id": "F3",
+      "peripheral": null,
+      "speed_hz": 20000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "SCK3",
+        "pin": null
+      },
+      "mosi": {
+        "net": "MOSI3",
+        "pin": null
+      },
+      "miso": {
+        "net": "MISO3",
+        "pin": null
+      }
+    }
+  ],
+  "i2c_devices": [
+    {
+      "reference": "S0",
+      "part": "BME280",
+      "supply": "VDD_3V3",
+      "bus": "B0",
+      "address": 118
+    },
+    {
+      "reference": "S1",
+      "part": "BME280",
+      "supply": "VDD_3V3",
+      "bus": "B0",
+      "address": 119
+    },
+    {
+      "reference": "S2",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B0",
+      "address": 72
+    },
+    {
+      "reference": "S3",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B0",
+      "address": 73
+    },
+    {
+      "reference": "S4",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B0",
+      "address": 74
+    },
+    {
+      "reference": "S5",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B0",
+      "address": 75
+    },
+    {
+      "reference": "S6",
+      "part": "BME280",
+      "supply": "VDD_3V3",
+      "bus": "B1",
+      "address": 118
+    },
+    {
+      "reference": "S7",
+      "part": "BME280",
+      "supply": "VDD_3V3",
+      "bus": "B1",
+      "address": 119
+    },
+    {
+      "reference": "S8",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B1",
+      "address": 72
+    },
+    {
+      "reference": "S9",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B1",
+      "address": 73
+    },
+    {
+      "reference": "S10",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B1",
+      "address": 74
+    },
+    {
+      "reference": "S11",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B1",
+      "address": 75
+    },
+    {
+      "reference": "S12",
+      "part": "BME280",
+      "supply": "VDD_3V3",
+      "bus": "B2",
+      "address": 118
+    },
+    {
+      "reference": "S13",
+      "part": "BME280",
+      "supply": "VDD_3V3",
+      "bus": "B2",
+      "address": 119
+    },
+    {
+      "reference": "S14",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B2",
+      "address": 72
+    },
+    {
+      "reference": "S15",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B2",
+      "address": 73
+    },
+    {
+      "reference": "S16",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B2",
+      "address": 74
+    },
+    {
+      "reference": "S17",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B2",
+      "address": 75
+    },
+    {
+      "reference": "S18",
+      "part": "BME280",
+      "supply": "VDD_3V3",
+      "bus": "B3",
+      "address": 118
+    },
+    {
+      "reference": "S19",
+      "part": "BME280",
+      "supply": "VDD_3V3",
+      "bus": "B3",
+      "address": 119
+    },
+    {
+      "reference": "S20",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B3",
+      "address": 72
+    },
+    {
+      "reference": "S21",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B3",
+      "address": 73
+    },
+    {
+      "reference": "S22",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B3",
+      "address": 74
+    },
+    {
+      "reference": "S23",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "B3",
+      "address": 75
+    }
+  ],
+  "spi_devices": [
+    {
+      "reference": "S1000",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "F0",
+      "cs": {
+        "net": "CS0_0",
+        "pin": null
+      }
+    },
+    {
+      "reference": "S1001",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "F0",
+      "cs": {
+        "net": "CS0_1",
+        "pin": null
+      }
+    },
+    {
+      "reference": "S1002",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "F0",
+      "cs": {
+        "net": "CS0_2",
+        "pin": null
+      }
+    },
+    {
+      "reference": "S1003",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "F1",
+      "cs": {
+        "net": "CS1_0",
+        "pin": null
+      }
+    },
+    {
+      "reference": "S1004",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "F1",
+      "cs": {
+        "net": "CS1_1",
+        "pin": null
+      }
+    },
+    {
+      "reference": "S1005",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "F1",
+      "cs": {
+        "net": "CS1_2",
+        "pin": null
+      }
+    },
+    {
+      "reference": "S1006",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "F2",
+      "cs": {
+        "net": "CS2_0",
+        "pin": null
+      }
+    },
+    {
+      "reference": "S1007",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "F2",
+      "cs": {
+        "net": "CS2_1",
+        "pin": null
+      }
+    },
+    {
+      "reference": "S1008",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "F2",
+      "cs": {
+        "net": "CS2_2",
+        "pin": null
+      }
+    },
+    {
+      "reference": "S1009",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "F3",
+      "cs": {
+        "net": "CS3_0",
+        "pin": null
+      }
+    },
+    {
+      "reference": "S1010",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "F3",
+      "cs": {
+        "net": "CS3_1",
+        "pin": null
+      }
+    },
+    {
+      "reference": "S1011",
+      "part": "W25Q64JV",
+      "supply": "VDD_3V3",
+      "bus": "F3",
+      "cs": {
+        "net": "CS3_2",
+        "pin": null
+      }
+    }
+  ],
+  "net_constraints": [
+    {
+      "net_name": "SDA0",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SCL0",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SDA1",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SCL1",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SDA2",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SCL2",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SDA3",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SCL3",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    }
+  ],
+  "board": {
+    "copper_layers": 4,
+    "layers": [
+      {
+        "name": "F.Cu",
+        "role": "signal",
+        "net": null
+      },
+      {
+        "name": "In1.Cu",
+        "role": "plane",
+        "net": "GND"
+      },
+      {
+        "name": "In2.Cu",
+        "role": "plane",
+        "net": "VDD_3V3"
+      },
+      {
+        "name": "B.Cu",
+        "role": "signal",
+        "net": null
+      }
+    ],
+    "stackup": {
+      "finished_thickness_um": {
+        "nominal": 1600,
+        "min": 1250,
+        "max": 1851,
+        "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 14 Nov 2026: min the dielectric minima summed; max dielectrics and resist at max plus 4 x 70 um copper, 1.8505 mm up"
+      },
+      "dielectrics": [
+        {
+          "between": [
+            "F.Cu",
+            "In1.Cu"
+          ],
+          "min_thickness_um": 179,
+          "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 14 Nov 2026: 2113 prepreg 0.1999 mm less 0.0202 mm, rounded down"
+        },
+        {
+          "between": [
+            "In1.Cu",
+            "In2.Cu"
+          ],
+          "min_thickness_um": 891,
+          "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 14 Nov 2026: FR408HR core 0.9906 mm less 0.0991 mm, rounded down"
+        },
+        {
+          "between": [
+            "In2.Cu",
+            "B.Cu"
+          ],
+          "min_thickness_um": 179,
+          "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 14 Nov 2026: 2113 prepreg 0.1999 mm less 0.0202 mm, rounded down"
+        }
+      ],
+      "copper_max_um": {
+        "value": 70,
+        "source": "the engine's stated condition (AET-WO-1305, as the reference): 2 oz, twice KiCad's 35 um; OSH Park publishes no copper tolerance"
+      },
+      "relative_permittivity_max_permille": {
+        "value": 5400,
+        "source": "the IPC-4101 FR-4 maximum, specified at 1 MHz"
+      }
+    },
+    "rules": {
+      "clearance_um": 200,
+      "track_width_um": 200,
+      "via_drill_um": 300,
+      "via_diameter_um": 600
+    }
+  }
+}

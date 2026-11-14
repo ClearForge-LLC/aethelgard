@@ -1,6 +1,11 @@
 //! The router (`AET-WO-1302`): tracks on F.Cu and B.Cu and vias from a
-//! deterministic, integer-only grid search, and an unfilled ground zone on
-//! B.Cu that the gate's `--refill-zones` fills (`AET-WO-1300` S4.3).
+//! deterministic, integer-only grid search. At 2 copper layers ground is an
+//! unfilled zone on B.Cu that the gate's `--refill-zones` fills (`AET-WO-1300`
+//! S4.3). At 4 (`AET-WO-4100`, S-P-P-S) each inner layer is an unfilled plane
+//! of one declared net, ground and one domain: each pad of a plane net is
+//! joined by F.Cu to a through via in the plane, as ground's pads are to the
+//! zone, and B.Cu carries tracks only. Track width and clearance are the
+//! specification's (`board.rules`), carried by [`Board::stack`].
 //!
 //! - **The grid** is [`PITCH_NM`], which divides the LQFP's 0.5 mm pitch, so
 //!   every LQFP pad centre is a node. Moves are axis-aligned, so every track
@@ -43,10 +48,6 @@ use crate::strict::{self, Tree};
 
 /// The grid's pitch.
 pub const PITCH_NM: i64 = 125_000;
-/// Every track's width: the gate's minimum (`rules`).
-pub const WIDTH_NM: i64 = FLOOR_NM;
-/// Copper to foreign copper: the gate's clearance.
-pub const CLEARANCE_NM: i64 = FLOOR_NM;
 /// The gate's Default net class via: 0.6 mm, drilled 0.3 mm.
 pub const VIA_NM: i64 = 600_000;
 pub const DRILL_NM: i64 = 300_000;
@@ -57,7 +58,7 @@ pub const EDGE_NM: i64 = 500_000;
 pub const HOLE_GAP_NM: i64 = 250_000;
 /// The zone's minimum width, as the zone states it.
 pub const MIN_THICKNESS_NM: i64 = 250_000;
-/// The net the B.Cu zone carries.
+/// The net the B.Cu zone carries at 2 layers, and one plane at 4.
 pub const GROUND: &str = crate::schematic::GND;
 /// How many nets may be taken up, in all, to make way for others.
 pub const RIPUPS: usize = 500;
@@ -67,10 +68,11 @@ pub const RIPUPS: usize = 500;
 /// least `sqrt((R + EPS)² - (PITCH/2)²)` from it, which is `R` or more when
 /// `2·R·EPS ≥ PITCH²/4`. The smallest reach is a track's to a pad.
 const EPS_NM: i64 = 10_000;
-const _: () = assert!(8 * (CLEARANCE_NM + WIDTH_NM / 2) * EPS_NM >= PITCH_NM * PITCH_NM);
+// At the floor; a declared width or clearance is never below it (`validate`).
+const _: () = assert!(8 * (FLOOR_NM + FLOOR_NM / 2) * EPS_NM >= PITCH_NM * PITCH_NM);
 const _: () = assert!(500_000 % PITCH_NM == 0);
 const _: () = assert!(PITCH_NM < MIN_THICKNESS_NM);
-const _: () = assert!(EDGE_NM >= FLOOR_NM && WIDTH_NM >= FLOOR_NM && CLEARANCE_NM >= FLOOR_NM);
+const _: () = assert!(EDGE_NM >= FLOOR_NM);
 
 /// The largest grid routed, per layer: 250 mm square at this pitch.
 const MAX_NODES: usize = 4_000_000;
@@ -81,9 +83,6 @@ const WINDOWS: [usize; 2] = [16, 64];
 /// node per pitch nearer the pad.
 const CORRIDOR_DEPTH: i64 = 16;
 const CORRIDOR_COST: u32 = 2;
-/// Half a corridor's width: a foreign track centred nearer than this to the
-/// pad's axis blocks the pad's straight escape.
-const CORRIDOR_HALF_NM: i64 = CLEARANCE_NM + WIDTH_NM;
 
 const STEP_F: u32 = 2;
 const STEP_B: u32 = 6;
@@ -136,11 +135,34 @@ pub struct Part {
     pub pads: Vec<Pad>,
 }
 
-/// What the router routes: the outline and every footprint's copper pads.
+/// What the router routes: the outline, every footprint's copper pads, and
+/// the board the specification declares.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Board {
     pub outline: Rect,
     pub parts: Vec<Part>,
+    pub stack: crate::stack::Stack,
+}
+
+impl Board {
+    fn w(&self) -> i64 {
+        self.stack.width_nm
+    }
+    fn s(&self) -> i64 {
+        self.stack.clearance_nm
+    }
+    /// How far a track's centre must stay from foreign copper on the grid.
+    fn track_reach(&self) -> i64 {
+        self.s() + self.w() / 2 + EPS_NM
+    }
+    fn via_reach(&self) -> i64 {
+        self.s() + VIA_NM / 2 + EPS_NM
+    }
+    /// Half a corridor's width: a foreign track centred nearer than this to
+    /// the pad's axis blocks the pad's straight escape.
+    fn corridor_half(&self) -> i64 {
+        self.s() + self.w()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -162,8 +184,8 @@ pub struct Via {
 pub struct Routed {
     pub segments: Vec<Segment>,
     pub vias: Vec<Via>,
-    /// Each zone's net and layer; its outline is the board's.
-    pub zones: Vec<(String, Layer)>,
+    /// Each zone's net and KiCad layer name; its outline is the board's.
+    pub zones: Vec<(String, String)>,
     /// How many nets were taken up and routed again (not read back from a
     /// board).
     pub ripups: usize,
@@ -319,8 +341,6 @@ fn claim(map: &mut [u32], grid: &Grid, shape: Shape, reach: i64, owner: u32) {
     }
 }
 
-const TRACK_REACH: i64 = CLEARANCE_NM + WIDTH_NM / 2 + EPS_NM;
-const VIA_REACH: i64 = CLEARANCE_NM + VIA_NM / 2 + EPS_NM;
 /// Hole to hole, centre to centre, with the margin.
 const HOLE_PITCH: i64 = DRILL_NM + HOLE_GAP_NM;
 const HOLE_REACH: i64 = HOLE_PITCH + EPS_NM;
@@ -391,7 +411,7 @@ impl<'a> Router<'a> {
         for node in 0..n {
             let (x, y) = grid.at(node);
             let edge = to_edge(o, (x, y));
-            if edge < EDGE_NM + WIDTH_NM / 2 + EPS_NM {
+            if edge < EDGE_NM + board.w() / 2 + EPS_NM {
                 track[0][node] = BLOCKED;
                 track[1][node] = BLOCKED;
             }
@@ -410,8 +430,8 @@ impl<'a> Router<'a> {
                     rect: pad.rect,
                     r: 0,
                 };
-                claim(&mut track[0], &grid, shape, TRACK_REACH, who);
-                claim(&mut via, &grid, shape, VIA_REACH, who);
+                claim(&mut track[0], &grid, shape, board.track_reach(), who);
+                claim(&mut via, &grid, shape, board.via_reach(), who);
             }
             // The pad field: on F.Cu, only inside a pad; no via near it.
             let Some(field) = part.pads.iter().map(|p| p.rect).reduce(|a, b| a.union(b)) else {
@@ -423,18 +443,18 @@ impl<'a> Router<'a> {
                     track[0][node] = BLOCKED;
                 }
             }
-            for node in grid.nodes(field.grow(VIA_NM / 2 + CLEARANCE_NM)) {
+            for node in grid.nodes(field.grow(VIA_NM / 2 + board.s())) {
                 via[node] = BLOCKED;
             }
             for pad in &part.pads {
                 if let Some(net) = pad.net.as_ref().and_then(|n| nets.binary_search(n).ok()) {
-                    corridors[net].extend(corridor(&grid, field, pad, CORRIDOR_HALF_NM, 0));
+                    corridors[net].extend(corridor(&grid, field, pad, board.corridor_half(), 0));
                     via_corridors[net].extend(corridor(
                         &grid,
                         field,
                         pad,
-                        CORRIDOR_HALF_NM + VIA_NM / 2,
-                        VIA_NM / 2 + CLEARANCE_NM,
+                        board.corridor_half() + VIA_NM / 2,
+                        VIA_NM / 2 + board.s(),
                     ));
                 }
             }
@@ -760,18 +780,22 @@ impl<'a> Router<'a> {
                 if self.open(lb, b, who) {
                     continue;
                 }
-                (b, TRACK_REACH, [lb == Layer::F, lb == Layer::B])
+                (
+                    b,
+                    self.board.track_reach(),
+                    [lb == Layer::F, lb == Layer::B],
+                )
             } else {
                 if self.via_open(a, net) && self.open(lb, a, who) {
                     continue;
                 }
-                (a, VIA_REACH, [true, true])
+                (a, self.board.via_reach(), [true, true])
             };
             // Every node where a blocker's track would stand in the way
             // costs more from now on: the contested node's shadow.
             let hole = if la != lb { HOLE_REACH } else { 0 };
             let (x, y) = self.grid.at(at);
-            let shadow = reach + WIDTH_NM / 2;
+            let shadow = reach + self.board.w() / 2;
             out.extend(self.contest(Rect::point(x, y), shadow, reach, layers, net, hole));
         }
         out
@@ -799,7 +823,7 @@ impl<'a> Router<'a> {
         }
         let mut out = BTreeSet::new();
         for (other, e) in self.edges.iter().enumerate() {
-            let r = reach + WIDTH_NM / 2;
+            let r = reach + self.board.w() / 2;
             let near = (0..2).filter(|&l| layers[l]).any(|l| {
                 e[l].iter()
                     .any(|&(p, q)| gap2(span(self.grid.at(p), self.grid.at(q)), here) < r * r)
@@ -839,17 +863,18 @@ impl<'a> Router<'a> {
     fn claim_edge(&mut self, net: usize, layer: Layer, a: usize, b: usize) {
         let shape = Shape {
             rect: span(self.grid.at(a), self.grid.at(b)),
-            r: WIDTH_NM / 2,
+            r: self.board.w() / 2,
         };
         let who = owner(net);
+        let (track_reach, via_reach) = (self.board.track_reach(), self.board.via_reach());
         claim(
             &mut self.track[layer.index()],
             &self.grid,
             shape,
-            TRACK_REACH,
+            track_reach,
             who,
         );
-        claim(&mut self.via, &self.grid, shape, VIA_REACH, who);
+        claim(&mut self.via, &self.grid, shape, via_reach, who);
     }
 
     fn claim_via(&mut self, net: usize, node: usize) {
@@ -859,10 +884,11 @@ impl<'a> Router<'a> {
             r: VIA_NM / 2,
         };
         let who = owner(net);
+        let (track_reach, via_reach) = (self.board.track_reach(), self.board.via_reach());
         for l in 0..2 {
-            claim(&mut self.track[l], &self.grid, shape, TRACK_REACH, who);
+            claim(&mut self.track[l], &self.grid, shape, track_reach, who);
         }
-        claim(&mut self.via, &self.grid, shape, VIA_REACH, who);
+        claim(&mut self.via, &self.grid, shape, via_reach, who);
         let centre = Shape {
             rect: Rect::point(x, y),
             r: 0,
@@ -970,8 +996,9 @@ impl<'a> Router<'a> {
         Ok(())
     }
 
-    /// Ground: each pad joined by F.Cu to a via, or to ground copper that
-    /// has one; the zone joins the vias.
+    /// Ground, and at 4 layers each plane net: each pad joined by F.Cu to a
+    /// via, or to the net's copper that has one; the zone or plane joins the
+    /// vias.
     fn route_ground(&mut self, net: usize, pads: &[PadRef]) -> Result<(), Stuck> {
         // A via stands only in the largest piece of the zone as the B.Cu
         // copper already laid leaves it.
@@ -1007,9 +1034,10 @@ impl<'a> Router<'a> {
         Ok(())
     }
 
-    /// `None` when the zone's fill is one piece holding every ground via;
-    /// otherwise the nets whose B.Cu copper fences it apart. Every node on
-    /// such a fence costs B.Cu searches more from now on.
+    /// `None` when the zone's (or plane's) fill is one piece holding every via
+    /// of `ground`, the stitched net; otherwise the nets whose copper fences
+    /// it apart. Every node on such a fence costs B.Cu searches more from now
+    /// on.
     fn zone_blockers(&mut self, ground: usize) -> Option<BTreeSet<usize>> {
         let seeds: Vec<usize> = self
             .vias
@@ -1047,8 +1075,8 @@ impl<'a> Router<'a> {
                 }
             }
         }
-        let reach = CLEARANCE_NM + MIN_THICKNESS_NM / 2 + EPS_NM + PITCH_NM;
-        let shadow = CLEARANCE_NM + MIN_THICKNESS_NM / 2 + WIDTH_NM / 2;
+        let reach = self.board.s() + MIN_THICKNESS_NM / 2 + EPS_NM + PITCH_NM;
+        let shadow = self.board.s() + MIN_THICKNESS_NM / 2 + self.board.w() / 2;
         let mut out = BTreeSet::new();
         for &n in &fence {
             let (x, y) = self.grid.at(n);
@@ -1058,21 +1086,25 @@ impl<'a> Router<'a> {
         Some(out)
     }
 
-    /// The B.Cu nodes the zone's fill is sure to cover: at least the
-    /// clearance and half the zone's minimum width from foreign B.Cu copper
-    /// and from the edge clearance.
+    /// The nodes the stitched net's fill is sure to cover: at least the
+    /// clearance and half the zone's minimum width from foreign copper on its
+    /// layer and from the edge clearance. At 2 layers that is the B.Cu zone,
+    /// cut by foreign B.Cu tracks and vias; at 4 it is the net's plane, which
+    /// carries no track, so only foreign through vias cut it.
     fn zone_core(&self, ground: usize) -> Vec<bool> {
+        let planes = self.board.stack.has_planes();
         zone_core(
             &self.grid,
             self.board.outline,
+            self.board.s(),
             self.edges
                 .iter()
                 .enumerate()
-                .filter(|&(net, _)| net != ground)
+                .filter(|&(net, _)| net != ground && !planes)
                 .flat_map(|(_, e)| {
                     e[1].iter().map(|&(a, b)| Shape {
                         rect: span(self.grid.at(a), self.grid.at(b)),
-                        r: WIDTH_NM / 2,
+                        r: self.board.w() / 2,
                     })
                 }),
             self.vias
@@ -1225,14 +1257,15 @@ fn to_edge(o: Rect, (x, y): (i64, i64)) -> i64 {
     (x - o.x0).min(o.x1 - x).min(y - o.y0).min(o.y1 - y)
 }
 
-/// See [`Router::zone_core`].
+/// See [`Router::zone_core`]. `clearance` is the declared one.
 fn zone_core(
     grid: &Grid,
     outline: Rect,
+    clearance: i64,
     tracks: impl Iterator<Item = Shape>,
     vias: impl Iterator<Item = Shape>,
 ) -> Vec<bool> {
-    let reach = CLEARANCE_NM + MIN_THICKNESS_NM / 2 + EPS_NM;
+    let reach = clearance + MIN_THICKNESS_NM / 2 + EPS_NM;
     let mut core = vec![true; grid.len()];
     for (n, c) in core.iter_mut().enumerate() {
         let (x, y) = grid.at(n);
@@ -1297,6 +1330,15 @@ fn components(grid: &Grid, core: &[bool], seeds: &[usize]) -> Vec<Option<usize>>
     out
 }
 
+/// What a stitched net's fill is called in a refusal: `B.Cu zone`, or
+/// `In1.Cu plane`.
+fn zone_name(stack: &crate::stack::Stack, net: &str) -> String {
+    match stack.plane_of(net) {
+        Some(layer) => format!("{layer} plane"),
+        None => "B.Cu zone".to_owned(),
+    }
+}
+
 /// Each routed net's pads, in order: by reference, then pad number.
 fn net_pads(board: &Board) -> BTreeMap<String, Vec<PadRef>> {
     let mut order: Vec<usize> = (0..board.parts.len()).collect();
@@ -1344,9 +1386,28 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
         // skips it; this keeps a track from ever joining one.
         .filter(|&i| pads[&nets[i]].len() > 1 && !nets[i].starts_with(crate::parity::UNCONNECTED))
         .collect();
-    let ground = nets.binary_search_by(|n| n.as_str().cmp(GROUND)).ok();
-    // Ground's stitching is the zone's, laid before any net is tracked.
-    order.sort_by_key(|&i| (Some(i) != ground, pads[&nets[i]].len(), nets[i].clone()));
+    // The stitched nets: ground at 2 layers (the B.Cu zone); at 4, each plane's
+    // net. Their stitching is laid before any net is tracked.
+    let stitched: Vec<usize> = if board.stack.has_planes() {
+        board
+            .stack
+            .planes
+            .iter()
+            .filter_map(|(_, n)| nets.binary_search(n).ok())
+            .collect()
+    } else {
+        nets.binary_search_by(|n| n.as_str().cmp(GROUND))
+            .ok()
+            .into_iter()
+            .collect()
+    };
+    order.sort_by_key(|&i| {
+        (
+            !stitched.contains(&i),
+            pads[&nets[i]].len(),
+            nets[i].clone(),
+        )
+    });
     let mut r = Router::new(board, grid, nets.clone());
     let mut queue: VecDeque<usize> = order.iter().copied().collect();
     let mut ripups = 0;
@@ -1355,7 +1416,7 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
             r.release(net, true);
             loop {
                 let p = &pads[&nets[net]];
-                let result = if Some(net) == ground {
+                let result = if stitched.contains(&net) {
                     r.route_ground(net, p)
                 } else {
                     r.route_net(net, p)
@@ -1384,28 +1445,50 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
                 }
             }
         }
-        let Some(g) = ground.filter(|g| r.vias.values().any(|v| v == g)) else {
-            break Vec::new();
+        // Each stitched net's fill must be one piece holding its vias.
+        let mut split = None;
+        for &g in &stitched {
+            if r.vias.values().any(|v| *v == g)
+                && let Some(by) = r.zone_blockers(g)
+            {
+                split = Some((g, by));
+                break;
+            }
+        }
+        let Some((g, by)) = split else {
+            break if board.stack.has_planes() {
+                board
+                    .stack
+                    .planes
+                    .iter()
+                    .map(|(l, n)| (n.clone(), l.clone()))
+                    .collect()
+            } else if stitched.iter().any(|g| r.vias.values().any(|v| v == g)) {
+                vec![(GROUND.to_owned(), "B.Cu".to_owned())]
+            } else {
+                Vec::new()
+            };
         };
-        let Some(by) = r.zone_blockers(g) else {
-            break vec![(nets[g].clone(), Layer::B)];
-        };
+        let fill = zone_name(&board.stack, &nets[g]);
         if by.is_empty() {
             return Err(fail(
-                GROUND,
-                "the board edge alone cuts the B.Cu zone apart".into(),
+                &nets[g],
+                format!("the board edge alone cuts the {fill} apart"),
             ));
         }
-        // The zone is split: the nets whose B.Cu copper fences an island are
-        // taken up, and routed again with the fence's nodes dearer.
+        // The fill is split: the nets whose copper fences an island are taken
+        // up, and routed again with the fence's nodes dearer.
         ripups += by.len();
         if ripups > RIPUPS {
             return Err(fail(
-                GROUND,
-                format!("the B.Cu zone does not join every ground via after {RIPUPS} rip-ups"),
+                &nets[g],
+                format!(
+                    "the {fill} does not join every {} via after {RIPUPS} rip-ups",
+                    nets[g]
+                ),
             ));
         }
-        // Ground is stitched again after them, into the zone they leave.
+        // The net is stitched again after them, into the fill they leave.
         for &b in by.iter().chain(&[g]) {
             r.rip(b);
             queue.push_back(b);
@@ -1465,7 +1548,7 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
             net: Some(&s.net),
             shape: Shape {
                 rect: span(s.start, s.end),
-                r: WIDTH_NM / 2,
+                r: board.w() / 2,
             },
             layers: [s.layer == Layer::F, s.layer == Layer::B],
         });
@@ -1485,7 +1568,7 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
 }
 
 /// Every pair of copper items on a shared layer, of different nets (a pad
-/// with no net differs from everything), keeps [`CLEARANCE_NM`]; every
+/// with no net differs from everything), keeps the declared clearance; every
 /// track and via keeps [`EDGE_NM`] from the edge; holes keep
 /// [`HOLE_GAP_NM`]; tracks run along an axis.
 pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
@@ -1494,10 +1577,14 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
         for b in &all[i + 1..] {
             let shared = (a.layers[0] && b.layers[0]) || (a.layers[1] && b.layers[1]);
             let same = a.net.is_some() && a.net == b.net;
-            if shared && !same && !a.shape.clear(b.shape, CLEARANCE_NM) {
+            if shared && !same && !a.shape.clear(b.shape, board.s()) {
                 return Err(format!(
-                    "{} ({:?}) is within {CLEARANCE_NM} nm of {} ({:?})",
-                    a.what, a.net, b.what, b.net
+                    "{} ({:?}) is within {} nm of {} ({:?})",
+                    a.what,
+                    a.net,
+                    board.s(),
+                    b.what,
+                    b.net
                 ));
             }
         }
@@ -1532,9 +1619,13 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
 }
 
 /// Every routed net's copper is one piece, as KiCad joins it: a track's end
-/// inside a pad's copper, a via, or another track of the net; ground vias by
-/// the zone, judged by the B.Cu area its fill is sure to cover. Every via has
-/// copper on both layers, and the zone's net is ground.
+/// inside a pad's copper, a via, or another track of the net; a stitched
+/// net's vias by its fill, judged by the area the fill is sure to cover: at 2
+/// layers ground's B.Cu zone, cut by foreign B.Cu copper and vias; at 4 each
+/// declared plane, cut by foreign vias. The zones are exactly the declared
+/// ones: at 2 layers none or ground's on B.Cu, at 4 every plane and nothing
+/// else. Every via is joined on at least two of the copper layers it
+/// crosses: tracks on F.Cu and B.Cu, or its net's fill.
 pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
     let grid = Grid::new(board.outline).ok_or("the board is too large")?;
     let all = items(board, routed);
@@ -1547,8 +1638,8 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
         i
     }
     let ends = |s: &Segment| [s.start, s.end];
-    // Per via, whether copper meets it on F.Cu and on B.Cu.
-    let mut via_layers: BTreeMap<(i64, i64), [bool; 2]> = BTreeMap::new();
+    // Per via, which copper meets it: F.Cu, B.Cu, its net's zone or plane.
+    let mut via_layers: BTreeMap<(i64, i64), [bool; 3]> = BTreeMap::new();
     let first_seg = all.len() - routed.segments.len() - routed.vias.len();
     let first_via = all.len() - routed.vias.len();
     for (si, s) in routed.segments.iter().enumerate() {
@@ -1583,36 +1674,54 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
         }
     }
 
-    for (net, layer) in &routed.zones {
-        if net != GROUND || *layer != Layer::B {
-            return Err(format!("a zone on {net} {}", layer.name()));
-        }
+    let stack = &board.stack;
+    let declared: Vec<(String, String)> = if stack.has_planes() {
+        stack
+            .planes
+            .iter()
+            .map(|(l, n)| (n.clone(), l.clone()))
+            .collect()
+    } else {
+        vec![(GROUND.to_owned(), "B.Cu".to_owned())]
+    };
+    let mut zones = routed.zones.clone();
+    zones.sort();
+    zones.dedup();
+    if zones.len() != routed.zones.len() || zones.iter().any(|z| !declared.contains(z)) {
+        return Err(format!(
+            "zones {:?}; the specification declares {declared:?}",
+            routed.zones
+        ));
     }
-    if !routed.zones.is_empty() {
+    if stack.has_planes() && zones.len() != declared.len() {
+        return Err(format!(
+            "planes {:?}; the specification declares {declared:?}",
+            routed.zones
+        ));
+    }
+    for (net, layer) in &zones {
+        let b_cu = layer == "B.Cu";
         let core = zone_core(
             &grid,
             board.outline,
+            board.s(),
             routed
                 .segments
                 .iter()
-                .filter(|s| s.layer == Layer::B && s.net != GROUND)
+                .filter(|s| b_cu && s.layer == Layer::B && s.net != *net)
                 .map(|s| Shape {
                     rect: span(s.start, s.end),
-                    r: WIDTH_NM / 2,
+                    r: board.w() / 2,
                 }),
-            routed
-                .vias
-                .iter()
-                .filter(|v| v.net != GROUND)
-                .map(|v| Shape {
-                    rect: Rect::point(v.at.0, v.at.1),
-                    r: VIA_NM / 2,
-                }),
+            routed.vias.iter().filter(|v| v.net != *net).map(|v| Shape {
+                rect: Rect::point(v.at.0, v.at.1),
+                r: VIA_NM / 2,
+            }),
         );
-        let ground: Vec<usize> = (0..routed.vias.len())
-            .filter(|&i| routed.vias[i].net == GROUND)
+        let stitched: Vec<usize> = (0..routed.vias.len())
+            .filter(|&i| routed.vias[i].net == *net)
             .collect();
-        let seeds: Vec<usize> = ground
+        let seeds: Vec<usize> = stitched
             .iter()
             .map(|&i| {
                 let (x, y) = routed.vias[i].at;
@@ -1620,27 +1729,45 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
             })
             .collect();
         if seeds.contains(&usize::MAX) {
-            return Err("a ground via is off the grid".into());
+            return Err(format!("a {net} via is off the grid"));
+        }
+        if !b_cu && stitched.is_empty() {
+            return Err(format!(
+                "the {layer} plane of {net} reaches no via: no pad draws from it"
+            ));
         }
         let labels = components(&grid, &core, &seeds);
-        for (k, &i) in ground.iter().enumerate() {
+        for (k, &i) in stitched.iter().enumerate() {
             if labels[k].is_none() || labels[k] != labels[0] {
+                let fill = if b_cu {
+                    "zone".to_owned()
+                } else {
+                    format!("{layer} plane of {net}")
+                };
                 return Err(format!(
-                    "the zone does not reach via {:?}",
+                    "the {fill} does not reach via {:?}",
                     routed.vias[i].at
                 ));
             }
-            via_layers.entry(routed.vias[i].at).or_default()[1] = true;
+            // Ground's zone is B.Cu copper: a B.Cu stub and the zone are one
+            // layer, as before planes. A plane is a layer of its own.
+            via_layers.entry(routed.vias[i].at).or_default()[if b_cu { 1 } else { 2 }] = true;
             let (ra, rb) = (
                 find(&mut parent, first_via + i),
-                find(&mut parent, first_via + ground[0]),
+                find(&mut parent, first_via + stitched[0]),
             );
             parent[ra] = rb;
         }
     }
     for v in &routed.vias {
-        if via_layers.get(&v.at) != Some(&[true, true]) {
-            return Err(format!("via {:?} is not joined on both layers", v.at));
+        let met = via_layers
+            .get(&v.at)
+            .map_or(0, |m| m.iter().filter(|&&b| b).count());
+        if met < 2 {
+            return Err(format!(
+                "via {:?} is not joined on two of the layers it crosses",
+                v.at
+            ));
         }
     }
     let index: BTreeMap<PadRef, usize> = board
@@ -1786,6 +1913,138 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
     Ok(Part { reference, pads })
 }
 
+/// A board that does not agree with the specification's declared board,
+/// named: `LayersDisagree`, `PlanesDisagree`, `ThicknessDisagrees` or
+/// `ViaNotThrough`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Disagrees {
+    pub kind: &'static str,
+    pub message: String,
+}
+
+/// Refuses a board whose copper layers, zones or declared thickness are not
+/// the specification's (`AET-WO-4100`): the layer table's copper entries
+/// must be exactly the declared layers, each with KiCad's id and `signal`;
+/// every via the engine's untyped through via (`F.Cu` to `B.Cu`, no `blind`
+/// or `micro`: the specification declares through vias only);
+/// every zone a declared one (ground's B.Cu zone at 2 layers, the planes at
+/// 4, each plane present); and `(general (thickness …))` the declared
+/// nominal. The board is judged by the specification, never by its own
+/// claims.
+pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagrees> {
+    let no = |kind: &'static str, message: String| Disagrees { kind, message };
+    let board = tree.root();
+    let table = one(&board, "layers")
+        .map_err(|m| no("LayersDisagree", m))?
+        .ok_or_else(|| no("LayersDisagree", "the board has no layer table".into()))?;
+    let mut copper = Vec::new();
+    for row in table.lists() {
+        let name = row.arg(1).unwrap_or("");
+        let id = row.head().unwrap_or("");
+        // KiCad 10 numbers copper 0, 2, 4 … 62 (even) and every other layer
+        // odd; a row is copper by its id whatever its name says, or by name.
+        let even = id.parse::<u32>().is_ok_and(|n| n % 2 == 0 && n <= 62);
+        if even || name.ends_with(".Cu") {
+            copper.push((
+                id.to_owned(),
+                name.to_owned(),
+                row.arg(2).unwrap_or("").to_owned(),
+            ));
+        }
+    }
+    let want: Vec<(String, String, String)> = stack
+        .copper
+        .iter()
+        .map(|n| {
+            (
+                crate::stack::kicad_id(n).unwrap_or("?").to_owned(),
+                n.clone(),
+                "signal".to_owned(),
+            )
+        })
+        .collect();
+    let mut sorted = copper.clone();
+    sorted.sort();
+    let mut expected = want.clone();
+    expected.sort();
+    if sorted != expected {
+        return Err(no(
+            "LayersDisagree",
+            format!(
+                "the board's copper layers are {copper:?}; the specification declares {want:?}"
+            ),
+        ));
+    }
+    for v in board.all("via") {
+        let layers: Vec<&str> = one(&v, "layers")
+            .map_err(|m| no("ViaNotThrough", m))?
+            .map(|l| l.texts().collect())
+            .unwrap_or_default();
+        if v.arg(1).is_some() || layers != ["F.Cu", "B.Cu"] {
+            return Err(no(
+                "ViaNotThrough",
+                format!(
+                    "a via typed {:?} on {layers:?}; the specification declares through vias, F.Cu to B.Cu",
+                    v.arg(1)
+                ),
+            ));
+        }
+    }
+    let mut zones = Vec::new();
+    for z in board.all("zone") {
+        let net = one(&z, "net")
+            .map_err(|m| no("PlanesDisagree", m))?
+            .and_then(|n| n.arg(1))
+            .unwrap_or("")
+            .to_owned();
+        let layer = one(&z, "layer")
+            .map_err(|m| no("PlanesDisagree", m))?
+            .and_then(|l| l.arg(1))
+            .unwrap_or("")
+            .to_owned();
+        zones.push((net, layer));
+    }
+    let planes: Vec<(String, String)> = stack
+        .planes
+        .iter()
+        .map(|(l, n)| (n.clone(), l.clone()))
+        .collect();
+    let ok = if stack.has_planes() {
+        let mut z = zones.clone();
+        z.sort();
+        let mut p = planes.clone();
+        p.sort();
+        z == p
+    } else {
+        zones.len() <= 1 && zones.iter().all(|z| z.0 == GROUND && z.1 == "B.Cu")
+    };
+    if !ok {
+        return Err(no(
+            "PlanesDisagree",
+            format!(
+                "the board's zones are {zones:?}; the specification declares {planes:?} (and ground's B.Cu zone at 2 layers)"
+            ),
+        ));
+    }
+    let thickness = board
+        .one("general")
+        .and_then(|g| g.map(|g| g.one("thickness")).transpose())
+        .map_err(|e| no("ThicknessDisagrees", e.to_string()))?
+        .flatten()
+        .and_then(|t| t.arg(1))
+        .and_then(sexpr::nm);
+    if thickness != Some(stack.thickness.nominal_nm) {
+        return Err(no(
+            "ThicknessDisagrees",
+            format!(
+                "the board declares thickness {thickness:?} nm; the specification declares {} nm",
+                stack.thickness.nominal_nm
+            ),
+        ));
+    }
+    Ok(())
+}
+
 fn layer_of(item: &strict::Node<'_>, what: &str) -> Result<Layer, String> {
     match one(item, "layer")?.and_then(|l| l.arg(1)) {
         Some("F.Cu") => Ok(Layer::F),
@@ -1795,9 +2054,13 @@ fn layer_of(item: &strict::Node<'_>, what: &str) -> Result<Layer, String> {
 }
 
 /// A board as the strict reader read it: its outline and pads, and its
-/// copper. Tracks and vias must be the router's own sizes; the outline is
-/// the one `Edge.Cuts` rectangle.
-pub fn read(tree: &Tree) -> Result<(Board, Routed), String> {
+/// copper, judged against the specification's declared board `stack`.
+/// Tracks must be the declared width and on F.Cu or B.Cu; vias the engine's
+/// through via; the outline the one `Edge.Cuts` rectangle. Whether the layer
+/// table, the zones and the thickness are exactly the declared ones is
+/// [`declared`]'s, which every caller runs first, and [`connectivity`] judges
+/// the zones again on the copper read here.
+pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed), String> {
     let board = tree.root();
     let mut edges = Vec::new();
     for r in board.all("gr_rect") {
@@ -1829,7 +2092,7 @@ pub fn read(tree: &Tree) -> Result<(Board, Routed), String> {
         let width = one(&s, "width")?
             .map(|w| nm_at(&w, 1, "segment"))
             .transpose()?;
-        if width != Some(WIDTH_NM) {
+        if width != Some(stack.width_nm) {
             return Err(format!("a segment {width:?} wide"));
         }
         routed.segments.push(Segment {
@@ -1845,7 +2108,11 @@ pub fn read(tree: &Tree) -> Result<(Board, Routed), String> {
         let layers: Vec<&str> = one(&v, "layers")?
             .map(|l| l.texts().collect())
             .unwrap_or_default();
-        if size != Some(VIA_NM) || drill != Some(DRILL_NM) || layers != ["F.Cu", "B.Cu"] {
+        if v.arg(1).is_some()
+            || size != Some(VIA_NM)
+            || drill != Some(DRILL_NM)
+            || layers != ["F.Cu", "B.Cu"]
+        {
             return Err(format!("a via {size:?}/{drill:?} on {layers:?}"));
         }
         routed.vias.push(Via {
@@ -1854,9 +2121,11 @@ pub fn read(tree: &Tree) -> Result<(Board, Routed), String> {
         });
     }
     for z in board.all("zone") {
-        routed
-            .zones
-            .push((net(&z, "a zone")?, layer_of(&z, "a zone")?));
+        let layer = one(&z, "layer")?
+            .and_then(|l| l.arg(1))
+            .map(str::to_owned)
+            .ok_or("a zone has no layer")?;
+        routed.zones.push((net(&z, "a zone")?, layer));
     }
     routed.segments.sort();
     routed.vias.sort();
@@ -1864,6 +2133,7 @@ pub fn read(tree: &Tree) -> Result<(Board, Routed), String> {
         Board {
             outline: span(a, b),
             parts,
+            stack: stack.clone(),
         },
         routed,
     ))
@@ -1887,6 +2157,10 @@ mod tests {
     }
 
     const MM: i64 = 1_000_000;
+
+    fn read_ref(tree: &Tree) -> Result<(Board, Routed), String> {
+        read(tree, &crate::stack::reference())
+    }
 
     /// An 0402-sized part at (x, 10 mm), pad 1 on `a` and pad 2 on `b`.
     fn resistor(reference: &str, x: i64, a: &str, b: &str) -> Part {
@@ -1918,6 +2192,7 @@ mod tests {
                 resistor("R1", 5 * MM, "/A", "/B"),
                 resistor("R2", 15 * MM, "/B", "/A"),
             ],
+            stack: crate::stack::reference(),
         };
         let routed = route(&board).unwrap();
         assert!(!routed.segments.is_empty());
@@ -1936,6 +2211,7 @@ mod tests {
                 reference: "R1".into(),
                 pads: vec![pad("1", Some("/A"), rect(4 * MM, 4 * MM, 5 * MM, 5 * MM))],
             }],
+            stack: crate::stack::reference(),
         };
         let at = |y: i64| Routed {
             segments: vec![Segment {
@@ -1946,7 +2222,7 @@ mod tests {
             }],
             ..Routed::default()
         };
-        let y = 5 * MM + CLEARANCE_NM + WIDTH_NM / 2;
+        let y = 5 * MM + crate::rules::FLOOR_NM + crate::rules::FLOOR_NM / 2;
         assert!(check(&board, &at(y)).is_ok());
         assert!(check(&board, &at(y - 1)).is_err());
         // A pad with no net is foreign to every net, its own kind included.
@@ -1972,9 +2248,10 @@ mod tests {
         let board = Board {
             outline: rect(0, 0, 10 * MM, 10 * MM),
             parts: vec![],
+            stack: crate::stack::reference(),
         };
         let ok = |r: &Routed| check(&board, r);
-        let near_edge = EDGE_NM + WIDTH_NM / 2;
+        let near_edge = EDGE_NM + crate::rules::FLOOR_NM / 2;
         let one = |y| Routed {
             segments: vec![seg("/A", Layer::B, (2 * MM, y), (8 * MM, y))],
             ..Routed::default()
@@ -2013,9 +2290,10 @@ mod tests {
                 resistor("R1", 5 * MM, GROUND, "/A"),
                 resistor("R2", 15 * MM, GROUND, "/A"),
             ],
+            stack: crate::stack::reference(),
         };
         let routed = route(&board).unwrap();
-        assert_eq!(routed.zones, vec![(GROUND.to_owned(), Layer::B)]);
+        assert_eq!(routed.zones, vec![(GROUND.to_owned(), "B.Cu".to_owned())]);
         connectivity(&board, &routed).unwrap();
         let mut no_zone = routed.clone();
         no_zone.zones.clear();
@@ -2045,6 +2323,61 @@ mod tests {
             .segments
             .push(seg("/A", Layer::F, (10 * MM, 3 * MM), (10 * MM, 4 * MM)));
         assert!(connectivity(&board, &dangling).is_err());
+    }
+
+    /// Adversarial A3: at 2 layers ground's zone is B.Cu copper, so a ground
+    /// via met only by a B.Cu stub and the zone is joined on one layer, and
+    /// refused, as before planes.
+    #[test]
+    fn a_ground_via_met_only_on_b_cu_is_not_joined_on_two_layers() {
+        let board = Board {
+            outline: rect(0, 0, 20 * MM, 20 * MM),
+            parts: vec![
+                resistor("R1", 5 * MM, GROUND, "/A"),
+                resistor("R2", 15 * MM, GROUND, "/A"),
+            ],
+            stack: crate::stack::reference(),
+        };
+        let mut routed = route(&board).unwrap();
+        connectivity(&board, &routed).unwrap();
+        let at = (10 * MM, 16 * MM);
+        routed.vias.push(Via {
+            net: GROUND.into(),
+            at,
+        });
+        routed
+            .segments
+            .push(seg(GROUND, Layer::B, at, (10 * MM, 17 * MM)));
+        let e = connectivity(&board, &routed).unwrap_err();
+        assert!(e.contains("not joined on two"), "{e}");
+    }
+
+    /// Adversarial A4: a declared plane whose net no pad draws from has no
+    /// via; KiCad would report its copper isolated. It is refused here, by
+    /// the router's own judge, before any tool runs.
+    #[test]
+    fn a_plane_no_via_reaches_is_refused() {
+        let mut stack = crate::stack::reference();
+        stack.copper = vec![
+            "F.Cu".into(),
+            "In1.Cu".into(),
+            "In2.Cu".into(),
+            "B.Cu".into(),
+        ];
+        stack.planes = vec![
+            ("In1.Cu".into(), GROUND.into()),
+            ("In2.Cu".into(), "VDD_UNUSED".into()),
+        ];
+        let board = Board {
+            outline: rect(0, 0, 20 * MM, 20 * MM),
+            parts: vec![
+                resistor("R1", 5 * MM, GROUND, "/A"),
+                resistor("R2", 15 * MM, GROUND, "/A"),
+            ],
+            stack,
+        };
+        let e = route(&board).unwrap_err();
+        assert!(e.why.contains("reaches no via"), "{e:?}");
     }
 
     /// What the router does not model is refused when read, never guessed.
@@ -2091,14 +2424,14 @@ mod tests {
             .unwrap()
         };
         assert!(
-            read(&board(
+            read_ref(&board(
                 "(segment (start 1 1) (end 2 1) (width 0.2) (layer \"F.Cu\") (net \"/A\"))"
             ))
             .is_ok()
         );
         // A second outline is refused, not resolved to the first.
         assert!(
-            read(&board(
+            read_ref(&board(
                 "(gr_rect (start 0 0) (end 50 50) (layer \"Edge.Cuts\"))"
             ))
             .unwrap_err()
@@ -2111,7 +2444,7 @@ mod tests {
             "(via (at 1 1) (size 0.6) (drill 0.3) (layers \"F.Cu\") (net \"/A\"))",
             "(segment (start 1 1) (end 2 1) (width 0.2) (layer \"F.Cu\"))",
         ] {
-            assert!(read(&board(copper)).is_err(), "{copper}");
+            assert!(read_ref(&board(copper)).is_err(), "{copper}");
         }
     }
 
@@ -2121,6 +2454,7 @@ mod tests {
         let board = Board {
             outline: rect(0, 0, 300 * MM, 300 * MM),
             parts: vec![],
+            stack: crate::stack::reference(),
         };
         let e = route(&board).unwrap_err();
         assert!(e.why.contains("larger than"), "{e:?}");
@@ -2132,8 +2466,12 @@ mod tests {
         let board = Board {
             outline: rect(0, 0, 10 * MM, 10 * MM),
             parts: vec![],
+            stack: crate::stack::reference(),
         };
-        for zone in [("VDD".to_owned(), Layer::B), (GROUND.to_owned(), Layer::F)] {
+        for zone in [
+            ("VDD".to_owned(), "B.Cu".to_owned()),
+            (GROUND.to_owned(), "F.Cu".to_owned()),
+        ] {
             let r = Routed {
                 zones: vec![zone.clone()],
                 ..Routed::default()

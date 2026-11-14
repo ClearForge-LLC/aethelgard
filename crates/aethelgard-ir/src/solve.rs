@@ -1087,6 +1087,9 @@ mod differential {
             .then(|| format!("{}{}", kind.prefix(), 1 + rng.below(4)))
     }
 
+    /// The reference specification's declared board (`examples/sentinel-01-minimal.json`).
+    const BOARD: &str = r#"{"copper_layers": 2, "layers": [{"name": "F.Cu", "role": "signal", "net": null}, {"name": "B.Cu", "role": "signal", "net": null}], "stackup": {"finished_thickness_um": {"nominal": 1600, "min": 340, "max": 2000, "source": "AET-WO-1305 conditions: 1.6 mm declared; 0.34 mm = 2 x 70 um + 0.2 mm; 2.0 mm = 1.6 mm + 25 %"}, "dielectrics": [{"between": ["F.Cu", "B.Cu"], "min_thickness_um": 200, "source": "implied: the finished minimum 340 um less twice the copper maximum 70 um"}], "copper_max_um": {"value": 70, "source": "AET-WO-1305 condition: twice KiCad's default 35 um (2 oz)"}, "relative_permittivity_max_permille": {"value": 5400, "source": "the IPC-4101 FR-4 maximum, specified at 1 MHz"}}, "rules": {"clearance_um": 200, "track_width_um": 200, "via_drill_um": 300, "via_diameter_um": 600}}"#;
+
     fn spec(rng: &mut Rng, pool: usize) -> Specification {
         let mut i2c_buses = Vec::new();
         for i in 0..rng.below(5) {
@@ -1138,7 +1141,8 @@ mod differential {
             })
             .collect();
         Specification {
-            schema_version: 1,
+            schema_version: 2,
+            board: serde_json::from_str(BOARD).expect("the declared board"),
             project_name: "t".into(),
             mcu: Mcu {
                 part: "T".into(),

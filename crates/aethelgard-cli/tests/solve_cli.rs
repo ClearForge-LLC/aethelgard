@@ -21,9 +21,11 @@ use sha2::{Digest, Sha256};
 /// `AET-WO-1205` added `i2c_speeds` and made the version 2 (`d684cd6d…` and
 /// `dd192c61…` before; old and new in its FEEDBACK), and `AET-WO-4200` added
 /// `spi_devices` and made the version 3 (`c655bf2e…` and `6eda552c…` before;
-/// old and new in its FEEDBACK).
-const REFERENCE_DIGEST: &str = "c28a36bfac444736e460b4daa315125be3e033b6c103c90a961b2a6eca4c0357";
-const STRESS_DIGEST: &str = "6b9107c39572547039638593b8ad427140e8ec48462b49df50e7605fb9e2ed9d";
+/// old and new in its FEEDBACK); re-taken at its merge of `AET-WO-4100`, whose
+/// specification version 2 and board section moved them on `main` too
+/// (`53ac16ac…` and `0c9ce020…` there).
+const REFERENCE_DIGEST: &str = "3c39199f6d31478fe30ca26dd6c9c3b8f5d455cfd256db24ef386e0fcce2b2a8";
+const STRESS_DIGEST: &str = "3169ae88d27ca644bf10cbcedea5472b6db561c9eaef9d50bd817199069e2276";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.

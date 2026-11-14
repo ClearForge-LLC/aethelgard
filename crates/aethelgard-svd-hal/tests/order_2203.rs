@@ -75,19 +75,22 @@ fn digests() -> Vec<(&'static str, String)> {
 /// faulted" and "boot image" digests were re-taken in `AET-WO-4200` too: the
 /// platform gains SPI1's multiplexer and the flash after the I2C devices, whose
 /// lines and order are unchanged, and the `Image` gains U4's SPI check. The old
-/// digests were `0b39d4aa…56d2`, `2ccc0e8d…c75b` and `06c8463c…5f5e`.
+/// digests were `0b39d4aa…56d2`, `2ccc0e8d…c75b` and `06c8463c…5f5e`. The
+/// firmware and both platform digests were re-taken again at the merge of
+/// `AET-WO-4100`, whose specification version 2 moved them on `main` (to
+/// `7079aa52…`, `b777f4e5…` and `82de0037…` there).
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "4cb2c9b1345a40db3e441c33f0ca0d42f4a0751fff7535caefcf22fe39c2e36f",
+        "c468b3cbbf33a9ee4ccb6bb5214782a59c3562c52e63216ea8ee028cc291604f",
     ),
     (
         "platform",
-        "5db8e3271b083b33789c25a71dcfa6988c1f6d3188fbcf9a11ae754d81c2f0de",
+        "9fd77dad7c7276c2a8e83fc252eaf32446421bd8b7ed7165fe1281d3149e53aa",
     ),
     (
         "platform faulted",
-        "d88ba5c30a25628f6164a3d4b47961c7e112b44ff3e17a20cc9c7b68c69367ac",
+        "c80833a90c3be6bd581173d27470e12f129c7735c7b34096447b7636f3448bec",
     ),
     (
         "boot image",
