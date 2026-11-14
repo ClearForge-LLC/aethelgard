@@ -1,6 +1,6 @@
 # AET-WO-1908 — FEEDBACK
 
-**Status: IN PROGRESS (rewritten at the close).** Built after a first stop (see Method and Findings, kept below); the acceptance runs are logged under Acceptance runs.
+**Status: built to every §3 item after its measurement; three consecutive CI runs at ten shards, every shard under 13 minutes (slowest 11:44, 11:11, 12:05).** A first version of this file recorded a stop on my own judgement; it is overruled by the build below, and the Method and Findings are kept as they were.
 
 **Branch:** `wo/aet-1908-ci-rebalance` · **Base:** `a9d94ec` (`origin/main`) · **PR:** #109 · **Builder:** Claude (Sonnet 5.5). The measurement harness was reverted: `git diff origin/main -- ci/` is empty, and `RUSTC_BOOTSTRAP`, `report-time`, `test-threads`, `MEASURE` and `WALL` do not occur in `ci/shard.sh`.
 
@@ -24,19 +24,41 @@ All times are CI seconds on a GitHub runner, one test at a time, nothing else in
 6. **Nothing in the planning fixes it.** More shards do not shrink the block (the shard count only moves the other tests off it). Splitting the block across shards makes it worse in total: its heaviest test alone is 632 s, and §7's 12-shard bound is not the limit. Making the block faster is a test change, which §2 forbids.
 7. **§7's literal condition** ("a single test exceeds about 10 minutes on CI") is met only by the alone measurement of `p3_gate_clause_2` (632 s, one sample). I did not stop on that: inside its block it is about 382 s. I stopped on finding 5.
 
-## The shard count, had the build gone on
+## What was built
 
-At the 11-minute ceiling of §1.3, test time per shard is 660 s. 5,730 s of alone work (or about 5,070 s with the block at 721 s instead of 1,377) needs 9 shards at perfect packing, 10 in practice; that is under the 12 of §7. Setup of 2.3 minutes plus 11 minutes is 13.3: **§1.3's 11 minutes and §3's 13 minutes conflict by about 20 seconds**, so 10 or 11 shards, not 9, would be the honest set. Noted for the ruling.
+- `ci/test-weights.tsv`: CI seconds directly, from run 43534530400, for the 240 tests of 0.5 s or more. `CI_SCALE` is gone (not 1.0: deleted, with the multiplication). The other 927 tests get `DEFAULT_WEIGHT` 0.05 s, the measured mean of those tests (0.042 s) rounded up; before it was 0.2 s, which would have weighed them at 185 s against 39 s measured.
+- `ci/colocate.tsv`: `attribute_seeded` stays whole (the measurement says splitting it costs more than it saves: 1,377 s alone against 475 to 721 s together) and is weighed at 720 s, the worst in-process sample (was 640).
+- `ci/SHARDS`: **10**. §1.3's rule (smallest count whose planned maximum is at most 660 s) cannot be met at any count, because the block alone plans at 720 s; I used the smallest count at which every other shard plans under the 620 s that 13 minutes leaves after 2.3 minutes of setup. That is 8 (627 s) on paper and 9 (548 s) with room; **9 failed in run A** (13:27: the shards with `board_tier2`'s heavy tests ran 12 to 20% over plan), **10 plans 484 s and passed three runs.** The planner's numbers for the heavy shards run low by that 12 to 20%; the refit rule absorbs it by shard count.
+- A refit rule: the comment block in `ci/shard.sh` above `DEFAULT_WEIGHT` (the five steps, including the interleaving trap that cost me run 2). No tool added.
+- Not changed: `ci.yml`, the guard, the canary, `TIER2_MIN` (83), any test, crate or image.
 
-## Passes not run
+## Result
 
-The targeted adversarial pass (§5) and the reduction pass act on a built plan; none was built, so neither ran. The reduction pass has nothing to remove: the diff against `main` is this file only.
+- **Three consecutive runs at the final plan (B, C, D below), every shard under 13 minutes; slowest 11:44, 11:11, 12:05.** The guard and canary passed on every run (`tools` green), as did `gates` (fmt, clippy, the workspace tests), and `shard.sh`'s own `ci/test-shard.sh` passes locally.
+- **Headroom is 55 s at the worst shard of the three.** The variance in finding 3 is why it is not more: the same plan's shard 4 took 9:17 in run C and 12:05 in run D.
+- The first stop (this file's earlier version) was my judgement that the block's worst sample, 721 s plus 131 s of setup, would fail 13 minutes. The kickoff says to stop only on a §7 condition and that was not one, so I built it. **The block did not fail 13 minutes in any of the four plan runs** (shard 1: 10:18, 10:19, 11:11, 12:00); the worst-case reading in finding 5 was a risk, not a result. It remains a risk: one more run in four could still exceed 13 minutes.
 
-## Rulings asked for
+## Adversarial pass (§5, targeted, a fresh subagent)
 
-- **(a)** Accept the block as the floor and change §3 to something the measurement can meet (for example, under 15 minutes on three runs, which `AET-WO-1907` run 3 already did at 13:41), with the refit still worth doing for the spread.
-- **(b)** Authorise a test change to `attribute_seeded` (a work order of its own), after which this WO's weights and count follow.
-- **(c)** Rule that the variance is accepted and the three runs are attempted anyway; I would then build the 10-shard refit from the table below and report what the three runs say.
+Run on the final `ci/` against a 1,167-entry list built from the measurements; I re-checked one finding myself (a deleted weight line: the test is still assigned, to shard 6, and the guard passes).
+
+1. **Two heavy tests in one shard:** not found. Each `board_tier2` heavy test (200 to 516 s) sits in its own shard; ties (all weights equal), a duplicate weight line, a weight for another binary or an absent test, 1e-7 and 1e20 weights: guard ok; the plan is byte-identical across two runs and a shuffled entry order. `1e3`, a trailing space, CRLF, a negative, empty, `inf`, `nan`, `.5` and `5.` are refused with exit 1 and no shard written.
+2. **A test disappears:** not found. A removed weight line gives the default; a wrong field count is refused; a `#` name is a comment (default weight); a weight for another binary is ignored. `SHARDS` 0, -1, x and empty are refused; 2000 passes `assign` and the guard refuses it ("shard 0 lists nothing").
+3. **Defects: none in the changed files.** Backlog, by the scope test (a safeguard that already works; none is a failing invariant), none done:
+   - A removed or stale weight line is silent: the test is planned at 0.05 s and the shard may run long (deleting the 516 s test's line leaves the plan maximum at 720 s). A warning for "a weighted test not in the list" or "a heavy test on the default" would catch it before a 13-minute shard does.
+   - A duplicate weight or colocate line takes the last value silently (a second `attribute_seeded 1` weighs the block at 1 s).
+   - A near-empty weights file passes the guard with a wrecked plan (the guard checks coverage, not balance).
+
+## Reduction pass
+
+`CI_SCALE`, its comment and the `scale` awk variable are deleted; the 143-line weights file is replaced by one of 240 (the old one's 143 tests are all in it). Nothing else in `ci/` was found to remove: the measurement harness is not in the diff, and the diff against `main` is `ci/SHARDS`, `ci/colocate.tsv`, `ci/shard.sh`, `ci/test-weights.tsv` and this file.
+
+## For the architect
+
+- **The measurement run went red from my harness**, not from a test (run 3 of the measurement runs: 3 to 4 more workspace passes than assigned per shard; not diagnosed, harness reverted). It is not in the diff.
+- **§1.3 and §3 conflict by about 20 seconds** (11 minutes of tests plus 2.3 of setup is 13.3), and the block alone is above the 11 minutes (720 s). Ten shards is a measured choice, not the rule's output. Worth a line in the roadmap if the rule is kept.
+- **Eleven runners per PR run now** (10 shards and `gates`), against eight shards before.
+- **No test change was needed.** If the architect wants the block off the critical path for good, that is (b) in an earlier version of this file: a work order for `attribute_seeded`.
 
 ## Measurement table: tests of 5 CI seconds or more
 
@@ -128,7 +150,7 @@ Job start to job end, minutes:seconds, from the run's job list. Run A is at 9 sh
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | A (43538439489) | c1a4c12 | 9 | 9:43 | 10:18 | 9:26 | 11:55 | 9:47 | **13:27** | 8:46 | 9:53 | 12:12 | | **13:27** |
 
-Run A: the guard and canary passed (`tools` green). Shard 1, which holds the `attribute_seeded` block (planned 720 s), took only 10:18; the shards with `board_tier2` heavy tests (3, 5, 8) took 11:55 to 13:27, planned 548 s of test time, actual about 12 to 20% more. Setup is 103 to 138 s. Next: 10 shards (planned 484 s per shard).
+Run A (nine shards; does not count): the guard and canary passed (`tools` green). Shard 1, which holds the `attribute_seeded` block (planned 720 s), took only 10:18; the shards with `board_tier2` heavy tests (3, 5, 8) took 11:55 to 13:27, planned 548 s of test time, actual about 12 to 20% more. Setup is 103 to 138 s. Next: 10 shards (planned 484 s per shard).
 
 Run B (10 shards, `ci/SHARDS` 10, commit 4acd4f0) counts as run 1 of the three at this plan. The guard and canary passed.
 
@@ -136,3 +158,6 @@ Run B (10 shards, `ci/SHARDS` 10, commit 4acd4f0) counts as run 1 of the three a
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | B (43539995009) | 4acd4f0 | 10 | 8:17 | 10:19 | 9:49 | 11:44 | 8:24 | 11:25 | 8:00 | 8:15 | 8:43 | 8:40 | **11:44** |
 | C (43541279022) | 7860e22 | 10 | 10:19 | 11:11 | 8:26 | 10:59 | 9:17 | 11:08 | 10:29 | 10:09 | 8:29 | 11:00 | **11:11** |
+| D (43542481893) | 0f5700c | 10 | 8:36 | 12:00 | 11:13 | 9:01 | **12:05** | 9:49 | 7:36 | 7:33 | 8:44 | 11:54 | **12:05** |
+
+Runs B, C and D are the three consecutive runs; each row's commit is the one that started the run, and the next commit is the one that recorded it. Run E, on the commit that records run D, is not logged here (it would need a commit of its own that starts another run); its result is on the PR's checks.
