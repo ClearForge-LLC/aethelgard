@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "name": "four-layer-pullup",
+  "base": "four-layer.json",
+  "expect": "pass",
+  "expect_findings": [],
+  "overrides": [
+    { "bus": "SENSORS", "pull_up_ohms": 2200 }
+  ]
+}

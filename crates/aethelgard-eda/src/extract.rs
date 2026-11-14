@@ -129,6 +129,9 @@ pub struct Physics {
     via_h: u128,
     h_top: u128,
     h_bottom: u128,
+    /// Every piece takes the cap path, at `min(h, S)`: only
+    /// [`bound_by_cap_path`] sets it, to show the two paths agree at `h = S`.
+    force_cap: bool,
 }
 
 impl Physics {
@@ -146,6 +149,7 @@ impl Physics {
             via_h: u(stack.thickness.max_nm),
             h_top: u(top),
             h_bottom: u(bottom),
+            force_cap: false,
         }
     }
 
@@ -393,10 +397,10 @@ pub fn cap(area_d: u128, perimeter_d: u128, ends: bool, h: u128, s: u128) -> Opt
 /// is thinner than `S` (else today's shell alone).
 fn capped(ph: &Physics, base: Base, c: u128, h: u128, ends: bool) -> Option<u128> {
     let v = shell(base, c, ph.s)?;
-    if h >= ph.s {
+    if h >= ph.s && !ph.force_cap {
         return Some(v);
     }
-    let extra = cap(base.area, base.perimeter, ends, h, ph.s)?;
+    let extra = cap(base.area, base.perimeter, ends, h.min(ph.s), ph.s)?;
     let total = i128::try_from(v).ok()?.checked_add(extra)?;
     u128::try_from(total).ok()
 }
@@ -411,10 +415,10 @@ pub fn per_mm_ff(ph: &Physics, h: u128) -> Option<u64> {
     let per_nm = (2 * c * s + 2 * w * s)
         .checked_mul(D)?
         .checked_add(s.checked_mul(s)?.checked_mul(PI_NUM * PI_DEN * 12)?)?;
-    let per_nm = if h >= s {
+    let per_nm = if h >= s && !ph.force_cap {
         per_nm
     } else {
-        let extra = cap(w.checked_mul(D)?, 2 * D, false, h, s)?;
+        let extra = cap(w.checked_mul(D)?, 2 * D, false, h.min(s), s)?;
         u128::try_from(i128::try_from(per_nm).ok()?.checked_add(extra)?).ok()?
     };
     femtofarads(ph, per_nm.checked_mul(1_000_000)?)
@@ -941,9 +945,25 @@ fn overflow(net: &str) -> Refused {
     )
 }
 
+/// [`bound`], with every piece taken through the cap path at `min(h, S)`.
+/// At a dielectric of at least `S` it must give [`bound`]'s integers, since
+/// the cap adds exactly 0 at `h = S` (ruled D5: the old and new paths agree on
+/// the reference). For that test only.
+#[doc(hidden)]
+pub fn bound_by_cap_path(read: &ReadBoard, lines: &[Line]) -> Result<Vec<LineBound>, Refused> {
+    lines.iter().map(|l| line_with(read, l, true)).collect()
+}
+
 fn line(read: &ReadBoard, want: &Line) -> Result<LineBound, Refused> {
+    line_with(read, want, false)
+}
+
+fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound, Refused> {
     let (board, routed, net) = (&read.board, &read.routed, want.net.as_str());
-    let ph = Physics::of(&board.stack);
+    let ph = Physics {
+        force_cap,
+        ..Physics::of(&board.stack)
+    };
     let board_net = board_net(net);
     let mut on_board: BTreeMap<&str, Vec<&route::Pad>> = BTreeMap::new();
     for part in &board.parts {
