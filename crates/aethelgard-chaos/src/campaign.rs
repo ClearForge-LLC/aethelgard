@@ -1263,7 +1263,10 @@ pub const NGSPICE: &str = "ngspice";
 /// The tools a campaign run's header names, sorted.
 pub fn tools_of(records: &[Record]) -> Vec<&'static str> {
     fn line(r: &Record) -> bool {
-        matches!(r, Record::RiseComputed { .. } | Record::LineStuckHigh { .. })
+        matches!(
+            r,
+            Record::RiseComputed { .. } | Record::LineStuckHigh { .. }
+        )
     }
     let any = |f: fn(&Record) -> bool| records.iter().any(f);
     let mut tools = vec![ENGINE];
