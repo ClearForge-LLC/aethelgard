@@ -2056,10 +2056,10 @@ fn layer_of(item: &strict::Node<'_>, what: &str) -> Result<Layer, String> {
 /// A board as the strict reader read it: its outline and pads, and its
 /// copper, judged against the specification's declared board `stack`.
 /// Tracks must be the declared width and on F.Cu or B.Cu; vias the engine's
-/// through via; zones on a declared layer (the planes at 4 layers, ground's
-/// B.Cu zone at 2); the outline the one `Edge.Cuts` rectangle. Whether the
-/// layer table, the zones and the thickness are exactly the declared ones is
-/// [`declared`]'s.
+/// through via; the outline the one `Edge.Cuts` rectangle. Whether the layer
+/// table, the zones and the thickness are exactly the declared ones is
+/// [`declared`]'s, which every caller runs first, and [`connectivity`] judges
+/// the zones again on the copper read here.
 pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed), String> {
     let board = tree.root();
     let mut edges = Vec::new();
@@ -2125,14 +2125,6 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
             .and_then(|l| l.arg(1))
             .map(str::to_owned)
             .ok_or("a zone has no layer")?;
-        let allowed = if stack.has_planes() {
-            stack.planes.iter().any(|(l, _)| *l == layer)
-        } else {
-            layer == "B.Cu"
-        };
-        if !allowed {
-            return Err(format!("a zone on layer {layer:?}"));
-        }
         routed.zones.push((net(&z, "a zone")?, layer));
     }
     routed.segments.sort();
