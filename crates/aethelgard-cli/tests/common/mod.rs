@@ -294,6 +294,7 @@ pub fn eventually(what: &str, mut cond: impl FnMut() -> bool) {
 }
 
 pub mod corpus;
+pub mod verify;
 
 /// The identity line the bridge built from this tree prints first
 /// (`AET-WO-2200` F15, `bridge/build.rs`): the same recipe, recomputed here

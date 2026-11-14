@@ -400,8 +400,21 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | Analog deck's fixed 400 kHz window labelled | review A10.4 | `AET-WO-2301` |
 | Type-level `RUL-16` fence replacing the grep test | review A7.1, B6 | **merged (PR #90)**: private device lists, a crate-local clippy `disallowed-methods` in `cli`, `svd-hal` and `twin`, and a guard test against a stale path |
 | `RLIMIT_FSIZE` for tool scratch | review A12.1 | **merged (PR #96)**: 64 MiB, exit 5 |
-| Escape planning for congested routing | 1302 B10 | `AET-WO-4100` §1 S3 (written 2026-11-14) |
-| Parts table as data | review B7 | `AET-WO-4200` §1 S3 (written 2026-11-14) |
+| Escape planning for congested routing | 1302 B10 | **`D1`-class closed by `AET-WO-4100` at 4 layers** (ruled 2026-11-14 on PR #120: 0.5 s, 13 rip-ups; `D1` becomes a committed fixture). **`D3`-class** (each LQFP supply and ground pad needs its own escape to a plane via) fails at 4 layers too: an escape-planning work order, to be written, with `D3` committed by `4100` as its failing target |
+| Parts table as data | review B7 | `AET-WO-4200`, ruled 2026-11-14 on PR #118 (D3): a pinned `parts.json` in `aethelgard-ir`, one parser that never panics, every value cited; each Renode model's witness and skip lines stay code |
+| No flight-controller IMU (ICM-42688-P, ICM-20602, MPU-6000, BMI088) and no SPI barometer (BMP388, DPS310, MS5611) is modelled in Renode 1.17.0; stand-ins are `ICM20948` and `LSM6DSO`, and I2C barometers (`BMP180`, `LPS25HB`, `ICP-101xx`) | `4200` F5 | **`AET-WO-4500` decides:** modelled parts, or a model of our own (a ruling) |
+| An SCK edge-rate check, `Fmax(OSPEEDR, VDD, C)` against the bus clock; DS12117 Table 149's speed-`10`/`11` rows assume the I/O compensation cell enabled (note 5), and the generated firmware never enables it | `4200` D6, F6 (moved from `4100` by its ruling) | `AET-WO-4300` (pin speeds and timing). Check whether Renode models `SYSCFG_CCCSR.READY` before ruling that firmware enables the cell |
+| The W25Q64JV and ICM-20948 datasheets held and pinned for the parts table's citations | `4200` D8 | the `4200` build fetches them from Furnace; any host that refuses goes to Scotty, as DS12117 did, and its citations stay marked `pending-document` |
+| 6-layer stackups: the two-cap inner bound (the exact stripline case, already checked) and a fixture | `4100` D1 | a later stackup work order. 6 layers measured no better than 4 on the 1302 set, and routed worse by default |
+| `validate` accepts a specification that `solve` and `emit` refuse for a bus with no net constraint (`MissingBusConstraint`) | `4100` F1 | the next work order that owns `validate` (whether `validate` runs the solver's bus checks) |
+| The engine's version in the archive header is the package version (`0.1.0`), not a commit | `2205` F4 | the 0.2.0 release row, or the next work order that owns the archive header |
+| Replay cannot bind kind 10's archived segments to the ELF, which is not archived | `2205` F6 | a named residual under `RUL-19` (3) |
+| ngspice's version in the header is the bridge's checked pin, not the banner the library printed | `2205` F1, D3 | the next work order that touches the bridge: its identity line carries the banner |
+| A missing boot word suppresses the I2C findings, so an identity read's timeout record goes unnamed (`no-boot-word` on 47 kΩ, `I1`) | `2205` §1.6, `3100` F15 | the next work order that owns the judge's findings |
+| No `verify` is left without a fab flag, so nothing shows that `against` and the exit code do not depend on the fab mode | `1909` adversarial LP1, LP2 | the next work order that owns `verify`: a cheap guard, if one exists that does not cost a full run |
+| Two committed-proposal tests are vacuous while `proposals/` is absent; do committed proposals belong in the repository? | `1909` F2 | the architect, when P4's evolve loop first proposes |
+| A Kani proof cache keyed on the harness and the board crate's hash | `1909` E (parallel Kani declined, 11.3 GB peak) | an idea only, revisited if proof time grows |
+| Colocated blocks weighed at one run's in-process time, where `ci/shard.sh` step 3 asks for the worst sample (`against_fab_tier2` 562 s committed, 764 s worst) | `1909` CI | the next refit (`4100`'s ruling carries it) |
 | Version bump to 0.2.0, which retires the published-0.1.0 collision (`--no-verify`, 3200 F18); `aethelgard-evolve`'s first publish | 3200 F18, 3100 F16 | the architect, at the next release; Scotty publishes `aethelgard-evolve` first |
 | Path-independent firmware ELFs | 3200 F11 | **merged (PR #91)**: symbols stripped; one sha256 at any path, `image_sha256` unchanged |
 | The same-uid race in a gate's scratch (`3301` F1), and a planted ancestor `.cargo` (`3301` F13) | `AET-WO-3301` | **merged (PR #96)**: a uid boundary when root, `uid_boundary` honest; the toolchain made root's (PRs #97, #98). On Furnace's rootless podman the boundary is `false` (user namespace) until the operator runs `aethelgard` as a dedicated uid |
@@ -506,6 +519,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-14 | §5, §7.1 | `AET-WO-2205` written (build, one stop): header versions, "computed" record names, the 400 kHz label, executable segments archived, the seeded set's exact evidence and an indeterminate case, `power::SOURCE` to Rev 10; trace version 6 | review B4, A7.5, A7.6, A10.4; `3100` F2, F13; `2301` B4, D10; `2204` B4 |
 | 2026-11-14 | §5 | `AET-WO-4200` written (spike, stop, build): SPI end to end, the parts table as data, an SPI witness, a static SPI fault; P4 begins | Scotty, 2026-11-12 (order); review B7 |
 | 2026-11-14 | §5, §7.1 | `AET-WO-4100` written (spike, stop, build): stackups at 2, 4 and 6 layers, the specification rules field, extraction's bound over a near plane, escape planning. `2205` and `4200` marked launched | Scotty, 2026-11-12 (order); Scotty, 2026-11-14 (spend the week's remainder on parallel builders) |
+| 2026-11-14 | §7.1 | The morning's rulings carried to the backlog: the spikes of `4200` (PR #118) and `4100` (PR #120), `2205` §1.6 (PR #119) and `1909`'s review (PR #115). Each moved or new item has an owner | Ruling comments 6874734470, 6875106140 and 6875119297; the `1909` review |
 
 ## 9. Provenance
 

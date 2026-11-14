@@ -247,7 +247,7 @@ aggregate() {
 FEATURES=(--locked --offline --features aethelgard-cli/with-tools)
 BRIDGE=(--manifest-path bridge/Cargo.toml --locked --offline)
 # Canary files (AET-WO-1900): the tier-2 test binaries, as cargo prints them.
-TIER2_RE='^tests/(with_tools|twin_tier2|board_tier2|campaign_tier2|attribute_seeded|adversarial_1301_tools|adversarial_1302_tools)[.]rs$'
+TIER2_RE='^tests/(with_tools|twin_tier2|board_tier2|verify_2k2_tier2|against_fab_tier2|verify_47k_tier2|campaign_tier2|attribute_seeded|adversarial_1301_tools|adversarial_1302_tools)[.]rs$'
 # Fixed work shard 0 does besides tests (bridge fmt + clippy), in seconds, measured on CI: the two steps took 25 s.
 BASE0=${SHARD0_FIXED_SECONDS:-25}
 
