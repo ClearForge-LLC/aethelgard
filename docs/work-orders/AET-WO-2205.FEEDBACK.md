@@ -191,7 +191,7 @@ A fresh Opus subagent attacked a frozen copy at `f13816e`, with real runs from b
 
 Green. Shards 0 to 7: 13:56, 12:48, 12:14, 10:35, 14:41, 12:49, 10:02, 12:17, so the slowest is 14:41 and the spread 4:39. Gates 8:19, image 4:17.
 
-## Gates (at `3d12877`)
+## Gates (at `98be31b`; tier 2 measured at `3d12877`)
 
 `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (with and without `with-tools`), `cargo test --workspace`: green on Furnace. Tier 2 in the image, the suites this work order touches: `attribute_seeded` 12 passed (327 s, the new case included), `campaign_tier2` 8 passed, `twin_tier2` 22 passed (`~/.cache/aet-2205/t2-1.log`). CI: on the PR (every suite, eight shards).
 
