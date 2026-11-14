@@ -564,3 +564,133 @@ Everything below was measured after commit `f61da75`, which holds the prediction
   | TMP117 | Texas Instruments SNOSD82D | D, 2022-09 | `78212e91e478035a91165397a8de8a90bfc776759dc445243c033537f0c4b789` | `ti.com/lit/ds/symlink/tmp117.pdf` |
 
   No citation is pending, so nothing is needed from Scotty. `tests/parts.rs` `no_citation_is_pending` holds the empty list.
+
+## What was built
+
+**The parts table (D3).** `crates/aethelgard-ir/data/parts.json` holds BME280, ICM20948, TMP117 and W25Q64JV.
+- **Embedding:** `include_str!`, with the file's sha256 pinned by `tests/parts.rs`.
+- **Parsing:** one parser, `parts::parse_parts`, reads it. It never panics.
+- **What it refuses** (`PartsTableInvalid`, naming the part and the field), each a tier-1 test in `tests/parts.rs`, 28 in all:
+  - an unknown key at any level;
+  - a bus holding neither or both of `i2c` and `spi`;
+  - an address, mode, clock, width, value or supply out of range;
+  - malformed hex;
+  - an unknown Renode model, or one on the wrong kind of bus;
+  - a citation neither held (sha256) nor pending (an https URL), or both;
+  - a duplicate part;
+  - a part name that is not an identifier;
+  - another schema version.
+- **How a malformed table surfaces:** `parts::table()` returns the parse once, as a `Result`. `Specification::validate` and `SolvedTopology::validate` end by reading it, so a malformed embedded table is `validate`'s JSON refusal, never a panic.
+- **Model behaviour stays code:** the witness format and the skip list live in `aethelgard-twin` `model.rs`, an exhaustive `match`.
+- **What migrated:**
+  - `parts.rs`'s identities (`write`, the byte written first, replaces `register`; the free-text `source` is gone);
+  - `model.rs`'s `MODELS`, now read from the table's `renode`.
+- **What stays in `aethelgard-eda`, as the ruling says:**
+  - the KiCad symbols, pin maps and footprints;
+  - `W25Q32JVSS` standing in for `W25Q64JV`'s symbol;
+  - `KNOWN_PARTS`;
+  - the strap pins (`SDO`, `ADD0`).
+
+  `schematic.rs`'s allowed-address lists were not migrated, because each is the strap's own mapping (which pin to which rail gives which address), a layout fact beside the pin map (F12).
+- **What stays in `aethelgard-ir` as bus rules:** UM10204's `Ci` and its sink limits.
+
+**`SolvedTopology` version 3.**
+- **`spi_devices`:** reference to `{index, part, bus, peripheral, cs}`, filled by `solve` from the bus's `sck` assignment, read through `spi_devices_in_order` (`RUL-16`: the twin and the generators learn devices only from the topology).
+- **Validation:** an SPI device must be on a solved `SPIn` peripheral, its `cs` net must be a solved GPIO, and its indices must be exactly `0..n`.
+- **Older files:** a version-2 file is refused as `UnsupportedSchemaVersion`, never as a missing key.
+- **Digest moves:**
+
+  | Solve | Before | After |
+  |---|---|---|
+  | Reference | `c655bf2e…` | `c28a36bf…` |
+  | Stress fixture | `6eda552c…` | `6b9107c3…` |
+
+**D7.** `RESERVED_REFERENCES` gains `spi1mux` to `spi6mux` (87 names; `architecture.md` §2.20 says 81). `twin/tests/reserved_names.rs` holds it equal to the pinned chain's names plus one mux per SPI controller the pinned header has (six, checked). `references_distinct`, in `Specification::validate` and now in `SolvedTopology::validate` too, refuses:
+- two references equal in any case (`DuplicateReference`);
+- a reference whose lowercased name plus `_memory` is another reference, or a reserved name (`ReferenceCollision`).
+
+The collision matrix, one assertion per cell, is in `ir/tests/validate.rs`. No reserved name ends in `_memory`, so that cell is empty by construction, and a test holds it so.
+
+**The twin (D1, D2, D4).** `platform.rs` emits, per SPI controller with a device:
+- `<spi>mux: SPI.SPIMultiplexer @ <spi>`, with `SetActiveLow k` for each device;
+- one block per GPIO port, `<pin> -> <spi>mux@k`;
+- then each modelled device present:
+  - a flash: `<ref>_memory: Memory.MappedMemory` of `2^capacity` bytes, then `<ref>: SPI.GenericSpiFlash @ <spi>mux k` with `manufacturerId`, `memoryType` and `capacityCode`, all from the table's identity bytes;
+  - the IMU: `Sensors.ICM20948 @ <spi>mux k`.
+
+An unmodelled SPI device keeps its wiring, is commented, and is listed in the header. `emit_faulted(topology, faulted, absent)` leaves each absent device out behind its chip select, keeps its wiring, and names it in the provenance. The output matches the platform the spike measured, line for line.
+
+`boot.rs`: `I2cCheck`/`I2cPlan` became `IdentityCheck`/`IdentityPlan`.
+- **`Wire`:** each check carries one, `I2c { address }` or `Spi { address, select }`.
+- **Order:** the I2C checks come first, then the SPI ones, in the specification's order; records are consecutive.
+- **Statuses:** `judge` counts a status only on its own bus. An I2C record holding `STATUS_RXP` (`0x22020005`, new) is invalid, a defect a tier-1 test caught during the build.
+
+**The judge (D2).** `renode.rs` collects each check's witness-shaped lines. Its skip lines are those exactly in the twin's list; any other line from the device fails.
+- **Finding kinds** carry the bus:
+  - `spi_identity_mismatch`;
+  - `spi_timeout` (stage `RXP`);
+  - `spi_record_invalid`;
+  - `spi_transaction_unwitnessed`;
+  - `spi_witness_unavailable`.
+- **Order** is judged per bus: `i2c_witness_out_of_order` keeps its name, and `spi_witness_out_of_order` is new. A cross-bus order would have renamed an I2C verdict on any board with SPI (§7.3).
+- **Status names** come from each check's own judgement.
+- **Evidence:** each SPI check's `unrouted` holds every whole `[WARNING] <spi>.<spi>mux: Tried to transmit byte 0x…` line: attribution's evidence, never a witness.
+- **The verdict** gains `boot.spi` and `boot.spi_witness`. Every I2C message is byte-identical.
+
+**The board crate and firmware.** Built by an Opus subagent in its own worktree from `9b47c1d`, and cherry-picked (`6ca2be8`, `5c0875c`, `3c55ade`); its report is summarised here and spot-checked against the generated code.
+- **Byte access:** `Registers` gains `read8`/`write8`. `Mmio` uses `u8` volatile access, because a 32-bit `TXDR`/`RXDR` access packs four 8-bit frames on silicon (RM0433 §50.4.13) and Renode does not pack.
+- **The chip-select typestate:**
+  - `Spi1Selects { pa0: PA0<Output> }` and `enum Spi1Device { U4 }`, the reference upper-cased;
+  - `Spi1::init` consumes the selects, so no transfer exists before every chip select of the bus went through `into_output`. That is F3 at the type level, and `init` also drives each high itself;
+  - `init` sets `DSIZE` = 7 and `MASTER`, and leaves `SPE` off.
+- **The transfer:** `transfer(device, write, read)`:
+  1. `TSIZE`;
+  2. select;
+  3. `SPE`;
+  4. `CSTART`;
+  5. per frame, one `TXDR` byte (`0x00` dummies while reading), a wait on `RXP` (at most `SPI_WAIT_SPINS`), and one `RXDR` byte only after `RXP`;
+  6. `EOTC`, `SPE` off, deselect, also after a timeout.
+
+  It returns `SpiError::Length` for 0 or more than 8 frames, touching nothing, and `SpiError::Rxp` on a timeout. SPI's 32-bit `write_byte` is gone.
+- **The firmware:** after the I2C reads, `spi1.transfer(&mut r, Spi1Device::U4, &[0x9f], &mut buf1)`, exactly 3 bytes (F7), recorded as record 1.
+- **Its tests:**
+  - **Compile-fail cases (trybuild):** `init` without the selects (E0061), a select not in `Output` (E0308), a transfer naming no device of the bus (E0308).
+  - **Text-order checks:** F3 on the reference and on a two-device board, with a negative control.
+  - **A second device:** it gets its own select, and is read after the flash.
+  - **`SharedChipSelect`:** one pin as two devices' chip select is refused.
+- **Kani** (Kani 0.68.0, the pinned image), every harness passing:
+
+  | Board | Harness | Covers | Time |
+  |---|---|---|---|
+  | Reference | `every_valid_sequence` | 8/8 | 115 s |
+  | Reference | `i2c1_transfer_is_bounded_and_ordered` | 7/7 | 5 s |
+  | Reference | `spi1_transfer_is_bounded_and_ordered` (new) | 4/4 | 7 s |
+  | Reference | `spi1_transfer_refuses_too_many_frames` (new) | 1/1 | 3 s |
+  | Four-device | `every_valid_sequence` | 14/14 | 304 s |
+
+  The new SPI harness checks four things: the transfer touches only SPI1 and the chosen device's `BSRR`; it selects before the first byte and deselects on every path; it never reads `RXDR` without `RXP`; and it ends with `SPE` off.
+- **Mutation:** 13 mutants of the generated SPI code, one each, all killed.
+- **A cap not met (F13):** the subagent's Kani container ran with `--memory 24g` but was denied writing `0` into `memory.swap.max`, which read back `25769803776`.
+
+**Chaos (D4).**
+- **Trace version 7** (6 is `AET-WO-2205`'s, on PR #119, not yet on `main`):
+  - **kind 21, `SpiCheck`:** reference, peripheral, select, mux address, command, expected, observed, status;
+  - **kind 22, `SpiWitness`:** peripheral, reference, device, expected, observed, `unrouted`, each line bounded and printable as kind 13's.
+- **Override 4, `[4, reference]`:** `{"spi_device_absent": "U4"}`, admitted only at scenario `schema_version` 2, as 2301 admitted the droop. The CLI refuses a reference the solved topology has no SPI device for (`UnknownDevice`).
+- **Run rules:**
+  - kinds 21 and 22 rank after 12 and 13;
+  - each SPI read appears once and is witnessed once, under `<spi>.<spi>mux.<ref>`;
+  - no device is both I2C and SPI.
+- **Refusals:** versions 1 to 6 are refused by name. The golden trace changed only in its version byte: set back to 5, it is version 5's golden trace again.
+
+**Evolve.**
+- **`E2` (electrical, evidence kind 22):** the multiplexer routed a byte to the device's own address and found no device there, and the model logged nothing.
+- **`S3` (software, kinds 21 and 22):** the multiplexer found no chip select asserted, or several; or the model logged lines other than the read's; or the read claims completion with nothing logged or routed.
+- **Proposals:** `E2` proposes nothing (no rule, as for a held line). `S3` gives a generator report, through a `Fields` view of kind 22: `select`, `command` and `read`, each with its solved value.
+
+  A test subagent found that `S3` first yielded no report, because kind 22 had no view. That is fixed and tested (`tests/spi.rs`, 11 tests).
+- **The seeded set** gains two cases, 24 in all:
+  - **`spi-absent-u4`:** a scenario, electrical, `E2`;
+  - **`cs-never`:** a mutant of `board.rs` whose select drives `PA0` high, software, `S3`.
+
+**The trace's other records are unchanged.** Kind 19's probe still reads the first check, U2's.
