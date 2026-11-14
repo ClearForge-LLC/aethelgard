@@ -25,10 +25,26 @@ export LC_ALL=C
 here=$(cd "$(dirname "$0")" && pwd)
 TAB=$(printf '\t')
 
-# ci/test-weights.tsv holds each test's time alone on Furnace; CI's runners took 1.7 to 1.9
-# times as long on every tier-2 test measured there (AET-WO-1907 FEEDBACK, first CI run).
-CI_SCALE=1.8
-DEFAULT_WEIGHT=0.2 # CI seconds, for a test the weights file does not know (stated, not hidden)
+# ci/test-weights.tsv holds CI seconds directly (AET-WO-1908): each test run alone on a GitHub
+# runner in the pinned image. A test it does not list gets DEFAULT_WEIGHT, the measured mean of
+# the 927 tests under 0.5 s (0.042 s), rounded up: stated, not hidden.
+DEFAULT_WEIGHT=0.05
+#
+# REFIT RULE (AET-WO-1908 §8): refresh the weights when any tools-shard job passes 20 minutes, start to end,
+# or when the spread (slowest shard minus fastest) passes 6 minutes on two runs in a row.
+#  1. In a throwaway commit on the PR, change `run` so each name runs in its own invocation:
+#       RUSTC_BOOTSTRAP=1 cargo test ... -- -Z unstable-options --report-time --test-threads=1 --exact NAME
+#     (RUSTC_BOOTSTRAP=1 lets the pinned stable toolchain take libtest's nightly-only flag; it makes
+#     cargo rebuild once, a minute). Print each test's `ok <seconds>` with its name. A test that spawns
+#     a tool can interleave its output with the result line: take the time from a later `ok <t>` line
+#     and the name from the last `test NAME ...` line, never from one line.
+#  2. Read the times from the job logs (`gh run view --job ID --log`), write `binary<TAB>test<TAB>seconds`
+#     for every test of 0.5 s or more into ci/test-weights.tsv, and revert the commit. Never weigh a
+#     test from a shared-process run: tests that take a lock (board_tier2) read as their queue time.
+#  3. Set a binary whose tests overlap in ONE process (attribute_seeded) in ci/colocate.tsv to the
+#     worst in-process wall time of the block over recent runs, not the sum of its alone times.
+#  4. ci/SHARDS stays 8 (Scotty, 2026-11-14). Rebalance with the block whole (ci/colocate.tsv), and
+#     check the plan with `bash ci/shard.sh plan DIR`, which prints each shard's planned seconds.
 
 die() { echo "shard: $*" >&2; exit 1; }
 readable() { [ -r "$1" ] || die "cannot read $1"; }
@@ -67,7 +83,7 @@ assign() {
   # Pass 1: one row per member of a unit: weight, the unit's first key (suite, name), the member (suite, name),
   # its occurrences. A binary whose tests overlap when run together (they share the runner's cores) is
   # kept whole: its tests are one block of the stated CI seconds, so splitting it does not lose the overlap.
-  awk -F'\t' -v wf="$weights" -v cf="$colocate" -v scale="$CI_SCALE" -v dflt="$DEFAULT_WEIGHT" '
+  awk -F'\t' -v wf="$weights" -v cf="$colocate" -v dflt="$DEFAULT_WEIGHT" '
     function bad(m) { print "shard: " m > "/dev/stderr"; exit 1 }
     FILENAME == wf { if ($0 ~ /^#/ || $0 == "") next
       if (NF != 3) bad(wf ":" FNR ": want 3 tab-separated fields, got " NF)
@@ -85,7 +101,7 @@ assign() {
         if ((eb[i] in blk) && !(k in bl)) bl[k] = eb[i] }
       for (i = 1; i <= ne; i++) { k = es[i] "\t" et[i]
         if (k in bl) continue
-        wt[k] += ((eb[i] "\t" et[i]) in w) ? w[eb[i] "\t" et[i]] * scale : dflt }
+        wt[k] += ((eb[i] "\t" et[i]) in w) ? w[eb[i] "\t" et[i]] : dflt }
       for (k in bl) { b = bl[k]; if (!(b in rep) || k < rep[b]) rep[b] = k }
       for (k in wt) printf "%.6f\t%s\t%s\t%d\n", wt[k], k, k, occ[k]
       for (k in bl) printf "%.6f\t%s\t%s\t%d\n", blk[bl[k]], rep[bl[k]], k, occ[k]
