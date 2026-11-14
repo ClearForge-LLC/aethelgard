@@ -227,7 +227,12 @@ jobs:
       # 83: plus 3 from AET-WO-2301 in campaign_tier2.rs (the two reference
       # droops twice, byte-identical, replayed; Renode's reset recipe pinned
       # step by step; a flooding firmware reaches a verdict, twice the same).
-      TIER2_MIN: "83"
+      # 90: plus 7 from AET-WO-2204 in twin_tier2.rs (every-register and
+      # wrong-address forgeries; two devices, each read witnessed; a core
+      # parked in its fault handler; the judge's own locked reads; a late
+      # locked access in a flood; a reserved device name breaks the load;
+      # Renode's configuration against its default). Two tests renamed.
+      TIER2_MIN: "90"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
