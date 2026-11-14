@@ -58,3 +58,31 @@ This section is committed before the first probe runs. Nothing in it is edited a
 ### S6 — scope check
 
 - **P6.1** Outside `aethelgard-eda` and the CLI's `generate`, `check`, `extract`, `verify` paths, nothing reads a board's layer count or thickness: the twin, the analog deck, the campaign and `evolve` read the solved topology and declared nets, not the board **[inferred]**.
+
+---
+
+## Results — measured after the predictions commit (`9b20f83`)
+
+Evidence: `~/.cache/aet-4100/` on Furnace (boards, verdicts, Gerbers); probes in `spike/4100/`; caps read back in `spike/4100/caps.log` (every container: `memory.max=8589934592 memory.swap.max=0 pids.max=max`).
+
+### S1 — KiCad 10.0.7 at 4 and 6 layers (image `c69ff9bc`, `kicad-cli version` = `10.0.7`)
+
+Probe boards: `spike/4100/s1/variants.py` turns the emitted reference (`aethelgard emit`, board sha256 `7b9b0e3d…`) into `b4` (F, In1, In2, B; GND plane on In1, `VDD_3V3` plane on In2, the B.Cu GND zone kept), `b6` (GND In1, `VDD_3V3` In4, In2/In3 signal), and seeded variants. Runs: `s1/drc.sh`, `s1/gerb.sh`.
+
+| Question | Measured |
+|---|---|
+| Layer table KiCad writes (`pcb upgrade --force`) | `(0 "F.Cu" signal) (4 "In1.Cu" signal) (6 "In2.Cu" signal) [(8 "In3.Cu" signal) (10 "In4.Cu" signal)] (2 "B.Cu" signal)`: kept as given, inner ids 4, 6, 8, 10. Plain `pcb upgrade` says "Board file was not updated" (format current) |
+| Stackup required? | No. A board with none loads, DRCs and plots; a forced save adds none (`(general (thickness 1.6))` is the only thickness) |
+| Stackup read by DRC? | No: raw DRC of `b4` and of `b4_stackup` (dielectrics 0.01 mm, `epsilon_r 50`) gives the same 15 violations. **And the gate never sees it:** `board::prepare_read` replaces the whole `(setup …)` with `rules::SETUP` (`(setup (pad_to_mask_clearance 0))`), so a board's stackup claim is discarded before DRC and before export |
+| Stackup read by the Gerbers? | No: every copper and outline Gerber of `b4_stackup` equals `b4`'s, line for line, once the two clock lines are removed. The job file is identical too, apart from its date: its `MaterialStackup` lists layer order and `FR4` but **no thickness and no permittivity**, with or without the block |
+| Gate on `b4`, `b6` (planes, refilled) | `pass`, no finding (`check drc --spec`, exit 0) |
+| Seeded inner clearance (`b6_seed`: In2.Cu `/I2C_SDA` and `/I2C_SCL` 0.1 mm apart) | **Reported:** `clearance`, "rule 'specification_clearance' clearance 0.2000 mm; actual 0.1000 mm", both tracks named on In2.Cu |
+| Seeded inner short (`b4_short`: In1.Cu track from an `/I2C_SDA` via to a `/FLASH_CS` via, across the GND plane's layer) | **Reported:** `shorting_items` "nets /FLASH_CS and /I2C_SDA", `Via [/FLASH_CS] on F.Cu - B.Cu` and `Track [/I2C_SDA] on In1.Cu` |
+| Through vias of other nets crossing a plane | No violation: the refill cuts an antipad. Measured from the Gerber regions (`s1/antipad.py`): smallest gap from plane copper to a foreign via's 0.6 mm disk is **0.5005 mm** on In1 (48 foreign vias) and on In2 (45), above `S` = 0.2 mm (the zone's own 0.5 mm clearance; 1305 measured 0.5005 mm on the 2-layer zone). Via pads are flashed on every inner layer (`%TA.AperFunction,ViaPad*%`, 70 on In1) |
+| Copper on an undeclared layer (`b2_undecl`: 2-layer table + an In1.Cu track) | **Reported:** `item_on_disabled_layer` "Item on a disabled copper layer (layer In1.Cu)", error |
+| A one-ended track of net A touching only a via of net B (`b4_seedvia`) | KiCad re-nets it by copper: reported as `Track [/FLASH_CS] on In2.Cu`, `track_dangling` only. Not a short, and correctly so (`RUL-03`: copper, not labels). My first short seed was this shape by mistake; `b4_short` is the real one |
+| Inner Gerber names and attributes | `In1_Cu.g1` … `In4_Cu.g4`; `%TF.FileFunction,Copper,L2,Inr*%` … `L5,Inr`; outer `Copper,L1,Top` and `Copper,L4,Bot` / `L6,Bot` |
+| Clock lines | In every copper file at 4 and 6 layers: `%TF.CreationDate` at **line 2**, `G04 Created by … date` at **line 9** (outline: 2 and 8), the places `RUL-03` names. Five exports per board across wall-clock seconds: raw files all differ, **stripped files byte-identical** (1 distinct sha256 per file), and no other line holds a date or time shape. **The §7 stop does not trigger** |
+| Job file (`input-job.gbrjob`, written by every `export gerbers`) | Two exports differ only in `"CreationDate"` (line 8, JSON). It also carries a `GUID` derived from the file stem, `"Revision": "rev?"`, `BoardThickness` from `(general …)`, and `DesignRules` with an `Inner` `PadToPad 0.0` |
+
+**S1 answers.** KiCad 10.0.7 handles 4 and 6 layers as predicted: P1.1, P1.2, P1.3, P1.4 and P1.5 hold. DRC reports seeded inner-layer clearance and shorts and copper on an undeclared layer, so the gate needs no inner-layer check of its own. The inner Gerbers carry the two clock lines at the measured places and nothing else nondeterministic. One thing the predictions missed: **a stackup in the board is inert everywhere that matters** (the gate drops it; DRC and the Gerbers ignore it; the job file prints no thickness). The stackup therefore lives only in the specification and `FAB-NOTES.md`, and adversarial §5.1 item 4 ("a stackup the board's `(setup …)` disagrees with") is closed by construction: the gate discards the board's `(setup …)`.
