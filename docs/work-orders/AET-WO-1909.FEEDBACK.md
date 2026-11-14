@@ -1,6 +1,6 @@
 # AET-WO-1909 — FEEDBACK
 
-**Status: built to the architect's ruling on PR #115 (comment 6873338632): A, B, C and D; `oq_03` removed; E declined. __STATUS_TAIL__**
+**Status: built to the architect's ruling on PR #115 (comment 6873338632): A, B, C and D; `oq_03` removed; E declined. Adversarial and reduction passes done; three counted CI runs recorded below.**
 
 **Branch:** `wo/aet-1909-ci-reduction` · **Base:** `a5be795` (`origin/main`, merged in) · **Builder:** Claude (Opus 5.5, orchestrating). Census rows and D8's assertion messages were done by Sonnet subagents, each checked against the source. The adversarial pass was run by a fresh Opus subagent.
 
@@ -78,11 +78,78 @@ Each mutant was a production edit in a scratch copy (`~/.cache/aet-1909/mutX`, `
 | `verify_fab_out_writes_nothing…` (moved; shares the run) | nothing written on failure | itself | mutant X `verify.rs:687` |
 | the dropped invocations V(2k2, `--against`) alone, V(2k2, `--fab-out`) alone and V(47k) alone | the same verdicts | the combined runs, equal apart from the named keys | the byte comparison and independence above |
 
-__ADVERSARIAL__
+## Adversarial pass (§5, targeted, a fresh Opus subagent)
 
-__CI__
+It ran in the pinned image (15 GiB cap, swap 0, read back in `~/.cache/aet-1909/adv/caps.log`), on a copy of the tree. Logs are under `~/.cache/aet-1909/adv/`. **No defect found in the build.**
 
-__REDUCTION__
+1. **Lose a failure.**
+   - Mutants X and Y (above) each go red naming their property.
+   - The reviewer's three further mutants go red only in the expected test, each naming its property:
+     - **KA:** a passing `--fab-out` without `--against` exits 1. Both A tests fail at once with "<property>: the shared run `verify 2k2 --fab-out, the package to compare` failed once…", and the log shows one `verify`: 145.5 s for the first test, 0.000 s for the second.
+     - **KB:** the manifest's verdict line carries a trailing space. B's fab test fails at "the manifest names the verdict without its fab key"; `verify_binds…` stays green.
+     - **KC:** a stray file is left after a failed `--fab-out`. C's `…writes_nothing…` fails at "a failing run wrote nothing into --fab-out"; `verify_fails_the_47k…` stays green.
+2. **Order.** libtest sorts tests by name, so the reviewer ran each test executable directly with `RUSTC_BOOTSTRAP=1 … --test-threads=1 -Z unstable-options --shuffle-seed N`. Seeds giving both orders were confirmed in the output, and each test was also run alone with `--exact`. **All 12 runs pass** (`order-{A,B,C}.log`).
+   - A, changed-copy first, then identical, passes: the copies are isolated.
+   - A with default threads passes, its three `verify` runs one after another (`parallel-A.log`), so there is no deadlock between `ONE_AT_A_TIME` and the `OnceLock`.
+3. **Poison.** Each maker was made to panic; in snapshot A it panics while holding `ONE_AT_A_TIME`. **All six dependent tests fail, in parallel, serial and alone runs, at 0.000 s each, with no hang.** The maker's panic appears once per process, and every message names its property and the stored failure (`poison.log`, `cur-poison-A.log` on the final A).
+
+**Finding (the coverage trade B and C ruled): LP1 and LP2.** Two mutants that the pre-build tests killed now pass all of tier 2:
+- **LP1** (`verify.rs:602`): `--against` alone reports "same" when no fab flag is given.
+- **LP2** (`verify.rs:680`): a failing `verify` without a fab flag exits 0.
+
+The originals go red, at `board_tier2.rs:405` and `:504` of `cfafdb4`.
+- **Why:** no test at any tier now runs a full `verify` without a fab flag. A regression that tied `against` or the exit code to the fab mode would pass CI.
+- **This is exactly the trade the ruling accepted on the byte comparison and the independence argument above.** I did not add a guard. One in tier 2 costs a full `verify` (about 215 CI s, much of B and C's saving). One in tier 1 would need a `#[cfg(test)]` in `verify.rs`, a production file outside the fence.
+- **Backlog, for the architect:** a cheap guard that `against` and the exit code do not depend on the fab mode, for example a unit test over `verify`'s report assembly, in a work order whose fence allows it.
+
+**Smaller findings:**
+- The shared runs' scratch directories are not removed, as the per-test ones were: about 288 KB per A directory, in the container's `/tmp`. Removing a shared directory needs every reader to have finished, which a `OnceLock` cannot tell. Left as is.
+- `Shared::get` cannot catch an abort, only an unwinding panic. A panic payload that is not a string still fails, as "a panic without a message".
+
+## CI: before and after, measured
+
+- **Suite seconds** are the sum, over the eight `tools-shard` jobs, of the step "cargo test inside the image, this shard's tests", from the GitHub API (`~/.cache/aet-1909/runtimes.sh RUN`).
+- **A shard's time** is its job, start to end. Spread is the slowest shard minus the fastest.
+
+**Before** (`main`, the same base code, eight shards):
+
+| run | commit | suite test-step s | slowest | fastest | spread |
+|---|---|---|---|---|---|
+| 43564483946 | `a5be795` | 4,622 | 16:14 | 9:18 | 6:56 |
+| 43562913696 | `79bdfe1` | 4,838 | 15:36 | 9:20 | 6:16 |
+
+**After:**
+
+| run | commit | plan | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | suite test-step s | slowest | spread | `tier2_tests_passed` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 (43570762262) | `ad432a3` | provisional block weights | 8:23 | 9:58 | 11:24 | 8:41 | 9:15 | 8:08 | 8:49 | 10:50 | 3,471 | 11:24 | 3:16 | 90 (floor 90) |
+__CI_ROWS__
+
+- **Run 1 measured the blocks in one process** (libtest's `finished in`): `attribute_seeded` 473.4 s, `against_fab_tier2` 562.2 s, `verify_2k2_tier2` 404.6 s, `verify_47k_tier2` 197.3 s, `campaign_tier2` 36.9 s.
+- **The refit** (`ci/shard.sh` REFIT RULE step 3: a colocated block at its in-process wall time) puts the new blocks at those values. `attribute_seeded` stays at 720, still its worst sample.
+- No per-test weight changed: no test that stays in a shard by name changed its work. The moved tests' lines left with them.
+- The refitted plan: the 720 s block, the 562 s `--against-fab` block, and six shards of 465 s. Run 1 does not count toward the three; runs 2 to 4 are on the refitted plan, and each commit after a run records it here.
+
+__CI_RESULT__
+
+## Reduction pass (diff)
+
+Run by a fresh subagent, read-only. It proposed; I applied what was inside the diff or a copy of a fact the diff touched.
+
+- **Done:**
+  - `attribute_seeded.rs`'s own `copy_tree` and `root`, and `campaign_tier2.rs`'s `root`, were byte-for-byte `common::verify`'s, so they now use it.
+  - `against_fab_tier2.rs` no longer takes `ONE_AT_A_TIME` inside the package's maker. No `--against-fab` comparison can start before the package exists, so that lock guarded nothing. The two comparisons still take it.
+- **Not done, and why:**
+  - Shortening `TIER2_MIN`'s comment: §2.3 and the ruling require every moved and removed test named there.
+  - The `scratch` doc line and `colocate.tsv`'s per-block comments: they carry the why, and the refit evidence the rule asks for.
+- **Proof:** the three touched binaries pass in the pinned image after the change, and mutants X and Y are still each caught by `against_fab_tier2`'s named test, and only by it (`against_fab_tier2` 2 passed in 432.4 s, `campaign_tier2` 8 passed, `attribute_seeded` 11 passed in the image, and its 5 tier-1 tests on the host; X still fails only `…finds…identical` and Y only `…names every changed…`; `~/.cache/aet-1909/reduce-run.log`, `mutX/reduce.log`, `mutY/reduce.log`).
+- **Findings, outside this diff:**
+  - Ten or so tier-1 files carry their own `root`, `sha`, `SPEC` or `scratch`. A phase-gate pass could move the identical ones to `common`.
+  - Three places list the tier-2 binaries: `TIER2_RE`, `ci.yml`'s comment and `colocate.tsv`'s. A guard comparing `TIER2_RE` with the files under `tests/` would let two of them go.
+  - `twin_tier2` and `campaign_tier2` build the reference firmware by the same cargo invocation, in two places.
+- **`common::verify::scratch` uses `temp_dir()`, as the moved tests did.** Inside the image that is the container's `/tmp`, not Furnace's tmpfs.
+
+Reduction pass (diff): −12 net (9 added, 21 removed) · 3 duplicates removed · 1 dead lock removed · 0 protected kept · 3 findings above.
 
 # Part 1: the census (§1), as stopped for the ruling
 

@@ -43,7 +43,6 @@ fn fab_verify(dir: &Path, flag: &str) -> (Option<i32>, String) {
 /// A copy of the shared package under `label`, for one test to compare.
 fn package_copy(property: &str, label: &str) -> (&'static Package, PathBuf) {
     let p = PACKAGE.get(property, || {
-        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
         let dir = scratch("against-fab").join("pkg");
         let (code, out) = fab_verify(&dir, "--fab-out");
         let verdict = one(&out);

@@ -15,13 +15,13 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Deserialize;
 
-fn root() -> PathBuf {
-    fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
-}
+mod common;
+
+use common::verify::root;
 
 const MANIFEST: &str = "scenarios/sentinel-01/seeded/cases.json";
 const BOARD: &str = "boards/sentinel-01";
@@ -316,6 +316,7 @@ fn every_committed_proposal_is_pull_up_changes_named_for_its_scenario() {
 mod tier2 {
     use std::fs::OpenOptions;
     use std::io::Write;
+    use std::path::PathBuf;
     use std::process::{Command, Stdio};
     use std::sync::OnceLock;
 
@@ -324,6 +325,7 @@ mod tier2 {
     use serde_json::Value;
 
     use super::*;
+    use crate::common::verify::copy_tree;
 
     fn answer(line: &str) {
         let mut log = OpenOptions::new().append(true).open("/dev/stderr").unwrap();
@@ -334,19 +336,6 @@ mod tier2 {
     fn scratch() -> PathBuf {
         Path::new(env!("CARGO_TARGET_TMPDIR"))
             .join(format!("aet-3100-seeded-{}", std::process::id()))
-    }
-
-    fn copy_tree(from: &Path, to: &Path) {
-        fs::create_dir_all(to).unwrap();
-        for entry in fs::read_dir(from).unwrap() {
-            let entry = entry.unwrap();
-            let (src, dst) = (entry.path(), to.join(entry.file_name()));
-            if entry.file_type().unwrap().is_dir() {
-                copy_tree(&src, &dst);
-            } else {
-                fs::copy(&src, &dst).unwrap();
-            }
-        }
     }
 
     /// The firmware of `mutant` (none: the generated firmware as committed),

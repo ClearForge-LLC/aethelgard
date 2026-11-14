@@ -26,9 +26,9 @@ use aethelgard_chaos::{Manifest, cbor, replay_dir};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-fn root() -> PathBuf {
-    fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
-}
+mod common;
+
+use common::verify::root;
 
 fn answer(line: &str) {
     let mut log = OpenOptions::new().append(true).open("/dev/stderr").unwrap();
