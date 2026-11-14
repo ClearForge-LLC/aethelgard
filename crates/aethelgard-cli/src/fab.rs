@@ -812,14 +812,24 @@ mod tests {
     #[test]
     fn the_notes_describe_every_file_and_the_package_names_them_after_the_project() {
         let spec: aethelgard_ir::Specification =
-            serde_json::from_str(include_str!("../../../examples/sentinel-01-minimal.json"))
-                .unwrap();
+            serde_json::from_str(&repo_file("examples/sentinel-01-minimal.json")).unwrap();
         let d = describe("p", &gerbers(&aethelgard_eda::stack::Stack::of(&spec)));
         assert_eq!(d.len(), LAYERS.len() + 4);
         assert!(
             d.iter()
                 .all(|(n, _)| n.starts_with("p-") || n.starts_with("p."))
         );
+    }
+
+    /// A repository file, read when the test runs: the package carries no file
+    /// outside the crate, so nothing here may be `include_str!`ed from one.
+    fn repo_file(path: &str) -> String {
+        std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join(path),
+        )
+        .unwrap()
     }
 
     /// The Gerber list follows the declared layers (`AET-WO-4100`): at 2
@@ -831,13 +841,15 @@ mod tests {
             let spec: aethelgard_ir::Specification = serde_json::from_str(text).unwrap();
             gerbers(&aethelgard_eda::stack::Stack::of(&spec))
         };
-        let two = load(include_str!("../../../examples/sentinel-01-minimal.json"));
+        let two = load(&repo_file("examples/sentinel-01-minimal.json"));
         let today: Vec<(String, String, usize)> = LAYERS
             .iter()
             .map(|(l, s, c)| ((*l).to_owned(), (*s).to_owned(), *c))
             .collect();
         assert_eq!(two, today);
-        let four = load(include_str!("../tests/fixtures/four-layer.json"));
+        let four = load(&repo_file(
+            "crates/aethelgard-cli/tests/fixtures/four-layer.json",
+        ));
         let inner: Vec<&(String, String, usize)> =
             four.iter().filter(|(l, ..)| l.starts_with("In")).collect();
         assert_eq!(
