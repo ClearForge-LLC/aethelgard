@@ -20,15 +20,43 @@ const LOG_ERROR: &str = "[ERROR]";
 /// written into the call's own scratch directory and passed as `--config`.
 pub const CONFIG_FILE: &str = "renode.config";
 
-/// That configuration (`AET-WO-2204` D4). It sets one key: Renode then writes
-/// each log entry from the thread that logs it, with no queue and no log
-/// thread (`Logger.cs` L822–834), so a line the firmware caused is on the
-/// console before `RunFor` returns, never interleaved with the monitor's
-/// output below line level (spike F2) and never dropped by a level change
-/// (B10). Measured: Renode fills every other key with the defaults it writes
-/// for itself when given no file, the history path and the folding of
-/// repeated lines included; the files differ in this key alone.
-pub const CONFIG: &str = "[general]\nuse-synchronous-logging = true\n";
+/// That configuration (`AET-WO-2204` D4), for a call whose tool home is
+/// `home`. It changes one key from what Renode writes for itself when given
+/// no file: `use-synchronous-logging = true`, so each log entry is written by
+/// the thread that logs it, with no queue and no log thread (`Logger.cs`
+/// L822–834); a line the firmware caused is on the console before `RunFor`
+/// returns, never split below line level by the monitor's output (spike F2)
+/// and never dropped by a level change (B10). Every other key Renode reads is
+/// stated at the value it writes for itself (measured: the history under
+/// `home`, repeated lines folded), because Renode writes a key it finds
+/// missing back into the file, and the file is the CLI's, sealed read-only
+/// for the tool uid (`AET-WO-1601`): given a file without them, Renode
+/// aborted in the sandbox. Stating them all, it only reads it.
+pub fn config(home: &std::path::Path) -> String {
+    format!(
+        "[general]\n\
+         use-synchronous-logging = true\n\
+         terminal = Termsharp\n\
+         compiler-cache-enabled = False\n\
+         serialization-mode = Generated\n\
+         always-log-machine-name = False\n\
+         collapse-repeated-log-entries = True\n\
+         log-timestamps-type = Host\n\
+         log-history-limit = 1000\n\
+         history-path = {}/.config/renode/history\n\
+         store-table-bits = 41\n\
+         [monitor]\n\
+         consume-exceptions-from-command = True\n\
+         break-script-on-exception = True\n\
+         number-format = Hexadecimal\n\
+         [plugins]\n\
+         enabled-plugins = \n\
+         [translation]\n\
+         min-tb-size = 33554432\n\
+         max-tb-size = 536870912\n",
+        home.display()
+    )
+}
 
 /// The monitor commands. The platform is always the call's own copy, at a
 /// path this CLI chose, so no part of the caller's input reaches the monitor.
@@ -421,7 +449,7 @@ impl BootPlan<'_> {
     /// the reads between sentinels, then the listing. Both paths are this
     /// CLI's own copies. With a droop, the fixed virtual time is the droop's
     /// schedule instead. The console's level is never changed: with
-    /// [`CONFIG`]'s synchronous logging, `BEGIN` is the boundary between the
+    /// [`config`]'s synchronous logging, `BEGIN` is the boundary between the
     /// run's log and the judge's (`AET-WO-2204` D4).
     pub fn commands(&self) -> String {
         let mut c = vec![
@@ -1275,6 +1303,41 @@ mod tests {
         for r in refused {
             assert!(probes_in(&r, false, &p).is_err(), "accepted: {r:?}");
         }
+    }
+
+    /// `AET-WO-2204` D4: the configuration is Renode 1.17.0's own default
+    /// (measured, and pinned on Renode by `twin_tier2::renode_s_configuration_
+    /// ...`) with `use-synchronous-logging` alone changed, and the history
+    /// under the call's home.
+    #[test]
+    fn the_configuration_is_renode_s_default_with_synchronous_logging() {
+        let c = config(std::path::Path::new("/w/tool"));
+        let mut lines: Vec<&str> = c.lines().collect();
+        lines.sort_unstable();
+        let mut want = vec![
+            "[general]",
+            "use-synchronous-logging = true",
+            "terminal = Termsharp",
+            "compiler-cache-enabled = False",
+            "serialization-mode = Generated",
+            "always-log-machine-name = False",
+            "collapse-repeated-log-entries = True",
+            "log-timestamps-type = Host",
+            "log-history-limit = 1000",
+            "history-path = /w/tool/.config/renode/history",
+            "store-table-bits = 41",
+            "[monitor]",
+            "consume-exceptions-from-command = True",
+            "break-script-on-exception = True",
+            "number-format = Hexadecimal",
+            "[plugins]",
+            "enabled-plugins = ",
+            "[translation]",
+            "min-tb-size = 33554432",
+            "max-tb-size = 536870912",
+        ];
+        want.sort_unstable();
+        assert_eq!(lines, want);
     }
 
     #[test]

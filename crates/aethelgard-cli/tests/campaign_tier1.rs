@@ -176,7 +176,8 @@ fn toolbox(stdout: &str) -> Dir {
     let body = format!(
         r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
-[ "$(/bin/cat "$2")" = "$(printf '[general]\nuse-synchronous-logging = true')" ] || exit 97
+/bin/grep -qx 'use-synchronous-logging = true' "$2" || exit 97
+/bin/grep -qx 'log-timestamps-type = Host' "$2" || exit 97
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n'; exit 0; fi
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in

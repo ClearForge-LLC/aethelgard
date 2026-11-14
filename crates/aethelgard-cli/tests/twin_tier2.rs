@@ -975,21 +975,47 @@ fn a_device_named_for_a_renode_instance_or_keyword_breaks_the_load() {
     }
 }
 
+/// Renode 1.17.0's own configuration when given none, as it writes it (the
+/// home as `$HOME`), measured; the CLI's (`renode::config`, pinned by its
+/// unit test) is this with `use-synchronous-logging = true`.
+const RENODE_DEFAULT_CONFIG: &str = "[general]
+use-synchronous-logging = False
+terminal = Termsharp
+compiler-cache-enabled = False
+serialization-mode = Generated
+always-log-machine-name = False
+collapse-repeated-log-entries = True
+log-timestamps-type = Host
+log-history-limit = 1000
+history-path = $HOME/.config/renode/history
+store-table-bits = 41
+[monitor]
+consume-exceptions-from-command = True
+break-script-on-exception = True
+number-format = Hexadecimal
+[plugins]
+enabled-plugins = 
+[translation]
+min-tb-size = 33554432
+max-tb-size = 536870912
+";
+
 #[test]
 fn renode_s_configuration_differs_from_its_default_in_synchronous_logging_alone() {
-    // AET-WO-2204 D4: Renode writes every key it uses into the file it is
-    // given, and into its default file when given none; the two differ in
-    // the one key the CLI's configuration sets.
+    // AET-WO-2204 D4. Renode writes every key it reads into its default file
+    // when given none; given a file stating every one of them, it only reads
+    // it: the CLI's file is sealed read-only for the tool uid (AET-WO-1601),
+    // and a file missing a key made Renode abort in the sandbox (measured).
     let dir = std::env::temp_dir().join(format!("aet-2204-t2-{}-config", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
-    let renode = |home: &Path, config: Option<&Path>| {
+    let renode = |home: &Path, config: Option<&Path>, commands: &str| {
         fs::create_dir_all(home).unwrap();
         let mut c = Command::new("renode");
         if let Some(path) = config {
             c.arg("--config").arg(path);
         }
         let out = c
-            .args(["--disable-gui", "--console", "--plain", "-e", "quit"])
+            .args(["--disable-gui", "--console", "--plain", "-e", commands])
             .env_clear()
             .env("HOME", home)
             .env("PATH", std::env::var_os("PATH").unwrap())
@@ -1000,35 +1026,35 @@ fn renode_s_configuration_differs_from_its_default_in_synchronous_logging_alone(
             .unwrap();
         assert!(out.status.success(), "{out:?}");
     };
-    let (plain, given) = (dir.join("plain"), dir.join("given"));
-    renode(&plain, None);
-    let config = given.join("renode.config");
-    fs::create_dir_all(&given).unwrap();
-    fs::write(&config, "[general]\nuse-synchronous-logging = true\n").unwrap();
-    renode(&given, Some(&config));
-    let keys = |text: String, home: &Path| -> Vec<String> {
-        let mut v: Vec<String> = text
-            .lines()
-            .map(|l| l.replace(home.to_str().unwrap(), "$HOME"))
-            .collect();
+    let sorted = |text: &str| {
+        let mut v: Vec<String> = text.lines().map(str::to_owned).collect();
         v.sort();
         v
     };
-    let default = keys(
-        fs::read_to_string(plain.join(".config/renode/config")).unwrap(),
-        &plain,
+    // Renode's own default, every key, after a whole boot of the reference.
+    let plain = dir.join("plain");
+    let boot = format!(
+        "mach create; machine LoadPlatformDescription @{}; sysbus LoadELF @{}; cpu VectorTableOffset 0x08000000; emulation RunFor \"0.001000000\"; machine Reset; emulation RunFor \"0.000010000\"; peripherals; quit",
+        platform().display(),
+        firmware().display()
     );
-    let supplied = keys(fs::read_to_string(&config).unwrap(), &given);
-    let only = |a: &[String], b: &[String]| -> Vec<String> {
-        a.iter().filter(|l| !b.contains(l)).cloned().collect()
-    };
+    renode(&plain, None, &boot);
+    let default = fs::read_to_string(plain.join(".config/renode/config")).unwrap();
     assert_eq!(
-        only(&default, &supplied),
-        ["use-synchronous-logging = False"]
+        sorted(&default.replace(plain.to_str().unwrap(), "$HOME")),
+        sorted(RENODE_DEFAULT_CONFIG)
     );
-    assert_eq!(
-        only(&supplied, &default),
-        ["use-synchronous-logging = true"]
-    );
-    answer(&format!("renode config keys: {supplied:?}"));
+    // The same with the one key changed is read and never written.
+    let given = dir.join("given");
+    fs::create_dir_all(&given).unwrap();
+    let text = RENODE_DEFAULT_CONFIG
+        .replace("$HOME", given.to_str().unwrap())
+        .replace(
+            "use-synchronous-logging = False",
+            "use-synchronous-logging = true",
+        );
+    let config = given.join("renode.config");
+    fs::write(&config, &text).unwrap();
+    renode(&given, Some(&config), &boot);
+    assert_eq!(fs::read_to_string(&config).unwrap(), text);
 }

@@ -164,7 +164,7 @@ fn good() -> String {
 }
 
 /// A `renode` stub that refuses (exit 97) a call without `--config` and a
-/// configuration whose one key is synchronous logging (`AET-WO-2204` D4),
+/// configuration with synchronous logging and host timestamps (`AET-WO-2204` D4),
 /// answers `--version`, refuses (exit 99) a command line without the boot's
 /// fixed parts, and prints `stdout`.
 fn toolbox(stdout: &str) -> Dir {
@@ -183,7 +183,8 @@ fn toolbox_then(stdout: &str, version: &str, then: &str) -> Dir {
     let body = format!(
         r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
-[ "$(/bin/cat "$2")" = "$(printf '[general]\nuse-synchronous-logging = true')" ] || exit 97
+/bin/grep -qx 'use-synchronous-logging = true' "$2" || exit 97
+/bin/grep -qx 'log-timestamps-type = Host' "$2" || exit 97
 if [ "$3" = --version ]; then printf '{version}\n'; exit 0; fi
 # No console level is ever set (`AET-WO-2204` D4); only a device's source level.
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
@@ -1274,4 +1275,98 @@ fn a_core_not_on_a_self_loop_fails_and_both_of_its_halfwords_pass() {
     // Outside the firmware it is `pc_outside_firmware` alone.
     let (_, v) = at("0x8000040");
     assert_eq!(kinds(&v), ["pc_outside_firmware"], "{v}");
+}
+
+/// `AET-WO-2204` D1: on a bus with two modelled devices (the test fixture
+/// `two-bme.json`: U2 at 0x76, U5 at 0x77), each read is witnessed by its own
+/// device's lines, and the devices' lines must come in the records' order.
+#[test]
+fn two_devices_witness_their_own_reads_in_the_records_order() {
+    let tree = Dir::new("two-bme");
+    let out = run_cli(
+        &cli(None),
+        Path::new(""),
+        &[
+            OsStr::new("generate"),
+            OsStr::new("--spec"),
+            root()
+                .join("crates/aethelgard-cli/tests/fixtures/two-bme.json")
+                .as_os_str(),
+            OsStr::new("--out"),
+            tree.0.join("g").as_os_str(),
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let platform = tree.0.join("g/board/sentinel-01.repl");
+    let spec = root().join("crates/aethelgard-cli/tests/fixtures/two-bme.json");
+    let line = |t: &str, d: &str, l: &str| format!("[03:07:39.{t}] [NOISY] i2c1.{d}: {l}\n");
+    let u2 = format!(
+        "{}{}",
+        line("3762", "u2", "Write D0"),
+        line("3765", "u2", "Read 60")
+    );
+    let u5 = format!(
+        "{}{}",
+        line("3862", "u5", "Write D0"),
+        line("3865", "u5", "Read 60")
+    );
+    let listing = CPU_LISTING.to_owned() + "  \u{251c}\u{2500}\u{2500} u5 (BME280)\n";
+    let boot_two = |log: &str| {
+        let mut r = reads(
+            "0x2100B007",
+            "0x00000000000F4240",
+            "0x00000064",
+            &GOOD_REGISTERS,
+        );
+        r.extend(GOOD_RECORD.iter().map(|s| (*s).to_owned()));
+        let text = transcript(log, &r.iter().map(String::as_str).collect::<Vec<_>>())
+            .replace(CPU_LISTING, &listing);
+        // A stub that checks the configuration alone: two devices make
+        // another command line.
+        let tb = Dir::new("tb-two");
+        let outf = tb.write("renode.out", text.as_bytes());
+        let stub = tb.write(
+            "renode",
+            format!(
+                "#!/bin/sh\n[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then printf 'Renode v1.17.0\\n'; exit 0; fi\n/bin/cat '{}'\n",
+                outf.display()
+            )
+            .as_bytes(),
+        );
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        let input = Dir::new("in");
+        let fw = input.write("fw.elf", &elf());
+        let out = run(
+            &tb.0,
+            &[
+                OsStr::new("simulate"),
+                OsStr::new("--platform"),
+                platform.as_os_str(),
+                OsStr::new("--firmware"),
+                fw.as_os_str(),
+                OsStr::new("--spec"),
+                spec.as_os_str(),
+                OsStr::new("--for"),
+                OsStr::new("10ms"),
+            ],
+        );
+        (out.status.code(), report(&out))
+    };
+    let (code, v) = boot_two(&format!("{u2}{u5}"));
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["boot"]["i2c_witness"].as_array().unwrap().len(), 2, "{v}");
+    // Each device's own lines are right, but U5's come first.
+    let (code, v) = boot_two(&format!("{u5}{u2}"));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["i2c_witness_out_of_order"], "{v}");
+    // One device's lines alone: the other read is unwitnessed, named.
+    let (code, v) = boot_two(&u5);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{v}");
+    assert!(
+        finding(&v, "i2c_transaction_unwitnessed").unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("U2")
+    );
 }
