@@ -637,3 +637,8 @@ Run by a subagent in its own worktree at `247df35`, every edit verified applied 
 - **`crates/aethelgard-svd-hal/tests/order_2203.rs`**: its "boot image" digest re-taken (the `Image` it prints carries the witness now); the firmware and both platform digests unchanged, so the generated files and the emitter are byte-identical.
 - **`crates/aethelgard-cli/tests/workspace_shape.rs`**: allows the twin's vendored Renode files and its `sha2` dev-dependency.
 - **The bridge** is unchanged: the droop's Renode gets the CLI's own arguments through `bridge --renode`, `--config` included, so the fence extension D4 allowed was not needed.
+
+## CI
+
+- **First run of the build** (`c017373`, run `43558095160`): every job green. Shards (8): 14m07s, 10m38s, 12m41s, 7m59s, 11m39s, 13m15s, 11m36s, **15m13s**. Shard 7, over the 15-minute bar, holds none of this build's tier-2 tests (they went to shards 0, 2, 3, 4, 6); its heaviest are `board_tier2`'s Kani and `verify` tests. For comparison, `main`'s latest run (`32a2be0`) peaked at 13m41s and `AET-WO-1908`'s branch at 15m33s: run-to-run variance is about a minute and a half.
+
