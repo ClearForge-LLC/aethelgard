@@ -323,6 +323,48 @@ fn project_names_and_references_have_their_own_shapes() {
     }
 }
 
+/// `AET-WO-2204` D5: a reference the emitter would lowercase onto a name the
+/// Renode platform already holds is refused at `validate`, I2C and SPI alike.
+#[test]
+fn a_reference_that_lowercases_to_a_reserved_name_is_refused() {
+    for id in [
+        "nvic", "cpu", "crypto", "sysbus", "machine", "using", "init", "True", "NVIC", "Cpu",
+        "I2C1", "SPI4",
+    ] {
+        let err = refusal(|s| devs(s).i2c[0].reference = id.into());
+        assert_invalid_identifier(err.clone(), "i2c_devices[0].reference");
+        assert!(err.to_string().contains("already holds"), "{err}");
+        let err = refusal(|s| devs(s).spi[0].reference = id.into());
+        assert_invalid_identifier(err.clone(), "spi_devices[0].reference");
+        assert!(err.to_string().contains("already holds"), "{err}");
+    }
+    // Capitals that do not lowercase onto a stock name load: `gpioporta` is not `gpioPortA`.
+    for ok in ["gpioPortA", "Nvic1", "U2", "usingx", "Machine1"] {
+        let mut spec = valid();
+        devs(&mut spec).i2c[0].reference = ok.into();
+        assert_eq!(spec.validate(), Ok(()), "{ok}");
+    }
+}
+
+#[test]
+fn the_reserved_list_is_sorted_and_lowercase() {
+    let list = aethelgard_ir::RESERVED_REFERENCES;
+    assert!(list.windows(2).all(|w| w[0] < w[1]), "sorted, no repeats");
+    assert!(list.iter().all(|n| {
+        n.bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+    }));
+}
+
+#[test]
+fn a_solved_topology_refuses_a_reserved_reference() {
+    let err = solved_refusal(|t| {
+        let device = t.i2c_devices.remove("U3").unwrap();
+        t.i2c_devices.insert("NVIC".into(), device);
+    });
+    assert_invalid_identifier(err, "i2c_devices.NVIC");
+}
+
 #[test]
 fn first_invalid_identifier_wins_in_key_order() {
     let err = refusal(|s| {

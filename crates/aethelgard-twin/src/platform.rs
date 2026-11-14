@@ -117,16 +117,17 @@ struct Modelled {
 }
 
 /// The devices whose part has a model, in name order, and the rest, in the
-/// order given. A name that cannot be a Renode identifier, or that a stock
-/// instance or another device already has, is refused: a duplicate
+/// order given. A name that cannot be a Renode identifier, or that a solved
+/// peripheral or another device already has, is refused: a duplicate
 /// registration breaks the load (`architecture.md` §2.9).
 fn split_devices<'d>(
     topology: &SolvedTopology,
     devices: &[Device<'d>],
 ) -> Result<(Vec<Modelled>, Vec<Device<'d>>), TwinError> {
     let used = solved(topology)?;
-    let mut taken: BTreeSet<String> = STOCK.iter().map(|s| s.1.to_owned()).collect();
-    taken.extend(used.iter().map(|p| p.to_ascii_lowercase()));
+    // A stock name is `validate`'s refusal (`RESERVED_REFERENCES`); what the
+    // emitter itself adds, the solved peripherals, is refused here.
+    let mut taken: BTreeSet<String> = used.iter().map(|p| p.to_ascii_lowercase()).collect();
     let mut modelled = Vec::new();
     let mut unmodelled = Vec::new();
     for &(reference, d) in devices {
@@ -366,4 +367,50 @@ pub fn device_path(peripheral: &str, reference: &str) -> Result<String, TwinErro
             peripheral: peripheral.to_owned(),
         })?;
     Ok(format!("{}.{}", bus.1, reference.to_ascii_lowercase()))
+}
+
+/// `AET-WO-2204` D5: the stock names a reference may not take are
+/// `aethelgard_ir::RESERVED_REFERENCES`, which `validate` enforces
+/// (`tests/reserved_names.rs` proves the list). What `split_devices` still
+/// refuses is what only the emitter knows: the peripherals it adds from the
+/// solution, and a repeat of a name.
+#[cfg(test)]
+mod tests {
+    use crate::tests::with_devices;
+
+    fn kind(devices: &[(&str, &str, u8)]) -> &'static str {
+        super::emit(&with_devices(devices)).unwrap_err().kind()
+    }
+
+    #[test]
+    fn a_name_the_emitter_adds_is_refused_here() {
+        // `SPI1` is solved in the reference topology, so the emitter declares `spi1`.
+        for name in ["SPI1", "spi1", "GPIOA", "gpioa"] {
+            assert_eq!(
+                kind(&[(name, "BME280", 0x76)]),
+                "InvalidDeviceName",
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn two_references_that_differ_only_in_case_are_refused_by_the_emitter_alone() {
+        // Measured: `SolvedTopology::validate` does not fold references, so
+        // this is `split_devices`' refusal and not the topology's.
+        assert_eq!(
+            kind(&[("U2", "BME280", 0x76), ("u2", "BME280", 0x77)]),
+            "InvalidDeviceName"
+        );
+    }
+
+    #[test]
+    fn a_reserved_name_is_the_topology_s_refusal_not_the_emitter_s() {
+        for name in ["nvic", "NVIC", "i2c1", "True", "sysbus"] {
+            assert_eq!(kind(&[(name, "BME280", 0x76)]), "InvalidTopology", "{name}");
+        }
+        // Only the lowercased form collides: `gpioPortA` loads.
+        let text = super::emit(&with_devices(&[("gpioPortA", "BME280", 0x76)])).unwrap();
+        assert!(text.contains("gpioporta: I2C.BME280"));
+    }
 }

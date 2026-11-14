@@ -649,6 +649,107 @@ const BASE_RULE: &str = "1 to 64 bytes of printable ASCII 0x21-0x7E, none of the
 const PROJECT_RULE: &str = "a project name is a crate name: 1 to 58 bytes of `a-z`, `0-9` and `-`, starting with a letter, not ending with `-`, with no `--` (`generate` names the board crate `<project>-board`, at most 64 bytes)";
 const REFERENCE_RULE: &str =
     "a device reference is a Renode identifier: a letter, then letters, digits and `_`";
+const RESERVED_RULE: &str = "a device reference may not be a name the Renode platform already holds, in any case: a stock instance, `machine`, `sysbus` or a `.repl` keyword (`RESERVED_REFERENCES`)";
+
+/// The names a device reference may not take, compared on its ASCII-lowercase
+/// form (`AET-WO-2204` D5, `RUL-14`). The emitter declares each modelled device
+/// in the Renode `.repl` under its reference lowercased, after
+/// `using "platforms/cpus/stm32h753.repl"`; Renode refuses the load when that
+/// name is already declared (E02) or is a keyword (E00). Renode compares names
+/// case-sensitively, so only an all-lowercase stock name can collide
+/// (`gpioPortA` lowercases to `gpioporta`, which loads).
+///
+/// Sorted. It holds: the all-lowercase instance names declared by Renode
+/// 1.17.0's chain `stm32h753.repl` (sha256 `13c5571e...d10ce`), `stm32h743.repl`
+/// (`86b2c2c5...b231c`) and `stm32h7.repl` (`b85cb4af...251e`); `machine` and
+/// `sysbus`, which `CreationDriver.cs` declares first; and the keywords of
+/// `Grammar.cs` (`using`, `new`, `as`, `preinit`, `init`, `reset`, `local`,
+/// `true`, `false`, `none`, `empty`) lowercased. The tier-1 test
+/// `aethelgard-twin/tests/reserved_names.rs` parses the pinned files and
+/// asserts this list equal to that set, so the list moves only with the pin.
+pub const RESERVED_REFERENCES: &[&str] = &[
+    "adc3",
+    "as",
+    "bdma",
+    "cpu",
+    "crc",
+    "crypto",
+    "dma1",
+    "dma2",
+    "dma2d",
+    "dmamux1",
+    "dtcm",
+    "dwt",
+    "empty",
+    "ethernet",
+    "exti",
+    "false",
+    "fdcan1",
+    "fdcan2",
+    "fmc",
+    "hsem",
+    "i2c1",
+    "i2c2",
+    "i2c3",
+    "i2c4",
+    "init",
+    "itcm",
+    "local",
+    "lptimer1",
+    "lptimer2",
+    "lptimer3",
+    "lptimer4",
+    "lptimer5",
+    "lpuart1",
+    "ltdc",
+    "machine",
+    "new",
+    "none",
+    "nvic",
+    "preinit",
+    "pwr",
+    "qspi",
+    "rcc",
+    "reset",
+    "rng",
+    "rtc",
+    "sdmmc",
+    "spi4",
+    "sram1",
+    "sram2",
+    "sram3",
+    "sram4",
+    "sysbus",
+    "syscfg",
+    "system_flash_ro",
+    "timer1",
+    "timer12",
+    "timer13",
+    "timer14",
+    "timer15",
+    "timer16",
+    "timer17",
+    "timer2",
+    "timer3",
+    "timer4",
+    "timer5",
+    "timer6",
+    "timer7",
+    "timer8",
+    "true",
+    "uart4",
+    "uart5",
+    "uart7",
+    "uart8",
+    "usart1",
+    "usart2",
+    "usart3",
+    "usart6",
+    "usb1",
+    "usb2",
+    "using",
+    "watchdog",
+];
 
 /// Whether `value` holds `dddd-dd-dd` or `dd:dd:dd` (`d` an ASCII digit) anywhere.
 fn clock_shape(value: &[u8]) -> bool {
@@ -696,7 +797,16 @@ pub fn check_identifier(kind: IdentifierKind, value: &str) -> Result<(), &'stati
             REFERENCE_RULE,
         ),
     };
-    if ok { Ok(()) } else { Err(rule) }
+    if !ok {
+        return Err(rule);
+    }
+    if kind == IdentifierKind::Reference {
+        let lowered = value.to_ascii_lowercase();
+        if RESERVED_REFERENCES.binary_search(&lowered.as_str()).is_ok() {
+            return Err(RESERVED_RULE);
+        }
+    }
+    Ok(())
 }
 
 fn identifier(
