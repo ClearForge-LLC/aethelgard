@@ -234,7 +234,10 @@ jobs:
       # Renode's configuration against its default). Two tests renamed.
       # 91: plus 1 from AET-WO-2204's adversarial A1 (a firmware that rewrites
       # its loop in flash is not parked).
-      TIER2_MIN: "91"
+      # 94: plus 3 from AET-WO-4200 in twin_tier2.rs (U4's JEDEC ID witnessed
+      # behind SPI1's multiplexer; SPI forgeries unwitnessed; the ICM-20948
+      # fixture read end to end).
+      TIER2_MIN: "94"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
