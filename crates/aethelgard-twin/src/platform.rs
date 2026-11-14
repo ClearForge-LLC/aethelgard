@@ -228,12 +228,22 @@ fn spi_buses(
     Ok(out)
 }
 
-/// Each SPI device in the specification's order, as (reference, peripheral,
-/// part, mux address, chip-select pin): the wiring [`emit`] declares, which
-/// the judge's checks name (`AET-WO-4200` D1).
-pub fn spi_wiring(
-    topology: &SolvedTopology,
-) -> Result<Vec<(String, String, String, u8, String)>, TwinError> {
+/// One SPI device as the emitted description wires it (`AET-WO-4200` D1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpiSelect {
+    pub reference: String,
+    /// ST's name of the controller, `SPI1`.
+    pub peripheral: String,
+    pub part: String,
+    /// The multiplexer address, which its chip select drives.
+    pub address: u8,
+    /// The chip select's pin, `PA0`.
+    pub select: String,
+}
+
+/// Each SPI device in the specification's order, as [`emit`] wires it: the
+/// judge's checks name the same address and pin.
+pub fn spi_wiring(topology: &SolvedTopology) -> Result<Vec<SpiSelect>, TwinError> {
     let buses = spi_buses(topology, &BTreeSet::new())?;
     let mut out = Vec::new();
     for (reference, d) in topology.spi_devices_in_order() {
@@ -244,13 +254,13 @@ pub fn spi_wiring(
             .ok_or_else(|| TwinError::InvalidDeviceName {
                 reference: reference.to_owned(),
             })?;
-        out.push((
-            reference.to_owned(),
-            d.peripheral.clone(),
-            d.part.clone(),
-            w.address,
-            w.pin_name.clone(),
-        ));
+        out.push(SpiSelect {
+            reference: reference.to_owned(),
+            peripheral: d.peripheral.clone(),
+            part: d.part.clone(),
+            address: w.address,
+            select: w.pin_name.clone(),
+        });
     }
     Ok(out)
 }

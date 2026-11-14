@@ -319,14 +319,17 @@ pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
             &|| platform::device_path(&d.peripheral, reference),
         )?;
     }
-    for (reference, peripheral, part, address, select) in platform::spi_wiring(topology)? {
+    for s in platform::spi_wiring(topology)? {
         push(
             &mut plan,
-            &reference,
-            &peripheral,
-            &part,
-            Wire::Spi { address, select },
-            &|| platform::spi_device_path(&peripheral, &reference),
+            &s.reference,
+            &s.peripheral,
+            &s.part,
+            Wire::Spi {
+                address: s.address,
+                select: s.select.clone(),
+            },
+            &|| platform::spi_device_path(&s.peripheral, &s.reference),
         )?;
     }
     Ok(plan)
