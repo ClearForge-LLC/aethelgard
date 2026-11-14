@@ -50,11 +50,12 @@ pub enum Rule {
     /// The symptom's bus is electrically faulted: a rise past its ceiling, a
     /// line stuck high, or a bus fault on it.
     E1,
-    /// The symptom's bus is measured healthy, and the firmware's own state on
+    /// The symptom's bus is computed healthy (its rises, computed from the
+    /// declared values, are within their ceilings), and the firmware's own state on
     /// that bus differs from the solved topology.
     S1,
     /// The symptom is on no bus (the boot, or a register no bus joins), every
-    /// bus is measured healthy, and the boot or such a register is wrong.
+    /// bus is computed healthy, and the boot or such a register is wrong.
     S2,
     /// The run passed.
     N1,
@@ -62,12 +63,12 @@ pub enum Rule {
     /// shows a failure no finding names.
     I1,
     /// A line of the symptom's bus (or, for a symptom on no bus, of any bus)
-    /// is not measured, the header cannot join the bus, or there is no bus.
+    /// has no computed rise, the header cannot join the bus, or there is no bus.
     I2,
-    /// The symptom's bus is measured healthy with no software evidence, and
+    /// The symptom's bus is computed healthy with no software evidence, and
     /// the only electrical fault is on another bus.
     I3,
-    /// Everything is measured healthy and no software evidence exists.
+    /// Every bus is computed healthy and no software evidence exists.
     I4,
     /// Some symptoms are electrical and others software.
     I5,
@@ -347,7 +348,7 @@ struct Bus<'a> {
     lines: &'a [BusLine],
     devices: &'a [(String, u8)],
     /// `None` when the header lacks a fact the bus names (a port or a pin it
-    /// does not have): the bus is then never measured healthy and owns nothing,
+    /// does not have): the bus is then never computed healthy and owns nothing,
     /// so its symptoms are `I2`, and no other bus's attribution is refused.
     joined: Option<Joined>,
 }
@@ -437,7 +438,7 @@ impl<'a> Run<'a> {
     }
 
     /// For a bus with no fault (`decide` asks only of those): the header knows
-    /// it, and each of its lines has its measured rise. R2 allows one per line,
+    /// it, and each of its lines has its computed rise. R2 allows one per line,
     /// and a rise past its ceiling, incomplete ones included, is a fault.
     fn healthy(&self, b: usize) -> bool {
         let bus = &self.buses[b];
