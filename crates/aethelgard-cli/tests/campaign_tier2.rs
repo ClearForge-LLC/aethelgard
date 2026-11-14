@@ -191,7 +191,7 @@ fn p2_gate_clause_2_the_47k_trace_shows_the_rise_the_fault_and_the_timeout_as_th
     let rises: Vec<(usize, &Record)> = records
         .iter()
         .enumerate()
-        .filter(|(_, r)| matches!(r, Record::RiseMeasured { .. }))
+        .filter(|(_, r)| matches!(r, Record::RiseComputed { .. }))
         .collect();
     assert_eq!(
         rises.len(),
@@ -199,7 +199,7 @@ fn p2_gate_clause_2_the_47k_trace_shows_the_rise_the_fault_and_the_timeout_as_th
         "the 47k trace holds exactly two rise measurements: {records:?}"
     );
     for (_, r) in &rises {
-        let Record::RiseMeasured {
+        let Record::RiseComputed {
             bus,
             rise_30_70_ps,
             complete,
@@ -241,7 +241,7 @@ fn p2_gate_clause_2_the_47k_trace_shows_the_rise_the_fault_and_the_timeout_as_th
     );
     assert_eq!(
         from,
-        &["analog.rise_time_measured > ceiling_ns"],
+        &["analog.rise_time_computed > ceiling_ns"],
         "the bus fault is caused by the analog rise-time check"
     );
     let (timeout_at, _) = records

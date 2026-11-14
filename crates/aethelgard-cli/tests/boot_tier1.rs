@@ -204,7 +204,7 @@ fn toolbox_then(stdout: &str, version: &str, then: &str) -> Dir {
 [ "$1" = --config ] || exit 97
 /bin/grep -qx 'use-synchronous-logging = true' "$2" || exit 97
 /bin/grep -qx 'log-timestamps-type = Host' "$2" || exit 97
-if [ "$3" = --version ]; then printf '{version}\n'; exit 0; fi
+if [ "$3" = --version ]; then printf '{version}\n  build: 1.17.0+20260907gitf1dd1b4af\n'; exit 0; fi
 # No console level is ever set (`AET-WO-2204` D4); only a device's source level.
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
@@ -737,13 +737,16 @@ fn each_line_is_recorded_apart_from_the_boot_and_no_fault_leaves_the_platform_as
     let analog = v["analog"].as_array().unwrap();
     assert_eq!(analog.len(), 2, "{v}");
     for (record, net) in analog.iter().zip(["I2C_SCL", "I2C_SDA"]) {
-        assert_eq!(record["kind"], "analog.rise_time_measured");
+        assert_eq!(record["kind"], "analog.rise_time_computed");
         assert_eq!(record["source"], "ngspice");
         assert_eq!(record["net"], net);
         assert_eq!(record["bus"], "SENSORS");
         assert_eq!(record["rise_30_70_ns"], 186.4);
         assert_eq!(record["ceiling_ns"], 300);
         assert_eq!(record["exceeds"], false);
+        // The deck's window beside the bus's declared speed (`AET-WO-2205` §1.3).
+        assert_eq!(record["deck_hz"], 400_000);
+        assert_eq!(record["declared_hz"], 400_000);
     }
     assert_eq!(v["faults"], serde_json::json!([]));
     assert!(v["boot"].is_object() && v["boot"].get("analog").is_none());
@@ -773,7 +776,7 @@ printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_3
     assert_eq!(faults[0]["nets"], serde_json::json!(["I2C_SCL"]));
     assert_eq!(
         faults[0]["from"],
-        serde_json::json!(["analog.rise_time_measured > ceiling_ns"])
+        serde_json::json!(["analog.rise_time_computed > ceiling_ns"])
     );
     let sees = faults[0]["firmware_sees"].as_str().unwrap();
     assert!(sees.contains("model's rendering") && sees.contains("not a measured waveform"));
@@ -891,7 +894,7 @@ done
         );
     }
     for line in v["analog"].as_array().unwrap() {
-        assert_eq!(line["kind"], "analog.rise_time_measured");
+        assert_eq!(line["kind"], "analog.rise_time_computed");
         assert_eq!(line["complete"], false);
         assert_eq!(line["exceeds"], true);
         let bound = line["rise_30_70_ns_lower_bound"].as_f64().unwrap();
@@ -900,7 +903,7 @@ done
     }
     assert_eq!(
         v["faults"][0]["from"],
-        serde_json::json!(["analog.rise_time_measured > ceiling_ns"])
+        serde_json::json!(["analog.rise_time_computed > ceiling_ns"])
     );
 
     // `AET-WO-1203`: `solve` now refuses the 10 Ω pull-up this case once used
@@ -1388,7 +1391,7 @@ fn two_devices_witness_their_own_reads_in_the_records_order() {
         let stub = tb.write(
             "renode",
             format!(
-                "#!/bin/sh\n[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then printf 'Renode v1.17.0\\n'; exit 0; fi\n/bin/cat '{}'\n",
+                "#!/bin/sh\n[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then printf 'Renode v1.17.0\\n  build: 1.17.0+20260907gitf1dd1b4af\\n'; exit 0; fi\n/bin/cat '{}'\n",
                 outf.display()
             )
             .as_bytes(),

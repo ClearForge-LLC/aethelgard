@@ -16,16 +16,19 @@ use common::*;
 /// `a2d551d1…4d166` (version 3) until `AET-WO-2301` added kinds 16 to 20, then
 /// `e9b23970…146ca` (version 4) until `AET-WO-2204` changed kinds 13 and 19; each
 /// time only the header's version byte changed, and setting it back gives the
-/// old hash again.
+/// old hash again. Then `080a804e…21371` (version 5) until `AET-WO-2205` added
+/// the header's tools: the version byte, the header's length and its empty
+/// tools array changed, and undoing the three gives version 5's hash again.
 const GOLDEN_TRACE_SHA256: &str =
-    "c4b8058718edc783e4a036379d4445f8d7aca8a076141fba0c083d464e3e27ea";
+    "dd0dd2dbdf44f6a8f04ad9ad9ea80144b37ce38a12ec11bc08e471dd0b20c7ff";
 /// The golden `state_hash`. Same rule. It was `535db225…adac4` (manifest
 /// version 1) until `AET-WO-0400a` made the chain hash each event's delta,
 /// then `af2d46bb…b4939` until `AET-WO-2300` changed the header it starts
 /// from, then `eb6408ee…93edc` until `AET-WO-3100` changed it again, then
 /// `0db4b4f9…10cea` until `AET-WO-2301` did, then `e5dcbe7c…37925` until
-/// `AET-WO-2204` did, then `28d3096c…1f82d` until `AET-WO-4200` did.
-const GOLDEN_STATE_HASH: &str = "0562aa95d1e697b6d8bd39e3481a2e44e18a05ba561d9fb683f3db90f0b9faa2";
+/// `AET-WO-2204` did, then `28d3096c…1f82d` until `AET-WO-2205` did, then
+/// `6868123f…ec11b` until `AET-WO-4200` did.
+const GOLDEN_STATE_HASH: &str = "abf1ccd2d100f56ab44e9539044e2bac1d6033a9d047e59d035e100192962524";
 
 #[test]
 fn golden_trace_and_state_hash_are_pinned() {
@@ -40,15 +43,35 @@ fn golden_trace_and_state_hash_are_pinned() {
     );
     assert_eq!(trace_sha, GOLDEN_TRACE_SHA256);
     assert_eq!(state_hash, GOLDEN_STATE_HASH);
-    // Only the version byte changed with AET-WO-4200 (as with AET-WO-2204):
-    // set back to 5, the bytes are version 5's golden trace again.
+    // AET-WO-4200 changed the version byte alone: set back to 6, the bytes
+    // are version 6's golden trace (AET-WO-2205's) again.
     let at = 1 + 1 + "aethelgard-trace".len();
-    let mut v5 = bytes.clone();
-    assert_eq!(v5[at], 7);
+    assert_eq!(bytes[at], 7);
+    let mut bytes = bytes.clone();
+    bytes[at] = 6;
+    assert_eq!(
+        hex(&Sha256::digest(&bytes)),
+        "1f9442fe2ca781f1c870093c114ba11d0ad6787daac27cd49a175a2fbfbade6b"
+    );
+    // AET-WO-2205 changed the header alone: a sixth item, the empty tools
+    // array last, and the version. Undone, the bytes are version 5's golden
+    // trace again; with the version set back to 4, version 4's.
+    let (_, header_end) = aethelgard_chaos::cbor::decode_prefix(&bytes, 0).unwrap();
+    assert_eq!((bytes[0], bytes[header_end - 1]), (0x86, 0x80));
+    assert_eq!(bytes[at], 6);
+    let mut v5 = vec![0x85];
+    v5.extend(&bytes[1..header_end - 1]);
+    v5.extend(&bytes[header_end..]);
     v5[at] = 5;
     assert_eq!(
         hex(&Sha256::digest(&v5)),
         "080a804ef992452a2f879b0c798603b5f1a1b40d0ba18e170b2a57975f221371"
+    );
+    let mut v4 = v5;
+    v4[at] = 4;
+    assert_eq!(
+        hex(&Sha256::digest(&v4)),
+        "e9b23970e9a5e874c86b6f4246482558a3b2d8844a9e9837f2dfc6ea219146ca"
     );
 }
 

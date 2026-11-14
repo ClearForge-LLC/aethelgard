@@ -100,8 +100,10 @@ impl Generator {
 pub struct Expectation {
     pub event: EventRef,
     pub generator: Generator,
-    /// The register field, as [`Field`] names it, or `instructions` for the
-    /// boot's instruction count.
+    /// The register field, as [`Field`] names it, `instructions` for the
+    /// boot's instruction count, or `pc_inside_firmware` for where the core
+    /// ended: solved 1, inside an executable segment; observed 0, outside
+    /// (`AET-WO-2205` §1.5).
     pub what: String,
     pub address: Option<u32>,
     pub mask: Option<u32>,
@@ -142,7 +144,7 @@ pub const MODEL_SLOT: &str = "no rule; RUL-18 model proposer slot";
 /// The cause the analog pass names in a bus fault for a rise past its
 /// ceiling (`aethelgard-cli`'s `analog.rs`, `PAST_CEILING`; pinned there by a
 /// test that reads it back from a campaign run).
-pub const PAST_CEILING_CAUSE: &str = "analog.rise_time_measured > ceiling_ns";
+pub const PAST_CEILING_CAUSE: &str = "analog.rise_time_computed > ceiling_ns";
 
 /// Headroom on the ceiling, 0.8: for a ±5 % resistor tolerance and a
 /// capacitance spread the run did not measure (`AET-WO-3200` §1.2).
@@ -392,6 +394,8 @@ fn report(input: &Input) -> Outcome {
                 boot_word,
                 instructions_expected,
                 instructions_observed,
+                pc_outside,
+                ..
             } => {
                 let mut v: Vec<Expectation> = [boot_word]
                     .into_iter()
@@ -407,6 +411,17 @@ fn report(input: &Input) -> Outcome {
                         mask: None,
                         solved: *instructions_expected,
                         observed: *instructions_observed,
+                    });
+                }
+                if *pc_outside {
+                    v.push(Expectation {
+                        event: e.event,
+                        generator: Generator::Firmware,
+                        what: "pc_inside_firmware".to_owned(),
+                        address: None,
+                        mask: None,
+                        solved: 1,
+                        observed: Some(0),
                     });
                 }
                 v

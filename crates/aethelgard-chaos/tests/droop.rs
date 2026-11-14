@@ -741,6 +741,7 @@ fn boot(instructions_observed: Option<u64>) -> Record {
         instructions_expected: 10,
         instructions_observed,
         pc: (!none).then_some(0),
+        executable: vec![(0, 0x1000_0000)],
     }
 }
 

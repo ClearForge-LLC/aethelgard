@@ -4,9 +4,9 @@
 //! campaign composes Renode's schedule with [`schedule`], and replay judges
 //! the archived resets with the same function, so the rule lives here alone.
 //!
-//! **Provisional (F1, D10):** every value is DS12117 Rev 7's, read from a
-//! third-party mirror because st.com was unreachable from the build host.
-//! When the current revision is read, this table is the one place to change.
+//! Every value is DS12117 Rev 10's, read from st.com (`AET-WO-2301` D10,
+//! closed 2026-11-14; `AET-WO-2205` §1.7). Rev 7's values, first read from a
+//! mirror (`2301` F1), are equal, and a test holds them so.
 
 /// Where the table's values come from.
 pub struct Source {
@@ -21,11 +21,11 @@ pub struct Source {
 
 pub const SOURCE: Source = Source {
     document: "DS12117 (STM32H753xI datasheet)",
-    revision: 7,
-    date: "April 2019",
-    table: "Table 26, Reset and power control block characteristics (section 6.3.4, pp. 109-110)",
-    read_from: "a third-party mirror (prod-parts-data.s3.amazonaws.com), not st.com",
-    sha256: "61fe6bb884401fbd791bcabef428a86852adbb84ccbe8aad75ede591677a3125",
+    revision: 10,
+    date: "January 2026",
+    table: "Table 16, Reset and power control block characteristics (section 6.3.4, p. 107)",
+    read_from: "st.com (fetched by Scotty, 2026-11-14)",
+    sha256: "607b9eadaef1c54f93e02d7cea58c862a1552bda47c848d96f2de5c0ee84c032",
 };
 
 /// One brown-out threshold: (min, typ, max) for each edge, in µV.
@@ -45,8 +45,9 @@ impl Threshold {
     }
 }
 
-/// `VBOR0` to `VBOR3`, Table 26. BOR0 "is enabled in all modes" (footnote 2):
-/// it is the part's lowest reset, and Rev 7 has no separate POR/PDR row.
+/// `VBOR0` to `VBOR3`, Table 16. BOR0 is the part's lowest reset: Rev 10's
+/// row is `VBOR0/POR/PDR`, the POR and PDR thresholds (Rev 7 had no POR/PDR
+/// row, and said BOR0 "is enabled in all modes").
 pub const BOR: [Threshold; 4] = [
     Threshold {
         name: "VBOR0",
@@ -70,7 +71,7 @@ pub const BOR: [Threshold; 4] = [
     },
 ];
 
-/// "Reset temporization after BOR0 released", typical, Table 26.
+/// "Reset temporization after BOR0 released", typical, Table 16.
 pub const T_RSTTEMPO_NS: u64 = 377_000;
 
 /// The schedule's resolution: a reset or a release lands on the first 10 ns
@@ -265,9 +266,46 @@ mod tests {
         }
     }
 
+    /// `AET-WO-2205` §1.7: Rev 10 changed no value. Rev 7's Table 26 as
+    /// `AET-WO-2301` read it, written out again here, not taken from [`BOR`].
     #[test]
-    fn the_table_is_ds12117_rev7_and_ordered() {
-        assert_eq!(SOURCE.revision, 7);
+    fn every_rev_10_value_equals_rev_7s() {
+        let rev7: [(&str, [u64; 3], [u64; 3]); 4] = [
+            (
+                "VBOR0",
+                [1_580_000, 1_620_000, 1_680_000],
+                [1_620_000, 1_670_000, 1_710_000],
+            ),
+            (
+                "VBOR1",
+                [1_950_000, 2_000_000, 2_060_000],
+                [2_040_000, 2_100_000, 2_150_000],
+            ),
+            (
+                "VBOR2",
+                [2_250_000, 2_310_000, 2_370_000],
+                [2_340_000, 2_410_000, 2_470_000],
+            ),
+            (
+                "VBOR3",
+                [2_540_000, 2_610_000, 2_680_000],
+                [2_630_000, 2_700_000, 2_780_000],
+            ),
+        ];
+        assert_eq!(BOR.len(), rev7.len());
+        for (t, (name, falling, rising)) in BOR.iter().zip(rev7) {
+            assert_eq!((t.name, t.falling_uv, t.rising_uv), (name, falling, rising));
+        }
+        assert_eq!(T_RSTTEMPO_NS, 377_000);
+        assert_eq!(
+            (SOURCE.revision, SOURCE.date),
+            (10, "January 2026"),
+            "the table's source is Rev 10"
+        );
+    }
+
+    #[test]
+    fn the_table_is_ordered() {
         for t in BOR {
             assert!(t.falling_uv[0] < t.falling_uv[1] && t.falling_uv[1] < t.falling_uv[2]);
             assert!(t.rising_uv[0] < t.rising_uv[1] && t.rising_uv[1] < t.rising_uv[2]);

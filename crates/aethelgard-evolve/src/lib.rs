@@ -55,11 +55,12 @@ pub enum Rule {
     /// address and found nothing there, and the model logged nothing
     /// (`AET-WO-4200` D4).
     E2,
-    /// The symptom's bus is measured healthy, and the firmware's own state on
+    /// The symptom's bus is computed healthy (its rises, computed from the
+    /// declared values, are within their ceilings), and the firmware's own state on
     /// that bus differs from the solved topology.
     S1,
     /// The symptom is on no bus (the boot, or a register no bus joins), every
-    /// bus is measured healthy, and the boot or such a register is wrong.
+    /// bus is computed healthy, and the boot or such a register is wrong.
     S2,
     /// The symptom's SPI read was the firmware's doing: the multiplexer found
     /// no chip select asserted, or several; or the model logged a transfer
@@ -72,18 +73,39 @@ pub enum Rule {
     /// shows a failure no finding names.
     I1,
     /// A line of the symptom's bus (or, for a symptom on no bus, of any bus)
-    /// is not measured, the header cannot join the bus, or there is no bus.
+    /// has no computed rise, the header cannot join the bus, or there is no bus.
     I2,
-    /// The symptom's bus is measured healthy with no software evidence, and
+    /// The symptom's bus is computed healthy with no software evidence, and
     /// the only electrical fault is on another bus.
     I3,
-    /// Everything is measured healthy and no software evidence exists.
+    /// Every bus is computed healthy and no software evidence exists.
     I4,
     /// Some symptoms are electrical and others software.
     I5,
 }
 
 impl Rule {
+    /// Every rule, in order.
+    pub const ALL: [Rule; 11] = [
+        Self::E1,
+        Self::E2,
+        Self::S1,
+        Self::S2,
+        Self::S3,
+        Self::N1,
+        Self::I1,
+        Self::I2,
+        Self::I3,
+        Self::I4,
+        Self::I5,
+    ];
+
+    /// The rule whose [`id`](Self::id) is `id`, so a reader of an attribution
+    /// or a manifest finds the rule, and its evidence kinds, here alone.
+    pub fn from_id(id: &str) -> Option<Rule> {
+        Self::ALL.into_iter().find(|r| r.id() == id)
+    }
+
     pub fn id(self) -> &'static str {
         match self {
             Self::E1 => "E1",
@@ -185,11 +207,14 @@ pub enum View {
         from: Vec<String>,
         nets: Vec<String>,
     },
-    /// Kind 10.
+    /// Kind 10: with whether the core ended outside every executable
+    /// segment the record archives (`AET-WO-2205` §1.5).
     Boot {
         boot_word: Field,
         instructions_expected: u64,
         instructions_observed: Option<u64>,
+        pc: Option<u32>,
+        pc_outside: bool,
     },
     /// Kind 11, or kind 13 with its device: each field the join gives a
     /// solved value. A witness that is no evidence either way has none.
@@ -212,14 +237,14 @@ pub struct Evidence {
     pub view: View,
 }
 
-/// A measured rise (kind 7) of one line.
+/// A computed rise (kind 7) of one line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rise {
     pub rise_ps: u64,
     pub complete: bool,
 }
 
-/// One line of a solved bus (kind 15), with every rise the run measured on it.
+/// One line of a solved bus (kind 15), with every rise the run computed for it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LineRises {
     pub net: String,
@@ -227,7 +252,7 @@ pub struct LineRises {
     pub rises: Vec<Rise>,
 }
 
-/// One solved bus (kind 15) and its lines' measured rises.
+/// One solved bus (kind 15) and its lines' computed rises.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SolvedBus {
     pub bus: String,
@@ -358,7 +383,7 @@ struct Bus<'a> {
     lines: &'a [BusLine],
     devices: &'a [(String, u8)],
     /// `None` when the header lacks a fact the bus names (a port or a pin it
-    /// does not have): the bus is then never measured healthy and owns nothing,
+    /// does not have): the bus is then never computed healthy and owns nothing,
     /// so its symptoms are `I2`, and no other bus's attribution is refused.
     joined: Option<Joined>,
 }
@@ -584,7 +609,7 @@ impl<'a> Run<'a> {
     fn faults(&self, b: usize) -> Vec<usize> {
         let id = self.buses[b].id;
         self.indices(|r| match r {
-            Record::RiseMeasured { bus, exceeds, .. } => bus == id && *exceeds,
+            Record::RiseComputed { bus, exceeds, .. } => bus == id && *exceeds,
             Record::LineStuckHigh { bus, .. } | Record::BusFault { bus, .. } => bus == id,
             _ => false,
         })
@@ -592,18 +617,18 @@ impl<'a> Run<'a> {
 
     fn rises(&self, b: usize) -> Vec<usize> {
         let id = self.buses[b].id;
-        self.indices(|r| matches!(r, Record::RiseMeasured { bus, .. } if bus == id))
+        self.indices(|r| matches!(r, Record::RiseComputed { bus, .. } if bus == id))
     }
 
     /// For a bus with no fault (`decide` asks only of those): the header knows
-    /// it, and each of its lines has its measured rise. R2 allows one per line,
+    /// it, and each of its lines has its computed rise. R2 allows one per line,
     /// and a rise past its ceiling, incomplete ones included, is a fault.
     fn healthy(&self, b: usize) -> bool {
         let bus = &self.buses[b];
         bus.joined.is_some()
             && bus.lines.iter().all(|line| {
                 self.records.iter().any(|r| {
-                    matches!(r, Record::RiseMeasured { bus: x, net, .. }
+                    matches!(r, Record::RiseComputed { bus: x, net, .. }
                         if x == bus.id && *net == line.net)
                 })
             })
@@ -749,6 +774,7 @@ impl<'a> Run<'a> {
             } => {
                 boot_word.observed != Some(boot_word.expected)
                     || instructions_observed.is_some_and(|n| n < *instructions_expected)
+                    || pc_outside(r)
             }
             Record::RegisterObserved { name, reading } => self.unowned(name, reading) != 0,
             _ => false,
@@ -757,7 +783,7 @@ impl<'a> Run<'a> {
 
     fn scope(&self, i: usize) -> Option<Scope<'a>> {
         Some(match &self.records[i] {
-            Record::RiseMeasured { bus, .. }
+            Record::RiseComputed { bus, .. }
             | Record::LineStuckHigh { bus, .. }
             | Record::BusFault { bus, .. } => Scope::Bus(self.bus_named(bus)?, None),
             Record::I2cCheck { reference, .. } | Record::I2cWitness { reference, .. } => {
@@ -785,7 +811,7 @@ impl<'a> Run<'a> {
         let status_is = |r: &Record, f: &dyn Fn(&str) -> bool| matches!(r, Record::I2cCheck { status: Some(s), .. } if f(s));
         let events = match kind {
             campaign::PAST_CEILING_FINDING => {
-                self.indices(|r| matches!(r, Record::RiseMeasured { exceeds: true, .. }))
+                self.indices(|r| matches!(r, Record::RiseComputed { exceeds: true, .. }))
             }
             campaign::STUCK_HIGH_FINDING => {
                 self.indices(|r| matches!(r, Record::LineStuckHigh { .. }))
@@ -842,6 +868,7 @@ impl<'a> Run<'a> {
                 matches!(r, Record::BootObserved { boot_word, .. }
                     if boot_word.observed != Some(boot_word.expected))
             }),
+            campaign::PC_OUTSIDE_FINDING => self.indices(pc_outside),
             "cpu_halted" => self.indices(|r| {
                 matches!(r, Record::BootObserved { instructions_expected, instructions_observed, .. }
                     if instructions_observed.is_some_and(|n| n < *instructions_expected))
@@ -925,6 +952,13 @@ impl<'a> Run<'a> {
     }
 }
 
+/// Kind 10 with its `pc` outside every executable segment it archives: the
+/// core ran where the firmware put no code (`AET-WO-2205` §1.5, `3100` F13).
+fn pc_outside(r: &Record) -> bool {
+    matches!(r, Record::BootObserved { pc: Some(pc), executable, .. }
+        if !aethelgard_chaos::record::inside(executable, *pc))
+}
+
 /// The run, judged by exactly the rules `replay` applies after its reader
 /// ([`campaign::check_archived`]), with every solved bus joined to the ST
 /// header; and whether its verdict passed.
@@ -983,7 +1017,7 @@ impl RunView<'_> {
             _ => None,
         };
         let view = match record {
-            Record::RiseMeasured {
+            Record::RiseComputed {
                 net,
                 rise_30_70_ps,
                 complete,
@@ -1006,8 +1040,11 @@ impl RunView<'_> {
                 boot_word,
                 instructions_expected,
                 instructions_observed,
+                pc,
                 ..
             } => View::Boot {
+                pc: *pc,
+                pc_outside: pc_outside(record),
                 boot_word: Field {
                     register: "boot_word".to_owned(),
                     address: boot_word.address,
@@ -1089,7 +1126,7 @@ impl RunView<'_> {
         })
     }
 
-    /// Every solved bus, in the run's order, with each line's measured rises.
+    /// Every solved bus, in the run's order, with each line's computed rises.
     pub fn buses(&self) -> Vec<SolvedBus> {
         let run = &self.0;
         run.buses
@@ -1106,7 +1143,7 @@ impl RunView<'_> {
                             .records
                             .iter()
                             .filter_map(|r| match r {
-                                Record::RiseMeasured {
+                                Record::RiseComputed {
                                     bus,
                                     net,
                                     rise_30_70_ps,

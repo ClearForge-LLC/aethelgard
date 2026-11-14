@@ -39,13 +39,17 @@ fn line(suffix: &str, net: &str, pin: &str) -> BusLine {
 }
 
 fn rise(net: &str) -> Record {
-    Record::RiseMeasured {
+    Record::RiseComputed {
         bus: "SENSORS".into(),
         net: net.into(),
         rise_30_70_ps: 186_402,
         complete: true,
         ceiling_ps: 300_000,
         exceeds: false,
+        window: aethelgard_chaos::record::Window {
+            deck_hz: 400_000,
+            declared_hz: 400_000,
+        },
     }
 }
 
@@ -125,6 +129,7 @@ fn base() -> Vec<Record> {
             instructions_expected: 10_000_000,
             instructions_observed: Some(10_000_000),
             pc: Some(0x0800_0596),
+            executable: vec![(0x0800_0000, 0x0800_1000)],
         },
         register("GPIOA.MODER"),
         register("GPIOB.MODER"),
@@ -291,6 +296,10 @@ fn archived(records: &[Record]) -> Replayed {
             ("specification".into(), *specification_sha256),
             ("topology".into(), *topology_sha256),
         ],
+        tools: aethelgard_chaos::campaign::tools_of(records)
+            .iter()
+            .map(|n| ((*n).to_owned(), "test".to_owned()))
+            .collect(),
     };
     let mut w = TraceWriter::create(&dir, &header).unwrap();
     for record in records.iter().cloned() {
