@@ -120,4 +120,10 @@ C0G capacitor per line = 100 pF − C_bench, rounded to a stock value: ____ pF.
 
 Raw: ________ · BOR_LEV: ________
 
+**Prediction, added 2026-11-14 before the bench, from ST's documents:**
+- RM0433 Rev 9 §4.9.8 confirms the register: `FLASH_OPTSR_CUR` at offset `0x01C` from FLASH base `0x52002000`, so `0x5200201C`; `BOR_LEV` is bits [3:2], where `00` selects VBOR0.
+- DS12117 Rev 10 Table 16 names VBOR0 as the POR/PDR threshold, so `00` is "no BOR above POR/PDR".
+- RM0433 Table 21 gives `FLASH_OPTSR[15:0]`'s default factory value as `1010101011110000`. Its `RDP` byte decodes to `0xAA` (level 0), which checks the bit order.
+- **Predicted:** `raw & 0x0000000C` = `0x0` (`BOR_LEV` `00`, VBOR0 only), unless the board's option bytes were changed after the factory.
+
 This is evidence for the specification field (D2 (b)), not a default the engine assumes.
