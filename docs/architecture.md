@@ -360,7 +360,7 @@ Nothing was run. The pins are Renode `v1.17.0` (`ab721d88`, infrastructure `066a
 The Mythos 5.2 review (`docs/reviews/2026-11-12-mythos-5-2.md`, A1 and A2) reproduced what §2.15 to §2.18 did not say:
 - **Every rise time in §2.17 and §2.18 is computed from declared values.** The netlist is built from the pull-up and the net constraint's `max_capacitance`, a bound used as a value. A 47 kΩ pull-up with a declared 5 pF, and 10 MΩ with 1 fF, both pass the campaign.
 - **Nothing bounded the pull-up from below.** 24 Ω, 50 Ω and 100 Ω passed, though 24 Ω asks the driver to sink 137 mA against UM10204's 3 mA. `AET-WO-1203` adds the floor to `solve`.
-- The words "measured" in §2.15 to §2.18 and in the record kind `analog.rise_time_measured` are kept as written, beside this correction, per this section's habit. They mean "computed by ngspice from the declared R and C". The record kinds are renamed with `AET-WO-2301`'s trace version bump (`RUL-19`).
+- The words "measured" in §2.15 to §2.18 and in the record kind `analog.rise_time_measured` are kept as written, beside this correction, per this section's habit. They mean "computed by ngspice from the declared R and C". The record kinds are renamed with `AET-WO-2301`'s trace version bump (`RUL-19`). *Done 2026-11-14 by `AET-WO-2205` (PR #119), trace version 6:* kind 7 is `analog.rise_time_computed`, kinds 7 and 8 carry the deck's 400 kHz window beside the declared speed, and the header names the engine, Renode (its `build:` line), and the bridge and ngspice when they ran.
 
 ### 2.20 Measurements from AET-WO-2204 (2026-11-14, Furnace and GitHub Actions)
 
