@@ -11,6 +11,18 @@
 use aethelgard_ir::Specification;
 use aethelgard_ir::board::LayerRole;
 
+/// KiCad 10.0.7's layer id for each copper layer this engine writes
+/// (measured, `AET-WO-4100` S1): `F.Cu` 0, `B.Cu` 2, `In1.Cu` 4, `In2.Cu` 6.
+pub fn kicad_id(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "F.Cu" => "0",
+        "B.Cu" => "2",
+        "In1.Cu" => "4",
+        "In2.Cu" => "6",
+        _ => return None,
+    })
+}
+
 /// The declared board, in nanometres.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stack {

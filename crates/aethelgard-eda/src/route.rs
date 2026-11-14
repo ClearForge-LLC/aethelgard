@@ -1906,17 +1906,6 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
     Ok(Part { reference, pads })
 }
 
-/// The KiCad layer id of each copper layer name (measured, `AET-WO-4100` S1).
-fn copper_id(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "F.Cu" => "0",
-        "B.Cu" => "2",
-        "In1.Cu" => "4",
-        "In2.Cu" => "6",
-        _ => return None,
-    })
-}
-
 /// A board that does not agree with the specification's declared board,
 /// named: `LayersDisagree`, `PlanesDisagree` or `ThicknessDisagrees`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1958,7 +1947,7 @@ pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagree
         .iter()
         .map(|n| {
             (
-                copper_id(n).unwrap_or("?").to_owned(),
+                crate::stack::kicad_id(n).unwrap_or("?").to_owned(),
                 n.clone(),
                 "signal".to_owned(),
             )

@@ -760,11 +760,6 @@ fn layout(parts: &[Part]) -> Result<Layout, EmitError> {
     layout_of(&items(parts)?)
 }
 
-/// KiCad 10.0.7's id for each inner copper layer this engine writes
-/// (measured, `AET-WO-4100` S1): `In1.Cu` 4, `In2.Cu` 6. Its rows follow
-/// `F.Cu` and precede `B.Cu`, as KiCad saves them.
-const INNER: [(&str, &str); 2] = [("4", "In1.Cu"), ("6", "In2.Cu")];
-
 /// The `.kicad_pcb` text for `parts`, on the board `stack` declares.
 pub(crate) fn write(
     project: &str,
@@ -775,15 +770,17 @@ pub(crate) fn write(
     let layout = layout_of(&items)?;
     let mut layers = vec![Sx::atom("layers")];
     for (id, name, kind, user) in LAYERS {
+        // Inner copper rows follow F.Cu and precede B.Cu, as KiCad saves them.
         if name == "B.Cu" {
-            for (inner_id, inner) in INNER {
-                if stack.copper.iter().any(|c| c == inner) {
-                    layers.push(Sx::List(vec![
-                        Sx::atom(inner_id),
-                        Sx::str(inner),
-                        Sx::atom("signal"),
-                    ]));
-                }
+            for inner in &stack.copper[1..stack.copper.len() - 1] {
+                let id = crate::stack::kicad_id(inner).ok_or_else(|| {
+                    EmitError::Internal(format!("no KiCad id for copper layer {inner}"))
+                })?;
+                layers.push(Sx::List(vec![
+                    Sx::atom(id),
+                    Sx::str(inner),
+                    Sx::atom("signal"),
+                ]));
             }
         }
         let mut l = vec![Sx::atom(id), Sx::str(name), Sx::atom(kind)];
