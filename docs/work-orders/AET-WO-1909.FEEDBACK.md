@@ -6,28 +6,31 @@
 
 ## Answer first
 
-1. **Every guarded failure the suite pays for is distinct, with one exception.** I found no test whose failure another test already catches. The exception is `attribute_seeded::tier2::oq_03_the_reference_runs_bytes_with_kind_15`, which asserts nothing of its own (§3).
+1. **Every guarded failure the suite pays for is distinct, with three exceptions.** I found no test whose failure another test already catches. The exceptions assert nothing of their own:
+   - `attribute_seeded::tier2::oq_03_the_reference_runs_bytes_with_kind_15`, which repeats `ran()`'s checks (§3, with its mutant);
+   - the two committed-proposal tests, which return early because `proposals/` is absent (F2).
 2. **Where CI pays twice is the same `verify` pipeline on the same reference.**
    - Six `board_tier2` tests make ten full `verify` runs: eight on 2k2, two on 47k.
-   - Every variant costs the same: 122 to 125 s on Furnace, 191 to 258 CI s, because two Kani proofs are most of each run. A flag adds nothing.
+   - Every variant costs the same: 122 to 125 s on Furnace, 191 to 258 CI s. Kani dominates each run. A flag adds nothing.
    - One shared `--fab-out` run is the same invocation that two tests repeat today; it is bookable (A, 1 run).
    - Three more runs can go only by merging invocations that differ in a flag (B, 2 runs; C, 1 run). That is the architect's call, not mine.
 3. **`attribute_seeded` already shares its expensive work in one process** (`RAN`, `REGATED`). Nothing there is booked as a saving.
    - On a CI-sized container the block's wall time is `p3_gate_clause_2`'s own chain: 303.8 s alone, 305.9 s for the whole block.
-   - That chain is `ran()` (68 s), then two re-gates of about 115 s each. Each re-gate is mostly one Kani proof (108 to 109 s), and `ONE_PROOF` serialises them.
+   - That chain is `ran()` (68 s), then two re-gates of about 115 s each. Each re-gate is mostly one Kani proof (108 to 109 s).
+   - The re-gates run one after the other because `p3_gate_clause_2` calls them in one loop on one thread, holding `REGATED`'s lock across `every_gate` (`:699`, `:744`, `:848-857`). Today `ONE_PROOF` never sees two callers.
    - Run concurrently, the two proofs take 122.8 s against 217.3 s, but the container's memory peaks at 11.3 GB against 5.5 GB (E, a decision).
-4. **Colocation saves little.** CI splits `campaign_tier2`'s `first()` (6.1 s) across shards, so each shard pays it again; keeping the binary whole saves about 40 CI s (D). `twin_tier2`'s `firmware()` costs about a second; nothing to gain.
+4. **Colocation saves little.** CI splits `campaign_tier2`'s `first()` (6.1 s) across four shards, so each pays it again; keeping the binary whole saves about 31 CI s (D). `twin_tier2`'s `firmware()` costs about a second; nothing to gain.
 5. **Predictions (§1.5), as the eight-shard plan by `ci/shard.sh assign`:**
    - Today: maximum 720 s, total 5,166 planned s.
    - Booking only A: 720 and 4,936.
    - B, C, D and E: every shard 524 planned s, total 4,192.
    - **Only E moves the maximum.** It is the `attribute_seeded` block, and nothing else reaches it.
-6. **Decisions needed:** D1 to D8, under "Decisions needed" below. **Findings:** F1 to F5.
+6. **Decisions needed:** D1 to D8, under "Decisions needed" below. **Findings:** F1 to F6 (F4 withdrawn).
 
 ## Method
 
 - **Rows:** every test that `cargo test --workspace --features aethelgard-cli/with-tools -- --list` prints, in the pinned image (`container/IMAGE`, `sha256:c69ff9bc…`). That gives 1,171 workspace tests. **91 of them are in the seven tier-2 binaries of `TIER2_RE`, which is exactly `TIER2_MIN` (91).** The canary counts every pass in those binaries, so the five tier-1 tests at the top of `attribute_seeded.rs` are among the 91.
-- **CI seconds** are `ci/test-weights.tsv` (`AET-WO-1908`, each test alone on a GitHub runner). A test that file does not list took under 0.5 s there, written `<0.5`. See finding F4 for the doubt about `with_tools`'s Kani tests.
+- **CI seconds** are `ci/test-weights.tsv` (`AET-WO-1908`, each test alone on a GitHub runner). A test that file does not list took under 0.5 s there, written `<0.5`. I re-timed the `with_tools` Kani tests serially to check this (F4, withdrawn).
 - **Furnace measurements** were taken in the pinned image under rootless podman with `--memory 15g --memory-swap 15g --pids-limit -1 --cpus 4`, so the container is about a GitHub runner's size (4 vCPU, 16 GB).
   - After start, 0 was written into the container's `memory.swap.max`, and each run's `memory.max=16106127360 memory.swap.max=0 pids.max=max cpu.max=400000 100000` was read back and logged (`~/.cache/aet-1909/caps.log`, every run).
   - TMPDIR was unset inside the container, as on CI. Runs were one at a time, with nothing else in the container.
@@ -54,7 +57,7 @@
 
 - **One V costs 191 to 258 CI s, about 215 on average,** read from the CI-measured tests: (382.4 + 515.7 + 416.1 + 453.5 − about 6 s of `build`/`campaign`/`emit`) / 8 = 220 for 2k2; 218.2 and 199.6 for 47k.
 - **The flags add nothing:** each variant is within 2 s of plain V.
-- A V is ERC, DRC, extract, two Kani proofs, `build`, `simulate` and a one-scenario `campaign`, yet `build` is 0.2 s and `campaign` 3.0 s. **The proofs are the cost.**
+- A V is ERC, DRC, extract, two Kani proofs, `build`, `simulate` and a one-scenario `campaign`, yet `build` is 0.2 s and `campaign` 3.0 s. **Kani dominates:** one proof alone is 106.4 s of V's 123 s. I did not measure how V's two prove gates split that time.
 - The ratio varies from 1.52 to 2.08 between tests run on different CI runners. That is the runner-to-runner variance `AET-WO-1908` measured (1.5×), not a pipeline difference.
 - **Savings below are booked in CI s from the CI-measured tests (one V = 215), never from Furnace × a ratio.**
 
@@ -88,7 +91,7 @@ Both pass with `harness_provenance: generated` and `cover_count: 9`. The peaks i
 |---|---|---|---|---|
 | `twin_tier2` | 37.7 | 101.8 | 211.7 | `firmware()`: its first user takes 2.9 s, the same as a mutant-build test, so the build is about 1 s |
 | `campaign_tier2` | 20.7 | 39.9 | 110.4 | `first()`: 6.1 s for its first user, then 0.0 s for the next three |
-| `with_tools` | — | 36.1 | 44.8 listed | the first Kani `kani-smoke` proof takes 10.8 s (its compile), and the later ones 0.2 s (F4) |
+| `with_tools` | — | 36.1 | 44.8 listed | none. Every `kani-smoke` proof takes under 1 s, and the heaviest test is `prove_of_an_unresolvable_dependency…` at 11.2 s |
 | `adversarial_1301_tools` | — | 74.4 | 111.6 | none |
 | `adversarial_1302_tools` | — | 4.2 | 6.6 | none |
 
@@ -114,7 +117,7 @@ Abbreviations for the expensive work:
 | `a_write_past_the_block_fails` | 178.9 | TXDR offset 0x28→0x2c fails as `proof_failed` "register access past the end of its block" (`:103`). | fail | P(seeded copy) ×1 |
 | `a_vacuous_harness_fails` | 101.8 | A seeded `kani::assume(false)` (Kani exits 0) is `cover_unsatisfied`, verdict fail (`:159-161`). | forgery | P(seeded copy) ×1 |
 | `build_gives_one_sha256_at_two_paths` | 1.2 | One crate built at two path lengths gives one ELF sha256, named in the verdict (`:319-322`); a build script, an outside `include_bytes!` and a bad cargo config are refused. | determinism | `build` ×5 |
-| `prove_with_spec_tells_a_hand_written_harness_from_the_generated_one` | 16.1 | With `--spec`, a hand-written vacuous harness is `harness_provenance: supplied, cover_count 0`, and the generated one `generated, 7`. | forgery | `prove --spec` ×2 |
+| `prove_with_spec_tells_a_hand_written_harness_from_the_generated_one` | 16.1 | With `--spec`, a hand-written vacuous harness that passes Kani is `harness_provenance: supplied, cover_count 0`, and the committed crate's generated harness `i2c1_transfer_is_bounded_and_ordered` is `generated, 7`. | forgery | `prove --spec` ×2, each on a small harness (a vacuous one; `i2c1_transfer_is_bounded_and_ordered`), not `every_valid_sequence` |
 | `verify_binds_the_reference_and_two_runs_print_the_same_bytes` | 382.4 | **MULTI (F1):** `verify --against` the committed tree prints the same bytes twice, binds every file's hash, gate order and verdicts, uid boundaries, the ELF `build` gives, and the run id `campaign` gives. | pass, determinism | V(2k2, `--against`) ×2; `build` ×1; `campaign` ×1; `emit` ×1 |
 | `verify_fails_the_47k_pull_up_with_the_campaigns_findings` | 218.2 | `verify` on 47k exits 1, with the campaign gate failing on exactly `analog_rise_exceeds_ceiling` and `i2c_timeout` (its own exit 0) and every earlier gate passing (`:509-528`). | fail | V(47k) ×1 |
 | `as_root_a_third_uid_cannot_change_what_build_reads` | <0.5 | While `build` runs, a third uid cannot overwrite, plant into or rename what it reads (every try `EACCES`), and the ELF is the reference's (`:636-658`). | forgery | `build` ×2 |
@@ -192,17 +195,17 @@ Abbreviations for the expensive work:
 | `with_tools::drc_violation_board_fails_with_exactly_one_clearance_finding` | 0.6 | The violation fixture is exactly one `clearance` naming NET_A and NET_B. | fail | KiCad DRC ×1 |
 | `with_tools::erc_clean_schematic_passes` | <0.5 | `check erc` on the clean fixture passes with no findings. | pass | KiCad ERC ×1 |
 | `with_tools::erc_dangling_label_fails_with_one_finding` | 0.5 | The dangling label is exactly `label_dangling`. | fail | KiCad ERC ×1 |
-| `with_tools::prove_verifies_the_in_range_harness` | <0.5 (F4) | Kani passes `add_in_range` with no findings. | pass | P(kani-smoke) ×1 |
-| `with_tools::prove_fails_the_seeded_overflow` | <0.5 (F4) | `add_overflows` is exactly `proof_failed` "attempt to add with overflow". | fail | P(kani-smoke) ×1 |
-| `with_tools::prove_reports_a_compile_error` | <0.5 (F4) | A crate that does not compile is exactly `compile_error`. | fail | P(kani-compile-error) ×1 |
-| `with_tools::prove_reports_a_missing_harness` | <0.5 (F4) | A missing harness is exactly `harness_not_found`. | refusal | P(kani-smoke) ×1 |
+| `with_tools::prove_verifies_the_in_range_harness` | <0.5 | Kani passes `add_in_range` with no findings. | pass | P(kani-smoke) ×1 |
+| `with_tools::prove_fails_the_seeded_overflow` | <0.5 | `add_overflows` is exactly `proof_failed` "attempt to add with overflow". | fail | P(kani-smoke) ×1 |
+| `with_tools::prove_reports_a_compile_error` | <0.5 | A crate that does not compile is exactly `compile_error`. | fail | P(kani-compile-error) ×1 |
+| `with_tools::prove_reports_a_missing_harness` | <0.5 | A missing harness is exactly `harness_not_found`. | refusal | P(kani-smoke) ×1 |
 | `with_tools::prove_of_an_unresolvable_dependency_names_the_package` | 11.1 | An unresolvable dependency is `ToolError` exit 5, naming the package and the tool's error. | refusal | P(fixture) ×1 |
-| `with_tools::prove_leaves_the_crate_untouched` | <0.5 (F4) | `prove` leaves nothing new beside its input crate. | other | P(kani-smoke) ×1 |
+| `with_tools::prove_leaves_the_crate_untouched` | <0.5 | `prove` leaves nothing new beside its input crate. | other | P(kani-smoke) ×1 |
 | `with_tools::simulate_loads_the_reference_board` | 2.2 | `simulate` of the Nucleo platform passes on Renode 1.17.0 with one `cpu`. | pass | Renode ×1 |
 | `with_tools::simulate_fails_a_platform_that_does_not_load` | 1.4 | A platform with a missing include is `platform_load_error`, although Renode exits 0. | fail | Renode ×1 |
 | `with_tools::each_tool_removed_from_path_is_named` | <0.5 | With a tool off `PATH`, the CLI is exit 4 `ToolMissing` naming exactly that tool. | refusal | none |
 | `with_tools::mcp_check_drc_passes_the_clean_board_and_fails_the_violation_without_is_error` | 1.2 | Through `mcp`, `check_drc` gives pass and fail as exit codes, never `isError`. | pass, fail | KiCad DRC ×2 |
-| `with_tools::mcp_prove_fails_the_seeded_overflow_without_is_error` | <0.5 (F4) | Through `mcp`, a failing proof is a verdict, not `isError`. | fail | P(kani-smoke) ×1 |
+| `with_tools::mcp_prove_fails_the_seeded_overflow_without_is_error` | <0.5 | Through `mcp`, a failing proof is a verdict, not `isError`. | fail | P(kani-smoke) ×1 |
 | `with_tools::mcp_simulate_loads_the_nucleo_board` | 2.3 | Through `mcp`, `simulate` passes without `isError`. | pass | Renode ×1 |
 | `with_tools::the_emitted_reference_schematic_passes_erc` | 2.1 | The schematic `emit` writes for the reference passes ERC. | pass | `emit` ×1; ERC ×1 |
 | `with_tools::identifiers_with_s_expression_characters_survive_kicad` | 1.9 | S-expression-significant names pass ERC and read back verbatim from KiCad's own netlist. | pass | `emit`; ERC; netlist |
@@ -244,8 +247,8 @@ A group is tests that run the same expensive work on the same input. Each group 
 | **G2.** V(2k2) twice for byte-identity: `--against` vs `--fab-out` | `verify_binds…` (V(`--against`) ×2); `verify_fab_out_writes…` (V(`--fab-out`) ×2) | Only by merging flags: run V(`--against`, `--fab-out` a) and V(`--against`, `--fab-out` b), and assert both tests' properties on those two runs (**proposal B**). The combined invocation passes (123.3 s, measured). It drops two distinct invocations, V(`--against`) alone and V(`--fab-out`) alone. | 898.1 | 2 V + `build`, `campaign`, `emit` ≈ 385 | 2 V ≈ 513 (**decision D2**) |
 | **G3.** V(47k) with and without `--fab-out` | `verify_fails_the_47k…` (V(47k) ×1); `verify_fab_out_writes_nothing…` (V(47k, `--fab-out`) ×1) | Only by merging: one V(47k, `--fab-out`) with both tests' assertions (**proposal C**). It drops plain V(47k). | 417.8 | 1 V ≈ 218 | 1 V ≈ 200 (**decision D3**) |
 | **G4.** `attribute_seeded`'s `RAN` and `REGATED` | six tests share `RAN`; `p3_gate_clause_2` alone uses `REGATED` | Already shared in one process, already colocated whole. | block 720 (planned) | — | **none bookable** (§4) |
-| **G5.** The two re-gate proofs inside `REGATED` | `p3_gate_clause_2` (P(generated, `--spec`) ×2, serialised by `ONE_PROOF`) | They are not the same invocation: the two specifications differ, and the two generated crates differ only in the provenance comment naming the specification's sha256 (measured with `diff -r`). Running them concurrently is **proposal E**: 122.8 s against 217.3 s, peak memory 11.3 GB against 5.5 GB. | block 720 | ≈ 497 (est.: 720 × (305.9 − 217.3 + 122.8) / 305.9) | ≈ 223 off the critical path (**decision D5**) |
-| **G6.** `campaign_tier2`'s `first()` (campaign of 2k2 and 47k on the reference) | five tests (`…passes_2k2_and_fails_47k…`, `…three_events`, `…replay_twice…`, `…one_byte_change…`, `…same_campaign_twice…`) | Already a `OnceLock`. Colocating the binary (**proposal D**) makes CI pay it once instead of on up to five shards. | 110.4 (alone sum) | ≈ 69 (est.: serial 39.9 Furnace s × 1.72) | ≈ 41 (4 × 6.1 Furnace s × 1.72; est.) |
+| **G5.** The two re-gate proofs inside `REGATED` | `p3_gate_clause_2` (P(generated, `--spec`) ×2, one after the other: one loop on one thread, with `REGATED` locked across `every_gate`, `:699`, `:744`, `:848-857`) | They are not the same invocation: the two specifications differ, and the two generated crates differ only in the provenance comment naming the specification's sha256 (measured with `diff -r`). **Proposal E** restructures the test so the distinct specifications' `every_gate` runs on two threads, without holding `REGATED` across it, and `ONE_PROOF` admits two proofs. Measured: 122.8 s against 217.3 s, peak memory 11.3 GB against 5.5 GB. | block 720 | ≈ 497 (est.: 720 × (305.9 − 217.3 + 122.8) / 305.9) | ≈ 223 off the critical path (**decision D5**) |
+| **G6.** `campaign_tier2`'s `first()` (campaign of 2k2 and 47k on the reference) | five tests (`…passes_2k2_and_fails_47k…`, `…three_events`, `…replay_twice…`, `…one_byte_change…`, `…same_campaign_twice…`) | Already a `OnceLock`. Colocating the binary (**proposal D**) makes CI pay it once instead of on up to five shards. | 110.4 (alone sum) | ≈ 69 (est.: serial 39.9 Furnace s × 1.72) | ≈ 31 (`first()`'s five tests sit on 4 shards of today's plan: 3 × 6.1 Furnace s × 1.72; est.) |
 | **G7.** `twin_tier2`'s `firmware()` | six tests | Already a `OnceLock`; the build costs about 1 s. | — | — | about 5 s: **not proposed** |
 | **G8.** `emit` of the reference specification | 10 calls across `with_tools`, `adversarial_1301_tools` and `adversarial_1302_tools` | 1.2 s each. | — | — | about 12 s across three binaries: **not proposed** |
 | **G9.** Kani on the board crate | `the_generated_board_proves` and four seeded `prove`s in `board_tier2`; two in every V; two in `p3_gate_clause_2` | Five distinct crates in `board_tier2`. The V and re-gate proofs carry `--spec` and run on other bytes. **No two are the same invocation.** A proof cache would be a production change (§7). | — | — | **none** |
@@ -253,7 +256,8 @@ A group is tests that run the same expensive work on the same input. Each group 
 What each proposal keeps:
 - **A** keeps every invocation and every assertion. Two tests read one package, each from its own copy, so `…names every changed…`'s byte flips cannot touch `…identical`'s input.
 - **B** and **C** keep every test and every assertion by name, but each asserts on a run that carries one flag more than today.
-- **D** changes no test. **E** changes `ONE_PROOF` from one proof at a time to two.
+- **D** changes no test.
+- **E** restructures `p3_gate_clause_2`'s re-gate loop to run the distinct specifications on two threads, and lets `ONE_PROOF` admit two. Every assertion stays.
 
 ## 3. Redundancy (§1.3)
 
@@ -294,8 +298,8 @@ What each proposal keeps:
   - Measured on Furnace: 303.8 s alone and 305.9 s as the whole block, the block ending when it ends.
   - So the block's wall time is `p3_gate_clause_2`'s own chain: `ran()` 68 s, then two re-gates of about 115 s each, 107 to 109 s of each being Kani, then `propose`.
   - The other five tests add nothing to the wall time.
-  - **This differs from `AET-WO-1908` FEEDBACK's "about 382 s inside the block".** That figure came from libtest's per-test `--report-time` in a shared process, which `AET-WO-1908` itself says not to trust for weights. On CI the block took 475 to 721 s and the test alone 632 s, so the same holds there within runner variance.
-- **The one lever that shortens it without dropping an invocation is E:** the two proofs at once. It would bring the block to about 211 Furnace s (est. 497 CI s), but the measured memory peak doubles to 11.3 GB on a 16 GB runner. `ONE_PROOF`'s comment ("each proof peaks at about 3.5 GB") is the reason it exists.
+  - **This differs from `AET-WO-1908` FEEDBACK's "about 382 s inside the block".** That FEEDBACK does not say where the figure came from. My inference is libtest's per-test `--report-time` in a shared process (its run 1), which `AET-WO-1908` itself says not to trust for weights. On CI the block took 475 to 721 s and the test alone 632 s, so the same holds there within runner variance.
+- **The one lever that shortens it without dropping an invocation is E:** the two re-gates at once, which means restructuring the test's loop and letting `ONE_PROOF` admit two. It would bring the block to about 211 Furnace s (est. 497 CI s), but the measured memory peak doubles to 11.3 GB on a 16 GB runner. `ONE_PROOF`'s comment ("each proof peaks at about 3.5 GB") is why one proof at a time is the rule.
 - **Not a lever:** the two re-gate crates differ only in a provenance comment, but `prove --spec` checks provenance against the specification, so one proof cannot stand for the other.
 
 ## 5. Predictions (§1.5)
@@ -312,7 +316,7 @@ The eight-shard plan by `ci/shard.sh assign`, unchanged, with `ci/test-weights.t
 | A | 720 | 4,936 | −230 |
 | B | 720 | 4,654 | −512 |
 | C | 720 | 4,969 | −197 |
-| D | 720 | 5,130 | −36 |
+| D | 720 | 5,130 | −36 (the planner books the alone sum, 110, against the block, 69; the measured saving is about 31, because `first()`'s tests sit on four shards today) |
 | E | 618 | 4,944 | −222 |
 | B + C + D | 720 | 4,416 | −750 |
 | A + B + C + D | 720 | 4,186 | −980 |
@@ -344,10 +348,11 @@ The eight-shard plan by `ci/shard.sh assign`, unchanged, with `ci/test-weights.t
 
   `TIER2_MIN` 91 therefore counts two vacuous passes and `oq_03`. **The distinct failures the 91 tests guard number 88.** I have not removed or changed them: they guard committed proposals if any are ever added. Whether `proposals/` should exist is the architect's.
 - **F3. `oq_03` (§3).**
-- **F4. The `with_tools` Kani tests are weighed under 0.5 s, but one of them costs about 11 s per process.** The first `kani-smoke` proof compiles (10.8 Furnace s), and the later ones take 0.2 s.
-  - `AET-WO-1908` timed each test alone in sequence on one runner, so the first test paid the compile and the rest found it warm.
-  - In a shard, whichever smoke test comes first pays it. The weights miss up to 11 s per shard that holds one.
-  - Small; for the next refit.
+- **F4. Withdrawn.** A first reading put about 11 s of Kani compile on the first `kani-smoke` proof. It came from a parser that dropped interleaved result lines (the trap `ci/shard.sh`'s refit rule names). Re-parsed, every smoke proof takes under 1 s, and their weights of under 0.5 s stand.
+- **F6. A shared run that panics is not poisoned; it runs again.** Under M1, `ran()`'s `OnceLock` init panicked in the first test, and `oq_03` then re-ran the whole init, waiting over 60 s, before failing at the same assertion.
+  - `std::sync::OnceLock::get_or_init` leaves the cell empty when its closure panics, so each dependent test re-runs the fixture and fails.
+  - That satisfies §5.3's "every dependent test must fail, none pass". But a failing fixture costs its run once per dependent test, and a fixture that fails late could take the shard past 20 minutes.
+  - A build that adds shared runs (A, B, C) should either accept this, or record the first failure (for example a `OnceLock<Result<…, String>>`), so each dependent test fails at once, naming the property.
 - **F5. The census's own limits:**
   - Furnace-to-CI ratios range from 1.52 to 2.08 across tests (runner variance), so every *est.* figure carries that spread.
   - The verdict bytes of the flag variants were not compared: they ran in the container's `/tmp`, which went with it. B and C should compare them at the build before relying on them.
@@ -361,8 +366,8 @@ The eight-shard plan by `ci/shard.sh assign`, unchanged, with `ci/test-weights.t
 | D2 | **B:** `verify_binds…` and `verify_fab_out_writes…` share two runs of V(`--against`, `--fab-out`), dropping V(`--against`) alone and V(`--fab-out`) alone. 513 CI s. | Yes, if F5's byte comparison shows the combined verdict equals each single-flag verdict apart from its own keys. |
 | D3 | **C:** the two 47k tests share one V(47k, `--fab-out`), dropping plain V(47k). About 200 CI s. | Yes, on the same condition. |
 | D4 | **A:** the two `--against-fab` tests share one `--fab-out` package. About 215 CI s; bookable. | Yes without E. With E, A makes a 640 s block that becomes the maximum: take A only if the architect weighs total seconds over the slowest shard. |
-| D5 | **E:** `ONE_PROOF` lets the two re-gate proofs run at once. It shortens the critical path by about 223 CI s, but the peak is 11.3 GB of a 16 GB runner. | The architect's call on the memory risk. Without E, nothing moves the maximum, and the run stays about 13 to 15 minutes at worst. |
-| D6 | **D:** colocate `campaign_tier2`. About 41 CI s; no test change. | Yes: small, and free. |
+| D5 | **E:** `p3_gate_clause_2` re-gates its two distinct specifications on two threads (not holding `REGATED` across `every_gate`), and `ONE_PROOF` admits two proofs. It shortens the critical path by about 223 CI s, but the peak is 11.3 GB of a 16 GB runner. | The architect's call on the memory risk. Without E, nothing moves the maximum, and the run stays about 13 to 15 minutes at worst. |
+| D6 | **D:** colocate `campaign_tier2`. About 31 CI s; no test change. | Yes: small, and free. |
 | D7 | **`oq_03`:** remove it (`TIER2_MIN` 90, its data already printed by `ran()`), or keep it as an `OQ-03` record. | Remove. |
 | D8 | **F1:** split the multi-property tests into named properties over one shared run (`TIER2_MIN` rises), or leave them whole. | The architect's: it is §2.1's "every property asserted by name". |
 
