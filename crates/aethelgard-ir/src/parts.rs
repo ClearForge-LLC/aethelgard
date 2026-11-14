@@ -279,7 +279,7 @@ fn citation(raw: RawCitation, group: &str) -> Result<Citation, String> {
         }
         (None, Some(url)) => {
             text(&url, &format!("citations.{group}.pending"), 256)?;
-            if !url.starts_with("https://") {
+            if url.strip_prefix("https://").is_none_or(str::is_empty) {
                 return Err(format!("`citations.{group}.pending` is not an https URL"));
             }
             Held::Pending(url)
@@ -417,6 +417,15 @@ pub fn parse_parts(json: &str) -> Result<PartsTable, IrValidationError> {
         let named = |reason: String| refused(Some(&name), reason);
         crate::check_identifier(crate::IdentifierKind::Plain, &name)
             .map_err(|rule| named(format!("`part` is not an identifier: {rule}")))?;
+        let one_bus = entry
+            .get("bus")
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(|b| b.len() == 1);
+        if !one_bus {
+            return Err(named(
+                "`bus` is not an object holding exactly one of `i2c` and `spi`".to_owned(),
+            ));
+        }
         let raw: RawPart = serde_json::from_value(entry).map_err(|e| named(e.to_string()))?;
         let p = part(raw).map_err(named)?;
         if parts.iter().any(|q| q.part == p.part) {

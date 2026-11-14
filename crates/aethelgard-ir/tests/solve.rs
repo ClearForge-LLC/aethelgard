@@ -536,7 +536,7 @@ fn each_i2c_bus_gets_its_ceiling_and_an_spi_only_spec_gets_none() {
 fn each_i2c_bus_carries_its_declared_speed_not_its_ceiling() {
     // AET-WO-1205: a 100 kHz bus under a 400 kHz ceiling.
     let t = ok(&i2c_spec(100_000, 300, 300));
-    assert_eq!(t.schema_version, 2);
+    assert_eq!(t.schema_version, aethelgard_ir::SOLVED_SCHEMA_VERSION);
     assert_eq!(t.i2c_ceilings["I"], 400_000);
     assert_eq!(t.i2c_speeds, BTreeMap::from([("I".into(), 100_000)]));
     assert_eq!(t.validate(), Ok(()));
