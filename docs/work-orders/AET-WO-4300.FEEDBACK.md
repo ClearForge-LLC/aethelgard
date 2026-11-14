@@ -98,11 +98,14 @@ Witness (P1, **[inferred]**): no timer log line marks an edge. The candidate wit
 
 ## 2. Runs
 
-- Four containers of the pinned image (`container/IMAGE`), one at a time, each under `spike/4300/img.sh` at `--memory 8g --memory-swap 8g --pids-limit -1`. Each read back `memory.max=8589934592 memory.swap.max=0 pids.max=max` before its command started (`out/caps.log`); none logged `CAPS NOT READ`. `TMPDIR` was unset inside each.
-  1. A failed start: `run.sh` passed a multi-line case list into `bash -c`, which stopped at a syntax error before any build or run. Fixed in `run.sh`.
+- Five containers of the pinned image (`container/IMAGE`), one of mine at a time, each under `spike/4300/img.sh` at `--memory 8g --memory-swap 8g --pids-limit -1`. `TMPDIR` was unset inside each.
+  1. A failed start: `run.sh` passed a multi-line case list into `bash -c`, which stopped at a syntax error before any build or run. Fixed in `run.sh`. Its caps line was lost: I deleted `caps.log` before the rerun.
   2. The 14 firmware builds (`out/fw.txt`, sha256 per ELF) and the 15 cases (`out/runs.jsonl`).
   3. `edges.py` over the raw stdout of the timer cases (`out/edges.txt`).
-  4. `usb.py`, the S3 run (`out/usb.jsonl`).
+  4. A check for `objdump` in the image; nothing used it.
+  5. `usb.py`, the S3 run (`out/usb.jsonl`).
+- Containers 2–5 each read back `memory.max=8589934592 memory.swap.max=0 pids.max=max` before their command started (`out/caps.log`, four lines); none logged `CAPS NOT READ`.
+- **Sharing Furnace.** `4200`'s and `2205`'s containers were running throughout (`podman ps` at the first run). I read the kickoff's "run one container at a time" as one of *mine* at a time, with 46 GiB available. If it meant one on the whole box, I broke it; that is the architect's call.
 - Every case uses the CLI's composition (`drive.py`, `4200`'s copy of `renode.rs`: complete `--config`, synchronous logging, `logLevel -1` per witness source). Every timer and UART case except `pwm50-host` runs with **one labelled deviation**: `log-timestamps-type = Virtual` in place of `Host`. `pwm50-host` is the composition verbatim.
 - Raw stdout and the UART and USB byte captures stay in `~/.cache/aet-4300/raw`; the full `runs.jsonl` (60 101 kept lines for `pwm600k`) is `~/.cache/aet-4300/runs-full.jsonl`. The committed copy caps `kept` at 200 lines per case.
 - **Third-party firmware (S3 only).** Antmicro's `nucleo_h753zi--zephyr-shell-cdc.elf`, the one `tests/platforms/nucleo_h753zi.robot` names. URL `https://dl.antmicro.com/projects/renode/nucleo_h753zi--zephyr-shell-cdc.elf-s_3030364-5067ae0e61cb460735c8e5c43f6a0000ccd17bdc`. Size 3 030 364 B and SHA-1 `5067ae0e…bdc` both match the URL; sha256 `109d26f2…cc2b`. It was downloaded on the host into `~/.cache/aet-4300/thirdparty`, not committed, and run with `--network none`.
@@ -112,15 +115,15 @@ Witness (P1, **[inferred]**): no timer log line marks an edge. The candidate wit
 | id | prediction | result | label | verdict |
 |---|---|---|---|---|
 | P1.1 | `pwm50`, CLI composition: alternating LED lines, about 8–10 in 100 ms, no timing | 9 LED lines (5 rises, 4 falls); host stamps only | measured | as predicted |
-| P1.2 | Virtual stamps on a 100 µs grid; period 20.0 ± 0.1 ms, high 1.5 ± 0.1 ms | Stamps are exact to the nanosecond, 9 distinct. High **1 500.000 µs** every period; period **19 999.000 µs**, not 20 000; first rise at 19 999 µs, not at `CEN` | measured | **wrong**: there is no quantum grid, and the model's period is `ARR` ticks, not `ARR + 1` |
+| P1.2 | Virtual stamps on a 100 µs grid; period 20.0 ± 0.1 ms, high 1.5 ± 0.1 ms | **Two clocks.** Lines a timer event causes carry its exact time, in 10 ns steps: high **1 500.000 µs** every period; period **19 999.000 µs**, not 20 000; first rise at 19 999 µs, not at `CEN`. Lines the CPU causes (register writes, `BSRR` edges, warnings) carry the start of their 100 µs quantum: every `pwm50` configuration line is at `0.000000000`; every `bitbang-af` edge is on the grid; `uart-nogate`'s 2.7 M warnings share 4 stamps | measured | **half wrong**: the grid holds for CPU-caused lines only. The model's period is `ARR` ticks, not `ARR + 1` |
 | P1.3 | `pwm400`: ≈ 75–80 lines; ± 0.1 ms | 79 lines; high 1 500 µs, period **2 499 µs** (silicon: 2 500), exact | measured | count as predicted; timing as P1.2 |
 | P1.4 | `nomoe`: same edges; `BDTR` reads 0 | Edges identical to `pwm50` to the nanosecond; `BDTR` reads 0 in both. `pwm50`'s `MOE` write is visible only as `[WARNING] timer1: Unhandled write to offset 0x44 … Tags: Main Output Enable (MOE) (0x1).` | measured | as predicted. The twin drives an output silicon leaves dead |
 | P1.5 | `cc1p`: same edges, not inverted | Identical to `pwm50`; `CCER` reads 0x1 | measured | as predicted |
 | P1.6 | `nogate`: no LED line; ≥ 7 warnings | 0 LED lines; 9 warnings, `[WARNING] sysbus: Tried to write a locked peripheral: machine-0.timer1. Address …` (8 writes, 1 read) | measured | as predicted |
 | P1.7 | `claim`: no LED line | 0 | measured | as predicted |
 | P1.8 | `cen-off`: 0 or 1 line | 0 | measured | as predicted |
-| P1.9 | `bitbang-af`: same lines and same `MODER`/`AFR` | 8 LED lines of the same form, exact virtual stamps, `MODER`/`AFRH` equal to `pwm50`'s. Every edge also gives `timer1: Channel #0 received external input when configured as output` (the stock route `8 -> timer1@00` loops the pin back), so that line does not tell a timer edge from a store. **Not** present: `timer1: IRQ pending` at each rise, and `CR1` reads 0 | measured | as predicted: the pin is forgeable |
-| P1.10 | `pwm600k`: > 20 000 lines; bit time not resolvable | 60 101 kept lines in 20 ms. High **1.24–1.25 µs**, period **1.66–1.67 µs** (416/250 MHz = 1.664; silicon 417/250 MHz = 1.668), each edge at its own stamp | measured | **wrong**: DShot600 bit timing is resolvable |
+| P1.9 | `bitbang-af`: same lines and same `MODER`/`AFR` | 8 LED lines of the same form, exact virtual stamps, `MODER`/`AFRH` equal to `pwm50`'s. Every edge also gives `timer1: Channel #0 received external input when configured as output` (the stock route `8 -> timer1@00` loops the pin back), so that line does not tell a timer edge from a store. **Not** present: `timer1: IRQ pending` at each rise, and `CR1` reads 0. Its edges sit on the 100 µs grid (0, 400, 6 000, 6 400 µs …), where the spin loops alone would not put them | measured | as predicted: the pin is forgeable |
+| P1.10 | `pwm600k`: > 20 000 lines; bit time not resolvable | 60 101 kept lines in 20 ms. High **1.24–1.25 µs** (CCR 312/250 MHz = 1.248), period **1.66–1.67 µs** (416/250 MHz = 1.664; silicon 417/250 MHz = 1.668), each edge at its own stamp in 10 ns steps | measured | **wrong**: DShot600 bit timing is resolvable to 10 ns |
 | P1.11 | DShot by DMA not modelled | Read only; no DMA probe was built | read | as predicted |
 | P1.12 | Timer clock is the repl's `frequency` | `PSC = 249` gave a 1 MHz tick from the fixed 250 MHz, not from this firmware's clock tree (HSI, 64 MHz on silicon) | measured | as predicted |
 | P2.1 | `uart`: 19 bytes exactly; nothing logged per byte | File backend: `AET-UART\r\n 00 FE 09 FD 7F 80 FF 0D 0A`, exactly; 0 `usart2` lines at `Noisy` | measured | as predicted |
@@ -132,6 +135,8 @@ Witness (P1, **[inferred]**): no timer log line marks an edge. The candidate wit
 | P3.1 | Zephyr CDC enumerates; prompt within 5 s | 3 054 bytes to the host side within 5 s of virtual time (6.7 s wall): 30 prompts `uart:~$`, Zephyr's `usbd_init` lines, and `demo board` answered `nucleo_h753zi`. `DCFG = 0x02200030` (device address 3, the host's), `DCTL = 0`. 23 tag warnings from `usb2` (`PHYSEL`, `CSRST`, `PWRDWN`, `INEPTXSA`/`INEPTXFD`, `BVALOEN`/`BVALOVAL`, `DSPD`, endpoint interrupt flags) | measured, **third-party firmware** | as predicted |
 | P3.2 | Our firmware needs a USB device stack | No USB crate is in the cache or the lock file | read | stands; not measured with our firmware |
 | P3.3 | USB not gated | `usb1`/`usb2` are not registered in `rcc`; `IsPeripheralEnabled` then returns false, so `USB1OTGHSEN`/`USB2OTGFSEN` always **read 0**, whatever the firmware writes | read | as predicted, plus the read-back |
+| P4.1 | The bridge solves DC operating points of declared parts | It solves a declared VDD droop in time (`--rail`, `2301`) and I2C rise times; not DC operating points of parts | read | **wrong** in its grounds; the conclusion (a regulator's input range needs no SPICE) stands |
+| P4.2 | ADC out; the sample is host-fed | `STM32H7_ADC` samples come from RESD sample sources | read | as predicted |
 | P5.1 | Timeout; `CCCSR` 0; unhandled logs; boot written | Record 1 = timeout (`STATUS_RXNE` used as the timeout code), `CCCSR = 0`; `syscfg: Unhandled write to offset 0x20, value 0x1.` then 100 000 × `Unhandled read from offset 0x20.`; boot word `0x2100B007` | measured | as predicted |
 | P5.2 | Hangs: boot 0, PC in the poll | Boot word `0x0`, PC `0x080005A4` in the poll after 10⁷ instructions; 3 332 936 unhandled-read warnings in 100 ms | measured | **as predicted: §7's second condition holds** |
 | P5.3 | Speed `10`/`11` rows need the cell; no figure without it | As predicted (table in S5 below) | read | as predicted |
@@ -143,7 +148,7 @@ Witness (P1, **[inferred]**): no timer log line marks an edge. The candidate wit
 ### S1. Timers as ESC outputs
 
 - **Model** [read]: `Timers.STM32_Timer`, 250 MHz fixed clock. Channel outputs reach a pin through the AF route when the pin is AF and selects the timer. PWM 1 and 2, toggle and forced modes drive the output. `MOE`, `OCxPE` (preload) and output polarity are not modelled.
-- **Period and duty are observable** [measured], with virtual timestamps, to the nanosecond: at 50 Hz, 400 Hz and DShot600's bit rate. With the CLI's host timestamps, only the edges' existence and order are observable.
+- **Period and duty are observable** [measured], with virtual timestamps, in 10 ns steps: at 50 Hz, 400 Hz and DShot600's bit rate. This holds for edges the timer makes. Lines the CPU causes carry their quantum's start (100 µs). With the CLI's host timestamps, only the edges' existence and order are observable.
 - **Fidelity gaps** [measured]:
   - the period is `ARR` ticks where silicon is `ARR + 1`;
   - the first edge comes one period late;
@@ -161,10 +166,10 @@ Witness (P1, **[inferred]**): no timer log line marks an edge. The candidate wit
   - A DShot frame's content cannot be witnessed.
 - **What a store can forge** [measured]:
   - The pin edge itself: `bitbang-af` drives PA8 in AF1 by `BSRR`, and the observer cannot tell.
-  - The timer's own `IRQ pending` line is at the identical nanosecond stamp as each rise in `pwm50` [measured: `19 999 000`, `39 998 000`, `59 997 000` ns], and `bitbang-af` has none [measured].
-  - A store cannot put that line at the stamp of its own `BSRR` edge: a `UG` write is a separate instruction, ≥ 10 ns away at 100 MIPS [inferred]. The same holds with `CR1.CEN` set.
+  - The timer's own `IRQ pending` line is at the identical stamp as each rise in `pwm50` [measured: `19 999 000`, `39 998 000`, `59 997 000` ns], and `bitbang-af` has none [measured]. That coincidence was **observed, not shown unforgeable**: a store's `UG` write (with `UIE`) and a `BSRR` edge in the same quantum would share a stamp too. That variant was not run.
+  - What a store cannot do is put an edge off the 100 µs grid, because every line the CPU causes carries its quantum's start [measured for writes, edges and warnings]. A solved timing that falls off the grid therefore cannot be met by stores [inferred]; one that falls on it can. This depends on the quantum, which is the CLI's default and not a stated key.
   - A firmware that runs the timer correctly *and* toggles `BSRR` adds edges the judge would see as wrong timing.
-- **Recommendation:** witness timer outputs by the pin observer's edges with virtual timestamps, each rise matched to a `timer<n>: IRQ pending` at the identical stamp, and `CR1.CEN` read back. Judge period and high time against the solved values, with the model's `ARR` convention. Judge DShot by bit timing measured plus DMA configuration static. This needs the CLI's `log-timestamps-type` changed (decision D2).
+- **Recommendation:** witness timer outputs by the pin observer's edges with virtual timestamps, at the solved period and high time (the model's `ARR` convention), plus the full TIM register read-back (`CR1`, `CCMR1`, `CCER`, `PSC`, `ARR`, `CCR1`) against the solved values. Record the coincident `IRQ pending` line, but do not rely on it. Judge DShot by bit timing measured plus DMA configuration static. This needs the CLI's `log-timestamps-type` changed (decision D2).
 
 ### S2. UARTs
 
@@ -233,7 +238,8 @@ Witness (P1, **[inferred]**): no timer log line marks an edge. The candidate wit
   - C is the extracted net capacitance (`4100`) plus the receiver's input capacitance, rounded **up** to the next table row (10, 30 or 50 pF). Above 50 pF the check refuses.
   - VDD is the declared rail's minimum.
   - **Speeds `10`/`11` are refused** until a ruling: the only figures for them assume the cell, and the twin cannot run a firmware that enables it.
-  - The generator emits `01` for SPI, enough for every SPI part in `4200`'s table at 50 pF (60 MHz).
+  - The generator emits `01` for SPI: 60 MHz at 50 pF, three times the reference's 20 MHz SCK (`4200` FEEDBACK, read). A faster SPI line would be refused, not sped up.
+  - `4200` notes the reference may be rev Y silicon (DS12117 Table 52), whose speed-`10` rows equal rev V's. The `00`/`01` rows of Table 52 were not read here.
 
 ### S6. 2100 F24 (cold `RCC_*ENR`)
 
@@ -242,7 +248,7 @@ Witness (P1, **[inferred]**): no timer log line marks an edge. The candidate wit
   - **Outside them:** LPUART1 and SYSCFG (`APB4ENR`); OTG1/OTG2, DMA1/2 and ADC12 (`AHB1ENR`); ADC3 (`AHB4ENR`, already cold).
 - **Gating** [measured]: Renode gates every peripheral registered in `rcc`, timers and USARTs included. A firmware that skips the enable gets one `Tried to write/read a locked peripheral` warning per access (`nogate`, `uart-nogate`).
 - **Why F24's DMA1 case passed** [read]: `AHB1ENR` is not cold-written, so DMA1 stays enabled from Renode's reset.
-- **F24's fix now:** cold-write every `RCC_*ENR` the header defines (`AHB1`–`4`, `APB1L`/`H`, `APB2`, `APB3`, `APB4`) and judge each in full. Register `usb1`/`usb2` (and any other peripheral the solver adds) in `rcc` in the emitted platform; otherwise its enable bit reads 0.
+- **F24's fix now** [inferred; not run]: cold-write every `RCC_*ENR` the header defines (`AHB1`–`4`, `APB1L`/`H`, `APB2`, `APB3`, `APB4`) and judge each in full. Register `usb1`/`usb2` (and any other peripheral the solver adds) in `rcc` in the emitted platform; otherwise its enable bit reads 0.
   - Size: small.
   - It belongs to the first piece that solves DMA, USB, LPUART or SYSCFG.
 - **The CPU-specific `C1_*ENR` aliases:** behaviour is unread; confirm before relying on them.
@@ -253,7 +259,7 @@ The schema version: `4100`'s is 2. `4200`'s build takes 3 (`spi_devices`), so a 
 
 | piece | solves | spec gains | twin witnesses / static | campaign fault | size | vs `4400` |
 |---|---|---|---|---|---|---|
-| **4300a — motor outputs** | timer channels on AF pins for PWM (50–490 Hz) and DShot300/600 timing; emitted `frequency` per timer from the clock tree; F24's cold `*ENR` | `motor_outputs`: label, pin (or solver-assigned), protocol `pwm`/`dshot300`/`dshot600`, rate, pulse range | **witnessed:** observer edges with virtual stamps, each rise matched to the timer's update line; period and high time. **Static:** `MOE` from its tag warning, DMA/DMAMUX for DShot, Fmax | **`motor_output_dead`**: one output's pin on the wrong AF, so no edges | M–L | before |
+| **4300a — motor outputs** | timer channels on AF pins for PWM (50–490 Hz) and DShot300/600 timing; emitted `frequency` per timer from the clock tree; F24's cold `*ENR` | `motor_outputs`: label, pin (or solver-assigned), protocol `pwm`/`dshot300`/`dshot600`, rate, pulse range | **witnessed:** observer edges with virtual stamps at the solved period and high time, plus TIM register read-back. **Static:** `MOE` from its tag warning, DMA/DMAMUX for DShot, Fmax | **`motor_output_dead`**: one output's pin on the wrong AF, so no edges | M–L | before |
 | **4300b — serial links** | USART/UART on AF pins; role `rc_sbus`, `rc_crsf`, `mavlink`, `gps`; baud and framing from the role | `serial_ports`: label, peripheral, TX/RX pins, role | **witnessed:** pattern bytes out; injected bytes echoed. **Static:** `BRR` from the clock tree, `PCE`/`STOP` registers, `M0`/`TXINV`/`RXINV` tag warnings | **`serial_rx_dead`**: RX on the wrong AF, so the echo is missing | M | before |
 | **4300c — pin speeds** | the Fmax check; generator `OSPEEDR` from it; speeds `10`/`11` refused | none (C from extraction, VDD from the rail) | **static only** | none: a static refusal | S | before |
 | **4300d — power parts** | buck, LDO and sense rows in the parts table; static input-range, dropout, VDD and full-scale checks | `power`: battery cells, buck, LDO and sense parts by name | **static only** | none | M | before; `4400` needs the sense scales |
@@ -270,7 +276,7 @@ The schema version: `4100`'s is 2. `4200`'s build takes 3 (`spi_devices`), so a 
   - **(c)** model `CCCSR` in the emitted platform. `syscfg` occupies the whole page, so this means replacing `STM32_SYSCFG` (EXTI routing included) or patching Renode. Either is a model change.
 - **D2 (S1, virtual time).** The CLI logs host time. Timer timing needs `log-timestamps-type = Virtual` or `Both` in the CLI's `--config`, which changes every line the witness rule compares (the timestamp prefix it strips). Change the composition, or judge timer outputs by edge count only?
 - **D3 (S1, the model's conventions).** Judge period against `ARR` (the model) and say so, or against `ARR + 1` (silicon) with a known 1-tick allowance? The same question applies to the late first edge, `MOE` and `CCxP`.
-- **D4 (S1, forgery).** Accept "observer edge + coincident update line + `CEN`" as the timer witness, given that a store can drive the pin (measured)?
+- **D4 (S1, forgery).** A store can drive the pin (measured), and the coincident update line is not shown unforgeable. Accept "observer edges at the solved timing + full TIM register read-back" as the timer witness, with the 100 µs grid argument as a stated residual?
 - **D5 (S3).** USB after `4400` as `4300e`, with a USB stack in the generated firmware: vendor a crate (`usb-device` + `synopsys-usb-otg`) or hand-write a minimal CDC? The other choice is static-only USB.
 - **D6 (S7).** The split as proposed, and the schema version each piece takes after `4200`'s v3.
 - **D7 (S4).** ADC battery monitoring out of `4300` and its fault, as proposed; the battery-sag chain into `--rail` a later work order.
