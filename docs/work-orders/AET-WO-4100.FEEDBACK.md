@@ -446,7 +446,7 @@ The twin, the analog deck (`cli/src/analog.rs`), the campaign and `evolve` read 
 - `validate`: the rules floor and the one GND plane;
 - the package's inner Gerbers.
 
-**Reduction pass (diff): −27 net · 2 duplicates removed · 0 dead paths removed · 1 protected kept · 0 findings below.**
+**Reduction pass (diff): −10 net (`564b814` +23 −25, `1311f5e` +4 −12) · 2 duplicates removed · 0 dead paths removed · 1 protected kept · 0 findings below.**
 - KiCad's copper-layer ids were stated in `pcb.rs` and in `route.rs`. They now live in one function, `stack::kicad_id`.
 - The zone-layer check was stated in `route::read` and again in `route::declared`. Every caller runs `declared` first, and `connectivity` judges the zones again, so `read`'s copy went.
 - Kept: `stack::reference()`, a literal copy of the reference's declared board for eda's unit tests (eda has no JSON dependency, which `workspace_shape` pins). `stackups_tier1::the_reference_declares_todays_two_layer_board` asserts it equals `Stack::of` on the file, so it cannot drift.
