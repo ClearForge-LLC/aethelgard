@@ -866,3 +866,27 @@ Each surviving guard's mutant fails a test:
 - the claimed-read event: 1 test;
 - the skip filter: killed only after a tier-1 test was added for it (`renode::tests::a_device_s_line_is_kept_unless_its_model_lists_it_as_skipped`);
 - the four replay joins.
+
+## Merges of `main`
+
+- **`2967d16` (`AET-WO-1909`, CI reduction), at `1fe460d`:**
+  - `board_tier2.rs`'s `verify` tests moved to `verify_2k2_tier2.rs`, and the four `prove` gates went with them;
+  - `TIER2_MIN` was 1909's 90 plus 3.
+- **`d00c965` (`AET-WO-4100`, the board section), at `748a733`:**
+  - **The fixtures:** `spi-imu.json` and `spi-only.json` are rebuilt from the migrated reference (specification version 2, its board section copied), each differing from it only as before.
+  - **`TIER2_MIN` 96:** 4100's 92 plus this build's 4.
+  - **Digests re-taken on the merged code:** the solve digests (reference `3c39199f…`, stress `3169ae88…`) and `order_2203`'s firmware and both platforms (`c468b3cb…`, `9fd77dad…`, `c80833a9…`), each naming 4100's own value on `main`.
+  - **One expectation moved:** `campaign_tier1::a_solved_topology_is_not_a_base` now expects `UnsupportedSchemaVersion`, not `SchemaViolation`. The topology is at version 3 and a specification at version 2, so the reader refuses it at its version, before its shape; it is still refused before any run.
+- **`AET-WO-2205` (trace version 6)** had not reached `main` at `748a733`. This build's trace is version 7, as ruled. When 2205 merges, `main` is merged again, the version-refusal and golden tests are re-checked (1 to 6 refused), and its record renames are carried onto kinds 21 to 23.
+
+## CI
+
+| Head | Result | Shards | Slowest |
+|---|---|---|---|
+| `1fe460d` | green | 8 | shard 1, 17m11s |
+| `c1d151d` | one test red, then fixed | — | — |
+| `6040fc1` | green | 8, from 9.0 to 17.2 min | shard 1, 17.2 min |
+
+The `c1d151d` failure: `a_droop_on_a_board_whose_first_read_is_on_spi_recovers_and_replays` generated its board under `CARGO_TARGET_TMPDIR`. CI keeps that inside the repository, so cargo refused the crate as a workspace member. It now generates under the system temp directory; reproduced and fixed with a target directory inside the repository.
+
+**The merged head `748a733`:** below.
