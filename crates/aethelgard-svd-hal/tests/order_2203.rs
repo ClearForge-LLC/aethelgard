@@ -71,7 +71,11 @@ fn digests() -> Vec<(&'static str, String)> {
 /// The "firmware/src/main.rs" digest was re-taken in `AET-WO-4200`, whose
 /// firmware hands the flash's chip select to `SPI1` and reads the flash's
 /// identity after the I2C reads (record 2 here); the I2C reads' text and order
-/// are unchanged. The old digest was `bd4e06af…c5f1`.
+/// are unchanged. The old digest was `bd4e06af…c5f1`. The "platform", "platform
+/// faulted" and "boot image" digests were re-taken in `AET-WO-4200` too: the
+/// platform gains SPI1's multiplexer and the flash after the I2C devices, whose
+/// lines and order are unchanged, and the `Image` gains U4's SPI check. The old
+/// digests were `0b39d4aa…56d2`, `2ccc0e8d…c75b` and `06c8463c…5f5e`.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
@@ -79,15 +83,15 @@ const BEFORE: [(&str, &str); 4] = [
     ),
     (
         "platform",
-        "0b39d4aa8dcb25de02663eb4364e195b4a0de2efb736ebb92b84f65e9c0e56d2",
+        "5db8e3271b083b33789c25a71dcfa6988c1f6d3188fbcf9a11ae754d81c2f0de",
     ),
     (
         "platform faulted",
-        "2ccc0e8d5a63073ebf96e75f7a7955887b03a123fc0e05757ba178b48af6c75b",
+        "d88ba5c30a25628f6164a3d4b47961c7e112b44ff3e17a20cc9c7b68c69367ac",
     ),
     (
         "boot image",
-        "06c8463ce9bf2b26f96e82cb2128d6e89ec78291203bdc63f2b5fb1adf025f5e",
+        "747bdc045a0c2a41b8e93922bb6e463d82b577a9e061905a708c4893228efbb3",
     ),
 ];
 

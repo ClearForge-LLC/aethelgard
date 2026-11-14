@@ -55,6 +55,12 @@
       "file": "firmware/src/main.rs",
       "find": "write_volatile(BOOT_MAGIC)",
       "replace": "write_volatile(0)"
+    },
+    "cs-never": {
+      "why": "the SPI transfer never asserts U4's chip select: its select drives PA0 high, not low",
+      "file": "src/board.rs",
+      "find": "Spi1Device::U4 => (Block::GpioA, 0x00010000, 0x00000001)",
+      "replace": "Spi1Device::U4 => (Block::GpioA, 0x00000001, 0x00000001)"
     }
   },
   "cases": [
@@ -280,6 +286,28 @@
       "domain": "none",
       "rule": "N1",
       "findings": []
+    },
+    {
+      "name": "spi-absent-u4",
+      "scenario": "scenarios/sentinel-01/seeded/spi-absent-u4.json",
+      "mutant": null,
+      "domain": "electrical",
+      "rule": "E2",
+      "findings": [
+        "spi_identity_mismatch",
+        "spi_transaction_unwitnessed"
+      ]
+    },
+    {
+      "name": "cs-never",
+      "scenario": "scenarios/sentinel-01/pullup-2k2.json",
+      "mutant": "cs-never",
+      "domain": "software",
+      "rule": "S3",
+      "findings": [
+        "spi_identity_mismatch",
+        "spi_transaction_unwitnessed"
+      ]
     },
     {
       "name": "unmutated-2k2",
