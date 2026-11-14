@@ -287,13 +287,15 @@ fn reads(
                 peripheral: d.peripheral.clone(),
             });
         }
-        let Some(id) = aethelgard_ir::parts::identity(&d.part) else {
+        let Some(id) =
+            aethelgard_ir::parts::identity(&d.part).map_err(BoardError::InvalidTopology)?
+        else {
             continue;
         };
         out.push(Read {
             bus: d.peripheral.to_ascii_lowercase(),
             address: d.address,
-            register: id.register,
+            register: id.write,
             width: id.width,
         });
     }

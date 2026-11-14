@@ -214,9 +214,12 @@ mod tests {
         let t = topology(|_| {});
         let plain = emit(&t).unwrap();
         assert!(plain.contains("\nu2: I2C.BME280 @ i2c1 0x76\n"), "{plain}");
-        assert_eq!(emit_faulted(&t, &BTreeSet::new()).unwrap(), plain);
+        assert_eq!(
+            emit_faulted(&t, &BTreeSet::new(), &BTreeSet::new()).unwrap(),
+            plain
+        );
         let sensors = BTreeSet::from(["SENSORS".to_owned()]);
-        let faulted = emit_faulted(&t, &sensors).unwrap();
+        let faulted = emit_faulted(&t, &sensors, &BTreeSet::new()).unwrap();
         let note = "// - Analog fault (AET-WO-2200): bus `SENSORS` (I2C1) is faulted by the analog pass,\n\
                     //   so its devices are left out of this platform: U2 (BME280), U3 (TMP117).\n";
         assert!(faulted.contains(note), "{faulted}");
@@ -232,7 +235,8 @@ mod tests {
             present(&t, &BTreeSet::new()).unwrap(),
             t.i2c_devices_in_order()
         );
-        let err = emit_faulted(&t, &BTreeSet::from(["FLASH".to_owned()])).unwrap_err();
+        let err =
+            emit_faulted(&t, &BTreeSet::from(["FLASH".to_owned()]), &BTreeSet::new()).unwrap_err();
         assert_eq!(err.kind(), "UnknownFaultedBus");
     }
 
