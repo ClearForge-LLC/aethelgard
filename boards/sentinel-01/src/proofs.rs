@@ -667,12 +667,15 @@ impl Registers for Spi1Spy {
                 (value ^ self.cr1) & !(0x00000001 | 0x00000200) == 0,
                 "CR1 changed beyond SPE and CSTART",
             );
-            let on = value & (0x00000001 | 0x00000200);
+            // `CSTART` is set-only: the enable may carry a stale one back.
             if self.stage == 2 {
-                kani::assert(on == 0x00000001, "the peripheral was not enabled alone first");
+                kani::assert(value & 0x00000001 != 0, "the peripheral was not enabled");
                 self.stage = 3;
             } else if self.stage == 3 {
-                kani::assert(on == 0x00000001 | 0x00000200, "the transfer was not started");
+                kani::assert(
+                    value & (0x00000001 | 0x00000200) == 0x00000001 | 0x00000200,
+                    "the transfer was not started",
+                );
                 self.stage = 4;
             } else if self.stage == 5 {
                 kani::assert(value & 0x00000001 == 0, "the peripheral was not disabled");

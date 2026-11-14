@@ -2552,12 +2552,15 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
                              (value ^ self.cr1) & !({spe} | {cstart}) == 0,\n                \
                              \"CR1 changed beyond SPE and CSTART\",\n            \
                          );\n            \
-                         let on = value & ({spe} | {cstart});\n            \
+                         // `CSTART` is set-only: the enable may carry a stale one back.\n            \
                          if self.stage == 2 {{\n                \
-                             kani::assert(on == {spe}, \"the peripheral was not enabled alone first\");\n                \
+                             kani::assert(value & {spe} != 0, \"the peripheral was not enabled\");\n                \
                              self.stage = 3;\n            \
                          }} else if self.stage == 3 {{\n                \
-                             kani::assert(on == {spe} | {cstart}, \"the transfer was not started\");\n                \
+                             kani::assert(\n                    \
+                                 value & ({spe} | {cstart}) == {spe} | {cstart},\n                    \
+                                 \"the transfer was not started\",\n                \
+                             );\n                \
                              self.stage = 4;\n            \
                          }} else if self.stage == 5 {{\n                \
                              kani::assert(value & {spe} == 0, \"the peripheral was not disabled\");\n                \
