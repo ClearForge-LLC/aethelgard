@@ -1516,3 +1516,35 @@ fn every_rule_is_found_by_its_id_and_nothing_else_is() {
         assert_eq!(Rule::from_id(other), None, "`{other}` names no rule");
     }
 }
+
+/// `AET-WO-2205` adversarial pass 2 (M3): software evidence on an
+/// electrically faulted bus is listed in `masked` whatever rule names the
+/// run. A wrong-register witness on the faulted SENSORS (E1) beside a boot
+/// with no boot word (I3, the fault is elsewhere) is I3, the witness masked.
+#[test]
+fn a_witness_on_a_faulted_bus_stays_masked_when_the_run_is_indeterminate() {
+    let mut r = healthy();
+    wrong_register(&mut r);
+    faulted_sensors(&mut r);
+    replace(
+        &mut r,
+        |x| matches!(x, Record::BootObserved { .. }),
+        boot(0),
+    );
+    replace(
+        &mut r,
+        is_verdict,
+        verdict(&[
+            ("analog_rise_exceeds_ceiling", 2),
+            ("boot_word_missing", 1),
+            ("i2c_timeout", 1),
+        ]),
+    );
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Indeterminate, Rule::I3));
+    assert_eq!(
+        kinds(&a.masked),
+        [13],
+        "the wrong witness on the faulted bus is masked"
+    );
+}

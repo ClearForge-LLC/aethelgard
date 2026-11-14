@@ -117,6 +117,24 @@ fn the_manifest_seeds_twenty_failing_cases_eight_per_domain_and_the_three_traps(
     names.sort();
     names.dedup();
     assert_eq!(names.len(), m.cases.len(), "case names are unique");
+    // A campaign line is found by its scenario's name: two scenario files of
+    // one name under one firmware would be checked against one run.
+    let mut runs: Vec<(Option<&str>, String)> = m
+        .cases
+        .iter()
+        .map(|c| {
+            let s: serde_json::Value =
+                serde_json::from_slice(&fs::read(root().join(&c.scenario)).unwrap()).unwrap();
+            (c.mutant.as_deref(), s["name"].as_str().unwrap().to_owned())
+        })
+        .collect();
+    runs.sort();
+    runs.dedup();
+    assert_eq!(
+        runs.len(),
+        m.cases.len(),
+        "each firmware runs each scenario name once"
+    );
     let case = |scenario: &str, mutant: Option<&str>| {
         m.cases
             .iter()
@@ -153,21 +171,22 @@ fn the_manifest_seeds_twenty_failing_cases_eight_per_domain_and_the_three_traps(
             "a case has no findings exactly when its domain is none: {}",
             c.name
         );
-        let ok = matches!(
-            (c.domain.as_str(), c.rule.as_str()),
-            ("electrical", "E1")
-                | ("software", "S1" | "S2")
-                | ("none", "N1")
-                | ("indeterminate", "I3")
-        );
-        assert!(
-            ok,
-            "each case carries a known domain and rule pair: {}: {} {}",
-            c.name, c.domain, c.rule
-        );
-        // The rule's evidence kinds are evolve's, read by its id: no copy here.
+        // The rule, its domain and its evidence kinds are evolve's, read by
+        // the rule's id: no copy here.
         let rule = aethelgard_evolve::Rule::from_id(&c.rule)
             .unwrap_or_else(|| panic!("each case's rule is one evolve defines: {}", c.name));
+        assert_eq!(
+            rule.domain().name(),
+            c.domain,
+            "each case's domain is its rule's: {}: {}",
+            c.name,
+            c.rule
+        );
+        assert!(
+            c.domain != "none" || c.masked.is_empty(),
+            "a passing case masks nothing: {}",
+            c.name
+        );
         assert_eq!(
             c.evidence.is_empty(),
             c.domain == "none",
@@ -711,10 +730,16 @@ mod tier2 {
             "the 3.3 kOhm wrong-address trap is attributed to software, rule S1: {a}"
         );
         // The 47 kOhm run with the same mutant is electrical, its witness masked.
+        let trap = case("trap-wrong-address-47k");
         assert_eq!(
             masked("trap-wrong-address-47k"),
+            trap.case.masked.iter().map(|[_, k]| *k).collect::<Vec<_>>(),
+            "the 47 kOhm wrong-address run is electrical with its witness masked, as the manifest states"
+        );
+        assert_eq!(
+            trap.case.masked.iter().map(|[_, k]| *k).collect::<Vec<_>>(),
             [13],
-            "the 47 kOhm wrong-address run is electrical with its witness (kind 13) masked"
+            "the manifest masks the 47 kOhm trap's witness (kind 13)"
         );
         // The unmutated 47 kOhm run masks nothing: its witness agrees.
         assert!(
@@ -914,18 +939,15 @@ mod tier2 {
                     // The trap's wrong address is masked by the fault, and
                     // the proposal says so: its re-gate, on regenerated
                     // firmware, cannot speak to the firmware that failed.
-                    let masked = p["attribution"]["masked"].as_array().unwrap();
+                    let masked: Vec<[u64; 2]> = p["attribution"]["masked"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|e| [e["index"].as_u64().unwrap(), e["kind"].as_u64().unwrap()])
+                        .collect();
                     assert_eq!(
-                        masked
-                            .iter()
-                            .map(|e| e["kind"].as_u64().unwrap())
-                            .collect::<Vec<_>>(),
-                        if r.case.mutant.is_some() {
-                            vec![13]
-                        } else {
-                            vec![]
-                        },
-                        "the proposal's masked witnesses are the wrong-address trap's kind 13 and nothing else: {name}"
+                        masked, r.case.masked,
+                        "the proposal's masked events are the case's, from the manifest: {name}"
                     );
                     regate(&out, &r.run);
                 }
