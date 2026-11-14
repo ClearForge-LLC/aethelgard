@@ -59,7 +59,7 @@ struct Case {
 
 fn manifest() -> Manifest {
     let m: Manifest = serde_json::from_slice(&fs::read(root().join(MANIFEST)).unwrap()).unwrap();
-    assert_eq!(m.schema_version, 1);
+    assert_eq!(m.schema_version, 1, "the manifest is schema version 1");
     m
 }
 
@@ -88,8 +88,14 @@ fn the_manifest_seeds_twenty_failing_cases_eight_per_domain_and_the_three_traps(
     let m = manifest();
     let count = |d: &str| m.cases.iter().filter(|c| c.domain == d).count();
     let (electrical, software) = (count("electrical"), count("software"));
-    assert!(electrical >= 8 && software >= 8, "{electrical} {software}");
-    assert!(electrical + software >= 20);
+    assert!(
+        electrical >= 8 && software >= 8,
+        "at least eight electrical and eight software cases: {electrical} {software}"
+    );
+    assert!(
+        electrical + software >= 20,
+        "at least twenty failing cases: {electrical} {software}"
+    );
     assert_eq!(
         m.cases.len(),
         electrical + software + count("none"),
@@ -110,22 +116,41 @@ fn the_manifest_seeds_twenty_failing_cases_eight_per_domain_and_the_three_traps(
     }
     assert_eq!(
         trap(case("seeded/pullup-3k3.json", Some("wrong-address"))),
-        ("software", "S1")
+        ("software", "S1"),
+        "the 3k3 wrong-address trap is a software S1 case"
     );
     assert_eq!(
         trap(case("/pullup-47k.json", Some("wrong-address"))),
-        ("electrical", "E1")
+        ("electrical", "E1"),
+        "the 47k wrong-address trap is an electrical E1 case"
     );
-    assert_eq!(trap(case("seeded/pullup-3k3.json", None)), ("none", "N1"));
+    assert_eq!(
+        trap(case("seeded/pullup-3k3.json", None)),
+        ("none", "N1"),
+        "the unmutated 3k3 case is the none N1 trap"
+    );
     for c in &m.cases {
-        assert_eq!(c.findings.is_empty(), c.domain == "none", "{}", c.name);
+        assert_eq!(
+            c.findings.is_empty(),
+            c.domain == "none",
+            "a case has no findings exactly when its domain is none: {}",
+            c.name
+        );
         let ok = matches!(
             (c.domain.as_str(), c.rule.as_str()),
             ("electrical", "E1") | ("software", "S1" | "S2") | ("none", "N1")
         );
-        assert!(ok, "{}: {} {}", c.name, c.domain, c.rule);
+        assert!(
+            ok,
+            "each case carries a known domain and rule pair: {}: {} {}",
+            c.name, c.domain, c.rule
+        );
         if let Some(mutant) = &c.mutant {
-            assert!(m.mutants.contains_key(mutant), "{}: {mutant}", c.name);
+            assert!(
+                m.mutants.contains_key(mutant),
+                "each case names a mutant the manifest defines: {}: {mutant}",
+                c.name
+            );
         }
     }
     // The software cases are the six the work order names, and more.
@@ -139,7 +164,7 @@ fn the_manifest_seeds_twenty_failing_cases_eight_per_domain_and_the_three_traps(
     ] {
         assert!(
             m.cases.iter().any(|c| c.mutant.as_deref() == Some(name)),
-            "{name}"
+            "a case uses each of the six named software mutants: {name}"
         );
     }
 }
@@ -149,7 +174,7 @@ fn every_mutant_applies_exactly_once_to_the_generated_board_as_committed() {
     for (name, m) in &manifest().mutants {
         let text = fs::read_to_string(root().join(BOARD).join(&m.file)).unwrap();
         let patched = patch(name, &text, m).unwrap();
-        assert_ne!(patched, text, "{name}");
+        assert_ne!(patched, text, "the mutant changes the board source: {name}");
     }
 }
 
@@ -161,18 +186,25 @@ fn a_patch_that_matches_zero_or_two_times_is_refused_naming_the_mutant() {
         find: "0x76".into(),
         replace: "0x77".into(),
     };
-    assert_eq!(patch("a", "x 0x76 y", &m).unwrap(), "x 0x77 y");
+    assert_eq!(
+        patch("a", "x 0x76 y", &m).unwrap(),
+        "x 0x77 y",
+        "a patch matching once is applied"
+    );
     for text in ["nothing", "0x76 and 0x76"] {
         let e = patch("wrong-address", text, &m).unwrap_err();
         assert!(
             e.contains("mutant `wrong-address`") && e.contains("not once"),
-            "{e}"
+            "a patch matching zero or two times is refused naming the mutant: {e}"
         );
     }
     // The adversary's decoy: the code moved to a constant, the text kept in a comment.
     let decoy = "    // i2c1.transfer(&mut r, 0x76,\n    i2c1.transfer(&mut r, ADDR, &[0xd0])\n";
     let e = patch("wrong-address", decoy, &m).unwrap_err();
-    assert!(e.contains("only in a comment"), "{e}");
+    assert!(
+        e.contains("only in a comment"),
+        "a match only inside a comment is refused as such: {e}"
+    );
 }
 
 #[test]
@@ -182,13 +214,21 @@ fn every_unmutated_case_is_a_scenario_whose_own_expectation_is_the_manifests() {
         let s = read_json(&root().join(&c.scenario));
         let mut expect: Vec<String> = serde_json::from_value(s["expect_findings"].clone()).unwrap();
         expect.sort();
-        assert_eq!(expect, c.findings, "{}", c.name);
+        assert_eq!(
+            expect, c.findings,
+            "an unmutated scenario expects the findings the manifest lists: {}",
+            c.name
+        );
         let fails = if c.findings.is_empty() {
             "pass"
         } else {
             "fail"
         };
-        assert_eq!(s["expect"], fails, "{}", c.name);
+        assert_eq!(
+            s["expect"], fails,
+            "an unmutated scenario expects fail exactly when the manifest lists findings: {}",
+            c.name
+        );
     }
     // Every seeded scenario is some case's.
     for entry in fs::read_dir(root().join("scenarios/sentinel-01/seeded")).unwrap() {
@@ -274,41 +314,62 @@ fn every_committed_proposal_is_pull_up_changes_named_for_its_scenario() {
         assert_eq!(
             names,
             ["proposal.json", "proposed-spec.json"],
-            "{}",
+            "a committed proposal directory holds exactly the proposal and its proposed spec: {}",
             dir.display()
         );
         let p = read_json(&dir.join("proposal.json"));
         assert_eq!(
             (&p["schema_version"], &p["outcome"], &p["proposer"]),
             (&1.into(), &"proposal".into(), &"rules".into()),
-            "{}",
+            "a proposal is schema 1, outcome proposal, proposed by rules: {}",
             dir.display()
         );
         let changes = p["changes"].as_array().unwrap();
-        assert!(!changes.is_empty());
+        assert!(!changes.is_empty(), "a proposal makes at least one change");
         for c in changes {
             let mut keys: Vec<&String> = c.as_object().unwrap().keys().collect();
             keys.sort();
-            assert_eq!(keys, ["bus", "pull_up_ohms"], "{}", dir.display());
+            assert_eq!(
+                keys,
+                ["bus", "pull_up_ohms"],
+                "each change is a pull-up change naming a bus and an ohms value: {}",
+                dir.display()
+            );
         }
         let spec = fs::read(dir.join("proposed-spec.json")).unwrap();
-        assert_eq!(p["proposed_specification_sha256"], sha_hex(&spec).as_str());
+        assert_eq!(
+            p["proposed_specification_sha256"],
+            sha_hex(&spec).as_str(),
+            "the proposal records the sha256 of its proposed spec"
+        );
         let out = std::process::Command::new(env!("CARGO_BIN_EXE_aethelgard"))
             .args(["validate", "--file"])
             .arg(dir.join("proposed-spec.json"))
             .output()
             .unwrap();
-        assert_eq!(out.status.code(), Some(0), "{}", dir.display());
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "the proposed spec validates: {}",
+            dir.display()
+        );
         let scenario = scenario_with_sha(p["scenario"]["sha256"].as_str().unwrap());
         let named = read_json(&root().join(&scenario));
-        assert_eq!(named["name"], p["scenario"]["name"]);
+        assert_eq!(
+            named["name"], p["scenario"]["name"],
+            "the proposal names the scenario its sha256 selects"
+        );
         let project: serde_json::Value = serde_json::from_slice(&spec).unwrap();
         let want = format!(
             "{}-{}",
             project["project_name"].as_str().unwrap(),
             named["name"].as_str().unwrap()
         );
-        assert_eq!(dir.file_name().unwrap().to_str().unwrap(), want);
+        assert_eq!(
+            dir.file_name().unwrap().to_str().unwrap(),
+            want,
+            "a proposal directory is named for its project and scenario"
+        );
     }
 }
 

@@ -1,10 +1,11 @@
-//! `verify` on the reference with the 2.2 kΩ scenario, run twice and read by
-//! two tests (`AET-WO-1909` B, ruled on PR #115): `AET-WO-3301`'s binding and
-//! byte-identity, and `AET-WO-3300`'s package at two paths. Both runs carry
-//! `--against` the committed tree and `--fab-out`, at two paths of different
-//! lengths. The flags read and write disjoint state, and each verdict equals
-//! the single-flag one apart from the keys the other flag adds
-//! (`AET-WO-1909` FEEDBACK). Every tool run happens in the shared run, once.
+//! `verify` on the reference with the 2.2 kΩ scenario, each test with its own
+//! two runs (`AET-WO-1909`, ruled on PR #115): `AET-WO-3301`'s binding and
+//! byte-identity with `--against`, and `AET-WO-3300`'s package at two paths
+//! with `--fab-out`. B (one pair of runs carrying both flags) was ruled on a
+//! byte comparison that `--fab-out`'s verdict did not meet (its
+//! `MANIFEST.json` names a verdict line that carries `against`), so each test
+//! keeps its own invocation (`AET-WO-1909` FEEDBACK). The runs go one at a
+//! time: each `verify` peaks at about 3.5 GB.
 
 #![cfg(feature = "with-tools")]
 
@@ -12,15 +13,25 @@ mod common;
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use common::verify::{
-    SPEC, Shared, aethelgard, board, build, copy_tree, gate_reads, one, package_files, root,
-    scratch, sha,
+    SPEC, aethelgard, board, build, copy_tree, gate_reads, one, package_files, root, scratch, sha,
 };
 use serde_json::Value;
 
-/// The two runs: their exit codes and stdout, the `--against` tree, and the
-/// two `--fab-out` directories.
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+/// Which flag a test's two runs carry.
+enum Flag {
+    /// `--against` the committed tree (`emit`'s KiCad files beside the board).
+    Against,
+    /// `--fab-out`, at two paths of different lengths.
+    FabOut,
+}
+
+/// Two runs: their exit codes and stdout, the `--against` tree, and the two
+/// `--fab-out` directories (each used by the flag that names it).
 struct Runs {
     base: PathBuf,
     tree: PathBuf,
@@ -31,12 +42,12 @@ struct Runs {
     second: String,
 }
 
-static RUNS: Shared<Runs> = Shared::new("verify 2k2 --against --fab-out, twice at two paths");
-
-fn runs(property: &str) -> &'static Runs {
-    RUNS.get(property, || {
-        let base = scratch("verify-2k2");
-        let tree = base.join("against");
+fn two_runs(label: &str, flag: &Flag) -> Runs {
+    let base = scratch(label);
+    let tree = base.join("against");
+    let a = base.join("a");
+    let b = base.join("a-much/longer/path/b");
+    if let Flag::Against = flag {
         copy_tree(&board(), &tree.join("board"));
         let kicad = tree.join("kicad");
         let (code, stdout) =
@@ -46,33 +57,32 @@ fn runs(property: &str) -> &'static Runs {
             Some(0),
             "emit writes the --against tree's KiCad files: {stdout}"
         );
-        let a = base.join("a");
-        let b = base.join("a-much/longer/path/b");
-        let run = |fab: &PathBuf| {
-            aethelgard(&[
-                "verify",
-                "--spec",
-                SPEC,
-                "--scenarios",
-                "scenarios/sentinel-01/pullup-2k2.json",
-                "--against",
-                tree.to_str().unwrap(),
-                "--fab-out",
-                fab.to_str().unwrap(),
-            ])
-        };
-        let (code_a, first) = run(&a);
-        let (code_b, second) = run(&b);
-        Runs {
-            base,
-            tree,
-            a,
-            b,
-            codes: [code_a, code_b],
-            first,
-            second,
+    }
+    let run = |fab: &PathBuf| {
+        let mut args = vec![
+            "verify",
+            "--spec",
+            SPEC,
+            "--scenarios",
+            "scenarios/sentinel-01/pullup-2k2.json",
+        ];
+        match flag {
+            Flag::Against => args.extend(["--against", tree.to_str().unwrap()]),
+            Flag::FabOut => args.extend(["--fab-out", fab.to_str().unwrap()]),
         }
-    })
+        aethelgard(&args)
+    };
+    let (code_a, first) = run(&a);
+    let (code_b, second) = run(&b);
+    Runs {
+        base,
+        tree,
+        a,
+        b,
+        codes: [code_a, code_b],
+        first,
+        second,
+    }
 }
 
 /// §3.2 and §3.4 of `AET-WO-3301`: `verify` with the 2.2 kΩ scenario and
@@ -81,7 +91,8 @@ fn runs(property: &str) -> &'static Runs {
 /// bytes.
 #[test]
 fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
-    let r = runs("verify binds the reference and two runs print the same bytes");
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let r = two_runs("verify-binds", &Flag::Against);
     let v = one(&r.first);
     assert_eq!(r.codes[0], Some(0), "the first run passes: {v}");
     assert_eq!(r.codes[1], Some(0), "the second run passes: {}", r.second);
@@ -240,7 +251,8 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
 /// clock (ruling on PR #103). `--against-fab` is `against_fab_tier2.rs`.
 #[test]
 fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
-    let r = runs("verify --fab-out writes the package its verdict names at any path");
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let r = two_runs("verify-fab-out", &Flag::FabOut);
     let v = one(&r.first);
     assert_eq!(r.codes[0], Some(0), "the run at the first path passes: {v}");
     assert_eq!(

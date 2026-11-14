@@ -439,7 +439,7 @@ fn build(dir: &Path, target_dir: &str, bin: &str) -> PathBuf {
         .unwrap();
     assert!(
         out.status.success(),
-        "{}",
+        "the release build of the firmware succeeds: {}",
         String::from_utf8_lossy(&out.stderr)
     );
     let elf = root()
@@ -981,8 +981,14 @@ fn a_flooding_firmware_reaches_a_verdict_and_its_message_is_the_same_twice() {
         })
         .collect();
     for (code, v) in &runs {
-        assert!(matches!(code, Some(0 | 1)), "{code:?} {v}");
-        assert!(v.get("verdict").is_some(), "{v}");
+        assert!(
+            matches!(code, Some(0 | 1)),
+            "a flooding firmware exits with a verdict code, 0 or 1: {code:?} {v}"
+        );
+        assert!(
+            v.get("verdict").is_some(),
+            "a flooding firmware run prints a verdict: {v}"
+        );
         let kinds: Vec<(&str, &str)> = v["findings"]
             .as_array()
             .unwrap()
@@ -991,9 +997,12 @@ fn a_flooding_firmware_reaches_a_verdict_and_its_message_is_the_same_twice() {
             .collect();
         assert!(
             kinds.iter().any(|(k, _)| *k == "locked_peripheral_access"),
-            "{kinds:?}"
+            "the flooding run reports a locked peripheral access: {kinds:?}"
         );
-        assert!(kinds.contains(&("renode_log_flood", "info")), "{kinds:?}");
+        assert!(
+            kinds.contains(&("renode_log_flood", "info")),
+            "the flooding run reports renode_log_flood at info severity: {kinds:?}"
+        );
     }
     let findings = |v: &Value| {
         v["findings"]
@@ -1009,5 +1018,9 @@ fn a_flooding_firmware_reaches_a_verdict_and_its_message_is_the_same_twice() {
             })
             .collect::<Vec<_>>()
     };
-    assert_eq!(findings(&runs[0].1), findings(&runs[1].1));
+    assert_eq!(
+        findings(&runs[0].1),
+        findings(&runs[1].1),
+        "the flooding firmware findings and messages are the same twice"
+    );
 }

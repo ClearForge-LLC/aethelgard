@@ -1,6 +1,6 @@
 # AET-WO-1909 — FEEDBACK
 
-**Status: built to the architect's ruling on PR #115 (comment 6873338632): A, B, C and D; `oq_03` removed; E declined. Adversarial and reduction passes done. Three consecutive CI runs at eight shards, every shard under 20 minutes (12:10, 11:59, 15:10); the suite went from 4,730 to 3,677 measured test-step seconds (−22 %). B's byte comparison holds apart from one derived field, `MANIFEST.json`'s `verdict_sha256` (the architect to confirm, below). The PR is retitled as the build, its body replaced; `gh-write` cannot edit a PR, so the operator applied both from the builder's text.**
+**Status: built to the architect's ruling on PR #115 (comment 6873338632): A, C and D; `oq_03` removed; E declined. B is not built: its byte comparison failed the ruling's test (one value inside `fab` differs, not only the key the extra flag adds), so, as the ruling says, the two tests keep their separate invocations. Every unnamed assertion in the seven touched test files now names its property. Adversarial and reduction passes done. Three consecutive CI runs on the final plan are recorded below, with before and after suite seconds. The PR is retitled as the build, its body replaced; `gh-write` cannot edit a PR, so the operator applied both from the builder's text.**
 
 **Branch:** `wo/aet-1909-ci-reduction` · **Base:** `a5be795` (`origin/main`, merged in) · **Builder:** Claude (Opus 5.5, orchestrating). Census rows and D8's assertion messages were done by Sonnet subagents, each checked against the source. The adversarial pass was run by a fresh Opus subagent.
 
@@ -11,34 +11,35 @@
 - **`tests/common/verify.rs` (new).**
   - It holds the helpers `board_tier2` and the three new binaries share: `aethelgard`, `one`, `build`, `gate_reads`, `package_files`, `copy_tree`, `sha`, `root`, `board` and `SPEC`. Each was moved out of `board_tier2.rs`, not copied.
   - It also holds `Shared<T>` (F6): a `OnceLock<Result<T, String>>` whose maker runs under `catch_unwind`. A run that fails is stored once and never made again. Every test that reads it fails at once, naming its own property and the stored failure.
-- **Three new tier-2 binaries (D1 (a)),** each reading one shared run. Every test keeps its name, and every original assertion is kept.
+- **Three new tier-2 binaries (D1 (a)).** Two read one shared run each; the third, B's, holds its two tests with their own runs. Every test keeps its name, and every original assertion is kept.
 
   | binary | tests (moved from `board_tier2.rs`) | the shared run | `verify` runs, before → after |
   |---|---|---|---|
-  | `verify_2k2_tier2.rs` (B) | `verify_binds_the_reference_and_two_runs_print_the_same_bytes`, `verify_fab_out_writes_the_package_its_verdict_names_at_any_path` | V(2k2, `--against` tree, `--fab-out`), at two paths of different lengths | 4 → 2 |
+  | `verify_2k2_tier2.rs` (B, **not shared**: see below) | `verify_binds_the_reference_and_two_runs_print_the_same_bytes`, `verify_fab_out_writes_the_package_its_verdict_names_at_any_path` | none. Each test makes its own two runs, as before: V(2k2, `--against`) ×2 and V(2k2, `--fab-out`) at two paths. `ONE_AT_A_TIME` keeps them one at a time | 4 → 4 |
   | `against_fab_tier2.rs` (A) | `verify_against_fab_finds_the_package_it_wrote_identical`, `verify_against_fab_names_every_changed_and_extra_file` | one V(2k2, `--fab-out`) package; each test compares its own copy, one `verify` at a time (`ONE_AT_A_TIME`) | 4 → 3 |
   | `verify_47k_tier2.rs` (C) | `verify_fails_the_47k_pull_up_with_the_campaigns_findings`, `verify_fab_out_writes_nothing_when_a_gate_fails` | V(47k, `--fab-out`) into an empty directory | 2 → 1 |
 - **`attribute_seeded.rs`:**
   - `tier2::oq_03_the_reference_runs_bytes_with_kind_15` is removed (D7). `ran()` already prints its data for every case; the module comment now says so.
   - The two committed-proposal tests now log `proposals/ absent: nothing to check` as an `ANSWER 3200` line, instead of returning silently (F2).
-- **D8, every assertion named.** Every assertion in the three F1 tests, and in every test that reads a shared run, now carries a message naming its property. That covers the new binaries, `ran()` and `REGATED` and their six readers, `first()` and its five readers plus the droop test, and `firmware()`/`two_bme()` and their seven readers.
-  - The change is messages only, checked mechanically: string literals, whitespace and commas are stripped from the old and new file, and the two token streams are diffed (`~/.cache/aet-1909/msgonly.py`).
-  - The residue is zero in `campaign_tier2.rs`. In `twin_tier2.rs` it is one hunk, a message change, read by hand. In `attribute_seeded.rs` it is my own D7 and F2 edits, plus two added `dir.display()` context arguments.
+- **D8, every assertion named.** The ruling covers the three F1 tests and every test that reads a shared run. **Every assertion in the seven files this work order touched now names its property:** `common/verify.rs`, the three new binaries, `attribute_seeded.rs`, `campaign_tier2.rs` and `twin_tier2.rs`, helpers and tier-1 tests included, so no line is left to argue scope over.
+  - **Completeness:** `~/.cache/aet-1909/d8check.py` lists every `assert!`/`assert_eq!`/`assert_ne!` with no message, or with only interpolation (`"{v}"`). Over the seven files it prints nothing.
+  - **Messages only:** `~/.cache/aet-1909/msgonly.py`, a scanner that drops comments, char literals, strings, raw strings, whitespace and commas, diffs each file's token stream against the commit before. Residue: 0 for `twin_tier2.rs`, `campaign_tier2.rs` and `attribute_seeded.rs`.
+  - An earlier regex version of `msgonly.py` mis-scanned char literals (`'"'`) and showed false residue.
 - **`ci/`:**
   - `TIER2_RE` names the three new binaries.
-  - `ci/colocate.tsv` keeps each new binary and `campaign_tier2` (D6) whole on one shard.
-  - `ci/test-weights.tsv` drops the seven lines for tests that moved or went.
+  - `ci/colocate.tsv` keeps `against_fab_tier2`, `verify_47k_tier2` and `campaign_tier2` (D6) whole on one shard, each at its worst in-process sample over CI runs 1 to 4 (the refit rule's step 3).
+  - `ci/test-weights.tsv` drops the seven lines for tests that moved or went. It adds B's two tests, under their new binary, at the CI seconds `AET-WO-1908` measured for that same work (382.4 and 515.7).
   - `TIER2_MIN` is 90 (91 − `oq_03`; the six moved tests still count), its comment naming every moved and removed test and the two vacuous ones.
 - **Not changed:** any production file, `ONE_PROOF` (E declined), `ci/SHARDS` (8), the guard and the canary.
 
-## B and C: the evidence the ruling asked for, before the old invocations went
+## B and C: the evidence the ruling asked for, and B reverted
 
 **1. Byte comparison** (`~/.cache/aet-1909/bytes/`; the pinned image; each verdict compared key by key with `cmp.py`):
 
 | compared | keys only in one | shared keys that differ | equal apart from those |
 |---|---|---|---|
 | V(2k2, `--against`) vs V(2k2, `--against`, `--fab-out`) | `fab` | none | yes |
-| V(2k2, `--fab-out`) vs V(2k2, `--against`, `--fab-out`) | `against` | `fab.files["MANIFEST.json"]` | yes, apart from those |
+| V(2k2, `--fab-out`) vs V(2k2, `--against`, `--fab-out`) | `against` | `fab.files["MANIFEST.json"]` | **no**: one value inside `fab` differs |
 | V(47k) vs V(47k, `--fab-out`) | `fab` | none | yes; `--fab-out` held 0 entries |
 
 - **The one shared key that differs is derived from the extra flag's key, and nothing else differs.**
@@ -46,23 +47,27 @@
   - Each run's `verdict_sha256` equals the sha256 of its own verdict line without `fab`, as `verify.rs:709-722` writes it. With `--against`, that line carries `"against":"identical"`.
   - The other 14 package files are byte-identical (`pkg-fabout.sha`, `pkg-both.sha`).
   - `verify_fab_out_writes…` still checks the manifest against the line its own run printed, so it checks the same binding.
-- **So B's condition 1 holds apart from that one derived field.** The ruling's fallback for a failed comparison is separate invocations, so **I ask the architect to confirm that this difference is acceptable.** Should the answer be no, the fix is to restore V(2k2, `--fab-out`) alone as a third run in `verify_2k2_tier2.rs`, at about 215 CI s.
+- **So B fails the ruling's test as written.** The verdicts must be equal "apart from the keys the extra flag adds", and a value inside `fab` differs. The difference is derived and explained, but the test is the test. **As the ruling says, the pair keeps its separate invocations.**
+  - `verify_binds…` makes its own two V(2k2, `--against`) runs and `verify_fab_out_writes…` its own two V(2k2, `--fab-out`) runs, exactly the invocations they made in `board_tier2.rs`.
+  - Both stay in `verify_2k2_tier2.rs`, with their D8 messages, serialised by `ONE_AT_A_TIME`. That binary is no longer colocated.
+  - The cost is B's saving, about 2 V (430 CI s) per CI run. The gain: LP1 (below) is guarded again.
+- **C passes:** V(47k) and V(47k, `--fab-out`) are equal apart from `fab`, the key `--fab-out` adds. Nothing differs inside any shared key.
 
 **2. Independence**, from the source:
 - `main.rs:340-353` passes `--against` and the fab mode to `verify::verify` as separate arguments.
 - In `verify.rs`, `--fab-out` is checked usable before any gate (`:566-574`). `--against` only reads its directory and diffs it against the in-memory generated `files` (`:576-603`), setting `report.against`, or failing before any gate if the trees differ.
 - Every gate runs on the scratch tree written from `files` (`:605-610`), never on the `--against` directory.
 - `--fab-out` is written only in `package()`, after every gate passed (`:694-780`), from the scratch root's board and ELF.
-- So neither reads what the other writes, and neither changes a gate's input. Their one coupling is the failure path: a differing `--against` writes no package (`:589-590`). B's shared runs pass `--against`, so that path is not shared.
+- So neither reads what the other writes, and neither changes a gate's input. Their one coupling is the failure path: a differing `--against` writes no package (`:589-590`). This held, but it cannot rescue B's failed comparison. It does stand for C, whose two invocations differ only by `--fab-out`.
 
-## Mutants (§4): for each shared run, one property broken, caught by the named test only
+## Mutants (§4): for each shared run (and B's two tests), one property broken, caught by the named test only
 
-Each mutant was a production edit in a scratch copy (`~/.cache/aet-1909/mutX`, `mutY`), run against all three binaries in the pinned image. Mutants on disjoint paths share a build.
+Each mutant was a production edit in a scratch copy (`~/.cache/aet-1909/mutX`, `mutY`), run against all three binaries in the pinned image. Mutants on disjoint paths share a build. After B's revert, `verify_2k2_tier2` was run again under X and Y (`mutX/revert.log`, `mutY/revert.log`): X is caught by `verify_fab_out_writes…` alone, at `verify_2k2_tier2.rs:409` "FAB-NOTES.md states plated via, drilled 0.3 mm", and Y by `verify_binds…` alone, at `:102` "--against finds the committed tree identical". The binary passes unmutated: 2 tests, 571.2 s (`revert-run.log`). The B rows below give the line numbers from that run.
 
 | mutant | caught by | the assertion that fires | the other test reading the run |
 |---|---|---|---|
-| X: `fab.rs:100` FAB-NOTES "plated via, drilled" → "plated via drilled" | `verify_fab_out_writes_the_package_its_verdict_names_at_any_path` | `verify_2k2_tier2.rs:397` "FAB-NOTES.md states plated via, drilled 0.3 mm" | `verify_binds…` passes |
-| Y: `verify.rs:602` `against` "identical" → "same" | `verify_binds_the_reference_and_two_runs_print_the_same_bytes` | `verify_2k2_tier2.rs:91` "--against finds the committed tree identical" | `verify_fab_out_writes…` passes |
+| X: `fab.rs:100` FAB-NOTES "plated via, drilled" → "plated via drilled" | `verify_fab_out_writes_the_package_its_verdict_names_at_any_path` | `verify_2k2_tier2.rs:409` "FAB-NOTES.md states plated via, drilled 0.3 mm" | `verify_binds…` passes (its own runs) |
+| Y: `verify.rs:602` `against` "identical" → "same" | `verify_binds_the_reference_and_two_runs_print_the_same_bytes` | `verify_2k2_tier2.rs:102` "--against finds the committed tree identical" | `verify_fab_out_writes…` passes (its own runs) |
 | X: `verify.rs:762` `against_fab` "identical" → "same" | `verify_against_fab_finds_the_package_it_wrote_identical` | `against_fab_tier2.rs:83` "the derived package is identical" | `…names every changed…` passes |
 | Y: `verify.rs:764` "differs" → "different" | `verify_against_fab_names_every_changed_and_extra_file` | `against_fab_tier2.rs:120` "the derived package differs" | `…finds…identical` passes |
 | X: `verify.rs:687` "not_written" → "unwritten" | `verify_fab_out_writes_nothing_when_a_gate_fails` | `verify_47k_tier2.rs:103` "the package is not written" | `verify_fails_the_47k…` passes |
@@ -73,13 +78,13 @@ Each mutant was a production edit in a scratch copy (`~/.cache/aet-1909/mutX`, `
 | test | what it guards | guarded now by | evidence |
 |---|---|---|---|
 | `oq_03_the_reference_runs_bytes_with_kind_15` (removed) | nothing of its own: `ran()`'s checks | `every_case_fails_the_way_its_manifest_says` and four more `ran()` readers, at the same assertion | mutant M1 (census §3): both died at `attribute_seeded.rs:433` |
-| `verify_binds…` (moved to `verify_2k2_tier2.rs`; now with `--fab-out` as well) | `--against` binding and byte-identity | itself, on the shared runs | mutant Y `verify.rs:602` |
-| `verify_fab_out_writes…` (moved; now with `--against` as well) | the package at two paths | itself | mutant X `fab.rs:100` |
+| `verify_binds…` (moved to `verify_2k2_tier2.rs`, its own runs, unchanged invocation) | `--against` binding and byte-identity | itself | mutant Y `verify.rs:602` |
+| `verify_fab_out_writes…` (moved, its own runs, unchanged invocation) | the package at two paths | itself | mutant X `fab.rs:100` |
 | `verify_against_fab_finds…identical` (moved; shares the package) | `--against-fab` identical | itself | mutant X `verify.rs:762` |
 | `verify_against_fab_names every changed…` (moved; shares the package) | `--against-fab` differences named | itself | mutant Y `verify.rs:764` |
 | `verify_fails_the_47k…` (moved; now with `--fab-out`) | 47k fails with the campaign's findings | itself | mutant Y `verify.rs:972` |
 | `verify_fab_out_writes_nothing…` (moved; shares the run) | nothing written on failure | itself | mutant X `verify.rs:687` |
-| the dropped invocations V(2k2, `--against`) alone, V(2k2, `--fab-out`) alone and V(47k) alone | the same verdicts | the combined runs, equal apart from the named keys | the byte comparison and independence above |
+| the one dropped invocation, V(47k) without a fab flag | the same verdict | V(47k, `--fab-out`), equal apart from `fab` | C's byte comparison and the independence above; LP2 below |
 
 ## Adversarial pass (§5, targeted, a fresh Opus subagent)
 
@@ -96,14 +101,14 @@ It ran in the pinned image (15 GiB cap, swap 0, read back in `~/.cache/aet-1909/
    - A with default threads passes, its three `verify` runs one after another (`parallel-A.log`), so there is no deadlock between `ONE_AT_A_TIME` and the `OnceLock`.
 3. **Poison.** Each maker was made to panic; in snapshot A it panics while holding `ONE_AT_A_TIME`. **All six dependent tests fail, in parallel, serial and alone runs, at 0.000 s each, with no hang.** The maker's panic appears once per process, and every message names its property and the stored failure (`poison.log`, `cur-poison-A.log` on the final A).
 
-**Finding (the coverage trade B and C ruled): LP1 and LP2.** Two mutants that the pre-build tests killed now pass all of tier 2:
+**Finding (the coverage trade B and C ruled): LP1 and LP2.** On the build as the reviewer ran it, with B shared, two mutants that the pre-build tests killed passed all of tier 2. **After B's revert, LP1 is guarded again**, because `verify_binds…` once more runs V(2k2, `--against`) without a fab flag. **LP2 is C's trade, and remains.**
 - **LP1** (`verify.rs:602`): `--against` alone reports "same" when no fab flag is given.
 - **LP2** (`verify.rs:680`): a failing `verify` without a fab flag exits 0.
 
 The originals go red, at `board_tier2.rs:405` and `:504` of `cfafdb4`.
-- **Why:** no test at any tier now runs a full `verify` without a fab flag. A regression that tied `against` or the exit code to the fab mode would pass CI.
-- **This is exactly the trade the ruling accepted on the byte comparison and the independence argument above.** I did not add a guard. One in tier 2 costs a full `verify` (about 215 CI s, much of B and C's saving). One in tier 1 would need a `#[cfg(test)]` in `verify.rs`, a production file outside the fence.
-- **Backlog, for the architect:** a cheap guard that `against` and the exit code do not depend on the fab mode, for example a unit test over `verify`'s report assembly, in a work order whose fence allows it.
+- **Why LP2 remains:** no test now runs a *failing* `verify` without a fab flag. A regression that tied the failing exit code to the fab mode would pass CI.
+- **This is the trade the ruling accepted for C**, on C's byte comparison and the independence argument. I did not add a guard. One in tier 2 costs a full `verify` (about 215 CI s, C's whole saving). One in tier 1 would need a `#[cfg(test)]` in `verify.rs`, a production file outside the fence.
+- **Backlog, for the architect:** a cheap guard that the exit code does not depend on the fab mode, in a work order whose fence allows it.
 
 **Smaller findings:**
 - The shared runs' scratch directories are not removed, as the per-test ones were: about 288 KB per A directory, in the container's `/tmp`. Removing a shared directory needs every reader to have finished, which a `OnceLock` cannot tell. Left as is.
@@ -121,38 +126,42 @@ The originals go red, at `board_tier2.rs:405` and `:504` of `cfafdb4`.
 | 43564483946 | `a5be795` | 4,622 | 16:14 | 9:18 | 6:56 |
 | 43562913696 | `79bdfe1` | 4,838 | 15:36 | 9:20 | 6:16 |
 
-**After:**
+**After, with B shared (runs 1 to 4).** These are measurements of a plan that B's revert superseded; they do not count toward the three:
 
 | run | commit | plan | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | suite test-step s | slowest | spread | `tier2_tests_passed` |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 (43570762262) | `ad432a3` | provisional block weights | 8:23 | 9:58 | 11:24 | 8:41 | 9:15 | 8:08 | 8:49 | 10:50 | 3,471 | 11:24 | 3:16 | 90 (floor 90) |
-| 2 (43573333731), counted 1 of 3 | `af2ec01` | refitted | 8:09 | 9:58 | 12:10 | 9:37 | 8:29 | 10:49 | 10:26 | 8:35 | 3,684 | 12:10 | 4:01 | 90 (floor 90) |
-| 3 (43574423322), counted 2 of 3 | `94488c7` | refitted | 8:38 | 9:46 | 11:59 | 10:54 | 8:16 | 8:14 | 10:00 | 11:04 | 3,722 | 11:59 | 3:45 | 90 (floor 90) |
-| 4 (43575564961), counted 3 of 3 | `22525aa` | refitted | 8:31 | 9:26 | 15:10 | 9:46 | 6:57 | 8:50 | 9:07 | 8:43 | 3,624 | 15:10 | 8:13 | 90 (floor 90) |
+| 2 (43573333731) | `af2ec01` | refitted | 8:09 | 9:58 | 12:10 | 9:37 | 8:29 | 10:49 | 10:26 | 8:35 | 3,684 | 12:10 | 4:01 | 90 (floor 90) |
+| 3 (43574423322) | `94488c7` | refitted | 8:38 | 9:46 | 11:59 | 10:54 | 8:16 | 8:14 | 10:00 | 11:04 | 3,722 | 11:59 | 3:45 | 90 (floor 90) |
+| 4 (43575564961) | `22525aa` | refitted | 8:31 | 9:26 | 15:10 | 9:46 | 6:57 | 8:50 | 9:07 | 8:43 | 3,624 | 15:10 | 8:13 | 90 (floor 90) |
 
 - **Run 1 measured the blocks in one process** (libtest's `finished in`): `attribute_seeded` 473.4 s, `against_fab_tier2` 562.2 s, `verify_2k2_tier2` 404.6 s, `verify_47k_tier2` 197.3 s, `campaign_tier2` 36.9 s.
 - **The refit** (`ci/shard.sh` REFIT RULE step 3: a colocated block at its in-process wall time) puts the new blocks at those values. `attribute_seeded` stays at 720, still its worst sample.
 - No per-test weight changed: no test that stays in a shard by name changed its work. The moved tests' lines left with them.
 - The refitted plan: the 720 s block, the 562 s `--against-fab` block, and six shards of 465 s. Run 1 does not count toward the three; runs 2 to 4 are on the refitted plan, and each commit after a run records it here.
 
-**Result: three consecutive runs (2, 3 and 4) on the refitted plan, eight shards, every shard under 20 minutes.**
-- **Slowest shard:** 12:10, 11:59 and 15:10.
-- **Spread:** 4:01, 3:45 and 8:13.
-- **The canary:** 90 tier-2 passes on each run, floor 90. The guard passed and `gates` was green on every run.
-
-**Suite seconds, measured:**
-- **Before:** 4,622 and 4,838 on `main`, mean 4,730.
-- **After:** 3,684, 3,722 and 3,624, mean 3,677.
-- **That is −1,053 s, −22 %.** The census predicted −980 planned seconds (−19 %).
-- **Slowest shard:** before, 16:14 and 15:36; after, 12:10, 11:59 and 15:10.
+Runs 2 to 4 were all green, every shard under 20 minutes (slowest 12:10, 11:59, 15:10). Their suite seconds were 3,684, 3,722 and 3,624.
 
 **Run 4's 15:10 is the `--against-fab` block on a slow runner.**
 - That block took 764.5 s in one process, against 562.2 s on run 1. That is three `verify` runs at about 255 s, the 1.36× runner variance `AET-WO-1908` measured.
 - The other blocks on run 4: `verify_2k2_tier2` 419.7 s, `verify_47k_tier2` 217.7 s, `attribute_seeded` 449.0 s, `campaign_tier2` 43.1 s.
-- **The refit, stated exactly.**
-  - The rule's trigger (one shard past 20 minutes, or a spread past 6 minutes on two runs in a row) has not fired: run 4's spread is the only one past 6 minutes.
-  - Step 3 asks for each block's worst in-process sample over recent runs, and the committed weights are run 1's. The worst over runs 1 to 4: `against_fab_tier2` 764.5 s (weighed 562), `verify_2k2_tier2` 465.8 s (405), `verify_47k_tier2` 249.3 s (197), `campaign_tier2` 54.7 s (37), `attribute_seeded` 473.4 s (720, still its worst sample overall).
-  - Committing those changes the plan and restarts the three-run count. I have left that choice to the architect: at 764 s, the A block would be the plan's maximum, still under 20 minutes with setup.
+- **The refit.** Step 3 asks for each block's worst in-process sample over recent runs. With B's revert changing the plan, and so restarting the count anyway, the blocks now carry their worst samples over runs 1 to 4:
+  - `against_fab_tier2` 765 (run 4's 764.5);
+  - `verify_47k_tier2` 250 (run 2's 249.3);
+  - `campaign_tier2` 55 (run 2's 54.7);
+  - `attribute_seeded` 720 (its worst sample overall; 473.4 in runs 1 to 4).
+
+  `verify_2k2_tier2` is no longer a block. Its two tests carry per-test weights.
+
+**The final plan** (`bash ci/shard.sh assign` on the image's own test list): the 765 s `--against-fab` block alone on one shard, the 720 s `attribute_seeded` block on another, and six shards of 559 s.
+
+**After, on the final plan (B reverted, worst-sample weights): the three counted runs.** Each commit after a run records it.
+
+| run | commit | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | suite test-step s | slowest | spread | `tier2_tests_passed` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+__CI_ROWS2__
+
+__CI_RESULT2__
 
 ## Reduction pass (diff)
 
