@@ -1607,6 +1607,38 @@ mod archived {
             aethelgard_chaos::campaign::tools_of(&lines),
             ["aethelgard", "aethelgard-bridge", "ngspice", "renode"]
         );
+        // A rail alone ran the bridge; ngspice is named only by a crossing.
+        let rail = Record::RailDeclared {
+            droop: aethelgard_chaos::record::Droop {
+                domain: "VDD".into(),
+                floor_millivolts: 2_000,
+                start_ns: 1,
+                fall_ns: 1,
+                hold_ns: 1,
+                rise_ns: 1,
+                source_milliohms: 1,
+                load_milliamps: 0,
+                bor_level: 0,
+            },
+            nominal_millivolts: 3_300,
+            tolerance_permille: 100,
+            decoupling_picofarads: 100_000,
+        };
+        assert_eq!(
+            aethelgard_chaos::campaign::tools_of(&[rail.clone()]),
+            ["aethelgard", "aethelgard-bridge", "renode"]
+        );
+        let crossing = Record::RailCrossing {
+            domain: "VDD".into(),
+            level: "VBOR0_falling".into(),
+            microvolts: 1_620_000,
+            at_ps: 1,
+            falling: true,
+        };
+        assert_eq!(
+            aethelgard_chaos::campaign::tools_of(&[rail, crossing]),
+            ["aethelgard", "aethelgard-bridge", "ngspice", "renode"]
+        );
     }
 
     #[test]
@@ -2256,6 +2288,19 @@ fn the_boot_read_is_whole_and_the_pc_findings_are_the_judges() {
             ("i2c_timeout", "error", 1),
             ("pc_outside_firmware", "error", 1),
             ("pc_outside_firmware", "info", 9),
+        ],
+    );
+    assert_eq!(check_run(&r).unwrap_err(), PC_OUTSIDE);
+    // pc outside and the finding only at info: the judge makes it an error.
+    let mut r = with_pc(0x7000_0000, segs.clone(), false);
+    let last = r.len() - 1;
+    r[last] = verdict(
+        false,
+        &[
+            (PAST, "error", 2),
+            ("device_unmodelled", "info", 1),
+            ("i2c_timeout", "error", 1),
+            ("pc_outside_firmware", "info", 1),
         ],
     );
     assert_eq!(check_run(&r).unwrap_err(), PC_OUTSIDE);

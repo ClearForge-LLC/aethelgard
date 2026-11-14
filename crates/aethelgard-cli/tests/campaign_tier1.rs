@@ -190,7 +190,7 @@ fn toolbox_built(stdout: &str, build: &str) -> Dir {
 [ "$1" = --config ] || exit 97
 /bin/grep -qx 'use-synchronous-logging = true' "$2" || exit 97
 /bin/grep -qx 'log-timestamps-type = Host' "$2" || exit 97
-if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: {build}\n'; exit 0; fi
+if [ "$3" = --version ]; then printf 'Renode v1.17.0\n{build_line}'; exit 0; fi
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
   "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
@@ -199,7 +199,12 @@ esac
 /bin/cat '{out}'
 "#,
         out = out.display(),
-        build = build,
+        // An empty `build` prints no build line at all.
+        build_line = if build.is_empty() {
+            String::new()
+        } else {
+            format!("  build: {build}\\n")
+        },
     );
     let stub = tb.write("renode", body.as_bytes());
     fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
@@ -452,25 +457,28 @@ fn the_header_names_the_renode_build_the_stub_printed_and_replay_reports_it() {
         .collect();
     assert_eq!(reported, header.tools);
 
-    // A Renode that names no build is not one a boot can be archived by.
-    let tb = toolbox_built(&good(), "");
-    let refused = campaign(
-        &cli(Some(BRIDGE_BY_PULL_UP)),
-        &tb.0,
-        &root(),
-        &["scenarios/sentinel-01/pullup-2k2.json"],
-        &work.firmware,
-        &archive.0.join("b"),
-    );
-    let r = lines(&refused);
-    assert_eq!(refused.status.code(), Some(4), "{r:?}");
-    assert!(
-        r.last().unwrap()["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("named no build"),
-        "{r:?}"
-    );
+    // A Renode that names no build, or a blank one, is not one a boot can
+    // be archived by.
+    for (build, at) in [("", "b"), ("   ", "c")] {
+        let tb = toolbox_built(&good(), build);
+        let refused = campaign(
+            &cli(Some(BRIDGE_BY_PULL_UP)),
+            &tb.0,
+            &root(),
+            &["scenarios/sentinel-01/pullup-2k2.json"],
+            &work.firmware,
+            &archive.0.join(at),
+        );
+        let r = lines(&refused);
+        assert_eq!(refused.status.code(), Some(4), "build `{build}`: {r:?}");
+        assert!(
+            r.last().unwrap()["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("named no build"),
+            "build `{build}`: {r:?}"
+        );
+    }
 }
 
 #[test]
