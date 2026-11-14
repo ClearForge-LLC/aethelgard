@@ -694,3 +694,92 @@ An unmodelled SPI device keeps its wiring, is commented, and is listed in the he
   - **`cs-never`:** a mutant of `board.rs` whose select drives `PA0` high, software, `S3`.
 
 **The trace's other records are unchanged.** Kind 19's probe still reads the first check, U2's.
+
+## Measured, at the build
+
+**Tier 1 (host):** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (also with `--features aethelgard-cli/with-tools`) and `cargo test --workspace` are all clean.
+
+**Tier 2 (the pinned image, under `spike/4200/img.sh` then `~/.cache/aet-4200`'s copy; every container read back `memory.swap.max=0`, `pids.max=max`):**
+
+| Binary | Result | Note |
+|---|---|---|
+| `twin_tier2` | 25/25 | 3 new |
+| `campaign_tier2` | 8/8 | Both reference droops hold with the SPI read in place: `droop-bor3` resets once and recovers, with U4 re-witnessed after the release |
+| `attribute_seeded` | 12/12 | All 24 cases attribute as their manifest says: `spi-absent-u4` → `E2` (evidence kind 22), `cs-never` → `S3` |
+| `board_tier2` | 18/18 | `verify` now runs four `prove` harnesses |
+| `with_tools` | 23/23 | |
+| `adversarial_1301_tools` | 6/6 | |
+| `adversarial_1302_tools` | 2/2 | |
+
+**Each new tier-2 test alone, in the image** (`ci/test-weights.tsv`, local seconds, not CI's): 3.07, 6.24, 3.40 s. `TIER2_MIN` is 91 + 3 = 94.
+
+**§7.3 against `main`** (`~/.cache/aet-4200/baseline`, each side's own CLI, bridge and reference firmware; all 13 scenarios, every replay keyed by scenario, the static `simulate` at 100 ms):
+- **Every campaign line and every replay** is identical but for:
+  - `event_count` (+2: kinds 21 and 22);
+  - the state hash;
+  - the firmware and topology artifacts.
+
+  Every verdict and every finding is unchanged.
+- **The new seeded scenario `spi-absent-u4`** fails as declared: `spi_identity_mismatch`, `spi_transaction_unwitnessed`.
+- **The static `simulate`:**
+  - the verdict, every I2C field, the registers and `icsr` are identical;
+  - it gains `boot.spi` and `boot.spi_witness`;
+  - `boot.pc` moved from `0x08000594` to `0x080006e8`, the longer firmware's loop;
+  - `machine.peripherals` lists `spi1mux` and `u4` beside `spi1`;
+  - the platform's and firmware's hashes moved.
+
+**The spike's outputs**, deleted with `spike/4200/` at this build (sha256 as committed, first 12):
+
+| File | sha256 |
+|---|---|
+| `out/caps.log` | `e51b7448d3d9` |
+| `out/fw-pass1.txt` | `f6723ea4ce19` |
+| `out/fw.txt` | `e4355a4d1c0f` |
+| `out/s2.jsonl` | `1eff191b6fc9` |
+| `out/s2-pass1.jsonl` | `339cc1ce671b` |
+| `out/s7.jsonl` | `1c3ab3f5c245` |
+| `platforms/direct-cs.repl` | `09cfd39a09c1` |
+| `platforms/direct.repl` | `4b369f244374` |
+| `platforms/mux-absent.repl` | `df3041c104a2` |
+| `platforms/mux.repl` | `b38cce5063b9` |
+| `platforms/none.repl` | `9d12fe3256ee` |
+| `s1-census.md` | `596fa5f0ee7e` |
+
+A copy is in `~/.cache/aet-4200/spike-copy`. Every measurement the build relies on is now a Rust test (`twin_tier2`, `campaign_tier2`, `attribute_seeded`).
+
+## Deviations and decisions, each named
+
+1. **`SolvedTopology::validate` now folds references** (`references_distinct`). `AET-WO-2204` measured it not doing so. Two `twin` tests that expected the emitter's `InvalidDeviceName` for `U2`/`u2` now get `InvalidTopology`, earlier and stricter.
+2. **The multiplexer names (`spi1mux`) are reserved for every reference, I2C ones too**, as is the `_memory` rule: a name the platform declares is reserved whatever bus the reference is on.
+3. **`spi_device_absent` needs scenario `schema_version` 2,** admitted as 2301 admitted the droop; no version 3.
+4. **The order of witnesses is judged per bus.** A cross-bus order would have renamed `i2c_witness_out_of_order` on any board with SPI.
+5. **A status counts only on its own bus,** and status names come from each check's judgement.
+6. **The board crate** (the svd-hal subagent's decisions, kept):
+   - `init` leaves `SPE` off, and each transfer enables and disables it (RM0433 §50.11.2: `TSIZE` is written with `SPE` clear);
+   - `DSIZE` = 7 is set once in `init`;
+   - `CR1`, `CFG1` and `CFG2` are written read-modify-write;
+   - `SPI_MAX_FRAMES` = 8;
+   - no wait for `EOT` before `EOTC`;
+   - the device enum's variants are the references upper-cased;
+   - `SharedChipSelect` refuses one pin as two devices' chip select.
+
+   The read-modify-write and `SPE`-off choices were unmeasured when made. Every tier-2 boot above measures them on Renode.
+7. **`edit` in `twin_tier2` now requires its find to occur exactly once.** `a_value_one_bit_off_fails_as_an_identity_mismatch`'s find (`fold(0u32,`) matched the SPI read's fold too and mutated both, so it now names `buf0`.
+8. **The ICM-20948 fixture is generated through the library,** not `aethelgard generate`: the vendored KiCad libraries have no ICM-20948 symbol, and eda refuses the part.
+9. **Kind 22's generator report names the board crate when the chip select is the wrong field,** and the firmware otherwise. The board crate's transfer drives the selects; the firmware passes the command and keeps the record.
+
+## Findings for the architect (build)
+
+- **F10 · The ICM-20948's `VDDIO` is 1.71 to 1.95 V · DS-000189 §3.4 · high for `4500` · read.** On a 3.3 V SPI bus it needs a level shifter, or a 1.8 V I/O domain. The fixture is the twin's only; the table's `supply_millivolts` holds `VDD` (1.71 to 3.6 V). Recommendation: `4500`'s IMU choice weighs it.
+- **F11 · The W25Q64JV's JEDEC device ID depends on the ordering code · W25Q64JV Rev J §8.1 · medium · read.**
+  - The IQ and JQ parts answer `EF 40 17`; the IM and JM parts answer `EF 70 17`.
+  - The table holds the IQ/JQ value, which the work order and the reference assume.
+  - Recommendation: a specification names its ordering code, or the table's part name does (`W25Q64JVxIQ`).
+- **F12 · The I2C strap address lists stay in `aethelgard-eda` `schematic.rs`,** beside each strap's own mapping (which pin to which rail gives which address). The table's `bus.i2c.addresses` lists them too, cited, so two sources hold one fact. Recommendation: `schematic.rs` checks its strap targets against the table (a reduction for the next eda work order). Not done here: it is outside the fence.
+- **F13 · One container ran without the swap cap.** The svd-hal subagent's Kani runs used `podman run --memory=24g`. Writing `0` into the container's `memory.swap.max` was denied to it, and it read back `25769803776`. The host's swap was full, so swap use was unlikely, but the cap rule was not met for those runs. Every container of mine read back `memory.swap.max=0`.
+- **F14 · `GenericSpiFlash`'s `0x9F` reply beyond the third byte is Renode's, not Winbond's** (`10 40 00`). The read is exactly the table's 3 bytes (F7), so nothing judges those bytes.
+- **F15 · TMP117 `Device_ID`'s low nibble is a revision field** (`Rev[3:0]`, `R-x`, SNOSD82D §7.6.11). The table's `0x0117` is the value at reset of the current revision. The TMP117 is unmodelled, so nothing judges it today.
+- **F16 · The multiplexer's lines are collected per controller, not per read.** A device's `unrouted` evidence holds every such line on its controller during the run, another device's reads included. `E2` requires `not connected` at the device's own address, so another device's absence cannot make it electrical.
+  - A `not connected` line for another address is therefore no evidence (`I4`, tested). The I2C path treats a wrong address as software; SPI does not, because the line cannot be tied to this device's read.
+  - Recommendation: per-read windows (markers between reads) if `P4` puts two read devices on one bus.
+- **F17 · PR #118's title still describes the spike.** `gh-write` has no command to edit a PR, so the builder cannot retitle it. Proposed title: **"AET-WO-4200: SPI devices end to end — parts as data, a witnessed SPI read behind a chip-select multiplexer, a static SPI fault"**.
