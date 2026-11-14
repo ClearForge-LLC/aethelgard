@@ -1246,9 +1246,9 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     }
     // What judged the boot, as each tool reported it (`AET-WO-2205` §1.1).
     if let Some(build) = build {
-        v.tools
-            .push(("aethelgard", env!("CARGO_PKG_VERSION").to_owned()));
-        v.tools.push(("renode", build));
+        use aethelgard_chaos::campaign::{ENGINE, RENODE};
+        v.tools.push((ENGINE, env!("CARGO_PKG_VERSION").to_owned()));
+        v.tools.push((RENODE, build));
     }
     if let Some((records, faults)) = analog {
         v.analog = Some(records);

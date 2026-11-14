@@ -398,6 +398,25 @@ mod tests {
         );
     }
 
+    /// `AET-WO-2205` §1.5: kind 10 archives the executable segments, sorted,
+    /// at most 16; a firmware with more is refused before it boots.
+    #[test]
+    fn executable_segments_are_sorted_and_at_most_sixteen() {
+        let at = |k: u32| 0x0800_0000 + 0x100 * k;
+        let segs: Vec<(u32, u32, &[u8], u32)> = (0..16)
+            .rev()
+            .map(|k| (at(k), at(k), &b"abcd"[..], 4))
+            .collect();
+        let image = check(&elf(&segs), &memory(), WORD).unwrap();
+        let want: Vec<(u64, u64)> = (0..16)
+            .map(|k| (at(k).into(), (at(k) + 4).into()))
+            .collect();
+        assert_eq!(image.executable, want, "sorted by address");
+        let segs: Vec<(u32, u32, &[u8], u32)> =
+            (0..17).map(|k| (at(k), at(k), &b"abcd"[..], 4)).collect();
+        assert_eq!(kind(&elf(&segs)), "MalformedFirmware", "17 segments");
+    }
+
     #[test]
     fn overlapping_segments_are_refused_by_their_memory_not_their_file_bytes() {
         assert_eq!(

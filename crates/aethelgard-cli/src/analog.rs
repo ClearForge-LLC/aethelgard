@@ -31,8 +31,9 @@ use serde_json::{Value, json};
 use crate::run;
 use crate::verdict::{AnalogRecord, FaultRecord, Finding};
 
-/// The bridge binary, found in this executable's own directory.
-pub const BRIDGE: &str = "aethelgard-bridge";
+/// The bridge binary, found in this executable's own directory: the name
+/// the archive header gives it, too.
+pub const BRIDGE: &str = campaign::BRIDGE;
 
 /// The ngspice release the bridge is pinned to; an answer naming another is refused.
 pub const NGSPICE: &str = "44.2";
@@ -162,7 +163,11 @@ pub fn pass(
         .filter(|d| !held.lines.iter().any(|h| h.net == d.net))
         .collect();
     // Each record states its bus's declared speed beside the deck's window
-    // (`AET-WO-2205` §1.3): a line whose bus declares none is not measured.
+    // (`AET-WO-2205` §1.3).
+    // belt-and-suspenders: `SolvedTopology::validate` (run by `decks`) already
+    // refuses a line whose bus has no ceiling (`UnknownBus`) and speeds that
+    // name other buses than the ceilings (`SpeedBusMismatch`), so this cannot
+    // fire today; it keeps an IR change from becoming a panic at `declared[bus]`.
     if let Some(d) = decks
         .iter()
         .find(|d| !topology.i2c_speeds.contains_key(&d.bus))
@@ -243,7 +248,7 @@ fn measure(
         answers(decks, stdout).map_err(|e| run::Stop::tool_error(BRIDGE, e))?;
     let mut pass = judge(decks, &measured, declared);
     pass.sandbox = Some(out.sandbox);
-    pass.tools = vec![(BRIDGE, identity), ("ngspice", ngspice)];
+    pass.tools = vec![(BRIDGE, identity), (campaign::NGSPICE, ngspice)];
     Ok(pass)
 }
 
@@ -327,7 +332,7 @@ pub fn rail(rail: &Rail, span_ns: u64, dir: &Path, status: &Path) -> Result<Solv
             .ok()
             .and_then(|v| v.get("ngspice").and_then(Value::as_str).map(str::to_owned))
             .ok_or_else(|| fail(format!("`{first}` names no ngspice")))?;
-        tools.push(("ngspice", named));
+        tools.push((campaign::NGSPICE, named));
     }
     Ok(Solved {
         crossings,
