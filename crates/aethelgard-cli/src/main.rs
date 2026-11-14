@@ -1093,7 +1093,10 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     // through the bridge included (`AET-WO-2204` D4, F6).
     let config = scratch.tool.join(renode::CONFIG_FILE);
     fs::write(&config, renode::CONFIG).map_err(|e| {
-        run::Stop::unusable("renode", format!("cannot write Renode's configuration: {e}"))
+        run::Stop::unusable(
+            "renode",
+            format!("cannot write Renode's configuration: {e}"),
+        )
     })?;
     let with_config = |rest: &[&str]| {
         let mut a = run::args(["--config".as_ref(), config.as_os_str()]);

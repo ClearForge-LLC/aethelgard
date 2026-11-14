@@ -75,8 +75,12 @@ fn elf_at(paddr: u32, code: &[u8], machine: u16) -> Vec<u8> {
     b
 }
 
+/// 64 bytes with one `yield; b.n` self-loop at `0x08000010`, where the
+/// transcripts leave the core (`AET-WO-2204` D3).
 fn elf() -> Vec<u8> {
-    elf_at(0x0800_0000, &[0u8; 64], 40)
+    let mut code = [0u8; 64];
+    code[0x10..0x14].copy_from_slice(&[0x10, 0xBF, 0xFD, 0xE7]);
+    elf_at(0x0800_0000, &code, 40)
 }
 
 /// The BME280's line of the platform listing.
@@ -96,8 +100,10 @@ const GOOD_REGISTERS: [&str; 7] = [
     "0x00001000",
 ];
 
-/// `CR2` (`SADD` 0x76 << 1, `RD_WRN`, `NBYTES` 1, `AUTOEND`) and `TXDR` (0xD0).
-const GOOD_CONTROLLER: [&str; 2] = ["0x020104EC", "0x000000D0"];
+/// What Renode 1.17.0's BME280 logs for U2's identity read (`AET-WO-2204`
+/// S1, measured).
+const GOOD_WITNESS: &str =
+    "[03:07:39.3762] [NOISY] i2c1.u2: Write D0\n[03:07:39.3765] [NOISY] i2c1.u2: Read 60\n";
 
 /// The record a firmware that read U2's ID register (0xD0) as 0x60 leaves.
 const GOOD_RECORD: [&str; 2] = ["0x22020000", "0x00000060"];
@@ -108,12 +114,13 @@ const TXIS_TIMEOUT: [&str; 2] = ["0x22020001", "0x00000060"];
 /// 100 ms of a 100 MIPS core, in the transcript's hex.
 const INSTRUCTIONS: &str = "0x0000000000989680";
 
-/// A transcript: the echoed command line, the reads between the markers,
-/// then `listing`.
-fn transcript(reads: &[&str], listing: &str) -> String {
+/// A transcript: the echoed command line, the run's `log`, the reads between
+/// the markers, then `listing`.
+fn transcript(log: &str, reads: &[&str], listing: &str) -> String {
     let mut s = String::from(
         "(monitor) emulation SetSeed 2100;  echo \"AETHELGARD-BOOT-BEGIN\";  echo \"AETHELGARD-BOOT-END\"\n",
     );
+    s.push_str(log);
     s.push_str("AETHELGARD-BOOT-BEGIN\n");
     for r in reads {
         s.push_str(r);
@@ -130,29 +137,34 @@ fn boot_reads(record: [&str; 2]) -> Vec<String> {
         "0x2100B007".to_owned(),
         INSTRUCTIONS.to_owned(),
         "0x00000064".to_owned(),
-        // Inside the synthetic ELF's one executable segment.
+        // On the synthetic ELF's self-loop.
         "0x8000010".to_owned(),
+        // ICSR: thread mode.
+        "0x00000800".to_owned(),
     ];
     v.extend(GOOD_REGISTERS.iter().map(|r| (*r).to_owned()));
     v.extend(record.iter().map(|r| (*r).to_owned()));
-    v.extend(GOOD_CONTROLLER.iter().map(|r| (*r).to_owned()));
     v
 }
 
-fn text(record: [&str; 2], listing: &str) -> String {
+fn text(log: &str, record: [&str; 2], listing: &str) -> String {
     let r = boot_reads(record);
-    transcript(&r.iter().map(String::as_str).collect::<Vec<_>>(), listing)
+    transcript(
+        log,
+        &r.iter().map(String::as_str).collect::<Vec<_>>(),
+        listing,
+    )
 }
 
-/// A boot that passes: the BME280 is on the platform and answers.
+/// A boot that passes: the BME280 is on the platform, answers, and logs it.
 fn good() -> String {
-    text(GOOD_RECORD, CPU_LISTING)
+    text(GOOD_WITNESS, GOOD_RECORD, CPU_LISTING)
 }
 
 /// A boot on a platform whose faulted bus declares no BME280: the read of
-/// U2 times out at TXIS.
+/// U2 times out at TXIS, and no model logs anything.
 fn faulted() -> String {
-    text(TXIS_TIMEOUT, &CPU_LISTING.replace(U2_LINE, ""))
+    text("", TXIS_TIMEOUT, &CPU_LISTING.replace(U2_LINE, ""))
 }
 
 /// A `renode` stub that answers `--version`, refuses (exit 99) a command
@@ -163,9 +175,12 @@ fn toolbox(stdout: &str) -> Dir {
     let out = tb.write("renode.out", stdout.as_bytes());
     let body = format!(
         r#"#!/bin/sh
-if [ "$1" = --version ]; then printf 'Renode v1.17.0\n'; exit 0; fi
-case "$5" in
-  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; cpu VectorTableOffset 0x08000000; emulation RunFor \"0.100000000\"; logLevel 3; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+[ "$1" = --config ] || exit 97
+[ "$(/bin/cat "$2")" = "$(printf '[general]\nuse-synchronous-logging = true')" ] || exit 97
+if [ "$3" = --version ]; then printf 'Renode v1.17.0\n'; exit 0; fi
+printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
+case "$7" in
+  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 /bin/cat '{out}'
@@ -2125,34 +2140,53 @@ if [ "$1" = --renode ]; then shift; exec "$@"; fi
 printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.4}' '{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","rise_30_70_ns":186.4}'
 "#;
 
+/// When U2's witness lines appear in a droop boot's log: since the release
+/// and before the probe (a firmware that recovered in the bound), only after
+/// the probe (one that talked to the bus late), or never.
+#[derive(Clone, Copy)]
+enum Witness {
+    BeforeProbe,
+    AfterProbe,
+    Never,
+}
+
 /// A `renode` stub for a droop boot: it refuses (exit 98) anything but
-/// `--disable-gui --console --plain -e <one line>`, refuses (exit 99) a command line without the rendered reset and its
-/// probe, and prints the probe `probe` then a boot that ran 9,877,201
-/// instructions after the release.
-fn droop_toolbox(probe: [&str; 5]) -> Dir {
-    droop_toolbox_then(probe, "")
+/// `--config <file> --disable-gui --console --plain -e <one line>`, refuses
+/// (exit 99) a command line without the rendered reset, its release marker
+/// and its probe, and prints the release, U2's witness where `witness` says,
+/// the probe `probe`, then a boot that ran 9,877,201 instructions after the
+/// release.
+fn droop_toolbox(probe: [&str; 3], witness: Witness) -> Dir {
+    droop_toolbox_then(probe, witness, "")
 }
 
 /// As [`droop_toolbox`], running `then` after its output.
-fn droop_toolbox_then(probe: [&str; 5], then: &str) -> Dir {
+fn droop_toolbox_then(probe: [&str; 3], witness: Witness, then: &str) -> Dir {
     let tb = Dir::new("tb-droop");
     let mut reads = boot_reads(GOOD_RECORD);
     reads[1] = "0x000000000096B6D1".to_owned();
+    let (before, after) = match witness {
+        Witness::BeforeProbe => (GOOD_WITNESS, ""),
+        Witness::AfterProbe => ("", GOOD_WITNESS),
+        Witness::Never => ("", ""),
+    };
     let mut out = format!(
-        "AETHELGARD-PROBE-BEGIN-0\n{}\nAETHELGARD-PROBE-END-0\n",
+        "AETHELGARD-RELEASE-0\n{before}AETHELGARD-PROBE-BEGIN-0\n{}\nAETHELGARD-PROBE-END-0\n",
         probe.join("\n")
     );
     out.push_str(&transcript(
+        after,
         &reads.iter().map(String::as_str).collect::<Vec<_>>(),
         CPU_LISTING,
     ));
     let out = tb.write("renode.out", out.as_bytes());
     let body = format!(
         r#"#!/bin/sh
-if [ "$1" = --version ]; then printf 'Renode v1.17.0\n'; exit 0; fi
-[ $# = 5 ] || exit 98
-case "$5" in
-  *"emulation RunFor \"0.001014430\"; machine Reset; "*"cpu IsHalted true; "*"emulation RunFor \"0.000213550\"; cpu IsHalted false; emulation RunFor \"0.000000010\"; emulation RunFor \"0.000099990\"; echo \"AETHELGARD-PROBE-BEGIN-0\""*) ;;
+[ "$1" = --config ] || exit 97
+if [ "$3" = --version ]; then printf 'Renode v1.17.0\n'; exit 0; fi
+[ $# = 7 ] || exit 98
+case "$7" in
+  *"emulation RunFor \"0.001014430\"; machine Reset; "*"cpu IsHalted true; "*"emulation RunFor \"0.000213550\"; cpu IsHalted false; echo \"AETHELGARD-RELEASE-0\"; emulation RunFor \"0.000000010\"; emulation RunFor \"0.000099990\"; echo \"AETHELGARD-PROBE-BEGIN-0\""*) ;;
   *) exit 99;;
 esac
 /bin/cat '{out}'
@@ -2170,13 +2204,10 @@ esac
 /// command line, so its monitor history is one line whatever the schedule.
 #[test]
 fn a_droop_scenario_renders_its_reset_through_the_bridge_in_one_command_line() {
-    let tb = droop_toolbox([
-        "0x2100B007",
-        "0x22020000",
-        "0x00000060",
-        GOOD_CONTROLLER[0],
-        GOOD_CONTROLLER[1],
-    ]);
+    let tb = droop_toolbox(
+        ["0x2100B007", "0x22020000", "0x00000060"],
+        Witness::BeforeProbe,
+    );
     let work = Work::new();
     let archive = Dir::new("archive");
     let out = campaign(
@@ -2212,13 +2243,10 @@ fn a_droop_scenario_renders_its_reset_through_the_bridge_in_one_command_line() {
 /// fails the run (`brownout_unrecovered`), and replay agrees with the verdict.
 #[test]
 fn a_firmware_that_does_not_recover_in_the_bound_fails_and_replays() {
-    let tb = droop_toolbox([
-        "0x00000000",
-        "0xFFFFFFFF",
-        "0xFFFFFFFF",
-        "0x00000000",
-        "0x00000000",
-    ]);
+    let tb = droop_toolbox(
+        ["0x00000000", "0xFFFFFFFF", "0xFFFFFFFF"],
+        Witness::AfterProbe,
+    );
     let work = Work::new();
     let archive = Dir::new("archive");
     let out = campaign(
@@ -2293,31 +2321,36 @@ fn a_stale_or_impostor_bridge_is_refused() {
 
 /// `AET-WO-2301` adversarial F1: a firmware that writes its boot word and an
 /// OK record before it has talked to the bus has not recovered. The probe
-/// reads the controller, which only a transfer sets after a reset.
+/// reads the device's own log since the release, which only a transfer
+/// writes (`AET-WO-2204`); the transfer comes after the probe.
 #[test]
-fn a_record_that_claims_ok_without_the_controller_showing_a_transfer_is_unrecovered() {
-    let tb = droop_toolbox([
-        "0x2100B007",
-        "0x22020000",
-        "0x00000060",
-        "0x00000000",
-        "0x00000000",
-    ]);
-    let work = Work::new();
-    let archive = Dir::new("archive");
-    let out = campaign(
-        &cli(Some(DROOP_BRIDGE)),
-        &tb.0,
-        &root(),
-        &["scenarios/sentinel-01/droop-bor3.json"],
-        &work.firmware,
-        &archive.0.join("a"),
-    );
-    let all = lines(&out);
-    assert_eq!(out.status.code(), Some(1), "{all:?}");
-    assert_eq!(all[0]["findings"], json!(["brownout_unrecovered"]));
-    let run = PathBuf::from(all[0]["run"].as_str().unwrap());
-    assert_eq!(lines(&replay(&tb.0, &run))[0]["verdict"], "fail");
+fn a_record_that_claims_ok_without_the_device_logging_a_transfer_is_unrecovered() {
+    // Late: the transfer comes after the probe; the final boot is witnessed.
+    // Never: no transfer at all; the final boot is unwitnessed too.
+    for (witness, findings) in [
+        (Witness::AfterProbe, json!(["brownout_unrecovered"])),
+        (
+            Witness::Never,
+            json!(["brownout_unrecovered", "i2c_transaction_unwitnessed"]),
+        ),
+    ] {
+        let tb = droop_toolbox(["0x2100B007", "0x22020000", "0x00000060"], witness);
+        let work = Work::new();
+        let archive = Dir::new("archive");
+        let out = campaign(
+            &cli(Some(DROOP_BRIDGE)),
+            &tb.0,
+            &root(),
+            &["scenarios/sentinel-01/droop-bor3.json"],
+            &work.firmware,
+            &archive.0.join("a"),
+        );
+        let all = lines(&out);
+        assert_eq!(out.status.code(), Some(1), "{all:?}");
+        assert_eq!(all[0]["findings"], findings);
+        let run = PathBuf::from(all[0]["run"].as_str().unwrap());
+        assert_eq!(lines(&replay(&tb.0, &run))[0]["verdict"], "fail");
+    }
 }
 
 /// `AET-WO-2301` D3 and the runner's droop rules: a droop off the MCU's
@@ -2364,13 +2397,8 @@ fn a_droop_the_runner_cannot_render_is_refused_before_any_run() {
 fn a_droop_boot_killed_at_a_bound_is_a_verdict_and_replays() {
     let hog = "x=$(/usr/bin/yes | /usr/bin/head -c 1300000000); /bin/sleep 60";
     let tb = droop_toolbox_then(
-        [
-            "0x2100B007",
-            "0x22020000",
-            "0x00000060",
-            GOOD_CONTROLLER[0],
-            GOOD_CONTROLLER[1],
-        ],
+        ["0x2100B007", "0x22020000", "0x00000060"],
+        Witness::BeforeProbe,
         hog,
     );
     // The stub prints its transcript, then hogs: the reaper's kill discards it.

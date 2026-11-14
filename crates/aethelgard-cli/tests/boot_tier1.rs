@@ -1072,16 +1072,43 @@ fn a_witness_that_shows_the_read_passes_and_is_reported() {
 fn any_witness_but_the_model_s_exact_lines_fails() {
     let w = |a: &str, b: &str| format!("[03:07:39.3762] {a}\n[03:07:39.3765] {b}\n");
     for (log, what) in [
-        (String::new(), "no line at all: a record written with no transfer"),
-        (w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Write D0"), "no read"),
-        (w("[NOISY] i2c1.u2: Write D1", "[NOISY] i2c1.u2: Read 60"), "another register"),
-        (w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 61"), "another value"),
-        (w("[NOISY] i2c1.u2: Read 60", "[NOISY] i2c1.u2: Write D0"), "out of order"),
-        (w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60 (2)"), "a folded line"),
-        (w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 600"), "a longer value"),
-        (w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60 "), "a trailing space"),
         (
-            format!("{GOOD_WITNESS}{}", w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60")),
+            String::new(),
+            "no line at all: a record written with no transfer",
+        ),
+        (
+            w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Write D0"),
+            "no read",
+        ),
+        (
+            w("[NOISY] i2c1.u2: Write D1", "[NOISY] i2c1.u2: Read 60"),
+            "another register",
+        ),
+        (
+            w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 61"),
+            "another value",
+        ),
+        (
+            w("[NOISY] i2c1.u2: Read 60", "[NOISY] i2c1.u2: Write D0"),
+            "out of order",
+        ),
+        (
+            w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60 (2)"),
+            "a folded line",
+        ),
+        (
+            w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 600"),
+            "a longer value",
+        ),
+        (
+            w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60 "),
+            "a trailing space",
+        ),
+        (
+            format!(
+                "{GOOD_WITNESS}{}",
+                w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60")
+            ),
             "a second read",
         ),
     ] {
@@ -1091,7 +1118,10 @@ fn any_witness_but_the_model_s_exact_lines_fails() {
         let m = finding(&v, "i2c_transaction_unwitnessed").unwrap()["message"]
             .as_str()
             .unwrap();
-        assert!(m.contains("U2") && m.contains("0x76") && m.contains("i2c1.u2"), "{m}");
+        assert!(
+            m.contains("U2") && m.contains("0x76") && m.contains("i2c1.u2"),
+            "{m}"
+        );
     }
     // Witness-shaped text that is not a whole log line of the device's own is
     // not a witness at all: the read is unwitnessed.
@@ -1194,7 +1224,9 @@ fn a_core_handling_an_exception_fails_naming_vectactive() {
     ));
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["core_in_exception"], "{v}");
-    let m = finding(&v, "core_in_exception").unwrap()["message"].as_str().unwrap();
+    let m = finding(&v, "core_in_exception").unwrap()["message"]
+        .as_str()
+        .unwrap();
     assert!(m.contains("VECTACTIVE") && m.contains("15"), "{m}");
     // Bits above VECTACTIVE do not count.
     r[4] = "0x0400F800".into();

@@ -540,7 +540,10 @@ fn sentinels(lines: &[&str], prefix: &str, n: usize) -> Result<Vec<usize>, Strin
     let mut at = Vec::with_capacity(n);
     for k in 0..n {
         let want = format!("{prefix}{k}");
-        match (0..lines.len()).filter(|&i| lines[i] == want).collect::<Vec<_>>()[..] {
+        match (0..lines.len())
+            .filter(|&i| lines[i] == want)
+            .collect::<Vec<_>>()[..]
+        {
             [i] if at.last().is_none_or(|&p| p < i) => at.push(i),
             _ => return Err(format!("renode did not print `{want}` once, in order")),
         }
@@ -596,11 +599,17 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         )));
     };
     if end < begin {
-        return Err(untrusted("renode printed the end marker before the begin marker".into()));
+        return Err(untrusted(
+            "renode printed the end marker before the begin marker".into(),
+        ));
     }
     // The droop's sentinels all come before the reads; the probes' own
     // blocks hold the judge's reads, not the run's log (F3).
-    let released = plan.resets.iter().filter(|r| r.released_ns.is_some()).count();
+    let released = plan
+        .resets
+        .iter()
+        .filter(|r| r.released_ns.is_some())
+        .count();
     let releases = sentinels(&lines[..begin], RELEASE, released).map_err(untrusted)?;
     let probe_begins = sentinels(&lines[..begin], PROBE_BEGIN, released).map_err(untrusted)?;
     let probe_ends = sentinels(&lines[..begin], PROBE_END, released).map_err(untrusted)?;
@@ -633,7 +642,11 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         } else if !is_log_line(line) {
             return Err(untrusted(format!(
                 "`{}` between the markers is neither a read nor a whole log line",
-                line.escape_debug().to_string().chars().take(120).collect::<String>()
+                line.escape_debug()
+                    .to_string()
+                    .chars()
+                    .take(120)
+                    .collect::<String>()
             )));
         }
     }
@@ -734,7 +747,10 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
     }
     // The count of such lines differs run to run under a flood (`AET-WO-2301`
     // F10), and Renode's timestamp always does: neither is in the message.
-    if let Some(first) = run_log.iter().find(|l| LOCKED.iter().any(|w| l.contains(w))) {
+    if let Some(first) = run_log
+        .iter()
+        .find(|l| LOCKED.iter().any(|w| l.contains(w)))
+    {
         findings.push(Finding::plain(
             "locked_peripheral_access",
             format!(
@@ -991,7 +1007,10 @@ fn probes_in(text: &str, dropped: bool, plan: &BootPlan<'_>) -> Result<Vec<Probe
         for line in &lines[b + 1..e] {
             match value(line) {
                 Some(v) => words.push(u32::try_from(v).map_err(|_| {
-                    untrusted(format!("probe {k}: `{}` is not a word", line.escape_debug()))
+                    untrusted(format!(
+                        "probe {k}: `{}` is not a word",
+                        line.escape_debug()
+                    ))
                 })?),
                 None if is_log_line(line) => {}
                 None => {
@@ -1163,7 +1182,8 @@ mod tests {
         let resets = bor3();
         let p = plan(&image, &resets);
         let lines = |l: &[&str]| l.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
-        let w = "[21:06:58.1004] [NOISY] i2c1.u2: Write D0\n[21:06:58.1005] [NOISY] i2c1.u2: Read 60";
+        let w =
+            "[21:06:58.1004] [NOISY] i2c1.u2: Write D0\n[21:06:58.1005] [NOISY] i2c1.u2: Read 60";
         let block = |log: &str, rows: &[&str]| {
             format!(
                 "x\nAETHELGARD-RELEASE-0\n{log}\nAETHELGARD-PROBE-BEGIN-0\n{}\nAETHELGARD-PROBE-END-0\n",
@@ -1175,7 +1195,10 @@ mod tests {
             at_ns: 1_327_980,
             boot_word: 0x2100_B007,
             record: Some((0x2202_0000, 0x60)),
-            witness: Some(lines(&["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"])),
+            witness: Some(lines(&[
+                "[NOISY] i2c1.u2: Write D0",
+                "[NOISY] i2c1.u2: Read 60",
+            ])),
         }];
         assert_eq!(probes_in(&block(w, &good), false, &p).unwrap(), want);
         // A whole Renode log line inside the block is the judge's reads',
@@ -1187,7 +1210,10 @@ mod tests {
         );
         assert_eq!(probes_in(&block(w, &logged), false, &p).unwrap(), want);
         // Past the filter's budget the witness is unread, never guessed.
-        assert_eq!(probes_in(&block(w, &good), true, &p).unwrap()[0].witness, None);
+        assert_eq!(
+            probes_in(&block(w, &good), true, &p).unwrap()[0].witness,
+            None
+        );
         // Lines before the release are the boot the reset ended, not this one.
         let early = format!("{w}\n{}", block("", &good));
         assert_eq!(
@@ -1202,7 +1228,14 @@ mod tests {
             block(w, &["0x2100B007", "0x22020000", "0x20000008\""]),
             block(w, &["0x2100B007", "0x22020000", " [WARNING] 0x60"]),
             // A log line split below line level (F2) is not a whole line.
-            block(w, &["0x2100B007", "0x22020000", "0x000000[21:06:58.1004] [WARNING] x"]),
+            block(
+                w,
+                &[
+                    "0x2100B007",
+                    "0x22020000",
+                    "0x000000[21:06:58.1004] [WARNING] x",
+                ],
+            ),
             format!("{}AETHELGARD-PROBE-BEGIN-1\n", block(w, &good)),
             "AETHELGARD-PROBE-END-0\n0x2100B007\nAETHELGARD-PROBE-BEGIN-0\n".to_owned(),
             // No release marker, or two.
@@ -1234,8 +1267,14 @@ mod tests {
             witness_shaped("[21:06:58.1004] [NOISY] i2c1.u2: Read 60 (2)", "i2c1.u2"),
             Some("[NOISY] i2c1.u2: Read 60 (2)")
         );
-        assert_eq!(witness_shaped("[21:06:58.1004] [NOISY] i2c1.u20: Read 60", "i2c1.u2"), None);
-        assert_eq!(witness_shaped("[21:06:58.1004] [INFO] i2c1.u2: Read 60", "i2c1.u2"), None);
+        assert_eq!(
+            witness_shaped("[21:06:58.1004] [NOISY] i2c1.u20: Read 60", "i2c1.u2"),
+            None
+        );
+        assert_eq!(
+            witness_shaped("[21:06:58.1004] [INFO] i2c1.u2: Read 60", "i2c1.u2"),
+            None
+        );
         assert!(is_log_line("[21:06:58.1004] [WARNING] sysbus: x"));
         assert!(!is_log_line("[21:06:58.1004] WARNING sysbus: x"));
     }

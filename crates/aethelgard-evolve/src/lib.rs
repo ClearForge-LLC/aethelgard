@@ -495,11 +495,10 @@ impl<'a> Run<'a> {
         };
         let observed = observed.as_deref()?;
         let logged = |lines: &[String], what: &str| {
-            lines
-                .iter()
-                .find_map(|l| witness_bytes(l, device, what))
+            lines.iter().find_map(|l| witness_bytes(l, device, what))
         };
-        let (Some(reg_want), Some(value_want)) = (logged(expected, "Write"), logged(expected, "Read"))
+        let (Some(reg_want), Some(value_want)) =
+            (logged(expected, "Write"), logged(expected, "Read"))
         else {
             return None;
         };
@@ -511,7 +510,11 @@ impl<'a> Run<'a> {
         let silent = claimed && observed.is_empty();
         let reg = logged(observed, "Write").map(|(v, _)| v);
         let read = logged(observed, "Read").map(|(v, _)| v);
-        let mask = if width == 4 { u32::MAX } else { (1u32 << (8 * width)) - 1 };
+        let mask = if width == 4 {
+            u32::MAX
+        } else {
+            (1u32 << (8 * width)) - 1
+        };
         let at = |name: &str, mask: u32, solved: u64, got: Option<u64>| Field {
             register: format!("{device}.{name}"),
             address: u32::from(*address),

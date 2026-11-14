@@ -573,7 +573,12 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
     // the firmware's own record (adversarial F1; `AET-WO-2204`).
     assert_eq!(
         witness.as_deref(),
-        Some(&["[NOISY] i2c1.u2: Write D0".to_owned(), "[NOISY] i2c1.u2: Read 60".to_owned()][..])
+        Some(
+            &[
+                "[NOISY] i2c1.u2: Write D0".to_owned(),
+                "[NOISY] i2c1.u2: Read 60".to_owned()
+            ][..]
+        )
     );
     let Some(Record::BootObserved {
         instructions_expected,
