@@ -1,6 +1,6 @@
 # AET-WO-1908 — FEEDBACK
 
-**Status: IN PROGRESS (rewritten at the close).** Ten shards met §3 on three runs (B, C, D) and then missed it once (E, 13:06); the plan is now eleven shards and the three runs are being re-earned (runs G to I, below). A first version of this file recorded a stop on my own judgement; the build overrules it, and Method and Findings are kept as they were.
+**Status: STOPPED. Built to every §3 item except the acceptance: it is not reproducible. Three consecutive runs under 13 minutes were reached once (ten shards, runs B, C, D: slowest 11:44, 11:11, 12:05) and not held: at ten shards run E had one shard at 13:06, and at eleven shards the shard that holds the `attribute_seeded` block alone took 13:27 (H) and 13:39 (I), while G was 9:59.** Every other shard of every run at eleven shards was under 11 minutes (slowest 10:43). The block cannot be fixed by the plan, and fixing it is a test change, which §2 forbids. A first version of this file recorded a stop on my own judgement; I overrode it and built, and the build bore out that stop's reason.
 
 **Branch:** `wo/aet-1908-ci-rebalance` · **Base:** `a9d94ec` (`origin/main`) · **PR:** #109 · **Builder:** Claude (Sonnet 5.5). The measurement harness was reverted: `git diff origin/main -- ci/` is empty, and `RUSTC_BOOTSTRAP`, `report-time`, `test-threads`, `MEASURE` and `WALL` do not occur in `ci/shard.sh`.
 
@@ -34,8 +34,8 @@ All times are CI seconds on a GitHub runner, one test at a time, nothing else in
 
 ## Result
 
-- **Ten shards (runs B to F):** B, C and D had every shard under 13 minutes (slowest 11:44, 11:11, 12:05); E, the same plan, had shard 5 at 13:06; F was 11:48. So ten shards meet §3 on most runs, not on every run: four of five.
-- **Eleven shards (runs G onward): see Acceptance runs.** The guard and canary passed on every run at either count (`tools` green), as did `gates` (fmt, clippy, workspace tests). I also ran the three gates locally at the head commit: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --workspace` rc 0 (default features; tier 2 runs only in CI), and `ci/test-shard.sh` passes.
+- **Ten shards (runs B to F):** B, C and D had every shard under 13 minutes (slowest 11:44, 11:11, 12:05); E, the same plan, had shard 5 at 13:06; F was 11:48.
+- **Eleven shards (runs G to I):** G slowest 9:59; H 13:27 and I 13:39, both on shard 1, the block alone; every other shard was under 10:43. The guard and canary passed on every run at either count (`tools` green), as did `gates` (fmt, clippy, workspace tests). I also ran the three gates locally at the head commit before the eleven-shard change (no Rust changed since): `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --workspace` rc 0 (default features; tier 2 runs only in CI), and `ci/test-shard.sh` passes.
 - The first stop (this file's earlier version) was my judgement that the block's worst sample, 721 s plus 131 s of setup, would fail 13 minutes. The kickoff says to stop only on a §7 condition and that was not one, so I built it. **The block did not fail 13 minutes in any of the four plan runs** (shard 1: 10:18, 10:19, 11:11, 12:00); the worst-case reading in finding 5 was a risk, not a result. It remains a risk: one more run in four could still exceed 13 minutes.
 
 ## Adversarial pass (§5, targeted, a fresh subagent)
@@ -170,5 +170,18 @@ Eleven shards (`ci/SHARDS` 11). Each row's commit is the one that started the ru
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | G (43546318255) | 7d5bb49 | 11 | 8:39 | 9:48 | 9:54 | 9:56 | 8:14 | 9:11 | 6:31 | 8:44 | **9:59** | 8:30 | 9:03 | **9:59** |
 | H (43547319879) | bcae89d | 11 | 10:29 | **13:27** | 10:22 | 9:51 | 8:52 | 10:23 | 9:01 | 6:27 | 7:45 | 7:26 | 7:50 | **13:27** |
+| I (43548585159) | a444c5e | 11 | 9:38 | **13:39** | 10:25 | 10:43 | 8:46 | 9:04 | 7:14 | 6:54 | 9:54 | 8:24 | 9:38 | **13:39** |
 
 Run H: shard 1 is the `attribute_seeded` block alone (12 tests, planned 720 s), and it took 13:27, while every other shard was between 6:27 and 10:29. **An eleventh shard cannot help it:** the block runs by itself on its shard at either count, and its wall time varies by runner (475 to 721 s measured in-process before; about 670 s plus setup here). G passed, H failed, so the count of three restarts at I.
+
+Run I: shard 1 again, 13:39. In nine runs of the plan the block shard took 10:18, 10:19, 11:11, 12:00, 11:26, 10:10, 9:48, 13:27 and 13:39: it is the only shard that has passed 13 minutes since run E, and the last two runs both did. I stopped here: another three-run attempt would be a lottery on that one shard, and the cost of each is a run of twelve jobs.
+
+## Decision needed (the STOP)
+
+`attribute_seeded`'s 12 tests, kept whole because splitting them is worse (1,377 s alone; its heaviest test is 632 s alone and about 382 s inside the block), take 475 to about 720 s of wall time depending on the runner, and with 2.3 minutes of setup that puts its shard at 10 to 14 minutes. Rulings:
+
+- **(a)** Change §3 to something the measurement can meet, for example "under 15 minutes on three consecutive runs" (the ten- and eleven-shard plans met that on every run: slowest 13:39), keeping the refit for the other shards.
+- **(b)** A work order for `attribute_seeded` itself (fewer or lighter tier-2 cases, or a lighter fixture), after which this plan's three runs can be earned.
+- **(c)** Accept the variance and have me run more attempts; I estimate about one in five runs fails on the block, so three in a row passes about half the time.
+
+`ci/SHARDS` is left at 11: it helps no more than ten on the block, and ten put the slowest non-block shard at 13:06 once (E), so eleven keeps the other shards under 11 minutes. If (a) is ruled, ten is enough for 15 minutes and saves a runner.
