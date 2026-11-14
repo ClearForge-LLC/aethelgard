@@ -56,3 +56,12 @@
 
 - A single test exceeds about 10 minutes on CI.
 - Under 13 minutes needs more than 12 shards.
+
+## 8. Amendment, 2026-11-14 (Scotty's ruling, after the builder's measured runs)
+
+The measured runs showed that the `attribute_seeded` block runs alone on its shard in 13:27 to 13:39 and gets slower when split (its heaviest test takes 632 s alone, against about 382 s inside the block). So no shard count meets §3's 13-minute target. Scotty ruled:
+
+- **`ci/SHARDS` is 8,** balanced as evenly as the plan allows. The block stays whole unless the measurements say otherwise.
+- **Acceptance (replaces §3's first bullet):** three consecutive CI runs on the PR, each with every shard under **20 minutes**, job start to end. Record each run's shard times and the spread (slowest minus fastest) in FEEDBACK. The runs already made at other shard counts stay in FEEDBACK as measurements.
+- **§1.3's 11-minute planned maximum and §7's "more than 12 shards" condition are withdrawn.**
+- **The fence is unchanged: no test change.** Whether every CI test earns its time is `AET-WO-1909`'s reduction pass, a separate work order.
