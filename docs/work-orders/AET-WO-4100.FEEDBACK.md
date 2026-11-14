@@ -402,7 +402,7 @@ Ruled by the architect on PR #120: D1 (a), D2 as recommended (with the published
 | The reader follows the specification | `route::declared`, `route::read`, `extract::read`, `cli/src/fab.rs` | A board whose copper layer table (by KiCad id, whatever the name says), zones/planes or thickness is not the declared one is refused by name: `LayersDisagree`, `PlanesDisagree`, `ThicknessDisagrees`. An inner-layer track, a zone on an undeclared layer, a via other than the engine's through via are refused. F2's state (DRC passes, the reader refuses) is closed by teaching the reader; the gate still discards the board's `(setup …)` (F4) |
 | §2.3 extraction | `extract.rs` (module doc: the derivation) | The elliptical cap for a piece whose next copper layer is nearer than `S`, keyed on each outer layer's adjacent dielectric minimum (F.Cu pieces and pads: the first dielectric; B.Cu tracks: the last). Implemented as today's shell plus the exact rational `cap = (S − h)·[…]/(72·113·h)`, which is 0 at `h = S` by its first factor. **When the minimum is at least `S`, today's integer path runs unchanged.** Via height: **the declared maximum finished thickness**; the quarter is dropped, because the maximum bounds the barrel and both pads (it is in the board), and the reference declares 2.0 mm, today's height. `CONDITIONS` became `conditions(&Stack)`: at 2 layers the same words, from the declared values; at 4 a line naming every dielectric minimum is added |
 | §2.4 package | `cli/src/fab.rs` `gerbers`, `eda/src/fab.rs` | The Gerber list derives from the declared layers (`In1_Cu.g1`, `In2_Cu.g2` after `B_Cu.gbl`, creator line 9 as measured). `FAB-NOTES.md` at 4 layers prints the layer order with each plane's net, every dielectric minimum with its source, the thickness's and copper's sources, and the rounding rule (minima down, maxima up). At 2 layers the words are today's. The job file stays excluded |
-| §2.6 fixtures | `cli/tests/fixtures/four-layer.json` (+ `four-layer-pullup.json`), `d1-24-i2c.json`, `d3-24-i2c-12-spi.json` | OSH Park 4-layer: dielectrics 179/891/179 µm (published value less published tolerance, rounded down), copper 44 µm (1.7 mil, rounded up), finished 1.250–1.692 mm (dielectric minima summed; every published layer at its maximum), permittivity 5.4 (IPC). `D1` and `D3` are the 1302 reviewer's generator, recovered in S3, on that board |
+| §2.6 fixtures | `cli/tests/fixtures/four-layer.json` (+ `four-layer-pullup.json`), `d1-24-i2c.json`, `d3-24-i2c-12-spi.json` | OSH Park 4-layer: dielectrics 179/891/179 µm (published value less published tolerance, rounded down), copper **70 µm** (the engine's stated condition; was 44 µm, the published 1.7 mil rounded up, a nominal: see the review fix below), finished 1.250–**1.851** mm (dielectric minima summed; every published dielectric and the solder resist at their maxima plus four copper layers at 70 µm; was 1.692), permittivity 5.4 (IPC). `D1` and `D3` are the 1302 reviewer's generator, recovered in S3, on that board |
 
 ## Acceptance (§4), measured
 
@@ -413,7 +413,7 @@ Ruled by the architect on PR #120: D1 (a), D2 as recommended (with the published
 | **4-layer fixture passes `verify --fab-out`** | In the image: every gate passes (ERC, DRC with schematic parity by the specification's rules, extract, prove ×2, build, simulate, campaign); the package carries `In1_Cu.g1` (GND region) and `In2_Cu.g2` (VDD_3V3 region); `--against-fab` derives it identical; a missing inner Gerber and a `FAB-NOTES.md` dielectric changed from 0.179 to 0.25 mm are each named (`board_tier2.rs`, 2 new tests, run in the image: 4 passed with the reference's two package tests) |
 | Five-export determinism on the gate-prepared 4-layer copy (ruling) | Five `verify --fab-out` runs, 09:48 to 09:58: all 17 files byte-identical across the five, verdict `fab.files` identical; `strip_clock` found the two clock lines at lines 2 and 9 of both inner Gerbers every time |
 | Plane gap on the gate-prepared copy (ruling) | From the package's inner Gerbers: smallest gap from plane copper to a foreign via's 0.6 mm disk **0.2005 mm** on In1 (47 foreign vias) and on In2 (45). **This corrects S1's 0.5005 mm**, which came from an unprepared copy (KiCad's default zone clearance); under the gate the fill keeps the declared clearance. The via term needs at least `S` and DRC judges it, so the bound stands; FEEDBACK S1 above keeps the unprepared number as measured |
-| The reference's I2C margin at 4 layers (integer path; evidence for Sentinel-02, not a gate) | The 4-layer fixture as routed (its I2C routes are shorter than the 2-layer reference's: SDA 18.1 mm vs 24.3, SCL 29.4 vs 43.5): at OSH Park's 0.179 mm, **SDA 44,953 fF, SCL 47,792 fF**; the same board judged at JLC 3313's 0.0994 mm (nominal, no tolerance published; evidence only), **SDA 46,784, SCL 50,293**. Declared 100,000 fF: margin ≥ 49 %. (S4's float estimate on the 2-layer reference's longer routes, 49.0 / 61.9 pF, is not this board) |
+| The reference's I2C margin at 4 layers (integer path; evidence for Sentinel-02, not a gate) | The 4-layer fixture as routed (its I2C routes are shorter than the 2-layer reference's: SDA 18.1 mm vs 24.3, SCL 29.4 vs 43.5): at OSH Park's 0.179 mm, **SDA 45,857 fF, SCL 48,827 fF** (was 44,953 / 47,792 with 44 µm copper and a 1.692 mm maximum); the same board judged at JLC 3313's 0.0994 mm (nominal, no tolerance published; evidence only), **SDA 47,688, SCL 51,327** (was 46,784 / 50,293). Declared 100,000 fF: margin ≥ 49 %. (S4's float estimate on the 2-layer reference's longer routes, 49.0 / 61.9 pF, is not this board) |
 | A malformed `board` refused by name, per field | `aethelgard-ir/tests/board.rs` (12 tests), `stackups_tier1::a_version_one_specification_is_refused_by_name` (validate and emit) |
 | 1302 B10, `D1` | `stackups_tier1`: `D1` routes at 4 layers (0.6 s release) and fails closed at 2 (`Unroutable /SDA0` after 500 rip-ups); `D3` fails closed at 4 naming its net (`VDD_3V3`, blocked by `/CS0_0`, `/S1000_HOLD`, `GND`): the escape-planning work order's target |
 | Gates (`CLAUDE.md`) | host: `cargo fmt --all -- --check` ok; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace` **1,109 passed, 0 failed** (tier 2 compiles and runs 0 on the host). Image: tier-2 build with `--features aethelgard-cli/with-tools` ok |
@@ -483,6 +483,38 @@ Each removal was proven with the same suites and the boards' bytes (the referenc
 
 1. **D5 as delivered (confirm).** The ruling says byte-identical to `main`. Delivered: byte-identical except the specification's sha256 and the hashes that carry it (8 one-line changes in `boards/`, `MANIFEST.json`'s hashes, `FAB-NOTES.md`'s hash line), because the reference's own bytes had to change (version 2 and its `board`). The work order allows a named change (§2.5), so this is not a §7 stop; I ask it be confirmed.
 2. **"A via joined on each layer it crosses" (reading).** Built as: every via is met by its net's copper on at least two of the layers it crosses (tracks on F.Cu or B.Cu, or its net's zone or plane). A through via crosses all four layers but a signal via cannot touch a plane of another net, so "each layer" read literally refuses every signal via. Confirm the reading.
-3. **D2 and the fixture's maxima.** OSH Park publishes tolerances for its dielectrics (used) but **none for copper or the finished thickness** (the 1.6 mm is "nominal"). So the fixture's copper maximum, 44 µm, is the published 1.7 mil rounded up (the ruling's "outer copper as published"), and its finished maximum, 1.692 mm, is my own sum of every published layer at its maximum with copper at nominal. That maximum is also the via-height bound. Accept these two as declared, or name a source with a tolerance (IPC-6012's copper and thickness classes) for the fixture.
+3. **D2 and the fixture's maxima** (ruled in the review: fix them; done below). OSH Park publishes tolerances for its dielectrics (used) but **none for copper or the finished thickness** (the 1.6 mm is "nominal"). So the fixture's copper maximum, 44 µm, is the published 1.7 mil rounded up (the ruling's "outer copper as published"), and its finished maximum, 1.692 mm, is my own sum of every published layer at its maximum with copper at nominal. That maximum is also the via-height bound. Accept these two as declared, or name a source with a tolerance (IPC-6012's copper and thickness classes) for the fixture.
 4. **F5 (low):** whether generated artifacts should keep naming the specification's sha256 (so every schema bump touches them), or name the solved topology's.
 5. **The PR title.** `gh-write` has no edit command, and a minted token is spent only through it (Furnace contract), so I cannot retitle PR #120 from here. Proposed title: `AET-WO-4100: stackups at 2 and 4 layers — the board a specification declares, routed, judged, bounded and packaged`. The architect sets it at merge (roadmap §6), or `gh-write` gains `edit`.
+
+## The review's fix (`~/.cache/aet-4100-review.md`)
+
+**Ruled in the review:**
+- D5 as delivered: confirmed.
+- The via reading: confirmed as built.
+- F5: keep naming the specification's hash.
+- F7, F9 and an IPC-6012 copper class: to the backlog.
+- The title: set by the architect.
+
+**The one change, the fixture's maxima (D2).** OSH Park publishes no copper tolerance, so the fixture's 44 µm was a nominal value, not a bound.
+
+| Fixture field (`four-layer.json`, and the same board in `d1-24-i2c.json`, `d3-24-i2c-12-spi.json`) | Before | Now |
+|---|---|---|
+| `copper_max_um` | 44 (1.7 mil rounded up; a nominal) | **70**, sourced as the engine's stated condition (`AET-WO-1305`, as the reference: 2 oz, twice KiCad's 35 µm), not a fabricator tolerance |
+| `finished_thickness_um.max` | 1692 (copper at nominal) | **1851**: 2 × 0.2201 (prepreg maximum) + 1.0897 (core maximum) + 2 × 0.0203 (solder resist maximum) + 4 × 0.070 (copper condition) = 1.8505 mm, rounded up; the source says so |
+| `finished_thickness_um.min`, dielectrics, permittivity, rules | unchanged | unchanged |
+
+**Re-measured.** The board is byte-identical: no routing input changed. Only the bound's inputs did: copper height, and via height, which is the declared maximum. Both terms rose, as they should:
+
+| Measurement | Before | Now |
+|---|---|---|
+| SDA bound at OSH's 0.179 mm (trace / vias / pads / pins, fF) | 44,953 (8,081 / 5,336 / 1,536 / 30,000) | **45,857** (8,532 / 5,716 / 1,609 / 30,000) |
+| SCL bound at OSH's 0.179 mm | 47,792 (10,920 / 5,336 / 1,536 / 30,000) | **48,827** (11,502 / 5,716 / 1,609 / 30,000) |
+| The same board at JLC 3313's 0.0994 mm (evidence only) | 46,784 / 50,293 | **47,688 / 51,327** |
+| `extract`'s copper condition, and `FAB-NOTES.md`'s | "finished copper at most 44 um thick; finished board from 1.25 mm to 1.692 mm thick" | "… at most 70 um …; … from 1.25 mm to 1.851 mm thick" |
+
+Two test files pin these values, and both were updated to the new numbers:
+- `stackups_tier1` (the bounds and the condition);
+- `board_tier2` (the notes' lines).
+
+Results: host `cargo test --workspace` 1,114 passed, 0 failed; the two 4-layer tier-2 tests were re-run in the image on this tree: 2 passed in 530.75 s, four `verify` runs of about 132 s each. CI on the pushed head is on the PR.

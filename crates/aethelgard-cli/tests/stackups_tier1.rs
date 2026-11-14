@@ -137,7 +137,7 @@ fn the_four_layer_board_is_the_declared_one_and_extracts() {
         &"each dielectric at least its declared minimum: F.Cu to In1.Cu 0.179 mm, In1.Cu to In2.Cu 0.891 mm, In2.Cu to B.Cu 0.179 mm"
     ));
     assert!(conditions.contains(
-        &"finished copper at most 44 um thick; finished board from 1.25 mm to 1.692 mm thick"
+        &"finished copper at most 70 um thick; finished board from 1.25 mm to 1.851 mm thick"
     ));
     // Measured with the integer path (FEEDBACK §2): evidence for Sentinel-02.
     let bounds: Vec<(String, u64)> = x["lines"]
@@ -154,8 +154,8 @@ fn the_four_layer_board_is_the_declared_one_and_extracts() {
     assert_eq!(
         bounds,
         [
-            ("I2C_SDA".to_owned(), 44_953),
-            ("I2C_SCL".to_owned(), 47_792)
+            ("I2C_SDA".to_owned(), 45_857),
+            ("I2C_SCL".to_owned(), 48_827)
         ],
         "re-measure FEEDBACK §2 before changing this line"
     );

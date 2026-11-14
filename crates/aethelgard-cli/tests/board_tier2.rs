@@ -806,8 +806,8 @@ fn four_layer_fixture_passes_every_gate_and_its_package_holds() {
         "  - F.Cu to In1.Cu: 0.179 mm (OSH Park 4-layer",
         "  - In1.Cu to In2.Cu: 0.891 mm (OSH Park 4-layer",
         "rounded down; every maximum, rounded up.",
-        "Finished board from 1.25 mm to 1.692 mm thick.",
-        "Finished copper at most 44 um thick on each layer.",
+        "Finished board from 1.25 mm to 1.851 mm thick.",
+        "Finished copper at most 70 um thick on each layer.",
         "- `sentinel-01-4l-In1_Cu.g1`: Gerber, inner copper layer 1",
     ] {
         assert!(notes.contains(want), "{want}");

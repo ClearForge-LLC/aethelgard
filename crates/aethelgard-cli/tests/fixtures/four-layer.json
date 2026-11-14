@@ -119,8 +119,8 @@
       "finished_thickness_um": {
         "nominal": 1600,
         "min": 1250,
-        "max": 1692,
-        "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 14 Nov 2026: min the dielectric minima summed; max every published layer at its maximum, solder resist included"
+        "max": 1851,
+        "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 14 Nov 2026: min the dielectric minima summed; max dielectrics and resist at max plus 4 x 70 um copper, 1.8505 mm up"
       },
       "dielectrics": [
         {
@@ -149,8 +149,8 @@
         }
       ],
       "copper_max_um": {
-        "value": 44,
-        "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 14 Nov 2026: outer 1 oz clad and plated, 1.7 mil (0.0432 mm), rounded up"
+        "value": 70,
+        "source": "the engine's stated condition (AET-WO-1305, as the reference): 2 oz, twice KiCad's 35 um; OSH Park publishes no copper tolerance"
       },
       "relative_permittivity_max_permille": {
         "value": 5400,
