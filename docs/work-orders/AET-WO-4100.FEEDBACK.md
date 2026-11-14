@@ -416,3 +416,66 @@ The twin, the analog deck (`cli/src/analog.rs`), the campaign and `evolve` read 
 | 1302 B10, `D1` | `stackups_tier1`: `D1` routes at 4 layers (0.6 s release) and fails closed at 2 (`Unroutable /SDA0` after 500 rip-ups); `D3` fails closed at 4 naming its net (`VDD_3V3`, blocked by `/CS0_0`, `/S1000_HOLD`, `GND`): the escape-planning work order's target |
 | Gates (`CLAUDE.md`) | host: `cargo fmt --all -- --check` ok; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace` **1,109 passed, 0 failed** (tier 2 compiles and runs 0 on the host). Image: tier-2 build with `--features aethelgard-cli/with-tools` ok |
 | `TIER2_MIN` | 91 → **93**, exactly the 2 new tier-2 tests. `ci/test-weights.tsv`: 7 rows added (the 2 tier-2 tests at 460 s each, estimated from the reference's own two-run fab tests at 416–516 s on CI; 5 tier-1 at their host times). No refit: nothing was measured above the refit rule's thresholds yet |
+
+## Adversarial pass (full, §5), by a fresh subagent
+
+**The reviewer:** a fresh Opus subagent in its own worktree at `564b814`, given the work order, the ruling and the code, not this FEEDBACK. Evidence: `~/.cache/aet-4100-adv-evidence/` on Furnace. Six image containers, one at a time (the first logged `CAPS NOT READ`: it ran only `kicad-cli version` and five refusals that start no tool; the other five read `memory.max=8589934592 memory.swap.max=0`). **I spot-checked each finding below by reproducing it before fixing it**, and each fix has a test that fails without it (mutation run below).
+
+| Id | Attack (§5) | Result at `564b814` | Severity | Now |
+|---|---|---|---|---|
+| A1 | §5.1: a board that lies about its stackup, judged by `check drc --spec` | **Broke.** `extract` and the package refused every lie by name, but `check drc --spec` compared the board with the declared board nowhere: the 2-layer reference passed under the 4-layer specification and the reverse, planes swapped passed, and a GND via typed `blind` or `micro` (F.Cu–In1.Cu) passed, each with 0 findings and `rules: "specification"` | high | **Fixed.** With `--spec`, `check drc` runs `route::declared` on the strict reading before any tool, refusing by name (exit 3): `LayersDisagree`, `PlanesDisagree`, `ThicknessDisagrees`, and the new `ViaNotThrough` (a via typed, or not `F.Cu`–`B.Cu`). `route::read` refuses a typed via too. Test `stackups_tier1::check_drc_with_spec_refuses_a_board_that_is_not_the_declared_one`. Two fixtures that ran `check drc --spec` on hand-written boards gained the declared layer table (`emit_tier1` `LOOSE_BOARD`, whose subject is the rule files; `with_tools` `LOOSE10`, `LOOSE` in KiCad 10's format, run in the image: pass). The corpus test (43 edits, `drc-parity` pinned) still passes in the image unchanged |
+| A2 | §5.2: under-bound by overflow | `femtofarads` multiplied by the permittivity's numerator before dividing; an irreducible value (4.663) gave `Overflow` on a 3.3 mm pad. Refused by name, never a wrap, but a refusal at a realistic input; new in this work order (εr was the constant 5.4) | low | **Fixed.** When the exact product overflows, the same value in two divisions, each rounded up (only adds); the exact path is unchanged, so 5.4 gives today's integers. Test `an_irreducible_permittivity_still_bounds_a_large_pad` |
+| A3 | §5.5: 2-layer behaviour against `main` | `connectivity` counted ground's B.Cu zone in a third slot, so a GND via met only by a B.Cu stub and the zone counted as joined on two layers; `main` refuses it (`NetLabelsDisagree`) | low | **Fixed.** Ground's zone is B.Cu copper (slot B); a plane is a layer of its own. Test `a_ground_via_met_only_on_b_cu_is_not_joined_on_two_layers` |
+| A4 | §5.6: router against KiCad | A plane on a declared domain no pad draws from passed `validate`, `emit` and `connectivity`; KiCad reports `isolated_copper` (failed closed at DRC) | low | **Fixed** earlier than DRC: `connectivity` (and so the router) refuses a plane no via reaches. Test `a_plane_no_via_reaches_is_refused` |
+| — | §5.1 other lies | plane on the wrong net, layer table renamed/reordered/added/dropped/typed `power`/id `04`, zone duplicated/filled/keepout/hatched/`connect_pads`/on B.Cu, a board `(stackup …)`: each refused by name by `extract` (and the board's setup is discarded by the gate, F4). An inner-layer track: all 11 seeds caught by DRC (dangling, short, clearance) and refused by `extract` | — | held |
+| — | §5.2 the bound | thinner dielectric, higher permittivity, more copper, larger maximum thickness: each raised both lines' bounds. `per_mm_ff`, `segment_ff`, `pad_ff`, `via_ff` never fell below an f64 evaluation over 894,891 draws (rounding and overflow only, same formula); **independent**: a direct quadrature of the trial for a disk below `z = 0` matches `lower(A,p,h)` to 3 × 10⁻⁶ | — | held |
+| — | §5.3 the specification | about 75 mutations, each refused by name with its path or id; a version-1 file through ten entries (validate, solve, emit, generate, verify ×3, extract, check drc, a campaign base): each exit 2 `UnsupportedSchemaVersion`. Passing, by design: planes swapped between `GND` and the domain (D7 allows either order), a 1 µm dielectric (a bound, conservative), 10 mm clearance (fails closed in routing), inline Markdown in a source (no newline possible) | — | held |
+| — | §5.5 2-layer identity | its own build of `a71bef5`: `emit` identical for the reference and `two-bme`, `extract` identical but the specification hash, FAB-NOTES text identical; `generate` differs only in the hash line | — | held (and A3) |
+| — | §5.6 `D1` at 4 layers in KiCad | DRC with parity: pass, 0 findings | — | held |
+| I1 | info | `route::read` does not judge a zone's polygon (a 1 mm² plane passes connectivity), on `main` too | info | finding F7 below |
+| I2 | info | "Laminate: FR-4" printed at 4 layers, while the fixture's core is FR408HR | info | fixed: at 4 layers the notes say the laminate is as the dielectrics' sources state; 2 layers unchanged |
+| I3 | info | the package path reports a `declared` mismatch as a `ToolError`, not by its kind | info | as intended: the package's board is the generated one, bound by hash, so a mismatch there is an engine defect; the kind is in the message |
+| I4 | info | a thinner dielectric can lower one piece's bound by about 1 fF when `S` ≥ 500 µm (the cap's `S − 2h` term); not at 200 or 300 µm. Not an under-bound: every value is a valid bound for its own `h` | info | noted |
+| — | §5.4 package lies, extra file | not run by the reviewer; covered by the tier-2 tests here (missing inner Gerber, lying stackup) and by the reference's own extra-file test | — | covered |
+
+**Mutation run** (one mutant per guard this work order adds, against the suite it lives in; `~/.cache/aet-4100/mutate.py`, at `eb28da7`): **12 of 12 killed**:
+- `declared`: the via type, the layer table, the planes and the thickness;
+- `connectivity`: the B.Cu slot and a plane with no via;
+- extraction: the cap path under `S` and the staged fallback;
+- `check drc` judging the declared board;
+- `validate`: the rules floor and the one GND plane;
+- the package's inner Gerbers.
+
+**Reduction pass (diff): −27 net · 2 duplicates removed · 0 dead paths removed · 1 protected kept · 0 findings below.**
+- KiCad's copper-layer ids were stated in `pcb.rs` and in `route.rs`. They now live in one function, `stack::kicad_id`.
+- The zone-layer check was stated in `route::read` and again in `route::declared`. Every caller runs `declared` first, and `connectivity` judges the zones again, so `read`'s copy went.
+- Kept: `stack::reference()`, a literal copy of the reference's declared board for eda's unit tests (eda has no JSON dependency, which `workspace_shape` pins). `stackups_tier1::the_reference_declares_todays_two_layer_board` asserts it equals `Stack::of` on the file, so it cannot drift.
+
+Each removal was proven with the same suites and the boards' bytes (the reference and the 4-layer fixture emit identical before and after).
+
+## Gates, final tree
+
+- **Host:**
+  - `cargo fmt --all -- --check`: ok.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean, with and without `--features aethelgard-cli/with-tools`.
+  - `cargo test --workspace`: **1,114 passed, 0 failed**.
+- **Image:**
+  - the new tier-2 tests and the reference's package tests: 4 passed;
+  - the corpus test and the loose-board gate test after A1: passed.
+- **CI:** the run on the pushed head is recorded on the PR.
+
+## Findings
+
+| # | Finding | Where | Severity | Type | Recommendation | Decision-needed |
+|---|---|---|---|---|---|---|
+| F1 | `validate` accepts what `solve` refuses for a missing bus constraint (spike) | `main` | low | backlog | ruled: roadmap backlog, not this build | no |
+| F5 | **The specification's sha256 is in every artifact that names the specification**, so a required schema change moves 8 committed generated files (one line each), the solve and svd-hal pins, `MANIFEST.json`'s hashes and `FAB-NOTES.md`'s hash line, although nothing they generate changed. Every future schema bump will do the same | `generate`, `fab`, pins | info | design | none here; if it should not, the generators could name the solved topology's hash instead (it changes only when a solved value does). A ruling, not this work order's | yes (low) |
+| F6 | **0.2005 mm, not 0.5005 mm**: the plane's gap to a foreign via under the gate is the declared clearance; S1's figure came from an unprepared copy. The bound needs only ≥ `S` and DRC judges it | `extract` conditions | info | correction | none: S1's row stays as measured; this row corrects its reading | no |
+| F7 | `route::read` does not judge a zone's outline (I1): a 1 mm² zone passes the router's connectivity; KiCad judges the fill. On `main` too | `route` | low | pre-existing | backlog: compare each zone's polygon with the outline | no |
+| F8 | `D3`-class boards (24 I2C + 12 SPI flashes) fail closed at 4 layers on the MCU's adjacent supply and ground pads | `route` | info | ruled (D3) | the escape-planning work order; `d3-24-i2c-12-spi.json` is its target | no |
+| F9 | The two new tier-2 tests' CI weights (460 s each) are estimates from the reference's two-run fab tests, not measured alone on CI | `ci/test-weights.tsv` | info | process | refit by the rule in `ci/shard.sh` if a shard passes 20 minutes or the spread passes 6 | no |
+
+## Decisions needed
+
+1. **F5 (low):** whether generated artifacts should keep naming the specification's sha256 (so every schema bump touches them), or name the solved topology's.
+2. **The PR title.** `gh-write` has no edit command, and a minted token is spent only through it (Furnace contract), so I cannot retitle PR #120 from here. Proposed title: `AET-WO-4100: stackups at 2 and 4 layers — the board a specification declares, routed, judged, bounded and packaged`. The architect sets it at merge (roadmap §6), or `gh-write` gains `edit`.
