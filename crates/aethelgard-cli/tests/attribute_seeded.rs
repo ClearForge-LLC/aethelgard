@@ -55,11 +55,19 @@ struct Case {
     domain: String,
     rule: String,
     findings: Vec<String>,
+    /// The exact `[index, kind]` events `attribute` names as evidence, and
+    /// those it masks (`AET-WO-2205` §1.6, ruled D1): see
+    /// [`tier2::p3_gate_clause_1_attribute_names_every_case_with_evidence_its_rule_allows`].
+    evidence: Vec<[u64; 2]>,
+    masked: Vec<[u64; 2]>,
 }
 
 fn manifest() -> Manifest {
     let m: Manifest = serde_json::from_slice(&fs::read(root().join(MANIFEST)).unwrap()).unwrap();
-    assert_eq!(m.schema_version, 1, "the manifest is schema version 1");
+    assert_eq!(
+        m.schema_version, 2,
+        "the manifest is schema version 2, with each case's exact evidence"
+    );
     m
 }
 
@@ -96,15 +104,37 @@ fn the_manifest_seeds_twenty_failing_cases_eight_per_domain_and_the_three_traps(
         electrical + software >= 20,
         "at least twenty failing cases: {electrical} {software}"
     );
+    assert!(
+        count("indeterminate") >= 1,
+        "at least one case is indeterminate end to end (AET-WO-2205 §1.6)"
+    );
     assert_eq!(
         m.cases.len(),
-        electrical + software + count("none"),
+        electrical + software + count("none") + count("indeterminate"),
         "every case names a domain"
     );
     let mut names: Vec<&str> = m.cases.iter().map(|c| c.name.as_str()).collect();
     names.sort();
     names.dedup();
     assert_eq!(names.len(), m.cases.len(), "case names are unique");
+    // A campaign line is found by its scenario's name: two scenario files of
+    // one name under one firmware would be checked against one run.
+    let mut runs: Vec<(Option<&str>, String)> = m
+        .cases
+        .iter()
+        .map(|c| {
+            let s: serde_json::Value =
+                serde_json::from_slice(&fs::read(root().join(&c.scenario)).unwrap()).unwrap();
+            (c.mutant.as_deref(), s["name"].as_str().unwrap().to_owned())
+        })
+        .collect();
+    runs.sort();
+    runs.dedup();
+    assert_eq!(
+        runs.len(),
+        m.cases.len(),
+        "each firmware runs each scenario name once"
+    );
     let case = |scenario: &str, mutant: Option<&str>| {
         m.cases
             .iter()
@@ -129,6 +159,11 @@ fn the_manifest_seeds_twenty_failing_cases_eight_per_domain_and_the_three_traps(
         ("none", "N1"),
         "the unmutated 3k3 case is the none N1 trap"
     );
+    assert_eq!(
+        trap(case("/pullup-47k.json", Some("leave-firmware"))),
+        ("indeterminate", "I3"),
+        "a core leaving the firmware beside the 47k bus fault is the indeterminate I3 trap"
+    );
     for c in &m.cases {
         assert_eq!(
             c.findings.is_empty(),
@@ -136,14 +171,41 @@ fn the_manifest_seeds_twenty_failing_cases_eight_per_domain_and_the_three_traps(
             "a case has no findings exactly when its domain is none: {}",
             c.name
         );
-        let ok = matches!(
-            (c.domain.as_str(), c.rule.as_str()),
-            ("electrical", "E1") | ("software", "S1" | "S2") | ("none", "N1")
+        // The rule, its domain and its evidence kinds are evolve's, read by
+        // the rule's id: no copy here.
+        let rule = aethelgard_evolve::Rule::from_id(&c.rule)
+            .unwrap_or_else(|| panic!("each case's rule is one evolve defines: {}", c.name));
+        assert_eq!(
+            rule.domain().name(),
+            c.domain,
+            "each case's domain is its rule's: {}: {}",
+            c.name,
+            c.rule
         );
         assert!(
-            ok,
-            "each case carries a known domain and rule pair: {}: {} {}",
-            c.name, c.domain, c.rule
+            c.domain != "none" || c.masked.is_empty(),
+            "a passing case masks nothing: {}",
+            c.name
+        );
+        assert_eq!(
+            c.evidence.is_empty(),
+            c.domain == "none",
+            "a case states evidence exactly when it fails: {}",
+            c.name
+        );
+        for [_, kind] in &c.evidence {
+            assert!(
+                rule.evidence_kinds().contains(kind),
+                "each stated evidence kind is one its rule may name: {}: kind {kind} under {}",
+                c.name,
+                c.rule
+            );
+        }
+        let sorted = |v: &[[u64; 2]]| v.windows(2).all(|w| w[0][0] < w[1][0]);
+        assert!(
+            sorted(&c.evidence) && sorted(&c.masked),
+            "a case's evidence and masked events are sorted by index, each once: {}",
+            c.name
         );
         if let Some(mutant) = &c.mutant {
             assert!(
@@ -552,7 +614,7 @@ mod tier2 {
             }
             // Every measured rise, recorded (FEEDBACK, §1.4).
             for record in replay_dir(&r.run).unwrap().state.records {
-                if let Record::RiseMeasured {
+                if let Record::RiseComputed {
                     net,
                     rise_30_70_ps,
                     complete,
@@ -570,6 +632,17 @@ mod tier2 {
         }
     }
 
+    /// `attribute` names every case's domain and rule, and **exactly** the
+    /// evidence and masked events the manifest states (`AET-WO-2205` §1.6,
+    /// ruled D1), each a record of the run of the kind it says. `symptoms`
+    /// are not asserted: the case's `findings` pin them.
+    ///
+    /// **The indices move when the trace gains records** (`AET-WO-4200`'s
+    /// SPI read will shift every index after it). Whoever moves them
+    /// re-derives every case's `evidence` and `masked` from `attribute`'s
+    /// output on their build, and explains every changed row in their
+    /// FEEDBACK: which record was added, where, and why each index moved.
+    /// A new table pasted without that account defeats this test.
     #[test]
     fn p3_gate_clause_1_attribute_names_every_case_with_evidence_its_rule_allows() {
         for r in ran() {
@@ -577,8 +650,12 @@ mod tier2 {
             let a = &json_lines(&stdout)[0];
             assert_eq!(
                 code,
-                Some(0),
-                "attribute exits 0 on every seeded run: {}: {a}",
+                Some(if r.case.domain == "indeterminate" {
+                    1
+                } else {
+                    0
+                }),
+                "attribute exits 1 on an indeterminate run and 0 on every other: {}: {a}",
                 r.case.name
             );
             assert_eq!(
@@ -588,35 +665,31 @@ mod tier2 {
                 r.case.name
             );
             let records = replay_dir(&r.run).unwrap().state.records;
-            let allowed: &[u64] = match r.case.rule.as_str() {
-                "E1" => &[7, 8, 9],
-                "S1" => &[7, 11, 13],
-                "S2" => &[7, 10, 11],
-                _ => &[],
+            let events = |key: &str| -> Vec<[u64; 2]> {
+                a[key]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|e| [e["index"].as_u64().unwrap(), e["kind"].as_u64().unwrap()])
+                    .collect()
             };
-            let evidence = a["evidence"].as_array().unwrap();
             assert_eq!(
-                evidence.is_empty(),
-                r.case.domain == "none",
-                "attribute cites evidence exactly when the case is a fault: {}: {a}",
+                events("evidence"),
+                r.case.evidence,
+                "attribute names exactly the manifest's evidence events: {}: {a}",
                 r.case.name
             );
-            for e in evidence {
-                let (index, kind) = (e["index"].as_u64().unwrap(), e["kind"].as_u64().unwrap());
-                assert!(
-                    (index as usize) < records.len(),
-                    "each evidence index points at a record of the run: {}: {a}",
-                    r.case.name
-                );
+            assert_eq!(
+                events("masked"),
+                r.case.masked,
+                "attribute masks exactly the manifest's events: {}: {a}",
+                r.case.name
+            );
+            for [index, kind] in events("evidence").into_iter().chain(events("masked")) {
                 assert_eq!(
-                    records[index as usize].kind(),
-                    kind,
-                    "each evidence entry's kind is the kind of the record it cites: {}: {a}",
-                    r.case.name
-                );
-                assert!(
-                    allowed.contains(&kind),
-                    "each evidence kind is one its rule allows: {}: {a}",
+                    records.get(index as usize).map(Record::kind),
+                    Some(kind),
+                    "each evidence or masked entry is a record of the run of the kind it says: {}: {a}",
                     r.case.name
                 );
             }
@@ -657,10 +730,16 @@ mod tier2 {
             "the 3.3 kOhm wrong-address trap is attributed to software, rule S1: {a}"
         );
         // The 47 kOhm run with the same mutant is electrical, its witness masked.
+        let trap = case("trap-wrong-address-47k");
         assert_eq!(
             masked("trap-wrong-address-47k"),
+            trap.case.masked.iter().map(|[_, k]| *k).collect::<Vec<_>>(),
+            "the 47 kOhm wrong-address run is electrical with its witness masked, as the manifest states"
+        );
+        assert_eq!(
+            trap.case.masked.iter().map(|[_, k]| *k).collect::<Vec<_>>(),
             [13],
-            "the 47 kOhm wrong-address run is electrical with its witness (kind 13) masked"
+            "the manifest masks the 47 kOhm trap's witness (kind 13)"
         );
         // The unmutated 47 kOhm run masks nothing: its witness agrees.
         assert!(
@@ -737,10 +816,14 @@ mod tier2 {
         BelowFloor,
         /// A passing run: attribution precedes mutation (`INV-05`).
         Inv05,
+        /// An indeterminate run: no proposal, the reason naming the rule
+        /// and `INV-05` (`AET-WO-2205` §1.6, ruled D2).
+        Indeterminate,
     }
 
     fn want(c: &Case) -> Want {
         match (c.domain.as_str(), c.name.as_str()) {
+            ("indeterminate", _) => Want::Indeterminate,
             ("software", _) => Want::Report,
             ("none", _) => Want::Inv05,
             _ if c.findings.iter().any(|f| f == "i2c_line_held_low") => Want::ModelSlot,
@@ -856,18 +939,15 @@ mod tier2 {
                     // The trap's wrong address is masked by the fault, and
                     // the proposal says so: its re-gate, on regenerated
                     // firmware, cannot speak to the firmware that failed.
-                    let masked = p["attribution"]["masked"].as_array().unwrap();
+                    let masked: Vec<[u64; 2]> = p["attribution"]["masked"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|e| [e["index"].as_u64().unwrap(), e["kind"].as_u64().unwrap()])
+                        .collect();
                     assert_eq!(
-                        masked
-                            .iter()
-                            .map(|e| e["kind"].as_u64().unwrap())
-                            .collect::<Vec<_>>(),
-                        if r.case.mutant.is_some() {
-                            vec![13]
-                        } else {
-                            vec![]
-                        },
-                        "the proposal's masked witnesses are the wrong-address trap's kind 13 and nothing else: {name}"
+                        masked, r.case.masked,
+                        "the proposal's masked events are the case's, from the manifest: {name}"
                     );
                     regate(&out, &r.run);
                 }
@@ -963,6 +1043,27 @@ mod tier2 {
                     assert!(
                         reason.contains("N1") && reason.contains("INV-05"),
                         "the refusal cites N1 and INV-05: {name}"
+                    );
+                }
+                Want::Indeterminate => {
+                    assert_eq!(
+                        code,
+                        Some(1),
+                        "an indeterminate run gets no proposal, exit 1: {name}: {line}"
+                    );
+                    assert_eq!(
+                        names(&out),
+                        ["proposal.json"],
+                        "an indeterminate run writes proposal.json only: {name}"
+                    );
+                    assert_eq!(
+                        p["outcome"], "no_proposal",
+                        "an indeterminate run's outcome is no_proposal: {name}"
+                    );
+                    let reason = p["reason"].as_str().unwrap();
+                    assert!(
+                        reason.contains(r.case.rule.as_str()) && reason.contains("INV-05"),
+                        "the refusal names the indeterminate rule and INV-05: {name}: {reason}"
                     );
                 }
             }
@@ -1107,7 +1208,7 @@ mod tier2 {
         let rise = passed
             .iter()
             .find_map(|x| match x {
-                Record::RiseMeasured {
+                Record::RiseComputed {
                     net: n,
                     rise_30_70_ps,
                     complete: true,

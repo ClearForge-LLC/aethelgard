@@ -4,7 +4,7 @@
 //! 1. `aethelgard-twin::analog` writes one netlist per line;
 //! 2. the bridge, a sandboxed tool beside this executable, measures each
 //!    line's 30 %–70 % rise time with libngspice;
-//! 3. each measurement is recorded as `analog.rise_time_measured`;
+//! 3. each rise is recorded as `analog.rise_time_computed` (from declared values, `RUL-19`);
 //! 4. a line past its ceiling, still rising when the window ends, or never
 //!    low when released faults its bus: `bridge.fault_state` is
 //!    recorded, and the bus's devices are left out of the platform the boot
@@ -16,7 +16,7 @@
 //! answers anything but one answer per line stops the call: nothing is read
 //! as "no fault" (`INV-06`). What the design does to a line is never a stop.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::Path;
@@ -31,8 +31,9 @@ use serde_json::{Value, json};
 use crate::run;
 use crate::verdict::{AnalogRecord, FaultRecord, Finding};
 
-/// The bridge binary, found in this executable's own directory.
-pub const BRIDGE: &str = "aethelgard-bridge";
+/// The bridge binary, found in this executable's own directory: the name
+/// the archive header gives it, too.
+pub const BRIDGE: &str = campaign::BRIDGE;
 
 /// The ngspice release the bridge is pinned to; an answer naming another is refused.
 pub const NGSPICE: &str = "44.2";
@@ -49,6 +50,9 @@ pub struct Pass {
     pub findings: Vec<Finding>,
     /// The bridge's sandbox, when it ran: its `uid_boundary` joins the boot's.
     pub sandbox: Option<run::SandboxReport>,
+    /// When the bridge ran: its identity digest and the ngspice its answers
+    /// named, as it reported them (`AET-WO-2205` §1.1).
+    pub tools: Vec<(&'static str, String)>,
 }
 
 impl Pass {
@@ -73,8 +77,9 @@ pub const BRIDGE_SOURCE_SHA256: &str =
 /// digest of the sources it was built from, which must be the ones this CLI
 /// was built with. A stale bridge, one from another tree, or one that says
 /// anything else first is refused (`BridgeMismatch`, exit 4) before any of
-/// its answer is read; the rest of its stdout is returned.
-pub fn identified(stdout: &str) -> Result<&str, run::Stop> {
+/// its answer is read; the digest as the bridge named it, for the archive's
+/// header (`AET-WO-2205` §1.1), and the rest of its stdout are returned.
+pub fn identified(stdout: &str) -> Result<(String, &str), run::Stop> {
     let (first, rest) = stdout.split_once('\n').unwrap_or((stdout, ""));
     let mismatch = |message: String| run::Stop {
         code: crate::EXIT_TOOL_UNAVAILABLE,
@@ -102,13 +107,13 @@ pub fn identified(stdout: &str) -> Result<&str, run::Stop> {
             first.escape_debug()
         )));
     }
-    if field("source_sha256") != Some(want) {
-        return Err(mismatch(format!(
+    match field("source_sha256") {
+        Some(named) if named == want => Ok((named.to_owned(), rest)),
+        named => Err(mismatch(format!(
             "it was built from sources {}, not the {want} this CLI was built with: rebuild it",
-            field("source_sha256").unwrap_or("(none)")
-        )));
+            named.unwrap_or("(none)")
+        ))),
     }
-    Ok(rest)
 }
 
 /// The bridge beside this executable, or `BridgeUnavailable` (exit 4).
@@ -157,7 +162,25 @@ pub fn pass(
         .into_iter()
         .filter(|d| !held.lines.iter().any(|h| h.net == d.net))
         .collect();
-    let mut pass = measure(&decks, dir, status)?;
+    // Each record states its bus's declared speed beside the deck's window
+    // (`AET-WO-2205` §1.3).
+    // belt-and-suspenders: `SolvedTopology::validate` (run by `decks`) already
+    // refuses a line whose bus has no ceiling (`UnknownBus`) and speeds that
+    // name other buses than the ceilings (`SpeedBusMismatch`), so this cannot
+    // fire today; it keeps an IR change from becoming a panic at `declared[bus]`.
+    if let Some(d) = decks
+        .iter()
+        .find(|d| !topology.i2c_speeds.contains_key(&d.bus))
+    {
+        return Err(run::Stop::tool_error(
+            "aethelgard",
+            format!(
+                "bus `{}` of net `{}` declares no speed in the solved topology",
+                d.bus, d.net
+            ),
+        ));
+    }
+    let mut pass = measure(&decks, &topology.i2c_speeds, dir, status)?;
     for line in held.lines {
         pass.findings.push(Finding::plain(
             campaign::HELD_LOW_FINDING,
@@ -180,9 +203,14 @@ pub fn pass(
 }
 
 /// Runs the bridge on `decks`; with none, there is nothing to measure.
-fn measure(decks: &[Deck], dir: &Path, status: &Path) -> Result<Pass, run::Stop> {
+fn measure(
+    decks: &[Deck],
+    declared: &BTreeMap<String, u32>,
+    dir: &Path,
+    status: &Path,
+) -> Result<Pass, run::Stop> {
     if decks.is_empty() {
-        return Ok(judge(decks, &[]));
+        return Ok(judge(decks, &[], declared));
     }
     let tool = bridge()?;
     fs::DirBuilder::new()
@@ -205,7 +233,7 @@ fn measure(decks: &[Deck], dir: &Path, status: &Path) -> Result<Pass, run::Stop>
     .run_bounded(crate::renode::BOOT_BOUNDS)?;
     let code = out.code(BRIDGE)?;
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let stdout = identified(&stdout)?;
+    let (identity, stdout) = identified(&stdout)?;
     if code != 0 {
         return Err(run::Stop::tool_error(
             BRIDGE,
@@ -216,9 +244,11 @@ fn measure(decks: &[Deck], dir: &Path, status: &Path) -> Result<Pass, run::Stop>
             ),
         ));
     }
-    let measured = answers(decks, stdout).map_err(|e| run::Stop::tool_error(BRIDGE, e))?;
-    let mut pass = judge(decks, &measured);
+    let (measured, ngspice) =
+        answers(decks, stdout).map_err(|e| run::Stop::tool_error(BRIDGE, e))?;
+    let mut pass = judge(decks, &measured, declared);
     pass.sandbox = Some(out.sandbox);
+    pass.tools = vec![(BRIDGE, identity), (campaign::NGSPICE, ngspice)];
     Ok(pass)
 }
 
@@ -238,6 +268,9 @@ pub struct Solved {
     pub crossings: Vec<Crossing>,
     pub minimum_microvolts: u64,
     pub sandbox: run::SandboxReport,
+    /// The bridge's identity digest, and the ngspice its crossing lines
+    /// named (none when the rail crossed no level), as it reported them.
+    pub tools: Vec<(&'static str, String)>,
 }
 
 /// Solves `rail` once with the bridge (`--rail`, ruled D1), over `span_ns`,
@@ -282,7 +315,7 @@ pub fn rail(rail: &Rail, span_ns: u64, dir: &Path, status: &Path) -> Result<Solv
     .run_bounded(crate::renode::BOOT_BOUNDS)?;
     let code = out.code(BRIDGE)?;
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let stdout = identified(&stdout)?;
+    let (identity, stdout) = identified(&stdout)?;
     let fail = |m: String| run::Stop::tool_error(BRIDGE, m);
     if code != 0 {
         return Err(fail(format!(
@@ -292,10 +325,20 @@ pub fn rail(rail: &Rail, span_ns: u64, dir: &Path, status: &Path) -> Result<Solv
         )));
     }
     let (crossings, minimum_microvolts) = rail_answer(stdout, &levels).map_err(fail)?;
+    let mut tools = vec![(BRIDGE, identity)];
+    // Every crossing line named `NGSPICE` or was refused: the first says it.
+    if let Some(first) = stdout.lines().next().filter(|_| !crossings.is_empty()) {
+        let named = serde_json::from_str::<Value>(first)
+            .ok()
+            .and_then(|v| v.get("ngspice").and_then(Value::as_str).map(str::to_owned))
+            .ok_or_else(|| fail(format!("`{first}` names no ngspice")))?;
+        tools.push((campaign::NGSPICE, named));
+    }
     Ok(Solved {
         crossings,
         minimum_microvolts,
         sandbox: out.sandbox,
+        tools,
     })
 }
 
@@ -380,7 +423,7 @@ pub fn boot(inv: &run::Invocation<'_>, renode: &Path) -> Result<run::Output, run
     }
     .run_bounded_filtered(crate::renode::BOOT_BOUNDS, crate::renode::LOG_FILTER)?;
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
-    let rest = identified(&text)?.as_bytes().to_vec();
+    let rest = identified(&text)?.1.as_bytes().to_vec();
     out.stdout = rest;
     Ok(out)
 }
@@ -532,7 +575,9 @@ pub fn droop_report(
             boot_word: boot,
             status,
             value,
-            witness,
+            // The judge read the whole witness; the report keeps the lines
+            // kind 19 archives (`AET-WO-2204` B4, `AET-WO-2205` §1.8).
+            witness: witness.and_then(|w| w.observed),
         });
     }
     // belt-and-suspenders: `check_droop` refused a rail whose levels are not
@@ -566,7 +611,7 @@ pub fn droop_report(
             decoupling_picofarads: rail.decoupling_picofarads,
             bor_level: d.bor_level,
             minimum_microvolts: solved.minimum_microvolts,
-            thresholds: "DS12117 Rev 7 Table 26, typical (provisional: read from a mirror, AET-WO-2301 F1)",
+            thresholds: "DS12117 Rev 10 Table 16, typical (read from st.com; equal to Rev 7's, AET-WO-2205)",
         },
         crossings: solved
             .crossings
@@ -619,7 +664,10 @@ enum Answer {
 
 /// One answer per deck, in the request's order, each exactly one of the
 /// bridge's three documented lines; anything else is refused.
-fn answers(decks: &[Deck], stdout: &str) -> Result<Vec<Answer>, String> {
+/// Each line's answer, and the ngspice they name: one, since each is refused
+/// unless it names [`NGSPICE`], which the bridge checks against the
+/// library's own banner.
+fn answers(decks: &[Deck], stdout: &str) -> Result<(Vec<Answer>, String), String> {
     let lines: Vec<&str> = stdout.lines().collect();
     if lines.len() != decks.len() {
         return Err(format!(
@@ -628,15 +676,20 @@ fn answers(decks: &[Deck], stdout: &str) -> Result<Vec<Answer>, String> {
             decks.len()
         ));
     }
-    decks
+    let mut ngspice = None;
+    let answers = decks
         .iter()
         .zip(lines)
         .map(|(deck, line)| {
             let v: Value =
                 serde_json::from_str(line).map_err(|e| format!("`{line}` is not JSON: {e}"))?;
-            answer(deck, &v).ok_or_else(|| format!("`{line}` is not an answer for `{}`", deck.net))
+            let a = answer(deck, &v)
+                .ok_or_else(|| format!("`{line}` is not an answer for `{}`", deck.net))?;
+            ngspice = v.get("ngspice").and_then(Value::as_str).map(str::to_owned);
+            Ok(a)
         })
-        .collect()
+        .collect::<Result<_, String>>()?;
+    Ok((answers, ngspice.ok_or("no answer named its ngspice")?))
 }
 
 fn answer(deck: &Deck, v: &Value) -> Option<Answer> {
@@ -658,17 +711,19 @@ fn answer(deck: &Deck, v: &Value) -> Option<Answer> {
 }
 
 /// Why a bus is faulted, as its fault record's `from` names it.
-const PAST_CEILING: &str = "analog.rise_time_measured > ceiling_ns";
+const PAST_CEILING: &str = "analog.rise_time_computed > ceiling_ns";
 const STUCK_HIGH: &str = "analog.line_stuck_high";
 
-fn judge(decks: &[Deck], answers: &[Answer]) -> Pass {
+/// `declared` holds each deck's bus: [`pass`] refuses a deck whose bus has
+/// no declared speed before the bridge runs.
+fn judge(decks: &[Deck], answers: &[Answer], declared: &BTreeMap<String, u32>) -> Pass {
     let mut analog_records = Vec::new();
     let mut findings = Vec::new();
     let mut faulted: Vec<(String, Vec<String>, Vec<&'static str>)> = Vec::new();
     for (deck, &answer) in decks.iter().zip(answers) {
         let (bus, net, ceiling) = (&deck.bus, &deck.net, deck.ceiling_ns);
         let mut record = AnalogRecord {
-            kind: "analog.rise_time_measured",
+            kind: "analog.rise_time_computed",
             source: "ngspice",
             bus: bus.clone(),
             net: net.clone(),
@@ -680,6 +735,8 @@ fn judge(decks: &[Deck], answers: &[Answer]) -> Pass {
             exceeds: false,
             method: "interpolated",
             ngspice: NGSPICE,
+            deck_hz: analog::DECK_HZ,
+            declared_hz: declared[bus],
         };
         let cause = match answer {
             Answer::Rise(rise) => {
@@ -755,6 +812,7 @@ fn judge(decks: &[Deck], answers: &[Answer]) -> Pass {
         faults,
         findings,
         sandbox: None,
+        tools: Vec::new(),
     }
 }
 
@@ -802,7 +860,10 @@ mod tests {
         let me = BRIDGE_SOURCE_SHA256;
         let ok =
             format!(r#"{{"bridge":"aethelgard-bridge","source_sha256":"{me}","version":"0.1.0"}}"#);
-        assert_eq!(identified(&format!("{ok}\nrest\n")).unwrap(), "rest\n");
+        assert_eq!(
+            identified(&format!("{ok}\nrest\n")).unwrap(),
+            (me.to_owned(), "rest\n")
+        );
         let refused = [
             String::new(),
             "rest".to_owned(),
@@ -886,6 +947,10 @@ mod tests {
         analog::decks(&topology).unwrap()
     }
 
+    fn speeds() -> BTreeMap<String, u32> {
+        BTreeMap::from([("SENSORS".to_owned(), 100_000)])
+    }
+
     fn line(net: &str, rise: &str) -> String {
         format!(
             r#"{{"method":"interpolated","net":"{net}","ngspice":"44.2","rise_30_70_ns":{rise}}}"#
@@ -898,7 +963,10 @@ mod tests {
         let good = format!("{}\n{}\n", line("I2C_SCL", "1.5"), line("I2C_SDA", "2.5"));
         assert_eq!(
             answers(&d, &good).unwrap(),
-            [Answer::Rise(1.5), Answer::Rise(2.5)]
+            (
+                vec![Answer::Rise(1.5), Answer::Rise(2.5)],
+                "44.2".to_owned()
+            )
         );
         let other = format!(
             "{}\n{}\n",
@@ -906,7 +974,7 @@ mod tests {
             r#"{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","volts_at_release":1.65}"#
         );
         assert_eq!(
-            answers(&d, &other).unwrap(),
+            answers(&d, &other).unwrap().0,
             [Answer::Incomplete(13298.0), Answer::StuckHigh(1.65)]
         );
         let incomplete = |extra: &str| {
@@ -975,17 +1043,21 @@ mod tests {
     fn a_line_past_its_ceiling_faults_its_bus_once() {
         let d = decks();
         let rises = |a: f64, b: f64| [Answer::Rise(a), Answer::Rise(b)];
-        let pass = judge(&d, &rises(3982.3, 186.4));
+        let pass = judge(&d, &rises(3982.3, 186.4), &speeds());
         assert_eq!(pass.analog.len(), 2);
+        // The deck's 400 kHz window, beside the bus's declared 100 kHz (`AET-WO-2205` §1.3).
+        for r in &pass.analog {
+            assert_eq!((r.deck_hz, r.declared_hz), (400_000, 100_000));
+        }
         assert!(pass.analog[0].exceeds && !pass.analog[1].exceeds);
         assert_eq!(pass.faulted(), BTreeSet::from(["SENSORS".to_owned()]));
         assert_eq!(pass.faults[0].nets, ["I2C_SCL"]);
         assert_eq!(pass.findings.len(), 1);
-        let pass = judge(&d, &rises(3982.3, 3982.3));
+        let pass = judge(&d, &rises(3982.3, 3982.3), &speeds());
         assert_eq!((pass.faults.len(), pass.findings.len()), (1, 2));
         assert_eq!(pass.faults[0].nets, ["I2C_SCL", "I2C_SDA"]);
         // At the ceiling exactly is not past it.
-        let pass = judge(&d, &rises(300.0, 186.4));
+        let pass = judge(&d, &rises(300.0, 186.4), &speeds());
         assert!(pass.faults.is_empty() && pass.findings.is_empty());
         assert_eq!(pass.analog[0].rise_30_70_ns, Some(300.0));
     }
@@ -995,11 +1067,15 @@ mod tests {
     #[test]
     fn an_unfinished_rise_and_a_line_stuck_high_fault_the_bus() {
         let d = decks();
-        let pass = judge(&d, &[Answer::Incomplete(13298.0), Answer::Rise(186.4)]);
+        let pass = judge(
+            &d,
+            &[Answer::Incomplete(13298.0), Answer::Rise(186.4)],
+            &speeds(),
+        );
         let r = &pass.analog[0];
         assert_eq!(
             (r.kind, r.complete, r.exceeds),
-            ("analog.rise_time_measured", false, true)
+            ("analog.rise_time_computed", false, true)
         );
         assert_eq!(
             (r.rise_30_70_ns, r.rise_30_70_ns_lower_bound),
@@ -1013,7 +1089,11 @@ mod tests {
                 .contains("more than 13298 ns (a lower bound)")
         );
 
-        let pass = judge(&d, &[Answer::StuckHigh(1.65), Answer::Rise(3982.3)]);
+        let pass = judge(
+            &d,
+            &[Answer::StuckHigh(1.65), Answer::Rise(3982.3)],
+            &speeds(),
+        );
         let r = &pass.analog[0];
         assert_eq!(
             (r.kind, r.complete, r.exceeds),

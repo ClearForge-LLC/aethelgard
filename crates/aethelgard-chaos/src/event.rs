@@ -13,13 +13,20 @@ pub const VERSION: u64 = 1;
 /// kind 15, the solved I2C bus, and the run rules that join to it; 4 since
 /// `AET-WO-2301` added kinds 16 to 20, a declared supply droop; 5 since
 /// `AET-WO-2204` made kind 13 the device model's log of each identity read
-/// and kind 19 carry the same since its release. An archive of any other
-/// version is refused by name (`Fault::Version`), as 2301 refused version 3.
-pub const TRACE_VERSION: u64 = 5;
+/// and kind 19 carry the same since its release; 6 since `AET-WO-2205`: the
+/// header names the tools that judged the run ([`Header::tools`]), kind 7 is
+/// `analog.rise_time_computed` and kinds 7 and 8 state the deck's window
+/// beside the bus's declared speed, kind 10 carries the firmware's executable
+/// segments, and kind 19's witness is the lines it archives. An archive of
+/// any other version is refused by name (`Fault::Version`), as 2204 refused
+/// version 4.
+pub const TRACE_VERSION: u64 = 6;
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.
 pub const MANIFEST_VERSION: u64 = 2;
+/// The longest tool version a header carries.
+pub const MAX_TOOL_VERSION_BYTES: usize = 256;
 pub const TRACE_MAGIC: &str = "aethelgard-trace";
 pub const MANIFEST_MAGIC: &str = "aethelgard-manifest";
 pub const MIRROR_MAGIC: &str = "aethelgard-mirror";
@@ -267,6 +274,11 @@ pub struct Header {
     pub run_id: [u8; 16],
     /// `[name, sha256]`, sorted by name, names unique (`INV-03`).
     pub artifacts: Vec<(String, [u8; 32])>,
+    /// `[name, version]` of each tool that judged the run, as the tool
+    /// reported it, sorted by name, names unique (`AET-WO-2205` §1.1, review
+    /// B4). Replay reports them; it does not require them equal to the
+    /// replaying host's.
+    pub tools: Vec<(String, String)>,
 }
 
 impl Header {
@@ -278,6 +290,16 @@ impl Header {
         }
         if self.artifacts.windows(2).any(|w| w[0].0 >= w[1].0) {
             return Err("artifacts are not sorted by unique name");
+        }
+        if !self
+            .tools
+            .iter()
+            .all(|(name, version)| name_ok(name) && text_ok(version, 1, MAX_TOOL_VERSION_BYTES))
+        {
+            return Err("a tool is not a name and 1 to 256 printable ASCII bytes of version");
+        }
+        if self.tools.windows(2).any(|w| w[0].0 >= w[1].0) {
+            return Err("tools are not sorted by unique name");
         }
         Ok(())
     }
@@ -296,6 +318,17 @@ impl Header {
             Value::Bytes(self.run_id.to_vec()),
             Value::Text(TIME_UNIT.to_owned()),
             Value::Array(artifacts),
+            Value::Array(
+                self.tools
+                    .iter()
+                    .map(|(name, version)| {
+                        Value::Array(vec![
+                            Value::Text(name.clone()),
+                            Value::Text(version.clone()),
+                        ])
+                    })
+                    .collect(),
+            ),
         ])
     }
 
@@ -307,6 +340,7 @@ impl Header {
             Value::Bytes(run_id),
             Value::Text(unit),
             Value::Array(list),
+            Value::Array(tool_list),
         ] = items
         else {
             return malformed("header has the wrong shape");
@@ -330,7 +364,21 @@ impl Header {
             };
             artifacts.push((name.clone(), hash));
         }
-        let header = Self { run_id, artifacts };
+        let mut tools = Vec::with_capacity(tool_list.len());
+        for entry in tool_list {
+            let Value::Array(pair) = entry else {
+                return malformed("tool is not an array");
+            };
+            let [Value::Text(name), Value::Text(version)] = pair.as_slice() else {
+                return malformed("tool is not [name, version]");
+            };
+            tools.push((name.clone(), version.clone()));
+        }
+        let header = Self {
+            run_id,
+            artifacts,
+            tools,
+        };
         match header.check() {
             Ok(()) => Ok(header),
             Err(reason) => malformed(reason),

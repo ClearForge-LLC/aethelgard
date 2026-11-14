@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "about": "AET-WO-3100 \u00a71.4: the seeded set. Each case is a scenario run against the generated firmware, unmutated or with one named mutant applied to a scratch copy of boards/sentinel-01. A mutant's `find` must occur exactly once in its `file`, or the test refuses it. `findings` are the case's failing finding kinds; `domain` and `rule` are what `aethelgard attribute` must name.",
+  "schema_version": 2,
+  "about": "AET-WO-3100 \u00a71.4: the seeded set. Each case is a scenario run against the generated firmware, unmutated or with one named mutant applied to a scratch copy of boards/sentinel-01. A mutant's `find` must occur exactly once in its `file`, or the test refuses it. `findings` are the case's failing finding kinds; `domain` and `rule` are what `aethelgard attribute` must name. Since schema version 2 (AET-WO-2205 \u00a71.6), `evidence` and `masked` are the exact [index, kind] events `attribute` names for the case, measured on the build; they move when the trace gains records, and whoever moves them re-derives them from `attribute` and accounts for every changed row in their FEEDBACK.",
   "mutants": {
     "wrong-address": {
       "why": "the BME280 read addresses 0x77, not the solved 0x76",
@@ -55,6 +55,12 @@
       "file": "firmware/src/main.rs",
       "find": "write_volatile(BOOT_MAGIC)",
       "replace": "write_volatile(0)"
+    },
+    "leave-firmware": {
+      "why": "after writing the boot word, the core jumps into the FMC bank at 0x70000000, plain zero-filled memory outside every executable segment (AET-WO-2205 \u00a71.5; twin_tier2's adversarial A7)",
+      "file": "firmware/src/main.rs",
+      "find": "unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_MAGIC) };",
+      "replace": "unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_MAGIC) };\n    unsafe { core::arch::asm!(\"ldr r0, =0x70000001\", \"bx r0\", options(noreturn)) };"
     }
   },
   "cases": [
@@ -67,7 +73,22 @@
       "findings": [
         "analog_rise_exceeds_ceiling",
         "i2c_timeout"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          5,
+          9
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "pullup-4k7",
@@ -78,7 +99,22 @@
       "findings": [
         "analog_rise_exceeds_ceiling",
         "i2c_timeout"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          5,
+          9
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "pullup-10k",
@@ -89,7 +125,22 @@
       "findings": [
         "analog_rise_exceeds_ceiling",
         "i2c_timeout"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          5,
+          9
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "pullup-47k",
@@ -100,7 +151,22 @@
       "findings": [
         "analog_rise_exceeds_ceiling",
         "i2c_timeout"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          5,
+          9
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "pullup-100k",
@@ -111,7 +177,22 @@
       "findings": [
         "analog_rise_exceeds_ceiling",
         "i2c_timeout"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          5,
+          9
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "cap-220p-2k2",
@@ -122,7 +203,22 @@
       "findings": [
         "analog_rise_exceeds_ceiling",
         "i2c_timeout"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          5,
+          9
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "cap-390p-sda-2k2",
@@ -133,7 +229,18 @@
       "findings": [
         "analog_rise_exceeds_ceiling",
         "i2c_timeout"
-      ]
+      ],
+      "evidence": [
+        [
+          4,
+          7
+        ],
+        [
+          5,
+          9
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "held-low-sda",
@@ -144,7 +251,14 @@
       "findings": [
         "i2c_line_held_low",
         "i2c_timeout"
-      ]
+      ],
+      "evidence": [
+        [
+          4,
+          9
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "held-low-scl",
@@ -155,7 +269,14 @@
       "findings": [
         "i2c_line_held_low",
         "i2c_timeout"
-      ]
+      ],
+      "evidence": [
+        [
+          4,
+          9
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "trap-wrong-address-47k",
@@ -166,6 +287,26 @@
       "findings": [
         "analog_rise_exceeds_ceiling",
         "i2c_timeout"
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          5,
+          9
+        ]
+      ],
+      "masked": [
+        [
+          15,
+          13
+        ]
       ]
     },
     {
@@ -176,7 +317,22 @@
       "rule": "S1",
       "findings": [
         "i2c_timeout"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          14,
+          13
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "trap-wrong-address-3k3",
@@ -186,7 +342,22 @@
       "rule": "S1",
       "findings": [
         "i2c_timeout"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          14,
+          13
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "wrong-register",
@@ -197,7 +368,22 @@
       "findings": [
         "i2c_identity_mismatch",
         "i2c_transaction_unwitnessed"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          14,
+          13
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "wrong-nbytes",
@@ -208,7 +394,22 @@
       "findings": [
         "i2c_identity_mismatch",
         "i2c_transaction_unwitnessed"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          14,
+          13
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "i2c-clock-skipped",
@@ -220,7 +421,22 @@
         "i2c_timeout",
         "locked_peripheral_access",
         "register_mismatch"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          11,
+          11
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "scl-af-wrong",
@@ -230,7 +446,22 @@
       "rule": "S1",
       "findings": [
         "register_mismatch"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          9,
+          11
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "sda-af-wrong",
@@ -240,7 +471,22 @@
       "rule": "S1",
       "findings": [
         "register_mismatch"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          9,
+          11
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "scl-mode-output",
@@ -250,7 +496,22 @@
       "rule": "S1",
       "findings": [
         "register_mismatch"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          8,
+          11
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "gpiob-clock-skipped",
@@ -261,7 +522,30 @@
       "findings": [
         "locked_peripheral_access",
         "register_mismatch"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          8,
+          11
+        ],
+        [
+          9,
+          11
+        ],
+        [
+          10,
+          11
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "no-boot-word",
@@ -271,7 +555,22 @@
       "rule": "S2",
       "findings": [
         "boot_word_missing"
-      ]
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          5,
+          10
+        ]
+      ],
+      "masked": []
     },
     {
       "name": "trap-unmutated-3k3",
@@ -279,7 +578,9 @@
       "mutant": null,
       "domain": "none",
       "rule": "N1",
-      "findings": []
+      "findings": [],
+      "evidence": [],
+      "masked": []
     },
     {
       "name": "unmutated-2k2",
@@ -287,7 +588,61 @@
       "mutant": null,
       "domain": "none",
       "rule": "N1",
-      "findings": []
+      "findings": [],
+      "evidence": [],
+      "masked": []
+    },
+    {
+      "name": "leave-firmware",
+      "scenario": "scenarios/sentinel-01/pullup-2k2.json",
+      "mutant": "leave-firmware",
+      "domain": "software",
+      "rule": "S2",
+      "findings": [
+        "pc_outside_firmware"
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          5,
+          10
+        ]
+      ],
+      "masked": []
+    },
+    {
+      "name": "trap-indeterminate-leave-47k",
+      "scenario": "scenarios/sentinel-01/pullup-47k.json",
+      "mutant": "leave-firmware",
+      "domain": "indeterminate",
+      "rule": "I3",
+      "findings": [
+        "analog_rise_exceeds_ceiling",
+        "i2c_timeout",
+        "pc_outside_firmware"
+      ],
+      "evidence": [
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          5,
+          9
+        ]
+      ],
+      "masked": []
     }
   ]
 }

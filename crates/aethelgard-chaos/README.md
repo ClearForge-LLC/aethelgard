@@ -47,10 +47,14 @@ leaves behind; it must not orphan a committed run).
 
 - **`trace.cbor`**, a CBOR sequence (RFC 8742): the header, then one item per
   event, no enclosing array, so it can be appended to.
-  - Header: `["aethelgard-trace", 2, run_id, "ns", artifacts]`. `run_id` is 16
-    bytes. `artifacts` is `[name, sha256]` pairs sorted by name, names unique,
-    each hash 32 bytes: what the run judged (`INV-03`). An artifact name is 1 to
-    1,024 bytes of printable ASCII, space allowed.
+  - Header: `["aethelgard-trace", 6, run_id, "ns", artifacts, tools]`. `run_id`
+    is 16 bytes. `artifacts` is `[name, sha256]` pairs sorted by name, names
+    unique, each hash 32 bytes: what the run judged (`INV-03`). An artifact name
+    is 1 to 1,024 bytes of printable ASCII, space allowed. `tools` is `[name,
+    version]` pairs sorted by name, names unique: what judged the run, each
+    version as the tool reported it (`AET-WO-2205` §1.1). A tool name is 1 to 64
+    printable ASCII bytes with no space, a version 1 to 256 with spaces allowed.
+    Replay reports them and never compares them with the replaying host's.
   - Event: `[kind, timestamp, …payload]`. Timestamps are unsigned, in
     nanoseconds, and never decrease; equal timestamps are allowed and file order
     decides. Events are never re-sorted.
@@ -75,11 +79,15 @@ leaves behind; it must not orphan a committed run).
 
 ## Version rule
 
-The trace header carries version 4 (`AET-WO-2300` added kinds 5 to 14 at
-version 2, `AET-WO-3100` kind 15 and the run rules that join to it at
-version 3, and `AET-WO-2301` kinds 16 to 20, a declared supply droop, at
-version 4; each time the golden trace's bytes changed in that one header byte
-only). An older trace is refused, not read under version 4's rules. The mirror record
+The trace header carries version 6. `AET-WO-2300` added kinds 5 to 14 at
+version 2, `AET-WO-3100` kind 15 and the run rules that join to it at version
+3, `AET-WO-2301` kinds 16 to 20, a declared supply droop, at version 4, and
+`AET-WO-2204` kind 13's device log at version 5; each time the golden trace's
+bytes changed in that one header byte only. `AET-WO-2205` added the header's
+`tools`, the window on kinds 7 and 8, kind 10's executable segments and kind
+19's slimmed witness at version 6; the golden trace's header gained its sixth
+item, an empty `tools`. An older trace is refused, not read under version 6's
+rules. The mirror record
 carries version 1, and the manifest version 2 (`AET-WO-0400a` changed what
 `state_hash` means, the trace's bytes not at all). A reader refuses any other
 version (`UnknownVersion`), judged before the item's shape. A change to the
@@ -179,10 +187,10 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 |---|---|---|
 | 5 | scenario | `name`, `sha256` (32 bytes, of the file), `expect_pass`, `[finding kind…]` (sorted; empty exactly when `expect_pass`), `[override…]`: `[0, bus, ohms]`, `[1, net, femtofarads]` or `[2, bus, line]` (0 SDA, 1 SCL) |
 | 6 | solved | `specification_sha256`, `topology_sha256` (32 bytes each) |
-| 7 | `analog.rise_time_measured` | `bus`, `net`, `rise_30_70_ps`, `complete`, `ceiling_ps`, `exceeds` (which must equal `!complete \|\| rise > ceiling`) |
-| 8 | `analog.line_stuck_high` | `bus`, `net`, `microvolts_at_release`, `ceiling_ps` |
+| 7 | `analog.rise_time_computed` (from declared values, `RUL-19` (1)) | `bus`, `net`, `rise_30_70_ps`, `complete`, `ceiling_ps`, `exceeds` (which must equal `!complete \|\| rise > ceiling`), `window` `[deck_hz, declared_hz]`: the deck's 400 kHz window beside the bus's declared speed, both above 0 |
+| 8 | `analog.line_stuck_high` | `bus`, `net`, `microvolts_at_release`, `ceiling_ps`, `window` as kind 7's |
 | 9 | `bridge.fault_state` | `bus`, `fault`, `source` (1–128 bytes), `[cause…]`, `[net…]` (sorted), `firmware_sees` (0–1,024 bytes) |
-| 10 | the boot | `image_sha256`, the boot word's `reading`, `instructions_expected`, `instructions_observed?`, `pc?` |
+| 10 | the boot | `image_sha256`, the boot word's `reading`, `instructions_expected`, `instructions_observed?`, `pc?`, `executable`: the firmware's executable segments as `[start, end)` pairs at their physical address, sorted, disjoint, nonempty, at most 16 |
 | 11 | a register | `name`, `reading` |
 | 12 | an I2C identity read | `reference`, `address`, `register` (each ≤ 255), `expected`, `observed?`, `status?` (text) |
 | 13 | an I2C device witness (`AET-WO-2204`) | `peripheral`, `reference`, `device`, `[expected line…]`, `[observed line…]?`, `[absent address…]` (at most 16 lines, each 1–256 printable bytes) |
@@ -266,7 +274,10 @@ campaign run by, after the strict reader. It refuses a run holding any event
 but campaign records, and a header whose `artifacts` are not exactly `base`,
 `firmware`, `scenario`, `specification` and `topology`, whose scenario,
 specification and topology hashes are not the records', or whose `run_id` is
-not the one its scenario, specification and firmware give. Then
+not the one its scenario, specification and firmware give, or whose `tools`
+are not exactly the ones that ran: `aethelgard` and `renode` always,
+`aethelgard-bridge` when kinds 7, 8 or 16 exist, and `ngspice` when kinds 7, 8
+or 17 exist (`campaign::tools_of`). Then
 `campaign::check_run`, which the campaign also applies before it writes a run,
 refuses:
 
@@ -296,7 +307,11 @@ refuses:
   without its override, or an override without its fault;
 - a verdict whose count of `analog_rise_exceeds_ceiling`,
   `analog_line_stuck_high` or `i2c_line_held_low` findings differs from those
-  records (so a passing verdict beside a bus fault, too).
+  records (so a passing verdict beside a bus fault, too);
+- a verdict that names `pc_outside_firmware` when kind 10's `pc` is inside its
+  executable segments, or does not when it is outside them (`AET-WO-2205`
+  §1.5). The segments are the judge's; replay cannot bind them to the ELF,
+  which is not archived (`RUL-19` (3)).
 
 So a run cannot replay as passing, or without its analog evidence, unless its
 manifest is re-sealed and its records rewritten consistently: which is the

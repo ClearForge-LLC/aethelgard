@@ -16,8 +16,12 @@ use aethelgard_ir::{AnalogLine, SolvedTopology};
 
 use crate::TwinError;
 
-/// The S2 window: nine bits at 400 kHz.
+/// The S2 window: nine bits at 400 kHz, whatever the bus's declared speed
+/// (review A10.4). Every analog record states it beside that speed
+/// (`AET-WO-2205` §1.3).
 pub const BIT_PS: u64 = 2_500_000;
+/// The window's bit rate, in Hz: [`BIT_PS`] as a frequency.
+pub const DECK_HZ: u32 = (1_000_000_000_000 / BIT_PS) as u32;
 pub const BITS: u64 = 9;
 pub const WINDOW_PS: u64 = BIT_PS * BITS;
 /// Each control edge ramps over 1 ns (S1).
@@ -172,6 +176,12 @@ mod tests {
             (2_500_000, 990_000, 2_310_000, 22_500_000)
         );
         assert_eq!((d[1].ceiling_ns, d[1].bus.as_str()), (300, "SENSORS"));
+    }
+
+    #[test]
+    fn the_deck_window_is_400_khz() {
+        assert_eq!(DECK_HZ, 400_000);
+        assert_eq!(u64::from(DECK_HZ) * BIT_PS, 1_000_000_000_000);
     }
 
     #[test]
