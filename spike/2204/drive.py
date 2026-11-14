@@ -8,7 +8,7 @@ fresh HOME per run whose Renode config points the history at /dev/null.
 
 Usage: drive.py <case.json> <out.jsonl> [runs]
 
-case.json: {"name", "platform", "elf", "records": n, "for_ns", "pre": [cmds before RunFor],
+case.json: {"name", "platform", "elf", "records": n, "for_ns", "pre": [cmds before RunFor], "sync": bool,
             "tail": "cli" | "onelevel", "extra": [[label, cmd], ...] read after the CLI's reads}
 """
 import hashlib, json, os, re, subprocess, sys, tempfile, time
@@ -86,7 +86,10 @@ def main():
             line = "; ".join(cmds).replace("LOGFILE", f"{home}/renode.log")
             os.makedirs(f"{home}/.config/renode")
             with open(f"{home}/.config/renode/config", "w") as cf:
-                cf.write("[general]\nhistory-path = /dev/null\n")
+                # `sync`: Renode's own switch (`Logger.cs` L822), which writes each
+                # log entry from the thread that logs it, with no queue or log thread.
+                cf.write("[general]\nhistory-path = /dev/null\n"
+                         + ("use-synchronous-logging = true\n" if case.get("sync") else ""))
             env = {"HOME": home, "PATH": "/usr/local/bin:/usr/bin:/bin", "DOTNET_EnableDiagnostics": "0",
                    "DOTNET_EnableWriteXorExecute": "0"}
             t0 = time.monotonic()

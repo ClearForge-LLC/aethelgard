@@ -109,3 +109,9 @@ for k in range(8):
     break
 EOF
 2026-11-14T01:28:57+00:00 aet2204-1727125-15456 memory.max=17179869184 memory.swap.max=0 pids.max=max cmd: bash -c PYTHONDONTWRITEBYTECODE=1 python3 /repo/spike/2204/s4_marker.py > /repo/spike/2204/out/s4-marker.txt
+2026-11-14T01:37:12+00:00 aet2204-1734354-21435 memory.max=17179869184 memory.swap.max=0 pids.max=max cmd: bash -c cd /cache && rm -f /cache/fw/ref-built.elf && /cache/target/debug/aethelgard build --crate /repo/boards/sentinel-01 --out /cache/fw/ref-built.elf | head -c 400; echo; ls -la /cache/fw/ref-built.elf
+2026-11-14T01:37:27+00:00 aet2204-1734649-9726 memory.max=17179869184 memory.swap.max=0 pids.max=max cmd: bash -c PYTHONDONTWRITEBYTECODE=1 python3 /repo/spike/2204/drive.py /cache/raw/ref-built.case.json /cache/raw/ref-built.jsonl 1 && cat /cache/raw/ref-built.jsonl
+2026-11-14T01:38:09+00:00 aet2204-1735240-7566 memory.max=12884901888 memory.swap.max=0 pids.max=max cmd: bash -c renode --help 2>&1 | grep -i -A1 "config"
+2026-11-14T01:38:31+00:00 aet2204-1735545-19780 memory.max=17179869184 memory.swap.max=0 pids.max=max cmd: bash -c rm -rf /cache/raw/s4e; PYTHONDONTWRITEBYTECODE=1 python3 /repo/spike/2204/s4_sync.py s4e 10
+2026-11-14T01:40:52+00:00 aet2204-1737488-7399 memory.max=17179869184 memory.swap.max=0 pids.max=max cmd: bash -c rm -rf /cache/raw/s4e; PYTHONDONTWRITEBYTECODE=1 python3 /repo/spike/2204/s4_sync.py s4e 10
+2026-11-14T01:45:47+00:00 aet2204-1741395-12918 memory.max=17179869184 memory.swap.max=0 pids.max=max cmd: bash /repo/spike/2204/s3_stripped.sh
