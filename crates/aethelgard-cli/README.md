@@ -55,7 +55,7 @@ aethelgard solve --file <path>
 Reads one `Specification` from the file, under the same 16 MiB cap and with the same exit `2` and `3` refusals as `validate`, and validates it. It then loads the pin table for `mcu.part` (exit `2`, `UnknownPart`, `id` the part, for any part but `STM32H753ZITx`), solves (`aethelgard_ir::solve`), and prints the `SolvedTopology` as one JSON line, exit `0`. `specification_sha256` is the sha256 of the file's bytes as read, so reformatting the file changes the hash and nothing else. It writes no file.
 
 ```json
-{"schema_version":2,"specification_sha256":"acd60081…","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},…},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{…},"i2c_devices":{…}}
+{"schema_version":3,"specification_sha256":"acd60081…","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},…},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{…},"i2c_devices":{…},"spi_devices":{}}
 ```
 
 A specification the solver cannot realize is exit `2`. The refusal envelope adds `claimants`, an array naming who is in conflict:
@@ -467,6 +467,14 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 | `I3` | indeterminate | the symptom's bus is computed healthy with no software evidence, and another bus is faulted | 7, 8, 9 |
 | `I4` | indeterminate | computed healthy, no software evidence, and no fault anywhere | 7 |
 
+For a symptom on an SPI device (`AET-WO-4200`: `spi_timeout`, `spi_record_invalid`, `spi_identity_mismatch` and `spi_transaction_unwitnessed`, from kinds 21 and 22):
+
+| rule | domain | holds when | evidence kinds |
+|---|---|---|---|
+| `E2` | electrical | the device's witness (kind 22) shows its controller's multiplexer routing a byte to the device's own address and finding nothing there, and the model logged nothing: a device absent behind a chip select the firmware asserted; its software evidence goes to `masked` | 22 |
+| `S3` | software | the multiplexer found no chip select asserted, or several; or the model logged lines other than the read's; or the read (kind 21) claims completion with nothing logged or routed | 21, 22 |
+| `I4` | indeterminate | neither | none |
+
 For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bus not computed healthy, gives `I2`. Then board software evidence gives `S2` (software; evidence kinds 7, 10, 11), and none gives `I4`.
 
 **The run.**
@@ -506,7 +514,8 @@ Then it attributes the run (`attribute`), reads each evidence event through `aet
 |---|---|
 | `E1`, every piece of evidence a complete rise past its ceiling (kind 7) or a bus fault caused only by one (kind 9) | a proposal per faulted bus, sized below |
 | `E1` with a line held low, a line stuck high, an incomplete rise, a bus fault of any other cause, or a line of the bus without exactly one complete rise | no rule: `no rule; RUL-18 model proposer slot`. A held line is a board fault no value change fixes |
-| `S1`, `S2` | a generator report, with no specification change |
+| `E2` | no rule: a device absent behind its chip select is a board fault no value change fixes |
+| `S1`, `S2`, `S3` | a generator report, with no specification change |
 | `N1`, `I1` to `I5` | nothing is proposed, naming the rule: attribution precedes mutation (`INV-05`) |
 
 **Sizing a pull-up.** The binding line is the one with the least `ceiling / rise`, which is the slowest line when the ceilings are equal. `R_target = R_now × ceiling × 0.8 / rise`, rounded down; the 0.8 is headroom for a ±5 % resistor tolerance and a capacitance spread the run did not measure. The value is the largest E12 value at or below `R_target`. If it is below `Rp_min`, the floor, nothing is proposed, never a value below it. The predicted rise is the binding line's rise scaled by the new value over the old, rounded up (the rise is linear in R × C, `docs/architecture.md` §2.18). Every rise is computed from declared values (`RUL-19`).

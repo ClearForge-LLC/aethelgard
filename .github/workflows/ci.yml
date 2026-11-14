@@ -250,7 +250,11 @@ jobs:
       # tier2::every_committed_proposal_reruns_to_its_own_bytes_and_regates.
       # 92: plus 2 from AET-WO-4100 in board_tier2.rs (the 4-layer fixture passes every gate
       # and its package holds; --against-fab names a missing inner layer and a lying stackup).
-      TIER2_MIN: "92"
+      # 96: plus 4 from AET-WO-4200: three in twin_tier2.rs (U4's JEDEC ID
+      # witnessed behind SPI1's multiplexer; SPI forgeries unwitnessed; the
+      # ICM-20948 fixture read end to end) and one in campaign_tier2.rs (a
+      # droop on a board whose first read is SPI, adversarial A1).
+      TIER2_MIN: "96"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

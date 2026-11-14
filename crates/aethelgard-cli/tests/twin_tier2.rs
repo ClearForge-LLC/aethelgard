@@ -161,7 +161,9 @@ fn mutant_of(board: &Path, name: &str, change: impl Fn(&Path)) -> PathBuf {
 fn edit(dir: &Path, rel: &str, from: &str, to: &str) {
     let path = dir.join(rel);
     let text = fs::read_to_string(&path).unwrap();
-    assert!(text.contains(from), "{rel} lacks {from}");
+    // Exactly once, as the seeded set's mutants: a find that matches two
+    // sites mutates both (`AET-WO-4200`: the SPI read's fold matched U2's).
+    assert_eq!(text.matches(from).count(), 1, "{rel} holds {from} not once");
     fs::write(&path, text.replace(from, to)).unwrap();
 }
 
@@ -274,7 +276,7 @@ fn the_emitted_platform_loads_and_lists_every_solved_peripheral() {
         .map(|p| (p["name"].as_str().unwrap(), p["type"].as_str().unwrap()))
         .collect();
     let solved =
-        aethelgard_twin::platform::instances(&topology(), &std::collections::BTreeSet::new())
+        aethelgard_twin::platform::instances(&topology(), &Default::default(), &Default::default())
             .unwrap();
     assert!(
         !solved.is_empty(),
@@ -727,7 +729,12 @@ fn a_value_one_bit_off_fails_as_an_identity_mismatch() {
     // AET-WO-2202: the firmware's record of what it read is one bit off the
     // table's (0x160 for 0x60). The judge's expectation is the table's.
     let elf = mutant("one-bit", |d| {
-        edit(d, "src/main.rs", "fold(0u32,", "fold(1u32,");
+        edit(
+            d,
+            "src/main.rs",
+            "buf0.iter().fold(0u32,",
+            "buf0.iter().fold(1u32,",
+        );
     });
     let (code, v) = boot_elf("one bit", &elf, "10ms");
     assert_eq!(code, Some(1), "a one-bit-off value exits 1: {v}");
@@ -1341,4 +1348,124 @@ fn renode_s_configuration_differs_from_its_default_in_synchronous_logging_alone(
         text,
         "Renode only reads the given configuration and never writes it"
     );
+}
+
+/// `AET-WO-4200` S2, as built: the reference firmware reads U4's JEDEC ID
+/// through SPI1's multiplexer, and Renode's `GenericSpiFlash` logs its eight
+/// `Transmit`-path lines for it; the multiplexer routes every byte.
+#[test]
+fn the_reference_reads_u4_s_jedec_id_witnessed_behind_spi1_s_multiplexer() {
+    let (code, v) = boot("reference spi", "10ms");
+    assert_eq!(code, Some(0), "{v}");
+    let spi = &v["boot"]["spi"][0];
+    assert_eq!(spi["reference"], "U4", "{v}");
+    assert_eq!(spi["select"], "PA0");
+    assert_eq!(spi["command"], "0x9f");
+    assert_eq!(spi["status"], "ok");
+    assert_eq!(spi["observed"], "0xef4017");
+    let w = &v["boot"]["spi_witness"][0];
+    assert_eq!(w["device"], "spi1.spi1mux.u4");
+    assert_eq!(w["observed"], w["expected"], "{v}");
+    assert_eq!(w["expected"].as_array().unwrap().len(), 8);
+    assert_eq!(w["unrouted"], serde_json::json!([]));
+}
+
+/// U4's read replaced by `forgery` (an expression of type
+/// `Result<usize, SpiError>`), with the table's EF 40 17 in the buffer.
+fn spi_forged(name: &str, forgery: &'static str) -> PathBuf {
+    mutant(name, move |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "let mut buf1 = [0u8; 3];",
+            "let mut buf1 = [0xefu8, 0x40, 0x17];",
+        );
+        edit(
+            d,
+            "src/main.rs",
+            "spi1.transfer(&mut r, Spi1Device::U4, &[0x9f], &mut buf1)",
+            forgery,
+        );
+    })
+}
+
+/// `AET-WO-4200` D2: a record that claims the flash's identity is witnessed
+/// only by the model's lines for that read. Claimed with no transfer, the
+/// model logs nothing; after a transfer of another command, it logs that
+/// command (and Renode an `[ERROR]` for it), never the read's lines.
+#[test]
+fn a_forged_spi_record_fails_unwitnessed() {
+    let elf = spi_forged("spi-forged", "Ok::<usize, SpiError>(3)");
+    let (code, v) = boot_elf("spi forged record", &elf, "10ms");
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["spi_transaction_unwitnessed"], "{v}");
+    assert_eq!(v["boot"]["spi"][0]["status"], "ok");
+    assert_eq!(v["boot"]["spi"][0]["observed"], "0xef4017");
+    assert_eq!(
+        v["boot"]["spi_witness"][0]["observed"],
+        serde_json::json!([])
+    );
+    let m = message(&v, "spi_transaction_unwitnessed");
+    assert!(m.contains("U4") && m.contains("PA0"), "{m}");
+
+    let elf = spi_forged(
+        "spi-wrong-command",
+        "{ let _ = spi1.transfer(&mut r, Spi1Device::U4, &[0x90], &mut [0u8; 3]); Ok::<usize, SpiError>(3) }",
+    );
+    let (code, v) = boot_elf("spi wrong command", &elf, "10ms");
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert!(
+        k.contains(&"spi_transaction_unwitnessed") && k.contains(&"renode_error_log"),
+        "{v}"
+    );
+    let observed = v["boot"]["spi_witness"][0]["observed"].as_array().unwrap();
+    assert_eq!(
+        observed[0],
+        "[NOISY] spi1.spi1mux.u4: Transmitting data 0x90, current state: RecognizeOperation"
+    );
+}
+
+/// `AET-WO-4200` D5: the test fixture `spi-imu.json` (the reference with an
+/// ICM-20948, U5, on the flash's bus, chip select `IMU_CS`) is read end to
+/// end. Generated through the board crate's generator and the twin's emitter
+/// (KiCad has no ICM-20948 symbol, so `generate` cannot draw it), built as
+/// the CLI builds a firmware, and judged by `simulate`: both reads pass, each
+/// witnessed by its own model behind one multiplexer, the IMU's idle lines
+/// skipped.
+#[test]
+fn a_second_spi_device_an_icm20948_is_read_and_witnessed() {
+    let spec_path = root().join("crates/aethelgard-cli/tests/fixtures/spi-imu.json");
+    let bytes = fs::read(&spec_path).unwrap();
+    let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
+    let sha: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &sha).unwrap();
+    let answers = |part: &str| matches!(aethelgard_twin::model::model(part), Ok(Some(_)));
+    let files =
+        aethelgard_svd_hal::board::generate_with("sentinel-01-board", &solved, &table, &answers)
+            .unwrap();
+    let dir = std::env::temp_dir().join(format!("aet-4200-t2-{}-imu", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    for (rel, text) in &files {
+        let to = dir.join(rel);
+        fs::create_dir_all(to.parent().unwrap()).unwrap();
+        fs::write(&to, text).unwrap();
+    }
+    let platform = dir.join("sentinel-01.repl");
+    fs::write(&platform, aethelgard_twin::platform::emit(&solved).unwrap()).unwrap();
+    let elf = mutant_of(&dir, "imu", |_| {});
+    let (code, v) = boot_on("spi imu", &platform, &spec_path, &elf, "10ms");
+    assert_eq!(code, Some(0), "{v}");
+    let spi = v["boot"]["spi"].as_array().unwrap();
+    assert_eq!(spi.len(), 2, "{v}");
+    assert_eq!(spi[1]["reference"], "U5");
+    assert_eq!(spi[1]["observed"], "0xea");
+    let w = &v["boot"]["spi_witness"][1];
+    assert_eq!(w["device"], "spi1.spi1mux.u5");
+    assert_eq!(w["observed"], w["expected"], "{v}");
+    assert_eq!(w["expected"].as_array().unwrap().len(), 4);
 }

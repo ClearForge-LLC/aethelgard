@@ -11,7 +11,7 @@ use crate::event::{name_ok, text_ok};
 /// The first campaign kind; [`Record::kind`] is this plus the variant's index.
 pub const FIRST_KIND: u64 = 5;
 /// The last campaign kind.
-pub const LAST_KIND: u64 = 20;
+pub const LAST_KIND: u64 = 23;
 
 /// One override a scenario applies to its specification (`AET-WO-2300` §1.1).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,6 +25,9 @@ pub enum Override {
     /// `[3, domain, floor_mv, start_ns, fall_ns, hold_ns, rise_ns,
     /// source_milliohms, load_milliamps, bor_level]` (`AET-WO-2301`).
     Droop(Droop),
+    /// `[4, reference]`: an SPI device left absent behind its chip select,
+    /// which stays wired (`AET-WO-4200` D4).
+    SpiDeviceAbsent { reference: String },
 }
 
 /// A declared sag of a voltage domain's source (`AET-WO-2301` P2, ruled D2
@@ -269,6 +272,44 @@ pub enum Record {
     /// Kind 20: the scenario's `expect_counts`, sorted by kind, archived only
     /// when it declares them.
     ExpectedCounts { counts: Vec<(String, u64)> },
+    /// Kind 21: one SPI identity read, as the firmware recorded it
+    /// (`AET-WO-4200`, kind 12's analogue): the device on its controller, at
+    /// its multiplexer address, selected by `select`, the command it writes
+    /// first, and the part's value against the record's.
+    SpiCheck {
+        reference: String,
+        peripheral: String,
+        select: String,
+        address: u8,
+        command: u8,
+        expected: u64,
+        observed: Option<u64>,
+        status: Option<String>,
+    },
+    /// Kind 22: one SPI read's witness (`AET-WO-4200` D2, kind 13's
+    /// analogue): the model's expected `Transmit`-path lines and what Renode
+    /// logged for the device, as kind 13 holds them; and every line the
+    /// controller's multiplexer logged when a byte reached no device, several,
+    /// or an address with none, at most [`MAX_WITNESS_LINES`]: attribution's
+    /// evidence (D4), never a witness.
+    SpiWitness {
+        peripheral: String,
+        reference: String,
+        device: String,
+        expected: Vec<String>,
+        observed: Option<Vec<String>>,
+        unrouted: Vec<String>,
+    },
+    /// Kind 23: one solved SPI controller, from the solved topology alone
+    /// (`AET-WO-4200` adversarial A3, kind 15's analogue): its devices in
+    /// the specification's order, each with its multiplexer address (its
+    /// place on the controller, from 0) and its chip select's pin. Kinds 21
+    /// and 22 and an absent device's override join to it. Archived beside
+    /// kind 15, before the boot.
+    SpiBusSolved {
+        peripheral: String,
+        devices: Vec<(String, u8, String)>,
+    },
 }
 
 fn u(n: u64) -> Value {
@@ -438,6 +479,7 @@ fn override_value(o: &Override) -> Value {
             v.extend(droop_fields(d));
             v
         }
+        Override::SpiDeviceAbsent { reference } => vec![u(4), t(reference)],
     })
 }
 
@@ -492,6 +534,9 @@ fn override_from(v: &Value) -> Option<Override> {
             },
         },
         3 => Override::Droop(f.droop()?),
+        4 => Override::SpiDeviceAbsent {
+            reference: f.text()?,
+        },
         _ => return None,
     };
     f.end()?;
@@ -528,6 +573,9 @@ impl Record {
                 Self::ResetRendered { .. } => 13,
                 Self::FirmwareObserved { .. } => 14,
                 Self::ExpectedCounts { .. } => 15,
+                Self::SpiCheck { .. } => 16,
+                Self::SpiWitness { .. } => 17,
+                Self::SpiBusSolved { .. } => 18,
             }
     }
 
@@ -552,6 +600,7 @@ impl Record {
             Self::Scenario { .. }
                 | Self::Solved { .. }
                 | Self::I2cBusSolved { .. }
+                | Self::SpiBusSolved { .. }
                 | Self::RiseComputed { .. }
                 | Self::LineStuckHigh { .. }
                 | Self::BusFault { .. }
@@ -773,6 +822,52 @@ impl Record {
                     .map(|(kind, n)| Value::Array(vec![t(kind), u(*n)]))
                     .collect(),
             )],
+            Self::SpiCheck {
+                reference,
+                peripheral,
+                select,
+                address,
+                command,
+                expected,
+                observed,
+                status,
+            } => vec![
+                t(reference),
+                t(peripheral),
+                t(select),
+                u((*address).into()),
+                u((*command).into()),
+                u(*expected),
+                opt(*observed),
+                Value::Array(status.iter().map(|s| t(s)).collect()),
+            ],
+            Self::SpiWitness {
+                peripheral,
+                reference,
+                device,
+                expected,
+                observed,
+                unrouted,
+            } => vec![
+                t(peripheral),
+                t(reference),
+                t(device),
+                texts(expected),
+                opt_texts(observed.as_deref()),
+                texts(unrouted),
+            ],
+            Self::SpiBusSolved {
+                peripheral,
+                devices,
+            } => vec![
+                t(peripheral),
+                Value::Array(
+                    devices
+                        .iter()
+                        .map(|(r, a, s)| Value::Array(vec![t(r), u((*a).into()), t(s)]))
+                        .collect(),
+                ),
+            ],
         }
     }
 
@@ -956,6 +1051,44 @@ impl Record {
                 }
                 Self::ExpectedCounts { counts }
             }
+            21 => Self::SpiCheck {
+                reference: f.text()?,
+                peripheral: f.text()?,
+                select: f.text()?,
+                address: f.u8()?,
+                command: f.u8()?,
+                expected: f.uint()?,
+                observed: f.opt()?,
+                status: match f.array()? {
+                    [] => None,
+                    [Value::Text(s)] => Some(s.clone()),
+                    _ => return None,
+                },
+            },
+            22 => Self::SpiWitness {
+                peripheral: f.text()?,
+                reference: f.text()?,
+                device: f.text()?,
+                expected: f.texts()?,
+                observed: f.opt_texts()?,
+                unrouted: f.texts()?,
+            },
+            23 => {
+                let peripheral = f.text()?;
+                let mut devices = Vec::new();
+                for item in f.array()? {
+                    let Value::Array(triple) = item else {
+                        return None;
+                    };
+                    let mut g = Fields(triple.iter());
+                    devices.push((g.text()?, g.u8()?, g.text()?));
+                    g.end()?;
+                }
+                Self::SpiBusSolved {
+                    peripheral,
+                    devices,
+                }
+            }
             _ => return None,
         };
         f.end()?;
@@ -991,6 +1124,7 @@ impl Record {
                     }
                     Override::MaxCapacitance { net, .. } => name_ok(net),
                     Override::Droop(d) => name_ok(&d.domain),
+                    Override::SpiDeviceAbsent { reference } => name_ok(reference),
                 });
                 if !ids_ok {
                     return Err("an override's id is not 1 to 64 printable ASCII bytes");
@@ -1206,6 +1340,70 @@ impl Record {
                     Err("expected counts are not one or more finding kinds")
                 } else if !counts.windows(2).all(|w| w[0].0 < w[1].0) {
                     Err("expected counts are not sorted unique by kind")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::SpiCheck {
+                reference,
+                peripheral,
+                select,
+                status,
+                ..
+            } => {
+                if !(name_ok(reference) && name_ok(peripheral) && name_ok(select)) {
+                    Err(
+                        "device reference, peripheral or select is not 1 to 64 printable ASCII bytes",
+                    )
+                } else if status.as_deref().is_some_and(|s| !name_ok(s)) {
+                    Err("status is not 1 to 64 printable ASCII bytes")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::SpiWitness {
+                peripheral,
+                reference,
+                device,
+                expected,
+                observed,
+                unrouted,
+            } => {
+                if !(name_ok(peripheral) && name_ok(reference) && name_ok(device)) {
+                    Err("peripheral, reference or device is not 1 to 64 printable ASCII bytes")
+                } else if !witness_lines_ok(expected)
+                    || observed.as_deref().is_some_and(|o| !witness_lines_ok(o))
+                    || !witness_lines_ok(unrouted)
+                {
+                    Err("witness lines are not at most 16 lines of 1 to 256 printable ASCII bytes")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::SpiBusSolved {
+                peripheral,
+                devices,
+            } => {
+                let addresses_in_order = devices
+                    .iter()
+                    .enumerate()
+                    .all(|(i, d)| usize::from(d.1) == i);
+                let mut selects: Vec<&str> = devices.iter().map(|d| d.2.as_str()).collect();
+                selects.sort_unstable();
+                selects.dedup();
+                if !name_ok(peripheral) || !peripheral.starts_with("SPI") {
+                    Err("a solved SPI controller is not named SPIn")
+                } else if devices.is_empty() || devices.len() > MAX_WITNESS_LINES {
+                    Err("a solved SPI controller has 1 to 16 devices")
+                } else if !devices
+                    .iter()
+                    .all(|d| name_ok(&d.0) && split_pin(&d.2).is_some())
+                {
+                    Err("a solved SPI device's reference or chip select is malformed")
+                } else if !addresses_in_order || selects.len() != devices.len() {
+                    Err(
+                        "a solved SPI controller's addresses are not 0 to n in order, or two devices share a chip select",
+                    )
                 } else {
                     Ok(())
                 }

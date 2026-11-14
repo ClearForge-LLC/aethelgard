@@ -1,0 +1,8 @@
+error[E0308]: mismatched types
+  --> tests/ui/fail/spi_select_not_output.rs:16:59
+   |
+16 |         .init(&mut r, sck, mosi, miso, Spi1Selects { pa0: a.pa0 });
+   |                                                           ^^^^^ expected `PA0<Output>`, found `PA0<Unconfigured>`
+   |
+   = note: expected struct `PA0<sentinel_01_board::Output>`
+              found struct `PA0<Unconfigured>`

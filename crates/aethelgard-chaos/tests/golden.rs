@@ -20,14 +20,15 @@ use common::*;
 /// the header's tools: the version byte, the header's length and its empty
 /// tools array changed, and undoing the three gives version 5's hash again.
 const GOLDEN_TRACE_SHA256: &str =
-    "1f9442fe2ca781f1c870093c114ba11d0ad6787daac27cd49a175a2fbfbade6b";
+    "dd0dd2dbdf44f6a8f04ad9ad9ea80144b37ce38a12ec11bc08e471dd0b20c7ff";
 /// The golden `state_hash`. Same rule. It was `535db225…adac4` (manifest
 /// version 1) until `AET-WO-0400a` made the chain hash each event's delta,
 /// then `af2d46bb…b4939` until `AET-WO-2300` changed the header it starts
 /// from, then `eb6408ee…93edc` until `AET-WO-3100` changed it again, then
 /// `0db4b4f9…10cea` until `AET-WO-2301` did, then `e5dcbe7c…37925` until
-/// `AET-WO-2204` did, then `28d3096c…1f82d` until `AET-WO-2205` did.
-const GOLDEN_STATE_HASH: &str = "6868123fb8c84266437c0f4f2c738fa0261f0fd85ae7c42bb0f443efc06ec11b";
+/// `AET-WO-2204` did, then `28d3096c…1f82d` until `AET-WO-2205` did, then
+/// `6868123f…ec11b` until `AET-WO-4200` did.
+const GOLDEN_STATE_HASH: &str = "abf1ccd2d100f56ab44e9539044e2bac1d6033a9d047e59d035e100192962524";
 
 #[test]
 fn golden_trace_and_state_hash_are_pinned() {
@@ -42,12 +43,21 @@ fn golden_trace_and_state_hash_are_pinned() {
     );
     assert_eq!(trace_sha, GOLDEN_TRACE_SHA256);
     assert_eq!(state_hash, GOLDEN_STATE_HASH);
+    // AET-WO-4200 changed the version byte alone: set back to 6, the bytes
+    // are version 6's golden trace (AET-WO-2205's) again.
+    let at = 1 + 1 + "aethelgard-trace".len();
+    assert_eq!(bytes[at], 7);
+    let mut bytes = bytes.clone();
+    bytes[at] = 6;
+    assert_eq!(
+        hex(&Sha256::digest(&bytes)),
+        "1f9442fe2ca781f1c870093c114ba11d0ad6787daac27cd49a175a2fbfbade6b"
+    );
     // AET-WO-2205 changed the header alone: a sixth item, the empty tools
     // array last, and the version. Undone, the bytes are version 5's golden
     // trace again; with the version set back to 4, version 4's.
     let (_, header_end) = aethelgard_chaos::cbor::decode_prefix(&bytes, 0).unwrap();
     assert_eq!((bytes[0], bytes[header_end - 1]), (0x86, 0x80));
-    let at = 1 + 1 + "aethelgard-trace".len();
     assert_eq!(bytes[at], 6);
     let mut v5 = vec![0x85];
     v5.extend(&bytes[1..header_end - 1]);

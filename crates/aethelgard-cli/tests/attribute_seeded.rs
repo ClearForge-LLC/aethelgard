@@ -827,6 +827,9 @@ mod tier2 {
             ("software", _) => Want::Report,
             ("none", _) => Want::Inv05,
             _ if c.findings.iter().any(|f| f == "i2c_line_held_low") => Want::ModelSlot,
+            // A device absent behind its chip select: a board fault no value
+            // fixes (`AET-WO-4200`, `E2`).
+            (_, "spi-absent-u4") => Want::ModelSlot,
             // R_target = R × 240,000 / rise ≈ 2,832 Ω for every pull-up case,
             // the 47 kOhm trap included (E1 masks its wrong address).
             (

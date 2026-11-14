@@ -23,7 +23,6 @@ use aethelgard_ir::SolvedTopology;
 use aethelgard_ir::parts;
 use aethelgard_svd_hal::cmsis;
 
-use crate::model::Model;
 use crate::{TwinError, kind, model, platform, split_pin};
 
 // belt-and-suspenders: the generator holds its own copy of this constant
@@ -128,6 +127,8 @@ pub const STATUS_TXIS: u32 = 0x2202_0001;
 pub const STATUS_TC: u32 = 0x2202_0002;
 pub const STATUS_RXNE: u32 = 0x2202_0003;
 pub const STATUS_STOP: u32 = 0x2202_0004;
+/// An SPI read whose bounded wait for `SR.RXP` expired (`AET-WO-4200`).
+pub const STATUS_RXP: u32 = 0x2202_0005;
 
 /// The Cortex-M7's Interrupt Control and State Register, and its `VECTACTIVE`
 /// field: the exception the core is handling, 0 in thread mode (ARMv7-M
@@ -158,21 +159,43 @@ pub fn self_loops(base: u64, code: &[u8]) -> Vec<u64> {
         .collect()
 }
 
-/// One identity read the judge expects, from the part table alone.
+/// Where a device sits on its bus.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct I2cCheck {
+pub enum Wire {
+    /// An I2C device at its 7-bit address.
+    I2c { address: u8 },
+    /// An SPI device at its multiplexer address, selected by the pin `select`
+    /// (`PA0`), driven low (`AET-WO-4200` D1).
+    Spi { address: u8, select: String },
+}
+
+impl Wire {
+    /// How a finding names where the device is: `at I2C address 0x76`, or
+    /// `on SPI1, chip select PA0`.
+    pub fn describe(&self, peripheral: &str) -> String {
+        match self {
+            Wire::I2c { address } => format!("at I2C address {address:#04x}"),
+            Wire::Spi { select, .. } => format!("on {peripheral}, chip select {select}"),
+        }
+    }
+}
+
+/// One identity read the judge expects, from the parts table alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentityCheck {
     pub reference: String,
     /// ST's name of the controller the device is on, such as `I2C1`.
     pub peripheral: String,
-    pub address: u8,
-    pub register: u8,
+    pub wire: Wire,
+    /// The byte written first: an I2C register, or an SPI command.
+    pub write: u8,
     pub width: u8,
     pub expected: u32,
     /// The record's two words in RAM.
     pub status_at: u32,
     pub value_at: u32,
-    /// The model's path in Renode, `i2c1.u2`: the bus's stock name, then the
-    /// device's emitted name.
+    /// The model's path in Renode: `i2c1.u2` (the bus's stock name, then the
+    /// device's emitted name), or `spi1.spi1mux.u4` (with the multiplexer).
     pub device: String,
     /// What Renode itself records when the controller runs this read on the
     /// model (`AET-WO-2204` D1): the model's whole log lines, after the host
@@ -182,32 +205,9 @@ pub struct I2cCheck {
     /// firmware (`INV-07`). `None` when the model has no known witness format:
     /// a named failure, never a skip (D2).
     pub witness: Option<Vec<String>>,
-}
-
-/// The whole log lines `model` writes for a read of `width` bytes from
-/// `register` that returns `value`: the exhaustive model-to-format mapping
-/// (`AET-WO-2204` D2). Renode 1.17.0's `BME280.cs` logs every write and read at
-/// `Noisy` as `Write {bytes}` and `Read {bytes}` (L38, L75), each byte in
-/// upper-case hexadecimal without padding (`ToString("X")`), joined by spaces.
-pub fn witness_lines(
-    model: Model,
-    device: &str,
-    register: u8,
-    width: u8,
-    value: u32,
-) -> Option<Vec<String>> {
-    match model {
-        Model::Bme280 => {
-            let bytes: Vec<String> = (0..width)
-                .rev()
-                .map(|i| format!("{:X}", (value >> (8 * u32::from(i))) & 0xFF))
-                .collect();
-            Some(vec![
-                format!("[NOISY] {device}: Write {register:X}"),
-                format!("[NOISY] {device}: Read {}", bytes.join(" ")),
-            ])
-        }
-    }
+    /// The model's `Noisy` lines that are not a transfer, which the judge
+    /// skips; any other line from the device fails (`AET-WO-4200` D2).
+    pub skipped: Vec<String>,
 }
 
 /// A device the twin has no model for: reported, never passed.
@@ -215,15 +215,17 @@ pub fn witness_lines(
 pub struct Unmodelled {
     pub reference: String,
     pub part: String,
-    pub address: u8,
+    pub peripheral: String,
+    pub wire: Wire,
 }
 
-/// What a boot must leave for the I2C devices.
+/// What a boot must leave for the devices.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct I2cPlan {
-    /// One per device whose part has an identity and a model, in the order
-    /// the devices are declared; the record index is the position.
-    pub checks: Vec<I2cCheck>,
+pub struct IdentityPlan {
+    /// One per device whose part has an identity and a model: the I2C
+    /// devices in the order they are declared, then the SPI devices in theirs;
+    /// the record index is the position.
+    pub checks: Vec<IdentityCheck>,
     pub unmodelled: Vec<Unmodelled>,
 }
 
@@ -240,39 +242,51 @@ pub enum Outcome {
     Invalid,
 }
 
-impl I2cCheck {
+impl IdentityCheck {
     /// The status word and value word, judged. Pass needs both: a status of
     /// OK and exactly the table's value.
     pub fn judge(&self, status: u32, value: u32) -> Outcome {
-        match status {
-            STATUS_OK if value == self.expected => Outcome::Pass,
-            STATUS_OK => Outcome::Mismatch,
-            STATUS_TXIS => Outcome::Timeout("TXIS"),
-            STATUS_TC => Outcome::Timeout("TC"),
-            STATUS_RXNE => Outcome::Timeout("RXNE"),
-            STATUS_STOP => Outcome::Timeout("STOPF"),
+        // A status counts only on its own bus: an I2C read never writes
+        // `RXP`, and an SPI read none of the I2C waits.
+        let spi = matches!(self.wire, Wire::Spi { .. });
+        match (status, spi) {
+            (STATUS_OK, _) if value == self.expected => Outcome::Pass,
+            (STATUS_OK, _) => Outcome::Mismatch,
+            (STATUS_TXIS, false) => Outcome::Timeout("TXIS"),
+            (STATUS_TC, false) => Outcome::Timeout("TC"),
+            (STATUS_RXNE, false) => Outcome::Timeout("RXNE"),
+            (STATUS_STOP, false) => Outcome::Timeout("STOPF"),
+            (STATUS_RXP, true) => Outcome::Timeout("RXP"),
             _ => Outcome::Invalid,
         }
     }
 }
 
-/// The I2C reads a boot of the topology's devices must make, in the
-/// specification's order, and the devices it cannot check. The identity is the
-/// part table's; the device is modelled when [`model::kind`] says so.
-pub fn i2c(topology: &SolvedTopology) -> Result<I2cPlan, TwinError> {
+/// The identity reads a boot of the topology's devices must make: the I2C
+/// devices in the specification's order, then the SPI devices in theirs; and
+/// the devices it cannot check. The identity is the parts table's; the device
+/// is modelled when [`model::kind`] says so.
+pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
     let base = boot_word()?;
-    let mut plan = I2cPlan::default();
-    for (reference, d) in topology.i2c_devices_in_order() {
-        let Some(model) = model::kind(&d.part) else {
+    let mut plan = IdentityPlan::default();
+    let push = |plan: &mut IdentityPlan,
+                reference: &str,
+                peripheral: &str,
+                part: &str,
+                wire: Wire,
+                device: &dyn Fn() -> Result<String, TwinError>|
+     -> Result<(), TwinError> {
+        let Some(model) = model::kind(part)? else {
             plan.unmodelled.push(Unmodelled {
                 reference: reference.to_owned(),
-                part: d.part.clone(),
-                address: d.address,
+                part: part.to_owned(),
+                peripheral: peripheral.to_owned(),
+                wire,
             });
-            continue;
+            return Ok(());
         };
-        let Some(id) = parts::identity(&d.part) else {
-            continue;
+        let Some(id) = parts::identity(part).map_err(TwinError::InvalidTopology)? else {
+            return Ok(());
         };
         let at = u32::try_from(plan.checks.len())
             .ok()
@@ -282,19 +296,44 @@ pub fn i2c(topology: &SolvedTopology) -> Result<I2cPlan, TwinError> {
             .ok_or_else(|| TwinError::InvalidDeviceName {
                 reference: reference.to_owned(),
             })?;
-        let device = platform::device_path(&d.peripheral, reference)?;
-        plan.checks.push(I2cCheck {
+        let device = device()?;
+        plan.checks.push(IdentityCheck {
             reference: reference.to_owned(),
-            peripheral: d.peripheral.clone(),
-            address: d.address,
-            register: id.register,
+            peripheral: peripheral.to_owned(),
+            wire,
+            write: id.write,
             width: id.width,
             expected: id.value,
             status_at: at,
             value_at: at + 4,
-            witness: witness_lines(model, &device, id.register, id.width, id.value),
+            witness: model.witness(&device, id.write, id.width, id.value),
+            skipped: model.skipped(&device),
             device,
         });
+        Ok(())
+    };
+    for (reference, d) in topology.i2c_devices_in_order() {
+        push(
+            &mut plan,
+            reference,
+            &d.peripheral,
+            &d.part,
+            Wire::I2c { address: d.address },
+            &|| platform::device_path(&d.peripheral, reference),
+        )?;
+    }
+    for s in platform::spi_wiring(topology)? {
+        push(
+            &mut plan,
+            &s.reference,
+            &s.peripheral,
+            &s.part,
+            Wire::Spi {
+                address: s.address,
+                select: s.select.clone(),
+            },
+            &|| platform::spi_device_path(&s.peripheral, &s.reference),
+        )?;
     }
     Ok(plan)
 }
@@ -313,8 +352,8 @@ pub struct Image {
     /// Solved fields Renode 1.17.0 does not store, so no read can judge them
     /// (spike F11): `OTYPER` of a port with an I2C pin, an I2C's `TIMINGR`.
     pub unobservable: Vec<String>,
-    /// The identity reads of the I2C devices (`AET-WO-2202`).
-    pub i2c: I2cPlan,
+    /// The identity reads of the devices (`AET-WO-2202`, `AET-WO-4200`).
+    pub identity: IdentityPlan,
 }
 
 // belt-and-suspenders: the generator's `board.rs` states these too; the
@@ -326,7 +365,7 @@ const MODE_AF: u32 = 0b10;
 /// The expected register image of `topology`.
 pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
     topology.validate().map_err(TwinError::InvalidTopology)?;
-    let i2c = i2c(topology)?;
+    let identity = identity(topology)?;
     let f = cmsis::register_facts()?;
     let gpio = f.layout("GPIO")?;
     let rcc = f.layout("RCC")?;
@@ -415,6 +454,6 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
         cold,
         registers,
         unobservable,
-        i2c,
+        identity,
     })
 }

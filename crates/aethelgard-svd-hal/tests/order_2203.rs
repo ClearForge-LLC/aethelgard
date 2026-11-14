@@ -34,7 +34,7 @@ fn digests() -> Vec<(&'static str, String)> {
     let spec: Specification = serde_json::from_slice(&bytes).unwrap();
     let table = pin_table(&spec.mcu.part).unwrap();
     let solved = aethelgard_ir::solve(&spec, &table, &hex(&bytes)).unwrap();
-    let answers = |part: &str| aethelgard_twin::model::model(part).is_some();
+    let answers = |part: &str| matches!(aethelgard_twin::model::model(part), Ok(Some(_)));
     let files = generate_with("order-board", &solved, &table, &answers).unwrap();
     let off = BTreeSet::from(["SENSORS".to_owned()]);
     vec![
@@ -48,9 +48,11 @@ fn digests() -> Vec<(&'static str, String)> {
         ),
         (
             "platform faulted",
-            hex(aethelgard_twin::platform::emit_faulted(&solved, &off)
-                .unwrap()
-                .as_bytes()),
+            hex(
+                aethelgard_twin::platform::emit_faulted(&solved, &off, &BTreeSet::new())
+                    .unwrap()
+                    .as_bytes(),
+            ),
         ),
         (
             "boot image",
@@ -66,22 +68,33 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `AET-WO-2204`, which replaced the bus's `CR2`/`TXDR` witness with each
 /// identity read's device path and witness lines (the `Image` the digest
 /// prints); the other three are unchanged. The old digest was `704f44d1…8e7c`.
+/// The "firmware/src/main.rs" digest was re-taken in `AET-WO-4200`, whose
+/// firmware hands the flash's chip select to `SPI1` and reads the flash's
+/// identity after the I2C reads (record 2 here); the I2C reads' text and order
+/// are unchanged. The old digest was `bd4e06af…c5f1`. The "platform", "platform
+/// faulted" and "boot image" digests were re-taken in `AET-WO-4200` too: the
+/// platform gains SPI1's multiplexer and the flash after the I2C devices, whose
+/// lines and order are unchanged, and the `Image` gains U4's SPI check. The old
+/// digests were `0b39d4aa…56d2`, `2ccc0e8d…c75b` and `06c8463c…5f5e`. The
+/// firmware and both platform digests were re-taken again at the merge of
+/// `AET-WO-4100`, whose specification version 2 moved them on `main` (to
+/// `7079aa52…`, `b777f4e5…` and `82de0037…` there).
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "7079aa52809a6454755e4c0d24e9123f84f3a625affd1d67ec09d9b4e95d7140",
+        "c468b3cbbf33a9ee4ccb6bb5214782a59c3562c52e63216ea8ee028cc291604f",
     ),
     (
         "platform",
-        "b777f4e58ca8965cb5f6749a78c452fee8a270310323e661b298af97737b38ba",
+        "9fd77dad7c7276c2a8e83fc252eaf32446421bd8b7ed7165fe1281d3149e53aa",
     ),
     (
         "platform faulted",
-        "82de00377b834812cb53ca737febf0f07ce0d670002490e624e36877c6dc84bc",
+        "c80833a90c3be6bd581173d27470e12f129c7735c7b34096447b7636f3448bec",
     ),
     (
         "boot image",
-        "06c8463ce9bf2b26f96e82cb2128d6e89ec78291203bdc63f2b5fb1adf025f5e",
+        "747bdc045a0c2a41b8e93922bb6e463d82b577a9e061905a708c4893228efbb3",
     ),
 ];
 

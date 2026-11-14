@@ -111,6 +111,18 @@ pub(crate) fn read_base(scenario: &Path, base: &str) -> Result<Vec<u8>, (&'stati
     Ok(bytes)
 }
 
+/// The SPI devices a scenario leaves absent behind their chip selects
+/// (`AET-WO-4200` D4), each checked against the solved topology by [`effective`].
+pub(crate) fn absent(overrides: &[Override]) -> std::collections::BTreeSet<String> {
+    overrides
+        .iter()
+        .filter_map(|o| match o {
+            Override::SpiDeviceAbsent { reference } => Some(reference.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// A line the scenario holds low: its bus and the line's net.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HeldLow {
@@ -168,6 +180,10 @@ pub(crate) fn apply_overrides(
             // A droop changes no value of the specification: the runner
             // resolves and checks it against the domain (`resolve_droop`).
             Override::Droop(_) => {}
+            // Nor does an absent SPI device: the platform leaves it out
+            // behind its chip select (`absent`, `AET-WO-4200` D4). [`effective`]
+            // refuses one the solved topology has no SPI device for (`RUL-16`).
+            Override::SpiDeviceAbsent { .. } => {}
         }
     }
     spec.validate().map_err(|e| {
@@ -350,6 +366,20 @@ pub(crate) fn effective(scenario: &Scenario, base: &[u8]) -> Result<Effective, E
     })?;
     let specification_sha256 = digest(&overridden);
     let (topology, _) = crate::solve_spec(&spec, &hex(specification_sha256))?;
+    if let Some(r) = absent(&scenario.overrides)
+        .into_iter()
+        .find(|r| !topology.spi_devices.contains_key(r))
+    {
+        return Err(refuse(
+            "UnknownDevice",
+            Some(&r),
+            format!(
+                "scenario `{}`: the specification declares no SPI device `{r}`",
+                scenario.name
+            ),
+            EXIT_INVALID_SPEC,
+        ));
+    }
     Ok(Effective {
         spec,
         held,
@@ -501,6 +531,10 @@ fn run_one(
         crate::diagnose(&m);
         ExitCode::from(EXIT_INTERNAL)
     })?;
+    let spi_buses = solved_spi(&p.topology).map_err(|e| {
+        crate::diagnose(&e.to_string());
+        ExitCode::from(EXIT_INTERNAL)
+    })?;
     let verdict = crate::simulate(
         &platform,
         Some(Boot {
@@ -509,6 +543,7 @@ fn run_one(
             virtual_ns: VIRTUAL_NS,
             scenario: p.scenario.name.clone(),
             held: p.held,
+            absent: absent(&p.scenario.overrides),
             rail: p.rail,
         }),
     )
@@ -546,6 +581,7 @@ fn run_one(
         topology_sha256,
     }]);
     records.extend(buses);
+    records.extend(spi_buses);
     records.extend(records_of(&verdict).map_err(internal)?);
     // The run must pass the rules replay will judge it by before it is written.
     let summary = rules::check_run(&records)
@@ -670,6 +706,29 @@ pub(crate) fn solved_buses(t: &SolvedTopology) -> Result<Vec<Record>, String> {
     Ok(out)
 }
 
+/// Kind 23, one per SPI controller with a device, from the solved topology
+/// alone, as the twin wires it (`aethelgard_twin::platform::spi_wiring`):
+/// each device's multiplexer address and chip select (`AET-WO-4200`
+/// adversarial A3).
+pub(crate) fn solved_spi(t: &SolvedTopology) -> Result<Vec<Record>, aethelgard_twin::TwinError> {
+    let mut by: BTreeMap<String, Vec<(String, u8, String)>> = BTreeMap::new();
+    for s in aethelgard_twin::platform::spi_wiring(t)? {
+        by.entry(s.peripheral)
+            .or_default()
+            .push((s.reference, s.address, s.select));
+    }
+    Ok(by
+        .into_iter()
+        .map(|(peripheral, mut devices)| {
+            devices.sort_by_key(|d| d.1);
+            Record::SpiBusSolved {
+                peripheral,
+                devices,
+            }
+        })
+        .collect())
+}
+
 /// Kinds 16 to 19 from a droop's report, the crossings, resets and
 /// observations merged in the time order replay checks (`AET-WO-2301`).
 fn droop_records(d: &crate::verdict::DroopReport) -> Result<Vec<Record>, String> {
@@ -748,6 +807,24 @@ fn archived_lines(lines: &[String]) -> Vec<String> {
                 e.truncate(256);
                 if e.is_empty() { "?".to_owned() } else { e }
             }
+        })
+        .collect()
+}
+
+/// The bytes a kind-22 witness's observed lines may take, and its
+/// multiplexer's lines: with the expected lines (eight of under 100 bytes for
+/// the flash) and the names, under the reader's 4,096-byte event bound.
+const WITNESS_BUDGET: usize = 1_800;
+const UNROUTED_BUDGET: usize = 1_200;
+
+/// The longest prefix of `lines` whose bytes sum to at most `budget`.
+fn within(lines: Vec<String>, budget: usize) -> Vec<String> {
+    let mut used = 0;
+    lines
+        .into_iter()
+        .take_while(|l| {
+            used += l.len();
+            used <= budget
         })
         .collect()
 }
@@ -921,6 +998,36 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
                 .take(aethelgard_chaos::record::MAX_WITNESS_LINES)
                 .map(|a| u8::try_from(hex_u64(a)?).map_err(|e| e.to_string()))
                 .collect::<Result<_, _>>()?,
+        });
+    }
+    for c in &boot.spi {
+        out.push(Record::SpiCheck {
+            reference: c.reference.clone(),
+            peripheral: c.peripheral.clone(),
+            select: c.select.clone(),
+            address: u8::try_from(hex_u64(&c.address)?).map_err(|e| e.to_string())?,
+            command: u8::try_from(hex_u64(&c.command)?).map_err(|e| e.to_string())?,
+            expected: hex_u64(&c.expected)?,
+            observed: c.observed.as_deref().map(hex_u64).transpose()?,
+            status: c.status.map(str::to_owned),
+        });
+    }
+    for w in &boot.spi_witness {
+        out.push(Record::SpiWitness {
+            peripheral: w.peripheral.clone(),
+            reference: w.reference.clone(),
+            device: w.device.clone(),
+            expected: w.expected.clone(),
+            // Kind 22 holds a witness and a multiplexer's lines, both of a
+            // length the firmware drives: each is cut to a byte budget so the
+            // event stays inside the reader's 4,096 bytes (adversarial A4). A
+            // cut observation still differs from what the judge expected, and
+            // the first lines are the read's own.
+            observed: w
+                .observed
+                .as_deref()
+                .map(|o| within(archived_lines(o), WITNESS_BUDGET)),
+            unrouted: within(archived_lines(&w.unrouted), UNROUTED_BUDGET),
         });
     }
     let mut findings: BTreeMap<(String, String), u64> = BTreeMap::new();
@@ -1114,6 +1221,33 @@ mod tests {
     /// printable ASCII, each at most 256 bytes; a changed line still differs
     /// from every line a model logs, so the archive cannot make it match.
     #[test]
+    fn a_kind_22_stays_inside_the_event_bound_however_long_its_lines() {
+        // `AET-WO-4200` adversarial A4: a firmware that reads with eight
+        // frames and then clocks 16 bytes with no chip select made a kind 22
+        // of 16 witness and 16 multiplexer lines, over the reader's 4,096
+        // bytes, and the campaign stopped with an archive error.
+        let lines =
+            |n: usize, len: usize| -> Vec<String> { (0..n).map(|_| "x".repeat(len)).collect() };
+        let observed = super::within(archived_lines(&lines(16, 256)), super::WITNESS_BUDGET);
+        let unrouted = super::within(archived_lines(&lines(16, 256)), super::UNROUTED_BUDGET);
+        let w = Record::SpiWitness {
+            peripheral: "SPI1".into(),
+            reference: "U4".into(),
+            device: "spi1.spi1mux.u4".into(),
+            expected: lines(8, 100),
+            observed: Some(observed.clone()),
+            unrouted: unrouted.clone(),
+        };
+        let bytes =
+            aethelgard_chaos::cbor::to_bytes(&aethelgard_chaos::cbor::Value::Array(w.fields()));
+        assert!(bytes.len() < 4096, "{}", bytes.len());
+        // A prefix, never a reordering: the first lines are the read's own.
+        assert_eq!(observed.len(), 1_800 / 256);
+        assert_eq!(unrouted.len(), 1_200 / 256);
+        assert_eq!(super::within(vec!["ab".into(), "c".into()], 2), ["ab"]);
+    }
+
+    #[test]
     fn witness_lines_are_archived_bounded_and_printable() {
         let many: Vec<String> = (0..20)
             .map(|i| format!("[NOISY] i2c1.u2: Read {i:X}"))
@@ -1250,7 +1384,7 @@ mod tests {
     /// The reference board's solved topology, as `solve` gives it.
     fn topology() -> aethelgard_ir::SolvedTopology {
         serde_json::from_value(json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "specification_sha256": "acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1",
             "assignments": {
                 "I2C_SCL": {"pin": "PB6", "peripheral": "I2C1", "signal": "I2C1_SCL", "alternate_function": 4},
@@ -1266,7 +1400,8 @@ mod tests {
             "i2c_devices": {
                 "U2": {"index": 0, "part": "BME280", "bus": "SENSORS", "peripheral": "I2C1", "address": 118},
                 "U3": {"index": 1, "part": "TMP117", "bus": "SENSORS", "peripheral": "I2C1", "address": 72}
-            }
+            },
+            "spi_devices": {}
         }))
         .unwrap()
     }

@@ -4,7 +4,8 @@ use common::devs;
 
 use aethelgard_ir::{
     AnalogLine, I2cBus, I2cDevice, IrValidationError as E, Mcu, NetConstraint, PinAssignment,
-    Signal, SolvedI2cDevice, SolvedTopology, Specification, SpiBus, SpiDevice, VoltageDomain,
+    Signal, SolvedI2cDevice, SolvedSpiDevice, SolvedTopology, Specification, SpiBus, SpiDevice,
+    VoltageDomain,
 };
 
 /// The reference specification's declared board (`examples/sentinel-01-minimal.json`).
@@ -828,10 +829,19 @@ fn assignment(pin: &str, af: u8) -> PinAssignment {
 
 fn solved() -> SolvedTopology {
     SolvedTopology {
-        schema_version: 2,
+        schema_version: 3,
         specification_sha256: HASH.into(),
         assignments: [
             ("I2C_SCL".to_owned(), assignment("PB8", 4)),
+            (
+                "SPI_SCK".to_owned(),
+                PinAssignment {
+                    pin: "PA5".into(),
+                    peripheral: "SPI1".into(),
+                    signal: "SPI1_SCK".into(),
+                    alternate_function: 5,
+                },
+            ),
             ("I2C_SDA".to_owned(), {
                 let mut sda = assignment("PB9", 4);
                 sda.signal = "I2C1_SDA".into();
@@ -853,6 +863,17 @@ fn solved() -> SolvedTopology {
             ("U10".to_owned(), device(1, 0x76)),
         ]
         .into(),
+        spi_devices: [("U4".to_owned(), spi_device(0))].into(),
+    }
+}
+
+fn spi_device(index: u32) -> SolvedSpiDevice {
+    SolvedSpiDevice {
+        index,
+        part: "W25Q64JV".into(),
+        bus: "FLASH".into(),
+        peripheral: "SPI1".into(),
+        cs: "FLASH_CS".into(),
     }
 }
 
@@ -890,8 +911,9 @@ fn valid_solved_topology_passes() {
 
 #[test]
 fn solved_refuses_version_and_hash() {
-    // Version 1 is the file before `i2c_speeds` (`AET-WO-1205`).
-    for version in [0, 1, 3] {
+    // Version 1 is the file before `i2c_speeds` (`AET-WO-1205`), 2 the file
+    // before `spi_devices` (`AET-WO-4200`), 4 one this build does not know.
+    for version in [0, 1, 2, 4] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -957,8 +979,8 @@ fn solved_round_trip_is_equal_and_byte_stable() {
 
 #[test]
 fn solved_serialization_is_sorted_whatever_the_input_order() {
-    let a = r#"{"schema_version":2,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"Z":"g","C":"c"},"i2c_ceilings":{"Y":100000,"B":400000},"i2c_speeds":{"Y":100000,"B":400000},"analog_lines":{},"i2c_devices":{}}"#;
-    let b = r#"{"schema_version":2,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"C":"c","Z":"g"},"i2c_ceilings":{"B":400000,"Y":100000},"i2c_speeds":{"B":400000,"Y":100000},"analog_lines":{},"i2c_devices":{}}"#;
+    let a = r#"{"schema_version":3,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"Z":"g","C":"c"},"i2c_ceilings":{"Y":100000,"B":400000},"i2c_speeds":{"Y":100000,"B":400000},"analog_lines":{},"i2c_devices":{},"spi_devices":{}}"#;
+    let b = r#"{"schema_version":3,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"C":"c","Z":"g"},"i2c_ceilings":{"B":400000,"Y":100000},"i2c_speeds":{"B":400000,"Y":100000},"analog_lines":{},"i2c_devices":{},"spi_devices":{}}"#;
     let a: SolvedTopology = serde_json::from_str(a).unwrap();
     let b: SolvedTopology = serde_json::from_str(b).unwrap();
     assert_eq!(
@@ -1533,7 +1555,7 @@ fn a_version_1_file_is_refused_by_version_not_by_a_missing_key() {
         "{err}"
     );
     // A repeated key is refused like every keyed collection.
-    let json = r#"{"schema_version":2,"specification_sha256":"h","assignments":{},"gpio":{},"i2c_ceilings":{},"i2c_speeds":{"B":400000,"B":100000},"analog_lines":{},"i2c_devices":{}}"#;
+    let json = r#"{"schema_version":3,"specification_sha256":"h","assignments":{},"gpio":{},"i2c_ceilings":{},"i2c_speeds":{"B":400000,"B":100000},"analog_lines":{},"i2c_devices":{},"spi_devices":{}}"#;
     assert!(serde_json::from_str::<SolvedTopology>(json).is_err());
 }
 
@@ -1704,4 +1726,209 @@ fn the_floor_and_the_limit_follow_the_declared_speed_not_the_ceiling() {
     let mut t = solved();
     under_1m(&mut t);
     assert_eq!(t.validate(), Ok(()));
+}
+
+// ---- SolvedTopology.spi_devices (AET-WO-4200) --------------------------------
+
+fn rename_i2c(t: &mut SolvedTopology, from: &str, to: &str) {
+    let d = t.i2c_devices.remove(from).unwrap();
+    t.i2c_devices.insert(to.into(), d);
+}
+
+fn rename_spi(t: &mut SolvedTopology, from: &str, to: &str) {
+    let d = t.spi_devices.remove(from).unwrap();
+    t.spi_devices.insert(to.into(), d);
+}
+
+#[test]
+fn a_version_2_file_without_spi_devices_is_refused_by_version_not_by_a_missing_key() {
+    let mut v = solved_json();
+    v["schema_version"] = 2.into();
+    v.as_object_mut().unwrap().remove("spi_devices");
+    let t: SolvedTopology = serde_json::from_value(v).unwrap();
+    assert_refusal(t.validate().unwrap_err(), "UnsupportedSchemaVersion", None);
+    // Under the current version the key is required, never defaulted.
+    let mut v = solved_json();
+    v.as_object_mut().unwrap().remove("spi_devices");
+    let err = serde_json::from_value::<SolvedTopology>(v).unwrap_err();
+    assert!(
+        err.to_string().contains("missing field `spi_devices`"),
+        "{err}"
+    );
+    // A repeated key is refused like every keyed collection.
+    let json = r#"{"schema_version":3,"specification_sha256":"h","assignments":{},"gpio":{},"i2c_ceilings":{},"i2c_speeds":{},"analog_lines":{},"i2c_devices":{},"spi_devices":{"U4":{"index":0,"part":"P","bus":"B","peripheral":"SPI1","cs":"C"},"U4":{"index":0,"part":"P","bus":"B","peripheral":"SPI1","cs":"C"}}}"#;
+    assert!(serde_json::from_str::<SolvedTopology>(json).is_err());
+}
+
+#[test]
+fn spi_devices_come_out_in_index_order_not_reference_order() {
+    let mut t = solved();
+    t.spi_devices.clear();
+    t.spi_devices.insert("U3".into(), spi_device(0));
+    t.spi_devices.insert("U10".into(), spi_device(1));
+    let refs: Vec<&str> = t.spi_devices.keys().map(String::as_str).collect();
+    assert_eq!(refs, ["U10", "U3"]);
+    let order: Vec<&str> = t.spi_devices_in_order().iter().map(|d| d.0).collect();
+    assert_eq!(order, ["U3", "U10"]);
+}
+
+#[test]
+fn solved_refuses_an_spi_device_off_an_spi_peripheral_or_with_no_signal_on_it() {
+    // Not an `SPIn` at all, even though a signal is solved to it.
+    let err = solved_refusal(|t| t.spi_devices.get_mut("U4").unwrap().peripheral = "I2C1".into());
+    assert_refusal(err, "SpiDevicePeripheral", Some("U4"));
+    // An `SPIn` no solved signal is on.
+    let err = solved_refusal(|t| t.spi_devices.get_mut("U4").unwrap().peripheral = "SPI2".into());
+    assert_refusal(err, "SpiDevicePeripheral", Some("U4"));
+}
+
+#[test]
+fn solved_refuses_an_spi_chip_select_that_is_not_a_gpio() {
+    let err = solved_refusal(|t| t.spi_devices.get_mut("U4").unwrap().cs = "NOPE".into());
+    assert_refusal(err, "SpiDeviceSelect", Some("U4"));
+    // A net solved to an alternate function is not a GPIO.
+    let err = solved_refusal(|t| t.spi_devices.get_mut("U4").unwrap().cs = "SPI_SCK".into());
+    assert_refusal(err, "SpiDeviceSelect", Some("U4"));
+}
+
+#[test]
+fn solved_refuses_spi_indices_that_are_not_exactly_zero_to_n() {
+    // Repeated, out of range, and a gap, as for the I2C devices.
+    let err = solved_refusal(|t| t.spi_devices.get_mut("U4").unwrap().index = 1);
+    assert_refusal(err, "SpiDeviceIndex", Some("U4"));
+    for (a, b) in [(0, 0), (1, 1), (0, 2), (1, 2), (5, 6)] {
+        let err = solved_refusal(|t| {
+            t.spi_devices.insert("U5".into(), spi_device(b));
+            t.spi_devices.get_mut("U4").unwrap().index = a;
+        });
+        assert_eq!(err.kind(), "SpiDeviceIndex", "{a} {b}");
+    }
+    let mut ok = solved();
+    ok.spi_devices.insert("U5".into(), spi_device(1));
+    assert_eq!(ok.validate(), Ok(()));
+}
+
+#[test]
+fn solved_refuses_an_spi_key_or_field_that_is_not_an_identifier() {
+    let err = solved_refusal(|t| rename_spi(t, "U4", "U 4"));
+    assert_invalid_identifier(err, "spi_devices.U 4");
+    let err = solved_refusal(|t| t.spi_devices.get_mut("U4").unwrap().part = "".into());
+    assert_invalid_identifier(err, "spi_devices.U4.part");
+    let err = solved_refusal(|t| t.spi_devices.get_mut("U4").unwrap().bus = "".into());
+    assert_invalid_identifier(err, "spi_devices.U4.bus");
+    let err = solved_refusal(|t| t.spi_devices.get_mut("U4").unwrap().peripheral = "".into());
+    assert_invalid_identifier(err, "spi_devices.U4.peripheral");
+    let err = solved_refusal(|t| t.spi_devices.get_mut("U4").unwrap().cs = "".into());
+    assert_invalid_identifier(err, "spi_devices.U4.cs");
+}
+
+// ---- D7: reference collisions (AET-WO-4200) ---------------------------------
+
+const MUXES: [&str; 6] = [
+    "spi1mux", "spi2mux", "spi3mux", "spi4mux", "spi5mux", "spi6mux",
+];
+
+#[test]
+fn a_reference_equal_to_a_mux_name_is_reserved_in_any_case() {
+    for name in ["SPI1MUX", "spi4mux", "Spi6Mux", "spi1mux"] {
+        let err = refusal(|s| devs(s).i2c[0].reference = name.into());
+        assert_invalid_identifier(err.clone(), "i2c_devices[0].reference");
+        assert!(err.to_string().contains("already holds"), "{err}");
+        let err = refusal(|s| devs(s).spi[0].reference = name.into());
+        assert_invalid_identifier(err.clone(), "spi_devices[0].reference");
+        assert!(err.to_string().contains("already holds"), "{err}");
+        let err = solved_refusal(|t| rename_i2c(t, "U3", name));
+        assert_invalid_identifier(err, &format!("i2c_devices.{name}"));
+        let err = solved_refusal(|t| rename_spi(t, "U4", name));
+        assert_invalid_identifier(err, &format!("spi_devices.{name}"));
+    }
+    for mux in MUXES {
+        assert!(aethelgard_ir::RESERVED_REFERENCES.contains(&mux), "{mux}");
+    }
+}
+
+#[test]
+fn a_reference_plus_memory_that_is_another_reference_is_a_collision() {
+    // The error's `id` is the reference whose array name collides, `with` the
+    // other reference as spelled.
+    let err = refusal(|s| devs(s).i2c[0].reference = "u4_memory".into());
+    assert_refusal(err.clone(), "ReferenceCollision", Some("U4"));
+    assert!(matches!(&err, E::ReferenceCollision { with, .. } if with == "u4_memory"));
+    let err = refusal(|s| devs(s).i2c[0].reference = "U4_MEMORY".into());
+    assert!(
+        matches!(&err, E::ReferenceCollision { id, with }
+        if id == "U4" && with == "U4_MEMORY"),
+        "{err}"
+    );
+    let err = refusal(|s| devs(s).spi[0].reference = "u2_memory".into());
+    assert!(
+        matches!(&err, E::ReferenceCollision { id, with }
+        if id == "U2" && with == "u2_memory"),
+        "{err}"
+    );
+    // Within one list.
+    let err = refusal(|s| devs(s).i2c[1].reference = "u2_memory".into());
+    assert!(
+        matches!(&err, E::ReferenceCollision { id, with }
+        if id == "U2" && with == "u2_memory"),
+        "{err}"
+    );
+
+    let err = solved_refusal(|t| rename_i2c(t, "U3", "u4_memory"));
+    assert!(
+        matches!(&err, E::ReferenceCollision { id, with }
+        if id == "U4" && with == "u4_memory"),
+        "{err}"
+    );
+    let err = solved_refusal(|t| rename_spi(t, "U4", "u3_memory"));
+    assert!(
+        matches!(&err, E::ReferenceCollision { id, with }
+        if id == "U3" && with == "u3_memory"),
+        "{err}"
+    );
+    let err = solved_refusal(|t| rename_i2c(t, "U10", "u3_memory"));
+    assert!(
+        matches!(&err, E::ReferenceCollision { id, with }
+        if id == "U3" && with == "u3_memory"),
+        "{err}"
+    );
+    assert_eq!(err.kind(), "ReferenceCollision");
+    assert_eq!(err.id(), Some("U3"));
+}
+
+/// The cell "a reference whose lowercase plus `_memory` is a reserved name" is
+/// empty by construction: no reserved name ends in `_memory`, so
+/// `references_distinct` can only match the suffix against another reference.
+/// If a reserved name ever does, this fails and the cell needs its own test.
+#[test]
+fn no_reserved_name_ends_in_memory() {
+    for name in aethelgard_ir::RESERVED_REFERENCES {
+        assert!(
+            !name.ends_with(aethelgard_ir::MEMORY_SUFFIX),
+            "{name} is reserved and ends in the memory suffix: add the D7 cell"
+        );
+    }
+    assert_eq!(aethelgard_ir::MEMORY_SUFFIX, "_memory");
+}
+
+#[test]
+fn solved_refuses_a_reference_equal_in_any_case_across_both_maps() {
+    // The later key in i2c-then-spi order is the one named; `first` is the earlier.
+    let err = solved_refusal(|t| rename_i2c(t, "U3", "u4"));
+    assert!(
+        matches!(&err, E::DuplicateReference { id, first }
+        if id == "U4" && first == "u4"),
+        "{err}"
+    );
+    assert_eq!(err.id(), Some("U4"));
+    let err = solved_refusal(|t| rename_spi(t, "U4", "u3"));
+    assert!(
+        matches!(&err, E::DuplicateReference { id, first }
+        if id == "u3" && first == "U3"),
+        "{err}"
+    );
+    assert_eq!(err.id(), Some("u3"));
+    // The same spelling in both maps.
+    let err = solved_refusal(|t| rename_spi(t, "U4", "U3"));
+    assert_refusal(err, "DuplicateReference", Some("U3"));
 }

@@ -10,6 +10,11 @@
 //!
 //! `AET-WO-2200` (`RUL-17`): [`analog`] writes each I2C line's netlist for the
 //! bridge to measure, and [`platform`] leaves a faulted bus's devices out.
+//!
+//! `AET-WO-4200`: [`platform`] puts each SPI controller's devices behind a
+//! `SPI.SPIMultiplexer`, each chip select a GPIO wired active-low (D1), and can
+//! leave one device absent behind its chip select (D4); [`model`] holds each
+//! model's witness and skipped lines (D2).
 
 #![forbid(unsafe_code)]
 
@@ -55,6 +60,20 @@ pub enum TwinError {
         reference: String,
         peripheral: String,
     },
+    #[error("part `{part}` names Renode model `{model}`, which the twin does not model")]
+    UnknownModel { part: String, model: String },
+    #[error(
+        "device `{reference}` is a `{part}`, whose Renode model the twin places only on another kind of bus"
+    )]
+    ModelOffItsBus { reference: String, part: String },
+    #[error(
+        "device `{reference}`'s identity is not the 3 bytes (manufacturer, type, capacity 0x10 to 0x19) a `SPI.GenericSpiFlash` is built from"
+    )]
+    FlashIdentity { reference: String },
+    #[error(
+        "the fault decision names SPI device `{reference}`, which the solved topology does not have"
+    )]
+    UnknownAbsentDevice { reference: String },
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -71,6 +90,10 @@ impl TwinError {
             Self::UnknownFaultedBus { .. } => "UnknownFaultedBus",
             Self::InvalidDeviceName { .. } => "InvalidDeviceName",
             Self::DeviceOffBus { .. } => "DeviceOffBus",
+            Self::UnknownModel { .. } => "UnknownModel",
+            Self::ModelOffItsBus { .. } => "ModelOffItsBus",
+            Self::FlashIdentity { .. } => "FlashIdentity",
+            Self::UnknownAbsentDevice { .. } => "UnknownAbsentDevice",
             Self::Register(e) => e.kind(),
         }
     }

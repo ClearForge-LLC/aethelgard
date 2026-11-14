@@ -191,14 +191,15 @@ fn the_firmware_follows_the_judges_boot_contract() {
     assert!(!files.contains_key("firmware/build.rs"));
 }
 
-/// `AET-WO-2202`: the record layout and the statuses are written twice, by the
-/// firmware's generator and by the judge, independently. They must agree, and
-/// the firmware must read exactly the devices the judge will check.
+/// `AET-WO-2202`, `AET-WO-4200`: the record layout and the statuses are
+/// written twice, by the firmware's generator and by the judge,
+/// independently. They must agree, and the firmware must read exactly the
+/// devices the judge will check, in its record order.
 #[test]
 fn the_firmware_follows_the_judges_record_layout() {
     use aethelgard_twin::boot::{
-        RECORD_BYTES, RECORD_OFFSET, RECORD_UNSET, STATUS_OK, STATUS_RXNE, STATUS_STOP, STATUS_TC,
-        STATUS_TXIS,
+        RECORD_BYTES, RECORD_OFFSET, RECORD_UNSET, STATUS_OK, STATUS_RXNE, STATUS_RXP, STATUS_STOP,
+        STATUS_TC, STATUS_TXIS, Wire,
     };
     let files = generated();
     let main = &files["firmware/src/main.rs"];
@@ -208,6 +209,7 @@ fn the_firmware_follows_the_judges_record_layout() {
         ("STATUS_TC", STATUS_TC),
         ("STATUS_RXNE", STATUS_RXNE),
         ("STATUS_STOP", STATUS_STOP),
+        ("STATUS_RXP", STATUS_RXP),
         ("RECORD_UNSET", RECORD_UNSET),
     ] {
         assert!(
@@ -215,13 +217,14 @@ fn the_firmware_follows_the_judges_record_layout() {
             "{name}"
         );
     }
-    // The array holds the boot word, then one record per read.
-    let words = (RECORD_OFFSET + RECORD_BYTES) / 4;
+    // The array holds the boot word, then one record per read: the BME280's
+    // and the flash's.
+    let words = (RECORD_OFFSET + 2 * RECORD_BYTES) / 4;
     assert!(
         main.contains(&format!(
             "static mut AETHELGARD_BOOT: [u32; {words}] = [0; {words}];"
         )),
-        "one read: {words} words"
+        "two reads: {words} words"
     );
     assert!(main.contains(&format!(
         "base.add({} + {} * index)",
@@ -234,8 +237,10 @@ fn the_firmware_follows_the_judges_record_layout() {
         RECORD_BYTES / 4
     )));
 
-    // Exactly the judge's checks are read: BME280 at 0x76, register 0xD0, one
-    // byte; the TMP117 is unmodelled and has no read.
+    // Exactly the judge's checks are read, each into its own record, in the
+    // judge's order: the BME280 at 0x76 (register 0xD0, one byte), then the
+    // W25Q64JV behind PA0 (0x9F, three bytes); the TMP117 is unmodelled and
+    // has no read.
     let bytes = fs::read(root().join("examples/sentinel-01-minimal.json")).unwrap();
     let spec: Specification = serde_json::from_slice(&bytes).unwrap();
     let sha: String = Sha256::digest(&bytes)
@@ -244,17 +249,37 @@ fn the_firmware_follows_the_judges_record_layout() {
         .collect();
     let table = pin_table(&spec.mcu.part).unwrap();
     let solved = aethelgard_ir::solve(&spec, &table, &sha).unwrap();
-    let plan = aethelgard_twin::boot::i2c(&solved).unwrap();
-    assert_eq!(plan.checks.len(), 1);
-    assert_eq!(plan.unmodelled.len(), 1);
-    let c = &plan.checks[0];
+    let plan = aethelgard_twin::boot::identity(&solved).unwrap();
+    let wires: Vec<&Wire> = plan.checks.iter().map(|c| &c.wire).collect();
     assert!(
-        main.contains(&format!(
-            "i2c1.transfer(&mut r, {:#04x}, &[{:#04x}], &mut buf0)",
-            c.address, c.register
-        )),
-        "{main}"
+        matches!(wires.as_slice(), [Wire::I2c { .. }, Wire::Spi { .. }]),
+        "{wires:?}"
     );
-    assert!(main.contains(&format!("[0u8; {}]", c.width)));
+    assert_eq!(plan.unmodelled.len(), 1);
+    let mut at = 0;
+    for (k, c) in plan.checks.iter().enumerate() {
+        let bus = c.peripheral.to_ascii_lowercase();
+        let to = match &c.wire {
+            Wire::I2c { address } => format!("{address:#04x}"),
+            // The bus's device enum, and the reference upper-cased.
+            Wire::Spi { .. } => format!(
+                "Spi{}Device::{}",
+                &c.peripheral[3..],
+                c.reference.to_ascii_uppercase()
+            ),
+        };
+        let read = format!(
+            "    let mut buf{k} = [0u8; {w}];\n    \
+             let (status, value) = match {bus}.transfer(&mut r, {to}, &[{reg:#04x}], &mut buf{k}) {{",
+            w = c.width,
+            reg = c.write,
+        );
+        let start = main[at..]
+            .find(&read)
+            .unwrap_or_else(|| panic!("check {k} is not read in order: {read}\n{main}"))
+            + at;
+        let record = format!("    record({k}, status, value);\n");
+        at = main[start..].find(&record).unwrap() + start;
+    }
     assert_eq!(main.matches(".transfer(").count(), plan.checks.len());
 }
