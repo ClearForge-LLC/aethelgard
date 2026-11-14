@@ -1,4 +1,4 @@
-# AET-WO-4100 — FEEDBACK (spike)
+# AET-WO-4100 — FEEDBACK (spike, then build)
 
 **Branch:** `wo/aet-4100-stackups` · **Base:** `9035203` (`origin/main`) · **Work order:** `origin/claude/argon-repo-docs-synthesis-rjrb0d` at `3110ac5`, `docs/work-orders/AET-WO-4100.md` (lands through docs PR #117; not committed here) · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Cadence:** spike (§1), then **STOP** for the architect's ruling. No build code before it.
 
@@ -366,7 +366,9 @@ The twin, the analog deck (`cli/src/analog.rs`), the campaign and `evolve` read 
 | **F3.** D1's generator existed only in the 1302 reviewer's session transcript; it is now `spike/4100/s3/gen.py`, which the build deletes with `spike/` | 1302 B10 | low | provenance | at the build, the D1 specification becomes a committed fixture (§2.7) | no |
 | **F4.** A board's stackup is inert: the gate discards `(setup …)`, DRC and the Gerbers ignore it, and the job file printed no thickness for the block tried | `eda::board::prepare_read` | info | measured | the stackup lives in the specification only | no |
 
-## Decisions needed
+## Decisions needed (spike) — ruled on PR #120
+
+Ruled by the architect on PR #120: D1 (a), D2 as recommended (with the published-tolerance rule), D3 (a), D4 not applicable, D5 confirmed, D6 this work order's, D7 confirmed and narrowed, D8 as proposed, D9 left as history. The build below follows the ruling.
 
 1. **D1. Layer counts in scope:**
    - **(a)** 2 and 4 now, with 6 deferred to `4500` or a successor. Recommended.
@@ -455,14 +457,16 @@ Each removal was proven with the same suites and the boards' bytes (the referenc
 
 ## Gates, final tree
 
-- **Host:**
+- **Host, at the final tree:**
   - `cargo fmt --all -- --check`: ok.
   - `cargo clippy --workspace --all-targets -- -D warnings`: clean, with and without `--features aethelgard-cli/with-tools`.
   - `cargo test --workspace`: **1,114 passed, 0 failed**.
-- **Image:**
-  - the new tier-2 tests and the reference's package tests: 4 passed;
-  - the corpus test and the loose-board gate test after A1: passed.
-- **CI:** the run on the pushed head is recorded on the PR.
+- **Image, each at the commit named** (none at the final tree; CI is the final tree's tier-2 run):
+  - at `adfcffa`'s tree (before A1–A4, both reductions and the merge): the two 4-layer tier-2 tests and the reference's two package tests, 4 passed;
+  - at `017b38c` (A1–A4 applied): the corpus test and the loose-board gate test, passed;
+  - at `4912049`–`adfcffa`: `verify --fab-out` on the 4-layer fixture ×5 (determinism), the D5 package comparison against `main`.
+- **CI:** the runs on the pushed heads are on the PR; their shard times and `tier2_tests_passed` are reported there, not here.
+- **The migration subagent's work** (`c7096e9`), checked by me: I reproduced the reference solve pin, `53ac16ac…` from `solve` on the new file, and `c655bf2e…` (the old pin) after substituting the old specification hash, byte for byte. Changes it made beyond the hash: two tests whose input was a bare `{"schema_version":1}` now say 2, so they still reach the shape error (`SchemaViolation`) they test rather than the new version refusal (`generate_tier1` `prove_with_spec_refuses_…`, `validate_cli` `solved_topology_document_exits_2`); the CLI test that expected `extract`'s `BoardThickness` now expects `ThicknessDisagrees` (a caller-visible rename at 2 layers, named in the CLI README).
 
 ## Findings
 
@@ -477,5 +481,8 @@ Each removal was proven with the same suites and the boards' bytes (the referenc
 
 ## Decisions needed
 
-1. **F5 (low):** whether generated artifacts should keep naming the specification's sha256 (so every schema bump touches them), or name the solved topology's.
-2. **The PR title.** `gh-write` has no edit command, and a minted token is spent only through it (Furnace contract), so I cannot retitle PR #120 from here. Proposed title: `AET-WO-4100: stackups at 2 and 4 layers — the board a specification declares, routed, judged, bounded and packaged`. The architect sets it at merge (roadmap §6), or `gh-write` gains `edit`.
+1. **D5 as delivered (confirm).** The ruling says byte-identical to `main`. Delivered: byte-identical except the specification's sha256 and the hashes that carry it (8 one-line changes in `boards/`, `MANIFEST.json`'s hashes, `FAB-NOTES.md`'s hash line), because the reference's own bytes had to change (version 2 and its `board`). The work order allows a named change (§2.5), so this is not a §7 stop; I ask it be confirmed.
+2. **"A via joined on each layer it crosses" (reading).** Built as: every via is met by its net's copper on at least two of the layers it crosses (tracks on F.Cu or B.Cu, or its net's zone or plane). A through via crosses all four layers but a signal via cannot touch a plane of another net, so "each layer" read literally refuses every signal via. Confirm the reading.
+3. **D2 and the fixture's maxima.** OSH Park publishes tolerances for its dielectrics (used) but **none for copper or the finished thickness** (the 1.6 mm is "nominal"). So the fixture's copper maximum, 44 µm, is the published 1.7 mil rounded up (the ruling's "outer copper as published"), and its finished maximum, 1.692 mm, is my own sum of every published layer at its maximum with copper at nominal. That maximum is also the via-height bound. Accept these two as declared, or name a source with a tolerance (IPC-6012's copper and thickness classes) for the fixture.
+4. **F5 (low):** whether generated artifacts should keep naming the specification's sha256 (so every schema bump touches them), or name the solved topology's.
+5. **The PR title.** `gh-write` has no edit command, and a minted token is spent only through it (Furnace contract), so I cannot retitle PR #120 from here. Proposed title: `AET-WO-4100: stackups at 2 and 4 layers — the board a specification declares, routed, judged, bounded and packaged`. The architect sets it at merge (roadmap §6), or `gh-write` gains `edit`.

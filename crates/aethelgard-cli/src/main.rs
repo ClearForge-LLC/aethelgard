@@ -218,7 +218,7 @@ enum CheckCommand {
         /// The .kicad_pcb file.
         #[arg(long)]
         board: PathBuf,
-        /// Judge by the rules this specification implies; without it, by KiCad's defaults. Either way the gate writes every rule file itself.
+        /// Judge by the rules this specification declares, and first refuse a board that is not its declared board (copper layers, planes, thickness, through vias); without it, by KiCad's defaults. Either way the gate writes every rule file itself.
         #[arg(long)]
         spec: Option<PathBuf>,
         /// Also check the board against this .kicad_sch (KiCad's schematic parity). It is copied beside the board and judged with it.
