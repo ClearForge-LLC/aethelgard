@@ -1,5 +1,5 @@
 # binary<TAB>CI seconds: tests kept in one shard because they overlap when run together.
-# attribute_seeded: its 11 tests overlap in one process; the whole block took 475, 505, 575 and 721 s on CI (AET-WO-1908 FEEDBACK), 1377 s alone. Weighed at the worst sample.
+# attribute_seeded: its 11 tests overlap in one process; the whole block took 475, 505, 575 and 721 s on CI (AET-WO-1908 FEEDBACK), 1377 s alone with AET-WO-1909's removed oq_03 (146 s), 1231 s without it. Weighed at the worst sample.
 tests/attribute_seeded.rs	720
 # AET-WO-1909: each of these binaries reads one shared run (common::verify::Shared), which pays only inside one process.
 # Weighed by ci/shard.sh's REFIT RULE step 3, at the block's in-process wall time on CI (libtest's `finished in`, run 43570762262).

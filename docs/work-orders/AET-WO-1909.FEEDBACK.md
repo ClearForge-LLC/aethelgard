@@ -1,6 +1,6 @@
 # AET-WO-1909 — FEEDBACK
 
-**Status: built to the architect's ruling on PR #115 (comment 6873338632): A, B, C and D; `oq_03` removed; E declined. Adversarial and reduction passes done. Three consecutive CI runs at eight shards, every shard under 20 minutes (12:10, 11:59, 15:10); the suite went from 4,730 to 3,677 measured test-step seconds (−22 %). The PR title still says "census": `gh-write` cannot edit a PR, so the architect sets the title at merge (roadmap §6).**
+**Status: built to the architect's ruling on PR #115 (comment 6873338632): A, B, C and D; `oq_03` removed; E declined. Adversarial and reduction passes done. Three consecutive CI runs at eight shards, every shard under 20 minutes (12:10, 11:59, 15:10); the suite went from 4,730 to 3,677 measured test-step seconds (−22 %). B's byte comparison holds apart from one derived field, `MANIFEST.json`'s `verdict_sha256` (the architect to confirm, below). The PR title still says "census": `gh-write` cannot edit a PR, so the architect sets the title at merge (roadmap §6).**
 
 **Branch:** `wo/aet-1909-ci-reduction` · **Base:** `a5be795` (`origin/main`, merged in) · **Builder:** Claude (Opus 5.5, orchestrating). Census rows and D8's assertion messages were done by Sonnet subagents, each checked against the source. The adversarial pass was run by a fresh Opus subagent.
 
@@ -41,9 +41,12 @@
 | V(2k2, `--fab-out`) vs V(2k2, `--against`, `--fab-out`) | `against` | `fab.files["MANIFEST.json"]` | yes, apart from those |
 | V(47k) vs V(47k, `--fab-out`) | `fab` | none | yes; `--fab-out` held 0 entries |
 
-- **The one shared key that differs is caused by the extra flag's key.** `MANIFEST.json` names the sha256 of the verdict line without `fab` (`verify.rs:709-722`), and with `--against` that line carries `"against":"identical"`.
-- The other 14 package files are byte-identical between the two `--fab-out` runs (`pkg-fabout.sha`, `pkg-both.sha`).
-- `verify_fab_out_writes…` still checks the manifest against the line its own run printed, so it checks the same binding.
+- **The one shared key that differs is derived from the extra flag's key, and nothing else differs.**
+  - The two `MANIFEST.json` files were kept and compared directly (`~/.cache/aet-1909/manifests/`). Their keys are identical, and the only field that differs is `verdict_sha256`.
+  - Each run's `verdict_sha256` equals the sha256 of its own verdict line without `fab`, as `verify.rs:709-722` writes it. With `--against`, that line carries `"against":"identical"`.
+  - The other 14 package files are byte-identical (`pkg-fabout.sha`, `pkg-both.sha`).
+  - `verify_fab_out_writes…` still checks the manifest against the line its own run printed, so it checks the same binding.
+- **So B's condition 1 holds apart from that one derived field.** The ruling's fallback for a failed comparison is separate invocations, so **I ask the architect to confirm that this difference is acceptable.** Should the answer be no, the fix is to restore V(2k2, `--fab-out`) alone as a third run in `verify_2k2_tier2.rs`, at about 215 CI s.
 
 **2. Independence**, from the source:
 - `main.rs:340-353` passes `--against` and the fab mode to `verify::verify` as separate arguments.
@@ -146,7 +149,10 @@ The originals go red, at `board_tier2.rs:405` and `:504` of `cfafdb4`.
 **Run 4's 15:10 is the `--against-fab` block on a slow runner.**
 - That block took 764.5 s in one process, against 562.2 s on run 1. That is three `verify` runs at about 255 s, the 1.36× runner variance `AET-WO-1908` measured.
 - The other blocks on run 4: `verify_2k2_tier2` 419.7 s, `verify_47k_tier2` 217.7 s, `attribute_seeded` 449.0 s, `campaign_tier2` 43.1 s.
-- Run 4's spread passed 6 minutes once. The refit rule fires on two runs in a row, so it does not apply yet. If it does, step 3 sets that block to its worst sample, 764 s, which would make it the plan's maximum: still under 20 minutes with setup.
+- **The refit, stated exactly.**
+  - The rule's trigger (one shard past 20 minutes, or a spread past 6 minutes on two runs in a row) has not fired: run 4's spread is the only one past 6 minutes.
+  - Step 3 asks for each block's worst in-process sample over recent runs, and the committed weights are run 1's. The worst over runs 1 to 4: `against_fab_tier2` 764.5 s (weighed 562), `verify_2k2_tier2` 465.8 s (405), `verify_47k_tier2` 249.3 s (197), `campaign_tier2` 54.7 s (37), `attribute_seeded` 473.4 s (720, still its worst sample overall).
+  - Committing those changes the plan and restarts the three-run count. I have left that choice to the architect: at 764 s, the A block would be the plan's maximum, still under 20 minutes with setup.
 
 ## Reduction pass (diff)
 
