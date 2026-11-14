@@ -1,6 +1,6 @@
 # AET-WO-1909 — FEEDBACK
 
-**Status: built to the architect's ruling on PR #115 (comment 6873338632): A, C and D; `oq_03` removed; E declined. B is not built: its byte comparison failed the ruling's test (one value inside `fab` differs, not only the key the extra flag adds), so, as the ruling says, the two tests keep their separate invocations. Every unnamed assertion in the seven touched test files now names its property. Adversarial and reduction passes done. Three consecutive CI runs on the final plan are recorded below, with before and after suite seconds. The PR is retitled as the build, its body replaced; `gh-write` cannot edit a PR, so the operator applied both from the builder's text.**
+**Status: built to the architect's ruling on PR #115 (comment 6873338632): A, C and D; `oq_03` removed; E declined. B is not built: its byte comparison failed the ruling's test (one value inside `fab` differs, not only the key the extra flag adds), so, as the ruling says, the two tests keep their separate invocations. Every unnamed assertion in the seven touched test files now names its property. Adversarial and reduction passes done. Three consecutive CI runs on the final plan, at eight shards, every shard under 20 minutes (14:11, 12:13, 15:06); suite test-step seconds went from 4,730 to 4,176 (−12 %). The PR title and body are for the operator to set from the builder's text: `gh-write` cannot edit a PR.**
 
 **Branch:** `wo/aet-1909-ci-reduction` · **Base:** `a5be795` (`origin/main`, merged in) · **Builder:** Claude (Opus 5.5, orchestrating). Census rows and D8's assertion messages were done by Sonnet subagents, each checked against the source. The adversarial pass was run by a fresh Opus subagent.
 
@@ -161,9 +161,30 @@ Runs 2 to 4 were all green, every shard under 20 minutes (slowest 12:10, 11:59, 
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 5 (43581095451), counted 1 of 3 | `f23bc52` | 12:26 | 13:59 | 10:04 | 9:33 | 14:11 | 10:40 | 9:45 | 11:57 | 4,470 | 14:11 | 4:38 | 90 (floor 90) |
 | 6 (43582335978), counted 2 of 3 | `04191e5` | 9:38 | 11:50 | 11:41 | 12:13 | 10:24 | 10:28 | 7:59 | 9:54 | 4,031 | 12:13 | 4:14 | 90 (floor 90) |
-__CI_ROWS2__
+| 7 (43583396362), counted 3 of 3 | `f726283` | 12:13 | 15:06 | 9:46 | 8:26 | 10:36 | 9:09 | 7:59 | 11:27 | 4,026 | 15:06 | 7:07 | 90 (floor 90) |
 
-__CI_RESULT2__
+**Result: three consecutive runs (5, 6 and 7) on the final plan, eight shards, every shard under 20 minutes.**
+- **Slowest shard:** 14:11, 12:13 and 15:06.
+- **Spread:** 4:38, 4:14 and 7:07.
+- **The canary:** 90 tier-2 passes on each, floor 90. The guard passed and `gates` was green on every run.
+
+**Suite seconds, measured:**
+- **Before:** 4,622 and 4,838 on `main`, mean 4,730.
+- **After:** 4,470, 4,031 and 4,026, mean 4,176.
+- **That is −554 s, −12 %.**
+- **Slowest shard:** before, 16:14 and 15:36; after, 14:11, 12:13 and 15:06.
+- **Against the census:** it predicted −980 planned seconds with B. B's runs, kept separate, account for most of the gap: about 430 to 500 s per run.
+- **With B shared** (runs 2 to 4), the mean was 3,677 (−22 %).
+
+**The blocks in one process on runs 5 to 7:**
+- `against_fab_tier2` 703.0, 580.8 and 751.0 s (weighed 765);
+- `attribute_seeded` 484.7, 562.9 and 462.5 s (720);
+- `verify_47k_tier2` 242.8, 203.8 and 208.5 s (250);
+- `campaign_tier2` 55.7, 38.2 and 56.2 s (55).
+
+**The refit rule:**
+- Run 7's spread, 7:07, passed 6 minutes. Run 6's, 4:14, did not, so the trigger (two runs in a row) has not fired.
+- Run 7's slowest shard is the `--against-fab` block shard at 15:06, as planned: the block is the plan's maximum.
 
 ## Reduction pass (diff)
 
