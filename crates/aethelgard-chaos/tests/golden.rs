@@ -18,14 +18,14 @@ use common::*;
 /// time only the header's version byte changed, and setting it back gives the
 /// old hash again.
 const GOLDEN_TRACE_SHA256: &str =
-    "080a804ef992452a2f879b0c798603b5f1a1b40d0ba18e170b2a57975f221371";
+    "c4b8058718edc783e4a036379d4445f8d7aca8a076141fba0c083d464e3e27ea";
 /// The golden `state_hash`. Same rule. It was `535db225…adac4` (manifest
 /// version 1) until `AET-WO-0400a` made the chain hash each event's delta,
 /// then `af2d46bb…b4939` until `AET-WO-2300` changed the header it starts
 /// from, then `eb6408ee…93edc` until `AET-WO-3100` changed it again, then
 /// `0db4b4f9…10cea` until `AET-WO-2301` did, then `e5dcbe7c…37925` until
-/// `AET-WO-2204` did.
-const GOLDEN_STATE_HASH: &str = "28d3096cd81f9bb6e05f435e9ae011fe1a7f5ce798c9abf6a453d42a3fc1f82d";
+/// `AET-WO-2204` did, then `28d3096c…1f82d` until `AET-WO-4200` did.
+const GOLDEN_STATE_HASH: &str = "0562aa95d1e697b6d8bd39e3481a2e44e18a05ba561d9fb683f3db90f0b9faa2";
 
 #[test]
 fn golden_trace_and_state_hash_are_pinned() {
@@ -40,15 +40,15 @@ fn golden_trace_and_state_hash_are_pinned() {
     );
     assert_eq!(trace_sha, GOLDEN_TRACE_SHA256);
     assert_eq!(state_hash, GOLDEN_STATE_HASH);
-    // Only the version byte changed with AET-WO-2204: set back to 4, the
-    // bytes are version 4's golden trace again.
+    // Only the version byte changed with AET-WO-4200 (as with AET-WO-2204):
+    // set back to 5, the bytes are version 5's golden trace again.
     let at = 1 + 1 + "aethelgard-trace".len();
-    let mut v4 = bytes.clone();
-    assert_eq!(v4[at], 5);
-    v4[at] = 4;
+    let mut v5 = bytes.clone();
+    assert_eq!(v5[at], 7);
+    v5[at] = 5;
     assert_eq!(
-        hex(&Sha256::digest(&v4)),
-        "e9b23970e9a5e874c86b6f4246482558a3b2d8844a9e9837f2dfc6ea219146ca"
+        hex(&Sha256::digest(&v5)),
+        "080a804ef992452a2f879b0c798603b5f1a1b40d0ba18e170b2a57975f221371"
     );
 }
 

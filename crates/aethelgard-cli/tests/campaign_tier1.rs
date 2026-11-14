@@ -87,7 +87,7 @@ fn elf() -> Vec<u8> {
 const U2_LINE: &str = "  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
 
 /// The listing of the emitted platform's CPU and every solved peripheral.
-const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
+const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n  \u{2502}   \u{2514}\u{2500}\u{2500} spi1mux (SPIMultiplexer)\n  \u{2502}       \u{2514}\u{2500}\u{2500} u4 (GenericSpiFlash)\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
 
 /// The reference topology's seven registers as a correct boot leaves them.
 const GOOD_REGISTERS: [&str; 7] = [
@@ -107,6 +107,20 @@ const GOOD_WITNESS: &str =
 
 /// The record a firmware that read U2's ID register (0xD0) as 0x60 leaves.
 const GOOD_RECORD: [&str; 2] = ["0x22020000", "0x00000060"];
+
+/// U4's record, the flash's JEDEC ID, after U2's (`AET-WO-4200`).
+const GOOD_SPI_RECORD: [&str; 2] = ["0x22020000", "0x00EF4017"];
+
+/// What Renode 1.17.0's `GenericSpiFlash` logs for U4's JEDEC ID read behind
+/// SPI1's multiplexer (`AET-WO-4200` S2, measured).
+const GOOD_SPI_WITNESS: &str = "[03:07:39.4001] [NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation\n\
+[03:07:39.4002] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadID, write enabled False\n\
+[03:07:39.4003] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
+[03:07:39.4004] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0xEF\n\
+[03:07:39.4005] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
+[03:07:39.4006] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x40\n\
+[03:07:39.4007] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
+[03:07:39.4008] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x17\n";
 
 /// U2's record when the wait for TXIS expired: the bus never answered.
 const TXIS_TIMEOUT: [&str; 2] = ["0x22020001", "0x00000060"];
@@ -147,13 +161,14 @@ fn boot_reads(record: [&str; 2]) -> Vec<String> {
     ];
     v.extend(GOOD_REGISTERS.iter().map(|r| (*r).to_owned()));
     v.extend(record.iter().map(|r| (*r).to_owned()));
+    v.extend(GOOD_SPI_RECORD.iter().map(|r| (*r).to_owned()));
     v
 }
 
 fn text(log: &str, record: [&str; 2], listing: &str) -> String {
     let r = boot_reads(record);
     transcript(
-        log,
+        &format!("{log}{GOOD_SPI_WITNESS}"),
         &r.iter().map(String::as_str).collect::<Vec<_>>(),
         listing,
     )
@@ -184,7 +199,7 @@ fn toolbox(stdout: &str) -> Dir {
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n'; exit 0; fi
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 /bin/cat '{out}'
@@ -2183,7 +2198,7 @@ fn droop_toolbox_then(probe: [&str; 3], witness: Witness, then: &str) -> Dir {
         probe.join("\n")
     );
     out.push_str(&transcript(
-        after,
+        &format!("{after}{GOOD_SPI_WITNESS}"),
         &reads.iter().map(String::as_str).collect::<Vec<_>>(),
         CPU_LISTING,
     ));

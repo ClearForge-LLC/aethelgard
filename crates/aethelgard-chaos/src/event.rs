@@ -13,9 +13,12 @@ pub const VERSION: u64 = 1;
 /// kind 15, the solved I2C bus, and the run rules that join to it; 4 since
 /// `AET-WO-2301` added kinds 16 to 20, a declared supply droop; 5 since
 /// `AET-WO-2204` made kind 13 the device model's log of each identity read
-/// and kind 19 carry the same since its release. An archive of any other
-/// version is refused by name (`Fault::Version`), as 2301 refused version 3.
-pub const TRACE_VERSION: u64 = 5;
+/// and kind 19 carry the same since its release; 7 since `AET-WO-4200` added
+/// kinds 21 and 22, an SPI identity read and its witness, and override 4, an
+/// SPI device left absent (6 is `AET-WO-2205`'s, taken once by each work
+/// order, as ruled). An archive of any other version is refused by name
+/// (`Fault::Version`), as 2301 refused version 3.
+pub const TRACE_VERSION: u64 = 7;
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.

@@ -185,6 +185,8 @@ pub struct SpiReport {
     pub peripheral: String,
     /// The chip select's pin, `PA0`.
     pub select: String,
+    /// The multiplexer address the chip select drives, `0x00`.
+    pub address: String,
     pub command: String,
     pub expected: String,
     pub observed: Option<String>,

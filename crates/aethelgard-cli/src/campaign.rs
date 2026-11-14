@@ -111,6 +111,18 @@ pub(crate) fn read_base(scenario: &Path, base: &str) -> Result<Vec<u8>, (&'stati
     Ok(bytes)
 }
 
+/// The SPI devices a scenario leaves absent behind their chip selects
+/// (`AET-WO-4200` D4), each checked against the solved topology by [`effective`].
+pub(crate) fn absent(overrides: &[Override]) -> std::collections::BTreeSet<String> {
+    overrides
+        .iter()
+        .filter_map(|o| match o {
+            Override::SpiDeviceAbsent { reference } => Some(reference.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// A line the scenario holds low: its bus and the line's net.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HeldLow {
@@ -168,6 +180,10 @@ pub(crate) fn apply_overrides(
             // A droop changes no value of the specification: the runner
             // resolves and checks it against the domain (`resolve_droop`).
             Override::Droop(_) => {}
+            // Nor does an absent SPI device: the platform leaves it out
+            // behind its chip select (`absent`, `AET-WO-4200` D4). [`effective`]
+            // refuses one the solved topology has no SPI device for (`RUL-16`).
+            Override::SpiDeviceAbsent { .. } => {}
         }
     }
     spec.validate().map_err(|e| {
@@ -350,6 +366,20 @@ pub(crate) fn effective(scenario: &Scenario, base: &[u8]) -> Result<Effective, E
     })?;
     let specification_sha256 = digest(&overridden);
     let (topology, _) = crate::solve_spec(&spec, &hex(specification_sha256))?;
+    if let Some(r) = absent(&scenario.overrides)
+        .into_iter()
+        .find(|r| !topology.spi_devices.contains_key(r))
+    {
+        return Err(refuse(
+            "UnknownDevice",
+            Some(&r),
+            format!(
+                "scenario `{}`: the specification declares no SPI device `{r}`",
+                scenario.name
+            ),
+            EXIT_INVALID_SPEC,
+        ));
+    }
     Ok(Effective {
         spec,
         held,
@@ -509,7 +539,7 @@ fn run_one(
             virtual_ns: VIRTUAL_NS,
             scenario: p.scenario.name.clone(),
             held: p.held,
-            absent: Default::default(),
+            absent: absent(&p.scenario.overrides),
             rail: p.rail,
         }),
     )
@@ -906,6 +936,28 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
                 .take(aethelgard_chaos::record::MAX_WITNESS_LINES)
                 .map(|a| u8::try_from(hex_u64(a)?).map_err(|e| e.to_string()))
                 .collect::<Result<_, _>>()?,
+        });
+    }
+    for c in &boot.spi {
+        out.push(Record::SpiCheck {
+            reference: c.reference.clone(),
+            peripheral: c.peripheral.clone(),
+            select: c.select.clone(),
+            address: u8::try_from(hex_u64(&c.address)?).map_err(|e| e.to_string())?,
+            command: u8::try_from(hex_u64(&c.command)?).map_err(|e| e.to_string())?,
+            expected: hex_u64(&c.expected)?,
+            observed: c.observed.as_deref().map(hex_u64).transpose()?,
+            status: c.status.map(str::to_owned),
+        });
+    }
+    for w in &boot.spi_witness {
+        out.push(Record::SpiWitness {
+            peripheral: w.peripheral.clone(),
+            reference: w.reference.clone(),
+            device: w.device.clone(),
+            expected: w.expected.clone(),
+            observed: w.observed.as_deref().map(archived_lines),
+            unrouted: archived_lines(&w.unrouted),
         });
     }
     let mut findings: BTreeMap<(String, String), u64> = BTreeMap::new();

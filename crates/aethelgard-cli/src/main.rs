@@ -1398,10 +1398,11 @@ fn boot_report(
             .iter()
             .enumerate()
             .filter_map(|(i, c)| match &c.wire {
-                aethelgard_twin::boot::Wire::Spi { select, .. } => Some(verdict::SpiReport {
+                aethelgard_twin::boot::Wire::Spi { select, address } => Some(verdict::SpiReport {
                     reference: c.reference.clone(),
                     peripheral: c.peripheral.clone(),
                     select: select.clone(),
+                    address: format!("{address:#04x}"),
                     command: format!("{:#04x}", c.write),
                     expected: format!("{:#x}", c.expected),
                     observed: observed.map(|o| format!("{:#x}", o.records[i].1)),
