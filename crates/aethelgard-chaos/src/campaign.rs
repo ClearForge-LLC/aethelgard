@@ -674,7 +674,7 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             Record::Scenario { .. } => 0,
             Record::ExpectedCounts { .. } => 1,
             Record::Solved { .. } => 2,
-            Record::I2cBusSolved { .. } => 3,
+            Record::I2cBusSolved { .. } | Record::SpiBusSolved { .. } => 3,
             Record::RiseMeasured { .. } | Record::LineStuckHigh { .. } => 4,
             Record::BusFault { .. } => 5,
             Record::RailDeclared { .. } => 6,
@@ -873,10 +873,20 @@ fn check_observed_against_the_boot(records: &[Record]) -> Result<(), &'static st
         Record::BootObserved { boot_word, .. } => Some(boot_word),
         _ => None,
     });
-    let check = records.iter().find_map(|r| match r {
-        Record::I2cCheck { expected, .. } => Some(*expected),
-        _ => None,
-    });
+    // The first identity read: the first I2C one, or the first SPI one on a
+    // board with none, as the checks are ordered (`AET-WO-4200` adversarial A1).
+    let check = records
+        .iter()
+        .find_map(|r| match r {
+            Record::I2cCheck { expected, .. } => Some(*expected),
+            _ => None,
+        })
+        .or_else(|| {
+            records.iter().find_map(|r| match r {
+                Record::SpiCheck { expected, .. } => Some(*expected),
+                _ => None,
+            })
+        });
     let has_witness = first_witness(records).is_some();
     let same = |a: &Reading, b: &Reading| {
         (a.address, a.mask, a.expected) == (b.address, b.mask, b.expected)
@@ -904,13 +914,22 @@ fn check_observed_against_the_boot(records: &[Record]) -> Result<(), &'static st
     Ok(())
 }
 
-/// The first identity read's expected witness lines (kind 13), which a
-/// droop's observation must show since its release.
+/// The first identity read's expected witness lines (kind 13, or kind 22 on
+/// a board with no I2C read), which a droop's observation must show since
+/// its release.
 fn first_witness(records: &[Record]) -> Option<&[String]> {
-    records.iter().find_map(|r| match r {
-        Record::I2cWitness { expected, .. } => Some(expected.as_slice()),
-        _ => None,
-    })
+    records
+        .iter()
+        .find_map(|r| match r {
+            Record::I2cWitness { expected, .. } => Some(expected.as_slice()),
+            _ => None,
+        })
+        .or_else(|| {
+            records.iter().find_map(|r| match r {
+                Record::SpiWitness { expected, .. } => Some(expected.as_slice()),
+                _ => None,
+            })
+        })
 }
 
 /// A reading as the judge sees it: observed, and equal to the expected
@@ -1262,26 +1281,73 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
     if named(false) != named(true) {
         return Err("an identity read without its witness, or a witness without its read");
     }
-    // The same for SPI (`AET-WO-4200`): each read witnessed once, on its own
-    // controller, under its own name behind that controller's multiplexer;
-    // and no device both an I2C and an SPI one.
-    let spi: BTreeMap<&str, &str> = records
+    // The same for SPI (`AET-WO-4200`, adversarial A3): each read joins its
+    // solved device (kind 23) at its address and chip select, is witnessed
+    // once under its own name behind its controller's multiplexer, and every
+    // multiplexer line a witness carries is that multiplexer's; an absent
+    // device is a solved one, and its model logged nothing; and no device is
+    // both an I2C and an SPI one.
+    let mut solved_spi: BTreeMap<&str, (&str, u8, &str)> = BTreeMap::new();
+    for r in records {
+        if let Record::SpiBusSolved {
+            peripheral,
+            devices,
+        } = r
+        {
+            for (reference, address, select) in devices {
+                if solved_spi
+                    .insert(
+                        reference.as_str(),
+                        (peripheral.as_str(), *address, select.as_str()),
+                    )
+                    .is_some()
+                {
+                    return Err("an SPI device is on two solved controllers");
+                }
+            }
+        }
+    }
+    let mut spi: BTreeMap<&str, &str> = BTreeMap::new();
+    for r in records {
+        if let Record::SpiCheck {
+            reference,
+            peripheral,
+            select,
+            address,
+            ..
+        } = r
+        {
+            if solved_spi.get(reference.as_str())
+                != Some(&(peripheral.as_str(), *address, select.as_str()))
+            {
+                return Err("an SPI read names no solved device at its address and chip select");
+            }
+            spi.insert(reference, peripheral);
+        }
+    }
+    let absent: BTreeSet<&str> = records
         .iter()
         .filter_map(|r| match r {
-            Record::SpiCheck {
-                reference,
-                peripheral,
-                ..
-            } => Some((reference.as_str(), peripheral.as_str())),
+            Record::Scenario { overrides, .. } => Some(overrides),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|o| match o {
+            Override::SpiDeviceAbsent { reference } => Some(reference.as_str()),
             _ => None,
         })
         .collect();
+    if absent.iter().any(|r| !solved_spi.contains_key(r)) {
+        return Err("an absent SPI device is no solved one");
+    }
     let mut witnessed: BTreeSet<&str> = BTreeSet::new();
     for r in records {
         let Record::SpiWitness {
             peripheral,
             reference,
             device: path,
+            observed,
+            unrouted,
             ..
         } = r
         else {
@@ -1291,11 +1357,19 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
         // this path; replay checks an archive without the twin, so it states
         // it again (this crate never depends on the twin).
         let c = peripheral.to_ascii_lowercase();
-        let want = format!("{c}.{c}mux.{}", reference.to_ascii_lowercase());
+        let mux = format!("{c}.{c}mux");
+        let want = format!("{mux}.{}", reference.to_ascii_lowercase());
         if spi.get(reference.as_str()) != Some(&peripheral.as_str()) || *path != want {
             return Err(
                 "an SPI witness is not its read's device behind its controller's multiplexer",
             );
+        }
+        let line = format!("[WARNING] {mux}: Tried to transmit byte 0x");
+        if !unrouted.iter().all(|l| l.starts_with(&line)) {
+            return Err("an SPI witness carries a line that is not its multiplexer's");
+        }
+        if absent.contains(reference.as_str()) && observed.as_ref().is_some_and(|o| !o.is_empty()) {
+            return Err("an absent SPI device's model logged a transfer");
         }
         witnessed.insert(reference);
     }

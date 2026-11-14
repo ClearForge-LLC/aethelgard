@@ -394,3 +394,51 @@ fn a_pending_citation_must_be_an_https_url_and_is_listed() {
         [("TMP117", "bus", "https://example.com/ds.pdf")]
     );
 }
+
+/// `AET-WO-4200` adversarial A2: a key given twice inside an entry is
+/// refused, never collapsed to the last one; so is an entry without
+/// `renode` (only `null` says unmodelled), a part twice in another case,
+/// and an empty table.
+#[test]
+fn a_key_twice_a_missing_renode_a_case_twin_or_no_parts_is_refused() {
+    let text = PARTS_JSON;
+    // `"part": "W25Q64JV"` given twice, the second renaming it.
+    let twice = text.replacen(
+        "\"part\": \"W25Q64JV\",",
+        "\"part\": \"W25Q64JV\",\n      \"part\": \"W25Q128JV\",",
+        1,
+    );
+    assert_ne!(twice, text);
+    let err = parse_parts(&twice).unwrap_err();
+    // Named by the entry's last `part`, as a lenient read gives it: the
+    // refusal still says which entry, and that a key is twice.
+    assert_refused(&err, Some("W25Q128JV"), "duplicate field `part`");
+    // `"value"` given twice in an identity.
+    let twice = text.replacen(
+        "\"value\": \"0xEF4017\"",
+        "\"value\": \"0xEF4017\",\n        \"value\": \"0xEF4018\"",
+        1,
+    );
+    assert_ne!(twice, text);
+    let err = parse_parts(&twice).unwrap_err();
+    assert_refused(&err, Some("W25Q64JV"), "duplicate field `value`");
+    // `renode` left out of an entry.
+    let mut doc = embedded();
+    doc.pointer_mut(&at("W25Q64JV"))
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .remove("renode");
+    let err = parse_parts(&doc.to_string()).unwrap_err();
+    assert_refused(&err, Some("W25Q64JV"), "missing field `renode`");
+    // The same part in another case.
+    let mut doc = embedded();
+    let mut copy = doc.pointer(&at("BME280")).unwrap().clone();
+    copy["part"] = "bme280".into();
+    doc["parts"].as_array_mut().unwrap().push(copy);
+    let err = parse_parts(&doc.to_string()).unwrap_err();
+    assert_refused(&err, Some("bme280"), "twice");
+    // No parts at all.
+    let err = parse_parts(r#"{"schema_version": 1, "parts": []}"#).unwrap_err();
+    assert_refused(&err, None, "`parts` is empty");
+}

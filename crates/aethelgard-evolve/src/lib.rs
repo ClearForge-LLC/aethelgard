@@ -541,6 +541,7 @@ impl<'a> Run<'a> {
             return (vec![], vec![]);
         };
         let Record::SpiWitness {
+            device,
             observed: Some(observed),
             unrouted,
             ..
@@ -548,14 +549,19 @@ impl<'a> Run<'a> {
         else {
             return (vec![], vec![]);
         };
+        // The device's own multiplexer's line, whole: its source is the path
+        // before the device's name (adversarial A3: a line of another source
+        // is no evidence).
+        let mux = device.rsplit_once('.').map_or("", |(m, _)| m);
         let absent = format!(
             " to device {address:#X}, but it's not connected - ignoring transfer and returning a dummy byte"
         )
         .replace("0X", "0x");
+        let source = format!("[WARNING] {mux}: Tried to transmit byte 0x");
         let electrical = observed.is_empty()
             && unrouted
                 .iter()
-                .any(|l| l.starts_with("[WARNING] ") && l.ends_with(&absent));
+                .any(|l| l.starts_with(&source) && l.ends_with(&absent));
         // The software conditions are the fields' (`spi_fields`): one
         // statement of each. A claim with nothing logged is the read's own
         // event as well as the witness's.

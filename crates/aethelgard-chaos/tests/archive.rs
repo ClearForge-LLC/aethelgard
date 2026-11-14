@@ -425,7 +425,7 @@ fn field_level_refusals_name_their_own_variant() {
         (
             "unknown-kind",
             // 5 to 20 are the campaign's records since AET-WO-2301.
-            cbor::to_bytes(&Value::Array(vec![Value::Uint(23), Value::Uint(0)])),
+            cbor::to_bytes(&Value::Array(vec![Value::Uint(24), Value::Uint(0)])),
         ),
         (
             "short-payload",
@@ -527,7 +527,7 @@ fn field_level_refusals_name_their_own_variant() {
             (
                 "unknown-kind",
                 Err(E::UnknownEventKind {
-                    kind: 23, index: 0, ..
+                    kind: 24, index: 0, ..
                 }),
             ) => {}
             ("float-microvolts", Err(E::NotDeterministicCbor(_))) => {}

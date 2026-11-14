@@ -112,6 +112,11 @@ fn base() -> Vec<Record> {
             ],
             devices: vec![("U2".into(), 0x76), ("U3".into(), 0x48)],
         },
+        // U4 on SPI1 at its multiplexer's address 0, chip select PA0 (kind 23).
+        Record::SpiBusSolved {
+            peripheral: "SPI1".into(),
+            devices: vec![("U4".into(), 0, "PA0".into())],
+        },
         rise("I2C_SCL"),
         rise("I2C_SDA"),
         Record::BootObserved {
@@ -519,4 +524,81 @@ fn s3_proposes_a_generator_report() {
         matches!(ans.outcome, Outcome::GeneratorReport(_)),
         "{ans:?}"
     );
+}
+
+/// `AET-WO-4200` adversarial A3: replay joins every SPI record to the solved
+/// controller (kind 23) and refuses what does not, as it refuses an I2C read
+/// at an address kind 15 does not give. Each hostile archive here was
+/// accepted by the build at `1fe460d`, and one attributed `E2`.
+#[test]
+fn replay_refuses_spi_records_that_do_not_join_the_solved_controller() {
+    let refused = |records: &[Record], why: &str| {
+        let err = campaign::check_run(records).unwrap_err();
+        assert!(err.contains(why), "{err}");
+    };
+    let absent = || {
+        run(
+            spi_check("ok", Some(0xFF_FFFF)),
+            spi_witness(Some(vec![]), not_connected(0)),
+            &BOTH,
+        )
+    };
+    // H3: the read at address 1, its solved address 0, with `not connected` at 1.
+    let mut r = run(
+        spi_check("ok", Some(0xFF_FFFF)),
+        spi_witness(Some(vec![]), not_connected(1)),
+        &BOTH,
+    );
+    for x in r.iter_mut() {
+        if let Record::SpiCheck { address, .. } = x {
+            *address = 1;
+        }
+    }
+    refused(&r, "no solved device at its address");
+    // H11: a chip select the solved controller does not give.
+    let mut r = absent();
+    for x in r.iter_mut() {
+        if let Record::SpiCheck { select, .. } = x {
+            *select = "PZ99".into();
+        }
+    }
+    refused(&r, "no solved device at its address");
+    // H2: a `not connected` line from a source that is not the multiplexer.
+    let other = vec![format!(
+        "[WARNING] i2c1: Tried to transmit byte 0x9F to device 0x0, but it's not connected {DUMMY}"
+    )];
+    let r = run(
+        spi_check("ok", Some(0xFF_FFFF)),
+        spi_witness(Some(vec![]), other),
+        &BOTH,
+    );
+    refused(&r, "not its multiplexer's");
+    // H15: an absent device that no solved controller has.
+    let mut r = absent();
+    if let Record::Scenario { overrides, .. } = &mut r[0] {
+        overrides.push(Override::SpiDeviceAbsent {
+            reference: "U9".into(),
+        });
+    }
+    refused(&r, "no solved one");
+    // H14: the scenario leaves U4 absent, yet its model logged the read.
+    let mut r = run(
+        spi_check("ok", Some(EXPECTED_ID)),
+        spi_witness(Some(flash_ok()), vec![]),
+        &[],
+    );
+    if let Record::Scenario { overrides, .. } = &mut r[0] {
+        overrides.push(Override::SpiDeviceAbsent {
+            reference: "U4".into(),
+        });
+    }
+    refused(&r, "absent SPI device's model logged");
+    // The absent run itself, with its override, is one replay accepts.
+    let mut r = absent();
+    if let Record::Scenario { overrides, .. } = &mut r[0] {
+        overrides.push(Override::SpiDeviceAbsent {
+            reference: "U4".into(),
+        });
+    }
+    campaign::check_run(&r).unwrap();
 }

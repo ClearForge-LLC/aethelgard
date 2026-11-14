@@ -161,7 +161,10 @@ impl PartsTable {
 #[serde(deny_unknown_fields)]
 struct RawTable {
     schema_version: u32,
-    parts: Vec<serde_json::Value>,
+    /// Each entry's own text, parsed strictly on its own (`RawPart`), so a
+    /// key given twice in an entry is refused, never collapsed (`AET-WO-4200`
+    /// adversarial A2).
+    parts: Vec<Box<serde_json::value::RawValue>>,
 }
 
 #[derive(Deserialize)]
@@ -171,6 +174,9 @@ struct RawPart {
     bus: RawBus,
     identity: RawIdentity,
     supply_millivolts: RawSupply,
+    /// Required: `null` says unmodelled; an absent key is refused, never read
+    /// as unmodelled (adversarial A2).
+    #[serde(deserialize_with = "Option::deserialize")]
     renode: Option<String>,
     citations: RawCitations,
 }
@@ -394,8 +400,9 @@ fn part(raw: RawPart) -> Result<Part, String> {
 /// Parses a parts table, refusing the first malformed entry by naming its
 /// part and the field: an unknown key, a field of the wrong kind or out of
 /// range, a model that is not known or does not attach to the part's bus, a
-/// citation that is neither held nor pending, or a part named twice. It never
-/// panics.
+/// citation that is neither held nor pending, a key given twice in an entry,
+/// a missing `renode` (`null` is unmodelled), a part named twice in any case,
+/// or an empty table. It never panics.
 pub fn parse_parts(json: &str) -> Result<PartsTable, IrValidationError> {
     let raw: RawTable = serde_json::from_str(json).map_err(|e| refused(None, e.to_string()))?;
     if raw.schema_version != PARTS_SCHEMA_VERSION {
@@ -407,8 +414,14 @@ pub fn parse_parts(json: &str) -> Result<PartsTable, IrValidationError> {
             ),
         ));
     }
+    if raw.parts.is_empty() {
+        return Err(refused(None, "`parts` is empty"));
+    }
     let mut parts: Vec<Part> = Vec::with_capacity(raw.parts.len());
-    for (i, entry) in raw.parts.into_iter().enumerate() {
+    for (i, text) in raw.parts.iter().enumerate() {
+        // The name, read leniently, only to say which entry is refused.
+        let entry: serde_json::Value =
+            serde_json::from_str(text.get()).map_err(|e| refused(None, e.to_string()))?;
         let name = entry
             .get("part")
             .and_then(serde_json::Value::as_str)
@@ -426,10 +439,12 @@ pub fn parse_parts(json: &str) -> Result<PartsTable, IrValidationError> {
                 "`bus` is not an object holding exactly one of `i2c` and `spi`".to_owned(),
             ));
         }
-        let raw: RawPart = serde_json::from_value(entry).map_err(|e| named(e.to_string()))?;
+        let raw: RawPart = serde_json::from_str(text.get()).map_err(|e| named(e.to_string()))?;
         let p = part(raw).map_err(named)?;
-        if parts.iter().any(|q| q.part == p.part) {
-            return Err(named("the part is in the table twice".to_owned()));
+        if parts.iter().any(|q| q.part.eq_ignore_ascii_case(&p.part)) {
+            return Err(named(
+                "the part is in the table twice, in some case".to_owned(),
+            ));
         }
         parts.push(p);
     }

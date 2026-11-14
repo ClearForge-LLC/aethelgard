@@ -1024,3 +1024,69 @@ fn a_flooding_firmware_reaches_a_verdict_and_its_message_is_the_same_twice() {
         "the flooding firmware findings and messages are the same twice"
     );
 }
+
+/// `AET-WO-4200` adversarial A1: on a board whose first identity read is on
+/// SPI (the test fixture `spi-only.json`, the reference without U2, so U4 is
+/// the first check and U3 unmodelled), a droop's probe reads U4's record and
+/// witness, and replay judges them against U4's kind 21 and 22. The build at
+/// `1fe460d` stopped this run with "an observation's readings are not the
+/// boot's own" (exit 70): chaos took the first read from I2C records only.
+#[test]
+fn a_droop_on_a_board_whose_first_read_is_on_spi_recovers_and_replays() {
+    let dir = scratch("spi-only");
+    let (code, stdout) = aethelgard(&[
+        "generate",
+        "--spec",
+        "crates/aethelgard-cli/tests/fixtures/spi-only.json",
+        "--out",
+        dir.join("g").to_str().unwrap(),
+    ]);
+    assert_eq!(code, Some(0), "{stdout}");
+    let target = dir.join("fw-target");
+    let out = Command::new(env!("CARGO"))
+        .args(["build", "--release", "--offline", "--locked"])
+        .current_dir(dir.join("g/board/firmware"))
+        .env("CARGO_TARGET_DIR", &target)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let elf = target.join("thumbv7em-none-eabihf/release/sentinel-01-board-firmware");
+    let archive = dir.join("archive");
+    let (code, stdout) = aethelgard(&[
+        "campaign",
+        "--scenarios",
+        "crates/aethelgard-cli/tests/fixtures/spi-only-droop-bor3.json",
+        "--firmware",
+        elf.to_str().unwrap(),
+        "--archive",
+        archive.to_str().unwrap(),
+    ]);
+    assert_eq!(code, Some(0), "{stdout}");
+    let lines = lines(&stdout);
+    let run = line(&lines, "spi-only-droop-bor3");
+    assert_eq!(run["verdict"], "pass", "{run}");
+    let records = records(&run_dir(run));
+    let probe = records
+        .iter()
+        .find_map(|r| match r {
+            Record::FirmwareObserved { witness, value, .. } => {
+                Some((witness.clone(), value.clone()))
+            }
+            _ => None,
+        })
+        .expect("one release, one observation");
+    assert_eq!(probe.1.expected, 0x00EF_4017);
+    assert_eq!(probe.1.observed, Some(0x00EF_4017));
+    assert_eq!(
+        probe.0.map(|w| w.len()),
+        Some(8),
+        "U4's eight lines since the release"
+    );
+    let (code, stdout) = aethelgard(&["replay", "--archive", run_dir(run).to_str().unwrap()]);
+    assert_eq!(code, Some(0), "{stdout}");
+}

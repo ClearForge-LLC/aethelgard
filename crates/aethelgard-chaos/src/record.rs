@@ -11,7 +11,7 @@ use crate::event::{name_ok, text_ok};
 /// The first campaign kind; [`Record::kind`] is this plus the variant's index.
 pub const FIRST_KIND: u64 = 5;
 /// The last campaign kind.
-pub const LAST_KIND: u64 = 22;
+pub const LAST_KIND: u64 = 23;
 
 /// One override a scenario applies to its specification (`AET-WO-2300` §1.1).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -271,6 +271,16 @@ pub enum Record {
         observed: Option<Vec<String>>,
         unrouted: Vec<String>,
     },
+    /// Kind 23: one solved SPI controller, from the solved topology alone
+    /// (`AET-WO-4200` adversarial A3, kind 15's analogue): its devices in
+    /// the specification's order, each with its multiplexer address (its
+    /// place on the controller, from 0) and its chip select's pin. Kinds 21
+    /// and 22 and an absent device's override join to it. Archived beside
+    /// kind 15, before the boot.
+    SpiBusSolved {
+        peripheral: String,
+        devices: Vec<(String, u8, String)>,
+    },
 }
 
 fn u(n: u64) -> Value {
@@ -513,6 +523,7 @@ impl Record {
                 Self::ExpectedCounts { .. } => 15,
                 Self::SpiCheck { .. } => 16,
                 Self::SpiWitness { .. } => 17,
+                Self::SpiBusSolved { .. } => 18,
             }
     }
 
@@ -537,6 +548,7 @@ impl Record {
             Self::Scenario { .. }
                 | Self::Solved { .. }
                 | Self::I2cBusSolved { .. }
+                | Self::SpiBusSolved { .. }
                 | Self::RiseMeasured { .. }
                 | Self::LineStuckHigh { .. }
                 | Self::BusFault { .. }
@@ -781,6 +793,18 @@ impl Record {
                 opt_texts(observed.as_deref()),
                 texts(unrouted),
             ],
+            Self::SpiBusSolved {
+                peripheral,
+                devices,
+            } => vec![
+                t(peripheral),
+                Value::Array(
+                    devices
+                        .iter()
+                        .map(|(r, a, s)| Value::Array(vec![t(r), u((*a).into()), t(s)]))
+                        .collect(),
+                ),
+            ],
         }
     }
 
@@ -972,6 +996,22 @@ impl Record {
                 observed: f.opt_texts()?,
                 unrouted: f.texts()?,
             },
+            23 => {
+                let peripheral = f.text()?;
+                let mut devices = Vec::new();
+                for item in f.array()? {
+                    let Value::Array(triple) = item else {
+                        return None;
+                    };
+                    let mut g = Fields(triple.iter());
+                    devices.push((g.text()?, g.u8()?, g.text()?));
+                    g.end()?;
+                }
+                Self::SpiBusSolved {
+                    peripheral,
+                    devices,
+                }
+            }
             _ => return None,
         };
         f.end()?;
@@ -1231,6 +1271,34 @@ impl Record {
                     || !witness_lines_ok(unrouted)
                 {
                     Err("witness lines are not at most 16 lines of 1 to 256 printable ASCII bytes")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::SpiBusSolved {
+                peripheral,
+                devices,
+            } => {
+                let addresses_in_order = devices
+                    .iter()
+                    .enumerate()
+                    .all(|(i, d)| usize::from(d.1) == i);
+                let mut selects: Vec<&str> = devices.iter().map(|d| d.2.as_str()).collect();
+                selects.sort_unstable();
+                selects.dedup();
+                if !name_ok(peripheral) || !peripheral.starts_with("SPI") {
+                    Err("a solved SPI controller is not named SPIn")
+                } else if devices.is_empty() || devices.len() > MAX_WITNESS_LINES {
+                    Err("a solved SPI controller has 1 to 16 devices")
+                } else if !devices
+                    .iter()
+                    .all(|d| name_ok(&d.0) && split_pin(&d.2).is_some())
+                {
+                    Err("a solved SPI device's reference or chip select is malformed")
+                } else if !addresses_in_order || selects.len() != devices.len() {
+                    Err(
+                        "a solved SPI controller's addresses are not 0 to n in order, or two devices share a chip select",
+                    )
                 } else {
                     Ok(())
                 }

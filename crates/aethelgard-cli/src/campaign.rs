@@ -531,6 +531,10 @@ fn run_one(
         crate::diagnose(&m);
         ExitCode::from(EXIT_INTERNAL)
     })?;
+    let spi_buses = solved_spi(&p.topology).map_err(|e| {
+        crate::diagnose(&e.to_string());
+        ExitCode::from(EXIT_INTERNAL)
+    })?;
     let verdict = crate::simulate(
         &platform,
         Some(Boot {
@@ -577,6 +581,7 @@ fn run_one(
         topology_sha256,
     }]);
     records.extend(buses);
+    records.extend(spi_buses);
     records.extend(records_of(&verdict).map_err(internal)?);
     // The run must pass the rules replay will judge it by before it is written.
     let summary = rules::check_run(&records)
@@ -696,6 +701,29 @@ pub(crate) fn solved_buses(t: &SolvedTopology) -> Result<Vec<Record>, String> {
     Ok(out)
 }
 
+/// Kind 23, one per SPI controller with a device, from the solved topology
+/// alone, as the twin wires it (`aethelgard_twin::platform::spi_wiring`):
+/// each device's multiplexer address and chip select (`AET-WO-4200`
+/// adversarial A3).
+pub(crate) fn solved_spi(t: &SolvedTopology) -> Result<Vec<Record>, aethelgard_twin::TwinError> {
+    let mut by: BTreeMap<String, Vec<(String, u8, String)>> = BTreeMap::new();
+    for s in aethelgard_twin::platform::spi_wiring(t)? {
+        by.entry(s.peripheral)
+            .or_default()
+            .push((s.reference, s.address, s.select));
+    }
+    Ok(by
+        .into_iter()
+        .map(|(peripheral, mut devices)| {
+            devices.sort_by_key(|d| d.1);
+            Record::SpiBusSolved {
+                peripheral,
+                devices,
+            }
+        })
+        .collect())
+}
+
 /// Kinds 16 to 19 from a droop's report, the crossings, resets and
 /// observations merged in the time order replay checks (`AET-WO-2301`).
 fn droop_records(d: &crate::verdict::DroopReport) -> Result<Vec<Record>, String> {
@@ -778,6 +806,24 @@ fn archived_lines(lines: &[String]) -> Vec<String> {
                 e.truncate(256);
                 if e.is_empty() { "?".to_owned() } else { e }
             }
+        })
+        .collect()
+}
+
+/// The bytes a kind-22 witness's observed lines may take, and its
+/// multiplexer's lines: with the expected lines (eight of under 100 bytes for
+/// the flash) and the names, under the reader's 4,096-byte event bound.
+const WITNESS_BUDGET: usize = 1_800;
+const UNROUTED_BUDGET: usize = 1_200;
+
+/// The longest prefix of `lines` whose bytes sum to at most `budget`.
+fn within(lines: Vec<String>, budget: usize) -> Vec<String> {
+    let mut used = 0;
+    lines
+        .into_iter()
+        .take_while(|l| {
+            used += l.len();
+            used <= budget
         })
         .collect()
 }
@@ -956,8 +1002,16 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
             reference: w.reference.clone(),
             device: w.device.clone(),
             expected: w.expected.clone(),
-            observed: w.observed.as_deref().map(archived_lines),
-            unrouted: archived_lines(&w.unrouted),
+            // Kind 22 holds a witness and a multiplexer's lines, both of a
+            // length the firmware drives: each is cut to a byte budget so the
+            // event stays inside the reader's 4,096 bytes (adversarial A4). A
+            // cut observation still differs from what the judge expected, and
+            // the first lines are the read's own.
+            observed: w
+                .observed
+                .as_deref()
+                .map(|o| within(archived_lines(o), WITNESS_BUDGET)),
+            unrouted: within(archived_lines(&w.unrouted), UNROUTED_BUDGET),
         });
     }
     let mut findings: BTreeMap<(String, String), u64> = BTreeMap::new();
@@ -1146,6 +1200,33 @@ mod tests {
     /// `AET-WO-2204`: an observation is archived as at most 16 lines of
     /// printable ASCII, each at most 256 bytes; a changed line still differs
     /// from every line a model logs, so the archive cannot make it match.
+    #[test]
+    fn a_kind_22_stays_inside_the_event_bound_however_long_its_lines() {
+        // `AET-WO-4200` adversarial A4: a firmware that reads with eight
+        // frames and then clocks 16 bytes with no chip select made a kind 22
+        // of 16 witness and 16 multiplexer lines, over the reader's 4,096
+        // bytes, and the campaign stopped with an archive error.
+        let lines =
+            |n: usize, len: usize| -> Vec<String> { (0..n).map(|_| "x".repeat(len)).collect() };
+        let observed = super::within(archived_lines(&lines(16, 256)), super::WITNESS_BUDGET);
+        let unrouted = super::within(archived_lines(&lines(16, 256)), super::UNROUTED_BUDGET);
+        let w = Record::SpiWitness {
+            peripheral: "SPI1".into(),
+            reference: "U4".into(),
+            device: "spi1.spi1mux.u4".into(),
+            expected: lines(8, 100),
+            observed: Some(observed.clone()),
+            unrouted: unrouted.clone(),
+        };
+        let bytes =
+            aethelgard_chaos::cbor::to_bytes(&aethelgard_chaos::cbor::Value::Array(w.fields()));
+        assert!(bytes.len() < 4096, "{}", bytes.len());
+        // A prefix, never a reordering: the first lines are the read's own.
+        assert_eq!(observed.len(), 1_800 / 256);
+        assert_eq!(unrouted.len(), 1_200 / 256);
+        assert_eq!(super::within(vec!["ab".into(), "c".into()], 2), ["ab"]);
+    }
+
     #[test]
     fn witness_lines_are_archived_bounded_and_printable() {
         let many: Vec<String> = (0..20)

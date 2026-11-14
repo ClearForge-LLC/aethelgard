@@ -39,7 +39,7 @@ roxmltree = "0.21"
 rustix = { version = "1.1.5", features = ["fs", "process", "thread"] }
 seccompiler = "0.5.0"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
 sha2 = "0.11"
 syn = { version = "2", features = ["full"] }
 thiserror = "2"

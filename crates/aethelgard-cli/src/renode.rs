@@ -1183,7 +1183,7 @@ fn probes_in(text: &str, dropped: bool, plan: &BootPlan<'_>) -> Result<Vec<Probe
         let witness = check.filter(|_| !dropped).map(|c| {
             lines[r + 1..b]
                 .iter()
-                .filter_map(|l| witness_shaped(l, &c.device))
+                .filter_map(|l| device_line(c, l))
                 .map(str::to_owned)
                 .collect()
         });
