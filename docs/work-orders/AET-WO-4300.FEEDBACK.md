@@ -285,3 +285,5 @@ The schema version: `4100`'s is 2. `4200`'s build takes 3 (`spi_devices`), so a 
 ## 6. What a build deletes
 
 `spike/4300/` (`roadmap.md` §6). The tables above are the record.
+
+Deleted from the branch at the ruling (2026-11-14). The probes, cases and outputs remain in history at `a96b977`.
