@@ -631,8 +631,12 @@ mod tier2 {
             let a = &json_lines(&stdout)[0];
             assert_eq!(
                 code,
-                Some(0),
-                "attribute exits 0 on every seeded run: {}: {a}",
+                Some(if r.case.domain == "indeterminate" {
+                    1
+                } else {
+                    0
+                }),
+                "attribute exits 1 on an indeterminate run and 0 on every other: {}: {a}",
                 r.case.name
             );
             assert_eq!(

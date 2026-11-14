@@ -297,7 +297,7 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
 
 ### The analog pre-pass (`simulate --firmware`)
 
-`AET-WO-2200` (`RUL-17`). Before Renode is looked for, each I2C line of the solved topology is measured, and the measurement decides the platform the boot loads:
+`AET-WO-2200` (`RUL-17`). Before Renode is looked for, each I2C line of the solved topology has its rise computed from the declared values (`RUL-19` (1)), and the result decides the platform the boot loads:
 
 1. `aethelgard-twin::analog` writes one netlist per line from the topology's `analog_lines`: the pull-up from the domain's rail, the line's capacitance, and the open-drain driver, released once in a 22.5 µs window (`AET-WO-2101` S2).
 2. `aethelgard-bridge`, found **beside the `aethelgard` binary** (`BridgeUnavailable`, exit `4`, if it is not), measures each line's 30 %–70 % rise with libngspice 44.2 in its own process. It runs as a sandboxed tool like Renode, with the same 30 s and 1 GiB bounds, in a directory of its own, so it can write none of the copies Renode reads. Its rise time is its own interpolation of the points ngspice accepted, and it must agree with ngspice's `meas` to 0.01 ns.
@@ -455,19 +455,19 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 
 **Software evidence on the board.** The boot word is missing, the core executed fewer instructions than expected, or a register is wrong outside every bus's fields.
 
-**A bus is measured healthy** when no kind 7 past its ceiling, no kind 8 and no kind 9 is on it, each of its two lines has its kind 7 (R2 allows one per line), and the ST header knows its controller and pins. A bus whose port or controller the header lacks is never healthy and owns nothing, so its symptoms are `I2` and no other bus's attribution is refused.
+**A bus is computed healthy** (its rises are computed from the declared values, `RUL-19` (1)) when no kind 7 past its ceiling, no kind 8 and no kind 9 is on it, each of its two lines has its kind 7 (R2 allows one per line), and the ST header knows its controller and pins. A bus whose port or controller the header lacks is never healthy and owns nothing, so its symptoms are `I2` and no other bus's attribution is refused.
 
 **The rules, closed and ordered.** Each symptom is decided by the first rule that holds for it:
 
 | rule | domain | holds when | evidence kinds |
 |---|---|---|---|
 | `E1` | electrical | the symptom's bus has a kind 7 past its ceiling, a kind 8 or a kind 9; its software evidence goes to `masked` | 7, 8, 9 |
-| `I2` | indeterminate | the symptom's bus is not measured healthy (a line unmeasured, or a bus the header cannot join) | 15 |
-| `S1` | software | the symptom's bus is measured healthy and has software evidence | 7, 11, 13 |
-| `I3` | indeterminate | the symptom's bus is measured healthy with no software evidence, and another bus is faulted | 7, 8, 9 |
-| `I4` | indeterminate | measured healthy, no software evidence, and no fault anywhere | 7 |
+| `I2` | indeterminate | the symptom's bus is not computed healthy (a line with no computed rise, or a bus the header cannot join) | 15 |
+| `S1` | software | the symptom's bus is computed healthy and has software evidence | 7, 11, 13 |
+| `I3` | indeterminate | the symptom's bus is computed healthy with no software evidence, and another bus is faulted | 7, 8, 9 |
+| `I4` | indeterminate | computed healthy, no software evidence, and no fault anywhere | 7 |
 
-For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bus not measured healthy, gives `I2`. Then board software evidence gives `S2` (software; evidence kinds 7, 10, 11), and none gives `I4`.
+For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bus not computed healthy, gives `I2`. Then board software evidence gives `S2` (software; evidence kinds 7, 10, 11), and none gives `I4`.
 
 **The run.**
 - A passing verdict is `none`, rule `N1`.
@@ -478,10 +478,11 @@ For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bu
 
 Software is never concluded by eliminating electrical, nor electrical by eliminating software.
 
-**The seeded set** is `scenarios/sentinel-01/seeded/cases.json`. It holds 20 failing cases, 10 in each domain, and two passing ones.
+**The seeded set** is `scenarios/sentinel-01/seeded/cases.json` (schema version 2). It holds 21 failing cases (10 electrical, 11 software), one indeterminate case and two passing ones. Each case states the exact `[index, kind]` events `attribute` must name as `evidence` and as `masked`, and the test asserts them exactly (`AET-WO-2205` §1.6). Each evidence kind must be one of `aethelgard_evolve::Rule::evidence_kinds` for the case's rule. The indices move when the trace gains records: whoever moves them re-derives them from `attribute` and explains each changed row in their FEEDBACK.
 - The electrical cases are scenarios run against the generated firmware.
 - The software cases are named exact-once patches of `boards/sentinel-01`, built from a scratch copy by `tests/attribute_seeded.rs`. A patch that matches zero or two times fails that test, and so does a generator change.
-- The trap: a wrong device address fails with `i2c_timeout` at TXIS, as a 47 kΩ pull-up does. It is `software` with 3.3 kΩ (measured inside the ceiling), and `electrical` with 47 kΩ, with the witness in `masked`.
+- The trap: a wrong device address fails with `i2c_timeout` at TXIS, as a 47 kΩ pull-up does. It is `software` with 3.3 kΩ (computed inside the ceiling), and `electrical` with 47 kΩ, with the witness in `masked`.
+- The indeterminate trap, `trap-indeterminate-leave-47k`: a core that leaves the firmware after its boot word (`leave-firmware`, `software S2` at 2.2 kΩ), on the 47 kΩ bus fault (`electrical E1` alone). Two real causes: it is `I3`, evidence exactly the bus fault's `3:7 4:7 5:9`, and `propose` refuses to mutate (`INV-05`).
 
 ## `propose`
 
