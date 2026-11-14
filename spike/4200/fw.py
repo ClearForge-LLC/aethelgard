@@ -111,9 +111,16 @@ VARIANTS = {
 }
 
 
+# Pass 2 (FEEDBACK, "Corrections during the runs"): every chip select idles high before any
+# SPI code, as the generator's `into_output` does for PA0. Pass 1 left PA1 undriven; Renode's
+# `GPIO.Connect` signals the initial low at load, so the mux's active-low input 1 (the IMU)
+# was selected throughout, and every byte met two selected devices.
+IDLE = "    unsafe { " + w(GPIOA_BSRR, 0b11) + " }\n"
+
+
 def main():
     name = sys.argv[1]
-    edits = VARIANTS[name]
+    edits = [(a, IDLE + b) for a, b in VARIANTS[name]]
     src = f"{REF}/firmware"
     dst = f"/cache/fw/{name}"
     shutil.rmtree(dst, ignore_errors=True)

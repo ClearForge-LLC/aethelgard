@@ -257,4 +257,268 @@ The `jedec` probe:
 
 ## Results — after the predictions
 
-*(To be written after the runs.)*
+Everything below was measured after commit `f61da75`, which holds the predictions above unchanged.
+
+### Where it ran
+
+**The containers.** Two containers of the pinned image ran, each under `spike/4200/img.sh` at `--memory 12g`. Each ran `s2.py`, which builds the eight probe firmwares and boots every case.
+- Both read back `memory.max=12884901888`, `memory.swap.max=0` and `pids.max=max` before their command started (`out/caps.log`). Neither logged `CAPS NOT READ`.
+- `TMPDIR` was unset inside each.
+
+**The composition.** Every boot used the CLI's composition:
+- `--config` with the 19 keys of `renode::config`, synchronous logging on;
+- `logLevel -1` only on the device sources the platform declares;
+- `BEGIN`/`END` around the reads (`raw/*.cmds` in `~/.cache/aet-4200`).
+
+**Outputs.**
+- `out/s2.jsonl` is pass 2, the results below: 18 runs, 14 cases, two of them three times.
+- `out/s2-pass1.jsonl` is pass 1 (see "Corrections").
+- `out/fw.txt` holds the probe ELFs' sha256.
+- Raw stdout stayed in the cache.
+
+**Wall time.** Each boot took 1.9 to 2.1 s, the reference's.
+
+### Corrections during the runs
+
+**Pass 1's mux cases measured a probe defect, kept as evidence.** Pass 1 left `PA1` (the IMU's chip select) undriven.
+- **Cause:** Renode's `GPIO.Connect` calls the receiver's `OnGPIO(n, state)` at connection (`GPIO.cs` L80, read after the run). So the mux's active-low input 1 started at `false`, selected, and stayed so.
+- **Effect:** every byte of every mux case met two selected devices: `[WARNING] spi1.spi1mux: Tried to transmit byte 0x9F, but multiple devices are currently selected ([0x0, 0x1]) - ignoring transfer and returning a dummy byte`. Each read gave `0x00FFFFFF`.
+- **In `mux-cs-never`,** the IMU alone was selected and answered `0x9F` as a read of register `0x1F`: `Unhandled read from offset 0x1F.`, value `0x000000`.
+- **Pass 2's fix:** every probe drives `PA0` and `PA1` high (`BSRR` = 3) before any SPI code, as `into_output` does for `PA0`.
+- **What it means for the build:** an undriven chip select is a selected part. The generated firmware must idle every chip select high before the first transfer on its bus (F3).
+
+### S1 — read (no run)
+
+- **The controller.** `STM32H7_SPI` holds one device, logs no byte and has no chip select (P1.1, read).
+- **The census** (`s1-census.md`, [read-sub]) lists the models; I read `GenericSpiFlash`, `SPIMultiplexer` and `ICM20948` myself.
+- **Spot-checked:**
+  - the absence of every named flight-controller part, by my own search of both trees: no hit for ICM-42688, ICM-20602, MPU-6000/6050/9250, BMI088, BMP3xx, DPS310, MS5611, W25Q or Winbond;
+  - `ICM20948`'s `WhoAmI` = `0xEA` (`ICM20948_Bank0Registers.cs` L15).
+
+### S2 — measured (`out/s2.jsonl`)
+
+- **All five platforms load:** `peripherals` lists `spi1 (STM32H7_SPI)` → `spi1mux (SPIMultiplexer)` → `u4 (GenericSpiFlash)`, `imu (ICM20948)`. No `[ERROR]`; `init: SetActiveLow` accepted.
+- **`direct-jedec`:**
+  - **record 1:** `0x22020000`, `0x00EF4017`;
+  - **the flash's lines:** exactly P2.2's eight, path `spi1.u4`;
+  - **nothing else from `u4`:** no warning at load (`Reset()` logged nothing visible), none at `EOT`;
+  - **record 0:** `0x22020000`, `0x60`, as the reference.
+- **No register witness (P2.3):** every case that ends with the probe's sequence leaves the same `SPI1` registers:
+
+  | Register | Value |
+  |---|---|
+  | `CR1` | `0` |
+  | `CR2` | `0` |
+  | `CFG1` | `7` |
+  | `CFG2` | `0x00400000` |
+  | `SR` | `0x00001002` |
+
+  That includes `jedec` on every platform, `forge-regs`, `wrong-cmd`, `cs-never` and `mode3`. `GPIOA.ODR` is `0x3` after pass 2's idle.
+- **`direct-cs-jedec`:**
+  - **the read:** as `direct`, with the same eight lines;
+  - **each rising `PA0` edge** (at the probe's idle, then after the transfer) adds `[NOISY] spi1.u4: Chip Select is deasserted.` and `[WARNING] spi1.u4: Transmission finished in the unexpected state: RecognizeOperation`;
+  - **so with the wire, every good read ends with a device warning.**
+- **`none-jedec`:** record 1 = `0x22020000`, `0x00000000`; no line from any `spi1` source; no `[ERROR]`.
+- **`mux-jedec`, 3/3 identical reads** (`reads_sha256` `c388a871…`, the same as `direct-jedec`'s):
+  - **the read:** `EF4017`, with the eight lines under `spi1.spi1mux.u4`.
+  - **Around them, the mux's lines:** `GPIO #n set to …` and `Finisihing transmission on device 0x…` (Renode's spelling), and the IMU's `Finishing transmission, going idle`.
+  - **Every edge on any input finishes every inactive input's device:**
+    - `PA1`'s idle-high finished `u4` again, with a second `Transmission finished in the unexpected state` warning;
+    - after the transfer, `PA0`'s rise finished `u4` in `HandleCommand`, with no warning (P2.6).
+- **`mux-two`:**
+  - **the records:** record 1 = `EF4017`; record 2 = `0x22020000`, `0x000000EA`;
+  - **the IMU's lines:** exactly P2.7's four, path `spi1.spi1mux.imu`;
+  - **two devices on one controller,** each read witnessed by its own model's lines, in order.
+
+### S4 — measured (the forgeries; `out/s2.jsonl`)
+
+| Case | Record 1 | `u4` `Transmit`-path lines | Other `u4` lines | Today's judge |
+|---|---|---|---|---|
+| `mux-forge-claim` | OK `EF4017` | none | the idle-edge finish warnings only | SPI unjudged |
+| `mux-forge-regs` | OK `EF4017` | none | as above, plus one more at the `PA0` rise | SPI unjudged |
+| `mux-forge-csusp` | OK `EF4017` | none (the mux suppresses the controller's finish) | as `forge-regs`; `SR` `0x1802` (`SUSP`, not cleared) | SPI unjudged |
+| `direct-forge-csusp` | OK `EF4017` | none | **`[WARNING] spi1.u4: Transmission finished in the unexpected state: RecognizeOperation` from the `CSUSP` store alone** | SPI unjudged |
+| `mux-wrong-cmd` | OK `EF4017` (claimed) | `Transmitting data 0x90 …`, then `None` lines | `[ERROR] spi1.spi1mux.u4: Command decoding failed on byte: 0x90 (144).` and 3 × `Unhandled operation … None` | `renode_error_log` |
+
+**What a store can and cannot produce:**
+- **Can:** a device line from a store, the finish warning, through `CSUSP` on the direct wiring and through any chip-select edge on the mux.
+- **Cannot:** a `Transmitting`/`Decoded`/`Handled` line. None of the five forgeries produced one.
+
+### S5 — measured (`out/s2.jsonl`)
+
+- **`mux-absent-jedec`, 3/3 identical:**
+  - **record 1:** `0x22020000`, `0x00FFFFFF`;
+  - **the mux's lines:** `[WARNING] spi1.spi1mux: Tried to transmit byte 0x9F to device 0x0, but it's not connected - ignoring transfer and returning a dummy byte`, then three identical lines for `0x0`, **not folded** (P5.1's fold did not happen);
+  - **each `PA0` edge** logs `[WARNING] spi1.spi1mux: Tried to finish transmission to device 0x0, but it's not connected`;
+  - **no `[ERROR]`;** record 0 and the I2C side unchanged.
+- **`mux-cs-never`:** record 1 = `0x00FFFFFF`. Four unfolded `[WARNING] spi1.spi1mux: Tried to transmit byte 0x…, but no device is currently selected - ignoring transfer and returning a dummy byte`. No `Transmit`-path line from `u4`.
+- **The other chip-select failure** (pass 1, the defect above): another part's chip select held gives `multiple devices are currently selected ([0x0, 0x1])` and `0xFF`.
+- **`direct-cs-never`:** reads `EF4017` with the eight lines, identical to `jedec`. With the direct wiring, chip select cannot be faulted.
+- **`mux-mode3`:** reads `EF4017` with the eight lines. Its one extra line is `[WARNING] spi1: Unhandled write to offset 0xC. Unhandled bits: [24-25] when writing value 0x3400000. Tags: CPHA (0x1), CPOL (0x1).`, and `CFG2` reads `0x00400000`.
+- **Not measured, read:**
+  - **SCK above the maximum:** `MBR` is a tag; no model has a clock.
+  - **MISO stuck:** stuck at 0 is `none-jedec`'s rendering; stuck at 1 is the mux's `0xFF`.
+  - **An open chip-select trace:** removing `0 -> spi1mux@0` leaves input 0 never connected, so never selected. That logs `no device is currently selected`, the same line as `cs-never`'s software fault.
+
+## The spike's table: each prediction beside its result
+
+| Id | Prediction | Result | Held? |
+|---|---|---|---|
+| P1.1 | `STM32H7_SPI`: one device, no byte log, finish only at `EOT`/`CSUSP`; tags not stored | read; `CSUSP` finish measured (`direct-forge-csusp`); tags not stored measured (`mode3` `CFG2`) | yes |
+| P1.2 | the models table | census [read-sub]; three read | read |
+| P1.3 | no named FC part modelled; stand-ins `GenericSpiFlash` (EF 40 17), `ICM20948`/`LSM6DSO`; no SPI barometer | as predicted (my own search); `EF4017` and `0xEA` measured | yes |
+| P2.1 | all five platforms load (70 %) | all load, no `[ERROR]` | yes |
+| P2.2 | `direct`: `EF4017`, the eight lines, path `spi1.u4`; ≤ 1 load warning (50 %) | exactly; no load warning | yes |
+| P2.3 | `jedec` and `forge-regs` leave identical `SPI1` registers | identical (`CR1` 0, `CR2` 0, `CFG1` 7, `CFG2` `0x400000`, `SR` `0x1002`) | yes |
+| P2.4 | `direct-cs`: the eight lines plus a deassert and a warning per `PA0` rise | exactly, twice | yes |
+| P2.5 | `none`: value 0, no line, no error | exactly | yes |
+| P2.6 | `mux`: `EF4017`, path `spi1.spi1mux.u4` (60 %), no warning after the transfer, 3/3 | **pass 1 no** (`PA1` undriven: two selected, `0xFFFFFF`); **pass 2 yes**, and every edge on any input also finishes every inactive device (an extra warning at `PA1`'s idle) | yes after the probe fix; the extra finish not predicted |
+| P2.7 | `mux-two`: `0xEA`, the four IMU lines | exactly (pass 2) | yes |
+| P4.1 | `forge-claim`: no `Transmit`-path line | none | yes |
+| P4.2 | `forge-regs`: registers identical, no `Transmit`-path line | so | yes |
+| P4.3 | `forge-csusp`: direct, a device warning from a store; mux, nothing from `u4` | direct, exactly; mux, nothing from the `CSUSP` (the chip-select edges still finish it) | yes |
+| P4.4 | `wrong-cmd`: `[ERROR] … 0x90 (144).`, 3 × `Unhandled operation … None` | exactly | yes |
+| P4.5 | the witness is the `Transmit`-path lines; no store makes them; §7.1 does not hold | measured on 5 forgeries | yes |
+| P5.1 | absent: `0xFFFFFF`, `not connected` lines folded ` (3)` (70 %), 3/3 | `0xFFFFFF`, `not connected`, 3/3; **not folded** | value yes; fold **no** |
+| P5.2 | `cs-never`: `0xFFFFFF`, `no device is currently selected` | exactly (unfolded) | yes |
+| P5.3 | `direct-cs-never` reads as `jedec` | identical | yes |
+| P5.4 | `mode3`: same read, a tag warning `[24-25]` (60 %), `CFG2` `0x400000` | exactly | yes |
+| P5.5 | SCK over maximum not renderable | read, not run | read |
+| P5.6 | MISO stuck 0 = `none`; stuck 1 = mux `0xFF` | measured as `none-jedec` and `mux-absent-jedec` | yes |
+| P3.1 | the inventory | as listed (S3 below) | read |
+| P6.1 | no gate in this work order; `4100` | reasoned (S6 below) | reasoned |
+
+**Why no fold (P5.1):** `AET-WO-2204` F5 saw Renode fold repeated lines with `collapse-repeated-log-entries = True`. Here, with the same key and synchronous logging, four consecutive identical warnings were not folded. Why was not established. The build's witness must neither assume folding nor be broken by it, so it should refuse a ` (N)` suffix on a witness line, as 2204's does.
+
+## Recommendations, one per question
+
+- **S1. Stock models carry the work order's first device; the flight-controller parts are not modelled.**
+  - **The flash:** `GenericSpiFlash` stands in for the W25Q64JV, ID set from the platform (`manufacturerId 0xEF`, `memoryType 0x40`, `capacityCode 0x17`), the exact `EF 40 17`.
+  - **The IMU:** `ICM20948` (`0xEA`, measured) is the one SPI IMU measured end to end; `LSM6DSO` (`0x6C`) is read only.
+  - **Not modelled:** none of ICM-42688-P, ICM-20602, MPU-6000, BMI088, BMP388, DPS310 or MS5611 in 1.17.0.
+  - **The barometer gap:** no barometer has an SPI model, so Sentinel-02's barometer is either an I2C part Renode models (`BMP180`, `LPS25HB`, `ICP-101xx`), or a model of our own (D5).
+- **S2. Wire every SPI bus through `SPI.SPIMultiplexer`.**
+  - **The wiring:**
+    - one `<spi>mux` per bus;
+    - each device at its own address, with its chip-select pin wired `<port>: <pin> -> <spi>mux@<k>` and `SetActiveLow <k>`;
+    - `logLevel -1` on each device.
+  - **Why the mux, measured:**
+    - it is the only stock way two devices share `STM32H7_SPI`;
+    - it is the only one that renders a chip-select fault (`cs-never`: `0xFF` and a warning; direct: identical to a good read);
+    - its `0xFF` is what an undriven MISO reads.
+  - **Two consequences for the generator:**
+    - every chip select idles high before the bus's first transfer (F3);
+    - the twin emits two new names per bus or device (`spi1mux`, `u4_memory`), which must stay clear of references and of 2204's reserved list (D7).
+- **S3. A pinned data file of part values in `aethelgard-ir`, with each Renode model's behaviour kept as code (D3).**
+  - **Home and form:** `crates/aethelgard-ir/data/parts.json`, embedded with `include_str!` and sha256-pinned by a tier-1 test. The precedent is `svd-hal`'s pinned CMSIS header (`cmsis.rs` L26).
+  - **Parsing:** serde with `deny_unknown_fields`; `serde_json` moves from a dev-dependency to a dependency of `aethelgard-ir`.
+  - **Validation:** once, at first use, refusing by name (`PartsTableInvalid { part, field, reason }`):
+    - a duplicate part;
+    - a field out of range, such as an I2C address above `0x7F`, an identity wider than 4 bytes, an SPI mode outside 0 to 3, or a supply minimum above its maximum;
+    - a bus field that does not match the bus kind;
+    - a Renode model outside the closed set.
+
+    A tier-1 test feeds each such entry.
+  - **Fields, one entry per part:**
+    - `part`;
+    - `bus`: `{"i2c": {"addresses": [..]}}` or `{"spi": {"modes": [0, 3], "max_clock_hz": …}}`;
+    - `identity`: `{"write": [0x9F], "read": 3, "value": "EF4017"}` (I2C: `write` is the register);
+    - `supply_millivolts: [min, max]`;
+    - `pins: {"capacitance_femtofarads": …, "sink_microamps": …}`, optional, present only where a gate reads it;
+    - `renode`: one of a closed set of model names, or `null` for unmodelled;
+    - `datasheet: {"document", "revision", "section"}`, one per value group.
+  - **The witness format** stays a `match` on the model enum in `aethelgard-twin`. It is a fact about Renode's source (`GenericSpiFlash.cs` L129/L298/L635), pinned to Renode 1.17.0, not a fact about the part. That keeps 2204 D2's guarantee: a model added cannot reach the judge without a witness decision.
+  - **What migrates:**
+    - `parts.rs` identities (BME280, TMP117), plus the W25Q64JV;
+    - `model.rs` `MODELS`;
+    - `schematic.rs`'s address straps (`allowed` 0x76/0x77 and 0x48–0x4B) and `KNOWN_PARTS`.
+  - **What stays in `aethelgard-eda`:** the KiCad symbol, pin and footprint choices, which are layout facts keyed by part, named in FEEDBACK.
+  - **What does not migrate:** UM10204's 10 pF `Ci` (`extract.rs`) and sink limits (`electrical.rs`), which are bus rules, not part values.
+  - **The alternative:** a typed Rust `const` table. Simpler, with no parser and no runtime refusal, but a malformed entry is then a test failure rather than a refusal by name (§5.3), and every part added is a code change.
+- **S4. The SPI witness is the device model's `Transmit`-path lines, as whole lines, in order; never a finish, chip-select, reset or mux line.**
+  - **For `GenericSpiFlash` and a JEDEC read:** the eight lines of P2.2.
+  - **For `ICM20948` and `WHO_AM_I`:** P2.7's four.
+  - **The level:** all are `Noisy`, set by `logLevel -1` on the device.
+  - **Measured:** no store produced one in five forgeries. A store does produce the finish warning (`direct-forge-csusp`), and every mux chip-select edge finishes every inactive device, so those lines are evidence for nothing.
+  - **The `0x9F` reply beyond 3 bytes** is Renode's (`10 40 00 …`, `GetDeviceData`), not Winbond's, so the read is exactly 3 bytes (F7).
+  - §7.1 does not hold.
+- **S5. The first SPI fault: the device absent behind its chip select (`mux-absent`).** Measured 3/3: record `0xFFFFFF`, the mux's `… to device 0x0, but it's not connected …` per byte, no error.
+  - **Trace:** a kind-13 analogue for SPI, carrying the device's witness lines and the mux's `not connected` lines for that address, as 2204's `absent`.
+  - **Attribution rule:**
+    - **electrical:** `not connected` at the faulted device's own address, with no line from the model;
+    - **software:** `no device is currently selected` (the firmware never asserted chip select) or `multiple devices are currently selected` (another part's chip select held), or the model's lines with another command (`wrong-cmd`'s `[ERROR]`).
+  - **A seeded case for each domain is possible:** absent (electrical), and `cs-never` (software).
+  - **The other candidates fail:**
+    - **wrong clock phase:** unrenderable; the read is unchanged, and only a tag warning records it;
+    - **SCK over maximum:** unrenderable; a static check;
+    - **MISO stuck at 0:** indistinguishable from an empty `spi1`, with no line at all;
+    - **an open chip select:** collides with `cs-never` (the same line).
+- **S6. No analog gate in this work order.**
+  - **The margin:** at `OSPEEDR` `10`, DS12117 Rev 10 Table 149 (rev V) allows 85 MHz into 50 pF at 2.7–3.6 V, more than four times the reference's 20 MHz at any capacitance the stackup can give.
+  - **Where a check would fire:** only at `OSPEEDR` `00` (Fmax 16 MHz even at 10 pF), which the generator never emits for an SPI pin.
+  - **The check, when it comes:** a static table check, `Fmax(OSPEEDR, VDD, C)` ≥ the bus clock, with C from the routed geometry. It belongs with the stackup and extraction (`4100`).
+  - **One caveat for `4100`** (F6): the `10`/`11` rows assume the I/O compensation cell enabled (note 5), and the generated firmware never enables it.
+
+## §7 checked
+
+- **§7.1 does not hold, measured.** `GenericSpiFlash` and `ICM20948` log each transaction at `Noisy`, and no store produces those lines (S4). `STM32H7_SPI` itself logs nothing per transfer, and no `SPI1` register separates a real transfer from a forgery (P2.3), so the witness is the model's log, as for I2C.
+- **§7.2 does not hold.** The W25Q64JV is unmodelled, but `GenericSpiFlash` with its JEDEC bytes is a stock stand-in, measured to read `EF 40 17`.
+- **§7.3 not reached.** Every probe left record 0 (the I2C read) at `0x22020000`, `0x60`. The reference's verdicts are the build's test.
+
+## Findings
+
+- **F1 · `STM32H7_SPI` has no chip select and one device; chip select is modelled only by `SPIMultiplexer` · Renode 1.17.0 · high for the twin's wiring · measured.**
+  - Direct wiring cannot render a chip-select fault, and cannot hold two devices.
+  - Recommendation: S2. Decision needed: D1.
+- **F2 · A store makes a device log: the finish warning · `STM32H7_SPI` `CSUSP`, `SPIMultiplexer` input edges · high for the witness · measured (`direct-forge-csusp`, every mux case).**
+  - The witness must exclude every finish, chip-select and mux line.
+  - Recommendation: S4.
+- **F3 · An undriven chip select is a selected part · `GPIO.Connect` L80, `SetActiveLow` · high for the generator · measured (pass 1).**
+  - At load every mux input reads low, so active. Until the firmware drives a chip select high, its part is selected, and two such parts turn every transfer into `0xFF`.
+  - Recommendation: the generated firmware idles every chip select high before the bus's first transfer. Two seeded possibilities follow (another part's chip select held).
+- **F4 · Renode did not fold four identical consecutive warnings · `collapse-repeated-log-entries = True`, synchronous logging · low · measured.**
+  - This contradicts `AET-WO-2204` F5's observation (asynchronous).
+  - Recommendation: the witness refuses a ` (N)` suffix and never relies on folding.
+- **F5 · No barometer, and none of the named IMUs, is modelled on SPI · Renode 1.17.0 · high for `4500` · read.**
+  - Recommendation: D5.
+- **F6 · DS12117's speed-`10`/`11` limits assume the I/O compensation cell enabled; nothing enables it · `board.rs` (`OSPEEDR` `10`), DS12117 Rev 10 Table 149 note 5 · medium, for `4100` · read.**
+  - Recommendation: `4100` either enables it in the generated firmware or reads the margin without it. Not this work order.
+- **F7 · `GenericSpiFlash` answers `0x9F` with six or more bytes · `GetDeviceData` · low · read.**
+  - The bytes are `EF 40 17 10 40 00 …`, Renode's defaults past the third byte, not Winbond's.
+  - Recommendation: the identity read is exactly 3 bytes.
+- **F8 · Renode spells its mux line `Finisihing transmission on device 0x…` · `SPIMultiplexer.cs` L107 · low · measured.** Any exact-line rule over it must use Renode's spelling. S4 excludes these lines anyway.
+- **F9 · The W25Q64JV's datasheet is not on Furnace · B7's "data licensing per part" · medium · —.**
+  - Its JEDEC ID is the work order's. Its modes, maximum clock and supply range are [recall].
+  - Recommendation: the build cites a held revision, fetched once and pinned like DS12117. Decision needed: D8.
+
+## Decisions needed
+
+- **D1 (S2): the SPI wiring.**
+  - **(a)** a `SPIMultiplexer` per bus, chip selects wired active-low, devices at their index. Recommended, measured: two devices, chip-select faults, `0xFF` MISO.
+  - **(b)** the device directly on `spi1`, one device per bus, with no chip-select fault.
+- **D2 (S4): accept the model's `Transmit`-path lines as the SPI witness** (2204 D1's rule, for SPI), exact whole lines in order, with no ` (N)` suffix (F4), and every finish, chip-select and mux line excluded (F2). Recommended.
+- **D3 (S3): the parts table's form.**
+  - **(a)** the pinned `parts.json` in `aethelgard-ir`, `serde_json` promoted to a dependency, refused by name at first use, the model's witness format kept as code. Recommended.
+  - **(b)** a typed Rust `const` table.
+- **D4 (S5): the first SPI fault.** The device absent behind its chip select, electrical by the mux's `not connected` line, with `cs-never` as its software twin. Recommended.
+- **D5 (§2.6): the flight-controller IMU.**
+  - **(a)** `ICM20948` declared in a test-fixture specification and read end to end in this build (measured, `0xEA`). Recommended: it is the only measured SPI IMU.
+  - **(b)** defer to `4500`.
+  - Separately for `4500`: the named IMUs and every SPI barometer are unmodelled (F5). The choice is between modelled parts and a model of our own, which is a ruling.
+- **D6 (S6): no analog SPI gate here; the `Fmax` table check and F6 go to `4100`.** Recommended.
+- **D7: the twin's new emitted names** (`<spi>mux`, `<ref>_memory`).
+  - The recommendation is that `validate` refuses a reference whose lowercased name, or name plus `_memory`, collides with one, as 2204 D5 does for stock names.
+  - The alternative is names a reference cannot take (`aet_` prefixed, with references refused from that prefix).
+- **D8 (F9): fetch and pin the W25Q64JV datasheet** (Winbond, current revision) for the parts table's citations.
+
+## Gates (spike)
+
+- **The diff against `main`** is this file and `spike/4200/`:
+  - the scripts, which are Python and shell;
+  - the five platform `.repl` files;
+  - the census;
+  - the outputs.
+
+  No Rust changed.
+- **`cargo fmt`, `clippy` and the tests** are unaffected; CI runs them on the PR.
+- **`docs/work-orders/AET-WO-4200.md`** is not committed here; it lands through PR #116.
