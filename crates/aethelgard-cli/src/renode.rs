@@ -988,9 +988,9 @@ fn probes_in(text: &str, dropped: bool, plan: &BootPlan<'_>) -> Result<Vec<Probe
     let lines = clean_lines(text);
     let releases: Vec<u64> = plan.resets.iter().filter_map(|r| r.released_ns).collect();
     let n = releases.len();
-    let released = sentinels(&lines, RELEASE, n).map_err(&untrusted)?;
-    let begins = sentinels(&lines, PROBE_BEGIN, n).map_err(&untrusted)?;
-    let ends = sentinels(&lines, PROBE_END, n).map_err(&untrusted)?;
+    let released = sentinels(&lines, RELEASE, n).map_err(untrusted)?;
+    let begins = sentinels(&lines, PROBE_BEGIN, n).map_err(untrusted)?;
+    let ends = sentinels(&lines, PROBE_END, n).map_err(untrusted)?;
     let reads = plan.probe_reads();
     let check = plan.image.i2c.checks.first();
     let mut out = Vec::new();
