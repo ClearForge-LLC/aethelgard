@@ -1,0 +1,125 @@
+diff --git a/crates/aethelgard-eda/src/route.rs b/crates/aethelgard-eda/src/route.rs
+index 9f13cfd..e39a21e 100644
+--- a/crates/aethelgard-eda/src/route.rs
++++ b/crates/aethelgard-eda/src/route.rs
+@@ -389,6 +389,33 @@ struct Router<'a> {
+     cost: Vec<u32>,
+     prev: Vec<u8>,
+     generation: u16,
++    /// Spike (c): F.Cu/via nodes inside a dense part's pad ring, and which
++    /// nets (by index) are stitched. Mode 1: only stitched nets may use the
++    /// interior; mode 2: every net.
++    interior: Vec<bool>,
++    stitched: Vec<bool>,
++    only_stitched: bool,
++}
++
++/// The empty interior of a pad ring: bounded by the inner edges of the pads
++/// nearest the field's centre line on each side; none if a side has no pad,
++/// a pad lies inside, or it is under 4 mm across.
++fn ring_interior(pads: &[Rect], field: Rect) -> Option<Rect> {
++    let (cx, cy) = ((field.x0 + field.x1) / 2, (field.y0 + field.y1) / 2);
++    let (qw, qh) = ((field.x1 - field.x0) / 4, (field.y1 - field.y0) / 4);
++    let mid = |p: &Rect| ((p.x0 + p.x1) / 2, (p.y0 + p.y1) / 2);
++    let xl = pads.iter().filter(|p| mid(p).0 < cx && (mid(p).1 - cy).abs() < qh).map(|p| p.x1).max()?;
++    let xr = pads.iter().filter(|p| mid(p).0 > cx && (mid(p).1 - cy).abs() < qh).map(|p| p.x0).min()?;
++    let yb = pads.iter().filter(|p| mid(p).1 < cy && (mid(p).0 - cx).abs() < qw).map(|p| p.y1).max()?;
++    let yt = pads.iter().filter(|p| mid(p).1 > cy && (mid(p).0 - cx).abs() < qw).map(|p| p.y0).min()?;
++    let r = Rect { x0: xl, y0: yb, x1: xr, y1: yt };
++    if xr - xl < 4_000_000 || yt - yb < 4_000_000 {
++        return None;
++    }
++    if pads.iter().any(|p| p.x0 < r.x1 && p.x1 > r.x0 && p.y0 < r.y1 && p.y1 > r.y0) {
++        return None;
++    }
++    Some(r)
+ }
+ 
+ fn owner(net: usize) -> u32 {
+@@ -408,6 +435,13 @@ impl<'a> Router<'a> {
+         let mut corridors = vec![Vec::new(); count];
+         let mut via_corridors = vec![Vec::new(); count];
+         let o = board.outline;
++        let mode = match std::env::var("AET_C").ok().as_deref() {
++            Some("1") => Some(true),
++            Some("2") => Some(false),
++            Some("1p") if board.stack.has_planes() => Some(true),
++            _ => None,
++        };
++        let mut interior = vec![false; n];
+         for node in 0..n {
+             let (x, y) = grid.at(node);
+             let edge = to_edge(o, (x, y));
+@@ -437,14 +471,22 @@ impl<'a> Router<'a> {
+             let Some(field) = part.pads.iter().map(|p| p.rect).reduce(|a, b| a.union(b)) else {
+                 continue;
+             };
++            let rects: Vec<Rect> = part.pads.iter().map(|p| p.rect).collect();
++            let hole = if mode.is_some() { ring_interior(&rects, field) } else { None };
+             for node in grid.nodes(field) {
+                 let (x, y) = grid.at(node);
++                if hole.is_some_and(|h| h.contains(Rect::point(x, y))) {
++                    interior[node] = true;
++                    continue;
++                }
+                 if !part.pads.iter().any(|p| p.rect.contains(Rect::point(x, y))) {
+                     track[0][node] = BLOCKED;
+                 }
+             }
+             for node in grid.nodes(field.grow(VIA_NM / 2 + board.s())) {
+-                via[node] = BLOCKED;
++                if !interior[node] {
++                    via[node] = BLOCKED;
++                }
+             }
+             for pad in &part.pads {
+                 if let Some(net) = pad.net.as_ref().and_then(|n| nets.binary_search(n).ok()) {
+@@ -492,6 +534,9 @@ impl<'a> Router<'a> {
+             cost: vec![0; 2 * n * 5],
+             prev: vec![0; 2 * n * 5],
+             generation: 0,
++            interior,
++            stitched: vec![false; count],
++            only_stitched: mode.unwrap_or(false),
+         }
+     }
+ 
+@@ -515,12 +560,18 @@ impl<'a> Router<'a> {
+         }
+     }
+ 
++    fn shut(&self, node: usize, who: u32) -> bool {
++        self.only_stitched
++            && self.interior[node]
++            && !self.stitched.get((who as usize).wrapping_sub(1)).copied().unwrap_or(false)
++    }
++
+     fn open(&self, layer: Layer, node: usize, who: u32) -> bool {
+-        opens(self.track[layer.index()][node], who)
++        !(layer == Layer::F && self.shut(node, who)) && opens(self.track[layer.index()][node], who)
+     }
+ 
+     fn via_open(&self, node: usize, net: usize) -> bool {
+-        opens(self.via[node], owner(net)) || self.vias.get(&node) == Some(&net)
++        !self.shut(node, owner(net)) && opens(self.via[node], owner(net)) || self.vias.get(&node) == Some(&net)
+     }
+ 
+     /// The first pair of `path`'s own new vias closer than the hole gap,
+@@ -1409,6 +1460,9 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
+         )
+     });
+     let mut r = Router::new(board, grid, nets.clone());
++    for &g in &stitched {
++        r.stitched[g] = true;
++    }
+     let mut queue: VecDeque<usize> = order.iter().copied().collect();
+     let mut ripups = 0;
+     let zones = loop {
+@@ -1512,6 +1566,7 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
+     // belt-and-suspenders: the grid's margins already keep the copper clear
+     // and joined (no tested board reaches these); the exact judges stand
+     // behind them, so a router defect fails closed rather than ships.
++    eprintln!("RIPUPS_TOTAL {ripups}");
+     check(board, &routed).map_err(|why| fail("", why))?;
+     connectivity(board, &routed).map_err(|why| fail("", why))?;
+     Ok(routed)

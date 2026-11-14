@@ -1,0 +1,229 @@
+diff --git a/crates/aethelgard-eda/src/pcb.rs b/crates/aethelgard-eda/src/pcb.rs
+index e9a60c7..3dab330 100644
+--- a/crates/aethelgard-eda/src/pcb.rs
++++ b/crates/aethelgard-eda/src/pcb.rs
+@@ -820,6 +820,28 @@ pub(crate) fn write(
+         parts,
+         stack: stack.clone(),
+     };
++    if let Ok(k) = std::env::var("AET_RENAME_SEED") {
++        let ident = k == "id";
++        let k: u64 = k.parse().unwrap_or(0);
++        let rb = if ident { board.clone() } else { spike_rename(&board, k) };
++        match route::route(&rb) {
++            Ok(r) => eprintln!(
++                "RENAMED seed={k} routed ripups={} digest={}",
++                r.ripups,
++                spike_digest(&r)
++            ),
++            Err(e) => {
++                eprintln!("RENAMED seed={k} UNROUTABLE net={} why={}", e.net, e.why);
++                return Err(match e.net.is_empty() {
++                    true => EmitError::BoardUnroutable(e.why),
++                    false => EmitError::Unroutable {
++                        net: e.net,
++                        why: e.why,
++                    },
++                });
++            }
++        }
++    }
+     let routed = route::route(&board).map_err(|e| match e.net.is_empty() {
+         true => EmitError::BoardUnroutable(e.why),
+         false => EmitError::Unroutable {
+@@ -1226,3 +1248,73 @@ mod tests {
+         }
+     }
+ }
++
++// ---- AET-WO-1307 S3 spike: renaming hook ----
++fn spike_hash(seed: u64, s: &str) -> u64 {
++    let mut h: u64 = 0xcbf29ce484222325 ^ seed.wrapping_mul(0x9e3779b97f4a7c15);
++    for b in s.bytes() {
++        h ^= b as u64;
++        h = h.wrapping_mul(0x100000001b3);
++    }
++    h ^= h >> 29;
++    h = h.wrapping_mul(0xbf58476d1ce4e5b9);
++    h ^ (h >> 32)
++}
++
++fn spike_rename(board: &route::Board, seed: u64) -> route::Board {
++    let planes = board.stack.has_planes();
++    let net = |n: &str| -> String {
++        if n.starts_with(parity::UNCONNECTED) || (!planes && n == route::GROUND) {
++            n.to_owned()
++        } else {
++            format!("{:04x}_{n}", spike_hash(seed, n) & 0xffff)
++        }
++    };
++    let mut b = board.clone();
++    for part in &mut b.parts {
++        part.reference = format!("{:04x}_{}", spike_hash(seed ^ 77, &part.reference) & 0xffff, part.reference);
++        for pad in &mut part.pads {
++            if let Some(n) = &pad.net {
++                pad.net = Some(net(n));
++            }
++        }
++    }
++    for (_, n) in &mut b.stack.planes {
++        *n = net(n);
++    }
++    b
++}
++
++fn spike_digest(r: &route::Routed) -> String {
++    let mut segs: Vec<(u8, (i64, i64), (i64, i64))> = r
++        .segments
++        .iter()
++        .map(|s| {
++            let (a, c) = if s.start <= s.end { (s.start, s.end) } else { (s.end, s.start) };
++            (s.layer as u8, a, c)
++        })
++        .collect();
++    segs.sort();
++    let mut vias: Vec<(i64, i64)> = r.vias.iter().map(|v| v.at).collect();
++    vias.sort();
++    let mut h: u64 = 0xcbf29ce484222325;
++    let mut f = |x: i64| {
++        for b in x.to_le_bytes() {
++            h ^= b as u64;
++            h = h.wrapping_mul(0x100000001b3);
++        }
++    };
++    for (l, a, c) in &segs {
++        f(*l as i64);
++        f(a.0);
++        f(a.1);
++        f(c.0);
++        f(c.1);
++    }
++    f(-1);
++    for v in &vias {
++        f(v.0);
++        f(v.1);
++    }
++    format!("{h:016x}")
++}
+diff --git a/crates/aethelgard-eda/src/route.rs b/crates/aethelgard-eda/src/route.rs
+index 9f13cfd..6d5551d 100644
+--- a/crates/aethelgard-eda/src/route.rs
++++ b/crates/aethelgard-eda/src/route.rs
+@@ -424,7 +424,7 @@ impl<'a> Router<'a> {
+                 let who = pad
+                     .net
+                     .as_ref()
+-                    .and_then(|net| nets.binary_search(net).ok())
++                    .and_then(|net| nets.iter().position(|x| x == net))
+                     .map_or(BLOCKED, owner);
+                 let shape = Shape {
+                     rect: pad.rect,
+@@ -447,7 +447,7 @@ impl<'a> Router<'a> {
+                 via[node] = BLOCKED;
+             }
+             for pad in &part.pads {
+-                if let Some(net) = pad.net.as_ref().and_then(|n| nets.binary_search(n).ok()) {
++                if let Some(net) = pad.net.as_ref().and_then(|n| nets.iter().position(|x| x == n)) {
+                     corridors[net].extend(corridor(&grid, field, pad, board.corridor_half(), 0));
+                     via_corridors[net].extend(corridor(
+                         &grid,
+@@ -1339,6 +1339,10 @@ fn zone_name(stack: &crate::stack::Stack, net: &str) -> String {
+     }
+ }
+ 
++fn centre(r: &Rect) -> (i64, i64) {
++    ((r.y0 + r.y1) / 2, (r.x0 + r.x1) / 2)
++}
++
+ /// Each routed net's pads, in order: by reference, then pad number.
+ fn net_pads(board: &Board) -> BTreeMap<String, Vec<PadRef>> {
+     let mut order: Vec<usize> = (0..board.parts.len()).collect();
+@@ -1359,6 +1363,11 @@ fn net_pads(board: &Board) -> BTreeMap<String, Vec<PadRef>> {
+             }
+         }
+     }
++    // S3: a net's pads in geometric order (y, then x); the stable sort keeps
++    // reference-then-number only for coincident centres.
++    for list in out.values_mut() {
++        list.sort_by_key(|&(p, i)| centre(&board.parts[p].pads[i].rect));
++    }
+     out
+ }
+ 
+@@ -1379,7 +1388,41 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
+         )
+     })?;
+     let pads = net_pads(board);
+-    let nets: Vec<String> = pads.keys().cloned().collect();
++    let is_stitched = |n: &str| -> bool {
++        if board.stack.has_planes() {
++            board.stack.planes.iter().any(|(_, p)| p == n)
++        } else {
++            n == GROUND
++        }
++    };
++    // S3: nets are indexed by a geometric key; the name is the last tie-break.
++    let mut keyed: Vec<_> = pads
++        .iter()
++        .map(|(name, list)| {
++            let cs: Vec<(i64, i64)> = list
++                .iter()
++                .map(|&(p, i)| centre(&board.parts[p].pads[i].rect))
++                .collect();
++            let (mut y0, mut y1, mut x0, mut x1) = (i64::MAX, i64::MIN, i64::MAX, i64::MIN);
++            for &(y, x) in &cs {
++                y0 = y0.min(y);
++                y1 = y1.max(y);
++                x0 = x0.min(x);
++                x1 = x1.max(x);
++            }
++            let mut sorted = cs;
++            sorted.sort();
++            (
++                !is_stitched(name),
++                list.len(),
++                0i64 * ((x1 - x0) + (y1 - y0)),
++                sorted,
++                name.clone(),
++            )
++        })
++        .collect();
++    keyed.sort();
++    let nets: Vec<String> = keyed.into_iter().map(|k| k.4).collect();
+     let mut order: Vec<usize> = (0..nets.len())
+         // belt-and-suspenders: an `unconnected-` net is one pin's alone
+         // (`pcb::pin_nets`, and parity refuses two), so the pad count already
+@@ -1393,21 +1436,13 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
+             .stack
+             .planes
+             .iter()
+-            .filter_map(|(_, n)| nets.binary_search(n).ok())
++            .filter_map(|(_, n)| nets.iter().position(|x| x == n))
+             .collect()
+     } else {
+-        nets.binary_search_by(|n| n.as_str().cmp(GROUND))
+-            .ok()
+-            .into_iter()
+-            .collect()
++        nets.iter().position(|n| n == GROUND).into_iter().collect()
+     };
+-    order.sort_by_key(|&i| {
+-        (
+-            !stitched.contains(&i),
+-            pads[&nets[i]].len(),
+-            nets[i].clone(),
+-        )
+-    });
++    // `nets` is already in key order, so `order` (stable) is too.
++    order.sort_by_key(|&i| (!stitched.contains(&i), i));
+     let mut r = Router::new(board, grid, nets.clone());
+     let mut queue: VecDeque<usize> = order.iter().copied().collect();
+     let mut ripups = 0;
+@@ -1512,6 +1547,7 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
+     // belt-and-suspenders: the grid's margins already keep the copper clear
+     // and joined (no tested board reaches these); the exact judges stand
+     // behind them, so a router defect fails closed rather than ships.
++    eprintln!("RIPUPS_TOTAL {ripups}");
+     check(board, &routed).map_err(|why| fail("", why))?;
+     connectivity(board, &routed).map_err(|why| fail("", why))?;
+     Ok(routed)

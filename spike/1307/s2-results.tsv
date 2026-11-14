@@ -1,0 +1,58 @@
+base	ref	True  	0.90	70	348.5	-	7b9b0e3dee3f	-	pass:46800,58235
+base	2x5	True  	5.38	132	650.0	-	55cecdf31636	-	fail:106609,93600,101943,91276
+base	four	True  	0.14	70	201.4	-	6acc50fec7c7	-	pass:45857,48827
+base	D1	True  	0.56	239	766.0	-	2af709faf83c	-	fail:115881,109047,97767,108851,115010,109781,119603,114036
+base	D3	False VDD_3V3 Unroutable	16.33	-	-	-	-	-	-
+a-v1(lanes-checked final)	ref	Unroutable /SPI_MISO 0.02s
+a	2x5	Unroutable /MISO0 0.29s
+a	four	Unroutable GND (U1 pad 107) 0.02s
+a	D1	Unroutable GND (U1 pad 107?) 0.10s
+a	D3	Unroutable GND "cannot take U1 pad 107 to a via" 0.16s
+a-v0(no via-hole bug, plan degenerate)
+ref identical 0.92s 70 vias; 2x5 identical; four identical; D1 identical; D3 Unroutable VDD_3V3 17.55s (plan committed nothing: via-map self-block bug)
+b	ref	True  	0.96	70	348.5	37	7b9b0e3dee3f	identical	pass:46800,58235
+b	2x5	True  	5.82	132	650.0	149	55cecdf31636	identical	fail:106609,93600,101943,91276
+b	four	True  	1.10	70	190.2	185	1359bb1984e8	differs	pass:50219,46755
+b	D1	True  	4.49	235	773.0	259	0fa8cc89e398	differs	fail:116292,116293,98192,108994,107722,113742,116852,114036
+b	D3	False VDD_3V3 Unroutable	8.50	-	-	-	-	-	-
+--- v2
+b	ref	True  	0.91	70	348.5	37	7b9b0e3dee3f	identical	pass:46800,58235
+b	2x5	True  	5.57	132	650.0	149	55cecdf31636	identical	fail:106609,93600,101943,91276
+b	four	True  	0.20	67	186.6	20	d4378fc0b9c2	differs	pass:46665,44438
+b	D1	True  	1.38	225	773.6	46	23bd685132c7	differs	fail:116483,107090,98227,108994,107722,113742,116852,114036
+b	D3	False GND Unroutable	14.67	-	-	-	-	-	-
+c1	ref	True  	0.91	62	312.8	18	ceb242d64a1e	differs	pass:46410,43741
+c1	2x5	False VDD_3V3 Unroutable	0.27	-	-	-	-	-	-
+c1	four	True  	0.04	69	171.2	0	96931a997124	differs	pass:51039,44975
+c1	D1	True  	0.37	231	723.4	11	ec518be82c1a	differs	fail:114255,103483,97767,108851,115010,109781,121927,114036
+c1	D3	False /CS0_1 Unroutable	0.25	-	-	-	-	-	-
+c2	ref	True  	0.90	58	325.5	21	036d39e52b9e	differs	pass:46410,43741
+c2	2x5	True  	3.02	138	632.9	101	4ad23f1d294d	differs	fail:123318,92653,98522,86374
+c2	four	True  	0.14	69	176.5	5	02c7acfa77a7	differs	pass:51039,44975
+c2	D1	True  	0.36	230	718.0	11	4a147f56d8c6	differs	fail:114255,103483,97767,108851,115010,109781,120874,114036
+c2	D3	True  	16.64	519	2480.1	496	b98ab3e00628	-	fail:122664,113018,127679,131049,117294,134459,117063,112381
+c1p	ref	True  	0.96	70	348.5	37	7b9b0e3dee3f	identical	pass:46800,58235
+c1p	2x5	True  	5.86	132	650.0	149	55cecdf31636	identical	fail:106609,93600,101943,91276
+c1p	four	True  	0.04	69	171.2	0	96931a997124	differs	pass:51039,44975
+c1p	D1	True  	0.36	231	723.4	11	ec518be82c1a	differs	fail:114255,103483,97767,108851,115010,109781,121927,114036
+c1p	D3	False /CS0_1 Unroutable	0.24	-	-	-	-	-	-
+s3order	ref	True  	1.18	73	350.4	62	8dd52c3e9b33	differs	pass:45309,53370
+s3order	2x5	True  	1.84	125	666.8	69	25619ae91e3a	differs	fail:91766,94254,101669,93727
+s3order	four	True  	0.08	70	205.1	3	2ad0aa204235	differs	pass:44865,48257
+s3order	D1	False /SDA0 Unroutable	10.92	-	-	-	-	-	-
+s3order	D3	False /CS2_1 Unroutable	14.19	-	-	-	-	-	-
+s3order	ref	True	1.18	73	350.4	62	8dd52c3e9b33	differs	pass:45309,53370
+s3order	2x5	True	1.84	125	666.8	69	25619ae91e3a	differs	fail:91766,94254,101669,93727
+s3order	four	True	0.08	70	205.1	3	2ad0aa204235	differs	pass:44865,48257
+s3order	D1	False /SDA0 Unroutable	10.92	-	-	-	-	-	-
+s3order	D3	False /CS2_1 Unroutable	14.19	-	-	-	-	-	-
+s3orderB	ref	True	1.43	66	352.4	48	93e7d1cae7f4	differs	pass:45085,54793
+s3orderB	2x5	True	3.21	119	641.6	132	5bdf5a24fd60	differs	fail:107066,88535,107336,87735
+s3orderB	four	True	0.23	71	198.6	14	ef5fa1fae3a5	differs	pass:45218,49377
+s3orderB	D1	True	4.94	238	769.1	201	fe0ddc1cd665	differs	fail:115273,108084,102275,112899,104668,116661,111480,121604
+s3orderB	D3	False /SCK2 Unroutable	20.88	-	-	-	-	-	-
+combo-c2+orderB	ref	True  	0.74	58	301.6	17	675cc07daf47	differs	pass:46192,54711
+combo-c2+orderB	2x5	True  	1.47	132	613.5	43	42a7fc52a522	differs	fail:98121,97048,103880,84836
+combo-c2+orderB	four	True  	0.05	66	170.2	3	32b38de5bfa8	differs	pass:49558,45671
+combo-c2+orderB	D1	True  	0.44	236	727.4	19	68092826c4a4	differs	fail:118877,103483,102275,112899,104668,116661,119339,113120
+combo-c2+orderB	D3	True  	4.62	525	2294.9	151	0058b9cbcaf6	-	fail:119054,116581,117616,128497,117599,142244,109001,117702

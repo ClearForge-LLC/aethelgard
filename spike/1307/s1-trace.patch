@@ -1,0 +1,112 @@
+diff --git a/crates/aethelgard-eda/src/route.rs b/crates/aethelgard-eda/src/route.rs
+index 9f13cfd..d981706 100644
+--- a/crates/aethelgard-eda/src/route.rs
++++ b/crates/aethelgard-eda/src/route.rs
+@@ -759,6 +759,10 @@ impl<'a> Router<'a> {
+                         return Ok(p);
+                     }
+                     let by = self.blockers(net, &p);
++                    if std::env::var_os("AET_TRACE").is_some() {
++                        let names: Vec<&str> = by.iter().map(|&b| self.nets[b].as_str()).collect();
++                        eprintln!("STUCK\t{}\t{what}\t{names:?}", self.nets[net]);
++                    }
+                     if by.is_empty() {
+                         return Err(Stuck::Unroutable(format!("{what}: no free path")));
+                     }
+@@ -1020,6 +1024,22 @@ impl<'a> Router<'a> {
+                 joined.extend(ends);
+                 continue;
+             }
++            if std::env::var_os("AET_TRACE").is_some() {
++                let w = self.window(&ends, Some(WINDOWS[0]));
++                let (mut hard, mut live) = (0, 0);
++                for y in w.1..=w.3 {
++                    for x in w.0..=w.2 {
++                        let n = y * self.grid.nx + x;
++                        if opens(self.hard_via[n], owner(net)) && zone[n] {
++                            hard += 1;
++                            if self.via_open(n, net) && self.open(Layer::F, n, owner(net)) && self.open(Layer::B, n, owner(net)) {
++                                live += 1;
++                            }
++                        }
++                    }
++                }
++                eprintln!("SITES\t{name}\t{}\thard={hard}\tlive={live}", self.nets[net]);
++            }
+             let own: BTreeSet<usize> = ends.iter().copied().collect();
+             let goal = |l: Layer, n: usize| {
+                 (l == Layer::B && zone[n]) || (joined.contains(&n) && !own.contains(&n))
+@@ -1411,8 +1431,9 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
+     let mut r = Router::new(board, grid, nets.clone());
+     let mut queue: VecDeque<usize> = order.iter().copied().collect();
+     let mut ripups = 0;
++    let mut partial = false;
+     let zones = loop {
+-        while let Some(net) = queue.pop_front() {
++        'outer: while let Some(net) = queue.pop_front() {
+             r.release(net, true);
+             loop {
+                 let p = &pads[&nets[net]];
+@@ -1427,7 +1448,17 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
+                     Err(Stuck::By(by)) => by,
+                 };
+                 ripups += by.len();
+-                if ripups > RIPUPS {
++                if std::env::var_os("AET_TRACE").is_some() {
++                    let names: Vec<&str> = by.iter().map(|&b| nets[b].as_str()).collect();
++                    eprintln!("RIP\t{ripups}\t{}\t{names:?}", nets[net]);
++                }
++                let budget: usize = std::env::var("AET_RIPUPS").ok().and_then(|v| v.parse().ok()).unwrap_or(RIPUPS);
++                if ripups > budget && std::env::var_os("AET_PARTIAL").is_some() {
++                    eprintln!("PARTIAL\t{}", nets[net]);
++                    partial = true;
++                    break 'outer;
++                }
++                if ripups > budget {
+                     let names: Vec<&str> = by.iter().map(|&b| nets[b].as_str()).collect();
+                     return Err(fail(
+                         &nets[net],
+@@ -1455,7 +1486,7 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
+                 break;
+             }
+         }
+-        let Some((g, by)) = split else {
++        let Some((g, by)) = split.filter(|_| !partial) else {
+             break if board.stack.has_planes() {
+                 board
+                     .stack
+@@ -1512,6 +1543,34 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
+     // belt-and-suspenders: the grid's margins already keep the copper clear
+     // and joined (no tested board reaches these); the exact judges stand
+     // behind them, so a router defect fails closed rather than ships.
++    eprintln!("RIPUPS_TOTAL {ripups}");
++    if let Some(path) = std::env::var_os("AET_DUMP") {
++        let mut j = String::from("{\"pads\":[");
++        let mut first = true;
++        for part in &board.parts {
++            for pad in &part.pads {
++                if !first { j.push(','); }
++                first = false;
++                let r = pad.rect;
++                j.push_str(&format!("[\"{} {}\",{:?},{},{},{},{}]", part.reference, pad.number, pad.net.as_deref().unwrap_or(""), r.x0, r.y0, r.x1, r.y1));
++            }
++        }
++        j.push_str("],\"segs\":[");
++        for (i, sg) in routed.segments.iter().enumerate() {
++            if i > 0 { j.push(','); }
++            j.push_str(&format!("[{:?},{},{},{},{},{}]", sg.net, sg.layer.index(), sg.start.0, sg.start.1, sg.end.0, sg.end.1));
++        }
++        j.push_str("],\"vias\":[");
++        for (i, v) in routed.vias.iter().enumerate() {
++            if i > 0 { j.push(','); }
++            j.push_str(&format!("[{:?},{},{}]", v.net, v.at.0, v.at.1));
++        }
++        j.push_str(&format!("],\"w\":{}}}", board.w()));
++        let _ = std::fs::write(path, j);
++    }
++    if partial {
++        return Ok(routed);
++    }
+     check(board, &routed).map_err(|why| fail("", why))?;
+     connectivity(board, &routed).map_err(|why| fail("", why))?;
+     Ok(routed)

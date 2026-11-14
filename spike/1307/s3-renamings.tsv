@@ -1,0 +1,371 @@
+today	board	ref	RENAMED seed=0 routed ripups=37 digest=3509fb88275b1b9b
+today	board	ref	RENAMED seed=0 routed ripups=35 digest=f961e05ac2622d4f
+today	board	ref	RENAMED seed=1 routed ripups=28 digest=6727d0ca8a84fb45
+today	board	ref	RENAMED seed=2 routed ripups=29 digest=38e771616e45cfd4
+today	board	ref	RENAMED seed=3 routed ripups=44 digest=6bf3a08552402bd1
+today	board	ref	RENAMED seed=4 UNROUTABLE net=4da3_VDD_3V3 why=cannot reach 93f4_R1 pad 1
+today	board	ref	RENAMED seed=5 routed ripups=13 digest=2cca5e460142c412
+today	board	ref	RENAMED seed=6 routed ripups=36 digest=98126b4f1485e35d
+today	board	ref	RENAMED seed=7 routed ripups=11 digest=a94a6dc5bacf600f
+today	board	ref	RENAMED seed=8 routed ripups=54 digest=98c8fa12c732e026
+today	board	ref	RENAMED seed=9 routed ripups=24 digest=e589973b19ecf760
+today	board	ref	RENAMED seed=10 routed ripups=43 digest=04963ff03da3dc49
+today	board	ref	RENAMED seed=11 routed ripups=56 digest=25d3bb19182adba2
+today	board	ref	RENAMED seed=12 routed ripups=14 digest=25e6f0ccb32ba073
+today	board	ref	RENAMED seed=13 routed ripups=11 digest=27af4e57e1832110
+today	board	ref	RENAMED seed=14 routed ripups=40 digest=288bc3ee17bd4dc4
+today	board	ref	RENAMED seed=15 routed ripups=133 digest=aa91099da8a20c8d
+today	board	ref	RENAMED seed=16 routed ripups=46 digest=6b155e111418f01f
+today	board	ref	RENAMED seed=17 routed ripups=20 digest=f10aff4107aceb66
+today	board	ref	RENAMED seed=18 routed ripups=47 digest=0a7ae329e307bbaf
+today	board	ref	RENAMED seed=19 routed ripups=38 digest=b561b316a92d1f58
+today	board	D1	RENAMED seed=0 routed ripups=20 digest=11a0296ce784cace
+today	board	D1	RENAMED seed=0 routed ripups=31 digest=7916cc439aaed1f7
+today	board	D1	RENAMED seed=1 routed ripups=31 digest=253cf5ac9a61b807
+today	board	D1	RENAMED seed=2 routed ripups=134 digest=a83ffb0305371215
+today	board	D1	RENAMED seed=3 routed ripups=201 digest=ad2f15711d4d04c6
+today	board	D1	RENAMED seed=4 routed ripups=28 digest=0cad015f76e181a3
+today	board	D1	RENAMED seed=5 routed ripups=11 digest=73b542db2938def3
+today	board	D1	RENAMED seed=6 routed ripups=110 digest=76a231d493a186c9
+today	board	D1	RENAMED seed=7 routed ripups=53 digest=80fa18b1fbe31abf
+today	board	D1	RENAMED seed=8 routed ripups=23 digest=cb3575118f203754
+today	board	D1	RENAMED seed=9 routed ripups=29 digest=13f4cc5339570db3
+today	board	D1	RENAMED seed=10 routed ripups=137 digest=ea48b3645d6661b7
+today	board	D1	RENAMED seed=11 routed ripups=18 digest=72bf0cfbab48ea54
+today	board	D1	RENAMED seed=12 routed ripups=23 digest=680f34e4ccd419b8
+today	board	D1	RENAMED seed=13 routed ripups=219 digest=664b4ae11808e5cc
+today	board	D1	RENAMED seed=14 UNROUTABLE net=7d94_/SDA0 why=still blocked by ["49ed_GND"] after 500 rip-ups
+today	board	D1	RENAMED seed=15 routed ripups=14 digest=6cfdd43688d5ae6e
+today	board	D1	RENAMED seed=16 UNROUTABLE net= why=track F (88500000, 83125000)-(89125000, 83125000) (Some("31d3_GND")) is within 200000 nm of track F (89250000, 82500000)-(89250000, 82750000) (Some("f11b_VDD_3V3"))
+today	board	D1	RENAMED seed=17 routed ripups=311 digest=8bf43d5e61bb4b2a
+today	board	D1	RENAMED seed=18 routed ripups=12 digest=bd403678186ea7d1
+today	board	D1	RENAMED seed=19 routed ripups=94 digest=ae1cad6d51f7c01f
+today	board	D3	RENAMED seed=0 UNROUTABLE net=VDD_3V3 why=still blocked by ["/CS0_0", "/S1000_HOLD", "GND"] after 500 rip-ups
+today	board	D3	RENAMED seed=0 UNROUTABLE net=e54d_/CS1_0 why=still blocked by ["7cd6_/SCK1", "aa63_/CS0_2"] after 500 rip-ups
+today	board	D3	RENAMED seed=1 UNROUTABLE net=74b1_VDD_3V3 why=still blocked by ["0458_GND"] after 500 rip-ups
+today	board	D3	RENAMED seed=2 UNROUTABLE net=9549_/S1000_HOLD why=still blocked by ["a961_/CS0_1"] after 500 rip-ups
+today	board	D3	RENAMED seed=3 UNROUTABLE net=dd1c_/CS1_2 why=cannot reach cd1f_S1005 pad 1
+today	board	D3	RENAMED seed=4 UNROUTABLE net=4da3_VDD_3V3 why=still blocked by ["2eec_GND"] after 500 rip-ups
+today	board	D3	RENAMED seed=5 UNROUTABLE net=b6aa_/CS0_2 why=still blocked by ["237a_/MISO0", "43f8_/CS2_2"] after 500 rip-ups
+today	board	D3	RENAMED seed=6 UNROUTABLE net=3aba_GND why=still blocked by ["b05b_VDD_3V3"] after 500 rip-ups
+today	board	D3	RENAMED seed=7 UNROUTABLE net=2c07_/MOSI1 why=cannot reach a7ab_S1003 pad 5
+today	board	D3	RENAMED seed=8 UNROUTABLE net=495b_GND why=still blocked by ["8544_VDD_3V3"] after 500 rip-ups
+today	board	D3	RENAMED seed=9 UNROUTABLE net=b59d_VDD_3V3 why=still blocked by ["7751_GND"] after 500 rip-ups
+today	board	D3	RENAMED seed=10 UNROUTABLE net=d1f9_/CS1_0 why=still blocked by ["0d2a_/SCK1", "c5d6_/CS0_2"] after 500 rip-ups
+today	board	D3	RENAMED seed=11 UNROUTABLE net=2d71_/CS0_0 why=still blocked by ["5192_/CS0_1"] after 500 rip-ups
+today	board	D3	RENAMED seed=12 UNROUTABLE net=7701_/SCK1 why=still blocked by ["0984_/S1002_WP"] after 500 rip-ups
+today	board	D3	RENAMED seed=13 UNROUTABLE net=0067_/MOSI0 why=still blocked by ["778c_/CS2_0", "cae0_/CS1_2"] after 500 rip-ups
+today	board	D3	RENAMED seed=14 UNROUTABLE net=49ed_GND why=still blocked by ["af7e_/S1000_HOLD", "bf9f_VDD_3V3"] after 500 rip-ups
+today	board	D3	RENAMED seed=15 UNROUTABLE net=1467_VDD_3V3 why=still blocked by ["4b7f_/CS2_1", "9c69_GND"] after 500 rip-ups
+today	board	D3	RENAMED seed=16 UNROUTABLE net=f11b_VDD_3V3 why=still blocked by ["31d3_GND", "7631_/CS0_0"] after 500 rip-ups
+today	board	D3	RENAMED seed=17 UNROUTABLE net=adc5_/S1000_HOLD why=still blocked by ["849b_/CS0_1", "dd9b_/CS0_0"] after 500 rip-ups
+today	board	D3	RENAMED seed=18 UNROUTABLE net=38b6_/S1000_HOLD why=still blocked by ["4534_/CS0_0"] after 500 rip-ups
+today	board	D3	RENAMED seed=19 UNROUTABLE net=418b_/CS0_0 why=still blocked by ["13f3_/CS0_1", "e99c_VDD_3V3"] after 500 rip-ups
+order	board	ref	RENAMED seed=0 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=0 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=1 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=2 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=3 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=4 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=5 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=6 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=7 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=8 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=9 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=10 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=11 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=12 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=13 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=14 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=15 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=16 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=17 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=18 routed ripups=62 digest=21e686ef1167fab2
+order	board	ref	RENAMED seed=19 routed ripups=62 digest=21e686ef1167fab2
+order	board	D1	RENAMED seed=0 UNROUTABLE net=/SDA0 why=still blocked by ["GND", "/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=0 UNROUTABLE net=4bbe_/SDA0 why=still blocked by ["a8af_GND", "bae7_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=1 UNROUTABLE net=49e5_/SDA0 why=still blocked by ["0458_GND", "5cbf_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=2 UNROUTABLE net=ae91_/SDA0 why=still blocked by ["9e09_GND", "fdfd_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=3 UNROUTABLE net=4aaf_/SDA0 why=still blocked by ["a548_GND", "7d87_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=4 UNROUTABLE net=4b50_/SDA0 why=still blocked by ["2eec_GND", "6c75_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=5 UNROUTABLE net=7d38_/SDA0 why=still blocked by ["36ff_GND", "32c7_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=6 UNROUTABLE net=8b15_/SDA0 why=still blocked by ["3aba_GND", "809c_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=7 UNROUTABLE net=b7f8_/SDA0 why=still blocked by ["62fb_GND", "b445_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=8 UNROUTABLE net=02ef_/SDA0 why=still blocked by ["495b_GND", "5a40_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=9 UNROUTABLE net=66b1_/SDA0 why=still blocked by ["7751_GND", "9377_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=10 UNROUTABLE net=6641_/SDA0 why=still blocked by ["c0a5_GND", "0cf0_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=11 UNROUTABLE net=1d21_/SDA0 why=still blocked by ["d036_GND", "63e6_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=12 UNROUTABLE net=7fc5_/SDA0 why=still blocked by ["8dc9_GND", "ba6d_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=13 UNROUTABLE net=a1af_/SDA0 why=still blocked by ["53c2_GND", "7600_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=14 UNROUTABLE net=7d94_/SDA0 why=still blocked by ["49ed_GND", "e444_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=15 UNROUTABLE net=c103_/SDA0 why=still blocked by ["9c69_GND", "585f_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=16 UNROUTABLE net=e0f3_/SDA0 why=still blocked by ["31d3_GND", "e4da_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=17 UNROUTABLE net=45cb_/SDA0 why=still blocked by ["851d_GND", "c211_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=18 UNROUTABLE net=1371_/SDA0 why=still blocked by ["a39f_GND", "1377_/SCL0"] after 500 rip-ups
+order	board	D1	RENAMED seed=19 UNROUTABLE net=ede6_/SDA0 why=still blocked by ["3c32_GND", "1450_/SCL0"] after 500 rip-ups
+order	board	D3	RENAMED seed=0 UNROUTABLE net=/CS2_1 why=still blocked by ["VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=0 UNROUTABLE net=16e4_/CS2_1 why=still blocked by ["3897_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=1 UNROUTABLE net=b404_/CS2_1 why=still blocked by ["74b1_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=2 UNROUTABLE net=f5a3_/CS2_1 why=still blocked by ["58e8_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=3 UNROUTABLE net=2854_/CS2_1 why=still blocked by ["05a3_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=4 UNROUTABLE net=bae3_/CS2_1 why=still blocked by ["4da3_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=5 UNROUTABLE net=4b4f_/CS2_1 why=still blocked by ["af88_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=6 UNROUTABLE net=9973_/CS2_1 why=still blocked by ["b05b_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=7 UNROUTABLE net=cff3_/CS2_1 why=still blocked by ["517e_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=8 UNROUTABLE net=f108_/CS2_1 why=still blocked by ["8544_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=9 UNROUTABLE net=11ad_/CS2_1 why=still blocked by ["b59d_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=10 UNROUTABLE net=be03_/CS2_1 why=still blocked by ["fcac_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=11 UNROUTABLE net=3767_/CS2_1 why=still blocked by ["93be_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=12 UNROUTABLE net=21b9_/CS2_1 why=still blocked by ["319b_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=13 UNROUTABLE net=7140_/CS2_1 why=still blocked by ["95ec_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=14 UNROUTABLE net=110a_/CS2_1 why=still blocked by ["bf9f_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=15 UNROUTABLE net=4b7f_/CS2_1 why=still blocked by ["1467_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=16 UNROUTABLE net=4688_/CS2_1 why=still blocked by ["f11b_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=17 UNROUTABLE net=d984_/CS2_1 why=still blocked by ["ba42_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=18 UNROUTABLE net=5bee_/CS2_1 why=still blocked by ["3e1e_VDD_3V3"] after 500 rip-ups
+order	board	D3	RENAMED seed=19 UNROUTABLE net=a175_/CS2_1 why=still blocked by ["e99c_VDD_3V3"] after 500 rip-ups
+orderB	board	ref	RENAMED seed=0 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=0 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=1 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=2 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=3 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=4 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=5 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=6 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=7 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=8 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=9 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=10 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=11 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=12 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=13 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=14 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=15 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=16 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=17 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=18 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	ref	RENAMED seed=19 routed ripups=48 digest=9d58f520cdcfa51e
+orderB	board	D1	RENAMED seed=0 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=0 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=1 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=2 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=3 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=4 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=5 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=6 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=7 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=8 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=9 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=10 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=11 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=12 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=13 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=14 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=15 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=16 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=17 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=18 routed ripups=201 digest=28d4af3f0c4eda6d
+orderB	board	D1	RENAMED seed=19 routed ripups=201 digest=28d4af3f0c4eda6d
+combo	board	ref	RENAMED seed=0 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=0 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=1 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=2 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=3 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=4 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=5 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=6 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=7 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=8 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=9 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=10 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=11 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=12 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=13 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=14 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=15 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=16 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=17 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=18 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	ref	RENAMED seed=19 routed ripups=17 digest=391b1c136c5a7f18
+combo	board	D1	RENAMED seed=0 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=0 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=1 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=2 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=3 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=4 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=5 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=6 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=7 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=8 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=9 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=10 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=11 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=12 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=13 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=14 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=15 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=16 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=17 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=18 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D1	RENAMED seed=19 routed ripups=19 digest=5cad6390af0d998e
+combo	board	D3	RENAMED seed=0 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=0 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=1 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=2 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=3 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=4 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=5 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=6 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=7 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=8 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=9 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=10 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=11 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=12 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=13 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=14 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=15 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=16 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=17 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=18 routed ripups=151 digest=73fda10749af8037
+combo	board	D3	RENAMED seed=19 routed ripups=151 digest=73fda10749af8037
+today	spec	ref	0	ok	8a68ff02bffa 15
+today	spec	ref	1	ok	27888995bbfb 15
+today	spec	ref	2	ok	da1a1c2ac5a0 15
+today	spec	ref	3	ok	27888995bbfb 15
+today	spec	ref	4	ok	bd8fda5c3310 15
+today	spec	ref	5	ok	8d7120abb7c3 15
+today	spec	ref	6	Unroutable VDD_3V3	-
+today	spec	ref	7	Unroutable VDD_3V3	-
+today	spec	ref	8	ok	27888995bbfb 15
+today	spec	ref	9	Unroutable VDD_3V3	-
+today	spec	ref	10	ok	da1a1c2ac5a0 15
+today	spec	ref	11	Unroutable VDD_3V3	-
+today	spec	ref	12	Unroutable VDD_3V3	-
+today	spec	ref	13	Unroutable VDD_3V3	-
+today	spec	ref	14	Unroutable VDD_3V3	-
+today	spec	ref	15	ok	20837ffdc429 15
+today	spec	ref	16	ok	bd8fda5c3310 15
+today	spec	ref	17	Unroutable VDD_3V3	-
+today	spec	ref	18	Unroutable VDD_3V3	-
+today	spec	ref	19	ok	8a68ff02bffa 15
+today	spec	D1	0	Unroutable None	-
+today	spec	D1	1	ok	88e15af0484a 72
+today	spec	D1	2	Unroutable GND	-
+today	spec	D1	3	ok	9a2c49eb62e6 72
+today	spec	D1	4	Unroutable GND	-
+today	spec	D1	5	Unroutable /843b_SDA0	-
+today	spec	D1	6	ok	10fc451770ea 72
+today	spec	D1	7	Unroutable GND	-
+today	spec	D1	8	Unroutable GND	-
+today	spec	D1	9	ok	4765bfefb1d1 72
+today	spec	D1	10	Unroutable /3010_SDA0	-
+today	spec	D1	11	ok	f4949af1dab7 72
+today	spec	D1	12	Unroutable None	-
+today	spec	D1	13	Unroutable GND	-
+today	spec	D1	14	Unroutable /7d22_SCL3	-
+today	spec	D1	15	ok	436496650a28 72
+today	spec	D1	16	Unroutable None	-
+today	spec	D1	17	ok	237caccc7850 72
+today	spec	D1	18	ok	2e10bad6e1fd 72
+today	spec	D1	19	ok	0653037b68b5 72
+orderB	spec	ref	0	ok	8a68ff02bffa 15
+orderB	spec	ref	1	ok	27888995bbfb 15
+orderB	spec	ref	2	ok	da1a1c2ac5a0 15
+orderB	spec	ref	3	ok	27888995bbfb 15
+orderB	spec	ref	4	ok	bd8fda5c3310 15
+orderB	spec	ref	5	ok	8d7120abb7c3 15
+orderB	spec	ref	6	Unroutable VDD_3V3	-
+orderB	spec	ref	7	Unroutable VDD_3V3	-
+orderB	spec	ref	8	ok	27888995bbfb 15
+orderB	spec	ref	9	Unroutable VDD_3V3	-
+orderB	spec	ref	10	ok	da1a1c2ac5a0 15
+orderB	spec	ref	11	Unroutable VDD_3V3	-
+orderB	spec	ref	12	Unroutable VDD_3V3	-
+orderB	spec	ref	13	ok	575c0d31a3a3 15
+orderB	spec	ref	14	ok	575c0d31a3a3 15
+orderB	spec	ref	15	ok	20837ffdc429 15
+orderB	spec	ref	16	ok	bd8fda5c3310 15
+orderB	spec	ref	17	Unroutable VDD_3V3	-
+orderB	spec	ref	18	Unroutable VDD_3V3	-
+orderB	spec	ref	19	ok	8a68ff02bffa 15
+orderB	spec	D1	0	ok	bd435c0bdd81 72
+orderB	spec	D1	1	ok	88e15af0484a 72
+orderB	spec	D1	2	ok	4eb30d51b659 72
+orderB	spec	D1	3	ok	9a2c49eb62e6 72
+orderB	spec	D1	4	Unroutable /fcab_SCL3	-
+orderB	spec	D1	5	Unroutable GND	-
+orderB	spec	D1	6	ok	10fc451770ea 72
+orderB	spec	D1	7	ok	704ed25aa2af 72
+orderB	spec	D1	8	ok	5cbb996aeb6d 72
+orderB	spec	D1	9	ok	4765bfefb1d1 72
+orderB	spec	D1	10	Unroutable GND	-
+orderB	spec	D1	11	ok	f4949af1dab7 72
+orderB	spec	D1	12	Unroutable GND	-
+orderB	spec	D1	13	Unroutable GND	-
+orderB	spec	D1	14	ok	77295101ef64 72
+orderB	spec	D1	15	ok	436496650a28 72
+orderB	spec	D1	16	ok	1868e0bef0e5 72
+orderB	spec	D1	17	ok	237caccc7850 72
+orderB	spec	D1	18	ok	2e10bad6e1fd 72
+orderB	spec	D1	19	ok	0653037b68b5 72
+combo	spec	ref	0	ok	8a68ff02bffa 15
+combo	spec	ref	1	ok	27888995bbfb 15
+combo	spec	ref	2	ok	da1a1c2ac5a0 15
+combo	spec	ref	3	ok	27888995bbfb 15
+combo	spec	ref	4	ok	bd8fda5c3310 15
+combo	spec	ref	5	ok	8d7120abb7c3 15
+combo	spec	ref	6	ok	89b9fb6f50cb 15
+combo	spec	ref	7	ok	460d513f4c09 15
+combo	spec	ref	8	ok	27888995bbfb 15
+combo	spec	ref	9	ok	be511cd74662 15
+combo	spec	ref	10	ok	da1a1c2ac5a0 15
+combo	spec	ref	11	ok	be511cd74662 15
+combo	spec	ref	12	ok	29d7dfdbd650 15
+combo	spec	ref	13	ok	575c0d31a3a3 15
+combo	spec	ref	14	ok	575c0d31a3a3 15
+combo	spec	ref	15	ok	20837ffdc429 15
+combo	spec	ref	16	ok	bd8fda5c3310 15
+combo	spec	ref	17	ok	be511cd74662 15
+combo	spec	ref	18	ok	89b9fb6f50cb 15
+combo	spec	ref	19	ok	8a68ff02bffa 15
+combo	spec	D1	0	Unroutable /56a5_SCL1	-
+combo	spec	D1	1	ok	88e15af0484a 72
+combo	spec	D1	2	ok	4eb30d51b659 72
+combo	spec	D1	3	ok	9a2c49eb62e6 72
+combo	spec	D1	4	ok	09c9a4dae657 72
+combo	spec	D1	5	ok	43ea044c7305 72
+combo	spec	D1	6	ok	10fc451770ea 72
+combo	spec	D1	7	ok	704ed25aa2af 72
+combo	spec	D1	8	ok	5cbb996aeb6d 72
+combo	spec	D1	9	ok	4765bfefb1d1 72
+combo	spec	D1	10	ok	c1941c60c529 72
+combo	spec	D1	11	ok	f4949af1dab7 72
+combo	spec	D1	12	ok	f6d3987f0c94 72
+combo	spec	D1	13	ok	106c83203ae8 72
+combo	spec	D1	14	ok	77295101ef64 72
+combo	spec	D1	15	ok	436496650a28 72
+combo	spec	D1	16	ok	1868e0bef0e5 72
+combo	spec	D1	17	ok	237caccc7850 72
+combo	spec	D1	18	ok	2e10bad6e1fd 72
+combo	spec	D1	19	ok	0653037b68b5 72
+combo	spec	D3	0	Unroutable /8004_MOSI1	-
+combo	spec	D3	1	Unroutable /a1f2_MOSI1	-
+combo	spec	D3	2	ok	48ca8f105b93 116
+combo	spec	D3	3	ok	a8e67a70e707 116
+combo	spec	D3	4	ok	95b1732a346b 116
+combo	spec	D3	5	ok	09cf9a7c7c90 116
+combo	spec	D3	6	ok	112fdc2ae790 116
+combo	spec	D3	7	Unroutable /6df0_SCL3	-
+combo	spec	D3	8	ok	b96a8b4e0937 116
+combo	spec	D3	9	ok	376570425387 116
+combo	spec	D3	10	ok	ea3c72f2913e 116
+combo	spec	D3	11	Unroutable /d07f_MOSI3	-
+combo	spec	D3	12	ok	20222d7be57d 116
+combo	spec	D3	13	ok	c76f566f1cb1 116
+combo	spec	D3	14	ok	cfc354d78645 116
+combo	spec	D3	15	ok	48ae99cde210 116
+combo	spec	D3	16	Unroutable /da35_MOSI3	-
+combo	spec	D3	17	Unroutable /b22f_MOSI3	-
+combo	spec	D3	18	ok	02226b2df719 116
+combo	spec	D3	19	Unroutable None	-
