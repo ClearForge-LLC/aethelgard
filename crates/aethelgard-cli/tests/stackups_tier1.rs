@@ -352,3 +352,64 @@ fn the_reference_declares_todays_two_layer_board() {
         }
     );
 }
+
+/// Adversarial A1 (`AET-WO-4100` §5.1): `check drc --spec` judges the board
+/// against the declared board before any tool runs, so a board that is not
+/// the specification's is refused by name, whatever KiCad would say: the
+/// 2-layer reference under the 4-layer specification and the reverse, the
+/// planes swapped, and a GND via made blind or micro.
+#[test]
+fn check_drc_with_spec_refuses_a_board_that_is_not_the_declared_one() {
+    let dir = scratch("drc-declared");
+    let (code, v, four) = emit(&dir, FOUR);
+    assert_eq!(code, 0, "{v}");
+    let ref_dir = dir.join("ref");
+    fs::create_dir_all(&ref_dir).unwrap();
+    let (code, v, two) = emit(&ref_dir, SPEC);
+    assert_eq!(code, 0, "{v}");
+    let drc = |board: &str, spec: &str| {
+        let path = dir.join("judged.kicad_pcb");
+        fs::write(&path, board).unwrap();
+        let (code, v) = run(&[
+            "check",
+            "drc",
+            "--board",
+            path.to_str().unwrap(),
+            "--spec",
+            spec,
+        ]);
+        assert_eq!(code, 3, "{v}");
+        v["error"]["kind"].as_str().unwrap().to_owned()
+    };
+    assert_eq!(drc(&two, FOUR), "LayersDisagree");
+    assert_eq!(drc(&four, SPEC), "LayersDisagree");
+    let swapped = four
+        .replace(
+            "(net \"GND\")\n\t\t(layer \"In1.Cu\")",
+            "(net \"GND\")\n\t\t(layer \"In9\")",
+        )
+        .replace(
+            "(net \"VDD_3V3\")\n\t\t(layer \"In2.Cu\")",
+            "(net \"VDD_3V3\")\n\t\t(layer \"In1.Cu\")",
+        )
+        .replace(
+            "(net \"GND\")\n\t\t(layer \"In9\")",
+            "(net \"GND\")\n\t\t(layer \"In2.Cu\")",
+        );
+    assert_ne!(swapped, four);
+    assert_eq!(drc(&swapped, FOUR), "PlanesDisagree");
+    for kind in ["blind", "micro"] {
+        let typed = four.replacen("\t(via\n", &format!("\t(via {kind}\n"), 1);
+        assert_eq!(drc(&typed, FOUR), "ViaNotThrough", "{kind}");
+    }
+    let skipping = four.replacen(
+        "(layers \"F.Cu\" \"B.Cu\")",
+        "(layers \"F.Cu\" \"In1.Cu\")",
+        1,
+    );
+    assert_eq!(drc(&skipping, FOUR), "ViaNotThrough");
+    // `extract` refuses the same boards.
+    let (code, x) = extract(&dir, &four.replacen("\t(via\n", "\t(via blind\n", 1), FOUR);
+    assert_eq!(code, 3, "{x}");
+    fs::remove_dir_all(&dir).unwrap();
+}

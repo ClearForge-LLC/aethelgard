@@ -2333,6 +2333,61 @@ mod tests {
         assert!(connectivity(&board, &dangling).is_err());
     }
 
+    /// Adversarial A3: at 2 layers ground's zone is B.Cu copper, so a ground
+    /// via met only by a B.Cu stub and the zone is joined on one layer, and
+    /// refused, as before planes.
+    #[test]
+    fn a_ground_via_met_only_on_b_cu_is_not_joined_on_two_layers() {
+        let board = Board {
+            outline: rect(0, 0, 20 * MM, 20 * MM),
+            parts: vec![
+                resistor("R1", 5 * MM, GROUND, "/A"),
+                resistor("R2", 15 * MM, GROUND, "/A"),
+            ],
+            stack: crate::stack::reference(),
+        };
+        let mut routed = route(&board).unwrap();
+        connectivity(&board, &routed).unwrap();
+        let at = (10 * MM, 16 * MM);
+        routed.vias.push(Via {
+            net: GROUND.into(),
+            at,
+        });
+        routed
+            .segments
+            .push(seg(GROUND, Layer::B, at, (10 * MM, 17 * MM)));
+        let e = connectivity(&board, &routed).unwrap_err();
+        assert!(e.contains("not joined on two"), "{e}");
+    }
+
+    /// Adversarial A4: a declared plane whose net no pad draws from has no
+    /// via; KiCad would report its copper isolated. It is refused here, by
+    /// the router's own judge, before any tool runs.
+    #[test]
+    fn a_plane_no_via_reaches_is_refused() {
+        let mut stack = crate::stack::reference();
+        stack.copper = vec![
+            "F.Cu".into(),
+            "In1.Cu".into(),
+            "In2.Cu".into(),
+            "B.Cu".into(),
+        ];
+        stack.planes = vec![
+            ("In1.Cu".into(), GROUND.into()),
+            ("In2.Cu".into(), "VDD_UNUSED".into()),
+        ];
+        let board = Board {
+            outline: rect(0, 0, 20 * MM, 20 * MM),
+            parts: vec![
+                resistor("R1", 5 * MM, GROUND, "/A"),
+                resistor("R2", 15 * MM, GROUND, "/A"),
+            ],
+            stack,
+        };
+        let e = route(&board).unwrap_err();
+        assert!(e.why.contains("reaches no via"), "{e:?}");
+    }
+
     /// What the router does not model is refused when read, never guessed.
     #[test]
     fn reading_refuses_what_the_router_does_not_model() {

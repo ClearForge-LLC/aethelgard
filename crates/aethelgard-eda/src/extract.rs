@@ -1363,6 +1363,37 @@ mod tests {
         }
     }
 
+    /// Adversarial A2: a permittivity whose thousandths do not reduce
+    /// (4.663) once overflowed the exact product on a 3.3 mm pad, giving
+    /// `None`. The staged division bounds it from above instead.
+    #[test]
+    fn an_irreducible_permittivity_still_bounds_a_large_pad() {
+        let mut stack = crate::stack::reference();
+        stack.permittivity_permille = 4663;
+        stack.dielectrics[0].2 = 179_000;
+        let ph = Physics::of(&stack);
+        for side in [3_300_000i64, 10_000_000, 40_000_000] {
+            let rect = crate::pcb::Rect {
+                x0: 0,
+                y0: 0,
+                x1: side,
+                y1: side,
+            };
+            let got = pad_ff(&ph, rect).unwrap_or_else(|| panic!("{side}: None"));
+            let (a, p, s, c, h) = (
+                (side * side) as f64,
+                4.0 * side as f64,
+                200_000.0,
+                70_000.0,
+                179_000.0,
+            );
+            let exact = 8.854_187_818_8e-6
+                * 4.663
+                * (shell_f(a, p, c, s) / (s * s) - lower(a, p, s, s) + lower(a, p, h, s));
+            assert!(got as f64 >= exact, "{side}: {got} < {exact}");
+        }
+    }
+
     #[test]
     fn a_pad_too_large_to_compute_is_none_not_a_wrap() {
         let ph = reference();
