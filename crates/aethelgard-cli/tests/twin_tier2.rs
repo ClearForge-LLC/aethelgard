@@ -918,7 +918,8 @@ fn the_judge_s_own_reads_of_a_gated_peripheral_are_never_the_firmware_s() {
     let k = kinds(&v);
     assert!(k.contains(&"boot_word_missing"), "{v}");
     assert!(
-        k.iter().all(|k| ["boot_word_missing", "register_mismatch"].contains(k)),
+        k.iter()
+            .all(|k| ["boot_word_missing", "register_mismatch"].contains(k)),
         "{v}"
     );
 }
