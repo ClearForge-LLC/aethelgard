@@ -521,4 +521,4 @@ Everything below was measured after commit `f61da75`, which holds the prediction
 
   No Rust changed.
 - **`cargo fmt`, `clippy` and the tests** are unaffected; CI runs them on the PR.
-- **`docs/work-orders/AET-WO-4200.md`** is not committed here; it lands through PR #116.
+- **`docs/work-orders/AET-WO-4200.md`** reached `main` through PR #116 (`9035203`), which is merged into this branch (`d6c40dd`). It is byte-identical to the copy this spike worked from (`claude/argon-repo-docs-synthesis-rjrb0d`).
