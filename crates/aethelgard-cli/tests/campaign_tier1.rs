@@ -1836,8 +1836,9 @@ fn propose_writes_only_into_an_empty_or_absent_directory_never_through_a_symlink
 #[test]
 fn a_generator_report_names_each_generator_once_in_order() {
     // On the measured healthy bus: the I2C clock gate and SCL's alternate
-    // function left wrong (the board crate's), and the address wrong (the
-    // firmware's).
+    // function left wrong (the board crate's), and the register the firmware
+    // wrote to the device wrong (the firmware's: `AET-WO-2204`, the device's
+    // own log shows a write of 0xd1 where the part table reads 0xd0).
     let (tb, work, run) = a_run();
     let (_d, forged) = reseal(
         &run,
@@ -1857,9 +1858,8 @@ fn a_generator_report_names_each_generator_once_in_order() {
                         *status = Some("timeout_txis".into());
                         *observed = None;
                     }
-                    Record::I2cWitness { cr2, txdr, .. } => {
-                        cr2.observed = Some(0x0001_00EE);
-                        txdr.observed = Some(0);
+                    Record::I2cWitness { observed, .. } => {
+                        *observed = Some(vec!["[NOISY] i2c1.u2: Write D1".to_owned()]);
                     }
                     _ => {}
                 }
@@ -1900,7 +1900,7 @@ fn a_generator_report_names_each_generator_once_in_order() {
         [
             ("board_crate", "GPIOB.AFRL", "0x04000000", "0x05000000"),
             ("board_crate", "RCC.APB1LENR", "0x00200000", "0x00000000"),
-            ("firmware", "I2C1.CR2", "0x000000ec", "0x000000ee"),
+            ("firmware", "i2c1.u2.Write", "0x000000d0", "0x000000d1"),
         ]
     );
 }

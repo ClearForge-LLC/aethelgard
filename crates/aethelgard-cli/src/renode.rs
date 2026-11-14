@@ -367,12 +367,20 @@ impl BootPlan<'_> {
     }
 
     /// Each modelled device's log at `Noisy`, set once before anything runs:
-    /// a source's level, not the console's (`AET-WO-2204` D1, D4).
+    /// a source's level, not the console's (`AET-WO-2204` D1, D4). Only a
+    /// device the booted platform declares: an analog fault leaves its bus's
+    /// devices off the platform, and a level set on no element is a failed
+    /// command.
     fn witness_levels(&self) -> Vec<String> {
         self.image
             .i2c
             .checks
             .iter()
+            .filter(|c| {
+                self.instances
+                    .iter()
+                    .any(|(name, _)| c.device.rsplit('.').next() == Some(name.as_str()))
+            })
             .map(|c| format!("logLevel -1 sysbus.{}", c.device))
             .collect()
     }
@@ -1043,6 +1051,10 @@ mod tests {
         aethelgard_twin::boot::expected(&topology).unwrap()
     }
 
+    /// The booted platform's U2, as the listing names it.
+    static INSTANCES: std::sync::LazyLock<Vec<(String, String)>> =
+        std::sync::LazyLock::new(|| vec![("u2".to_owned(), "BME280".to_owned())]);
+
     fn plan<'a>(
         image: &'a aethelgard_twin::boot::Image,
         resets: &'a [power::Reset],
@@ -1055,7 +1067,8 @@ mod tests {
             vector_table: 0x0800_0000,
             image,
             executable: &[],
-            instances: &[],
+            self_loops: &[],
+            instances: &INSTANCES,
             resets,
         }
     }
@@ -1087,12 +1100,25 @@ mod tests {
         let resets = bor3();
         let droop = plan(&image, &resets).commands();
         let static_ = plan(&image, &[]).commands();
-        assert!(static_.contains("emulation RunFor \"0.100000000\"; logLevel 3"));
+        // `AET-WO-2204` D4: no level is ever changed; the device's log is set
+        // to `Noisy` once, before the run (D1).
+        assert!(static_.contains(
+            "cpu VectorTableOffset 0x08000000; logLevel -1 sysbus.i2c1.u2; emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\""
+        ));
+        assert!(!droop.contains("logLevel 3") && !static_.contains("logLevel 3"));
+        assert_eq!(static_.matches("logLevel").count(), 1);
+        assert!(static_.contains("sysbus ReadDoubleWord 0xe000ed04"));
         assert!(!static_.contains("machine Reset"));
+        // A device the booted platform does not declare (a faulted bus) gets
+        // no level: a level on no element is a failed command.
+        let mut bare = plan(&image, &[]);
+        bare.instances = &[];
+        assert!(!bare.commands().contains("logLevel"));
         let rec = |at: u32| format!("sysbus WriteDoubleWord {at:#010x} 0xffffffff");
         let check = &image.i2c.checks[0];
         let want = [
             "cpu VectorTableOffset 0x08000000".to_owned(),
+            "logLevel -1 sysbus.i2c1.u2".to_owned(),
             "emulation RunFor \"0.001014430\"".to_owned(),
             "machine Reset".to_owned(),
         ]
@@ -1105,6 +1131,7 @@ mod tests {
             rec(check.value_at),
             "emulation RunFor \"0.000213550\"".to_owned(),
             "cpu IsHalted false".to_owned(),
+            "echo \"AETHELGARD-RELEASE-0\"".to_owned(),
             "emulation RunFor \"0.000000010\"".to_owned(),
             "emulation RunFor \"0.000099990\"".to_owned(),
             "echo \"AETHELGARD-PROBE-BEGIN-0\"".to_owned(),
@@ -1112,7 +1139,7 @@ mod tests {
         .join("; ");
         assert!(droop.contains(&rest), "{droop}");
         assert!(droop.contains(
-            "echo \"AETHELGARD-PROBE-END-0\"; emulation RunFor \"0.098672020\"; logLevel 3"
+            "echo \"AETHELGARD-PROBE-END-0\"; emulation RunFor \"0.098672020\"; echo \"AETHELGARD-BOOT-BEGIN\""
         ));
         // After `machine Reset` alone the core never runs (F3): the cold
         // writes and the vector table follow it.
@@ -1135,71 +1162,81 @@ mod tests {
         let image = image();
         let resets = bor3();
         let p = plan(&image, &resets);
-        let block = |rows: &[&str]| {
+        let lines = |l: &[&str]| l.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        let w = "[21:06:58.1004] [NOISY] i2c1.u2: Write D0\n[21:06:58.1005] [NOISY] i2c1.u2: Read 60";
+        let block = |log: &str, rows: &[&str]| {
             format!(
-                "x\nAETHELGARD-PROBE-BEGIN-0\n{}\nAETHELGARD-PROBE-END-0\n",
+                "x\nAETHELGARD-RELEASE-0\n{log}\nAETHELGARD-PROBE-BEGIN-0\n{}\nAETHELGARD-PROBE-END-0\n",
                 rows.join("\n")
             )
         };
-        let good = [
-            "0x2100B007",
-            "0x22020000",
-            "0x00000060",
-            "0x020104EC",
-            "0x000000D0",
-        ];
+        let good = ["0x2100B007", "0x22020000", "0x00000060"];
         let want = [Probe {
             at_ns: 1_327_980,
             boot_word: 0x2100_B007,
             record: Some((0x2202_0000, 0x60)),
-            controller: Some((0x0201_04EC, 0xD0)),
+            witness: Some(lines(&["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"])),
         }];
-        assert_eq!(probes_in(&block(&good), &p).unwrap(), want);
-        // A whole Renode log line inside the block is the log, not a read
-        // (the console keeps its level through a probe, adversarial F2).
+        assert_eq!(probes_in(&block(w, &good), false, &p).unwrap(), want);
+        // A whole Renode log line inside the block is the judge's reads',
+        // not a read and not the witness (`AET-WO-2204` F3).
         let mut logged = good.to_vec();
         logged.insert(
             2,
             "[21:06:58.1004] [WARNING] sysbus: Tried to write a locked peripheral",
         );
-        assert_eq!(probes_in(&block(&logged), &p).unwrap(), want);
+        assert_eq!(probes_in(&block(w, &logged), false, &p).unwrap(), want);
+        // Past the filter's budget the witness is unread, never guessed.
+        assert_eq!(probes_in(&block(w, &good), true, &p).unwrap()[0].witness, None);
+        // Lines before the release are the boot the reset ended, not this one.
+        let early = format!("{w}\n{}", block("", &good));
+        assert_eq!(
+            probes_in(&early, false, &p).unwrap()[0].witness,
+            Some(Vec::new())
+        );
         let refused = [
             String::new(),
-            block(&good[..4]),
-            block(&[
-                "0x2100B007",
-                "0x22020000",
-                "0x60 0x61",
-                "0x020104EC",
-                "0x000000D0",
-            ]),
+            block(w, &good[..2]),
+            block(w, &["0x2100B007", "0x22020000", "0x60 0x61"]),
             // An echoed command's tail read as a value (`AET-WO-2301` F8).
-            block(&[
-                "0x2100B007",
-                "0x22020000",
-                "0x20000008\"",
-                "0x020104EC",
-                "0x000000D0",
-            ]),
-            block(&[
-                "0x2100B007",
-                "0x22020000",
-                " [WARNING] 0x60",
-                "0x020104EC",
-                "0x000000D0",
-            ]),
-            format!("{}AETHELGARD-PROBE-BEGIN-1\n", block(&good)),
+            block(w, &["0x2100B007", "0x22020000", "0x20000008\""]),
+            block(w, &["0x2100B007", "0x22020000", " [WARNING] 0x60"]),
+            // A log line split below line level (F2) is not a whole line.
+            block(w, &["0x2100B007", "0x22020000", "0x000000[21:06:58.1004] [WARNING] x"]),
+            format!("{}AETHELGARD-PROBE-BEGIN-1\n", block(w, &good)),
             "AETHELGARD-PROBE-END-0\n0x2100B007\nAETHELGARD-PROBE-BEGIN-0\n".to_owned(),
-            block(&[
-                "0x1FFFFFFFF",
-                "0x22020000",
-                "0x00000060",
-                "0x020104EC",
-                "0x000000D0",
-            ]),
+            // No release marker, or two.
+            block(w, &good).replace("AETHELGARD-RELEASE-0\n", ""),
+            format!("AETHELGARD-RELEASE-0\n{}", block(w, &good)),
+            block(w, &["0x1FFFFFFFF", "0x22020000", "0x00000060"]),
         ];
         for r in refused {
-            assert!(probes_in(&r, &p).is_err(), "accepted: {r:?}");
+            assert!(probes_in(&r, false, &p).is_err(), "accepted: {r:?}");
         }
+    }
+
+    #[test]
+    fn a_log_body_is_exactly_the_text_after_a_whole_host_timestamp() {
+        assert_eq!(
+            log_body("[21:06:58.1004] [NOISY] i2c1.u2: Read 60"),
+            Some("[NOISY] i2c1.u2: Read 60")
+        );
+        for not in [
+            "[NOISY] i2c1.u2: Read 60",
+            "x[21:06:58.1004] [NOISY] i2c1.u2: Read 60",
+            "[21:06:58.104] [NOISY] i2c1.u2: Read 60",
+            "[21:06:58.1004][NOISY] i2c1.u2: Read 60",
+            "[2a:06:58.1004] [NOISY] i2c1.u2: Read 60",
+        ] {
+            assert_eq!(log_body(not), None, "{not}");
+        }
+        assert_eq!(
+            witness_shaped("[21:06:58.1004] [NOISY] i2c1.u2: Read 60 (2)", "i2c1.u2"),
+            Some("[NOISY] i2c1.u2: Read 60 (2)")
+        );
+        assert_eq!(witness_shaped("[21:06:58.1004] [NOISY] i2c1.u20: Read 60", "i2c1.u2"), None);
+        assert_eq!(witness_shaped("[21:06:58.1004] [INFO] i2c1.u2: Read 60", "i2c1.u2"), None);
+        assert!(is_log_line("[21:06:58.1004] [WARNING] sysbus: x"));
+        assert!(!is_log_line("[21:06:58.1004] WARNING sysbus: x"));
     }
 }
