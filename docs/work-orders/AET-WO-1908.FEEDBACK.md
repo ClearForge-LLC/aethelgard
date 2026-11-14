@@ -169,3 +169,6 @@ Eleven shards (`ci/SHARDS` 11). Each row's commit is the one that started the ru
 | run | commit | shards | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | slowest |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | G (43546318255) | 7d5bb49 | 11 | 8:39 | 9:48 | 9:54 | 9:56 | 8:14 | 9:11 | 6:31 | 8:44 | **9:59** | 8:30 | 9:03 | **9:59** |
+| H (43547319879) | bcae89d | 11 | 10:29 | **13:27** | 10:22 | 9:51 | 8:52 | 10:23 | 9:01 | 6:27 | 7:45 | 7:26 | 7:50 | **13:27** |
+
+Run H: shard 1 is the `attribute_seeded` block alone (12 tests, planned 720 s), and it took 13:27, while every other shard was between 6:27 and 10:29. **An eleventh shard cannot help it:** the block runs by itself on its shard at either count, and its wall time varies by runner (475 to 721 s measured in-process before; about 670 s plus setup here). G passed, H failed, so the count of three restarts at I.
