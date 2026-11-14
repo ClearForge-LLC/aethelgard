@@ -16,6 +16,20 @@ const LOAD_ERROR: &str = "There was an error executing command";
 /// Renode's error log level; a CPU listed beside one is not a clean load.
 const LOG_ERROR: &str = "[ERROR]";
 
+/// The file name of the configuration every Renode this CLI starts reads,
+/// written into the call's own scratch directory and passed as `--config`.
+pub const CONFIG_FILE: &str = "renode.config";
+
+/// That configuration (`AET-WO-2204` D4). It sets one key: Renode then writes
+/// each log entry from the thread that logs it, with no queue and no log
+/// thread (`Logger.cs` L822–834), so a line the firmware caused is on the
+/// console before `RunFor` returns, never interleaved with the monitor's
+/// output below line level (spike F2) and never dropped by a level change
+/// (B10). Measured: Renode fills every other key with the defaults it writes
+/// for itself when given no file, the history path and the folding of
+/// repeated lines included; the files differ in this key alone.
+pub const CONFIG: &str = "[general]\nuse-synchronous-logging = true\n";
+
 /// The monitor commands. The platform is always the call's own copy, at a
 /// path this CLI chose, so no part of the caller's input reaches the monitor.
 pub fn commands(copy: &std::path::Path) -> String {
@@ -189,7 +203,8 @@ pub fn bounded(out: &Output, bound: Bound) -> Finding {
 
 /// The sentinels around a boot's reads. Each is matched as a whole line, so
 /// the echo of the command line itself, which contains them inside quotes,
-/// never matches.
+/// never matches. With synchronous logging, every log line before `BEGIN` is
+/// the run's; one between the sentinels is the judge's own reads' (F3).
 const BEGIN: &str = "AETHELGARD-BOOT-BEGIN";
 const END: &str = "AETHELGARD-BOOT-END";
 /// The warning Renode logs when a gated peripheral is touched (spike F10).
@@ -210,6 +225,9 @@ pub struct BootPlan<'a> {
     pub image: &'a aethelgard_twin::boot::Image,
     /// The firmware's executable ranges, where the core must be at the end.
     pub executable: &'a [(u64, u64)],
+    /// Every `yield; b.n` self-loop in the firmware's loaded bytes
+    /// ([`aethelgard_twin::boot::self_loops`]): the core must end on one.
+    pub self_loops: &'a [u64],
     /// Every solved peripheral as the listing must name it: (name, model).
     pub instances: &'a [(String, String)],
     /// The resets a declared droop renders, in time order; empty for every
@@ -221,6 +239,9 @@ pub struct BootPlan<'a> {
 /// pair per release, numbered from 0; each is matched as a whole line.
 const PROBE_BEGIN: &str = "AETHELGARD-PROBE-BEGIN-";
 const PROBE_END: &str = "AETHELGARD-PROBE-END-";
+/// The sentinel at each release, numbered as the probes are: the log lines
+/// from it to the probe's `BEGIN` are the recovered boot's (`AET-WO-2204`).
+const RELEASE: &str = "AETHELGARD-RELEASE-";
 
 fn run_for(ns: u64) -> String {
     format!(
@@ -258,6 +279,13 @@ impl BootPlan<'_> {
             ("cpu ExecutedInstructions".to_owned(), Read::Instructions),
             ("cpu PerformanceInMips".to_owned(), Read::Mips),
             ("cpu PC".to_owned(), Read::Pc),
+            (
+                format!(
+                    "sysbus ReadDoubleWord {:#010x}",
+                    aethelgard_twin::boot::ICSR
+                ),
+                Read::Icsr,
+            ),
         ];
         for (i, r) in self.image.registers.iter().enumerate() {
             reads.push((
@@ -272,16 +300,6 @@ impl BootPlan<'_> {
                     Read::Record(i, word),
                 ));
             }
-        }
-        for (i, w) in self.image.i2c.witnesses.iter().enumerate() {
-            reads.push((
-                format!("sysbus ReadDoubleWord {:#010x}", w.cr2_at),
-                Read::Controller(i, 0),
-            ));
-            reads.push((
-                format!("sysbus ReadDoubleWord {:#010x}", w.txdr_at),
-                Read::Controller(i, 1),
-            ));
         }
         reads
     }
@@ -334,10 +352,10 @@ impl BootPlan<'_> {
         c
     }
 
-    /// The reads of a probe: the boot word, the first identity record's
-    /// status and value, then the first witness's `CR2` and `TXDR`: the
-    /// record is the firmware's own claim, the controller is what a transfer
-    /// on the bus leaves (`AET-WO-2301` adversarial F1).
+    /// The reads of a probe: the boot word, then the first identity record's
+    /// status and value. The record is the firmware's own claim; what a
+    /// transfer on the bus leaves is the device's witness lines since the
+    /// release (`AET-WO-2301` adversarial F1, `AET-WO-2204`).
     fn probe_reads(&self) -> Vec<String> {
         let mut c = vec![format!("sysbus ReadDoubleWord {:#010x}", self.boot_word)];
         if let Some(check) = self.image.i2c.checks.first() {
@@ -345,12 +363,18 @@ impl BootPlan<'_> {
                 c.push(format!("sysbus ReadDoubleWord {at:#010x}"));
             }
         }
-        if let Some(w) = self.image.i2c.witnesses.first() {
-            for at in [w.cr2_at, w.txdr_at] {
-                c.push(format!("sysbus ReadDoubleWord {at:#010x}"));
-            }
-        }
         c
+    }
+
+    /// Each modelled device's log at `Noisy`, set once before anything runs:
+    /// a source's level, not the console's (`AET-WO-2204` D1, D4).
+    fn witness_levels(&self) -> Vec<String> {
+        self.image
+            .i2c
+            .checks
+            .iter()
+            .map(|c| format!("logLevel -1 sysbus.{}", c.device))
+            .collect()
     }
 
     /// The droop's schedule as monitor commands, from virtual time 0 to the
@@ -371,11 +395,11 @@ impl BootPlan<'_> {
             let Some(release) = r.released_ns else { break };
             at(&mut c, release);
             c.push("cpu IsHalted false".to_owned());
+            c.push(format!("echo \"{RELEASE}{k}\""));
             // The nudge (F5): the release takes effect at its end.
             at(&mut c, release + power::NUDGE_NS);
             at(&mut c, release + power::RECOVERY_BOUND_NS);
-            // The console's level is not changed around a probe: a change
-            // drops the log lines still queued (`AET-WO-2301` adversarial F2).
+            // No level is changed anywhere (`AET-WO-2204` D4).
             c.push(format!("echo \"{PROBE_BEGIN}{k}\""));
             c.extend(self.probe_reads());
             c.push(format!("echo \"{PROBE_END}{k}\""));
@@ -385,9 +409,12 @@ impl BootPlan<'_> {
     }
 
     /// The monitor commands: a fixed seed, the platform, the firmware, the
-    /// cold RCC, a fixed virtual time, then the reads between sentinels under
-    /// `logLevel 3`, then the listing. Both paths are this CLI's own copies.
-    /// With a droop, the fixed virtual time is the droop's schedule instead.
+    /// cold RCC, each modelled device's log level, a fixed virtual time, then
+    /// the reads between sentinels, then the listing. Both paths are this
+    /// CLI's own copies. With a droop, the fixed virtual time is the droop's
+    /// schedule instead. The console's level is never changed: with
+    /// [`CONFIG`]'s synchronous logging, `BEGIN` is the boundary between the
+    /// run's log and the judge's (`AET-WO-2204` D4).
     pub fn commands(&self) -> String {
         let mut c = vec![
             format!("emulation SetSeed {}", aethelgard_twin::boot::SEED),
@@ -401,12 +428,12 @@ impl BootPlan<'_> {
         c.extend(self.cold());
         c.extend(self.rearm());
         c.push(self.vtor());
+        c.extend(self.witness_levels());
         if self.resets.is_empty() {
             c.push(run_for(self.virtual_ns));
         } else {
             c.extend(self.droop_schedule());
         }
-        c.push("logLevel 3".to_owned());
         c.push(format!("echo \"{BEGIN}\""));
         c.extend(self.reads().into_iter().map(|(cmd, _)| cmd));
         c.push(format!("echo \"{END}\""));
@@ -422,11 +449,10 @@ enum Read {
     Instructions,
     Mips,
     Pc,
+    Icsr,
     Register(usize),
     /// Check `.0`'s record: word 0 is the status, word 1 the value.
     Record(usize, u8),
-    /// Witness `.0`'s controller: word 0 is `CR2`, word 1 `TXDR`.
-    Controller(usize, u8),
 }
 
 /// A boot's findings, the listing, and what the reads gave.
@@ -438,11 +464,14 @@ pub struct Observed {
     pub instructions: u64,
     pub mips: u64,
     pub pc: u32,
+    pub icsr: u32,
     pub registers: Vec<u32>,
     /// Each identity check's (status, value) words.
     pub records: Vec<(u32, u32)>,
-    /// Each bus witness's controller (`CR2`, `TXDR`) words.
-    pub controllers: Vec<(u32, u32)>,
+    /// Each identity check's witness: every line Renode logged for its
+    /// device with a witness's shape, in order ([`witness_shaped`]); `None`
+    /// when the log could not be read whole (`AET-WO-2204` D2).
+    pub witnesses: Vec<Option<Vec<String>>>,
 }
 
 /// A bare hexadecimal value, the whole line: `0x2100B007`. Anything else on
@@ -453,6 +482,62 @@ fn value(line: &str) -> Option<u64> {
         return None;
     }
     u64::from_str_radix(hex, 16).ok()
+}
+
+/// The text of a whole Renode log line after its host timestamp
+/// (`[21:06:58.1004] `), exactly: nothing trimmed. `None` for any other line.
+fn log_body(line: &str) -> Option<&str> {
+    let b = line.as_bytes();
+    let digits = |r: std::ops::Range<usize>| b[r].iter().all(u8::is_ascii_digit);
+    let stamped = b.len() >= 16
+        && b[0] == b'['
+        && digits(1..3)
+        && b[3] == b':'
+        && digits(4..6)
+        && b[6] == b':'
+        && digits(7..9)
+        && b[9] == b'.'
+        && digits(10..14)
+        && b[14] == b']'
+        && b[15] == b' ';
+    stamped.then(|| &line[16..])
+}
+
+/// Renode's log levels, as a line names them after its timestamp.
+const LEVELS: [&str; 5] = ["[NOISY] ", "[DEBUG] ", "[INFO] ", "[WARNING] ", "[ERROR] "];
+
+/// A whole Renode log line: a host timestamp, then a level.
+fn is_log_line(line: &str) -> bool {
+    log_body(line).is_some_and(|b| LEVELS.iter().any(|l| b.starts_with(l)))
+}
+
+/// A log line's text, if it has a witness's shape for `device`:
+/// `[NOISY] i2c1.u2: …`. The shape only ever fails a witness: a pass needs
+/// the whole text equal to an expected line (`AET-WO-2204` D1).
+fn witness_shaped<'l>(line: &'l str, device: &str) -> Option<&'l str> {
+    log_body(line).filter(|b| {
+        b.strip_prefix("[NOISY] ")
+            .and_then(|r| r.strip_prefix(device))
+            .is_some_and(|r| r.starts_with(": "))
+    })
+}
+
+/// The line index of each `{prefix}{k}` sentinel, `k` from 0 to `n` − 1: each
+/// exactly once, as a whole line, in order, and none beyond `n`.
+fn sentinels(lines: &[&str], prefix: &str, n: usize) -> Result<Vec<usize>, String> {
+    let all = lines.iter().filter(|l| l.starts_with(prefix)).count();
+    if all != n {
+        return Err(format!("renode printed {all} `{prefix}` markers, not {n}"));
+    }
+    let mut at = Vec::with_capacity(n);
+    for k in 0..n {
+        let want = format!("{prefix}{k}");
+        match (0..lines.len()).filter(|&i| lines[i] == want).collect::<Vec<_>>()[..] {
+            [i] if at.last().is_none_or(|&p| p < i) => at.push(i),
+            _ => return Err(format!("renode did not print `{want}` once, in order")),
+        }
+    }
+    Ok(at)
 }
 
 /// Judges one boot. A finding means `fail`; a `Stop` means the output cannot
@@ -502,50 +587,93 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             ends.len()
         )));
     };
+    if end < begin {
+        return Err(untrusted("renode printed the end marker before the begin marker".into()));
+    }
+    // The droop's sentinels all come before the reads; the probes' own
+    // blocks hold the judge's reads, not the run's log (F3).
+    let released = plan.resets.iter().filter(|r| r.released_ns.is_some()).count();
+    let releases = sentinels(&lines[..begin], RELEASE, released).map_err(untrusted)?;
+    let probe_begins = sentinels(&lines[..begin], PROBE_BEGIN, released).map_err(untrusted)?;
+    let probe_ends = sentinels(&lines[..begin], PROBE_END, released).map_err(untrusted)?;
+    let in_probe = |i: usize| {
+        probe_begins
+            .iter()
+            .zip(&probe_ends)
+            .any(|(&b, &e)| b <= i && i <= e)
+    };
+    // Every log line the run caused: with synchronous logging, all of them
+    // are on the console before `RunFor` returns, so before `BEGIN`.
+    let run_log: Vec<&str> = (0..begin)
+        .filter(|&i| !in_probe(i))
+        .map(|i| lines[i])
+        .collect();
+    // The boot the reads judge: after the last release, if the droop had one.
+    let last_boot: Vec<&str> = (releases.last().map_or(0, |&r| r + 1)..begin)
+        .filter(|&i| !in_probe(i))
+        .map(|i| lines[i])
+        .collect();
+
+    // Between the sentinels: the reads, each a bare value, and whole log
+    // lines the judge's own reads caused, which are never the firmware's
+    // (`AET-WO-2204` D4). Anything else is refused, never read.
     let reads = plan.reads();
-    let between = lines.get(begin + 1..end).unwrap_or_default();
-    if end < begin || between.len() != reads.len() {
+    let mut values = Vec::with_capacity(reads.len());
+    for line in &lines[begin + 1..end] {
+        if value(line).is_some() {
+            values.push(*line);
+        } else if !is_log_line(line) {
+            return Err(untrusted(format!(
+                "`{}` between the markers is neither a read nor a whole log line",
+                line.escape_debug().to_string().chars().take(120).collect::<String>()
+            )));
+        }
+    }
+    if values.len() != reads.len() {
         return Err(untrusted(format!(
-            "renode printed {} lines between the markers, not the {} reads",
-            between.len(),
+            "renode printed {} values between the markers, not the {} reads",
+            values.len(),
             reads.len()
         )));
     }
+    let checks = &plan.image.i2c.checks;
+    // Past the filter's budget a log line may have been dropped, so no
+    // witness can be read whole: every one is unwitnessed, never passed
+    // (`AET-WO-2204` D2, ruled).
+    let witnesses: Vec<Option<Vec<String>>> = checks
+        .iter()
+        .map(|c| {
+            (out.dropped_log_lines == 0).then(|| {
+                last_boot
+                    .iter()
+                    .filter_map(|l| witness_shaped(l, &c.device))
+                    .map(str::to_owned)
+                    .collect()
+            })
+        })
+        .collect();
     let mut observed = Observed {
         boot_word: 0,
         instructions: 0,
         mips: 0,
         pc: 0,
+        icsr: 0,
         registers: vec![0; plan.image.registers.len()],
-        records: vec![(0, 0); plan.image.i2c.checks.len()],
-        controllers: vec![(0, 0); plan.image.i2c.witnesses.len()],
+        records: vec![(0, 0); checks.len()],
+        witnesses,
     };
-    for ((cmd, read), line) in reads.iter().zip(between) {
-        let v = value(line).ok_or_else(|| {
-            let shown: String = line
-                .chars()
-                .take(120)
-                .map(|c| {
-                    if c.is_ascii_graphic() || c == ' ' {
-                        c
-                    } else {
-                        '?'
-                    }
-                })
-                .collect();
-            untrusted(format!("`{cmd}` read `{shown}`, not a bare value"))
-        })?;
+    for ((cmd, read), line) in reads.iter().zip(values) {
+        let v = value(line).ok_or_else(|| untrusted(format!("`{cmd}` read no value")))?;
         let word = || u32::try_from(v).map_err(|_| untrusted(format!("`{cmd}` read {v:#x}")));
         match *read {
             Read::BootWord => observed.boot_word = word()?,
             Read::Instructions => observed.instructions = v,
             Read::Mips => observed.mips = v,
             Read::Pc => observed.pc = word()?,
+            Read::Icsr => observed.icsr = word()?,
             Read::Register(i) => observed.registers[i] = word()?,
             Read::Record(i, 0) => observed.records[i].0 = word()?,
             Read::Record(i, _) => observed.records[i].1 = word()?,
-            Read::Controller(i, 0) => observed.controllers[i].0 = word()?,
-            Read::Controller(i, _) => observed.controllers[i].1 = word()?,
         }
     }
     let (cpus, peripherals) = listing(&lines[end + 1..]);
@@ -587,7 +715,10 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             ),
         ));
     }
-    if let Some(line) = lines.iter().find(|l| l.contains(LOG_ERROR)) {
+    // Only the run's own log is the firmware's: a line the judge's reads
+    // caused (a read of a peripheral whose clock is off) comes after `BEGIN`
+    // or inside a probe's block, and is never attributed (F3).
+    if let Some(line) = run_log.iter().find(|l| l.contains(LOG_ERROR)) {
         findings.push(Finding::plain(
             "renode_error_log",
             log_text(line).to_owned(),
@@ -595,7 +726,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
     }
     // The count of such lines differs run to run under a flood (`AET-WO-2301`
     // F10), and Renode's timestamp always does: neither is in the message.
-    if let Some(first) = lines.iter().find(|l| LOCKED.iter().any(|w| l.contains(w))) {
+    if let Some(first) = run_log.iter().find(|l| LOCKED.iter().any(|w| l.contains(w))) {
         findings.push(Finding::plain(
             "locked_peripheral_access",
             format!(
@@ -626,7 +757,8 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
     }
     // Thumb code runs at even addresses; the PC Renode reports has no Thumb bit.
     let pc = u64::from(observed.pc);
-    if !plan.executable.iter().any(|&(s, e)| pc >= s && pc < e) {
+    let inside = plan.executable.iter().any(|&(s, e)| pc >= s && pc < e);
+    if !inside {
         findings.push(Finding::plain(
             "pc_outside_firmware",
             format!(
@@ -634,6 +766,30 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
                 observed.pc
             ),
         ));
+    }
+    // After the boot word, the core must be parked in thread mode on a
+    // self-loop (`AET-WO-2204` D3). That is all a pass claims: not that the
+    // loop is the generator's fixed point (a named residual).
+    if booted {
+        let active = observed.icsr & aethelgard_twin::boot::VECTACTIVE_MASK;
+        if active != 0 {
+            findings.push(Finding::plain(
+                "core_in_exception",
+                format!(
+                    "the core ended handling exception {active} (ICSR.VECTACTIVE), not in thread mode"
+                ),
+            ));
+        }
+        let on_loop = plan.self_loops.iter().any(|&a| pc == a || pc == a + 2);
+        if inside && !on_loop {
+            findings.push(Finding::plain(
+                "pc_not_on_self_loop",
+                format!(
+                    "the core ended at {:#010x}, which is not on a `yield; b.n` self-loop of the firmware",
+                    observed.pc
+                ),
+            ));
+        }
     }
     for (r, &got) in plan.image.registers.iter().zip(&observed.registers) {
         if got & r.mask != r.value {
@@ -650,17 +806,10 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
     // reached its fixed point, which it does after writing every record;
     // before that `boot_word_missing` already says the run failed.
     if booted {
-        for (c, &(status, value)) in plan.image.i2c.checks.iter().zip(&observed.records) {
+        for (c, &(status, value)) in checks.iter().zip(&observed.records) {
             findings.extend(i2c_finding(c, status, value));
         }
-        // A record that claims the read completed is checked against the
-        // controller, which only a transaction leaves in that state
-        // (`AET-WO-2202` W1). A record that says a wait expired claims nothing.
-        for (w, &(cr2, txdr)) in plan.image.i2c.witnesses.iter().zip(&observed.controllers) {
-            if observed.records[w.check].0 == aethelgard_twin::boot::STATUS_OK {
-                findings.extend(witness_finding(w, cr2, txdr));
-            }
-        }
+        findings.extend(witness_findings(checks, &observed, &last_boot));
     }
     for d in &plan.image.i2c.unmodelled {
         findings.push(Finding::info(
@@ -679,6 +828,80 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         Some(Machine { cpus, peripherals }),
         Some(observed),
     ))
+}
+
+/// Each record that claims its read completed, against what Renode logged
+/// for its device (`AET-WO-2204` D1): exactly the model's expected lines, as
+/// whole lines, in order, and across the devices in the records' order. A
+/// record that says a wait expired claims nothing.
+fn witness_findings(
+    checks: &[aethelgard_twin::boot::I2cCheck],
+    observed: &Observed,
+    log: &[&str],
+) -> Vec<Finding> {
+    let claimed: Vec<usize> = (0..checks.len())
+        .filter(|&i| observed.records[i].0 == aethelgard_twin::boot::STATUS_OK)
+        .collect();
+    let each: Vec<Finding> = claimed
+        .iter()
+        .filter_map(|&i| witness_finding(&checks[i], observed.witnesses[i].as_deref()))
+        .collect();
+    if !each.is_empty() {
+        return each;
+    }
+    // Each device's own lines are right; the devices' order must be too.
+    let devices: Vec<&str> = claimed.iter().map(|&i| checks[i].device.as_str()).collect();
+    let seen: Vec<&str> = log
+        .iter()
+        .filter_map(|l| devices.iter().find_map(|d| witness_shaped(l, d)))
+        .collect();
+    let want: Vec<&str> = claimed
+        .iter()
+        .flat_map(|&i| checks[i].witness.iter().flatten().map(String::as_str))
+        .collect();
+    if seen == want {
+        return Vec::new();
+    }
+    vec![Finding::plain(
+        "i2c_transaction_unwitnessed",
+        format!(
+            "the devices' witness lines are not in the records' order: Renode logged {seen:?}, the records need {want:?}"
+        ),
+    )]
+}
+
+/// The finding for one record that claims its read completed, or none when
+/// Renode logged exactly the model's lines for it.
+fn witness_finding(
+    c: &aethelgard_twin::boot::I2cCheck,
+    seen: Option<&[String]>,
+) -> Option<Finding> {
+    let who = format!("{} at I2C address {:#04x}", c.reference, c.address);
+    let Some(want) = &c.witness else {
+        return Some(Finding::plain(
+            "i2c_witness_unavailable",
+            format!(
+                "{who}: the twin knows no witness format for its model, so no read of it can be witnessed"
+            ),
+        ));
+    };
+    match seen {
+        Some(seen) if seen == want.as_slice() => None,
+        Some(seen) => Some(Finding::plain(
+            "i2c_transaction_unwitnessed",
+            format!(
+                "{who}: the record says the read completed, but Renode logged {seen:?} for `{}`, not {want:?}",
+                c.device
+            ),
+        )),
+        None => Some(Finding::plain(
+            "i2c_transaction_unwitnessed",
+            format!(
+                "{who}: the record says the read completed, but the log passed the filter's budget, so `{}`'s witness cannot be read whole",
+                c.device
+            ),
+        )),
+    }
 }
 
 /// The finding for one identity record, or none when the read passed. The
@@ -712,123 +935,90 @@ fn i2c_finding(c: &aethelgard_twin::boot::I2cCheck, status: u32, value: u32) -> 
     }
 }
 
-/// The finding for a bus whose controller does not show the transaction its
-/// last record claims, naming the device and each field that differs.
-fn witness_finding(w: &aethelgard_twin::boot::I2cWitness, cr2: u32, txdr: u32) -> Option<Finding> {
-    let differing = w.differing(cr2, txdr);
-    if differing.is_empty() {
-        return None;
-    }
-    let fields: Vec<String> = differing
-        .iter()
-        .map(|(name, expected, got)| format!("{name} reads {got:#x}, expected {expected:#x}"))
-        .collect();
-    Some(Finding::plain(
-        "i2c_transaction_unwitnessed",
-        format!(
-            "{} at I2C address {:#04x}: the record says the read completed, but {}'s state after the run does not show it ({}): CR2 {cr2:#010x}, TXDR {txdr:#04x}",
-            w.reference,
-            w.address,
-            w.peripheral,
-            fields.join("; ")
-        ),
-    ))
-}
-
-/// How a record's status reads in the verdict.
 /// What a probe read after a release (`AET-WO-2301` §2.3): the boot word,
-/// then the first identity record's status and value, if the image has one.
+/// then the first identity record's status and value, if the image has one,
+/// and what Renode logged for that record's device since the release.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Probe {
     pub at_ns: u64,
     pub boot_word: u32,
     pub record: Option<(u32, u32)>,
-    /// The first witness's `CR2` and `TXDR`, if the image has one.
-    pub controller: Option<(u32, u32)>,
+    /// The first check's witness-shaped lines from the release to the probe;
+    /// `None` without a check, or when the log could not be read whole.
+    pub witness: Option<Vec<String>>,
 }
 
 /// Each release's probe, read between its own whole-line sentinels: exactly
 /// one pair per release and none other, and between them exactly the
-/// probe's reads, each a bare value (`value`), or the output is not trusted.
-/// A boot killed at a bound has read none; its probes are absent, never
-/// guessed.
+/// probe's reads, each a bare value (`value`), and whole log lines the
+/// judge's reads caused, or the output is not trusted. A boot killed at a
+/// bound has read none; its probes are absent, never guessed.
 pub fn probes(out: &Output, plan: &BootPlan<'_>) -> Result<Vec<Probe>, Stop> {
-    probes_in(&out.text(), plan)
+    probes_in(&out.text(), out.dropped_log_lines > 0, plan)
 }
 
-fn probes_in(text: &str, plan: &BootPlan<'_>) -> Result<Vec<Probe>, Stop> {
+fn probes_in(text: &str, dropped: bool, plan: &BootPlan<'_>) -> Result<Vec<Probe>, Stop> {
     let untrusted = |what: String| {
         Stop::tool_error(TOOL, format!("{what}{}", said::suffix(text, Style::Renode)))
     };
     let lines = clean_lines(text);
     let releases: Vec<u64> = plan.resets.iter().filter_map(|r| r.released_ns).collect();
-    let sentinels = lines
-        .iter()
-        .filter(|l| l.starts_with(PROBE_BEGIN) || l.starts_with(PROBE_END))
-        .count();
-    if sentinels != 2 * releases.len() {
-        return Err(untrusted(format!(
-            "renode printed {sentinels} probe markers for {} releases",
-            releases.len()
-        )));
-    }
+    let n = releases.len();
+    let released = sentinels(&lines, RELEASE, n).map_err(&untrusted)?;
+    let begins = sentinels(&lines, PROBE_BEGIN, n).map_err(&untrusted)?;
+    let ends = sentinels(&lines, PROBE_END, n).map_err(&untrusted)?;
     let reads = plan.probe_reads();
+    let check = plan.image.i2c.checks.first();
     let mut out = Vec::new();
     for (k, release) in releases.iter().enumerate() {
-        let find = |m: String| -> Result<usize, Stop> {
-            match (0..lines.len())
-                .filter(|&i| lines[i] == m)
-                .collect::<Vec<_>>()[..]
-            {
-                [i] => Ok(i),
-                _ => Err(untrusted(format!("renode did not print `{m}` once"))),
-            }
-        };
-        let (b, e) = (
-            find(format!("{PROBE_BEGIN}{k}"))?,
-            find(format!("{PROBE_END}{k}"))?,
-        );
-        // A whole Renode log line inside the block is the log, not a read: the
-        // console keeps its level through a probe (F2). Anything else that
-        // is not a bare value is refused below.
-        let between: Vec<&str> = lines
-            .get(b + 1..e)
-            .unwrap_or_default()
-            .iter()
-            .copied()
-            .filter(|l| !l.starts_with('['))
-            .collect();
-        if e < b || between.len() != reads.len() {
+        let (r, b, e) = (released[k], begins[k], ends[k]);
+        if !(r < b && b < e) {
             return Err(untrusted(format!(
-                "probe {k}: {} lines between its markers, not the {} reads",
-                between.len(),
+                "probe {k}: its release and markers are out of order"
+            )));
+        }
+        // A whole Renode log line inside the block is the judge's reads',
+        // not a read; anything else that is not a bare value is refused.
+        let mut words = Vec::new();
+        for line in &lines[b + 1..e] {
+            match value(line) {
+                Some(v) => words.push(u32::try_from(v).map_err(|_| {
+                    untrusted(format!("probe {k}: `{}` is not a word", line.escape_debug()))
+                })?),
+                None if is_log_line(line) => {}
+                None => {
+                    return Err(untrusted(format!(
+                        "probe {k}: `{}` is neither a read nor a whole log line",
+                        line.escape_debug()
+                    )));
+                }
+            }
+        }
+        if words.len() != reads.len() {
+            return Err(untrusted(format!(
+                "probe {k}: {} values between its markers, not the {} reads",
+                words.len(),
                 reads.len()
             )));
         }
-        let mut words = Vec::new();
-        for (cmd, line) in reads.iter().zip(between) {
-            let v = value(line)
-                .and_then(|v| u32::try_from(v).ok())
-                .ok_or_else(|| {
-                    untrusted(format!(
-                        "probe {k}: `{cmd}` read `{}`, not a word",
-                        line.escape_debug()
-                    ))
-                })?;
-            words.push(v);
-        }
-        let check = usize::from(!plan.image.i2c.checks.is_empty());
+        let witness = check.filter(|_| !dropped).map(|c| {
+            lines[r + 1..b]
+                .iter()
+                .filter_map(|l| witness_shaped(l, &c.device))
+                .map(str::to_owned)
+                .collect()
+        });
         out.push(Probe {
             at_ns: release + power::RECOVERY_BOUND_NS,
             boot_word: words[0],
-            record: (check == 1).then(|| (words[1], words[2])),
-            controller: (!plan.image.i2c.witnesses.is_empty())
-                .then(|| (words[1 + 2 * check], words[2 + 2 * check])),
+            record: check.map(|_| (words[1], words[2])),
+            witness,
         });
     }
     Ok(out)
 }
 
+/// How a record's status reads in the verdict.
 pub fn status_name(status: u32) -> &'static str {
     use aethelgard_twin::boot::{STATUS_OK, STATUS_RXNE, STATUS_STOP, STATUS_TC, STATUS_TXIS};
     match status {

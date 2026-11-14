@@ -44,6 +44,10 @@ pub struct Image {
     /// The virtual ranges of the executable segments: where a firmware that
     /// reached its fixed point is still running (adversarial A7).
     pub executable: Vec<(u64, u64)>,
+    /// Every `yield; b.n` self-loop in the executable segments' file bytes,
+    /// what Renode loads (`AET-WO-2204` D3): read from the ELF, never from the
+    /// machine, so a firmware cannot rewrite the code the judge reads.
+    pub self_loops: Vec<u64>,
 }
 
 fn malformed(message: String) -> Stop {
@@ -187,6 +191,16 @@ pub fn check(bytes: &[u8], memory: &Memory, boot_word: u32) -> Result<Image, Sto
             .iter()
             .filter(|l| l.flags & PF_X != 0 && l.memsz > 0)
             .map(|l| (l.vaddr, l.vaddr + l.memsz))
+            .collect(),
+        self_loops: loads
+            .iter()
+            .filter(|l| l.flags & PF_X != 0)
+            .flat_map(|l| {
+                aethelgard_twin::boot::self_loops(
+                    l.vaddr,
+                    &bytes[l.offset as usize..(l.offset + l.filesz) as usize],
+                )
+            })
             .collect(),
     })
 }

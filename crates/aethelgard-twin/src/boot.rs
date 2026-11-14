@@ -7,7 +7,10 @@
 //!
 //! `AET-WO-2202` adds a fourth: each modelled I2C device's identity read, one
 //! record per device after the boot word, judged against `aethelgard-ir`'s
-//! part table ([`I2cPlan`]).
+//! part table ([`I2cPlan`]). `AET-WO-2204` witnesses each read by what Renode
+//! records, not by what the firmware writes: the device model's own log lines
+//! ([`I2cCheck::witness`]); and requires the core parked in thread mode on a
+//! self-loop ([`VECTACTIVE_MASK`], [`self_loops`]).
 //!
 //! Every expected value here comes from the [`SolvedTopology`] and ST's
 //! header, never from the firmware or from the generator that wrote it
@@ -20,7 +23,8 @@ use aethelgard_ir::SolvedTopology;
 use aethelgard_ir::parts;
 use aethelgard_svd_hal::cmsis;
 
-use crate::{TwinError, kind, model, split_pin};
+use crate::model::Model;
+use crate::{TwinError, kind, model, platform, split_pin};
 
 // belt-and-suspenders: the generator holds its own copy of this constant
 // (`aethelgard-svd-hal` `board/firmware.rs`), because the judge's expectations
@@ -125,11 +129,32 @@ pub const STATUS_TC: u32 = 0x2202_0002;
 pub const STATUS_RXNE: u32 = 0x2202_0003;
 pub const STATUS_STOP: u32 = 0x2202_0004;
 
-// belt-and-suspenders: the header's `_Msk` macros are shifts the header reader
-// does not evaluate, so the two field widths are stated here from RM0433 §48.7.2
-// (`CR2.SADD` is 10 bits, `CR2.NBYTES` 8); the positions come from the header.
-const CR2_SADD_BITS: u32 = 10;
-const CR2_NBYTES_BITS: u32 = 8;
+/// The Cortex-M7's Interrupt Control and State Register, and its `VECTACTIVE`
+/// field: the exception the core is handling, 0 in thread mode (ARMv7-M
+/// Architecture Reference Manual, B3.2.4). Renode's NVIC model computes it
+/// from its own state (`NVIC.cs` L1077), so no firmware store sets it.
+pub const ICSR: u32 = 0xE000_ED04;
+pub const VECTACTIVE_MASK: u32 = 0x1FF;
+
+/// Thumb `yield`, then `b.n` back to it: the two halfwords
+/// `loop { core::hint::spin_loop() }` compiles to (`AET-WO-2204` S3, measured
+/// at `0x08000594` in the reference firmware). A pass claims the core parked
+/// on such a loop after the boot word, not that the loop is the generator's
+/// fixed point: a firmware that writes the boot word and then parks on
+/// another thread-mode self-loop also passes (ruled D3, a named residual).
+pub const YIELD: u16 = 0xBF10;
+pub const B_N_BACK: u16 = 0xE7FD;
+
+/// The address of every `yield; b.n` self-loop in `code`, loaded at `base`:
+/// the core is on the loop when its `PC` is one of these or two past it.
+pub fn self_loops(base: u64, code: &[u8]) -> Vec<u64> {
+    let half = |i: usize| u16::from_le_bytes([code[i], code[i + 1]]);
+    (0..code.len().saturating_sub(3))
+        .step_by(2)
+        .filter(|&i| half(i) == YIELD && half(i + 2) == B_N_BACK)
+        .filter_map(|i| base.checked_add(i as u64))
+        .collect()
+}
 
 /// One identity read the judge expects, from the part table alone.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,54 +169,42 @@ pub struct I2cCheck {
     /// The record's two words in RAM.
     pub status_at: u32,
     pub value_at: u32,
+    /// The model's path in Renode, `i2c1.u2`: the bus's stock name, then the
+    /// device's emitted name.
+    pub device: String,
+    /// What Renode itself records when the controller runs this read on the
+    /// model (`AET-WO-2204` D1): the model's whole log lines, after the host
+    /// timestamp, in order. Only a transfer the controller runs to the
+    /// device's address calls the model, so no store writes these lines. All
+    /// of it comes from the part table and the emitter, never from the
+    /// firmware (`INV-07`). `None` when the model has no known witness format:
+    /// a named failure, never a skip (D2).
+    pub witness: Option<Vec<String>>,
 }
 
-/// What the controller itself must show after the last identity read on its
-/// bus (`AET-WO-2202` W1): Renode stores `CR2` and `TXDR`, so they say what
-/// the last transaction was, whatever the firmware wrote in its record. All of
-/// it comes from the solved address, the part table and the header, never from
-/// the firmware (`INV-07`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct I2cWitness {
-    pub peripheral: String,
-    pub reference: String,
-    pub address: u8,
-    /// Index into [`I2cPlan::checks`] of the read this witnesses: the last on
-    /// its bus. It is judged only when that record claims the read completed.
-    pub check: usize,
-    pub cr2_at: u32,
-    pub txdr_at: u32,
-    /// `CR2`'s fields as (name, mask, expected value in place), then `TXDR`'s
-    /// byte as the last entry.
-    pub fields: Vec<(&'static str, u32, u32)>,
-}
-
-impl I2cWitness {
-    /// `CR2` under every field's mask, as it must read.
-    pub fn cr2_mask(&self) -> u32 {
-        self.fields[..4].iter().fold(0, |m, f| m | f.1)
-    }
-    pub fn cr2_expected(&self) -> u32 {
-        self.fields[..4].iter().fold(0, |v, f| v | f.2)
-    }
-    pub fn txdr_expected(&self) -> u32 {
-        self.fields[4].2
-    }
-
-    /// The fields that differ, as (name, expected, observed), in `CR2`
-    /// bit-field values (shifted back down) and `TXDR`'s byte.
-    pub fn differing(&self, cr2: u32, txdr: u32) -> Vec<(&'static str, u32, u32)> {
-        self.fields
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &(name, mask, expected))| {
-                let got = if i < 4 { cr2 } else { txdr } & mask;
-                (got != expected).then(|| {
-                    let down = mask.trailing_zeros();
-                    (name, expected >> down, got >> down)
-                })
-            })
-            .collect()
+/// The whole log lines `model` writes for a read of `width` bytes from
+/// `register` that returns `value`: the exhaustive model-to-format mapping
+/// (`AET-WO-2204` D2). Renode 1.17.0's `BME280.cs` logs every write and read at
+/// `Noisy` as `Write {bytes}` and `Read {bytes}` (L38, L75), each byte in
+/// upper-case hexadecimal without padding (`ToString("X")`), joined by spaces.
+pub fn witness_lines(
+    model: Model,
+    device: &str,
+    register: u8,
+    width: u8,
+    value: u32,
+) -> Option<Vec<String>> {
+    match model {
+        Model::Bme280 => {
+            let bytes: Vec<String> = (0..width)
+                .rev()
+                .map(|i| format!("{:X}", (value >> (8 * u32::from(i))) & 0xFF))
+                .collect();
+            Some(vec![
+                format!("[NOISY] {device}: Write {register:X}"),
+                format!("[NOISY] {device}: Read {}", bytes.join(" ")),
+            ])
+        }
     }
 }
 
@@ -210,8 +223,6 @@ pub struct I2cPlan {
     /// the devices are declared; the record index is the position.
     pub checks: Vec<I2cCheck>,
     pub unmodelled: Vec<Unmodelled>,
-    /// One per bus that has an identity read.
-    pub witnesses: Vec<I2cWitness>,
 }
 
 /// How one record reads against its check.
@@ -250,14 +261,14 @@ pub fn i2c(topology: &SolvedTopology) -> Result<I2cPlan, TwinError> {
     let base = boot_word()?;
     let mut plan = I2cPlan::default();
     for (reference, d) in topology.i2c_devices_in_order() {
-        if model::model(&d.part).is_none() {
+        let Some(model) = model::kind(&d.part) else {
             plan.unmodelled.push(Unmodelled {
                 reference: reference.to_owned(),
                 part: d.part.clone(),
                 address: d.address,
             });
             continue;
-        }
+        };
         let Some(id) = parts::identity(&d.part) else {
             continue;
         };
@@ -269,6 +280,7 @@ pub fn i2c(topology: &SolvedTopology) -> Result<I2cPlan, TwinError> {
             .ok_or_else(|| TwinError::InvalidDeviceName {
                 reference: reference.to_owned(),
             })?;
+        let device = platform::device_path(&d.peripheral, reference)?;
         plan.checks.push(I2cCheck {
             reference: reference.to_owned(),
             peripheral: d.peripheral.clone(),
@@ -278,48 +290,8 @@ pub fn i2c(topology: &SolvedTopology) -> Result<I2cPlan, TwinError> {
             expected: id.value,
             status_at: at,
             value_at: at + 4,
-        });
-    }
-    let f = cmsis::register_facts()?;
-    for (i, c) in plan.checks.iter().enumerate() {
-        // The last read on a bus is the one the controller still shows.
-        if plan.checks[i + 1..]
-            .iter()
-            .any(|n| n.peripheral == c.peripheral)
-        {
-            continue;
-        }
-        let base = f.base(&c.peripheral)?;
-        let layout = f.layout("I2C")?;
-        let field = |name: &'static str, pos: &str, bits: u32, value: u32| {
-            let pos = f.position(pos)?;
-            Ok::<_, TwinError>((name, ((1u32 << bits) - 1) << pos, value << pos))
-        };
-        plan.witnesses.push(I2cWitness {
-            peripheral: c.peripheral.clone(),
-            reference: c.reference.clone(),
-            address: c.address,
-            check: i,
-            cr2_at: base + layout.offset("CR2", 0)?,
-            txdr_at: base + layout.offset("TXDR", 0)?,
-            fields: vec![
-                // A 7-bit address sits in SADD[7:1].
-                field(
-                    "SADD",
-                    "I2C_CR2_SADD_Pos",
-                    CR2_SADD_BITS,
-                    u32::from(c.address) << 1,
-                )?,
-                field("RD_WRN", "I2C_CR2_RD_WRN_Pos", 1, 1)?,
-                field(
-                    "NBYTES",
-                    "I2C_CR2_NBYTES_Pos",
-                    CR2_NBYTES_BITS,
-                    u32::from(c.width),
-                )?,
-                field("AUTOEND", "I2C_CR2_AUTOEND_Pos", 1, 1)?,
-                ("TXDR", 0xFF, u32::from(c.register)),
-            ],
+            witness: witness_lines(model, &device, id.register, id.width, id.value),
+            device,
         });
     }
     Ok(plan)

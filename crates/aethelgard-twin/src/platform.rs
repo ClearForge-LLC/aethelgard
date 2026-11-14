@@ -352,3 +352,18 @@ fn instance(peripheral: &str, facts: &RegisterFacts) -> Result<Instance, TwinErr
 fn short(model: &str) -> &str {
     model.rsplit('.').next().unwrap_or(model)
 }
+
+/// The path Renode gives a modelled device on `peripheral`, `i2c1.u2`: the
+/// controller's stock name, then the emitted name (the reference, lower-cased,
+/// as [`split_devices`] declares it). The witness lines carry it
+/// (`AET-WO-2204` D1).
+pub fn device_path(peripheral: &str, reference: &str) -> Result<String, TwinError> {
+    let bus = STOCK
+        .iter()
+        .find(|s| s.0 == peripheral && s.2 == "I2C.STM32F7_I2C")
+        .ok_or_else(|| TwinError::DeviceOffBus {
+            reference: reference.to_owned(),
+            peripheral: peripheral.to_owned(),
+        })?;
+    Ok(format!("{}.{}", bus.1, reference.to_ascii_lowercase()))
+}

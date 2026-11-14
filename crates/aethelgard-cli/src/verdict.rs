@@ -145,17 +145,25 @@ pub struct Boot {
     pub unobservable: Vec<String>,
     /// One per identity read the judge expects (`AET-WO-2202`).
     pub i2c: Vec<I2cReport>,
-    /// The controller state that witnesses the last read on each bus.
+    /// What Renode logged for each identity read's device (`AET-WO-2204` D1).
     pub i2c_witness: Vec<WitnessReport>,
+    /// `ICSR` after the run: `VECTACTIVE` [8:0] is 0 when the core is in
+    /// thread mode (`AET-WO-2204` D3).
+    pub icsr: Option<String>,
 }
 
-/// A bus controller's `CR2` and `TXDR` after the run, against the expectation.
+/// One identity read's witness: the device model's whole log lines the judge
+/// expects, and every line Renode logged for the device with a witness's
+/// shape (`AET-WO-2204` D1).
 #[derive(Serialize)]
 pub struct WitnessReport {
-    pub peripheral: String,
     pub reference: String,
-    pub cr2: RegisterReport,
-    pub txdr: RegisterReport,
+    /// The model's path in Renode, `i2c1.u2`.
+    pub device: String,
+    /// Empty when the model has no known witness format (a named failure).
+    pub expected: Vec<String>,
+    /// `null` until Renode has run, or when the log could not be read whole.
+    pub observed: Option<Vec<String>>,
 }
 
 /// One identity read: what the part table says, and what the firmware's record held.
