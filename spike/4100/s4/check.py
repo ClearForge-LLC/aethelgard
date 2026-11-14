@@ -206,7 +206,8 @@ for line in ext["lines"]:
     for h in (0.2, 0.1797, 0.15, 0.12, 0.1, 0.0994, 0.09, 0.075, 0.05):
         tr, v, pd, pins = total(h)
         tot = tr + v + pd + pins
-        say(f"    h={h:5}: trace {tr:7.0f} vias {v:6.0f} pads {pd:6.0f} pins {pins} -> {tot:7.0f} fF "
-            f"({tot - line['c_bound_femtofarads']:+.0f} vs 2 layers; margin to declared {line['declared_femtofarads'] - tot:.0f})")
+        base = tr0 + v0 + pd0 + pins
+        say(f"    h={h:6}: per-length {per_mm(min(h, S)):.1f} fF/mm; trace {tr:7.0f} vias {v:6.0f} pads {pd:6.0f} pins {pins} -> {tot:7.0f} fF "
+            f"({tot - base:+.0f} vs the float model at h >= S, {100 * (tot - base) / base:+.2f} %; margin to declared {line['declared_femtofarads'] - tot:.0f})")
 
 open(sys.argv[3] if len(sys.argv) > 3 else "/dev/null", "w").write("\n".join(out) + "\n")

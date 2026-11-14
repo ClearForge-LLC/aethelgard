@@ -67,6 +67,8 @@ Evidence: `~/.cache/aet-4100/` on Furnace (boards, verdicts, Gerbers); probes in
 
 ### S1 — KiCad 10.0.7 at 4 and 6 layers (image `c69ff9bc`, `kicad-cli version` = `10.0.7`)
 
+**Where the Gerber and antipad numbers come from.** The gate verdicts below are the real `check drc --spec`. The five-run determinism test, the stackup comparison and the 0.5005 mm antipad gap came from **unprepared copies** (raw `kicad-cli` on the probe board, KiCad's default project settings), all in one container on Furnace. The package exports the gate-prepared copy instead, which differs in its `(setup …)` and its rule files. At the build, the determinism test should be repeated on the prepared copy.
+
 Probe boards: `spike/4100/s1/variants.py` turns the emitted reference (`aethelgard emit`, board sha256 `7b9b0e3d…`) into `b4` (F, In1, In2, B; GND plane on In1, `VDD_3V3` plane on In2, the B.Cu GND zone kept), `b6` (GND In1, `VDD_3V3` In4, In2/In3 signal), and seeded variants. Runs: `s1/drc.sh`, `s1/gerb.sh`.
 
 | Question | Measured |
@@ -74,11 +76,11 @@ Probe boards: `spike/4100/s1/variants.py` turns the emitted reference (`aethelga
 | Layer table KiCad writes (`pcb upgrade --force`) | `(0 "F.Cu" signal) (4 "In1.Cu" signal) (6 "In2.Cu" signal) [(8 "In3.Cu" signal) (10 "In4.Cu" signal)] (2 "B.Cu" signal)`: kept as given, inner ids 4, 6, 8, 10. Plain `pcb upgrade` says "Board file was not updated" (format current) |
 | Stackup required? | No. A board with none loads, DRCs and plots; a forced save adds none (`(general (thickness 1.6))` is the only thickness) |
 | Stackup read by DRC? | No: raw DRC of `b4` and of `b4_stackup` (dielectrics 0.01 mm, `epsilon_r 50`) gives the same 15 violations. **And the gate never sees it:** `board::prepare_read` replaces the whole `(setup …)` with `rules::SETUP` (`(setup (pad_to_mask_clearance 0))`), so a board's stackup claim is discarded before DRC and before export |
-| Stackup read by the Gerbers? | No: every copper and outline Gerber of `b4_stackup` equals `b4`'s, line for line, once the two clock lines are removed. The job file is identical too, apart from its date: its `MaterialStackup` lists layer order and `FR4` but **no thickness and no permittivity**, with or without the block |
+| Stackup read by the Gerbers? | No: every copper and outline Gerber of `b4_stackup` equals `b4`'s, line for line, once the two clock lines are removed. The job file is identical too, apart from its date: its `MaterialStackup` lists layer order and `FR4` but **no thickness and no permittivity**, with or without my block. That block listed only copper and dielectric layers; a complete KiCad block (with silk, paste and mask) was not tried, so this claim is limited to that block |
 | Gate on `b4`, `b6` (planes, refilled) | `pass`, no finding (`check drc --spec`, exit 0) |
 | Seeded inner clearance (`b6_seed`: In2.Cu `/I2C_SDA` and `/I2C_SCL` 0.1 mm apart) | **Reported:** `clearance`, "rule 'specification_clearance' clearance 0.2000 mm; actual 0.1000 mm", both tracks named on In2.Cu |
 | Seeded inner short (`b4_short`: In1.Cu track from an `/I2C_SDA` via to a `/FLASH_CS` via, across the GND plane's layer) | **Reported:** `shorting_items` "nets /FLASH_CS and /I2C_SDA", `Via [/FLASH_CS] on F.Cu - B.Cu` and `Track [/I2C_SDA] on In1.Cu` |
-| Through vias of other nets crossing a plane | No violation: the refill cuts an antipad. Measured from the Gerber regions (`s1/antipad.py`): smallest gap from plane copper to a foreign via's 0.6 mm disk is **0.5005 mm** on In1 (48 foreign vias) and on In2 (45), above `S` = 0.2 mm (the zone's own 0.5 mm clearance; 1305 measured 0.5005 mm on the 2-layer zone). Via pads are flashed on every inner layer (`%TA.AperFunction,ViaPad*%`, 70 on In1) |
+| Through vias of other nets crossing a plane | No violation: the refill cuts an antipad. Measured from the Gerber regions (`s1/antipad.py`): smallest gap from plane copper to a foreign via's 0.6 mm disk is **0.5005 mm** on In1 (48 foreign vias) and on In2 (45), above `S` = 0.2 mm. The emitted zone declares no clearance, so where KiCad takes 0.5 mm from is not established here; S4 needs only that the gap is at least `S` and judged by DRC. 1305 measured 0.5005 mm on the 2-layer zone. Via pads are flashed on every inner layer (`%TA.AperFunction,ViaPad*%`, 70 on In1) |
 | Copper on an undeclared layer (`b2_undecl`: 2-layer table + an In1.Cu track) | **Reported:** `item_on_disabled_layer` "Item on a disabled copper layer (layer In1.Cu)", error |
 | A one-ended track of net A touching only a via of net B (`b4_seedvia`) | KiCad re-nets it by copper: reported as `Track [/FLASH_CS] on In2.Cu`, `track_dangling` only. Not a short, and correctly so (`RUL-03`: copper, not labels). My first short seed was this shape by mistake; `b4_short` is the real one |
 | Inner Gerber names and attributes | `In1_Cu.g1` … `In4_Cu.g4`; `%TF.FileFunction,Copper,L2,Inr*%` … `L5,Inr`; outer `Copper,L1,Top` and `Copper,L4,Bot` / `L6,Bot` |
@@ -101,7 +103,7 @@ Probe boards: `spike/4100/s1/variants.py` turns the emitted reference (`aethelga
     {"name": "B.Cu",   "role": "signal"}
   ],
   "stackup": {
-    "finished_thickness_um": {"min": 1440, "max": 1760, "source": "…"},
+    "finished_thickness_um": {"nominal": 1600, "min": 1440, "max": 1760, "source": "…"},
     "dielectrics": [
       {"between": ["F.Cu", "In1.Cu"],   "min_thickness_um": 179,  "source": "…"},
       {"between": ["In1.Cu", "In2.Cu"], "min_thickness_um": 891,  "source": "…"},
@@ -121,13 +123,13 @@ Probe boards: `spike/4100/s1/variants.py` turns the emitted reference (`aethelga
 - a plane whose `net` is not `GND` or a declared domain id;
 - two planes on one net (the router stitches one plane per net);
 - `dielectrics` not exactly the `n − 1` adjacent pairs in order;
-- `min > max`, a zero thickness, `finished_thickness.min` below the sum of the dielectric minima;
+- `min > nominal` or `nominal > max`, a zero thickness, `finished_thickness.min` below the sum of the dielectric minima;
 - `copper_max_um` or `relative_permittivity_max_permille` zero;
 - any rule below the engine floor (`FLOOR_NM`, 0.2 mm; via drill 0.3 mm, via 0.6 mm), or a via smaller than its drill plus twice the track floor;
 - an empty `source`.
 
 Today's two-layer constants become Sentinel-01's declared values (decision **D5**):
-- finished 340–2000 µm;
+- finished 340–2000 µm, nominal 1600 µm. The nominal is what `pcb.rs` writes as `(general (thickness 1.6))` (L785), what `FAB-NOTES.md` prints as "Declared thickness 1.6 mm" (`eda/src/fab.rs` L89), what `extract::read` requires of the board, and the base of the via's height bound (nominal + 25 %, today 2.0 mm). A 4-layer board writes its own nominal there;
 - one dielectric with a 200 µm minimum (0.34 mm − 2 × 70 µm);
 - 70 µm copper;
 - permittivity 5.4.
@@ -168,7 +170,7 @@ The probe was built by a subagent (Sonnet) in its own worktree. I spot-checked t
 - `results.tsv`;
 - `gen.py`.
 
-**D1 is the reviewer's own input.** Its generator was recovered verbatim from the 1302 reviewer's transcript (`many()`: 4 I2C buses × 6 devices, references `S0…S23`, one SPI flash `S1000`). The only change: `emit` now refuses an I2C bus with no rise-time constraint (`MissingBusConstraint`), so `gen.py` adds the reference's constraint (100 pF, 300 ns) to every line.
+**2 × 5 is a reconstruction** (`many(n_i2c=2, per_bus=5)`); only D1's generator was recovered. **D1 is the reviewer's own input.** Its generator was recovered verbatim from the 1302 reviewer's transcript (`many()`: 4 I2C buses × 6 devices, references `S0…S23`, one SPI flash `S1000`). The only change: `emit` now refuses an I2C bus with no rise-time constraint (`MissingBusConstraint`), so `gen.py` adds the reference's constraint (100 pF, 300 ns) to every line.
 
 **The probe's design.** `AET_LAYERS` selects 2, 4 or 6 layers:
 - **2 layers** are today's code path. The reference, 2 × 5 and 2 × 5-without-SPI boards are byte-identical to HEAD, and the route unit tests pass.
@@ -266,21 +268,21 @@ The result:
 
 **The reference's I2C lines over a plane at `h`.** I took the reference's own routed pieces: length, tracks, vias, and each pad's box read from the board. I recomputed the trace, the track ends and the pads with `lower(·, h)`. The vias and pins do not change. At `h ≥ S`, the float model reproduces `extract`'s 2-layer terms to rounding (trace 9,116 against 9,146 integer, and so on).
 
-| `h_min` (mm), source | SDA bound (fF) | SCL bound (fF) | vs 2 layers | Declared | Margin |
-|---|---|---|---|---|---|
-| ≥ 0.2 (today, 2 layers) | 46,800 | 58,235 | — | 100,000 | 53 % / 42 % |
-| 0.1797 (OSH Park 2113 prepreg, 0.1999 − 0.0202) | 46,944 | 58,472 | +144 / +237 | 100,000 | 53 % / 42 % |
-| 0.15 | 47,371 | 59,178 | +571 / +943 | 100,000 | |
-| 0.1 | 48,987 | 61,841 | +2,187 / +3,606 | 100,000 | |
-| **0.0994 (JLC04161H-3313, nominal; no tolerance published)** | **49,019** | **61,893** | **+2,219 / +3,658** | 100,000 | **51 % / 38 %** |
-| 0.075 | 50,804 | 64,834 | +4,004 / +6,599 | 100,000 | |
-| 0.05 | 54,641 | 71,149 | +7,841 / +12,914 | 100,000 | 45 % / 29 % |
+Every row is the float model; deltas are float against float at `h ≥ S` (SDA 46,765, SCL 58,177). `extract`'s integer path gives 46,800 and 58,235 there, because it rounds each term up.
 
-(float values; the build's integer path rounds each term up, as today.)
+| `h_min` (mm), source | per-length (fF/mm) | SDA bound (fF) | SCL bound (fF) | rise vs `h ≥ S` | Margin to 100,000 |
+|---|---|---|---|---|---|
+| ≥ 0.2 (2 layers) | 279.3 | 46,765 | 58,177 | — | 53 % / 42 % |
+| 0.1797 (OSH Park 2113 prepreg, 0.1999 − 0.0202) | 285.1 | 46,944 | 58,472 | +178 / +295 (+0.4 / +0.5 %) | 53 % / 42 % |
+| 0.15 | 298.4 | 47,371 | 59,178 | +606 / +1,002 | |
+| 0.1 | 345.9 | 48,987 | 61,841 | +2,222 / +3,664 | |
+| **0.0994 (JLC04161H-3313, nominal; no tolerance published)** | **346.8** | **49,019** | **61,893** | **+2,253 / +3,717 (+4.8 / +6.4 %)** | **51 % / 38 %** |
+| 0.075 | 398.1 | 50,804 | 64,834 | +4,039 / +6,657 | |
+| 0.05 | 507.2 | 54,641 | 71,149 | +7,875 / +12,972 (+16.8 / +22.3 %) | 45 % / 29 % |
 
 **S4 answers.**
 - **A valid trial exists, and it is derived and checked.** The §7 stop "no trial bounds an outer piece over a near plane" does not trigger.
-- **The reference's declared 100 pF still holds at 4 layers.** At the thinnest real prepreg (JLC 3313) the bound rises by 4.7 % (SDA) and 6.3 % (SCL), leaving 38 % margin on SCL. The pins' 30 pF dominate. P4.2 predicted about 345 fF/mm per length at 0.1 mm, and the measured value is 0.0994 mm → 346 fF/mm. P4.4's ranges were close: SDA came in lower than predicted.
+- **The reference's declared 100 pF still holds at 4 layers.** At the thinnest real prepreg (JLC 3313) the bound rises by 4.8 % (SDA) and 6.4 % (SCL), leaving 38 % margin on SCL. The pins' 30 pF dominate. P4.2 predicted about 345 fF/mm per length at 0.1 mm. The run printed 345.9 fF/mm at 0.1 mm and 346.8 fF/mm at 0.0994 mm. P4.4's ranges were close: SDA came in lower than predicted.
 - **The 2-layer reference is unchanged by construction.** Its `h_min` = 0.34 − 2 × 0.07 = 0.2 mm = `S`. I recommend the build keep today's integer code path whenever `h_min ≥ S`, rather than evaluate the new formula at `h = S`: a different `div_ceil` placement could move an integer even where the reals agree. The `CONDITIONS` strings must also stay word for word for Sentinel-01, because `FAB-NOTES.md` prints them.
 - **Six layers: refusing inner-layer tracks is not enough on its own.** The S3 probe routed I2C on In2 and In3 at 6 layers (D1: 24 mm on In2). Either the router keeps I2C on the outer layers, or extraction bounds inner pieces with two caps. The two-cap form is the stripline case already checked exactly, so it costs little (decision **D4**). P4.5 holds.
 
@@ -293,7 +295,7 @@ The result:
 | Drill at 4 layers | `export drill --excellon-min-header` on `b4` is **byte-identical** to the 2-layer reference's (through vias only, the same holes) |
 | `FAB-NOTES.md` | `eda/src/fab.rs` L86 prints "Two copper layers: F.Cu (top) and B.Cu (bottom).", a literal. At 4 layers it would lie. It must print the declared layer order with each layer's role and plane net, and the declared stackup table with its bounds and sources |
 | `MANIFEST.json`, `--against-fab` | Both enumerate what the package writes. Once the Gerber list follows the declared layers, `--against-fab` names a missing inner Gerber as a missing file and a stackup mismatch in `FAB-NOTES.md` as a differing file. Neither works today because both stop at `route::read` |
-| The job file (`.gbrjob`) | Not recommended. It carries a wall-clock `CreationDate` (JSON line 8), a place `RUL-03`'s amended rule does not name, so including it needs a new amendment. Worse, it says nothing the fabricator needs that the package would not already state. **Its `MaterialStackup` has no thickness or permittivity** (S1), the board's stackup never reaches it through the gate, and the layer order is already in every Gerber's `%TF.FileFunction` |
+| The job file (`.gbrjob`) | Not recommended. It carries a wall-clock `CreationDate` (JSON line 8), a place `RUL-03`'s amended rule does not name, so including it needs a new amendment. Worse, it says nothing the fabricator needs that the package would not already state. The deciding reasons: **the gate discards the board's `(setup …)`, so no declared stackup can reach the job file** through the package's export, and the layer order is already in every Gerber's `%TF.FileFunction`. (With my partial block its `MaterialStackup` printed no thickness either, S1.) |
 
 **What a fabricator needs at 4 layers that the package lacks:**
 - the inner Gerbers;
@@ -334,8 +336,8 @@ The twin, the analog deck (`cli/src/analog.rs`), the campaign and `evolve` read 
 | P3.3 | 6 adds nothing over 4 | **held** (worse by default on D1) |
 | P3.4 | check/connectivity learn per-layer, via on every layer, plane joins | **held** (probe) |
 | P4.1 | elliptical cap; equals today at h = S | **held**, derived and checked |
-| P4.2 | ≈345 fF/mm at 0.1 mm | **held**: 346 at 0.0994 |
-| P4.3 | 7628 slightly under S with tolerance | **untested as stated:** JLC 7628 is 0.2104 nominal with no published tolerance; OSH's 0.1797 minimum gives +0.3 % |
+| P4.2 | ≈345 fF/mm at 0.1 mm | **held**: 345.9 at 0.1, 346.8 at 0.0994 |
+| P4.3 | 7628 slightly under S with tolerance | **untested as stated:** JLC 7628 is 0.2104 nominal with no published tolerance; OSH's 0.1797 minimum gives +0.4 % / +0.5 % |
 | P4.4 | SDA 50–55 pF, SCL 62–68 pF at 0.1 mm | **close:** 49.0 / 61.9 pF (slightly lower) |
 | P4.5 | inner refusal enough only if I2C stays outer | **held**: the 6-layer probe routes I2C inside |
 | P5.1–P5.3 | verify cannot take a 4-layer board; fabricator needs order and stackup; job file excluded | **held** |
@@ -355,6 +357,15 @@ The twin, the analog deck (`cli/src/analog.rs`), the campaign and `evolve` read 
 - **S5. Derive the Gerber list and `FAB-NOTES.md`'s layer and stackup text from the declared board.** Keep the job file excluded.
 - **S6. No change outside the fence.**
 
+## Findings
+
+| Finding | Where | Severity | Type | Recommendation | Decision needed |
+|---|---|---|---|---|---|
+| **F1.** `validate` accepts a specification that `solve` and `emit` refuse: the pre-fix D1 (no net constraint on its buses) gives `validate` exit 0, `{"ok":true,…}`, and `solve`/`emit` exit 2, `MissingBusConstraint` "I2C bus `B0` has no net constraint on `SDA0`". Measured on `main`'s binary. `RUL-14` says `validate` refuses what `generate` refuses; that sentence was written about identifiers, so this may be by design | `aethelgard-ir` validate vs solve | low | `main`, not this work order's | rule whether `validate` should run the solver's bus checks; not fixed here | yes |
+| **F2.** A 4- or 6-layer board passes the DRC gate (`check drc --spec`, exit 0) while `route::read` refuses it (`BoardUnreadable`, "a zone on layer In1.Cu"), so `extract` and the package refuse it. This fails closed today; the build must make the readers follow the declared layers | `cli check drc` / `eda::route::read` | info | measured | the build's §2.2–2.4 | no |
+| **F3.** D1's generator existed only in the 1302 reviewer's session transcript; it is now `spike/4100/s3/gen.py`, which the build deletes with `spike/` | 1302 B10 | low | provenance | at the build, the D1 specification becomes a committed fixture (§2.7) | no |
+| **F4.** A board's stackup is inert: the gate discards `(setup …)`, DRC and the Gerbers ignore it, and the job file printed no thickness for the block tried | `eda::board::prepare_read` | info | measured | the stackup lives in the specification only | no |
+
 ## Decisions needed
 
 1. **D1. Layer counts in scope:**
@@ -365,7 +376,7 @@ The twin, the analog deck (`cli/src/analog.rs`), the campaign and `evolve` read 
    - **(a)** Accept D1 routing at 4 layers as B10's closure, and open escape planning as its own work order. Recommended.
    - **(b)** Build escape planning here.
 4. **D4. Inner-layer I2C (only if D1 is (b)):** the router keeps I2C on the outer layers, or extraction bounds inner pieces with the two-cap form. I recommend the bound.
-5. **D5. Sentinel-01's declared stackup** reproduces today's constants (340–2000 µm, one dielectric ≥ 200 µm, 70 µm copper, 5.4), so its package and extraction stay byte-identical. Confirm.
+5. **D5. Sentinel-01's declared stackup** reproduces today's constants (nominal 1600 µm, finished 340–2000 µm, one dielectric ≥ 200 µm, 70 µm copper, 5.4), so its package and extraction stay byte-identical. Confirm.
 6. **D6. Version bump sharing with `4200`:** whichever lands first takes specification `schema_version` 2, and the other merges onto it.
 7. **D7. Which nets are planes.** The proposal makes each plane name its net, ground or a declared domain, one plane per net. A board with more domains than plane layers routes the extra domains as tracks, as today. Confirm.
 8. **D8. Units:** micrometres and thousandths in the specification, as proposed, or nanometres like the code.
