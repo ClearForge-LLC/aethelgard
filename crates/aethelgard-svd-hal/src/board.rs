@@ -128,11 +128,13 @@ pub fn generate(
     generate_with(crate_name, solved, table, &|_| false)
 }
 
-/// [`generate`], and the reference firmware also reads the identity register
-/// of each of the topology's I2C devices (`SolvedTopology::i2c_devices`,
-/// `AET-WO-2203`) whose part has an identity and for which `answers` says the
+/// [`generate`], and the reference firmware also reads the identity of each of
+/// the topology's I2C devices (`SolvedTopology::i2c_devices`, `AET-WO-2203`),
+/// then of each of its SPI devices (`SolvedTopology::spi_devices`,
+/// `AET-WO-4200`), whose part has an identity and for which `answers` says the
 /// twin has a model (`AET-WO-2202`). This crate cannot depend on the twin, so
-/// the caller passes `aethelgard_twin::model::model(part).is_some()`.
+/// the caller passes whether `aethelgard_twin::model::model(part)` is
+/// `Ok(Some(_))`.
 pub fn generate_with(
     crate_name: &str,
     solved: &SolvedTopology,
