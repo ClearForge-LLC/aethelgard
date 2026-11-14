@@ -889,4 +889,4 @@ Each surviving guard's mutant fails a test:
 
 The `c1d151d` failure: `a_droop_on_a_board_whose_first_read_is_on_spi_recovers_and_replays` generated its board under `CARGO_TARGET_TMPDIR`. CI keeps that inside the repository, so cargo refused the crate as a workspace member. It now generates under the system temp directory; reproduced and fixed with a target directory inside the repository.
 
-**The merged head `748a733`:** below.
+**The merged head `748a733`** (run 43595196849): green, 8 shards from 11.6 to 15.1 min, the slowest shard 0, and `gates` 10.3 min. `main` then gained `4fc60e9` (docs only), merged at the head below; CI runs on it too.
