@@ -1,6 +1,6 @@
 # AET-WO-1909 — FEEDBACK
 
-**Status: built to the architect's ruling on PR #115 (comment 6873338632): A, B, C and D; `oq_03` removed; E declined. Adversarial and reduction passes done. Three consecutive CI runs at eight shards, every shard under 20 minutes (12:10, 11:59, 15:10); the suite went from 4,730 to 3,677 measured test-step seconds (−22 %). B's byte comparison holds apart from one derived field, `MANIFEST.json`'s `verdict_sha256` (the architect to confirm, below). The PR title still says "census": `gh-write` cannot edit a PR, so the architect sets the title at merge (roadmap §6).**
+**Status: built to the architect's ruling on PR #115 (comment 6873338632): A, B, C and D; `oq_03` removed; E declined. Adversarial and reduction passes done. Three consecutive CI runs at eight shards, every shard under 20 minutes (12:10, 11:59, 15:10); the suite went from 4,730 to 3,677 measured test-step seconds (−22 %). B's byte comparison holds apart from one derived field, `MANIFEST.json`'s `verdict_sha256` (the architect to confirm, below). The PR is retitled as the build, its body replaced; `gh-write` cannot edit a PR, so the operator applied both from the builder's text.**
 
 **Branch:** `wo/aet-1909-ci-reduction` · **Base:** `a5be795` (`origin/main`, merged in) · **Builder:** Claude (Opus 5.5, orchestrating). Census rows and D8's assertion messages were done by Sonnet subagents, each checked against the source. The adversarial pass was run by a fresh Opus subagent.
 
