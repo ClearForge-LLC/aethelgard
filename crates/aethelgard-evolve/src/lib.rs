@@ -75,6 +75,25 @@ pub enum Rule {
 }
 
 impl Rule {
+    /// Every rule, in order.
+    pub const ALL: [Rule; 9] = [
+        Self::E1,
+        Self::S1,
+        Self::S2,
+        Self::N1,
+        Self::I1,
+        Self::I2,
+        Self::I3,
+        Self::I4,
+        Self::I5,
+    ];
+
+    /// The rule whose [`id`](Self::id) is `id`, so a reader of an attribution
+    /// or a manifest finds the rule, and its evidence kinds, here alone.
+    pub fn from_id(id: &str) -> Option<Rule> {
+        Self::ALL.into_iter().find(|r| r.id() == id)
+    }
+
     pub fn id(self) -> &'static str {
         match self {
             Self::E1 => "E1",
