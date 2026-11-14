@@ -278,7 +278,11 @@ The reader removes a stray `\r` at either end of a line, matches each marker as 
         "boot_word":{"address":"0x20000000","expected":"0x2100b007","observed":"0x2100b007"},
         "registers":[{"name":"GPIOA.MODER","address":"0x58020000","mask":"0x0000fc03","expected":"0x0000a801","observed":"0x0000a801"},…],
         "unobservable":["GPIOB.OTYPER","I2C1.TIMINGR"],
-        "i2c":[{"reference":"U2","address":"0x76","register":"0xd0","expected":"0x60","observed":"0x60","status":"ok"}]}
+        "i2c":[{"reference":"U2","address":"0x76","register":"0xd0","expected":"0x60","observed":"0x60","status":"ok"}],
+        "i2c_witness":[{"peripheral":"I2C1","reference":"U2","device":"i2c1.u2",
+                        "expected":["[NOISY] i2c1.u2: Write D0","[NOISY] i2c1.u2: Read 60"],
+                        "observed":["[NOISY] i2c1.u2: Write D0","[NOISY] i2c1.u2: Read 60"],"absent":[]}],
+        "icsr":"0x00000800"}
 ```
 
 **The I2C identity reads** (`AET-WO-2202`). The specification's I2C devices are placed on the peripheral their bus was solved to (`SolvedTopology::i2c_devices`, `AET-WO-2203`). For each device whose part has a Renode 1.17.0 model (today the BME280, `I2C.BME280`) the emitted platform declares the model at its bus and address, and the reference firmware reads the part's identity register once, through the board crate's bounded `transfer`, before it writes the boot word.

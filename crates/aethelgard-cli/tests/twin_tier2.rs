@@ -913,7 +913,14 @@ fn the_judge_s_own_reads_of_a_gated_peripheral_are_never_the_firmware_s() {
     // logging they come after BEGIN and are not attributed to the firmware.
     let (code, v) = boot("1us", "1us");
     assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["boot_word_missing"], "{v}");
+    // At 1 us nothing is configured yet: the boot word is missing and the
+    // registers are at reset. No locked access is the firmware's.
+    let k = kinds(&v);
+    assert!(k.contains(&"boot_word_missing"), "{v}");
+    assert!(
+        k.iter().all(|k| ["boot_word_missing", "register_mismatch"].contains(k)),
+        "{v}"
+    );
 }
 
 #[test]
