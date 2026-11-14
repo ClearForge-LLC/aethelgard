@@ -171,6 +171,24 @@ pub struct WitnessReport {
     pub absent: Vec<String>,
 }
 
+impl WitnessReport {
+    /// `check`'s witness as the judge expects it, with what Renode logged.
+    pub fn of(
+        check: &aethelgard_twin::boot::I2cCheck,
+        observed: Option<Vec<String>>,
+        absent: Vec<String>,
+    ) -> Self {
+        WitnessReport {
+            peripheral: check.peripheral.clone(),
+            reference: check.reference.clone(),
+            device: check.device.clone(),
+            expected: check.witness.clone().unwrap_or_default(),
+            observed,
+            absent,
+        }
+    }
+}
+
 /// One identity read: what the part table says, and what the firmware's record held.
 #[derive(Serialize)]
 pub struct I2cReport {

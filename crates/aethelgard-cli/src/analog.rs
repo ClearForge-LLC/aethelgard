@@ -423,14 +423,8 @@ fn recovered_words(
             probe.map(|p| p.record.map_or(0, |r| r.1)),
         ),
     ];
-    let witness = check.map(|c| WitnessReport {
-        peripheral: c.peripheral.clone(),
-        reference: c.reference.clone(),
-        device: c.device.clone(),
-        expected: c.witness.clone().unwrap_or_default(),
-        observed: probe.and_then(|p| p.witness.clone()),
-        absent: Vec::new(),
-    });
+    let witness =
+        check.map(|c| WitnessReport::of(c, probe.and_then(|p| p.witness.clone()), Vec::new()));
     (words, witness)
 }
 

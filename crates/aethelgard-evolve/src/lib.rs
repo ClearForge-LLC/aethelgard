@@ -137,11 +137,12 @@ pub struct Attribution {
     pub unexplained: Vec<String>,
 }
 
-/// One field of a register or of a controller witness, read through the join
+/// One field of a register or of a device witness, read through the join
 /// attribution uses: what the solved topology fixes it to, what the run
 /// observed under the same mask, and whether attribution counts it as
 /// evidence. `register` is named as the ST header names it (`RCC.APB1LENR`,
-/// `GPIOB.AFRL`, `I2C1.CR2`), or `boot_word`.
+/// `GPIOB.AFRL`), `boot_word`, or a witness's `i2c1.u2.address`, `.Write`
+/// or `.Read`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
     pub register: String,
@@ -461,7 +462,7 @@ impl<'a> Run<'a> {
     /// that could not be read whole, is no evidence. A transfer to a wrong
     /// address leaves the device's log empty, as a fault on the bus does, but
     /// its controller logs that it found no device at that address: an
-    /// address other than the device's is evidence (where `CR2.SADD` was). A
+    /// address other than the device's is evidence. A
     /// faulted bus finds none at the device's own, which is not.
     fn witness_wrong(&self, b: usize, record: &Record) -> bool {
         self.witness_fields(b, record)

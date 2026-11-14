@@ -258,7 +258,7 @@ impl I2cCheck {
 
 /// The I2C reads a boot of the topology's devices must make, in the
 /// specification's order, and the devices it cannot check. The identity is the
-/// part table's; the device is modelled when [`model::model`] says so.
+/// part table's; the device is modelled when [`model::kind`] says so.
 pub fn i2c(topology: &SolvedTopology) -> Result<I2cPlan, TwinError> {
     let base = boot_word()?;
     let mut plan = I2cPlan::default();

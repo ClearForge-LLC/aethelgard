@@ -579,8 +579,8 @@ fn a_skipped_controller_clock_is_software_and_explains_the_locked_access() {
     );
     let a = attributed(&r);
     assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S1));
-    // CR2 reads 0, its reset value: the firmware never wrote it, so it says
-    // nothing of an address. The clock gate left off is the evidence.
+    // The device's log is empty, as a gated controller leaves it: no
+    // evidence of an address or a register. The clock gate left off is.
     assert_eq!(kinds(&a.evidence), [7, 7, 11]);
 }
 

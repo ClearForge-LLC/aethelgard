@@ -224,9 +224,9 @@ pub enum Record {
         rendering: String,
     },
     /// Kind 19: `firmware.observed` after a release, at the recovery bound:
-    /// the boot word, the identity read's two words, and the controller's
-    /// `CR2` and `TXDR`, which only a transfer on the bus sets after a reset
-    /// (`AET-WO-2301` adversarial F1), as Renode read them.
+    /// the boot word and the identity read's two words, as Renode read them,
+    /// and the first identity read's witness lines from the release to the
+    /// probe (`AET-WO-2301` adversarial F1, `AET-WO-2204`).
     FirmwareObserved {
         at_ns: u64,
         boot_word: Reading,

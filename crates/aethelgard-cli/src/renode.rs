@@ -186,16 +186,7 @@ pub const LOG_FILTER: LogFilter = LogFilter {
 /// `AET-WO-2301` F10).
 fn log_text(line: &str) -> &str {
     let line = line.trim();
-    match line.strip_prefix('[').and_then(|r| r.split_once("] ")) {
-        Some((stamp, rest))
-            if stamp
-                .bytes()
-                .all(|b| b.is_ascii_digit() || b == b':' || b == b'.') =>
-        {
-            rest.trim()
-        }
-        _ => line,
-    }
+    log_body(line).unwrap_or(line).trim()
 }
 
 /// The finding for a boot the reaper killed at a bound: `cpu_aborted` if
