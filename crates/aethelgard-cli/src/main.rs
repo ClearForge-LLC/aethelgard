@@ -218,7 +218,7 @@ enum CheckCommand {
         /// The .kicad_pcb file.
         #[arg(long)]
         board: PathBuf,
-        /// Judge by the rules this specification implies; without it, by KiCad's defaults. Either way the gate writes every rule file itself.
+        /// Judge by the rules this specification declares, and first refuse a board that is not its declared board (copper layers, planes, thickness, through vias); without it, by KiCad's defaults. Either way the gate writes every rule file itself.
         #[arg(long)]
         spec: Option<PathBuf>,
         /// Also check the board against this .kicad_sch (KiCad's schematic parity). It is copied beside the board and judged with it.
@@ -698,6 +698,7 @@ fn check_kicad(
     schematic: Option<&Path>,
 ) -> Result<verdict::Verdict, run::Stop> {
     let original = input::file_check(path)?;
+    let mut declared = None;
     let (rules, spec_sha256) = match spec {
         Some(file) => {
             let (spec, sha256) = read_spec(Some(file)).map_err(|(refusal, code)| run::Stop {
@@ -706,6 +707,7 @@ fn check_kicad(
                 id: refusal.error.id,
                 message: refusal.error.message,
             })?;
+            declared = Some(aethelgard_eda::stack::Stack::of(&spec));
             (
                 aethelgard_eda::rules::Rules::from_specification(&spec),
                 Some(sha256),
@@ -722,6 +724,17 @@ fn check_kicad(
         kicad::refuse_sheets(&input.copy)?;
     }
     let board = kicad::prepare(check, &input.copy, &scratch.tool, &rules)?;
+    // With `--spec` the board is judged against the declared board before
+    // KiCad runs (`AET-WO-4100`): its copper layers, planes, thickness and
+    // vias, by name, never by the board's own claims (`RUL-03`).
+    if let (Some(stack), Some(tree)) = (&declared, &board) {
+        aethelgard_eda::route::declared(tree, stack).map_err(|d| run::Stop {
+            code: EXIT_UNREADABLE,
+            kind: d.kind,
+            id: None,
+            message: d.message,
+        })?;
+    }
     // KiCad's parity check reads the schematic named like the board, beside
     // it; the copy is scanned like the board before any tool runs, and the
     // board is judged on the strict reading `prepare` made of it.
@@ -1419,6 +1432,25 @@ fn read_spec(file: Option<&Path>) -> Result<(Specification, String), (Refusal, u
 /// Parses and validates one `Specification` from bytes already read under the
 /// cap, as `read_spec` does.
 fn parse_spec(input: &[u8]) -> Result<(Specification, String), (Refusal, u8)> {
+    // A specification of another version is refused by name before its shape
+    // is judged: a version-1 file has no `board`, and nothing supplies one
+    // (`AET-WO-4100`, `RUL-14`).
+    #[derive(serde::Deserialize)]
+    struct Version {
+        schema_version: u32,
+    }
+    if let Ok(Version { schema_version }) = serde_json::from_slice::<Version>(input)
+        && schema_version != aethelgard_ir::SPECIFICATION_SCHEMA_VERSION
+    {
+        let err = aethelgard_ir::IrValidationError::UnsupportedSchemaVersion {
+            version: schema_version,
+            expected: aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
+        };
+        return Err((
+            Refusal::new(err.kind(), err.id(), err.to_string()),
+            EXIT_INVALID_SPEC,
+        ));
+    }
     // Well-formed JSON of the wrong shape is an invalid specification;
     // anything that is not one JSON document is unreadable input.
     let spec: Specification = serde_json::from_slice(input).map_err(|err| {

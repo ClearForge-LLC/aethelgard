@@ -24,4 +24,5 @@ pub mod route;
 pub mod rules;
 pub mod schematic;
 pub mod sexpr;
+pub mod stack;
 pub mod strict;

@@ -20,8 +20,8 @@ use sha2::{Digest, Sha256};
 /// (`1b98f4c6…` and `d5f27416…` before; old and new in its FEEDBACK), and
 /// `AET-WO-1205` added `i2c_speeds` and made the version 2 (`d684cd6d…` and
 /// `dd192c61…` before; old and new in its FEEDBACK).
-const REFERENCE_DIGEST: &str = "c655bf2ee3097e37be0268ddf688a879345c9a80e9b3de59441c5a981c3f6701";
-const STRESS_DIGEST: &str = "6eda552cadd0a1d7a6338ab758d0de431f03315ebfb9cf99948e86cbbbef10ed";
+const REFERENCE_DIGEST: &str = "53ac16ac129029cb0fdc9176d78ec9e3e316446b2d034c91851396502d4dd4c0";
+const STRESS_DIGEST: &str = "0c9ce0204b90b59935f0b79d57e2691a05e21d5a556ea0c01b1ef286c9380662";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.

@@ -130,6 +130,7 @@ const MODULES: &[(&str, Role)] = &[
     ("aethelgard-eda/src/fab.rs", Role::Other),
     ("aethelgard-eda/src/lib.rs", Role::Other),
     ("aethelgard-eda/src/rules.rs", Role::Other),
+    ("aethelgard-eda/src/stack.rs", Role::Other),
     ("aethelgard-cli/src/kicad.rs", Role::Gate),
     ("aethelgard-cli/src/extract.rs", Role::Gate),
     ("aethelgard-cli/src/verify.rs", Role::Gate),

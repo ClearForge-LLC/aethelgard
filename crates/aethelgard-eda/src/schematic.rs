@@ -407,7 +407,7 @@ pub fn emit(
     Ok(Emission {
         schematic: write_sheet(&spec.project_name, &parts, &rails)?,
         bom: crate::bom::write(&parts.iter().map(BomRow::from).collect::<Vec<_>>()),
-        board: crate::pcb::write(&spec.project_name, &parts)?,
+        board: crate::pcb::write(&spec.project_name, &parts, &crate::stack::Stack::of(spec))?,
     })
 }
 

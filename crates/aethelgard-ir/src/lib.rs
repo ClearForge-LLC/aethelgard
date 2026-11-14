@@ -10,6 +10,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod board;
 pub mod electrical;
 pub mod parts;
 mod solve;
@@ -23,7 +24,12 @@ use serde::de::value::MapAccessDeserializer;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// The top-level specification, version 1 (`RUL-14`). Arrays keep the order a
+/// The specification's schema version (`RUL-14`). Version 2 added `board`
+/// (`AET-WO-4100`); a version-1 file is refused by name, and nothing supplies a
+/// board for it.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 2;
+
+/// The top-level specification, version 2 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
@@ -42,6 +48,8 @@ pub struct Specification {
     /// [`Specification::declared_spi_devices`].
     spi_devices: Vec<SpiDevice>,
     pub net_constraints: Vec<NetConstraint>,
+    /// The copper layers, the stackup and the design rules (`board`).
+    pub board: board::Board,
 }
 
 /// The microcontroller: a part name and the domain that supplies it.
@@ -275,6 +283,7 @@ macro_rules! object_only {
         }
     )*};
 }
+pub(crate) use object_only;
 
 object_only!(
     Specification,
@@ -410,6 +419,36 @@ impl PinTable {
 pub enum IrValidationError {
     #[error("schema_version is {version}, not {expected}")]
     UnsupportedSchemaVersion { version: u32, expected: u32 },
+    #[error("board.copper_layers is {value}; this engine builds 2 or 4 copper layers")]
+    UnsupportedLayerCount { value: u8 },
+    #[error("`{path}`: {rule}")]
+    LayerTable { path: String, rule: &'static str },
+    #[error("`{path}`: {rule}")]
+    LayerRole { path: String, rule: &'static str },
+    #[error("plane net `{id}` is not `GND` or a declared voltage domain")]
+    PlaneNet { id: String },
+    #[error("board.layers: {rule}")]
+    PlaneLayout { rule: &'static str },
+    #[error("`{path}`: {rule}")]
+    DielectricTable { path: String, rule: &'static str },
+    #[error("board.stackup.finished_thickness_um: {rule}")]
+    FinishedThickness { rule: &'static str },
+    #[error("`{path}`: {rule}")]
+    StackupValue { path: String, rule: &'static str },
+    #[error("`{path}` is not a source: 1 to 200 bytes of printable ASCII, no space at either end")]
+    InvalidSource { path: String },
+    #[error("`{path}` is {value} um, below the engine floor of {floor} um")]
+    RuleBelowFloor {
+        path: String,
+        value: u32,
+        floor: u32,
+    },
+    #[error("`{path}` is {value} um; this engine builds only {required} um vias")]
+    UnsupportedViaRule {
+        path: String,
+        value: u32,
+        required: u32,
+    },
     #[error("`{path}` is not an identifier: {rule}")]
     InvalidIdentifier { path: String, rule: &'static str },
     #[error("voltage_domains is empty")]
@@ -521,6 +560,17 @@ impl IrValidationError {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::UnsupportedSchemaVersion { .. } => "UnsupportedSchemaVersion",
+            Self::UnsupportedLayerCount { .. } => "UnsupportedLayerCount",
+            Self::LayerTable { .. } => "LayerTable",
+            Self::LayerRole { .. } => "LayerRole",
+            Self::PlaneNet { .. } => "PlaneNet",
+            Self::PlaneLayout { .. } => "PlaneLayout",
+            Self::DielectricTable { .. } => "DielectricTable",
+            Self::FinishedThickness { .. } => "FinishedThickness",
+            Self::StackupValue { .. } => "StackupValue",
+            Self::InvalidSource { .. } => "InvalidSource",
+            Self::RuleBelowFloor { .. } => "RuleBelowFloor",
+            Self::UnsupportedViaRule { .. } => "UnsupportedViaRule",
             Self::InvalidIdentifier { .. } => "InvalidIdentifier",
             Self::NoVoltageDomain => "NoVoltageDomain",
             Self::DuplicateDomainId { .. } => "DuplicateDomainId",
@@ -567,9 +617,20 @@ impl IrValidationError {
     pub fn id(&self) -> Option<&str> {
         match self {
             Self::UnsupportedSchemaVersion { .. }
+            | Self::UnsupportedLayerCount { .. }
+            | Self::LayerTable { .. }
+            | Self::LayerRole { .. }
+            | Self::PlaneLayout { .. }
+            | Self::DielectricTable { .. }
+            | Self::FinishedThickness { .. }
+            | Self::StackupValue { .. }
+            | Self::InvalidSource { .. }
+            | Self::RuleBelowFloor { .. }
+            | Self::UnsupportedViaRule { .. }
             | Self::InvalidIdentifier { .. }
             | Self::NoVoltageDomain
             | Self::MalformedSpecificationHash => None,
+            Self::PlaneNet { id } => Some(id),
             Self::DuplicateDomainId { id }
             | Self::ZeroNominalVoltage { id }
             | Self::ToleranceOutOfRange { id, .. }
@@ -611,7 +672,14 @@ impl IrValidationError {
     /// `i2c_buses[0].sda.net`.
     pub fn path(&self) -> Option<&str> {
         match self {
-            Self::InvalidIdentifier { path, .. } => Some(path),
+            Self::InvalidIdentifier { path, .. }
+            | Self::LayerTable { path, .. }
+            | Self::LayerRole { path, .. }
+            | Self::DielectricTable { path, .. }
+            | Self::StackupValue { path, .. }
+            | Self::InvalidSource { path }
+            | Self::RuleBelowFloor { path, .. }
+            | Self::UnsupportedViaRule { path, .. } => Some(path),
             _ => None,
         }
     }
@@ -857,10 +925,10 @@ impl Specification {
         use IrValidationError as E;
 
         // 1
-        if self.schema_version != 1 {
+        if self.schema_version != SPECIFICATION_SCHEMA_VERSION {
             return Err(E::UnsupportedSchemaVersion {
                 version: self.schema_version,
-                expected: 1,
+                expected: SPECIFICATION_SCHEMA_VERSION,
             });
         }
         // 2
@@ -1073,7 +1141,8 @@ impl Specification {
                 return Err(E::ZeroImpedance { id: id.clone() });
             }
         }
-        Ok(())
+        // 13
+        self.board.validate(&domains)
     }
 
     /// Step 2, in the order the README lists.
@@ -1124,6 +1193,9 @@ impl Specification {
         }
         for (i, net) in self.net_constraints.iter().enumerate() {
             plain(&net.net_name, || format!("net_constraints[{i}].net_name"))?;
+        }
+        for (i, layer) in self.board.layers.iter().enumerate() {
+            optional_identifier(&layer.net, || format!("board.layers[{i}].net"))?;
         }
         Ok(())
     }
