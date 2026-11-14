@@ -69,15 +69,15 @@ fn digests() -> Vec<(&'static str, String)> {
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "bd4e06afea31d18fd46e29503fd0076ea679cc246ae5aea636ff8755266dc5f1",
+        "7079aa52809a6454755e4c0d24e9123f84f3a625affd1d67ec09d9b4e95d7140",
     ),
     (
         "platform",
-        "0b39d4aa8dcb25de02663eb4364e195b4a0de2efb736ebb92b84f65e9c0e56d2",
+        "b777f4e58ca8965cb5f6749a78c452fee8a270310323e661b298af97737b38ba",
     ),
     (
         "platform faulted",
-        "2ccc0e8d5a63073ebf96e75f7a7955887b03a123fc0e05757ba178b48af6c75b",
+        "82de00377b834812cb53ca737febf0f07ce0d670002490e624e36877c6dc84bc",
     ),
     (
         "boot image",

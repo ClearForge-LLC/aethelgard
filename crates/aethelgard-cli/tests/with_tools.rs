@@ -593,7 +593,7 @@ fn a_board_whose_own_files_are_looser_is_judged_by_the_gate() {
     fs::write(t.0.join("loose.kicad_dru"), loose.custom_rules()).unwrap();
     let spec = example_spec("sentinel-01-minimal.json");
     for (args, rules) in [
-        (vec!["--spec", spec.to_str().unwrap()], "engine-floor"),
+        (vec!["--spec", spec.to_str().unwrap()], "specification"),
         (vec![], "kicad-default"),
     ] {
         let mut all = vec!["check", "drc", "--board", board.to_str().unwrap()];
@@ -742,7 +742,7 @@ fn drc_parity(board: &Path, sch: &Path, spec: &Path) -> Value {
     );
     let v = verdict(&out, code);
     assert_judged(&v, "drc", "kicad-cli", "10.0.7");
-    assert_eq!(v["rules"], "engine-floor", "{v}");
+    assert_eq!(v["rules"], "specification", "{v}");
     v
 }
 
@@ -838,6 +838,10 @@ fn p1_gate_clause_1_the_reference_board_passes_erc_and_drc_with_no_finding() {
         // routing its pads again, which lays the same copper.
         let (pads, routed) = aethelgard_eda::route::read(
             &aethelgard_eda::strict::board(&fs::read_to_string(&board).unwrap()).unwrap(),
+            &aethelgard_eda::stack::Stack::of(
+                &serde_json::from_slice::<aethelgard_ir::Specification>(&fs::read(&spec).unwrap())
+                    .unwrap(),
+            ),
         )
         .unwrap();
         let again = aethelgard_eda::route::route(&pads).unwrap();

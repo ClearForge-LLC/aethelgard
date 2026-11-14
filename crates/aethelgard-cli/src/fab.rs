@@ -811,7 +811,10 @@ mod tests {
 
     #[test]
     fn the_notes_describe_every_file_and_the_package_names_them_after_the_project() {
-        let d = describe("p");
+        let spec: aethelgard_ir::Specification =
+            serde_json::from_str(include_str!("../../../examples/sentinel-01-minimal.json"))
+                .unwrap();
+        let d = describe("p", &gerbers(&aethelgard_eda::stack::Stack::of(&spec)));
         assert_eq!(d.len(), LAYERS.len() + 4);
         assert!(
             d.iter()
