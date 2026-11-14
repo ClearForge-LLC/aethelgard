@@ -1419,6 +1419,25 @@ fn read_spec(file: Option<&Path>) -> Result<(Specification, String), (Refusal, u
 /// Parses and validates one `Specification` from bytes already read under the
 /// cap, as `read_spec` does.
 fn parse_spec(input: &[u8]) -> Result<(Specification, String), (Refusal, u8)> {
+    // A specification of another version is refused by name before its shape
+    // is judged: a version-1 file has no `board`, and nothing supplies one
+    // (`AET-WO-4100`, `RUL-14`).
+    #[derive(serde::Deserialize)]
+    struct Version {
+        schema_version: u32,
+    }
+    if let Ok(Version { schema_version }) = serde_json::from_slice::<Version>(input)
+        && schema_version != aethelgard_ir::SPECIFICATION_SCHEMA_VERSION
+    {
+        let err = aethelgard_ir::IrValidationError::UnsupportedSchemaVersion {
+            version: schema_version,
+            expected: aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
+        };
+        return Err((
+            Refusal::new(err.kind(), err.id(), err.to_string()),
+            EXIT_INVALID_SPEC,
+        ));
+    }
     // Well-formed JSON of the wrong shape is an invalid specification;
     // anything that is not one JSON document is unreadable input.
     let spec: Specification = serde_json::from_slice(input).map_err(|err| {

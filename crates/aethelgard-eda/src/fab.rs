@@ -1,14 +1,15 @@
 //! The text of a fabrication package's `FAB-NOTES.md` (`AET-WO-3300` §1.2).
 //!
-//! Every number comes from the constant it states: the stackup and the
-//! conditions from [`crate::extract`], the rule minima from [`crate::route`].
-//! The text claims what the package's verdict shows and nothing beyond it
-//! (`RUL-19`).
+//! Every number comes from the specification's declared board
+//! ([`crate::stack::Stack`], `AET-WO-4100`): the layers, the stackup and its
+//! sources, the rule minima, and the conditions as [`crate::extract`] states
+//! them. At 2 layers the words are `AET-WO-3300`'s, so the reference's notes
+//! are unchanged (ruled D5). The text claims what the package's verdict shows
+//! and nothing beyond it (`RUL-19`).
 
-use crate::extract::{
-    BOARD_THICKNESS_NM, CONDITIONS, COPPER_NM, EPS_R_DEN, EPS_R_NUM, VIA_HEIGHT_NM,
-};
-use crate::route::{CLEARANCE_NM, DRILL_NM, VIA_NM, WIDTH_NM};
+use crate::extract::{conditions, permille};
+use crate::route::{DRILL_NM, VIA_NM};
+use crate::stack::Stack;
 
 /// What the notes name that the board does not carry.
 pub struct Notes<'a> {
@@ -19,11 +20,9 @@ pub struct Notes<'a> {
     pub kicad_version: &'a str,
     /// Every other file of the package, in order, with what it is.
     pub files: &'a [(String, &'a str)],
+    /// The board the specification declares.
+    pub stack: &'a Stack,
 }
-
-/// The finished board's minimum: both copper layers at their maximum and the
-/// dielectric between them no thinner than one clearance (`extract`).
-pub const MIN_FINISHED_NM: i64 = 2 * COPPER_NM + CLEARANCE_NM;
 
 /// `nm` in millimetres, with no trailing zeros: 1_600_000 is `1.6`.
 fn mm(nm: i64) -> String {
@@ -40,13 +39,16 @@ fn mm(nm: i64) -> String {
 /// `FAB-NOTES.md`, byte-identical for the same `notes`.
 pub fn notes(n: &Notes<'_>) -> String {
     let kicad = n.kicad_version;
-    let um = COPPER_NM / 1000;
-    let eps = format!("{}.{}", EPS_R_NUM / EPS_R_DEN, EPS_R_NUM % EPS_R_DEN);
+    let st = n.stack;
+    let um = st.copper_max_nm / 1000;
+    let eps = permille(st.permittivity_permille);
+    let eps_source = &st.permittivity_source;
+    let stackup = stackup(st);
     let mut files = String::new();
     for (name, what) in n.files {
         files.push_str(&format!("- `{name}`: {what}\n"));
     }
-    let conditions: String = CONDITIONS.iter().map(|c| format!("- {c}\n")).collect();
+    let conditions: String = conditions(st).iter().map(|c| format!("- {c}\n")).collect();
     format!(
         "# Fabrication notes: {project}
 
@@ -83,9 +85,8 @@ Gerber job file is not included; this file states the stackup.
 
 ## Stackup
 
-- Two copper layers: F.Cu (top) and B.Cu (bottom).
-- Laminate: FR-4, with laminate and solder mask relative permittivity at
-  most {eps} (the IPC-4101 FR-4 maximum, specified at 1 MHz).
+{stackup}- Laminate: FR-4, with laminate and solder mask relative permittivity at
+  most {eps} ({eps_source}).
 - Declared thickness {declared} mm. Finished board from {min} mm to {max} mm thick.
 - Finished copper at most {um} um thick on each layer.
 
@@ -119,14 +120,46 @@ CC-BY-SA 4.0 with a design exception that covers designs made from them.
         project = n.project,
         engine = n.engine_version,
         spec = n.specification_sha256,
-        declared = mm(BOARD_THICKNESS_NM),
-        min = mm(MIN_FINISHED_NM),
-        max = mm(VIA_HEIGHT_NM),
+        declared = mm(st.thickness.nominal_nm),
+        min = mm(st.thickness.min_nm),
+        max = mm(st.thickness.max_nm),
         drill = mm(DRILL_NM),
         via = mm(VIA_NM),
-        track = mm(WIDTH_NM),
-        space = mm(CLEARANCE_NM),
+        track = mm(st.width_nm),
+        space = mm(st.clearance_nm),
     )
+}
+
+/// The layer lines of the stackup section. At 2 layers, `AET-WO-3300`'s one
+/// line. At 4, the layer order with each plane's net, every dielectric's
+/// minimum with its source, the thickness's and copper's sources, and the
+/// rounding rule (ruled D2): a fabricator builds from these.
+fn stackup(st: &Stack) -> String {
+    if !st.has_planes() {
+        return "- Two copper layers: F.Cu (top) and B.Cu (bottom).\n".to_owned();
+    }
+    let mut out = format!(
+        "- {} copper layers, top to bottom, joined only by through vias:\n",
+        st.layers()
+    );
+    for layer in &st.copper {
+        match st.plane_of_layer(layer) {
+            Some(net) => out.push_str(&format!("  - {layer}: plane, net {net}\n")),
+            None => out.push_str(&format!("  - {layer}: signal\n")),
+        }
+    }
+    out.push_str("- Each dielectric at least:\n");
+    for (a, b, min, source) in &st.dielectrics {
+        out.push_str(&format!("  - {a} to {b}: {} mm ({source})\n", mm(*min)));
+    }
+    out.push_str(&format!(
+        "- Thickness source: {}. Copper source: {}.\n",
+        st.thickness.source, st.copper_source
+    ));
+    out.push_str(
+        "- Every minimum here is its source's value less its published tolerance, rounded down; every maximum, rounded up.\n",
+    );
+    out
 }
 
 #[cfg(test)]
@@ -134,6 +167,10 @@ mod tests {
     use super::*;
 
     fn sample() -> String {
+        sample_on(&crate::stack::reference())
+    }
+
+    fn sample_on(stack: &Stack) -> String {
         let files = [("p-F_Cu.gtl".to_owned(), "F.Cu")];
         notes(&Notes {
             project: "p",
@@ -141,6 +178,7 @@ mod tests {
             specification_sha256: "ab",
             kicad_version: "10.0.7",
             files: &files,
+            stack,
         })
     }
 
@@ -172,7 +210,7 @@ mod tests {
         ] {
             assert!(text.contains(want), "missing {want:?}");
         }
-        for c in CONDITIONS {
+        for c in conditions(&crate::stack::reference()) {
             assert!(text.contains(&format!("- {c}\n")), "{c}");
         }
         assert_eq!(text, sample());

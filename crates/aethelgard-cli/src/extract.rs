@@ -9,7 +9,7 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use aethelgard_eda::extract::{self as bound, CONDITIONS, LineBound};
+use aethelgard_eda::extract::{self as bound, LineBound};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -29,7 +29,7 @@ struct Report {
     input: InputReport,
     specification_sha256: String,
     capacitance: &'static str,
-    conditions: &'static [&'static str],
+    conditions: Vec<String>,
     lines: Vec<Value>,
     findings: Vec<Finding>,
 }
@@ -84,7 +84,8 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         Ok(l) => l,
         Err(r) => return refuse(r.kind, r.message, EXIT_INVALID_SPEC),
     };
-    let lines = match bound::read(text).and_then(|read| bound::bound(&read, &wanted)) {
+    let stack = aethelgard_eda::stack::Stack::of(&spec);
+    let lines = match bound::read(text, &stack).and_then(|read| bound::bound(&read, &wanted)) {
         Ok(l) => l,
         Err(r) => {
             return crate::emit(
@@ -135,7 +136,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         },
         specification_sha256: spec_sha256,
         capacitance: CAPACITANCE,
-        conditions: CONDITIONS,
+        conditions: bound::conditions(&stack),
         lines: out,
         findings,
     };

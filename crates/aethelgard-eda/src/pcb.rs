@@ -760,12 +760,32 @@ fn layout(parts: &[Part]) -> Result<Layout, EmitError> {
     layout_of(&items(parts)?)
 }
 
-/// The `.kicad_pcb` text for `parts`.
-pub(crate) fn write(project: &str, parts: &[Part]) -> Result<String, EmitError> {
+/// KiCad 10.0.7's id for each inner copper layer this engine writes
+/// (measured, `AET-WO-4100` S1): `In1.Cu` 4, `In2.Cu` 6. Its rows follow
+/// `F.Cu` and precede `B.Cu`, as KiCad saves them.
+const INNER: [(&str, &str); 2] = [("4", "In1.Cu"), ("6", "In2.Cu")];
+
+/// The `.kicad_pcb` text for `parts`, on the board `stack` declares.
+pub(crate) fn write(
+    project: &str,
+    parts: &[Part],
+    stack: &crate::stack::Stack,
+) -> Result<String, EmitError> {
     let items = items(parts)?;
     let layout = layout_of(&items)?;
     let mut layers = vec![Sx::atom("layers")];
     for (id, name, kind, user) in LAYERS {
+        if name == "B.Cu" {
+            for (inner_id, inner) in INNER {
+                if stack.copper.iter().any(|c| c == inner) {
+                    layers.push(Sx::List(vec![
+                        Sx::atom(inner_id),
+                        Sx::str(inner),
+                        Sx::atom("signal"),
+                    ]));
+                }
+            }
+        }
         let mut l = vec![Sx::atom(id), Sx::str(name), Sx::atom(kind)];
         if let Some(u) = user {
             l.push(Sx::str(u));
@@ -782,7 +802,7 @@ pub(crate) fn write(project: &str, parts: &[Part]) -> Result<String, EmitError> 
         ]),
         Sx::List(vec![
             Sx::atom("general"),
-            Sx::node("thickness", &["1.6"]),
+            Sx::node("thickness", &[&mm(stack.thickness.nominal_nm)]),
             Sx::node("legacy_teardrops", &["no"]),
         ]),
         Sx::List(vec![Sx::atom("paper"), Sx::str("A4")]),
@@ -798,7 +818,11 @@ pub(crate) fn write(project: &str, parts: &[Part]) -> Result<String, EmitError> 
         out.push(fp);
     }
     let o = layout.outline;
-    let board = route::Board { outline: o, parts };
+    let board = route::Board {
+        outline: o,
+        parts,
+        stack: stack.clone(),
+    };
     let routed = route::route(&board).map_err(|e| match e.net.is_empty() {
         true => EmitError::BoardUnroutable(e.why),
         false => EmitError::Unroutable {
@@ -819,7 +843,7 @@ pub(crate) fn write(project: &str, parts: &[Part]) -> Result<String, EmitError> 
         Sx::List(vec![Sx::atom("layer"), Sx::str("Edge.Cuts")]),
         uuid_sx(&format!("{project}/outline")),
     ]));
-    out.extend(copper(project, &routed, o));
+    out.extend(copper(project, &routed, o, stack.width_nm));
     out.push(Sx::node("embedded_fonts", &["no"]));
     Ok(sexpr::write(&Sx::List(out)))
 }
@@ -828,7 +852,7 @@ pub(crate) fn write(project: &str, parts: &[Part]) -> Result<String, EmitError> 
 /// keyed by its content. A zone's outline is the board's; it carries no
 /// `connect_pads` clearance, which the gate refuses (`AET-WO-1300` B2), and
 /// no fill, which the gate's `--refill-zones` computes.
-fn copper(project: &str, routed: &route::Routed, o: Rect) -> Vec<Sx> {
+fn copper(project: &str, routed: &route::Routed, o: Rect, width_nm: i64) -> Vec<Sx> {
     let net = |n: &str| Sx::List(vec![Sx::atom("net"), Sx::str(n)]);
     let layer = |l: route::Layer| Sx::List(vec![Sx::atom("layer"), Sx::str(l.name())]);
     let mut out = Vec::new();
@@ -837,7 +861,7 @@ fn copper(project: &str, routed: &route::Routed, o: Rect) -> Vec<Sx> {
             Sx::atom("segment"),
             at_sx("start", s.start),
             at_sx("end", s.end),
-            Sx::node("width", &[&mm(route::WIDTH_NM)]),
+            Sx::node("width", &[&mm(width_nm)]),
             layer(s.layer),
             net(&s.net),
             uuid_sx(&format!(
@@ -867,8 +891,8 @@ fn copper(project: &str, routed: &route::Routed, o: Rect) -> Vec<Sx> {
         out.push(Sx::List(vec![
             Sx::atom("zone"),
             net(n),
-            layer(*l),
-            uuid_sx(&format!("{project}/zone/{n}/{}", l.name())),
+            Sx::List(vec![Sx::atom("layer"), Sx::str(l)]),
+            uuid_sx(&format!("{project}/zone/{n}/{l}")),
             Sx::node("hatch", &["edge", "0.5"]),
             Sx::node("min_thickness", &[&mm(route::MIN_THICKNESS_NM)]),
             Sx::node("filled_areas_thickness", &["no"]),
@@ -1047,10 +1071,13 @@ mod tests {
                 &[("1", net("A"))],
             ),
         ];
-        let forward = write("p", &parts).unwrap();
+        let forward = write("p", &parts, &crate::stack::reference()).unwrap();
         let mut reversed = parts.clone();
         reversed.reverse();
-        assert_eq!(forward, write("p", &reversed).unwrap());
+        assert_eq!(
+            forward,
+            write("p", &reversed, &crate::stack::reference()).unwrap()
+        );
         assert!(forward.starts_with("(kicad_pcb\n\t(version 20260206)"));
     }
 
@@ -1168,7 +1195,12 @@ mod tests {
                 ],
             )
         };
-        let board = write("p", &[mcu(&[("34", net("SDA"))]), bme("U2"), bme("U3")]).unwrap();
+        let board = write(
+            "p",
+            &[mcu(&[("34", net("SDA"))]), bme("U2"), bme("U3")],
+            &crate::stack::reference(),
+        )
+        .unwrap();
         let uuids: Vec<&str> = board
             .match_indices("(uuid \"")
             .map(|(i, m)| &board[i + m.len()..i + m.len() + 36])

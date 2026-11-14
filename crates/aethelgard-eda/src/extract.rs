@@ -15,17 +15,48 @@
 //!
 //! **The trial.** For each convex piece of the line's copper (a track, a
 //! via, a pad), `ψ = max(0, 1 − d/S)`, with `d` the distance to the piece
-//! and `S` = [`CLEARANCE_NM`]. `|∇ψ| = 1/S` in the shell `0 < d < S` and 0
-//! elsewhere, so `C_piece ≤ ε_max · V_shell / S²`. `ψ` is 0 on every foreign
-//! conductor, because each one is at least `S` from the piece:
+//! and `S` the specification's declared clearance. `|∇ψ| = 1/S` in the shell
+//! `0 < d < S` and 0 elsewhere, so `C_piece ≤ ε_max · V_shell / S²`. `ψ` is 0
+//! on every foreign conductor, because each one is at least `S` from the
+//! piece:
 //! - on the same copper layer, by [`route::check`], which `read` runs on
 //!   exactly the shapes used here (a track's stadium, a via's disk, a pad's
 //!   box);
-//! - on the other layer, across a dielectric thicker than `S` (asserted);
+//! - on the next copper layer, across a dielectric whose declared minimum
+//!   `h` is at least `S`; when it is less, the cap below applies;
 //! - in the dielectric, where the only conductors are via barrels inside
 //!   their checked disks;
-//! - in the ground zone's fill, which keeps the board's clearance (the DRC
-//!   gate refills and judges it).
+//! - in a zone's or plane's fill, which keeps the board's clearance from
+//!   the line's vias (the DRC gate refills and judges it).
+//!
+//! **The cap, for an outer piece over a dielectric thinner than `S`**
+//! (`AET-WO-4100` S4, ruled on PR #120). A piece is a prism: a convex base
+//! `B` (area `A`, perimeter `p`), height `c`, bottom face at `z = 0`, the
+//! dielectric below, and the next copper layer, plane or signal, no nearer
+//! than `h < S` (the declared minimum of that dielectric). Take
+//! `ρ = d/S` for `z ≥ 0` (today's trial) and `ρ = √((d_B/S)² + (z/h)²)` for
+//! `z < 0`, with `d_B` the planar distance to `B`, and `ψ = max(0, 1 − ρ)`:
+//! 1. `ψ = 1` on the piece;
+//! 2. `ψ` is continuous (at `z = 0` both forms are `d_B/S`) and Lipschitz;
+//! 3. below, `z² < h²(1 − d_B²/S²) ≤ S² − d_B²`, so the support lies inside
+//!    today's `S`-shell, and every conductor that argument excludes stays
+//!    excluded;
+//! 4. below, the support ends at `|z| < h`, so `ψ` is 0 on the next copper
+//!    layer, whatever it carries.
+//!
+//! Above and beside, the energy is today's. Below, directly under `B`,
+//! `|∇ρ|² = 1/h²` over `A·h`; beyond it, at `d_B = s` (area `(p + 2πs) ds`,
+//! Steiner), with `s = Su`, `|z| = hv` and polar `(u, v) = r(cos θ, sin θ)`,
+//! `|∇ρ|² = cos²θ/S² + sin²θ/h²`. Integrating:
+//!
+//! `lower(A, p, h) = A/h + πph/(8S) + πpS/(8h) + 4πh/9 + 2πS²/(9h)`,
+//!
+//! which at `h = S` is today's bottom end cap `A/S + πp/4 + 2πS/3`, term by
+//! term. So the bound is today's shell plus `S²·(lower(h) − lower(S))`
+//! ([`cap`]), an exact rational that is 0 at `h = S`. **When the declared
+//! minimum is at least `S`, today's integer path runs unchanged** (ruled
+//! D5). Checked against a quadrature of the same `ψ`, the exact
+//! zero-thickness stripline (Cohn), and the identity at `h = S` (tests).
 //!
 //! The line is the union of its pieces, and `max(ψ_a, ψ_b)` is a trial for
 //! the union whose energy is at most the sum, so the line's bound is the
@@ -53,9 +84,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use aethelgard_ir::{PinTable, SolvedTopology, Specification};
 
 use crate::pcb::escape;
-use crate::route::{self, Board, CLEARANCE_NM, DRILL_NM, Routed, VIA_NM, WIDTH_NM};
+use crate::route::{self, Board, DRILL_NM, Routed, VIA_NM};
 use crate::schematic::Conn;
 use crate::sexpr;
+use crate::stack::Stack;
 use crate::strict::{self, Node};
 
 /// π from above: 355/113 = 3.14159292… > π.
@@ -69,30 +101,66 @@ pub const PI_DEN: u128 = 113;
 pub const EPS0_NUM: u128 = 88_541_878_202;
 pub const EPS0_DEN: u128 = 10_000_000_000_000_000;
 
-/// The relative permittivity bound: 5.4, the IPC-4101 maximum for FR-4 at
-/// 1 MHz, as quoted in the "IPC Specification" column of Panasonic's
-/// R-1566W data sheet (IPC-4101E /127: "Permittivity, maximum at 1MHz
-/// 5,4") and Bungard's FR4 data sheet (IPC 4101A: "Permittivity, spec
-/// maximum, A. @ 1 MHz 5.4"). Air (1), solder mask and every typical FR-4
-/// value lie below it, and `C` cannot fall when `ε` rises anywhere, so one
-/// bound covers the board and the air around it. A part's body (a ceramic
-/// resistor's, near 10) is not covered: part bodies are outside the scope
-/// ([`CONDITIONS`]). The maximum is specified at 1 MHz; IPC gives none
-/// below it.
-pub const EPS_R_NUM: u128 = 54;
-pub const EPS_R_DEN: u128 = 10;
+/// The bound's physical inputs, from the specification's declared board
+/// (`AET-WO-4100`, ruled D2 and D5). Each is a bound with a source, and
+/// [`conditions`] states them:
+/// - `S`, the declared clearance;
+/// - `W`, the declared track width;
+/// - `c`, the finished copper's maximum (`AET-WO-1305`: 70 µm on the
+///   reference);
+/// - `ε_r`, the laminate's and mask's relative permittivity maximum, as a
+///   reduced fraction (`C` cannot fall when `ε` rises anywhere, so one bound
+///   covers the board and the air around it; part bodies are outside the
+///   scope);
+/// - a via's height: the declared maximum finished thickness. The barrel
+///   and both pads lie within the finished board, so the maximum bounds it
+///   and no margin is added (`AET-WO-1305` added a quarter to a 1.6 mm board
+///   that declared no maximum; the reference now declares 2.0 mm, the same
+///   height);
+/// - `h_top` and `h_bottom`: the declared minimum of the dielectric under
+///   `F.Cu` and over `B.Cu`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Physics {
+    s: u128,
+    w: u128,
+    c: u128,
+    er_num: u128,
+    er_den: u128,
+    via_h: u128,
+    h_top: u128,
+    h_bottom: u128,
+}
 
-/// The board's declared thickness, as the generator writes it (`pcb`,
-/// `(general (thickness 1.6))`). `read` refuses a board declaring another.
-pub const BOARD_THICKNESS_NM: i64 = 1_600_000;
+impl Physics {
+    pub fn of(stack: &Stack) -> Physics {
+        let u = |v: i64| u128::try_from(v).unwrap_or(0);
+        let (top, bottom) = stack.outer_dielectrics_nm();
+        let num = u128::from(stack.permittivity_permille);
+        let g = gcd(num, 1000);
+        Physics {
+            s: u(stack.clearance_nm),
+            w: u(stack.width_nm),
+            c: u(stack.copper_max_nm),
+            er_num: num / g,
+            er_den: 1000 / g,
+            via_h: u(stack.thickness.max_nm),
+            h_top: u(top),
+            h_bottom: u(bottom),
+        }
+    }
 
-/// A via's copper height, bounded: the declared thickness plus a quarter,
-/// for fabrication tolerance (a condition, [`CONDITIONS`]).
-pub const VIA_HEIGHT_NM: i64 = BOARD_THICKNESS_NM + BOARD_THICKNESS_NM / 4;
+    /// The dielectric's minimum under a piece on `layer`.
+    fn h(&self, layer: route::Layer) -> u128 {
+        match layer {
+            route::Layer::F => self.h_top,
+            route::Layer::B => self.h_bottom,
+        }
+    }
+}
 
-/// Finished outer copper, bounded: 70 µm (2 oz), twice KiCad's default
-/// 35 µm. The board declares no copper weight, so this is a condition.
-pub const COPPER_NM: i64 = 70_000;
+const fn gcd(a: u128, b: u128) -> u128 {
+    if b == 0 { a } else { gcd(b, a % b) }
+}
 
 /// UM10204 rev. 7.0 (1 October 2021), Table 10 "Characteristics of the SDA
 /// and SCL I/O stages", page 43: `Ci`, "capacitance for each I/O pin",
@@ -101,23 +169,66 @@ pub const COPPER_NM: i64 = 70_000;
 /// exceed this capacitance because they connect multiple paths together."
 pub const PIN_FF: u64 = 10_000;
 
-/// What the bound assumes of the fabricated board and its parts.
-pub const CONDITIONS: &[&str] = &[
-    "scope: the bare board's copper and each I2C pin's Ci; part bodies, solder and terminations above the pads are not included",
-    "laminate and solder mask relative permittivity at most 5.4 (the IPC-4101 FR-4 maximum, specified at 1 MHz)",
-    "finished copper at most 70 um thick; finished board from 0.34 mm to 2.0 mm thick",
-    "zone fill keeps the board's clearance (the DRC gate refills and judges it)",
-    "every I2C pin at most UM10204's Ci of 10 pF; no multiplexer or switch on the line",
-    "neighbouring nets are static while the line rises",
-];
+/// `nm` in millimetres, at least one decimal: `2_000_000` is `2.0`.
+fn mm1(nm: i64) -> String {
+    let s = crate::sexpr::mm(nm);
+    if s.contains('.') { s } else { format!("{s}.0") }
+}
 
-/// The shell's half-width: every foreign conductor is at least this far.
-const S: u128 = CLEARANCE_NM as u128;
+/// Thousandths as a decimal: `5400` is `5.4`.
+pub fn permille(v: u32) -> String {
+    let frac = format!("{:03}", v % 1000);
+    let frac = frac.trim_end_matches('0');
+    if frac.is_empty() {
+        (v / 1000).to_string()
+    } else {
+        format!("{}.{frac}", v / 1000)
+    }
+}
 
-// The other layer's copper is beyond the shell: the dielectric between the
-// two copper layers is thicker than `S`, at the declared thickness and at
-// the stated minimum (0.34 mm = 2 × 70 µm + 0.2 mm, which leaves exactly `S`).
-const _: () = assert!(BOARD_THICKNESS_NM - 2 * COPPER_NM > CLEARANCE_NM);
+/// What the bound assumes of the fabricated board and its parts, from the
+/// declared stack. At 2 layers the words are `AET-WO-1305`'s, so the
+/// reference's `extract` output and `FAB-NOTES.md` are unchanged (ruled D5):
+/// there the dielectric follows from the finished minimum less both copper
+/// maxima, which `validate` requires. At 4 each dielectric's minimum is
+/// stated as well.
+pub fn conditions(stack: &Stack) -> Vec<String> {
+    let mut out = vec![
+        "scope: the bare board's copper and each I2C pin's Ci; part bodies, solder and terminations above the pads are not included".to_owned(),
+        format!(
+            "laminate and solder mask relative permittivity at most {} ({})",
+            permille(stack.permittivity_permille),
+            stack.permittivity_source
+        ),
+        format!(
+            "finished copper at most {} um thick; finished board from {} mm to {} mm thick",
+            stack.copper_max_nm / 1000,
+            mm1(stack.thickness.min_nm),
+            mm1(stack.thickness.max_nm)
+        ),
+    ];
+    if stack.has_planes() {
+        let each: Vec<String> = stack
+            .dielectrics
+            .iter()
+            .map(|(a, b, min, _)| format!("{a} to {b} {} mm", crate::sexpr::mm(*min)))
+            .collect();
+        out.push(format!(
+            "each dielectric at least its declared minimum: {}",
+            each.join(", ")
+        ));
+    }
+    out.extend(
+        [
+            "zone fill keeps the board's clearance (the DRC gate refills and judges it)",
+            "every I2C pin at most UM10204's Ci of 10 pF; no multiplexer or switch on the line",
+            "neighbouring nets are static while the line rises",
+        ]
+        .map(str::to_owned),
+    );
+    out
+}
+
 // A via's barrel lies inside its checked disk.
 const _: () = assert!(DRILL_NM <= VIA_NM);
 
@@ -209,11 +320,21 @@ pub const fn shell(base: Base, c: u128, s: u128) -> Option<u128> {
 
 /// Femtofarads, rounded up, from `D` times a shell's volume in nm³:
 /// `ε0 · ε_r · V / S²`.
-pub const fn femtofarads(volume_d: u128) -> Option<u64> {
-    let Some(a) = mul(volume_d, EPS0_NUM * EPS_R_NUM) else {
+pub const fn femtofarads(ph: &Physics, volume_d: u128) -> Option<u64> {
+    let Some(a) = mul(volume_d, EPS0_NUM) else {
         return None;
     };
-    let den = EPS0_DEN * EPS_R_DEN * D * S * S;
+    let Some(a) = mul(a, ph.er_num) else {
+        return None;
+    };
+    let Some(den) = mul(EPS0_DEN, ph.er_den) else {
+        return None;
+    };
+    let Some(den) = mul(den, D) else { return None };
+    let Some(s2) = mul(ph.s, ph.s) else {
+        return None;
+    };
+    let Some(den) = mul(den, s2) else { return None };
     let ff = a.div_ceil(den);
     if ff > u64::MAX as u128 {
         return None;
@@ -221,40 +342,106 @@ pub const fn femtofarads(volume_d: u128) -> Option<u64> {
     Some(ff as u64)
 }
 
+/// `D · S² · (lower(A, p, h) − lower(A, p, S))`, rounded up, signed: what the
+/// cap adds to today's shell, in the units [`shell`] returns. `area_d` and
+/// `perimeter_d` are `D` times the base's (a [`Base`]); `ends` includes the
+/// two terms that do not grow with a base (`4πh/9`, `2πS²/(9h)`), which a
+/// per-length derivative leaves out. With π = 355/113 and
+/// `T(h) = D·S²·lower(h)`:
+///
+/// `72·113·h·T(h) = 72·113·A_d·S² + 9·355·p_d·h²·S + 9·355·p_d·S³
+///   + ends·(32·355·D·h²·S² + 16·355·D·S⁴)`,
+///
+/// so the difference is `(N(h)·S − N(S)·h) / (72·113·h·S)`, exactly 0 at
+/// `h = S`. `None` on overflow.
+pub fn cap(area_d: u128, perimeter_d: u128, ends: bool, h: u128, s: u128) -> Option<i128> {
+    let n = |h: u128| -> Option<u128> {
+        let s2 = s.checked_mul(s)?;
+        let h2 = h.checked_mul(h)?;
+        let a = (72 * PI_DEN).checked_mul(area_d)?.checked_mul(s2)?;
+        let b = (9 * PI_NUM)
+            .checked_mul(perimeter_d)?
+            .checked_mul(h2)?
+            .checked_mul(s)?;
+        let c = (9 * PI_NUM)
+            .checked_mul(perimeter_d)?
+            .checked_mul(s2)?
+            .checked_mul(s)?;
+        let mut sum = a.checked_add(b)?.checked_add(c)?;
+        if ends {
+            let d1 = (32 * PI_NUM)
+                .checked_mul(D)?
+                .checked_mul(h2)?
+                .checked_mul(s2)?;
+            let d2 = (16 * PI_NUM)
+                .checked_mul(D)?
+                .checked_mul(s2)?
+                .checked_mul(s2)?;
+            sum = sum.checked_add(d1)?.checked_add(d2)?;
+        }
+        Some(sum)
+    };
+    let top = i128::try_from(n(h)?.checked_mul(s)?).ok()?;
+    let bottom = i128::try_from(n(s)?.checked_mul(h)?).ok()?;
+    let num = top.checked_sub(bottom)?;
+    let den = i128::try_from((72 * PI_DEN).checked_mul(h)?.checked_mul(s)?).ok()?;
+    // Rounded up: toward +∞ for either sign.
+    Some(num.div_euclid(den) + i128::from(num.rem_euclid(den) != 0))
+}
+
+/// A piece's shell, `D` times nm³, with the cap when the dielectric below it
+/// is thinner than `S` (else today's shell alone).
+fn capped(ph: &Physics, base: Base, c: u128, h: u128, ends: bool) -> Option<u128> {
+    let v = shell(base, c, ph.s)?;
+    if h >= ph.s {
+        return Some(v);
+    }
+    let extra = cap(base.area, base.perimeter, ends, h, ph.s)?;
+    let total = i128::try_from(v).ok()?.checked_add(extra)?;
+    u128::try_from(total).ok()
+}
+
 /// The per-length bound, femtofarads per millimetre of a track's length,
 /// rounded up: `d/dL` of a track's shell. A track of centre length `L` is
-/// a stadium (`A = L·W + π W²/4`, `p = 2L + π W`), so
-/// `dV/dL = 2·c·S + 2·W·S + π·S²`.
-pub const PER_MM_FF: u64 = {
-    let (c, w) = (COPPER_NM as u128, WIDTH_NM as u128);
-    let per_nm = (2 * c * S + 2 * w * S) * D + S * S * PI_NUM * PI_DEN * 12;
-    femtofarads(per_nm * 1_000_000).expect("the per-length bound fits")
-};
+/// a stadium (`A = L·W + π W²/4`, `p = 2L + πW`), so
+/// `dV/dL = 2·c·S + 2·W·S + π·S²`, plus the cap's `dA/dL = W`, `dp/dL = 2`
+/// terms when the dielectric below is thinner than `S`.
+pub fn per_mm_ff(ph: &Physics, h: u128) -> Option<u64> {
+    let (c, w, s) = (ph.c, ph.w, ph.s);
+    let per_nm = (2 * c * s + 2 * w * s)
+        .checked_mul(D)?
+        .checked_add(s.checked_mul(s)?.checked_mul(PI_NUM * PI_DEN * 12)?)?;
+    let per_nm = if h >= s {
+        per_nm
+    } else {
+        let extra = cap(w.checked_mul(D)?, 2 * D, false, h, s)?;
+        u128::try_from(i128::try_from(per_nm).ok()?.checked_add(extra)?).ok()?
+    };
+    femtofarads(ph, per_nm.checked_mul(1_000_000)?)
+}
 
 /// Each track's two round ends: the shell of a track of length 0, a disk of
-/// diameter `WIDTH_NM`, `COPPER_NM` high.
-pub const SEGMENT_FF: u64 = {
-    let base = Base::disk(WIDTH_NM as u128 / 2).expect("a track's ends fit");
-    let shell = shell(base, COPPER_NM as u128, S).expect("a track's ends fit");
-    femtofarads(shell).expect("a track's ends fit")
-};
+/// diameter `W`, `c` high.
+pub fn segment_ff(ph: &Physics, h: u128) -> Option<u64> {
+    let base = Base::disk(ph.w / 2)?;
+    femtofarads(ph, capped(ph, base, ph.c, h, true)?)
+}
 
-/// One via: its checked disk, diameter `VIA_NM`, through `VIA_HEIGHT_NM`.
-/// The barrel and both pads lie inside it.
-pub const VIA_FF: u64 = {
-    let base = Base::disk(VIA_NM as u128 / 2).expect("a via fits");
-    let shell = shell(base, VIA_HEIGHT_NM as u128, S).expect("a via fits");
-    femtofarads(shell).expect("a via fits")
-};
+/// One via: its checked disk, diameter `VIA_NM`, through the declared
+/// maximum finished thickness. The barrel and both pads lie inside it.
+pub fn via_ff(ph: &Physics) -> Option<u64> {
+    let base = Base::disk(VIA_NM as u128 / 2)?;
+    femtofarads(ph, shell(base, ph.via_h, ph.s)?)
+}
 
-const _: () = assert!(WIDTH_NM % 2 == 0 && VIA_NM % 2 == 0);
+const _: () = assert!(VIA_NM % 2 == 0);
 
 /// One pad's bound: its box (a superset of its copper, and the shape
-/// `route::check` clears), `COPPER_NM` high.
-pub fn pad_ff(rect: crate::pcb::Rect) -> Option<u64> {
+/// `route::check` clears), `c` high, on F.Cu.
+pub fn pad_ff(ph: &Physics, rect: crate::pcb::Rect) -> Option<u64> {
     let w = u128::try_from(rect.x1.checked_sub(rect.x0)?).ok()?;
     let h = u128::try_from(rect.y1.checked_sub(rect.y0)?).ok()?;
-    femtofarads(shell(Base::boxed(w, h)?, COPPER_NM as u128, S)?)
+    femtofarads(ph, capped(ph, Base::boxed(w, h)?, ph.c, ph.h_top, true)?)
 }
 
 /// A refusal: a named kind and a message. No estimate follows one.
@@ -584,14 +771,17 @@ pub struct ReadBoard {
 }
 
 /// Reads a `.kicad_pcb` text and refuses, before any estimate, a board the
-/// bound does not hold for or could misread: unparseable; another
-/// thickness; what the strict reader refuses (`MalformedBoard`); an item,
+/// bound does not hold for or could misread: unparseable; copper layers,
+/// zones or a thickness other than the specification declares
+/// ([`route::declared`]: `LayersDisagree`, `PlanesDisagree`,
+/// `ThicknessDisagrees`); what the strict reader refuses (`MalformedBoard`); an item,
 /// child, headless list, repeated child or value count the bound does not
 /// model; a coordinate beyond [`MAX_COORD_NM`]; copper outside pads,
 /// tracks, vias and the zone; two footprints with one reference; net
 /// labels that disagree with the copper's connections (`route::connectivity`);
-/// or copper closer than [`CLEARANCE_NM`] to another net's (`route::check`).
-pub fn read(text: &str) -> Result<ReadBoard, Refused> {
+/// or copper closer than the declared clearance to another net's
+/// (`route::check`).
+pub fn read(text: &str, stack: &Stack) -> Result<ReadBoard, Refused> {
     let tree = strict::board(text).map_err(malformed)?;
     let board = tree.root();
     let mut once = BTreeSet::new();
@@ -625,22 +815,8 @@ pub fn read(text: &str) -> Result<ReadBoard, Refused> {
             _ => {}
         }
     }
-    let thickness = board
-        .one("general")
-        .and_then(|g| g.map(|g| g.one("thickness")).transpose())
-        .map_err(malformed)?
-        .flatten()
-        .and_then(|t| t.arg(1))
-        .and_then(sexpr::nm);
-    if thickness != Some(BOARD_THICKNESS_NM) {
-        return Err(refused(
-            "BoardThickness",
-            format!(
-                "the board declares thickness {thickness:?} nm; the bound is derived for {BOARD_THICKNESS_NM} nm"
-            ),
-        ));
-    }
-    let (board, routed) = route::read(&tree).map_err(|e| refused("BoardUnreadable", e))?;
+    route::declared(&tree, stack).map_err(|d| refused(d.kind, d.message))?;
+    let (board, routed) = route::read(&tree, stack).map_err(|e| refused("BoardUnreadable", e))?;
     route::connectivity(&board, &routed).map_err(|e| refused("NetLabelsDisagree", e))?;
     route::check(&board, &routed).map_err(|e| refused("ClearanceViolated", e))?;
     Ok(ReadBoard {
@@ -767,6 +943,7 @@ fn overflow(net: &str) -> Refused {
 
 fn line(read: &ReadBoard, want: &Line) -> Result<LineBound, Refused> {
     let (board, routed, net) = (&read.board, &read.routed, want.net.as_str());
+    let ph = Physics::of(&board.stack);
     let board_net = board_net(net);
     let mut on_board: BTreeMap<&str, Vec<&route::Pad>> = BTreeMap::new();
     for part in &board.parts {
@@ -824,7 +1001,7 @@ fn line(read: &ReadBoard, want: &Line) -> Result<LineBound, Refused> {
             pull_ups.push((*reference).to_owned());
         }
         for pad in pads {
-            let ff = pad_ff(pad.rect).ok_or_else(|| overflow(net))?;
+            let ff = pad_ff(&ph, pad.rect).ok_or_else(|| overflow(net))?;
             terms.pads = terms.pads.checked_add(ff).ok_or_else(|| overflow(net))?;
             pad_count += 1;
             if role.pin {
@@ -837,25 +1014,35 @@ fn line(read: &ReadBoard, want: &Line) -> Result<LineBound, Refused> {
         }
     }
 
+    // Per layer, each track's length times its layer's per-length bound,
+    // summed, then rounded up once: at 2 layers both layers' bounds are the
+    // same, so this is today's `⌈length × per-length⌉`.
     let mut length: u128 = 0;
+    let mut weighted: u128 = 0;
     let mut segments = 0u64;
+    let mut ends: u64 = 0;
     for s in routed.segments.iter().filter(|s| s.net == board_net) {
         let d = |a: i64, b: i64| u128::from(a.abs_diff(b));
-        length = length
-            .checked_add(d(s.start.0, s.end.0) + d(s.start.1, s.end.1))
+        let here = d(s.start.0, s.end.0) + d(s.start.1, s.end.1);
+        let h = ph.h(s.layer);
+        let per = per_mm_ff(&ph, h).ok_or_else(|| overflow(net))?;
+        let end = segment_ff(&ph, h).ok_or_else(|| overflow(net))?;
+        length = length.checked_add(here).ok_or_else(|| overflow(net))?;
+        weighted = here
+            .checked_mul(u128::from(per))
+            .and_then(|x| weighted.checked_add(x))
             .ok_or_else(|| overflow(net))?;
+        ends = ends.checked_add(end).ok_or_else(|| overflow(net))?;
         segments += 1;
     }
-    let per_length = length
-        .checked_mul(u128::from(PER_MM_FF))
-        .ok_or_else(|| overflow(net))?
-        .div_ceil(1_000_000);
+    let per_length = weighted.div_ceil(1_000_000);
     terms.trace = u64::try_from(per_length)
         .ok()
-        .and_then(|t| t.checked_add(segments.checked_mul(SEGMENT_FF)?))
+        .and_then(|t| t.checked_add(ends))
         .ok_or_else(|| overflow(net))?;
     let via_count = routed.vias.iter().filter(|v| v.net == board_net).count() as u64;
-    terms.vias = via_count.checked_mul(VIA_FF).ok_or_else(|| overflow(net))?;
+    let via = via_ff(&ph).ok_or_else(|| overflow(net))?;
+    terms.vias = via_count.checked_mul(via).ok_or_else(|| overflow(net))?;
     let total = [terms.trace, terms.vias, terms.pads, terms.pins]
         .into_iter()
         .try_fold(0u64, u64::checked_add)
@@ -891,8 +1078,12 @@ mod tests {
             + 4.0 / 3.0 * PI * s * s * s
     }
 
+    fn reference() -> Physics {
+        Physics::of(&crate::stack::reference())
+    }
+
     fn ff(volume: f64) -> f64 {
-        let s = CLEARANCE_NM as f64;
+        let s = 200_000.0;
         EPS * volume / (s * s)
     }
 
@@ -907,27 +1098,31 @@ mod tests {
         );
     }
 
-    /// §1.4: each derived constant against its formula, and against the
-    /// values the §1.3 measurement used, so a change to a router constant
-    /// re-derives it here and fails loudly.
+    /// §1.4: each derived value against its formula on the reference's
+    /// declared board, and against the values the §1.3 measurement used.
     #[test]
     fn each_constant_is_its_formula_rounded_up() {
-        let (s, c, w) = (CLEARANCE_NM as f64, COPPER_NM as f64, WIDTH_NM as f64);
+        let ph = reference();
+        let h = ph.h_top;
+        let (s, c, w) = (200_000.0, 70_000.0, 200_000.0);
         let per_nm = 2.0 * c * s + 2.0 * w * s + PI * s * s;
-        pinned("PER_MM_FF", PER_MM_FF, ff(per_nm * 1e6));
+        let per_mm = per_mm_ff(&ph, h).unwrap();
+        pinned("per-length", per_mm, ff(per_nm * 1e6));
         let r = w / 2.0;
+        let segment = segment_ff(&ph, h).unwrap();
         pinned(
-            "SEGMENT_FF",
-            SEGMENT_FF,
+            "segment",
+            segment,
             ff(shell_f(PI * r * r, 2.0 * PI * r, c, s)),
         );
         let r = VIA_NM as f64 / 2.0;
+        let via = via_ff(&ph).unwrap();
         pinned(
-            "VIA_FF",
-            VIA_FF,
-            ff(shell_f(PI * r * r, 2.0 * PI * r, VIA_HEIGHT_NM as f64, s)),
+            "via",
+            via,
+            ff(shell_f(PI * r * r, 2.0 * PI * r, 2_000_000.0, s)),
         );
-        for (pw, ph) in [
+        for (pw, phh) in [
             (300_000, 1_475_000),
             (540_000, 640_000),
             (1, 1),
@@ -937,15 +1132,15 @@ mod tests {
                 x0: 7,
                 y0: -3,
                 x1: 7 + pw,
-                y1: -3 + ph,
+                y1: -3 + phh,
             };
-            let (a, p) = ((pw * ph) as f64, 2.0 * (pw + ph) as f64);
-            pinned("pad_ff", pad_ff(rect).unwrap(), ff(shell_f(a, p, c, s)));
+            let (a, p) = ((pw * phh) as f64, 2.0 * (pw + phh) as f64);
+            pinned("pad", pad_ff(&ph, rect).unwrap(), ff(shell_f(a, p, c, s)));
         }
         assert_eq!(
-            (PER_MM_FF, SEGMENT_FF, VIA_FF, PIN_FF),
+            (per_mm, segment, via, PIN_FF),
             (280, 124, 1519, 10_000),
-            "a constant moved: re-measure §1.3 before changing this line"
+            "a value moved: re-measure §1.3 before changing this line"
         );
     }
 
@@ -977,6 +1172,12 @@ mod tests {
         PI / (2.0 * agm(1.0, (1.0 - k * k).sqrt()))
     }
 
+    /// `K(k')` from `k` itself, `π / (2 AGM(1, k))`, so a tiny `k` does not
+    /// lose `k'` to rounding.
+    fn k_prime(k: f64) -> f64 {
+        PI / (2.0 * agm(1.0, k))
+    }
+
     /// The bound dominates the exact solutions it must: a zero-thickness
     /// coplanar strip of width `W` between ground planes at `S` on both
     /// sides, in a medium of `ε_max` everywhere (conformal mapping, exact:
@@ -986,33 +1187,161 @@ mod tests {
     /// the trial bounds them; a bound below either would be a defect.
     #[test]
     fn the_bound_dominates_the_exact_solutions_of_its_class() {
-        let (w, s) = (WIDTH_NM as f64, CLEARANCE_NM as f64);
+        let ph = reference();
+        let (w, s, height) = (200_000.0, 200_000.0, 2_000_000.0);
         let kk = w / (w + 2.0 * s);
         let cpw_per_mm = 4.0 * EPS * k(kk) / k((1.0 - kk * kk).sqrt()) * 1e6;
-        assert!(PER_MM_FF as f64 >= cpw_per_mm, "{cpw_per_mm}");
+        assert!(
+            per_mm_ff(&ph, ph.h_top).unwrap() as f64 >= cpw_per_mm,
+            "{cpw_per_mm}"
+        );
         let r = VIA_NM as f64 / 2.0;
-        let coax = 2.0 * PI * EPS / ((r + s) / r).ln() * VIA_HEIGHT_NM as f64;
-        assert!(VIA_FF as f64 >= coax, "{coax}");
+        let coax = 2.0 * PI * EPS / ((r + s) / r).ln() * height;
+        assert!(via_ff(&ph).unwrap() as f64 >= coax, "{coax}");
         // The side of the via's shell alone already dominates the coax.
-        let side = ff((2.0 * PI * r * s + PI * s * s) * VIA_HEIGHT_NM as f64);
+        let side = ff((2.0 * PI * r * s + PI * s * s) * height);
         assert!(side >= coax, "{side} {coax}");
+    }
+
+    /// `lower(A, p, h)` of the module documentation, per `ε`.
+    fn lower(a: f64, p: f64, h: f64, s: f64) -> f64 {
+        a / h
+            + PI * p * h / (8.0 * s)
+            + PI * p * s / (8.0 * h)
+            + 4.0 * PI * h / 9.0
+            + 2.0 * PI * s * s / (9.0 * h)
+    }
+
+    /// The identity the cap rests on (ruled D5): at `h = S` the cap adds
+    /// exactly nothing, for any base, so the old and new paths give equal
+    /// integers; and `lower(S)` is today's bottom end cap term by term.
+    #[test]
+    fn at_h_equal_s_the_cap_adds_nothing() {
+        for (w, l) in [
+            (1, 1),
+            (200_000, 200_000),
+            (540_000, 640_000),
+            (5_000_000, 3_000_000),
+        ] {
+            let base = Base::boxed(w, l).unwrap();
+            for ends in [false, true] {
+                assert_eq!(
+                    cap(base.area, base.perimeter, ends, 200_000, 200_000),
+                    Some(0)
+                );
+            }
+            let (a, p, s) = ((w * l) as f64, 2.0 * (w + l) as f64, 200_000.0);
+            let today = a / s + PI * p / 4.0 + 2.0 * PI * s / 3.0;
+            assert!((lower(a, p, s, s) - today).abs() < 1e-9 * today);
+        }
+        let ph = reference();
+        let mut at_s = ph;
+        at_s.h_top = 199_999;
+        // Just under `S` the cap path runs, and differs from today's only by
+        // the cap's own few femtofarads per millimetre.
+        let under = per_mm_ff(&at_s, at_s.h_top).unwrap();
+        assert!((280..=281).contains(&under), "{under}");
+    }
+
+    /// The integer cap against its real formula: `D · S² · (lower(h) −
+    /// lower(S))`, rounded up, for bases and depths across the range.
+    #[test]
+    fn the_integer_cap_is_its_formula_rounded_up() {
+        let d = D as f64;
+        for (w, l) in [
+            (200_000, 1_000_000),
+            (540_000, 640_000),
+            (300_000, 1_475_000),
+        ] {
+            let base = Base::boxed(w, l).unwrap();
+            let (a, p, s) = ((w * l) as f64, 2.0 * (w + l) as f64, 200_000.0);
+            for h in [50_000u128, 99_000, 179_000, 199_000] {
+                let hf = h as f64;
+                let want = d * s * s * (lower(a, p, hf, s) - lower(a, p, s, s));
+                let got = cap(base.area, base.perimeter, true, h, 200_000).unwrap() as f64;
+                assert!(
+                    got >= want * (1.0 - 1e-6) && got <= want * (1.0 + 1e-3) + 1.0,
+                    "{h}: {got} {want}"
+                );
+            }
+        }
+    }
+
+    /// The exact case for the cap (`AET-WO-4100` S4): a zero-thickness strip
+    /// midway between two planes `2h` apart, in `ε` everywhere, is exactly
+    /// `4ε K(k')/K(k)`, `k = sech(πW/4h)` (Cohn). The trial with a cap on both
+    /// sides bounds it from above at every depth; the modulus is checked by
+    /// the wide strip's limit `2W/h + 8 ln 2 / π`.
+    #[test]
+    fn the_capped_trial_dominates_the_exact_stripline() {
+        let exact = |w: f64, h: f64| {
+            let x = PI * w / (4.0 * h);
+            let kk = 2.0 * (-x).exp() / (1.0 + (-2.0 * x).exp());
+            4.0 * k_prime(kk) / k(kk)
+        };
+        let wide = exact(4.0, 0.1) - 2.0 * 4.0 / 0.1;
+        assert!((wide - 8.0 * 2f64.ln() / PI).abs() < 1e-6, "{wide}");
+        let s = 0.2;
+        for w in [0.1, 0.2, 0.5, 1.0] {
+            for h in [0.05, 0.075, 0.0994, 0.1, 0.15, 0.179, 0.2] {
+                // Per length: dA/dL = W and dp/dL = 2 in `lower`, both sides.
+                let trial = 2.0 * (w / h + PI * 2.0 * h / (8.0 * s) + PI * 2.0 * s / (8.0 * h));
+                assert!(
+                    trial >= exact(w, h),
+                    "W {w} h {h}: {trial} < {}",
+                    exact(w, h)
+                );
+            }
+        }
+    }
+
+    /// The cap's closed form against a direct quadrature of the same `ψ`
+    /// over a track's cross-section below its bottom face (`z < 0`), per
+    /// length: `∫∫ |∇ρ|²` over `(d_B/S)² + (z/h)² < 1`.
+    #[test]
+    fn the_cap_is_its_quadrature() {
+        let (w, s) = (0.2f64, 0.2f64);
+        for h in [0.075, 0.1, 0.179] {
+            let n = 2000;
+            let (gx, gz) = ((w / 2.0 + s) / n as f64, h / n as f64);
+            let psi = |x: f64, z: f64| {
+                let db = (x.abs() - w / 2.0).max(0.0);
+                (1.0 - ((db / s).powi(2) + (z / h).powi(2)).sqrt()).max(0.0)
+            };
+            let mut e = 0.0;
+            for i in 0..n {
+                for j in 0..n {
+                    let (x, z) = (i as f64 * gx, -(j as f64) * gz);
+                    let dx = (psi(x + gx, z) - psi(x, z)) / gx;
+                    let dz = (psi(x, z - gz) - psi(x, z)) / gz;
+                    e += (dx * dx + dz * dz) * gx * gz;
+                }
+            }
+            let quad = 2.0 * e;
+            let closed = w / h + PI * h / (4.0 * s) + PI * s / (4.0 * h);
+            assert!(
+                (quad - closed).abs() < 2e-3 * closed,
+                "h {h}: {quad} vs {closed}"
+            );
+        }
     }
 
     #[test]
     fn a_pad_too_large_to_compute_is_none_not_a_wrap() {
+        let ph = reference();
         let huge = crate::pcb::Rect {
             x0: i64::MIN,
             y0: 0,
             x1: i64::MAX,
             y1: 1,
         };
-        assert_eq!(pad_ff(huge), None);
+        assert_eq!(pad_ff(&ph, huge), None);
         let inverted = crate::pcb::Rect {
             x0: 5,
             y0: 0,
             x1: 0,
             y1: 1,
         };
-        assert_eq!(pad_ff(inverted), None);
+        assert_eq!(pad_ff(&ph, inverted), None);
     }
 }
