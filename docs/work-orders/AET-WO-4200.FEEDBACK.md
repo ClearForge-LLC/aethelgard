@@ -877,7 +877,74 @@ Each surviving guard's mutant fails a test:
   - **`TIER2_MIN` 96:** 4100's 92 plus this build's 4.
   - **Digests re-taken on the merged code:** the solve digests (reference `3c39199f…`, stress `3169ae88…`) and `order_2203`'s firmware and both platforms (`c468b3cb…`, `9fd77dad…`, `c80833a9…`), each naming 4100's own value on `main`.
   - **One expectation moved:** `campaign_tier1::a_solved_topology_is_not_a_base` now expects `UnsupportedSchemaVersion`, not `SchemaViolation`. The topology is at version 3 and a specification at version 2, so the reader refuses it at its version, before its shape; it is still refused before any run.
-- **`AET-WO-2205` (trace version 6)** had not reached `main` at `748a733`. This build's trace is version 7, as ruled. When 2205 merges, `main` is merged again, the version-refusal and golden tests are re-checked (1 to 6 refused), and its record renames are carried onto kinds 21 to 23.
+- **`d1385f3` (`AET-WO-2205`, trace version 6), at `4ac9f3c`:**
+  - **The trace version is 7,** after 2205's 6:
+    - `archive.rs` refuses versions 1 to 6 and 8;
+    - the golden trace (`dd0dd2db…`, state hash `abf1ccd2…`) differs from 2205's golden in its version byte alone: set back to 6, it is `1f9442fe…`, and 2205's own chain back to 5 and 4 runs on that.
+  - **2205's renames carried into this build's tests:** `RiseComputed` and its window, kind 10's `executable`, and the header's `tools`.
+  - **Evolve:** `Rule::ALL` holds E2 and S3, so `Rule::from_id` finds them, and the eleven-rule test counts eleven.
+  - **The manifest:** the `cs-never` mutant is restored in the schema-2 manifest; the merge had kept only 2205's side of the mutants hunk.
+  - **`TIER2_MIN` 96:** `main` is still 92 after 2205, and the merged tree lists exactly 96 tests in `ci/shard.sh`'s `TIER2_RE` binaries.
+
+  | Binary | Tests |
+  |---|---|
+  | `with_tools` | 23 |
+  | `twin_tier2` | 25 |
+  | `board_tier2` | 14 |
+  | `verify_2k2_tier2` | 2 |
+  | `against_fab_tier2` | 2 |
+  | `verify_47k_tier2` | 2 |
+  | `campaign_tier2` | 9 |
+  | `attribute_seeded` | 11 |
+  | `adversarial_1301_tools` | 6 |
+  | `adversarial_1302_tools` | 2 |
+  | **Total** | **96** |
+
+### The seeded table's indices, re-derived (`attribute_seeded.rs`'s rule)
+
+**The record added, and where.** This build adds kind 23 (`SpiBusSolved`, SPI1 with U4 at address 0, chip select `PA0`). Every reference run archives it at index 3:
+- it ranks with kind 15 (both are the solved buses, before the boot);
+- the campaign writes it straight after kind 15, which is index 2 in every seeded run (index 0 the scenario, 1 the topology; no seeded scenario declares `expect_counts`).
+
+Every record from index 3 on therefore moves up by one: the analog records (kinds 7, 9), the boot (10), the registers (11), the I2C read and witness (12, 13). Kinds 21 and 22 also join after kind 13, which moves the verdict too, but no case names the verdict.
+
+**Measured:** `attribute_seeded` (11/11, the pinned image, `p3_gate_clause_1` asserting each case's exact evidence and masked events) passes on `4ac9f3c` with the table below. Each changed row is 2205's row with every index of 3 or more plus one, and no other change:
+
+| Case | 2205's evidence → this build's | Masked |
+|---|---|---|
+| `pullup-3k9`, `pullup-4k7`, `pullup-10k`, `pullup-47k`, `pullup-100k`, `cap-220p-2k2`, `trap-indeterminate-leave-47k` | `[3,7] [4,7] [5,9]` → `[4,7] [5,7] [6,9]` | — |
+| `cap-390p-sda-2k2` | `[4,7] [5,9]` → `[5,7] [6,9]` | — |
+| `held-low-sda`, `held-low-scl` | `[4,9]` → `[5,9]` | — |
+| `trap-wrong-address-47k` | `[3,7] [4,7] [5,9]` → `[4,7] [5,7] [6,9]` | `[15,13]` → `[16,13]` |
+| `wrong-address-2k2`, `trap-wrong-address-3k3`, `wrong-register`, `wrong-nbytes` | `[3,7] [4,7] [14,13]` → `[4,7] [5,7] [15,13]` | — |
+| `i2c-clock-skipped` | `[3,7] [4,7] [11,11]` → `[4,7] [5,7] [12,11]` | — |
+| `scl-af-wrong`, `sda-af-wrong` | `[3,7] [4,7] [9,11]` → `[4,7] [5,7] [10,11]` | — |
+| `scl-mode-output` | `[3,7] [4,7] [8,11]` → `[4,7] [5,7] [9,11]` | — |
+| `gpiob-clock-skipped` | `[3,7] [4,7] [8,11] [9,11] [10,11]` → `[4,7] [5,7] [9,11] [10,11] [11,11]` | — |
+| `no-boot-word`, `leave-firmware` | `[3,7] [4,7] [5,10]` → `[4,7] [5,7] [6,10]` | — |
+
+`trap-unmutated-3k3` and `unmutated-2k2` (evidence empty) do not change.
+
+**This build's two cases, derived from `attribute`'s output:**
+- **`spi-absent-u4`:** `E2`, evidence `[17,22]`, masked none, symptoms kinds 21 and 22 at 16 and 17.
+- **`cs-never`:** `S3`, evidence `[17,22]`, masked none.
+
+Kind 22 is at 17. A seeded run's records, on this build:
+
+| Index | Record |
+|---|---|
+| 0 | the scenario |
+| 1 | the topology |
+| 2 | kind 15 |
+| 3 | kind 23 |
+| 4, 5 | the two rises (kind 7) |
+| 6 | the boot (kind 10) |
+| 7 to 13 | the seven registers (kind 11) |
+| 14, 15 | U2's read and witness (kinds 12, 13) |
+| 16, 17 | U4's read and witness (kinds 21, 22) |
+| 18 | the verdict |
+
+2205's `[14,13]` is the same witness one index lower.
 
 ## CI
 
