@@ -110,9 +110,14 @@ fn firmware() -> &'static Path {
 /// A copy of the reference firmware with `edit` applied, built like it into
 /// its own target directory outside the repository.
 fn mutant(name: &str, change: impl Fn(&Path)) -> PathBuf {
+    mutant_of(&root().join("boards/sentinel-01"), name, change)
+}
+
+/// As [`mutant`], from the firmware crate of the board crate at `board`.
+fn mutant_of(board: &Path, name: &str, change: impl Fn(&Path)) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("aet-2100-t2-{}-{name}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
-    let src = root().join("boards/sentinel-01/firmware");
+    let src = board.join("firmware");
     for rel in [
         "Cargo.toml",
         "Cargo.lock",
@@ -124,7 +129,7 @@ fn mutant(name: &str, change: impl Fn(&Path)) -> PathBuf {
         fs::create_dir_all(to.parent().unwrap()).unwrap();
         fs::copy(src.join(rel), &to).unwrap();
     }
-    let board = fs::canonicalize(root().join("boards/sentinel-01")).unwrap();
+    let board = fs::canonicalize(board).unwrap();
     edit(
         &dir,
         "Cargo.toml",
@@ -173,15 +178,26 @@ fn kinds(v: &Value) -> Vec<&str> {
 
 /// One boot of `elf` on the committed platform, judged by the reference spec.
 fn boot_elf(label: &str, elf: &Path, time: &str) -> (Option<i32>, Value) {
+    boot_on(label, &platform(), &spec(), elf, time)
+}
+
+/// One boot of `elf` on `platform`, judged by `spec`.
+fn boot_on(
+    label: &str,
+    platform: &Path,
+    spec: &Path,
+    elf: &Path,
+    time: &str,
+) -> (Option<i32>, Value) {
     let start = Instant::now();
     let (code, v) = aethelgard(&[
         "simulate",
         "--platform",
-        platform().to_str().unwrap(),
+        platform.to_str().unwrap(),
         "--firmware",
         elf.to_str().unwrap(),
         "--spec",
-        spec().to_str().unwrap(),
+        spec.to_str().unwrap(),
         "--for",
         time,
     ]);
@@ -293,11 +309,16 @@ fn the_reference_firmware_boots_and_two_boots_agree() {
         .collect();
     assert_eq!(unmodelled.len(), 1, "{first}");
     assert_eq!(unmodelled[0]["severity"], "info");
-    // W1: the controller shows the read the record claims.
-    let w = &b["i2c_witness"][0];
-    assert_eq!(w["cr2"]["observed"], "0x020104ec");
-    assert_eq!(w["cr2"]["observed"], w["cr2"]["expected"]);
-    assert_eq!(w["txdr"]["observed"], "0x000000d0");
+    // AET-WO-2204 D1: Renode's BME280 logged the read the record claims,
+    // exactly; D3: the core ended in thread mode.
+    assert_eq!(
+        b["i2c_witness"],
+        serde_json::json!([{
+            "peripheral": "I2C1", "reference": "U2", "device": "i2c1.u2",
+            "expected": WITNESS, "observed": WITNESS, "absent": []
+        }])
+    );
+    assert_eq!(b["icsr"], "0x00000800");
     assert!(
         unmodelled[0]["message"]
             .as_str()
@@ -565,8 +586,9 @@ fn a_value_one_bit_off_fails_as_an_identity_mismatch() {
 }
 
 /// Renode run directly (not through `simulate`, which refuses a platform other
-/// than the emitted one): the monitor script `simulate` builds for a boot, on a
-/// platform of the test's own, and the two words of U2's record.
+/// than the emitted one): a boot's monitor script, as `simulate` built it
+/// before `AET-WO-2204` (no log is judged here, so the console's level may
+/// change), on a platform of the test's own, and the two words of U2's record.
 fn record_on(platform: &Path, elf: &Path) -> (String, String) {
     let boot_word = aethelgard_twin::boot::boot_word().unwrap();
     let unset = aethelgard_twin::boot::RECORD_UNSET;
@@ -661,7 +683,7 @@ fn a_firmware_that_skips_the_read_or_its_record_cannot_pass() {
     });
     let (code, v) = boot_elf("skip the read", &skip, "10ms");
     assert_eq!(code, Some(1), "{v}");
-    // The record carries 0, and no transaction left the controller in a state.
+    // The record carries 0, and the device logged no transaction.
     assert_eq!(
         kinds(&v),
         ["i2c_identity_mismatch", "i2c_transaction_unwitnessed"],
@@ -683,12 +705,135 @@ fn a_firmware_that_skips_the_read_or_its_record_cannot_pass() {
     assert_eq!(v["boot"]["i2c"][0]["status"], "invalid");
 }
 
+/// What Renode 1.17.0's BME280 logs for U2's identity read (`AET-WO-2204`
+/// S1, measured).
+const WITNESS: [&str; 2] = ["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"];
+
+/// A finding's message, by kind.
+fn message<'a>(v: &'a Value, kind: &str) -> &'a str {
+    v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["kind"] == kind)
+        .unwrap_or_else(|| panic!("no {kind}: {v}"))["message"]
+        .as_str()
+        .unwrap()
+}
+
+/// U2's read replaced by `forgery` (an expression of type
+/// `Result<usize, I2cError>`), with the table's 0x60 in the buffer.
+fn forged(name: &str, forgery: &'static str) -> PathBuf {
+    mutant(name, move |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "let mut buf0 = [0u8; 1];",
+            "let mut buf0 = [0x60u8; 1];",
+        );
+        edit(
+            d,
+            "src/main.rs",
+            "i2c1.transfer(&mut r, 0x76, &[0xd0], &mut buf0)",
+            forgery,
+        );
+    })
+}
+
+/// A forgery's verdict: the record is perfect, and the read is unwitnessed:
+/// the device logged nothing.
+fn assert_unwitnessed(v: &Value) {
+    assert_eq!(kinds(v), ["i2c_transaction_unwitnessed"], "{v}");
+    assert_eq!(v["boot"]["i2c"][0]["status"], "ok");
+    assert_eq!(v["boot"]["i2c"][0]["observed"], "0x60");
+    assert_eq!(
+        v["boot"]["i2c_witness"][0]["observed"],
+        serde_json::json!([])
+    );
+    let m = message(v, "i2c_transaction_unwitnessed");
+    assert!(
+        m.contains("U2") && m.contains("0x76") && m.contains("i2c1.u2"),
+        "{m}"
+    );
+}
+
 #[test]
-fn a_forged_record_without_a_transaction_fails_on_the_controller_state() {
-    // AET-WO-2202 W1: the firmware writes STATUS_OK and the table's 0x60 and
-    // never calls `transfer`. The record is perfect; the controller was never
-    // touched, so CR2 and TXDR read their reset values.
-    let forged = mutant("forged", |d| {
+fn a_forged_record_without_a_transaction_fails_unwitnessed() {
+    // AET-WO-2202 W1, now AET-WO-2204 D1: the firmware writes STATUS_OK and
+    // the table's 0x60 and never calls `transfer`.
+    let elf = forged("forged", "Ok::<usize, I2cError>(1)");
+    let (code, v) = boot_elf("forged record", &elf, "10ms");
+    assert_eq!(code, Some(1), "{v}");
+    assert_unwitnessed(&v);
+}
+
+#[test]
+fn a_firmware_that_writes_the_controller_registers_by_hand_fails_unwitnessed() {
+    // AET-WO-1900 §1.10 (review A11.1), measured passing until AET-WO-2204:
+    // the forged record, and the reference boot's final `CR2` (0x020104EC)
+    // and `TXDR` (0xD0) written straight to I2C1 (base 0x40005400, CR2
+    // +0x04, TXDR +0x28), with no call to `transfer`. Renode stores both
+    // writes; the BME280 model logs nothing, so the judge fails it. Inverted,
+    // not deleted, as 1900 asked.
+    let elf = forged(
+        "forged-regs",
+        "{ unsafe { core::ptr::write_volatile(0x4000_5404 as *mut u32, 0x0201_04EC); core::ptr::write_volatile(0x4000_5428 as *mut u32, 0xD0); } Ok::<usize, I2cError>(1) }",
+    );
+    let (code, v) = boot_elf("forged record and registers", &elf, "10ms");
+    assert_eq!(code, Some(1), "{v}");
+    assert_unwitnessed(&v);
+}
+
+#[test]
+fn a_forgery_through_every_register_or_a_wrong_address_fails_unwitnessed() {
+    // AET-WO-2204 S1, measured: every I2C1 register at the reference's final
+    // value (STOP alone sets STOPF, ICR clears it as the board does; ISR and
+    // RXDR written too), so every register reads as the reference's; and a
+    // real transfer to the absent 0x77 followed by the same hand-written CR2
+    // and TXDR. Neither reaches the BME280.
+    let all = forged(
+        "forge-all",
+        "{ unsafe { core::ptr::write_volatile(0x4000_5404 as *mut u32, 0x4000); core::ptr::write_volatile(0x4000_5404 as *mut u32, 0x0201_04EC); core::ptr::write_volatile(0x4000_5428 as *mut u32, 0xD0); core::ptr::write_volatile(0x4000_5418 as *mut u32, 0x1); core::ptr::write_volatile(0x4000_5424 as *mut u32, 0x60); core::ptr::write_volatile(0x4000_541C as *mut u32, 0x30); } Ok::<usize, I2cError>(1) }",
+    );
+    let wrong = forged(
+        "wrong-addr-forge",
+        "{ let _ = i2c1.transfer(&mut r, 0x77, &[0xd0], &mut buf0); buf0 = [0x60u8]; unsafe { core::ptr::write_volatile(0x4000_5404 as *mut u32, 0x0201_04EC); core::ptr::write_volatile(0x4000_5428 as *mut u32, 0xD0); } Ok::<usize, I2cError>(1) }",
+    );
+    for (label, elf) in [("forge every register", all), ("wrong address", wrong)] {
+        let (code, v) = boot_elf(label, &elf, "10ms");
+        assert_eq!(code, Some(1), "{label}: {v}");
+        assert_unwitnessed(&v);
+    }
+}
+
+/// The reference specification with a second BME280, `U5` at 0x77 on
+/// `SENSORS` (a test fixture, `AET-WO-2204` §2.2), generated once.
+fn two_bme() -> &'static (PathBuf, PathBuf) {
+    static TREE: OnceLock<(PathBuf, PathBuf)> = OnceLock::new();
+    TREE.get_or_init(|| {
+        let spec = root().join("crates/aethelgard-cli/tests/fixtures/two-bme.json");
+        let out = std::env::temp_dir().join(format!("aet-2204-t2-{}-two-bme", std::process::id()));
+        let _ = fs::remove_dir_all(&out);
+        let (code, v) = aethelgard(&[
+            "generate",
+            "--spec",
+            spec.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ]);
+        assert_eq!(code, Some(0), "{v}");
+        (spec, out.join("board"))
+    })
+}
+
+#[test]
+fn on_a_bus_with_two_devices_each_read_is_witnessed() {
+    // AET-WO-2204 S2, measured: today's judge witnessed only the last read on
+    // a bus and passed both forgeries.
+    let (spec, board) = two_bme();
+    let platform = board.join("sentinel-01.repl");
+    let real = mutant_of(board, "two-ref", |_| {});
+    let first = mutant_of(board, "two-forged-first", |d| {
         edit(
             d,
             "src/main.rs",
@@ -702,57 +847,188 @@ fn a_forged_record_without_a_transaction_fails_on_the_controller_state() {
             "Ok::<usize, I2cError>(1)",
         );
     });
-    let (code, v) = boot_elf("forged record", &forged, "10ms");
-    assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{v}");
-    assert_eq!(v["boot"]["i2c"][0]["status"], "ok");
-    assert_eq!(v["boot"]["i2c"][0]["observed"], "0x60");
-    assert_eq!(v["boot"]["i2c_witness"][0]["cr2"]["observed"], "0x00000000");
-    let f = v["findings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|f| f["kind"] == "i2c_transaction_unwitnessed")
-        .unwrap();
-    let m = f["message"].as_str().unwrap();
-    assert!(
-        m.contains("U2") && m.contains("0x76") && m.contains("I2C1"),
-        "{m}"
+    let last = mutant_of(board, "two-forged-last", |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "let mut buf1 = [0u8; 1];",
+            "let mut buf1 = [0x60u8; 1];",
+        );
+        edit(
+            d,
+            "src/main.rs",
+            "i2c1.transfer(&mut r, 0x77, &[0xd0], &mut buf1)",
+            "{ unsafe { core::ptr::write_volatile(0x4000_5404 as *mut u32, 0x0201_04EE); core::ptr::write_volatile(0x4000_5428 as *mut u32, 0xD0); } Ok::<usize, I2cError>(1) }",
+        );
+    });
+    let (code, v) = boot_on("two devices", &platform, spec, &real, "10ms");
+    assert_eq!(code, Some(0), "{v}");
+    let w = v["boot"]["i2c_witness"].as_array().unwrap();
+    assert_eq!(w.len(), 2, "{v}");
+    assert_eq!(w[1]["device"], "i2c1.u5");
+    assert_eq!(
+        w[1]["observed"],
+        serde_json::json!(["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"])
     );
-    for field in ["SADD", "RD_WRN", "NBYTES", "AUTOEND", "TXDR"] {
-        assert!(m.contains(field), "{field}: {m}");
+    for (label, elf, who) in [("forged first", first, "U2"), ("forged last", last, "U5")] {
+        let (code, v) = boot_on(label, &platform, spec, &elf, "10ms");
+        assert_eq!(code, Some(1), "{label}: {v}");
+        assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{label}: {v}");
+        assert!(
+            message(&v, "i2c_transaction_unwitnessed").starts_with(who),
+            "{label}: {v}"
+        );
     }
 }
 
 #[test]
-fn a_firmware_that_writes_the_witness_registers_by_hand_passes_today_a_named_residual() {
-    // AET-WO-1900 §1.10 (review A11.1), measured: the same forged record as
-    // above, and now also the reference boot's final `CR2` (0x020104EC) and
-    // `TXDR` (0xD0) written straight to I2C1 (base 0x40005400, CR2 +0x04, TXDR
-    // +0x28), with no call to `transfer`. Renode stores both writes, so the
-    // judge passes it. This test pins that, as 1301's A5 test does for KiCad:
-    // it turns red when `AET-WO-2301` adds an observable a plain write cannot
-    // set, and must then be inverted, not deleted.
-    let forged = mutant("forged-regs", |d| {
+fn a_firmware_parked_in_its_fault_handler_fails_naming_vectactive() {
+    // AET-WO-2301 F9, AET-WO-2204 D3: `systick-before`, as a firmware edit:
+    // SysTick armed (reload 999, TICKINT) after the boot word is written, so
+    // the first tick enters `fault` and parks there, the boot word and record
+    // written and MIPS x time executed, on `fault`'s own self-loop.
+    let elf = mutant("systick", |d| {
         edit(
             d,
             "src/main.rs",
-            "let mut buf0 = [0u8; 1];",
-            "let mut buf0 = [0x60u8; 1];",
-        );
-        edit(
-            d,
-            "src/main.rs",
-            "i2c1.transfer(&mut r, 0x76, &[0xd0], &mut buf0)",
-            "{ unsafe { core::ptr::write_volatile(0x4000_5404 as *mut u32, 0x0201_04EC); core::ptr::write_volatile(0x4000_5428 as *mut u32, 0xD0); } Ok::<usize, I2cError>(1) }",
+            "    // No sleep: the judge requires",
+            "    unsafe { core::ptr::write_volatile(0xE000_E014 as *mut u32, 999); core::ptr::write_volatile(0xE000_E018 as *mut u32, 0); core::ptr::write_volatile(0xE000_E010 as *mut u32, 7); }\n    // No sleep: the judge requires",
         );
     });
-    let (code, v) = boot_elf("forged record and registers", &forged, "10ms");
-    assert_eq!(code, Some(0), "{v}");
-    assert_eq!(v["verdict"], "pass", "{v}");
-    assert_eq!(v["boot"]["i2c_witness"][0]["cr2"]["observed"], "0x020104ec");
-    assert_eq!(
-        v["boot"]["i2c_witness"][0]["txdr"]["observed"],
-        "0x000000d0"
+    let (code, v) = boot_elf("fault-parked", &elf, "10ms");
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["core_in_exception"], "{v}");
+    assert!(
+        message(&v, "core_in_exception").contains("exception 15"),
+        "{v}"
     );
+    assert_eq!(v["boot"]["boot_word"]["observed"], "0x2100b007");
+    assert_eq!(v["boot"]["instructions"]["observed"], 1_000_000);
+}
+
+#[test]
+fn the_judge_s_own_reads_of_a_gated_peripheral_are_never_the_firmware_s() {
+    // AET-WO-2204 D8 (a): at 1 us no clock is on yet, so the judge's own
+    // reads of I2C1 and the GPIO ports log locked accesses. With synchronous
+    // logging they come after BEGIN and are not attributed to the firmware.
+    let (code, v) = boot("1us", "1us");
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["boot_word_missing"], "{v}");
+}
+
+#[test]
+fn a_locked_access_late_in_a_flood_reaches_the_judge_whole() {
+    // AET-WO-2204 D8, F2, B10: the spike's `flood-locked`, 37.7 MB of
+    // alternating warnings after the boot word, one read of the gated
+    // GPIOC.MODER about 600 lines before the run's end (pair 199,461 of the
+    // 199,761 measured). Its line reaches the judge, and the markers and
+    // values come through whole (a verdict, not exit 5).
+    let elf = mutant("flood-locked", |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "    // No sleep: the judge requires instructions executed to equal MIPS x time.\n    loop {\n        core::hint::spin_loop();\n    }\n",
+            "    let mut n: u32 = 0;\n    loop {\n        unsafe { core::ptr::read_volatile(0x40005424 as *const u32); core::ptr::write_volatile(0x4000541c as *mut u32, 0x10); }\n        if n == 199461 { unsafe { core::ptr::read_volatile(0x5802_0800 as *const u32); } }\n        n = n.wrapping_add(1);\n    }\n",
+        );
+    });
+    let (code, v) = boot_elf("flood-locked", &elf, "10ms");
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert!(k.contains(&"locked_peripheral_access"), "{v}");
+    assert!(
+        message(&v, "locked_peripheral_access").contains("0x58020800"),
+        "{v}"
+    );
+    // Past the filter's budget: the witness is unread, never passed (D2).
+    assert!(k.contains(&"i2c_transaction_unwitnessed"), "{v}");
+    assert!(message(&v, "renode_log_flood").contains("8 MiB"), "{v}");
+}
+
+#[test]
+fn a_device_named_for_a_renode_instance_or_keyword_breaks_the_load() {
+    // AET-WO-2204 S5, measured: why `validate` refuses such references. A
+    // platform declaring a device under a stock instance's name, or under a
+    // `.repl` keyword, does not load in Renode 1.17.0.
+    let dir = std::env::temp_dir().join(format!("aet-2204-t2-{}-reserved", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let emitted = fs::read_to_string(platform()).unwrap();
+    for (name, error) in [
+        ("nvic", "Error E02: Variable 'nvic' was already declared"),
+        ("using", "Error E00: Syntax error, Unexpected using."),
+    ] {
+        let repl = dir.join(format!("{name}.repl"));
+        fs::write(
+            &repl,
+            emitted.replace(
+                "u2: I2C.BME280 @ i2c1 0x76\n",
+                &format!("{name}: I2C.BME280 @ i2c1 0x76\n"),
+            ),
+        )
+        .unwrap();
+        let (code, v) = aethelgard(&["simulate", "--platform", repl.to_str().unwrap()]);
+        assert_eq!(code, Some(1), "{name}: {v}");
+        assert_eq!(kinds(&v), ["platform_load_error"], "{name}: {v}");
+        assert!(
+            message(&v, "platform_load_error").contains(error),
+            "{name}: {v}"
+        );
+    }
+}
+
+#[test]
+fn renode_s_configuration_differs_from_its_default_in_synchronous_logging_alone() {
+    // AET-WO-2204 D4: Renode writes every key it uses into the file it is
+    // given, and into its default file when given none; the two differ in
+    // the one key the CLI's configuration sets.
+    let dir = std::env::temp_dir().join(format!("aet-2204-t2-{}-config", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let renode = |home: &Path, config: Option<&Path>| {
+        fs::create_dir_all(home).unwrap();
+        let mut c = Command::new("renode");
+        if let Some(path) = config {
+            c.arg("--config").arg(path);
+        }
+        let out = c
+            .args(["--disable-gui", "--console", "--plain", "-e", "quit"])
+            .env_clear()
+            .env("HOME", home)
+            .env("PATH", std::env::var_os("PATH").unwrap())
+            .env("DOTNET_EnableDiagnostics", "0")
+            .env("DOTNET_EnableWriteXorExecute", "0")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+    };
+    let (plain, given) = (dir.join("plain"), dir.join("given"));
+    renode(&plain, None);
+    let config = given.join("renode.config");
+    fs::create_dir_all(&given).unwrap();
+    fs::write(&config, "[general]\nuse-synchronous-logging = true\n").unwrap();
+    renode(&given, Some(&config));
+    let keys = |text: String, home: &Path| -> Vec<String> {
+        let mut v: Vec<String> = text
+            .lines()
+            .map(|l| l.replace(home.to_str().unwrap(), "$HOME"))
+            .collect();
+        v.sort();
+        v
+    };
+    let default = keys(
+        fs::read_to_string(plain.join(".config/renode/config")).unwrap(),
+        &plain,
+    );
+    let supplied = keys(fs::read_to_string(&config).unwrap(), &given);
+    let only = |a: &[String], b: &[String]| -> Vec<String> {
+        a.iter().filter(|l| !b.contains(l)).cloned().collect()
+    };
+    assert_eq!(
+        only(&default, &supplied),
+        ["use-synchronous-logging = False"]
+    );
+    assert_eq!(
+        only(&supplied, &default),
+        ["use-synchronous-logging = true"]
+    );
+    answer(&format!("renode config keys: {supplied:?}"));
 }

@@ -1056,7 +1056,7 @@ fn a_witness_that_shows_the_read_passes_and_is_reported() {
         *w,
         serde_json::json!([{
             "peripheral": "I2C1", "reference": "U2", "device": "i2c1.u2",
-            "expected": lines, "observed": lines
+            "expected": lines, "observed": lines, "absent": []
         }])
     );
     assert_eq!(v["boot"]["icsr"], "0x00000800");
@@ -1066,6 +1066,16 @@ fn a_witness_that_shows_the_read_passes_and_is_reported() {
     );
     let (code, v) = boot(&with_log(GOOD_RECORD, &around));
     assert_eq!(code, Some(0), "{v}");
+    // The controller's `Unknown slave` lines are kept for attribution, never
+    // judged: here a stray transfer to 0x77 beside a witnessed read passes.
+    let stray =
+        format!("[03:07:39.3700] [WARNING] i2c1: Unknown slave at address 119.\n{GOOD_WITNESS}");
+    let (code, v) = boot(&with_log(GOOD_RECORD, &stray));
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(
+        v["boot"]["i2c_witness"][0]["absent"],
+        serde_json::json!(["0x77"])
+    );
 }
 
 #[test]

@@ -101,6 +101,7 @@ fn witness_with(
         expected: lines(expected),
         observed: observed.map(lines),
         device,
+        absent: Vec::new(),
     }
 }
 
@@ -1376,6 +1377,9 @@ fn the_view_reads_every_field_of_a_rise_a_stuck_line_a_boot_and_a_witness() {
     assert_eq!(
         got,
         [
+            // `AET-WO-2204`: the addresses the controller found no device at
+            // (none here), U2's own 0x76 the solved value.
+            ("i2c1.u2.address", 0x7F, 0x76, None, false),
             ("i2c1.u2.Write", 0xFF, 0xD0, Some(0xD1), true),
             ("i2c1.u2.Read", 0xFF, 0x60, None, false),
         ]
@@ -1599,7 +1603,8 @@ fn on_two_buses_the_view_puts_each_event_and_rise_on_its_own_bus() {
     let View::Fields { fields, .. } = &e.view else {
         panic!("{e:?}")
     };
-    assert_eq!(fields[0].register, "i2c2.u5.Write");
+    assert_eq!(fields[0].register, "i2c2.u5.address");
+    assert_eq!(fields[1].register, "i2c2.u5.Write");
     let rises: Vec<(String, Vec<u64>)> = v
         .buses()
         .iter()

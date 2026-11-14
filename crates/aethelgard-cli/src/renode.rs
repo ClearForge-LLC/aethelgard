@@ -480,6 +480,25 @@ pub struct Observed {
     /// device with a witness's shape, in order ([`witness_shaped`]); `None`
     /// when the log could not be read whole (`AET-WO-2204` D2).
     pub witnesses: Vec<Option<Vec<String>>>,
+    /// For each identity check, the addresses its bus's controller found no
+    /// device at during the run (Renode's `Unknown slave at address N.`), in
+    /// order: attribution's evidence of a transfer to a wrong address, never
+    /// a witness (`AET-WO-2204`, the seeded set's `wrong-address`).
+    pub absent: Vec<Vec<u8>>,
+}
+
+/// An address the controller `bus` (`i2c1`) found no device at, from its
+/// whole log line `[WARNING] i2c1: Unknown slave at address 119.`
+/// (`STM32F7_I2C.cs` L349, the address in decimal).
+fn absent_address(line: &str, bus: &str) -> Option<u8> {
+    log_body(line)?
+        .strip_prefix("[WARNING] ")?
+        .strip_prefix(bus)?
+        .strip_prefix(": Unknown slave at address ")?
+        .strip_suffix('.')
+        .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))?
+        .parse()
+        .ok()
 }
 
 /// A bare hexadecimal value, the whole line: `0x2100B007`. Anything else on
@@ -682,6 +701,16 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         registers: vec![0; plan.image.registers.len()],
         records: vec![(0, 0); checks.len()],
         witnesses,
+        absent: checks
+            .iter()
+            .map(|c| {
+                let bus = c.device.split('.').next().unwrap_or_default();
+                last_boot
+                    .iter()
+                    .filter_map(|l| absent_address(l, bus))
+                    .collect()
+            })
+            .collect(),
     };
     for ((cmd, read), line) in reads.iter().zip(values) {
         let v = value(line).ok_or_else(|| untrusted(format!("`{cmd}` read no value")))?;

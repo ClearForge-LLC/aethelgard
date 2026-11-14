@@ -173,6 +173,10 @@ pub enum Record {
         device: String,
         expected: Vec<String>,
         observed: Option<Vec<String>>,
+        /// The addresses the device's controller found no device at during
+        /// the run, in order, at most [`MAX_WITNESS_LINES`]: attribution's
+        /// evidence of a transfer to a wrong address, never a witness.
+        absent: Vec<u8>,
     },
     /// Kind 14: the verdict, with each distinct finding kind, its severity and
     /// how many times it was found, sorted.
@@ -603,12 +607,14 @@ impl Record {
                 device,
                 expected,
                 observed,
+                absent,
             } => vec![
                 t(peripheral),
                 t(reference),
                 t(device),
                 texts(expected),
                 opt_texts(observed.as_deref()),
+                Value::Array(absent.iter().map(|&a| u(a.into())).collect()),
             ],
             Self::Verdict { pass, findings } => vec![
                 flag(*pass),
@@ -779,6 +785,14 @@ impl Record {
                 device: f.text()?,
                 expected: f.texts()?,
                 observed: f.opt_texts()?,
+                absent: {
+                    let mut inner = Fields(f.array()?.iter());
+                    let mut v = Vec::new();
+                    while inner.0.len() > 0 {
+                        v.push(inner.u8()?);
+                    }
+                    v
+                },
             },
             14 => {
                 let pass = f.flag()?;
@@ -975,8 +989,11 @@ impl Record {
                 device,
                 expected,
                 observed,
+                absent,
             } => {
-                if !(name_ok(peripheral) && name_ok(reference) && name_ok(device)) {
+                if absent.len() > MAX_WITNESS_LINES || absent.iter().any(|&a| a > 0x7F) {
+                    Err("absent addresses are not at most 16 seven-bit addresses")
+                } else if !(name_ok(peripheral) && name_ok(reference) && name_ok(device)) {
                     Err("peripheral, reference or device is not 1 to 64 printable ASCII bytes")
                 } else if !witness_lines_ok(expected)
                     || observed.as_deref().is_some_and(|o| !witness_lines_ok(o))

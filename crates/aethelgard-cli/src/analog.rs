@@ -429,6 +429,7 @@ fn recovered_words(
         device: c.device.clone(),
         expected: c.witness.clone().unwrap_or_default(),
         observed: probe.and_then(|p| p.witness.clone()),
+        absent: Vec::new(),
     });
     (words, witness)
 }

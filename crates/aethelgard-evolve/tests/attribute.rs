@@ -109,6 +109,7 @@ fn witness_with(
         expected: lines(expected),
         observed: observed.map(lines),
         device,
+        absent: Vec::new(),
     }
 }
 
@@ -517,6 +518,30 @@ fn a_read_counts_only_once_the_model_logged_one() {
     // Once it logged a read, another value is evidence.
     replace(&mut r, is_witness, witness(Some(&["Write D0", "Read 61"])));
     assert_eq!(attributed(&r).rule, Rule::S1);
+}
+
+#[test]
+fn a_transfer_the_controller_found_no_device_for_is_evidence_unless_it_is_the_devices_own() {
+    // `AET-WO-2204`: the seeded set's `wrong-address`. A TXIS timeout with
+    // nothing logged by the model is no evidence alone; the controller's
+    // `Unknown slave at address 119.` (0x77, not U2's 0x76) is the firmware's.
+    let mut r = healthy();
+    replace(&mut r, is_check, check("timeout_txis", 0));
+    replace(&mut r, is_witness, witness(Some(&[])));
+    replace(&mut r, is_verdict, verdict(&[("i2c_timeout", 1)]));
+    assert_eq!(attributed(&r).rule, Rule::I4);
+    let i = find(&r, is_witness);
+    let absent = |r: &mut Vec<Record>, a: Vec<u8>| {
+        if let Record::I2cWitness { absent, .. } = &mut r[i] {
+            *absent = a;
+        }
+    };
+    absent(&mut r, vec![0x77]);
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S1));
+    // A faulted bus finds no device even at U2's own address: no evidence.
+    absent(&mut r, vec![0x76]);
+    assert_eq!(attributed(&r).rule, Rule::I4);
 }
 
 #[test]

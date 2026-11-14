@@ -1375,6 +1375,9 @@ fn boot_report(
                 device: c.device.clone(),
                 expected: c.witness.clone().unwrap_or_default(),
                 observed: observed.and_then(|o| o.witnesses[i].clone()),
+                absent: observed
+                    .map(|o| o.absent[i].iter().map(|a| format!("{a:#04x}")).collect())
+                    .unwrap_or_default(),
             })
             .collect(),
         icsr: observed.map(|o| word(o.icsr)),

@@ -446,6 +446,7 @@ fn one_of_each() -> Vec<Record> {
                 "[NOISY] i2c1.u2: Read 71".into(),
             ],
             observed: None,
+            absent: vec![0x77],
         },
         Record::Verdict {
             pass: false,
@@ -816,6 +817,7 @@ fn witness(
         ],
         device,
         observed,
+        absent: Vec::new(),
     }
 }
 

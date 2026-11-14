@@ -899,6 +899,12 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
             device: w.device.clone(),
             expected: w.expected.clone(),
             observed: w.observed.as_deref().map(archived_lines),
+            absent: w
+                .absent
+                .iter()
+                .take(aethelgard_chaos::record::MAX_WITNESS_LINES)
+                .map(|a| u8::try_from(hex_u64(a)?).map_err(|e| e.to_string()))
+                .collect::<Result<_, _>>()?,
         });
     }
     let mut findings: BTreeMap<(String, String), u64> = BTreeMap::new();

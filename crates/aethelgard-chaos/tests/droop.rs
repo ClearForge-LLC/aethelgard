@@ -1569,6 +1569,7 @@ fn run_with_check() -> Vec<Record> {
             device: "i2c1.u2".into(),
             expected: lines(),
             observed: Some(lines()),
+            absent: Vec::new(),
         },
     );
     r

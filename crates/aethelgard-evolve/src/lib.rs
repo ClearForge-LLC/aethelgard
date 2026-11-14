@@ -459,8 +459,10 @@ impl<'a> Run<'a> {
     /// the model logged nothing, which only the firmware's own claim can do. A
     /// witness whose own expectation is not the solved register and value, or
     /// that could not be read whole, is no evidence. A transfer to a wrong
-    /// address leaves the device's log empty, which a fault on the bus also
-    /// does, so it is no evidence (where `CR2.SADD` was).
+    /// address leaves the device's log empty, as a fault on the bus does, but
+    /// its controller logs that it found no device at that address: an
+    /// address other than the device's is evidence (where `CR2.SADD` was). A
+    /// faulted bus finds none at the device's own, which is not.
     fn witness_wrong(&self, b: usize, record: &Record) -> bool {
         self.witness_fields(b, record)
             .is_some_and(|f| f.iter().any(|f| f.wrong))
@@ -470,12 +472,13 @@ impl<'a> Run<'a> {
     /// solved value, the first the model logged, and whether it counts as
     /// evidence ([`Self::witness_wrong`]); `None` for a witness that is no
     /// evidence.
-    fn witness_fields(&self, b: usize, record: &Record) -> Option<[Field; 2]> {
+    fn witness_fields(&self, b: usize, record: &Record) -> Option<[Field; 3]> {
         let Record::I2cWitness {
             reference,
             device,
             expected,
             observed,
+            absent,
             ..
         } = record
         else {
@@ -523,7 +526,16 @@ impl<'a> Run<'a> {
             observed: got.map(|g| g as u32 & mask),
             wrong: silent || got.is_some_and(|g| g != solved),
         };
+        let elsewhere = absent.iter().copied().find(|a| a != address);
         Some([
+            Field {
+                register: format!("{device}.address"),
+                address: u32::from(*address),
+                mask: 0x7F,
+                solved: u32::from(*address),
+                observed: elsewhere.map(u32::from),
+                wrong: elsewhere.is_some(),
+            },
             at("Write", 0xFF, reg_want.0, reg),
             at("Read", mask, value_want.0, read),
         ])
