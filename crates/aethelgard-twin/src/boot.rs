@@ -142,6 +142,8 @@ pub const VECTACTIVE_MASK: u32 = 0x1FF;
 /// on such a loop after the boot word, not that the loop is the generator's
 /// fixed point: a firmware that writes the boot word and then parks on
 /// another thread-mode self-loop also passes (ruled D3, a named residual).
+/// Nor does it claim that no interrupt runs after the boot word (adversarial
+/// A2: a SysTick handler that returns leaves the core on the loop).
 pub const YIELD: u16 = 0xBF10;
 pub const B_N_BACK: u16 = 0xE7FD;
 
