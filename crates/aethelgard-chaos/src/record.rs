@@ -1044,11 +1044,28 @@ impl Record {
                     Ok(())
                 }
             }
-            Self::BootObserved { executable, .. } => {
+            Self::BootObserved {
+                boot_word,
+                instructions_observed,
+                pc,
+                executable,
+                ..
+            } => {
                 let ordered = executable.iter().all(|&(s, e)| s < e)
                     && executable.windows(2).all(|w| w[0].1 <= w[1].0);
+                // One read gives all three (`AET-WO-2205` adversarial 1): a
+                // `pc` absent beside a boot that was read hides where it ended.
+                let read = [
+                    boot_word.observed.is_some(),
+                    instructions_observed.is_some(),
+                    pc.is_some(),
+                ];
                 if executable.len() > MAX_EXECUTABLE_SEGMENTS || !ordered {
                     Err("executable segments are not at most 16 sorted, disjoint, nonempty ranges")
+                } else if read.contains(&true) && read.contains(&false) {
+                    Err(
+                        "the boot word, the instruction count and pc are not all read or all unread",
+                    )
                 } else {
                     Ok(())
                 }

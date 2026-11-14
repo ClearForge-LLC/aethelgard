@@ -1349,7 +1349,9 @@ fn the_view_reads_every_field_of_a_rise_a_stuck_line_a_boot_and_a_witness() {
         ..
     } = &mut r[i]
     {
-        boot_word.observed = None;
+        // Read, and not the boot word: one read gives all of kind 10's
+        // readings (`AET-WO-2205` adversarial 1).
+        boot_word.observed = Some(0);
         *instructions_observed = Some(7);
     }
     let i = find(&r, is_rise_on("I2C_SDA"));
@@ -1414,7 +1416,7 @@ fn the_view_reads_every_field_of_a_rise_a_stuck_line_a_boot_and_a_witness() {
     };
     assert!(
         boot_word.wrong,
-        "an unobserved boot word is not the solved one"
+        "a boot word read as 0 is not the solved one"
     );
     assert_eq!(
         (*instructions_expected, *instructions_observed),

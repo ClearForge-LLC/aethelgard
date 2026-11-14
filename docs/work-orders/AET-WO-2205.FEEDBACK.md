@@ -151,6 +151,46 @@ What the table shows that the `allowed` test did not:
 - **F5 · The rule docs in evolve still say "measured healthy" (I2, I4, S1, S2) · low · wording.** They describe rules over computed rises. They are not kind or field names, so §1.2 does not reach them, and I left them.
 - **F6 · Replay cannot bind the segments to the ELF · residual (`RUL-19` (3)).** The firmware is not archived, so replay checks that kind 10's segments agree with the verdict's `pc_outside_firmware` (the new rule). It cannot check that they are the ELF's. A forged archive with both changed consistently replays, as any forged archive with a rewritten manifest does. §5.1 probes this.
 
+## Adversarial pass, before the stop: §5.1 and §5.3 (§5.2 waits for item 6)
+
+A fresh Opus subagent attacked a frozen copy at `f13816e`, with real runs from both baselines. It forged runs at the CBOR value level and rewrote the manifest each time. Its harness is under `~/.cache/aet-2205-adv/work`: 79 cases, `run-cases.sh`, and `mcp-drive.py`. I re-ran every case on the fix (`run-cases-fixed.sh`).
+
+- **§5.3, version 5:**
+  - All 13 real v5 runs are refused as `UnknownVersion` (exit 3) by `replay`, `attribute`, `propose` and the MCP server's three tools. `propose` writes nothing.
+  - A v5 header on v6 records, and version 7, are `UnknownVersion`. A v6-numbered header with five items is `MalformedHeader`. A v6 header on a v5 body is `MalformedEvent`, because kinds 7, 8 and 10 changed shape and every run holds a kind 10.
+- **§5.1, header tools:** every malformed entry is refused (`MalformedHeader` or `NotACampaignRun`):
+  - control characters, non-ASCII, 0 or 257 bytes;
+  - a duplicate, unsorted, upper-case, spaced or 65-byte name;
+  - a missing or extra tool, or tools kept after their records were dropped.
+
+  A well-formed forged version replays. That is the design: replay proves integrity, not authenticity (`RUL-19` (3)).
+- **§5.1, segments against the ELF:** replay's rule and attribution agreed in every case, and no forgery gave S2 without a `pc_outside_firmware`. The pass found three gaps in the new rule. **All three are fixed:**
+  - **A1 (should-fix).** A `pc` removed from a boot that was otherwise read hid a real `pc_outside_firmware`: `pass`, `N1`. The fix: kind 10's boot word, instruction count and `pc` are all read or all unread, and the writer and the reader refuse anything else.
+  - **A2 (should-fix).** `pc_outside_firmware` at `info` passed, and so did an error beside nine infos. The fix: its count at any severity must equal the rule's 0 or 1.
+  - **A3 (should-fix).** `pc_not_on_self_loop` beside a `pc` outside the firmware passed. The judge makes it only for a `pc` inside. The fix: it is refused otherwise. The judge and the rule now share `campaign::PC_OUTSIDE_FINDING` and `SELF_LOOP_FINDING`.
+  - Re-run on the fix, the five cases that passed are refused. Across the 79 cases, refusals went from 110 to 121, and no refused case now passes. Every one of the 25 real v6 runs still replays and attributes. Test: `the_boot_read_is_whole_and_the_pc_findings_are_the_judges`.
+  - One evolve fixture had read the instruction count beside an unread boot word, which no boot produces. Its boot word is now read as 0, and the test's assertion is unchanged.
+- **Residual, by design (F6):**
+  - segments widened over `pc` with the finding dropped (`N1`), or narrowed with it added (`S2`);
+  - an empty segment list with the finding, consistently;
+  - kind 10's `image_sha256` is not the header's firmware hash.
+
+  The ELF is not archived, so replay cannot bind them.
+- **Older than this work order (backlog; not this fence's records):**
+  - **B1.** `check_joins` does not require a kind 7 or 8 for each kind-15 line. Dropping every rise, and the bridge and ngspice from the header, replays as `pass`, `N1`. `tools_of` binds only to the records present.
+  - **B2.** A boot that read nothing, with no `boot_word_missing`, replays as `pass`; attribute says `I1`.
+  - **B3.** A finding's severity is open text: `zzz` counts as failing.
+
+## Reduction pass, diff-sized (so far)
+
+- Two findings the judge names and the run rules check were string literals in both places. They are now `campaign::PC_OUTSIDE_FINDING` and `SELF_LOOP_FINDING`.
+- No other duplicate. The judge keeps its own `inside` over the ELF's `u64` ranges, beside the record's `u32` ones.
+- The full pass closes the build after item 6.
+
+## CI (PR #119, first run, `f13816e`)
+
+Green. Shards 0 to 7: 13:56, 12:48, 12:14, 10:35, 14:41, 12:49, 10:02, 12:17, so the slowest is 14:41 and the spread 4:39. Gates 8:19, image 4:17.
+
 ## Gates (at `3d12877`)
 
 `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (with and without `with-tools`), `cargo test --workspace`: green on Furnace. Tier 2 in the image, the suites this work order touches: `attribute_seeded` 12 passed (327 s, the new case included), `campaign_tier2` 8 passed, `twin_tier2` 22 passed (`~/.cache/aet-2205/t2-1.log`). CI: on the PR (every suite, eight shards).

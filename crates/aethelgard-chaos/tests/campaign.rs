@@ -2209,3 +2209,76 @@ fn kind_10s_segments_and_kind_7s_window_are_checked_on_write_and_read() {
         assert_eq!(Event::from_value(&ev.to_value()).unwrap(), ev);
     }
 }
+
+/// `AET-WO-2205` adversarial pass: a `pc` unread beside a boot that was read,
+/// `pc_outside_firmware` at `info`, and `pc_not_on_self_loop` beside a core
+/// outside the firmware cannot come from the judge, and are refused.
+#[test]
+fn the_boot_read_is_whole_and_the_pc_findings_are_the_judges() {
+    let segs = vec![(0x0800_0000, 0x0800_2000)];
+    // pc unread, the rest read, and the reverse: refused at the record, by
+    // the writer and the reader alike.
+    let boot = |pc: Option<u32>, instructions: Option<u64>| Record::BootObserved {
+        image_sha256: [4; 32],
+        boot_word: reading(Some(0x12)),
+        instructions_expected: 10,
+        instructions_observed: instructions,
+        pc,
+        executable: segs.clone(),
+    };
+    for r in [boot(None, Some(10)), boot(Some(0), None)] {
+        assert_eq!(
+            r.check().unwrap_err(),
+            "the boot word, the instruction count and pc are not all read or all unread"
+        );
+    }
+    boot(Some(0), Some(10)).check().unwrap();
+    // pc_outside_firmware at info, pc inside; and error beside info, pc outside.
+    let mut r = with_pc(0x0800_1000, segs.clone(), false);
+    let last = r.len() - 1;
+    r[last] = verdict(
+        false,
+        &[
+            (PAST, "error", 2),
+            ("device_unmodelled", "info", 1),
+            ("i2c_timeout", "error", 1),
+            ("pc_outside_firmware", "info", 1),
+        ],
+    );
+    assert_eq!(check_run(&r).unwrap_err(), PC_OUTSIDE);
+    let mut r = with_pc(0x7000_0000, segs.clone(), true);
+    let last = r.len() - 1;
+    r[last] = verdict(
+        false,
+        &[
+            (PAST, "error", 2),
+            ("device_unmodelled", "info", 1),
+            ("i2c_timeout", "error", 1),
+            ("pc_outside_firmware", "error", 1),
+            ("pc_outside_firmware", "info", 9),
+        ],
+    );
+    assert_eq!(check_run(&r).unwrap_err(), PC_OUTSIDE);
+    // pc_not_on_self_loop: kept inside, refused outside.
+    let self_loop = |pc: u32, outside: bool| {
+        let mut r = with_pc(pc, segs.clone(), outside);
+        let last = r.len() - 1;
+        let mut f = vec![
+            (PAST, "error", 2),
+            ("device_unmodelled", "info", 1),
+            ("i2c_timeout", "error", 1),
+            ("pc_not_on_self_loop", "error", 1),
+        ];
+        if outside {
+            f.push(("pc_outside_firmware", "error", 1));
+        }
+        f.sort();
+        r[last] = verdict(false, &f);
+        check_run(&r)
+    };
+    self_loop(0x0800_1000, false).unwrap();
+    assert_eq!(
+        self_loop(0x7000_0000, true).unwrap_err(),
+        "the verdict names pc_not_on_self_loop for a pc outside the firmware or unread"
+    );
+}

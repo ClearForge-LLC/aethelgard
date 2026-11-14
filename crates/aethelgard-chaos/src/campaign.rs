@@ -48,6 +48,9 @@ pub const STUCK_HIGH_FINDING: &str = "analog_line_stuck_high";
 /// The boot judge's finding for a core that ended outside every executable
 /// segment of the firmware, which kind 10 archives (`AET-WO-2205` §1.5).
 pub const PC_OUTSIDE_FINDING: &str = "pc_outside_firmware";
+/// The boot judge's finding for a core parked inside the firmware but off
+/// every self-loop, made only when `pc` is inside (`AET-WO-2204` D3).
+pub const SELF_LOOP_FINDING: &str = "pc_not_on_self_loop";
 
 /// A scenario refused, with the kind `aethelgard` reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -793,8 +796,23 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
         matches!(r, Record::BootObserved { pc: Some(pc), executable, .. }
             if !record::inside(executable, *pc))
     });
-    if count(PC_OUTSIDE_FINDING) != u64::from(outside) {
+    // At any severity: the judge makes it an error or not at all
+    // (`AET-WO-2205` adversarial 2).
+    if any_severity(PC_OUTSIDE_FINDING) != u64::from(outside)
+        || count(PC_OUTSIDE_FINDING) != u64::from(outside)
+    {
         return Err("the verdict's pc_outside_firmware does not match the boot's pc and segments");
+    }
+    // The judge looks for the self-loop only inside the firmware
+    // (`AET-WO-2205` adversarial 3).
+    let read_inside = records.iter().any(|r| {
+        matches!(r, Record::BootObserved { pc: Some(pc), executable, .. }
+            if record::inside(executable, *pc))
+    });
+    if any_severity(SELF_LOOP_FINDING) > 0 && !read_inside {
+        return Err(
+            "the verdict names pc_not_on_self_loop for a pc outside the firmware or unread",
+        );
     }
     let droop_counts = check_droop_records(records, overrides)?;
     for (kind, want) in droop_counts {

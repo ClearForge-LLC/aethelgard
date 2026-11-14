@@ -845,7 +845,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
     let inside = plan.executable.iter().any(|&(s, e)| pc >= s && pc < e);
     if !inside {
         findings.push(Finding::plain(
-            "pc_outside_firmware",
+            aethelgard_chaos::campaign::PC_OUTSIDE_FINDING,
             format!(
                 "the core ended at {:#010x}, outside every executable segment of the firmware",
                 observed.pc
@@ -875,7 +875,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         let rewritten = on.is_some_and(|i| observed.loops[i] != intact);
         if inside && (on.is_none() || rewritten) {
             findings.push(Finding::plain(
-                "pc_not_on_self_loop",
+                aethelgard_chaos::campaign::SELF_LOOP_FINDING,
                 if rewritten {
                     format!(
                         "the core ended at {:#010x}, on a `yield; b.n` self-loop of the firmware that the machine no longer holds",
