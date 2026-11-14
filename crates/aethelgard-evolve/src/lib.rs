@@ -445,6 +445,75 @@ impl<'a> Run<'a> {
             .find(|r| matches!(r, Record::SpiCheck { reference: x, .. } if x == reference))
     }
 
+    /// An SPI witness's fields, each with its solved value and whether it is
+    /// software evidence ([`Self::spi_evidence`]), for the generator report:
+    /// the chip select the multiplexer should have found asserted alone (its
+    /// address), the command the model decoded, and the read the record
+    /// claims. A witness that could not be read whole has none.
+    fn spi_fields(&self, record: &Record) -> Vec<Field> {
+        let Record::SpiWitness {
+            reference,
+            device,
+            expected,
+            observed: Some(observed),
+            unrouted,
+            ..
+        } = record
+        else {
+            return Vec::new();
+        };
+        let Some(Record::SpiCheck {
+            address,
+            command,
+            expected: value,
+            observed: value_read,
+            status,
+            ..
+        }) = self.spi_check_of(reference)
+        else {
+            return Vec::new();
+        };
+        let unselected = unrouted.iter().any(|l| {
+            l.starts_with("[WARNING] ")
+                && (l.contains(", but no device is currently selected - ")
+                    || l.contains(", but multiple devices are currently selected ("))
+        });
+        // `GenericSpiFlash.cs` L129: the first byte a read sends is the
+        // command, logged in the state that decodes it.
+        let decoded = observed.iter().find_map(|l| {
+            l.strip_prefix(&format!("[NOISY] {device}: Transmitting data 0x"))?
+                .strip_suffix(", current state: RecognizeOperation")
+                .and_then(|h| u32::from_str_radix(h, 16).ok())
+        });
+        let claimed = status.as_deref() == Some("ok");
+        let at = |name: &str, mask: u32, solved: u32, observed: Option<u32>, wrong: bool| Field {
+            register: format!("{device}.{name}"),
+            address: u32::from(*address),
+            mask,
+            solved,
+            observed,
+            wrong,
+        };
+        vec![
+            at("select", 0xFF, u32::from(*address), None, unselected),
+            at(
+                "command",
+                0xFF,
+                u32::from(*command),
+                decoded,
+                (!observed.is_empty() && observed != expected)
+                    || decoded.is_some_and(|d| d != u32::from(*command)),
+            ),
+            at(
+                "read",
+                u32::MAX,
+                *value as u32,
+                value_read.map(|v| v as u32),
+                claimed && observed.is_empty() && unrouted.is_empty(),
+            ),
+        ]
+    }
+
     /// An SPI device's evidence (`AET-WO-4200` D4), from its witness (kind
     /// 22) and its read (kind 21), as (electrical, software) events:
     /// - electrical: the multiplexer routed a byte to the device's own
@@ -1003,6 +1072,10 @@ impl RunView<'_> {
                     .and_then(|b| run.witness_fields(b, record))
                     .map(Vec::from)
                     .unwrap_or_default(),
+            },
+            Record::SpiWitness { reference, .. } => View::Fields {
+                device: Some(reference.clone()),
+                fields: run.spi_fields(record),
             },
             _ => View::Other,
         };
