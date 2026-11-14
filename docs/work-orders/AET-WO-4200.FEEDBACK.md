@@ -272,7 +272,7 @@ Everything below was measured after commit `f61da75`, which holds the prediction
 
 **Outputs.**
 - `out/s2.jsonl` is pass 2, the results below: 18 runs, 14 cases, two of them three times.
-- `out/s2-pass1.jsonl` is pass 1 (see "Corrections").
+- `out/s2-pass1.jsonl` is pass 1 (see "Corrections"), built by `fw.py` as committed at `f61da75`; `out/fw-pass1.txt` holds its ELFs' sha256.
 - `out/fw.txt` holds the probe ELFs' sha256.
 - Raw stdout stayed in the cache.
 
@@ -316,7 +316,7 @@ Everything below was measured after commit `f61da75`, which holds the prediction
   That includes `jedec` on every platform, `forge-regs`, `wrong-cmd`, `cs-never` and `mode3`. `GPIOA.ODR` is `0x3` after pass 2's idle.
 - **`direct-cs-jedec`:**
   - **the read:** as `direct`, with the same eight lines;
-  - **each rising `PA0` edge** (at the probe's idle, then after the transfer) adds `[NOISY] spi1.u4: Chip Select is deasserted.` and `[WARNING] spi1.u4: Transmission finished in the unexpected state: RecognizeOperation`;
+  - **each rising `PA0` edge** (`into_output`'s first set-high, then the one after the transfer; the probe's idle re-drives an already-high `PA0` and signals nothing, `GPIO.cs` L47) adds `[NOISY] spi1.u4: Chip Select is deasserted.` and `[WARNING] spi1.u4: Transmission finished in the unexpected state: RecognizeOperation`;
   - **so with the wire, every good read ends with a device warning.**
 - **`none-jedec`:** record 1 = `0x22020000`, `0x00000000`; no line from any `spi1` source; no `[ERROR]`.
 - **`mux-jedec`, 3/3 identical reads** (`reads_sha256` `c388a871…`, the same as `direct-jedec`'s):
@@ -388,7 +388,7 @@ Everything below was measured after commit `f61da75`, which holds the prediction
 | P3.1 | the inventory | as listed (S3 below) | read |
 | P6.1 | no gate in this work order; `4100` | reasoned (S6 below) | reasoned |
 
-**Why no fold (P5.1):** `AET-WO-2204` F5 saw Renode fold repeated lines with `collapse-repeated-log-entries = True`. Here, with the same key and synchronous logging, four consecutive identical warnings were not folded. Why was not established. The build's witness must neither assume folding nor be broken by it, so it should refuse a ` (N)` suffix on a witness line, as 2204's does.
+**Why no fold (P5.1):** `AET-WO-2204` F5 saw Renode fold repeated lines with `collapse-repeated-log-entries = True`. Here, with the same key and synchronous logging, three consecutive identical warnings were not folded on the console. Why was not established; a hidden line at a lower level between them (for example the controller's `Debug` `Setting IRQ to …`) is an untested cause. The build's witness must neither assume folding nor be broken by it, so it should refuse a ` (N)` suffix on a witness line, as 2204's does.
 
 ## Recommendations, one per question
 
@@ -411,7 +411,7 @@ Everything below was measured after commit `f61da75`, which holds the prediction
     - the twin emits two new names per bus or device (`spi1mux`, `u4_memory`), which must stay clear of references and of 2204's reserved list (D7).
 - **S3. A pinned data file of part values in `aethelgard-ir`, with each Renode model's behaviour kept as code (D3).**
   - **Home and form:** `crates/aethelgard-ir/data/parts.json`, embedded with `include_str!` and sha256-pinned by a tier-1 test. The precedent is `svd-hal`'s pinned CMSIS header (`cmsis.rs` L26).
-  - **Parsing:** serde with `deny_unknown_fields`; `serde_json` moves from a dev-dependency to a dependency of `aethelgard-ir`.
+  - **Parsing:** serde with `deny_unknown_fields`; `serde_json` moves from a dev-dependency to a dependency of `aethelgard-ir`. `workspace_shape.rs` (`ir_depends_on_no_other_member`) forbids only `aethelgard-*` dependencies there, so this passes it (read; not run).
   - **Validation:** once, at first use, refusing by name (`PartsTableInvalid { part, field, reason }`):
     - a duplicate part;
     - a field out of range, such as an I2C address above `0x7F`, an identity wider than 4 bytes, an SPI mode outside 0 to 3, or a supply minimum above its maximum;
@@ -454,10 +454,13 @@ Everything below was measured after commit `f61da75`, which holds the prediction
     - **MISO stuck at 0:** indistinguishable from an empty `spi1`, with no line at all;
     - **an open chip select:** collides with `cs-never` (the same line).
 - **S6. No analog gate in this work order.**
+  - **Silicon revision (a correction to the predictions' grounds):** the predictions called the reference rev V silicon; nothing read established that. Rev Y's Table 52 (`ds10.txt` L9371 on) gives the same speed-`10` limits (85/110/166 MHz at 50/30/10 pF, 2.7–3.6 V, note 5), so the margin below holds on both revisions.
   - **The margin:** at `OSPEEDR` `10`, DS12117 Rev 10 Table 149 (rev V) allows 85 MHz into 50 pF at 2.7–3.6 V, more than four times the reference's 20 MHz at any capacitance the stackup can give.
   - **Where a check would fire:** only at `OSPEEDR` `00` (Fmax 16 MHz even at 10 pF), which the generator never emits for an SPI pin.
   - **The check, when it comes:** a static table check, `Fmax(OSPEEDR, VDD, C)` ≥ the bus clock, with C from the routed geometry. It belongs with the stackup and extraction (`4100`).
   - **One caveat for `4100`** (F6): the `10`/`11` rows assume the I/O compensation cell enabled (note 5), and the generated firmware never enables it.
+
+**Not run, and the build's first measurement:** anything across `machine Reset`. `SPIMultiplexer.Reset()` clears its input state (L47–50), so chip-select state after a droop's reset may differ from the state at load. The reference's droop scenarios will cross it.
 
 ## §7 checked
 
@@ -476,10 +479,10 @@ Everything below was measured after commit `f61da75`, which holds the prediction
 - **F3 · An undriven chip select is a selected part · `GPIO.Connect` L80, `SetActiveLow` · high for the generator · measured (pass 1).**
   - At load every mux input reads low, so active. Until the firmware drives a chip select high, its part is selected, and two such parts turn every transfer into `0xFF`.
   - Recommendation: the generated firmware idles every chip select high before the bus's first transfer. Two seeded possibilities follow (another part's chip select held).
-- **F4 · Renode did not fold four identical consecutive warnings · `collapse-repeated-log-entries = True`, synchronous logging · low · measured.**
-  - This contradicts `AET-WO-2204` F5's observation (asynchronous).
+- **F4 · Renode did not fold three identical consecutive warnings · `collapse-repeated-log-entries = True`, synchronous logging · low · measured.**
+  - `AET-WO-2204` F5's folding (asynchronous) is not reproduced here; the cause is untested.
   - Recommendation: the witness refuses a ` (N)` suffix and never relies on folding.
-- **F5 · No barometer, and none of the named IMUs, is modelled on SPI · Renode 1.17.0 · high for `4500` · read.**
+- **F5 · No barometer, and none of the named IMUs, is modelled on SPI · Renode 1.17.0 · high for `4500` · read** (after the census: `BMP180`, `LPS25HB` and `ICP_101xx` implement `II2CPeripheral` only, and no class under `Sensors/` implementing `ISPIPeripheral` is a pressure sensor).
   - Recommendation: D5.
 - **F6 · DS12117's speed-`10`/`11` limits assume the I/O compensation cell enabled; nothing enables it · `board.rs` (`OSPEEDR` `10`), DS12117 Rev 10 Table 149 note 5 · medium, for `4100` · read.**
   - Recommendation: `4100` either enables it in the generated firmware or reads the margin without it. Not this work order.
@@ -497,6 +500,8 @@ Everything below was measured after commit `f61da75`, which holds the prediction
   - **(a)** a `SPIMultiplexer` per bus, chip selects wired active-low, devices at their index. Recommended, measured: two devices, chip-select faults, `0xFF` MISO.
   - **(b)** the device directly on `spi1`, one device per bus, with no chip-select fault.
 - **D2 (S4): accept the model's `Transmit`-path lines as the SPI witness** (2204 D1's rule, for SPI), exact whole lines in order, with no ` (N)` suffix (F4), and every finish, chip-select and mux line excluded (F2). Recommended.
+  - **2204's rule cannot be reused as written.** Its judge fails any extra line with a witness's shape (`[NOISY] <device>: `), and these models log `Noisy` lines that are not transfers on every chip-select edge: the flash's `Chip Select is deasserted.`, the IMU's `Finishing transmission, going idle`.
+  - **What SPI needs instead:** a per-model, exact list of such lines, which the judge skips. Any other line from the device still fails.
 - **D3 (S3): the parts table's form.**
   - **(a)** the pinned `parts.json` in `aethelgard-ir`, `serde_json` promoted to a dependency, refused by name at first use, the model's witness format kept as code. Recommended.
   - **(b)** a typed Rust `const` table.
