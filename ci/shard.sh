@@ -261,8 +261,10 @@ run() {
     set +e
     : >"$out/test-ws.log"
     for t in "${ws[@]}"; do
-      RUSTC_BOOTSTRAP=1 cargo test --workspace "${FEATURES[@]}" -- -Z unstable-options --report-time --test-threads=1 --exact "$t" 2>&1 | tee -a "$out/test-ws.log" | awk '/^ +Running /{b=$0;sub(/^ +Running /,"",b);sub(/ \(.*$/,"",b)} /^test .* [.][.][.] (ok|FAILED)/{n=$2;t=$0;gsub(/^.*<|s>$/,"",t);print "MEASURE\t" b "\t" n "\t" t}'
-      [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
+      t0=$EPOCHREALTIME
+      RUSTC_BOOTSTRAP=1 cargo test --workspace "${FEATURES[@]}" -- -Z unstable-options --report-time --test-threads=1 --exact "$t" 2>&1 | tee -a "$out/test-ws.log" | awk '/^ +Running /{b=$0;sub(/^ +Running /,"",b);sub(/ \(.*$/,"",b)} /^test [^ ]+ [.][.][.]/{p=$2} /(ok|FAILED) <[0-9.]+s>$/{t=$0;gsub(/^.*<|s>$/,"",t);print "MEASURE\t" b "\t" p "\t" t}'
+      st=${PIPESTATUS[0]}; echo "WALL	$t	$(awk -v a="$t0" -v b="$EPOCHREALTIME" 'BEGIN{printf "%.2f", b-a}')"
+      [ "$st" -eq 0 ] || status=1
     done
     set -e
   fi
@@ -270,8 +272,10 @@ run() {
     set +e
     : >"$out/test-bridge.log"
     for t in "${br[@]}"; do
-      RUSTC_BOOTSTRAP=1 cargo test "${BRIDGE[@]}" -- -Z unstable-options --report-time --test-threads=1 --exact "$t" 2>&1 | tee -a "$out/test-bridge.log" | awk '/^ +Running /{b=$0;sub(/^ +Running /,"",b);sub(/ \(.*$/,"",b)} /^test .* [.][.][.] (ok|FAILED)/{n=$2;t=$0;gsub(/^.*<|s>$/,"",t);print "MEASURE\tbridge:" b "\t" n "\t" t}'
-      [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
+      t0=$EPOCHREALTIME
+      RUSTC_BOOTSTRAP=1 cargo test "${BRIDGE[@]}" -- -Z unstable-options --report-time --test-threads=1 --exact "$t" 2>&1 | tee -a "$out/test-ws.log" | awk '/^ +Running /{b=$0;sub(/^ +Running /,"",b);sub(/ \(.*$/,"",b)} /^test [^ ]+ [.][.][.]/{p=$2} /(ok|FAILED) <[0-9.]+s>$/{t=$0;gsub(/^.*<|s>$/,"",t);print "MEASURE\t" b "\t" p "\t" t}'
+      st=${PIPESTATUS[0]}; echo "WALL	$t	$(awk -v a="$t0" -v b="$EPOCHREALTIME" 'BEGIN{printf "%.2f", b-a}')"
+      [ "$st" -eq 0 ] || status=1
     done
     set -e
   fi
