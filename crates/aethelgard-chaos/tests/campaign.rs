@@ -1625,7 +1625,7 @@ mod archived {
             decoupling_picofarads: 100_000,
         };
         assert_eq!(
-            aethelgard_chaos::campaign::tools_of(&[rail.clone()]),
+            aethelgard_chaos::campaign::tools_of(std::slice::from_ref(&rail)),
             ["aethelgard", "aethelgard-bridge", "renode"]
         );
         let crossing = Record::RailCrossing {

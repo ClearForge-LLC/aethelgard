@@ -306,5 +306,6 @@ Reduction pass (diff): net lines positive (the removals above take out the `allo
 
 - `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (with and without `with-tools`), `cargo test --workspace`: green on Furnace.
 - `TIER2_MIN` 90, exact: 1909's, unchanged here.
-- CI: on the PR at the pushed head; recorded in the PR thread and the final report.
+- **CI's first run of the build (`f8d4053`) failed `gates` and shard 0 on one clippy lint,** `cloned_ref_to_slice_refs`, in the `tools_of` rail test. I added that test (for mutant M14) after my last local clippy run: my miss, not a flake. It is fixed, and every clippy gate (workspace, `with-tools`, bridge) was re-run locally before the push.
+- CI: on the PR at the pushed head; recorded in the final report.
 
