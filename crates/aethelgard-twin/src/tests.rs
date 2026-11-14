@@ -293,6 +293,8 @@ fn the_judge_expects_the_part_table_s_values_in_records_after_the_boot_word() {
     );
     assert_eq!((f.status_at, f.value_at), (word + 12, word + 16));
     assert_eq!(f.judge(boot::STATUS_RXP, 0), boot::Outcome::Timeout("RXP"));
+    assert_eq!(f.judge(boot::STATUS_TXIS, 0), boot::Outcome::Invalid);
+    assert_eq!(c.judge(boot::STATUS_RXP, 0x60), boot::Outcome::Invalid);
     assert_eq!((c.width, c.expected), (1, 0x60));
     assert_eq!((c.status_at, c.value_at), (word + 4, word + 8));
     assert_eq!(image.identity.unmodelled.len(), 1);

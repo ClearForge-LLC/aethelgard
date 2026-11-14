@@ -94,7 +94,7 @@ pub fn tree(
         aethelgard_eda::schematic::emit(spec, topology, table).map_err(GenerateError::Emit)?;
     // The devices are the topology's; the firmware reads the ones the twin can
     // answer for, and the platform declares the same ones (`AET-WO-2202`).
-    let answers = |part: &str| aethelgard_twin::model::model(part).is_some();
+    let answers = |part: &str| aethelgard_twin::model::model(part).is_ok_and(|m| m.is_some());
     let board =
         aethelgard_svd_hal::board::generate_with(&crate_name(project), topology, table, &answers)
             .map_err(GenerateError::Board)?;

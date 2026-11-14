@@ -5,6 +5,7 @@
 // - Renode 1.17.0: `platforms/cpus/stm32h7.repl` sha256 `b85cb4af7a7e98f784ed822941ddc2ec4ddc0c3928c3efe7ef7bb4702764251e`.
 // - Register facts: `https://github.com/STMicroelectronics/cmsis-device-h7` at `8f922cdc7cc6de2344e75ddd657889f4ff761790`, `stm32h753xx.h` sha256 `4f6def439a9fa94705303fe227d34308048c44bd36263d311aa54cc94f8398f5`.
 // - Unmodelled I2C devices (no Renode 1.17.0 model): U3 (TMP117) at I2C1 0x48.
+// - Unmodelled SPI devices (no Renode 1.17.0 model): none.
 using "platforms/cpus/stm32h753.repl"
 
 // SPI1: SPI1_BASE and SPI1_IRQn from the header; the model is `spi4`'s.
@@ -16,3 +17,23 @@ spi1: SPI.STM32H7_SPI @ {
 
 // U2: Renode 1.17.0's `I2C.BME280`, at 0x76 on i2c1.
 u2: I2C.BME280 @ i2c1 0x76
+
+// SPI1's chip selects (AET-WO-4200 D1): Renode 1.17.0's `SPI.SPIMultiplexer`, input k
+// active-low and the device at address k selected by it.
+spi1mux: SPI.SPIMultiplexer @ spi1
+    init:
+        SetActiveLow 0
+
+gpioPortA:
+    0 -> spi1mux@0
+
+// U4: Renode 1.17.0's `SPI.GenericSpiFlash`, its JEDEC ID the parts table's, at
+// spi1mux@0, chip select PA0; its array is 2^capacity bytes.
+u4_memory: Memory.MappedMemory
+    size: 0x800000
+
+u4: SPI.GenericSpiFlash @ spi1mux 0
+    underlyingMemory: u4_memory
+    manufacturerId: 0xEF
+    memoryType: 0x40
+    capacityCode: 0x17

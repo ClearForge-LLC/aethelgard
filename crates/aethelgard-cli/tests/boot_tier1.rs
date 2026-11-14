@@ -89,7 +89,7 @@ fn elf() -> Vec<u8> {
 }
 
 /// The listing of the emitted platform's CPU and every solved peripheral.
-const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
+const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n  \u{2502}   \u{2514}\u{2500}\u{2500} spi1mux (SPIMultiplexer)\n  \u{2502}       \u{2514}\u{2500}\u{2500} u4 (GenericSpiFlash)\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
 
 /// The reference topology's seven registers as a correct boot leaves them.
 const GOOD_REGISTERS: [&str; 7] = [
@@ -134,10 +134,26 @@ fn reads(word: &str, instructions: &str, mips: &str, registers: &[&str]) -> Vec<
         "0xE7FD".to_owned(),
     ];
     v.extend(registers.iter().map(|r| (*r).to_owned()));
-    // U2's record: OK, then the BME280's identity.
+    // U2's record: OK, then the BME280's identity; then U4's, the flash's
+    // JEDEC ID (`AET-WO-4200`).
     v.extend(GOOD_RECORD.iter().map(|r| (*r).to_owned()));
+    v.extend(GOOD_SPI_RECORD.iter().map(|r| (*r).to_owned()));
     v
 }
+
+/// The record a firmware that read U4's JEDEC ID (0x9F) as EF 40 17 leaves.
+const GOOD_SPI_RECORD: [&str; 2] = ["0x22020000", "0x00EF4017"];
+
+/// What Renode 1.17.0's `GenericSpiFlash` logs for U4's JEDEC ID read behind
+/// SPI1's multiplexer (`AET-WO-4200` S2, measured).
+const GOOD_SPI_WITNESS: &str = "[03:07:39.4001] [NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation\n\
+[03:07:39.4002] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadID, write enabled False\n\
+[03:07:39.4003] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
+[03:07:39.4004] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0xEF\n\
+[03:07:39.4005] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
+[03:07:39.4006] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x40\n\
+[03:07:39.4007] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
+[03:07:39.4008] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x17\n";
 
 /// What Renode 1.17.0's BME280 logs for U2's identity read (`AET-WO-2204`
 /// S1, measured): the run's witness, before `BEGIN`.
@@ -151,7 +167,7 @@ const GOOD_RECORD: [&str; 2] = ["0x22020000", "0x00000060"];
 fn with(log: &str, word: &str, instructions: &str, mips: &str, registers: &[&str]) -> String {
     let r = reads(word, instructions, mips, registers);
     transcript(
-        &format!("{GOOD_WITNESS}{log}"),
+        &format!("{GOOD_WITNESS}{GOOD_SPI_WITNESS}{log}"),
         &r.iter().map(String::as_str).collect::<Vec<_>>(),
     )
 }
@@ -192,7 +208,7 @@ if [ "$3" = --version ]; then printf '{version}\n'; exit 0; fi
 # No console level is ever set (`AET-WO-2204` D4); only a device's source level.
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.010000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.010000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 /bin/cat '{out}'
@@ -929,10 +945,15 @@ fn with_log(record: [&str; 2], log: &str) -> String {
         "0x00000064",
         &GOOD_REGISTERS,
     );
+    // U2's record, before U4's (`AET-WO-4200`), which stays good, its
+    // witness after the test's log.
     let n = r.len();
-    r[n - 2] = record[0].to_owned();
-    r[n - 1] = record[1].to_owned();
-    transcript(log, &r.iter().map(String::as_str).collect::<Vec<_>>())
+    r[n - 4] = record[0].to_owned();
+    r[n - 3] = record[1].to_owned();
+    transcript(
+        &format!("{log}{GOOD_SPI_WITNESS}"),
+        &r.iter().map(String::as_str).collect::<Vec<_>>(),
+    )
 }
 
 fn finding<'a>(v: &'a Value, kind: &str) -> Option<&'a Value> {
@@ -1176,7 +1197,7 @@ fn the_judge_s_own_log_after_begin_is_never_the_run_s() {
     let locked = "[03:07:40.0001] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.i2c1. Address 0x40005404.";
     let r = after(&[locked, locked]);
     let (code, v) = boot(&transcript(
-        GOOD_WITNESS,
+        &format!("{GOOD_WITNESS}{GOOD_SPI_WITNESS}"),
         &r.iter().map(String::as_str).collect::<Vec<_>>(),
     ));
     assert_eq!(code, Some(0), "{v}");
@@ -1190,7 +1211,11 @@ fn the_judge_s_own_log_after_begin_is_never_the_run_s() {
         &r.iter().map(String::as_str).collect::<Vec<_>>(),
     ));
     assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{v}");
+    assert_eq!(
+        kinds(&v),
+        ["i2c_transaction_unwitnessed", "spi_transaction_unwitnessed"],
+        "{v}"
+    );
     // Anything after `BEGIN` that is neither a value nor a whole log line is
     // refused, never read (F2: a log line split below line level).
     for split in [
@@ -1200,7 +1225,7 @@ fn the_judge_s_own_log_after_begin_is_never_the_run_s() {
     ] {
         let r = after(&[split]);
         untrusted(boot(&transcript(
-            GOOD_WITNESS,
+            &format!("{GOOD_WITNESS}{GOOD_SPI_WITNESS}"),
             &r.iter().map(String::as_str).collect::<Vec<_>>(),
         )));
     }
@@ -1214,7 +1239,12 @@ fn a_log_past_the_filter_s_budget_leaves_every_read_unwitnessed() {
     let flood = "[03:07:39.4000] [WARNING] i2c1: Receive buffer underflow!\n".repeat(160_000);
     let (code, v) = boot(&with_log(GOOD_RECORD, &format!("{GOOD_WITNESS}{flood}")));
     assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{v}");
+    // Every read, U4's on SPI too (`AET-WO-4200`).
+    assert_eq!(
+        kinds(&v),
+        ["i2c_transaction_unwitnessed", "spi_transaction_unwitnessed"],
+        "{v}"
+    );
     assert!(finding(&v, "renode_log_flood").is_some(), "{v}");
     assert_eq!(v["boot"]["i2c_witness"][0]["observed"], Value::Null);
 }
@@ -1233,7 +1263,7 @@ fn a_core_handling_an_exception_fails_naming_vectactive() {
     // `systick-before`, measured: VECTACTIVE 15, on `fault`'s own self-loop.
     r[4] = "0x0400080F".into();
     let (code, v) = boot(&transcript(
-        GOOD_WITNESS,
+        &format!("{GOOD_WITNESS}{GOOD_SPI_WITNESS}"),
         &r.iter().map(String::as_str).collect::<Vec<_>>(),
     ));
     assert_eq!(code, Some(1), "{v}");
@@ -1245,7 +1275,7 @@ fn a_core_handling_an_exception_fails_naming_vectactive() {
     // Bits above VECTACTIVE do not count.
     r[4] = "0x0400F800".into();
     let (code, v) = boot(&transcript(
-        GOOD_WITNESS,
+        &format!("{GOOD_WITNESS}{GOOD_SPI_WITNESS}"),
         &r.iter().map(String::as_str).collect::<Vec<_>>(),
     ));
     assert_eq!(code, Some(0), "{v}");
@@ -1262,7 +1292,7 @@ fn a_core_not_on_a_self_loop_fails_and_both_of_its_halfwords_pass() {
         );
         r[3] = pc.into();
         boot(&transcript(
-            GOOD_WITNESS,
+            &format!("{GOOD_WITNESS}{GOOD_SPI_WITNESS}"),
             &r.iter().map(String::as_str).collect::<Vec<_>>(),
         ))
     };
@@ -1288,7 +1318,7 @@ fn a_core_not_on_a_self_loop_fails_and_both_of_its_halfwords_pass() {
     );
     r[5] = "0x6008".into();
     let (code, v) = boot(&transcript(
-        GOOD_WITNESS,
+        &format!("{GOOD_WITNESS}{GOOD_SPI_WITNESS}"),
         &r.iter().map(String::as_str).collect::<Vec<_>>(),
     ));
     assert_eq!(code, Some(1), "{v}");
@@ -1343,9 +1373,14 @@ fn two_devices_witness_their_own_reads_in_the_records_order() {
             "0x00000064",
             &GOOD_REGISTERS,
         );
-        r.extend(GOOD_RECORD.iter().map(|s| (*s).to_owned()));
-        let text = transcript(log, &r.iter().map(String::as_str).collect::<Vec<_>>())
-            .replace(CPU_LISTING, &listing);
+        // U5's record after U2's, before U4's on SPI (`AET-WO-4200`).
+        let n = r.len();
+        r.splice(n - 2..n - 2, GOOD_RECORD.iter().map(|s| (*s).to_owned()));
+        let text = transcript(
+            &format!("{log}{GOOD_SPI_WITNESS}"),
+            &r.iter().map(String::as_str).collect::<Vec<_>>(),
+        )
+        .replace(CPU_LISTING, &listing);
         // A stub that checks the configuration alone: two devices make
         // another command line.
         let tb = Dir::new("tb-two");

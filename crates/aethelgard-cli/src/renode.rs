@@ -317,7 +317,7 @@ impl BootPlan<'_> {
                 Read::Register(i),
             ));
         }
-        for (i, c) in self.image.i2c.checks.iter().enumerate() {
+        for (i, c) in self.image.identity.checks.iter().enumerate() {
             for (at, word) in [(c.status_at, 0), (c.value_at, 1)] {
                 reads.push((
                     format!("sysbus ReadDoubleWord {at:#010x}"),
@@ -365,7 +365,7 @@ impl BootPlan<'_> {
             "sysbus WriteDoubleWord {:#010x} 0x0",
             self.boot_word
         )];
-        for check in &self.image.i2c.checks {
+        for check in &self.image.identity.checks {
             for at in [check.status_at, check.value_at] {
                 c.push(format!(
                     "sysbus WriteDoubleWord {at:#010x} {:#010x}",
@@ -382,7 +382,7 @@ impl BootPlan<'_> {
     /// release (`AET-WO-2301` adversarial F1, `AET-WO-2204`).
     fn probe_reads(&self) -> Vec<String> {
         let mut c = vec![format!("sysbus ReadDoubleWord {:#010x}", self.boot_word)];
-        if let Some(check) = self.image.i2c.checks.first() {
+        if let Some(check) = self.image.identity.checks.first() {
             for at in [check.status_at, check.value_at] {
                 c.push(format!("sysbus ReadDoubleWord {at:#010x}"));
             }
@@ -397,7 +397,7 @@ impl BootPlan<'_> {
     /// command.
     fn witness_levels(&self) -> Vec<String> {
         self.image
-            .i2c
+            .identity
             .checks
             .iter()
             .filter(|c| {
@@ -513,8 +513,40 @@ pub struct Observed {
     /// For each identity check, the addresses its bus's controller found no
     /// device at during the run (Renode's `Unknown slave at address N.`), in
     /// order: attribution's evidence of a transfer to a wrong address, never
-    /// a witness (`AET-WO-2204`, the seeded set's `wrong-address`).
+    /// a witness (`AET-WO-2204`, the seeded set's `wrong-address`). Empty for
+    /// an SPI check.
     pub absent: Vec<Vec<u8>>,
+    /// For each identity check on SPI, every line its controller's
+    /// multiplexer logged when it routed a byte to no device, to several, or
+    /// to an address with none (`SPIMultiplexer.cs` L56, L62, L69), whole
+    /// and in order: attribution's evidence, never a witness (`AET-WO-4200`
+    /// D4). Empty for an I2C check.
+    pub unrouted: Vec<Vec<String>>,
+}
+
+/// A line the multiplexer of `mux` (`spi1.spi1mux`) logs when a byte reaches
+/// no single device: its whole text after the timestamp.
+fn unrouted_line<'l>(line: &'l str, mux: &str) -> Option<&'l str> {
+    log_body(line).filter(|b| {
+        b.strip_prefix("[WARNING] ")
+            .and_then(|r| r.strip_prefix(mux))
+            .and_then(|r| r.strip_prefix(": Tried to transmit byte 0x"))
+            .is_some()
+    })
+}
+
+/// `i2c` or `spi`: the prefix of a check's finding kinds.
+fn bus_word(c: &aethelgard_twin::boot::IdentityCheck) -> &'static str {
+    match c.wire {
+        aethelgard_twin::boot::Wire::I2c { .. } => "i2c",
+        aethelgard_twin::boot::Wire::Spi { .. } => "spi",
+    }
+}
+
+/// How a finding names a check's device: `U2 at I2C address 0x76`, or `U4 on
+/// SPI1, chip select PA0`.
+fn who(c: &aethelgard_twin::boot::IdentityCheck) -> String {
+    format!("{} {}", c.reference, c.wire.describe(&c.peripheral))
 }
 
 /// An address the controller `bus` (`i2c1`) found no device at, from its
@@ -706,10 +738,12 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             reads.len()
         )));
     }
-    let checks = &plan.image.i2c.checks;
+    let checks = &plan.image.identity.checks;
     // Past the filter's budget a log line may have been dropped, so no
     // witness can be read whole: every one is unwitnessed, never passed
-    // (`AET-WO-2204` D2, ruled).
+    // (`AET-WO-2204` D2, ruled). A line the model writes that is not a
+    // transfer, exactly as the twin lists it, is skipped; nothing else is
+    // (`AET-WO-4200` D2).
     let witnesses: Vec<Option<Vec<String>>> = checks
         .iter()
         .map(|c| {
@@ -717,6 +751,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
                 last_boot
                     .iter()
                     .filter_map(|l| witness_shaped(l, &c.device))
+                    .filter(|b| !c.skipped.iter().any(|s| s == b))
                     .map(str::to_owned)
                     .collect()
             })
@@ -734,12 +769,29 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         witnesses,
         absent: checks
             .iter()
-            .map(|c| {
-                let bus = c.device.split('.').next().unwrap_or_default();
-                last_boot
-                    .iter()
-                    .filter_map(|l| absent_address(l, bus))
-                    .collect()
+            .map(|c| match c.wire {
+                aethelgard_twin::boot::Wire::I2c { .. } => {
+                    let bus = c.device.split('.').next().unwrap_or_default();
+                    last_boot
+                        .iter()
+                        .filter_map(|l| absent_address(l, bus))
+                        .collect()
+                }
+                aethelgard_twin::boot::Wire::Spi { .. } => Vec::new(),
+            })
+            .collect(),
+        unrouted: checks
+            .iter()
+            .map(|c| match c.wire {
+                aethelgard_twin::boot::Wire::I2c { .. } => Vec::new(),
+                aethelgard_twin::boot::Wire::Spi { .. } => {
+                    let mux = c.device.rsplit_once('.').map_or("", |(m, _)| m);
+                    last_boot
+                        .iter()
+                        .filter_map(|l| unrouted_line(l, mux))
+                        .map(str::to_owned)
+                        .collect()
+                }
             })
             .collect(),
     };
@@ -906,18 +958,18 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
     // before that `boot_word_missing` already says the run failed.
     if booted {
         for (c, &(status, value)) in checks.iter().zip(&observed.records) {
-            findings.extend(i2c_finding(c, status, value));
+            findings.extend(identity_finding(c, status, value));
         }
         findings.extend(witness_findings(checks, &observed, &last_boot));
     }
-    for d in &plan.image.i2c.unmodelled {
+    for d in &plan.image.identity.unmodelled {
         findings.push(Finding::info(
             "device_unmodelled",
             format!(
-                "{} ({}) at I2C address {:#04x} has no Renode {} model, so its identity was not read",
+                "{} ({}) {} has no Renode {} model, so its identity was not read",
                 d.reference,
                 d.part,
-                d.address,
+                d.wire.describe(&d.peripheral),
                 aethelgard_twin::platform::RENODE_VERSION
             ),
         ));
@@ -934,7 +986,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
 /// whole lines, in order, and across the devices in the records' order. A
 /// record that says a wait expired claims nothing.
 fn witness_findings(
-    checks: &[aethelgard_twin::boot::I2cCheck],
+    checks: &[aethelgard_twin::boot::IdentityCheck],
     observed: &Observed,
     log: &[&str],
 ) -> Vec<Finding> {
@@ -948,37 +1000,53 @@ fn witness_findings(
     if !each.is_empty() {
         return each;
     }
-    // Each device's own lines are right; the devices' order must be too.
-    let devices: Vec<&str> = claimed.iter().map(|&i| checks[i].device.as_str()).collect();
-    let seen: Vec<&str> = log
-        .iter()
-        .filter_map(|l| devices.iter().find_map(|d| witness_shaped(l, d)))
-        .collect();
-    let want: Vec<&str> = claimed
-        .iter()
-        .flat_map(|&i| checks[i].witness.iter().flatten().map(String::as_str))
-        .collect();
-    if seen == want {
-        return Vec::new();
-    }
-    vec![Finding::plain(
-        "i2c_witness_out_of_order",
-        format!(
-            "the devices' witness lines are not in the records' order: Renode logged {seen:?}, the records need {want:?}"
-        ),
-    )]
+    // Each device's own lines are right; the devices' order on each bus must
+    // be too. Two buses are judged apart: the I2C order as `AET-WO-2204`
+    // built it, and the SPI order (`AET-WO-4200`).
+    ["i2c", "spi"]
+        .into_iter()
+        .filter_map(|bus| {
+            let on: Vec<usize> = claimed
+                .iter()
+                .copied()
+                .filter(|&i| bus_word(&checks[i]) == bus)
+                .collect();
+            let seen: Vec<&str> = log
+                .iter()
+                .filter_map(|l| {
+                    on.iter().find_map(|&i| {
+                        witness_shaped(l, &checks[i].device)
+                            .filter(|b| !checks[i].skipped.iter().any(|s| s == b))
+                    })
+                })
+                .collect();
+            let want: Vec<&str> = on
+                .iter()
+                .flat_map(|&i| checks[i].witness.iter().flatten().map(String::as_str))
+                .collect();
+            (seen != want).then(|| {
+                Finding::plain(
+                    &format!("{bus}_witness_out_of_order"),
+                    format!(
+                        "the devices' witness lines are not in the records' order: Renode logged {seen:?}, the records need {want:?}"
+                    ),
+                )
+            })
+        })
+        .collect()
 }
 
 /// The finding for one record that claims its read completed, or none when
 /// Renode logged exactly the model's lines for it.
 fn witness_finding(
-    c: &aethelgard_twin::boot::I2cCheck,
+    c: &aethelgard_twin::boot::IdentityCheck,
     seen: Option<&[String]>,
 ) -> Option<Finding> {
-    let who = format!("{} at I2C address {:#04x}", c.reference, c.address);
+    let who = who(c);
+    let bus = bus_word(c);
     let Some(want) = &c.witness else {
         return Some(Finding::plain(
-            "i2c_witness_unavailable",
+            &format!("{bus}_witness_unavailable"),
             format!(
                 "{who}: the twin knows no witness format for its model, so no read of it can be witnessed"
             ),
@@ -987,14 +1055,14 @@ fn witness_finding(
     match seen {
         Some(seen) if seen == want.as_slice() => None,
         Some(seen) => Some(Finding::plain(
-            "i2c_transaction_unwitnessed",
+            &format!("{bus}_transaction_unwitnessed"),
             format!(
                 "{who}: the record says the read completed, but Renode logged {seen:?} for `{}`, not {want:?}",
                 c.device
             ),
         )),
         None => Some(Finding::plain(
-            "i2c_transaction_unwitnessed",
+            &format!("{bus}_transaction_unwitnessed"),
             format!(
                 "{who}: the record says the read completed, but the log passed the filter's budget, so `{}`'s witness cannot be read whole",
                 c.device
@@ -1006,27 +1074,33 @@ fn witness_finding(
 /// The finding for one identity record, or none when the read passed. The
 /// expectation is the check's, which comes from the part table, never from
 /// the firmware (`INV-07`).
-fn i2c_finding(c: &aethelgard_twin::boot::I2cCheck, status: u32, value: u32) -> Option<Finding> {
+fn identity_finding(
+    c: &aethelgard_twin::boot::IdentityCheck,
+    status: u32,
+    value: u32,
+) -> Option<Finding> {
     use aethelgard_twin::boot::Outcome;
-    let who = format!("{} at I2C address {:#04x}", c.reference, c.address);
+    let who = who(c);
+    let bus = bus_word(c);
+    let what = if bus == "i2c" { "register" } else { "command" };
     match c.judge(status, value) {
         Outcome::Pass => None,
         Outcome::Mismatch => Some(Finding::plain(
-            "i2c_identity_mismatch",
+            &format!("{bus}_identity_mismatch"),
             format!(
-                "{who}: register {:#04x} read {value:#x}, the part table says {:#x}",
-                c.register, c.expected
+                "{who}: {what} {:#04x} read {value:#x}, the part table says {:#x}",
+                c.write, c.expected
             ),
         )),
         Outcome::Timeout(stage) => Some(Finding::plain(
-            "i2c_timeout",
+            &format!("{bus}_timeout"),
             format!(
-                "{who}: the firmware's wait for {stage} expired reading register {:#04x} (expected {:#x})",
-                c.register, c.expected
+                "{who}: the firmware's wait for {stage} expired reading {what} {:#04x} (expected {:#x})",
+                c.write, c.expected
             ),
         )),
         Outcome::Invalid => Some(Finding::plain(
-            "i2c_record_invalid",
+            &format!("{bus}_record_invalid"),
             format!(
                 "{who}: the record reads status {status:#010x} and value {value:#010x}, which no completed or timed-out transfer writes"
             ),
@@ -1067,7 +1141,7 @@ fn probes_in(text: &str, dropped: bool, plan: &BootPlan<'_>) -> Result<Vec<Probe
     let begins = sentinels(&lines, PROBE_BEGIN, n).map_err(untrusted)?;
     let ends = sentinels(&lines, PROBE_END, n).map_err(untrusted)?;
     let reads = plan.probe_reads();
-    let check = plan.image.i2c.checks.first();
+    let check = plan.image.identity.checks.first();
     let mut out = Vec::new();
     for (k, release) in releases.iter().enumerate() {
         let (r, b, e) = (released[k], begins[k], ends[k]);
@@ -1121,15 +1195,18 @@ fn probes_in(text: &str, dropped: bool, plan: &BootPlan<'_>) -> Result<Vec<Probe
 }
 
 /// How a record's status reads in the verdict.
-pub fn status_name(status: u32) -> &'static str {
-    use aethelgard_twin::boot::{STATUS_OK, STATUS_RXNE, STATUS_STOP, STATUS_TC, STATUS_TXIS};
-    match status {
-        STATUS_OK => "ok",
-        STATUS_TXIS => "timeout_txis",
-        STATUS_TC => "timeout_tc",
-        STATUS_RXNE => "timeout_rxne",
-        STATUS_STOP => "timeout_stopf",
-        _ => "invalid",
+pub fn status_name(c: &aethelgard_twin::boot::IdentityCheck, status: u32) -> &'static str {
+    use aethelgard_twin::boot::Outcome;
+    // The check's own judgement names it, so a status counts only on its own
+    // bus (`AET-WO-4200`): an I2C record holding `RXP`'s word is invalid.
+    match c.judge(status, c.expected) {
+        Outcome::Pass | Outcome::Mismatch => "ok",
+        Outcome::Timeout("TXIS") => "timeout_txis",
+        Outcome::Timeout("TC") => "timeout_tc",
+        Outcome::Timeout("RXNE") => "timeout_rxne",
+        Outcome::Timeout("STOPF") => "timeout_stopf",
+        Outcome::Timeout("RXP") => "timeout_rxp",
+        Outcome::Timeout(_) | Outcome::Invalid => "invalid",
     }
 }
 
@@ -1139,7 +1216,7 @@ mod tests {
 
     fn image() -> aethelgard_twin::boot::Image {
         let topology: aethelgard_ir::SolvedTopology = serde_json::from_str(
-            r#"{"schema_version":2,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}}}"#,
+            r#"{"schema_version":3,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{}}"#,
         )
         .unwrap();
         aethelgard_twin::boot::expected(&topology).unwrap()
@@ -1209,7 +1286,7 @@ mod tests {
         bare.instances = &[];
         assert!(!bare.commands().contains("logLevel"));
         let rec = |at: u32| format!("sysbus WriteDoubleWord {at:#010x} 0xffffffff");
-        let check = &image.i2c.checks[0];
+        let check = &image.identity.checks[0];
         let want = [
             "cpu VectorTableOffset 0x08000000".to_owned(),
             "logLevel -1 sysbus.i2c1.u2".to_owned(),

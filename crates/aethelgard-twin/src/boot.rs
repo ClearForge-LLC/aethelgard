@@ -246,14 +246,17 @@ impl IdentityCheck {
     /// The status word and value word, judged. Pass needs both: a status of
     /// OK and exactly the table's value.
     pub fn judge(&self, status: u32, value: u32) -> Outcome {
-        match status {
-            STATUS_OK if value == self.expected => Outcome::Pass,
-            STATUS_OK => Outcome::Mismatch,
-            STATUS_TXIS => Outcome::Timeout("TXIS"),
-            STATUS_TC => Outcome::Timeout("TC"),
-            STATUS_RXNE => Outcome::Timeout("RXNE"),
-            STATUS_STOP => Outcome::Timeout("STOPF"),
-            STATUS_RXP => Outcome::Timeout("RXP"),
+        // A status counts only on its own bus: an I2C read never writes
+        // `RXP`, and an SPI read none of the I2C waits.
+        let spi = matches!(self.wire, Wire::Spi { .. });
+        match (status, spi) {
+            (STATUS_OK, _) if value == self.expected => Outcome::Pass,
+            (STATUS_OK, _) => Outcome::Mismatch,
+            (STATUS_TXIS, false) => Outcome::Timeout("TXIS"),
+            (STATUS_TC, false) => Outcome::Timeout("TC"),
+            (STATUS_RXNE, false) => Outcome::Timeout("RXNE"),
+            (STATUS_STOP, false) => Outcome::Timeout("STOPF"),
+            (STATUS_RXP, true) => Outcome::Timeout("RXP"),
             _ => Outcome::Invalid,
         }
     }

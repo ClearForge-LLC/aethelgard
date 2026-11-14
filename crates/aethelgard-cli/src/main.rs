@@ -392,6 +392,7 @@ fn main() -> ExitCode {
                         virtual_ns,
                         scenario: String::new(),
                         held: Vec::new(),
+                        absent: Default::default(),
                         rail: None,
                     }),
                 )
@@ -934,6 +935,8 @@ struct Boot {
     /// --firmware` has neither (`AET-WO-2300`).
     scenario: String,
     held: Vec<campaign::HeldLow>,
+    /// The SPI devices the scenario leaves absent (`AET-WO-4200` D4).
+    absent: std::collections::BTreeSet<String>,
     /// A campaign scenario's declared droop (`AET-WO-2301`); `None` otherwise.
     rail: Option<analog::Rail>,
 }
@@ -953,6 +956,9 @@ struct Ready {
     topology: aethelgard_ir::SolvedTopology,
     scenario: String,
     held: Vec<campaign::HeldLow>,
+    /// The SPI devices a campaign scenario leaves absent behind their chip
+    /// selects (`AET-WO-4200` D4).
+    absent: std::collections::BTreeSet<String>,
     rail: Option<analog::Rail>,
 }
 
@@ -1029,6 +1035,7 @@ fn ready(
             topology: boot.topology,
             scenario: boot.scenario,
             held: boot.held,
+            absent: boot.absent,
             rail: boot.rail,
         },
     ))
@@ -1265,8 +1272,9 @@ fn analog_pass(r: &Ready, scratch: &Scratch) -> Result<(analog::Pass, Booted), r
         &scratch.root.join("status-bridge"),
     )?;
     let faulted = pass.faulted();
-    let text = aethelgard_twin::platform::emit_faulted(&r.topology, &faulted).map_err(twin_stop)?;
-    let instances = aethelgard_twin::platform::instances(&r.topology, &faulted)
+    let text = aethelgard_twin::platform::emit_faulted(&r.topology, &faulted, &r.absent)
+        .map_err(twin_stop)?;
+    let instances = aethelgard_twin::platform::instances(&r.topology, &faulted, &r.absent)
         .map_err(twin_stop)?
         .into_iter()
         .map(|i| (i.name, i.model))
@@ -1292,8 +1300,8 @@ fn analog_pass(r: &Ready, scratch: &Scratch) -> Result<(analog::Pass, Booted), r
 /// the verdict's `faults`, read again just before Renode starts.
 fn booted_is_emitted(booted: &Path, r: &Ready, pass: &analog::Pass) -> Result<(), run::Stop> {
     let topology = &r.topology;
-    let want =
-        aethelgard_twin::platform::emit_faulted(topology, &pass.faulted()).map_err(twin_stop)?;
+    let want = aethelgard_twin::platform::emit_faulted(topology, &pass.faulted(), &r.absent)
+        .map_err(twin_stop)?;
     let have = fs::read(booted)
         .map_err(|e| run::Stop::unreadable(format!("cannot read the booted platform: {e}")))?;
     if have != want.as_bytes() {
@@ -1350,25 +1358,29 @@ fn boot_report(
         unobservable: r.image.unobservable.clone(),
         i2c: r
             .image
-            .i2c
+            .identity
             .checks
             .iter()
             .enumerate()
-            .map(|(i, c)| verdict::I2cReport {
-                reference: c.reference.clone(),
-                address: format!("{:#04x}", c.address),
-                register: format!("{:#04x}", c.register),
-                expected: format!("{:#x}", c.expected),
-                observed: observed.map(|o| format!("{:#x}", o.records[i].1)),
-                status: observed.map(|o| renode::status_name(o.records[i].0)),
+            .filter_map(|(i, c)| match c.wire {
+                aethelgard_twin::boot::Wire::I2c { address } => Some(verdict::I2cReport {
+                    reference: c.reference.clone(),
+                    address: format!("{address:#04x}"),
+                    register: format!("{:#04x}", c.write),
+                    expected: format!("{:#x}", c.expected),
+                    observed: observed.map(|o| format!("{:#x}", o.records[i].1)),
+                    status: observed.map(|o| renode::status_name(c, o.records[i].0)),
+                }),
+                aethelgard_twin::boot::Wire::Spi { .. } => None,
             })
             .collect(),
         i2c_witness: r
             .image
-            .i2c
+            .identity
             .checks
             .iter()
             .enumerate()
+            .filter(|(_, c)| matches!(c.wire, aethelgard_twin::boot::Wire::I2c { .. }))
             .map(|(i, c)| {
                 verdict::WitnessReport::of(
                     c,
@@ -1377,6 +1389,41 @@ fn boot_report(
                         .map(|o| o.absent[i].iter().map(|a| format!("{a:#04x}")).collect())
                         .unwrap_or_default(),
                 )
+            })
+            .collect(),
+        spi: r
+            .image
+            .identity
+            .checks
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| match &c.wire {
+                aethelgard_twin::boot::Wire::Spi { select, .. } => Some(verdict::SpiReport {
+                    reference: c.reference.clone(),
+                    peripheral: c.peripheral.clone(),
+                    select: select.clone(),
+                    command: format!("{:#04x}", c.write),
+                    expected: format!("{:#x}", c.expected),
+                    observed: observed.map(|o| format!("{:#x}", o.records[i].1)),
+                    status: observed.map(|o| renode::status_name(c, o.records[i].0)),
+                }),
+                aethelgard_twin::boot::Wire::I2c { .. } => None,
+            })
+            .collect(),
+        spi_witness: r
+            .image
+            .identity
+            .checks
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| matches!(c.wire, aethelgard_twin::boot::Wire::Spi { .. }))
+            .map(|(i, c)| verdict::SpiWitnessReport {
+                peripheral: c.peripheral.clone(),
+                reference: c.reference.clone(),
+                device: c.device.clone(),
+                expected: c.witness.clone().unwrap_or_default(),
+                observed: observed.and_then(|o| o.witnesses[i].clone()),
+                unrouted: observed.map(|o| o.unrouted[i].clone()).unwrap_or_default(),
             })
             .collect(),
         icsr: observed.map(|o| word(o.icsr)),
