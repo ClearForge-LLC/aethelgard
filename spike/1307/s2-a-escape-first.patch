@@ -1,0 +1,259 @@
+diff --git a/crates/aethelgard-eda/src/route.rs b/crates/aethelgard-eda/src/route.rs
+index 9f13cfd..2f777bc 100644
+--- a/crates/aethelgard-eda/src/route.rs
++++ b/crates/aethelgard-eda/src/route.rs
+@@ -62,6 +62,10 @@ pub const MIN_THICKNESS_NM: i64 = 250_000;
+ pub const GROUND: &str = crate::schematic::GND;
+ /// How many nets may be taken up, in all, to make way for others.
+ pub const RIPUPS: usize = 500;
++/// Escape rows and the depth between them, in pitches.
++const ROWS: usize = 2;
++const LANE: usize = 12;
++const ROW_STEP: usize = 5;
+ 
+ /// Added to every reach on the grid. Two open nodes a pitch apart are each
+ /// at least `R + EPS` from an obstacle, so the chord between them stays at
+@@ -384,6 +388,8 @@ struct Router<'a> {
+     /// Via nodes a connection may not use: each made a via of its own path
+     /// too close to another.
+     banned: BTreeSet<usize>,
++    /// Planned plane escapes: net, pad, unit edges, via node.
++    seeds: Vec<(usize, PadRef, Vec<(usize, usize)>, usize)>,
+     // The search's scratch, stamped per search.
+     stamp: Vec<u16>,
+     cost: Vec<u32>,
+@@ -488,6 +494,7 @@ impl<'a> Router<'a> {
+             released: vec![false; count],
+             history: [vec![0; n], vec![0; n]],
+             banned: BTreeSet::new(),
++            seeds: Vec::new(),
+             stamp: vec![0; 2 * n * 5],
+             cost: vec![0; 2 * n * 5],
+             prev: vec![0; 2 * n * 5],
+@@ -900,6 +907,7 @@ impl<'a> Router<'a> {
+     fn rip(&mut self, net: usize) {
+         self.edges[net] = Default::default();
+         self.vias.retain(|_, n| *n != net);
++        self.seed(net);
+         self.release(net, false);
+         self.track = self.hard_track.clone();
+         self.via = self.hard_via.clone();
+@@ -918,6 +926,185 @@ impl<'a> Router<'a> {
+         }
+     }
+ 
++    fn seed(&mut self, net: usize) {
++        for (n, _, edges, via) in &self.seeds {
++            if *n == net {
++                self.edges[net][0].extend(edges.iter().copied());
++                self.vias.insert(*via, net);
++            }
++        }
++    }
++
++    /// Escape first: one planned stub and via per pad of the densest part.
++    /// Plane nets' are laid as copper; signal nets' are reserved.
++    fn plan_escapes(&mut self, stitched: &[usize], routable: &BTreeSet<usize>) {
++        let board = self.board;
++        let Some(part) = board
++            .parts
++            .iter()
++            .enumerate()
++            .max_by_key(|(i, p)| (p.pads.len(), Reverse(*i)))
++            .map(|(i, _)| i)
++        else {
++            return;
++        };
++        let pads = &board.parts[part].pads;
++        let Some(field) = pads.iter().map(|p| p.rect).reduce(|a, b| a.union(b)) else {
++            return;
++        };
++        // (side, along, pad index)
++        let mut list: Vec<(usize, i64, usize)> = Vec::new();
++        for (i, p) in pads.iter().enumerate() {
++            let (cx, cy) = p.rect.centre();
++            let d = [
++                cx - field.x0,
++                field.x1 - cx,
++                cy - field.y0,
++                field.y1 - cy,
++            ];
++            let (side, near) = (0..4).min_by_key(|&k| (d[k], k)).map(|k| (k, d[k])).unwrap_or((0, 0));
++            if near > 1_000_000 {
++                continue;
++            }
++            list.push((side, if side < 2 { cy } else { cx }, i));
++        }
++        list.sort();
++        let mut rows: BTreeMap<usize, usize> = BTreeMap::new();
++        let mut cnt: BTreeMap<usize, usize> = BTreeMap::new();
++        for &(side, _, i) in &list {
++            let c = cnt.entry(side).or_insert(0);
++            rows.insert(i, *c % ROWS);
++            *c += 1;
++        }
++        let mut todo: Vec<(bool, usize, i64, usize)> = Vec::new();
++        for &(side, along, i) in &list {
++            let Some(net) = pads[i].net.as_ref().and_then(|n| self.nets.binary_search(n).ok())
++            else {
++                continue;
++            };
++            if !routable.contains(&net) {
++                continue;
++            }
++            todo.push((!stitched.contains(&net), side, along, i));
++        }
++        todo.sort();
++        let mut planned: Vec<(u32, Vec<usize>)> = Vec::new();
++        let mut lanes: Vec<(u32, Vec<usize>)> = Vec::new();
++        for &(side, _, i) in &list {
++            let Some(net) = pads[i].net.as_ref().and_then(|n| self.nets.binary_search(n).ok())
++            else {
++                continue;
++            };
++            let (cx, cy) = pads[i].rect.centre();
++            let dir = [1, 0, 3, 2][side];
++            let Some(st) = self.grid.nodes(pads[i].inner()).min_by_key(|&n| {
++                let (x, y) = self.grid.at(n);
++                ((x - cx).abs() + (y - cy).abs(), n)
++            }) else {
++                continue;
++            };
++            let mut v = vec![st];
++            while v.len() < LANE {
++                let Some(nx) = self.grid.step(v[v.len() - 1], dir) else { break };
++                v.push(nx);
++            }
++            lanes.push((owner(net), v));
++        }
++        let pad_nodes: Vec<(u32, Vec<usize>)> = pads
++            .iter()
++            .filter_map(|p| {
++                let net = p.net.as_ref().and_then(|n| self.nets.binary_search(n).ok())?;
++                routable
++                    .contains(&net)
++                    .then(|| (owner(net), self.grid.nodes(p.inner()).collect()))
++            })
++            .collect();
++        for (_, side, _, i) in todo {
++            let net = pads[i]
++                .net
++                .as_ref()
++                .and_then(|n| self.nets.binary_search(n).ok())
++                .unwrap_or(0);
++            let who = owner(net);
++            let ends = self.terminals(&pads[i], net);
++            let (cx, cy) = pads[i].rect.centre();
++            let Some(&start) = ends.iter().min_by_key(|&&n| {
++                let (x, y) = self.grid.at(n);
++                ((x - cx).abs() + (y - cy).abs(), n)
++            }) else {
++                continue;
++            };
++            let dir = [1, 0, 3, 2][side];
++            // Nodes outward from the start.
++            let mut nodes = vec![start];
++            while nodes.len() <= 20 {
++                let Some(nx) = self.grid.step(*nodes.last().unwrap_or(&start), dir) else {
++                    break;
++                };
++                nodes.push(nx);
++            }
++            let base = (1..nodes.len())
++                .find(|&t| opens(self.hard_via[nodes[t]], who))
++                .unwrap_or(1);
++            let min_t = base + rows[&i] * ROW_STEP;
++            let mut found = None;
++            for t in min_t..nodes.len().min(min_t + 12) {
++                if nodes[..=t].iter().any(|&n| !opens(self.track[0][n], who)) {
++                    break;
++                }
++                if opens(self.via[nodes[t]], who) && opens(self.track[1][nodes[t]], who) {
++                    found = Some(t);
++                    break;
++                }
++            }
++            eprintln!("TRY pad {} side {side} start {start} base {base} found {:?} ends {}", pads[i].number, found, ends.len());
++            let Some(t0) = found else { continue };
++            let mut done = false;
++            for t in t0..nodes.len().min(t0 + 12) {
++                if nodes[..=t].iter().any(|&n| !opens(self.track[0][n], who)) {
++                    break;
++                }
++                if !(opens(self.via[nodes[t]], who) && opens(self.track[1][nodes[t]], who)) {
++                    continue;
++                }
++                let saved = (self.track.clone(), self.via.clone());
++                let edges: Vec<(usize, usize)> = nodes[..=t]
++                    .windows(2)
++                    .map(|w| (w[0].min(w[1]), w[0].max(w[1])))
++                    .collect();
++                for &(a, b) in &edges {
++                    self.claim_edge(net, Layer::F, a, b);
++                }
++                self.claim_via(net, nodes[t]);
++                planned.push((who, nodes[..=t].to_vec()));
++                let kept = planned.iter().all(|(w, ns)| {
++                    ns.iter().all(|&n| opens(self.track[0][n], *w))
++                        && opens(self.track[1][ns[ns.len() - 1]], *w)
++                }) && lanes.iter().all(|(w, ns)| ns.iter().all(|&n| opens(self.track[0][n], *w)))
++                    && pad_nodes.iter().all(|(w, ns)| {
++                    ns.is_empty() || ns.iter().any(|&n| opens(self.track[0][n], *w))
++                });
++                if !kept {
++                    planned.pop();
++                    self.track = saved.0;
++                    self.via = saved.1;
++                    continue;
++                }
++                if stitched.contains(&net) {
++                    self.seeds.push((net, (part, i), edges, nodes[t]));
++                }
++                done = true;
++                break;
++            }
++            eprintln!("PLAN pad {} t0 {:?} done {done}", pads[i].number, found);
++        }
++        self.hard_track = self.track.clone();
++        self.hard_via = self.via.clone();
++        for net in 0..self.nets.len() {
++            self.seed(net);
++        }
++    }
++
+     fn pad(&self, (part, i): PadRef) -> &'a Pad {
+         &self.board.parts[part].pads[i]
+     }
+@@ -1008,7 +1195,15 @@ impl<'a> Router<'a> {
+         let main = main_label(&labels);
+         let zone: Vec<bool> = labels.iter().map(|l| l.is_some() && *l == main).collect();
+         let mut joined: BTreeSet<usize> = BTreeSet::new();
++        for (n, _, edges, _) in &self.seeds {
++            if *n == net {
++                joined.extend(edges.iter().flat_map(|&(a, b)| [a, b]));
++            }
++        }
+         for &p in pads {
++            if self.seeds.iter().any(|(n, sp, _, _)| *n == net && *sp == p) {
++                continue;
++            }
+             let name = self.pad_name(p);
+             let ends = self.terminals(self.pad(p), net);
+             if ends.is_empty() {
+@@ -1409,6 +1604,8 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
+         )
+     });
+     let mut r = Router::new(board, grid, nets.clone());
++    let routable: BTreeSet<usize> = order.iter().copied().collect();
++    r.plan_escapes(&stitched, &routable);
+     let mut queue: VecDeque<usize> = order.iter().copied().collect();
+     let mut ripups = 0;
+     let zones = loop {
+@@ -1512,6 +1709,7 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
+     // belt-and-suspenders: the grid's margins already keep the copper clear
+     // and joined (no tested board reaches these); the exact judges stand
+     // behind them, so a router defect fails closed rather than ships.
++    eprintln!("RIPUPS_TOTAL {ripups}");
+     check(board, &routed).map_err(|why| fail("", why))?;
+     connectivity(board, &routed).map_err(|why| fail("", why))?;
+     Ok(routed)

@@ -1,0 +1,147 @@
+diff --git a/crates/aethelgard-eda/src/route.rs b/crates/aethelgard-eda/src/route.rs
+index 9f13cfd..24ee3d7 100644
+--- a/crates/aethelgard-eda/src/route.rs
++++ b/crates/aethelgard-eda/src/route.rs
+@@ -1034,6 +1034,85 @@ impl<'a> Router<'a> {
+         Ok(())
+     }
+ 
++    /// Probe (b): every stitched net's pads in ONE pass, most constrained
++    /// first (fewest free via sites within 16 pitches, recounted after each
++    /// join), then by position (y, x).
++    fn route_joint(
++        &mut self,
++        nets: &[usize],
++        pads: &[&Vec<PadRef>],
++        bump: &mut BTreeSet<PadRef>,
++    ) -> Result<(), Stuck> {
++        let mut zones: Vec<Vec<bool>> = Vec::new();
++        for &net in nets {
++            let core = self.zone_core(net);
++            let all: Vec<usize> = (0..core.len()).collect();
++            let labels = components(&self.grid, &core, &all);
++            let main = main_label(&labels);
++            zones.push(labels.iter().map(|l| l.is_some() && *l == main).collect());
++        }
++        let mut joined: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); nets.len()];
++        let mut todo: Vec<(usize, PadRef)> = Vec::new();
++        for (k, ps) in pads.iter().enumerate() {
++            todo.extend(ps.iter().map(|&p| (k, p)));
++        }
++        while !todo.is_empty() {
++            let mut best = 0;
++            let mut key = (true, usize::MAX, i64::MAX, i64::MAX);
++            for (i, &(k, p)) in todo.iter().enumerate() {
++                let r = self.pad(p).rect;
++                let reach = Rect {
++                    x0: r.x0 - 16 * PITCH_NM,
++                    y0: r.y0 - 16 * PITCH_NM,
++                    x1: r.x1 + 16 * PITCH_NM,
++                    y1: r.y1 + 16 * PITCH_NM,
++                };
++                let free = self
++                    .grid
++                    .nodes(reach)
++                    .filter(|&n| self.via_open(n, nets[k]))
++                    .count();
++                let kk = (!bump.contains(&p), free, r.y0 + r.y1, r.x0 + r.x1);
++                if kk < key {
++                    key = kk;
++                    best = i;
++                }
++            }
++            let (k, p) = todo.remove(best);
++            let net = nets[k];
++            let name = self.pad_name(p);
++            let ends = self.terminals(self.pad(p), net);
++            if ends.is_empty() {
++                return Err(Stuck::Unroutable(format!(
++                    "{name} has no node clear to start a track"
++                )));
++            }
++            if ends.iter().any(|n| joined[k].contains(n)) {
++                joined[k].extend(ends);
++                continue;
++            }
++            let own: BTreeSet<usize> = ends.iter().copied().collect();
++            let zone = &zones[k];
++            let jk = &joined[k];
++            let goal = |l: Layer, n: usize| {
++                (l == Layer::B && zone[n]) || (jk.contains(&n) && !own.contains(&n))
++            };
++            let sources: Vec<Node> = ends.iter().map(|&n| (Layer::F, n)).collect();
++            let what = format!("cannot take {name} to a via");
++            let path = match self.connect(net, &sources, &ends, &goal, &|_| 0, false, &what) {
++                Ok(path) => path,
++                Err(e) => {
++                    bump.insert(p);
++                    return Err(e);
++                }
++            };
++            self.commit(net, &path);
++            joined[k].extend(path.iter().filter(|(l, _)| *l == Layer::F).map(|&(_, n)| n));
++            joined[k].extend(ends);
++        }
++        Ok(())
++    }
++
+     /// `None` when the zone's (or plane's) fill is one piece holding every via
+     /// of `ground`, the stitched net; otherwise the nets whose copper fences
+     /// it apart. Every node on such a fence costs B.Cu searches more from now
+@@ -1411,12 +1490,30 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
+     let mut r = Router::new(board, grid, nets.clone());
+     let mut queue: VecDeque<usize> = order.iter().copied().collect();
+     let mut ripups = 0;
++    let mut bump: BTreeSet<PadRef> = BTreeSet::new();
+     let zones = loop {
+         while let Some(net) = queue.pop_front() {
++            let group = stitched.len() > 1 && stitched.contains(&net);
++            if group {
++                for &g in &stitched {
++                    if g != net {
++                        queue.retain(|q| *q != g);
++                        r.rip(g);
++                    }
++                }
++            }
+             r.release(net, true);
+             loop {
+                 let p = &pads[&nets[net]];
+-                let result = if stitched.contains(&net) {
++                if group {
++                    for &g in &stitched {
++                        r.release(g, true);
++                    }
++                }
++                let result = if group {
++                    let ps: Vec<&Vec<PadRef>> = stitched.iter().map(|&g| &pads[&nets[g]]).collect();
++                    r.route_joint(&stitched, &ps, &mut bump)
++                } else if stitched.contains(&net) {
+                     r.route_ground(net, p)
+                 } else {
+                     r.route_net(net, p)
+@@ -1438,8 +1535,16 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
+                 // then the blockers, in their order.
+                 r.rip(net);
+                 r.release(net, true);
++                if group {
++                    for &g in &stitched {
++                        r.rip(g);
++                    }
++                }
+                 queue.retain(|q| !by.contains(q));
+                 for &b in by.iter().rev() {
++                    if group && stitched.contains(&b) {
++                        continue;
++                    }
+                     r.rip(b);
+                     queue.push_front(b);
+                 }
+@@ -1512,6 +1617,7 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
+     // belt-and-suspenders: the grid's margins already keep the copper clear
+     // and joined (no tested board reaches these); the exact judges stand
+     // behind them, so a router defect fails closed rather than ships.
++    eprintln!("RIPUPS_TOTAL {ripups}");
+     check(board, &routed).map_err(|why| fail("", why))?;
+     connectivity(board, &routed).map_err(|why| fail("", why))?;
+     Ok(routed)
