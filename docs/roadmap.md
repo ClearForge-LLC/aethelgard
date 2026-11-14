@@ -206,7 +206,15 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
   - **Records.** Trace version 5; kind 19 is on device lines too.
   - **Tests and CI.** `TIER2_MIN` is 91. CI on `b93f7bf`: 14 checks green, slowest shard 15:38.
   - **Open after it.** A2 and A3 are named residuals; A4 waits for P4's IMU work order; A5 goes to `aethelgard-eda`; B4 to `2205`.
-- `AET-WO-2205` — **written 2026-11-14**, build with one stop (the seeded set's evidence table), strong tier, targeted adversarial pass, from `2204`'s split: the archive's hygiene and attribution's evidence. Engine and tool versions in the archive header and record kinds renamed from "measured" (review B4), the analog deck's 400 kHz window labelled (review A10.4, `2301` B4), the status-to-phase table in one place (`3100` F2), the executable segments archived for `pc_outside_firmware` (`3100` F13), and the seeded set's exact evidence per case with an indeterminate case end to end (review A7.5, A7.6). Also `power::SOURCE` to DS12117 Rev 10 (`2301` D10) and the droop's witness report slimmed (`2204` B4). One trace version bump, 5 to 6. `3100` F2 may already be closed by `2204`'s removal of the `CR2`/`TXDR` evidence; the build checks first. **Launched 2026-11-14** beside `1909` and `4200`.
+- `AET-WO-2205` — **merged (PR #119, `d1385f3`)**, build with one stop, strong tier, targeted adversarial pass. **The archive's hygiene and attribution's evidence.** Trace version 6:
+  - the header names its tools (`aethelgard`, Renode by its `build:` line, and the bridge and ngspice when they ran), and replay reports them;
+  - kind 7 is `analog.rise_time_computed`;
+  - kinds 7 and 8 carry the 400 kHz deck window beside the declared speed;
+  - kind 10 archives the executable segments, so replay judges `pc_outside_firmware`, with a new S2 seeded case, `leave-firmware`;
+  - `power::SOURCE` cites DS12117 Rev 10;
+  - the droop's witness report is slimmed.
+
+  The seeded set (`cases.json` v2) pins each case's exact evidence and masked events, with the shift rule in the test's doc comment. An I3 indeterminate case (`trap-indeterminate-leave-47k`) gets `no_proposal` under `INV-05`. `3100` F2 is closed by `79bdfe1` (no gating survives). 14 of 14 mutants killed; one adversarial should-fix (M3, masked collected only from the named rule) fixed.
 
 **Exit gate: passed 2026-11-09, as reconciled in §7.** Every clause below is owned by merged work.
 
@@ -392,22 +400,22 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | Tier-2 canary; missing-key test; quickstart on `main`; README status test | review A6, A7, B5, B8 | **done (PR #87)** |
 | Manifest read uncapped; relative `PATH` entries; case-colliding labels | review A11.2, A12.2, A10.1 | **done (PR #87)** |
 | I2C witness forgeable by a hand-written firmware | review A11.1 | **done, `AET-WO-2204` (PR #111):** the witness is the device model's own log lines; the forgery fails and its test is inverted |
-| Review's unverified test notes (A7.4–A7.7, A10 notes) | review | verified by `1900`: A7.4 and A7.7 fixed; A7.5 and A7.6 to `AET-WO-2205` |
+| Review's unverified test notes (A7.4–A7.7, A10 notes) | review | verified by `1900`: A7.4 and A7.7 fixed; A7.5 and A7.6 **done, `AET-WO-2205` (PR #119)**: exact evidence per seeded case, and an indeterminate case end to end |
 | State folded before the run rules bound it | review A11.3 | **done (PR #87)**: once-only records refused at fold time, `MAX_RECORDS` 65,536. `AET-WO-2301` measures fold memory (about 35 × wire size) and raises or streams it for per-quantum logs |
 | Generation in the CLI; `verify`; verdict binding; harness provenance | review A3, A4, B1 | **merged (PR #91)**: `generate`, `build`, `verify`, `prove --spec` with `harness_provenance` and `cover_count` |
 | Bench comparison early | review | `AET-WO-3302` |
 | Extraction, first step, then full | review A1, B3; `1303` | **first step merged (PR #99)**; `AET-WO-1303` before `4500` |
-| Status-to-phase table in one place | 3100 F2 | `AET-WO-2205` |
-| `pc_outside_firmware` needs the executable segments archived | 3100 F13 | `AET-WO-2205` |
-| `power::SOURCE` cites DS12117 Rev 7 from a mirror; Rev 10 from st.com is held and its thresholds are equal (2301 D10, closed 2026-11-14) | 2301 F1, D10 | `AET-WO-2205`: cite Rev 10, its Table 16 and its hash; no threshold changes |
+| Status-to-phase table in one place | 3100 F2 | **closed, `AET-WO-2205` (PR #119):** no status-to-phase gating survives `2204` (`79bdfe1`); a TXIS timeout alone stays indeterminate (evolve test) |
+| `pc_outside_firmware` needs the executable segments archived | 3100 F13 | **done, `AET-WO-2205` (PR #119):** kind 10 carries them; replay requires the finding exactly when `pc` is outside |
+| `power::SOURCE` cites DS12117 Rev 7 from a mirror; Rev 10 from st.com is held and its thresholds are equal (2301 D10, closed 2026-11-14) | 2301 F1, D10 | **done, `AET-WO-2205` (PR #119):** Rev 10, Table 16, its sha256; Rev 7's values held as independent literals |
 | Only the last transaction per bus is witnessed | 2202 | **done, `AET-WO-2204`:** one witness per identity read, in the records' order |
 | The witness's semantics for more than one read per device: a configuration write, a second read, or interleaved phases fail today (`i2c_witness_out_of_order`) | `2204` A4 | **the P4 IMU work order rules it before its firmware makes a second read** |
 | "Parked" does not exclude an interrupt running after the boot word; a check that `SysTick` and every `ISER` read 0 would break P4's firmware | `2204` A2 | a named residual (`RUL-19` (5)) until P4's IMU work order rules "parked" |
 | The router depends on reference names: `Peripherals` and `Sysbus_` give `Unroutable` | `2204` A5 | `AET-WO-1307` §1 S3 (written 2026-11-14) |
-| The droop's `ObservedReport.witness` carries a whole `WitnessReport`, of which kind 19 archives only `observed` | `2204` B4 | `AET-WO-2205` (it changes the verdict's JSON) |
+| The droop's `ObservedReport.witness` carries a whole `WitnessReport`, of which kind 19 archives only `observed` | `2204` B4 | **done, `AET-WO-2205` (PR #119)** |
 | Bridge identity handshake | 2200 F15 | `AET-WO-2301` |
-| Engine and tool versions in the archive header; record kinds renamed from "measured" | review B4, `RUL-19` | `AET-WO-2205` (its trace version bump) |
-| Analog deck's fixed 400 kHz window labelled | review A10.4 | `AET-WO-2301` |
+| Engine and tool versions in the archive header; record kinds renamed from "measured" | review B4, `RUL-19` | **done, `AET-WO-2205` (PR #119):** trace version 6 |
+| Analog deck's fixed 400 kHz window labelled | review A10.4 | **done, `AET-WO-2205` (PR #119):** kinds 7 and 8 carry `window: [deck_hz, declared_hz]` |
 | Type-level `RUL-16` fence replacing the grep test | review A7.1, B6 | **merged (PR #90)**: private device lists, a crate-local clippy `disallowed-methods` in `cli`, `svd-hal` and `twin`, and a guard test against a stale path |
 | `RLIMIT_FSIZE` for tool scratch | review A12.1 | **merged (PR #96)**: 64 MiB, exit 5 |
 | Escape planning for congested routing | 1302 B10 | **`D1`-class closed by `AET-WO-4100`** (merged, PR #120: routes at 4 layers). **`D3`-class:** `AET-WO-1307` (written 2026-11-14), with `D3` committed as its failing target |
@@ -420,6 +428,8 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | The 4-layer tier-2 tests' CI weights (460 s each) are estimates, not measured alone on CI | `4100` F9 | the next refit (`ci/shard.sh`) |
 | A citable copper-thickness class (IPC-6012) for declared copper maxima; today a fixture without a fabricator tolerance declares the engine's 70 µm condition | `4100` review | the work order that writes Sentinel-02's specification (`4500`) |
 | The battery-sag chain: battery, then buck/LDO dropout, then VDD, fed into `--rail` from declared parts | `4300` D7 | a later analog work order, after `4300d` |
+| `check_joins` does not require a kind 7 or 8 per kind-15 line; a boot that read nothing, with no `boot_word_missing`, replays as `pass`; a finding's severity is open text | `2205` adversarial B1–B3 (older than `2205`) | the next work order that owns the archive's run rules |
+| An I3 seeded trap on a second shape (`cap-390p-sda-2k2` × `leave-firmware`), which would separate evidence mutants the one-bus set cannot (M1) | `2205` adversarial pass 2 | the next work order that touches the seeded set |
 | `validate` accepts a specification that `solve` and `emit` refuse for a bus with no net constraint (`MissingBusConstraint`) | `4100` F1 | the next work order that owns `validate` (whether `validate` runs the solver's bus checks) |
 | The engine's version in the archive header is the package version (`0.1.0`), not a commit | `2205` F4 | the 0.2.0 release row, or the next work order that owns the archive header |
 | Replay cannot bind kind 10's archived segments to the ELF, which is not archived | `2205` F6 | a named residual under `RUL-19` (3) |
@@ -539,6 +549,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-14 | §5 | `AET-WO-4300` written (spike, then a stop that scopes the build, possibly split): flight I/O measured in the twin before it is built | Scotty, 2026-11-14 (spend the week's remainder); roadmap §5 P4 |
 | 2026-11-14 | §5, §7.1 | `AET-WO-4100` reconciled (merged, PR #120): stackups at 2 and 4 layers, specification version 2, extraction over a near plane; 6 layers deferred. `AET-WO-4300` reconciled (spike merged, PR #123): ruled and split into `4300a`–`e2` with an order | PRs #120, #123; ruling comments 6876688824 and 6876703331 |
 | 2026-11-14 | §5, §7.1 | `AET-WO-1307` written (escape planning and name-independent routing); three backlog rows given to it | 4100's `D3`; 1102 A6; 2204 A5; 4100 F7 |
+| 2026-11-14 | §5, §7.1 | `AET-WO-2205` reconciled (merged, PR #119): trace version 6, the seeded set's exact evidence and an indeterminate case; seven backlog rows closed, two added | PR #119 |
 
 ## 9. Provenance
 
