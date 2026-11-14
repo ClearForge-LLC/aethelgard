@@ -594,3 +594,46 @@ Run by a subagent in its own worktree at `247df35`, every edit verified applied 
 | M19 | the reserved list in `check_identifier` | never reserved | `ir validate::a_solved_topology_refuses_a_reserved_reference` |
 | M20 | bytes unpadded, as `BME280.cs` logs them | `{:02X}` | `twin tests::the_witness_lines_are_computed_from_the_part_table_and_the_width` |
 | M21 | 16 archived lines | unbounded | **survived**; then `campaign::tests::witness_lines_are_archived_bounded_and_printable` (added) |
+
+## Measured, at the build
+
+**Every measurement the build relies on is a Rust test** (binding item 1; no Python reached `main`):
+
+| Measurement (spike) | Test |
+|---|---|
+| A11.1 forgery (`CR2`/`TXDR` by hand) fails | `twin_tier2::a_firmware_that_writes_the_controller_registers_by_hand_fails_unwitnessed` (inverted, renamed from `…passes_today_a_named_residual`) |
+| a forged record with no transfer fails | `twin_tier2::a_forged_record_without_a_transaction_fails_unwitnessed` (renamed) |
+| `forge-all`, `wrong-addr-forge` | `twin_tier2::a_forgery_through_every_register_or_a_wrong_address_fails_unwitnessed` |
+| `two-forged-first`, `two-forged-last` (and the real two-device read) | `twin_tier2::on_a_bus_with_two_devices_each_read_is_witnessed` (fixture `tests/fixtures/two-bme.json`) |
+| `systick-before` | `twin_tier2::a_firmware_parked_in_its_fault_handler_fails_naming_vectactive` (SysTick armed by the firmware after its boot-word store) |
+| the short-run judge reads (D8 a) | `twin_tier2::the_judge_s_own_reads_of_a_gated_peripheral_are_never_the_firmware_s`; deterministic in tier 1: `boot_tier1::the_judge_s_own_log_after_begin_is_never_the_run_s` |
+| `flood-locked` (D8) | `twin_tier2::a_locked_access_late_in_a_flood_reaches_the_judge_whole` |
+| S5's colliding references | `twin_tier2::a_device_named_for_a_renode_instance_or_keyword_breaks_the_load` (Renode refuses the load), `aethelgard-ir validate` and `aethelgard-cli reserved_references_tier1` (refused before any output), `aethelgard-twin reserved_names` (the list) |
+| the configuration's keys | `twin_tier2::renode_s_configuration_differs_from_its_default_in_synchronous_logging_alone` |
+| the stripped ELF passes D3 | `board_tier2`'s `verify` path (`aethelgard build` strips; `simulate` boots it) |
+| the reference's witness lines, `ICSR`, `PC` | `twin_tier2::the_reference_firmware_boots_and_two_boots_agree` |
+| the droop probe's window, a device level surviving a reset | `campaign_tier2::the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay`, with `droop-bor3`'s probe witnessed |
+
+**D8's `flood-locked` test does not discriminate the composition** (named, as the advisor asked before the build): the spike measured today's CLI catching that late locked line 10/10 with asynchronous logging, so removing the configuration would not fail it. What does fail when the configuration is removed or a console level is set is deterministic and tier 1: `boot_tier1`'s and `campaign_tier1`'s stubs refuse a call without `--config`, without the synchronous key, or with a `logLevel` other than a device's (mutant M9 killed), and the renode.rs unit test pins the file. The spike's F2 measurement (the marker scattered 8/10 under `flood-max`) was not made a test: the ruling left `flood-max` out for CI time.
+
+**Tier 1 (host, `systemd-run` scope, 32 GiB, no swap):** `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean, and with `--features aethelgard-cli/with-tools`; `cargo test --workspace`: 1,084 passed, 0 failed.
+
+**Tier 2 (the pinned image, before the merge of `main`'s `32a2be0`, docs only):** `twin_tier2` 21/21 (one assertion of mine corrected after its first run: at 1 µs the registers are also at reset, `register_mismatch`; the property, no locked access attributed, held), `campaign_tier2` 8/8, `board_tier2` 18/18, `with_tools` 23/23, `attribute_seeded` 12/12 (the seeded set's 22 cases, its rules and both traps unchanged). Each new tier-2 test alone, in the image (`ci/test-weights.tsv`): 5.98, 11.78, 2.95, 2.83, 4.65, 2.14, 3.62 s; the two renamed 2.97 and 2.98 s.
+
+**Static verdicts against `main` (binding item 3; `~/.cache/aet-2204/baseline/`, main's binaries and the build's, the same 13 scenarios, every replay, the reference `simulate` at 100 ms):**
+- every campaign line, every replay line: identical but for `state_sequence_hash` (each trace carries kind 13's new shape and version 5);
+- the reference `simulate`: identical but for `boot.i2c_witness[0]` (`cr2`, `txdr` gone; `device`, `expected`, `observed`, `absent` added: D6, D7) and the new `boot.icsr` (D3);
+- every verdict, finding and match: identical.
+
+**Caps.** Every container ran under `~/.cache/aet-2204/img.sh` (`--memory`/`--memory-swap` equal, `--pids-limit -1`, `0` written to the container's own `memory.swap.max`, the three files read back before the command may start). **A record lost, mine:** the build's read-back lines for containers before 03:59 were in the spike's `caps.log`, and my own `git checkout` of that file before several commits discarded them. The 46 start-gate flags each container needed (written only after the read-back) remain in `~/.cache/aet-2204/capflags`; the values are gone. Every container since logs to `~/.cache/aet-2204/caps.log` (outside the repository): `memory.swap.max=0` and `pids.max=max` on each.
+
+## Deviations and fence extensions, each named
+
+- **`crates/aethelgard-chaos` kind 19** (the operator's ruling above) and kind 13's `absent` field (the seeded set's attribution, above).
+- **`crates/aethelgard-evolve`**: `witness_fields`, `witness_wrong`, the `i2c_transaction_unwitnessed` selector, and the now-unused `CR2`/`SADD`/`NBYTES` state removed.
+- **`crates/aethelgard-cli/src/elf.rs`** (`self_loops`, the ELF's own bytes), **`analog.rs`** (the probe's recovered rule and report), **`campaign.rs`** (kinds 13/19 emitted, `archived_lines`), outside the fence's "`renode.rs`, `verdict.rs` and `main.rs`'s `simulate`": each is where the record or the boot is built.
+- **`crates/aethelgard-twin/src/model.rs`**: `Model` became an enum for D2's exhaustive `match`.
+- **`crates/aethelgard-cli/README.md`**: the composition, the witness, D3's residual and the attribution rules.
+- **`crates/aethelgard-svd-hal/tests/order_2203.rs`**: its "boot image" digest re-taken (the `Image` it prints carries the witness now); the firmware and both platform digests unchanged, so the generated files and the emitter are byte-identical.
+- **`crates/aethelgard-cli/tests/workspace_shape.rs`**: allows the twin's vendored Renode files and its `sha2` dev-dependency.
+- **The bridge** is unchanged: the droop's Renode gets the CLI's own arguments through `bridge --renode`, `--config` included, so the fence extension D4 allowed was not needed.
