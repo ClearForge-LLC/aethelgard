@@ -107,7 +107,7 @@ exit 0
 
 /// The board's own setup (board minimum 0.01 mm) and a pad's 0.01 mm local
 /// clearance survive into the copy KiCad judges, behind `#` comment lines,
-/// and the verdict says `"rules": "engine-floor"`.
+/// and the verdict says `"rules": "specification"`.
 #[test]
 fn attack_a_board_hiding_its_rules_behind_hash_comments_gets_an_engine_floor_verdict() {
     let d = Dir::new("hash");

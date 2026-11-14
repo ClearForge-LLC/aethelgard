@@ -20,14 +20,12 @@ use aethelgard_ir::Specification;
 
 use crate::sexpr::mm;
 
-/// The engine's own floor: KiCad's default net-class clearance and track
-/// width, 0.2 mm each. The specification declares no spacing or fabrication
-/// field, so `--spec` cannot derive a tighter or looser one; the floor is
-/// engine policy, stated here, not a default substituted for a declared value
-/// (`INV-06`). Spacing between voltage domains is bounded by each domain's
-/// spacing to ground, so one minimum covers isolation as well. A
-/// voltage-derived spacing needs a ruled source (FEEDBACK).
-pub const FLOOR_NM: i64 = 200_000;
+/// The engine's floor: KiCad's default net-class clearance and track width,
+/// 0.2 mm each (`aethelgard_ir::board::FLOOR_UM`). A specification declares
+/// its own rules at or above it (`board.rules`, `AET-WO-4100`); `validate`
+/// refuses one below it. Spacing between voltage domains is bounded by each
+/// domain's spacing to ground, so one minimum covers isolation as well.
+pub const FLOOR_NM: i64 = aethelgard_ir::board::FLOOR_UM as i64 * 1000;
 
 /// Where a rule set came from, as the verdict reports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,7 +37,7 @@ pub enum Source {
 impl Source {
     pub fn name(self) -> &'static str {
         match self {
-            Source::Specification => "engine-floor",
+            Source::Specification => "specification",
             Source::KicadDefault => "kicad-default",
         }
     }
@@ -55,13 +53,14 @@ pub struct Rules {
 }
 
 impl Rules {
-    /// The rules a specification implies. Today that is the floor for every
-    /// specification; the parameter keeps the derivation at its one seam.
-    pub fn from_specification(_spec: &Specification) -> Rules {
+    /// The rules a specification declares (`board.rules`): its clearance and
+    /// track width, each at or above the floor once `validate` has passed.
+    pub fn from_specification(spec: &Specification) -> Rules {
+        let stack = crate::stack::Stack::of(spec);
         Rules {
             source: Source::Specification,
-            clearance_nm: FLOOR_NM,
-            min_track_width_nm: Some(FLOOR_NM),
+            clearance_nm: stack.clearance_nm,
+            min_track_width_nm: Some(stack.width_nm),
         }
     }
 
@@ -152,7 +151,7 @@ mod tests {
             clearance_nm: FLOOR_NM,
             min_track_width_nm: Some(FLOOR_NM),
         };
-        assert_eq!(spec.source.name(), "engine-floor");
+        assert_eq!(spec.source.name(), "specification");
         let pro = spec.project("input");
         assert!(pro.contains("\"min_clearance\": 0.2,"));
         assert!(pro.contains("\"min_track_width\": 0.2 "));

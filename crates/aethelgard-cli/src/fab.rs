@@ -129,8 +129,19 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
         kicad::prepare(kicad::Check::Drc, &copy, &scratch.tool, &rules)?.ok_or_else(|| {
             Stop::tool_error("aethelgard", "no strict reading of the board".to_owned())
         })?;
-    let (_, routed) = aethelgard_eda::route::read(&tree)
+    let stack = aethelgard_eda::stack::Stack::of(b.spec);
+    aethelgard_eda::route::declared(&tree, &stack).map_err(|d| {
+        Stop::tool_error(
+            "aethelgard",
+            format!(
+                "the board is not the declared one ({}): {}",
+                d.kind, d.message
+            ),
+        )
+    })?;
+    let (_, routed) = aethelgard_eda::route::read(&tree, &stack)
         .map_err(|e| Stop::tool_error("aethelgard", format!("the board's copper: {e}")))?;
+    let layers = gerbers(&stack);
     no_drilled_pad(&tree)?;
 
     let tool = run::Tool::find(TOOL)?;
@@ -149,7 +160,7 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
     let version = crate::version(invocation(run::args(["version"]), "status-version"))?;
     let mut out_dir = scratch.tool.clone().into_os_string();
     out_dir.push("/");
-    let layers: Vec<&str> = LAYERS.iter().map(|(l, ..)| *l).collect();
+    let names: Vec<&str> = layers.iter().map(|(l, ..)| l.as_str()).collect();
     let pos = scratch.tool.join(format!("{STEM}-pos.csv"));
     let exports = [
         (
@@ -159,7 +170,7 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
                 "export",
                 "gerbers",
                 "--layers",
-                &layers.join(","),
+                &names.join(","),
                 "--check-zones",
             ]),
             &out_dir,
@@ -198,7 +209,8 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
     }
 
     let mut copper = BTreeMap::new();
-    for (layer, suffix, creator) in LAYERS {
+    for (layer, suffix, creator) in &layers {
+        let (layer, creator) = (layer.as_str(), *creator);
         let raw = read_output(TOOL, &scratch.tool.join(format!("{STEM}-{suffix}")))?;
         let stripped = strip_clock(&raw, creator).map_err(|m| {
             Stop::tool_error(TOOL, format!("the {layer} Gerber is not as measured: {m}"))
@@ -210,7 +222,7 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
     }
     for (net, layer) in &routed.zones {
         let plotted = copper
-            .get(layer.name())
+            .get(layer.as_str())
             .map(Vec::as_slice)
             .unwrap_or_default();
         if !pours(plotted, net) {
@@ -218,7 +230,7 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
                 TOOL,
                 format!(
                     "the board declares a {net} zone on {}, and its Gerber carries no region of {net}: the copper plotted is not the copper DRC judged",
-                    layer.name()
+                    layer
                 ),
             ));
         }
@@ -234,13 +246,14 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
     files.insert(format!("{}.bom.csv", b.project), b.bom.to_vec());
     files.insert(format!("{}.elf", b.project), elf);
 
-    let described = describe(b.project);
+    let described = describe(b.project, &layers);
     let notes = aethelgard_eda::fab::notes(&aethelgard_eda::fab::Notes {
         project: b.project,
         engine_version: env!("CARGO_PKG_VERSION"),
         specification_sha256: b.specification_sha256,
         kicad_version: KICAD_VERSION,
         files: &described,
+        stack: &stack,
     });
     files.insert(NOTES.to_owned(), notes.into_bytes());
     Ok(Exported {
@@ -250,14 +263,38 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
     })
 }
 
+/// The Gerbers of the declared board (`AET-WO-4100`): today's nine, and each
+/// inner copper layer after `B.Cu`, named as KiCad 10.0.7 names it
+/// (`In1_Cu.g1`, `In2_Cu.g2`), its creator line on line 9 as on every copper
+/// layer (measured, S1). The list follows the specification, never the
+/// board, so a package cannot lose a declared layer.
+pub fn gerbers(stack: &aethelgard_eda::stack::Stack) -> Vec<(String, String, usize)> {
+    let mut out = Vec::new();
+    for (layer, suffix, creator) in LAYERS {
+        out.push((layer.to_owned(), suffix.to_owned(), creator));
+        if layer == "B.Cu" {
+            for (i, inner) in stack.copper[1..stack.copper.len() - 1].iter().enumerate() {
+                out.push((
+                    inner.clone(),
+                    format!("{}.g{}", inner.replace('.', "_"), i + 1),
+                    9,
+                ));
+            }
+        }
+    }
+    out
+}
+
 /// Every file of the package but the notes and the manifest, with what it is.
-fn describe(project: &str) -> Vec<(String, &'static str)> {
-    let mut out: Vec<(String, &'static str)> = LAYERS
+fn describe(project: &str, layers: &[(String, String, usize)]) -> Vec<(String, &'static str)> {
+    let mut out: Vec<(String, &'static str)> = layers
         .iter()
         .map(|(layer, suffix, _)| {
-            let what = match *layer {
+            let what = match layer.as_str() {
                 "F.Cu" => "Gerber, top copper",
                 "B.Cu" => "Gerber, bottom copper",
+                "In1.Cu" => "Gerber, inner copper layer 1, a plane (see Stackup)",
+                "In2.Cu" => "Gerber, inner copper layer 2, a plane (see Stackup)",
                 "F.Paste" => "Gerber, top solder paste",
                 "B.Paste" => "Gerber, bottom solder paste",
                 "F.SilkS" => "Gerber, top silkscreen",
@@ -774,11 +811,54 @@ mod tests {
 
     #[test]
     fn the_notes_describe_every_file_and_the_package_names_them_after_the_project() {
-        let d = describe("p");
+        let spec: aethelgard_ir::Specification =
+            serde_json::from_str(&repo_file("examples/sentinel-01-minimal.json")).unwrap();
+        let d = describe("p", &gerbers(&aethelgard_eda::stack::Stack::of(&spec)));
         assert_eq!(d.len(), LAYERS.len() + 4);
         assert!(
             d.iter()
                 .all(|(n, _)| n.starts_with("p-") || n.starts_with("p."))
         );
+    }
+
+    /// A repository file, read when the test runs: the package carries no file
+    /// outside the crate, so nothing here may be `include_str!`ed from one.
+    fn repo_file(path: &str) -> String {
+        std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join(path),
+        )
+        .unwrap()
+    }
+
+    /// The Gerber list follows the declared layers (`AET-WO-4100`): at 2
+    /// layers exactly today's nine; at 4 both inner layers after `B.Cu`,
+    /// named as KiCad 10.0.7 names them, creator line 9 (measured, S1).
+    #[test]
+    fn the_gerbers_are_the_declared_layers() {
+        let load = |text: &str| {
+            let spec: aethelgard_ir::Specification = serde_json::from_str(text).unwrap();
+            gerbers(&aethelgard_eda::stack::Stack::of(&spec))
+        };
+        let two = load(&repo_file("examples/sentinel-01-minimal.json"));
+        let today: Vec<(String, String, usize)> = LAYERS
+            .iter()
+            .map(|(l, s, c)| ((*l).to_owned(), (*s).to_owned(), *c))
+            .collect();
+        assert_eq!(two, today);
+        let four = load(&repo_file(
+            "crates/aethelgard-cli/tests/fixtures/four-layer.json",
+        ));
+        let inner: Vec<&(String, String, usize)> =
+            four.iter().filter(|(l, ..)| l.starts_with("In")).collect();
+        assert_eq!(
+            inner,
+            [
+                &("In1.Cu".to_owned(), "In1_Cu.g1".to_owned(), 9),
+                &("In2.Cu".to_owned(), "In2_Cu.g2".to_owned(), 9)
+            ]
+        );
+        assert_eq!(four.len(), LAYERS.len() + 2);
     }
 }

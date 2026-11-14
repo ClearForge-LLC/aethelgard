@@ -467,7 +467,7 @@ fn what_the_reader_does_not_model_is_refused() {
         (
             "thickness",
             once("(thickness 1.6)", "(thickness 1.0)"),
-            "BoardThickness",
+            "ThicknessDisagrees",
         ),
         ("huge", huge, "BoardTooLarge"),
         (
@@ -627,8 +627,18 @@ fn a_foreign_pad_closer_than_the_clearance_to_a_line_is_refused() {
 #[test]
 fn the_references_smallest_foreign_gap_to_each_line_is_at_least_the_clearance() {
     use aethelgard_eda::extract;
-    use aethelgard_eda::route::{CLEARANCE_NM, Layer, VIA_NM, WIDTH_NM};
-    let read = extract::read(reference()).unwrap();
+    use aethelgard_eda::route::{Layer, VIA_NM};
+    use aethelgard_eda::rules::FLOOR_NM;
+    let spec: aethelgard_ir::Specification = serde_json::from_slice(
+        &fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join(SPEC),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let read = extract::read(reference(), &aethelgard_eda::stack::Stack::of(&spec)).unwrap();
     // (net, layers [F, B], box, radius, name)
     let mut items = Vec::new();
     for part in &read.board.parts {
@@ -651,7 +661,7 @@ fn the_references_smallest_foreign_gap_to_each_line_is_at_least_the_clearance() 
             Some(s.net.clone()),
             on,
             (x0, y0, x1, y1),
-            WIDTH_NM / 2,
+            FLOOR_NM / 2,
             "track".to_owned(),
         ));
     }
@@ -684,6 +694,6 @@ fn the_references_smallest_foreign_gap_to_each_line_is_at_least_the_clearance() 
             "ANSWER 1305 smallest foreign gap {net}: {:.0} nm, {}",
             best.0, best.1
         );
-        assert!(best.0 >= CLEARANCE_NM as f64, "{net}: {best:?}");
+        assert!(best.0 >= FLOOR_NM as f64, "{net}: {best:?}");
     }
 }

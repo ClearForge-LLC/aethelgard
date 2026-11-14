@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 use aethelgard_eda::route::{self, Layer};
+use aethelgard_eda::stack::Stack;
 use aethelgard_eda::strict;
 use serde_json::Value;
 
@@ -74,8 +75,15 @@ fn emitted(d: &Dir) -> String {
     fs::read_to_string(r["board"]["path"].as_str().unwrap()).unwrap()
 }
 
+/// The reference specification's declared stack.
+fn stack() -> Stack {
+    let spec: aethelgard_ir::Specification =
+        serde_json::from_slice(&fs::read(example("sentinel-01-minimal.json")).unwrap()).unwrap();
+    Stack::of(&spec)
+}
+
 fn read(board: &str) -> (route::Board, route::Routed) {
-    route::read(&strict::board(board).unwrap()).unwrap()
+    route::read(&strict::board(board).unwrap(), &stack()).unwrap()
 }
 
 /// Two processes, in different environments, working directories and out
@@ -167,6 +175,7 @@ fn no_copper_touches_an_unconnected_pad() {
     for pad in lone {
         let alone = route::Board {
             outline: board.outline,
+            stack: stack(),
             parts: vec![route::Part {
                 reference: "lone".into(),
                 pads: vec![pad.clone()],
@@ -184,7 +193,7 @@ fn every_nets_copper_is_connected() {
     let d = Dir::new("connected");
     let (board, routed) = read(&emitted(&d));
     route::connectivity(&board, &routed).unwrap();
-    assert_eq!(routed.zones, vec![("GND".to_owned(), Layer::B)]);
+    assert_eq!(routed.zones, vec![("GND".to_owned(), "B.Cu".to_owned())]);
     // A track taken away leaves a net in pieces, and the check says so.
     let mut cut = routed.clone();
     let i = cut

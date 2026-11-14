@@ -2,13 +2,13 @@
 
 The specification schema and the solved topology, as two separate types (`RUL-16`), with validation. Every type refuses unknown fields and accepts only a JSON object. Nothing defaults (`INV-06`).
 
-## `Specification`, version 1
+## `Specification`, version 2
 
-Every key is required. `peripheral`, `pin` and `impedance_ohms` may be `null`, but the key may not be missing. Arrays keep the order they were written in; nothing is sorted.
+Version 2 (`AET-WO-4100`) added `board`. A version-1 file is refused by name (`UnsupportedSchemaVersion`); nothing supplies a board for it. Every key is required. `peripheral`, `pin`, `impedance_ohms` and a signal layer's `net` may be `null`, but the key may not be missing. Arrays keep the order they were written in; nothing is sorted.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "project_name": "sentinel-01",
   "mcu": { "part": "STM32H753ZITx", "supply": "VDD_3V3" },
   "voltage_domains": [{ "id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50 }],
@@ -32,11 +32,27 @@ Every key is required. `peripheral`, `pin` and `impedance_ohms` may be `null`, b
       "max_rise_time_nanoseconds": 300, "impedance_ohms": null },
     { "net_name": "I2C_SCL", "max_capacitance_femtofarads": 100000,
       "max_rise_time_nanoseconds": 300, "impedance_ohms": null }
-  ]
+  ],
+  "board": {
+    "copper_layers": 2,
+    "layers": [
+      { "name": "F.Cu", "role": "signal", "net": null },
+      { "name": "B.Cu", "role": "signal", "net": null }
+    ],
+    "stackup": {
+      "finished_thickness_um": { "nominal": 1600, "min": 340, "max": 2000, "source": "…" },
+      "dielectrics": [{ "between": ["F.Cu", "B.Cu"], "min_thickness_um": 200, "source": "…" }],
+      "copper_max_um": { "value": 70, "source": "…" },
+      "relative_permittivity_max_permille": { "value": 5400, "source": "the IPC-4101 FR-4 maximum, specified at 1 MHz" }
+    },
+    "rules": { "clearance_um": 200, "track_width_um": 200, "via_drill_um": 300, "via_diameter_um": 600 }
+  }
 }
 ```
 
 Every list except `voltage_domains` may be empty.
+
+**`board`** (`AET-WO-4100`, ruled on PR #120). Micrometres and thousandths. A stackup value is a bound with its source, never a nominal: a minimum dielectric is its source's value less a published tolerance, rounded down; a maximum is rounded up. The engine builds 2 copper layers (both signal) or 4 (`F.Cu`, `In1.Cu`, `In2.Cu`, `B.Cu`: outer layers signal, both inner layers planes, exactly one `GND` and the other a declared domain), through vias only. The rules are honoured: clearance and track width at or above the engine floor (0.2 mm), and the one via the engine builds (0.3 mm drill, 0.6 mm). See `crates/aethelgard-cli/tests/fixtures/four-layer.json` for a 4-layer board on OSH Park's published stackup.
 
 ## `Specification::validate`
 
@@ -44,7 +60,7 @@ Returns the first refusal, in this order, and in document order within a step. `
 
 | # | Rule | Refusal (`id()`) |
 |---|---|---|
-| 1 | `schema_version` is 1 | `UnsupportedSchemaVersion` (none) |
+| 1 | `schema_version` is 2 | `UnsupportedSchemaVersion` (none) |
 | 2 | Every identifier is 1 to 64 bytes of printable ASCII `0x21`–`0x7E`, none of them `/`, `{`, `}`, `$`, `[`, `]`, `"`, `%`, `*`, `,` or `\`, and none holding a date shape (`dddd-dd-dd`) or a time shape (`dd:dd:dd`). The project name is also a crate name (1 to 58 bytes of `a-z`, `0-9`, `-`; a letter first, no trailing or doubled `-`; 58 because `generate` adds `-board`), and a device reference, I2C or SPI, a Renode identifier (a letter, then letters, digits and `_`). One function, `check_identifier(IdentifierKind, &str)`, holds the table, and the error's message names the rule broken (`RUL-14`; `AET-WO-1102`) | `InvalidIdentifier` (none; `path()`) |
 | 3 | `voltage_domains` is not empty | `NoVoltageDomain` (none) |
 | 4 | Domains: unique ids, nominal voltage not 0, tolerance in 1..=500 | `DuplicateDomainId`, `ZeroNominalVoltage`, `ToleranceOutOfRange` (the id) |
@@ -57,8 +73,9 @@ Returns the first refusal, in this order, and in document order within a step. `
 | 10 | An I2C address is in `0x08..=0x77` and unique on its bus | `I2cAddressOutOfRange`, `DuplicateI2cAddress` (the device reference) |
 | 11 | A net is declared by exactly one signal across every bus and every `cs`, and no signal net has a voltage domain's id (compared with case folded),, none differs from `GND` only in case, and voltage domain ids are compared the same way (`DuplicateDomainId`) | `DuplicateNetName`, `NetShadowsDomain` (the net) |
 | 12 | Net constraints: unique `net_name`; each names a declared signal net or a voltage domain id; capacitance, rise time and impedance are not 0 | `DuplicateNetConstraint`, `UnknownNet`, `ZeroCapacitance`, `ZeroRiseTime`, `ZeroImpedance` (the net) |
+| 13 | `board`, in this order: `copper_layers` is 2 or 4; `layers` is KiCad's copper names in order; each role fits (outer signal, at 4 both inner planes, a plane names a net, a signal layer none); each plane net is `GND` or a declared domain, one plane per net, exactly one `GND` at 4; `dielectrics` is the adjacent pairs in order, each minimum above 0; `finished_thickness_um` has `0 < min <= nominal <= max <= 10000` and `min` at least the dielectric minima summed (at 2 layers, the dielectric minimum at most `min` less twice `copper_max_um`, which the notes then imply); `copper_max_um` in 1..=10000, permittivity in 1000..=100000; every `source` 1 to 200 bytes of printable ASCII, no space at either end; clearance and track width at least 200 µm; via drill 300 µm and diameter 600 µm exactly | `UnsupportedLayerCount` (none), `LayerTable`, `LayerRole`, `DielectricTable`, `StackupValue`, `InvalidSource`, `RuleBelowFloor`, `UnsupportedViaRule` (none; `path()`), `PlaneNet` (the net), `PlaneLayout`, `FinishedThickness` (none) |
 
-Step 2 walks the identifiers in this order: `project_name`; `mcu.part`, `mcu.supply`; `voltage_domains[i].id`; each I2C bus (`id`, `peripheral` if set, `domain`, then `sda` and `scl`: `net`, `pin` if set); each SPI bus (the same, with `sck`, `mosi`, `miso`); each I2C device (`reference`, `part`, `supply`, `bus`); each SPI device (the same, then `cs.net`, `cs.pin` if set); `net_constraints[i].net_name`. Nothing is trimmed or case-folded, so ids that differ only in whitespace are refused, not matched.
+Step 2 walks the identifiers in this order: `project_name`; `mcu.part`, `mcu.supply`; `voltage_domains[i].id`; each I2C bus (`id`, `peripheral` if set, `domain`, then `sda` and `scl`: `net`, `pin` if set); each SPI bus (the same, with `sck`, `mosi`, `miso`); each I2C device (`reference`, `part`, `supply`, `bus`); each SPI device (the same, then `cs.net`, `cs.pin` if set); `net_constraints[i].net_name`; `board.layers[i].net` if set. Nothing is trimmed or case-folded, so ids that differ only in whitespace are refused, not matched.
 
 `validate` does not check that a part, peripheral or pin exists, nor that two signals ask for one pin. Both need the pin table, so `solve` refuses them (below).
 
