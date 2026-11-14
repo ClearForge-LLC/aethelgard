@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""AET-WO-4200 spike: build one SPI probe firmware inside the pinned image.
+"""AET-WO-4300 spike: build one flight-I/O probe firmware inside the pinned image.
 
-A copy of the committed reference firmware crate (`boards/sentinel-01/firmware`), with the
-named variant's text edits, built offline and locked into its own target directory under
-/cache/fw, as `twin_tier2.rs` `mutant()` does (2204's fw.py). Prints the ELF's path and sha256.
+`4200`'s method: a copy of the committed reference firmware crate (`boards/sentinel-01/firmware`)
+with the variant's text inserted before the boot word, built offline and locked into its own
+target directory under /cache/fw. Prints the ELF's path and sha256.
 
-Every variant keeps the reference's I2C read (record 0) and adds a second record (record 1)
-after it, so the boot block is the boot word plus two records. The SPI code is raw volatile
-register access to SPI1 (0x4001_3000) and GPIOA (0x5802_0000): the board crate has no SPI
-transfer yet, and the spike does not change it.
+Every variant keeps the reference's I2C read (record 0) and writes record 1 (and 2 where
+stated). The probe code is raw volatile register access: the board crate has no timer, USART
+or SYSCFG yet, and the spike does not change it.
 
 Usage: fw.py <variant>
 """
@@ -16,111 +15,131 @@ import hashlib, os, shutil, subprocess, sys
 
 REF = "/repo/boards/sentinel-01"
 FILES = ["Cargo.toml", "Cargo.lock", ".cargo/config.toml", "link.x", "src/main.rs"]
-W = "core::ptr::write_volatile"
-R = "core::ptr::read_volatile"
-SPI1 = 0x4001_3000
-GPIOA_BSRR = 0x5802_0018
-CS_LOW, CS_HIGH = 1 << 16, 1
-
 ARRAY = ("static mut AETHELGARD_BOOT: [u32; 3] = [0; 3];", "static mut AETHELGARD_BOOT: [u32; 7] = [0; 7];")
 AT = "    // SAFETY: a word only this line writes, in RAM the linker script placed.\n"
 
+# Addresses (RM0433 Rev 9 / stm32h753xx.h).
+RCC_APB1LENR, RCC_APB2ENR, RCC_APB4ENR = 0x580244E8, 0x580244F0, 0x580244F4
+GPIOA = 0x58020000
+TIM1 = 0x40010000
+USART2 = 0x40004400
+SYSCFG_CCCSR = 0x58000420
 
-def w(addr, val):
-    return f"{W}({addr:#x} as *mut u32, {val:#x});"
-
-
-def spi(off):
-    return SPI1 + off
-
-
-# A helper the variants call: one full-duplex transfer of `tx` through SPI1, TSIZE = len(tx),
-# 8-bit frames, master. Each RXDR read waits on SR.RXP (bit 0) for at most 20_000 polls.
-# Returns the bytes clocked in, or None when RXP never rose.
 HELPER = """
-/// AET-WO-4200 spike: one SPI1 transfer, raw registers. `cs` is the GPIOA pin mask asserted
-/// (driven low) around it; 0 asserts none.
-fn spike_spi(tx: &[u8], rx: &mut [u8], cs: u32, cfg2: u32) -> bool {
-    unsafe {
-        let r = |a: u32| core::ptr::read_volatile(a as *const u32);
-        let w = |a: u32, v: u32| core::ptr::write_volatile(a as *mut u32, v);
-        w(0x40013000, 0); // CR1: SPE off, so CFG1/CFG2 accept writes
-        w(0x40013008, 0x0000_0007); // CFG1: DSIZE = 7 (8-bit frames)
-        w(0x4001300c, cfg2); // CFG2: MASTER and whatever the variant adds
-        w(0x40013004, tx.len() as u32); // CR2: TSIZE
-        if cs != 0 { w(0x58020018, cs << 16); } // the chip select pin(s) low: asserted
-        w(0x40013000, 1); // SPE
-        w(0x40013000, 1 | (1 << 9)); // CSTART
-        let mut ok = true;
-        for (i, &b) in tx.iter().enumerate() {
-            core::ptr::write_volatile(0x40013020 as *mut u8, b);
-            let mut n = 0u32;
-            while r(0x40013014) & 1 == 0 && n < 20_000 { n += 1; }
-            if n == 20_000 { ok = false; }
-            rx[i] = core::ptr::read_volatile(0x40013030 as *const u8);
-        }
-        w(0x40013018, 1 << 3); // IFCR: EOTC
-        w(0x40013000, 0); // SPE off
-        if cs != 0 { w(0x58020018, cs); } // high again
-        ok
+/// AET-WO-4300 spike: raw register access.
+fn rd(a: u32) -> u32 { unsafe { core::ptr::read_volatile(a as *const u32) } }
+fn wr(a: u32, v: u32) { unsafe { core::ptr::write_volatile(a as *mut u32, v) } }
+fn modify(a: u32, clear: u32, set: u32) { wr(a, (rd(a) & !clear) | set) }
+fn spin(n: u32) { for _ in 0..n { core::hint::spin_loop(); } }
+
+/// PA8 to alternate function `af`.
+fn pa8_af(af: u32) {
+    modify(0x58020000, 0b11 << 16, 0b10 << 16); // MODER8 = AF
+    modify(0x58020024, 0xF, af); // AFRH: AFSEL8
+}
+
+/// TIM1 channel 1, PWM mode 1, at 1 MHz from Renode's 250 MHz (PSC 249) unless `psc` says otherwise.
+fn tim1_pwm(psc: u32, arr: u32, ccr: u32, ccer: u32, moe: bool, cen: bool) {
+    let t = 0x40010000u32;
+    wr(t + 0x28, psc); // PSC
+    wr(t + 0x2C, arr); // ARR
+    wr(t + 0x18, 0x68); // CCMR1: OC1M = 110 (PWM 1), OC1PE
+    wr(t + 0x34, ccr); // CCR1
+    wr(t + 0x20, ccer); // CCER
+    if moe { wr(t + 0x44, 1 << 15); } // BDTR.MOE
+    wr(t + 0x14, 1); // EGR.UG
+    if cen { wr(t + 0x00, 0x81); } // CR1: ARPE | CEN
+}
+
+/// USART2 on PA2 (TX) and PA3 (RX), AF7: `brr`, `cr1_extra` (M0/PCE/PS), `cr2`.
+fn usart2_init(brr: u32, cr1_extra: u32, cr2: u32) {
+    modify(0x58020000, 0b1111 << 4, 0b1010 << 4); // MODER2, MODER3 = AF
+    modify(0x58020020, 0xFF << 8, 0x77 << 8); // AFRL: AFSEL2, AFSEL3 = 7
+    let u = 0x40004400u32;
+    wr(u + 0x00, 0);
+    wr(u + 0x0C, brr); // BRR
+    wr(u + 0x04, cr2); // CR2
+    wr(u + 0x00, cr1_extra | (1 << 3) | (1 << 2) | 1); // TE, RE, UE
+}
+
+fn usart2_send(bytes: &[u8]) {
+    let u = 0x40004400u32;
+    for &b in bytes {
+        let mut n = 0u32;
+        while rd(u + 0x1C) & (1 << 7) == 0 && n < 100_000 { n += 1; } // ISR.TXE
+        wr(u + 0x28, u32::from(b)); // TDR
     }
+}
+
+/// Echo what arrives for at most `polls` polls of ISR.RXNE; returns the count echoed.
+fn usart2_echo(polls: u32, max: u32) -> u32 {
+    let u = 0x40004400u32;
+    let mut count = 0u32;
+    let mut n = 0u32;
+    while n < polls && count < max {
+        if rd(u + 0x1C) & (1 << 5) != 0 { // ISR.RXNE
+            let b = rd(u + 0x24) & 0xFF; // RDR
+            usart2_send(&[b as u8]);
+            count += 1;
+        }
+        n += 1;
+    }
+    count
 }
 """
 
-MASTER = 1 << 22
+PATTERN = "b\"AET-UART\\r\\n\\x00\\xfe\\x09\\xfd\\x7f\\x80\\xff\\r\\n\""
+TIM1EN = f"    modify({RCC_APB2ENR:#x}, 0, 1);\n"
+USART2EN = f"    modify({RCC_APB1LENR:#x}, 0, 1 << 17);\n"
+REC1 = "    record(1, STATUS_OK, {v});\n"
 
 
-def jedec(cmd=0x9F, cs=1, cfg2=MASTER):
-    """The JEDEC ID read: the command, then three dummy bytes; the value is the three bytes
-    clocked in after the command, first on the wire as the most significant."""
-    return ("    let mut spi_rx = [0u8; 4];\n"
-            f"    let spi_ok = spike_spi(&[{cmd:#04x}, 0, 0, 0], &mut spi_rx, {cs:#x}, {cfg2:#x});\n"
-            "    let spi_value = (u32::from(spi_rx[1]) << 16) | (u32::from(spi_rx[2]) << 8) | u32::from(spi_rx[3]);\n"
-            "    record(1, if spi_ok { STATUS_OK } else { STATUS_RXNE }, spi_value);\n")
+def pwm(psc=249, arr=19999, ccr=1500, ccer=1, moe="true", cen="true", gate=True):
+    return ((TIM1EN if gate else "") + "    pa8_af(1);\n"
+            + f"    tim1_pwm({psc}, {arr}, {ccr}, {ccer}, {moe}, {cen});\n" + REC1.format(v="rd(0x40010000)"))
 
 
-CLAIM = "    record(1, STATUS_OK, 0x00ef4017);\n"
+def uart(brr=1085, cr1=0, cr2=0, gate=True):
+    return ((USART2EN if gate else "") + f"    usart2_init({brr}, {cr1:#x}, {cr2:#x});\n"
+            + f"    usart2_send({PATTERN});\n"
+            + "    let echoed = usart2_echo(3_000_000, 4);\n"
+            + REC1.format(v="echoed")
+            + "    record(2, rd(0x40004404), rd(0x40004400));\n")
+
+
+def cccsr(bound):
+    poll = ("    let mut n = 0u32;\n    while rd(0x58000420) & (1 << 8) == 0 && n < 100_000 { n += 1; }\n"
+            "    record(1, if n < 100_000 { STATUS_OK } else { STATUS_RXNE }, rd(0x58000420));\n") if bound else \
+           "    while rd(0x58000420) & (1 << 8) == 0 {}\n    record(1, STATUS_OK, rd(0x58000420));\n"
+    return f"    modify({RCC_APB4ENR:#x}, 0, 1 << 1);\n    wr({SYSCFG_CCCSR:#x}, 1);\n" + poll
+
+
+BITBANG = ("    pa8_af(1);\n"
+           "    for _ in 0..4 { wr(0x58020018, 1 << 8); spin(15_000); wr(0x58020018, 1 << 24); spin(185_000); }\n"
+           + REC1.format(v="rd(0x58020000)"))
 
 VARIANTS = {
-    # The reference read, then the JEDEC read through SPI1 with PA0 as chip select.
-    "jedec": [(AT, jedec() + AT)],
-    # No SPI access at all: the record claims the JEDEC ID.
-    "forge-claim": [(AT, CLAIM + AT)],
-    # The helper's exact register sequence, chip select included, with no TXDR write and no
-    # RXDR read, so it ends in the register state `jedec` ends in; then the claim.
-    "forge-regs": [(AT, "    unsafe { " + w(spi(0x00), 0) + w(spi(0x08), 7) + w(spi(0x0C), MASTER) + w(spi(0x04), 4)
-                    + w(GPIOA_BSRR, CS_LOW) + w(spi(0x00), 1) + w(spi(0x00), 1 | (1 << 9))
-                    + w(spi(0x18), 1 << 3) + w(spi(0x00), 0) + w(GPIOA_BSRR, CS_HIGH) + " }\n" + CLAIM + AT)],
-    # As forge-regs, plus CSUSP (CR1 bit 10) while SPE is set: EndTransfer with no transfer, which
-    # sets EOT and calls the attached model's FinishTransmission.
-    "forge-csusp": [(AT, "    unsafe { " + w(spi(0x00), 0) + w(spi(0x08), 7) + w(spi(0x0C), MASTER) + w(spi(0x04), 4)
-                     + w(GPIOA_BSRR, CS_LOW) + w(spi(0x00), 1) + w(spi(0x00), 1 | (1 << 9)) + w(spi(0x00), 1 | (1 << 10))
-                     + w(spi(0x18), 1 << 3) + w(spi(0x00), 0) + w(GPIOA_BSRR, CS_HIGH) + " }\n" + CLAIM + AT)],
-    # A real transfer of the wrong command (0x90, Manufacturer/Device ID), then the claim.
-    "wrong-cmd": [(AT, "    let mut spi_rx = [0u8; 4];\n    let _ = spike_spi(&[0x90, 0, 0, 0], &mut spi_rx, 1, 0x400000);\n"
-                   + CLAIM + AT)],
-    # The JEDEC read with chip select never asserted (PA0 left high).
-    "cs-never": [(AT, jedec(cs=0) + AT)],
-    # The JEDEC read with CPHA (CFG2 bit 24) and CPOL (bit 25) set: mode 3.
-    "mode3": [(AT, jedec(cfg2=MASTER | (1 << 24) | (1 << 25)) + AT)],
-    # Two devices on SPI1: the JEDEC read on PA0, then the ICM-20948's WHO_AM_I (bank 0, register
-    # 0x00, read bit 7 set) on PA1, recorded as record 2.
-    "two": [(AT, jedec() + "    let mut imu_rx = [0u8; 2];\n"
-             "    let imu_ok = spike_spi(&[0x80, 0], &mut imu_rx, 2, 0x400000);\n"
-             "    record(2, if imu_ok { STATUS_OK } else { STATUS_RXNE }, u32::from(imu_rx[1]));\n" + AT)],
+    "pwm50": pwm(),
+    "pwm400": pwm(arr=2499),
+    "nomoe": pwm(moe="false"),
+    "cc1p": pwm(ccer=3),
+    "nogate": pwm(gate=False),
+    "claim": REC1.format(v="0x50"),
+    "cen-off": pwm(cen="false"),
+    "bitbang-af": BITBANG,
+    "pwm600k": pwm(psc=0, arr=416, ccr=312),
+    # 115200 8N1 at Renode's 125 MHz: BRR = 1085.
+    "uart": uart(),
+    # SBUS: 100 kbaud (BRR 1250), 9-bit word with even parity (M0 | PCE), 2 stop bits, TX and RX inverted.
+    "uart-sbus": uart(brr=1250, cr1=(1 << 12) | (1 << 10), cr2=(0b10 << 12) | (1 << 17) | (1 << 16)),
+    "uart-nogate": uart(gate=False),
+    "cccsr-bounded": cccsr(True),
+    "cccsr-wait": cccsr(False),
 }
-
-
-# Pass 2 (FEEDBACK, "Corrections during the runs"): every chip select idles high before any
-# SPI code, as the generator's `into_output` does for PA0. Pass 1 left PA1 undriven; Renode's
-# `GPIO.Connect` signals the initial low at load, so the mux's active-low input 1 (the IMU)
-# was selected throughout, and every byte met two selected devices.
-IDLE = "    unsafe { " + w(GPIOA_BSRR, 0b11) + " }\n"
 
 
 def main():
     name = sys.argv[1]
-    edits = [(a, IDLE + b) for a, b in VARIANTS[name]]
     src = f"{REF}/firmware"
     dst = f"/cache/fw/{name}"
     shutil.rmtree(dst, ignore_errors=True)
@@ -141,8 +160,7 @@ def main():
     edit(".cargo/config.toml", old, f'target-dir = "{dst}/target"')
     edit("src/main.rs", *ARRAY)
     edit("src/main.rs", "#[panic_handler]", HELPER + "\n#[panic_handler]")
-    for a, b in edits:
-        edit("src/main.rs", a, b)
+    edit("src/main.rs", AT, VARIANTS[name] + AT)
     env = dict(os.environ)
     env.pop("CARGO_TARGET_DIR", None)
     p = subprocess.run(["cargo", "build", "--release", "--offline", "--locked", "-q"], cwd=dst, env=env,

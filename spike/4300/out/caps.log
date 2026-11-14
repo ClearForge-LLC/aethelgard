@@ -1,0 +1,7 @@
+2026-11-14T10:48:25+00:00 aet4300-3197712-3021 memory.max=8589934592 memory.swap.max=0 pids.max=max cmd: bash -c 
+set -eu
+cd /repo/spike/4300
+for v in $(python3 -c "import fw; print(\" \".join(fw.VARIANTS))"); do python3 fw.py "$v"; done > out/fw.txt
+for c in bitbang-af cc1p cccsr-bounded cccsr-wait cen-off claim nogate nomoe pwm400 pwm50-host pwm50 pwm600k uart-nogate uart-sbus uart ; do python3 drive.py cases/$c.json out/runs.jsonl 1; echo "done $c"; done
+2026-11-14T10:49:47+00:00 aet4300-3204222-15049 memory.max=8589934592 memory.swap.max=0 pids.max=max cmd: python3 spike/4300/edges.py pwm50 pwm50-host pwm400 nomoe cc1p nogate claim cen-off bitbang-af pwm600k
+2026-11-14T10:50:29+00:00 aet4300-3208304-16868 memory.max=8589934592 memory.swap.max=0 pids.max=max cmd: bash -c arm-none-eabi-objdump --version >/dev/null 2>&1 && echo objdump-ok; ls /usr/bin | grep -i objdump | head -3

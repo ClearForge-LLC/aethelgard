@@ -1,0 +1,40 @@
+== pwm50: 9 LED lines, 9 with a virtual stamp; raw tail kept 6712 chars
+   first: [(19999.0, True), (21499.0, False), (39998.0, True), (41498.0, False), (59997.0, True), (61497.0, False)]
+   high_us: n=4 min=1500.0 max=1500.0 common=[(1500.0, 4)]
+   low_us: n=4 min=18499.0 max=18499.0 common=[(18499.0, 4)]
+   period_us: n=4 min=19999.0 max=19999.0 common=[(19999.0, 4)]
+   distinct stamps 9; most edges at one stamp 1
+== pwm50-host: 9 LED lines, 0 with a virtual stamp; raw tail kept 6472 chars
+== pwm400: 79 LED lines, 79 with a virtual stamp; raw tail kept 20433 chars
+   first: [(2499.0, True), (3999.0, False), (4998.0, True), (6498.0, False), (7497.0, True), (8997.0, False)]
+   high_us: n=39 min=1500.0 max=1500.0 common=[(1500.0, 39)]
+   low_us: n=39 min=999.0 max=999.0 common=[(999.0, 39)]
+   period_us: n=39 min=2499.0 max=2499.0 common=[(2499.0, 39)]
+   distinct stamps 79; most edges at one stamp 1
+== nomoe: 9 LED lines, 9 with a virtual stamp; raw tail kept 6555 chars
+   first: [(19999.0, True), (21499.0, False), (39998.0, True), (41498.0, False), (59997.0, True), (61497.0, False)]
+   high_us: n=4 min=1500.0 max=1500.0 common=[(1500.0, 4)]
+   low_us: n=4 min=18499.0 max=18499.0 common=[(18499.0, 4)]
+   period_us: n=4 min=19999.0 max=19999.0 common=[(19999.0, 4)]
+   distinct stamps 9; most edges at one stamp 1
+== cc1p: 9 LED lines, 9 with a virtual stamp; raw tail kept 6711 chars
+   first: [(19999.0, True), (21499.0, False), (39998.0, True), (41498.0, False), (59997.0, True), (61497.0, False)]
+   high_us: n=4 min=1500.0 max=1500.0 common=[(1500.0, 4)]
+   low_us: n=4 min=18499.0 max=18499.0 common=[(18499.0, 4)]
+   period_us: n=4 min=19999.0 max=19999.0 common=[(19999.0, 4)]
+   distinct stamps 9; most edges at one stamp 1
+== nogate: 0 LED lines, 0 with a virtual stamp; raw tail kept 6072 chars
+== claim: 0 LED lines, 0 with a virtual stamp; raw tail kept 4964 chars
+== cen-off: 0 LED lines, 0 with a virtual stamp; raw tail kept 4927 chars
+== bitbang-af: 8 LED lines, 8 with a virtual stamp; raw tail kept 6341 chars
+   first: [(0.0, True), (400.0, False), (6000.0, True), (6400.0, False), (12000.0, True), (12400.0, False)]
+   high_us: n=4 min=400.0 max=400.0 common=[(400.0, 4)]
+   low_us: n=3 min=5600.0 max=5600.0 common=[(5600.0, 3)]
+   period_us: n=3 min=6000.0 max=6000.0 common=[(6000.0, 3)]
+   distinct stamps 8; most edges at one stamp 1
+== pwm600k: 2037 LED lines, 2037 with a virtual stamp; raw tail kept 399962 chars
+   first: [(18305.67, True), (18306.92, False), (18307.33, True), (18308.58, False), (18309.0, True), (18310.24, False)]
+   high_us: n=1018 min=1.24 max=1.25 common=[(1.25, 814), (1.24, 204)]
+   low_us: n=1018 min=0.41 max=0.42 common=[(0.42, 611), (0.41, 407)]
+   period_us: n=1018 min=1.66 max=1.67 common=[(1.66, 611), (1.67, 407)]
+   distinct stamps 2037; most edges at one stamp 1

@@ -1,0 +1,21 @@
+{
+ "name": "cccsr-bounded",
+ "platform": "/repo/spike/4300/platforms/none.repl",
+ "elf": "/cache/fw/cccsr-bounded/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware",
+ "records": 3,
+ "for_ns": 100000000,
+ "levels": [
+  "sysbus.syscfg"
+ ],
+ "grep": "syscfg",
+ "extra": [
+  [
+   "cccsr",
+   "sysbus ReadDoubleWord 0x58000420"
+  ],
+  [
+   "rcc_apb4enr",
+   "sysbus ReadDoubleWord 0x580244f4"
+  ]
+ ]
+}

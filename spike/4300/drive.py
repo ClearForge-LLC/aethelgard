@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""AET-WO-4200 spike: one Renode boot in the CLI's composition, read and classified.
+"""AET-WO-4300 spike (4200's drive.py): one Renode boot in the CLI's composition, read and classified.
+
+4300 changes: `timestamps` (a labelled deviation: Host, Virtual or Both), any bracketed
+timestamp prefix accepted by `body()`, `mid` commands between two RunFor halves, `post`
+monitor commands read after END, and `keep_all` to keep every kept line (no 200 cap).
 
 The composition is `renode.rs` as `AET-WO-2204` built it:
 - `renode --disable-gui --console --plain --config <scratch>/renode.config -e "<one line>"`,
@@ -29,7 +33,7 @@ SPI1 = 0x40013000
 REGS = [0x58020000, 0x58020020, 0x58020400, 0x58020420, 0x580244E0, 0x580244E8, 0x580244F0]
 SPI_REGS = [("spi_cr1", SPI1 + 0x00), ("spi_cr2", SPI1 + 0x04), ("spi_cfg1", SPI1 + 0x08),
             ("spi_cfg2", SPI1 + 0x0C), ("spi_sr", SPI1 + 0x14), ("gpioa_odr", 0x58020014)]
-HOST_TS = re.compile(r"^\[\d\d:\d\d:\d\d\.\d{4}\] ")
+HOST_TS = re.compile(r"^(\[[0-9:.]+\] )+")
 
 CONFIG = """[general]
 use-synchronous-logging = true
@@ -38,7 +42,7 @@ compiler-cache-enabled = False
 serialization-mode = Generated
 always-log-machine-name = False
 collapse-repeated-log-entries = True
-log-timestamps-type = Host
+log-timestamps-type = {ts}
 log-history-limit = 1000
 history-path = {home}/.config/renode/history
 store-table-bits = 41
@@ -69,14 +73,17 @@ def commands(c):
     cmds += ["cpu VectorTableOffset 0x08000000"]
     cmds += [f"logLevel -1 {s}" for s in c.get("levels", [])]
     cmds += c.get("pre", [])
-    cmds += [run_for(c.get("for_ns", 100_000_000))]
+    if c.get("mid"):
+        cmds += [run_for(c["mid_at_ns"])] + c["mid"] + [run_for(c.get("for_ns", 100_000_000) - c["mid_at_ns"])]
+    else:
+        cmds += [run_for(c.get("for_ns", 100_000_000))]
     reads = [("boot", f"sysbus ReadDoubleWord {BOOT:#010x}"), ("instr", "cpu ExecutedInstructions"),
              ("pc", "cpu PC"), ("icsr", "sysbus ReadDoubleWord 0xe000ed04")]
     reads += [(f"reg{a:08x}", f"sysbus ReadDoubleWord {a:#010x}") for a in REGS]
     reads += [(f"rec{i}", f"sysbus ReadDoubleWord {a:#010x}") for i, a in enumerate(recs)]
     reads += [(k, f"sysbus ReadDoubleWord {a:#010x}") for k, a in SPI_REGS]
     reads += [tuple(x) for x in c.get("extra", [])]
-    cmds += [f'echo "{BEGIN}"'] + [r[1] for r in reads] + [f'echo "{END}"', "peripherals", "quit"]
+    cmds += [f'echo "{BEGIN}"'] + [r[1] for r in reads] + [f'echo "{END}"'] + c.get("post", []) + ["quit"]
     return cmds, reads
 
 
@@ -111,11 +118,11 @@ def main():
     with open(dest, "a") as f:
         for r in range(runs):
             os.makedirs("/cache/homes", exist_ok=True)
-            home = tempfile.mkdtemp(prefix="aet4200-home-", dir="/cache/homes")
+            home = tempfile.mkdtemp(prefix="aet4300-home-", dir="/cache/homes")
             os.makedirs(f"{home}/.config/renode")
             cfg = f"{home}/renode.config"
             with open(cfg, "w") as cf:
-                cf.write(CONFIG.format(home=home))
+                cf.write(CONFIG.format(home=home, ts=case.get("timestamps", "Host")))
             env = {"HOME": home, "PATH": "/usr/local/bin:/usr/bin:/bin", "DOTNET_EnableDiagnostics": "0",
                    "DOTNET_EnableWriteXorExecute": "0"}
             t0 = time.monotonic()
@@ -130,7 +137,9 @@ def main():
                    "stdout_bytes": len(p.stdout), **res,
                    "errors": [l for l in run_log if l.startswith("[ERROR]")][:20],
                    "warnings": [l for l in run_log if l.startswith("[WARNING]")][:20],
-                   "kept": [l for l in run_log if grep and re.search(grep, l)][:200],
+                   "kept": [l for l in run_log if grep and re.search(grep, l)][:None if case.get("keep_all") else 200],
+                   "kept_n": sum(1 for l in run_log if grep and re.search(grep, l)),
+                   "kept_raw": [l for l in run_part if grep and re.search(grep, l)][:40],
                    "run_log_lines": len(run_log),
                    "reads_sha256": hashlib.sha256(json.dumps(res.get("reads"), sort_keys=True).encode()).hexdigest()[:16]}
             f.write(json.dumps(row) + "\n")

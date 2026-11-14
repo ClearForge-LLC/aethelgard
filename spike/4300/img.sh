@@ -1,19 +1,19 @@
 #!/bin/bash
-# AET-WO-4200 spike runner (2204's, with REPO/CACHE/caps log for 4200): the pinned tools image under rootless podman, as CI's tools job runs it.
-# - repo at /repo (read-write: probes write spike/4200/out), caches at /cache (~/.cache/aet-4200);
+# AET-WO-4300 spike runner (4200's, with REPO/CACHE/caps log for 4300, default cap 8g): the pinned tools image under rootless podman, as CI's tools job runs it.
+# - repo at /repo (read-write: probes write spike/4300/out), caches at /cache (~/.cache/aet-4300);
 # - CARGO_HOME and CARGO_TARGET_DIR under /cache, so nothing builds into the worktree;
 # - TMPDIR unset inside the container;
-# - --memory/--memory-swap $MEM (default 12g) and --pids-limit -1; after start, 0 is written into the
+# - --memory/--memory-swap $MEM (default 8g, the kickoff's ceiling) and --pids-limit -1; after start, 0 is written into the
 #   container's own memory.swap.max, and memory.max, memory.swap.max and pids.max are read back
-#   into spike/4200/out/caps.log with the command.
+#   into spike/4300/out/caps.log with the command.
 # - The command inside does not start until the host has zeroed swap and read the caps back (a flag
 #   file under /capflags); if that never happens it exits 99 having run nothing. (The first version
 #   polled after start, and six short containers ended before the poll: FEEDBACK.)
-# Usage: img.sh [--net] [--name N] [--mem 12g] -- <command...>
+# Usage: img.sh [--net] [--name N] [--mem 8g] -- <command...>
 set -u
-REPO=${REPO:-/home/forge/aethelgard-4200}
-CACHE=${CACHE:-$HOME/.cache/aet-4200}
-NET="--network none"; NAME="aet4200-$$-$RANDOM"; MEM=12g
+REPO=${REPO:-/home/forge/aethelgard-4300}
+CACHE=${CACHE:-$HOME/.cache/aet-4300}
+NET="--network none"; NAME="aet4300-$$-$RANDOM"; MEM=8g
 while [[ $# -gt 0 && "$1" == --* ]]; do
   case "$1" in
     --net) NET="";;
@@ -23,7 +23,7 @@ while [[ $# -gt 0 && "$1" == --* ]]; do
   esac
   shift
 done
-CAPLOG=${CAPLOG:-$REPO/spike/4200/out/caps.log}
+CAPLOG=${CAPLOG:-$REPO/spike/4300/out/caps.log}
 FLAGS=$CACHE/capflags
 mkdir -p "$(dirname "$CAPLOG")" "$FLAGS"
 rm -f "$FLAGS/$NAME"

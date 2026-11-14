@@ -1,0 +1,14 @@
+pwm50 /cache/fw/pwm50/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware 35e7ee246ef935d7862bcd641d56e1d24e5d29474f79656a8f137c0cc2685dfa
+pwm400 /cache/fw/pwm400/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware 1ad34fa4ff72f2bfc40bc11e37cba7afe8bdd1669675836cdce10eb1381e1dfa
+nomoe /cache/fw/nomoe/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware 06a08e155d6ee1ec432fbcbd076acac6fafa83931eff269bf422c514a8f25c60
+cc1p /cache/fw/cc1p/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware f35c3dc76f6d44956f5062f39ec2b398e8361e1975d11fe6d99c42e4c4168a40
+nogate /cache/fw/nogate/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware e535fd14d25fb6f77c41b93f023ef5b88e5af6dea42f11c7b4a0c05e4711b0f9
+claim /cache/fw/claim/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware 191f071149a3de221bd840b046cd404885908f704f2f9cb9664f058b1eaf8c0b
+cen-off /cache/fw/cen-off/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware 91f47c7682c2614a5218aaa8e558a34ff99590755694b58c3076befa23540425
+bitbang-af /cache/fw/bitbang-af/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware 3f3eb1e1b745cc4447d05a6bad8ab08a99108cbfc986883836119f0288aa4cca
+pwm600k /cache/fw/pwm600k/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware be4f23d0bef03fbfb6f53c34d83ce3e5f096ffeff12da9202277b734a5c1786d
+uart /cache/fw/uart/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware d84c9f41f5f590976e9e03e3f4c2c6da007abe98aa20c8a901a8c84346447f67
+uart-sbus /cache/fw/uart-sbus/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware b270021a73432fcfea900c06a3fcf3d88df988d964a09300858c534582d42a89
+uart-nogate /cache/fw/uart-nogate/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware a024d7b1b476f139413c35a4489aabc027b2770bf20f817a60f94f2aba3a866b
+cccsr-bounded /cache/fw/cccsr-bounded/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware 8c91cc97f4b325e872f720a73d9303388aa838902e69493c1b6490a163ed51ab
+cccsr-wait /cache/fw/cccsr-wait/target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware c32f534a5c78f41afd8f975d1346e5793311b8e263018bf6cba3a88dacfec436
