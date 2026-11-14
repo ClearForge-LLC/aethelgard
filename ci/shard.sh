@@ -30,7 +30,8 @@ TAB=$(printf '\t')
 # the 927 tests under 0.5 s (0.042 s), rounded up: stated, not hidden.
 DEFAULT_WEIGHT=0.05
 #
-# REFIT RULE: refresh the weights when any tools-shard job passes 13 minutes, start to end.
+# REFIT RULE (AET-WO-1908 §8): refresh the weights when any tools-shard job passes 20 minutes, start to end,
+# or when the spread (slowest shard minus fastest) passes 6 minutes on two runs in a row.
 #  1. In a throwaway commit on the PR, change `run` so each name runs in its own invocation:
 #       RUSTC_BOOTSTRAP=1 cargo test ... -- -Z unstable-options --report-time --test-threads=1 --exact NAME
 #     (RUSTC_BOOTSTRAP=1 lets the pinned stable toolchain take libtest's nightly-only flag; it makes
@@ -42,8 +43,8 @@ DEFAULT_WEIGHT=0.05
 #     test from a shared-process run: tests that take a lock (board_tier2) read as their queue time.
 #  3. Set a binary whose tests overlap in ONE process (attribute_seeded) in ci/colocate.tsv to the
 #     worst in-process wall time of the block over recent runs, not the sum of its alone times.
-#  4. Set ci/SHARDS to the smallest count whose planned maximum is at most 11 minutes (660 s) of test
-#     time; `bash ci/shard.sh plan DIR` prints each shard's planned seconds. Setup is about 2.3 minutes.
+#  4. ci/SHARDS stays 8 (Scotty, 2026-11-14). Rebalance with the block whole (ci/colocate.tsv), and
+#     check the plan with `bash ci/shard.sh plan DIR`, which prints each shard's planned seconds.
 
 die() { echo "shard: $*" >&2; exit 1; }
 readable() { [ -r "$1" ] || die "cannot read $1"; }
