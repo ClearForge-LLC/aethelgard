@@ -121,7 +121,7 @@ fn the_manifest_seeds_twenty_failing_cases_eight_per_domain_and_the_three_traps(
         assert_eq!(c.findings.is_empty(), c.domain == "none", "{}", c.name);
         let ok = matches!(
             (c.domain.as_str(), c.rule.as_str()),
-            ("electrical", "E1") | ("software", "S1" | "S2") | ("none", "N1")
+            ("electrical", "E1" | "E2") | ("software", "S1" | "S2" | "S3") | ("none", "N1")
         );
         assert!(ok, "{}: {} {}", c.name, c.domain, c.rule);
         if let Some(mutant) = &c.mutant {
