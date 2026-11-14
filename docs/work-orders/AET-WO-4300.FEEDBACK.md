@@ -161,7 +161,8 @@ Witness (P1, **[inferred]**): no timer log line marks an edge. The candidate wit
   - A DShot frame's content cannot be witnessed.
 - **What a store can forge** [measured]:
   - The pin edge itself: `bitbang-af` drives PA8 in AF1 by `BSRR`, and the observer cannot tell.
-  - What a store cannot make is the timer's own `IRQ pending` line at the same stamp as a rise (a store's `UG` write is a separate instruction, ≥ 10 ns away at 100 MIPS) together with `CR1.CEN` set [inferred].
+  - The timer's own `IRQ pending` line is at the identical nanosecond stamp as each rise in `pwm50` [measured: `19 999 000`, `39 998 000`, `59 997 000` ns], and `bitbang-af` has none [measured].
+  - A store cannot put that line at the stamp of its own `BSRR` edge: a `UG` write is a separate instruction, ≥ 10 ns away at 100 MIPS [inferred]. The same holds with `CR1.CEN` set.
   - A firmware that runs the timer correctly *and* toggles `BSRR` adds edges the judge would see as wrong timing.
 - **Recommendation:** witness timer outputs by the pin observer's edges with virtual timestamps, each rise matched to a `timer<n>: IRQ pending` at the identical stamp, and `CR1.CEN` read back. Judge period and high time against the solved values, with the model's `ARR` convention. Judge DShot by bit timing measured plus DMA configuration static. This needs the CLI's `log-timestamps-type` changed (decision D2).
 
@@ -189,7 +190,7 @@ Witness (P1, **[inferred]**): no timer log line marks an edge. The candidate wit
 - **Our firmware** [inferred]: the generated firmware would need a USB device stack, and none is available offline today. Enumeration of *our* firmware is unmeasured.
 - **Platform** [read / inferred]: the emitted platform must register `usb1`/`usb2` in `rcc` (as it already does for `spi1`), or `USBxOTGxxEN` reads 0 and the enable can't be judged.
 - **Static checks a USB design needs anyway** [inferred]:
-  - `D+`/`D−` on PA12/PA11 at AF10 (OTG2_FS), or PB15/PB14 at AF12 for OTG1 in FS;
+  - `D+`/`D−` on PA12/PA11, the pinout's `OTG_FS_DP`/`OTG_FS_DM` (DS12117 Rev 10, read). Their AF number and the OTG_HS pins' FS use were not read;
   - a 48 MHz kernel clock (`RCC_D2CCIP2R.USBSEL`: PLL1Q, PLL3Q or HSI48), with the frequency proven from the clock tree;
   - the 90 Ω differential pair from `4100`'s extraction;
   - VBUS sensing (PA9) or its override (`GOTGCTL.BVALOEN`/`BVALOVAL`, both tags in the model, so only static).
@@ -256,7 +257,7 @@ The schema version: `4100`'s is 2. `4200`'s build takes 3 (`spi_devices`), so a 
 | **4300b — serial links** | USART/UART on AF pins; role `rc_sbus`, `rc_crsf`, `mavlink`, `gps`; baud and framing from the role | `serial_ports`: label, peripheral, TX/RX pins, role | **witnessed:** pattern bytes out; injected bytes echoed. **Static:** `BRR` from the clock tree, `PCE`/`STOP` registers, `M0`/`TXINV`/`RXINV` tag warnings | **`serial_rx_dead`**: RX on the wrong AF, so the echo is missing | M | before |
 | **4300c — pin speeds** | the Fmax check; generator `OSPEEDR` from it; speeds `10`/`11` refused | none (C from extraction, VDD from the rail) | **static only** | none: a static refusal | S | before |
 | **4300d — power parts** | buck, LDO and sense rows in the parts table; static input-range, dropout, VDD and full-scale checks | `power`: battery cells, buck, LDO and sense parts by name | **static only** | none | M | before; `4400` needs the sense scales |
-| **4300e — USB device** | OTG FS on PA11/PA12 AF10, 48 MHz source, VBUS; CDC-ACM in the generated firmware; `usb` registered in `rcc` | `usb`: port, VBUS sense pin | **witnessed:** CDC bytes after enumeration (`USB_UART`). **Static:** the pins, the clock, the 90 Ω pair | **`usb_enum_fail`**: D+ on the wrong AF | L (a USB stack) | after; `4400` names USB from the static part alone |
+| **4300e — USB device** | OTG FS on PA11/PA12, 48 MHz source, VBUS; CDC-ACM in the generated firmware; `usb` registered in `rcc` | `usb`: port, VBUS sense pin | **witnessed:** CDC bytes after enumeration (`USB_UART`). **Static:** the pins, the clock, the 90 Ω pair | **`usb_enum_fail`**: D+ on the wrong AF | L (a USB stack) | after; `4400` names USB from the static part alone |
 
 - **Firmware's claim only:** none of the pieces rests on it. ADC battery monitoring would (the judge supplies the sample), so it is out, with no fault (S4).
 - **Order:** `4300c` first, because it changes the SPI pins `4200` builds. Then `a` and `b` in parallel; they touch different peripherals but the same crates, so in sequence if one builder. Then `d`; `e` after `4400`.
