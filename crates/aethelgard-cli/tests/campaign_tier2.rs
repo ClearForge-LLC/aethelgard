@@ -1034,18 +1034,23 @@ fn a_flooding_firmware_reaches_a_verdict_and_its_message_is_the_same_twice() {
 #[test]
 fn a_droop_on_a_board_whose_first_read_is_on_spi_recovers_and_replays() {
     let dir = scratch("spi-only");
+    // The generated board is built where no workspace encloses it: CI keeps
+    // its target directory, and so `CARGO_TARGET_TMPDIR`, inside the
+    // repository, whose `Cargo.toml` would claim the crate.
+    let board = std::env::temp_dir().join(format!("aet-4200-t2-{}-spi-only", std::process::id()));
+    let _ = fs::remove_dir_all(&board);
     let (code, stdout) = aethelgard(&[
         "generate",
         "--spec",
         "crates/aethelgard-cli/tests/fixtures/spi-only.json",
         "--out",
-        dir.join("g").to_str().unwrap(),
+        board.to_str().unwrap(),
     ]);
     assert_eq!(code, Some(0), "{stdout}");
-    let target = dir.join("fw-target");
+    let target = board.join("fw-target");
     let out = Command::new(env!("CARGO"))
         .args(["build", "--release", "--offline", "--locked"])
-        .current_dir(dir.join("g/board/firmware"))
+        .current_dir(board.join("board/firmware"))
         .env("CARGO_TARGET_DIR", &target)
         .stdin(Stdio::null())
         .output()
