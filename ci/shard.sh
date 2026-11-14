@@ -259,24 +259,14 @@ run() {
   mapfile -t br < <(names "$shard" bridge)
   if [ "${#ws[@]}" -gt 0 ]; then
     set +e
-    : >"$out/test-ws.log"
-    for t in "${ws[@]}"; do
-      t0=$EPOCHREALTIME
-      RUSTC_BOOTSTRAP=1 cargo test --workspace "${FEATURES[@]}" -- -Z unstable-options --report-time --test-threads=1 --exact "$t" 2>&1 | tee -a "$out/test-ws.log" | awk '/^ +Running /{b=$0;sub(/^ +Running /,"",b);sub(/ \(.*$/,"",b)} /^test [^ ]+ [.][.][.]/{p=$2} /(ok|FAILED) <[0-9.]+s>$/{t=$0;gsub(/^.*<|s>$/,"",t);print "MEASURE\t" b "\t" p "\t" t}'
-      st=${PIPESTATUS[0]}; echo "WALL	$t	$(awk -v a="$t0" -v b="$EPOCHREALTIME" 'BEGIN{printf "%.2f", b-a}')"
-      [ "$st" -eq 0 ] || status=1
-    done
+    cargo test --workspace "${FEATURES[@]}" -- --exact "${ws[@]}" 2>&1 | tee "$out/test-ws.log"
+    [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
     set -e
   fi
   if [ "${#br[@]}" -gt 0 ]; then
     set +e
-    : >"$out/test-bridge.log"
-    for t in "${br[@]}"; do
-      t0=$EPOCHREALTIME
-      RUSTC_BOOTSTRAP=1 cargo test "${BRIDGE[@]}" -- -Z unstable-options --report-time --test-threads=1 --exact "$t" 2>&1 | tee -a "$out/test-ws.log" | awk '/^ +Running /{b=$0;sub(/^ +Running /,"",b);sub(/ \(.*$/,"",b)} /^test [^ ]+ [.][.][.]/{p=$2} /(ok|FAILED) <[0-9.]+s>$/{t=$0;gsub(/^.*<|s>$/,"",t);print "MEASURE\t" b "\t" p "\t" t}'
-      st=${PIPESTATUS[0]}; echo "WALL	$t	$(awk -v a="$t0" -v b="$EPOCHREALTIME" 'BEGIN{printf "%.2f", b-a}')"
-      [ "$st" -eq 0 ] || status=1
-    done
+    cargo test "${BRIDGE[@]}" -- --exact "${br[@]}" 2>&1 | tee "$out/test-bridge.log"
+    [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
     set -e
   fi
   [ "$status" -eq 0 ] || die "shard $k: a test run failed"
