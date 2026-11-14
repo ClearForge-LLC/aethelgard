@@ -415,7 +415,7 @@ The twin, the analog deck (`cli/src/analog.rs`), the campaign and `evolve` read 
 | A malformed `board` refused by name, per field | `aethelgard-ir/tests/board.rs` (12 tests), `stackups_tier1::a_version_one_specification_is_refused_by_name` (validate and emit) |
 | 1302 B10, `D1` | `stackups_tier1`: `D1` routes at 4 layers (0.6 s release) and fails closed at 2 (`Unroutable /SDA0` after 500 rip-ups); `D3` fails closed at 4 naming its net (`VDD_3V3`, blocked by `/CS0_0`, `/S1000_HOLD`, `GND`): the escape-planning work order's target |
 | Gates (`CLAUDE.md`) | host: `cargo fmt --all -- --check` ok; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace` **1,109 passed, 0 failed** (tier 2 compiles and runs 0 on the host). Image: tier-2 build with `--features aethelgard-cli/with-tools` ok |
-| `TIER2_MIN` | 91 → **93**, exactly the 2 new tier-2 tests. `ci/test-weights.tsv`: 7 rows added (the 2 tier-2 tests at 460 s each, estimated from the reference's own two-run fab tests at 416–516 s on CI; 5 tier-1 at their host times). No refit: nothing was measured above the refit rule's thresholds yet |
+| `TIER2_MIN` | **92**: `main`'s 90 (after `AET-WO-1909`, merged in as `7bf199e`) plus exactly the 2 new tier-2 tests (91 → 93 before that merge). `ci/test-weights.tsv`: 7 rows added (the 2 tier-2 tests at 460 s each, estimated from the reference's own two-run fab tests at 416–516 s on CI; 5 tier-1 at their host times). No refit: nothing was measured above the refit rule's thresholds yet |
 
 ## Adversarial pass (full, §5), by a fresh subagent
 
