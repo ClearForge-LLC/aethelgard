@@ -1,6 +1,6 @@
 # AET-WO-1908 — FEEDBACK
 
-**Status: built to every §3 item after its measurement; three consecutive CI runs at ten shards, every shard under 13 minutes (slowest 11:44, 11:11, 12:05).** A first version of this file recorded a stop on my own judgement; it is overruled by the build below, and the Method and Findings are kept as they were.
+**Status: IN PROGRESS (rewritten at the close).** Ten shards met §3 on three runs (B, C, D) and then missed it once (E, 13:06); the plan is now eleven shards and the three runs are being re-earned (runs G to I, below). A first version of this file recorded a stop on my own judgement; the build overrules it, and Method and Findings are kept as they were.
 
 **Branch:** `wo/aet-1908-ci-rebalance` · **Base:** `a9d94ec` (`origin/main`) · **PR:** #109 · **Builder:** Claude (Sonnet 5.5). The measurement harness was reverted: `git diff origin/main -- ci/` is empty, and `RUSTC_BOOTSTRAP`, `report-time`, `test-threads`, `MEASURE` and `WALL` do not occur in `ci/shard.sh`.
 
@@ -28,14 +28,14 @@ All times are CI seconds on a GitHub runner, one test at a time, nothing else in
 
 - `ci/test-weights.tsv`: CI seconds directly, from run 43534530400, for the 240 tests of 0.5 s or more. `CI_SCALE` is gone (not 1.0: deleted, with the multiplication). The other 927 tests get `DEFAULT_WEIGHT` 0.05 s, the measured mean of those tests (0.042 s) rounded up; before it was 0.2 s, which would have weighed them at 185 s against 39 s measured.
 - `ci/colocate.tsv`: `attribute_seeded` stays whole (the measurement says splitting it costs more than it saves: 1,377 s alone against 475 to 721 s together) and is weighed at 720 s, the worst in-process sample (was 640).
-- `ci/SHARDS`: **10**. §1.3's rule (smallest count whose planned maximum is at most 660 s) cannot be met at any count, because the block alone plans at 720 s; I used the smallest count at which every other shard plans under the 620 s that 13 minutes leaves after 2.3 minutes of setup. That is 8 (627 s) on paper and 9 (548 s) with room; **9 failed in run A** (13:27: the shards with `board_tier2`'s heavy tests ran 12 to 20% over plan), **10 plans 484 s and passed three runs.** The planner's numbers for the heavy shards run low by that 12 to 20%; the refit rule absorbs it by shard count.
+- `ci/SHARDS`: **11** (10 until run E). §1.3's rule (smallest count whose planned maximum is at most 660 s) cannot be met at any count, because the block alone plans at 720 s; I used the smallest count at which every other shard plans under the 620 s that 13 minutes leaves after 2.3 minutes of setup. That is 8 (627 s) on paper and 9 (548 s) with room; **9 failed in run A** (13:27: the shards with `board_tier2`'s heavy tests ran 12 to 20% over plan), **10 plans 484 s and passed three runs.** The planner's numbers for the heavy shards run low by that 12 to 20%; the refit rule absorbs it by shard count.
 - A refit rule: the comment block in `ci/shard.sh` above `DEFAULT_WEIGHT` (the five steps, including the interleaving trap that cost me run 2). No tool added.
 - Not changed: `ci.yml`, the guard, the canary, `TIER2_MIN` (83), any test, crate or image.
 
 ## Result
 
-- **Three consecutive runs at the final plan (B, C, D below), every shard under 13 minutes; slowest 11:44, 11:11, 12:05.** The guard and canary passed on every run (`tools` green), as did `gates` (fmt, clippy, the workspace tests), and `shard.sh`'s own `ci/test-shard.sh` passes locally.
-- **Headroom is 55 s at the worst shard of the three, and run E (same plan, after them) was 13:06 on shard 5: see Acceptance runs.** The variance in finding 3 is why it is not more: the same plan's shard 4 took 9:17 in run C and 12:05 in run D.
+- **Ten shards (runs B to F):** B, C and D had every shard under 13 minutes (slowest 11:44, 11:11, 12:05); E, the same plan, had shard 5 at 13:06; F was 11:48. So ten shards meet §3 on most runs, not on every run: four of five.
+- **Eleven shards (runs G onward): see Acceptance runs.** The guard and canary passed on every run at either count (`tools` green), as did `gates` (fmt, clippy, workspace tests). I also ran the three gates locally at the head commit: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --workspace` rc 0 (default features; tier 2 runs only in CI), and `ci/test-shard.sh` passes.
 - The first stop (this file's earlier version) was my judgement that the block's worst sample, 721 s plus 131 s of setup, would fail 13 minutes. The kickoff says to stop only on a §7 condition and that was not one, so I built it. **The block did not fail 13 minutes in any of the four plan runs** (shard 1: 10:18, 10:19, 11:11, 12:00); the worst-case reading in finding 5 was a risk, not a result. It remains a risk: one more run in four could still exceed 13 minutes.
 
 ## Adversarial pass (§5, targeted, a fresh subagent)
@@ -56,8 +56,8 @@ Run on the final `ci/` against a 1,167-entry list built from the measurements; I
 ## For the architect
 
 - **The measurement run went red from my harness**, not from a test (run 3 of the measurement runs: 3 to 4 more workspace passes than assigned per shard; not diagnosed, harness reverted). It is not in the diff.
-- **§1.3 and §3 conflict by about 20 seconds** (11 minutes of tests plus 2.3 of setup is 13.3), and the block alone is above the 11 minutes (720 s). Ten shards is a measured choice, not the rule's output. Worth a line in the roadmap if the rule is kept.
-- **Eleven runners per PR run now** (10 shards and `gates`), against eight shards before.
+- **§1.3 and §3 conflict by about 20 seconds** (11 minutes of tests plus 2.3 of setup is 13.3), and the block alone is above the 11 minutes (720 s). The shard count is a measured choice, not the rule's output. Worth a line in the roadmap if the rule is kept.
+- **Twelve jobs per PR run now** (11 shards and `gates`), against eight shards before; ten shards cost eleven.
 - **No test change was needed.** If the architect wants the block off the critical path for good, that is (b) in an earlier version of this file: a work order for `attribute_seeded`.
 
 ## Measurement table: tests of 5 CI seconds or more
@@ -160,5 +160,11 @@ Run B (10 shards, `ci/SHARDS` 10, commit 4acd4f0) counts as run 1 of the three a
 | C (43541279022) | 7860e22 | 10 | 10:19 | 11:11 | 8:26 | 10:59 | 9:17 | 11:08 | 10:29 | 10:09 | 8:29 | 11:00 | **11:11** |
 | D (43542481893) | 0f5700c | 10 | 8:36 | 12:00 | 11:13 | 9:01 | **12:05** | 9:49 | 7:36 | 7:33 | 8:44 | 11:54 | **12:05** |
 | E (43543703305) | 211082d | 10 | 8:46 | 11:26 | 10:40 | 11:00 | 9:54 | **13:06** | 9:27 | 7:53 | 9:32 | 9:05 | **13:06** |
+| F (43545027152) | c6aa0ea | 10 | 9:52 | 10:10 | 10:59 | 11:05 | **11:48** | 10:57 | 8:25 | 8:07 | 10:12 | 11:36 | **11:48** |
 
-Runs B, C and D are the three consecutive runs the acceptance asks for; each row's commit is the one that started the run, and the next commit recorded it. **Run E, on the unchanged plan, put shard 5 at 13:06, six seconds over the line** (the guard and canary passed). So the three-run claim is met, and the headroom is not: of four runs at this plan, one shard passed 13 minutes once. Shard 5 holds `board_tier2` heavy tests, which run serially and carry most of the runner-to-runner variance; 11 shards would plan about 440 s and widen the margin, at a twelfth runner. That is the architect's call, not a failing invariant. A run F on the commit that records run E is on the PR's checks.
+**Run E, on the plan of B to D, put shard 5 at 13:06, six seconds over** (guard and canary passed); shard 5 holds `board_tier2` heavy tests, which run serially and carry most of the runner-to-runner variance. F was 11:48. Four of five runs at ten shards met §3, so the acceptance was reached and then lost; I took the lever named in the first stop: an eleventh shard (planned about 427 s per shard, against 484 s at ten). The count of three consecutive runs restarts at G.
+
+Eleven shards (`ci/SHARDS` 11). Each row's commit is the one that started the run and the next commit recorded it.
+
+| run | commit | shards | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | slowest |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
