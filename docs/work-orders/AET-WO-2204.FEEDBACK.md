@@ -666,3 +666,24 @@ Harness and every verdict in `~/.cache/aet-2204-adv/` on Furnace (44 firmware ed
 | A3 | The static judge has no window between the record and the witness: a firmware that writes the OK record and the boot word first and transfers afterwards, or that writes a constant 0x60 instead of the byte it read, passes. The droop probe has the window (`droop-late-claim` fails) | low, measured | **Named residual:** a static pass means "the right device returned the table's value during the run"; it does not mean the record was derived from that read. |
 | A4 | "Exactly the model's lines" fails a firmware that legitimately does more on the bus: a configuration write after the read, a second read, an extra write, or the two devices' phases interleaved (`W U2, W U5, R U2, R U5` gives `i2c_witness_out_of_order`). Extra traffic to an absent address passes (attribution's evidence only) | low, design | **Decision needed before P4** (the IMU bus will do more than one read): the witness's semantics for more than the identity read. Today's generated firmware makes exactly one read per device, and passes. |
 | A5 (out of fence) | References `Peripherals` and `Sysbus_` give `Unroutable` ("cannot reach Peripherals pad 8"): the router depends on reference names | low, measured | Reported, not changed (`aethelgard-eda`, outside the fence). |
+
+## Merges of `main`
+
+- `32a2be0` (#112, docs: the RUL-17 amendment ratified, `AET-WO-1908` amended): merge commit `a0c8e03`, no conflict.
+- `23a7c79` (#109, `AET-WO-1908`: CI weights refitted to CI seconds; `CI_SCALE` gone): merge commit `d101084`. `ci/test-weights.tsv` conflicted; main's file is kept whole, the two renamed tests keep main's CI times under their new names, and the eight new tier-2 tests are added at CI scale (alone in the image × 2.2, `twin_tier2`'s own ratio between main's CI times and my image times: 12.390/5.52, 6.400/2.96). `TIER2_MIN` 91 = main's 83 + 8. `ci/test-shard.sh` passes.
+
+## Findings for the architect (build)
+
+- **B1 · Renode rewrites a configuration file that lacks a key, and the CLI's files are sealed for the tool uid · `renode.rs` `config` · high, measured, fixed.** Above ("Why every key"). The spike missed it because its runs were outside the sandbox; it said so.
+- **B2 · The seeded set's wrong-address cases needed the controller's `Unknown slave` lines · evolve, kind 13 `absent` · medium, measured, built.** Above. Decision-needed (low): keep `absent` as attribution evidence (recommended; `attribute_seeded` 12/12) or rule the seeded expectations changed.
+- **B3 · D8's flood test does not discriminate the composition · medium, by design of the ruling.** Above; the deterministic tier-1 guard is the stub's check of the arguments and the file.
+- **B4 · The droop's `ObservedReport.witness` is a whole `WitnessReport`, of which kind 19 archives only `observed`; `absent` is always empty there** · low, reduction found it. Slimming it changes the verdict's JSON: decision-needed (low).
+- **Adversarial A2, A3, A4 and A5** above: two named residuals and two decisions (A2's interrupt check; A4's witness semantics before P4).
+
+## Gates (build)
+
+- `cargo fmt --all -- --check`: clean. `cargo clippy --workspace --all-targets -- -D warnings`: clean, and with `--features aethelgard-cli/with-tools`. `cargo test --workspace`: 1,085 passed, 0 failed (host, after the reduction).
+- Tier 2 in the image: the suites above, then after A1's fix the new test and its neighbours (`a_firmware_that_rewrites_its_loop_in_flash_is_not_parked` 3.76 s alone).
+- **Reduction pass (diff): +3 net (code −16, doc +19) · 2 duplicates removed (the host-timestamp parser in `log_text`, now `log_body`'s; the `WitnessReport` built in two places, now `WitnessReport::of`) · 0 dead paths left (the `CR2`/`TXDR` state was removed with D7, above) · 1 protected kept (`analog.rs`'s `belt-and-suspenders` on `check_droop`) · 4 findings: stale prose fixed in the chaos README, `record.rs` and evolve's `Field` doc; the witness line format lives in the twin (written), evolve (parsed: evolve cannot depend on the twin) and the CLI (matched), forced by crate layering; `split_devices` and `device_path` both lower-case the reference (both needed: the boot path does not go through `emit`); B4.** Run by a fresh subagent, read-only at `01b3858`; the lead applied and proved it (the suite green; the guards' mutants above unchanged).
+
+**Not shown here:** live acceptance (merge, deploy, the uid-boundary path under real root in CI rather than rootless podman) is the operator's. A green CI is not acceptance.
