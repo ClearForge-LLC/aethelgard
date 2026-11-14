@@ -1,6 +1,6 @@
 # AET-WO-1908 — FEEDBACK
 
-**Status: STOPPED. Built to every §3 item except the acceptance: it is not reproducible. Three consecutive runs under 13 minutes were reached once (ten shards, runs B, C, D: slowest 11:44, 11:11, 12:05) and not held: at ten shards run E had one shard at 13:06, and at eleven shards the shard that holds the `attribute_seeded` block alone took 13:27 (H) and 13:39 (I), while G was 9:59.** Every other shard of every run at eleven shards was under 11 minutes (slowest 10:43). The block cannot be fixed by the plan, and fixing it is a test change, which §2 forbids. A first version of this file recorded a stop on my own judgement; I overrode it and built, and the build bore out that stop's reason.
+**Status: IN PROGRESS (rewritten at the close).** Amended by the architect's ruling (work order §8, Scotty, 2026-11-14): eight shards, three consecutive runs each with every shard under 20 minutes, spread recorded; the 13-minute target and the 11-minute plan maximum are withdrawn. Runs B to K, at nine to eleven shards, stay below as measurements. The three acceptance runs are logged under "Acceptance runs under §8".
 
 **Branch:** `wo/aet-1908-ci-rebalance` · **Base:** `a9d94ec` (`origin/main`) · **PR:** #109 · **Builder:** Claude (Sonnet 5.5). The measurement harness was reverted: `git diff origin/main -- ci/` is empty, and `RUSTC_BOOTSTRAP`, `report-time`, `test-threads`, `MEASURE` and `WALL` do not occur in `ci/shard.sh`.
 
@@ -28,7 +28,7 @@ All times are CI seconds on a GitHub runner, one test at a time, nothing else in
 
 - `ci/test-weights.tsv`: CI seconds directly, from run 43534530400, for the 240 tests of 0.5 s or more. `CI_SCALE` is gone (not 1.0: deleted, with the multiplication). The other 927 tests get `DEFAULT_WEIGHT` 0.05 s, the measured mean of those tests (0.042 s) rounded up; before it was 0.2 s, which would have weighed them at 185 s against 39 s measured.
 - `ci/colocate.tsv`: `attribute_seeded` stays whole (the measurement says splitting it costs more than it saves: 1,377 s alone against 475 to 721 s together) and is weighed at 720 s, the worst in-process sample (was 640).
-- `ci/SHARDS`: **11** (10 until run E). §1.3's rule (smallest count whose planned maximum is at most 660 s) cannot be met at any count, because the block alone plans at 720 s; I used the smallest count at which every other shard plans under the 620 s that 13 minutes leaves after 2.3 minutes of setup. That is 8 (627 s) on paper and 9 (548 s) with room; **9 failed in run A** (13:27: the shards with `board_tier2`'s heavy tests ran 12 to 20% over plan), **10 plans 484 s and passed three runs.** The planner's numbers for the heavy shards run low by that 12 to 20%; the refit rule absorbs it by shard count.
+- `ci/SHARDS`: **8**, per §8's ruling (it was 10, then 11, while the 13-minute target stood). The plan at eight is as even as it allows: seven shards of 626 to 627 planned seconds and the `attribute_seeded` block, whole, alone on the eighth (720 s). The block is not split: its 12 tests take 1,377 s alone against 475 to about 720 s together, and its heaviest test takes 632 s alone against about 382 s inside the block.
 - A refit rule: the comment block in `ci/shard.sh` above `DEFAULT_WEIGHT` (the five steps, including the interleaving trap that cost me run 2). No tool added.
 - Not changed: `ci.yml`, the guard, the canary, `TIER2_MIN` (83), any test, crate or image.
 
@@ -56,8 +56,8 @@ Run on the final `ci/` against a 1,167-entry list built from the measurements; I
 ## For the architect
 
 - **The measurement run went red from my harness**, not from a test (run 3 of the measurement runs: 3 to 4 more workspace passes than assigned per shard; not diagnosed, harness reverted). It is not in the diff.
-- **§1.3 and §3 conflict by about 20 seconds** (11 minutes of tests plus 2.3 of setup is 13.3), and the block alone is above the 11 minutes (720 s). The shard count is a measured choice, not the rule's output. Worth a line in the roadmap if the rule is kept.
-- **Twelve jobs per PR run now** (11 shards and `gates`), against eight shards before; ten shards cost eleven.
+- **§1.3's 11-minute planned maximum and §7's "more than 12 shards" were withdrawn by §8**, so the old conflict between §1.3 and §3 is gone. The plan's maximum at eight shards is the block's 720 s; the planner's numbers for the heavy `board_tier2` shards run 12 to 20% low (run A).
+- **Nine jobs per PR run** (eight shards and `gates`), `shards` and `tools` aside; the same eight shards as before this work order.
 - **No test change was needed.** If the architect wants the block off the critical path for good, that is (b) in an earlier version of this file: a work order for `attribute_seeded`.
 
 ## Measurement table: tests of 5 CI seconds or more
@@ -172,17 +172,19 @@ Eleven shards (`ci/SHARDS` 11). Each row's commit is the one that started the ru
 | H (43547319879) | bcae89d | 11 | 10:29 | **13:27** | 10:22 | 9:51 | 8:52 | 10:23 | 9:01 | 6:27 | 7:45 | 7:26 | 7:50 | **13:27** |
 | I (43548585159) | a444c5e | 11 | 9:38 | **13:39** | 10:25 | 10:43 | 8:46 | 9:04 | 7:14 | 6:54 | 9:54 | 8:24 | 9:38 | **13:39** |
 | J (43549860019) | 279bda6 | 11 | 10:08 | **11:49** | 8:43 | 8:47 | 11:00 | 11:07 | 8:54 | 6:25 | 8:00 | 9:31 | 10:39 | **11:49** |
+| K (43551011287) | 87974aa | 11 | 10:36 | 10:00 | 11:07 | 9:37 | 11:06 | 10:52 | 10:06 | 6:39 | 7:49 | 9:19 | 9:37 | **11:07** |
 
 Run H: shard 1 is the `attribute_seeded` block alone (12 tests, planned 720 s), and it took 13:27, while every other shard was between 6:27 and 10:29. **An eleventh shard cannot help it:** the block runs by itself on its shard at either count, and its wall time varies by runner (475 to 721 s measured in-process before; about 670 s plus setup here). G passed, H failed, so the count of three restarts at I.
 
 Run I: shard 1 again, 13:39. In nine runs of the plan the block shard took 10:18, 10:19, 11:11, 12:00, 11:26, 10:10, 9:48, 13:27 and 13:39: it is the only shard that has passed 13 minutes since run E, and the last two runs both did. I stopped here: another three-run attempt would be a lottery on that one shard, and the cost of each is a run of twelve jobs.
 
-## Decision needed (the STOP)
+## Amendment (§8): eight shards, under 20 minutes
 
-`attribute_seeded`'s 12 tests, kept whole because splitting them is worse (1,377 s alone; its heaviest test is 632 s alone and about 382 s inside the block), take 475 to about 720 s of wall time depending on the runner, and with 2.3 minutes of setup that puts its shard at 10 to 14 minutes. Rulings:
+The measured runs above showed that no shard count meets §3's 13-minute target, because the `attribute_seeded` block runs alone on its shard in 13:27 to 13:39 (H, I) and is slower split. Scotty ruled (work order §8, 2026-11-14): `ci/SHARDS` is 8, balanced as evenly as the plan allows with the block whole; acceptance is three consecutive runs, each shard under 20 minutes, with the spread (slowest minus fastest) recorded; the runs at other counts stay as measurements; no test change. Run K (11 shards, 11:07, in the table above) was let finish and is a measurement. The switch to eight is the commit after it.
 
-- **(a)** Change §3 to something the measurement can meet, for example "under 15 minutes on three consecutive runs" (the ten- and eleven-shard plans met that on every run: slowest 13:39), keeping the refit for the other shards.
-- **(b)** A work order for `attribute_seeded` itself (fewer or lighter tier-2 cases, or a lighter fixture), after which this plan's three runs can be earned.
-- **(c)** Accept the variance and have me run more attempts; I estimate about one in five runs fails on the block, so three in a row passes about half the time.
+## Acceptance runs under §8 (`ci/SHARDS` 8, every shard under 20 minutes, job start to end)
 
-`ci/SHARDS` is left at 11: it helps no more than ten on the block, and ten put the slowest non-block shard at 13:06 once (E), so eleven keeps the other shards under 11 minutes. If (a) is ruled, ten is enough for 15 minutes and saves a runner.
+Each row's commit is the one that started the run; the next commit recorded it. Spread is the slowest shard minus the fastest.
+
+| run | commit | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | slowest | fastest | spread |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
