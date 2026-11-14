@@ -783,3 +783,86 @@ A copy is in `~/.cache/aet-4200/spike-copy`. Every measurement the build relies 
   - A `not connected` line for another address is therefore no evidence (`I4`, tested). The I2C path treats a wrong address as software; SPI does not, because the line cannot be tied to this device's read.
   - Recommendation: per-read windows (markers between reads) if `P4` puts two read devices on one bus.
 - **F17 · PR #118's title still describes the spike.** `gh-write` has no command to edit a PR, so the builder cannot retitle it. Proposed title: **"AET-WO-4200: SPI devices end to end — parts as data, a witnessed SPI read behind a chip-select multiplexer, a static SPI fault"**.
+
+## Adversarial pass (full, a fresh Opus subagent, on a frozen copy at `1fe460d`)
+
+Run in its own worktree. Four containers, each read back `memory.max=17179869184 memory.swap.max=0 pids.max=max`. Harnesses are in that worktree's `adversarial/` (23 tier-2 tests, tier-1 archive and table harnesses); none reached the branch.
+
+**Held, each measured.**
+- **Every SPI forgery failed** `spi_transaction_unwitnessed`:
+  - a claim with no transfer;
+  - the `SPI1` registers by hand with `CSUSP` (observed `[]`);
+  - `CSTART` with `RXDR` reads and no `TXDR` (plus `renode_error_log`);
+  - receive-only mode;
+  - a 2-byte read, and a 4-byte read with 3 recorded;
+  - another flash's read recorded as `U40`'s;
+  - a select of another part held low through the read: the multiplexer's `multiple devices`, `S3`.
+- **Every correct read passed:**
+  - `CPOL`/`CPHA` = 1, and `MBR` = /256;
+  - the chip select asserted after `SPE` and `CSTART`;
+  - `PA0` low before `init`;
+  - `--for` from 500 µs to 5 ms;
+  - a path that is a prefix of another (`u4` and `u40`).
+
+  The reference droops held.
+- **The parts table:** no `unwrap` or `expect` on `table()` or `identity()` outside tests.
+- **Override 4:** refused by name for an I2C reference, a case variant, an unknown device, `schema_version` 1, the same device twice, and a malformed value.
+- **D7:** `SPI1MUX` and `U2_MEMORY` beside `U2` are refused.
+
+**Broken, then fixed in this build (`16f6bbe`), each with a test that fails on `1fe460d` and a mutant per new guard:**
+- **A1 (high) · A droop on a board whose first identity read is SPI stopped the campaign** (exit 70: "an observation's readings are not the boot's own").
+  - **Cause:** chaos took the first read from kinds 12 and 13 only, while the CLI's probe takes the first check of either bus. The probe also collected the device's lines without the skip list.
+  - **Fix:** `first_witness` and the probe's check take I2C first, then SPI. The probe uses `device_line`, so an ICM-20948's idle lines no longer fail its recovery.
+  - **Test:** `campaign_tier2::a_droop_on_a_board_whose_first_read_is_on_spi_recovers_and_replays` (fixture `spi-only.json`, the reference without U2; `droop-bor3` passes and replays, and the probe carries U4's eight lines).
+- **A2 (medium) · `parse_parts` collapsed a key given twice in an entry, and read a missing `renode` as unmodelled.** With the W25Q64JV's `renode` removed, `generate` listed U4 unmodelled, and its read would never have been judged: a false-pass path.
+  - **Fix:** each entry is held as raw JSON (`serde_json`'s `raw_value` feature, workspace-wide) and parsed strictly. `renode` is required (`null` is unmodelled). A part twice in any case, and an empty table, are refused.
+  - **Test:** `ir/tests/parts.rs` `a_key_twice_a_missing_renode_a_case_twin_or_no_parts_is_refused`.
+- **A3 (medium) · Replay joined no SPI record to anything,** while attribution decided `E2` on kind 21's address.
+  - **What was accepted:** a forged address with `not connected` at it (attributed `E2`); a `not connected` line from another source (attributed `E2`); an absent override naming no device; an "absent" device whose model answered; a malformed select.
+  - **Fix:** kind 23, `SpiBusSolved` (peripheral, then each device's reference, multiplexer address and chip select), from the solved topology through `platform::spi_wiring`, archived beside kind 15. Replay requires:
+    - each kind 21 at its kind-23 address and select;
+    - every multiplexer line in a kind 22 to be its own multiplexer's whole line;
+    - every absent device to be a solved one, whose model logged nothing.
+
+    Evolve's `E2` also requires the multiplexer's own source.
+  - **Test:** `evolve/tests/spi.rs` `replay_refuses_spi_records_that_do_not_join_the_solved_controller`. Four mutants, all killed.
+  - **The trace stays at version 7.** No archive of version 7 exists outside this branch.
+- **A4 (medium-low) · A firmware could make a kind 22 over the reader's 4,096-byte event bound,** and the campaign stopped with `ArchiveWriteFailed`.
+  - **Fix:** kind 22's observed and multiplexer lines are each cut to a byte budget (1,800 and 1,200), keeping the longest prefix. The judge compared them whole first, so a cut observation still differs.
+  - **Test:** `a_kind_22_stays_inside_the_event_bound_however_long_its_lines`.
+  - **Not fixed, outside the fence:** kind 13 has the same bound (16 × 256 bytes), inherited from `AET-WO-2204` (F18).
+
+**Findings, not fixed (decisions or residuals):**
+- **F18 · Kind 13 can reach the 4,096-byte event bound** at its line bound (16 × 256), inherited from `AET-WO-2204`. Recommendation: the same budget, in the work order that next touches kind 13.
+- **F19 · The table's `modes`, `max_clock_hz` and `supply_millivolts` have no consumer** (adversary A5, measured).
+  - An SPI bus at 200 MHz with the W25Q64JV (maximum 104 MHz) passes `validate`, `solve` and `generate`.
+  - A part on the wrong kind of bus passes `validate` and `solve`, and `generate` refuses it with eda's message ("no vendored model; known: BME280, …"), which contradicts itself.
+  - Spike P5.5 called SCK-over-maximum "a static check", but no work order holds it.
+  - Decision needed: a `validate` gate (the bus's declared speed against each part's `max_clock_hz`, the part's bus kind), in which work order.
+- **F20 · A malformed flash identity reaches `generate`.** A `SPI.GenericSpiFlash` entry whose identity is not `0x9F`, 3 bytes, capacity `0x10..=0x19`:
+  - passes `validate`;
+  - `generate` refuses it as `FlashIdentity`, with no `id`;
+  - a command other than `0x9F` is emitted, and the judge names it `spi_witness_unavailable`.
+
+  It is caught, but late. Recommendation: the parser checks a model's identity shape. That is a model fact in `aethelgard-ir`, so it is the architect's call.
+- **F21 · The controllers' own names (`spi1` and the other `SPIn`) are not reserved** (pre-existing). A reference `SPI1` passes `validate` and is refused by `generate` (`InvalidDeviceName`, no `id`). Recommendation: add them to `RESERVED_REFERENCES` with the multiplexer names.
+- **F22 · D2's "any other line from the device fails" holds for the device's `Noisy` lines.** The judge reads only `[NOISY] <device>: ` lines, as `AET-WO-2204` built it. A device's `[WARNING]` (`Transmission finished in the unexpected state`) is not read. Every `Transmit` line is `Noisy`, so no witness rests on a `Warning`.
+- **Residuals the adversary confirmed, each named before:**
+  - two devices on one controller, another one absent (F16);
+  - `0xFF` dummy bytes fail the flash's witness, which expects `0x00` (the generated firmware clocks `0x00`; the Kani spy requires it);
+  - a second read after the identity read fails (the one-transaction rule, `2204` A4);
+  - an open chip-select trace renders as `cs-never` (spike S5);
+  - `cs-never` with U4 absent is `S3`: only the firmware's fault is observable.
+- **Not tried by the adversary:** U5 absent on the ICM-20948 fixture (`campaign` refuses the IMU: no KiCad symbol), a reset during a transfer, A4 within a multi-scenario campaign, and Kani.
+
+## Reduction pass (diff)
+
+Run after the adversarial build and before its fixes; re-checked after them.
+
+Reduction pass (diff): −4 net · 2 duplicates removed (S3's software conditions, stated once in `spi_fields`; the skip filter, once in `device_line`, now also the probe's) · 0 dead paths removed · 1 protected kept (chaos's restatement of the multiplexer path, now labelled `belt-and-suspenders:`) · 1 finding below (F12: eda's strap address lists beside the table's).
+
+Each surviving guard's mutant fails a test:
+- the select field: 5 tests;
+- the claimed-read event: 1 test;
+- the skip filter: killed only after a tier-1 test was added for it (`renode::tests::a_device_s_line_is_kept_unless_its_model_lists_it_as_skipped`);
+- the four replay joins.
