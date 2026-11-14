@@ -1,0 +1,26 @@
+spec	layers	outcome	secs	vias	ripups	len_mm_F/B/In2/In3	notes
+ref	2 (HEAD binary)	routed	1.0	70	-	-	baseline; board byte-identical to probe at 2
+2x5	2 (HEAD binary)	routed	5.8	132	-	-	baseline
+2x5_nospi	2 (HEAD binary)	routed	4.4	114	-	-	baseline
+D1_24i2c	2 (HEAD binary)	Unroutable /SDA0	13.5	-	500	-	still blocked by [/SCL0] after 500 rip-ups
+D3_24i2c_4spi_x3	2 (HEAD binary)	Unroutable /MOSI0	19.1	-	500	-	blocked by [/CS2_2,/MISO2]
+ref	2 (probe)	routed	1.0	70	37	240.3/108.3/0/0	identical bytes to HEAD
+ref	4	routed	0.1	64	4	127.6/65.4/0/0	S-P-P-S
+ref	6	routed	0.6	65	12	119.6/66.3/6.1/0	F,In2,In3,B route
+2x5	2 (probe)	routed	5.8	132	149	470.1/179.9/0/0	identical bytes to HEAD
+2x5	4	routed	0.4	129	20	280.0/113.6/0/0	
+2x5	6	routed	0.9	126	16	269.6/88.4/32.8/10.4	
+2x5_nospi	2 (probe)	routed	4.4	114	138	387.6/148.3/0/0	identical bytes to HEAD
+2x5_nospi	4	routed	0.3	114	17	256.5/62.8/0/0	
+2x5_nospi	6	routed	0.6	111	13	246.1/37.5/32.8/10.4	
+D1_24i2c	2 (probe)	Unroutable /SDA0	13.8	-	500	-	same as HEAD
+D1_24i2c	4	routed	0.5	226	13	532.1/205.0/0/0	routes what 2 cannot
+D1_24i2c	6	Unroutable /SCL3	29.5	-	500	-	blocked by [/SDA3,GND]; heuristic, see next rows
+D1_24i2c	6 AET_STEPI=6	routed	9.6	237	170	641.1/99.6/24.0/4.1	inner-layer step cost 6 instead of 2
+D1_24i2c	6 AET_RIPUPS=3000	routed	55.1	228	924	524.1/193.5/34.8/0	budget only
+D3_24i2c_4spi_x3	2 (probe)	Unroutable /MOSI0	19.6	-	500	-	same as HEAD
+D3_24i2c_4spi_x3	4	Unroutable VDD_3V3	17.5	-	500	-	blocked by [GND]; U1 pad 39 (VDD) / pad 31 (GND) plane-via fan-out
+D3_24i2c_4spi_x3	4 AET_RIPUPS=3000	Unroutable VDD_3V3	-	-	3000	-	same net still
+D3_24i2c_4spi_x3	6	Unroutable /CS0_2	35.1	-	500	-	blocked by [/CS1_0,/CS2_2]
+D3_24i2c_4spi_x3	6 AET_STEPI=6	Unroutable /MISO0	-	-	500	-	blocked by [/MOSI0,/SCK0]
+D3_24i2c_4spi_x3	6 AET_RIPUPS=3000	"message":"the router cannot complete net `/CS1_0`: still blocked by [\"/CS0_2\"] after 3000 rip-ups"

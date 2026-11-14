@@ -1,0 +1,59 @@
+## 1. h = S reduces to today's bottom cap, coefficient by coefficient (exact rationals)
+  A=3 p=7 S=1/5: lower(h=S) = 15 + 113/60·pi ; today = 15 + 113/60·pi ; equal: True
+  A=1/3 p=11/2 S=2: lower(h=S) = 1/6 + 65/24·pi ; today = 1/6 + 65/24·pi ; equal: True
+  A=5 p=1 S=1/7: lower(h=S) = 35 + 29/84·pi ; today = 35 + 29/84·pi ; equal: True
+  per-length at h = S: 279.3018 fF/mm (today's exact 279.30, rounded up 280)
+
+## 2. lower(A,p,h) against a 3D finite-difference quadrature of the same psi (box base a x b)
+  box 0.2x1.0 mm, h=0.075: closed form 6.01043; quadrature n=20/40/80 5.89801 5.95232 5.98112; extrapolated 6.00992 (rel. diff 8.4e-05)
+  box 0.2x1.0 mm, h=0.1: closed form 4.77507; quadrature n=20/40/80 4.70760 4.73918 4.75752; extrapolated 4.77586 (rel. diff 1.6e-04)
+  box 0.2x1.0 mm, h=0.15: closed form 3.69244; quadrature n=20/40/80 3.65597 3.67297 3.68248; extrapolated 3.69198 (rel. diff 1.2e-04)
+  box 0.6x0.5 mm, h=0.075: closed form 7.10487; quadrature n=20/40/80 7.00007 7.05071 7.07757; extrapolated 7.10443 (rel. diff 6.2e-05)
+  box 0.6x0.5 mm, h=0.1: closed form 5.57872; quadrature n=20/40/80 5.51573 5.54525 5.56235; extrapolated 5.57945 (rel. diff 1.3e-04)
+  box 0.6x0.5 mm, h=0.15: closed form 4.19548; quadrature n=20/40/80 4.16132 4.17727 4.18617; extrapolated 4.19507 (rel. diff 9.9e-05)
+
+## 3. Exact case: symmetric zero-thickness stripline (Cohn; C' = 4 eps K(k')/K(k), k = sech(pi W/(4h)))
+  modulus check W=2.0 h=0.1: exact 41.7651, two plates 2W/h 40.0000, difference 1.7651 (wide-strip limit 8 ln2 / pi = 1.7651)
+  modulus check W=4.0 h=0.1: exact 81.7651, two plates 2W/h 80.0000, difference 1.7651 (wide-strip limit 8 ln2 / pi = 1.7651)
+  modulus check W=8.0 h=0.1: exact 161.7651, two plates 2W/h 160.0000, difference 1.7651 (wide-strip limit 8 ln2 / pi = 1.7651)
+  per-length, eps = 1, W = 0.2 mm (trial: elliptical caps both sides, lateral S = 0.2 mm, c = 0):
+    h=0.05: exact 9.7651, trial 14.6759, trial/exact 1.503, bound holds: True
+    h=0.075: exact 7.0983, trial 10.1112, trial/exact 1.424, bound holds: True
+    h=0.1: exact 5.7645, trial 7.9270, trial/exact 1.375, bound holds: True
+    h=0.15: exact 4.4269, trial 5.9392, trial/exact 1.342, bound holds: True
+    h=0.2: exact 3.7511, trial 5.1416, trial/exact 1.371, bound holds: True
+    W=0.1, h=0.1: exact 3.7511, trial 5.9270, holds: True
+    W=0.5, h=0.1: exact 11.7651, trial 13.9270, holds: True
+    W=1.0, h=0.1: exact 21.7651, trial 23.9270, holds: True
+
+## 4. Microstrip W x c at h over a plane, eps = 1, per mm: the trial against a P1 (5-point) energy
+  The discrete energy of any admissible grid function is >= C of the boxed problem >= C in the open;
+  so trial >= P1 energy shows trial >= truth. The inscribed wire (radius c/2) is a lower reference.
+    h=0.075: trial 8.3264 >= P1-in-box 5.8639 >= truth; inscribed wire 3.4676; trial/P1 1.420; holds: True
+    h=0.1: trial 7.2343 >= P1-in-box 4.9670 >= truth; inscribed wire 3.1015; trial/P1 1.456; holds: True
+    h=0.15: trial 6.2404 >= P1-in-box 4.0115 >= truth; inscribed wire 2.6747; trial/P1 1.556; holds: True
+    h=0.2: trial 5.8416 >= P1-in-box 3.4976 >= truth; inscribed wire 2.4243; trial/P1 1.670; holds: True
+
+## 5. The reference's I2C lines if their outer copper lay over a plane at h (bound, fF)
+  /I2C_SDA: L=24.25 mm, 19 tracks, 4 vias, pads [(0.54, 0.64), (0.3, 1.475), (0.5, 0.35), (0.375, 0.4)]; extract today: trace 9146 vias 6076 pads 1578 pins 30000 = 46800 (declared 100000)
+    float model at h >= S: trace 9116 vias 6074 pads 1576 (matches extract to rounding)
+    h=  0.2: trace    9116 vias   6074 pads   1576 pins 30000 ->   46765 fF (-35 vs 2 layers; margin to declared 53235)
+    h=0.1797: trace    9264 vias   6074 pads   1605 pins 30000 ->   46944 fF (+144 vs 2 layers; margin to declared 53056)
+    h= 0.15: trace    9623 vias   6074 pads   1674 pins 30000 ->   47371 fF (+571 vs 2 layers; margin to declared 52629)
+    h= 0.12: trace   10269 vias   6074 pads   1795 pins 30000 ->   48139 fF (+1339 vs 2 layers; margin to declared 51861)
+    h=  0.1: trace   10985 vias   6074 pads   1928 pins 30000 ->   48987 fF (+2187 vs 2 layers; margin to declared 51013)
+    h=0.0994: trace   11012 vias   6074 pads   1933 pins 30000 ->   49019 fF (+2219 vs 2 layers; margin to declared 50981)
+    h= 0.09: trace   11486 vias   6074 pads   2020 pins 30000 ->   49579 fF (+2779 vs 2 layers; margin to declared 50421)
+    h=0.075: trace   12521 vias   6074 pads   2210 pins 30000 ->   50804 fF (+4004 vs 2 layers; margin to declared 49196)
+    h= 0.05: trace   15766 vias   6074 pads   2801 pins 30000 ->   54641 fF (+7841 vs 2 layers; margin to declared 45359)
+  /I2C_SCL: L=43.5 mm, 31 tracks, 7 vias, pads [(0.54, 0.64), (0.3, 1.475), (0.5, 0.35), (0.375, 0.4)]; extract today: trace 16024 vias 10633 pads 1578 pins 30000 = 58235 (declared 100000)
+    float model at h >= S: trace 15972 vias 10629 pads 1576 (matches extract to rounding)
+    h=  0.2: trace   15972 vias  10629 pads   1576 pins 30000 ->   58177 fF (-58 vs 2 layers; margin to declared 41823)
+    h=0.1797: trace   16237 vias  10629 pads   1605 pins 30000 ->   58472 fF (+237 vs 2 layers; margin to declared 41528)
+    h= 0.15: trace   16875 vias  10629 pads   1674 pins 30000 ->   59178 fF (+943 vs 2 layers; margin to declared 40822)
+    h= 0.12: trace   18019 vias  10629 pads   1795 pins 30000 ->   60444 fF (+2209 vs 2 layers; margin to declared 39556)
+    h=  0.1: trace   19284 vias  10629 pads   1928 pins 30000 ->   61841 fF (+3606 vs 2 layers; margin to declared 38159)
+    h=0.0994: trace   19331 vias  10629 pads   1933 pins 30000 ->   61893 fF (+3658 vs 2 layers; margin to declared 38107)
+    h= 0.09: trace   20168 vias  10629 pads   2020 pins 30000 ->   62817 fF (+4582 vs 2 layers; margin to declared 37183)
+    h=0.075: trace   21995 vias  10629 pads   2210 pins 30000 ->   64834 fF (+6599 vs 2 layers; margin to declared 35166)
+    h= 0.05: trace   27718 vias  10629 pads   2801 pins 30000 ->   71149 fF (+12914 vs 2 layers; margin to declared 28851)
