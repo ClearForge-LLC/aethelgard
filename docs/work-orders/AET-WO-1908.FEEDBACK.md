@@ -1,6 +1,6 @@
 # AET-WO-1908 — FEEDBACK
 
-**Status: IN PROGRESS (rewritten at the close).** Amended by the architect's ruling (work order §8, Scotty, 2026-11-14): eight shards, three consecutive runs each with every shard under 20 minutes, spread recorded; the 13-minute target and the 11-minute plan maximum are withdrawn. Runs B to K, at nine to eleven shards, stay below as measurements. The three acceptance runs are logged under "Acceptance runs under §8".
+**Status: built to the §8 amendment; three consecutive CI runs at eight shards, every shard under 20 minutes (slowest 13:01, 14:48, 14:12; spreads 2:51, 5:09, 4:42), logged under "Acceptance runs under §8".** The 13-minute target of §3 was withdrawn by §8 after runs B to K (nine to eleven shards) showed that the `attribute_seeded` block shard alone passes 13 minutes on some runs; those runs stay below as measurements. A first version of this file recorded a stop on my own judgement; the build and §8 overrule it.
 
 **Branch:** `wo/aet-1908-ci-rebalance` · **Base:** `a9d94ec` (`origin/main`) · **PR:** #109 · **Builder:** Claude (Sonnet 5.5). The measurement harness was reverted: `git diff origin/main -- ci/` is empty, and `RUSTC_BOOTSTRAP`, `report-time`, `test-threads`, `MEASURE` and `WALL` do not occur in `ci/shard.sh`.
 
@@ -190,3 +190,6 @@ Each row's commit is the one that started the run; the next commit recorded it. 
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | L (43552101218) | 52423c7 | 10:56 | 11:35 | 11:29 | 11:57 | **13:01** | 11:53 | 10:10 | 10:26 | 13:01 | 10:10 | 2:51 |
 | M (43553274964) | a53c725 | 13:10 | 9:39 | 9:44 | 13:21 | 13:05 | 11:32 | 12:25 | **14:48** | 14:48 | 9:39 | 5:09 |
+| N (43554556808) | b1380f8 | 13:33 | 9:30 | 12:17 | **14:12** | 12:18 | 11:58 | 13:00 | 10:21 | 14:12 | 9:30 | 4:42 |
+
+**Result under §8: three consecutive runs (L, M, N) at eight shards, every shard under 20 minutes: slowest 13:01, 14:48 and 14:12, spreads 2:51, 5:09 and 4:42.** The guard and canary passed on every run (`tools` green), as did `gates`. The slowest shard moves between runs (4, 7, 3), not the block shard: the eight-shard plan is even to within the planner's error, and what is left is runner-to-runner variance of a few minutes. No test, crate or image change; `ci.yml` and `TIER2_MIN` are unchanged. Run O, on the commit that records run N, is on the PR's checks and is not logged here.
