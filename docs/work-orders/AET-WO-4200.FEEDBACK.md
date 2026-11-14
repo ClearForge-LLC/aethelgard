@@ -527,3 +527,40 @@ Everything below was measured after commit `f61da75`, which holds the prediction
   No Rust changed.
 - **`cargo fmt`, `clippy` and the tests** are unaffected; CI runs them on the PR.
 - **`docs/work-orders/AET-WO-4200.md`** reached `main` through PR #116 (`9035203`), which is merged into this branch (`d6c40dd`). It is byte-identical to the copy this spike worked from (`claude/argon-repo-docs-synthesis-rjrb0d`).
+
+---
+# The build (§2), to the architect's ruling on PR #118
+
+**Ruling** (`~/.cache/aet-4200-ruling.md`, 2026-11-14), each decision as built:
+- **D1 (a):** a `SPI.SPIMultiplexer` per SPI controller. Each device sits at its index on that controller, and its chip select is wired `<port>: <pin> -> <spi>mux@<k>` with `SetActiveLow <k>`. Each device's source gets `logLevel -1`.
+- **D2:** the SPI witness is the model's `Transmit`-path lines, matched exactly. The model's `Noisy` lines that are not transfers form an exact skip list, a `match` on the model enum. Each skipped line is pinned to its Renode source line by a test. Any other device line fails.
+- **D3 (a):** `crates/aethelgard-ir/data/parts.json`, read by one parser, `parse_parts`, which refuses a malformed entry by name.
+- **D4:**
+  - the device absent behind its chip select (electrical, `E2`) and `cs-never` (software, `S3`);
+  - trace version 7, with kinds 21 and 22.
+- **D5 (a):** the ICM-20948 in a test-fixture specification.
+- **D6:** no analog gate here.
+- **D7:** the multiplexer names are reserved, and a reference whose name plus `_memory` collides is refused.
+- **D8:** all four parts' datasheets fetched and held.
+
+## Before any code: measured
+
+- **Across a reset** (the ruling's first measurement). Run by `spike/4200/s7.py` in the pinned image, 2 runs at each of two reset times (`out/s7.jsonl`, sha256 `1c3ab3f5…`). Composed as `renode.rs` `droop_schedule` composes a droop, but driven directly, not through the bridge:
+  - **During the halt:** `machine Reset` resets the GPIO port, which drives both chip selects low, so both mux inputs are selected.
+  - **After the release:** the firmware idles them high and reads again. The flash's eight `Transmit` lines appear again between `RELEASE-0` and `PROBE-BEGIN-0`.
+  - **At release + 100 µs** the probe reads the boot word set and both records OK (`0x60`, `0xEF4017`).
+  - The device's `Noisy` level survives the reset, so an SPI read is re-witnessed after recovery. No §7 stop.
+- **The §7.3 baseline:** `main`'s own binaries at `a71bef5` (`~/.cache/aet-4200/baseline/main-bin`):
+  - CLI `984910b2…`, bridge `980d1ed0…`, reference firmware `deee3a94…`;
+  - every scenario (2 static, 2 droop, every seeded scenario file), every replay, and the static `simulate` at 100 ms;
+  - campaign exit 0, `simulate` exit 0.
+- **The datasheets** (D8), each fetched from its vendor's own domain into `~/.cache/aet-4200/ds/`, with sha256 checked against the files:
+
+  | Part | Document | Revision | sha256 | Where it came from |
+  |---|---|---|---|---|
+  | W25Q64JV | Winbond W25Q64JV | J, 2018-03-27 | `452d906c3be0da077fd751a2b8aa062629caf6081f8dd1eda04880854ce7c8f9` | `winbond.com/resource-files/w25q64jv revj 03272018 plus.pdf`; whether J is current is not proven (the product page lists no PDF; a guessed Rev K returned 404) |
+  | ICM-20948 | TDK InvenSense DS-000189 | 1.6, 2024-03-12 | `0588625f4f1d6d27382a4322f48073dc0ce569e537c63786b13aab3eeb76b718` | TDK's CDN, linked from its product page |
+  | BME280 | Bosch Sensortec BST-BME280-DS001-24 | 1.24, 2024-02-20 | `a2ccdb449fec94380742fe8eec851a11d9bd4142252d332b34682b4deecd7d89` | `bosch-sensortec.com`; the URL says `ds002`, the document says `DS001-24`; its page footers still say `DS001-23` |
+  | TMP117 | Texas Instruments SNOSD82D | D, 2022-09 | `78212e91e478035a91165397a8de8a90bfc776759dc445243c033537f0c4b789` | `ti.com/lit/ds/symlink/tmp117.pdf` |
+
+  No citation is pending, so nothing is needed from Scotty. `tests/parts.rs` `no_citation_is_pending` holds the empty list.

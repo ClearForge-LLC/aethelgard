@@ -22,8 +22,9 @@ use crate::record::{BusLine, Droop, Line, Override, Reading, Record};
 use crate::replay::State;
 
 /// The scenario format versions read: 1 (static scenarios, unchanged) and 2,
-/// since `AET-WO-2301`, which admits the `droop` override and `expect_counts`;
-/// a version 1 file may use neither.
+/// since `AET-WO-2301`, which admits the `droop` override and `expect_counts`,
+/// and since `AET-WO-4200` the `spi_device_absent` override; a version 1 file
+/// may use none of them.
 pub const SCENARIO_VERSIONS: [u32; 2] = [1, 2];
 /// At most this many overrides, so the scenario record stays inside the
 /// reader's 4,096-byte event bound.
@@ -562,11 +563,14 @@ impl Scenario {
             .map(override_from)
             .collect::<Result<Vec<_>, _>>()?;
         let mut expect_counts = raw.expect_counts.unwrap_or_default();
-        let v2_only =
-            overrides.iter().any(|o| matches!(o, Override::Droop(_))) || !expect_counts.is_empty();
+        let v2_only = overrides
+            .iter()
+            .any(|o| matches!(o, Override::Droop(_) | Override::SpiDeviceAbsent { .. }))
+            || !expect_counts.is_empty();
         if v2_only && raw.schema_version < 2 {
             return Err(schema(
-                "a droop override and expect_counts need schema_version 2".to_owned(),
+                "a droop override, an absent SPI device and expect_counts need schema_version 2"
+                    .to_owned(),
             ));
         }
         if expect_counts.len() > MAX_EXPECTED {
