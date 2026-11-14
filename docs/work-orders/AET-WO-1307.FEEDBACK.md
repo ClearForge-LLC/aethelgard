@@ -79,7 +79,7 @@ Probe plan: patches to `route.rs` under `spike/1307/`, applied to detached workt
 **Method.** Host only.
 - Each probe is a patch to `route.rs` (S3 also patches `pcb.rs`) on `40951e4`, built `--release` in a detached worktree under `~/.cache/aet-1307`, with `systemd-run --user --scope -p MemoryMax=12–16G -p MemorySwapMax=0`.
 - `spike/1307/run.sh` measures one binary over the five inputs: emit, time, vias and track length (`stats.py`), rip-ups, board sha, byte-identity with today's board, and `extract`'s bounds.
-- Candidates (a), (b), (c) and S3 were built by four Sonnet subagents in their own worktrees, from one common brief. I spot-checked each claim the table relies on by re-running its binary (§2.2).
+- Candidates (a), (b), (c) and S3 were built by four Sonnet subagents in their own worktrees, from one common brief. I re-ran (c1) and (c2) on D3, recomputed the S3 counts from the TSVs, and built and measured the combined probe myself. Rows (a) and (b) are the subagents' reported runs and were **not** re-run by me; `a.tsv` was hand-formatted by its subagent.
 
 **KiCad was not run.** The auto-mode classifier denied the capped `podman run` of the pinned image (`spike/1307/img.sh`). The operator ruled "skip KiCad this spike". So:
 - the S1 figure is a PNG rendered from the router's own dump (`plot.py`), not a KiCad plot;
@@ -98,18 +98,20 @@ The router's exact judges (`check`, `connectivity`) ran on every board marked ro
 | D1 (4 layers) | routed | 0.56 | 239 | 766.0 | **fail**: 7 of 8 lines over 100,000 fF (max 119,603) |
 | D3 (4 layers) | `Unroutable VDD_3V3` after 500 rip-ups | 16.33 | – | – | – |
 
-**Finding F1 (not this work order's, but it shapes §4.2).** `D1` and `2 × 5` route on `main` but **fail `extract`**: their I2C lines bound above their declared 100 pF. So "D1 routes and passes every gate" was never true of `extract`/`verify`. `4100` claimed DRC with parity only. Any D3 that routes will fail `extract` the same way (§2.2, c2).
+**Finding F1 (not this work order's, but it shapes §4.2).** `D1` and `2 × 5` route on `main` but **fail `extract`**: their I2C lines bound above their declared 100 pF. So "D1 routes and passes every gate" was never true of `extract`/`verify`. `4100` claimed DRC with parity only. The two D3 boards that route here (c2, and c2 with order B) fail `extract` the same way (§2.2). `4100`'s FEEDBACK records no `extract` result for D1, so this is new.
 
 ### 2.1 S1 — why D3 fails [measured]
 
 Probe `spike/1307/s1-trace.patch` (env-gated: `AET_TRACE` logs each stuck search, rip-up and plane pad's via sites; `AET_PARTIAL` returns the copper at give-up; `AET_DUMP` writes it as JSON). Log: `~/.cache/aet-1307/runs/d3-trace.log`.
 
-- **Contested escapes (P1.1 held).** All 358 rip-up events and the last stuck searches are at U1's bottom-left corner:
+- **Contested escapes (P1.1 held).** 277 of the 358 stuck searches (77 %) are at U1's bottom-left corner:
   - plane pads, left side: **30 VDD_3V3, 31 GND, 32 VDD_3V3, 33 VDD_3V3** (four in a row);
   - CS escapes, left side: 34 `/CS0_0`, 35 `/CS0_1`, 36 `/CS1_2`;
   - round the corner, bottom side: 37 `/CS2_0`, **38 GND, 39 VDD_3V3**, 40 `/CS2_1`, 41 `/SCK0`, 42 `/MISO0`, 43 `/MOSI0`.
 
-  The stuck searches are "cannot take U1 pad 32 / 31 / 39 to a via" and "cannot reach U1 pad 34 / 35 / 36 / 41". The decoupling capacitors placed by those pads take further sites.
+  The corner's stuck searches: "cannot take U1 pad 31 / 39 / 32 to a via" (70, 40, 37) and "cannot reach U1 pad 35 / 34 / 41 / 40" (33, 33, 25, 18).
+
+  A second, smaller cluster is U1's plane pads 84 and 107 (23, 6 %), whose live sites also hit zero. The rest (58) are spread over flash pads (`S1000`–`S1010`) and single U1 pads. The corner is where the loop ends, and it is the cause stated below; pads 84 and 107 show the same mechanism with fewer neighbours. The decoupling capacitors placed by the supply pads take further sites.
 - **Via sites (P1.2 held, with a nuance).** Counted within 16 pitches of each plane pad, in the plane's fill:
   - against pads, fields and edge alone (`hard_via`), every plane pad has free sites: at least 19 (U1 84), 22 (U1 33) and 39 (U1 31);
   - against live copper, U1 31 had **zero** in 12 of 166 attempts, U1 84 in 14 of 114, and U1 32, 33 and 107 at times;
@@ -121,23 +123,6 @@ Probe `spike/1307/s1-trace.patch` (env-gated: `AET_TRACE` logs each stuck search
   - Pads: GND dark green, VDD_3V3 orange, other nets grey.
   - Tracks: F.Cu red, B.Cu blue.
   - Vias: GND green, VDD_3V3 yellow, others magenta.
-
-### 2.4 S4 — zone outlines [read + measured]
-
-- **What the emitter writes (P4.1 held).** `spike/1307/s4_zones.py` over every board emitted at baseline (reference, 2 × 5, four-layer, D1) shows each zone with exactly one `polygon` of 4 `pts`, **exactly** the outline's corners in the emitter's order. No `filled_polygon` appears. The repository commits no `.kicad_pcb` with a zone (`container/fixtures/drc-*.kicad_pcb` have none). The strict corpus has two zone recipes [read]. Neither changes the polygon, so the proposed judge leaves their recorded verdicts as they are:
-  - `board/unread-child/zone_fill_close.edit`: a saved fill; `drc` passes, `extract` refuses it `UnmodelledCopper`.
-  - `zone_clearance.edit`: `drc` refuses it `LocalClearance`.
-
-  The build must re-measure both.
-- **The wording (P4.2 held).** The emitter writes the outline itself, not the outline minus the edge clearance. The judge is therefore **equality with the `Edge.Cuts` rectangle**. The edge clearance is KiCad's at fill time, and the router's `zone_core` already models it.
-- **Proposal.** In `route::read`, each zone must have:
-  - exactly one `polygon` child and exactly one `pts`;
-  - exactly 4 `xy` points, which are the outline's four corners in the emitter's order (or, if the architect prefers, in any cyclic order and direction).
-
-  Anything else is refused by name: "zone `GND` on In1.Cu: its outline is not the board's". That covers smaller, larger, offset, holed (a second polygon) and extra-vertex outlines. `filled_polygon` children are not read, so a board filled and saved in KiCad is not refused for its fill.
-- **What legitimate input is refused:**
-  - a plane deliberately pulled back by a user (for example from a mounting hole or an antenna). No specification field can declare that today, so it is not the declared board, and refusing it is `INV-06`'s fail-closed.
-  - A KiCad 10.0.7 open-and-save of an emitted board is **not measured** (container denied). If KiCad rewrote the start corner or direction, the strict-order form would refuse it and the any-order form would not. **Decision D6.**
 
 ### 2.2 S2 — escape strategies [measured]
 
@@ -166,7 +151,7 @@ Each row is `run.sh` on that probe's binary.
 
   The subagent stopped there. It also broke boards that route today.
 - **(b) moves the contention without removing it.** Joint, most-constrained-first stitching is better on `four` and D1 (fewer vias, 46 rip-ups against 259 for its own v1). But D3's two plane nets block each other at the same corner. Ordering cannot help when the strip has fewer via sites than the corner's pads need.
-- **(c) removes the cause.** Opening the LQFP's interior (the pad ring's inside, the field shrunk past the pads' inner ends) lets an escape go inward, then down a via, then out under the pads on B.Cu. Only (c2), the variant open to every net, routes D3; plane nets alone (c1) make CS0_1 statically unroutable. Alone, (c2) routes D3 at 496 of 500 rip-ups, which is luck, not margin. **With order B it routes D3 in 4.6 s with 151 rip-ups**, and it routes every one of the 20 board-level renamings (§2.3).
+- **(c) removes the cause.** Opening the LQFP's interior (the pad ring's inside, the field shrunk past the pads' inner ends) lets an escape go inward, then down a via, then out under the pads on B.Cu. Only (c2), the variant open to every net, routes D3; plane nets alone (c1) make CS0_1 statically unroutable. Alone, (c2) routes D3 at 496 of 500 rip-ups, which is luck, not margin. **With order B it routes D3 in 4.6 s with 151 rip-ups**, and it routes every one of the 20 board-level renamings (§2.3). On 2 × 5 the via count is equal (132); on the others it is lower.
 - **Spot checks.**
   - I re-ran (c2) and (c1) on D3 myself (496 rip-ups, routed; `/CS0_1` in 0.24 s).
   - I recomputed the S3 counts from the subagent's TSVs.
@@ -201,7 +186,24 @@ No spec-level renaming was refused for anything but `Unroutable`.
   The two messages read are each a GND F.Cu track against a VDD_3V3 F.Cu track, ending diagonally 1 × 3 pitches apart: "track F (…) (GND) is within 200000 nm of track F (…) (VDD_3V3)". With 0.2 mm tracks that is 0.395 − 0.2 = 0.195 mm, under the 0.2 mm clearance.
 
   It fails closed (`Unroutable`, no id), so nothing ships. But a tracked end's corner is not covered by the node-to-node margin, and the stitched nets' F.Cu stubs hit it. The build should fix the margin (claim the end caps) rather than rely on the judge.
-- **The guard (P3.3).** An `aethelgard-eda` unit test reads the emitted reference, `four` and D1 (via `route::read`), renames every net and reference by 8 fixed permutations, routes each, and asserts one name-erased digest (sorted segments and vias). A tier-1 CLI test over 20 board-level renamings of the reference, D1 and D3 is the work order's literal acceptance (§4), at about 0.5 s + 0.5 s + 4.6 s per renaming in release.
+- **The guard (P3.3).** An `aethelgard-eda` unit test reads the emitted reference, `four` and D1 (via `route::read`), renames every net and reference **and permutes the order of `parts`** by 8 fixed permutations, routes each, and asserts one name-erased digest (sorted segments and vias). A tier-1 CLI test over 20 board-level renamings of the reference, D1 and D3 is the work order's literal acceptance (§4), at about 0.5 s + 0.5 s + 4.6 s per renaming in release.
+
+### 2.4 S4 — zone outlines [read + measured]
+
+- **What the emitter writes (P4.1 held).** `spike/1307/s4_zones.py` over every board emitted at baseline (reference, 2 × 5, four-layer, D1) shows each zone with exactly one `polygon` of 4 `pts`, **exactly** the outline's corners in the emitter's order. No `filled_polygon` appears. The repository commits no `.kicad_pcb` with a zone (`container/fixtures/drc-*.kicad_pcb` have none). The strict corpus has two zone recipes [read]. Neither changes the polygon, so the proposed judge leaves their recorded verdicts as they are:
+  - `board/unread-child/zone_fill_close.edit`: a saved fill; `drc` passes, `extract` refuses it `UnmodelledCopper`.
+  - `zone_clearance.edit`: `drc` refuses it `LocalClearance`.
+
+  The build must re-measure both.
+- **The wording (P4.2 held).** The emitter writes the outline itself, not the outline minus the edge clearance. The judge is therefore **equality with the `Edge.Cuts` rectangle**. The edge clearance is KiCad's at fill time, and the router's `zone_core` already models it.
+- **Proposal.** In `route::read`, each zone must have:
+  - exactly one `polygon` child and exactly one `pts`;
+  - exactly 4 `xy` points, which are the outline's four corners in the emitter's order (or, if the architect prefers, in any cyclic order and direction).
+
+  Anything else is refused by name: "zone `GND` on In1.Cu: its outline is not the board's". That covers smaller, larger, offset, holed (a second polygon) and extra-vertex outlines. `filled_polygon` children are not read, so a board filled and saved in KiCad is not refused for its fill.
+- **What legitimate input is refused:**
+  - a plane deliberately pulled back by a user (for example from a mounting hole or an antenna). No specification field can declare that today, so it is not the declared board, and refusing it is `INV-06`'s fail-closed.
+  - A KiCad 10.0.7 open-and-save of an emitted board is **not measured** (container denied). If KiCad rewrote the start corner or direction, the strict-order form would refuse it and the any-order form would not. **Decision K6.**
 
 ## 3. Predictions against measurement
 
@@ -227,36 +229,42 @@ No spec-level renaming was refused for anything but `Unroutable`.
 
 ## 4. Recommendation per question
 
+Steering read after the merge of `origin/main` (PR #124): architecture §2.12, §2.21 and `RUL-03` with every amendment, and roadmap §7.1.
+- `RUL-03` sets the gate's rules as clearance and width from `board.rules`, plus refusals of local overrides and waivers. Nothing in it or §2.12 forbids a via inside a part's own courtyard, so K1 (i) contradicts no ruling; it needs one because it is new.
+- §2.21 records D3's failure as "needs escape planning", which this spike answers.
+- The S4 judge is `INV-06`'s fail-closed, applied in `route::read`.
+
+
 - **S1. The cause.** Four adjacent plane pads at the LQFP's bottom-left corner need four vias at 0.8 mm pitch in the one outward strip that seven converging CS/SPI escapes must also cross, because the pad field allows only outward escapes. It is contention, not placement: sites exist against pads and fields.
-- **S2. The strategy: (c2) inward escape, with order B.** Recommended. Open the dense part's interior, the inside of the pad ring, to every net's F.Cu tracks and through vias. The ring itself and every other part's field stay closed. D3 routes in 4.6 s at 151 rip-ups, and so do all 20 board-level renamings. The other four inputs route with fewer vias and less track.
+- **S2. The strategy: (c2) inward escape, with order B.** Recommended. Open the dense part's interior, the inside of the pad ring, to every net's F.Cu tracks and through vias. The ring itself and every other part's field stay closed. D3 routes in 4.6 s at 151 rip-ups, and so do all 20 board-level renamings. The other four inputs route with no more vias and less track.
   - Not (a): infeasible at 0.5 mm pitch as written.
   - Not (b) alone: it cannot make sites that the strip does not have.
-  - **The cost: the reference changes.** Its board, extraction bounds (−1.3 % and −6.1 %, still passing) and fabrication package all change. Gating (c) to boards with planes (`has_planes`) keeps the reference and 2 × 5 byte-identical under (c1p). But order B changes the reference anyway, so gating buys nothing once order B lands (D2).
+  - **The cost: the reference changes.** Its board, extraction bounds (−1.3 % and −6.1 %, still passing) and fabrication package all change. Gating (c) to boards with planes (`has_planes`) keeps the reference and 2 × 5 byte-identical under (c1p). But order B changes the reference anyway, so gating buys nothing once order B lands (K2).
 - **S3. The order: order B.**
   - The key is `(!stitched, pad count, sorted pad centres, name)`. Nets are re-indexed by it once, so the queue, the blocker re-queue, the owner ids and the tree root all follow it.
   - A net's pads are ordered by `(y, x)`.
   - The guard is a digest test over renamings (§2.3).
-  - It removes the router's name dependence entirely (one geometry per board at board level). It does not remove placement's: specification-level renamings still move parts (D3).
+  - It removes the router's dependence on net names and on the order of a net's pads: one geometry per board at board level. The board-level hook renamed references **after** `pcb.rs` had sorted the parts, so the order of `parts` was not exercised. The build should order parts by position where the router reads them, and the guard should also shuffle `parts`. It does not remove placement's: specification-level renamings still move parts (K3).
 - **S4. The zone judge.** Each zone has exactly one `polygon` whose four points are the `Edge.Cuts` rectangle's corners. Anything else is refused by name; `filled_polygon` is not read. Nothing `emit` writes is refused. A deliberately pulled-back plane is refused, which is right while the specification cannot declare one.
 
-## 5. Decisions needed
+## 5. Decisions needed (K1–K6; `D1`, `D3` are the fixtures)
 
-- **D1. Escape strategy.**
+- **K1. Escape strategy.**
   - (i) **(c2) inward escape under the dense part's own body, for every net, with order B.** Recommended.
   - (ii) (c1p), inward for plane nets only with planes. This keeps the reference identical, but does not route D3.
   - (iii) Something else, for example jogged planned escapes (a′), which were not measured.
 
   Under (i), a via inside the LQFP's own courtyard is new. WO §5.2's "a via site under another part's courtyard" stays an escape lie the gate must refuse, and "own part's interior" becomes the one admitted case.
-- **D2. Sentinel-01 changes** (WO §2.4). Under (i) the reference's routed board changes: 70 → 58 vias, 348.5 → 301.6 mm, bounds 46,800/58,235 → 46,192/54,711, all passing. So do its fabrication package and the `46_800, 58_235` literal in `stackups_tier1.rs`. Accept the change? Recommended: yes. The second §7 stop is not hit: no bound passes its declared value.
-- **D3. Placement's name dependence.** At spec level, order B + (c2) routes 20/20 of the reference, 19/20 of D1 and 13/20 of D3. The rest fail because `pcb::place` orders by reference. The work order's acceptance ("20 renamings each route the reference, D1 and D3") is met at **board level** only.
+- **K2. Sentinel-01 changes** (WO §2.4). Under (i) the reference's routed board changes: 70 → 58 vias, 348.5 → 301.6 mm, bounds 46,800/58,235 → 46,192/54,711, all passing. So do its fabrication package and the `46_800, 58_235` literal in `stackups_tier1.rs`. Accept the change? Recommended: yes. The second §7 stop is not hit: no bound passes its declared value.
+- **K3. Placement's name dependence.** At spec level, order B + (c2) routes 20/20 of the reference, 19/20 of D1 and 13/20 of D3. The rest fail because `pcb::place` orders by reference. The work order's acceptance ("20 renamings each route the reference, D1 and D3") is met at **board level** only.
   - (i) Read the acceptance as board level (the router's guarantee), and backlog a geometric placement order. Recommended, as the fence is `route.rs` plus "`pcb.rs` where the escape is written".
   - (ii) Widen the fence to `pcb::place` and make it name-independent too. This changes every placed board.
-- **D4. "Passes every gate" for D3** (WO §2.1, §4). D3 under (i) routes and passes `check`/`connectivity`. Its I2C lines bound at 109,001–142,244 fF against a declared 100,000, so `extract` and hence `verify` fail. D1 and 2 × 5 **already fail `extract` on `main`** (F1).
+- **K4. "Passes every gate" for D3** (WO §2.1, §4). D3 under (i) routes and passes `check`/`connectivity`. Its I2C lines bound at 109,001–142,244 fF against a declared 100,000, so `extract` and hence `verify` fail. D1 and 2 × 5 **already fail `extract` on `main`** (F1).
   - (i) Read "every gate" as DRC with parity, as `4100` did for D1, and backlog D1/D3's bound. Recommended.
   - (ii) Raise the fixtures' declared bound so they pass, which changes the fixtures `4100` committed.
   - (iii) Treat the bound as this work order's (it is not routing).
-- **D5. KiCad DRC of the chosen strategy.** It was not run in this spike (container denied; operator ruled to skip). The build runs the tier-2 gate on D3, D1, `four` and the reference under (i) before anything else. If KiCad refuses a via under the body, that is a §7 stop.
-- **D6. Zone judge vertex order.** Strict (emitter's order) or any cyclic order and direction? Recommended: any order, because a KiCad round trip (not measured) may rotate the start. Both refuse every shape other than the outline.
+- **K5. KiCad DRC of the chosen strategy.** It was not run in this spike (container denied; operator ruled to skip). The build runs the tier-2 gate on D3, D1, `four` and the reference under (i) before anything else. If KiCad refuses a via under the body, that is a §7 stop.
+- **K6. Zone judge vertex order.** Strict (emitter's order) or any cyclic order and direction? Recommended: any order, because a KiCad round trip (not measured) may rotate the start. Both refuse every shape other than the outline.
 - **F2 (for the build, no ruling needed unless the architect wants it separate).** The grid's margin misses a diagonal track-end corner (GND/VDD stubs, 0.195 mm). The exact judge catches it and fails closed. Fix the margin, so the "no tested board reaches these" comment becomes true, and add the reproducing renaming as a test.
 
 ## 6. Files
@@ -265,5 +273,5 @@ No spec-level renaming was refused for anything but `Unroutable`.
 - **Probes:** `s1-trace.patch`, `s2-a-escape-first.patch`, `s2-b-plane-priority.patch`, `s2-c-inward.patch` (env `AET_C` = `1`, `2`, `1p`), `s3-rename-hook.patch`, `s3-order-b.patch`. The combined probe is the last two applied together, with `AET_C=2`.
 - **Runners:** `run.sh`, `stats.py`, `gen.py` (2 × 5), `rename_spec.py`, `placement.py`, `s3-board-level.sh`, `s3-spec-level.sh`, `s4_zones.py`, `plot.py`.
 - **Not run:** `img.sh`, the capped image runner (container denied).
-- **Data:** `s2-results.tsv`, `s3-renamings.tsv`, and the figure `s1-d3-u1-pads-28-44.png`.
+- **Data:** `s2-results.tsv` (labels: `b` appears twice, v1 then v2; `s3order` is order A, `s3orderB` is order B; `a` rows are hand-formatted), `s3-renamings.tsv`, and the figure `s1-d3-u1-pads-28-44.png`.
 - **Logs:** under `~/.cache/aet-1307/` (not committed).
