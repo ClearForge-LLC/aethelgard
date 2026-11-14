@@ -611,6 +611,13 @@ fn witness_shaped<'l>(line: &'l str, device: &str) -> Option<&'l str> {
     })
 }
 
+/// A log line's text if it is `c`'s device's and not one of the lines its
+/// model writes that are not a transfer, which the judge skips, exactly as
+/// the twin lists them (`AET-WO-4200` D2).
+fn device_line<'l>(c: &aethelgard_twin::boot::IdentityCheck, line: &'l str) -> Option<&'l str> {
+    witness_shaped(line, &c.device).filter(|b| !c.skipped.iter().any(|s| s == b))
+}
+
 /// The line index of each `{prefix}{k}` sentinel, `k` from 0 to `n` − 1: each
 /// exactly once, as a whole line, in order, and none beyond `n`.
 fn sentinels(lines: &[&str], prefix: &str, n: usize) -> Result<Vec<usize>, String> {
@@ -750,8 +757,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             (out.dropped_log_lines == 0).then(|| {
                 last_boot
                     .iter()
-                    .filter_map(|l| witness_shaped(l, &c.device))
-                    .filter(|b| !c.skipped.iter().any(|s| s == b))
+                    .filter_map(|l| device_line(c, l))
                     .map(str::to_owned)
                     .collect()
             })
@@ -1014,10 +1020,7 @@ fn witness_findings(
             let seen: Vec<&str> = log
                 .iter()
                 .filter_map(|l| {
-                    on.iter().find_map(|&i| {
-                        witness_shaped(l, &checks[i].device)
-                            .filter(|b| !checks[i].skipped.iter().any(|s| s == b))
-                    })
+                    on.iter().find_map(|&i| device_line(&checks[i], l))
                 })
                 .collect();
             let want: Vec<&str> = on
@@ -1213,6 +1216,47 @@ pub fn status_name(c: &aethelgard_twin::boot::IdentityCheck, status: u32) -> &'s
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `AET-WO-4200` D2: of a device's own lines, exactly those its model
+    /// lists as not a transfer are skipped; every other line of the device is
+    /// kept, so it can fail the witness; a line of another device is not this
+    /// one's, its path a prefix or not.
+    #[test]
+    fn a_device_s_line_is_kept_unless_its_model_lists_it_as_skipped() {
+        let c = aethelgard_twin::boot::IdentityCheck {
+            reference: "U5".into(),
+            peripheral: "SPI1".into(),
+            wire: aethelgard_twin::boot::Wire::Spi {
+                address: 1,
+                select: "PA1".into(),
+            },
+            write: 0x80,
+            width: 1,
+            expected: 0xEA,
+            status_at: 0x2000_0004,
+            value_at: 0x2000_0008,
+            device: "spi1.spi1mux.u5".into(),
+            witness: None,
+            skipped: vec!["[NOISY] spi1.spi1mux.u5: Finishing transmission, going idle".into()],
+        };
+        let at = |b: &str| format!("[03:07:39.4001] {b}");
+        let idle = at("[NOISY] spi1.spi1mux.u5: Finishing transmission, going idle");
+        assert_eq!(device_line(&c, &idle), None);
+        let read = at("[NOISY] spi1.spi1mux.u5: Received byte 0x80, returning 0x0");
+        assert_eq!(
+            device_line(&c, &read),
+            Some("[NOISY] spi1.spi1mux.u5: Received byte 0x80, returning 0x0")
+        );
+        // A skip line with anything appended is not the skip line.
+        let longer = at("[NOISY] spi1.spi1mux.u5: Finishing transmission, going idle (2)");
+        assert!(device_line(&c, &longer).is_some());
+        for other in [
+            "[NOISY] spi1.spi1mux.u50: Received byte 0x80, returning 0x0",
+            "[NOISY] spi1.spi1mux: GPIO #1 set to False",
+        ] {
+            assert_eq!(device_line(&c, &at(other)), None, "{other}");
+        }
+    }
 
     fn image() -> aethelgard_twin::boot::Image {
         let topology: aethelgard_ir::SolvedTopology = serde_json::from_str(

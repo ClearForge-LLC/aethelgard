@@ -1287,6 +1287,9 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
         else {
             continue;
         };
+        // belt-and-suspenders: the twin's `platform::spi_device_path` states
+        // this path; replay checks an archive without the twin, so it states
+        // it again (this crate never depends on the twin).
         let c = peripheral.to_ascii_lowercase();
         let want = format!("{c}.{c}mux.{}", reference.to_ascii_lowercase());
         if spi.get(reference.as_str()) != Some(&peripheral.as_str()) || *path != want {

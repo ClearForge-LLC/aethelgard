@@ -526,10 +526,7 @@ impl<'a> Run<'a> {
     ///
     /// A witness that could not be read whole is no evidence.
     fn spi_evidence(&self, reference: &str) -> (Vec<usize>, Vec<usize>) {
-        let Some(Record::SpiCheck {
-            address, status, ..
-        }) = self.spi_check_of(reference)
-        else {
+        let Some(Record::SpiCheck { address, .. }) = self.spi_check_of(reference) else {
             return (vec![], vec![]);
         };
         let check = self
@@ -544,7 +541,6 @@ impl<'a> Run<'a> {
             return (vec![], vec![]);
         };
         let Record::SpiWitness {
-            expected,
             observed: Some(observed),
             unrouted,
             ..
@@ -556,24 +552,18 @@ impl<'a> Run<'a> {
             " to device {address:#X}, but it's not connected - ignoring transfer and returning a dummy byte"
         )
         .replace("0X", "0x");
-        let unrouted_at = |what: &str| {
-            unrouted
-                .iter()
-                .any(|l| l.starts_with("[WARNING] ") && l.contains(what))
-        };
         let electrical = observed.is_empty()
             && unrouted
                 .iter()
                 .any(|l| l.starts_with("[WARNING] ") && l.ends_with(&absent));
-        let claimed = status.as_deref() == Some("ok");
-        let software = unrouted_at(", but no device is currently selected - ")
-            || unrouted_at(", but multiple devices are currently selected (")
-            || (!observed.is_empty() && observed != expected)
-            || (claimed && observed.is_empty() && unrouted.is_empty());
-        let software = if software {
+        // The software conditions are the fields' (`spi_fields`): one
+        // statement of each. A claim with nothing logged is the read's own
+        // event as well as the witness's.
+        let fields = self.spi_fields(&self.records[w]);
+        let software = if fields.iter().any(|f| f.wrong) {
             [
                 Some(w),
-                check.filter(|_| claimed && observed.is_empty() && unrouted.is_empty()),
+                check.filter(|_| fields.get(2).is_some_and(|f| f.wrong)),
             ]
             .into_iter()
             .flatten()
