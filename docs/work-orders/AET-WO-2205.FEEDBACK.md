@@ -6,9 +6,9 @@
 
 Entry schema for findings: `finding · where · severity · type · recommendation · decision-needed`.
 
-## Status: STOPPED at §1.6
+## Status: built to the ruling, READY FOR REVIEW
 
-Items 1, 2, 3, 4, 5, 7, 8 and 9 are built and measured. Item 6 is not: §1.6 stops before its code. The evidence table and the indeterminate proposal are below, with decisions D1 to D4. Nothing after them is built until the ruling.
+The stop at §1.6 was ruled on PR #119, in the architect's ruling of 2026-11-14 (D1–D4 accepted, F5 to fix, 1909 merged in first). Everything up to "Reduction pass, diff-sized (so far)" is the record of the stop, kept as written. **The build to the ruling is in "# The build, to the ruling" at the end.**
 
 ## Item 4 first: no status-to-phase gating survives `2204` (`3100` F2 closed)
 
@@ -191,7 +191,120 @@ A fresh Opus subagent attacked a frozen copy at `f13816e`, with real runs from b
 
 Green. Shards 0 to 7: 13:56, 12:48, 12:14, 10:35, 14:41, 12:49, 10:02, 12:17, so the slowest is 14:41 and the spread 4:39. Gates 8:19, image 4:17.
 
-## Gates (at `98be31b`; tier 2 measured at `3d12877`)
+## Gates at the stop (at `98be31b`; tier 2 measured at `3d12877`)
 
 `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (with and without `with-tools`), `cargo test --workspace`: green on Furnace. Tier 2 in the image, the suites this work order touches: `attribute_seeded` 12 passed (327 s, the new case included), `campaign_tier2` 8 passed, `twin_tier2` 22 passed (`~/.cache/aet-2205/t2-1.log`). CI: on the PR (every suite, eight shards).
+
+# The build, to the ruling
+
+## Sequencing (ruling, "Sequencing")
+
+- F5 was fixed before 1909 landed (`8644d64`, `ae0a254`). It is doc comments only.
+- `AET-WO-1909` merged as `2967d16` (PR #115). I merged `origin/main` with a merge commit, `27b976e`, **before item 6's code**. One conflict, in `campaign_tier2.rs`: 1909's new assertion messages against my rename. I kept 1909's messages and applied `analog.rise_time_computed`.
+- Item 6 is written on 1909's shape: shared runs, D8 messages, `oq_03` gone. Every new assertion names its property.
+- `TIER2_MIN` is **90**, 1909's, unchanged: this work order adds no tier-2 test function.
+
+## F5 (ruled: fix in this PR)
+
+evolve's rule docs (`S1`, `S2`, `I2`, `I3`, `I4`, the `joined` and `healthy` docs) say "computed healthy" and "has no computed rise", never "measured healthy". So do evolve's attribution test comments and the CLI README's rule table: the "A bus is computed healthy" paragraph, the `I2`–`I4` and `S1` rows, the board paragraph, the trap line, and the analog pre-pass's opening. There is no behaviour change. The local variable `unmeasured` in `decide` is left as it is: it is not a doc.
+
+## Item 6, built (D1, D2)
+
+- **`cases.json` is at schema version 2.**
+  - Each case carries `evidence` and `masked` as `[index, kind]` lists, exactly the §1.6 table.
+  - The table was re-derived from the build's `attribute` output after the merge. Every index is unchanged: 1909 changed tests, not the trace.
+  - `about` states the shift rule.
+- **The seeded test** (`crates/aethelgard-cli/tests/attribute_seeded.rs`):
+  - **Tier 2, clause 1:** `attribute`'s `evidence` and `masked` must equal the case's exactly, as plain `Vec` equality with no sort. Each listed event must be a record of the run of the kind it says. The doc comment carries the ruling's obligation: whoever shifts the indices re-derives them from `attribute` and explains every changed row in their FEEDBACK. `symptoms` are not asserted (D1).
+  - **The `allowed` table is gone.** Tier 1 reads each case's rule with `aethelgard_evolve::Rule::from_id` (new, beside `Rule::ALL`), and checks against it:
+    - each case's domain is the rule's `domain()`;
+    - each stated evidence kind is in `evidence_kinds()`;
+    - evidence is stated exactly when the case fails;
+    - a passing case masks nothing;
+    - evidence and masked are sorted by index;
+    - each firmware runs each scenario name once.
+  - **Tier 1** requires at least one indeterminate case, and the I3 trap.
+  - **Clause 2:**
+    - `Want::Indeterminate`: no proposal, exit 1, `proposal.json` only, the reason naming the rule and `INV-05`.
+    - A proposal's `masked` is read from the manifest, no longer a hard-coded `[13]`. The trap test likewise.
+  - **`attribute` exits 1 on an indeterminate run**, as the README states. The test now expects that, not 0.
+- **`trap-indeterminate-leave-47k`** (D2): `pullup-47k.json` with `leave-firmware`.
+  - Measured in the image: findings `analog_rise_exceeds_ceiling`, `i2c_timeout`, `pc_outside_firmware`; `indeterminate I3`, evidence exactly `3:7 4:7 5:9`, masked none.
+  - `propose` answers `no_proposal`, exit 1: "attribution rule I3 (`indeterminate`): attribution precedes mutation, so nothing is proposed (INV-05)".
+  - It adds no firmware: `leave-firmware`'s campaign gains one scenario.
+- **The CLI README's seeded-set paragraph:** 21 failing cases (10 electrical, 11 software), one indeterminate and two passing, exact evidence, and the shift rule.
+- **The seeded block in the image:** 11 tests, all passing (353 s at `ce9fc7e`; 325 s at `0ca3347`).
+
+## Adversarial pass (targeted, §5), at `ce9fc7e`
+
+A fresh Opus subagent worked on a frozen copy with its own image runner (`~/.cache/aet-2205-adv2`), using 3 tier-2 runs with caps read back. The copy was verified reverted afterwards (`diff -r` against `git archive ce9fc7e`).
+
+- **§5.2, a seeded case attributing evidence the exact table does not list.** I ran ten evolve mutants through a host replica of clause 1's comparisons over the 24 archived seeded runs; three also ran through the real clause 1 in the image, and the replica predicted all three.
+  - **Caught by clause 1** (as were the first-pass §5.1/§5.3 fixes):
+    - masked emptied;
+    - a rise dropped from `S1` (9 cases) and from `S2` (2 cases);
+    - a kind 13 added to `E1`'s evidence;
+    - `I3`'s evidence widened with kind 10. Real clause 1 failed: "attribute names exactly the manifest's evidence events: trap-indeterminate-leave-47k", `[[3,7],[4,7],[5,9],[6,10]]` against `[[3,7],[4,7],[5,9]]`.
+  - **M3, should-fix, fixed.** Masked was collected only from the named rule's decisions. That changes no seeded row, and no suite caught it. The new evolve test `a_witness_on_a_faulted_bus_stays_masked_when_the_run_is_indeterminate` pins masked `[13]` beside an `I3` decision. I applied M3 and it fails, then reverted.
+  - **Residual: a coverage limit of a one-bus, one-device seeded set.** Four mutants match every seeded row and are caught by evolve's own tests:
+    - M1: board-scope `I3` evidence plus every rise;
+    - M9: evidence from every decided rule;
+    - M2: `S1` ignoring the device;
+    - M10: bus-scope `I3` without rises.
+
+    On one faulted 47 kΩ bus, `E1`'s and `I3`'s evidence and the rises are the same set. **Backlog:** an `I3` trap on `cap-390p-sda-2k2` with `leave-firmware` would separate M1.
+  - **Escapes, by reading:**
+    - none today: every case runs, and the lists are compared unsorted.
+    - Two latent gaps are now closed in tier 1: one scenario name per firmware, and a passing case masks nothing.
+    - The hard-coded `[13]` masks and the `matches!` domain/rule pairs duplicated the manifest and `Rule::domain`. They now read them.
+- **§5.1, re-check:** all 79 forged cases of the first pass give the post-fix result. No replay or attribute result moved from refused to passing.
+- **§5.3, re-check:** all 13 v5 runs are refused, `UnknownVersion`, exit 3, by `replay`, `attribute` and `propose`, which writes nothing.
+
+## Mutation testing (sized to the diff: one mutant per guard this work order adds)
+
+`~/.cache/aet-2205/mut/mut.py` applies each mutant and reverts it by exact inverse edit, against the guard's tier-1 suite. **14 of 14 are killed** (`result.txt`, `result2.txt`):
+- header tools rule; header tools sorted;
+- `pc_outside_firmware` at any severity; `pc_outside_firmware` exactly when outside;
+- self-loop only inside; kind 10 read whole; segments ordered; window above 0;
+- Renode build required; elf's 16-segment bound;
+- evolve `pc_outside` as board software; `Rule::from_id`; `propose`'s `pc_inside_firmware`;
+- `tools_of`'s bridge on kind 16.
+
+Three survived the first run and now have tests:
+- `pc_outside_firmware` at `info` only, with `pc` outside;
+- a Renode with no `build:` line at all, beside a blank one;
+- a rail alone names the bridge and not ngspice.
+
+The elf bound had no test, and has one: `executable_segments_are_sorted_and_at_most_sixteen`.
+
+## Findings for the architect (build)
+
+- **Backlog, from adversarial pass 1 (older than this work order):**
+  - B1: `check_joins` does not require a kind 7 or 8 per kind-15 line.
+  - B2: a boot that read nothing, with no `boot_word_missing`, replays as `pass`.
+  - B3: a finding's severity is open text.
+- **Backlog, from pass 2:** an `I3` seeded case on a second shape (`cap-390p-sda-2k2` × `leave-firmware`) would separate M1.
+- **The declared-speed guard in `analog::pass` is labelled `belt-and-suspenders:`.** `SolvedTopology::validate` already refuses a line's bus with no declared speed (measured: `UnknownBus`), so it cannot fire today. It stays so an IR change cannot become a panic at `declared[bus]`.
+- **The PR title still describes the stop.** `gh-write` cannot edit a PR (it has `prep`, `push`, `pr`, `delete-branch` and `revoke`), and the token may go nowhere else. **The retitle is the architect's.**
+
+  Proposed title: "AET-WO-2205: archive hygiene — trace v6 (header tools, computed names, window, segments, Rev 10, witness) and the seeded set's exact evidence with an indeterminate case".
+
+## Reduction pass (diff), the whole work order
+
+- **Duplicates removed, 6:**
+  - the header's tool names, literal in the CLI and constants in chaos, now `campaign::{ENGINE, BRIDGE, NGSPICE, RENODE}`; `analog::BRIDGE` is `campaign::BRIDGE`;
+  - the judge's two finding names, now `PC_OUTSIDE_FINDING` and `SELF_LOOP_FINDING`;
+  - the seeded `allowed` table, a copy of `Rule::evidence_kinds`;
+  - the tier-1 domain/rule `matches!`, a copy of `Rule::domain`;
+  - two hard-coded masked `[13]`s, copies of the manifest.
+- **Dead paths removed: 0.**
+- **Protected kept: 1**, the declared-speed guard, now labelled.
+
+Reduction pass (diff): net lines positive (the removals above take out the `allowed` table, the `matches!` pairs, two hard-coded masks and the CLI's tool-name literals; the tests the mutants and adversaries asked for add more; `git show --numstat 87a5fe5 0ca3347` gives +110 −32) · 6 duplicates removed · 0 dead paths removed · 1 protected kept · 4 findings above.
+
+## Gates (build, at `0ca3347`)
+
+- `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (with and without `with-tools`), `cargo test --workspace`: green on Furnace.
+- `TIER2_MIN` 90, exact: 1909's, unchanged here.
+- CI: on the PR at the pushed head; recorded in the PR thread and the final report.
 
