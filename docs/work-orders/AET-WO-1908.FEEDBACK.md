@@ -35,7 +35,7 @@ All times are CI seconds on a GitHub runner, one test at a time, nothing else in
 ## Result
 
 - **Three consecutive runs at the final plan (B, C, D below), every shard under 13 minutes; slowest 11:44, 11:11, 12:05.** The guard and canary passed on every run (`tools` green), as did `gates` (fmt, clippy, the workspace tests), and `shard.sh`'s own `ci/test-shard.sh` passes locally.
-- **Headroom is 55 s at the worst shard of the three.** The variance in finding 3 is why it is not more: the same plan's shard 4 took 9:17 in run C and 12:05 in run D.
+- **Headroom is 55 s at the worst shard of the three, and run E (same plan, after them) was 13:06 on shard 5: see Acceptance runs.** The variance in finding 3 is why it is not more: the same plan's shard 4 took 9:17 in run C and 12:05 in run D.
 - The first stop (this file's earlier version) was my judgement that the block's worst sample, 721 s plus 131 s of setup, would fail 13 minutes. The kickoff says to stop only on a §7 condition and that was not one, so I built it. **The block did not fail 13 minutes in any of the four plan runs** (shard 1: 10:18, 10:19, 11:11, 12:00); the worst-case reading in finding 5 was a risk, not a result. It remains a risk: one more run in four could still exceed 13 minutes.
 
 ## Adversarial pass (§5, targeted, a fresh subagent)
@@ -159,5 +159,6 @@ Run B (10 shards, `ci/SHARDS` 10, commit 4acd4f0) counts as run 1 of the three a
 | B (43539995009) | 4acd4f0 | 10 | 8:17 | 10:19 | 9:49 | 11:44 | 8:24 | 11:25 | 8:00 | 8:15 | 8:43 | 8:40 | **11:44** |
 | C (43541279022) | 7860e22 | 10 | 10:19 | 11:11 | 8:26 | 10:59 | 9:17 | 11:08 | 10:29 | 10:09 | 8:29 | 11:00 | **11:11** |
 | D (43542481893) | 0f5700c | 10 | 8:36 | 12:00 | 11:13 | 9:01 | **12:05** | 9:49 | 7:36 | 7:33 | 8:44 | 11:54 | **12:05** |
+| E (43543703305) | 211082d | 10 | 8:46 | 11:26 | 10:40 | 11:00 | 9:54 | **13:06** | 9:27 | 7:53 | 9:32 | 9:05 | **13:06** |
 
-Runs B, C and D are the three consecutive runs; each row's commit is the one that started the run, and the next commit is the one that recorded it. Run E, on the commit that records run D, is not logged here (it would need a commit of its own that starts another run); its result is on the PR's checks.
+Runs B, C and D are the three consecutive runs the acceptance asks for; each row's commit is the one that started the run, and the next commit recorded it. **Run E, on the unchanged plan, put shard 5 at 13:06, six seconds over the line** (the guard and canary passed). So the three-run claim is met, and the headroom is not: of four runs at this plan, one shard passed 13 minutes once. Shard 5 holds `board_tier2` heavy tests, which run serially and carry most of the runner-to-runner variance; 11 shards would plan about 440 s and widen the margin, at a twelfth runner. That is the architect's call, not a failing invariant. A run F on the commit that records run E is on the PR's checks.
