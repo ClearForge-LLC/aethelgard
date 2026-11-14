@@ -1252,28 +1252,29 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
 pub const ARTIFACTS: [&str; 5] = ["base", "firmware", "scenario", "specification", "topology"];
 
 /// The header's tool names (`AET-WO-2205` §1.1): the engine and Renode judge
-/// every run; the bridge and its ngspice only a run that computed a line or
-/// a rail (kinds 7, 8 or 16), since the bridge runs only then.
+/// every run; the bridge only a run that computed a line or a rail (kinds 7,
+/// 8 or 16), since it runs only then; and ngspice only a run with an answer
+/// that named it, a line (kinds 7 and 8) or a crossing (kind 17).
 pub const ENGINE: &str = "aethelgard";
 pub const RENODE: &str = "renode";
 pub const BRIDGE: &str = "aethelgard-bridge";
 pub const NGSPICE: &str = "ngspice";
 
 /// The tools a campaign run's header names, sorted.
-pub fn tools_of(records: &[Record]) -> &'static [&'static str] {
-    let bridge = records.iter().any(|r| {
-        matches!(
-            r,
-            Record::RiseComputed { .. }
-                | Record::LineStuckHigh { .. }
-                | Record::RailDeclared { .. }
-        )
-    });
-    if bridge {
-        &[ENGINE, BRIDGE, NGSPICE, RENODE]
-    } else {
-        &[ENGINE, RENODE]
+pub fn tools_of(records: &[Record]) -> Vec<&'static str> {
+    fn line(r: &Record) -> bool {
+        matches!(r, Record::RiseComputed { .. } | Record::LineStuckHigh { .. })
     }
+    let any = |f: fn(&Record) -> bool| records.iter().any(f);
+    let mut tools = vec![ENGINE];
+    if any(|r| line(r) || matches!(r, Record::RailDeclared { .. })) {
+        tools.push(BRIDGE);
+    }
+    if any(|r| line(r) || matches!(r, Record::RailCrossing { .. })) {
+        tools.push(NGSPICE);
+    }
+    tools.push(RENODE);
+    tools
 }
 
 /// Judge an archived campaign run, after the strict reader: it holds no
