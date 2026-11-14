@@ -350,45 +350,38 @@ pub const fn femtofarads(ph: &Physics, volume_d: u128) -> Option<u64> {
 /// cap adds to today's shell, in the units [`shell`] returns. `area_d` and
 /// `perimeter_d` are `D` times the base's (a [`Base`]); `ends` includes the
 /// two terms that do not grow with a base (`4πh/9`, `2πS²/(9h)`), which a
-/// per-length derivative leaves out. With π = 355/113 and
-/// `T(h) = D·S²·lower(h)`:
+/// per-length derivative leaves out. Term by term the difference factors:
 ///
-/// `72·113·h·T(h) = 72·113·A_d·S² + 9·355·p_d·h²·S + 9·355·p_d·S³
-///   + ends·(32·355·D·h²·S² + 16·355·D·S⁴)`,
+/// - `A·S²·(1/h − 1/S) = A·S·(S − h)/h`;
+/// - `(πp/8)·S²·(h/S + S/h − 2) = (πp/8)·S·(S − h)²/h`;
+/// - `S²·(2π/9)·(2h + S²/h − 3S) = S²·(2π/9)·(S − h)(S − 2h)/h`;
 ///
-/// so the difference is `(N(h)·S − N(S)·h) / (72·113·h·S)`, exactly 0 at
-/// `h = S`. `None` on overflow.
+/// so, with π = 355/113,
+///
+/// `cap = (S − h)·[72·113·A_d·S + 9·355·p_d·S·(S − h)
+///   + ends·16·355·D·S²·(S − 2h)] / (72·113·h)`,
+///
+/// which is 0 at `h = S` by its first factor. `None` on overflow or `h = 0`.
 pub fn cap(area_d: u128, perimeter_d: u128, ends: bool, h: u128, s: u128) -> Option<i128> {
-    let n = |h: u128| -> Option<u128> {
-        let s2 = s.checked_mul(s)?;
-        let h2 = h.checked_mul(h)?;
-        let a = (72 * PI_DEN).checked_mul(area_d)?.checked_mul(s2)?;
-        let b = (9 * PI_NUM)
-            .checked_mul(perimeter_d)?
-            .checked_mul(h2)?
-            .checked_mul(s)?;
-        let c = (9 * PI_NUM)
-            .checked_mul(perimeter_d)?
-            .checked_mul(s2)?
-            .checked_mul(s)?;
-        let mut sum = a.checked_add(b)?.checked_add(c)?;
-        if ends {
-            let d1 = (32 * PI_NUM)
-                .checked_mul(D)?
-                .checked_mul(h2)?
-                .checked_mul(s2)?;
-            let d2 = (16 * PI_NUM)
-                .checked_mul(D)?
-                .checked_mul(s2)?
-                .checked_mul(s2)?;
-            sum = sum.checked_add(d1)?.checked_add(d2)?;
-        }
-        Some(sum)
-    };
-    let top = i128::try_from(n(h)?.checked_mul(s)?).ok()?;
-    let bottom = i128::try_from(n(s)?.checked_mul(h)?).ok()?;
-    let num = top.checked_sub(bottom)?;
-    let den = i128::try_from((72 * PI_DEN).checked_mul(h)?.checked_mul(s)?).ok()?;
+    let i = |v: u128| i128::try_from(v).ok();
+    let (h, s, a, p) = (i(h)?, i(s)?, i(area_d)?, i(perimeter_d)?);
+    if h <= 0 {
+        return None;
+    }
+    let gap = s.checked_sub(h)?;
+    let pi = i(PI_NUM)?;
+    let first = (72 * i(PI_DEN)?).checked_mul(a)?.checked_mul(s)?;
+    let second = (9 * pi).checked_mul(p)?.checked_mul(s)?.checked_mul(gap)?;
+    let mut sum = first.checked_add(second)?;
+    if ends {
+        let third = (16 * pi)
+            .checked_mul(i(D)?)?
+            .checked_mul(s.checked_mul(s)?)?
+            .checked_mul(s.checked_sub(h.checked_mul(2)?)?)?;
+        sum = sum.checked_add(third)?;
+    }
+    let num = gap.checked_mul(sum)?;
+    let den = (72 * i(PI_DEN)?).checked_mul(h)?;
     // Rounded up: toward +∞ for either sign.
     Some(num.div_euclid(den) + i128::from(num.rem_euclid(den) != 0))
 }

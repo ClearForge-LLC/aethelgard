@@ -1734,9 +1734,13 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
         let labels = components(&grid, &core, &seeds);
         for (k, &i) in stitched.iter().enumerate() {
             if labels[k].is_none() || labels[k] != labels[0] {
+                let fill = if b_cu {
+                    "zone".to_owned()
+                } else {
+                    format!("{layer} plane of {net}")
+                };
                 return Err(format!(
-                    "the {net} {} does not reach via {:?}",
-                    if b_cu { "zone" } else { "plane" },
+                    "the {fill} does not reach via {:?}",
                     routed.vias[i].at
                 ));
             }

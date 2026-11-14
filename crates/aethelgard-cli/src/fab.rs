@@ -293,8 +293,8 @@ fn describe(project: &str, layers: &[(String, String, usize)]) -> Vec<(String, &
             let what = match layer.as_str() {
                 "F.Cu" => "Gerber, top copper",
                 "B.Cu" => "Gerber, bottom copper",
-                "In1.Cu" => "Gerber, inner copper layer 1 (FAB-NOTES.md: Stackup)",
-                "In2.Cu" => "Gerber, inner copper layer 2 (FAB-NOTES.md: Stackup)",
+                "In1.Cu" => "Gerber, inner copper layer 1, a plane (see Stackup)",
+                "In2.Cu" => "Gerber, inner copper layer 2, a plane (see Stackup)",
                 "F.Paste" => "Gerber, top solder paste",
                 "B.Paste" => "Gerber, bottom solder paste",
                 "F.SilkS" => "Gerber, top silkscreen",

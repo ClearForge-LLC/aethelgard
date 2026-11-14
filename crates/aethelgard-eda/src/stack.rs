@@ -118,37 +118,32 @@ impl Stack {
     }
 }
 
-/// The reference's declared board, for tests.
+/// The reference's declared board (`examples/sentinel-01-minimal.json`), for
+/// tests. The CLI's `stackups_tier1` asserts it equals `Stack::of` on that
+/// file, so the two cannot drift.
 #[cfg(test)]
 pub(crate) fn reference() -> Stack {
-    let spec: Specification =
-        serde_json::from_str(include_str!("../../../examples/sentinel-01-minimal.json")).unwrap();
-    Stack::of(&spec)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_reference_declares_todays_two_layer_board() {
-        let spec: Specification =
-            serde_json::from_str(include_str!("../../../examples/sentinel-01-minimal.json"))
-                .unwrap();
-        spec.validate().unwrap();
-        let s = Stack::of(&spec);
-        assert_eq!(s.copper, ["F.Cu", "B.Cu"]);
-        assert!(s.planes.is_empty());
-        assert_eq!(
-            (
-                s.thickness.nominal_nm,
-                s.thickness.min_nm,
-                s.thickness.max_nm
-            ),
-            (1_600_000, 340_000, 2_000_000)
-        );
-        assert_eq!(s.outer_dielectrics_nm(), (200_000, 200_000));
-        assert_eq!((s.copper_max_nm, s.permittivity_permille), (70_000, 5400));
-        assert_eq!((s.clearance_nm, s.width_nm), (200_000, 200_000));
+    let thickness_source = "AET-WO-1305 conditions: 1.6 mm declared; 0.34 mm = 2 x 70 um + 0.2 mm; 2.0 mm = 1.6 mm + 25 %";
+    Stack {
+        copper: vec!["F.Cu".into(), "B.Cu".into()],
+        planes: vec![],
+        thickness: Thickness {
+            nominal_nm: 1_600_000,
+            min_nm: 340_000,
+            max_nm: 2_000_000,
+            source: thickness_source.into(),
+        },
+        dielectrics: vec![(
+            "F.Cu".into(),
+            "B.Cu".into(),
+            200_000,
+            "implied: the finished minimum 340 um less twice the copper maximum 70 um".into(),
+        )],
+        copper_max_nm: 70_000,
+        copper_source: "AET-WO-1305 condition: twice KiCad's default 35 um (2 oz)".into(),
+        permittivity_permille: 5400,
+        permittivity_source: "the IPC-4101 FR-4 maximum, specified at 1 MHz".into(),
+        clearance_nm: 200_000,
+        width_nm: 200_000,
     }
 }

@@ -108,7 +108,10 @@ fn the_four_layer_board_is_the_declared_one_and_extracts() {
     }
     assert_eq!(board.matches("\t(zone\n").count(), 2);
     assert!(!board.contains("\t(zone\n\t\t(net \"GND\")\n\t\t(layer \"B.Cu\")"));
-    assert!(!board.contains("(filled_polygon"), "planes are emitted unfilled");
+    assert!(
+        !board.contains("(filled_polygon"),
+        "planes are emitted unfilled"
+    );
     for via in board.split("\t(via\n").skip(1) {
         assert!(via.contains("(layers \"F.Cu\" \"B.Cu\")"), "{via}");
     }
@@ -141,11 +144,19 @@ fn the_four_layer_board_is_the_declared_one_and_extracts() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|l| (l["net"].as_str().unwrap().to_owned(), l["c_bound_femtofarads"].as_u64().unwrap()))
+        .map(|l| {
+            (
+                l["net"].as_str().unwrap().to_owned(),
+                l["c_bound_femtofarads"].as_u64().unwrap(),
+            )
+        })
         .collect();
     assert_eq!(
         bounds,
-        [("I2C_SDA".to_owned(), 44_953), ("I2C_SCL".to_owned(), 47_792)],
+        [
+            ("I2C_SDA".to_owned(), 44_953),
+            ("I2C_SCL".to_owned(), 47_792)
+        ],
         "re-measure FEEDBACK §2 before changing this line"
     );
     fs::remove_dir_all(&dir).unwrap();
@@ -223,7 +234,10 @@ fn d1_routes_at_four_layers_and_fails_closed_at_two() {
     let (code, v, _) = emit(&two_dir, &path);
     assert_eq!(code, 2, "{v}");
     assert_eq!(v["error"]["kind"], "Unroutable", "{v}");
-    assert!(v["error"]["message"].as_str().unwrap().contains("rip-ups"), "{v}");
+    assert!(
+        v["error"]["message"].as_str().unwrap().contains("rip-ups"),
+        "{v}"
+    );
     fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -233,7 +247,10 @@ fn d3_fails_closed_at_four_layers_naming_its_net() {
     let (code, v, _) = emit(&dir, D3);
     assert_eq!(code, 2, "{v}");
     assert_eq!(v["error"]["kind"], "Unroutable", "{v}");
-    assert!(v["error"]["id"].as_str().is_some_and(|n| !n.is_empty()), "{v}");
+    assert!(
+        v["error"]["id"].as_str().is_some_and(|n| !n.is_empty()),
+        "{v}"
+    );
     fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -290,9 +307,48 @@ fn the_old_and_new_paths_agree_on_the_reference() {
     let new = extract::bound_by_cap_path(&read, &lines).unwrap();
     assert_eq!(old, new);
     assert_eq!(
-        old.iter().map(|l| l.c_bound_femtofarads).collect::<Vec<_>>(),
+        old.iter()
+            .map(|l| l.c_bound_femtofarads)
+            .collect::<Vec<_>>(),
         [46_800, 58_235],
         "the reference's bounds (AET-WO-1305 §3) moved"
     );
     fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The reference declares today's two-layer board (ruled D5), and this is
+/// the literal `aethelgard_eda::stack::reference()` the eda unit tests use.
+#[test]
+fn the_reference_declares_todays_two_layer_board() {
+    use aethelgard_eda::stack::{Stack, Thickness};
+    let spec: aethelgard_ir::Specification =
+        serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
+    spec.validate().unwrap();
+    let s = Stack::of(&spec);
+    let thickness_source = "AET-WO-1305 conditions: 1.6 mm declared; 0.34 mm = 2 x 70 um + 0.2 mm; 2.0 mm = 1.6 mm + 25 %";
+    assert_eq!(
+        s,
+        Stack {
+            copper: vec!["F.Cu".into(), "B.Cu".into()],
+            planes: vec![],
+            thickness: Thickness {
+                nominal_nm: 1_600_000,
+                min_nm: 340_000,
+                max_nm: 2_000_000,
+                source: thickness_source.into(),
+            },
+            dielectrics: vec![(
+                "F.Cu".into(),
+                "B.Cu".into(),
+                200_000,
+                "implied: the finished minimum 340 um less twice the copper maximum 70 um".into(),
+            )],
+            copper_max_nm: 70_000,
+            copper_source: "AET-WO-1305 condition: twice KiCad's default 35 um (2 oz)".into(),
+            permittivity_permille: 5400,
+            permittivity_source: "the IPC-4101 FR-4 maximum, specified at 1 MHz".into(),
+            clearance_nm: 200_000,
+            width_nm: 200_000,
+        }
+    );
 }
