@@ -129,3 +129,9 @@ Job start to job end, minutes:seconds, from the run's job list. Run A is at 9 sh
 | A (43538439489) | c1a4c12 | 9 | 9:43 | 10:18 | 9:26 | 11:55 | 9:47 | **13:27** | 8:46 | 9:53 | 12:12 | | **13:27** |
 
 Run A: the guard and canary passed (`tools` green). Shard 1, which holds the `attribute_seeded` block (planned 720 s), took only 10:18; the shards with `board_tier2` heavy tests (3, 5, 8) took 11:55 to 13:27, planned 548 s of test time, actual about 12 to 20% more. Setup is 103 to 138 s. Next: 10 shards (planned 484 s per shard).
+
+Run B (10 shards, `ci/SHARDS` 10, commit 4acd4f0) counts as run 1 of the three at this plan. The guard and canary passed.
+
+| run | commit | shards | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | slowest |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| B (43539995009) | 4acd4f0 | 10 | 8:17 | 10:19 | 9:49 | 11:44 | 8:24 | 11:25 | 8:00 | 8:15 | 8:43 | 8:40 | **11:44** |
