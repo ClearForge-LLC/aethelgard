@@ -956,4 +956,6 @@ Kind 22 is at 17. A seeded run's records, on this build:
 
 The `c1d151d` failure: `a_droop_on_a_board_whose_first_read_is_on_spi_recovers_and_replays` generated its board under `CARGO_TARGET_TMPDIR`. CI keeps that inside the repository, so cargo refused the crate as a workspace member. It now generates under the system temp directory; reproduced and fixed with a target directory inside the repository.
 
-**The merged head `748a733`** (run 43595196849): green, 8 shards from 11.6 to 15.1 min, the slowest shard 0, and `gates` 10.3 min. `main` then gained `4fc60e9` (docs only), merged at the head below; CI runs on it too.
+**The merged head `748a733`** (run 43595196849): green, 8 shards from 11.6 to 15.1 min, the slowest shard 0, and `gates` 10.3 min. `main` then gained `4fc60e9` (docs only), merged at `597b3bb`: green (run 43596501423).
+
+**After the merge of `AET-WO-2205`, at `3dccd3a`** (run 43597954549): green, 8 shards from 12.6 to 18.4 min, the slowest shard 0, and `gates` 9.1 min. `main` then gained `99544b5` (2205's reconciliation, docs only), merged at the head that carries this line; CI runs on it.
