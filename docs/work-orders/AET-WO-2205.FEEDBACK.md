@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-2205-archive-hygiene` · **Base:** `a5be795` (`origin/main`) · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Cadence:** build, with one stop (§1.6) before the seeded set's exact-evidence code.
 
-**Where everything runs.** Every Renode and tier-2 step runs in the pinned tools image (`container/IMAGE`, `…@sha256:c69ff9bc…`) under rootless podman with `--memory X --memory-swap X --pids-limit -1`. After start, `0` is written into the container's `memory.swap.max`, and `memory.max`, `memory.swap.max` and `pids.max` are read back before the command inside starts (`~/.cache/aet-2205/caps.log`, the runner `~/.cache/aet-2205/img.sh`, 2204's). `TMPDIR` is unset inside the container, as in CI. One exception, named: the first `renode --version` probe (below) ran in the image with `--memory 4g --memory-swap 4g` and no swap write or read-back. It was a 1-second version print.
+**Where everything runs.** Every Renode and tier-2 step runs in the pinned tools image (`container/IMAGE`, `…@sha256:c69ff9bc…`) under rootless podman with `--memory X --memory-swap X --pids-limit -1`. After start, `0` is written into the container's `memory.swap.max`, and `memory.max`, `memory.swap.max` and `pids.max` are read back before the command inside starts (`~/.cache/aet-2205/caps.log`, the runner `~/.cache/aet-2205/img.sh`, 2204's). `TMPDIR` is unset inside the container, as in CI. One exception, named: the first probe, `renode --version` (which printed `Renode v1.17.0` and `build: 1.17.0+20260907gitf1dd1b4af`), ran in the image with `--memory 4g --memory-swap 4g` and no swap write or read-back. It was a 1-second version print.
 
 Entry schema for findings: `finding · where · severity · type · recommendation · decision-needed`.
 
@@ -12,10 +12,10 @@ Items 1, 2, 3, 4, 5, 7, 8 and 9 are built and measured. Item 6 is not: §1.6 sto
 
 ## Item 4 first: no status-to-phase gating survives `2204` (`3100` F2 closed)
 
-- **What was searched.** Every non-test source in `crates/` for the transfer statuses (`timeout_tc`, `timeout_rxne`, `timeout_stopf`, `timeout_txis`) and for any phase table.
+- **What was searched.** Every non-test source in `crates/` for the transfer statuses (`timeout_tc`, `timeout_rxne`, `timeout_stopf`, `timeout_txis`) and for any phase table. The judge's side too: `aethelgard_twin::boot::I2cCheck::judge` maps a status word to an outcome (`Pass`, `Mismatch`, `Timeout(…)`, `Invalid`) and gates nothing.
   - Two places name them. `cli/src/renode.rs` `status_name` maps the firmware's status word to its name for the verdict. `cli/src/verdict.rs` documents those names. Neither gates evidence.
   - The chaos run rules (`chaos/src/campaign.rs`) name no status.
-- **What `2204` removed.** `79bdfe1` (PR #111) deleted `READ_PHASE`, `WROTE_TXDR`, `NBYTES_BITS` and the `CR2`/`TXDR` fields they gated from `aethelgard-evolve` (`git show 79bdfe1 -- crates/aethelgard-evolve/src/lib.rs`, the removed lines 108, 164–168, 200–201, 280–282, 357). The `CR2`/`TXDR` evidence went with them (2204 D7).
+- **What `2204` removed.** `79bdfe1` (PR #111) deleted `READ_PHASE`, `WROTE_TXDR`, `NBYTES_BITS` and the `CR2`/`TXDR` fields they gated from `aethelgard-evolve` (`git show 79bdfe1 -- crates/aethelgard-evolve/src/lib.rs`: lines 108, 164–168, 200–201, 280–282 and 357 of that diff). The `CR2`/`TXDR` evidence went with them (2204 D7).
 - **What remains is a claim check, not phase gating.** evolve reads `status == "ok"` in two places:
   - `witness_fields`: a record that claims a completed read while the model logged nothing is evidence;
   - the `i2c_transaction_unwitnessed` selector: the firmware's claim, not a phase.
@@ -53,17 +53,19 @@ No tier-2 test function was added, so `TIER2_MIN` is unchanged. The seeded block
 ## Baseline: `main` against the build
 
 `main`'s binaries (`a5be795`, built in the image) and this branch's (`de96ed9`) ran the same scenarios and the same firmwares (`~/.cache/aet-2205/baseline/run.py`, `compare.py`, output `compare-1.txt`). The firmwares were built once with `main`'s `aethelgard build`, since the generated firmware is outside the fence.
-- **Coverage:** all 15 scenarios against the unmutated firmware, and each seeded mutant's cases against its firmware. That is 24 runs, plus `leave-firmware`. Every run went through `campaign`, `replay`, `attribute` and `propose`, plus one static `simulate` of the reference.
+- **Coverage:** all 13 scenario files against the unmutated firmware, and each seeded mutant's cases against its firmware. That is 24 runs, plus `leave-firmware`. Every run went through `campaign`, `replay`, `attribute` and `propose`, plus one static `simulate` of the reference.
 - **Unchanged.** Every campaign line except `state_sequence_hash` and `trace_bytes`, which move with the trace. `event_count` is unchanged. Every verdict, finding, match and exit code. Every `attribute` answer: domain, rule, evidence, symptoms, masked, unexplained, index for index. Every `propose` outcome and file, except its `state_sequence_hash` and the files' hashes that follow it.
 - **Changed, each named by this work order:**
   - `replay` gains `tools` on every run (§1.1): `aethelgard 0.1.0`, `aethelgard-bridge 91e72fcc…cebb`, `ngspice 44.2`, `renode 1.17.0+20260907gitf1dd1b4af`.
   - The static `simulate` verdict's analog records: `kind` `analog.rise_time_measured` → `analog.rise_time_computed` (§1.2), and `deck_hz` 400000 and `declared_hz` 400000 added (§1.3).
   - A droop's verdict: `observed[].witness` changes from `{peripheral, reference, device, expected, observed, absent}` to the observed lines (§1.8), and `rail.thresholds` names Rev 10 (§1.7). No command prints a droop's verdict: `campaign` archives it as kinds 16 to 19 and prints its line. Kind 19's bytes do not change, since it already held only the observed lines.
   - The new seeded case, present only in the build.
+- **A version-5 archive, one of `main`'s real runs (`baseline/main/unmutated/archive/32182887…`), fed to the build's readers.** `replay`, `attribute` and `propose` each refuse it with `{"kind":"UnknownVersion","message":"unknown format version 5 in header"}`, exit 3. The MCP tools call the same functions.
+- **No build output says "measured":** no file under `baseline/build`, and no key or kind in `results.json` or `simulate.json`.
 
 ## §1.6 — the seeded set's exact evidence (STOP: ruling needed)
 
-**The table.** It is measured, not predicted: each row is `attribute`'s answer for the case on this branch, read from `compare-1.txt`'s build side. `index:kind`, with indices into the run's trace. The evidence, symptoms and masked columns are identical, index for index, to `main`'s for every case `main` has (the baseline above). Kind 7 is a computed rise, 9 a bus fault, 10 the boot, 11 a register, 12 an identity read's record, and 13 its witness.
+**The table.** It is measured, not predicted: each row is `attribute`'s answer for the case on this branch, read from the build's `~/.cache/aet-2205/baseline/build/results.json`. `index:kind`, with indices into the run's trace. The evidence, symptoms and masked columns are identical, index for index, to `main`'s for every case `main` has (the baseline above). Kind 7 is a computed rise, 9 a bus fault, 10 the boot, 11 a register, 12 an identity read's record, and 13 its witness.
 
 | Case | Scenario | Mutant | Rule | Evidence (exact) | Masked (exact) | Symptoms (for reference) |
 |---|---|---|---|---|---|---|
