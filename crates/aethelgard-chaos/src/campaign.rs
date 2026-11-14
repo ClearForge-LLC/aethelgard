@@ -835,10 +835,12 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
 /// name is joined by exactly one solved bus (kind 15), so a dropped or forged
 /// join is refused here and never reaches attribution as a guess.
 /// Each observation's readings are the boot's own (`AET-WO-2301` adversarial
-/// F5): the boot word's address and expectation, the identity read's
-/// expected value and the witness's `CR2` and `TXDR`, each at the mask the
-/// boot record judges it by; the record's status and value are full words.
-/// Replay trusts no expectation an observation could carry for itself.
+/// F5): the boot word's address and expectation and the identity read's
+/// expected value, each at the mask the boot record judges it by; the
+/// record's status and value are full words. An observation's witness lines
+/// are judged against the first identity read's witness record (kind 13) and
+/// exist exactly when it does (`AET-WO-2204`). Replay trusts no expectation
+/// an observation could carry for itself.
 fn check_observed_against_the_boot(records: &[Record]) -> Result<(), &'static str> {
     let boot = records.iter().find_map(|r| match r {
         Record::BootObserved { boot_word, .. } => Some(boot_word),
@@ -848,21 +850,16 @@ fn check_observed_against_the_boot(records: &[Record]) -> Result<(), &'static st
         Record::I2cCheck { expected, .. } => Some(*expected),
         _ => None,
     });
-    let witness = records.iter().find_map(|r| match r {
-        Record::I2cWitness { cr2, txdr, .. } => Some((cr2, txdr)),
-        _ => None,
-    });
+    let has_witness = first_witness(records).is_some();
     let same = |a: &Reading, b: &Reading| {
         (a.address, a.mask, a.expected) == (b.address, b.mask, b.expected)
     };
-    let vacuous = |r: &Reading| r.mask == 0;
     for r in records {
         let Record::FirmwareObserved {
             boot_word,
             status,
             value,
-            cr2,
-            txdr,
+            witness,
             ..
         } = r
         else {
@@ -872,15 +869,21 @@ fn check_observed_against_the_boot(records: &[Record]) -> Result<(), &'static st
             && status.mask == u32::MAX
             && value.mask == u32::MAX
             && check.is_none_or(|v| u64::from(value.expected) == v)
-            && match witness {
-                Some((c, t)) => same(cr2, c) && same(txdr, t),
-                None => vacuous(cr2) && vacuous(txdr),
-            };
+            && (has_witness || witness.is_none());
         if !ok {
             return Err("an observation's readings are not the boot's own");
         }
     }
     Ok(())
+}
+
+/// The first identity read's expected witness lines (kind 13), which a
+/// droop's observation must show since its release.
+fn first_witness(records: &[Record]) -> Option<&[String]> {
+    records.iter().find_map(|r| match r {
+        Record::I2cWitness { expected, .. } => Some(expected.as_slice()),
+        _ => None,
+    })
 }
 
 /// A reading as the judge sees it: observed, and equal to the expected
@@ -954,6 +957,7 @@ fn check_droop_records(
             _ => None,
         })
         .collect();
+    let want = first_witness(records);
     let observed: Vec<(u64, bool)> = records
         .iter()
         .filter_map(|r| match r {
@@ -962,13 +966,13 @@ fn check_droop_records(
                 boot_word,
                 status,
                 value,
-                cr2,
-                txdr,
+                witness,
             } => Some((
                 *at_ns,
-                [boot_word, status, value, cr2, txdr]
+                [boot_word, status, value]
                     .iter()
-                    .all(|r| reads_as_expected(r)),
+                    .all(|r| reads_as_expected(r))
+                    && witness.as_deref() == want,
             )),
             _ => None,
         })
@@ -1122,8 +1126,9 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
     {
         return Err("two devices on one solved bus share an address");
     }
-    // One measurement per line, one identity read per device, one witness per
-    // device and per controller, as the campaign writes them (adversarial A2).
+    // One measurement per line, one identity read per device and one witness
+    // per identity read, as the campaign writes them (adversarial A2;
+    // `AET-WO-2204`: a bus with two devices has two witnesses).
     let mut seen: BTreeSet<(u8, &str, &str)> = BTreeSet::new();
     for r in records {
         let keys: Vec<(u8, &str, &str)> = match r {
@@ -1131,18 +1136,12 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
                 vec![(0, bus, net)]
             }
             Record::I2cCheck { reference, .. } => vec![(1, reference, "")],
-            Record::I2cWitness {
-                peripheral,
-                reference,
-                ..
-            } => vec![(2, reference, ""), (3, peripheral, "")],
+            Record::I2cWitness { reference, .. } => vec![(2, reference, "")],
             _ => vec![],
         };
         for key in keys {
             if !seen.insert(key) {
-                return Err(
-                    "a line measured twice, or a device read or witnessed twice, or a controller witnessed twice",
-                );
+                return Err("a line measured twice, or a device read or witnessed twice");
             }
         }
     }
@@ -1204,16 +1203,35 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
             Record::I2cWitness {
                 peripheral,
                 reference,
+                device: path,
                 ..
             } => match device.get(reference.as_str()) {
-                None => return Err("a controller witness names no device of a solved bus"),
+                None => return Err("a witness names no device of a solved bus"),
                 Some((p, _)) if p != peripheral => {
-                    return Err("a controller witness is not on its device's solved bus");
+                    return Err("a witness is not on its device's solved bus");
+                }
+                Some(_) if !path.ends_with(&format!(".{}", reference.to_ascii_lowercase())) => {
+                    return Err("a witness's model path is not its device's emitted name");
                 }
                 Some(_) => {}
             },
             _ => {}
         }
+    }
+    // Each identity read is witnessed, and each witness is of an identity
+    // read (`AET-WO-2204` D1).
+    let named = |witness: bool| -> BTreeSet<&str> {
+        records
+            .iter()
+            .filter_map(|r| match r {
+                Record::I2cCheck { reference, .. } if !witness => Some(reference.as_str()),
+                Record::I2cWitness { reference, .. } if witness => Some(reference.as_str()),
+                _ => None,
+            })
+            .collect()
+    };
+    if named(false) != named(true) {
+        return Err("an identity read without its witness, or a witness without its read");
     }
     Ok(())
 }

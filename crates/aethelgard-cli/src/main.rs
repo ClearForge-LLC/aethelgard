@@ -944,6 +944,7 @@ struct Ready {
     firmware: input::Input,
     image_sha256: String,
     executable: Vec<(u64, u64)>,
+    self_loops: Vec<u64>,
     vector_table: u32,
     image: aethelgard_twin::boot::Image,
     boot_word: u32,
@@ -1019,6 +1020,7 @@ fn ready(
             firmware,
             image_sha256: checked.sha256,
             executable: checked.executable,
+            self_loops: checked.self_loops,
             vector_table,
             image,
             boot_word,
@@ -1087,7 +1089,18 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         read_only: read_only.clone(),
         read_write: Vec::new(),
     };
-    let version = version(invocation(run::args(["--version"]), "status-version"))?;
+    // Every Renode this call starts reads one configuration, the droop's
+    // through the bridge included (`AET-WO-2204` D4, F6).
+    let config = scratch.tool.join(renode::CONFIG_FILE);
+    fs::write(&config, renode::CONFIG).map_err(|e| {
+        run::Stop::unusable("renode", format!("cannot write Renode's configuration: {e}"))
+    })?;
+    let with_config = |rest: &[&str]| {
+        let mut a = run::args(["--config".as_ref(), config.as_os_str()]);
+        a.extend(run::args(rest));
+        a
+    };
+    let version = version(invocation(with_config(&["--version"]), "status-version"))?;
     // The stock table and the boot's measured facts are Renode 1.17.0's;
     // another Renode is a fact the twin does not have (`INV-06`).
     let pinned = format!("Renode v{}", aethelgard_twin::platform::RENODE_VERSION);
@@ -1125,6 +1138,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             vector_table: r.vector_table,
             image: &r.image,
             executable: &r.executable,
+            self_loops: &r.self_loops,
             instances: &booted.instances,
             resets: droop
                 .as_ref()
@@ -1137,7 +1151,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         Some(plan) => plan.commands(),
         None => renode::commands(&input.copy),
     };
-    let args = run::args(["--disable-gui", "--console", "--plain", "-e", &commands]);
+    let args = with_config(&["--disable-gui", "--console", "--plain", "-e", &commands]);
     let run = invocation(args, "status-run");
     // Only a boot is bounded (`RUL-13` as amended, PR #56 B1); a load is not.
     // A boot's log is read through the filter, so a flood reaches a verdict;
@@ -1349,28 +1363,18 @@ fn boot_report(
         i2c_witness: r
             .image
             .i2c
-            .witnesses
+            .checks
             .iter()
             .enumerate()
-            .map(|(i, w)| verdict::WitnessReport {
-                peripheral: w.peripheral.clone(),
-                reference: w.reference.clone(),
-                cr2: verdict::RegisterReport {
-                    name: format!("{}.CR2", w.peripheral),
-                    address: word(w.cr2_at),
-                    mask: word(w.cr2_mask()),
-                    expected: word(w.cr2_expected()),
-                    observed: observed.map(|o| word(o.controllers[i].0)),
-                },
-                txdr: verdict::RegisterReport {
-                    name: format!("{}.TXDR", w.peripheral),
-                    address: word(w.txdr_at),
-                    mask: word(0xFF),
-                    expected: word(w.txdr_expected()),
-                    observed: observed.map(|o| word(o.controllers[i].1)),
-                },
+            .map(|(i, c)| verdict::WitnessReport {
+                peripheral: c.peripheral.clone(),
+                reference: c.reference.clone(),
+                device: c.device.clone(),
+                expected: c.witness.clone().unwrap_or_default(),
+                observed: observed.and_then(|o| o.witnesses[i].clone()),
             })
             .collect(),
+        icsr: observed.map(|o| word(o.icsr)),
     }
 }
 

@@ -235,15 +235,11 @@ impl From<RegisterError> for AttributeError {
 }
 
 // belt-and-suspenders: the header's `_Msk` macros are shifts the header reader
-// does not evaluate, so the widths are stated here from RM0433 (§48.7.2: SADD
-// 10 bits, NBYTES 8; §11.4.1: MODER 2 bits a pin; §11.4.9: AFSEL 4 bits a pin).
-// Every position comes from the header, as the judge's does.
-const SADD_BITS: u32 = 10;
-const NBYTES_BITS: u32 = 8;
+// does not evaluate, so the widths are stated here from RM0433 (§11.4.1: MODER
+// 2 bits a pin; §11.4.9: AFSEL 4 bits a pin). Every position comes from the
+// header, as the judge's does.
 const MODE_BITS: u32 = 2;
 const AFSEL_BITS: u32 = 4;
-/// `TXDR`'s data byte.
-const TXDR_DATA: u32 = 0xFF;
 // belt-and-suspenders: the twin's judge states this too (RM0433 §11.4.1); a
 // pin with an alternate function is in alternate-function mode, so the mode a
 // line's pin must hold follows from kind 15, not from the reading.
@@ -264,11 +260,9 @@ struct Owned {
 }
 
 /// What the ST header says of one solved bus: the register fields it owns
-/// (`AET-WO-3100` R5) and where its controller's `CR2` and `TXDR` are.
+/// (`AET-WO-3100` R5).
 struct Joined {
     owned: Vec<Owned>,
-    cr2_at: u32,
-    txdr_at: u32,
 }
 
 /// The fields a bus owns: its controller's clock gate, the gates of its pins'
@@ -318,13 +312,7 @@ fn join(f: &RegisterFacts, peripheral: &str, lines: &[BusLine]) -> Result<Joined
             want: u32::from(line.alternate_function) << pos,
         });
     }
-    let base = f.base(peripheral)?;
-    let i2c = f.layout("I2C")?;
-    Ok(Joined {
-        owned,
-        cr2_at: base + i2c.offset("CR2", 0)?,
-        txdr_at: base + i2c.offset("TXDR", 0)?,
-    })
+    Ok(Joined { owned })
 }
 
 /// Whether `owned`'s field in `reading` (of register `name`) is wrong, as a
@@ -352,7 +340,6 @@ struct Bus<'a> {
     /// The kind 15's event index.
     at: usize,
     id: &'a str,
-    peripheral: &'a str,
     lines: &'a [BusLine],
     devices: &'a [(String, u8)],
     /// `None` when the header lacks a fact the bus names (a port or a pin it
@@ -371,16 +358,32 @@ enum Scope<'a> {
 struct Run<'a> {
     records: &'a [Record],
     buses: Vec<Bus<'a>>,
-    sadd: u32,
-    nbytes: u32,
     rcc: (u32, u32),
 }
 
-/// Statuses whose record shows the write phase ran, so `TXDR` was written.
-const WROTE_TXDR: [&str; 4] = ["ok", "timeout_tc", "timeout_rxne", "timeout_stopf"];
-/// Statuses whose record shows the read phase started, so `CR2` holds the
-/// read's `NBYTES`. Before it, `CR2` holds the write's.
-const READ_PHASE: [&str; 3] = ["ok", "timeout_rxne", "timeout_stopf"];
+/// The bytes of a witness line `[NOISY] {device}: {what} {bytes}`, as the
+/// model logs them (each byte in upper-case hexadecimal, joined by spaces),
+/// first byte most significant, with their count; `None` for any other line.
+fn witness_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
+    let rest = line
+        .strip_prefix("[NOISY] ")?
+        .strip_prefix(device)?
+        .strip_prefix(": ")?
+        .strip_prefix(what)?
+        .strip_prefix(' ')?;
+    let bytes: Vec<u8> = rest
+        .split(' ')
+        .map(|b| {
+            (!b.is_empty() && b.len() <= 2 && b.bytes().all(|c| c.is_ascii_hexdigit()))
+                .then(|| u8::from_str_radix(b, 16).ok())
+                .flatten()
+        })
+        .collect::<Option<_>>()?;
+    (1..=8).contains(&bytes.len()).then(|| {
+        let v = bytes.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b));
+        (v, bytes.len())
+    })
+}
 /// The finding kinds that each select their own events, one finding each.
 const PER_EVENT: [&str; 11] = [
     campaign::PAST_CEILING_FINDING,
@@ -449,70 +452,77 @@ impl<'a> Run<'a> {
             .collect()
     }
 
-    /// A controller witness on bus `b` disagrees with its solved device:
-    /// `SADD` once the firmware wrote `CR2` (both phases write it), `NBYTES`
-    /// once the read phase began, `TXDR` once the write phase ran. A witness
-    /// not at its controller's registers, or whose own expectation is not the
-    /// solved address and register, is no evidence.
+    /// A device's witness on bus `b` disagrees with its solved read
+    /// (`AET-WO-2204`): the model logged a write of another register, or
+    /// returned another value, so the bus reached the device and the firmware
+    /// asked for the wrong thing; or the record says the read completed and
+    /// the model logged nothing, which only the firmware's own claim can do. A
+    /// witness whose own expectation is not the solved register and value, or
+    /// that could not be read whole, is no evidence. A transfer to a wrong
+    /// address leaves the device's log empty, which a fault on the bus also
+    /// does, so it is no evidence (where `CR2.SADD` was).
     fn witness_wrong(&self, b: usize, record: &Record) -> bool {
         self.witness_fields(b, record)
             .is_some_and(|f| f.iter().any(|f| f.wrong))
     }
 
-    /// A sound witness's `SADD`, `NBYTES` and `TXDR` fields, each with its
-    /// solved value, its observed value and whether it counts as evidence
-    /// ([`Self::witness_wrong`]); `None` for a witness that is no evidence.
-    fn witness_fields(&self, b: usize, record: &Record) -> Option<[Field; 3]> {
+    /// A sound witness's register written and value read, each with its
+    /// solved value, the first the model logged, and whether it counts as
+    /// evidence ([`Self::witness_wrong`]); `None` for a witness that is no
+    /// evidence.
+    fn witness_fields(&self, b: usize, record: &Record) -> Option<[Field; 2]> {
         let Record::I2cWitness {
             reference,
-            cr2,
-            txdr,
+            device,
+            expected,
+            observed,
             ..
         } = record
         else {
             return None;
         };
         let bus = &self.buses[b];
-        let joined = bus.joined.as_ref()?;
+        bus.joined.as_ref()?;
         let (_, address) = bus.devices.iter().find(|(r, _)| r == reference)?;
         let Some(Record::I2cCheck {
-            register, status, ..
+            register,
+            expected: value,
+            status,
+            ..
         }) = self.check_of(reference)
         else {
             return None;
         };
-        let fields = self.sadd | self.nbytes;
-        let sadd_want = (u32::from(*address) << 1) << self.sadd.trailing_zeros();
-        let sound = cr2.address == joined.cr2_at
-            && txdr.address == joined.txdr_at
-            && cr2.mask & fields == fields
-            && txdr.mask & TXDR_DATA == TXDR_DATA
-            && cr2.expected & self.sadd == sadd_want
-            && txdr.expected & TXDR_DATA == u32::from(*register);
-        if !sound {
+        let observed = observed.as_deref()?;
+        let logged = |lines: &[String], what: &str| {
+            lines
+                .iter()
+                .find_map(|l| witness_bytes(l, device, what))
+        };
+        let (Some(reg_want), Some(value_want)) = (logged(expected, "Write"), logged(expected, "Read"))
+        else {
+            return None;
+        };
+        let width = u32::try_from(value_want.1).ok()?;
+        if reg_want.0 != u64::from(*register) || value_want.0 != *value || width > 4 {
             return None;
         }
-        let status = status.as_deref().unwrap_or("");
-        let written = cr2.observed.filter(|o| o & fields != 0);
-        let sadd = written.is_some_and(|o| o & self.sadd != sadd_want);
-        let nbytes = READ_PHASE.contains(&status)
-            && written.is_some_and(|o| o & self.nbytes != cr2.expected & self.nbytes);
-        let data = WROTE_TXDR.contains(&status)
-            && txdr
-                .observed
-                .is_some_and(|o| o & TXDR_DATA != u32::from(*register));
-        let at = |name: &str, r: &Reading, mask: u32, solved: u32, wrong: bool| Field {
-            register: format!("{}.{name}", bus.peripheral),
-            address: r.address,
+        let claimed = status.as_deref() == Some("ok");
+        let silent = claimed && observed.is_empty();
+        let reg = logged(observed, "Write").map(|(v, _)| v);
+        let read = logged(observed, "Read").map(|(v, _)| v);
+        let mask = if width == 4 { u32::MAX } else { (1u32 << (8 * width)) - 1 };
+        let at = |name: &str, mask: u32, solved: u64, got: Option<u64>| Field {
+            register: format!("{device}.{name}"),
+            address: u32::from(*address),
             mask,
-            solved,
-            observed: r.observed.map(|o| o & mask),
-            wrong,
+            solved: solved as u32,
+            observed: got.map(|g| g as u32 & mask),
+            wrong: silent || got.is_some_and(|g| g != solved),
         };
         Some([
-            at("CR2", cr2, self.sadd, sadd_want, sadd),
-            at("CR2", cr2, self.nbytes, cr2.expected & self.nbytes, nbytes),
-            at("TXDR", txdr, TXDR_DATA, u32::from(*register), data),
+            at("Write", 0xFF, reg_want.0, reg),
+            at("Read", mask, value_want.0, read),
         ])
     }
 
@@ -611,13 +621,13 @@ impl<'a> Run<'a> {
             "i2c_transaction_unwitnessed" => self.indices(|r| match r {
                 Record::I2cWitness {
                     reference,
-                    cr2,
-                    txdr,
+                    expected,
+                    observed,
                     ..
                 } => {
                     matches!(self.check_of(reference),
                         Some(Record::I2cCheck { status: Some(s), .. }) if s == "ok")
-                        && (mismatch(cr2) != 0 || mismatch(txdr) != 0)
+                        && observed.as_deref() != Some(expected.as_slice())
                 }
                 _ => false,
             }),
@@ -722,7 +732,6 @@ fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
             buses.push(Bus {
                 at,
                 id: bus,
-                peripheral,
                 lines,
                 devices,
                 joined: join(&f, peripheral, lines).ok(),
@@ -732,8 +741,6 @@ fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
     let state = Run {
         records,
         buses,
-        sadd: field(f.position("I2C_CR2_SADD_Pos")?, SADD_BITS),
-        nbytes: field(f.position("I2C_CR2_NBYTES_Pos")?, NBYTES_BITS),
         rcc: (rcc, rcc + f.layout("RCC")?.size),
     };
     Ok((state, summary.pass))

@@ -11,8 +11,11 @@ pub const VERSION: u64 = 1;
 /// The format version of the trace header. 2 since `AET-WO-2300` added the
 /// campaign's event kinds 5 to 14 ([`Record`]); 3 since `AET-WO-3100` added
 /// kind 15, the solved I2C bus, and the run rules that join to it; 4 since
-/// `AET-WO-2301` added kinds 16 to 20, a declared supply droop.
-pub const TRACE_VERSION: u64 = 4;
+/// `AET-WO-2301` added kinds 16 to 20, a declared supply droop; 5 since
+/// `AET-WO-2204` made kind 13 the device model's log of each identity read
+/// and kind 19 carry the same since its release. An archive of any other
+/// version is refused by name (`Fault::Version`), as 2301 refused version 3.
+pub const TRACE_VERSION: u64 = 5;
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.

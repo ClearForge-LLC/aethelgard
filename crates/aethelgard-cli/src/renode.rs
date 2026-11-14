@@ -863,7 +863,7 @@ fn witness_findings(
         return Vec::new();
     }
     vec![Finding::plain(
-        "i2c_transaction_unwitnessed",
+        "i2c_witness_out_of_order",
         format!(
             "the devices' witness lines are not in the records' order: Renode logged {seen:?}, the records need {want:?}"
         ),

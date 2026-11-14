@@ -386,19 +386,20 @@ pub fn boot(inv: &run::Invocation<'_>, renode: &Path) -> Result<run::Output, run
 }
 
 /// What a probe must read for the firmware to have recovered: the boot word,
-/// the first identity check's status OK and expected value, and the first
-/// witness's `CR2` and `TXDR` at the final block's masks (`AET-WO-2301`
-/// adversarial F1: the record alone is the firmware's own claim). A reading
-/// the image has no check or witness for has a mask of 0 and is vacuous.
+/// the first identity check's status OK and expected value, and that check's
+/// device witness since the release, exactly the model's lines (`AET-WO-2301`
+/// adversarial F1: the record alone is the firmware's own claim;
+/// `AET-WO-2204`: Renode's log is not). A reading the image has no check for
+/// is vacuous.
 fn recovered_words(
     image: &aethelgard_twin::boot::Image,
     boot_word: u32,
     probe: Option<&crate::renode::Probe>,
 ) -> (
     [crate::verdict::Word; 3],
-    [crate::verdict::RegisterReport; 2],
+    Option<crate::verdict::WitnessReport>,
 ) {
-    use crate::verdict::{RegisterReport, Word, word};
+    use crate::verdict::{WitnessReport, Word, word};
     let check = image.i2c.checks.first();
     let w = |address: u32, expected: u32, observed: Option<u32>| Word {
         address: word(address),
@@ -422,53 +423,20 @@ fn recovered_words(
             probe.map(|p| p.record.map_or(0, |r| r.1)),
         ),
     ];
-    let witness = image.i2c.witnesses.first();
-    let reg = |name: &str, address: u32, mask: u32, expected: u32, observed: Option<u32>| {
-        RegisterReport {
-            name: name.to_owned(),
-            address: word(address),
-            mask: word(mask),
-            expected: word(expected),
-            observed: observed.map(word),
-        }
-    };
-    let controller = probe.map(|p| p.controller.unwrap_or((0, 0)));
-    let regs = match witness {
-        Some(wi) => [
-            reg(
-                &format!("{}.CR2", wi.peripheral),
-                wi.cr2_at,
-                wi.cr2_mask(),
-                wi.cr2_expected(),
-                controller.map(|c| c.0),
-            ),
-            reg(
-                &format!("{}.TXDR", wi.peripheral),
-                wi.txdr_at,
-                0xFF,
-                wi.txdr_expected(),
-                controller.map(|c| c.1),
-            ),
-        ],
-        None => [
-            reg("CR2", 0, 0, 0, controller.map(|c| c.0)),
-            reg("TXDR", 0, 0, 0, controller.map(|c| c.1)),
-        ],
-    };
-    (words, regs)
+    let witness = check.map(|c| WitnessReport {
+        peripheral: c.peripheral.clone(),
+        reference: c.reference.clone(),
+        device: c.device.clone(),
+        expected: c.witness.clone().unwrap_or_default(),
+        observed: probe.and_then(|p| p.witness.clone()),
+    });
+    (words, witness)
 }
 
-/// Whether a word reads as expected under its mask.
-fn as_expected(r: &crate::verdict::RegisterReport) -> bool {
-    let n = |s: &str| u32::from_str_radix(s.trim_start_matches("0x"), 16).ok();
-    match (
-        r.observed.as_deref().and_then(n),
-        n(&r.expected),
-        n(&r.mask),
-    ) {
-        (Some(o), Some(e), Some(m)) => o & m == e & m,
-        _ => false,
-    }
+/// Whether a witness shows exactly the model's lines; no witness (no
+/// identity read) is vacuous, and an unknown format never shows them.
+fn witnessed(w: Option<&crate::verdict::WitnessReport>) -> bool {
+    w.is_none_or(|w| !w.expected.is_empty() && w.observed.as_ref() == Some(&w.expected))
 }
 
 /// A droop's records and findings (`AET-WO-2301` §2.2, §2.3): the declared
@@ -540,23 +508,25 @@ pub fn droop_report(
             ));
             continue;
         };
-        let ([boot, status, value], [cr2, txdr]) = recovered_words(image, boot_word, probe);
+        let ([boot, status, value], witness) = recovered_words(image, boot_word, probe);
         let ok = [&boot, &status, &value]
             .iter()
             .all(|w| w.observed.as_deref() == Some(w.expected.as_str()))
-            && as_expected(&cr2)
-            && as_expected(&txdr);
+            && witnessed(witness.as_ref());
         if !ok {
             findings.push(Finding::plain(
                 campaign::UNRECOVERED_FINDING,
                 format!(
-                                        "{} ns after the release at {at} ns the firmware had not recovered: boot word {}, status {}, value {}, CR2 {}, TXDR {}",
+                    "{} ns after the release at {at} ns the firmware had not recovered: boot word {}, status {}, value {}, witness {}",
                     power::RECOVERY_BOUND_NS,
                     boot.observed.as_deref().unwrap_or("unread"),
                     status.observed.as_deref().unwrap_or("unread"),
                     value.observed.as_deref().unwrap_or("unread"),
-                    cr2.observed.as_deref().unwrap_or("unread"),
-                    txdr.observed.as_deref().unwrap_or("unread")
+                    match witness.as_ref().map(|w| &w.observed) {
+                        None => "none".to_owned(),
+                        Some(None) => "unread".to_owned(),
+                        Some(Some(lines)) => format!("{lines:?}"),
+                    }
                 ),
             ));
         }
@@ -567,8 +537,7 @@ pub fn droop_report(
             boot_word: boot,
             status,
             value,
-            cr2,
-            txdr,
+            witness,
         });
     }
     // belt-and-suspenders: `check_droop` refused a rail whose levels are not

@@ -120,10 +120,11 @@ pub struct ObservedReport {
     pub boot_word: Word,
     pub status: Word,
     pub value: Word,
-    /// The controller's state, which only a transfer sets after a reset
-    /// (`AET-WO-2301` adversarial F1).
-    pub cr2: RegisterReport,
-    pub txdr: RegisterReport,
+    /// What Renode logged for the first identity read's device from the
+    /// release to this read: only a transfer the controller runs calls the
+    /// model (`AET-WO-2301` adversarial F1, `AET-WO-2204`). `null` when the
+    /// boot has no identity read.
+    pub witness: Option<WitnessReport>,
 }
 
 /// A boot's inputs, its expectations and what Renode read (`AET-WO-2100`).
@@ -157,6 +158,7 @@ pub struct Boot {
 /// shape (`AET-WO-2204` D1).
 #[derive(Serialize)]
 pub struct WitnessReport {
+    pub peripheral: String,
     pub reference: String,
     /// The model's path in Renode, `i2c1.u2`.
     pub device: String,

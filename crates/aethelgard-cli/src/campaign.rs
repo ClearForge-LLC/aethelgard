@@ -717,14 +717,38 @@ fn droop_records(d: &crate::verdict::DroopReport) -> Result<Vec<Record>, String>
                 boot_word: word(&o.boot_word)?,
                 status: word(&o.status)?,
                 value: word(&o.value)?,
-                cr2: reading(&o.cr2)?,
-                txdr: reading(&o.txdr)?,
+                witness: o
+                    .witness
+                    .as_ref()
+                    .and_then(|w| w.observed.as_deref())
+                    .map(archived_lines),
             },
         ));
     }
     timed.sort_by_key(|(k, _)| *k);
     out.extend(timed.into_iter().map(|(_, r)| r));
     Ok(out)
+}
+
+/// Witness lines as a record archives them: the first
+/// [`aethelgard_chaos::record::MAX_WITNESS_LINES`], each as printable ASCII of
+/// at most 256 bytes. A line that is not is escaped and cut; the judge
+/// compared the lines whole, and a changed line still differs from what it
+/// expects, so this cannot make an observation match.
+fn archived_lines(lines: &[String]) -> Vec<String> {
+    lines
+        .iter()
+        .take(aethelgard_chaos::record::MAX_WITNESS_LINES)
+        .map(|l| {
+            if aethelgard_chaos::event::text_ok(l, 1, 256) {
+                l.clone()
+            } else {
+                let mut e: String = l.escape_default().collect();
+                e.truncate(256);
+                if e.is_empty() { "?".to_owned() } else { e }
+            }
+        })
+        .collect()
 }
 
 fn hex_u64(s: &str) -> Result<u64, String> {
@@ -872,8 +896,9 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
         out.push(Record::I2cWitness {
             peripheral: w.peripheral.clone(),
             reference: w.reference.clone(),
-            cr2: reading(&w.cr2)?,
-            txdr: reading(&w.txdr)?,
+            device: w.device.clone(),
+            expected: w.expected.clone(),
+            observed: w.observed.as_deref().map(archived_lines),
         });
     }
     let mut findings: BTreeMap<(String, String), u64> = BTreeMap::new();
