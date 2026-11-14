@@ -13,8 +13,6 @@ use aethelgard_chaos::record::{BusLine, Line, Override, Reading, Record};
 use aethelgard_chaos::{Event, Header, Replayed, TraceWriter, replay_dir};
 use aethelgard_evolve::{Attribution, Domain, Rule, attribute};
 
-const CR2_OK: u32 = 0x0201_04EC;
-
 fn reading(address: u32, mask: u32, expected: u32, observed: u32) -> Reading {
     Reading {
         address,
@@ -85,13 +83,39 @@ fn check(status: &str, observed: u64) -> Record {
     }
 }
 
-fn witness(cr2: u32, txdr: u32) -> Record {
+/// U2's identity read as the BME280 model logs it (register 0xD0, value 0x60),
+/// without the `[NOISY] i2c1.u2: ` every line starts with.
+const OK: [&str; 2] = ["Write D0", "Read 60"];
+
+/// A witness of `reference` on `peripheral` (`AET-WO-2204`): what the judge
+/// expects the model to log, and what Renode logged (`None`: unreadable).
+fn witness_with(
+    peripheral: &str,
+    reference: &str,
+    expected: &[&str],
+    observed: Option<&[&str]>,
+) -> Record {
+    let device = format!(
+        "{}.{}",
+        peripheral.to_ascii_lowercase(),
+        reference.to_ascii_lowercase()
+    );
+    let lines = |v: &[&str]| -> Vec<String> {
+        v.iter().map(|l| format!("[NOISY] {device}: {l}")).collect()
+    };
     Record::I2cWitness {
-        peripheral: "I2C1".into(),
-        reference: "U2".into(),
-        cr2: reading(0x4000_5404, 0x02FF_07FF, CR2_OK, cr2),
-        txdr: reading(0x4000_5428, 0xFF, 0xD0, txdr),
+        peripheral: peripheral.into(),
+        reference: reference.into(),
+        expected: lines(expected),
+        observed: observed.map(lines),
+        device,
     }
+}
+
+/// U2's witness with the lines Renode logged for it: [`OK`] is a read that
+/// went as solved, `Some(&[])` a device that logged nothing.
+fn witness(observed: Option<&[&str]>) -> Record {
+    witness_with("I2C1", "U2", &OK, observed)
 }
 
 fn verdict(findings: &[(&str, u64)]) -> Record {
@@ -171,7 +195,7 @@ fn healthy() -> Vec<Record> {
         register("RCC.AHB4ENR", None),
         register("RCC.APB1LENR", None),
         check("ok", 0x60),
-        witness(CR2_OK, 0xD0),
+        witness(Some(&OK)),
         verdict(&[]),
     ]
 }
@@ -256,10 +280,11 @@ fn kinds(refs: &[aethelgard_evolve::EventRef]) -> Vec<u64> {
     refs.iter().map(|e| e.kind).collect()
 }
 
-/// The wrong-address shape: U2 times out at TXIS, `CR2.SADD` holds 0x77.
-fn wrong_address(r: &mut [Record]) {
-    replace(r, is_check, check("timeout_txis", 0));
-    replace(r, is_witness, witness(0x0001_00EE, 0));
+/// The wrong-register shape: U2 times out waiting for the read, and the model
+/// logged a write of register 0xD1 where 0xD0 was solved.
+fn wrong_register(r: &mut [Record]) {
+    replace(r, is_check, check("timeout_rxne", 0));
+    replace(r, is_witness, witness(Some(&["Write D1"])));
     replace(r, is_verdict, verdict(&[("i2c_timeout", 1)]));
 }
 
@@ -292,9 +317,9 @@ fn the_healthy_run_passes_and_is_none() {
 }
 
 #[test]
-fn a_wrong_address_on_a_measured_healthy_bus_is_software_by_the_witness() {
+fn a_wrong_register_on_a_measured_healthy_bus_is_software_by_the_witness() {
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     let a = attributed(&r);
     assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S1));
     assert_eq!(kinds(&a.evidence), [7, 7, 13]);
@@ -303,9 +328,9 @@ fn a_wrong_address_on_a_measured_healthy_bus_is_software_by_the_witness() {
 }
 
 #[test]
-fn the_same_wrong_address_on_a_faulted_bus_is_electrical_with_the_witness_masked() {
+fn the_same_wrong_register_on_a_faulted_bus_is_electrical_with_the_witness_masked() {
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     faulted_sensors(&mut r);
     replace(
         &mut r,
@@ -319,13 +344,13 @@ fn the_same_wrong_address_on_a_faulted_bus_is_electrical_with_the_witness_masked
 }
 
 #[test]
-fn a_txis_timeout_with_a_correct_address_is_indeterminate_not_software() {
-    // TXDR is written only after TXIS, and CR2 still holds the write phase:
-    // neither is evidence about a TXIS timeout. The bus is healthy and the
-    // firmware asked for the right device, so nothing says which half.
+fn a_txis_timeout_with_nothing_logged_is_indeterminate_not_software() {
+    // A transfer that never got past the address leaves the device's log
+    // empty, which a fault on the bus does too: it is no evidence about a TXIS
+    // timeout. The bus is healthy, but nothing says which half.
     let mut r = healthy();
     replace(&mut r, is_check, check("timeout_txis", 0));
-    replace(&mut r, is_witness, witness(0x0001_00EC, 0));
+    replace(&mut r, is_witness, witness(Some(&[])));
     replace(&mut r, is_verdict, verdict(&[("i2c_timeout", 1)]));
     let a = attributed(&r);
     assert_eq!((a.domain, a.rule), (Domain::Indeterminate, Rule::I4));
@@ -335,7 +360,7 @@ fn a_txis_timeout_with_a_correct_address_is_indeterminate_not_software() {
 #[test]
 fn no_rise_measured_on_a_line_of_the_symptoms_bus_is_indeterminate() {
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     r.retain(|x| !matches!(x, Record::RiseMeasured { net, .. } if net == "I2C_SDA"));
     let a = attributed(&r);
     assert_eq!((a.domain, a.rule), (Domain::Indeterminate, Rule::I2));
@@ -346,7 +371,7 @@ fn no_rise_measured_on_a_line_of_the_symptoms_bus_is_indeterminate() {
 #[test]
 fn removing_every_rise_never_turns_a_software_run_electrical_or_keeps_it_software() {
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     r.retain(|x| !matches!(x, Record::RiseMeasured { .. }));
     let a = attributed(&r);
     assert_eq!(a.domain, Domain::Indeterminate);
@@ -372,7 +397,7 @@ fn a_fault_on_another_bus_is_indeterminate_because_the_fault_is_elsewhere() {
     // measured healthy (its rises are present); the only fault is on OTHER.
     let mut r = healthy();
     replace(&mut r, is_check, check("timeout_txis", 0));
-    replace(&mut r, is_witness, witness(0x0001_00EC, 0));
+    replace(&mut r, is_witness, witness(Some(&[])));
     other_bus_faulted(&mut r);
     replace(
         &mut r,
@@ -396,7 +421,7 @@ fn a_fault_on_another_bus_is_indeterminate_because_the_fault_is_elsewhere() {
 #[test]
 fn an_electrical_bus_and_a_software_bus_in_one_run_are_indeterminate_never_averaged() {
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     other_bus_faulted(&mut r);
     replace(
         &mut r,
@@ -420,12 +445,12 @@ fn a_finding_no_archived_event_shows_is_indeterminate_and_named() {
 
 #[test]
 fn changing_only_the_verdicts_finding_kinds_does_not_move_the_domain() {
-    // A wrong-register run (the read completed, TXDR holds 0xd1) whose verdict
+    // A wrong-register run (the read completed, the model logged Write D1) whose verdict
     // is rewritten to claim a timeout: no event shows one, so it is I1, not
     // whatever a timeout would have been attributed to.
     let mut r = healthy();
     replace(&mut r, is_check, check("ok", 0x00));
-    replace(&mut r, is_witness, witness(CR2_OK, 0xD1));
+    replace(&mut r, is_witness, witness(Some(&["Write D1", "Read 0"])));
     replace(
         &mut r,
         is_verdict,
@@ -455,48 +480,42 @@ fn changing_only_the_verdicts_finding_kinds_does_not_move_the_domain() {
 #[test]
 fn a_finding_count_the_events_do_not_reach_is_unexplained() {
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     replace(&mut r, is_verdict, verdict(&[("i2c_timeout", 2)]));
     let a = attributed(&r);
     assert_eq!(a.rule, Rule::I1);
 }
 
 #[test]
-fn a_witness_agreeing_with_a_wrong_address_leaves_no_software_evidence() {
-    // The firmware's address was wrong, but the witness is rewritten to agree
-    // with the solved one: attribution has nothing, and says so.
+fn a_witness_agreeing_with_a_wrong_register_leaves_no_software_evidence() {
+    // The firmware's register was wrong, but the witness is rewritten to agree
+    // with the solved read: attribution has nothing, and says so.
     let mut r = healthy();
-    wrong_address(&mut r);
-    replace(&mut r, is_witness, witness(0x0001_00EC, 0));
+    wrong_register(&mut r);
+    replace(&mut r, is_witness, witness(Some(&OK)));
     assert_eq!(attributed(&r).rule, Rule::I4);
 }
 
 #[test]
 fn a_witness_whose_own_expectation_disagrees_with_the_solved_device_is_no_evidence() {
     let mut r = healthy();
-    wrong_address(&mut r);
-    let mut w = witness(0x0001_00EE, 0);
-    if let Record::I2cWitness { cr2, .. } = &mut w {
-        cr2.expected = 0x0201_04EE;
-    }
+    wrong_register(&mut r);
+    let w = witness_with("I2C1", "U2", &["Write D1", "Read 60"], Some(&["Write D1"]));
     replace(&mut r, is_witness, w);
     assert_eq!(attributed(&r).rule, Rule::I4);
 }
 
 #[test]
-fn nbytes_counts_only_once_the_read_phase_began() {
-    // A TC timeout: CR2 holds the write phase, NBYTES 1 against a 2-byte read.
+fn a_read_counts_only_once_the_model_logged_one() {
+    // A timeout after the write: the model logged the right write and no
+    // read, so nothing is wrong yet.
     let mut r = healthy();
-    replace(&mut r, is_check, check("timeout_tc", 0));
-    let mut w = witness(0x0001_00EC, 0xD0);
-    if let Record::I2cWitness { cr2, .. } = &mut w {
-        cr2.expected = 0x0202_04EC;
-    }
-    replace(&mut r, is_witness, w);
+    replace(&mut r, is_check, check("timeout_rxne", 0));
+    replace(&mut r, is_witness, witness(Some(&["Write D0"])));
     replace(&mut r, is_verdict, verdict(&[("i2c_timeout", 1)]));
     assert_eq!(attributed(&r).rule, Rule::I4);
-    // Past the read's start, the same NBYTES is evidence.
-    replace(&mut r, is_check, check("timeout_rxne", 0));
+    // Once it logged a read, another value is evidence.
+    replace(&mut r, is_witness, witness(Some(&["Write D0", "Read 61"])));
     assert_eq!(attributed(&r).rule, Rule::S1);
 }
 
@@ -523,7 +542,7 @@ fn a_skipped_controller_clock_is_software_and_explains_the_locked_access() {
         register("RCC.APB1LENR", Some(0)),
     );
     replace(&mut r, is_check, check("timeout_txis", 0));
-    replace(&mut r, is_witness, witness(0, 0));
+    replace(&mut r, is_witness, witness(Some(&[])));
     replace(
         &mut r,
         is_verdict,
@@ -627,7 +646,7 @@ fn a_held_low_line_is_electrical_by_its_fault() {
         },
     );
     replace(&mut r, is_check, check("timeout_txis", 0));
-    replace(&mut r, is_witness, witness(0x0001_00EC, 0));
+    replace(&mut r, is_witness, witness(Some(&[])));
     replace(
         &mut r,
         is_verdict,
@@ -678,10 +697,8 @@ fn add_aux(r: &mut Vec<Record>, measured: bool) {
     }
 }
 
-const CR2_U5: u32 = 0x0201_0480;
-
-/// U5's identity read and its controller's witness.
-fn u5_read(r: &mut Vec<Record>, status: &str, cr2: u32, txdr: u32) {
+/// U5's identity read and its witness: `observed` is what the model logged.
+fn u5_read(r: &mut Vec<Record>, status: &str, observed: &[&str]) {
     insert_after_last(
         r,
         is_check,
@@ -697,12 +714,7 @@ fn u5_read(r: &mut Vec<Record>, status: &str, cr2: u32, txdr: u32) {
     insert_after_last(
         r,
         is_witness,
-        Record::I2cWitness {
-            peripheral: "I2C2".into(),
-            reference: "U5".into(),
-            cr2: reading(0x4000_5804, 0x02FF_07FF, CR2_U5, cr2),
-            txdr: reading(0x4000_5828, 0xFF, 0xD0, txdr),
-        },
+        witness_with("I2C2", "U5", &OK, Some(observed)),
     );
 }
 
@@ -722,7 +734,7 @@ fn a1_a_verdict_narrowed_or_passed_beside_a_failing_event_leaves_it_unexplained(
     // The wrong-address run, its verdict rewritten to pass: the TXIS timeout
     // is still in the archive, so it is unexplained, never `none`.
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     let timeout = find(&r, is_check);
     replace(&mut r, is_verdict, verdict(&[]));
     let a = attributed(&r);
@@ -730,7 +742,7 @@ fn a1_a_verdict_narrowed_or_passed_beside_a_failing_event_leaves_it_unexplained(
     assert_eq!(a.unexplained, [format!("event {timeout}")]);
     // The timeout moved to `info`: the same.
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     replace(
         &mut r,
         is_verdict,
@@ -744,7 +756,7 @@ fn a1_a_verdict_narrowed_or_passed_beside_a_failing_event_leaves_it_unexplained(
     // verdict. Without the converse rule this was a confident E1.
     let mut r = healthy();
     add_aux(&mut r, true);
-    u5_read(&mut r, "timeout_txis", 0x0001_0082, 0);
+    u5_read(&mut r, "timeout_rxne", &["Write D1"]);
     faulted_sensors(&mut r);
     replace(
         &mut r,
@@ -770,7 +782,7 @@ fn a3_a_bus_the_header_cannot_join_is_never_healthy_and_refuses_nothing_else() {
     };
     // The symptom's own bus is joined: still software.
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     unjoinable(&mut r);
     assert_eq!(attributed(&r).rule, Rule::S1);
     // A symptom on the board needs every bus measured healthy: I2.
@@ -788,8 +800,8 @@ fn a3_a_bus_the_header_cannot_join_is_never_healthy_and_refuses_nothing_else() {
 
 #[test]
 fn a4_one_devices_witness_never_explains_another_devices_timeout() {
-    // U2 times out with the right address; U3, on the same bus, completed a
-    // read of the wrong register, and the bus's witness is U3's.
+    // U2 times out with nothing logged; U3, on the same bus, completed a
+    // read of the wrong register, and only U3's witness shows it.
     let mut r = healthy();
     replace(&mut r, is_check, check("timeout_txis", 0));
     insert_after_last(
@@ -804,15 +816,16 @@ fn a4_one_devices_witness_never_explains_another_devices_timeout() {
             status: Some("ok".into()),
         },
     );
-    replace(
+    replace(&mut r, is_witness, witness(Some(&[])));
+    insert_after_last(
         &mut r,
         is_witness,
-        Record::I2cWitness {
-            peripheral: "I2C1".into(),
-            reference: "U3".into(),
-            cr2: reading(0x4000_5404, 0x02FF_07FF, 0x0202_0490, 0x0202_0490),
-            txdr: reading(0x4000_5428, 0xFF, 0x0F, 0x0E),
-        },
+        witness_with(
+            "I2C1",
+            "U3",
+            &["Write F", "Read 1 17"],
+            Some(&["Write E", "Read 0"]),
+        ),
     );
     replace(
         &mut r,
@@ -833,12 +846,14 @@ fn a4_one_devices_witness_never_explains_another_devices_timeout() {
 }
 
 #[test]
-fn a5_a_witness_not_at_its_controllers_registers_is_no_evidence() {
+fn a5_a_witness_whose_lines_are_not_its_devices_is_no_evidence() {
+    // The logged lines are another device's (`i2c1.u3`), not the witness's
+    // own (`i2c1.u2`): nothing the judge can attribute to U2.
     let mut r = healthy();
-    wrong_address(&mut r);
-    let mut w = witness(0x0001_00EE, 0);
-    if let Record::I2cWitness { cr2, .. } = &mut w {
-        cr2.address = 0x4000_5804;
+    wrong_register(&mut r);
+    let mut w = witness(Some(&["Write D1"]));
+    if let Record::I2cWitness { observed, .. } = &mut w {
+        *observed = Some(vec!["[NOISY] i2c1.u3: Write D1".into()]);
     }
     replace(&mut r, is_witness, w);
     assert_eq!(attributed(&r).rule, Rule::I4);
@@ -864,7 +879,7 @@ fn a7_the_mode_a_pin_must_hold_is_kind_15s_not_the_readings() {
 #[test]
 fn a10_one_event_never_explains_a_finding_counted_at_two_severities() {
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     replace(
         &mut r,
         is_verdict,
@@ -884,7 +899,7 @@ fn a15_the_evidence_is_the_named_rules_alone() {
     // A wrong address on the bus (S1) and no boot word (S2): the run is S1,
     // and its evidence holds no kind 10.
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     replace(
         &mut r,
         |x| matches!(x, Record::BootObserved { .. }),
@@ -900,43 +915,35 @@ fn a15_the_evidence_is_the_named_rules_alone() {
     assert_eq!(kinds(&a.symptoms), [10, 12]);
 }
 
-#[test]
-fn every_witness_field_is_evidence_within_its_width() {
-    // SADD's tenth bit, after the read completed with the right value.
-    let completed = |cr2: u32| {
-        let mut r = healthy();
-        replace(&mut r, is_witness, witness(cr2, 0xD0));
-        replace(
-            &mut r,
-            is_verdict,
-            verdict(&[("i2c_transaction_unwitnessed", 1)]),
-        );
-        attributed(&r).rule
-    };
-    assert_eq!(completed(CR2_OK | 0x200), Rule::S1);
-    // NBYTES's eighth bit.
-    assert_eq!(completed(CR2_OK | 0x0080_0000), Rule::S1);
-    // A CR2 reading that does not cover SADD and NBYTES is no evidence.
+/// The run whose read completed (status ok, value 0x60) with `observed` logged
+/// and the verdict naming only the unwitnessed read.
+fn completed(observed: Option<&[&str]>) -> Rule {
     let mut r = healthy();
-    let mut w = witness(CR2_OK | 0x0080_0000, 0xD0);
-    if let Record::I2cWitness { cr2, .. } = &mut w {
-        cr2.mask = 0x0200_07FF;
-        cr2.observed = Some(CR2_OK | 0x200);
-    }
-    replace(&mut r, is_witness, w);
+    replace(&mut r, is_witness, witness(observed));
     replace(
         &mut r,
         is_verdict,
         verdict(&[("i2c_transaction_unwitnessed", 1)]),
     );
-    assert_eq!(attributed(&r).rule, Rule::I4);
-    // A TXDR whose own expectation is not the read's register is no evidence.
+    attributed(&r).rule
+}
+
+#[test]
+fn every_witness_line_is_evidence_within_its_width() {
+    // The register written, after the read completed with the right value.
+    assert_eq!(completed(Some(&["Write D1", "Read 60"])), Rule::S1);
+    // The value read.
+    assert_eq!(completed(Some(&["Write D0", "Read 61"])), Rule::S1);
+    // A read the record says completed and the model never logged.
+    assert_eq!(completed(Some(&[])), Rule::S1);
+    // A byte wider than a byte is no line the judge can read: no evidence.
+    assert_eq!(completed(Some(&["Write D0", "Read 160"])), Rule::I4);
+    assert_eq!(completed(Some(&["Write D01", "Read 60"])), Rule::I4);
+    // A log that could not be read whole is no evidence.
+    assert_eq!(completed(None), Rule::I4);
+    // A witness whose own expectation is not the read's register is no evidence.
     let mut r = healthy();
-    let mut w = witness(CR2_OK, 0xD1);
-    if let Record::I2cWitness { txdr, .. } = &mut w {
-        txdr.expected = 0xD1;
-        txdr.observed = Some(0xD2);
-    }
+    let w = witness_with("I2C1", "U2", &["Write D1", "Read 60"], Some(&["Write D2"]));
     replace(&mut r, is_witness, w);
     replace(
         &mut r,
@@ -947,15 +954,17 @@ fn every_witness_field_is_evidence_within_its_width() {
 }
 
 #[test]
-fn txdr_counts_from_a_tc_timeout_and_nbytes_from_a_stopf_timeout() {
+fn a_wrong_line_counts_on_any_timed_out_read() {
+    // A TC timeout after the model logged a write of another register.
     let mut r = healthy();
     replace(&mut r, is_check, check("timeout_tc", 0));
-    replace(&mut r, is_witness, witness(0x0001_20EC, 0xD1));
+    replace(&mut r, is_witness, witness(Some(&["Write D1"])));
     replace(&mut r, is_verdict, verdict(&[("i2c_timeout", 1)]));
     assert_eq!(attributed(&r).rule, Rule::S1);
+    // A STOPF timeout after the model returned another value.
     let mut r = healthy();
     replace(&mut r, is_check, check("timeout_stopf", 0));
-    replace(&mut r, is_witness, witness(0x0202_04EC, 0xD0));
+    replace(&mut r, is_witness, witness(Some(&["Write D0", "Read 61"])));
     replace(&mut r, is_verdict, verdict(&[("i2c_timeout", 1)]));
     assert_eq!(attributed(&r).rule, Rule::S1);
 }
@@ -1085,7 +1094,7 @@ fn a_line_stuck_high_and_an_incomplete_rise_are_electrical() {
         *from = vec!["analog.line_stuck_high".into()];
     }
     replace(&mut r, is_check, check("timeout_txis", 0));
-    replace(&mut r, is_witness, witness(0x0001_00EC, 0));
+    replace(&mut r, is_witness, witness(Some(&[])));
     replace(
         &mut r,
         is_verdict,
@@ -1106,7 +1115,7 @@ fn a_line_stuck_high_and_an_incomplete_rise_are_electrical() {
     };
     r.insert(i + 2, fault("SENSORS", &["I2C_SCL"]));
     replace(&mut r, is_check, check("timeout_txis", 0));
-    replace(&mut r, is_witness, witness(0x0001_00EC, 0));
+    replace(&mut r, is_witness, witness(Some(&[])));
     replace(
         &mut r,
         is_verdict,
@@ -1120,14 +1129,14 @@ fn each_finding_selects_only_the_events_that_show_it() {
     // An invalid record, as invalid: no evidence, I4. Claimed as a timeout: I1.
     let mut r = healthy();
     replace(&mut r, is_check, check("invalid", 0));
-    replace(&mut r, is_witness, witness(0x0001_00EC, 0));
+    replace(&mut r, is_witness, witness(Some(&[])));
     replace(&mut r, is_verdict, verdict(&[("i2c_record_invalid", 1)]));
     assert_eq!(attributed(&r).rule, Rule::I4);
     replace(&mut r, is_verdict, verdict(&[("i2c_timeout", 1)]));
     assert_eq!(attributed(&r).rule, Rule::I1);
     // An identity mismatch or an unwitnessed read claimed of a timed-out read.
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     for kind in ["i2c_identity_mismatch", "i2c_transaction_unwitnessed"] {
         replace(&mut r, is_verdict, verdict(&[(kind, 1)]));
         assert_eq!(attributed(&r).rule, Rule::I1, "{kind}");
@@ -1216,13 +1225,13 @@ fn the_fault_on_the_second_bus_is_elsewhere_for_the_first() {
     // (index 1) faulted.
     let mut r = healthy();
     add_aux(&mut r, true);
-    u5_read(&mut r, "timeout_txis", 0x0001_0080, 0);
+    u5_read(&mut r, "timeout_txis", &[]);
     faulted_sensors(&mut r);
     replace(&mut r, is_check, check("timeout_txis", 0));
     replace(
         &mut r,
         |x| matches!(x, Record::I2cWitness { reference, .. } if reference == "U2"),
-        witness(0x0001_00EC, 0),
+        witness(Some(&[])),
     );
     replace(
         &mut r,
@@ -1239,12 +1248,12 @@ fn the_lowest_indeterminate_rule_names_the_run_with_only_its_evidence() {
     // timeout (I4): the run is I2, with AUX's kind 15 alone.
     let mut r = healthy();
     add_aux(&mut r, false);
-    u5_read(&mut r, "timeout_txis", 0x0001_0080, 0);
+    u5_read(&mut r, "timeout_txis", &[]);
     replace(&mut r, is_check, check("timeout_txis", 0));
     replace(
         &mut r,
         |x| matches!(x, Record::I2cWitness { reference, .. } if reference == "U2"),
-        witness(0x0001_00EC, 0),
+        witness(Some(&[])),
     );
     replace(&mut r, is_verdict, verdict(&[("i2c_timeout", 2)]));
     let a = attributed(&r);
@@ -1255,9 +1264,9 @@ fn the_lowest_indeterminate_rule_names_the_run_with_only_its_evidence() {
 fn i5_lists_both_halves_and_the_masked_witness() {
     // SENSORS faulted with U2's wrong address (masked); AUX healthy with U5's.
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     add_aux(&mut r, true);
-    u5_read(&mut r, "timeout_txis", 0x0001_0082, 0);
+    u5_read(&mut r, "timeout_rxne", &["Write D1"]);
     faulted_sensors(&mut r);
     replace(
         &mut r,
@@ -1273,7 +1282,7 @@ fn i5_lists_both_halves_and_the_masked_witness() {
 #[test]
 fn an_unexplained_finding_names_no_evidence_beside_a_decided_symptom() {
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     replace(
         &mut r,
         is_verdict,
@@ -1298,7 +1307,7 @@ fn every_kind_of_failing_event_the_verdict_omits_is_unexplained() {
         ),
         (
             "unwitnessed",
-            Box::new(|r| replace(r, is_witness, witness(CR2_OK, 0xD1))),
+            Box::new(|r| replace(r, is_witness, witness(Some(&["Write D1", "Read 60"])))),
         ),
         (
             "register",
@@ -1349,18 +1358,22 @@ fn every_kind_of_failing_event_the_verdict_omits_is_unexplained() {
 #[test]
 fn a_timeout_claimed_as_an_invalid_record_is_unexplained() {
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     replace(&mut r, is_verdict, verdict(&[("i2c_record_invalid", 1)]));
     assert_eq!(attributed(&r).rule, Rule::I1);
 }
 
 #[test]
 fn each_part_of_a_sound_witness_is_required() {
-    let unwitnessed = |edit: &dyn Fn(&mut Reading, &mut Reading)| {
+    type Edit<'a> = &'a dyn Fn(&mut Vec<String>, &mut Option<Vec<String>>);
+    let unwitnessed = |edit: Edit| {
         let mut r = healthy();
-        let mut w = witness(CR2_OK, 0xD1);
-        if let Record::I2cWitness { cr2, txdr, .. } = &mut w {
-            edit(cr2, txdr);
+        let mut w = witness(Some(&["Write D1", "Read 60"]));
+        if let Record::I2cWitness {
+            expected, observed, ..
+        } = &mut w
+        {
+            edit(expected, observed);
         }
         replace(&mut r, is_witness, w);
         replace(
@@ -1371,35 +1384,27 @@ fn each_part_of_a_sound_witness_is_required() {
         attributed(&r).rule
     };
     assert_eq!(unwitnessed(&|_, _| {}), Rule::S1);
+    // An expectation with no write of the check's register, or no read of its
+    // value, or the read of another value.
+    assert_eq!(unwitnessed(&|e, _| e.remove(0).clear()), Rule::I4);
+    assert_eq!(unwitnessed(&|e, _| e.truncate(1)), Rule::I4);
     assert_eq!(
-        unwitnessed(&|_, t| t.address = 0x4000_5828 + 0x400),
+        unwitnessed(&|e, _| e[1] = "[NOISY] i2c1.u2: Read 61".into()),
         Rule::I4
     );
-    assert_eq!(unwitnessed(&|_, t| t.mask = 0x0F), Rule::I4);
-    // A CR2 reading that covers NBYTES but not SADD.
+    // An expectation of another device's lines.
     assert_eq!(
-        unwitnessed(&|c, _| {
-            c.mask = 0x02FF_0400;
-            c.expected = CR2_OK & 0x02FF_0400;
-            c.observed = Some((CR2_OK & 0x02FF_0400) | 0xEE);
-        }),
+        unwitnessed(&|e, _| e.iter_mut().for_each(|l| *l = l.replace("u2", "u3"))),
         Rule::I4
     );
-    // A CR2 at its reset value, after a completed read: NBYTES says nothing.
-    let mut r = healthy();
-    replace(&mut r, is_witness, witness(0, 0xD0));
-    replace(
-        &mut r,
-        is_verdict,
-        verdict(&[("i2c_transaction_unwitnessed", 1)]),
-    );
-    assert_eq!(attributed(&r).rule, Rule::I4);
+    // A log that could not be read.
+    assert_eq!(unwitnessed(&|_, o| *o = None), Rule::I4);
 }
 
 #[test]
 fn a_register_with_nothing_observed_is_no_evidence() {
     let mut r = healthy();
-    wrong_address(&mut r);
+    wrong_register(&mut r);
     set_register(&mut r, "GPIOB.AFRL", |g| g.observed = None);
     let a = attributed(&r);
     assert_eq!(kinds(&a.evidence), [7, 7, 13]);

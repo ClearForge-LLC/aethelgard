@@ -440,8 +440,12 @@ fn one_of_each() -> Vec<Record> {
         Record::I2cWitness {
             peripheral: "I2C1".into(),
             reference: "U2".into(),
-            cr2: reading(Some(1)),
-            txdr: reading(None),
+            device: "i2c1.u2".into(),
+            expected: vec![
+                "[NOISY] i2c1.u2: Write 75".into(),
+                "[NOISY] i2c1.u2: Read 71".into(),
+            ],
+            observed: None,
         },
         Record::Verdict {
             pass: false,
@@ -780,6 +784,7 @@ fn good() -> Vec<Record> {
             observed: None,
             status: Some("timeout_txis".into()),
         },
+        witness("I2C1", "U2", 0x75, 0x71, Some(vec![])),
         verdict(
             false,
             &[
@@ -789,6 +794,29 @@ fn good() -> Vec<Record> {
             ],
         ),
     ]
+}
+
+/// Kind 13 for the identity read of `reference` (register `register`, value
+/// `value`), as the BME280 model logs it: the device is `i2c1.` and the
+/// reference lowercased.
+fn witness(
+    peripheral: &str,
+    reference: &str,
+    register: u8,
+    value: u8,
+    observed: Option<Vec<String>>,
+) -> Record {
+    let device = format!("i2c1.{}", reference.to_ascii_lowercase());
+    Record::I2cWitness {
+        peripheral: peripheral.into(),
+        reference: reference.into(),
+        expected: vec![
+            format!("[NOISY] {device}: Write {register:X}"),
+            format!("[NOISY] {device}: Read {value:X}"),
+        ],
+        device,
+        observed,
+    }
 }
 
 /// Kind 15 for `bus` on `peripheral`, SCL then SDA, with a 300,000 ps ceiling.
@@ -1191,18 +1219,20 @@ fn a_device_on_two_solved_buses_is_refused() {
     );
 }
 
+/// The reference run with its witness moved to `peripheral` and `reference`.
 fn with_witness(peripheral: &str, reference: &str) -> Vec<Record> {
     let mut r = good();
-    let last = r.len() - 1;
-    r.insert(
-        last,
-        Record::I2cWitness {
-            peripheral: peripheral.into(),
-            reference: reference.into(),
-            cr2: reading(Some(0)),
-            txdr: reading(Some(0)),
-        },
-    );
+    for x in &mut r {
+        if let Record::I2cWitness {
+            peripheral: p,
+            reference: n,
+            ..
+        } = x
+        {
+            *p = peripheral.into();
+            *n = reference.into();
+        }
+    }
     r
 }
 
@@ -1211,11 +1241,11 @@ fn a_witness_must_name_a_solved_device_on_its_own_controller() {
     assert!(check_run(&with_witness("I2C1", "U2")).is_ok());
     assert_eq!(
         check_run(&with_witness("I2C2", "U2")).unwrap_err(),
-        "a controller witness is not on its device's solved bus"
+        "a witness is not on its device's solved bus"
     );
     assert_eq!(
         check_run(&with_witness("I2C1", "U9")).unwrap_err(),
-        "a controller witness names no device of a solved bus"
+        "a witness names no device of a solved bus"
     );
 }
 
@@ -1808,7 +1838,7 @@ fn two_devices_at_one_address_on_one_bus_are_refused() {
 
 #[test]
 fn a_line_measured_twice_or_a_device_read_or_witnessed_twice_is_refused() {
-    let why = "a line measured twice, or a device read or witnessed twice, or a controller witnessed twice";
+    let why = "a line measured twice, or a device read or witnessed twice";
     // A second rise for one line, with the verdict's count raised to match.
     let mut r = good();
     let i = position(&r, |x| matches!(x, Record::RiseMeasured { .. }));
@@ -1866,28 +1896,62 @@ fn a_rise_and_a_stuck_high_on_one_line_are_two_measurements() {
     );
     assert_eq!(
         check_run(&r).unwrap_err(),
-        "a line measured twice, or a device read or witnessed twice, or a controller witnessed twice"
+        "a line measured twice, or a device read or witnessed twice"
     );
 }
 
+/// `AET-WO-2204`: the witness is per identity read, so a bus with two devices
+/// has two witnesses and the "controller witnessed twice" rule is gone.
 #[test]
-fn two_witnesses_of_one_controller_are_refused_even_for_two_devices() {
-    let mut r = with_witness("I2C1", "U2");
+fn two_devices_on_one_controller_have_two_witnesses() {
+    let mut r = good();
     if let Record::I2cBusSolved { devices, .. } = at(&mut r, is_bus) {
         devices.push(("U3".into(), 0x48));
     }
-    let last = r.len() - 1;
+    let w = position(&r, |x| matches!(x, Record::I2cWitness { .. }));
     r.insert(
-        last,
-        Record::I2cWitness {
-            peripheral: "I2C1".into(),
+        w,
+        Record::I2cCheck {
             reference: "U3".into(),
-            cr2: reading(Some(0)),
-            txdr: reading(Some(0)),
+            address: 0x48,
+            register: 0x75,
+            expected: 0x71,
+            observed: None,
+            status: Some("timeout_txis".into()),
         },
     );
+    // A second read with no witness of its own is refused.
     assert_eq!(
         check_run(&r).unwrap_err(),
-        "a line measured twice, or a device read or witnessed twice, or a controller witnessed twice"
+        "an identity read without its witness, or a witness without its read"
+    );
+    r.insert(w + 2, witness("I2C1", "U3", 0x75, 0x71, Some(vec![])));
+    assert!(check_run(&r).is_ok());
+}
+
+#[test]
+fn each_identity_read_has_a_witness_and_each_witness_a_read() {
+    let why = "an identity read without its witness, or a witness without its read";
+    let mut r = good();
+    let i = position(&r, |x| matches!(x, Record::I2cWitness { .. }));
+    r.remove(i);
+    assert_eq!(check_run(&r).unwrap_err(), why);
+    let mut r = good();
+    let i = position(&r, |x| matches!(x, Record::I2cCheck { .. }));
+    r.remove(i);
+    assert_eq!(check_run(&r).unwrap_err(), why);
+}
+
+#[test]
+fn a_witness_device_must_end_with_its_references_lowercased() {
+    let mut r = good();
+    if let Record::I2cWitness { device, .. } =
+        at(&mut r, |x| matches!(x, Record::I2cWitness { .. }))
+    {
+        *device = "i2c1.u3".into();
+    }
+    assert_eq!(
+        check_run(&r).unwrap_err(),
+        "a witness's model path is not its device's emitted name"
     );
 }
