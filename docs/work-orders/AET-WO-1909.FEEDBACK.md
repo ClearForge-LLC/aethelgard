@@ -1,6 +1,6 @@
 # AET-WO-1909 — FEEDBACK
 
-**Status: built to the architect's ruling on PR #115 (comment 6873338632): A, B, C and D; `oq_03` removed; E declined. Adversarial and reduction passes done; three counted CI runs recorded below.**
+**Status: built to the architect's ruling on PR #115 (comment 6873338632): A, B, C and D; `oq_03` removed; E declined. Adversarial and reduction passes done. Three consecutive CI runs at eight shards, every shard under 20 minutes (12:10, 11:59, 15:10); the suite went from 4,730 to 3,677 measured test-step seconds (−22 %). The PR title still says "census": `gh-write` cannot edit a PR, so the architect sets the title at merge (roadmap §6).**
 
 **Branch:** `wo/aet-1909-ci-reduction` · **Base:** `a5be795` (`origin/main`, merged in) · **Builder:** Claude (Opus 5.5, orchestrating). Census rows and D8's assertion messages were done by Sonnet subagents, each checked against the source. The adversarial pass was run by a fresh Opus subagent.
 
@@ -125,14 +125,28 @@ The originals go red, at `board_tier2.rs:405` and `:504` of `cfafdb4`.
 | 1 (43570762262) | `ad432a3` | provisional block weights | 8:23 | 9:58 | 11:24 | 8:41 | 9:15 | 8:08 | 8:49 | 10:50 | 3,471 | 11:24 | 3:16 | 90 (floor 90) |
 | 2 (43573333731), counted 1 of 3 | `af2ec01` | refitted | 8:09 | 9:58 | 12:10 | 9:37 | 8:29 | 10:49 | 10:26 | 8:35 | 3,684 | 12:10 | 4:01 | 90 (floor 90) |
 | 3 (43574423322), counted 2 of 3 | `94488c7` | refitted | 8:38 | 9:46 | 11:59 | 10:54 | 8:16 | 8:14 | 10:00 | 11:04 | 3,722 | 11:59 | 3:45 | 90 (floor 90) |
-__CI_ROWS__
+| 4 (43575564961), counted 3 of 3 | `22525aa` | refitted | 8:31 | 9:26 | 15:10 | 9:46 | 6:57 | 8:50 | 9:07 | 8:43 | 3,624 | 15:10 | 8:13 | 90 (floor 90) |
 
 - **Run 1 measured the blocks in one process** (libtest's `finished in`): `attribute_seeded` 473.4 s, `against_fab_tier2` 562.2 s, `verify_2k2_tier2` 404.6 s, `verify_47k_tier2` 197.3 s, `campaign_tier2` 36.9 s.
 - **The refit** (`ci/shard.sh` REFIT RULE step 3: a colocated block at its in-process wall time) puts the new blocks at those values. `attribute_seeded` stays at 720, still its worst sample.
 - No per-test weight changed: no test that stays in a shard by name changed its work. The moved tests' lines left with them.
 - The refitted plan: the 720 s block, the 562 s `--against-fab` block, and six shards of 465 s. Run 1 does not count toward the three; runs 2 to 4 are on the refitted plan, and each commit after a run records it here.
 
-__CI_RESULT__
+**Result: three consecutive runs (2, 3 and 4) on the refitted plan, eight shards, every shard under 20 minutes.**
+- **Slowest shard:** 12:10, 11:59 and 15:10.
+- **Spread:** 4:01, 3:45 and 8:13.
+- **The canary:** 90 tier-2 passes on each run, floor 90. The guard passed and `gates` was green on every run.
+
+**Suite seconds, measured:**
+- **Before:** 4,622 and 4,838 on `main`, mean 4,730.
+- **After:** 3,684, 3,722 and 3,624, mean 3,677.
+- **That is −1,053 s, −22 %.** The census predicted −980 planned seconds (−19 %).
+- **Slowest shard:** before, 16:14 and 15:36; after, 12:10, 11:59 and 15:10.
+
+**Run 4's 15:10 is the `--against-fab` block on a slow runner.**
+- That block took 764.5 s in one process, against 562.2 s on run 1. That is three `verify` runs at about 255 s, the 1.36× runner variance `AET-WO-1908` measured.
+- The other blocks on run 4: `verify_2k2_tier2` 419.7 s, `verify_47k_tier2` 217.7 s, `attribute_seeded` 449.0 s, `campaign_tier2` 43.1 s.
+- Run 4's spread passed 6 minutes once. The refit rule fires on two runs in a row, so it does not apply yet. If it does, step 3 sets that block to its worst sample, 764 s, which would make it the plan's maximum: still under 20 minutes with setup.
 
 ## Reduction pass (diff)
 
