@@ -305,7 +305,8 @@ Reduction pass (diff): net lines positive (the removals above take out the `allo
 ## Gates (build, at `0ca3347`)
 
 - `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (with and without `with-tools`), `cargo test --workspace`: green on Furnace.
-- `TIER2_MIN` 90, exact: 1909's, unchanged here.
+- `TIER2_MIN` exact and `main`'s, unchanged here: 90 after 1909, then 92 after `AET-WO-4100` (PR #120) added two. This work order adds no tier-2 test function.
+- **`main` merged again at `d00c965`** (`AET-WO-4100`, specification `schema_version` 2; the `4300` record), as merge commit `dbd0d09`, with no conflict. The host gates are green on the merged head, and the seeded block was re-run in the image to check that the exact indices survive 4100's specification change: 11 passed (333 s), every index unchanged.
 - **CI's first run of the build (`f8d4053`) failed `gates` and shard 0 on one clippy lint,** `cloned_ref_to_slice_refs`, in the `tools_of` rail test. I added that test (for mutant M14) after my last local clippy run: my miss, not a flake. It is fixed, and every clippy gate (workspace, `with-tools`, bridge) was re-run locally before the push.
 - CI: on the PR at the pushed head; recorded in the final report.
 
