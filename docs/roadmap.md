@@ -197,8 +197,9 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
   - `OQ-03` measured.
 
   Dynamic faults (droop, interrupt storm) are split out as `AET-WO-2301`. Intent as first written: fault orchestrator: scenarios authored independently of the generated artifacts (`INV-07`), including a held-low data line, an oversized pull-up, a rail droop, and an interrupt storm; every campaign writes to the P0 archive.
-- `AET-WO-2301` — **written 2026-11-13**, spike then stop then build, strong tier, full adversarial pass. A rail droop as a scenario fault, run in lock-step (`2101`'s `ioc` route, the bridge owning Renode): ngspice computes the rail, the bridge renders a reset or PVD as the model's rendering, Renode shows the firmware's effect, and the archive records each separately. The spike answers how Renode 1.17.0 can render a brownout, what the rail model declares, what an interrupt storm means for firmware that takes no interrupt (storms may be deferred to P4's IMU), `OQ-03`'s dynamic volume, and the log flood (`2100` F23). **Carried in:** expectations by count (`2300` F11), Renode history to `/dev/null` (`2200` L6), the bridge handshake (`2200` F15), the analog window label (review A10.4).
-- `AET-WO-2204` — **reserved 2026-11-13**, strong tier: the I2C witness a firmware cannot forge (review A11.1: an observable a plain write cannot set, and the pinning test inverted), one witness per transaction (`2202`), the status-to-phase table in one place (`3100` F2), the executable segments archived for `pc_outside_firmware` (`3100` F13), and engine and tool versions in the archive header with record kinds renamed from "measured" (review B4), and the seeded set's exact evidence per case with an indeterminate case end to end (review A7.5, A7.6). Its own trace version bump; it may run beside `2301`'s spike.
+- `AET-WO-2301` — **merged (PR #107)**, spike then stop then build, strong tier, full adversarial pass. A declared rail droop as a scenario fault (scenario version 2, `droop` and `expect_counts`): the bridge solves the rail once with libngspice, its crossings become resets by one rule (`aethelgard_chaos::power::schedule`, DS12117 Table 26, BOR level declared by the scenario), Renode renders each as a held reset with the bridge owning it, and trace version 4 records the declared rail, each crossing, each rendered reset and each recovery observation (boot word, identity record and the controller's own `CR2`/`TXDR`), each naming its source. `droop-tolerated` passes; `droop-bor3` resets once and recovers within 100 µs, predicted to the picosecond. A log flood now reaches a verdict; the bridge identifies itself by a hash of its build inputs. Storms deferred to P4's IMU. **Pending Scotty:** the `RUL-17` amendment, D8 (not sampling), D10 (DS12117 current revision and RM0433; the thresholds are Rev 7's, provisional).
+- `AET-WO-2204` — **written 2026-11-14**, spike then stop then build, strong tier, full adversarial pass. The boot judge a firmware cannot fool: an I2C witness on an observable a plain store cannot set (review A11.1; the pinning test inverted), one witness per transaction (`2202`), `PC` at the firmware's fixed point (`2301` D9), one console level through the static boot's reads so no log line is lost (`2301` B10), and device references refused when they collide with a Renode name (`1102` A3).
+- `AET-WO-2205` — **reserved 2026-11-14**, from `2204`'s split: the archive's hygiene and attribution's evidence. Engine and tool versions in the archive header and record kinds renamed from "measured" (review B4), the analog deck's 400 kHz window labelled (review A10.4, `2301` B4), the status-to-phase table in one place (`3100` F2), the executable segments archived for `pc_outside_firmware` (`3100` F13), and the seeded set's exact evidence per case with an indeterminate case end to end (review A7.5, A7.6). Its own trace version bump, after `2204`'s.
 
 **Exit gate: passed 2026-11-09, as reconciled in §7.** Every clause below is owned by merged work.
 
@@ -373,16 +374,16 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | Tier-2 canary; missing-key test; quickstart on `main`; README status test | review A6, A7, B5, B8 | **done (PR #87)** |
 | Manifest read uncapped; relative `PATH` entries; case-colliding labels | review A11.2, A12.2, A10.1 | **done (PR #87)** |
 | I2C witness forgeable by a hand-written firmware | review A11.1 | **measured: it passes** (PR #87). `AET-WO-2204` adds an observable a plain write cannot set and inverts the pinning test |
-| Review's unverified test notes (A7.4–A7.7, A10 notes) | review | verified by `1900`: A7.4 and A7.7 fixed; A7.5 and A7.6 to `AET-WO-2204`, which changes the witness evidence attribution reads |
+| Review's unverified test notes (A7.4–A7.7, A10 notes) | review | verified by `1900`: A7.4 and A7.7 fixed; A7.5 and A7.6 to `AET-WO-2205` |
 | State folded before the run rules bound it | review A11.3 | **done (PR #87)**: once-only records refused at fold time, `MAX_RECORDS` 65,536. `AET-WO-2301` measures fold memory (about 35 × wire size) and raises or streams it for per-quantum logs |
 | Generation in the CLI; `verify`; verdict binding; harness provenance | review A3, A4, B1 | **merged (PR #91)**: `generate`, `build`, `verify`, `prove --spec` with `harness_provenance` and `cover_count` |
 | Bench comparison early | review | `AET-WO-3302` |
 | Extraction, first step, then full | review A1, B3; `1303` | **first step merged (PR #99)**; `AET-WO-1303` before `4500` |
-| Status-to-phase table in one place | 3100 F2 | `AET-WO-2204` |
-| `pc_outside_firmware` needs the executable segments archived | 3100 F13 | `AET-WO-2204` |
+| Status-to-phase table in one place | 3100 F2 | `AET-WO-2205` |
+| `pc_outside_firmware` needs the executable segments archived | 3100 F13 | `AET-WO-2205` |
 | Only the last transaction per bus is witnessed | 2202 | `AET-WO-2204` |
 | Bridge identity handshake | 2200 F15 | `AET-WO-2301` |
-| Engine and tool versions in the archive header; record kinds renamed from "measured" | review B4, `RUL-19` | `AET-WO-2204` (its trace version bump) |
+| Engine and tool versions in the archive header; record kinds renamed from "measured" | review B4, `RUL-19` | `AET-WO-2205` (its trace version bump) |
 | Analog deck's fixed 400 kHz window labelled | review A10.4 | `AET-WO-2301` |
 | Type-level `RUL-16` fence replacing the grep test | review A7.1, B6 | **merged (PR #90)**: private device lists, a crate-local clippy `disallowed-methods` in `cli`, `svd-hal` and `twin`, and a guard test against a stale path |
 | `RLIMIT_FSIZE` for tool scratch | review A12.1 | **merged (PR #96)**: 64 MiB, exit 5 |
@@ -410,7 +411,9 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | A reference named for a Renode instance the platform's stock list omits (`nvic`, `sysbus`, `usart1`…) or a platform keyword (`using`, `init`) may redeclare it in the `.repl` (inferred, not run) | `1102` A3 | `AET-WO-2204` (it touches the platform): read the pinned platform's whole name set |
 | A project name that is a Windows reserved device name (`con`, `prn`, `aux`, `nul`, `com1`–`com9`, `lpt1`–`lpt9`) writes files Windows cannot open | `1102` A7 | the next identifier work order: refuse them in any case |
 | The router completes nets in name order, so a net's name alone can make `generate` fail with `Unroutable` | `1102` §4.4, A6 | the next work order that owns the router |
-| **CI headroom:** with eight shards the slowest ran 15:04 and then about 16 minutes (PR #106) | `1102` §8 | **next:** rebalance `ci/test-weights.tsv` from CI-measured times, or a ninth shard; before the next tier-2-heavy merge |
+| **CI headroom:** with eight shards the slowest ran 15:04 and then about 16 minutes (PR #106) | `1102` §8 | `AET-WO-1908` (written 2026-11-13): weights refitted from CI's own times, slowest shard under 13 minutes on three consecutive runs |
+| A tool spawned under the sandbox cannot open `/dev/null` (`Stdio::null()` fails with `EACCES`); the bridge inherits stdio | `2301` B2 | the next sandbox work order: grant `/dev/null` or keep inherited stdio as the rule |
+| The CLI's README documents only version-1 scenarios (`droop`, `expect_counts`, `schema_version` 2 are in the chaos README) | `2301` B13 | the next work order that touches the CLI README |
 | The export's ELF and board `BindingMismatch` guards have no killing test (a swap race in `verify`'s scratch, as `1305`'s extract test does) | `3300` F16 | the next work order that touches `verify` |
 | `fab::LAYERS` and `fab::describe` both map each layer; fold the description into `LAYERS` | `3300` F21 | the next work order that touches the fab module (nit) |
 | A dedicated uid for `aethelgard` on Furnace, so `uid_boundary` holds there | `1601` §1.3, R4 | **the operator's** (the CLI README's deployment section) |
@@ -479,6 +482,9 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-13 | §5, §7.1 | `AET-WO-2301` written (spike, stop, build: a rail droop in lock-step); `AET-WO-2204` reserved for the I2C witness and the archive's trace hygiene, which 2301's carry-ins split into | `AET-WO-2101` S4–S7; the Mythos review |
 | 2026-11-13 | §5 | `AET-WO-3302` written: the bench comparison, P3 gate clause 4; the board arrived | Scotty, 2026-11-13 |
 | 2026-11-13 | §5, §7.1 | `AET-WO-1102` reconciled (merged, PR #106): `RUL-14` narrowed by measurement into one `check_identifier`; its adversarial residuals and the CI headroom given owners | PR #106 |
+| 2026-11-13 | §5, §7.1 | `AET-WO-2301` reconciled (merged, PR #107): a declared droop by the schedule, trace version 4; `OQ-03` answered for declared droops subject to D8; the `RUL-17` amendment proposed for Scotty's ratification; `2204`'s scope grows by `2301` D9, B4 and B10 | PR #107 |
+| 2026-11-13 | §7.1 | `AET-WO-1908` written: CI weights refitted from CI's own times, for headroom under 15 minutes | PRs #106, #107's shard times |
+| 2026-11-14 | §5, §7.1 | `AET-WO-2204` written (spike, stop, build: the boot judge a firmware cannot fool); `AET-WO-2205` reserved for the archive's hygiene and attribution's evidence, split from it | `2301` review; `1102` A3 |
 
 ## 9. Provenance
 
