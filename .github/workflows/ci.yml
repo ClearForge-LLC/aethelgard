@@ -234,10 +234,24 @@ jobs:
       # Renode's configuration against its default). Two tests renamed.
       # 91: plus 1 from AET-WO-2204's adversarial A1 (a firmware that rewrites
       # its loop in flash is not parked).
-      # 94: plus 3 from AET-WO-4200 in twin_tier2.rs (U4's JEDEC ID witnessed
+      # 90 (AET-WO-1909, ruled on PR #115): minus 1, attribute_seeded.rs's
+      # oq_03_the_reference_runs_bytes_with_kind_15 removed (it asserted only
+      # what ran() asserts; ran() prints its data). Six tests moved out of
+      # board_tier2.rs, each still counted: verify_2k2_tier2.rs
+      # (verify_binds_the_reference_and_two_runs_print_the_same_bytes,
+      # verify_fab_out_writes_the_package_its_verdict_names_at_any_path; each
+      # with its own runs) and two binaries that share one verify run:
+      # against_fab_tier2.rs (verify_against_fab_finds_the_package_it_wrote_identical,
+      # verify_against_fab_names_every_changed_and_extra_file) and
+      # verify_47k_tier2.rs (verify_fails_the_47k_pull_up_with_the_campaigns_findings,
+      # verify_fab_out_writes_nothing_when_a_gate_fails). Two counted tests are
+      # vacuous while proposals/ is absent, and each logs so:
+      # every_committed_proposal_is_pull_up_changes_named_for_its_scenario and
+      # tier2::every_committed_proposal_reruns_to_its_own_bytes_and_regates.
+      # 93: plus 3 from AET-WO-4200 in twin_tier2.rs (U4's JEDEC ID witnessed
       # behind SPI1's multiplexer; SPI forgeries unwitnessed; the ICM-20948
       # fixture read end to end).
-      TIER2_MIN: "94"
+      TIER2_MIN: "93"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

@@ -71,7 +71,7 @@ fn aethelgard(args: &[&str]) -> (Option<i32>, Value) {
 
 fn topology() -> SolvedTopology {
     let (code, v) = aethelgard(&["solve", "--file", spec().to_str().unwrap()]);
-    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(code, Some(0), "solving the spec exits 0: {v}");
     serde_json::from_value(v).unwrap()
 }
 
@@ -92,7 +92,7 @@ fn firmware() -> &'static Path {
             .unwrap();
         assert!(
             out.status.success(),
-            "{}",
+            "the reference firmware builds offline and locked: {}",
             String::from_utf8_lossy(&out.stderr)
         );
         let elf = root().join(
@@ -152,7 +152,7 @@ fn mutant_of(board: &Path, name: &str, change: impl Fn(&Path)) -> PathBuf {
         .unwrap();
     assert!(
         out.status.success(),
-        "{}",
+        "the mutant firmware builds offline: {}",
         String::from_utf8_lossy(&out.stderr)
     );
     dir.join("target/thumbv7em-none-eabihf/release/sentinel-01-board-firmware")
@@ -231,7 +231,10 @@ fn renode_s_files_are_the_pinned_ones_and_declare_the_stock_table() {
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect();
-        assert_eq!(got, sha, "{file}");
+        assert_eq!(
+            got, sha,
+            "each Renode file matches its pinned sha256: {file}"
+        );
     }
     let text = fs::read_to_string(tree.join(aethelgard_twin::platform::STOCK_FILE)).unwrap();
     let lines: Vec<&str> = text.lines().collect();
@@ -253,7 +256,11 @@ fn renode_s_files_are_the_pinned_ones_and_declare_the_stock_table() {
             .chars()
             .take_while(char::is_ascii_hexdigit)
             .collect();
-        assert_eq!(u32::from_str_radix(&hex, 16).unwrap(), address, "{name}");
+        assert_eq!(
+            u32::from_str_radix(&hex, 16).unwrap(),
+            address,
+            "each stock peripheral sits at its declared sysbus address: {name}"
+        );
     }
 }
 
@@ -261,7 +268,7 @@ fn renode_s_files_are_the_pinned_ones_and_declare_the_stock_table() {
 fn the_emitted_platform_loads_and_lists_every_solved_peripheral() {
     let (code, v) = aethelgard(&["simulate", "--platform", platform().to_str().unwrap()]);
     answer(&format!("platform: exit={code:?} verdict={v}"));
-    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(code, Some(0), "the emitted platform loads and exits 0: {v}");
     let listed: Vec<(&str, &str)> = v["machine"]["peripherals"]
         .as_array()
         .unwrap()
@@ -271,7 +278,10 @@ fn the_emitted_platform_loads_and_lists_every_solved_peripheral() {
     let solved =
         aethelgard_twin::platform::instances(&topology(), &Default::default(), &Default::default())
             .unwrap();
-    assert!(!solved.is_empty());
+    assert!(
+        !solved.is_empty(),
+        "the topology solves to at least one peripheral"
+    );
     for i in solved {
         assert!(
             listed.contains(&(i.name.as_str(), i.model.as_str())),
@@ -285,14 +295,27 @@ fn the_emitted_platform_loads_and_lists_every_solved_peripheral() {
 #[test]
 fn the_reference_firmware_boots_and_two_boots_agree() {
     let (code, first) = boot("boot 1", "10ms");
-    assert_eq!(code, Some(0), "{first}");
-    assert_eq!(first["verdict"], "pass");
+    assert_eq!(
+        code,
+        Some(0),
+        "the reference firmware boots and passes the spec: {first}"
+    );
+    assert_eq!(first["verdict"], "pass", "the first boot's verdict is pass");
     let b = &first["boot"];
-    assert_eq!(b["boot_word"]["observed"], "0x2100b007");
-    assert_eq!(b["instructions"]["observed"], 1_000_000);
-    assert_eq!(b["seed"], 2100);
+    assert_eq!(
+        b["boot_word"]["observed"], "0x2100b007",
+        "the boot word reads 0x2100b007 after the first boot"
+    );
+    assert_eq!(
+        b["instructions"]["observed"], 1_000_000,
+        "the first boot executes exactly 1,000,000 instructions"
+    );
+    assert_eq!(b["seed"], 2100, "the boot runs with the pinned seed 2100");
     for r in b["registers"].as_array().unwrap() {
-        assert_eq!(r["observed"], r["expected"], "{r}");
+        assert_eq!(
+            r["observed"], r["expected"],
+            "every register at the end of the boot equals its expected value: {r}"
+        );
     }
     // AET-WO-2202: U2's ID register reads 0x60, from the part table; U3 is
     // reported and does not fail the run.
@@ -301,7 +324,8 @@ fn the_reference_firmware_boots_and_two_boots_agree() {
         serde_json::json!([{
             "reference": "U2", "address": "0x76", "register": "0xd0",
             "expected": "0x60", "observed": "0x60", "status": "ok"
-        }])
+        }]),
+        "the i2c record is U2 reading 0x60 at register 0xd0 with status ok"
     );
     let unmodelled: Vec<&Value> = first["findings"]
         .as_array()
@@ -309,8 +333,15 @@ fn the_reference_firmware_boots_and_two_boots_agree() {
         .iter()
         .filter(|f| f["kind"] == "device_unmodelled")
         .collect();
-    assert_eq!(unmodelled.len(), 1, "{first}");
-    assert_eq!(unmodelled[0]["severity"], "info");
+    assert_eq!(
+        unmodelled.len(),
+        1,
+        "exactly one device is reported unmodelled: {first}"
+    );
+    assert_eq!(
+        unmodelled[0]["severity"], "info",
+        "the unmodelled-device finding is informational"
+    );
     // AET-WO-2204 D1: Renode's BME280 logged the read the record claims,
     // exactly; D3: the core ended in thread mode.
     assert_eq!(
@@ -318,36 +349,64 @@ fn the_reference_firmware_boots_and_two_boots_agree() {
         serde_json::json!([{
             "peripheral": "I2C1", "reference": "U2", "device": "i2c1.u2",
             "expected": WITNESS, "observed": WITNESS, "absent": []
-        }])
+        }]),
+        "Renode's BME280 logged exactly the read the record claims"
     );
-    assert_eq!(b["icsr"], "0x00000800");
+    assert_eq!(
+        b["icsr"], "0x00000800",
+        "the core ended the boot in thread mode"
+    );
     assert!(
         unmodelled[0]["message"]
             .as_str()
             .unwrap()
-            .contains("U3 (TMP117)")
+            .contains("U3 (TMP117)"),
+        "the unmodelled-device message names U3 (TMP117)"
     );
-    assert_eq!(first["findings"].as_array().unwrap().len(), 1, "{first}");
+    assert_eq!(
+        first["findings"].as_array().unwrap().len(),
+        1,
+        "the unmodelled-device report is the boot's only finding: {first}"
+    );
     let (code, second) = boot("boot 2", "10ms");
-    assert_eq!(code, Some(0), "{second}");
-    assert_eq!(first["boot"], second["boot"]);
-    assert_eq!(first["machine"], second["machine"]);
+    assert_eq!(code, Some(0), "the second boot also passes: {second}");
+    assert_eq!(
+        first["boot"], second["boot"],
+        "two boots of the reference agree on the boot record"
+    );
+    assert_eq!(
+        first["machine"], second["machine"],
+        "two boots of the reference agree on the machine record"
+    );
 }
 
 #[test]
 fn a_boot_too_short_to_reach_the_fixed_point_fails() {
     // The spike measured the fixed point between 1,000 and 2,000 instructions.
     let (code, v) = boot("short", "10us");
-    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(
+        code,
+        Some(1),
+        "a boot too short for the fixed point fails the spec: {v}"
+    );
     let kinds: Vec<&str> = v["findings"]
         .as_array()
         .unwrap()
         .iter()
         .map(|f| f["kind"].as_str().unwrap())
         .collect();
-    assert!(kinds.contains(&"boot_word_missing"), "{v}");
-    assert!(!kinds.contains(&"cpu_halted"), "{v}");
-    assert_eq!(v["boot"]["instructions"]["observed"], 1000);
+    assert!(
+        kinds.contains(&"boot_word_missing"),
+        "a boot too short for the fixed point reports the boot word missing: {v}"
+    );
+    assert!(
+        !kinds.contains(&"cpu_halted"),
+        "a boot too short for the fixed point has not halted the cpu: {v}"
+    );
+    assert_eq!(
+        v["boot"]["instructions"]["observed"], 1000,
+        "a 10 us boot executes exactly 1000 instructions"
+    );
 }
 
 #[test]
@@ -363,11 +422,15 @@ fn a_firmware_with_no_vector_table_at_the_boot_address_fails() {
         );
     });
     let (code, v) = boot_elf("A3 flash offset", &elf, "10ms");
-    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(
+        code,
+        Some(1),
+        "a flash offset reports boot_word_missing and cpu_halted: {v}"
+    );
     let kinds = kinds(&v);
     assert!(
         kinds.contains(&"boot_word_missing") && kinds.contains(&"cpu_halted"),
-        "{v}"
+        "a flash offset reports boot_word_missing and cpu_halted: {v}"
     );
 }
 
@@ -383,9 +446,16 @@ fn a_core_that_leaves_the_firmware_after_the_boot_word_fails() {
         );
     });
     let (code, v) = boot_elf("A7 leave", &elf, "10ms");
-    assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["pc_outside_firmware"], "{v}");
-    assert_eq!(v["boot"]["boot_word"]["observed"], "0x2100b007");
+    assert_eq!(code, Some(1), "a core leaving the firmware exits 1: {v}");
+    assert_eq!(
+        kinds(&v),
+        ["pc_outside_firmware"],
+        "a core leaving the firmware reports exactly pc_outside_firmware: {v}"
+    );
+    assert_eq!(
+        v["boot"]["boot_word"]["observed"], "0x2100b007",
+        "the boot word is still set when the core leaves the firmware"
+    );
 }
 
 #[test]
@@ -404,9 +474,16 @@ fn an_aborted_machine_returns_inside_the_bound_as_cpu_aborted() {
     let start = Instant::now();
     let (code, v) = boot_elf("A6 hole", &elf, "10ms");
     let took = start.elapsed();
-    assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["cpu_aborted"], "{v}");
-    assert!(took.as_secs() < 30 + 5, "{took:?}");
+    assert_eq!(code, Some(1), "an aborted machine exits 1: {v}");
+    assert_eq!(
+        kinds(&v),
+        ["cpu_aborted"],
+        "an aborted machine reports exactly cpu_aborted: {v}"
+    );
+    assert!(
+        took.as_secs() < 30 + 5,
+        "an aborted machine returns inside the bound: {took:?}"
+    );
 }
 
 /// `AET-WO-2200` §3, the P2 gate's clause 2, as one test: the reference
@@ -418,7 +495,11 @@ fn an_aborted_machine_returns_inside_the_bound_as_cpu_aborted() {
 #[test]
 fn p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes() {
     let spec_text = fs::read_to_string(spec()).unwrap();
-    assert_eq!(spec_text.matches("\"pull_up_ohms\": 2200").count(), 1);
+    assert_eq!(
+        spec_text.matches("\"pull_up_ohms\": 2200").count(),
+        1,
+        "the spec declares the 2200 ohm pull-up exactly once"
+    );
     let dir =
         Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("aet-2200-t2-{}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
@@ -432,12 +513,19 @@ fn p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes() {
         let spec = dir.join(format!("spec-{ohms}.json"));
         fs::write(&spec, &text).unwrap();
         let (code, v) = aethelgard(&["solve", "--file", spec.to_str().unwrap()]);
-        assert_eq!(code, Some(0), "{v}");
+        assert_eq!(
+            code,
+            Some(0),
+            "the spec with each pull-up value solves: {v}"
+        );
         let topology: SolvedTopology = serde_json::from_value(v).unwrap();
         // The caller's platform is the unfaulted emission, U2 declared (F6).
         let platform = dir.join(format!("platform-{ohms}.repl"));
         let emitted = aethelgard_twin::platform::emit(&topology).unwrap();
-        assert!(emitted.contains("\nu2: I2C.BME280 @ i2c1 0x76\n"));
+        assert!(
+            emitted.contains("\nu2: I2C.BME280 @ i2c1 0x76\n"),
+            "the emitted platform declares the BME280 u2 at i2c1 0x76"
+        );
         fs::write(&platform, emitted).unwrap();
         let run = |n: u32| {
             let start = Instant::now();
@@ -464,24 +552,54 @@ fn p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes() {
             (code, v)
         };
         let (code, v) = run(1);
-        let analog = v["analog"].as_array().unwrap_or_else(|| panic!("{v}"));
-        assert_eq!(analog.len(), 2, "{v}");
+        let analog = v["analog"]
+            .as_array()
+            .unwrap_or_else(|| panic!("the run reports its analog records: {v}"));
+        assert_eq!(
+            analog.len(),
+            2,
+            "the run reports analog records for two lines: {v}"
+        );
         for line in analog {
             let measured = line["rise_30_70_ns"].as_f64().unwrap();
-            assert!((measured - rise).abs() <= tolerance, "{ohms} ohm: {line}");
-            assert_eq!(line["ceiling_ns"], 300);
-            assert_eq!(line["complete"], true);
-            assert_eq!(line["exceeds"], faulted);
-            assert_eq!(line["bus"], "SENSORS");
-            assert_eq!(line["ngspice"], "44.2");
+            assert!(
+                (measured - rise).abs() <= tolerance,
+                "the measured 30-70 rise matches the SPICE value within tolerance: {ohms} ohm: {line}"
+            );
+            assert_eq!(
+                line["ceiling_ns"], 300,
+                "each analog line carries the 300 ns ceiling"
+            );
+            assert_eq!(
+                line["complete"], true,
+                "each analog line is a complete measurement"
+            );
+            assert_eq!(
+                line["exceeds"], faulted,
+                "an analog line exceeds the ceiling exactly when the pull-up is 47k"
+            );
+            assert_eq!(
+                line["bus"], "SENSORS",
+                "each analog line names the bus SENSORS"
+            );
+            assert_eq!(
+                line["ngspice"], "44.2",
+                "each analog line records ngspice 44.2"
+            );
         }
         // The boot completed either way: the word is set and the core ran.
-        assert_eq!(v["boot"]["boot_word"]["observed"], "0x2100b007", "{v}");
-        assert_eq!(v["boot"]["instructions"]["observed"], 10_000_000);
+        assert_eq!(
+            v["boot"]["boot_word"]["observed"], "0x2100b007",
+            "the boot completes either way: the boot word is set: {v}"
+        );
+        assert_eq!(
+            v["boot"]["instructions"]["observed"], 10_000_000,
+            "the core ran 10,000,000 instructions either way"
+        );
         let u2 = &v["boot"]["i2c"][0];
-        assert_eq!(u2["reference"], "U2", "{v}");
-        assert_eq!(u2["address"], "0x76");
-        assert_eq!(u2["expected"], "0x60");
+        assert_eq!(u2["reference"], "U2", "the i2c record is U2's: {v}");
+        assert_eq!(u2["address"], "0x76", "the i2c record is for address 0x76");
+        assert_eq!(u2["expected"], "0x60", "the i2c record expects 0x60");
         let listed = v["machine"]["peripherals"].as_array().unwrap();
         let bme = listed.iter().any(|p| p["type"] == "BME280");
         let kinds: Vec<&str> = v["findings"]
@@ -492,16 +610,29 @@ fn p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes() {
             .map(|f| f["kind"].as_str().unwrap())
             .collect();
         if faulted {
-            assert_eq!(code, Some(1), "{v}");
-            assert_eq!(v["verdict"], "fail");
+            assert_eq!(code, Some(1), "the 47k run fails: {v}");
+            assert_eq!(v["verdict"], "fail", "the 47k run's verdict is fail");
             // The fault reached the platform: Renode built no BME280.
-            assert!(!bme, "{v}");
+            assert!(
+                !bme,
+                "the fault reached the platform: Renode built no BME280: {v}"
+            );
             let faults = v["faults"].as_array().unwrap();
-            assert_eq!(faults.len(), 1, "{v}");
-            assert_eq!(faults[0]["kind"], "bridge.fault_state");
-            assert_eq!(faults[0]["bus"], "SENSORS");
+            assert_eq!(
+                faults.len(),
+                1,
+                "the 47k run reports exactly one fault: {v}"
+            );
+            assert_eq!(
+                faults[0]["kind"], "bridge.fault_state",
+                "the fault is the bridge's fault state"
+            );
+            assert_eq!(faults[0]["bus"], "SENSORS", "the fault is on bus SENSORS");
             // The firmware's observation, its own record: U2 timed out at TXIS.
-            assert_eq!(u2["status"], "timeout_txis", "{v}");
+            assert_eq!(
+                u2["status"], "timeout_txis",
+                "the firmware's own record shows U2 timed out at TXIS: {v}"
+            );
             assert_eq!(
                 kinds,
                 [
@@ -509,33 +640,43 @@ fn p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes() {
                     "analog_rise_exceeds_ceiling",
                     "i2c_timeout"
                 ],
-                "{v}"
+                "the 47k run's error findings are two slow rises and an I2C timeout: {v}"
             );
             for f in &v["findings"].as_array().unwrap()[..2] {
                 let m = f["message"].as_str().unwrap();
                 assert!(
                     m.contains("`SENSORS`") && m.contains("300 ns ceiling") && m.contains("3982.3"),
-                    "{m}"
+                    "each rise finding names the bus, the 300 ns ceiling and the measured 3982.3 ns: {m}"
                 );
             }
         } else {
-            assert_eq!(code, Some(0), "{v}");
-            assert_eq!(v["verdict"], "pass");
-            assert_eq!(v["faults"], serde_json::json!([]));
-            assert!(bme, "{v}");
+            assert_eq!(code, Some(0), "the 2k2 run passes: {v}");
+            assert_eq!(v["verdict"], "pass", "the 2k2 run's verdict is pass");
+            assert_eq!(
+                v["faults"],
+                serde_json::json!([]),
+                "the 2k2 run reports no faults"
+            );
+            assert!(bme, "the unfaulted platform gives Renode a BME280: {v}");
             assert_eq!(
                 (&u2["status"], &u2["observed"]),
-                (&"ok".into(), &"0x60".into())
+                (&"ok".into(), &"0x60".into()),
+                "the 2k2 run's U2 record is ok reading 0x60"
             );
-            assert!(kinds.is_empty(), "{v}");
+            assert!(kinds.is_empty(), "the 2k2 run has no error findings: {v}");
         }
         let (_, again) = run(2);
         for record in ["analog", "faults"] {
-            assert_eq!(v[record].to_string(), again[record].to_string(), "{record}");
+            assert_eq!(
+                v[record].to_string(),
+                again[record].to_string(),
+                "a second run reproduces the same record: {record}"
+            );
         }
         assert_eq!(
             v["boot"]["i2c"].to_string(),
-            again["boot"]["i2c"].to_string()
+            again["boot"]["i2c"].to_string(),
+            "a second run reproduces the same i2c record"
         );
     }
     let _ = fs::remove_dir_all(&dir);
@@ -555,9 +696,16 @@ fn a_read_no_model_answers_fails_as_a_timeout_at_txis() {
         );
     });
     let (code, v) = boot_elf("absent device", &elf, "100ms");
-    assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["i2c_timeout"], "{v}");
-    assert_eq!(v["boot"]["i2c"][0]["status"], "timeout_txis");
+    assert_eq!(code, Some(1), "an absent device exits 1: {v}");
+    assert_eq!(
+        kinds(&v),
+        ["i2c_timeout"],
+        "an absent device reports exactly i2c_timeout: {v}"
+    );
+    assert_eq!(
+        v["boot"]["i2c"][0]["status"], "timeout_txis",
+        "the absent device's I2C status is timeout_txis"
+    );
     let f = v["findings"]
         .as_array()
         .unwrap()
@@ -567,10 +715,13 @@ fn a_read_no_model_answers_fails_as_a_timeout_at_txis() {
     let m = f["message"].as_str().unwrap();
     assert!(
         m.contains("U2") && m.contains("0x76") && m.contains("TXIS") && m.contains("0x60"),
-        "{m}"
+        "the timeout message names U2, its address, TXIS and the identity register: {m}"
     );
     // The boot itself completed: the word is set, the core ran to the end.
-    assert_eq!(v["boot"]["boot_word"]["observed"], "0x2100b007");
+    assert_eq!(
+        v["boot"]["boot_word"]["observed"], "0x2100b007",
+        "the boot itself completed with the boot word set"
+    );
 }
 
 #[test]
@@ -586,10 +737,20 @@ fn a_value_one_bit_off_fails_as_an_identity_mismatch() {
         );
     });
     let (code, v) = boot_elf("one bit", &elf, "10ms");
-    assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["i2c_identity_mismatch"], "{v}");
-    assert_eq!(v["boot"]["i2c"][0]["expected"], "0x60");
-    assert_eq!(v["boot"]["i2c"][0]["observed"], "0x160");
+    assert_eq!(code, Some(1), "a one-bit-off value exits 1: {v}");
+    assert_eq!(
+        kinds(&v),
+        ["i2c_identity_mismatch"],
+        "a one-bit-off value reports exactly i2c_identity_mismatch: {v}"
+    );
+    assert_eq!(
+        v["boot"]["i2c"][0]["expected"], "0x60",
+        "the identity mismatch expects 0x60"
+    );
+    assert_eq!(
+        v["boot"]["i2c"][0]["observed"], "0x160",
+        "the identity mismatch observes 0x160"
+    );
 }
 
 /// Renode run directly (not through `simulate`, which refuses a platform other
@@ -637,7 +798,10 @@ fn record_on(platform: &Path, elf: &Path) -> (String, String) {
 fn a_platform_without_the_bme280_leaves_a_txis_timeout_in_the_record() {
     // AET-WO-2202: the emitted platform with U2's declaration removed, by hand.
     let emitted = fs::read_to_string(platform()).unwrap();
-    assert!(emitted.contains("\nu2: I2C.BME280 @ i2c1 0x76\n"));
+    assert!(
+        emitted.contains("\nu2: I2C.BME280 @ i2c1 0x76\n"),
+        "the emitted platform declares the BME280 u2 at i2c1 0x76"
+    );
     let dir = std::env::temp_dir().join(format!("aet-2202-t2-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
@@ -664,13 +828,15 @@ fn a_platform_without_the_bme280_leaves_a_txis_timeout_in_the_record() {
                 .replace("0X", "0x")
                 .as_str(),
             "0x00000060"
-        )
+        ),
+        "with the model the record holds status ok and value 0x60"
     );
     let (status, _) = record_on(&without, firmware());
     answer(&format!("direct, without the model: status={status}"));
     assert_eq!(
         status,
-        format!("{txis:#010x}").to_uppercase().replace("0X", "0x")
+        format!("{txis:#010x}").to_uppercase().replace("0X", "0x"),
+        "without the model the record holds the TXIS timeout status"
     );
     fs::remove_dir_all(&dir).unwrap();
 }
@@ -689,14 +855,17 @@ fn a_firmware_that_skips_the_read_or_its_record_cannot_pass() {
         );
     });
     let (code, v) = boot_elf("skip the read", &skip, "10ms");
-    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(code, Some(1), "a firmware skipping the read exits 1: {v}");
     // The record carries 0, and the device logged no transaction.
     assert_eq!(
         kinds(&v),
         ["i2c_identity_mismatch", "i2c_transaction_unwitnessed"],
-        "{v}"
+        "a firmware skipping the read reports an identity mismatch and an unwitnessed transaction: {v}"
     );
-    assert_eq!(v["boot"]["i2c"][0]["observed"], "0x0");
+    assert_eq!(
+        v["boot"]["i2c"][0]["observed"], "0x0",
+        "the skipped read leaves the record at 0x0"
+    );
 
     let unwritten = mutant("no-record", |d| {
         edit(
@@ -707,9 +876,16 @@ fn a_firmware_that_skips_the_read_or_its_record_cannot_pass() {
         );
     });
     let (code, v) = boot_elf("no record", &unwritten, "10ms");
-    assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["i2c_record_invalid"], "{v}");
-    assert_eq!(v["boot"]["i2c"][0]["status"], "invalid");
+    assert_eq!(code, Some(1), "a firmware with no record exits 1: {v}");
+    assert_eq!(
+        kinds(&v),
+        ["i2c_record_invalid"],
+        "a firmware with no record reports exactly i2c_record_invalid: {v}"
+    );
+    assert_eq!(
+        v["boot"]["i2c"][0]["status"], "invalid",
+        "the missing record's I2C status is invalid"
+    );
 }
 
 /// What Renode 1.17.0's BME280 logs for U2's identity read (`AET-WO-2204`
@@ -750,17 +926,28 @@ fn forged(name: &str, forgery: &'static str) -> PathBuf {
 /// A forgery's verdict: the record is perfect, and the read is unwitnessed:
 /// the device logged nothing.
 fn assert_unwitnessed(v: &Value) {
-    assert_eq!(kinds(v), ["i2c_transaction_unwitnessed"], "{v}");
-    assert_eq!(v["boot"]["i2c"][0]["status"], "ok");
-    assert_eq!(v["boot"]["i2c"][0]["observed"], "0x60");
+    assert_eq!(
+        kinds(v),
+        ["i2c_transaction_unwitnessed"],
+        "the run reports exactly i2c_transaction_unwitnessed: {v}"
+    );
+    assert_eq!(
+        v["boot"]["i2c"][0]["status"], "ok",
+        "the forged read's I2C status is ok"
+    );
+    assert_eq!(
+        v["boot"]["i2c"][0]["observed"], "0x60",
+        "the forged read's record observes 0x60"
+    );
     assert_eq!(
         v["boot"]["i2c_witness"][0]["observed"],
-        serde_json::json!([])
+        serde_json::json!([]),
+        "the device witnessed no transaction"
     );
     let m = message(v, "i2c_transaction_unwitnessed");
     assert!(
         m.contains("U2") && m.contains("0x76") && m.contains("i2c1.u2"),
-        "{m}"
+        "the unwitnessed message names U2, its address and the device instance: {m}"
     );
 }
 
@@ -770,7 +957,7 @@ fn a_forged_record_without_a_transaction_fails_unwitnessed() {
     // the table's 0x60 and never calls `transfer`.
     let elf = forged("forged", "Ok::<usize, I2cError>(1)");
     let (code, v) = boot_elf("forged record", &elf, "10ms");
-    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(code, Some(1), "a forged record exits 1: {v}");
     assert_unwitnessed(&v);
 }
 
@@ -787,7 +974,11 @@ fn a_firmware_that_writes_the_controller_registers_by_hand_fails_unwitnessed() {
         "{ unsafe { core::ptr::write_volatile(0x4000_5404 as *mut u32, 0x0201_04EC); core::ptr::write_volatile(0x4000_5428 as *mut u32, 0xD0); } Ok::<usize, I2cError>(1) }",
     );
     let (code, v) = boot_elf("forged record and registers", &elf, "10ms");
-    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(
+        code,
+        Some(1),
+        "a forged record with hand-written registers exits 1: {v}"
+    );
     assert_unwitnessed(&v);
 }
 
@@ -808,7 +999,7 @@ fn a_forgery_through_every_register_or_a_wrong_address_fails_unwitnessed() {
     );
     for (label, elf) in [("forge every register", all), ("wrong address", wrong)] {
         let (code, v) = boot_elf(label, &elf, "10ms");
-        assert_eq!(code, Some(1), "{label}: {v}");
+        assert_eq!(code, Some(1), "each forgery exits 1: {label}: {v}");
         assert_unwitnessed(&v);
     }
 }
@@ -828,7 +1019,7 @@ fn two_bme() -> &'static (PathBuf, PathBuf) {
             "--out",
             out.to_str().unwrap(),
         ]);
-        assert_eq!(code, Some(0), "{v}");
+        assert_eq!(code, Some(0), "the two-BME spec generates a board: {v}");
         (spec, out.join("board"))
     })
 }
@@ -869,21 +1060,41 @@ fn on_a_bus_with_two_devices_each_read_is_witnessed() {
         );
     });
     let (code, v) = boot_on("two devices", &platform, spec, &real, "10ms");
-    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(
+        code,
+        Some(0),
+        "the real firmware on the two-BME board passes the spec: {v}"
+    );
     let w = v["boot"]["i2c_witness"].as_array().unwrap();
-    assert_eq!(w.len(), 2, "{v}");
-    assert_eq!(w[1]["device"], "i2c1.u5");
+    assert_eq!(
+        w.len(),
+        2,
+        "the witness covers both devices on the bus: {v}"
+    );
+    assert_eq!(
+        w[1]["device"], "i2c1.u5",
+        "the second witnessed device is i2c1.u5"
+    );
     assert_eq!(
         w[1]["observed"],
-        serde_json::json!(["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"])
+        serde_json::json!(["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"]),
+        "Renode's second BME280 logged the write and the read the record claims"
     );
     for (label, elf, who) in [("forged first", first, "U2"), ("forged last", last, "U5")] {
         let (code, v) = boot_on(label, &platform, spec, &elf, "10ms");
-        assert_eq!(code, Some(1), "{label}: {v}");
-        assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{label}: {v}");
+        assert_eq!(
+            code,
+            Some(1),
+            "a forged read on the two-BME board fails the spec: {label}: {v}"
+        );
+        assert_eq!(
+            kinds(&v),
+            ["i2c_transaction_unwitnessed"],
+            "a forged read on the two-BME board is reported unwitnessed: {label}: {v}"
+        );
         assert!(
             message(&v, "i2c_transaction_unwitnessed").starts_with(who),
-            "{label}: {v}"
+            "the unwitnessed finding names the forged device: {label}: {v}"
         );
     }
 }
@@ -903,14 +1114,24 @@ fn a_firmware_parked_in_its_fault_handler_fails_naming_vectactive() {
         );
     });
     let (code, v) = boot_elf("fault-parked", &elf, "10ms");
-    assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["core_in_exception"], "{v}");
+    assert_eq!(code, Some(1), "a fault-parked firmware exits 1: {v}");
+    assert_eq!(
+        kinds(&v),
+        ["core_in_exception"],
+        "a fault-parked firmware reports exactly core_in_exception: {v}"
+    );
     assert!(
         message(&v, "core_in_exception").contains("exception 15"),
-        "{v}"
+        "the core_in_exception message names exception 15: {v}"
     );
-    assert_eq!(v["boot"]["boot_word"]["observed"], "0x2100b007");
-    assert_eq!(v["boot"]["instructions"]["observed"], 1_000_000);
+    assert_eq!(
+        v["boot"]["boot_word"]["observed"], "0x2100b007",
+        "the fault-parked boot word is still set"
+    );
+    assert_eq!(
+        v["boot"]["instructions"]["observed"], 1_000_000,
+        "the fault-parked core ran the full instruction budget"
+    );
 }
 
 #[test]
@@ -935,11 +1156,15 @@ fn a_firmware_that_rewrites_its_loop_in_flash_is_not_parked() {
         );
     });
     let (code, v) = boot_elf("rewritten loop", &elf, "10ms");
-    assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["pc_not_on_self_loop"], "{v}");
+    assert_eq!(code, Some(1), "a rewritten loop exits 1: {v}");
+    assert_eq!(
+        kinds(&v),
+        ["pc_not_on_self_loop"],
+        "a rewritten loop reports exactly pc_not_on_self_loop: {v}"
+    );
     assert!(
         message(&v, "pc_not_on_self_loop").contains("no longer holds"),
-        "{v}"
+        "the pc_not_on_self_loop message says the loop no longer holds: {v}"
     );
 }
 
@@ -949,15 +1174,18 @@ fn the_judge_s_own_reads_of_a_gated_peripheral_are_never_the_firmware_s() {
     // reads of I2C1 and the GPIO ports log locked accesses. With synchronous
     // logging they come after BEGIN and are not attributed to the firmware.
     let (code, v) = boot("1us", "1us");
-    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(code, Some(1), "a 1 us boot fails the spec: {v}");
     // At 1 us nothing is configured yet: the boot word is missing and the
     // registers are at reset. No locked access is the firmware's.
     let k = kinds(&v);
-    assert!(k.contains(&"boot_word_missing"), "{v}");
+    assert!(
+        k.contains(&"boot_word_missing"),
+        "a 1 us boot reports the boot word missing: {v}"
+    );
     assert!(
         k.iter()
             .all(|k| ["boot_word_missing", "register_mismatch"].contains(k)),
-        "{v}"
+        "no locked access at 1 us is attributed to the firmware: {v}"
     );
 }
 
@@ -977,16 +1205,25 @@ fn a_locked_access_late_in_a_flood_reaches_the_judge_whole() {
         );
     });
     let (code, v) = boot_elf("flood-locked", &elf, "10ms");
-    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(code, Some(1), "a flood with a locked access exits 1: {v}");
     let k = kinds(&v);
-    assert!(k.contains(&"locked_peripheral_access"), "{v}");
+    assert!(
+        k.contains(&"locked_peripheral_access"),
+        "the locked access is reported as locked_peripheral_access: {v}"
+    );
     assert!(
         message(&v, "locked_peripheral_access").contains("0x58020800"),
-        "{v}"
+        "the locked-access message carries the register address: {v}"
     );
     // Past the filter's budget: the witness is unread, never passed (D2).
-    assert!(k.contains(&"i2c_transaction_unwitnessed"), "{v}");
-    assert!(message(&v, "renode_log_flood").contains("8 MiB"), "{v}");
+    assert!(
+        k.contains(&"i2c_transaction_unwitnessed"),
+        "past the filter budget the witness is unread, never passed: {v}"
+    );
+    assert!(
+        message(&v, "renode_log_flood").contains("8 MiB"),
+        "the flood is reported with its 8 MiB budget: {v}"
+    );
 }
 
 #[test]
@@ -1011,11 +1248,15 @@ fn a_device_named_for_a_renode_instance_or_keyword_breaks_the_load() {
         )
         .unwrap();
         let (code, v) = aethelgard(&["simulate", "--platform", repl.to_str().unwrap()]);
-        assert_eq!(code, Some(1), "{name}: {v}");
-        assert_eq!(kinds(&v), ["platform_load_error"], "{name}: {v}");
+        assert_eq!(code, Some(1), "each bad device name exits 1: {name}: {v}");
+        assert_eq!(
+            kinds(&v),
+            ["platform_load_error"],
+            "each bad device name reports exactly platform_load_error: {name}: {v}"
+        );
         assert!(
             message(&v, "platform_load_error").contains(error),
-            "{name}: {v}"
+            "each bad device name's load error carries the expected text: {name}: {v}"
         );
     }
 }
@@ -1069,7 +1310,7 @@ fn renode_s_configuration_differs_from_its_default_in_synchronous_logging_alone(
             .stdin(Stdio::null())
             .output()
             .unwrap();
-        assert!(out.status.success(), "{out:?}");
+        assert!(out.status.success(), "Renode runs to completion: {out:?}");
     };
     let sorted = |text: &str| {
         let mut v: Vec<String> = text.lines().map(str::to_owned).collect();
@@ -1087,7 +1328,8 @@ fn renode_s_configuration_differs_from_its_default_in_synchronous_logging_alone(
     let default = fs::read_to_string(plain.join(".config/renode/config")).unwrap();
     assert_eq!(
         sorted(&default.replace(plain.to_str().unwrap(), "$HOME")),
-        sorted(RENODE_DEFAULT_CONFIG)
+        sorted(RENODE_DEFAULT_CONFIG),
+        "Renode's default configuration is exactly the pinned table"
     );
     // The same with the one key changed is read and never written.
     let given = dir.join("given");
@@ -1101,7 +1343,11 @@ fn renode_s_configuration_differs_from_its_default_in_synchronous_logging_alone(
     let config = given.join("renode.config");
     fs::write(&config, &text).unwrap();
     renode(&given, Some(&config), &boot);
-    assert_eq!(fs::read_to_string(&config).unwrap(), text);
+    assert_eq!(
+        fs::read_to_string(&config).unwrap(),
+        text,
+        "Renode only reads the given configuration and never writes it"
+    );
 }
 
 /// `AET-WO-4200` S2, as built: the reference firmware reads U4's JEDEC ID
