@@ -10,6 +10,15 @@ error[E0425]: cannot find type `Token` in this scope
 12 |     fn write(&mut self, _: Token, _: Block, _: usize, _: u32) {}
    |                            ^^^^^ not found in this scope
 
+error[E0046]: not all trait items implemented, missing: `read8`, `write8`
+ --> tests/ui/fail/foreign_registers.rs:8:1
+  |
+8 | impl Registers for Fake {
+  | ^^^^^^^^^^^^^^^^^^^^^^^ missing `read8`, `write8` in implementation
+  |
+  = help: implement the missing item: `fn read8(&mut self, _: sentinel_01_board::board::sealed::Token, _: Block, _: usize) -> u8 { todo!() }`
+  = help: implement the missing item: `fn write8(&mut self, _: sentinel_01_board::board::sealed::Token, _: Block, _: usize, _: u8) { todo!() }`
+
 error[E0277]: the trait bound `Fake: sentinel_01_board::board::sealed::Sealed` is not satisfied
  --> tests/ui/fail/foreign_registers.rs:8:20
   |

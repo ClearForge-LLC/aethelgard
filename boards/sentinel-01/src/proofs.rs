@@ -83,8 +83,16 @@ impl Registers for Image {
                 "Spi1 CFG2 written while the peripheral is enabled",
             );
         }
+        if block == Block::Spi1 && offset == 0x08 {
+            kani::assert(
+                self.spi1[0] & 0x00000001 == 0,
+                "Spi1 CFG1 written while the peripheral is enabled",
+            );
+        }
         if block == Block::GpioA && offset == 0x18 {
             kani::assert(value == 0x00000001 || value == 0x00010000, "GpioA BSRR write touches a pin no solved output owns");
+            // The level it leaves: a set bit wins over a reset bit (RM0433 §11.4.7).
+            self.gpioa[5] = (self.gpioa[5] & !(value >> 16)) | (value & 0xffff);
         }
         if block == Block::GpioA && offset == 0x00 {
             let old = self.gpioa[0];
@@ -135,6 +143,8 @@ impl Registers for Image {
         }
         if block == Block::GpioB && offset == 0x18 {
             kani::assert(false, "GpioB BSRR write touches a pin no solved output owns");
+            // The level it leaves: a set bit wins over a reset bit (RM0433 §11.4.7).
+            self.gpiob[5] = (self.gpiob[5] & !(value >> 16)) | (value & 0xffff);
         }
         if block == Block::GpioB && offset == 0x00 {
             let old = self.gpiob[0];
@@ -164,6 +174,14 @@ impl Registers for Image {
             );
         }
         *self.slot(block, offset) = value;
+    }
+    // A byte access models the register as its word: the low byte read, the
+    // byte written zero-extended, under every rule above.
+    fn read8(&mut self, token: sealed::Token, block: Block, offset: usize) -> u8 {
+        self.read(token, block, offset).to_le_bytes()[0]
+    }
+    fn write8(&mut self, token: sealed::Token, block: Block, offset: usize, value: u8) {
+        self.write(token, block, offset, u32::from(value));
     }
 }
 
@@ -209,8 +227,12 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
         after.gpioa[8] & !0xfff00000 == before.gpioa[8] & !0xfff00000,
         "GpioA word 8: an unsolved pin's field changed",
     );
+    kani::assert(after.gpioa[5] & 0x00000001 != 0, "PA0, a chip select, is not high once its bus started");
+    kani::assert(
+        after.gpioa[5] & !0x00000001 == before.gpioa[5] & !0x00000001,
+        "GpioA word 5: a level no solved output owns changed",
+    );
     kani::assert(after.gpioa[4] == before.gpioa[4], "GpioA word 4 changed");
-    kani::assert(after.gpioa[5] == before.gpioa[5], "GpioA word 5 changed");
     kani::assert(after.gpioa[7] == before.gpioa[7], "GpioA word 7 changed");
     kani::assert(after.gpioa[9] == before.gpioa[9], "GpioA word 9 changed");
     kani::assert(
@@ -283,10 +305,15 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
     kani::assert(after.i2c1[7] == before.i2c1[7], "I2c1 word 7 changed");
     kani::assert(after.i2c1[8] == before.i2c1[8], "I2c1 word 8 changed");
     kani::assert(after.i2c1[9] == before.i2c1[9], "I2c1 word 9 changed");
-    kani::assert(after.spi1[0] & 0x00000001 != 0, "Spi1 is not enabled");
+    kani::assert(after.spi1[0] & 0x00000001 == 0, "Spi1 is left enabled");
     kani::assert(
         after.spi1[0] & !0x00000001 == before.spi1[0] & !0x00000001,
         "Spi1 CR1 changed beyond its enable bit",
+    );
+    kani::assert(after.spi1[2] & 0x0000001f == 0x00000007, "Spi1 frames are not 8 bits");
+    kani::assert(
+        after.spi1[2] & !0x0000001f == before.spi1[2] & !0x0000001f,
+        "Spi1 CFG1 changed beyond DSIZE",
     );
     kani::assert(after.spi1[3] & 0x00400000 != 0, "Spi1 is not a master");
     kani::assert(
@@ -294,11 +321,11 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
         "Spi1 CFG2 changed beyond MASTER",
     );
     kani::assert(after.spi1[1] == before.spi1[1], "Spi1 word 1 changed");
-    kani::assert(after.spi1[2] == before.spi1[2], "Spi1 word 2 changed");
     kani::assert(after.spi1[4] == before.spi1[4], "Spi1 word 4 changed");
     kani::assert(after.spi1[5] == before.spi1[5], "Spi1 word 5 changed");
     kani::assert(after.spi1[6] == before.spi1[6], "Spi1 word 6 changed");
     kani::assert(after.spi1[7] == before.spi1[7], "Spi1 word 7 changed");
+    kani::assert(after.spi1[8] == before.spi1[8], "Spi1 word 8 changed");
     kani::assert(after.spi1[9] == before.spi1[9], "Spi1 word 9 changed");
     kani::assert(after.spi1[10] == before.spi1[10], "Spi1 word 10 changed");
     kani::assert(after.spi1[11] == before.spi1[11], "Spi1 word 11 changed");
@@ -315,8 +342,9 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
 
 /// Every order the typestate API admits: at each of 12 steps, any
 /// action whose inputs exist. The `assume` admits only those orders; the
-/// types forbid the rest at compile time. Each peripheral writes zero or one
-/// byte when it starts, and the output pins are driven zero or one time.
+/// types forbid the rest at compile time. Each I2C peripheral writes zero or
+/// one byte when it starts; each SPI peripheral takes its bus's chip selects;
+/// and the output pins are driven zero or one time first.
 #[kani::proof]
 #[kani::unwind(77)]
 fn every_valid_sequence() {
@@ -445,16 +473,10 @@ fn every_valid_sequence() {
                 i2c1_done = true;
             }
             11 => {
-                kani::assume(spi1_clocked.is_some() && pa5_done.is_some() && pa7_done.is_some() && pa6_done.is_some());
+                kani::assume(spi1_clocked.is_some() && pa5_done.is_some() && pa7_done.is_some() && pa6_done.is_some() && pa0_done.is_some());
                 let i = spi1_clocked.take().unwrap();
-                let mut bus = i.init::<_>(&mut img, pa5_done.take().unwrap(), pa7_done.take().unwrap(), pa6_done.take().unwrap());
+                let _bus = i.init::<_>(&mut img, pa5_done.take().unwrap(), pa7_done.take().unwrap(), pa6_done.take().unwrap(), Spi1Selects { pa0: pa0_done.take().unwrap() });
                 kani::cover!(true, "SPI1 started");
-                if kani::any() {
-                    let levels = [img.gpioa[6], img.gpiob[6]];
-                    bus.write_byte(&mut img, kani::any());
-                    kani::assert(levels == [img.gpioa[6], img.gpiob[6]], "SPI1 write_byte touched a GPIO BSRR");
-                    kani::cover!(true, "SPI1 wrote a byte");
-                }
                 spi1_done = true;
             }
             _ => kani::assume(false),
@@ -462,7 +484,6 @@ fn every_valid_sequence() {
     }
     kani::assert(i2c1_done, "the schedule did not start I2C1");
     kani::assert(spi1_done, "the schedule did not start SPI1");
-    kani::assert(pa0_done.is_some(), "the schedule did not configure PA0");
     check_final(&before, &img, i2c1_timingr);
     kani::cover!(true, "the end of a complete schedule is reachable");
 }
@@ -520,6 +541,13 @@ impl Registers for I2c1Spy {
             kani::assert(false, "a I2c1 transfer wrote a register it does not own");
         }
     }
+    fn read8(&mut self, _: sealed::Token, _: Block, _: usize) -> u8 {
+        kani::assert(false, "a I2c1 transfer made a byte access");
+        0
+    }
+    fn write8(&mut self, _: sealed::Token, _: Block, _: usize, _: u8) {
+        kani::assert(false, "a I2c1 transfer made a byte access");
+    }
 }
 
 /// A transfer of any address, up to two bytes each way and any answers, with
@@ -572,4 +600,217 @@ fn i2c1_transfer_is_bounded_and_ordered() {
         Err(I2cError::Stop) => kani::cover!(true, "I2c1 timed out waiting for STOPF"),
         Err(I2cError::Length) => kani::assert(false, "a transfer of at most two bytes was refused as too long"),
     }
+}
+
+/// Spi1's registers and its devices' chip selects as a transfer may touch them,
+/// in order. `stage` is 0 before, 1 once TSIZE is set, 2 once the device is
+/// selected, 3 once enabled, 4 once started, 5 once EOT is cleared, 6 once
+/// disabled, 7 once deselected.
+struct Spi1Spy {
+    device: Spi1Device,
+    out: [u8; 2],
+    wl: usize,
+    stage: u8,
+    cr1: u32,
+    tsize: u32,
+    sr_reads: u32,
+    rxp: bool,
+    sent: usize,
+    received: usize,
+    touched: bool,
+}
+
+impl Spi1Spy {
+    /// The device's chip select: its port, and its BSRR reset and set words.
+    fn select(&self) -> (Block, u32, u32) {
+        match self.device {
+            Spi1Device::U4 => (Block::GpioA, 0x00010000, 0x00000001),
+        }
+    }
+}
+
+impl sealed::Sealed for Spi1Spy {}
+
+impl Registers for Spi1Spy {
+    fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {
+        self.touched = true;
+        kani::assert(block == Block::Spi1, "a Spi1 transfer read another block");
+        if offset == 0x00 {
+            if kani::any() { self.cr1 & !0x00000200 } else { self.cr1 }
+        } else if offset == 0x14 {
+            kani::assert(self.stage == 4, "SR polled outside the transfer");
+            self.sr_reads += 1;
+            let v: u32 = kani::any();
+            self.rxp = v & 0x00000001 != 0;
+            v
+        } else {
+            kani::assert(false, "a Spi1 transfer read a register it does not own");
+            0
+        }
+    }
+    fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {
+        self.touched = true;
+        let (port, select, deselect) = self.select();
+        if block == port && offset == 0x18 && value == select {
+            kani::assert(self.stage == 1, "the device was selected out of order");
+            self.stage = 2;
+        } else if block == port && offset == 0x18 && value == deselect {
+            kani::assert(self.stage == 6, "the device was deselected before the peripheral was disabled");
+            self.stage = 7;
+        } else if block == Block::Spi1 && offset == 0x04 {
+            kani::assert(self.stage == 0, "CR2 written out of order");
+            kani::assert(self.cr1 & 0x00000001 == 0, "TSIZE written while the peripheral is enabled");
+            self.tsize = value;
+            self.stage = 1;
+        } else if block == Block::Spi1 && offset == 0x00 {
+            kani::assert(
+                (value ^ self.cr1) & !(0x00000001 | 0x00000200) == 0,
+                "CR1 changed beyond SPE and CSTART",
+            );
+            let on = value & (0x00000001 | 0x00000200);
+            if self.stage == 2 {
+                kani::assert(on == 0x00000001, "the peripheral was not enabled alone first");
+                self.stage = 3;
+            } else if self.stage == 3 {
+                kani::assert(on == 0x00000001 | 0x00000200, "the transfer was not started");
+                self.stage = 4;
+            } else if self.stage == 5 {
+                kani::assert(value & 0x00000001 == 0, "the peripheral was not disabled");
+                self.stage = 6;
+            } else {
+                kani::assert(false, "CR1 written out of order");
+            }
+            self.cr1 = value;
+        } else if block == Block::Spi1 && offset == 0x18 {
+            kani::assert(self.stage == 4, "EOT cleared out of order");
+            kani::assert(value == 0x00000008, "IFCR cleared more than EOTC");
+            self.stage = 5;
+        } else {
+            kani::assert(false, "a Spi1 transfer wrote a register it does not own, or another device's chip select");
+        }
+    }
+    fn read8(&mut self, _: sealed::Token, block: Block, offset: usize) -> u8 {
+        self.touched = true;
+        kani::assert(block == Block::Spi1 && offset == 0x30, "a byte read of anything but RXDR");
+        kani::assert(self.stage == 4, "RXDR read outside the transfer");
+        kani::assert(self.rxp, "RXDR read without RXP");
+        self.rxp = false;
+        self.received += 1;
+        kani::any()
+    }
+    fn write8(&mut self, _: sealed::Token, block: Block, offset: usize, value: u8) {
+        self.touched = true;
+        kani::assert(block == Block::Spi1 && offset == 0x20, "a byte write to anything but TXDR");
+        kani::assert(self.stage == 4, "TXDR written outside the transfer");
+        let expected = if self.sent < self.wl { self.out[self.sent] } else { 0 };
+        kani::assert(value == expected, "a frame is not the caller's byte, or a dummy is not 0x00");
+        self.sent += 1;
+        kani::assert(self.sent as u32 <= self.tsize, "more frames sent than TSIZE");
+    }
+}
+
+/// A transfer of any device, up to two bytes out and three in (an identity
+/// read is one and three) and any answers, with each wait bounded at two reads
+/// of `SR`: selects that device before its first frame and deselects it after
+/// the peripheral is disabled, also after a wait that expired; reads `RXDR`
+/// only after `RXP`; and returns `Ok` only when every frame moved.
+#[kani::proof]
+#[kani::unwind(5)]
+fn spi1_transfer_is_bounded_and_ordered() {
+    let mut img = Image {
+        rcc: kani::any(),
+        gpioa: kani::any(),
+        gpiob: kani::any(),
+        i2c1: kani::any(),
+        spi1: kani::any(),
+    };
+    let board = Board::take().unwrap();
+    let mut rcc = board.rcc;
+    let gpioa = rcc.enable_gpioa(&mut img, board.gpioa).split();
+    let pa5 = gpioa.pa5.into_spi1_sck(&mut img);
+    let pa7 = gpioa.pa7.into_spi1_mosi(&mut img);
+    let pa6 = gpioa.pa6.into_spi1_miso(&mut img);
+    let pa0 = gpioa.pa0.into_output(&mut img);
+    let mut bus = rcc
+        .enable_spi1(&mut img, board.spi1)
+        .init(&mut img, pa5, pa7, pa6, Spi1Selects { pa0 });
+    let devices = [Spi1Device::U4];
+    let pick: usize = kani::any();
+    kani::assume(pick < devices.len());
+    let device = devices[pick];
+    // The state `init` and every transfer leave: disabled (`every_valid_sequence`,
+    // and the end of this proof).
+    let cr1: u32 = kani::any();
+    kani::assume(cr1 & 0x00000001 == 0);
+    let (wl, rl): (usize, usize) = (kani::any(), kani::any());
+    kani::assume(wl <= 2 && rl <= 3);
+    let out: [u8; 2] = kani::any();
+    let mut back = [0u8; 3];
+    let mut spy = Spi1Spy { device, out, wl, stage: 0, cr1, tsize: 0, sr_reads: 0, rxp: false, sent: 0, received: 0, touched: false };
+    let spins = 2;
+    let result = bus.transfer_within(&mut spy, device, &out[..wl], &mut back[..rl], spins);
+    let frames = wl + rl;
+    if frames == 0 {
+        kani::assert(result == Err(SpiError::Length), "a transfer of nothing was not refused");
+        kani::assert(!spy.touched, "a refused transfer touched a register");
+        kani::cover!(true, "Spi1 refused a transfer of nothing");
+        return;
+    }
+    kani::assert(spy.stage == 7, "a transfer did not end disabled and deselected");
+    kani::assert(spy.tsize == frames as u32, "TSIZE is not the frames of the transfer");
+    kani::assert(
+        spy.sr_reads as usize <= frames * spins as usize,
+        "a wait read SR more often than its bound",
+    );
+    match result {
+        Ok(n) => {
+            kani::assert(n == rl && spy.sent == frames && spy.received == frames, "Ok without every frame moved");
+            kani::cover!(wl > 0 && rl > 0, "Spi1 wrote, then read");
+            kani::cover!(wl == 1 && rl == 3, "Spi1 made an identity read's frames");
+        }
+        Err(SpiError::Rxp) => {
+            kani::assert(spy.received < frames, "Rxp after every frame moved");
+            kani::cover!(true, "Spi1 timed out waiting for RXP");
+        }
+        Err(SpiError::Length) => kani::assert(false, "a transfer of at most five frames was refused"),
+    }
+}
+
+/// More frames than [`SPI_MAX_FRAMES`] are refused, and touch no register. The
+/// bound fails the proof if a loop of the transfer is reached.
+#[kani::proof]
+#[kani::unwind(2)]
+fn spi1_transfer_refuses_too_many_frames() {
+    let mut img = Image {
+        rcc: kani::any(),
+        gpioa: kani::any(),
+        gpiob: kani::any(),
+        i2c1: kani::any(),
+        spi1: kani::any(),
+    };
+    let board = Board::take().unwrap();
+    let mut rcc = board.rcc;
+    let gpioa = rcc.enable_gpioa(&mut img, board.gpioa).split();
+    let pa5 = gpioa.pa5.into_spi1_sck(&mut img);
+    let pa7 = gpioa.pa7.into_spi1_mosi(&mut img);
+    let pa6 = gpioa.pa6.into_spi1_miso(&mut img);
+    let pa0 = gpioa.pa0.into_output(&mut img);
+    let mut bus = rcc
+        .enable_spi1(&mut img, board.spi1)
+        .init(&mut img, pa5, pa7, pa6, Spi1Selects { pa0 });
+    let devices = [Spi1Device::U4];
+    let pick: usize = kani::any();
+    kani::assume(pick < devices.len());
+    let device = devices[pick];
+    // The state `init` and every transfer leave: disabled (`every_valid_sequence`,
+    // and the end of this proof).
+    let cr1: u32 = kani::any();
+    kani::assume(cr1 & 0x00000001 == 0);
+    let (wl, out) = (1, [0u8; 2]);
+    let mut back = [0u8; SPI_MAX_FRAMES as usize];
+    let mut spy = Spi1Spy { device, out, wl, stage: 0, cr1, tsize: 0, sr_reads: 0, rxp: false, sent: 0, received: 0, touched: false };
+    let result = bus.transfer(&mut spy, device, &out[..wl], &mut back);
+    kani::assert(result == Err(SpiError::Length), "a transfer of too many frames was not refused");
+    kani::assert(!spy.touched, "a refused transfer touched a register");
+    kani::cover!(true, "Spi1 refused too many frames");
 }

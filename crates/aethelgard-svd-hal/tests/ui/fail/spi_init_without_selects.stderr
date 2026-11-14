@@ -1,0 +1,15 @@
+error[E0061]: this method takes 5 arguments but 4 arguments were supplied
+  --> tests/ui/fail/spi_init_without_selects.rs:14:52
+   |
+14 |     let _spi = rcc.enable_spi1(&mut r, board.spi1).init(&mut r, sck, mosi, miso);
+   |                                                    ^^^^------------------------- argument #5 of type `Spi1Selects` is missing
+   |
+note: method defined here
+  --> $WORKSPACE/boards/sentinel-01/src/board.rs
+   |
+   |     pub fn init<R: Registers>(
+   |            ^^^^
+help: provide the argument
+   |
+14 |     let _spi = rcc.enable_spi1(&mut r, board.spi1).init(&mut r, sck, mosi, miso, /* Spi1Selects */);
+   |                                                                                +++++++++++++++++++

@@ -18,7 +18,9 @@ use aethelgard_ir::SolvedTopology;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use super::{BoardError, I2C_MODES, Kind, Plan, Role, Speeds, method, pin_field, port_field};
+use super::{
+    BoardError, I2C_MODES, Kind, Plan, Role, Speeds, method, pin_field, port_field, type_name,
+};
 use crate::cmsis::{self, RegisterError, RegisterFacts};
 
 // belt-and-suspenders: the judge holds its own copy
@@ -42,6 +44,8 @@ pub const STATUS_TXIS: u32 = 0x2202_0001;
 pub const STATUS_TC: u32 = 0x2202_0002;
 pub const STATUS_RXNE: u32 = 0x2202_0003;
 pub const STATUS_STOP: u32 = 0x2202_0004;
+/// An SPI read whose wait for `SR.RXP` expired (`AET-WO-4200`).
+pub const STATUS_RXP: u32 = 0x2202_0005;
 
 /// The memory the linker script describes, from the header.
 struct Memory {
@@ -258,24 +262,37 @@ fn highest(speeds: &Speeds, peripheral: &str) -> &'static str {
     I2C_MODES[*admitted.last().expect("a declared speed admits a mode")].0
 }
 
+/// Where an identity read goes.
+enum Target {
+    /// An I2C device at its address.
+    I2c { address: u8 },
+    /// An SPI device: its bus's device enum, `Spi1Device`, and its variant.
+    Spi { device: String, variant: String },
+}
+
 /// One identity read the firmware makes.
 struct Read {
-    /// The I2C peripheral's field, `i2c1`.
+    /// The peripheral's field, `i2c1` or `spi1`.
     bus: String,
-    address: u8,
+    target: Target,
+    /// The byte written first: an I2C register, or an SPI command.
     register: u8,
     width: u8,
 }
 
-/// The identity reads, in the specification's order: one per device of the
-/// topology whose part has an identity and that `answers` accepts (the twin
-/// has a model for it; this crate cannot depend on the twin). A device on a
-/// peripheral the board does not have as an I2C bus is refused.
+/// The identity reads, as the judge orders its records
+/// (`aethelgard_twin::boot::identity`): the I2C devices in the
+/// specification's order, then the SPI devices in theirs; one per device
+/// that `answers` accepts (the twin has a model for it; this crate cannot
+/// depend on the twin) and whose part has an identity. A device on a
+/// peripheral the board does not have as a bus of its kind is refused.
 fn reads(
     plan: &Plan,
     solved: &SolvedTopology,
     answers: &dyn Fn(&str) -> bool,
 ) -> Result<Vec<Read>, BoardError> {
+    let identity =
+        |part: &str| aethelgard_ir::parts::identity(part).map_err(BoardError::InvalidTopology);
     let mut out = Vec::new();
     for (reference, d) in solved.i2c_devices_in_order() {
         if !answers(&d.part) {
@@ -287,14 +304,38 @@ fn reads(
                 peripheral: d.peripheral.clone(),
             });
         }
-        let Some(id) =
-            aethelgard_ir::parts::identity(&d.part).map_err(BoardError::InvalidTopology)?
-        else {
+        let Some(id) = identity(&d.part)? else {
             continue;
         };
         out.push(Read {
             bus: d.peripheral.to_ascii_lowercase(),
-            address: d.address,
+            target: Target::I2c { address: d.address },
+            register: id.write,
+            width: id.width,
+        });
+    }
+    for (reference, d) in solved.spi_devices_in_order() {
+        if !answers(&d.part) {
+            continue;
+        }
+        let Some(id) = identity(&d.part)? else {
+            continue;
+        };
+        // `Plan::new` placed every SPI device on its bus, or refused it.
+        let sel = plan
+            .selects
+            .get(&d.peripheral)
+            .and_then(|s| s.iter().find(|s| s.reference == reference))
+            .ok_or_else(|| BoardError::DeviceNotOnABus {
+                reference: reference.to_owned(),
+                peripheral: d.peripheral.clone(),
+            })?;
+        out.push(Read {
+            bus: d.peripheral.to_ascii_lowercase(),
+            target: Target::Spi {
+                device: format!("{}Device", type_name(&d.peripheral)),
+                variant: sel.variant.clone(),
+            },
             register: id.write,
             width: id.width,
         });
@@ -326,8 +367,21 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
             imports.push(format!("{}_speed", name.to_ascii_lowercase()));
         }
     }
-    if !reads.is_empty() {
+    let i2c_reads = reads.iter().any(|r| matches!(r.target, Target::I2c { .. }));
+    let spi_reads = reads.iter().any(|r| matches!(r.target, Target::Spi { .. }));
+    if i2c_reads {
         imports.push("I2cError".to_owned());
+    }
+    for name in plan.selects.keys() {
+        let t = type_name(name);
+        let f = name.to_ascii_lowercase();
+        if reads.iter().any(|r| r.bus == f) {
+            imports.push(format!("{t}Device"));
+        }
+        imports.push(format!("{t}Selects"));
+    }
+    if spi_reads {
+        imports.push("SpiError".to_owned());
     }
     imports.push("mmio::Mmio".to_owned());
     let (first, stride) = (RECORD_OFFSET / 4, RECORD_BYTES / 4);
@@ -342,17 +396,27 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
              static mut AETHELGARD_BOOT: [u32; {n_words}] = [0; {n_words}];"
         )
     };
+    let mut statuses = format!("const STATUS_OK: u32 = {STATUS_OK:#010x};\n");
+    if i2c_reads {
+        for (name, v) in [
+            ("TXIS", STATUS_TXIS),
+            ("TC", STATUS_TC),
+            ("RXNE", STATUS_RXNE),
+            ("STOP", STATUS_STOP),
+        ] {
+            let _ = writeln!(statuses, "const STATUS_{name}: u32 = {v:#010x};");
+        }
+    }
+    if spi_reads {
+        let _ = writeln!(statuses, "const STATUS_RXP: u32 = {STATUS_RXP:#010x};");
+    }
     let records = if reads.is_empty() {
         String::new()
     } else {
         format!(
             "/// What a record holds when the read finished: the judge's constants,\n\
              /// `aethelgard_twin::boot::STATUS_*`.\n\
-             const STATUS_OK: u32 = {ok:#010x};\n\
-             const STATUS_TXIS: u32 = {txis:#010x};\n\
-             const STATUS_TC: u32 = {tc:#010x};\n\
-             const STATUS_RXNE: u32 = {rxne:#010x};\n\
-             const STATUS_STOP: u32 = {stop:#010x};\n\
+             {statuses}\
              /// What a transfer that could not run leaves, the judge's own fill.\n\
              const RECORD_UNSET: u32 = {unset:#010x};\n\
              \n\
@@ -367,11 +431,6 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
              }}\n\
              }}\n\
              \n",
-            ok = STATUS_OK,
-            txis = STATUS_TXIS,
-            tc = STATUS_TC,
-            rxne = STATUS_RXNE,
-            stop = STATUS_STOP,
             unset = RECORD_UNSET,
             v = first + 1,
         )
@@ -494,8 +553,13 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     }
     for (pin, p) in &plan.pins {
         let f = pin_field(pin);
+        // An output no bus takes as a chip select is configured and unused.
         let (bind, port) = (
-            if p.role == Role::Output { "_" } else { "" },
+            if p.role == Role::Output && !plan.is_select(pin) {
+                "_"
+            } else {
+                ""
+            },
             port_field(p.port),
         );
         let _ = writeln!(s, "    let {bind}{f} = {port}.{f}.{}(&mut r);", method(p));
@@ -518,29 +582,51 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
                 );
             }
             Kind::Spi => {
-                let _ = writeln!(s, "    let _{f} = {f}.init(&mut r, {args});");
+                let bind = if reads.iter().any(|r| r.bus == f) {
+                    format!("mut {f}")
+                } else {
+                    format!("_{f}")
+                };
+                let selects = match plan.selects.get(name) {
+                    Some(selects) => {
+                        let pins: Vec<String> = selects.iter().map(|s| pin_field(&s.pin)).collect();
+                        format!(", {}Selects {{ {} }}", type_name(name), pins.join(", "))
+                    }
+                    None => String::new(),
+                };
+                let _ = writeln!(s, "    let {bind} = {f}.init(&mut r, {args}{selects});");
             }
         }
     }
     for (k, read) in reads.iter().enumerate() {
+        let (to, errors) = match &read.target {
+            Target::I2c { address } => (
+                format!("{address:#04x}"),
+                "        Err(I2cError::Txis) => (STATUS_TXIS, 0),\n        \
+                 Err(I2cError::Tc) => (STATUS_TC, 0),\n        \
+                 Err(I2cError::Rxne) => (STATUS_RXNE, 0),\n        \
+                 Err(I2cError::Stop) => (STATUS_STOP, 0),\n        \
+                 Err(I2cError::Length) => (RECORD_UNSET, RECORD_UNSET),\n",
+            ),
+            Target::Spi { device, variant } => (
+                format!("{device}::{variant}"),
+                "        Err(SpiError::Rxp) => (STATUS_RXP, 0),\n        \
+                 Err(SpiError::Length) => (RECORD_UNSET, RECORD_UNSET),\n",
+            ),
+        };
         let _ = write!(
             s,
             "    let mut buf{k} = [0u8; {w}];\n    \
-             let (status, value) = match {bus}.transfer(&mut r, {a:#04x}, &[{reg:#04x}], &mut buf{k}) {{\n        \
+             let (status, value) = match {bus}.transfer(&mut r, {to}, &[{reg:#04x}], &mut buf{k}) {{\n        \
              Ok(_) => (\n            \
              STATUS_OK,\n            \
              buf{k}.iter().fold(0u32, |v, &b| (v << 8) | u32::from(b)),\n        \
-             ),\n        \
-             Err(I2cError::Txis) => (STATUS_TXIS, 0),\n        \
-             Err(I2cError::Tc) => (STATUS_TC, 0),\n        \
-             Err(I2cError::Rxne) => (STATUS_RXNE, 0),\n        \
-             Err(I2cError::Stop) => (STATUS_STOP, 0),\n        \
-             Err(I2cError::Length) => (RECORD_UNSET, RECORD_UNSET),\n    \
+             ),\n\
+             {errors}    \
              }};\n    \
              record({k}, status, value);\n",
             w = read.width,
             bus = read.bus,
-            a = read.address,
             reg = read.register,
         );
     }

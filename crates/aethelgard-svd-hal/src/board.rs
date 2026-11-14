@@ -50,11 +50,17 @@ pub enum BoardError {
     #[error("peripheral `{peripheral}` is not one this generator emits (I2Cn, SPIn)")]
     UnsupportedPeripheral { peripheral: String },
     #[error(
-        "device `{reference}` is on `{peripheral}`, which is not an I2C peripheral of this board"
+        "device `{reference}` is on `{peripheral}`, which is not a peripheral of this board of its bus's kind"
     )]
     DeviceNotOnABus {
         reference: String,
         peripheral: String,
+    },
+    #[error("SPI devices `{first}` and `{reference}` share the chip select `{pin}`")]
+    SharedChipSelect {
+        pin: String,
+        first: String,
+        reference: String,
     },
     #[error("signal `{signal}` is not a role of `{peripheral}`")]
     UnsupportedSignal { peripheral: String, signal: String },
@@ -89,6 +95,7 @@ impl BoardError {
             Self::AssignmentMismatch { .. } => "AssignmentMismatch",
             Self::UnsupportedPeripheral { .. } => "UnsupportedPeripheral",
             Self::DeviceNotOnABus { .. } => "DeviceNotOnABus",
+            Self::SharedChipSelect { .. } => "SharedChipSelect",
             Self::UnsupportedSignal { .. } => "UnsupportedSignal",
             Self::IncompletePeripheral { .. } => "IncompletePeripheral",
             Self::CeilingMismatch { .. } => "CeilingMismatch",
@@ -311,6 +318,160 @@ fn emit_transfer(w: &mut String, name: &str, i: &I2cFacts, txdr: u32) {
     );
 }
 
+/// The items every SPI peripheral's transfer shares (`AET-WO-4200`): the
+/// bound on a wait, the bound on a transfer, the typed refusals, and one
+/// frame. Emitted when some SPI peripheral has a device.
+fn emit_spi_shared(w: &mut String, s: &SpiFacts, txdr: u32) {
+    let _ = writeln!(
+        w,
+        "/// The most reads of `SR` any one wait of an SPI transfer makes before it gives up.\n\
+         pub const SPI_WAIT_SPINS: u32 = 20_000;\n\
+         \n\
+         /// The most frames one SPI transfer moves: an identity read is the command and\n\
+         /// at most four bytes, and one transaction per device is all this crate makes.\n\
+         pub const SPI_MAX_FRAMES: u32 = 8;\n\
+         \n\
+         /// Why an SPI transfer gave up. It never panics and never waits without a bound.\n\
+         #[derive(Clone, Copy, PartialEq, Eq, Debug)]\n\
+         pub enum SpiError {{\n    \
+             /// No frame, or more than [`SPI_MAX_FRAMES`]. No register was touched.\n    \
+             Length,\n    \
+             /// `SR.RXP` never rose: a frame's byte did not arrive.\n    \
+             Rxp,\n\
+         }}\n\
+         \n\
+         /// One 8-bit frame: `byte` out through `TXDR`, a wait of at most `spins` reads of\n\
+         /// `SR` for `RXP`, then the byte in from `RXDR`. Both data accesses are one byte\n\
+         /// wide ([`Registers`]). `None` when `RXP` never rose, and `RXDR` is then not\n\
+         /// read: an empty FIFO.\n\
+         fn spi_frame<R: Registers>(r: &mut R, block: Block, byte: u8, spins: u32) -> Option<u8> {{\n    \
+             r.write8(TOKEN, block, {txdr:#04x}, byte);\n    \
+             let mut n = 0;\n    \
+             while n < spins {{\n        \
+                 if r.read(TOKEN, block, {sr:#04x}) & {rxp:#010x} != 0 {{\n            \
+                     return Some(r.read8(TOKEN, block, {rxdr:#04x}));\n        \
+                 }}\n        \
+                 n += 1;\n    \
+             }}\n    \
+             None\n\
+         }}\n",
+        sr = s.sr,
+        rxp = 1u32 << s.rxp,
+        rxdr = s.rxdr,
+    );
+}
+
+/// `expr` shifted by `pos` with `op`, or `expr` alone when `pos` is 0.
+fn shifted(expr: &str, op: &str, pos: u32) -> String {
+    if pos == 0 {
+        expr.to_owned()
+    } else {
+        format!("({expr}) {op} {pos}")
+    }
+}
+
+/// One SPI peripheral's bounded transfer (`AET-WO-4200`): the command and
+/// argument bytes out, then the answer in, with `0x00` clocked out while it
+/// arrives. The register order is the one measured against Renode 1.17.0
+/// (`TSIZE` while disabled, select, `SPE`, `CSTART`, the frames, `EOTC`, `SPE`
+/// off, deselect).
+fn emit_spi_transfer(w: &mut String, name: &str, selects: &[Select], plan: &Plan, facts: &Facts) {
+    let t = type_name(name);
+    let pf = &facts.peripherals[name];
+    let Some(s) = &pf.spi else { return };
+    let bit = |pos: u32| format!("{:#010x}", 1u32 << pos);
+    let arms: Vec<String> = selects
+        .iter()
+        .map(|sel| {
+            let pin = &plan.pins[&sel.pin];
+            let pinf = &facts.pins[&sel.pin];
+            format!(
+                "            {t}Device::{v} => (Block::{port}, {br:#010x}, {bs:#010x}),",
+                v = sel.variant,
+                port = port_type(pin.port),
+                br = 1u32 << pinf.br,
+                bs = 1u32 << pinf.bs,
+            )
+        })
+        .collect();
+    let _ = writeln!(
+        w,
+        "impl {t}<Enabled<()>> {{\n    \
+             /// Selects `device` (its chip select low) and only it, writes `write`, then\n    \
+             /// reads `read` while it clocks out `0x00`; then disables the peripheral and\n    \
+             /// deselects the device, also after a wait that expired. Every frame is one\n    \
+             /// byte, and every wait is bounded by [`SPI_WAIT_SPINS`]. Returns the bytes\n    \
+             /// read, or why it gave up.\n    \
+             pub fn transfer<R: Registers>(\n        \
+                 &mut self,\n        \
+                 r: &mut R,\n        \
+                 device: {t}Device,\n        \
+                 write: &[u8],\n        \
+                 read: &mut [u8],\n    \
+             ) -> Result<usize, SpiError> {{\n        \
+                 self.transfer_within(r, device, write, read, SPI_WAIT_SPINS)\n    \
+             }}\n\
+             \n    \
+             /// [`Self::transfer`] with its own bound on each wait, so the proof can use a\n    \
+             /// small one.\n    \
+             #[doc(hidden)]\n    \
+             pub fn transfer_within<R: Registers>(\n        \
+                 &mut self,\n        \
+                 r: &mut R,\n        \
+                 device: {t}Device,\n        \
+                 write: &[u8],\n        \
+                 read: &mut [u8],\n        \
+                 spins: u32,\n    \
+             ) -> Result<usize, SpiError> {{\n        \
+                 let frames = match u32::try_from(write.len() + read.len()) {{\n            \
+                     Ok(n) if n > 0 && n <= SPI_MAX_FRAMES => n,\n            \
+                     _ => return Err(SpiError::Length),\n        \
+                 }};\n        \
+                 let (port, select, deselect) = match device {{\n\
+         {arms}\n        \
+                 }};\n        \
+                 r.write(TOKEN, Block::{t}, {cr2:#04x}, {tsize_word});\n        \
+                 r.write(TOKEN, port, {bsrr:#04x}, select);\n        \
+                 r.modify(TOKEN, Block::{t}, {cr1:#04x}, |v| v | {spe});\n        \
+                 r.modify(TOKEN, Block::{t}, {cr1:#04x}, |v| v | {cstart});\n        \
+                 let mut fail = false;\n        \
+                 for &byte in write {{\n            \
+                     if spi_frame(r, Block::{t}, byte, spins).is_none() {{\n                \
+                         fail = true;\n                \
+                         break;\n            \
+                     }}\n        \
+                 }}\n        \
+                 let mut got = 0;\n        \
+                 if !fail {{\n            \
+                     for slot in read.iter_mut() {{\n                \
+                         match spi_frame(r, Block::{t}, 0x00, spins) {{\n                    \
+                             Some(byte) => *slot = byte,\n                    \
+                             None => {{\n                        \
+                                 fail = true;\n                        \
+                                 break;\n                    \
+                             }}\n                \
+                         }}\n                \
+                         got += 1;\n            \
+                     }}\n        \
+                 }}\n        \
+                 r.write(TOKEN, Block::{t}, {ifcr:#04x}, {eotc});\n        \
+                 r.modify(TOKEN, Block::{t}, {cr1:#04x}, |v| v & !{spe});\n        \
+                 r.write(TOKEN, port, {bsrr:#04x}, deselect);\n        \
+                 if fail {{ Err(SpiError::Rxp) }} else {{ Ok(got) }}\n    \
+             }}\n\
+         }}\n",
+        arms = arms.join("\n"),
+        cr2 = s.cr2,
+        tsize_word = shifted("frames", "<<", s.tsize),
+        bsrr = facts.gpio.bsrr,
+        cr1 = pf.cr1,
+        spe = bit(pf.enable),
+        cstart = bit(s.cstart),
+        ifcr = s.ifcr,
+        eotc = bit(s.eotc),
+    );
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Role {
     I2cScl,
@@ -324,6 +485,11 @@ enum Role {
 /// MODER values (RM0433 §11.4.1).
 const MODE_OUTPUT: u32 = 0b01;
 const MODE_AF: u32 = 0b10;
+
+/// `SPI_CFG1.DSIZE` for 8-bit frames: the frame's bits less one (RM0433
+/// §50.11.3). The generator's policy: every SPI part this crate reads takes
+/// bytes.
+const SPI_DSIZE: u32 = 7;
 
 impl Role {
     fn signal(self) -> &'static str {
@@ -388,6 +554,20 @@ struct Periph {
     pins: BTreeMap<Role, String>,
 }
 
+/// One SPI device and its chip select (`AET-WO-4200`).
+#[derive(Debug, Clone)]
+struct Select {
+    reference: String,
+    part: String,
+    /// The device's variant in its bus's device enum: the reference
+    /// upper-cased. References are ASCII and distinct in any case
+    /// (`SolvedTopology::validate`), so the variants are distinct; and no
+    /// upper-case word is a Rust keyword (`Self` is mixed case).
+    variant: String,
+    /// The chip select's pin, `PA0`: a solved GPIO output.
+    pin: String,
+}
+
 /// What the topology asks for, checked against the pin table.
 #[derive(Debug, Clone)]
 struct Plan {
@@ -399,6 +579,16 @@ struct Plan {
     /// Peripheral name (`I2C1`) to its plan.
     peripherals: BTreeMap<String, Periph>,
     ports: BTreeSet<char>,
+    /// SPI peripheral name (`SPI1`) to its devices, in the specification's
+    /// order. A peripheral with no device has no entry.
+    selects: BTreeMap<String, Vec<Select>>,
+}
+
+impl Plan {
+    /// Whether `pin` is some SPI device's chip select.
+    fn is_select(&self, pin: &str) -> bool {
+        self.selects.values().flatten().any(|s| s.pin == pin)
+    }
 }
 
 fn crate_name_ok(name: &str) -> bool {
@@ -542,6 +732,40 @@ impl Plan {
                 },
             );
         }
+        let mut selects: BTreeMap<String, Vec<Select>> = BTreeMap::new();
+        let mut owner: BTreeMap<&str, &str> = BTreeMap::new();
+        for (reference, d) in solved.spi_devices_in_order() {
+            if peripherals.get(&d.peripheral).map(|p: &Periph| p.kind) != Some(Kind::Spi) {
+                return Err(BoardError::DeviceNotOnABus {
+                    reference: reference.to_owned(),
+                    peripheral: d.peripheral.clone(),
+                });
+            }
+            // `validate` refuses a chip select that is not a solved GPIO.
+            let pin = solved.gpio.get(&d.cs).ok_or_else(|| {
+                BoardError::InvalidTopology(IrValidationError::SpiDeviceSelect {
+                    id: reference.to_owned(),
+                })
+            })?;
+            // A pin handed to two buses, or twice to one, would not compile:
+            // refuse it by name.
+            if let Some(first) = owner.insert(pin, reference) {
+                return Err(BoardError::SharedChipSelect {
+                    pin: pin.clone(),
+                    first: first.to_owned(),
+                    reference: reference.to_owned(),
+                });
+            }
+            selects
+                .entry(d.peripheral.clone())
+                .or_default()
+                .push(Select {
+                    reference: reference.to_owned(),
+                    part: d.part.clone(),
+                    variant: reference.to_ascii_uppercase(),
+                    pin: pin.clone(),
+                });
+        }
         let ports = pins.values().map(|p| p.port).collect();
         Ok(Plan {
             crate_name: crate_name.into(),
@@ -550,6 +774,7 @@ impl Plan {
             pins,
             peripherals,
             ports,
+            selects,
         })
     }
 }
@@ -588,6 +813,8 @@ struct GpioFacts {
     otyper: u32,
     ospeedr: u32,
     pupdr: u32,
+    /// The output levels, which a `BSRR` write sets and resets.
+    odr: u32,
     bsrr: u32,
     afr: [u32; 2],
     /// (MODER, OTYPER, OSPEEDR, PUPDR, AFR) widths, from consecutive positions.
@@ -621,6 +848,26 @@ struct PeriphFacts {
     txdr: u32,
     /// I2C only: the registers and bits of a transfer.
     i2c: Option<I2cFacts>,
+    /// SPI only: the registers and bits of a transfer.
+    spi: Option<SpiFacts>,
+}
+
+/// The SPI registers (RM0433 §50.11) and bit positions a transfer uses, all
+/// read from the header.
+#[derive(Debug, Clone)]
+struct SpiFacts {
+    cr2: u32,
+    cfg1: u32,
+    sr: u32,
+    ifcr: u32,
+    rxdr: u32,
+    cstart: u32,
+    tsize: u32,
+    dsize: u32,
+    /// `DSIZE`'s width: the next field's position, `FTHLV`, less its own.
+    dsize_width: u32,
+    rxp: u32,
+    eotc: u32,
 }
 
 /// The I2Cv2 registers (RM0433 §48.7) and bit positions a transfer uses, all
@@ -654,6 +901,33 @@ struct Facts {
     peripherals: BTreeMap<String, PeriphFacts>,
 }
 
+fn spi_facts(f: &RegisterFacts, layout: &cmsis::Layout) -> Result<SpiFacts, BoardError> {
+    let dsize = f.position("SPI_CFG1_DSIZE_Pos")?;
+    let dsize_width = f
+        .position("SPI_CFG1_FTHLV_Pos")?
+        .checked_sub(dsize)
+        .filter(|w| (3..=5).contains(w))
+        .ok_or_else(|| {
+            BoardError::Register(RegisterError::MalformedSource {
+                detail: "`SPI_CFG1_DSIZE` and `SPI_CFG1_FTHLV` positions do not give a field width"
+                    .into(),
+            })
+        })?;
+    Ok(SpiFacts {
+        cr2: layout.offset("CR2", 0)?,
+        cfg1: layout.offset("CFG1", 0)?,
+        sr: layout.offset("SR", 0)?,
+        ifcr: layout.offset("IFCR", 0)?,
+        rxdr: layout.offset("RXDR", 0)?,
+        cstart: f.position("SPI_CR1_CSTART_Pos")?,
+        tsize: f.position("SPI_CR2_TSIZE_Pos")?,
+        dsize,
+        dsize_width,
+        rxp: f.position("SPI_SR_RXP_Pos")?,
+        eotc: f.position("SPI_IFCR_EOTC_Pos")?,
+    })
+}
+
 fn gate(facts: &RegisterFacts, rcc: &cmsis::Layout, name: &str) -> Result<Gate, BoardError> {
     let (register, bit) = facts.enable_bit(name)?;
     let offset = rcc.offset(&register, 0)?;
@@ -685,6 +959,7 @@ impl Facts {
             otyper: g.offset("OTYPER", 0)?,
             ospeedr: g.offset("OSPEEDR", 0)?,
             pupdr: g.offset("PUPDR", 0)?,
+            odr: g.offset("ODR", 0)?,
             bsrr: g.offset("BSRR", 0)?,
             afr: [g.offset("AFR", 0)?, g.offset("AFR", 1)?],
             widths: [
@@ -774,6 +1049,10 @@ impl Facts {
                             nackcf: f.position("I2C_ICR_NACKCF_Pos")?,
                         }),
                         Kind::Spi => None,
+                    },
+                    spi: match p.kind {
+                        Kind::I2c => None,
+                        Kind::Spi => Some(spi_facts(f, &layout)?),
                     },
                 },
             );
@@ -946,9 +1225,16 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          /// crate can make. So firmware can neither implement it, which would advance\n\
          /// the typestates on a stand-in, nor call it, which would reach a register\n\
          /// around them. Only the typestate API below can (`INV-02`; adversarial E2, E3).\n\
+         ///\n\
+         /// `read8` and `write8` are single-byte accesses, for the SPI data registers\n\
+         /// only: with frames of 8 bits or less, a 16- or 32-bit access to `SPI_TXDR` or\n\
+         /// `SPI_RXDR` packs two or four frames on silicon (RM0433 Rev 9 §50.4.13) and\n\
+         /// one in Renode 1.17.0, so only a byte access means the same on both.\n\
          pub trait Registers: sealed::Sealed {{\n    \
              fn read(&mut self, token: sealed::Token, block: Block, offset: usize) -> u32;\n    \
              fn write(&mut self, token: sealed::Token, block: Block, offset: usize, value: u32);\n    \
+             fn read8(&mut self, token: sealed::Token, block: Block, offset: usize) -> u8;\n    \
+             fn write8(&mut self, token: sealed::Token, block: Block, offset: usize, value: u8);\n    \
              fn modify(&mut self, token: sealed::Token, block: Block, offset: usize, f: impl FnOnce(u32) -> u32) {{\n        \
                  let value = self.read(sealed::Token(()), block, offset);\n        \
                  self.write(token, block, offset, f(value));\n    \
@@ -1009,6 +1295,14 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
              fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n            \
                  // SAFETY: as for `read`.\n            \
                  unsafe {{ core::ptr::write_volatile((base(block) + offset) as *mut u32, value) }}\n        \
+             }}\n        \
+             fn read8(&mut self, _: sealed::Token, block: Block, offset: usize) -> u8 {{\n            \
+                 // SAFETY: as for `read`, one byte wide.\n            \
+                 unsafe {{ core::ptr::read_volatile((base(block) + offset) as *const u8) }}\n        \
+             }}\n        \
+             fn write8(&mut self, _: sealed::Token, block: Block, offset: usize, value: u8) {{\n            \
+                 // SAFETY: as for `read`, one byte wide.\n            \
+                 unsafe {{ core::ptr::write_volatile((base(block) + offset) as *mut u8, value) }}\n        \
              }}\n    \
          }}\n\
          }}\n\
@@ -1062,6 +1356,16 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     }
     if !speeds.is_empty() {
         w.push_str(I2C_SHARED);
+    }
+    // Every SPI peripheral shares `SPI_TypeDef` and the header's positions.
+    let spi = plan.selects.keys().find_map(|name| {
+        Some((
+            facts.peripherals[name].spi.as_ref()?,
+            facts.peripherals[name].txdr,
+        ))
+    });
+    if let Some((spi, txdr)) = spi {
+        emit_spi_shared(w, spi, txdr);
     }
     // Pins.
     for (pin, p) in &plan.pins {
@@ -1221,38 +1525,113 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             }
             Kind::Spi => {
                 let master = 1u32 << pf.master.unwrap_or_default();
+                let selects = plan
+                    .selects
+                    .get(name)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                let mut params = params;
+                // Each select's BSRR set write, to drive it high in `init`.
+                let mut high = String::new();
+                if !selects.is_empty() {
+                    let _ = writeln!(
+                        w,
+                        "/// The chip selects of `{name}`'s devices, each already an output. [`{t}::init`]\n\
+                         /// takes them all, so nothing transfers on `{name}` before every chip select of\n\
+                         /// the bus is driven: an undriven chip select is a selected part (`AET-WO-4200`\n\
+                         /// F3).\n\
+                         pub struct {t}Selects {{"
+                    );
+                    for sel in selects {
+                        let pin = &plan.pins[&sel.pin];
+                        let _ = writeln!(
+                            w,
+                            "    /// `{r}`'s, net `{net}`.\n    pub {f}: {p}<Output>,",
+                            r = sel.reference,
+                            net = pin.net,
+                            f = pin_field(&sel.pin),
+                            p = sel.pin,
+                        );
+                        let _ = writeln!(
+                            high,
+                            "        r.write(TOKEN, Block::{port}, {bsrr:#04x}, {bs:#010x});",
+                            port = port_type(pin.port),
+                            bsrr = facts.gpio.bsrr,
+                            bs = 1u32 << facts.pins[&sel.pin].bs,
+                        );
+                    }
+                    let _ = writeln!(
+                        w,
+                        "}}\n\
+                         \n\
+                         /// The devices on `{name}`, in the specification's order: each reference,\n\
+                         /// upper-cased.\n\
+                         #[allow(non_camel_case_types)]\n\
+                         #[derive(Clone, Copy, PartialEq, Eq, Debug)]\n\
+                         pub enum {t}Device {{"
+                    );
+                    for sel in selects {
+                        let _ = writeln!(
+                            w,
+                            "    /// `{r}`, a `{part}`, chip select `{pin}`.\n    {v},",
+                            r = sel.reference,
+                            part = sel.part,
+                            pin = sel.pin,
+                            v = sel.variant,
+                        );
+                    }
+                    let _ = writeln!(w, "}}\n");
+                    params.push(format!("_selects: {t}Selects"));
+                }
+                let doc_selects = if selects.is_empty() {
+                    ""
+                } else {
+                    " Every chip select of the bus is\n    \
+                     /// driven high first (deselected), whatever firmware did with it before."
+                };
                 let _ = writeln!(
                     w,
                     "impl {t}<Clocked> {{\n    \
-                         /// Master mode; baud rate and frame format are not solved yet.\n    \
+                         /// Master mode, 8-bit frames, and the peripheral left disabled: each\n    \
+                         /// transfer enables it and disables it again.{doc_selects} The\n    \
+                         /// baud rate, clock polarity and phase, and slave-select management are not\n    \
+                         /// solved yet: they stay at reset (Renode 1.17.0 does not model them).\n    \
                          pub fn init<R: Registers>(\n        \
                              self,\n        \
                              r: &mut R,\n        \
                              {params},\n    \
-                         ) -> {t}<Enabled<()>> {{\n        \
+                         ) -> {t}<Enabled<()>> {{\n\
+                         {high}        \
                              r.modify(TOKEN, Block::{block}, {cr1:#04x}, |v| v & !{enable:#010x});\n        \
+                             r.modify(TOKEN, Block::{block}, {cfg1:#04x}, |v| (v & !{dmask:#010x}) | {dsize:#010x});\n        \
                              r.modify(TOKEN, Block::{block}, {cfg:#04x}, |v| v | {master:#010x});\n        \
-                             r.modify(TOKEN, Block::{block}, {cr1:#04x}, |v| v | {enable:#010x});\n        \
                              {t} {{ _state: PhantomData }}\n    \
                          }}\n\
-                     }}\n\
-                     \n\
-                     impl {t}<Enabled<()>> {{",
+                     }}\n",
                     params = params.join(",\n        "),
                     cr1 = pf.cr1,
                     cfg = pf.config,
+                    cfg1 = pf.spi.as_ref().map_or(0, |s| s.cfg1),
+                    dmask = pf
+                        .spi
+                        .as_ref()
+                        .map_or(0, |s| oracle_mask(s.dsize_width, s.dsize)),
+                    dsize = pf.spi.as_ref().map_or(0, |s| SPI_DSIZE << s.dsize),
                 );
+                if !selects.is_empty() {
+                    emit_spi_transfer(w, name, selects, plan, facts);
+                }
             }
         }
-        let _ = writeln!(
-            w,
-            "    pub fn write_byte<R: Registers>(&mut self, r: &mut R, byte: u8) {{\n        \
-                 r.write(TOKEN, Block::{block}, {txdr:#04x}, u32::from(byte));\n    \
-             }}\n\
-             }}\n",
-            txdr = pf.txdr
-        );
         if let Some(i) = &pf.i2c {
+            let _ = writeln!(
+                w,
+                "    pub fn write_byte<R: Registers>(&mut self, r: &mut R, byte: u8) {{\n        \
+                     r.write(TOKEN, Block::{block}, {txdr:#04x}, u32::from(byte));\n    \
+                 }}\n\
+                 }}\n",
+                txdr = pf.txdr
+            );
             emit_transfer(w, name, i, pf.txdr);
         }
     }
@@ -1497,6 +1876,20 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             cr1 = pf.cr1 / 4,
             en = 1u32 << pf.enable,
         );
+        if let Some(spi) = &pf.spi {
+            let _ = writeln!(
+                w,
+                "        if block == Block::{t} && offset == {cfg1:#04x} {{\n            \
+                     kani::assert(\n                \
+                         self.{field}[{cr1}] & {en:#010x} == 0,\n                \
+                         \"{t} CFG1 written while the peripheral is enabled\",\n            \
+                     );\n        \
+                 }}",
+                cfg1 = spi.cfg1,
+                cr1 = pf.cr1 / 4,
+                en = 1u32 << pf.enable,
+            );
+        }
     }
     // GPIO write-time rules (adversarial E6, E7): a BSRR write may touch only a
     // solved output's set or reset bit; a MODER write may move only solved pins,
@@ -1525,11 +1918,14 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let _ = writeln!(
             w,
             "        if block == Block::{t} && offset == {bsrr:#04x} {{\n            \
-                 kani::assert({rule}, \"{t} BSRR write touches a pin no solved output owns\");\n        \
+                 kani::assert({rule}, \"{t} BSRR write touches a pin no solved output owns\");\n            \
+                 // The level it leaves: a set bit wins over a reset bit (RM0433 §11.4.7).\n            \
+                 self.{field}[{oi}] = (self.{field}[{oi}] & !(value >> 16)) | (value & 0xffff);\n        \
              }}\n        \
              if block == Block::{t} && offset == {moder:#04x} {{\n            \
                  let old = self.{field}[{mi}];",
             bsrr = g.bsrr,
+            oi = g.odr / 4,
             moder = g.moder,
             mi = g.moder / 4,
         );
@@ -1597,7 +1993,17 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     }
     let _ = writeln!(
         w,
-        "        *self.slot(block, offset) = value;\n    }}\n}}\n"
+        "        *self.slot(block, offset) = value;\n    \
+         }}\n    \
+         // A byte access models the register as its word: the low byte read, the\n    \
+         // byte written zero-extended, under every rule above.\n    \
+         fn read8(&mut self, token: sealed::Token, block: Block, offset: usize) -> u8 {{\n        \
+             self.read(token, block, offset).to_le_bytes()[0]\n    \
+         }}\n    \
+         fn write8(&mut self, token: sealed::Token, block: Block, offset: usize, value: u8) {{\n        \
+             self.write(token, block, offset, u32::from(value));\n    \
+         }}\n\
+         }}\n"
     );
 
     // The final-state oracle.
@@ -1647,6 +2053,37 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             );
             touched.insert(*reg);
         }
+        // The levels: every chip select high once its bus started (F3, and
+        // nothing drives one after `init` takes it); a level no solved output
+        // owns, unchanged.
+        let outputs: Vec<(&String, &PinPlan)> = plan
+            .pins
+            .iter()
+            .filter(|(_, p)| p.port == *port && p.role == Role::Output)
+            .collect();
+        if !outputs.is_empty() {
+            let i = g.odr / 4;
+            let t = port_type(*port);
+            let mut owned = 0u32;
+            for (pin, _) in &outputs {
+                let bit = 1u32 << facts.pins[*pin].bs;
+                owned |= bit;
+                if plan.is_select(pin) {
+                    let _ = writeln!(
+                        w,
+                        "    kani::assert(after.{field}[{i}] & {bit:#010x} != 0, \"{pin}, a chip select, is not high once its bus started\");"
+                    );
+                }
+            }
+            let _ = writeln!(
+                w,
+                "    kani::assert(\n        \
+                     after.{field}[{i}] & !{owned:#010x} == before.{field}[{i}] & !{owned:#010x},\n        \
+                     \"{t} word {i}: a level no solved output owns changed\",\n    \
+                 );"
+            );
+            touched.insert(g.odr);
+        }
         for i in 0..g.words {
             if !touched.contains(&(i * 4)) {
                 let _ = writeln!(
@@ -1683,16 +2120,38 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let t = type_name(name);
         let field = name.to_ascii_lowercase();
         let cr1 = pf.cr1 / 4;
+        // An I2C peripheral is left enabled; an SPI one disabled, as every
+        // transfer leaves it (`AET-WO-4200`).
+        let (enabled, state) = match plan.peripherals[name].kind {
+            Kind::I2c => ("!=", "is not enabled"),
+            Kind::Spi => ("==", "is left enabled"),
+        };
         let _ = writeln!(
             w,
-            "    kani::assert(after.{field}[{cr1}] & {en:#010x} != 0, \"{t} is not enabled\");\n    \
+            "    kani::assert(after.{field}[{cr1}] & {en:#010x} {enabled} 0, \"{t} {state}\");\n    \
              kani::assert(\n        \
                  after.{field}[{cr1}] & !{en:#010x} == before.{field}[{cr1}] & !{en:#010x},\n        \
                  \"{t} CR1 changed beyond its enable bit\",\n    \
              );",
             en = 1u32 << pf.enable
         );
-        let written = [pf.cr1, pf.config, pf.txdr];
+        let written = match &pf.spi {
+            None => vec![pf.cr1, pf.config, pf.txdr],
+            Some(spi) => {
+                let mask = oracle_mask(spi.dsize_width, spi.dsize);
+                let _ = writeln!(
+                    w,
+                    "    kani::assert(after.{field}[{c}] & {mask:#010x} == {v:#010x}, \"{t} frames are not 8 bits\");\n    \
+                     kani::assert(\n        \
+                         after.{field}[{c}] & !{mask:#010x} == before.{field}[{c}] & !{mask:#010x},\n        \
+                         \"{t} CFG1 changed beyond DSIZE\",\n    \
+                     );",
+                    c = spi.cfg1 / 4,
+                    v = SPI_DSIZE << spi.dsize,
+                );
+                vec![pf.cr1, spi.cfg1, pf.config]
+            }
+        };
         match plan.peripherals[name].kind {
             Kind::I2c => {
                 let _ = writeln!(
@@ -1733,8 +2192,9 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         w,
         "/// Every order the typestate API admits: at each of {actions} steps, any\n\
          /// action whose inputs exist. The `assume` admits only those orders; the\n\
-         /// types forbid the rest at compile time. Each peripheral writes zero or one\n\
-         /// byte when it starts, and the output pins are driven zero or one time.\n\
+         /// types forbid the rest at compile time. Each I2C peripheral writes zero or\n\
+         /// one byte when it starts; each SPI peripheral takes its bus's chip selects;\n\
+         /// and the output pins are driven zero or one time first.\n\
          #[kani::proof]\n\
          #[kani::unwind({unwind})]\n\
          fn every_valid_sequence() {{\n    \
@@ -1852,11 +2312,33 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     for (name, p) in &plan.peripherals {
         let f = name.to_ascii_lowercase();
         let pins: Vec<String> = p.pins.values().map(|n| pin_field(n)).collect();
-        let ready: Vec<String> = pins.iter().map(|n| format!("{n}_done.is_some()")).collect();
-        let args: Vec<String> = pins
+        let selects: Vec<String> = plan
+            .selects
+            .get(name)
+            .into_iter()
+            .flatten()
+            .map(|s| pin_field(&s.pin))
+            .collect();
+        let ready: Vec<String> = pins
+            .iter()
+            .chain(&selects)
+            .map(|n| format!("{n}_done.is_some()"))
+            .collect();
+        let mut args: Vec<String> = pins
             .iter()
             .map(|n| format!("{n}_done.take().unwrap()"))
             .collect();
+        if !selects.is_empty() {
+            let fields: Vec<String> = selects
+                .iter()
+                .map(|n| format!("{n}: {n}_done.take().unwrap()"))
+                .collect();
+            args.push(format!(
+                "{}Selects {{ {} }}",
+                type_name(name),
+                fields.join(", ")
+            ));
+        }
         let _ = writeln!(
             w,
             "            {a} => {{\n                \
@@ -1922,7 +2404,14 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                     );
                 }
             }
-            Kind::Spi => start(w, "_", "", "                "),
+            Kind::Spi => {
+                let _ = writeln!(
+                    w,
+                    "                let _bus = i.init::<_>(&mut img, {args});\n                \
+                     kani::cover!(true, \"{name} started\");",
+                    args = args.join(", "),
+                );
+            }
         }
         let _ = writeln!(w, "                {f}_done = true;\n            }}");
         a += 1;
@@ -1938,8 +2427,9 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             "    kani::assert({f}_done, \"the schedule did not start {name}\");"
         );
     }
+    // A chip select is configured before its bus starts, which takes it.
     for (pin, p) in &plan.pins {
-        if p.role == Role::Output {
+        if p.role == Role::Output && !plan.is_select(pin) {
             let f = pin_field(pin);
             let _ = writeln!(
                 w,
@@ -1961,7 +2451,288 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         timingr_args.concat()
     );
     emit_transfer_proofs(w, plan, facts, speeds);
+    emit_spi_transfer_proofs(w, plan, facts);
     s
+}
+
+/// The proof over each SPI peripheral's transfer (`AET-WO-4200`), on the
+/// harness-owned register image: from the state `init` leaves (the
+/// peripheral disabled, every chip select high), a transfer of any device
+/// touches only that peripheral and that device's chip select, in the order
+/// of a transfer, within its bound, and leaves the same state. The
+/// environment is nondeterministic: every `SR` and `RXDR` read returns any
+/// value, and `CSTART` may or may not have cleared itself.
+fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
+    for (name, selects) in &plan.selects {
+        let pf = &facts.peripherals[name];
+        let Some(s) = &pf.spi else { continue };
+        let p = &plan.peripherals[name];
+        let t = type_name(name);
+        let m = name.to_ascii_lowercase();
+        let bit = |pos: u32| format!("{:#010x}", 1u32 << pos);
+        let (spe, cstart) = (bit(pf.enable), bit(s.cstart));
+        let arms: Vec<String> = selects
+            .iter()
+            .map(|sel| {
+                let pinf = &facts.pins[&sel.pin];
+                format!(
+                    "            {t}Device::{v} => (Block::{port}, {br:#010x}, {bs:#010x}),",
+                    v = sel.variant,
+                    port = port_type(plan.pins[&sel.pin].port),
+                    br = 1u32 << pinf.br,
+                    bs = 1u32 << pinf.bs,
+                )
+            })
+            .collect();
+        let _ = writeln!(
+            w,
+            "\n\
+             /// {t}'s registers and its devices' chip selects as a transfer may touch them,\n\
+             /// in order. `stage` is 0 before, 1 once TSIZE is set, 2 once the device is\n\
+             /// selected, 3 once enabled, 4 once started, 5 once EOT is cleared, 6 once\n\
+             /// disabled, 7 once deselected.\n\
+             struct {t}Spy {{\n    \
+                 device: {t}Device,\n    \
+                 out: [u8; 2],\n    \
+                 wl: usize,\n    \
+                 stage: u8,\n    \
+                 cr1: u32,\n    \
+                 tsize: u32,\n    \
+                 sr_reads: u32,\n    \
+                 rxp: bool,\n    \
+                 sent: usize,\n    \
+                 received: usize,\n    \
+                 touched: bool,\n\
+             }}\n\
+             \n\
+             impl {t}Spy {{\n    \
+                 /// The device's chip select: its port, and its BSRR reset and set words.\n    \
+                 fn select(&self) -> (Block, u32, u32) {{\n        \
+                     match self.device {{\n\
+             {arms}\n        \
+                     }}\n    \
+                 }}\n\
+             }}\n\
+             \n\
+             impl sealed::Sealed for {t}Spy {{}}\n\
+             \n\
+             impl Registers for {t}Spy {{\n    \
+                 fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {{\n        \
+                     self.touched = true;\n        \
+                     kani::assert(block == Block::{t}, \"a {t} transfer read another block\");\n        \
+                     if offset == {cr1:#04x} {{\n            \
+                         if kani::any() {{ self.cr1 & !{cstart} }} else {{ self.cr1 }}\n        \
+                     }} else if offset == {sr:#04x} {{\n            \
+                         kani::assert(self.stage == 4, \"SR polled outside the transfer\");\n            \
+                         self.sr_reads += 1;\n            \
+                         let v: u32 = kani::any();\n            \
+                         self.rxp = v & {rxp} != 0;\n            \
+                         v\n        \
+                     }} else {{\n            \
+                         kani::assert(false, \"a {t} transfer read a register it does not own\");\n            \
+                         0\n        \
+                     }}\n    \
+                 }}\n    \
+                 fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n        \
+                     self.touched = true;\n        \
+                     let (port, select, deselect) = self.select();\n        \
+                     if block == port && offset == {bsrr:#04x} && value == select {{\n            \
+                         kani::assert(self.stage == 1, \"the device was selected out of order\");\n            \
+                         self.stage = 2;\n        \
+                     }} else if block == port && offset == {bsrr:#04x} && value == deselect {{\n            \
+                         kani::assert(self.stage == 6, \"the device was deselected before the peripheral was disabled\");\n            \
+                         self.stage = 7;\n        \
+                     }} else if block == Block::{t} && offset == {cr2:#04x} {{\n            \
+                         kani::assert(self.stage == 0, \"CR2 written out of order\");\n            \
+                         kani::assert(self.cr1 & {spe} == 0, \"TSIZE written while the peripheral is enabled\");\n            \
+                         self.tsize = value;\n            \
+                         self.stage = 1;\n        \
+                     }} else if block == Block::{t} && offset == {cr1:#04x} {{\n            \
+                         kani::assert(\n                \
+                             (value ^ self.cr1) & !({spe} | {cstart}) == 0,\n                \
+                             \"CR1 changed beyond SPE and CSTART\",\n            \
+                         );\n            \
+                         let on = value & ({spe} | {cstart});\n            \
+                         if self.stage == 2 {{\n                \
+                             kani::assert(on == {spe}, \"the peripheral was not enabled alone first\");\n                \
+                             self.stage = 3;\n            \
+                         }} else if self.stage == 3 {{\n                \
+                             kani::assert(on == {spe} | {cstart}, \"the transfer was not started\");\n                \
+                             self.stage = 4;\n            \
+                         }} else if self.stage == 5 {{\n                \
+                             kani::assert(value & {spe} == 0, \"the peripheral was not disabled\");\n                \
+                             self.stage = 6;\n            \
+                         }} else {{\n                \
+                             kani::assert(false, \"CR1 written out of order\");\n            \
+                         }}\n            \
+                         self.cr1 = value;\n        \
+                     }} else if block == Block::{t} && offset == {ifcr:#04x} {{\n            \
+                         kani::assert(self.stage == 4, \"EOT cleared out of order\");\n            \
+                         kani::assert(value == {eotc}, \"IFCR cleared more than EOTC\");\n            \
+                         self.stage = 5;\n        \
+                     }} else {{\n            \
+                         kani::assert(false, \"a {t} transfer wrote a register it does not own, or another device's chip select\");\n        \
+                     }}\n    \
+                 }}\n    \
+                 fn read8(&mut self, _: sealed::Token, block: Block, offset: usize) -> u8 {{\n        \
+                     self.touched = true;\n        \
+                     kani::assert(block == Block::{t} && offset == {rxdr:#04x}, \"a byte read of anything but RXDR\");\n        \
+                     kani::assert(self.stage == 4, \"RXDR read outside the transfer\");\n        \
+                     kani::assert(self.rxp, \"RXDR read without RXP\");\n        \
+                     self.rxp = false;\n        \
+                     self.received += 1;\n        \
+                     kani::any()\n    \
+                 }}\n    \
+                 fn write8(&mut self, _: sealed::Token, block: Block, offset: usize, value: u8) {{\n        \
+                     self.touched = true;\n        \
+                     kani::assert(block == Block::{t} && offset == {txdr:#04x}, \"a byte write to anything but TXDR\");\n        \
+                     kani::assert(self.stage == 4, \"TXDR written outside the transfer\");\n        \
+                     let expected = if self.sent < self.wl {{ self.out[self.sent] }} else {{ 0 }};\n        \
+                     kani::assert(value == expected, \"a frame is not the caller's byte, or a dummy is not 0x00\");\n        \
+                     self.sent += 1;\n        \
+                     kani::assert(self.sent as u32 <= {frames_set}, \"more frames sent than TSIZE\");\n    \
+                 }}\n\
+             }}",
+            arms = arms.join("\n"),
+            cr1 = pf.cr1,
+            sr = s.sr,
+            rxp = bit(s.rxp),
+            bsrr = facts.gpio.bsrr,
+            cr2 = s.cr2,
+            ifcr = s.ifcr,
+            eotc = bit(s.eotc),
+            rxdr = s.rxdr,
+            txdr = pf.txdr,
+            frames_set = shifted("self.tsize", ">>", s.tsize),
+        );
+        // The setup: the bus's ports, its pins and chip selects, `init`.
+        let mut blocks: Vec<String> = vec!["rcc".into()];
+        blocks.extend(plan.ports.iter().map(|p| port_field(*p)));
+        blocks.extend(plan.peripherals.keys().map(|n| n.to_ascii_lowercase()));
+        let pins: Vec<&String> = p.pins.values().collect();
+        let select_pins: Vec<&String> = selects.iter().map(|s| &s.pin).collect();
+        let ports: BTreeSet<char> = pins
+            .iter()
+            .chain(&select_pins)
+            .map(|n| plan.pins[*n].port)
+            .collect();
+        let mut setup = String::new();
+        for b in &blocks {
+            let _ = writeln!(setup, "        {b}: kani::any(),");
+        }
+        let _ = writeln!(
+            setup,
+            "    }};\n    \
+             let board = Board::take().unwrap();\n    \
+             let mut rcc = board.rcc;"
+        );
+        for port in &ports {
+            let f = port_field(*port);
+            let _ = writeln!(
+                setup,
+                "    let {f} = rcc.enable_{f}(&mut img, board.{f}).split();"
+            );
+        }
+        for pin in pins.iter().chain(&select_pins) {
+            let _ = writeln!(
+                setup,
+                "    let {f} = {port}.{f}.{method}(&mut img);",
+                f = pin_field(pin),
+                port = port_field(plan.pins[*pin].port),
+                method = method(&plan.pins[*pin])
+            );
+        }
+        let args: Vec<String> = pins.iter().map(|n| pin_field(n)).collect();
+        let fields: Vec<String> = select_pins.iter().map(|n| pin_field(n)).collect();
+        let variants: Vec<String> = selects
+            .iter()
+            .map(|s| format!("{t}Device::{}", s.variant))
+            .collect();
+        let _ = writeln!(
+            setup,
+            "    let mut bus = rcc\n        \
+                 .enable_{m}(&mut img, board.{m})\n        \
+                 .init(&mut img, {args}, {t}Selects {{ {fields} }});\n    \
+             let devices = [{variants}];\n    \
+             let pick: usize = kani::any();\n    \
+             kani::assume(pick < devices.len());\n    \
+             let device = devices[pick];\n    \
+             // The state `init` and every transfer leave: disabled (`every_valid_sequence`,\n    \
+             // and the end of this proof).\n    \
+             let cr1: u32 = kani::any();\n    \
+             kani::assume(cr1 & {spe} == 0);",
+            args = args.join(", "),
+            fields = fields.join(", "),
+            variants = variants.join(", "),
+        );
+        let spy = format!(
+            "{t}Spy {{ device, out, wl, stage: 0, cr1, tsize: 0, sr_reads: 0, rxp: false, sent: 0, received: 0, touched: false }}"
+        );
+        let _ = writeln!(
+            w,
+            "\n\
+             /// A transfer of any device, up to two bytes out and three in (an identity\n\
+             /// read is one and three) and any answers, with each wait bounded at two reads\n\
+             /// of `SR`: selects that device before its first frame and deselects it after\n\
+             /// the peripheral is disabled, also after a wait that expired; reads `RXDR`\n\
+             /// only after `RXP`; and returns `Ok` only when every frame moved.\n\
+             #[kani::proof]\n\
+             #[kani::unwind(5)]\n\
+             fn {m}_transfer_is_bounded_and_ordered() {{\n    \
+                 let mut img = Image {{\n\
+             {setup}    \
+                 let (wl, rl): (usize, usize) = (kani::any(), kani::any());\n    \
+                 kani::assume(wl <= 2 && rl <= 3);\n    \
+                 let out: [u8; 2] = kani::any();\n    \
+                 let mut back = [0u8; 3];\n    \
+                 let mut spy = {spy};\n    \
+                 let spins = 2;\n    \
+                 let result = bus.transfer_within(&mut spy, device, &out[..wl], &mut back[..rl], spins);\n    \
+                 let frames = wl + rl;\n    \
+                 if frames == 0 {{\n        \
+                     kani::assert(result == Err(SpiError::Length), \"a transfer of nothing was not refused\");\n        \
+                     kani::assert(!spy.touched, \"a refused transfer touched a register\");\n        \
+                     kani::cover!(true, \"{t} refused a transfer of nothing\");\n        \
+                     return;\n    \
+                 }}\n    \
+                 kani::assert(spy.stage == 7, \"a transfer did not end disabled and deselected\");\n    \
+                 kani::assert(spy.tsize == {tsize_word}, \"TSIZE is not the frames of the transfer\");\n    \
+                 kani::assert(\n        \
+                     spy.sr_reads as usize <= frames * spins as usize,\n        \
+                     \"a wait read SR more often than its bound\",\n    \
+                 );\n    \
+                 match result {{\n        \
+                     Ok(n) => {{\n            \
+                         kani::assert(n == rl && spy.sent == frames && spy.received == frames, \"Ok without every frame moved\");\n            \
+                         kani::cover!(wl > 0 && rl > 0, \"{t} wrote, then read\");\n            \
+                         kani::cover!(wl == 1 && rl == 3, \"{t} made an identity read's frames\");\n        \
+                     }}\n        \
+                     Err(SpiError::Rxp) => {{\n            \
+                         kani::assert(spy.received < frames, \"Rxp after every frame moved\");\n            \
+                         kani::cover!(true, \"{t} timed out waiting for RXP\");\n        \
+                     }}\n        \
+                     Err(SpiError::Length) => kani::assert(false, \"a transfer of at most five frames was refused\"),\n    \
+                 }}\n\
+             }}\n\
+             \n\
+             /// More frames than [`SPI_MAX_FRAMES`] are refused, and touch no register. The\n\
+             /// bound fails the proof if a loop of the transfer is reached.\n\
+             #[kani::proof]\n\
+             #[kani::unwind(2)]\n\
+             fn {m}_transfer_refuses_too_many_frames() {{\n    \
+                 let mut img = Image {{\n\
+             {setup}    \
+                 let (wl, out) = (1, [0u8; 2]);\n    \
+                 let mut back = [0u8; SPI_MAX_FRAMES as usize];\n    \
+                 let mut spy = {spy};\n    \
+                 let result = bus.transfer(&mut spy, device, &out[..wl], &mut back);\n    \
+                 kani::assert(result == Err(SpiError::Length), \"a transfer of too many frames was not refused\");\n    \
+                 kani::assert(!spy.touched, \"a refused transfer touched a register\");\n    \
+                 kani::cover!(true, \"{t} refused too many frames\");\n\
+             }}",
+            tsize_word = shifted("frames as u32", "<<", s.tsize),
+        );
+    }
 }
 
 /// The proof over each I2C peripheral's transfer (`AET-WO-2202`, ruled on the
@@ -2038,6 +2809,13 @@ fn emit_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts, speeds: &Spe
                      }} else {{\n            \
                          kani::assert(false, \"a {t} transfer wrote a register it does not own\");\n        \
                      }}\n    \
+                 }}\n    \
+                 fn read8(&mut self, _: sealed::Token, _: Block, _: usize) -> u8 {{\n        \
+                     kani::assert(false, \"a {t} transfer made a byte access\");\n        \
+                     0\n    \
+                 }}\n    \
+                 fn write8(&mut self, _: sealed::Token, _: Block, _: usize, _: u8) {{\n        \
+                     kani::assert(false, \"a {t} transfer made a byte access\");\n    \
                  }}\n\
              }}\n\
              \n\
@@ -2145,7 +2923,7 @@ mod tests {
     /// Sentinel-01's solved topology, written out.
     fn solved() -> SolvedTopology {
         SolvedTopology {
-            schema_version: 2,
+            schema_version: 3,
             specification_sha256: "0".repeat(64),
             assignments: BTreeMap::from([
                 ("SCL".into(), assign("PB6", "I2C1", "I2C1_SCL", 4)),
@@ -2156,6 +2934,7 @@ mod tests {
             i2c_speeds: BTreeMap::from([("BUS".into(), 400_000)]),
             analog_lines: analog_lines(&[("SCL", "BUS"), ("SDA", "BUS")]),
             i2c_devices: BTreeMap::new(),
+            spi_devices: BTreeMap::new(),
         }
     }
 
@@ -2391,5 +3170,185 @@ mod tests {
         assert!(files["firmware/Cargo.toml"].contains("b = { path = \"..\" }"));
         assert!(files["firmware/Cargo.lock"].contains("name = \"b-firmware\""));
         assert!(!files.keys().any(|k| k.ends_with("build.rs")));
+    }
+
+    fn spi_device(index: u32, peripheral: &str, cs: &str) -> aethelgard_ir::SolvedSpiDevice {
+        aethelgard_ir::SolvedSpiDevice {
+            index,
+            part: "W25Q64JV".into(),
+            bus: format!("{peripheral}_BUS"),
+            peripheral: peripheral.into(),
+            cs: cs.into(),
+        }
+    }
+
+    /// [`solved`], with SPI1 on PA5, PA6 and PA7 and the devices `devices`
+    /// (reference, chip-select net, pin) on it.
+    fn with_spi(devices: &[(&str, &str, &str)]) -> SolvedTopology {
+        let mut s = solved();
+        for (net, pin, signal) in [
+            ("SCK", "PA5", "SCK"),
+            ("MISO", "PA6", "MISO"),
+            ("MOSI", "PA7", "MOSI"),
+        ] {
+            s.assignments.insert(
+                net.into(),
+                assign(pin, "SPI1", &format!("SPI1_{signal}"), 5),
+            );
+        }
+        s.gpio.clear();
+        for (i, (reference, net, pin)) in devices.iter().enumerate() {
+            s.gpio.insert((*net).into(), (*pin).into());
+            s.spi_devices.insert(
+                (*reference).into(),
+                spi_device(u32::try_from(i).unwrap(), "SPI1", net),
+            );
+        }
+        s
+    }
+
+    /// The generated `impl` block that starts with `head`.
+    fn block<'a>(text: &'a str, head: &str) -> &'a str {
+        let at = text.find(head).unwrap_or_else(|| panic!("no `{head}`"));
+        let rest = &text[at..];
+        &rest[..rest.find("\n}\n").unwrap()]
+    }
+
+    #[test]
+    fn spi_data_registers_are_reached_one_byte_at_a_time() {
+        let files = generate("b", &with_spi(&[("U4", "CS", "PA0")]), &table()).unwrap();
+        let lib = &files["src/board.rs"];
+        let mmio = block(lib, "pub mod mmio {");
+        assert!(mmio.contains("read_volatile((base(block) + offset) as *const u8)"));
+        assert!(mmio.contains("write_volatile((base(block) + offset) as *mut u8, value)"));
+        // TXDR (0x20) and RXDR (0x30) are reached only in `spi_frame`, and
+        // there only through the byte accessors.
+        let frame = block(lib, "fn spi_frame<");
+        assert!(frame.contains("r.write8(TOKEN, block, 0x20, byte);"));
+        assert!(frame.contains("return Some(r.read8(TOKEN, block, 0x30));"));
+        for line in frame
+            .lines()
+            .filter(|l| l.contains("0x20") || l.contains("0x30"))
+        {
+            assert!(
+                line.contains("write8(") || line.contains("read8("),
+                "{line}"
+            );
+        }
+        assert!(!lib.contains("Block::Spi1, 0x20") && !lib.contains("Block::Spi1, 0x30"));
+        let transfer = block(lib, "impl Spi1<Enabled<()>> {");
+        assert!(!transfer.contains("0x20") && !transfer.contains("0x30"));
+        // `write_byte`, a 32-bit TXDR write, is I2C's only.
+        assert!(!block(lib, "impl Spi1<Enabled<()>> {").contains("write_byte"));
+        assert!(
+            block(lib, "impl<S: i2c1_speed::AtMostCeiling> I2c1<Enabled<S>> {")
+                .contains("pub fn write_byte")
+        );
+    }
+
+    #[test]
+    fn spi_init_takes_every_select_and_drives_it_high() {
+        let s = with_spi(&[("U4", "CS", "PA0"), ("u_4", "CS2", "PA1")]);
+        let files = generate("b", &s, &table()).unwrap();
+        let lib = &files["src/board.rs"];
+        let selects = block(lib, "pub struct Spi1Selects {");
+        assert!(selects.contains("pub pa0: PA0<Output>,"));
+        assert!(selects.contains("pub pa1: PA1<Output>,"));
+        let init = block(lib, "impl Spi1<Clocked> {");
+        assert!(init.contains("_selects: Spi1Selects,"));
+        // Both high (BSRR set) before anything else of the bus.
+        let pa0 = init.find("Block::GpioA, 0x18, 0x00000001);").unwrap();
+        let pa1 = init.find("Block::GpioA, 0x18, 0x00000002);").unwrap();
+        let spi = init.find("Block::Spi1").unwrap();
+        assert!(pa0 < spi && pa1 < spi);
+        // Each device's own chip select, and no other, by its variant.
+        let transfer = block(lib, "impl Spi1<Enabled<()>> {");
+        assert!(transfer.contains("Spi1Device::U4 => (Block::GpioA, 0x00010000, 0x00000001),"));
+        assert!(transfer.contains("Spi1Device::U_4 => (Block::GpioA, 0x00020000, 0x00000002),"));
+        let proofs = &files["src/proofs.rs"];
+        assert!(proofs.contains("Spi1Device::U4 => (Block::GpioA, 0x00010000, 0x00000001),"));
+        assert!(proofs.contains("Spi1Device::U_4 => (Block::GpioA, 0x00020000, 0x00000002),"));
+        assert!(proofs.contains("let devices = [Spi1Device::U4, Spi1Device::U_4];"));
+        // The firmware hands both over in `init`, each bound after its `into_output`.
+        let main = &files["firmware/src/main.rs"];
+        assert!(main.contains("let pa1 = gpioa.pa1.into_output(&mut r);"));
+        assert!(
+            main.contains(
+                "let _spi1 = spi1.init(&mut r, pa5, pa7, pa6, Spi1Selects { pa0, pa1 });"
+            )
+        );
+    }
+
+    #[test]
+    fn device_variants_are_the_references_upper_cased() {
+        // Distinct in any case (`validate`), so distinct upper-cased; and no
+        // upper-case word is a keyword, which `r#` cannot escape for these.
+        let refs = ["Self", "crate", "super", "fn"];
+        let pins = ["PA0", "PA1", "PA2", "PA3"];
+        let nets = ["CS0", "CS1", "CS2", "CS3"];
+        let devices: Vec<(&str, &str, &str)> =
+            (0..4).map(|i| (refs[i], nets[i], pins[i])).collect();
+        let files = generate("b", &with_spi(&devices), &table()).unwrap();
+        let device = block(&files["src/board.rs"], "pub enum Spi1Device {");
+        for v in ["SELF", "CRATE", "SUPER", "FN"] {
+            assert!(device.contains(&format!("    {v},")), "{v}");
+        }
+    }
+
+    #[test]
+    fn a_bus_without_devices_keeps_its_init_and_has_no_transfer() {
+        let mut s = with_spi(&[]);
+        s.gpio.insert("CS".into(), "PA0".into());
+        let files = generate("b", &s, &table()).unwrap();
+        let lib = &files["src/board.rs"];
+        let init = block(lib, "impl Spi1<Clocked> {");
+        assert!(init.contains("_miso: PA6<AlternateFunction<5>>,\n    ) -> Spi1<Enabled<()>> {"));
+        assert!(!lib.contains("Spi1Selects") && !lib.contains("SpiError"));
+        assert!(!files["src/proofs.rs"].contains("Spi1Spy"));
+        let main = &files["firmware/src/main.rs"];
+        assert!(main.contains("let _pa0 = gpioa.pa0.into_output(&mut r);"));
+        assert!(main.contains("let _spi1 = spi1.init(&mut r, pa5, pa7, pa6);"));
+    }
+
+    #[test]
+    fn each_bus_transfers_only_to_its_own_devices() {
+        let mut s = with_spi(&[("U4", "CS", "PA0")]);
+        for (net, pin, signal) in [
+            ("SCK2", "PB13", "SCK"),
+            ("MISO2", "PB14", "MISO"),
+            ("MOSI2", "PB15", "MOSI"),
+        ] {
+            s.assignments.insert(
+                net.into(),
+                assign(pin, "SPI2", &format!("SPI2_{signal}"), 5),
+            );
+        }
+        s.gpio.insert("CS2".into(), "PA1".into());
+        s.spi_devices
+            .insert("U5".into(), spi_device(1, "SPI2", "CS2"));
+        let files = generate("b", &s, &table()).unwrap();
+        let lib = &files["src/board.rs"];
+        for (t, other) in [("Spi1", "Spi2"), ("Spi2", "Spi1")] {
+            let transfer = block(lib, &format!("impl {t}<Enabled<()>> {{"));
+            assert!(transfer.contains(&format!("device: {t}Device,")));
+            assert!(!transfer.contains(&format!("{other}Device")), "{t}");
+        }
+        assert!(block(lib, "pub struct Spi2Selects {").contains("pub pa1: PA1<Output>,"));
+    }
+
+    #[test]
+    fn a_chip_select_shared_by_two_devices_is_refused() {
+        let mut s = with_spi(&[("U4", "CS", "PA0")]);
+        s.spi_devices
+            .insert("U5".into(), spi_device(1, "SPI1", "CS"));
+        let err = generate("b", &s, &table()).unwrap_err();
+        assert_eq!(
+            err,
+            BoardError::SharedChipSelect {
+                pin: "PA0".into(),
+                first: "U4".into(),
+                reference: "U5".into(),
+            }
+        );
     }
 }

@@ -34,7 +34,7 @@ fn digests() -> Vec<(&'static str, String)> {
     let spec: Specification = serde_json::from_slice(&bytes).unwrap();
     let table = pin_table(&spec.mcu.part).unwrap();
     let solved = aethelgard_ir::solve(&spec, &table, &hex(&bytes)).unwrap();
-    let answers = |part: &str| aethelgard_twin::model::model(part).is_some();
+    let answers = |part: &str| matches!(aethelgard_twin::model::model(part), Ok(Some(_)));
     let files = generate_with("order-board", &solved, &table, &answers).unwrap();
     let off = BTreeSet::from(["SENSORS".to_owned()]);
     vec![
@@ -48,9 +48,11 @@ fn digests() -> Vec<(&'static str, String)> {
         ),
         (
             "platform faulted",
-            hex(aethelgard_twin::platform::emit_faulted(&solved, &off)
-                .unwrap()
-                .as_bytes()),
+            hex(
+                aethelgard_twin::platform::emit_faulted(&solved, &off, &BTreeSet::new())
+                    .unwrap()
+                    .as_bytes(),
+            ),
         ),
         (
             "boot image",
@@ -66,10 +68,14 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `AET-WO-2204`, which replaced the bus's `CR2`/`TXDR` witness with each
 /// identity read's device path and witness lines (the `Image` the digest
 /// prints); the other three are unchanged. The old digest was `704f44d1…8e7c`.
+/// The "firmware/src/main.rs" digest was re-taken in `AET-WO-4200`, whose
+/// firmware hands the flash's chip select to `SPI1` and reads the flash's
+/// identity after the I2C reads (record 2 here); the I2C reads' text and order
+/// are unchanged. The old digest was `bd4e06af…c5f1`.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "bd4e06afea31d18fd46e29503fd0076ea679cc246ae5aea636ff8755266dc5f1",
+        "4cb2c9b1345a40db3e441c33f0ca0d42f4a0751fff7535caefcf22fe39c2e36f",
     ),
     (
         "platform",
