@@ -11,7 +11,7 @@
 //! with the real bridge and Renode, and `attribute` on its run names the
 //! manifest's domain and rule, with evidence of the kinds that rule allows.
 //! Each run writes `ANSWER 3100` lines to `/dev/stderr`: every measured rise,
-//! and the trace bytes `OQ-03` asks for.
+//! and each case's trace bytes and event count, which `OQ-03` asks for.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -253,7 +253,15 @@ fn scenario_with_sha(sha: &str) -> String {
 /// `<project>-<scenario name>`. The tier-2 test re-runs it to its bytes.
 #[test]
 fn every_committed_proposal_is_pull_up_changes_named_for_its_scenario() {
+    // Vacuous while `proposals/` is absent (`AET-WO-1909` F2): say so, once.
     let Ok(entries) = fs::read_dir(root().join("proposals")) else {
+        use std::io::Write;
+        let mut log = fs::OpenOptions::new()
+            .append(true)
+            .open("/dev/stderr")
+            .unwrap();
+        log.write_all(b"ANSWER 3200: proposals/ absent: nothing to check\n")
+            .unwrap();
         return;
     };
     for entry in entries {
@@ -356,7 +364,9 @@ mod tier2 {
             let text = fs::read_to_string(&file).unwrap();
             fs::write(
                 &file,
-                patch(name, &text, m).unwrap_or_else(|e| panic!("{e}")),
+                patch(name, &text, m).unwrap_or_else(|e| {
+                    panic!("the mutant patch applies to the board source: {e}")
+                }),
             )
             .unwrap();
         }
@@ -371,7 +381,7 @@ mod tier2 {
         assert_eq!(
             code,
             Some(0),
-            "{label}: {}",
+            "aethelgard build succeeds on the case firmware: {label}: {}",
             String::from_utf8_lossy(&stdout)
         );
         elf
@@ -430,20 +440,32 @@ mod tier2 {
                 let (code, stdout) = aethelgard(&args);
                 let lines = json_lines(&stdout);
                 let summary = lines.last().unwrap();
-                assert_eq!(summary["check"], "campaign", "{label}: {lines:?}");
+                assert_eq!(
+                    summary["check"], "campaign",
+                    "the campaign output ends with its campaign summary line: {label}: {lines:?}"
+                );
                 // A firmware whose every case is unmutated, or passes, matches all.
                 let all = cases
                     .iter()
                     .all(|c| c.mutant.is_none() || c.findings.is_empty());
                 if all {
-                    assert_eq!(code, Some(0), "{label}: {lines:?}");
+                    assert_eq!(
+                        code,
+                        Some(0),
+                        "a campaign whose cases all match exits 0: {label}: {lines:?}"
+                    );
                 }
                 for c in cases {
                     let scenario = read_json(&root().join(&c.scenario));
                     let line = lines
                         .iter()
                         .find(|l| l["scenario"] == scenario["name"])
-                        .unwrap_or_else(|| panic!("{}: no line in {lines:?}", c.name))
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "the campaign reports a line for every case scenario: {}: no line in {lines:?}",
+                                c.name
+                            )
+                        })
                         .clone();
                     answer(&format!(
                         "case {} trace_bytes={} event_count={}",
@@ -465,10 +487,18 @@ mod tier2 {
     fn every_case_fails_the_way_its_manifest_says() {
         for r in ran() {
             let findings: Vec<String> = serde_json::from_value(r.line["findings"].clone()).unwrap();
-            assert_eq!(findings, r.case.findings, "{}", r.case.name);
+            assert_eq!(
+                findings, r.case.findings,
+                "each case reports exactly its manifest's findings: {}",
+                r.case.name
+            );
             // A scenario run against the unmutated firmware matches its own `expect`.
             if r.case.mutant.is_none() {
-                assert_eq!(r.line["matched"], true, "{}: {}", r.case.name, r.line);
+                assert_eq!(
+                    r.line["matched"], true,
+                    "an unmutated case matches its scenario's own expectation: {}: {}",
+                    r.case.name, r.line
+                );
             }
             // Every measured rise, recorded (FEEDBACK, §1.4).
             for record in replay_dir(&r.run).unwrap().state.records {
@@ -495,11 +525,16 @@ mod tier2 {
         for r in ran() {
             let (code, stdout) = attribute(&r.run);
             let a = &json_lines(&stdout)[0];
-            assert_eq!(code, Some(0), "{}: {a}", r.case.name);
+            assert_eq!(
+                code,
+                Some(0),
+                "attribute exits 0 on every seeded run: {}: {a}",
+                r.case.name
+            );
             assert_eq!(
                 (a["domain"].as_str().unwrap(), a["rule"].as_str().unwrap()),
                 (r.case.domain.as_str(), r.case.rule.as_str()),
-                "{}: {a}",
+                "attribute names the manifest's domain and rule: {}: {a}",
                 r.case.name
             );
             let records = replay_dir(&r.run).unwrap().state.records;
@@ -513,14 +548,27 @@ mod tier2 {
             assert_eq!(
                 evidence.is_empty(),
                 r.case.domain == "none",
-                "{}: {a}",
+                "attribute cites evidence exactly when the case is a fault: {}: {a}",
                 r.case.name
             );
             for e in evidence {
                 let (index, kind) = (e["index"].as_u64().unwrap(), e["kind"].as_u64().unwrap());
-                assert!((index as usize) < records.len(), "{}: {a}", r.case.name);
-                assert_eq!(records[index as usize].kind(), kind, "{}: {a}", r.case.name);
-                assert!(allowed.contains(&kind), "{}: {a}", r.case.name);
+                assert!(
+                    (index as usize) < records.len(),
+                    "each evidence index points at a record of the run: {}: {a}",
+                    r.case.name
+                );
+                assert_eq!(
+                    records[index as usize].kind(),
+                    kind,
+                    "each evidence entry's kind is the kind of the record it cites: {}: {a}",
+                    r.case.name
+                );
+                assert!(
+                    allowed.contains(&kind),
+                    "each evidence kind is one its rule allows: {}: {a}",
+                    r.case.name
+                );
             }
             answer(&format!(
                 "attribute {} domain={} rule={} evidence={} symptoms={} masked={}",
@@ -547,28 +595,45 @@ mod tier2 {
     fn the_trap_the_wrong_address_shares_i2c_timeout_with_47k_and_is_told_apart() {
         // Both fail with i2c_timeout at TXIS; 3.3 kOhm is measured inside the ceiling.
         let soft = case("trap-wrong-address-3k3");
-        assert_eq!(soft.line["findings"], serde_json::json!(["i2c_timeout"]));
+        assert_eq!(
+            soft.line["findings"],
+            serde_json::json!(["i2c_timeout"]),
+            "the 3.3 kOhm wrong-address trap fails with i2c_timeout, as the 47 kOhm run does"
+        );
         let a = &json_lines(&attribute(&soft.run).1)[0];
         assert_eq!(
             (&a["domain"], &a["rule"]),
             (&"software".into(), &"S1".into()),
-            "{a}"
+            "the 3.3 kOhm wrong-address trap is attributed to software, rule S1: {a}"
         );
         // The 47 kOhm run with the same mutant is electrical, its witness masked.
-        assert_eq!(masked("trap-wrong-address-47k"), [13]);
+        assert_eq!(
+            masked("trap-wrong-address-47k"),
+            [13],
+            "the 47 kOhm wrong-address run is electrical with its witness (kind 13) masked"
+        );
         // The unmutated 47 kOhm run masks nothing: its witness agrees.
-        assert!(masked("pullup-47k").is_empty());
+        assert!(
+            masked("pullup-47k").is_empty(),
+            "the unmutated 47 kOhm run masks nothing: its witness agrees"
+        );
         let none = &json_lines(&attribute(&case("trap-unmutated-3k3").run).1)[0];
         assert_eq!(
             (&none["domain"], &none["rule"]),
-            (&"none".into(), &"N1".into())
+            (&"none".into(), &"N1".into()),
+            "the unmutated 3.3 kOhm run is attributed to none, rule N1: {none}"
         );
     }
 
     #[test]
     fn attribute_twice_is_identical_and_a_one_byte_change_is_refused_as_replay_refuses_it() {
         for r in ran() {
-            assert_eq!(attribute(&r.run), attribute(&r.run), "{}", r.case.name);
+            assert_eq!(
+                attribute(&r.run),
+                attribute(&r.run),
+                "attribute twice on the same run gives identical output: {}",
+                r.case.name
+            );
         }
         let run = &case("trap-wrong-address-3k3").run;
         let copy = scratch().join("flipped").join(run.file_name().unwrap());
@@ -583,23 +648,20 @@ mod tier2 {
         fs::write(copy.join("trace.cbor"), &trace).unwrap();
         let replayed = aethelgard(&["replay", "--archive", copy.to_str().unwrap()]);
         let attributed = attribute(&copy);
-        assert_eq!(attributed, replayed);
-        assert_eq!(attributed.0, Some(3));
+        assert_eq!(
+            attributed, replayed,
+            "attribute refuses a one-byte-changed trace exactly as replay does"
+        );
+        assert_eq!(
+            attributed.0,
+            Some(3),
+            "a one-byte-changed trace is refused with exit 3"
+        );
         assert_eq!(
             json_lines(&attributed.1)[0]["error"]["kind"],
-            "HashMismatch"
+            "HashMismatch",
+            "a one-byte-changed trace is refused as a HashMismatch"
         );
-    }
-
-    #[test]
-    fn oq_03_the_reference_runs_bytes_with_kind_15() {
-        for name in ["unmutated-2k2", "pullup-47k"] {
-            let r = case(name);
-            answer(&format!(
-                "OQ-03 {name} trace_bytes={} event_count={}",
-                r.line["trace_bytes"], r.line["event_count"]
-            ));
-        }
     }
 
     // ---- `AET-WO-3200`: `propose` on every seeded run, and the re-gate ----
@@ -707,23 +769,39 @@ mod tier2 {
             ));
             // Twice: the same bytes (§3.5).
             let again = scratch().join("again").join(name);
-            assert_eq!(propose(r, &again).0, code, "{name}");
-            assert_eq!(names(&again), names(&out), "{name}");
+            assert_eq!(
+                propose(r, &again).0,
+                code,
+                "propose twice exits the same: {name}"
+            );
+            assert_eq!(
+                names(&again),
+                names(&out),
+                "propose twice writes the same files: {name}"
+            );
             for f in names(&out) {
                 assert_eq!(
                     fs::read(out.join(&f)).unwrap(),
                     fs::read(again.join(&f)).unwrap(),
-                    "{name}: {f}"
+                    "propose twice writes the same bytes: {name}: {f}"
                 );
             }
             match want(&r.case) {
                 Want::Proposal(ohms) => {
-                    assert_eq!(code, Some(0), "{name}: {line}");
-                    assert_eq!(names(&out), ["proposal.json", "proposed-spec.json"]);
+                    assert_eq!(
+                        code,
+                        Some(0),
+                        "a pull-up case is proposed with exit 0: {name}: {line}"
+                    );
+                    assert_eq!(
+                        names(&out),
+                        ["proposal.json", "proposed-spec.json"],
+                        "a proposal writes proposal.json and proposed-spec.json only: {name}"
+                    );
                     assert_eq!(
                         p["changes"],
                         serde_json::json!([{"bus": "SENSORS", "pull_up_ohms": ohms}]),
-                        "{name}"
+                        "the proposal changes exactly the SENSORS pull-up to the expected E12 value: {name}"
                     );
                     // The trap's wrong address is masked by the fault, and
                     // the proposal says so: its re-gate, on regenerated
@@ -739,47 +817,103 @@ mod tier2 {
                         } else {
                             vec![]
                         },
-                        "{name}"
+                        "the proposal's masked witnesses are the wrong-address trap's kind 13 and nothing else: {name}"
                     );
                     regate(&out, &r.run);
                 }
                 Want::Report => {
-                    assert_eq!(code, Some(6), "{name}: {line}");
-                    assert_eq!(names(&out), ["generator-report.json", "proposal.json"]);
+                    assert_eq!(
+                        code,
+                        Some(6),
+                        "a software case gets a generator report with exit 6: {name}: {line}"
+                    );
+                    assert_eq!(
+                        names(&out),
+                        ["generator-report.json", "proposal.json"],
+                        "a generator report writes generator-report.json and proposal.json only: {name}"
+                    );
                     // The generator the mutant's file belongs to: an oracle
                     // the manifest states, independent of the tool.
                     let file = &m.mutants[r.case.mutant.as_ref().unwrap()].file;
                     let generator = if file.starts_with("firmware/") {
                         "firmware"
                     } else {
-                        assert_eq!(file, "src/board.rs");
+                        assert_eq!(
+                            file, "src/board.rs",
+                            "a mutant file is under firmware/ or is src/board.rs: {name}"
+                        );
                         "board_crate"
                     };
                     let g = read_json(&out.join("generator-report.json"));
-                    assert_eq!(g["generators"], serde_json::json!([generator]), "{name}");
-                    assert_eq!(g["rule"], r.case.rule.as_str(), "{name}");
-                    assert_eq!(p["changes"], serde_json::json!([]), "{name}");
+                    assert_eq!(
+                        g["generators"],
+                        serde_json::json!([generator]),
+                        "the report names the generator the mutant's file belongs to: {name}"
+                    );
+                    assert_eq!(
+                        g["rule"],
+                        r.case.rule.as_str(),
+                        "the report names the case's rule: {name}"
+                    );
+                    assert_eq!(
+                        p["changes"],
+                        serde_json::json!([]),
+                        "a software case proposes no changes: {name}"
+                    );
                 }
                 Want::ModelSlot => {
-                    assert_eq!(code, Some(1), "{name}: {line}");
-                    assert_eq!(names(&out), ["proposal.json"]);
-                    assert_eq!(p["reason"], "no rule; RUL-18 model proposer slot", "{name}");
+                    assert_eq!(
+                        code,
+                        Some(1),
+                        "a held-line case gets no proposal, exit 1: {name}: {line}"
+                    );
+                    assert_eq!(
+                        names(&out),
+                        ["proposal.json"],
+                        "a held-line case writes proposal.json only: {name}"
+                    );
+                    assert_eq!(
+                        p["reason"], "no rule; RUL-18 model proposer slot",
+                        "a held-line case is left to the model proposer slot: {name}"
+                    );
                 }
                 Want::BelowFloor => {
-                    assert_eq!(code, Some(1), "{name}: {line}");
-                    assert_eq!(names(&out), ["proposal.json"]);
+                    assert_eq!(
+                        code,
+                        Some(1),
+                        "a case whose E12 value is below the floor gets no proposal, exit 1: {name}: {line}"
+                    );
+                    assert_eq!(
+                        names(&out),
+                        ["proposal.json"],
+                        "a below-floor case writes proposal.json only: {name}"
+                    );
                     let s = &p["sizing"][0];
                     assert!(
                         s["e12_ohms"].as_u64().unwrap() < s["rp_min_ohms"].as_u64().unwrap(),
-                        "{name}: {p}"
+                        "the sized E12 value lies below the minimum pull-up: {name}: {p}"
                     );
-                    assert!(p["reason"].as_str().unwrap().contains("floor"), "{name}");
+                    assert!(
+                        p["reason"].as_str().unwrap().contains("floor"),
+                        "the below-floor reason names the floor: {name}"
+                    );
                 }
                 Want::Inv05 => {
-                    assert_eq!(code, Some(1), "{name}: {line}");
-                    assert_eq!(names(&out), ["proposal.json"]);
+                    assert_eq!(
+                        code,
+                        Some(1),
+                        "a passing run is refused a proposal, exit 1: {name}: {line}"
+                    );
+                    assert_eq!(
+                        names(&out),
+                        ["proposal.json"],
+                        "a refused passing run writes proposal.json only: {name}"
+                    );
                     let reason = p["reason"].as_str().unwrap();
-                    assert!(reason.contains("N1") && reason.contains("INV-05"), "{name}");
+                    assert!(
+                        reason.contains("N1") && reason.contains("INV-05"),
+                        "the refusal cites N1 and INV-05: {name}"
+                    );
                 }
             }
         }
@@ -791,7 +925,8 @@ mod tier2 {
     #[test]
     fn every_committed_proposal_reruns_to_its_own_bytes_and_regates() {
         let Ok(entries) = fs::read_dir(root().join("proposals")) else {
-            note("committed proposals: none in this tree");
+            // Vacuous while `proposals/` is absent (`AET-WO-1909` F2).
+            note("proposals/ absent: nothing to check");
             return;
         };
         for entry in entries {
@@ -811,8 +946,17 @@ mod tier2 {
                 .join("committed")
                 .join(committed.file_name().unwrap());
             let (code, line) = propose(r, &out);
-            assert_eq!(code, Some(0), "{line}");
-            assert_eq!(names(&out), names(&committed), "{}", committed.display());
+            assert_eq!(
+                code,
+                Some(0),
+                "propose on a committed proposal's scenario exits 0: {line}"
+            );
+            assert_eq!(
+                names(&out),
+                names(&committed),
+                "a rerun writes the same files as the committed proposal: {}",
+                committed.display()
+            );
             for f in names(&committed) {
                 assert_eq!(
                     fs::read(out.join(&f)).unwrap(),
@@ -843,7 +987,12 @@ mod tier2 {
         let p = read_json(&dir.join("proposal.json"));
         let bytes = fs::read(dir.join("proposed-spec.json")).unwrap();
         let sha = sha_hex(&bytes);
-        assert_eq!(p["proposed_specification_sha256"], sha.as_str());
+        assert_eq!(
+            p["proposed_specification_sha256"],
+            sha.as_str(),
+            "the proposal's recorded sha256 is that of its proposed-spec.json: {}",
+            dir.display()
+        );
         let run = {
             let mut done = REGATED.lock().unwrap_or_else(|e| e.into_inner());
             match done.get(&sha) {
@@ -865,7 +1014,12 @@ mod tier2 {
                 .cloned()
                 .collect()
         };
-        assert_eq!(solved(&passed), solved(&failed), "{}", dir.display());
+        assert_eq!(
+            solved(&passed),
+            solved(&failed),
+            "the re-gate run solves the same buses, lines, ceilings and devices as the failing run: {}",
+            dir.display()
+        );
         // Every device the failing run read is read, and answers.
         let reads = |r: &[Record]| -> Vec<(String, Option<String>)> {
             r.iter()
@@ -881,9 +1035,13 @@ mod tier2 {
         assert!(!now.is_empty(), "the re-gate run read no device");
         assert_eq!(
             now.iter().map(|x| &x.0).collect::<Vec<_>>(),
-            then.iter().map(|x| &x.0).collect::<Vec<_>>()
+            then.iter().map(|x| &x.0).collect::<Vec<_>>(),
+            "the re-gate run reads every device the failing run read"
         );
-        assert!(now.iter().all(|x| x.1.as_deref() == Some("ok")), "{now:?}");
+        assert!(
+            now.iter().all(|x| x.1.as_deref() == Some("ok")),
+            "every device the re-gate run reads answers ok: {now:?}"
+        );
         // Each binding line's rise, computed from declared values, within 2 %
         // of its predicted rise.
         for s in p["sizing"].as_array().unwrap() {
@@ -908,7 +1066,9 @@ mod tier2 {
                 } if n == net => Some(*rise_30_70_ps),
                 _ => None,
             })
-            .unwrap_or_else(|| panic!("no complete rise within its ceiling on {net}"));
+            .unwrap_or_else(|| {
+                panic!("the re-gate run measures a complete rise within its ceiling on the binding net: {net}")
+            });
         note(&format!(
             "regate {} spec={sha} {net} rise_30_70_ps={rise} predicted_rise_ps={predicted} off_by_ps={}",
             dir.display(),
@@ -916,7 +1076,7 @@ mod tier2 {
         ));
         assert!(
             rise.abs_diff(predicted) * 50 <= predicted,
-            "{net}: {rise} ps is more than 2 % from the predicted {predicted} ps"
+            "the re-gate rise is within 2 % of the predicted rise: {net}: {rise} ps is more than 2 % from the predicted {predicted} ps"
         );
     }
 
@@ -936,7 +1096,11 @@ mod tier2 {
         let ok = |args: &[&str]| -> Value {
             let (code, stdout) = aethelgard_in(&dir, args);
             let v = json_lines(&stdout).pop().unwrap();
-            assert_eq!(code, Some(0), "{args:?}: {v}");
+            assert_eq!(
+                code,
+                Some(0),
+                "each gate passes the proposed specification with exit 0: {args:?}: {v}"
+            );
             note(&format!("regate {sha} {}: exit 0", args[..2].join(" ")));
             v
         };
@@ -950,7 +1114,8 @@ mod tier2 {
         let pcb = format!("gen/kicad/{}.kicad_pcb", spec.project_name);
         assert_eq!(
             ok(&["check", "erc", "--schematic", &sch])["verdict"],
-            "pass"
+            "pass",
+            "ERC passes the proposed specification's schematic"
         );
         let drc = ok(&[
             "check",
@@ -962,7 +1127,10 @@ mod tier2 {
             "--schematic",
             &sch,
         ]);
-        assert_eq!(drc["verdict"], "pass");
+        assert_eq!(
+            drc["verdict"], "pass",
+            "DRC with schematic parity passes the proposed specification's board"
+        );
         {
             let _one = ONE_PROOF.lock().unwrap_or_else(|e| e.into_inner());
             let v = ok(&[
@@ -974,12 +1142,21 @@ mod tier2 {
                 "--spec",
                 "proposed-spec.json",
             ]);
-            assert_eq!(v["verdict"], "pass");
-            assert_eq!(v["harness_provenance"], "generated");
+            assert_eq!(
+                v["verdict"], "pass",
+                "the proposed specification's board crate is proved"
+            );
+            assert_eq!(
+                v["harness_provenance"], "generated",
+                "the proof ran the generated harness"
+            );
         }
         // The firmware generated with the crate, built as the seeded set's is.
         let built = ok(&["build", "--crate", "gen/board", "--out", "firmware.elf"]);
-        assert_eq!(built["verdict"], "pass");
+        assert_eq!(
+            built["verdict"], "pass",
+            "the proposed specification's board crate builds"
+        );
         let elf = dir.join("firmware.elf");
 
         let scenario = serde_json::json!({
@@ -1004,16 +1181,19 @@ mod tier2 {
             ],
         );
         let lines = json_lines(&stdout);
-        assert_eq!(code, Some(0), "{lines:?}");
-        assert_eq!(lines[0]["matched"], true, "{lines:?}");
+        assert_eq!(code, Some(0), "the re-gate campaign exits 0: {lines:?}");
+        assert_eq!(
+            lines[0]["matched"], true,
+            "the re-gate scenario matches its expect: pass: {lines:?}"
+        );
         let run = dir.join(lines[0]["run"].as_str().unwrap());
         let (code, stdout) = attribute(&run);
         let a = &json_lines(&stdout)[0];
-        assert_eq!(code, Some(0), "{a}");
+        assert_eq!(code, Some(0), "attribute exits 0 on the re-gate run: {a}");
         assert_eq!(
             (&a["domain"], &a["rule"]),
             (&"none".into(), &"N1".into()),
-            "{a}"
+            "attribute names the re-gate run none, rule N1: {a}"
         );
         note(&format!("regate {sha}: campaign matched, attribute N1"));
         run

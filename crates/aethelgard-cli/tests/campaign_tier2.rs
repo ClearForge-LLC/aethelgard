@@ -50,7 +50,7 @@ fn firmware() -> &'static Path {
             .unwrap();
         assert!(
             out.status.success(),
-            "{}",
+            "the reference firmware builds offline and locked: {}",
             String::from_utf8_lossy(&out.stderr)
         );
         root().join(
@@ -69,7 +69,7 @@ fn aethelgard(args: &[&str]) -> (Option<i32>, String) {
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(
         !stdout.is_empty(),
-        "no stdout; stderr: {}",
+        "every aethelgard invocation prints JSON on stdout: stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
     (out.status.code(), stdout)
@@ -92,7 +92,12 @@ impl Campaign {
         self.lines
             .iter()
             .find(|l| l["scenario"] == name)
-            .unwrap_or_else(|| panic!("no line for {name}: {:?}", self.lines))
+            .unwrap_or_else(|| {
+                panic!(
+                    "the campaign prints a line for each scenario, none for {name}: {:?}",
+                    self.lines
+                )
+            })
     }
 }
 
@@ -138,26 +143,45 @@ fn run_47k() -> PathBuf {
 #[test]
 fn p2_gate_clause_2_the_campaign_passes_2k2_and_fails_47k_as_each_expects() {
     let c = first();
-    assert_eq!(c.code, Some(0), "{:?}", c.lines);
-    assert_eq!(c.lines.len(), 3, "{:?}", c.lines);
+    assert_eq!(
+        c.code,
+        Some(0),
+        "the campaign exits 0 when both scenarios match their expectation: {:?}",
+        c.lines
+    );
+    assert_eq!(
+        c.lines.len(),
+        3,
+        "the campaign prints one line per scenario plus a summary: {:?}",
+        c.lines
+    );
     let pass = c.scenario("pullup-2k2");
     assert_eq!(
         (&pass["verdict"], &pass["expect"], &pass["matched"]),
-        (&"pass".into(), &"pass".into(), &true.into())
+        (&"pass".into(), &"pass".into(), &true.into()),
+        "the 2k2 pull-up passes, expects a pass, and the two match"
     );
     let fail = c.scenario("pullup-47k");
     assert_eq!(
         (&fail["verdict"], &fail["expect"], &fail["matched"]),
-        (&"fail".into(), &"fail".into(), &true.into())
+        (&"fail".into(), &"fail".into(), &true.into()),
+        "the 47k pull-up fails, expects a fail, and the two match"
     );
     assert_eq!(
         fail["findings"],
-        serde_json::json!(["analog_rise_exceeds_ceiling", "i2c_timeout"])
+        serde_json::json!(["analog_rise_exceeds_ceiling", "i2c_timeout"]),
+        "the 47k campaign's findings are exactly a slow rise and an I2C timeout"
     );
     let summary = c.lines.last().unwrap();
-    assert_eq!(summary["ok"], true);
-    assert_eq!(summary["matched"], 2);
-    assert_eq!(summary["virtual_time_ns"], 100_000_000);
+    assert_eq!(summary["ok"], true, "the campaign summary reports ok");
+    assert_eq!(
+        summary["matched"], 2,
+        "the campaign summary counts both scenarios as matched"
+    );
+    assert_eq!(
+        summary["virtual_time_ns"], 100_000_000,
+        "the campaign summary totals the virtual time of both scenarios"
+    );
 }
 
 #[test]
@@ -169,7 +193,11 @@ fn p2_gate_clause_2_the_47k_trace_shows_the_rise_the_fault_and_the_timeout_as_th
         .enumerate()
         .filter(|(_, r)| matches!(r, Record::RiseMeasured { .. }))
         .collect();
-    assert_eq!(rises.len(), 2, "{records:?}");
+    assert_eq!(
+        rises.len(),
+        2,
+        "the 47k trace holds exactly two rise measurements: {records:?}"
+    );
     for (_, r) in &rises {
         let Record::RiseMeasured {
             bus,
@@ -182,28 +210,40 @@ fn p2_gate_clause_2_the_47k_trace_shows_the_rise_the_fault_and_the_timeout_as_th
         else {
             unreachable!()
         };
-        assert_eq!(bus, "SENSORS");
+        assert_eq!(bus, "SENSORS", "each rise is measured on the SENSORS bus");
         assert!(
             rise_30_70_ps.abs_diff(3_982_300) <= 500,
-            "rise {rise_30_70_ps} ps"
+            "each 47k rise time is 3,982,300 ps within 500 ps: rise {rise_30_70_ps} ps"
         );
-        assert_eq!((*complete, *ceiling_ps, *exceeds), (true, 300_000, true));
+        assert_eq!(
+            (*complete, *ceiling_ps, *exceeds),
+            (true, 300_000, true),
+            "each rise is complete and exceeds the 300,000 ps ceiling"
+        );
         answer(&format!("47k rise_30_70_ps={rise_30_70_ps}"));
     }
     let (fault_at, fault) = records
         .iter()
         .enumerate()
         .find(|(_, r)| matches!(r, Record::BusFault { .. }))
-        .expect("a bus fault");
+        .expect("the 47k trace holds a bus fault");
     let Record::BusFault {
         bus, nets, from, ..
     } = fault
     else {
         unreachable!()
     };
-    assert_eq!(bus, "SENSORS");
-    assert_eq!(nets, &["I2C_SCL", "I2C_SDA"]);
-    assert_eq!(from, &["analog.rise_time_measured > ceiling_ns"]);
+    assert_eq!(bus, "SENSORS", "the bus fault is on the SENSORS bus");
+    assert_eq!(
+        nets,
+        &["I2C_SCL", "I2C_SDA"],
+        "the bus fault names both I2C nets"
+    );
+    assert_eq!(
+        from,
+        &["analog.rise_time_measured > ceiling_ns"],
+        "the bus fault is caused by the analog rise-time check"
+    );
     let (timeout_at, _) = records
         .iter()
         .enumerate()
@@ -211,16 +251,16 @@ fn p2_gate_clause_2_the_47k_trace_shows_the_rise_the_fault_and_the_timeout_as_th
             matches!(r, Record::I2cCheck { reference, status: Some(s), .. }
                 if reference == "U2" && s == "timeout_txis")
         })
-        .expect("U2's TXIS timeout");
+        .expect("the 47k trace holds U2's TXIS timeout");
     let indices = [rises[0].0, rises[1].0, fault_at, timeout_at];
     assert!(
         indices.windows(2).all(|w| w[0] < w[1]),
-        "three separate events, in that order: {indices:?}"
+        "the two rises, the bus fault and the timeout are separate events, in that order: {indices:?}"
     );
     let Some(Record::Verdict { pass, findings }) = records.last() else {
-        panic!("the verdict is last");
+        panic!("the verdict is the last record");
     };
-    assert!(!pass);
+    assert!(!pass, "the 47k verdict is a fail");
     let failing: Vec<(&str, u64)> = findings
         .iter()
         .filter(|(_, s, _)| s != "info")
@@ -228,7 +268,8 @@ fn p2_gate_clause_2_the_47k_trace_shows_the_rise_the_fault_and_the_timeout_as_th
         .collect();
     assert_eq!(
         failing,
-        [("analog_rise_exceeds_ceiling", 2), ("i2c_timeout", 1)]
+        [("analog_rise_exceeds_ceiling", 2), ("i2c_timeout", 1)],
+        "the 47k verdict counts two excessive rises and one I2C timeout"
     );
 }
 
@@ -237,8 +278,15 @@ fn p2_gate_clause_3_replay_twice_is_identical_and_equals_the_committed_hash() {
     let run = run_47k();
     let (c1, out1) = aethelgard(&["replay", "--archive", run.to_str().unwrap()]);
     let (c2, out2) = aethelgard(&["replay", "--archive", run.to_str().unwrap()]);
-    assert_eq!((c1, c2), (Some(0), Some(0)), "{out1}");
-    assert_eq!(out1, out2, "two replays differ");
+    assert_eq!(
+        (c1, c2),
+        (Some(0), Some(0)),
+        "both replays of the 47k run exit 0: {out1}"
+    );
+    assert_eq!(
+        out1, out2,
+        "two replays of the same run print identical output"
+    );
     let v = &lines(&out1)[0];
     let manifest = replay_dir(&run).unwrap().manifest;
     let committed: String = manifest
@@ -246,14 +294,20 @@ fn p2_gate_clause_3_replay_twice_is_identical_and_equals_the_committed_hash() {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
-    assert_eq!(v["state_sequence_hash"], committed.as_str());
     assert_eq!(
         v["state_sequence_hash"],
-        first().scenario("pullup-47k")["state_sequence_hash"]
+        committed.as_str(),
+        "the replayed state-sequence hash equals the manifest's committed hash"
+    );
+    assert_eq!(
+        v["state_sequence_hash"],
+        first().scenario("pullup-47k")["state_sequence_hash"],
+        "the replayed hash equals the hash the campaign printed for 47k"
     );
     assert_eq!(
         (&v["verdict"], &v["matched"]),
-        (&"fail".into(), &true.into())
+        (&"fail".into(), &true.into()),
+        "the replay of the 47k run still fails and matches its expectation"
     );
     answer(&format!("replay 47k twice identical hash={committed}"));
 }
@@ -285,8 +339,15 @@ fn p2_gate_clause_3_a_one_byte_change_is_refused_even_with_the_manifest_resealed
         t[at] ^= 1;
     });
     let (code, v) = refused(&flipped);
-    assert_eq!(code, Some(3), "{v}");
-    assert_eq!(v["error"]["kind"], "HashMismatch");
+    assert_eq!(
+        code,
+        Some(3),
+        "a flipped trace byte makes replay exit 3: {v}"
+    );
+    assert_eq!(
+        v["error"]["kind"], "HashMismatch",
+        "a flipped trace byte is refused as a hash mismatch"
+    );
 
     // 3,982,30x ps is encoded as 0x1a and four bytes. Change its last bit, then
     // seal the manifest around the new bytes, keeping the committed hash: only
@@ -294,7 +355,7 @@ fn p2_gate_clause_3_a_one_byte_change_is_refused_even_with_the_manifest_resealed
     let resealed = tampered("reseal", |t| {
         let at = (0..t.len() - 4)
             .find(|&i| t[i] == 0x1a && t[i + 1..i + 4] == [0x00, 0x3c, 0xc3])
-            .expect("a 3,982,xxx ps rise in the trace");
+            .expect("the trace holds a 3,982,xxx ps rise to alter");
         t[at + 4] ^= 1;
     });
     let trace = fs::read(resealed.join("trace.cbor")).unwrap();
@@ -310,21 +371,45 @@ fn p2_gate_clause_3_a_one_byte_change_is_refused_even_with_the_manifest_resealed
     )
     .unwrap();
     let (code, v) = refused(&resealed);
-    assert_eq!(code, Some(3), "{v}");
-    assert_eq!(v["error"]["kind"], "ReplayDiverged");
+    assert_eq!(
+        code,
+        Some(3),
+        "a resealed altered trace makes replay exit 3: {v}"
+    );
+    assert_eq!(
+        v["error"]["kind"], "ReplayDiverged",
+        "a resealed altered trace is refused as a replay divergence"
+    );
 }
 
 #[test]
 fn p2_gate_clause_3_the_same_campaign_twice_gives_identical_hashes_per_scenario() {
     let second = campaign("b");
-    assert_eq!(second.code, Some(0));
+    assert_eq!(
+        second.code,
+        Some(0),
+        "the second campaign exits 0 like the first"
+    );
     for name in ["pullup-2k2", "pullup-47k"] {
         let (a, b) = (first().scenario(name), second.scenario(name));
-        assert_eq!(a["state_sequence_hash"], b["state_sequence_hash"], "{name}");
-        assert_eq!(a["run_id"], b["run_id"], "{name}");
-        assert_eq!(a["trace_bytes"], b["trace_bytes"], "{name}");
+        assert_eq!(
+            a["state_sequence_hash"], b["state_sequence_hash"],
+            "two campaigns give the same state-sequence hash: {name}"
+        );
+        assert_eq!(
+            a["run_id"], b["run_id"],
+            "two campaigns give the same run id: {name}"
+        );
+        assert_eq!(
+            a["trace_bytes"], b["trace_bytes"],
+            "two campaigns give the same trace length: {name}"
+        );
         let read = |l: &Value| fs::read(Path::new(l["run"].as_str().unwrap()).join("trace.cbor"));
-        assert_eq!(read(a).unwrap(), read(b).unwrap(), "{name}: traces differ");
+        assert_eq!(
+            read(a).unwrap(),
+            read(b).unwrap(),
+            "two campaigns give byte-identical traces: {name}: traces differ"
+        );
     }
 }
 
@@ -417,7 +502,9 @@ fn line<'a>(lines: &'a [Value], name: &str) -> &'a Value {
     lines
         .iter()
         .find(|l| l["scenario"] == name)
-        .unwrap_or_else(|| panic!("no line for {name}: {lines:?}"))
+        .unwrap_or_else(|| {
+            panic!("the campaign prints a line for each scenario, none for {name}: {lines:?}")
+        })
 }
 
 fn run_dir(line: &Value) -> PathBuf {
@@ -449,25 +536,39 @@ fn crossings(records: &[Record]) -> Vec<(String, String, u64, bool)> {
 fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay() {
     let (code_a, a) = droop_campaign("a");
     let (code_b, b) = droop_campaign("b");
-    assert_eq!((code_a, code_b), (Some(0), Some(0)), "{a:?} {b:?}");
+    assert_eq!(
+        (code_a, code_b),
+        (Some(0), Some(0)),
+        "both droop campaigns exit 0: {a:?} {b:?}"
+    );
     for name in DROOPS {
         for l in [line(&a, name), line(&b, name)] {
             assert_eq!(
                 (&l["verdict"], &l["expect"], &l["matched"]),
                 (&"pass".into(), &"pass".into(), &true.into()),
-                "{name}: {l}"
+                "each droop scenario passes, expects a pass, and the two match: {name}: {l}"
             );
         }
         let read = |l: &Value| fs::read(run_dir(l).join("trace.cbor")).unwrap();
         let (ta, tb) = (read(line(&a, name)), read(line(&b, name)));
         answer_2301(&format!("{name} trace_bytes={}", ta.len()));
-        assert_eq!(ta, tb, "{name}: two campaigns' traces differ");
+        assert_eq!(
+            ta, tb,
+            "two droop campaigns give byte-identical traces: {name}: two campaigns' traces differ"
+        );
         for l in [line(&a, name), line(&b, name)] {
             let run = run_dir(l);
             let (code, out) = aethelgard(&["replay", "--archive", run.to_str().unwrap()]);
             let v = &lines(&out)[0];
-            assert_eq!(code, Some(0), "{name}: {out}");
-            assert_eq!(v["matched"], true, "{name}: {out}");
+            assert_eq!(
+                code,
+                Some(0),
+                "replaying a droop run exits 0: {name}: {out}"
+            );
+            assert_eq!(
+                v["matched"], true,
+                "replaying a droop run matches its expectation: {name}: {out}"
+            );
         }
     }
 
@@ -478,7 +579,7 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
         tolerated
             .iter()
             .any(|r| matches!(r, Record::RailDeclared { .. })),
-        "kind 16 is archived: {tolerated:?}"
+        "the tolerated droop archives its declared rail (kind 16): {tolerated:?}"
     );
     assert!(
         !tolerated.iter().any(|r| matches!(
@@ -487,7 +588,7 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
                 | Record::ResetRendered { .. }
                 | Record::FirmwareObserved { .. }
         )),
-        "{tolerated:?}"
+        "the tolerated droop has no rail crossing, reset or firmware observation: {tolerated:?}"
     );
     let Some(Record::BootObserved {
         instructions_expected,
@@ -497,21 +598,31 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
         .iter()
         .find(|r| matches!(r, Record::BootObserved { .. }))
     else {
-        panic!("no boot observed: {tolerated:?}");
+        panic!("the tolerated droop archives a boot observation: {tolerated:?}");
     };
-    assert_eq!(*instructions_expected, 10_000_000);
-    assert_eq!(*instructions_observed, Some(10_000_000));
+    assert_eq!(
+        *instructions_expected, 10_000_000,
+        "the tolerated droop expects 10,000,000 instructions"
+    );
+    assert_eq!(
+        *instructions_observed,
+        Some(10_000_000),
+        "the tolerated droop observes the full 10,000,000 instructions"
+    );
     let Some(Record::Verdict { pass, findings }) = tolerated.last() else {
-        panic!("the verdict is last");
+        panic!("the verdict is the last record");
     };
-    assert!(*pass);
+    assert!(*pass, "the tolerated droop verdict is a pass");
     let droop_findings = |f: &[(String, String, u64)]| {
         f.iter()
             .filter(|(k, _, _)| k != "device_unmodelled")
             .cloned()
             .collect::<Vec<_>>()
     };
-    assert!(droop_findings(findings).is_empty(), "{findings:?}");
+    assert!(
+        droop_findings(findings).is_empty(),
+        "the tolerated droop has no findings but unmodelled devices: {findings:?}"
+    );
 
     // droop-bor3: the supply falls through VBOR3, the reset is asserted and
     // released, and the firmware boots again.
@@ -529,7 +640,8 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
             ("VBOR3_falling", 1_014_422_222, true),
             ("VBOR3_falling", 1_225_977_778, false),
             ("VBOR3_rising", 1_227_977_778, false),
-        ]
+        ],
+        "the bor3 droop crosses VBOR3 falling then rising at the predicted times"
     );
     let resets: Vec<(u64, bool, Vec<String>)> = bor3
         .iter()
@@ -548,13 +660,18 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
         [
             (1_014_430, false, vec!["VBOR3".to_owned()]),
             (1_227_980, true, vec!["VBOR3".to_owned()]),
-        ]
+        ],
+        "the bor3 droop asserts the reset then releases it, both caused by VBOR3"
     );
     let observed: Vec<&Record> = bor3
         .iter()
         .filter(|r| matches!(r, Record::FirmwareObserved { .. }))
         .collect();
-    assert_eq!(observed.len(), 1, "{observed:?}");
+    assert_eq!(
+        observed.len(),
+        1,
+        "the bor3 droop observes the firmware exactly once, after the reset: {observed:?}"
+    );
     let Record::FirmwareObserved {
         at_ns,
         boot_word,
@@ -565,10 +682,25 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
     else {
         unreachable!()
     };
-    assert_eq!(*at_ns, 1_327_980);
-    assert_eq!(boot_word.observed, Some(0x2100_b007));
-    assert_eq!(status.observed, Some(0x2202_0000));
-    assert_eq!(value.observed, Some(0x60));
+    assert_eq!(
+        *at_ns, 1_327_980,
+        "the firmware is observed at the predicted time after the release"
+    );
+    assert_eq!(
+        boot_word.observed,
+        Some(0x2100_b007),
+        "the observed boot word is the rebooted firmware's"
+    );
+    assert_eq!(
+        status.observed,
+        Some(0x2202_0000),
+        "the observed I2C status is the completed transfer's"
+    );
+    assert_eq!(
+        value.observed,
+        Some(0x60),
+        "the observed sensor value is the one read back"
+    );
     // The device's own log shows the transfer since the release, not only
     // the firmware's own record (adversarial F1; `AET-WO-2204`).
     assert_eq!(
@@ -578,7 +710,8 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
                 "[NOISY] i2c1.u2: Write D0".to_owned(),
                 "[NOISY] i2c1.u2: Read 60".to_owned()
             ][..]
-        )
+        ),
+        "the device's own log witnesses the post-release transfer"
     );
     let Some(Record::BootObserved {
         instructions_expected,
@@ -588,20 +721,28 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
         .iter()
         .find(|r| matches!(r, Record::BootObserved { .. }))
     else {
-        panic!("no boot observed: {bor3:?}");
+        panic!("the bor3 droop archives a boot observation: {bor3:?}");
     };
-    assert_eq!(*instructions_expected, 9_877_201);
-    assert_eq!(*instructions_observed, Some(9_877_201));
+    assert_eq!(
+        *instructions_expected, 9_877_201,
+        "the bor3 droop expects 9,877,201 instructions"
+    );
+    assert_eq!(
+        *instructions_observed,
+        Some(9_877_201),
+        "the bor3 droop observes all 9,877,201 instructions"
+    );
     let Some(Record::Verdict { pass, findings }) = bor3.last() else {
-        panic!("the verdict is last");
+        panic!("the verdict is the last record");
     };
-    assert!(*pass);
+    assert!(*pass, "the bor3 droop verdict is a pass");
     assert_eq!(
         droop_findings(findings),
         [
             ("brownout_reset".to_owned(), "info".to_owned(), 1),
             ("rail_below_tolerance".to_owned(), "info".to_owned(), 1),
-        ]
+        ],
+        "the bor3 droop's findings are one brownout reset and one rail below tolerance, both info"
     );
 }
 

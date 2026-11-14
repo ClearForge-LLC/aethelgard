@@ -1,8 +1,90 @@
 # AET-WO-1909 — FEEDBACK
 
-**Status: census (§1) done; STOPPED for the architect's ruling. No test, fixture, `ci/` file or production file is changed; this file is the whole diff.**
+**Status: built to the architect's ruling on PR #115 (comment 6873338632): A, B, C and D; `oq_03` removed; E declined. __STATUS_TAIL__**
 
-**Branch:** `wo/aet-1909-ci-reduction` · **Base:** `79bdfe1` (`origin/main`) · **Builder:** Claude (Opus 5.5, orchestrating; read-only census rows by Sonnet subagents, each spot-checked against the source).
+**Branch:** `wo/aet-1909-ci-reduction` · **Base:** `a5be795` (`origin/main`, merged in) · **Builder:** Claude (Opus 5.5, orchestrating). Census rows and D8's assertion messages were done by Sonnet subagents, each checked against the source. The adversarial pass was run by a fresh Opus subagent.
+
+# Part 2: the build (§2), as ruled
+
+## What changed
+
+- **`tests/common/verify.rs` (new).**
+  - It holds the helpers `board_tier2` and the three new binaries share: `aethelgard`, `one`, `build`, `gate_reads`, `package_files`, `copy_tree`, `sha`, `root`, `board` and `SPEC`. Each was moved out of `board_tier2.rs`, not copied.
+  - It also holds `Shared<T>` (F6): a `OnceLock<Result<T, String>>` whose maker runs under `catch_unwind`. A run that fails is stored once and never made again. Every test that reads it fails at once, naming its own property and the stored failure.
+- **Three new tier-2 binaries (D1 (a)),** each reading one shared run. Every test keeps its name, and every original assertion is kept.
+
+  | binary | tests (moved from `board_tier2.rs`) | the shared run | `verify` runs, before → after |
+  |---|---|---|---|
+  | `verify_2k2_tier2.rs` (B) | `verify_binds_the_reference_and_two_runs_print_the_same_bytes`, `verify_fab_out_writes_the_package_its_verdict_names_at_any_path` | V(2k2, `--against` tree, `--fab-out`), at two paths of different lengths | 4 → 2 |
+  | `against_fab_tier2.rs` (A) | `verify_against_fab_finds_the_package_it_wrote_identical`, `verify_against_fab_names_every_changed_and_extra_file` | one V(2k2, `--fab-out`) package; each test compares its own copy, one `verify` at a time (`ONE_AT_A_TIME`) | 4 → 3 |
+  | `verify_47k_tier2.rs` (C) | `verify_fails_the_47k_pull_up_with_the_campaigns_findings`, `verify_fab_out_writes_nothing_when_a_gate_fails` | V(47k, `--fab-out`) into an empty directory | 2 → 1 |
+- **`attribute_seeded.rs`:**
+  - `tier2::oq_03_the_reference_runs_bytes_with_kind_15` is removed (D7). `ran()` already prints its data for every case; the module comment now says so.
+  - The two committed-proposal tests now log `proposals/ absent: nothing to check` as an `ANSWER 3200` line, instead of returning silently (F2).
+- **D8, every assertion named.** Every assertion in the three F1 tests, and in every test that reads a shared run, now carries a message naming its property. That covers the new binaries, `ran()` and `REGATED` and their six readers, `first()` and its five readers plus the droop test, and `firmware()`/`two_bme()` and their seven readers.
+  - The change is messages only, checked mechanically: string literals, whitespace and commas are stripped from the old and new file, and the two token streams are diffed (`~/.cache/aet-1909/msgonly.py`).
+  - The residue is zero in `campaign_tier2.rs`. In `twin_tier2.rs` it is one hunk, a message change, read by hand. In `attribute_seeded.rs` it is my own D7 and F2 edits, plus two added `dir.display()` context arguments.
+- **`ci/`:**
+  - `TIER2_RE` names the three new binaries.
+  - `ci/colocate.tsv` keeps each new binary and `campaign_tier2` (D6) whole on one shard.
+  - `ci/test-weights.tsv` drops the seven lines for tests that moved or went.
+  - `TIER2_MIN` is 90 (91 − `oq_03`; the six moved tests still count), its comment naming every moved and removed test and the two vacuous ones.
+- **Not changed:** any production file, `ONE_PROOF` (E declined), `ci/SHARDS` (8), the guard and the canary.
+
+## B and C: the evidence the ruling asked for, before the old invocations went
+
+**1. Byte comparison** (`~/.cache/aet-1909/bytes/`; the pinned image; each verdict compared key by key with `cmp.py`):
+
+| compared | keys only in one | shared keys that differ | equal apart from those |
+|---|---|---|---|
+| V(2k2, `--against`) vs V(2k2, `--against`, `--fab-out`) | `fab` | none | yes |
+| V(2k2, `--fab-out`) vs V(2k2, `--against`, `--fab-out`) | `against` | `fab.files["MANIFEST.json"]` | yes, apart from those |
+| V(47k) vs V(47k, `--fab-out`) | `fab` | none | yes; `--fab-out` held 0 entries |
+
+- **The one shared key that differs is caused by the extra flag's key.** `MANIFEST.json` names the sha256 of the verdict line without `fab` (`verify.rs:709-722`), and with `--against` that line carries `"against":"identical"`.
+- The other 14 package files are byte-identical between the two `--fab-out` runs (`pkg-fabout.sha`, `pkg-both.sha`).
+- `verify_fab_out_writes…` still checks the manifest against the line its own run printed, so it checks the same binding.
+
+**2. Independence**, from the source:
+- `main.rs:340-353` passes `--against` and the fab mode to `verify::verify` as separate arguments.
+- In `verify.rs`, `--fab-out` is checked usable before any gate (`:566-574`). `--against` only reads its directory and diffs it against the in-memory generated `files` (`:576-603`), setting `report.against`, or failing before any gate if the trees differ.
+- Every gate runs on the scratch tree written from `files` (`:605-610`), never on the `--against` directory.
+- `--fab-out` is written only in `package()`, after every gate passed (`:694-780`), from the scratch root's board and ELF.
+- So neither reads what the other writes, and neither changes a gate's input. Their one coupling is the failure path: a differing `--against` writes no package (`:589-590`). B's shared runs pass `--against`, so that path is not shared.
+
+## Mutants (§4): for each shared run, one property broken, caught by the named test only
+
+Each mutant was a production edit in a scratch copy (`~/.cache/aet-1909/mutX`, `mutY`), run against all three binaries in the pinned image. Mutants on disjoint paths share a build.
+
+| mutant | caught by | the assertion that fires | the other test reading the run |
+|---|---|---|---|
+| X: `fab.rs:100` FAB-NOTES "plated via, drilled" → "plated via drilled" | `verify_fab_out_writes_the_package_its_verdict_names_at_any_path` | `verify_2k2_tier2.rs:397` "FAB-NOTES.md states plated via, drilled 0.3 mm" | `verify_binds…` passes |
+| Y: `verify.rs:602` `against` "identical" → "same" | `verify_binds_the_reference_and_two_runs_print_the_same_bytes` | `verify_2k2_tier2.rs:91` "--against finds the committed tree identical" | `verify_fab_out_writes…` passes |
+| X: `verify.rs:762` `against_fab` "identical" → "same" | `verify_against_fab_finds_the_package_it_wrote_identical` | `against_fab_tier2.rs:83` "the derived package is identical" | `…names every changed…` passes |
+| Y: `verify.rs:764` "differs" → "different" | `verify_against_fab_names_every_changed_and_extra_file` | `against_fab_tier2.rs:120` "the derived package differs" | `…finds…identical` passes |
+| X: `verify.rs:687` "not_written" → "unwritten" | `verify_fab_out_writes_nothing_when_a_gate_fails` | `verify_47k_tier2.rs:103` "the package is not written" | `verify_fails_the_47k…` passes |
+| Y: after `verify.rs:972`, the campaign gate's `exit_code` + 7 | `verify_fails_the_47k_pull_up_with_the_campaigns_findings` | `verify_47k_tier2.rs:67` "the scenario met its own expectation" | `…writes_nothing…` passes |
+
+## Coverage map: every removed or merged test, what it guarded, and what guards it now
+
+| test | what it guards | guarded now by | evidence |
+|---|---|---|---|
+| `oq_03_the_reference_runs_bytes_with_kind_15` (removed) | nothing of its own: `ran()`'s checks | `every_case_fails_the_way_its_manifest_says` and four more `ran()` readers, at the same assertion | mutant M1 (census §3): both died at `attribute_seeded.rs:433` |
+| `verify_binds…` (moved to `verify_2k2_tier2.rs`; now with `--fab-out` as well) | `--against` binding and byte-identity | itself, on the shared runs | mutant Y `verify.rs:602` |
+| `verify_fab_out_writes…` (moved; now with `--against` as well) | the package at two paths | itself | mutant X `fab.rs:100` |
+| `verify_against_fab_finds…identical` (moved; shares the package) | `--against-fab` identical | itself | mutant X `verify.rs:762` |
+| `verify_against_fab_names every changed…` (moved; shares the package) | `--against-fab` differences named | itself | mutant Y `verify.rs:764` |
+| `verify_fails_the_47k…` (moved; now with `--fab-out`) | 47k fails with the campaign's findings | itself | mutant Y `verify.rs:972` |
+| `verify_fab_out_writes_nothing…` (moved; shares the run) | nothing written on failure | itself | mutant X `verify.rs:687` |
+| the dropped invocations V(2k2, `--against`) alone, V(2k2, `--fab-out`) alone and V(47k) alone | the same verdicts | the combined runs, equal apart from the named keys | the byte comparison and independence above |
+
+__ADVERSARIAL__
+
+__CI__
+
+__REDUCTION__
+
+# Part 1: the census (§1), as stopped for the ruling
 
 ## Answer first
 
