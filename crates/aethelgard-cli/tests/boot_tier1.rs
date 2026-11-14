@@ -129,6 +129,9 @@ fn reads(word: &str, instructions: &str, mips: &str, registers: &[&str]) -> Vec<
         "0x8000010".to_owned(),
         // ICSR: thread mode (VECTACTIVE 0), as measured on Renode 1.17.0.
         "0x00000800".to_owned(),
+        // The ELF's one self-loop, as the machine still holds it.
+        "0xBF10".to_owned(),
+        "0xE7FD".to_owned(),
     ];
     v.extend(registers.iter().map(|r| (*r).to_owned()));
     // U2's record: OK, then the BME280's identity.
@@ -189,7 +192,7 @@ if [ "$3" = --version ]; then printf '{version}\n'; exit 0; fi
 # No console level is ever set (`AET-WO-2204` D4); only a device's source level.
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.010000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.010000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 /bin/cat '{out}'
@@ -1275,6 +1278,28 @@ fn a_core_not_on_a_self_loop_fails_and_both_of_its_halfwords_pass() {
     // Outside the firmware it is `pc_outside_firmware` alone.
     let (_, v) = at("0x8000040");
     assert_eq!(kinds(&v), ["pc_outside_firmware"], "{v}");
+    // Adversarial A1: on the ELF's loop, but the machine no longer holds it
+    // (the firmware rewrote its flash: `str r0, [r1]` where the `yield` was).
+    let mut r = reads(
+        "0x2100B007",
+        "0x00000000000F4240",
+        "0x00000064",
+        &GOOD_REGISTERS,
+    );
+    r[5] = "0x6008".into();
+    let (code, v) = boot(&transcript(
+        GOOD_WITNESS,
+        &r.iter().map(String::as_str).collect::<Vec<_>>(),
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["pc_not_on_self_loop"], "{v}");
+    assert!(
+        finding(&v, "pc_not_on_self_loop").unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .contains("no longer holds"),
+        "{v}"
+    );
 }
 
 /// `AET-WO-2204` D1: on a bus with two modelled devices (the test fixture

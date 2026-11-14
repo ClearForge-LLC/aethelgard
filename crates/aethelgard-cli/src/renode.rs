@@ -315,6 +315,11 @@ impl BootPlan<'_> {
                 Read::Icsr,
             ),
         ];
+        for (i, &at) in self.self_loops.iter().enumerate() {
+            for (k, at) in [(0u8, at), (1, at + 2)] {
+                reads.push((format!("sysbus ReadWord {at:#010x}"), Read::Loop(i, k)));
+            }
+        }
         for (i, r) in self.image.registers.iter().enumerate() {
             reads.push((
                 format!("sysbus ReadDoubleWord {:#010x}", r.address),
@@ -486,6 +491,9 @@ enum Read {
     Mips,
     Pc,
     Icsr,
+    /// Self-loop `.0`'s halfword `.1` (0 the `yield`, 1 the `b.n`), read back
+    /// from the machine.
+    Loop(usize, u8),
     Register(usize),
     /// Check `.0`'s record: word 0 is the status, word 1 the value.
     Record(usize, u8),
@@ -501,6 +509,9 @@ pub struct Observed {
     pub mips: u64,
     pub pc: u32,
     pub icsr: u32,
+    /// Each ELF self-loop's two halfwords as the machine held them after the
+    /// run: a firmware can rewrite its flash in Renode (adversarial A1).
+    pub loops: Vec<[u32; 2]>,
     pub registers: Vec<u32>,
     /// Each identity check's (status, value) words.
     pub records: Vec<(u32, u32)>,
@@ -726,6 +737,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         mips: 0,
         pc: 0,
         icsr: 0,
+        loops: vec![[0, 0]; plan.self_loops.len()],
         registers: vec![0; plan.image.registers.len()],
         records: vec![(0, 0); checks.len()],
         witnesses,
@@ -749,6 +761,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             Read::Mips => observed.mips = v,
             Read::Pc => observed.pc = word()?,
             Read::Icsr => observed.icsr = word()?,
+            Read::Loop(i, k) => observed.loops[i][usize::from(k)] = word()?,
             Read::Register(i) => observed.registers[i] = word()?,
             Read::Record(i, 0) => observed.records[i].0 = word()?,
             Read::Record(i, _) => observed.records[i].1 = word()?,
@@ -861,14 +874,28 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
                 ),
             ));
         }
-        let on_loop = plan.self_loops.iter().any(|&a| pc == a || pc == a + 2);
-        if inside && !on_loop {
+        // On a loop the ELF holds, and that the machine still holds there:
+        // a firmware can rewrite its own flash in Renode (adversarial A1).
+        let intact = [
+            u32::from(aethelgard_twin::boot::YIELD),
+            u32::from(aethelgard_twin::boot::B_N_BACK),
+        ];
+        let on = plan.self_loops.iter().position(|&a| pc == a || pc == a + 2);
+        let rewritten = on.is_some_and(|i| observed.loops[i] != intact);
+        if inside && (on.is_none() || rewritten) {
             findings.push(Finding::plain(
                 "pc_not_on_self_loop",
-                format!(
-                    "the core ended at {:#010x}, which is not on a `yield; b.n` self-loop of the firmware",
-                    observed.pc
-                ),
+                if rewritten {
+                    format!(
+                        "the core ended at {:#010x}, on a `yield; b.n` self-loop of the firmware that the machine no longer holds",
+                        observed.pc
+                    )
+                } else {
+                    format!(
+                        "the core ended at {:#010x}, which is not on a `yield; b.n` self-loop of the firmware",
+                        observed.pc
+                    )
+                },
             ));
         }
     }

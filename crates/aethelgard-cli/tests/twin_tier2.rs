@@ -907,6 +907,36 @@ fn a_firmware_parked_in_its_fault_handler_fails_naming_vectactive() {
 }
 
 #[test]
+fn a_firmware_that_rewrites_its_loop_in_flash_is_not_parked() {
+    // AET-WO-2204 adversarial A1 (`smc-flash2`): the ELF carries a `yield;
+    // b.n` loop, and after the boot word the firmware stores `str r0, [r1]`
+    // over its `yield` (Renode's flash takes the store) and spins there,
+    // writing a register. On the ELF's bytes the core looked parked; the
+    // judge reads the loop back from the machine.
+    let elf = mutant("rewritten-loop", |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "unsafe extern \"C\" {\n    fn Reset() -> !;\n}",
+            "core::arch::global_asm!(\n    \".section .text.fakeloop,\\\"ax\\\",%progbits\",\n    \".global fakeloop\", \".type fakeloop,%function\", \".thumb_func\", \".balign 4\",\n    \"fakeloop:\", \"    .short 0xbf10\", \"    .short 0xe7fd\",\n    \".size fakeloop, . - fakeloop\",\n);\nunsafe extern \"C\" {\n    fn fakeloop() -> !;\n    fn Reset() -> !;\n}",
+        );
+        edit(
+            d,
+            "src/main.rs",
+            "    // No sleep: the judge requires instructions executed to equal MIPS x time.\n    loop {\n        core::hint::spin_loop();\n    }\n}\n\n#[panic_handler]",
+            "    unsafe {\n        let at = (fakeloop as usize & !1) as *mut u16;\n        at.write_volatile(0x6008);\n        core::arch::asm!(\"dsb\", \"isb\");\n        core::arch::asm!(\"bx {t}\", t = in(reg) (at as usize) | 1, in(\"r0\") 0x1u32, in(\"r1\") 0x5802_0014u32, options(noreturn));\n    }\n}\n\n#[panic_handler]",
+        );
+    });
+    let (code, v) = boot_elf("rewritten loop", &elf, "10ms");
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["pc_not_on_self_loop"], "{v}");
+    assert!(
+        message(&v, "pc_not_on_self_loop").contains("no longer holds"),
+        "{v}"
+    );
+}
+
+#[test]
 fn the_judge_s_own_reads_of_a_gated_peripheral_are_never_the_firmware_s() {
     // AET-WO-2204 D8 (a): at 1 us no clock is on yet, so the judge's own
     // reads of I2C1 and the GPIO ports log locked accesses. With synchronous

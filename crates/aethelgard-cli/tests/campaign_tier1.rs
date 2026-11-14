@@ -141,6 +141,9 @@ fn boot_reads(record: [&str; 2]) -> Vec<String> {
         "0x8000010".to_owned(),
         // ICSR: thread mode.
         "0x00000800".to_owned(),
+        // The ELF's one self-loop, as the machine still holds it.
+        "0xBF10".to_owned(),
+        "0xE7FD".to_owned(),
     ];
     v.extend(GOOD_REGISTERS.iter().map(|r| (*r).to_owned()));
     v.extend(record.iter().map(|r| (*r).to_owned()));
@@ -181,7 +184,7 @@ fn toolbox(stdout: &str) -> Dir {
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n'; exit 0; fi
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 /bin/cat '{out}'
@@ -2056,7 +2059,11 @@ fn a_firmware_changed_while_the_campaign_runs_is_refused() {
     // firmware; the second scenario boots the changed file. A fixed delay
     // raced the boot on a slow runner (PR #89's first `gates` run).
     wait_for_the_slow_bridge(child.id());
-    fs::write(&work.firmware, elf_at(0x0800_0000, &[1u8; 64], 40)).unwrap();
+    // Other bytes, the same self-loop: the boot's reads are the same
+    // (`AET-WO-2204` reads each self-loop back), only the firmware changed.
+    let mut changed = [1u8; 64];
+    changed[0x10..0x14].copy_from_slice(&[0x10, 0xBF, 0xFD, 0xE7]);
+    fs::write(&work.firmware, elf_at(0x0800_0000, &changed, 40)).unwrap();
     let out = child.wait_with_output().unwrap();
     let all = lines(&out);
     assert_eq!(out.status.code(), Some(3), "{all:?}");
