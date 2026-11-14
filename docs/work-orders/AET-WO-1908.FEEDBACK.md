@@ -1,6 +1,6 @@
 # AET-WO-1908 — FEEDBACK
 
-**Status: STOPPED before the build.** No weight, `SHARDS` or `shard.sh` change is in this PR. The three acceptance runs were not attempted, because the measurement shows the `attribute_seeded` block alone can take 14 minutes of job time on CI, and the fence forbids the only fix (a test change). Rulings are asked for at the end.
+**Status: IN PROGRESS (rewritten at the close).** Built after a first stop (see Method and Findings, kept below); the acceptance runs are logged under Acceptance runs.
 
 **Branch:** `wo/aet-1908-ci-rebalance` · **Base:** `a9d94ec` (`origin/main`) · **PR:** #109 · **Builder:** Claude (Sonnet 5.5). The measurement harness was reverted: `git diff origin/main -- ci/` is empty, and `RUSTC_BOOTSTRAP`, `report-time`, `test-threads`, `MEASURE` and `WALL` do not occur in `ci/shard.sh`.
 
@@ -119,3 +119,13 @@ The targeted adversarial pass (§5) and the reduction pass act on a built plan; 
 | 5 | 7 | `tests/boot_tier1.rs` | `a_bridge_that_fails_or_answers_wrong_stops_the_call` |
 | 5 | 6 | `tests/twin_tier2.rs` | `a_firmware_that_writes_the_witness_registers_by_hand_passes_today_a_named_residual` |
 | 5 | 5 | `tests/generate_tier1.rs` | `generate_reproduces_the_committed_board_and_emits_files_byte_for_byte` |
+
+## Acceptance runs
+
+Job start to job end, minutes:seconds, from the run's job list. Run A is at 9 shards and does not count (a shard passed 13 minutes); the count restarts with every change to the plan.
+
+| run | commit | shards | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | slowest |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| A (43538439489) | c1a4c12 | 9 | 9:43 | 10:18 | 9:26 | 11:55 | 9:47 | **13:27** | 8:46 | 9:53 | 12:12 | | **13:27** |
+
+Run A: the guard and canary passed (`tools` green). Shard 1, which holds the `attribute_seeded` block (planned 720 s), took only 10:18; the shards with `board_tier2` heavy tests (3, 5, 8) took 11:55 to 13:27, planned 548 s of test time, actual about 12 to 20% more. Setup is 103 to 138 s. Next: 10 shards (planned 484 s per shard).
