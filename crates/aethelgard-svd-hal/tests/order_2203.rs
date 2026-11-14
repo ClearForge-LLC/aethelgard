@@ -62,7 +62,10 @@ fn digests() -> Vec<(&'static str, String)> {
 /// Taken from the code before the move (`i2c_targets` in the caller). The
 /// "platform faulted" digest was re-taken in `AET-WO-1900` (2300 F13), which
 /// reworded the faulted platform's provenance comment and nothing else: the old
-/// digest was `35509f30…1073`.
+/// digest was `35509f30…1073`. The "boot image" digest was re-taken in
+/// `AET-WO-2204`, which replaced the bus's `CR2`/`TXDR` witness with each
+/// identity read's device path and witness lines (the `Image` the digest
+/// prints); the other three are unchanged. The old digest was `704f44d1…8e7c`.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
@@ -78,7 +81,7 @@ const BEFORE: [(&str, &str); 4] = [
     ),
     (
         "boot image",
-        "704f44d1fd5c60f828991d81aed84c16f7e687af04d86ee378b93b5d04c78e7c",
+        "06c8463ce9bf2b26f96e82cb2128d6e89ec78291203bdc63f2b5fb1adf025f5e",
     ),
 ];
 

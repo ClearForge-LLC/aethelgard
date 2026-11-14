@@ -90,6 +90,7 @@ dependencies = [
  "aethelgard-ir",
  "aethelgard-svd-hal",
  "serde_json",
+ "sha2",
  "thiserror",
 ]
 

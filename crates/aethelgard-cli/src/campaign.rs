@@ -717,14 +717,38 @@ fn droop_records(d: &crate::verdict::DroopReport) -> Result<Vec<Record>, String>
                 boot_word: word(&o.boot_word)?,
                 status: word(&o.status)?,
                 value: word(&o.value)?,
-                cr2: reading(&o.cr2)?,
-                txdr: reading(&o.txdr)?,
+                witness: o
+                    .witness
+                    .as_ref()
+                    .and_then(|w| w.observed.as_deref())
+                    .map(archived_lines),
             },
         ));
     }
     timed.sort_by_key(|(k, _)| *k);
     out.extend(timed.into_iter().map(|(_, r)| r));
     Ok(out)
+}
+
+/// Witness lines as a record archives them: the first
+/// [`aethelgard_chaos::record::MAX_WITNESS_LINES`], each as printable ASCII of
+/// at most 256 bytes. A line that is not is escaped and cut; the judge
+/// compared the lines whole, and a changed line still differs from what it
+/// expects, so this cannot make an observation match.
+fn archived_lines(lines: &[String]) -> Vec<String> {
+    lines
+        .iter()
+        .take(aethelgard_chaos::record::MAX_WITNESS_LINES)
+        .map(|l| {
+            if aethelgard_chaos::event::text_ok(l, 1, 256) {
+                l.clone()
+            } else {
+                let mut e: String = l.escape_default().collect();
+                e.truncate(256);
+                if e.is_empty() { "?".to_owned() } else { e }
+            }
+        })
+        .collect()
 }
 
 fn hex_u64(s: &str) -> Result<u64, String> {
@@ -872,8 +896,15 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
         out.push(Record::I2cWitness {
             peripheral: w.peripheral.clone(),
             reference: w.reference.clone(),
-            cr2: reading(&w.cr2)?,
-            txdr: reading(&w.txdr)?,
+            device: w.device.clone(),
+            expected: w.expected.clone(),
+            observed: w.observed.as_deref().map(archived_lines),
+            absent: w
+                .absent
+                .iter()
+                .take(aethelgard_chaos::record::MAX_WITNESS_LINES)
+                .map(|a| u8::try_from(hex_u64(a)?).map_err(|e| e.to_string()))
+                .collect::<Result<_, _>>()?,
         });
     }
     let mut findings: BTreeMap<(String, String), u64> = BTreeMap::new();
@@ -1055,7 +1086,29 @@ pub fn attribute(dir: &Path) -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{HeldLow, Record, Scenario, Specification, apply, picoseconds, solved_buses};
+    use super::{
+        HeldLow, Record, Scenario, Specification, apply, archived_lines, picoseconds, solved_buses,
+    };
+
+    /// `AET-WO-2204`: an observation is archived as at most 16 lines of
+    /// printable ASCII, each at most 256 bytes; a changed line still differs
+    /// from every line a model logs, so the archive cannot make it match.
+    #[test]
+    fn witness_lines_are_archived_bounded_and_printable() {
+        let many: Vec<String> = (0..20)
+            .map(|i| format!("[NOISY] i2c1.u2: Read {i:X}"))
+            .collect();
+        let kept = archived_lines(&many);
+        assert_eq!(kept.len(), aethelgard_chaos::record::MAX_WITNESS_LINES);
+        assert_eq!(kept[..], many[..16]);
+        let odd = archived_lines(&["[NOISY] i2c1.u2: Read 60\u{e9}".to_owned(), "x".repeat(300)]);
+        assert_eq!(odd[0], "[NOISY] i2c1.u2: Read 60\\u{e9}");
+        assert_eq!(odd[1].len(), 256);
+        assert!(
+            odd.iter()
+                .all(|l| aethelgard_chaos::event::text_ok(l, 1, 256))
+        );
+    }
     use serde_json::{Value, json};
 
     fn spec() -> Specification {

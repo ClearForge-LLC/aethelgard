@@ -161,12 +161,22 @@ pub enum Record {
         observed: Option<u64>,
         status: Option<String>,
     },
-    /// Kind 13: the controller state that witnesses the last read on a bus.
+    /// Kind 13: one identity read's witness (`AET-WO-2204` D1): the whole
+    /// log lines the device's model writes for the read, as the judge
+    /// expects them, and every line Renode logged for the device with a
+    /// witness's shape, in order, at most [`MAX_WITNESS_LINES`]; `None` when
+    /// the log could not be read whole (past the filter's budget).
     I2cWitness {
         peripheral: String,
         reference: String,
-        cr2: Reading,
-        txdr: Reading,
+        /// The model's path in Renode, `i2c1.u2`.
+        device: String,
+        expected: Vec<String>,
+        observed: Option<Vec<String>>,
+        /// The addresses the device's controller found no device at during
+        /// the run, in order, at most [`MAX_WITNESS_LINES`]: attribution's
+        /// evidence of a transfer to a wrong address, never a witness.
+        absent: Vec<u8>,
     },
     /// Kind 14: the verdict, with each distinct finding kind, its severity and
     /// how many times it was found, sorted.
@@ -214,16 +224,18 @@ pub enum Record {
         rendering: String,
     },
     /// Kind 19: `firmware.observed` after a release, at the recovery bound:
-    /// the boot word, the identity read's two words, and the controller's
-    /// `CR2` and `TXDR`, which only a transfer on the bus sets after a reset
-    /// (`AET-WO-2301` adversarial F1), as Renode read them.
+    /// the boot word and the identity read's two words, as Renode read them,
+    /// and the first identity read's witness lines from the release to the
+    /// probe (`AET-WO-2301` adversarial F1, `AET-WO-2204`).
     FirmwareObserved {
         at_ns: u64,
         boot_word: Reading,
         status: Reading,
         value: Reading,
-        cr2: Reading,
-        txdr: Reading,
+        /// The first identity read's witness-shaped lines from the release
+        /// to the probe (`AET-WO-2204`): `None` when the boot has no identity
+        /// read, or when the log could not be read whole.
+        witness: Option<Vec<String>>,
     },
     /// Kind 20: the scenario's `expect_counts`, sorted by kind, archived only
     /// when it declares them.
@@ -249,6 +261,21 @@ fn opt(v: Option<u64>) -> Value {
 fn texts(v: &[String]) -> Value {
     Value::Array(v.iter().map(|s| t(s)).collect())
 }
+
+fn opt_texts(v: Option<&[String]>) -> Value {
+    Value::Array(v.map(texts).into_iter().collect())
+}
+
+/// Witness lines as a record carries them: at most [`MAX_WITNESS_LINES`],
+/// each 1 to 256 printable ASCII bytes.
+fn witness_lines_ok(v: &[String]) -> bool {
+    v.len() <= MAX_WITNESS_LINES && v.iter().all(|s| text_ok(s, 1, 256))
+}
+
+/// The most witness lines a record carries: a judge sees two per identity
+/// read, so a longer observation already differs from what it expects, and
+/// cutting it here cannot make it match.
+pub const MAX_WITNESS_LINES: usize = 16;
 
 fn reading(r: &Reading) -> Value {
     Value::Array(vec![
@@ -326,6 +353,15 @@ impl<'a> Fields<'a> {
             out.push(inner.text()?);
         }
         Some(out)
+    }
+    fn opt_texts(&mut self) -> Option<Option<Vec<String>>> {
+        let mut inner = Fields(self.array()?.iter());
+        if inner.0.len() == 0 {
+            return Some(None);
+        }
+        let v = inner.texts()?;
+        inner.end()?;
+        Some(Some(v))
     }
     fn reading(&mut self) -> Option<Reading> {
         let mut r = Fields(self.array()?.iter());
@@ -568,9 +604,18 @@ impl Record {
             Self::I2cWitness {
                 peripheral,
                 reference,
-                cr2,
-                txdr,
-            } => vec![t(peripheral), t(reference), reading(cr2), reading(txdr)],
+                device,
+                expected,
+                observed,
+                absent,
+            } => vec![
+                t(peripheral),
+                t(reference),
+                t(device),
+                texts(expected),
+                opt_texts(observed.as_deref()),
+                Value::Array(absent.iter().map(|&a| u(a.into())).collect()),
+            ],
             Self::Verdict { pass, findings } => vec![
                 flag(*pass),
                 Value::Array(
@@ -651,15 +696,13 @@ impl Record {
                 boot_word,
                 status,
                 value,
-                cr2,
-                txdr,
+                witness,
             } => vec![
                 u(*at_ns),
                 reading(boot_word),
                 reading(status),
                 reading(value),
-                reading(cr2),
-                reading(txdr),
+                opt_texts(witness.as_deref()),
             ],
             Self::ExpectedCounts { counts } => vec![Value::Array(
                 counts
@@ -739,8 +782,17 @@ impl Record {
             13 => Self::I2cWitness {
                 peripheral: f.text()?,
                 reference: f.text()?,
-                cr2: f.reading()?,
-                txdr: f.reading()?,
+                device: f.text()?,
+                expected: f.texts()?,
+                observed: f.opt_texts()?,
+                absent: {
+                    let mut inner = Fields(f.array()?.iter());
+                    let mut v = Vec::new();
+                    while inner.0.len() > 0 {
+                        v.push(inner.u8()?);
+                    }
+                    v
+                },
             },
             14 => {
                 let pass = f.flag()?;
@@ -813,8 +865,7 @@ impl Record {
                 boot_word: f.reading()?,
                 status: f.reading()?,
                 value: f.reading()?,
-                cr2: f.reading()?,
-                txdr: f.reading()?,
+                witness: f.opt_texts()?,
             },
             20 => {
                 let mut counts = Vec::new();
@@ -935,12 +986,21 @@ impl Record {
             Self::I2cWitness {
                 peripheral,
                 reference,
-                ..
+                device,
+                expected,
+                observed,
+                absent,
             } => {
-                if name_ok(peripheral) && name_ok(reference) {
-                    Ok(())
+                if absent.len() > MAX_WITNESS_LINES || absent.iter().any(|&a| a > 0x7F) {
+                    Err("absent addresses are not at most 16 seven-bit addresses")
+                } else if !(name_ok(peripheral) && name_ok(reference) && name_ok(device)) {
+                    Err("peripheral, reference or device is not 1 to 64 printable ASCII bytes")
+                } else if !witness_lines_ok(expected)
+                    || observed.as_deref().is_some_and(|o| !witness_lines_ok(o))
+                {
+                    Err("witness lines are not at most 16 lines of 1 to 256 printable ASCII bytes")
                 } else {
-                    Err("peripheral or reference is not 1 to 64 printable ASCII bytes")
+                    Ok(())
                 }
             }
             Self::Verdict { pass, findings } => {
@@ -1029,7 +1089,13 @@ impl Record {
                     Ok(())
                 }
             }
-            Self::FirmwareObserved { .. } => Ok(()),
+            Self::FirmwareObserved { witness, .. } => {
+                if witness.as_deref().is_some_and(|o| !witness_lines_ok(o)) {
+                    Err("witness lines are not at most 16 lines of 1 to 256 printable ASCII bytes")
+                } else {
+                    Ok(())
+                }
+            }
             Self::ExpectedCounts { counts } => {
                 if counts.is_empty() || !counts.iter().all(|(k, _)| name_ok(k)) {
                     Err("expected counts are not one or more finding kinds")

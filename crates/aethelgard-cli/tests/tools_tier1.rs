@@ -257,7 +257,9 @@ const LOAD_ERROR: &str = "There was an error executing command 'machine LoadPlat
 fn renode_stub(tb: &Dir, version: Version, exit: i32, stdout: &str) {
     tb.write("renode.out", stdout.as_bytes());
     let body = format!(
-        "if [ \"$1\" = --version ]; then {}; fi\n/bin/cat '{}'\nexit {exit}",
+        // Every Renode the CLI starts is handed its configuration first
+        // (`AET-WO-2204` D4): `--config <file>`, then the call's own arguments.
+        "[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then {}; fi\n/bin/cat '{}'\nexit {exit}",
         version.shell("Renode v1.17.0"),
         tb.join("renode.out").display()
     );
@@ -1150,7 +1152,7 @@ fn simulate_killed_by_sigkill_is_tool_error() {
     let tb = Dir::new("tb");
     tb.script(
         "renode",
-        "if [ \"$1\" = --version ]; then printf 'Renode v1.17.0\\n'; exit 0; fi\nkill -9 $$",
+        "if [ \"$3\" = --version ]; then printf 'Renode v1.17.0\\n'; exit 0; fi\nkill -9 $$",
     );
     let p = input("p.repl", b"x\n");
     refused_id(&simulate(&tb, p.path.as_os_str()), 5, "ToolError", "renode");

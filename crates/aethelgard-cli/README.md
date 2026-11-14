@@ -246,23 +246,24 @@ A verdict that cannot name its input's hash and its judge's version is never pri
 - the firmware never sleeps once it is running: the instruction witness needs the core busy for the whole run;
 - a firmware may load only into flash, `FLASH_BANK1_BASE` to `FLASH_END` (`0x08000000`–`0x081FFFFF`), or RAM, `D1_DTCMRAM_BASE` and the 128 KB its comment states. Every address comes from ST's pinned header.
 
-**The run.** One Renode call executes:
+**The run.** Every Renode the CLI starts reads `--config <scratch>/renode.config`, which sets one key, `[general]` `use-synchronous-logging = true` (`AET-WO-2204` D4): each log line is written by the thread that logs it, so a line the firmware caused is on the console before `RunFor` returns, never split below line level by the monitor's output and never dropped by a level change. Every other key is stated at Renode's own default, the value it writes when given no file (Renode writes a missing key back, and the file is sealed read-only for the tool uid). One Renode call executes:
 1. `emulation SetSeed 2100`, so the platform's random initial values are the same in every run;
 2. the platform, then `sysbus LoadELF` of the firmware's copy;
 3. `0` written to every RCC enable register that gates a solved port or peripheral, silicon's reset value (Renode resets them with every clock on), and to the boot word, so only the firmware's code can set it;
    then `cpu VectorTableOffset` set to `FLASH_BANK1_BASE`, where the part boots, rather than letting Renode guess the table from the ELF;
-4. `emulation RunFor` the `--for` time;
-5. then, under `logLevel 3`, the reads between two marker lines (the boot word, `cpu ExecutedInstructions`, `cpu PerformanceInMips`, `cpu PC` and each solved register), then `peripherals`.
+4. `logLevel -1 sysbus.<bus>.<device>` for each modelled I2C device the platform declares (the device's own log, not the console's level), then `emulation RunFor` the `--for` time;
+5. then the reads between two marker lines (the boot word, `cpu ExecutedInstructions`, `cpu PerformanceInMips`, `cpu PC`, `ICSR` and each solved register), then `peripherals`. No console level is ever changed.
 
 **The bounds** (`RUL-13` as amended for `simulate --firmware` only, ruled on PR #56, B1): the reaper kills Renode's whole process tree after **30 s** of wall-clock time, or once the tree's resident memory (the sum of its processes' `VmRSS`, read every 100 ms) passes **1 GiB**. The call is then a `fail` that names the bound: `wall_bound_exceeded` or `memory_cap_exceeded`, or `cpu_aborted` if Renode logged `This machine has aborted` first (its `RunFor` then never returns). Nothing is read, and `tool.exit_code` is `-1`. The constants are measured: the reference boot at `--for 100ms` took at most 2.59 s and 404,620 KiB in the tools image, and the ruling asks at least 10× and 2× of those. `RLIMIT_AS` cannot do it, because CoreCLR will not start under any address-space limit. Plain `simulate`, `prove` and `check` stay unbounded, and the caller's timeout ends them.
 
-The reader removes a stray `\r` at either end of a line, matches each marker as a whole line, and takes each read only as a line that is a bare `0x…` value. Anything else between the markers is exit `5`.
+The reader removes a stray `\r` at either end of a line, matches each marker as a whole line, and takes each read only as a line that is a bare `0x…` value. Every log line before `BEGIN` is the run's; a whole log line between the markers is the judge's own reads' (a read of a peripheral whose clock is off logs one) and is never attributed to the firmware. Anything else between the markers is exit `5`.
 
 **What is judged.** The expected registers come from the solved topology alone (`INV-07`), never from the firmware:
 - each solved pin's `MODER` field (alternate function, or output for a `gpio` net);
 - its `AFRL`/`AFRH` field for an alternate function;
 - each cold RCC register in full, which must hold exactly the solved enable bits;
-- and the core's final `PC`, which must lie inside an executable `PT_LOAD` of the firmware.
+- and the core's final `PC`, which must lie inside an executable `PT_LOAD` of the firmware;
+- after the boot word, the core in thread mode (`ICSR.VECTACTIVE` 0, else `core_in_exception`) and its `PC` on a `yield; b.n` self-loop read from the ELF's own bytes (else `pc_not_on_self_loop`), `AET-WO-2204` D3. **Named residual:** a pass claims the core parked in thread mode on a self-loop after the boot word, not that the loop is the generator's fixed point; a firmware that writes the boot word and parks on another thread-mode self-loop passes, and an interrupt handler that runs and returns after the boot word is not seen (`AET-WO-2204` adversarial A2). The loop's two halfwords are read back from the machine after the run, since a firmware can rewrite its flash in Renode, and an executable segment whose virtual address is not its physical one is refused.
 
 **The named residual** (ruled on PR #56, B2): the boot word witnesses that the solved configuration happened and that the core kept executing inside the firmware's own code; it does not witness that `main` returned.
 
@@ -277,7 +278,11 @@ The reader removes a stray `\r` at either end of a line, matches each marker as 
         "boot_word":{"address":"0x20000000","expected":"0x2100b007","observed":"0x2100b007"},
         "registers":[{"name":"GPIOA.MODER","address":"0x58020000","mask":"0x0000fc03","expected":"0x0000a801","observed":"0x0000a801"},…],
         "unobservable":["GPIOB.OTYPER","I2C1.TIMINGR"],
-        "i2c":[{"reference":"U2","address":"0x76","register":"0xd0","expected":"0x60","observed":"0x60","status":"ok"}]}
+        "i2c":[{"reference":"U2","address":"0x76","register":"0xd0","expected":"0x60","observed":"0x60","status":"ok"}],
+        "i2c_witness":[{"peripheral":"I2C1","reference":"U2","device":"i2c1.u2",
+                        "expected":["[NOISY] i2c1.u2: Write D0","[NOISY] i2c1.u2: Read 60"],
+                        "observed":["[NOISY] i2c1.u2: Write D0","[NOISY] i2c1.u2: Read 60"],"absent":[]}],
+        "icsr":"0x00000800"}
 ```
 
 **The I2C identity reads** (`AET-WO-2202`). The specification's I2C devices are placed on the peripheral their bus was solved to (`SolvedTopology::i2c_devices`, `AET-WO-2203`). For each device whose part has a Renode 1.17.0 model (today the BME280, `I2C.BME280`) the emitted platform declares the model at its bus and address, and the reference firmware reads the part's identity register once, through the board crate's bounded `transfer`, before it writes the boot word.
@@ -286,11 +291,7 @@ The reader removes a stray `\r` at either end of a line, matches each marker as 
 - **Findings:** `i2c_identity_mismatch` (status OK, another value), `i2c_timeout` (naming the wait), `i2c_record_invalid` (a record no transfer writes: the fill, or another word). A record is judged only once the boot word is set; before that `boot_word_missing` already says the run failed.
 - **`device_unmodelled`** has severity `info`: the device's part has no model in the twin (the TMP117 has none in Renode 1.17.0), so its identity was not read. It is reported on every boot and does not make the verdict `fail`; it also appears in the platform's header comment.
 
-- **The controller witness** (`AET-WO-2202` W1). The record is the firmware's account, so for the last identity read on each bus the judge also reads the controller's `CR2` and `TXDR` after the run, which Renode 1.17.0 stores. The expectation is computed from the solved address, the part table and the header (`SADD` = address << 1, `RD_WRN` = 1, `NBYTES` = the identity's width, `AUTOEND` set, `TXDR` = the identity register; `START` and every other bit are ignored) and is judged only when that record claims the read completed. A difference is `i2c_transaction_unwitnessed`, naming the device and each field. The verdict's `boot.i2c_witness` lists both registers with their addresses, masks, expected and observed values.
-
-**Named residual** (`AET-WO-2202` W1): only the last transaction on each bus is witnessed by controller state. Today each bus has one modelled device; a bus with two needs a per-transaction witness.
-
-**Named residual** (`AET-WO-1900` A11.1, measured): the controller witness guards a mistaken generated firmware, not a hostile one. A hand-written firmware that writes the record and also stores the reference boot's final `CR2` (`0x020104EC`) and `TXDR` (`0xD0`) straight to `I2C1`, calling no `transfer`, is stored by Renode 1.17.0 and judged `pass` (`twin_tier2::a_firmware_that_writes_the_witness_registers_by_hand_passes_today_a_named_residual`). An observable a plain write cannot set is left to `AET-WO-2301`.
+- **The witness** (`AET-WO-2204` D1, replacing `AET-WO-2202`'s controller `CR2`/`TXDR`, which a plain store sets). The record is the firmware's account; the witness is what Renode itself logs when the controller runs the read on the device's model: for the BME280, `[NOISY] i2c1.u2: Write D0` then `[NOISY] i2c1.u2: Read 60`. The expected lines come from the part table and the emitter (the device's path is the controller's stock name, then the reference lower-cased), never from the firmware. For every record whose status is OK the judge requires exactly those lines from the device, matched as the whole text after the host timestamp, in order, every device's in the records' order: so each read on a bus is witnessed, not only the last. A difference is `i2c_transaction_unwitnessed` (naming the device, what Renode logged and what was expected); a cross-device order difference is `i2c_witness_out_of_order`; a model with no known witness format is `i2c_witness_unavailable`. Past the output filter's 8 MiB budget a line may have been dropped, so every read is unwitnessed, never passed. **Named residual** (adversarial A3): a static pass means the right device returned the table's value during the run, not that the record was derived from that read (a firmware that writes the record first and transfers after passes; the droop's probe does check the order). The verdict's `boot.i2c_witness` lists, per read, `device`, `expected`, `observed` and `absent` (the addresses the controller found no device at, kept for attribution, never judged).
 
 Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a load error. `firmware.image_sha256` is the sha256, over every `PT_LOAD` with memory in physical-address order, of its physical address, file size and memory size (each a `u32` little-endian) and then its file bytes: the memory image Renode builds. It is the firmware's identity, because the file's own hash also covers symbol names, which Cargo derives from the checkout path.
 
@@ -432,7 +433,7 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 | `i2c_line_held_low` | kind 9 caused by `scenario.line_held_low` |
 | `i2c_timeout`, `i2c_record_invalid` | kind 12 whose status is a `timeout_…`, or `invalid` |
 | `i2c_identity_mismatch` | kind 12 whose status is `ok` and whose value is not the part table's |
-| `i2c_transaction_unwitnessed` | kind 13 whose read's status is `ok` and whose `CR2` or `TXDR` differs from its expectation |
+| `i2c_transaction_unwitnessed` | kind 13 whose read's status is `ok` and whose observed lines are not exactly its expected ones |
 | `register_mismatch` | kind 11 that differs from its expectation under its mask |
 | `boot_word_missing`, `cpu_halted` | kind 10 without the boot word, or with fewer instructions than expected |
 | `locked_peripheral_access` | kind 11 in RCC with an expected enable bit clear, at least one: the same fact, archived (the count is not compared, since the judge reports one finding for any number of accesses) |
@@ -445,11 +446,9 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 - Kind 10, and any kind 11 wrong elsewhere, is on the board.
 
 **Software evidence on a bus.** For a symptom of one device, only that device's own witness counts, since another device's transaction says nothing of this one's. The bus's owned registers count for every symptom on it.
-- The controller witness (kind 13) differs from its solved device. The witness must be read at its controller's `CR2` and `TXDR` addresses, from the header.
-- `CR2.SADD` differs from the device's address shifted left by one. Both phases of the transfer write it. It counts only when the firmware wrote `CR2`, i.e. `SADD` or `NBYTES` is not 0; a `CR2` at its reset value says nothing of an address.
-- `NBYTES` differs from the witness's own expectation. It counts only once the record's status shows the read phase began (`ok`, `timeout_rxne`, `timeout_stopf`): before that, `CR2` holds the write's `NBYTES`.
-- `TXDR`'s byte differs from the read's register. It counts only once the write phase ran (`ok`, `timeout_tc`, `timeout_rxne`, `timeout_stopf`): on a TXIS timeout `TXDR` was never written.
-- A witness whose own expectation is not the solved address and register is no evidence either way.
+- The device's witness (kind 13) differs from its solved read: the model logged a write of another register or a read of another value (the first of each counts), or the record says the read completed and the model logged nothing.
+- Its controller found no device at an address other than the device's (Renode's `Unknown slave at address N.`): a transfer to a wrong address, which leaves the model's log empty as a faulted bus does. On a faulted bus the correct address itself is absent, which is not counted.
+- A witness whose own expectation is not the solved register and value, or that could not be read whole, is no evidence either way.
 - An owned register field is wrong. A pin's `MODER` field must hold alternate-function mode and its `AFR` field kind 15's alternate function; both come from kind 15, never from the reading's own expectation, and a reading whose expectation disagrees is no evidence.
 
 **Software evidence on the board.** The boot word is missing, the core executed fewer instructions than expected, or a register is wrong outside every bus's fields.

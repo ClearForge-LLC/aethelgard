@@ -17,6 +17,8 @@ thiserror.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+# The sha256 of the vendored Renode files (AET-WO-2204 D5).
+sha2.workspace = true
 
 [lints]
 workspace = true

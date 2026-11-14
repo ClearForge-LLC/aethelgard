@@ -418,6 +418,16 @@ fn kicad_library_files_live_only_in_the_data_crate() {
     }
 }
 
+/// The Renode 1.17.0 files the twin's `tests/reserved_names.rs` parses at run
+/// time (`AET-WO-2204` D5), with their licence and source note.
+const TWIN_RENODE_DATA: [&str; 5] = [
+    "tests/renode-1.17.0/LICENSE",
+    "tests/renode-1.17.0/NOTICE",
+    "tests/renode-1.17.0/platforms/cpus/stm32h7.repl",
+    "tests/renode-1.17.0/platforms/cpus/stm32h743.repl",
+    "tests/renode-1.17.0/platforms/cpus/stm32h753.repl",
+];
+
 /// `aethelgard-twin` lowers a solved topology to a Renode platform and holds
 /// the judge's half of a boot (`AET-WO-2100`, ruled on PR #56, R6), so it is
 /// no longer a re-export stub. Its files, manifest keys and dependencies are
@@ -431,8 +441,12 @@ fn twin_has_only_its_known_files_keys_and_dependencies() {
             || file == "README.md"
             || LICENCE_FILES.contains(&file.as_str())
             || (file.starts_with("src/") && file.ends_with(".rs"))
-            || (file.starts_with("tests/") && file.ends_with(".rs"));
+            || (file.starts_with("tests/") && file.ends_with(".rs"))
+            || TWIN_RENODE_DATA.contains(&file.as_str());
         assert!(allowed, "twin has a file outside the allowed set: {file}");
+    }
+    for file in TWIN_RENODE_DATA {
+        assert!(root().join(TWIN).join(file).exists(), "missing {file}");
     }
     let twin = manifest(TWIN);
     for key in twin.keys() {
@@ -454,7 +468,8 @@ fn twin_has_only_its_known_files_keys_and_dependencies() {
         table("dependencies"),
         ["aethelgard-ir", "aethelgard-svd-hal", "thiserror"]
     );
-    assert_eq!(table("dev-dependencies"), ["serde_json"]);
+    // `sha2` checks the vendored Renode files (`AET-WO-2204` D5).
+    assert_eq!(table("dev-dependencies"), ["serde_json", "sha2"]);
     for key in ["dependencies", "dev-dependencies"] {
         for (name, dep) in twin[key].as_table().unwrap() {
             assert_eq!(

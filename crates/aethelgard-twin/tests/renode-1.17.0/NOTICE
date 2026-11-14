@@ -1,0 +1,12 @@
+These three files are copied unchanged from Renode 1.17.0
+(https://github.com/renode/renode, tag v1.17.0, source commit ab721d88):
+
+  platforms/cpus/stm32h753.repl
+  platforms/cpus/stm32h743.repl
+  platforms/cpus/stm32h7.repl
+
+Renode is distributed under the licence in the LICENSE file beside this one.
+They are test data only: `tests/reserved_names.rs` reads them at runtime, checks
+each against the sha256 in `aethelgard_twin::platform::RENODE_FILES`, and parses
+them to prove that `aethelgard_ir::RESERVED_REFERENCES` is exactly the set of
+names a device reference may not take. Nothing in the crate's source includes them.

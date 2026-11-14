@@ -44,7 +44,17 @@ pub struct Image {
     /// The virtual ranges of the executable segments: where a firmware that
     /// reached its fixed point is still running (adversarial A7).
     pub executable: Vec<(u64, u64)>,
+    /// Every `yield; b.n` self-loop in the executable segments' file bytes,
+    /// what Renode loads (`AET-WO-2204` D3), at most [`MAX_SELF_LOOPS`]. The
+    /// judge also reads each back from the machine after the run, since a
+    /// firmware can rewrite its own flash in Renode (adversarial A1).
+    pub self_loops: Vec<u64>,
 }
+
+/// The most `yield; b.n` self-loops a firmware may hold: each is read back
+/// after the run. The generated firmware has three (`fault`, `Board::take`'s
+/// `else`, the fixed point).
+pub const MAX_SELF_LOOPS: usize = 64;
 
 fn malformed(message: String) -> Stop {
     Stop::refused("MalformedFirmware", message)
@@ -181,13 +191,43 @@ pub fn check(bytes: &[u8], memory: &Memory, boot_word: u32) -> Result<Image, Sto
         }
         hasher.update(&bytes[l.offset as usize..(l.offset + l.filesz) as usize]);
     }
+    // Cortex-M has no MMU: code runs where Renode loads it, at the physical
+    // address. An executable segment that names another virtual one would let
+    // the judge read code that is not where the core runs (`AET-WO-2204`
+    // adversarial A1).
+    if let Some(l) = loads
+        .iter()
+        .find(|l| l.flags & PF_X != 0 && l.memsz > 0 && l.vaddr != l.paddr)
+    {
+        return Err(malformed(format!(
+            "an executable PT_LOAD's virtual address {:#010x} is not its physical one {:#010x}",
+            l.vaddr, l.paddr
+        )));
+    }
+    let self_loops: Vec<u64> = loads
+        .iter()
+        .filter(|l| l.flags & PF_X != 0)
+        .flat_map(|l| {
+            aethelgard_twin::boot::self_loops(
+                l.paddr,
+                &bytes[l.offset as usize..(l.offset + l.filesz) as usize],
+            )
+        })
+        .collect();
+    if self_loops.len() > MAX_SELF_LOOPS {
+        return Err(malformed(format!(
+            "the executable segments hold {} `yield; b.n` self-loops, more than {MAX_SELF_LOOPS}",
+            self_loops.len()
+        )));
+    }
     Ok(Image {
         sha256: hex(hasher.finalize()),
         executable: loads
             .iter()
             .filter(|l| l.flags & PF_X != 0 && l.memsz > 0)
-            .map(|l| (l.vaddr, l.vaddr + l.memsz))
+            .map(|l| (l.paddr, l.paddr + l.memsz))
             .collect(),
+        self_loops,
     })
 }
 
@@ -272,6 +312,47 @@ mod tests {
         assert_eq!(
             image.executable,
             [(0x0800_0000, 0x0800_0004), (0x2000_0000, 0x2000_0008)]
+        );
+    }
+
+    /// `AET-WO-2204` D3, adversarial A1: the self-loops are read at the
+    /// physical address, where Renode loads them; an executable segment
+    /// naming another virtual address is refused (Cortex-M has no MMU), and
+    /// so are more loops than the judge reads back.
+    #[test]
+    fn self_loops_are_found_where_renode_loads_them() {
+        let lp: &[u8] = &[0, 0, 0x10, 0xBF, 0xFD, 0xE7, 0, 0];
+        let a = elf(&[(0x0800_0000, 0x0800_0000, lp, 8)]);
+        assert_eq!(
+            check(&a, &memory(), WORD).unwrap().self_loops,
+            [0x0800_0002]
+        );
+        // Not a loop: the `b.n` goes elsewhere, or no `yield` before it.
+        for code in [
+            &[0x10u8, 0xBF, 0xFE, 0xE7][..],
+            &[0x08, 0x60, 0xFD, 0xE7][..],
+        ] {
+            let e = elf(&[(0x0800_0000, 0x0800_0000, code, 4)]);
+            assert!(check(&e, &memory(), WORD).unwrap().self_loops.is_empty());
+        }
+        // The decoy: a loop's bytes at one virtual address, loaded at another.
+        let decoy = elf(&[(0x080F_0000, 0x0800_0040, lp, 8)]);
+        assert_eq!(kind(&decoy), "MalformedFirmware");
+        let many = [0x10u8, 0xBF, 0xFD, 0xE7].repeat(MAX_SELF_LOOPS + 1);
+        assert_eq!(
+            kind(&elf(&[(
+                0x0800_0000,
+                0x0800_0000,
+                &many,
+                many.len() as u32
+            )])),
+            "MalformedFirmware"
+        );
+        let enough = [0x10u8, 0xBF, 0xFD, 0xE7].repeat(MAX_SELF_LOOPS);
+        let e = elf(&[(0x0800_0000, 0x0800_0000, &enough, enough.len() as u32)]);
+        assert_eq!(
+            check(&e, &memory(), WORD).unwrap().self_loops.len(),
+            MAX_SELF_LOOPS
         );
     }
 

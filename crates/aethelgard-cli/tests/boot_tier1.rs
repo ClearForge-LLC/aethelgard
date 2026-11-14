@@ -1,8 +1,9 @@
 //! `AET-WO-2100`, tier 1: `simulate --firmware` against a stub `renode`, with
 //! none of the real tools installed. The stub checks the command line's shape
-//! (fixed seed, cold RCC, fixed virtual time, reads after `logLevel 3`), then
-//! prints a canned transcript, so the judge's every branch runs in `gates`:
-//! the three witnesses, the hardened reader (R3), and the refusals before
+//! (the configuration file and its synchronous logging, fixed seed, cold RCC,
+//! the device's log level, fixed virtual time, no console level changed),
+//! then prints a canned transcript, so the judge's every branch runs in
+//! `gates`: the witnesses, the hardened reader (R3), and the refusals before
 //! Renode runs (R2, R5, R6).
 
 use std::ffi::OsStr;
@@ -75,8 +76,16 @@ fn elf_at(paddr: u32, code: &[u8], machine: u16) -> Vec<u8> {
     b
 }
 
+/// 64 bytes at the flash's start with one `yield; b.n` self-loop at
+/// `0x08000010`, where the stub's transcripts leave the core.
+fn code() -> [u8; 64] {
+    let mut c = [0u8; 64];
+    c[0x10..0x14].copy_from_slice(&[0x10, 0xBF, 0xFD, 0xE7]);
+    c
+}
+
 fn elf() -> Vec<u8> {
-    elf_at(0x0800_0000, &[0u8; 64], 40)
+    elf_at(0x0800_0000, &code(), 40)
 }
 
 /// The listing of the emitted platform's CPU and every solved peripheral.
@@ -116,27 +125,35 @@ fn reads(word: &str, instructions: &str, mips: &str, registers: &[&str]) -> Vec<
         word.to_owned(),
         instructions.to_owned(),
         mips.to_owned(),
-        // Inside the synthetic ELF's one executable segment.
+        // On the synthetic ELF's self-loop.
         "0x8000010".to_owned(),
+        // ICSR: thread mode (VECTACTIVE 0), as measured on Renode 1.17.0.
+        "0x00000800".to_owned(),
+        // The ELF's one self-loop, as the machine still holds it.
+        "0xBF10".to_owned(),
+        "0xE7FD".to_owned(),
     ];
     v.extend(registers.iter().map(|r| (*r).to_owned()));
     // U2's record: OK, then the BME280's identity.
     v.extend(GOOD_RECORD.iter().map(|r| (*r).to_owned()));
-    // I2C1's CR2 and TXDR after that read, as measured on Renode 1.17.0.
-    v.extend(GOOD_CONTROLLER.iter().map(|r| (*r).to_owned()));
     v
 }
 
-/// `CR2` (`SADD` 0x76 << 1, `RD_WRN`, `NBYTES` 1, `AUTOEND`) and `TXDR` (0xD0).
-const GOOD_CONTROLLER: [&str; 2] = ["0x020104EC", "0x000000D0"];
+/// What Renode 1.17.0's BME280 logs for U2's identity read (`AET-WO-2204`
+/// S1, measured): the run's witness, before `BEGIN`.
+const GOOD_WITNESS: &str =
+    "[03:07:39.3762] [NOISY] i2c1.u2: Write D0\n[03:07:39.3765] [NOISY] i2c1.u2: Read 60\n";
 
 /// The record a firmware that read U2's ID register (0xD0) as 0x60 leaves.
 const GOOD_RECORD: [&str; 2] = ["0x22020000", "0x00000060"];
 
-/// A transcript with `log` before the reads.
+/// A transcript with the device's witness, then `log`, before the reads.
 fn with(log: &str, word: &str, instructions: &str, mips: &str, registers: &[&str]) -> String {
     let r = reads(word, instructions, mips, registers);
-    transcript(log, &r.iter().map(String::as_str).collect::<Vec<_>>())
+    transcript(
+        &format!("{GOOD_WITNESS}{log}"),
+        &r.iter().map(String::as_str).collect::<Vec<_>>(),
+    )
 }
 
 fn good() -> String {
@@ -149,8 +166,10 @@ fn good() -> String {
     )
 }
 
-/// A `renode` stub that answers `--version`, refuses (exit 99) a command
-/// line without the boot's fixed parts, and prints `stdout`.
+/// A `renode` stub that refuses (exit 97) a call without `--config` and a
+/// configuration with synchronous logging and host timestamps (`AET-WO-2204` D4),
+/// answers `--version`, refuses (exit 99) a command line without the boot's
+/// fixed parts, and prints `stdout`.
 fn toolbox(stdout: &str) -> Dir {
     toolbox_version(stdout, "Renode v1.17.0")
 }
@@ -166,9 +185,14 @@ fn toolbox_then(stdout: &str, version: &str, then: &str) -> Dir {
     let out = tb.write("renode.out", stdout.as_bytes());
     let body = format!(
         r#"#!/bin/sh
-if [ "$1" = --version ]; then printf '{version}\n'; exit 0; fi
-case "$5" in
-  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; cpu VectorTableOffset 0x08000000; emulation RunFor \"0.010000000\"; logLevel 3; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+[ "$1" = --config ] || exit 97
+/bin/grep -qx 'use-synchronous-logging = true' "$2" || exit 97
+/bin/grep -qx 'log-timestamps-type = Host' "$2" || exit 97
+if [ "$3" = --version ]; then printf '{version}\n'; exit 0; fi
+# No console level is ever set (`AET-WO-2204` D4); only a device's source level.
+printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
+case "$7" in
+  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.010000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 /bin/cat '{out}'
@@ -305,11 +329,11 @@ fn three_agreeing_witnesses_pass() {
         serde_json::json!(["GPIOB.OTYPER", "I2C1.TIMINGR"])
     );
     // The image hash binds each segment's address and sizes to its bytes:
-    // sha256 of 0x08000000, 64, 64 (u32 LE each) and 64 zero bytes, computed
-    // outside this crate.
+    // sha256 of 0x08000000, 64, 64 (u32 LE each) and [`code`]'s 64 bytes,
+    // computed outside this crate.
     assert_eq!(
         b["firmware"]["image_sha256"],
-        "548141f7eafd58bfe2d127063336109587d6af4f8e099d1649efa842a81dad22"
+        "dcb9381570c783a1de3fb3d7617b88a7f17761f126db560115e8368693dfae1a"
     );
     assert_ne!(b["firmware"]["sha256"], b["firmware"]["image_sha256"]);
 }
@@ -439,9 +463,11 @@ fn a_core_ending_outside_the_firmware_fails() {
     let (code, v) = boot(&good().replace("0x8000010\n", "0x701e7bca\n"));
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["pc_outside_firmware"]);
-    // The segment's last instruction is inside; its end is not.
+    // The segment's last instruction is inside (and not on the self-loop,
+    // `AET-WO-2204` D3); its end is not.
     let (code, v) = boot(&good().replace("0x8000010\n", "0x800003e\n"));
-    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(kinds(&v), ["pc_not_on_self_loop"], "{v}");
+    assert_eq!(code, Some(1), "{v}");
     let (code, v) = boot(&good().replace("0x8000010\n", "0x8000040\n"));
     assert_eq!(code, Some(1), "{v}");
 }
@@ -645,7 +671,7 @@ fn a_boot_past_the_wall_bound_fails_and_names_it() {
 /// (`faulted`) or does not carry the analog fault decision.
 fn platform_checking_toolbox(faulted: bool) -> Dir {
     let check =
-        r#"p=$(printf '%s' "$5" | /bin/sed -n 's/.*LoadPlatformDescription @\([^;]*\);.*/\1/p')"#;
+        r#"p=$(printf '%s' "$7" | /bin/sed -n 's/.*LoadPlatformDescription @\([^;]*\);.*/\1/p')"#;
     let then = if faulted {
         format!(
             "{check}\n/bin/grep -q 'bus `SENSORS` (I2C1) is faulted by the analog pass' \"$p\" || exit 98"
@@ -888,23 +914,15 @@ done
 
 // `AET-WO-2202`: the identity reads, judged from the part table.
 
-/// A boot that reached the fixed point with `record` in U2's record.
+/// A boot that reached the fixed point with `record` in U2's record, and
+/// U2's witness before the reads.
 fn with_record(record: [&str; 2]) -> String {
-    let mut r = reads(
-        "0x2100B007",
-        "0x00000000000F4240",
-        "0x00000064",
-        &GOOD_REGISTERS,
-    );
-    let n = r.len();
-    r[n - 4] = record[0].to_owned();
-    r[n - 3] = record[1].to_owned();
-    transcript("", &r.iter().map(String::as_str).collect::<Vec<_>>())
+    with_log(record, GOOD_WITNESS)
 }
 
-/// A boot that reached the fixed point, with a good record and `controller`
-/// in I2C1's `CR2` and `TXDR`.
-fn with_controller(controller: [&str; 2]) -> String {
+/// A boot that reached the fixed point with `record` in U2's record and `log`
+/// as the run's log before the reads.
+fn with_log(record: [&str; 2], log: &str) -> String {
     let mut r = reads(
         "0x2100B007",
         "0x00000000000F4240",
@@ -912,9 +930,9 @@ fn with_controller(controller: [&str; 2]) -> String {
         &GOOD_REGISTERS,
     );
     let n = r.len();
-    r[n - 2] = controller[0].to_owned();
-    r[n - 1] = controller[1].to_owned();
-    transcript("", &r.iter().map(String::as_str).collect::<Vec<_>>())
+    r[n - 2] = record[0].to_owned();
+    r[n - 1] = record[1].to_owned();
+    transcript(log, &r.iter().map(String::as_str).collect::<Vec<_>>())
 }
 
 fn finding<'a>(v: &'a Value, kind: &str) -> Option<&'a Value> {
@@ -1006,16 +1024,15 @@ fn the_expected_value_is_the_tables_whatever_the_record_says_it_expects() {
 
 #[test]
 fn a_record_is_not_judged_when_the_boot_word_is_missing() {
-    let r = reads(
+    let mut r = reads(
         "0x00000000",
         "0x00000000000F4240",
         "0x00000064",
         &GOOD_REGISTERS,
     );
-    let mut r = r;
     let n = r.len();
-    r[n - 4] = "0xFFFFFFFF".into();
-    r[n - 3] = "0xFFFFFFFF".into();
+    r[n - 2] = "0xFFFFFFFF".into();
+    r[n - 1] = "0xFFFFFFFF".into();
     let (code, v) = boot(&transcript(
         "",
         &r.iter().map(String::as_str).collect::<Vec<_>>(),
@@ -1023,106 +1040,358 @@ fn a_record_is_not_judged_when_the_boot_word_is_missing() {
     assert_eq!(code, Some(1), "{v}");
     assert!(finding(&v, "boot_word_missing").is_some());
     assert!(finding(&v, "i2c_record_invalid").is_none(), "{v}");
+    // Nor its witness, nor where the core parked.
+    assert_eq!(kinds(&v), ["boot_word_missing"], "{v}");
     // The unmodelled device is still reported on a failed boot.
     assert!(finding(&v, "device_unmodelled").is_some());
 }
 
-// `AET-WO-2202` W1: the record is the firmware's word; the controller is the
-// witness. The judge computes `CR2` and `TXDR` from the solved address and the
-// part table (0x76, read, 1 byte, AUTOEND; register 0xD0).
+// `AET-WO-2204` D1: the record is the firmware's word; the device model's own
+// log is the witness. The judge expects exactly BME280.cs's two lines for U2
+// (`Write D0`, `Read 60`), whole, after the host timestamp, in order.
 
 #[test]
-fn a_controller_that_shows_the_read_passes_and_is_reported() {
+fn a_witness_that_shows_the_read_passes_and_is_reported() {
     let (code, v) = boot(&good());
     assert_eq!(code, Some(0), "{v}");
-    let w = &v["boot"]["i2c_witness"][0];
+    let w = &v["boot"]["i2c_witness"];
+    let lines = serde_json::json!(["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"]);
     assert_eq!(
-        (w["peripheral"].as_str(), w["reference"].as_str()),
-        (Some("I2C1"), Some("U2"))
+        *w,
+        serde_json::json!([{
+            "peripheral": "I2C1", "reference": "U2", "device": "i2c1.u2",
+            "expected": lines, "observed": lines, "absent": []
+        }])
     );
-    assert_eq!(w["cr2"]["address"], "0x40005404");
-    assert_eq!(w["cr2"]["expected"], "0x020104ec");
-    assert_eq!(w["cr2"]["observed"], "0x020104ec");
-    assert_eq!(w["txdr"]["address"], "0x40005428");
-    assert_eq!(w["txdr"]["expected"], "0x000000d0");
-    // START is not stored once set, and bits outside the fields do not count.
-    let (code, v) = boot(&with_controller(["0x020124EC", "0x000001D0"]));
+    assert_eq!(v["boot"]["icsr"], "0x00000800");
+    // Other log lines around the witness are not the witness.
+    let around = format!(
+        "[03:07:39.3700] [INFO] machine-0: Machine started.\n{GOOD_WITNESS}[03:07:39.3790] [WARNING] i2c1: Unhandled write to offset 0x1C.\n"
+    );
+    let (code, v) = boot(&with_log(GOOD_RECORD, &around));
     assert_eq!(code, Some(0), "{v}");
+    // The controller's `Unknown slave` lines are kept for attribution, never
+    // judged: here a stray transfer to 0x77 beside a witnessed read passes.
+    let stray =
+        format!("[03:07:39.3700] [WARNING] i2c1: Unknown slave at address 119.\n{GOOD_WITNESS}");
+    let (code, v) = boot(&with_log(GOOD_RECORD, &stray));
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(
+        v["boot"]["i2c_witness"][0]["absent"],
+        serde_json::json!(["0x77"])
+    );
 }
 
 #[test]
-fn each_field_of_the_controller_state_fails_alone() {
-    for (cr2, txdr, field) in [
-        ("0x020104EE", "0x000000D0", "SADD reads 0xee, expected 0xec"),
-        ("0x020100EC", "0x000000D0", "RD_WRN reads 0x0, expected 0x1"),
-        ("0x020204EC", "0x000000D0", "NBYTES reads 0x2, expected 0x1"),
+fn any_witness_but_the_model_s_exact_lines_fails() {
+    let w = |a: &str, b: &str| format!("[03:07:39.3762] {a}\n[03:07:39.3765] {b}\n");
+    for (log, what) in [
         (
-            "0x000104EC",
-            "0x000000D0",
-            "AUTOEND reads 0x0, expected 0x1",
+            String::new(),
+            "no line at all: a record written with no transfer",
         ),
-        ("0x020104EC", "0x000000D1", "TXDR reads 0xd1, expected 0xd0"),
+        (
+            w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Write D0"),
+            "no read",
+        ),
+        (
+            w("[NOISY] i2c1.u2: Write D1", "[NOISY] i2c1.u2: Read 60"),
+            "another register",
+        ),
+        (
+            w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 61"),
+            "another value",
+        ),
+        (
+            w("[NOISY] i2c1.u2: Read 60", "[NOISY] i2c1.u2: Write D0"),
+            "out of order",
+        ),
+        (
+            w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60 (2)"),
+            "a folded line",
+        ),
+        (
+            w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 600"),
+            "a longer value",
+        ),
+        (
+            w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60 "),
+            "a trailing space",
+        ),
+        (
+            format!(
+                "{GOOD_WITNESS}{}",
+                w("[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60")
+            ),
+            "a second read",
+        ),
     ] {
-        let (code, v) = boot(&with_controller([cr2, txdr]));
-        assert_eq!(code, Some(1), "{field}: {v}");
-        assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{field}: {v}");
-        let f = finding(&v, "i2c_transaction_unwitnessed").unwrap();
-        let m = f["message"].as_str().unwrap();
+        let (code, v) = boot(&with_log(GOOD_RECORD, &log));
+        assert_eq!(code, Some(1), "{what}: {v}");
+        assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{what}: {v}");
+        let m = finding(&v, "i2c_transaction_unwitnessed").unwrap()["message"]
+            .as_str()
+            .unwrap();
         assert!(
-            m.contains("U2") && m.contains("0x76") && m.contains("I2C1"),
+            m.contains("U2") && m.contains("0x76") && m.contains("i2c1.u2"),
             "{m}"
         );
-        assert!(m.contains(field), "{field}: {m}");
-        assert_eq!(f["severity"], "error");
+    }
+    // Witness-shaped text that is not a whole log line of the device's own is
+    // not a witness at all: the read is unwitnessed.
+    for log in [
+        "[03:07:39.3762] [INFO] i2c1.u2: Write D0\n[03:07:39.3765] [INFO] i2c1.u2: Read 60\n",
+        "[NOISY] i2c1.u2: Write D0\n[NOISY] i2c1.u2: Read 60\n",
+        "[03:07:39.3762] [NOISY] usart1: [NOISY] i2c1.u2: Write D0\n[03:07:39.3765] [NOISY] usart1: [NOISY] i2c1.u2: Read 60\n",
+        "x[03:07:39.3762] [NOISY] i2c1.u2: Write D0\nx[03:07:39.3765] [NOISY] i2c1.u2: Read 60\n",
+    ] {
+        let (code, v) = boot(&with_log(GOOD_RECORD, log));
+        assert_eq!(code, Some(1), "{log}: {v}");
+        assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{log}: {v}");
     }
 }
 
 #[test]
-fn a_forged_record_over_an_untouched_controller_fails_on_every_field() {
-    // OK and the table's value written with no transaction: CR2 and TXDR are 0.
-    let (code, v) = boot(&with_controller(["0x00000000", "0x00000000"]));
+fn the_witness_is_not_judged_for_a_record_that_claims_nothing() {
+    // A wait that expired claims no transfer; `i2c_timeout` alone names it.
+    let (code, v) = boot(&with_log(["0x22020001", "0x00000000"], ""));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["i2c_timeout"], "{v}");
+}
+
+#[test]
+fn the_judge_s_own_log_after_begin_is_never_the_run_s() {
+    // `AET-WO-2204` D8 (a), F3: lines the judge's reads cause come after
+    // `BEGIN`, whole, and are skipped; they neither witness nor fail the run.
+    let after = |lines: &[&str]| {
+        let mut r = reads(
+            "0x2100B007",
+            "0x00000000000F4240",
+            "0x00000064",
+            &GOOD_REGISTERS,
+        );
+        r.splice(1..1, lines.iter().map(|l| (*l).to_owned()));
+        r
+    };
+    let locked = "[03:07:40.0001] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.i2c1. Address 0x40005404.";
+    let r = after(&[locked, locked]);
+    let (code, v) = boot(&transcript(
+        GOOD_WITNESS,
+        &r.iter().map(String::as_str).collect::<Vec<_>>(),
+    ));
+    assert_eq!(code, Some(0), "{v}");
+    // The witness among the judge's reads is not the run's: unwitnessed.
+    let r = after(&[
+        "[03:07:40.0001] [NOISY] i2c1.u2: Write D0",
+        "[03:07:40.0002] [NOISY] i2c1.u2: Read 60",
+    ]);
+    let (code, v) = boot(&transcript(
+        "",
+        &r.iter().map(String::as_str).collect::<Vec<_>>(),
+    ));
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{v}");
-    let m = finding(&v, "i2c_transaction_unwitnessed").unwrap()["message"]
-        .as_str()
-        .unwrap();
-    for field in ["SADD", "RD_WRN", "NBYTES", "AUTOEND", "TXDR"] {
-        assert!(m.contains(field), "{field}: {m}");
+    // Anything after `BEGIN` that is neither a value nor a whole log line is
+    // refused, never read (F2: a log line split below line level).
+    for split in [
+        "0x000000[03:07:40.0001] [WARNING] sysbus: Tried to read a locked peripheral",
+        "AETHELGARD-BOOT-B",
+        "[WARNING] sysbus: no timestamp",
+    ] {
+        let r = after(&[split]);
+        untrusted(boot(&transcript(
+            GOOD_WITNESS,
+            &r.iter().map(String::as_str).collect::<Vec<_>>(),
+        )));
     }
 }
 
 #[test]
-fn the_controller_is_not_judged_for_a_record_that_claims_nothing() {
-    // A wait that expired leaves the controller wherever the failed transfer
-    // left it; `i2c_timeout` alone names the failure.
+fn a_log_past_the_filter_s_budget_leaves_every_read_unwitnessed() {
+    // `AET-WO-2204` D2, ruled: past 8 MiB a log line may have been dropped,
+    // so the witness, though printed first, cannot be read whole: never a
+    // pass.
+    let flood = "[03:07:39.4000] [WARNING] i2c1: Receive buffer underflow!\n".repeat(160_000);
+    let (code, v) = boot(&with_log(GOOD_RECORD, &format!("{GOOD_WITNESS}{flood}")));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{v}");
+    assert!(finding(&v, "renode_log_flood").is_some(), "{v}");
+    assert_eq!(v["boot"]["i2c_witness"][0]["observed"], Value::Null);
+}
+
+// `AET-WO-2204` D3: after the boot word, the core is in thread mode on a
+// `yield; b.n` self-loop read from the ELF.
+
+#[test]
+fn a_core_handling_an_exception_fails_naming_vectactive() {
     let mut r = reads(
         "0x2100B007",
         "0x00000000000F4240",
         "0x00000064",
         &GOOD_REGISTERS,
     );
-    let n = r.len();
-    r[n - 4] = "0x22020001".into();
-    r[n - 2] = "0x00000000".into();
-    r[n - 1] = "0x00000000".into();
+    // `systick-before`, measured: VECTACTIVE 15, on `fault`'s own self-loop.
+    r[4] = "0x0400080F".into();
     let (code, v) = boot(&transcript(
-        "",
+        GOOD_WITNESS,
         &r.iter().map(String::as_str).collect::<Vec<_>>(),
     ));
     assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["i2c_timeout"], "{v}");
-    // Nor when the boot word is missing.
+    assert_eq!(kinds(&v), ["core_in_exception"], "{v}");
+    let m = finding(&v, "core_in_exception").unwrap()["message"]
+        .as_str()
+        .unwrap();
+    assert!(m.contains("VECTACTIVE") && m.contains("15"), "{m}");
+    // Bits above VECTACTIVE do not count.
+    r[4] = "0x0400F800".into();
+    let (code, v) = boot(&transcript(
+        GOOD_WITNESS,
+        &r.iter().map(String::as_str).collect::<Vec<_>>(),
+    ));
+    assert_eq!(code, Some(0), "{v}");
+}
+
+#[test]
+fn a_core_not_on_a_self_loop_fails_and_both_of_its_halfwords_pass() {
+    let at = |pc: &str| {
+        let mut r = reads(
+            "0x2100B007",
+            "0x00000000000F4240",
+            "0x00000064",
+            &GOOD_REGISTERS,
+        );
+        r[3] = pc.into();
+        boot(&transcript(
+            GOOD_WITNESS,
+            &r.iter().map(String::as_str).collect::<Vec<_>>(),
+        ))
+    };
+    for pc in ["0x8000010", "0x8000012"] {
+        let (code, v) = at(pc);
+        assert_eq!(code, Some(0), "{pc}: {v}");
+    }
+    for pc in ["0x8000014", "0x800000E", "0x8000020"] {
+        let (code, v) = at(pc);
+        assert_eq!(code, Some(1), "{pc}: {v}");
+        assert_eq!(kinds(&v), ["pc_not_on_self_loop"], "{pc}: {v}");
+    }
+    // Outside the firmware it is `pc_outside_firmware` alone.
+    let (_, v) = at("0x8000040");
+    assert_eq!(kinds(&v), ["pc_outside_firmware"], "{v}");
+    // Adversarial A1: on the ELF's loop, but the machine no longer holds it
+    // (the firmware rewrote its flash: `str r0, [r1]` where the `yield` was).
     let mut r = reads(
-        "0x00000000",
+        "0x2100B007",
         "0x00000000000F4240",
         "0x00000064",
         &GOOD_REGISTERS,
     );
-    let n = r.len();
-    r[n - 2] = "0x00000000".into();
-    let (_, v) = boot(&transcript(
-        "",
+    r[5] = "0x6008".into();
+    let (code, v) = boot(&transcript(
+        GOOD_WITNESS,
         &r.iter().map(String::as_str).collect::<Vec<_>>(),
     ));
-    assert!(finding(&v, "i2c_transaction_unwitnessed").is_none(), "{v}");
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["pc_not_on_self_loop"], "{v}");
+    assert!(
+        finding(&v, "pc_not_on_self_loop").unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .contains("no longer holds"),
+        "{v}"
+    );
+}
+
+/// `AET-WO-2204` D1: on a bus with two modelled devices (the test fixture
+/// `two-bme.json`: U2 at 0x76, U5 at 0x77), each read is witnessed by its own
+/// device's lines, and the devices' lines must come in the records' order.
+#[test]
+fn two_devices_witness_their_own_reads_in_the_records_order() {
+    let tree = Dir::new("two-bme");
+    let out = run_cli(
+        &cli(None),
+        Path::new(""),
+        &[
+            OsStr::new("generate"),
+            OsStr::new("--spec"),
+            root()
+                .join("crates/aethelgard-cli/tests/fixtures/two-bme.json")
+                .as_os_str(),
+            OsStr::new("--out"),
+            tree.0.join("g").as_os_str(),
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let platform = tree.0.join("g/board/sentinel-01.repl");
+    let spec = root().join("crates/aethelgard-cli/tests/fixtures/two-bme.json");
+    let line = |t: &str, d: &str, l: &str| format!("[03:07:39.{t}] [NOISY] i2c1.{d}: {l}\n");
+    let u2 = format!(
+        "{}{}",
+        line("3762", "u2", "Write D0"),
+        line("3765", "u2", "Read 60")
+    );
+    let u5 = format!(
+        "{}{}",
+        line("3862", "u5", "Write D0"),
+        line("3865", "u5", "Read 60")
+    );
+    let listing = CPU_LISTING.to_owned() + "  \u{251c}\u{2500}\u{2500} u5 (BME280)\n";
+    let boot_two = |log: &str| {
+        let mut r = reads(
+            "0x2100B007",
+            "0x00000000000F4240",
+            "0x00000064",
+            &GOOD_REGISTERS,
+        );
+        r.extend(GOOD_RECORD.iter().map(|s| (*s).to_owned()));
+        let text = transcript(log, &r.iter().map(String::as_str).collect::<Vec<_>>())
+            .replace(CPU_LISTING, &listing);
+        // A stub that checks the configuration alone: two devices make
+        // another command line.
+        let tb = Dir::new("tb-two");
+        let outf = tb.write("renode.out", text.as_bytes());
+        let stub = tb.write(
+            "renode",
+            format!(
+                "#!/bin/sh\n[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then printf 'Renode v1.17.0\\n'; exit 0; fi\n/bin/cat '{}'\n",
+                outf.display()
+            )
+            .as_bytes(),
+        );
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        let input = Dir::new("in");
+        let fw = input.write("fw.elf", &elf());
+        let out = run(
+            &tb.0,
+            &[
+                OsStr::new("simulate"),
+                OsStr::new("--platform"),
+                platform.as_os_str(),
+                OsStr::new("--firmware"),
+                fw.as_os_str(),
+                OsStr::new("--spec"),
+                spec.as_os_str(),
+                OsStr::new("--for"),
+                OsStr::new("10ms"),
+            ],
+        );
+        (out.status.code(), report(&out))
+    };
+    let (code, v) = boot_two(&format!("{u2}{u5}"));
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["boot"]["i2c_witness"].as_array().unwrap().len(), 2, "{v}");
+    // Each device's own lines are right, but U5's come first.
+    let (code, v) = boot_two(&format!("{u5}{u2}"));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["i2c_witness_out_of_order"], "{v}");
+    // One device's lines alone: the other read is unwitnessed, named.
+    let (code, v) = boot_two(&u5);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["i2c_transaction_unwitnessed"], "{v}");
+    assert!(
+        finding(&v, "i2c_transaction_unwitnessed").unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("U2")
+    );
 }

@@ -120,10 +120,11 @@ pub struct ObservedReport {
     pub boot_word: Word,
     pub status: Word,
     pub value: Word,
-    /// The controller's state, which only a transfer sets after a reset
-    /// (`AET-WO-2301` adversarial F1).
-    pub cr2: RegisterReport,
-    pub txdr: RegisterReport,
+    /// What Renode logged for the first identity read's device from the
+    /// release to this read: only a transfer the controller runs calls the
+    /// model (`AET-WO-2301` adversarial F1, `AET-WO-2204`). `null` when the
+    /// boot has no identity read.
+    pub witness: Option<WitnessReport>,
 }
 
 /// A boot's inputs, its expectations and what Renode read (`AET-WO-2100`).
@@ -145,17 +146,47 @@ pub struct Boot {
     pub unobservable: Vec<String>,
     /// One per identity read the judge expects (`AET-WO-2202`).
     pub i2c: Vec<I2cReport>,
-    /// The controller state that witnesses the last read on each bus.
+    /// What Renode logged for each identity read's device (`AET-WO-2204` D1).
     pub i2c_witness: Vec<WitnessReport>,
+    /// `ICSR` after the run: `VECTACTIVE` [8:0] is 0 when the core is in
+    /// thread mode (`AET-WO-2204` D3).
+    pub icsr: Option<String>,
 }
 
-/// A bus controller's `CR2` and `TXDR` after the run, against the expectation.
+/// One identity read's witness: the device model's whole log lines the judge
+/// expects, and every line Renode logged for the device with a witness's
+/// shape (`AET-WO-2204` D1).
 #[derive(Serialize)]
 pub struct WitnessReport {
     pub peripheral: String,
     pub reference: String,
-    pub cr2: RegisterReport,
-    pub txdr: RegisterReport,
+    /// The model's path in Renode, `i2c1.u2`.
+    pub device: String,
+    /// Empty when the model has no known witness format (a named failure).
+    pub expected: Vec<String>,
+    /// `null` until Renode has run, or when the log could not be read whole.
+    pub observed: Option<Vec<String>>,
+    /// The addresses the device's controller found no device at, in order:
+    /// attribution's evidence, never part of the witness.
+    pub absent: Vec<String>,
+}
+
+impl WitnessReport {
+    /// `check`'s witness as the judge expects it, with what Renode logged.
+    pub fn of(
+        check: &aethelgard_twin::boot::I2cCheck,
+        observed: Option<Vec<String>>,
+        absent: Vec<String>,
+    ) -> Self {
+        WitnessReport {
+            peripheral: check.peripheral.clone(),
+            reference: check.reference.clone(),
+            device: check.device.clone(),
+            expected: check.witness.clone().unwrap_or_default(),
+            observed,
+            absent,
+        }
+    }
 }
 
 /// One identity read: what the part table says, and what the firmware's record held.

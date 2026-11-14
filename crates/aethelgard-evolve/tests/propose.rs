@@ -21,7 +21,6 @@ use aethelgard_evolve::{
     view,
 };
 
-const CR2_OK: u32 = 0x0201_04EC;
 const FLOOR: u32 = 967;
 
 fn reading(address: u32, mask: u32, expected: u32, observed: u32) -> Reading {
@@ -76,13 +75,40 @@ fn check(status: &str, observed: u64) -> Record {
     }
 }
 
-fn witness(cr2: u32, txdr: u32) -> Record {
+/// U2's identity read as the BME280 model logs it (register 0xD0, value 0x60),
+/// without the `[NOISY] i2c1.u2: ` every line starts with.
+const OK: [&str; 2] = ["Write D0", "Read 60"];
+
+/// A witness of `reference` on `peripheral` (`AET-WO-2204`): what the judge
+/// expects the model to log, and what Renode logged (`None`: unreadable).
+fn witness_with(
+    peripheral: &str,
+    reference: &str,
+    expected: &[&str],
+    observed: Option<&[&str]>,
+) -> Record {
+    let device = format!(
+        "{}.{}",
+        peripheral.to_ascii_lowercase(),
+        reference.to_ascii_lowercase()
+    );
+    let lines = |v: &[&str]| -> Vec<String> {
+        v.iter().map(|l| format!("[NOISY] {device}: {l}")).collect()
+    };
     Record::I2cWitness {
-        peripheral: "I2C1".into(),
-        reference: "U2".into(),
-        cr2: reading(0x4000_5404, 0x02FF_07FF, CR2_OK, cr2),
-        txdr: reading(0x4000_5428, 0xFF, 0xD0, txdr),
+        peripheral: peripheral.into(),
+        reference: reference.into(),
+        expected: lines(expected),
+        observed: observed.map(lines),
+        device,
+        absent: Vec::new(),
     }
+}
+
+/// U2's witness with the lines Renode logged for it: [`OK`] is a read that
+/// went as solved, `Some(&[])` a device that logged nothing.
+fn witness(observed: Option<&[&str]>) -> Record {
+    witness_with("I2C1", "U2", &OK, observed)
 }
 
 fn verdict(findings: &[(&str, u64)]) -> Record {
@@ -164,7 +190,7 @@ fn healthy(ohms: u32) -> Vec<Record> {
         register("RCC.AHB4ENR", None),
         register("RCC.APB1LENR", None),
         check("ok", 0x60),
-        witness(CR2_OK, 0xD0),
+        witness(Some(&OK)),
         verdict(&[]),
     ]
 }
@@ -202,7 +228,7 @@ fn rises(r: &mut Vec<Record>, scl: u64, sda: u64) {
     replace(
         r,
         |x| matches!(x, Record::I2cWitness { .. }),
-        witness(0x0001_00EC, 0),
+        witness(Some(&[])),
     );
     replace(
         r,
@@ -449,7 +475,7 @@ fn held_low(r: &mut Vec<Record>) {
     replace(
         r,
         |x| matches!(x, Record::I2cWitness { .. }),
-        witness(0x0001_00EC, 0),
+        witness(Some(&[])),
     );
     replace(
         r,
@@ -492,7 +518,7 @@ fn a_stuck_high_line_an_incomplete_rise_or_a_fault_of_another_cause_has_no_rule(
     replace(
         &mut r,
         |x| matches!(x, Record::I2cWitness { .. }),
-        witness(0x0001_00EC, 0),
+        witness(Some(&[])),
     );
     replace(
         &mut r,
@@ -553,17 +579,17 @@ fn a_line_with_no_rise_beside_one_past_its_ceiling_sizes_nothing() {
 }
 
 #[test]
-fn a_wrong_address_is_a_firmware_generator_report_with_no_change() {
+fn a_wrong_register_is_a_firmware_generator_report_with_no_change() {
     let mut r = healthy(2200);
     replace(
         &mut r,
         |x| matches!(x, Record::I2cCheck { .. }),
-        check("timeout_txis", 0),
+        check("timeout_rxne", 0),
     );
     replace(
         &mut r,
         |x| matches!(x, Record::I2cWitness { .. }),
-        witness(0x0001_00EE, 0),
+        witness(Some(&["Write D1"])),
     );
     replace(
         &mut r,
@@ -579,12 +605,13 @@ fn a_wrong_address_is_a_firmware_generator_report_with_no_change() {
     assert_eq!(g.expectations.len(), 1, "{g:?}");
     let e = &g.expectations[0];
     assert_eq!(e.generator, Generator::Firmware);
-    assert_eq!(e.what, "I2C1.CR2");
-    assert_eq!(e.address, Some(0x4000_5404));
-    // SADD holds the 7-bit address shifted once: 0x76 solved, 0x77 observed.
+    assert_eq!(e.what, "i2c1.u2.Write");
+    // The field's address is the device's, 0x76 on I2C1.
+    assert_eq!(e.address, Some(0x76));
+    // The register written: 0xD0 solved, 0xD1 logged.
     assert_eq!(
         (e.mask, e.solved, e.observed),
-        (Some(0x3FF), 0xEC, Some(0xEE))
+        (Some(0xFF), 0xD0, Some(0xD1))
     );
 }
 
@@ -604,7 +631,7 @@ fn a_clock_gate_left_off_is_a_board_crate_report_and_a_boot_word_a_firmware_one(
     replace(
         &mut r,
         |x| matches!(x, Record::I2cWitness { .. }),
-        witness(0, 0),
+        witness(Some(&[])),
     );
     replace(
         &mut r,
@@ -684,7 +711,7 @@ fn an_indeterminate_or_passing_run_proposes_nothing_and_names_its_rule() {
     replace(
         &mut r,
         |x| matches!(x, Record::I2cWitness { .. }),
-        witness(0x0001_00EC, 0),
+        witness(Some(&[])),
     );
     replace(
         &mut r,
@@ -1257,12 +1284,12 @@ fn the_view_reads_every_field_of_a_rise_a_stuck_line_a_boot_and_a_witness() {
     replace(
         &mut r,
         |x| matches!(x, Record::I2cCheck { .. }),
-        check("timeout_txis", 0),
+        check("timeout_rxne", 0),
     );
     replace(
         &mut r,
         |x| matches!(x, Record::I2cWitness { .. }),
-        witness(0x0001_00EE, 0),
+        witness(Some(&["Write D1"])),
     );
     let i = find(&r, |x| matches!(x, Record::BootObserved { .. }));
     if let Record::BootObserved {
@@ -1350,15 +1377,11 @@ fn the_view_reads_every_field_of_a_rise_a_stuck_line_a_boot_and_a_witness() {
     assert_eq!(
         got,
         [
-            ("I2C1.CR2", 0x3FF, 0xEC, Some(0xEE), true),
-            (
-                "I2C1.CR2",
-                0x00FF_0000,
-                0x0001_0000,
-                Some(0x0001_0000),
-                false
-            ),
-            ("I2C1.TXDR", 0xFF, 0xD0, Some(0), false),
+            // `AET-WO-2204`: the addresses the controller found no device at
+            // (none here), U2's own 0x76 the solved value.
+            ("i2c1.u2.address", 0x7F, 0x76, None, false),
+            ("i2c1.u2.Write", 0xFF, 0xD0, Some(0xD1), true),
+            ("i2c1.u2.Read", 0xFF, 0x60, None, false),
         ]
     );
 
@@ -1563,15 +1586,7 @@ fn on_two_buses_the_view_puts_each_event_and_rise_on_its_own_bus() {
         .iter()
         .rposition(|x| matches!(x, Record::I2cWitness { .. }))
         .unwrap();
-    r.insert(
-        last_witness + 1,
-        Record::I2cWitness {
-            peripheral: "I2C2".into(),
-            reference: "U5".into(),
-            cr2: reading(0x4000_5804, 0x02FF_07FF, 0x0201_0480, 0x0201_0480),
-            txdr: reading(0x4000_5828, 0xFF, 0xD0, 0xD0),
-        },
-    );
+    r.insert(last_witness + 1, witness_with("I2C2", "U5", &OK, Some(&OK)));
     let run = archived(&r);
     let v = view(&run).unwrap();
     let w = r
@@ -1588,7 +1603,8 @@ fn on_two_buses_the_view_puts_each_event_and_rise_on_its_own_bus() {
     let View::Fields { fields, .. } = &e.view else {
         panic!("{e:?}")
     };
-    assert_eq!(fields[0].register, "I2C2.CR2");
+    assert_eq!(fields[0].register, "i2c2.u5.address");
+    assert_eq!(fields[1].register, "i2c2.u5.Write");
     let rises: Vec<(String, Vec<u64>)> = v
         .buses()
         .iter()

@@ -461,9 +461,8 @@ fn observation(at_ns: u64, status: u32) -> Record {
         boot_word: reading(0x2000_0000, u32::MAX, 0x2100_B007, Some(0x2100_B007)),
         status: reading(0x2000_0004, u32::MAX, 0x2202_0000, Some(status)),
         value: reading(0x2000_0008, u32::MAX, 0x60, Some(0x60)),
-        // The run has no witness record: the controller's readings are vacuous.
-        cr2: reading(0, 0, 0, Some(0)),
-        txdr: reading(0, 0, 0, Some(0)),
+        // The run has no witness record, so the observation shows no lines.
+        witness: None,
     }
 }
 
@@ -535,15 +534,21 @@ fn every_new_record_kind_round_trips_and_checks() {
             boot_word: reading(1, 2, 3, None),
             status: reading(4, 5, 6, None),
             value: reading(7, 8, 9, None),
-            cr2: reading(10, 11, 12, None),
-            txdr: reading(13, 14, 15, Some(16)),
+            witness: None,
+        },
+        Record::FirmwareObserved {
+            at_ns: 6,
+            boot_word: reading(1, 2, 3, None),
+            status: reading(4, 5, 6, None),
+            value: reading(7, 8, 9, None),
+            witness: Some(vec!["[NOISY] i2c1.u2: Read 60".into()]),
         },
         Record::ExpectedCounts {
             counts: vec![("a".into(), 0), ("b".into(), u64::MAX)],
         },
     ];
     let kinds: Vec<u64> = records.iter().map(Record::kind).collect();
-    assert_eq!(kinds, [16, 17, 17, 18, 18, 19, 19, 19, 20]);
+    assert_eq!(kinds, [16, 17, 17, 18, 18, 19, 19, 19, 19, 20]);
     for r in &records {
         assert_eq!(r.check(), Ok(()), "{r:?}");
         assert_eq!(Record::from_fields(r.kind(), &r.fields()).as_ref(), Some(r));
@@ -1526,8 +1531,6 @@ fn run_with_check() -> Vec<Record> {
         alternate_function: 4,
         ceiling_ps: 300_000,
     };
-    let cr2 = reading(0x4000_5404, 0x03FF_67FF, 0x0201_04EC, Some(0x0201_04EC));
-    let txdr = reading(0x4000_5428, 0xFF, 0xD0, Some(0xD0));
     let mut r = run();
     let solved = index(&r, |x| matches!(x, Record::Solved { .. }));
     r.insert(
@@ -1543,12 +1546,8 @@ fn run_with_check() -> Vec<Record> {
         },
     );
     let o = index(&r, |x| matches!(x, Record::FirmwareObserved { .. }));
-    if let Record::FirmwareObserved {
-        cr2: c, txdr: t, ..
-    } = &mut r[o]
-    {
-        *c = cr2.clone();
-        *t = txdr.clone();
+    if let Record::FirmwareObserved { witness, .. } = &mut r[o] {
+        *witness = Some(lines());
     }
     let v = r.len() - 1;
     r.insert(
@@ -1567,46 +1566,65 @@ fn run_with_check() -> Vec<Record> {
         Record::I2cWitness {
             peripheral: "I2C1".into(),
             reference: "U2".into(),
-            cr2,
-            txdr,
+            device: "i2c1.u2".into(),
+            expected: lines(),
+            observed: Some(lines()),
+            absent: Vec::new(),
         },
     );
     r
 }
 
+/// U2's identity read as the BME280 model logs it: register 0xD0, value 0x60.
+fn lines() -> Vec<String> {
+    vec![
+        "[NOISY] i2c1.u2: Write D0".into(),
+        "[NOISY] i2c1.u2: Read 60".into(),
+    ]
+}
+
 /// `AET-WO-2301` adversarial F5, with a check and a witness in the run: the
-/// observation's value is the check's expectation, and its `CR2` and `TXDR`
-/// are the witness's own address, mask and expectation.
+/// observation's value is the check's expectation, and (`AET-WO-2204`) its
+/// witness lines are the first witness record's own expected lines, or none
+/// when the run has no witness.
 #[test]
-fn an_observations_value_and_controller_are_pinned_to_the_check_and_the_witness() {
+fn an_observations_value_and_witness_are_pinned_to_the_check_and_the_witness() {
     assert!(check_run(&run_with_check()).is_ok_and(|s| s.matched));
-    let mutations: [fn(&mut Record); 3] = [
-        |r| {
-            if let Record::FirmwareObserved { value, .. } = r {
-                value.expected = 0x61;
-                value.observed = Some(0x61);
-            }
-        },
-        |r| {
-            if let Record::FirmwareObserved { cr2, .. } = r {
-                cr2.mask = 0;
-            }
-        },
-        |r| {
-            if let Record::FirmwareObserved { txdr, .. } = r {
-                txdr.address = 0x4000_5400;
-            }
-        },
+    let mut r = run_with_check();
+    let k = index(&r, |x| matches!(x, Record::FirmwareObserved { .. }));
+    if let Record::FirmwareObserved { value, .. } = &mut r[k] {
+        value.expected = 0x61;
+        value.observed = Some(0x61);
+    }
+    assert_eq!(
+        check_run(&r).map(|_| ()),
+        Err("an observation's readings are not the boot's own"),
+    );
+    // Lines on an observation of a run with no witness record are refused.
+    let mut r = run();
+    let k = index(&r, |x| matches!(x, Record::FirmwareObserved { .. }));
+    if let Record::FirmwareObserved { witness, .. } = &mut r[k] {
+        *witness = Some(lines());
+    }
+    assert_eq!(
+        check_run(&r).map(|_| ()),
+        Err("an observation's readings are not the boot's own"),
+    );
+    // With a witness record, an observation that shows other lines, none, or
+    // an unreadable log is not a recovery: the verdict that says recovered is
+    // refused.
+    let others: [Option<Vec<String>>; 3] = [
+        Some(vec!["[NOISY] i2c1.u2: Write D0".into()]),
+        Some(vec![]),
+        None,
     ];
-    for (i, m) in mutations.iter().enumerate() {
+    for (i, w) in others.into_iter().enumerate() {
         let mut r = run_with_check();
         let k = index(&r, |x| matches!(x, Record::FirmwareObserved { .. }));
-        m(&mut r[k]);
-        assert_eq!(
-            check_run(&r).map(|_| ()),
-            Err("an observation's readings are not the boot's own"),
-            "mutation {i}"
-        );
+        if let Record::FirmwareObserved { witness, .. } = &mut r[k] {
+            *witness = w;
+        }
+        assert_eq!(refused(&r), MSG_COUNTS, "variant {i}");
     }
 }
 
