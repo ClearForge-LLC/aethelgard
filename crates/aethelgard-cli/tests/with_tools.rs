@@ -579,11 +579,17 @@ fn identifiers_with_s_expression_characters_survive_kicad() {
 /// rules file all saying 0.05 mm.
 const LOOSE: &str = "(kicad_pcb\n\t(version 20240108)\n\t(generator \"aethelgard\")\n\t(general (thickness 1.6) (legacy_teardrops no))\n\t(paper \"A4\")\n\t(layers (0 \"F.Cu\" signal) (31 \"B.Cu\" signal) (44 \"Edge.Cuts\" user))\n\t(setup (pad_to_mask_clearance 0) (trace_clearance 0.05) (clearance_min 0.05))\n\t(net 0 \"\")\n\t(net 1 \"NET_A\")\n\t(net 2 \"NET_B\")\n\t(gr_rect (start 100 100) (end 130 120) (stroke (width 0.1) (type default)) (fill none) (layer \"Edge.Cuts\"))\n\t(segment (start 105 110) (end 125 110) (width 0.25) (layer \"F.Cu\") (net 1))\n\t(segment (start 105 110.35) (end 125 110.35) (width 0.25) (layer \"F.Cu\") (net 2))\n)\n";
 
+/// `LOOSE` in KiCad 10.0.7's format (the engine's: copper ids 0 and 2, nets
+/// by name), with its declared thickness: with `--spec` the gate first
+/// requires the board to be the declared one (`AET-WO-4100`), which `LOOSE`'s
+/// KiCad 8 table (B.Cu as 31) is not. The same tracks, 0.1 mm apart.
+const LOOSE10: &str = "(kicad_pcb\n\t(version 20260206)\n\t(generator \"aethelgard\")\n\t(general (thickness 1.6) (legacy_teardrops no))\n\t(paper \"A4\")\n\t(layers (0 \"F.Cu\" signal) (2 \"B.Cu\" signal) (25 \"Edge.Cuts\" user))\n\t(setup (pad_to_mask_clearance 0) (trace_clearance 0.05) (clearance_min 0.05))\n\t(gr_rect (start 100 100) (end 130 120) (stroke (width 0.1) (type default)) (fill no) (layer \"Edge.Cuts\"))\n\t(segment (start 105 110) (end 125 110) (width 0.25) (layer \"F.Cu\") (net \"NET_A\"))\n\t(segment (start 105 110.35) (end 125 110.35) (width 0.25) (layer \"F.Cu\") (net \"NET_B\"))\n)\n";
+
 #[test]
 fn a_board_whose_own_files_are_looser_is_judged_by_the_gate() {
     let t = Temp::new("loose");
     let board = t.0.join("loose.kicad_pcb");
-    fs::write(&board, LOOSE).unwrap();
+    fs::write(&board, LOOSE10).unwrap();
     let loose = aethelgard_eda::rules::Rules {
         source: aethelgard_eda::rules::Source::Specification,
         clearance_nm: 50_000,

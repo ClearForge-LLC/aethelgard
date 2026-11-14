@@ -1731,6 +1731,11 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
         if seeds.contains(&usize::MAX) {
             return Err(format!("a {net} via is off the grid"));
         }
+        if !b_cu && stitched.is_empty() {
+            return Err(format!(
+                "the {layer} plane of {net} reaches no via: no pad draws from it"
+            ));
+        }
         let labels = components(&grid, &core, &seeds);
         for (k, &i) in stitched.iter().enumerate() {
             if labels[k].is_none() || labels[k] != labels[0] {
@@ -1744,7 +1749,9 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
                     routed.vias[i].at
                 ));
             }
-            via_layers.entry(routed.vias[i].at).or_default()[2] = true;
+            // Ground's zone is B.Cu copper: a B.Cu stub and the zone are one
+            // layer, as before planes. A plane is a layer of its own.
+            via_layers.entry(routed.vias[i].at).or_default()[if b_cu { 1 } else { 2 }] = true;
             let (ra, rb) = (
                 find(&mut parent, first_via + i),
                 find(&mut parent, first_via + stitched[0]),
@@ -1907,7 +1914,8 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
 }
 
 /// A board that does not agree with the specification's declared board,
-/// named: `LayersDisagree`, `PlanesDisagree` or `ThicknessDisagrees`.
+/// named: `LayersDisagree`, `PlanesDisagree`, `ThicknessDisagrees` or
+/// `ViaNotThrough`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Disagrees {
     pub kind: &'static str,
@@ -1917,6 +1925,8 @@ pub struct Disagrees {
 /// Refuses a board whose copper layers, zones or declared thickness are not
 /// the specification's (`AET-WO-4100`): the layer table's copper entries
 /// must be exactly the declared layers, each with KiCad's id and `signal`;
+/// every via the engine's untyped through via (`F.Cu` to `B.Cu`, no `blind`
+/// or `micro`: the specification declares through vias only);
 /// every zone a declared one (ground's B.Cu zone at 2 layers, the planes at
 /// 4, each plane present); and `(general (thickness …))` the declared
 /// nominal. The board is judged by the specification, never by its own
@@ -1964,6 +1974,21 @@ pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagree
                 "the board's copper layers are {copper:?}; the specification declares {want:?}"
             ),
         ));
+    }
+    for v in board.all("via") {
+        let layers: Vec<&str> = one(&v, "layers")
+            .map_err(|m| no("ViaNotThrough", m))?
+            .map(|l| l.texts().collect())
+            .unwrap_or_default();
+        if v.arg(1).is_some() || layers != ["F.Cu", "B.Cu"] {
+            return Err(no(
+                "ViaNotThrough",
+                format!(
+                    "a via typed {:?} on {layers:?}; the specification declares through vias, F.Cu to B.Cu",
+                    v.arg(1)
+                ),
+            ));
+        }
     }
     let mut zones = Vec::new();
     for z in board.all("zone") {
@@ -2083,7 +2108,11 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
         let layers: Vec<&str> = one(&v, "layers")?
             .map(|l| l.texts().collect())
             .unwrap_or_default();
-        if size != Some(VIA_NM) || drill != Some(DRILL_NM) || layers != ["F.Cu", "B.Cu"] {
+        if v.arg(1).is_some()
+            || size != Some(VIA_NM)
+            || drill != Some(DRILL_NM)
+            || layers != ["F.Cu", "B.Cu"]
+        {
             return Err(format!("a via {size:?}/{drill:?} on {layers:?}"));
         }
         routed.vias.push(Via {

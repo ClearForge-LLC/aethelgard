@@ -85,7 +85,7 @@ Gerber job file is not included; this file states the stackup.
 
 ## Stackup
 
-{stackup}- Laminate: FR-4, with laminate and solder mask relative permittivity at
+{stackup}- {laminate}, with laminate and solder mask relative permittivity at
   most {eps} ({eps_source}).
 - Declared thickness {declared} mm. Finished board from {min} mm to {max} mm thick.
 - Finished copper at most {um} um thick on each layer.
@@ -120,6 +120,11 @@ CC-BY-SA 4.0 with a design exception that covers designs made from them.
         project = n.project,
         engine = n.engine_version,
         spec = n.specification_sha256,
+        laminate = if st.has_planes() {
+            "Laminate: as the dielectrics' sources above state"
+        } else {
+            "Laminate: FR-4"
+        },
         declared = mm(st.thickness.nominal_nm),
         min = mm(st.thickness.min_nm),
         max = mm(st.thickness.max_nm),

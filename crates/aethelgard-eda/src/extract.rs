@@ -323,13 +323,15 @@ pub const fn shell(base: Base, c: u128, s: u128) -> Option<u128> {
 }
 
 /// Femtofarads, rounded up, from `D` times a shell's volume in nm³:
-/// `ε0 · ε_r · V / S²`.
+/// `ε0 · ε_r · V / S²`, as one exact division. When the product overflows
+/// (a permittivity whose thousandths do not reduce, on a large piece), the
+/// same value in two divisions, each rounded up, which can only add.
 pub const fn femtofarads(ph: &Physics, volume_d: u128) -> Option<u64> {
     let Some(a) = mul(volume_d, EPS0_NUM) else {
         return None;
     };
     let Some(a) = mul(a, ph.er_num) else {
-        return None;
+        return staged(ph, volume_d);
     };
     let Some(den) = mul(EPS0_DEN, ph.er_den) else {
         return None;
@@ -340,6 +342,28 @@ pub const fn femtofarads(ph: &Physics, volume_d: u128) -> Option<u64> {
     };
     let Some(den) = mul(den, s2) else { return None };
     let ff = a.div_ceil(den);
+    if ff > u64::MAX as u128 {
+        return None;
+    }
+    Some(ff as u64)
+}
+
+/// `⌈⌈V·ε0 / (ε0_den·D·S²)⌉ · ε_r_num / ε_r_den⌉`: at least the exact value.
+const fn staged(ph: &Physics, volume_d: u128) -> Option<u64> {
+    let Some(a) = mul(volume_d, EPS0_NUM) else {
+        return None;
+    };
+    let Some(den) = mul(EPS0_DEN, D) else {
+        return None;
+    };
+    let Some(s2) = mul(ph.s, ph.s) else {
+        return None;
+    };
+    let Some(den) = mul(den, s2) else { return None };
+    let Some(x) = mul(a.div_ceil(den), ph.er_num) else {
+        return None;
+    };
+    let ff = x.div_ceil(ph.er_den);
     if ff > u64::MAX as u128 {
         return None;
     }

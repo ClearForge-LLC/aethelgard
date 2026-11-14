@@ -314,7 +314,11 @@ exit 0
     tb
 }
 
-const LOOSE_BOARD: &str = "(kicad_pcb\n\t(version 20240108)\n\t(setup\n\t\t(pad_to_mask_clearance 0)\n\t\t(trace_clearance 0.05)\n\t\t(clearance_min 0.05)\n\t)\n\t(net 0 \"\")\n)\n";
+/// A board whose own rules are loose. With `--spec` it must also be the
+/// declared board (`AET-WO-4100`: two copper layers, 1.6 mm), or the gate
+/// refuses it before writing anything, so it carries the reference's layer
+/// table and thickness; its subject is the rule files, not the board.
+const LOOSE_BOARD: &str = "(kicad_pcb\n\t(version 20240108)\n\t(general\n\t\t(thickness 1.6)\n\t)\n\t(layers\n\t\t(0 \"F.Cu\" signal)\n\t\t(2 \"B.Cu\" signal)\n\t)\n\t(setup\n\t\t(pad_to_mask_clearance 0)\n\t\t(trace_clearance 0.05)\n\t\t(clearance_min 0.05)\n\t)\n\t(net 0 \"\")\n)\n";
 
 #[test]
 fn the_gate_writes_every_rule_and_library_file_and_reads_none_from_the_board() {

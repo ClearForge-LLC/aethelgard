@@ -698,6 +698,7 @@ fn check_kicad(
     schematic: Option<&Path>,
 ) -> Result<verdict::Verdict, run::Stop> {
     let original = input::file_check(path)?;
+    let mut declared = None;
     let (rules, spec_sha256) = match spec {
         Some(file) => {
             let (spec, sha256) = read_spec(Some(file)).map_err(|(refusal, code)| run::Stop {
@@ -706,6 +707,7 @@ fn check_kicad(
                 id: refusal.error.id,
                 message: refusal.error.message,
             })?;
+            declared = Some(aethelgard_eda::stack::Stack::of(&spec));
             (
                 aethelgard_eda::rules::Rules::from_specification(&spec),
                 Some(sha256),
@@ -722,6 +724,17 @@ fn check_kicad(
         kicad::refuse_sheets(&input.copy)?;
     }
     let board = kicad::prepare(check, &input.copy, &scratch.tool, &rules)?;
+    // With `--spec` the board is judged against the declared board before
+    // KiCad runs (`AET-WO-4100`): its copper layers, planes, thickness and
+    // vias, by name, never by the board's own claims (`RUL-03`).
+    if let (Some(stack), Some(tree)) = (&declared, &board) {
+        aethelgard_eda::route::declared(tree, stack).map_err(|d| run::Stop {
+            code: EXIT_UNREADABLE,
+            kind: d.kind,
+            id: None,
+            message: d.message,
+        })?;
+    }
     // KiCad's parity check reads the schematic named like the board, beside
     // it; the copy is scanned like the board before any tool runs, and the
     // board is judged on the strict reading `prepare` made of it.
