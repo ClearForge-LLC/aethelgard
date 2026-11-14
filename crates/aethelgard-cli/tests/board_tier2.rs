@@ -436,6 +436,10 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
             ("erc", "pass"),
             ("drc", "pass"),
             ("extract", "pass"),
+            // One per harness: the scheduler, I2C1's transfer, and since
+            // `AET-WO-4200` SPI1's transfer and its frame bound.
+            ("prove", "pass"),
+            ("prove", "pass"),
             ("prove", "pass"),
             ("prove", "pass"),
             ("build", "pass"),

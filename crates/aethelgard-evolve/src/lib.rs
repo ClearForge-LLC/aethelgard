@@ -1073,10 +1073,17 @@ impl RunView<'_> {
                     .map(Vec::from)
                     .unwrap_or_default(),
             },
-            Record::SpiWitness { reference, .. } => View::Fields {
-                device: Some(reference.clone()),
-                fields: run.spi_fields(record),
-            },
+            // The chip select is the board crate's: its transfer drives it.
+            // The command and the record are the firmware's. A wrong select
+            // names no device, so the report names the board crate's generator.
+            Record::SpiWitness { reference, .. } => {
+                let fields = run.spi_fields(record);
+                let select = fields.first().is_some_and(|f| f.wrong);
+                View::Fields {
+                    device: (!select).then(|| reference.clone()),
+                    fields,
+                }
+            }
             _ => View::Other,
         };
         Some(Evidence {

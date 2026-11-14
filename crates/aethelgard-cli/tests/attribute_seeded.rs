@@ -505,8 +505,10 @@ mod tier2 {
             let records = replay_dir(&r.run).unwrap().state.records;
             let allowed: &[u64] = match r.case.rule.as_str() {
                 "E1" => &[7, 8, 9],
+                "E2" => &[22],
                 "S1" => &[7, 11, 13],
                 "S2" => &[7, 10, 11],
+                "S3" => &[21, 22],
                 _ => &[],
             };
             let evidence = a["evidence"].as_array().unwrap();
@@ -632,6 +634,9 @@ mod tier2 {
             ("software", _) => Want::Report,
             ("none", _) => Want::Inv05,
             _ if c.findings.iter().any(|f| f == "i2c_line_held_low") => Want::ModelSlot,
+            // A device absent behind its chip select: a board fault no value
+            // fixes (`AET-WO-4200`, `E2`).
+            (_, "spi-absent-u4") => Want::ModelSlot,
             // R_target = R × 240,000 / rise ≈ 2,832 Ω for every pull-up case,
             // the 47 kOhm trap included (E1 masks its wrong address).
             (
