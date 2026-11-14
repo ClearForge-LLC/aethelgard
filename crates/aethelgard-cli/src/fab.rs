@@ -821,4 +821,32 @@ mod tests {
                 .all(|(n, _)| n.starts_with("p-") || n.starts_with("p."))
         );
     }
+
+    /// The Gerber list follows the declared layers (`AET-WO-4100`): at 2
+    /// layers exactly today's nine; at 4 both inner layers after `B.Cu`,
+    /// named as KiCad 10.0.7 names them, creator line 9 (measured, S1).
+    #[test]
+    fn the_gerbers_are_the_declared_layers() {
+        let load = |text: &str| {
+            let spec: aethelgard_ir::Specification = serde_json::from_str(text).unwrap();
+            gerbers(&aethelgard_eda::stack::Stack::of(&spec))
+        };
+        let two = load(include_str!("../../../examples/sentinel-01-minimal.json"));
+        let today: Vec<(String, String, usize)> = LAYERS
+            .iter()
+            .map(|(l, s, c)| ((*l).to_owned(), (*s).to_owned(), *c))
+            .collect();
+        assert_eq!(two, today);
+        let four = load(include_str!("../tests/fixtures/four-layer.json"));
+        let inner: Vec<&(String, String, usize)> =
+            four.iter().filter(|(l, ..)| l.starts_with("In")).collect();
+        assert_eq!(
+            inner,
+            [
+                &("In1.Cu".to_owned(), "In1_Cu.g1".to_owned(), 9),
+                &("In2.Cu".to_owned(), "In2_Cu.g2".to_owned(), 9)
+            ]
+        );
+        assert_eq!(four.len(), LAYERS.len() + 2);
+    }
 }
