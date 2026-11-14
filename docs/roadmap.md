@@ -206,7 +206,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
   - **Records.** Trace version 5; kind 19 is on device lines too.
   - **Tests and CI.** `TIER2_MIN` is 91. CI on `b93f7bf`: 14 checks green, slowest shard 15:38.
   - **Open after it.** A2 and A3 are named residuals; A4 waits for P4's IMU work order; A5 goes to `aethelgard-eda`; B4 to `2205`.
-- `AET-WO-2205` — **reserved 2026-11-14**, from `2204`'s split: the archive's hygiene and attribution's evidence. Engine and tool versions in the archive header and record kinds renamed from "measured" (review B4), the analog deck's 400 kHz window labelled (review A10.4, `2301` B4), the status-to-phase table in one place (`3100` F2), the executable segments archived for `pc_outside_firmware` (`3100` F13), and the seeded set's exact evidence per case with an indeterminate case end to end (review A7.5, A7.6). Its own trace version bump, after `2204`'s.
+- `AET-WO-2205` — **written 2026-11-14**, build with one stop (the seeded set's evidence table), strong tier, targeted adversarial pass;, from `2204`'s split: the archive's hygiene and attribution's evidence. Engine and tool versions in the archive header and record kinds renamed from "measured" (review B4), the analog deck's 400 kHz window labelled (review A10.4, `2301` B4), the status-to-phase table in one place (`3100` F2), the executable segments archived for `pc_outside_firmware` (`3100` F13), and the seeded set's exact evidence per case with an indeterminate case end to end (review A7.5, A7.6). Also `power::SOURCE` to DS12117 Rev 10 (`2301` D10) and the droop's witness report slimmed (`2204` B4). One trace version bump, 5 to 6. `3100` F2 may already be closed by `2204`'s removal of the `CR2`/`TXDR` evidence; the build checks first. Launch waits for Furnace's weekly usage reset.
 
 **Exit gate: passed 2026-11-09, as reconciled in §7.** Every clause below is owned by merged work.
 
@@ -503,6 +503,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-14 | §7.1 | `AET-WO-1908` reconciled (merged, PR #109): CI weights in CI seconds, eight balanced shards under 20 minutes. Its squash title still reads "WIP, measuring" (the PR title was not updated); the commit body and FEEDBACK are the record. `2301` D10 closed: DS12117 Rev 10 equals Rev 7 in every BOR threshold | PR #109; ST's PDFs |
 | 2026-11-14 | §5, §6, §7.1 | `AET-WO-2204` reconciled (merged, PR #111, `79bdfe1`): the device model's log is the I2C witness; the core parked in thread mode; synchronous logging; reserved names refused; trace version 5. `architecture.md` §2.20 and `RUL-19` (5) added. The PR's squash title still reads "spike measured, STOPPED for ruling" (the build is in it); §6 now has the architect set the title at merge, and states the spike-language rule | PR #111 |
 | 2026-11-14 | §7.1 | `AET-WO-1909` written (census, stop, build): a CI reduction pass that keeps every guarded failure, at Scotty's request | Scotty, 2026-11-14; `1908` FEEDBACK |
+| 2026-11-14 | §5, §7.1 | `AET-WO-2205` written (build, one stop): header versions, "computed" record names, the 400 kHz label, executable segments archived, the seeded set's exact evidence and an indeterminate case, `power::SOURCE` to Rev 10; trace version 6 | review B4, A7.5, A7.6, A10.4; `3100` F2, F13; `2301` B4, D10; `2204` B4 |
 
 ## 9. Provenance
 
