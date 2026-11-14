@@ -1,8 +1,0 @@
-build: pass {'path': '/cache/fw/ref-built.elf', 'sha256': '2d9ee2641f6e0a1b6e48f1637cefe4fa01cab3f97849a1dd074474c879fe0d2f'}
-sha256: 2d9ee2641f6e0a1b6e48f1637cefe4fa01cab3f97849a1dd074474c879fe0d2f
-entry: 0x8000041 cargo build: 0x8000041
-stripped sections: ['', '.ARM.attributes', '.aethelgard_boot', '.bss', '.comment', '.data', '.rodata', '.shstrtab', '.text', '.vector_table']
-symtab in stripped: False in cargo build: True
-.text identical: True bytes: 1454 at 0x8000040
-bytes at 0x08000588..0x08000598: 88604bf20700c2f20010086010bffde7
-boot: {'boot': '0x2100B007', 'pc': '0x8000594', 'icsr': '0x00000800', 'cpsr': '0x21000000'}
