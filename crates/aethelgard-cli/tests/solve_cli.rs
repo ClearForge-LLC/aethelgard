@@ -470,6 +470,35 @@ fn a_power_tree_solves_into_the_topology_and_is_refused_at_emit() {
         (p.input_steady_milliamps, p.input_fault_milliamps),
         (2679, 10_100)
     );
+    // `AET-WO-4300d2` §1.7: the sense net's pin, the lowest package position
+    // among the free pins that carry a single-ended ADC input.
+    let table = aethelgard_svd_hal::pin_table("STM32H753ZITx").unwrap();
+    let sense = &p.sense["VBAT_SENSE"];
+    let pin = &table.pins[&sense.pin];
+    assert_eq!(sense.position, pin.position);
+    assert_eq!(
+        sense.channels,
+        pin.adc_channels.iter().cloned().collect::<Vec<_>>()
+    );
+    assert!(!sense.channels.is_empty());
+    let taken: Vec<&str> = t
+        .assignments
+        .values()
+        .map(|a| a.pin.as_str())
+        .chain(t.gpio.values().map(String::as_str))
+        .collect();
+    assert!(!taken.contains(&sense.pin.as_str()));
+    let lowest = table
+        .pins
+        .iter()
+        .filter(|(n, q)| {
+            !q.adc_channels.is_empty()
+                && !aethelgard_ir::RESERVED_PINS.contains(&n.as_str())
+                && !taken.contains(&n.as_str())
+        })
+        .map(|(_, q)| q.position)
+        .min();
+    assert_eq!(lowest, Some(sense.position));
     // The seam of the split: nothing emits a board without its power tree.
     let out = dir.join("emitted");
     let output = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
