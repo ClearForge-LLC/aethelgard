@@ -183,16 +183,31 @@ fn no_courtyards_overlap_and_every_one_is_inside_the_outline() {
     for fp in board.children("footprint") {
         let reference = fp.property("Reference").unwrap().to_owned();
         let at = fp.child("at").unwrap();
-        assert_eq!(at.items().len(), 3, "{reference} is rotated");
-        let g = pcb::geometry(fp, &reference).unwrap();
+        // The support network's capacitors are turned to their pins
+        // (`AET-WO-4300g`): each courtyard is judged as placed, at its angle.
+        let theta: u16 = match at.items().len() {
+            3 => 0,
+            4 => at.arg(3).unwrap().parse().unwrap(),
+            n => panic!("{reference}'s `at` has {n} items"),
+        };
+        let g = pcb::geometry_at(fp, &reference, theta).unwrap();
         let c = shifted(g.courtyard, (nm(at, 1), nm(at, 2)));
+        // A connector sits at the edge, its courtyard inside the outline
+        // itself (`AET-WO-4300f` D7); every other part keeps the clearance.
+        let within = if fp.arg(1).is_some_and(|f| f.starts_with("Connector_")) {
+            edge
+        } else {
+            inner
+        };
         assert!(
-            inner.contains(c),
-            "{reference}'s courtyard {c:?} is not inside {inner:?}"
+            within.contains(c),
+            "{reference}'s courtyard {c:?} is not inside {within:?}"
         );
         courtyards.push((reference, c));
     }
-    assert_eq!(courtyards.len(), 15);
+    // 4 ICs, 2 connectors, 5 resistors and 22 capacitors (`AET-WO-4300g`:
+    // the 19 of the MCU's support network among them).
+    assert_eq!(courtyards.len(), 33);
     for (i, (a, ca)) in courtyards.iter().enumerate() {
         for (b, cb) in &courtyards[i + 1..] {
             assert!(!ca.overlaps(*cb), "{a} and {b} overlap");
