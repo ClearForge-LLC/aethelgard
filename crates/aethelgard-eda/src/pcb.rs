@@ -1474,6 +1474,15 @@ mod tests {
             "Capacitor_SMD:C_0402_1005Metric",
             "Package_SO:SOIC-8_5.3x5.3mm_P1.27mm",
             "Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering",
+            "Package_SO:Texas_HSOP-8-1EP_3.9x4.9mm_P1.27mm",
+            "Package_TO_SOT_SMD:SOT-23-5",
+            "Package_SO:TSSOP-14_4.4x5mm_P0.65mm",
+            "Inductor_SMD:L_Vishay_IHLP-5050",
+            "Connector_AMASS:AMASS_XT30PW-M_1x02_P2.50mm_Horizontal",
+            "Capacitor_SMD:C_0603_1608Metric",
+            "Capacitor_SMD:C_1210_3225Metric",
+            "Resistor_SMD:R_0603_1608Metric",
+            "Sensor_Motion:InvenSense_QFN-24_3x3mm_P0.4mm",
         ] {
             let g = geometry(&library::footprint(id).unwrap(), "R1").unwrap();
             assert!(g.keep.contains(g.courtyard), "{id}");

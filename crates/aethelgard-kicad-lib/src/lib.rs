@@ -7,11 +7,35 @@
 #![forbid(unsafe_code)]
 
 /// Every vendored file: its path under `data/kicad-10.0.7/` and its bytes.
-pub const FILES: [(&str, &[u8]); 24] = [
+pub const FILES: [(&str, &[u8]); 41] = [
     (
         "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
         include_bytes!(
             "../data/kicad-10.0.7/footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Capacitor_SMD.pretty/C_0603_1608Metric.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Capacitor_SMD.pretty/C_0603_1608Metric.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Capacitor_SMD.pretty/C_1210_3225Metric.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Capacitor_SMD.pretty/C_1210_3225Metric.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Connector_AMASS.pretty/AMASS_XT30PW-M_1x02_P2.50mm_Horizontal.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Connector_AMASS.pretty/AMASS_XT30PW-M_1x02_P2.50mm_Horizontal.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Inductor_SMD.pretty/L_Vishay_IHLP-5050.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Inductor_SMD.pretty/L_Vishay_IHLP-5050.kicad_mod"
         ),
     ),
     (
@@ -27,6 +51,18 @@ pub const FILES: [(&str, &[u8]); 24] = [
         ),
     ),
     (
+        "footprints/Package_SO.pretty/TSSOP-14_4.4x5mm_P0.65mm.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Package_SO.pretty/TSSOP-14_4.4x5mm_P0.65mm.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Package_SO.pretty/Texas_HSOP-8-1EP_3.9x4.9mm_P1.27mm.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Package_SO.pretty/Texas_HSOP-8-1EP_3.9x4.9mm_P1.27mm.kicad_mod"
+        ),
+    ),
+    (
         "footprints/Package_SON.pretty/WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm.kicad_mod",
         include_bytes!(
             "../data/kicad-10.0.7/footprints/Package_SON.pretty/WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm.kicad_mod"
@@ -36,6 +72,12 @@ pub const FILES: [(&str, &[u8]); 24] = [
         "footprints/Package_SO.pretty/SOIC-8_5.3x5.3mm_P1.27mm.kicad_mod",
         include_bytes!(
             "../data/kicad-10.0.7/footprints/Package_SO.pretty/SOIC-8_5.3x5.3mm_P1.27mm.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Package_TO_SOT_SMD.pretty/SOT-23-5.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Package_TO_SOT_SMD.pretty/SOT-23-5.kicad_mod"
         ),
     ),
     (
@@ -69,6 +111,24 @@ pub const FILES: [(&str, &[u8]); 24] = [
         ),
     ),
     (
+        "footprints/Resistor_SMD.pretty/R_0603_1608Metric.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Resistor_SMD.pretty/R_0603_1608Metric.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Sensor_Motion.pretty/InvenSense_QFN-24_3x3mm_P0.4mm.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Sensor_Motion.pretty/InvenSense_QFN-24_3x3mm_P0.4mm.kicad_mod"
+        ),
+    ),
+    (
+        "symbols/Connector_Generic.kicad_symdir/Conn_01x02.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Connector_Generic.kicad_symdir/Conn_01x02.kicad_sym"
+        ),
+    ),
+    (
         "symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x04_MountingPin.kicad_sym",
         include_bytes!(
             "../data/kicad-10.0.7/symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x04_MountingPin.kicad_sym"
@@ -91,8 +151,18 @@ pub const FILES: [(&str, &[u8]); 24] = [
         include_bytes!("../data/kicad-10.0.7/symbols/Device.kicad_symdir/C.kicad_sym"),
     ),
     (
+        "symbols/Device.kicad_symdir/L.kicad_sym",
+        include_bytes!("../data/kicad-10.0.7/symbols/Device.kicad_symdir/L.kicad_sym"),
+    ),
+    (
         "symbols/Device.kicad_symdir/R.kicad_sym",
         include_bytes!("../data/kicad-10.0.7/symbols/Device.kicad_symdir/R.kicad_sym"),
+    ),
+    (
+        "symbols/Logic_LevelTranslator.kicad_symdir/TXU0304PW.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Logic_LevelTranslator.kicad_symdir/TXU0304PW.kicad_sym"
+        ),
     ),
     (
         "symbols/MCU_ST_STM32H7.kicad_symdir/STM32H753ZITx.kicad_sym",
@@ -104,6 +174,36 @@ pub const FILES: [(&str, &[u8]); 24] = [
         "symbols/Memory_Flash.kicad_symdir/W25Q32JVSS.kicad_sym",
         include_bytes!(
             "../data/kicad-10.0.7/symbols/Memory_Flash.kicad_symdir/W25Q32JVSS.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Regulator_Linear.kicad_symdir/TLV70012_SOT23-5.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Regulator_Linear.kicad_symdir/TLV70012_SOT23-5.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Regulator_Linear.kicad_symdir/TLV75518PDBV.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Regulator_Linear.kicad_symdir/TLV75518PDBV.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Regulator_Switching.kicad_symdir/LMR33630ADDA.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Regulator_Switching.kicad_symdir/LMR33630ADDA.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Regulator_Switching.kicad_symdir/LMR33640ADDA.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Regulator_Switching.kicad_symdir/LMR33640ADDA.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Sensor_Motion.kicad_symdir/ICM-20948.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Sensor_Motion.kicad_symdir/ICM-20948.kicad_sym"
         ),
     ),
     (
