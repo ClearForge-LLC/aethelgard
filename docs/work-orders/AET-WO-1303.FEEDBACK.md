@@ -108,8 +108,8 @@ The predictions below were committed before any measured run. They are not edite
 | P4.2 | Tube flow, R ≤ ρL/(Wt) under a length condition | Derived. On the routed boards the condition and its companions (pad end, via entry) often fail at W. A path then narrows its tube (rigorous) or is refused by name. The first version checked only the bends, and allowed what the second forbids: F7 | measured | right, with F7 |
 | P4.3 | Every input is on the wrong side as declared | Confirmed. Copper minimum, plating minimum, temperature and a material allowance are all new | read | right |
 | P4.4 | Exact checks hold | Bar, annulus and barrel equal their closed forms; the 90° bend lies inside a certified bracket (corner 0.558–0.560 squares against the tube's 1) | measured | right |
-| P4.5 | Reference 50–300 mΩ from the best stand-in | **9.6–132.8 mΩ** on 8 of 16 pins with the hole concentric; **9.6–351.1 mΩ** on 8 of 16 with the hole anywhere in JLCPCB's ±0.075 mm; the rest are refused by name | measured | partly; coverage not predicted |
-| P4.6 | 4-layer 10–40 mΩ | **8.6–66.9 mΩ** on 11 of 16 pins, concentric; **2 of 16** (8.6–10.7 mΩ) at ±0.075 mm | measured | close only under the concentric condition |
+| P4.5 | Reference 50–300 mΩ from the best stand-in | **11.4–156.8 mΩ** on 8 of 16 pins with the hole concentric; **11.4–414.6 mΩ** on 8 of 16 with the hole anywhere in JLCPCB's ±0.075 mm; the rest are refused by name | measured | partly; coverage not predicted |
+| P4.6 | 4-layer 10–40 mΩ | **10.2–79.0 mΩ** on 11 of 16 pins, concentric; **2 of 16** (10.2–12.6 mΩ) at ±0.075 mm | measured | close only under the concentric condition |
 | P4.7 | Refill joins vias solidly | **Not measured** (container guard), but **read at source**. KiCad 10.0.7 `pcbnew/zone_filler.cpp` `knockoutThermalReliefs` gives thermal reliefs to footprint pads, and gives them to vias only in a `HATCH_PATTERN` zone (l.2002–2112). The planes here are solid fill, so a same-net via joins the fill all round. The same source shows the zone's `min_thickness` opening the fill (F9) | read | right |
 | P4.8 | Per-pin R × total load bounds the drop | Holds on 300 random networks: the maximum ratio is 1.000000 | measured | right |
 | P5.1–P5.3 | Shape of the verdict and limits | Proposal below | inferred | — |
@@ -228,7 +228,7 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
 - **Hole offset, rigorous** (`rbound2.py` `fan_off`, `spread_off`, `best_cut_off`). The hole centre c' may lie anywhere within δ of the pad centre. The cut stays in the pad disc and clears 1.05·r_d + δ, so rays to any c' stay in the pad. Each energy is bounded in closed form over every c', using p' ≥ p − δ and r' ≤ r + δ (integrand increasing). The barrel spread is bounded via f(j) = j ln(2πj)/(2πj − 1), which is increasing, with ∫j0 dφ0 = 1 and |Φ − φ0| ≤ 2π. In the plane, discs grow by δ and D by 2δ. These worst-case forms dominate a 64-direction sample at every case tried (`s4/check_offset.out` is the earlier sensitivity). **At JLCPCB's ±0.075 mm [read] the bound is rigorous with no concentricity condition** (`s4/paths.out`), but the 0.15 mm annular ring leaves few admissible entries and the worst-case spread is about 8× loose (F10).
 - **Stated conditions the bound still rests on.** The work order's S4 itself allows these: "the plating thickness is a fabricator figure, so cite it or declare it as a condition".
   - **Fabrication:** none in `paths.out` (the hole anywhere within the cited ±0.075 mm); `paths-concentric.out` adds the condition "hole concentric with its pad";
-  - **Material:** plating ≥ 18 µm (JLCPCB publishes an 18 µm *average* [read]), outer copper ≥ 30 µm, plane copper ≥ 15 µm, copper at most 125 °C (the Tj of the cited load), resistivity allowance k = 1. Each is in `conditions.json` with its source. No primary citation is reachable: IPC-4562 Table 3-2 and IPC-6012 Tables 3-4 and 3-14 are paywalled, vendor pages quote them second-hand and disagree, and foil datasheets omit resistivity (D6);
+  - **Material:** plating ≥ 18 µm (JLCPCB publishes an 18 µm *average* [read]), outer copper ≥ 30 µm, plane copper ≥ 15 µm, copper at most 125 °C (the Tj of the cited load). Resistivity allowance **k = 1.181, cited**: the largest rated foil resistivity in IPC-MF-150F §3.8.1.2, 0.181 Ω·g/m², as quoted in US 6,652,725 B2 [read], over IACS's 0.15328. That is cited for foil; applying it to plated copper is a condition. Each input is in `conditions.json` with its source. The copper minima remain declared conditions: IPC-6012 Tables 3-4 and 3-14 are paywalled, vendor pages quote them second-hand and disagree, and OSH Park publishes a nominal with no tolerance (D6). For plating, the lower of two fabricator figures is taken: JLCPCB's 18 µm average and PCBWay's 'minimum … typically 20 micrometers' per IPC-6012 [both read];
   - **Terminal:** each pad is one equipotential;
   - **DRC gate:** the plane's fill is the declared plane, which the DRC gate refills and judges.
 
@@ -238,7 +238,7 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
 - ρ20: IACS 1.7241 µΩ·cm (NBS Handbook 100, read);
 - α: 0.00393 (read);
 - copper temperature: 125 °C (a condition), the junction temperature at which DS12117 Table 120 gives the 658 mA load. The run at 105 °C gave the same coverage, with every R 6 % lower;
-- material allowance: k = 1 (a condition; every R scales by k);
+- material allowance: k = 1.181, from IPC-MF-150F's largest rated foil resistivity, quoted in US 6,652,725 B2 [read]; every R scales by k;
 - outer copper minimum: 30 µm (a condition);
 - plane copper minimum: 15 µm (a condition);
 - plating minimum: 18 µm (a condition);
@@ -248,8 +248,8 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
 
 | Board | Pins bounded | Best stand-in, range over the bounded pins | Pairs bounded | Drop at 658 mA, worst bounded pin | Refused by name |
 |---|---|---|---|---|---|
-| Reference (2 layers, 0.2 mm tracks) | **8 of 16** (both runs) | ±0.075 mm: 9.6–351.1 mΩ; concentric: 9.6–132.8 mΩ | 22 / 45 of 208 | 231 mV (±0.075 mm; over the 165 mV tolerance) / 87 mV (concentric) | the rest by name; most are reached only through vias and pads the pieces cannot enter |
-| 4-layer fixture (`In2` plane) | **2 of 16** at ±0.075 mm; **11 of 16** concentric | ±0.075 mm: 8.6–10.7 mΩ; concentric: 8.6–66.9 mΩ | 2 / 74 of 208 | 7 mV / 44 mV | concentric: U1.6, 30, 108, 143, 144; ±0.075 mm: every pin behind a via |
+| Reference (2 layers, 0.2 mm tracks) | **8 of 16** (both runs) | ±0.075 mm: 11.4–414.6 mΩ; concentric: 11.4–156.8 mΩ | 22 / 45 of 208 | 273 mV (±0.075 mm; over the 165 mV tolerance) / 103 mV (concentric) | the rest by name; most are reached only through vias and pads the pieces cannot enter |
+| 4-layer fixture (`In2` plane) | **2 of 16** at ±0.075 mm; **11 of 16** concentric | ±0.075 mm: 10.2–12.6 mΩ; concentric: 10.2–79.0 mΩ | 2 / 74 of 208 | 8 mV / 52 mV | concentric: U1.6, 30, 108, 143, 144; ±0.075 mm: every pin behind a via |
 
 - **These are `main`'s routes (`121344d`).** `1307` (PR #126, unmerged) changes every routed board: the reference goes from 70 to 64 vias, and from 348.5 to 331.6 mm of track (its mailbox note, `bae55aa`). The numbers above will move. The build re-measures after `1307` merges, as the work order's cadence already says. The method and its checks do not depend on the routes.
 - **What limits coverage:** the closed-form pieces, not the copper. A via entered after a turn inside its pad, a pad too narrow for the tube, or a plane hop blocked by crowded foreign vias each refuse a path that real current would use. Where the pieces do fit, the plane hop dominates at 4 layers: 6–44 mΩ per hop against 2.05 mΩ for an ideal two-via sheet at 10 mm (not a bound).
@@ -307,7 +307,11 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
   - **(a)** The closed-form pieces measured here. Rigorous, but they cover 8 of 16 pins on the reference (both runs), and on the 4-layer fixture 11 of 16 with the hole concentric but 2 of 16 at JLCPCB's ±0.075 mm, and the plane hop is 2.7–78× the exact two-hole sheet.
   - **(b)** A certified discrete Thomson flow over the copper: per-layer sheets with holes, as S3's stream-function dual, joined by barrels. It never refuses connected copper and is tighter, but it is numerical.
   - **Recommended: (b) for the build, with (a)'s closed forms as its exact-case tests.** D1 (a) puts a numerical variational solve in the engine anyway.
-- **D6 · Material allowance and temperature.** No citable maximum resistivity for electrodeposited foil or barrel plating was reachable (IPC-4562 is paywalled). **Recommended:** k and the copper temperature are declared conditions with their sources, and the build cites IPC-4562 Table 3-2 once someone holds a copy. Every R scales linearly in k and in 1 + α(T − 20).
+- **D6 · Material allowance, copper minima and temperature.**
+  - **k = 1.181 is cited:** IPC-MF-150F §3.8.1.2's largest rated foil resistivity, via US 6,652,725 B2 [read]. For plated copper no maximum was reachable, so applying k there is a condition.
+  - **The copper minima remain declared:** IPC-6012 Tables 3-4 and 3-14 are paywalled, and OSH Park gives no tolerance.
+  - **Temperature:** 125 °C, the Tj of the cited load.
+  - **Recommended:** the specification declares each with its source, and the build cites IPC-4562 and IPC-6012 once someone holds copies. Every R scales linearly in k, in 1 + α(T − 20) and in 1/t_min.
 - **D7 · The ground return.** The MCU sees VDD − VSS, so a supply gate that bounds only VDD under-claims. **Recommended:** the same bound on GND (zone or plane plus its stitching), with the drop limit applied to the sum.
 - **D8 · Router scope** (`1307` is changing it).
   - No net has its own width: every supply track is 0.2 mm.
