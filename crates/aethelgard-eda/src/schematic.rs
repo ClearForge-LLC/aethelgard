@@ -299,7 +299,7 @@ fn ohms(v: u32) -> String {
 /// The MCU's symbol, the one part every design has.
 pub(crate) const MCU: &str = "MCU_ST_STM32H7:STM32H753ZITx";
 
-const KNOWN_PARTS: &str = "BME280, TMP117, W25Q64JVxIQ";
+const KNOWN_PARTS: &str = "BME280, TMP117, W25Q64JVxIQ, ICM20948";
 const STRAP: u32 = 10_000;
 
 struct Builder<'a> {
@@ -774,17 +774,8 @@ pub(crate) fn design(
         if !solved.gpio.contains_key(&d.cs.net) {
             return Err(EmitError::UnsolvedNet(d.cs.net.clone()));
         }
-        if d.part != "W25Q64JVxIQ" {
-            return Err(EmitError::UnknownPart {
-                reference: d.reference.clone(),
-                part: d.part.clone(),
-                known: KNOWN_PARTS,
-            });
-        }
         let rail = b.rail(&d.supply);
         let gnd = b.ground();
-        let wp = b.strap(&d.reference, "WP", rail.clone())?;
-        let hold = b.strap(&d.reference, "HOLD", rail.clone())?;
         let net = |line: power::Line, own: &String| {
             Conn::Net(
                 behind
@@ -794,19 +785,56 @@ pub(crate) fn design(
                     .clone(),
             )
         };
-        let conns = [
-            ("1", net(power::Line::Cs, &d.cs.net)),
-            ("2", net(power::Line::Miso, &bus.miso.net)),
-            ("3", wp),
-            ("4", gnd),
-            ("5", net(power::Line::Mosi, &bus.mosi.net)),
-            ("6", net(power::Line::Sck, &bus.sck.net)),
-            ("7", hold),
-            ("8", rail),
-        ]
-        .to_vec();
-        device(&mut b, &d.reference, "Memory_Flash:W25Q32JVSS", conns)?;
-        b.decouple(&d.reference, &d.supply, "100n")?;
+        match d.part.as_str() {
+            "W25Q64JVxIQ" => {
+                let wp = b.strap(&d.reference, "WP", rail.clone())?;
+                let hold = b.strap(&d.reference, "HOLD", rail.clone())?;
+                let conns = [
+                    ("1", net(power::Line::Cs, &d.cs.net)),
+                    ("2", net(power::Line::Miso, &bus.miso.net)),
+                    ("3", wp),
+                    ("4", gnd),
+                    ("5", net(power::Line::Mosi, &bus.mosi.net)),
+                    ("6", net(power::Line::Sck, &bus.sck.net)),
+                    ("7", hold),
+                    ("8", rail),
+                ]
+                .to_vec();
+                device(&mut b, &d.reference, "Memory_Flash:W25Q32JVSS", conns)?;
+                b.decouple(&d.reference, &d.supply, "100n")?;
+            }
+            // DS-000189 p. 20, 4.1 and 4.3: VDD and VDDIO on the supply, each
+            // bypassed; REGOUT's 0.1 uF filter capacitor (C1); FSYNC and RESV
+            // pin 20 to GND; RESV pin 19 and the auxiliary I2C master pins left
+            // open. SPI: SCLK, SDI, SDO and nCS (`AET-WO-4300d2` D2 (a)).
+            "ICM20948" => {
+                let regout = b.own_net(format!("{}_REGOUT", d.reference))?;
+                let conns = [
+                    ("8", rail.clone()),
+                    ("13", rail),
+                    ("18", gnd.clone()),
+                    ("20", gnd.clone()),
+                    ("11", gnd.clone()),
+                    ("10", Conn::Net(regout.clone())),
+                    ("22", net(power::Line::Cs, &d.cs.net)),
+                    ("23", net(power::Line::Sck, &bus.sck.net)),
+                    ("24", net(power::Line::Mosi, &bus.mosi.net)),
+                    ("9", net(power::Line::Miso, &bus.miso.net)),
+                ]
+                .to_vec();
+                device(&mut b, &d.reference, "Sensor_Motion:ICM-20948", conns)?;
+                b.passive('C', "100n".into(), Conn::Net(regout), gnd)?;
+                b.decouple(&d.reference, &d.supply, "100n")?;
+                b.decouple(&d.reference, &d.supply, "100n")?;
+            }
+            _ => {
+                return Err(EmitError::UnknownPart {
+                    reference: d.reference.clone(),
+                    part: d.part.clone(),
+                    known: KNOWN_PARTS,
+                });
+            }
+        }
     }
     if let Some(p) = &spec.power {
         power::draw(

@@ -254,6 +254,7 @@ fn part(reference: &str, pads: Vec<Pad>) -> Part {
         rotation: 0,
         pads,
         courtyard: Vec::new(),
+        keepouts: Vec::new(),
     }
 }
 

@@ -691,6 +691,7 @@ mod tests {
                     rotation: 0,
                     pads: vec![p],
                     courtyard: Vec::new(),
+                    keepouts: Vec::new(),
                 }),
             }
         }

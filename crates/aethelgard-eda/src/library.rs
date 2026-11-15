@@ -15,7 +15,7 @@ use crate::sexpr::{self, Sx};
 /// `aethelgard-kicad-lib`, and the sha256 its bytes must have. The pins live
 /// here, in the consumer: a data crate that pinned its own files would be
 /// checking itself (AET-WO-1304).
-const PINS: [(&str, &str); 39] = [
+const PINS: [(&str, &str); 41] = [
     (
         "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
         "0403382fc4583ed510b461b1fa4a36dfaec6f4c0d9b1a67e6b0027837a54e1b5",
@@ -89,6 +89,10 @@ const PINS: [(&str, &str); 39] = [
         "7190ac4a00125b807e54129ef0d87d87f2a658eeb74d025a7028203419b09f23",
     ),
     (
+        "footprints/Sensor_Motion.pretty/InvenSense_QFN-24_3x3mm_P0.4mm.kicad_mod",
+        "f8bb811410e1c549caa7667ad203ffc67fed319ae1957a41922c297ffb7cdffa",
+    ),
+    (
         "symbols/Connector_Generic.kicad_symdir/Conn_01x02.kicad_sym",
         "0fa71012f16ff9329d578174b763d6aee9b64f3b5112db4416a0cf5df7491fdc",
     ),
@@ -143,6 +147,10 @@ const PINS: [(&str, &str); 39] = [
     (
         "symbols/Regulator_Switching.kicad_symdir/LMR33640ADDA.kicad_sym",
         "888e4dedeb4d2c14d3fad15bc15d911bd8c6289ee25621ec372e46a41b6510b4",
+    ),
+    (
+        "symbols/Sensor_Motion.kicad_symdir/ICM-20948.kicad_sym",
+        "6a92444c8a1137c38a8b9e080edb82872deea8f3f9f5d324e9c487d2ad6862d4",
     ),
     (
         "symbols/power.kicad_symdir/+3V3.kicad_sym",
@@ -464,6 +472,13 @@ mod tests {
                     "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
                 ],
             ),
+            (
+                "Sensor_Motion:ICM-20948",
+                &[
+                    "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                    "15", "16", "17", "18", "19", "20", "21", "22", "23", "24",
+                ],
+            ),
             ("Device:L", &["1", "2"]),
             ("Connector_Generic:Conn_01x02", &["1", "2"]),
         ] {
@@ -500,8 +515,21 @@ mod tests {
         for &(path, _, bytes) in checked().unwrap() {
             if path.starts_with("footprints/") {
                 let text = std::str::from_utf8(bytes).unwrap();
-                assert_eq!(sexpr::parse(text).unwrap().head(), Some("footprint"));
-                assert!(!text.contains("(clearance"), "{path}");
+                let fp = sexpr::parse(text).unwrap();
+                assert_eq!(fp.head(), Some("footprint"));
+                // A clearance only inside a keepout zone's `connect_pads`
+                // (`RUL-03`, amended for `AET-WO-4300d2` D2 (a)).
+                let keepout_clearances: usize = fp
+                    .children("zone")
+                    .filter(|z| z.child("keepout").is_some())
+                    .filter_map(|z| z.child("connect_pads"))
+                    .map(|c| c.children("clearance").count())
+                    .sum();
+                assert_eq!(
+                    text.matches("(clearance").count(),
+                    keepout_clearances,
+                    "{path}"
+                );
             }
         }
     }
@@ -513,8 +541,8 @@ mod tests {
             "(lib (name \"Device\") (type \"KiCad\") (uri \"/s/lib/symbols/Device.kicad_symdir\")"
         ));
         assert!(fp.contains("(uri \"/s/lib/footprints/Package_QFP.pretty\")"));
-        assert_eq!(sym.matches("(lib ").count(), 11);
-        assert_eq!(fp.matches("(lib ").count(), 10);
+        assert_eq!(sym.matches("(lib ").count(), 12);
+        assert_eq!(fp.matches("(lib ").count(), 11);
         assert!(sexpr::parse(&sym).is_ok() && sexpr::parse(&fp).is_ok());
     }
 }

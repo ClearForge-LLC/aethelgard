@@ -895,6 +895,14 @@ fn footprint(
         let mut c = child.clone();
         match child.head() {
             Some("version" | "generator" | "generator_version" | "layer") => continue,
+            // A keepout's polygon is not turned here (`AET-WO-4300d2` D2): a
+            // footprint carrying one is drawn at rotation 0 only.
+            Some("zone") if rotation != 0 => {
+                return Err(internal(
+                    &part.reference,
+                    "a footprint with a keepout zone is not turned",
+                ));
+            }
             Some("fp_text") if rotation != 0 => turn(&mut c, rotation, &part.reference)?,
             Some("property") => {
                 if rotation != 0 {
@@ -1692,6 +1700,7 @@ mod tests {
             "Capacitor_SMD:C_0603_1608Metric",
             "Capacitor_SMD:C_1210_3225Metric",
             "Resistor_SMD:R_0603_1608Metric",
+            "Sensor_Motion:InvenSense_QFN-24_3x3mm_P0.4mm",
         ] {
             let g = geometry(&library::footprint(id).unwrap(), "R1").unwrap();
             assert!(g.keep.contains(g.courtyard), "{id}");

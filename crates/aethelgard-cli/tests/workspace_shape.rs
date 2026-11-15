@@ -371,7 +371,7 @@ fn eda_has_only_its_known_files_keys_and_dependencies() {
 /// has no dependency, it is `CC-BY-SA-4.0`, and `src/lib.rs` is its only Rust.
 #[test]
 fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
-    const DATA: [&str; 40] = [
+    const DATA: [&str; 42] = [
         "data/kicad-10.0.7/LICENSE.md",
         "data/kicad-10.0.7/README.md",
         "data/kicad-10.0.7/footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
@@ -392,6 +392,7 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
         "data/kicad-10.0.7/footprints/Package_TO_SOT_SMD.pretty/SOT-23-5.kicad_mod",
         "data/kicad-10.0.7/footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod",
         "data/kicad-10.0.7/footprints/Resistor_SMD.pretty/R_0603_1608Metric.kicad_mod",
+        "data/kicad-10.0.7/footprints/Sensor_Motion.pretty/InvenSense_QFN-24_3x3mm_P0.4mm.kicad_mod",
         "data/kicad-10.0.7/symbols/Connector_Generic.kicad_symdir/Conn_01x02.kicad_sym",
         "data/kicad-10.0.7/symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x04_MountingPin.kicad_sym",
         "data/kicad-10.0.7/symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x06_MountingPin.kicad_sym",
@@ -407,6 +408,7 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
         "data/kicad-10.0.7/symbols/Regulator_Switching.kicad_symdir/LMR33630ADDA.kicad_sym",
         "data/kicad-10.0.7/symbols/Regulator_Switching.kicad_symdir/LMR33640ADDA.kicad_sym",
         "data/kicad-10.0.7/symbols/Sensor.kicad_symdir/BME280.kicad_sym",
+        "data/kicad-10.0.7/symbols/Sensor_Motion.kicad_symdir/ICM-20948.kicad_sym",
         "data/kicad-10.0.7/symbols/Sensor_Temperature.kicad_symdir/TMP102xxDRL.kicad_sym",
         "data/kicad-10.0.7/symbols/Sensor_Temperature.kicad_symdir/TMP117xxDRV.kicad_sym",
         "data/kicad-10.0.7/symbols/power.kicad_symdir/+3V3.kicad_sym",

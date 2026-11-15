@@ -171,6 +171,22 @@ pub struct Part {
     /// The front courtyard's outline, as straight edges in board
     /// coordinates; empty for a footprint with none.
     pub courtyard: Vec<Edge>,
+    /// Its keepout zones (`AET-WO-4300d2` D2 (a), `RUL-03`): areas where no
+    /// copper of the kinds each forbids may be, routed around and judged.
+    pub keepouts: Vec<Keepout>,
+}
+
+/// A footprint's keepout zone, in board coordinates: a rectangle on one
+/// copper layer, with what it forbids there. A vendored footprint's (the
+/// ICM-20948's no-copper area under its die) is the only kind modelled.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Keepout {
+    pub layer: Layer,
+    pub rect: Rect,
+    pub tracks: bool,
+    pub vias: bool,
+    pub pads: bool,
+    pub fill: bool,
 }
 
 /// A straight edge of an outline, end to end.
@@ -919,6 +935,22 @@ impl<'a> Router<'a> {
                 for pad in &part.pads {
                     for node in grid.nodes(pad.rect.grow(r.via_nm / 2)) {
                         if own(node) && touches(pad, grid.at(node), r.via_nm / 2) {
+                            via[k][node] = BLOCKED;
+                        }
+                    }
+                }
+            }
+            // A keepout: no track of any net on its layer, and no via, where
+            // the copper would reach into it (`AET-WO-4300d2` D2).
+            for k_out in &part.keepouts {
+                for (k, r) in kinds.iter().enumerate() {
+                    if k_out.tracks {
+                        for node in grid.nodes(k_out.rect.grow(r.width_nm / 2 + EPS_NM)) {
+                            track[k][k_out.layer.index()][node] = BLOCKED;
+                        }
+                    }
+                    if k_out.vias {
+                        for node in grid.nodes(k_out.rect.grow(r.via_nm / 2 + EPS_NM)) {
                             via[k][node] = BLOCKED;
                         }
                     }
@@ -2857,6 +2889,42 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
     out
 }
 
+/// No copper a keepout forbids is inside it (`AET-WO-4300d2` D2 (a),
+/// `RUL-03`): a track on its layer, a via or thermal via, another part's pad
+/// on its layer, or a fill on its layer. Copper that touches its edge is not
+/// inside it.
+fn keepouts(board: &Board, routed: &Routed, all: &[Item<'_>]) -> Result<(), String> {
+    for part in &board.parts {
+        for k in &part.keepouts {
+            let area = Shape { rect: k.rect, r: 0 };
+            let l = k.layer.index();
+            for item in all.iter().filter(|i| i.layers[l]) {
+                let forbidden = if item.what.starts_with("track") {
+                    k.tracks
+                } else if item.what.starts_with("via") || item.what.starts_with("thermal") {
+                    k.vias
+                } else {
+                    k.pads && !item.what.starts_with(&format!("{} pad ", part.reference))
+                };
+                if forbidden && !area.clear(item.shape, 0) {
+                    return Err(format!(
+                        "{} is inside {}'s keepout on {:?}",
+                        item.what, part.reference, k.layer
+                    ));
+                }
+            }
+            let name = k.layer.name();
+            if k.fill && routed.zones.iter().any(|(_, layer)| layer == name) {
+                return Err(format!(
+                    "a fill on {name} would meet {}'s keepout",
+                    part.reference
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Every pair of copper items on a shared layer, of different nets (a pad
 /// with no net differs from everything), keeps the declared clearance; every
 /// track and via keeps [`EDGE_NM`] from the edge; holes keep
@@ -2865,6 +2933,7 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
 /// own ring interior (`AET-WO-1307` K1).
 pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
     let all = items(board, routed);
+    keepouts(board, routed, &all)?;
     for (i, a) in all.iter().enumerate() {
         for b in &all[i + 1..] {
             let shared = (a.layers[0] && b.layers[0]) || (a.layers[1] && b.layers[1]);
@@ -3558,11 +3627,91 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
     if courtyard.is_empty() && !pads.is_empty() {
         return Err(format!("{reference} has copper pads and no courtyard"));
     }
+    let mut keepouts = Vec::new();
+    for z in fp.all("zone") {
+        keepouts.push(keepout(&z, &reference, origin, theta)?);
+    }
     Ok(Part {
         reference,
         rotation: theta,
         pads,
         courtyard,
+        keepouts,
+    })
+}
+
+/// A footprint zone, which only a keepout may be: a rectangle on one copper
+/// layer, turned with the footprint, each of its five kinds `allowed` or
+/// `not_allowed`, no net. Anything else is refused by name, never dropped
+/// (`RUL-03`, amended for `AET-WO-4300d2` D2).
+fn keepout(
+    z: &strict::Node<'_>,
+    reference: &str,
+    origin: (i64, i64),
+    theta: u16,
+) -> Result<Keepout, String> {
+    let what = format!("{reference}'s zone");
+    let k = one(z, "keepout")?.ok_or_else(|| format!("{what} is not a keepout"))?;
+    for token in ["net", "net_name"] {
+        if one(z, token)?.is_some() {
+            return Err(format!("{what} is a keepout with a `{token}`"));
+        }
+    }
+    if one(z, "layers")?.is_some() {
+        return Err(format!("{what} names more than one layer"));
+    }
+    let layer = match one(z, "layer")?.and_then(|l| l.arg(1)) {
+        Some("F.Cu") => Layer::F,
+        Some("B.Cu") => Layer::B,
+        other => return Err(format!("{what} is on {other:?}, not F.Cu or B.Cu")),
+    };
+    let flag = |name: &str| -> Result<bool, String> {
+        match one(&k, name)?.map(|n| (n.arg(1), n.arg(2))) {
+            Some((Some("not_allowed"), None)) => Ok(true),
+            Some((Some("allowed"), None)) => Ok(false),
+            other => Err(format!("{what}'s keepout `{name}` is {other:?}")),
+        }
+    };
+    let (tracks, vias, pads, fill) = (
+        flag("tracks")?,
+        flag("vias")?,
+        flag("pads")?,
+        flag("copperpour")?,
+    );
+    flag("footprints")?;
+    let mut polys = z.all("polygon");
+    let (Some(poly), None) = (polys.next(), polys.next()) else {
+        return Err(format!("{what} has no polygon, or more than one"));
+    };
+    let pts = one(&poly, "pts")?.ok_or_else(|| format!("{what}: no `pts`"))?;
+    let corners = pts
+        .lists()
+        .map(|xy| match xy.head() {
+            Some("xy") => xy_of(Some(xy), &what).map(|p| {
+                let (x, y) = rotate(theta, p);
+                (origin.0 + x, origin.1 + y)
+            }),
+            h => Err(format!("{what}: a `{}` in its points", h.unwrap_or("()"))),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let rect = corners
+        .iter()
+        .map(|&(x, y)| Rect::point(x, y))
+        .reduce(Rect::union)
+        .ok_or_else(|| format!("{what} has no points"))?;
+    let on_box =
+        |&(x, y): &(i64, i64)| (x == rect.x0 || x == rect.x1) && (y == rect.y0 || y == rect.y1);
+    if corners.len() != 4 || !corners.iter().all(on_box) || rect.x0 == rect.x1 || rect.y0 == rect.y1
+    {
+        return Err(format!("{what} is not a rectangle at a right angle"));
+    }
+    Ok(Keepout {
+        layer,
+        rect,
+        tracks,
+        vias,
+        pads,
+        fill,
     })
 }
 
@@ -4128,6 +4277,7 @@ mod tests {
                 ),
             ],
             courtyard: Vec::new(),
+            keepouts: Vec::new(),
         }
     }
 
@@ -4172,6 +4322,7 @@ mod tests {
             reference: "U".into(),
             pads,
             courtyard: Vec::new(),
+            keepouts: Vec::new(),
         }
     }
 
@@ -4280,6 +4431,7 @@ mod tests {
                 reference: "R1".into(),
                 pads: vec![pad("1", Some("/A"), rect(4 * MM, 4 * MM, 5 * MM, 5 * MM))],
                 courtyard: Vec::new(),
+                keepouts: Vec::new(),
             }],
             stack: crate::stack::reference(),
         };
@@ -4370,6 +4522,7 @@ mod tests {
                 pad("2", Some("/N"), at(xn, 5 * MM + MM / 2)),
             ],
             courtyard: Vec::new(),
+            keepouts: Vec::new(),
         };
         Board {
             outline: rect(0, 0, 20 * MM, 10 * MM),
@@ -4443,6 +4596,7 @@ mod tests {
                 rect(15 * MM, 5 * MM, 15 * MM + 300_000, 5 * MM + 300_000),
             )],
             courtyard: Vec::new(),
+            keepouts: Vec::new(),
         });
         board.parts[1].pads.pop();
         let e = route(&board).unwrap_err();
