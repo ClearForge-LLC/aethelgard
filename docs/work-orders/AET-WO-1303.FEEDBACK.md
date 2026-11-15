@@ -310,6 +310,13 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
 - **D6 · Material allowance, copper minima and temperature.**
   - **k = 1.181 is cited:** IPC-MF-150F §3.8.1.2's largest rated foil resistivity, via US 6,652,725 B2 [read]. For plated copper no maximum was reachable, so applying k there is a condition.
   - **The copper minima remain declared:** IPC-6012 Tables 3-4 and 3-14 are paywalled, and OSH Park gives no tolerance.
+  - **Searched and not found:** a primary source for a finished-copper or hole-wall *minimum*.
+    - OSH Park's 4-layer page gives nominals only (1.7 mil outer, 0.68 mil inner, "via plating 1 mil", unqualified).
+    - PCBWay's manufacturing-tolerances page gives nominal weights and no copper tolerance.
+    - JLCPCB gives an 18 µm hole-plating *average*.
+    - The rest are second-hand quotations of IPC-6012.
+
+    `RUL-14` forbids declaring a nominal as a minimum, so these stay stated conditions, below every published nominal: 30 µm outer against 43 µm, 15 µm plane against 17.3 µm, 18 µm plating against 25.4 µm. A ruling is needed: accept them as conditions, or name a source.
   - **Temperature:** 125 °C, the Tj of the cited load.
   - **Recommended:** the specification declares each with its source, and the build cites IPC-4562 and IPC-6012 once someone holds copies. Every R scales linearly in k, in 1 + α(T − 20) and in 1/t_min.
 - **D7 · The ground return.** The MCU sees VDD − VSS, so a supply gate that bounds only VDD under-claims. **Recommended:** the same bound on GND (zone or plane plus its stitching), with the drop limit applied to the sum.
