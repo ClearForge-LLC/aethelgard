@@ -1070,7 +1070,10 @@ fn an_offboard_budget_past_the_bound_is_refused_and_its_maximum_is_not() {
     };
     for (ff, refused) in [
         (u64::MAX, true),
-        (aethelgard_ir::connectors::MAX_OFFBOARD_FEMTOFARADS + 1, true),
+        (
+            aethelgard_ir::connectors::MAX_OFFBOARD_FEMTOFARADS + 1,
+            true,
+        ),
         (aethelgard_ir::connectors::MAX_OFFBOARD_FEMTOFARADS, false),
     ] {
         let mut v = fixture();

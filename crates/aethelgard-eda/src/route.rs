@@ -4632,7 +4632,10 @@ mod tests {
                 stack: crate::stack::reference(),
             };
             let e = check(&board, &Routed::default());
-            assert!(!e.as_ref().is_err_and(|m| m.contains("of the edge")), "{reference}: {e:?}");
+            assert!(
+                !e.as_ref().is_err_and(|m| m.contains("of the edge")),
+                "{reference}: {e:?}"
+            );
         }
     }
 

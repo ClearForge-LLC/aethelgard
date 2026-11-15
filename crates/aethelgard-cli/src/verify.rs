@@ -107,9 +107,9 @@ struct FabReport {
     /// `written` (`--fab-out`, every gate passed), `derived` (`--against-fab`),
     /// or `not_written` / `not_derived` when a gate failed: nothing is written.
     status: &'static str,
-    /// Each precondition of a package and its state (`AET-WO-3303` §1.1):
-    /// those the inputs decide were refused by name before any gate ran, so
-    /// they are met here; the rest are judged on the gates.
+    /// Each precondition of a package and its state (`AET-WO-3303` §1.1). A
+    /// skipped harness was refused before any gate ran; campaign coverage is
+    /// stated here and not yet enforced (FEEDBACK D1).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     preconditions: Vec<Precondition>,
     /// `kicad-cli`'s version, as the export ran it.
@@ -152,9 +152,9 @@ impl Precondition {
     }
 }
 
-/// Every precondition of a package, in a fixed order, on the gates that ran.
-/// Coverage was refused before any gate when short, so it is met here.
-fn preconditions(report: &Report, planned: &[String]) -> Vec<Precondition> {
+/// Every precondition of a package, in a fixed order, on the gates that ran,
+/// with [`uncovered`]'s list for the campaign's coverage.
+fn preconditions(report: &Report, planned: &[String], uncovered: Vec<String>) -> Vec<Precondition> {
     let proved = |h: &String| {
         report
             .gates
@@ -186,7 +186,7 @@ fn preconditions(report: &Report, planned: &[String]) -> Vec<Precondition> {
                 .map(|h| format!("{h} not proved"))
                 .collect(),
         ),
-        Precondition::of("campaign_faults_every_bus_and_rail", Vec::new()),
+        Precondition::of("campaign_faults_every_bus_and_rail", uncovered),
         Precondition::of("every_gate_passed", failed),
     ]
 }
@@ -846,8 +846,8 @@ pub fn verify(
         harnesses(board.get("src/proofs.rs").map_or("", String::as_str)),
         !topology.motor_outputs.is_empty(),
     );
-    // A package's preconditions that the inputs decide (`AET-WO-3303` §1.1),
-    // refused by name before any gate runs; the rest are judged on the gates.
+    // A skipped harness is refused by name before any gate runs (`AET-WO-3303`
+    // §1.1); the other preconditions are judged on the gates.
     if fab_mode.is_some() {
         let left_out = if skipped {
             Some(format!(
@@ -864,19 +864,14 @@ pub fn verify(
                 EXIT_UNREADABLE,
             );
         }
-        let short = uncovered(&spec, &topology, &read);
-        if !short.is_empty() {
-            return refuse(
-                "CampaignCoverageShort",
-                None,
-                format!(
-                    "no package: the campaign seeds no fault on {}",
-                    short.join(", ")
-                ),
-                EXIT_UNREADABLE,
-            );
-        }
     }
+    // Coverage is judged and stated in the package's preconditions, not yet
+    // enforced: no fault kind a design survives reaches an SPI bus, so no
+    // board with one could be packaged (`AET-WO-3303` FEEDBACK D1, open).
+    let short = match fab_mode {
+        Some(_) => uncovered(&spec, &topology, &read),
+        None => Vec::new(),
+    };
 
     // `--against` first: a directory that is not the tree fails, naming
     // every difference, and no gate runs; with a fab flag, nothing is
@@ -988,7 +983,7 @@ pub fn verify(
                 sha256: hex(e.scenario),
             })
             .collect();
-        let pre = preconditions(&report, &harnesses);
+        let pre = preconditions(&report, &harnesses, short);
         if let Err(code) = package(&mut report, mode, &bound, &scenarios) {
             return code;
         }
@@ -1385,6 +1380,89 @@ mod tests {
             "#[kani::proof]\nfn a() {}\n#[kani::proof_for_contract(f)]\n".to_owned(),
         )]);
         assert!(unplanned(&contract, 1).is_none());
+    }
+
+    fn solved(path: &str) -> (aethelgard_ir::Specification, aethelgard_ir::SolvedTopology) {
+        let bytes = std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join(path),
+        )
+        .unwrap();
+        let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        (spec, topology)
+    }
+
+    fn scenario_file(path: &str) -> aethelgard_chaos::campaign::Scenario {
+        aethelgard_chaos::campaign::Scenario::parse(
+            &std::fs::read(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../..")
+                    .join(path),
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
+    /// `AET-WO-3303` §1.1: each declared bus and rail is named until a
+    /// scenario seeds a fault on it. The reference's survivable faults
+    /// (`pullup-3k3`, `droop-tolerated`) cover `SENSORS` and `VDD_3V3`;
+    /// `FLASH` is covered only by `spi-absent-u4`, which no design survives
+    /// (3301 §3.2), so a passing package always names it (FEEDBACK D1).
+    #[test]
+    fn each_bus_and_rail_is_named_until_a_fault_covers_it() {
+        let (spec, topology) = solved("examples/sentinel-01-minimal.json");
+        let named = |files: &[&str]| {
+            let read: Vec<_> = files.iter().map(|f| scenario_file(f)).collect();
+            uncovered(&spec, &topology, &read)
+        };
+        let all = ["I2C bus `SENSORS`", "SPI bus `FLASH`", "rail `VDD_3V3`"];
+        assert_eq!(named(&["scenarios/sentinel-01/pullup-2k2.json"]), all);
+        assert_eq!(
+            named(&[
+                "scenarios/sentinel-01/seeded/pullup-3k3.json",
+                "scenarios/sentinel-01/droop-tolerated.json"
+            ]),
+            ["SPI bus `FLASH`"]
+        );
+        assert_eq!(
+            named(&[
+                "scenarios/sentinel-01/pullup-47k.json",
+                "scenarios/sentinel-01/seeded/spi-absent-u4.json",
+                "scenarios/sentinel-01/droop-bor3.json"
+            ]),
+            Vec::<String>::new()
+        );
+    }
+
+    /// `AET-WO-3303` §7 (D1): a rail other than the MCU's supply and an SPI
+    /// bus no device uses are named whatever the campaign seeds, each with
+    /// why: no override kind reaches them.
+    #[test]
+    fn a_rail_or_bus_no_fault_kind_reaches_is_named_with_why() {
+        let (spec, topology) = solved("crates/aethelgard-cli/tests/fixtures/connectors.json");
+        let faults = aethelgard_chaos::campaign::Scenario::parse(
+            json!({"schema_version": 2, "name": "x", "base": "b.json", "expect": "fail",
+                "expect_findings": ["i2c_timeout"], "overrides": [
+                    {"bus": "SENSORS", "line_held_low": "scl"},
+                    {"spi_device_absent": "U4"},
+                    {"droop": {"domain": "VDD_3V3", "floor_millivolts": 3200, "start_ns": 1000000,
+                        "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
+                        "source_milliohms": 500, "load_milliamps": 100, "bor_level": 0}}]})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(
+            uncovered(&spec, &topology, &[faults]),
+            [
+                "SPI bus `EXT` (no device uses it, so a fault there judges nothing; no fault kind names an SPI bus but through a device)",
+                "rail `VDD_5V` (not the MCU's supply: no fault kind droops it)"
+            ]
+        );
     }
 
     /// `AET-WO-3303` §5.2: a fault equal to the no-fault case covers
