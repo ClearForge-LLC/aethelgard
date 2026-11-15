@@ -109,11 +109,13 @@ fn the_four_layer_fixture_and_d1_hold_on_every_in_scope_line() {
     }
 }
 
-/// Ruled D2: the ICM-20948 fixture's lines are declared and labelled
-/// unverified until it has a board. At 7 MHz `00` serves SCK and MOSI.
+/// Ruled D2: the IMU fixture's lines are declared and labelled unverified
+/// until it has a board. It runs at 1.8 V (`AET-WO-4210` D7: the
+/// ICM-20948's `VDDIO`), where DS12117's 1.62 to 2.7 V band needs `01` for
+/// SCK and MOSI at 7 MHz.
 #[test]
-fn the_icm_fixture_is_judged_on_its_declaration_and_labelled_unverified() {
-    let (code, v) = speeds(&root().join("crates/aethelgard-cli/tests/fixtures/spi-imu.json"));
+fn the_imu_fixture_is_judged_on_its_declaration_and_labelled_unverified() {
+    let (code, v) = speeds(&root().join("crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json"));
     assert_eq!(code, Some(0), "{v}");
     let label = v["capacitance"].as_str().unwrap();
     assert!(
@@ -123,9 +125,13 @@ fn the_icm_fixture_is_judged_on_its_declaration_and_labelled_unverified() {
         "{label}"
     );
     let all = by_net(&v);
-    assert!(all.iter().all(|l| l.1 == "00"), "{all:?}");
+    for (net, speed, _) in &all {
+        let want = if *net == "SPI_SCK" || *net == "SPI_MOSI" { "01" } else { "00" };
+        assert_eq!(*speed, want, "{net}");
+    }
     assert_eq!(reason(&v, "SPI_SCK"), "30 pF");
     assert!(reason(&v, "IMU_CS").starts_with("software-driven"));
+    assert!(reason(&v, "IMU2_CS").starts_with("software-driven"));
 }
 
 /// §1.4: a bus whose rate needs `10` or `11` is refused by name, exit 2.
