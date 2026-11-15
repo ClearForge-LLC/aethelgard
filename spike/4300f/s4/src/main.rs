@@ -193,7 +193,11 @@ fn main() {
         let x = at.arg(1).and_then(sexpr::nm).expect("at x");
         let y = at.arg(2).and_then(sexpr::nm).expect("at y");
         let g = aethelgard_eda::pcb::geometry(item, &reference).expect("geometry");
-        keeps.push((reference, !lib_id.starts_with("Device:"), shift(g.keep, (x, y))));
+        keeps.push((
+            reference,
+            !lib_id.starts_with("Device:"),
+            shift(g.keep, (x, y)),
+        ));
     }
     let jg = aethelgard_eda::pcb::geometry(&lib, "J1").expect("J1 geometry");
     println!(
