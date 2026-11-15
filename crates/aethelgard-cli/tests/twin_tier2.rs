@@ -1610,8 +1610,11 @@ fn adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail() {
                 .any(|f| f["message"].as_str().unwrap().starts_with(register)),
             "{label}: {v}"
         );
+        // Stores in one quantum share its stamp (`batched`); spread over
+        // quanta they miss the sequence (`mismatch`): either way no pass.
         for m in motors(&v) {
-            assert_eq!(m["twin"]["status"], "mismatch", "{label}: {m}");
+            let status = m["twin"]["status"].as_str().unwrap();
+            assert!(["mismatch", "batched"].contains(&status), "{label}: {m}");
             assert_eq!(
                 m["twin"]["off_grid"], 0,
                 "{label}: every store edge on the grid: {m}"
