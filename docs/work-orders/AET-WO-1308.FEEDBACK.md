@@ -175,3 +175,22 @@ A fresh Opus subagent worked on a frozen copy at `61aa841`. Its report is in `~/
 ## B11. Reduction pass (diff)
 
 Reduction pass (diff): −19 net (stack −5, `read`'s lookup −6, `route_pair` −8) · 2 duplicates removed (one class-ownership lookup, `Stack::owner`, replaces `Stack::rule`'s search, `read`'s search and `pair_of`; `route_pair`'s two identical "same two parts" refusals are one) · 0 dead paths removed · 0 protected kept · 0 findings below.
+
+## B12. Merge with 4300f, and the renumbering [measured]
+
+`4300f` merged first (PR #138, `eb19c64`), taking specification v4 (`connectors`). As the second to merge, this work order renumbers to **v5** (F1, WHO.md's rule). `origin/main` `091003f` was merged in as `ca3dd63`.
+- **Conflicts resolved:**
+  - `ir/lib.rs`: both modules, v5, the doc;
+  - `pcb.rs`: 4300f's placer returns the connectors' bottom edge; `layout_of` applies moves after it, and a moved part below the edge drops flushness;
+  - the IR and CLI tests;
+  - the READMEs;
+  - `ci.yml`: `TIER2_MIN` **101** = 98 + 3.
+  - Every specification fixture and spec literal is now v5 with `connectors`, `net_classes` and `diff_pairs`.
+- **Hashes re-taken, each proven to move only by the specification's sha256:**
+  - `boards/sentinel-01`: regenerated, equal to the committed tree but its 8 hash lines;
+  - the twin's `REFERENCE`;
+  - the `verify_2k2` prefix;
+  - `solve_cli`'s two digests: with `main`'s hash substituted back, each equals `main`'s pin;
+  - `order_2203`'s three digests: with `main`'s hash passed to `solve`, all four equal `main`'s pins.
+  - `campaign_tier1::a_solved_topology_is_not_a_base` is back to `UnsupportedSchemaVersion`: specification 5 against topology 4 is refused at the version again.
+- **Identity against the new `main`'s binary** (`091003f`): 15 of 15 fixtures, 4300f's `connectors.json` included, give byte-identical schematic, BOM and board. All 7 `extract` verdicts are identical but for path and hash.

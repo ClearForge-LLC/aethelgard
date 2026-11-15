@@ -1223,7 +1223,7 @@ mod differential {
             })
         }));
         Specification {
-            schema_version: 4,
+            schema_version: crate::SPECIFICATION_SCHEMA_VERSION,
             board: serde_json::from_str(BOARD).expect("the declared board"),
             net_classes: vec![],
             diff_pairs: vec![],
