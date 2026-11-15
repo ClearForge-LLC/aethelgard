@@ -63,7 +63,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
 
 use crate::pcb::Rect;
 use crate::rules::FLOOR_NM;
-use crate::sexpr::{self, Sx};
+use crate::sexpr::Sx;
 use crate::stack::Rule;
 use crate::strict::{self, Tree};
 
@@ -3346,9 +3346,7 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
 // ---- reading a board ----
 
 fn nm_at(item: &strict::Node<'_>, i: usize, what: &str) -> Result<i64, String> {
-    item.arg(i)
-        .and_then(sexpr::nm)
-        .ok_or_else(|| format!("{what}: unreadable `{:?}`", item.head()))
+    strict::number(item, i).ok_or_else(|| format!("{what}: unreadable `{:?}`", item.head()))
 }
 
 fn xy_of(item: Option<strict::Node<'_>>, what: &str) -> Result<(i64, i64), String> {
@@ -3423,7 +3421,7 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
         let copper: Vec<&str> = layers
             .iter()
             .copied()
-            .filter(|l| l.ends_with(".Cu"))
+            .filter(|l| strict::copper_pad_layer(l))
             .collect();
         if copper.is_empty() {
             // A hole with no copper still cuts every layer it passes:
@@ -3455,8 +3453,7 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
             Some("rect") => 0,
             Some("roundrect") => {
                 let ratio = one(&pad, "roundrect_rratio")?
-                    .and_then(|r| r.arg(1))
-                    .and_then(sexpr::nm)
+                    .and_then(|r| strict::number(&r, 1))
                     .ok_or_else(|| format!("{what}: no `roundrect_rratio`"))?;
                 w.min(h) * ratio.clamp(0, 500_000) / 1_000_000
             }
@@ -3669,7 +3666,25 @@ pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagree
         // KiCad 10 numbers copper 0, 2, 4 … 62 (even) and every other layer
         // odd; a row is copper by its id whatever its name says, or by name.
         let even = id.parse::<u32>().is_ok_and(|n| n % 2 == 0 && n <= 62);
-        if even || name.ends_with(".Cu") {
+        let is_copper = even || strict::copper_layer(name);
+        // `(id "name" type "user name")`: KiCad then takes the user name for
+        // the layer, so an item on `"TOP"` would sit on `F.Cu` unseen. KiCad
+        // itself writes one on a non-copper row (`(9 "F.Adhes" user
+        // "F.Adhesive")`), so only a copper row's, or a user name that is
+        // itself a copper layer's, is refused (`AET-WO-3303` A11).
+        let user = row.arg(3);
+        if !(3..=4).contains(&row.len())
+            || (user.is_some() && is_copper)
+            || user.is_some_and(strict::copper_pad_layer)
+        {
+            return Err(no(
+                "LayersDisagree",
+                format!(
+                    "layer row `{id}` is not an id, a canonical name and a type; a copper row has no user name, and KiCad would take one for the layer",
+                ),
+            ));
+        }
+        if is_copper {
             copper.push((
                 id.to_owned(),
                 name.to_owned(),
@@ -3756,8 +3771,7 @@ pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagree
         .and_then(|g| g.map(|g| g.one("thickness")).transpose())
         .map_err(|e| no("ThicknessDisagrees", e.to_string()))?
         .flatten()
-        .and_then(|t| t.arg(1))
-        .and_then(sexpr::nm);
+        .and_then(|t| strict::number(&t, 1));
     // Every declared class's and pair's net is on a pad (`AET-WO-1308`
     // adversarial pass A3): a board that renames one, pads and tracks alike,
     // would otherwise escape its class's rules.
@@ -4761,5 +4775,66 @@ mod tests {
             };
             assert!(connectivity(&board, &r).is_err(), "{zone:?}");
         }
+    }
+
+    fn two_layer_stack() -> crate::stack::Stack {
+        crate::stack::Stack {
+            copper: vec!["F.Cu".into(), "B.Cu".into()],
+            planes: vec![],
+            thickness: crate::stack::Thickness {
+                nominal_nm: 1_600_000,
+                min_nm: 1_500_000,
+                max_nm: 1_700_000,
+                source: "t".into(),
+            },
+            dielectrics: vec![],
+            copper_max_nm: 0,
+            copper_source: String::new(),
+            permittivity_permille: 0,
+            permittivity_source: String::new(),
+            clearance_nm: 0,
+            width_nm: 0,
+            classes: vec![],
+            pairs: vec![],
+            joins: vec![],
+            thermal: vec![],
+        }
+    }
+
+    #[test]
+    fn a_layer_row_with_a_user_name_or_a_non_canonical_copper_name_is_refused() {
+        let stack = two_layer_stack();
+        let judged = |layers: &str| {
+            declared(
+                &strict::board(&format!("(kicad_pcb (layers {layers}))")).unwrap(),
+                &stack,
+            )
+        };
+        let canonical = "(0 \"F.Cu\" signal) (2 \"B.Cu\" signal)";
+        // Control: the canonical table passes the layer check (a later one
+        // refuses this board, which has no zone).
+        let e = judged(canonical).unwrap_err();
+        assert_ne!(e.kind, "LayersDisagree", "{}", e.message);
+        // KiCad's user name for a layer: items on "TOP" would sit on F.Cu.
+        let e = judged("(0 \"F.Cu\" signal \"TOP\") (2 \"B.Cu\" signal)").unwrap_err();
+        assert_eq!(e.kind, "LayersDisagree");
+        assert!(e.message.contains("layer row `0`"), "{}", e.message);
+        // KiCad's own user name on a non-copper row stays (`F.Adhesive`) ...
+        let e = judged(&format!("{canonical} (9 \"F.Adhes\" user \"F.Adhesive\")")).unwrap_err();
+        assert_ne!(e.kind, "LayersDisagree", "{}", e.message);
+        // ... unless it is a copper layer's name, or the row has five values.
+        for row in [
+            "(9 \"F.Adhes\" user \"F.Cu\")",
+            "(9 \"F.Adhes\" user \"*.Cu\")",
+            "(9 \"F.Adhes\" user \"a\" \"b\")",
+        ] {
+            let e = judged(&format!("{canonical} {row}")).unwrap_err();
+            assert_eq!(e.kind, "LayersDisagree", "{row}");
+        }
+        // A copper layer is its canonical name, not `ends_with(".Cu")`.
+        let e = judged(&format!("{canonical} (1 \"X.Cu\" user)")).unwrap_err();
+        assert_ne!(e.kind, "LayersDisagree", "{}", e.message);
+        let e = judged("(0 \"F.Cu\" signal) (1 \"B.Cu\" signal)").unwrap_err();
+        assert_eq!(e.kind, "LayersDisagree");
     }
 }

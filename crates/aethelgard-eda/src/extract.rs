@@ -597,10 +597,6 @@ pub struct LineBound {
 /// distance `route::check` squares fits in an `i64`.
 pub const MAX_COORD_NM: i64 = 250_000_000;
 
-fn copper_layer(name: &str) -> bool {
-    name.ends_with(".Cu")
-}
-
 /// A pad layer by KiCad's canonical name (a user name such as `TOP` could
 /// stand for a copper layer the reader would not see as one).
 fn canonical_layer(name: &str) -> bool {
@@ -616,7 +612,8 @@ fn canonical_layer(name: &str) -> bool {
 
 /// True when `item` or any list inside it names a copper layer.
 fn on_copper(item: &Node<'_>) -> bool {
-    if matches!(item.head(), Some("layer" | "layers")) && item.texts().any(copper_layer) {
+    if matches!(item.head(), Some("layer" | "layers")) && item.texts().any(strict::copper_pad_layer)
+    {
         return true;
     }
     item.lists().any(|c| on_copper(&c))
@@ -899,6 +896,7 @@ pub fn read(text: &str, stack: &Stack) -> Result<ReadBoard, Refused> {
 /// pair, so the pair judge sees only copper this allowlist models
 /// (`AET-WO-3303` §1.3).
 pub fn read_tree(tree: &strict::Tree, stack: &Stack) -> Result<ReadBoard, Refused> {
+    strict::version(tree).map_err(malformed)?;
     let board = tree.root();
     let mut once = BTreeSet::new();
     let mut footprints = BTreeMap::new();
