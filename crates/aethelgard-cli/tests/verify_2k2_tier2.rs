@@ -395,6 +395,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
     let met = serde_json::json!([
         {"precondition": "every_harness_proved", "state": "met"},
         {"precondition": "campaign_faults_every_bus_and_rail", "state": "met"},
+        {"precondition": "mcu_support_network_judged", "state": "met"},
         {"precondition": "every_gate_passed", "state": "met"},
     ]);
     assert_eq!(fab["preconditions"], met, "{fab}");

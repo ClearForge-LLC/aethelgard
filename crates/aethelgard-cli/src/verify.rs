@@ -177,25 +177,29 @@ fn preconditions(report: &Report, planned: &[String], covered: Coverage) -> Vec<
             no_device: covered.no_device,
             ..fab::Precondition::of("campaign_faults_every_bus_and_rail", covered.unmet)
         },
-        fab::Precondition::of(
-            "mcu_support_network_judged",
-            match report.gates.iter().find(|g| g.gate == "support") {
-                Some(g) if g.verdict == "pass" => Vec::new(),
-                Some(g) => g
-                    .findings
-                    .iter()
-                    .map(|f| f["kind"].as_str().unwrap_or("finding").to_owned())
-                    .chain(
-                        g.findings
-                            .is_empty()
-                            .then(|| format!("support: {}", g.verdict)),
-                    )
-                    .collect(),
-                None => vec!["support: not run".to_owned()],
-            },
-        ),
+        support_judged(&report.gates),
         fab::Precondition::of("every_gate_passed", failed),
     ]
+}
+
+/// `AET-WO-4300g` §1.5: met only when the support gate ran and passed; each
+/// finding's kind is named otherwise, or that it did not run.
+fn support_judged(gates: &[Gate]) -> fab::Precondition {
+    let unmet = match gates.iter().find(|g| g.gate == "support") {
+        Some(g) if g.verdict == "pass" => Vec::new(),
+        Some(g) => g
+            .findings
+            .iter()
+            .map(|f| f["kind"].as_str().unwrap_or("finding").to_owned())
+            .chain(
+                g.findings
+                    .is_empty()
+                    .then(|| format!("support: {}", g.verdict)),
+            )
+            .collect(),
+        None => vec!["support: not run".to_owned()],
+    };
+    fab::Precondition::of("mcu_support_network_judged", unmet)
 }
 
 /// The support gate's record as the notes' lines (`AET-WO-4300g` §1.6): each
@@ -1697,6 +1701,31 @@ fn run_gates(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// `AET-WO-4300g`: the package's support precondition is met only by a
+    /// support gate that ran and passed.
+    #[test]
+    fn the_support_precondition_needs_the_gate_passed() {
+        let state = |gates: &[Gate]| {
+            let p = support_judged(gates);
+            (p.state, p.unmet)
+        };
+        let mut passed = not_run("support");
+        passed.verdict = "pass";
+        assert_eq!(state(&[passed]), ("met", vec![]));
+        let mut failed = not_run("support");
+        failed.verdict = "fail";
+        failed.findings = vec![json!({"kind": "support_capacitor_missing"})];
+        assert_eq!(
+            state(&[failed]),
+            ("unmet", vec!["support_capacitor_missing".to_owned()])
+        );
+        assert_eq!(
+            state(&[not_run("support")]),
+            ("unmet", vec!["support: not_run".to_owned()])
+        );
+        assert_eq!(state(&[]), ("unmet", vec!["support: not run".to_owned()]));
+    }
 
     /// `AET-WO-3303` §1.1: every `kani::proof` attribute in the crate is
     /// counted, so a harness the line reader misses (its attribute and `fn`
