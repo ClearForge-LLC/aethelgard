@@ -126,6 +126,17 @@ const GOOD_REGISTERS: [&str; 24] = [
 /// pin, PA10, in AF mode on AF7, as measured.
 const INJECTION: &str = "AETHELGARD-INJECT-BEGIN\n0x0028A801\n0x00000770\nAETHELGARD-INJECT-END\n";
 
+/// The console's bring-up as Renode 1.17.0's access log shows it
+/// (`AET-WO-4300b` fix 1, measured): PA10's and PA9's AF7, their modes, then
+/// USART1's `BRR`, `CR2`, `CR1`, `CR1 | UE`, then the pattern's first byte.
+const CONSOLE_ACCESS: &str = "[00:00:00.000000000] [INFO] gpioPortA: [cpu: 0x80009BC] WriteUInt32 to 0x24 (AlternateFunctionHigh), value 0x770\n\
+[00:00:00.000000000] [INFO] gpioPortA: [cpu: 0x80009BC] WriteUInt32 to 0x0 (Mode), value 0x28A801\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0xC (BaudRate), value 0x22C\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x4 (ControlRegister2), value 0x0\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x0 (ControlRegister1), value 0xC\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x0 (ControlRegister1), value 0xD\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x28 (TransmitData), value 0x43\n";
+
 /// What USART1's file backend holds after a boot of `firmware` that sent
 /// the console's pattern and echoed its frame (`AET-WO-4300b`; measured).
 fn capture_of(firmware: &[u8]) -> Vec<u8> {
@@ -178,6 +189,7 @@ fn transcript(log: &str, reads: &[&str], listing: &str) -> String {
     let mut s = String::from(
         "(monitor) emulation SetSeed 2100;  echo \"AETHELGARD-BOOT-BEGIN\";  echo \"AETHELGARD-BOOT-END\"\n",
     );
+    s.push_str(CONSOLE_ACCESS);
     s.push_str(INJECTION);
     s.push_str(log);
     s.push_str("AETHELGARD-BOOT-BEGIN\n");

@@ -68,9 +68,9 @@ fn sbus() -> Record {
     }
 }
 
-fn tags(warnings: u64) -> Option<SerialTags> {
+fn tags(writes: u64) -> Option<SerialTags> {
     Some(SerialTags {
-        warnings,
+        writes,
         missing: vec![],
         unexpected: vec![],
     })
@@ -121,7 +121,31 @@ fn witness(label: &str, af: u8) -> Record {
         echo: "witnessed".into(),
         rx_at_injection: Some((0b10, af)),
         tx_at_end: Some((0b10, af)),
+        tx_at_send: Some((0b10, af)),
     }
+}
+
+/// Kind 11's read of `name` (`GPIOA.MODER`): `observed` under its whole word.
+fn read(name: &str, address: u32, observed: u32) -> Record {
+    Record::RegisterObserved {
+        name: name.into(),
+        reading: Reading {
+            address,
+            mask: u32::MAX,
+            expected: observed,
+            observed: Some(observed),
+        },
+    }
+}
+
+/// The two ports' pins as the image reads them at the end: PA0 and PA1 on
+/// AF8 (SBUS), PA9 and PA10 on AF7 (the console), all four in AF mode.
+fn gpio_reads() -> [Record; 3] {
+    [
+        read("GPIOA.MODER", 0x5802_0000, 0x0028_000A),
+        read("GPIOA.AFRL", 0x5802_0020, 0x88),
+        read("GPIOA.AFRH", 0x5802_0024, 0x770),
+    ]
 }
 
 fn boot(booted: bool) -> Record {
@@ -143,10 +167,12 @@ fn boot(booted: bool) -> Record {
 /// The positions of the records [`run`] builds.
 const CONSOLE: usize = 2;
 const BOOT: usize = 4;
-const CHECK_CONSOLE: usize = 5;
-const CHECK_SBUS: usize = 6;
-const WITNESS_CONSOLE: usize = 7;
-const WITNESS_SBUS: usize = 8;
+/// Kind 11's read of `GPIOA.MODER`, then `AFRL` and `AFRH`.
+const MODER: usize = 5;
+const CHECK_CONSOLE: usize = 8;
+const CHECK_SBUS: usize = 9;
+const WITNESS_CONSOLE: usize = 10;
+const WITNESS_SBUS: usize = 11;
 
 /// A booted run of the two ports, both witnessed, passing.
 fn run() -> Vec<Record> {
@@ -165,6 +191,9 @@ fn run() -> Vec<Record> {
         console(),
         sbus(),
         boot(true),
+        gpio_reads()[0].clone(),
+        gpio_reads()[1].clone(),
+        gpio_reads()[2].clone(),
         check_console(),
         check_sbus(),
         witness("CONSOLE", 7),
@@ -251,8 +280,8 @@ fn the_serial_records_round_trip_through_the_archive() {
         .collect();
     let (dir, _) = write_run("serial-roundtrip", 9, &events);
     assert_eq!(replay_dir(&dir).unwrap().state.records, records);
-    let kinds: Vec<u64> = records[2..9].iter().map(Record::kind).collect();
-    assert_eq!(kinds, [27, 27, 10, 28, 28, 29, 29]);
+    let kinds: Vec<u64> = records[2..12].iter().map(Record::kind).collect();
+    assert_eq!(kinds, [27, 27, 10, 11, 11, 11, 28, 28, 29, 29]);
     assert!(records[CONSOLE].before_boot());
     assert!(!records[CHECK_CONSOLE].before_boot() && !records[WITNESS_CONSOLE].before_boot());
 }
@@ -264,7 +293,7 @@ fn a_witnessed_run_passes_and_each_failure_needs_its_own_finding() {
     // findings the judge gives it.
     type Forge =
         fn(&mut Option<SerialCapture>, &mut String, &mut Option<(u8, u8)>, &mut Option<(u8, u8)>);
-    let cases: [(&str, Forge, &[&str]); 7] = [
+    let cases: [(&str, Forge, &[&str]); 6] = [
         (
             "no echo",
             |c, e, _, _| {
@@ -300,11 +329,6 @@ fn a_witnessed_run_passes_and_each_failure_needs_its_own_finding() {
                 *e = "not_counted".into();
             },
             &[SERIAL_ECHO_FINDING],
-        ),
-        (
-            "the TX pin off its AF at the end",
-            |_, _, _, tx| *tx = Some((0b11, 7)),
-            &[SERIAL_PATTERN_FINDING],
         ),
         (
             "no capture",
@@ -358,6 +382,65 @@ fn a_witnessed_run_passes_and_each_failure_needs_its_own_finding() {
         other.push((SERIAL_TAG_FINDING, 1));
         assert!(check_run(&judged(r, &other)).is_err(), "{what}");
     }
+}
+
+/// The pattern counts only with the TX pin on its AF at the end, as kind 11
+/// read it, and at the first `TDR` write of each boot (adversarial F4); a
+/// TX pin at the end that contradicts kind 11's read is refused (F11).
+#[test]
+fn adversarial_f4_f11_the_tx_pin_counts_at_its_first_send_and_at_the_end() {
+    let send = |m: Option<(u8, u8)>| {
+        edit(|r| {
+            let Record::SerialWitness { tx_at_send, .. } = &mut r[WITNESS_CONSOLE] else {
+                panic!("not a witness");
+            };
+            *tx_at_send = m;
+        })
+    };
+    for m in [Some((0b00, 0)), Some((0b10, 8)), Some((0b11, 7)), None] {
+        let r = send(m);
+        assert!(
+            ok(&judged(r.clone(), &[(SERIAL_PATTERN_FINDING, 1)])),
+            "{m:?}"
+        );
+        assert!(check_run(&judged(r, &[])).is_err(), "{m:?}");
+    }
+    // PA9 analog at the end, as kind 11 read GPIOA.MODER too.
+    let end = edit(|r| {
+        r[MODER] = read("GPIOA.MODER", 0x5802_0000, 0x002C_000A);
+        set_witness(r, WITNESS_CONSOLE, |_, _, _, tx| *tx = Some((0b11, 7)));
+    });
+    assert!(ok(&judged(end.clone(), &[(SERIAL_PATTERN_FINDING, 1)])));
+    assert!(check_run(&judged(end, &[])).is_err());
+    // ADV-R1: kind 11 reads PA9 in AF mode, kind 29 says it ended an input.
+    let contradicted = edit(|r| {
+        set_witness(r, WITNESS_CONSOLE, |_, _, _, tx| *tx = Some((0b00, 7)));
+    });
+    for findings in [&[(SERIAL_PATTERN_FINDING, 1)][..], &[]] {
+        let res = check_run(&judged(contradicted.clone(), findings));
+        assert_eq!(
+            res.as_ref().map(|s| s.matched),
+            Err(
+                &"a serial witness's TX pin at the end is not what kind 11 read of its MODER and AFR"
+            ),
+            "{res:?}"
+        );
+    }
+    // The AF read contradicted, or a register kind 11 never read.
+    let af = edit(|r| set_witness(r, WITNESS_CONSOLE, |_, _, _, tx| *tx = Some((0b10, 8))));
+    assert!(check_run(&judged(af, &[(SERIAL_PATTERN_FINDING, 1)])).is_err());
+    let unread = edit(|r| {
+        r.remove(MODER + 2);
+    });
+    assert!(check_run(&unread).is_err());
+    // Neither read nor witnessed at the end: tied, and the pattern fails.
+    let neither = edit(|r| {
+        r.drain(MODER..MODER + 3);
+        for w in [WITNESS_CONSOLE - 3, WITNESS_SBUS - 3] {
+            set_witness(r, w, |_, _, _, tx| *tx = None);
+        }
+    });
+    assert!(ok(&judged(neither, &[(SERIAL_PATTERN_FINDING, 2)])));
 }
 
 /// The ruling on C1's parser: a pattern cut short counts as a boot, so it
@@ -454,12 +537,12 @@ fn a_port_s_tags_fail_when_missing_unexpected_or_unread() {
     for tags in [
         None,
         Some(SerialTags {
-            warnings: 2,
+            writes: 2,
             missing: vec!["CR1.M0".into()],
             unexpected: vec![],
         }),
         Some(SerialTags {
-            warnings: 4,
+            writes: 4,
             missing: vec![],
             unexpected: vec!["SWAP (0x1) at 0x4".into()],
         }),
@@ -865,7 +948,7 @@ fn the_field_rules_hold_on_write_and_read() {
         check(&|r| {
             if let Record::SerialFramingCheck { tags, .. } = r {
                 *tags = Some(SerialTags {
-                    warnings: 0,
+                    writes: 0,
                     missing: vec!["CR1.M1".into()],
                     unexpected: vec![],
                 })
@@ -874,7 +957,7 @@ fn the_field_rules_hold_on_write_and_read() {
         check(&|r| {
             if let Record::SerialFramingCheck { tags, .. } = r {
                 *tags = Some(SerialTags {
-                    warnings: 0,
+                    writes: 0,
                     missing: vec![],
                     unexpected: vec!["x".into(); 17],
                 })

@@ -17,8 +17,9 @@
 //! model's witness and skipped lines (D2).
 //!
 //! `AET-WO-4300b`: [`serial`] holds what the judge expects of each serial
-//! port (its pattern, frame, injection instant and tags) and the parsers for
-//! its capture and its tag warnings; [`boot`] adds each USART's stored
+//! port (its pattern, frame, injection instant, bring-up and tags) and the
+//! parsers for its capture and Renode's access log; [`boot`] adds each
+//! USART's stored
 //! registers to the expected image.
 
 #![forbid(unsafe_code)]

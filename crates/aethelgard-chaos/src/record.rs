@@ -40,7 +40,7 @@ pub const SERIAL_ROLES: [&str; 5] = ["console", "mavlink", "gps", "rc_crsf", "rc
 pub const SERIAL_PARITIES: [&str; 3] = ["none", "even", "odd"];
 
 /// The framing fields Renode's USART stores nowhere (`AET-WO-4300b`), seen
-/// only as the warning a write that sets one logs, in the order kind 28
+/// only in the words its access log shows written, in the order kind 28
 /// lists the ones a framing needs.
 pub const SERIAL_TAGS: [&str; 4] = ["CR1.M0", "CR1.M1", "CR2.RXINV", "CR2.TXINV"];
 
@@ -64,8 +64,8 @@ pub const SERIAL_ECHO_STATUSES: [&str; 5] = [
 pub const SERIAL_FRAME_LEN: usize = 8;
 pub const SERIAL_TAIL_LEN: usize = 5;
 
-/// The most unexpected tag warnings kind 28 carries: the CLI cuts a longer
-/// list, which still fails the port's tags, so the event fits the bound.
+/// The most unexpected writes kind 28 carries: the CLI cuts a longer list,
+/// which still fails the port's tags, so the event fits the bound.
 pub const MAX_SERIAL_UNEXPECTED: usize = 16;
 
 /// A serial port's framing as kind 27 carries it, from the specification
@@ -116,13 +116,14 @@ pub struct SerialCapture {
     pub len: u64,
 }
 
-/// What a port's tag warnings showed, as kind 28 carries it: the warnings
-/// from its USART, each needed tag none carried, and each tag a warning
-/// carried that the framing does not need (at most
+/// What a port's writes showed, rebuilt from Renode's access log, as kind 28
+/// carries it (`AET-WO-4300b` adversarial F1–F3): its USART's writes in the
+/// last boot, each needed tag not set in its word at `UE`, and everything
+/// else the writes did that the bring-up does not (at most
 /// [`MAX_SERIAL_UNEXPECTED`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SerialTags {
-    pub warnings: u64,
+    pub writes: u64,
     pub missing: Vec<String>,
     pub unexpected: Vec<String>,
 }
@@ -542,7 +543,8 @@ pub enum Record {
     /// gives, the receiver-tolerance row that applies (RM0433 Rev 9 Tables
     /// 406 and 407: the table, `M[1:0]`, the tolerance in ppm) and whether
     /// every rule held. The twin's: the tags the framing needs (of
-    /// [`SERIAL_TAGS`]) and what the USART's warnings showed, absent until
+    /// [`SERIAL_TAGS`]) and what the USART's writes showed ([`SerialTags`]),
+    /// absent until
     /// Renode has run or when its log could not be read whole. The stored
     /// fields (`CR1`, `CR2.STOP`, `CR3`, `BRR`) are read back as kind 11s
     /// and judged there. Archived after the boot.
@@ -561,8 +563,12 @@ pub enum Record {
     /// capture held (absent when Renode left no file), the frame injected,
     /// the echo's status (one of [`SERIAL_ECHO_STATUSES`]), and the RX pin's
     /// `MODER` and `AFSEL` fields at the injection (absent when no frame went
-    /// in) and the TX pin's at the end. Archived after kind 28, once Renode
-    /// has run.
+    /// in), the TX pin's at the end (as kind 11 reads its registers), and
+    /// the TX pin's at the first `TDR` write of each boot, rebuilt from the
+    /// access log: the first boot's that is not routed, else the last's
+    /// (absent when no boot wrote `TDR`, a boot's could not be rebuilt, or the
+    /// log could not be read whole; adversarial F4). Archived after kind 28,
+    /// once Renode has run.
     SerialWitness {
         label: String,
         capture: Option<SerialCapture>,
@@ -570,6 +576,7 @@ pub enum Record {
         echo: String,
         rx_at_injection: Option<(u8, u8)>,
         tx_at_end: Option<(u8, u8)>,
+        tx_at_send: Option<(u8, u8)>,
     },
 }
 
@@ -1364,11 +1371,7 @@ impl Record {
                 Value::Array(
                     tags.iter()
                         .map(|j| {
-                            Value::Array(vec![
-                                u(j.warnings),
-                                texts(&j.missing),
-                                texts(&j.unexpected),
-                            ])
+                            Value::Array(vec![u(j.writes), texts(&j.missing), texts(&j.unexpected)])
                         })
                         .collect(),
                 ),
@@ -1380,6 +1383,7 @@ impl Record {
                 echo,
                 rx_at_injection,
                 tx_at_end,
+                tx_at_send,
             } => vec![
                 t(label),
                 Value::Array(
@@ -1400,6 +1404,7 @@ impl Record {
                 t(echo),
                 mux(*rx_at_injection),
                 mux(*tx_at_end),
+                mux(*tx_at_send),
             ],
         }
     }
@@ -1707,7 +1712,7 @@ impl Record {
                 tags_needed: f.texts()?,
                 tags: f.opt_with(|g| {
                     Some(SerialTags {
-                        warnings: g.uint()?,
+                        writes: g.uint()?,
                         missing: g.texts()?,
                         unexpected: g.texts()?,
                     })
@@ -1731,6 +1736,7 @@ impl Record {
                 echo: f.text()?,
                 rx_at_injection: f.mux()?,
                 tx_at_end: f.mux()?,
+                tx_at_send: f.mux()?,
             },
             _ => return None,
         };
@@ -2208,6 +2214,7 @@ impl Record {
                 echo,
                 rx_at_injection,
                 tx_at_end,
+                tx_at_send,
                 ..
             } => {
                 let mux_ok = |m: &Option<(u8, u8)>| {
@@ -2217,7 +2224,7 @@ impl Record {
                     Err("a serial witness's label is malformed")
                 } else if !SERIAL_ECHO_STATUSES.contains(&echo.as_str()) {
                     Err("a serial witness's echo is not one the judge gives")
-                } else if !mux_ok(rx_at_injection) || !mux_ok(tx_at_end) {
+                } else if !mux_ok(rx_at_injection) || !mux_ok(tx_at_end) || !mux_ok(tx_at_send) {
                     Err("a serial witness's pin mode is above 3 or its alternate function above 15")
                 } else if capture.is_some_and(|c| !capture_fits(&c, label)) {
                     Err(

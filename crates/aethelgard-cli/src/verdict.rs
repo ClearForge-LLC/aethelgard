@@ -258,7 +258,7 @@ pub const MOTOR_SPEED_NOT_JUDGED: &str = "motor pin speed not judged: off-board 
 /// One serial port's judgements (`AET-WO-4300b`, `4300` D8), never blended:
 /// `silicon`, the solved `BRR` on the topology's clock against RM0433's
 /// receiver tolerance; and `twin`, what Renode's USART left: the capture,
-/// the pins' mux, and the tag warnings.
+/// the pins' mux, and the USART's writes from Renode's access log.
 #[derive(Serialize)]
 pub struct SerialReport {
     pub label: String,
@@ -299,8 +299,9 @@ pub struct SerialTwinReport {
     pub pattern: String,
     /// The injected frame's bytes, upper-case hexadecimal.
     pub frame: String,
-    /// The tags the framing needs set (`CR1.M0`), each seen only as its
-    /// warning; the register image holds the stored fields.
+    /// The tags the framing needs set (`CR1.M0`) at `UE`, each seen only in
+    /// the words Renode's access log shows written; the register image holds
+    /// the stored fields.
     pub tags_needed: Vec<String>,
     /// Whole patterns before the frame.
     pub patterns: Option<usize>,
@@ -314,13 +315,16 @@ pub struct SerialTwinReport {
     pub stray: Option<bool>,
     /// `witnessed`, `missing`, `partial`, `not_counted` or `not_judged`.
     pub echo: Option<&'static str>,
-    /// The RX pin at the injection and the TX pin at the end: `PA10 MODER
-    /// 0b10, AF7`.
+    /// The RX pin at the injection, the TX pin at the end, and the TX pin at
+    /// a boot's first `TDR` write (the first boot's not routed, else the
+    /// last's): `PA10 MODER 0b10, AF7`.
     pub rx_at_injection: Option<String>,
     pub tx_at_end: Option<String>,
-    /// The tag warnings from the USART, and what they lacked or carried
-    /// beyond the framing; `null` when the log could not be read whole.
-    pub tag_warnings: Option<usize>,
+    pub tx_at_send: Option<String>,
+    /// The USART's writes in the last boot (Renode's access log), and what
+    /// they lacked at `UE` or did beyond the bring-up; `null` when the log
+    /// could not be read whole.
+    pub usart_writes: Option<usize>,
     pub tags_missing: Option<Vec<String>>,
     pub tags_unexpected: Option<Vec<String>>,
     /// What the campaign archives (kind 29) and the JSON says in words: the
@@ -331,6 +335,8 @@ pub struct SerialTwinReport {
     pub rx_fields: Option<(u8, u8)>,
     #[serde(skip)]
     pub tx_fields: Option<(u8, u8)>,
+    #[serde(skip)]
+    pub tx_send_fields: Option<(u8, u8)>,
 }
 
 impl SerialReport {
@@ -379,7 +385,10 @@ impl SerialReport {
                 tx_at_end: w
                     .and_then(|w| w.tx_at_end)
                     .map(|(m, a)| s.tx.describe(m, a)),
-                tag_warnings: tags.map(|t| t.warnings),
+                tx_at_send: w
+                    .and_then(|w| w.tx_at_send)
+                    .map(|(m, a)| s.tx.describe(m, a)),
+                usart_writes: tags.map(|t| t.writes),
                 tags_missing: tags.map(|t| t.missing.clone()),
                 tags_unexpected: tags.map(|t| t.unexpected.clone()),
                 frame_bytes: s.frame,
@@ -387,6 +396,7 @@ impl SerialReport {
                     .and_then(|w| w.rx_at_injection)
                     .map(|(m, a)| s.rx.fields(m, a)),
                 tx_fields: w.and_then(|w| w.tx_at_end).map(|(m, a)| s.tx.fields(m, a)),
+                tx_send_fields: w.and_then(|w| w.tx_at_send).map(|(m, a)| s.tx.fields(m, a)),
             },
             speed: SERIAL_SPEED_NOT_JUDGED,
         }

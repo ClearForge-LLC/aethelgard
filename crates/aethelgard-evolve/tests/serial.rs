@@ -113,7 +113,8 @@ fn figures(holds: bool) -> (u32, u64, i64) {
 }
 
 /// The port's framing check: as its solved port gives it, or (`holds`
-/// false) as a `BRR` of 557 gives it, with no tag warning or one `SWAP`.
+/// false) as a `BRR` of 557 gives it, with the bring-up's writes alone or
+/// one to `PRESC` beside them.
 fn check(label: &str, holds: bool, tags_hold: bool) -> Record {
     let (brr, actual_millibaud, error_ppm) = figures(holds);
     Record::SerialFramingCheck {
@@ -126,12 +127,12 @@ fn check(label: &str, holds: bool, tags_hold: bool) -> Record {
         holds,
         tags_needed: vec![],
         tags: Some(SerialTags {
-            warnings: u64::from(!tags_hold),
+            writes: 5,
             missing: vec![],
             unexpected: if tags_hold {
                 vec![]
             } else {
-                vec!["SWAP (0x1) at 0x4".into()]
+                vec!["0x1 to 0x2C".into()]
             },
         }),
     }
@@ -149,7 +150,9 @@ enum Echo {
     Silent,
 }
 
-fn witness(label: &str, echo: Echo) -> Record {
+/// `tx`: the TX pin's `MODER` and `AFSEL` fields at the end, as kind 11 read
+/// them (adversarial F11), and at its first `TDR` write.
+fn witness(label: &str, echo: Echo, tx: (u8, u8)) -> Record {
     let p = (label.len() + 5) as u64;
     let (patterns, echoed) = match echo {
         Echo::Witnessed | Echo::NotCounted => (1, 8),
@@ -173,7 +176,8 @@ fn witness(label: &str, echo: Echo) -> Record {
         }
         .into(),
         rx_at_injection: Some((0b10, if echo == Echo::NotCounted { 8 } else { 7 })),
-        tx_at_end: Some((0b10, 7)),
+        tx_at_end: Some(tx),
+        tx_at_send: Some(tx),
     }
 }
 
@@ -314,8 +318,16 @@ fn run(c: &Case, findings: &[(&str, u64)]) -> Vec<Record> {
         i2c_witness(),
         check("CONSOLE", c.console_holds, c.console_tags_hold),
         check("GPS", true, true),
-        witness("CONSOLE", c.console),
-        witness("GPS", c.gps),
+        witness(
+            "CONSOLE",
+            c.console,
+            (((c.moder >> 18) & 3) as u8, ((c.afrh >> 4) & 0xF) as u8),
+        ),
+        witness(
+            "GPS",
+            c.gps,
+            (((c.moder >> 4) & 3) as u8, ((c.afrl >> 8) & 0xF) as u8),
+        ),
         Record::Verdict {
             pass: findings.iter().all(|f| f.1 == "info"),
             findings,
@@ -504,7 +516,7 @@ fn no_register_evidence_is_never_a_guess() {
     let a = attributed(&r);
     assert_eq!((a.domain, a.rule), (Domain::Indeterminate, Rule::I6));
     assert_eq!(named(&r, &a), ["kind 29 CONSOLE"]);
-    // A tag warning the framing does not set, every register right: I6, by
+    // A write the bring-up never makes, every register right: I6, by
     // the framing check.
     let r = run(
         &Case {

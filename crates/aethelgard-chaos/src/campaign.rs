@@ -1322,7 +1322,8 @@ fn routed(mux: Option<(u8, u8)>, af: u8) -> bool {
 /// boot judge gives them: no capture is forged and nothing else; a capture
 /// with stray bytes, or more patterns (whole and cut) than boots, is forged;
 /// the pattern is out when at least one whole pattern was captured and the
-/// TX pin ends on its AF; and the echo fails unless witnessed.
+/// TX pin was on its AF at the first `TDR` write of each boot (adversarial
+/// F4) and at the end; and the echo fails unless witnessed.
 pub fn serial_witness_findings(
     port: &Record,
     witness: &Record,
@@ -1334,6 +1335,7 @@ pub fn serial_witness_findings(
             capture,
             echo,
             tx_at_end,
+            tx_at_send,
             ..
         },
     ) = (port, witness)
@@ -1348,7 +1350,7 @@ pub fn serial_witness_findings(
     if c.stray || c.patterns.saturating_add(c.cut) > boots {
         out.push(SERIAL_FORGED_FINDING);
     }
-    if !(c.patterns > 0 && routed(*tx_at_end, *tx_af)) {
+    if !(c.patterns > 0 && routed(*tx_at_send, *tx_af) && routed(*tx_at_end, *tx_af)) {
         out.push(SERIAL_PATTERN_FINDING);
     }
     if echo != "witnessed" && echo != "not_judged" {
@@ -1427,8 +1429,54 @@ fn check_serial_joins(records: &[Record], booted: bool) -> Result<(), &'static s
         if !serial_echo(port, witness, booted) {
             return Err("a serial witness's echo is not what its capture and its RX pin give");
         }
+        if !serial_tx_read(port, witness, records) {
+            return Err(
+                "a serial witness's TX pin at the end is not what kind 11 read of its MODER and AFR",
+            );
+        }
     }
     Ok(())
+}
+
+/// Whether kind 29 `witness`'s TX pin at the end is the `MODER` and `AFSEL`
+/// fields of kind 11's reads of the pin's `GPIOx.MODER` and `GPIOx.AFRL` or
+/// `AFRH`, joined to kind 27 `port` (adversarial F11): both present and
+/// equal, or both absent (the image read neither register).
+// belt-and-suspenders: the judge takes both from one read
+// (`aethelgard_twin::serial::PinMux`); replay checks an archive without the
+// twin, so it splits the pin and places its fields again.
+fn serial_tx_read(port: &Record, witness: &Record, records: &[Record]) -> bool {
+    let (Record::SerialPortSolved { tx, .. }, Record::SerialWitness { tx_at_end, .. }) =
+        (port, witness)
+    else {
+        return false;
+    };
+    let mut chars = tx.chars();
+    let (Some('P'), Some(letter @ 'A'..='K')) = (chars.next(), chars.next()) else {
+        return false;
+    };
+    let Some(index) = chars.as_str().parse::<u32>().ok().filter(|i| *i < 16) else {
+        return false;
+    };
+    let read = |name: String| {
+        records.iter().find_map(|r| match r {
+            Record::RegisterObserved { name: n, reading } if *n == name => reading.observed,
+            _ => None,
+        })
+    };
+    let moder = read(format!("GPIO{letter}.MODER"));
+    let afr = read(format!(
+        "GPIO{letter}.{}",
+        if index < 8 { "AFRL" } else { "AFRH" }
+    ));
+    match (tx_at_end, moder.zip(afr)) {
+        (None, None) => moder.is_none() && afr.is_none(),
+        (Some((mode, af)), Some((m, a))) => {
+            u32::from(*mode) == (m >> (2 * index)) & 0b11
+                && u32::from(*af) == (a >> (4 * (index % 8))) & 0xF
+        }
+        _ => false,
+    }
 }
 
 /// RM0433 Rev 9 §48.5.8, Tables 406 (`BRR[3:0]` = 0) and 407, column

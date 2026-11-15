@@ -56,6 +56,23 @@ pub fn renode_name(peripheral: &str) -> Result<&'static str, TwinError> {
         })
 }
 
+/// Renode's `lpuart1`, in the stock platform beside the USARTs and UARTs of
+/// [`platform::STOCK`] (measured: a file backend on it opens, fix 1 P2); no
+/// port may use it (`aethelgard_ir::serial::LPUART`).
+pub const LPUART_RENODE: &str = "lpuart1";
+
+/// Every stock serial peripheral's Renode name: the composition captures each
+/// one, so a byte sent on one the topology does not name is seen
+/// (`AET-WO-4300b` adversarial F12).
+pub fn stock_uarts() -> Vec<&'static str> {
+    platform::STOCK
+        .iter()
+        .filter(|s| kind(s.0).is_ok_and(|k| k == Kind::Serial))
+        .map(|s| s.1)
+        .chain([LPUART_RENODE])
+        .collect()
+}
+
 /// The file the composition captures `peripheral`'s bytes into, inside the
 /// boot's fresh capture directory: `usart1.bin`.
 pub fn capture_file(peripheral: &str) -> Result<String, TwinError> {
@@ -246,130 +263,228 @@ pub fn parse(bytes: &[u8], pattern: &[u8], frame: &[u8; FRAME_LEN]) -> Capture {
     }
 }
 
-/// One `Unhandled write` warning Renode logs for a write that sets a tag
-/// (`PeripheralRegister.cs` L755–770, `TagLogger`): the source, the
-/// register's offset, the whole value written, and each tag the write's
-/// unhandled bits touch with its value in the write.
+/// One access Renode's peripheral access log shows (`sysbus
+/// LogPeripheralAccess`, enabled by the composition for each port's USART and
+/// each TX pin's GPIO port): its source, whether it wrote, its width in bits,
+/// the offset in the peripheral and the value written or returned.
+///
+/// Measured in Renode 1.17.0 (`AET-WO-4300b` fix 1, P1 and P2): one `INFO`
+/// line per access, whatever the offset or width, a defined register or not,
+/// and through `machine Reset`:
+/// `[INFO] usart1: [cpu: 0x80009DE] WriteUInt32 to 0x28 (TransmitData), value 0x43`,
+/// `… WriteUInt32 to 0x2C (TransmitData+0x4), value 0x1`,
+/// `… WriteByte to 0x1 (ControlRegister1+0x1), value 0x10`,
+/// `… ReadUInt32 from 0x1C (InterruptAndStatus), returned 0x206000C0`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TagWarning {
+pub struct Access {
     pub source: String,
+    pub write: bool,
+    pub bits: u8,
     pub offset: u32,
-    pub value: u32,
-    pub tags: Vec<(String, u32)>,
+    pub value: u64,
 }
 
-/// Parses a whole log line's text after its timestamp:
-/// `[WARNING] usart1: Unhandled write to offset 0x0. Unhandled bits: [12]
-/// when writing value 0x100D. Tags: MO (0x1).` Renode writes the offset, the
-/// value and each tag's value as `0x{:X}`, the bits as `GetSetBitsPretty`
-/// (`BitHelper.cs` L413), and the tags joined by `, `. `None` for any other
-/// line, a warning with no tag included.
-pub fn tag_warning(body: &str) -> Option<TagWarning> {
-    let hex = |s: &str| -> Option<u32> {
-        let h = s.strip_prefix("0x")?;
-        (!h.is_empty()
-            && h.len() <= 8
-            && h.bytes()
-                .all(|b| b.is_ascii_digit() || b.is_ascii_uppercase()))
-        .then(|| u32::from_str_radix(h, 16).ok())
-        .flatten()
-    };
-    let rest = body.strip_prefix("[WARNING] ")?;
-    let (source, rest) = rest.split_once(": Unhandled write to offset ")?;
-    if source.is_empty() || source.contains(' ') {
+/// `0x` then upper-case hexadecimal, as Renode writes `0x{:X}`.
+fn upper_hex(s: &str) -> Option<u64> {
+    let h = s.strip_prefix("0x")?;
+    (!h.is_empty()
+        && h.len() <= 16
+        && h.bytes()
+            .all(|b| b.is_ascii_digit() || (b'A'..=b'F').contains(&b)))
+    .then(|| u64::from_str_radix(h, 16).ok())
+    .flatten()
+}
+
+/// Parses a whole log line's text after its timestamp as one access, in
+/// exactly the measured shape ([`Access`]); `None` for any other line.
+pub fn access(body: &str) -> Option<Access> {
+    let rest = body.strip_prefix("[INFO] ")?;
+    let (source, rest) = rest.split_once(": [cpu: ")?;
+    if source.is_empty() || !source.bytes().all(|b| b.is_ascii_alphanumeric()) {
         return None;
     }
-    let (offset, rest) = rest.split_once(". Unhandled bits: [")?;
-    let (bits, rest) = rest.split_once("] when writing value ")?;
-    if bits.is_empty()
-        || !bits
+    let (pc, rest) = rest.split_once("] ")?;
+    upper_hex(pc)?;
+    let (op, rest) = rest.split_once(' ')?;
+    let (write, width) = if let Some(w) = op.strip_prefix("Write") {
+        (true, w)
+    } else {
+        (false, op.strip_prefix("Read")?)
+    };
+    let bits = match width {
+        "Byte" => 8,
+        "UInt16" => 16,
+        "UInt32" => 32,
+        "UInt64" => 64,
+        _ => return None,
+    };
+    let rest = rest.strip_prefix(if write { "to " } else { "from " })?;
+    let (offset, rest) = rest.split_once(" (")?;
+    let (name, value) = rest.split_once("), ")?;
+    if name.is_empty()
+        || !name
             .bytes()
-            .all(|b| b.is_ascii_digit() || b == b'-' || b == b',' || b == b' ')
+            .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'_')
     {
         return None;
     }
-    let (value, rest) = rest.split_once(". Tags: ")?;
-    let tags = rest.strip_suffix('.')?;
-    let mut parsed = Vec::new();
-    for tag in tags.split(", ") {
-        let (name, v) = tag.split_once(" (")?;
-        let v = hex(v.strip_suffix(')')?)?;
-        if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
-            return None;
-        }
-        parsed.push((name.to_owned(), v));
-    }
-    Some(TagWarning {
+    let value = value.strip_prefix(if write { "value " } else { "returned " })?;
+    Some(Access {
         source: source.to_owned(),
-        offset: hex(offset)?,
-        value: hex(value)?,
-        tags: parsed,
+        write,
+        bits,
+        offset: u32::try_from(upper_hex(offset)?).ok()?,
+        value: upper_hex(value)?,
     })
 }
 
-/// A tag the framing needs set: the register's name and offset, the field's
-/// name in ST's header, and its name as Renode's model logs it.
+/// True for a line Renode's access log writes for a read ([`access`]):
+/// what the boot's log filter discards before its budget, uncounted, since
+/// the judge reads only writes and a firmware polling `ISR` writes one such
+/// line per poll (measured: 20 000 polls, 2.3 MB, per port that waits out
+/// `ECHO_POLLS`; fix 1 P2).
+pub fn is_access_read(body: &str) -> bool {
+    access(body).is_some_and(|a| !a.write)
+}
+
+/// True when `body` is a line of `source`'s own `INFO` log: from a logged
+/// source, every such line must be a whole access, or the judge cannot
+/// rebuild what was written ([`judge_writes`] then fails closed).
+pub fn logged_by(body: &str, source: &str) -> bool {
+    body.strip_prefix("[INFO] ")
+        .and_then(|r| r.strip_prefix(source))
+        .is_some_and(|r| r.starts_with(": "))
+}
+
+/// A tag the framing may set: the register's name and offset, the field's
+/// name in ST's header, and its bit there.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tag {
     pub register: &'static str,
     pub offset: u32,
     pub field: &'static str,
-    /// `MO` for `M0` (`STM32F7_USART.cs` L162), else the header's name.
-    pub renode: &'static str,
+    pub mask: u32,
 }
 
-/// The tags `framing` needs set, in register order: `M0` for a 9-bit word
-/// and `M1` for a 7-bit one (`M[1:0]`, RM0433 Rev 9 §48.8.1), `RXINV` and
-/// `TXINV` when inverted (§48.8.2). Renode stores none of them
-/// (`STM32F7_USART.cs` L162, L167, L177–178): each is seen only as the
-/// warning a write that sets it logs. Offsets from the header's layout.
-pub fn needed_tags(framing: &Framing) -> Result<Vec<Tag>, TwinError> {
-    let layout = cmsis::register_facts()?.layout("USART")?;
+/// Every tag a framing may need, in register order (the order kind 28 lists
+/// them in): `M0` for a 9-bit word and `M1` for a 7-bit one (`M[1:0]`,
+/// RM0433 Rev 9 §48.8.1), `RXINV` and `TXINV` when inverted (§48.8.2).
+/// Renode stores none of them (`STM32F7_USART.cs` L162, L167, L177–178):
+/// each is seen in the values the access log shows written. Offsets and bits
+/// from the header.
+fn all_tags() -> Result<Vec<Tag>, TwinError> {
+    let f = cmsis::register_facts()?;
+    let layout = f.layout("USART")?;
     let (cr1, cr2) = (layout.offset("CR1", 0)?, layout.offset("CR2", 0)?);
+    let tag = |register, offset, field: &'static str| -> Result<Tag, TwinError> {
+        Ok(Tag {
+            register,
+            offset,
+            field,
+            mask: 1 << f.position(&format!("USART_{register}_{field}_Pos"))?,
+        })
+    };
+    Ok(vec![
+        tag("CR1", cr1, "M0")?,
+        tag("CR1", cr1, "M1")?,
+        tag("CR2", cr2, "RXINV")?,
+        tag("CR2", cr2, "TXINV")?,
+    ])
+}
+
+/// The tags `framing` needs set, of [`all_tags`], in its order.
+pub fn needed_tags(framing: &Framing) -> Result<Vec<Tag>, TwinError> {
     let m = framing.m_bits().ok_or_else(|| {
         TwinError::Register(RegisterError::Undefined {
             name: format!("USART_CR1.M for a {}-bit word", framing.word_bits()),
         })
     })?;
-    let mut out = Vec::new();
-    if m & 0b01 != 0 {
-        out.push(Tag {
-            register: "CR1",
-            offset: cr1,
-            field: "M0",
-            renode: "MO",
-        });
-    }
-    if m & 0b10 != 0 {
-        out.push(Tag {
-            register: "CR1",
-            offset: cr1,
-            field: "M1",
-            renode: "M1",
-        });
-    }
-    if framing.inverted {
-        for f in ["RXINV", "TXINV"] {
-            out.push(Tag {
-                register: "CR2",
-                offset: cr2,
-                field: f,
-                renode: f,
-            });
-        }
-    }
-    Ok(out)
+    let need = [
+        m & 0b01 != 0,
+        m & 0b10 != 0,
+        framing.inverted,
+        framing.inverted,
+    ];
+    Ok(all_tags()?
+        .into_iter()
+        .zip(need)
+        .filter_map(|(t, n)| n.then_some(t))
+        .collect())
 }
 
-/// What one port's tag warnings show against its framing.
+/// What a port's bring-up writes, from the solved topology and ST's header
+/// alone (`INV-07`): the word each of `CR1`, `CR2`, `CR3` and `BRR` holds at
+/// the write that first sets `CR1.UE` (`CR1` with `UE`; `CR3` its reset 0,
+/// never written), and `TDR`'s offset. The firmware writes `BRR`, `CR2`,
+/// `CR1`, `CR1 | UE`, then `TDR` only (the contract's order).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bringup {
+    /// `(name, offset, word at UE)` for `CR1`, `CR2`, `CR3`, `BRR`.
+    pub words: [(&'static str, u32, u32); 4],
+    pub tdr: u32,
+    pub ue: u32,
+    pub tags: Vec<Tag>,
+    pub needed: Vec<Tag>,
+}
+
+impl Bringup {
+    pub fn of(framing: &Framing, brr: u32) -> Result<Self, TwinError> {
+        let f = cmsis::register_facts()?;
+        let layout = f.layout("USART")?;
+        let bit = |name: &str| -> Result<u32, TwinError> { Ok(1 << f.position(name)?) };
+        let needed = needed_tags(framing)?;
+        let set = |reg: &str| {
+            needed
+                .iter()
+                .filter(|t| t.register == reg)
+                .fold(0, |m, t| m | t.mask)
+        };
+        let (pce, ps) = parity_bits(framing);
+        let ue = bit("USART_CR1_UE_Pos")?;
+        let mut cr1 = ue | bit("USART_CR1_RE_Pos")? | bit("USART_CR1_TE_Pos")? | set("CR1");
+        if pce {
+            cr1 |= bit("USART_CR1_PCE_Pos")?;
+        }
+        if ps {
+            cr1 |= bit("USART_CR1_PS_Pos")?;
+        }
+        let (stop_pos, _) = f.field("USART_CR2_STOP")?;
+        let stop = framing.stop_field().ok_or_else(|| {
+            TwinError::Register(RegisterError::Undefined {
+                name: format!("USART_CR2.STOP for {} stop bits", framing.stop_bits),
+            })
+        })?;
+        let cr2 = (u32::from(stop) << stop_pos) | set("CR2");
+        Ok(Self {
+            words: [
+                ("CR1", layout.offset("CR1", 0)?, cr1),
+                ("CR2", layout.offset("CR2", 0)?, cr2),
+                ("CR3", layout.offset("CR3", 0)?, 0),
+                ("BRR", layout.offset("BRR", 0)?, brr),
+            ],
+            tdr: layout.offset("TDR", 0)?,
+            ue,
+            tags: all_tags()?,
+            needed,
+        })
+    }
+}
+
+/// What a port's writes, rebuilt from the access log, show against its
+/// bring-up ([`judge_writes`]).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TagJudgement {
-    /// The warnings from the port's USART, in order.
-    pub warnings: usize,
-    /// Each needed tag no warning carried at 1, as `CR1.M0`.
+    /// The USART's writes in the last boot.
+    pub writes: usize,
+    /// Each needed tag not set in its register's word at `UE` in some boot,
+    /// as `CR1.M0`, in [`all_tags`]' order.
     pub missing: Vec<String>,
-    /// Each tag a warning carried that the framing does not need, or at
-    /// another offset or value: `CR2.SWAP (0x1) at 0x4`.
+    /// Everything else the writes did that the bring-up does not, each once,
+    /// in the order first seen: a tag set at `UE` the framing does not need
+    /// (`CR1.M1 set at UE`), another bit of a word at `UE` (`CR1 0x40D at UE,
+    /// not 0x140D`), a word changed after `UE` (`CR2 0x32000 after UE`), a
+    /// write the bring-up never makes (`0x1 to 0x2C`, `WriteByte to 0x1`,
+    /// `TDR before UE`), and a last boot that never set `UE`.
     pub unexpected: Vec<String>,
 }
 
@@ -379,35 +494,143 @@ impl TagJudgement {
     }
 }
 
-/// Judges the warnings `source` logged (`usart1`) against `needed`: every
-/// needed tag carried at 1, at its register's offset, by at least one
-/// warning; and no warning carrying any other tag, a needed one at another
-/// offset, or any tag at another value.
-pub fn judge_tags(source: &str, needed: &[Tag], warnings: &[TagWarning]) -> TagJudgement {
+/// Judges the writes `source` (the port's USART, `usart1`) made in each boot,
+/// in log order (`boots`, the first boot then one per rendered release;
+/// every boot starts from reset, `0` in each word), against `b`: in each
+/// boot, every write a word write to `CR1`, `CR2`, `BRR` or `TDR`; at the
+/// write that first sets `UE`, the four words exactly `b`'s, the tags
+/// judged apart; after it, no word changed and before it no `TDR` write; and
+/// the last boot sets `UE`. A boot cut by a reset before `UE` is judged as
+/// far as it went.
+pub fn judge_writes(b: &Bringup, source: &str, boots: &[Vec<Access>]) -> TagJudgement {
     let mut j = TagJudgement::default();
-    let mine: Vec<&TagWarning> = warnings.iter().filter(|w| w.source == source).collect();
-    j.warnings = mine.len();
-    for t in needed {
-        let carried = mine
-            .iter()
-            .any(|w| w.offset == t.offset && w.tags.iter().any(|(n, v)| n == t.renode && *v == 1));
-        if !carried {
-            j.missing.push(format!("{}.{}", t.register, t.field));
+    let mut missing = vec![false; b.tags.len()];
+    let note = |j: &mut TagJudgement, x: String| {
+        if !j.unexpected.contains(&x) {
+            j.unexpected.push(x);
+        }
+    };
+    for (k, boot) in boots.iter().enumerate() {
+        let mut word = [0u32; 4];
+        let mut enabled = false;
+        let mine = boot.iter().filter(|a| a.write && a.source == source);
+        if k + 1 == boots.len() {
+            j.writes = mine.clone().count();
+        }
+        for a in mine {
+            let slot = b.words.iter().position(|w| w.1 == a.offset);
+            let value = u32::try_from(a.value).unwrap_or(u32::MAX);
+            if a.bits != 32 {
+                let width = match a.bits {
+                    8 => "Byte",
+                    16 => "UInt16",
+                    _ => "UInt64",
+                };
+                note(&mut j, format!("Write{width} to {:#X}", a.offset));
+                continue;
+            }
+            if a.offset == b.tdr {
+                if !enabled {
+                    note(&mut j, "TDR before UE".to_owned());
+                }
+                continue;
+            }
+            let Some(i) = slot.filter(|&i| b.words[i].0 != "CR3") else {
+                note(&mut j, format!("{value:#X} to {:#X}", a.offset));
+                continue;
+            };
+            if enabled {
+                if word[i] != value {
+                    note(&mut j, format!("{} {value:#X} after UE", b.words[i].0));
+                }
+                word[i] = value;
+                continue;
+            }
+            word[i] = value;
+            if b.words[i].0 != "CR1" || value & b.ue == 0 {
+                continue;
+            }
+            enabled = true;
+            for (tag, gone) in b.tags.iter().zip(missing.iter_mut()) {
+                let at = b
+                    .words
+                    .iter()
+                    .position(|w| w.0 == tag.register)
+                    .unwrap_or(0);
+                let set = word[at] & tag.mask != 0;
+                let needed = b.needed.contains(tag);
+                if needed && !set {
+                    *gone = true;
+                } else if set && !needed {
+                    note(&mut j, format!("{}.{} set at UE", tag.register, tag.field));
+                }
+            }
+            for (n, (name, _, want)) in b.words.iter().enumerate() {
+                let tag_bits = b
+                    .tags
+                    .iter()
+                    .filter(|t| t.register == *name)
+                    .fold(0, |m, t| m | t.mask);
+                if (word[n] ^ want) & !tag_bits != 0 {
+                    note(
+                        &mut j,
+                        format!(
+                            "{name} {:#X} at UE, not {:#X}",
+                            word[n] & !tag_bits,
+                            want & !tag_bits
+                        ),
+                    );
+                }
+            }
+        }
+        if k + 1 == boots.len() && !enabled {
+            note(&mut j, "the last boot never set CR1.UE".to_owned());
         }
     }
-    for w in &mine {
-        for (name, v) in &w.tags {
-            let ok = *v == 1
-                && needed
-                    .iter()
-                    .any(|t| t.renode == name && t.offset == w.offset);
-            let shown = format!("{name} ({v:#X}) at {:#X}", w.offset);
-            if !ok && !j.unexpected.contains(&shown) {
-                j.unexpected.push(shown);
+    j.missing = b
+        .tags
+        .iter()
+        .zip(&missing)
+        .filter(|(_, m)| **m)
+        .map(|(t, _)| format!("{}.{}", t.register, t.field))
+        .collect();
+    j
+}
+
+/// The TX pin's `MODER` and `AFR` words at the first `TDR` write of each
+/// boot that wrote one, rebuilt from the words the access log shows the
+/// firmware wrote to the pin's GPIO port in that boot (a register never
+/// written reads `0` here: never routed); `None` for a boot in which a
+/// non-word write reached either register before it. The pattern counts
+/// only if every boot's is routed (`AET-WO-4300b` adversarial F4).
+pub fn tx_at_send(
+    tx: &PinMux,
+    usart: &str,
+    tdr: u32,
+    boots: &[Vec<Access>],
+) -> Vec<Option<(u32, u32)>> {
+    let mut out = Vec::new();
+    for boot in boots {
+        let (mut moder, mut afr) = (Some(0u32), Some(0u32));
+        for a in boot.iter().filter(|a| a.write) {
+            if a.source == usart && a.offset == tdr {
+                out.push(moder.zip(afr));
+                break;
+            }
+            if a.source != tx.source {
+                continue;
+            }
+            for (at, reg) in [(tx.offsets.0, &mut moder), (tx.offsets.1, &mut afr)] {
+                if a.offset & !3 == at {
+                    *reg = match (*reg, a.bits == 32 && a.offset == at) {
+                        (Some(_), true) => u32::try_from(a.value).ok(),
+                        _ => None,
+                    };
+                }
             }
         }
     }
-    j
+    out
 }
 
 /// One serial port as the judge needs it, in the specification's order.
@@ -447,10 +670,16 @@ pub fn ports(topology: &SolvedTopology) -> Result<Vec<Port>, TwinError> {
 }
 
 /// A pin's mode and alternate function registers, and where its fields sit:
-/// what the composition reads for a port's RX pin at the injection instant.
+/// what the composition reads for a port's RX pin at the injection instant,
+/// and what the judge rebuilds for its TX pin from the access log.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PinMux {
     pub pin: String,
+    /// Renode's name of the pin's GPIO port, `gpioPortA`: the access log's
+    /// source.
+    pub source: &'static str,
+    /// `MODER`'s and the `AFR` word's offsets in the port.
+    pub offsets: (u32, u32),
     /// `GPIOA.MODER` and its address.
     pub moder: (String, u32),
     /// `GPIOA.AFRH` and its address.
@@ -471,8 +700,17 @@ impl PinMux {
         let gpio = f.layout("GPIO")?;
         let base = f.base(&format!("GPIO{port}"))?;
         let word = index / 8;
+        let source = platform::STOCK
+            .iter()
+            .find(|s| s.0 == format!("GPIO{port}"))
+            .map(|s| s.1)
+            .ok_or_else(|| TwinError::InvalidPin {
+                pin: pin.to_owned(),
+            })?;
         Ok(Self {
             pin: pin.to_owned(),
+            source,
+            offsets: (gpio.offset("MODER", 0)?, gpio.offset("AFR", word)?),
             moder: (format!("GPIO{port}.MODER"), base + gpio.offset("MODER", 0)?),
             afr: (
                 format!("GPIO{port}.{}", ["AFRL", "AFRH"][word as usize]),
@@ -660,36 +898,48 @@ mod tests {
         assert_eq!((cap.patterns, cap.cut), (1, 1));
     }
 
+    /// Lines verbatim from Renode 1.17.0's access log (fix 1, P2's `v.out`).
+    const WRITE_TDR: &str =
+        "[INFO] usart1: [cpu: 0x80009DE] WriteUInt32 to 0x28 (TransmitData), value 0x43";
+    const WRITE_PRESC: &str =
+        "[INFO] usart1: [cpu: 0x800070A] WriteUInt32 to 0x2C (TransmitData+0x4), value 0x1";
+    const WRITE_BYTE: &str =
+        "[INFO] usart1: [cpu: 0x8000710] WriteByte to 0x1 (ControlRegister1+0x1), value 0x10";
+    const READ_ISR: &str = "[INFO] usart1: [cpu: 0x80009B2] ReadUInt32 from 0x1C (InterruptAndStatus), returned 0x206000C0";
+    const GPIO_HALF: &str =
+        "[INFO] gpioPortA: [cpu: 0x8000728] WriteUInt16 to 0x0 (Mode), value 0xA801";
+
     #[test]
-    fn a_tag_warning_parses_only_in_renode_s_shape() {
-        let w = tag_warning(
-            "[WARNING] usart1: Unhandled write to offset 0x0. Unhandled bits: [12] when writing value 0x100D. Tags: MO (0x1).",
-        )
-        .unwrap();
+    fn an_access_parses_only_in_renode_s_measured_shape() {
+        let a = |source: &str, write, bits, offset, value| Access {
+            source: source.into(),
+            write,
+            bits,
+            offset,
+            value,
+        };
+        assert_eq!(access(WRITE_TDR), Some(a("usart1", true, 32, 0x28, 0x43)));
+        assert_eq!(access(WRITE_PRESC), Some(a("usart1", true, 32, 0x2C, 1)));
+        assert_eq!(access(WRITE_BYTE), Some(a("usart1", true, 8, 1, 0x10)));
         assert_eq!(
-            w,
-            TagWarning {
-                source: "usart1".into(),
-                offset: 0,
-                value: 0x100D,
-                tags: vec![("MO".into(), 1)]
-            }
+            access(READ_ISR),
+            Some(a("usart1", false, 32, 0x1C, 0x2060_00C0))
         );
-        let two = tag_warning(
-            "[WARNING] uart4: Unhandled write to offset 0x4. Unhandled bits: [16-17] when writing value 0x32000. Tags: RXINV (0x1), TXINV (0x1).",
-        )
-        .unwrap();
-        assert_eq!(two.offset, 4);
-        assert_eq!(two.tags.len(), 2);
+        assert_eq!(access(GPIO_HALF), Some(a("gpioPortA", true, 16, 0, 0xA801)));
+        assert!(is_access_read(READ_ISR) && !is_access_read(WRITE_TDR));
+        assert!(logged_by(WRITE_TDR, "usart1") && !logged_by(WRITE_TDR, "usart"));
         for bad in [
-            "[INFO] usart1: Unhandled write to offset 0x0. Unhandled bits: [12] when writing value 0x100D. Tags: MO (0x1).",
-            "[WARNING] usart1: Unhandled write to offset 0x0. Unhandled bits: [12] when writing value 0x100d. Tags: MO (0x1).",
-            "[WARNING] usart1: Unhandled write to offset 0x0. Unhandled bits: [12] when writing value 0x100D.",
-            "[WARNING] usart1: Unhandled write to offset 0x0. Unhandled bits: [12] when writing value 0x100D. Tags: MO (0x1)",
-            "[WARNING] usart1: Unhandled write to offset 0x0. Unhandled bits: [x] when writing value 0x100D. Tags: MO (0x1).",
-            "[WARNING] a b: Unhandled write to offset 0x0. Unhandled bits: [12] when writing value 0x100D. Tags: MO (0x1).",
+            "[WARNING] usart1: [cpu: 0x80009DE] WriteUInt32 to 0x28 (TransmitData), value 0x43",
+            "[INFO] usart1: [cpu: 0x80009de] WriteUInt32 to 0x28 (TransmitData), value 0x43",
+            "[INFO] usart1: [cpu: 0x80009DE] WriteUInt32 to 0x28 (TransmitData), value 0x43 (2)",
+            "[INFO] usart1: [cpu: 0x80009DE] WriteUInt32 from 0x28 (TransmitData), value 0x43",
+            "[INFO] usart1: [cpu: 0x80009DE] WriteUInt8 to 0x28 (TransmitData), value 0x43",
+            "[INFO] usart1: [cpu: 0x80009DE] ReadUInt32 from 0x1C (InterruptAndStatus), value 0x0",
+            "[INFO] usart1: WriteUInt32 to 0x28 (TransmitData), value 0x43",
+            "[INFO] usart 1: [cpu: 0x80009DE] WriteUInt32 to 0x28 (TransmitData), value 0x43",
+            "[WARNING] usart1: Unhandled write to offset 0x2C, value 0x1.",
         ] {
-            assert_eq!(tag_warning(bad), None, "{bad}");
+            assert_eq!(access(bad), None, "{bad}");
         }
     }
 
@@ -706,9 +956,13 @@ mod tests {
     #[test]
     fn the_framing_needs_its_tags_and_no_other() {
         let sbus = needed_tags(&framing(8, Parity::Even, 2, true)).unwrap();
-        let names: Vec<&str> = sbus.iter().map(|t| t.renode).collect();
-        assert_eq!(names, ["MO", "RXINV", "TXINV"]);
+        let names: Vec<&str> = sbus.iter().map(|t| t.field).collect();
+        assert_eq!(names, ["M0", "RXINV", "TXINV"]);
         assert_eq!((sbus[0].offset, sbus[1].offset), (0, 4));
+        assert_eq!(
+            (sbus[0].mask, sbus[1].mask, sbus[2].mask),
+            (1 << 12, 1 << 16, 1 << 17)
+        );
         assert!(
             needed_tags(&framing(8, Parity::None, 1, false))
                 .unwrap()
@@ -718,29 +972,190 @@ mod tests {
             needed_tags(&framing(7, Parity::None, 1, false)).unwrap()[0].field,
             "M1"
         );
-        let warn = |source: &str, offset, tags: &[(&str, u32)]| TagWarning {
+    }
+
+    fn w(source: &str, offset: u32, value: u32) -> Access {
+        Access {
             source: source.into(),
+            write: true,
+            bits: 32,
             offset,
-            value: 0,
-            tags: tags.iter().map(|(n, v)| ((*n).to_owned(), *v)).collect(),
-        };
-        let ok = [
-            warn("uart4", 0, &[("MO", 1)]),
-            warn("uart4", 0, &[("MO", 1)]),
-            warn("uart4", 4, &[("RXINV", 1), ("TXINV", 1)]),
-            warn("usart1", 0, &[("SWAP", 1)]),
-        ];
-        let j = judge_tags("uart4", &sbus, &ok);
+            value: value.into(),
+        }
+    }
+
+    /// The four-port fixture's SBUS on UART4: BRR, CR2, CR1, CR1 | UE, then a
+    /// byte; as the generated board writes it.
+    fn sbus_boot() -> Vec<Access> {
+        vec![
+            w("uart4", 0x0c, 640),
+            w("uart4", 0x04, 0x0003_2000),
+            w("uart4", 0x00, 0x0000_140c),
+            w("uart4", 0x00, 0x0000_140d),
+            w("uart4", 0x28, 0x53),
+        ]
+    }
+
+    #[test]
+    fn the_bring_up_s_words_come_from_the_framing_and_the_header() {
+        let b = Bringup::of(&framing(8, Parity::Even, 2, true), 640).unwrap();
+        assert_eq!(
+            b.words,
+            [
+                ("CR1", 0, 0x140d),
+                ("CR2", 4, 0x3_2000),
+                ("CR3", 8, 0),
+                ("BRR", 0xc, 640)
+            ]
+        );
+        assert_eq!((b.tdr, b.ue), (0x28, 1));
+        let console = Bringup::of(&framing(8, Parity::None, 1, false), 556).unwrap();
+        assert_eq!(console.words[0].2, 0xd);
+        assert_eq!(console.words[1].2, 0);
+    }
+
+    /// Adversarial F1, F2, F3: the words in force at the first write that
+    /// sets `UE` are judged, from the values written, not from which writes
+    /// set a tag; nothing changes after it; and a write the bring-up never
+    /// makes is seen whatever its offset or width.
+    #[test]
+    fn adversarial_f1_f2_f3_the_writes_are_judged_at_ue_and_after() {
+        let b = Bringup::of(&framing(8, Parity::Even, 2, true), 640).unwrap();
+        let j = judge_writes(&b, "uart4", &[sbus_boot()]);
         assert!(j.holds(), "{j:?}");
-        assert_eq!(j.warnings, 3);
-        // One missing, one at the wrong offset, one the framing does not need.
-        let j = judge_tags("uart4", &sbus, &ok[..2]);
+        assert_eq!(j.writes, 5);
+        let with = |edit: &dyn Fn(&mut Vec<Access>)| {
+            let mut boot = sbus_boot();
+            edit(&mut boot);
+            judge_writes(&b, "uart4", &[boot])
+        };
+        // F1 (ADV-3): M0 set, then cleared by a second CR1 write before UE.
+        let j = with(&|v| {
+            v[2] = w("uart4", 0, 0x040c);
+            v[3] = w("uart4", 0, 0x040d);
+        });
+        assert_eq!(j.missing, ["CR1.M0"]);
+        assert!(j.unexpected.is_empty(), "{j:?}");
+        // F2 (ADV-4): CR2 without inversion, inverted only after UE.
+        let j = with(&|v| {
+            v[1] = w("uart4", 4, 0x2000);
+            v.insert(4, w("uart4", 4, 0x3_2000));
+        });
         assert_eq!(j.missing, ["CR2.RXINV", "CR2.TXINV"]);
-        let j = judge_tags("uart4", &sbus, &[warn("uart4", 4, &[("MO", 1)])]);
-        assert!(j.missing.contains(&"CR1.M0".to_owned()));
-        assert_eq!(j.unexpected, ["MO (0x1) at 0x4"]);
-        let j = judge_tags("usart1", &[], &ok);
-        assert_eq!(j.unexpected, ["SWAP (0x1) at 0x0"]);
+        assert_eq!(j.unexpected, ["CR2 0x32000 after UE"]);
+        // F3 (ADV-2): PRESC, GTPR, RTOR, RQR, CR3: never written by the bring-up.
+        for at in [0x2c, 0x10, 0x14, 0x18, 0x08] {
+            let j = with(&|v| v.insert(2, w("uart4", at, 1)));
+            assert_eq!(j.unexpected, [format!("0x1 to {at:#X}")], "{at:#x}");
+        }
+        // ADV-2b: UE cleared, PRESC, UE set again, after the bring-up.
+        let j = with(&|v| {
+            v.extend([
+                w("uart4", 0, 0x140c),
+                w("uart4", 0x2c, 1),
+                w("uart4", 0, 0x140d),
+            ])
+        });
+        assert_eq!(
+            j.unexpected,
+            ["CR1 0x140C after UE", "0x1 to 0x2C", "CR1 0x140D after UE"]
+        );
+        // A byte write that sets M0 is no word write (measured, P2).
+        let j = with(&|v| {
+            v.insert(
+                2,
+                Access {
+                    bits: 8,
+                    ..w("uart4", 1, 0x10)
+                },
+            )
+        });
+        assert_eq!(j.unexpected, ["WriteByte to 0x1"]);
+        // A tag set that the framing does not need, a stored bit off, a
+        // byte before UE, and UE never set.
+        let j = with(&|v| v[3] = w("uart4", 0, 0x1000_140d));
+        assert_eq!(j.unexpected, ["CR1.M1 set at UE"]);
+        let j = with(&|v| v[3] = w("uart4", 0, 0x340d));
+        assert_eq!(j.unexpected, ["CR1 0x240D at UE, not 0x40D"]);
+        let j = with(&|v| v[3] = w("uart4", 0, 0x140f));
+        assert_eq!(j.unexpected, ["CR1 0x40F at UE, not 0x40D"]);
+        let j = with(&|v| v.insert(0, w("uart4", 0x28, 0)));
+        assert_eq!(j.unexpected, ["TDR before UE"]);
+        let j = with(&|v| v.truncate(3));
+        assert_eq!(j.unexpected, ["the last boot never set CR1.UE"]);
+        // Another USART's writes are not this port's.
+        let mut boot = sbus_boot();
+        boot.push(w("usart1", 0x2c, 1));
+        assert!(judge_writes(&b, "uart4", &[boot]).holds());
+        // A boot cut by a reset before UE is judged as far as it went; the
+        // last boot is judged whole, and a boot's words start from reset.
+        let cut = sbus_boot()[..2].to_vec();
+        assert!(judge_writes(&b, "uart4", &[cut.clone(), sbus_boot()]).holds());
+        assert!(!judge_writes(&b, "uart4", &[sbus_boot(), cut]).holds());
+        let rest = sbus_boot()[2..].to_vec();
+        let j = judge_writes(&b, "uart4", &[sbus_boot(), rest]);
+        assert_eq!(j.missing, ["CR2.RXINV", "CR2.TXINV"]);
+    }
+
+    /// Adversarial F4: the TX pin counts only if it was routed at the first
+    /// `TDR` write of each boot, rebuilt from the words written before it.
+    #[test]
+    fn adversarial_f4_the_tx_pin_is_judged_at_the_first_tdr_write() {
+        let tx = PinMux::of("PA9", 7).unwrap();
+        assert_eq!((tx.source, tx.offsets), ("gpioPortA", (0, 0x24)));
+        let routed = [w("gpioPortA", 0x24, 0x70), w("gpioPortA", 0, 0x8_0000)];
+        let send = w("usart1", 0x28, 0x43);
+        let boot = |before: &[Access], after: &[Access]| {
+            let mut b = before.to_vec();
+            b.push(send.clone());
+            b.extend_from_slice(after);
+            b
+        };
+        let got = tx_at_send(&tx, "usart1", 0x28, &[boot(&routed, &[])]);
+        assert_eq!(got, [Some((0x8_0000, 0x70))]);
+        assert!(got[0].is_some_and(|(m, a)| tx.routed(m, a)));
+        // ADV-1: PA9 an input while the pattern goes out, routed afterwards.
+        let got = tx_at_send(&tx, "usart1", 0x28, &[boot(&routed[..1], &routed[1..])]);
+        assert_eq!(got, [Some((0, 0x70))]);
+        assert!(!got[0].is_some_and(|(m, a)| tx.routed(m, a)));
+        // A half-word write to MODER cannot be rebuilt: not routed.
+        let half = Access {
+            bits: 16,
+            ..w("gpioPortA", 0, 0x8_0000)
+        };
+        let got = tx_at_send(
+            &tx,
+            "usart1",
+            0x28,
+            &[boot(&[routed[0].clone(), routed[1].clone(), half], &[])],
+        );
+        assert_eq!(got, [None]);
+        // Each boot from reset: a boot after a release that sends before routing.
+        let got = tx_at_send(
+            &tx,
+            "usart1",
+            0x28,
+            &[boot(&routed, &[]), boot(&[], &routed)],
+        );
+        assert_eq!(got, [Some((0x8_0000, 0x70)), Some((0, 0))]);
+        // Another port's GPIO words, and a boot with no TDR write.
+        let other = [w("gpioPortB", 0x24, 0x70), w("gpioPortB", 0, 0x8_0000)];
+        assert_eq!(
+            tx_at_send(&tx, "usart1", 0x28, &[boot(&other, &[])]),
+            [Some((0, 0))]
+        );
+        assert!(tx_at_send(&tx, "usart1", 0x28, &[routed.to_vec()]).is_empty());
+    }
+
+    #[test]
+    fn every_stock_uart_is_captured() {
+        assert_eq!(
+            stock_uarts(),
+            [
+                "usart1", "usart2", "usart3", "uart4", "uart5", "usart6", "uart7", "uart8",
+                "lpuart1"
+            ]
+        );
     }
 
     #[test]

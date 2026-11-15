@@ -155,6 +155,19 @@ const NO_SERIAL_REGISTERS: [&str; 19] = [
 /// pin, PA10, in AF mode on AF7 (GPIOA's `MODER`, then `AFRH`), as measured.
 const INJECTION: &str = "AETHELGARD-INJECT-BEGIN\n0x0028A801\n0x00000770\nAETHELGARD-INJECT-END\n";
 
+/// The console's bring-up as Renode 1.17.0's access log shows it
+/// (`AET-WO-4300b` fix 1, measured): PA10's and PA9's AF7, their modes, then
+/// USART1's `BRR`, `CR2`, `CR1`, `CR1 | UE`, then the pattern's first byte,
+/// with a poll of `ISR` the boot's filter discards.
+const CONSOLE_ACCESS: &str = "[00:00:00.000000000] [INFO] gpioPortA: [cpu: 0x80009BC] WriteUInt32 to 0x24 (AlternateFunctionHigh), value 0x770\n\
+[00:00:00.000000000] [INFO] gpioPortA: [cpu: 0x80009BC] WriteUInt32 to 0x0 (Mode), value 0x28A801\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0xC (BaudRate), value 0x22C\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x4 (ControlRegister2), value 0x0\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x0 (ControlRegister1), value 0xC\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x0 (ControlRegister1), value 0xD\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x8000990] ReadUInt32 from 0x1C (InterruptAndStatus), returned 0x206000C0\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x28 (TransmitData), value 0x43\n";
+
 /// What USART1's file backend holds after a boot of `firmware` that sent
 /// the console's pattern and echoed its frame (`AET-WO-4300b`; measured).
 fn capture_of(firmware: &[u8]) -> Vec<u8> {
@@ -172,6 +185,7 @@ fn transcript(run_log: &str, reads: &[&str]) -> String {
     let mut s = String::from(
         "(monitor) emulation SetSeed 2100;  echo \"AETHELGARD-BOOT-BEGIN\";  echo \"AETHELGARD-BOOT-END\"\n",
     );
+    s.push_str(CONSOLE_ACCESS);
     s.push_str(INJECTION);
     s.push_str(run_log);
     s.push_str("AETHELGARD-BOOT-BEGIN\n");
@@ -435,7 +449,7 @@ fn three_agreeing_witnesses_pass() {
         ])
     );
     // The console: its pattern out, its frame echoed, the RX pin routed at
-    // the injection, and no tag warning for 8N1 (`AET-WO-4300b`).
+    // the injection, and its writes the bring-up's (`AET-WO-4300b`).
     let serial = &b["serial"][0];
     assert_eq!(serial["label"], "CONSOLE");
     assert_eq!(serial["peripheral"], "USART1");
@@ -446,7 +460,10 @@ fn three_agreeing_witnesses_pass() {
     assert_eq!(serial["twin"]["echo"], "witnessed");
     assert_eq!(serial["twin"]["rx_at_injection"], "PA10 MODER 0b10, AF7");
     assert_eq!(serial["twin"]["tx_at_end"], "PA9 MODER 0b10, AF7");
-    assert_eq!(serial["twin"]["tag_warnings"], 0);
+    // Renode's access log: the bring-up's four writes and one byte, PA9
+    // routed at it (`AET-WO-4300b` fix 1).
+    assert_eq!(serial["twin"]["usart_writes"], 5);
+    assert_eq!(serial["twin"]["tx_at_send"], "PA9 MODER 0b10, AF7");
     assert_eq!(
         serial["speed"],
         "serial pin speed not judged: off-board load undeclared"
@@ -1388,14 +1405,16 @@ fn a_log_past_the_filter_s_budget_leaves_every_read_unwitnessed() {
     let flood = "[00:00:00.040000000] [WARNING] i2c1: Receive buffer underflow!\n".repeat(160_000);
     let (code, v) = boot(&with_log(GOOD_RECORD, &format!("{GOOD_WITNESS}{flood}")));
     assert_eq!(code, Some(1), "{v}");
-    // Every read, U4's on SPI too (`AET-WO-4200`), and the console's tag
-    // warnings (`AET-WO-4300b`): a dropped line could be one.
+    // Every read, U4's on SPI too (`AET-WO-4200`), and the console's
+    // writes and its TX pin at the first TDR write (`AET-WO-4300b`): a
+    // dropped line could be one.
     assert_eq!(
         kinds(&v),
         [
             "i2c_transaction_unwitnessed",
             "spi_transaction_unwitnessed",
-            "serial_tag_mismatch"
+            "serial_tag_mismatch",
+            "serial_pattern_missing"
         ],
         "{v}"
     );
@@ -1863,32 +1882,45 @@ fn the_injection_s_reads_are_one_whole_block_of_bare_values() {
     assert_eq!(code, Some(0), "{v}");
 }
 
-/// `AET-WO-4300b` §1.5: a tag the framing does not need, from the port's
-/// own USART, fails; a warning from another source is not the port's.
+/// `AET-WO-4300b` §1.5, adversarial F1–F3: a write the bring-up never
+/// makes, from the port's own USART, fails, whatever its offset or width;
+/// one from another source is not the port's.
 #[test]
-fn a_tag_warning_the_framing_does_not_need_fails_and_another_source_s_does_not_count() {
+fn a_write_the_bring_up_never_makes_fails_and_another_source_s_does_not_count() {
     let capture = capture_of(&elf());
-    let warn = |source: &str| {
+    let write = |source: &str, op: &str, at: &str, value: &str| {
         format!(
-            "[00:00:00.000000000] [WARNING] {source}: Unhandled write to offset 0x0. Unhandled bits: [12] when writing value 0x100C. Tags: MO (0x1).\n"
+            "[00:00:00.000100000] [INFO] {source}: [cpu: 0x800070A] {op} to {at} (TransmitData+0x4), value {value}\n"
         )
     };
+    for (line, unexpected) in [
+        (write("usart1", "WriteUInt32", "0x2C", "0x1"), "0x1 to 0x2C"),
+        (
+            write("usart1", "WriteByte", "0x1", "0x10"),
+            "WriteByte to 0x1",
+        ),
+        (
+            write("usart1", "WriteUInt32", "0x4", "0x2000"),
+            "CR2 0x2000 after UE",
+        ),
+    ] {
+        let text = with(
+            &line,
+            "0x2100B007",
+            "0x00000000000F4240",
+            "0x00000064",
+            &GOOD_REGISTERS,
+        );
+        let (code, v) = boot_capture(&text, &capture, "");
+        assert_eq!(code, Some(1), "{v}");
+        assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+        assert_eq!(
+            console(&v)["tags_unexpected"],
+            serde_json::json!([unexpected])
+        );
+    }
     let text = with(
-        &warn("usart1"),
-        "0x2100B007",
-        "0x00000000000F4240",
-        "0x00000064",
-        &GOOD_REGISTERS,
-    );
-    let (code, v) = boot_capture(&text, &capture, "");
-    assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
-    assert_eq!(
-        console(&v)["tags_unexpected"],
-        serde_json::json!(["MO (0x1) at 0x0"])
-    );
-    let text = with(
-        &warn("usart2"),
+        &write("usart2", "WriteUInt32", "0x2C", "0x1"),
         "0x2100B007",
         "0x00000000000F4240",
         "0x00000064",
@@ -1896,7 +1928,23 @@ fn a_tag_warning_the_framing_does_not_need_fails_and_another_source_s_does_not_c
     );
     let (code, v) = boot_capture(&text, &capture, "");
     assert_eq!(code, Some(0), "{v}");
-    assert_eq!(console(&v)["tag_warnings"], 0);
+    assert_eq!(console(&v)["usart_writes"], 5);
+    // A line of the port's own `INFO` log that is no whole access: its
+    // writes cannot be rebuilt, which fails closed.
+    let text = with(
+        "[00:00:00.000100000] [INFO] usart1: something else\n",
+        "0x2100B007",
+        "0x00000000000F4240",
+        "0x00000064",
+        &GOOD_REGISTERS,
+    );
+    let (code, v) = boot_capture(&text, &capture, "");
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(
+        kinds(&v),
+        ["serial_tag_mismatch", "serial_pattern_missing"],
+        "{v}"
+    );
 }
 
 /// The ruling's amendment 3: a `--for` too short to hold the injection and

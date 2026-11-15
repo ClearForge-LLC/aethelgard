@@ -843,8 +843,8 @@ pub(crate) fn solved_serial(t: &SolvedTopology) -> Vec<Record> {
 /// Kinds 28 and 29 from the boot's serial reports (`AET-WO-4300b`): every
 /// port's static framing judgement, its silicon half from the topology and
 /// its tags once Renode has run; then every port's witness, once Renode has
-/// run. A longer list of unexpected tags than kind 28 holds is cut: it fails
-/// the port's tags all the same.
+/// run. A longer list of unexpected writes than kind 28 holds is cut: it
+/// fails the port's tags all the same.
 fn serial_records(serial: &[crate::verdict::SerialReport]) -> Vec<Record> {
     use aethelgard_chaos::record::{MAX_SERIAL_UNEXPECTED, SerialCapture, SerialTags};
     let mut out: Vec<Record> = serial
@@ -862,9 +862,9 @@ fn serial_records(serial: &[crate::verdict::SerialReport]) -> Vec<Record> {
                     .map(|r| (r.table.to_owned(), r.m_bits, r.tolerance_ppm)),
                 holds: f.holds,
                 tags_needed: w.tags_needed.clone(),
-                tags: match (w.tag_warnings, &w.tags_missing, &w.tags_unexpected) {
+                tags: match (w.usart_writes, &w.tags_missing, &w.tags_unexpected) {
                     (Some(n), Some(missing), Some(unexpected)) => Some(SerialTags {
-                        warnings: n as u64,
+                        writes: n as u64,
                         missing: missing.clone(),
                         unexpected: unexpected
                             .iter()
@@ -901,6 +901,7 @@ fn serial_records(serial: &[crate::verdict::SerialReport]) -> Vec<Record> {
             echo: echo.to_owned(),
             rx_at_injection: w.rx_fields,
             tx_at_end: w.tx_fields,
+            tx_at_send: w.tx_send_fields,
         });
     }
     out

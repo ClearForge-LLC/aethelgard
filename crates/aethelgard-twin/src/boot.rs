@@ -549,8 +549,8 @@ fn timer_registers(
 /// solved value in its 16 stored bits (L210). Positions from ST's header.
 /// The tags the framing sets or relies on (`CR1.M0`, `M1`, `CR2.TXINV`,
 /// `RXINV`, `CR3.ONEBIT`; L162, L167, L177–178, L347) are stored nowhere
-/// and listed as unobservable here: the judge sees them only as the warning
-/// a write that sets one logs (`crate::serial::judge_tags`).
+/// and listed as unobservable here: the judge sees them only in the words
+/// Renode's access log shows written (`crate::serial::judge_writes`).
 fn serial_registers(
     topology: &SolvedTopology,
     f: &cmsis::RegisterFacts,
