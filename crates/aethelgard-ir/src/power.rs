@@ -359,7 +359,6 @@ struct Ctx<'a> {
     spec: &'a Specification,
     power: &'a Power,
     table: &'a PowerPartsTable,
-    sensors: &'a crate::parts::PartsTable,
     delays: &'a OutputDelays,
     conditions: BTreeSet<String>,
 }
@@ -1885,7 +1884,6 @@ pub fn check_against(
         spec,
         power,
         table,
-        sensors,
         delays,
         conditions: BTreeSet::new(),
     };
