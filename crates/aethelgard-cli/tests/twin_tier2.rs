@@ -1570,6 +1570,39 @@ fn the_imu_and_barometer_fixture_runs_every_script_step_witnessed() {
         "imu baro: SysTick.CSR observed {}",
         csr["observed"]
     ));
+    // Scotty's ruling on D1: the acknowledged stand-ins are named in a loud
+    // banner, in the verdict and in the header of every generated file.
+    let banner: Vec<&str> = v["lifecycle"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l.as_str().unwrap())
+        .collect();
+    assert_eq!(banner.len(), 2, "{v}");
+    assert!(
+        banner[0].starts_with("LIFECYCLE EOL: ICP10111 (U6)"),
+        "{banner:?}"
+    );
+    assert!(
+        banner[1].starts_with("LIFECYCLE EOL: ICM20948 (U5, U7)"),
+        "{banner:?}"
+    );
+    for rel in [
+        "imu-baro-1v8.repl",
+        "src/lib.rs",
+        "src/board.rs",
+        "src/proofs.rs",
+        "Cargo.toml",
+        "firmware/src/main.rs",
+        "firmware/Cargo.toml",
+        "firmware/.cargo/config.toml",
+        "firmware/link.x",
+    ] {
+        let text = fs::read_to_string(dir.join(rel)).unwrap();
+        for line in &banner {
+            assert!(text.contains(line), "{rel} lacks the banner `{line}`");
+        }
+    }
 }
 
 /// `AET-WO-4210` §2.4, one seeded fault per part, each named by its step:
