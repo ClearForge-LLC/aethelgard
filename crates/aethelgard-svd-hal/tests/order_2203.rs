@@ -96,23 +96,27 @@ fn digests() -> Vec<(&'static str, String)> {
 /// (`747bdc04…fbb3`). Re-taken in `AET-WO-4300d` (version 7, `power` and
 /// `mcu.bor_level`): with `main`'s hash `ff1786a9…5756` passed to `solve`, all
 /// four were `main`'s digests exactly (`dac44166…2e7e`, `693c78ad…dab0`,
-/// `2fe09c95…f5b0`, the boot image unchanged).
+/// `2fe09c95…f5b0`, the boot image unchanged). Re-taken in `AET-WO-4210` (each
+/// device's script and its records; specification version 8,
+/// `accept_lifecycle`; the image's SysTick and NVIC words), merging after
+/// `4300d`: the four were `a5a8e53a…5e46`, `b3bf305f…a745`, `ea29d696…07f0` and
+/// `893fb13d…c4a6` there.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "a5a8e53a75f8884aaba2a4c361a21b79f2213dfebde76931a1f9d0b56d1a5e46",
+        "d114ae787ece6238223fdd2ddf78c14021dbb548ce966cac310aceb9bc89c455",
     ),
     (
         "platform",
-        "b3bf305f90f93e934a1e3f673e0417e107dcf2ad7fae1414bfbff10bb178a745",
+        "849eb6bc70882585b2fa054260861646f6bb026ef0203fbb0cd5c7447a844397",
     ),
     (
         "platform faulted",
-        "ea29d696acd78e13fdf69d9dcabd874372c5910a0cf978b685cd3189995307f0",
+        "b24f53ebd62e293e1edaabb0a0723c1accb0098e3e64ef4f7e21caf363459e35",
     ),
     (
         "boot image",
-        "893fb13d4ae7e065b25f237b728f1c455d1e7cbd21972369c2815d8f9906c4a6",
+        "0e4d72ee3bc5716b2aa3c6e8e3f66f65ecc34d61e01c9e84bad8549fc20cc8a2",
     ),
 ];
 

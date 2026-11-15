@@ -14,7 +14,6 @@ use std::path::Path;
 use aethelgard_ir::{SolvedSpiDevice, SolvedTopology, Specification};
 use aethelgard_svd_hal::board::generate_with;
 use aethelgard_svd_hal::pin_table;
-use aethelgard_twin::boot::Wire;
 use sha2::{Digest, Sha256};
 
 fn reference() -> (SolvedTopology, aethelgard_ir::PinTable) {
@@ -148,24 +147,28 @@ fn a_second_device_gets_its_own_select_and_is_read_after_the_flash() {
         "Spi1Device::U5 => (Block::GpioA, 0x00020000, 0x00000002),",
     );
 
-    // Records: the BME280's 0, then U4's 1, then U5's 2, as the judge orders them.
+    // Records: the BME280's, then U4's, then U5's script, as the judge orders
+    // them (`AET-WO-4210`): its identity, its wake, and its 6-byte data read,
+    // whose record takes two value words, so each record names its word.
     let main = &files["firmware/src/main.rs"];
     let plan = aethelgard_twin::boot::identity(&solved).unwrap();
-    let refs: Vec<(&str, &Wire)> = plan
+    let refs: Vec<(&str, &str, u32)> = plan
         .checks
         .iter()
-        .map(|c| (c.reference.as_str(), &c.wire))
+        .map(|c| {
+            let word = (c.status_at - plan.checks[0].status_at) / 4 + 1;
+            (c.reference.as_str(), c.step.name(), word)
+        })
         .collect();
-    assert!(
-        matches!(
-            refs.as_slice(),
-            [
-                (_, Wire::I2c { .. }),
-                ("U4", Wire::Spi { .. }),
-                ("U5", Wire::Spi { .. })
-            ]
-        ),
-        "{refs:?}"
+    assert_eq!(
+        refs,
+        [
+            ("U2", "identity", 1),
+            ("U4", "identity", 3),
+            ("U5", "identity", 5),
+            ("U5", "configure", 7),
+            ("U5", "data", 9),
+        ]
     );
     let u4 = once(
         main,
@@ -177,9 +180,21 @@ fn a_second_device_gets_its_own_select_and_is_read_after_the_flash() {
         "    let mut buf2 = [0u8; 1];\n    \
          let (status, value) = match spi1.transfer(&mut r, Spi1Device::U5, &[0x80], &mut buf2) {",
     );
-    assert!(u4 < u5);
-    assert!(once(main, "record(1, status, value);") < u5);
-    assert!(u5 < once(main, "record(2, status, value);"));
-    assert!(main.contains("static mut AETHELGARD_BOOT: [u32; 7] = [0; 7];"));
+    let wake = once(
+        main,
+        "    let mut buf3 = [0u8; 0];\n    \
+         let (status, value) = match spi1.transfer(&mut r, Spi1Device::U5, &[0x06, 0x01], &mut buf3) {",
+    );
+    let data = once(
+        main,
+        "    let mut buf4 = [0u8; 6];\n    \
+         let (status, value) = match spi1.transfer(&mut r, Spi1Device::U5, &[0xad], &mut buf4) {",
+    );
+    assert!(u4 < u5 && u5 < wake && wake < data);
+    assert!(once(main, "record(3, 1, status, value);") < u5);
+    assert!(u5 < once(main, "record(5, 1, status, value);"));
+    assert!(wake < once(main, "record(7, 1, status, value);"));
+    assert!(data < once(main, "record(9, 2, status, value);"));
+    assert!(main.contains("static mut AETHELGARD_BOOT: [u32; 12] = [0; 12];"));
     assert!(main.contains("Spi1Selects { pa0, pa1 }"));
 }

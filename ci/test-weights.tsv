@@ -249,7 +249,6 @@ unittests src/main.rs	run::tests::the_capture_cap_holds_with_and_without_the_fil
 unittests src/main.rs	tests::provenance_is_generated_only_for_the_generated_crate	2.755
 tests/twin_tier2.rs	the_reference_reads_u4_s_jedec_id_witnessed_behind_spi1_s_multiplexer	3.070
 tests/twin_tier2.rs	a_forged_spi_record_fails_unwitnessed	6.240
-tests/twin_tier2.rs	a_second_spi_device_an_icm20948_is_read_and_witnessed	3.400
 # AET-WO-1307: estimates until the next refit, each the test alone on Furnace (2026-11-15, --report-time,
 # --test-threads=1) times 2.8, the CI-to-Furnace ratio of routing_tier1's measured weights above.
 tests/stackups_tier1.rs	d1_routes_at_four_layers_and_at_two	10.400
@@ -262,6 +261,13 @@ tests/escape_tier1.rs	a_zone_that_is_not_the_board_outline_is_refused_by_name	2.
 tests/escape_tier1.rs	a_via_in_a_courtyard_is_refused_but_in_the_dense_parts_own_ring	2.100
 tests/with_tools.rs	d3_and_d1_pass_erc_and_drc_with_parity_at_four_layers	24.500
 tests/escape_tier1.rs	shifted_placements_route_without_reaching_the_exact_judge	3.300
+# AET-WO-4210: estimates until the next refit, each the test's wall time on Furnace (2026-11-15, in the
+# pinned image, --test-threads 4) times 2.8, as AET-WO-1307's above.
+tests/twin_tier2.rs	the_imu_and_barometer_fixture_runs_every_script_step_witnessed	9.700
+tests/twin_tier2.rs	a_seeded_imu_fault_is_named_by_its_step	8.500
+tests/twin_tier2.rs	a_seeded_barometer_fault_is_named_by_its_step	8.600
+tests/twin_tier2.rs	an_interrupt_armed_after_the_boot_word_fails_naming_it	17.000
+tests/board_tier2.rs	the_imu_fixture_s_transfers_prove_within_its_scripts	45.000
 tests/twin_tier2.rs	the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back	12.000
 tests/twin_tier2.rs	the_dshot600_fixture_s_outputs_are_witnessed_in_a_two_millisecond_boot	12.000
 tests/twin_tier2.rs	adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail	26.000

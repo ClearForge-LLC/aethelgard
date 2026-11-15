@@ -9,6 +9,9 @@ pub fn power_tree() -> Value {
         .join("../aethelgard-ir/tests/fixtures/sentinel-02-power.json");
     let mut v: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     v["power"]["crossings"] = json!([]);
+    // The IMU's acknowledgement goes with it: one stands only for a part the
+    // board uses (`AET-WO-4210` D-B6).
+    v["accept_lifecycle"] = json!([]);
     for key in ["spi_devices", "spi_buses", "net_constraints"] {
         let kept: Vec<Value> = v[key]
             .as_array()

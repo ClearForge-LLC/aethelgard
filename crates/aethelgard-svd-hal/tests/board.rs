@@ -270,9 +270,14 @@ fn the_firmware_follows_the_judges_record_layout() {
         };
         let read = format!(
             "    let mut buf{k} = [0u8; {w}];\n    \
-             let (status, value) = match {bus}.transfer(&mut r, {to}, &[{reg:#04x}], &mut buf{k}) {{",
+             let (status, value) = match {bus}.transfer(&mut r, {to}, &[{reg}], &mut buf{k}) {{",
             w = c.width,
-            reg = c.write,
+            reg = c
+                .write
+                .iter()
+                .map(|b| format!("{b:#04x}"))
+                .collect::<Vec<_>>()
+                .join(", "),
         );
         let start = main[at..]
             .find(&read)

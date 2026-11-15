@@ -37,9 +37,11 @@ use sha2::{Digest, Sha256};
 /// version 5 (`clock`, `motor_outputs`) moved them (`8100aadf…` and
 /// `798ae634…` before); and in `AET-WO-4300d`, whose specification version
 /// 7 (`power`, `mcu.bor_level`) and solved version 6 (`power`) moved them
-/// (`e61864b9…` and `33b079d1…` before).
-const REFERENCE_DIGEST: &str = "c7688dcac8a0e015c9e73766eef85a099878def4aa5b489ce706c5e2eaad0e99";
-const STRESS_DIGEST: &str = "fe4252ebbcee5bc138c248d0fa2e29de093474665081021165589502b8231ce8";
+/// (`e61864b9…` and `33b079d1…` before); and in `AET-WO-4210`, whose
+/// specification version 8 (`accept_lifecycle`) moved only the specification's
+/// sha256 after `4300d`'s (`c7688dca…` and `fe4252eb…` before).
+const REFERENCE_DIGEST: &str = "8646b4b00eeb9ce5fd29e8af0f6950734d4cea10c5d20843840f60a4b61b41bd";
+const STRESS_DIGEST: &str = "c7df9cafd4628297628aab80e59dd3073cdf5b92f91dbcfd7b1e75c687f1b4d8";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.

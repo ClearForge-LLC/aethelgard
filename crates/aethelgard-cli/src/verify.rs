@@ -62,6 +62,12 @@ struct Report {
     topology_sha256: String,
     /// Every generated file's sha256, by its path in the tree.
     files: BTreeMap<String, String>,
+    /// The lifecycle banner (`AET-WO-4210` D1): one line per `eol` or `nrnd`
+    /// part the board uses, absent when it is empty. It is in the verdict
+    /// that names the package, not in a file of the package: no board with an
+    /// `eol` or `nrnd` part can be drawn today (FEEDBACK, adversarial A3).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    lifecycle: Vec<String>,
     /// `--against`: whether the directory matched the tree; absent without it.
     #[serde(skip_serializing_if = "Option::is_none")]
     against: Option<&'static str>,
@@ -80,6 +86,11 @@ struct Report {
     /// `--fab-out` or `--against-fab`: the package.
     #[serde(skip_serializing_if = "Option::is_none")]
     fab: Option<FabReport>,
+    /// The parts whose lifecycle the table cites but does not hold, which the
+    /// package names (`AET-WO-4210` D1): never in the verdict without a fab
+    /// flag.
+    #[serde(skip)]
+    lifecycle_unheld: Vec<String>,
 }
 
 /// `--fab-out D` writes the package into `D`; `--against-fab D` compares it.
@@ -106,10 +117,15 @@ struct FabReport {
     /// `--against-fab`: every file that differs, is missing or is extra.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     differences: Vec<Finding>,
+    /// Each part on the board whose lifecycle no held vendor page states,
+    /// named with the page it must be read from: a purchase never meets an
+    /// unread lifecycle silently (`AET-WO-4210` D1).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    lifecycle_unheld: Vec<String>,
 }
 
 impl FabReport {
-    fn none(status: &'static str) -> Self {
+    fn none(status: &'static str, lifecycle_unheld: Vec<String>) -> Self {
         Self {
             status,
             tool_version: None,
@@ -118,8 +134,35 @@ impl FabReport {
             board_sha256: None,
             files: BTreeMap::new(),
             differences: Vec::new(),
+            lifecycle_unheld,
         }
     }
+}
+
+/// Every part on the board whose lifecycle the table cites as pending (not
+/// held), named with the page it must be read from, so a purchase never
+/// meets an unread lifecycle silently (`AET-WO-4210` D1). An `eol` or `nrnd`
+/// part needs no rule here: `validate` refuses it unless the specification
+/// acknowledges it, and the verdict's banner names it (Scotty's ruling on
+/// D1). Devices in the specification's order, I2C then SPI.
+fn lifecycle_unheld(topology: &aethelgard_ir::SolvedTopology) -> Vec<String> {
+    let Ok(table) = aethelgard_ir::parts::table() else {
+        return Vec::new();
+    };
+    let mut unheld = Vec::new();
+    for (reference, part) in topology.parts_in_order() {
+        let Some(p) = table.get(part) else { continue };
+        if let aethelgard_ir::parts::Held::Pending(url) = &p.citations.lifecycle.held {
+            let line = format!(
+                "{part} ({reference}): lifecycle `{}` not held, read {url}",
+                p.lifecycle.name()
+            );
+            if !unheld.contains(&line) {
+                unheld.push(line);
+            }
+        }
+    }
+    unheld
 }
 
 /// `--fab-out` must be an empty directory or absent. One that exists must be
@@ -526,6 +569,10 @@ pub fn verify(
         Ok(s) => s,
         Err(code) => return code,
     };
+    let lifecycle_unheld = match fab_mode {
+        Some(_) => lifecycle_unheld(&topology),
+        None => Vec::new(),
+    };
     let (files, topology_sha256) = match crate::generated(&spec, &topology, &table) {
         Ok(generated) => generated,
         Err(code) => return code,
@@ -544,6 +591,7 @@ pub fn verify(
         specification_sha256: spec_sha256.clone(),
         topology_sha256,
         files: hashes.clone(),
+        lifecycle: topology.lifecycle_banner().unwrap_or_default(),
         against: None,
         elf_sha256: None,
         rise_times: RISE_TIMES,
@@ -552,6 +600,7 @@ pub fn verify(
         findings: Vec::new(),
         against_fab: None,
         fab: None,
+        lifecycle_unheld,
     };
 
     // Every scenario must start from exactly `--spec`, or its campaign would
@@ -721,7 +770,7 @@ fn not_packaged(report: &mut Report, mode: &FabMode) {
         FabMode::Write(_) => ("not_written", None),
         FabMode::Compare(_) => ("not_derived", Some("not_compared")),
     };
-    report.fab = Some(FabReport::none(status));
+    report.fab = Some(FabReport::none(status, report.lifecycle_unheld.clone()));
     report.against_fab = against;
 }
 
@@ -769,6 +818,7 @@ fn package(
         board_sha256: Some(bound.board_sha256.to_owned()),
         files,
         differences: Vec::new(),
+        lifecycle_unheld: report.lifecycle_unheld.clone(),
     };
     match mode {
         FabMode::Write(dir) => {

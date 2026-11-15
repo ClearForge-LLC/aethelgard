@@ -32,6 +32,9 @@ struct Report {
     check: &'static str,
     engine_version: &'static str,
     specification_sha256: String,
+    /// The lifecycle banner (`AET-WO-4210` D1); absent when it is empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    lifecycle: Vec<String>,
     /// The table judged against.
     table: Value,
     /// Where the judged capacitance comes from, and whether a board can
@@ -116,6 +119,7 @@ pub fn speeds(spec_path: &Path) -> ExitCode {
         check: "speeds",
         engine_version: env!("CARGO_PKG_VERSION"),
         specification_sha256: topology.specification_sha256.clone(),
+        lifecycle: topology.lifecycle_banner().unwrap_or_default(),
         table: json!({
             "mcu": speeds_table.mcu,
             "rev_v": format!("{}, rev. {}, {}", speeds_table.rev_v.document, speeds_table.rev_v.revision, speeds_table.rev_v.section),

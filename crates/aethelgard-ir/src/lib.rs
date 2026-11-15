@@ -42,14 +42,18 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// `net_classes` and `diff_pairs` (`AET-WO-1308`); an empty array declares
 /// none. Version 6 requires `motor_outputs` and `mcu.hse_hz` (`AET-WO-4300a`
 /// §1.1, `4400` D1). Version 7 requires `power` (`null` declares no power
-/// tree) and `mcu.bor_level` (`AET-WO-4300d`, ruled D4). Nothing supplies any
-/// of them for an older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 7;
+/// tree) and `mcu.bor_level` (`AET-WO-4300d`, ruled D4). Version 8 requires
+/// `accept_lifecycle`, each end-of-life or not-recommended part the board
+/// uses acknowledged with a statement (`AET-WO-4210`, Scotty's ruling on
+/// D1); an empty list acknowledges none. `4210` took 8 by the numbering
+/// rule, merging after `4300d`. Nothing supplies any of them for an older
+/// file.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 8;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
 
-/// The top-level specification, version 7 (`RUL-14`). Arrays keep the order a
+/// The top-level specification, version 8 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
@@ -83,6 +87,66 @@ pub struct Specification {
     /// as a key (`INV-06`).
     #[serde(deserialize_with = "Option::deserialize")]
     pub power: Option<power::Power>,
+    /// Each `eol` or `nrnd` part the board uses, acknowledged by name with its
+    /// status and a statement of why (`AET-WO-4210`, ruled by Scotty on D1).
+    /// `validate` refuses any such part not listed, and any entry that is not
+    /// one: no end-of-life part is accepted silently (`INV-06`).
+    pub accept_lifecycle: Vec<LifecycleAcceptance>,
+}
+
+/// One acknowledged lifecycle: the part, its status as the parts table cites
+/// it (`eol` or `nrnd`), and why the board uses it anyway.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct LifecycleAcceptance {
+    pub part: String,
+    pub status: String,
+    pub statement: String,
+}
+
+/// The longest acknowledgement statement, in bytes.
+pub const MAX_LIFECYCLE_STATEMENT: usize = 512;
+
+/// The banner every verdict, generated file and fabrication package carries
+/// when the board uses an `eol` or `nrnd` part (`AET-WO-4210`, ruled by Scotty
+/// on D1): one line per part, naming its status, the devices and the vendor
+/// page it is cited to. Empty for a board of `active` parts, so such a
+/// board's outputs are unchanged. Devices in the order given; a part with no
+/// table entry has no lifecycle and is not named.
+pub fn lifecycle_banner<'a>(
+    table: &parts::PartsTable,
+    devices: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Vec<String> {
+    let mut by_part: Vec<(&parts::Part, Vec<&str>)> = Vec::new();
+    for (reference, part) in devices {
+        let Some(p) = table.get(part) else { continue };
+        if p.lifecycle == parts::Lifecycle::Active {
+            continue;
+        }
+        match by_part.iter_mut().find(|(q, _)| q.part == p.part) {
+            Some((_, refs)) => refs.push(reference),
+            None => by_part.push((p, vec![reference])),
+        }
+    }
+    by_part
+        .into_iter()
+        .map(|(p, refs)| {
+            let c = &p.citations.lifecycle;
+            format!(
+                "LIFECYCLE {}: {} ({}) is {} by its vendor ({} {}, {}), acknowledged in accept_lifecycle",
+                p.lifecycle.name().to_ascii_uppercase(),
+                p.part,
+                refs.join(", "),
+                match p.lifecycle {
+                    parts::Lifecycle::Eol => "end of life",
+                    _ => "not recommended for new designs",
+                },
+                c.document,
+                c.revision,
+                c.section
+            )
+        })
+        .collect()
 }
 
 /// The microcontroller: a part name, the domain that supplies it, its
@@ -522,6 +586,7 @@ pub(crate) use object_only;
 
 object_only!(
     Specification,
+    LifecycleAcceptance,
     Mcu,
     VoltageDomain,
     Signal,
@@ -951,9 +1016,53 @@ pub enum IrValidationError {
         citation: String,
     },
     #[error(
+        "device `{id}` is a `{part}` on bus `{bus}`, whose domain runs {min_millivolts} to {max_millivolts} mV, outside the part's I/O range of {part_min_millivolts} to {part_max_millivolts} mV ({citation}); and no crossing declared on that bus puts it on another domain (`AET-WO-4210` D7, `AET-WO-4300d` D9)"
+    )]
+    IoOutsidePart {
+        id: String,
+        part: String,
+        bus: String,
+        min_millivolts: u32,
+        max_millivolts: u32,
+        part_min_millivolts: u32,
+        part_max_millivolts: u32,
+        /// Boxed, so the error stays small enough to return by value.
+        citation: Box<str>,
+    },
+    #[error(
         "net constraint on `{id}`, an SPI bus's MISO or a chip select: no check reads it, so it cannot be held (`AET-WO-4300c` D3, D4)"
     )]
     UnjudgedSpiConstraint { id: String },
+    #[error(
+        "device `{id}` is a `{part}`, which its vendor lists as `{status}` ({citation}), and `accept_lifecycle` does not acknowledge it: name the part, its status and why the board uses it (`AET-WO-4210` D1)"
+    )]
+    LifecycleNotAccepted {
+        id: String,
+        part: String,
+        status: &'static str,
+        citation: String,
+    },
+    #[error(
+        "device `{id}` is a `{part}`, which its vendor lists as `{status}` ({citation}), but `accept_lifecycle` acknowledges it as `{accepted}`"
+    )]
+    LifecycleStatusMismatch {
+        id: String,
+        part: String,
+        status: &'static str,
+        accepted: String,
+        /// Boxed, as `IoOutsidePart`'s is.
+        citation: Box<str>,
+    },
+    #[error("`accept_lifecycle` acknowledges `{id}` twice")]
+    LifecycleAcceptedTwice { id: String },
+    #[error(
+        "`accept_lifecycle` acknowledges `{id}` with a statement that is empty, longer than 512 bytes, or not printable ASCII"
+    )]
+    LifecycleStatementInvalid { id: String },
+    #[error(
+        "`accept_lifecycle` acknowledges `{id}`, which no device uses as an end-of-life or not-recommended part: an acknowledgement stands only for a part the board uses"
+    )]
+    LifecycleAcceptanceUnused { id: String },
     #[error(
         "device `{id}` is a `{part}` on an {bus_kind} bus, but the part is an {part_kind} part ({citation})"
     )]
@@ -1203,6 +1312,12 @@ impl IrValidationError {
             Self::AmbiguousPartName { .. } => "AmbiguousPartName",
             Self::PartNameCase { .. } => "PartNameCase",
             Self::SupplyOutsidePart { .. } => "SupplyOutsidePart",
+            Self::IoOutsidePart { .. } => "IoOutsidePart",
+            Self::LifecycleNotAccepted { .. } => "LifecycleNotAccepted",
+            Self::LifecycleStatusMismatch { .. } => "LifecycleStatusMismatch",
+            Self::LifecycleAcceptedTwice { .. } => "LifecycleAcceptedTwice",
+            Self::LifecycleStatementInvalid { .. } => "LifecycleStatementInvalid",
+            Self::LifecycleAcceptanceUnused { .. } => "LifecycleAcceptanceUnused",
             Self::UnjudgedSpiConstraint { .. } => "UnjudgedSpiConstraint",
             Self::PartOnWrongBus { .. } => "PartOnWrongBus",
             Self::I2cAddressNotOffered { .. } => "I2cAddressNotOffered",
@@ -1308,6 +1423,12 @@ impl IrValidationError {
             | Self::AmbiguousPartName { id, .. }
             | Self::PartNameCase { id, .. }
             | Self::SupplyOutsidePart { id, .. }
+            | Self::IoOutsidePart { id, .. }
+            | Self::LifecycleNotAccepted { id, .. }
+            | Self::LifecycleStatusMismatch { id, .. }
+            | Self::LifecycleAcceptedTwice { id }
+            | Self::LifecycleStatementInvalid { id }
+            | Self::LifecycleAcceptanceUnused { id }
             | Self::UnjudgedSpiConstraint { id }
             | Self::PartOnWrongBus { id, .. }
             | Self::I2cAddressNotOffered { id, .. }
@@ -1711,6 +1832,68 @@ impl Specification {
                 });
             }
         }
+        // Each device's bus domain within its part's I/O range, where the
+        // datasheet separates it from the supply (`AET-WO-4210` D7, `4200`
+        // F19). Step 9 checked every device's bus, step 5 every bus's domain.
+        // An SPI device behind a declared crossing on its bus is on the
+        // crossing's B side, so that domain is the one judged, as step 5's
+        // supply rule reads it (`AET-WO-4300d` D9).
+        let on_bus = self
+            .i2c_devices
+            .iter()
+            .map(|d| {
+                (
+                    &d.reference,
+                    &d.part,
+                    &d.bus,
+                    self.i2c_buses
+                        .iter()
+                        .find(|b| b.id == d.bus)
+                        .map(|b| &b.domain),
+                )
+            })
+            .chain(self.spi_devices.iter().map(|d| {
+                let crossed = self.power.as_ref().and_then(|p| {
+                    p.crossings
+                        .iter()
+                        .find(|c| c.bus == d.bus && c.b_domain == d.supply)
+                });
+                (
+                    &d.reference,
+                    &d.part,
+                    &d.bus,
+                    match crossed {
+                        Some(c) => Some(&c.b_domain),
+                        None => self
+                            .spi_buses
+                            .iter()
+                            .find(|b| b.id == d.bus)
+                            .map(|b| &b.domain),
+                    },
+                )
+            }));
+        for (reference, part, bus, domain) in on_bus {
+            let (Some(p), Some(domain)) = (
+                part_entry(table, reference, part)?,
+                domain.and_then(|id| self.voltage_domains.iter().find(|v| &v.id == id)),
+            ) else {
+                continue;
+            };
+            let (min, max) = (minimum_millivolts(domain), maximum_millivolts(domain));
+            let ((part_min, part_max), citation) = p.io_range();
+            if min < part_min || max > part_max {
+                return Err(IrValidationError::IoOutsidePart {
+                    id: reference.clone(),
+                    part: p.part.clone(),
+                    bus: bus.clone(),
+                    min_millivolts: min,
+                    max_millivolts: max,
+                    part_min_millivolts: part_min,
+                    part_max_millivolts: part_max,
+                    citation: cite(citation).into(),
+                });
+            }
+        }
         for d in &self.i2c_devices {
             if let Some(p) = part_entry(table, &d.reference, &d.part)? {
                 check_i2c_address(&d.reference, p, d.address)?;
@@ -1727,7 +1910,88 @@ impl Specification {
                 check_spi_clock(&d.reference, p, speed_hz)?;
             }
         }
+        self.validate_lifecycle(table)
+    }
+
+    /// Step 15 (`AET-WO-4210`, ruled by Scotty on D1): each `eol` or `nrnd`
+    /// part a device uses is acknowledged in `accept_lifecycle`, once, at the
+    /// status the table cites, with a statement; and each entry acknowledges
+    /// such a part. A part with no table entry has no lifecycle to
+    /// acknowledge. Devices in the specification's order, I2C then SPI.
+    fn validate_lifecycle(&self, table: &parts::PartsTable) -> Result<(), IrValidationError> {
+        use IrValidationError as E;
+        let mut seen = BTreeSet::new();
+        for a in &self.accept_lifecycle {
+            if !seen.insert(a.part.as_str()) {
+                return Err(E::LifecycleAcceptedTwice { id: a.part.clone() });
+            }
+            let printable = a.statement.bytes().all(|b| (0x20..=0x7E).contains(&b));
+            if a.statement.trim().is_empty()
+                || a.statement.len() > MAX_LIFECYCLE_STATEMENT
+                || !printable
+            {
+                return Err(E::LifecycleStatementInvalid { id: a.part.clone() });
+            }
+        }
+        let devices = self
+            .i2c_devices
+            .iter()
+            .map(|d| (&d.reference, &d.part))
+            .chain(self.spi_devices.iter().map(|d| (&d.reference, &d.part)));
+        let mut used = BTreeSet::new();
+        for (reference, part) in devices {
+            let Some(p) = part_entry(table, reference, part)? else {
+                continue;
+            };
+            if p.lifecycle == parts::Lifecycle::Active {
+                continue;
+            }
+            used.insert(p.part.as_str());
+            let status = p.lifecycle.name();
+            let citation = cite(&p.citations.lifecycle);
+            match self.accept_lifecycle.iter().find(|a| a.part == p.part) {
+                None => {
+                    return Err(E::LifecycleNotAccepted {
+                        id: reference.clone(),
+                        part: p.part.clone(),
+                        status,
+                        citation,
+                    });
+                }
+                Some(a) if a.status != status => {
+                    return Err(E::LifecycleStatusMismatch {
+                        id: reference.clone(),
+                        part: p.part.clone(),
+                        status,
+                        accepted: a.status.clone(),
+                        citation: citation.into(),
+                    });
+                }
+                Some(_) => {}
+            }
+        }
+        if let Some(a) = self
+            .accept_lifecycle
+            .iter()
+            .find(|a| !used.contains(a.part.as_str()))
+        {
+            return Err(E::LifecycleAcceptanceUnused { id: a.part.clone() });
+        }
         Ok(())
+    }
+
+    /// [`lifecycle_banner`] for the declared devices, in order.
+    pub fn lifecycle_banner(&self) -> Result<Vec<String>, IrValidationError> {
+        let devices = self
+            .i2c_devices
+            .iter()
+            .map(|d| (d.reference.as_str(), d.part.as_str()))
+            .chain(
+                self.spi_devices
+                    .iter()
+                    .map(|d| (d.reference.as_str(), d.part.as_str())),
+            );
+        Ok(lifecycle_banner(parts::table()?, devices))
     }
 
     fn validate_declared(&self) -> Result<(), IrValidationError> {
@@ -2503,6 +2767,24 @@ impl SolvedTopology {
             }
         }
         Ok(())
+    }
+
+    /// Every device's (reference, part), I2C then SPI, each in the
+    /// specification's order.
+    pub fn parts_in_order(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.i2c_devices_in_order()
+            .into_iter()
+            .map(|(r, d)| (r, d.part.as_str()))
+            .chain(
+                self.spi_devices_in_order()
+                    .into_iter()
+                    .map(|(r, d)| (r, d.part.as_str())),
+            )
+    }
+
+    /// [`lifecycle_banner`] for the solved devices.
+    pub fn lifecycle_banner(&self) -> Result<Vec<String>, IrValidationError> {
+        Ok(lifecycle_banner(parts::table()?, self.parts_in_order()))
     }
 
     /// The SPI devices in the specification's order, as

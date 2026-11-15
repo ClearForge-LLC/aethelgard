@@ -462,7 +462,10 @@ fn recovered_words(
         ),
         w(
             check.map_or(0, |c| c.value_at),
-            check.map_or(0, |c| c.expected),
+            // The first check is an identity read, at most four bytes. A
+            // masked identity is compared whole here: it can fail a probe,
+            // never pass one (`AET-WO-4210`, a named residual).
+            check.map_or(0, |c| u32::try_from(c.expected).unwrap_or(u32::MAX)),
             probe.map(|p| p.record.map_or(0, |r| r.1)),
         ),
     ];

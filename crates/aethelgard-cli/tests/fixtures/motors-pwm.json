@@ -1,5 +1,6 @@
 {
-  "schema_version": 7,
+  "schema_version": 8,
+  "accept_lifecycle": [],
   "project_name": "motors-pwm",
   "mcu": {
     "part": "STM32H753ZITx",

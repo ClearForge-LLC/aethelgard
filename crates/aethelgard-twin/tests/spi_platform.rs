@@ -11,7 +11,7 @@ use aethelgard_twin::boot::{self, RECORD_BYTES, Wire};
 use aethelgard_twin::platform;
 
 /// The reference topology, as `src/tests.rs` has it.
-const REFERENCE: &str = r#"{"schema_version":6,"specification_sha256":"921207936b7d56bd04c03e59bf0185e659839fb094e3e1c776c0716b3d9f8e04","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"power":null}"#;
+const REFERENCE: &str = r#"{"schema_version":6,"specification_sha256":"03a82a043d459930e254adf5ef24bc5899efe2f5507d29e1c717f315c7bfe7ea","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"power":null}"#;
 
 fn reference() -> SolvedTopology {
     serde_json::from_str(REFERENCE).unwrap()
@@ -121,7 +121,10 @@ fn two_spi_devices_share_one_mux_and_one_port_block_and_the_judge_reads_both() {
 
     let plan = boot::identity(&t).unwrap();
     let refs: Vec<&str> = plan.checks.iter().map(|c| c.reference.as_str()).collect();
-    assert_eq!(refs, ["U2", "U4", "U5"]);
+    // U5, a scripted part, makes three steps (`AET-WO-4210`).
+    assert_eq!(refs, ["U2", "U4", "U5", "U5", "U5"]);
+    let steps: Vec<&str> = plan.checks[2..].iter().map(|c| c.step.name()).collect();
+    assert_eq!(steps, ["identity", "configure", "data"]);
     assert_eq!(plan.checks[0].wire, Wire::I2c { address: 0x76 });
     assert_eq!(
         plan.checks[1].wire,
@@ -137,19 +140,24 @@ fn two_spi_devices_share_one_mux_and_one_port_block_and_the_judge_reads_both() {
             select: "PA1".into()
         }
     );
-    // Records follow the boot word's, one pair each, consecutive.
+    // Records follow the boot word's, consecutive: the status, then as many
+    // value words as the read needs (the data read's six bytes take two).
     let first = plan.checks[0].status_at;
-    for (n, c) in plan.checks.iter().enumerate() {
-        assert_eq!(c.status_at, first + RECORD_BYTES * n as u32);
+    let mut at = first;
+    for c in &plan.checks {
+        assert_eq!(c.status_at, at);
         assert_eq!(c.value_at, c.status_at + 4);
+        at += 4 + 4 * boot::value_words(c.width);
     }
+    assert_eq!(plan.checks[1].status_at, first + RECORD_BYTES);
+    assert_eq!(at - first, 2 * RECORD_BYTES + 8 + 8 + 12);
     assert_eq!(first, boot::boot_word().unwrap() + boot::RECORD_OFFSET);
 
     // U5's witness is the ICM's four lines, and its skipped line is the one
     // chip-select edge the model logs.
     let u5 = &plan.checks[2];
     assert_eq!(u5.device, "spi1.spi1mux.u5");
-    assert_eq!((u5.write, u5.width), (0x80, 1));
+    assert_eq!((u5.write.as_slice(), u5.width), (&[0x80][..], 1));
     let id = u5.expected;
     let d = "spi1.spi1mux.u5";
     assert_eq!(

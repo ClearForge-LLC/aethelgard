@@ -27,6 +27,9 @@ fn full() -> Value {
 fn base() -> Value {
     let mut v = full();
     v["power"]["crossings"] = json!([]);
+    // The IMU's acknowledgement goes with it: one stands only for a part the
+    // board uses (`AET-WO-4210` D-B6).
+    v["accept_lifecycle"] = json!([]);
     for key in ["spi_devices", "spi_buses", "net_constraints"] {
         let list = v[key].as_array().unwrap().clone();
         v[key] = Value::Array(
