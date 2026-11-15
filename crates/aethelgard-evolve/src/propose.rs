@@ -236,7 +236,7 @@ impl Proposer for Rules {
             // A device absent behind its chip select is a board fault no
             // value change fixes: no rule, as for a held line (`AET-WO-4200`).
             Rule::E2 => None,
-            Rule::S1 | Rule::S2 | Rule::S3 | Rule::S4 => Some(report(input)),
+            Rule::S1 | Rule::S2 | Rule::S3 | Rule::S4 | Rule::S5 => Some(report(input)),
             rule => Some(no(format!(
                 "attribution rule {} (`{}`): attribution precedes mutation, so nothing is proposed (INV-05)",
                 rule.id(),
@@ -377,9 +377,9 @@ fn report(input: &Input) -> Outcome {
             observed: f.observed.map(u64::from),
         };
         let found: Vec<Expectation> = match &e.view {
-            // A rise, or a motor output's witness, is a symptom with no
-            // solved expectation of its own.
-            View::Rise { .. } | View::MotorWitness { .. } => continue,
+            // A rise, or a motor output's or serial port's witness, is a
+            // symptom with no solved expectation of its own.
+            View::Rise { .. } | View::MotorWitness { .. } | View::SerialWitness { .. } => continue,
             View::Fields { device, fields } => {
                 let generator = if device.is_some() {
                     Generator::Firmware
