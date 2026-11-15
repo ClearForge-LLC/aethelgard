@@ -137,6 +137,17 @@ Probe plan, so the predictions have something to point at. Probes are built `420
 - `motors-dshot600`, `--for 2ms`: **pass**, each output `witnessed`: 4,662 rises and falls, span 8 ns, 9,322 edges off the grid, the registers at `PSC` 0, `ARR` 106, `CCR` 40.
 - `motors-dshot600`, 100 ms: **fail, closed**: `renode_log_flood` (info), then every witness unreadable (`motor_output_unwitnessed` four times, and the I2C and SPI identity witnesses with them). This is D1 (§5) measured through the CLI.
 
+**The seeded set's evidence, re-derived from `attribute`** on the image's run (`~/.cache/aet-4300a/derive.log`; every case's domain and rule unchanged). Every move is 2100 F24's: the six enable registers now judged in full are kind 11 records archived in address order, `AHB3ENR`, `AHB1ENR` and `AHB2ENR` before `AHB4ENR`, `APB3ENR` before `APB1LENR`, `APB1HENR` and `APB4ENR` among the rest, so each event after them moves by six, and an enable register by the ones now before it:
+
+| case | before (evidence, masked) | after |
+|---|---|---|
+| `trap-wrong-address-47k` | [[4,7],[5,7],[6,9]] [[16,13]] | [[4,7],[5,7],[6,9]] [[22,13]] |
+| `wrong-address-2k2`, `trap-wrong-address-3k3`, `wrong-register`, `wrong-nbytes` | [[4,7],[5,7],[15,13]] | [[4,7],[5,7],[21,13]] |
+| `i2c-clock-skipped` | [[4,7],[5,7],[12,11]] | [[4,7],[5,7],[16,11]] (`APB1LENR`, now after four enable registers) |
+| `gpiob-clock-skipped` | [[4,7],[5,7],[9,11],[10,11],[11,11]] | [[4,7],[5,7],[9,11],[10,11],[14,11]] (`AHB4ENR`, now after three) |
+| `spi-absent-u4`, `cs-never` | [[17,22]] | [[23,22]] |
+| `motor-output-dead` (new) | — | [[28,11],[44,26]]: `GPIOA.AFRH` and MOTOR1's witness, S4 |
+
 **§1.8, the off-board net, measured on this work order's fixture** (`~/.cache/aet-4300a/evidence/gates-1.8`, HEAD `9fe8baa`'s binaries built in the pinned image, one container under RULE3, caps read back: memory.max 8 GiB, swap 0, pids 8192):
 - `aethelgard emit --file crates/aethelgard-cli/tests/fixtures/motors-pwm.json`: exit 0. The schematic carries each motor net `MOTOR1`–`MOTOR4` as one local label on one MCU pin (PA8–PA11), and nothing else on it.
 - `aethelgard check erc`: kicad-cli exit 5, verdict fail, **four findings, each `isolated_pin_label` (warning) "Label connected to only one pin"**, one per motor net. The reference (`sentinel-01-minimal.json`) passes with none.
