@@ -4,11 +4,13 @@
 # - repo at /repo (read-write: probes write spike/4210/out), caches at /cache (~/.cache/aet-4210);
 # - CARGO_HOME and CARGO_TARGET_DIR under /cache, so nothing builds into the worktree;
 # - TMPDIR unset inside the container (it is never passed);
-# - --memory/--memory-swap $MEM (default 8g, the kickoff's ceiling) and --pids-limit -1; after
-#   start, 0 is written into the container's own memory.swap.max, and memory.max,
-#   memory.swap.max and pids.max are read back into spike/4210/out/caps.log with the command;
-# - the command inside does not start until the host has zeroed swap and read the caps back
-#   (a flag file under /capflags); if that never happens it exits 99 having run nothing.
+# - --memory/--memory-swap $MEM (default 8g, the kickoff's ceiling) and --pids-limit -1. Nothing is
+#   written into any cgroup file (Furnace hard-denies writes under /sys/fs/cgroup; kickoff rule 3):
+#   with --memory-swap equal to --memory, podman is expected to set memory.swap.max to 0 itself.
+#   memory.max, memory.swap.max and pids.max are read back into spike/4210/out/caps.log with the
+#   command;
+# - the command inside does not start until the host has read the caps back AND found
+#   memory.swap.max exactly 0 (a flag file under /capflags); otherwise it exits 99 having run nothing.
 # - one container of this work order at a time: refuses to start while another aet4210-* runs.
 # Usage: img.sh [--name N] [--mem 8g] -- <command...>
 set -u
@@ -34,9 +36,14 @@ rm -f "$FLAGS/$NAME"
 ( for _ in $(seq 1 240); do
     p=$(podman inspect -f '{{.State.CgroupPath}}' "$NAME" 2>/dev/null) && [ -n "$p" ] \
       && [ -e "/sys/fs/cgroup$p/memory.swap.max" ] && {
-      echo 0 > "/sys/fs/cgroup$p/memory.swap.max"
-      echo "$(date -Is) $NAME memory.max=$(cat /sys/fs/cgroup$p/memory.max) memory.swap.max=$(cat /sys/fs/cgroup$p/memory.swap.max) pids.max=$(cat /sys/fs/cgroup$p/pids.max) cmd: $*" >> "$CAPLOG"
-      touch "$FLAGS/$NAME"
+      d=/sys/fs/cgroup$p
+      mm=$(cat "$d/memory.max"); ms=$(cat "$d/memory.swap.max"); pm=$(cat "$d/pids.max")
+      if [ "$ms" = 0 ]; then
+        echo "$(date -Is) $NAME memory.max=$mm memory.swap.max=$ms pids.max=$pm cmd: $*" >> "$CAPLOG"
+        touch "$FLAGS/$NAME"
+      else
+        echo "$(date -Is) $NAME SWAP NOT ZERO, nothing runs: memory.max=$mm memory.swap.max=$ms pids.max=$pm cmd: $*" >> "$CAPLOG"
+      fi
       exit 0; }
     sleep 0.25
   done
