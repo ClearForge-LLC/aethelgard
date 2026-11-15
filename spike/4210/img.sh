@@ -36,5 +36,5 @@ if podman ps --format '{{.Names}}' | grep -q '^aet4210-'; then
 fi
 mkdir -p "$(dirname "$CAPLOG")"
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
-exec systemd-run --user --scope -q -p MemoryMax=8G -p MemorySwapMax=0 -p TasksMax=8192 \
+exec systemd-run --user --scope -q --expand-environment=no -p MemoryMax=8G -p MemorySwapMax=0 -p TasksMax=8192 \
   bash "$0" --in-scope "aet4210-$$-$RANDOM" -- "$@"
