@@ -319,6 +319,11 @@ pub struct Notes<'a> {
     pub offboard: bool,
     /// The drill file's tools ([`drills`]).
     pub drills: &'a [Drill],
+    /// What the design-rule gate's verdict names as not judged on a board
+    /// with a power tree ([`crate::loops::conditions`]): the package states
+    /// every condition its verdict states (`AET-WO-4300f` F2,
+    /// `AET-WO-4300d2` §1.6). Empty, and no section, for any other board.
+    pub power: &'a [String],
 }
 
 /// `nm` in millimetres, with no trailing zeros: 1_600_000 is `1.6`.
@@ -340,7 +345,7 @@ pub fn notes(n: &Notes<'_>) -> String {
     let um = st.copper_max_nm / 1000;
     let eps = permille(st.permittivity_permille);
     let eps_source = &st.permittivity_source;
-    let stackup = stackup(st);
+    let stackup = stackup(st, n.drills);
     let mut files = String::new();
     for (name, what) in n.files {
         files.push_str(&format!("- `{name}`: {what}\n"));
@@ -408,7 +413,7 @@ header carries no plating comment.
 - Track width: {track} mm.
 - Copper to copper: {space} mm.
 - Via: {via} mm pad, {drill} mm drill.
-{classes}
+{classes}{power}
 ## Files
 
 {files}
@@ -435,7 +440,21 @@ CC-BY-SA 4.0 with a design exception that covers designs made from them.
         space = mm(st.clearance_nm),
         holes = holes_text(st, n.drills),
         classes = classes(st),
+        power = power(n.power),
     )
+}
+
+/// The power tree's section, before the file list, when the verdict names
+/// conditions: each as the gate states it.
+fn power(conditions: &[String]) -> String {
+    if conditions.is_empty() {
+        return String::new();
+    }
+    let mut out = "\n## Power tree\n\nThe design-rule gate judged each loop part's distance to the pin it serves and each regulator's source and return pads. It did not judge, and this package does not claim:\n\n".to_owned();
+    for c in conditions {
+        out.push_str(&format!("- {c}\n"));
+    }
+    out
 }
 
 /// The Holes section's first paragraph, ending where "The drill file is
@@ -479,6 +498,20 @@ fn holes_text(st: &Stack, drills: &[Drill]) -> String {
 /// each; nothing for a specification that declares none.
 fn classes(st: &Stack) -> String {
     let mut out = String::new();
+    // A thermal array's vias are its rule's, under its pad, not the board's
+    // via above (`AET-WO-1309` D1, `AET-WO-4300d2` §1.5).
+    for t in &st.thermal {
+        out.push_str(&format!(
+            "- Thermal vias under {} pad {}: {} x {}, {} mm pad, {} mm drill, {} mm pitch.\n",
+            t.reference,
+            t.pad,
+            t.columns,
+            t.rows,
+            mm(t.via_nm),
+            mm(t.drill_nm),
+            mm(t.pitch_nm)
+        ));
+    }
     for c in &st.classes {
         let via = if c.via_declared {
             format!(
@@ -513,12 +546,18 @@ fn classes(st: &Stack) -> String {
 /// line. At 4, the layer order with each plane's net, every dielectric's
 /// minimum with its source, the thickness's and copper's sources, and the
 /// rounding rule (ruled D2): a fabricator builds from these.
-fn stackup(st: &Stack) -> String {
+fn stackup(st: &Stack, drills: &[Drill]) -> String {
     if !st.has_planes() {
         return "- Two copper layers: F.Cu (top) and B.Cu (bottom).\n".to_owned();
     }
+    // Plated through-hole pads join the layers too (`AET-WO-4300d2`).
+    let joined = if drills.iter().any(|d| d.hole == Hole::Pad) {
+        "through vias and plated through-hole pads"
+    } else {
+        "through vias"
+    };
     let mut out = format!(
-        "- {} copper layers, top to bottom, joined only by through vias:\n",
+        "- {} copper layers, top to bottom, joined only by {joined}:\n",
         st.layers()
     );
     for layer in &st.copper {
@@ -549,6 +588,45 @@ mod tests {
         sample_on(&crate::stack::reference())
     }
 
+    /// `AET-WO-4300d2`: a board with a thermal array and a power tree's
+    /// conditions states both; a board with neither keeps its bytes (the
+    /// goldens in `cli/src/fab.rs` pin that).
+    #[test]
+    fn the_notes_state_a_thermal_array_and_every_power_condition() {
+        let mut stack = crate::stack::reference();
+        stack.thermal.push(crate::stack::ThermalPad {
+            reference: "U10".into(),
+            pad: "9".into(),
+            columns: 3,
+            rows: 4,
+            pitch_nm: 900_000,
+            drill_nm: 254_000,
+            via_nm: 554_000,
+            layers: vec!["B.Cu".into()],
+        });
+        let conditions = ["LAYOUT: one".to_owned(), "CLASSES: two".to_owned()];
+        let text = notes(&Notes {
+            project: "p",
+            engine_version: "0.1.0",
+            specification_sha256: "ab",
+            kicad_version: "10.0.7",
+            files: &[],
+            stack: &stack,
+            offboard: false,
+            drills: &[routed(DRILL_NM, VIA_NM, 64)],
+            power: &conditions,
+        });
+        assert!(
+            text.contains("- Thermal vias under U10 pad 9: 3 x 4, 0.554 mm pad, 0.254 mm drill, 0.9 mm pitch.\n"),
+            "{text}"
+        );
+        assert!(text.contains("## Power tree\n"), "{text}");
+        for c in conditions {
+            assert!(text.contains(&format!("- {c}\n")), "{text}");
+        }
+        assert!(!sample().contains("## Power tree"));
+    }
+
     fn sample_on(stack: &Stack) -> String {
         notes_with(stack, &[routed(DRILL_NM, VIA_NM, 64)])
     }
@@ -564,6 +642,7 @@ mod tests {
             stack,
             offboard: false,
             drills,
+            power: &[],
         })
     }
 

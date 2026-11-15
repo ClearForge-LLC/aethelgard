@@ -308,6 +308,7 @@ fn notes(
         stack: &stack,
         offboard: aethelgard_eda::schematic::declares_offboard(spec),
         drills,
+        power: &aethelgard_eda::loops::conditions(spec),
     })
 }
 

@@ -268,10 +268,11 @@ jobs:
       # fixtures witnessed, two forgeries, motor_output_dead, Kani on the
       # motor board's timer start and clock check with its HSIDIV negative,
       # and the DShot600 fixture's campaign inside its 2 ms window, D1 ruled (a)).
-      # 111: plus 1 from AET-WO-4300d2 in board_tier2.rs (the Sentinel-02 power
+      # 112: plus 2 from AET-WO-4300d2: board_tier2.rs (the Sentinel-02 power
       # fixture passes ERC and DRC with parity, its loop rules measured, and
-      # extract; a loop part moved off its pin fails DRC by its rule).
-      TIER2_MIN: "111"
+      # extract; a loop part moved off its pin fails DRC by its rule) and
+      # with_tools.rs (KiCad writes the pinned drill files: one tool per drill).
+      TIER2_MIN: "112"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
