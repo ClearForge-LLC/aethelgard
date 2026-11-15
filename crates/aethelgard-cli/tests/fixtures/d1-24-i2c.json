@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "accept_lifecycle": [],
   "project_name": "d1-24-i2c",
   "mcu": {
@@ -277,6 +277,7 @@
       }
     }
   ],
+  "connectors": [],
   "net_constraints": [
     {
       "net_name": "SDA0",

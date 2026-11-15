@@ -1223,7 +1223,7 @@ mod differential {
             })
         }));
         Specification {
-            schema_version: 4,
+            schema_version: 5,
             board: serde_json::from_str(BOARD).expect("the declared board"),
             accept_lifecycle: Vec::new(),
             project_name: "t".into(),
@@ -1240,6 +1240,7 @@ mod differential {
             spi_buses,
             i2c_devices: vec![],
             spi_devices,
+            connectors: vec![],
             net_constraints,
         }
     }

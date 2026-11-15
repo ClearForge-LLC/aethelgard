@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "accept_lifecycle": [],
   "project_name": "sentinel-01",
   "mcu": {
@@ -78,6 +78,7 @@
       }
     }
   ],
+  "connectors": [],
   "net_constraints": [
     {
       "net_name": "I2C_SDA",

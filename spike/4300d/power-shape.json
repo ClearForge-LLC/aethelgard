@@ -1,0 +1,158 @@
+{
+  "_comment": "AET-WO-4300d S2 proposal, illustrative only: the shape of `power` beside today's voltage_domains. Values marked with a source are read from held datasheets; the battery's per-cell limits are the user's declaration with the user's source.",
+  "voltage_domains": [
+    {
+      "id": "VDD_5V",
+      "nominal_millivolts": 5000,
+      "tolerance_permille": 50
+    },
+    {
+      "id": "VDD_3V3",
+      "nominal_millivolts": 3300,
+      "tolerance_permille": 50
+    },
+    {
+      "id": "VDD_1V8",
+      "nominal_millivolts": 1800,
+      "tolerance_permille": 50
+    }
+  ],
+  "power": {
+    "input": {
+      "reference": "J1",
+      "part": "XT30PW-M",
+      "_note": "a connectors-table row (4300f's table), rated 15 A (AMASS spec V1.2)"
+    },
+    "battery": {
+      "cells": 6,
+      "chemistry": "lipo",
+      "cell_min_millivolts": {
+        "value": 3000,
+        "source": "the pack's datasheet, named by the user"
+      },
+      "cell_max_millivolts": {
+        "value": 4200,
+        "source": "the pack's datasheet, named by the user"
+      }
+    },
+    "regulators": [
+      {
+        "reference": "U10",
+        "part": "LMR33630ADDA",
+        "input": "battery",
+        "output": "VDD_5V",
+        "feedback": {
+          "top": {
+            "reference": "R10",
+            "ohms": 102000
+          },
+          "bottom": {
+            "reference": "R11",
+            "ohms": 25500
+          },
+          "part": "TNPW0603-0.1%-25ppm"
+        },
+        "external": {
+          "inductor": {
+            "reference": "L10",
+            "part": "<a cited inductor row: L, Isat min, DCR max>"
+          },
+          "input_capacitors": [
+            {
+              "reference": "C10",
+              "part": "<a cited capacitor row: rated C, voltage, dielectric>"
+            }
+          ],
+          "_note": "each a declared part; the check reads rated values against the regulator row's stated ranges (D6)"
+        }
+      },
+      {
+        "reference": "U11",
+        "part": "LMR33630ADDA",
+        "input": "battery",
+        "output": "VDD_3V3",
+        "feedback": {
+          "top": {
+            "reference": "R12",
+            "ohms": 105000
+          },
+          "bottom": {
+            "reference": "R13",
+            "ohms": 46400
+          },
+          "part": "TNPW0603-0.1%-25ppm"
+        },
+        "external": {
+          "inductor": {
+            "reference": "L11",
+            "part": "<a cited inductor row: L, Isat min, DCR max>"
+          },
+          "input_capacitors": [
+            {
+              "reference": "C11",
+              "part": "<a cited capacitor row: rated C, voltage, dielectric>"
+            }
+          ],
+          "_note": "each a declared part; the check reads rated values against the regulator row's stated ranges (D6)"
+        }
+      },
+      {
+        "reference": "U12",
+        "part": "TLV75518PDBV",
+        "input": "VDD_3V3",
+        "output": "VDD_1V8"
+      }
+    ],
+    "loads": [
+      {
+        "domain": "VDD_5V",
+        "milliamps": 2000,
+        "source": "declared: DS-009 ports' VCC budget, the user's"
+      },
+      {
+        "domain": "VDD_1V8",
+        "milliamps": 20,
+        "source": "declared: the IMU's VDDIO and the translator's B side, the user's"
+      }
+    ],
+    "sense": [
+      {
+        "top": {
+          "reference": "R20",
+          "ohms": 100000
+        },
+        "bottom": {
+          "reference": "R21",
+          "ohms": 10000
+        },
+        "part": "CRCW0603-1%",
+        "reservoir": {
+          "reference": "C20",
+          "part": "<a cited capacitor row>"
+        },
+        "from": "battery",
+        "net": "VBAT_SENSE",
+        "pin": null,
+        "adc_resolution_bits": 12
+      }
+    ],
+    "crossings": [
+      {
+        "reference": "U13",
+        "part": "TXU0304PW",
+        "bus": "IMU_SPI",
+        "a_domain": "VDD_3V3",
+        "b_domain": "VDD_1V8",
+        "_note": "TXU0304: A1-A3 to B1Y-B3Y carry SCK, MOSI and CS from the MCU (A side, 3.3 V); B4 to A4Y carries MISO back from the IMU (B side, 1.8 V). The channel directions are the part row's"
+      }
+    ],
+    "conditions": {
+      "board_temperature_celsius": {
+        "min": -40,
+        "max": 125,
+        "source": "declared: resistor and part temperature range the checks evaluate at (A2)"
+      }
+    }
+  },
+  "_mcu_load": "not declared by hand: the MCU's 658 mA comes from its parts row (DS12117 Rev 10 Table 120, Tj 125 C), and each device's from its row where a maximum is cited"
+}

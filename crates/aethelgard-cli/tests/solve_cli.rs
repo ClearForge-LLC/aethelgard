@@ -26,10 +26,13 @@ use sha2::{Digest, Sha256};
 /// (`53ac16ac…` and `0c9ce020…` there); and re-taken in `AET-WO-4300c`, whose
 /// specification version 3, solved version 4 (`spi_lines`) and `W25Q64JVxIQ`
 /// moved them (`3c39199f…` and `3169ae88…` before); and re-taken in
-/// `AET-WO-4210`, whose specification version 4 (`accept_lifecycle`) moved the
-/// reference's and the stress fixture's (`ac9c9299…` and `a8606bf8…` before).
-const REFERENCE_DIGEST: &str = "d54fe37b652f5933489f6fcec69007a4acad8408fd97e3d5d894e7d2b7a556a1";
-const STRESS_DIGEST: &str = "4190e162eb555ffd20782db75cb1d4a6953e153b9928acc74c0be9730b0613d1";
+/// `AET-WO-4300f`, whose specification version 4 (`connectors`) moved only the
+/// specification's sha256: with the old hash put back, each output's digest is
+/// the old one exactly (`ac9c9299…` and `a8606bf8…` before; FEEDBACK); and
+/// `AET-WO-4210`, whose specification version 5 (`accept_lifecycle`) moved them
+/// the same way (`26771d90…` and `6e4af649…` before).
+const REFERENCE_DIGEST: &str = "658c8f60dfccbde65c0d4b6cc2b6b0443c5bb667bc9150e6106cb22afb26d4f8";
+const STRESS_DIGEST: &str = "d37766d205c949601dde41858660b0826ee3a6df72df8576cb773cb881ab48c4";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.

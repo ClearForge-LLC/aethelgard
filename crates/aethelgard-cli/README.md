@@ -561,7 +561,7 @@ An upper bound on each I2C line's capacitance, and each SPI bus's SCK and MOSI (
    - `UnmodelledPart`: two footprints with one reference;
    - `NetLabelsDisagree`: net labels that disagree with the copper's connections (`route::connectivity`);
    - `ClearanceViolated`: copper closer than the 0.2 mm clearance to another net's (`route::check`).
-3. **The parts on each line are the design's** (each I2C bus's SDA and SCL, then each SPI bus's SCK and MOSI, in document order). The design is the parts `emit` draws from the specification and its solved topology. Each part on a line must be the design's part of that reference, with its footprint, its `Value` and exactly its pads on the line. A part that is not a passive (the MCU, a declared device) is a pin part. The resistor between the line and the bus's rail is a pull-up. Refused, exit `3`:
+3. **The parts on each line are the design's** (each I2C bus's SDA and SCL, then each SPI bus's SCK and MOSI, in document order). The design is the parts `emit` draws from the specification and its solved topology. Each part on a line must be the design's part of that reference, with its footprint, its `Value` and exactly its pads on the line. A part that is not a passive or a connector (the MCU, a declared device) is a pin part. The resistor between the line and the bus's rail is a pull-up. Refused, exit `3`:
    - `LineNotOnBoard`: a line with no pad;
    - `DeviceNotOnLine`: a design part missing from the line;
    - `UnmodelledPart`: a part the design does not put there;
@@ -569,7 +569,7 @@ An upper bound on each I2C line's capacitance, and each SPI bus's SCK and MOSI (
    - `Overflow`: a bound too large for integer arithmetic.
 
    A design that puts any other passive on a line is refused with exit `2`, because its capacitance is not known.
-4. **Bound each line**, in integer femtofarads, each step rounded up, as the sum of four terms:
+4. **Bound each line**, in integer femtofarads, each step rounded up, as the sum of four terms, and a fifth where a connector sits on the line:
    - **trace:** 280 fF per millimetre of routed length, plus 124 fF for each track's two round ends;
    - **vias:** 1,519 fF each;
    - **pads:** each copper pad on the line, by its box, pins' lands included;
@@ -589,7 +589,7 @@ An upper bound on each I2C line's capacitance, and each SPI bus's SCK and MOSI (
  "findings":[]}
 ```
 
-An SCK or MOSI line also carries `"signal"` and `"drivers"`; an I2C line's object is unchanged.
+An SCK or MOSI line also carries `"signal"` and `"drivers"`; an I2C line's object is unchanged. A line that a connector carries (`AET-WO-4300f`, ruled D8) also carries `"terms"."offboard"`, each connector pad's declared off-board capacitance (the mated contact, the cable and the remote pins, as the specification states it), and `"offboard"`, listing each as `<reference>.<pad>: <fF> fF (<source>)`. The connector's pad copper is counted, its pin at no `Ci`, and the conditions then end with the one the declared values add. A line with no connector is unchanged.
 
 Exit `0` when every line's bound is at most its declared bound; `1` otherwise, with one `capacitance_over_declared_bound` finding per line over its bound, naming the line, the bound, its four terms and the declared value. A specification with no I2C bus passes with no lines.
 

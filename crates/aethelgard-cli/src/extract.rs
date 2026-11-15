@@ -60,6 +60,11 @@ fn line(b: LineBound, declared: u64) -> Value {
         v["signal"] = signal.into();
         v["drivers"] = b.drivers.into();
     }
+    // A line with no connector is unchanged too (`AET-WO-4300f` D8).
+    if !b.offboard.is_empty() {
+        v["terms"]["offboard"] = t.offboard.into();
+        v["offboard"] = b.offboard.into();
+    }
     v
 }
 
@@ -108,6 +113,9 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     if lines.iter().any(|b| b.spi_signal.is_some()) {
         conditions.push(bound::SPI_CONDITION.to_owned());
     }
+    if aethelgard_eda::schematic::declares_offboard(&spec) {
+        conditions.push(bound::OFFBOARD.to_owned());
+    }
     for b in lines {
         // `solve` refused a line with no constraint (`MissingBusConstraint`,
         // `MissingSpiConstraint`).
@@ -137,13 +145,16 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
             kind: "capacitance_over_declared_bound",
             severity: "error",
             message: format!(
-                "`{}`: bound {} fF (trace {}, vias {}, pads {}, pins {}) exceeds the declared {} fF",
+                "`{}`: bound {} fF (trace {}, vias {}, pads {}, pins {}{}) exceeds the declared {} fF",
                 l["net"].as_str().unwrap_or_default(),
                 l["c_bound_femtofarads"],
                 l["terms"]["trace"],
                 l["terms"]["vias"],
                 l["terms"]["pads"],
                 l["terms"]["pins"],
+                l["terms"]
+                    .get("offboard")
+                    .map_or_else(String::new, |o| format!(", offboard {o}")),
                 l["declared_femtofarads"]
             ),
         })

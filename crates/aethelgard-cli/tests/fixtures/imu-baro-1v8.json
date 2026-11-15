@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "accept_lifecycle": [
     {
       "part": "ICP10111",
@@ -99,6 +99,7 @@
       }
     }
   ],
+  "connectors": [],
   "net_constraints": [
     {
       "net_name": "I2C_SDA",

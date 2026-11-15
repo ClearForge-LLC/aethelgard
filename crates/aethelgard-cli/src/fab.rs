@@ -254,6 +254,7 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
         kicad_version: KICAD_VERSION,
         files: &described,
         stack: &stack,
+        offboard: aethelgard_eda::schematic::declares_offboard(b.spec),
     });
     files.insert(NOTES.to_owned(), notes.into_bytes());
     Ok(Exported {

@@ -456,3 +456,275 @@ A runner that needs `${…}` inside the scope should pass `--expand-environment=
 - S2's measured answer is in the `4300a` and `4300b` inboxes.
 - At `f426009` (`main` `5f47a5d` merged in), host gates and CI were green: `gates`, `shards`, `tools` and all eight `tools` shards.
 - Decisions D1–D9 and D11 are open (§5); D10 is closed by the ruling.
+
+---
+
+# Build (§2), after the ruling on PR #134
+
+**Builder:** Claude (strong tier), worktree `~/aethelgard-4300f`, branch `wo/aet-4300f-build` from `main` `158d408`. The work order is read from `origin/claude/argon-repo-docs-synthesis-rjrb0d` (docs PR #136) and is not committed here. The ruling is `~/.cache/aet-4300f-ruling.md` (PR #134, comment 6889019743). The fence: `aethelgard-ir`, `aethelgard-kicad-lib`, `aethelgard-eda` (never `route.rs`), tests and fixtures, and this file.
+
+The spike's sections above are unchanged. The predictions in §9 were committed before any build run, including the baseline.
+
+## 9. Build predictions (committed before any run)
+
+**The plan, by ruling:**
+- **D1 (a):** `Specification.connectors[]`, each with `reference`, `part` (a row of a cited connectors table in `aethelgard-ir`), `standard` (a DS-009 port row, or `null`) and every pin with its net or `null`.
+  - It is a required key. A required key is a schema bump, as `board` was (`RUL-14` version 2): the new version is `main`'s + 1 through the one constant.
+  - Private, behind `declared_connectors()` and the `RUL-16` fence, as the device lists are. So the twin cannot read it.
+- **D2 (a):** the port rows cite DS-009 by its only commit `48dd6d1d` and sha256 `dbc6b94e…`. They name the document (`"DS-009 I2C"`), never the mark. The `standard` field, the ports rows and their refusals sit in one module, so that (c) is a deletion.
+- **D3 (a):** `Connector_Generic_MountingPin:Conn_01xNN_MountingPin`, with `MP` on `GND`.
+- **D4:** vendored footprints GH `SM04B`, `SM06B`, `SM10B` and SH `SM06B-SRSS`; symbols `Conn_01x04/06/10_MountingPin`.
+- **D5 (a):** a DS-009 port whose VCC pin is not a 5 V domain is refused by name.
+- **D7:** the bottom edge only.
+- **D8 (a):** every connector pin on an I2C or SPI net declares an off-board capacitance budget with its source. Extraction counts the connector's pad copper with no `Ci`, and adds the budget as its own term.
+
+**P10, the baseline.** Every specification fixture and example at `main` `158d408` emits.
+- After the build, each one changes only by `"connectors": []` and the schema version.
+- Its emitted `.kicad_sch`, `.kicad_pcb` and `.bom.csv` are byte-identical.
+- Sentinel-01's generated crate differs from the committed one only in the lines that carry the specification's sha256.
+
+**P11, the vendored files.** The seven files hash as the spike's §3.1 table, and the licence needs no new file.
+
+**P12, the thin slice through the image.** The reference plus J1, a GH 4-pin explicit map (`VDD_3V3`, `I2C_SCL`, `I2C_SDA`, `GND`), placed at the bottom edge:
+- ERC exit 0;
+- DRC with `--spec` and parity exit 0, with 0 findings. That includes no `lib_footprint_issues` or `lib_footprint_mismatch` once vendored.
+  - Both `MP` pads carry `GND`. Parity accepts one symbol pin `MP` on two pads named `MP`, because KiCad matches a pad to a pin by number.
+- `extract` accepts the board (the GH footprint's tokens are in the reader's list) and bounds each I2C line with J1's pad copper plus the declared budget.
+
+**P13, the acceptance fixture.** The reference plus a declared `VDD_5V` domain, plus:
+- a TELEM-shaped GH 6-pin explicit map with two `null` pins, each drawn as a `no_connect`;
+- a `"DS-009 I2C"` GH 4-pin with its budget.
+
+It passes ERC, DRC and parity in the image, each with exit 0 and 0 findings. A second rail is drawn with the rail symbol, and its pad is a one-pad net with no copper. Neither is a finding.
+
+**P14, S2 again.** S2's probe specification (a device-less SPI bus) plus a connector carrying its three lines measures ERC exit 0, where the spike measured exit 5.
+
+**P15, placement.** Connectors are placed after every other part, in reference order, left to right along the bottom.
+- Each housing's front (the courtyard's bottom) is within one 50 µm snap of the edge, and inside the board.
+- Every pad is at least `EDGE_NM` from the edge.
+- The no-connector path is untouched, which P10 checks.
+
+**P16, the twin.** `SolvedTopology`, the `.repl`, the board crate and the firmware do not change with connectors. A specification with connectors and the same specification without them solve to identical assignments; only the specification's sha256 differs.
+
+**P17, CI.** `TIER2_MIN` rises by exactly the new tier-2 tests, which I predict is 1: one test runs both gates on the acceptance fixture.
+
+## 10. What was built, in order
+
+1. **Predictions:** committed as §9 (`a38cf15`), before any run.
+2. **Baseline:** every specification fixture and example emitted with `main`'s CLI.
+3. **Vendoring (D3, D4):** seven files, verbatim from KiCad GitLab tag `10.0.7`, each pinned in `aethelgard-eda::library`. The data README carries each file's sha256, git blob and source URL. Every blob was computed locally and equals GitLab's.
+4. **The IR:**
+   - `connectors.rs`: the parts table, the `Connector`, `ConnectorPin` and `OffBoard` types, and the generic checks.
+   - `ds009.rs`: the DS-009 ports, their roles and `judge`.
+   - `Specification.connectors` is private, behind `declared_connectors()`. `cli`, `svd-hal` and `twin` disallow it, and the two guard tests name it.
+5. **The emitter** (`schematic.rs`): each connector becomes a part after every other.
+6. **The placer** (`pcb.rs` `place_connectors`): the connectors are placed in a row at the bottom edge.
+7. **Extraction** (`extract.rs`): `Load::Connector` and `Role::offboard`.
+8. **The fixture** `tests/fixtures/connectors.json`, the tier-1 and tier-2 tests, and the READMEs.
+9. **`origin/main` moved during the build:** `4300c` merged (PR #129), and so did the docs PR #136. It was merged in with a merge commit (`6e85e23`):
+   - `4300c` had taken specification version 3, so connectors are version **4**.
+   - The specification files and the board crate were taken from `main`, then re-migrated by the one script (`~/.cache/aet-4300f-build/migrate.sh 3 4`).
+   - Extraction was merged with `4300c`'s SPI lines: a connector on SCK or MOSI is counted the same way.
+   - The connectors moved to validation step 15, after `4300c`'s parts step 14.
+10. **CI:** `TIER2_MIN` 97 and the new test's weight. PR #138 opened.
+
+**The fork taken without a ruling (for the architect):**
+- **The connectors and ports tables are Rust constants in `aethelgard-ir`, not a JSON file like `parts.json`.** Each row is cited by document, sha256 and section. A constant cannot be malformed at run time, so there is no parser and no `ConnectorsTableInvalid` refusal. A tier-1 test checks the tables against each other and against the vendored footprints and symbols. If the architect wants them as data, the move is mechanical.
+
+## 11. Results against the predictions
+
+Labels as in §0: **[measured]**, **[read]**, **[inferred]**.
+
+**P10, byte identity: held [measured].**
+- Every specification fixture and example was emitted twice: by `main`'s CLI on `main`'s files, and by this branch's CLI on its migrated files. That was done at `158d408`, and again after the merge, against `08d6206` built in a detached worktree.
+- Every `.kicad_sch`, `.kicad_pcb` and `.bom.csv` is byte-identical, and every refusal verdict is identical (same exit codes).
+- Each emit verdict differs only in the specification's sha256 and its output path.
+- Sentinel-01's regenerated crate differs from `main`'s in 8 lines, each the specification sha256 line.
+
+**The re-taken pins, measured by substitution [measured].**
+- These had to be re-taken, because they hash outputs that carry the specification's sha256:
+  - `solve_cli.rs` `REFERENCE_DIGEST` and `STRESS_DIGEST`;
+  - `order_2203.rs`'s firmware, platform and faulted-platform digests;
+  - `verify_2k2_tier2.rs`'s FAB-NOTES hash prefix.
+- For each, the new output with the old specification hash put back hashes to the old pinned digest exactly. So the specification's sha256 is the only change.
+- `campaign_tier1.rs` `a_solved_topology_is_not_a_base`: a solved topology (version 4, `4300c`) and a specification (version 4) now share a version. The base is therefore refused by its shape (`SchemaViolation`, exit 2), not by its version, and still before anything runs.
+
+**P11, the vendored files: held [measured].**
+- The seven hashes equal the spike's §3.1 table.
+- `LICENSE.md` is byte-identical, so no new licence file is needed.
+
+**P12–P14, the gates in the image [measured]:**
+- The setup: kicad-cli 10.0.7 in the pinned image, under `RULE3.md`. The caps read back as `memory.max` 8589934592, `memory.swap.max` 0 and `pids.max` 8192, with the container in the scope (`~/.cache/aet-4300f-build/caps.log`). `TMPDIR` was never passed.
+- The connectors fixture is the reference plus:
+  - S2's device-less SPI bus `EXT`;
+  - a `VDD_5V` domain;
+  - J1, `SM04B-GHS-TB`, `"DS-009 I2C"` on `SENSORS`, with a 30 pF budget on each line;
+  - J2, `SM06B-GHS-TB`, an explicit TELEM-shaped map: `VDD_5V`, `EXT_SCK`, `EXT_MOSI`, `EXT_MISO`, `null`, `GND`.
+- It passes:
+  - ERC: exit 0, 0 findings;
+  - DRC with the specification's rules and parity: exit 0, 0 findings.
+- The same holds with the 4-layer board swapped in.
+- The tier-2 test `connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers` passed in the image in 3.8 s.
+- **S2 again (P14):** the device-less bus whose three one-pin nets failed ERC with exit 5 in the spike now passes ERC with exit 0, because its lines end at J2.
+- **Two seeded faults show that the gate judges the connector:**
+  - J2's floating pad put on `/EXT_SCK`: DRC reports `net_conflict` and `unconnected_items`.
+  - J1's pad 1 shrunk by 0.1 mm: DRC reports `lib_footprint_mismatch`. So the library check runs against the vendored footprint.
+- **KiCad names an unconnected connector pin `unconnected-(J2-Pin_5-Pad5)`,** the name `pcb.rs` writes, so parity holds.
+- **P13's prediction of "two `null` pins" missed:**
+  - J2 has one `null` pin. A device-less SPI bus has three lines, and each must end on a pin.
+  - "TELEM-shaped" here means a 6-pin GH with VCC on pin 1, GND on pin 6 and a floating pin, as an explicit map, because no serial net exists in the schema yet **[inferred]** from the ruling's words.
+
+**P12, extraction [measured]** (the fixture's emitted board):
+- **I2C:** `I2C_SDA` 95,962 fF and `I2C_SCL` 95,272 fF against the declared 100,000.
+  - Each has `terms.offboard` 30,000.
+  - J1's pad copper is in `pads`; J1 is not in `pins`, so no `Ci` is counted for it.
+- **SPI** (`4300c`'s SCK and MOSI): `EXT_SCK` 50,212 fF and `EXT_MOSI` 45,764 fF against 60,000, each with J2's 30,000.
+- `SPI_SCK` and `SPI_MOSI` have no connector, and their line objects are `main`'s, unchanged.
+- The verdict's last condition is `OFFBOARD`. Without a connector budget, the conditions and FAB-NOTES are unchanged.
+
+**P15, placement [measured]:**
+- In the fixture, J1 is at (88.3, 120.1) and J2 at (100.1, 120.1), and the edge is at 123.35 mm.
+- J1's courtyard bottom is 123.325 mm, 25 µm inside the edge, and its mounting pads are 0.55 mm from the edge.
+- The tier-1 tests cover the rest:
+  - three connectors in reference order;
+  - every part of the table, each placed, written and routed;
+  - a connector moves no other part.
+- **The cable direction is now [read],** from two JST figures together:
+  - the GH catalogue's p. 2 board layout shows the contact pads protruding past the header outline at the pad end;
+  - its p. 3 side view shows the tails, 0.8 mm beyond the 4.05 mm body, on the side away from the opening.
+- With the footprint's F.Fab body (y −1.6 to 2.45, the pads at −y), the mating face is +y. At rotation 0 that is the bottom edge.
+
+**P16, the twin: held [measured].** `solve` gives the same output with and without the connectors, apart from the specification's sha256. That is tier-1 in `connectors_tier1.rs` and in the IR's `solve_is_blind_to_connectors`.
+
+**P17, CI.** 97 tier-2 tests, listed one binary at a time: 96 on `main` plus 1. `TIER2_MIN` is 97, exact.
+
+## 12. Findings and questions for the architect
+
+- **F1. Budgets on lines nothing bounds** **[read]**, about ruling D8.
+  - `validate` requires an `offboard` budget on every connector pin on an I2C line, an SPI bus line (SCK, MOSI or MISO) or an SPI chip select.
+  - Extraction bounds I2C SDA and SCL and, since `4300c`, SPI SCK and MOSI. So a budget on MISO or a chip select is declared and checked as present, but no bound uses it.
+  - Should the requirement narrow to the bounded lines, or stay as ruled, ready for when MISO and CS are bounded?
+- **F2. FAB-NOTES.md and the SPI condition** **[read]**:
+  - With a connector budget, this build adds `OFFBOARD` to both the extract verdict and FAB-NOTES (`Notes.offboard`).
+  - `4300c`'s `SPI_CONDITION` reaches the extract verdict but not FAB-NOTES, so a package for a board with SPI lines states fewer conditions than its extract verdict.
+  - That is outside this fence; it is recorded here.
+- **F3. Specification version numbering.** This build takes version 4, because `4300c` took 3 while this build was in progress. `4300a` was told to take the version after `4300c`'s, so it is now 5. The `4300c`, `4300a` and `4300b` inboxes were told (§13).
+- **F4. The process slip:** the inbox notes to `4300c`, `4300a` and `4300b` were written with an unquoted heredoc, to stamp the time and commit, against kickoff rule 5. Their text was checked after writing and is as intended. Every later file was written with the Write tool or a quoted heredoc.
+- **F5. From the inboxes (peer information):**
+  - `4300d` proposes an AMASS XT30PW-M for power-in (D6 is `4300d`'s). It is through-hole, and `route.rs` refuses through-hole pads. If it becomes a connectors-table row, the table needs a current rating, which this build left out because nothing reads one yet.
+  - `4210` moves `parts.json` to its schema 3. The connectors table is not in `parts.json`, so there is no conflict.
+
+## 13. `main` moved twice more, and the router landed
+
+- **`1307` (PR #126) and docs PR #139** were merged in with a merge commit (`dec6921`).
+- `1307` changes `route.rs`. Everything was re-measured on the merged tree:
+  - **P10 still holds [measured].** `main`'s CLI at `cd0bd31` (built in a detached worktree) and this branch's CLI emit every existing specification to byte-identical schematics, boards and BOMs. Verdicts differ only in the specification's sha256 and the output paths.
+  - `generate` on Sentinel-01 equals the committed crate, byte for byte.
+- **The router moved the fixture's I2C copper [measured].**
+  - With a 30 pF budget, `I2C_SDA` bounded 102,540 fF against the declared 100,000, so `extract` failed.
+  - The fixture's budgets are now one stated condition for every connector pin, 20 pF: a JST cable of at most 100 mm at 50 pF/m, the mated contact and one remote pin.
+  - Now `I2C_SDA` is 92,540, `I2C_SCL` 81,489, `EXT_SCK` 36,134 and `EXT_MOSI` 34,304 fF, each under its declared value.
+  - The budget is the fixture's stated condition, not a measured property of any cable.
+- **`TIER2_MIN` 98, exact [measured]:**
+  - 97 on `main` (`1307`'s `with_tools` test) plus this build's one.
+  - 98 tier-2 tests, counted binary by binary.
+
+## 14. Adversarial pass
+
+**The method:** a fresh subagent on Opus, given the sources and the ruling, not this document's conclusions, and asked to falsify the build. It built its own CLIs, emitted its own specifications, and ran the gates in the image, one container at a time under `RULE3.md`.
+
+**No critical finding. What it found, and what was done:**
+
+**A1 (major), fixed.** The acceptance fixture passed ERC, DRC and parity, but `check speeds` and `generate` refused it.
+- Their check is `LoadAboveSpeedTable`: `EXT_MOSI`'s declared 60 pF is above DS12117 Table 149's heaviest row, 50 pF. That is `4300c`'s speed check, which arrived with the merge.
+- No declared value could satisfy both checks with a 30 pF budget.
+- The fixture now declares 50 pF on `EXT_SCK` and `EXT_MOSI` with a 20 pF budget.
+- The tier-1 test `the_fixture_passes_check_speeds_and_generate` runs both on the fixture.
+
+**A2 (minor), fixed.** "The housing's front is at the edge" described the courtyard, not the housing.
+- The courtyard's bottom is within 50 µm of the edge.
+- The housing body (`F.Fab`) sits about 0.8 mm (GH) or 0.775 mm (SH) inside it. The docs now say so.
+- The footprint's `Value` text, which is on `F.Fab` and is not fabricated, lies about 0.65 mm outside the outline. Recorded only.
+
+**A3 (minor), recorded.** A connector named `U1`, `R1` or `C1` passes `validate`, and the emitter renumbers its own part, so the MCU becomes `U2`. `u1`, `r1` or `c1` is refused only at `emit` (`DuplicateReference`). Declared devices have behaved the same since before this build.
+- Connector references are also held to Renode's reserved names, although connectors never reach the `.repl`.
+- Both follow from putting connectors on the device references' path (step 8).
+
+**A4 (minor), recorded.** A budget of `u64::MAX` passes `validate`; `extract` then refuses it with `Overflow` (exit 3). Refused, but late.
+
+**A5 (minor), fixed.** This is F1, confirmed: MISO and chip-select pins must declare a budget, though no bound uses it.
+- The refusal message no longer claims "the line's bound would leave out the cable".
+- The `OFFBOARD` condition is now decided by one mechanism, `declares_offboard`, for the extract verdict and FAB-NOTES alike. Before, the verdict decided it from its lines and FAB-NOTES from the specification.
+
+**A6 (note).** Two pins of one connector on one line count the budget twice. That is conservative, not unsound.
+
+**A7 (notes), the doc corrected.**
+- Four of the five ports cannot validate today, because a role this schema cannot declare refuses every net. Only `"DS-009 I2C"` can.
+- CAN (a GH 4-pin) is left out until a work order declares a CAN bus.
+- `Role::name` joins DS-009's signal and voltage columns for a supply.
+- DS-009's "1.5K pullup on autopilot" is not judged, and the fixture's bus uses 2.2 kΩ.
+
+**A8 (minor), fixed.** The SH citation now gives its page (p. 3).
+
+**A9 (note), for the architect.** J2 is an explicit SPI map, "TELEM-shaped" as §11 infers from the ruling's words. Does it meet the acceptance wording?
+
+**A10 (note), outside the ruling's fence.** These files are touched as named consequences, each minimal:
+- `cli/src/extract.rs` and `cli/src/fab.rs` (the verdict's off-board term, and the condition in FAB-NOTES);
+- the CLI README;
+- three `clippy.toml` files and the two guard tests (the `RUL-16` fence);
+- `boards/sentinel-01` and `examples/` (the version bump);
+- `ci.yml` and `ci/test-weights.tsv`;
+- tests across crates whose pins carry the specification's sha256.
+
+`declares_offboard` is a public `eda` function that relays one fact about the declared connectors to the CLI. `eda`'s reader of the specification stays `schematic.rs`, as the guard test pins.
+
+**A11 (minor), fixed.** The README's step-15 row now says the net and budget checks run pin by pin.
+
+**What it tried to break and could not [measured]:**
+- **P10, and the re-taken pins:** with the hash swapped back, each output equals `main`'s.
+- **Every step-15 refusal, at every entry:** each holds at `validate`, `solve`, `emit`, `generate`, `extract`, `check speeds` and `check drc --spec`. That includes case variants of net names, a pin `05` or `+5` or `MP`, and an unknown standard's spelling.
+- **ERC and DRC with parity, 0 findings**, for:
+  - six connectors (every part, a 10-pin, an all-null connector, GND and domain pins), at 2 and at 4 layers;
+  - a connector named `U1`;
+  - two pins on one line;
+  - Sentinel-01 plus an SH connector.
+- **KiCad's names for unconnected pins:** they are the ones `pcb.rs` writes.
+- **Placement:** every pad at least 0.55 mm from the edge, and identical bytes in either connector order.
+- **The `RUL-16` fence:** a planted `declared_connectors()` in `cli/src/fab.rs` fails clippy.
+- **The DS-009 rows and the JST rows,** each against its document, pin by pin.
+
+## 15. Reduction pass, mutations, gates
+
+**Reduction pass (diff): −3 net lines · 2 duplicates removed · 0 dead paths removed · 2 protected kept · 2 findings below.**
+- **Removed:**
+  - `KNOWN_CONNECTORS`, a second copy of the part names on a path `validate` already rules out. That path is now an `Internal` error, labelled `belt-and-suspenders`.
+  - `eda`'s own `GND` constant: `eda` now uses the IR's.
+- **Merged:** the two mechanisms that decided the `OFFBOARD` condition are now one (A5).
+- **Protected, kept:**
+  - `extract::offboard_of`'s refusal;
+  - the pad-to-edge guard in `place_connectors`.
+- **Findings:**
+  - `schematic::connector_library` maps the IR's part names to KiCad's ids, which states the names a second time. That is kept, because the IR holds no tool's names; the tier-1 test `the_connector_table_and_the_vendored_files_agree` ties the two.
+  - The spike's `spike/4300f/img.sh` and the build runner `~/.cache/aet-4300f-build/img.sh` are one runner pattern. Furnace now has `~/bin/capped-run` for it, and the global contract names it.
+
+**Mutation testing, sized to the diff [measured].** 28 mutants, one per guard this build adds, each run against its own suites in a copy of the tree. Every file was restored and checked by `cmp`.
+- **24 were killed first time.** Two survivors were test gaps, now closed, and both re-run killed:
+  - **#14:** the debug port's required supply is now asserted (3300 mV).
+  - **#23:** the bound is now asserted to be the sum of its terms, the off-board term included.
+- **Two survive by construction:**
+  - **#16:** a `MayFloat` pin is unreachable today, because TELEM's TX pin refuses first. It becomes reachable when `4300b` declares serial nets.
+  - **#19:** no vendored footprint can trip the pad-to-edge guard, which is now labelled `belt-and-suspenders`.
+
+**Gates [measured]**, Furnace, host, under a capped user scope, on the merged tree (after `dec6921`):
+- `cargo fmt --all -- --check`: 0;
+- `cargo clippy --workspace --all-targets -- -D warnings`: 0, and with `--features with-tools`: 0;
+- `cargo test --workspace`: 0, with 1339 passed, 0 failed and 0 ignored.
+- **Tier 2 in the image:** `connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers` passed, at 3.8 s. The scope read back `memory.max` 8589934592, `memory.swap.max` 0 and `pids.max` 8192, and the container was in it.
+- **CI on PR #138's first head (`f3714f0`):** green on every job; the slowest `tools` shard took 17:44.
+
+## 16. Close
+
+The build is ready for review on PR #138.
+- **Delivered:** the ruled parts are vendored; the specification's connectors are validated against DS-009 where a port applies; the emitter, placer and extraction handle them; every gate judges them. Sentinel-01 changes only in its specification's sha256.
+- **Open for the architect:** F1 (the budgets on MISO and chip select), F2 (FAB-NOTES and the SPI condition), F3 (version 4), A3 and A4 (late refusals), and A9 (the fixture's TELEM shape).
+- **For Scotty:** D2 stays provisional.
