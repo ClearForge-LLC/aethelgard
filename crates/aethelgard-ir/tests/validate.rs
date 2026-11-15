@@ -2118,6 +2118,46 @@ fn a_supply_outside_a_part_s_range_is_refused() {
     assert!(err.to_string().contains("9.2"), "{err}");
 }
 
+/// `AET-WO-4210` D7: a device whose part separates its I/O range from its
+/// supply is refused by name when its bus's domain leaves that range: the
+/// ICM-20948's `VDDIO` tops out at 1.95 V, so on a 3.3 V bus it is refused
+/// though its supply range holds 3.3 V. At 1.8 V the whole board passes.
+#[test]
+fn a_device_whose_io_range_excludes_its_bus_domain_is_refused() {
+    let mut spec = valid();
+    devs(&mut spec).spi[0].part = "ICM20948".into();
+    let err = spec.validate().unwrap_err();
+    assert_refusal(err.clone(), "IoOutsidePart", Some("U4"));
+    let m = err.to_string();
+    assert!(
+        m.contains("3135 to 3465 mV")
+            && m.contains("1710 to 1950 mV")
+            && m.contains("3.4, table 4"),
+        "{m}"
+    );
+    let mut spec = valid();
+    devs(&mut spec).spi[0].part = "ICM20948".into();
+    devs(&mut spec).i2c.truncate(1);
+    devs(&mut spec).i2c[0].part = "ICP10111".into();
+    devs(&mut spec).i2c[0].address = 0x63;
+    let v = serde_json::to_string(&spec)
+        .unwrap()
+        .replace("VDD_3V3", "VDD_1V8");
+    let mut spec: Specification = serde_json::from_str(&v).unwrap();
+    spec.voltage_domains[0].nominal_millivolts = 1_800;
+    spec.spi_buses[0].speed_hz = 7_000_000;
+    spec.validate().unwrap();
+    // The BME280 separates VDDIO (1.2 to 3.6 V): at 1.2 V its supply refuses
+    // it first, at its own minimum the I/O range alone would not.
+    let mut spec = valid();
+    spec.voltage_domains[0].nominal_millivolts = 1_200;
+    assert_refusal(
+        spec.validate().unwrap_err(),
+        "SupplyOutsidePart",
+        Some("U2"),
+    );
+}
+
 /// Adversarial 3: a table part named in another case, or the bare flash in
 /// any case, is refused rather than read as an unlisted part.
 #[test]

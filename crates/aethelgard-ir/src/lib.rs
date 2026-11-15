@@ -651,6 +651,19 @@ pub enum IrValidationError {
         citation: String,
     },
     #[error(
+        "device `{id}` is a `{part}` on bus `{bus}`, whose domain runs {min_millivolts} to {max_millivolts} mV, outside the part's I/O range of {part_min_millivolts} to {part_max_millivolts} mV ({citation}); the specification cannot declare a level crossing (`AET-WO-4210` D7)"
+    )]
+    IoOutsidePart {
+        id: String,
+        part: String,
+        bus: String,
+        min_millivolts: u32,
+        max_millivolts: u32,
+        part_min_millivolts: u32,
+        part_max_millivolts: u32,
+        citation: String,
+    },
+    #[error(
         "net constraint on `{id}`, an SPI bus's MISO or a chip select: no check reads it, so it cannot be held (`AET-WO-4300c` D3, D4)"
     )]
     UnjudgedSpiConstraint { id: String },
@@ -785,6 +798,7 @@ impl IrValidationError {
             Self::AmbiguousPartName { .. } => "AmbiguousPartName",
             Self::PartNameCase { .. } => "PartNameCase",
             Self::SupplyOutsidePart { .. } => "SupplyOutsidePart",
+            Self::IoOutsidePart { .. } => "IoOutsidePart",
             Self::UnjudgedSpiConstraint { .. } => "UnjudgedSpiConstraint",
             Self::PartOnWrongBus { .. } => "PartOnWrongBus",
             Self::I2cAddressNotOffered { .. } => "I2cAddressNotOffered",
@@ -855,6 +869,7 @@ impl IrValidationError {
             | Self::AmbiguousPartName { id, .. }
             | Self::PartNameCase { id, .. }
             | Self::SupplyOutsidePart { id, .. }
+            | Self::IoOutsidePart { id, .. }
             | Self::UnjudgedSpiConstraint { id }
             | Self::PartOnWrongBus { id, .. }
             | Self::I2cAddressNotOffered { id, .. }
@@ -1192,6 +1207,56 @@ impl Specification {
                     part_min_millivolts: part_min,
                     part_max_millivolts: part_max,
                     citation: cite(&p.citations.supply),
+                });
+            }
+        }
+        // Each device's bus domain within its part's I/O range, where the
+        // datasheet separates it from the supply (`AET-WO-4210` D7, `4200`
+        // F19). Step 9 checked every device's bus, step 5 every bus's domain.
+        let on_bus = self
+            .i2c_devices
+            .iter()
+            .map(|d| {
+                (
+                    &d.reference,
+                    &d.part,
+                    &d.bus,
+                    self.i2c_buses
+                        .iter()
+                        .find(|b| b.id == d.bus)
+                        .map(|b| &b.domain),
+                )
+            })
+            .chain(self.spi_devices.iter().map(|d| {
+                (
+                    &d.reference,
+                    &d.part,
+                    &d.bus,
+                    self.spi_buses
+                        .iter()
+                        .find(|b| b.id == d.bus)
+                        .map(|b| &b.domain),
+                )
+            }));
+        for (reference, part, bus, domain) in on_bus {
+            let (Some(p), Some(domain)) = (
+                part_entry(table, reference, part)?,
+                domain.and_then(|id| self.voltage_domains.iter().find(|v| &v.id == id)),
+            ) else {
+                continue;
+            };
+            let (min, max) = (minimum_millivolts(domain), maximum_millivolts(domain));
+            let ((part_min, part_max), citation) = p.io_range();
+            if min < part_min || max > part_max {
+                return Err(IrValidationError::IoOutsidePart {
+                    id: reference.clone(),
+                    part: p.part.clone(),
+                    bus: bus.clone(),
+                    min_millivolts: min,
+                    max_millivolts: max,
+                    part_min_millivolts: part_min,
+                    part_max_millivolts: part_max,
+                    citation: cite(citation),
                 });
             }
         }

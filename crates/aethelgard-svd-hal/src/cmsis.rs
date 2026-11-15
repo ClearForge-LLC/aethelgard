@@ -407,6 +407,53 @@ impl RegisterFacts {
         }
     }
 
+    /// The highest interrupt number in the `IRQn_Type` enum: the part's last
+    /// interrupt line, so the NVIC's set-enable words that hold implemented
+    /// bits are 0 to `irq_max / 32` (`AET-WO-4210`, `AET-WO-2204` A2). The
+    /// core's own exceptions are negative and do not count; a value that is
+    /// neither is refused.
+    pub fn irq_max(&self) -> Result<u32, RegisterError> {
+        let undefined = || RegisterError::Undefined {
+            name: "IRQn_Type".into(),
+        };
+        let start = self.text.find("typedef enum").ok_or_else(undefined)?;
+        let len = self.text[start..]
+            .find("} IRQn_Type;")
+            .ok_or_else(undefined)?;
+        let mut max = None;
+        for line in self.text[start..start + len].lines() {
+            let code = strip_comment(line).trim();
+            let Some((lhs, rhs)) = code.split_once('=') else {
+                continue;
+            };
+            if !lhs.trim().ends_with("_IRQn") {
+                continue;
+            }
+            let value = rhs.trim().strip_suffix(',').unwrap_or(rhs.trim()).trim();
+            if let Some(negative) = value.strip_prefix('-') {
+                if negative.is_empty() || !negative.bytes().all(|b| b.is_ascii_digit()) {
+                    return malformed(format!(
+                        "`{}` is `{value}`, not a decimal number",
+                        lhs.trim()
+                    ));
+                }
+                continue;
+            }
+            match value.parse::<u32>() {
+                Ok(v) if value.bytes().all(|b| b.is_ascii_digit()) => {
+                    max = max.max(Some(v));
+                }
+                _ => {
+                    return malformed(format!(
+                        "`{}` is `{value}`, not a decimal number",
+                        lhs.trim()
+                    ));
+                }
+            }
+        }
+        max.ok_or_else(undefined)
+    }
+
     /// The size in KiB that the comment of `#define name` states:
     /// `/*!< Base address of : <N>KB …`. The header has no size macro for its
     /// RAM regions, so this is the only place the size is written.
@@ -657,6 +704,21 @@ mod tests {
             "MalformedSource"
         );
         // Outside the enum, a matching line is not read.
+        assert_eq!(
+            e("  N_IRQn = -14,\n  A_IRQn = 7,\n  B_IRQn = 149,\n  C_IRQn = 3,")
+                .irq_max()
+                .unwrap(),
+            149
+        );
+        assert_eq!(
+            e("  N_IRQn = -1,").irq_max().unwrap_err().kind(),
+            "Undefined"
+        );
+        assert_eq!(
+            e("  A_IRQn = 0x7,").irq_max().unwrap_err().kind(),
+            "Malformed"
+        );
+        assert_eq!(register_facts().unwrap().irq_max().unwrap(), 149);
         let outside = synthetic("  A_IRQn = 7,\ntypedef enum\n{\n} IRQn_Type;\n");
         assert_eq!(outside.irq("A").unwrap_err().kind(), "Undefined");
         assert_eq!(synthetic("").irq("A").unwrap_err().kind(), "Undefined");

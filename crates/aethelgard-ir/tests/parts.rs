@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/parts.json`. It moves only with the file, on purpose.
-const PARTS_SHA256: &str = "83d962bd021bed0ae51a16f4e7fc66a761e4aef86225961184918085e179bb73";
+const PARTS_SHA256: &str = "3252804077e9985f2beca19ff1eb83a74ae83b4e5d8f8a9eae71d5794659217c";
 
 fn embedded() -> Value {
     serde_json::from_str(PARTS_JSON).unwrap()
@@ -50,18 +50,29 @@ fn the_embedded_table_is_pinned_by_its_sha256() {
 }
 
 #[test]
-fn the_embedded_table_parses_and_holds_four_parts() {
+fn the_embedded_table_parses_and_holds_five_parts() {
     let t = table().unwrap();
     let names: Vec<&str> = t.parts().iter().map(|p| p.part.as_str()).collect();
-    assert_eq!(names, ["BME280", "ICM20948", "TMP117", "W25Q64JVxIQ"]);
+    assert_eq!(
+        names,
+        ["BME280", "ICM20948", "ICP10111", "TMP117", "W25Q64JVxIQ"]
+    );
     assert_eq!(parse_parts(PARTS_JSON).unwrap(), *t);
 }
 
 #[test]
-fn no_citation_is_pending() {
-    // Every citation's document is held in ~/.cache/aet-4200/ds/, recorded in
-    // the work order's FEEDBACK.
-    assert_eq!(table().unwrap().pending(), Vec::<(&str, &str, &str)>::new());
+fn only_the_flashs_lifecycle_is_pending() {
+    // Every datasheet is held in ~/.cache/aet-4200/ds/ or ~/.cache/aet-4210/ds/,
+    // recorded in the work orders' FEEDBACK. Winbond's catalog loads the
+    // flash's status by script, so its lifecycle is not held (`AET-WO-4210`).
+    assert_eq!(
+        table().unwrap().pending(),
+        [(
+            "W25Q64JVxIQ",
+            "lifecycle",
+            "https://www.winbond.com/hq/new-online-purchasing-guide/?__locale=en&pLine=/product/code-storage-flash/qspi-nor/&pNo=W25Q64JV"
+        )]
+    );
 }
 
 #[test]
@@ -90,8 +101,12 @@ fn each_part_holds_its_datasheet_values() {
 
     let p = get("BME280");
     assert_eq!(
-        (p.identity.write, p.identity.width, p.identity.value),
-        (0xD0, 1, 0x60)
+        (
+            p.identity.write.as_slice(),
+            p.identity.width,
+            p.identity.value
+        ),
+        (&[0xD0][..], 1, 0x60)
     );
     assert_eq!(
         p.bus,
@@ -104,8 +119,12 @@ fn each_part_holds_its_datasheet_values() {
 
     let p = get("TMP117");
     assert_eq!(
-        (p.identity.write, p.identity.width, p.identity.value),
-        (0x0F, 2, 0x0117)
+        (
+            p.identity.write.as_slice(),
+            p.identity.width,
+            p.identity.value
+        ),
+        (&[0x0F][..], 2, 0x0117)
     );
     assert_eq!(
         p.bus,
@@ -118,8 +137,12 @@ fn each_part_holds_its_datasheet_values() {
 
     let p = get("W25Q64JVxIQ");
     assert_eq!(
-        (p.identity.write, p.identity.width, p.identity.value),
-        (0x9F, 3, 0xEF4017)
+        (
+            p.identity.write.as_slice(),
+            p.identity.width,
+            p.identity.value
+        ),
+        (&[0x9F][..], 3, 0xEF4017)
     );
     assert_eq!(
         p.bus,
@@ -135,8 +158,12 @@ fn each_part_holds_its_datasheet_values() {
 
     let p = get("ICM20948");
     assert_eq!(
-        (p.identity.write, p.identity.width, p.identity.value),
-        (0x80, 1, 0xEA)
+        (
+            p.identity.write.as_slice(),
+            p.identity.width,
+            p.identity.value
+        ),
+        (&[0x80][..], 1, 0xEA)
     );
     assert_eq!(
         p.bus,
@@ -171,8 +198,8 @@ fn refuses_an_unknown_key_at_top_level() {
 }
 
 #[test]
-fn refuses_schema_version_1_and_3() {
-    for version in [1, 3] {
+fn refuses_schema_version_2_and_4() {
+    for version in [2, 4] {
         let mut doc = embedded();
         doc["schema_version"] = version.into();
         let err = parse_parts(&doc.to_string()).unwrap_err();
@@ -306,9 +333,15 @@ fn refuses_an_identity_value_wider_than_its_read() {
 #[test]
 fn refuses_an_identity_write_above_ff_or_malformed() {
     for bad in ["0x100", "0xd0", "D0", "", "0x", "0xDG"] {
-        let err = refused_entry("BME280", |p| p["identity"]["write"] = bad.into());
+        let err = refused_entry("BME280", |p| p["identity"]["write"] = json!([bad]));
         assert_refused(&err, Some("BME280"), "identity.write");
     }
+    for bad in [json!([]), json!(["0x1", "0x2", "0x3", "0x4", "0x5"])] {
+        let err = refused_entry("BME280", |p| p["identity"]["write"] = bad.clone());
+        assert_refused(&err, Some("BME280"), "identity.write");
+    }
+    let err = refused_entry("BME280", |p| p["identity"]["write"] = "0xD0".into());
+    assert_refused(&err, Some("BME280"), "invalid type");
 }
 
 // ---- supply -------------------------------------------------------------------
@@ -405,7 +438,14 @@ fn a_pending_citation_must_be_an_https_url_and_is_listed() {
     let t = parse_parts(&doc.to_string()).unwrap();
     assert_eq!(
         t.pending(),
-        [("TMP117", "bus", "https://example.com/ds.pdf")]
+        [
+            ("TMP117", "bus", "https://example.com/ds.pdf"),
+            (
+                "W25Q64JVxIQ",
+                "lifecycle",
+                "https://www.winbond.com/hq/new-online-purchasing-guide/?__locale=en&pLine=/product/code-storage-flash/qspi-nor/&pNo=W25Q64JV"
+            )
+        ]
     );
 }
 
@@ -453,7 +493,7 @@ fn a_key_twice_a_missing_renode_a_case_twin_or_no_parts_is_refused() {
     let err = parse_parts(&doc.to_string()).unwrap_err();
     assert_refused(&err, Some("bme280"), "twice");
     // No parts at all.
-    let err = parse_parts(r#"{"schema_version": 2, "parts": []}"#).unwrap_err();
+    let err = parse_parts(r#"{"schema_version": 3, "parts": []}"#).unwrap_err();
     assert_refused(&err, None, "`parts` is empty");
 }
 
@@ -488,7 +528,7 @@ fn refuses_a_missing_or_out_of_range_pin_capacitance() {
 #[test]
 fn refuses_a_malformed_flash_identity() {
     for (field, bad) in [
-        ("write", json!("0x9E")),
+        ("write", json!(["0x9E"])),
         ("read", json!(2)),
         ("value", json!("0xEF400F")),
         ("value", json!("0xEF401A")),
@@ -507,4 +547,188 @@ fn refuses_a_malformed_flash_identity() {
         doc.pointer_mut(&at("W25Q64JVxIQ")).unwrap()["identity"]["value"] = value.into();
         assert!(parse_parts(&doc.to_string()).is_ok(), "{value}");
     }
+}
+
+// ---- schema 3 (`AET-WO-4210`) -------------------------------------------------
+
+#[test]
+fn the_stand_ins_hold_their_scripts_and_lifecycles() {
+    use aethelgard_ir::parts::{Lifecycle, StepKind};
+    let t = table().unwrap();
+    let life: Vec<(&str, Lifecycle, bool)> = t
+        .parts()
+        .iter()
+        .map(|p| (p.part.as_str(), p.lifecycle, p.stand_in))
+        .collect();
+    assert_eq!(
+        life,
+        [
+            ("BME280", Lifecycle::Active, false),
+            ("ICM20948", Lifecycle::Eol, true),
+            ("ICP10111", Lifecycle::Eol, true),
+            ("TMP117", Lifecycle::Active, false),
+            ("W25Q64JVxIQ", Lifecycle::Active, false),
+        ]
+    );
+    let imu = t.get("ICM20948").unwrap();
+    assert_eq!(imu.io_millivolts, Some((1710, 1950)));
+    let steps = imu.steps();
+    let shape: Vec<(StepKind, Vec<u8>, u8, u64, u64)> = steps
+        .iter()
+        .map(|s| (s.kind, s.write.clone(), s.width, s.expected, s.mask))
+        .collect();
+    // D3: 0 g, 0 g and 1 g at 16,384 LSB/g; F5: the wake is the configuration.
+    assert_eq!(
+        shape,
+        [
+            (StepKind::Identity, vec![0x80], 1, 0xEA, 0xFF),
+            (StepKind::Configure, vec![0x06, 0x01], 0, 0, 0),
+            (StepKind::Data, vec![0xAD], 6, 0x4000, 0xFFFF_FFFF_FFFF),
+        ]
+    );
+    let baro = t.get("ICP10111").unwrap();
+    assert_eq!(baro.io_range().0, (1710, 1890));
+    assert!(!baro.identity.datasheet_value);
+    let shape: Vec<(StepKind, Vec<u8>, u8, u64, u64)> = baro
+        .steps()
+        .iter()
+        .map(|s| (s.kind, s.write.clone(), s.width, s.expected, s.mask))
+        .collect();
+    // F6: bits 5:0 only. 25 degrees C: (25 + 45) x 65536 / 175 = 26214.4.
+    assert_eq!(
+        shape,
+        [
+            (StepKind::Identity, vec![0xEF, 0xC8], 2, 0x0008, 0x3F),
+            (StepKind::Configure, vec![0x80, 0x5D], 0, 0, 0),
+            (StepKind::Data, vec![0x78, 0x66], 2, 26_214, 0xFFFF),
+        ]
+    );
+    // A part with no script makes its identity read alone.
+    assert_eq!(t.get("BME280").unwrap().steps().len(), 1);
+}
+
+#[test]
+fn a_channel_rounds_half_away_from_zero_and_wraps_signed() {
+    use aethelgard_ir::parts::{Channel, Quantity};
+    let c = |stimulus, zero, lsb, signed| Channel {
+        quantity: Quantity::AccelerationX,
+        stimulus,
+        zero,
+        lsb,
+        signed,
+    };
+    assert_eq!(c(1, 0, (3, 2), false).raw(), 2);
+    assert_eq!(c(-1, 0, (3, 2), true).raw(), 0xFFFE);
+    assert_eq!(c(-1, 0, (16384, 1), true).raw(), 0xC000);
+    assert_eq!(c(1, 0, (1, 4), false).raw(), 0);
+}
+
+#[test]
+fn refuses_a_lifecycle_outside_the_three() {
+    for bad in ["Active", "obsolete", ""] {
+        let err = refused_entry("TMP117", |p| p["lifecycle"] = bad.into());
+        assert_refused(&err, Some("TMP117"), "lifecycle");
+    }
+    let err = refused_entry("TMP117", |p| {
+        p.as_object_mut().unwrap().remove("lifecycle");
+    });
+    assert_refused(&err, Some("TMP117"), "lifecycle");
+    let err = refused_entry("TMP117", |p| {
+        p["citations"].as_object_mut().unwrap().remove("lifecycle");
+    });
+    assert_refused(&err, Some("TMP117"), "lifecycle");
+}
+
+#[test]
+fn only_a_stand_in_may_carry_an_identity_no_datasheet_states() {
+    let err = refused_entry("ICP10111", |p| p["stand_in"] = false.into());
+    assert_refused(&err, Some("ICP10111"), "identity.datasheet_value");
+    let err = refused_entry("BME280", |p| {
+        p["identity"]["datasheet_value"] = false.into()
+    });
+    assert_refused(&err, Some("BME280"), "identity.datasheet_value");
+}
+
+#[test]
+fn refuses_a_mask_that_is_zero_too_wide_or_leaves_the_value_unfixed() {
+    for bad in ["0x0", "0x10000", "0x37"] {
+        let err = refused_entry("ICP10111", |p| p["identity"]["mask"] = bad.into());
+        assert_refused(&err, Some("ICP10111"), "identity.mask");
+    }
+    let err = refused_entry("ICP10111", |p| {
+        p["identity"].as_object_mut().unwrap().remove("mask");
+    });
+    assert_refused(&err, Some("ICP10111"), "mask");
+}
+
+#[test]
+fn an_io_range_and_its_citation_come_together() {
+    let err = refused_entry("ICM20948", |p| p["io_millivolts"] = Value::Null);
+    assert_refused(&err, Some("ICM20948"), "citations.io");
+    let err = refused_entry("TMP117", |p| {
+        p["io_millivolts"] = json!({"min": 1800, "max": 3600});
+    });
+    assert_refused(&err, Some("TMP117"), "citations.io");
+    let err = refused_entry("ICM20948", |p| {
+        p["io_millivolts"] = json!({"min": 1950, "max": 1710});
+    });
+    assert_refused(&err, Some("ICM20948"), "io_millivolts");
+    let err = refused_entry("TMP117", |p| {
+        p.as_object_mut().unwrap().remove("io_millivolts");
+    });
+    assert_refused(&err, Some("TMP117"), "io_millivolts");
+}
+
+#[test]
+fn a_script_and_its_two_citations_come_together() {
+    let err = refused_entry("ICM20948", |p| p["script"] = Value::Null);
+    assert_refused(&err, Some("ICM20948"), "citations.configure");
+    let err = refused_entry("ICM20948", |p| p["citations"]["data"] = Value::Null);
+    assert_refused(&err, Some("ICM20948"), "citations.data");
+    let err = refused_entry("BME280", |p| {
+        p.as_object_mut().unwrap().remove("script");
+    });
+    assert_refused(&err, Some("BME280"), "script");
+}
+
+#[test]
+fn refuses_a_malformed_script() {
+    let cases: [(&str, fn(&mut Value)); 9] = [
+        ("script.configure.write", |p| {
+            p["script"]["configure"]["write"] = json!([])
+        }),
+        ("script.data.write", |p| {
+            p["script"]["data"]["write"] = json!(["0x1FF"])
+        }),
+        ("script.data.channels", |p| {
+            p["script"]["data"]["channels"] = json!([])
+        }),
+        ("script.data.channels", |p| {
+            let c = p["script"]["data"]["channels"][0].clone();
+            p["script"]["data"]["channels"] =
+                json!([c.clone(), c.clone(), c.clone(), c.clone(), c]);
+        }),
+        ("quantity", |p| {
+            p["script"]["data"]["channels"][0]["quantity"] = "pressure".into()
+        }),
+        ("unit", |p| {
+            p["script"]["data"]["channels"][0]["unit"] = "celsius".into()
+        }),
+        ("lsb", |p| {
+            p["script"]["data"]["channels"][0]["lsb"] = json!([0, 1])
+        }),
+        ("16-bit word", |p| {
+            p["script"]["data"]["channels"][2]["stimulus"] = 2.into()
+        }),
+        ("16-bit word", |p| {
+            p["script"]["data"]["channels"][2]["signed"] = false.into();
+            p["script"]["data"]["channels"][2]["stimulus"] = (-1).into();
+        }),
+    ];
+    for (field, mutate) in cases {
+        let err = refused_entry("ICM20948", mutate);
+        assert_refused(&err, Some("ICM20948"), field);
+    }
+    let err = refused_entry("ICM20948", |p| p["script"]["data"]["extra"] = 1.into());
+    assert_refused(&err, Some("ICM20948"), "extra");
 }
