@@ -29,7 +29,7 @@ pub const VERSION: &str = "20260306";
 
 const GRID: i64 = 1_270_000;
 const STUB: i64 = 2 * GRID;
-pub(crate) const GND: &str = "GND";
+pub(crate) use aethelgard_ir::GND;
 const RAIL_SYMBOL: &str = "power:+3V3";
 const GND_SYMBOL: &str = "power:GND";
 const FLAG_SYMBOL: &str = "power:PWR_FLAG";
@@ -186,6 +186,49 @@ pub(crate) struct Part {
     pub(crate) note: Option<&'static str>,
     /// A decoupling capacitor's IC: the reference it was drawn for.
     pub(crate) decouples: Option<String>,
+    /// A connector's declared off-board capacitance by pin number, with its
+    /// source: what extraction adds to a line it carries (`AET-WO-4300f` D8).
+    pub(crate) offboard: BTreeMap<String, (u64, String)>,
+}
+
+/// Each connector part's symbol and footprint, both vendored (`AET-WO-4300f`
+/// D3, D4). The symbol carries a mounting pin, `MP`, which both of the
+/// footprint's `MP` pads take.
+pub(crate) fn connector_library(part: &str) -> Option<(&'static str, &'static str)> {
+    Some(match part {
+        "SM04B-GHS-TB" => (
+            "Connector_Generic_MountingPin:Conn_01x04_MountingPin",
+            "Connector_JST:JST_GH_SM04B-GHS-TB_1x04-1MP_P1.25mm_Horizontal",
+        ),
+        "SM06B-GHS-TB" => (
+            "Connector_Generic_MountingPin:Conn_01x06_MountingPin",
+            "Connector_JST:JST_GH_SM06B-GHS-TB_1x06-1MP_P1.25mm_Horizontal",
+        ),
+        "SM10B-GHS-TB" => (
+            "Connector_Generic_MountingPin:Conn_01x10_MountingPin",
+            "Connector_JST:JST_GH_SM10B-GHS-TB_1x10-1MP_P1.25mm_Horizontal",
+        ),
+        "SM06B-SRSS-TB" => (
+            "Connector_Generic_MountingPin:Conn_01x06_MountingPin",
+            "Connector_JST:JST_SH_SM06B-SRSS-TB_1x06-1MP_P1.00mm_Horizontal",
+        ),
+        _ => return None,
+    })
+}
+
+/// Whether `spec`'s connectors declare any off-board capacitance, which the
+/// extraction bound then adds ([`crate::extract::OFFBOARD`]). Here, so that
+/// `eda`'s one reader of declared intent stays this module (`RUL-16`).
+pub fn declares_offboard(spec: &Specification) -> bool {
+    spec.declared_connectors()
+        .iter()
+        .any(|c| c.pins.iter().any(|p| p.offboard.is_some()))
+}
+
+/// Whether `part` is an off-board connector: placed last, at the board edge,
+/// and on a line counted as copper plus its declared budget, never at `Ci`.
+pub(crate) fn is_connector(part: &Part) -> bool {
+    part.lib_id.starts_with("Connector_")
 }
 
 /// A UUID derived from content: sha256 of a domain-separated key, the first
@@ -346,6 +389,7 @@ impl Builder<'_> {
             conns: BTreeMap::from([("1".into(), one), ("2".into(), two)]),
             note: None,
             decouples: None,
+            offboard: BTreeMap::new(),
         });
         Ok(())
     }
@@ -486,6 +530,7 @@ pub(crate) fn design(
         .iter()
         .map(|d| &d.reference)
         .chain(spec.declared_spi_devices().iter().map(|d| &d.reference))
+        .chain(spec.declared_connectors().iter().map(|c| &c.reference))
     {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
         // flag) and drops it from the netlist and BOM, and the emitter names its
@@ -574,6 +619,7 @@ pub(crate) fn design(
         conns,
         note: None,
         decouples: None,
+        offboard: BTreeMap::new(),
     });
 
     // The I2C buses' pull-ups, then their devices.
@@ -704,7 +750,47 @@ pub(crate) fn design(
         device(&mut b, &d.reference, "Memory_Flash:W25Q32JVSS", conns)?;
         b.decouple(&d.reference, &d.supply, "100n")?;
     }
+    connectors(&mut b)?;
     Ok((b.parts, b.rails))
+}
+
+/// Each declared connector, after every other part: a pin's net is drawn as
+/// the rail it names (`GND` or a domain), or a label, or a no-connect when it
+/// is `null`; the mounting pin goes to `GND` (`AET-WO-4300f` D3).
+fn connectors(b: &mut Builder<'_>) -> Result<(), EmitError> {
+    let spec = b.spec;
+    for c in spec.declared_connectors() {
+        // belt-and-suspenders: `validate` refuses a part not in the IR's
+        // table (`UnknownConnectorPart`), and a tier-1 test maps every row.
+        let (lib_id, footprint) = connector_library(&c.part).ok_or_else(|| {
+            EmitError::Internal(format!("{}: no library entry for {}", c.reference, c.part))
+        })?;
+        let mut conns = BTreeMap::from([("MP".to_owned(), b.ground())]);
+        let mut offboard = BTreeMap::new();
+        for p in &c.pins {
+            let conn = match p.net.as_deref() {
+                None => Conn::NoConnect,
+                Some(GND) => b.ground(),
+                Some(n) if spec.voltage_domains.iter().any(|d| d.id == n) => b.rail(n),
+                Some(n) => Conn::Net(n.to_owned()),
+            };
+            conns.insert(p.pin.clone(), conn);
+            if let Some(o) = &p.offboard {
+                offboard.insert(p.pin.clone(), (o.capacitance_femtofarads, o.source.clone()));
+            }
+        }
+        b.parts.push(Part {
+            lib_id,
+            reference: c.reference.clone(),
+            value: c.part.clone(),
+            footprint: footprint.to_owned(),
+            conns,
+            note: None,
+            decouples: None,
+            offboard,
+        });
+    }
+    Ok(())
 }
 
 /// A device's part, with the part's default footprint and the D2 note.
@@ -736,6 +822,7 @@ fn device(
         conns: conns.into_iter().map(|(n, c)| (n.to_owned(), c)).collect(),
         note,
         decouples: None,
+        offboard: BTreeMap::new(),
     });
     Ok(())
 }
@@ -1227,5 +1314,78 @@ mod tests {
                 .collect();
             assert_eq!(got, want, "{id}");
         }
+    }
+
+    #[test]
+    fn the_connector_table_and_the_vendored_files_agree() {
+        use aethelgard_ir::connectors::{PARTS, Series};
+        for row in PARTS.iter() {
+            let (sym_id, fp_id) = connector_library(row.name)
+                .unwrap_or_else(|| panic!("{} has no connector_library mapping", row.name));
+            let mut want: Vec<String> = (1..=row.pins).map(|i| i.to_string()).collect();
+            want.push("MP".into());
+            want.sort();
+            let mut got: Vec<String> = pins(&library::symbol(sym_id).unwrap())
+                .unwrap()
+                .into_iter()
+                .map(|p| p.number)
+                .collect();
+            got.sort();
+            assert_eq!(
+                got, want,
+                "{}: symbol pins differ from 1..N plus MP",
+                row.name
+            );
+            let fp = library::footprint(fp_id).unwrap();
+            let mut pads: Vec<String> = fp
+                .children("pad")
+                .map(|p| p.arg(1).unwrap_or("").to_owned())
+                .collect();
+            pads.sort();
+            let mut want_pads = want.clone();
+            want_pads.push("MP".into());
+            want_pads.sort();
+            assert_eq!(
+                pads, want_pads,
+                "{}: footprint pads differ from 1..N plus two MP",
+                row.name
+            );
+            let pitch = match row.series {
+                Series::JstGh => "P1.25mm",
+                Series::JstSh => "P1.00mm",
+            };
+            assert!(
+                fp_id.contains(pitch),
+                "{}: footprint name lacks the series pitch {pitch}",
+                row.name
+            );
+            assert!(
+                fp_id.contains(row.name),
+                "{}: footprint name lacks the part name",
+                row.name
+            );
+            assert!(
+                is_connector(&Part {
+                    lib_id: sym_id,
+                    reference: "J1".into(),
+                    value: row.name.into(),
+                    footprint: fp_id.into(),
+                    conns: Default::default(),
+                    note: None,
+                    decouples: None,
+                    offboard: Default::default(),
+                }),
+                "{}: its symbol is not recognised as a connector",
+                row.name
+            );
+        }
+        assert!(
+            connector_library("SM05B-GHS-TB").is_none(),
+            "a name not in PARTS has a mapping"
+        );
+        assert!(
+            connector_library("").is_none(),
+            "the empty name has a mapping"
+        );
     }
 }

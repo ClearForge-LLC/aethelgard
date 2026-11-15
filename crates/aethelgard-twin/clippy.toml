@@ -5,4 +5,5 @@
 disallowed-methods = [
   { path = "aethelgard_ir::Specification::declared_i2c_devices", reason = "RUL-16: read the SolvedTopology (i2c_devices_in_order), not the specification's device list" },
   { path = "aethelgard_ir::Specification::declared_spi_devices", reason = "RUL-16: read the SolvedTopology, not the specification's device list" },
+  { path = "aethelgard_ir::Specification::declared_connectors", reason = "RUL-16 (AET-WO-4300f): a connector is drawn on the board only; nothing solves it, and no runner reads it" },
 ]
