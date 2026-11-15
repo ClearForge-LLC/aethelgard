@@ -5,11 +5,11 @@
 # drc-parity: 3 MalformedBoard kicad_pcb/segment[40]
 # extract: 3 MalformedBoard kicad_pcb/segment[40]
 @@ find
-		(end 95.5 81.875)
+		(end 95.625 81.625)
 		(width 0.2)
 @@ replace
 		(start 94.8 78)
-		(end 95.5 81.875)
+		(end 95.625 81.625)
 		(end 94.8 114.5)
 		(width 0.2)
 		(width 40)

@@ -19,13 +19,21 @@
 //! - **Escape.** On F.Cu no track crosses a footprint's pad field (the box
 //!   around its pads) except inside its own pad, so every pad is left
 //!   straight out across the field's edge. At the LQFP, where the 0.2 mm gap
-//!   between pads admits no track, that is the only way out.
-//! - **Order.** Nets with two or more pads, `unconnected-…` aside, by pad
-//!   count ascending, then by name. A multi-pad net grows as a tree from its
-//!   first pad (by reference, then pad number), joining the nearest pad next.
-//!   Ground is not tracked between pads: each ground pad is joined by F.Cu to
-//!   a via, or to ground copper that already has one, and the B.Cu zone
-//!   joins the vias.
+//!   between pads admits no track, that is the only way out, except inward:
+//!   a dense part's ring interior ([`ring_interior`], `AET-WO-1307` K1) is
+//!   open to every net's F.Cu tracks and through vias.
+//! - **Courtyards.** No via's copper enters a part's courtyard, except a via
+//!   inside that part's own ring interior (K1); [`check`] refuses one.
+//! - **Order** (`AET-WO-1307` order B): a fact about the board, not its
+//!   names. Nets with two or more pads, `unconnected-…` aside, stitched nets
+//!   first, then by pad count ascending, then by their pads' centres; a name
+//!   decides only between two nets whose pads coincide, which [`check`]
+//!   refuses. The nets are indexed in that order, so every index-ordered
+//!   choice (the queue, the blockers taken up, ties) follows it. A net's pads
+//!   are ordered by centre (y, then x), and a multi-pad net grows as a tree
+//!   from its first, joining the nearest pad next. Ground is not tracked
+//!   between pads: each ground pad is joined by F.Cu to a via, or to ground
+//!   copper that already has one, and the B.Cu zone joins the vias.
 //! - **Rip-up and retry.** When a connection finds no free path, a soft
 //!   search that may cross other nets' copper, at a price, names the nets in
 //!   the way. They and the stuck net are taken up; the stuck net is routed
@@ -133,7 +141,13 @@ pub struct Pad {
 pub struct Part {
     pub reference: String,
     pub pads: Vec<Pad>,
+    /// The front courtyard's outline, as straight edges in board
+    /// coordinates; empty for a footprint with none.
+    pub courtyard: Vec<Edge>,
 }
+
+/// A straight edge of an outline, end to end.
+pub type Edge = ((i64, i64), (i64, i64));
 
 /// What the router routes: the outline, every footprint's copper pads, and
 /// the board the specification declares.
@@ -391,6 +405,92 @@ struct Router<'a> {
     generation: u16,
 }
 
+/// The dense part's ring interior (`AET-WO-1307` K1, the build's rule): the
+/// box bounded by the inner edges of the pads nearest the field's centre lines
+/// on each of the four sides. A part qualifies only with pads on all four
+/// sides, an interior at least [`DENSE_INTERIOR_NM`] across both ways, and no
+/// pad inside it, so a QFN's exposed pad excludes it. Why: at a 0.5 mm pitch
+/// a pad ring's adjacent plane pads cannot all drop their vias outward in the
+/// one strip their neighbours' escapes must also cross (the spike's S1); the
+/// interior under the part's own body is empty copper the escape can use
+/// instead.
+pub fn ring_interior(part: &Part) -> Option<Rect> {
+    let field = part.pads.iter().map(|p| p.rect).reduce(|a, b| a.union(b))?;
+    let (cx, cy) = ((field.x0 + field.x1) / 2, (field.y0 + field.y1) / 2);
+    let (qw, qh) = ((field.x1 - field.x0) / 4, (field.y1 - field.y0) / 4);
+    let mid = |p: &&Pad| p.rect.centre();
+    let pads = || part.pads.iter();
+    let rows = |y: i64| (y - cy).abs() < qh;
+    let cols = |x: i64| (x - cx).abs() < qw;
+    let x0 = pads()
+        .filter(|p| mid(p).0 < cx && rows(mid(p).1))
+        .map(|p| p.rect.x1)
+        .max()?;
+    let x1 = pads()
+        .filter(|p| mid(p).0 > cx && rows(mid(p).1))
+        .map(|p| p.rect.x0)
+        .min()?;
+    let y0 = pads()
+        .filter(|p| mid(p).1 < cy && cols(mid(p).0))
+        .map(|p| p.rect.y1)
+        .max()?;
+    let y1 = pads()
+        .filter(|p| mid(p).1 > cy && cols(mid(p).0))
+        .map(|p| p.rect.y0)
+        .min()?;
+    let r = Rect { x0, y0, x1, y1 };
+    let inside =
+        |p: &Pad| p.rect.x0 < r.x1 && p.rect.x1 > r.x0 && p.rect.y0 < r.y1 && p.rect.y1 > r.y0;
+    (x1 - x0 >= DENSE_INTERIOR_NM && y1 - y0 >= DENSE_INTERIOR_NM && !pads().any(inside))
+        .then_some(r)
+}
+
+/// The least free interior, each way, of a dense part (K1).
+pub const DENSE_INTERIOR_NM: i64 = 4_000_000;
+
+/// True when `p` is inside the closed outline `edges` or on it, exactly
+/// (crossings of a ray to +x, half-open in y).
+fn under(edges: &[Edge], p: (i64, i64)) -> bool {
+    let mut inside = false;
+    for &(a, b) in edges {
+        let (dx, dy) = (i128::from(b.0 - a.0), i128::from(b.1 - a.1));
+        let (px, py) = (i128::from(p.0 - a.0), i128::from(p.1 - a.1));
+        if dx * py == dy * px && span(a, b).contains(Rect::point(p.0, p.1)) {
+            return true;
+        }
+        if (a.1 > p.1) != (b.1 > p.1) && (dy > 0) == (px * dy < py * dx) {
+            inside = !inside;
+        }
+    }
+    inside
+}
+
+/// True when some edge of `edges` passes nearer than `r` to `p`, exactly.
+fn near(edges: &[Edge], p: (i64, i64), r: i64) -> bool {
+    let r2 = i128::from(r) * i128::from(r);
+    edges.iter().any(|&(a, b)| {
+        let (dx, dy) = (i128::from(b.0 - a.0), i128::from(b.1 - a.1));
+        let (px, py) = (i128::from(p.0 - a.0), i128::from(p.1 - a.1));
+        let (l2, dot) = (dx * dx + dy * dy, px * dx + py * dy);
+        if l2 == 0 || dot <= 0 {
+            px * px + py * py < r2
+        } else if dot >= l2 {
+            let (qx, qy) = (px - dx, py - dy);
+            qx * qx + qy * qy < r2
+        } else {
+            let cross = px * dy - py * dx;
+            cross * cross < r2 * l2
+        }
+    })
+}
+
+/// True when a via centred at `p` puts copper in `part`'s courtyard, outside
+/// the part's own ring interior `hole` (K1).
+fn in_courtyard(part: &Part, hole: Option<Rect>, p: (i64, i64)) -> bool {
+    !hole.is_some_and(|h| h.contains(Rect::point(p.0, p.1)))
+        && (under(&part.courtyard, p) || near(&part.courtyard, p, VIA_NM / 2))
+}
+
 fn owner(net: usize) -> u32 {
     u32::try_from(net + 1).unwrap_or(BLOCKED)
 }
@@ -419,13 +519,15 @@ impl<'a> Router<'a> {
                 via[node] = BLOCKED;
             }
         }
+        let index: BTreeMap<&str, usize> = nets
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.as_str(), i))
+            .collect();
+        let net_of = |pad: &Pad| pad.net.as_deref().and_then(|n| index.get(n).copied());
         for part in &board.parts {
             for pad in &part.pads {
-                let who = pad
-                    .net
-                    .as_ref()
-                    .and_then(|net| nets.binary_search(net).ok())
-                    .map_or(BLOCKED, owner);
+                let who = net_of(pad).map_or(BLOCKED, owner);
                 let shape = Shape {
                     rect: pad.rect,
                     r: 0,
@@ -433,21 +535,29 @@ impl<'a> Router<'a> {
                 claim(&mut track[0], &grid, shape, board.track_reach(), who);
                 claim(&mut via, &grid, shape, board.via_reach(), who);
             }
-            // The pad field: on F.Cu, only inside a pad; no via near it.
+            // The pad field: on F.Cu, only inside a pad; no via near it;
+            // except in a dense part's own ring interior (K1).
             let Some(field) = part.pads.iter().map(|p| p.rect).reduce(|a, b| a.union(b)) else {
                 continue;
             };
+            let hole = ring_interior(part);
+            let own = |node: usize| {
+                let (x, y) = grid.at(node);
+                hole.is_some_and(|h| h.contains(Rect::point(x, y)))
+            };
             for node in grid.nodes(field) {
                 let (x, y) = grid.at(node);
-                if !part.pads.iter().any(|p| p.rect.contains(Rect::point(x, y))) {
+                if !own(node) && !part.pads.iter().any(|p| p.rect.contains(Rect::point(x, y))) {
                     track[0][node] = BLOCKED;
                 }
             }
             for node in grid.nodes(field.grow(VIA_NM / 2 + board.s())) {
-                via[node] = BLOCKED;
+                if !own(node) {
+                    via[node] = BLOCKED;
+                }
             }
             for pad in &part.pads {
-                if let Some(net) = pad.net.as_ref().and_then(|n| nets.binary_search(n).ok()) {
+                if let Some(net) = net_of(pad) {
                     corridors[net].extend(corridor(&grid, field, pad, board.corridor_half(), 0));
                     via_corridors[net].extend(corridor(
                         &grid,
@@ -456,6 +566,22 @@ impl<'a> Router<'a> {
                         board.corridor_half() + VIA_NM / 2,
                         VIA_NM / 2 + board.s(),
                     ));
+                }
+            }
+        }
+        for part in &board.parts {
+            let hole = ring_interior(part);
+            let Some(yard) = part
+                .courtyard
+                .iter()
+                .map(|&(a, b)| span(a, b))
+                .reduce(|a, b| a.union(b))
+            else {
+                continue;
+            };
+            for node in grid.nodes(yard.grow(VIA_NM / 2)) {
+                if in_courtyard(part, hole, grid.at(node)) {
+                    via[node] = BLOCKED;
                 }
             }
         }
@@ -608,14 +734,29 @@ impl<'a> Router<'a> {
         // move was a via.
         let id = |l: Layer, node: usize, d: usize| (l.index() * n + node) * 5 + d;
         let layer_of = |s: usize| if s / 5 >= n { Layer::B } else { Layer::F };
+        // The price of a node: free, or (soft) another net's.
+        let price = |open: bool, hard: bool| match (open, soft && hard) {
+            (true, _) => Some(0),
+            (false, true) => Some(SOFT_COST),
+            (false, false) => None,
+        };
         let mut heap = BinaryHeap::new();
+        // A source is priced as a move into it is (F2): a pad's terminal is
+        // open by the pads alone, but a track's end there must also keep clear
+        // of the copper already laid.
         for &(l, node) in sources {
+            let Some(extra) = price(
+                self.open(l, node, who),
+                opens(self.hard_track[l.index()][node], who),
+            ) else {
+                continue;
+            };
             let s = id(l, node, 4);
-            if self.stamp[s] != g {
+            if self.stamp[s] != g || extra < self.cost[s] {
                 self.stamp[s] = g;
-                self.cost[s] = 0;
+                self.cost[s] = extra;
                 self.prev[s] = SOURCE;
-                heap.push(Reverse((h(node), s)));
+                heap.push(Reverse((extra + h(node), s)));
             }
         }
         let (wx0, wy0, wx1, wy1) = window;
@@ -646,12 +787,6 @@ impl<'a> Router<'a> {
                 return Some(path);
             }
             moves.clear();
-            // The price of a node: free, or (soft) another net's.
-            let price = |open: bool, hard: bool| match (open, soft && hard) {
-                (true, _) => Some(0),
-                (false, true) => Some(SOFT_COST),
-                (false, false) => None,
-            };
             let from = d as u8;
             if l == Layer::F || b_moves {
                 for dir in 0..4 {
@@ -774,8 +909,12 @@ impl<'a> Router<'a> {
     fn blockers(&mut self, net: usize, path: &[Node]) -> BTreeSet<usize> {
         let who = owner(net);
         let mut out = BTreeSet::new();
-        for w in path.windows(2) {
-            let ((la, a), (lb, b)) = (w[0], w[1]);
+        // The source is a step too (F2): a path may start where it is not free.
+        let first = path.first().map(|&(l, n)| ((l, n), (l, n)));
+        let steps = first
+            .into_iter()
+            .chain(path.windows(2).map(|w| (w[0], w[1])));
+        for ((la, a), (lb, b)) in steps {
             let (at, reach, layers) = if la == lb {
                 if self.open(lb, b, who) {
                     continue;
@@ -1339,25 +1478,26 @@ fn zone_name(stack: &crate::stack::Stack, net: &str) -> String {
     }
 }
 
-/// Each routed net's pads, in order: by reference, then pad number.
+/// A pad's centre as (y, x): the key of every geometric order (order B).
+fn yx(pad: &Pad) -> (i64, i64) {
+    let (x, y) = pad.rect.centre();
+    (y, x)
+}
+
+/// Each routed net's pads, in order: by centre, y then x (order B). Two pads
+/// of one net with one centre keep the order of `board.parts`; [`check`]
+/// refuses two such pads of different nets.
 fn net_pads(board: &Board) -> BTreeMap<String, Vec<PadRef>> {
-    let mut order: Vec<usize> = (0..board.parts.len()).collect();
-    order.sort_by(|&a, &b| board.parts[a].reference.cmp(&board.parts[b].reference));
     let mut out: BTreeMap<String, Vec<PadRef>> = BTreeMap::new();
-    for part in order {
-        let mut pads: Vec<usize> = (0..board.parts[part].pads.len()).collect();
-        pads.sort_by(|&a, &b| {
-            let n = |i: usize| {
-                let s = &board.parts[part].pads[i].number;
-                (s.parse::<u64>().unwrap_or(u64::MAX), s.clone())
-            };
-            n(a).cmp(&n(b))
-        });
-        for i in pads {
-            if let Some(net) = &board.parts[part].pads[i].net {
+    for (part, p) in board.parts.iter().enumerate() {
+        for (i, pad) in p.pads.iter().enumerate() {
+            if let Some(net) = &pad.net {
                 out.entry(net.clone()).or_default().push((part, i));
             }
         }
+    }
+    for list in out.values_mut() {
+        list.sort_by_key(|&(p, i)| yx(&board.parts[p].pads[i]));
     }
     out
 }
@@ -1379,35 +1519,34 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
         )
     })?;
     let pads = net_pads(board);
-    let nets: Vec<String> = pads.keys().cloned().collect();
-    let mut order: Vec<usize> = (0..nets.len())
+    // The stitched nets: ground at 2 layers (the B.Cu zone); at 4, each plane's
+    // net. Their stitching is laid before any net is tracked.
+    let is_stitched = |n: &str| {
+        if board.stack.has_planes() {
+            board.stack.planes.iter().any(|(_, p)| p == n)
+        } else {
+            n == GROUND
+        }
+    };
+    // Order B: each net's index is its rank by (stitched first, pad count,
+    // its pads' centres), the name last; so is every choice made by index.
+    let mut nets: Vec<String> = pads.keys().cloned().collect();
+    nets.sort_by_cached_key(|name| {
+        let list = &pads[name];
+        let at: Vec<(i64, i64)> = list
+            .iter()
+            .map(|&(p, i)| yx(&board.parts[p].pads[i]))
+            .collect();
+        (!is_stitched(name), list.len(), at, name.clone())
+    });
+    let pads: Vec<Vec<PadRef>> = nets.iter().map(|n| pads[n].clone()).collect();
+    let order: Vec<usize> = (0..nets.len())
         // belt-and-suspenders: an `unconnected-` net is one pin's alone
         // (`pcb::pin_nets`, and parity refuses two), so the pad count already
         // skips it; this keeps a track from ever joining one.
-        .filter(|&i| pads[&nets[i]].len() > 1 && !nets[i].starts_with(crate::parity::UNCONNECTED))
+        .filter(|&i| pads[i].len() > 1 && !nets[i].starts_with(crate::parity::UNCONNECTED))
         .collect();
-    // The stitched nets: ground at 2 layers (the B.Cu zone); at 4, each plane's
-    // net. Their stitching is laid before any net is tracked.
-    let stitched: Vec<usize> = if board.stack.has_planes() {
-        board
-            .stack
-            .planes
-            .iter()
-            .filter_map(|(_, n)| nets.binary_search(n).ok())
-            .collect()
-    } else {
-        nets.binary_search_by(|n| n.as_str().cmp(GROUND))
-            .ok()
-            .into_iter()
-            .collect()
-    };
-    order.sort_by_key(|&i| {
-        (
-            !stitched.contains(&i),
-            pads[&nets[i]].len(),
-            nets[i].clone(),
-        )
-    });
+    let stitched: Vec<usize> = (0..nets.len()).filter(|&i| is_stitched(&nets[i])).collect();
     let mut r = Router::new(board, grid, nets.clone());
     let mut queue: VecDeque<usize> = order.iter().copied().collect();
     let mut ripups = 0;
@@ -1415,7 +1554,7 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
         while let Some(net) = queue.pop_front() {
             r.release(net, true);
             loop {
-                let p = &pads[&nets[net]];
+                let p = &pads[net];
                 let result = if stitched.contains(&net) {
                     r.route_ground(net, p)
                 } else {
@@ -1570,7 +1709,8 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
 /// Every pair of copper items on a shared layer, of different nets (a pad
 /// with no net differs from everything), keeps the declared clearance; every
 /// track and via keeps [`EDGE_NM`] from the edge; holes keep
-/// [`HOLE_GAP_NM`]; tracks run along an axis.
+/// [`HOLE_GAP_NM`]; tracks run along an axis; no via's copper is in a part's
+/// courtyard, but inside that part's own ring interior (`AET-WO-1307` K1).
 pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
     let all = items(board, routed);
     for (i, a) in all.iter().enumerate() {
@@ -1613,6 +1753,15 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
             if gap2(Rect::point(a.at.0, a.at.1), Rect::point(b.at.0, b.at.1)) < need * need {
                 return Err(format!("vias {:?} and {:?} are too close", a.at, b.at));
             }
+        }
+    }
+    for part in &board.parts {
+        let hole = ring_interior(part);
+        if let Some(v) = routed.vias.iter().find(|v| in_courtyard(part, hole, v.at)) {
+            return Err(format!(
+                "via {:?} ({}) is in {}'s courtyard",
+                v.at, v.net, part.reference
+            ));
         }
     }
     Ok(())
@@ -1910,7 +2059,85 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
             corner_nm: corner,
         });
     }
-    Ok(Part { reference, pads })
+    // The front courtyard, as straight edges; an arc or circle in it is not
+    // modelled and is refused, never approximated.
+    let mut courtyard = Vec::new();
+    let at = |p: (i64, i64)| (origin.0 + p.0, origin.1 + p.1);
+    for g in fp.lists() {
+        let head = g.head().unwrap_or("");
+        if !head.starts_with("fp_") || one(&g, "layer")?.and_then(|l| l.arg(1)) != Some("F.CrtYd") {
+            continue;
+        }
+        let what = format!("{reference}'s courtyard {head}");
+        match head {
+            "fp_line" | "fp_rect" => {
+                let a = at(xy_of(one(&g, "start")?, &what)?);
+                let b = at(xy_of(one(&g, "end")?, &what)?);
+                if head == "fp_line" {
+                    courtyard.push((a, b));
+                } else {
+                    let c = [a, (b.0, a.1), b, (a.0, b.1)];
+                    courtyard.extend((0..4).map(|i| (c[i], c[(i + 1) % 4])));
+                }
+            }
+            "fp_poly" => {
+                let pts = one(&g, "pts")?.ok_or_else(|| format!("{what}: no `pts`"))?;
+                let c = pts
+                    .all("xy")
+                    .map(|xy| xy_of(Some(xy), &what).map(at))
+                    .collect::<Result<Vec<_>, _>>()?;
+                courtyard.extend((0..c.len()).map(|i| (c[i], c[(i + 1) % c.len()])));
+            }
+            _ => return Err(format!("{what} is not modelled")),
+        }
+    }
+    Ok(Part {
+        reference,
+        pads,
+        courtyard,
+    })
+}
+
+/// True when `zone`'s outline is the board's (`AET-WO-1307` K6, 4100 F7):
+/// exactly one `polygon` with one `pts` of exactly four `xy` points, which
+/// are `outline`'s corners in any cyclic order and direction. A
+/// `filled_polygon` (KiCad's saved fill) is not read.
+fn zone_is_outline(zone: &strict::Node<'_>, outline: Rect) -> Result<bool, String> {
+    let polygons: Vec<_> = zone.all("polygon").collect();
+    let [polygon] = polygons.as_slice() else {
+        return Ok(false);
+    };
+    let lists: Vec<_> = polygon.lists().collect();
+    let [pts] = lists.as_slice() else {
+        return Ok(false);
+    };
+    if pts.head() != Some("pts") {
+        return Ok(false);
+    }
+    let points = pts
+        .lists()
+        .map(|xy| match xy.head() {
+            Some("xy") if xy.len() == 3 => xy_of(Some(xy), "a zone").map(Some),
+            _ => Ok(None),
+        })
+        .collect::<Result<Option<Vec<_>>, _>>()?;
+    let Some(points) = points else {
+        return Ok(false);
+    };
+    let Rect { x0, y0, x1, y1 } = outline;
+    let mut corners = vec![(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
+    let mut seen = points.clone();
+    corners.sort();
+    seen.sort();
+    // The four corners, each once, and each step along an edge (never a
+    // diagonal): the rectangle, walked either way from any corner.
+    Ok(seen == corners
+        && x0 != x1
+        && y0 != y1
+        && (0..4).all(|i| {
+            let (p, q) = (points[i], points[(i + 1) % 4]);
+            (p.0 == q.0) != (p.1 == q.1)
+        }))
 }
 
 /// A board that does not agree with the specification's declared board,
@@ -2120,18 +2347,25 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
             at: xy_of(one(&v, "at")?, "via")?,
         });
     }
+    let outline = span(a, b);
     for z in board.all("zone") {
         let layer = one(&z, "layer")?
             .and_then(|l| l.arg(1))
             .map(str::to_owned)
             .ok_or("a zone has no layer")?;
-        routed.zones.push((net(&z, "a zone")?, layer));
+        let name = net(&z, "a zone")?;
+        if !zone_is_outline(&z, outline)? {
+            return Err(format!(
+                "zone `{name}` on {layer}: its outline is not the board's"
+            ));
+        }
+        routed.zones.push((name, layer));
     }
     routed.segments.sort();
     routed.vias.sort();
     Ok((
         Board {
-            outline: span(a, b),
+            outline,
             parts,
             stack: stack.clone(),
         },
@@ -2179,7 +2413,90 @@ mod tests {
                     rect(x + 260_000, y - 320_000, x + 760_000, y + 320_000),
                 ),
             ],
+            courtyard: Vec::new(),
         }
+    }
+
+    /// A quad pad ring: `per` pads a side at 0.5 mm, 1.5 mm long, around a
+    /// free square `inner` across; `sides` of the four are populated, and
+    /// `centre` adds a pad in the middle (an exposed pad).
+    fn ring(per: i64, inner: i64, sides: usize, centre: bool) -> Part {
+        let mut pads = Vec::new();
+        let half = inner / 2;
+        let span = (per - 1) * MM / 2;
+        for side in 0..sides {
+            for k in 0..per {
+                let along = -span / 2 + k * MM / 2;
+                let (cx, cy) = match side {
+                    0 => (-half - 750_000, along),
+                    1 => (half + 750_000, along),
+                    2 => (along, -half - 750_000),
+                    _ => (along, half + 750_000),
+                };
+                let (w, h) = if side < 2 {
+                    (750_000, 150_000)
+                } else {
+                    (150_000, 750_000)
+                };
+                pads.push(pad(
+                    &format!("{}", pads.len() + 1),
+                    None,
+                    rect(
+                        50 * MM + cx - w,
+                        50 * MM + cy - h,
+                        50 * MM + cx + w,
+                        50 * MM + cy + h,
+                    ),
+                ));
+            }
+        }
+        if centre {
+            pads.push(pad("EP", None, rect(49 * MM, 49 * MM, 51 * MM, 51 * MM)));
+        }
+        Part {
+            reference: "U".into(),
+            pads,
+            courtyard: Vec::new(),
+        }
+    }
+
+    /// K1's rule: a part with pads on all four sides and a free interior of
+    /// at least 4 mm is the dense part; two sides, an exposed pad or a
+    /// smaller interior is not.
+    #[test]
+    fn the_dense_part_is_chosen_by_rule() {
+        let r = ring_interior(&ring(9, 5 * MM, 4, false)).unwrap();
+        assert_eq!(r, rect(47_500_000, 47_500_000, 52_500_000, 52_500_000));
+        assert_eq!(
+            ring_interior(&ring(9, DENSE_INTERIOR_NM, 4, false)).map(|r| r.x1 - r.x0),
+            Some(DENSE_INTERIOR_NM)
+        );
+        assert_eq!(
+            ring_interior(&ring(9, DENSE_INTERIOR_NM - 1, 4, false)),
+            None
+        );
+        assert_eq!(ring_interior(&ring(9, 5 * MM, 2, false)), None);
+        assert_eq!(ring_interior(&ring(9, 5 * MM, 3, false)), None);
+        assert_eq!(ring_interior(&ring(9, 5 * MM, 4, true)), None);
+    }
+
+    /// The courtyard predicates are exact: on the outline is under it; a via
+    /// tangent to it is clear, 1 nm nearer is not.
+    #[test]
+    fn the_courtyard_test_is_exact() {
+        let sq = |a: i64, b: i64| -> Vec<Edge> {
+            let c = [(a, a), (b, a), (b, b), (a, b)];
+            (0..4).map(|i| (c[i], c[(i + 1) % 4])).collect()
+        };
+        let e = sq(0, 10 * MM);
+        assert!(under(&e, (5 * MM, 5 * MM)));
+        assert!(under(&e, (0, 5 * MM)) && under(&e, (10 * MM, 10 * MM)));
+        assert!(!under(&e, (-1, 5 * MM)) && !under(&e, (10 * MM + 1, 0)));
+        assert!(!near(&e, (10 * MM + 300_000, 5 * MM), 300_000));
+        assert!(near(&e, (10 * MM + 299_999, 5 * MM), 300_000));
+        // A corner: the distance is to the point, not the box.
+        assert!(!near(&e, (10 * MM + 212_133, 10 * MM + 212_133), 300_000));
+        assert!(near(&e, (10 * MM + 212_131, 10 * MM + 212_131), 300_000));
     }
 
     /// Two resistors whose nets cross (`AET-WO-1300` S4's case): both nets
@@ -2210,6 +2527,7 @@ mod tests {
             parts: vec![Part {
                 reference: "R1".into(),
                 pads: vec![pad("1", Some("/A"), rect(4 * MM, 4 * MM, 5 * MM, 5 * MM))],
+                courtyard: Vec::new(),
             }],
             stack: crate::stack::reference(),
         };
