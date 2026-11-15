@@ -1139,27 +1139,34 @@ fn serial_who(s: &Serial) -> String {
     )
 }
 
-/// A port whose wire-time budget does not fit: the port, its character's
-/// and its budget's ns, and where the budget ends (`None` where its baud
-/// gives no time).
-pub type WirePast<'a> = (&'a Serial, Option<(u64, u64)>, Option<u64>);
+/// A port at which the wire-time budget passes the window: the port, its
+/// character's ns, its own budget's and the ports' budgets' sum through it,
+/// and where that sum ends (`None` where its baud gives no time).
+pub type WirePast<'a> = (&'a Serial, Option<(u64, u64, u64)>, Option<u64>);
 
-/// The first port, in the specification's order, whose wire-time budget
-/// ([`aethelgard_twin::serial::wire_ns`]) does not fit between the
-/// injection at `injection_ns` and the board's window `window_ns` (the PM's
-/// ruling on adversarial F5): the port, its character's and its budget's ns,
-/// and where the budget ends. A port whose baud gives no time is the same.
+/// The first port, in the specification's order, at which the ports' wire
+/// time no longer fits between the injection at `injection_ns` and the
+/// board's window `window_ns` (the PM's rulings on adversarial F5 and on
+/// pass 2's H1): the firmware sends the patterns port after port and echoes
+/// port after port, so the budget is the sum, in the specification's order,
+/// of each port's own ([`aethelgard_twin::serial::wire_ns`]: its pattern,
+/// the frame and one echoed character). The port, its character's ns, its
+/// budget's and the sum through it, and where the sum ends. A port whose baud
+/// gives no time is the same.
 pub fn wire_past_window(
     serial: &[Serial],
     injection_ns: u64,
     window_ns: u64,
 ) -> Option<WirePast<'_>> {
+    let mut sum = Some(0u64);
     serial.iter().find_map(|s| {
         let millibaud = s.silicon.actual_millibaud;
         let char_ns = aethelgard_twin::serial::char_ns(&s.port.framing, millibaud);
         let wire = aethelgard_twin::serial::wire_ns(&s.port.label, &s.port.framing, millibaud);
-        let end = wire.and_then(|w| injection_ns.checked_add(w));
-        (!end.is_some_and(|e| e <= window_ns)).then_some((s, char_ns.zip(wire), end))
+        sum = sum.zip(wire).and_then(|(a, w)| a.checked_add(w));
+        let end = sum.and_then(|t| injection_ns.checked_add(t));
+        let times = char_ns.zip(wire).zip(sum).map(|((c, w), t)| (c, w, t));
+        (!end.is_some_and(|e| e <= window_ns)).then_some((s, times, end))
     })
 }
 
@@ -3397,14 +3404,17 @@ mod tests {
         ));
     }
 
-    /// The PM's ruling on adversarial F5, from the topology alone: the
-    /// console's pattern (12 characters), the frame (8) and one echoed
-    /// character, from the injection one quantum in (100 000 ns), inside the
-    /// board's window. At 115 200 8N1 (BRR 556): 21 x 86 876 = 1 824 396 ns,
-    /// ending at 1 924 396 ns, inside `DSHOT_WINDOW_NS` (2 000 000). At 9600
-    /// 8N1 (BRR 6667, 9 599.520 baud): 21 x 1 041 719 = 21 876 099 ns,
-    /// ending at 21 976 099 ns: past the DShot window, inside
-    /// `MAX_VIRTUAL_NS` (100 000 000).
+    /// The PM's rulings on adversarial F5 and pass 2's H1, from the
+    /// topology alone: each port's pattern, the frame (8) and one echoed
+    /// character, summed over the ports in the specification's order, from
+    /// the injection one quantum in (100 000 ns), inside the board's window.
+    /// The console at 115 200 8N1 (BRR 556): 21 x 86 876 = 1 824 396 ns,
+    /// ending at 1 924 396 ns, inside `DSHOT_WINDOW_NS` (2 000 000). A `GPS`
+    /// port after it at 115 200 8N1: 17 x 86 876 = 1 476 892 ns, 3 301 288 ns
+    /// with the console's, ending at 3 401 288 ns: past the DShot window,
+    /// though each alone fits. At 9600 8N1 (BRR 6667, 9 599.520 baud): 21 x
+    /// 1 041 719 = 21 876 099 ns, ending at 21 976 099 ns: past the DShot
+    /// window, inside `MAX_VIRTUAL_NS` (100 000 000).
     #[test]
     fn a_port_s_wire_time_must_fit_the_board_s_window() {
         let dshot = aethelgard_twin::boot::DSHOT_WINDOW_NS;
@@ -3416,8 +3426,22 @@ mod tests {
         let late = wire_past_window(&fast, 175_605, dshot).unwrap();
         assert_eq!(
             (late.1, late.2),
-            (Some((86_876, 1_824_396)), Some(2_000_001))
+            (Some((86_876, 1_824_396, 1_824_396)), Some(2_000_001))
         );
+        // H1: the ports are served one after another. A second port, alone
+        // inside the window, passes it after the console.
+        let mut gps = fast[0].clone();
+        gps.port.label = "GPS".to_owned();
+        gps.pattern = aethelgard_twin::serial::pattern("GPS");
+        assert!(wire_past_window(std::slice::from_ref(&gps), 100_000, dshot).is_none());
+        let two = [fast[0].clone(), gps];
+        let (port, times, end) = wire_past_window(&two, 100_000, dshot).unwrap();
+        assert_eq!(port.port.label, "GPS");
+        assert_eq!(
+            (times, end),
+            (Some((86_876, 1_476_892, 3_301_288)), Some(3_401_288))
+        );
+        assert!(wire_past_window(&two, 100_000, full).is_none());
         let slow_json = CONSOLE_TOPOLOGY
             .replace("\"baud\":115200", "\"baud\":9600")
             .replace(
@@ -3432,7 +3456,7 @@ mod tests {
         assert_eq!(port.port.label, "CONSOLE");
         assert_eq!(
             (times, end),
-            (Some((1_041_719, 21_876_099)), Some(21_976_099))
+            (Some((1_041_719, 21_876_099, 21_876_099)), Some(21_976_099))
         );
         assert!(wire_past_window(&slow, 100_000, full).is_none());
     }

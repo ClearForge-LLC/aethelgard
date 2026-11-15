@@ -1189,10 +1189,12 @@ fn serial_fits(injection_ns: u64, window_ns: u64, window: &str) -> Result<(), ru
     ))
 }
 
-/// `SerialWireTimePastWindow` (the PM's ruling on adversarial F5): each
-/// port's pattern, the frame and one echoed character, at its solved actual
-/// baud, from the injection at `injection_ns`, inside the board's window.
-/// The twin renders no wire time, so this is judged before the boot.
+/// `SerialWireTimePastWindow` (the PM's rulings on adversarial F5 and pass
+/// 2's H1): every port's pattern, the frame and one echoed character, each
+/// at its solved actual baud, summed over the ports in the specification's
+/// order (the firmware serves them one after another), from the injection
+/// at `injection_ns`, inside the board's window. The twin renders no wire
+/// time, so this is judged before the boot.
 fn serial_wire_fits(
     serial: &[renode::Serial],
     injection_ns: u64,
@@ -1210,11 +1212,18 @@ fn serial_wire_fits(
             s.port.peripheral,
             aethelgard_twin::serial::describe(&s.port.framing),
             match (times, end) {
-                (Some((char_ns, wire)), Some(end)) => format!(
-                    "its pattern ({} characters), the frame ({}) and one echoed character take {wire} ns on the wire at {} mbaud ({char_ns} ns a character), ending at {end} ns",
+                (Some((char_ns, wire, sum)), Some(end)) => format!(
+                    "its pattern ({} characters), the frame ({}) and one echoed character take {wire} ns on the wire at {} mbaud ({char_ns} ns a character), {}ending at {end} ns",
                     s.pattern.len(),
                     aethelgard_twin::serial::FRAME_LEN,
-                    s.silicon.actual_millibaud
+                    s.silicon.actual_millibaud,
+                    if sum > wire {
+                        format!(
+                            "{sum} ns after the ports before it in the specification's order, which the firmware serves first, "
+                        )
+                    } else {
+                        String::new()
+                    }
                 ),
                 _ => format!(
                     "its wire time at {} mbaud cannot be computed",
