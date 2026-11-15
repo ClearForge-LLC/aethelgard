@@ -142,7 +142,9 @@ pub fn char_ns(framing: &Framing, actual_millibaud: u64) -> Option<u64> {
 /// A port's wire-time budget in ns (the PM's ruling on adversarial F5): its
 /// pattern, the frame, and one character more, since the firmware echoes
 /// byte by byte, each character [`char_ns`]. The twin renders no wire time
-/// (Renode queues the bytes): the budget is judged statically, before the
+/// (Renode queues the bytes): the CLI sums the ports' budgets in the
+/// specification's order, since the firmware serves them one after another
+/// (the ruling on pass 2's H1), and judges the sum statically, before the
 /// boot, against the board's window.
 pub fn wire_ns(label: &str, framing: &Framing, actual_millibaud: u64) -> Option<u64> {
     let chars = u64::try_from(pattern(label).len() + FRAME_LEN + 1).ok()?;

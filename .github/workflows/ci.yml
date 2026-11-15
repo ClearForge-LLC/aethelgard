@@ -291,7 +291,11 @@ jobs:
       # datasheet resets, ArduPilot's probe, rounding, data-ready, a model that
       # does not compile, the BMP581's deep start-up and read pointer, the
       # datasheets' access timing (plus 7).
-      TIER2_MIN: "140"
+      # 145: plus 5 from AET-WO-4300b's second adversarial pass in twin_tier2.rs
+      # (ADV2-1 a GPIO reset through the RCC, ADV2-2 an open-drain pulled-down TX,
+      # ADV2-3 a SYSRESETREQ at start, ADV2-4 an unaligned store into AFRH,
+      # ADV2-5 a locked TX pin).
+      TIER2_MIN: "145"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
