@@ -1,6 +1,6 @@
 # AET-WO-3303 FEEDBACK — package preconditions, the harness split, the pair judge's allowlist, a strict number reader, `main` kept green
 
-**Status: in progress, stopping on D1** (§7, the second flag-and-stop condition) on branch `wo/aet-3303-preconditions`, from `main` at `4246200`. Campaign coverage is judged and stated in every package's verdict, and **not enforced** until D1 is ruled: enforcing it today refuses every board with an SPI bus, the reference among them. Everything else in §1 is built; §1.2 (the harness split) is being measured.
+**Status: in progress, stopping on D1** (§7, the second flag-and-stop condition) on branch `wo/aet-3303-preconditions`, from `main` at `4246200`. Campaign coverage is judged and stated in every package's verdict, and **not enforced** until D1 is ruled: enforcing it today refuses every board with an SPI bus, the reference among them. Everything else in §1 is built, and §1.2's measured stop did not fire: the split proves in seconds.
 
 The predictions in §1 were committed before any container run, any measured run of the CLI and any Kani run. They are not edited afterwards; corrections go in later sections.
 
@@ -67,6 +67,21 @@ Blocks: §2's "the reference package's `VERDICT` lists every precondition as met
 - Every package verdict carries `fab.preconditions`: `every_harness_proved` (each planned harness has a `prove` gate that passed; a timed-out or failed harness is named), `campaign_faults_every_bus_and_rail` (D1: stated, not enforced), `every_gate_passed` (each gate not `pass`, and each error finding). It sits inside `fab`, so the manifest's `verdict_sha256` line is unchanged. `4230` appends its ledger row to the same list.
 - **P3 was wrong [read].** It counted `pullup-47k` and `spi-absent-u4`, which fail, and a package needs every scenario to pass (D1).
 - **P4 held [measured]**, and D1 grew beyond it.
+
+### §1.2 The whole-schedule harness, split (an Opus subagent; its diff and the runner log checked by me)
+- **The measured stop did not fire [measured, in the image].** On a board with a timer, `every_valid_sequence` becomes `every_valid_sequence_<unit>`: one part per I2C or SPI peripheral (its pins and chip selects), per timer (its channel pins and the reset-clock read), and `_gpio` for an output no unit owns. A board without a timer emits the whole harness byte for byte as before (every timerless fixture and `boards/sentinel-01` regenerate identical).
+
+  | Part (wall clock through `aethelgard prove`, compile included) | `motors-pwm` | `motors-dshot600` |
+  |---|---|---|
+  | `every_valid_sequence_i2c1` | 12.4 s | 12.9 s |
+  | `every_valid_sequence_spi1` | 36.0 s | 37.1 s |
+  | `every_valid_sequence_tim1` | 43.6 s | 43.7 s |
+
+  The reference's whole harness: 129 s, unchanged. A throwaway board with an extra output (no specification can declare one) proves `_gpio` in 2.6 s. **P1 held** (each part under 5 min, the sum under 10).
+- **Why the parts are the same claim (rely–guarantee, mechanised).** Each action has a footprint, the bits the whole oracle lets it change, computed from the plan and the register facts. In a part, every write asserts it changes only the running action's footprint (a stored `BSRR` is judged on the value written), and an access outside the part's blocks fails; before each step every bit of another owner's footprint is havocked (the rely); every other bit is asserted unchanged directly. `generate` refuses footprints that overlap between owners (`FootprintOverlap`; each port enable is its own owner) and an action of the whole schedule in no part (`UnscheduledAction`). Sketch: a whole schedule is a permutation of take-once actions, and its projection on a part's actions is a schedule of that part; up to the first write outside a footprint, every bit another owner changed is one the rely may choose, so the part's step runs as in the whole, and its assertions (a superset of the whole's on its blocks) hold; at the end each owner's bits were last changed by its own actions. The parts are strictly stronger than the old claim: a set-then-restore of another unit's gate bit fails them, and would pass the old end-state oracle (not run on the whole harness, which does not finish).
+- **P2 held [measured]:** each mutant fails its own part. (a) I2C start writes a TIM1 word: "a block outside the i2c1 part was accessed"; (b) TIM start sets the chip select by `BSRR`: "GpioA BSRR write touches a pin no solved output of the tim1 part owns"; (b3) the same through `ODR`: "a write changed a bit outside the running action's footprint"; (c) `enable_tim1` emptied: "Tim1 accessed before RCC_APB2ENR bit 0 is set"; (d) set then restore TIM1's gate in `enable_i2c1`: the footprint assertion; (e) `kani::assume(false)` in `_tim1`: `cover_unsatisfied`, 0 of 3.
+- **Not measured:** a board with two timers (their shared reset-clock read is argued, not run).
+- `verify` lost `harness_plan`'s drop and its `info` finding: nothing is skipped. `twin_tier2::kani_proves_every_part_of_both_motor_fixtures` proves all six parts in CI (weighed 240 s; TIER2_MIN 127, `main`'s 126 and this test).
 
 ### §1.3 The pair judge's allowlist
 - `check drc --spec` with declared pairs now runs `extract::read_tree` (extraction's whole allowlist, the version pin, `declared`, `route::read`, `connectivity`, `check`) on its own strict reading, then `pairs`. `extract::read` is `read_tree` on a fresh reading, so the two cannot differ.

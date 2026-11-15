@@ -281,7 +281,7 @@ jobs:
       # datasheet resets, ArduPilot's probe, rounding, data-ready, a model that
       # does not compile, the BMP581's deep start-up and read pointer, the
       # datasheets' access timing (plus 7).
-      TIER2_MIN: "126"
+      TIER2_MIN: "127"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
