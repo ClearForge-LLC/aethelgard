@@ -1,0 +1,11 @@
+bar: tube 428.571429 = exact 428.571429
+annulus: flow 6.303874 = exact ln(b/a)/(2 pi t) 6.303874
+barrel: flow 100.334085 = exact H/(pi t_p (2 r_d - t_p)) 100.334085
+bend a=3.0 b=3.0 fine=0.0250: exact in [4.55530, 4.56253] squares; corner excess over arms 0.5625..0.5553; tube bound 5.00000 holds
+bend a=3.0 b=3.0 fine=0.0063: exact in [4.55773, 4.55993] squares; corner excess over arms 0.5599..0.5577; tube bound 5.00000 holds
+bend a=2.0 b=5.0 fine=0.0250: exact in [5.55521, 5.56242] squares; corner excess over arms 0.5624..0.5552; tube bound 6.00000 holds
+bend a=2.0 b=5.0 fine=0.0063: exact in [5.55763, 5.55982] squares; corner excess over arms 0.5598..0.5576; tube bound 6.00000 holds
+bend a=1.5 b=1.5 fine=0.0250: exact in [1.55037, 1.55773] squares; corner excess over arms 0.5577..0.5504; tube bound 2.00000 holds
+bend a=1.5 b=1.5 fine=0.0063: exact in [1.55288, 1.55506] squares; corner excess over arms 0.5551..0.5529; tube bound 2.00000 holds
+transfer: max over 300 networks of drop_p / (R_eff(s,p) * total load) = 1.000000 holds
+ALL HOLD

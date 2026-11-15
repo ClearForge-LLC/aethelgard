@@ -1,0 +1,32 @@
+1. bowtie vs exact two-hole sheet (squares)
+   D   1.0 beta 75: bowtie   1.9523 exact  0.5965 ratio   3.27 holds
+   D   1.0 beta 45: bowtie   1.9742 exact  0.5965 ratio   3.31 holds
+   D   1.0 beta 20: bowtie   3.6273 exact  0.5965 ratio   6.08 holds
+   D   1.0 beta  7: bowtie   9.9159 exact  0.5965 ratio  16.62 holds
+   D   1.0 beta  2: bowtie  34.5087 exact  0.5965 ratio  57.86 holds
+   D   3.0 beta 75: bowtie   2.7916 exact  0.9528 ratio   2.93 holds
+   D   3.0 beta 45: bowtie   3.3730 exact  0.9528 ratio   3.54 holds
+   D   3.0 beta 20: bowtie   6.7746 exact  0.9528 ratio   7.11 holds
+   D   3.0 beta  7: bowtie  18.9082 exact  0.9528 ratio  19.85 holds
+   D   3.0 beta  2: bowtie  65.9817 exact  0.9528 ratio  69.25 holds
+   D  10.0 beta 75: bowtie   3.7114 exact  1.3367 ratio   2.78 holds
+   D  10.0 beta 45: bowtie   4.9060 exact  1.3367 ratio   3.67 holds
+   D  10.0 beta 20: bowtie  10.2237 exact  1.3367 ratio   7.65 holds
+   D  10.0 beta  7: bowtie  28.7628 exact  1.3367 ratio  21.52 holds
+   D  10.0 beta  2: bowtie 100.4729 exact  1.3367 ratio  75.16 holds
+   D  30.0 beta 75: bowtie   4.5507 exact  1.6865 ratio   2.70 holds
+   D  30.0 beta 45: bowtie   6.3048 exact  1.6865 ratio   3.74 holds
+   D  30.0 beta 20: bowtie  13.3710 exact  1.6865 ratio   7.93 holds
+   D  30.0 beta  7: bowtie  37.7551 exact  1.6865 ratio  22.39 holds
+   D  30.0 beta  2: bowtie 131.9459 exact  1.6865 ratio  78.24 holds
+2. fan + tube vs a certified lower bound on R(K) (squares)
+   straight: tube+fan bound  5.3313, certified R >=  4.7989, ratio  1.11 holds
+   45 deg turn at 0.125: tube+fan bound  4.3303, certified R >=  3.7270, ratio  1.16 holds
+   90 deg turn at 0.125: tube+fan bound  4.7152, certified R >=  3.9360, ratio  1.20 holds
+3. pass through a pad: tube + virtual segment vs a certified lower bound on R(K) (squares)
+   straight across: tube width 0.200, bound 15.0000, certified R >= 11.5021, ratio  1.30 holds
+   corner inside the pad: tube width 0.200, bound 14.2678, certified R >= 10.9221, ratio  1.31 holds
+   offset ends: tube width 0.200, bound 15.2028, certified R >= 11.0317, ratio  1.38 holds
+4. via entry admissibility, brute force: every chosen cut's fan region is via-pad copper
+   381 random approaches, 293 admissible cuts; points of cut lines outside the via-pad annulus: 0
+ALL HOLD
