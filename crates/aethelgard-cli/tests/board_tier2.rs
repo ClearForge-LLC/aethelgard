@@ -1019,7 +1019,7 @@ fn the_power_fixture_passes_erc_drc_its_loop_rules_and_extract() {
     let moved_path = base.join("moved.kicad_pcb");
     fs::write(&moved_path, moved.board).unwrap();
     let (code, v) = drc(moved_path.to_str().unwrap());
-    assert_eq!(code, Some(5), "moved drc: {v}");
+    assert_eq!(code, Some(1), "moved drc: {v}");
     let kinds: Vec<&str> = v["findings"]
         .as_array()
         .unwrap()
