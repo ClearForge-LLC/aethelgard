@@ -1,28 +1,8 @@
 //! The pinout check (`AET-WO-4400a`, ruling D7 on PR #130): what a linked
-//! STM32H7 firmware writes to its GPIO registers at reset, judged against the
-//! `SolvedTopology` it was meant to realise.
-//!
-//! - **Observed** values come from the firmware alone: the 308 bytes of
-//!   `gpio_default_config` in the ELF ([`elf`]), and, as a cross-check that
-//!   refuses on any disagreement, `hwdef.h`'s initialisers ([`header`]).
-//! - **Expected** values come only from the topology, a declared allow-list
-//!   passed in, and the package's pin list. The check holds no list of its own
-//!   and never reads the `hwdef.dat` a generator wrote (`INV-07`).
-//!
-//! Three directions:
-//! - **forward:** every assignment's pin is alternate at its solved AF, every
-//!   `gpio` pin an output;
-//! - **reverse:** every pin the image configures is named by the topology or
-//!   the allow-list, and an allowed pin is exactly as declared;
-//! - **package:** every pin the image configures exists in the package.
-//!
-//! A pin is **configured** when it is driven, output or alternate, and is not
-//! at its reset state. The reset state is RM0433 Rev 9 §11.4.1 (`MODER` resets
-//! to analog, except PA13–PA15 and PB3–PB4, which reset to alternate) and
-//! §11.4.9–10 (both AF registers reset to 0). Input and analog drive nothing,
-//! and ArduPilot writes input to every pin it is not told about (unless a
-//! `DEFAULTGPIO` line before `MCU` says otherwise), so neither counts
-//! (`AET-WO-4400a` FEEDBACK).
+//! STM32H7 firmware writes to its GPIO registers at reset ([`elf`], with
+//! [`header`] as a cross-check), judged against the `SolvedTopology`, a
+//! declared allow-list and the package's pins by [`judge`]. The rules, the
+//! definition of a configured pin and the blind spots are in `README.md`.
 
 #![forbid(unsafe_code)]
 

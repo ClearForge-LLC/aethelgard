@@ -8,10 +8,11 @@
 #   d4                    the D4 control: with GITHUB_ACTIONS=true, as GitHub's
 #                         runner sets it, configure refuses step G's numeric
 #                         APJ_BOARD_ID. Passes only if it refuses with that message.
-#   boards [-i] NAME...   install /boards/NAME.hwdef.dat as the untracked board
-#                         Sentinel01, as spike/4400/s3.sh did, build copter, and
-#                         copy the ELF and hwdef.h to /out/NAME/. Each board is
-#                         built from a clean build directory unless -i (reuse it).
+#   boards NAME...        install /boards/NAME.hwdef.dat as the untracked board
+#                         Sentinel01, as the AET-WO-4400 spike did (S3), build
+#                         copter from a clean build directory, and copy the ELF
+#                         and hwdef.h to /out/NAME/. Reusing the directory saves
+#                         nothing (AET-WO-4400a FEEDBACK), so it is never reused.
 #
 # Every ArduPilot build runs with GITHUB_ACTIONS unset (ruling D4 on PR #130):
 # ArduPilot refuses a numeric APJ_BOARD_ID when it is "true"
@@ -54,12 +55,10 @@ case ${1:-} in
     ;;
   boards)
     shift
-    reuse=0
-    if [ "${1:-}" = -i ]; then reuse=1; shift; fi
     for name in "$@"; do
       mkdir -p "$board"
       cp "/boards/$name.hwdef.dat" "$board/hwdef.dat"
-      [ "$reuse" -eq 1 ] || rm -rf build/Sentinel01
+      rm -rf build/Sentinel01
       t=$(($(date +%s%N) / 1000000))
       env -u GITHUB_ACTIONS ./waf configure --board Sentinel01
       env -u GITHUB_ACTIONS ./waf copter -j"$jobs"
@@ -67,11 +66,11 @@ case ${1:-} in
       mkdir -p "/out/$name"
       cp build/Sentinel01/bin/arducopter "/out/$name/arducopter.elf"
       cp build/Sentinel01/hwdef.h "/out/$name/hwdef.h"
-      echo "ANSWER board=$name reuse=$reuse jobs=$jobs wall_ms=$(since "$t")"
+      echo "ANSWER board=$name jobs=$jobs wall_ms=$(since "$t")"
     done
     ;;
   *)
-    echo "usage: ardupilot-build.sh smoke | d4 | boards [-i] NAME..." >&2
+    echo "usage: ardupilot-build.sh smoke | d4 | boards NAME..." >&2
     exit 64
     ;;
 esac
