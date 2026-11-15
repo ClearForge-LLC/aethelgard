@@ -198,6 +198,7 @@ No datasheet was fetched, no image file read and no container run before this co
 - **`power.sense[]`:** the divider, its resistor part, the battery as source, the ADC net and its pin (solved).
 - **`power.crossings[]`:** `{reference, part, bus, a_domain, b_domain}`. Each channel's direction is the part row's.
 - **`voltage_domains` is unchanged** (`INV-01`): `power` names domains and never restates them.
+- **How a crossing meets `4210`'s refusal** (its build, mailbox note at `ef8fc97`). `4210` adds `io_millivolts` to `parts.json` and refuses `IoOutsidePart` when a device's bus domain leaves the part's I/O range. A crossing therefore splits one SPI bus into two segments: the MCU side, in the bus's declared domain (`VDD_3V3`), and the device side, in the crossing's other domain (`VDD_1V8`). `IoOutsidePart` reads the device-side domain, and refuses an ICM-20948 on a 3.3 V bus with no crossing, as it should.
 - **A regulators table** beside `parts.json`'s sensor rows: a row has no bus, identity or Renode model. Each row holds:
   - its cited limits (S3's fields);
   - its pin roles (input, output or feedback, ground, EP);
@@ -397,3 +398,22 @@ Its findings, with their dispositions:
 - L by Eq. 4 at K = 20–40 % and ≥ Eq. 5's L_MIN, with Isat ≥ ISC max ideally and never below the low-side limit.
 
 Vendoring needs capacitor footprints above 0402 (0805, 1210).
+
+## Gates
+
+- On Furnace, under a capped user scope (`memory.swap.max` 0), at `9648f38`:
+  - `cargo fmt --all -- --check`: exit 0;
+  - `cargo clippy --workspace --all-targets -- -D warnings`: exit 0;
+  - `cargo test --workspace`: exit 0 (79 result lines, all ok).
+- The merge of `origin/main` at `08d6206` (#136) changed only `docs/`.
+- The spike adds no Rust and touches nothing outside `spike/4300d/` and this file. Tier 2 is CI's.
+- **Reduction pass (diff): nothing to remove.** No fact is held twice as a source. The two reader records are evidence (the cache copies are scratch). Every `checks.py` source key is read, and the two shell scripts do different jobs.
+
+## Stop
+
+**The spike is done; S1–S5 were measured or read.**
+- **Predictions:** committed first (`7508585`).
+- **Datasheets:** 11 held by sha256 (`spike/4300d/SHA256SUMS`). Scotty's list is under S1.
+- **The adversarial pass:** fifteen findings, three high, all applied.
+- **For the architect:** the table (S1), the recommended parts, the specification's shape (S2), the checks (S3), the board (S4), the output pad (S5), and D1–D13.
+- **The build waits** for the ruling, and for `4300f` and `1308`.
