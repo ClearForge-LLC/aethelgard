@@ -243,6 +243,9 @@ pub struct StepCheck {
     pub peripheral: String,
     pub wire: Wire,
     pub step: parts::StepKind,
+    /// The step's name among the device's steps ([`parts::Step::label`]): what
+    /// every verdict, record and finding calls it (`AET-WO-4220`).
+    pub label: &'static str,
     /// The bytes written first: an I2C register or command, or an SPI command.
     pub write: Vec<u8>,
     pub width: u8,
@@ -395,6 +398,7 @@ pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
                 peripheral: peripheral.to_owned(),
                 wire: wire.clone(),
                 step: step.kind,
+                label: step.label,
                 width: step.width,
                 expected: step.expected,
                 mask: step.mask,

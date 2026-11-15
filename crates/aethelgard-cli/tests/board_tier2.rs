@@ -12,7 +12,8 @@
 mod common;
 
 use common::verify::{
-    SPEC, aethelgard, board, build, copy_tree, gate_reads, one, package_files, root, sha,
+    SPEC, aethelgard, board, build, copy_tree, gate_reads, generated, one, package_files, root,
+    sha, write_files,
 };
 
 use std::fs::{self, OpenOptions};
@@ -165,6 +166,62 @@ fn the_imu_fixture_s_transfers_prove_within_its_scripts() {
         log.write_all(
             format!(
                 "ANSWER 4210-PB10: {harness}: exit={:?} wall_s={:.2} verdict={}\n",
+                out.status.code(),
+                start.elapsed().as_secs_f64(),
+                stdout.trim()
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        let v: Value = serde_json::from_str(stdout.trim()).unwrap();
+        assert_eq!(out.status.code(), Some(0), "{v}");
+        assert_eq!(v["verdict"], "pass", "{v}");
+    }
+}
+
+/// `AET-WO-4220` PB10: the Sentinel-02 fixture with the parts of our own.
+/// The ICM-42688-P's data read (one byte out, six in) and the BMP581's
+/// configuration (three out) bound their buses' transfer proofs, so every
+/// transfer its firmware makes is inside what Kani proves.
+#[test]
+fn the_own_parts_fixture_s_transfers_prove_within_its_scripts() {
+    let spec_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sentinel-02-own.json");
+    let (solved, files) = generated(&spec_path, "own-parts-board");
+    let dir = std::env::temp_dir().join(format!("aet-4220-prove-{}", std::process::id()));
+    write_files(&dir, &files);
+    let proofs = &files["src/proofs.rs"];
+    let imu = solved.spi_devices["U5"].peripheral.to_ascii_lowercase();
+    let harnesses: Vec<String> = proofs
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("fn "))
+        .filter_map(|l| l.split_once('(').map(|(n, _)| n.to_owned()))
+        .filter(|n| n.ends_with("_transfer_is_bounded_and_ordered"))
+        .collect();
+    assert!(
+        harnesses.contains(&format!("{imu}_transfer_is_bounded_and_ordered")),
+        "{harnesses:?}"
+    );
+    for harness in harnesses {
+        let harness = format!("proofs::{harness}");
+        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let start = Instant::now();
+        let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+            .args([
+                "prove",
+                "--crate",
+                dir.to_str().unwrap(),
+                "--harness",
+                &harness,
+            ])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8(out.stdout).unwrap();
+        let mut log = OpenOptions::new().append(true).open("/dev/stderr").unwrap();
+        log.write_all(
+            format!(
+                "ANSWER 4220-PB10: {harness}: exit={:?} wall_s={:.2} verdict={}\n",
                 out.status.code(),
                 start.elapsed().as_secs_f64(),
                 stdout.trim()

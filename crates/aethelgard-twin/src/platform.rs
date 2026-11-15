@@ -65,6 +65,90 @@ pub const STOCK: [(&str, &str, &str, u32); 16] = [
     ("SPI4", "spi4", "SPI.STM32H7_SPI", 0x4001_3400),
 ];
 
+/// How the header names a model of our own and its pin, before
+/// `` `models/renode/<file>` sha256 `<64 hex>`. `` (`AET-WO-4220` D6).
+pub const OWN_LINE: &str = "Model of our own (AET-WO-4220): ";
+
+/// Who wrote a model, for its comment: Renode's, or this project's own with
+/// its file.
+fn whose(m: Model) -> String {
+    match m.own() {
+        Some((file, _)) => format!(
+            "Aethelgard's own `{}` (`{}/{file}`)",
+            m.renode(),
+            model::OWN_DIR
+        ),
+        None => format!("Renode {RENODE_VERSION}'s `{}`", m.renode()),
+    }
+}
+
+/// The models of our own a platform description may load: each its header
+/// names, with its pin. Refused (`ModelUnpinned`, `AET-WO-4220` D6):
+/// - a header line naming a file the twin does not pin, or a sha256 other
+///   than its pin, or one model twice;
+/// - a device line declaring a model of our own its header does not name,
+///   however the type is spelled: Renode resolves `Sensors.X` and
+///   `Antmicro.Renode.Peripherals.Sensors.X` alike, and needs no space after
+///   the colon (adversarial F1, F7).
+///
+/// Only the header's leading comment lines are read as the header. A
+/// platform this emitter wrote passes; the CLI also reads a caller's.
+pub fn own_models(text: &str) -> Result<Vec<Model>, TwinError> {
+    let unpinned = |why: String| Err(TwinError::ModelUnpinned { why });
+    let mut named: Vec<Model> = Vec::new();
+    for line in text.lines().take_while(|l| l.starts_with("//")) {
+        let Some(rest) = line
+            .strip_prefix("// - ")
+            .and_then(|l| l.strip_prefix(OWN_LINE))
+        else {
+            continue;
+        };
+        let parsed = rest
+            .strip_prefix('`')
+            .and_then(|r| r.split_once("` sha256 `"))
+            .and_then(|(path, r)| Some((path, r.strip_suffix("`.")?)));
+        let Some((path, sha)) = parsed else {
+            return unpinned(format!(
+                "the header line `{line}` is not `{OWN_LINE}`<path>` sha256 `<hex>`.`"
+            ));
+        };
+        let Some(&(m, _, pin)) = model::OWN
+            .iter()
+            .find(|o| path == format!("{}/{}", model::OWN_DIR, o.1))
+        else {
+            return unpinned(format!(
+                "the header names `{path}`, which is no model of our own the twin pins"
+            ));
+        };
+        if sha != pin {
+            return unpinned(format!(
+                "the header pins `{path}` at sha256 `{sha}`, but the twin pins it at `{pin}`"
+            ));
+        }
+        if named.contains(&m) {
+            return unpinned(format!("the header names `{path}` twice"));
+        }
+        named.push(m);
+    }
+    for line in text.lines() {
+        let class = line
+            .split_once(':')
+            .and_then(|(_, r)| r.split_whitespace().next())
+            .map(|t| t.rsplit('.').next().unwrap_or(t));
+        let own = model::OWN
+            .iter()
+            .map(|o| o.0)
+            .find(|m| class.is_some_and(|c| m.renode().rsplit('.').next() == Some(c)));
+        if let Some(m) = own.filter(|m| !named.contains(m)) {
+            return unpinned(format!(
+                "a device is declared as `{}`, but the header names no pinned copy of it",
+                m.renode()
+            ));
+        }
+    }
+    Ok(named)
+}
+
 /// The model an added SPI instance takes: `spi4`'s, from [`STOCK_FILE`].
 const SPI_MODEL: &str = "SPI.STM32H7_SPI";
 
@@ -360,9 +444,10 @@ fn emit_spi(
                 Some(m) => {
                     let _ = write!(
                         out,
-                        "\n// {r}: Renode {RENODE_VERSION}'s `{m}`, at {c}mux@{k}, chip select {pin}.\n\
-                         {n}: {m} @ {c}mux {k}\n",
-                        m = m.renode(),
+                        "\n// {r}: {whose}, at {c}mux@{k}, chip select {pin}.\n\
+                         {n}: {name} @ {c}mux {k}\n",
+                        whose = whose(m),
+                        name = m.renode(),
                         pin = d.pin_name,
                     );
                 }
@@ -564,6 +649,27 @@ pub fn emit_faulted(
         file = cmsis::HEADER_FILE,
         sha = cmsis::HEADER_SHA256,
     );
+    // Each model of our own the platform declares, with its pin (`AET-WO-4220`
+    // D6): the CLI includes exactly these, from its own copies, before the
+    // load. None for a board of Renode's models, whose platform is unchanged.
+    let mut own: BTreeSet<(&str, &str)> = BTreeSet::new();
+    let declared = modelled
+        .iter()
+        .filter_map(|d| Model::from_renode(d.model))
+        .chain(
+            spi.values()
+                .flatten()
+                .filter(|d| !d.absent)
+                .filter_map(|d| d.model),
+        );
+    own.extend(declared.filter_map(Model::own));
+    for (file, sha) in own {
+        let _ = writeln!(
+            out,
+            "// - {OWN_LINE}`{}/{file}` sha256 `{sha}`.",
+            model::OWN_DIR
+        );
+    }
     // The lifecycle banner (`AET-WO-4210` D1): none for a board of `active`
     // parts, whose platform is then unchanged.
     for line in topology
@@ -612,9 +718,11 @@ pub fn emit_faulted(
     for d in &modelled {
         let _ = write!(
             out,
-            "\n// {r}: Renode {RENODE_VERSION}'s `{m}`, at 0x{a:02X} on {bus}.\n\
+            "\n// {r}: {whose}, at 0x{a:02X} on {bus}.\n\
              {name}: {m} @ {bus} 0x{a:02X}\n",
             r = d.reference,
+            whose = Model::from_renode(d.model)
+                .map_or_else(|| format!("Renode {RENODE_VERSION}'s `{}`", d.model), whose),
             m = d.model,
             a = d.address,
             bus = d.bus,

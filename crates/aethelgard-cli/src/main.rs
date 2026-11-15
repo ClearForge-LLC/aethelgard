@@ -1297,6 +1297,14 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         read_only: read_only.clone(),
         read_write: Vec::new(),
     };
+    // The models of our own the loaded platform declares, each the CLI's own
+    // copy, hashed again as written, before any tool runs, so the copies are
+    // sealed with the rest of the scratch (`AET-WO-4220` D6).
+    let loaded = match &analog {
+        Some((_, booted)) => booted.path.as_path(),
+        None => input.copy.as_path(),
+    };
+    let models = own_models(loaded, &scratch.tool)?;
     // Every Renode this call starts reads one configuration, the droop's
     // through the bridge included (`AET-WO-2204` D4, F6).
     let config = scratch.tool.join(renode::CONFIG_FILE);
@@ -1351,6 +1359,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         .zip(booted.as_ref())
         .map(|(r, booted)| renode::BootPlan {
             platform: &booted.path,
+            models: &models,
             firmware: &r.firmware.copy,
             virtual_ns: r.virtual_ns,
             window_ns: aethelgard_twin::boot::window(&r.topology).0,
@@ -1370,7 +1379,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     }
     let commands = match &plan {
         Some(plan) => plan.commands(),
-        None => renode::commands(&input.copy),
+        None => renode::commands(&input.copy, &models),
     };
     let args = with_config(&["--disable-gui", "--console", "--plain", "-e", &commands]);
     let run = invocation(args, "status-run");
@@ -1541,6 +1550,62 @@ fn analog_pass(r: &Ready, scratch: &Scratch) -> Result<(analog::Pass, Booted), r
     ))
 }
 
+/// The models of our own `platform` declares (`AET-WO-4220` D6), each written
+/// from `aethelgard_renode_models` into `dir/models/`, read back and hashed:
+/// - `ModelUnpinned`: the header names a model or sha256 the twin does not
+///   pin, or a device is declared as one the header does not name;
+/// - `ModelPinMismatch`: the copy's bytes do not hash to the pin.
+///
+/// Returns the copies' paths, in the header's order.
+fn own_models(platform: &Path, dir: &Path) -> Result<Vec<PathBuf>, run::Stop> {
+    // Lossy: a header line and a device line are ASCII either way, and a
+    // platform Renode would read is not refused here for another byte.
+    let bytes = fs::read(platform)
+        .map_err(|e| run::Stop::unreadable(format!("cannot read the platform: {e}")))?;
+    let named = aethelgard_twin::platform::own_models(&String::from_utf8_lossy(&bytes))
+        .map_err(|e| run::Stop::refused(e.kind(), e.to_string()))?;
+    if named.is_empty() {
+        return Ok(Vec::new());
+    }
+    let to = dir.join("models");
+    let written = |e: io::Error| {
+        run::Stop::tool_error(
+            "aethelgard",
+            format!("cannot write a model of our own into the scratch: {e}"),
+        )
+    };
+    fs::create_dir(&to).map_err(written)?;
+    let mut out = Vec::new();
+    for m in named {
+        // `own_models` named only pinned models, each with a source.
+        let ((file, pin), Some(text)) = (m.own().expect("a pinned model"), m.source()) else {
+            return Err(run::Stop::refused(
+                "ModelUnpinned",
+                format!("`{}` has no source in this build", m.renode()),
+            ));
+        };
+        let path = to.join(file);
+        fs::write(&path, text).map_err(written)?;
+        let back = fs::read(&path).map_err(written)?;
+        let sha = input::hex(<sha2::Sha256 as sha2::Digest>::digest(&back));
+        // belt-and-suspenders: the bytes written and the pin come from one
+        // build, and the twin's tier-1 test holds them equal, so no test
+        // reaches this refusal (adversarial F8). Ruling D6 asks for the copy
+        // hashed again as written: a scratch a tool can reach is not trusted.
+        if sha != pin {
+            return Err(run::Stop::refused(
+                "ModelPinMismatch",
+                format!(
+                    "the copy of `{}/{file}` hashes to sha256 `{sha}`, not its pin `{pin}`",
+                    aethelgard_twin::model::OWN_DIR
+                ),
+            ));
+        }
+        out.push(path);
+    }
+    Ok(out)
+}
+
 /// `PlatformNotEmitted` for the file the boot loads: it must be the
 /// emission for the specification plus the fault decision as recorded in
 /// the verdict's `faults`, read again just before Renode starts.
@@ -1613,7 +1678,7 @@ fn boot_report(
                 aethelgard_twin::boot::Wire::I2c { address } => Some(verdict::I2cReport {
                     reference: c.reference.clone(),
                     address: format!("{address:#04x}"),
-                    step: c.step.name(),
+                    step: c.label,
                     register: bytes(&c.write),
                     width: c.width,
                     expected: format!("{:#x}", c.expected),
@@ -1653,7 +1718,7 @@ fn boot_report(
                     peripheral: c.peripheral.clone(),
                     select: select.clone(),
                     address: format!("{address:#04x}"),
-                    step: c.step.name(),
+                    step: c.label,
                     command: bytes(&c.write),
                     width: c.width,
                     expected: format!("{:#x}", c.expected),
@@ -1674,7 +1739,7 @@ fn boot_report(
             .map(|(i, c)| verdict::SpiWitnessReport {
                 peripheral: c.peripheral.clone(),
                 reference: c.reference.clone(),
-                step: c.step.name(),
+                step: c.label,
                 device: c.device.clone(),
                 expected: c.witness.clone().unwrap_or_default(),
                 observed: observed.and_then(|o| o.witnesses[i].clone()),

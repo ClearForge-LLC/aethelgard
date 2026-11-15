@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "parts": [
     {
       "part": "BME280",
@@ -79,6 +79,137 @@
       }
     },
     {
+      "part": "BMP581",
+      "lifecycle": "active",
+      "stand_in": false,
+      "bus": {
+        "i2c": {
+          "addresses": [
+            "0x46",
+            "0x47"
+          ]
+        }
+      },
+      "identity": {
+        "write": [
+          "0x01"
+        ],
+        "read": 1,
+        "value": "0x50",
+        "mask": null,
+        "datasheet_value": true
+      },
+      "supply_millivolts": {
+        "min": 1710,
+        "max": 3600
+      },
+      "io_millivolts": {
+        "min": 1080,
+        "max": 3600
+      },
+      "pin_capacitance": {
+        "max_femtofarads": null
+      },
+      "spi_output_delay_max_ns": null,
+      "renode": "Sensors.BMP581",
+      "script": {
+        "configure": {
+          "writes": [
+            [
+              "0x36",
+              "0x40",
+              "0x81"
+            ]
+          ],
+          "settle_us": 10000
+        },
+        "data": {
+          "write": [
+            "0x1D"
+          ],
+          "channels": [
+            {
+              "quantity": "temperature",
+              "unit": "celsius",
+              "stimulus": 25,
+              "zero": 0,
+              "lsb": [
+                65536,
+                1
+              ],
+              "signed": true,
+              "bytes": 3,
+              "order": "little"
+            },
+            {
+              "quantity": "pressure",
+              "unit": "pascal",
+              "stimulus": 101325,
+              "zero": 0,
+              "lsb": [
+                64,
+                1
+              ],
+              "signed": true,
+              "bytes": 3,
+              "order": "little"
+            }
+          ]
+        }
+      },
+      "citations": {
+        "bus": {
+          "document": "Bosch Sensortec BST-BMP581-DS004-13",
+          "revision": "1.13 (2025-04)",
+          "section": "5.6 (I2C address 0x46 with SDO low, 0x47 with SDO high), p. 38; read (rendered)",
+          "sha256": "ddcf4202c4fdf2ab6ad86f22b67ba4d2471d76b9ce510397cacfe398400ab439"
+        },
+        "identity": {
+          "document": "Bosch Sensortec BST-BMP581-DS004-13",
+          "revision": "1.13 (2025-04)",
+          "section": "7.1 (CHIP_ID, address 0x01, reset 0x50), p. 51, and the register map, p. 50; read (rendered)",
+          "sha256": "ddcf4202c4fdf2ab6ad86f22b67ba4d2471d76b9ce510397cacfe398400ab439"
+        },
+        "supply": {
+          "document": "Bosch Sensortec BST-BMP581-DS004-13",
+          "revision": "1.13 (2025-04)",
+          "section": "table 4 (VDD 1.71 to 3.6 V), p. 10; read (rendered)",
+          "sha256": "ddcf4202c4fdf2ab6ad86f22b67ba4d2471d76b9ce510397cacfe398400ab439"
+        },
+        "io": {
+          "document": "Bosch Sensortec BST-BMP581-DS004-13",
+          "revision": "1.13 (2025-04)",
+          "section": "table 4 (VDDIO 1.08 to 3.6 V, independent of VDD), p. 10; read (rendered)",
+          "sha256": "ddcf4202c4fdf2ab6ad86f22b67ba4d2471d76b9ce510397cacfe398400ab439"
+        },
+        "pin_capacitance": {
+          "document": "Bosch Sensortec BST-BMP581-DS004-13",
+          "revision": "1.13 (2025-04)",
+          "section": "tables 4, 5, 6 and 17, pp. 10-13 and 31: no pin or input capacitance is printed; read (rendered)",
+          "sha256": "ddcf4202c4fdf2ab6ad86f22b67ba4d2471d76b9ce510397cacfe398400ab439"
+        },
+        "spi_output_delay": null,
+        "lifecycle": {
+          "document": "Bosch Sensortec BMP581 product page",
+          "revision": "fetched 2026-11-15",
+          "section": "no lifecycle word; listed in Bosch's current pressure-sensor catalogue (page sha256 b955a973...), which cites as active (AET-WO-4220 ruling D3)",
+          "sha256": "67e496006ab5b3013dec7408cc4a392d0b04c7e666b0859b44f52403fa1b1d3f"
+        },
+        "configure": {
+          "document": "Bosch Sensortec BST-BMP581-DS004-13",
+          "revision": "1.13 (2025-04)",
+          "section": "7.33-7.34 (OSR_CONFIG 0x40: press_en, OSR 1x; ODR_CONFIG 0x81: deep_dis, 240 Hz, normal), pp. 64-65; 5.6.1 (writes auto-increment), p. 39; table 4 (t_startup_deep 4 ms max, t_conv 1x 1.0 ms each): waits 10 ms; read (rendered)",
+          "sha256": "ddcf4202c4fdf2ab6ad86f22b67ba4d2471d76b9ce510397cacfe398400ab439"
+        },
+        "data": {
+          "document": "Bosch Sensortec BST-BMP581-DS004-13",
+          "revision": "1.13 (2025-04)",
+          "section": "4.5 (T = raw / 2^16 degC, p = raw / 2^6 Pa), p. 22; 7.11-7.16 (0x1D to 0x22, XLSB first, signed 24-bit, reset 0x7F each), pp. 56-57; read (rendered)",
+          "sha256": "ddcf4202c4fdf2ab6ad86f22b67ba4d2471d76b9ce510397cacfe398400ab439"
+        }
+      }
+    },
+    {
       "part": "ICM20948",
       "lifecycle": "eol",
       "stand_in": true,
@@ -115,10 +246,13 @@
       "renode": "Sensors.ICM20948",
       "script": {
         "configure": {
-          "write": [
-            "0x06",
-            "0x01"
-          ]
+          "writes": [
+            [
+              "0x06",
+              "0x01"
+            ]
+          ],
+          "settle_us": null
         },
         "data": {
           "write": [
@@ -134,7 +268,9 @@
                 16384,
                 1
               ],
-              "signed": true
+              "signed": true,
+              "bytes": 2,
+              "order": "big"
             },
             {
               "quantity": "acceleration_y",
@@ -145,7 +281,9 @@
                 16384,
                 1
               ],
-              "signed": true
+              "signed": true,
+              "bytes": 2,
+              "order": "big"
             },
             {
               "quantity": "acceleration_z",
@@ -156,7 +294,9 @@
                 16384,
                 1
               ],
-              "signed": true
+              "signed": true,
+              "bytes": 2,
+              "order": "big"
             }
           ]
         }
@@ -219,6 +359,158 @@
       }
     },
     {
+      "part": "ICM42688P",
+      "lifecycle": "active",
+      "stand_in": false,
+      "bus": {
+        "spi": {
+          "modes": [
+            0,
+            3
+          ],
+          "max_clock_hz": 24000000
+        }
+      },
+      "identity": {
+        "write": [
+          "0xF5"
+        ],
+        "read": 1,
+        "value": "0x47",
+        "mask": null,
+        "datasheet_value": true
+      },
+      "supply_millivolts": {
+        "min": 1710,
+        "max": 3600
+      },
+      "io_millivolts": {
+        "min": 1710,
+        "max": 3600
+      },
+      "pin_capacitance": {
+        "max_femtofarads": null
+      },
+      "spi_output_delay_max_ns": null,
+      "renode": "Sensors.ICM42688P",
+      "script": {
+        "configure": {
+          "writes": [
+            [
+              "0x4C",
+              "0xC0"
+            ],
+            [
+              "0x50",
+              "0x66"
+            ],
+            [
+              "0x4E",
+              "0x03"
+            ]
+          ],
+          "settle_us": 20000
+        },
+        "data": {
+          "write": [
+            "0x9D"
+          ],
+          "channels": [
+            {
+              "quantity": "temperature",
+              "unit": "celsius",
+              "stimulus": 29,
+              "zero": 25,
+              "lsb": [
+                13248,
+                100
+              ],
+              "signed": true,
+              "bytes": 2,
+              "order": "little"
+            },
+            {
+              "quantity": "acceleration_x",
+              "unit": "g",
+              "stimulus": 0,
+              "zero": 0,
+              "lsb": [
+                16384,
+                1
+              ],
+              "signed": true,
+              "bytes": 2,
+              "order": "little"
+            },
+            {
+              "quantity": "acceleration_y",
+              "unit": "g",
+              "stimulus": 1,
+              "zero": 0,
+              "lsb": [
+                16384,
+                1
+              ],
+              "signed": true,
+              "bytes": 2,
+              "order": "little"
+            }
+          ]
+        }
+      },
+      "citations": {
+        "bus": {
+          "document": "TDK InvenSense DS-000347 ICM-42688-P",
+          "revision": "1.9 (2024-11-12)",
+          "section": "9.6 (SCLK at most 24 MHz; data latched on the rising edge; the first bit 1 reads), p. 53; 14.1 (DEVICE_CONFIG SPI_MODE 0 at reset: modes 0 and 3), p. 64",
+          "sha256": "9c6b57b0a2e45cf0251dd2423878573bd4da46e0cc2faa93dc558c28af51300a"
+        },
+        "identity": {
+          "document": "TDK InvenSense DS-000347 ICM-42688-P",
+          "revision": "1.9 (2024-11-12)",
+          "section": "14.58 (WHO_AM_I, bank 0 address 0x75, reset 0x47), p. 88; 9.6 (the first bit 1 is a read), p. 53",
+          "sha256": "9c6b57b0a2e45cf0251dd2423878573bd4da46e0cc2faa93dc558c28af51300a"
+        },
+        "supply": {
+          "document": "TDK InvenSense DS-000347 ICM-42688-P",
+          "revision": "1.9 (2024-11-12)",
+          "section": "3.3.1, table 3 (VDD 1.71 to 3.6 V), p. 13",
+          "sha256": "9c6b57b0a2e45cf0251dd2423878573bd4da46e0cc2faa93dc558c28af51300a"
+        },
+        "io": {
+          "document": "TDK InvenSense DS-000347 ICM-42688-P",
+          "revision": "1.9 (2024-11-12)",
+          "section": "3.3.1, table 3 (VDDIO 1.71 to 3.6 V, on its own pin), p. 13",
+          "sha256": "9c6b57b0a2e45cf0251dd2423878573bd4da46e0cc2faa93dc558c28af51300a"
+        },
+        "pin_capacitance": {
+          "document": "TDK InvenSense DS-000347 ICM-42688-P",
+          "revision": "1.9 (2024-11-12)",
+          "section": "3.3.2, table 4 (FSYNC, SCLK, SDI, CS: C_I \"< 10\" pF in the TYP column, MIN and MAX empty: a typical, not a maximum; nothing for SDO), p. 14",
+          "sha256": "9c6b57b0a2e45cf0251dd2423878573bd4da46e0cc2faa93dc558c28af51300a"
+        },
+        "spi_output_delay": null,
+        "lifecycle": {
+          "document": "TDK InvenSense ICM-42688-P product page",
+          "revision": "fetched 2026-11-15",
+          "section": "the status badge beside the part's own title reads \"Production\", which cites as active (AET-WO-4220 ruling D3)",
+          "sha256": "764fd0148dedea2cbe74e4a7dc34d64cba13508f3d54c72f86f6a83cc0568add"
+        },
+        "configure": {
+          "document": "TDK InvenSense DS-000347 ICM-42688-P",
+          "revision": "1.9 (2024-11-12)",
+          "section": "14.34 (INTF_CONFIG0 0xC0, ArduPilot's: little-endian data), 14.38 (ACCEL_CONFIG0 0x66: +-2 g, 1 kHz), 14.36 (PWR_MGMT0 0x03, last: no write for 200 us after), pp. 74-78; table 2 (accel start-up 10 ms typ, no max: waits 20 ms), p. 12",
+          "sha256": "9c6b57b0a2e45cf0251dd2423878573bd4da46e0cc2faa93dc558c28af51300a"
+        },
+        "data": {
+          "document": "TDK InvenSense DS-000347 ICM-42688-P",
+          "revision": "1.9 (2024-11-12)",
+          "section": "14.5-14.9 (TEMP_DATA1 0x1D to ACCEL_DATA_Y0 0x22, reset 0x8000), pp. 65-66; 14.34 (SENSOR_DATA_ENDIAN 0: low byte first), p. 75; table 2 (16,384 LSB/g at +-2 g), p. 12; 14.5 (T = TEMP_DATA / 132.48 + 25), p. 66",
+          "sha256": "9c6b57b0a2e45cf0251dd2423878573bd4da46e0cc2faa93dc558c28af51300a"
+        }
+      }
+    },
+    {
       "part": "ICP10111",
       "lifecycle": "eol",
       "stand_in": true,
@@ -251,10 +543,13 @@
       "renode": "Sensors.ICP_101xx",
       "script": {
         "configure": {
-          "write": [
-            "0x80",
-            "0x5D"
-          ]
+          "writes": [
+            [
+              "0x80",
+              "0x5D"
+            ]
+          ],
+          "settle_us": null
         },
         "data": {
           "write": [
@@ -271,7 +566,9 @@
                 65536,
                 175
               ],
-              "signed": false
+              "signed": false,
+              "bytes": 2,
+              "order": "big"
             }
           ]
         }
