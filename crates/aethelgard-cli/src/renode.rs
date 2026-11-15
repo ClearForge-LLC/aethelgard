@@ -439,7 +439,7 @@ impl BootPlan<'_> {
 
     /// Every peripheral whose accesses Renode logs: each port's USART, then
     /// each TX and RX pin's GPIO port, once each, in the ports' order, then
-    /// the RCC, whose writes may reset any of them; none without a serial
+    /// the RCC, whose writes may reset or reclock any of them; none without a serial
     /// port.
     fn logged_sources(&self) -> Vec<&'static str> {
         let mut out: Vec<&'static str> = self.serial.iter().map(|p| p.port.renode).collect();
@@ -1049,9 +1049,9 @@ pub struct Serial {
     /// What the bring-up writes, from the topology and the header, against
     /// which the access log's writes are judged.
     pub bringup: aethelgard_twin::serial::Bringup,
-    /// The reset bits of the port's USART and of its pins' GPIO ports, none
-    /// of which the firmware may set.
-    pub resets: Vec<aethelgard_twin::serial::ResetBit>,
+    /// What the RCC's writes may be: its enable registers alone, never
+    /// clearing the gate of the port's USART or of its pins' GPIO ports.
+    pub rcc: aethelgard_twin::serial::RccRule,
 }
 
 /// Every serial port of `topology`, in the specification's order, for the
@@ -1073,10 +1073,7 @@ pub fn serials(
                 rx: aethelgard_twin::serial::PinMux::of(&port.rx, port.rx_af)?,
                 silicon: aethelgard_ir::serial::check_silicon(&topology.clock, solved),
                 bringup: aethelgard_twin::serial::Bringup::of(&port.framing, solved.brr)?,
-                resets: aethelgard_twin::serial::reset_bits(
-                    &port.peripheral,
-                    &[&port.tx, &port.rx],
-                )?,
+                rcc: aethelgard_twin::serial::rcc_rule(&port.peripheral, &[&port.tx, &port.rx])?,
                 port,
             })
         })
@@ -2245,7 +2242,7 @@ fn access_boots(
 /// pin's mux at the injection, its TX pin's at the end (among the image's
 /// reads) and at the first `TDR` write of each boot, and the writes of each
 /// boot ([`access_boots`]; `None` when the log could not be read whole): its
-/// USART's against the bring-up, the RCC's against its resets, its pins'
+/// USART's against the bring-up, the RCC's against its rule (enable registers only), its pins'
 /// beyond their mux (`inject_at`: how many of the last boot's accesses
 /// precede the injection). The echo is `not_judged` until the caller knows
 /// the boot word; [`judge_boot`] sets it.
@@ -2312,11 +2309,11 @@ fn serial_witnesses(
                 tx_at_end,
                 tx_at_send,
                 tags: boots.map(|b| {
-                    use aethelgard_twin::serial::{judge_pins, judge_resets, judge_writes};
+                    use aethelgard_twin::serial::{judge_pins, judge_rcc, judge_writes};
                     let mut j = judge_writes(&s.bringup, s.port.renode, b);
                     let tdr = s.bringup.tdr;
                     let at = inject_at.filter(|_| rx_at_injection.is_some());
-                    for x in judge_resets(&s.resets, b).into_iter().chain(judge_pins(
+                    for x in judge_rcc(&s.rcc, b).into_iter().chain(judge_pins(
                         &s.tx,
                         &s.rx,
                         s.port.renode,
@@ -3214,7 +3211,11 @@ mod tests {
             b
         };
         for (accesses, inject_at, unexpected) in [
-            (reset, None, "RCC.AHB4RSTR.GPIOARST set"),
+            (
+                reset,
+                None,
+                "RCC.AHB4RSTR 0x1 written, not an enable register, RCC.AHB4RSTR 0x0 written, not an enable register",
+            ),
             (
                 open_drain,
                 None,

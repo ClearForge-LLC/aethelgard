@@ -2545,7 +2545,8 @@ fn unexpected(v: &Value) -> Vec<String> {
 /// ADV2-1 (A1, the PM's ruling): GPIOA reset through `RCC_AHB4RSTR` after
 /// the bring-up routed PA9, the pattern sent with PA9 in its reset mode, then
 /// every GPIOA word written back. The reset leaves no line in GPIOA's access
-/// log, so the RCC's is read: the reset fails by name.
+/// log, so the RCC's is read: the reset fails by name, since pass 3 (ADV3-1)
+/// as a write to a register that is not an enable register.
 #[test]
 fn adv2_1_a_gpio_reset_through_the_rcc_fails() {
     let elf = adv_reference(
@@ -2566,7 +2567,14 @@ fn adv2_1_a_gpio_reset_through_the_rcc_fails() {
     answer(&format!("ADV2-1 code={code:?} kinds={:?}", kinds(&v)));
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
-    assert_eq!(unexpected(&v), ["RCC.AHB4RSTR.GPIOARST set"], "{v}");
+    assert_eq!(
+        unexpected(&v),
+        [
+            "RCC.AHB4RSTR 0x1 written, not an enable register",
+            "RCC.AHB4RSTR 0x0 written, not an enable register"
+        ],
+        "{v}"
+    );
 }
 
 /// ADV2-2 (A2, the PM's ruling): PA9 made open-drain with a pull-down
@@ -2703,6 +2711,56 @@ fn adv2_6_an_open_drain_tx_read_modify_written_fails() {
     assert_eq!(
         unexpected(&v),
         ["PA9 OT set in OTYPER, a bit Renode does not store"],
+        "{v}"
+    );
+}
+
+// ------------------------------------------------- adversarial pass 3 (ADV3)
+
+/// One boot of the reference with `line` inserted right after the console's
+/// bring-up, in `main.rs`.
+fn adv3_after_bring_up(name: &str, line: &str) -> (Option<i32>, Value) {
+    let at = "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n";
+    let elf = adv_reference(name, &[], &[(at, &format!("{at}{line}\n"))]);
+    boot_elf(name, &elf, "100ms")
+}
+
+/// ADV3-1 (the PM's ruling): after the bring-up, `RCC_D2CFGR.D2PPRE2` = /2:
+/// APB2 at 32 MHz halves USART1's `rcc_pclk2` kernel clock, 57 600 baud on
+/// silicon; Renode stores it and its USART ignores it. Before the ruling it
+/// passed (adversarial pass 3's verdict, code 0). The bring-up writes the
+/// RCC's enable registers alone.
+#[test]
+fn adv3_1_an_apb2_prescaler_after_the_bring_up_fails() {
+    let (code, v) = adv3_after_bring_up(
+        "adv3-d2ppre2",
+        "    unsafe { (0x5802_441C as *mut u32).write_volatile(0x400); }",
+    );
+    answer(&format!("ADV3-1 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(
+        unexpected(&v),
+        ["RCC.D2CFGR 0x400 written, not an enable register"],
+        "{v}"
+    );
+}
+
+/// ADV3-1b: after the bring-up, `RCC_D2CCIP2R.USART16SEL` = `100`
+/// (`csi_ker_ck`, CSI off at reset: no kernel clock on silicon); Renode
+/// stores no such field. Passed before the ruling.
+#[test]
+fn adv3_1b_a_usart_kernel_clock_selection_after_the_bring_up_fails() {
+    let (code, v) = adv3_after_bring_up(
+        "adv3-usart16sel",
+        "    unsafe { (0x5802_4454 as *mut u32).write_volatile(0x20); }",
+    );
+    answer(&format!("ADV3-1b code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(
+        unexpected(&v),
+        ["RCC.D2CCIP2R 0x20 written, not an enable register"],
         "{v}"
     );
 }

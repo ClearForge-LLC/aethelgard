@@ -594,7 +594,7 @@ pub struct TagJudgement {
     /// not 0x140D`), a word changed after `UE` (`CR2 0x32000 after UE`), a
     /// write the bring-up never makes (`0x1 to 0x2C`, `WriteByte to 0x1`,
     /// `TDR before UE`), and a last boot that never set `UE`; then what
-    /// [`judge_resets`] and [`judge_pins`] add.
+    /// [`judge_rcc`] and [`judge_pins`] add.
     pub unexpected: Vec<String>,
 }
 
@@ -903,24 +903,49 @@ pub fn judge_pins(
 /// A1).
 pub const RCC_RENODE: &str = "rcc";
 
-/// A peripheral's reset bit: its `RCC_*RSTR` register's name and offset in
-/// the RCC, and the bit, from the header.
+/// A clock gate the bring-up sets: its peripheral, its `RCC_*ENR` register's
+/// name and offset in the RCC, and the bit, from the header.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResetBit {
+pub struct Gate {
     pub peripheral: String,
     pub register: String,
     pub offset: u32,
     pub mask: u32,
 }
 
-/// The reset bits of `peripheral` (a port's USART) and of each of `pins`'
-/// GPIO ports, once each. A write that sets one resets that peripheral's
-/// registers in Renode with no line in the access log (measured, adversarial
-/// pass 2 q1: `BRR`, `CR1`, `CR2` and `GPIOA.MODER` all read 0 after it), so
-/// the rebuild would no longer be the state ([`judge_resets`]).
-pub fn reset_bits(peripheral: &str, pins: &[&str]) -> Result<Vec<ResetBit>, TwinError> {
+/// What a port allows the RCC's writes to be (`AET-WO-4300b` adversarial
+/// pass 3, ADV3-1, the PM's ruling): the bring-up writes only the run-mode
+/// clock enable registers (`AHB3ENR` at 0xD4 … `APB4ENR` at 0xF4, every register of the
+/// header's `RCC_TypeDef` named `*ENR` but not `*LPENR`), and only sets bits
+/// in them (measured, fix 3 m1: the reference, the four-port fixture and
+/// both motor fixtures write `AHB4ENR`, `APB1LENR` and `APB2ENR`, nothing
+/// else). Every RCC register is named for a finding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RccRule {
+    /// Every register of the RCC's layout: its name and offset.
+    pub registers: Vec<(String, u32)>,
+    /// The offsets of the enable registers.
+    pub enables: Vec<u32>,
+    /// The gates of the port's USART and of each of its pins' GPIO ports,
+    /// once each.
+    pub gates: Vec<Gate>,
+}
+
+/// The RCC rule of a port on `peripheral` (its USART) with `pins`.
+pub fn rcc_rule(peripheral: &str, pins: &[&str]) -> Result<RccRule, TwinError> {
     let f = cmsis::register_facts()?;
     let rcc = f.layout("RCC")?;
+    let registers: Vec<(String, u32)> = rcc
+        .fields
+        .iter()
+        .flat_map(|r| (0..r.words).map(move |k| (r.name.clone(), r.offset + 4 * k)))
+        .collect();
+    let enables = rcc
+        .fields
+        .iter()
+        .filter(|r| r.name.ends_with("ENR") && !r.name.ends_with("LPENR"))
+        .map(|r| r.offset)
+        .collect();
     let mut names = vec![peripheral.to_owned()];
     for pin in pins {
         let port = format!("GPIO{}", crate::split_pin(pin)?.0);
@@ -928,42 +953,82 @@ pub fn reset_bits(peripheral: &str, pins: &[&str]) -> Result<Vec<ResetBit>, Twin
             names.push(port);
         }
     }
-    names
+    let gates = names
         .into_iter()
         .map(|peripheral| {
-            let (register, bit) = f.reset_bit(&peripheral)?;
-            Ok(ResetBit {
+            let (register, bit) = f.enable_bit(&peripheral)?;
+            Ok(Gate {
                 offset: rcc.offset(&register, 0)?,
                 mask: 1 << bit,
                 register,
                 peripheral,
             })
         })
-        .collect()
+        .collect::<Result<_, TwinError>>()?;
+    Ok(RccRule {
+        registers,
+        enables,
+        gates,
+    })
 }
 
-/// The RCC's writes in `boots` that may reset one of `bits`' peripherals,
-/// each once, in the order first seen: a word write to its register with its
-/// bit set (`RCC.AHB4RSTR.GPIOARST set`), or a write into its register that
-/// is not a word write (`WriteByte to RCC 0x88`). The bring-up writes only
-/// enable registers (adversarial pass 2, q2), so no correct board fails.
-pub fn judge_resets(bits: &[ResetBit], boots: &[Vec<Access>]) -> Vec<String> {
+/// The RCC's writes in `boots` the bring-up never makes, each once, in the
+/// order first seen (`AET-WO-4300b` adversarial pass 3, ADV3-1 and 1b, the
+/// PM's ruling; it subsumes pass 2's reset bits, A1):
+/// - a write that is not a word write at a word's offset, which the judge
+///   cannot rebuild (`WriteByte to RCC 0xF0`);
+/// - a word write to any register but an enable register: a prescaler, a
+///   kernel clock selection, an oscillator or a reset (`RCC.D2CFGR 0x400
+///   written, not an enable register`), which Renode may store or not, and
+///   which changes or stops a port's clock on silicon;
+/// - in a boot, an enable write that clears the gate of the port's USART or
+///   of its pins' GPIO ports once a write set it (`RCC.APB2ENR.USART1EN
+///   cleared after it was set`).
+pub fn judge_rcc(rule: &RccRule, boots: &[Vec<Access>]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    for a in boots
-        .iter()
-        .flatten()
-        .filter(|a| a.write && a.source == RCC_RENODE)
-    {
-        for b in bits.iter().filter(|b| b.offset == a.offset & !3) {
-            let x = if a.bits != 32 || a.offset != b.offset {
-                format!("Write{} to RCC {:#X}", width_name(a.bits), a.offset)
-            } else if a.value & u64::from(b.mask) != 0 {
-                format!("RCC.{}.{}RST set", b.register, b.peripheral)
+    for boot in boots {
+        let mut set = vec![false; rule.gates.len()];
+        for a in boot.iter().filter(|a| a.write && a.source == RCC_RENODE) {
+            let value = u32::try_from(a.value).unwrap_or(u32::MAX);
+            let x = if a.bits != 32 || a.offset % 4 != 0 {
+                Some(format!(
+                    "Write{} to RCC {:#X}",
+                    width_name(a.bits),
+                    a.offset
+                ))
+            } else if !rule.enables.contains(&a.offset) {
+                let name = rule
+                    .registers
+                    .iter()
+                    .find(|r| r.1 == a.offset && !r.0.starts_with("RESERVED"))
+                    .map_or_else(|| format!("{:#X}", a.offset), |r| r.0.clone());
+                Some(format!(
+                    "RCC.{name} {value:#X} written, not an enable register"
+                ))
             } else {
-                continue;
+                None
             };
-            if !out.contains(&x) {
-                out.push(x);
+            if let Some(x) = x {
+                if !out.contains(&x) {
+                    out.push(x);
+                }
+                continue;
+            }
+            for (g, on) in rule.gates.iter().zip(set.iter_mut()) {
+                if g.offset != a.offset {
+                    continue;
+                }
+                if value & g.mask != 0 {
+                    *on = true;
+                } else if *on {
+                    let x = format!(
+                        "RCC.{}.{}EN cleared after it was set",
+                        g.register, g.peripheral
+                    );
+                    if !out.contains(&x) {
+                        out.push(x);
+                    }
+                }
             }
         }
     }
@@ -1662,57 +1727,114 @@ mod tests {
         assert!(tx_at_send(&tx, "usart1", 0x28, &[routed.to_vec()]).is_empty());
     }
 
-    /// Adversarial pass 2, A1 (ADV2-1): a write that sets the reset bit of
-    /// the port's USART or of a GPIO port holding one of its pins resets
-    /// those registers with no line in the access log, so it fails by name;
-    /// another peripheral's reset, and the enable registers, do not.
+    /// Adversarial pass 3, ADV3-1 and 1b (the PM's ruling; it subsumes pass
+    /// 2's A1, ADV2-1): the RCC's writes are the enable registers' alone, as
+    /// words, and none clears the gate of the port's USART or of its pins'
+    /// GPIO ports once set in that boot.
     #[test]
-    fn adversarial_2_a1_a_reset_of_the_port_s_peripherals_is_named() {
-        let bits = reset_bits("USART1", &["PA9", "PA10"]).unwrap();
-        let named: Vec<(&str, &str, u32, u32)> = bits
+    fn adversarial_3_adv3_1_the_rcc_writes_only_enable_registers() {
+        let rule = rcc_rule("USART1", &["PA9", "PA10"]).unwrap();
+        let gates: Vec<(&str, &str, u32, u32)> = rule
+            .gates
             .iter()
-            .map(|b| (b.peripheral.as_str(), b.register.as_str(), b.offset, b.mask))
+            .map(|g| (g.peripheral.as_str(), g.register.as_str(), g.offset, g.mask))
             .collect();
         assert_eq!(
-            named,
+            gates,
             [
-                ("USART1", "APB2RSTR", 0x98, 1 << 4),
-                ("GPIOA", "AHB4RSTR", 0x88, 1)
+                ("USART1", "APB2ENR", 0xF0, 1 << 4),
+                ("GPIOA", "AHB4ENR", 0xE0, 1)
             ]
         );
-        let enable = [w("rcc", 0xE0, 1), w("rcc", 0xF0, 0x10)];
-        assert!(judge_resets(&bits, &[enable.to_vec()]).is_empty());
-        // ADV2-1: GPIOARST pulsed after the bring-up.
-        let pulse = [w("rcc", 0x88, 1), w("rcc", 0x88, 0)];
+        // AHB3ENR at 0xD4 through APB4ENR at 0xF4, no sleep enable.
         assert_eq!(
-            judge_resets(&bits, &[enable.to_vec(), pulse.to_vec()]),
-            ["RCC.AHB4RSTR.GPIOARST set"]
+            rule.enables,
+            [0xD4, 0xD8, 0xDC, 0xE0, 0xE4, 0xE8, 0xEC, 0xF0, 0xF4]
         );
-        // A1b: USART1RST, among other bits of APB2RSTR.
+        // The reference's RCC writes (measured, fix 3 m1).
+        let enable = [
+            w("rcc", 0xE0, 1),
+            w("rcc", 0xE0, 3),
+            w("rcc", 0xE8, 0x20_0000),
+            w("rcc", 0xF0, 0x1000),
+            w("rcc", 0xF0, 0x1010),
+        ];
+        assert!(judge_rcc(&rule, &[enable.to_vec()]).is_empty());
+        let with = |extra: &[Access]| {
+            let mut boot = enable.to_vec();
+            boot.extend_from_slice(extra);
+            judge_rcc(&rule, &[boot])
+        };
+        // ADV3-1: D2PPRE2 /2 after the bring-up; ADV3-1b: USART16SEL CSI.
         assert_eq!(
-            judge_resets(&bits, &[vec![w("rcc", 0x98, 0x1011)]]),
-            ["RCC.APB2RSTR.USART1RST set"]
+            with(&[w("rcc", 0x1C, 0x400)]),
+            ["RCC.D2CFGR 0x400 written, not an enable register"]
         );
-        // GPIOB and USART6 are not this port's; a byte into AHB4RSTR may be.
-        assert!(judge_resets(&bits, &[vec![w("rcc", 0x88, 2), w("rcc", 0x98, 0x20)]]).is_empty());
+        assert_eq!(
+            with(&[w("rcc", 0x54, 0x20)]),
+            ["RCC.D2CCIP2R 0x20 written, not an enable register"]
+        );
+        // The clock's other words, a sleep enable, a reserved word and one
+        // past the layout, each named; written to their reset value too.
+        for (at, name) in [
+            (0x00, "CR"),
+            (0x10, "CFGR"),
+            (0x18, "D1CFGR"),
+            (0x20, "D3CFGR"),
+            (0x118, "APB2LPENR"),
+            (0x14, "0x14"),
+            (0x130, "0x130"),
+        ] {
+            assert_eq!(
+                with(&[w("rcc", at, 0)]),
+                [format!("RCC.{name} 0x0 written, not an enable register")],
+                "{at:#x}"
+            );
+        }
+        // Pass 2's A1 (ADV2-1): GPIOARST pulsed; A1b: USART1RST. Another
+        // peripheral's reset is no longer allowed either.
+        assert_eq!(
+            with(&[w("rcc", 0x88, 1), w("rcc", 0x88, 0)]),
+            [
+                "RCC.AHB4RSTR 0x1 written, not an enable register",
+                "RCC.AHB4RSTR 0x0 written, not an enable register"
+            ]
+        );
+        assert_eq!(
+            with(&[w("rcc", 0x98, 0x1011)]),
+            ["RCC.APB2RSTR 0x1011 written, not an enable register"]
+        );
+        // A sub-word or unaligned write anywhere in the RCC, an enable
+        // register's included, cannot be rebuilt.
         let byte = Access {
             bits: 8,
-            ..w("rcc", 0x89, 1)
+            ..w("rcc", 0xF0, 0)
         };
+        assert_eq!(with(&[byte]), ["WriteByte to RCC 0xF0"]);
+        assert_eq!(with(&[w("rcc", 0xF2, 0)]), ["WriteUInt32 to RCC 0xF2"]);
+        // The gate of the port's USART, or of its pins' port, cleared once
+        // set; another peripheral's gate, or the gate written clear before it
+        // is set, is not.
         assert_eq!(
-            judge_resets(&bits, &[vec![byte]]),
-            ["WriteByte to RCC 0x89"]
+            with(&[w("rcc", 0xF0, 0x1000)]),
+            ["RCC.APB2ENR.USART1EN cleared after it was set"]
         );
+        assert_eq!(
+            with(&[w("rcc", 0xE0, 2), w("rcc", 0xE0, 3)]),
+            ["RCC.AHB4ENR.GPIOAEN cleared after it was set"]
+        );
+        assert!(with(&[w("rcc", 0xE0, 1), w("rcc", 0xF0, 0x10)]).is_empty());
+        let before = [w("rcc", 0xF0, 0), w("rcc", 0xF0, 0x10)];
+        assert!(judge_rcc(&rule, &[before.to_vec()]).is_empty());
+        // Each boot from reset: a gate set in one boot and clear in the next
+        // before it is set again.
+        assert!(judge_rcc(&rule, &[enable.to_vec(), before.to_vec()]).is_empty());
         // Another source's write at the same offset is not the RCC's.
-        assert!(judge_resets(&bits, &[vec![w("gpioPortA", 0x88, 1)]]).is_empty());
-        // A UART8 port's pins on port E: its bit is APB1LRSTR's 31.
-        let uart8 = reset_bits("UART8", &["PE1", "PE0"]).unwrap();
-        assert_eq!(uart8.len(), 2);
-        assert_eq!((uart8[0].offset, uart8[0].mask), (0x90, 1 << 31));
-        assert_eq!(
-            (uart8[1].register.as_str(), uart8[1].mask),
-            ("AHB4RSTR", 1 << 4)
-        );
+        assert!(with(&[w("gpioPortA", 0x1C, 1)]).is_empty());
+        // A UART8 port's pins on port E: APB1LENR's 31 and AHB4ENR's 4.
+        let uart8 = rcc_rule("UART8", &["PE1", "PE0"]).unwrap();
+        let g: Vec<(u32, u32)> = uart8.gates.iter().map(|g| (g.offset, g.mask)).collect();
+        assert_eq!(g, [(0xE8, 1 << 31), (0xE0, 1 << 4)]);
     }
 
     /// The console's TX and RX as the generated board leaves them: each word
