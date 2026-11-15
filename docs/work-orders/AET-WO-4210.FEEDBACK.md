@@ -118,9 +118,38 @@ Read at source (`spike/4210/s1-models.md`, spot-checked by me at `LPS25HB.cs`, `
 
 ## Results — after the predictions
 
-### Where it did not run: two stops
+### Second session (2026-11-15): the corrected rule stops at the swap read-back (measured)
 
-**1. The container was denied (the kickoff's stop).**
+The architect's corrected kickoff rule 3 drops the cgroup write, which caused the first denial, and states its premise: "with `--memory-swap` equal to `--memory`, podman sets `memory.swap.max` to 0 itself under cgroup v2. … stop if `memory.swap.max` is not 0."
+- **The runner was changed to match** (`76ff075`):
+  - `img.sh` writes no cgroup file;
+  - it reads `memory.max`, `memory.swap.max` and `pids.max` back;
+  - it releases the command inside only if `memory.swap.max` is exactly `0`.
+- **One container started**: `bash spike/4210/img.sh -- renode --version`, a plain call. The classifier allowed it. `spike/4210/out/caps.log`:
+
+  `aet4210-265274-14998 SWAP NOT ZERO, nothing runs: memory.max=8589934592 memory.swap.max=8589934592 pids.max=max`
+- **The premise is false on Furnace (measured).** Podman 5.7.0 with `--memory 8g --memory-swap 8g` sets `memory.swap.max` to 8 GiB, so the container could use 8 GiB of RAM plus 8 GiB of swap. That is what the global contract already records (Aethelgard `2101` F11). The command inside exited 99 having run nothing, as built.
+- **This is the kickoff's stop.** I did not try other flags, a parent slice, or Renode on the host: each changes the cap mechanism the rule fixes, so that is a ruling (D8, F10).
+- **So S2 and S3 are still unmeasured.** The harness is unchanged apart from the runner, and has still never run a case.
+
+### Datasheets for Scotty (not a stop)
+
+The hosts below refuse Furnace or no longer serve the part. Each was retried once on 2026-11-15 with a plain `curl` (no User-Agent change, no mirror).
+
+| URL | Result on 2026-11-15 |
+|---|---|
+| `https://www.st.com/resource/en/datasheet/lsm6dso.pdf` | curl rc 92, no HTTP status (HTTP/2 `INTERNAL_ERROR`) |
+| `https://www.st.com/resource/en/datasheet/lps25hb.pdf` | rc 92 |
+| `https://www.st.com/en/mems-and-sensors/lsm6dso.html` | rc 92 |
+| `https://www.st.com/en/mems-and-sensors/lps25hb.html` | rc 92 |
+| `https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmp180-ds000.pdf` (BMP180 datasheet) | HTTP 404 (a Bosch HTML page, 90,599 bytes) |
+| `https://www.bosch-sensortec.com/en/products/environmental-sensors/pressure-sensors/bmp180` | HTTP 404 |
+
+**If Scotty fetches them:** put them in `~/.cache/aet-4210/ds/`. They are needed only if D2 (b), the BMP180, is chosen; the ST parts are out on other grounds (S1).
+
+### First session: where it did not run
+
+**1. The container was denied (the kickoff's stop).** The cause, given by the architect afterwards, was the old rule 3's write into the container's `memory.swap.max`; Furnace hard-denies writes under `/sys/fs/cgroup`.
 - My first container was a no-op whose only job was to prove the caps read back, at 8g. **The permission classifier denied that call, and gave no reason.** The call was one compound command:
   - `chmod +x spike/4210/img.sh`;
   - then `spike/4210/img.sh -- bash -c 'echo inside; env | grep -c TMPDIR; renode --version | head -2; ls /cache'`;
@@ -143,19 +172,11 @@ Read at source (`spike/4210/s1-models.md`, spot-checked by me at `LPS25HB.cs`, `
 
   One command runs it all: `bash spike/4210/img.sh -- python3 spike/4210/s2.py`. Each case names the prediction it tests.
 
-**2. st.com refuses Furnace (§7, the second condition).**
-- Every ST URL fails at the transport, with no HTTP status: curl rc 92, `HTTP/2 stream 1 was not closed cleanly: INTERNAL_ERROR`. `--http1.1` timed out (rc 28).
-- The datasheet subagent measured it, and I measured it again with one plain request.
-- The URLs, for Scotty:
-  - `https://www.st.com/en/mems-and-sensors/lsm6dso.html`
-  - `https://www.st.com/en/mems-and-sensors/lps25hb.html`
-  - `https://www.st.com/resource/en/datasheet/lsm6dso.pdf`
-  - `https://www.st.com/resource/en/datasheet/lps25hb.pdf`
-  - `https://www.st.com/`
-- No mirror was used. A browser-like User-Agent was tried once by the subagent; the classifier denied it, and it stopped there.
+**2. st.com refuses Furnace.** In the first session this was read as §7's second condition and a stop. The goal for the second session rules it is not a stop. The URLs and the retry are in "Datasheets for Scotty" above.
+- A browser-like User-Agent was tried once by the first session's subagent. The classifier denied it, and nobody tried again.
 - **Effect on the recommendation: none (inferred).** Neither ST part can be chosen on other grounds: no ArduPilot driver accepts the LSM6DSO, and the LPS25HB model writes no Noisy line at all (below).
 
-**Not a refusal: Bosch's BMP180 page is a 404.** The BMP180 is absent from Bosch's current pressure list, which names the BMP384, BMP390, BMP580, BMP581 and BMP585. No BMP180 datasheet is held, so no BMP180 value can be cited as the parts table requires (`4200` §2.22).
+**Bosch's BMP180 page and datasheet are 404s** (listed above for Scotty). The BMP180 is absent from Bosch's current pressure list, which names the BMP384, BMP390, BMP580, BMP581 and BMP585. No BMP180 datasheet is held, so no BMP180 value can be cited as the parts table requires (`4200` §2.22).
 
 ### S1 — the parts, by evidence (read; `s1-models.md`, `s1-ardupilot.md`, `~/.cache/aet-4210/ds/REPORT.md`)
 
@@ -264,12 +285,12 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
 
 | Prediction | Result | Label |
 |---|---|---|
-| P1.1–P1.7 (the ICM script's lines, values, warnings, repeatability) | not run | blocked; `s2.py imu-script imu-script-stim` |
-| P2.1–P2.2 (forgeries) | not run | blocked; `s2.py imu-forge-config imu-forge-data` |
-| P3.1–P3.3 (windows) | not run | blocked; `s2.py two-windows two-windows-u4-absent` |
+| P1.1–P1.7 (the ICM script's lines, values, warnings, repeatability) | not run | blocked (F10: swap read-back 8 GiB); `s2.py imu-script imu-script-stim` |
+| P2.1–P2.2 (forgeries) | not run | blocked (F10: swap read-back 8 GiB); `s2.py imu-forge-config imu-forge-data` |
+| P3.1–P3.3 (windows) | not run | blocked (F10: swap read-back 8 GiB); `s2.py two-windows two-windows-u4-absent` |
 | P4.1–P4.2 (data-ready) | not run. The source supports both (`ICM20948_Bank0Registers.cs` L114; `ICM20948.cs` L221–243). | read |
 | P5 (ArduPilot) | as read. One correction: the model's FIFO is tags, not merely unknown. | read |
-| P6.1–P6.4 (barometers) | not run. P6.4 holds at source. | blocked; `s2.py baro-*` |
+| P6.1–P6.4 (barometers) | not run. P6.4 holds at source. | blocked (F10: swap read-back 8 GiB); `s2.py baro-*` |
 
 ## §7 checked
 
@@ -277,8 +298,9 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
   - The IMU qualifies: the ICM-20948.
   - A barometer qualifies only with a ruling: the ICP-10111 at Debug, or the BMP180 without a citation.
   - Every candidate is EOL or out of catalogue (D1).
-- **A vendor host refuses Furnace: met.** st.com; the URLs are above, for Scotty.
-- **Also: a tool call denied by the permission classifier** (the kickoff's stop): met. It was the first container.
+- **A vendor host refuses Furnace:** met by st.com, and Bosch serves 404s. Ruled not a stop for this spike; the URLs are listed for Scotty.
+- **A tool call denied by the permission classifier** (the kickoff's stop): met in the first session (the cgroup write), and not met in the second.
+- **`memory.swap.max` not 0** (the corrected rule 3's stop): **met in the second session** (F10).
 
 ## Held, by full sha256 (`~/.cache/aet-4210/ds/`)
 
@@ -296,9 +318,8 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
 
 ## Findings
 
-- **F1 · The first container was denied by the permission classifier, with no reason given.** Not worked around, so S2 and S3 are unmeasured.
-  - **To unblock:** a permission rule that lets this session run `bash spike/4210/img.sh -- python3 spike/4210/s2.py` (rootless podman, `--network none`, 8g), plus a replacement goal.
-- **F2 · st.com refuses Furnace at the transport** (HTTP/2 `INTERNAL_ERROR`, rc 92). Nothing ST-made can be held from this box.
+- **F1 · The first container was denied by the permission classifier.** The cause, per the architect, was the old rule 3's write into `memory.swap.max`. It was removed from the runner (`76ff075`), and the second session's container was allowed.
+- **F2 · st.com refuses Furnace at the transport** (HTTP/2 `INTERNAL_ERROR`, rc 92; retried 2026-11-15). Nothing ST-made can be held from this box.
 - **F3 · The ICM-20948 and every ICP-101xx are EOL**, on TDK's own pages (held in `~/.cache/aet-4210/ds/pages`, sha256 in REPORT.md). The BMP180 is absent from Bosch's catalogue.
 - **F4 · The ICM-20948 model has no FIFO** (`FIFO_CNT` and `FIFO_R_W` are tags). ArduPilot's read path gets no samples in the twin. That matters when ArduPilot is ever in the twin, which is not this work order.
 - **F5 · The silicon resets `PWR_MGMT_1` to `0x41`** (asleep), and the model resets it to 0. A firmware that never wakes the part passes in the twin and reads zeros on the bench. The script's configuration write should be the wake, so the bench and the twin agree on what was done.
@@ -309,6 +330,13 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
   - `BARO_PROBE_EXT` defaults to 0.
   - The ICP-101xx has no autodetect, so `4400`'s generated hwdef must name the barometer.
 - **F9 · `4400`'s clone is at the same commit.** I read `Copter-4.7.2` (`fb773567`). Its clone appeared during this spike, and `~/.cache/aet-4400/ardupilot` `HEAD` is `fb773567` (read-only `rev-parse`).
+- **F10 · `--memory-swap` equal to `--memory` does not zero swap on Furnace (measured).**
+  - Podman 5.7.0 set the container's `memory.swap.max` to `8589934592`, the value given (`spike/4210/out/caps.log`).
+  - The corrected rule 3 rests on the opposite premise, so under it no Renode run can start on this box.
+  - Two other routes zeroed swap before, and both are now closed:
+    - the global contract's "write `0` into `memory.swap.max`" step is hard-denied by Furnace;
+    - the runner's old version did exactly that, and was denied (F1).
+  - The global contract (furnace777, `host/home/forge/.claude/CLAUDE.md`) still prescribes that write. It needs the same correction, by PR there.
 
 ## Decisions needed
 
@@ -322,7 +350,10 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
 - **D5 · Per-read windows:** the multiplexer's chip-select lines, attribution only (recommended), pending P3's measurement.
 - **D6 · Interrupts:** stay polled, and adopt `2204` A2's `SysTick`/`ISER` check now (recommended), or arm one EXTI. The model gives no sensor-driven data-ready to learn from.
 - **D7 · 1.8 V.** Where a device's I/O domain and a bus's level crossing are declared (`4300d`, or this build), and whether a translator is a part or a refusal.
-- **D8 · Unblocking the measurement:** F1's permission rule and a replacement goal. Or accept S2 and S3 as read, and measure at the build.
+- **D8 · How a container is held to zero swap on Furnace (F10).** Each option below changes rule 3, so none was tried.
+  - **(a)** Run the container under a user-level slice declared with `MemorySwapMax=0`. The slice is a unit file in `~/.config/systemd/user/`, started with `podman run --cgroup-parent=<slice>`. Systemd sets the cap with no write of ours. The read-back reads the slice's `memory.swap.max`, which the container's own `max` cannot exceed. **Recommended** (inferred; untested).
+  - **(b)** Accept 8 GiB of swap for this spike's containers.
+  - **(c)** Accept S2 and S3 as read, and measure at the build.
 
 ## Gates (spike)
 

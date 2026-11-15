@@ -8,7 +8,8 @@ with the variant's text edits, and built offline and locked into its own target 
 and adds its script steps after them, through the board crate's own `transfer` (a write-only
 step passes an empty read buffer). Prints the variant, the ELF's path and its sha256.
 
-NOT RUN: the container that would run it was denied by the permission classifier (FEEDBACK).
+NOT RUN: the first container was denied (FEEDBACK F1); the second read memory.swap.max back
+as 8 GiB, not 0, and ran nothing (F10).
 
 Usage: fw.py <variant>
 """

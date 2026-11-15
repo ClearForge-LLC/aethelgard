@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """AET-WO-4210 spike: S2, S3 and F16's boots, inside the pinned image (under img.sh).
 
-NOT RUN. The first container of this work order (a no-op that only read back its caps) was
+NOT RUN. The second session's container read memory.swap.max back as 8 GiB, not 0, so it
+ran nothing (FEEDBACK F10). Before that, the first container of this work order (a no-op that only read back its caps) was
 denied by the permission classifier, and the kickoff forbids working around a denial
 (FEEDBACK, "Where it did not run"). This file is the harness the blocked rows name.
 
