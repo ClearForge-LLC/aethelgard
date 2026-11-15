@@ -3,6 +3,7 @@
 **Builder:** Claude (strong tier), worktree `~/aethelgard-4300a`, branch `wo/aet-4300a-motor-outputs` from `main` `50d7a6f`.
 **Work order:** `docs/work-orders/AET-WO-4300a.md` as on `origin/claude/argon-repo-docs-synthesis-rjrb0d` (docs PR #136); identical to `main`'s copy at `50d7a6f`.
 **Cadence:** build, with one measured stop (§1.2, pre-ruled at the `4400` ruling D1) and the off-board-net item (§1.8).
+**Status: STOPPED at D1** (§5), on PR #145. §1.2 held (measured); §1.8 passes at a connector after `4300f` (measured); every other clause of §1.7 and §2 passes in the pinned image. The DShot600 fixture's campaign clause waits on D1: its 100 ms boot fails closed on the log budget. Adversarial pass §7, reduction pass §8, gates green.
 
 The predictions in §1 were committed before any container run, any firmware build for a probe, and any baseline run. They are not edited afterwards; corrections go in later sections.
 
