@@ -188,19 +188,21 @@ const ABORTED: &str = "This machine has aborted";
 /// a run whose output fits 8 MiB is read byte for byte; past that, Renode's
 /// log lines are counted and dropped, but the first of each kind the judge
 /// reads is kept, so a firmware flooding the log still reaches a verdict.
-/// Renode's access log of a read is discarded, uncounted, wherever it falls
-/// (`AET-WO-4300b` fix 1): the judge reads only writes, and a port polling
-/// `ISR` until `ECHO_POLLS` runs out writes 20 000 such lines, 2.3 MB
-/// (measured, P2; the four-port fixture with no frame, 9.3 MB).
+/// Renode's access log of an access the judge never reads (a read, a write
+/// to a GPIO word other than `MODER` and `AFR`) is discarded, uncounted,
+/// wherever it falls (`AET-WO-4300b` fix 1): a port polling `ISR` until
+/// `ECHO_POLLS` runs out writes 20 000 such lines, 2.3 MB (measured, P2; the
+/// four-port fixture with no frame, 9.3 MB), and a firmware toggling a pin
+/// of a logged port in its loop one per toggle.
 pub const LOG_FILTER: LogFilter = LogFilter {
     budget: 8 * 1024 * 1024,
     keep: &[ABORTED, LOAD_ERROR, LOG_ERROR, LOCKED[0], LOCKED[1]],
-    discard: access_read_line,
+    discard: unjudged_access_line,
 };
 
-/// A whole log line that is Renode's access log of a read.
-fn access_read_line(line: &str) -> bool {
-    log_body(line).is_some_and(aethelgard_twin::serial::is_access_read)
+/// A whole log line of Renode's access log the judge never reads.
+fn unjudged_access_line(line: &str) -> bool {
+    log_body(line).is_some_and(aethelgard_twin::serial::is_unjudged_access)
 }
 
 /// A log line without Renode's timestamp (`[00:00:00.019999000] `), which
@@ -3028,8 +3030,10 @@ mod tests {
         let read = stamp(
             "[INFO] usart1: [cpu: 0x8000990] ReadUInt32 from 0x1C (InterruptAndStatus), returned 0x206000C0",
         );
-        assert!(access_read_line(&read) && !access_read_line(&lines[3]));
-        assert!(!access_read_line(&CONSOLE_BOOT[3].replace("Write", "Read")));
+        assert!(unjudged_access_line(&read) && !unjudged_access_line(&lines[3]));
+        assert!(!unjudged_access_line(
+            &CONSOLE_BOOT[3].replace("Write", "Read")
+        ));
     }
 
     fn bor3() -> Vec<power::Reset> {

@@ -276,7 +276,11 @@ jobs:
       # echo; the four-port fixture's ports and SBUS's tags; three forgeries: a TDR
       # store with UE clear, an echo never received, a pattern on the wrong port;
       # serial_rx_dead's dead echo; the four-port fixture's campaign and replay).
-      TIER2_MIN: "121"
+      # 127: plus 6 from AET-WO-4300b's first adversarial pass in twin_tier2.rs
+      # (ADV-1 TX routed after the pattern, ADV-2 and ADV-2b PRESC, ADV-3 SBUS's M0
+      # cleared before UE, ADV-4 its inversion after UE, ADV-5 a pattern on a USART
+      # no port names).
+      TIER2_MIN: "127"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

@@ -338,13 +338,35 @@ pub fn access(body: &str) -> Option<Access> {
     })
 }
 
-/// True for a line Renode's access log writes for a read ([`access`]):
-/// what the boot's log filter discards before its budget, uncounted, since
-/// the judge reads only writes and a firmware polling `ISR` writes one such
-/// line per poll (measured: 20 000 polls, 2.3 MB, per port that waits out
-/// `ECHO_POLLS`; fix 1 P2).
-pub fn is_access_read(body: &str) -> bool {
-    access(body).is_some_and(|a| !a.write)
+/// True for a line of Renode's access log ([`access`]) the judge never reads:
+/// a read, or a write to a GPIO port's word other than `MODER`, `AFRL` and
+/// `AFRH` (a sub-word write into one of those is kept, and fails closed).
+/// The boot's log filter discards these before its budget, uncounted: a
+/// firmware polling `ISR` writes one line per poll (measured: 20 000 polls,
+/// 2.3 MB, per port that waits out `ECHO_POLLS`; fix 1 P2), and one toggling
+/// a pin of a logged port (`BSRR`, `ODR`) one per toggle.
+pub fn is_unjudged_access(body: &str) -> bool {
+    access(body).is_some_and(|a| {
+        !a.write
+            || (a.source.starts_with("gpioPort")
+                && gpio_mux_offsets().is_some_and(|o| !o.contains(&(a.offset & !3))))
+    })
+}
+
+/// `MODER`'s, `AFRL`'s and `AFRH`'s offsets in a GPIO port, from the
+/// header, read once; `None` if the header cannot be read (then nothing is
+/// discarded).
+fn gpio_mux_offsets() -> Option<[u32; 3]> {
+    static OFFSETS: std::sync::OnceLock<Option<[u32; 3]>> = std::sync::OnceLock::new();
+    *OFFSETS.get_or_init(|| {
+        let f = cmsis::register_facts().ok()?;
+        let g = f.layout("GPIO").ok()?;
+        Some([
+            g.offset("MODER", 0).ok()?,
+            g.offset("AFR", 0).ok()?,
+            g.offset("AFR", 1).ok()?,
+        ])
+    })
 }
 
 /// True when `body` is a line of `source`'s own `INFO` log: from a logged
@@ -926,7 +948,34 @@ mod tests {
             Some(a("usart1", false, 32, 0x1C, 0x2060_00C0))
         );
         assert_eq!(access(GPIO_HALF), Some(a("gpioPortA", true, 16, 0, 0xA801)));
-        assert!(is_access_read(READ_ISR) && !is_access_read(WRITE_TDR));
+        assert!(is_unjudged_access(READ_ISR) && !is_unjudged_access(WRITE_TDR));
+        // A GPIO port's writes are judged only in MODER and AFR, a sub-word
+        // write into either included.
+        for (line, unjudged) in [
+            (GPIO_HALF, false),
+            (
+                "[INFO] gpioPortA: [cpu: 0x8000728] WriteUInt32 to 0x18 (BitSet), value 0x1",
+                true,
+            ),
+            (
+                "[INFO] gpioPortA: [cpu: 0x8000728] WriteUInt32 to 0x14 (Output), value 0x1",
+                true,
+            ),
+            (
+                "[INFO] gpioPortA: [cpu: 0x8000728] WriteByte to 0x25 (AlternateFunctionHigh+0x1), value 0x7",
+                false,
+            ),
+            (
+                "[INFO] gpioPortA: [cpu: 0x80009BC] WriteUInt32 to 0x20 (AlternateFunctionLow), value 0x5500000",
+                false,
+            ),
+            (
+                "[INFO] usart1: [cpu: 0x8000728] WriteUInt32 to 0x18 (Request), value 0x1",
+                false,
+            ),
+        ] {
+            assert_eq!(is_unjudged_access(line), unjudged, "{line}");
+        }
         assert!(logged_by(WRITE_TDR, "usart1") && !logged_by(WRITE_TDR, "usart"));
         for bad in [
             "[WARNING] usart1: [cpu: 0x80009DE] WriteUInt32 to 0x28 (TransmitData), value 0x43",
