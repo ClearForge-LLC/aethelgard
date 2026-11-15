@@ -535,6 +535,7 @@ fn run_one(
         crate::diagnose(&e.to_string());
         ExitCode::from(EXIT_INTERNAL)
     })?;
+    let motors = solved_motors(&p.topology);
     let verdict = crate::simulate(
         &platform,
         Some(Boot {
@@ -582,6 +583,7 @@ fn run_one(
     }]);
     records.extend(buses);
     records.extend(spi_buses);
+    records.extend(motors);
     records.extend(records_of(&verdict).map_err(internal)?);
     // The run must pass the rules replay will judge it by before it is written.
     let summary = rules::check_run(&records)
@@ -727,6 +729,47 @@ pub(crate) fn solved_spi(t: &SolvedTopology) -> Result<Vec<Record>, aethelgard_t
             }
         })
         .collect())
+}
+
+/// Kinds 24 and 25, one of each per motor output, from the solved topology
+/// alone (`AET-WO-4300a`): the output as solved, and the static check for
+/// silicon the judge reports, by the same function (`motor::check_silicon`).
+pub(crate) fn solved_motors(t: &SolvedTopology) -> Vec<Record> {
+    let mut solved = Vec::new();
+    let mut checks = Vec::new();
+    for (label, m, a) in t.motor_outputs_in_order() {
+        // `SolvedTopology::validate` gave every output a `TIMn_CHk`.
+        let Some((timer, channel)) = aethelgard_ir::motor::timer_channel(&a.signal) else {
+            continue;
+        };
+        solved.push(Record::MotorOutputSolved {
+            label: label.to_owned(),
+            timer: a.peripheral.clone(),
+            channel: u8::try_from(channel).expect("1 to 4"),
+            pin: a.pin.clone(),
+            alternate_function: a.alternate_function,
+            protocol: m.protocol.name().to_owned(),
+            psc: m.psc,
+            arr: m.arr,
+            ccr: m.ccr,
+            pwm: m
+                .pwm
+                .as_ref()
+                .map(|p| (p.rate_hz, p.pulse_min_us, p.pulse_max_us)),
+        });
+        let s = aethelgard_ir::motor::check_silicon(&t.clock, timer, m);
+        checks.push(Record::MotorTimingCheck {
+            label: label.to_owned(),
+            kernel_hz: s.kernel_hz,
+            period_ps: s.period_ps,
+            high_ps: s.high_ps,
+            nominal_period_ps: s.nominal_period_ps,
+            nominal_high_ps: s.nominal_high_ps,
+            holds: s.holds,
+        });
+    }
+    solved.extend(checks);
+    solved
 }
 
 /// Kinds 16 to 19 from a droop's report, the crossings, resets and
@@ -1028,6 +1071,31 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
                 .as_deref()
                 .map(|o| within(archived_lines(o), WITNESS_BUDGET)),
             unrouted: within(archived_lines(&w.unrouted), UNROUTED_BUDGET),
+        });
+    }
+    // Kind 26, each motor output's twin witness, once Renode has run
+    // (`AET-WO-4300a`).
+    for m in &boot.motor {
+        let w = &m.twin;
+        let (Some(status), Some(rises), Some(falls), Some(off_grid), Some(batched)) =
+            (w.status, w.rises, w.falls, w.off_grid, w.batched)
+        else {
+            continue;
+        };
+        out.push(Record::MotorWitness {
+            label: m.label.clone(),
+            observer: w.observer.clone(),
+            period_ns: w.period_ns,
+            high_ns: w.high_ns,
+            grain_ns: w.grain_ns,
+            quantum_ns: w.quantum_ns,
+            status: status.to_owned(),
+            rises,
+            falls,
+            first_ns: w.first_ns,
+            span_ns: w.span_ns,
+            off_grid,
+            batched,
         });
     }
     let mut findings: BTreeMap<(String, String), u64> = BTreeMap::new();

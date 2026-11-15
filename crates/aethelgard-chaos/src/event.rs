@@ -21,8 +21,10 @@ pub const VERSION: u64 = 1;
 /// `AET-WO-4200` added kinds 21 to 23 (an SPI identity read, its witness and
 /// the solved SPI controller) and override 4 (an SPI device left absent). An
 /// archive of any other version is refused by name (`Fault::Version`), as
-/// 2204 refused version 4.
-pub const TRACE_VERSION: u64 = 7;
+/// 2204 refused version 4; 8 since `AET-WO-4300a` added kinds 24 to 26 (a
+/// solved motor output, its static timing check for silicon, and its twin
+/// witness).
+pub const TRACE_VERSION: u64 = 8;
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.

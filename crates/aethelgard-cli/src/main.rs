@@ -1212,7 +1212,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         (Some(_), None) => run.run_bounded_filtered(renode::BOOT_BOUNDS, renode::LOG_FILTER)?,
         (None, _) => run.run()?,
     };
-    let (code, (findings, machine, observed)) = match (&plan, &out.ended) {
+    let (code, (mut findings, machine, observed)) = match (&plan, &out.ended) {
         // Killed at a bound: a fail that names it, with nothing read. A killed
         // tool has no exit code, so the verdict records -1.
         (Some(_), run::Ended::Bounded(bound)) => {
@@ -1228,6 +1228,11 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             (code, (findings, machine, None))
         }
     };
+    // The motor outputs' static check judges the topology, never the run
+    // (`4300` D3), so a boot killed at a bound reports it too.
+    if let Some(plan) = &plan {
+        findings.extend(renode::static_motor_findings(plan.motors));
+    }
     // The analog findings first: they are the evidence the boot's effect follows.
     let bridge = analog.as_ref().and_then(|(pass, _)| pass.sandbox);
     let mut tools: Vec<(&'static str, String)> = analog

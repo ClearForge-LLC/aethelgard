@@ -698,25 +698,43 @@ fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>) -> MotorWit
     w
 }
 
-/// The findings of one motor output: the static check's, then the
-/// witness's when the boot reached its fixed point.
-fn motor_findings(m: &Motor, witness: Option<&MotorWitness>) -> Vec<Finding> {
+fn motor_who(o: &aethelgard_twin::timer::Observer) -> String {
+    format!("{} (TIM{}_CH{} on {})", o.label, o.timer, o.channel, o.pin)
+}
+
+/// The static check's findings for every motor output (`4300` D3): decided
+/// from the topology alone, so a boot killed at a bound reports them too.
+pub fn static_motor_findings(motors: &[Motor]) -> Vec<Finding> {
+    motors
+        .iter()
+        .filter(|m| !m.silicon.holds)
+        .map(|m| {
+            let s = &m.silicon;
+            Finding::plain(
+                aethelgard_chaos::campaign::MOTOR_STATIC_FINDING,
+                format!(
+                    "{}: PSC {}, ARR {}, CCR {} on a {} Hz timer clock give a period of {} ps and a high time of {} ps (silicon counts ARR + 1); the declared timing is {} ps and {} ps",
+                    motor_who(&m.observer),
+                    m.psc,
+                    m.arr,
+                    m.ccr,
+                    s.kernel_hz,
+                    s.period_ps,
+                    s.high_ps,
+                    s.nominal_period_ps,
+                    s.nominal_high_ps
+                ),
+            )
+        })
+        .collect()
+}
+
+/// One motor output's witness finding, once the boot reached its fixed
+/// point (as an identity record is judged only then).
+fn witness_findings_of(m: &Motor, w: &MotorWitness) -> Vec<Finding> {
     let o = &m.observer;
-    let who = format!("{} (TIM{}_CH{} on {})", o.label, o.timer, o.channel, o.pin);
+    let who = motor_who(o);
     let mut out = Vec::new();
-    let s = &m.silicon;
-    if !s.holds {
-        out.push(Finding::plain(
-            "motor_timing_static_mismatch",
-            format!(
-                "{who}: PSC {}, ARR {}, CCR {} on a {} Hz timer clock give a period of {} ps and a high time of {} ps (silicon counts ARR + 1); the declared timing is {} ps and {} ps",
-                m.psc, m.arr, m.ccr, s.kernel_hz, s.period_ps, s.high_ps, s.nominal_period_ps, s.nominal_high_ps
-            ),
-        ));
-    }
-    let Some(w) = witness else {
-        return out;
-    };
     let model = format!(
         "the model's period {} ns and high time {} ns (ARR and CCR ticks at {} Hz)",
         o.period_ns,
@@ -726,7 +744,7 @@ fn motor_findings(m: &Motor, witness: Option<&MotorWitness>) -> Vec<Finding> {
     match w.status {
         "witnessed" => {}
         "static_only" => out.push(Finding::info(
-            "motor_witness_static_only",
+            aethelgard_chaos::campaign::MOTOR_STATIC_ONLY_FINDING,
             format!(
                 "{who}: {} rises at {model}, every edge on the {} ns quantum's grid, where a store can put one; judged by the static check alone",
                 w.rises,
@@ -734,25 +752,25 @@ fn motor_findings(m: &Motor, witness: Option<&MotorWitness>) -> Vec<Finding> {
             ),
         )),
         "unreadable" => out.push(Finding::plain(
-            "motor_output_unwitnessed",
+            aethelgard_chaos::campaign::MOTOR_UNWITNESSED_FINDING,
             format!("{who}: Renode's log could not be read whole, so the output's edges were not"),
         )),
         "unwitnessed" => out.push(Finding::plain(
-            "motor_output_unwitnessed",
+            aethelgard_chaos::campaign::MOTOR_UNWITNESSED_FINDING,
             format!(
                 "{who}: the observer on {} logged {} rises and {} falls, too few to show a period",
                 o.pin, w.rises, w.falls
             ),
         )),
         "batched" => out.push(Finding::plain(
-            "motor_timing_mismatch",
+            aethelgard_chaos::campaign::MOTOR_MISMATCH_FINDING,
             format!(
                 "{who}: {} pairs of edges share one stamp, so the timer's events were not delivered at their times",
                 w.batched
             ),
         )),
         _ => out.push(Finding::plain(
-            "motor_timing_mismatch",
+            aethelgard_chaos::campaign::MOTOR_MISMATCH_FINDING,
             format!(
                 "{who}: {} rises and {} falls do not follow {model} from the first rise: their deviations span {} ns, not under {STAMP_GRAIN_NS} ns, or they do not alternate from a rise",
                 w.rises,
@@ -1236,8 +1254,10 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
     // silicon from the topology alone, the twin's witness the model's
     // conventions, never blended (`4300` D3). The witness is read only once
     // the firmware reached its fixed point, as an identity record is.
-    for (m, w) in plan.motors.iter().zip(&observed.motors) {
-        findings.extend(motor_findings(m, booted.then_some(w)));
+    if booted {
+        for (m, w) in plan.motors.iter().zip(&observed.motors) {
+            findings.extend(witness_findings_of(m, w));
+        }
     }
     for d in &plan.image.identity.unmodelled {
         findings.push(Finding::info(
@@ -1636,7 +1656,7 @@ mod tests {
         assert_eq!(w.status, "witnessed", "{w:?}");
         assert_eq!((w.rises, w.falls, w.first_ns), (150, 150, Some(639_750)));
         assert_eq!(w.span_ns, Some(8));
-        assert!(motor_findings(&m, Some(&w)).is_empty());
+        assert!(witness_findings_of(&m, &w).is_empty());
     }
 
     #[test]
@@ -1653,7 +1673,7 @@ mod tests {
         e[7].0 += 10;
         let w = witness_motor(&m, Some(Some(e)));
         assert_eq!((w.status, w.span_ns), ("mismatch", Some(10)));
-        let f = motor_findings(&m, Some(&w));
+        let f = witness_findings_of(&m, &w);
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].kind, "motor_timing_mismatch");
     }
@@ -1676,7 +1696,7 @@ mod tests {
         let w = witness_motor(&m, Some(Some(one)));
         assert_eq!(w.status, "unwitnessed");
         assert_eq!(
-            motor_findings(&m, Some(&w))[0].kind,
+            witness_findings_of(&m, &w)[0].kind,
             "motor_output_unwitnessed"
         );
         assert_eq!(witness_motor(&m, Some(Some(vec![]))).status, "unwitnessed");
@@ -1693,7 +1713,7 @@ mod tests {
             .collect();
         let w = witness_motor(&m, Some(Some(e)));
         assert_eq!(w.status, "static_only");
-        let f = motor_findings(&m, Some(&w));
+        let f = witness_findings_of(&m, &w);
         assert_eq!(f.len(), 1);
         assert_eq!(
             (f[0].kind.as_str(), f[0].severity.as_str()),
@@ -1731,7 +1751,7 @@ mod tests {
     fn a_static_mismatch_is_its_own_finding() {
         let mut m = motor();
         m.silicon.holds = false;
-        let f = motor_findings(&m, None);
+        let f = static_motor_findings(std::slice::from_ref(&m));
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].kind, "motor_timing_static_mismatch");
     }

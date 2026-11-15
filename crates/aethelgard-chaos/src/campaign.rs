@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 
 use crate::event::{Header, name_ok};
 use crate::power::{self, Band};
-use crate::record::{self, BusLine, Droop, Line, Override, Reading, Record};
+use crate::record::{self, BusLine, Droop, Line, Override, Reading, Record, split_pin};
 use crate::replay::State;
 
 /// The scenario format versions read: 1 (static scenarios, unchanged) and 2,
@@ -672,15 +672,20 @@ pub struct RunSummary {
 /// solved topology, the solved I2C buses (kind 15, sorted by bus), the analog
 /// records (kinds 7 and 8), the bus faults, the declared rail (kind 16), the
 /// droop's crossings, resets and observations (kinds 17 to 19) in time
-/// order, the boot's witnesses (kind 10, then 11, 12, 13, 21 and 22 in that
-/// order), and the verdict, last and once.
+/// order, the boot's witnesses (kind 10, then 11, 12, 13, 21, 22 and 26 in
+/// that order), and the verdict, last and once. The solved motor outputs
+/// (kind 24) and their static checks (kind 25) sit with the solved buses
+/// (`AET-WO-4300a`).
 pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     fn rank(r: &Record) -> u8 {
         match r {
             Record::Scenario { .. } => 0,
             Record::ExpectedCounts { .. } => 1,
             Record::Solved { .. } => 2,
-            Record::I2cBusSolved { .. } | Record::SpiBusSolved { .. } => 3,
+            Record::I2cBusSolved { .. }
+            | Record::SpiBusSolved { .. }
+            | Record::MotorOutputSolved { .. }
+            | Record::MotorTimingCheck { .. } => 3,
             Record::RiseComputed { .. } | Record::LineStuckHigh { .. } => 4,
             Record::BusFault { .. } => 5,
             Record::RailDeclared { .. } => 6,
@@ -693,7 +698,8 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             Record::I2cWitness { .. } => 11,
             Record::SpiCheck { .. } => 12,
             Record::SpiWitness { .. } => 13,
-            Record::Verdict { .. } => 14,
+            Record::MotorWitness { .. } => 14,
+            Record::Verdict { .. } => 15,
         }
     }
     /// Within rank 7: time in ps, then crossing, reset, observation.
@@ -713,7 +719,7 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     if records.is_empty() || !ordered {
         return Err("the records are not in the campaign's order");
     }
-    if !(count_rank(0) == 1 && count_rank(2) == 1 && count_rank(8) == 1 && count_rank(14) == 1) {
+    if !(count_rank(0) == 1 && count_rank(2) == 1 && count_rank(8) == 1 && count_rank(15) == 1) {
         return Err("a run holds exactly one scenario, topology, boot and verdict");
     }
     if count_rank(1) > 1 || count_rank(6) > 1 {
@@ -840,6 +846,49 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
         return Err(
             "the verdict names pc_not_on_self_loop for a pc outside the firmware or unread",
         );
+    }
+    // The motor outputs (`AET-WO-4300a`): the verdict names a static
+    // mismatch once per check that fails, and, once the boot word is set,
+    // each witness's finding by its status, exactly; before it, none.
+    let booted = records.iter().any(|r| {
+        matches!(r, Record::BootObserved { boot_word, .. }
+            if boot_word.observed == Some(boot_word.expected))
+    });
+    let mut motor_needed: BTreeMap<&str, u64> = BTreeMap::new();
+    for r in records {
+        match r {
+            Record::MotorTimingCheck { holds: false, .. } => {
+                *motor_needed.entry(MOTOR_STATIC_FINDING).or_default() += 1;
+            }
+            Record::MotorWitness { status, .. } if booted => {
+                let kind = match status.as_str() {
+                    "unwitnessed" | "unreadable" => Some(MOTOR_UNWITNESSED_FINDING),
+                    "mismatch" | "batched" => Some(MOTOR_MISMATCH_FINDING),
+                    "static_only" => Some(MOTOR_STATIC_ONLY_FINDING),
+                    _ => None,
+                };
+                if let Some(kind) = kind {
+                    *motor_needed.entry(kind).or_default() += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    for kind in [
+        MOTOR_STATIC_FINDING,
+        MOTOR_UNWITNESSED_FINDING,
+        MOTOR_MISMATCH_FINDING,
+        MOTOR_STATIC_ONLY_FINDING,
+    ] {
+        if any_severity(kind) != motor_needed.get(kind).copied().unwrap_or(0) {
+            return Err("the verdict's motor findings do not match the motor records");
+        }
+    }
+    if findings
+        .iter()
+        .any(|(k, s, _)| (k == MOTOR_STATIC_ONLY_FINDING) != (s == "info") && motor_kind(k))
+    {
+        return Err("a motor finding has the wrong severity");
     }
     let droop_counts = check_droop_records(records, overrides)?;
     for (kind, want) in droop_counts {
@@ -1165,7 +1214,73 @@ fn check_droop_records(
     ])
 }
 
+/// The motor output findings the boot judge gives (`AET-WO-4300a`).
+pub const MOTOR_STATIC_FINDING: &str = "motor_timing_static_mismatch";
+pub const MOTOR_UNWITNESSED_FINDING: &str = "motor_output_unwitnessed";
+pub const MOTOR_MISMATCH_FINDING: &str = "motor_timing_mismatch";
+/// `info`: the witness fit the model's sequence with every edge on the grid.
+pub const MOTOR_STATIC_ONLY_FINDING: &str = "motor_witness_static_only";
+
+fn motor_kind(kind: &str) -> bool {
+    [
+        MOTOR_STATIC_FINDING,
+        MOTOR_UNWITNESSED_FINDING,
+        MOTOR_MISMATCH_FINDING,
+        MOTOR_STATIC_ONLY_FINDING,
+    ]
+    .contains(&kind)
+}
+
+/// Kinds 25 and 26 each join one solved motor output (kind 24) by label,
+/// every output has exactly one static check and at most one witness, and
+/// a witness's observer is its output's pin's (`AET-WO-4300a`).
+fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
+    let mut solved: BTreeMap<&str, &str> = BTreeMap::new();
+    for r in records {
+        if let Record::MotorOutputSolved { label, pin, .. } = r {
+            if solved.insert(label.as_str(), pin.as_str()).is_some() {
+                return Err("a motor output is solved twice");
+            }
+        }
+    }
+    let mut checked: BTreeSet<&str> = BTreeSet::new();
+    let mut witnessed: BTreeSet<&str> = BTreeSet::new();
+    for r in records {
+        match r {
+            Record::MotorTimingCheck { label, .. } => {
+                if !solved.contains_key(label.as_str()) || !checked.insert(label) {
+                    return Err("a motor timing check names no solved output, or one twice");
+                }
+            }
+            Record::MotorWitness {
+                label, observer, ..
+            } => {
+                // belt-and-suspenders: the twin's `timer::observer_name`
+                // states this path; replay checks an archive without the
+                // twin, so it states it again.
+                let Some(pin) = solved.get(label.as_str()) else {
+                    return Err("a motor witness names no solved output");
+                };
+                let want = split_pin(pin).map(|(port, n)| {
+                    format!("gpioPort{port}.p{}{n}obs", port.to_ascii_lowercase())
+                });
+                if want.as_deref() != Some(observer.as_str()) || !witnessed.insert(label) {
+                    return Err(
+                        "a motor witness is not its output's pin's observer, or is there twice",
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+    if checked.len() != solved.len() {
+        return Err("a solved motor output has no static timing check");
+    }
+    Ok(())
+}
+
 fn check_joins(records: &[Record]) -> Result<(), &'static str> {
+    check_motor_joins(records)?;
     /// A kind 15's bus, peripheral, lines and devices.
     type Solved<'a> = (&'a str, &'a str, &'a [BusLine], &'a [(String, u8)]);
     let solved: Vec<Solved> = records
