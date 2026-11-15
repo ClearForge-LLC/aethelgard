@@ -489,18 +489,21 @@ const _: () = assert!(VIA_NM % 2 == 0);
 /// One pad's bound: its box (a superset of its copper, and the shape
 /// `route::check` clears), `c` high, on F.Cu.
 pub fn pad_ff(ph: &Physics, rect: crate::pcb::Rect) -> Option<u64> {
+    femtofarads(ph, capped(ph, base_of(rect)?, ph.c, ph.h_top, true)?)
+}
+
+/// A pad's box as the bound's base.
+fn base_of(rect: crate::pcb::Rect) -> Option<Base> {
     let w = u128::try_from(rect.x1.checked_sub(rect.x0)?).ok()?;
     let h = u128::try_from(rect.y1.checked_sub(rect.y0)?).ok()?;
-    femtofarads(ph, capped(ph, Base::boxed(w, h)?, ph.c, ph.h_top, true)?)
+    Base::boxed(w, h)
 }
 
 /// One through-hole pad (`AET-WO-1309`): its box through the declared
 /// maximum finished thickness, as [`via_ff`] bounds a via. The barrel and
 /// the pad's copper on every layer lie inside it.
 pub fn through_hole_ff(ph: &Physics, rect: crate::pcb::Rect) -> Option<u64> {
-    let w = u128::try_from(rect.x1.checked_sub(rect.x0)?).ok()?;
-    let h = u128::try_from(rect.y1.checked_sub(rect.y0)?).ok()?;
-    femtofarads(ph, shell(Base::boxed(w, h)?, ph.via_h, ph.s)?)
+    femtofarads(ph, shell(base_of(rect)?, ph.via_h, ph.s)?)
 }
 
 /// A pad's bound on a line: a through-hole pad's [`through_hole_ff`], an

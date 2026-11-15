@@ -185,3 +185,51 @@ The plan in F5 was a gate-written `.kicad_dru` rule, `(constraint zone_connectio
   - **Why this keeps `INV-07`:** the value is never read as a pass criterion; a disagreeing token fails.
   - **Recommended:** accept, and record it beside `RUL-03`'s amendment. The alternative, the gate rewriting each pad's token in its own scratch copy, adds an editor to the gate's preparation for the same verdict.
 - **D4 · Fab (F7).** **[read]** `fab` refuses a drilled pad and a drill file with more than one tool, so no board with a through-hole pad or a thermal array gets a fabrication package. That fails closed. `cli/fab.rs` is outside this fence; **recommended** for `4300d`'s build or a `fab` work order: one drill tool per declared drill, and a hit count per tool.
+
+## 5. Adversarial pass (full; a fresh Opus subagent, at `e523d1b`)
+
+Its report and reproducers are in `~/.cache/aet-1309/adv/`. The builder wrote `REPORT.md` from the subagent's returned text, because the Write tool is denied to subagents.
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| A1 | **high** | A drilled hole with no copper (`np_thru_hole` on `*.Mask` only) inside the thermal pad passed the gate. **[measured]** KiCad DRC passed it in 2 to 3 of 5 runs on identical input. `route::part` skipped any pad with no copper layer, a pre-existing line that 1309's "every drilled hole" claim widened | **fixed:** a drilled pad with no copper is refused by name |
+| A2 | medium | `backdrill` or post-machining on array vias or on a through-hole pad cut the hole off In1. The gate passed; KiCad gave only `via_dangling` warnings or `starved_thermal` | **fixed:** a via may hold only the engine's six tokens; a through-hole pad refuses `backdrill`, `tertiary_drill` and both post-machining tokens |
+| A3 | medium | A hatched plane, `(mode hatch)` in the zone's fill, passed both stages; the judges assume solid fill | **fixed:** a zone and its fill hold only the engine's tokens, with `min_thickness` and `island_removal_mode 0` pinned |
+| A4 | low | Several new refusals had no tier-1 test | **fixed:** each now has one, the mutation pass's survivors included (§6) |
+| A5 | low | `ThermalPad::of` does not call `ThermalVias::validate` (latent: no specification carries a rule) | **recorded** in D1: `4300d` validates at its step |
+| A6 | low | A through-hole pad's minimum ring and hole are KiCad 10.0.7's defaults under the gate's project (0.1 mm, 0.3 mm), not a specification field. A pad drilled 3.49 mm in 3.5 mm passes the gate and is caught by KiCad's `annular_width` | **recorded:** the defaults are fixed by the pinned KiCad and the gate's own project. A declared minimum ring arrives with the first part row that cites one |
+| A7 | low | `extract` refused a footprint at 270°: its angle was bounded as a coordinate (pre-existing since `1308`) | **fixed:** `at`'s third value is not bounded as a coordinate |
+| A8 | low | `through_hole_ff`'s box premise does not hold on inner planes, which KiCad clears from the round copper (**[measured]** 1.951 mm against the box corner's 2.475 mm); numerically it is still a bound (13,422 against 7,540 fF for a 3.5 mm pad) | **recorded** for `1303`'s extraction build. No through-hole pad sits on a line today (D1) |
+| A9 | low | A declared join for a part the board lacks was ignored | **fixed:** refused by name |
+
+**Held:**
+- **§5.1, the inner-layer short:** no copper reaches an inner layer but fill. KiCad's saved fills keep the clearance from every through-hole pad (≥ 1.951 mm from a 1.75 mm pad), at 2 and 4 layers, rotated.
+- **§5.2, the array against its rule:** resized, duplicated and extra vias are refused by the gate. KiCad passes a 13th via, so the gate is the only judge of count and sites, as designed.
+- **§5.3, a plane flooding a foreign pad:** held, and so did pad and via label lies.
+- **Also held:** zone `connect_pads yes`/`no`, where the pad's own `zone_connect` wins; footprint-level thermal tokens, which the refill ignores; U5 at 90° and 270°, and J1 at 180°.
+- **Identity:** the adversary re-ran it independently and found it IDENTICAL.
+
+## 6. Mutation, reduction, gates
+
+- **Mutation, sized to the diff:** 36 guards, one mutant each, against `aethelgard-eda --lib`, `through_hole_tier1`, `extract_tier1` and `ir --test thermal`. Driver and results are in `~/.cache/aet-1309/mut/`.
+  - The first sweep, on `e523d1b`, killed 18 of 26. The 8 survivors each got a test:
+    - the duplicate array;
+    - the cut by foreign through-hole pads;
+    - the "joins no fill" check;
+    - the anchor-label check;
+    - the relief pin;
+    - the array-size consistency;
+    - the relief ring's `all`;
+    - extraction's pad bound.
+  - On re-run all 8 were killed, as were 10 more for the guards added since: the SMD drill (route and extract), and 8 for the adversarial fixes.
+  - Two re-mutated after the reduction (the hole gap, the join token) were killed.
+  - **36 of 36 killed.**
+- **Reduction pass (diff): +20 net (7 of them a test pinning the join tokens) · 4 duplicates removed · 0 dead paths removed · 1 protected kept · 0 findings.**
+  - **The duplicates:**
+    - the router's stitched-net rule now is `filled()`;
+    - one hole-gap formula, `hole_pitch`, serves vias, through-hole pads and thermal vias;
+    - the join tokens live once, in `Join::token`, for the writer and the reader;
+    - `base_of` serves both pad bounds.
+  - **Protected:** the router's fill cuts and the judge's are built separately, by design, because the judge must not reuse the router's copper (`check` and `connectivity` stand behind the router).
+- **A pre-existing test was edited:** `extract_tier1`'s `pad_circle` case became `pad_oval`, because a circle is now modelled (inside its box). That same test then caught an SMD pad's `(drill (offset …))` slipping through extraction's widened allowlist, which is fixed: a drill is a through-hole pad's alone, in `route` and in `extract`.
+- **The strict fence** caught a first-match read (`lists().next()`) in the drill check; it is now a count over every child.

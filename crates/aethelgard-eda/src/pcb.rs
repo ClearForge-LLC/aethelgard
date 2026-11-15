@@ -1065,17 +1065,16 @@ pub fn write_placed(
 }
 
 /// The declared join on each through-hole pad of a part that has one
-/// (`AET-WO-1309`), as the pad's own `zone_connect`: 2 solid, 1 relief.
-/// KiCad 10.0.7's refill takes the join from the pad, not from a custom
-/// rule (measured, FEEDBACK B2). A part with none declared is unchanged.
+/// (`AET-WO-1309`), as the pad's own `zone_connect` ([`Join::token`]). A
+/// part with none declared is unchanged.
+///
+/// [`Join::token`]: crate::stack::Join::token
 fn join(fp: &mut Sx, stack: &crate::stack::Stack) {
     let declared = fp
         .property("Reference")
         .and_then(|r| stack.joins.iter().find(|(x, _)| x == r).map(|&(_, j)| j));
-    let value = match declared {
-        Some(crate::stack::Join::Solid) => "2",
-        Some(crate::stack::Join::Relief) => "1",
-        None => return,
+    let Some(value) = declared.map(crate::stack::Join::token) else {
+        return;
     };
     for pad in fp.items_mut().into_iter().flatten() {
         if pad.head() == Some("pad")

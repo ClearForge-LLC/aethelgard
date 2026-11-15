@@ -401,13 +401,13 @@ fn claim(map: &mut [u32], grid: &Grid, shape: Shape, reach: i64, owner: u32) {
     }
 }
 
-/// Hole to hole, centre to centre, for vias drilled by `a` and `b`.
-fn hole_pitch(a: Rule, b: Rule) -> i64 {
-    a.drill_nm / 2 + b.drill_nm / 2 + HOLE_GAP_NM
+/// Hole to hole, centre to centre, for holes drilled `a` and `b` nm.
+fn hole_pitch(a: i64, b: i64) -> i64 {
+    a / 2 + b / 2 + HOLE_GAP_NM
 }
 /// The same with the grid's margin.
 fn hole_reach(a: Rule, b: Rule) -> i64 {
-    hole_pitch(a, b) + EPS_NM
+    hole_pitch(a.drill_nm, b.drill_nm) + EPS_NM
 }
 
 /// A pad of a net, by part and pad index.
@@ -813,7 +813,7 @@ impl<'a> Router<'a> {
                 r: 0,
             };
             for (k, r) in kinds.iter().enumerate() {
-                let reach = drill / 2 + r.drill_nm / 2 + HOLE_GAP_NM + EPS_NM;
+                let reach = hole_pitch(drill, r.drill_nm) + EPS_NM;
                 claim(&mut via[k], &grid, centre, reach, BLOCKED);
             }
         };
@@ -1954,15 +1954,10 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
         )
     })?;
     let pads = net_pads(board);
-    // The stitched nets: ground at 2 layers (the B.Cu zone); at 4, each plane's
-    // net. Their stitching is laid before any net is tracked.
-    let is_stitched = |n: &str| {
-        if board.stack.has_planes() {
-            board.stack.planes.iter().any(|(_, p)| p == n)
-        } else {
-            n == GROUND
-        }
-    };
+    // The stitched nets, the filled ones: ground at 2 layers (the B.Cu zone);
+    // at 4, each plane's net. Their stitching is laid before any net is
+    // tracked.
+    let is_stitched = |n: &str| filled(&board.stack, n);
     // Order B: each net's index is its rank by (stitched first, pad count,
     // its pads' centres), the name last; so is every choice made by index.
     let mut nets: Vec<String> = pads.keys().cloned().collect();
@@ -2907,7 +2902,7 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
         .collect();
     for (i, &(a, da)) in holes.iter().enumerate() {
         for &(b, db) in &holes[i + 1..] {
-            let need = da / 2 + db / 2 + HOLE_GAP_NM;
+            let need = hole_pitch(da, db);
             if gap2(Rect::point(a.0, a.1), Rect::point(b.0, b.1)) < need * need {
                 return Err(format!("holes at {a:?} and {b:?} are too close"));
             }
@@ -3563,8 +3558,7 @@ fn through_hole(
 ) -> Result<(Option<i64>, Option<crate::stack::Join>), String> {
     let join = match one(pad, "zone_connect")?.map(|z| (z.arg(1), z.arg(2))) {
         None => None,
-        Some((Some("2"), None)) => Some(crate::stack::Join::Solid),
-        Some((Some("1"), None)) => Some(crate::stack::Join::Relief),
+        Some((Some(t), None)) if let Some(j) = crate::stack::Join::of_token(t) => Some(j),
         Some(other) => return Err(format!("{what} has `zone_connect` {other:?}")),
     };
     for token in [
@@ -3991,6 +3985,8 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
                     | "filled_areas_thickness"
                     | "fill"
                     | "polygon"
+                    // KiCad's saved fill: not read (the gate refills), as before.
+                    | "filled_polygon"
             ) {
                 return Err(format!(
                     "zone `{name}` on {layer} has `{head}`, which the gate does not model"
@@ -4601,6 +4597,12 @@ mod tests {
         };
         let read = part_of(&fp("1 2", &th("(remove_unused_layers no)"))).unwrap();
         assert_eq!(read.pads[0].drill_nm, Some(500_000));
+        // KiCad 10.0.7's tokens, measured (FEEDBACK B2): 2 solid, 1 relief.
+        use crate::stack::Join;
+        for (token, join) in [("2", Join::Solid), ("1", Join::Relief)] {
+            let read = part_of(&fp("1 2", &th(&format!("(zone_connect {token})")))).unwrap();
+            assert_eq!(read.pads[0].join, Some(join));
+        }
         for (pad, want) in [
             (th("(padstack (mode front_inner_back))"), "own `padstack`"),
             (

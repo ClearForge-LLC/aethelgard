@@ -62,6 +62,24 @@ pub enum Join {
     Relief,
 }
 
+impl Join {
+    /// The pad's own `zone_connect` that makes KiCad 10.0.7's refill join
+    /// it so (measured, `AET-WO-1309` FEEDBACK B2): 2 solid, 1 relief.
+    pub fn token(self) -> &'static str {
+        match self {
+            Join::Solid => "2",
+            Join::Relief => "1",
+        }
+    }
+
+    /// The join a pad's `zone_connect` token gives, if it is one of these.
+    pub fn of_token(token: &str) -> Option<Join> {
+        [Join::Solid, Join::Relief]
+            .into_iter()
+            .find(|j| j.token() == token)
+    }
+}
+
 /// A declared thermal-via array, in nanometres: `columns` along the
 /// footprint's x as drawn at rotation 0, `rows` along its y, centred on the
 /// pad, `pitch_nm` apart both ways.
