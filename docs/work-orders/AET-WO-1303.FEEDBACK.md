@@ -210,6 +210,13 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
 - across 300 random resistor networks, drop / (R_eff × total load) ≤ 1.000000, which is P4.8;
 - the general fan and spread reduce to the symmetric closed forms at s0 = 0. The spread matches to 15 digits. The fan is lower, because it integrates the log term the first version only bounded.
 - The pad-copper test agrees with a 720-point brute force on 3,000 random discs.
+- **The plane bowtie against an exact case** (`s4/check_fan_plane.out`). Two equipotential holes in an infinite sheet have R = (ρ/πt)·acosh(D/2r_d) exactly. The bowtie's flow is admissible there, and its bound holds at every β from 2° to 75° and every D from 1 to 30 mm. It sits 2.7–78× above the exact value: the narrow sectors are the loose ones.
+- **The general fan against a certified lower bound.** Take the copper of a track ending at a via, terminals at the far end and at the hole rim. A P1 primal on a grid domain that contains the copper, with the hole terminal grown, gives R ≥ 1/E. Tube plus fan holds above it at a straight entry and at 45° and 90° turns 0.125 mm before the centre: 1.11×, 1.16× and 1.20× the lower bound.
+- **Stated conditions the bound still rests on,** none checked from the board:
+  - the plane's fill is the declared plane: the outline less 0.51 mm discs around foreign vias, meeting each own-net via all round (P4.7 was blocked, D9);
+  - each pad is an equipotential terminal;
+  - the via pad is concentric with its hole;
+  - the plating, copper and temperature figures in `conditions.json`.
 
 **Conditions taken** (`s4/conditions.json`, each with its source):
 - ρ20: IACS 1.7241 µΩ·cm (NBS Handbook 100, read);
