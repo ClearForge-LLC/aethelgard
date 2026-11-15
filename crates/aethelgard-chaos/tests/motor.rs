@@ -488,17 +488,41 @@ fn replay_ties_a_witness_s_fields_its_window_and_the_kernel_clock() {
     ] {
         assert!(forged(&f).is_err());
     }
-    // A boot of other than the window's instructions.
-    assert!(
+    // A boot that counts fewer instructions than the window, as a droop's
+    // does from its last reset's release, is the run's own (third review,
+    // F1: tying it to the window refused every droop on a motor board).
+    assert_eq!(
         forged(&|r| if let Record::BootObserved {
             instructions_expected,
+            instructions_observed,
             ..
         } = &mut r[6]
         {
-            *instructions_expected = 200_000;
-        })
-        .is_err()
+            (*instructions_expected, *instructions_observed) = (3_970_000, Some(3_970_000));
+        }),
+        Ok(())
     );
+    // Counts that would overflow, or wrap onto the honest spacing (third
+    // review, F2): refused, never a panic.
+    for f in [
+        w(|x| {
+            if let Record::MotorWitness { rises, falls, .. } = x {
+                (*rises, *falls) = ((1 << 56) + 156, (1 << 56) + 155);
+            }
+        }),
+        w(|x| {
+            if let Record::MotorWitness { status, rises, .. } = x {
+                (*status, *rises) = ("mismatch".into(), u64::MAX);
+            }
+        }),
+        w(|x| {
+            if let Record::MotorWitness { falls, .. } = x {
+                *falls = u64::MAX;
+            }
+        }),
+    ] {
+        assert!(forged(&f).is_err());
+    }
     // A kernel clock other than the reset clock's, every record consistent
     // with it: PSC 0 at a claimed 1 MHz is 400 Hz on paper and 25.6 kHz on
     // silicon (the review's forgery).
@@ -558,8 +582,8 @@ fn a_dshot_board_s_witnesses_end_at_its_2_ms_window() {
         ccr: 40,
         pwm: None,
     };
-    // The PWM witness's own window moves with the board's; M1 at 400 Hz
-    // cannot show two rises in 2 ms, so the honest records say unwitnessed.
+    // Both witnesses end at the board's 2 ms window; here neither output
+    // shows a rise (a firmware that never started its timers).
     let unwitnessed = |label: &str, observer: &str, period: u64, high: u64| Record::MotorWitness {
         label: label.into(),
         observer: observer.into(),
@@ -603,13 +627,12 @@ fn a_dshot_board_s_witnesses_end_at_its_2_ms_window() {
         findings: vec![(MOTOR_UNWITNESSED_FINDING.to_owned(), "error".to_owned(), 2)],
     };
     assert_eq!(check_run(&r).map(|_| ()), Ok(()));
-    // The same records at the 100 ms window's instruction count are refused.
-    if let Record::BootObserved {
-        instructions_expected,
-        ..
-    } = &mut r[6]
-    {
-        *instructions_expected = 10_000_000;
+    // The same witnesses ending at the 100 ms window are refused: a board
+    // with a DShot output boots for 2 ms.
+    for i in [7, 8] {
+        if let Record::MotorWitness { end_ns, .. } = &mut r[i] {
+            *end_ns = 100_000_000;
+        }
     }
     assert!(check_run(&r).is_err());
 }

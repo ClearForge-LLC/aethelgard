@@ -750,7 +750,10 @@ pub fn static_motor_findings(motors: &[Motor]) -> Vec<Finding> {
 
 /// One motor output's witness finding, once the boot reached its fixed
 /// point (as an identity record is judged only then).
-fn witness_findings_of(m: &Motor, w: &MotorWitness) -> Vec<Finding> {
+/// `window_ns` is the board's window (`aethelgard_twin::boot::window`), not
+/// the boot's own length: a boot shorter than its board's window says
+/// nothing about what a full one could show.
+fn witness_findings_of(m: &Motor, w: &MotorWitness, window_ns: u64) -> Vec<Finding> {
     let o = &m.observer;
     let who = motor_who(o);
     let mut out = Vec::new();
@@ -783,10 +786,9 @@ fn witness_findings_of(m: &Motor, w: &MotorWitness) -> Vec<Finding> {
                 w.falls,
                 // Two rises need two of the model's periods inside the window
                 // (`AET-WO-4300a` D1, adversarial F5): name it when they cannot.
-                if 2 * o.period_ns > w.end_ns {
+                if 2 * o.period_ns > window_ns {
                     format!(
-                        "; the boot's window of {} ns is shorter than two of its periods ({} ns), so no boot of it can show one",
-                        w.end_ns,
+                        "; the board's window of {window_ns} ns is shorter than two of its periods ({} ns), so no boot of this board can show one",
                         2 * o.period_ns
                     )
                 } else {
@@ -1294,6 +1296,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         findings.extend(reads_outside_window(
             checks,
             &observed.records,
+            plan.virtual_ns,
             plan.window_ns,
         ));
     }
@@ -1303,7 +1306,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
     // the firmware reached its fixed point, as an identity record is.
     if booted {
         for (m, w) in plan.motors.iter().zip(&observed.motors) {
-            findings.extend(witness_findings_of(m, w));
+            findings.extend(witness_findings_of(m, w, plan.window_ns));
         }
     }
     for d in &plan.image.identity.unmodelled {
@@ -1420,6 +1423,7 @@ fn witness_finding(
 fn reads_outside_window(
     checks: &[aethelgard_twin::boot::IdentityCheck],
     records: &[(u32, u32)],
+    boot_ns: u64,
     window_ns: u64,
 ) -> Vec<Finding> {
     if window_ns >= aethelgard_twin::boot::MAX_VIRTUAL_NS {
@@ -1433,7 +1437,7 @@ fn reads_outside_window(
             Finding::plain(
                 "identity_read_outside_window",
                 format!(
-                    "{}: its identity read did not complete inside the board's window of {window_ns} ns (a board with a DShot output, AET-WO-4300a D1)",
+                    "{}: its identity read did not complete inside this boot of {boot_ns} ns (a board with a DShot output boots inside its window of {window_ns} ns, AET-WO-4300a D1)",
                     who(c)
                 ),
             )
@@ -1743,7 +1747,7 @@ mod tests {
         assert_eq!(w.status, "witnessed", "{w:?}");
         assert_eq!((w.rises, w.falls, w.first_ns), (150, 150, Some(639_750)));
         assert_eq!(w.span_ns, Some(8));
-        assert!(witness_findings_of(&m, &w).is_empty());
+        assert!(witness_findings_of(&m, &w, aethelgard_twin::boot::MAX_VIRTUAL_NS).is_empty());
     }
 
     #[test]
@@ -1760,7 +1764,7 @@ mod tests {
         e[7].0 += 10;
         let w = witness_motor_at(&m, Some(Some(e)));
         assert_eq!((w.status, w.span_ns), ("mismatch", Some(10)));
-        let f = witness_findings_of(&m, &w);
+        let f = witness_findings_of(&m, &w, aethelgard_twin::boot::MAX_VIRTUAL_NS);
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].kind, "motor_timing_mismatch");
     }
@@ -1783,7 +1787,7 @@ mod tests {
         let w = witness_motor_at(&m, Some(Some(one)));
         assert_eq!(w.status, "unwitnessed");
         assert_eq!(
-            witness_findings_of(&m, &w)[0].kind,
+            witness_findings_of(&m, &w, aethelgard_twin::boot::MAX_VIRTUAL_NS)[0].kind,
             "motor_output_unwitnessed"
         );
         assert_eq!(
@@ -1803,7 +1807,7 @@ mod tests {
             .collect();
         let w = witness_motor_at(&m, Some(Some(e)));
         assert_eq!(w.status, "static_only");
-        let f = witness_findings_of(&m, &w);
+        let f = witness_findings_of(&m, &w, aethelgard_twin::boot::MAX_VIRTUAL_NS);
         assert_eq!(f.len(), 1);
         assert_eq!(
             (f[0].kind.as_str(), f[0].severity.as_str()),
@@ -1846,7 +1850,10 @@ mod tests {
         let two = measured(2, &[0]);
         let w = witness_motor(&m, Some(Some(two.clone())), 100_000_000);
         assert_eq!(w.status, "stopped");
-        assert_eq!(witness_findings_of(&m, &w)[0].kind, "motor_timing_mismatch");
+        assert_eq!(
+            witness_findings_of(&m, &w, aethelgard_twin::boot::MAX_VIRTUAL_NS)[0].kind,
+            "motor_timing_mismatch"
+        );
         // Within a period and a grain of the end, it covers the window.
         let end = two[2].0 + 639_744 + 10;
         assert_eq!(witness_motor(&m, Some(Some(two)), end).status, "witnessed");
@@ -1876,7 +1883,7 @@ mod tests {
         let m = motor();
         let short = witness_motor(&m, Some(Some(vec![(639_750, true)])), 1_000_000);
         assert_eq!(short.status, "unwitnessed");
-        let f = witness_findings_of(&m, &short);
+        let f = witness_findings_of(&m, &short, 1_000_000);
         assert_eq!(f.len(), 1);
         assert!(
             f[0].message
@@ -1884,9 +1891,11 @@ mod tests {
             "{}",
             f[0].message
         );
-        let long = witness_motor(&m, Some(Some(vec![(639_750, true)])), 100_000_000);
+        // A boot shorter than a long enough window: the reason is not given
+        // (third adversarial review, F3: `--for 1ms` on a 100 ms board).
+        let long = witness_motor(&m, Some(Some(vec![(639_750, true)])), 1_000_000);
         assert!(
-            !witness_findings_of(&m, &long)[0]
+            !witness_findings_of(&m, &long, aethelgard_twin::boot::MAX_VIRTUAL_NS)[0]
                 .message
                 .contains("shorter than two")
         );
@@ -1903,7 +1912,7 @@ mod tests {
         let checks = &image.identity.checks;
         assert!(!checks.is_empty());
         let unset = vec![(RECORD_UNSET, RECORD_UNSET); checks.len()];
-        let named = reads_outside_window(checks, &unset, DSHOT_WINDOW_NS);
+        let named = reads_outside_window(checks, &unset, DSHOT_WINDOW_NS, DSHOT_WINDOW_NS);
         assert_eq!(named.len(), checks.len());
         assert!(
             named
@@ -1921,8 +1930,10 @@ mod tests {
             named[0].message
         );
         let written = vec![(STATUS_OK, 0x60); checks.len()];
-        assert!(reads_outside_window(checks, &written, DSHOT_WINDOW_NS).is_empty());
-        assert!(reads_outside_window(checks, &unset, MAX_VIRTUAL_NS).is_empty());
+        assert!(
+            reads_outside_window(checks, &written, DSHOT_WINDOW_NS, DSHOT_WINDOW_NS).is_empty()
+        );
+        assert!(reads_outside_window(checks, &unset, MAX_VIRTUAL_NS, MAX_VIRTUAL_NS).is_empty());
     }
 
     #[test]

@@ -1236,7 +1236,9 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
         }
     }
     // The board's window, from its outputs' protocols (`AET-WO-4300a` D1):
-    // every witness ends at it, and the boot ran exactly its instructions.
+    // every witness ends at it. Kind 10's instruction count is not tied to
+    // it: a droop's boot counts from the last reset's release (third
+    // adversarial review, F1).
     let window = if solved.values().any(
         |m| matches!(m, Record::MotorOutputSolved { protocol, .. } if protocol.starts_with("dshot")),
     ) {
@@ -1244,14 +1246,6 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
     } else {
         TWIN_MAX_VIRTUAL_NS
     };
-    if !solved.is_empty()
-        && records.iter().any(|r| {
-            matches!(r, Record::BootObserved { instructions_expected, .. }
-                if instructions_expected.checked_mul(TWIN_NS_PER_INSTRUCTION) != Some(window))
-        })
-    {
-        return Err("a motor board's boot is not its window's instructions");
-    }
     let mut checked: BTreeSet<&str> = BTreeSet::new();
     let mut witnessed: BTreeSet<&str> = BTreeSet::new();
     for r in records {
@@ -1315,17 +1309,15 @@ const TWIN_GRAIN_NS: u64 = 10;
 const TWIN_QUANTUM_NS: u64 = 100_000;
 
 /// A boot's windows: 100 ms, or 2 ms for a board with a DShot output
-/// (`AET-WO-4300a` D1), at 10 ns an instruction (100 MIPS); and every
-/// timer's kernel clock, the reset clock's 64 MHz (RM0433 Table 57), the
+/// (`AET-WO-4300a` D1); and every timer's kernel clock, the reset clock's 64 MHz (RM0433 Table 57), the
 /// only clock a solved topology admits.
 // belt-and-suspenders: `aethelgard_twin::boot::{MAX_VIRTUAL_NS,
-// DSHOT_WINDOW_NS, MIPS}` and `aethelgard_ir::SolvedClock::reset` state
+// DSHOT_WINDOW_NS}` and `aethelgard_ir::SolvedClock::reset` state
 // these, and `aethelgard_twin::boot::window` the rule that picks the window
 // (any DShot output); replay checks an archive without the twin or
 // `aethelgard-ir` (RUL-16), so it states them again.
 const TWIN_MAX_VIRTUAL_NS: u64 = 100_000_000;
 const TWIN_DSHOT_WINDOW_NS: u64 = 2_000_000;
-const TWIN_NS_PER_INSTRUCTION: u64 = 10;
 const RESET_KERNEL_HZ: u64 = 64_000_000;
 
 /// Whether kind 25 `check` is exactly the static check of kind 24 `m` on its
@@ -1441,7 +1433,9 @@ fn witness_consistent(m: &Record, w: &Record) -> bool {
     // rise exactly `rises - 1` periods after its first, within its span.
     if first_ns.zip(*last_ns).is_some_and(|(f, l)| f > l)
         || last_ns.is_some_and(|l| l > *end_ns)
-        || *off_grid > rises + falls
+        || rises
+            .checked_add(*falls)
+            .is_none_or(|edges| *off_grid > edges)
     {
         return false;
     }
@@ -1450,12 +1444,21 @@ fn witness_consistent(m: &Record, w: &Record) -> bool {
         && *batched == 0
         && first_ns.is_some()
         && span_ns.is_some_and(|s| s < *grain_ns);
-    let covers = last_ns.is_some_and(|l| l + period_ns + grain_ns >= *end_ns);
+    let covers =
+        last_ns.is_some_and(|l| l.saturating_add(*period_ns).saturating_add(*grain_ns) >= *end_ns);
+    // Checked: a forged count must not wrap onto the honest spacing, nor
+    // panic (third adversarial review, F2).
     let spaced = first_ns
         .zip(*last_ns)
         .zip(*span_ns)
-        .is_some_and(|((f, l), s)| (l - f).abs_diff((rises - 1) * period_ns) <= s);
-    let passing = shaped && spaced && (*falls == *rises || *falls + 1 == *rises) && covers;
+        .is_some_and(|((f, l), s)| {
+            rises
+                .checked_sub(1)
+                .and_then(|n| n.checked_mul(*period_ns))
+                .is_some_and(|due| (l - f).abs_diff(due) <= s)
+        });
+    let alternating = *falls == *rises || rises.checked_sub(1) == Some(*falls);
+    let passing = shaped && spaced && alternating && covers;
     match status.as_str() {
         "witnessed" => passing && *off_grid > 0,
         "static_only" => passing && *off_grid == 0,
