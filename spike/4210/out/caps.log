@@ -1,1 +1,3 @@
 2026-11-15T02:19:01+00:00 aet4210-265274-14998 SWAP NOT ZERO, nothing runs: memory.max=8589934592 memory.swap.max=8589934592 pids.max=max cmd: renode --version
+2026-11-15T02:30:37.593 aet4210-318423-22996 sample memory.max=8589934592 memory.swap.max=8589934592 pids.max=max
+2026-11-15T02:31:22+00:00 aet4210-318423-22996 SWAP NOT ZERO or CAPS NOT READ, nothing runs: last memory.max=8589934592 memory.swap.max=8589934592 pids.max=max cmd: renode --version

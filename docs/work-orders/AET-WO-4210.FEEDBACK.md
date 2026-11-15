@@ -125,10 +125,16 @@ The architect's corrected kickoff rule 3 drops the cgroup write, which caused th
   - `img.sh` writes no cgroup file;
   - it reads `memory.max`, `memory.swap.max` and `pids.max` back;
   - it releases the command inside only if `memory.swap.max` is exactly `0`.
-- **One container started**: `bash spike/4210/img.sh -- renode --version`, a plain call. The classifier allowed it. `spike/4210/out/caps.log`:
+- **Two containers started**, each `bash spike/4210/img.sh -- renode --version`, a plain call. The classifier allowed both. From `spike/4210/out/caps.log`:
+  - `aet4210-265274-14998` read once, at the instant the file appeared: `memory.swap.max=8589934592`.
+  - **`aet4210-318423-22996`** (runner `c145906`) sampled every 0.25 s for 40 s. It logged one value, unchanged throughout: `memory.max=8589934592 memory.swap.max=8589934592 pids.max=max`.
+- **The premise is false on Furnace (measured).** Podman 5.7.0 (systemd cgroup manager, crun) with `--memory 8g --memory-swap 8g` sets `memory.swap.max` to 8 GiB and leaves it there. So the container could use 8 GiB of RAM plus 8 GiB of swap. That is what the global contract already records (Aethelgard `2101` F11). Each command inside exited 99 having run nothing, as built.
+- **1307's caps log reads 0 with the same flags; its zeros most likely came from a write (inferred).** I read `~/.cache/aet-1307/` read-only:
+  - its live container `aet1307ci-240016` has the same `CreateCommand` flags and `HostConfig.MemorySwap` 8589934592, and reads `memory.swap.max=0`;
+  - that file's mtime is `02:10:18.478`, 0.5 s after `memory.max` (`02:10:17.985`): the poll interval of 1307's runner;
+  - 1307's `ci-img.sh` and `img.sh` were rewritten without the write at `02:16:05`, after the last line of its caps log (`02:10:18`).
 
-  `aet4210-265274-14998 SWAP NOT ZERO, nothing runs: memory.max=8589934592 memory.swap.max=8589934592 pids.max=max`
-- **The premise is false on Furnace (measured).** Podman 5.7.0 with `--memory 8g --memory-swap 8g` sets `memory.swap.max` to 8 GiB, so the container could use 8 GiB of RAM plus 8 GiB of swap. That is what the global contract already records (Aethelgard `2101` F11). The command inside exited 99 having run nothing, as built.
+  So every zero in 1307's log predates the correction. No read under the corrected rule shows 0.
 - **This is the kickoff's stop.** I did not try other flags, a parent slice, or Renode on the host: each changes the cap mechanism the rule fixes, so that is a ruling (D8, F10).
 - **So S2 and S3 are still unmeasured.** The harness is unchanged apart from the runner, and has still never run a case.
 
@@ -331,7 +337,8 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
   - The ICP-101xx has no autodetect, so `4400`'s generated hwdef must name the barometer.
 - **F9 · `4400`'s clone is at the same commit.** I read `Copter-4.7.2` (`fb773567`). Its clone appeared during this spike, and `~/.cache/aet-4400/ardupilot` `HEAD` is `fb773567` (read-only `rev-parse`).
 - **F10 · `--memory-swap` equal to `--memory` does not zero swap on Furnace (measured).**
-  - Podman 5.7.0 set the container's `memory.swap.max` to `8589934592`, the value given (`spike/4210/out/caps.log`).
+  - Podman 5.7.0 set the container's `memory.swap.max` to `8589934592`, the value given, and it held for 40 s of sampling (`spike/4210/out/caps.log`).
+  - 1307's zeros with the same flags predate the correction, by file times (inferred; above). A note went to 1307's inbox and to the other builders whose runners take the same rule.
   - The corrected rule 3 rests on the opposite premise, so under it no Renode run can start on this box.
   - Two other routes zeroed swap before, and both are now closed:
     - the global contract's "write `0` into `memory.swap.max`" step is hard-denied by Furnace;
@@ -357,11 +364,11 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
 
 ## Gates (spike)
 
-The fence: `git diff --name-only origin/main...HEAD` lists this file and `spike/4210/` only (`main` merged in at `121344d`).
+The fence: `git diff --name-only origin/main...HEAD` lists this file and `spike/4210/` only (`main` `9dc8861` merged in at `c9c5c9b`).
 
-On the host, under `systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`, at the merge (`9634f7b`):
+On the host, under `systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`, at `c9c5c9b`:
 - `cargo fmt --all -- --check`: ok;
 - `cargo clippy --workspace --all-targets -- -D warnings`: ok;
-- `cargo test --workspace`: exit 0, no failure.
+- `cargo test --workspace`: exit 0, 77 `test result: ok`, no failure.
 
-Tier 2 is CI's (`roadmap.md` §6). This branch changes no crate, so nothing of tier 2's is touched. CI on PR #131 was pending at `21722c2` when this was written.
+Later commits change only `spike/4210/` and this file. Tier 2 is CI's (`roadmap.md` §6), and this branch changes no crate.

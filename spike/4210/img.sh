@@ -34,9 +34,8 @@ CAPLOG=$REPO/spike/4210/out/caps.log
 FLAGS=$CACHE/capflags
 mkdir -p "$(dirname "$CAPLOG")" "$FLAGS"
 rm -f "$FLAGS/$NAME"
-# The caps are sampled every 0.25 s, not read once: the second session's first version read the
-# file the instant it appeared and logged swap 8 GiB, while a settled container with these flags
-# reads 0 (FEEDBACK F10). Every change of value is logged; the command is released only after
+# The caps are sampled every 0.25 s, not read once, so a value read while podman is still
+# applying limits cannot release or stop the run (FEEDBACK F10: settled, swap stays 8 GiB). Every change of value is logged; the command is released only after
 # swap reads 0 on 4 consecutive samples; one more read is logged 1 s after release, and a swap
 # value other than 0 after release kills the container.
 ( last=""; zeros=0; rel=0; after=0
