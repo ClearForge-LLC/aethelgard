@@ -172,3 +172,12 @@ Reduction pass (diff): −35 net · 2 duplicates removed · 1 dead path removed 
 - The pair judge has no minimum coupled length (A16; `DiffPair` has no length field).
 - No item cap on `route::read`'s items, and the strict reader's per-node path strings (A16; both bounded by the 1 M-token cap).
 - A board with two timers: the split's shared reset-clock read is argued, not measured (§3, §1.2).
+
+## 10. D1 as ruled (PR #155, comment 6899438039): predictions, committed before any run
+
+The ruling: (a) a detected intolerable fault covers its bus when it fails by the named mechanism and attribution, nothing else fails, and a passing no-fault baseline is in the campaign; (c) a bus no device uses is named `no device: nothing to fault` and does not block; (b) non-MCU rails and the battery stay `unmet`; `CampaignCoverageShort` before any gate; the reference's package tests run `pullup-3k3`, `droop-bor3`, `spi-absent-u4` and the baseline.
+
+- **P17, the design.** Coverage is decided in two stages. Before any gate, structurally: every bus and rail has a stressing fault in a scenario that expects pass, or (on a bus) in a scenario that expects fail by its fault's own mechanism, with a baseline that changes nothing in the set. Otherwise `CampaignCoverageShort`. After the gates, the campaign gate passes an expected-fail run only when its findings are within the fault's mechanism (a closed table per override kind: kinds, `electrical`, rule `E1` or `E2`), `attribute` on the run names that domain and rule with nothing unexplained, every subject the attribution cites is the seeded one, and the baseline passed. [design]
+- **P18, `spi-absent-u4` detects.** Its run fails `spi_identity_mismatch` and `spi_transaction_unwitnessed`; `attribute` gives `electrical`, `E2`, and cites only U4's records. [inferred from `cases.json`]
+- **P19, the wrong reason fails.** `cs-never` gives the same finding kinds under `software`/`S3` (`cases.json`), so a seeded absent U4 whose run failed that way would not cover. [read]
+- **P20, cost.** A reference verify with four scenarios costs about 3 × 20 s more on a CI runner than with one, plus one `attribute` (under a second). `against_fab_tier2`'s colocated block (765 s, about four verifies) grows by about four minutes; a refit of `ci/colocate.tsv` and the weights is needed, and 8 shards still fit under 20 minutes. [inferred, not measured]
