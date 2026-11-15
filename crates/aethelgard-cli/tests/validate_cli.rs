@@ -51,7 +51,7 @@ fn valid_example_exits_0() {
             "ok": true,
             "project_name": "sentinel-01",
             "voltage_domains": 1,
-            "net_constraints": 2
+            "net_constraints": 4
         })
     );
 }
@@ -73,7 +73,7 @@ fn zero_domain_example_exits_2_naming_the_domain() {
 #[test]
 fn solved_topology_document_exits_2() {
     let solved = serde_json::json!({
-        "schema_version": 2,
+        "schema_version": 3,
         "specification_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         "assignments": {}
     });

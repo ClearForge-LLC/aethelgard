@@ -230,7 +230,10 @@ fn ohms(v: u32) -> String {
     format!("{whole}{unit}{digits}")
 }
 
-const KNOWN_PARTS: &str = "BME280, TMP117, W25Q64JV";
+/// The MCU's symbol, the one part every design has.
+pub(crate) const MCU: &str = "MCU_ST_STM32H7:STM32H753ZITx";
+
+const KNOWN_PARTS: &str = "BME280, TMP117, W25Q64JVxIQ";
 const STRAP: u32 = 10_000;
 
 struct Builder<'a> {
@@ -524,7 +527,7 @@ pub(crate) fn design(
 
     // The MCU.
     let mcu_ref = b.reference('U')?;
-    let mcu_sym = library::symbol("MCU_ST_STM32H7:STM32H753ZITx")?;
+    let mcu_sym = library::symbol(MCU)?;
     let mcu_pins = pins(&mcu_sym).map_err(EmitError::Internal)?;
     let mut conns = BTreeMap::new();
     for p in &mcu_pins {
@@ -564,7 +567,7 @@ pub(crate) fn design(
     }
     b.decouple(&mcu_ref, &spec.mcu.supply.clone(), "100n")?;
     b.parts.push(Part {
-        lib_id: "MCU_ST_STM32H7:STM32H753ZITx",
+        lib_id: MCU,
         reference: mcu_ref,
         value: spec.mcu.part.clone(),
         footprint: mcu_sym.property("Footprint").unwrap_or("").to_owned(),
@@ -676,7 +679,7 @@ pub(crate) fn design(
         if !solved.gpio.contains_key(&d.cs.net) {
             return Err(EmitError::UnsolvedNet(d.cs.net.clone()));
         }
-        if d.part != "W25Q64JV" {
+        if d.part != "W25Q64JVxIQ" {
             return Err(EmitError::UnknownPart {
                 reference: d.reference.clone(),
                 part: d.part.clone(),
@@ -714,9 +717,12 @@ fn device(
     let sym = library::symbol(lib_id)?;
     let (value, note) = if lib_id == "Memory_Flash:W25Q32JVSS" {
         (
-            "W25Q64JVSS".to_owned(),
+            // The ordering code in full: package `SS` (SOIC-8 208-mil, the
+            // footprint), then `IQ`, whose JEDEC identity the twin reads
+            // (`AET-WO-4300c` F11).
+            "W25Q64JVSSIQ".to_owned(),
             Some(
-                "symbol Memory_Flash:W25Q32JVSS stands in for W25Q64JV: same family, same SOIC-8 208-mil pinout (AET-WO-1300 D2)",
+                "symbol Memory_Flash:W25Q32JVSS stands in for W25Q64JVSSIQ: same family, same SOIC-8 208-mil pinout (AET-WO-1300 D2)",
             ),
         )
     } else {

@@ -2,13 +2,14 @@
 //! and one refusal per malformed field, each through `parse_parts`.
 
 use aethelgard_ir::parts::{
-    Bus, Held, MAX_SPI_CLOCK_HZ, MAX_SUPPLY_MILLIVOLTS, PARTS_JSON, parse_parts, table,
+    Bus, Held, MAX_PIN_FEMTOFARADS, MAX_SPI_CLOCK_HZ, MAX_SUPPLY_MILLIVOLTS, PARTS_JSON,
+    parse_parts, table,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/parts.json`. It moves only with the file, on purpose.
-const PARTS_SHA256: &str = "bbf2c111038a6217ce24a18f339df5a401766e5789a7403997f51a387d32f7a6";
+const PARTS_SHA256: &str = "83d962bd021bed0ae51a16f4e7fc66a761e4aef86225961184918085e179bb73";
 
 fn embedded() -> Value {
     serde_json::from_str(PARTS_JSON).unwrap()
@@ -52,7 +53,7 @@ fn the_embedded_table_is_pinned_by_its_sha256() {
 fn the_embedded_table_parses_and_holds_four_parts() {
     let t = table().unwrap();
     let names: Vec<&str> = t.parts().iter().map(|p| p.part.as_str()).collect();
-    assert_eq!(names, ["BME280", "ICM20948", "TMP117", "W25Q64JV"]);
+    assert_eq!(names, ["BME280", "ICM20948", "TMP117", "W25Q64JVxIQ"]);
     assert_eq!(parse_parts(PARTS_JSON).unwrap(), *t);
 }
 
@@ -64,9 +65,14 @@ fn no_citation_is_pending() {
 }
 
 #[test]
-fn every_entry_has_all_three_citations_held() {
+fn every_entry_has_all_four_citations_held() {
     for p in table().unwrap().parts() {
-        for c in [&p.citations.bus, &p.citations.identity, &p.citations.supply] {
+        for c in [
+            &p.citations.bus,
+            &p.citations.identity,
+            &p.citations.supply,
+            &p.citations.pin_capacitance,
+        ] {
             assert!(!c.document.is_empty() && !c.revision.is_empty() && !c.section.is_empty());
             assert!(
                 matches!(&c.held, Held::Sha256(h) if h.len() == 64),
@@ -110,7 +116,7 @@ fn each_part_holds_its_datasheet_values() {
     assert_eq!(p.supply_millivolts, (1800, 5500));
     assert_eq!(p.renode, None);
 
-    let p = get("W25Q64JV");
+    let p = get("W25Q64JVxIQ");
     assert_eq!(
         (p.identity.write, p.identity.width, p.identity.value),
         (0x9F, 3, 0xEF4017)
@@ -124,6 +130,8 @@ fn each_part_holds_its_datasheet_values() {
     );
     assert_eq!(p.supply_millivolts, (2700, 3600));
     assert_eq!(p.renode.as_deref(), Some("SPI.GenericSpiFlash"));
+    // `AET-WO-4300c` D3: Cout 8 pF, the larger of the two printed maxima.
+    assert_eq!(p.pin_capacitance_femtofarads, Some(8_000));
 
     let p = get("ICM20948");
     assert_eq!(
@@ -139,6 +147,8 @@ fn each_part_holds_its_datasheet_values() {
     );
     assert_eq!(p.supply_millivolts, (1710, 3600));
     assert_eq!(p.renode.as_deref(), Some("Sensors.ICM20948"));
+    // "< 10" pF is printed as a typical: no maximum (`AET-WO-4300c` D3).
+    assert_eq!(p.pin_capacitance_femtofarads, None);
 }
 
 // ---- file level -------------------------------------------------------------
@@ -161,11 +171,13 @@ fn refuses_an_unknown_key_at_top_level() {
 }
 
 #[test]
-fn refuses_schema_version_2() {
-    let mut doc = embedded();
-    doc["schema_version"] = 2.into();
-    let err = parse_parts(&doc.to_string()).unwrap_err();
-    assert_refused(&err, None, "schema_version");
+fn refuses_schema_version_1_and_3() {
+    for version in [1, 3] {
+        let mut doc = embedded();
+        doc["schema_version"] = version.into();
+        let err = parse_parts(&doc.to_string()).unwrap_err();
+        assert_refused(&err, None, "schema_version");
+    }
 }
 
 #[test]
@@ -194,8 +206,8 @@ fn refuses_an_unknown_key_in_an_entry() {
 fn refuses_an_unknown_key_in_bus() {
     let err = refused_entry("BME280", |p| p["bus"]["i2c"]["extra"] = 1.into());
     assert_refused(&err, Some("BME280"), "extra");
-    let err = refused_entry("W25Q64JV", |p| p["bus"]["spi"]["extra"] = 1.into());
-    assert_refused(&err, Some("W25Q64JV"), "extra");
+    let err = refused_entry("W25Q64JVxIQ", |p| p["bus"]["spi"]["extra"] = 1.into());
+    assert_refused(&err, Some("W25Q64JVxIQ"), "extra");
     let err = refused_entry("BME280", |p| p["bus"]["extra"] = json!({}));
     assert_refused(&err, Some("BME280"), "");
 }
@@ -250,23 +262,25 @@ fn refuses_a_malformed_i2c_address() {
 
 #[test]
 fn refuses_an_spi_mode_out_of_range_repeated_or_missing() {
-    let err = refused_entry("W25Q64JV", |p| p["bus"]["spi"]["modes"] = json!([0, 4]));
-    assert_refused(&err, Some("W25Q64JV"), "bus.spi.modes");
-    let err = refused_entry("W25Q64JV", |p| p["bus"]["spi"]["modes"] = json!([3, 3]));
-    assert_refused(&err, Some("W25Q64JV"), "bus.spi.modes");
-    let err = refused_entry("W25Q64JV", |p| p["bus"]["spi"]["modes"] = json!([]));
-    assert_refused(&err, Some("W25Q64JV"), "bus.spi.modes");
+    let err = refused_entry("W25Q64JVxIQ", |p| p["bus"]["spi"]["modes"] = json!([0, 4]));
+    assert_refused(&err, Some("W25Q64JVxIQ"), "bus.spi.modes");
+    let err = refused_entry("W25Q64JVxIQ", |p| p["bus"]["spi"]["modes"] = json!([3, 3]));
+    assert_refused(&err, Some("W25Q64JVxIQ"), "bus.spi.modes");
+    let err = refused_entry("W25Q64JVxIQ", |p| p["bus"]["spi"]["modes"] = json!([]));
+    assert_refused(&err, Some("W25Q64JVxIQ"), "bus.spi.modes");
 }
 
 #[test]
 fn refuses_a_max_clock_of_zero_or_above_the_ceiling() {
     for hz in [0, u64::from(MAX_SPI_CLOCK_HZ) + 1] {
-        let err = refused_entry("W25Q64JV", |p| p["bus"]["spi"]["max_clock_hz"] = hz.into());
-        assert_refused(&err, Some("W25Q64JV"), "bus.spi.max_clock_hz");
+        let err = refused_entry("W25Q64JVxIQ", |p| {
+            p["bus"]["spi"]["max_clock_hz"] = hz.into()
+        });
+        assert_refused(&err, Some("W25Q64JVxIQ"), "bus.spi.max_clock_hz");
     }
     // The ceiling itself is accepted.
     let mut doc = embedded();
-    doc.pointer_mut(&at("W25Q64JV")).unwrap()["bus"]["spi"]["max_clock_hz"] =
+    doc.pointer_mut(&at("W25Q64JVxIQ")).unwrap()["bus"]["spi"]["max_clock_hz"] =
         MAX_SPI_CLOCK_HZ.into();
     parse_parts(&doc.to_string()).unwrap();
 }
@@ -330,8 +344,8 @@ fn refuses_an_unknown_renode_model() {
 fn refuses_a_known_renode_model_on_the_wrong_bus_kind() {
     let err = refused_entry("BME280", |p| p["renode"] = "SPI.GenericSpiFlash".into());
     assert_refused(&err, Some("BME280"), "renode");
-    let err = refused_entry("W25Q64JV", |p| p["renode"] = "I2C.BME280".into());
-    assert_refused(&err, Some("W25Q64JV"), "renode");
+    let err = refused_entry("W25Q64JVxIQ", |p| p["renode"] = "I2C.BME280".into());
+    assert_refused(&err, Some("W25Q64JVxIQ"), "renode");
     // `Sensors.ICM20948` attaches to either kind.
     let mut doc = embedded();
     doc.pointer_mut(&at("BME280")).unwrap()["renode"] = "Sensors.ICM20948".into();
@@ -402,10 +416,10 @@ fn a_pending_citation_must_be_an_https_url_and_is_listed() {
 #[test]
 fn a_key_twice_a_missing_renode_a_case_twin_or_no_parts_is_refused() {
     let text = PARTS_JSON;
-    // `"part": "W25Q64JV"` given twice, the second renaming it.
+    // `"part": "W25Q64JVxIQ"` given twice, the second renaming it.
     let twice = text.replacen(
-        "\"part\": \"W25Q64JV\",",
-        "\"part\": \"W25Q64JV\",\n      \"part\": \"W25Q128JV\",",
+        "\"part\": \"W25Q64JVxIQ\",",
+        "\"part\": \"W25Q64JVxIQ\",\n      \"part\": \"W25Q128JV\",",
         1,
     );
     assert_ne!(twice, text);
@@ -421,16 +435,16 @@ fn a_key_twice_a_missing_renode_a_case_twin_or_no_parts_is_refused() {
     );
     assert_ne!(twice, text);
     let err = parse_parts(&twice).unwrap_err();
-    assert_refused(&err, Some("W25Q64JV"), "duplicate field `value`");
+    assert_refused(&err, Some("W25Q64JVxIQ"), "duplicate field `value`");
     // `renode` left out of an entry.
     let mut doc = embedded();
-    doc.pointer_mut(&at("W25Q64JV"))
+    doc.pointer_mut(&at("W25Q64JVxIQ"))
         .unwrap()
         .as_object_mut()
         .unwrap()
         .remove("renode");
     let err = parse_parts(&doc.to_string()).unwrap_err();
-    assert_refused(&err, Some("W25Q64JV"), "missing field `renode`");
+    assert_refused(&err, Some("W25Q64JVxIQ"), "missing field `renode`");
     // The same part in another case.
     let mut doc = embedded();
     let mut copy = doc.pointer(&at("BME280")).unwrap().clone();
@@ -439,6 +453,58 @@ fn a_key_twice_a_missing_renode_a_case_twin_or_no_parts_is_refused() {
     let err = parse_parts(&doc.to_string()).unwrap_err();
     assert_refused(&err, Some("bme280"), "twice");
     // No parts at all.
-    let err = parse_parts(r#"{"schema_version": 1, "parts": []}"#).unwrap_err();
+    let err = parse_parts(r#"{"schema_version": 2, "parts": []}"#).unwrap_err();
     assert_refused(&err, None, "`parts` is empty");
+}
+
+/// `AET-WO-4300c` D3: `pin_capacitance` is required, its key too, and a
+/// stated maximum is 1 fF to the ceiling; `null` is "no maximum printed".
+#[test]
+fn refuses_a_missing_or_out_of_range_pin_capacitance() {
+    let err = refused_entry("BME280", |p| {
+        p.as_object_mut().unwrap().remove("pin_capacitance");
+    });
+    assert_refused(&err, Some("BME280"), "pin_capacitance");
+    let err = refused_entry("BME280", |p| p["pin_capacitance"] = json!({}));
+    assert_refused(&err, Some("BME280"), "max_femtofarads");
+    for bad in [0, MAX_PIN_FEMTOFARADS + 1] {
+        let err = refused_entry("W25Q64JVxIQ", |p| {
+            p["pin_capacitance"]["max_femtofarads"] = bad.into();
+        });
+        assert_refused(&err, Some("W25Q64JVxIQ"), "pin_capacitance.max_femtofarads");
+    }
+    let err = refused_entry("W25Q64JVxIQ", |p| {
+        p["citations"]
+            .as_object_mut()
+            .unwrap()
+            .remove("pin_capacitance");
+    });
+    assert_refused(&err, Some("W25Q64JVxIQ"), "pin_capacitance");
+}
+
+/// `AET-WO-4300c` F20: a `SPI.GenericSpiFlash` part's identity is a JEDEC
+/// read (`9Fh`, 3 bytes) whose capacity code the model can build, or the
+/// table is refused before it reaches `generate`.
+#[test]
+fn refuses_a_malformed_flash_identity() {
+    for (field, bad) in [
+        ("write", json!("0x9E")),
+        ("read", json!(2)),
+        ("value", json!("0xEF400F")),
+        ("value", json!("0xEF401A")),
+    ] {
+        let err = refused_entry("W25Q64JVxIQ", |p| {
+            p["identity"][field] = bad.clone();
+            if field == "read" {
+                p["identity"]["value"] = "0x4017".into();
+            }
+        });
+        assert_refused(&err, Some("W25Q64JVxIQ"), "JEDEC identity");
+    }
+    // The edges of the capacity codes are accepted.
+    for value in ["0xEF4010", "0xEF4019"] {
+        let mut doc = embedded();
+        doc.pointer_mut(&at("W25Q64JVxIQ")).unwrap()["identity"]["value"] = value.into();
+        assert!(parse_parts(&doc.to_string()).is_ok(), "{value}");
+    }
 }

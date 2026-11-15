@@ -103,7 +103,7 @@ fn the_reserved_list_is_the_pinned_chain_s_lowercase_names_builtins_keywords_and
         .collect();
     want.extend(BUILTINS.iter().chain(&KEYWORDS).map(|s| (*s).to_owned()));
     // The emitter's own names: one multiplexer per SPI controller the pinned
-    // header has (`AET-WO-4200` D7).
+    // header has (`AET-WO-4200` D7) ...
     let facts = aethelgard_svd_hal::cmsis::register_facts().unwrap();
     let spi: Vec<String> = (1..=9)
         .map(|n| format!("SPI{n}"))
@@ -111,6 +111,9 @@ fn the_reserved_list_is_the_pinned_chain_s_lowercase_names_builtins_keywords_and
         .collect();
     assert_eq!(spi.len(), 6, "the H753 has SPI1 to SPI6");
     want.extend(spi.iter().map(|p| mux_name(&p.to_ascii_lowercase())));
+    // ... and the controllers themselves, which it declares where the chain
+    // does not (`AET-WO-4300c` F21).
+    want.extend(spi.iter().map(|p| p.to_ascii_lowercase()));
     let have: BTreeSet<String> = RESERVED_REFERENCES
         .iter()
         .map(|s| (*s).to_owned())
