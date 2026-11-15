@@ -197,6 +197,20 @@ pub(crate) struct Part {
     /// A connector's declared off-board capacitance by pin number, with its
     /// source: what extraction adds to a line it carries (`AET-WO-4300f` D8).
     pub(crate) offboard: BTreeMap<String, (u64, String)>,
+    /// A power-tree part's place by its regulator's pin (`AET-WO-4300d2`
+    /// §1.3), which the placer targets and the DRC gate judges.
+    pub(crate) anchor: Option<Anchor>,
+}
+
+/// Where a power-tree part must sit, from the tree's declared ownership: the
+/// IC that owns it, each of its own pads with the IC pad it must lie beside,
+/// the largest copper-edge gap allowed, and the rule that asks for it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Anchor {
+    pub(crate) ic: String,
+    pub(crate) pads: Vec<(String, String)>,
+    pub(crate) bound_nm: i64,
+    pub(crate) rule: &'static str,
 }
 
 /// Each connector part's symbol and footprint, both vendored (`AET-WO-4300f`
@@ -397,6 +411,7 @@ impl Builder<'_> {
             conns: BTreeMap::from([("1".into(), one), ("2".into(), two)]),
             note: None,
             decouples: None,
+            anchor: None,
             offboard: BTreeMap::new(),
         });
         Ok(())
@@ -640,12 +655,13 @@ pub(crate) fn design(
     b.decouple(&mcu_ref, &spec.mcu.supply.clone(), "100n")?;
     b.parts.push(Part {
         lib_id: MCU,
-        reference: mcu_ref,
+        reference: mcu_ref.clone(),
         value: spec.mcu.part.clone(),
         footprint: mcu_sym.property("Footprint").unwrap_or("").to_owned(),
         conns,
         note: None,
         decouples: None,
+        anchor: None,
         offboard: BTreeMap::new(),
     });
 
@@ -792,7 +808,7 @@ pub(crate) fn design(
         b.decouple(&d.reference, &d.supply, "100n")?;
     }
     if let Some(p) = &spec.power {
-        power::draw(&mut b, p, &behind)?;
+        power::draw(&mut b, p, &behind, &mcu_ref, solved, table)?;
     }
     connectors(&mut b)?;
     Ok((b.parts, b.rails))
@@ -831,6 +847,7 @@ fn connectors(b: &mut Builder<'_>) -> Result<(), EmitError> {
             conns,
             note: None,
             decouples: None,
+            anchor: None,
             offboard,
         });
     }
@@ -866,6 +883,7 @@ fn device(
         conns: conns.into_iter().map(|(n, c)| (n.to_owned(), c)).collect(),
         note,
         decouples: None,
+        anchor: None,
         offboard: BTreeMap::new(),
     });
     Ok(())
@@ -1433,6 +1451,7 @@ mod tests {
                     conns: Default::default(),
                     note: None,
                     decouples: None,
+                    anchor: None,
                     offboard: Default::default(),
                 }),
                 "{}: its symbol is not recognised as a connector",

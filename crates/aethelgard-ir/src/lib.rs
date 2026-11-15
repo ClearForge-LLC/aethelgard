@@ -266,13 +266,11 @@ pub struct SolvedPower {
     pub input_fault_milliamps: u64,
     /// Every condition the checks rest on, each once, sorted.
     pub conditions: Vec<String>,
-    /// Each battery sense net's ADC pin, keyed by net (`AET-WO-4300d2` §1.7).
-    /// Absent when the tree declares no sense.
-    #[serde(
-        default,
-        skip_serializing_if = "BTreeMap::is_empty",
-        deserialize_with = "unique_keys"
-    )]
+    /// Each battery sense net's ADC pin, keyed by net (`AET-WO-4300d2` §1.7):
+    /// empty when the tree declares no sense. A required key, never
+    /// defaulted (`INV-06`): a topology written before it is refused, not
+    /// read as "no sense solved".
+    #[serde(deserialize_with = "unique_keys")]
     pub sense: BTreeMap<String, SolvedSense>,
 }
 

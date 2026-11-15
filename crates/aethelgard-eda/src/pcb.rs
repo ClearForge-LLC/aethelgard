@@ -50,6 +50,7 @@ pub const GAP_NM: i64 = 500_000;
 /// between their pads (`AET-WO-1302`). At [`GAP_NM`], the reference board's
 /// U1 pad 34 and U4 pad 7 faced each other across one track's width.
 pub const IC_GAP_NM: i64 = 1_000_000;
+
 /// From the outermost keep-out box to the board edge.
 pub const MARGIN_NM: i64 = 2_000_000;
 /// The candidate positions' pitch.
@@ -515,6 +516,22 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
         };
         key(a).cmp(&key(b))
     });
+    // An anchored part goes straight after its IC, in drawing order, before
+    // any other part can crowd the pins it serves (`AET-WO-4300d2` §1.3). A
+    // design with no anchor keeps the order above.
+    let anchored = |i: usize| items[i].part.anchor.as_ref().map(|a| a.ic.as_str());
+    let mut grouped = Vec::with_capacity(order.len());
+    for &i in order.iter().filter(|&&i| anchored(i).is_none()) {
+        grouped.push(i);
+        let reference = items[i].part.reference.as_str();
+        grouped.extend((0..items.len()).filter(|&j| anchored(j) == Some(reference)));
+    }
+    if grouped.len() != order.len() {
+        return Err(EmitError::Internal(
+            "a part is anchored to an IC that is not drawn".into(),
+        ));
+    }
+    let order = grouped;
     let mut placed: Vec<Option<Placed>> = vec![None; items.len()];
     for (step, &i) in order.iter().enumerate() {
         let item = &items[i];
@@ -535,7 +552,13 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
         // The anchor: an IC already placed.
         let candidates =
             (0..items.len()).filter(|&j| j != i && placed[j].is_some() && is_ic(items[j].part));
-        let anchor = match &item.part.decouples {
+        let owner = item
+            .part
+            .anchor
+            .as_ref()
+            .map(|a| &a.ic)
+            .or(item.part.decouples.as_ref());
+        let anchor = match owner {
             Some(ic) => (0..items.len())
                 .find(|&j| placed[j].is_some() && &items[j].part.reference == ic)
                 .ok_or_else(|| {
@@ -554,24 +577,46 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
                 .ok_or_else(|| internal(&item.part.reference, "no IC to place beside"))?,
         };
         let at = placed[anchor].as_ref().map(|p| p.origin).unwrap_or(ORIGIN);
-        let target = item
-            .shared(&items[anchor])
-            .first()
-            .and_then(|net| items[anchor].pad_on(net))
-            .map(|(x, y)| (at.0 + x, at.1 + y))
-            .unwrap_or_else(|| {
-                placed[anchor]
-                    .as_ref()
-                    .map_or(ORIGIN, |p| p.courtyard.centre())
-            });
+        // An IC that owns anchored parts keeps its loop's room from every part
+        // placed before it (`AET-WO-4300d2` §1.3): the longest side of its
+        // largest anchored part, plus [`IC_GAP_NM`], so that part can sit on
+        // any side of the pins it serves. ICs packed at [`IC_GAP_NM`] took
+        // that room on the Sentinel-02 fixture (measured: FEEDBACK §1.4).
+        let reference = item.part.reference.as_str();
+        let reserve = items
+            .iter()
+            .filter(|x| x.part.anchor.as_ref().is_some_and(|a| a.ic == reference))
+            .map(|x| {
+                let k = x.geometry.keep;
+                (k.x1 - k.x0).max(k.y1 - k.y0) + IC_GAP_NM
+            })
+            .max();
         let taken: Vec<(Rect, i64)> = (0..items.len())
             .filter_map(|j| {
                 let both = is_ic(items[j].part) && is_ic(item.part);
-                placed[j]
-                    .as_ref()
-                    .map(|p| (p.keep, if both { IC_GAP_NM } else { GAP_NM }))
+                let gap = match (reserve, both) {
+                    (Some(r), _) => r,
+                    (None, true) => IC_GAP_NM,
+                    (None, false) => GAP_NM,
+                };
+                placed[j].as_ref().map(|p| (p.keep, gap))
             })
             .collect();
+        if let Some(a) = &item.part.anchor {
+            placed[i] = Some(place_anchored(item, &items[anchor], at, a, &taken)?);
+            continue;
+        }
+        let target = {
+            item.shared(&items[anchor])
+            .first()
+            .and_then(|net| items[anchor].pad_on(net))
+            .map(|(x, y)| (at.0 + x, at.1 + y))
+        }
+        .unwrap_or_else(|| {
+            placed[anchor]
+                .as_ref()
+                .map_or(ORIGIN, |p| p.courtyard.centre())
+        });
         let origin = spot(g, target, &taken)
             .ok_or_else(|| internal(&item.part.reference, "no free spot within a metre"))?;
         placed[i] = Some(Placed {
@@ -588,6 +633,71 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| EmitError::Internal("a part was not placed".into()))?;
     Ok((placed, edge))
+}
+
+/// An anchored part (`AET-WO-4300d2` §1.3), placed at whichever of the four
+/// right angles brings its pads nearest the IC pads they serve: for each
+/// angle, the free spot nearest the origin that would put each own pad, on
+/// average, on its IC pad; then the angle with the least sum of squared
+/// centre distances, ties to the smaller angle.
+fn place_anchored(
+    item: &Item<'_>,
+    ic: &Item<'_>,
+    at: (i64, i64),
+    a: &schematic::Anchor,
+    taken: &[(Rect, i64)],
+) -> Result<Placed, EmitError> {
+    let reference = &item.part.reference;
+    let mut pairs = Vec::new();
+    for (own, theirs) in &a.pads {
+        let (mine, _) = item
+            .pads
+            .get(own)
+            .ok_or_else(|| internal(reference, format!("anchored by pad {own}, which it lacks")))?;
+        let (pin, _) = ic.pads.get(theirs).ok_or_else(|| {
+            internal(reference, format!("anchored to {} pad {theirs}, which it lacks", a.ic))
+        })?;
+        pairs.push((*mine, (at.0 + pin.0, at.1 + pin.1)));
+    }
+    let n = i64::try_from(pairs.len().max(1)).unwrap_or(1);
+    let mut best: Option<(i128, Placed)> = None;
+    for theta in [0u16, 90, 180, 270] {
+        let g = geometry_at(&item.fp, reference, theta)?;
+        let turned: Vec<_> = pairs
+            .iter()
+            .map(|&(mine, pin)| (route::rotate(theta, mine), pin))
+            .collect();
+        let ideal = turned.iter().fold((0, 0), |s, &(m, p)| {
+            (s.0 + p.0 - m.0, s.1 + p.1 - m.1)
+        });
+        let (kx, ky) = g.keep.centre();
+        let target = (ideal.0 / n + kx, ideal.1 / n + ky);
+        let Some(origin) = spot(g, target, taken) else {
+            continue;
+        };
+        let score: i128 = turned
+            .iter()
+            .map(|&(m, p)| {
+                let dx = i128::from(origin.0 + m.0 - p.0);
+                let dy = i128::from(origin.1 + m.1 - p.1);
+                dx * dx + dy * dy
+            })
+            .sum();
+        if best.as_ref().is_none_or(|(s, _)| score < *s) {
+            best = Some((
+                score,
+                Placed {
+                    reference: reference.clone(),
+                    origin,
+                    rotation: theta,
+                    courtyard: g.courtyard.shift(origin),
+                    keep: g.keep.shift(origin),
+                },
+            ));
+        }
+    }
+    best.map(|(_, p)| p)
+        .ok_or_else(|| internal(reference, "no free spot within a metre"))
 }
 
 /// The connectors, at the bottom edge (`AET-WO-4300f`, ruled D7: a side-entry
@@ -882,7 +992,10 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
     }
     let mut out = Vec::new();
     for part in parts {
-        let fp = library::footprint(&part.footprint)?;
+        let mut fp = library::footprint(&part.footprint)?;
+        if part.anchor.is_some() {
+            reference_on_fab(&mut fp);
+        }
         let nets = pin_nets(part)?;
         let mut pads = BTreeMap::new();
         let mut numbers = BTreeSet::new();
@@ -910,6 +1023,26 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
         });
     }
     Ok(out)
+}
+
+/// An anchored part's reference text moves from the silkscreen to `F.Fab`
+/// (`AET-WO-4300d2` §1.3): on the silkscreen it would hold the part's keep-out
+/// box a text's width from the pin it must sit beside. The board's
+/// fabrication notes and the placement file still name every reference.
+fn reference_on_fab(fp: &mut Sx) {
+    let Some(items) = fp.items_mut() else { return };
+    for c in items.iter_mut() {
+        if c.head() != Some("property") || c.arg(1) != Some("Reference") {
+            continue;
+        }
+        if let Some(fields) = c.items_mut() {
+            for f in fields.iter_mut() {
+                if f.head() == Some("layer") {
+                    *f = Sx::List(vec![Sx::atom("layer"), Sx::str("F.Fab")]);
+                }
+            }
+        }
+    }
 }
 
 /// The placed board: what `write` emits, for tests and the outline.
@@ -1261,6 +1394,7 @@ mod tests {
                 .collect(),
             note: None,
             decouples: None,
+            anchor: None,
             offboard: BTreeMap::new(),
         }
     }

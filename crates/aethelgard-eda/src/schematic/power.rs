@@ -27,7 +27,9 @@ use std::collections::BTreeMap;
 use aethelgard_ir::power::{Power, Resistor};
 use aethelgard_ir::power_parts::{self, Direction, Kind, Role, Row};
 
-use super::{Builder, Conn, EmitError, Part};
+use aethelgard_ir::{PinTable, SolvedTopology};
+
+use super::{Anchor, Builder, Conn, EmitError, Part};
 
 pub(crate) use aethelgard_ir::power::BATTERY_NET;
 
@@ -38,6 +40,42 @@ pub(crate) const POWER_IN_FOOTPRINT: &str =
     "Connector_AMASS:AMASS_XT30PW-M_1x02_P2.50mm_Horizontal";
 const POWER_IN_POSITIVE: &str = "2";
 const POWER_IN_NEGATIVE: &str = "1";
+
+/// The largest copper-edge gap from a part's pad to its IC's pin, by rule.
+/// Every bound is an engine choice: each datasheet asks for "as close as
+/// possible" and states no distance (`AET-WO-4300d2` R4, the `D-B5`
+/// precedent), so each rule's text says so.
+const NEAR_NM: i64 = 2_000_000;
+/// The bulk input capacitor sits behind the high-frequency one, which takes
+/// the pins first (SNVSAN3F p. 23, 9.2.2.6), and the inductor beside CBOOT:
+/// both bounds were set after the §1.4 measurement, not before (FEEDBACK D3).
+const CIN_BULK_NM: i64 = 5_000_000;
+const SW_NM: i64 = 4_000_000;
+const RESERVOIR_NM: i64 = 3_000_000;
+const CIN_HF_RULE: &str = "SNVSAN3F p. 33, 10.1 item 1 and p. 23, 9.2.2.6: the 220 nF input capacitor as close as possible to the VIN and GND terminals (2.0 mm, an engine choice: no distance is stated)";
+const CIN_RULE: &str = "SNVSAN3F p. 33, 10.1 item 1: the bulk input capacitor close to the VIN and GND terminals, behind the high-frequency one (5.0 mm, an engine choice set after measuring the placer: no distance is stated)";
+const CBOOT_RULE: &str = "SNVSAN3F p. 33, 10.1 item 3: CBOOT close to the device, with short traces to the BOOT and SW pins (2.0 mm, an engine choice: no distance is stated)";
+const CVCC_RULE: &str = "SNVSAN3F p. 33, 10.1 item 2: the VCC bypass capacitor close to the VCC pin (2.0 mm, an engine choice: no distance is stated; its GND return is by the ground fill)";
+const FB_RULE: &str = "SNVSAN3F p. 33, 10.1 item 4: the feedback divider as close as possible to the FB pin (2.0 mm, an engine choice: no distance is stated)";
+const SW_RULE: &str = "SNVSAN3F p. 33, 10.1 item 9: the copper from the SW pin to the inductor as short as possible (4.0 mm, an engine choice set after measuring the placer: no distance is stated)";
+const LDO_RULE: &str = "SBVS320D p. 21, 7.4.1: input and output capacitors as close as possible to the device (2.0 mm, an engine choice: no distance is stated)";
+const BYPASS_RULE: &str = "SCES935A p. 25, 12.1: the bypass capacitors as close to the device as possible (2.0 mm, an engine choice: no distance is stated)";
+const RESERVOIR_RULE: &str = "AN2834 p. 45, 4.4.3: a large external capacitor at the ADC input pin (3.0 mm, an engine choice: no distance is stated)";
+
+/// Anchors the part just drawn to `ic`'s pads.
+fn anchor(b: &mut Builder<'_>, ic: &str, pads: &[(&str, &str)], bound_nm: i64, rule: &'static str) {
+    if let Some(p) = b.parts.last_mut() {
+        p.anchor = Some(Anchor {
+            ic: ic.to_owned(),
+            pads: pads
+                .iter()
+                .map(|(own, theirs)| ((*own).to_owned(), (*theirs).to_owned()))
+                .collect(),
+            bound_nm,
+            rule,
+        });
+    }
+}
 
 /// Each SPI line a crossing carries, by the channel that carries it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -115,6 +153,7 @@ fn two_pin(
         conns: BTreeMap::from([("1".into(), one), ("2".into(), two)]),
         note: None,
         decouples: None,
+        anchor: None,
         offboard: BTreeMap::new(),
     });
     Ok(())
@@ -158,6 +197,7 @@ fn ic(
         conns,
         note: None,
         decouples: None,
+        anchor: None,
         offboard: BTreeMap::new(),
     });
     Ok(())
@@ -268,11 +308,16 @@ fn lines(reference: &str, part: &str) -> Result<Vec<(Line, String)>, EmitError> 
 }
 
 /// Draws the whole tree. `behind` is [`behind`]'s map; the devices
-/// themselves are drawn with the other SPI devices.
+/// themselves are drawn with the other SPI devices. `mcu` is the MCU's
+/// reference, whose solved sense pins (`SolvedTopology.power.sense`, by the
+/// table's package position) are connected here.
 pub(crate) fn draw(
     b: &mut Builder<'_>,
     p: &Power,
     behind: &BTreeMap<String, Behind>,
+    mcu: &str,
+    solved: &SolvedTopology,
+    table: &PinTable,
 ) -> Result<(), EmitError> {
     for r in &p.regulators {
         regulator(b, r)?;
@@ -281,6 +326,32 @@ pub(crate) fn draw(
         crossing(b, c, behind)?;
     }
     for s in &p.sense {
+        let pin = solved
+            .power
+            .as_ref()
+            .and_then(|sp| sp.sense.get(&s.net))
+            .ok_or_else(|| EmitError::UnsolvedNet(s.net.clone()))?;
+        let position = table
+            .pins
+            .get(&pin.pin)
+            .ok_or_else(|| EmitError::UnknownPin {
+                net: s.net.clone(),
+                pin: pin.pin.clone(),
+            })?
+            .position
+            .to_string();
+        let m = b
+            .parts
+            .iter_mut()
+            .find(|x| x.reference == mcu)
+            .ok_or_else(|| EmitError::Internal("the MCU is not drawn".into()))?;
+        if m.conns.contains_key(&position) {
+            return Err(EmitError::Internal(format!(
+                "{}: the MCU's pin {position} is already connected",
+                s.net
+            )));
+        }
+        m.conns.insert(position.clone(), Conn::Net(s.net.clone()));
         let top = b.rail(BATTERY_NET);
         let net = Conn::Net(s.net.clone());
         resistor(b, &s.top, top, net.clone())?;
@@ -289,6 +360,7 @@ pub(crate) fn draw(
         if let Some(c) = &s.reservoir {
             let g = b.ground();
             capacitor(b, &c.reference, &c.part, net, g)?;
+            anchor(b, mcu, &[("1", &position)], RESERVOIR_NM, RESERVOIR_RULE);
         }
     }
     // The power-in connector, drawn like `4300f`'s connectors (it is placed
@@ -306,6 +378,7 @@ pub(crate) fn draw(
         ]),
         note: None,
         decouples: None,
+        anchor: None,
         offboard: BTreeMap::new(),
     });
     Ok(())
@@ -339,16 +412,17 @@ fn regulator(b: &mut Builder<'_>, reg: &aethelgard_ir::power::Regulator) -> Resu
                 conns.insert(pin(u, r, role)?, conn);
             }
             ic(b, u, r, conns)?;
-            // belt-and-suspenders: `validate` refuses a buck with no divider
-            // (`ExternalPartMissing`).
-            let d = reg
-                .feedback
-                .as_ref()
-                .ok_or_else(|| refuse(u, "a buck with no feedback divider"))?;
-            resistor(b, &d.top, output.clone(), Conn::Net(fb.clone()))?;
-            resistor(b, &d.bottom, Conn::Net(fb), g.clone())?;
-            for e in of(Role::Cin).chain(of(Role::CinHf)) {
+            let [vin, pgnd, fbp, vccp, bootp, swp] =
+                ["VIN", "PGND", "FB", "VCC", "BOOT", "SW"].map(|role| pin(u, r, role));
+            let (vin, pgnd, fbp, vccp, bootp, swp) = (vin?, pgnd?, fbp?, vccp?, bootp?, swp?);
+            // Drawn, and so placed (`pcb::place`), in this order around the
+            // pins: the high-frequency input capacitor, CBOOT, the inductor
+            // (beside SW before CVCC and the divider fill that side), CVCC,
+            // the divider, then the bulk input capacitor behind the
+            // high-frequency one.
+            for e in of(Role::CinHf) {
                 capacitor(b, &e.reference, &e.part, input.clone(), g.clone())?;
+                anchor(b, u, &[("1", &vin), ("2", &pgnd)], NEAR_NM, CIN_HF_RULE);
             }
             for e in of(Role::Cboot) {
                 capacitor(
@@ -358,9 +432,7 @@ fn regulator(b: &mut Builder<'_>, reg: &aethelgard_ir::power::Regulator) -> Resu
                     Conn::Net(boot.clone()),
                     Conn::Net(sw.clone()),
                 )?;
-            }
-            for e in of(Role::Cvcc) {
-                capacitor(b, &e.reference, &e.part, Conn::Net(vcc.clone()), g.clone())?;
+                anchor(b, u, &[("1", &bootp), ("2", &swp)], NEAR_NM, CBOOT_RULE);
             }
             for e in of(Role::Inductor) {
                 let Kind::Inductor(l) = &row(&e.reference, &e.part)?.kind else {
@@ -379,6 +451,25 @@ fn regulator(b: &mut Builder<'_>, reg: &aethelgard_ir::power::Regulator) -> Resu
                     Conn::Net(sw.clone()),
                     output.clone(),
                 )?;
+                anchor(b, u, &[("1", &swp)], SW_NM, SW_RULE);
+            }
+            for e in of(Role::Cvcc) {
+                capacitor(b, &e.reference, &e.part, Conn::Net(vcc.clone()), g.clone())?;
+                anchor(b, u, &[("1", &vccp)], NEAR_NM, CVCC_RULE);
+            }
+            // belt-and-suspenders: `validate` refuses a buck with no divider
+            // (`ExternalPartMissing`).
+            let d = reg
+                .feedback
+                .as_ref()
+                .ok_or_else(|| refuse(u, "a buck with no feedback divider"))?;
+            resistor(b, &d.top, output.clone(), Conn::Net(fb.clone()))?;
+            anchor(b, u, &[("2", &fbp)], NEAR_NM, FB_RULE);
+            resistor(b, &d.bottom, Conn::Net(fb), g.clone())?;
+            anchor(b, u, &[("1", &fbp)], NEAR_NM, FB_RULE);
+            for e in of(Role::Cin) {
+                capacitor(b, &e.reference, &e.part, input.clone(), g.clone())?;
+                anchor(b, u, &[("1", &vin), ("2", &pgnd)], CIN_BULK_NM, CIN_RULE);
             }
             for e in of(Role::Cout) {
                 capacitor(b, &e.reference, &e.part, output.clone(), g.clone())?;
@@ -395,11 +486,14 @@ fn regulator(b: &mut Builder<'_>, reg: &aethelgard_ir::power::Regulator) -> Resu
                 conns.insert(pin(u, r, role)?, conn);
             }
             ic(b, u, r, conns)?;
+            let (inp, outp) = (pin(u, r, "IN")?, pin(u, r, "OUT")?);
             for e in of(Role::Cin) {
                 capacitor(b, &e.reference, &e.part, input.clone(), g.clone())?;
+                anchor(b, u, &[("1", &inp)], NEAR_NM, LDO_RULE);
             }
             for e in of(Role::Cout) {
                 capacitor(b, &e.reference, &e.part, output.clone(), g.clone())?;
+                anchor(b, u, &[("1", &outp)], NEAR_NM, LDO_RULE);
             }
         }
         _ => return Err(refuse(u, format!("`{}` is not a regulator", reg.part))),
@@ -471,13 +565,15 @@ fn crossing(
     }
     ic(b, &c.reference, r, conns)?;
     resistor(b, &c.cs_pull_up, a.clone(), Conn::Net(device.cs.net.clone()))?;
+    let (vcca, vccb) = (pin(&c.reference, r, "VCCA")?, pin(&c.reference, r, "VCCB")?);
     for e in &c.external {
-        let rail = match e.role {
-            Role::BypassA => a.clone(),
-            Role::BypassB => bside.clone(),
+        let (rail, at) = match e.role {
+            Role::BypassA => (a.clone(), &vcca),
+            Role::BypassB => (bside.clone(), &vccb),
             _ => return Err(refuse(&e.reference, "a translator part that is not a bypass")),
         };
         capacitor(b, &e.reference, &e.part, rail, g.clone())?;
+        anchor(b, &c.reference, &[("1", at)], NEAR_NM, BYPASS_RULE);
     }
     Ok(())
 }

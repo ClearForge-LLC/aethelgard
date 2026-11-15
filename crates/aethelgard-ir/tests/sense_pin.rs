@@ -180,14 +180,18 @@ fn the_solution_is_deterministic_and_round_trips() {
 }
 
 #[test]
-fn a_tree_without_a_sense_and_a_spec_without_a_tree_serialize_no_sense() {
+fn a_tree_without_a_sense_states_an_empty_sense_and_a_topology_without_the_key_is_refused() {
     let t = table(&[("PB1", 3, &[], &["ADC1_INP5"])]);
     let mut v = base();
     v["power"]["sense"] = json!([]);
     let s = solved(&v, &t).unwrap();
     assert!(s.power.as_ref().unwrap().sense.is_empty());
-    let j: Value = serde_json::to_value(&s).unwrap();
-    assert!(j["power"].get("sense").is_none(), "{j}");
+    let mut j: Value = serde_json::to_value(&s).unwrap();
+    assert_eq!(j["power"]["sense"], json!({}), "{j}");
+    // INV-06: a topology that omits the key is refused, never defaulted.
+    j["power"].as_object_mut().unwrap().remove("sense");
+    let err = serde_json::from_value::<aethelgard_ir::SolvedTopology>(j).unwrap_err();
+    assert!(err.to_string().contains("sense"), "{err}");
 }
 
 #[test]
