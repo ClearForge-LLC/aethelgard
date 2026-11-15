@@ -292,8 +292,9 @@ fn net_kinds(spec: &Specification) -> BTreeMap<&str, NetKind<'_>> {
 
 /// Step 15 of `validate`, after the parts (step 14): each connector by
 /// document order, then its part, its pins, each pin's net and budget, then
-/// its standard. References are checked with the devices' (step 8) and
-/// identifiers with every other (step 2).
+/// its standard; then each serial port's TX and RX, each on some connector's
+/// pin. References are checked with the devices' (step 8) and identifiers
+/// with every other (step 2).
 pub(crate) fn validate(spec: &Specification) -> Result<(), E> {
     let kinds = net_kinds(spec);
     for c in spec.declared_connectors() {
@@ -368,6 +369,24 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), E> {
         }
         if let Some(standard) = &c.standard {
             crate::ds009::judge(spec, c, part, standard, &kinds)?;
+        }
+    }
+    // Each serial port's TX and RX end at a declared connector pin (the
+    // architect's ruling 1 on `AET-WO-4300b`; adversarial F9).
+    for p in &spec.serial_ports {
+        for (line, net) in [("TX", &p.tx.net), ("RX", &p.rx.net)] {
+            let at_pin = spec
+                .declared_connectors()
+                .iter()
+                .flat_map(|c| &c.pins)
+                .any(|pin| pin.net.as_ref() == Some(net));
+            if !at_pin {
+                return Err(E::SerialPortNotAtConnector {
+                    label: p.label.clone(),
+                    line,
+                    net: net.clone(),
+                });
+            }
         }
     }
     Ok(())

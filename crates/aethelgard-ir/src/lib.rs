@@ -1258,7 +1258,7 @@ pub enum IrValidationError {
         required_millivolts: Option<u32>,
     },
     #[error(
-        "connector `{id}` pin `{pin}` is `{role}` in its standard, and its net {} is not that (a role this schema cannot yet declare takes no net, and only a pin the standard lets float may be null)",
+        "connector `{id}` pin `{pin}` is `{role}` in its standard, and its net {} is not that ({rule})",
         net.as_deref().map_or_else(|| "(null)".to_owned(), |n| format!("`{n}`"))
     )]
     ConnectorPinContradictsStandard {
@@ -1266,6 +1266,28 @@ pub enum IrValidationError {
         pin: String,
         role: &'static str,
         net: Option<String>,
+        /// What the role takes, in words: [`crate::ds009::Role::rule`].
+        rule: &'static str,
+    },
+    #[error(
+        "connector `{id}` pin `{pin}` is on `{standard}`, whose serial pins carry a `{}` serial port, and its net is serial port `{label}`'s, whose role is `{declared}` ({})",
+        crate::ds009::port(standard).and_then(|p| p.serial_role).map_or("", SerialRole::name),
+        crate::ds009::port(standard).map_or("", |p| p.section)
+    )]
+    ConnectorSerialRoleContradictsStandard {
+        id: String,
+        pin: String,
+        standard: &'static str,
+        label: String,
+        declared: &'static str,
+    },
+    #[error(
+        "serial port `{label}`'s {line} net `{net}` is on no connector pin; each serial port's TX and RX end at a declared connector pin (AET-WO-4300b, the architect's ruling 1)"
+    )]
+    SerialPortNotAtConnector {
+        label: String,
+        line: &'static str,
+        net: String,
     },
 }
 
@@ -1388,6 +1410,10 @@ impl IrValidationError {
             Self::ConnectorPartContradictsStandard { .. } => "ConnectorPartContradictsStandard",
             Self::ConnectorSupplyContradictsStandard { .. } => "ConnectorSupplyContradictsStandard",
             Self::ConnectorPinContradictsStandard { .. } => "ConnectorPinContradictsStandard",
+            Self::ConnectorSerialRoleContradictsStandard { .. } => {
+                "ConnectorSerialRoleContradictsStandard"
+            }
+            Self::SerialPortNotAtConnector { .. } => "SerialPortNotAtConnector",
         }
     }
 
@@ -1508,7 +1534,9 @@ impl IrValidationError {
             | Self::UnknownConnectorStandard { id, .. }
             | Self::ConnectorPartContradictsStandard { id, .. }
             | Self::ConnectorSupplyContradictsStandard { id, .. }
-            | Self::ConnectorPinContradictsStandard { id, .. } => Some(id),
+            | Self::ConnectorPinContradictsStandard { id, .. }
+            | Self::ConnectorSerialRoleContradictsStandard { id, .. } => Some(id),
+            Self::SerialPortNotAtConnector { label, .. } => Some(label),
         }
     }
 

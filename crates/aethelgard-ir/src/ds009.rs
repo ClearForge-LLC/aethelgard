@@ -33,7 +33,7 @@
 use std::collections::BTreeMap;
 
 use crate::connectors::{Connector, NetKind, Part, Series};
-use crate::{IrValidationError as E, Specification};
+use crate::{IrValidationError as E, SerialRole, Specification};
 
 /// DS-009 rev 0.1.0, at commit `48dd6d1d` (2020-04-24), its only commit.
 pub const DOCUMENT: &str = "DS-009 Connector Standard, rev 0.1.0, commit 48dd6d1d";
@@ -74,6 +74,26 @@ impl Role {
             Role::SerialTx(n) | Role::SerialRx(n) | Role::Undeclared(n) | Role::MayFloat(n) => n,
         }
     }
+
+    /// What a pin of this role takes, in words, for a refusal.
+    pub fn rule(self) -> &'static str {
+        match self {
+            Role::Vcc5V | Role::TargetVoltage | Role::Vdd3V3 => {
+                "a supply pin takes its voltage domain"
+            }
+            Role::Ground => "a ground pin takes `GND`",
+            Role::I2cScl | Role::I2cSda => {
+                "an I2C pin takes its own line of one bus, both pins the same bus's"
+            }
+            Role::SerialTx(_) | Role::SerialRx(_) => {
+                "a `TX (OUT)` pin takes a serial port's `tx` net and an `RX (IN)` pin its `rx` net, both pins the same port's, and neither floats"
+            }
+            Role::Undeclared(_) => "a role this schema cannot yet declare takes no net",
+            Role::MayFloat(_) => {
+                "a pin the standard lets float is null until its net can be declared"
+            }
+        }
+    }
 }
 
 /// One port: its name, its series and pin 1 to N's roles.
@@ -84,6 +104,10 @@ pub struct Port {
     pub roles: &'static [Role],
     /// The PDF page, then the page number printed on it.
     pub section: &'static str,
+    /// The one serial role the port's own name gives its serial pins
+    /// (`AET-WO-4300b` adversarial F8): `gps` on both GPS ports. `None`
+    /// where DS-009 names no device: TELEM is "any serial port".
+    pub serial_role: Option<SerialRole>,
 }
 
 use Role::*;
@@ -101,6 +125,7 @@ pub const PORTS: [Port; 5] = [
             Ground,
         ],
         section: "PDF p. 6 (printed 5), Telemetry Port: CTS and RTS float without flow control",
+        serial_role: None,
     },
     Port {
         name: "DS-009 GPS",
@@ -114,6 +139,7 @@ pub const PORTS: [Port; 5] = [
             Ground,
         ],
         section: "PDF p. 8 (printed 7), Basic GPS port",
+        serial_role: Some(SerialRole::Gps),
     },
     Port {
         name: "DS-009 GPS FULL",
@@ -131,12 +157,14 @@ pub const PORTS: [Port; 5] = [
             Ground,
         ],
         section: "PDF p. 7 (printed 6), Full GPS plus Safety Switch Port",
+        serial_role: Some(SerialRole::Gps),
     },
     Port {
         name: "DS-009 I2C",
         series: Series::JstGh,
         roles: &[Vcc5V, I2cScl, I2cSda, Ground],
         section: "PDF p. 9 (printed 8), I2C port",
+        serial_role: None,
     },
     Port {
         name: "DS-009 DEBUG MINI",
@@ -150,6 +178,7 @@ pub const PORTS: [Port; 5] = [
             Ground,
         ],
         section: "PDF p. 12 (printed 11), Debug Mini: JST SH SM06B",
+        serial_role: None,
     },
 ];
 
@@ -162,7 +191,7 @@ pub fn port(name: &str) -> Option<&'static Port> {
 /// part of another series or pin count, a supply pin whose net is not the
 /// supply the port names (D5), or another pin whose net is not its role's.
 /// The two I2C pins of one port must be one bus's, and its two serial pins
-/// one serial port's.
+/// one serial port's, of the port's [`Port::serial_role`] where it has one.
 pub(crate) fn judge(
     spec: &Specification,
     c: &Connector,
@@ -216,6 +245,23 @@ pub(crate) fn judge(
             _ => false,
         };
         if holds {
+            if let (Some(wants), Some(NetKind::SerialTx(label) | NetKind::SerialRx(label))) =
+                (port.serial_role, kind)
+                && let Some(declared) = spec
+                    .serial_ports
+                    .iter()
+                    .find(|p| p.label == label)
+                    .map(|p| p.role)
+                    .filter(|r| *r != wants)
+            {
+                return Err(E::ConnectorSerialRoleContradictsStandard {
+                    id: id(),
+                    pin: number,
+                    standard: port.name,
+                    label: label.to_owned(),
+                    declared: declared.name(),
+                });
+            }
             continue;
         }
         if matches!(role, Vcc5V | Vdd3V3 | TargetVoltage) {
@@ -232,6 +278,7 @@ pub(crate) fn judge(
             pin: number,
             role: role.name(),
             net: pin.net.clone(),
+            rule: role.rule(),
         });
     }
     Ok(())

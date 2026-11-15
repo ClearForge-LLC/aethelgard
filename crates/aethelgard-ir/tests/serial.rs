@@ -84,7 +84,22 @@ fn port(label: &str, peripheral: Option<&str>, tx: Option<&str>, rx: Option<&str
            "framing": {"baud": 115200, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": false}})
 }
 
+/// A specification holding `ports`, each port's TX and RX on pins 1 and 2 of
+/// its own four-pin connector `J10<n>` with an explicit map: each serial port
+/// ends at a connector pin (the architect's ruling 1; adversarial F9).
 fn spec_json(ports: Vec<Value>) -> Value {
+    let connectors: Vec<Value> = ports
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            json!({"reference": format!("J{}", 100 + i), "part": "SM04B-GHS-TB", "standard": null,
+                "pins": [
+                    {"pin": "1", "net": p["tx"]["net"], "offboard": null},
+                    {"pin": "2", "net": p["rx"]["net"], "offboard": null},
+                    {"pin": "3", "net": null, "offboard": null},
+                    {"pin": "4", "net": "GND", "offboard": null}]})
+        })
+        .collect();
     json!({
         "schema_version": aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
         "accept_lifecycle": [],
@@ -96,7 +111,7 @@ fn spec_json(ports: Vec<Value>) -> Value {
             {"id": "VDD_5V", "nominal_millivolts": 5000, "tolerance_permille": 50}],
         "i2c_buses": [], "spi_buses": [], "i2c_devices": [], "spi_devices": [],
         "net_constraints": [],
-        "connectors": [],
+        "connectors": connectors,
         "net_classes": [],
         "diff_pairs": [],
         "motor_outputs": [],
@@ -392,7 +407,8 @@ fn a_serial_net_is_a_net_and_takes_no_constraint() {
     );
 }
 
-/// A connector `J1` on `part` with `standard`, pins `1..` holding `nets`.
+/// A connector `J1` on `part` with `standard`, pins `1..` holding `nets`,
+/// in place of [`spec_json`]'s connector of each port it holds a line of.
 fn with_connector(
     mut v: Value,
     part: &str,
@@ -411,8 +427,21 @@ fn with_connector(
         .enumerate()
         .map(|(i, net)| json!({"pin": (i + 1).to_string(), "net": net, "offboard": offboard(*net)}))
         .collect();
-    v["connectors"] =
-        json!([{"reference": "J1", "part": part, "standard": standard, "pins": pins}]);
+    let mut connectors: Vec<Value> = v["connectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| {
+            !c["pins"].as_array().unwrap().iter().any(|p| {
+                p["net"].as_str().is_some_and(|n| {
+                    (n.ends_with("_TX") || n.ends_with("_RX")) && nets.contains(&Some(n))
+                })
+            })
+        })
+        .cloned()
+        .collect();
+    connectors.push(json!({"reference": "J1", "part": part, "standard": standard, "pins": pins}));
+    v["connectors"] = Value::Array(connectors);
     v
 }
 
@@ -472,7 +501,9 @@ fn ds_009_telem_takes_one_port_s_tx_out_and_rx_in() {
 #[test]
 fn ds_009_gps_takes_a_port_and_the_bus_s_i2c_lines() {
     let gps = |scl: &str, sda: &str| {
-        let v = with_i2c(spec_json(vec![port("G", None, None, None)]), None, None);
+        let mut g = port("G", None, None, None);
+        g["role"] = json!("gps");
+        let v = with_i2c(spec_json(vec![g]), None, None);
         let nets = [
             Some("VDD_5V"),
             Some("G_TX"),
@@ -491,6 +522,116 @@ fn ds_009_gps_takes_a_port_and_the_bus_s_i2c_lines() {
             ..
         }
     ));
+}
+
+/// Adversarial F8: DS-009's GPS ports carry a GPS, by their names; TELEM is
+/// "any serial port". A `mavlink` port on DS-009 GPS or GPS FULL is refused
+/// by name, citing the pin and the port's section; on TELEM every role
+/// validates.
+#[test]
+fn adversarial_f8_ds_009_s_gps_ports_take_only_a_gps() {
+    let on = |standard: &str, part: &str, role: &str| {
+        let mut g = port("G", None, None, None);
+        g["role"] = json!(role);
+        // Each role's own framing, so only the connector can refuse it.
+        match role {
+            "rc_crsf" => g["framing"]["baud"] = json!(420000),
+            "rc_sbus" => {
+                g["framing"] = json!({"baud": 100000, "data_bits": 8, "parity": "even",
+                    "stop_bits": 2, "inverted": true});
+            }
+            _ => {}
+        }
+        let v = with_i2c(spec_json(vec![g]), None, None);
+        let mut nets = vec![
+            Some("VDD_5V"),
+            Some("G_TX"),
+            Some("G_RX"),
+            Some("I2C_SCL"),
+            Some("I2C_SDA"),
+        ];
+        if standard == "DS-009 GPS FULL" {
+            nets.extend([None, None, Some("VDD_3V3"), None]);
+        }
+        nets.push(Some("GND"));
+        with_connector(v, part, Some(standard), &nets)
+    };
+    assert_eq!(
+        parse(on("DS-009 GPS", "SM06B-GHS-TB", "gps")).validate(),
+        Ok(())
+    );
+    for standard in ["DS-009 GPS", "DS-009 GPS FULL"] {
+        let part = if standard == "DS-009 GPS" {
+            "SM06B-GHS-TB"
+        } else {
+            "SM10B-GHS-TB"
+        };
+        for role in ["console", "mavlink", "rc_crsf", "rc_sbus"] {
+            let e = refused(on(standard, part, role));
+            assert_eq!(e.kind(), "ConnectorSerialRoleContradictsStandard", "{e}");
+            assert_eq!(e.id(), Some("J1"));
+            let text = e.to_string();
+            assert!(
+                text.contains("pin `2`")
+                    && text.contains(&format!("`{role}`"))
+                    && text.contains("`gps`")
+                    && text.contains(&format!("`{standard}`")),
+                "{text}"
+            );
+        }
+    }
+    for role in ["console", "mavlink", "gps", "rc_crsf", "rc_sbus"] {
+        let mut v = on("DS-009 TELEM", "SM06B-GHS-TB", role);
+        // TELEM's pins 4 and 5 are CTS and RTS, which float.
+        v["connectors"][0]["pins"][3] = json!({"pin": "4", "net": null, "offboard": null});
+        v["connectors"][0]["pins"][4] = json!({"pin": "5", "net": null, "offboard": null});
+        assert_eq!(parse(v).validate(), Ok(()), "{role}");
+    }
+}
+
+/// Adversarial F9: each serial port's TX and RX end at a declared connector
+/// pin (the architect's ruling 1). A port on no connector, or with one line
+/// on none, is refused by name, naming the line.
+#[test]
+fn adversarial_f9_a_port_s_tx_and_rx_each_end_at_a_connector_pin() {
+    let mut v = spec_json(vec![port("C", None, None, None)]);
+    v["connectors"] = json!([]);
+    let e = refused(v.clone());
+    assert_eq!(
+        e,
+        IrValidationError::SerialPortNotAtConnector {
+            label: "C".into(),
+            line: "TX",
+            net: "C_TX".into()
+        }
+    );
+    assert_eq!((e.kind(), e.id()), ("SerialPortNotAtConnector", Some("C")));
+    let v = with_connector(
+        v,
+        "SM04B-GHS-TB",
+        None,
+        &[Some("C_TX"), None, None, Some("GND")],
+    );
+    assert_eq!(
+        refused(v),
+        IrValidationError::SerialPortNotAtConnector {
+            label: "C".into(),
+            line: "RX",
+            net: "C_RX".into()
+        }
+    );
+}
+
+/// The refusal says what the role takes: a serial pin's rule, never "a role
+/// this schema cannot yet declare" (adversarial F8's stale message).
+#[test]
+fn a_serial_pin_s_refusal_states_the_serial_rule() {
+    let text = refused(telem(Some("A_RX"), Some("A_TX"))).to_string();
+    assert!(
+        text.contains("a `TX (OUT)` pin takes a serial port's `tx` net")
+            && !text.contains("cannot yet declare"),
+        "{text}"
+    );
 }
 
 #[test]
