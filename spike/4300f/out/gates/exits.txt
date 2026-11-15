@@ -1,0 +1,6 @@
+ref-erc exit 0
+ref-drc exit 0
+s2-erc exit 1
+s2-drc exit 0
+s4-drc-A exit 1
+s4-drc-B exit 1

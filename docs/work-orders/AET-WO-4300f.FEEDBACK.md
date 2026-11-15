@@ -160,7 +160,7 @@ What the read changes against the prediction (P1):
 - **The schematic:** each `EXT_*` net is one local label on one wire stub on one MCU pin. There is no `no_connect` and no other label of that name.
 - **The board:** each is one MCU pad carrying `(net "/EXT_…")`, with no segment, via or zone on it. The router routes only nets with two or more pads (`route.rs`, the `order` filter).
 
-**Gate half: not measured** (§3.0).
+**Gate half: measured after the ruling, §7.** ERC fails with three `isolated_pin_label` warnings; DRC passes. The source read below predicted both.
 
 **ERC** **[read]**, KiCad 10.0.7 at GitLab tag `10.0.7`, sha256s in `~/.cache/aet-4300f/kicad-src/SHA256SUMS`:
 - `CONNECTION_GRAPH::ercCheckLabels` (`eeschema/connection_graph.cpp` ~l. 4640) reports `ERCE_LABEL_SINGLE_PIN` for a label whose net, across the schematic, has exactly one pin and no no-connect.
@@ -263,7 +263,7 @@ It went to both inboxes at 02:50Z, with the same labels.
   - The position moved by 25 µm, and the routing counts are unchanged.
   - **The keep-out boxes are validated:** their union grown by `MARGIN_NM` reproduces the emitted outline within 30 µm, inside the 50 µm snap. J1's smallest clearance over all 15 boxes is 2.05 mm, to U1 (an IC; it needs 1 mm).
 - **Routed, with the router's exact `check` and `connectivity`:** yes, both variants. Two runs gave identical output (wall times aside) and identical boards **[measured]**.
-- **DRC:** not measured (§3.0). `spike/4300f/gates.sh` runs it on both boards, unrun.
+- **DRC:** measured after the ruling (§7). Both variants have exactly one finding, `lib_footprint_issues` ("the current configuration does not include the footprint library 'Connector_JST'"), because the gate's library table lists only vendored libraries. No clearance, edge, courtyard, silkscreen or mask finding.
   - The boards carry no schematic symbol for J1, so the DRC there omits parity.
   - **[inferred]** the risks DRC would judge that the router does not: courtyard and silkscreen against the edge (the housing is flush with it), and mask slivers between the 0.65 mm-gap GH pads.
 
@@ -302,12 +302,12 @@ It went to both inboxes at 02:50Z, with the same labels.
 | S1: DS-009 pinouts | §3.1 table: 9 ports. Debug ports are **JST SH**, not GH. Every VCC is +5 V. No motor, PWM or USB port. | read |
 | S1: KiCad GH/SH footprints and symbols vendorable under `RUL-11` | yes: CC-BY-SA 4.0 + design exception, the same licence file byte for byte; footprints: GitLab = image bytes (the image ships symbols merged, so symbols are GitLab's only) | read |
 | S2: `validate`/`solve`/`emit` with a one-pin net | all exit 0; one label on one MCU pin; one pad, no copper | measured |
-| S2: ERC | `isolated_pin_label` warning per net, so the gate fails (exit 5 expected) | read (KiCad source), **run blocked** |
-| S2: DRC | no finding expected | inferred, **run blocked** |
+| S2: ERC | kicad-cli exit 5, `check erc` fails: 3 `isolated_pin_label` warnings, one per net; the reference has 0 | **measured** (§7), and read at source |
+| S2: DRC (with parity) | exit 0, pass, 0 findings | **measured** (§7) |
 | S3: shape | (a) explicit `connectors`, with `standard` or `null`; eight named refusals, one waiting for `4300d` | inferred |
 | S4: placer puts a connector at an edge | no: beside an IC; no rotation (`route::part` refuses it) | read, measured |
 | S4: hand-placed GH 4-pin at the bottom edge | placement legal, routed, `check` and `connectivity` Ok, both MP variants, deterministic | measured (host) |
-| S4: DRC of that board | **not run**; harness `spike/4300f/gates.sh` | blocked |
+| S4: DRC of that board | one finding in each variant: `lib_footprint_issues` (Connector_JST is not a vendored library); no geometric finding | **measured** (§7) |
 | S5: twin | unchanged; no peripheral, no witness change | read |
 | S5: exceptions | extraction refuses a connector pad on an I2C line (`UnmodelledPart`); the bound ignores cable and remote `Ci`; an off-board device is placed by `emit` | read, inferred |
 | caps | `memory.swap.max` = 8 GiB under `--memory 8g --memory-swap 8g` | measured |
@@ -318,9 +318,9 @@ It went to both inboxes at 02:50Z, with the same labels.
   - debug is SH;
   - the power port is "Analog Power", with a current contradiction;
   - there is no motor or USB port.
-- **P2 held** where it could be checked: the device-less SPI bus is admitted, there is one pad and no copper, and the ERC rule exists as predicted (read). The ERC and DRC predictions are unmeasured.
+- **P2 held:** the device-less SPI bus is admitted, there is one pad and no copper, ERC exits 5 with `isolated_pin_label` per net, and DRC has no finding (§7).
 - **P3 stands as the recommendation.**
-- **P4 held on the host.** It missed that rotation is refused, which confines v1 to one edge. DRC is unmeasured.
+- **P4 held,** with two misses. Rotation is refused, which confines v1 to one edge. And "DRC clean" was not quite right: the one finding is the unvendored library, which the build's vendoring removes, and nothing geometric (§7).
 - **P5 held.** The exception is wider than predicted: extraction refuses outright, rather than under-counting, and there is the off-board-device case.
 
 ### 4.2 Recommended shape
@@ -368,11 +368,8 @@ Into `aethelgard-kicad-lib`, verbatim from KiCad GitLab tag `10.0.7`, each with 
   - Who declares the off-board capacitance budget (cable plus remote `Ci`, with a source), so that the bound in `RUL-19` (1) and `4300c`'s `Fmax(C)` stay true?
   - Options: (a) a per-connector-pin declared budget, required on I2C and SPI lines (recommended); (b) the line's `max_capacitance` covers it, so extraction checks board + 0, which is weaker and should be stated.
 - **D9. Off-board devices** (a GPS's compass on a DS-009 GPS port): modelled in the twin, not placed on the board. Is that in `4300f`'s build or a later work order?
-- **D10. The caps stop (= 4210's D8 on PR #131).** S2's ERC and DRC and S4's DRC are unmeasured because swap read 8 GiB.
-  - The harness is committed: `bash spike/4300f/img.sh -- bash spike/4300f/gates.sh`.
-  - `gates.sh` has never executed. Once D8 is ruled it measures S2's ERC/DRC and S4's DRC, and the result goes to `4300a`/`4300b`. Both inboxes already have the host half and the source read.
-  - Alternatively, the architect can measure the gate half in CI's `tools` job, which has KiCad.
-- **D11. Sequencing for `4300a` and `4300b`.** By KiCad's source, their off-board nets fail ERC honestly, so both will STOP at their §1 measured stop unless connectors land first. Should `4300f`'s build come before their board side, or should they carry a bottom-edge connector themselves?
+- **D10. The caps stop: ruled** on PR #134. The stop was the architect's rule, not a finding; it is replaced by `~/.cache/aet-bus/RULE3.md`, under which the KiCad steps ran (§7). No decision is left.
+- **D11. Sequencing for `4300a` and `4300b`.** Measured (§7): their off-board nets fail ERC honestly, so both will STOP at their §1 measured stop unless connectors land first. Should `4300f`'s build come before their board side, or should they carry a bottom-edge connector themselves?
 
 ## 6. Adversarial pass, reduction pass, gates
 
@@ -408,3 +405,38 @@ Outside the repository, an 802 MB scratch copy of KiCad's share tree was deleted
 - `cargo test --workspace`: 0, with 1200 passed, 0 failed and 0 ignored across 77 test binaries.
 
 The spike adds no workspace code. Its probe crate has its own `[workspace]`. Tier 2 is CI's.
+
+## 7. The KiCad steps, measured after the ruling (PR #134, 2026-11-15)
+
+The architect's ruling on PR #134 withdrew the swap stop. It replaced rule 3 with `~/.cache/aet-bus/RULE3.md`: the container runs inside a capped `systemd-run --user --scope`, which it shares, with `podman run --cgroups=disabled` and no podman memory flags.
+
+**The runner, under that rule** (`spike/4300f/img.sh`, rewritten; the old one is in history at `7a804fd`):
+- The scope is `MemoryMax=8G`, `MemorySwapMax=0`, `TasksMax=8192`.
+- Inside the scope, before the container, it reads back `memory.max` 8589934592, `memory.swap.max` 0 and `pids.max` 8192, at `/sys/fs/cgroup` plus the path in `/proc/self/cgroup`. It runs nothing unless swap is 0, and writes no cgroup file.
+- Once the container is up, its PID's `/proc/<pid>/cgroup` is the scope's ("same: yes", `spike/4300f/out/caps.log`).
+- `TMPDIR` is unset inside the container (`env` shows none), and the network is `none`.
+
+**The runs** **[measured]**:
+- `bash spike/4300f/img.sh -- bash spike/4300f/gates.sh`, the unmodified CLI's gates (host build at `75d66b3`, whose code is `cb44872`'s) on kicad-cli 10.0.7 in the pinned image.
+- Reports in `spike/4300f/out/gates/`.
+- The gate's sandbox reported Landlock ABI 8, TCP confined, sockets denied, and `uid_boundary: false` (the user namespace, as on every Furnace run).
+
+| Run | Input | kicad-cli exit | Verdict | Findings |
+|---|---|---|---|---|
+| `ref-erc` | the unmodified reference's schematic | 0 | pass | 0 |
+| `ref-drc` | the unmodified reference, `--spec`, `--schematic` (parity) | 0 | pass | 0 |
+| `s2-erc` | S2's schematic (`18bc6253…`) | **5** | **fail** | **3**, each `isolated_pin_label` (warning) "Label connected to only one pin": `EXT_SCK` at (96.52, 81.28), `EXT_MISO` at (96.52, 129.54), `EXT_MOSI` at (96.52, 132.08) |
+| `s2-drc` | S2's board (`55408e56…`), `--spec offboard.json`, `--schematic` (parity) | 0 | pass | 0 |
+| `s4-drc-A` | the reference + J1, MP no net (`000550fa…`), `--spec` | 5 | fail | 1: `lib_footprint_issues` (warning) "The current configuration does not include the footprint library 'Connector_JST'" on J1 |
+| `s4-drc-B` | the reference + J1, MP on GND (`a459f8e2…`), `--spec` | 5 | fail | 1: the same, on J1 |
+
+**What it settles:**
+- **S2.** `emit` draws an off-board net honestly, and DRC and parity pass it.
+  - **ERC fails it,** with exactly one `isolated_pin_label` per off-board net and nothing else; the reference alone has none.
+  - The only way to silence it is a `no_connect` on a used pin, which is a waiver. So the gates do not pass an off-board net honestly.
+  - That is the STOP branch of `4300a` §1.8 and `4300b` §1.6. Both inboxes have it, measured, at 03:40Z.
+- **S4.** With J1 at the bottom edge, its housing flush with the edge and its pads 0.525 mm from it, KiCad's DRC under the specification's rules finds nothing geometric. There is no clearance, edge clearance, courtyard, silkscreen or solder-mask finding, in either mounting-pad variant.
+  - The one finding in each is `lib_footprint_issues`. It arises because the gate writes its own `fp-lib-table` from the vendored libraries (`RUL-03`), and `Connector_JST` is not vendored.
+  - **[inferred]** Vendoring the footprint (§4.3) removes it. KiCad's library-mismatch check then judges J1 against its library, which it should pass, because J1 is the vendored bytes placed. The build should test that.
+  - Parity was not judged for S4, because no schematic carries J1.
+- **The answer** is now "spike done", ruling needed on the decisions in §5, with D10 closed.
