@@ -330,7 +330,7 @@ fn bounded(value: u32, max: u32, path: String) -> Result<(), IrValidationError> 
     Ok(())
 }
 
-fn source(value: &str, path: &str) -> Result<(), IrValidationError> {
+pub(crate) fn source(value: &str, path: &str) -> Result<(), IrValidationError> {
     let b = value.as_bytes();
     let ok = (1..=MAX_SOURCE).contains(&b.len())
         && b.iter().all(|c| (0x20..=0x7E).contains(c))

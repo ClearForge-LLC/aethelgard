@@ -44,6 +44,7 @@ tests/board_tier2.rs	a_write_past_the_block_fails	178.851
 tests/board_tier2.rs	a_wrong_alternate_function_fails	127.107
 tests/board_tier2.rs	against_fab_names_a_missing_inner_layer_and_a_stackup_that_lies	460.000
 tests/board_tier2.rs	build_gives_one_sha256_at_two_paths	1.180
+tests/board_tier2.rs	connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers	4.000
 tests/board_tier2.rs	every_admitted_identifier_character_survives_every_output	251.072
 tests/board_tier2.rs	every_corpus_file_the_reader_accepts_gets_its_stated_kicad_verdict	51.275
 tests/board_tier2.rs	four_layer_fixture_passes_every_gate_and_its_package_holds	460.000
