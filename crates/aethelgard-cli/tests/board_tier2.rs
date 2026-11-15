@@ -1203,3 +1203,88 @@ fn the_power_fixture_passes_erc_drc_its_loop_rules_and_extract() {
     );
     fs::remove_dir_all(&base).unwrap();
 }
+
+/// `AET-WO-4300g` §1.5, on KiCad's own netlist: the reference's schematic,
+/// exported by `kicad-cli sch export netlist` in the sandbox, passes the
+/// support gate with every role in its bound, J1 the programming path and J2
+/// the source. Then the board with one VDD capacitor moved 25 mm off its pin
+/// (the schematic unchanged) fails it, by that role and by nothing else.
+#[test]
+fn the_reference_passes_the_support_gate_and_a_capacitor_moved_off_fails() {
+    use aethelgard_eda::schematic;
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let base = std::env::temp_dir().join(format!("aet-4300g-support-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    fs::create_dir_all(&base).unwrap();
+    let spec_path = root().join("examples/sentinel-01-minimal.json");
+    let spec_arg = spec_path.to_str().unwrap();
+    let out = base.join("emitted");
+    let (code, text) = aethelgard(&["emit", "--file", spec_arg, "--out", out.to_str().unwrap()]);
+    let r = one(&text);
+    assert_eq!(code, Some(0), "emit: {r}");
+    let board = r["board"]["path"].as_str().unwrap().to_owned();
+    let sch = r["schematic"]["path"].as_str().unwrap().to_owned();
+    let support = |board: &str| {
+        let (code, text) = aethelgard(&[
+            "check",
+            "support",
+            "--schematic",
+            &sch,
+            "--board",
+            board,
+            "--spec",
+            spec_arg,
+        ]);
+        (code, one(&text))
+    };
+    let (code, v) = support(&board);
+    assert_eq!(code, Some(0), "support: {v}");
+    assert_eq!(v["verdict"], "pass", "{v}");
+    assert_eq!(v["findings"], Value::Array(vec![]), "{v}");
+    let s = &v["support"];
+    let roles = s["roles"].as_array().unwrap();
+    assert_eq!(roles.len(), 19, "{v}");
+    assert!(roles.iter().all(|x| x["verdict"] == "pass"), "{v}");
+    assert_eq!(s["programming"]["connector"], "J1", "{v}");
+    assert_eq!(s["supply_source"], "J2 pin 1", "{v}");
+    let moved_part = roles
+        .iter()
+        .find(|x| x["role"] == "vdd_bypass" && x["pin"] == "52")
+        .unwrap()["part"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let spec: aethelgard_ir::Specification =
+        serde_json::from_slice(&fs::read(&spec_path).unwrap()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+    let tree = aethelgard_eda::strict::board(&fs::read_to_string(&board).unwrap()).unwrap();
+    let (b, _) =
+        aethelgard_eda::route::read(&tree, &aethelgard_eda::stack::Stack::of(&spec)).unwrap();
+    let moves = vec![(
+        moved_part.clone(),
+        (b.outline.x1 + 25_000_000, b.outline.y0),
+        0,
+    )];
+    let moved = schematic::emit_moved(&spec, &solved, &table, &moves).unwrap();
+    let moved_path = base.join("moved.kicad_pcb");
+    fs::write(&moved_path, moved.board).unwrap();
+    let (code, v) = support(moved_path.to_str().unwrap());
+    assert_eq!(code, Some(1), "moved: {v}");
+    let kinds: Vec<&str> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["support_capacitor_missing"], "{v}");
+    assert!(
+        v["findings"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("VDD 52"),
+        "{v}"
+    );
+    fs::remove_dir_all(&base).unwrap();
+}

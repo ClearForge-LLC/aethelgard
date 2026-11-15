@@ -201,7 +201,7 @@ DRC also runs with `--refill-zones`: zones are judged filled, and the board is n
 - the programming connector, with whether NRST reaches it;
 - the declared source's pin on the supply.
 
-**Findings:** each failure is a finding, so the check fails with exit `5`:
+**Findings:** each failure is a finding, so the check fails with exit `1`:
 - `support_pin_off_net`;
 - `strap_wrong`;
 - `support_capacitor_missing`;
