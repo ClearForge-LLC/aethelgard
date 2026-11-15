@@ -3,7 +3,7 @@
 **Builder:** Claude (strong tier), worktree `~/aethelgard-4300b`, branch `wo/aet-4300b-serial` from `main` `7ca65e6`.
 **Work order:** `docs/work-orders/AET-WO-4300b.md` on `main`, as amended by the architect's kickoff amendments (`~/.cache/aet-4300b-ruling.md`, 2026-11-15 12:00 UTC).
 **Cadence:** build, with one measured stop (§1.6, now answered by connectors unless ERC or DRC fails).
-**Status:** built on PR #152. §1.6 measured and passed (ERC and DRC at connectors, no finding, no waiver); the §7 clock stop does not fire. Three fresh adversarial passes (§8), every finding fixed or asked (§9); reduction pass (§11); gates green. Specification 9, topology 7, trace 11, `TIER2_MIN` 154.
+**Status: STOPPED** on PR #152, on one acceptance clause: CI is green, but not with every shard under 20 minutes (§12). Everything else is built and measured. §1.6 is measured and passed (ERC and DRC at connectors, no finding, no waiver), and the §7 clock stop does not fire. Three fresh adversarial passes (§8) found holes; every finding is fixed or asked (§9). The reduction pass is done (§11), and the gates are green. Specification 9, topology 7, trace 11, `TIER2_MIN` 154 (exact).
 
 The predictions in §1 are committed before any container run, any firmware build for a probe, and any baseline run. They are not edited afterwards; corrections go in later sections.
 
@@ -264,3 +264,33 @@ F6, F7, F10, F14 and F15 are questions or notes (§9). Each fix has a test that 
   - `ci/colocate.tsv`: the four blocks at their worst in-process wall time (libtest's `finished in`) over runs 43752525127 and 43763615224: `attribute_seeded` 873 s (was 720), `against_fab_tier2` 870 s (was an estimate of 900), `verify_47k_tier2` 279 s (was 305), `campaign_tier2` 46 s (was 55).
   - `shard.sh assign` over the run's entries plans 1006 s on every shard; the guard holds (1899 names, 1904 occurrences).
 - `TIER2_MIN` 154: the `#[test]` count of the files `TIER2_RE` names (with_tools 30, twin_tier2 65, board_tier2 18, attribute_seeded 11, campaign_tier2 9, models_tier2 7, adversarial_1301_tools 6, and 2 each in adversarial_1302_tools, against_fab_tier2, verify_2k2_tier2 and verify_47k_tier2), `main`'s 129 with this work order's 25.
+
+### After the refit, measured
+
+- **CI on `719c57f`** (run 43771580225, the refit's weights): every job green.
+  - The tools shards took 15m18s to **22m13s**: shard 4 ran **21m14s** and shard 6 **22m13s**. The refit left two shards over where the old weights left one.
+  - Setup is about 3 min per shard. The test steps took 777–912 s on six shards and 1,081 s (shard 4) and 1,139 s (shard 6) on the other two, each against a plan of 1,006 s.
+  - Shard 4 holds the reference `verify` (584 s alone); shard 6 holds two of `board_tier2`'s Kani-heavy tests (468 s and 230 s) behind its one-at-a-time lock.
+  - Alone-times mispredict in-shard time for CPU-heavy tests: six shards ran 9–23 % under their plan, those two 7 % and 13 % over.
+- **No in-rule lever is left.**
+  - Rule step 3 colocates binaries whose tests share one run. Only `against_fab_tier2` and `verify_47k_tier2` use `common::verify::Shared`, and both are already blocks.
+  - `verify_2k2_tier2` and `board_tier2` share nothing but their lock.
+  - Hand-tuning weights, a contention factor, a ninth shard, and going back to the old weights are each outside the rule (`ci/SHARDS` stays 8, Scotty), so none was done.
+- **Runner variance on `main` is as large as the excess.** `main` at `dbf049e` and at `423e018` differ in `docs/roadmap.md` alone. Shard 0's test step took 1,035 s on the first run (shard 0 at 20.8 min) and 695 s on the second (14.3 min); shard 4's took 911 s and 661 s. So `main` itself passes 20 minutes on a slow runner, and one run under 20 on this branch would not show the clause holds.
+- This work order's own tests weigh 278 s of about 7,950 s. Its share of the growth is mostly indirect: the console makes the reference's Kani harnesses and its `verify` heavier, by about 25–50 s on each `board_tier2` proof (weights before and after, measured).
+
+- The architect's 22:00 note asks for a normal CI run on the PR head with every shard under 20 minutes before the SIGNAL commit; the measurement workflow does not reach `main` (reverted, `86f2d4c`, `3b6b95d`). The 22:55 ruling gives this work order the refit of `main`'s existing tests, so `4300d3` takes these weights when this merges.
+
+### Q10, the shard budget (the reason for the stop)
+
+The 20-minute clause cannot be met reliably with 8 shards, by the rule as written. Options for the architect:
+- (a) a ninth shard (Scotty's ruling of 2026-11-14 fixed 8);
+- (b) a contention-aware rule, e.g. weighing CPU-heavy Kani and `verify` tests from their in-shard time, or capping such tests per shard;
+- (c) splitting the long `verify` tests: `verify_2k2_tier2`'s two (584 s and 647 s alone), and `board_tier2`'s four-layer and fab pair (537 s and 468 s);
+- (d) a clause measured over runs rather than one run, given `main`'s own 14.3–20.8 min on one code.
+
+The refit's weights stay committed, since they are this rule's measurement; the architect may prefer the old ones until (a) to (d) is ruled.
+
+### For §8
+
+Fix 3 has not itself been re-attacked, and each earlier fix round was found wanting by the next pass. A fourth pass on `e032b23..43bb051`'s fix-3 hunks is the next review step.
