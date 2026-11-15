@@ -1,0 +1,13 @@
+# Product-status reads, 2026-11-15 (Furnace curl). TI pages: the production badge '>ACTIVE<' (class mod-align-center) found in the HTML.
+https://www.ti.com/product/LMR33630 41c8e52f654b29ac566062b771c2bcae93835c06d7c8931e43aec6862f4e1855 4 ACTIVE-badge-hits
+https://www.ti.com/product/TPS62933 147d88efcb98aad4eda85b0f2a81316ebbf013739fc5e255fc3b6e865a66500b 7 ACTIVE-badge-hits
+https://www.ti.com/product/LMR51430 3f657b3b6215340b0e760afdfe1d38a7553a4f1a3c560f03364303a0b74283cc 2 ACTIVE-badge-hits
+https://www.ti.com/product/TLV755P 839f1e06b0299a518ee3f1f569f31474f766e70fe9f960dc0af59e34792b6808 5 ACTIVE-badge-hits
+https://www.ti.com/product/TXU0304 076269d8e34ddc1243af6e7bec4492607929b1754f841ec3afab0607907d6dac 5 ACTIVE-badge-hits
+https://www.ti.com/product/TXB0104 de0d40c433c8b771a277e805a955184dfb38c626bbdc5be44e7edfd7405d17b5 6 ACTIVE-badge-hits
+https://www.diodes.com/part/view/AP63205 02448a2353e621563cf29a1c0b7af58899dfe2a4718793d1260ed71ef6a1d316 Cloudflare challenge page: status UNREAD
+https://www.diodes.com/part/view/AP63203 414bf564fbe2c80044f5139da9f5a0c017a57064d5b58e17073f8f3512252bb3 Cloudflare challenge page: status UNREAD
+https://www.diodes.com/part/view/AP2112 cabf70dba521be40adf0fedda4a710cd8f35a9fed0738520629f365d10c7a36c Cloudflare challenge page: status UNREAD
+https://www.vishay.com/en/product/28758/ 96bd8ed3e3db240aac00cafbe6d9b51fb6ee44225107adb8604d78faaa9d0f71 no lifecycle field in the page: status UNREAD
+https://www.vishay.com/en/product/20035/ 91e0955ccea4dcfc80730dce981652777558dedf4f6578f248415921c9d4c444 no lifecycle field in the page: status UNREAD
+AMASS XT30PW-M: no maker page fetched (china-amass.net /uploads 404): status UNREAD

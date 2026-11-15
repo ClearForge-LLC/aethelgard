@@ -371,15 +371,22 @@ fn eda_has_only_its_known_files_keys_and_dependencies() {
 /// has no dependency, it is `CC-BY-SA-4.0`, and `src/lib.rs` is its only Rust.
 #[test]
 fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
-    const DATA: [&str; 18] = [
+    const DATA: [&str; 25] = [
         "data/kicad-10.0.7/LICENSE.md",
         "data/kicad-10.0.7/README.md",
         "data/kicad-10.0.7/footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
+        "data/kicad-10.0.7/footprints/Connector_JST.pretty/JST_GH_SM04B-GHS-TB_1x04-1MP_P1.25mm_Horizontal.kicad_mod",
+        "data/kicad-10.0.7/footprints/Connector_JST.pretty/JST_GH_SM06B-GHS-TB_1x06-1MP_P1.25mm_Horizontal.kicad_mod",
+        "data/kicad-10.0.7/footprints/Connector_JST.pretty/JST_GH_SM10B-GHS-TB_1x10-1MP_P1.25mm_Horizontal.kicad_mod",
+        "data/kicad-10.0.7/footprints/Connector_JST.pretty/JST_SH_SM06B-SRSS-TB_1x06-1MP_P1.00mm_Horizontal.kicad_mod",
         "data/kicad-10.0.7/footprints/Package_LGA.pretty/Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering.kicad_mod",
         "data/kicad-10.0.7/footprints/Package_QFP.pretty/LQFP-144_20x20mm_P0.5mm.kicad_mod",
         "data/kicad-10.0.7/footprints/Package_SO.pretty/SOIC-8_5.3x5.3mm_P1.27mm.kicad_mod",
         "data/kicad-10.0.7/footprints/Package_SON.pretty/WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm.kicad_mod",
         "data/kicad-10.0.7/footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod",
+        "data/kicad-10.0.7/symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x04_MountingPin.kicad_sym",
+        "data/kicad-10.0.7/symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x06_MountingPin.kicad_sym",
+        "data/kicad-10.0.7/symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x10_MountingPin.kicad_sym",
         "data/kicad-10.0.7/symbols/Device.kicad_symdir/C.kicad_sym",
         "data/kicad-10.0.7/symbols/Device.kicad_symdir/R.kicad_sym",
         "data/kicad-10.0.7/symbols/MCU_ST_STM32H7.kicad_symdir/STM32H753ZITx.kicad_sym",

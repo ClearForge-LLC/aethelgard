@@ -12,7 +12,6 @@ use serde_json::{Value, json};
 const SPEC: &str = "examples/sentinel-01-minimal.json";
 const FOUR: &str = "crates/aethelgard-cli/tests/fixtures/four-layer.json";
 const D1: &str = "crates/aethelgard-cli/tests/fixtures/d1-24-i2c.json";
-const D3: &str = "crates/aethelgard-cli/tests/fixtures/d3-24-i2c-12-spi.json";
 
 fn root() -> PathBuf {
     fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
@@ -84,7 +83,7 @@ fn a_version_one_specification_is_refused_by_name() {
         let (code, v) = run(&args);
         assert_eq!(code, 2, "{sub}: {v}");
         assert_eq!(v["error"]["kind"], "UnsupportedSchemaVersion", "{sub}: {v}");
-        assert!(v["error"]["message"].as_str().unwrap().contains("not 3"));
+        assert!(v["error"]["message"].as_str().unwrap().contains("not 4"));
     }
     fs::remove_dir_all(&dir).unwrap();
 }
@@ -140,6 +139,8 @@ fn the_four_layer_board_is_the_declared_one_and_extracts() {
         &"finished copper at most 70 um thick; finished board from 1.25 mm to 1.851 mm thick"
     ));
     // Measured with the integer path (FEEDBACK §2): evidence for Sentinel-02.
+    // AET-WO-1307 (its FEEDBACK, K1 and K2): the escape and the order moved
+    // the fixture's copper; were 45_857 and 48_827.
     let bounds: Vec<(String, u64)> = x["lines"]
         .as_array()
         .unwrap()
@@ -154,11 +155,12 @@ fn the_four_layer_board_is_the_declared_one_and_extracts() {
     assert_eq!(
         bounds,
         [
-            ("I2C_SDA".to_owned(), 45_857),
-            ("I2C_SCL".to_owned(), 48_827),
-            // `AET-WO-4300c`: SCK and MOSI, the flash's pin at 8 pF.
-            ("SPI_SCK".to_owned(), 18_470),
-            ("SPI_MOSI".to_owned(), 17_114)
+            ("I2C_SDA".to_owned(), 49_641),
+            ("I2C_SCL".to_owned(), 45_671),
+            // `AET-WO-4300c`: SCK and MOSI, the flash's pin at 8 pF; on
+            // AET-WO-1307's routes (were 18_470 and 17_114).
+            ("SPI_SCK".to_owned(), 15_264),
+            ("SPI_MOSI".to_owned(), 16_439)
         ],
         "re-measure FEEDBACK §2 (and AET-WO-4300c's) before changing this line"
     );
@@ -220,11 +222,12 @@ fn the_reader_refuses_a_board_that_disagrees_with_the_specification() {
 }
 
 /// 1302 B10 (ruled D3): the reviewer's `D1` (24 I2C devices, short
-/// references) fails closed at 2 layers and routes at 4; `D3` (the same with
-/// 4 SPI buses of 3 flashes) still fails closed at 4, naming its net, the
-/// target of the escape-planning work order.
+/// references) routes at 4 layers, and since `AET-WO-1307`'s inward escape
+/// (K1) at 2 as well, where `4100` measured it failing closed. `D3` (the same
+/// with 4 SPI buses of 3 flashes), which failed closed at 4, now routes there:
+/// `escape_tier1.rs`.
 #[test]
-fn d1_routes_at_four_layers_and_fails_closed_at_two() {
+fn d1_routes_at_four_layers_and_at_two() {
     let dir = scratch("d1");
     let (code, v, board) = emit(&dir, D1);
     assert_eq!(code, 0, "{v}");
@@ -245,26 +248,9 @@ fn d1_routes_at_four_layers_and_fails_closed_at_two() {
     let path = write_spec(&dir, "d1-two.json", &two);
     let two_dir = dir.join("two");
     fs::create_dir_all(&two_dir).unwrap();
-    let (code, v, _) = emit(&two_dir, &path);
-    assert_eq!(code, 2, "{v}");
-    assert_eq!(v["error"]["kind"], "Unroutable", "{v}");
-    assert!(
-        v["error"]["message"].as_str().unwrap().contains("rip-ups"),
-        "{v}"
-    );
-    fs::remove_dir_all(&dir).unwrap();
-}
-
-#[test]
-fn d3_fails_closed_at_four_layers_naming_its_net() {
-    let dir = scratch("d3");
-    let (code, v, _) = emit(&dir, D3);
-    assert_eq!(code, 2, "{v}");
-    assert_eq!(v["error"]["kind"], "Unroutable", "{v}");
-    assert!(
-        v["error"]["id"].as_str().is_some_and(|n| !n.is_empty()),
-        "{v}"
-    );
+    let (code, v, board) = emit(&two_dir, &path);
+    assert_eq!(code, 0, "{v}");
+    assert!(!board.contains("In1.Cu"));
     fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -324,8 +310,11 @@ fn the_old_and_new_paths_agree_on_the_reference() {
         old.iter()
             .map(|l| l.c_bound_femtofarads)
             .collect::<Vec<_>>(),
-        [46_800, 58_235, 18_521, 17_188],
-        "the reference's bounds (AET-WO-1305 §3, AET-WO-4300c) moved"
+        // AET-WO-1307 K2 (ruled): the reference's routed board changed with
+        // the inward escape, order B and the courtyard rule; was
+        // [46_800, 58_235, 18_521, 17_188] (AET-WO-1305 §3, AET-WO-4300c).
+        [50_576, 43_749, 16_972, 13_772],
+        "the reference's bounds (AET-WO-1305 §3, AET-WO-4300c, AET-WO-1307 K2) moved"
     );
     fs::remove_dir_all(&dir).unwrap();
 }

@@ -254,7 +254,11 @@ jobs:
       # witnessed behind SPI1's multiplexer; SPI forgeries unwitnessed; the
       # ICM-20948 fixture read end to end) and one in campaign_tier2.rs (a
       # droop on a board whose first read is SPI, adversarial A1).
-      TIER2_MIN: "96"
+      # 97: plus 1 from AET-WO-1307 in with_tools.rs (D3 and D1 pass ERC and DRC with
+      # parity at 4 layers under the inward escape).
+      # 98: plus 1 from AET-WO-4300f in board_tier2.rs (the connectors fixture passes ERC
+      # and DRC with the specification's rules and parity, at 2 layers and at 4).
+      TIER2_MIN: "98"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
