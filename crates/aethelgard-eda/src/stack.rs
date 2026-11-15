@@ -158,25 +158,25 @@ impl Stack {
         }
     }
 
-    /// The rule a net (by the board's name) is laid with: its class's, its
-    /// pair's width with the board's via, or the board's own.
-    pub fn rule(&self, net: &str) -> Rule {
-        if let Some(c) = self
-            .classes
-            .iter()
-            .find(|c| c.nets.iter().any(|n| n == net))
-        {
-            return c.rule;
+    /// The class or pair a net (by the board's name) is in: `class` or
+    /// `pair`, its name, and the rule its nets are laid with (a pair's width
+    /// with the board's via).
+    pub fn owner(&self, net: &str) -> Option<(&'static str, &str, Rule)> {
+        let has = |nets: &[String]| nets.iter().any(|n| n == net);
+        if let Some(c) = self.classes.iter().find(|c| has(&c.nets)) {
+            return Some(("class", &c.name, c.rule));
         }
-        let width_nm = self
-            .pairs
-            .iter()
-            .find(|p| p.nets.iter().any(|n| n == net))
-            .map_or(self.width_nm, |p| p.width_nm);
-        Rule {
-            width_nm,
+        let p = self.pairs.iter().find(|p| has(&p.nets))?;
+        let rule = Rule {
+            width_nm: p.width_nm,
             ..self.default_rule()
-        }
+        };
+        Some(("pair", &p.name, rule))
+    }
+
+    /// The rule a net is laid with: its class's or pair's, or the board's.
+    pub fn rule(&self, net: &str) -> Rule {
+        self.owner(net).map_or(self.default_rule(), |(_, _, r)| r)
     }
 
     /// The board's own rule: the declared track width and the engine's via.
@@ -186,11 +186,6 @@ impl Stack {
             via_nm: crate::route::VIA_NM,
             drill_nm: crate::route::DRILL_NM,
         }
-    }
-
-    /// The pair a net (by the board's name) is a conductor of.
-    pub fn pair_of(&self, net: &str) -> Option<&Pair> {
-        self.pairs.iter().find(|p| p.nets.iter().any(|n| n == net))
     }
 
     /// The number of copper layers.

@@ -2100,21 +2100,13 @@ impl<'a> Router<'a> {
         let m = usize::try_from(spacing / PITCH_NM).map_err(|e| e.to_string())?;
         // End A is the positive conductor's first pad, with the negative pad
         // on the same part.
-        let a = pads[0][0];
-        let Some(&na) = pads[1].iter().find(|r| r.0 == a.0) else {
-            return Err(format!(
-                "pair `{name}`: its conductors do not run between the same two parts"
-            ));
+        let (a, b) = (pads[0][0], pads[0][1]);
+        let (na, nb) = if pads[1][0].0 == a.0 {
+            (pads[1][0], pads[1][1])
+        } else {
+            (pads[1][1], pads[1][0])
         };
-        let (b, nb) = (
-            pads[0][1],
-            if na == pads[1][0] {
-                pads[1][1]
-            } else {
-                pads[1][0]
-            },
-        );
-        if b.0 != nb.0 {
+        if na.0 != a.0 || nb.0 != b.0 {
             return Err(format!(
                 "pair `{name}`: its conductors do not run between the same two parts"
             ));
@@ -2253,6 +2245,31 @@ fn conductor(board: &Board, routed: &Routed, net: &str) -> Result<(Vec<Run>, usi
                 ));
             }
             _ => return Err(format!("`{net}`: its copper branches at {at:?}")),
+        }
+    }
+    // Copper that runs back over itself would count its length twice and
+    // hide a length difference (adversarial pass A2): no two pieces of one
+    // conductor on one layer share more than a point.
+    for (i, &(la, a0, a1)) in out.iter().enumerate() {
+        for &(lb, b0, b1) in &out[i + 1..] {
+            let (ra, rb) = (span(a0, a1), span(b0, b1));
+            let shared = Rect {
+                x0: ra.x0.max(rb.x0),
+                y0: ra.y0.max(rb.y0),
+                x1: ra.x1.min(rb.x1),
+                y1: ra.y1.min(rb.y1),
+            };
+            if la == lb
+                && shared.x0 <= shared.x1
+                && shared.y0 <= shared.y1
+                && shared != Rect::point(shared.x0, shared.y0)
+            {
+                return Err(format!(
+                    "`{net}`: its copper runs over itself from {:?} to {:?}",
+                    (shared.x0, shared.y0),
+                    (shared.x1, shared.y1)
+                ));
+            }
         }
     }
     if !last.inner().contains(Rect::point(at.0, at.1)) || layer != Layer::F {
@@ -3123,6 +3140,29 @@ pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagree
         .flatten()
         .and_then(|t| t.arg(1))
         .and_then(sexpr::nm);
+    // Every declared class's and pair's net is on a pad (`AET-WO-1308`
+    // adversarial pass A3): a board that renames one, pads and tracks alike,
+    // would otherwise escape its class's rules.
+    let pad_nets: BTreeSet<&str> = board
+        .all("footprint")
+        .flat_map(|fp| fp.all("pad").collect::<Vec<_>>())
+        .filter_map(|pad| pad.one("net").ok().flatten().and_then(|n| n.arg(1)))
+        .collect();
+    let declared_nets = stack
+        .classes
+        .iter()
+        .flat_map(|c| c.nets.iter())
+        .chain(stack.pairs.iter().flat_map(|p| p.nets.iter()));
+    for net in declared_nets {
+        if !pad_nets.contains(net.as_str()) {
+            return Err(no(
+                "ClassNetAbsent",
+                format!(
+                    "the specification puts `{net}` in a class or pair, and no pad of the board is on it"
+                ),
+            ));
+        }
+    }
     if thickness != Some(stack.thickness.nominal_nm) {
         return Err(no(
             "ThicknessDisagrees",
@@ -3187,15 +3227,9 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
     };
     let named = |item: &strict::Node<'_>, rule: Rule| -> Result<String, String> {
         let net = one(item, "net")?.and_then(|n| n.arg(1)).unwrap_or("?");
-        let class = stack
-            .classes
-            .iter()
-            .find(|c| c.nets.iter().any(|n| n == net))
-            .map(|c| format!("class `{}`", c.name))
-            .or_else(|| stack.pair_of(net).map(|p| format!("pair `{}`", p.name)));
-        Ok(match class {
-            Some(class) if rule != stack.default_rule() => {
-                format!(" on `{net}`, whose {class} declares")
+        Ok(match stack.owner(net) {
+            Some((kind, name, _)) if rule != stack.default_rule() => {
+                format!(" on `{net}`, whose {kind} `{name}` declares")
             }
             _ => String::new(),
         })

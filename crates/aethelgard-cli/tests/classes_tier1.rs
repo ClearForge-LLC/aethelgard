@@ -370,6 +370,33 @@ fn the_pair_judge_refuses_each_breakage() {
     let e = route::pairs(&b, &r).unwrap_err();
     assert!(e.contains("pair `USB_STANDIN`"), "{e}");
     eprintln!("ANSWER 1308 detour: {e}");
+    // Adversarial A2: a conductor that runs back over its own line counts
+    // that copper twice; refused, never measured.
+    let mut r = routed.clone();
+    let i = longest(&r, neg);
+    let s = r.segments.remove(i);
+    let at = |k: i64| {
+        (
+            s.start.0 + (s.end.0 - s.start.0) * k / 4,
+            s.start.1 + (s.end.1 - s.start.1) * k / 4,
+        )
+    };
+    for (p, q) in [(s.start, at(2)), (at(2), at(1)), (at(1), s.end)] {
+        r.segments.push(Segment {
+            net: neg.to_owned(),
+            layer: s.layer,
+            start: p,
+            end: q,
+        });
+    }
+    r.segments.sort();
+    let e = route::pairs(&b, &r).unwrap_err();
+    assert!(e.contains("runs over itself"), "{e}");
+    // Adversarial A3: a pair net renamed on the board, pads and tracks alike,
+    // is refused against the specification before any judge.
+    let renamed = board.replace("\"/SPI_MOSI\"", "\"/SPI_MOSX\"");
+    let d = route::declared(&strict::board(&renamed).unwrap(), &stack).unwrap_err();
+    assert_eq!(d.kind, "ClassNetAbsent", "{d:?}");
     fs::remove_dir_all(&dir).unwrap();
 }
 

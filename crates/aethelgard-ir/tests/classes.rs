@@ -257,7 +257,7 @@ fn names_are_identifiers_and_unique_across_classes_and_pairs() {
 }
 
 #[test]
-fn a_class_net_holding_a_quote_is_refused() {
+fn a_class_net_holding_a_quote_or_a_wildcard_is_refused() {
     // RUL-14 admits `'` in a net name; the gate's KiCad rules quote with it.
     let text =
         include_str!("../../../examples/sentinel-01-minimal.json").replace("I2C_SDA", "I2C'SDA");
@@ -265,6 +265,18 @@ fn a_class_net_holding_a_quote_is_refused() {
     verdict(&v).unwrap();
     v["net_classes"] = json!([class("sig", json!(["I2C'SDA"]))]);
     let e = verdict(&v).unwrap_err();
-    assert_eq!(e.kind(), "ClassNetQuoted");
+    assert_eq!(e.kind(), "ClassNetNotLiteral");
     assert_eq!(e.id(), Some("I2C'SDA"));
+    // `?` is KiCad's one-character wildcard in `==` (adversarial pass: a class
+    // on `SPI_SC?` bound `SPI_SCK` too).
+    let text =
+        include_str!("../../../examples/sentinel-01-minimal.json").replace("I2C_SCL", "SPI_SC?");
+    let mut v: Value = serde_json::from_str(&text).unwrap();
+    verdict(&v).unwrap();
+    v["net_classes"] = json!([class("sig", json!(["SPI_SC?"]))]);
+    assert_eq!(verdict(&v).unwrap_err().kind(), "ClassNetNotLiteral");
+    v["net_classes"] = json!([]);
+    v["diff_pairs"] =
+        json!([{"name": "P", "nets": ["SPI_SC?", "SPI_MOSI"], "gap_um": 300, "width_um": 200}]);
+    assert_eq!(verdict(&v).unwrap_err().kind(), "ClassNetNotLiteral");
 }

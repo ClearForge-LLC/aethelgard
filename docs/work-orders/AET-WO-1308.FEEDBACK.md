@@ -51,7 +51,7 @@ Probes under `~/.cache/aet-1308/{rot,p4}`, each through `~/bin/capped-run` (caps
 
 ## B2. What was built
 
-- **Specification v4** (subagent, spot-checked; `9681ede`, `e09fe38`): `net_classes` and `diff_pairs`, both required. Each refusal is its own kind, with a tier-1 test in `crates/aethelgard-ir/tests/classes.rs`: `NetInTwoClasses` (a pair counts as its nets' class), `ClassUnknownNet`, `ClassNoNets`, `ClassBelowMinimum`, `ClassAboveMaximum`, `ViaRingUnderRules`, `PairNets`, `PairOnRail`, `DuplicateClassName`, plus `ClassNetQuoted` (mine: RUL-14 admits `'`, which would break the gate's KiCad expressions, so it is refused rather than escaped by guess).
+- **Specification v4** (subagent, spot-checked; `9681ede`, `e09fe38`): `net_classes` and `diff_pairs`, both required. Each refusal is its own kind, with a tier-1 test in `crates/aethelgard-ir/tests/classes.rs`: `NetInTwoClasses` (a pair counts as its nets' class), `ClassUnknownNet`, `ClassNoNets`, `ClassBelowMinimum`, `ClassAboveMaximum`, `ViaRingUnderRules`, `PairNets`, `PairOnRail`, `DuplicateClassName`, plus `ClassNetNotLiteral` (mine: RUL-14 admits `'`, which ends the gate's KiCad quote, and `?`, which KiCad's `==` reads as a wildcard (adversarial A1), so both are refused rather than escaped by guess).
 - **`stack::Rule`** per net: its class's width and via, its pair's width, or the board's.
 - **The router:** one set of occupancy maps per distinct rule, each reach computed at that rule. A board with one rule therefore runs today's arithmetic, which P1 measures. Exact judges (`check`, `connectivity`, `zone_core`) take each item's radius from its net's rule.
 - **`route::read`** refuses a track or via other than its net's rule, naming the class or pair.
@@ -137,3 +137,41 @@ The reference was emitted with U2 at the left edge at 90°, U3 at the top at 0°
 5. **Pairs are F.Cu only, with no via.** A pair via needs a spacing at which two vias clear each other. At 0.5 mm spacing they cannot, so via pairs are refused by construction.
 6. **The subagent's judgement:** `campaign_tier1::a_solved_topology_is_not_a_base` now refuses as `SchemaViolation`, not `UnsupportedSchemaVersion`. Both documents are version 4 now. The refusal still comes before any run.
 7. **`1303` D5 (b):** decide from B4.
+
+## B9. Mutation, sized to the diff [measured]
+
+`~/.cache/aet-1308/mut/run.py` makes one exact replacement per guard in a pristine copy and runs the suite that should kill it.
+- **First run, 16 guards:** the pair judge's layers, vias, coupled break, exact spacing, grid and side tests; the reader's width and via; IR `NetInTwoClasses`, ring, drill, quote and pair gap; the rules writer's `max`; `check`'s per-drill hole pitch; extract's `laid_by`.
+  - 14 were killed.
+  - 2 survived: `check-hole`, because no test had a class drill other than 0.3 mm, and `extract-laid-by`, because the pair fixture's width equals the board's.
+  - Two tests were added: holes at a 0.4 mm class drill, and the SCK trace term of a pair widened to 0.25 mm, recomputed and greater than at 0.2 mm. Both survivors are now killed.
+- **After the adversarial fixes,** the three new guards (wildcard, self-overlap, absent class net) each had one mutant, and all three were killed.
+- **Total:** 19 of 19 killed.
+
+## B10. Adversarial pass, full [measured by the adversary; each fix measured by me]
+
+A fresh Opus subagent worked on a frozen copy at `61aa841`. Its report is in `~/.cache/aet-1308/adv/REPORT.md`. Its Write was denied, so I saved the report from its hand-back; its evidence is under `adv/work/`.
+- **A1, high, fixed.** `?` in a class net is KiCad's wildcard in `A.NetName == '…'`.
+  - With a class on `SPI_SC?`, the correct board failed DRC, and a board with SCK narrowed passed, exit 0, with and without `--schematic`.
+  - Validation now refuses `'` and `?` in class and pair nets (`ClassNetNotLiteral`). RUL-14 already refuses `*`.
+  - The reproducer `adv/work/specs/wild-a.json` is refused by `validate`, with tier-1 tests.
+- **A2, high, fixed.** A conductor that runs back over its own line counted that copper twice. The skew board `adv/work/out/skew/b.kicad_pcb` passed `check drc --spec --schematic` reporting 1.9 mm, while its real difference is 2.5 mm against a 2 mm bound.
+  - `route::pairs` now refuses a conductor whose pieces on one layer share more than a point. The board is refused as `PairNotCoupled`: "its copper runs over itself" (tier-1 test).
+- **A3, low, fixed.** A class net renamed on the board, pads and tracks together, passed standalone `check drc --spec`. Parity catches it, and `verify` always runs parity.
+  - `route::declared` now refuses, with `--spec`, a board with a class or pair net on no pad (`ClassNetAbsent`). The reproducer is refused, and there is a tier-1 test.
+- **A4, low, a finding only.** A pair plus a class on a neighbouring net can fail naming another net, for example `GND: cannot take U4 pad 4 to a via`. The pair's fixed copper blocks the net, and the message does not name the pair. It fails closed. Naming the fixed blocker is a backlog item.
+- **A5–A7, notes.** A default net's via is not held to its exact size by DRC (as on `main`). KiCad judged a relabelled class track by its class (by connection). A net listed twice in one class reads "in two classes: `power` and `power`".
+- **What held,** each run by the adversary:
+  - identity on every fixture;
+  - class and net order invariance;
+  - 54 validation cases;
+  - the class-lie variants: shrunk via, shrunk drill, relabelled track, renamed plane;
+  - the pair breakages: widened gap, zero-length and diagonal segments, overlapping pieces;
+  - rotation angle parsing (`90.0`, `-90` and `450` refused);
+  - starvation: LQFP at 0.3 mm, a 4-pad pair, a 9.8 mm gap (about 70 MB);
+  - large class vias and a class on every net, all routed and DRC clean;
+  - extract's bound rising with width.
+
+## B11. Reduction pass (diff)
+
+Reduction pass (diff): −19 net (stack −5, `read`'s lookup −6, `route_pair` −8) · 2 duplicates removed (one class-ownership lookup, `Stack::owner`, replaces `Stack::rule`'s search, `read`'s search and `pair_of`; `route_pair`'s two identical "same two parts" refusals are one) · 0 dead paths removed · 0 protected kept · 0 findings below.
