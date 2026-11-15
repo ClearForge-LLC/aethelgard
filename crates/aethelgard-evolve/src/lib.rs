@@ -77,9 +77,15 @@ pub enum Rule {
     /// The symptom's serial port was the firmware's doing (`AET-WO-4300b`):
     /// a register field the port owns read back other than the solved
     /// topology (its TX or RX pin's mode or alternate function, its pins'
-    /// ports' or its USART's clock gate, or a register of its USART). The
-    /// twin models nothing electrical on a USART's pins, so no rule
-    /// attributes a serial symptom to the electrical half.
+    /// ports' or its USART's clock gate, or a register of its USART); or the
+    /// firmware's writes, rebuilt from Renode's access log, failed the
+    /// port's judgement (kind 28's tags: a word wrong at `UE` or changed
+    /// after it, a write the bring-up never makes, a reset of its
+    /// peripherals, a pin misconfigured or locked); or its TX pin was not
+    /// routed at a `TDR` write (kind 29's `tx_at_send`; adversarial pass 2,
+    /// M1). Each is direct evidence of a write. The twin models nothing
+    /// electrical on a USART's pins, so no rule attributes a serial symptom
+    /// to the electrical half.
     S5,
     /// The run passed.
     N1,
@@ -96,7 +102,9 @@ pub enum Rule {
     I4,
     /// Some symptoms are electrical and others software.
     I5,
-    /// The symptom's serial port owns no wrong register field, or its static
+    /// The symptom's serial port shows no write of the firmware's wrong (no
+    /// wrong register field it owns, no failing write judgement, no unrouted
+    /// send; an access log that could not be read shows none), or its static
     /// framing check failed, which is the topology's (`AET-WO-4300b`): never
     /// software by elimination.
     I6,
@@ -164,12 +172,12 @@ impl Rule {
             Self::S2 => &[7, 10, 11],
             Self::S3 => &[21, 22],
             Self::S4 => &[11, 26],
-            Self::S5 => &[11, 29],
+            Self::S5 => &[11, 28, 29],
             Self::N1 | Self::I1 => &[],
             Self::I2 => &[15],
             Self::I3 => &[7, 8, 9],
             Self::I4 => &[7, 25, 26],
-            Self::I5 => &[7, 8, 9, 10, 11, 13, 21, 22, 26, 29],
+            Self::I5 => &[7, 8, 9, 10, 11, 13, 21, 22, 26, 28, 29],
             Self::I6 => &[28, 29],
         }
     }
@@ -924,10 +932,30 @@ impl<'a> Run<'a> {
     }
 
     /// Software evidence for serial port `s`: each register it owns that is
-    /// wrong.
+    /// wrong; once the boot word is set, its framing check whose write
+    /// judgement failed (read and not held: an unread one shows no write),
+    /// and its witness whose TX pin was rebuilt unrouted at a `TDR` write
+    /// (adversarial pass 2, M1).
     fn serial_software(&self, s: usize) -> Vec<usize> {
+        let label = self.serial[s].label;
+        let tx_af = match self.serial_port(label) {
+            Some(Record::SerialPortSolved { tx_af, .. }) => Some(*tx_af),
+            _ => None,
+        };
         self.indices(|r| match r {
             Record::RegisterObserved { name, reading } => self.serial_owned_wrong(s, name, reading),
+            Record::SerialFramingCheck {
+                label: l,
+                tags: Some(t),
+                ..
+            } => self.booted && l == label && !t.holds(),
+            Record::SerialWitness {
+                label: l,
+                tx_at_send: Some(m),
+                ..
+            } => {
+                self.booted && l == label && tx_af.is_some_and(|af| !campaign::routed(Some(*m), af))
+            }
             _ => false,
         })
     }
@@ -1287,15 +1315,15 @@ impl<'a> Run<'a> {
                 if software.is_empty() {
                     (Rule::I6, self.serial_failing(s), vec![])
                 } else {
-                    let witness = self
+                    let witness: Vec<usize> = self
                         .serial_failing(s)
                         .into_iter()
-                        .filter(|&i| matches!(self.records[i], Record::SerialWitness { .. }));
-                    (
-                        Rule::S5,
-                        software.into_iter().chain(witness).collect(),
-                        vec![],
-                    )
+                        .filter(|&i| {
+                            matches!(self.records[i], Record::SerialWitness { .. })
+                                && !software.contains(&i)
+                        })
+                        .collect();
+                    (Rule::S5, [software, witness].concat(), vec![])
                 }
             }
             Scope::Board if !faulted.is_empty() => (Rule::I3, faults_of(&faulted), vec![]),

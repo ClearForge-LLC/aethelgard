@@ -516,8 +516,33 @@ fn no_register_evidence_is_never_a_guess() {
     let a = attributed(&r);
     assert_eq!((a.domain, a.rule), (Domain::Indeterminate, Rule::I6));
     assert_eq!(named(&r, &a), ["kind 29 CONSOLE"]);
-    // A write the bring-up never makes, every register right: I6, by
-    // the framing check.
+    // Renode's access log not read whole: neither the writes nor the TX pin
+    // at its sends were rebuilt, so no write shows: I6, by both records.
+    let mut r = run(
+        &Case::default(),
+        &[(SERIAL_TAG_FINDING, 1), (SERIAL_PATTERN_FINDING, 1)],
+    );
+    for x in r.iter_mut() {
+        match x {
+            Record::SerialFramingCheck { label, tags, .. } if label == "CONSOLE" => *tags = None,
+            Record::SerialWitness {
+                label, tx_at_send, ..
+            } if label == "CONSOLE" => *tx_at_send = None,
+            _ => {}
+        }
+    }
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Indeterminate, Rule::I6));
+    assert_eq!(named(&r, &a), ["kind 28 CONSOLE", "kind 29 CONSOLE"]);
+}
+
+/// Adversarial pass 2, M1 (the PM's ruling): a failing write judgement
+/// (kind 28's tags, from Renode's access log) and a TX pin rebuilt unrouted
+/// at a `TDR` write (kind 29's `tx_at_send`) are each direct evidence of a
+/// firmware write: software, S5, citing them, every register right.
+#[test]
+fn a_failing_write_judgement_or_an_unrouted_send_is_software_s5() {
+    // A write the bring-up never makes (`0x1 to 0x2C`): S5 by kind 28.
     let r = run(
         &Case {
             console_tags_hold: false,
@@ -526,8 +551,92 @@ fn no_register_evidence_is_never_a_guess() {
         &[(SERIAL_TAG_FINDING, 1)],
     );
     let a = attributed(&r);
-    assert_eq!(a.rule, Rule::I6);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S5), "{a:?}");
     assert_eq!(named(&r, &a), ["kind 28 CONSOLE"]);
+    // PA9 an input at the pattern's sends, routed by the end (ADV-1): S5 by
+    // kind 29, which the pattern's finding selects.
+    let mut r = run(&Case::default(), &[(SERIAL_PATTERN_FINDING, 1)]);
+    for x in r.iter_mut() {
+        if let Record::SerialWitness {
+            label, tx_at_send, ..
+        } = x
+            && label == "CONSOLE"
+        {
+            *tx_at_send = Some((0b00, 7));
+        }
+    }
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S5), "{a:?}");
+    assert_eq!(named(&r, &a), ["kind 29 CONSOLE"]);
+    // `propose` says so, and reports nothing: the witness names no field.
+    let archived = archived(&r);
+    let v = view(&archived).unwrap();
+    let evidence: Vec<Evidence> = a.evidence.iter().map(|e| v.event(*e).unwrap()).collect();
+    let input = Input {
+        attribution: &a,
+        evidence: &evidence,
+        buses: &v.buses(),
+        facts: &BTreeMap::new(),
+    };
+    let ans = propose::propose(&[&Rules], &input);
+    assert!(
+        matches!(&ans.outcome, Outcome::NoProposal { reason, .. } if reason.contains("no generator report")),
+        "{:?}",
+        ans.outcome
+    );
+    // Both, beside a wrong register of the port's: all three cited.
+    let mut r = run(
+        &Case {
+            console_tags_hold: false,
+            usart1_cr1: 0x40D,
+            ..Case::default()
+        },
+        &[
+            ("register_mismatch", 1),
+            (SERIAL_TAG_FINDING, 1),
+            (SERIAL_PATTERN_FINDING, 1),
+        ],
+    );
+    for x in r.iter_mut() {
+        if let Record::SerialWitness {
+            label, tx_at_send, ..
+        } = x
+            && label == "CONSOLE"
+        {
+            *tx_at_send = Some((0b10, 0));
+        }
+    }
+    let a = attributed(&r);
+    assert_eq!(a.rule, Rule::S5, "{a:?}");
+    assert_eq!(
+        named(&r, &a),
+        ["USART1.CR1", "kind 28 CONSOLE", "kind 29 CONSOLE"]
+    );
+    // Another port's failing judgement never explains this port's echo.
+    let mut r = run(
+        &Case {
+            console: Echo::Missing,
+            ..Case::default()
+        },
+        &[(SERIAL_ECHO_FINDING, 1), (SERIAL_TAG_FINDING, 1)],
+    );
+    for x in r.iter_mut() {
+        if let Record::SerialFramingCheck {
+            label,
+            tags: Some(t),
+            ..
+        } = x
+            && label == "GPS"
+        {
+            t.unexpected = vec!["RCC.APB1LRSTR.USART2RST set".into()];
+        }
+    }
+    let a = attributed(&r);
+    assert_eq!(
+        (a.domain, a.rule),
+        (Domain::Indeterminate, Rule::I6),
+        "{a:?}"
+    );
 }
 
 /// `4300a` F1: a failing static check is the topology's, not the

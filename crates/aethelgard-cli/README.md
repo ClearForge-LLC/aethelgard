@@ -522,8 +522,8 @@ For a symptom on a serial port (`AET-WO-4300b`: `serial_pattern_missing`, `seria
 
 | rule | domain | holds when | evidence kinds |
 |---|---|---|---|
-| `S5` | software | a register field the port owns is wrong (kind 11), with the port's witness when it failed: the firmware's own configuration of the pins or the USART differs from the solved topology. The twin models nothing electrical on a USART's pins, so no rule attributes a serial symptom to the electrical half | 11, 29 |
-| `I6` | indeterminate | no owned register is wrong (a dead echo or pattern, or a tag warning, with every register right), or the port's static framing check failed, which is the topology's | 28, 29 |
+| `S5` | software | the firmware's writes are shown wrong, with the port's witness when it failed: a register field the port owns is wrong (kind 11); or the port's writes, rebuilt from Renode's access log, fail its judgement (kind 28's tags: a word wrong at `UE` or changed after it, a write the bring-up never makes, a reset of its USART or pins' ports, a pin misconfigured or locked); or its TX pin was not routed at a `TDR` write (kind 29's `tx_at_send`). The twin models nothing electrical on a USART's pins, so no rule attributes a serial symptom to the electrical half | 11, 28, 29 |
+| `I6` | indeterminate | no write of the firmware's is shown wrong (a dead echo or pattern with every register right, every write judged as the bring-up's, or an access log that could not be read whole), or the port's static framing check failed, which is the topology's | 28, 29 |
 
 A witness or framing check is evidence only when it failed. `serial_capture_forged` may count more than the witnesses show: a foreign file in the capture directory names no port.
 

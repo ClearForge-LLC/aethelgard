@@ -438,5 +438,13 @@ fn report(input: &Input) -> Outcome {
         }
         expectations.extend(found);
     }
+    // A serial port's S5 may rest on its witness alone (an unrouted send,
+    // `AET-WO-4300b` adversarial pass 2, M1), which names no solved field.
+    if expectations.is_empty() {
+        return no(
+            "no evidence event shows an unmet solved expectation, so no generator report is made"
+                .to_owned(),
+        );
+    }
     Outcome::GeneratorReport(GeneratorReport { expectations })
 }

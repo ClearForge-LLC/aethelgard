@@ -1313,7 +1313,7 @@ pub fn released(records: &[Record]) -> u64 {
 
 /// Whether a pin's `MODER` and `AFSEL` fields, as kind 29 carries them, put
 /// it in alternate-function mode (`10`, RM0433 Rev 9 §11.4.1) on `af`.
-fn routed(mux: Option<(u8, u8)>, af: u8) -> bool {
+pub fn routed(mux: Option<(u8, u8)>, af: u8) -> bool {
     mux.is_some_and(|(mode, a)| mode == 0b10 && a == af)
 }
 
