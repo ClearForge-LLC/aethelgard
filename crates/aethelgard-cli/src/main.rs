@@ -772,6 +772,7 @@ fn check_kicad(
     // With `--spec` the board is judged against the declared board before
     // KiCad runs (`AET-WO-4100`): its copper layers, planes, thickness and
     // vias, by name, never by the board's own claims (`RUL-03`).
+    let mut pairs = None;
     if let (Some(stack), Some(tree)) = (&declared, &board) {
         aethelgard_eda::route::declared(tree, stack).map_err(|d| run::Stop {
             code: EXIT_UNREADABLE,
@@ -779,6 +780,25 @@ fn check_kicad(
             id: None,
             message: d.message,
         })?;
+        // Declared coupled pairs are judged on the board's copper, read and
+        // joined by geometry first (`AET-WO-1308` §1.3): KiCad has no rule
+        // for a pair it cannot recognise by name.
+        if !stack.pairs.is_empty() {
+            use aethelgard_eda::route;
+            let stop = |kind: &'static str| {
+                move |message: String| run::Stop {
+                    code: EXIT_UNREADABLE,
+                    kind,
+                    id: None,
+                    message,
+                }
+            };
+            let (b, r) = route::read(tree, stack).map_err(stop("BoardUnreadable"))?;
+            route::connectivity(&b, &r).map_err(stop("NetLabelsDisagree"))?;
+            route::check(&b, &r).map_err(stop("ClearanceViolated"))?;
+            let reports = route::pairs(&b, &r).map_err(stop("PairNotCoupled"))?;
+            pairs = Some(reports.into_iter().map(verdict::PairRecord::from).collect());
+        }
     }
     // KiCad's parity check reads the schematic named like the board, beside
     // it; the copy is scanned like the board before any tool runs, and the
@@ -834,6 +854,7 @@ fn check_kicad(
     if matches!(check, kicad::Check::Drc) {
         v.rules = Some(rules.source.name());
         v.specification_sha256 = spec_sha256;
+        v.pairs = pairs;
         v.schematic = schematic.map(|s| verdict::InputReport {
             path: s.original.display().to_string(),
             sha256: s.sha256,

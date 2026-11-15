@@ -20,8 +20,13 @@
 //! - **Placement** is integer-only and a function of the parts alone
 //!   ([`place`]).
 //!
-//! Every coordinate is nanometres, board Y down; every footprint sits at
-//! rotation 0 on the front.
+//! Every coordinate is nanometres, board Y down; every footprint sits on the
+//! front. The placer gives every footprint rotation 0; a placement may carry
+//! 90, 180 or 270 (`AET-WO-1308` §1.5, [`write_moved`]), which rotates the
+//! footprint's pads, graphics and text positions about its origin
+//! ([`route::rotate`]) and adds the rotation to each pad's and property's own
+//! angle, which KiCad's file holds absolute (measured): the footprint turns
+//! whole.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -159,7 +164,7 @@ fn layer(item: &Sx) -> Option<&str> {
 
 /// The box around a graphic's points: `fp_line`, `fp_rect` or `fp_poly`,
 /// and half its stroke on every side. Anything else is refused.
-fn graphic_box(item: &Sx, reference: &str) -> Result<Rect, EmitError> {
+fn graphic_box(item: &Sx, reference: &str, theta: u16) -> Result<Rect, EmitError> {
     let mut points = Vec::new();
     match item.head() {
         Some("fp_line" | "fp_rect") => {
@@ -192,12 +197,16 @@ fn graphic_box(item: &Sx, reference: &str) -> Result<Rect, EmitError> {
         .and_then(sexpr::nm)
         .unwrap_or(0)
         / 2;
-    let first = *points
-        .first()
-        .ok_or_else(|| internal(reference, "a graphic with no points"))?;
+    let first = route::rotate(
+        theta,
+        *points
+            .first()
+            .ok_or_else(|| internal(reference, "a graphic with no points"))?,
+    );
     Ok(points
         .iter()
-        .fold(Rect::point(first.0, first.1), |r, &(x, y)| {
+        .map(|&p| route::rotate(theta, p))
+        .fold(Rect::point(first.0, first.1), |r, (x, y)| {
             r.union(Rect::point(x, y))
         })
         .grow(half))
@@ -207,11 +216,12 @@ fn graphic_box(item: &Sx, reference: &str) -> Result<Rect, EmitError> {
 /// widest, `m`, whose advance is 4/3 of the font width (measured by Gerber
 /// plot in the tools image, `AET-WO-1301` adversarial pass F3), plus the
 /// stroke all round.
-fn text_box(item: &Sx, text: &str, reference: &str) -> Result<Rect, EmitError> {
+fn text_box(item: &Sx, text: &str, reference: &str, theta: u16) -> Result<Rect, EmitError> {
     let at = item
         .child("at")
         .ok_or_else(|| internal(reference, "a text without `at`"))?;
-    let (x, y) = xy(at, reference)?;
+    // The text turns whole with the footprint ([`turn`]).
+    let (x, y) = route::rotate(theta, xy(at, reference)?);
     let font = item
         .child("effects")
         .and_then(|e| e.child("font"))
@@ -227,10 +237,14 @@ fn text_box(item: &Sx, text: &str, reference: &str) -> Result<Rect, EmitError> {
         .unwrap_or(h / 8);
     let chars = i64::try_from(text.chars().count()).unwrap_or(i64::MAX / 4);
     let (mut hw, mut hh) = (chars.saturating_mul(w) * 2 / 3 + thick, h / 2 + thick);
-    match at.arg(3).unwrap_or("0") {
-        "0" | "180" => {}
-        "90" | "270" => std::mem::swap(&mut hw, &mut hh),
-        a => return Err(internal(reference, format!("a text at angle {a}"))),
+    let own = route::angle(at.arg(3)).ok_or_else(|| {
+        internal(
+            reference,
+            format!("a text at angle {}", at.arg(3).unwrap_or("?")),
+        )
+    })?;
+    if matches!((own + theta) % 360, 90 | 270) {
+        std::mem::swap(&mut hw, &mut hh);
     }
     Ok(Rect {
         x0: x - hw,
@@ -252,6 +266,11 @@ pub struct Geometry {
 
 /// `fp`'s geometry with `reference` as its reference text.
 pub fn geometry(fp: &Sx, reference: &str) -> Result<Geometry, EmitError> {
+    geometry_at(fp, reference, 0)
+}
+
+/// [`geometry`] of the footprint rotated by `theta` about its origin.
+pub fn geometry_at(fp: &Sx, reference: &str, theta: u16) -> Result<Geometry, EmitError> {
     let mut courtyard: Option<Rect> = None;
     let mut silk: Option<Rect> = None;
     let join = |acc: &mut Option<Rect>, r: Rect| *acc = Some(acc.map_or(r, |a| a.union(r)));
@@ -259,10 +278,10 @@ pub fn geometry(fp: &Sx, reference: &str) -> Result<Geometry, EmitError> {
         let hidden = item.child("hide").and_then(|h| h.arg(1)) == Some("yes");
         match (item.head(), layer(item)) {
             (Some("fp_line" | "fp_rect" | "fp_poly" | "fp_arc" | "fp_circle"), Some("F.CrtYd")) => {
-                join(&mut courtyard, graphic_box(item, reference)?);
+                join(&mut courtyard, graphic_box(item, reference, theta)?);
             }
             (Some("fp_line" | "fp_rect" | "fp_poly" | "fp_arc" | "fp_circle"), Some("F.SilkS")) => {
-                join(&mut silk, graphic_box(item, reference)?);
+                join(&mut silk, graphic_box(item, reference, theta)?);
             }
             (Some("property"), Some("F.SilkS")) if !hidden => {
                 let text = if item.arg(1) == Some("Reference") {
@@ -270,12 +289,12 @@ pub fn geometry(fp: &Sx, reference: &str) -> Result<Geometry, EmitError> {
                 } else {
                     item.arg(2).unwrap_or("")
                 };
-                join(&mut silk, text_box(item, text, reference)?);
+                join(&mut silk, text_box(item, text, reference, theta)?);
             }
             (Some("fp_text"), Some("F.SilkS")) if !hidden => {
                 join(
                     &mut silk,
-                    text_box(item, item.arg(2).unwrap_or(""), reference)?,
+                    text_box(item, item.arg(2).unwrap_or(""), reference, theta)?,
                 );
             }
             _ => {}
@@ -360,6 +379,8 @@ pub(crate) fn pin_nets(part: &Part) -> Result<BTreeMap<String, String>, EmitErro
 pub struct Placed {
     pub reference: String,
     pub origin: (i64, i64),
+    /// 0, 90, 180 or 270 degrees ([`route::rotate`]); 0 from the placer.
+    pub rotation: u16,
     /// Board coordinates.
     pub courtyard: Rect,
     pub keep: Rect,
@@ -453,6 +474,7 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
             placed[i] = Some(Placed {
                 reference: item.part.reference.clone(),
                 origin: ORIGIN,
+                rotation: 0,
                 courtyard: g.courtyard.shift(ORIGIN),
                 keep: g.keep.shift(ORIGIN),
             });
@@ -503,6 +525,7 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
         placed[i] = Some(Placed {
             reference: item.part.reference.clone(),
             origin,
+            rotation: 0,
             courtyard: g.courtyard.shift(origin),
             keep: g.keep.shift(origin),
         });
@@ -584,6 +607,7 @@ fn place_connectors(
         placed[i] = Some(Placed {
             reference: item.part.reference.clone(),
             origin,
+            rotation: 0,
             courtyard: g.courtyard.shift(origin),
             keep: g.keep.shift(origin),
         });
@@ -667,7 +691,12 @@ fn rekey(sx: &mut Sx, key: &str, n: &mut usize) {
 }
 
 /// The footprint as the board holds it.
-fn footprint(project: &str, item: &Item<'_>, origin: (i64, i64)) -> Result<Sx, EmitError> {
+fn footprint(
+    project: &str,
+    item: &Item<'_>,
+    origin: (i64, i64),
+    rotation: u16,
+) -> Result<Sx, EmitError> {
     let part = item.part;
     let key = format!("{project}/footprint/{}", part.reference);
     let sym = library::symbol(part.lib_id)?;
@@ -686,7 +715,10 @@ fn footprint(project: &str, item: &Item<'_>, origin: (i64, i64)) -> Result<Sx, E
         Sx::str(part.footprint.clone()),
         Sx::List(vec![Sx::atom("layer"), Sx::str("F.Cu")]),
         uuid_sx(&key),
-        at_sx("at", origin),
+        match rotation {
+            0 => at_sx("at", origin),
+            r => Sx::node("at", &[&mm(origin.0), &mm(origin.1), &r.to_string()]),
+        },
     ];
     let body = item.fp.items().get(2..).unwrap_or(&[]);
     let last_prop = body
@@ -698,7 +730,11 @@ fn footprint(project: &str, item: &Item<'_>, origin: (i64, i64)) -> Result<Sx, E
         let mut c = child.clone();
         match child.head() {
             Some("version" | "generator" | "generator_version" | "layer") => continue,
+            Some("fp_text") if rotation != 0 => turn(&mut c, rotation, &part.reference)?,
             Some("property") => {
+                if rotation != 0 {
+                    turn(&mut c, rotation, &part.reference)?;
+                }
                 let text = match child.arg(1) {
                     Some("Reference") => Some(part.reference.as_str()),
                     Some("Value") => Some(part.value.as_str()),
@@ -711,6 +747,9 @@ fn footprint(project: &str, item: &Item<'_>, origin: (i64, i64)) -> Result<Sx, E
             }
             Some("pad") => {
                 let number = child.arg(1).unwrap_or("");
+                if rotation != 0 {
+                    turn(&mut c, rotation, &part.reference)?;
+                }
                 if let Some((_, net)) = item.pads.get(number)
                     && let Some(items) = c.items_mut()
                 {
@@ -829,8 +868,29 @@ pub struct Layout {
     pub pad_nets: BTreeMap<(String, String), String>,
 }
 
-fn layout_of(items: &[Item<'_>]) -> Result<Layout, EmitError> {
-    let (placed, edge) = place(items)?;
+/// A part the caller places itself (`AET-WO-1308` §1.5): its reference, its
+/// origin and its rotation. Every other part is placed by [`place`] first.
+pub type Move = (String, (i64, i64), u16);
+
+fn layout_of(items: &[Item<'_>], moves: &[Move]) -> Result<Layout, EmitError> {
+    let (mut placed, edge) = place(items)?;
+    for (reference, origin, rotation) in moves {
+        if !matches!(rotation, 0 | 90 | 180 | 270) {
+            return Err(internal(reference, format!("a rotation of {rotation}")));
+        }
+        let i = items
+            .iter()
+            .position(|it| &it.part.reference == reference)
+            .ok_or_else(|| internal(reference, "moved, but not a part of the design"))?;
+        let g = geometry_at(&items[i].fp, reference, *rotation)?;
+        placed[i] = Placed {
+            reference: reference.clone(),
+            origin: *origin,
+            rotation: *rotation,
+            courtyard: g.courtyard.shift(*origin),
+            keep: g.keep.shift(*origin),
+        };
+    }
     let first = placed
         .first()
         .ok_or_else(|| EmitError::Internal("no parts".into()))?
@@ -864,17 +924,52 @@ fn layout_of(items: &[Item<'_>]) -> Result<Layout, EmitError> {
 /// The placement and pad nets `write` uses.
 #[cfg(test)]
 fn layout(parts: &[Part]) -> Result<Layout, EmitError> {
-    layout_of(&items(parts)?)
+    layout_of(&items(parts)?, &[])
+}
+
+/// A pad's or a text's `(at x y [a])` with the footprint's rotation added to
+/// its own angle, which KiCad's file holds absolute (measured, `AET-WO-1308`
+/// P5), so the footprint turns whole: text kept upright would land on the
+/// footprint's own turned silkscreen (measured, KiCad's `silk_overlap`).
+/// Only right angles are written; the library's are right angles.
+fn turn(item: &mut Sx, rotation: u16, reference: &str) -> Result<(), EmitError> {
+    let items = item
+        .items_mut()
+        .ok_or_else(|| internal(reference, "a pad or text that is not a list"))?;
+    let at = items
+        .iter_mut()
+        .find(|i| i.head() == Some("at"))
+        .ok_or_else(|| internal(reference, "a pad or text without `at`"))?;
+    let (x, y) = xy(at, reference)?;
+    let own = route::angle(at.arg(3))
+        .ok_or_else(|| internal(reference, format!("an item at angle {:?}", at.arg(3))))?;
+    let turned = (own + rotation) % 360;
+    *at = match turned {
+        0 => at_sx("at", (x, y)),
+        a => Sx::node("at", &[&mm(x), &mm(y), &a.to_string()]),
+    };
+    Ok(())
 }
 
 /// The `.kicad_pcb` text for `parts`, on the board `stack` declares.
+#[cfg(test)]
 pub(crate) fn write(
     project: &str,
     parts: &[Part],
     stack: &crate::stack::Stack,
 ) -> Result<String, EmitError> {
+    write_moved(project, parts, stack, &[])
+}
+
+/// [`write`], with each of `moves` placed where it says instead.
+pub(crate) fn write_moved(
+    project: &str,
+    parts: &[Part],
+    stack: &crate::stack::Stack,
+    moves: &[Move],
+) -> Result<String, EmitError> {
     let items = items(parts)?;
-    let layout = layout_of(&items)?;
+    let layout = layout_of(&items, moves)?;
     let mut layers = vec![Sx::atom("layers")];
     for (id, name, kind, user) in LAYERS {
         // Inner copper rows follow F.Cu and precede B.Cu, as KiCad saves them.
@@ -917,7 +1012,8 @@ pub(crate) fn write(
     // `place` returns each item's placement at the item's index.
     let mut parts = Vec::new();
     for i in order {
-        let fp = footprint(project, &items[i], layout.placed[i].origin)?;
+        let p = &layout.placed[i];
+        let fp = footprint(project, &items[i], p.origin, p.rotation)?;
         parts.push(route::part_of(&fp).map_err(EmitError::Internal)?);
         out.push(fp);
     }
@@ -947,7 +1043,7 @@ pub(crate) fn write(
         Sx::List(vec![Sx::atom("layer"), Sx::str("Edge.Cuts")]),
         uuid_sx(&format!("{project}/outline")),
     ]));
-    out.extend(copper(project, &routed, o, stack.width_nm));
+    out.extend(copper(project, &routed, o, stack));
     out.push(Sx::node("embedded_fonts", &["no"]));
     Ok(sexpr::write(&Sx::List(out)))
 }
@@ -956,7 +1052,7 @@ pub(crate) fn write(
 /// keyed by its content. A zone's outline is the board's; it carries no
 /// `connect_pads` clearance, which the gate refuses (`AET-WO-1300` B2), and
 /// no fill, which the gate's `--refill-zones` computes.
-fn copper(project: &str, routed: &route::Routed, o: Rect, width_nm: i64) -> Vec<Sx> {
+fn copper(project: &str, routed: &route::Routed, o: Rect, stack: &crate::stack::Stack) -> Vec<Sx> {
     let net = |n: &str| Sx::List(vec![Sx::atom("net"), Sx::str(n)]);
     let layer = |l: route::Layer| Sx::List(vec![Sx::atom("layer"), Sx::str(l.name())]);
     let mut out = Vec::new();
@@ -965,7 +1061,7 @@ fn copper(project: &str, routed: &route::Routed, o: Rect, width_nm: i64) -> Vec<
             Sx::atom("segment"),
             at_sx("start", s.start),
             at_sx("end", s.end),
-            Sx::node("width", &[&mm(width_nm)]),
+            Sx::node("width", &[&mm(stack.rule(&s.net).width_nm)]),
             layer(s.layer),
             net(&s.net),
             uuid_sx(&format!(
@@ -983,8 +1079,8 @@ fn copper(project: &str, routed: &route::Routed, o: Rect, width_nm: i64) -> Vec<
         out.push(Sx::List(vec![
             Sx::atom("via"),
             at_sx("at", v.at),
-            Sx::node("size", &[&mm(route::VIA_NM)]),
-            Sx::node("drill", &[&mm(route::DRILL_NM)]),
+            Sx::node("size", &[&mm(stack.rule(&v.net).via_nm)]),
+            Sx::node("drill", &[&mm(stack.rule(&v.net).drill_nm)]),
             Sx::List(vec![Sx::atom("layers"), Sx::str("F.Cu"), Sx::str("B.Cu")]),
             net(&v.net),
             uuid_sx(&format!("{project}/via/{}/{} {}", v.net, v.at.0, v.at.1)),
