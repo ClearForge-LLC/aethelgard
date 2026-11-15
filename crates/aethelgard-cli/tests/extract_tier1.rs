@@ -124,7 +124,8 @@ fn the_reference_passes_with_every_term() {
     );
     assert!(!v["conditions"].as_array().unwrap().is_empty());
     let lines = v["lines"].as_array().unwrap();
-    assert_eq!(lines.len(), 2);
+    // `AET-WO-4300c` D2: the SPI bus's SCK and MOSI follow the I2C lines.
+    assert_eq!(lines.len(), 4);
     let (sda, scl) = (&lines[0], &lines[1]);
     assert_eq!(
         (sda["net"].as_str(), scl["net"].as_str()),
@@ -141,8 +142,60 @@ fn the_reference_passes_with_every_term() {
         assert_eq!(line["pad_count"], 4);
         assert_eq!(line["pins"].as_array().unwrap().len(), 3);
         assert_eq!(line["pull_ups"].as_array().unwrap().len(), 1);
+        // An I2C line's object is `AET-WO-1305`'s, unchanged.
+        assert!(line.get("signal").is_none() && line.get("drivers").is_none());
     }
+    // `AET-WO-4300c` D3: the flash's pin at its cited 8 pF, the MCU's pin
+    // (the driver) not counted, its pad's copper counted.
+    let (sck, mosi) = (&lines[2], &lines[3]);
+    assert_eq!(terms(sck), [5_920, 3_038, 1_563, 8_000, 18_521]);
+    assert_eq!(terms(mosi), [4_587, 3_038, 1_563, 8_000, 17_188]);
+    for (line, net, signal, pin, driver) in [
+        (sck, "SPI_SCK", "SCK", "U4.6", "U1.41"),
+        (mosi, "SPI_MOSI", "MOSI", "U4.5", "U1.43"),
+    ] {
+        assert_eq!(line["net"], net);
+        assert_eq!(line["signal"], signal);
+        assert_eq!(line["verdict"], "pass");
+        assert_eq!(line["declared_femtofarads"], 30_000);
+        assert_eq!(line["pad_count"], 2);
+        assert_eq!(line["pins"], serde_json::json!([pin]));
+        assert_eq!(line["drivers"], serde_json::json!([driver]));
+        assert_eq!(line["pull_ups"], serde_json::json!([]));
+    }
+    assert!(
+        v["conditions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c.as_str().unwrap().starts_with("on SCK and MOSI")),
+        "{v}"
+    );
     assert_eq!(v["findings"], Value::Array(vec![]));
+}
+
+/// `AET-WO-4300c` D2: extraction confirms each declared SPI capacitance, and
+/// a declaration below the bound fails by name; at the bound it passes.
+#[test]
+fn a_declared_spi_bound_below_the_bound_fails_and_at_it_passes() {
+    let set = |v: &mut Value, ff: u64| {
+        for c in v["net_constraints"].as_array_mut().unwrap() {
+            if c["net_name"] == "SPI_SCK" {
+                c["max_capacitance_femtofarads"] = ff.into();
+            }
+        }
+    };
+    let spec = spec_with("sck-under", |v| set(v, 18_520));
+    let (code, v) = extract("sck-under", reference(), spec.to_str().unwrap());
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(
+        v["findings"][0]["message"],
+        "`SPI_SCK`: bound 18521 fF (trace 5920, vias 3038, pads 1563, pins 8000) exceeds the declared 18520 fF"
+    );
+    assert_eq!(v["findings"].as_array().unwrap().len(), 1);
+    let spec = spec_with("sck-at", |v| set(v, 18_521));
+    let (code, v) = extract("sck-at", reference(), spec.to_str().unwrap());
+    assert_eq!(code, 0, "{v}");
 }
 
 /// §3.2 and the §1.3 prediction: declared 20 pF fails both lines on their
@@ -179,7 +232,7 @@ fn a_declared_bound_below_the_bound_fails_naming_each_line() {
         .iter()
         .map(|l| l["verdict"].as_str().unwrap())
         .collect();
-    assert_eq!(verdicts, ["pass", "fail"]);
+    assert_eq!(verdicts, ["pass", "fail", "pass", "pass"]);
     assert_eq!(v["findings"].as_array().unwrap().len(), 1);
 
     // At the bound exactly, the line passes.
@@ -565,13 +618,14 @@ fn the_parts_on_a_line_are_the_designs() {
     assert_eq!(code, 3, "{v}");
     assert_eq!(refused(&v), "LineNotOnBoard");
 
-    // A specification `solve` accepts and the design refuses is exit 2.
+    // An address the part's straps do not offer is exit 2: since
+    // `AET-WO-4300c` §1.5 `validate` refuses it, before the design is drawn.
     let address = spec_with("address", |v| {
         v["i2c_devices"][0]["address"] = 80.into();
     });
     let (code, v) = extract("address", text, address.to_str().unwrap());
     assert_eq!(code, 2, "{v}");
-    assert_eq!(refused(&v), "UnsupportedAddress");
+    assert_eq!(refused(&v), "I2cAddressNotOffered");
 }
 
 /// The architect's check on PR #99: the bound needs every foreign conductor

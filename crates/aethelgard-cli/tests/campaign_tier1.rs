@@ -887,7 +887,7 @@ fn a_solved_topology_is_not_a_base() {
     work.dir
         .write("s.json", scenario_with_base("topology.json").as_bytes());
     let out = work.campaign(&cli(Some(BRIDGE_BY_PULL_UP)), &tb.0, &["s.json"]);
-    // A solved topology and a specification are both at version 3 (`AET-WO-4200`,
+    // A solved topology and a specification are both at version 4 (`AET-WO-4300c`,
     // `AET-WO-4300f`), so the reader refuses it by its shape (its
     // `specification_sha256` is no specification key): refused before running
     // either way.

@@ -51,10 +51,11 @@ pub fn notes(n: &Notes<'_>) -> String {
     for (name, what) in n.files {
         files.push_str(&format!("- `{name}`: {what}\n"));
     }
-    let conditions: String = conditions(st, n.offboard)
-        .iter()
-        .map(|c| format!("- {c}\n"))
-        .collect();
+    let mut conditions = conditions(st);
+    if n.offboard {
+        conditions.push(crate::extract::OFFBOARD.to_owned());
+    }
+    let conditions: String = conditions.iter().map(|c| format!("- {c}\n")).collect();
     format!(
         "# Fabrication notes: {project}
 
@@ -222,7 +223,7 @@ mod tests {
         ] {
             assert!(text.contains(want), "missing {want:?}");
         }
-        for c in conditions(&crate::stack::reference(), false) {
+        for c in conditions(&crate::stack::reference()) {
             assert!(text.contains(&format!("- {c}\n")), "{c}");
         }
         assert_eq!(text, sample());

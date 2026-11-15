@@ -213,13 +213,34 @@ fn extract_counts_each_connectors_declared_budget_and_no_ci() {
     assert_eq!(v["verdict"], "pass", "{v}");
     assert_eq!(v["findings"], Value::Array(vec![]), "{v}");
     let lines = v["lines"].as_array().unwrap();
-    assert_eq!(lines.len(), 2, "{v}");
+    let nets: Vec<&str> = lines.iter().map(|l| l["net"].as_str().unwrap()).collect();
+    assert_eq!(
+        nets,
+        [
+            "I2C_SDA", "I2C_SCL", "SPI_SCK", "SPI_MOSI", "EXT_SCK", "EXT_MOSI"
+        ],
+        "the bounded lines are each I2C line, then each SPI bus's SCK and MOSI"
+    );
     for line in lines {
         let net = line["net"].as_str().unwrap();
-        let j1_pad = match net {
-            "I2C_SCL" => "J1.2",
-            "I2C_SDA" => "J1.3",
-            other => panic!("an unexpected line {other}"),
+        let connector_pad = match net {
+            "I2C_SCL" => Some("J1.2"),
+            "I2C_SDA" => Some("J1.3"),
+            "EXT_SCK" => Some("J2.2"),
+            "EXT_MOSI" => Some("J2.3"),
+            _ => None,
+        };
+        let pins = line["pins"].as_array().unwrap();
+        assert!(
+            pins.iter().all(|p| !p.as_str().unwrap().starts_with('J')),
+            "{net}: a connector pad is counted as a pin with a Ci: {pins:?}"
+        );
+        let Some(pad) = connector_pad else {
+            assert!(
+                line["terms"].get("offboard").is_none() && line.get("offboard").is_none(),
+                "{net}: a line no connector carries keeps its verdict object unchanged: {line}"
+            );
+            continue;
         };
         assert_eq!(
             line["terms"]["offboard"], 30_000,
@@ -235,19 +256,27 @@ fn extract_counts_each_connectors_declared_budget_and_no_ci() {
             named[0]
                 .as_str()
                 .unwrap()
-                .starts_with(&format!("{j1_pad}: 30000 fF (")),
-            "{net}: the off-board list does not name {j1_pad} with its budget: {named:?}"
+                .starts_with(&format!("{pad}: 30000 fF (")),
+            "{net}: the off-board list does not name {pad} with its budget: {named:?}"
         );
-        let pins = line["pins"].as_array().unwrap();
-        assert!(
-            pins.iter().all(|p| !p.as_str().unwrap().starts_with('J')),
-            "{net}: a connector pad is counted as a pin with a Ci: {pins:?}"
-        );
-        assert_eq!(
-            line["terms"]["pins"], 30_000,
-            "{net}: pins' Ci is not three pins at 10 pF (the connector adds none)"
-        );
+        if net.starts_with("I2C") {
+            assert_eq!(
+                line["terms"]["pins"], 30_000,
+                "{net}: pins' Ci is not three pins at 10 pF (the connector adds none)"
+            );
+        } else {
+            assert_eq!(
+                line["terms"]["pins"], 0,
+                "{net}: EXT has no device, so no pin is counted (the MCU drives, the connector adds none)"
+            );
+        }
     }
+    let conditions = v["conditions"].as_array().unwrap();
+    assert_eq!(
+        conditions.last().and_then(Value::as_str),
+        Some(aethelgard_eda::extract::OFFBOARD),
+        "a verdict with a declared off-board budget states it as its last condition"
+    );
 }
 
 /// The digital twin reads only the solved topology: with the connectors

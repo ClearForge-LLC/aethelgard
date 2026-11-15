@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "project_name": "d3-24-i2c-12-spi",
   "mcu": {
     "part": "STM32H753ZITx",
@@ -321,7 +321,7 @@
   "spi_devices": [
     {
       "reference": "S1000",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "F0",
       "cs": {
@@ -331,7 +331,7 @@
     },
     {
       "reference": "S1001",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "F0",
       "cs": {
@@ -341,7 +341,7 @@
     },
     {
       "reference": "S1002",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "F0",
       "cs": {
@@ -351,7 +351,7 @@
     },
     {
       "reference": "S1003",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "F1",
       "cs": {
@@ -361,7 +361,7 @@
     },
     {
       "reference": "S1004",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "F1",
       "cs": {
@@ -371,7 +371,7 @@
     },
     {
       "reference": "S1005",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "F1",
       "cs": {
@@ -381,7 +381,7 @@
     },
     {
       "reference": "S1006",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "F2",
       "cs": {
@@ -391,7 +391,7 @@
     },
     {
       "reference": "S1007",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "F2",
       "cs": {
@@ -401,7 +401,7 @@
     },
     {
       "reference": "S1008",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "F2",
       "cs": {
@@ -411,7 +411,7 @@
     },
     {
       "reference": "S1009",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "F3",
       "cs": {
@@ -421,7 +421,7 @@
     },
     {
       "reference": "S1010",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "F3",
       "cs": {
@@ -431,7 +431,7 @@
     },
     {
       "reference": "S1011",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "F3",
       "cs": {
@@ -488,6 +488,54 @@
       "net_name": "SCL3",
       "max_capacitance_femtofarads": 100000,
       "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SCK0",
+      "max_capacitance_femtofarads": 50000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "MOSI0",
+      "max_capacitance_femtofarads": 50000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SCK1",
+      "max_capacitance_femtofarads": 50000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "MOSI1",
+      "max_capacitance_femtofarads": 50000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SCK2",
+      "max_capacitance_femtofarads": 50000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "MOSI2",
+      "max_capacitance_femtofarads": 50000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SCK3",
+      "max_capacitance_femtofarads": 50000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "MOSI3",
+      "max_capacitance_femtofarads": 50000,
+      "max_rise_time_nanoseconds": 20,
       "impedance_ohms": null
     }
   ],

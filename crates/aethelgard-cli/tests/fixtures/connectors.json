@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "project_name": "connectors",
   "mcu": {
     "part": "STM32H753ZITx",
@@ -91,7 +91,7 @@
   "spi_devices": [
     {
       "reference": "U4",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "FLASH",
       "cs": {
@@ -192,6 +192,30 @@
       "net_name": "I2C_SCL",
       "max_capacitance_femtofarads": 100000,
       "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI_SCK",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI_MOSI",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "EXT_SCK",
+      "max_capacitance_femtofarads": 60000,
+      "max_rise_time_nanoseconds": 100,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "EXT_MOSI",
+      "max_capacitance_femtofarads": 60000,
+      "max_rise_time_nanoseconds": 100,
       "impedance_ohms": null
     }
   ],

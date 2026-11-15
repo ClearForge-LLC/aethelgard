@@ -11,7 +11,7 @@ use common::devs;
 
 use aethelgard_ir::{
     AnalogLine, I2cBus, Mcu, NetConstraint, Pin, PinSource, PinTable, RESERVED_PINS, Signal,
-    SolveError, SolvedTopology, Specification, SpiBus, SpiDevice, VoltageDomain, solve,
+    SolveError, SolvedTopology, Specification, SpiBus, SpiDevice, SpiLine, VoltageDomain, solve,
     solve_with_limit,
 };
 
@@ -130,14 +130,22 @@ fn spec(
     spi_buses: Vec<SpiBus>,
     spi_devices: Vec<SpiDevice>,
 ) -> Specification {
-    let net_constraints: Vec<NetConstraint> = i2c_buses
+    let mut net_constraints: Vec<NetConstraint> = i2c_buses
         .iter()
         .flat_map(|b| [constraint(&b.sda.net, 300), constraint(&b.scl.net, 300)])
         .collect();
+    net_constraints.extend(spi_buses.iter().flat_map(|b| {
+        [&b.sck.net, &b.mosi.net].map(|net| NetConstraint {
+            net_name: net.clone(),
+            max_capacitance_femtofarads: 30_000,
+            max_rise_time_nanoseconds: 20,
+            impedance_ohms: None,
+        })
+    }));
     // The device lists are private to the crate (`AET-WO-1204`), so the
     // specification is built from the JSON it reads.
     let json = serde_json::json!({
-        "schema_version": 3,
+        "schema_version": 4,
         "project_name": "t",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
         "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into() },
@@ -813,7 +821,11 @@ fn devices_are_copied_with_their_peripheral_and_their_place_in_the_order() {
         bus: "I".into(),
         address,
     };
-    devs(&mut s).i2c = vec![dev("U10", 0x76), dev("U3", 0x77), dev("U2", 0x40)];
+    // The BME280 offers two addresses; the third device is a part the table
+    // does not hold, so it has no limit to keep.
+    let mut u2 = dev("U2", 0x40);
+    u2.part = "HDC1080".into();
+    devs(&mut s).i2c = vec![dev("U10", 0x76), dev("U3", 0x77), u2];
     let t = ok(&s);
     t.validate().unwrap();
     let peripheral = t.assignments["I_SDA"].peripheral.clone();
@@ -837,4 +849,59 @@ fn devices_are_copied_with_their_peripheral_and_their_place_in_the_order() {
 #[test]
 fn a_specification_with_no_device_solves_to_none() {
     assert!(ok(&basic()).i2c_devices.is_empty());
+}
+
+#[test]
+fn an_spi_bus_without_a_constraint_on_its_mosi_is_refused_naming_the_net() {
+    let mut s = basic();
+    s.net_constraints.retain(|c| c.net_name != "S_MOSI");
+    let err = refused(&s);
+    assert_eq!(err.kind(), "MissingSpiConstraint");
+    assert_eq!(err.id(), Some("S"));
+    assert!(err.to_string().contains("`S_MOSI`"), "{err}");
+    // The same for the clock.
+    let mut s = basic();
+    s.net_constraints.retain(|c| c.net_name != "S_SCK");
+    let err = refused(&s);
+    assert_eq!(err.kind(), "MissingSpiConstraint");
+    assert!(err.to_string().contains("`S_SCK`"), "{err}");
+}
+
+#[test]
+fn solve_copies_each_declared_sck_and_mosi_constraint_and_nothing_else() {
+    let mut s = basic();
+    s.spi_buses[0].speed_hz = 8_000_000;
+    for c in &mut s.net_constraints {
+        match c.net_name.as_str() {
+            "S_SCK" => {
+                c.max_capacitance_femtofarads = 12_345;
+                c.max_rise_time_nanoseconds = 7;
+            }
+            "S_MOSI" => {
+                c.max_capacitance_femtofarads = 23_456;
+                c.max_rise_time_nanoseconds = 9;
+            }
+            _ => {}
+        }
+    }
+    let t = ok(&s);
+    assert_eq!(t.validate(), Ok(()));
+    let line = |signal: &str, capacitance_femtofarads, rise_time_ns| SpiLine {
+        bus: "S".into(),
+        signal: signal.into(),
+        rate_hz: 8_000_000,
+        capacitance_femtofarads,
+        rise_time_ns,
+        vdd_min_millivolts: 3135,
+    };
+    assert_eq!(
+        t.spi_lines,
+        BTreeMap::from([
+            ("S_SCK".to_owned(), line("SCK", 12_345, 7)),
+            ("S_MOSI".to_owned(), line("MOSI", 23_456, 9)),
+        ])
+    );
+    // MISO is an input and the chip select a GPIO: neither has a line.
+    assert!(!t.spi_lines.contains_key("S_MISO"));
+    assert!(!t.spi_lines.contains_key("U1_CS"));
 }

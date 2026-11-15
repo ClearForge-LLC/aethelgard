@@ -189,7 +189,7 @@ fn net_kinds(spec: &Specification) -> BTreeMap<&str, NetKind<'_>> {
     kinds
 }
 
-/// The connectors' step of `validate`, after the board: each connector by
+/// Step 15 of `validate`, after the parts (step 14): each connector by
 /// document order, then its part, its pins, each pin's net and budget, then
 /// its standard. References are checked with the devices' (step 8) and
 /// identifiers with every other (step 2).

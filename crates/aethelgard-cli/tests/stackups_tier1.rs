@@ -84,7 +84,7 @@ fn a_version_one_specification_is_refused_by_name() {
         let (code, v) = run(&args);
         assert_eq!(code, 2, "{sub}: {v}");
         assert_eq!(v["error"]["kind"], "UnsupportedSchemaVersion", "{sub}: {v}");
-        assert!(v["error"]["message"].as_str().unwrap().contains("not 2"));
+        assert!(v["error"]["message"].as_str().unwrap().contains("not 4"));
     }
     fs::remove_dir_all(&dir).unwrap();
 }
@@ -155,9 +155,12 @@ fn the_four_layer_board_is_the_declared_one_and_extracts() {
         bounds,
         [
             ("I2C_SDA".to_owned(), 45_857),
-            ("I2C_SCL".to_owned(), 48_827)
+            ("I2C_SCL".to_owned(), 48_827),
+            // `AET-WO-4300c`: SCK and MOSI, the flash's pin at 8 pF.
+            ("SPI_SCK".to_owned(), 18_470),
+            ("SPI_MOSI".to_owned(), 17_114)
         ],
-        "re-measure FEEDBACK §2 before changing this line"
+        "re-measure FEEDBACK §2 (and AET-WO-4300c's) before changing this line"
     );
     fs::remove_dir_all(&dir).unwrap();
 }
@@ -226,6 +229,17 @@ fn d1_routes_at_four_layers_and_fails_closed_at_two() {
     let (code, v, board) = emit(&dir, D1);
     assert_eq!(code, 0, "{v}");
     assert!(board.contains("(4 \"In1.Cu\" signal)"));
+    // `AET-WO-4300c`, ruled D1: the fixture's declarations are true. Every
+    // line, its eight I2C lines and its SCK and MOSI, is within its declared
+    // bound on its own routed board. No number is pinned: `1307` reroutes D1.
+    let (code, x) = extract(&dir, &board, D1);
+    assert_eq!(code, 0, "{x}");
+    let lines = x["lines"].as_array().unwrap();
+    assert_eq!(lines.len(), 10, "{x}");
+    for l in lines {
+        assert_eq!(l["verdict"], "pass", "{l}");
+        assert!(l["c_bound_femtofarads"].as_u64() <= l["declared_femtofarads"].as_u64());
+    }
     let mut two = load(D1);
     two["board"] = load(SPEC)["board"].clone();
     let path = write_spec(&dir, "d1-two.json", &two);
@@ -310,8 +324,8 @@ fn the_old_and_new_paths_agree_on_the_reference() {
         old.iter()
             .map(|l| l.c_bound_femtofarads)
             .collect::<Vec<_>>(),
-        [46_800, 58_235],
-        "the reference's bounds (AET-WO-1305 §3) moved"
+        [46_800, 58_235, 18_521, 17_188],
+        "the reference's bounds (AET-WO-1305 §3, AET-WO-4300c) moved"
     );
     fs::remove_dir_all(&dir).unwrap();
 }

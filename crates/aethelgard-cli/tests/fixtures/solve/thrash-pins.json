@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "project_name": "thrash",
   "mcu": {
     "part": "STM32H753ZITx",
@@ -188,7 +188,7 @@
   "spi_devices": [
     {
       "reference": "U200",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "SPI_BUS_0",
       "cs": {
@@ -198,7 +198,7 @@
     },
     {
       "reference": "U201",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "SPI_BUS_0",
       "cs": {
@@ -208,7 +208,7 @@
     },
     {
       "reference": "U202",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "SPI_BUS_0",
       "cs": {
@@ -265,6 +265,78 @@
       "net_name": "I2C3_SCL_NET",
       "max_capacitance_femtofarads": 100000,
       "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI0_SCK_NET",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI0_MOSI_NET",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI1_SCK_NET",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI1_MOSI_NET",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI2_SCK_NET",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI2_MOSI_NET",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI3_SCK_NET",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI3_MOSI_NET",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI4_SCK_NET",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI4_MOSI_NET",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI5_SCK_NET",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI5_MOSI_NET",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
       "impedance_ohms": null
     }
   ],

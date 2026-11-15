@@ -78,19 +78,27 @@ fn digests() -> Vec<(&'static str, String)> {
 /// digests were `0b39d4aa…56d2`, `2ccc0e8d…c75b` and `06c8463c…5f5e`. The
 /// firmware and both platform digests were re-taken again at the merge of
 /// `AET-WO-4100`, whose specification version 2 moved them on `main` (to
-/// `7079aa52…`, `b777f4e5…` and `82de0037…` there).
+/// `7079aa52…`, `b777f4e5…` and `82de0037…` there). They were re-taken once more
+/// in `AET-WO-4300c` (specification version 3, so the specification's sha256;
+/// the flash is `W25Q64JVxIQ`; and the firmware's SPI output speeds): the
+/// firmware was `c468b3cb…604f`, the platform `9fd77dad…53aa` and the
+/// faulted platform `c80833a9…8bec`. The boot image's digest is unchanged.
+/// Re-taken in `AET-WO-4300f` (specification version 4, `connectors`), which
+/// moved only the specification's sha256: with the old hash put back, each
+/// output's digest is the old one exactly. The three were `ecd58f5f…9b7b`,
+/// `bc1517cd…7522` and `f684f871…3dba`.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "c468b3cbbf33a9ee4ccb6bb5214782a59c3562c52e63216ea8ee028cc291604f",
+        "f3e10417efe8d2b887dae335bc7dca9637211a8a65320ed65bee6a81fb092985",
     ),
     (
         "platform",
-        "9fd77dad7c7276c2a8e83fc252eaf32446421bd8b7ed7165fe1281d3149e53aa",
+        "9c02c1e256190c4d99ee4259586e1be57c5e717b2c2c1c3cc301ddc5e0812bf4",
     ),
     (
         "platform faulted",
-        "c80833a90c3be6bd581173d27470e12f129c7735c7b34096447b7636f3448bec",
+        "cc3a3e65412b06da24bc13f93f2dfed765c426227f9daef1afc1c5292912dff9",
     ),
     (
         "boot image",

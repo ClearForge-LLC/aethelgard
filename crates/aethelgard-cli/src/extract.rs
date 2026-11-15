@@ -1,6 +1,6 @@
-//! `extract`: each I2C line's capacitance bounded from above from the routed
-//! board's copper, judged against the line's declared bound (`AET-WO-1305`,
-//! `RUL-19` (1)). The bound and its sources are `aethelgard_eda::extract`'s.
+//! `extract`: each I2C line's capacitance, and each SPI bus's SCK and MOSI
+//! (`AET-WO-4300c` D2), bounded from above from the routed board's copper and
+//! judged against the line's declared bound (`AET-WO-1305`, `RUL-19` (1)). The bound and its sources are `aethelgard_eda::extract`'s.
 //!
 //! The board is read once, into memory; its sha256 and the bound are both
 //! taken from those bytes, so the verdict names exactly what it judged. No
@@ -44,14 +44,25 @@ struct Finding {
 /// One line of the verdict: the bound with its terms, and the judgement.
 fn line(b: LineBound, declared: u64) -> Value {
     let t = &b.terms;
-    json!({
+    let mut v = json!({
         "net": b.net, "board_net": b.board_net, "bus": b.bus,
         "verdict": if b.c_bound_femtofarads <= declared { "pass" } else { "fail" },
         "c_bound_femtofarads": b.c_bound_femtofarads, "declared_femtofarads": declared,
-        "terms": {"trace": t.trace, "vias": t.vias, "pads": t.pads, "pins": t.pins, "offboard": t.offboard},
+        "terms": {"trace": t.trace, "vias": t.vias, "pads": t.pads, "pins": t.pins},
         "length_nm": b.length_nm, "segments": b.segments, "via_count": b.via_count,
-        "pad_count": b.pad_count, "pins": b.pins, "pull_ups": b.pull_ups, "offboard": b.offboard,
-    })
+        "pad_count": b.pad_count, "pins": b.pins, "pull_ups": b.pull_ups,
+    });
+    // An I2C line's object is `AET-WO-1305`'s, unchanged.
+    if let Some(signal) = b.spi_signal {
+        v["signal"] = signal.into();
+        v["drivers"] = b.drivers.into();
+    }
+    // A line with no connector is unchanged too (`AET-WO-4300f` D8).
+    if !b.offboard.is_empty() {
+        v["terms"]["offboard"] = t.offboard.into();
+        v["offboard"] = b.offboard.into();
+    }
+    v
 }
 
 /// `aethelgard extract --board <pcb> --spec <spec>`.
@@ -95,16 +106,34 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         }
     };
     let mut out = Vec::new();
+    let mut conditions = bound::conditions(&stack);
+    if lines.iter().any(|b| b.spi_signal.is_some()) {
+        conditions.push(bound::SPI_CONDITION.to_owned());
+    }
+    if lines.iter().any(|b| !b.offboard.is_empty()) {
+        conditions.push(bound::OFFBOARD.to_owned());
+    }
     for b in lines {
-        // `solve` refused a line with no constraint (`MissingBusConstraint`).
-        let Some(declared) = topology.analog_lines.get(&b.net) else {
+        // `solve` refused a line with no constraint (`MissingBusConstraint`,
+        // `MissingSpiConstraint`).
+        let declared = match b.spi_signal {
+            None => topology
+                .analog_lines
+                .get(&b.net)
+                .map(|l| l.capacitance_femtofarads),
+            Some(_) => topology
+                .spi_lines
+                .get(&b.net)
+                .map(|l| l.capacitance_femtofarads),
+        };
+        let Some(declared) = declared else {
             return refuse(
                 "MissingBusConstraint",
                 format!("`{}` has no declared capacitance bound", b.net),
                 EXIT_INVALID_SPEC,
             );
         };
-        out.push(line(b, declared.capacitance_femtofarads));
+        out.push(line(b, declared));
     }
     let findings: Vec<Finding> = out
         .iter()
@@ -113,14 +142,16 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
             kind: "capacitance_over_declared_bound",
             severity: "error",
             message: format!(
-                "`{}`: bound {} fF (trace {}, vias {}, pads {}, pins {}, offboard {}) exceeds the declared {} fF",
+                "`{}`: bound {} fF (trace {}, vias {}, pads {}, pins {}{}) exceeds the declared {} fF",
                 l["net"].as_str().unwrap_or_default(),
                 l["c_bound_femtofarads"],
                 l["terms"]["trace"],
                 l["terms"]["vias"],
                 l["terms"]["pads"],
                 l["terms"]["pins"],
-                l["terms"]["offboard"],
+                l["terms"]
+                    .get("offboard")
+                    .map_or_else(String::new, |o| format!(", offboard {o}")),
                 l["declared_femtofarads"]
             ),
         })
@@ -137,7 +168,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         },
         specification_sha256: spec_sha256,
         capacitance: CAPACITANCE,
-        conditions: bound::conditions(&stack, aethelgard_eda::schematic::declares_offboard(&spec)),
+        conditions,
         lines: out,
         findings,
     };

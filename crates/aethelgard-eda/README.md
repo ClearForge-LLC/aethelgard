@@ -18,7 +18,7 @@ Schematic and bill-of-materials emission, and the design-rule files the KiCad ga
 **Parts with a model:**
 - the MCU `STM32H753ZITx`;
 - on I2C, `BME280` (address 118 or 119) and `TMP117` (72 to 75);
-- on SPI, `W25Q64JV`, drawn with the `W25Q32JVSS` symbol (same SOIC-8 pinout; the bill of materials notes it, D2).
+- on SPI, `W25Q64JVxIQ` (Value `W25Q64JVSSIQ`, its full ordering code, `AET-WO-4300c` F11), drawn with the `W25Q32JVSS` symbol (same SOIC-8 pinout; the bill of materials notes it, D2).
 
 Any other part is refused, never approximated (`INV-06`).
 
