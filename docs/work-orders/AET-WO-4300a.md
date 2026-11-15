@@ -42,6 +42,12 @@
    - for PWM, its rate in Hz and its pulse range in µs.
 
    Every key is required (`INV-06`). The specification takes the next free `schema_version`, once.
+
+   **The same bump carries `mcu.hse_hz`** (ruled `4400` D1, PR #130, comment 6887864517). It is a required integer:
+   - **`0`:** no crystal. The solver stops reserving PH0/PH1; PC14/PC15 (LSE) stay reserved.
+   - **Non-zero:** refused by name until a crystal part exists in `parts.json` (backlog).
+   - **Sentinel-01 and every fixture declare `0`.**
+   - **The `SolvedTopology` carries it.** If freeing PH0/PH1 changes any solved assignment on the reference, that is a named consequence; state it.
 2. **The solver assigns timer channels** from the pin and AF data the solver already reads, so that outputs sharing a timer share its rate. A rate conflict on one timer is refused by name.
    - The `SolvedTopology` carries each output's timer, channel, pin and AF, plus the solved `PSC`, `ARR` and `CCR` from the declared clock tree (`RUL-16`).
    - **The clock-tree assumption** the generator uses today must be a declared or solved fact. If it is not, measure first; that is §1.2.
@@ -58,9 +64,11 @@
 6. **2100 F24:** cold-write every `RCC_*ENR` the header defines, and judge each in full.
 7. **A test fixture:** a 4-output PWM specification, and a 4-output DShot600 one, with every gate passing in the image.
 
-**§1.2 Measure first, and STOP if it is large: the clock tree.** Read how `svd-hal` and the generator choose the system clock today: HSI 64 MHz, or a PLL. The static check needs the timer kernel clock as a fact.
-- **If it is fixed and written in one place,** declare it in the solved topology and proceed.
-- **If the generator has no clock-tree model,** stop with what a minimal one needs: the oscillator, the PLL, and the `APB1`/`APB2` timer clocks. That is a ruling, because `4400`'s `hwdef.dat` needs the oscillator too.
+**§1.2 The clock tree: pre-ruled at the `4400` ruling (D1).** On `main`, `svd-hal` has no clock-tree model: the board crate never touches `RCC_CR`/`RCC_CFGR` or the PLL (`board.rs`: "clock-tree solving is out of scope"). The bring-up firmware therefore runs on the reset clock.
+- **The ruling:** declare that as a solved fact in the `SolvedTopology`: source HSI, 64 MHz, and the `D1`/`D2`/`D3` prescalers at their reset value 1. Cite RM0433 for each reset value and for the timer-kernel-clock rule that follows from them, then derive `APB1`/`APB2` timer kernel clocks from it. The static check reads only that fact.
+- **The generated firmware asserts it.** Before the first timer write it reads `RCC_CFGR.SWS` and the `D1CFGR`/`D2CFGR` prescalers, and stops if any differs.
+- **Measure first** what Renode's RCC returns for those reads. If the model does not hold reset values there, **STOP** with the reads: that is a ruling.
+- **No PLL** in this work order. ArduPilot sets its own clock tree from `OSCILLATOR_HZ` (`4400b`).
 
 ## 2. Acceptance
 
@@ -93,5 +101,5 @@
 
 ## 7. Flag-and-stop conditions
 
-- The generator has no clock-tree model (§1.2).
+- Renode's RCC does not hold the reset values §1.2 asserts.
 - The virtual-time composition changes any existing witness's verdict.
