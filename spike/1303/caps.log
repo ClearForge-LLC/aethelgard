@@ -1,0 +1,2 @@
+2026-11-15T02:23:47+00:00 aet1303-278399 memory.max=8589934592 memory.swap.max=8589934592 pids.max=max
+2026-11-15T02:23:47+00:00 aet1303-278399 STOP: memory.swap.max is 8589934592, not 0; killed
