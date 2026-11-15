@@ -8,7 +8,7 @@ Version 2 (`AET-WO-4100`) added `board`. Version 3 (`AET-WO-4300c`) requires a n
 
 ```json
 {
-  "schema_version": 8,
+  "schema_version": 9,
   "project_name": "sentinel-01",
   "mcu": { "part": "STM32H753ZITx", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 3 },
   "voltage_domains": [{ "id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50 }],
@@ -110,7 +110,7 @@ Returns the first refusal, in this order, and in document order within a step. `
 
 | # | Rule | Refusal (`id()`) |
 |---|---|---|
-| 1 | `schema_version` is `SPECIFICATION_SCHEMA_VERSION` (9) | `UnsupportedSchemaVersion` (none) |
+| 1 | `schema_version` is 9 | `UnsupportedSchemaVersion` (none) |
 | 2 | Every identifier is 1 to 64 bytes of printable ASCII `0x21`–`0x7E`, none of them `/`, `{`, `}`, `$`, `[`, `]`, `"`, `%`, `*`, `,` or `\`, and none holding a date shape (`dddd-dd-dd`) or a time shape (`dd:dd:dd`). The project name is also a crate name (1 to 58 bytes of `a-z`, `0-9`, `-`; a letter first, no trailing or doubled `-`; 58 because `generate` adds `-board`), and a device or connector reference a Renode identifier (a letter, then letters, digits and `_`). One function, `check_identifier(IdentifierKind, &str)`, holds the table, and the error's message names the rule broken (`RUL-14`; `AET-WO-1102`) | `InvalidIdentifier` (none; `path()`) |
 | 2a | `mcu.hse_hz` is 0: a crystal needs a crystal part, which no table holds (`4400` D1) | `CrystalNotSupported` (none) |
 | 2b | `mcu.bor_level` is 0 to 3 | `BorLevelOutOfRange` (none) |
@@ -140,7 +140,7 @@ Step 2 walks the identifiers in this order: `project_name`; `mcu.part`, `mcu.sup
 ## `SolvedTopology`
 
 What the solver derives (`RUL-16`):
-- `schema_version` (`SOLVED_SCHEMA_VERSION`, 7; an older file is refused as `UnsupportedSchemaVersion`, whether or not it has the keys a later version added);
+- `schema_version` (7; an older file is refused as `UnsupportedSchemaVersion`, whether or not it has the keys a later version added);
 - `specification_sha256` (64 lowercase hex digits);
 - `assignments`, a `BTreeMap` keyed by net, holding every bus signal on an alternate function, each value a `PinAssignment` (`pin`, `peripheral`, `signal`, `alternate_function`);
 - `gpio`, a `BTreeMap` from net to pin, holding every net driven as a plain GPIO output: today, each SPI device's `cs`. It records no direction, because every entry is an output;

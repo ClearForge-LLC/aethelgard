@@ -780,7 +780,7 @@ fn unknown_field_in_each_struct_is_refused() {
 /// A document with every section of the specification populated, and one
 /// entry of each variant a section has: `sentinel-02-power.json` (power,
 /// lifecycle, devices, board) plus the connectors, net classes, pair and
-/// motor outputs it lacks. A new section earns its place in the walk by being
+/// motor outputs and serial ports it lacks. A new section earns its place in the walk by being
 /// added here; `the_full_document_is_valid_and_populates_every_section` fails
 /// until it is.
 fn full_document() -> serde_json::Value {
@@ -830,6 +830,28 @@ fn full_document() -> serde_json::Value {
          "pwm": {"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000}},
         {"label": "M2", "pin": null, "protocol": "dshot600", "pwm": null}
     ]);
+    // `AET-WO-4300b`: a port left to the solver, and one with its peripheral
+    // and pins named, parity, two stop bits and inversion.
+    v["serial_ports"] = json!([
+        {"label": "CONSOLE", "peripheral": null,
+         "tx": {"net": "CONSOLE_TX", "pin": null}, "rx": {"net": "CONSOLE_RX", "pin": null},
+         "role": "console",
+         "framing": {"baud": 115200, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": false}},
+        {"label": "SBUS", "peripheral": "USART2",
+         "tx": {"net": "SBUS_TX", "pin": "PD5"}, "rx": {"net": "SBUS_RX", "pin": "PD6"},
+         "role": "rc_sbus",
+         "framing": {"baud": 100000, "data_bits": 8, "parity": "even", "stop_bits": 2, "inverted": true}}
+    ]);
+    // Each serial line leaves the board at a connector.
+    for (reference, port) in [("J7", "CONSOLE"), ("J8", "SBUS")] {
+        v["connectors"].as_array_mut().unwrap().push(json!(
+            {"reference": reference, "part": "SM04B-GHS-TB", "standard": null, "pins": [
+                {"pin": "1", "net": format!("{port}_TX"), "offboard": null},
+                {"pin": "2", "net": format!("{port}_RX"), "offboard": null},
+                {"pin": "3", "net": null, "offboard": null},
+                {"pin": "4", "net": "GND", "offboard": null}]}
+        ));
+    }
     v
 }
 
