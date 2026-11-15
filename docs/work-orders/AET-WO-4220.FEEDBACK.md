@@ -513,3 +513,52 @@ The predictions above were committed alone at `de8698d`, before any Renode, Kani
 - **F-B4 · The bench (Scotty's parts).** The identities are the datasheets': `WHO_AM_I` 0x47 at 0x75, `CHIP_ID` 0x50 at 0x01, as ArduPilot checks (`INV3_ID_ICM42688_P`, `BMP581_ID`). The first comparison these models will face is a `3302`-style read of both parts on the bench. The waits (D-B5) and the pre-sample values (PB7) are what to watch.
 - **F-B5 · `SPI_MAX_FRAMES` = 8** bounds a data read at 7 bytes (D-B4). ArduPilot reads up to 8 FIFO packets (129 bytes) per transfer.
 - **F-B6 · The C# was checked against ArduPilot's probe only from the monitor.** No ArduPilot firmware ran (D7: FIFO later).
+
+## Adversarial pass (a fresh subagent, Opus: judgement over gate logic)
+
+The adversary was given the code and the rules, not the builder's reasoning. It attacked `38e1457` from its own worktree, with its own cargo target in the image after I told it the default one was shared (a stale-binary hazard: cargo's mtime check across two checkouts at one `/repo` path). It pushed and committed nothing. Its reproductions are uncommitted in its worktree (`adv_t2_4220.rs`, `adv/`), and its outputs are in `~/.cache/aet-4220-t2/adv-t2-*.txt`. I checked every finding I adopted at the code; the fixes are `c36aed3`.
+
+| id | severity | finding | disposition |
+|---|---|---|---|
+| F1 | high | **A D6 bypass on the load-only path.** `simulate --platform` with a caller's `.repl` spelling the device `Antmicro.Renode.Peripherals.Sensors.ICM42688P` slipped past `own_models`' exact match. A `preinit:` block then had Renode compile a C# file of its own (measured: a fake ICM answering 0x48, listed as `ICM42688P`, verdict pass). The boot path held: `PlatformNotEmitted` refuses any platform but the emission. | **Fixed:** a device whose type's last segment is one of our classes, however qualified, needs its header pin. The CLI then includes the pinned bytes first, and Renode refuses a second definition of the same type (spike F7). **Residual, recorded:** a caller's load-only platform can still run monitor code (`init`/`preinit`, Python), as before this build, and so list a class of another namespace under the same short name. The load-only listing is the caller's word; only the boot path judges. |
+| F2 | high | **The twin cannot fail a wait between 0.52 and 1 times the cited one.** Measured: 3,000/6,000 µs where 10,000/20,000 µs are cited passes; 2,000/4,000 µs fails. | **Recorded, not fixed (D-B5):** the spin's virtual time is 1.92 times silicon's lower bound, and Renode does not model instruction timing (`RUL-05`). F3 narrows the gap. A static check that a script's `settle_us` covers the model's start-up would bind the table, not a hand-written firmware. |
+| F3 | medium | The BMP581 took the 3 ms start-up, reading the `deep_dis` the same write set; the part leaves DEEP STANDBY after reset (p. 16), and the max is 4 ms (p. 11). Conversions were at typical. | **Fixed:** the start-up comes from the state the write leaves, and conversions run at their maximum (+5 %). The first measurement is at 6.1 ms (`the_bmp581_measures_after_its_deep_start_up_and_reads_from_its_last_write`). |
+| F4 | medium | A new BMP581 read continued from the incremented pointer; p. 40 starts it at the latest write's register. | **Fixed**, same test. |
+| F5 | low–medium | Accesses the datasheets forbid were taken silently: a write within 200 µs of the ICM leaving OFF (p. 76); access within 1 ms of the ICM's soft reset (p. 64) or 2 ms of the BMP581's (p. 11). | **Fixed:** each logs a warning, which fails the firmware's step (`an_access_the_datasheets_forbid_warns`). The datasheets do not define what silicon then does, so the access still goes ahead. |
+| F6 | low | ICM `INT1` ignores `INT_ASYNC_RESET` (p. 85) and the open-drain drive. | Recorded. No firmware of the build arms `INT1` (D8). |
+| F7 | low | `u5:Sensors.ICM42688P`, with no space, dodged the device check; it ended as a load error, not `ModelUnpinned`. | **Fixed** with F1. |
+| F8 | low | No test reaches `ModelPinMismatch`: the copy and the pin come from one build. The late-header rule was not isolated. | The re-hash is ruled (D6) and is now labelled `belt-and-suspenders:` at its site. The late-header rule now has its own assertion. |
+
+**Mutants (the adversary's, one per guard, and mine for the fixes):**
+- **Killed:**
+  - the header pin compare;
+  - the device check;
+  - the include placed after the load;
+  - the compile-error check;
+  - both guards of the release-time attribution;
+  - the wait on every configure write, and the wait not emitted;
+  - `settle_us` 0, null for a non-stand-in, and the 8-byte cap;
+  - the ICM's bank-select witness, `WHO_AM_I`, byte order, truncation, `INT_STATUS` writable, empty-finish logging, and no start-up;
+  - the BMP581's `STATUS` reset.
+- **Survived the adversary, now killed:**
+  - the header's `take_while` (by `a_model_of_our_own_loads_only_by_its_pinned_header_line`, measured);
+  - a 1-byte channel, and the -2^23 bound (`refuses_a_malformed_schema_4_script`);
+  - the ICM's `GYRO_CONFIG1` reset, and the BMP581's `DSP_CONFIG` reset, `INT_STATUS` writable and empty-finish logging (`our_models_answer_their_datasheets_reset_values`);
+  - the BMP581's start-up at 0.
+- **My mutants of the fixes, each killed by `models_tier2` in the image:** start-up from the new state, pointer continued, both soft-reset checks off, and the 200 µs check off.
+- **Survives by design:** the CLI's pin compare (F8).
+
+**Attacks that held** (the adversary's):
+- the boot path's byte-equal platform;
+- every Renode command line includes the models before the load, the droop's included;
+- `ModelLoadFailed` is judged before any marker;
+- a step without a witness is a named failure;
+- nine constructed SPI logs against the release-time attribution: an extra transaction, an empty leading window, the wrong device's finish, two of our devices;
+- the I2C address MSB is ignored (p. 39);
+- the ICM's byte order and its pre-sample values;
+- both `INT_STATUS` registers are read-only;
+- nanosecond time;
+- no PLL anywhere, so 64 MHz holds;
+- the schema's arithmetic is in i128.
+
+**A third finding from review (the advisor), fixed before the adversary reported:** the duplicate step names (D-B3).
