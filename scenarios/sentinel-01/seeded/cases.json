@@ -67,6 +67,13 @@
       "file": "src/board.rs",
       "find": "Spi1Device::U4 => (Block::GpioA, 0x00010000, 0x00000001)",
       "replace": "Spi1Device::U4 => (Block::GpioA, 0x00000001, 0x00000001)"
+    },
+    "motor-af-wrong": {
+      "why": "AET-WO-4300a motor_output_dead: PA8 (MOTOR1, TIM1_CH1) is put on AF2, not the solved AF1, so the timer's channel never reaches the pin; the board is the PWM fixture's, generated",
+      "spec": "crates/aethelgard-cli/tests/fixtures/motors-pwm.json",
+      "file": "src/board.rs",
+      "find": "r.modify(TOKEN, Block::GpioA, 0x24, |v| (v & !0x0000000f) | 0x00000001);",
+      "replace": "r.modify(TOKEN, Block::GpioA, 0x24, |v| (v & !0x0000000f) | 0x00000002);"
     }
   },
   "cases": [
@@ -684,6 +691,19 @@
           9
         ]
       ],
+      "masked": []
+    },
+    {
+      "name": "motor-output-dead",
+      "scenario": "scenarios/sentinel-01/seeded/motors-pwm.json",
+      "mutant": "motor-af-wrong",
+      "domain": "software",
+      "rule": "S4",
+      "findings": [
+        "motor_output_unwitnessed",
+        "register_mismatch"
+      ],
+      "evidence": [],
       "masked": []
     }
   ]
