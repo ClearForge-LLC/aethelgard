@@ -2633,7 +2633,10 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
             .flatten()
             .collect();
         let wmax = steps.iter().map(|s| s.write.len()).fold(2, usize::max);
-        let rmax = steps.iter().map(|s| usize::from(s.width)).fold(3, usize::max);
+        let rmax = steps
+            .iter()
+            .map(|s| usize::from(s.width))
+            .fold(3, usize::max);
         let scripted: Vec<(usize, usize, &'static str)> = {
             let mut v: Vec<(usize, usize, &'static str)> = steps
                 .iter()
