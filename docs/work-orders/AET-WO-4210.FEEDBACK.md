@@ -441,11 +441,11 @@ Every [WARNING] of the correct ICM run (`imu-script`, run 0), by source:
 
 ## Gates (spike)
 
-The fence: `git diff --name-only origin/main...HEAD` lists this file and `spike/4210/` only (`main` `9dc8861` merged in at `c9c5c9b`).
+The fence: `git diff --name-only origin/main...HEAD` lists this file and `spike/4210/` only (`main` `5f47a5d` merged in at `0871026`).
 
-On the host, under `systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`, at `c9c5c9b`:
+On the host, under `systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`, at `0871026`:
 - `cargo fmt --all -- --check`: ok;
 - `cargo clippy --workspace --all-targets -- -D warnings`: ok;
 - `cargo test --workspace`: exit 0, 77 `test result: ok`, no failure.
 
-Later commits change only `spike/4210/` and this file. Tier 2 is CI's (`roadmap.md` §6), and this branch changes no crate.
+This branch changes no crate. Tier 2 is CI's (`roadmap.md` §6). The spike's Renode runs are the third session's, under `RULE3.md`.
