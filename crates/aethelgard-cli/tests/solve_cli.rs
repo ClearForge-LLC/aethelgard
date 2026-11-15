@@ -4,6 +4,8 @@
 //! `AET-WO-1200` spike's specifications, byte for byte, so the digests below
 //! are the ones the spike measured on Furnace.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{Duration, Instant};
@@ -433,29 +435,9 @@ fn a_line_over_the_bus_capacitance_limit_is_refused_by_net() {
     assert_eq!(report["error"]["claimants"], json!(["I2C_SDA"]), "{report}");
 }
 
-/// `AET-WO-4300d`: the Sentinel-02 power fixture without its crossing (which
-/// waits for the sensor table's output delay, `K6`), written to `dir`.
+/// `AET-WO-4300d`: the power tree (`common::power`), written to `dir`.
 fn power_tree(dir: &Path) -> PathBuf {
-    let text = std::fs::read_to_string(
-        root().join("crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json"),
-    )
-    .unwrap();
-    let mut v: Value = serde_json::from_str(&text).unwrap();
-    v["power"]["crossings"] = json!([]);
-    for key in ["spi_devices", "spi_buses", "net_constraints"] {
-        let kept: Vec<Value> = v[key]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|x| {
-                !(x["reference"] == "U5"
-                    || x["id"] == "IMU"
-                    || x["net_name"].as_str().is_some_and(|n| n.starts_with("IMU")))
-            })
-            .cloned()
-            .collect();
-        v[key] = Value::Array(kept);
-    }
+    let v = common::power::power_tree();
     std::fs::create_dir_all(dir).unwrap();
     let path = dir.join("power-tree.json");
     std::fs::write(&path, serde_json::to_vec(&v).unwrap()).unwrap();

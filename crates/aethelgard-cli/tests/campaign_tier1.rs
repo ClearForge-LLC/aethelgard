@@ -2567,3 +2567,28 @@ fn the_droop_scenarios_carry_only_identifiers_the_base_set_admits() {
         }
     }
 }
+
+/// `AET-WO-4300d`'s seam (adversarial A6): the twin models no power tree, so
+/// a scenario whose base declares one is refused before any run.
+#[test]
+fn a_scenario_on_a_power_tree_is_refused_before_any_run() {
+    let tb = toolbox(&good());
+    let work = Work::new();
+    let spec = common::power::power_tree();
+    work.dir.write("power.json", spec.to_string().as_bytes());
+    let doc = json!({
+        "schema_version": 2, "name": "p", "base": "power.json", "expect": "pass",
+        "expect_findings": [], "overrides": [],
+    });
+    work.dir.write("p.json", doc.to_string().as_bytes());
+    let out = campaign(
+        &cli(None),
+        &tb.0,
+        &work.dir.0,
+        &["p.json"],
+        &work.firmware,
+        &work.archive,
+    );
+    expect_refusal(&out, 2, "PowerNotEmitted");
+    assert!(!work.archive.exists(), "an archive was made");
+}

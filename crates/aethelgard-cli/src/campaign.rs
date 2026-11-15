@@ -361,6 +361,16 @@ pub(crate) fn effective(scenario: &Scenario, base: &[u8]) -> Result<Effective, E
         r.error.message = format!("scenario `{}`, base: {}", scenario.name, r.error.message);
         emit(&r, code)
     })?;
+    // `AET-WO-4300d`'s seam (adversarial A6): the twin models no power tree,
+    // so a campaign over one would judge a board nothing emits.
+    if let Err(e) = aethelgard_eda::schematic::refuse_power(&spec) {
+        return Err(refuse(
+            e.kind(),
+            None,
+            format!("scenario `{}`, base: {e}", scenario.name),
+            EXIT_INVALID_SPEC,
+        ));
+    }
     let held = apply(scenario, &mut spec).map_err(|e| {
         refuse(
             e.kind,

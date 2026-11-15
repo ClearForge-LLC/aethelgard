@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/power-parts.json`. It moves only with the file.
-const TABLE_SHA256: &str = "dfb7835627736da6d164767d77d49d6abe26b25fcd2bbbaf001d8cd620950558";
+const TABLE_SHA256: &str = "6d571194a1ed7380a389563476cd14b34ceadbccad32be5dbebf1b9ca0c85783";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -178,6 +178,25 @@ fn the_table_parser_refuses_by_name() {
         row(t, "TLV75518PDBV")["kind"]["ldo"]["external"][0]["dielectrics"] = json!([])
     });
     assert!(r.contains("allowed dielectrics"), "{r}");
+    // A key given twice in `pins` or `documents` is refused (A5).
+    let text = POWER_PARTS_JSON.replacen("\"OUT\": \"5\"", "\"OUT\": \"5\", \"OUT\": \"1\"", 1);
+    assert!(matches!(
+        parse_power_parts(&text),
+        Err(E::PowerPartsTable { .. })
+    ));
+    let first = format!(
+        "\"SNVSAN3F\": {{\"title\": \"t\", \"revision\": \"r\", \"sha256\": \"{}\", \"pending\": null}}, \"SNVSAN3F\": {{",
+        "0".repeat(64)
+    );
+    let text = POWER_PARTS_JSON.replacen("\"SNVSAN3F\": {", &first, 1);
+    assert!(matches!(
+        parse_power_parts(&text),
+        Err(E::PowerPartsTable { .. })
+    ));
+    let r = table_refusal(|t| {
+        row(t, "STM32H753ZITx")["kind"]["mcu"]["spi_sck_low_shortfall_ns"]["value"] = json!(-1000)
+    });
+    assert!(r.contains("below zero"), "{r}");
     // A key given twice in a row is refused, never collapsed.
     let text = POWER_PARTS_JSON.replacen(
         "\"lifecycle\": \"active\",",
@@ -269,7 +288,13 @@ fn the_tree_checks_to_its_hand_computed_bounds() {
     assert_eq!(pad(&d("VDD_1V8").ret), ("U12".to_owned(), "2".to_owned()));
     let floors = &d("VDD_3V3").consumers;
     assert_eq!(floors[0], ("STM32H753ZITx (MCU)".to_owned(), 2680));
-    assert!(floors.contains(&("U12 (TLV75518PDBV input)".to_owned(), 1450)));
+    // The LDO's input floor is its dropout need, 1827 + 400 mV (A3), and
+    // VREF+ is floored where the divided battery still fits under it (D3).
+    assert!(floors.contains(&("U12 (TLV75518PDBV input)".to_owned(), 2227)));
+    assert!(
+        floors.contains(&("VREF+ (VBAT_SENSE full scale)".to_owned(), 2536)),
+        "{floors:?}"
+    );
     assert!(
         p.conditions
             .iter()
@@ -702,7 +727,7 @@ fn the_miso_round_trip_bounds_the_crossed_bus() {
 
 #[test]
 fn a_miso_round_trip_with_no_cited_output_delay_is_refused_not_passed() {
-    assert_power(&refused(&full()), Refusal::MisoRoundTripTooSlow, "U5");
+    assert_power(&refused(&full()), Refusal::OutputDelayMissing, "U5");
 }
 
 #[test]
@@ -898,4 +923,14 @@ fn the_mutation_survivors_are_held() {
         Refusal::ExternalPartOutOfRange,
         "C50",
     );
+}
+
+/// `power::check` is public: on a specification nobody validated, a BOR
+/// level past the table is refused, never an index past its end (A19).
+#[test]
+fn check_on_an_unvalidated_bor_level_refuses_rather_than_panics() {
+    let mut v = base();
+    v["mcu"]["bor_level"] = json!(7);
+    let err = power::check(&spec(&v)).unwrap_err();
+    assert_power(&err, Refusal::PowerValueInvalid, "mcu");
 }

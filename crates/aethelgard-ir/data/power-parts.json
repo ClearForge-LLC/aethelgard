@@ -460,7 +460,7 @@
         "max": 125,
         "at": {
           "document": "SCES935A",
-          "section": "p. 14, 7.11 Switching Characteristics, columns TA -40 to 125 C"
+          "section": "p. 6, 7.3 Recommended Operating Conditions, TA -40 to 125 C"
         }
       },
       "kind": {
@@ -610,7 +610,7 @@
               "section": "p. 216, Table 120, run mode, cache off, all peripherals enabled, VOS0 480 MHz, max at Tj 125 C"
             }
           },
-          "idd_condition": "Table 120's maximum at Tj 125 C (AET-WO-1303 D4); Table 111 note 5 limits VOS0 to Tj 105 C, where it is 504 mA",
+          "idd_condition": "Table 120's maximum at Tj 125 C (AET-WO-1303 D4; VOS0 is limited to Tj 105 C, 504 mA); it excludes I/O source currents, VDDA and VDD33USB",
           "bor_falling_max_millivolts": [
             {
               "value": 1680,

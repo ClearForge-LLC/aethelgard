@@ -437,6 +437,8 @@ impl PowerPartsTable {
 #[serde(deny_unknown_fields)]
 struct RawTable {
     schema_version: u32,
+    /// A key given twice is refused, never collapsed (adversarial A5).
+    #[serde(deserialize_with = "crate::unique_keys")]
     documents: BTreeMap<String, RawDocument>,
     /// Each row's own text, parsed strictly on its own, so a key given twice
     /// in a row is refused, never collapsed (`AET-WO-4200` A2).
@@ -481,6 +483,7 @@ struct RawRow {
     lifecycle: Lifecycle,
     symbol: String,
     footprint: String,
+    #[serde(deserialize_with = "crate::unique_keys")]
     pins: BTreeMap<String, String>,
     temperature_celsius: RawRanged,
     kind: RawKind,
@@ -1053,10 +1056,16 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                     adc_capacitance_femtofarads: rule.adc_capacitance_femtofarads,
                     at: r.at(rule.at, "kind.mcu.reservoir_rule")?,
                 },
-                spi_sck_low_shortfall_ns: r.limit(
-                    m.spi_sck_low_shortfall_ns,
-                    "kind.mcu.spi_sck_low_shortfall_ns",
-                )?,
+                spi_sck_low_shortfall_ns: {
+                    let l = r.limit(
+                        m.spi_sck_low_shortfall_ns,
+                        "kind.mcu.spi_sck_low_shortfall_ns",
+                    )?;
+                    if l.value < 0 {
+                        return Err("`kind.mcu.spi_sck_low_shortfall_ns` is below zero".to_owned());
+                    }
+                    l
+                },
                 spi_input_setup_min_ns: r
                     .positive(m.spi_input_setup_min_ns, "kind.mcu.spi_input_setup_min_ns")?,
             })

@@ -249,6 +249,8 @@ pub enum Refusal {
     CrossingPullUp,
     CrossingTooFast,
     MisoRoundTripTooSlow,
+    /// A device behind a crossing whose sensor row holds no output delay.
+    OutputDelayMissing,
 }
 
 impl Refusal {
@@ -278,6 +280,7 @@ impl Refusal {
             Self::CrossingPullUp => "CrossingPullUp",
             Self::CrossingTooFast => "CrossingTooFast",
             Self::MisoRoundTripTooSlow => "MisoRoundTripTooSlow",
+            Self::OutputDelayMissing => "OutputDelayMissing",
         }
     }
 }
@@ -360,6 +363,8 @@ struct Ctx<'a> {
     power: &'a Power,
     table: &'a PowerPartsTable,
     delays: &'a OutputDelays,
+    /// Floors found by a check, not by a part row: `(domain, name, mV)`.
+    floors: Vec<(String, String, u64)>,
     conditions: BTreeSet<String>,
 }
 
@@ -822,6 +827,9 @@ struct Consumer {
     name: String,
     range: (i64, i64),
     floor: i64,
+    /// The floor `SolvedTopology` carries for the copper bound: above
+    /// `floor` where another check judges the rest (an LDO's dropout, A3).
+    solved_floor: i64,
     cite: String,
 }
 
@@ -832,12 +840,20 @@ fn consumers(ctx: &Ctx<'_>, domain: &str) -> Result<Vec<Consumer>, IrValidationE
     if spec.mcu.supply == domain {
         let (row, m) = mcu(ctx)?;
         let level = usize::from(spec.mcu.bor_level);
-        let bor = &m.bor_falling_max_millivolts[level];
+        let bor = m.bor_falling_max_millivolts.get(level).ok_or_else(|| {
+            refuse(
+                Refusal::PowerValueInvalid,
+                "mcu",
+                format!("mcu.bor_level {level} has no row"),
+                ctx.cite(&m.vdd_millivolts.at),
+            )
+        })?;
         let floor = m.vdd_millivolts.range.min.max(bor.value);
         out.push(Consumer {
             name: format!("{} (MCU)", row.part),
             range: (m.vdd_millivolts.range.min, m.vdd_millivolts.range.max),
             floor,
+            solved_floor: floor,
             cite: format!(
                 "{}; VBOR{level} falling max {}",
                 ctx.cite(&m.vdd_millivolts.at),
@@ -850,15 +866,30 @@ fn consumers(ctx: &Ctx<'_>, domain: &str) -> Result<Vec<Consumer>, IrValidationE
             continue;
         }
         let row = ctx.row(&r.reference, &r.part)?;
-        let (vin, at) = match &row.kind {
-            Kind::Buck(b) => (&b.vin_millivolts, &b.vin_millivolts.at),
-            Kind::Ldo(l) => (&l.vin_millivolts, &l.vin_millivolts.at),
+        // An LDO's solved floor is what its dropout needs, not its input
+        // minimum: its output holds only with that headroom (A3); the
+        // dropout check judges it, so the range check reads the minimum.
+        let (vin, at, solved_floor) = match &row.kind {
+            Kind::Buck(b) => (
+                &b.vin_millivolts,
+                &b.vin_millivolts.at,
+                b.vin_millivolts.range.min,
+            ),
+            Kind::Ldo(l) => (
+                &l.vin_millivolts,
+                &l.vin_millivolts.at,
+                l.vin_millivolts
+                    .range
+                    .min
+                    .max(l.vout_millivolts.range.max + l.dropout_max_millivolts.value),
+            ),
             _ => return Err(ctx.kind_err(&r.reference, &r.part, "regulator (buck or LDO)")),
         };
         out.push(Consumer {
             name: format!("{} ({} input)", r.reference, r.part),
             range: (vin.range.min, vin.range.max),
             floor: vin.range.min,
+            solved_floor,
             cite: ctx.cite(at),
         });
     }
@@ -876,6 +907,7 @@ fn consumers(ctx: &Ctx<'_>, domain: &str) -> Result<Vec<Consumer>, IrValidationE
                     name: format!("{} ({} {side})", c.reference, c.part),
                     range: (v.range.min, v.range.max),
                     floor: v.range.min,
+                    solved_floor: v.range.min,
                     cite: ctx.cite(&v.at),
                 });
             }
@@ -903,6 +935,7 @@ fn domains_inside_consumers(ctx: &Ctx<'_>) -> Result<(), IrValidationError> {
             range: (cmin, cmax),
             floor,
             cite,
+            ..
         } in consumers(ctx, &d.id)?
         {
             let inside =
@@ -991,6 +1024,11 @@ fn loads(
                 let child = load[&c.reg.output];
                 sum += match &c.row.kind {
                     Kind::Ldo(l) => {
+                        ctx.note(format!(
+                            "{}: its ground current is the no-load maximum; no figure under load is held ({})",
+                            c.reg.part,
+                            ctx.cite(&l.ignd_max_microamps.at)
+                        ));
                         child
                             + u64::try_from(l.ignd_max_microamps.value)
                                 .unwrap_or(0)
@@ -1075,6 +1113,12 @@ fn headroom(
                     return Err(ctx.kind_err(&inductor.reference, &inductor.part, "inductor"));
                 };
                 let dcr = i128::from(l.dcr_max_milliohms.value);
+                ctx.note(format!(
+                    "{}: {}'s DCR maximum is stated at 25 °C and is not raised for a {} °C board",
+                    d.reg.reference,
+                    inductor.part,
+                    ctx.temperature().max
+                ));
                 let rhs = i128::from(b.rds_high_max_milliohms.value);
                 let rls = i128::from(b.rds_low_max_milliohms.value);
                 let vin_uv = i128::from(vin_min) * 1000;
@@ -1215,8 +1259,13 @@ fn power_in(
         }
     }
     ctx.note(format!(
-        "{}: rated {} mA {} ({})",
-        conn.name, conn.rated_milliamps, conn.rating_condition, conn.cited.document
+        "{}: rated {} mA {} ({}); no rating is held for a board at {} °C, where that rise passes the part's {} °C, so the rating is used as stated; AMASS's V1.2 sheet states 15 A and its 2025V0 sheet (the XT30PW-M30) 20 A at 80 V",
+        conn.name,
+        conn.rated_milliamps,
+        conn.rating_condition,
+        conn.cited.document,
+        ctx.temperature().max,
+        conn.temperature_celsius.1
     ));
     for (what, amps) in [("steady state", steady), ("fault", fault)] {
         if amps > u64::from(conn.rated_milliamps) {
@@ -1285,11 +1334,16 @@ fn every_part(power: &Power) -> Vec<(&str, &str)> {
 
 /// Step 9 (ruled D7): the board's declared temperature inside every power
 /// part's operating range.
-fn temperatures(ctx: &Ctx<'_>) -> Result<(), IrValidationError> {
+fn temperatures(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
     let t = ctx.temperature();
     let mcu = ("mcu", ctx.spec.mcu.part.as_str());
     for (reference, part) in std::iter::once(mcu).chain(every_part(ctx.power)) {
         let row = ctx.row(reference, part)?;
+        if row.lifecycle == pp::Lifecycle::Unread {
+            ctx.note(format!(
+                "{part}: its maker's page states no lifecycle, so its production status is unread"
+            ));
+        }
         if row.lifecycle == pp::Lifecycle::Eol {
             return Err(refuse(
                 Refusal::PowerPartUnknown,
@@ -1443,7 +1497,7 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                             ));
                         }
                         ctx.note(format!(
-                            "{}: the inductance meets Equation 5 and is TI's Table 9-2 choice at 400 kHz; Equation 4's 20 to 40 % ripple and the 10 % ripple floor are not met across the whole battery range (ruled D6) ({})",
+                            "{}: the inductance meets Equation 5; Table 9-2 gives 8 uH at 5 V and 6.8 uH at 3.3 V, and Equation 4's 20 to 40 % ripple and the 10 % ripple floor are not met across the whole battery range (ruled D6) ({})",
                             o.reference,
                             ctx.cite(&rule.at)
                         ));
@@ -1575,6 +1629,13 @@ fn sense(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
             "{}: VREF+ is taken as VDDA on the MCU's supply `{}`; the specification declares no separate reference",
             s.net, ctx.spec.mcu.supply
         ));
+        // D3: VREF+ is a consumer of the MCU's supply, floored where the
+        // divided battery still fits under it.
+        ctx.floors.push((
+            ctx.spec.mcu.supply.clone(),
+            format!("VREF+ ({} full scale)", s.net),
+            u64::try_from(div_ceil(full_uv, 1000)).unwrap_or(u64::MAX),
+        ));
         if full_uv > i128::from(vref_min) * 1000 {
             return Err(refuse(
                 Refusal::SenseFullScaleExceeded,
@@ -1642,7 +1703,7 @@ fn sense(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
             ));
         }
         ctx.note(format!(
-            "{}: the reservoir rule is {}; the ADC's sampling rate must let the reservoir recharge through the divider between conversions ({})",
+            "{}: the reservoir rule is {}; the reservoir is judged at rated capacitance, without its tolerance or DC bias; the ADC's sampling rate must let the reservoir recharge through the divider between conversions ({})",
             s.net,
             m.reservoir_rule.statement,
             ctx.cite(&m.reservoir_rule.at)
@@ -1655,7 +1716,10 @@ fn sense(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
 pub fn reservoir_min_picofarads(m: &pp::Mcu, bits: u8) -> i128 {
     // Cext ≥ 2^(N + extra_bits) × C_ADC.
     let shift = u32::from(bits) + u32::from(m.reservoir_rule.extra_bits);
-    i128::from(m.reservoir_rule.adc_capacitance_femtofarads) * (1i128 << shift.min(100)) / 1000
+    div_ceil(
+        i128::from(m.reservoir_rule.adc_capacitance_femtofarads) * (1i128 << shift.min(100)),
+        1000,
+    )
 }
 
 /// Step 12 (ruled D9): each crossing.
@@ -1747,6 +1811,10 @@ fn crossings(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                 ctx.cite(&t.pull_up_max_ohms.at),
             ));
         }
+        ctx.note(format!(
+            "{}: TMAX is stated with one channel switching at 50 % duty, and SCK and MOSI switch together; tw(SCKL)'s 2 ns shortfall is stated for SCK at PCLK / 2 and is applied at every rate",
+            c.reference
+        ));
         // A clock at f toggles at 2f transitions a second; a data line at
         // most as often.
         let rate = 2 * u64::from(bus.speed_hz);
@@ -1771,7 +1839,7 @@ fn crossings(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
         let (_, m) = mcu(ctx)?;
         let Some((tdo, tdo_cite)) = ctx.delays.get(&device.part).cloned() else {
             return Err(refuse(
-                Refusal::MisoRoundTripTooSlow,
+                Refusal::OutputDelayMissing,
                 &device.reference,
                 format!(
                     "`{}` behind crossing `{}` has no output delay in the sensor table, so its MISO round trip cannot be judged",
@@ -1883,10 +1951,11 @@ pub fn check_against(
         power,
         table,
         delays,
+        floors: Vec::new(),
         conditions: BTreeSet::new(),
     };
     mcu(&ctx)?;
-    temperatures(&ctx)?;
+    temperatures(&mut ctx)?;
     thermal(&ctx)?;
     let derived = outputs(&mut ctx)?;
     domains_inside_consumers(&ctx)?;
@@ -1901,7 +1970,7 @@ pub fn check_against(
     for d in &derived {
         let mut consumers: Vec<(String, u64)> = consumers(&ctx, &d.reg.output)?
             .into_iter()
-            .map(|c| (c.name, u64::try_from(c.floor).unwrap_or(0)))
+            .map(|c| (c.name, u64::try_from(c.solved_floor).unwrap_or(0)))
             .collect();
         // Each declared device on the domain, at its part's supply minimum:
         // `validate_parts` has already judged its range (`SupplyOutsidePart`).
@@ -1914,14 +1983,28 @@ pub fn check_against(
                     .iter()
                     .map(|d| (&d.reference, &d.part, &d.supply)),
             );
+        let mut uncounted = Vec::new();
         for (reference, part, supply) in devices {
-            if *supply == d.reg.output
-                && let Some(p) = sensors.get(part)
-            {
-                consumers.push((
-                    format!("{reference} ({part})"),
-                    u64::from(p.supply_millivolts.0),
-                ));
+            if *supply == d.reg.output {
+                uncounted.push(reference.as_str());
+                if let Some(p) = sensors.get(part) {
+                    consumers.push((
+                        format!("{reference} ({part})"),
+                        u64::from(p.supply_millivolts.0),
+                    ));
+                }
+            }
+        }
+        if !uncounted.is_empty() {
+            ctx.note(format!(
+                "{}: the supply currents of {} are not in its load, which counts only declared `loads` and the MCU's row (A1)",
+                d.reg.output,
+                uncounted.join(", ")
+            ));
+        }
+        for (domain, name, floor) in &ctx.floors {
+            if *domain == d.reg.output {
+                consumers.push((name.clone(), *floor));
             }
         }
         domains.insert(

@@ -418,7 +418,7 @@ pub struct PinAssignment {
 
 /// serde's derived `BTreeMap` keeps the last value of a repeated key and drops
 /// the first without a word; this refuses it instead (`INV-06`).
-fn unique_keys<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
+pub(crate) fn unique_keys<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
     deserializer: D,
 ) -> Result<BTreeMap<String, V>, D::Error> {
     struct Unique<V>(std::marker::PhantomData<V>);
