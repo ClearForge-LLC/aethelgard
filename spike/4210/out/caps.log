@@ -1,0 +1,7 @@
+2026-11-15T02:19:01+00:00 aet4210-265274-14998 SWAP NOT ZERO, nothing runs: memory.max=8589934592 memory.swap.max=8589934592 pids.max=max cmd: renode --version
+2026-11-15T02:30:37.593 aet4210-318423-22996 sample memory.max=8589934592 memory.swap.max=8589934592 pids.max=max
+2026-11-15T02:31:22+00:00 aet4210-318423-22996 SWAP NOT ZERO or CAPS NOT READ, nothing runs: last memory.max=8589934592 memory.swap.max=8589934592 pids.max=max cmd: renode --version
+2026-11-15T03:34:17+00:00 aet4210-724818-8741 scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p724818-i143317204.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192 cmd: bash -c renode --version | head -2; echo TMPDIR=; cat /proc/self/cgroup
+2026-11-15T03:34:29+00:00 aet4210-728128-17128 scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p728128-i143337130.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192 cmd: bash -c echo TMPDIR=${TMPDIR-unset}; sleep 8
+2026-11-15T03:35:09+00:00 aet4210-735597-18210 scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p735597-i143325374.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192 cmd: python3 spike/4210/s2.py imu-script
+2026-11-15T03:35:27+00:00 aet4210-737919-13495 scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p737919-i143341799.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192 cmd: python3 spike/4210/s2.py
