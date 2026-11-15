@@ -916,6 +916,16 @@ pub struct Line {
     parts: BTreeMap<String, Role>,
 }
 
+/// The pads of `part` the design puts on board net `on`.
+fn pads_on(part: &crate::schematic::Part, on: &str) -> Result<BTreeSet<String>, Refused> {
+    let pin_nets = crate::pcb::pin_nets(part).map_err(|e| invalid(&e))?;
+    Ok(pin_nets
+        .into_iter()
+        .filter(|(_, n)| n == on)
+        .map(|(p, _)| p)
+        .collect())
+}
+
 /// Each I2C line of `spec`, bus by bus in document order, SDA then SCL,
 /// then each SPI bus's SCK and MOSI (`AET-WO-4300c` D2), with the parts the
 /// generator's design puts on it (`schematic::design`, from the
@@ -944,12 +954,7 @@ pub fn lines(
             let on = board_net(net);
             let mut roles = BTreeMap::new();
             for part in &parts {
-                let pin_nets = crate::pcb::pin_nets(part).map_err(|e| invalid(&e))?;
-                let pads: BTreeSet<String> = pin_nets
-                    .into_iter()
-                    .filter(|(_, n)| *n == on)
-                    .map(|(p, _)| p)
-                    .collect();
+                let pads = pads_on(part, &on)?;
                 if pads.is_empty() {
                     continue;
                 }
@@ -1010,12 +1015,7 @@ pub fn lines(
             let on = board_net(net);
             let mut roles = BTreeMap::new();
             for part in &parts {
-                let pin_nets = crate::pcb::pin_nets(part).map_err(|e| invalid(&e))?;
-                let pads: BTreeSet<String> = pin_nets
-                    .into_iter()
-                    .filter(|(_, n)| *n == on)
-                    .map(|(p, _)| p)
-                    .collect();
+                let pads = pads_on(part, &on)?;
                 if pads.is_empty() {
                     continue;
                 }

@@ -294,3 +294,51 @@ The tests that asserted them now assert the earlier refusal, each with a comment
 - **Vendor the ICM-20948 symbol**, so its fixture has a board and its declared C can be confirmed (ruled D2).
 - **The MCU's input capacitance as a maximum**, to judge a device's drive into MISO (ruled D3).
 - The three shadowed refusals above.
+
+## Adversarial pass (full; a fresh Opus subagent, on a frozen copy at `2de70f6`)
+
+Run on the host only; no container. The report's text is saved at `~/.cache/aet-4300c/adv-work/REPORT.md`; the subagent's own write of it was refused, and it did not work around that. Its attack inputs are in `~/.cache/aet-4300c/adv-work/`. Each finding was read or re-run by the builder before it was adopted.
+
+| # | Finding | Severity | Label | Disposition |
+|---|---|---|---|---|
+| 1 | A hand-edited topology could relabel one of a peripheral's lines (`spi_lines.bus`), giving SPI1 two rates. Both the speed choice and the part's clock re-check read the forged one: SCK was emitted at `01` judged at 110 MHz, while the flash's 104 MHz limit was checked against a 1 MHz "GHOST" bus. Library API only. | major | measured | **Fixed.** `validate_spi_lines` now holds one label and one rate per peripheral as well as per label (`SpiLineMismatch`). Test: `a_peripheral_s_lines_share_one_label_and_one_rate`. |
+| 2 | A part's `supply_millivolts` had no consumer. 2800 mV ±5 % (2660 mV, under the flash's 2.7 V) and 3600 mV ±5 % (3780 mV) passed everything, and the Fmax check never checked Table 149's 3.6 V top. Pre-existing on `main`. | major / scope | measured | **Fixed, as fork F-i.** The work order's box promises "every part's declared limits are enforced", and supply is one. `validate` step 14 refuses a device whose domain range (nominal ± tolerance; minimum rounded down, maximum up) leaves its part's range (`SupplyOutsidePart`, citing the datasheet). `solve` refuses an SPI bus whose MCU supply leaves 1620–3600 mV (`SupplyOutsideSpeedTable`). Tests: `a_supply_outside_a_part_s_range_is_refused`, `a_supply_above_the_table_s_bands_is_refused`. |
+| 3 | Near-miss part names (`W25Q64JVXIQ`, `w25q64jv`) skipped every limit. | minor | measured | **Fixed.** The bare name is matched in any case. A table part named in another case is `PartNameCase`. A part absent from the table is still not refused (F-f); `emit` and `generate` refuse it as `UnknownPart`. |
+| 4 | `check speeds` said "extract bounds it" though it computes no bound. Two flashes declared at 30 pF passed `check speeds` while `extract` on their board fails (36,305 fF). A specification with no SPI bus printed `pass` with nothing judged. | minor | measured | **Fixed.** The label now says the value is not bounded here and names `extract` and `verify` as what bounds it. A new `judged` count is 0 when nothing is judged. `verify`'s extract gate is what catches the two-flash case. |
+| 5 | Constraints on MISO and chip selects were accepted and never read. | minor | measured | **Fixed.** Refused by name (`UnjudgedSpiConstraint`), so the declared set is the judged set (F-a). |
+| 6 | W25Q64JV §9.6's minimum clock slew (0.1 V/ns) is not held as data. | nit | read | **Named, not built.** Every Table 149 row in the 2.7–3.6 V band meets it (13.3 and 16.6 ns at worst, about 0.2 V/ns). A supply under 2.7 V is now refused for the flash (F-i). |
+| 7 | eda's `UnsupportedAddress`, the twin's `ModelOffItsBus`, and `spi1`–`spi6` as the emitter's `InvalidDeviceName` are pre-empted by the new earlier refusals. | nit | measured, inferred | **Backlog row** (outside the fence), above. |
+| 8 | Stale wording: `extract --help` said I2C only; `check --help` said "KiCad"; `AmbiguousPartName` said "for the IQ and JQ codes"; fR (50 MHz for Read Data `03h`) is not cited; F20 leaves the manufacturer byte free. | nit | read | The help text and the message are **fixed**. fR does not apply, because the firmware sends only `9Fh`. The manufacturer byte is any JEDEC code, so it is left free. |
+
+**What held** [measured or read by the adversary]:
+- all 24 rows against Tables 149 and 52, cell by cell, and against the page image;
+- rounding at 10,000, 10,001, 30,001 and 50,001 fF;
+- the VDD minimum and the band edge (2843 and 2844 mV at 50 ‰);
+- the rise-time refusal, and rows `10`/`11` never selected;
+- every part limit at `validate`, and the topology re-check under one label;
+- specification v2 and v4 refused, and `MissingSpiConstraint`;
+- extraction's pin counting (MCU excluded; two flashes give 16 pF);
+- the reference's I2C line objects JSON-identical to `main`'s binary;
+- D1's 150 pF honest, and its test killing 100 pF;
+- the regenerated reference byte-identical, and against `main` only the named changes;
+- note 2 unreachable, and the pin capacitances at source;
+- no weakened assertion in 19 test diffs, and `ci/` unchanged.
+
+**F-i**, taken in answer to adversarial finding 2: each device's supply range lies within its part's, and an SPI bus's MCU supply within Table 149's 1620–3600 mV. It is in the work order's box ("every part's declared limits"), though not in §1.5's list. The architect may narrow it.
+
+## Mutation (diff-sized: one mutant per guard this work order adds)
+
+There are 28 mutants: the table's choice and parser (7), the parts parser (2), `validate`'s part limits and constraints (8), the topology re-checks (3), `solve` (2), the generator (2), extraction (2), F21, and the `judged` count. `~/.cache/aet-4300c/mut/mutate.py` holds them.
+- **Each is killed by a test** [measured].
+- Mutant 25, the first version of "eda: typical promoted", was killed only by the compiler. It was rewritten as a behaviour mutant, and a test then killed it.
+- After the reduction, mutants 9, 10, 11 and 17 were moved onto the shared helpers and re-killed.
+
+## Reduction pass
+
+Reduction pass (diff): −10 net · 3 duplicates removed · 0 dead paths removed · 2 protected kept · 3 findings below. It was run by a fresh subagent.
+- **The duplicates:** the I2C address and wrong-bus check, and the SPI clock check, are each one helper (`check_i2c_address`, `check_spi_clock`), shared by `validate` and the topology re-check; extraction's pad lookup is one `pads_on`.
+- **Protected:** the two `belt-and-suspenders:` `UnmodelledPart` refusals in `extract::lines`.
+- **Findings:**
+  - the `Role` insert repeated in extraction's two loops (folding it only moves it);
+  - the twin's `ModelOffItsBus` and eda's `UnsupportedAddress`, outside the fence (backlog, above);
+  - the ruled deletion of `spike/4300c/`.

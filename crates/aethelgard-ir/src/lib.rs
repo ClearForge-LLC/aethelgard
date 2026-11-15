@@ -1196,41 +1196,19 @@ impl Specification {
             }
         }
         for d in &self.i2c_devices {
-            let Some(p) = part_entry(table, &d.reference, &d.part)? else {
-                continue;
-            };
-            let parts::Bus::I2c { addresses } = &p.bus else {
-                return Err(wrong_bus(&d.reference, p, "I2C"));
-            };
-            if !addresses.contains(&d.address) {
-                return Err(IrValidationError::I2cAddressNotOffered {
-                    id: d.reference.clone(),
-                    part: p.part.clone(),
-                    address: d.address,
-                    offered: addresses
-                        .iter()
-                        .map(|a| format!("{a:#04X}"))
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    citation: cite(&p.citations.bus),
-                });
+            if let Some(p) = part_entry(table, &d.reference, &d.part)? {
+                check_i2c_address(&d.reference, p, d.address)?;
             }
         }
         for d in &self.spi_devices {
-            let Some(p) = part_entry(table, &d.reference, &d.part)? else {
-                continue;
-            };
-            let parts::Bus::Spi { max_clock_hz, .. } = &p.bus else {
-                return Err(wrong_bus(&d.reference, p, "SPI"));
-            };
-            // Step 9 checked every device's bus.
-            let speed_hz = self
-                .spi_buses
-                .iter()
-                .find(|b| b.id == d.bus)
-                .map_or(0, |b| b.speed_hz);
-            if speed_hz > *max_clock_hz {
-                return Err(spi_clock_above_part(&d.reference, p, speed_hz));
+            if let Some(p) = part_entry(table, &d.reference, &d.part)? {
+                // Step 9 checked every device's bus.
+                let speed_hz = self
+                    .spi_buses
+                    .iter()
+                    .find(|b| b.id == d.bus)
+                    .map_or(0, |b| b.speed_hz);
+                check_spi_clock(&d.reference, p, speed_hz)?;
             }
         }
         Ok(())
@@ -1591,18 +1569,50 @@ fn wrong_bus(reference: &str, p: &parts::Part, bus_kind: &'static str) -> IrVali
     }
 }
 
-fn spi_clock_above_part(reference: &str, p: &parts::Part, speed_hz: u32) -> IrValidationError {
-    let max_clock_hz = match p.bus {
-        parts::Bus::Spi { max_clock_hz, .. } => max_clock_hz,
-        parts::Bus::I2c { .. } => 0,
+/// The part is an I2C one and offers `address`.
+fn check_i2c_address(
+    reference: &str,
+    p: &parts::Part,
+    address: u8,
+) -> Result<(), IrValidationError> {
+    let parts::Bus::I2c { addresses } = &p.bus else {
+        return Err(wrong_bus(reference, p, "I2C"));
     };
-    IrValidationError::SpiClockAbovePart {
+    if addresses.contains(&address) {
+        return Ok(());
+    }
+    Err(IrValidationError::I2cAddressNotOffered {
+        id: reference.to_owned(),
+        part: p.part.clone(),
+        address,
+        offered: addresses
+            .iter()
+            .map(|a| format!("{a:#04X}"))
+            .collect::<Vec<_>>()
+            .join(", "),
+        citation: cite(&p.citations.bus),
+    })
+}
+
+/// The part is an SPI one and its clock limit is not below `speed_hz`.
+fn check_spi_clock(
+    reference: &str,
+    p: &parts::Part,
+    speed_hz: u32,
+) -> Result<(), IrValidationError> {
+    let parts::Bus::Spi { max_clock_hz, .. } = &p.bus else {
+        return Err(wrong_bus(reference, p, "SPI"));
+    };
+    if speed_hz <= *max_clock_hz {
+        return Ok(());
+    }
+    Err(IrValidationError::SpiClockAbovePart {
         id: reference.to_owned(),
         part: p.part.clone(),
         speed_hz,
-        max_clock_hz,
+        max_clock_hz: *max_clock_hz,
         citation: cite(&p.citations.bus),
-    }
+    })
 }
 
 /// What the emitter appends to a device's lowercased reference to name the
@@ -1715,38 +1725,18 @@ impl SolvedTopology {
         let table = parts::table()?;
         for (reference, d) in &self.i2c_devices {
             if let Some(p) = part_entry(table, reference, &d.part)? {
-                let parts::Bus::I2c { addresses } = &p.bus else {
-                    return Err(wrong_bus(reference, p, "I2C"));
-                };
-                if !addresses.contains(&d.address) {
-                    return Err(IrValidationError::I2cAddressNotOffered {
-                        id: reference.clone(),
-                        part: p.part.clone(),
-                        address: d.address,
-                        offered: addresses
-                            .iter()
-                            .map(|a| format!("{a:#04X}"))
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                        citation: cite(&p.citations.bus),
-                    });
-                }
+                check_i2c_address(reference, p, d.address)?;
             }
         }
         for (reference, d) in &self.spi_devices {
             if let Some(p) = part_entry(table, reference, &d.part)? {
-                let parts::Bus::Spi { max_clock_hz, .. } = &p.bus else {
-                    return Err(wrong_bus(reference, p, "SPI"));
-                };
                 // `validate_spi_lines` gave every device's bus one rate.
                 let rate_hz = self
                     .spi_lines
                     .values()
                     .find(|l| l.bus == d.bus)
                     .map_or(0, |l| l.rate_hz);
-                if rate_hz > *max_clock_hz {
-                    return Err(spi_clock_above_part(reference, p, rate_hz));
-                }
+                check_spi_clock(reference, p, rate_hz)?;
             }
         }
         Ok(())
