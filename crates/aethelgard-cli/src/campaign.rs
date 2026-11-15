@@ -257,6 +257,17 @@ fn resolve_droop(
     topology: &SolvedTopology,
 ) -> Result<crate::analog::Rail, ScenarioError> {
     let refuse = |kind: &'static str, m: String| ScenarioError::new(kind, Some(&droop.domain), m);
+    // `AET-WO-4300d` D4: the BOR level is the specification's (`mcu.bor_level`);
+    // a droop that states another is refused, so the two never disagree (K8).
+    if droop.bor_level != spec.mcu.bor_level {
+        return Err(refuse(
+            "BorLevelContradictsSpecification",
+            format!(
+                "the droop states BOR level {}, and the specification's mcu.bor_level is {}",
+                droop.bor_level, spec.mcu.bor_level
+            ),
+        ));
+    }
     if droop.domain != spec.mcu.supply {
         return Err(refuse(
             "DroopNotMcuSupply",

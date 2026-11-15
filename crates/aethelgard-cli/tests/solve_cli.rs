@@ -31,8 +31,8 @@ use sha2::{Digest, Sha256};
 /// the old one exactly (`ac9c9299…` and `a8606bf8…` before; FEEDBACK); and
 /// re-taken in `AET-WO-1308` (version 5, `net_classes` and `diff_pairs`) the same
 /// way (`26771d90…` and `6e4af649…` before).
-const REFERENCE_DIGEST: &str = "8100aadf717d99a1a004808be856509482f797ac8f6c7653944926c003cd29fd";
-const STRESS_DIGEST: &str = "798ae634e9de56232228f8a1289d0e4e8816a2b8aa095ce5f0dd41ee2cea9fbf";
+const REFERENCE_DIGEST: &str = "22b50ac89f9b1a63a2f8210f2fb28946c2aed11a42ffdfa57786ca62b46109aa";
+const STRESS_DIGEST: &str = "0ccc5888041848bb97fc22750d04ec65d71519c257a1e618e7511c2dac7b89fd";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -202,7 +202,7 @@ fn the_reference_solves_to_the_expected_pins() {
     // Both lines declare 300 ns: Fast-mode, 400 kHz, the bus's own speed.
     assert_eq!(t.i2c_ceilings, [("SENSORS".to_owned(), 400_000)].into());
     assert_eq!(t.i2c_speeds, [("SENSORS".to_owned(), 400_000)].into());
-    assert_eq!(t.schema_version, 4);
+    assert_eq!(t.schema_version, 5);
 }
 
 #[test]
@@ -431,4 +431,70 @@ fn a_line_over_the_bus_capacitance_limit_is_refused_by_net() {
     );
     assert_eq!(report["error"]["id"], "I2C_SDA", "{report}");
     assert_eq!(report["error"]["claimants"], json!(["I2C_SDA"]), "{report}");
+}
+
+/// `AET-WO-4300d`: the Sentinel-02 power fixture without its crossing (which
+/// waits for the sensor table's output delay, `K6`), written to `dir`.
+fn power_tree(dir: &Path) -> PathBuf {
+    let text = std::fs::read_to_string(
+        root().join("crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json"),
+    )
+    .unwrap();
+    let mut v: Value = serde_json::from_str(&text).unwrap();
+    v["power"]["crossings"] = json!([]);
+    for key in ["spi_devices", "spi_buses", "net_constraints"] {
+        let kept: Vec<Value> = v[key]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|x| {
+                !(x["reference"] == "U5"
+                    || x["id"] == "IMU"
+                    || x["net_name"].as_str().is_some_and(|n| n.starts_with("IMU")))
+            })
+            .cloned()
+            .collect();
+        v[key] = Value::Array(kept);
+    }
+    std::fs::create_dir_all(dir).unwrap();
+    let path = dir.join("power-tree.json");
+    std::fs::write(&path, serde_json::to_vec(&v).unwrap()).unwrap();
+    path
+}
+
+#[test]
+fn a_power_tree_solves_into_the_topology_and_is_refused_at_emit() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("aet-4300d-power-tree");
+    let _ = std::fs::remove_dir_all(&dir);
+    let file = power_tree(&dir);
+    let (t, _) = solved(&file);
+    let p = t.power.expect("the solved tree");
+    let d = &p.domains["VDD_3V3"];
+    assert_eq!(
+        (d.vout_min_microvolts, d.vout_max_microvolts),
+        (3_144_727, 3_417_204)
+    );
+    assert_eq!(
+        (d.source.reference.as_str(), d.source.pad.as_str()),
+        ("R20", "1")
+    );
+    assert_eq!((d.ret.reference.as_str(), d.ret.pad.as_str()), ("R21", "2"));
+    assert_eq!(
+        (p.input_steady_milliamps, p.input_fault_milliamps),
+        (2679, 10_100)
+    );
+    // The seam of the split: nothing emits a board without its power tree.
+    let out = dir.join("emitted");
+    let output = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["emit", "--file"])
+        .arg(&file)
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let v: Value = serde_json::from_str(line(&output)).unwrap();
+    assert_eq!(v["error"]["kind"], "PowerNotEmitted", "{v}");
+    assert!(!out.join("sentinel-02-power.kicad_pcb").exists());
+    std::fs::remove_dir_all(&dir).unwrap();
 }

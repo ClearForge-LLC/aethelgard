@@ -1,0 +1,1054 @@
+{
+  "schema_version": 1,
+  "documents": {
+    "SNVSAN3F": {
+      "title": "TI LMR33630 datasheet SNVSAN3F",
+      "revision": "F (November 2020)",
+      "sha256": "3b0920a4e56a0b3f5f214a6317d3c06cff6e541e5054024adc31c30acc50c04a",
+      "pending": null
+    },
+    "SBVS320D": {
+      "title": "TI TLV755P datasheet SBVS320D",
+      "revision": "D (September 2024)",
+      "sha256": "d617843b63c23921f6ed65ae0f91c251cb79d14ae290aeb1778ffdf89b662e97",
+      "pending": null
+    },
+    "SCES935A": {
+      "title": "TI TXU0304 datasheet SCES935A",
+      "revision": "A (November 2021)",
+      "sha256": "425338d941c0f63da7c2f9dc23136161de457e137394d9b10e38bb0bd602550f",
+      "pending": null
+    },
+    "VISHAY_28758": {
+      "title": "Vishay TNPW e3 datasheet, document 28758",
+      "revision": "10-Apr-2026",
+      "sha256": "6f0508c568cb355aaf2accdd33fe3a780d3ea5ef207c4c9a71839a8acadc33a5",
+      "pending": null
+    },
+    "VISHAY_20035": {
+      "title": "Vishay D/CRCW e3 datasheet, document 20035",
+      "revision": "14-Apr-2026",
+      "sha256": "113d2d57a320a1b1736c92ba201e9a705c38ebf2c78a8f79523ee47aebdae8b3",
+      "pending": null
+    },
+    "VISHAY_34123": {
+      "title": "Vishay IHLP-5050FD-01 datasheet, document 34123",
+      "revision": "07-Oct-2026",
+      "sha256": "6bcbe41527961660c895dbee73a9a2eaab68204dfd417cc3b254240f53a2dd11",
+      "pending": null
+    },
+    "DS12117": {
+      "title": "ST DS12117, STM32H753xI datasheet",
+      "revision": "10 (January 2026)",
+      "sha256": "607b9eadaef1c54f93e02d7cea58c862a1552bda47c848d96f2de5c0ee84c032",
+      "pending": null
+    },
+    "AN2834": {
+      "title": "ST AN2834, how to get the best ADC accuracy in STM32 microcontrollers",
+      "revision": "10 (October 2024)",
+      "sha256": "da96e285ee1e151646b285e8828b3486ed40bf7ca2680620f06ef693be2cd569",
+      "pending": null
+    },
+    "MURATA_GCM32EC71H106KA03": {
+      "title": "Murata reference sheet GCM32EC71H106KA03",
+      "revision": "Apr.13, 2026",
+      "sha256": "900f46e665a49bbd8d35f149b192e8d8b4e2959f84930f3cef90e917c0ec48cb",
+      "pending": null
+    },
+    "MURATA_GCM188R71H224KA64": {
+      "title": "Murata reference sheet GCM188R71H224KA64",
+      "revision": "Apr.8, 2026",
+      "sha256": "5b4d3f03df521302a4604630116d748afabbd00e5caa8fac20a40b88ff8399e5",
+      "pending": null
+    },
+    "MURATA_GCM188R71H104KA57": {
+      "title": "Murata reference sheet GCM188R71H104KA57",
+      "revision": "Apr.8, 2026",
+      "sha256": "5a29828795fe4b9b8282c7c7fc77e7859fd5e25a64e208257ed25be08ef2402a",
+      "pending": null
+    },
+    "MURATA_GRM188R71C105KA12": {
+      "title": "Murata reference sheet GRM188R71C105KA12",
+      "revision": "Mar.10, 2016",
+      "sha256": "35512c925f1086e70d420165ea8bd188c2606dbd5c1100cee1593b4436252475",
+      "pending": null
+    },
+    "MURATA_GRM32ER71A226KE20": {
+      "title": "Murata reference sheet GRM32ER71A226KE20",
+      "revision": "Jun.26, 2026",
+      "sha256": "0b08caae0ba2d0e2d42edadbffd6ac89f27b1d8f7d49cc463ab777f100e5dafd",
+      "pending": null
+    },
+    "MURATA_GRM32ER61C226KE20": {
+      "title": "Murata reference sheet GRM32ER61C226KE20",
+      "revision": "Jun.26, 2026",
+      "sha256": "063100b7649564e4f7bfa7f93f79fc0638b6b7c76c143dbada9b7466747f7b4e",
+      "pending": null
+    }
+  },
+  "parts": [
+    {
+      "part": "LMR33630ADDA",
+      "lifecycle": "active",
+      "symbol": "Regulator_Switching:LMR33630ADDA",
+      "footprint": "Package_SO:Texas_HSOP-8-1EP_3.9x4.9mm_P1.27mm",
+      "pins": {
+        "PGND": "1",
+        "VIN": "2",
+        "EN": "3",
+        "PG": "4",
+        "FB": "5",
+        "VCC": "6",
+        "BOOT": "7",
+        "SW": "8",
+        "EP": "9"
+      },
+      "temperature_celsius": {
+        "min": -40,
+        "max": 125,
+        "at": {
+          "document": "SNVSAN3F",
+          "section": "p. 6, 7.3 Recommended Operating Conditions, TJ -40 to 125 C"
+        }
+      },
+      "kind": {
+        "buck": {
+          "vin_millivolts": {
+            "min": 3800,
+            "max": 36000,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 7, 7.5 VIN minimum operating input voltage, max 3.8 V; p. 6, 7.3 VIN to 36 V"
+            }
+          },
+          "vfb_microvolts": {
+            "min": 985000,
+            "max": 1015000,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 7, 7.5 Voltage reference (FB pin), VFB min 0.985 V, max 1.015 V"
+            }
+          },
+          "ifb_max_nanoamps": {
+            "value": 50,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 7, 7.5 IFB, FB = 1 V, max 50 nA"
+            }
+          },
+          "regulation_permille": {
+            "min": -15,
+            "max": 25,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 9, 7.7 System Characteristics, VOUT regulation 0 A to full load, -1.5 % / +2.5 % (5 V row from VIN 7 V, 3.3 V row from VIN 3.8 V), not ensured by production testing"
+            }
+          },
+          "regulation_production_tested": false,
+          "fsw_hz": {
+            "min": 340000,
+            "max": 460000,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 8, 7.5 Oscillator, fSW A version min 340 kHz, max 460 kHz"
+            }
+          },
+          "ton_min_max_ns": {
+            "value": 108,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 8, 7.6 Timing, tON-MIN DDA max 108 ns"
+            }
+          },
+          "toff_min_max_ns": {
+            "value": 85,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 8, 7.6 Timing, tOFF-MIN DDA max 85 ns"
+            }
+          },
+          "rds_high_max_milliohms": {
+            "value": 160,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 8, 7.5 MOSFETs, RDS-ON high side DDA max 160 mOhm"
+            }
+          },
+          "rds_low_max_milliohms": {
+            "value": 110,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 8, 7.5 MOSFETs, RDS-ON low side DDA max 110 mOhm"
+            }
+          },
+          "high_side_limit_milliamps": {
+            "min": 3850,
+            "max": 5050,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 7, 7.5 Current limits, ISC LMR33630 min 3.85 A, max 5.05 A (note 4: tested open loop)"
+            }
+          },
+          "low_side_limit_milliamps": {
+            "min": 2900,
+            "max": 4100,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 7, 7.5 Current limits, ILIMIT min 2.9 A, max 4.1 A"
+            }
+          },
+          "iout_max_milliamps": {
+            "value": 3000,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 6, 7.3 Recommended Operating Conditions, IOUT 0 to 3 A"
+            }
+          },
+          "rfbt_max_ohms": {
+            "value": 1000000,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 21, 9.2.2.3: RFBT maximum value of 1 MOhm, with a feedforward capacitor"
+            }
+          },
+          "inductor_min_coefficient": {
+            "value": 280,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 22, 9.2.2.4, Equation 5: L_MIN >= 0.28 x VOUT / fSW (uH, V, MHz)"
+            }
+          },
+          "stated_at": "at VIN = 12 V, VEN = 4 V and TJ -40 to 125 C (SNVSAN3F p. 7, 7.5 header)",
+          "external": [
+            {
+              "role": "cin",
+              "min_picofarads": 10000000,
+              "max_picofarads": null,
+              "rated_min_millivolts": null,
+              "rated_step": null,
+              "rated_at_least_working": true,
+              "dielectrics": [
+                "X5R",
+                "X7R",
+                "X7S"
+              ],
+              "at": {
+                "document": "SNVSAN3F",
+                "section": "p. 23, 9.2.2.6: a minimum of 10 uF of ceramic capacitance, rated for at least the maximum input voltage (p. 20, Table 9-2: 10 uF + 220 nF)"
+              }
+            },
+            {
+              "role": "cin_hf",
+              "min_picofarads": 220000,
+              "max_picofarads": 220000,
+              "rated_min_millivolts": 50000,
+              "rated_step": null,
+              "rated_at_least_working": true,
+              "dielectrics": [
+                "X7R"
+              ],
+              "at": {
+                "document": "SNVSAN3F",
+                "section": "p. 23, 9.2.2.6: a 220 nF ceramic capacitor must be used at the input, rated at 50 V with an X7R dielectric"
+              }
+            },
+            {
+              "role": "cboot",
+              "min_picofarads": 100000,
+              "max_picofarads": 100000,
+              "rated_min_millivolts": 10000,
+              "rated_step": null,
+              "rated_at_least_working": false,
+              "dielectrics": [
+                "C0G",
+                "X5R",
+                "X7R",
+                "X7S"
+              ],
+              "at": {
+                "document": "SNVSAN3F",
+                "section": "p. 23, 9.2.2.7: a high-quality ceramic capacitor of 100 nF and at least 10 V"
+              }
+            },
+            {
+              "role": "cvcc",
+              "min_picofarads": 1000000,
+              "max_picofarads": 1000000,
+              "rated_min_millivolts": 16000,
+              "rated_step": null,
+              "rated_at_least_working": false,
+              "dielectrics": [
+                "X5R",
+                "X7R",
+                "X7S"
+              ],
+              "at": {
+                "document": "SNVSAN3F",
+                "section": "p. 23, 9.2.2.8: a 1 uF, 16 V ceramic from VCC to GND"
+              }
+            },
+            {
+              "role": "cout",
+              "min_picofarads": 88000000,
+              "max_picofarads": 880000000,
+              "rated_min_millivolts": 10000,
+              "rated_step": {
+                "from_nominal_millivolts": 5000,
+                "rated_min_millivolts": 16000
+              },
+              "rated_at_least_working": true,
+              "dielectrics": [
+                "X5R",
+                "X7R",
+                "X7S"
+              ],
+              "at": {
+                "document": "SNVSAN3F",
+                "section": "p. 22-23, 9.2.2.5: at least 10 V for 3.3 V or less, 16 V or more for 5 V and above; at most about 10 times the design value or 1000 uF; p. 20, Table 9-2's 4 x 22 uF as the design value"
+              }
+            },
+            {
+              "role": "inductor",
+              "min_picofarads": null,
+              "max_picofarads": null,
+              "rated_min_millivolts": null,
+              "rated_step": null,
+              "rated_at_least_working": false,
+              "dielectrics": [],
+              "at": {
+                "document": "SNVSAN3F",
+                "section": "p. 21-22, 9.2.2.4 and Table 9-2 (8 uH at 5 V, 6.8 uH at 3.3 V, 400 kHz)"
+              }
+            }
+          ],
+          "thermal_vias": {
+            "pad": "EP",
+            "columns": 3,
+            "rows": 4,
+            "pitch_um": 900,
+            "drill_um": 254,
+            "ring_um": 150,
+            "sources": {
+              "count": "SNVSAN3F p. 34, 10.1.1: a minimum 4 x 3 array of thermal vias, evenly distributed under the PAD",
+              "pitch": "fitted to the 2.95 x 4.9 mm exposed pad of Package_SO:Texas_HSOP-8-1EP_3.9x4.9mm_P1.27mm; SNVSAN3F p. 34 states only an even distribution",
+              "drill": "SNVSAN3F p. 34, 10.1.1: 10-mil thermal vias (254 um)",
+              "ring": "the engine's via ring for a 0.3 mm drill in a 0.6 mm pad; SNVSAN3F states none",
+              "layers": "SNVSAN3F p. 34, 10.1.1: to the system ground plane heat sink"
+            }
+          }
+        }
+      }
+    },
+    {
+      "part": "TLV75518PDBV",
+      "lifecycle": "active",
+      "symbol": "Regulator_Linear:TLV75518PDBV",
+      "footprint": "Package_TO_SOT_SMD:SOT-23-5",
+      "pins": {
+        "IN": "1",
+        "GND": "2",
+        "EN": "3",
+        "NC": "4",
+        "OUT": "5"
+      },
+      "temperature_celsius": {
+        "min": -40,
+        "max": 125,
+        "at": {
+          "document": "SBVS320D",
+          "section": "p. 4, 5.3 Recommended Operating Conditions, TJ -40 to 125 C"
+        }
+      },
+      "kind": {
+        "ldo": {
+          "vin_millivolts": {
+            "min": 1450,
+            "max": 5500,
+            "at": {
+              "document": "SBVS320D",
+              "section": "p. 4, 5.3 and p. 5, 5.5: VIN 1.45 to 5.5 V"
+            }
+          },
+          "vout_millivolts": {
+            "min": 1773,
+            "max": 1827,
+            "at": {
+              "document": "SBVS320D",
+              "section": "p. 5, 5.5 Output accuracy, VOUT >= 1 V, -1.5 % / +1.5 % under the table's TJ -40 to 125 C"
+            }
+          },
+          "vout_condition": "at IOUT 1 mA, VIN = VOUT(nom) + 0.5 V or 2 V, TJ -40 to 125 C; line and load regulation are typical only",
+          "dropout_max_millivolts": {
+            "value": 400,
+            "at": {
+              "document": "SBVS320D",
+              "section": "p. 6, 5.5 VDO, IOUT 500 mA, 1.8 V <= VOUT < 2.5 V, DBV, TJ -40 to 125 C, max 400 mV"
+            }
+          },
+          "dropout_at_milliamps": 500,
+          "iout_max_milliamps": {
+            "value": 500,
+            "at": {
+              "document": "SBVS320D",
+              "section": "p. 4, 5.3 IOUT 0 to 500 mA"
+            }
+          },
+          "ignd_max_microamps": {
+            "value": 40,
+            "at": {
+              "document": "SBVS320D",
+              "section": "p. 5, 5.5 IGND, IOUT 0 mA, TJ -40 to 125 C, max 40 uA (no value is stated under load)"
+            }
+          },
+          "theta_ja_decikelvin_per_watt": {
+            "value": 2311,
+            "at": {
+              "document": "SBVS320D",
+              "section": "p. 5, 5.4 Thermal Information, DBV RthetaJA 231.1 C/W"
+            }
+          },
+          "theta_ja_condition": "a JEDEC standard 2s2p board with no vias to the internal plane, not this board (ruled D1)",
+          "junction_max_celsius": {
+            "value": 125,
+            "at": {
+              "document": "SBVS320D",
+              "section": "p. 4, 5.3 Recommended Operating Conditions, TJ max 125 C"
+            }
+          },
+          "external": [
+            {
+              "role": "cin",
+              "min_picofarads": 1000000,
+              "max_picofarads": null,
+              "rated_min_millivolts": null,
+              "rated_step": null,
+              "rated_at_least_working": true,
+              "dielectrics": [
+                "X5R",
+                "X7R"
+              ],
+              "at": {
+                "document": "SBVS320D",
+                "section": "p. 4, 5.3 CIN 1 uF minimum; p. 15, 7.1.1 X5R and X7R ceramics"
+              }
+            },
+            {
+              "role": "cout",
+              "min_picofarads": 1000000,
+              "max_picofarads": 200000000,
+              "rated_min_millivolts": null,
+              "rated_step": null,
+              "rated_at_least_working": true,
+              "dielectrics": [
+                "X5R",
+                "X7R"
+              ],
+              "at": {
+                "document": "SBVS320D",
+                "section": "p. 4, 5.3 COUT 1 uF to 200 uF; p. 15, 7.1.1 X5R and X7R ceramics"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "part": "TXU0304PW",
+      "lifecycle": "active",
+      "symbol": "Logic_LevelTranslator:TXU0304PW",
+      "footprint": "Package_SO:TSSOP-14_4.4x5mm_P0.65mm",
+      "pins": {
+        "VCCA": "1",
+        "GND": "7",
+        "OE": "8",
+        "VCCB": "14"
+      },
+      "temperature_celsius": {
+        "min": -40,
+        "max": 125,
+        "at": {
+          "document": "SCES935A",
+          "section": "p. 14, 7.11 Switching Characteristics, columns TA -40 to 125 C"
+        }
+      },
+      "kind": {
+        "translator": {
+          "vcca_millivolts": {
+            "min": 3000,
+            "max": 3600,
+            "at": {
+              "document": "SCES935A",
+              "section": "p. 14, 7.11 the VCCA = 3.3 V +/- 0.3 V rows (the device's own range is 1.08 to 5.5 V, p. 6, 7.3)"
+            }
+          },
+          "vccb_millivolts": {
+            "min": 1650,
+            "max": 1950,
+            "at": {
+              "document": "SCES935A",
+              "section": "p. 14, 7.11 the VCCB = 1.8 V +/- 0.15 V rows"
+            }
+          },
+          "tpd_a_to_b_max_ns": {
+            "value": 19,
+            "at": {
+              "document": "SCES935A",
+              "section": "p. 14, 7.11 tpd A to B, VCCA 3.3 +/- 0.3 V, VCCB 1.8 +/- 0.15 V, TA -40 to 125 C, max 19 ns (RL 10 kOhm, CL 5 pF, p. 18)"
+            }
+          },
+          "tpd_b_to_a_max_ns": {
+            "value": 15,
+            "at": {
+              "document": "SCES935A",
+              "section": "p. 14, 7.11 tpd B to A, same supplies, TA -40 to 125 C, max 15 ns"
+            }
+          },
+          "tmax_a_to_b_bps": {
+            "value": 50000000,
+            "at": {
+              "document": "SCES935A",
+              "section": "p. 9, 7.6 TMAX, VCCI 3.0 to 3.6 V to VCCO 1.65 to 1.95 V, min 50 Mbps"
+            }
+          },
+          "tmax_b_to_a_bps": {
+            "value": 100000000,
+            "at": {
+              "document": "SCES935A",
+              "section": "p. 9, 7.6 TMAX, VCCI 1.65 to 1.95 V to VCCO 3.0 to 3.6 V, min 100 Mbps"
+            }
+          },
+          "pull_up_max_ohms": {
+            "value": 1000000,
+            "at": {
+              "document": "SCES935A",
+              "section": "p. 21, 9.3.1.1: an external pull-up no larger than 1 MOhm against the 5 MOhm internal pull-down"
+            }
+          },
+          "channels": [
+            {
+              "input": "A1",
+              "output": "B1Y",
+              "direction": "a_to_b"
+            },
+            {
+              "input": "A2",
+              "output": "B2Y",
+              "direction": "a_to_b"
+            },
+            {
+              "input": "A3",
+              "output": "B3Y",
+              "direction": "a_to_b"
+            },
+            {
+              "input": "B4",
+              "output": "A4Y",
+              "direction": "b_to_a"
+            }
+          ],
+          "external": [
+            {
+              "role": "bypass_a",
+              "min_picofarads": 100000,
+              "max_picofarads": 1100000,
+              "rated_min_millivolts": null,
+              "rated_step": null,
+              "rated_at_least_working": true,
+              "dielectrics": [
+                "C0G",
+                "X5R",
+                "X7R",
+                "X7S"
+              ],
+              "at": {
+                "document": "SCES935A",
+                "section": "p. 25, 12.1: a 0.1 uF bypass on each supply pin, or 1 uF and 0.1 uF in parallel"
+              }
+            },
+            {
+              "role": "bypass_b",
+              "min_picofarads": 100000,
+              "max_picofarads": 1100000,
+              "rated_min_millivolts": null,
+              "rated_step": null,
+              "rated_at_least_working": true,
+              "dielectrics": [
+                "C0G",
+                "X5R",
+                "X7R",
+                "X7S"
+              ],
+              "at": {
+                "document": "SCES935A",
+                "section": "p. 25, 12.1: a 0.1 uF bypass on each supply pin, or 1 uF and 0.1 uF in parallel"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "part": "STM32H753ZITx",
+      "lifecycle": "active",
+      "symbol": "MCU_ST_STM32H7:STM32H753ZITx",
+      "footprint": "Package_QFP:LQFP-144_20x20mm_P0.5mm",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -40,
+        "max": 85,
+        "at": {
+          "document": "DS12117",
+          "section": "p. 209, Table 111, TA for suffix 6, -40 to 85 C"
+        }
+      },
+      "kind": {
+        "mcu": {
+          "vdd_millivolts": {
+            "min": 1620,
+            "max": 3600,
+            "at": {
+              "document": "DS12117",
+              "section": "p. 209, Table 111, VDD 1.62 to 3.6 V"
+            }
+          },
+          "idd_max_milliamps": {
+            "value": 658,
+            "at": {
+              "document": "DS12117",
+              "section": "p. 216, Table 120, run mode, cache off, all peripherals enabled, VOS0 480 MHz, max at Tj 125 C"
+            }
+          },
+          "idd_condition": "Table 120's maximum at Tj 125 C (AET-WO-1303 D4); Table 111 note 5 limits VOS0 to Tj 105 C, where it is 504 mA",
+          "bor_falling_max_millivolts": [
+            {
+              "value": 1680,
+              "at": {
+                "document": "DS12117",
+                "section": "p. 212, Table 115, VBOR0 falling max 1.68 V"
+              }
+            },
+            {
+              "value": 2060,
+              "at": {
+                "document": "DS12117",
+                "section": "p. 212, Table 115, VBOR1 falling max 2.06 V"
+              }
+            },
+            {
+              "value": 2370,
+              "at": {
+                "document": "DS12117",
+                "section": "p. 212, Table 115, VBOR2 falling max 2.37 V"
+              }
+            },
+            {
+              "value": 2680,
+              "at": {
+                "document": "DS12117",
+                "section": "p. 212, Table 115, VBOR3 falling max 2.68 V"
+              }
+            }
+          ],
+          "rain_max_ohms": [
+            {
+              "bits": 16,
+              "max_ohms": {
+                "value": 170,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 273, Table 173, RAIN 16-bit, Tj 125 C, max 170 Ohm"
+                }
+              }
+            },
+            {
+              "bits": 14,
+              "max_ohms": {
+                "value": 435,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 273, Table 173, RAIN 14-bit, Tj 125 C, max 435 Ohm"
+                }
+              }
+            },
+            {
+              "bits": 12,
+              "max_ohms": {
+                "value": 1150,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 273, Table 173, RAIN 12-bit, Tj 125 C, max 1150 Ohm"
+                }
+              }
+            },
+            {
+              "bits": 10,
+              "max_ohms": {
+                "value": 5650,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 273, Table 173, RAIN 10-bit, Tj 125 C, max 5650 Ohm"
+                }
+              }
+            },
+            {
+              "bits": 8,
+              "max_ohms": {
+                "value": 26500,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 273, Table 173, RAIN 8-bit, Tj 125 C, max 26500 Ohm"
+                }
+              }
+            }
+          ],
+          "reservoir_rule": {
+            "statement": "Cext >= Csh x Umax / Ulsb with Ulsb 0.5 LSB (AN2834 p. 45), Csh = CADC 4 pF typical (DS12117 p. 273, Table 173), single conversions with a gap (AN2834 p. 46)",
+            "extra_bits": 1,
+            "adc_capacitance_femtofarads": 4000,
+            "at": {
+              "document": "AN2834",
+              "section": "p. 45, 4.4.3, workaround for extra high impedance sources: Cext >= Csh x (Umax / Ulsb)"
+            }
+          },
+          "spi_input_setup_min_ns": {
+            "value": 2,
+            "at": {
+              "document": "DS12117",
+              "section": "p. 301, Table 194, SPI master tsu(MI) min 2 ns (OSPEEDR 11, CL 30 pF)"
+            }
+          }
+        }
+      }
+    },
+    {
+      "part": "TNPW0603_B_E",
+      "lifecycle": "unread",
+      "symbol": "Device:R",
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -55,
+        "max": 125,
+        "at": {
+          "document": "VISHAY_28758",
+          "section": "p. 2, general mode, -55 to 125 C"
+        }
+      },
+      "kind": {
+        "resistor": {
+          "tolerance_ppm": {
+            "value": 1000,
+            "at": {
+              "document": "VISHAY_28758",
+              "section": "p. 1, tolerance +/- 0.1 % (ordering letter B)"
+            }
+          },
+          "tcr_ppm_per_kelvin": {
+            "value": 25,
+            "at": {
+              "document": "VISHAY_28758",
+              "section": "p. 3, TCR +/- 25 ppm/K at +/- 0.1 % (ordering letter E)"
+            }
+          },
+          "tcr_reference_celsius": 20,
+          "drift_ppm": {
+            "value": 1000,
+            "at": {
+              "document": "VISHAY_28758",
+              "section": "p. 2, general mode, drift <= 0.10 % at 8000 h"
+            }
+          },
+          "drift_condition": "0.10 % after 8000 h at P70 in general mode (film 125 C), the reference temperature 20 C (test table, (20 / -55 / 20) C and (20 / 125 / 20) C)"
+        }
+      }
+    },
+    {
+      "part": "CRCW0603_F_K",
+      "lifecycle": "unread",
+      "symbol": "Device:R",
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -55,
+        "max": 155,
+        "at": {
+          "document": "VISHAY_20035",
+          "section": "p. 1, operating temperature -55 to 155 C"
+        }
+      },
+      "kind": {
+        "resistor": {
+          "tolerance_ppm": {
+            "value": 10000,
+            "at": {
+              "document": "VISHAY_20035",
+              "section": "p. 1-2, tolerance +/- 1 % (ordering letter F)"
+            }
+          },
+          "tcr_ppm_per_kelvin": {
+            "value": 100,
+            "at": {
+              "document": "VISHAY_20035",
+              "section": "p. 2, TCR +/- 100 ppm/K at +/- 1 % (ordering letter K)"
+            }
+          },
+          "tcr_reference_celsius": 20,
+          "drift_ppm": {
+            "value": 20000,
+            "at": {
+              "document": "VISHAY_20035",
+              "section": "p. 2, stability class 1, <= 2 % at 8000 h"
+            }
+          },
+          "drift_condition": "2 % after 8000 h at P70 (stability class 1), the reference temperature 20 C (test table, (20 / -55 / 20) C and (20 / 155 / 20) C)"
+        }
+      }
+    },
+    {
+      "part": "IHLP5050FDER8R2M01",
+      "lifecycle": "unread",
+      "symbol": "Device:L",
+      "footprint": "Inductor_SMD:L_Vishay_IHLP-5050",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -55,
+        "max": 125,
+        "at": {
+          "document": "VISHAY_34123",
+          "section": "p. 1, operating temperature -55 to 125 C (ambient plus rise)"
+        }
+      },
+      "kind": {
+        "inductor": {
+          "nanohenries": {
+            "min": 6560,
+            "max": 9840,
+            "at": {
+              "document": "VISHAY_34123",
+              "section": "p. 1, Standard Electrical Specifications, 8.2 uH +/- 20 % at 100 kHz, 0.25 V, 0 A"
+            }
+          },
+          "isat_typical_milliamps": {
+            "value": 16000,
+            "at": {
+              "document": "VISHAY_34123",
+              "section": "p. 1, saturation current DC typ. 16 A, note 2"
+            }
+          },
+          "isat_definition": "the DC current at which L0 drops about 20 %, typical",
+          "dcr_max_milliohms": {
+            "value": 16,
+            "at": {
+              "document": "VISHAY_34123",
+              "section": "p. 1, DCR max 15.5 mOhm at 25 C, held as 16 here"
+            }
+          }
+        }
+      }
+    },
+    {
+      "part": "GCM32EC71H106KA03",
+      "lifecycle": "unread",
+      "symbol": "Device:C",
+      "footprint": "Capacitor_SMD:C_1210_3225Metric",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -55,
+        "max": 125,
+        "at": {
+          "document": "MURATA_GCM32EC71H106KA03",
+          "section": "specifications, operating temperature -55 to 125 C"
+        }
+      },
+      "kind": {
+        "capacitor": {
+          "rated_picofarads": {
+            "value": 10000000,
+            "at": {
+              "document": "MURATA_GCM32EC71H106KA03",
+              "section": "specifications, rated capacitance"
+            }
+          },
+          "rated_millivolts": {
+            "value": 50000,
+            "at": {
+              "document": "MURATA_GCM32EC71H106KA03",
+              "section": "specifications, rated voltage"
+            }
+          },
+          "dielectric": "X7S"
+        }
+      }
+    },
+    {
+      "part": "GCM188R71H224KA64",
+      "lifecycle": "unread",
+      "symbol": "Device:C",
+      "footprint": "Capacitor_SMD:C_0603_1608Metric",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -55,
+        "max": 125,
+        "at": {
+          "document": "MURATA_GCM188R71H224KA64",
+          "section": "specifications, operating temperature -55 to 125 C"
+        }
+      },
+      "kind": {
+        "capacitor": {
+          "rated_picofarads": {
+            "value": 220000,
+            "at": {
+              "document": "MURATA_GCM188R71H224KA64",
+              "section": "specifications, rated capacitance"
+            }
+          },
+          "rated_millivolts": {
+            "value": 50000,
+            "at": {
+              "document": "MURATA_GCM188R71H224KA64",
+              "section": "specifications, rated voltage"
+            }
+          },
+          "dielectric": "X7R"
+        }
+      }
+    },
+    {
+      "part": "GCM188R71H104KA57",
+      "lifecycle": "unread",
+      "symbol": "Device:C",
+      "footprint": "Capacitor_SMD:C_0603_1608Metric",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -55,
+        "max": 125,
+        "at": {
+          "document": "MURATA_GCM188R71H104KA57",
+          "section": "specifications, operating temperature -55 to 125 C"
+        }
+      },
+      "kind": {
+        "capacitor": {
+          "rated_picofarads": {
+            "value": 100000,
+            "at": {
+              "document": "MURATA_GCM188R71H104KA57",
+              "section": "specifications, rated capacitance"
+            }
+          },
+          "rated_millivolts": {
+            "value": 50000,
+            "at": {
+              "document": "MURATA_GCM188R71H104KA57",
+              "section": "specifications, rated voltage"
+            }
+          },
+          "dielectric": "X7R"
+        }
+      }
+    },
+    {
+      "part": "GRM188R71C105KA12",
+      "lifecycle": "unread",
+      "symbol": "Device:C",
+      "footprint": "Capacitor_SMD:C_0603_1608Metric",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -55,
+        "max": 125,
+        "at": {
+          "document": "MURATA_GRM188R71C105KA12",
+          "section": "specifications, operating temperature -55 to 125 C"
+        }
+      },
+      "kind": {
+        "capacitor": {
+          "rated_picofarads": {
+            "value": 1000000,
+            "at": {
+              "document": "MURATA_GRM188R71C105KA12",
+              "section": "specifications, rated capacitance"
+            }
+          },
+          "rated_millivolts": {
+            "value": 16000,
+            "at": {
+              "document": "MURATA_GRM188R71C105KA12",
+              "section": "specifications, rated voltage"
+            }
+          },
+          "dielectric": "X7R"
+        }
+      }
+    },
+    {
+      "part": "GRM32ER71A226KE20",
+      "lifecycle": "unread",
+      "symbol": "Device:C",
+      "footprint": "Capacitor_SMD:C_1210_3225Metric",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -55,
+        "max": 125,
+        "at": {
+          "document": "MURATA_GRM32ER71A226KE20",
+          "section": "specifications, operating temperature -55 to 125 C"
+        }
+      },
+      "kind": {
+        "capacitor": {
+          "rated_picofarads": {
+            "value": 22000000,
+            "at": {
+              "document": "MURATA_GRM32ER71A226KE20",
+              "section": "specifications, rated capacitance"
+            }
+          },
+          "rated_millivolts": {
+            "value": 10000,
+            "at": {
+              "document": "MURATA_GRM32ER71A226KE20",
+              "section": "specifications, rated voltage"
+            }
+          },
+          "dielectric": "X7R"
+        }
+      }
+    },
+    {
+      "part": "GRM32ER61C226KE20",
+      "lifecycle": "unread",
+      "symbol": "Device:C",
+      "footprint": "Capacitor_SMD:C_1210_3225Metric",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -55,
+        "max": 85,
+        "at": {
+          "document": "MURATA_GRM32ER61C226KE20",
+          "section": "specifications, operating temperature -55 to 85 C"
+        }
+      },
+      "kind": {
+        "capacitor": {
+          "rated_picofarads": {
+            "value": 22000000,
+            "at": {
+              "document": "MURATA_GRM32ER61C226KE20",
+              "section": "specifications, rated capacitance"
+            }
+          },
+          "rated_millivolts": {
+            "value": 16000,
+            "at": {
+              "document": "MURATA_GRM32ER61C226KE20",
+              "section": "specifications, rated voltage"
+            }
+          },
+          "dielectric": "X5R"
+        }
+      }
+    }
+  ]
+}

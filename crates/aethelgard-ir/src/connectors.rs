@@ -111,6 +111,71 @@ pub fn part(name: &str) -> Option<&'static Part> {
     PARTS.iter().find(|p| p.name == name)
 }
 
+/// How a through-hole pad joins a copper zone of its net (`AET-WO-1309` D1,
+/// D2): the power-in row declares it, and slice B's `Stack::of` maps it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PadJoin {
+    Solid,
+    Relief,
+}
+
+/// A power-in connector: where the battery enters the board (`AET-WO-4300d`,
+/// ruled D2 and D7). A specification names it in `power.input`, never in
+/// `connectors`, so `4300f`'s emitter never meets one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PowerIn {
+    pub name: &'static str,
+    /// The contacts, battery positive first.
+    pub pins: u8,
+    /// The rated current, mA, and the condition the maker states it under.
+    pub rated_milliamps: u32,
+    pub rating_condition: &'static str,
+    pub cited: Cited,
+    /// The operating temperature, °C, and where it was read.
+    pub temperature_celsius: (i32, i32),
+    pub temperature_cited: Cited,
+    /// Declared solid: a relieved through-hole pad on a supply path is
+    /// refused until its spokes are priced (`1309` D2, ruled at 10:30 UTC).
+    pub join: PadJoin,
+}
+
+/// AMASS's board-type table for the XT30 family, held as a screenshot of the
+/// maker's page (the architect's fetch, 2026-11-15).
+pub const AMASS_XT30_TABLE: &str =
+    "AMASS XT30 2PIN board-type table (amassconnectors.com, screenshot)";
+pub const AMASS_XT30_TABLE_SHA256: &str =
+    "7fa569aa04e90c72a5a37333efd2bf057bf63aac6265d2485a47b073d3e0c7bc";
+/// AMASS's own XT30PW-M specification V1.2, a copy hosted by a distributor
+/// (store.comet.bg): the sheet names its maker and its part.
+pub const AMASS_XT30PW_M_V12: &str =
+    "AMASS specification XT30PW-M, version V1.2 (copy hosted by store.comet.bg)";
+pub const AMASS_XT30PW_M_V12_SHA256: &str =
+    "c57b5a373507b2cd0004dbd3e043448347b5ff8e95d6435d61a409c81cdcf185";
+
+pub const POWER_IN: [PowerIn; 1] = [PowerIn {
+    name: "XT30PW-M",
+    pins: 2,
+    rated_milliamps: 20_000,
+    rating_condition: "at most, for a temperature rise under 85 K",
+    cited: Cited {
+        document: AMASS_XT30_TABLE,
+        sha256: AMASS_XT30_TABLE_SHA256,
+        section: "the XT30PW row: current rating 20A MAX (delta < 85 C), max voltage 500V DC",
+    },
+    temperature_celsius: (-20, 120),
+    temperature_cited: Cited {
+        document: AMASS_XT30PW_M_V12,
+        sha256: AMASS_XT30PW_M_V12_SHA256,
+        section: "the one page: operating temperature -20 C to 120 C",
+    },
+    join: PadJoin::Solid,
+}];
+
+/// The power-in row named `name`.
+pub fn power_in(name: &str) -> Option<&'static PowerIn> {
+    POWER_IN.iter().find(|p| p.name == name)
+}
+
 /// One connector, as declared.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]

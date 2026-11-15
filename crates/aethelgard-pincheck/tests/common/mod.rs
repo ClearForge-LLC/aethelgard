@@ -179,7 +179,7 @@ impl Elf {
 
 /// The reference topology as `aethelgard solve` gives it for
 /// `examples/sentinel-01-minimal.json`; regenerate it with `aethelgard solve`
-/// when the solved schema changes (schema 4 since `AET-WO-4300c`).
+/// when the solved schema changes (schema 5 since `AET-WO-4300d`).
 pub fn topology() -> SolvedTopology {
     serde_json::from_str(include_str!("topology.json")).unwrap()
 }

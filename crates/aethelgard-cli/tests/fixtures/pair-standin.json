@@ -1,9 +1,10 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "project_name": "sentinel-01-pair",
   "mcu": {
     "part": "STM32H753ZITx",
-    "supply": "VDD_3V3"
+    "supply": "VDD_3V3",
+    "bor_level": 0
   },
   "voltage_domains": [
     {
@@ -162,5 +163,6 @@
       "gap_um": 300,
       "width_um": 200
     }
-  ]
+  ],
+  "power": null
 }

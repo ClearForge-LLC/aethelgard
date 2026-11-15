@@ -90,18 +90,22 @@ fn digests() -> Vec<(&'static str, String)> {
 /// Re-taken in `AET-WO-1308` (version 5) the same way: with `main`'s hash
 /// passed to `solve`, each was `f3e10417…2985`, `9c02c1e2…12bf4` and
 /// `cc3a3e65…2dff9` exactly.
+/// Re-taken in `AET-WO-4300d` (version 6, `power` and `mcu.bor_level`) the
+/// same way: with `main`'s hash `3b2d7972…cfde` passed to `solve`, all four
+/// were `main`'s digests exactly (`44f22188…e3af`, `bd957c1d…d4b0`,
+/// `b962492f…ee15`, `747bdc04…efbb3`); the boot image does not carry the hash.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "44f22188f559ecb595304ba8fa905876c7ff1ed563b4a5388f059eeb7797e3af",
+        "2ecfb1e139c4a64cc77ab4fd6d5c7c860e570174a3afcb5ded2411ed4fc25386",
     ),
     (
         "platform",
-        "bd957c1dea50e5f2261a797fbeeb9d7fecaa4f68af13799482810e8d8c93d4b0",
+        "eb0ae4f279c8dbf45ce5a06768122a542faec564c562804e3a4a19db10e63376",
     ),
     (
         "platform faulted",
-        "b962492fa26128b8d84385623e0fb5f6d9e04292dabc524c66c6f8d8e61aee15",
+        "9cb8d335e28c95e6144d9eee3388dbb6ccde3220ebb2d0c26f1d31b7a04aab2c",
     ),
     (
         "boot image",
