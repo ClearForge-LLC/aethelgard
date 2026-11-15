@@ -16,7 +16,8 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use common::verify::{
-    SPEC, aethelgard, board, build, copy_tree, gate_reads, one, package_files, root, scratch, sha,
+    SEEDED, SPEC, aethelgard, board, build, copy_tree, gate_reads, one, package_files, root,
+    scratch, sha,
 };
 use serde_json::Value;
 
@@ -59,16 +60,18 @@ fn two_runs(label: &str, flag: &Flag) -> Runs {
         );
     }
     let run = |fab: &PathBuf| {
-        let mut args = vec![
-            "verify",
-            "--spec",
-            SPEC,
-            "--scenarios",
-            "scenarios/sentinel-01/pullup-2k2.json",
-        ];
+        let mut args = vec!["verify", "--spec", SPEC, "--scenarios"];
+        // A package needs the seeded set (`AET-WO-3303` D1, ruled).
         match flag {
-            Flag::Against => args.extend(["--against", tree.to_str().unwrap()]),
-            Flag::FabOut => args.extend(["--fab-out", fab.to_str().unwrap()]),
+            Flag::Against => args.extend([
+                "scenarios/sentinel-01/pullup-2k2.json",
+                "--against",
+                tree.to_str().unwrap(),
+            ]),
+            Flag::FabOut => {
+                args.extend(SEEDED);
+                args.extend(["--fab-out", fab.to_str().unwrap()]);
+            }
         }
         aethelgard(&args)
     };
@@ -373,11 +376,38 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         manifest["topology_sha256"], v["topology_sha256"],
         "the manifest names the topology"
     );
-    let scenario = fs::read(root().join("scenarios/sentinel-01/pullup-2k2.json")).unwrap();
+    let scenarios: Vec<Value> = SEEDED
+        .iter()
+        .map(|f| {
+            let bytes = fs::read(root().join(f)).unwrap();
+            let name = serde_json::from_slice::<Value>(&bytes).unwrap()["name"].clone();
+            serde_json::json!({"scenario": name, "sha256": sha(&bytes)})
+        })
+        .collect();
     assert_eq!(
         manifest["scenarios"],
-        serde_json::json!([{"scenario": "pullup-2k2", "sha256": sha(&scenario)}]),
-        "the manifest names the scenario and its sha256"
+        Value::Array(scenarios),
+        "the manifest names each scenario and its sha256"
+    );
+    // `AET-WO-3303` §2: the reference package's verdict, and its manifest,
+    // list every precondition as met; FLASH's absent device was detected by
+    // its mechanism (its `attribute` gate passed).
+    let met = serde_json::json!([
+        {"precondition": "every_harness_proved", "state": "met"},
+        {"precondition": "campaign_faults_every_bus_and_rail", "state": "met"},
+        {"precondition": "every_gate_passed", "state": "met"},
+    ]);
+    assert_eq!(fab["preconditions"], met, "{fab}");
+    assert_eq!(manifest["preconditions"], met, "{manifest}");
+    assert!(
+        v["gates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g["gate"] == "attribute"
+                && g["scenario"] == "spi-absent-u4"
+                && g["verdict"] == "pass"),
+        "{v}"
     );
     let mut listed = named.clone();
     listed.remove("MANIFEST.json");
