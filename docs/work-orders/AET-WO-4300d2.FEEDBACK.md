@@ -113,3 +113,12 @@ Each step was measured; the dumps are `l5`–`l10.tsv`.
   - Two were set after it: 5.0 mm for the bulk Cin, behind the 220 nF capacitor, and 4.0 mm for the inductor (§2).
   - Accept, or give a source for a tighter rule? A four-layer Sentinel-02 (which TI recommends, SNVSAN3F p. 34) would not change them; the limit is in-plane.
 - **D4 · SNVSAN3F 10.1 item 5 asks for a ground plane on an inner layer.** The fixture is two-layer (slice A), so it is named as not met in the verdict. Move Sentinel-02 to four layers?
+- **D5 · §1.9's `fab` clause and its `campaign` clause cannot both hold** [read].
+  - `verify --fab-out` and `--against-fab` require `--scenarios` (`cli/src/main.rs:118-122`: "`INV-03` counts the fault campaign", `3300`).
+  - `fab::derive` is reached only from `verify`'s gates, after the campaign.
+  - §1.9 keeps `campaign` refusing a power tree until the battery-sag work order. So no path writes a fabrication package for the Sentinel-02 fixture.
+  - Built anyway, and proved where it can be: `fab`'s drill tools, on `1309`'s through-hole and thermal fixtures, and on the power board's own drill file.
+  - Options:
+    - (a) `verify --fab-out` without scenarios for a specification whose campaign is refused by name (an `INV-03` exception);
+    - (b) the battery-sag work order first;
+    - (c) accept `fab` proved below `verify` for this work order.
