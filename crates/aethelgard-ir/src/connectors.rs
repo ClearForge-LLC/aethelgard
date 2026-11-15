@@ -421,19 +421,11 @@ pub(crate) fn identifiers(spec: &Specification) -> Result<(), E> {
 /// no NRST, so NRST is not required). Its standard, if any, was judged in
 /// step 15.
 pub(crate) fn programming_path(spec: &Specification) -> Result<(), E> {
-    let supply = spec.mcu.supply.as_str();
-    let carries = |c: &&Connector| {
-        [crate::SWDIO, crate::SWCLK, crate::GND, supply]
-            .iter()
-            .all(|want| c.pins.iter().any(|p| p.net.as_deref() == Some(*want)))
-    };
-    if spec.declared_connectors().iter().any(|c| carries(&c)) {
-        Ok(())
-    } else {
-        Err(E::NoProgrammingPath {
-            supply: supply.to_owned(),
+    programming_connector(spec)
+        .map(|_| ())
+        .ok_or_else(|| E::NoProgrammingPath {
+            supply: spec.mcu.supply.clone(),
         })
-    }
 }
 
 /// The connector that programs the part, by document order: the first that

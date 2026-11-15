@@ -177,7 +177,8 @@ fn the_mcu_row_holds_figure_14s_network() {
 /// A malformed support network is refused by name, never read in part.
 #[test]
 fn a_malformed_support_network_is_refused() {
-    let edits: [(&str, fn(&mut Value)); 7] = [
+    type Edit = (&'static str, fn(&mut Value));
+    let edits: [Edit; 7] = [
         ("a pin in two groups", |s| s["pins"]["VBAT"] = json!(["17"])),
         ("a group out of order", |s| {
             s["pins"]["VCAP"] = json!(["106", "71"])

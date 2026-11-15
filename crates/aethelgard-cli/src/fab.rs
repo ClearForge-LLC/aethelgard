@@ -313,9 +313,6 @@ pub fn gerbers(stack: &aethelgard_eda::stack::Stack) -> Vec<(String, String, usi
     out
 }
 
-/// `FAB-NOTES.md` for the package of `spec`'s board, whose drill file holds
-/// `drills`, with the `extract` verdict's `conditions` and `lifecycle` lines
-/// as it stated them (`AET-WO-3303`).
 /// What the verdict states that the notes repeat: `extract`'s conditions,
 /// the lifecycle lines, and the support gate's lines.
 struct Stated<'a> {
@@ -324,6 +321,9 @@ struct Stated<'a> {
     support: &'a [String],
 }
 
+/// `FAB-NOTES.md` for the package of `spec`'s board, whose drill file holds
+/// `drills`, with the `extract` verdict's `conditions` and `lifecycle` lines
+/// as it stated them (`AET-WO-3303`).
 fn notes(
     project: &str,
     engine: &str,

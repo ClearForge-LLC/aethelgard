@@ -249,6 +249,11 @@ pub fn row(part: &str) -> Result<&'static Support, String> {
     }
 }
 
+/// A net, quoted, or "no net".
+fn quoted(n: Option<&str>) -> String {
+    n.map_or_else(|| "no net".to_owned(), |n| format!("`{n}`"))
+}
+
 fn pad<'b>(board: &'b Board, reference: &str, number: &str) -> Option<&'b Pad> {
     let part = board.parts.iter().find(|p| p.reference == reference)?;
     let mut found = part.pads.iter().filter(|p| p.number == number);
@@ -352,6 +357,7 @@ fn augment(i: usize, edges: &[Vec<usize>], seen: &mut [bool], owner: &mut [Optio
 /// gate cannot judge from.
 pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<Record, String> {
     let s = row(&spec.mcu.part)?;
+    let table = power_parts::table().map_err(|e| e.to_string())?;
     let mut findings = Vec::new();
     let mut fail = |kind: &'static str, message: String| findings.push(Finding { kind, message });
     // 1. The MCU, by its declared part.
@@ -431,7 +437,7 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
                     off.join(", "),
                     r.min,
                     r.max,
-                    power_parts::table().map_or_else(|_| p.at.section.clone(), |t| t.cite(&p.at))
+                    table.cite(&p.at)
                 ),
             );
         }
@@ -455,9 +461,8 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
                     format!(
                         "{mcu} {} (pin {p}) is on {}, which is not a net of its own ({})",
                         o.group,
-                        mine.map_or_else(|| "no net".to_owned(), |n| format!("`{n}`")),
-                        power_parts::table()
-                            .map_or_else(|_| o.at.section.clone(), |t| t.cite(&o.at))
+                        quoted(mine.as_deref()),
+                        table.cite(&o.at)
                     ),
                 );
             }
@@ -477,7 +482,7 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
                 format!(
                     "{mcu} {} (pin {pin}) is on {}, not on {}'s net {}",
                     strap.pin,
-                    have.map_or_else(|| "no net".to_owned(), |n| format!("`{n}`")),
+                    quoted(have.as_deref()),
                     strap.to,
                     want.map_or_else(
                         || "(none, or more than one)".to_owned(),
@@ -528,8 +533,7 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
     for (i, slot) in slots.iter().enumerate() {
         let matched = owner.iter().position(|o| *o == Some(i));
         let gap = matched.and_then(|c| fits(board, mcu, slot, &caps[c]).flatten());
-        let rule = power_parts::table()
-            .map_or_else(|_| slot.rule.at.section.clone(), |t| t.cite(&slot.rule.at));
+        let rule = table.cite(&slot.rule.at);
         if matched.is_none() {
             let (lo, hi) = slot.rule.class();
             fail(
@@ -538,12 +542,8 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
                     "{mcu} {} {}: no capacitor of {lo} to {hi} pF between {} and {}{} serves it ({rule})",
                     slot.rule.owner,
                     slot.label,
-                    slot.owner_net
-                        .as_deref()
-                        .map_or_else(|| "no net".to_owned(), |n| format!("`{n}`")),
-                    slot.ground_net
-                        .as_deref()
-                        .map_or_else(|| "no net".to_owned(), |n| format!("`{n}`")),
+                    quoted(slot.owner_net.as_deref()),
+                    quoted(slot.ground_net.as_deref()),
                     slot.rule
                         .bound_um
                         .map_or_else(String::new, |b| format!(" within {b} um of the pin")),
@@ -606,8 +606,8 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
                         c.reference,
                         p.pin,
                         p.net.as_deref().unwrap_or(""),
-                        have.map_or_else(|| "no net".to_owned(), |n| format!("`{n}`")),
-                        want.map_or_else(|| "no net".to_owned(), |n| format!("`{n}`")),
+                        quoted(have),
+                        quoted(want.as_deref()),
                     ),
                 );
             }

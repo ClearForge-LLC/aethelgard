@@ -658,6 +658,9 @@ pub(crate) fn design(
         }
         conns.insert(p.number.clone(), Conn::Net(net.clone()));
     }
+    // belt-and-suspenders: `the_mcu_rows_support_pins_are_the_symbols` proves
+    // the one MCU row's pins against the symbol; a row added later is refused
+    // here at emit, not drawn on a pin the symbol lacks.
     if let Some((pin, _)) = conns
         .iter()
         .find(|(pin, _)| !mcu_pins.iter().any(|p| &p.number == *pin))
