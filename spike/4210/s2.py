@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """AET-WO-4210 spike: S2, S3 and F16's boots, inside the pinned image (under img.sh).
 
-NOT RUN. The second session's container read memory.swap.max back as 8 GiB, not 0, so it
-ran nothing (FEEDBACK F10). Before that, the first container of this work order (a no-op that only read back its caps) was
-denied by the permission classifier, and the kickoff forbids working around a denial
-(FEEDBACK, "Where it did not run"). This file is the harness the blocked rows name.
+Run in the third session under the replacement rule 3 (~/.cache/aet-bus/RULE3.md): 11 cases,
+17 boots; the rows are out/s2.jsonl and s2_read.py turns them into FEEDBACK's table. The first
+two sessions could not run it (FEEDBACK F1, F10).
 
 The platforms are aet-4210-gen's `spi-imu` output plus what each case appends (PLATFORMS);
 the firmwares are fw.py's; each boot is drive.py's (4200's, the CLI's composition), one JSON

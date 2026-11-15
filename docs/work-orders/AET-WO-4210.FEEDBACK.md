@@ -118,6 +118,23 @@ Read at source (`spike/4210/s1-models.md`, spot-checked by me at `LPS25HB.cs`, `
 
 ## Results — after the predictions
 
+### Third session (2026-11-15): S2 and S3 measured under the replacement rule 3
+
+The architect's ruling on PR #131 (comment `6888603447`) replaces rule 3 with `~/.cache/aet-bus/RULE3.md`. Each container runs inside a capped user scope that it shares: `systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 -p TasksMax=8192 podman run --rm --cgroups=disabled --network none …`, with no `--memory`, `--memory-swap` or `--pids-limit` flag.
+- **The runner** (`img.sh`, `1a1265c` and `5695882`):
+  - It reads `memory.max`, `memory.swap.max` and `pids.max` inside the scope, at `/sys/fs/cgroup` plus the path in `/proc/self/cgroup`.
+  - It logs them to `spike/4210/out/caps.log`, and starts no container unless swap is `0`.
+  - It writes no cgroup file.
+- **Every read-back of this session** (measured): `memory.max=8589934592 memory.swap.max=0 pids.max=8192`, each with its own `run-p…scope` path.
+  - The container's PID showed the scope's own cgroup: `aet4210-728128-17128`, PID 728187, `/proc/728187/cgroup` = `0::/…/app.slice/run-p728128-i143337130.scope`, the path its read-back logged.
+  - `TMPDIR` printed `unset` inside the container.
+- **`systemd-run` expands `$VAR` in the command it runs (measured, F13).** My first check printed `TMPDIR=`, because systemd-run had already substituted the variable before the container started. The runner passes `--expand-environment=no`.
+- **The sweep:** `bash spike/4210/img.sh -- python3 spike/4210/s2.py`, all 11 cases and 17 Renode boots, in 36 s.
+  - Every boot exited 0 with the boot word `0x2100B007` and no `[ERROR]` line.
+  - The firmware sha256s are in `out/fw.txt`, and every row in `out/s2.jsonl`.
+  - The table below is `out/s2-table.md`, which `s2_read.py` generates from the rows.
+- **One harness fix before the sweep:** `IRQ` is read as `IRQ IsSet`, because the bare GPIO does not print a value (`d7c31c0`). No prediction was changed.
+
 ### Second session (2026-11-15): the corrected rule stops at the swap read-back (measured)
 
 The architect's corrected kickoff rule 3 drops the cgroup write, which caused the first denial, and states its premise: "with `--memory-swap` equal to `--memory`, podman sets `memory.swap.max` to 0 itself under cgroup v2. … stop if `memory.swap.max` is not 0."
@@ -135,8 +152,7 @@ The architect's corrected kickoff rule 3 drops the cgroup write, which caused th
   - 1307's `ci-img.sh` and `img.sh` were rewritten without the write at `02:16:05`, after the last line of its caps log (`02:10:18`).
 
   So every zero in 1307's log predates the correction. No read under the corrected rule shows 0.
-- **This is the kickoff's stop.** I did not try other flags, a parent slice, or Renode on the host: each changes the cap mechanism the rule fixes, so that is a ruling (D8, F10).
-- **So S2 and S3 are still unmeasured.** The harness is unchanged apart from the runner, and has still never run a case.
+- **This was the kickoff's stop.** I did not try other flags, a parent slice, or Renode on the host: each changes the cap mechanism the rule fixes. The architect ruled (D8), and the third session measured S2 and S3.
 
 ### Datasheets for Scotty (not a stop)
 
@@ -167,7 +183,7 @@ The hosts below refuse Furnace or no longer serve the part. Each was retried onc
   - I did not hand it to a subagent;
   - I did not run Renode on the host.
 - **No container started** for this work order. `spike/4210/out/` was never created.
-- **So every S2 and S3 row below is *read* or *inferred*, never *measured*.** The harness that would measure them is committed, **unrun and untested**:
+- **So in this session every S2 and S3 row was *read* or *inferred*** (the third session measured them). The harness that would measure them is committed, **unrun and untested**:
   - its exec bit was never set;
   - the firmware variants were never compiled, because the host has no `thumbv7em` target and only the image does;
   - so its first run may need fixes.
@@ -202,7 +218,7 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
 
 **IMU: the ICM-20948.**
 - It is the only IMU the twin models that ArduPilot also drives. The LSM6DSO is driven by nothing (read).
-- Its whole script can be witnessed at Noisy, and the value written is in the line (read; unmeasured).
+- Its whole script can be witnessed at Noisy, and the value written is in the line (measured: P1.1–P1.5).
 - **Its costs:**
   - TDK lists it **EOL**;
   - its `VDDIO` tops out at 1.95 V;
@@ -213,15 +229,15 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
   - the datasheet is held;
   - ArduPilot drives it;
   - one fixed address;
-  - its whole bring-up logs one line per step, with the bytes, at Debug (read).
+  - its whole bring-up logs one line per step, with the bytes, at Debug. Its measurement read also logs 2 Noisy lines (measured: P6.2).
 - **Its costs:**
   - **EOL**;
   - **1.8 V only**, the IMU's domain;
   - a 16-bit identity command, so `identity.write` becomes a byte list;
   - an identity value that no held document states. ArduPilot says `0x08`, and Renode answers `00 08`.
 - **The alternatives:**
-  - **The BMP180** witnesses at Noisy and runs at 3.3 V, but no vendor datasheet can be held, so its values cannot be cited.
-  - **The LPS25HB** cannot be witnessed at all.
+  - **The BMP180** witnesses every step at Noisy, with no device warning (measured: P6.3), and runs at 3.3 V, but no vendor datasheet can be held, so its values cannot be cited.
+  - **The LPS25HB** cannot be witnessed at all: no Noisy line in a whole script (measured: P6.1).
 
 **The 1.8 V domain.**
 - `4300d` as split (`4300` FEEDBACK §S7) adds buck, LDO and sense rows to the parts table. It can therefore declare a 1.8 V LDO rail. A `voltage_domains` entry of 1800 mV is already expressible today (inferred).
@@ -233,7 +249,7 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
 
 **What all this means for `4500` (the larger decision, D1).** Every part that the twin models and ArduPilot drives, and that this spike could hold a datasheet for, is EOL. Sentinel-02 is the first board that is bought. §7's first condition is not met as worded: the ICM-20948 qualifies, and so do the ICP-10111 (with D2) and the BMP180 (without a citation). But a purchase of EOL parts is close to it. A model of our own, for example an ICM-42688-P and a BMP390, is the ruling `4500` was to make. **It may be worth making now**, before the build puts EOL parts into `parts.json`.
 
-### S2 — the transaction script (proposal; the measurement is blocked)
+### S2 — the transaction script (proposal; measured on the stand-ins)
 
 **Where the script lives.** It goes in `parts.json`, beside the identity, with each step cited. The identity stays as it is, as step 0, so today's table is unchanged:
 
@@ -253,23 +269,39 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
 - **Per-read windows on SPI (F16).**
   - A window is the multiplexer's own `GPIO #k set to False` … `GPIO #k set to True` (`SPIMultiplexer.cs` L30, Noisy), `k` being the device's address. Each step's transfer lines must lie inside one window of its own select.
   - A `not connected` line is attributed to the window it falls in, so `E2` no longer depends on the address alone.
-  - The edges can be forged, but a forged edge only adds an empty window (P3.3, inferred). Windows attribute lines; they never witness.
-  - Unmeasured: P3.1–P3.3.
-- **The event bound (F18).** Kinds 13 and 22 become one event per step, not per read:
-  - a step that reads `n` bytes logs `2 + 2n` ICM lines, about 75 bytes each, so a 6-byte read is about 1,050 bytes, inside kind 22's 1,800-byte budget;
-  - a 14-byte ArduPilot-sized burst (about 2,200 bytes) is not.
+  - The edges can be forged, but a forged edge only adds an empty window (P2.1 measured it; P3.3). Windows attribute lines; they never witness.
+  - **Measured (P3.1):** in 3 runs of interleaved U5/U4/U5/U4 steps, all 46 transfer lines lay inside their own select's window, and the two selects' windows never overlapped.
+  - **Measured (P3.2):** with U4 absent, all 12 `Tried to transmit … not connected` lines fell inside `GPIO #0` windows.
+    - The multiplexer also warns `Tried to finish transmission to device 0x0, but it's not connected` on every edge, 3 of them inside U5's windows.
+    - `unrouted_line` already ignores those, and the window rule must keep doing so (F11).
+- **The event bound (F18), measured.** Kinds 13 and 22 become one event per step, not per read. The correct ICM run's step sizes (log bodies, all from U5):
+  - identity: 4 lines, 261 bytes;
+  - configuration write: 3 Noisy lines, 195 bytes. With its Debug and Warning lines it is 5 lines, 394 bytes;
+  - 6-byte data read: 14 lines, 1,006 bytes, a mean of 71.9 bytes and a longest line of 87.
 
-  So the budget applies per step. A script read is capped at what fits: `(2 + 2n) × 75 ≤ 1,800` gives `n ≤ 11` bytes (inferred from line lengths, unmeasured; the cap is set at the build from measured lines). Kind 13 takes kind 22's budget, which closes F18.
-- **Device warnings (F22, D4).** A correct, ArduPilot-faithful configuration write warns: `CLKSEL` (P1.3, read at `PeripheralRegister.cs` L593, L682, L726–760), and `I2C_IF_DIS`. So "any device warning fails" would fail a correct script.
-  - **Proposal:** each step declares its expected warnings exactly, pinned to source. Any other `[WARNING]` from the device fails the step.
+  So a step reading `n` bytes logs `2 + 2n` lines (measured for n = 1 and 6). At the longest measured line, `(2 + 2n) × 87 ≤ 1,800` gives **`n ≤ 9`**. A 14-byte ArduPilot-sized burst does not fit. Kind 13 takes kind 22's per-step budget, which closes F18.
+- **Device warnings (F22, D4), measured.** A correct configuration write warns: `CLKSEL`, exactly as predicted (P1.3). `I2C_IF_DIS` was not scripted here (read only). So "any device warning fails" would fail a correct script.
+  - **A second source of device warnings (measured, P1.6; F11):**
+    - on every chip-select edge, the multiplexer finishes every deselected device (`SPIMultiplexer.cs` `UpdateChipSelectState`);
+    - the flash model warns `Transmission finished in the unexpected state: RecognizeOperation` whenever it is finished idle (`GenericSpiFlash.cs` L95);
+    - so in a correct run, **U4 warns 8 times on edges that are not its own transfers**.
+
+    A device-warning rule that judges U4 would fail U4 for U5's script, and today's sentinel-01 has U4 too.
+  - **The correct ICM run's warnings, every one:** U5's `CLKSEL` (1); U4's idle finish (8); the multiplexer's `Tried to finish transmission … not connected`, logged with no source name during platform load, before `Machine started` and before the devices were attached (3; raw log L6–8); and the controllers' own tag warnings, `i2c1` (2) and `gpioPortB` (2). No barometer model warned in any case.
+  - **Proposal:**
+    - each step declares its expected warnings exactly, pinned to source;
+    - the flash's idle-finish warning is pinned as an edge artefact: allowed only directly after a multiplexer `Finisihing transmission on device 0x0` line that an edge produced;
+    - any other `[WARNING]` from a scripted device fails the step.
   - **The alternative:** script only writes that touch no tag. `PWR_MGMT_1` = `0x00` wakes the silicon (`0x41` → `0x00`, internal oscillator) and warns nothing in the model, but it is not ArduPilot's value.
 
-### S3 — interrupts (read; unmeasured)
+### S3 — interrupts (measured)
 
-- **The ICM-20948 model never raises data-ready by itself** (P4.1):
+- **The ICM-20948 model never raises data-ready by itself** (P4.1, measured):
+  - with `INT_ENABLE_1` = 1 and a data read, `IRQ IsSet` read `False` after the run, and `INT_STATUS_1` read `0x0`;
   - `RAW_DATA_0_RDY_INT` is set by nothing but a firmware write of `INT_STATUS_1`;
   - `DATA_RDY_STATUS` is a tag that reads 0.
-- **An interrupt the judge learned from this model would witness a firmware store, not the sensor** (P4.2).
+- **An interrupt the judge learned from this model would witness a firmware store, not the sensor** (P4.2, measured): the firmware wrote `INT_STATUS_1` = 1 over SPI, the model logged `IRQ set` (Debug), and `IsSet` read `True`.
+- Each write to an interrupt register also logs a Noisy `Interrupts: DMP False, … Raw Data Ready …` line. A script step writing `INT_ENABLE_1` is therefore 4 Noisy lines, not 3.
 - No barometer model has an interrupt line, and the ICP-10111 has no pin at all.
 - **ArduPilot does not use a DRDY pin** for the ICM-20948 either, except behind an `#ifdef`.
 
@@ -289,24 +321,60 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
 
 ## The spike's table: each prediction beside its result
 
-| Prediction | Result | Label |
+Every row is **measured** except P3.3 and P6.4 (as marked) and P5 (read). Generated by `spike/4210/s2_read.py` from `spike/4210/out/s2.jsonl`; the predictions are unchanged above.
+
+| Prediction | Result | Measured |
 |---|---|---|
-| P1.1–P1.7 (the ICM script's lines, values, warnings, repeatability) | not run | blocked (F10: swap read-back 8 GiB); `s2.py imu-script imu-script-stim` |
-| P2.1–P2.2 (forgeries) | not run | blocked (F10: swap read-back 8 GiB); `s2.py imu-forge-config imu-forge-data` |
-| P3.1–P3.3 (windows) | not run | blocked (F10: swap read-back 8 GiB); `s2.py two-windows two-windows-u4-absent` |
-| P4.1–P4.2 (data-ready) | not run. The source supports both (`ICM20948_Bank0Registers.cs` L114; `ICM20948.cs` L221–243). | read |
-| P5 (ArduPilot) | as read. One correction: the model's FIFO is tags, not merely unknown. | read |
-| P6.1–P6.4 (barometers) | not run. P6.4 holds at source. | blocked (F10: swap read-back 8 GiB); `s2.py baro-*` |
+| P1.1 | held | identity window: 4 U5 lines, equal to the 4 `model.rs` expects |
+| P1.2 | held | 3 Noisy lines as predicted; the value only in `Write at bank #0 to 0x6 (PowerManagement1): value 0x1` (Debug) and the second `Received byte`. Order: Preparing, Received 0x6, Debug, Warning, Received 0x1 |
+| P1.3 | held | U5 warns 1 time(s) in the run, inside the configuration window: `Unhandled write to offset 0x6. Unhandled bits: [0] when writing value 0x1. Tags: CLKSEL (0x1).` |
+| P1.4 | held | 14 Noisy lines (predicted 14); bytes ['0x0', '0x0', '0x0', '0x0', '0x0', '0x0']; registers 0x2D–0x32 named |
+| P1.5 | held | with `DefaultAccelerationZ 1`: AccelerationXOutHigh 0x0, AccelerationXOutLow 0x0, AccelerationYOutHigh 0x0, AccelerationYOutLow 0x0, AccelerationZOutHigh 0x40, AccelerationZOutLow 0x0 |
+| P1.6 | failed in part | U5's lines outside its steps: {'Finishing transmission, going idle': 6}, by the edge that preceded each: {'GPIO #1 True': 4, 'GPIO #0 False': 1, 'GPIO #0 True': 1}. On every edge of any select, the multiplexer finishes every deselected device (`SPIMultiplexer.cs` `UpdateChipSelectState`), so U5 also goes idle on U4's edges. U5 warns only P1.3's line, but **U4 warns 8 times** in a correct run (`Transmission finished in the unexpected state: RecognizeOperation`, `GenericSpiFlash.cs` L95): it is finished while idle on edges of either select |
+| P1.7 | held | 3 runs: kept lines and reads byte-identical: True |
+| P2.1 | held | 2 U5 windows: the forged one holds 0 U5 lines; `GPIO #1` edges and U5's idle line are logged; no `Preparing for write`. Records still claim `0x601`: 0x00000601 |
+| P2.2 | held | 2 U5 windows; the configuration step's 3 lines present; no read of 0x2D; record 4 claims 0x22020000/0x00000000 |
+| P3.1 | held | 3 runs, 46 transfer lines each: 0 outside their own select's window or inside another's. The two selects' windows never overlap |
+| P3.2 | held for the transmit lines; a second kind found | `Tried to transmit … to device 0x0, but it's not connected`: {'#0': 12} (inside `GPIO #0` windows only). But the multiplexer also logs `Tried to finish transmission to device 0x0, but it's not connected` (Warning) on every edge: {'none': 8, '#1': 3} by the window open when logged. The judge's `unrouted_line` takes only `Tried to transmit byte` (`renode.rs` L529), so these do not reach `E2` today |
+| P3.3 | consistent (inferred) | P2.1's forged window is empty: forged edges add an empty window and move no transfer line. Windows attribute; they do not witness |
+| P4.1 | held | `IRQ IsSet` after the run: False; `INT_STATUS_1` read: 0x00000000. The `INT_ENABLE_1` write logs `IRQ unset` (Debug) and an `Interrupts: … Raw Data Ready False …` Noisy line |
+| P4.2 | held | after the firmware writes `INT_STATUS_1` = 1: `IRQ set` (Debug), `IsSet` True, status read 0x00000001 |
+| P6.1 | held | identity 0x000000BD, data 0x00000000; device lines: ['[DEBUG] i2c1.baro: Writing 0x90 to register 0x20']; Noisy: 0; device warnings 0 |
+| P6.2 | held for identity; failed in part for data | identity 0x00000838 (`00 08` + CRC `0x38`). Debug lines: 4, one per command and one per read, bytes in the line. **The measurement read also logs 2 Noisy lines** (`A=… B=… C=…`, `p_raw=…`), so a data step is visible at Noisy, but not its identity. Device warnings 0 |
+| P6.3 | held but for the data step's count | Noisy lines per step: [4, 4, 7] (predicted 4, 4, 5: the 2-byte read logs `Write`, `Preparing`, `Reading`, then a `Read value` and an `Auto-incrementing` line per byte, 7). Values decimal (`Read value 85`, `67`, `79`); register hex 8 digits. Device warnings 0. 3 runs identical: True |
+| P6.4 | held (read) | none of the three barometer models has a GPIO; no barometer case logged an IRQ line |
+| P5 | read, not run (ArduPilot is not in the twin) | as read. One correction: the model's FIFO is tags, not merely unknown |
+
+Step sizes in the correct ICM run (log bodies without the host timestamp; the judge's events are built from these):
+
+| Step | U5 lines (all levels) | Noisy | bytes, all | bytes, Noisy |
+|---|---|---|---|---|
+| identity | 4 | 4 | 261 | 261 |
+| configuration write | 5 | 3 | 394 | 195 |
+| data read, 6 bytes | 14 | 14 | 1006 | 1006 |
+
+Longest Noisy line of the data read: 87 bytes; mean 71.9.
+
+Every [WARNING] of the correct ICM run (`imu-script`, run 0), by source:
+
+- 1 × `(no source): Tried to finish transmission to device 0x0, but it's not connected`
+- 2 × `(no source): Tried to finish transmission to device 0x1, but it's not connected`
+- 1 × `gpioPortB: Unhandled write to offset 0x4. Unhandled bits: [6] when writing value 0x40. Tags: OT6 (0x1).`
+- 1 × `gpioPortB: Unhandled write to offset 0x4. Unhandled bits: [7] when writing value 0x80. Tags: OT7 (0x1).`
+- 1 × `i2c1: Unhandled write to offset 0x10. Unhandled bits: [0-1, 4-6, 8, 13, 21-22] when writing value 0x602173. Tags: SCLL (0x73), SCLH (0x21), SCLDEL (0x6).`
+- 1 × `i2c1: Unhandled write to offset 0x1C. Unhandled bits: [4] when writing value 0x30. Tags: NACKCF (0x1).`
+- 8 × `spi1.spi1mux.u4: Transmission finished in the unexpected state: RecognizeOperation`
+- 1 × `spi1.spi1mux.u5: Unhandled write to offset 0x6. Unhandled bits: [0] when writing value 0x1. Tags: CLKSEL (0x1).`
 
 ## §7 checked
 
-- **No modelled IMU or barometer both drivable and witnessable beyond identity:** not met as worded (read, not measured).
+- **No modelled IMU or barometer both drivable and witnessable beyond identity:** not met as worded (measured).
   - The IMU qualifies: the ICM-20948.
   - A barometer qualifies only with a ruling: the ICP-10111 at Debug, or the BMP180 without a citation.
   - Every candidate is EOL or out of catalogue (D1).
 - **A vendor host refuses Furnace:** met by st.com, and Bosch serves 404s. Ruled not a stop for this spike; the URLs are listed for Scotty.
 - **A tool call denied by the permission classifier** (the kickoff's stop): met in the first session (the cgroup write), and not met in the second.
-- **`memory.swap.max` not 0** (the corrected rule 3's stop): **met in the second session** (F10).
+- **`memory.swap.max` not 0:** met in the second session (F10), under the rule since replaced. Under `RULE3.md` every read-back was 0.
 
 ## Held, by full sha256 (`~/.cache/aet-4210/ds/`)
 
@@ -336,7 +404,7 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
   - `BARO_PROBE_EXT` defaults to 0.
   - The ICP-101xx has no autodetect, so `4400`'s generated hwdef must name the barometer.
 - **F9 · `4400`'s clone is at the same commit.** I read `Copter-4.7.2` (`fb773567`). Its clone appeared during this spike, and `~/.cache/aet-4400/ardupilot` `HEAD` is `fb773567` (read-only `rev-parse`).
-- **F10 · `--memory-swap` equal to `--memory` does not zero swap on Furnace (measured).**
+- **F10 · `--memory-swap` equal to `--memory` does not zero swap on Furnace (measured). Ruled: `RULE3.md` replaces the rule.**
   - Podman 5.7.0 set the container's `memory.swap.max` to `8589934592`, the value given, and it held for 40 s of sampling (`spike/4210/out/caps.log`).
   - 1307's zeros with the same flags predate the correction, by file times (inferred; above). A note went to 1307's inbox and to the other builders whose runners take the same rule.
   - The corrected rule 3 rests on the opposite premise, so under it no Renode run can start on this box.
@@ -344,6 +412,18 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
     - the global contract's "write `0` into `memory.swap.max`" step is hard-denied by Furnace;
     - the runner's old version did exactly that, and was denied (F1).
   - The global contract (furnace777, `host/home/forge/.claude/CLAUDE.md`) still prescribes that write. It needs the same correction, by PR there.
+- **F11 · The multiplexer finishes every deselected device on every chip-select edge** (measured P1.6, P3.2; `SPIMultiplexer.cs` `UpdateChipSelectState`). Three consequences:
+  - the flash model warns on edges that are not its own transfers;
+  - U5 logs its idle line on U4's edges;
+  - with a select's device absent, a `Tried to finish transmission … not connected` Warning lands inside other devices' windows.
+
+  The judge must attribute by window and pin these lines. It must not judge "all warnings of a device".
+- **F12 · Two step counts differed from the predictions** (measured):
+  - the BMP180's 2-byte read logs 7 Noisy lines, not 5;
+  - the ICP-101xx's measurement read logs 2 Noisy computation lines.
+
+  The scripts' line counts are set from measurement, as these were.
+- **F13 · `systemd-run` expands `$VAR` in its command line** unless `--expand-environment=no` is given (systemd 259; measured). `RULE3.md`'s command form would otherwise rewrite any `$` in a container's command.
 
 ## Decisions needed
 
@@ -353,14 +433,11 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
   - **(b)** The BMP180, uncited.
   - **(c)** None, until a model of our own.
 - **D3 · The data read's value:** exact, from a judge-set stimulus and the datasheet's scale (recommended), or the line's shape only.
-- **D4 · Device warnings:** declared exactly per step and pinned to source (recommended), or only tag-free writes.
-- **D5 · Per-read windows:** the multiplexer's chip-select lines, attribution only (recommended), pending P3's measurement.
+- **D4 · Device warnings:** declared exactly per step and pinned to source, with the flash's idle-finish warning pinned as an edge artefact (F11; recommended); or only tag-free writes, which does not remove F11's warnings.
+- **D5 · Per-read windows:** the multiplexer's chip-select lines, attribution only (recommended; P3.1 and P3.2 measured it). `Tried to finish … not connected` stays out of `E2` (F11).
 - **D6 · Interrupts:** stay polled, and adopt `2204` A2's `SysTick`/`ISER` check now (recommended), or arm one EXTI. The model gives no sensor-driven data-ready to learn from.
 - **D7 · 1.8 V.** Where a device's I/O domain and a bus's level crossing are declared (`4300d`, or this build), and whether a translator is a part or a refusal.
-- **D8 · How a container is held to zero swap on Furnace (F10).** Each option below changes rule 3, so none was tried.
-  - **(a)** Run the container under a user-level slice declared with `MemorySwapMax=0`. The slice is a unit file in `~/.config/systemd/user/`, started with `podman run --cgroup-parent=<slice>`. Systemd sets the cap with no write of ours. The read-back reads the slice's `memory.swap.max`, which the container's own `max` cannot exceed. **Recommended** (inferred; untested).
-  - **(b)** Accept 8 GiB of swap for this spike's containers.
-  - **(c)** Accept S2 and S3 as read, and measure at the build.
+- **D8 · How a container is held to zero swap on Furnace: ruled** (PR #131 comment `6888603447`, `RULE3.md`). S2 and S3 were measured under it.
 
 ## Gates (spike)
 

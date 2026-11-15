@@ -8,8 +8,7 @@ with the variant's text edits, and built offline and locked into its own target 
 and adds its script steps after them, through the board crate's own `transfer` (a write-only
 step passes an empty read buffer). Prints the variant, the ELF's path and its sha256.
 
-NOT RUN: the first container was denied (FEEDBACK F1); the second read memory.swap.max back
-as 8 GiB, not 0, and ran nothing (F10).
+Run in the third session (FEEDBACK); each variant's sha256 is in out/fw.txt.
 
 Usage: fw.py <variant>
 """
