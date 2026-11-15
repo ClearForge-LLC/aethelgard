@@ -181,3 +181,38 @@ The ruling: (a) a detected intolerable fault covers its bus when it fails by the
 - **P18, `spi-absent-u4` detects.** Its run fails `spi_identity_mismatch` and `spi_transaction_unwitnessed`; `attribute` gives `electrical`, `E2`, and cites only U4's records. [inferred from `cases.json`]
 - **P19, the wrong reason fails.** `cs-never` gives the same finding kinds under `software`/`S3` (`cases.json`), so a seeded absent U4 whose run failed that way would not cover. [read]
 - **P20, cost.** A reference verify with four scenarios costs about 3 × 20 s more on a CI runner than with one, plus one `attribute` (under a second). `against_fab_tier2`'s colocated block (765 s, about four verifies) grows by about four minutes; a refit of `ci/colocate.tsv` and the weights is needed, and 8 shards still fit under 20 minutes. [inferred, not measured]
+
+### D1 as built (measured)
+
+- **The rule, two stages** (`cli/src/verify.rs`: `stress`, `classify`, `coverage`, `detection`).
+  - **Before any gate**, a fab flag refuses `CampaignCoverageShort` unless every I2C and SPI bus a device uses, and the MCU's supply, has a tolerated fault in a scenario that expects pass, or (a bus) a detectable fault beside a baseline.
+  - **Detectable** means: one target and one mechanism, the declared kinds within that mechanism. The mechanism is a closed table per override kind: pull-up off its value and raised line capacitance give `analog_rise_exceeds_ceiling`/`i2c_timeout` by `E1`; a held line gives `i2c_line_held_low`/`i2c_timeout` by `E1`; an absent device gives `spi_identity_mismatch`/`spi_transaction_unwitnessed` by `E2`.
+  - **A baseline** is a scenario that expects pass and whose every override is the specification's own value.
+  - **The campaign gate** then passes a run that survived, or one that is its seeded fault detected:
+    - it failed exactly as declared, every kind within the mechanism;
+    - `attribute` on the run, as a gate bound by run id and state-sequence hash, names `electrical` by the mechanism's rule;
+    - nothing is unexplained or masked;
+    - every subject it cites is the seeded bus and its devices, or the absent device and its controller;
+    - a baseline passed.
+  - Any other failure fails the gate and names why.
+  - **After the gates**, coverage is recomputed from the runs that passed. The row and the manifest list `no_device` (ruled (c)). Rails other than the MCU's supply and the battery stay `unmet` (ruled (b)).
+- **`attribute` gains `subjects`**, an additive key: each evidence and symptom record's bus, device, rail, register, output, controller or `boot`. `campaign.rs` is outside the fence: a deviation, needed by the ruling's device check.
+- **P17 held; P18 held [measured, in the image, 19:07 UTC].** `verify` on the reference with `pullup-3k3`, `droop-bor3`, `spi-absent-u4` and `pullup-2k2` and `--fab-out`:
+  - pass, exit 0, 173 s on Furnace;
+  - `spi-absent-u4` fails as declared and its `attribute` gate passes;
+  - the package's 15 files are written;
+  - the verdict's `fab.preconditions` and the manifest's `preconditions` list all three preconditions `met` (§2's line, now met).
+- **P19 held [read, tier 1].** `verify::tests::only_an_unmutated_electrical_case_of_the_seeded_set_is_a_detection` gives each row of `cases.json` its measured domain, rule and masked events. Only the nine unmutated electrical cases are detections. Not detections:
+  - `trap-wrong-address-47k` (electrical, but masked evidence);
+  - `cs-never` (`software`/`S3`, the absent flash's kinds);
+  - `trap-indeterminate-leave-47k`.
+- **The package tests run the seeded set [measured, in the image, Furnace wall time]:**
+  - reference packages (`against_fab_tier2` 530 s, `verify_2k2_tier2` 651 s for its two tests);
+  - the 4-layer fixture, with its own `four-layer-3k3`, `four-layer-droop` (3100 mV, below the 3135 mV band, BOR level 0), `four-layer-spi-absent` and its 2.2 kΩ baseline (`four_layer_…` 329 s, `against_fab_names_…` 333 s);
+  - the identifier fixture, renamed (164 s).
+- **`verify_47k_tier2`'s premise changed:**
+  - its campaign is `pullup-47k`, `droop-bor3`, a fixture seeding U4 absent but declaring only one of its two kinds, and the baseline;
+  - 47 kΩ is detected (its `attribute` gate passes, no finding);
+  - the one-kind run fails the gate, so nothing is written (179 s).
+- **P20 [measured on Furnace; CI estimated].** Weights re-estimated at Furnace time × 1.7 (`ci/colocate.tsv`, `ci/test-weights.tsv`). CI's own shard times decide; the refit rule applies if any passes 20 minutes.
+- **3301 §3.2's statement** in `cli/README.md` is replaced by the ruled gate. The fab section names both refusals, the precondition list and the reference's seeded set.
