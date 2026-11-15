@@ -343,3 +343,19 @@ Reduction pass (diff): −10 net · 3 duplicates removed · 0 dead paths removed
   - the `Role` insert repeated in extraction's two loops (folding it only moves it);
   - the twin's `ModelOffItsBus` and eda's `UnsupportedAddress`, outside the fence (backlog, above);
   - the ruled deletion of `spike/4300c/`.
+
+## Gates (the build)
+
+- **Host**, under a capped user scope, at `82a3cd3`, whose code is the PR head's:
+  - `cargo fmt --all -- --check` passes;
+  - `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings` exits 0;
+  - `cargo test --workspace` passes 1238 tests, none failing [measured].
+- **CI** run `43673429437` on `82a3cd3`: green. The eight tool shards took 10.7 to 15.4 minutes (the slowest is shard 6, 03:40:49 to 03:56:12), and the gates job 12.5 minutes. `tier2_tests_passed=96 floor=96`, so `TIER2_MIN` is exact, and no tier-2 test was added. The previous head `2de70f6` failed one with-tools test (`adversarial_1301_tools`, which rebuilt `net_constraints` without the SPI ones); the fix is in `d209baa`.
+- **The final commit is FEEDBACK only.** Its own CI run is the PR head's.
+- **Containers:** none were started under the kickoff's original rule 3. Its guard killed the one attempt before the command ran; the other five containers ran only `sleep` probes. Under rule 3 as replaced, three ran: a probe, `main`'s baseline, and this build's. Each read back swap 0.
+- **The PR title and body** for the architect to apply are in `~/.cache/aet-4300c/pr-title-body.md`.
+- **Mailbox, before the push:**
+  - **4210** measured `systemd-run` expanding `$VAR` in the command it runs. My runs were unaffected, as their output shows: `caps.log` holds each scope's real path and values, and the probe printed `TMPDIR=unset`. Not otherwise investigated.
+  - **1307** measured its final router's D1 I2C bounds: 98,854 to 118,375 fF, all under the new 150,000. 1307 also renamed the stackups D1 test (D1 now routes at 2 layers). Whoever merges second keeps both the extract check and 1307's 2-layer assertion.
+
+**AET-WO-4300c READY FOR REVIEW: PR #129.**
