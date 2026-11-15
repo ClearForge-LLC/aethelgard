@@ -1579,9 +1579,8 @@ const RAW: &str = "fn wr(a: u32, v: u32) { unsafe { core::ptr::write_volatile(a 
 /// `AET-WO-4300a` §5 item 1, through Renode: PA8..PA11 driven by `BSRR`
 /// stores with the timer never started, and the `UG` + `BSRR` pair the 4300
 /// spike left unmeasured (an update event and a store edge in one quantum).
-/// Every store edge carries its quantum's start, so neither is the model's
-/// sequence, and the read-back names the timer left stopped and the update
-/// interrupt armed.
+/// Neither is the model's sequence, and the read-back names the timer left
+/// stopped and the update interrupt armed.
 #[test]
 fn adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail() {
     let start = "let _tim1 = tim1.start_outputs(&mut r, &clock, pa8, pa9, pa10, pa11);";
@@ -1615,10 +1614,9 @@ fn adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail() {
         for m in motors(&v) {
             let status = m["twin"]["status"].as_str().unwrap();
             assert!(["mismatch", "batched"].contains(&status), "{label}: {m}");
-            assert_eq!(
-                m["twin"]["off_grid"], 0,
-                "{label}: every store edge on the grid: {m}"
-            );
+            // A store right after a timer access (the `UG` write) carries an
+            // exact stamp, so a store edge can be off the grid (FEEDBACK M4):
+            // the grid alone never passes or fails a witness.
         }
     }
 }

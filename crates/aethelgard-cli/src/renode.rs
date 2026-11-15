@@ -598,8 +598,10 @@ pub struct MotorWitness {
     /// The widest spread of the edges' deviations from the predicted
     /// sequence, in ns: below [`STAMP_GRAIN_NS`] for an exact sequence.
     pub span_ns: Option<u64>,
-    /// Edges whose stamp is off the quantum's grid: a store cannot place one
-    /// there (FEEDBACK P2.1).
+    /// Edges whose stamp is off the quantum's grid. A store alone carries its
+    /// quantum's start (FEEDBACK P2.1), but one right after a timer access
+    /// carries an exact stamp (M4), so the grid is D4's third part, never the
+    /// witness's whole: the exact sequence and the read-back are the rest.
     pub off_grid: u64,
     /// Consecutive edges with one stamp: a timer the core touched while it
     /// ran (FEEDBACK M1).

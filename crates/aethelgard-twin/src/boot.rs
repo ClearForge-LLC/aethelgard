@@ -48,8 +48,9 @@ pub const MIPS: u64 = 100;
 /// The quantum every boot runs at, in nanoseconds (`AET-WO-4300` D2): Renode
 /// 1.17.0's own default (`TimeSourceBase.DefaultQuantum`, 100 µs), stated by
 /// the CLI's composition. A line the CPU causes carries the start of its
-/// quantum, so an edge off this grid was not made by a store
-/// (`AET-WO-4300a`, D4).
+/// quantum, unless the core has just accessed a timer, which brings the
+/// clock to that instant (`AET-WO-4300a` FEEDBACK M4): an edge off this grid
+/// is D4's third part of the witness, never proof alone.
 pub const QUANTUM_NS: u64 = 100_000;
 
 /// A half-open address range.
