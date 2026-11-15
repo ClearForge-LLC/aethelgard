@@ -138,6 +138,11 @@ Probe plan, so the predictions have something to point at. Probes are built `420
 - `motors-dshot600`, `--for 2ms`: **pass**, each output `witnessed`: 4,662 rises and falls, span 8 ns, 9,322 edges off the grid, the registers at `PSC` 0, `ARR` 106, `CCR` 40.
 - `motors-dshot600`, 100 ms: **fail, closed**: `renode_log_flood` (info), then every witness unreadable (`motor_output_unwitnessed` four times, and the I2C and SPI identity witnesses with them). This is D1 (§5) measured through the CLI.
 
+**§2's "the reference's verdicts are unchanged apart from the named consequences", measured** against `main`'s binaries at the `main` merged in (`cd0bd31`), as `4200` did (`~/.cache/aet-4300a/baseline/main2`, `head2`; `run.sh` over every committed scenario, replay of each archive, a static `simulate`; keyed by scenario):
+- **All 14 shared scenarios keep their verdict and finding kinds**, field for field. They differ only in `run_id`, `run`, `state_sequence_hash`, `trace_bytes` and `event_count` (+6 each). Each difference is named: the six enable registers judged in full (§1.6, F24) are six more kind 11 events; trace version 8 (§1.4) and specification version 4 (§1.1, which moves the specification's hash, and with it the run id) change every trace's bytes. D2 itself changes nothing (P3.1).
+- `simulate` differs in `boot.registers` (the same six), `boot.specification_sha256` and `input.sha256` (specification 4), and the firmware's path.
+- The new seeded scenario `motors-pwm` runs here with the reference firmware, which starts no timers, and fails `motor_output_unwitnessed` and `register_mismatch`: it is a seeded case's scenario, meant for its mutant firmware on the PWM fixture's board.
+
 **The seeded set's evidence, re-derived from `attribute`** on the image's run (`~/.cache/aet-4300a/derive.log`; every case's domain and rule unchanged). Every move is 2100 F24's: the six enable registers now judged in full are kind 11 records archived in address order, `AHB3ENR`, `AHB1ENR` and `AHB2ENR` before `AHB4ENR`, `APB3ENR` before `APB1LENR`, `APB1HENR` and `APB4ENR` among the rest, so each event after them moves by six, and an enable register by the ones now before it:
 
 | case | before (evidence, masked) | after |
