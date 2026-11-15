@@ -398,3 +398,67 @@ fn the_reader_admits_a_footprints_keepout_clearance_and_nothing_more() {
         "LocalClearance"
     );
 }
+
+/// D2 (a): the router routes around a keepout. Two pads of one net face each
+/// other across it, so the straight track would cross it; the routed board
+/// passes `route::check`, which refuses any track inside the keepout.
+#[test]
+fn the_router_goes_around_a_keepout() {
+    let mm = 1_000_000;
+    let pad = |reference: &str, x: i64| route::Part {
+        reference: reference.into(),
+        rotation: 0,
+        pads: vec![route::Pad {
+            number: "1".into(),
+            net: Some("/X".into()),
+            rect: aethelgard_eda::pcb::Rect {
+                x0: x - mm / 2,
+                y0: 10 * mm - mm / 2,
+                x1: x + mm / 2,
+                y1: 10 * mm + mm / 2,
+            },
+            corner_nm: 0,
+            drill_nm: None,
+            join: None,
+        }],
+        courtyard: Vec::new(),
+        keepouts: Vec::new(),
+    };
+    let wall = route::Part {
+        reference: "K1".into(),
+        rotation: 0,
+        pads: Vec::new(),
+        courtyard: Vec::new(),
+        keepouts: vec![route::Keepout {
+            layer: route::Layer::F,
+            rect: aethelgard_eda::pcb::Rect {
+                x0: 9 * mm,
+                y0: 7 * mm,
+                x1: 11 * mm,
+                y1: 13 * mm,
+            },
+            tracks: true,
+            vias: true,
+            pads: true,
+            fill: true,
+        }],
+    };
+    let (spec, _, _) = fixture();
+    let mut stack = Stack::of(&spec);
+    stack.thermal.clear();
+    stack.joins.clear();
+    stack.classes.clear();
+    let board = route::Board {
+        outline: aethelgard_eda::pcb::Rect {
+            x0: 0,
+            y0: 0,
+            x1: 20 * mm,
+            y1: 20 * mm,
+        },
+        parts: vec![pad("R1", 5 * mm), pad("R2", 15 * mm), wall],
+        stack,
+    };
+    let routed = route::route(&board).unwrap();
+    route::check(&board, &routed).unwrap();
+    assert!(!routed.segments.is_empty());
+}

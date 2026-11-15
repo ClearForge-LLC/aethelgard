@@ -908,6 +908,22 @@ impl<'a> Router<'a> {
                     }
                 }
             }
+            // A keepout: no track of any net on its layer, and no via, where
+            // the copper would reach into it (`AET-WO-4300d2` D2).
+            for k_out in &part.keepouts {
+                for (k, r) in kinds.iter().enumerate() {
+                    if k_out.tracks {
+                        for node in grid.nodes(k_out.rect.grow(r.width_nm / 2 + EPS_NM)) {
+                            track[k][k_out.layer.index()][node] = BLOCKED;
+                        }
+                    }
+                    if k_out.vias {
+                        for node in grid.nodes(k_out.rect.grow(r.via_nm / 2 + EPS_NM)) {
+                            via[k][node] = BLOCKED;
+                        }
+                    }
+                }
+            }
             // The pad field: on F.Cu, only inside a pad; no via near it;
             // except in a dense part's own ring interior (K1).
             let Some(field) = part.pads.iter().map(|p| p.rect).reduce(|a, b| a.union(b)) else {
@@ -935,22 +951,6 @@ impl<'a> Router<'a> {
                 for pad in &part.pads {
                     for node in grid.nodes(pad.rect.grow(r.via_nm / 2)) {
                         if own(node) && touches(pad, grid.at(node), r.via_nm / 2) {
-                            via[k][node] = BLOCKED;
-                        }
-                    }
-                }
-            }
-            // A keepout: no track of any net on its layer, and no via, where
-            // the copper would reach into it (`AET-WO-4300d2` D2).
-            for k_out in &part.keepouts {
-                for (k, r) in kinds.iter().enumerate() {
-                    if k_out.tracks {
-                        for node in grid.nodes(k_out.rect.grow(r.width_nm / 2 + EPS_NM)) {
-                            track[k][k_out.layer.index()][node] = BLOCKED;
-                        }
-                    }
-                    if k_out.vias {
-                        for node in grid.nodes(k_out.rect.grow(r.via_nm / 2 + EPS_NM)) {
                             via[k][node] = BLOCKED;
                         }
                     }
