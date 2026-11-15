@@ -130,12 +130,15 @@ fn the_expected_image_holds_the_timer_s_stored_fields_and_names_its_tags() {
         .collect();
     let want = [
         reg("TIM1.CR1", 0x4001_0000, 0xFF, 0x81),
+        reg("TIM1.CR2", 0x4001_0004, 0x80, 0),
+        reg("TIM1.SMCR", 0x4001_0008, 0x77, 0),
         reg("TIM1.DIER", 0x4001_000C, 0x5F, 0),
         reg("TIM1.CCMR1", 0x4001_0018, 0x7373, 0x6060),
         reg("TIM1.CCMR2", 0x4001_001C, 0x7373, 0x6060),
         reg("TIM1.CCER", 0x4001_0020, 0xBBBB, 0x1111),
         reg("TIM1.PSC", 0x4001_0028, u32::MAX, 63),
         reg("TIM1.ARR", 0x4001_002C, u32::MAX, 2499),
+        reg("TIM1.RCR", 0x4001_0030, 0xFF, 0),
         reg("TIM1.CCR1", 0x4001_0034, u32::MAX, 1000),
         reg("TIM1.CCR2", 0x4001_0038, u32::MAX, 1000),
         reg("TIM1.CCR3", 0x4001_003C, u32::MAX, 1000),
@@ -158,6 +161,9 @@ fn the_expected_image_holds_the_timer_s_stored_fields_and_names_its_tags() {
     assert_eq!((afrh.mask, afrh.value), (0x0000_FFFF, 0x0000_1111));
     for tag in [
         "TIM1.BDTR.MOE",
+        "TIM1.BDTR.BKE",
+        "TIM1.SMCR.ECE",
+        "GPIOA.OTYPER",
         "TIM1.CCMR1.OC1PE",
         "TIM1.CCMR1.OC2PE",
         "TIM1.CCMR2.OC3PE",

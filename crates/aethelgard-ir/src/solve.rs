@@ -1016,6 +1016,17 @@ impl<'s, 't> Model<'s, 't> {
     /// hand pin, with no bus placed.
     fn motors_fit(&self, subset: &[usize], budget: &mut Budget) -> Result<bool, SolveError> {
         let mut search = Search::beside_hand_pins(self);
+        // Pigeonhole: each rate needs a timer of its own, so more rates than
+        // the timers the subset can reach cannot fit; the search would spend
+        // its budget proving it (adversarial pass).
+        let (mut keys, mut timers) = (BTreeSet::new(), BTreeSet::new());
+        for &m in subset {
+            keys.insert(self.motors[m].key);
+            timers.extend(search.channels_for(m).map(|c| c.0));
+        }
+        if keys.len() > timers.len() {
+            return Ok(false);
+        }
         search.motor_active = subset.to_vec();
         let found = search.run(budget);
         if let Some(pos) = search.exceeded {

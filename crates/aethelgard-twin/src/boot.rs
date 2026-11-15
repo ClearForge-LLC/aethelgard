@@ -382,7 +382,9 @@ pub const ENR_RESET: [(&str, u32); 1] = [("APB4ENR", 0x0001_0000)];
 /// `OCxFE`, `OCxPE` and `OCxCE` are tags). `CCER`: each used channel's
 /// `CCxE`, polarity 0, under the stored `CCxE`, `CCxP` and `CCxNP` bits
 /// (`CCxNE` is a tag). `PSC`, `ARR` and each used channel's `CCRx` in full.
-/// `BDTR` is all tags, so `MOE` is listed as unobservable. An unused
+/// `CR2.TI1S`, `SMCR`'s `SMS` and `TS`, and `RCR` (where the timer has one)
+/// at their reset value 0, which the bring-up never changes. `BDTR` is all
+/// tags, so `MOE` and `BKE` are listed as unobservable, with `SMCR.ECE`. An unused
 /// channel's `CCRx` is not written and not read: Renode resets it to
 /// `0xFFFF` where silicon resets it to 0 (measured, FEEDBACK P8.1).
 fn timer_registers(
@@ -412,6 +414,12 @@ fn timer_registers(
             Ok(())
         };
         reg("CR1", 0xFF, CR1_ARPE | CR1_CEN)?;
+        // `CR2.TI1S`, and `SMCR`'s slave mode and trigger (L175, L186–207),
+        // at reset: a gated or trigger slave mode keeps the model counting
+        // while it stops silicon's counter, or stops the model's with `CEN`
+        // still set (adversarial H1, H2).
+        reg("CR2", 0x80, 0)?;
+        reg("SMCR", 0x77, 0)?;
         reg("DIER", 0x5F, 0)?;
         let (mut ccmr, mut ccer) = ([0u32; 2], 0u32);
         for &c in &channels {
@@ -424,6 +432,11 @@ fn timer_registers(
         reg("CCER", 0xBBBB, ccer)?;
         reg("PSC", u32::MAX, m.psc)?;
         reg("ARR", u32::MAX, m.arr)?;
+        // The repetition counter, at reset, on the timers that have one (the
+        // same set as `MOE`'s, RM0433 Rev 9 §38.4.15, §41.5.13, §41.6.12).
+        if aethelgard_ir::motor::has_main_output_enable(timer) {
+            reg("RCR", 0xFF, 0)?;
+        }
         for &c in &channels {
             let ccr = topology
                 .motor_outputs_in_order()
@@ -475,8 +488,14 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
         if let Some((timer, channel)) = aethelgard_ir::motor::timer_channel(&a.signal) {
             let ccmr = if channel <= 2 { 1 } else { 2 };
             unobservable.push(format!("{}.CCMR{ccmr}.OC{channel}PE", a.peripheral));
+            // External clock mode 2 (`ECE`, L211) would leave silicon's
+            // counter waiting on `ETR`; a motor pin's output type is a tag
+            // too (adversarial H2).
+            unobservable.push(format!("{}.SMCR.ECE", a.peripheral));
+            unobservable.push(format!("GPIO{port}.OTYPER"));
             if aethelgard_ir::motor::has_main_output_enable(timer) {
                 unobservable.push(format!("{}.BDTR.MOE", a.peripheral));
+                unobservable.push(format!("{}.BDTR.BKE", a.peripheral));
             }
         }
     }

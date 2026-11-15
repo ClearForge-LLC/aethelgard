@@ -82,34 +82,62 @@ struct Wrong {
     psc: Option<u32>,
 }
 
-fn witness(status: &str) -> Record {
+/// A witness of output `label` on `observer`, with counts its status allows
+/// (replay re-derives the status from them), at the model's timing for
+/// `ccr`.
+fn witness_of(label: &str, observer: &str, status: &str, ccr: u32) -> Record {
+    let edges = status == "witnessed" || status == "mismatch";
     Record::MotorWitness {
-        label: "MOTOR1".into(),
-        observer: "gpioPortA.pa8obs".into(),
+        label: label.into(),
+        observer: observer.into(),
         period_ns: 639_744,
-        high_ns: 256_000,
+        high_ns: u64::from(ccr) * 256,
         grain_ns: 10,
         quantum_ns: 100_000,
         status: status.into(),
-        rises: if status == "witnessed" || status == "mismatch" {
-            156
-        } else {
-            0
-        },
-        falls: if status == "witnessed" || status == "mismatch" {
-            155
-        } else {
-            0
-        },
-        first_ns: None,
-        span_ns: None,
-        off_grid: 0,
+        rises: if edges { 156 } else { 0 },
+        falls: if edges { 155 } else { 0 },
+        first_ns: edges.then_some(639_750),
+        last_ns: edges.then_some(99_769_014),
+        end_ns: 100_000_000,
+        span_ns: edges.then_some(if status == "mismatch" { 400 } else { 8 }),
+        off_grid: if edges { 311 } else { 0 },
         batched: 0,
+    }
+}
+
+fn solved(label: &str, channel: u8, pin: &str, ccr: u32) -> Record {
+    Record::MotorOutputSolved {
+        label: label.into(),
+        timer: "TIM1".into(),
+        channel,
+        pin: pin.into(),
+        alternate_function: 1,
+        protocol: "pwm".into(),
+        psc: 63,
+        arr: 2499,
+        ccr,
+        pwm: Some((400, 1000, 2000)),
+    }
+}
+
+/// The static check of an output at `ccr`: it holds at the 1000 µs idle
+/// pulse's 1000 ticks, and fails a tick short.
+fn check(label: &str, ccr: u32) -> Record {
+    Record::MotorTimingCheck {
+        label: label.into(),
+        kernel_hz: 64_000_000,
+        period_ps: 2_500_000_000,
+        high_ps: u64::from(ccr) * 1_000_000,
+        nominal_period_ps: 2_500_000_000,
+        nominal_high_ps: 1_000_000_000,
+        holds: ccr == 1000,
     }
 }
 
 fn run(wrong: &Wrong, status: &str, holds: bool, findings: &[(&str, u64)]) -> Vec<Record> {
     let ok = |w: Option<u32>, v: u32| w.unwrap_or(v);
+    let ccr = if holds { 1000 } else { 999 };
     let mut findings: Vec<(String, String, u64)> = findings
         .iter()
         .map(|(k, n)| ((*k).into(), "error".into(), *n))
@@ -144,27 +172,8 @@ fn run(wrong: &Wrong, status: &str, holds: bool, findings: &[(&str, u64)]) -> Ve
             ],
             devices: vec![("U2".into(), 0x76), ("U3".into(), 0x48)],
         },
-        Record::MotorOutputSolved {
-            label: "MOTOR1".into(),
-            timer: "TIM1".into(),
-            channel: 1,
-            pin: "PA8".into(),
-            alternate_function: 1,
-            protocol: "pwm".into(),
-            psc: 63,
-            arr: 2499,
-            ccr: 1000,
-            pwm: Some((400, 1000, 2000)),
-        },
-        Record::MotorTimingCheck {
-            label: "MOTOR1".into(),
-            kernel_hz: 64_000_000,
-            period_ps: 2_500_000_000,
-            high_ps: 1_000_000_000,
-            nominal_period_ps: 2_500_000_000,
-            nominal_high_ps: 1_000_000_000,
-            holds,
-        },
+        solved("MOTOR1", 1, "PA8", ccr),
+        check("MOTOR1", ccr),
         rise("I2C_SCL"),
         rise("I2C_SDA"),
         Record::BootObserved {
@@ -223,7 +232,7 @@ fn run(wrong: &Wrong, status: &str, holds: bool, findings: &[(&str, u64)]) -> Ve
             status: Some("ok".into()),
         },
         i2c_witness(),
-        witness(status),
+        witness_of("MOTOR1", "gpioPortA.pa8obs", status, ccr),
         Record::Verdict {
             pass: findings.iter().all(|f| f.1 == "info"),
             findings,
@@ -424,4 +433,96 @@ fn propose_answers_the_dead_output_with_a_generator_report_of_its_af_field() {
         .map(|e| (e.what.as_str(), e.mask.unwrap(), e.solved, e.observed))
         .collect();
     assert_eq!(what, [("GPIOA.AFRH", 0xF, 1, Some(2))]);
+}
+
+/// `run` with a second output, `MOTOR2` on TIM1_CH2 (PA9), witnessed as
+/// `status`, and `TIM1.CCR2` read as `ccr2`, the verdict's findings as given.
+fn with_motor2(status: &str, ccr2: u32, findings: &[(&str, u64)]) -> Vec<Record> {
+    let mut r = run(&Wrong::default(), "witnessed", true, findings);
+    let at = |r: &[Record], f: &dyn Fn(&Record) -> bool| r.iter().position(f).unwrap() + 1;
+    let i = at(&r, &|x| matches!(x, Record::MotorOutputSolved { .. }));
+    r.insert(i, solved("MOTOR2", 2, "PA9", 1000));
+    let i = at(&r, &|x| matches!(x, Record::MotorTimingCheck { .. }));
+    r.insert(i, check("MOTOR2", 1000));
+    let i = at(
+        &r,
+        &|x| matches!(x, Record::RegisterObserved { name, .. } if name == "TIM1.PSC"),
+    );
+    r.insert(i, register("TIM1.CCR2", 0x4001_0038, u32::MAX, 1000, ccr2));
+    let i = at(&r, &|x| matches!(x, Record::MotorWitness { .. }));
+    r.insert(i, witness_of("MOTOR2", "gpioPortA.pa9obs", status, 1000));
+    r
+}
+
+#[test]
+fn adversarial_h3_a_channel_s_register_is_its_own_output_s_alone() {
+    // Adversarial pass, H3: MOTOR1 dead with every register of its own
+    // right, and another channel's CCR2 wrong. The wrong CCR2 is MOTOR2's
+    // evidence only; MOTOR1's dead output stays indeterminate.
+    let mut r = with_motor2(
+        "mismatch",
+        0x3e9,
+        &[
+            ("register_mismatch", 1),
+            (MOTOR_MISMATCH_FINDING, 1),
+            (MOTOR_UNWITNESSED_FINDING, 1),
+        ],
+    );
+    let i = r
+        .iter()
+        .position(|x| matches!(x, Record::MotorWitness { label, .. } if label == "MOTOR1"))
+        .unwrap();
+    r[i] = witness_of("MOTOR1", "gpioPortA.pa8obs", "unwitnessed", 1000);
+    let dead = |r: &[Record]| {
+        let a = attribute(&archived(r)).unwrap();
+        assert_eq!(
+            (a.domain, a.rule),
+            (Domain::Indeterminate, Rule::I4),
+            "{a:?}"
+        );
+        assert_eq!(named(r, &a), ["kind 25", "kind 26"]);
+        assert!(matches!(&r[a.evidence[1].index as usize],
+                Record::MotorWitness { label, .. } if label == "MOTOR1"));
+    };
+    dead(&r);
+    // MOTOR2 witnessed beside the wrong CCR2: still not MOTOR1's evidence.
+    let alone = {
+        let mut r = with_motor2(
+            "witnessed",
+            0x3e9,
+            &[("register_mismatch", 1), (MOTOR_UNWITNESSED_FINDING, 1)],
+        );
+        r[i] = witness_of("MOTOR1", "gpioPortA.pa8obs", "unwitnessed", 1000);
+        r
+    };
+    dead(&alone);
+}
+
+#[test]
+fn adversarial_a_wrong_channel_register_cites_that_output_s_failing_witness_only() {
+    // Adversarial pass, medium: CCR2 wrong, MOTOR2 a mismatch, MOTOR1
+    // witnessed. The evidence is CCR2 and MOTOR2's witness, never MOTOR1's
+    // passing one.
+    let r = with_motor2(
+        "mismatch",
+        0x3e9,
+        &[("register_mismatch", 1), (MOTOR_MISMATCH_FINDING, 1)],
+    );
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S4), "{a:?}");
+    assert_eq!(named(&r, &a), ["TIM1.CCR2", "kind 26"]);
+    let cited = a
+        .evidence
+        .iter()
+        .find(|e| e.kind == 26)
+        .map(|e| &r[e.index as usize]);
+    assert!(
+        matches!(cited, Some(Record::MotorWitness { label, .. }) if label == "MOTOR2"),
+        "{cited:?}"
+    );
+    // CCR2 wrong and MOTOR2's witness passing: the register alone.
+    let r = with_motor2("witnessed", 0x3e9, &[("register_mismatch", 1)]);
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S4), "{a:?}");
+    assert_eq!(named(&r, &a), ["TIM1.CCR2"]);
 }

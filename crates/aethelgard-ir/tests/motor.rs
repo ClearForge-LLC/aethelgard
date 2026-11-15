@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use aethelgard_ir::motor::check_silicon;
 use aethelgard_ir::{
     IrValidationError, MotorOutput, MotorProtocol, Pin, PinSource, PinTable, PwmTiming, SolveError,
-    SolvedClock, SolvedTopology, Specification, solve,
+    SolvedClock, SolvedTopology, Specification, solve, solve_with_limit,
 };
 use serde_json::{Value, json};
 
@@ -432,4 +432,18 @@ fn a_device_reference_may_not_be_an_observer_s_name() {
             "{name}"
         );
     }
+}
+
+#[test]
+fn adversarial_more_rates_than_timers_is_named_not_a_spent_budget() {
+    // Adversarial pass (low): thirteen rates on the H753's twelve timers ran
+    // the search out of budget. Five rates on this table's four timers are
+    // named with no search proving it: within 100 nodes, which the search
+    // alone spends (measured), every output a claimant (dropping any fits).
+    let rates: Vec<Value> = (0..5)
+        .map(|i| pwm(&format!("M{i}"), None, 400 + 10 * i))
+        .collect();
+    let e = solve_with_limit(&spec(rates), &table(), HASH, 100).unwrap_err();
+    assert_eq!(e.kind(), "MotorsInfeasible", "{e}");
+    assert_eq!(e.claimants(), ["M0", "M1", "M2", "M3", "M4"]);
 }

@@ -20,14 +20,16 @@ pub const MOTOR_PROTOCOLS: [&str; 3] = ["pwm", "dshot300", "dshot600"];
 /// What kind 26's `status` may say (`AET-WO-4300a`): the observer's edges
 /// were the model's sequence with an edge off the grid; were, on the grid
 /// alone; showed fewer than two rises; could not be read whole; did not fit
-/// the sequence; or shared stamps.
-pub const MOTOR_STATUSES: [&str; 6] = [
+/// the sequence; shared stamps; or stopped more than a period before the
+/// window's end.
+pub const MOTOR_STATUSES: [&str; 7] = [
     "witnessed",
     "static_only",
     "unwitnessed",
     "unreadable",
     "mismatch",
     "batched",
+    "stopped",
 ];
 
 /// One override a scenario applies to its specification (`AET-WO-2300` §1.1).
@@ -374,6 +376,9 @@ pub enum Record {
         rises: u64,
         falls: u64,
         first_ns: Option<u64>,
+        /// The last rise, and the end of the window it must reach.
+        last_ns: Option<u64>,
+        end_ns: u64,
         span_ns: Option<u64>,
         off_grid: u64,
         batched: u64,
@@ -998,6 +1003,8 @@ impl Record {
                 rises,
                 falls,
                 first_ns,
+                last_ns,
+                end_ns,
                 span_ns,
                 off_grid,
                 batched,
@@ -1012,6 +1019,8 @@ impl Record {
                 u(*rises),
                 u(*falls),
                 opt(*first_ns),
+                opt(*last_ns),
+                u(*end_ns),
                 opt(*span_ns),
                 u(*off_grid),
                 u(*batched),
@@ -1278,6 +1287,8 @@ impl Record {
                 rises: f.uint()?,
                 falls: f.uint()?,
                 first_ns: f.opt()?,
+                last_ns: f.opt()?,
+                end_ns: f.uint()?,
                 span_ns: f.opt()?,
                 off_grid: f.uint()?,
                 batched: f.uint()?,

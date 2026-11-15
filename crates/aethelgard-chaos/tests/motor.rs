@@ -16,7 +16,16 @@ use common::*;
 
 const BOOT_WORD: u32 = 0x2100_B007;
 
+/// The CCR of an output whose static check holds (the 1000 µs idle pulse at
+/// a 1 µs tick), and of one whose check fails (a tick short).
+const CCR_HOLDS: u32 = 1000;
+const CCR_FAILS: u32 = 999;
+
 fn solved(label: &str, pin: &str, channel: u8) -> Record {
+    solved_ccr(label, pin, channel, CCR_HOLDS)
+}
+
+fn solved_ccr(label: &str, pin: &str, channel: u8, ccr: u32) -> Record {
     Record::MotorOutputSolved {
         label: label.into(),
         timer: "TIM1".into(),
@@ -26,38 +35,63 @@ fn solved(label: &str, pin: &str, channel: u8) -> Record {
         protocol: "pwm".into(),
         psc: 63,
         arr: 2499,
-        ccr: 1000,
+        ccr,
         pwm: Some((400, 1000, 2000)),
     }
 }
 
+/// The static check of an output solved at [`CCR_HOLDS`], or at
+/// [`CCR_FAILS`] when it does not hold: its figures are what replay
+/// re-derives from kind 24.
 fn check(label: &str, holds: bool) -> Record {
+    let ccr = u64::from(if holds { CCR_HOLDS } else { CCR_FAILS });
     Record::MotorTimingCheck {
         label: label.into(),
         kernel_hz: 64_000_000,
         period_ps: 2_500_000_000,
-        high_ps: 1_000_000_000,
+        high_ps: ccr * 1_000_000,
         nominal_period_ps: 2_500_000_000,
         nominal_high_ps: 1_000_000_000,
         holds,
     }
 }
 
+/// A witness with counts the status allows: a full window of edges on the
+/// model's sequence for `witnessed`, and each other status's own departure.
 fn witness(label: &str, observer: &str, status: &str) -> Record {
+    witness_ccr(label, observer, status, CCR_HOLDS)
+}
+
+fn witness_ccr(label: &str, observer: &str, status: &str, ccr: u32) -> Record {
+    let (mut rises, mut falls, mut first_ns, mut last_ns, mut span_ns) =
+        (156, 155, Some(639_750), Some(99_769_014), Some(8));
+    let (mut off_grid, mut batched) = (311, 0);
+    match status {
+        "static_only" => off_grid = 0,
+        "unwitnessed" | "unreadable" => {
+            (rises, falls, first_ns, last_ns, span_ns, off_grid) = (0, 0, None, None, None, 0);
+        }
+        "mismatch" => span_ns = Some(400),
+        "batched" => batched = 3,
+        "stopped" => last_ns = Some(50_000_000),
+        _ => {}
+    }
     Record::MotorWitness {
         label: label.into(),
         observer: observer.into(),
         period_ns: 639_744,
-        high_ns: 256_000,
+        high_ns: u64::from(ccr) * 256,
         grain_ns: 10,
         quantum_ns: 100_000,
         status: status.into(),
-        rises: 156,
-        falls: 155,
-        first_ns: Some(639_750),
-        span_ns: Some(8),
-        off_grid: 311,
-        batched: 0,
+        rises,
+        falls,
+        first_ns,
+        last_ns,
+        end_ns: 100_000_000,
+        span_ns,
+        off_grid,
+        batched,
     }
 }
 
@@ -95,6 +129,7 @@ fn run(
     booted: bool,
     findings: Vec<(&str, &str, u64)>,
 ) -> Vec<Record> {
+    let m2_ccr = if m2_holds { CCR_HOLDS } else { CCR_FAILS };
     let pass = findings.iter().all(|f| f.1 == "info");
     let failing: Vec<&str> = findings
         .iter()
@@ -108,12 +143,12 @@ fn run(
             topology_sha256: [3; 32],
         },
         solved("M1", "PA8", 1),
-        solved("M2", "PA9", 2),
+        solved_ccr("M2", "PA9", 2, m2_ccr),
         check("M1", true),
         check("M2", m2_holds),
         boot(Some(if booted { BOOT_WORD } else { 0 })),
         witness("M1", "gpioPortA.pa8obs", "witnessed"),
-        witness("M2", "gpioPortA.pa9obs", m2_status),
+        witness_ccr("M2", "gpioPortA.pa9obs", m2_status, m2_ccr),
         Record::Verdict {
             pass,
             findings: findings
@@ -152,6 +187,7 @@ fn a_witnessed_run_passes_and_each_status_needs_its_own_finding() {
         ("unreadable", MOTOR_UNWITNESSED_FINDING),
         ("mismatch", MOTOR_MISMATCH_FINDING),
         ("batched", MOTOR_MISMATCH_FINDING),
+        ("stopped", MOTOR_MISMATCH_FINDING),
     ] {
         let ok = run(status, true, true, vec![(kind, "error", 1)]);
         assert!(check_run(&ok).unwrap().matched, "{status}");
@@ -308,4 +344,82 @@ fn the_field_rules_hold_on_write_and_read() {
     }
     assert!(solved("M1", "PA8", 1).check().is_ok());
     assert!(witness("M1", "gpioPortA.pa8obs", "batched").check().is_ok());
+}
+
+#[test]
+fn replay_re_derives_the_static_check_and_the_witness_status() {
+    // Adversarial pass: replay took kinds 25 and 26 at their word, so a
+    // forged `holds` or `status` beside its own failing figures passed.
+    let base = run("witnessed", true, true, vec![]);
+    let edit = |f: &dyn Fn(&mut Vec<Record>)| {
+        let mut r = base.clone();
+        f(&mut r);
+        check_run(&r).map(|_| ())
+    };
+    assert_eq!(edit(&|_| {}), Ok(()));
+    // A check that claims to hold beside its own figures a tick short.
+    let mut short = run("witnessed", false, true, vec![]);
+    if let Record::MotorTimingCheck { holds, .. } = &mut short[5] {
+        *holds = true;
+    }
+    assert!(check_run(&short).is_err());
+    // A check whose figures are not its output's.
+    assert!(
+        edit(
+            &|r| if let Record::MotorTimingCheck { high_ps, .. } = &mut r[5] {
+                *high_ps += 1;
+            }
+        )
+        .is_err()
+    );
+    let forge = |f: &dyn Fn(&mut Record)| edit(&|r| f(&mut r[8]));
+    // A witnessed status over each departure the judge fails.
+    for status in [
+        "static_only",
+        "unwitnessed",
+        "mismatch",
+        "batched",
+        "stopped",
+    ] {
+        assert!(
+            forge(&|w| {
+                *w = witness("M2", "gpioPortA.pa9obs", status);
+                if let Record::MotorWitness { status, .. } = w {
+                    *status = "witnessed".into();
+                }
+            })
+            .is_err(),
+            "{status}"
+        );
+    }
+    // A witness of another timing, grain or quantum than the judge's.
+    for f in [
+        (|w: &mut Record| {
+            if let Record::MotorWitness { period_ns, .. } = w {
+                *period_ns += 4;
+            }
+        }) as fn(&mut Record),
+        |w| {
+            if let Record::MotorWitness { high_ns, .. } = w {
+                *high_ns += 4;
+            }
+        },
+        |w| {
+            if let Record::MotorWitness { grain_ns, .. } = w {
+                *grain_ns = 1_000;
+            }
+        },
+        |w| {
+            if let Record::MotorWitness { quantum_ns, .. } = w {
+                *quantum_ns = 10;
+            }
+        },
+        |w| {
+            if let Record::MotorWitness { falls, .. } = w {
+                *falls = 10;
+            }
+        },
+    ] {
+        assert!(forge(&f).is_err());
+    }
 }

@@ -588,13 +588,18 @@ pub const STAMP_GRAIN_NS: u64 = 1000 / aethelgard_twin::boot::MIPS;
 /// conventions (`aethelgard_twin::timer`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MotorWitness {
-    /// `witnessed`, `static_only`, `unwitnessed`, `unreadable`, `mismatch`
-    /// or `batched`.
+    /// `witnessed`, `static_only`, `unwitnessed`, `unreadable`, `mismatch`,
+    /// `batched` or `stopped`.
     pub status: &'static str,
     pub rises: u64,
     pub falls: u64,
     /// The first rise's stamp, the anchor every later edge is predicted from.
     pub first_ns: Option<u64>,
+    /// The last rise's stamp, and the end of the window it must reach to
+    /// within one period and one stamp grain (adversarial H1: a timer
+    /// stopped after two periods).
+    pub last_ns: Option<u64>,
+    pub end_ns: u64,
     /// The widest spread of the edges' deviations from the predicted
     /// sequence, in ns: below [`STAMP_GRAIN_NS`] for an exact sequence.
     pub span_ns: Option<u64>,
@@ -642,12 +647,14 @@ fn observer_edges(source: &str, lines: &[&str]) -> Option<Vec<(u64, bool)>> {
 /// every deviation inside one stamp grain of every other (the model's
 /// conventions, `aethelgard_twin::timer`). `None` is a log that could not be
 /// read whole; `Some(None)` an observer line that was not a state change.
-fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>) -> MotorWitness {
+fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>, end_ns: u64) -> MotorWitness {
     let mut w = MotorWitness {
         status: "unreadable",
         rises: 0,
         falls: 0,
         first_ns: None,
+        last_ns: None,
+        end_ns,
         span_ns: None,
         off_grid: 0,
         batched: 0,
@@ -688,10 +695,17 @@ fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>) -> MotorWit
     }
     let span = u64::try_from(hi - lo).unwrap_or(u64::MAX);
     w.span_ns = Some(span);
+    let last = edges.iter().rev().find(|e| e.1).map(|e| e.0);
+    w.last_ns = last;
+    // The outputs run to the end of the window: a rise is due every period,
+    // so the last one comes no earlier than a period and a grain before it.
+    let covers = last.is_some_and(|l| l + m.observer.period_ns + STAMP_GRAIN_NS >= end_ns);
     w.status = if w.batched > 0 {
         "batched"
     } else if !alternating || span >= STAMP_GRAIN_NS {
         "mismatch"
+    } else if !covers {
+        "stopped"
     } else if w.off_grid == 0 {
         "static_only"
     } else {
@@ -762,6 +776,15 @@ fn witness_findings_of(m: &Motor, w: &MotorWitness) -> Vec<Finding> {
             format!(
                 "{who}: the observer on {} logged {} rises and {} falls, too few to show a period",
                 o.pin, w.rises, w.falls
+            ),
+        )),
+        "stopped" => out.push(Finding::plain(
+            aethelgard_chaos::campaign::MOTOR_MISMATCH_FINDING,
+            format!(
+                "{who}: {} rises follow {model}, but the last is at {} ns, more than a period before the window's end at {} ns: the output stopped",
+                w.rises,
+                w.last_ns.unwrap_or(0),
+                w.end_ns
             ),
         )),
         "batched" => out.push(Finding::plain(
@@ -1081,7 +1104,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             .map(|m| {
                 let edges = (out.dropped_log_lines == 0)
                     .then(|| observer_edges(&m.observer.source, &last_boot));
-                witness_motor(m, edges)
+                witness_motor(m, edges, plan.virtual_ns)
             })
             .collect(),
     };
@@ -1598,6 +1621,16 @@ mod tests {
         }
     }
 
+    /// The witness of a run whose window ends right after the edges given.
+    fn witness_motor_at(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>) -> MotorWitness {
+        let end = edges
+            .as_ref()
+            .and_then(|e| e.as_ref())
+            .and_then(|e| e.iter().map(|x| x.0).max())
+            .unwrap_or(0);
+        witness_motor(m, edges, end)
+    }
+
     /// The PWM fixture's first output: the model's 639,744 ns period and
     /// 256,000 ns high time (PSC 63, ARR 2499, CCR 1000 at 4 ns a tick).
     fn motor() -> Motor {
@@ -1654,7 +1687,7 @@ mod tests {
     #[test]
     fn a_motor_s_edges_on_the_model_s_sequence_are_witnessed() {
         let m = motor();
-        let w = witness_motor(&m, Some(Some(measured(150, &[0, -6, 2, -4]))));
+        let w = witness_motor_at(&m, Some(Some(measured(150, &[0, -6, 2, -4]))));
         assert_eq!(w.status, "witnessed", "{w:?}");
         assert_eq!((w.rises, w.falls, w.first_ns), (150, 150, Some(639_750)));
         assert_eq!(w.span_ns, Some(8));
@@ -1669,11 +1702,11 @@ mod tests {
         for (i, edge) in e.iter_mut().enumerate() {
             edge.0 += 256 * (i as u64 / 2);
         }
-        assert_eq!(witness_motor(&m, Some(Some(e))).status, "mismatch");
+        assert_eq!(witness_motor_at(&m, Some(Some(e))).status, "mismatch");
         // One grain off on one edge alone.
         let mut e = measured(10, &[0]);
         e[7].0 += 10;
-        let w = witness_motor(&m, Some(Some(e)));
+        let w = witness_motor_at(&m, Some(Some(e)));
         assert_eq!((w.status, w.span_ns), ("mismatch", Some(10)));
         let f = witness_findings_of(&m, &w);
         assert_eq!(f.len(), 1);
@@ -1688,20 +1721,23 @@ mod tests {
         let store: Vec<(u64, bool)> = (0..4)
             .flat_map(|k| [(k * 6_000_000, true), (k * 6_000_000 + 400_000, false)])
             .collect();
-        assert_eq!(witness_motor(&m, Some(Some(store))).status, "mismatch");
+        assert_eq!(witness_motor_at(&m, Some(Some(store))).status, "mismatch");
         // A store that copies the period exactly still cannot leave the grid:
         // the model's period here is not a multiple of 100 us, so two rises
         // on the grid cannot be one period apart.
         let on_grid = vec![(0, true), (300_000, false), (700_000, true)];
-        assert_eq!(witness_motor(&m, Some(Some(on_grid))).status, "mismatch");
+        assert_eq!(witness_motor_at(&m, Some(Some(on_grid))).status, "mismatch");
         let one = vec![(639_750, true), (895_750, false)];
-        let w = witness_motor(&m, Some(Some(one)));
+        let w = witness_motor_at(&m, Some(Some(one)));
         assert_eq!(w.status, "unwitnessed");
         assert_eq!(
             witness_findings_of(&m, &w)[0].kind,
             "motor_output_unwitnessed"
         );
-        assert_eq!(witness_motor(&m, Some(Some(vec![]))).status, "unwitnessed");
+        assert_eq!(
+            witness_motor_at(&m, Some(Some(vec![]))).status,
+            "unwitnessed"
+        );
     }
 
     #[test]
@@ -1713,7 +1749,7 @@ mod tests {
         let e: Vec<(u64, bool)> = (0..5)
             .flat_map(|k| [(k * 2_000_000, true), (k * 2_000_000 + 1_000_000, false)])
             .collect();
-        let w = witness_motor(&m, Some(Some(e)));
+        let w = witness_motor_at(&m, Some(Some(e)));
         assert_eq!(w.status, "static_only");
         let f = witness_findings_of(&m, &w);
         assert_eq!(f.len(), 1);
@@ -1728,13 +1764,13 @@ mod tests {
         let m = motor();
         let mut e = measured(10, &[0]);
         e[4].0 = e[3].0;
-        assert_eq!(witness_motor(&m, Some(Some(e))).status, "batched");
-        assert_eq!(witness_motor(&m, None).status, "unreadable");
-        assert_eq!(witness_motor(&m, Some(None)).status, "mismatch");
+        assert_eq!(witness_motor_at(&m, Some(Some(e))).status, "batched");
+        assert_eq!(witness_motor_at(&m, None).status, "unreadable");
+        assert_eq!(witness_motor_at(&m, Some(None)).status, "mismatch");
         // Starting on a fall is not the model's sequence.
         let mut e = measured(10, &[0]);
         e.remove(0);
-        assert_eq!(witness_motor(&m, Some(Some(e))).status, "mismatch");
+        assert_eq!(witness_motor_at(&m, Some(Some(e))).status, "mismatch");
         let lines = [
             "[00:00:00.000639750] [NOISY] gpioPortA.pa8obs: LED state changed to True",
             "[00:00:00.000639750] [NOISY] gpioPortA.pa9obs: LED state changed to True",
@@ -1747,6 +1783,21 @@ mod tests {
         );
         let odd = ["[00:00:00.000639750] [INFO] gpioPortA.pa8obs: LED state changed to True"];
         assert_eq!(observer_edges("gpioPortA.pa8obs", &odd), None);
+    }
+
+    /// Adversarial H1: a timer stopped after two periods (or started late,
+    /// which the coverage rule does not judge) passes no witness once the
+    /// window runs on past its last rise.
+    #[test]
+    fn adversarial_h1_edges_that_stop_before_the_window_s_end_fail() {
+        let m = motor();
+        let two = measured(2, &[0]);
+        let w = witness_motor(&m, Some(Some(two.clone())), 100_000_000);
+        assert_eq!(w.status, "stopped");
+        assert_eq!(witness_findings_of(&m, &w)[0].kind, "motor_timing_mismatch");
+        // Within a period and a grain of the end, it covers the window.
+        let end = two[2].0 + 639_744 + 10;
+        assert_eq!(witness_motor(&m, Some(Some(two)), end).status, "witnessed");
     }
 
     #[test]

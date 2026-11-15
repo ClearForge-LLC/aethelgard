@@ -403,13 +403,15 @@ struct Bus<'a> {
 
 /// One solved motor output (kind 24, `AET-WO-4300a`) and the register
 /// fields it owns: the bus join's pin and gate fields, from the header, and
-/// every register of its timer's block (`timer`, `[start, end)`).
+/// its channel's fields of its timer's block (`timer`, `[start, end)`; see
+/// [`timer_bits`]).
 struct Motor<'a> {
     label: &'a str,
     /// `None` when the header lacks a fact the output names: it then owns
     /// nothing, as a bus that cannot join does.
     joined: Option<Joined>,
     timer: (&'a str, u32, u32),
+    channel: u8,
 }
 
 /// Where a symptom is: on a bus, for a device of it or not, or on the board.
@@ -794,16 +796,22 @@ impl<'a> Run<'a> {
                     .flat_map(|m| m.joined.iter().flat_map(|j| &j.owned)),
             )
             .filter(|o| o.name == name && o.address == r.address)
-            .fold(0, |m, o| m | o.mask);
-        if self.motors.iter().any(|m| in_timer(m, name, r)) {
-            return 0;
-        }
+            .fold(0, |m, o| m | o.mask)
+            | self.timer_owned(name, r);
         mismatch(r) & !owned
     }
 
+    /// The bits of a timer register reading that some motor output owns.
+    fn timer_owned(&self, name: &str, r: &Reading) -> u32 {
+        self.motors
+            .iter()
+            .fold(0, |bits, m| bits | timer_bits(m, name, r))
+    }
+
     /// Whether motor output `m` owns a wrong field of `reading`: its pin's or
-    /// gates' (as a bus owns its own), or any wrong bit of its timer's
-    /// registers.
+    /// gates' (as a bus owns its own), or a wrong bit of its channel's fields
+    /// of its timer (adversarial pass: another channel's `CCRk` made a dead
+    /// output software).
     fn motor_owned_wrong(&self, m: usize, name: &str, reading: &Reading) -> bool {
         let motor = &self.motors[m];
         motor
@@ -811,7 +819,7 @@ impl<'a> Run<'a> {
             .iter()
             .flat_map(|j| &j.owned)
             .any(|o| wrong(o, name, reading))
-            || (in_timer(motor, name, reading) && mismatch(reading) != 0)
+            || mismatch(reading) & timer_bits(motor, name, reading) != 0
     }
 
     /// Software evidence for motor output `m`: each register it owns that is
@@ -952,7 +960,7 @@ impl<'a> Run<'a> {
             }),
             campaign::MOTOR_MISMATCH_FINDING => self.indices(|r| {
                 matches!(r, Record::MotorWitness { status, .. }
-                    if status == "mismatch" || status == "batched")
+                    if status == "mismatch" || status == "batched" || status == "stopped")
             }),
             "register_mismatch" => self.indices(
                 |r| matches!(r, Record::RegisterObserved { reading, .. } if mismatch(reading) != 0),
@@ -1036,9 +1044,12 @@ impl<'a> Run<'a> {
                 if software.is_empty() {
                     (Rule::I4, own, vec![])
                 } else {
-                    let witness = own
-                        .into_iter()
-                        .filter(|&i| matches!(self.records[i], Record::MotorWitness { .. }));
+                    // Its witness is evidence only when it failed
+                    // (adversarial pass: a passing one was cited).
+                    let witness = own.into_iter().filter(|&i| {
+                        matches!(&self.records[i], Record::MotorWitness { status, .. }
+                            if !PASSING_WITNESS.contains(&status.as_str()))
+                    });
                     (
                         Rule::S4,
                         software.into_iter().chain(witness).collect(),
@@ -1065,13 +1076,34 @@ impl<'a> Run<'a> {
     }
 }
 
-/// Whether `reading` (of register `name`) is one of motor output `m`'s
-/// timer's registers: named `TIMn.` and inside its block.
-fn in_timer(m: &Motor<'_>, name: &str, reading: &Reading) -> bool {
+/// The witness statuses that pass (`AET-WO-4300a` D4).
+const PASSING_WITNESS: [&str; 2] = ["witnessed", "static_only"];
+
+/// The bits of `reading` (of register `name`) that motor output `m` owns in
+/// its timer's block (named `TIMn.` and inside it): its own `CCRk` whole,
+/// its byte of `CCMR1` or `CCMR2`, its nibble of `CCER`, and every other
+/// register of the timer whole, which all the timer's outputs share; 0
+/// outside the block and for another channel's fields.
+fn timer_bits(m: &Motor<'_>, name: &str, reading: &Reading) -> u32 {
     let (timer, start, end) = m.timer;
-    name.strip_prefix(timer)
-        .is_some_and(|rest| rest.starts_with('.'))
-        && (start..end).contains(&reading.address)
+    let Some(register) = name
+        .strip_prefix(timer)
+        .and_then(|rest| rest.strip_prefix('.'))
+        .filter(|_| (start..end).contains(&reading.address))
+    else {
+        return 0;
+    };
+    // Channels 1 to 4 (kind 24's field rule).
+    let k = u32::from(m.channel).clamp(1, 4) - 1;
+    let ccmr = if k < 2 { "CCMR1" } else { "CCMR2" };
+    let bits = match register {
+        "CCMR1" | "CCMR2" if register == ccmr => 0xFF << (8 * (k % 2)),
+        "CCER" => 0xF << (4 * k),
+        r if r == format!("CCR{}", k + 1) => u32::MAX,
+        r if r.starts_with("CCMR") || r.starts_with("CCR") => 0,
+        _ => u32::MAX,
+    };
+    bits & reading.mask
 }
 
 /// Kind 10 with its `pc` outside every executable segment it archives: the
@@ -1114,6 +1146,7 @@ fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
         if let Record::MotorOutputSolved {
             label,
             timer,
+            channel,
             pin,
             alternate_function,
             ..
@@ -1128,6 +1161,7 @@ fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
             };
             let base = f.base(timer).ok();
             motors.push(Motor {
+                channel: *channel,
                 label,
                 joined: join(&f, timer, std::slice::from_ref(&line)).ok(),
                 timer: (
@@ -1240,14 +1274,15 @@ impl RunView<'_> {
                     seen.push(f.clone());
                     new
                 });
-                // A motor output's timer register is owned whole.
-                if run.motors.iter().any(|m| in_timer(m, name, reading)) && mismatch(reading) != 0 {
+                // The motor outputs' fields of a timer register, as one.
+                let timer = run.timer_owned(name, reading);
+                if mismatch(reading) & timer != 0 {
                     fields.push(Field {
                         register: name.clone(),
                         address: reading.address,
-                        mask: reading.mask,
-                        solved: reading.expected & reading.mask,
-                        observed: reading.observed.map(|v| v & reading.mask),
+                        mask: timer,
+                        solved: reading.expected & timer,
+                        observed: reading.observed.map(|v| v & timer),
                         wrong: true,
                     });
                 }

@@ -863,7 +863,7 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             Record::MotorWitness { status, .. } if booted => {
                 let kind = match status.as_str() {
                     "unwitnessed" | "unreadable" => Some(MOTOR_UNWITNESSED_FINDING),
-                    "mismatch" | "batched" => Some(MOTOR_MISMATCH_FINDING),
+                    "mismatch" | "batched" | "stopped" => Some(MOTOR_MISMATCH_FINDING),
                     "static_only" => Some(MOTOR_STATIC_ONLY_FINDING),
                     _ => None,
                 };
@@ -1235,10 +1235,10 @@ fn motor_kind(kind: &str) -> bool {
 /// every output has exactly one static check and at most one witness, and
 /// a witness's observer is its output's pin's (`AET-WO-4300a`).
 fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
-    let mut solved: BTreeMap<&str, &str> = BTreeMap::new();
+    let mut solved: BTreeMap<&str, &Record> = BTreeMap::new();
     for r in records {
-        if let Record::MotorOutputSolved { label, pin, .. } = r
-            && solved.insert(label.as_str(), pin.as_str()).is_some()
+        if let Record::MotorOutputSolved { label, .. } = r
+            && solved.insert(label.as_str(), r).is_some()
         {
             return Err("a motor output is solved twice");
         }
@@ -1248,19 +1248,32 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
     for r in records {
         match r {
             Record::MotorTimingCheck { label, .. } => {
-                if !solved.contains_key(label.as_str()) || !checked.insert(label) {
-                    return Err("a motor timing check names no solved output, or one twice");
+                let Some(m) = solved.get(label.as_str()) else {
+                    return Err("a motor timing check names no solved output");
+                };
+                if !checked.insert(label) {
+                    return Err("a motor timing check names one output twice");
+                }
+                if silicon_check(m, r) != Some(true) {
+                    return Err("a motor timing check is not what its solved output gives");
                 }
             }
             Record::MotorWitness {
                 label, observer, ..
             } => {
+                let Some(m @ Record::MotorOutputSolved { pin, .. }) =
+                    solved.get(label.as_str()).copied()
+                else {
+                    return Err("a motor witness names no solved output");
+                };
+                if !witness_consistent(m, r) {
+                    return Err(
+                        "a motor witness's status is not what its counts and its output's timing give",
+                    );
+                }
                 // belt-and-suspenders: the twin's `timer::observer_name`
                 // states this path; replay checks an archive without the
                 // twin, so it states it again.
-                let Some(pin) = solved.get(label.as_str()) else {
-                    return Err("a motor witness names no solved output");
-                };
                 let want = split_pin(pin).map(|(port, n)| {
                     format!("gpioPort{port}.p{}{n}obs", port.to_ascii_lowercase())
                 });
@@ -1277,6 +1290,140 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
         return Err("a solved motor output has no static timing check");
     }
     Ok(())
+}
+
+/// The cycle of the twin's timers (4 ns at Renode's fixed 250 MHz), the
+/// stamp grain (10 ns) and the quantum (100 µs) the judge witnesses with.
+// belt-and-suspenders: `aethelgard_twin::timer::CYCLE_NS`,
+// `aethelgard-cli`'s `STAMP_GRAIN_NS` and `aethelgard_twin::boot::QUANTUM_NS`
+// state these; replay checks an archive without the twin or the CLI, so it
+// states them again.
+const TWIN_CYCLE_NS: u64 = 4;
+const TWIN_GRAIN_NS: u64 = 10;
+const TWIN_QUANTUM_NS: u64 = 100_000;
+
+/// Whether kind 25 `check` is exactly the static check of kind 24 `m` on its
+/// own kernel clock: the figures and `holds`, re-derived (adversarial pass:
+/// a forged `holds` beside its own failing figures).
+// belt-and-suspenders: `aethelgard_ir::motor::check_silicon` is the judge's
+// check; replay never depends on `aethelgard-ir` (RUL-16), so it states the
+// same exact-integer rules again.
+fn silicon_check(m: &Record, check: &Record) -> Option<bool> {
+    let (
+        Record::MotorOutputSolved {
+            protocol,
+            psc,
+            arr,
+            ccr,
+            pwm,
+            ..
+        },
+        Record::MotorTimingCheck {
+            kernel_hz,
+            period_ps,
+            high_ps,
+            nominal_period_ps,
+            nominal_high_ps,
+            holds,
+            ..
+        },
+    ) = (m, check)
+    else {
+        return None;
+    };
+    let kernel = u128::from(*kernel_hz);
+    let (psc1, arr1, ccr) = (u128::from(*psc) + 1, u128::from(*arr) + 1, u128::from(*ccr));
+    let ps = |cycles: u128| u64::try_from(cycles * 1_000_000_000_000 / kernel.max(1)).ok();
+    let bit_rate = match protocol.as_str() {
+        "dshot300" => Some(300_000u128),
+        "dshot600" => Some(600_000),
+        _ => None,
+    };
+    let (want_holds, nominal, nominal_high) = match (bit_rate, pwm) {
+        (Some(rate), None) => {
+            let period_ok = (2 * arr1 * psc1 * rate).abs_diff(2 * kernel) <= psc1 * rate;
+            let high_ok = (8 * ccr * psc1 * rate).abs_diff(3 * kernel) <= 4 * psc1 * rate;
+            let n = 1_000_000_000_000 / rate;
+            (period_ok && high_ok, n, n * 3 / 8)
+        }
+        (None, Some((rate, lo, hi))) => {
+            let rate = u128::from(*rate);
+            let period_ok =
+                rate > 0 && (2 * arr1 * psc1 * rate).abs_diff(2 * kernel) <= psc1 * rate;
+            let high_ok = ccr * psc1 * 1_000_000 == u128::from(*lo) * kernel;
+            let max_ok = u128::from(*hi) * kernel < arr1 * psc1 * 1_000_000;
+            (
+                period_ok && high_ok && max_ok,
+                1_000_000_000_000 / rate.max(1),
+                u128::from(*lo) * 1_000_000,
+            )
+        }
+        _ => return Some(false),
+    };
+    Some(
+        ps(arr1 * psc1) == Some(*period_ps)
+            && ps(ccr * psc1) == Some(*high_ps)
+            && u64::try_from(nominal).ok() == Some(*nominal_period_ps)
+            && u64::try_from(nominal_high).ok() == Some(*nominal_high_ps)
+            && want_holds == *holds,
+    )
+}
+
+/// Whether kind 26 `w` is consistent with kind 24 `m` and with its own
+/// counts: the model's timing is the output's (`ARR` and `CCR` ticks of
+/// `PSC + 1` cycles), and a status is one its counts allow. A passing status
+/// needs two rises or more, alternating counts, no shared stamp, a spread
+/// under the grain, the last rise within a period and a grain of the
+/// window's end, and edges off the grid exactly when `witnessed`.
+fn witness_consistent(m: &Record, w: &Record) -> bool {
+    let (
+        Record::MotorOutputSolved { psc, arr, ccr, .. },
+        Record::MotorWitness {
+            period_ns,
+            high_ns,
+            grain_ns,
+            quantum_ns,
+            status,
+            rises,
+            falls,
+            first_ns,
+            last_ns,
+            end_ns,
+            span_ns,
+            off_grid,
+            batched,
+            ..
+        },
+    ) = (m, w)
+    else {
+        return false;
+    };
+    let cycles = (u64::from(*psc) + 1) * TWIN_CYCLE_NS;
+    if *period_ns != u64::from(*arr) * cycles
+        || *high_ns != u64::from(*ccr) * cycles
+        || *grain_ns != TWIN_GRAIN_NS
+        || *quantum_ns != TWIN_QUANTUM_NS
+    {
+        return false;
+    }
+    let none = *rises == 0 && *falls == 0 && first_ns.is_none();
+    let shaped = *rises >= 2
+        && *batched == 0
+        && first_ns.is_some()
+        && span_ns.is_some_and(|s| s < *grain_ns);
+    let covers = last_ns.is_some_and(|l| l + period_ns + grain_ns >= *end_ns);
+    let passing = shaped && (*falls == *rises || *falls + 1 == *rises) && covers;
+    match status.as_str() {
+        "witnessed" => passing && *off_grid > 0,
+        "static_only" => passing && *off_grid == 0,
+        "unwitnessed" => *rises < 2,
+        "unreadable" => none,
+        "batched" => *rises >= 2 && *batched > 0,
+        "stopped" => shaped && !covers,
+        // An unreadable log, or edges off the model's sequence.
+        "mismatch" => none || *rises >= 2,
+        _ => false,
+    }
 }
 
 fn check_joins(records: &[Record]) -> Result<(), &'static str> {

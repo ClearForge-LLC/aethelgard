@@ -1077,8 +1077,8 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
     // (`AET-WO-4300a`).
     for m in &boot.motor {
         let w = &m.twin;
-        let (Some(status), Some(rises), Some(falls), Some(off_grid), Some(batched)) =
-            (w.status, w.rises, w.falls, w.off_grid, w.batched)
+        let (Some(status), Some(rises), Some(falls), Some(off_grid), Some(batched), Some(end_ns)) =
+            (w.status, w.rises, w.falls, w.off_grid, w.batched, w.end_ns)
         else {
             continue;
         };
@@ -1093,6 +1093,8 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
             rises,
             falls,
             first_ns: w.first_ns,
+            last_ns: w.last_ns,
+            end_ns,
             span_ns: w.span_ns,
             off_grid,
             batched,
