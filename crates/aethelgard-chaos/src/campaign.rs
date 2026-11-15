@@ -1237,10 +1237,10 @@ fn motor_kind(kind: &str) -> bool {
 fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
     let mut solved: BTreeMap<&str, &str> = BTreeMap::new();
     for r in records {
-        if let Record::MotorOutputSolved { label, pin, .. } = r {
-            if solved.insert(label.as_str(), pin.as_str()).is_some() {
-                return Err("a motor output is solved twice");
-            }
+        if let Record::MotorOutputSolved { label, pin, .. } = r
+            && solved.insert(label.as_str(), pin.as_str()).is_some()
+        {
+            return Err("a motor output is solved twice");
         }
     }
     let mut checked: BTreeSet<&str> = BTreeSet::new();
