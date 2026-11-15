@@ -44,7 +44,7 @@ CASES = {
     "baro-icp": ("baro-icp", "baro-icp", MUX + ["sysbus.i2c1.baro"], 1, []),             # P6.2
 }
 # S3 reads the IMU's IRQ line after the run, beside the standard reads.
-IRQ = [["u5_irq", "sysbus.spi1.spi1mux.u5 IRQ"]]
+IRQ = [["u5_irq", "sysbus.spi1.spi1mux.u5 IRQ IsSet"]]
 
 
 def platform(name):
