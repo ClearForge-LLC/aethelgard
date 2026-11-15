@@ -18,8 +18,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PATH=/opt/venv/bin:/opt/gcc-arm-none-eabi-10-2020-q4-major/bin:$PATH
 
 # What waf looked for in the spike's configure log (AET-WO-4400 S1): python3
-# with venv, make, git and rsync; bzip2 unpacks the toolchain; curl and
-# ca-certificates fetch it. Exact versions from trixie and trixie-security.
+# with venv, make, git and rsync. A host C compiler too, which the spike could
+# not see because Furnace has one: waf builds AP_Scripting's binding generator
+# (libraries/AP_Scripting/generator/src/main.c) with `gcc` (AET-WO-4400a, first
+# CI run). bzip2 unpacks the toolchain; curl and ca-certificates fetch it.
+# Exact versions from trixie and trixie-security.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates=20250419+deb13u1 \
@@ -30,6 +33,8 @@ RUN apt-get update \
       git=1:2.47.3-0+deb13u1 \
       rsync=3.5.0+ds1-0+deb13u1 \
       bzip2=1.0.8-6 \
+      gcc=4:14.2.0-1 \
+      libc6-dev=2.41-12+deb13u4 \
  && rm -rf /var/lib/apt/lists/*
 
 # The toolchain Copter-4.7.2's Tools/environment_install/install-prereqs-ubuntu.sh:249
