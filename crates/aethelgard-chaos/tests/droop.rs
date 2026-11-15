@@ -1556,8 +1556,11 @@ fn run_with_check() -> Vec<Record> {
         Record::I2cCheck {
             reference: "U2".into(),
             address: 0x76,
-            register: 0xD0,
+            step: "identity".into(),
+            write: vec![0xD0],
+            width: 1,
             expected: 0x60,
+            mask: 0xFF,
             observed: Some(0x60),
             status: Some("ok".into()),
         },
@@ -1565,6 +1568,7 @@ fn run_with_check() -> Vec<Record> {
     r.insert(
         v + 1,
         Record::I2cWitness {
+            step: "identity".into(),
             peripheral: "I2C1".into(),
             reference: "U2".into(),
             device: "i2c1.u2".into(),

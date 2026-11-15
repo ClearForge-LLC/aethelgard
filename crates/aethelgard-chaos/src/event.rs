@@ -19,10 +19,15 @@ pub const VERSION: u64 = 1;
 /// beside the bus's declared speed, kind 10 carries the firmware's executable
 /// segments, and kind 19's witness is the lines it archives; 7 since
 /// `AET-WO-4200` added kinds 21 to 23 (an SPI identity read, its witness and
-/// the solved SPI controller) and override 4 (an SPI device left absent). An
+/// the solved SPI controller) and override 4 (an SPI device left absent); 8
+/// since `AET-WO-4210`: kinds 12, 13, 21 and 22 are one event per step of a
+/// device's script (identity, configure, data), each naming its step, the
+/// check's write as a byte list with the read's width and mask, and a
+/// witness's lines may include the device's own `[WARNING]` lines; kind 22's
+/// multiplexer lines are its step's chip-select window's. An
 /// archive of any other version is refused by name (`Fault::Version`), as
 /// 2204 refused version 4.
-pub const TRACE_VERSION: u64 = 7;
+pub const TRACE_VERSION: u64 = 8;
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.

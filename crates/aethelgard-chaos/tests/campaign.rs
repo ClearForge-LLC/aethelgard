@@ -438,20 +438,27 @@ fn one_of_each() -> Vec<Record> {
         Record::I2cCheck {
             reference: "U2".into(),
             address: 0x68,
-            register: 0x75,
+            step: "identity".into(),
+            write: vec![0x75],
+            width: 1,
             expected: 0x71,
+            mask: 0xFF,
             observed: Some(0x71),
             status: None,
         },
         Record::I2cCheck {
             reference: "U2".into(),
             address: 0x68,
-            register: 0x75,
+            step: "identity".into(),
+            write: vec![0x75],
+            width: 1,
             expected: 0x71,
+            mask: 0xFF,
             observed: None,
             status: Some("timeout_txis".into()),
         },
         Record::I2cWitness {
+            step: "identity".into(),
             peripheral: "I2C1".into(),
             reference: "U2".into(),
             device: "i2c1.u2".into(),
@@ -807,8 +814,11 @@ fn good() -> Vec<Record> {
         Record::I2cCheck {
             reference: "U2".into(),
             address: 0x68,
-            register: 0x75,
+            step: "identity".into(),
+            write: vec![0x75],
+            width: 1,
             expected: 0x71,
+            mask: 0xFF,
             observed: None,
             status: Some("timeout_txis".into()),
         },
@@ -836,6 +846,7 @@ fn witness(
 ) -> Record {
     let device = format!("i2c1.{}", reference.to_ascii_lowercase());
     Record::I2cWitness {
+        step: "identity".into(),
         peripheral: peripheral.into(),
         reference: reference.into(),
         expected: vec![
@@ -1398,8 +1409,11 @@ fn the_reader_applies_the_record_field_rules_the_writer_does() {
             Record::I2cCheck {
                 reference: "bad ref".into(),
                 address: 0x68,
-                register: 0x75,
+                step: "identity".into(),
+                write: vec![0x75],
+                width: 1,
                 expected: 0x71,
+                mask: 0xFF,
                 observed: None,
                 status: None,
             },
@@ -2005,7 +2019,7 @@ fn two_devices_at_one_address_on_one_bus_are_refused() {
 
 #[test]
 fn a_line_measured_twice_or_a_device_read_or_witnessed_twice_is_refused() {
-    let why = "a line measured twice, or a device read or witnessed twice";
+    let why = "a line measured twice, or a device step read or witnessed twice";
     // A second rise for one line, with the verdict's count raised to match.
     let mut r = good();
     let i = position(&r, |x| matches!(x, Record::RiseComputed { .. }));
@@ -2067,7 +2081,7 @@ fn a_rise_and_a_stuck_high_on_one_line_are_two_measurements() {
     );
     assert_eq!(
         check_run(&r).unwrap_err(),
-        "a line measured twice, or a device read or witnessed twice"
+        "a line measured twice, or a device step read or witnessed twice"
     );
 }
 
@@ -2085,8 +2099,11 @@ fn two_devices_on_one_controller_have_two_witnesses() {
         Record::I2cCheck {
             reference: "U3".into(),
             address: 0x48,
-            register: 0x75,
+            step: "identity".into(),
+            write: vec![0x75],
+            width: 1,
             expected: 0x71,
+            mask: 0xFF,
             observed: None,
             status: Some("timeout_txis".into()),
         },
@@ -2094,7 +2111,7 @@ fn two_devices_on_one_controller_have_two_witnesses() {
     // A second read with no witness of its own is refused.
     assert_eq!(
         check_run(&r).unwrap_err(),
-        "an identity read without its witness, or a witness without its read"
+        "a step's read without its witness, or a witness without its read"
     );
     r.insert(w + 2, witness("I2C1", "U3", 0x75, 0x71, Some(vec![])));
     assert!(check_run(&r).is_ok());
@@ -2102,7 +2119,7 @@ fn two_devices_on_one_controller_have_two_witnesses() {
 
 #[test]
 fn each_identity_read_has_a_witness_and_each_witness_a_read() {
-    let why = "an identity read without its witness, or a witness without its read";
+    let why = "a step's read without its witness, or a witness without its read";
     let mut r = good();
     let i = position(&r, |x| matches!(x, Record::I2cWitness { .. }));
     r.remove(i);
@@ -2326,4 +2343,223 @@ fn the_boot_read_is_whole_and_the_pc_findings_are_the_judges() {
         self_loop(0x7000_0000, true).unwrap_err(),
         "the verdict names pc_not_on_self_loop for a pc outside the firmware or unread"
     );
+}
+
+// ---- AET-WO-4210: kinds 12, 13, 21 and 22 per step of a device's script ----
+
+fn i2c_step_check(step: &str, write: Vec<u8>, width: u8, expected: u64, mask: u64) -> Record {
+    Record::I2cCheck {
+        reference: "U2".into(),
+        address: 0x68,
+        step: step.into(),
+        write,
+        width,
+        expected,
+        mask,
+        observed: (width > 0).then_some(expected),
+        status: Some("ok".into()),
+    }
+}
+
+fn i2c_step_witness(step: &str, lines: &[&str]) -> Record {
+    let lines: Vec<String> = lines
+        .iter()
+        .map(|l| format!("[NOISY] i2c1.u2: {l}"))
+        .collect();
+    Record::I2cWitness {
+        step: step.into(),
+        peripheral: "I2C1".into(),
+        reference: "U2".into(),
+        device: "i2c1.u2".into(),
+        expected: lines.clone(),
+        observed: Some(lines),
+        absent: Vec::new(),
+    }
+}
+
+/// `good()` with U2's identity read followed by a configure and a data step,
+/// each witnessed (the timed-out identity read keeps its own witness).
+fn three_steps() -> Vec<Record> {
+    let mut r = good();
+    let c = position(&r, |x| matches!(x, Record::I2cCheck { .. }));
+    r.insert(
+        c + 1,
+        i2c_step_check("configure", vec![0xF2, 0x01], 0, 0, 0),
+    );
+    r.insert(c + 2, i2c_step_check("data", vec![0xF7], 2, 0x1234, 0xFFFF));
+    let w = position(&r, |x| matches!(x, Record::I2cWitness { .. }));
+    r.insert(w + 1, i2c_step_witness("configure", &["Write F2 01"]));
+    r.insert(w + 2, i2c_step_witness("data", &["Write F7", "Read 12 34"]));
+    r
+}
+
+#[test]
+fn a_device_with_three_steps_round_trips_and_replays() {
+    let r = three_steps();
+    assert!(check_run(&r).is_ok(), "{:?}", check_run(&r));
+    let (dir, manifest) = write_run("three-steps", 7, &as_events(r.clone()));
+    let replayed = replay_dir(&dir).unwrap();
+    assert_eq!(replayed.state.records, r);
+    assert_eq!(replayed.manifest, manifest);
+}
+
+#[test]
+fn a_step_given_twice_or_out_of_order_is_refused_by_replay() {
+    let twice = "a line measured twice, or a device step read or witnessed twice";
+    let order = "a device's steps are not in the order identity, configure, data";
+    // A step twice, check or witness.
+    for kind_is_check in [true, false] {
+        let mut r = three_steps();
+        let is = |x: &Record| {
+            matches!(x, Record::I2cCheck { step, .. } | Record::I2cWitness { step, .. }
+                if step == "data")
+                && matches!(x, Record::I2cCheck { .. }) == kind_is_check
+        };
+        let i = position(&r, is);
+        let dup = r[i].clone();
+        r.insert(i, dup);
+        assert_eq!(check_run(&r).unwrap_err(), twice, "check {kind_is_check}");
+    }
+    // Data before configure, in the checks and in the witnesses.
+    for check in [true, false] {
+        let mut r = three_steps();
+        let pick = |x: &Record, s: &str| match x {
+            Record::I2cCheck { step, .. } => check && step == s,
+            Record::I2cWitness { step, .. } => !check && step == s,
+            _ => false,
+        };
+        let (a, b) = (
+            position(&r, |x| pick(x, "configure")),
+            position(&r, |x| pick(x, "data")),
+        );
+        r.swap(a, b);
+        assert_eq!(check_run(&r).unwrap_err(), order, "check {check}");
+    }
+    // A device whose first step is not its identity.
+    let mut r = three_steps();
+    let i = position(
+        &r,
+        |x| matches!(x, Record::I2cCheck { step, .. } if step == "identity"),
+    );
+    r.remove(i);
+    let i = position(
+        &r,
+        |x| matches!(x, Record::I2cWitness { step, .. } if step == "identity"),
+    );
+    r.remove(i);
+    assert_eq!(check_run(&r).unwrap_err(), order);
+    // A step witnessed that was never read, and the reverse.
+    let mut r = three_steps();
+    let i = position(
+        &r,
+        |x| matches!(x, Record::I2cWitness { step, .. } if step == "data"),
+    );
+    r.remove(i);
+    assert_eq!(
+        check_run(&r).unwrap_err(),
+        "a step's read without its witness, or a witness without its read"
+    );
+}
+
+fn spi_step_check(step: &str, write: Vec<u8>, width: u8, expected: u64, mask: u64) -> Record {
+    Record::SpiCheck {
+        reference: "U4".into(),
+        peripheral: "SPI1".into(),
+        select: "PA0".into(),
+        address: 0,
+        step: step.into(),
+        write,
+        width,
+        expected,
+        mask,
+        observed: None,
+        status: None,
+    }
+}
+
+fn spi_step_witness(step: &str) -> Record {
+    Record::SpiWitness {
+        step: step.into(),
+        peripheral: "SPI1".into(),
+        reference: "U4".into(),
+        device: "spi1.spi1mux.u4".into(),
+        expected: vec![],
+        observed: None,
+        unrouted: vec![],
+    }
+}
+
+/// Each kind-12, -13, -21 and -22 field rule, one refusal each: the writer
+/// refuses the record and so does the reader, on the same bytes.
+#[test]
+fn the_step_fields_of_kinds_12_13_21_and_22_are_refused_by_rule() {
+    let i2c = |step: &str, write: Vec<u8>, width: u8, expected: u64, mask: u64| {
+        i2c_step_check(step, write, width, expected, mask)
+    };
+    let spi = spi_step_check;
+    let mut bad_i2c_witness = i2c_step_witness("identity", &["Write D0"]);
+    if let Record::I2cWitness { step, .. } = &mut bad_i2c_witness {
+        *step = "boot".into();
+    }
+    let mut bad_spi_witness = spi_step_witness("identity");
+    if let Record::SpiWitness { step, .. } = &mut bad_spi_witness {
+        *step = "".into();
+    }
+    let cases = vec![
+        // The step is one of identity, configure, data.
+        ("12-step", i2c("probe", vec![0xD0], 1, 0x60, 0xFF)),
+        ("21-step", spi("probe", vec![0x9F], 1, 0x60, 0xFF)),
+        ("13-step", bad_i2c_witness),
+        ("22-step", bad_spi_witness),
+        // The write is 1 to 4 bytes.
+        ("12-write-empty", i2c("identity", vec![], 1, 0x60, 0xFF)),
+        (
+            "12-write-5",
+            i2c("identity", vec![1, 2, 3, 4, 5], 1, 0x60, 0xFF),
+        ),
+        ("21-write-empty", spi("identity", vec![], 1, 0x60, 0xFF)),
+        (
+            "21-write-5",
+            spi("identity", vec![1, 2, 3, 4, 5], 1, 0x60, 0xFF),
+        ),
+        // The width is 0 to 8, and 0 exactly for configure.
+        ("12-width-9", i2c("data", vec![1], 9, 0, 0)),
+        ("12-width-0-identity", i2c("identity", vec![1], 0, 0, 0)),
+        ("12-width-1-configure", i2c("configure", vec![1], 1, 0, 0)),
+        ("21-width-9", spi("data", vec![1], 9, 0, 0)),
+        ("21-width-0-data", spi("data", vec![1], 0, 0, 0)),
+        ("21-width-1-configure", spi("configure", vec![1], 1, 0, 0)),
+        // The mask and the expected value fit the width.
+        ("12-mask-wide", i2c("identity", vec![1], 1, 0x60, 0x1FF)),
+        ("12-expected-wide", i2c("identity", vec![1], 1, 0x160, 0xFF)),
+        ("12-mask-configure", i2c("configure", vec![1], 0, 0, 1)),
+        ("21-mask-wide", spi("identity", vec![1], 2, 0x60, 0x1_FFFF)),
+        (
+            "21-expected-wide",
+            spi("identity", vec![1], 2, 0x1_0060, 0xFFFF),
+        ),
+        ("21-mask-configure", spi("configure", vec![1], 0, 0, 1)),
+    ];
+    for (name, record) in cases {
+        assert!(
+            matches!(
+                append_one(name, record.clone()),
+                Err(E::InvalidEvent { .. })
+            ),
+            "{name}: writer"
+        );
+        let r = raw_with_event(&format!("{name}-raw"), record_bytes(record));
+        assert!(
+            matches!(r, Err(E::MalformedEvent { index: 0, .. })),
+            "{name}: reader gave {r:?}"
+        );
+    }
+    // The widest read, eight bytes at the full mask, is accepted.
+    for record in [
+        i2c("data", vec![1, 2, 3, 4], 8, u64::MAX, u64::MAX),
+        spi("data", vec![1], 8, u64::MAX, u64::MAX),
+        i2c("configure", vec![1], 0, 0, 0),
+    ] {
+        assert!(append_one("step-ok", record).is_ok());
+    }
 }

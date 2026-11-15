@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 
 use crate::event::{Header, name_ok};
 use crate::power::{self, Band};
-use crate::record::{self, BusLine, Droop, Line, Override, Reading, Record};
+use crate::record::{self, BusLine, Droop, Line, Override, Reading, Record, STEPS};
 use crate::replay::State;
 
 /// The scenario format versions read: 1 (static scenarios, unchanged) and 2,
@@ -1202,24 +1202,44 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
     {
         return Err("two devices on one solved bus share an address");
     }
-    // One measurement per line, one identity read per device and one witness
-    // per identity read, as the campaign writes them (adversarial A2;
-    // `AET-WO-2204`: a bus with two devices has two witnesses).
+    // One measurement per line, one read per step of a device's script and
+    // one witness per step, as the campaign writes them (adversarial A2;
+    // `AET-WO-2204`: a bus with two devices has two witnesses;
+    // `AET-WO-4210`: a device's steps run identity, configure, data, each
+    // at most once, the first being identity).
     let mut seen: BTreeSet<(u8, &str, &str)> = BTreeSet::new();
+    let mut last_step: BTreeMap<(u8, &str), usize> = BTreeMap::new();
     for r in records {
         let keys: Vec<(u8, &str, &str)> = match r {
             Record::RiseComputed { bus, net, .. } | Record::LineStuckHigh { bus, net, .. } => {
                 vec![(0, bus, net)]
             }
-            Record::I2cCheck { reference, .. } => vec![(1, reference, "")],
-            Record::I2cWitness { reference, .. } => vec![(2, reference, "")],
-            Record::SpiCheck { reference, .. } => vec![(3, reference, "")],
-            Record::SpiWitness { reference, .. } => vec![(4, reference, "")],
+            Record::I2cCheck {
+                reference, step, ..
+            } => vec![(1, reference, step)],
+            Record::I2cWitness {
+                reference, step, ..
+            } => vec![(2, reference, step)],
+            Record::SpiCheck {
+                reference, step, ..
+            } => vec![(3, reference, step)],
+            Record::SpiWitness {
+                reference, step, ..
+            } => vec![(4, reference, step)],
             _ => vec![],
         };
         for key in keys {
             if !seen.insert(key) {
-                return Err("a line measured twice, or a device read or witnessed twice");
+                return Err("a line measured twice, or a device step read or witnessed twice");
+            }
+            if key.0 != 0 {
+                let Some(index) = STEPS.iter().position(|s| *s == key.2) else {
+                    return Err("a step is not identity, configure or data");
+                };
+                let previous = last_step.insert((key.0, key.1), index);
+                if previous.map_or(index != 0, |p| index <= p) {
+                    return Err("a device's steps are not in the order identity, configure, data");
+                }
             }
         }
     }
@@ -1296,20 +1316,24 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
             _ => {}
         }
     }
-    // Each identity read is witnessed, and each witness is of an identity
-    // read (`AET-WO-2204` D1).
-    let named = |witness: bool| -> BTreeSet<&str> {
+    // Each step's read is witnessed, and each witness is of a step's read,
+    // joined on (reference, step) (`AET-WO-2204` D1, `AET-WO-4210`).
+    let named = |witness: bool| -> BTreeSet<(&str, &str)> {
         records
             .iter()
             .filter_map(|r| match r {
-                Record::I2cCheck { reference, .. } if !witness => Some(reference.as_str()),
-                Record::I2cWitness { reference, .. } if witness => Some(reference.as_str()),
+                Record::I2cCheck {
+                    reference, step, ..
+                } if !witness => Some((reference.as_str(), step.as_str())),
+                Record::I2cWitness {
+                    reference, step, ..
+                } if witness => Some((reference.as_str(), step.as_str())),
                 _ => None,
             })
             .collect()
     };
     if named(false) != named(true) {
-        return Err("an identity read without its witness, or a witness without its read");
+        return Err("a step's read without its witness, or a witness without its read");
     }
     // The same for SPI (`AET-WO-4200`, adversarial A3): each read joins its
     // solved device (kind 23) at its address and chip select, is witnessed
@@ -1338,12 +1362,14 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
         }
     }
     let mut spi: BTreeMap<&str, &str> = BTreeMap::new();
+    let mut spi_steps: BTreeSet<(&str, &str)> = BTreeSet::new();
     for r in records {
         if let Record::SpiCheck {
             reference,
             peripheral,
             select,
             address,
+            step,
             ..
         } = r
         {
@@ -1353,6 +1379,7 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
                 return Err("an SPI read names no solved device at its address and chip select");
             }
             spi.insert(reference, peripheral);
+            spi_steps.insert((reference, step));
         }
     }
     let absent: BTreeSet<&str> = records
@@ -1370,12 +1397,13 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
     if absent.iter().any(|r| !solved_spi.contains_key(r)) {
         return Err("an absent SPI device is no solved one");
     }
-    let mut witnessed: BTreeSet<&str> = BTreeSet::new();
+    let mut witnessed: BTreeSet<(&str, &str)> = BTreeSet::new();
     for r in records {
         let Record::SpiWitness {
             peripheral,
             reference,
             device: path,
+            step,
             observed,
             unrouted,
             ..
@@ -1401,9 +1429,9 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
         if absent.contains(reference.as_str()) && observed.as_ref().is_some_and(|o| !o.is_empty()) {
             return Err("an absent SPI device's model logged a transfer");
         }
-        witnessed.insert(reference);
+        witnessed.insert((reference, step));
     }
-    if witnessed.len() != spi.len() || spi.keys().any(|r| device.contains_key(r)) {
+    if witnessed != spi_steps || spi.keys().any(|r| device.contains_key(r)) {
         return Err("an SPI read without its witness, or a device on two buses");
     }
     Ok(())
