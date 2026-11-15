@@ -208,3 +208,15 @@ Reduction pass (diff): −19 net (stack −5, `read`'s lookup −6, `route_pair`
 - **Shards.** The first green run's slowest shard took 19.4 min. It was shard 6: `verify_2k2_tier2`'s reference verify took 608.6 s against its 382 s weight, and `main`'s run 43685243548 shows the same, 612.3 s, with `main`'s slowest shard at 18.9 min. This is pre-existing.
   - The two `verify_2k2` weights now take the worst of the two runs (612.29 and 549.44 s), labelled as estimates until the refit.
   - `ci/shard.sh plan` in the image then plans 816 s per shard, with the reference verify and `a_write_past_the_block_fails` in different shards.
+
+## B13. Gates and CI [measured]
+
+- **The CLAUDE.md gates on `3da0b22`:** `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean, with `--features aethelgard-cli/with-tools` too; `cargo test --workspace` 1366 passed, 0 failed.
+- **Tier 2 in the pinned image on Furnace,** through `~/bin/capped-run` with swap read back as 0: the three new `with_tools` tests and 4300f's connectors test pass.
+- **CI run 43690112990 on `3da0b22`:** green.
+  - Shards: 13.8 to 16.9 min, every one under 20.
+  - `ANSWER tier2_tests_passed=101 floor=101`: `TIER2_MIN` exact.
+  - The engine image built (run 43690112964).
+- **Earlier runs:** `61aa841`, green with tier 2 at 100/100 and the slowest shard 17 min; `9e51294`, green with tier 2 at 101/101 and the slowest shard 19.4 min, which led to B12's re-weighing.
+- **This commit** changes only this file.
+- **Tokens:** one minted per push and revoked after it (HTTP 204 each time). `~/.cache/aet-1308/pr-title-body.md` holds the title and body for the architect.
