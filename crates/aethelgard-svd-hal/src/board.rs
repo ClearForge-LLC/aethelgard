@@ -860,7 +860,8 @@ impl Plan {
             let channel = motor::timer_channel(&a.signal)
                 .filter(|(n, _)| a.peripheral == format!("TIM{n}"))
                 .and_then(|(n, k)| Some((n, k, Role::timer_channel(k)?)));
-            if let Some((n, k, role)) = channel {
+            // The pin's role, and its peripheral's kind unless it is a timer's.
+            let (role, kind) = if let Some((n, k, role)) = channel {
                 let mismatch = || {
                     BoardError::InvalidTopology(IrValidationError::MotorOutputMismatch {
                         id: net.clone(),
@@ -882,36 +883,24 @@ impl Plan {
                 if t.channels.insert(k, (a.pin.clone(), m.ccr)).is_some() {
                     return Err(mismatch());
                 }
-                let (speed, check) = choose_speed(speeds_table, solved, &a.pin, net, role)?;
-                pins.insert(
-                    a.pin.clone(),
-                    PinPlan {
-                        port,
-                        index,
-                        role,
-                        af: u32::from(a.alternate_function),
-                        peripheral: Some(a.peripheral.clone()),
-                        net: net.clone(),
-                        speed,
-                        check,
-                    },
-                );
-                continue;
-            }
-            let kind = peripheral_kind(&a.peripheral)?;
-            let role_name = a
-                .signal
-                .strip_prefix(a.peripheral.as_str())
-                .and_then(|s| s.strip_prefix('_'));
-            let role = kind
-                .roles()
-                .iter()
-                .copied()
-                .find(|r| Some(r.signal()) == role_name)
-                .ok_or_else(|| BoardError::UnsupportedSignal {
-                    peripheral: a.peripheral.clone(),
-                    signal: a.signal.clone(),
-                })?;
+                (role, None)
+            } else {
+                let kind = peripheral_kind(&a.peripheral)?;
+                let role_name = a
+                    .signal
+                    .strip_prefix(a.peripheral.as_str())
+                    .and_then(|s| s.strip_prefix('_'));
+                let role = kind
+                    .roles()
+                    .iter()
+                    .copied()
+                    .find(|r| Some(r.signal()) == role_name)
+                    .ok_or_else(|| BoardError::UnsupportedSignal {
+                        peripheral: a.peripheral.clone(),
+                        signal: a.signal.clone(),
+                    })?;
+                (role, Some(kind))
+            };
             let (speed, check) = choose_speed(speeds_table, solved, &a.pin, net, role)?;
             let plan = PinPlan {
                 port,
@@ -924,13 +913,15 @@ impl Plan {
                 check,
             };
             pins.insert(a.pin.clone(), plan);
-            roles
-                .entry(a.peripheral.clone())
-                .or_insert_with(|| (kind, BTreeMap::new()))
-                .1
-                .entry(role)
-                .or_default()
-                .push(a.pin.clone());
+            if let Some(kind) = kind {
+                roles
+                    .entry(a.peripheral.clone())
+                    .or_insert_with(|| (kind, BTreeMap::new()))
+                    .1
+                    .entry(role)
+                    .or_default()
+                    .push(a.pin.clone());
+            }
         }
         for (net, pin) in &solved.gpio {
             let (port, index) = split_pin(pin)?;

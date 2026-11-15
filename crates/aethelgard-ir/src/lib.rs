@@ -20,7 +20,7 @@ mod solve;
 pub mod speeds;
 
 pub use motor::{MotorOutput, MotorProtocol, PwmTiming, SolvedClock, SolvedMotorOutput};
-pub use solve::{HSE_PINS, NODE_LIMIT, RESERVED_PINS, SolveError, solve, solve_with_limit};
+pub use solve::{NODE_LIMIT, RESERVED_PINS, SolveError, solve, solve_with_limit};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;

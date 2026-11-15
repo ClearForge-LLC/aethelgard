@@ -874,20 +874,14 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             _ => {}
         }
     }
-    for kind in [
-        MOTOR_STATIC_FINDING,
-        MOTOR_UNWITNESSED_FINDING,
-        MOTOR_MISMATCH_FINDING,
-        MOTOR_STATIC_ONLY_FINDING,
-    ] {
+    for kind in MOTOR_FINDINGS {
         if any_severity(kind) != motor_needed.get(kind).copied().unwrap_or(0) {
             return Err("the verdict's motor findings do not match the motor records");
         }
     }
-    if findings
-        .iter()
-        .any(|(k, s, _)| (k == MOTOR_STATIC_ONLY_FINDING) != (s == "info") && motor_kind(k))
-    {
+    if findings.iter().any(|(k, s, _)| {
+        (k == MOTOR_STATIC_ONLY_FINDING) != (s == "info") && MOTOR_FINDINGS.contains(&k.as_str())
+    }) {
         return Err("a motor finding has the wrong severity");
     }
     let droop_counts = check_droop_records(records, overrides)?;
@@ -1221,15 +1215,13 @@ pub const MOTOR_MISMATCH_FINDING: &str = "motor_timing_mismatch";
 /// `info`: the witness fit the model's sequence with every edge on the grid.
 pub const MOTOR_STATIC_ONLY_FINDING: &str = "motor_witness_static_only";
 
-fn motor_kind(kind: &str) -> bool {
-    [
-        MOTOR_STATIC_FINDING,
-        MOTOR_UNWITNESSED_FINDING,
-        MOTOR_MISMATCH_FINDING,
-        MOTOR_STATIC_ONLY_FINDING,
-    ]
-    .contains(&kind)
-}
+/// Every motor finding kind the records explain.
+const MOTOR_FINDINGS: [&str; 4] = [
+    MOTOR_STATIC_FINDING,
+    MOTOR_UNWITNESSED_FINDING,
+    MOTOR_MISMATCH_FINDING,
+    MOTOR_STATIC_ONLY_FINDING,
+];
 
 /// Kinds 25 and 26 each join one solved motor output (kind 24) by label,
 /// every output has exactly one static check and at most one witness, and

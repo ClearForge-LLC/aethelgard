@@ -155,7 +155,7 @@ A pure function: its output depends only on the specification, the table and the
 - `PA13` (SWDIO) and `PA14` (SWCLK), so the board can still be programmed and debugged;
 - `PC14` and `PC15` (LSE), so the board keeps its 32 kHz crystal.
 
-`HSE_PINS` (`PH0`, `PH1`) are reserved only beside an HSE crystal. A specification can declare none yet (`mcu.hse_hz` must be 0, `4400` D1), so the solver assigns them like any other pin (`AET-WO-4300a` §1.1). On every committed specification this moved no assignment (measured, `AET-WO-4300a` FEEDBACK P4.1).
+The HSE pins (`PH0`, `PH1`) would be reserved only beside an HSE crystal. A specification can declare none yet (`mcu.hse_hz` must be 0, `4400` D1), so the solver assigns them like any other pin (`AET-WO-4300a` §1.1). On every committed specification this moved no assignment (measured, `AET-WO-4300a` FEEDBACK P4.1).
 
 **Debugging is assumed to be SWD only.** The JTAG-only pins `PA15`, `PB3` and `PB4` stay assignable, as do USB's `PA11` and `PA12`.
 

@@ -13,13 +13,11 @@ use crate::{
 
 /// Never assigned, and refused as a hand pin: the SWD debug port (`PA13`
 /// SWDIO, `PA14` SWCLK), so the board can be programmed, and the LSE pins
-/// (`PC14`/`PC15`), so it keeps its 32 kHz crystal.
+/// (`PC14`/`PC15`), so it keeps its 32 kHz crystal. The HSE pins (`PH0`,
+/// `PH1`) are not reserved: they would be only beside a crystal, which no
+/// specification can declare yet (`mcu.hse_hz` must be 0, `4400` D1;
+/// `AET-WO-4300a` §1.1).
 pub const RESERVED_PINS: [&str; 4] = ["PA13", "PA14", "PC14", "PC15"];
-
-/// The HSE oscillator's pins. Reserved only beside a crystal, which no
-/// specification can declare yet: `mcu.hse_hz` must be 0 (`4400` D1), so
-/// the solver may assign them (`AET-WO-4300a` §1.1).
-pub const HSE_PINS: [&str; 2] = ["PH0", "PH1"];
 
 /// The values [`solve`] may try, across the whole solve including the
 /// minimal-set searches, before refusing with [`SolveError::BudgetExceeded`].

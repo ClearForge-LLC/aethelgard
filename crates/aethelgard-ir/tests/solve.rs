@@ -10,9 +10,9 @@ mod common;
 use common::devs;
 
 use aethelgard_ir::{
-    AnalogLine, HSE_PINS, I2cBus, Mcu, NetConstraint, Pin, PinSource, PinTable, RESERVED_PINS,
-    Signal, SolveError, SolvedTopology, Specification, SpiBus, SpiDevice, SpiLine, VoltageDomain,
-    solve, solve_with_limit,
+    AnalogLine, I2cBus, Mcu, NetConstraint, Pin, PinSource, PinTable, RESERVED_PINS, Signal,
+    SolveError, SolvedTopology, Specification, SpiBus, SpiDevice, SpiLine, VoltageDomain, solve,
+    solve_with_limit,
 };
 
 const PART: &str = "TEST_PART";
@@ -259,9 +259,6 @@ fn the_hse_pins_are_assigned_when_no_crystal_is_declared() {
 #[test]
 fn reserved_pins_are_the_debug_port_and_the_lse_oscillator() {
     assert_eq!(RESERVED_PINS, ["PA13", "PA14", "PC14", "PC15"]);
-    // `mcu.hse_hz` is 0 in every specification `validate` admits (`4400`
-    // D1), so the HSE pins are free (`AET-WO-4300a` §1.1).
-    assert_eq!(HSE_PINS, ["PH0", "PH1"]);
 }
 
 #[test]

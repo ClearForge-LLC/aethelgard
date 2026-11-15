@@ -269,10 +269,11 @@ pub fn solve_timing(
 
 /// What [`check_silicon`] found for one output, in picoseconds where a time
 /// is named (`period_ps` and `high_ps` are floors; the verdict is exact).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SiliconTiming {
     pub kernel_hz: u64,
-    /// `(PSC + 1)` kernel cycles.
+    /// `(PSC + 1)` kernel cycles; not in the verdict.
+    #[serde(skip)]
     pub tick_ps: u64,
     /// `(ARR + 1)` ticks: what silicon counts.
     pub period_ps: u64,

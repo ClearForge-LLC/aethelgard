@@ -190,18 +190,8 @@ pub struct MotorReport {
     pub psc: u32,
     pub arr: u32,
     pub ccr: u32,
-    pub silicon: SiliconReport,
+    pub silicon: aethelgard_ir::motor::SiliconTiming,
     pub twin: TwinReport,
-}
-
-#[derive(Serialize)]
-pub struct SiliconReport {
-    pub kernel_hz: u64,
-    pub period_ps: u64,
-    pub high_ps: u64,
-    pub nominal_period_ps: u64,
-    pub nominal_high_ps: u64,
-    pub holds: bool,
 }
 
 #[derive(Serialize)]
@@ -227,7 +217,6 @@ pub struct TwinReport {
 impl MotorReport {
     pub fn new(m: &crate::renode::Motor, w: Option<&crate::renode::MotorWitness>) -> Self {
         let o = &m.observer;
-        let s = &m.silicon;
         MotorReport {
             label: o.label.clone(),
             protocol: o.protocol.name(),
@@ -237,14 +226,7 @@ impl MotorReport {
             psc: m.psc,
             arr: m.arr,
             ccr: m.ccr,
-            silicon: SiliconReport {
-                kernel_hz: s.kernel_hz,
-                period_ps: s.period_ps,
-                high_ps: s.high_ps,
-                nominal_period_ps: s.nominal_period_ps,
-                nominal_high_ps: s.nominal_high_ps,
-                holds: s.holds,
-            },
+            silicon: m.silicon.clone(),
             twin: TwinReport {
                 observer: o.source.clone(),
                 period_ns: o.period_ns,

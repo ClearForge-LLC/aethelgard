@@ -393,7 +393,8 @@ fn timer_registers(
     field: &mut impl FnMut(u32, String, u32, u32),
 ) -> Result<(), TwinError> {
     let tim = f.layout("TIM")?;
-    let mut timers: BTreeMap<u32, (&aethelgard_ir::SolvedMotorOutput, Vec<u32>)> = BTreeMap::new();
+    // Each timer's shared values, and each used channel with its CCR.
+    let mut timers = BTreeMap::new();
     for (net, m, a) in topology.motor_outputs_in_order() {
         let (timer, channel) = aethelgard_ir::motor::timer_channel(&a.signal).ok_or_else(|| {
             TwinError::UnsupportedPeripheral {
@@ -404,7 +405,7 @@ fn timer_registers(
             .entry(timer)
             .or_insert((m, Vec::new()))
             .1
-            .push(channel);
+            .push((channel, m.ccr));
     }
     for (timer, (m, channels)) in timers {
         let name = format!("TIM{timer}");
@@ -422,7 +423,7 @@ fn timer_registers(
         reg("SMCR", 0x77, 0)?;
         reg("DIER", 0x5F, 0)?;
         let (mut ccmr, mut ccer) = ([0u32; 2], 0u32);
-        for &c in &channels {
+        for &(c, _) in &channels {
             let half = (c - 1) % 2;
             ccmr[((c - 1) / 2) as usize] |= OCM_PWM1 << (4 + 8 * half);
             ccer |= 1 << (4 * (c - 1));
@@ -437,13 +438,7 @@ fn timer_registers(
         if aethelgard_ir::motor::has_main_output_enable(timer) {
             reg("RCR", 0xFF, 0)?;
         }
-        for &c in &channels {
-            let ccr = topology
-                .motor_outputs_in_order()
-                .into_iter()
-                .find(|(_, _, a)| a.signal == format!("TIM{timer}_CH{c}"))
-                .map(|(_, m, _)| m.ccr)
-                .expect("a used channel has its output");
+        for &(c, ccr) in &channels {
             reg(&format!("CCR{c}"), u32::MAX, ccr)?;
         }
     }
