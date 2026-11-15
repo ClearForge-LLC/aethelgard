@@ -272,8 +272,8 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
   6. `4400`.
   7. `4300e2`, the CDC stack, witnessed through `USB_UART`.
 
-  `4300c` waits for `4200`, because it changes the SPI pins. Each piece takes the next free specification version once. ADC battery monitoring is out: the judge would supply the sample.
-- `AET-WO-4400` — **ArduPilot's board definition (`hwdef.dat`) generated from the `SolvedTopology`** (`RUL-16`). Unmodified ArduPilot builds from it. Its pinout is checked against the specification by a check the generator does not compute (`INV-07`).
+  `4300c` waits for `4200`, because it changes the SPI pins. Each piece takes the next free specification version once. ADC battery monitoring is out: the judge would supply the sample. **`AET-WO-4300c` written 2026-11-15** (build with one measured stop): the Fmax table as cited data, speeds `10`/`11` refused, the slowest sufficient `OSPEEDR`, and the parts table's limits enforced at `validate` (`4200` F11, F19, F20, F21).
+- `AET-WO-4400` — **ArduPilot's board definition (`hwdef.dat`) generated from the `SolvedTopology`** (`RUL-16`). Unmodified ArduPilot builds from it. Its pinout is checked against the specification by a check the generator does not compute (`INV-07`). **Spike written 2026-11-15:** can Furnace build unmodified ArduPilot, the `hwdef.dat` field table against the solved topology, a minimal board from today's reference, and a pinout check from ArduPilot's own generated `hwdef.h` (`INV-07`).
 - `AET-WO-4500` — **Sentinel-02:** the specification, every gate, a fault campaign that includes an SPI fault, and the fabrication package. Then fabrication (human-track: Scotty's purchase), then bring-up on the bench, then flight in this order: props off, tethered, free. Disagreements between simulation and the board go into `northstar.md` §2 as scars.
 
 **Exit gate (intent; refined after P3, never weakened)**
@@ -550,6 +550,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-14 | §5, §7.1 | `AET-WO-4100` reconciled (merged, PR #120): stackups at 2 and 4 layers, specification version 2, extraction over a near plane; 6 layers deferred. `AET-WO-4300` reconciled (spike merged, PR #123): ruled and split into `4300a`–`e2` with an order | PRs #120, #123; ruling comments 6876688824 and 6876703331 |
 | 2026-11-14 | §5, §7.1 | `AET-WO-1307` written (escape planning and name-independent routing); three backlog rows given to it | 4100's `D3`; 1102 A6; 2204 A5; 4100 F7 |
 | 2026-11-14 | §5, §7.1 | `AET-WO-2205` reconciled (merged, PR #119): trace version 6, the seeded set's exact evidence and an indeterminate case; seven backlog rows closed, two added | PR #119 |
+| 2026-11-15 | §5 | `AET-WO-4300c` (pin speeds, parts limits) and `AET-WO-4400` (ArduPilot `hwdef.dat`, spike) written; `4200` merged (PR #118, reconciliation follows) | Scotty, 2026-11-15 (a double-limit week toward P4) |
 
 ## 9. Provenance
 
