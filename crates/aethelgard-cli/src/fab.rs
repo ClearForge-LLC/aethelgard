@@ -52,7 +52,12 @@ pub const LAYERS: [(&str, &str, usize, &str); 9] = [
     ("F.Paste", "F_Paste.gtp", 9, "Gerber, top solder paste"),
     ("B.Paste", "B_Paste.gbp", 9, "Gerber, bottom solder paste"),
     ("F.SilkS", "F_Silkscreen.gto", 9, "Gerber, top silkscreen"),
-    ("B.SilkS", "B_Silkscreen.gbo", 9, "Gerber, bottom silkscreen"),
+    (
+        "B.SilkS",
+        "B_Silkscreen.gbo",
+        9,
+        "Gerber, bottom silkscreen",
+    ),
     ("F.Mask", "F_Mask.gts", 9, "Gerber, top solder mask"),
     ("B.Mask", "B_Mask.gbs", 9, "Gerber, bottom solder mask"),
     ("Edge.Cuts", "Edge_Cuts.gm1", 8, "Gerber, board outline"),
@@ -277,7 +282,12 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
 pub fn gerbers(stack: &aethelgard_eda::stack::Stack) -> Vec<(String, String, usize, String)> {
     let mut out = Vec::new();
     for (layer, suffix, creator, what) in LAYERS {
-        out.push((layer.to_owned(), suffix.to_owned(), creator, what.to_owned()));
+        out.push((
+            layer.to_owned(),
+            suffix.to_owned(),
+            creator,
+            what.to_owned(),
+        ));
         if layer == "B.Cu" {
             for (i, inner) in stack.copper[1..stack.copper.len() - 1].iter().enumerate() {
                 out.push((
@@ -811,7 +821,8 @@ mod tests {
     fn the_notes_describe_every_file_and_the_package_names_them_after_the_project() {
         let spec: aethelgard_ir::Specification =
             serde_json::from_str(&repo_file("examples/sentinel-01-minimal.json")).unwrap();
-        let d = describe("p", &gerbers(&aethelgard_eda::stack::Stack::of(&spec)));
+        let layers = gerbers(&aethelgard_eda::stack::Stack::of(&spec));
+        let d = describe("p", &layers);
         assert_eq!(d.len(), LAYERS.len() + 4);
         assert!(
             d.iter()
@@ -853,7 +864,10 @@ mod tests {
             .filter(|(l, ..)| l.starts_with("In"))
             .map(|(l, s, c, _)| (l.as_str(), s.as_str(), *c))
             .collect();
-        assert_eq!(inner, [("In1.Cu", "In1_Cu.g1", 9), ("In2.Cu", "In2_Cu.g2", 9)]);
+        assert_eq!(
+            inner,
+            [("In1.Cu", "In1_Cu.g1", 9), ("In2.Cu", "In2_Cu.g2", 9)]
+        );
         assert_eq!(four.len(), LAYERS.len() + 2);
     }
 }

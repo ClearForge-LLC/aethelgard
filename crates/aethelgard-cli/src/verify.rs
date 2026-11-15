@@ -850,12 +850,19 @@ pub fn verify(
     // refused by name before any gate runs; the rest are judged on the gates.
     if fab_mode.is_some() {
         let left_out = if skipped {
-            Some(format!("{WHOLE_SCHEDULE} is not proved on a board with motor outputs"))
+            Some(format!(
+                "{WHOLE_SCHEDULE} is not proved on a board with motor outputs"
+            ))
         } else {
             unplanned(&board, harnesses.len())
         };
         if let Some(m) = left_out {
-            return refuse("HarnessSkipped", None, format!("no package: {m}"), EXIT_UNREADABLE);
+            return refuse(
+                "HarnessSkipped",
+                None,
+                format!("no package: {m}"),
+                EXIT_UNREADABLE,
+            );
         }
         let short = uncovered(&spec, &topology, &read);
         if !short.is_empty() {
@@ -1350,6 +1357,77 @@ fn run_gates(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// `AET-WO-3303` §1.1: every `kani::proof` attribute in the crate is
+    /// counted, so a harness the line reader misses (its attribute and `fn`
+    /// on one line, or in another file) refuses the package.
+    #[test]
+    fn a_harness_the_plan_misses_is_counted() {
+        let proofs = "#[kani::proof]\nfn a() {}\n#[kani::proof] fn b() {}\n";
+        let crate_ = BTreeMap::from([("src/proofs.rs".to_owned(), proofs.to_owned())]);
+        assert_eq!(harnesses(proofs), ["proofs::a"]);
+        assert!(unplanned(&crate_, 1).is_some());
+        assert!(unplanned(&crate_, 2).is_none());
+        let other = BTreeMap::from([
+            (
+                "src/proofs.rs".to_owned(),
+                "#[kani::proof]\nfn a() {}\n".to_owned(),
+            ),
+            (
+                "src/lib.rs".to_owned(),
+                "#[kani::proof]\nfn c() {}\n".to_owned(),
+            ),
+        ]);
+        assert!(unplanned(&other, 1).is_some());
+        // A longer path that only starts with the attribute's is not one.
+        let contract = BTreeMap::from([(
+            "src/proofs.rs".to_owned(),
+            "#[kani::proof]\nfn a() {}\n#[kani::proof_for_contract(f)]\n".to_owned(),
+        )]);
+        assert!(unplanned(&contract, 1).is_none());
+    }
+
+    /// `AET-WO-3303` §5.2: a fault equal to the no-fault case covers
+    /// nothing: a capacitance limit at its declared value, a droop whose
+    /// floor is the nominal; nor does a fault on a bus no device uses.
+    #[test]
+    fn a_fault_that_changes_nothing_covers_nothing() {
+        let bytes = std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sentinel-01-minimal.json"),
+        )
+        .unwrap();
+        let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let sda = &spec.i2c_buses[0].sda.net;
+        let declared = spec
+            .net_constraints
+            .iter()
+            .find(|c| &c.net_name == sda)
+            .unwrap()
+            .max_capacitance_femtofarads;
+        let scenario = |overrides: Value| {
+            aethelgard_chaos::campaign::Scenario::parse(
+                json!({"schema_version": 2, "name": "x", "base": "b.json", "expect": "pass",
+                    "expect_findings": [], "overrides": overrides})
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap()
+        };
+        let droop = |floor: u32| {
+            json!({"droop": {"domain": "VDD_3V3", "floor_millivolts": floor, "start_ns": 1000000,
+                "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000, "source_milliohms": 500,
+                "load_milliamps": 100, "bor_level": 3}})
+        };
+        let short = |o: Value| uncovered(&spec, &topology, &[scenario(o)]);
+        let all =
+            short(json!([{"net": sda, "max_capacitance_femtofarads": declared}, droop(3300)]));
+        assert_eq!(all.len(), 3, "{all:?}");
+        let covered =
+            short(json!([{"net": sda, "max_capacitance_femtofarads": declared + 1}, droop(3299)]));
+        assert_eq!(covered, ["SPI bus `FLASH`"]);
+    }
 
     /// `uid_boundary` is the gate's own `sandbox.uid_boundary`, and true only
     /// when that is the JSON `true`; a gate that did not run has none; the

@@ -11,7 +11,13 @@ use std::process::{Command, Stdio};
 use serde_json::Value;
 
 const SPEC: &str = "examples/sentinel-01-minimal.json";
-const SCENARIO: &str = "scenarios/sentinel-01/pullup-2k2.json";
+/// A campaign with a fault on every declared bus and rail of the reference
+/// (`AET-WO-3303` §1.1): `SENSORS`, `FLASH` and `VDD_3V3`.
+const SCENARIOS: [&str; 3] = [
+    "scenarios/sentinel-01/pullup-47k.json",
+    "scenarios/sentinel-01/seeded/spi-absent-u4.json",
+    "scenarios/sentinel-01/droop-tolerated.json",
+];
 
 fn root() -> PathBuf {
     fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
@@ -63,7 +69,9 @@ fn an_unusable_fab_out_is_refused_before_any_gate_and_left_untouched() {
             "--spec",
             SPEC,
             "--scenarios",
-            SCENARIO,
+            SCENARIOS[0],
+            SCENARIOS[1],
+            SCENARIOS[2],
             "--fab-out",
             s(dir),
         ]);
@@ -93,7 +101,9 @@ fn a_run_that_cannot_pass_creates_nothing_and_the_flags_exclude_each_other() {
         "--spec",
         SPEC,
         "--scenarios",
-        SCENARIO,
+        SCENARIOS[0],
+        SCENARIOS[1],
+        SCENARIOS[2],
         "--fab-out",
         s(&absent),
     ]);
@@ -108,7 +118,9 @@ fn a_run_that_cannot_pass_creates_nothing_and_the_flags_exclude_each_other() {
         "--spec",
         SPEC,
         "--scenarios",
-        SCENARIO,
+        SCENARIOS[0],
+        SCENARIOS[1],
+        SCENARIOS[2],
         "--against-fab",
         s(&absent),
     ]);
@@ -119,7 +131,9 @@ fn a_run_that_cannot_pass_creates_nothing_and_the_flags_exclude_each_other() {
         "--spec",
         SPEC,
         "--scenarios",
-        SCENARIO,
+        SCENARIOS[0],
+        SCENARIOS[1],
+        SCENARIOS[2],
         "--fab-out",
         s(&absent),
         "--against-fab",
@@ -144,7 +158,9 @@ fn a_fab_out_another_uid_could_write_is_refused() {
             "--spec",
             SPEC,
             "--scenarios",
-            SCENARIO,
+            SCENARIOS[0],
+            SCENARIOS[1],
+            SCENARIOS[2],
             "--fab-out",
             s(&dir),
         ]);
@@ -159,7 +175,9 @@ fn a_fab_out_another_uid_could_write_is_refused() {
             "--spec",
             SPEC,
             "--scenarios",
-            SCENARIO,
+            SCENARIOS[0],
+            SCENARIOS[1],
+            SCENARIOS[2],
             "--fab-out",
             s(&dir),
         ]);
@@ -181,7 +199,9 @@ fn a_tree_that_differs_writes_no_package_and_says_so() {
         "--spec",
         SPEC,
         "--scenarios",
-        SCENARIO,
+        SCENARIOS[0],
+        SCENARIOS[1],
+        SCENARIOS[2],
         "--against",
         s(&tree),
         "--fab-out",
@@ -196,7 +216,9 @@ fn a_tree_that_differs_writes_no_package_and_says_so() {
         "--spec",
         SPEC,
         "--scenarios",
-        SCENARIO,
+        SCENARIOS[0],
+        SCENARIOS[1],
+        SCENARIOS[2],
         "--against",
         s(&tree),
         "--against-fab",
@@ -242,7 +264,9 @@ fn an_unacknowledged_eol_part_is_refused_on_the_fab_path_by_name() {
         "--spec",
         s(&path),
         "--scenarios",
-        SCENARIO,
+        SCENARIOS[0],
+        SCENARIOS[1],
+        SCENARIOS[2],
         "--fab-out",
         s(&out),
     ]);
@@ -255,4 +279,95 @@ fn an_unacknowledged_eol_part_is_refused_on_the_fab_path_by_name() {
         "{m}"
     );
     assert!(!out.exists(), "nothing is created");
+}
+
+/// `AET-WO-3303` §1.1: a campaign with no fault on a declared bus or rail is
+/// refused by each fab flag before any gate (`CampaignCoverageShort`), naming
+/// every uncovered one, and nothing is created. A "fault" whose value is the
+/// specification's own (2.2 kΩ, the declared pull-up) covers nothing (§5.2);
+/// each covering scenario alone leaves exactly the other two named.
+#[test]
+fn a_campaign_that_misses_a_bus_or_rail_is_refused_by_name() {
+    let out = scratch("coverage");
+    // `--against-fab` names an existing directory; it is left empty.
+    let existing = scratch("coverage-against");
+    fs::create_dir_all(&existing).unwrap();
+    let cases: [(&[&str], &[&str]); 4] = [
+        (
+            &["scenarios/sentinel-01/pullup-2k2.json"],
+            &["I2C bus `SENSORS`", "SPI bus `FLASH`", "rail `VDD_3V3`"],
+        ),
+        (&[SCENARIOS[0]], &["SPI bus `FLASH`", "rail `VDD_3V3`"]),
+        (&[SCENARIOS[1]], &["I2C bus `SENSORS`", "rail `VDD_3V3`"]),
+        (&[SCENARIOS[2]], &["I2C bus `SENSORS`", "SPI bus `FLASH`"]),
+    ];
+    for flag in ["--fab-out", "--against-fab"] {
+        for (scenarios, named) in cases {
+            let mut args = vec!["verify", "--spec", SPEC, "--scenarios"];
+            args.extend(scenarios);
+            let dir = if flag == "--fab-out" { &out } else { &existing };
+            args.extend([flag, s(dir)]);
+            let (code, v) = run(&args);
+            assert_eq!(code, Some(3), "{flag} {scenarios:?}: {v}");
+            assert_eq!(v["error"]["kind"], "CampaignCoverageShort", "{v}");
+            let m = v["error"]["message"].as_str().unwrap();
+            for n in named {
+                assert!(m.contains(n), "{flag} {scenarios:?}: {m}");
+            }
+            assert_eq!(m.matches('`').count(), 2 * named.len(), "{m}");
+            assert!(!out.exists());
+            assert_eq!(fs::read_dir(&existing).unwrap().count(), 0);
+        }
+    }
+    fs::remove_dir_all(&existing).unwrap();
+}
+
+/// `AET-WO-3303` §7 (D1): a rail other than the MCU's supply and an SPI bus
+/// no device uses cannot be faulted by any override kind, so a package of the
+/// connectors fixture is refused, each named with why.
+#[test]
+fn a_rail_or_bus_no_fault_kind_reaches_is_named() {
+    let dir = scratch("coverage-d1");
+    fs::create_dir_all(&dir).unwrap();
+    fs::copy(
+        root().join("crates/aethelgard-cli/tests/fixtures/connectors.json"),
+        dir.join("connectors.json"),
+    )
+    .unwrap();
+    let scenario = serde_json::json!({
+        "schema_version": 2,
+        "name": "connectors-faults",
+        "base": "connectors.json",
+        "expect": "fail",
+        "expect_findings": ["i2c_timeout"],
+        "overrides": [
+            {"bus": "SENSORS", "line_held_low": "scl"},
+            {"spi_device_absent": "U4"},
+            {"droop": {"domain": "VDD_3V3", "floor_millivolts": 3200, "start_ns": 1000000,
+                "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
+                "source_milliohms": 500, "load_milliamps": 100, "bor_level": 0}}
+        ]
+    });
+    fs::write(dir.join("faults.json"), scenario.to_string()).unwrap();
+    let out = dir.join("pkg");
+    let (code, v) = run(&[
+        "verify",
+        "--spec",
+        s(&dir.join("connectors.json")),
+        "--scenarios",
+        s(&dir.join("faults.json")),
+        "--fab-out",
+        s(&out),
+    ]);
+    assert_eq!(code, Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "CampaignCoverageShort", "{v}");
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(m.contains("SPI bus `EXT` (no device uses it"), "{m}");
+    assert!(m.contains("rail `VDD_5V` (not the MCU's supply"), "{m}");
+    assert!(
+        !m.contains("SENSORS") && !m.contains("FLASH") && !m.contains("VDD_3V3"),
+        "{m}"
+    );
+    assert!(!out.exists());
+    fs::remove_dir_all(&dir).unwrap();
 }
