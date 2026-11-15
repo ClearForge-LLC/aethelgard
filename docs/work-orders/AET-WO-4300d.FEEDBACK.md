@@ -138,6 +138,7 @@ No datasheet was fetched, no image file read and no container run before this co
 | **TI TXU0304PW** | translator, SPI 3.3 V ↔ 1.8 V | SCES935A, Nov 2021, `425338d9…550f` | ACTIVE | `Logic_LevelTranslator:TXU0304PW` → `TSSOP-14` | VCCA, VCCB 1.08–5.5 V (no order); A1–A3 → B, B4 → A; TMAX ≥ 50 Mbps down, ≥ 100 Mbps up; tpd ≤ 19/15 ns; skew ≤ 8 ns; Schmitt inputs |
 | TI TXB0104PW | translator (rejected) | SCES650K, `9a852f7b…` | ACTIVE | `TXB0104PW` → `TSSOP-14` | VCCA ≤ VCCB; ±20 µA drive; load ≤ 70 pF; pull-ups > 50 kΩ |
 | **Vishay CRCW0603 e3, 1 %** | FB dividers, battery sense | doc 20035, 14-Apr-2026, `113d2d57…` | not read (product page not fetched) | `Device:R` (vendored) → `Resistor_SMD:R_0603_1608Metric` (not vendored; `R_0402` is) | ±1 %; ±100 ppm/K; 75 V; 0.1 W |
+| **Vishay TNPW0603 e3, 0.1 %, 25 ppm/K** | FB dividers (added after A1) | doc 28758, 10-Apr-2026, `6f0508c5…` | not read (product page not fetched) | `Device:R` → `R_0603_1608Metric` | ±0.1 %; ±25 ppm/K (TCR to ±10 ppm/K offered); ≤ 0.10 % after 8000 h at P70 (general mode, p2) |
 | **AMASS XT30PW-M** | power-in | AMASS spec V1.2 (distributor copy), `c57b5a37…` | **unread**: Scotty | `Connector_AMASS:AMASS_XT30PW-M_1x02_P2.50mm_Horizontal` (TH) | rated 15 A, momentary 30 A, 0.80 mΩ, DC 500 V, −20…120 °C |
 
 **For Scotty** (each one was not fetchable or not readable from Furnace):
