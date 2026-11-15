@@ -151,11 +151,12 @@ fn the_reference_passes_with_every_term() {
     // (the driver) not counted, its pad's copper counted.
     // AET-WO-1307 K2: the SPI terms on its routed board; were 18_521 and
     // 17_188 on `AET-WO-4300c`'s.
-    // AET-WO-4300b: the console's two nets (U1 to J1) come before SPI in
-    // order B and take the run under U1 MOSI used, so MOSI crosses on B.Cu
-    // (two vias, 13.75 mm) and SCK is rerouted shorter (7.375 mm); were
-    // [4_371, 3_038, 1_563, 8_000, 16_972] and [4_209, 0, 1_563, 8_000,
-    // 13_772]. J1 at the edge alone moves no term (measured).
+    // AET-WO-4300b: the console's two nets (U1 to J1) are routed before SPI
+    // (order B: their first pads are higher on the board), and SPI is routed
+    // differently around them: MOSI now crosses on B.Cu (two vias, 13.75 mm)
+    // and SCK is shorter (7.375 mm); were [4_371, 3_038, 1_563, 8_000,
+    // 16_972] and [4_209, 0, 1_563, 8_000, 13_772]. Measured: J1 at the edge
+    // with no console net moves no term, and no I2C term moves.
     let (sck, mosi) = (&lines[2], &lines[3]);
     assert_eq!(terms(sck), [2_933, 3_038, 1_563, 8_000, 15_534]);
     assert_eq!(terms(mosi), [4_966, 3_038, 1_563, 8_000, 17_567]);
