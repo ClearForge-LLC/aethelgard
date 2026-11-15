@@ -56,6 +56,14 @@ fn every_loop_rule_holds_on_the_fixtures_own_board() {
     let sense = &solved.power.as_ref().unwrap().sense["VBAT_SENSE"];
     let c50 = records.iter().find(|r| r.part == "C50").unwrap();
     assert_eq!(c50.pads[0].pin, sense.position.to_string());
+    // And that MCU pad carries the sense net (§1.7).
+    let mcu = b.parts.iter().find(|p| p.reference == c50.ic).unwrap();
+    let pad = mcu
+        .pads
+        .iter()
+        .find(|p| p.number == sense.position.to_string())
+        .unwrap();
+    assert_eq!(pad.net.as_deref(), Some("/VBAT_SENSE"));
     // Two emissions are byte for byte the same.
     assert_eq!(e, schematic::emit(&spec, &solved, &table).unwrap());
 }
@@ -203,4 +211,24 @@ fn extract_bounds_the_power_board() {
     assert_eq!(out.status.code(), Some(0), "{v}");
     assert_eq!(v["verdict"], "pass", "{v}");
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// K10: the battery's rail is `VBAT` on a board with a power tree, so a net
+/// the specification spells `VBAT`, in any case, is refused by name.
+#[test]
+fn a_net_spelled_vbat_beside_a_power_tree_is_refused() {
+    let mut v = common::power::power_tree();
+    v["i2c_buses"][0]["sda"]["net"] = "vbat".into();
+    for c in v["net_constraints"].as_array_mut().unwrap() {
+        if c["net_name"] == "I2C_SDA" {
+            c["net_name"] = "vbat".into();
+        }
+    }
+    let spec: Specification = serde_json::from_value(v).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+    match schematic::emit(&spec, &solved, &table) {
+        Err(e @ EmitError::ReservedName(_)) => assert!(e.to_string().contains("VBAT"), "{e}"),
+        other => panic!("{other:?}"),
+    }
 }
