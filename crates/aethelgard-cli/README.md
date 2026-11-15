@@ -364,6 +364,25 @@ As root, as in the published image, the CLI runs every tool under a separate uid
 
 The CLI cannot see this set-up, so its verdicts still say `"uid_boundary":false`: they under-claim, which `RUL-19` prefers to over-claiming. Without all three, the residual above is the client's own identity (`RUL-19` (4)).
 
+## `check pinout`
+
+```
+aethelgard check pinout --topology <solved.json> --elf <firmware.elf> [--hwdef-h <hwdef.h>] [--allow <allow.json>]
+```
+
+The pinout check of `aethelgard-pincheck` (`AET-WO-4400a`). It judges what a linked STM32H753 firmware writes to its GPIO registers at reset (`gpio_default_config`, 308 bytes) against a `SolvedTopology`, in three directions: forward, reverse and package. The crate's `README.md` gives the rules. It starts no process and runs no tool, so it has no sandbox and no scratch. The package is the solver's own pin table for `STM32H753ZITx`, the one part whose register layout the check knows; a topology names no part yet.
+
+Every input is read whole under the 16 MiB cap. The verdict carries each input's sha256, `ok`, `decodes` (`elf and hwdef.h agree`, or `elf only`), `configured` (each configured pin with `named_by`, a topology net, `allow-list` or null), and `findings`. Each finding is named by `check` (`forward`, `reverse` or `package`), `kind` (`NotAlternate`, `WrongAlternateFunction`, `NotOutput`, `UnnamedPin`, `AllowedPinDiffers` or `NotInPackage`), `pin`, `net` (or null), `expected` and `decoded`.
+
+| Exit | When |
+|---|---|
+| `0` | no finding |
+| `1` | at least one finding |
+| `2` | the topology is well-formed JSON of the wrong shape (`SchemaViolation`), `validate` refuses it, or one of its pins is not `P[A-K]0-15` (`InvalidPin`) |
+| `3` | an input cannot be read or is too large (`UnreadableInput`, `InputTooLarge`), or the topology is not JSON (`InvalidJson`). A malformed ELF by name: `Truncated`, `NotElf`, `WrongClass`, `WrongByteOrder`, `WrongMachine`, `NoSectionTable`, `NoSymbolTable`, `NoProgramHeaders`, `MalformedElf`, `SymbolMissing`, `SymbolDuplicated`, `SymbolNotObject`, `SymbolSize`, `SymbolOutsideSection`, `SymbolNotLoaded`, and `SectionTableDisagrees` when the section table and the `PT_LOAD` put the symbol at different file offsets. `MalformedHeader` (`id` the macro). `MalformedAllowList`, and `AllowNamesTopologyPin`, an allow-list that would hide a topology pin |
+| `5` | `DecodesDisagree`: `hwdef.h` and the ELF give different `MODER`, `AFRL` or `AFRH` for a port (`id` such as `GPIOB_AFRL`). Never read as pass or fail |
+| `70` | the vendored pin table failed its own check |
+
 ## `campaign` and `replay`
 
 `AET-WO-2300`: the P2 gate's fault campaign, its archive, and replay from the archive alone (`INV-04`).

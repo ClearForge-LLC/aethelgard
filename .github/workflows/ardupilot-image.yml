@@ -1,0 +1,199 @@
+# The ArduPilot image (AET-WO-4400a, ruling D5 on PR #130): unmodified ArduPilot
+# Copter-4.7.2, its toolchain and its Python set, pinned as RUL-15 pins the tools
+# image. Pull requests build it and smoke it under --network none; they never
+# publish. A push to main does the same and then publishes from one job, the
+# only one holding packages: write, the very image it has just smoke-tested.
+#
+# The `ardupilot` job also builds step G and the three seeds in the image, and
+# `pinout` judges them with `aethelgard check pinout` (ruling D7). The jobs live
+# here, not in ci.yml, because they need this image, which only this workflow
+# builds. They run whenever the image, the check or anything the topology
+# comes from changes.
+name: ardupilot-image
+
+on:
+  pull_request:
+    paths:
+      - "container/ardupilot*"
+      - "container/check-pins.sh"
+      - "crates/**"
+      - "examples/**"
+      - "Cargo.*"
+      - "rust-toolchain.toml"
+      - ".github/workflows/ardupilot-image.yml"
+  push:
+    branches: [main]
+    paths:
+      - "container/ardupilot*"
+      - "container/check-pins.sh"
+      - "crates/**"
+      - "examples/**"
+      - "Cargo.*"
+      - "rust-toolchain.toml"
+      - ".github/workflows/ardupilot-image.yml"
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: aethelgard-ardupilot:ci
+
+jobs:
+  ardupilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: refuse an unpinned base, download, package, clone or pip file
+        run: bash container/check-pins.sh container/ardupilot.Dockerfile
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: container
+          file: container/ardupilot.Dockerfile
+          tags: ${{ env.IMAGE }}
+          load: true
+          cache-from: type=gha,scope=ardupilot-image
+          cache-to: type=gha,mode=max,scope=ardupilot-image
+
+      - name: image size
+        run: echo "ANSWER image_bytes=$(docker image inspect --format '{{.Size}}' "$IMAGE") nproc=$(nproc)"
+
+      - name: smoke with --network none
+        run: |
+          docker run --rm --network none -v "$PWD/container:/container:ro" \
+            "$IMAGE" bash /container/ardupilot-build.sh smoke
+
+      # D4 (PR #130): the runner sets GITHUB_ACTIONS=true, and ArduPilot then
+      # refuses a numeric APJ_BOARD_ID. This control passes it into the
+      # container and requires that refusal, so the builds below, which run
+      # with the variable unset, prove what unsetting it does.
+      - name: D4 control, GITHUB_ACTIONS=true refuses the board ID
+        run: |
+          echo "GITHUB_ACTIONS on the runner: $GITHUB_ACTIONS"
+          docker run --rm --network none -v "$PWD/container:/container:ro" \
+            -v "$PWD/crates/aethelgard-pincheck/fixtures:/boards:ro" \
+            "$IMAGE" bash /container/ardupilot-build.sh d4
+
+      - name: build step G and the three seeds with --network none, GITHUB_ACTIONS unset
+        run: |
+          mkdir -p "$RUNNER_TEMP/boards"
+          docker run --rm --network none -v "$PWD/container:/container:ro" \
+            -v "$PWD/crates/aethelgard-pincheck/fixtures:/boards:ro" -v "$RUNNER_TEMP/boards:/out" \
+            "$IMAGE" bash /container/ardupilot-build.sh boards step-g seed-pin seed-af seed-pkg
+
+      # Measured once for the work order (§1.2): the same four in one build
+      # directory, reused. Only the clean builds above are judged.
+      - name: the four again, one build directory reused (measurement)
+        run: |
+          docker run --rm --network none -v "$PWD/container:/container:ro" \
+            -v "$PWD/crates/aethelgard-pincheck/fixtures:/boards:ro" -v "$RUNNER_TEMP/reuse:/out" \
+            "$IMAGE" bash /container/ardupilot-build.sh boards -i step-g seed-pin seed-af seed-pkg
+
+      # GPL binaries: they live only here and in this run's artifacts, never in
+      # the repository (ARDUPILOT-LICENSE.md).
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ardupilot-boards
+          path: ${{ runner.temp }}/boards
+          if-no-files-found: error
+          retention-days: 7
+
+  cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Installs the toolchain pinned in rust-toolchain.toml.
+      - run: rustup toolchain install && rustc --version
+      - run: cargo build --locked -p aethelgard-cli
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: aethelgard
+          path: target/debug/aethelgard
+          if-no-files-found: error
+          retention-days: 7
+
+  pinout:
+    needs: [ardupilot, cli]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ardupilot-boards
+          path: ${{ runner.temp }}/boards
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: aethelgard
+          path: ${{ runner.temp }}/bin
+      # The expected values come from the solver, never from the boards (INV-07).
+      - name: step G passes, each seed fails by name
+        run: |
+          bin="$RUNNER_TEMP/bin/aethelgard"
+          chmod +x "$bin"
+          "$bin" solve --file examples/sentinel-01-minimal.json > "$RUNNER_TEMP/topology.json"
+          bash container/ardupilot-pinout.sh "$bin" "$RUNNER_TEMP/topology.json" "$RUNNER_TEMP/boards" \
+            crates/aethelgard-pincheck/fixtures/step-g.allow.json
+
+  publish:
+    needs: [ardupilot, pinout]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      TAG: ghcr.io/clearforge-llc/aethelgard-ardupilot:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: refuse an unpinned base, download, package, clone or pip file
+        run: bash container/check-pins.sh container/ardupilot.Dockerfile
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: container
+          file: container/ardupilot.Dockerfile
+          tags: ${{ env.TAG }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          load: true
+          cache-from: type=gha,scope=ardupilot-image
+
+      # The image pushed is the image smoke-tested here, not a rebuild of it.
+      - name: smoke the image about to be published
+        run: |
+          docker run --rm --network none -v "$PWD/container:/container:ro" \
+            "$TAG" bash /container/ardupilot-build.sh smoke
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # container/ARDUPILOT-IMAGE is set by a pull request from this digest; CI
+      # never writes to the repository.
+      - name: push and record the digest
+        run: |
+          docker push "$TAG"
+          digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$TAG")
+          [[ "$digest" =~ ^ghcr\.io/clearforge-llc/aethelgard-ardupilot@sha256:[0-9a-f]{64}$ ]] || { echo "no digest: $digest" >&2; exit 1; }
+          echo "Published \`$digest\` from \`$GITHUB_SHA\`." >> "$GITHUB_STEP_SUMMARY"

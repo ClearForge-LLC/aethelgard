@@ -84,8 +84,44 @@ for i in "${!lines[@]}"; do
     fi
   fi
 
-  if [[ "$line" =~ (^|[^a-z-])(wget|pip3?|npm|git[[:space:]]+clone)([^a-z-]|$) ]] || [[ "${line,,}" =~ ^[[:space:]]*add[[:space:]].*:// ]]; then
-    refuse "$i" "fetches outside the checked curl shape: $line"
+  # Two more fetch shapes (AET-WO-4400a), each checked as tightly as curl's:
+  #   - `git clone --depth 1 -b REF --recurse-submodules --shallow-submodules
+  #     https://URL DIR`, and the next line is `&& test "$(git -C DIR rev-parse
+  #     HEAD)" = <40 hex>`: the commit, not the ref, is the pin;
+  #   - `pip install --no-cache-dir --require-hashes --no-deps
+  #     [--no-build-isolation] -r PATH`, where PATH is the target of a `COPY
+  #     NAME PATH` in this file and NAME, beside this file, holds only
+  #     `name==version --hash=sha256:<64 hex>...` lines (and comments).
+  shaped=0
+  if [[ "$line" =~ ^[[:space:]]*(RUN|\&\&)\ git\ clone\ --depth\ 1\ -b\ [A-Za-z0-9._-]+\ --recurse-submodules\ --shallow-submodules\ https://[^[:space:]]+\ (/[^[:space:]]+)\ \\$ ]]; then
+    shaped=1
+    dir=${BASH_REMATCH[2]}
+    next=${lines[$((i + 1))]:-}
+    [[ "$next" =~ ^[[:space:]]*\&\&\ test\ \"\$\(git\ -C\ ${dir//./\\.}\ rev-parse\ HEAD\)\"\ =\ [0-9a-f]{40}(\ \\)?$ ]] \
+      || refuse "$i" "clone not checked against a commit by the next line: $dir"
+  elif [[ "$line" =~ ^[[:space:]]*(RUN|\&\&)\ (/[^[:space:]]+/)?pip3?\ install\ --no-cache-dir\ --require-hashes\ --no-deps\ (--no-build-isolation\ )?-r\ (/[^[:space:]]+)(\ \\)?$ ]]; then
+    shaped=1
+    req=${BASH_REMATCH[4]}
+    name=${req##*/}
+    copied=0
+    for l in "${lines[@]}"; do [ "$l" = "COPY $name $req" ] && copied=1; done
+    [ "$copied" -eq 1 ] || refuse "$i" "requirements $req is not exactly 'COPY $name $req' from beside this file"
+    reqfile=$(dirname "$file")/$name
+    if [ -f "$reqfile" ]; then
+      n=0
+      while IFS= read -r r || [ -n "$r" ]; do
+        n=$((n + 1))
+        [[ "$r" =~ ^[[:space:]]*(#|$) ]] && continue
+        [[ "$r" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*==[0-9][A-Za-z0-9.+!-]*(\ --hash=sha256:${hex})+$ ]] \
+          || refuse "$i" "$name:$n: not name==version with sha256 hashes: $r"
+      done < "$reqfile"
+    else
+      refuse "$i" "$reqfile not found: the hashes are unreadable"
+    fi
+  fi
+
+  if [ "$shaped" -eq 0 ] && { [[ "$line" =~ (^|[^a-z-])(wget|pip3?|npm|git[[:space:]]+clone)([^a-z-]|$) ]] || [[ "${line,,}" =~ ^[[:space:]]*add[[:space:]].*:// ]]; }; then
+    refuse "$i" "fetches outside the checked curl, clone and pip shapes: $line"
   fi
 
   if [[ "$line" == *curl* ]]; then
