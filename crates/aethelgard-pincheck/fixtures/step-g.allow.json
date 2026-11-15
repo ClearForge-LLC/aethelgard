@@ -1,0 +1,14 @@
+{
+  "allow": {
+    "PD8": {
+      "mode": "alternate",
+      "alternate_function": 7,
+      "why": "USART3_TX: ArduPilot builds only with one USART (AET-WO-4400 step F); the topology gains UARTs in AET-WO-4300b. Chosen by hand, not by any declared fact."
+    },
+    "PD9": {
+      "mode": "alternate",
+      "alternate_function": 7,
+      "why": "USART3_RX, with PD8."
+    }
+  }
+}
