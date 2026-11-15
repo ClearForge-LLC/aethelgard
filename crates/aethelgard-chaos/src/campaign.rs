@@ -1235,6 +1235,23 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
             return Err("a motor output is solved twice");
         }
     }
+    // The board's window, from its outputs' protocols (`AET-WO-4300a` D1):
+    // every witness ends at it, and the boot ran exactly its instructions.
+    let window = if solved.values().any(
+        |m| matches!(m, Record::MotorOutputSolved { protocol, .. } if protocol.starts_with("dshot")),
+    ) {
+        TWIN_DSHOT_WINDOW_NS
+    } else {
+        TWIN_MAX_VIRTUAL_NS
+    };
+    if !solved.is_empty()
+        && records.iter().any(|r| {
+            matches!(r, Record::BootObserved { instructions_expected, .. }
+                if instructions_expected.checked_mul(TWIN_NS_PER_INSTRUCTION) != Some(window))
+        })
+    {
+        return Err("a motor board's boot is not its window's instructions");
+    }
     let mut checked: BTreeSet<&str> = BTreeSet::new();
     let mut witnessed: BTreeSet<&str> = BTreeSet::new();
     for r in records {
@@ -1258,6 +1275,9 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
                 else {
                     return Err("a motor witness names no solved output");
                 };
+                if !matches!(r, Record::MotorWitness { end_ns, .. } if *end_ns == window) {
+                    return Err("a motor witness does not end at its board's window");
+                }
                 if !witness_consistent(m, r) {
                     return Err(
                         "a motor witness's status is not what its counts and its output's timing give",
@@ -1294,6 +1314,19 @@ const TWIN_CYCLE_NS: u64 = 4;
 const TWIN_GRAIN_NS: u64 = 10;
 const TWIN_QUANTUM_NS: u64 = 100_000;
 
+/// A boot's windows: 100 ms, or 2 ms for a board with a DShot output
+/// (`AET-WO-4300a` D1), at 10 ns an instruction (100 MIPS); and every
+/// timer's kernel clock, the reset clock's 64 MHz (RM0433 Table 57), the
+/// only clock a solved topology admits.
+// belt-and-suspenders: `aethelgard_twin::boot::{MAX_VIRTUAL_NS,
+// DSHOT_WINDOW_NS, MIPS}` and `aethelgard_ir::SolvedClock::reset` state
+// these; replay checks an archive without the twin or `aethelgard-ir`
+// (RUL-16), so it states them again.
+const TWIN_MAX_VIRTUAL_NS: u64 = 100_000_000;
+const TWIN_DSHOT_WINDOW_NS: u64 = 2_000_000;
+const TWIN_NS_PER_INSTRUCTION: u64 = 10;
+const RESET_KERNEL_HZ: u64 = 64_000_000;
+
 /// Whether kind 25 `check` is exactly the static check of kind 24 `m` on its
 /// own kernel clock: the figures and `holds`, re-derived (adversarial pass:
 /// a forged `holds` beside its own failing figures).
@@ -1323,6 +1356,9 @@ fn silicon_check(m: &Record, check: &Record) -> Option<bool> {
     else {
         return None;
     };
+    if *kernel_hz != RESET_KERNEL_HZ {
+        return Some(false);
+    }
     let kernel = u128::from(*kernel_hz);
     let (psc1, arr1, ccr) = (u128::from(*psc) + 1, u128::from(*arr) + 1, u128::from(*ccr));
     let ps = |cycles: u128| u64::try_from(cycles * 1_000_000_000_000 / kernel.max(1)).ok();
@@ -1398,13 +1434,27 @@ fn witness_consistent(m: &Record, w: &Record) -> bool {
     {
         return false;
     }
+    // The fields agree with each other (adversarial F3, on `a2c4fa4`): the
+    // first rise no later than the last, which is no later than the end;
+    // no more edges off the grid than edges; and a passing sequence's last
+    // rise exactly `rises - 1` periods after its first, within its span.
+    if first_ns.zip(*last_ns).is_some_and(|(f, l)| f > l)
+        || last_ns.is_some_and(|l| l > *end_ns)
+        || *off_grid > rises + falls
+    {
+        return false;
+    }
     let none = *rises == 0 && *falls == 0 && first_ns.is_none();
     let shaped = *rises >= 2
         && *batched == 0
         && first_ns.is_some()
         && span_ns.is_some_and(|s| s < *grain_ns);
     let covers = last_ns.is_some_and(|l| l + period_ns + grain_ns >= *end_ns);
-    let passing = shaped && (*falls == *rises || *falls + 1 == *rises) && covers;
+    let spaced = first_ns
+        .zip(*last_ns)
+        .zip(*span_ns)
+        .is_some_and(|((f, l), s)| (l - f).abs_diff((rises - 1) * period_ns) <= s);
+    let passing = shaped && spaced && (*falls == *rises || *falls + 1 == *rises) && covers;
     match status.as_str() {
         "witnessed" => passing && *off_grid > 0,
         "static_only" => passing && *off_grid == 0,

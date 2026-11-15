@@ -422,6 +422,9 @@ enum Scope<'a> {
     Spi(&'a str),
     /// A motor output, by its position among the kind 24s (`AET-WO-4300a`).
     Motor(usize),
+    /// A motor output's failing static check (kind 25): the topology's
+    /// timing, never the firmware's (second adversarial review, F1).
+    MotorStatic(usize),
     Board,
 }
 
@@ -831,6 +834,22 @@ impl<'a> Run<'a> {
         })
     }
 
+    /// Motor output `m`'s failing records: its static check when it does not
+    /// hold, and its witness when it failed. A passing one is never evidence
+    /// (adversarial pass, and F6 of the second review).
+    fn motor_failing(&self, m: usize) -> Vec<usize> {
+        let label = self.motors[m].label;
+        self.indices(|r| match r {
+            Record::MotorTimingCheck {
+                label: l, holds, ..
+            } => l == label && !holds,
+            Record::MotorWitness {
+                label: l, status, ..
+            } => l == label && !PASSING_WITNESS.contains(&status.as_str()),
+            _ => false,
+        })
+    }
+
     /// The position among the kind 24s of the output labelled `label`.
     fn motor_named(&self, label: &str) -> Option<usize> {
         self.motors.iter().position(|m| m.label == label)
@@ -866,9 +885,8 @@ impl<'a> Run<'a> {
             Record::SpiCheck { reference, .. } | Record::SpiWitness { reference, .. } => {
                 Scope::Spi(reference.as_str())
             }
-            Record::MotorTimingCheck { label, .. } | Record::MotorWitness { label, .. } => {
-                Scope::Motor(self.motor_named(label)?)
-            }
+            Record::MotorTimingCheck { label, .. } => Scope::MotorStatic(self.motor_named(label)?),
+            Record::MotorWitness { label, .. } => Scope::Motor(self.motor_named(label)?),
             Record::RegisterObserved { name, reading } => {
                 let on: Vec<usize> = (0..self.buses.len())
                     .filter(|&b| self.owned_wrong(b, name, reading))
@@ -1034,22 +1052,18 @@ impl<'a> Run<'a> {
                     (Rule::I4, vec![], vec![])
                 }
             }
+            // A failing static check is the topology's: indeterminate, never
+            // software, whatever else of the output's is wrong (F1).
+            Scope::MotorStatic(m) => (Rule::I4, self.motor_failing(m), vec![]),
             Scope::Motor(m) => {
-                let label = self.motors[m].label;
-                let own = self.indices(|r| {
-                    matches!(r, Record::MotorWitness { label: l, .. }
-                        | Record::MotorTimingCheck { label: l, .. } if l == label)
-                });
                 let software = self.motor_software(m);
                 if software.is_empty() {
-                    (Rule::I4, own, vec![])
+                    (Rule::I4, self.motor_failing(m), vec![])
                 } else {
-                    // Its witness is evidence only when it failed
-                    // (adversarial pass: a passing one was cited).
-                    let witness = own.into_iter().filter(|&i| {
-                        matches!(&self.records[i], Record::MotorWitness { status, .. }
-                            if !PASSING_WITNESS.contains(&status.as_str()))
-                    });
+                    let witness = self
+                        .motor_failing(m)
+                        .into_iter()
+                        .filter(|&i| matches!(self.records[i], Record::MotorWitness { .. }));
                     (
                         Rule::S4,
                         software.into_iter().chain(witness).collect(),

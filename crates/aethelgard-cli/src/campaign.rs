@@ -28,9 +28,11 @@ use crate::{
     read_input, run,
 };
 
-/// Every scenario boots for the longest virtual time `simulate --firmware`
-/// admits, so a read that times out still reaches the boot word (`AET-WO-2202`).
-pub const VIRTUAL_NS: u64 = aethelgard_twin::boot::MAX_VIRTUAL_NS;
+// Every scenario boots for its board's window
+// (`aethelgard_twin::boot::window`): the longest virtual time `simulate
+// --firmware` admits, so a read that times out still reaches the boot word
+// (`AET-WO-2202`), or the shorter window of a board with a DShot output
+// (`AET-WO-4300a` D1).
 
 /// One scenario, read, applied and solved, ready to run.
 struct Prepared {
@@ -43,6 +45,8 @@ struct Prepared {
     held: Vec<HeldLow>,
     rail: Option<crate::analog::Rail>,
     run_id: [u8; 16],
+    /// The board's window and the constant that states it (`AET-WO-4300a` D1).
+    window: (u64, &'static str),
 }
 
 pub(crate) fn refuse(kind: &'static str, id: Option<&str>, message: String, code: u8) -> ExitCode {
@@ -235,6 +239,7 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         None => None,
     };
     let run_id = rules::run_id(&scenario.sha256, &specification_sha256, firmware_sha256);
+    let window = aethelgard_twin::boot::window(&topology);
     Ok(Prepared {
         path: path.to_path_buf(),
         base_sha256: digest(&base),
@@ -244,6 +249,7 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         held,
         rail,
         run_id,
+        window,
     })
 }
 
@@ -287,7 +293,9 @@ fn resolve_droop(
         droop,
         domain.nominal_millivolts,
         decoupling_picofarads,
-        VIRTUAL_NS,
+        // A droop past the board's window is refused with its time, never
+        // cut short (`AET-WO-4300a` D1).
+        aethelgard_twin::boot::window(topology).0,
     )?;
     Ok(crate::analog::Rail {
         droop: droop.clone(),
@@ -402,6 +410,10 @@ struct ScenarioLine {
     state_sequence_hash: String,
     event_count: u64,
     trace_bytes: u64,
+    /// The boot's virtual time, its board's window, and the constant that
+    /// states it (`AET-WO-4300a` D1).
+    virtual_time_ns: u64,
+    window: &'static str,
     /// The boot's `uid_boundary` and, when false, why (`AET-WO-1601`).
     uid_boundary: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -415,6 +427,7 @@ struct CampaignSummary {
     check: &'static str,
     scenarios: usize,
     matched: usize,
+    /// The longest window any scenario booted for; each line names its own.
     virtual_time_ns: u64,
     trace_bytes: u64,
 }
@@ -475,6 +488,7 @@ pub fn run(scenarios: &[PathBuf], firmware: &Path, archive: &Path) -> ExitCode {
     }
 
     let (mut matched, mut total) = (0, 0u64);
+    let longest = prepared.iter().map(|p| p.window.0).max().unwrap_or(0);
     for p in prepared {
         let (line, ok) = match run_one(p, firmware, &firmware_sha256, archive) {
             Ok(done) => done,
@@ -495,7 +509,7 @@ pub fn run(scenarios: &[PathBuf], firmware: &Path, archive: &Path) -> ExitCode {
             check: "campaign",
             scenarios: scenarios.len(),
             matched,
-            virtual_time_ns: VIRTUAL_NS,
+            virtual_time_ns: longest,
             trace_bytes: total,
         },
         if all { 0 } else { EXIT_FAIL },
@@ -541,7 +555,7 @@ fn run_one(
         Some(Boot {
             firmware: firmware.to_path_buf(),
             topology: p.topology,
-            virtual_ns: VIRTUAL_NS,
+            virtual_ns: p.window.0,
             scenario: p.scenario.name.clone(),
             held: p.held,
             absent: absent(&p.scenario.overrides),
@@ -608,7 +622,7 @@ fn run_one(
     let archived = (|| {
         let mut writer = TraceWriter::create(&dir, &header)?;
         for record in records {
-            let timestamp = record.timestamp(VIRTUAL_NS);
+            let timestamp = record.timestamp(p.window.0);
             writer.append(&Event::Record { timestamp, record })?;
         }
         writer.commit()
@@ -636,6 +650,8 @@ fn run_one(
             state_sequence_hash: hex(archived.state_hash),
             event_count: archived.event_count,
             trace_bytes: archived.trace_bytes,
+            virtual_time_ns: p.window.0,
+            window: p.window.1,
             uid_boundary,
             uid_boundary_unmet,
         },

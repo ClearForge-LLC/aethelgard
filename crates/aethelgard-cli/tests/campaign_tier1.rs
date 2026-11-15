@@ -2570,3 +2570,43 @@ fn the_droop_scenarios_carry_only_identifiers_the_base_set_admits() {
         }
     }
 }
+
+/// `AET-WO-4300a` D1, ruled (a): a board with a DShot output boots inside
+/// `DSHOT_WINDOW_NS`. A droop whose effects run past it is refused by name,
+/// with its time, before any run, never cut short.
+#[test]
+fn a_droop_past_a_dshot_board_s_window_is_refused_with_its_time() {
+    let tb = toolbox(&good());
+    let droop = json!({"droop": {
+        "domain": "VDD_3V3", "floor_millivolts": 2400, "start_ns": 3000000,
+        "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
+        "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3
+    }});
+    let work = Work::new();
+    work.dir.write(
+        "spec.json",
+        &std::fs::read(root().join("crates/aethelgard-cli/tests/fixtures/motors-dshot600.json"))
+            .unwrap(),
+    );
+    let doc = json!({
+        "schema_version": 2,
+        "name": "late",
+        "base": "spec.json",
+        "expect": "pass",
+        "expect_findings": [],
+        "overrides": [droop],
+    });
+    work.dir.write("d.json", doc.to_string().as_bytes());
+    let out = campaign(
+        &cli(Some(DROOP_BRIDGE)),
+        &tb.0,
+        &work.dir.0,
+        &["d.json"],
+        &work.firmware,
+        &work.archive,
+    );
+    let v = expect_refusal(&out, 2, "DroopRefused");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(message.contains("past the boot's 2000000 ns"), "{message}");
+    assert!(!work.archive.exists(), "an archive was made");
+}

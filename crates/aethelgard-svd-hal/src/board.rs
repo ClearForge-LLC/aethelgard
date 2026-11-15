@@ -1161,13 +1161,15 @@ struct TimFacts {
 const PWM_MODE_1: u32 = 0b110;
 
 /// The registers [`Rcc::reset_clock`]-to-be reads and the fields each must
-/// hold at 0, their reset value (RM0433 Rev 9 §8.7.7–8.7.9): register name,
+/// hold at 0, their reset value (RM0433 Rev 9 §8.7.2, §8.7.7–8.7.9): register name,
 /// `RCC_TypeDef` offset, and each field's name, position and width.
 type ClockFacts = Vec<(&'static str, u32, Vec<(&'static str, u32, u32)>)>;
 
-/// The reset clock's fields, by register: `CFGR` `SWS` (HSI) and `TIMPRE`,
+/// The reset clock's fields, by register: `CR` `HSIDIV` (HSI undivided, so
+/// 64 MHz; `AET-WO-4300a` Q2, ruled), `CFGR` `SWS` (HSI) and `TIMPRE`,
 /// `D1CFGR` `D1CPRE`, `D1PPRE` and `HPRE`, `D2CFGR` `D2PPRE1` and `D2PPRE2`.
-const RESET_CLOCK_FIELDS: [(&str, &[&str]); 3] = [
+const RESET_CLOCK_FIELDS: [(&str, &[&str]); 4] = [
+    ("CR", &["HSIDIV"]),
     ("CFGR", &["SWS", "TIMPRE"]),
     ("D1CFGR", &["D1CPRE", "D1PPRE", "HPRE"]),
     ("D2CFGR", &["D2PPRE1", "D2PPRE2"]),
@@ -2189,7 +2191,7 @@ fn emit_timer_start(w: &mut String, n: u32, t: &TimerPlan, plan: &Plan, tf: &Tim
     let _ = writeln!(w, "        Tim{n} {{ _state: PhantomData }}\n    }}\n}}\n");
 }
 
-/// [`Rcc`]'s `reset_clock`: the three registers read, and each one's fields
+/// [`Rcc`]'s `reset_clock`: the four registers read, and each one's fields
 /// held at 0 as one mask.
 fn emit_reset_clock(w: &mut String, clock: &ClockFacts) {
     let reads: Vec<String> = clock
@@ -2220,7 +2222,7 @@ fn emit_reset_clock(w: &mut String, clock: &ClockFacts) {
     let _ = writeln!(
         w,
         "\n    /// A [`ResetClock`], when each of these fields holds 0, its reset value\n    \
-         /// (RM0433 Rev 9 §8.7.7–8.7.9). Reads the three registers and writes nothing.\n\
+         /// (RM0433 Rev 9 §8.7.2, §8.7.7–8.7.9). Reads the four registers and writes nothing.\n\
          {named}\n    \
          pub fn reset_clock<R: Registers>(&self, r: &mut R) -> Result<ResetClock, NotResetClock> {{\n\
          {reads}\n        \
@@ -3112,7 +3114,7 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
 
 /// The proofs of the motor outputs (`AET-WO-4300a` §1.3), when the topology
 /// has a timer: that `reset_clock` is `Ok` exactly when every field it checks
-/// holds its reset value, reading only its three registers and writing none;
+/// holds its reset value, reading only its four registers and writing none;
 /// and, for each timer, that its start writes exactly the solved registers and
 /// values in order, reading none. Every expected value is the oracle's
 /// ([`timer_oracle`], and the fields' positions and widths), never read from

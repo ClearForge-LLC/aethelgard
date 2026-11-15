@@ -98,7 +98,7 @@ fn witness_of(label: &str, observer: &str, status: &str, ccr: u32) -> Record {
         rises: if edges { 156 } else { 0 },
         falls: if edges { 155 } else { 0 },
         first_ns: edges.then_some(639_750),
-        last_ns: edges.then_some(99_769_014),
+        last_ns: edges.then_some(99_800_070),
         end_ns: 100_000_000,
         span_ns: edges.then_some(if status == "mismatch" { 400 } else { 8 }),
         off_grid: if edges { 311 } else { 0 },
@@ -480,8 +480,10 @@ fn adversarial_h3_a_channel_s_register_is_its_own_output_s_alone() {
             (Domain::Indeterminate, Rule::I4),
             "{a:?}"
         );
-        assert_eq!(named(r, &a), ["kind 25", "kind 26"]);
-        assert!(matches!(&r[a.evidence[1].index as usize],
+        // Only the failing record: MOTOR1's passing static check is not
+        // evidence (second review, F6).
+        assert_eq!(named(r, &a), ["kind 26"]);
+        assert!(matches!(&r[a.evidence[0].index as usize],
                 Record::MotorWitness { label, .. } if label == "MOTOR1"));
     };
     dead(&r);
@@ -525,4 +527,27 @@ fn adversarial_a_wrong_channel_register_cites_that_output_s_failing_witness_only
     let a = attributed(&r);
     assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S4), "{a:?}");
     assert_eq!(named(&r, &a), ["TIM1.CCR2"]);
+}
+
+#[test]
+fn a_failing_static_check_is_never_software_whatever_else_is_wrong() {
+    // Second adversarial review, F1: the solver's CCR a tick short (a
+    // failing static check, the topology's) beside an unrelated wrong bit
+    // of the output's CR1 (URS) was attributed software, S4.
+    let r = run(
+        &Wrong {
+            cr1: Some(0x85),
+            ..Wrong::default()
+        },
+        "witnessed",
+        false,
+        &[("register_mismatch", 1), (MOTOR_STATIC_FINDING, 1)],
+    );
+    let a = attributed(&r);
+    assert_eq!(
+        (a.domain, a.rule),
+        (Domain::Indeterminate, Rule::I4),
+        "{a:?}"
+    );
+    assert_eq!(named(&r, &a), ["kind 25"]);
 }

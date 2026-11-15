@@ -181,6 +181,9 @@ pub struct Boot {
     pub specification_sha256: String,
     pub seed: u32,
     pub virtual_time_ns: u64,
+    /// The constant that bounds this board's boot: `MAX_VIRTUAL_NS`, or
+    /// `DSHOT_WINDOW_NS` for a board with a DShot output (`AET-WO-4300a` D1).
+    pub window: &'static str,
     /// `null` until Renode has read it, as is every `observed` below.
     pub mips: Option<u64>,
     pub instructions: Expected<u64>,
@@ -231,7 +234,14 @@ pub struct MotorReport {
     pub ccr: u32,
     pub silicon: aethelgard_ir::motor::SiliconTiming,
     pub twin: TwinReport,
+    /// What the verdict says of the pin's output speed (`AET-WO-4300a` Q3,
+    /// ruled: owned by `AET-WO-4500`'s backlog).
+    pub speed: &'static str,
 }
+
+/// The motor pin's speed is not judged: its load is off-board and no
+/// specification declares it (`AET-WO-4300a` Q3, ruled).
+pub const MOTOR_SPEED_NOT_JUDGED: &str = "motor pin speed not judged: off-board load undeclared";
 
 #[derive(Serialize)]
 pub struct TwinReport {
@@ -266,6 +276,7 @@ impl MotorReport {
             arr: m.arr,
             ccr: m.ccr,
             silicon: m.silicon.clone(),
+            speed: MOTOR_SPEED_NOT_JUDGED,
             twin: TwinReport {
                 observer: o.source.clone(),
                 period_ns: o.period_ns,

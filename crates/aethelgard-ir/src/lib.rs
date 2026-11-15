@@ -1713,6 +1713,18 @@ impl Specification {
                 return Err(E::NetShadowsDomain { id: net.clone() });
             }
         }
+        // A motor output's net is a signal that leaves the board; named
+        // `GND`, it would join the emitter's ground (second adversarial
+        // review, F2).
+        if let Some(m) = self
+            .motor_outputs
+            .iter()
+            .find(|m| m.label.eq_ignore_ascii_case(GND))
+        {
+            return Err(E::NetShadowsDomain {
+                id: m.label.clone(),
+            });
+        }
         // 12
         let mut constrained = BTreeSet::new();
         for net in &self.net_constraints {

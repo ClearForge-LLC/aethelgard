@@ -48,9 +48,6 @@ use crate::run;
 use crate::tree::{self, Difference};
 use crate::{EXIT_FAIL, EXIT_INTERNAL, EXIT_TOOL_ERROR, EXIT_UNREADABLE};
 
-/// The virtual time `simulate` boots for: the campaign's.
-const BOOT_TIME: &str = "100ms";
-
 /// `RUL-19` (1), in the verdict itself.
 const RISE_TIMES: &str = "computed from declared values";
 
@@ -679,6 +676,7 @@ pub fn verify(
             spec: &spec_sha256,
             harnesses,
             skipped,
+            boot_time: format!("{}ns", aethelgard_twin::boot::window(&topology).0),
         },
         &expected,
     ) {
@@ -841,6 +839,9 @@ struct Want<'a> {
     harnesses: Vec<String>,
     /// The whole-schedule harness left out on a motor board.
     skipped: Option<String>,
+    /// The `--for` `simulate` boots for: the board's window, as the
+    /// campaign's (`AET-WO-4300a` D1).
+    boot_time: String,
 }
 
 fn args(items: &[&dyn AsRef<std::ffi::OsStr>]) -> Vec<OsString> {
@@ -946,7 +947,7 @@ fn run_gates(
             &"--spec",
             &p.spec,
             &"--for",
-            &BOOT_TIME,
+            &want.boot_time,
         ]),
     )?;
     bound("simulate", &sim, want, &elf, "")?;
@@ -1106,6 +1107,7 @@ mod tests {
             spec: "spec",
             harnesses: Vec::new(),
             skipped: None,
+            boot_time: "100000000ns".to_owned(),
         }
     }
 

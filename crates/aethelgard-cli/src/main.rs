@@ -1034,6 +1034,8 @@ struct Ready {
     boot_word: u32,
     specification_sha256: String,
     virtual_ns: u64,
+    /// The constant that bounds `virtual_ns` for this board (`AET-WO-4300a` D1).
+    window: &'static str,
     topology: aethelgard_ir::SolvedTopology,
     scenario: String,
     held: Vec<campaign::HeldLow>,
@@ -1092,6 +1094,18 @@ fn ready(
             ),
         ));
     }
+    // `AET-WO-4300a` D1: a board with a DShot output boots inside its own
+    // shorter window, refused by name past it, never cut short.
+    let (window_ns, window) = aethelgard_twin::boot::window(&boot.topology);
+    if boot.virtual_ns > window_ns {
+        return Err(run::Stop::refused(
+            "BootPastWindow",
+            format!(
+                "a boot of {} ns is past this board's {window} of {window_ns} ns (a board with a DShot output boots inside it, AET-WO-4300a D1)",
+                boot.virtual_ns
+            ),
+        ));
+    }
     let firmware = input::file(&boot.firmware, &scratch.tool.join("firmware.elf"))?;
     let bytes = fs::read(&firmware.copy)
         .map_err(|e| run::Stop::unreadable(format!("cannot read the firmware's copy: {e}")))?;
@@ -1115,6 +1129,7 @@ fn ready(
             boot_word,
             specification_sha256: boot.topology.specification_sha256.clone(),
             virtual_ns: boot.virtual_ns,
+            window,
             topology: boot.topology,
             scenario: boot.scenario,
             held: boot.held,
@@ -1235,6 +1250,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             platform: &booted.path,
             firmware: &r.firmware.copy,
             virtual_ns: r.virtual_ns,
+            window_ns: aethelgard_twin::boot::window(&r.topology).0,
             boot_word: r.boot_word,
             vector_table: r.vector_table,
             image: &r.image,
@@ -1454,6 +1470,7 @@ fn boot_report(
         specification_sha256: r.specification_sha256.clone(),
         seed: aethelgard_twin::boot::SEED,
         virtual_time_ns: r.virtual_ns,
+        window: r.window,
         mips: observed.map(|o| o.mips),
         instructions: verdict::Expected {
             expected: plan.instructions(),

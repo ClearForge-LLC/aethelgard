@@ -111,10 +111,11 @@ fn the_start_takes_the_clock_token_and_only_its_own_configured_pins() {
     let rcc = item(board, "impl Rcc {");
     assert!(rcc.contains(
         "    pub fn reset_clock<R: Registers>(&self, r: &mut R) -> Result<ResetClock, NotResetClock> {\n        \
+         let cr = r.read(TOKEN, Block::Rcc, 0x000);\n        \
          let cfgr = r.read(TOKEN, Block::Rcc, 0x010);\n        \
          let d1cfgr = r.read(TOKEN, Block::Rcc, 0x018);\n        \
          let d2cfgr = r.read(TOKEN, Block::Rcc, 0x01c);\n        \
-         if cfgr & 0x00008038 == 0 && d1cfgr & 0x00000f7f == 0 && d2cfgr & 0x00000770 == 0 {\n            \
+         if cr & 0x00000018 == 0 && cfgr & 0x00008038 == 0 && d1cfgr & 0x00000f7f == 0 && d2cfgr & 0x00000770 == 0 {\n            \
          Ok(ResetClock { _private: () })\n"
     ));
     // TIM1's clock gate is RCC_APB2ENR bit 0, and its block is at 0x40010000.

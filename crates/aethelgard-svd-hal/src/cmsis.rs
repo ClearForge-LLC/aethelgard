@@ -661,6 +661,7 @@ mod tests {
     fn a_field_is_its_position_and_a_run_of_ones() {
         let f = facts();
         for (name, field) in [
+            ("RCC_CR_HSIDIV", (3, 2)),
             ("RCC_CFGR_SWS", (3, 3)),
             ("RCC_CFGR_TIMPRE", (15, 1)),
             ("RCC_D1CFGR_D1CPRE", (8, 4)),

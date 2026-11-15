@@ -1544,6 +1544,11 @@ fn the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back() {
             (&m["psc"], &m["arr"], &m["ccr"]),
             (&63.into(), &2499.into(), &1000.into())
         );
+        // Q3, ruled: the verdict states the speed is not judged.
+        assert_eq!(
+            m["speed"],
+            "motor pin speed not judged: off-board load undeclared"
+        );
     }
     let regs = v["boot"]["registers"].as_array().unwrap();
     let tim1 = regs
@@ -1714,4 +1719,38 @@ fn kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check() {
         assert_eq!(code, Some(0), "{harness}: {v}");
         assert_eq!(v["verdict"], "pass", "{harness}: {v}");
     }
+    // Q2 (ruled): the check reads `RCC_CR.HSIDIV`. A copy whose check
+    // leaves it out fails the harness as a failed proof, not a compile
+    // error: the negative that shows the harness holds the field.
+    let (platform, _, _) = motor_board(
+        "motors-pwm",
+        "prove-no-hsidiv",
+        |d| {
+            let p = d.join("src/board.rs");
+            let text = fs::read_to_string(&p).unwrap();
+            let cut = text.replace("cr & 0x00000018 == 0 && ", "");
+            assert_ne!(cut, text, "the check holds HSIDIV");
+            fs::write(&p, cut).unwrap();
+        },
+        |_| {},
+    );
+    let (code, v) = aethelgard(&[
+        "prove",
+        "--crate",
+        platform.parent().unwrap().to_str().unwrap(),
+        "--harness",
+        "proofs::reset_clock_is_ok_exactly_at_reset",
+    ]);
+    answer(&format!("prove reset_clock without HSIDIV: exit={code:?}"));
+    assert_eq!(code, Some(1), "{v}");
+    let kinds: Vec<&str> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["kind"].as_str().unwrap())
+        .collect();
+    assert!(
+        !kinds.is_empty() && kinds.iter().all(|k| *k == "proof_failed"),
+        "{v}"
+    );
 }

@@ -1,69 +1,80 @@
 {
-  "schema_version": 2,
-  "about": "AET-WO-3100 \u00a71.4: the seeded set. Each case is a scenario run against the generated firmware, unmutated or with one named mutant applied to a scratch copy of boards/sentinel-01. A mutant's `find` must occur exactly once in its `file`, or the test refuses it. `findings` are the case's failing finding kinds; `domain` and `rule` are what `aethelgard attribute` must name. Since schema version 2 (AET-WO-2205 \u00a71.6), `evidence` and `masked` are the exact [index, kind] events `attribute` names for the case, measured on the build; they move when the trace gains records, and whoever moves them re-derives them from `attribute` and accounts for every changed row in their FEEDBACK.",
+  "schema_version": 3,
+  "about": "AET-WO-3100 \u00a71.4: the seeded set. Each case is a scenario run against the generated firmware, unmutated or with one named mutant applied to a scratch copy of boards/sentinel-01. A mutant's `find` must occur exactly once in its `file`, or the test refuses it. `findings` are the case's failing finding kinds; `domain` and `rule` are what `aethelgard attribute` must name. Since schema version 2 (AET-WO-2205 \u00a71.6), `evidence` and `masked` are the exact [index, kind] events `attribute` names for the case, measured on the build; they move when the trace gains records, and whoever moves them re-derives them from `attribute` and accounts for every changed row in their FEEDBACK. Since schema version 3 (AET-WO-4300a Q4, ruled), every mutant names `spec`, the specification whose generated board it patches; none is supplied by default (INV-06).",
   "mutants": {
     "wrong-address": {
       "why": "the BME280 read addresses 0x77, not the solved 0x76",
+      "spec": "examples/sentinel-01-minimal.json",
       "file": "firmware/src/main.rs",
       "find": "i2c1.transfer(&mut r, 0x76,",
       "replace": "i2c1.transfer(&mut r, 0x77,"
     },
     "wrong-register": {
       "why": "the identity read asks for register 0xd1, not the part table's 0xd0",
+      "spec": "examples/sentinel-01-minimal.json",
       "file": "firmware/src/main.rs",
       "find": "&[0xd0], &mut buf0",
       "replace": "&[0xd1], &mut buf0"
     },
     "wrong-nbytes": {
       "why": "the identity read reads two bytes, not the part table's one",
+      "spec": "examples/sentinel-01-minimal.json",
       "file": "firmware/src/main.rs",
       "find": "let mut buf0 = [0u8; 1];",
       "replace": "let mut buf0 = [0u8; 2];"
     },
     "i2c-clock-skipped": {
       "why": "enable_i2c1 leaves RCC_APB1LENR bit 21 clear",
+      "spec": "examples/sentinel-01-minimal.json",
       "file": "src/board.rs",
       "find": "Block::Rcc, 0x0e8, |v| v | 0x00200000",
       "replace": "Block::Rcc, 0x0e8, |v| v"
     },
     "scl-af-wrong": {
       "why": "PB6 (SCL) is put on AF5, not the solved AF4",
+      "spec": "examples/sentinel-01-minimal.json",
       "file": "src/board.rs",
       "find": "(v & !0x0f000000) | 0x04000000",
       "replace": "(v & !0x0f000000) | 0x05000000"
     },
     "sda-af-wrong": {
       "why": "PB7 (SDA) is put on AF5, not the solved AF4",
+      "spec": "examples/sentinel-01-minimal.json",
       "file": "src/board.rs",
       "find": "(v & !0xf0000000) | 0x40000000",
       "replace": "(v & !0xf0000000) | 0x50000000"
     },
     "scl-mode-output": {
       "why": "PB6 (SCL) is put in output mode, not alternate function",
+      "spec": "examples/sentinel-01-minimal.json",
       "file": "src/board.rs",
       "find": "Block::GpioB, 0x00, |v| (v & !0x00003000) | 0x00002000",
       "replace": "Block::GpioB, 0x00, |v| (v & !0x00003000) | 0x00001000"
     },
     "gpiob-clock-skipped": {
       "why": "enable_gpiob leaves RCC_AHB4ENR bit 1 clear",
+      "spec": "examples/sentinel-01-minimal.json",
       "file": "src/board.rs",
       "find": "Block::Rcc, 0x0e0, |v| v | 0x00000002",
       "replace": "Block::Rcc, 0x0e0, |v| v"
     },
     "no-boot-word": {
       "why": "the fixed point writes 0, not the boot word",
+      "spec": "examples/sentinel-01-minimal.json",
       "file": "firmware/src/main.rs",
       "find": "write_volatile(BOOT_MAGIC)",
       "replace": "write_volatile(0)"
     },
     "leave-firmware": {
       "why": "after writing the boot word, the core jumps into the FMC bank at 0x70000000, plain zero-filled memory outside every executable segment (AET-WO-2205 \u00a71.5; twin_tier2's adversarial A7)",
+      "spec": "examples/sentinel-01-minimal.json",
       "file": "firmware/src/main.rs",
       "find": "unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_MAGIC) };",
       "replace": "unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_MAGIC) };\n    unsafe { core::arch::asm!(\"ldr r0, =0x70000001\", \"bx r0\", options(noreturn)) };"
     },
     "cs-never": {
       "why": "the SPI transfer never asserts U4's chip select: its select drives PA0 high, not low",
+      "spec": "examples/sentinel-01-minimal.json",
       "file": "src/board.rs",
       "find": "Spi1Device::U4 => (Block::GpioA, 0x00010000, 0x00000001)",
       "replace": "Spi1Device::U4 => (Block::GpioA, 0x00000001, 0x00000001)"

@@ -472,3 +472,13 @@ fn a_connector_ends_a_motor_net_with_no_off_board_capacitance() {
         with(json!({"capacitance_femtofarads": 1000, "source": "condition: test"})).unwrap_err();
     assert_eq!(e.kind(), "ConnectorBudgetNotApplicable", "{e}");
 }
+
+#[test]
+fn a_motor_output_named_gnd_is_refused() {
+    // Second adversarial review, F2: a motor output labelled `GND` joined
+    // the emitter's ground and left its pin unconnected.
+    for label in ["GND", "gnd"] {
+        let e = refused(vec![pwm(label, None, 400)]);
+        assert_eq!(e.kind(), "NetShadowsDomain", "{label}: {e}");
+    }
+}

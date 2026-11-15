@@ -64,7 +64,7 @@ fn witness(label: &str, observer: &str, status: &str) -> Record {
 
 fn witness_ccr(label: &str, observer: &str, status: &str, ccr: u32) -> Record {
     let (mut rises, mut falls, mut first_ns, mut last_ns, mut span_ns) =
-        (156, 155, Some(639_750), Some(99_769_014), Some(8));
+        (156, 155, Some(639_750), Some(99_800_070), Some(8));
     let (mut off_grid, mut batched) = (311, 0);
     match status {
         "static_only" => off_grid = 0,
@@ -422,4 +422,194 @@ fn replay_re_derives_the_static_check_and_the_witness_status() {
     ] {
         assert!(forge(&f).is_err());
     }
+}
+
+#[test]
+fn replay_ties_a_witness_s_fields_its_window_and_the_kernel_clock() {
+    // Second adversarial review (on `a2c4fa4`), F3 and F4: each forgery
+    // below passed `check_run` before.
+    let base = run("witnessed", true, true, vec![]);
+    let forged = |f: &dyn Fn(&mut Vec<Record>)| {
+        let mut r = base.clone();
+        f(&mut r);
+        check_run(&r).map(|_| ())
+    };
+    assert_eq!(forged(&|_| {}), Ok(()));
+    let w = |f: fn(&mut Record)| move |r: &mut Vec<Record>| f(&mut r[8]);
+    for f in [
+        // Two rises spanning 155 periods (everything else consistent).
+        w(|x| {
+            if let Record::MotorWitness {
+                rises,
+                falls,
+                off_grid,
+                ..
+            } = x
+            {
+                (*rises, *falls, *off_grid) = (2, 2, 4);
+            }
+        }),
+        // Rises on the model's spacing that run past the window's end.
+        w(|x| {
+            if let Record::MotorWitness {
+                rises,
+                falls,
+                last_ns,
+                ..
+            } = x
+            {
+                (*rises, *falls) = (160, 159);
+                *last_ns = Some(639_750 + 159 * 639_744);
+            }
+        }),
+        // A window of its own: two rises ending a period apart, at 2 ms.
+        w(|x| {
+            if let Record::MotorWitness {
+                rises,
+                falls,
+                last_ns,
+                end_ns,
+                off_grid,
+                ..
+            } = x
+            {
+                (*rises, *falls, *off_grid) = (2, 2, 4);
+                *last_ns = Some(639_750 + 639_744);
+                // Within a period of the last rise: covered, but not the board's.
+                *end_ns = 1_900_000;
+            }
+        }),
+        // More edges off the grid than edges.
+        w(|x| {
+            if let Record::MotorWitness { off_grid, .. } = x {
+                *off_grid = 1_000_000;
+            }
+        }),
+    ] {
+        assert!(forged(&f).is_err());
+    }
+    // A boot of other than the window's instructions.
+    assert!(
+        forged(&|r| if let Record::BootObserved {
+            instructions_expected,
+            ..
+        } = &mut r[6]
+        {
+            *instructions_expected = 200_000;
+        })
+        .is_err()
+    );
+    // A kernel clock other than the reset clock's, every record consistent
+    // with it: PSC 0 at a claimed 1 MHz is 400 Hz on paper and 25.6 kHz on
+    // silicon (the review's forgery).
+    let mut clock = base.clone();
+    if let Record::MotorOutputSolved { psc, .. } = &mut clock[3] {
+        *psc = 0;
+    }
+    clock[5] = Record::MotorTimingCheck {
+        label: "M2".into(),
+        kernel_hz: 1_000_000,
+        period_ps: 2_500_000_000,
+        high_ps: 1_000_000_000,
+        nominal_period_ps: 2_500_000_000,
+        nominal_high_ps: 1_000_000_000,
+        holds: true,
+    };
+    if let Record::MotorWitness {
+        period_ns,
+        high_ns,
+        rises,
+        falls,
+        first_ns,
+        last_ns,
+        span_ns,
+        ..
+    } = &mut clock[8]
+    {
+        (*period_ns, *high_ns) = (2499 * 4, 1000 * 4);
+        (*rises, *falls) = (10_004, 10_003);
+        *first_ns = Some(10_000);
+        *last_ns = Some(10_000 + 10_003 * 9996);
+        *span_ns = Some(8);
+    }
+    assert!(check_run(&clock).is_err());
+    if let Record::MotorTimingCheck { kernel_hz, .. } = &mut clock[5] {
+        *kernel_hz = 64_000_000;
+    }
+    // At the true clock the same figures do not hold, so it is refused too:
+    // the forgery needs the false clock, and the pin refuses that.
+    assert!(check_run(&clock).is_err());
+}
+
+#[test]
+fn a_dshot_board_s_witnesses_end_at_its_2_ms_window() {
+    // `AET-WO-4300a` D1: a board with a DShot output boots for 2 ms, so its
+    // boot is 200,000 instructions and every witness ends at 2,000,000 ns.
+    let mut r = run("witnessed", true, true, vec![]);
+    r[3] = Record::MotorOutputSolved {
+        label: "M2".into(),
+        timer: "TIM2".into(),
+        channel: 1,
+        pin: "PA9".into(),
+        alternate_function: 1,
+        protocol: "dshot600".into(),
+        psc: 0,
+        arr: 106,
+        ccr: 40,
+        pwm: None,
+    };
+    // The PWM witness's own window moves with the board's; M1 at 400 Hz
+    // cannot show two rises in 2 ms, so the honest records say unwitnessed.
+    let unwitnessed = |label: &str, observer: &str, period: u64, high: u64| Record::MotorWitness {
+        label: label.into(),
+        observer: observer.into(),
+        period_ns: period,
+        high_ns: high,
+        grain_ns: 10,
+        quantum_ns: 100_000,
+        status: "unwitnessed".into(),
+        rises: 0,
+        falls: 0,
+        first_ns: None,
+        last_ns: None,
+        end_ns: 2_000_000,
+        span_ns: None,
+        off_grid: 0,
+        batched: 0,
+    };
+    r[5] = Record::MotorTimingCheck {
+        label: "M2".into(),
+        kernel_hz: 64_000_000,
+        period_ps: 1_671_875,
+        high_ps: 625_000,
+        nominal_period_ps: 1_666_666,
+        nominal_high_ps: 624_999,
+        holds: true,
+    };
+    if let Record::BootObserved {
+        instructions_expected,
+        instructions_observed,
+        ..
+    } = &mut r[6]
+    {
+        (*instructions_expected, *instructions_observed) = (200_000, Some(200_000));
+    }
+    r[7] = unwitnessed("M1", "gpioPortA.pa8obs", 639_744, 256_000);
+    r[8] = unwitnessed("M2", "gpioPortA.pa9obs", 424, 160);
+    r[0] = scenario(false, &[MOTOR_UNWITNESSED_FINDING]);
+    let last = r.len() - 1;
+    r[last] = Record::Verdict {
+        pass: false,
+        findings: vec![(MOTOR_UNWITNESSED_FINDING.to_owned(), "error".to_owned(), 2)],
+    };
+    assert_eq!(check_run(&r).map(|_| ()), Ok(()));
+    // The same records at the 100 ms window's instruction count are refused.
+    if let Record::BootObserved {
+        instructions_expected,
+        ..
+    } = &mut r[6]
+    {
+        *instructions_expected = 10_000_000;
+    }
+    assert!(check_run(&r).is_err());
 }

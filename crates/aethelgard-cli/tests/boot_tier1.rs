@@ -1441,3 +1441,55 @@ fn two_devices_witness_their_own_reads_in_the_records_order() {
             .starts_with("U2")
     );
 }
+
+/// `AET-WO-4300a` D1, ruled (a): a board with a DShot output boots inside
+/// `DSHOT_WINDOW_NS` (2 ms). `--for` past it is refused by name before any
+/// tool is looked for; at the window, the inputs pass to the missing tool.
+#[test]
+fn a_boot_past_a_dshot_board_s_window_is_refused_by_name() {
+    let empty = Dir::new("empty-dshot");
+    let input = Dir::new("in-dshot");
+    let spec =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/motors-dshot600.json");
+    let bytes = fs::read(&spec).unwrap();
+    let parsed: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
+    let sha: String = <sha2::Sha256 as sha2::Digest>::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let table = aethelgard_svd_hal::pin_table(&parsed.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&parsed, &table, &sha).unwrap();
+    let platform = input.write(
+        "dshot.repl",
+        aethelgard_twin::platform::emit(&solved).unwrap().as_bytes(),
+    );
+    let good = input.write("good.elf", &elf());
+    let boot = |time: &str| {
+        run(
+            &empty.0,
+            &[
+                OsStr::new("simulate"),
+                OsStr::new("--platform"),
+                platform.as_os_str(),
+                OsStr::new("--firmware"),
+                good.as_os_str(),
+                OsStr::new("--spec"),
+                spec.as_os_str(),
+                OsStr::new("--for"),
+                OsStr::new(time),
+            ],
+        )
+    };
+    let out = boot("100ms");
+    let v = report(&out);
+    assert_eq!(out.status.code(), Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "BootPastWindow", "{v}");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("DSHOT_WINDOW_NS of 2000000 ns"),
+        "{message}"
+    );
+    // At the window the inputs are good: the missing tool stops it (exit 4).
+    let out = boot("2ms");
+    assert_eq!(out.status.code(), Some(4), "{}", report(&out));
+}

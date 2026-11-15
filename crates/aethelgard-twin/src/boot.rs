@@ -40,6 +40,28 @@ pub const SEED: u32 = 2100;
 /// Renode's 100 MIPS (R5).
 pub const MAX_VIRTUAL_NS: u64 = 100_000_000;
 
+/// The bound on the boot of a board with a DShot output (`AET-WO-4300a` D1,
+/// ruled (a)): four DShot600 channels for 100 ms flood the log (139.6 MB,
+/// 17 times its budget) and cost 10.8 s of timer events; 2 ms fits (37,748
+/// lines, 2.80 MB, 2.64 s on Furnace; FEEDBACK P5.2). Every other board
+/// keeps [`MAX_VIRTUAL_NS`].
+pub const DSHOT_WINDOW_NS: u64 = 2_000_000;
+
+/// The bound on a boot of `topology`'s board, and the name of the constant
+/// that states it: [`DSHOT_WINDOW_NS`] when any motor output is DShot, else
+/// [`MAX_VIRTUAL_NS`].
+pub fn window(topology: &SolvedTopology) -> (u64, &'static str) {
+    if topology
+        .motor_outputs
+        .values()
+        .any(|m| m.protocol.bit_rate().is_some())
+    {
+        (DSHOT_WINDOW_NS, "DSHOT_WINDOW_NS")
+    } else {
+        (MAX_VIRTUAL_NS, "MAX_VIRTUAL_NS")
+    }
+}
+
 /// The core's speed in the emitted platform: Renode 1.17.0's default, which
 /// the platform never changes (spike S4: `cpu PerformanceInMips` reads 100,
 /// and 10 ms executes exactly 1,000,000 instructions).

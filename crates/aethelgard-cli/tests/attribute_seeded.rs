@@ -24,7 +24,6 @@ mod common;
 use common::verify::root;
 
 const MANIFEST: &str = "scenarios/sentinel-01/seeded/cases.json";
-const BOARD: &str = "boards/sentinel-01";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,22 +40,21 @@ struct Manifest {
 struct Mutant {
     #[allow(dead_code)]
     why: String,
-    /// The specification whose generated board the patch applies to;
-    /// absent for the committed reference board (`AET-WO-4300a`: the
-    /// motor case runs on the PWM fixture, whose board is not committed).
-    #[serde(default)]
-    spec: Option<String>,
+    /// The specification whose generated board the patch applies to,
+    /// required since schema version 3 (`AET-WO-4300a` Q4, ruled: no
+    /// default is substituted, `INV-06`).
+    spec: String,
     file: String,
     find: String,
     replace: String,
 }
 
-/// The board source `m` patches: `boards/sentinel-01` as committed, or the
-/// board `aethelgard generate` writes for `m.spec`, generated into `out`.
+/// The board source `m` patches: the board `aethelgard generate` writes for
+/// `m.spec`, generated into `out`. For the reference specification it is
+/// `boards/sentinel-01` byte for byte (the regeneration guard,
+/// `generate_tier1`).
 fn board_of(m: &Mutant, out: &Path) -> PathBuf {
-    let Some(spec) = &m.spec else {
-        return root().join(BOARD);
-    };
+    let spec = &m.spec;
     let _ = fs::remove_dir_all(out);
     let status = std::process::Command::new(env!("CARGO_BIN_EXE_aethelgard"))
         .args(["generate", "--spec"])
@@ -92,8 +90,8 @@ struct Case {
 fn manifest() -> Manifest {
     let m: Manifest = serde_json::from_slice(&fs::read(root().join(MANIFEST)).unwrap()).unwrap();
     assert_eq!(
-        m.schema_version, 2,
-        "the manifest is schema version 2, with each case's exact evidence"
+        m.schema_version, 3,
+        "the manifest is schema version 3: each case's exact evidence, each mutant's spec"
     );
     m
 }
@@ -273,7 +271,7 @@ fn every_mutant_applies_exactly_once_to_the_generated_board_as_committed() {
 fn a_patch_that_matches_zero_or_two_times_is_refused_naming_the_mutant() {
     let m = Mutant {
         why: String::new(),
-        spec: None,
+        spec: "examples/sentinel-01-minimal.json".into(),
         file: "f.rs".into(),
         find: "0x76".into(),
         replace: "0x77".into(),
@@ -502,7 +500,8 @@ mod tier2 {
         let board = dir.join("board");
         let source = match mutant {
             Some((_, m)) => board_of(m, &dir.join("generated")),
-            None => root().join(BOARD),
+            // The unmutated firmware is the committed reference board's.
+            None => root().join("boards/sentinel-01"),
         };
         copy_tree(&source, &board);
         if let Some((name, m)) = mutant {

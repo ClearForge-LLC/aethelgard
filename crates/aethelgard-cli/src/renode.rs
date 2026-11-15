@@ -250,6 +250,9 @@ pub struct BootPlan<'a> {
     pub platform: &'a std::path::Path,
     pub firmware: &'a std::path::Path,
     pub virtual_ns: u64,
+    /// The board's window (`aethelgard_twin::boot::window`): shorter than
+    /// `MAX_VIRTUAL_NS` for a board with a DShot output (`AET-WO-4300a` D1).
+    pub window_ns: u64,
     pub boot_word: u32,
     /// Where the part boots from: `FLASH_BANK1_BASE`, the header's `FLASH_BASE`.
     pub vector_table: u32,
@@ -774,8 +777,21 @@ fn witness_findings_of(m: &Motor, w: &MotorWitness) -> Vec<Finding> {
         "unwitnessed" => out.push(Finding::plain(
             aethelgard_chaos::campaign::MOTOR_UNWITNESSED_FINDING,
             format!(
-                "{who}: the observer on {} logged {} rises and {} falls, too few to show a period",
-                o.pin, w.rises, w.falls
+                "{who}: the observer on {} logged {} rises and {} falls, too few to show a period{}",
+                o.pin,
+                w.rises,
+                w.falls,
+                // Two rises need two of the model's periods inside the window
+                // (`AET-WO-4300a` D1, adversarial F5): name it when they cannot.
+                if 2 * o.period_ns > w.end_ns {
+                    format!(
+                        "; the boot's window of {} ns is shorter than two of its periods ({} ns), so no boot of it can show one",
+                        w.end_ns,
+                        2 * o.period_ns
+                    )
+                } else {
+                    String::new()
+                }
             ),
         )),
         "stopped" => out.push(Finding::plain(
@@ -1274,6 +1290,12 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             findings.extend(identity_finding(c, status, value));
         }
         findings.extend(witness_findings(checks, &observed, &last_boot));
+    } else {
+        findings.extend(reads_outside_window(
+            checks,
+            &observed.records,
+            plan.window_ns,
+        ));
     }
     // The motor outputs (`AET-WO-4300a` §1.4): the static check judges
     // silicon from the topology alone, the twin's witness the model's
@@ -1388,6 +1410,35 @@ fn witness_finding(
             ),
         )),
     }
+}
+
+/// On a board whose window is shorter than `MAX_VIRTUAL_NS` (a DShot board,
+/// `AET-WO-4300a` D1, ruled (a)), every declared identity read whose record
+/// is still unset when the window ends did not complete inside it, and is
+/// named; the run already fails on its missing boot word. A record the
+/// firmware wrote, however it reads, is not named here.
+fn reads_outside_window(
+    checks: &[aethelgard_twin::boot::IdentityCheck],
+    records: &[(u32, u32)],
+    window_ns: u64,
+) -> Vec<Finding> {
+    if window_ns >= aethelgard_twin::boot::MAX_VIRTUAL_NS {
+        return Vec::new();
+    }
+    checks
+        .iter()
+        .zip(records)
+        .filter(|(_, r)| r.0 == aethelgard_twin::boot::RECORD_UNSET)
+        .map(|(c, _)| {
+            Finding::plain(
+                "identity_read_outside_window",
+                format!(
+                    "{}: its identity read did not complete inside the board's window of {window_ns} ns (a board with a DShot output, AET-WO-4300a D1)",
+                    who(c)
+                ),
+            )
+        })
+        .collect()
 }
 
 /// The finding for one identity record, or none when the read passed. The
@@ -1610,6 +1661,7 @@ mod tests {
             platform: std::path::Path::new("/w/platform.repl"),
             firmware: std::path::Path::new("/w/firmware.elf"),
             virtual_ns: 100_000_000,
+            window_ns: 100_000_000,
             boot_word: 0x2000_0000,
             vector_table: 0x0800_0000,
             image,
@@ -1815,6 +1867,62 @@ mod tests {
             released_ns: Some(1_227_980),
             cause: vec!["VBOR3".to_owned()],
         }]
+    }
+
+    /// `AET-WO-4300a` D1 (a): on a DShot board's short window, a declared
+    /// identity read whose record is still unset is named; one the firmware
+    /// wrote is not, and on the 100 ms window nothing is (the missing boot
+    /// word already fails the run).
+    /// `AET-WO-4300a` D1 and adversarial F5: a correct slow output in a
+    /// window shorter than two of its periods fails closed, and says why.
+    #[test]
+    fn an_output_too_slow_for_its_window_is_named_with_the_reason() {
+        let m = motor();
+        let short = witness_motor(&m, Some(Some(vec![(639_750, true)])), 1_000_000);
+        assert_eq!(short.status, "unwitnessed");
+        let f = witness_findings_of(&m, &short);
+        assert_eq!(f.len(), 1);
+        assert!(
+            f[0].message
+                .contains("shorter than two of its periods (1279488 ns)"),
+            "{}",
+            f[0].message
+        );
+        let long = witness_motor(&m, Some(Some(vec![(639_750, true)])), 100_000_000);
+        assert!(
+            !witness_findings_of(&m, &long)[0]
+                .message
+                .contains("shorter than two")
+        );
+    }
+
+    #[test]
+    fn a_read_left_unset_by_a_short_window_is_named() {
+        use aethelgard_twin::boot::{DSHOT_WINDOW_NS, MAX_VIRTUAL_NS, RECORD_UNSET, STATUS_OK};
+        let image = image();
+        let checks = &image.identity.checks;
+        assert!(!checks.is_empty());
+        let unset = vec![(RECORD_UNSET, RECORD_UNSET); checks.len()];
+        let named = reads_outside_window(checks, &unset, DSHOT_WINDOW_NS);
+        assert_eq!(named.len(), checks.len());
+        assert!(
+            named
+                .iter()
+                .all(|f| f.kind == "identity_read_outside_window")
+        );
+        assert!(
+            named[0].message.contains(&who(&checks[0])),
+            "{}",
+            named[0].message
+        );
+        assert!(
+            named[0].message.contains("2000000 ns"),
+            "{}",
+            named[0].message
+        );
+        let written = vec![(STATUS_OK, 0x60); checks.len()];
+        assert!(reads_outside_window(checks, &written, DSHOT_WINDOW_NS).is_empty());
+        assert!(reads_outside_window(checks, &unset, MAX_VIRTUAL_NS).is_empty());
     }
 
     #[test]
