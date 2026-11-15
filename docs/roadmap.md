@@ -489,6 +489,8 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | Vendor the ICM-20948 symbol so its fixture has a board | 4300c D2 | `4210` build |
 | IPC-6012 Tables 3-4 and 3-14 (copper and plating minima) | 1303 D6 | Scotty, an optional purchase; the fabrication package states the minima until then |
 | The 1303 build: supply and ground R bounds with coverage, stackup minima fields, USB pair C | 1303 ruling | `AET-WO-1303` build, after `1308` and `4300d` |
+| Off-board devices (a GPS module's compass on a DS-009 GPS port): modelled in the twin, not placed on the board | 4300f D9 | `AET-WO-4500` |
+| Sentinel-02's own IMU and barometer: current parts with Renode models of our own (the twin's modelled parts are all EOL) | 4210 D1 | Scotty's decision (a purchase, and `RUL-12`'s language rule) |
 
 ## 8. Amendments
 
@@ -574,6 +576,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-15 | §5 | `AET-WO-4400` spike merged as the record (PR #130) and ruled: `4400a` written (image, CI build, ELF pinout check); `4300a` amended with `mcu.hse_hz` (D1) and the reset clock as a solved fact (§1.2 pre-ruled); `4400b` staged after `4300a` and `4300b` | ruling comment 6887864517 |
 | 2026-11-15 | §5 | `AET-WO-4300b` (serial links) and `AET-WO-4300f` (off-board connectors, spike) written; `4300a` gains the off-board-net measurement | found at the desk: no connector part exists, and every flight I/O piece leaves the board |
 | 2026-11-15 | §5, §7.1 | `AET-WO-1303` spike merged as the record (PR #133) and ruled; its build is deferred until `1308` and `4300d`. `AET-WO-1308` (router: per-net widths, via-pad option, coupled pairs) and `AET-WO-4300d` (power parts, spike) written | ruling comment 6888926396 |
+| 2026-11-15 | §5, §7.1 | `AET-WO-4210` spike merged (PR #131): build on EOL stand-ins, `lifecycle` in `parts.json`, EOL refused for fabrication. `AET-WO-4300f` spike merged (PR #134): explicit `connectors[]`, DS-009 pinouts cited as facts, bottom edge for v1 (rotation to `1308`); its build is running and lands before the board side of `4300a`/`4300b` | ruling comments 6888973755 and 6889019743 |
 
 ## 9. Provenance
 

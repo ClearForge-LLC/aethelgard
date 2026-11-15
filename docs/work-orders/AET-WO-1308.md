@@ -12,7 +12,7 @@
   - The ring, not the copper, limits the bound.
 - **No pair is routed coupled.** USB full speed's < 10 % conductor-capacitance mismatch is ruled a condition of symmetric pair routing (`1303` D2), which the router cannot provide today.
 
-> **What this is:** the router lays declared nets at a declared width; it can use a larger via pad where the specification asks; and it routes a declared differential pair as a symmetric coupled pair. Each is judged by the gates already in place.
+> **What this is:** the router lays declared nets at a declared width; it can use a larger via pad where the specification asks; it routes a declared differential pair as a symmetric coupled pair; and it handles rotated parts, so connectors can sit on any edge. Each is judged by the gates already in place.
 >
 > It is NOT:
 > - length tuning beyond pair symmetry;
@@ -37,7 +37,8 @@
    - The verdict reports each pair's length difference and via count per conductor.
    - A pair the router cannot couple is refused by name, never routed apart.
 4. **Sentinel-01 is unchanged** unless its specification declares classes. Its committed files stay byte-identical (it declares none).
-5. **The fixtures:**
+5. **Part rotation (`4300f` D7, PR #134).** `route::part` and `pcb.rs` accept a placed part's rotation (0/90/180/270), so connectors can sit on any board edge. `4300f`'s v1 places on the bottom edge only. A test places one connector on each edge, routed, DRC clean.
+6. **The fixtures:**
    - **a 4-layer fixture** with a `power` class (for example 0.5 mm track, 0.7 mm via pad), routed, ERC and DRC clean;
    - **a fixture with one declared pair** (USB D+/D−), routed coupled and reported.
 
