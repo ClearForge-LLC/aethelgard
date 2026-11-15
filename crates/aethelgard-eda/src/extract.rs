@@ -955,7 +955,11 @@ pub fn lines(
                 }
                 let passive =
                     part.lib_id == crate::schematic::R || part.lib_id == crate::schematic::C;
-                let load = if passive { Load::PullUp } else { Load::Pin(PIN_FF) };
+                let load = if passive {
+                    Load::PullUp
+                } else {
+                    Load::Pin(PIN_FF)
+                };
                 let pull_up = part.lib_id == crate::schematic::R
                     && part
                         .conns
@@ -1537,9 +1541,15 @@ mod tests {
         );
         let err = device_pin(table, "U5", "ICM20948", "SPI_SCK").unwrap_err();
         assert_eq!(err.kind, "UnboundedPinCapacitance");
-        assert!(err.message.contains("U5 (ICM20948) on `SPI_SCK`"), "{}", err.message);
+        assert!(
+            err.message.contains("U5 (ICM20948) on `SPI_SCK`"),
+            "{}",
+            err.message
+        );
         assert_eq!(
-            device_pin(table, "U9", "UNLISTED", "SPI_SCK").unwrap_err().kind,
+            device_pin(table, "U9", "UNLISTED", "SPI_SCK")
+                .unwrap_err()
+                .kind,
             "UnboundedPinCapacitance"
         );
     }

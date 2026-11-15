@@ -41,7 +41,7 @@ Labels: **[measured]** run here; **[read]** read at source; **[inferred]** reaso
 - **The probe** is `spike/4300c/probe.patch`, about 110 lines, applied and then reverted, so nothing in `crates/` changes. It adds `extract::probe_lines` and a test, `probe_4300c.rs`.
   - `probe_lines` is `extract::lines` widened to any list of nets. Every non-passive part on a net is a pin part, and any passive is refused by name.
   - The test emits each acceptance board with `schematic::emit`, then bounds every I2C line with today's `lines` and `bound`, and every SPI line (each bus's SCK, MOSI and MISO, and each device's chip select) with `probe_lines` and `bound`.
-- Raw output: `spike/4300c/probe-output.txt`. Reproduce with `git apply spike/4300c/probe.patch && cargo test -p aethelgard-cli --test probe_4300c -- --nocapture`.
+- Raw output: `spike/4300c/probe-output.txt`. Reproduce at the stop's commit `139226e`, where both files live (deleted in the build as the ruling's reduction): `git checkout 139226e && git apply spike/4300c/probe.patch && cargo test -p aethelgard-cli --test probe_4300c -- --nocapture`.
 
 ### §1.3, measured: the machinery is small; the source of C is not
 
