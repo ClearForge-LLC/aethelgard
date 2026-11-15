@@ -139,10 +139,15 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
             ),
         )
     })?;
-    let (_, routed) = aethelgard_eda::route::read(&tree, &stack)
+    // `read` refuses every hole but a routed via, a declared array's via and
+    // a plated round through-hole pad: an unplated hole would share KiCad's
+    // one drill file with no plating mark, and a slot is a `G85` line
+    // (measured, `AET-WO-4300d2` FEEDBACK).
+    let (board, routed) = aethelgard_eda::route::read(&tree, &stack)
         .map_err(|e| Stop::tool_error("aethelgard", format!("the board's copper: {e}")))?;
+    let drills = aethelgard_eda::fab::drills(&board, &routed)
+        .map_err(|e| Stop::tool_error("aethelgard", format!("the board's holes: {e}")))?;
     let layers = gerbers(&stack);
-    no_drilled_pad(&tree)?;
 
     let tool = run::Tool::find(TOOL)?;
     let invocation = |args: Vec<OsString>, status: &str| run::Invocation {
@@ -236,7 +241,7 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
         }
     }
     let drill = read_output(TOOL, &scratch.tool.join(format!("{STEM}.drl")))?;
-    holes(&drill, routed.vias.len())
+    aethelgard_eda::fab::holes(&drill, &drills)
         .map_err(|m| Stop::tool_error(TOOL, format!("the drill file: {m}")))?;
     files.insert(format!("{}.drl", b.project), drill);
     let placement = read_output(TOOL, &pos)?;
@@ -246,16 +251,13 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
     files.insert(format!("{}.bom.csv", b.project), b.bom.to_vec());
     files.insert(format!("{}.elf", b.project), elf);
 
-    let described = describe(b.project, &layers);
-    let notes = aethelgard_eda::fab::notes(&aethelgard_eda::fab::Notes {
-        project: b.project,
-        engine_version: env!("CARGO_PKG_VERSION"),
-        specification_sha256: b.specification_sha256,
-        kicad_version: KICAD_VERSION,
-        files: &described,
-        stack: &stack,
-        offboard: aethelgard_eda::schematic::declares_offboard(b.spec),
-    });
+    let notes = notes(
+        b.project,
+        env!("CARGO_PKG_VERSION"),
+        b.specification_sha256,
+        b.spec,
+        &drills,
+    );
     files.insert(NOTES.to_owned(), notes.into_bytes());
     Ok(Exported {
         files,
@@ -284,6 +286,29 @@ pub fn gerbers(stack: &aethelgard_eda::stack::Stack) -> Vec<(String, String, usi
         }
     }
     out
+}
+
+/// `FAB-NOTES.md` for the package of `spec`'s board, whose drill file holds
+/// `drills`.
+fn notes(
+    project: &str,
+    engine: &str,
+    specification_sha256: &str,
+    spec: &aethelgard_ir::Specification,
+    drills: &[aethelgard_eda::fab::Drill],
+) -> String {
+    let stack = aethelgard_eda::stack::Stack::of(spec);
+    let described = describe(project, &gerbers(&stack));
+    aethelgard_eda::fab::notes(&aethelgard_eda::fab::Notes {
+        project,
+        engine_version: engine,
+        specification_sha256,
+        kicad_version: KICAD_VERSION,
+        files: &described,
+        stack: &stack,
+        offboard: aethelgard_eda::schematic::declares_offboard(spec),
+        drills,
+    })
 }
 
 /// Every file of the package but the notes and the manifest, with what it is.
@@ -461,53 +486,6 @@ pub fn pours(gerber: &[u8], net: &str) -> bool {
         .windows(2)
         .enumerate()
         .any(|(i, w)| w[0] == attribute && w[1] == "G36*" && lines[i + 2..].contains(&"G37*"))
-}
-
-/// The notes say every hole is a plated via of the router's drill
-/// (condition 6): no pad of the board carries a drill.
-fn no_drilled_pad(tree: &aethelgard_eda::strict::Tree) -> Result<(), Stop> {
-    for fp in tree.root().all("footprint") {
-        for pad in fp.all("pad") {
-            // A drill, or two (which `one` refuses), is a drilled pad.
-            if !matches!(pad.one("drill"), Ok(None)) {
-                return Err(Stop::tool_error(
-                    "aethelgard",
-                    "a pad of the board is drilled; the package states that every hole is a via"
-                        .to_owned(),
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
-/// The drill file has exactly one tool, the router's via drill in mm, and
-/// one hit per via of the board.
-pub fn holes(drill: &[u8], vias: usize) -> Result<(), String> {
-    let text = std::str::from_utf8(drill).map_err(|_| "it is not UTF-8".to_owned())?;
-    let drill_nm = aethelgard_eda::route::DRILL_NM;
-    let tool = format!(
-        "T1C{}.{:03}",
-        drill_nm / 1_000_000,
-        drill_nm % 1_000_000 / 1000
-    );
-    let header: Vec<&str> = text.lines().take_while(|l| *l != "%").collect();
-    if !header.contains(&"METRIC") {
-        return Err("it is not metric".to_owned());
-    }
-    let tools: Vec<&str> = header
-        .iter()
-        .copied()
-        .filter(|l| l.starts_with('T'))
-        .collect();
-    if tools != [tool.as_str()] {
-        return Err(format!("its tools are {tools:?}, not [{tool}]"));
-    }
-    let hits = text.lines().filter(|l| l.starts_with('X')).count();
-    if hits != vias {
-        return Err(format!("it has {hits} hits for the board's {vias} vias"));
-    }
-    Ok(())
 }
 
 /// KiCad writes each placement row's reference, value and package in quotes
@@ -727,22 +705,6 @@ mod tests {
     }
 
     #[test]
-    fn the_drill_file_must_be_every_via_and_nothing_else() {
-        let drl = "M48\nMETRIC\nT1C0.300\n%\nG90\nG05\nT1\nX76.25Y-108.75\nX77.5Y-111.25\nM30\n";
-        assert_eq!(holes(drl.as_bytes(), 2), Ok(()));
-        assert!(holes(drl.as_bytes(), 3).is_err());
-        assert!(holes(drl.replace("T1C0.300", "T1C0.400").as_bytes(), 2).is_err());
-        assert!(
-            holes(
-                drl.replace("T1C0.300\n", "T1C0.300\nT2C1.000\n").as_bytes(),
-                2
-            )
-            .is_err()
-        );
-        assert!(holes(drl.replace("METRIC", "INCH").as_bytes(), 2).is_err());
-    }
-
-    #[test]
     fn a_placement_row_with_a_quote_inside_a_field_is_refused() {
         let ok = "Ref,Val,Package,PosX,PosY,Rot,Side\n\"U4\",\"W25Q64JVSS\",\"SOIC-8\",82.55,-108.4,0.0,top\n";
         assert_eq!(placement_rows(ok.as_bytes()), Ok(()));
@@ -790,26 +752,6 @@ mod tests {
         assert!(m.ends_with(b"}\n"));
     }
 
-    /// Condition 6 rests on this: a drilled pad, or a pad with two drills,
-    /// is refused; an SMD pad is not.
-    #[test]
-    fn a_drilled_pad_is_refused() {
-        let board = |pad: &str| {
-            aethelgard_eda::strict::board(&format!(
-                "(kicad_pcb (version 20260206) (generator \"t\") (footprint \"t\" (layer \"F.Cu\") (at 0 0) {pad}))"
-            ))
-            .unwrap()
-        };
-        let smd = "(pad \"1\" smd rect (at 0 0) (size 1 1) (layers \"F.Cu\"))";
-        assert!(no_drilled_pad(&board(smd)).is_ok());
-        let drilled =
-            "(pad \"1\" thru_hole circle (at 0 0) (size 1 1) (drill 0.5) (layers \"*.Cu\"))";
-        assert!(no_drilled_pad(&board(drilled)).is_err());
-        let npth =
-            "(pad \"\" np_thru_hole circle (at 0 0) (size 1 1) (drill 1) (layers \"F.Mask\"))";
-        assert!(no_drilled_pad(&board(npth)).is_err());
-    }
-
     #[test]
     fn the_notes_describe_every_file_and_the_package_names_them_after_the_project() {
         let spec: aethelgard_ir::Specification =
@@ -820,6 +762,78 @@ mod tests {
             d.iter()
                 .all(|(n, _)| n.starts_with("p-") || n.starts_with("p."))
         );
+    }
+
+    /// The tool `derive` expects of a board whose only holes are `n` routed
+    /// vias at the board's own rule.
+    fn vias_only(n: usize) -> Vec<aethelgard_eda::fab::Drill> {
+        vec![aethelgard_eda::fab::Drill {
+            drill_nm: aethelgard_eda::route::DRILL_NM,
+            hole: aethelgard_eda::fab::Hole::Via,
+            what: vec![(
+                aethelgard_eda::fab::Drilled::Routed {
+                    via_nm: aethelgard_eda::route::VIA_NM,
+                },
+                n,
+            )],
+        }]
+    }
+
+    /// `AET-WO-4300d2` §2: every existing board's package is byte-identical.
+    /// KiCad's files pass through unchanged, so only `FAB-NOTES.md` (and the
+    /// manifest's hash of it) could move. Each golden is the notes the code
+    /// before `AET-WO-4300d2` wrote for that specification (captured at
+    /// 9ce769c, same project, engine version and specification hash), and
+    /// today's notes for its via-only board are those bytes: 2 layers, 4
+    /// layers, and a net class with its own via (the clause that sentence
+    /// carries).
+    #[test]
+    fn a_via_only_boards_notes_are_byte_identical_to_before_4300d2() {
+        for (spec, project, golden) in [
+            (
+                "examples/sentinel-01-minimal.json",
+                "sentinel-01",
+                include_str!("../tests/fixtures/fab/notes-before-4300d2-sentinel-01-minimal.md"),
+            ),
+            (
+                "crates/aethelgard-cli/tests/fixtures/four-layer.json",
+                "sentinel-01-4l",
+                include_str!("../tests/fixtures/fab/notes-before-4300d2-four-layer.md"),
+            ),
+            (
+                "crates/aethelgard-cli/tests/fixtures/four-layer-power.json",
+                "p",
+                include_str!("../tests/fixtures/fab/notes-before-4300d2-four-layer-power.md"),
+            ),
+        ] {
+            let spec: aethelgard_ir::Specification =
+                serde_json::from_str(&repo_file(spec)).unwrap();
+            for n in [1, 64] {
+                assert_eq!(
+                    notes(project, "0.1.0", "SPEC_SHA", &spec, &vias_only(n)),
+                    golden,
+                    "{project}"
+                );
+            }
+        }
+    }
+
+    /// The reference's drill file as KiCad 10.0.7 wrote it from the emitted
+    /// `sentinel-01` board (64 vias), pinned: the one tool and its hits, and
+    /// an off-by-one either way refused.
+    #[test]
+    fn todays_drill_file_holds_exactly_its_vias() {
+        let drl = include_bytes!("../tests/fixtures/fab/kicad-10.0.7-vias.drl");
+        assert_eq!(aethelgard_eda::fab::holes(drl, &vias_only(64)), Ok(()));
+        for n in [63, 65] {
+            let e = aethelgard_eda::fab::holes(drl, &vias_only(n)).unwrap_err();
+            assert!(
+                e.contains(&format!("tool T1 (0.3 mm) has 64 hits, where the board holds {n}: routed vias, 0.6 mm pad ({n})")),
+                "{e}"
+            );
+        }
+        let e = aethelgard_eda::fab::holes(drl, &[]).unwrap_err();
+        assert!(e.contains("no holes"), "{e}");
     }
 
     /// A repository file, read when the test runs: the package carries no file
