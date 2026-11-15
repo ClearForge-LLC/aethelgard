@@ -6,7 +6,7 @@
 # extract: 3 UnmodelledCopper
 @@ find
 		(net "/I2C_SDA")
-		(uuid "75a92571-c2c1-8ecd-bf4a-c5f6be5cf77c")
+		(uuid "17343037-4086-842d-808c-f3a0e0ae8c33")
 @@ replace
 		(net "/I2C_SDA")
 		(padstack
@@ -18,5 +18,5 @@
 				(size 2.4)
 			)
 		)
-		(uuid "75a92571-c2c1-8ecd-bf4a-c5f6be5cf77c")
+		(uuid "17343037-4086-842d-808c-f3a0e0ae8c33")
 @@ end
