@@ -502,6 +502,8 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | `tools_tier1` `ETXTBSY` race: a stub exec'd while a sibling thread holds its write descriptor | 4220 F15 | unowned; the next CLI work order |
 | Router wall-time bound (an adversarial 4 × LQFP-144 board took 616 s, bounded only by `RIPUPS`) | 1307 A4 | unowned |
 | Fetch for Scotty: ST AN2834 (ADC source impedance), the AMASS XT30 maker datasheet, Infineon DPS310 and TE MS5611 (hosts refuse Furnace) | 4300d D7, D10; 4220 F5 | Scotty |
+| FAB-NOTES must state every condition the extract verdict states (`4300c`'s SPI condition is missing from FAB-NOTES) | 4300f F2 | unowned; the next fab/CLI work order |
+| Late refusals: a connector named `U1` (refused only at `emit`), a `u64::MAX` off-board budget (refused only at `extract`): refuse both at `validate` | 4300f A3, A4 | unowned |
 
 ## 8. Amendments
 
@@ -590,6 +592,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-15 | §5, §7.1 | `AET-WO-4210` spike merged (PR #131): build on EOL stand-ins, `lifecycle` in `parts.json`, EOL refused for fabrication. `AET-WO-4300f` spike merged (PR #134): explicit `connectors[]`, DS-009 pinouts cited as facts, bottom edge for v1 (rotation to `1308`); its build is running and lands before the board side of `4300a`/`4300b` | ruling comments 6888973755 and 6889019743 |
 | 2026-11-15 | §5, §7.1 | `AET-WO-4220` (own sensor models, spike) written; `RUL-12` amended for C# Renode models; EOL parts usable only with a named acknowledgement and a banner (`4210` build) | Scotty, 2026-11-15 |
 | 2026-11-15 | §5, §7.1 | `1307` merged (PR #126); the `4300d` (PR #137) and `4220` (PR #140) spikes ruled; `AET-WO-1309` written | comments 6890078133, 6890080737 |
+| 2026-11-15 | §5, §7.1 | `AET-WO-4300f` build merged (PR #138): `connectors[]` with DS-009 ports, specification version 4, bottom-edge placement, off-board capacitance budgets in extraction; `TIER2_MIN` 98 | review comment 6890107750 |
 
 ## 9. Provenance
 
