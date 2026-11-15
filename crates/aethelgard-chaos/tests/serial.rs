@@ -498,6 +498,9 @@ fn a_witness_and_tags_are_judged_only_once_the_boot_word_is_set() {
             if let Record::SerialFramingCheck { tags, .. } = &mut r[CHECK_SBUS] {
                 *tags = None;
             }
+            if let Record::SerialWitness { tx_at_send, .. } = &mut r[WITNESS_SBUS] {
+                *tx_at_send = None;
+            }
         });
         let mut f = vec![("boot_word_missing", 1)];
         f.extend_from_slice(findings);
@@ -534,8 +537,38 @@ fn a_witness_and_tags_are_judged_only_once_the_boot_word_is_set() {
 
 #[test]
 fn a_port_s_tags_fail_when_missing_unexpected_or_unread() {
+    // Unread: the access log was not whole, so neither the writes nor the
+    // TX pin at its sends were rebuilt, and both fail.
+    let unread = edit(|r| {
+        if let Record::SerialFramingCheck { tags: t, .. } = &mut r[CHECK_SBUS] {
+            *t = None;
+        }
+        if let Record::SerialWitness { tx_at_send, .. } = &mut r[WITNESS_SBUS] {
+            *tx_at_send = None;
+        }
+    });
+    assert!(ok(&judged(
+        unread.clone(),
+        &[(SERIAL_TAG_FINDING, 1), (SERIAL_PATTERN_FINDING, 1)]
+    )));
+    // Adversarial pass 2, L1: a TX pin rebuilt from a log the tags could not
+    // read is a pair the judge never writes.
+    let forged = edit(|r| {
+        if let Record::SerialFramingCheck { tags: t, .. } = &mut r[CHECK_SBUS] {
+            *t = None;
+        }
+    });
+    for findings in [&[(SERIAL_TAG_FINDING, 1)][..], &[]] {
+        let res = check_run(&judged(forged.clone(), findings));
+        assert_eq!(
+            res.as_ref().map(|s| s.matched),
+            Err(
+                &"a serial witness's TX pin at its sends is rebuilt from an access log its framing check could not read"
+            ),
+            "{res:?}"
+        );
+    }
     for tags in [
-        None,
         Some(SerialTags {
             writes: 2,
             missing: vec!["CR1.M0".into()],

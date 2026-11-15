@@ -1365,7 +1365,9 @@ pub fn serial_witness_findings(
 /// ports' order, which is what its solved port gives silicon; and its
 /// witnesses are in the ports' order too, every port's or none, and every
 /// port's once the boot word is set, each echo the status its own counts and
-/// pins give.
+/// pins give, and its TX pin at its sends rebuilt only where its framing
+/// check's writes were (both come from one access log; adversarial pass 2,
+/// L1).
 fn check_serial_joins(records: &[Record], booted: bool) -> Result<(), &'static str> {
     let ports: Vec<&Record> = records
         .iter()
@@ -1423,6 +1425,22 @@ fn check_serial_joins(records: &[Record], booted: bool) -> Result<(), &'static s
     for (port, check) in ports.iter().zip(&checks) {
         if !serial_silicon(port, check) {
             return Err("a serial framing check is not what its solved port gives");
+        }
+    }
+    for (check, witness) in checks.iter().zip(&witnesses) {
+        if matches!(
+            (check, witness),
+            (
+                Record::SerialFramingCheck { tags: None, .. },
+                Record::SerialWitness {
+                    tx_at_send: Some(_),
+                    ..
+                }
+            )
+        ) {
+            return Err(
+                "a serial witness's TX pin at its sends is rebuilt from an access log its framing check could not read",
+            );
         }
     }
     for (port, witness) in ports.iter().zip(&witnesses) {
