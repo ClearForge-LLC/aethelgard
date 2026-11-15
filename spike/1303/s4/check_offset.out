@@ -1,0 +1,4 @@
+via end (fan + spread), concentric, cut at x_e = 0.3: 2.680 mOhm
+hole off by 0.025 mm: worst of 64 directions 1.914 mOhm at x_e 0.1850 (x0.714 the concentric value)
+hole off by 0.05 mm: worst of 64 directions 2.333 mOhm at x_e 0.2100 (x0.871 the concentric value)
+hole off by 0.075 mm: NO admissible cut of width 0.2 mm (annular ring 0.15 mm)

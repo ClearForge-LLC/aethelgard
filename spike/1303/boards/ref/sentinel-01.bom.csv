@@ -1,0 +1,16 @@
+Reference,Value,Footprint,Symbol,Note
+C1,2u2,Capacitor_SMD:C_0402_1005Metric,Device:C,
+C2,2u2,Capacitor_SMD:C_0402_1005Metric,Device:C,
+C3,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,
+C4,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,
+C5,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,
+C6,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,
+R1,2k2,Resistor_SMD:R_0402_1005Metric,Device:R,
+R2,2k2,Resistor_SMD:R_0402_1005Metric,Device:R,
+R3,10k,Resistor_SMD:R_0402_1005Metric,Device:R,
+R4,10k,Resistor_SMD:R_0402_1005Metric,Device:R,
+R5,10k,Resistor_SMD:R_0402_1005Metric,Device:R,
+U1,STM32H753ZITx,Package_QFP:LQFP-144_20x20mm_P0.5mm,MCU_ST_STM32H7:STM32H753ZITx,
+U2,BME280,Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering,Sensor:BME280,
+U3,TMP117xxDRV,Package_SON:WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm,Sensor_Temperature:TMP117xxDRV,
+U4,W25Q64JVSS,Package_SO:SOIC-8_5.3x5.3mm_P1.27mm,Memory_Flash:W25Q32JVSS,"symbol Memory_Flash:W25Q32JVSS stands in for W25Q64JV: same family, same SOIC-8 208-mil pinout (AET-WO-1300 D2)"

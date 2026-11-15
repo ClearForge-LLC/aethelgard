@@ -1,0 +1,19 @@
+# AET-WO-4210 spike: emits the board crate and the twin's platform for one
+# specification, through the same library calls `twin_tier2.rs`
+# (`a_second_spi_device_an_icm20948_is_read_and_witnessed`) makes. Its own
+# workspace, so it is never a member of the repository's (spike/ is deleted at
+# the build).
+[package]
+name = "aet-4210-gen"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+aethelgard-ir = { path = "../../../crates/aethelgard-ir" }
+aethelgard-svd-hal = { path = "../../../crates/aethelgard-svd-hal" }
+aethelgard-twin = { path = "../../../crates/aethelgard-twin" }
+serde_json = "1"
+sha2 = "0.11"

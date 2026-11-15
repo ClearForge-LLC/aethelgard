@@ -1,0 +1,6 @@
+p 0.3 s0 +0.00 H 1.6 d 0.3: spread bound    2.726 sq, certified sheet R >=    2.282 sq, ratio  1.19, uniform-only   1.698 sq: holds
+p 0.3 s0 +0.00 H 1.07 d 0.25: spread bound    2.190 sq, certified sheet R >=    1.720 sq, ratio  1.27, uniform-only   1.135 sq: holds
+p 0.2 s0 +0.05 H 1.6 d 0.3: spread bound    2.554 sq, certified sheet R >=    2.180 sq, ratio  1.17, uniform-only   1.698 sq: holds
+p 0.17 s0 -0.06 H 2.0 d 0.4: spread bound    2.951 sq, certified sheet R >=    2.570 sq, ratio  1.15, uniform-only   2.122 sq: holds
+p 0.25 s0 +0.09 H 0.34 d 0.15: spread bound    1.640 sq, certified sheet R >=    0.914 sq, ratio  1.79, uniform-only   0.361 sq: holds
+ALL HOLD
