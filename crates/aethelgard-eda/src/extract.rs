@@ -126,6 +126,8 @@ pub const EPS0_DEN: u128 = 10_000_000_000_000_000;
 pub struct Physics {
     s: u128,
     w: u128,
+    /// A via's pad diameter: the engine's, or the line's class's.
+    via: u128,
     c: u128,
     er_num: u128,
     er_den: u128,
@@ -146,6 +148,7 @@ impl Physics {
         Physics {
             s: u(stack.clearance_nm),
             w: u(stack.width_nm),
+            via: u(VIA_NM),
             c: u(stack.copper_max_nm),
             er_num: num / g,
             er_den: 1000 / g,
@@ -153,6 +156,17 @@ impl Physics {
             h_top: u(top),
             h_bottom: u(bottom),
             force_cap: false,
+        }
+    }
+
+    /// The same for a line laid by `rule` (`AET-WO-1308`): a class's or a
+    /// pair's width, and a class's via. The board's own rule changes nothing.
+    pub fn laid_by(self, rule: crate::stack::Rule) -> Physics {
+        let u = |v: i64| u128::try_from(v).unwrap_or(0);
+        Physics {
+            w: u(rule.width_nm),
+            via: u(rule.via_nm),
+            ..self
         }
     }
 
@@ -462,10 +476,11 @@ pub fn segment_ff(ph: &Physics, h: u128) -> Option<u64> {
     femtofarads(ph, capped(ph, base, ph.c, h, true)?)
 }
 
-/// One via: its checked disk, diameter `VIA_NM`, through the declared
-/// maximum finished thickness. The barrel and both pads lie inside it.
+/// One via: its checked disk, its pad's diameter (`VIA_NM`, or its class's),
+/// through the declared maximum finished thickness. The barrel and both pads
+/// lie inside it.
 pub fn via_ff(ph: &Physics) -> Option<u64> {
-    let base = Base::disk(VIA_NM as u128 / 2)?;
+    let base = Base::disk(ph.via / 2)?;
     femtofarads(ph, shell(base, ph.via_h, ph.s)?)
 }
 
@@ -1150,11 +1165,12 @@ fn line(read: &ReadBoard, want: &Line) -> Result<LineBound, Refused> {
 
 fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound, Refused> {
     let (board, routed, net) = (&read.board, &read.routed, want.net.as_str());
+    let board_net = board_net(net);
     let ph = Physics {
         force_cap,
         ..Physics::of(&board.stack)
-    };
-    let board_net = board_net(net);
+    }
+    .laid_by(board.stack.rule(&board_net));
     let mut on_board: BTreeMap<&str, Vec<&route::Pad>> = BTreeMap::new();
     for part in &board.parts {
         let here: Vec<&route::Pad> = part

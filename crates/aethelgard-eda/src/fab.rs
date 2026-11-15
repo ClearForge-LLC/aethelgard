@@ -105,7 +105,7 @@ states them:
 
 ## Holes
 
-Every hole is a plated via, drilled {drill} mm, with a {via} mm pad. The
+Every hole is a plated via, drilled {drill} mm, with a {via} mm pad{holes}. The
 drill file is Excellon, metric, with decimal coordinates, and its minimal
 header carries no plating comment.
 
@@ -114,7 +114,7 @@ header carries no plating comment.
 - Track width: {track} mm.
 - Copper to copper: {space} mm.
 - Via: {via} mm pad, {drill} mm drill.
-
+{classes}
 ## Files
 
 {files}
@@ -139,7 +139,47 @@ CC-BY-SA 4.0 with a design exception that covers designs made from them.
         via = mm(VIA_NM),
         track = mm(st.width_nm),
         space = mm(st.clearance_nm),
+        holes = if st.classes.iter().any(|c| c.via_declared) {
+            ", but where a net class below declares its own via"
+        } else {
+            ""
+        },
+        classes = classes(st),
     )
+}
+
+/// The declared net classes' and pairs' own rules (`AET-WO-1308`), one line
+/// each; nothing for a specification that declares none.
+fn classes(st: &Stack) -> String {
+    let mut out = String::new();
+    for c in &st.classes {
+        let via = if c.via_declared {
+            format!(
+                ", via {} mm pad, {} mm drill",
+                mm(c.rule.via_nm),
+                mm(c.rule.drill_nm)
+            )
+        } else {
+            String::new()
+        };
+        out.push_str(&format!(
+            "- Net class `{}` ({}): track width {} mm{via}.\n",
+            c.name,
+            c.nets.join(", "),
+            mm(c.rule.width_nm)
+        ));
+    }
+    for p in &st.pairs {
+        out.push_str(&format!(
+            "- Coupled pair `{}` ({}, {}): track width {} mm, {} mm apart.\n",
+            p.name,
+            p.nets[0],
+            p.nets[1],
+            mm(p.width_nm),
+            mm(p.gap_nm)
+        ));
+    }
+    out
 }
 
 /// The layer lines of the stackup section. At 2 layers, `AET-WO-3300`'s one

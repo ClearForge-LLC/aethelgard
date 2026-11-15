@@ -1,5 +1,5 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "project_name": "inf",
   "mcu": {
     "part": "STM32H753ZITx",
@@ -205,5 +205,7 @@
       "via_diameter_um": 600
     }
   },
+  "net_classes": [],
+  "diff_pairs": [],
   "motor_outputs": []
 }

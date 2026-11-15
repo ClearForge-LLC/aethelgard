@@ -83,24 +83,29 @@ fn digests() -> Vec<(&'static str, String)> {
 /// the flash is `W25Q64JVxIQ`; and the firmware's SPI output speeds): the
 /// firmware was `c468b3cb…604f`, the platform `9fd77dad…53aa` and the
 /// faulted platform `c80833a9…8bec`. The boot image's digest is unchanged.
-/// Re-taken in `AET-WO-4300a` after `4300f`: specification version 5
-/// (`motor_outputs`, `mcu.hse_hz`, after `4300f`'s `connectors`) moved the
-/// specification's sha256 in the firmware (`f3e10417…2985`), the platform
-/// (`9c02c1e2…2bf4`) and the faulted platform (`cc3a3e65…2dff9`); every
-/// enable register cold and judged in full (2100 F24) moved the boot image
+/// Re-taken in `AET-WO-4300f` (specification version 4, `connectors`), which
+/// moved only the specification's sha256: with the old hash put back, each
+/// output's digest is the old one exactly. The three were `ecd58f5f…9b7b`,
+/// `bc1517cd…7522` and `f684f871…3dba`.
+/// Re-taken in `AET-WO-1308` (version 5) the same way: with `main`'s hash
+/// passed to `solve`, each was `f3e10417…2985`, `9c02c1e2…12bf4` and
+/// `cc3a3e65…2dff9` exactly. Re-taken in `AET-WO-4300a`: specification version 6
+/// (`motor_outputs`, `mcu.hse_hz`) moved the specification's sha256 in the
+/// three (`44f22188…e3af`, `bd957c1d…d4b0`, `b962492f…ee15`); every enable
+/// register cold and judged in full (2100 F24) moved the boot image
 /// (`747bdc04…fbb3`).
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "b392afd7187b7751ce75efb06fb16dee31cf988156b0e969ab2c58c418029ce6",
+        "dac441661258773151468edeee5d357de637c793da0d81f79ec0aa44091e2e7e",
     ),
     (
         "platform",
-        "bd4f15a916ae92f256ce8c0ee119b43d4833457707f85c52a1dd59ea43a6d664",
+        "693c78ad1dc30b44fc1b467fcba243dce1e5ea09d225841339ae9e8bfd41dab0",
     ),
     (
         "platform faulted",
-        "70e6de90b5cfbcc1704a7d2f9e691810672eca6a5e6b83eedbf914ad7d40f67d",
+        "2fe09c9590bdeffae53d193034dec3561e9d07d5223257e118adde9cdadcf5b0",
     ),
     (
         "boot image",

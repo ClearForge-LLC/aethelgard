@@ -408,7 +408,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         "0.34 mm to 2 mm",
         "FR-4",
         "plated via, drilled 0.3 mm",
-        "b81279d7",
+        "ef03b3f1",
     ] {
         assert!(notes.contains(want), "FAB-NOTES.md states {want}");
     }
