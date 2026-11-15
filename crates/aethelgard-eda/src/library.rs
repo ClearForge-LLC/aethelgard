@@ -15,7 +15,7 @@ use crate::sexpr::{self, Sx};
 /// `aethelgard-kicad-lib`, and the sha256 its bytes must have. The pins live
 /// here, in the consumer: a data crate that pinned its own files would be
 /// checking itself (AET-WO-1304).
-const PINS: [(&str, &str); 17] = [
+const PINS: [(&str, &str); 24] = [
     (
         "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
         "0403382fc4583ed510b461b1fa4a36dfaec6f4c0d9b1a67e6b0027837a54e1b5",
@@ -39,6 +39,34 @@ const PINS: [(&str, &str); 17] = [
     (
         "footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod",
         "e05c7605248c220836f642ed1f526133edf0374acdfd5bb2631e58b4e377acfb",
+    ),
+    (
+        "footprints/Connector_JST.pretty/JST_GH_SM04B-GHS-TB_1x04-1MP_P1.25mm_Horizontal.kicad_mod",
+        "d28e139f60db2bef02272b37d5075e87f3e804aef0b442d0fd81a3f7cfe07ebe",
+    ),
+    (
+        "footprints/Connector_JST.pretty/JST_GH_SM06B-GHS-TB_1x06-1MP_P1.25mm_Horizontal.kicad_mod",
+        "d1855caf77704056d0af0775660442c74af40b18ae3e40bd244db5997fdc072f",
+    ),
+    (
+        "footprints/Connector_JST.pretty/JST_GH_SM10B-GHS-TB_1x10-1MP_P1.25mm_Horizontal.kicad_mod",
+        "5767bc29104c4797f67b898b1db76f1e1afb5ac65f432afaabda2c56769c7da7",
+    ),
+    (
+        "footprints/Connector_JST.pretty/JST_SH_SM06B-SRSS-TB_1x06-1MP_P1.00mm_Horizontal.kicad_mod",
+        "090e9bd7350aed224a938b922cc7d49020aa5235cc7e647a82cc3c08f37e881e",
+    ),
+    (
+        "symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x04_MountingPin.kicad_sym",
+        "370c2845e6ad1e61ea1b6b5c6a0784dea59f4aedc6d16eedda5ea3108c5105ac",
+    ),
+    (
+        "symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x06_MountingPin.kicad_sym",
+        "43b18535b89d110da0b5750f4aeff7ed5c1ccb7def712d79451b292f55ce3c53",
+    ),
+    (
+        "symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x10_MountingPin.kicad_sym",
+        "29f8c6d312d1a9a13225066d864c58b4e1e08d001360fb5bcc196a08be14caba",
     ),
     (
         "symbols/Device.kicad_symdir/C.kicad_sym",
@@ -394,8 +422,8 @@ mod tests {
             "(lib (name \"Device\") (type \"KiCad\") (uri \"/s/lib/symbols/Device.kicad_symdir\")"
         ));
         assert!(fp.contains("(uri \"/s/lib/footprints/Package_QFP.pretty\")"));
-        assert_eq!(sym.matches("(lib ").count(), 6);
-        assert_eq!(fp.matches("(lib ").count(), 6);
+        assert_eq!(sym.matches("(lib ").count(), 7);
+        assert_eq!(fp.matches("(lib ").count(), 7);
         assert!(sexpr::parse(&sym).is_ok() && sexpr::parse(&fp).is_ok());
     }
 }

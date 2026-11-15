@@ -424,8 +424,13 @@ fn is_ic(part: &Part) -> bool {
 /// first shared net (label nets before rails), so a decoupling capacitor
 /// sits by the power pin its rail names; with no shared net, the anchor's
 /// courtyard centre.
-fn place(items: &[Item<'_>]) -> Result<Vec<Placed>, EmitError> {
-    let mut order: Vec<usize> = (0..items.len()).collect();
+///
+/// Connectors are left to [`place_connectors`], after every other part, so
+/// none is an anchor; the board's bottom edge is returned when there is one.
+fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
+    let mut order: Vec<usize> = (0..items.len())
+        .filter(|&i| !schematic::is_connector(items[i].part))
+        .collect();
     order.sort_by(|&a, &b| {
         let key = |i: usize| {
             let p = items[i].part;
@@ -502,10 +507,111 @@ fn place(items: &[Item<'_>]) -> Result<Vec<Placed>, EmitError> {
             keep: g.keep.shift(origin),
         });
     }
-    placed
+    let edge = place_connectors(items, &mut placed)?;
+    let placed = placed
         .into_iter()
         .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| EmitError::Internal("a part was not placed".into()))
+        .ok_or_else(|| EmitError::Internal("a part was not placed".into()))?;
+    Ok((placed, edge))
+}
+
+/// The connectors, at the bottom edge (`AET-WO-4300f`, ruled D7: a side-entry
+/// header at rotation 0 takes its cable toward +y, and the router refuses a
+/// rotated part). In reference order, left to right, in one row centred under
+/// every part already placed, each keep-out box [`IC_GAP_NM`] from the next
+/// and from every box above. The edge is the first [`SNAP`] line that leaves
+/// [`MARGIN_NM`] below the other parts and lets every connector sit there:
+/// each courtyard's bottom (the cable side) is within one [`SNAP`] of the
+/// edge and inside it, and every pad keeps [`route::EDGE_NM`] from it. The
+/// housing body (`F.Fab`) sits about 0.8 mm inside, by the courtyard's own
+/// clearance.
+/// Returns that edge, or `None` with no connector.
+fn place_connectors(
+    items: &[Item<'_>],
+    placed: &mut [Option<Placed>],
+) -> Result<Option<i64>, EmitError> {
+    let mut row: Vec<usize> = (0..items.len())
+        .filter(|&i| schematic::is_connector(items[i].part))
+        .collect();
+    if row.is_empty() {
+        return Ok(None);
+    }
+    row.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference));
+    let core = placed
+        .iter()
+        .flatten()
+        .map(|p| p.keep)
+        .reduce(Rect::union)
+        .ok_or_else(|| EmitError::Internal("connectors with no other part".into()))?;
+    let down = |v: i64| v.div_euclid(SNAP) * SNAP;
+    let up = |v: i64| -((-v).div_euclid(SNAP) * SNAP);
+    let mut edge = up(core.y1 + MARGIN_NM);
+    for &i in &row {
+        let g = items[i].geometry;
+        if g.keep.y1 > g.courtyard.y1 {
+            return Err(internal(
+                &items[i].part.reference,
+                "silkscreen below the courtyard would cross the board edge",
+            ));
+        }
+        edge = edge.max(up(up(core.y1 + IC_GAP_NM - g.keep.y0) + g.courtyard.y1));
+    }
+    let width = row
+        .iter()
+        .map(|&i| items[i].geometry.keep.x1 - items[i].geometry.keep.x0 + IC_GAP_NM)
+        .sum::<i64>()
+        - IC_GAP_NM;
+    let mut x = core.centre().0 - width / 2;
+    for &i in &row {
+        let (item, g) = (&items[i], items[i].geometry);
+        let origin = (up(x - g.keep.x0), down(edge - g.courtyard.y1));
+        // belt-and-suspenders: every vendored connector's pads sit inside its
+        // courtyard by more than EDGE_NM, so no shipped part trips this (a
+        // mutation that loosens it survives); a footprint added later might.
+        for pad in item.fp.children("pad") {
+            let r = pad_box(pad, &item.part.reference)?;
+            if origin.1 + r.y1 + route::EDGE_NM > edge {
+                return Err(internal(
+                    &item.part.reference,
+                    format!(
+                        "pad {} would be nearer the edge than {} nm",
+                        pad.arg(1).unwrap_or(""),
+                        route::EDGE_NM
+                    ),
+                ));
+            }
+        }
+        placed[i] = Some(Placed {
+            reference: item.part.reference.clone(),
+            origin,
+            courtyard: g.courtyard.shift(origin),
+            keep: g.keep.shift(origin),
+        });
+        x = origin.0 + g.keep.x1 + IC_GAP_NM;
+    }
+    Ok(Some(edge))
+}
+
+/// A pad's box relative to its footprint's origin, from its `at` and `size`.
+/// A rotated pad is refused: the box would be wrong.
+fn pad_box(pad: &Sx, reference: &str) -> Result<Rect, EmitError> {
+    let at = pad
+        .child("at")
+        .ok_or_else(|| internal(reference, "a pad without `at`"))?;
+    if at.arg(3).is_some_and(|a| a != "0") {
+        return Err(internal(reference, "a rotated pad"));
+    }
+    let (x, y) = xy(at, reference)?;
+    let size = pad
+        .child("size")
+        .ok_or_else(|| internal(reference, "a pad without `size`"))?;
+    let (w, h) = xy(size, reference)?;
+    Ok(Rect {
+        x0: x - w / 2,
+        y0: y - h / 2,
+        x1: x + w - w / 2,
+        y1: y + h - h / 2,
+    })
 }
 
 /// The first origin, in rings out from `target`, where `g`'s keep-out box
@@ -724,7 +830,7 @@ pub struct Layout {
 }
 
 fn layout_of(items: &[Item<'_>]) -> Result<Layout, EmitError> {
-    let placed = place(items)?;
+    let (placed, edge) = place(items)?;
     let first = placed
         .first()
         .ok_or_else(|| EmitError::Internal("no parts".into()))?
@@ -737,7 +843,8 @@ fn layout_of(items: &[Item<'_>]) -> Result<Layout, EmitError> {
         x0: all.x0.div_euclid(SNAP) * SNAP,
         y0: all.y0.div_euclid(SNAP) * SNAP,
         x1: -((-all.x1).div_euclid(SNAP) * SNAP),
-        y1: -((-all.y1).div_euclid(SNAP) * SNAP),
+        // With connectors, their courtyards' bottoms are the bottom edge.
+        y1: edge.unwrap_or(-((-all.y1).div_euclid(SNAP) * SNAP)),
     };
     let pad_nets = items
         .iter()
@@ -935,6 +1042,7 @@ mod tests {
                 .collect(),
             note: None,
             decouples: None,
+            offboard: BTreeMap::new(),
         }
     }
 
@@ -1224,5 +1332,156 @@ mod tests {
                 "{id}"
             );
         }
+    }
+
+    /// A connector of `name` as `design` makes one: pins 1..N on `net`
+    /// (the last on GND), the mounting pin on GND.
+    fn connector(name: &str, reference: &str, net_name: Option<&str>) -> Part {
+        let (sym, fp) = schematic::connector_library(name).unwrap();
+        let n = aethelgard_ir::connectors::part(name).unwrap().pins;
+        let mut conns: Vec<(String, Conn)> = (1..=n)
+            .map(|i| {
+                let c = match (net_name, i == n) {
+                    (_, true) => Conn::Rail("GND".into()),
+                    (Some(x), false) => net(x),
+                    (None, false) => Conn::NoConnect,
+                };
+                (i.to_string(), c)
+            })
+            .collect();
+        conns.push(("MP".into(), Conn::Rail("GND".into())));
+        let mut p = part(sym, fp, reference, &[]);
+        p.conns = conns.into_iter().collect();
+        p
+    }
+
+    fn passives() -> Vec<Part> {
+        vec![
+            mcu(&[("34", net("A")), ("35", net("B"))]),
+            part("Device:R", R0402, "R2", &[("1", net("A")), ("2", net("B"))]),
+            part(
+                "Device:R",
+                R0402,
+                "R10",
+                &[("1", net("B")), ("2", Conn::Rail("GND".into()))],
+            ),
+        ]
+    }
+
+    /// Connectors go at the bottom edge, in reference order.
+    #[test]
+    fn connectors_go_at_the_bottom_edge_in_reference_order() {
+        let mut parts = passives();
+        parts.push(connector("SM06B-GHS-TB", "J3", None));
+        parts.push(connector("SM04B-GHS-TB", "J1", None));
+        parts.push(connector("SM10B-GHS-TB", "J10", None));
+        let l = layout(&parts).unwrap();
+        let items = items(&parts).unwrap();
+        let at = |r: &str| l.placed.iter().find(|p| p.reference == r).unwrap();
+        // String order: J1 < J10 < J3.
+        let (j1, j10, j3) = (at("J1"), at("J10"), at("J3"));
+        assert!(
+            j1.keep.x1 < j10.keep.x0 && j10.keep.x1 < j3.keep.x0,
+            "connectors are not in reference (string) order left to right"
+        );
+        assert_eq!(
+            j1.origin.1, j3.origin.1,
+            "the connectors are not in one row"
+        );
+        let o = l.outline;
+        assert_eq!(o.y1 % SNAP, 0, "the outline's bottom is off the 50 um grid");
+        assert_eq!(o.x0 % SNAP, 0, "the outline's left is off the 50 um grid");
+        assert_eq!(o.y0 % SNAP, 0, "the outline's top is off the 50 um grid");
+        assert_eq!(o.x1 % SNAP, 0, "the outline's right is off the 50 um grid");
+        for c in [j1, j10, j3] {
+            assert!(
+                c.courtyard.y1 <= o.y1,
+                "{} courtyard is past the bottom edge",
+                c.reference
+            );
+            assert!(
+                c.courtyard.y1 > o.y1 - SNAP,
+                "{} courtyard bottom is more than one SNAP above the edge",
+                c.reference
+            );
+            let i = items
+                .iter()
+                .position(|i| i.part.reference == c.reference)
+                .unwrap();
+            for pad in items[i].fp.children("pad") {
+                let r = pad_box(pad, &c.reference).unwrap();
+                assert!(
+                    c.origin.1 + r.y1 + route::EDGE_NM <= o.y1,
+                    "{} pad {} is nearer the edge than EDGE_NM",
+                    c.reference,
+                    pad.arg(1).unwrap_or("")
+                );
+            }
+            for other in &l.placed {
+                if other.reference == c.reference {
+                    continue;
+                }
+                assert!(
+                    !c.keep.grow(IC_GAP_NM).overlaps(other.keep),
+                    "{} keep box is within IC_GAP_NM of {}",
+                    c.reference,
+                    other.reference
+                );
+            }
+        }
+        assert!(
+            l.placed
+                .iter()
+                .all(|p| p.keep.y1 <= o.y1 - MARGIN_NM || p.reference.starts_with('J')),
+            "a non-connector keep box is within MARGIN_NM of the bottom edge"
+        );
+    }
+
+    /// A connector moves nothing else.
+    #[test]
+    fn a_connector_moves_no_other_part() {
+        let without = layout(&passives()).unwrap();
+        let mut parts = passives();
+        parts.push(connector("SM04B-GHS-TB", "J1", Some("A")));
+        let with = layout(&parts).unwrap();
+        assert_eq!(with.placed.len(), without.placed.len() + 1);
+        for p in &without.placed {
+            let q = with.placed.iter().find(|q| q.reference == p.reference);
+            assert_eq!(
+                q.map(|q| q.origin),
+                Some(p.origin),
+                "adding a connector moved {}",
+                p.reference
+            );
+        }
+    }
+
+    /// Every connector part of the IR table fits the edge rule, alone and
+    /// together, and the board writes.
+    #[test]
+    fn every_connector_part_places_and_writes() {
+        for row in aethelgard_ir::connectors::PARTS.iter() {
+            let mut parts = passives();
+            parts.push(connector(row.name, "J1", None));
+            let l = layout(&parts).unwrap_or_else(|e| panic!("{} does not place: {e:?}", row.name));
+            let j = l.placed.iter().find(|p| p.reference == "J1").unwrap();
+            assert!(
+                j.courtyard.y1 <= l.outline.y1 && j.courtyard.y1 > l.outline.y1 - SNAP,
+                "{} courtyard is not at the edge",
+                row.name
+            );
+            write("p", &parts, &crate::stack::reference())
+                .unwrap_or_else(|e| panic!("{} does not write: {e:?}", row.name));
+        }
+        let all: Vec<Part> = passives()
+            .into_iter()
+            .chain(
+                aethelgard_ir::connectors::PARTS
+                    .iter()
+                    .enumerate()
+                    .map(|(i, r)| connector(r.name, &format!("J{i}"), None)),
+            )
+            .collect();
+        layout(&all).expect("all four connector parts together do not place");
     }
 }
