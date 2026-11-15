@@ -243,3 +243,54 @@ The kickoff runs every KiCad, Renode and tier-2 step under `--memory X --memory-
 
   The host build, the tier-1 tests and the three gates proceed under a capped user scope. CI on GitHub runs tier 2.
 - **Without a ruling** that gives a compliant container, this work order ends `STOPPED`: §2's "every verdict is unchanged … against `main`'s binaries" cannot be shown on Furnace.
+
+## Built (commits `501a070` … `2de70f6`)
+
+| Work order item | What was built | Where |
+|---|---|---|
+| §1.1 Fmax table | **Its home: a pinned data file in `aethelgard-ir`, `data/output-speeds.json`**, with one strict parser, `speeds.rs`, on `parts.json`'s precedent. It is a part fact (the MCU's), read by the generator, the CLI and the tests, so it lives with the other shared data (`INV-01`). It holds 24 rows (4 speeds × 2 bands × 3 loads), each Fmax and tr/tf, and both citations: Table 149 (rev V) and Table 52 (rev Y), which agree in all 48 cells (`~/.cache/aet-4300c/fmax/extract.py` asserts it on the text extraction; the values were checked against the rendered pages 245–246). Rows `10`/`11` carry note 5 and are never selectable. The file also holds note 2's VBAT pins and D1's reason why I2C has no row. The parser refuses by name: a malformed row, a missing citation, a missing or repeated row, note 5 on the wrong speed, and a heavier load given a higher Fmax or a faster edge. | `crates/aethelgard-ir/data/output-speeds.json`, `src/speeds.rs`, `tests/speeds.rs` |
+| §1.2 + §1.4 the check and the choice | `OutputSpeeds::choose` picks the slowest of `00`/`01` whose Fmax ≥ the rate and whose tr/tf ≤ the declared rise time (F-b). The band comes from VDD minimum (2.7 V exactly takes the lower band); C is rounded up to the next row. It refuses above 50 pF, outside 1.62–3.6 V, or when only `10`/`11` would serve; nothing is sped up. The generator computes every pin's speed in `Plan::new` (`pin_speeds`): SCK and MOSI from `spi_lines`; I2C, MISO and GPIO outputs at `00`, each with its named reason (D1, D3 (ii), D4). | `svd-hal/src/board.rs` |
+| D2 declared C, schema | Specification v3: SCK and MOSI each need a `net_constraint` (`MissingSpiConstraint` in `solve`, beside `MissingBusConstraint`). Solved topology v4: `spi_lines` holds what the check reads (bus, signal, rate, C, rise time, VDD minimum). Its `validate` refuses a forged or missing line (`SpiLineMismatch`) and re-checks every part limit from what it carries (§4.2). | `ir/src/lib.rs`, `solve.rs` |
+| D2/D3 extraction | `extract::lines` adds each SPI bus's SCK and MOSI after the I2C lines, which are unchanged. On SCK/MOSI each device pad counts at its part's cited maximum; the MCU pad (the driver) is copper only and is listed as `drivers`; a part with no cited maximum is `UnboundedPinCapacitance`. The CLI judges SPI lines against `spi_lines` and states the SPI pin convention as one extra condition, so `conditions()` and FAB-NOTES are unchanged. | `eda/src/extract.rs`, `cli/src/extract.rs` |
+| D3 `pin_capacitance` | Parts table v2: a required `pin_capacitance.max_femtofarads` (null when no maximum is printed) with its own citation. W25Q64JV 8000 fF (§9.4 Cout 8 pF; CIN 6; sampled at 25 °C and 3.0 V, stated). ICM-20948, TMP117 and BME280 are null, each citing why. The W25Q64JV's §9.5 TR/TF 5 ns is recorded as a measurement condition, as ruled. | `ir/data/parts.json`, `parts.rs` |
+| §1.5 limits at `validate` | Step 14, each refusal citing the datasheet: `SpiClockAbovePart`, `I2cAddressNotOffered`, `PartOnWrongBus`, and `AmbiguousPartName` for the bare `W25Q64JV`. **F20:** a `SPI.GenericSpiFlash` part's identity must be write `0x9F`, read 3, capacity `0x10`–`0x19` (the twin's own shape). | `ir/src/lib.rs`, `parts.rs` |
+| §1.6 F21 | `spi1`, `spi2`, `spi3`, `spi5` and `spi6` join `RESERVED_REFERENCES` (`spi4` was already there from the stock chain). The twin's exact test now derives the emitter's controller names too. | `ir/src/lib.rs`, `twin/tests/reserved_names.rs` |
+| §1.7 F11 | `W25Q64JVxIQ` in the table, every fixture, eda's map and the examples. The bare name is refused by name. The schematic `Value` is now the full ordering code, `W25Q64JVSSIQ` (SS is the drawn SOIC-8 208-mil footprint; F-g below). | `parts.json`, `eda/src/schematic.rs` |
+| Verdict surface (F-c) | `aethelgard check speeds --spec`, also an MCP tool (`check_speeds`, since tools derive from the CLI tree). | `cli/src/speeds.rs` |
+| D1 fixture (F-d) | Raised to 150,000 fF on its eight I2C lines; SCK0/MOSI0 declared. A tier-1 test runs `extract` on D1 at 4 layers and needs every line to pass; it is killed by the old 100,000 fF (7 findings, exit 1) [measured]. | `fixtures/d1-24-i2c.json`, `stackups_tier1.rs` |
+| Reduction (ruled) | `spi/4300c/` deleted; the reproduce line points at `139226e`. | — |
+
+### Further forks taken during the build
+
+- **F-f · A part absent from the table is not refused at `validate`.** That is the behaviour before this work order: `emit` refuses an unmodelled part (`UnknownPart`), and the solve fixtures use synthetic parts. Such a part has no limit to enforce, so the check skips it rather than inventing one.
+- **F-g · The flash's schematic `Value` became `W25Q64JVSSIQ`.** `W25Q64JVSS` on a BOM can be bought as an IM part, whose JEDEC identity (`EF 70 17`) the firmware would fail, which is exactly F11's hazard. This changes the BOM, schematic and board `Value`, and so the fabrication package's hashes. Nothing of it is committed.
+- **F-h · Extraction reads each device's part from the solved topology** (`solved.spi_devices`), not the specification, so `solved_devices.rs`'s RUL-16 pin (schematic.rs is the one eda reader of the declared device lists) still holds unchanged.
+
+### Results, each beside its prediction
+
+| # | Prediction | Result | Label |
+|---|---|---|---|
+| B1 | Reference SCK 18.5, MOSI 17.2 pF (±1 fF of the probe's column B) | **SCK 18,521 fF** (trace 5920, vias 3038, pads 1563, pins 8000), **MOSI 17,188 fF**. 4-layer: 18,470 / 17,114. D1: 19,183 / 17,486 | measured |
+| B2 | Declared 30 pF (50 on D3) | As declared. Every bound is under 30 pF, so extraction confirms all six SCK/MOSI declarations on the three boards that exist | measured |
+| B3 | SCK/MOSI `01`, MISO `00`, CS and I2C `00`; ICM fixture `00` | As predicted on all four boards (`check speeds`, `speeds_tier1.rs`) | measured |
+| B4 | 3135 mV, upper band; 2.7 V takes the lower | As predicted (`tests/speeds.rs`) | measured |
+| B5 | D1 passes extract after F-d | 8 I2C lines 97,767–119,603 fF under 150,000; SCK0/MOSI0 under 30,000 | measured |
+| B6 | Reference files change only in the spec hash, the SPI speed fields and the part name | As predicted. The 8 changed files under `boards/sentinel-01/` differ only in the spec-hash line, three `OSPEEDR` writes (PA5 and PA7 `10`→`01`, PA6 `10`→`00`), their three oracle lines and one combined mask, and the doc comment `a W25Q64JV` → `a W25Q64JVxIQ`. The `.repl` changes only in its hash line | measured (`git show e60cd48`) |
+| B7 | No tier-2 time; `TIER2_MIN` stays 96 | No tier-2 test was added; `TIER2_MIN` stays 96 | read |
+| B8 | Verdicts unchanged against `main`'s binaries | **Not measured: the container question** | — |
+| B9 | Note 2 never reached on the LQFP144 | As predicted; held as data and tested (`a_vbat_pin_is_held_to_2_mhz`) | read, measured |
+
+### Refusals shadowed by an earlier one (reduction candidates outside this fence)
+
+§1.5 and F21 now refuse earlier what three later checks refused before:
+- eda's `UnsupportedAddress`, for a part in the table;
+- the twin's `ModelOffItsBus`;
+- the twin's `InvalidDeviceName` for `spi1`–`spi6`.
+
+The tests that asserted them now assert the earlier refusal, each with a comment saying why: `emit_tier1`, `extract_tier1`, `twin platform::tests` and `spi_platform`. The later checks stay as the emitter's own guard. Deleting them is outside this fence (eda beyond the line list, and the twin), so it is a **backlog row**.
+
+### Backlog rows (from the ruling and the build)
+
+- **Vendor the ICM-20948 symbol**, so its fixture has a board and its declared C can be confirmed (ruled D2).
+- **The MCU's input capacitance as a maximum**, to judge a device's drive into MISO (ruled D3).
+- The three shadowed refusals above.
