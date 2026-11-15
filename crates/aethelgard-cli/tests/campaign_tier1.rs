@@ -128,13 +128,14 @@ const INJECTION: &str = "AETHELGARD-INJECT-BEGIN\n0x0028A801\n0x00000770\nAETHEL
 
 /// The console's bring-up as Renode 1.17.0's access log shows it
 /// (`AET-WO-4300b` fix 1, measured): PA10's and PA9's AF7, their modes, then
-/// USART1's `BRR`, `CR2`, `CR1`, `CR1 | UE`, then the pattern's first byte.
+/// USART1's `BRR`, `CR2`, `CR1`, `CR1 | UE` (in FIFO mode), then the
+/// pattern's first byte.
 const CONSOLE_ACCESS: &str = "[00:00:00.000000000] [INFO] gpioPortA: [cpu: 0x80009BC] WriteUInt32 to 0x24 (AlternateFunctionHigh), value 0x770\n\
 [00:00:00.000000000] [INFO] gpioPortA: [cpu: 0x80009BC] WriteUInt32 to 0x0 (Mode), value 0x28A801\n\
 [00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0xC (BaudRate), value 0x22C\n\
 [00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x4 (ControlRegister2), value 0x0\n\
-[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x0 (ControlRegister1), value 0xC\n\
-[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x0 (ControlRegister1), value 0xD\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x0 (ControlRegister1), value 0x2000000C\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x0 (ControlRegister1), value 0x2000000D\n\
 [00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x28 (TransmitData), value 0x43\n";
 
 /// What USART1's file backend holds after a boot of `firmware` that sent
