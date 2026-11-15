@@ -255,10 +255,10 @@ Key to "today": **T** = emitted from `SolvedTopology` today; **S** = the value e
 | C | `SERIAL_ORDER EMPTY`, `define HAL_USE_ADC FALSE` | ok | **fails** | `StorageManager.h:30: "HAL_STORAGE_SIZE" is not defined` |
 | D | `define HAL_STORAGE_SIZE 16384` | ok | **fails** | `UARTDriver.cpp:514: 'SerialDriver' was not declared` (`EMPTY` alone leaves no serial driver) |
 | E | D, with `SERIAL_ORDER OTG1` and PA11/PA12 in place of `EMPTY` | ok | **fails** | the same `#error "SERIAL driver activated but no USART/UART peripheral assigned"` |
-| F | D, with `SERIAL_ORDER USART3`, PD8 and PD9 in place of `EMPTY` | ok | **builds**: 48.1 s wall, 280 CPU-s, peak 1.04 GB; 1,286,028 B of flash | — but `FLASH_LOAD_ADDRESS 0x08004000`: the default 16 KB reserve with no bootloader leaves the reset vector empty, so it would not boot |
+| F | D, with `SERIAL_ORDER USART3`, PD8 and PD9 in place of `EMPTY` | ok | **builds**: 48.1 s wall, 280 CPU-s, peak 1.04 GB; 1,286,028 B of flash | — but `FLASH_LOAD_ADDRESS 0x08004000`: the default 16 KB reserve with no bootloader leaves 0x08000000 empty, so it would not boot from reset [inferred] |
 | **G** | `FLASH_RESERVE_START_KB 0` | ok | **builds**: 48.4 s, 280.5 CPU-s, peak 1.06 GB; 1,285,344 B of flash, 811,804 B free; `FLASH_LOAD_ADDRESS 0x08000000` | — |
 
-**Step G is `spike/4400/sentinel-01.hwdef.dat`.** It has 21 lines, each tagged:
+**Step G, `spike/4400/hwdef/step-g.hwdef.dat`, is S3's file.** It has 21 lines, each tagged:
 - **9 `[T]`**, emitted from the topology today: the five pin lines, the chip select, `I2C_ORDER`, and `BARO`, whose driver name is a mapping. Also the bus and CS fields of `SPIDEV`, whose speed is `[S]` and whose mode and role are `[N]`.
 - **1 `[S]`**: `MCU`.
 - **11 `[N]`**: `OSCILLATOR_HZ`, `FLASH_SIZE_KB`, `APJ_BOARD_ID`, the bootloader define, the logger role, `SERIAL_ORDER` and the two USART pins, `HAL_USE_ADC FALSE`, `HAL_STORAGE_SIZE` and `FLASH_RESERVE_START_KB`.
