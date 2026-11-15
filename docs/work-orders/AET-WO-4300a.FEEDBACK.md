@@ -238,3 +238,17 @@ Reduction pass (diff): −44 net · 4 duplicates removed · 1 dead path removed 
 - `HSE_PINS`, read only by a test of its own value, folded into `RESERVED_PINS`' doc (dead path);
 - the four motor finding kinds listed once (`MOTOR_FINDINGS`).
 Protected, kept (`belt-and-suspenders:`): the generator's `timer_oracle`; replay's `TWIN_CYCLE_NS`/`GRAIN`/`QUANTUM`, `silicon_check` and the observer path. Findings for the owner, not removed: (F1) the witness status strings live in four places across the CLI, chaos and evolve; (F2) `board.rs`'s `TimerShared` and duplicate-channel branches cannot fire after `validate()`; (F3) the twin's `CR1_CEN`, `CR1_ARPE`, `OCM_PWM1` and channel shifts restate the generator's under the existing `INV-07` label; (F4) `motor::has_main_output_enable` and `apb()` hold the same timer set for different hardware reasons; (F5) `TIMER_NAMES` spells `format!("timer{n}")` out because `AddressMismatch.name` is `&'static str`; (F6) the witness fields are copied three times in three shapes; (F7) `MotorProtocol::name()` restates serde's spelling; (F8) no weakened test seen.
+
+## 9. Resume after the ruling (PR #145, comment 6892698852)
+
+The architect ruled D1 (a), Q1 accepted (`SetGlobalQuantum` stated, a deviation of form), Q2 in this work order, Q3 stated in the verdict and owned by `4500`, Q4 a manifest version bump with `spec` required, Q5 the targeted harnesses with `verify` stating what ran. The second fresh review's findings (`~/.cache/aet-4300a/adv2-findings.md`, on `a2c4fa4`) are inside the fence: F1 (a wrong attribution in this work order's own rule) blocks READY, and F2–F6 are fixed with it. That is a stated addition to the ruling's list, not a silent one.
+
+### Predictions (committed before any run of the resume)
+
+- **P10, D1 window.** The DShot600 fixture's campaign at a 2 ms window passes: all four outputs `witnessed` (about 4,660 rises each, as `simulate --for 2ms` measured), the log about 2.8 MB, under the 8 MiB budget, and both identity reads (U2, U4) complete inside it. [inferred from P5.2 and §1.8's 2 ms boot]
+- **P11, a late event.** A droop whose effects end after 2 ms on a DShot board is refused before any boot, `DroopRefused`, naming its end time and the window. [read: `check_droop` refuses past its span]
+- **P12, a read outside the window.** A held-low SCL on the DShot fixture: the I2C wait loops run past 2 ms, so the boot word is not set and the verdict names U2's read as not completed inside the window. [inferred; the loops' length is not measured]
+- **P13, a mixed board.** A PWM output at 400 Hz beside a DShot one cannot show two rises in 2 ms (its model period is 2.56 ms): the verdict names it unwitnessed with the window as the reason. This is a question for the architect, not widened here. [computed]
+- **P14, Q2.** Renode's `RCC_CR` reads 0x25 (P1.1), so `HSIDIV` is 0 and the motor fixtures still boot; the Kani harness proves the check, and a copy whose check omits `HSIDIV` fails it as a failed proof. [inferred]
+- **P15, Q4.** The reference mutants, generating their board from `examples/sentinel-01-minimal.json`, give the same evidence as the committed board (the regeneration guard holds them byte-identical). [inferred]
+- **P16, Q5.** `verify` on the PWM fixture runs the targeted harnesses, names `every_valid_sequence` as not run in an info finding, and otherwise passes. [inferred]
