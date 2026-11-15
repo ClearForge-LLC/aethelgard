@@ -466,7 +466,7 @@ fn telem_with_floating_flow_control_is_refused_at_tx() {
     assert!(
         matches!(&err, E::ConnectorPinContradictsStandard { pin, role: "TX (OUT)", net: None, .. }
             if pin == "2"),
-        "no serial net exists in this schema, so TX refuses null: {err}"
+        "a serial pin may not float, so TX refuses null: {err}"
     );
 }
 

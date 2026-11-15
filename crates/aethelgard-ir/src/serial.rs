@@ -20,8 +20,10 @@ use serde::de::value::MapAccessDeserializer;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::Signal;
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::motor::SolvedClock;
+use crate::{IrValidationError, Signal, SolvedTopology};
 
 /// What a port carries. The framing is declared, never inferred from it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -83,8 +85,11 @@ pub struct Framing {
 
 impl Framing {
     /// The word length the receiver samples: data bits plus a parity bit.
+    /// Saturating, so a deserialized `data_bits` of 255 gives no word
+    /// rather than an overflow.
     pub fn word_bits(&self) -> u8 {
-        self.data_bits + u8::from(self.parity != Parity::None)
+        self.data_bits
+            .saturating_add(u8::from(self.parity != Parity::None))
     }
 
     /// `USART_CR1.M[1:0]` for the word (RM0433 Rev 9 §48.8.1): `00` 8 bits,
@@ -247,6 +252,20 @@ pub fn tolerance(brr: u32, m_bits: u8) -> Option<&'static ToleranceRow> {
         .find(|r| r.table == table && r.m_bits == m_bits)
 }
 
+/// Whether the error of `kernel_hz / brr` against `baud` is strictly below
+/// `tolerance_ppm` (RM0433's "<"), in exact integers:
+/// `|kernel − BRR·baud| · 10⁶ < tolerance · BRR·baud`.
+///
+/// With `BRR` the nearest whole `USARTDIV` and at least 16, the error is at
+/// most `1 / (2·BRR)`: 3.125 % at `BRR` 16 (Table 406, whose tightest row is
+/// 3.41 %) and 2.94 % from `BRR` 17 on (Table 407, tightest 3.03 %). So no
+/// baud [`solve_brr`] admits fails this on any kernel clock; the check
+/// refuses only a `BRR` that is not the solved one.
+pub fn within(kernel_hz: u64, brr: u32, baud: u32, tolerance_ppm: u32) -> bool {
+    let d = u128::from(brr) * u128::from(baud);
+    u128::from(kernel_hz).abs_diff(d) * 1_000_000 < u128::from(tolerance_ppm) * d
+}
+
 /// The baud a `BRR` gives on `kernel_hz`, in thousandths of a baud, rounded
 /// down.
 pub fn actual_millibaud(kernel_hz: u64, brr: u32) -> u64 {
@@ -323,9 +342,12 @@ pub fn check_silicon(clock: &SolvedClock, port: &SolvedSerialPort) -> SiliconFra
         .is_some_and(|k| k == port.kernel_hz && solve_brr(k, port.framing.baud) == Some(port.brr));
     let shape_ok = port.framing.stop_field().is_some();
     let within = tolerance.is_some_and(|row| {
-        // |kernel − BRR·baud| / (BRR·baud) < tolerance, times 10⁶·BRR·baud.
-        let d = u128::from(port.brr) * u128::from(port.framing.baud);
-        u128::from(port.kernel_hz).abs_diff(d) * 1_000_000 < u128::from(row.tolerance_ppm) * d
+        within(
+            port.kernel_hz,
+            port.brr,
+            port.framing.baud,
+            row.tolerance_ppm,
+        )
     });
     SiliconFraming {
         kernel_hz: port.kernel_hz,
@@ -372,6 +394,162 @@ pub fn contradiction(role: SerialRole, framing: &Framing) -> Option<(&'static st
         ));
     }
     None
+}
+
+/// Step 13c of [`crate::Specification::validate`], each port in document
+/// order: a label unique with case folded; a peripheral that is `null` or one
+/// of [`PERIPHERALS`] exactly (`LPUART1`, in any case, refused by its own
+/// name), and not another port's; the framing's shape; and no contradiction
+/// of the role's published framing ([`contradiction`]). The nets are step 11's
+/// and a constraint on one step 14's.
+pub(crate) fn validate(ports: &[SerialPort]) -> Result<(), IrValidationError> {
+    use IrValidationError as E;
+
+    let mut labels: BTreeMap<String, &str> = BTreeMap::new();
+    let mut peripherals: BTreeMap<&str, &str> = BTreeMap::new();
+    for port in ports {
+        let id = || port.label.clone();
+        if labels
+            .insert(port.label.to_lowercase(), &port.label)
+            .is_some()
+        {
+            return Err(E::DuplicateSerialLabel { id: id() });
+        }
+        if let Some(p) = port.peripheral.as_deref() {
+            if p.eq_ignore_ascii_case(LPUART) {
+                return Err(E::SerialPeripheralLpuart {
+                    id: id(),
+                    peripheral: p.to_owned(),
+                });
+            }
+            if !PERIPHERALS.contains(&p) {
+                return Err(E::UnknownSerialPeripheral {
+                    id: id(),
+                    peripheral: p.to_owned(),
+                });
+            }
+            if let Some(first) = peripherals.insert(p, &port.label) {
+                return Err(E::SerialPeripheralTwice {
+                    id: id(),
+                    first: first.to_owned(),
+                    peripheral: p.to_owned(),
+                });
+            }
+        }
+        if let Some((field, value, rule)) = shape_error(&port.framing) {
+            return Err(E::SerialFramingShape {
+                id: id(),
+                field,
+                value,
+                rule,
+            });
+        }
+        if let Some((field, required)) = contradiction(port.role, &port.framing) {
+            return Err(E::SerialFramingContradictsRole {
+                id: id(),
+                role: port.role.name(),
+                field,
+                required,
+                citation: CRSF_SOURCE,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The first field of `framing` outside the shape the firmware can write:
+/// a baud above 0, 7 to 9 data bits, a word (data and parity) of 7 to 9 bits
+/// (`M[1:0]`), and 1 or 2 stop bits (`STOP`).
+fn shape_error(framing: &Framing) -> Option<(&'static str, u32, &'static str)> {
+    if framing.baud == 0 {
+        return Some(("baud", 0, "a baud is above 0"));
+    }
+    if !(7..=9).contains(&framing.data_bits) {
+        return Some((
+            "data_bits",
+            u32::from(framing.data_bits),
+            "7 to 9 data bits",
+        ));
+    }
+    if framing.m_bits().is_none() {
+        return Some((
+            "parity",
+            u32::from(framing.word_bits()),
+            "the data bits and a parity bit make a word of 7 to 9 bits (RM0433 Rev 9 §48.8.1, `USART_CR1.M[1:0]`), and this many is the word",
+        ));
+    }
+    if framing.stop_field().is_none() {
+        return Some((
+            "stop_bits",
+            u32::from(framing.stop_bits),
+            "1 or 2 stop bits (RM0433 Rev 9 §48.8.2, `USART_CR2.STOP` `00` or `10`)",
+        ));
+    }
+    None
+}
+
+/// Whether `peripheral` is a USART, UART or LPUART name: an assignment on
+/// one belongs to a serial port.
+fn is_serial_peripheral(peripheral: &str) -> bool {
+    ["USART", "UART", "LPUART"]
+        .iter()
+        .any(|prefix| peripheral.starts_with(prefix))
+}
+
+/// The serial step of [`crate::SolvedTopology::validate`]: `serial_ports`
+/// agrees with `assignments` and with what this module recomputes from the
+/// topology's clock and each port's framing. Labels and nets were checked as
+/// identifiers before.
+pub(crate) fn validate_solved(topology: &SolvedTopology) -> Result<(), IrValidationError> {
+    let mismatch = |id: &str| IrValidationError::SerialPortMismatch { id: id.to_owned() };
+    let mut owners: BTreeMap<&str, &str> = BTreeMap::new();
+    for (label, port) in &topology.serial_ports {
+        for net in [&port.tx, &port.rx] {
+            if owners.insert(net, label).is_some() {
+                return Err(mismatch(label));
+            }
+        }
+    }
+    for (net, a) in &topology.assignments {
+        let owned = owners
+            .get(net.as_str())
+            .is_some_and(|label| topology.serial_ports[*label].peripheral == a.peripheral);
+        if is_serial_peripheral(&a.peripheral) != owned {
+            return Err(mismatch(net));
+        }
+    }
+    let mut indices = BTreeSet::new();
+    let mut peripherals = BTreeSet::new();
+    for (label, port) in &topology.serial_ports {
+        let p = port.peripheral.as_str();
+        let on = |net: &str, signal: &str| {
+            topology
+                .assignments
+                .get(net)
+                .is_some_and(|a| a.peripheral == p && a.signal == format!("{p}_{signal}"))
+        };
+        let in_range = usize::try_from(port.index).is_ok_and(|i| i < topology.serial_ports.len());
+        let f = &port.framing;
+        let solved = kernel_hz(&topology.clock, p).is_some_and(|k| {
+            k == port.kernel_hz
+                && solve_brr(k, f.baud) == Some(port.brr)
+                && port.actual_millibaud == actual_millibaud(k, port.brr)
+                && port.error_ppm == error_ppm(k, port.brr, f.baud)
+        });
+        if !PERIPHERALS.contains(&p)
+            || !on(&port.tx, "TX")
+            || !on(&port.rx, "RX")
+            || !in_range
+            || !indices.insert(port.index)
+            || !peripherals.insert(p)
+            || shape_error(f).is_some()
+            || contradiction(port.role, f).is_some()
+            || !solved
+        {
+            return Err(mismatch(label));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

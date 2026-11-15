@@ -906,6 +906,49 @@ pub enum IrValidationError {
         "motor output `{id}` disagrees with the solved topology: its net is one `TIMn_CHk` assignment of a timer with channels, each channel once, indices exactly 0..n, `pwm` present exactly for PWM, and PSC, ARR and CCR within the timer (CCR from 1 to ARR - 1, so a fall never meets the next update)"
     )]
     MotorOutputMismatch { id: String },
+    #[error("serial port `{id}` is declared twice (labels are compared with case folded)")]
+    DuplicateSerialLabel { id: String },
+    #[error(
+        "serial port `{id}` names `{peripheral}`: LPUART1 is refused, because its enable bit is in `RCC_APB4ENR`, outside the enable registers the generated firmware writes, and its baud generator is not a USART's; name one of USART1, USART2, USART3, UART4, UART5, USART6, UART7, UART8, or null"
+    )]
+    SerialPeripheralLpuart { id: String, peripheral: String },
+    #[error(
+        "serial port `{id}` names peripheral `{peripheral}`, which is none of USART1, USART2, USART3, UART4, UART5, USART6, UART7, UART8 (as written, in upper case), nor null"
+    )]
+    UnknownSerialPeripheral { id: String, peripheral: String },
+    #[error(
+        "serial ports `{first}` and `{id}` both name peripheral `{peripheral}`: a USART carries one port"
+    )]
+    SerialPeripheralTwice {
+        id: String,
+        first: String,
+        peripheral: String,
+    },
+    #[error("serial port `{id}`: `framing.{field}` is {value}; {rule}")]
+    SerialFramingShape {
+        id: String,
+        field: &'static str,
+        value: u32,
+        rule: &'static str,
+    },
+    #[error(
+        "serial port `{id}` has role `{role}`: `framing.{field}` must be {required} ({citation})"
+    )]
+    SerialFramingContradictsRole {
+        id: String,
+        role: &'static str,
+        field: &'static str,
+        required: String,
+        citation: &'static str,
+    },
+    #[error(
+        "net constraint on `{id}`, a serial port's TX or RX: no check reads it, so it cannot be held (the line leaves the board at a connector, and its load is off-board)"
+    )]
+    UnjudgedSerialConstraint { id: String },
+    #[error(
+        "serial port or net `{id}` disagrees with the solved topology: every assignment on a USART or UART is one port's TX or RX on `<peripheral>_TX` or `_RX` of the port's own peripheral, one of USART1 to UART8, each peripheral once, indices exactly 0..n, the framing's shape valid and not contradicting its role, and the kernel clock, BRR, actual baud and error what `serial` recomputes from the clock"
+    )]
+    SerialPortMismatch { id: String },
     #[error(
         "timer `{id}` carries outputs that differ in protocol, rate, PSC or ARR: the outputs of one timer share its counter"
     )]
@@ -1063,6 +1106,14 @@ impl IrValidationError {
             Self::PulseExceedsPeriod { .. } => "PulseExceedsPeriod",
             Self::UnjudgedMotorConstraint { .. } => "UnjudgedMotorConstraint",
             Self::MotorOutputMismatch { .. } => "MotorOutputMismatch",
+            Self::DuplicateSerialLabel { .. } => "DuplicateSerialLabel",
+            Self::SerialPeripheralLpuart { .. } => "SerialPeripheralLpuart",
+            Self::UnknownSerialPeripheral { .. } => "UnknownSerialPeripheral",
+            Self::SerialPeripheralTwice { .. } => "SerialPeripheralTwice",
+            Self::SerialFramingShape { .. } => "SerialFramingShape",
+            Self::SerialFramingContradictsRole { .. } => "SerialFramingContradictsRole",
+            Self::UnjudgedSerialConstraint { .. } => "UnjudgedSerialConstraint",
+            Self::SerialPortMismatch { .. } => "SerialPortMismatch",
             Self::TimerShared { .. } => "TimerShared",
             Self::UnsupportedClock => "UnsupportedClock",
             Self::UnknownConnectorPart { .. } => "UnknownConnectorPart",
@@ -1163,7 +1214,15 @@ impl IrValidationError {
             | Self::PulseExceedsPeriod { id, .. }
             | Self::UnjudgedMotorConstraint { id }
             | Self::MotorOutputMismatch { id }
-            | Self::TimerShared { id } => Some(id),
+            | Self::TimerShared { id }
+            | Self::DuplicateSerialLabel { id }
+            | Self::SerialPeripheralLpuart { id, .. }
+            | Self::UnknownSerialPeripheral { id, .. }
+            | Self::SerialPeripheralTwice { id, .. }
+            | Self::SerialFramingShape { id, .. }
+            | Self::SerialFramingContradictsRole { id, .. }
+            | Self::UnjudgedSerialConstraint { id }
+            | Self::SerialPortMismatch { id } => Some(id),
             Self::CrystalNotSupported { .. } | Self::UnsupportedClock => None,
             Self::PartsTable { part, .. } => part.as_deref(),
             Self::CeilingNotDerived { bus, .. }
@@ -1518,6 +1577,15 @@ impl Specification {
                 });
             }
         }
+        let serial_nets = self
+            .serial_ports
+            .iter()
+            .flat_map(|p| [&p.tx.net, &p.rx.net]);
+        for net in serial_nets {
+            if self.net_constraints.iter().any(|c| &c.net_name == net) {
+                return Err(IrValidationError::UnjudgedSerialConstraint { id: net.clone() });
+            }
+        }
         // Each device's supply within its part's range (adversarial 2):
         // step 5 checked every supply names a domain.
         let devices = self
@@ -1756,6 +1824,7 @@ impl Specification {
                     .flat_map(|b| [&b.sck, &b.mosi, &b.miso]),
             )
             .chain(self.spi_devices.iter().map(|d| &d.cs))
+            .chain(self.serial_ports.iter().flat_map(|p| [&p.tx, &p.rx]))
             .map(|s| &s.net)
             .chain(self.motor_outputs.iter().map(|m| &m.label));
         for net in signals {
@@ -1769,17 +1838,16 @@ impl Specification {
                 return Err(E::NetShadowsDomain { id: net.clone() });
             }
         }
-        // A motor output's net is a signal that leaves the board; named
-        // `GND`, it would join the emitter's ground (second adversarial
-        // review, F2).
-        if let Some(m) = self
-            .motor_outputs
-            .iter()
-            .find(|m| m.label.eq_ignore_ascii_case(GND))
-        {
-            return Err(E::NetShadowsDomain {
-                id: m.label.clone(),
-            });
+        // A motor output's net, or a serial port's, is a signal that leaves
+        // the board; named `GND`, it would join the emitter's ground (`4300a`
+        // second adversarial review, F2).
+        let mut leaving = self.motor_outputs.iter().map(|m| &m.label).chain(
+            self.serial_ports
+                .iter()
+                .flat_map(|p| [&p.tx.net, &p.rx.net]),
+        );
+        if let Some(net) = leaving.find(|n| n.eq_ignore_ascii_case(GND)) {
+            return Err(E::NetShadowsDomain { id: net.clone() });
         }
         // 12
         let mut constrained = BTreeSet::new();
@@ -1815,7 +1883,8 @@ impl Specification {
         for m in &self.motor_outputs {
             motor_shape(m)?;
         }
-        Ok(())
+        // 13c: each serial port, in document order (`AET-WO-4300b`).
+        serial::validate(&self.serial_ports)
     }
 
     /// Step 2, in the order the README lists.
@@ -1873,6 +1942,13 @@ impl Specification {
         for (i, m) in self.motor_outputs.iter().enumerate() {
             plain(&m.label, || format!("motor_outputs[{i}].label"))?;
             optional_identifier(&m.pin, || format!("motor_outputs[{i}].pin"))?;
+        }
+        for (i, p) in self.serial_ports.iter().enumerate() {
+            let at = format!("serial_ports[{i}]");
+            plain(&p.label, || format!("{at}.label"))?;
+            optional_identifier(&p.peripheral, || format!("{at}.peripheral"))?;
+            signal_identifiers(&p.tx, &format!("{at}.tx"))?;
+            signal_identifiers(&p.rx, &format!("{at}.rx"))?;
         }
         connectors::identifiers(self)
     }
@@ -2115,6 +2191,12 @@ impl SolvedTopology {
         for net in self.motor_outputs.keys() {
             plain(net, || format!("motor_outputs.{net}"))?;
         }
+        for (label, p) in &self.serial_ports {
+            plain(label, || format!("serial_ports.{label}"))?;
+            plain(&p.peripheral, || format!("serial_ports.{label}.peripheral"))?;
+            plain(&p.tx, || format!("serial_ports.{label}.tx"))?;
+            plain(&p.rx, || format!("serial_ports.{label}.rx"))?;
+        }
         plain(&self.clock.source, || "clock.source".into())?;
         for (net, a) in &self.assignments {
             if a.alternate_function > 15 {
@@ -2148,6 +2230,7 @@ impl SolvedTopology {
         self.validate_spi_devices()?;
         self.validate_spi_lines()?;
         self.validate_motor_outputs()?;
+        serial::validate_solved(self)?;
         // The part limits again, from what the topology carries, so a bus
         // sped up or a device moved after `validate` is refused here too
         // (`AET-WO-4300c` §4.2, `RUL-16`).
@@ -2237,6 +2320,24 @@ impl SolvedTopology {
             .filter_map(|(net, m)| self.assignments.get(net).map(|a| (net.as_str(), m, a)))
             .collect();
         out.sort_by_key(|(_, m, _)| m.index);
+        out
+    }
+
+    /// The serial ports in the specification's order, with the assignments
+    /// of their TX and RX nets.
+    pub fn serial_ports_in_order(
+        &self,
+    ) -> Vec<(&str, &SolvedSerialPort, &PinAssignment, &PinAssignment)> {
+        let mut out: Vec<_> = self
+            .serial_ports
+            .iter()
+            .filter_map(|(label, p)| {
+                let tx = self.assignments.get(&p.tx)?;
+                let rx = self.assignments.get(&p.rx)?;
+                Some((label.as_str(), p, tx, rx))
+            })
+            .collect();
+        out.sort_by_key(|(_, p, _, _)| p.index);
         out
     }
 

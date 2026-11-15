@@ -10,7 +10,8 @@
 //! and the [`crate::SolvedTopology`] never carries it, so the twin, which
 //! reads only the latter (`RUL-16`), cannot see one.
 //!
-//! **Off-board capacitance (D8).** A pin on an I2C or SPI line declares the
+//! **Off-board capacitance (D8).** A pin on an I2C or SPI line, and only
+//! there (not a motor output's or a serial port's), declares the
 //! capacitance beyond the board: the mated contact, the cable and the remote
 //! pins, with the source of the number. Extraction adds it to the board's own
 //! copper, so a line's bound stays a bound (`RUL-19` (1)).
@@ -161,6 +162,11 @@ pub(crate) enum NetKind<'s> {
     /// A motor output's net (`AET-WO-4300a` §1.8): it leaves the board at
     /// a connector, on no bus, so it declares no off-board capacitance.
     Motor,
+    /// A serial port's TX or RX net, with the port's label
+    /// (`AET-WO-4300b`): on no bus, so, like a motor output's, it declares
+    /// no off-board capacitance (D8 covers I2C and SPI lines only).
+    SerialTx(&'s str),
+    SerialRx(&'s str),
 }
 
 impl NetKind<'_> {
@@ -191,6 +197,10 @@ fn net_kinds(spec: &Specification) -> BTreeMap<&str, NetKind<'_>> {
     }
     for m in &spec.motor_outputs {
         kinds.insert(m.label.as_str(), NetKind::Motor);
+    }
+    for p in &spec.serial_ports {
+        kinds.insert(p.tx.net.as_str(), NetKind::SerialTx(&p.label));
+        kinds.insert(p.rx.net.as_str(), NetKind::SerialRx(&p.label));
     }
     kinds
 }

@@ -12,12 +12,23 @@
 //! (Sentinel-02's SWD). The analog power port is `AET-WO-4300d`'s (D6); the
 //! SPI and full debug ports have no vendored part; CAN (a GH 4-pin) is left
 //! out until a work order declares a CAN bus. A role whose net this schema
-//! cannot yet declare (a serial port's TX, a safety switch, SWD) refuses
-//! every net until the work order that declares it, unless DS-009 lets the
-//! pin float, so today only `"DS-009 I2C"` can validate. [`Role::name`]
-//! gives DS-009's signal and voltage columns together for a supply
-//! (`"VCC +5V"`). DS-009's "1.5K pullup on autopilot" on its I2C port is not
-//! judged.
+//! cannot yet declare (a safety switch, a LED, a buzzer, SWD) refuses every
+//! net until the work order that declares it, unless DS-009 lets the pin
+//! float. Since `AET-WO-4300b` declares serial ports, `"DS-009 I2C"`,
+//! `"DS-009 TELEM"` and `"DS-009 GPS"` can validate; `"DS-009 GPS FULL"`
+//! (safety switch, LED, buzzer) and `"DS-009 DEBUG MINI"` (SWD) cannot.
+//! [`Role::name`] gives DS-009's signal and voltage columns together for a
+//! supply (`"VCC +5V"`). DS-009's "1.5K pullup on autopilot" on its I2C port
+//! is not judged.
+//!
+//! **Serial direction.** DS-009's pin tables are the autopilot's side: "TX
+//! (OUT)" is the autopilot's output, and the peripheral crosses the lines
+//! ("Cables should be 1:1 to the peripheral and TX / RX as well as CTS / RTS
+//! should be crossed on the peripheral side (e.g. a radio modem would have
+//! its RX port on pin 2, TX port on pin 3 …)", Telemetry Port, PDF p. 6,
+//! printed 5). So a `TX (OUT)` pin carries a serial port's `tx` net and an
+//! `RX (IN)` pin its `rx` net, and the two pins of one port are one serial
+//! port's, as the two I2C pins are one bus's.
 
 use std::collections::BTreeMap;
 
@@ -40,6 +51,10 @@ pub enum Role {
     Ground,
     I2cScl,
     I2cSda,
+    /// The autopilot's serial output: a serial port's `tx` net. DS-009's words.
+    SerialTx(&'static str),
+    /// The autopilot's serial input: a serial port's `rx` net. DS-009's words.
+    SerialRx(&'static str),
     /// A role no net of this schema can carry yet: DS-009's words.
     Undeclared(&'static str),
     /// A role DS-009 lets float: `null`, until its net can be declared.
@@ -56,7 +71,7 @@ impl Role {
             Role::Ground => "GND",
             Role::I2cScl => "I2C SCL",
             Role::I2cSda => "I2C SDA",
-            Role::Undeclared(n) | Role::MayFloat(n) => n,
+            Role::SerialTx(n) | Role::SerialRx(n) | Role::Undeclared(n) | Role::MayFloat(n) => n,
         }
     }
 }
@@ -79,8 +94,8 @@ pub const PORTS: [Port; 5] = [
         series: Series::JstGh,
         roles: &[
             Vcc5V,
-            Undeclared("TX (OUT)"),
-            Undeclared("RX (IN)"),
+            SerialTx("TX (OUT)"),
+            SerialRx("RX (IN)"),
             MayFloat("CTS (IN)"),
             MayFloat("RTS (OUT)"),
             Ground,
@@ -92,8 +107,8 @@ pub const PORTS: [Port; 5] = [
         series: Series::JstGh,
         roles: &[
             Vcc5V,
-            Undeclared("TX (OUT)"),
-            Undeclared("RX (IN)"),
+            SerialTx("TX (OUT)"),
+            SerialRx("RX (IN)"),
             I2cScl,
             I2cSda,
             Ground,
@@ -105,8 +120,8 @@ pub const PORTS: [Port; 5] = [
         series: Series::JstGh,
         roles: &[
             Vcc5V,
-            Undeclared("TX (OUT)"),
-            Undeclared("RX (IN)"),
+            SerialTx("TX (OUT)"),
+            SerialRx("RX (IN)"),
             I2cScl,
             I2cSda,
             Undeclared("SAFETY SWITCH IN"),
@@ -128,8 +143,8 @@ pub const PORTS: [Port; 5] = [
         series: Series::JstSh,
         roles: &[
             TargetVoltage,
-            Undeclared("CONSOLE TX (OUT)"),
-            Undeclared("CONSOLE RX (IN)"),
+            SerialTx("CONSOLE TX (OUT)"),
+            SerialRx("CONSOLE RX (IN)"),
             Undeclared("SWDIO"),
             Undeclared("SWCLK"),
             Ground,
@@ -146,7 +161,8 @@ pub fn port(name: &str) -> Option<&'static Port> {
 /// Refuses `c` where it contradicts the port it names: an unknown port, a
 /// part of another series or pin count, a supply pin whose net is not the
 /// supply the port names (D5), or another pin whose net is not its role's.
-/// The two I2C pins of one port must be one bus's.
+/// The two I2C pins of one port must be one bus's, and its two serial pins
+/// one serial port's.
 pub(crate) fn judge(
     spec: &Specification,
     c: &Connector,
@@ -172,6 +188,7 @@ pub(crate) fn judge(
         .find(|d| d.id == spec.mcu.supply)
         .map(|d| d.nominal_millivolts);
     let mut i2c_bus: Option<&str> = None;
+    let mut serial_port: Option<&str> = None;
     for (i, role) in port.roles.iter().enumerate() {
         let number = (i + 1).to_string();
         let Some(pin) = c.pins.iter().find(|p| p.pin == number) else {
@@ -190,6 +207,10 @@ pub(crate) fn judge(
             (Ground, Some(NetKind::Ground)) => true,
             (I2cScl, Some(NetKind::I2cScl(bus))) | (I2cSda, Some(NetKind::I2cSda(bus))) => {
                 *i2c_bus.get_or_insert(bus) == bus
+            }
+            (SerialTx(_), Some(NetKind::SerialTx(label)))
+            | (SerialRx(_), Some(NetKind::SerialRx(label))) => {
+                *serial_port.get_or_insert(label) == label
             }
             (MayFloat(_), None) => true,
             _ => false,
