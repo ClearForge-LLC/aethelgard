@@ -254,6 +254,7 @@ fn part(reference: &str, pads: Vec<Pad>) -> Part {
         rotation: 0,
         pads,
         courtyard: Vec::new(),
+        keepouts: Vec::new(),
     }
 }
 
@@ -591,4 +592,239 @@ fn a_declared_array_needs_its_pad_and_its_vias() {
         e.contains("U5 pad 9 has no thermal array; the specification declares one"),
         "{e}"
     );
+}
+
+// ---- `AET-WO-4300d2` §1.6: the drill file `fab` accepts ----
+
+/// A drill file KiCad 10.0.7 wrote (`kicad-cli pcb export drill
+/// --excellon-min-header`, as `fab` runs it) from this fixture's board in
+/// the pinned image, committed whole: each is a few hundred bytes.
+fn drl(name: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/fab")
+        .join(format!("kicad-10.0.7-{name}.drl"));
+    std::fs::read_to_string(path).unwrap()
+}
+
+/// The tools `fab` expects of a board: what `route::read` returns, through
+/// `fab::drills`, exactly as `fab`'s `derive` takes them.
+fn tools((stack, text): (aethelgard_eda::stack::Stack, String)) -> Vec<aethelgard_eda::fab::Drill> {
+    let tree = aethelgard_eda::strict::board(&text).unwrap();
+    let (board, routed) = aethelgard_eda::route::read(&tree, &stack).unwrap();
+    aethelgard_eda::fab::drills(&board, &routed).unwrap()
+}
+
+/// The 2-layer thermal fixture laid with the footprint's own 0.3 mm
+/// through-hole pads (KiCad's `_ThermalVias` shape) and no array: a via and
+/// a pad hole of one diameter.
+fn own_vias() -> (aethelgard_eda::stack::Stack, String) {
+    let (mut stack, fps, outline) = th::thermal_board(false, None, true);
+    stack.joins = vec![("U5".to_owned(), Join::Solid)];
+    th::write((stack, fps, outline)).unwrap()
+}
+
+/// Each fixture's board predicts KiCad's file exactly: one tool per
+/// diameter and kind of hole, in KiCad's order (ascending diameter; at one
+/// diameter the vias' tool, then the pads'), each with its hit count. The
+/// XT30's two unnumbered mechanical pads are plated (`thru_hole` on `*.Cu`,
+/// as KiCad's `AMASS_XT30PW-M` footprint has them) and are a tool of their
+/// own.
+#[test]
+fn each_fixtures_drill_file_holds_exactly_its_holes() {
+    let cases = [
+        (
+            "xt30-4",
+            tools(th::write(th::xt30_board(true, Join::Solid)).unwrap()),
+            vec![("T1C0.300", 5), ("T2C1.000", 2), ("T3C1.900", 2)],
+        ),
+        (
+            "thermal-4",
+            tools(thermal(th::lmr33630_rule(&["In1.Cu"])).unwrap()),
+            vec![("T1C0.254", 12), ("T2C0.300", 6)],
+        ),
+        (
+            "via-and-pad-0.3",
+            tools(own_vias()),
+            vec![("T1C0.300", 3), ("T2C0.300", 8)],
+        ),
+    ];
+    for (name, tools, want) in cases {
+        let got: Vec<(String, usize)> = tools
+            .iter()
+            .enumerate()
+            .map(|(i, d)| (d.tool_line(i + 1), d.hits()))
+            .collect();
+        let want: Vec<(String, usize)> = want.iter().map(|(t, n)| ((*t).to_owned(), *n)).collect();
+        assert_eq!(got, want, "{name}");
+        assert_eq!(
+            aethelgard_eda::fab::holes(drl(name).as_bytes(), &tools),
+            Ok(()),
+            "{name}"
+        );
+    }
+}
+
+/// `text` with its `n`th line (from 0) removed.
+fn without_line(text: &str, n: usize) -> String {
+    text.split_inclusive('\n')
+        .enumerate()
+        .filter(|(i, _)| *i != n)
+        .map(|(_, l)| l)
+        .collect()
+}
+
+/// `AET-WO-4300d2` §5.4, a lie in the drill file: a tool missing, an extra
+/// tool, a wrong diameter, a hit count off by one either way, a hit moved
+/// to another tool, a slot, and lines KiCad does not write. Each is refused
+/// naming the tool and what the board drills with it.
+#[test]
+fn a_drill_file_that_lies_is_refused_by_name() {
+    let xt30 = tools(th::write(th::xt30_board(true, Join::Solid)).unwrap());
+    let thermal_tools = tools(thermal(th::lmr33630_rule(&["In1.Cu"])).unwrap());
+    let x = drl("xt30-4");
+    let t = drl("thermal-4");
+    // xt30-4: lines 0 M48, 1 METRIC, 2-4 T1-T3, 5 %, 6 G90, 7 G05, 8 T1,
+    // 9-13 its five vias, 14 T2, 15-16, 17 T3, 18-19, 20 M30.
+    assert_eq!(x.lines().nth(17), Some("T3"));
+    assert_eq!(x.lines().nth(20), Some("M30"));
+    // The array's last hit moved under T2: thermal-4 is T1 (12), then T2.
+    let moved = {
+        let mut lines: Vec<&str> = t.lines().collect();
+        let i = lines.iter().position(|l| *l == "T2").unwrap();
+        let hit = lines.remove(i - 1);
+        lines.insert(i, hit);
+        lines.join("\n") + "\n"
+    };
+    let cases: Vec<(&str, &[aethelgard_eda::fab::Drill], String, &str)> = vec![
+        (
+            "a tool missing (header and body)",
+            &xt30,
+            without_line(
+                &without_line(&without_line(&without_line(&x, 19), 18), 17),
+                4,
+            ),
+            "tool 3 is missing: the board's T3C1.900 (1.9 mm, through-hole pad 1 of J1 (1), through-hole pad 2 of J1 (1))",
+        ),
+        (
+            "an extra tool",
+            &xt30,
+            x.replace("T3C1.900\n", "T3C1.900\nT4C2.000\n"),
+            "it has a tool the board does not: T4C2.000",
+        ),
+        (
+            "a wrong diameter",
+            &xt30,
+            x.replace("T2C1.000", "T2C1.100"),
+            "tool 2 is T2C1.100, where the board's is T2C1.000 (1 mm, through-hole pads of J1 with no number (2))",
+        ),
+        (
+            "a hit missing",
+            &xt30,
+            without_line(&x, 16),
+            "tool T2 (1 mm) has 1 hits, where the board holds 2: through-hole pads of J1 with no number (2)",
+        ),
+        (
+            "a hit added",
+            &thermal_tools,
+            t.replacen("T2\n", "T2\nX1.0Y-1.0\n", 1),
+            "tool T2 (0.3 mm) has 7 hits, where the board holds 6: routed vias, 0.6 mm pad (6)",
+        ),
+        (
+            "a thermal via drilled as a routed via",
+            &thermal_tools,
+            moved,
+            "tool T1 (0.254 mm) has 11 hits, where the board holds 12: the thermal-via array under U5 pad 9, 0.554 mm pad (12)",
+        ),
+        (
+            "a slot under a tool",
+            &xt30,
+            x.replace("X110.0Y-116.0", "X110.0Y-115.7G85X110.0Y-116.3"),
+            "under T3, `X110.0Y-115.7G85X110.0Y-116.3` is not one round hit",
+        ),
+        (
+            "a tool selected out of order",
+            &xt30,
+            x.replace("T2\n", "T3\n"),
+            "tool T2 is not selected next",
+        ),
+        (
+            "a coordinate KiCad does not write",
+            &xt30,
+            x.replace("X110.0Y-116.0", "X110.Y-116.0"),
+            "under T3, `X110.Y-116.0` is not one round hit",
+        ),
+        (
+            "inches",
+            &xt30,
+            x.replace("METRIC", "INCH"),
+            "it does not begin M48, METRIC",
+        ),
+        (
+            "a line after M30",
+            &xt30,
+            x.clone() + "M30\n",
+            "after the board's last tool's holes, `M30`",
+        ),
+        (
+            "no M30",
+            &xt30,
+            without_line(&x, 20),
+            "does not end with M30",
+        ),
+        (
+            "a carriage return",
+            &xt30,
+            x.replace("G90\n", "G90\r\n"),
+            "not ASCII lines ending in a newline",
+        ),
+    ];
+    for (what, tools, file, want) in cases {
+        assert!(file != x && file != t, "{what}");
+        let e = aethelgard_eda::fab::holes(file.as_bytes(), tools).unwrap_err();
+        assert!(e.contains(want), "{what}: {e}");
+    }
+}
+
+/// What KiCad 10.0.7 writes for an unplated hole and a slot, measured on
+/// the 2-layer XT30 board edited so (FEEDBACK): the unplated pegs' tool
+/// comes after every plated one in the same file, with no plating mark; the
+/// slot is a `G85` line under the round drill's tool. Neither file is the
+/// plated board's, and `route::read` refuses both boards, and an offset
+/// drill, by name before any export.
+#[test]
+fn an_unplated_hole_or_a_slot_is_refused_by_name() {
+    let (stack, text) = th::write(th::xt30_board(false, Join::Solid)).unwrap();
+    let plated = tools((stack.clone(), text.clone()));
+    let e = aethelgard_eda::fab::holes(drl("npth").as_bytes(), &plated).unwrap_err();
+    assert!(
+        e.contains("tool 2 is T2C1.900, where the board's is T2C1.000"),
+        "{e}"
+    );
+    let e = aethelgard_eda::fab::holes(drl("slot").as_bytes(), &plated).unwrap_err();
+    assert!(
+        e.contains("tool T3 (1.9 mm) has 1 hits, where the board holds 2"),
+        "{e}"
+    );
+    for (board, want) in [
+        (
+            text.replace(
+                "(pad \"\" thru_hole circle",
+                "(pad \"\" np_thru_hole circle",
+            ),
+            "J1 pad  is neither a front SMD pad nor a plated through-hole pad on *.Cu",
+        ),
+        (
+            text.replacen("(drill 1.9)", "(drill oval 1.9 2.5)", 1),
+            "J1 pad 1: only a round drill at its centre is modelled",
+        ),
+        (
+            text.replacen("(drill 1.9)", "(drill 1.9 (offset 0.2 0))", 1),
+            "J1 pad 1: only a round drill at its centre is modelled",
+        ),
+    ] {
+        assert_ne!(board, text);
+        let tree = aethelgard_eda::strict::board(&board).unwrap();
+        let e = aethelgard_eda::route::read(&tree, &stack).unwrap_err();
+        assert!(e.contains(want), "{want}: {e}");
+    }
 }

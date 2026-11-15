@@ -1098,3 +1098,108 @@ fn connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers() {
     }
     fs::remove_dir_all(&base).unwrap();
 }
+
+/// `AET-WO-4300d2` §1.9: the Sentinel-02 power fixture (slice A's copy without
+/// its crossing, which waits for the ICM-20948's footprint, FEEDBACK
+/// D2) emits a schematic that passes ERC and a board that passes DRC by the
+/// specification's rules with schematic parity, with no finding of any kind,
+/// its loop rules measured from the board, every class named with its width,
+/// and `extract` passing on every line. Then one loop part moved off its pin
+/// (§5.1) fails the same gate, by its rule, and by nothing else.
+#[test]
+fn the_power_fixture_passes_erc_drc_its_loop_rules_and_extract() {
+    use aethelgard_eda::schematic;
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let base = std::env::temp_dir().join(format!("aet-4300d2-gate-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    fs::create_dir_all(&base).unwrap();
+    let v = common::power::power_tree();
+    let spec_path = base.join("sentinel-02-power.json");
+    fs::write(&spec_path, serde_json::to_vec_pretty(&v).unwrap()).unwrap();
+    let spec_arg = spec_path.to_str().unwrap();
+    let out = base.join("emitted");
+    let (code, text) = aethelgard(&["emit", "--file", spec_arg, "--out", out.to_str().unwrap()]);
+    let r = one(&text);
+    assert_eq!(code, Some(0), "emit: {r}");
+    let board = r["board"]["path"].as_str().unwrap().to_owned();
+    let sch = r["schematic"]["path"].as_str().unwrap().to_owned();
+
+    let (code, text) = aethelgard(&["check", "erc", "--schematic", &sch]);
+    let erc = one(&text);
+    assert_eq!(code, Some(0), "erc: {erc}");
+    assert_eq!(erc["findings"], Value::Array(vec![]), "erc has findings");
+
+    let drc = |board: &str| {
+        let (code, text) = aethelgard(&[
+            "check",
+            "drc",
+            "--board",
+            board,
+            "--spec",
+            spec_arg,
+            "--schematic",
+            &sch,
+        ]);
+        (code, one(&text))
+    };
+    let (code, v) = drc(&board);
+    assert_eq!(code, Some(0), "drc: {v}");
+    assert_eq!(v["verdict"], "pass", "drc: {v}");
+    assert_eq!(v["findings"], Value::Array(vec![]), "drc has findings");
+    let loops = v["power"]["loops"].as_array().unwrap();
+    assert_eq!(loops.len(), 17, "{v}");
+    assert!(loops.iter().all(|l| l["verdict"] == "pass"), "{v}");
+    let classes: Vec<(&str, i64)> = v["power"]["classes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c["name"].as_str().unwrap(), c["width_um"].as_i64().unwrap()))
+        .collect();
+    assert_eq!(classes, [("POWER", 500), ("SUPPLY_MCU", 200)], "{v}");
+    let conditions = v["power"]["conditions"].as_array().unwrap();
+    assert!(
+        conditions
+            .iter()
+            .any(|c| c.as_str().unwrap().contains("item 5")),
+        "{v}"
+    );
+
+    let (code, text) = aethelgard(&["extract", "--board", &board, "--spec", spec_arg]);
+    let x = one(&text);
+    assert_eq!(code, Some(0), "extract: {x}");
+    assert_eq!(x["verdict"], "pass", "extract: {x}");
+
+    // §5.1: the high-frequency input capacitor of U10 moved 25 mm off.
+    let spec: aethelgard_ir::Specification =
+        serde_json::from_value(common::power::power_tree()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+    let tree = aethelgard_eda::strict::board(&fs::read_to_string(&board).unwrap()).unwrap();
+    let (b, _) =
+        aethelgard_eda::route::read(&tree, &aethelgard_eda::stack::Stack::of(&spec)).unwrap();
+    let moves = vec![(
+        "C11".to_owned(),
+        (b.outline.x1 + 25_000_000, b.outline.y0),
+        0,
+    )];
+    let moved = schematic::emit_moved(&spec, &solved, &table, &moves).unwrap();
+    let moved_path = base.join("moved.kicad_pcb");
+    fs::write(&moved_path, moved.board).unwrap();
+    let (code, v) = drc(moved_path.to_str().unwrap());
+    assert_eq!(code, Some(1), "moved drc: {v}");
+    let kinds: Vec<&str> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["loop_rule"], "{v}");
+    assert!(
+        v["findings"][0]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("C11 "),
+        "{v}"
+    );
+    fs::remove_dir_all(&base).unwrap();
+}

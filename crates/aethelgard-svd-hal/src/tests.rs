@@ -2,7 +2,10 @@ use super::*;
 
 /// The pinned sha256 of the table's JSON, computed on Furnace and reproduced in
 /// `gates`. A mismatch between the two is a stop, not a constant to update.
-const TABLE_JSON_SHA256: &str = "80dcd2751a3a0036f7609c06929a33b6446885b5ac04a380f34afcf0f61d9e2c";
+const TABLE_JSON_SHA256: &str = "77e2b0c0f46a55f724da7fcd9efe20e8b0e5b8edb1454f18e587016ebb387e6e";
+/// The digest before `AET-WO-4300d2` §1.7 added `adc_channels`.
+const TABLE_JSON_SHA256_WITHOUT_ADC: &str =
+    "80dcd2751a3a0036f7609c06929a33b6446885b5ac04a380f34afcf0f61d9e2c";
 
 fn source() -> PinSource {
     PinSource {
@@ -124,6 +127,14 @@ fn table_json_is_deterministic() {
     let json = serde_json::to_string(&real()).unwrap();
     assert_eq!(json, serde_json::to_string(&real()).unwrap());
     assert_eq!(sha256_hex(json.as_bytes()), TABLE_JSON_SHA256);
+    // `AET-WO-4300d2` §1.7 moved the digest by the ADC channels alone: with
+    // them cleared, the bytes are those of before.
+    let mut bare = real();
+    for pin in bare.pins.values_mut() {
+        pin.adc_channels.clear();
+    }
+    let bare = serde_json::to_string(&bare).unwrap();
+    assert_eq!(sha256_hex(bare.as_bytes()), TABLE_JSON_SHA256_WITHOUT_ADC);
 }
 
 #[test]

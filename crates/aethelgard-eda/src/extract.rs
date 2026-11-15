@@ -713,6 +713,12 @@ const FOOTPRINT: &[(&str, bool)] = &[
     ("fp_line", true),
     ("fp_rect", true),
     ("fp_poly", true),
+    // The XT30PW-M's silkscreen and fabrication rings (`AET-WO-4300d2`): a
+    // graphic, so one on a copper layer is still refused below.
+    ("fp_arc", true),
+    // A vendored footprint's keepout (`AET-WO-4300d2` D2 (a)): no copper, so
+    // nothing the bound adds; any other zone is copper and refused below.
+    ("zone", true),
     ("fp_text", true),
     ("pad", true),
 ];
@@ -853,6 +859,7 @@ fn footprint(fp: &Node<'_>) -> Result<(String, (String, String)), Refused> {
             }
             // A footprint's own `layer` names its side.
             "layer" => {}
+            "zone" if child.one("keepout").map_err(malformed)?.is_some() => {}
             _ if on_copper(&child) => {
                 return Err(unmodelled(format!("{what} has `{head}` on a copper layer")));
             }
@@ -1147,6 +1154,19 @@ pub fn lines(
                     .filter(|d| d.bus == bus.id);
                 let load = if part.lib_id == crate::schematic::MCU {
                     Load::Driver
+                } else if crate::schematic::is_translator(part) {
+                    // `AET-WO-4300d2` D6 (b): SCES935A p. 9 prints the TXU0304's
+                    // Cio once per temperature range, across its MIN, TYP and
+                    // MAX columns, at OE = GND and 3.3 V on both sides: no
+                    // maximum for this circuit, and no typical stands in for
+                    // one (`AET-WO-4300c` D3).
+                    return Err(refused(
+                        "TranslatorPinUnbounded",
+                        format!(
+                            "the design puts translator {} on `{net}`, and its data pins' capacitance has no stated maximum (SCES935A p. 9, Cio)",
+                            part.reference
+                        ),
+                    ));
                 } else if let Some(d) = device {
                     device_pin(table, &part.reference, &d.part, net)?
                 } else if crate::schematic::is_connector(part) {
@@ -1440,6 +1460,7 @@ mod tests {
                     rotation: 0,
                     pads: vec![pad],
                     courtyard: Vec::new(),
+                    keepouts: Vec::new(),
                 }],
                 stack: crate::stack::reference(),
             },

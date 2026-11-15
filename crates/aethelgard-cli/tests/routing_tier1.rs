@@ -181,6 +181,7 @@ fn no_copper_touches_an_unconnected_pad() {
                 reference: "lone".into(),
                 pads: vec![pad.clone()],
                 courtyard: Vec::new(),
+                keepouts: Vec::new(),
             }],
         };
         route::check(&alone, &routed).unwrap();

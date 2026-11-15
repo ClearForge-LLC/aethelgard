@@ -227,9 +227,17 @@ fn parse(mcu: &[u8], gpio: &[u8], source: PinSource) -> Result<PinTable, PinTabl
                 }
             }
         }
+        // The single-ended inputs, `ADCn_INPm`: the GPIO file gives analog
+        // signals no AF, so the <Signal> set is their only source.
+        let adc_channels = signals
+            .iter()
+            .filter(|s| s.starts_with("ADC") && s.contains("_INP"))
+            .map(|s| (*s).to_owned())
+            .collect();
         let pin = Pin {
             position,
             alternate_functions,
+            adc_channels,
         };
         if pins.insert(name.to_owned(), pin).is_some() {
             return malformed(format!("two I/O pins reduce to `{name}`"));

@@ -171,6 +171,22 @@ pub struct Part {
     /// The front courtyard's outline, as straight edges in board
     /// coordinates; empty for a footprint with none.
     pub courtyard: Vec<Edge>,
+    /// Its keepout zones (`AET-WO-4300d2` D2 (a), `RUL-03`): areas where no
+    /// copper of the kinds each forbids may be, routed around and judged.
+    pub keepouts: Vec<Keepout>,
+}
+
+/// A footprint's keepout zone, in board coordinates: a rectangle on one
+/// copper layer, with what it forbids there. A vendored footprint's (the
+/// ICM-20948's no-copper area under its die) is the only kind modelled.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Keepout {
+    pub layer: Layer,
+    pub rect: Rect,
+    pub tracks: bool,
+    pub vias: bool,
+    pub pads: bool,
+    pub fill: bool,
 }
 
 /// A straight edge of an outline, end to end.
@@ -279,7 +295,7 @@ fn span(a: (i64, i64), b: (i64, i64)) -> Rect {
 }
 
 /// The squared distance between two closed boxes.
-fn gap2(a: Rect, b: Rect) -> i64 {
+pub(crate) fn gap2(a: Rect, b: Rect) -> i64 {
     let dx = (a.x0 - b.x1).max(b.x0 - a.x1).max(0);
     let dy = (a.y0 - b.y1).max(b.y0 - a.y1).max(0);
     dx * dx + dy * dy
@@ -308,8 +324,26 @@ impl Shape {
 impl Pad {
     /// The box in which every point is inside the pad's copper, whatever its
     /// rounding: a track that ends here is joined to the pad.
-    fn inner(&self) -> Rect {
+    pub(crate) fn inner(&self) -> Rect {
         self.rect.grow(-self.corner_nm)
+    }
+
+    /// The box a track may end in, joined to the pad. It is [`Pad::inner`]
+    /// but for a pad that is all rounding, a circle or an oval, whose inner box
+    /// is a point or a line (the XT30PW-M's pad 2 is a 3.5 mm circle round a
+    /// 1.9 mm hole, `AET-WO-4300d2`; no pad drawn before it is one). There it is
+    /// the box inscribed in the rounding: shrunk by `corner × (1 − 1/√2)`,
+    /// rounded so the box stays inside the copper.
+    pub(crate) fn reach(&self) -> Rect {
+        let short = (self.rect.x1 - self.rect.x0).min(self.rect.y1 - self.rect.y0);
+        if 2 * self.corner_nm < short {
+            return self.inner();
+        }
+        let c = i128::from(self.corner_nm);
+        // ⌊c / √2⌋ ≤ c × 707_106 / 1_000_000 < c / √2.
+        let kept = c * 707_106 / 1_000_000;
+        let shrink = i64::try_from(c - kept).unwrap_or(self.corner_nm);
+        self.rect.grow(-shrink)
     }
 }
 
@@ -874,6 +908,22 @@ impl<'a> Router<'a> {
                     }
                 }
             }
+            // A keepout: no track of any net on its layer, and no via, where
+            // the copper would reach into it (`AET-WO-4300d2` D2).
+            for k_out in &part.keepouts {
+                for (k, r) in kinds.iter().enumerate() {
+                    if k_out.tracks {
+                        for node in grid.nodes(k_out.rect.grow(r.width_nm / 2 + EPS_NM)) {
+                            track[k][k_out.layer.index()][node] = BLOCKED;
+                        }
+                    }
+                    if k_out.vias {
+                        for node in grid.nodes(k_out.rect.grow(r.via_nm / 2 + EPS_NM)) {
+                            via[k][node] = BLOCKED;
+                        }
+                    }
+                }
+            }
             // The pad field: on F.Cu, only inside a pad; no via near it;
             // except in a dense part's own ring interior (K1).
             let Some(field) = part.pads.iter().map(|p| p.rect).reduce(|a, b| a.union(b)) else {
@@ -1062,7 +1112,7 @@ impl<'a> Router<'a> {
     /// pads and the edge alone.
     fn terminals(&self, pad: &Pad, net: usize) -> Vec<usize> {
         self.grid
-            .nodes(pad.inner())
+            .nodes(pad.reach())
             .filter(|&n| self.hard_open(Layer::F, n, net))
             .collect()
     }
@@ -1077,7 +1127,7 @@ impl<'a> Router<'a> {
         if pad.drill_nm.is_some() {
             out.extend(
                 self.grid
-                    .nodes(pad.inner())
+                    .nodes(pad.reach())
                     .filter(|&n| self.hard_open(Layer::B, n, net))
                     .map(|n| (Layer::B, n)),
             );
@@ -2839,6 +2889,42 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
     out
 }
 
+/// No copper a keepout forbids is inside it (`AET-WO-4300d2` D2 (a),
+/// `RUL-03`): a track on its layer, a via or thermal via, another part's pad
+/// on its layer, or a fill on its layer. Copper that touches its edge is not
+/// inside it.
+fn keepouts(board: &Board, routed: &Routed, all: &[Item<'_>]) -> Result<(), String> {
+    for part in &board.parts {
+        for k in &part.keepouts {
+            let area = Shape { rect: k.rect, r: 0 };
+            let l = k.layer.index();
+            for item in all.iter().filter(|i| i.layers[l]) {
+                let forbidden = if item.what.starts_with("track") {
+                    k.tracks
+                } else if item.what.starts_with("via") || item.what.starts_with("thermal") {
+                    k.vias
+                } else {
+                    k.pads && !item.what.starts_with(&format!("{} pad ", part.reference))
+                };
+                if forbidden && !area.clear(item.shape, 0) {
+                    return Err(format!(
+                        "{} is inside {}'s keepout on {:?}",
+                        item.what, part.reference, k.layer
+                    ));
+                }
+            }
+            let name = k.layer.name();
+            if k.fill && routed.zones.iter().any(|(_, layer)| layer == name) {
+                return Err(format!(
+                    "a fill on {name} would meet {}'s keepout",
+                    part.reference
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Every pair of copper items on a shared layer, of different nets (a pad
 /// with no net differs from everything), keeps the declared clearance; every
 /// track and via keeps [`EDGE_NM`] from the edge; holes keep
@@ -2847,6 +2933,7 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
 /// own ring interior (`AET-WO-1307` K1).
 pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
     let all = items(board, routed);
+    keepouts(board, routed, &all)?;
     for (i, a) in all.iter().enumerate() {
         for b in &all[i + 1..] {
             let shared = (a.layers[0] && b.layers[0]) || (a.layers[1] && b.layers[1]);
@@ -3068,8 +3155,8 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
             let mut joined = false;
             for (k, &e) in ends(s).iter().enumerate() {
                 let here = if j < pad_count {
-                    // A pad: the track ends inside its copper.
-                    pads[j].inner().contains(Rect::point(e.0, e.1))
+                    // A pad: the track ends inside its copper ([`Pad::reach`]).
+                    pads[j].reach().contains(Rect::point(e.0, e.1))
                 } else {
                     b.shape.holds(e)
                 };
@@ -3545,11 +3632,91 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
     if courtyard.is_empty() && !pads.is_empty() {
         return Err(format!("{reference} has copper pads and no courtyard"));
     }
+    let mut keepouts = Vec::new();
+    for z in fp.all("zone") {
+        keepouts.push(keepout(&z, &reference, origin, theta)?);
+    }
     Ok(Part {
         reference,
         rotation: theta,
         pads,
         courtyard,
+        keepouts,
+    })
+}
+
+/// A footprint zone, which only a keepout may be: a rectangle on one copper
+/// layer, turned with the footprint, each of its five kinds `allowed` or
+/// `not_allowed`, no net. Anything else is refused by name, never dropped
+/// (`RUL-03`, amended for `AET-WO-4300d2` D2).
+fn keepout(
+    z: &strict::Node<'_>,
+    reference: &str,
+    origin: (i64, i64),
+    theta: u16,
+) -> Result<Keepout, String> {
+    let what = format!("{reference}'s zone");
+    let k = one(z, "keepout")?.ok_or_else(|| format!("{what} is not a keepout"))?;
+    for token in ["net", "net_name"] {
+        if one(z, token)?.is_some() {
+            return Err(format!("{what} is a keepout with a `{token}`"));
+        }
+    }
+    if one(z, "layers")?.is_some() {
+        return Err(format!("{what} names more than one layer"));
+    }
+    let layer = match one(z, "layer")?.and_then(|l| l.arg(1)) {
+        Some("F.Cu") => Layer::F,
+        Some("B.Cu") => Layer::B,
+        other => return Err(format!("{what} is on {other:?}, not F.Cu or B.Cu")),
+    };
+    let flag = |name: &str| -> Result<bool, String> {
+        match one(&k, name)?.map(|n| (n.arg(1), n.arg(2))) {
+            Some((Some("not_allowed"), None)) => Ok(true),
+            Some((Some("allowed"), None)) => Ok(false),
+            other => Err(format!("{what}'s keepout `{name}` is {other:?}")),
+        }
+    };
+    let (tracks, vias, pads, fill) = (
+        flag("tracks")?,
+        flag("vias")?,
+        flag("pads")?,
+        flag("copperpour")?,
+    );
+    flag("footprints")?;
+    let mut polys = z.all("polygon");
+    let (Some(poly), None) = (polys.next(), polys.next()) else {
+        return Err(format!("{what} has no polygon, or more than one"));
+    };
+    let pts = one(&poly, "pts")?.ok_or_else(|| format!("{what}: no `pts`"))?;
+    let corners = pts
+        .lists()
+        .map(|xy| match xy.head() {
+            Some("xy") => xy_of(Some(xy), &what).map(|p| {
+                let (x, y) = rotate(theta, p);
+                (origin.0 + x, origin.1 + y)
+            }),
+            h => Err(format!("{what}: a `{}` in its points", h.unwrap_or("()"))),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let rect = corners
+        .iter()
+        .map(|&(x, y)| Rect::point(x, y))
+        .reduce(Rect::union)
+        .ok_or_else(|| format!("{what} has no points"))?;
+    let on_box =
+        |&(x, y): &(i64, i64)| (x == rect.x0 || x == rect.x1) && (y == rect.y0 || y == rect.y1);
+    if corners.len() != 4 || !corners.iter().all(on_box) || rect.x0 == rect.x1 || rect.y0 == rect.y1
+    {
+        return Err(format!("{what} is not a rectangle at a right angle"));
+    }
+    Ok(Keepout {
+        layer,
+        rect,
+        tracks,
+        vias,
+        pads,
+        fill,
     })
 }
 
@@ -4132,6 +4299,7 @@ mod tests {
                 ),
             ],
             courtyard: Vec::new(),
+            keepouts: Vec::new(),
         }
     }
 
@@ -4176,6 +4344,7 @@ mod tests {
             reference: "U".into(),
             pads,
             courtyard: Vec::new(),
+            keepouts: Vec::new(),
         }
     }
 
@@ -4284,6 +4453,7 @@ mod tests {
                 reference: "R1".into(),
                 pads: vec![pad("1", Some("/A"), rect(4 * MM, 4 * MM, 5 * MM, 5 * MM))],
                 courtyard: Vec::new(),
+                keepouts: Vec::new(),
             }],
             stack: crate::stack::reference(),
         };
@@ -4374,6 +4544,7 @@ mod tests {
                 pad("2", Some("/N"), at(xn, 5 * MM + MM / 2)),
             ],
             courtyard: Vec::new(),
+            keepouts: Vec::new(),
         };
         Board {
             outline: rect(0, 0, 20 * MM, 10 * MM),
@@ -4447,6 +4618,7 @@ mod tests {
                 rect(15 * MM, 5 * MM, 15 * MM + 300_000, 5 * MM + 300_000),
             )],
             courtyard: Vec::new(),
+            keepouts: Vec::new(),
         });
         board.parts[1].pads.pop();
         let e = route(&board).unwrap_err();

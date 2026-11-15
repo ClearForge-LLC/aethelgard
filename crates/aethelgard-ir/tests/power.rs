@@ -23,7 +23,7 @@ fn full() -> Value {
 }
 
 /// The fixture without its crossing and the 1.8 V IMU behind it: the tree
-/// every check but the crossing's passes (the crossing waits for `K6`).
+/// every check but the crossing's passes.
 fn base() -> Value {
     let mut v = full();
     v["power"]["crossings"] = json!([]);
@@ -76,20 +76,12 @@ fn row<'v>(t: &'v mut Value, part: &str) -> &'v mut Value {
         .unwrap()
 }
 
-/// The fixture checked against `table`, with the ICM-20948's SPI output
-/// delay as `K6` will hold it in the sensor table: TDK DS-000189 1.6, p. 17,
-/// Table 8, tVD.SDO at most 59 ns at 20 pF.
+/// The fixture checked against `table`, with the sensor table's own output
+/// delays (`K6`: the ICM-20948's tVD.SDO, 59 ns).
 fn against(v: &Value, table: &Value) -> Result<(), E> {
     let t = parse_power_parts(&table.to_string()).expect("the changed table parses");
     let sensors = aethelgard_ir::parts::table().unwrap();
-    let delays = power::OutputDelays::from([(
-        "ICM20948".to_owned(),
-        (
-            59,
-            "TDK DS-000189 1.6, p. 17, Table 8, tVD.SDO max 59 ns at 20 pF".to_owned(),
-        ),
-    )]);
-    power::check_against(&spec(v), &t, sensors, &delays).map(|_| ())
+    power::check_against(&spec(v), &t, sensors, &power::output_delays(sensors)).map(|_| ())
 }
 
 fn table_refusal(mutate: impl FnOnce(&mut Value)) -> String {
@@ -227,6 +219,10 @@ fn a_sense_net_is_a_new_net() {
 fn power_is_a_required_key_and_null_declares_none() {
     let mut v = base();
     v["power"] = Value::Null;
+    // Without a tree there is no battery rail, so a class naming it names an
+    // unknown net (`AET-WO-4300d2` K10).
+    assert_eq!(refused(&v).kind(), "ClassUnknownNet");
+    v["net_classes"] = json!([]);
     assert_eq!(spec(&v).validate(), Ok(()));
 }
 
@@ -725,8 +721,40 @@ fn the_miso_round_trip_bounds_the_crossed_bus() {
 }
 
 #[test]
+fn the_committed_fixture_with_its_crossing_validates_on_the_sensor_tables_own_delay() {
+    // `K6`: no table copy, no injected delay.
+    let p = power::check(&spec(&full())).unwrap().unwrap();
+    assert!(spec(&full()).validate().is_ok());
+    let has = |s: &str| p.conditions.iter().any(|c| c.contains(s));
+    // F-B1: 19 + 59 + 15 + 2 ns, at 4 MHz.
+    assert!(has("the MISO round trip is 95 ns"), "{:?}", p.conditions);
+    // The delay's characterization is a condition the verdict names.
+    assert!(has("tVD.SDO max 59 ns at 20 pF"), "{:?}", p.conditions);
+    assert!(has("characterization of 5 parts"), "{:?}", p.conditions);
+}
+
+#[test]
 fn a_miso_round_trip_with_no_cited_output_delay_is_refused_not_passed() {
-    assert_power(&refused(&full()), Refusal::OutputDelayMissing, "U5");
+    // The row's value is `null`: a table copy, since the committed one holds it.
+    let mut doc: Value = serde_json::from_str(aethelgard_ir::parts::PARTS_JSON).unwrap();
+    let imu = doc["parts"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|r| r["part"] == "ICM20948")
+        .unwrap();
+    imu["spi_output_delay_max_ns"] = Value::Null;
+    imu["citations"]["spi_output_delay"] = Value::Null;
+    let sensors = aethelgard_ir::parts::parse_parts(&doc.to_string()).unwrap();
+    let t = parse_power_parts(POWER_PARTS_JSON).unwrap();
+    let err = power::check_against(
+        &spec(&full()),
+        &t,
+        &sensors,
+        &power::output_delays(&sensors),
+    )
+    .unwrap_err();
+    assert_power(&err, Refusal::OutputDelayMissing, "U5");
 }
 
 #[test]
@@ -956,19 +984,7 @@ fn the_build_rulings_hold() {
         }
     }
     // D-B3, D-B4, D-B6, D-B7, D-B8: each margin and condition is in the verdict.
-    let t = parse_power_parts(POWER_PARTS_JSON).unwrap();
-    let delays = power::OutputDelays::from([(
-        "ICM20948".to_owned(),
-        (59, "TDK DS-000189 1.6, p. 17, Table 8".to_owned()),
-    )]);
-    let p = power::check_against(
-        &spec(&full()),
-        &t,
-        aethelgard_ir::parts::table().unwrap(),
-        &delays,
-    )
-    .unwrap()
-    .unwrap();
+    let p = power::check(&spec(&full())).unwrap().unwrap();
     let has = |s: &str| p.conditions.iter().any(|c| c.contains(s));
     assert!(has(
         "a margin of 3.16 times, not guaranteed above it (ruled D-B3)"
