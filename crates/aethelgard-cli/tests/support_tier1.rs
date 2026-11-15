@@ -342,3 +342,47 @@ fn one_capacitor_serves_one_pin() {
         out.findings
     );
 }
+
+/// A capacitor whose supply side stays by its pin but whose ground side is on
+/// another net (VCAP1's) is between the wrong two nets: the nets alone fail
+/// it, with its distance in bound.
+#[test]
+fn a_capacitor_whose_ground_side_is_on_another_net_fails() {
+    let (spec, mut pads, board, r) = passing();
+    let c = part_at(&r, "vdd_bypass", "62");
+    let vcap = pads.1[&("U1".to_owned(), "71".to_owned())].clone();
+    for ((reference, _), net) in pads.1.iter_mut() {
+        if reference == &c && net == "GND" {
+            *net = vcap.clone();
+        }
+    }
+    let out = judge(&spec, &pads, &board);
+    assert_eq!(
+        kinds(&out),
+        ["support_capacitor_missing"],
+        "{:?}",
+        out.findings
+    );
+    assert!(out.findings[0].message.contains("VDD 62"));
+}
+
+/// A ground pin off `GND`, and a powered pin (VDDA) on no declared domain.
+#[test]
+fn a_ground_or_powered_pin_off_its_net_fails() {
+    let (spec, pads, board, _) = passing();
+    let mut vss = pads.clone();
+    vss.1
+        .insert(("U1".into(), "38".into()), spec.mcu.supply.clone());
+    let k = kinds(&judge(&spec, &vss, &board));
+    assert!(k.contains(&"support_pin_off_net"), "{k:?}");
+    let mut vdda = pads.clone();
+    vdda.1.insert(("U1".into(), "33".into()), "/I2C_SDA".into());
+    let out = judge(&spec, &vdda, &board);
+    assert!(
+        out.findings
+            .iter()
+            .any(|f| f.kind == "support_pin_off_net" && f.message.contains("VDDA")),
+        "{:?}",
+        out.findings
+    );
+}
