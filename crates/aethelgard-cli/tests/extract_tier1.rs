@@ -131,9 +131,11 @@ fn the_reference_passes_with_every_term() {
         (sda["net"].as_str(), scl["net"].as_str()),
         (Some("I2C_SDA"), Some("I2C_SCL"))
     );
-    assert_eq!(terms(sda), [9_146, 6_076, 1_578, 30_000, 46_800]);
-    assert_eq!(terms(scl), [16_024, 10_633, 1_578, 30_000, 58_235]);
-    for (line, length, segments, vias) in [(sda, 24_250_000, 19, 4), (scl, 43_500_000, 31, 7)] {
+    // AET-WO-1307 K2 (ruled): the reference's routed board, so these terms,
+    // moved with the escape and the order; were 46_800 and 58_235.
+    assert_eq!(terms(sda), [12_922, 6_076, 1_578, 30_000, 50_576]);
+    assert_eq!(terms(scl), [9_133, 3_038, 1_578, 30_000, 43_749]);
+    for (line, length, segments, vias) in [(sda, 33_750_000, 28, 4), (scl, 22_875_000, 22, 2)] {
         assert_eq!(line["verdict"], "pass");
         assert_eq!(line["declared_femtofarads"], 100_000);
         assert_eq!(line["length_nm"], length);
@@ -147,9 +149,11 @@ fn the_reference_passes_with_every_term() {
     }
     // `AET-WO-4300c` D3: the flash's pin at its cited 8 pF, the MCU's pin
     // (the driver) not counted, its pad's copper counted.
+    // AET-WO-1307 K2: the SPI terms on its routed board; were 18_521 and
+    // 17_188 on `AET-WO-4300c`'s.
     let (sck, mosi) = (&lines[2], &lines[3]);
-    assert_eq!(terms(sck), [5_920, 3_038, 1_563, 8_000, 18_521]);
-    assert_eq!(terms(mosi), [4_587, 3_038, 1_563, 8_000, 17_188]);
+    assert_eq!(terms(sck), [4_371, 3_038, 1_563, 8_000, 16_972]);
+    assert_eq!(terms(mosi), [4_209, 0, 1_563, 8_000, 13_772]);
     for (line, net, signal, pin, driver) in [
         (sck, "SPI_SCK", "SCK", "U4.6", "U1.41"),
         (mosi, "SPI_MOSI", "MOSI", "U4.5", "U1.43"),
@@ -185,21 +189,22 @@ fn a_declared_spi_bound_below_the_bound_fails_and_at_it_passes() {
             }
         }
     };
-    let spec = spec_with("sck-under", |v| set(v, 18_520));
+    let spec = spec_with("sck-under", |v| set(v, 16_971));
     let (code, v) = extract("sck-under", reference(), spec.to_str().unwrap());
     assert_eq!(code, 1, "{v}");
     assert_eq!(
         v["findings"][0]["message"],
-        "`SPI_SCK`: bound 18521 fF (trace 5920, vias 3038, pads 1563, pins 8000) exceeds the declared 18520 fF"
+        "`SPI_SCK`: bound 16972 fF (trace 4371, vias 3038, pads 1563, pins 8000) exceeds the declared 16971 fF"
     );
     assert_eq!(v["findings"].as_array().unwrap().len(), 1);
-    let spec = spec_with("sck-at", |v| set(v, 18_521));
+    let spec = spec_with("sck-at", |v| set(v, 16_972));
     let (code, v) = extract("sck-at", reference(), spec.to_str().unwrap());
     assert_eq!(code, 0, "{v}");
 }
 
 /// §3.2 and the §1.3 prediction: declared 20 pF fails both lines on their
-/// pins alone, exit 1, each named with its numbers; 50 pF fails SCL only.
+/// pins alone, exit 1, each named with its numbers; 50 pF fails SDA only
+/// (SCL before `AET-WO-1307` K2 moved the reference's copper).
 #[test]
 fn a_declared_bound_below_the_bound_fails_naming_each_line() {
     let spec = spec_with("20p", |v| declared(v, 20_000));
@@ -218,8 +223,8 @@ fn a_declared_bound_below_the_bound_fails_naming_each_line() {
     assert_eq!(
         messages,
         [
-            "`I2C_SDA`: bound 46800 fF (trace 9146, vias 6076, pads 1578, pins 30000) exceeds the declared 20000 fF",
-            "`I2C_SCL`: bound 58235 fF (trace 16024, vias 10633, pads 1578, pins 30000) exceeds the declared 20000 fF",
+            "`I2C_SDA`: bound 50576 fF (trace 12922, vias 6076, pads 1578, pins 30000) exceeds the declared 20000 fF",
+            "`I2C_SCL`: bound 43749 fF (trace 9133, vias 3038, pads 1578, pins 30000) exceeds the declared 20000 fF",
         ]
     );
 
@@ -232,16 +237,16 @@ fn a_declared_bound_below_the_bound_fails_naming_each_line() {
         .iter()
         .map(|l| l["verdict"].as_str().unwrap())
         .collect();
-    assert_eq!(verdicts, ["pass", "fail", "pass", "pass"]);
+    assert_eq!(verdicts, ["fail", "pass", "pass", "pass"]);
     assert_eq!(v["findings"].as_array().unwrap().len(), 1);
 
     // At the bound exactly, the line passes.
     let spec = spec_with("at", |v| {
         for c in v["net_constraints"].as_array_mut().unwrap() {
             let at = if c["net_name"] == "I2C_SDA" {
-                46_800
+                50_576
             } else {
-                58_235
+                43_749
             };
             c["max_capacitance_femtofarads"] = at.into();
         }
@@ -633,9 +638,11 @@ fn the_parts_on_a_line_are_the_designs() {
 /// footprint included. `route::check` judges every pair of copper items of
 /// different nets on a shared layer, pads of one part included
 /// (`route.rs` `items` and `check`), and `read` runs it before any
-/// estimate. Here a foreign pad moved to 0.15 mm from an I2C pad in the
-/// same footprint, the MCU's 0.5 mm-pitch pins and the BME280's pads, is
-/// refused naming both pads.
+/// estimate. Here a foreign pad and an I2C pad of the same footprint brought
+/// to 0.15 mm (the MCU's 0.5 mm-pitch pins) and 0.175 mm (the BME280's pads)
+/// apart are refused naming both pads. On the BME280 the I2C pad is the one
+/// moved: since `AET-WO-1307` K2 the foreign pad's track no longer reaches
+/// it once moved, and connectivity refuses first.
 #[test]
 fn a_foreign_pad_closer_than_the_clearance_to_a_line_is_refused() {
     let text = reference();
@@ -651,10 +658,10 @@ fn a_foreign_pad_closer_than_the_clearance_to_a_line_is_refused() {
         (
             "sensor",
             "U2",
-            "(at -0.325 -1.025 90)",
-            "(at -0.2 -1.025 90)",
+            "(at 0.325 -1.025 90)",
+            "(at 0.45 -1.025 90)",
             "U2 pad 3",
-            "U2 pad 2",
+            "U2 pad 4",
         ),
     ] {
         let start = text

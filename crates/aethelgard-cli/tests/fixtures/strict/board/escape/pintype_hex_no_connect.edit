@@ -19,13 +19,6 @@
 		(pad "138" smd roundrect
 @@ end
 @@ find
-		(start 94.75 88)
-		(end 94.75 88.625)
-		(width 0.2)
-		(layer "F.Cu")
-		(net "/I2C_SDA")
-		(uuid "c1dd8d81-00bf-8958-a037-4cd7062848e0")
-	)
 	(segment
 		(start 94.75 88.625)
 		(end 94.75 88.75)
@@ -35,127 +28,162 @@
 		(uuid "c64ccc4a-c11e-8d07-83d4-e48e2ca04b15")
 	)
 	(segment
-		(start 95.5 81.875)
-		(end 95.5 82.125)
-		(width 0.2)
-		(layer "F.Cu")
-		(net "/I2C_SDA")
-		(uuid "bd7149dc-7996-8dd5-b53b-456ea89926a5")
-	)
-	(segment
-		(start 95.5 82.125)
-		(end 95.75 82.125)
-		(width 0.2)
-		(layer "F.Cu")
-		(net "/I2C_SDA")
-		(uuid "222b2780-18bd-8cc1-9365-4d95c2183b87")
-	)
-	(segment
-		(start 95.75 82.125)
-		(end 95.75 83.125)
-		(width 0.2)
-		(layer "F.Cu")
-		(net "/I2C_SDA")
-		(uuid "97345d26-ddd4-8616-b193-82dd383052b1")
-	)
-	(segment
-		(start 95.75 82.125)
-		(end 96.5 82.125)
-		(width 0.2)
-		(layer "F.Cu")
-		(net "/I2C_SDA")
-		(uuid "242980ad-311a-847c-b1ad-0fee95544961")
-	)
-	(segment
-		(start 96.5 82.125)
-		(end 96.5 82.5)
-		(width 0.2)
-		(layer "F.Cu")
-		(net "/I2C_SDA")
-		(uuid "8bb7df68-4edd-8b8e-907e-7b9a7561c387")
 @@ replace
-		(start 95.5 81.875)
-		(end 95.5 82.125)
-		(width 0.2)
-		(layer "F.Cu")
-		(net "/I2C_SDA")
-		(uuid "bd7149dc-7996-8dd5-b53b-456ea89926a5")
-	)
 	(segment
-		(start 95.5 82.125)
-		(end 95.75 82.125)
-		(width 0.2)
-		(layer "F.Cu")
-		(net "/I2C_SDA")
-		(uuid "222b2780-18bd-8cc1-9365-4d95c2183b87")
-	)
-	(segment
-		(start 95.75 82.125)
-		(end 95.75 83.125)
-		(width 0.2)
-		(layer "F.Cu")
-		(net "/I2C_SDA")
-		(uuid "97345d26-ddd4-8616-b193-82dd383052b1")
-	)
-	(segment
-		(start 95.75 82.125)
-		(end 96.5 82.125)
-		(width 0.2)
-		(layer "F.Cu")
-		(net "/I2C_SDA")
-		(uuid "242980ad-311a-847c-b1ad-0fee95544961")
 @@ end
 @@ find
+	(segment
+		(start 94.75 87.25)
+		(end 94.75 88.625)
+		(width 0.2)
+		(layer "F.Cu")
+		(net "/I2C_SDA")
+		(uuid "656842f8-8518-8926-9d57-5519d2c5e42f")
 	)
 	(segment
-		(start 94.75 88)
-		(end 96.625 88)
-		(width 0.2)
-		(layer "B.Cu")
-		(net "/I2C_SDA")
-		(uuid "b68a5112-091e-8df2-be3c-a77c3fc42072")
-	)
-	(segment
-		(start 96.5 82.5)
-		(end 96.5 86.625)
-		(width 0.2)
-		(layer "B.Cu")
-		(net "/I2C_SDA")
-		(uuid "d79ee4e4-1307-81dd-ac34-57015f3a45bd")
-	)
-	(segment
-		(start 96.5 86.625)
-		(end 96.625 86.625)
-		(width 0.2)
-		(layer "B.Cu")
-		(net "/I2C_SDA")
-		(uuid "c11d54f8-1e88-8e21-b9b3-2984db665941")
-	)
-	(segment
-		(start 96.625 86.625)
-		(end 96.625 88)
-		(width 0.2)
-		(layer "B.Cu")
-		(net "/I2C_SDA")
-		(uuid "bbf083d3-611d-8103-855f-ce34333fc99b")
 @@ replace
+	(segment
 @@ end
 @@ find
-		(at 94.75 88)
+	(segment
+		(start 94.625 87.25)
+		(end 94.75 87.25)
+		(width 0.2)
+		(layer "F.Cu")
+		(net "/I2C_SDA")
+		(uuid "1a30aed6-07b3-8e31-bb9d-0c7f88fe40fa")
+	)
+	(segment
+@@ replace
+	(segment
+@@ end
+@@ find
+	(via
+		(at 94.625 87.25)
 		(size 0.6)
 		(drill 0.3)
 		(layers "F.Cu" "B.Cu")
 		(net "/I2C_SDA")
-		(uuid "75a92571-c2c1-8ecd-bf4a-c5f6be5cf77c")
+		(uuid "17343037-4086-842d-808c-f3a0e0ae8c33")
 	)
 	(via
-		(at 96.5 82.5)
+@@ replace
+	(via
+@@ end
+@@ find
+	(segment
+		(start 94.625 87.25)
+		(end 99.25 87.25)
+		(width 0.2)
+		(layer "B.Cu")
+		(net "/I2C_SDA")
+		(uuid "bc956304-1844-88d5-b59b-852d0860b9e6")
+	)
+	(segment
+@@ replace
+	(segment
+@@ end
+@@ find
+	(segment
+		(start 99.25 86.25)
+		(end 99.25 87.25)
+		(width 0.2)
+		(layer "B.Cu")
+		(net "/I2C_SDA")
+		(uuid "bfd098ab-43a3-88b6-a877-8f55e547728b")
+	)
+	(segment
+@@ replace
+	(segment
+@@ end
+@@ find
+	(segment
+		(start 99.25 86.125)
+		(end 99.25 86.25)
+		(width 0.2)
+		(layer "B.Cu")
+		(net "/I2C_SDA")
+		(uuid "bf5b73b4-0e99-8f83-8df5-6b2b125cc66a")
+	)
+	(segment
+@@ replace
+	(segment
+@@ end
+@@ find
+	(segment
+		(start 99.25 86)
+		(end 99.25 86.125)
+		(width 0.2)
+		(layer "B.Cu")
+		(net "/I2C_SDA")
+		(uuid "3a912eaf-d63f-8509-8c4d-12f5add9b8e0")
+	)
+	(segment
+@@ replace
+	(segment
+@@ end
+@@ find
+	(segment
+		(start 99.25 85.875)
+		(end 99.25 86)
+		(width 0.2)
+		(layer "B.Cu")
+		(net "/I2C_SDA")
+		(uuid "589363e7-abee-8037-9a08-2a84f7c08ac5")
+	)
+	(segment
+@@ replace
+	(segment
+@@ end
+@@ find
+	(segment
+		(start 99.25 85.75)
+		(end 99.25 85.875)
+		(width 0.2)
+		(layer "B.Cu")
+		(net "/I2C_SDA")
+		(uuid "782e29ab-323b-8b5b-8cdb-79f4d7abac3f")
+	)
+	(segment
+@@ replace
+	(segment
+@@ end
+@@ find
+	(segment
+		(start 99.25 85.125)
+		(end 99.25 85.75)
+		(width 0.2)
+		(layer "B.Cu")
+		(net "/I2C_SDA")
+		(uuid "98c945e0-a3db-8790-9336-823a84c13246")
+	)
+	(segment
+@@ replace
+	(segment
+@@ end
+@@ find
+	(via
+		(at 99.25 85.125)
 		(size 0.6)
 		(drill 0.3)
 		(layers "F.Cu" "B.Cu")
 		(net "/I2C_SDA")
-		(uuid "aaa251b7-e347-8337-a8cc-0e8f6716d86b")
+		(uuid "d2c03a25-1815-8bcb-900d-b2b3307aac01")
 	)
 	(via
 @@ replace
+	(via
+@@ end
+@@ find
+	(segment
+		(start 99.25 85.125)
+		(end 100.125 85.125)
+		(width 0.2)
+		(layer "F.Cu")
+		(net "/I2C_SDA")
+		(uuid "b6d57ca7-f188-8f8b-9ba9-3bf35080d0f8")
+	)
+	(segment
+@@ replace
+	(segment
 @@ end
