@@ -405,11 +405,11 @@ Vendoring needs capacitor footprints above 0402 (0805, 1210).
 
 ## Gates
 
-- On Furnace, under a capped user scope (`memory.swap.max` 0), at `9648f38`:
+- On Furnace, under a capped user scope (`memory.swap.max` 0), at `1ed4f9c` (every later commit touches this file only):
   - `cargo fmt --all -- --check`: exit 0;
   - `cargo clippy --workspace --all-targets -- -D warnings`: exit 0;
   - `cargo test --workspace`: exit 0 (79 result lines, all ok).
-- The merge of `origin/main` at `08d6206` (#136) changed only `docs/`.
+- The merge of `origin/main` at `08d6206` (#136) changed only `docs/`. The first run, at `9648f38`, also passed; the run above is at the head after the adversarial amendments.
 - The spike adds no Rust and touches nothing outside `spike/4300d/` and this file. Tier 2 is CI's.
 - **Reduction pass (diff): nothing to remove.** No fact is held twice as a source. The two reader records are evidence (the cache copies are scratch). Every `checks.py` source key is read, and the two shell scripts do different jobs.
 
