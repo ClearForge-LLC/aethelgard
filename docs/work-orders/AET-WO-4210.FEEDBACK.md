@@ -121,13 +121,23 @@ Read at source (`spike/4210/s1-models.md`, spot-checked by me at `LPS25HB.cs`, `
 ### Where it did not run: two stops
 
 **1. The container was denied (the kickoff's stop).**
-- My first container was a no-op whose only job was to prove the caps read back: `spike/4210/img.sh -- bash -c 'echo inside; …'`, at 8g. **The permission classifier denied that call, and gave no reason.**
+- My first container was a no-op whose only job was to prove the caps read back, at 8g. **The permission classifier denied that call, and gave no reason.** The call was one compound command:
+  - `chmod +x spike/4210/img.sh`;
+  - then `spike/4210/img.sh -- bash -c 'echo inside; env | grep -c TMPDIR; renode --version | head -2; ls /cache'`;
+  - then `cat spike/4210/out/caps.log`.
+
+  Which part tripped the classifier is not known, so D8's permission rule should name the runner, `bash spike/4210/img.sh -- …`.
 - The kickoff says a denial is not worked around, so:
   - I did not retry it, split it or reword it;
   - I did not hand it to a subagent;
   - I did not run Renode on the host.
 - **No container started** for this work order. `spike/4210/out/` was never created.
-- **So every S2 and S3 row below is *read* or *inferred*, never *measured*.** The harness that would measure them is committed and unrun:
+- **So every S2 and S3 row below is *read* or *inferred*, never *measured*.** The harness that would measure them is committed, **unrun and untested**:
+  - its exec bit was never set;
+  - the firmware variants were never compiled, because the host has no `thumbv7em` target and only the image does;
+  - so its first run may need fixes.
+
+  Its pieces:
   - `aet-4210-gen` (built and run on the host under the capped scope; it writes `~/.cache/aet-4210/boards/spi-imu`);
   - `img.sh`, `fw.py`, `s2.py`, and `drive.py` (4200's, with only names and bounds changed).
 
@@ -151,7 +161,7 @@ Read at source (`spike/4210/s1-models.md`, spot-checked by me at `LPS25HB.cs`, `
 
 Each subagent's claims that the recommendation rests on were spot-checked by me at the cited lines, and the hashes recomputed.
 - **Renode** at `066a7f13`.
-- **ArduPilot** at `Copter-4.7.2` (`fb773567`), which `ArduCopter-stable` also points at. `4400`'s rule ("the latest stable Copter tag") resolves to it, but `4400` has not recorded its tag yet (`~/.cache/aet-4400` is empty). Re-check at the ruling.
+- **ArduPilot** at `Copter-4.7.2` (`fb773567`), which `ArduCopter-stable` also points at. That is `4400`'s clone's commit too (F9).
 
 | Part | What the Renode model witnesses (Noisy) | ArduPilot | Datasheet (held) | Vendor status |
 |---|---|---|---|---|
@@ -222,7 +232,7 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
   - a step that reads `n` bytes logs `2 + 2n` ICM lines, about 75 bytes each, so a 6-byte read is about 1,050 bytes, inside kind 22's 1,800-byte budget;
   - a 14-byte ArduPilot-sized burst (about 2,200 bytes) is not.
 
-  So the budget applies per step, and a script read is capped at what fits, 12 bytes (inferred from line lengths, unmeasured). Kind 13 takes kind 22's budget, which closes F18.
+  So the budget applies per step. A script read is capped at what fits: `(2 + 2n) × 75 ≤ 1,800` gives `n ≤ 11` bytes (inferred from line lengths, unmeasured; the cap is set at the build from measured lines). Kind 13 takes kind 22's budget, which closes F18.
 - **Device warnings (F22, D4).** A correct, ArduPilot-faithful configuration write warns: `CLKSEL` (P1.3, read at `PeripheralRegister.cs` L593, L682, L726–760), and `I2C_IF_DIS`. So "any device warning fails" would fail a correct script.
   - **Proposal:** each step declares its expected warnings exactly, pinned to source. Any other `[WARNING]` from the device fails the step.
   - **The alternative:** script only writes that touch no tag. `PWR_MGMT_1` = `0x00` wakes the silicon (`0x41` → `0x00`, internal oscillator) and warns nothing in the model, but it is not ArduPilot's value.
@@ -270,6 +280,20 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
 - **A vendor host refuses Furnace: met.** st.com; the URLs are above, for Scotty.
 - **Also: a tool call denied by the permission classifier** (the kickoff's stop): met. It was the first container.
 
+## Held, by full sha256 (`~/.cache/aet-4210/ds/`)
+
+| File | sha256 |
+|---|---|
+| ICM-20948 DS-000189 1.6 (`icm20948_new.pdf`, `icm20948_held.pdf`) | `0588625f4f1d6d27382a4322f48073dc0ce569e537c63786b13aab3eeb76b718` |
+| ICP-10101 DS-000408 1.2 | `5f1dddc3f7c59453374d8aafb727cd10326472565f0d6001626eaa5493198f49` |
+| ICP-10111 DS-000177 1.3 | `249f1431a27dc70d39be1dfd39ff36429d1f66bdea115178ed05e3e3275a2d58` |
+| ICP-10125 DS-000329 1.1 | `27947486a648cb734da8cb982e4331981aff997440f8584ad3a8157c6b69657e` |
+| TDK ICM-20948 product page (EOL) | `694cc3e2bc2871c94f65735a7057c8280ba74cb02ea820f9e588aa810a1eb284` |
+| TDK ICP-10101 page (EOL) | `be6c588ef20c83ac746d9f22e14ed314082ba4646d1e23e7b3e0d316cf0ad65a` |
+| TDK ICP-10111 page (EOL) | `fdc2178341ce7da92d79d10901d8f5163a541cf585b9133f9097d20673fe7a57` |
+| TDK ICP-10125 page (EOL) | `29ff151405afcb876bc2f1ed3923b9ab534fd24348b27601d3a9b7cda65c4b67` |
+| TDK pressure family page ("EOL and not recommended for new designs") | `0b307a68fe91c773412c177db37d25662b711ded852e7bfc4af2ed8a4fc51865` |
+
 ## Findings
 
 - **F1 · The first container was denied by the permission classifier, with no reason given.** Not worked around, so S2 and S3 are unmeasured.
@@ -284,7 +308,7 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
   - A hwdef `BARO` line forces that driver's enable (`hwdef.py` L650).
   - `BARO_PROBE_EXT` defaults to 0.
   - The ICP-101xx has no autodetect, so `4400`'s generated hwdef must name the barometer.
-- **F9 · `4400` has not recorded its ArduPilot tag.** I read `Copter-4.7.2` (`fb773567`), which is what its rule gives today.
+- **F9 · `4400`'s clone is at the same commit.** I read `Copter-4.7.2` (`fb773567`). Its clone appeared during this spike, and `~/.cache/aet-4400/ardupilot` `HEAD` is `fb773567` (read-only `rev-parse`).
 
 ## Decisions needed
 
@@ -309,4 +333,4 @@ On the host, under `systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax
 - `cargo clippy --workspace --all-targets -- -D warnings`: ok;
 - `cargo test --workspace`: exit 0, no failure.
 
-Tier 2 is CI's (`roadmap.md` §6). This branch changes no crate, so nothing of tier 2's is touched.
+Tier 2 is CI's (`roadmap.md` §6). This branch changes no crate, so nothing of tier 2's is touched. CI on PR #131 was pending at `21722c2` when this was written.
