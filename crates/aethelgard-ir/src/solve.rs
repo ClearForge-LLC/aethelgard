@@ -282,6 +282,7 @@ fn solve_inner(
         spi_lines: BTreeMap::new(),
         clock: SolvedClock::reset(),
         motor_outputs: BTreeMap::new(),
+        serial_ports: BTreeMap::new(),
     };
     out.validate().map_err(SolveError::InvalidSpecification)?;
     out.i2c_ceilings = i2c_ceilings(spec)?;
@@ -1588,6 +1589,7 @@ mod differential {
             connectors: vec![],
             net_constraints,
             motor_outputs: vec![],
+            serial_ports: vec![],
         }
     }
 

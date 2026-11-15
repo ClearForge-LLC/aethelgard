@@ -17,11 +17,13 @@ pub mod ds009;
 pub mod electrical;
 pub mod motor;
 pub mod parts;
+pub mod serial;
 mod solve;
 pub mod speeds;
 pub mod thermal;
 
 pub use motor::{MotorOutput, MotorProtocol, PwmTiming, SolvedClock, SolvedMotorOutput};
+pub use serial::{Framing, Parity, SerialPort, SerialRole, SolvedSerialPort};
 pub use solve::{NODE_LIMIT, RESERVED_PINS, SolveError, solve, solve_with_limit};
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -39,8 +41,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// Version 4 added `connectors` (`AET-WO-4300f`). Version 5 requires
 /// `net_classes` and `diff_pairs` (`AET-WO-1308`); an empty array declares
 /// none. Version 6 requires `motor_outputs` and `mcu.hse_hz` (`AET-WO-4300a`
-/// §1.1, `4400` D1). Nothing supplies any of them for an older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 6;
+/// §1.1, `4400` D1). Version 7 requires `serial_ports` (`AET-WO-4300b`).
+/// Nothing supplies any of them for an older file.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 7;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -75,6 +78,8 @@ pub struct Specification {
     pub diff_pairs: Vec<classes::DiffPair>,
     /// Each motor output: a timer channel the solver assigns (`AET-WO-4300a`).
     pub motor_outputs: Vec<MotorOutput>,
+    /// Each serial port: a USART or UART the solver assigns (`AET-WO-4300b`).
+    pub serial_ports: Vec<SerialPort>,
 }
 
 /// The microcontroller: a part name, the domain that supplies it, and its
@@ -174,8 +179,9 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// The `schema_version` of a [`SolvedTopology`]. Version 2 added `i2c_speeds`
 /// (`AET-WO-1205`), version 3 `spi_devices` (`AET-WO-4200`), version 4
 /// `spi_lines` (`AET-WO-4300c`), version 5 `clock` and `motor_outputs`
-/// (`AET-WO-4300a`); an older file is refused, never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 5;
+/// (`AET-WO-4300a`), version 6 `serial_ports` (`AET-WO-4300b`); an older
+/// file is refused, never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 6;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -229,6 +235,10 @@ pub struct SolvedTopology {
     /// `assignments` on a `TIMn_CHk` signal (`AET-WO-4300a`, `RUL-16`).
     #[serde(deserialize_with = "unique_keys")]
     pub motor_outputs: BTreeMap<String, SolvedMotorOutput>,
+    /// Each serial port, keyed by its label; its TX and RX nets are keys of
+    /// `assignments` on `<peripheral>_TX` / `_RX` (`AET-WO-4300b`, `RUL-16`).
+    #[serde(deserialize_with = "unique_keys")]
+    pub serial_ports: BTreeMap<String, SolvedSerialPort>,
 }
 
 /// One SPI line the MCU drives: the bus's declared clock (the most it
@@ -440,6 +450,8 @@ struct SolvedWire {
     clock: Option<SolvedClock>,
     #[serde(default, deserialize_with = "unique_keys_some")]
     motor_outputs: Option<BTreeMap<String, SolvedMotorOutput>>,
+    #[serde(default, deserialize_with = "unique_keys_some")]
+    serial_ports: Option<BTreeMap<String, SolvedSerialPort>>,
 }
 
 fn unique_keys_some<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
@@ -500,6 +512,12 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     None if w.schema_version != SOLVED_SCHEMA_VERSION => BTreeMap::new(),
                     None => return Err(serde::de::Error::missing_field("motor_outputs")),
                 };
+                // The same for `serial_ports`, which version 6 added.
+                let serial_ports = match w.serial_ports {
+                    Some(m) => m,
+                    None if w.schema_version != SOLVED_SCHEMA_VERSION => BTreeMap::new(),
+                    None => return Err(serde::de::Error::missing_field("serial_ports")),
+                };
                 Ok(SolvedTopology {
                     schema_version: w.schema_version,
                     specification_sha256: w.specification_sha256,
@@ -513,6 +531,7 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     spi_lines,
                     clock,
                     motor_outputs,
+                    serial_ports,
                 })
             }
         }

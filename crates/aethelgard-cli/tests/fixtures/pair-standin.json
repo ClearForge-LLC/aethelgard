@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "project_name": "sentinel-01-pair",
   "mcu": {
     "part": "STM32H753ZITx",
@@ -164,5 +164,6 @@
       "width_um": 200
     }
   ],
-  "motor_outputs": []
+  "motor_outputs": [],
+  "serial_ports": []
 }

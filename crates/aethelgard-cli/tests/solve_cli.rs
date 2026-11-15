@@ -34,8 +34,8 @@ use sha2::{Digest, Sha256};
 /// whose specification version 6 (`motor_outputs`, `mcu.hse_hz`) and solved
 /// version 5 (`clock`, `motor_outputs`) moved them (`8100aadf…` and
 /// `798ae634…` before).
-const REFERENCE_DIGEST: &str = "e61864b97aba69bb3865e060c0bd186ab6c6295d50ba0c9fb869aeb046ab413e";
-const STRESS_DIGEST: &str = "33b079d1071240b656ac24091f0a4c61befb15c0df4e3064af65a085f7f10721";
+const REFERENCE_DIGEST: &str = "729e3f2ce27701c9772463513d2e06b888b42a0ab8e3c34e9d89a6726f0b5b64";
+const STRESS_DIGEST: &str = "1e53a7c12d4664cf4eeb077ca1354df2418ac0a6cab7fffde16bbaf0ffdf4621";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -205,7 +205,7 @@ fn the_reference_solves_to_the_expected_pins() {
     // Both lines declare 300 ns: Fast-mode, 400 kHz, the bus's own speed.
     assert_eq!(t.i2c_ceilings, [("SENSORS".to_owned(), 400_000)].into());
     assert_eq!(t.i2c_speeds, [("SENSORS".to_owned(), 400_000)].into());
-    assert_eq!(t.schema_version, 5);
+    assert_eq!(t.schema_version, 6);
 }
 
 #[test]

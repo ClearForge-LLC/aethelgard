@@ -65,7 +65,7 @@ fn dshot(label: &str, pin: Option<&str>) -> Value {
 
 fn spec_json(motors: Vec<Value>) -> Value {
     json!({
-        "schema_version": 6,
+        "schema_version": 7,
         "project_name": "t",
         "board": serde_json::from_str::<Value>(BOARD).unwrap(),
         "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0},
@@ -76,6 +76,7 @@ fn spec_json(motors: Vec<Value>) -> Value {
         "net_classes": [],
         "diff_pairs": [],
         "motor_outputs": motors,
+        "serial_ports": [],
     })
 }
 
@@ -396,7 +397,7 @@ fn a_version_4_topology_without_the_new_fields_is_refused_as_a_version() {
     v.as_object_mut().unwrap().remove("motor_outputs");
     let t: SolvedTopology = serde_json::from_value(v.clone()).unwrap();
     assert_eq!(t.validate().unwrap_err().kind(), "UnsupportedSchemaVersion");
-    v["schema_version"] = json!(5);
+    v["schema_version"] = json!(6);
     assert!(serde_json::from_value::<SolvedTopology>(v).is_err());
 }
 

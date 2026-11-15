@@ -143,7 +143,7 @@ fn spec(
     // The device lists are private to the crate (`AET-WO-1204`), so the
     // specification is built from the JSON it reads.
     let json = serde_json::json!({
-        "schema_version": 6,
+        "schema_version": 7,
         "net_classes": [],
         "diff_pairs": [],
         "project_name": "t",
@@ -161,6 +161,7 @@ fn spec(
         "connectors": [],
         "net_constraints": net_constraints,
         "motor_outputs": [],
+        "serial_ports": [],
     });
     serde_json::from_value(json).expect("the fixture is a specification")
 }
