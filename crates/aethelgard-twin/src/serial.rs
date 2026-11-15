@@ -376,18 +376,41 @@ pub fn refused_by(body: &str) -> Option<&str> {
 }
 
 /// True for a line of Renode's access log ([`access`]) the judge never reads:
-/// a read (the RCC's included), or a write to a GPIO port's word other than
-/// `MODER`, `OTYPER`, `OSPEEDR`, `PUPDR`, `AFRL` and `AFRH` (a sub-word write
-/// into one of those is kept, and fails closed). The boot's log filter
-/// discards these before its budget, uncounted: a firmware polling `ISR`
-/// writes one line per poll (measured: 20 000 polls, 2.3 MB, per port that
-/// waits out `ECHO_POLLS`; fix 1 P2), and one toggling a pin of a logged port
-/// (`BSRR`, `ODR`) one per toggle.
+/// a read of a GPIO port or of the RCC, a USART's read of `ISR` or `RDR` (any
+/// width, in the word), or a write to a GPIO port's word other than `MODER`,
+/// `OTYPER`, `OSPEEDR`, `PUPDR`, `AFRL` and `AFRH` (a sub-word write into one
+/// of those is kept, and fails closed). A USART's read of any other word is
+/// kept: the bring-up never reads one (adversarial pass 3, ADV3-2;
+/// [`judge_writes`]). The boot's log filter discards these before its budget,
+/// uncounted: a firmware polling `ISR` writes one line per poll (measured:
+/// 20 000 polls, 2.3 MB, per port that waits out `ECHO_POLLS`; fix 1 P2), and
+/// one toggling a pin of a logged port (`BSRR`, `ODR`) one per toggle.
 pub fn is_unjudged_access(body: &str) -> bool {
     access(body).is_some_and(|a| {
-        !a.write
-            || (a.source.starts_with("gpioPort")
-                && gpio_judged_offsets().is_some_and(|o| !o.contains(&(a.offset & !3))))
+        if a.write {
+            a.source.starts_with("gpioPort")
+                && gpio_judged_offsets().is_some_and(|o| !o.contains(&(a.offset & !3)))
+        } else {
+            !usart_sources().contains(&a.source.as_str())
+                || usart_polled_offsets().is_some_and(|o| o.contains(&(a.offset & !3)))
+        }
+    })
+}
+
+/// Every stock USART's Renode name ([`stock_uarts`]), read once.
+fn usart_sources() -> &'static [&'static str] {
+    static SOURCES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    SOURCES.get_or_init(stock_uarts)
+}
+
+/// A USART's `ISR` and `RDR` offsets, from the header, read once; `None` if
+/// the header cannot be read (then no USART read is discarded).
+fn usart_polled_offsets() -> Option<[u32; 2]> {
+    static OFFSETS: std::sync::OnceLock<Option<[u32; 2]>> = std::sync::OnceLock::new();
+    *OFFSETS.get_or_init(|| {
+        let f = cmsis::register_facts().ok()?;
+        let u = f.layout("USART").ok()?;
+        Some([u.offset("ISR", 0).ok()?, u.offset("RDR", 0).ok()?])
     })
 }
 
@@ -526,6 +549,11 @@ pub struct Bringup {
     /// For each of [`Self::words`], the bits Renode stores nowhere
     /// ([`usart_stored`]; none of `BRR`'s are judged here).
     pub unstored: [u32; 4],
+    /// `ISR`'s and `RDR`'s offsets: the only words the bring-up reads
+    /// (adversarial pass 3, ADV3-2).
+    pub polled: [u32; 2],
+    /// Every word of the USART's layout, its name and offset, for a finding.
+    pub registers: Vec<(String, u32)>,
 }
 
 impl Bringup {
@@ -575,6 +603,12 @@ impl Bringup {
                 let [a, b, c] = usart_stored(&f)?;
                 [!a, !b, !c, 0]
             },
+            polled: [layout.offset("ISR", 0)?, layout.offset("RDR", 0)?],
+            registers: layout
+                .fields
+                .iter()
+                .map(|r| (r.name.clone(), r.offset))
+                .collect(),
         })
     }
 }
@@ -588,10 +622,11 @@ pub struct TagJudgement {
     /// Each needed tag not set in its register's word at `UE` in some boot,
     /// as `CR1.M0`, in [`all_tags`]' order.
     pub missing: Vec<String>,
-    /// Everything else the writes did that the bring-up does not, each once,
-    /// in the order first seen: a tag set at `UE` the framing does not need
-    /// (`CR1.M1 set at UE`), another bit of a word at `UE` (`CR1 0x40D at UE,
-    /// not 0x140D`), a word changed after `UE` (`CR2 0x32000 after UE`), a
+    /// Everything else the accesses did that the bring-up does not, each
+    /// once, in the order first seen: a read of a word but `ISR` and `RDR`
+    /// (`ReadUInt32 from CR2 (0x4)`), a tag set at `UE` the framing does not
+    /// need (`CR1.M1 set at UE`), another bit of a word at `UE` (`CR1 0x40D at
+    /// UE, not 0x140D`), a word changed after `UE` (`CR2 0x32000 after UE`), a
     /// write the bring-up never makes (`0x1 to 0x2C`, `WriteByte to 0x1`,
     /// `TDR before UE`), and a last boot that never set `UE`; then what
     /// [`judge_rcc`] and [`judge_pins`] add.
@@ -614,7 +649,9 @@ impl TagJudgement {
 /// Judges the writes `source` (the port's USART, `usart1`) made in each boot,
 /// in log order (`boots`, the first boot then one per rendered release;
 /// every boot starts from reset, `0` in each word), against `b`: in each
-/// boot, every write a word write to `CR1`, `CR2`, `BRR` or `TDR`; no write
+/// boot, no read but of `ISR` and `RDR` ([`Bringup::polled`]: `ReadUInt32
+/// from CR2 (0x4)`), every write a word
+/// write to `CR1`, `CR2`, `BRR` or `TDR`; no write
 /// sets a bit Renode does not store ([`Bringup::unstored`]) that `b`'s word
 /// leaves clear; at the write that first sets `UE`, the four words exactly
 /// `b`'s, the tags judged apart; after it, no word changed and before it no
@@ -627,11 +664,33 @@ pub fn judge_writes(b: &Bringup, source: &str, boots: &[Vec<Access>]) -> TagJudg
     for (k, boot) in boots.iter().enumerate() {
         let mut word = [0u32; 4];
         let mut enabled = false;
-        let mine = boot.iter().filter(|a| a.write && a.source == source);
         if k + 1 == boots.len() {
-            j.writes = mine.clone().count();
+            j.writes = boot
+                .iter()
+                .filter(|a| a.write && a.source == source)
+                .count();
         }
-        for a in mine {
+        for a in boot.iter().filter(|a| a.source == source) {
+            // The bring-up reads `ISR` and `RDR` alone: a read of a
+            // configuration word gives what Renode stores, which is not
+            // silicon's where a bit is a tag (`CR2`'s inversion reads 0), so
+            // a firmware could write back what it read and differ on silicon
+            // (adversarial pass 3, ADV3-2). The log filter keeps every other
+            // read ([`is_unjudged_access`]).
+            if !a.write {
+                if !b.polled.contains(&(a.offset & !3)) {
+                    let name = b
+                        .registers
+                        .iter()
+                        .find(|r| r.1 == a.offset & !3)
+                        .map_or_else(|| format!("{:#X}", a.offset & !3), |r| r.0.clone());
+                    note(
+                        &mut j,
+                        format!("Read{} from {name} ({:#X})", width_name(a.bits), a.offset),
+                    );
+                }
+                continue;
+            }
             let slot = b.words.iter().position(|w| w.1 == a.offset);
             let value = u32::try_from(a.value).unwrap_or(u32::MAX);
             if a.bits != 32 {
@@ -1423,6 +1482,37 @@ mod tests {
                 "[INFO] usart1: [cpu: 0x8000728] WriteUInt32 to 0x18 (Request), value 0x1",
                 false,
             ),
+            // Adversarial pass 3, ADV3-2: a USART's reads of ISR and RDR are
+            // discarded, at any width in the word; of any other word kept, a
+            // byte of CR2 included; a GPIO port's reads discarded.
+            (
+                "[INFO] usart1: [cpu: 0x80009C0] ReadUInt32 from 0x24 (ReceiveData), returned 0x41",
+                true,
+            ),
+            (
+                "[INFO] usart1: [cpu: 0x80009C0] ReadByte from 0x1E (InterruptAndStatus+0x2), returned 0x60",
+                true,
+            ),
+            (
+                "[INFO] uart4: [cpu: 0x80009C0] ReadUInt32 from 0x4 (ControlRegister2), returned 0x2000",
+                false,
+            ),
+            (
+                "[INFO] uart4: [cpu: 0x80009C0] ReadByte from 0x6 (ControlRegister2+0x2), returned 0x0",
+                false,
+            ),
+            (
+                "[INFO] usart1: [cpu: 0x80009C0] ReadUInt32 from 0x0 (ControlRegister1), returned 0xD",
+                false,
+            ),
+            (
+                "[INFO] usart1: [cpu: 0x80009C0] ReadUInt32 from 0x2C (TransmitData+0x4), returned 0x0",
+                false,
+            ),
+            (
+                "[INFO] gpioPortA: [cpu: 0x8000A2A] ReadUInt32 from 0x4 (OutputType), returned 0x0",
+                true,
+            ),
         ] {
             assert_eq!(is_unjudged_access(line), unjudged, "{line}");
         }
@@ -1663,6 +1753,63 @@ mod tests {
         let rest = sbus_boot()[2..].to_vec();
         let j = judge_writes(&b, "uart4", &[sbus_boot(), rest]);
         assert_eq!(j.missing, ["CR2.RXINV", "CR2.TXINV"]);
+    }
+
+    /// Adversarial pass 3, ADV3-2 (the PM's ruling): the bring-up reads a
+    /// USART's `ISR` and `RDR` alone; a read of any other word is named once,
+    /// in the order seen, whatever its width, in any boot.
+    #[test]
+    fn adversarial_3_adv3_2_a_read_of_a_configuration_word_is_named() {
+        let b = Bringup::of(&framing(8, Parity::Even, 2, true), 640).unwrap();
+        assert_eq!(b.polled, [0x1C, 0x24]);
+        let read = |offset, bits| Access {
+            write: false,
+            bits,
+            ..w("uart4", offset, 0)
+        };
+        let with = |at: usize, reads: &[Access]| {
+            let mut boot = sbus_boot();
+            for (k, r) in reads.iter().enumerate() {
+                boot.insert(at + k, r.clone());
+            }
+            judge_writes(&b, "uart4", &[boot])
+        };
+        // ISR polled and RDR read: the bring-up's own.
+        let j = with(4, &[read(0x1C, 32), read(0x24, 32), read(0x1E, 8)]);
+        assert!(j.holds(), "{j:?}");
+        assert_eq!(j.writes, 5);
+        // ADV3-2: CR2 read back before UE, then written XORed with the
+        // inversion (Renode reads it without the tags).
+        let mut boot = sbus_boot();
+        boot.insert(2, read(0x04, 32));
+        boot.insert(3, w("uart4", 0x04, 0x3_2000));
+        let j = judge_writes(&b, "uart4", &[boot]);
+        assert_eq!(j.unexpected, ["ReadUInt32 from CR2 (0x4)"]);
+        for (offset, bits, named) in [
+            (0x00, 32, "ReadUInt32 from CR1 (0x0)"),
+            (0x06, 8, "ReadByte from CR2 (0x6)"),
+            (0x08, 32, "ReadUInt32 from CR3 (0x8)"),
+            (0x0C, 16, "ReadUInt16 from BRR (0xC)"),
+            (0x2C, 32, "ReadUInt32 from PRESC (0x2C)"),
+            (0x30, 32, "ReadUInt32 from 0x30 (0x30)"),
+        ] {
+            assert_eq!(
+                with(0, &[read(offset, bits), read(offset, bits)]).unexpected,
+                [named],
+                "{offset:#x}"
+            );
+        }
+        // In a boot before the last, and another USART's read is not this
+        // port's.
+        let mut early = sbus_boot();
+        early.push(read(0x04, 32));
+        assert!(!judge_writes(&b, "uart4", &[early, sbus_boot()]).holds());
+        let mut other = sbus_boot();
+        other.push(Access {
+            write: false,
+            ..w("usart1", 0x04, 0)
+        });
+        assert!(judge_writes(&b, "uart4", &[other]).holds());
     }
 
     /// Adversarial F4: the TX pin counts only if it was routed at the first

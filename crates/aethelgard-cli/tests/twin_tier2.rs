@@ -2765,6 +2765,39 @@ fn adv3_1b_a_usart_kernel_clock_selection_after_the_bring_up_fails() {
     );
 }
 
+/// ADV3-2 (the PM's ruling): SBUS's `CR2` read back before `UE` and written
+/// XORed with `TXINV|RXINV`. Renode returns `CR2` without its tags
+/// (`0x2000`), so the log shows `0x32000` written twice; silicon returns
+/// `0x32000` and is left `0x2000`, not inverted. Passed before the ruling.
+/// The bring-up reads `ISR` and `RDR` alone.
+#[test]
+fn adv3_2_sbus_s_cr2_read_back_and_xored_fails() {
+    let (platform, spec, elf) = motor_board(
+        "serial-four",
+        "adv3-inv-xor",
+        |d| {
+            edit(
+                d,
+                "src/board.rs",
+                "        r.write(TOKEN, Block::Uart4, 0x04, 0x00032000); // CR2\n",
+                "        r.write(TOKEN, Block::Uart4, 0x04, 0x00032000); // CR2\n        { let v = r.read(TOKEN, Block::Uart4, 0x04); r.write(TOKEN, Block::Uart4, 0x04, v ^ 0x00030000); }\n",
+            )
+        },
+        |_| {},
+    );
+    let (code, v) = boot_on("adv3-2", &platform, &spec, &elf, "100ms");
+    answer(&format!("ADV3-2 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    let sbus = &serial(&v)[3];
+    assert_eq!(sbus["label"], "SBUS", "{v}");
+    assert_eq!(
+        sbus["twin"]["tags_unexpected"],
+        serde_json::json!(["ReadUInt32 from CR2 (0x4)"]),
+        "{v}"
+    );
+}
+
 // ---------------------------------------------------------------- AET-WO-4220
 
 /// `AET-WO-4220` §2.3: the Sentinel-02-shaped fixture with the parts of our
