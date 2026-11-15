@@ -1039,3 +1039,47 @@ fn solve_is_blind_to_connectors() {
         "the topology does not name a connector"
     );
 }
+
+// AET-WO-3303 §1.8 (`4300f` A3, A4): two refusals moved to `validate`.
+
+#[test]
+fn a_connector_named_as_the_emitters_own_parts_is_refused() {
+    for name in ["U1", "u1", "R12", "r1", "C3", "c10"] {
+        let mut v = fixture();
+        v["connectors"][0]["reference"] = json!(name);
+        assert_refusal(&refusal(&v), "ConnectorReferenceReserved", name);
+    }
+    for name in ["U", "UX1", "U1a", "J7", "CN1"] {
+        let mut v = fixture();
+        v["connectors"][0]["reference"] = json!(name);
+        if let Err(err) = spec_of(&v).validate() {
+            assert_ne!(err.kind(), "ConnectorReferenceReserved", "{name}: {err}");
+        }
+    }
+}
+
+#[test]
+fn an_offboard_budget_past_the_bound_is_refused_and_its_maximum_is_not() {
+    let budgeted = |v: &Value| {
+        v["connectors"][0]["pins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|p| !p["offboard"].is_null())
+            .expect("J1 has a budgeted pin")
+    };
+    for (ff, refused) in [
+        (u64::MAX, true),
+        (aethelgard_ir::connectors::MAX_OFFBOARD_FEMTOFARADS + 1, true),
+        (aethelgard_ir::connectors::MAX_OFFBOARD_FEMTOFARADS, false),
+    ] {
+        let mut v = fixture();
+        let i = budgeted(&v);
+        v["connectors"][0]["pins"][i]["offboard"]["capacitance_femtofarads"] = json!(ff);
+        match spec_of(&v).validate() {
+            Err(err) if refused => assert_refusal(&err, "ConnectorBudgetTooLarge", "J1"),
+            Ok(()) if !refused => {}
+            other => panic!("{ff}: {other:?}"),
+        }
+    }
+}

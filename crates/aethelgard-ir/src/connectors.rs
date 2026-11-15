@@ -280,6 +280,13 @@ fn net_kinds(spec: &Specification) -> BTreeMap<&str, NetKind<'_>> {
     kinds
 }
 
+/// The largest off-board budget one connector pin may declare: 1 µF, three
+/// orders above UM10204's 550 pF Fast-mode Plus bus limit, so no real line is
+/// refused, and small enough that no board's sum of terms overflows the
+/// bound's integers (`AET-WO-4300f` A4: `u64::MAX` reached `extract`'s
+/// `Overflow`).
+pub const MAX_OFFBOARD_FEMTOFARADS: u64 = 1_000_000_000;
+
 /// Step 15 of `validate`, after the parts (step 14): each connector by
 /// document order, then its part, its pins, each pin's net and budget, then
 /// its standard. References are checked with the devices' (step 8) and
@@ -288,6 +295,17 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), E> {
     let kinds = net_kinds(spec);
     for c in spec.declared_connectors() {
         let id = || c.reference.clone();
+        // `AET-WO-4300f` A3: the emitter numbers its own parts `U<n>`, `R<n>`
+        // and `C<n>`, skipping a reference the specification spells so; a
+        // connector there renumbers the MCU, or in another case is refused
+        // only at `emit`.
+        let mut chars = c.reference.chars();
+        if chars.next().is_some_and(|f| "UuRrCc".contains(f))
+            && !chars.as_str().is_empty()
+            && chars.all(|d| d.is_ascii_digit())
+        {
+            return Err(E::ConnectorReferenceReserved { id: id() });
+        }
         let part = part(&c.part).ok_or_else(|| E::UnknownConnectorPart {
             id: id(),
             part: c.part.clone(),
@@ -339,6 +357,14 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), E> {
                     return Err(E::ConnectorBudgetNotApplicable {
                         id: id(),
                         pin: p.pin.clone(),
+                    });
+                }
+                Some(o) if o.capacitance_femtofarads > MAX_OFFBOARD_FEMTOFARADS => {
+                    return Err(E::ConnectorBudgetTooLarge {
+                        id: id(),
+                        pin: p.pin.clone(),
+                        femtofarads: o.capacitance_femtofarads,
+                        max: MAX_OFFBOARD_FEMTOFARADS,
                     });
                 }
                 Some(o) if o.capacitance_femtofarads == 0 => {
