@@ -574,6 +574,10 @@ pub struct Precondition {
     pub state: &'static str,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub unmet: Vec<String>,
+    /// Coverage: each bus no device uses, named and not blocking
+    /// (`AET-WO-3303` D1, ruled (c)).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub no_device: Vec<String>,
 }
 
 impl Precondition {
@@ -583,6 +587,7 @@ impl Precondition {
             precondition,
             state,
             unmet,
+            no_device: Vec::new(),
         }
     }
 }
