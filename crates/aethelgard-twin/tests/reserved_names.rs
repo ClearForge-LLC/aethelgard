@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 
 use aethelgard_ir::RESERVED_REFERENCES;
-use aethelgard_twin::platform::{RENODE_FILES, STOCK};
+use aethelgard_twin::platform::{RENODE_FILES, STOCK, mux_name};
 use sha2::{Digest, Sha256};
 
 /// The `.repl` keywords (`Grammar.cs` of Renode 1.17.0, lines 106-129), lowercased.
@@ -96,12 +96,21 @@ fn the_parser_skips_string_blocks_comments_and_updates() {
 }
 
 #[test]
-fn the_reserved_list_is_the_pinned_chain_s_lowercase_names_builtins_and_keywords() {
+fn the_reserved_list_is_the_pinned_chain_s_lowercase_names_builtins_keywords_and_muxes() {
     let mut want: BTreeSet<String> = chain_names()
         .into_iter()
         .filter(|n| n.chars().all(|c| !c.is_ascii_uppercase()))
         .collect();
     want.extend(BUILTINS.iter().chain(&KEYWORDS).map(|s| (*s).to_owned()));
+    // The emitter's own names: one multiplexer per SPI controller the pinned
+    // header has (`AET-WO-4200` D7).
+    let facts = aethelgard_svd_hal::cmsis::register_facts().unwrap();
+    let spi: Vec<String> = (1..=9)
+        .map(|n| format!("SPI{n}"))
+        .filter(|p| facts.base(p).is_ok())
+        .collect();
+    assert_eq!(spi.len(), 6, "the H753 has SPI1 to SPI6");
+    want.extend(spi.iter().map(|p| mux_name(&p.to_ascii_lowercase())));
     let have: BTreeSet<String> = RESERVED_REFERENCES
         .iter()
         .map(|s| (*s).to_owned())

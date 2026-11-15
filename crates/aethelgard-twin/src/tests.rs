@@ -6,16 +6,17 @@ use crate::platform;
 
 /// The reference topology, as `aethelgard solve` gives it for
 /// `examples/sentinel-01-minimal.json`.
-pub(crate) const REFERENCE: &str = r#"{"schema_version":2,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}}}"#;
+pub(crate) const REFERENCE: &str = r#"{"schema_version":3,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JV","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}}}"#;
 
 fn reference() -> SolvedTopology {
     serde_json::from_str(REFERENCE).unwrap()
 }
 
-/// The reference with no I2C device.
+/// The reference with no device, I2C or SPI.
 pub(crate) fn bare() -> SolvedTopology {
     let mut t = reference();
     t.i2c_devices.clear();
+    t.spi_devices.clear();
     t
 }
 
@@ -43,6 +44,7 @@ fn edited(from: &str, to: &str) -> SolvedTopology {
     assert!(REFERENCE.contains(from), "{from}");
     let mut t: SolvedTopology = serde_json::from_str(&REFERENCE.replace(from, to)).unwrap();
     t.i2c_devices.clear();
+    t.spi_devices.clear();
     t
 }
 
@@ -65,12 +67,15 @@ fn the_reference_platform_adds_spi1_and_names_every_solved_peripheral() {
     assert!(text.ends_with(
         "spi1: SPI.STM32H7_SPI @ {\n        sysbus 0x40013000;\n        rcc RegistrationPeripheralAlias.SPI1\n    }\n    IRQ -> nvic@35\n"
     ));
-    let names: Vec<(String, bool)> =
-        platform::instances(&bare(), &std::collections::BTreeSet::new())
-            .unwrap()
-            .into_iter()
-            .map(|i| (i.name, i.added))
-            .collect();
+    let names: Vec<(String, bool)> = platform::instances(
+        &bare(),
+        &std::collections::BTreeSet::new(),
+        &std::collections::BTreeSet::new(),
+    )
+    .unwrap()
+    .into_iter()
+    .map(|i| (i.name, i.added))
+    .collect();
     assert_eq!(
         names,
         [
@@ -130,7 +135,7 @@ fn what_cannot_be_lowered_is_refused() {
     assert_eq!(kind(t), "Undefined");
     assert_eq!(kind(edited("\"PA0\"", "\"PZ0\"")), "InvalidPin");
     assert_eq!(
-        kind(edited("\"schema_version\":2", "\"schema_version\":3")),
+        kind(edited("\"schema_version\":3", "\"schema_version\":4")),
         "InvalidTopology"
     );
     assert_eq!(
@@ -232,12 +237,15 @@ fn a_modelled_device_is_declared_and_an_unmodelled_one_is_listed() {
     );
     let none = platform::emit(&bare()).unwrap();
     assert!(none.contains("model): none."), "{none}");
-    let listed: Vec<(String, String)> =
-        platform::instances(&reference(), &std::collections::BTreeSet::new())
-            .unwrap()
-            .into_iter()
-            .map(|i| (i.name, i.model))
-            .collect();
+    let listed: Vec<(String, String)> = platform::instances(
+        &reference(),
+        &std::collections::BTreeSet::new(),
+        &std::collections::BTreeSet::new(),
+    )
+    .unwrap()
+    .into_iter()
+    .map(|i| (i.name, i.model))
+    .collect();
     assert!(listed.contains(&("u2".into(), "BME280".into())));
     assert!(!listed.iter().any(|(n, _)| n == "u3"));
     assert_eq!(text, platform::emit(&reference()).unwrap());
@@ -248,11 +256,12 @@ fn a_device_that_would_break_the_load_is_refused() {
     let kind = |d: &[(&str, &str, u8)]| platform::emit(&with_devices(d)).unwrap_err().kind();
     // A stock instance's name is the topology's refusal, which comes first
     // (`AET-WO-2204` D5: `validate` refuses a reference that is a stock name);
-    // a name repeated in another case is the emitter's.
+    // a name repeated in another case is the topology's too since
+    // `AET-WO-4200` D7 (`SolvedTopology::validate` folds references).
     assert_eq!(kind(&[("I2C1", "BME280", 0x76)]), "InvalidTopology");
     assert_eq!(
         kind(&[("U2", "BME280", 0x76), ("u2", "BME280", 0x77)]),
-        "InvalidDeviceName"
+        "InvalidTopology"
     );
     // A name that is no identifier at all, or that Renode cannot take (a
     // leading digit, `-`), is the topology's refusal, which comes first
@@ -267,16 +276,29 @@ fn a_device_that_would_break_the_load_is_refused() {
 fn the_judge_expects_the_part_table_s_values_in_records_after_the_boot_word() {
     let image = boot::expected(&reference()).unwrap();
     let word = boot::boot_word().unwrap();
-    assert_eq!(image.i2c.checks.len(), 1, "U3 has no model, so no read");
-    let c = &image.i2c.checks[0];
     assert_eq!(
-        (c.reference.as_str(), c.address, c.register),
-        ("U2", 0x76, 0xD0)
+        image.identity.checks.len(),
+        2,
+        "U3 has no model, so no read; U2, then U4 on SPI"
     );
+    let c = &image.identity.checks[0];
+    assert_eq!(
+        (c.reference.as_str(), &c.wire, c.write),
+        ("U2", &boot::Wire::I2c { address: 0x76 }, 0xD0)
+    );
+    let f = &image.identity.checks[1];
+    assert_eq!(
+        (f.reference.as_str(), f.write, f.width, f.expected),
+        ("U4", 0x9F, 3, 0xEF_4017)
+    );
+    assert_eq!((f.status_at, f.value_at), (word + 12, word + 16));
+    assert_eq!(f.judge(boot::STATUS_RXP, 0), boot::Outcome::Timeout("RXP"));
+    assert_eq!(f.judge(boot::STATUS_TXIS, 0), boot::Outcome::Invalid);
+    assert_eq!(c.judge(boot::STATUS_RXP, 0x60), boot::Outcome::Invalid);
     assert_eq!((c.width, c.expected), (1, 0x60));
     assert_eq!((c.status_at, c.value_at), (word + 4, word + 8));
-    assert_eq!(image.i2c.unmodelled.len(), 1);
-    assert_eq!(image.i2c.unmodelled[0].reference, "U3");
+    assert_eq!(image.identity.unmodelled.len(), 1);
+    assert_eq!(image.identity.unmodelled[0].reference, "U3");
 
     use boot::Outcome::*;
     assert_eq!(c.judge(boot::STATUS_OK, 0x60), Pass);
@@ -290,7 +312,7 @@ fn the_judge_expects_the_part_table_s_values_in_records_after_the_boot_word() {
 #[test]
 fn no_devices_means_no_reads_and_nothing_unmodelled() {
     let image = boot::expected(&bare()).unwrap();
-    assert!(image.i2c.checks.is_empty() && image.i2c.unmodelled.is_empty());
+    assert!(image.identity.checks.is_empty() && image.identity.unmodelled.is_empty());
 }
 
 #[test]
@@ -298,8 +320,9 @@ fn every_modelled_part_has_an_identity_so_no_device_passes_unchecked() {
     // Adversarial 3: a part with a model and no identity would be declared in
     // the platform, never read and never reported. Today none exists; this
     // makes adding one a failing test, not a silent gap.
-    for (part, _) in crate::model::MODELS {
-        assert!(aethelgard_ir::parts::identity(part).is_some(), "{part}");
+    let table = aethelgard_ir::parts::table().unwrap();
+    for p in table.parts().iter().filter(|p| p.renode.is_some()) {
+        assert!(crate::model::kind(&p.part).unwrap().is_some(), "{}", p.part);
     }
 }
 
@@ -320,24 +343,25 @@ fn a_part_name_that_is_not_exactly_a_table_s_is_unmodelled_not_skipped() {
         .enumerate()
         .map(|(i, part)| (names[i].as_str(), *part, 0x40 + i as u8))
         .collect();
-    let plan = boot::i2c(&with_devices(&devices)).unwrap();
+    let plan = boot::identity(&with_devices(&devices)).unwrap();
     assert!(plan.checks.is_empty());
     assert_eq!(plan.unmodelled.len(), devices.len());
 }
 
 #[test]
 fn a_two_byte_identity_is_judged_whole_and_most_significant_byte_first() {
-    let c = boot::I2cCheck {
+    let c = boot::IdentityCheck {
         reference: "U3".into(),
         peripheral: "I2C1".into(),
-        address: 0x48,
-        register: 0x0F,
+        wire: boot::Wire::I2c { address: 0x48 },
+        write: 0x0F,
         width: 2,
         expected: 0x0117,
         status_at: 0x2000_0004,
         value_at: 0x2000_0008,
         device: "i2c1.u3".into(),
         witness: None,
+        skipped: Vec::new(),
     };
     use boot::Outcome::*;
     assert_eq!(c.judge(boot::STATUS_OK, 0x0117), Pass);
@@ -350,9 +374,18 @@ fn each_identity_read_carries_the_models_log_lines_of_its_device() {
     // U2 is register 0xD0, value 0x60, on I2C1: the BME280 model logs the
     // write and the read at Noisy, in upper-case hexadecimal.
     let image = boot::expected(&reference()).unwrap();
-    let [c] = image.i2c.checks.as_slice() else {
-        panic!("one modelled device, one read");
+    let [c, flash] = image.identity.checks.as_slice() else {
+        panic!("two modelled devices, two reads: U2 on I2C1, then U4 on SPI1");
     };
+    assert_eq!(flash.device, "spi1.spi1mux.u4");
+    assert_eq!(
+        flash.wire,
+        boot::Wire::Spi {
+            address: 0,
+            select: "PA0".into()
+        }
+    );
+    assert_eq!(flash.status_at, c.status_at + boot::RECORD_BYTES);
     assert_eq!(c.device, "i2c1.u2");
     assert_eq!(
         c.witness.as_deref(),
@@ -371,14 +404,9 @@ fn the_witness_lines_are_computed_from_the_part_table_and_the_width() {
     // A two-byte identity reads most significant byte first, each byte in
     // upper-case hexadecimal without zero padding: 0x0A is "A", 0x00 is "0".
     let lines = |register, width, value| {
-        boot::witness_lines(
-            crate::model::Model::Bme280,
-            "i2c1.u9",
-            register,
-            width,
-            value,
-        )
-        .unwrap()
+        crate::model::Model::Bme280
+            .witness("i2c1.u9", register, width, value)
+            .unwrap()
     };
     assert_eq!(
         lines(0x0F, 2, 0x1234),
@@ -396,7 +424,7 @@ fn every_read_on_a_bus_is_witnessed_by_its_own_device() {
     // its own device path and lines.
     let devices = [("U2", "BME280", 0x76), ("U4", "BME280", 0x77)];
     let image = boot::expected(&with_devices(&devices)).unwrap();
-    let [a, b] = image.i2c.checks.as_slice() else {
+    let [a, b] = image.identity.checks.as_slice() else {
         panic!("two reads")
     };
     assert_eq!(

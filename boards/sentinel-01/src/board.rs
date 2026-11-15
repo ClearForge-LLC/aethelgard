@@ -43,9 +43,16 @@ const TOKEN: sealed::Token = sealed::Token(());
 /// crate can make. So firmware can neither implement it, which would advance
 /// the typestates on a stand-in, nor call it, which would reach a register
 /// around them. Only the typestate API below can (`INV-02`; adversarial E2, E3).
+///
+/// `read8` and `write8` are single-byte accesses, for the SPI data registers
+/// only: with frames of 8 bits or less, a 16- or 32-bit access to `SPI_TXDR` or
+/// `SPI_RXDR` packs two or four frames on silicon (RM0433 Rev 9 §50.4.13) and
+/// one in Renode 1.17.0, so only a byte access means the same on both.
 pub trait Registers: sealed::Sealed {
     fn read(&mut self, token: sealed::Token, block: Block, offset: usize) -> u32;
     fn write(&mut self, token: sealed::Token, block: Block, offset: usize, value: u32);
+    fn read8(&mut self, token: sealed::Token, block: Block, offset: usize) -> u8;
+    fn write8(&mut self, token: sealed::Token, block: Block, offset: usize, value: u8);
     fn modify(&mut self, token: sealed::Token, block: Block, offset: usize, f: impl FnOnce(u32) -> u32) {
         let value = self.read(sealed::Token(()), block, offset);
         self.write(token, block, offset, f(value));
@@ -90,6 +97,14 @@ pub mod mmio {
         fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {
             // SAFETY: as for `read`.
             unsafe { core::ptr::write_volatile((base(block) + offset) as *mut u32, value) }
+        }
+        fn read8(&mut self, _: sealed::Token, block: Block, offset: usize) -> u8 {
+            // SAFETY: as for `read`, one byte wide.
+            unsafe { core::ptr::read_volatile((base(block) + offset) as *const u8) }
+        }
+        fn write8(&mut self, _: sealed::Token, block: Block, offset: usize, value: u8) {
+            // SAFETY: as for `read`, one byte wide.
+            unsafe { core::ptr::write_volatile((base(block) + offset) as *mut u8, value) }
         }
     }
 }
@@ -161,6 +176,38 @@ fn i2c_wait<R: Registers>(r: &mut R, block: Block, isr: usize, mask: u32, spins:
         n += 1;
     }
     false
+}
+
+/// The most reads of `SR` any one wait of an SPI transfer makes before it gives up.
+pub const SPI_WAIT_SPINS: u32 = 20_000;
+
+/// The most frames one SPI transfer moves: an identity read is the command and
+/// at most four bytes, and one transaction per device is all this crate makes.
+pub const SPI_MAX_FRAMES: u32 = 8;
+
+/// Why an SPI transfer gave up. It never panics and never waits without a bound.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SpiError {
+    /// No frame, or more than [`SPI_MAX_FRAMES`]. No register was touched.
+    Length,
+    /// `SR.RXP` never rose: a frame's byte did not arrive.
+    Rxp,
+}
+
+/// One 8-bit frame: `byte` out through `TXDR`, a wait of at most `spins` reads of
+/// `SR` for `RXP`, then the byte in from `RXDR`. Both data accesses are one byte
+/// wide ([`Registers`]). `None` when `RXP` never rose, and `RXDR` is then not
+/// read: an empty FIFO.
+fn spi_frame<R: Registers>(r: &mut R, block: Block, byte: u8, spins: u32) -> Option<u8> {
+    r.write8(TOKEN, block, 0x20, byte);
+    let mut n = 0;
+    while n < spins {
+        if r.read(TOKEN, block, 0x14) & 0x00000001 != 0 {
+            return Some(r.read8(TOKEN, block, 0x30));
+        }
+        n += 1;
+    }
+    None
 }
 
 /// `PA0`, net `FLASH_CS`: a GPIO output.
@@ -412,25 +459,108 @@ pub struct Spi1<S> {
     _state: PhantomData<S>,
 }
 
+/// The chip selects of `SPI1`'s devices, each already an output. [`Spi1::init`]
+/// takes them all, so nothing transfers on `SPI1` before every chip select of
+/// the bus is driven: an undriven chip select is a selected part (`AET-WO-4200`
+/// F3).
+pub struct Spi1Selects {
+    /// `U4`'s, net `FLASH_CS`.
+    pub pa0: PA0<Output>,
+}
+
+/// The devices on `SPI1`, in the specification's order: each reference,
+/// upper-cased.
+#[allow(non_camel_case_types)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Spi1Device {
+    /// `U4`, a `W25Q64JV`, chip select `PA0`.
+    U4,
+}
+
 impl Spi1<Clocked> {
-    /// Master mode; baud rate and frame format are not solved yet.
+    /// Master mode, 8-bit frames, and the peripheral left disabled: each
+    /// transfer enables it and disables it again. Every chip select of the bus is
+    /// driven high first (deselected), whatever firmware did with it before. The
+    /// baud rate, clock polarity and phase, and slave-select management are not
+    /// solved yet: they stay at reset (Renode 1.17.0 does not model them).
     pub fn init<R: Registers>(
         self,
         r: &mut R,
         _sck: PA5<AlternateFunction<5>>,
         _mosi: PA7<AlternateFunction<5>>,
         _miso: PA6<AlternateFunction<5>>,
+        _selects: Spi1Selects,
     ) -> Spi1<Enabled<()>> {
+        r.write(TOKEN, Block::GpioA, 0x18, 0x00000001);
         r.modify(TOKEN, Block::Spi1, 0x00, |v| v & !0x00000001);
+        r.modify(TOKEN, Block::Spi1, 0x08, |v| (v & !0x0000001f) | 0x00000007);
         r.modify(TOKEN, Block::Spi1, 0x0c, |v| v | 0x00400000);
-        r.modify(TOKEN, Block::Spi1, 0x00, |v| v | 0x00000001);
         Spi1 { _state: PhantomData }
     }
 }
 
 impl Spi1<Enabled<()>> {
-    pub fn write_byte<R: Registers>(&mut self, r: &mut R, byte: u8) {
-        r.write(TOKEN, Block::Spi1, 0x20, u32::from(byte));
+    /// Selects `device` (its chip select low) and only it, writes `write`, then
+    /// reads `read` while it clocks out `0x00`; then disables the peripheral and
+    /// deselects the device, also after a wait that expired. Every frame is one
+    /// byte, and every wait is bounded by [`SPI_WAIT_SPINS`]. Returns the bytes
+    /// read, or why it gave up.
+    pub fn transfer<R: Registers>(
+        &mut self,
+        r: &mut R,
+        device: Spi1Device,
+        write: &[u8],
+        read: &mut [u8],
+    ) -> Result<usize, SpiError> {
+        self.transfer_within(r, device, write, read, SPI_WAIT_SPINS)
+    }
+
+    /// [`Self::transfer`] with its own bound on each wait, so the proof can use a
+    /// small one.
+    #[doc(hidden)]
+    pub fn transfer_within<R: Registers>(
+        &mut self,
+        r: &mut R,
+        device: Spi1Device,
+        write: &[u8],
+        read: &mut [u8],
+        spins: u32,
+    ) -> Result<usize, SpiError> {
+        let frames = match u32::try_from(write.len() + read.len()) {
+            Ok(n) if n > 0 && n <= SPI_MAX_FRAMES => n,
+            _ => return Err(SpiError::Length),
+        };
+        let (port, select, deselect) = match device {
+            Spi1Device::U4 => (Block::GpioA, 0x00010000, 0x00000001),
+        };
+        r.write(TOKEN, Block::Spi1, 0x04, frames);
+        r.write(TOKEN, port, 0x18, select);
+        r.modify(TOKEN, Block::Spi1, 0x00, |v| v | 0x00000001);
+        r.modify(TOKEN, Block::Spi1, 0x00, |v| v | 0x00000200);
+        let mut fail = false;
+        for &byte in write {
+            if spi_frame(r, Block::Spi1, byte, spins).is_none() {
+                fail = true;
+                break;
+            }
+        }
+        let mut got = 0;
+        if !fail {
+            for slot in read.iter_mut() {
+                match spi_frame(r, Block::Spi1, 0x00, spins) {
+                    Some(byte) => *slot = byte,
+                    None => {
+                        fail = true;
+                        break;
+                    }
+                }
+                got += 1;
+            }
+        }
+        r.write(TOKEN, Block::Spi1, 0x18, 0x00000008);
+        r.modify(TOKEN, Block::Spi1, 0x00, |v| v & !0x00000001);
+        r.write(TOKEN, port, 0x18, deselect);
+        if fail { Err(SpiError::Rxp) } else { Ok(got) }
     }
 }
 

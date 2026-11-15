@@ -11,10 +11,11 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
-use aethelgard_ir::{SolvedI2cDevice, SolvedTopology};
+use aethelgard_ir::parts::BusKind;
+use aethelgard_ir::{MEMORY_SUFFIX, SolvedI2cDevice, SolvedTopology};
 use aethelgard_svd_hal::cmsis::{self, RegisterFacts};
 
-use crate::model;
+use crate::model::{self, Model};
 use crate::{Kind, TwinError, kind, split_pin};
 
 /// The Renode release the stock table below was read from.
@@ -80,10 +81,12 @@ pub struct Instance {
 
 /// Every solved peripheral and port, with the name Renode lists it by, then
 /// each modelled I2C device (`AET-WO-2202`) of the topology that is not on a
-/// bus in `faulted`, added by the emitted description.
+/// bus in `faulted`, then each SPI controller's multiplexer and each modelled
+/// SPI device not in `absent` (`AET-WO-4200`), added by the emitted description.
 pub fn instances(
     topology: &SolvedTopology,
     faulted: &BTreeSet<String>,
+    absent: &BTreeSet<String>,
 ) -> Result<Vec<Instance>, TwinError> {
     let mut out = stock_instances(topology)?;
     let (modelled, _) = split_devices(topology, &present(topology, faulted)?)?;
@@ -93,7 +96,268 @@ pub fn instances(
         model: short(d.model).to_owned(),
         added: true,
     }));
+    for (controller, devices) in spi_buses(topology, absent)? {
+        out.push(Instance {
+            peripheral: format!("{}MUX", controller.to_ascii_uppercase()),
+            name: mux_name(&controller),
+            model: short(MUX_MODEL).to_owned(),
+            added: true,
+        });
+        for d in devices {
+            if let (Some(m), false) = (d.model, d.absent) {
+                out.push(Instance {
+                    peripheral: d.reference,
+                    name: d.name,
+                    model: short(m.renode()).to_owned(),
+                    added: true,
+                });
+            }
+        }
+    }
     Ok(out)
+}
+
+/// The model of each SPI controller's chip-select multiplexer (`AET-WO-4200` D1).
+const MUX_MODEL: &str = "SPI.SPIMultiplexer";
+
+/// The name the emitter declares the multiplexer of the SPI controller
+/// Renode names `controller` (`spi1`) under: `spi1mux`, which
+/// `aethelgard_ir::RESERVED_REFERENCES` holds for every SPI controller of the
+/// pinned header (`AET-WO-4200` D7, `tests/reserved_names.rs`).
+pub fn mux_name(controller: &str) -> String {
+    format!("{controller}mux")
+}
+
+/// One SPI device the emitted description wires behind its controller's
+/// multiplexer.
+struct SpiWired {
+    reference: String,
+    /// The reference, lower-cased: the name Renode declares.
+    name: String,
+    part: String,
+    /// `None`: unmodelled; its chip select is wired, and nothing answers it.
+    model: Option<Model>,
+    /// The mux input its chip select drives, and the address it sits at.
+    address: u8,
+    /// Its chip select's pin: the port's Renode name and the pin's index.
+    port: &'static str,
+    pin: u32,
+    pin_name: String,
+    /// Left out behind its chip select by the fault decision (`AET-WO-4200` D4).
+    absent: bool,
+}
+
+/// Each SPI controller with a device, by its Renode name (`spi1`), with its
+/// devices in the specification's order, each at its position on that
+/// controller as its mux address. A device in `absent` is kept, marked, so
+/// its chip select is still wired; a reference in `absent` that is not an SPI
+/// device is refused.
+fn spi_buses(
+    topology: &SolvedTopology,
+    absent: &BTreeSet<String>,
+) -> Result<std::collections::BTreeMap<String, Vec<SpiWired>>, TwinError> {
+    if let Some(r) = absent
+        .iter()
+        .find(|r| !topology.spi_devices.contains_key(*r))
+    {
+        return Err(TwinError::UnknownAbsentDevice {
+            reference: r.clone(),
+        });
+    }
+    let used = solved(topology)?;
+    let mut taken: BTreeSet<String> = used.iter().map(|p| p.to_ascii_lowercase()).collect();
+    taken.extend(topology.i2c_devices.keys().map(|r| r.to_ascii_lowercase()));
+    let mut out: std::collections::BTreeMap<String, Vec<SpiWired>> = Default::default();
+    for (reference, d) in topology.spi_devices_in_order() {
+        let name = reference.to_ascii_lowercase();
+        let ident = name.starts_with(|c: char| c.is_ascii_lowercase())
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+        if !ident || !taken.insert(name.clone()) {
+            return Err(TwinError::InvalidDeviceName {
+                reference: reference.to_owned(),
+            });
+        }
+        if kind(&d.peripheral)? != Kind::Spi || !used.contains(&d.peripheral) {
+            return Err(TwinError::DeviceOffBus {
+                reference: reference.to_owned(),
+                peripheral: d.peripheral.clone(),
+            });
+        }
+        let model = model::kind(&d.part)?;
+        if model.is_some_and(|m| m.bus() != BusKind::Spi) {
+            return Err(TwinError::ModelOffItsBus {
+                reference: reference.to_owned(),
+                part: d.part.clone(),
+            });
+        }
+        let pin_name = topology
+            .gpio
+            .get(&d.cs)
+            .ok_or_else(|| {
+                TwinError::InvalidTopology(aethelgard_ir::IrValidationError::SpiDeviceSelect {
+                    id: reference.to_owned(),
+                })
+            })?
+            .clone();
+        let (port, pin) = split_pin(&pin_name)?;
+        let port = STOCK
+            .iter()
+            .find(|s| s.0 == format!("GPIO{port}"))
+            .map(|s| s.1)
+            .ok_or_else(|| TwinError::InvalidPin {
+                pin: pin_name.clone(),
+            })?;
+        let devices = out.entry(d.peripheral.to_ascii_lowercase()).or_default();
+        let address = u8::try_from(devices.len()).map_err(|_| TwinError::InvalidDeviceName {
+            reference: reference.to_owned(),
+        })?;
+        devices.push(SpiWired {
+            reference: reference.to_owned(),
+            name,
+            part: d.part.clone(),
+            model,
+            address,
+            port,
+            pin,
+            pin_name,
+            absent: absent.contains(reference),
+        });
+    }
+    Ok(out)
+}
+
+/// One SPI device as the emitted description wires it (`AET-WO-4200` D1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpiSelect {
+    pub reference: String,
+    /// ST's name of the controller, `SPI1`.
+    pub peripheral: String,
+    pub part: String,
+    /// The multiplexer address, which its chip select drives.
+    pub address: u8,
+    /// The chip select's pin, `PA0`.
+    pub select: String,
+}
+
+/// Each SPI device in the specification's order, as [`emit`] wires it: the
+/// judge's checks name the same address and pin.
+pub fn spi_wiring(topology: &SolvedTopology) -> Result<Vec<SpiSelect>, TwinError> {
+    let buses = spi_buses(topology, &BTreeSet::new())?;
+    let mut out = Vec::new();
+    for (reference, d) in topology.spi_devices_in_order() {
+        let w = buses
+            .values()
+            .flatten()
+            .find(|w| w.reference == reference)
+            .ok_or_else(|| TwinError::InvalidDeviceName {
+                reference: reference.to_owned(),
+            })?;
+        out.push(SpiSelect {
+            reference: reference.to_owned(),
+            peripheral: d.peripheral.clone(),
+            part: d.part.clone(),
+            address: w.address,
+            select: w.pin_name.clone(),
+        });
+    }
+    Ok(out)
+}
+
+/// The path Renode gives a modelled SPI device on `peripheral`,
+/// `spi1.spi1mux.u4`: the controller, its multiplexer, then the emitted name.
+pub fn spi_device_path(peripheral: &str, reference: &str) -> Result<String, TwinError> {
+    if kind(peripheral)? != Kind::Spi {
+        return Err(TwinError::DeviceOffBus {
+            reference: reference.to_owned(),
+            peripheral: peripheral.to_owned(),
+        });
+    }
+    let c = peripheral.to_ascii_lowercase();
+    Ok(format!(
+        "{c}.{}.{}",
+        mux_name(&c),
+        reference.to_ascii_lowercase()
+    ))
+}
+
+/// The text that declares each SPI controller's multiplexer, the chip-select
+/// wiring (one block per port), then each modelled device present.
+fn emit_spi(
+    out: &mut String,
+    buses: &std::collections::BTreeMap<String, Vec<SpiWired>>,
+) -> Result<(), TwinError> {
+    let mut ports: std::collections::BTreeMap<&str, Vec<(u32, String)>> = Default::default();
+    for (c, devices) in buses {
+        let _ = write!(
+            out,
+            "\n// {C}'s chip selects (AET-WO-4200 D1): Renode {RENODE_VERSION}'s `{MUX_MODEL}`, input k\n\
+             // active-low and the device at address k selected by it.\n\
+             {m}: {MUX_MODEL} @ {c}\n    init:\n",
+            m = mux_name(c),
+            C = c.to_ascii_uppercase(),
+        );
+        for d in devices {
+            let _ = writeln!(out, "        SetActiveLow {}", d.address);
+            ports
+                .entry(d.port)
+                .or_default()
+                .push((d.pin, format!("{c}mux@{}", d.address)));
+        }
+    }
+    for (port, mut lines) in ports {
+        lines.sort();
+        let _ = writeln!(out, "\n{port}:");
+        for (pin, to) in lines {
+            let _ = writeln!(out, "    {pin} -> {to}");
+        }
+    }
+    for (c, devices) in buses {
+        for d in devices.iter().filter(|d| !d.absent) {
+            let (r, n, k) = (&d.reference, &d.name, d.address);
+            match d.model {
+                None => {
+                    let _ = write!(
+                        out,
+                        "\n// {r} ({}): no Renode {RENODE_VERSION} model; its chip select ({}) is wired to\n\
+                         // {c}mux@{k}, and nothing answers it.\n",
+                        d.part, d.pin_name
+                    );
+                }
+                Some(Model::GenericSpiFlash) => {
+                    let id = aethelgard_ir::parts::identity(&d.part)
+                        .map_err(TwinError::InvalidTopology)?
+                        .filter(|id| id.width == 3 && (0x10..=0x19).contains(&(id.value & 0xFF)))
+                        .ok_or_else(|| TwinError::FlashIdentity {
+                            reference: r.clone(),
+                        })?;
+                    let [_, maker, kind, capacity] = id.value.to_be_bytes();
+                    let _ = write!(
+                        out,
+                        "\n// {r}: Renode {RENODE_VERSION}'s `{m}`, its JEDEC ID the parts table's, at\n\
+                         // {c}mux@{k}, chip select {pin}; its array is 2^capacity bytes.\n\
+                         {n}{MEMORY_SUFFIX}: Memory.MappedMemory\n    size: 0x{size:X}\n\
+                         \n{n}: {m} @ {c}mux {k}\n    underlyingMemory: {n}{MEMORY_SUFFIX}\n    \
+                         manufacturerId: 0x{maker:02X}\n    memoryType: 0x{kind:02X}\n    capacityCode: 0x{capacity:02X}\n",
+                        m = Model::GenericSpiFlash.renode(),
+                        pin = d.pin_name,
+                        size = 1u64 << capacity,
+                    );
+                }
+                Some(m) => {
+                    let _ = write!(
+                        out,
+                        "\n// {r}: Renode {RENODE_VERSION}'s `{m}`, at {c}mux@{k}, chip select {pin}.\n\
+                         {n}: {m} @ {c}mux {k}\n",
+                        m = m.renode(),
+                        pin = d.pin_name,
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Every solved peripheral and port, with the name Renode lists it by.
@@ -141,10 +405,17 @@ fn split_devices<'d>(
                 reference: reference.to_owned(),
             });
         }
-        let Some(model) = model::model(&d.part) else {
+        let Some(model) = model::kind(&d.part)? else {
             unmodelled.push((reference, d));
             continue;
         };
+        if model.bus() != BusKind::I2c {
+            return Err(TwinError::ModelOffItsBus {
+                reference: reference.to_owned(),
+                part: d.part.clone(),
+            });
+        }
+        let model = model.renode();
         let bus = STOCK
             .iter()
             .find(|s| s.0 == d.peripheral && used.contains(&d.peripheral))
@@ -168,7 +439,7 @@ fn split_devices<'d>(
 /// The `.repl` text for `topology`, with its I2C devices declared where the
 /// part has a model and listed as unmodelled where it has none.
 pub fn emit(topology: &SolvedTopology) -> Result<String, TwinError> {
-    emit_faulted(topology, &BTreeSet::new())
+    emit_faulted(topology, &BTreeSet::new(), &BTreeSet::new())
 }
 
 /// Each bus in `faulted` with the peripheral the topology solved it on. A
@@ -209,20 +480,33 @@ pub fn present<'t>(
         .collect())
 }
 
-/// The `.repl` text for `topology` with the analog pass's fault decision:
-/// each bus in `faulted` has its devices left out, modelled or not, which is
-/// how a bus fault reaches the firmware (`RUL-17`, `AET-WO-2101` route iii).
+/// The `.repl` text for `topology` with the fault decision:
+/// - each bus in `faulted` has its devices left out, modelled or not, which
+///   is how a bus fault reaches the firmware (`RUL-17`, `AET-WO-2101` route
+///   iii);
+/// - each SPI device in `absent` is left out behind its chip select, which
+///   stays wired, so a read of it meets the multiplexer's `not connected`
+///   (`AET-WO-4200` D4).
+///
 /// The decision and the devices it leaves out are written into the
 /// provenance comment, so a platform emitted without it differs from one
 /// emitted with it.
 pub fn emit_faulted(
     topology: &SolvedTopology,
     faulted: &BTreeSet<String>,
+    absent: &BTreeSet<String>,
 ) -> Result<String, TwinError> {
     let instances = stock_instances(topology)?;
     let kept = present(topology, faulted)?;
     let (modelled, unmodelled) = split_devices(topology, &kept)?;
+    let spi = spi_buses(topology, absent)?;
     let mut omitted = Vec::new();
+    for d in spi.values().flatten().filter(|d| d.absent) {
+        omitted.push(format!(
+            "\n// - SPI fault (AET-WO-4200 D4): {} ({}) is absent behind its chip select {}.",
+            d.reference, d.part, d.pin_name
+        ));
+    }
     for (bus, peripheral) in faulted_peripherals(topology, faulted)? {
         let gone: Vec<String> = topology
             .i2c_devices_in_order()
@@ -268,6 +552,26 @@ pub fn emit_faulted(
         file = cmsis::HEADER_FILE,
         sha = cmsis::HEADER_SHA256,
     );
+    let spi_unmodelled: Vec<String> = spi
+        .iter()
+        .flat_map(|(c, ds)| {
+            ds.iter()
+                .filter(|d| d.model.is_none())
+                .map(move |d| format!("{} ({}) at {}mux@{}", d.reference, d.part, c, d.address))
+        })
+        .collect();
+    if !spi.is_empty() {
+        out.pop();
+        let _ = writeln!(
+            out,
+            "\n// - Unmodelled SPI devices (no Renode {RENODE_VERSION} model): {}.",
+            if spi_unmodelled.is_empty() {
+                "none".to_owned()
+            } else {
+                spi_unmodelled.join(", ")
+            }
+        );
+    }
     for line in &omitted {
         out.pop();
         out.push_str(line);
@@ -297,6 +601,7 @@ pub fn emit_faulted(
             name = d.name,
         );
     }
+    emit_spi(&mut out, &spi)?;
     Ok(out)
 }
 
@@ -395,12 +700,13 @@ mod tests {
     }
 
     #[test]
-    fn two_references_that_differ_only_in_case_are_refused_by_the_emitter_alone() {
-        // Measured: `SolvedTopology::validate` does not fold references, so
-        // this is `split_devices`' refusal and not the topology's.
+    fn two_references_that_differ_only_in_case_are_refused_by_the_topology() {
+        // `AET-WO-2204` measured `SolvedTopology::validate` not folding
+        // references; since `AET-WO-4200` D7 it does, so the topology refuses
+        // first. `split_devices` keeps its own check.
         assert_eq!(
             kind(&[("U2", "BME280", 0x76), ("u2", "BME280", 0x77)]),
-            "InvalidDeviceName"
+            "InvalidTopology"
         );
     }
 
