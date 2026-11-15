@@ -1,0 +1,28 @@
+== A. Fixed geometry (no tolerance): bracket vs IPC-2141 closed form
+ W    s    h     t     er  | Zdiff bracket (ohm)     | IPC-2141 | inside?
+ 0.20 0.20 0.200 0.043 3.61 | [ 115.07,  115.48] w 0.36% |  112.42 | NO, off by -2.3%
+ 0.30 0.20 0.200 0.043 3.61 | [  96.98,   97.29] w 0.31% |   91.36 | NO, off by -5.8%
+ 0.35 0.15 0.200 0.043 3.61 | [  85.26,   85.53] w 0.32% |   77.91 | NO, off by -8.6%
+ 0.20 0.20 0.200 0.043 5.40 | [  98.19,   98.57] w 0.39% |   96.52 | NO, off by -1.7%
+ 0.10 0.10 0.200 0.035 4.00 | [ 117.89,  118.51] w 0.52% |  123.15 | NO, off by 3.9%
+ 0.40 0.40 0.200 0.035 4.00 | [  89.85,   90.07] w 0.24% |   84.47 | NO, off by -6.0%
+
+== B. Certified interval over the stackup's tolerances (s = 0.2 mm)
+ W     er range      | Zdiff interval (ohm) | centre | half-width | hi/lo (<= 1.353 needed) | inside 76.5..103.5?
+ 0.20 3.4..5.4        | [  69.98,  135.00] |  102.5 |  31.7 % | 1.929 | no
+ 0.20 3.61..3.72 +-5% | [  81.11,  134.55] |  107.8 |  24.8 % | 1.659 | no
+ 0.30 3.4..5.4        | [  61.12,  112.37] |   86.7 |  29.5 % | 1.839 | no
+ 0.30 3.61..3.72 +-5% | [  70.86,  111.99] |   91.4 |  22.5 % | 1.580 | no
+ 0.35 3.4..5.4        | [  57.57,  104.11] |   80.8 |  28.8 % | 1.808 | no
+ 0.35 3.61..3.72 +-5% | [  66.76,  103.75] |   85.3 |  21.7 % | 1.554 | no
+ 0.40 3.4..5.4        | [  54.45,   97.13] |   75.8 |  28.2 % | 1.784 | no
+ 0.40 3.61..3.72 +-5% | [  63.16,   96.80] |   80.0 |  21.0 % | 1.533 | no
+
+== B2. The same with the etch tolerance halved (+-12.5 um) and t from 35 um, to show what tighter declared inputs buy
+ 0.30 3.61..3.72 +-5% | [  73.32,  107.44] | hi/lo 1.465 | no
+ 0.35 3.61..3.72 +-5% | [  68.93,   99.88] | hi/lo 1.449 | no
+
+== C. 1305's shell trial as the upper C (single line, h = 0.1797, W 0.2, t 0.07, er 5.4)
+ C shell 285.1 pF/m vs bracket [112.4, 113.1] (x2.52); C_air shell 52.8 vs [32.3, 32.4] (x1.63)
+ effective permittivity the bracket implies, C/C_air: 3.49..3.48; the shell takes 5.4 everywhere, a factor 1.55; times the air-case looseness 1.63 = 2.52
+ Z0 lower bound from the shell 27.2 ohm vs certified [55.1, 55.4]: 50.7 % below

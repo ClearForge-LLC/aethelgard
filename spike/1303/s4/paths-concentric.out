@@ -1,0 +1,57 @@
+== ref/sentinel-01: rho_max 2.8761e-05 ohm*mm; 16 MCU pins, 13 stand-ins
+U1.   6: best   72.1 mOhm from C6.1 {'padend': 2, 'seg': 6, 'fan': 4, 'barrel': 2} | worst  528.9 from R1.1 | refused from 7
+U1.  17: best   32.4 mOhm from C6.1 {'padend': 2, 'seg': 3} | worst  693.9 from R1.1 | refused from 6
+U1.  30: best   12.6 mOhm from U4.8 {'padend': 2, 'seg': 6} | worst  956.0 from R1.1 | refused from 6
+U1.  32: REFUSED from every stand-in
+U1.  33: best   11.4 mOhm from U4.8 {'padend': 2, 'seg': 5} | worst  986.2 from R1.1 | refused from 6
+U1.  39: REFUSED from every stand-in
+U1.  52: REFUSED from every stand-in
+U1.  62: REFUSED from every stand-in
+U1.  72: REFUSED from every stand-in
+U1.  84: REFUSED from every stand-in
+U1.  95: REFUSED from every stand-in
+U1. 108: REFUSED from every stand-in
+U1. 121: best  156.8 mOhm from C4.1 {'padend': 2, 'seg': 34, 'fan': 12, 'barrel': 6} | worst  208.2 from R1.1 | refused from 11
+U1. 131: best   30.0 mOhm from R2.1 {'padend': 2, 'seg': 11} | worst  115.7 from C4.1 | refused from 9
+U1. 143: best   25.8 mOhm from U3.5 {'padend': 2, 'seg': 6} | worst  292.6 from R1.1 | refused from 7
+U1. 144: best   28.2 mOhm from U3.5 {'padend': 2, 'seg': 7} | worst  304.7 from R1.1 | refused from 7
+   coefficients: R = rho_max (a/t_out + b/t_plane + c/A(t_p)), fitted exactly on 4 thickness sets per path; worst relative residual 6.3e-15
+   U1.   6 best (C6.1): a     59.99 mm, b     -0.00 mm, c 1.2909e+00 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1.  17 best (C6.1): a     33.75 mm, b     -0.00 mm, c 3.8122e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1.  30 best (U4.8): a     13.12 mm, b     -0.00 mm, c 1.4766e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1.  33 best (U4.8): a     11.87 mm, b     -0.00 mm, c 1.3185e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1. 121 best (C4.1): a    117.86 mm, b     -0.00 mm, c 3.8635e+00 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1. 131 best (R2.1): a     31.25 mm, b     -0.00 mm, c 3.4890e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1. 143 best (U3.5): a     26.87 mm, b     -0.00 mm, c 2.9439e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1. 144 best (U3.5): a     29.37 mm, b     -0.00 mm, c 3.3544e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   best-stand-in range over pins: 11.4..156.8 mOhm; all pairs max 986.2; pairs bounded 45 of 208; refusals {'no path under the flow rules': 156, 'pad end': 7, 'narrowed (bounded)': 16}
+== four/sentinel-01-4l: rho_max 2.8761e-05 ohm*mm; 16 MCU pins, 13 stand-ins
+U1.   6: REFUSED from every stand-in
+U1.  17: best   67.4 mOhm from C6.1 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 1} | worst  199.4 from C4.1 | refused from 5
+U1.  30: REFUSED from every stand-in
+U1.  32: best   10.2 mOhm from U4.8 {'padend': 2, 'seg': 6} | worst   10.2 from U4.8 | refused from 12
+U1.  33: best   12.6 mOhm from U4.8 {'padend': 2, 'seg': 7} | worst   12.6 from U4.8 | refused from 12
+U1.  39: best   79.0 mOhm from U2.6 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 2} | worst  216.4 from C4.1 | refused from 5
+U1.  52: best   52.0 mOhm from U2.6 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 2} | worst  198.7 from C4.1 | refused from 5
+U1.  62: best   58.0 mOhm from R1.1 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 2} | worst  197.0 from C4.1 | refused from 5
+U1.  72: best   43.6 mOhm from C3.1 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 1} | worst  177.8 from C4.1 | refused from 5
+U1.  84: best   40.7 mOhm from U4.8 {'padend': 2, 'seg': 6, 'fan': 2, 'barrel-plane': 2, 'plane': 1} | worst  171.8 from C4.1 | refused from 5
+U1.  95: best   40.9 mOhm from U4.8 {'padend': 2, 'seg': 6, 'fan': 2, 'barrel-plane': 2, 'plane': 1} | worst  171.9 from C4.1 | refused from 5
+U1. 108: REFUSED from every stand-in
+U1. 121: best   30.4 mOhm from R1.1 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 1} | worst  171.6 from C4.1 | refused from 5
+U1. 131: best   24.8 mOhm from U2.6 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 1} | worst  171.1 from C4.1 | refused from 5
+U1. 143: REFUSED from every stand-in
+U1. 144: REFUSED from every stand-in
+   coefficients: R = rho_max (a/t_out + b/t_plane + c/A(t_p)), fitted exactly on 4 thickness sets per path; worst relative residual 6.1e-15
+   U1.  17 best (C6.1): a     11.55 mm, b     21.54 mm, c 1.3290e+00 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1.  32 best (U4.8): a     10.62 mm, b     -0.00 mm, c 1.2122e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1.  33 best (U4.8): a     13.12 mm, b     -0.00 mm, c 1.4766e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1.  39 best (U2.6): a     11.55 mm, b     24.53 mm, c 1.8444e+00 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1.  52 best (U2.6): a     11.55 mm, b     11.85 mm, c 1.6118e+00 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1.  62 best (R1.1): a     11.55 mm, b     14.38 mm, c 1.7102e+00 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1.  72 best (C3.1): a      5.29 mm, b     13.35 mm, c 1.1441e+00 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1.  84 best (U4.8): a     11.93 mm, b      8.71 mm, c 1.1077e+00 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1.  95 best (U4.8): a     11.93 mm, b      8.81 mm, c 1.1077e+00 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1. 121 best (R1.1): a      7.79 mm, b      5.60 mm, c 1.0780e+00 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1. 131 best (U2.6): a      7.79 mm, b      3.07 mm, c 1.0123e+00 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   best-stand-in range over pins: 10.2..79.0 mOhm; all pairs max 216.4; pairs bounded 74 of 208; refusals {'no path under the flow rules': 110, 'pad end': 24}
