@@ -98,18 +98,18 @@ The predictions below were committed before any measured run. They are not edite
 | P3.1 | Four bounds give a certified interval | Built: primal P1 in a grounded box, stream-function dual in an insulated box | measured | right |
 | P3.2 | The shell trial puts the Z lower bound 15–25 % low | **Far worse.** On a single line, the shell's C is 2.52× the certified C and its C_air 1.63×, so Z0's lower bound is **50.7 % below** the truth | measured | wrong (too mild) |
 | P3.3 | The bracket within 1 % at about 10⁴ nodes | 0.24–0.52 % wide at 25–47 k nodes, about 1 s per geometry | measured | right |
-| P3.4 | Cohn's exact stripline lies inside | **Inside at all 8 points** (4 geometries × 2 meshes): 0.9908–0.99997 below, 1.0014–1.0109 above. The first run failed it: see F1 | measured | right, after F1 |
+| P3.4 | Cohn's exact stripline lies inside | **Inside at all 8 points** (4 geometries × 2 meshes): 0.9908–0.99997 below, 1.0014–1.0109 above. This checks `stripline_odd`. `microstrip_odd`'s dual (a cut with duplicated nodes, its own code path) has no exact case. On nested uniform refinement (`s3/nested.out`) its bounds never cross, the lower rises and the upper falls at every level: the test that exposed F1. The first run failed Cohn: see F1 | measured | right, after F1 |
 | P3.5 | IPC-2141 lies outside by more than 3 % at some point | Outside at **all six** fixed geometries, by −8.6 % to +3.9 % | measured | right |
 | P3.6 | W = S = 0.2 mm gives about 110–135 Ω | 115.1–115.5 Ω at h 0.2 mm, εr 3.61, t 43 µm. Near 90 Ω needs W ≈ 0.4 mm at s = 0.4 mm, or 0.3–0.35 mm at s 0.15–0.2 mm | measured | right |
-| P3.7 | Tolerances alone give about ±10–13 % | **±22–33 %.** The bracket itself is under 0.5 % wide; the rest is input. The solder mask (−17 % if 50 µm at εr 5.4 is allowed), εr's IPC maximum (−15 %) and etch (±6 %) dominate (`s3/sens.out`). **No geometry fits 76.5–103.5 Ω** under the conditions taken | measured | wrong (too mild) |
+| P3.7 | Tolerances alone give about ±10–13 % | **±21–32 %**, so hi/lo is 1.53–1.93 against the 1.353 (103.5/76.5) any interval must meet to fit, whatever W. The bracket itself is under 0.5 % wide; the rest is input. Three inputs dominate (`s3/sens.out`): the solder mask (−13.8 % at OSH Park's cited 0.8 mil maximum, with εr 5.4 a condition), εr's IPC maximum (−15 %) and etch (±6 %). **No geometry fits,** even with etch halved (hi/lo 1.45) | measured | wrong (too mild) |
 | P3.8 | No rigorous interval at 2 layers | Agreed. The reference's `B.Cu` carries 55 tracks (108 mm, 30 of them `VDD_3V3`) through the ground zone, and the fill is never read | measured / inferred | right |
 | P3.9 | Full speed is electrically short | TFR/TFF 4–20 ns (USB 2.0 Table 7-9, read), about 0.6 m of FR-4 at 4 ns. The reference outline is 45.2 × 40.4 mm | read / inferred | right |
 | P4.1 | No regulator on either board | None: `VDD_3V3` has 29 pads on U1 (16), U2 (3), U3, U4, C3–C6, R1, R2, R4 and R5 | measured | right |
-| P4.2 | Tube flow, R ≤ ρL/(Wt) under a length condition | Derived. The condition held on every path found (no tube narrowed) | measured | right |
+| P4.2 | Tube flow, R ≤ ρL/(Wt) under a length condition | Derived. On the routed boards the condition and its companions (pad end, via entry) often fail at W. A path then narrows its tube (rigorous) or is refused by name. The first version checked only the bends, and allowed what the second forbids: F7 | measured | right, with F7 |
 | P4.3 | Every input is on the wrong side as declared | Confirmed. Copper minimum, plating minimum, temperature and a material allowance are all new | read | right |
 | P4.4 | Exact checks hold | Bar, annulus and barrel equal their closed forms; the 90° bend lies inside a certified bracket (corner 0.558–0.560 squares against the tube's 1) | measured | right |
-| P4.5 | Reference 50–300 mΩ from the best stand-in | **7.7–229 mΩ** per pin from its best stand-in; up to 481 mΩ from the worst | measured | range low end wrong |
-| P4.6 | 4-layer 10–40 mΩ | **8.1–53.2 mΩ**; worst 152 mΩ. Two stand-ins are refused (an isolated via, below) | measured | close; high end wrong |
+| P4.5 | Reference 50–300 mΩ from the best stand-in | **9.1–125 mΩ** on the 7 of 16 pins it bounds; 9 pins are refused by name from every stand-in | measured | partly; coverage not predicted |
+| P4.6 | 4-layer 10–40 mΩ | **8.1–116 mΩ** on 15 of 16 pins; U1.108 refused | measured | wrong high end |
 | P4.7 | Refill joins vias solidly | **Blocked** (container guard) | — | not measured |
 | P4.8 | Per-pin R × total load bounds the drop | Holds on 300 random networks: the maximum ratio is 1.000000 | measured | right |
 | P5.1–P5.3 | Shape of the verdict and limits | Proposal below | inferred | — |
@@ -140,12 +140,13 @@ The predictions below were committed before any measured run. They are not edite
 
   The ICM-20948 fixture has no board, and D1's I2C lines exceed their own declared bound [read].
 - **No board carries a UART or timer line** [read], so there is nothing to measure.
-- **What the reader refuses,** and so the bound never meets [read, `extract.rs`]:
-  - a top-level `arc`, `gr_poly`, `gr_line`, `gr_text` or any other item outside `TOP`, which covers copper arcs and graphics;
-  - a pad with `drill`, which covers through-hole pads; any pad shape but `rect` or `roundrect`, so circle, oval and custom; a padstack or any child not in `allowed("pad")`;
+- **What the reader refuses,** and so the bound never meets [read]:
+  - a top-level item outside `TOP` (`extract.rs:663-676`): an `arc`, a `gr_poly`, a `gr_line` or a `gr_text` on copper;
+  - a pad child not in `allowed("pad")` (`extract.rs:597-604`), which has no `drill`: so no through-hole pad and no padstack;
+  - any pad shape but `rect` or `roundrect` (`extract.rs:764`): circle, oval, trapezoid and custom;
   - copper in a footprint outside its pads;
   - a zone other than the declared ground or planes (`route::connectivity`), and a filled zone;
-  - an inner-layer track, since `route::Layer` is `F` or `B`.
+  - a segment on any layer but `F.Cu` or `B.Cu` (`route.rs:2048-2053`), so no inner-layer track.
 
   An arc or an inner track would need its own shell. Every other refusal is copper of unknown shape.
 
@@ -162,19 +163,23 @@ The predictions below were committed before any measured run. They are not edite
   - ε pointwise.
 
 **Checks.**
-- **Exact:** Cohn's zero-thickness coupled stripline, odd mode, solved on the half-domain with the strip on the symmetry plane. It lies inside the bracket at every point (`s3/exact.out`).
+- **Exact:** Cohn's zero-thickness coupled stripline, odd mode, solved on the half-domain with the strip on the symmetry plane. It lies inside `stripline_odd`'s bracket at every point (`s3/exact.out`).
+- **Consistency of `microstrip_odd`** (its dual is a separate code path): nested uniform refinement at two geometries, four levels each (`s3/nested.out`). The bounds never cross, the lower bound rises, and the upper falls.
 - **Closed forms against the bracket at fixed geometry** (`s3/usb.out` A):
   - IPC-2141 (second-hand formula text; the standard is paywalled) is **outside at all six points**, by −8.6 % to +3.9 %.
   - No published coupled-microstrip table was reachable: Bryant & Weiss 1968 and Garg & Bahl are paywalled (research record items 3–4).
 - **The interval over the 4-layer fixture's tolerances** (`s3/usb.out` B, s = 0.2 mm):
 
-| W (mm) | εr taken | Z_diff interval (Ω) | inside 76.5–103.5? |
+| W (mm) | εr taken | Z_diff interval (Ω) | hi/lo (fits only if ≤ 1.353) |
 |---|---|---|---|
-| 0.20 | 3.4–5.4 (5.4 the fixture's declared IPC maximum; 3.4 a stated condition, since no minimum is published) | 67.8–135.0 | no |
-| 0.20 | 3.43–3.91 (±5 % about OSH Park's 3.61 at 1 GHz and Isola's 3.72 at 100 MHz) | 78.8–134.6 | no |
-| 0.30 | 3.43–3.91 | 69.1–112.0 | no |
-| 0.35 | 3.43–3.91 | 65.2–103.8 | no |
-| 0.40 | 3.43–3.91 | 61.7–96.8 | no |
+| 0.20 | 3.4–5.4 (5.4 the fixture's declared IPC maximum; 3.4 a stated condition, since no minimum is published) | 70.0–135.0 | 1.93 |
+| 0.20 | 3.43–3.91 (±5 % about OSH Park's 3.61 at 1 GHz and Isola's 3.72 at 100 MHz) | 81.1–134.6 | 1.66 |
+| 0.30 | 3.43–3.91 | 70.9–112.0 | 1.58 |
+| 0.35 | 3.43–3.91 | 66.8–103.8 | 1.55 |
+| 0.40 | 3.43–3.91 | 63.2–96.8 | 1.53 |
+| 0.30, etch halved, t ≥ 35 µm | 3.43–3.91 | 73.3–107.4 | 1.47 |
+
+The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], with εr 5.4 (a condition). The etch is ±25 µm about fixed centres, and copper is 30–70 µm (conditions).
 
 - **Why so wide** (`s3/sens.out`, one input at a time about W 0.3 mm, nominal 96.6 Ω):
   - h ±0.0202 mm: −3.9/+3.3 %;
@@ -182,7 +187,7 @@ The predictions below were committed before any measured run. They are not edite
   - εr up to 5.4: −14.6 %;
   - t 30–70 µm: −4.9/+2.7 %;
   - etch ±25 µm: ±6 %;
-  - **solder mask 0–50 µm at εr 5.4: −17.2 %** (at 25 µm and εr 4.0: −10.8 %).
+  - **solder mask 0–21 µm at εr 5.4: −13.8 %** (50 µm: −17.2 %; 25 µm at εr 4.0: −10.8 %). In odd mode the field crowds into the gap the mask fills.
 
   An exact solver given the same inputs would be just as wide, because the bracket is under 0.5 % wide. The gate is limited by what the stackup declares, not by the bound.
 - **Two layers:** refused. No plane lies under the pair, and the `B.Cu` ground zone is unfilled in the file and cut by 55 tracks.
@@ -190,41 +195,42 @@ The predictions below were committed before any measured run. They are not edite
 
 ### S4 — supply-path resistance: a Thomson bound, measured
 
-**The bound** (`spike/1303/s4/rbound.py`, module doc).
-- **Terminals.** Each pad is one equipotential (its solder and lead), with unit current between two. Any divergence-free J confined to the copper gives R ≤ ∫ρ|J|²; deleting copper never lowers R (Rayleigh). So one path's flow bounds the whole net.
-- **Track chain.** Uniform flow along the offset curves of the centreline. At a bend of deviation θ the inner offset loses 2y·tan(θ/2) and the outer gains yθ, so ∫ℓ(y)dy = LW + (θ − 2 tan(θ/2))W²/8 ≤ LW, and **R ≤ ρ·L_centre/(W·t_min)**. It needs, on each side of each segment, length ≥ (W/2)·Σ tan(θ/2) over the bends whose inside is on that side; otherwise the tube narrows. It held on every path.
-- **Via, outer layer.** From the cross-section at x_e = 0.3 mm, rays go to the hole wall with angular density j = x_e/(W cos²φ), |φ| ≤ atan(W/2x_e). This is the closed form `fan`, 0.89 mΩ.
-- **Barrel.** The plating shell carries J = (0, p·r/A, q/A), divergence-free when (p, q) is, with energy ≤ (ρ/A)∫(q² + r_d²p²). The entry density is carried along straight lines to uniform over a depth d, then back to the leaving arc. Over the depth, the integral is ln(x)/(x − 1) in closed form, leaving one smooth quadrature in φ. The result is 6.2 mΩ through the reference and 3.7 mΩ to the 4-layer `In2`, against 2.9 and 2.7 mΩ for exact uniform current. A first, unspread strip gave 30 mΩ.
-- **Plane.** From uniform barrel current, un-spread to uniform over |φ| ≤ β facing the other via, then rays to the bisector, mirrored. That is 2(ρ/t)(1/2β)·ln(D/(2r_d cos β)) plus the un-spread. It is admissible only if the rhombus holds plane copper: no foreign via's 0.51 mm clearance disc, and no edge. The probe takes the cheapest clear β from 75° down to 2°.
+**The bound** (`spike/1303/s4/rbound.py` and `rbound2.py`, each module doc). Terminals are the two pads, each one equipotential (its solder and lead), with unit current between them. Any divergence-free J confined to the copper gives R ≤ ∫ρ|J|². Deleting copper never lowers R (Rayleigh), so one path's flow bounds the whole net. The flow, piece by piece:
+- **Track chain.** Uniform flow along the offset curves of the centreline. At a bend of deviation θ the inner offset loses 2y·tan(θ/2) and the outer gains yθ, so ∫ℓ(y)dy = LW + (θ − 2 tan(θ/2))W²/8 ≤ LW, and **R ≤ ρ·L_centre/(w·t_min)**. It is admissible while every segment, on each side, is at least (w/2)·Σtan(θ/2) over the bends whose inside is on that side. Otherwise the path's tube narrows to the w that is admissible.
+- **Pad end.** The end cross-section (width w, normal to the track) lies inside the pad's rounded box (an erosion test). Otherwise w narrows.
+- **Pass through a pad.** At 2 layers the supply is daisy-chained through pads, and a pad between two tracks is not an equipotential. It is priced as a straight virtual track between the two track ends, admissible when its stadium lies inside the pad's copper.
+- **Via entry, the general fan.** The tube stops at any cross-section inside the via pad disc (r ≤ 0.3 mm), on one of the last three segments, with the centre ahead and the hole (r_d = 0.15 mm) clear. From that line, current runs along rays to the hole wall with angular density j = (1/w)|q − c|²/p. Its energy is (ρ/t)(1/w²)/p·∫|q − c|² ln(|q − c|/r_d) ds, and the region is the via pad, star-shaped about the centre. The cut minimizing tube plus fan is taken.
+- **Barrel.** The plating shell carries J = (0, p·r/A, q/A), divergence-free when (p, q) is, with energy ≤ (ρ/A)∫(q² + r_d²p²). The entry density is carried along straight lines to uniform over a depth d; over the depth this integrates to ln(x)/(x − 1), leaving one quadrature. The flow is uniform in the middle and un-spread to the leaving arc. A via is used once.
+- **Plane.** Uniform barrel current is un-spread to uniform over |φ| ≤ β facing the other via, then sent along rays to the bisector, mirrored. It is admissible if the rhombus is clear of foreign vias' 0.51 mm clearance discs, of every other own-net via's drilled hole, and of the edge. Plane to plane through via B joins two sector flows in B's barrel above the plane, f1 + f2, priced at twice their energies (|a + b|² ≤ 2|a|² + 2|b|²).
+- **The search.** Dijkstra chooses a path under these rules: no pass across a hole, no hop through a pad. `path_bound` then recomputes the path's bound from its own geometry, and a piece that fails is banned and the search repeated (up to 40 times). **Every number below is a recomputed path bound.**
 
 **Checks** (`s4/check_exact.out`):
 - the bar, the radial annulus and the uniform barrel equal their closed forms;
-- 90° bends of three shapes lie inside certified primal/dual brackets, with the corner at 0.5577–0.5599 squares; the tube bound counts 1 square there and holds;
-- across 300 random resistor networks, drop / (R_eff × total load) ≤ 1.000000, which is P4.8.
+- 90° bends of three shapes lie inside certified primal/dual brackets, with the corner at 0.5577–0.5599 squares; the tube counts 1 square there and holds;
+- across 300 random resistor networks, drop / (R_eff × total load) ≤ 1.000000, which is P4.8;
+- the general fan and spread reduce to the symmetric closed forms at s0 = 0. The spread matches to 15 digits. The fan is lower, because it integrates the log term the first version only bounded.
+- The pad-copper test agrees with a 720-point brute force on 3,000 random discs.
 
 **Conditions taken** (`s4/conditions.json`, each with its source):
 - ρ20: IACS 1.7241 µΩ·cm (NBS Handbook 100, read);
 - α: 0.00393 (read);
-- temperature: 105 °C (condition);
-- material allowance: k = 1 (condition; IPC-4562's foil maximum was not reached, and no cited maximum exists for plated copper; every R scales by k);
-- outer copper minimum: 30 µm (condition; OSH Park gives 43 µm nominal with no tolerance);
-- plane copper minimum: 15 µm (condition);
-- plating minimum: 18 µm (condition; JLCPCB states an 18 µm average [read]; IPC-6012 class 2 thin-area 18 µm is second-hand);
+- copper temperature: 105 °C (a condition). The 658 mA load is DS12117's figure at Tj 125 °C, so the junction is allowed hotter than the copper. The architect may want both at 125 °C, which raises every R by 6 %;
+- material allowance: k = 1 (a condition; every R scales by k);
+- outer copper minimum: 30 µm (a condition);
+- plane copper minimum: 15 µm (a condition);
+- plating minimum: 18 µm (a condition);
 - barrel lengths: from the declared stack.
 
-**Measured** (`s4/paths.out`), per MCU supply pin, from its best and worst stand-in source:
+**Measured** (`s4/paths.out`, recomputed paths only), per MCU supply pin, from its best stand-in source:
 
-| Board | Best stand-in, over the 16 pins | Worst stand-in, over the 16 pins | Drop at 658 mA, best stand-in, worst pin | Refused |
-|---|---|---|---|---|
-| Reference (2 layers, 0.2 mm tracks) | 7.7–229.0 mΩ | up to 480.8 mΩ | 151 mV of 165 mV | none |
-| 4-layer fixture (`In2` plane) | 8.1–53.2 mΩ | up to 152.4 mΩ | 35 mV | 2 of 13 stand-ins: their stitching vias' rhombi are all blocked |
+| Board | Pins bounded | Best stand-in, range over the bounded pins | Pairs bounded | Drop at 658 mA, worst bounded pin | Refused by name |
+|---|---|---|---|---|---|
+| Reference (2 layers, 0.2 mm tracks) | **7 of 16** | 9.1–125.4 mΩ | 45 of 208 | 83 mV of 165 mV | 9 pins from every stand-in: U1.32, and 39–121 behind vias and pads. 156 pairs have no path the flow rules admit; the rest fail at a pad end |
+| 4-layer fixture (`In2` plane) | **15 of 16** | 8.1–116.1 mΩ | 89 of 208 | 76 mV | U1.108 from every stand-in |
 
-- **Composition at 4 layers.**
-  - Each plane hop costs 6–44 mΩ, depending on the clear β. The ideal two-via sheet resistance at D = 10 mm would be 2.05 mΩ (not a bound).
-  - Crowded foreign vias block 182 of 300 rhombi.
-  - The bound is about 3–20× the ideal there. It is the loose term.
 - **These are `main`'s routes (`121344d`).** `1307` (PR #126, unmerged) changes every routed board: the reference goes from 70 to 64 vias, and from 348.5 to 331.6 mm of track (its mailbox note, `bae55aa`). The numbers above will move. The build re-measures after `1307` merges, as the work order's cadence already says. The method and its checks do not depend on the routes.
-- **At 2 layers the tracks dominate.** The reference's 0.2 mm supply tracks, with up to 4 vias on a path, give bounds that alone eat most of the tolerance at the MCU's maximum load. The router has one width for every net.
+- **What limits coverage:** the closed-form pieces, not the copper. A via entered after a turn inside its pad, a pad too narrow for the tube, or a plane hop blocked by crowded foreign vias each refuse a path that real current would use. Where the pieces do fit, the plane hop dominates at 4 layers: 6–44 mΩ per hop against 2.05 mΩ for an ideal two-via sheet at 10 mm (not a bound).
+- **The first version's table** (`s4/paths-v1-inadmissible.out`: 7.7–229 / 8.1–53 mΩ) **was not a bound.** On the reference, 120 of its 208 paths hopped through an intermediate pad at zero cost, and it never checked via entry or pad ends (F7).
 
 ### S5 — where the bounds go (proposal)
 
@@ -249,34 +255,44 @@ The predictions below were committed before any measured run. They are not edite
   - `temperature_max_c`;
   - a resistivity allowance.
 
+## Recommendation per question
+
+| Q | Recommendation | Rests on |
+|---|---|---|
+| S1 | Three consumers, each with its direction and precision as tabled. Add a fourth, the ground return (D7). `4300e1`'s quantity for a full-speed device is C per conductor (≤ 25 pF) and its mismatch, not 90 Ω (D2) | USB 2.0 §7.1.6.1; DS12117 Tables 118–120; PR #129 |
+| S2 | Nothing to build here: `4300c`'s ruling widens the line list. Arcs, inner tracks and non-rectangular pads stay refused by name until a board needs them | PR #129 ruling; `extract.rs`, `route.rs` reads |
+| S3 | If any impedance check stays: the certified 2D bracket (D1 (a)), never closed forms. For full speed, check C instead (D2 (b)). Refuse at 2 layers | S3 A, B, exact and nested checks |
+| S4 | Thomson's principle with an explicit flow, reported per pin, refused by name where no admissible flow is found. The closed-form pieces are rigorous but cover 7/16 and 15/16 pins on today's routes. For the build, a certified discrete flow (D5 (b)), checked against the closed forms where both apply | S4 table and checks |
+| S5 | `pairs` and `supplies` beside `lines`, gated like `lines`. New limit and stackup fields, a schema version, refused by name when absent | `INV-06`, `RUL-14` |
+
 ## Decisions needed
 
 - **D1 · How Z is bounded, if it is bounded at all.**
-  - **(a)** The certified 2D bracket built here: primal P1 plus a stream-function dual, both variational, on a cross-section. It is a numerical solve, which §1's "not a field solver" excludes, but every number it gives is a proven bound, and it holds Cohn's exact case. **Recommended if D2 keeps the impedance check.**
+  - **(a)** The certified 2D bracket built here: primal P1 plus a stream-function dual, both variational, on a cross-section. It is a numerical solve, which §1's "not a field solver" excludes, but every number it gives is a proven bound. It holds Cohn's exact case, and its microstrip dual passes nested refinement. **Recommended if D2 keeps an impedance check.**
   - **(b)** Closed forms (IPC-2141, Wadell). They are not bounds: IPC-2141 falls outside the bracket at every point tried, by up to 8.6 %. 1305 F1's ruling ranks them as approximations.
   - **(c)** No Z bound; see D2 (b).
 - **D2 · What 4300e1 checks for a full-speed device.**
-  - **(a)** Z_diff in 90 Ω ±15 %, reading §7.1.6.1's 90 Ω sentence as binding the device. With today's declarable inputs, no geometry fits (S3 B).
-  - **(b)** §7.1.6.1's device budget: each conductor's C ≤ 25 pF, by today's machinery widened to the pair, and |C+ − C−| < 10 %. The mismatch needs a lower bound on C too: the parallel-plate flux under the track, or D1 (a) on the parallel run. **Recommended:** it is the clause written for a device, and the pair is electrically short.
+  - **(a)** Z_diff in 90 Ω ±15 %, reading §7.1.6.1's 90 Ω sentence as binding the device. With today's declarable inputs no geometry fits: hi/lo ≥ 1.45 against 1.353 (S3 B).
+  - **(b)** §7.1.6.1's device budget: each conductor's C ≤ 25 pF, and |C+ − C−| < 10 %. **Recommended for the 25 pF half,** which today's upper-bound machinery delivers once widened to the pair. **The mismatch half is not delivered today.** It needs an upper bound on one line against a lower bound on the other. The shell trial is 1.6–2.5× above the truth, and the only closed lower bound, parallel-plate flux under the track, is far below. A 10 % mismatch is provable only with D1 (a)'s bracket on the parallel run, plus a stated condition that the two lines see the same stackup. Or the mismatch is declared a condition of the router's symmetric routing (D8).
   - **(c)** Both.
-- **D3 · The stackup's other sides** (S5's list) are new specification fields, each with a source, or a stated condition. The mask, εr minimum and etch decide whether any Z interval can pass at all.
-- **D4 · The supply bound's terminals and source.**
-  - Pads are taken as equipotentials.
-  - The source pad is `4300d`'s regulator output. Until then there is no supply gate, since no board has a source.
-  - The drop is per-pin R × the total declared load (P4.8).
-- **D5 · Plane flow.**
-  - **(a)** The closed-form bowtie measured here. It is rigorous but 3–20× loose, and it refuses 2 of 13 stand-ins.
-  - **(b)** A certified discrete Thomson flow in the plane sheet (the S3 dual, in 2D with holes). It is tighter, never refuses a connected plane, and is numerical.
-  - (a) is enough for Sentinel-02 if its rail budget holds at 4 layers (35 mV of 165 mV here).
-- **D6 · Material allowance and temperature.** No citable maximum resistivity for electrodeposited foil or barrel plating was reachable (IPC-4562 is paywalled). k and the copper temperature are conditions until one is cited. Every R scales linearly in k and in 1 + α(T − 20).
-- **D7 · The ground return.** The MCU sees VDD − VSS, so a supply gate that bounds only VDD under-claims. The same bound applies to GND (the zone or plane, and its stitching).
+- **D3 · The stackup's other sides** (S5's list) become specification fields, each with a source, or a stated condition. **Recommended: fields, with refusal when a gate needs one and it is absent.** The mask (εr and thickness), the εr minimum and the etch decide whether any Z interval can pass at all. Copper and plating minima and a temperature decide S4.
+- **D4 · The supply bound's terminals and source.** **Recommended as measured:**
+  - pads are equipotentials, and a pass through a pad is priced, not assumed;
+  - the source pad is `4300d`'s regulator output, and until a board has one there is no supply gate;
+  - the drop is per-pin R × the total declared load (P4.8), with the load cited from the parts table (DS12117 Table 120: 658 mA at Tj 125 °C).
+- **D5 · How the flow is built.**
+  - **(a)** The closed-form pieces measured here. Rigorous, but they cover 7 of 16 pins on the reference and 15 of 16 on the 4-layer fixture, and the plane hop is 3–20× the ideal.
+  - **(b)** A certified discrete Thomson flow over the copper: per-layer sheets with holes, as S3's stream-function dual, joined by barrels. It never refuses connected copper and is tighter, but it is numerical.
+  - **Recommended: (b) for the build, with (a)'s closed forms as its exact-case tests.** D1 (a) puts a numerical variational solve in the engine anyway.
+- **D6 · Material allowance and temperature.** No citable maximum resistivity for electrodeposited foil or barrel plating was reachable (IPC-4562 is paywalled). **Recommended:** k and the copper temperature are declared conditions with their sources, and the build cites IPC-4562 Table 3-2 once someone holds a copy. Every R scales linearly in k and in 1 + α(T − 20).
+- **D7 · The ground return.** The MCU sees VDD − VSS, so a supply gate that bounds only VDD under-claims. **Recommended:** the same bound on GND (zone or plane plus its stitching), with the drop limit applied to the sum.
 - **D8 · Router scope** (`1307` is changing it).
   - No net has its own width: every supply track is 0.2 mm.
   - No pair is routed coupled, with a fixed gap.
-  - Both a supply gate and any pair check need these. Whose work order owns them?
+  - Both a supply gate and a pair check need these. **Recommended:** a router work order after `1307`. `1303`'s build gates what the router produces and refuses what it cannot bound.
 - **D9 · Container caps.**
-  - With equal flags, podman 5.7 leaves `memory.swap.max` at 8 GiB (read back). The guard stopped the run, and nothing was written under `/sys/fs/cgroup`.
-  - Either a capped-swap route is ruled (for example a furnace777 apply script, or a podman option that reaches `memory.swap.max = 0`), or P4.7 stays a stated condition: the plane meets each own-net via all round.
+  - With equal flags, podman 5.7 leaves `memory.swap.max` at 8 GiB (read back). The guard stopped the run, and nothing was written under `/sys/fs/cgroup`. The correction's premise does not hold on this podman.
+  - **Recommended:** P4.7 stays a stated condition (the plane meets each own-net via all round, and keeps 0.2005 mm from foreign vias, as `4100` measured) until a capped-swap route is ruled.
 - **D10 · The work order's S4 says "the copper maximum".** An upper R bound needs the copper **minimum**; the maximum bounds the wrong way. Read as a slip; please confirm.
 
 ## Findings
@@ -285,10 +301,12 @@ The predictions below were committed before any measured run. They are not edite
 |---|---|---|---|---|
 | F1 | **My first dual bound was not admissible.** It left the strip's end nodes free, so χ varied along the insulating edge beside each tip. Cohn's check caught it: lower bound above upper, and falling on refinement. The fix fixes every node of an insulating piece, end points included. The same trap waits for the build | `s3/bracket.py` | process / lesson | no |
 | F2 | A narrow-strip barrel flow is rigorous but 10× loose (30 mΩ against 2.9 exact). Spreading to uniform brings it to about 2× | `s4/rbound.py` | design | no |
-| F3 | 1305's shell trial is 2.5× above the certified C for a line over a plane at 0.18 mm, because it ignores the plane's screening of the far field. Fine for an upper bound, useless for Z | S3 C | measured | no |
-| F4 | The delegated research pass misread DS12117's IDD columns, putting Typ in the Max columns; rendering the page settled it. Its other READ items were spot-checked where used | research record | process | no |
+| F3 | 1305's shell trial is 2.52× the certified C for a line over a plane at 0.18 mm. Its air-case looseness is 1.63×, the trial's own (as `4100` measured). The other 1.55× is the shell taking εr 5.4 in the air above the board, where the bracket's C/C_air gives an effective 3.48. Fine for an upper bound, useless for Z | S3 C | measured | no |
+| F4 | The delegated research pass could not resolve DS12117's IDD columns and guessed 550 mA at Tj 125 °C. Rendering pp. 215–216 shows Typ, then Max at Tj 25/85/105/125 °C, so 550 mA is at Tj 105 °C (Table 118) and the maximum is 658 mA at 125 °C (Table 120). Its other READ items were spot-checked where used | research record | process | no |
 | F5 | §7.1.6.1's 90 Ω sentence and the device's 25 pF budget sit in adjacent paragraphs. Which binds a device is a reading of the spec, not a measurement | USB 2.0 | ruling | D2 |
 | F6 | OSH Park's 4-layer lots sometimes use an EM528 core (Dk 4.11) instead of FR408HR. That does not touch the F.Cu–In1 prepreg, but a stackup source should name the lot risk | research record item 5 | data | D3 |
+| F7 | **My first S4 table was not a bound.** It let a path hop through an intermediate pad at zero cost (120 of the reference's 208 paths did) and pass across a via's hole on one layer. It ignored own-net via holes in the plane and never checked via entry or pad ends. The advisor's review found it before the push. The second version (`rbound2.py`) recomputes every reported bound from its path's geometry; the first output is kept as `paths-v1-inadmissible.out` | `s4/` | process / lesson | no |
+| F8 | On today's routes the closed-form pieces refuse many paths real current uses: a turn inside a via pad, narrow pads, crowded plane rhombi. Coverage, not looseness, is their limit | S4 | measured | D5 |
 
 ## What a build deletes
 

@@ -8,8 +8,10 @@ Python 3 with numpy, scipy (any recent); no network. Run from each directory.
   - `run_exact.py` → `exact.out`: against Cohn's exact coupled stripline.
   - `run_usb.py` → `usb.out`: IPC-2141 against the bracket; Z intervals over the 4-layer stackup; 1305's shell trial.
   - `run_sens.py` → `sens.out`: what widens the interval.
-- `s4/`: the Thomson resistance bound (`rbound.py`, `pcb.py`).
-  - `run_paths.py conditions.json` → `paths.out`.
+  - `run_nested.py` → `nested.out`: `microstrip_odd`'s bounds under nested refinement.
+- `s4/`: the Thomson resistance bound (`rbound.py` pieces, `rbound2.py` graph and per-path recomputation, `pcb.py`).
+  - `run_paths2.py conditions.json` → `paths.out`: the reported bounds.
+  - `run_paths.py` → `paths-v1-inadmissible.out`: the first version, kept as the record of FEEDBACK F7; not a bound.
   - `check_exact.py` → `check_exact.out`: bar, annulus, barrel, 90° bend bracket, transfer resistance.
 - `img.sh`: the capped container runner; `caps.log` is its read-back (the guard stopped the only run: FEEDBACK D9).
 - `research-sources.md`: the research pass's record, labelled.

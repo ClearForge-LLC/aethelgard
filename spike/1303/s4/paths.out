@@ -1,37 +1,36 @@
-== ref/sentinel-01: rho_max 2.3000e-05 ohm*mm; 16 MCU pins, 13 stand-in sources
-U1.   6: best    21.1 mOhm from C3.1 (w 0.200, {'padend': 2, 'seg': 13}) | worst   167.8 mOhm from R4.2
-U1.  17: best    25.9 mOhm from C6.1 (w 0.200, {'padend': 2, 'seg': 3}) | worst   168.8 mOhm from C5.1
-U1.  30: best    10.1 mOhm from U4.8 (w 0.200, {'padend': 2, 'seg': 6}) | worst   208.1 mOhm from C5.1
-U1.  32: best     7.7 mOhm from U4.8 (w 0.200, {'padend': 2, 'seg': 4}) | worst   209.5 mOhm from C5.1
-U1.  33: best     9.1 mOhm from U4.8 (w 0.200, {'padend': 2, 'seg': 5}) | worst   210.9 mOhm from C5.1
-U1.  39: best    53.4 mOhm from R5.2 (w 0.200, {'padend': 2, 'seg': 5, 'fan': 4, 'barrel': 2}) | worst   305.2 mOhm from C5.1
-U1.  52: best    78.3 mOhm from R5.2 (w 0.200, {'padend': 2, 'seg': 7, 'fan': 4, 'barrel': 2}) | worst   330.2 mOhm from C5.1
-U1.  62: best    97.5 mOhm from R5.2 (w 0.200, {'padend': 2, 'seg': 8, 'fan': 4, 'barrel': 2}) | worst   349.3 mOhm from C5.1
-U1.  72: best   116.2 mOhm from R5.2 (w 0.200, {'padend': 2, 'seg': 9, 'fan': 4, 'barrel': 2}) | worst   368.0 mOhm from C5.1
-U1.  84: best   178.6 mOhm from R5.2 (w 0.200, {'padend': 2, 'seg': 13, 'fan': 8, 'barrel': 4}) | worst   430.5 mOhm from C5.1
-U1.  95: best   199.7 mOhm from R5.2 (w 0.200, {'padend': 2, 'seg': 14, 'fan': 8, 'barrel': 4}) | worst   451.6 mOhm from C5.1
-U1. 108: best   229.0 mOhm from R5.2 (w 0.200, {'padend': 2, 'seg': 15, 'fan': 8, 'barrel': 4}) | worst   480.8 mOhm from C5.1
-U1. 121: best    48.1 mOhm from R1.1 (w 0.200, {'padend': 2, 'seg': 9, 'fan': 4, 'barrel': 2}) | worst   317.4 mOhm from R4.2
-U1. 131: best    12.0 mOhm from R1.1 (w 0.200, {'padend': 2, 'seg': 6}) | worst   281.3 mOhm from R4.2
-U1. 143: best    20.6 mOhm from U3.5 (w 0.200, {'padend': 2, 'seg': 6}) | worst   216.4 mOhm from R4.2
-U1. 144: best    22.5 mOhm from U3.5 (w 0.200, {'padend': 2, 'seg': 7}) | worst   214.5 mOhm from R4.2
-   over all pairs: min 7.7 max 480.8 mOhm; sources needing a narrowed tube: 0
-== four/sentinel-01-4l: rho_max 2.3000e-05 ohm*mm; 16 MCU pins, 13 stand-in sources
-U1.   6: best    50.6 mOhm from C5.1 (w 0.200, {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 1}) | worst   136.0 mOhm from C4.1 | refused from 2
-U1.  17: best    42.9 mOhm from C6.1 (w 0.200, {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 1}) | worst   149.7 mOhm from C4.1 | refused from 2
-U1.  30: best    38.0 mOhm from U2.6 (w 0.200, {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 2}) | worst   119.3 mOhm from C4.1 | refused from 2
-U1.  32: best     8.1 mOhm from U4.8 (w 0.200, {'padend': 2, 'seg': 6}) | worst   120.0 mOhm from C4.1 | refused from 2
-U1.  33: best    10.1 mOhm from U4.8 (w 0.200, {'padend': 2, 'seg': 7}) | worst   121.9 mOhm from C4.1 | refused from 2
-U1.  39: best    49.6 mOhm from U2.6 (w 0.200, {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 2}) | worst   152.4 mOhm from C4.1 | refused from 2
-U1.  52: best    39.3 mOhm from R1.1 (w 0.200, {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 2}) | worst   150.8 mOhm from C4.1 | refused from 2
-U1.  62: best    42.6 mOhm from U2.6 (w 0.200, {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 2}) | worst   149.6 mOhm from C4.1 | refused from 2
-U1.  72: best    37.9 mOhm from U2.6 (w 0.200, {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 2}) | worst   140.9 mOhm from C4.1 | refused from 2
-U1.  84: best    35.9 mOhm from U4.8 (w 0.200, {'padend': 2, 'seg': 6, 'fan': 2, 'barrel-plane': 2, 'plane': 1}) | worst   136.4 mOhm from C4.1 | refused from 2
-U1.  95: best    35.2 mOhm from R1.1 (w 0.200, {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 2}) | worst   136.6 mOhm from C4.1 | refused from 2
-U1. 108: best    32.1 mOhm from R1.1 (w 0.200, {'padend': 2, 'seg': 2, 'fan': 2, 'barrel-plane': 2, 'plane': 2}) | worst   134.4 mOhm from C4.1 | refused from 2
-U1. 121: best    24.7 mOhm from R1.1 (w 0.200, {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 1}) | worst   136.3 mOhm from C4.1 | refused from 2
-U1. 131: best    23.3 mOhm from U2.6 (w 0.200, {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 1}) | worst   135.9 mOhm from C4.1 | refused from 2
-U1. 143: best    51.3 mOhm from R1.1 (w 0.200, {'padend': 2, 'seg': 4, 'fan': 2, 'barrel-plane': 2, 'plane': 3}) | worst   139.5 mOhm from C4.1 | refused from 2
-U1. 144: best    53.2 mOhm from R1.1 (w 0.200, {'padend': 2, 'seg': 5, 'fan': 2, 'barrel-plane': 2, 'plane': 3}) | worst   141.4 mOhm from C4.1 | refused from 2
-   over all pairs: min 8.1 max 152.4 mOhm; sources needing a narrowed tube: 0
-   plane rhombi blocked (last build): 182
+== ref/sentinel-01: rho_max 2.3000e-05 ohm*mm; 16 MCU pins, 13 stand-ins
+U1.   6: best   57.7 mOhm from C6.1 {'padend': 2, 'seg': 6, 'fan': 4, 'barrel': 2} | worst  423.0 from R1.1 | refused from 7
+U1.  17: best   25.9 mOhm from C6.1 {'padend': 2, 'seg': 3} | worst  554.9 from R1.1 | refused from 6
+U1.  30: best   10.1 mOhm from U4.8 {'padend': 2, 'seg': 6} | worst  764.5 from R1.1 | refused from 6
+U1.  32: REFUSED from every stand-in
+U1.  33: best    9.1 mOhm from U4.8 {'padend': 2, 'seg': 5} | worst  788.7 from R1.1 | refused from 6
+U1.  39: REFUSED from every stand-in
+U1.  52: REFUSED from every stand-in
+U1.  62: REFUSED from every stand-in
+U1.  72: REFUSED from every stand-in
+U1.  84: REFUSED from every stand-in
+U1.  95: REFUSED from every stand-in
+U1. 108: REFUSED from every stand-in
+U1. 121: best  125.4 mOhm from C4.1 {'padend': 2, 'seg': 34, 'fan': 12, 'barrel': 6} | worst  166.5 from R1.1 | refused from 11
+U1. 131: best   24.0 mOhm from R2.1 {'padend': 2, 'seg': 11} | worst   92.5 from C4.1 | refused from 9
+U1. 143: best   20.6 mOhm from U3.5 {'padend': 2, 'seg': 6} | worst  234.0 from R1.1 | refused from 7
+U1. 144: best   22.5 mOhm from U3.5 {'padend': 2, 'seg': 7} | worst  243.6 from R1.1 | refused from 7
+   best-stand-in range over pins: 9.1..125.4 mOhm; all pairs max 788.7; pairs bounded 45 of 208; refusals {'no path under the flow rules': 156, 'pad end': 7, 'narrowed (bounded)': 16}
+== four/sentinel-01-4l: rho_max 2.3000e-05 ohm*mm; 16 MCU pins, 13 stand-ins
+U1.   6: best   99.8 mOhm from U3.5 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 2} | worst   99.8 from U3.5 | refused from 12
+U1.  17: best   39.4 mOhm from C6.1 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 1} | worst  151.4 from C4.1 | refused from 4
+U1.  30: best  116.1 mOhm from U3.5 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 3} | worst  116.1 from U3.5 | refused from 12
+U1.  32: best    8.1 mOhm from U4.8 {'padend': 2, 'seg': 6} | worst  115.5 from U3.5 | refused from 11
+U1.  33: best   10.1 mOhm from U4.8 {'padend': 2, 'seg': 7} | worst  118.2 from U3.5 | refused from 11
+U1.  39: best   49.0 mOhm from U2.6 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 2} | worst  154.1 from C4.1 | refused from 4
+U1.  52: best   41.6 mOhm from U2.6 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 2} | worst  158.9 from C4.1 | refused from 4
+U1.  62: best   41.7 mOhm from U2.6 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 2} | worst  157.5 from C4.1 | refused from 4
+U1.  72: best   34.8 mOhm from U2.6 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 1} | worst  142.2 from C4.1 | refused from 4
+U1.  84: best   32.5 mOhm from U4.8 {'padend': 2, 'seg': 6, 'fan': 2, 'barrel-plane': 2, 'plane': 1} | worst  137.4 from C4.1 | refused from 4
+U1.  95: best   32.7 mOhm from U4.8 {'padend': 2, 'seg': 6, 'fan': 2, 'barrel-plane': 2, 'plane': 1} | worst  137.5 from C4.1 | refused from 4
+U1. 108: REFUSED from every stand-in
+U1. 121: best   21.3 mOhm from R1.1 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 1} | worst  137.2 from C4.1 | refused from 4
+U1. 131: best   19.8 mOhm from U2.6 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 1} | worst  136.8 from C4.1 | refused from 4
+U1. 143: best  105.0 mOhm from U3.5 {'padend': 2, 'seg': 4, 'fan': 2, 'barrel-plane': 2, 'plane': 3} | worst  105.0 from U3.5 | refused from 12
+U1. 144: best  107.6 mOhm from U3.5 {'padend': 2, 'seg': 5, 'fan': 2, 'barrel-plane': 2, 'plane': 3} | worst  107.6 from U3.5 | refused from 12
+   best-stand-in range over pins: 8.1..116.1 mOhm; all pairs max 158.9; pairs bounded 89 of 208; refusals {'no path under the flow rules': 78, 'pad end': 41, 'narrowed (bounded)': 15}

@@ -14,6 +14,7 @@ for name, lo_kw, hi_kw in [("h 0.1797..0.2201", dict(h=0.1797), dict(h=0.2201)),
                            ("er 3.4..5.4", dict(er=5.4), dict(er=3.4)),
                            ("t 30..70 um", dict(t=0.070), dict(t=0.030)),
                            ("etch +-25 um", dict(W=0.325, s=0.175), dict(W=0.275, s=0.225)),
+                           ("mask 0..21 um at er 5.4", dict(mask=0.021), dict()),
                            ("mask 0..50 um at er 5.4", dict(mask=0.05), dict()),
                            ("mask 0..25 um at er 4.0", dict(mask=0.025, er_mask=4.0), dict())]:
     a, b = z(**lo_kw), z(**hi_kw)

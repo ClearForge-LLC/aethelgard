@@ -59,8 +59,12 @@ class Board:
                     sx, sy = sy, sx
                 elif abs(tot) > 1e-6:
                     raise ValueError(f"{ref}.{pad[1]}: pad at {tot} deg")
+                rr = kid(pad, "roundrect_rratio")
+                corner = float(rr[1]) * min(sx, sy) if (rr and pad[3] == "roundrect") else 0.0
+                if pad[3] not in ("rect", "roundrect"):
+                    raise ValueError(f"{ref}.{pad[1]}: pad shape {pad[3]}")
                 self.pads.append(
-                    dict(ref=ref, num=pad[1], x=fx + dx, y=fy + dy, w=sx, h=sy,
+                    dict(ref=ref, num=pad[1], x=fx + dx, y=fy + dy, w=sx, h=sy, corner=corner,
                          net=net[1] if net else None, layers=kid(pad, "layers")[1:])
                 )
         for s in kids(root, "segment"):

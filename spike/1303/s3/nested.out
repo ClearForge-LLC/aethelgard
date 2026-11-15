@@ -1,0 +1,9 @@
+W 0.2 g 0.2 h 0.2 t 0.05 er 4.0 f 0.05: C_lo   86.2650 C_up  102.9163 pF/m (2115 nodes) ok
+W 0.2 g 0.2 h 0.2 t 0.05 er 4.0 f 0.025: C_lo   90.6971 C_up   98.1110 pF/m (8277 nodes) ok
+W 0.2 g 0.2 h 0.2 t 0.05 er 4.0 f 0.0125: C_lo   92.7106 C_up   96.0323 pF/m (32745 nodes) ok
+W 0.2 g 0.2 h 0.2 t 0.05 er 4.0 f 0.00625: C_lo   93.6128 C_up   95.1128 pF/m (130257 nodes) ok
+W 0.4 g 0.2 h 0.2 t 0.05 er 1.0 f 0.05: C_lo   49.4408 C_up   54.3213 pF/m (2295 nodes) ok
+W 0.4 g 0.2 h 0.2 t 0.05 er 1.0 f 0.025: C_lo   50.8773 C_up   52.8531 pF/m (8989 nodes) ok
+W 0.4 g 0.2 h 0.2 t 0.05 er 1.0 f 0.0125: C_lo   51.4541 C_up   52.2769 pF/m (35577 nodes) ok
+W 0.4 g 0.2 h 0.2 t 0.05 er 1.0 f 0.00625: C_lo   51.6806 C_up   52.0490 pF/m (141553 nodes) ok
+NESTED OK
