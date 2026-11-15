@@ -166,6 +166,7 @@ Probe plan, so the predictions have something to point at. Probes are built `420
 - **No waiver** [measured]: the PWM schematic holds 107 `no_connect`s, the reference's 110 less PA8–PA11 (now used) plus J1 pin 5 (an unused connector contact, not a used MCU pin), and 8 `MOTOR` labels (4 at the MCU, 4 at J1). The DShot600 schematic the same.
 - So §1.8's first branch holds: the gates pass the off-board net honestly, at a connector. The gap the verdict names is the one `4300f` leaves: a motor pin has no off-board capacitance (D8 covers bus lines), so its speed is not judged (§4, Q3).
 - `generate` and `build` exit 0 on both fixtures; `simulate`: PWM at 100 ms passes (4 × `witnessed`, 156 rises, first rise 662,750 ns at this HEAD, span 8 ns, 311 edges off the grid; 28 registers judged, none wrong); DShot600 at 2 ms passes (4 × `witnessed`, 4,662 rises); **DShot600 at 100 ms fails closed** (`renode_log_flood`, so every witness and both bus transactions `…_unwitnessed`): D1, unchanged.
+- Re-measured after the merge of `1308` (specification 6, per-class DRC rules), at `fa2a572` in the image (`~/.cache/aet-4300a/m5`): `emit`, ERC and DRC pass with 0 findings on both fixtures and the reference; `twin_tier2` 31 of 31 and `campaign_tier2` pass. [measured]
 
 ## 4. Decisions taken inside the work order
 
