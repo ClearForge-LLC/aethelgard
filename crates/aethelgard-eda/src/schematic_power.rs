@@ -29,7 +29,7 @@ use aethelgard_ir::power_parts::{self, Direction, Kind, Role, Row};
 
 use aethelgard_ir::{SolvedTopology, SpiDevice};
 
-use super::{Anchor, Builder, Conn, EmitError, Part};
+use super::{Anchor, Builder, Conn, EmitError, Owner, Part};
 
 use aethelgard_ir::power::BATTERY_NET;
 
@@ -65,14 +65,17 @@ const RESERVOIR_RULE: &str = "AN2834 p. 45, 4.4.3: a large external capacitor at
 /// Anchors the part just drawn to `ic`'s pads.
 fn anchor(b: &mut Builder<'_>, ic: &str, pads: &[(&str, &str)], bound_nm: i64, rule: &'static str) {
     if let Some(p) = b.parts.last_mut() {
-        p.anchor = Some(Anchor {
+        p.owner = Some(Owner {
             ic: ic.to_owned(),
-            pads: pads
-                .iter()
-                .map(|(own, theirs)| ((*own).to_owned(), (*theirs).to_owned()))
-                .collect(),
-            bound_nm,
-            rule,
+            anchor: Some(Anchor {
+                pads: pads
+                    .iter()
+                    .map(|(own, theirs)| ((*own).to_owned(), (*theirs).to_owned()))
+                    .collect(),
+                bound_nm,
+                rule,
+            }),
+            decouples: false,
         });
     }
 }
@@ -155,8 +158,7 @@ fn two_pin(
         footprint: r.footprint.clone(),
         conns: BTreeMap::from([("1".into(), one), ("2".into(), two)]),
         note: None,
-        decouples: None,
-        anchor: None,
+        owner: None,
         offboard: BTreeMap::new(),
     });
     Ok(())
@@ -199,8 +201,7 @@ fn ic(
         footprint: r.footprint.clone(),
         conns,
         note: None,
-        decouples: None,
-        anchor: None,
+        owner: None,
         offboard: BTreeMap::new(),
     });
     Ok(())
@@ -374,8 +375,7 @@ pub(crate) fn draw(
             (POWER_IN_NEGATIVE.into(), minus),
         ]),
         note: None,
-        decouples: None,
-        anchor: None,
+        owner: None,
         offboard: BTreeMap::new(),
     });
     Ok(())

@@ -193,22 +193,34 @@ pub(crate) struct Part {
     /// By pin number; pins absent here get a no-connect.
     pub(crate) conns: BTreeMap<String, Conn>,
     pub(crate) note: Option<&'static str>,
-    /// A decoupling capacitor's IC: the reference it was drawn for.
-    pub(crate) decouples: Option<String>,
+    /// The IC this part belongs to, if any: one relation for a decoupling
+    /// capacitor and for a part a datasheet asks to sit by an IC's pins.
+    pub(crate) owner: Option<Owner>,
     /// A connector's declared off-board capacitance by pin number, with its
     /// source: what extraction adds to a line it carries (`AET-WO-4300f` D8).
     pub(crate) offboard: BTreeMap<String, (u64, String)>,
-    /// A power-tree part's place by its regulator's pin (`AET-WO-4300d2`
-    /// §1.3), which the placer targets and the DRC gate judges.
-    pub(crate) anchor: Option<Anchor>,
 }
 
-/// Where a power-tree part must sit, from the tree's declared ownership: the
-/// IC that owns it, each of its own pads with the IC pad it must lie beside,
-/// the largest copper-edge gap allowed, and the rule that asks for it.
+/// The IC a part belongs to (`AET-WO-4300d2` reduction finding 9: one
+/// relation, where there were two fields): the placer puts the part beside
+/// it, by its pins when the part is anchored.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Owner {
+    pub(crate) ic: String,
+    /// Where by the IC's pins it must sit (`AET-WO-4300d2` §1.3), which the
+    /// placer targets and the DRC gate judges; `None` beside the IC by its
+    /// shared net alone.
+    pub(crate) anchor: Option<Anchor>,
+    /// Whether it counts in its rail's decoupling, as a capacitor between the
+    /// rail and `GND` drawn for this IC ([`decoupling_picofarads`]).
+    pub(crate) decouples: bool,
+}
+
+/// Where an owned part must sit: each of its own pads with the IC pad it
+/// must lie beside, the largest copper-edge gap allowed, and the rule that
+/// asks for it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Anchor {
-    pub(crate) ic: String,
     pub(crate) pads: Vec<(String, String)>,
     pub(crate) bound_nm: i64,
     pub(crate) rule: &'static str,
@@ -416,8 +428,7 @@ impl Builder<'_> {
             footprint: footprint.to_owned(),
             conns: BTreeMap::from([("1".into(), one), ("2".into(), two)]),
             note: None,
-            decouples: None,
-            anchor: None,
+            owner: None,
             offboard: BTreeMap::new(),
         });
         Ok(())
@@ -445,7 +456,11 @@ impl Builder<'_> {
         let g = self.ground();
         self.passive('C', value.to_owned(), r, g)?;
         if let Some(cap) = self.parts.last_mut() {
-            cap.decouples = Some(ic.to_owned());
+            cap.owner = Some(Owner {
+                ic: ic.to_owned(),
+                anchor: None,
+                decouples: true,
+            });
         }
         Ok(())
     }
@@ -511,7 +526,10 @@ pub fn decoupling_picofarads(
 ) -> Result<BTreeMap<String, u64>, EmitError> {
     let (parts, _) = design(spec, solved, table)?;
     let mut out: BTreeMap<String, u64> = BTreeMap::new();
-    for p in parts.iter().filter(|p| p.decouples.is_some()) {
+    for p in parts
+        .iter()
+        .filter(|p| p.owner.as_ref().is_some_and(|o| o.decouples))
+    {
         let pf = picofarads(&p.value).ok_or_else(|| {
             EmitError::Internal(format!(
                 "{}'s value `{}` is not a capacitance this reads",
@@ -666,8 +684,7 @@ pub(crate) fn design(
         footprint: mcu_sym.property("Footprint").unwrap_or("").to_owned(),
         conns,
         note: None,
-        decouples: None,
-        anchor: None,
+        owner: None,
         offboard: BTreeMap::new(),
     });
 
@@ -887,8 +904,7 @@ fn connectors(b: &mut Builder<'_>) -> Result<(), EmitError> {
             footprint: footprint.to_owned(),
             conns,
             note: None,
-            decouples: None,
-            anchor: None,
+            owner: None,
             offboard,
         });
     }
@@ -923,8 +939,7 @@ fn device(
         footprint: sym.property("Footprint").unwrap_or("").to_owned(),
         conns: conns.into_iter().map(|(n, c)| (n.to_owned(), c)).collect(),
         note,
-        decouples: None,
-        anchor: None,
+        owner: None,
         offboard: BTreeMap::new(),
     });
     Ok(())
@@ -1489,8 +1504,7 @@ mod tests {
                     footprint: fp_id.into(),
                     conns: Default::default(),
                     note: None,
-                    decouples: None,
-                    anchor: None,
+                    owner: None,
                     offboard: Default::default(),
                 }),
                 "{}: its symbol is not recognised as a connector",

@@ -528,7 +528,10 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
     // An anchored part goes straight after its IC, in drawing order, before
     // any other part can crowd the pins it serves (`AET-WO-4300d2` §1.3). A
     // design with no anchor keeps the order above.
-    let anchored = |i: usize| items[i].part.anchor.as_ref().map(|a| a.ic.as_str());
+    let anchored = |i: usize| {
+        let o = items[i].part.owner.as_ref()?;
+        o.anchor.as_ref().map(|_| o.ic.as_str())
+    };
     let mut grouped = Vec::with_capacity(order.len());
     for &i in order.iter().filter(|&&i| anchored(i).is_none()) {
         grouped.push(i);
@@ -561,13 +564,7 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
         // The anchor: an IC already placed.
         let candidates =
             (0..items.len()).filter(|&j| j != i && placed[j].is_some() && is_ic(items[j].part));
-        let owner = item
-            .part
-            .anchor
-            .as_ref()
-            .map(|a| &a.ic)
-            .or(item.part.decouples.as_ref());
-        let anchor = match owner {
+        let anchor = match item.part.owner.as_ref().map(|o| &o.ic) {
             Some(ic) => (0..items.len())
                 .find(|&j| placed[j].is_some() && &items[j].part.reference == ic)
                 .ok_or_else(|| {
@@ -594,7 +591,12 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
         let reference = item.part.reference.as_str();
         let reserve = items
             .iter()
-            .filter(|x| x.part.anchor.as_ref().is_some_and(|a| a.ic == reference))
+            .filter(|x| {
+                x.part
+                    .owner
+                    .as_ref()
+                    .is_some_and(|o| o.anchor.is_some() && o.ic == reference)
+            })
             .map(|x| {
                 let k = x.geometry.keep;
                 (k.x1 - k.x0).max(k.y1 - k.y0) + IC_GAP_NM
@@ -611,7 +613,7 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
                 placed[j].as_ref().map(|p| (p.keep, gap))
             })
             .collect();
-        if let Some(a) = &item.part.anchor {
+        if let Some(a) = item.part.owner.as_ref().and_then(|o| o.anchor.as_ref()) {
             placed[i] = Some(place_anchored(item, &items[anchor], at, a, &taken)?);
             continue;
         }
@@ -666,7 +668,10 @@ fn place_anchored(
         let (pin, _) = ic.pads.get(theirs).ok_or_else(|| {
             internal(
                 reference,
-                format!("anchored to {} pad {theirs}, which it lacks", a.ic),
+                format!(
+                    "anchored to {} pad {theirs}, which it lacks",
+                    ic.part.reference
+                ),
             )
         })?;
         pairs.push((*mine, (at.0 + pin.0, at.1 + pin.1)));
@@ -1015,7 +1020,7 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
     let mut out = Vec::new();
     for part in parts {
         let mut fp = library::footprint(&part.footprint)?;
-        if part.anchor.is_some() {
+        if part.owner.as_ref().is_some_and(|o| o.anchor.is_some()) {
             reference_on_fab(&mut fp);
         }
         let nets = pin_nets(part)?;
@@ -1419,8 +1424,7 @@ mod tests {
                 .map(|(n, c)| ((*n).to_owned(), c.clone()))
                 .collect(),
             note: None,
-            decouples: None,
-            anchor: None,
+            owner: None,
             offboard: BTreeMap::new(),
         }
     }
@@ -1577,7 +1581,11 @@ mod tests {
             "C1",
             &[("1", vdd()), ("2", gnd())],
         );
-        cap.decouples = Some("U2".into());
+        cap.owner = Some(schematic::Owner {
+            ic: "U2".into(),
+            anchor: None,
+            decouples: true,
+        });
         let parts = vec![
             mcu(&[("34", net("SCL"))]),
             part(
