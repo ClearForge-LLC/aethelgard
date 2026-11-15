@@ -155,7 +155,9 @@ fn r5_copy(board: &str, new_ref: &str, attr: &str, value: &str) -> String {
         );
     let at = fp.find("\t\t(at ").unwrap();
     let at_end = at + fp[at..].find(')').unwrap() + 1;
-    fp.replace_range(at..at_end, "\t\t(at 115 105)");
+    // Clear of every part and track: (115, 105) became the support network's
+    // right column, by the board edge (`AET-WO-4300g`).
+    fp.replace_range(at..at_end, "\t\t(at 76 100)");
     let mut out = String::new();
     let mut rest = fp.as_str();
     let mut n = 0;
