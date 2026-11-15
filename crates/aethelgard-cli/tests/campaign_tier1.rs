@@ -2708,3 +2708,182 @@ fn a_release_too_late_for_the_serial_injection_is_refused_by_name() {
         "{v}"
     );
 }
+
+/// `AET-WO-4300b`: replay holds its own copy of the frame's formula and of
+/// the pattern's tail and the frame's length (it never depends on the twin,
+/// `RUL-16`); the copies are the judge's.
+#[test]
+fn replay_s_serial_frame_and_lengths_are_the_twin_s() {
+    for (fw, label) in [([0u8; 32], "CONSOLE"), ([0xA5; 32], "rc_sbus-2")] {
+        assert_eq!(
+            aethelgard_chaos::record::serial_frame(&fw, label),
+            aethelgard_twin::serial::frame(&fw, label),
+            "{label}"
+        );
+    }
+    assert_eq!(
+        aethelgard_chaos::record::SERIAL_FRAME_LEN,
+        aethelgard_twin::serial::FRAME_LEN
+    );
+    assert_eq!(
+        aethelgard_chaos::record::SERIAL_TAIL_LEN,
+        aethelgard_twin::serial::PATTERN_TAIL.len()
+    );
+}
+
+/// `AET-WO-4300b`: replay's copy of the silicon check (and of the tags a
+/// framing needs) gives `aethelgard_ir::serial::check_silicon`'s figures,
+/// row and `holds` (and the twin's `needed_tags`) on every baud, word,
+/// parity and stop bits the sweep tries, solved and off by one, both tables.
+#[test]
+fn replay_s_serial_silicon_check_is_the_judge_s_on_a_sweep() {
+    use aethelgard_chaos::record::{Reading, SerialFraming};
+    use aethelgard_ir::serial::{Framing, Parity, SerialRole, SolvedSerialPort};
+    let clock = aethelgard_ir::SolvedClock::reset();
+    let mut tried = 0;
+    let mut failing = 0;
+    // The header is read once per shape, not once per case.
+    let shapes: Vec<(u8, Parity, u8, Vec<String>)> = [
+        (8u8, Parity::None, 1u8),
+        (8, Parity::Even, 2),
+        (7, Parity::None, 1),
+        (8, Parity::Odd, 1),
+        (6, Parity::Even, 1),
+    ]
+    .into_iter()
+    .map(|(d, p, s)| {
+        let framing = Framing {
+            baud: 1,
+            data_bits: d,
+            parity: p,
+            stop_bits: s,
+            inverted: p == Parity::Even,
+        };
+        let needed = aethelgard_twin::serial::needed_tags(&framing)
+            .unwrap()
+            .iter()
+            .map(|t| format!("{}.{}", t.register, t.field))
+            .collect();
+        (d, p, s, needed)
+    })
+    .collect();
+    for peripheral in ["USART1", "UART4"] {
+        let kernel = aethelgard_ir::serial::kernel_hz(&clock, peripheral).unwrap();
+        for baud in [
+            1_200u32, 9_600, 57_600, 100_000, 115_200, 230_400, 420_000, 1_000_000, 4_000_000,
+        ] {
+            for (data_bits, parity, stop_bits, needed) in &shapes {
+                let (data_bits, parity, stop_bits) = (*data_bits, *parity, *stop_bits);
+                let Some(solved) = aethelgard_ir::serial::solve_brr(kernel, baud) else {
+                    continue;
+                };
+                for brr in [solved, solved + 1, solved - 1] {
+                    let framing = Framing {
+                        baud,
+                        data_bits,
+                        parity,
+                        stop_bits,
+                        inverted: parity == Parity::Even,
+                    };
+                    let port = SolvedSerialPort {
+                        index: 0,
+                        peripheral: peripheral.into(),
+                        tx: "TX".into(),
+                        rx: "RX".into(),
+                        role: SerialRole::Gps,
+                        framing: framing.clone(),
+                        kernel_hz: kernel,
+                        brr,
+                        actual_millibaud: aethelgard_ir::serial::actual_millibaud(kernel, brr),
+                        error_ppm: aethelgard_ir::serial::error_ppm(kernel, brr, baud),
+                    };
+                    let f = aethelgard_ir::serial::check_silicon(&clock, &port);
+                    let records = vec![
+                        Record::Scenario {
+                            name: "sweep".into(),
+                            sha256: [1; 32],
+                            expect_pass: f.holds,
+                            expect_findings: if f.holds {
+                                vec![]
+                            } else {
+                                vec!["serial_framing_static_mismatch".into()]
+                            },
+                            overrides: vec![],
+                        },
+                        Record::Solved {
+                            specification_sha256: [2; 32],
+                            topology_sha256: [3; 32],
+                        },
+                        Record::SerialPortSolved {
+                            label: "P".into(),
+                            index: 0,
+                            peripheral: peripheral.into(),
+                            tx: "PA0".into(),
+                            tx_af: 8,
+                            rx: "PA1".into(),
+                            rx_af: 8,
+                            role: "gps".into(),
+                            framing: SerialFraming {
+                                baud,
+                                data_bits,
+                                parity: parity.name().into(),
+                                stop_bits,
+                                inverted: framing.inverted,
+                            },
+                            kernel_hz: port.kernel_hz,
+                            brr,
+                            actual_millibaud: port.actual_millibaud,
+                            error_ppm: port.error_ppm,
+                        },
+                        Record::BootObserved {
+                            image_sha256: [4; 32],
+                            boot_word: Reading {
+                                address: 0x2000_0000,
+                                mask: u32::MAX,
+                                expected: 1,
+                                observed: Some(0),
+                            },
+                            instructions_expected: 1,
+                            instructions_observed: Some(1),
+                            pc: None,
+                            executable: vec![(0x0800_0000, 0x0801_0000)],
+                        },
+                        Record::SerialFramingCheck {
+                            label: "P".into(),
+                            kernel_hz: f.kernel_hz,
+                            brr: f.brr,
+                            actual_millibaud: f.actual_millibaud,
+                            error_ppm: f.error_ppm,
+                            tolerance: f
+                                .tolerance
+                                .map(|r| (r.table.into(), r.m_bits, r.tolerance_ppm)),
+                            holds: f.holds,
+                            tags_needed: needed.clone(),
+                            tags: None,
+                        },
+                        Record::Verdict {
+                            pass: f.holds,
+                            findings: if f.holds {
+                                vec![]
+                            } else {
+                                vec![("serial_framing_static_mismatch".into(), "error".into(), 1)]
+                            },
+                        },
+                    ];
+                    let summary = aethelgard_chaos::campaign::check_run(&records);
+                    assert!(
+                        summary.as_ref().is_ok_and(|s| s.matched),
+                        "{peripheral} {baud} {data_bits}{parity:?}{stop_bits} BRR {brr}: {summary:?}"
+                    );
+                    tried += 1;
+                    failing += usize::from(!f.holds);
+                }
+            }
+        }
+    }
+    // The sweep reaches both outcomes, on both tables.
+    assert!(
+        tried > 200 && failing > 0 && failing < tried,
+        "{tried} {failing}"
+    );
+}
