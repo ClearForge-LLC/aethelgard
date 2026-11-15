@@ -91,6 +91,9 @@ struct Report {
     /// flag.
     #[serde(skip)]
     lifecycle_unheld: Vec<String>,
+    /// The `extract` gate's stated conditions, for the package's notes.
+    #[serde(skip)]
+    conditions: Vec<String>,
 }
 
 /// `--fab-out D` writes the package into `D`; `--against-fab D` compares it.
@@ -786,6 +789,7 @@ pub fn verify(
         against_fab: None,
         fab: None,
         lifecycle_unheld,
+        conditions: Vec::new(),
     };
 
     // Every scenario must start from exactly `--spec`, or its campaign would
@@ -951,6 +955,13 @@ pub fn verify(
     report.verdict = if report.ok { "pass" } else { "fail" };
     if let Some(mode) = fab_mode {
         let elf_sha256 = report.elf_sha256.clone().unwrap_or_default();
+        let lifecycle: Vec<String> = report
+            .lifecycle
+            .iter()
+            .chain(&report.lifecycle_unheld)
+            .cloned()
+            .collect();
+        let conditions = std::mem::take(&mut report.conditions);
         let bound = fab::Bound {
             project: &project,
             spec: &spec,
@@ -960,6 +971,8 @@ pub fn verify(
             elf: &scratch.tool.join("firmware.elf"),
             elf_sha256: &elf_sha256,
             bom: files[&format!("{KICAD_DIR}/{project}.bom.csv")].as_bytes(),
+            conditions: &conditions,
+            lifecycle: &lifecycle,
         };
         let scenarios: Vec<fab::Scenario> = expected
             .iter()
@@ -1154,6 +1167,12 @@ fn run_gates(
     bound("extract", &extract, want, "", "")?;
     // `extract` runs no external tool, so its verdict has no `sandbox` and no
     // uid boundary to report: null, never a value it did not measure.
+    report.conditions = extract.last()["conditions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|c| c.as_str().map(str::to_owned))
+        .collect();
     let mut g = gate_report("extract", None, &extract);
     g.uid_boundary = None;
     report.gates.push(g);

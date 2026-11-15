@@ -891,7 +891,14 @@ pub struct ReadBoard {
 /// or copper closer than the declared clearance to another net's
 /// (`route::check`).
 pub fn read(text: &str, stack: &Stack) -> Result<ReadBoard, Refused> {
-    let tree = strict::board(text).map_err(malformed)?;
+    read_tree(&strict::board(text).map_err(malformed)?, stack)
+}
+
+/// [`read`] on a board the strict reader has already read: `check drc
+/// --spec` runs it on its own strict reading before it judges a declared
+/// pair, so the pair judge sees only copper this allowlist models
+/// (`AET-WO-3303` §1.3).
+pub fn read_tree(tree: &strict::Tree, stack: &Stack) -> Result<ReadBoard, Refused> {
     let board = tree.root();
     let mut once = BTreeSet::new();
     let mut footprints = BTreeMap::new();
@@ -924,8 +931,8 @@ pub fn read(text: &str, stack: &Stack) -> Result<ReadBoard, Refused> {
             _ => {}
         }
     }
-    route::declared(&tree, stack).map_err(|d| refused(d.kind, d.message))?;
-    let (board, routed) = route::read(&tree, stack).map_err(|e| refused("BoardUnreadable", e))?;
+    route::declared(tree, stack).map_err(|d| refused(d.kind, d.message))?;
+    let (board, routed) = route::read(tree, stack).map_err(|e| refused("BoardUnreadable", e))?;
     route::connectivity(&board, &routed).map_err(|e| refused("NetLabelsDisagree", e))?;
     route::check(&board, &routed).map_err(|e| refused("ClearanceViolated", e))?;
     Ok(ReadBoard {

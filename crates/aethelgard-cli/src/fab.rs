@@ -80,6 +80,10 @@ pub struct Bound<'a> {
     pub elf_sha256: &'a str,
     /// `emit`'s bill of materials, as generated.
     pub bom: &'a [u8],
+    /// The conditions the `extract` gate's verdict stated, as it stated them.
+    pub conditions: &'a [String],
+    /// The verdict's lifecycle lines: its banner, then each part unheld.
+    pub lifecycle: &'a [String],
 }
 
 /// What the export reports for the verdict's `fab` key: the tool it ran and
@@ -254,7 +258,8 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
         kicad_version: KICAD_VERSION,
         files: &described,
         stack: &stack,
-        offboard: aethelgard_eda::schematic::declares_offboard(b.spec),
+        conditions: b.conditions,
+        lifecycle: b.lifecycle,
     });
     files.insert(NOTES.to_owned(), notes.into_bytes());
     Ok(Exported {
