@@ -192,11 +192,16 @@ impl Channel {
     /// The word the part answers for the stimulus, rounded half away from
     /// zero. The parser refused a channel whose word does not fit 16 bits.
     pub fn raw(&self) -> u16 {
-        let num = (i64::from(self.stimulus) - i64::from(self.zero)) * i64::from(self.lsb.0);
-        let den = i64::from(self.lsb.1);
-        let rounded = (2 * num + num.signum() * den) / (2 * den);
         // Two's complement in 16 bits; `channel` checked the range.
-        (rounded & 0xFFFF) as u16
+        (self.rounded() & 0xFFFF) as u16
+    }
+
+    /// `round((stimulus - zero) * lsb.0 / lsb.1)`, half away from zero, in
+    /// 128 bits, where no `i32` and `u32` inputs overflow (adversarial A5).
+    fn rounded(&self) -> i128 {
+        let num = (i128::from(self.stimulus) - i128::from(self.zero)) * i128::from(self.lsb.0);
+        let den = i128::from(self.lsb.1);
+        (2 * num + num.signum() * den) / (2 * den)
     }
 }
 
@@ -661,9 +666,7 @@ fn channel(raw: &RawChannel, at: usize) -> Result<Channel, String> {
         lsb: (num, den),
         signed: raw.signed,
     };
-    let n = (i64::from(c.stimulus) - i64::from(c.zero)) * i64::from(num);
-    let d = i64::from(den);
-    let rounded = (2 * n + n.signum() * d) / (2 * d);
+    let rounded = c.rounded();
     let range = if c.signed {
         -32_768..=32_767
     } else {
@@ -797,6 +800,12 @@ fn part(raw: RawPart) -> Result<Part, String> {
             m
         }
     };
+    // A stand-in is in the table to exercise the twin, never for a purchase,
+    // so it must carry a lifecycle the specification has to acknowledge and
+    // the banner names (adversarial A6).
+    if raw.stand_in && lifecycle == Lifecycle::Active {
+        return Err("`stand_in` is true for an `active` part: a twin stand-in is `eol` or `nrnd`, so a board that uses it must acknowledge it".to_owned());
+    }
     if !raw.identity.datasheet_value && !raw.stand_in {
         return Err(
             "`identity.datasheet_value` is false, which only a twin stand-in may be".to_owned(),

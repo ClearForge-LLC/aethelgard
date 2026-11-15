@@ -393,6 +393,10 @@ struct ScenarioLine {
     scenario: String,
     file: String,
     verdict: &'static str,
+    /// The scenario's boot's lifecycle banner (`AET-WO-4210` D1); absent when
+    /// it is empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    lifecycle: Vec<String>,
     expect: &'static str,
     matched: bool,
     findings: Vec<String>,
@@ -625,6 +629,7 @@ fn run_one(
             scenario: summary.name,
             file: p.path.display().to_string(),
             verdict: pass_fail(summary.pass),
+            lifecycle: verdict.lifecycle.clone(),
             expect: pass_fail(summary.expect_pass),
             matched: ok,
             findings: summary.failing_kinds,

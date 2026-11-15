@@ -491,3 +491,20 @@ The architect relayed the ruling at 05:15 UTC into this builder's inbox (`~/.cac
 | PL1 | With both stand-ins acknowledged, the fixture's `simulate --spec` verdict carries `lifecycle` with two lines, ICP10111 (U6) first, then ICM20948 (U5, U7), each naming `EOL` and TDK's product page. The emitted platform's header and every board-crate file with a header (`lib.rs`, `board.rs`, `proofs.rs`, `Cargo.toml`, `firmware/src/main.rs`, `firmware/Cargo.toml`, `firmware/.cargo/config.toml`, `firmware/link.x`) carry the same two lines. | `lifecycle_banner`, devices I2C then SPI |
 | PL2 | Every Sentinel-01 verdict, board-crate file and platform is unchanged but for the specification hash. It has no `lifecycle` key, because its parts are `active`. | `skip_serializing_if`, an empty banner |
 | PL3 | The fixture's earlier tier-2 results (PB1-PB10) are unchanged: only the verdict's new key and the headers differ. | — |
+
+## Build results — after the predictions
+
+Every container of this build ran under `~/bin/capped-run`, through `~/.cache/aet-4210/t2.sh`: a capped user scope that the container shares (`--cgroups=disabled`, `--network none`, `TMPDIR` unset), one at a time under a lock. **Every read-back:** `memory.max=8589934592 memory.swap.max=0 pids.max=8192`, each logged in `~/.cache/aet-4210/t2.log` with its own `run-p…scope` path. Crates were fetched on the host into `~/.cache/aet-4210/cargo-home`, then built offline in the image.
+
+| Prediction | Result | Measured |
+|---|---|---|
+| PB1 | held | 10 records in the predicted order. U6 data `0x6666`; U5 and U7 data `0x4000`; identities `0x60`, `0x8` (mask `0x3f`), `0xea`. Exit 0 (`the_imu_and_barometer_fixture_runs_every_script_step_witnessed`) |
+| PB2 | held | SPI witnesses 4, 4, 14, 4, 4, 14 lines, each observed equal to expected. No unrouted line |
+| PB3 | held | ICP at `Debug`: 2, 1 and 2 lines. Data line `Reading data with CRC: [0x66, 0x66], current command: 0x7866 (UltraLowNoiseTemperaturePressure), requested: 2 bytes` |
+| PB4 | held | `SysTick.CSR` observed `0x00000004`; `NVIC.ISER0`-`4` `0x00000000` |
+| PB5 | held | A `.repl` with `DefaultAccelerationZ: 1` and `DefaultTemperature: 25` loaded. The monitor read back `1`, `0` (X, unset) and `25` (`~/.cache/aet-4210/stim/stim.repl`) |
+| PB6 | held | exactly 2 × `spi_transaction_unwitnessed` for U5: its configure step holds the data read's 14 lines, its data step none. U7 untouched. **And F5 measured:** U5's data read `0x4000` though it was never woken |
+| PB7 | held | `i2c_identity_mismatch` (U6's data step read `0x303d`, not `0x6666`) and `i2c_transaction_unwitnessed` (U6's data step logged `0x48A3 (NormalPressureTemperature)`) |
+| PB8 | held | Sentinel-01's tier-2 boots pass (`twin_tier2`, 28 tests, run 2). The flash's idle warnings are skipped as edge artefacts |
+| PB9 | held | The fault-parked SysTick mutant: `core_in_exception` and `register_mismatch` on `SysTick.CSR`. `systick-counting` (CSR = 1) and `nvic-line` (ISER0 = 1): `register_mismatch` alone, each naming its register |
+| PB10 | held | The fixture's `spi1_transfer_is_bounded_and_ordered` (wl ≤ 2, rl ≤ 6, unwind 8) proved in 10.67 s; `i2c1_transfer_is_bounded_and_ordered` in 5.22 s. Fixture boots: 2.9-3.1 s each |

@@ -733,3 +733,18 @@ fn refuses_a_malformed_script() {
     let err = refused_entry("ICM20948", |p| p["script"]["data"]["extra"] = 1.into());
     assert_refused(&err, Some("ICM20948"), "extra");
 }
+
+/// Adversarial A5: a channel whose conversion overflows 64 bits is refused,
+/// never a panic; A6: a stand-in must be `eol` or `nrnd`.
+#[test]
+fn an_overflowing_channel_or_an_active_stand_in_is_refused() {
+    let err = refused_entry("ICM20948", |p| {
+        let c = &mut p["script"]["data"]["channels"][2];
+        c["stimulus"] = i32::MAX.into();
+        c["zero"] = i32::MIN.into();
+        c["lsb"] = json!([u32::MAX, 1]);
+    });
+    assert_refused(&err, Some("ICM20948"), "16-bit word");
+    let err = refused_entry("ICP10111", |p| p["lifecycle"] = "active".into());
+    assert_refused(&err, Some("ICP10111"), "stand_in");
+}

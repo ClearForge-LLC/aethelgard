@@ -66,8 +66,9 @@ struct Report {
     /// Every generated file's sha256, by its path in the tree.
     files: BTreeMap<String, String>,
     /// The lifecycle banner (`AET-WO-4210` D1): one line per `eol` or `nrnd`
-    /// part the board uses, absent when it is empty. The package's verdict is
-    /// this one, so the fabrication package carries it.
+    /// part the board uses, absent when it is empty. It is in the verdict
+    /// that names the package, not in a file of the package: no board with an
+    /// `eol` or `nrnd` part can be drawn today (FEEDBACK, adversarial A3).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     lifecycle: Vec<String>,
     /// `--against`: whether the directory matched the tree; absent without it.

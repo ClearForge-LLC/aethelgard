@@ -728,6 +728,10 @@ struct Plan {
     /// SPI peripheral name (`SPI1`) to its devices, in the specification's
     /// order. A peripheral with no device has no entry.
     selects: BTreeMap<String, Vec<Select>>,
+    /// I2C peripheral name (`I2C1`) to the most bytes any step of a script on
+    /// it writes and reads, at least two each: its transfer proof's bounds
+    /// (`AET-WO-4210` adversarial A9).
+    i2c_frames: BTreeMap<String, (usize, usize)>,
     /// The lifecycle banner every generated file's header carries
     /// (`aethelgard_ir::lifecycle_banner`; `AET-WO-4210` D1): empty for a
     /// board of `active` parts, whose files are then unchanged.
@@ -938,6 +942,20 @@ impl Plan {
             peripherals,
             ports,
             selects,
+            i2c_frames: {
+                let mut frames: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+                for (_, d) in solved.i2c_devices_in_order() {
+                    let e = frames.entry(d.peripheral.clone()).or_insert((2, 2));
+                    for step in aethelgard_ir::parts::steps(&d.part)
+                        .map_err(BoardError::InvalidTopology)?
+                        .unwrap_or_default()
+                    {
+                        e.0 = e.0.max(step.write.len());
+                        e.1 = e.1.max(usize::from(step.width));
+                    }
+                }
+                frames
+            },
             lifecycle: solved
                 .lifecycle_banner()
                 .map_err(BoardError::InvalidTopology)?,
@@ -2975,6 +2993,25 @@ fn emit_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts, speeds: &Spe
         let Some(i) = i else { continue };
         let t = type_name(name);
         let m = name.to_ascii_lowercase();
+        // The proof's bytes: two each way, or as many as any step of a script
+        // on this bus writes and reads (`AET-WO-4210` adversarial A9).
+        let (wmax, rmax) = plan.i2c_frames.get(name).copied().unwrap_or((2, 2));
+        let unwind = wmax + rmax + 2;
+        let (doc, most) = if (wmax, rmax) == (2, 2) {
+            (
+                "/// A transfer of any address, up to two bytes each way and any answers, with\n"
+                    .to_owned(),
+                "two".to_owned(),
+            )
+        } else {
+            (
+                format!(
+                    "/// A transfer of any address, up to {wmax} bytes out and {rmax} in (the largest step\n\
+                     /// of a script on this bus, `AET-WO-4210`) and any answers, with\n"
+                ),
+                format!("{wmax} out or {rmax} in"),
+            )
+        };
         let bit = |pos: u32| format!("{:#010x}", 1u32 << pos);
         let (_, admitted) = &speeds[name];
         let mode = I2C_MODES[admitted[0]].0;
@@ -3048,11 +3085,11 @@ fn emit_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts, speeds: &Spe
                  }}\n\
              }}\n\
              \n\
-             /// A transfer of any address, up to two bytes each way and any answers, with\n\
+             {doc}\
              /// each wait bounded at two reads of `ISR`: touches only {t}, in order, within\n\
              /// the bound, and ends in the result its phases imply.\n\
              #[kani::proof]\n\
-             #[kani::unwind(6)]\n\
+             #[kani::unwind({unwind})]\n\
              fn {m}_transfer_is_bounded_and_ordered() {{\n    \
                  let mut img = Image {{",
             isr = i.isr,
@@ -3098,9 +3135,9 @@ fn emit_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts, speeds: &Spe
                  .init::<{m}_speed::{mode}, _>(&mut img, {args});\n    \
              let mut spy = {t}Spy {{ stage: 0, isr_reads: 0, bytes_written: 0 }};\n    \
              let (wl, rl): (usize, usize) = (kani::any(), kani::any());\n    \
-             kani::assume(wl <= 2 && rl <= 2);\n    \
-             let out: [u8; 2] = kani::any();\n    \
-             let mut back = [0u8; 2];\n    \
+             kani::assume(wl <= {wmax} && rl <= {rmax});\n    \
+             let out: [u8; {wmax}] = kani::any();\n    \
+             let mut back = [0u8; {rmax}];\n    \
              let spins = 2;\n    \
              let result = bus.transfer_within(&mut spy, kani::any(), &out[..wl], &mut back[..rl], spins);\n    \
              let waits = wl + usize::from(wl > 0 && rl > 0) + rl + usize::from(wl + rl > 0);\n    \
@@ -3123,7 +3160,7 @@ fn emit_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts, speeds: &Spe
                  Err(I2cError::Tc) => kani::cover!(true, \"{t} timed out waiting for TC\"),\n        \
                  Err(I2cError::Rxne) => kani::cover!(true, \"{t} timed out waiting for RXNE\"),\n        \
                  Err(I2cError::Stop) => kani::cover!(true, \"{t} timed out waiting for STOPF\"),\n        \
-                 Err(I2cError::Length) => kani::assert(false, \"a transfer of at most two bytes was refused as too long\"),\n    \
+                 Err(I2cError::Length) => kani::assert(false, \"a transfer of at most {most} bytes was refused as too long\"),\n    \
              }}\n\
              }}",
             args = pins.join(", "),
