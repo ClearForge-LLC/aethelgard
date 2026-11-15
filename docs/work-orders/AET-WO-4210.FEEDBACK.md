@@ -690,5 +690,62 @@ Neither is fixed here. Whether Renode logs a device's error outside its window i
 - In the pinned image under `capped-run`. The read-back was `memory.max=8589934592 memory.swap.max=0 pids.max=8192`, in `~/.cache/aet-4210/t2.log`.
   - The full suite with `with-tools` (`final2.log`): 1,537 passed and 1 failed (the test above).
   - After the test edit, `twin_tier2` reran in full: 28 passed.
+- CI on `8e2a0a2` was green: `ci` 43708232762, every shard ≤ 17.0 min, canary `tier2_tests_passed=107 floor=107`.
 
-CI: recorded with the READY commit that follows this round.
+### Then `4300a` merged first: specification 7, trace 9
+
+The architect ruled the order (mailbox, 11:40 UTC): `4300a` (PR #145) merges first, keeping specification 6, topology 5 and trace 8, and this build renumbers. `4300a` merged at `7ca65e6`. Its tree equals its PR head `89ed1d6`'s, so the merge was resolved and tested in a scratch worktree against that head first, then taken whole at `4ce8a56`: the merged tree is the tested trial tree (`476b62f`).
+
+- **Versions.**
+  - `SPECIFICATION_SCHEMA_VERSION` is **7** (`accept_lifecycle`, after `4300a`'s `motor_outputs` and `mcu.hse_hz`), and every specification file is at 7. `4300a`'s two motor fixtures and its `ir/tests/motor.rs` specification gained `"accept_lifecycle": []`, since their parts are `active`.
+  - `TRACE_VERSION` is **9** (kinds 12, 13, 21 and 22 as steps; a witness may hold the device's `[ERROR]` lines). The golden trace's sha256 differs from `4300a`'s (`43cbe654…`) by the version byte alone, which the golden test asserts by setting it back to 8.
+  - The solved topology is not this build's to bump.
+- **Both sides kept.**
+  - The `Specification` carries `motor_outputs` and `accept_lifecycle`. The board generator carries `timers`, `i2c_frames` and `lifecycle`.
+  - The image's registers are `4300a`'s 13 (the seven solved, then the six other enable registers), then this build's six (SysTick, `NVIC.ISER0`-`4`), so 19. Tier-1's register fixtures and the A2 test's indices moved by 6.
+- **The judge.** `4300a`'s changes to `renode.rs` were applied onto this build's version hunk by hunk:
+  - virtual timestamps (`log_stamped`, 21-byte stamps);
+  - the quantum;
+  - enable registers written cold at their reset values;
+  - motor observers and their findings;
+  - the DShot window's `reads_outside_window`, which now takes step records and names a script's step.
+  - This build's unit tests use virtual stamps.
+- **Evolve's motor test** (`4300a`'s) builds its I2C records in the step shape.
+- **Re-pinned:**
+  - Sentinel-01's eight hash lines, and the `motors-pwm` UI board's one (only those lines changed);
+  - `solve_cli` (`e61864b9…`/`33b079d1…` before) and `order_2203`'s four, the boot image included (old values in their comments);
+  - the twin's `REFERENCE`, pincheck's topology hash, and `verify_2k2`'s prefix (`6e04f12d`).
+- **The seeded set.** The trial's tier-2 run (1,618 passed) failed only the two `attribute_seeded` gates. The events after the register block moved +6 behind this build's six registers, so each `evidence` and `masked` event of kind 12, 13, 21, 22 or 26 is +6. Eight rows changed:
+  - `trap-wrong-address-47k` masked 22→28;
+  - `wrong-address-2k2`, `trap-wrong-address-3k3`, `wrong-register` and `wrong-nbytes` 21→27;
+  - `spi-absent-u4` and `cs-never` 23→29;
+  - `motor-output-dead` 47→53.
+  - Kinds 7, 9, 10 and 11 come before the A2 registers, so they did not move. The rule, domain and kinds are unchanged.
+- **`TIER2_MIN`:** 110 on `main` plus this build's 4, so **114**.
+
+### Then `4300d` slice A merged first: specification 8
+
+The architect ruled again (mailbox, 12:40 UTC): `4300d` slice A (PR #147) took specification 7 and merged first (`27e504a`), so this build takes **8**. The trace stays 9, and the solved topology is `4300d`'s 6. The method was the same: the merge was resolved in a scratch worktree against PR head `14e3393`, whose tree equals `27e504a`'s, and taken whole at `d47427a`.
+- **Versions.** `SPECIFICATION_SCHEMA_VERSION` is **8**, and every specification file is at 8. Both sides' keys are kept: `power` and `mcu.bor_level` beside `accept_lifecycle`. Version literals follow `4300d`'s use of the constant where it took it.
+- **D7 meets the crossing.** `4300d`'s full Sentinel-02 fixture puts U5 (ICM-20948, I/O 1.71-1.95 V) on the 3.3 V `IMU` bus behind a declared TXU0304 crossing, whose B side is `VDD_1V8`. D7's `IoOutsidePart` judged the bus's domain and refused U5 before `4300d`'s crossing rules could run, failing three of its power tests.
+  - D7 now judges an SPI device behind a declared crossing on its bus, whose B domain is the device's supply, against that B domain. That is how `4300d`'s supply rule (step 5) reads the same device, and its 4300d note in this inbox (04:55 UTC) proposed it.
+  - The refusal's text no longer says a crossing cannot be declared.
+  - With the bus's domain judged instead (the pre-fix code), three power tests fail: the guard is load-bearing.
+- **Sentinel-02's ICM-20948 is `eol`.** The fixture acknowledges it, with the same stand-in statement as `imu-baro-1v8.json`. `4300d`'s two helpers that strip the IMU (`ir/tests/power.rs` `base()`, `cli/tests/common/power.rs`) also clear `accept_lifecycle`, since an acknowledgement stands only for a part the board uses (D-B6).
+- **Re-pinned again:**
+  - Sentinel-01's eight hash lines and the UI board's one, only those lines;
+  - `solve_cli` (`c7688dca…`/`fe4252eb…` before) and `order_2203`'s three (the boot image unchanged);
+  - the twin's `REFERENCE`, pincheck's topology, and `verify_2k2`'s prefix (`03a82a04`).
+- **`TIER2_MIN`:** `4300d` added no tier-2 test, so it stays **114**.
+
+- **F-B11, closed:** docs #148 (`2907989`, merged in at `65d21fd`) removed the stray root file `9`.
+
+**Gates (after both renumberings):**
+- **Host, trial tree** (equal to `d47427a`'s), under `systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`:
+  - `cargo fmt --all -- --check`: ok.
+  - `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings`: ok.
+  - `cargo test --workspace --no-fail-fast`: 98 `test result: ok`, none failed. The `renamings_` tests were skipped, as before.
+- **Image, trial trees, under `capped-run`** (read-back `memory.max=8589934592 memory.swap.max=0 pids.max=8192` each time):
+  - **The `4300a` trial:** 1,618 passed and 2 failed, the two seeded-set gates above.
+  - **The `4300d` trial with the seeded fix:** 1,642 passed and 1 failed, `svd-hal`'s trybuild `board_ui`. Its eight mismatches are rustc leaving out the source snippet of `boards/sentinel-01/src/lib.rs` in a note, a property of the scratch checkout's build, not of the code. Rerun in the image on this worktree, with the same tree, it passed.
+- The full suite on this worktree's final tree, and CI, are recorded with the READY commit.
