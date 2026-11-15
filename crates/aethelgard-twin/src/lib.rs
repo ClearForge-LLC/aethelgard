@@ -101,6 +101,8 @@ pub enum TwinError {
         pin: String,
         alternate_function: u8,
     },
+    #[error("a model of our own is not pinned (AET-WO-4220 D6): {why}")]
+    ModelUnpinned { why: String },
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -119,6 +121,7 @@ impl TwinError {
             Self::DeviceOffBus { .. } => "DeviceOffBus",
             Self::UnknownModel { .. } => "UnknownModel",
             Self::ModelOffItsBus { .. } => "ModelOffItsBus",
+            Self::ModelUnpinned { .. } => "ModelUnpinned",
             Self::FlashIdentity { .. } => "FlashIdentity",
             Self::UnknownAbsentDevice { .. } => "UnknownAbsentDevice",
             Self::NoTimerRoute { .. } => "NoTimerRoute",

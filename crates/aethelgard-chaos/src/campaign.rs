@@ -19,8 +19,8 @@ use sha2::{Digest, Sha256};
 use crate::event::{Header, name_ok};
 use crate::power::{self, Band};
 use crate::record::{
-    self, BusLine, Droop, Line, Override, Reading, Record, SERIAL_FRAME_LEN, STEPS, SerialCapture,
-    split_pin,
+    self, BusLine, Droop, Line, Override, Reading, Record, SERIAL_FRAME_LEN, SerialCapture,
+    split_pin, step_index,
 };
 use crate::replay::State;
 
@@ -1924,7 +1924,8 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
     // one witness per step, as the campaign writes them (adversarial A2;
     // `AET-WO-2204`: a bus with two devices has two witnesses;
     // `AET-WO-4210`: a device's steps run identity, configure, data, each
-    // at most once, the first being identity).
+    // at most once, the first being identity; `AET-WO-4220`: several
+    // configurations each by its own name, in order).
     let mut seen: BTreeSet<(u8, &str, &str)> = BTreeSet::new();
     let mut last_step: BTreeMap<(u8, &str), usize> = BTreeMap::new();
     for r in records {
@@ -1951,8 +1952,8 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
                 return Err("a line measured twice, or a device step read or witnessed twice");
             }
             if key.0 != 0 {
-                let Some(index) = STEPS.iter().position(|s| *s == key.2) else {
-                    return Err("a step is not identity, configure or data");
+                let Some(index) = step_index(key.2) else {
+                    return Err("a step is not identity, a configuration or data");
                 };
                 let previous = last_step.insert((key.0, key.1), index);
                 if previous.map_or(index != 0, |p| index <= p) {

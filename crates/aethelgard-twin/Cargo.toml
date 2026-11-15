@@ -11,6 +11,8 @@ categories = ["simulation","embedded"]
 
 [dependencies]
 aethelgard-ir.workspace = true
+# The models of our own the platform pins (AET-WO-4220 D6).
+aethelgard-renode-models.workspace = true
 # The register facts (AET-WO-2100, ruled on PR #56, R6).
 aethelgard-svd-hal.workspace = true
 # The serial frame (AET-WO-4300b), and the sha256 of the vendored Renode

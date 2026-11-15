@@ -623,8 +623,30 @@ fn witness_lines_ok(v: &[String]) -> bool {
     v.len() <= MAX_WITNESS_LINES && v.iter().all(|s| text_ok(s, 1, 256))
 }
 
-/// The steps of a device's script, in the order a script runs them.
-pub const STEPS: [&str; 3] = ["identity", "configure", "data"];
+/// A step's place among a device's steps, from its name, in the order a
+/// script runs them: `identity` 0; one configuration, `configure`, 1, or one
+/// of several, `configure 1` to `configure 4`, its number (`AET-WO-4220`:
+/// each step has its own name, so a record is joined to one step alone);
+/// `data` 5. `None` for any other name.
+// belt-and-suspenders: the names restate `aethelgard_ir::parts::CONFIGURE_STEPS`,
+// which this crate may not depend on (`workspace_shape`); the archive reads a
+// run without the table (`INV-07`). `own_models_tier1.rs` holds the two equal.
+pub fn step_index(step: &str) -> Option<usize> {
+    match step {
+        "identity" => Some(0),
+        "configure" | "configure 1" => Some(1),
+        "configure 2" => Some(2),
+        "configure 3" => Some(3),
+        "configure 4" => Some(4),
+        "data" => Some(5),
+        _ => None,
+    }
+}
+
+/// Whether a step is a configuration write, which reads nothing.
+fn is_configure(step: &str) -> bool {
+    matches!(step_index(step), Some(1..=4))
+}
 
 /// A step's fields as kinds 12 and 21 carry them (`AET-WO-4210`): a known
 /// step, a write of 1 to 4 bytes, a read of 0 to 8 bytes (0 exactly for
@@ -637,11 +659,11 @@ fn step_ok(
     mask: u64,
 ) -> Result<(), &'static str> {
     let fits = |v: u64| width >= 8 || v >> (8 * u32::from(width)) == 0;
-    if !STEPS.contains(&step) {
-        Err("step is not identity, configure or data")
+    if step_index(step).is_none() {
+        Err("step is not identity, a configuration or data")
     } else if write.is_empty() || write.len() > 4 {
         Err("write is not 1 to 4 bytes")
-    } else if width > 8 || (width == 0) != (step == "configure") {
+    } else if width > 8 || (width == 0) != is_configure(step) {
         Err("width is not 0 to 8, or is 0 for a step that reads or not 0 for configure")
     } else if !fits(mask) || !fits(expected) {
         Err("expected or mask does not fit the width")
@@ -1888,8 +1910,8 @@ impl Record {
                 observed,
                 absent,
             } => {
-                if !STEPS.contains(&step.as_str()) {
-                    Err("step is not identity, configure or data")
+                if step_index(step).is_none() {
+                    Err("step is not identity, a configuration or data")
                 } else if absent.len() > MAX_WITNESS_LINES || absent.iter().any(|&a| a > 0x7F) {
                     Err("absent addresses are not at most 16 seven-bit addresses")
                 } else if !(name_ok(peripheral) && name_ok(reference) && name_ok(device)) {
@@ -2036,8 +2058,8 @@ impl Record {
                 observed,
                 unrouted,
             } => {
-                if !STEPS.contains(&step.as_str()) {
-                    Err("step is not identity, configure or data")
+                if step_index(step).is_none() {
+                    Err("step is not identity, a configuration or data")
                 } else if !(name_ok(peripheral) && name_ok(reference) && name_ok(device)) {
                     Err("peripheral, reference or device is not 1 to 64 printable ASCII bytes")
                 } else if !witness_lines_ok(expected)

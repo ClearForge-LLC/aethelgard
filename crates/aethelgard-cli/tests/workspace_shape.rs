@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use toml::{Table, Value};
 
-const MEMBERS: [&str; 9] = [
+const MEMBERS: [&str; 10] = [
     "crates/aethelgard-ir",
     "crates/aethelgard-eda",
     "crates/aethelgard-kicad-lib",
@@ -20,6 +20,7 @@ const MEMBERS: [&str; 9] = [
     "crates/aethelgard-evolve",
     "crates/aethelgard-pincheck",
     "crates/aethelgard-cli",
+    "models/renode",
 ];
 
 /// The per-crate copies of the root licences (`AET-WO-1800`); the byte-identity
@@ -32,6 +33,7 @@ const EDA: &str = "crates/aethelgard-eda";
 const TWIN: &str = "crates/aethelgard-twin";
 const KICAD_LIB: &str = "crates/aethelgard-kicad-lib";
 const EVOLVE: &str = "crates/aethelgard-evolve";
+const RENODE_MODELS: &str = "models/renode";
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -104,7 +106,7 @@ fn forbids_unsafe(file: &syn::File) -> bool {
 }
 
 #[test]
-fn members_are_exactly_the_nine_parts() {
+fn members_are_exactly_the_ten_parts() {
     let root = manifest("");
     let members: Vec<&str> = root["workspace"]["members"]
         .as_array()
@@ -413,6 +415,36 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
     assert!(dependency_names(&kicad).is_empty());
 }
 
+/// `aethelgard-renode-models` holds Aethelgard's own Renode models as text and
+/// nothing else (`AET-WO-4220` D6, `RUL-12` as amended): its files are named
+/// one by one, it has no dependency, it is `MIT OR Apache-2.0` like every
+/// published crate, and `src/lib.rs` is its only Rust.
+#[test]
+fn renode_models_has_only_its_known_files_keys_and_no_dependencies() {
+    let mut expected = vec![
+        "BMP581.cs",
+        "Cargo.toml",
+        "ICM42688P.cs",
+        "README.md",
+        "src/lib.rs",
+    ];
+    expected.extend(LICENCE_FILES);
+    expected.sort();
+    assert_eq!(files(&root().join(RENODE_MODELS)), expected);
+    let models = manifest(RENODE_MODELS);
+    for key in models.keys() {
+        assert!(
+            ["package", "lints"].contains(&key.as_str()),
+            "renode-models sets [{key}]"
+        );
+    }
+    assert_eq!(
+        models["package"]["license"]["workspace"].as_bool(),
+        Some(true)
+    );
+    assert!(dependency_names(&models).is_empty());
+}
+
 /// No KiCad library file sits anywhere under `crates/` but in the data crate,
 /// so no crate can carry a share-alike file the licence fields do not show.
 #[test]
@@ -475,9 +507,16 @@ fn twin_has_only_its_known_files_keys_and_dependencies() {
         names.sort();
         names
     };
+    // `aethelgard-renode-models`: the models the twin pins (`AET-WO-4220` D6).
     assert_eq!(
         table("dependencies"),
-        ["aethelgard-ir", "aethelgard-svd-hal", "sha2", "thiserror"]
+        [
+            "aethelgard-ir",
+            "aethelgard-renode-models",
+            "aethelgard-svd-hal",
+            "sha2",
+            "thiserror"
+        ]
     );
     // `sha2` derives the serial frame (`AET-WO-4300b`), and checks the
     // vendored Renode files in tests (`AET-WO-2204` D5).

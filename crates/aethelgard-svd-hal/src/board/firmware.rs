@@ -295,7 +295,14 @@ struct Read {
     write: Vec<u8>,
     /// The bytes read back; none for a configuration.
     width: u8,
+    /// How long the firmware waits after it, in microseconds (`AET-WO-4220`):
+    /// the part's cited start-up before its data read; 0 for no wait.
+    settle_us: u32,
 }
+
+/// The core clock the wait is sized for: the reset clock, HSI at 64 MHz
+/// (`AET-WO-4300a` Q2, ruled), with no PLL.
+const CORE_HZ_PER_US: u32 = 64;
 
 // belt-and-suspenders: the judge holds its own copy of the record layout
 // (`aethelgard_twin::boot::value_words`), because its expectations are never
@@ -340,6 +347,7 @@ fn reads(
                 target: Target::I2c { address: d.address },
                 write: step.write,
                 width: step.width,
+                settle_us: step.settle_us,
             });
         }
     }
@@ -368,6 +376,7 @@ fn reads(
                 },
                 write: step.write,
                 width: step.width,
+                settle_us: step.settle_us,
             });
         }
     }
@@ -499,6 +508,24 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
             unset = RECORD_UNSET,
             v = first + 1,
         )
+    };
+    // The wait a scripted part's data read needs (`AET-WO-4220`), only where
+    // a script states one, so every other board's firmware is unchanged.
+    let records = if reads.iter().any(|r| r.settle_us > 0) {
+        format!(
+            "{records}/// Waits at least `spins` cycles of the {CORE_HZ_PER_US} MHz reset clock (AET-WO-4220):\n\
+             /// each iteration is a volatile load the compiler keeps, at least one cycle.\n\
+             fn settle(spins: u32) {{\n    \
+             let boot = (&raw const AETHELGARD_BOOT).cast::<u32>();\n    \
+             for _ in 0..spins {{\n        \
+             // SAFETY: the first word of the array above; reading it changes nothing.\n        \
+             let _ = unsafe {{ boot.read_volatile() }};\n    \
+             }}\n\
+             }}\n\
+             \n"
+        )
+    } else {
+        records
     };
     let serial_consts = if plan.serials.is_empty() {
         String::new()
@@ -774,6 +801,16 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
             bus = read.bus,
             write = write.join(", "),
         );
+        if read.settle_us > 0 {
+            let _ = writeln!(
+                s,
+                "    // The part's cited wait before its data read (AET-WO-4220), {us} us.\n    \
+                 settle({spins});",
+                us = read.settle_us,
+                // `MAX_SETTLE_US` x 64 fits u32 (`aethelgard_ir::parts`).
+                spins = read.settle_us.saturating_mul(CORE_HZ_PER_US),
+            );
+        }
     }
     // The motor outputs (`AET-WO-4300a` §1.3), after the identity reads: the
     // timers' values were solved for the reset clock, so without it the

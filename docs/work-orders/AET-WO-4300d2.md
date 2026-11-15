@@ -50,6 +50,12 @@
 9. **The Sentinel-02 power fixture** (3S–6S, as ruled at D-B9) passes every gate in the pinned image: emit, ERC, DRC with parity, extract, and `fab`.
    - Remove `PowerNotEmitted` from each gate as it passes.
    - `campaign` keeps refusing a power tree until the battery-sag work order. Say so in its message.
+   - **Amended 2026-11-15 (D5, comment 6896976241; the architect's error):** `fab` was listed in error. Under `INV-03`, `verify --fab-out` needs a campaign, so the fixture cannot have a package until the battery-sag work order. `fab` is proved below `verify`:
+     - drill tools and hit counts on real KiCad drill files;
+     - FAB-NOTES carrying the power tree's conditions, on `1309`'s fixtures and this board.
+
+     The package is a FEEDBACK residual.
+   - **Amended 2026-11-15 (D6, comment 6897291654):** `extract` refuses, by name, a line carrying a translator pin with no stated maximum capacitance. The fixture's extraction is proved on its crossing-free copy.
 
 **§1.4 Measure first: the placer.** Before building anchors, measure where today's placer puts the fixture's power parts (slice A's fixture, with `PowerNotEmitted` bypassed in a probe only).
 - **If every external part already lands within its datasheet distance,** record it and build only the checks.
@@ -57,7 +63,7 @@
 
 ## 2. Acceptance
 
-- **The Sentinel-02 power fixture passes every gate in the image.** Each loop rule a gate can check is checked, and each one it cannot is named.
+- **The Sentinel-02 power fixture passes emit, ERC and DRC with parity in the image.** Its extraction passes on the crossing-free copy, and `fab` is proved below `verify` (§1.9 as amended). Each loop rule a gate can check is checked, and each one it cannot is named.
 - **Every existing board's files and verdicts are byte-identical**, apart from the specification-hash lines a version bump moves.
 - **Each new refusal has a tier-1 test.**
 - **The CLAUDE.md gates pass.** CI is green with every shard under 20 minutes (refit by `ci/shard.sh`'s rule; its spread clause has fired), and `TIER2_MIN` is exact.

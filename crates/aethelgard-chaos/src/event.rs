@@ -28,11 +28,14 @@ pub const VERSION: u64 = 1;
 /// witness's lines may include the device's own `[WARNING]` and `[ERROR]`
 /// lines; kind 22's multiplexer lines are its step's chip-select window's.
 /// `4210` took 9 by the numbering rule, merging after `4300a`; 10 since
+/// `AET-WO-4220`: a device of several configuration writes names each step
+/// `configure 1` to `configure 4`, so each record and witness joins to its
+/// own step (a lone configuration is still `configure`); 11 since
 /// `AET-WO-4300b` added kinds 27 to 29 (a solved serial port, its static
-/// framing judgement, and its twin witness), renumbered from 9 by the same
+/// framing judgement, and its twin witness), renumbered from 10 by the same
 /// rule. An archive of any other version is refused by name
 /// (`Fault::Version`), as 2204 refused version 4.
-pub const TRACE_VERSION: u64 = 10;
+pub const TRACE_VERSION: u64 = 11;
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.

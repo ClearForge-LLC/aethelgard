@@ -100,7 +100,10 @@ fn digests() -> Vec<(&'static str, String)> {
 /// device's script and its records; specification version 8,
 /// `accept_lifecycle`; the image's SysTick and NVIC words), merging after
 /// `4300d`: the four were `a5a8e53a…5e46`, `b3bf305f…a745`, `ea29d696…07f0` and
-/// `893fb13d…c4a6` there. Re-taken in `AET-WO-4300b`, merging after both
+/// `893fb13d…c4a6` there. The boot image was re-taken in `AET-WO-4220`, whose
+/// `StepCheck` names each step (`label`): with its three `label: "identity"`
+/// fields removed, the image's text hashes to the old `0e4d72ee…c8a2` exactly.
+/// Re-taken in `AET-WO-4300b`, merging after `4300d` and `4210`
 /// (specification version 9, solved version 7, `serial_ports`): the
 /// reference gains its console (USART1 on PA9/PA10). With the console and
 /// its connector removed and `main`'s hash passed to `solve`, all four were

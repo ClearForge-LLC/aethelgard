@@ -134,3 +134,24 @@ Raw: ________ · BOR_LEV: ________
 - **Predicted:** `raw & 0x0000000C` = `0x0` (`BOR_LEV` `00`, VBOR0 only), unless the board's option bytes were changed after the factory.
 
 This is evidence for the specification field (D2 (b)), not a default the engine assumes.
+
+## B8. The SPI controller's clock, rate and slave-select (second Mythos review, A1)
+
+**Prediction, added 2026-11-15 before the bench, from RM0433 Rev 9 (as quoted in the review) and ST's CMSIS header held in `crates/aethelgard-svd-hal/data/st-cmsis-device-h7/stm32h753xx.h` (addresses and bit positions read there):** the firmware above enables SPI1's bus clock but selects no kernel clock. `SPI123SEL` resets to `000`, `pll1_q_ck`, and PLL1 is off at reset. **So SPI1 produces no SCK at all.** The flash read the twin witnessed cannot happen on this silicon. `AET-WO-4230` fixes it; this row records the silicon before the fix.
+
+Read after the same 1 s as B2. Compare only the masked bits.
+
+| Register | Address | Mask | Predicted | Bench (raw) | Bench & mask | Agree? |
+|---|---|---|---|---|---|---|
+| RCC.CR (`PLL1ON`) | `0x58024400` | `0x01000000` | `0x00000000` | | | |
+| RCC.D1CCIPR (`CKPERSEL`) | `0x5802444c` | `0x30000000` | `0x00000000` | | | |
+| RCC.D2CCIP1R (`SPI123SEL`) | `0x58024450` | `0x00007000` | `0x00000000` (`pll1_q_ck`) | | | |
+| SPI1.CR1 (`SSI`) | `0x40013000` | `0x00001000` | `0x00000000` | | | |
+| SPI1.CFG1 (`MBR`) | `0x40013008` | `0x70000000` | `0x00000000` (never written) | | | |
+| SPI1.CFG2 (`SSM`, `MASTER`) | `0x4001300c` | `0x04400000` | `0x00400000` (master, `SSM` clear) | | | |
+
+**Scope, channel 1 on PA5 (SPI1 SCK, the Nucleo's D13), trigger on any edge, from reset for 1 s:**
+- **Predicted:** no edge at all.
+- **If edges appear,** record their frequency. The prediction is then wrong, and the result is a scar either way.
+
+Edges seen: ________ · frequency if any: ________

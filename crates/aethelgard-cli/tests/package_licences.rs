@@ -5,15 +5,16 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const PUBLISHED: [&str; 8] = [
-    "aethelgard-ir",
-    "aethelgard-svd-hal",
-    "aethelgard-eda",
-    "aethelgard-twin",
-    "aethelgard-chaos",
-    "aethelgard-evolve",
-    "aethelgard-pincheck",
-    "aethelgard-cli",
+const PUBLISHED: [&str; 9] = [
+    "crates/aethelgard-ir",
+    "crates/aethelgard-svd-hal",
+    "crates/aethelgard-eda",
+    "crates/aethelgard-twin",
+    "crates/aethelgard-chaos",
+    "crates/aethelgard-evolve",
+    "crates/aethelgard-pincheck",
+    "crates/aethelgard-cli",
+    "models/renode",
 ];
 
 /// CC-BY-SA-4.0, with KiCad's own `LICENSE.md` as its licence: it carries neither.
@@ -28,7 +29,7 @@ fn every_published_crate_holds_byte_identical_licence_files() {
     for name in PUBLISHED {
         for file in ["LICENSE-MIT", "LICENSE-APACHE"] {
             let canonical = fs::read(root().join(file)).unwrap();
-            let copy = fs::read(root().join("crates").join(name).join(file))
+            let copy = fs::read(root().join(name).join(file))
                 .unwrap_or_else(|e| panic!("{name}/{file}: {e}"));
             assert_eq!(copy, canonical, "{name}/{file} differs from the root's");
         }
