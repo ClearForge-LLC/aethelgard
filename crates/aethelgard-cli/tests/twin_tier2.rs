@@ -1197,15 +1197,16 @@ fn a_locked_access_late_in_a_flood_reaches_the_judge_whole() {
     // 199,761 measured). Its line reaches the judge, and the markers and
     // values come through whole (a verdict, not exit 5). Since `AET-WO-4300b`
     // the console's echo runs between the boot word and the loop, waiting for
-    // the frame injected at 100 us, so the loop starts about 85 us (some
-    // 1,700 pairs) later: the read is at pair 190,000, still far past the
-    // 8 MiB budget (about pair 42,000) and before the run's end.
+    // the frame injected at 100 us, so the loop starts later: its last pair
+    // in the 10 ms boot is 197,874 (measured by bisection on this read's
+    // pair, C1 `flood-bisect.sh`), and the read is 300 pairs before it, as
+    // before.
     let elf = mutant("flood-locked", |d| {
         edit(
             d,
             "src/main.rs",
             "    // No sleep: the judge requires instructions executed to equal MIPS x time.\n    loop {\n        core::hint::spin_loop();\n    }\n",
-            "    let mut n: u32 = 0;\n    loop {\n        unsafe { core::ptr::read_volatile(0x40005424 as *const u32); core::ptr::write_volatile(0x4000541c as *mut u32, 0x10); }\n        if n == 190000 { unsafe { core::ptr::read_volatile(0x5802_0800 as *const u32); } }\n        n = n.wrapping_add(1);\n    }\n",
+            "    let mut n: u32 = 0;\n    loop {\n        unsafe { core::ptr::read_volatile(0x40005424 as *const u32); core::ptr::write_volatile(0x4000541c as *mut u32, 0x10); }\n        if n == 197574 { unsafe { core::ptr::read_volatile(0x5802_0800 as *const u32); } }\n        n = n.wrapping_add(1);\n    }\n",
         );
     });
     let (code, v) = boot_elf("flood-locked", &elf, "10ms");
