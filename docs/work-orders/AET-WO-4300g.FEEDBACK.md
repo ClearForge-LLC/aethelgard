@@ -169,3 +169,40 @@ None is weakened or retargeted: d1's tests are the router's capacity claim, and 
 - (c) the placer gains a rule this builder did not find in its time box.
 
 Until a ruling, this work order's final line is STOPPED on D5.
+
+## 7. Adversarial pass (full; a fresh Opus subagent, frozen at `2cf2c19`)
+
+It ran the four §5 attacks as worded and went beyond them, all at tier 1: it emitted the reference, built a KiCad-shaped netlist from the board, mutated it, and judged it. It also wrote emitter mutants in a scratch `schematic_support.rs`. Its harness is under `~/.cache/aet-4300g/adv/`, not committed.
+
+| Id | Severity | Finding | Disposition |
+|---|---|---|---|
+| A1 | high | The gate had no rule for which net NRST, VCAP, SWDIO and SWCLK must be on. Three emitter mutants (NRST or a VCAP on the supply) and seven netlist edits passed with no finding, among them SWDIO shorted to SWCLK and NRST on `VDD_3V3`. The reset role is unbounded, so any 100 nF anywhere filled it. | **Fixed.** The row's `own_nets` (VCAP, NRST, SWDIO, SWCLK, each cited) requires each pin on a net that is no declared domain, not `GND`, and no other support pin's. Tested: five renames each fail by name. |
+| A2 | high | A powered group was accepted on any declared domain, VDDA on 5 V included. Table 108 note 1 says "in the permitted range". | **Fixed.** Each powered group carries its range: VDDA 1.62–3.6 V and VDD33USB 0–3.6 V (Table 111, p. 209, read by rendering), VBAT 1.2–3.6 V (p. 27). The domain's whole tolerance band must lie inside it. Tested. |
+| A3 | medium | `supply_source` could name the debug port's own supply pin, the sense line D3 excludes. | **Fixed.** Step 18 refuses a source on the programming connector (`SupplyHasNoSource`, naming why). Tested. |
+| A4 | medium | The gate read no population flag and no symbol, and `100n DNP` passed. | **Fixed.** The netlist reader reads `libsource` and the properties. A capacitor is `Device:C` with no `dnp`, `exclude_from_bom` or `exclude_from_board`. A value is a capacitance, optionally followed by a capacitor part of the table. Tested on all five forms. KiCad's property shape `(property (name …) (value …))` was checked against a real export (§3); the flags' names are KiCad's, as the reviewer recalls them, not yet seen in an export. |
+| A5 | low-medium | A connector pin declared not connected could carry a net. | **Fixed.** It must be on no net (`connector_pin_off_net`). Tested. |
+| A6 | low | §5.3 (a regulator's output renamed) is refused, but at step 16 (`UnknownDomain`, `DomainWithoutSource`), before step 18. | **Covered by a test as worded.** `SupplyHasNoSource`'s null branch is reachable only with no power tree. |
+| A7 | low | Three points against RUL-20: <ul><li>the gate sits in `eda`, beside the emitter (as §3's fence places it);</li><li>its distances reuse `loops::gap_nm` and `route::read`, geometry shared with the router;</li><li>a condition restated the emitter's "0402";</li><li>the emitter took the first MCU row while the gate looks it up by part.</li></ul> | The condition and the row lookup are **fixed**. The placement in `eda` and the shared geometry readers are **for the architect**: neither reads an emitter choice, and moving the gate to `ir` would need `ir` to read boards. |
+
+**Held** [measured by the reviewer]:
+- §5.1: each of the 19 role capacitors removed; one moved to four wrong nets; seven wrong values.
+- §5.2: SWDIO and SWCLK swapped at either end; GND or the supply dropped.
+- §5.4: six emitter mutants that fail correctly.
+- The value edges: 79n and 121n out; 80n and 120n in.
+- One capacitor per pin.
+- The MCU's identity.
+- The strict reader: duplicated sections, a doubled node, version `D`.
+- Every `validate` refusal path.
+- Every debug-net spelling.
+- Every rendered citation in the row.
+
+## 8. Mutation pass (diff-sized)
+
+One mutant per guard this work order adds, each against the suite its test lives in (`~/.cache/aet-4300g/tools/mutate.py`, run in its own worktree) [measured]:
+- **First run, 27 mutants:** 24 caught, 3 survived.
+  - m14 (the nets check): the "another pin's net" test was caught by the distance check by accident.
+  - m26 (ground pins) and m27 (powered pins): no test exercised them.
+
+  Three discriminating tests were added: a capacitor between the wrong nets within its bound, a VSS pin off `GND`, and VDDA on no domain. All three mutants are now caught.
+- **The fixes of §7 add 7 guards,** m28–m34 (own nets, powered range, population, symbol, value tail, NC pins, source not on the debug port). Each mutant is caught.
+- **Total: 34 mutants, 34 caught.**
