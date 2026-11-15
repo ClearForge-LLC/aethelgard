@@ -196,6 +196,14 @@ fn the_reference_image_is_the_one_the_spike_read_back() {
             reg("RCC.AHB4ENR", 0x5802_44E0, u32::MAX, 0x0000_0003),
             reg("RCC.APB1LENR", 0x5802_44E8, u32::MAX, 0x0020_0000),
             reg("RCC.APB2ENR", 0x5802_44F0, u32::MAX, 0x0000_1000),
+            // `AET-WO-2204` A2 (ruled D6): no interrupt armed, one ISER per
+            // 32 lines up to the header's `WAKEUP_PIN_IRQn` = 149.
+            reg("SysTick.CSR", 0xE000_E010, u32::MAX, 0),
+            reg("NVIC.ISER0", 0xE000_E100, u32::MAX, 0),
+            reg("NVIC.ISER1", 0xE000_E104, u32::MAX, 0),
+            reg("NVIC.ISER2", 0xE000_E108, u32::MAX, 0),
+            reg("NVIC.ISER3", 0xE000_E10C, u32::MAX, 0),
+            reg("NVIC.ISER4", 0xE000_E110, u32::MAX, 0),
         ]
     );
     assert_eq!(
@@ -283,13 +291,18 @@ fn the_judge_expects_the_part_table_s_values_in_records_after_the_boot_word() {
     );
     let c = &image.identity.checks[0];
     assert_eq!(
-        (c.reference.as_str(), &c.wire, c.write),
-        ("U2", &boot::Wire::I2c { address: 0x76 }, 0xD0)
+        (c.reference.as_str(), &c.wire, c.write.as_slice()),
+        ("U2", &boot::Wire::I2c { address: 0x76 }, &[0xD0][..])
     );
     let f = &image.identity.checks[1];
     assert_eq!(
-        (f.reference.as_str(), f.write, f.width, f.expected),
-        ("U4", 0x9F, 3, 0xEF_4017)
+        (
+            f.reference.as_str(),
+            f.write.as_slice(),
+            f.width,
+            f.expected
+        ),
+        ("U4", &[0x9F][..], 3, 0xEF_4017)
     );
     assert_eq!((f.status_at, f.value_at), (word + 12, word + 16));
     assert_eq!(f.judge(boot::STATUS_RXP, 0), boot::Outcome::Timeout("RXP"));
@@ -305,7 +318,10 @@ fn the_judge_expects_the_part_table_s_values_in_records_after_the_boot_word() {
     assert_eq!(c.judge(boot::STATUS_OK, 0x61), Mismatch);
     assert_eq!(c.judge(boot::STATUS_TXIS, 0x60), Timeout("TXIS"));
     assert_eq!(c.judge(boot::STATUS_RXNE, 0), Timeout("RXNE"));
-    assert_eq!(c.judge(boot::RECORD_UNSET, boot::RECORD_UNSET), Invalid);
+    assert_eq!(
+        c.judge(boot::RECORD_UNSET, u64::from(boot::RECORD_UNSET)),
+        Invalid
+    );
     assert_eq!(c.judge(0, 0x60), Invalid);
 }
 
@@ -350,23 +366,75 @@ fn a_part_name_that_is_not_exactly_a_table_s_is_unmodelled_not_skipped() {
 
 #[test]
 fn a_two_byte_identity_is_judged_whole_and_most_significant_byte_first() {
-    let c = boot::IdentityCheck {
+    let mut c = boot::StepCheck {
         reference: "U3".into(),
         peripheral: "I2C1".into(),
         wire: boot::Wire::I2c { address: 0x48 },
-        write: 0x0F,
+        step: aethelgard_ir::parts::StepKind::Identity,
+        write: vec![0x0F],
         width: 2,
         expected: 0x0117,
+        mask: 0xFFFF,
         status_at: 0x2000_0004,
         value_at: 0x2000_0008,
+        level: (-1, "[NOISY] "),
         device: "i2c1.u3".into(),
         witness: None,
+        warnings: Some(Vec::new()),
+        idle_warning: None,
         skipped: Vec::new(),
+        stimulus: Some(Vec::new()),
     };
     use boot::Outcome::*;
     assert_eq!(c.judge(boot::STATUS_OK, 0x0117), Pass);
     assert_eq!(c.judge(boot::STATUS_OK, 0x1701), Mismatch);
     assert_eq!(c.judge(boot::STATUS_OK, 0x17), Mismatch);
+    // `AET-WO-4210` F6: a masked identity judges only its fixed bits.
+    c.mask = 0x3F;
+    c.expected = 0x0008;
+    assert_eq!(c.judge(boot::STATUS_OK, 0xFFC8), Pass);
+    assert_eq!(c.judge(boot::STATUS_OK, 0x0009), Mismatch);
+}
+
+/// `AET-WO-4210` S2: a scripted part is one record per step, in its
+/// script's order, each record as wide as its read; a part with no script is
+/// its identity alone, so a board without one keeps its layout.
+#[test]
+fn a_scripted_device_is_one_record_per_step() {
+    let words: Vec<u32> = [0u8, 1, 4, 5, 6, 8].map(boot::value_words).to_vec();
+    assert_eq!(words, [1, 1, 1, 2, 2, 2]);
+    let plan = boot::identity(&with_devices(&[
+        ("U2", "BME280", 0x76),
+        ("U6", "ICP10111", 0x63),
+    ]))
+    .unwrap();
+    let steps: Vec<(&str, &str, u32)> = plan
+        .checks
+        .iter()
+        .map(|c| {
+            (
+                c.reference.as_str(),
+                c.step.name(),
+                c.status_at - plan.checks[0].status_at,
+            )
+        })
+        .collect();
+    assert_eq!(
+        steps,
+        [
+            ("U2", "identity", 0),
+            ("U6", "identity", 8),
+            ("U6", "configure", 16),
+            ("U6", "data", 24),
+        ]
+    );
+    let data = &plan.checks[3];
+    assert_eq!(data.level, (0, "[DEBUG] "));
+    assert_eq!(data.stimulus, Some(vec![("DefaultTemperature", 25)]));
+    assert_eq!(
+        data.witness.as_deref().unwrap()[1],
+        "[DEBUG] i2c1.u6: Reading data with CRC: [0x66, 0x66], current command: 0x7866 (UltraLowNoiseTemperaturePressure), requested: 2 bytes"
+    );
 }
 
 #[test]
@@ -403,9 +471,18 @@ fn each_identity_read_carries_the_models_log_lines_of_its_device() {
 fn the_witness_lines_are_computed_from_the_part_table_and_the_width() {
     // A two-byte identity reads most significant byte first, each byte in
     // upper-case hexadecimal without zero padding: 0x0A is "A", 0x00 is "0".
-    let lines = |register, width, value| {
+    let lines = |register: u8, width: u8, value: u64| {
         crate::model::Model::Bme280
-            .witness("i2c1.u9", register, width, value)
+            .witness(
+                "i2c1.u9",
+                &aethelgard_ir::parts::Step {
+                    kind: aethelgard_ir::parts::StepKind::Identity,
+                    write: vec![register],
+                    width,
+                    expected: value,
+                    mask: u64::MAX,
+                },
+            )
             .unwrap()
     };
     assert_eq!(

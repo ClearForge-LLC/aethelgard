@@ -2,14 +2,17 @@
 //! parts table (`aethelgard_ir::parts`) gives a Renode 1.17.0 model. A part
 //! with no model is *unmodelled*, never silently passed.
 //!
-//! The table names the model; what the model does is this module's: the
-//! whole log lines it writes for an identity read (the witness, `AET-WO-2204`
-//! D2), and the `Noisy` lines it writes that are not a transfer, which the
-//! judge skips and nothing else (`AET-WO-4200` D2). Both are an exhaustive
-//! `match` on [`Model`], so a model added cannot reach the judge without a
-//! decision on either.
+//! The table names the model and holds each step's bytes; what the model
+//! does is this module's (`AET-WO-2204` D2): the whole log lines it writes
+//! for each step of a device's script (the witness, `AET-WO-4210` S2), the
+//! warnings a correct step makes it write, each pinned to Renode's source
+//! (D4), the `Noisy` lines it writes that are not a transfer, which the judge
+//! skips and nothing else (`AET-WO-4200` D2), and the property each stimulus
+//! is set through (D3). Each is an exhaustive `match` on [`Model`], so a
+//! model added cannot reach the judge without a decision on each. A step the
+//! twin knows no format for is `None`: a named failure, never a skip.
 
-use aethelgard_ir::parts::{self, BusKind};
+use aethelgard_ir::parts::{self, BusKind, Quantity, Step, StepKind};
 
 use crate::TwinError;
 
@@ -23,6 +26,66 @@ pub enum Model {
     GenericSpiFlash,
     /// `Sensors.ICM20948`, on SPI.
     Icm20948,
+    /// `Sensors.ICP_101xx`, on I2C: it logs each transaction at `Debug`
+    /// only (`AET-WO-4210` D2).
+    Icp101xx,
+}
+
+/// Every model, for the exhaustive tests.
+pub const MODELS: [Model; 4] = [
+    Model::Bme280,
+    Model::GenericSpiFlash,
+    Model::Icm20948,
+    Model::Icp101xx,
+];
+
+/// The ICM-20948's bank-0 registers a script may name, as Renode's
+/// `ICM20948_Bank0Registers.cs` names them: the model's lines carry the name.
+const ICM_BANK0: [(u8, &str); 8] = [
+    (0x00, "WhoAmI"),
+    (0x06, "PowerManagement1"),
+    (0x2D, "AccelerationXOutHigh"),
+    (0x2E, "AccelerationXOutLow"),
+    (0x2F, "AccelerationYOutHigh"),
+    (0x30, "AccelerationYOutLow"),
+    (0x31, "AccelerationZOutHigh"),
+    (0x32, "AccelerationZOutLow"),
+];
+
+/// The warning each ICM-20948 register write the twin knows makes the model
+/// write: the register framework's for a write into a tag
+/// (`PeripheralRegister.cs`), measured (`AET-WO-4210` P1.3). A write not
+/// listed has no known warnings, so it cannot be judged.
+const ICM_WRITE_WARNINGS: [(u8, u8, &str); 1] = [(
+    0x06,
+    0x01,
+    "Unhandled write to offset 0x6. Unhandled bits: [0] when writing value 0x1. Tags: CLKSEL (0x1).",
+)];
+
+/// The ICP-101xx commands a script may send, as Renode's `ICP_101xx.cs`
+/// `Command` enum names them.
+const ICP_COMMANDS: [(u16, &str); 3] = [
+    (0xEFC8, "Id"),
+    (0x805D, "SoftReset"),
+    (0x7866, "UltraLowNoiseTemperaturePressure"),
+];
+
+fn icm_register(r: u8) -> Option<&'static str> {
+    ICM_BANK0.iter().find(|x| x.0 == r).map(|x| x.1)
+}
+
+/// Bytes as Renode's `Misc.PrettyPrintCollectionHex` writes them: `[0x0, 0x8]`.
+fn pretty(bytes: &[u8]) -> String {
+    let each: Vec<String> = bytes.iter().map(|b| format!("0x{b:X}")).collect();
+    format!("[{}]", each.join(", "))
+}
+
+/// A step's expected bytes, the first on the wire first.
+fn read_bytes(step: &Step) -> Vec<u8> {
+    (0..u32::from(step.width))
+        .rev()
+        .map(|i| u8::try_from((step.expected >> (8 * i)) & 0xFF).unwrap_or(0))
+        .collect()
 }
 
 impl Model {
@@ -32,39 +95,52 @@ impl Model {
             Model::Bme280 => "I2C.BME280",
             Model::GenericSpiFlash => "SPI.GenericSpiFlash",
             Model::Icm20948 => "Sensors.ICM20948",
+            Model::Icp101xx => "Sensors.ICP_101xx",
         }
     }
 
     /// The model the parts table's name stands for. Every name in
     /// [`parts::RENODE_MODELS`] has one (a tier-1 test).
     pub fn from_renode(name: &str) -> Option<Model> {
-        [Model::Bme280, Model::GenericSpiFlash, Model::Icm20948]
-            .into_iter()
-            .find(|m| m.renode() == name)
+        MODELS.into_iter().find(|m| m.renode() == name)
     }
 
     /// The bus the twin places the model on. The ICM-20948 has an I2C side
     /// too; the twin wires only its SPI side.
     pub fn bus(self) -> BusKind {
         match self {
-            Model::Bme280 => BusKind::I2c,
+            Model::Bme280 | Model::Icp101xx => BusKind::I2c,
             Model::GenericSpiFlash | Model::Icm20948 => BusKind::Spi,
         }
     }
 
-    /// The whole log lines (after the host timestamp) `device` writes, in
-    /// order, for an identity read that writes `write` then reads `width`
-    /// bytes answering `value`; `None` when the twin knows no format for that
-    /// read, a named failure, never a skip (`AET-WO-2204` D2). Bytes are
-    /// upper-case hexadecimal without padding, as Renode's `{0:X}` writes them.
-    pub fn witness(self, device: &str, write: u8, width: u8, value: u32) -> Option<Vec<String>> {
-        let bytes: Vec<u32> = (0..width)
-            .rev()
-            .map(|i| (value >> (8 * u32::from(i))) & 0xFF)
-            .collect();
+    /// The level the judge sets the device's log to, as Renode's `logLevel`
+    /// takes it, and the prefix its witness lines carry: `Noisy` (-1), or
+    /// `Debug` (0) for the ICP-101xx, whose transactions log nothing at
+    /// `Noisy` but its pressure arithmetic (`AET-WO-4210` P6.2, D2).
+    pub fn level(self) -> (i8, &'static str) {
         match self {
-            // `BME280.cs` L38 and L75: `Write {bytes}`, `Read {bytes}`.
+            Model::Bme280 | Model::GenericSpiFlash | Model::Icm20948 => (-1, "[NOISY] "),
+            Model::Icp101xx => (0, "[DEBUG] "),
+        }
+    }
+
+    /// The whole log lines (after the host timestamp) `device` writes, in
+    /// order, for `step`, answering its expected bytes; `None` when the twin
+    /// knows no format for that step, a named failure, never a skip
+    /// (`AET-WO-2204` D2). Bytes are upper-case hexadecimal without padding,
+    /// as Renode's `{0:X}` writes them.
+    pub fn witness(self, device: &str, step: &Step) -> Option<Vec<String>> {
+        let bytes = read_bytes(step);
+        let w = step.write.as_slice();
+        match self {
+            // `BME280.cs` L38 and L75: `Write {bytes}`, `Read {bytes}`. Only
+            // an identity read has a known format.
             Model::Bme280 => {
+                let [write] = w else { return None };
+                if step.kind != StepKind::Identity {
+                    return None;
+                }
                 let read: Vec<String> = bytes.iter().map(|b| format!("{b:X}")).collect();
                 Some(vec![
                     format!("[NOISY] {device}: Write {write:X}"),
@@ -76,7 +152,7 @@ impl Model {
             // (0x9F) has a known format; the firmware clocks 0x00 out while
             // it reads.
             Model::GenericSpiFlash => {
-                if write != 0x9F {
+                if w != [parts::JEDEC_READ] || step.kind != StepKind::Identity {
                     return None;
                 }
                 let mut lines = vec![
@@ -97,27 +173,115 @@ impl Model {
                 }
                 Some(lines)
             }
-            // `ICM20948.cs` L131 (a read's first byte), L142 (each byte read)
-            // and L156 (every byte). Only `WhoAmI` (bank 0, register 0, read
-            // bit set) for one byte has a known format: the register name in
-            // the line moves with the register.
+            // `ICM20948.cs` `Transmit`: the first byte selects a bank-0
+            // register (bits 6:0) and the direction (bit 7), and logs
+            // `Preparing for read` (L131) or `Preparing for write` (L136);
+            // every byte logs `Received byte` (L156); each byte read after it
+            // logs `Read at` (L142) and moves to the next register. A write's
+            // value is in its `Received byte` line; its own line is `Debug`
+            // (L147), which the witness does not read. Only the registers in
+            // `ICM_BANK0` have a known name, and only bank 0 is selected
+            // from reset.
             Model::Icm20948 => {
-                if write != 0x80 || width != 1 {
+                let (&first, values) = w.split_first()?;
+                let r = first & 0x7F;
+                let name = icm_register(r)?;
+                if first & 0x80 != 0 {
+                    if !values.is_empty() || step.width == 0 {
+                        return None;
+                    }
+                    let mut lines = vec![
+                        format!(
+                            "[NOISY] {device}: Preparing for read at bank #0 from 0x{r:X} ({name})"
+                        ),
+                        format!("[NOISY] {device}: Received byte 0x{first:X}, returning 0x0"),
+                    ];
+                    for (i, b) in bytes.iter().enumerate() {
+                        let at = r.checked_add(u8::try_from(i).ok()?)?;
+                        let name = icm_register(at)?;
+                        lines.push(format!(
+                            "[NOISY] {device}: Read at bank #0 from 0x{at:X} ({name}), returned 0x{b:X}"
+                        ));
+                        lines.push(format!(
+                            "[NOISY] {device}: Received byte 0x0, returning 0x{b:X}"
+                        ));
+                    }
+                    Some(lines)
+                } else {
+                    if values.len() != 1 || step.width != 0 {
+                        return None;
+                    }
+                    Some(vec![
+                        format!(
+                            "[NOISY] {device}: Preparing for write at bank #0 to 0x{r:X} ({name})"
+                        ),
+                        format!("[NOISY] {device}: Received byte 0x{first:X}, returning 0x0"),
+                        format!(
+                            "[NOISY] {device}: Received byte 0x{:X}, returning 0x0",
+                            values[0]
+                        ),
+                    ])
+                }
+            }
+            // `ICP_101xx.cs` `Write` (L61): one `Received command` line per
+            // write of a 16-bit command; `Read` (L75): one `Reading data with
+            // CRC` line per read. The model puts a CRC byte after every two
+            // data bytes, so only a read of at most two bytes answers the
+            // step's bytes alone.
+            Model::Icp101xx => {
+                let &[hi, lo] = w else { return None };
+                let command = u16::from_be_bytes([hi, lo]);
+                let name = ICP_COMMANDS.iter().find(|c| c.0 == command)?.1;
+                if step.width > 2 {
                     return None;
                 }
-                Some(vec![
-                    format!("[NOISY] {device}: Preparing for read at bank #0 from 0x0 (WhoAmI)"),
-                    format!("[NOISY] {device}: Received byte 0x80, returning 0x0"),
-                    format!(
-                        "[NOISY] {device}: Read at bank #0 from 0x0 (WhoAmI), returned 0x{:X}",
-                        bytes[0]
-                    ),
-                    format!(
-                        "[NOISY] {device}: Received byte 0x0, returning 0x{:X}",
-                        bytes[0]
-                    ),
-                ])
+                let mut lines = vec![format!("[DEBUG] {device}: Received command: {}", pretty(w))];
+                if step.width > 0 {
+                    lines.push(format!(
+                        "[DEBUG] {device}: Reading data with CRC: {}, current command: 0x{command:X} ({name}), requested: {} bytes",
+                        pretty(&bytes),
+                        step.width
+                    ));
+                }
+                Some(lines)
             }
+        }
+    }
+
+    /// The `[WARNING]` lines a correct `step` makes the model write, exactly
+    /// and in order, each pinned to Renode's source (`AET-WO-4210` D4); any
+    /// other warning from the device in the step fails it. `None` when the
+    /// twin does not know what the step makes the model warn, which is a
+    /// named failure.
+    pub fn warnings(self, device: &str, step: &Step) -> Option<Vec<String>> {
+        match self {
+            // Measured: none of these warns in a correct identity read, or
+            // in the ICP-101xx's script (`AET-WO-4210` P6.2).
+            Model::Bme280 | Model::GenericSpiFlash | Model::Icp101xx => Some(Vec::new()),
+            Model::Icm20948 => match step.write.as_slice() {
+                [r, v] if r & 0x80 == 0 => ICM_WRITE_WARNINGS
+                    .iter()
+                    .find(|x| x.0 == *r && x.1 == *v)
+                    .map(|x| vec![format!("[WARNING] {device}: {}", x.2)]),
+                [r] if r & 0x80 != 0 => Some(Vec::new()),
+                _ => None,
+            },
+        }
+    }
+
+    /// The warning the model writes when the multiplexer finishes it while
+    /// it is idle, which it does on every chip-select edge of its controller
+    /// (`SPIMultiplexer.cs` `UpdateChipSelectState`; `AET-WO-4210` F11): an
+    /// edge artefact, allowed only on the line directly after the
+    /// multiplexer's `Finisihing transmission on device` line for the
+    /// device's own address (D4).
+    pub fn idle_warning(self, device: &str) -> Option<String> {
+        match self {
+            // `GenericSpiFlash.cs` L95, measured (`AET-WO-4210` P1.6).
+            Model::GenericSpiFlash => Some(format!(
+                "[WARNING] {device}: Transmission finished in the unexpected state: RecognizeOperation"
+            )),
+            Model::Bme280 | Model::Icm20948 | Model::Icp101xx => None,
         }
     }
 
@@ -128,11 +292,29 @@ impl Model {
     /// Select is deasserted.` (`GenericSpiFlash.cs` L83, a direct wire only).
     pub fn skipped(self, device: &str) -> Vec<String> {
         match self {
-            Model::Bme280 | Model::GenericSpiFlash => Vec::new(),
+            // The ICP-101xx is read at `Debug`, which does not print its
+            // `Noisy` arithmetic.
+            Model::Bme280 | Model::GenericSpiFlash | Model::Icp101xx => Vec::new(),
             // `ICM20948.cs` L162, on every chip-select edge the mux routes to it.
             Model::Icm20948 => vec![format!(
                 "[NOISY] {device}: Finishing transmission, going idle"
             )],
+        }
+    }
+
+    /// The model's property the twin sets `quantity` through, before the
+    /// run (`AET-WO-4210` D3); `None` when the model has no such property.
+    pub fn stimulus(self, quantity: Quantity) -> Option<&'static str> {
+        match (self, quantity) {
+            // `ICM20948_Accelerometer.cs`: in g.
+            (Model::Icm20948, Quantity::AccelerationX) => Some("DefaultAccelerationX"),
+            (Model::Icm20948, Quantity::AccelerationY) => Some("DefaultAccelerationY"),
+            (Model::Icm20948, Quantity::AccelerationZ) => Some("DefaultAccelerationZ"),
+            // `ICP_101xx.cs`: in degrees Celsius.
+            (Model::Icp101xx, Quantity::Temperature) => Some("DefaultTemperature"),
+            (Model::Bme280 | Model::GenericSpiFlash, _)
+            | (Model::Icm20948, Quantity::Temperature)
+            | (Model::Icp101xx, _) => None,
         }
     }
 }
@@ -170,7 +352,7 @@ mod tests {
             162,
             r#"this.NoisyLog("Finishing transmission, going idle");"#,
         )];
-        for m in [Model::Bme280, Model::GenericSpiFlash, Model::Icm20948] {
+        for m in MODELS {
             let pinned: Vec<String> = source
                 .iter()
                 .filter(|s| s.0 == m)
@@ -192,25 +374,261 @@ mod tests {
         assert_eq!(Model::from_renode("I2C.BMP180"), None);
     }
 
+    fn step(kind: StepKind, write: &[u8], width: u8, expected: u64) -> Step {
+        Step {
+            kind,
+            write: write.to_vec(),
+            width,
+            expected,
+            mask: u64::MAX,
+        }
+    }
+
+    /// The C# format string's literal text, with each `{n}` or `{n:X}` a
+    /// wildcard: whether `line` is what the format writes.
+    fn matches_format(format: &str, line: &str) -> bool {
+        let mut rest = line;
+        let mut parts = format.split('{').peekable();
+        let first = parts.next().unwrap();
+        let Some(r) = rest.strip_prefix(first) else {
+            return false;
+        };
+        rest = r;
+        while let Some(p) = parts.next() {
+            let literal = p.split_once('}').map_or("", |(_, l)| l);
+            if literal.is_empty() {
+                if parts.peek().is_none() {
+                    return !rest.is_empty();
+                }
+                continue;
+            }
+            let last = parts.peek().is_none();
+            match if last {
+                rest.rfind(literal)
+            } else {
+                rest.find(literal)
+            } {
+                Some(at) if at > 0 => rest = &rest[at + literal.len()..],
+                _ => return false,
+            }
+        }
+        rest.is_empty()
+    }
+
+    /// Each format the witness, the warnings and the stimulus use, beside
+    /// the Renode source line that writes it, as read at
+    /// `renode-infrastructure` `066a7f13` (`AET-WO-4210` S1).
+    #[test]
+    fn every_witness_line_is_its_renode_source_line() {
+        let icm = "src/Emulator/Peripherals/Peripherals/Sensors/ICM20948/ICM20948.cs";
+        let icp = "src/Emulator/Peripherals/Peripherals/Sensors/ICP_101xx.cs";
+        let pinned: [(&str, u32, &str); 7] = [
+            (
+                icm,
+                131,
+                "Preparing for read at bank #{0} from 0x{1:X} ({2})",
+            ),
+            (
+                icm,
+                136,
+                "Preparing for write at bank #{0} to 0x{1:X} ({2})",
+            ),
+            (
+                icm,
+                142,
+                "Read at bank #{0} from 0x{1:X} ({2}), returned 0x{3:X}",
+            ),
+            (icm, 156, "Received byte 0x{0:X}, returning 0x{1:X}"),
+            (icp, 61, "Received command: {0}"),
+            (
+                icp,
+                75,
+                "Reading data with CRC: {0}, current command: {1}, requested: {2} bytes",
+            ),
+            (
+                "src/Emulator/Main/Core/Structure/Registers/PeripheralRegister.cs",
+                755,
+                "Unhandled write to offset 0x{2:X}. Unhandled bits: [{1}] when writing value 0x{3:X}.{0}",
+            ),
+        ];
+        let imu = [
+            step(StepKind::Identity, &[0x80], 1, 0xEA),
+            step(StepKind::Configure, &[0x06, 0x01], 0, 0),
+            step(StepKind::Data, &[0xAD], 6, 0x4000),
+        ];
+        let baro = [
+            step(StepKind::Identity, &[0xEF, 0xC8], 2, 0x0008),
+            step(StepKind::Configure, &[0x80, 0x5D], 0, 0),
+            step(StepKind::Data, &[0x78, 0x66], 2, 0x6666),
+        ];
+        let mut lines: Vec<String> = Vec::new();
+        for s in &imu {
+            lines.extend(Model::Icm20948.witness("d", s).unwrap());
+            lines.extend(Model::Icm20948.warnings("d", s).unwrap());
+        }
+        for s in &baro {
+            lines.extend(Model::Icp101xx.witness("d", s).unwrap());
+        }
+        for line in &lines {
+            let body = line.split_once(": ").unwrap().1;
+            let by: Vec<&(&str, u32, &str)> = pinned
+                .iter()
+                .filter(|p| matches_format(p.2, body))
+                .collect();
+            assert_eq!(by.len(), 1, "`{line}` is written by {by:?}");
+        }
+        // Every pinned format is used.
+        for p in &pinned {
+            assert!(
+                lines
+                    .iter()
+                    .any(|l| matches_format(p.2, l.split_once(": ").unwrap().1)),
+                "{p:?}"
+            );
+        }
+        for (m, name) in [
+            (Model::Icm20948, "ICM20948_Bank0Registers.cs"),
+            (Model::Icp101xx, "ICP_101xx.cs"),
+        ] {
+            assert!(!name.is_empty() && m.level().1.ends_with("] "));
+        }
+    }
+
+    /// The register and command names the model's lines carry, beside their
+    /// enum members in Renode's source (`066a7f13`).
+    #[test]
+    fn every_name_is_its_renode_enum_member() {
+        let bank0: [(u32, &str); 8] = [
+            (274, "WhoAmI = 0x0,"),
+            (277, "PowerManagement1 = 0x6,"),
+            (291, "AccelerationXOutHigh = 0x2D,"),
+            (292, "AccelerationXOutLow = 0x2E,"),
+            (293, "AccelerationYOutHigh = 0x2F,"),
+            (294, "AccelerationYOutLow = 0x30,"),
+            (295, "AccelerationZOutHigh = 0x31,"),
+            (296, "AccelerationZOutLow = 0x32,"),
+        ];
+        for ((r, name), (_, member)) in ICM_BANK0.iter().zip(bank0) {
+            assert_eq!(format!("{name} = 0x{r:X},"), member);
+        }
+        let commands: [(u32, &str); 3] = [
+            (503, "Id = 0xEFC8,"),
+            (502, "SoftReset = 0x805D,"),
+            (500, "UltraLowNoiseTemperaturePressure = 0x7866,"),
+        ];
+        for ((c, name), (_, member)) in ICP_COMMANDS.iter().zip(commands) {
+            assert_eq!(format!("{name} = 0x{c:X},"), member);
+        }
+    }
+
+    /// The lines the spike measured in the pinned image (`AET-WO-4210` P1.1,
+    /// P1.2, P1.4, P1.5, P6.2), and every step the twin knows no format for.
     #[test]
     fn the_witness_formats_are_the_measured_lines() {
         let flash = Model::GenericSpiFlash
-            .witness("spi1.spi1mux.u4", 0x9F, 3, 0xEF_4017)
+            .witness(
+                "spi1.spi1mux.u4",
+                &step(StepKind::Identity, &[0x9F], 3, 0xEF_4017),
+            )
             .unwrap();
         assert_eq!(flash.len(), 8);
         assert_eq!(
             flash[7],
             "[NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x17"
         );
-        assert_eq!(Model::GenericSpiFlash.witness("d", 0x90, 3, 0), None);
-        let imu = Model::Icm20948
-            .witness("spi1.spi1mux.u5", 0x80, 1, 0xEA)
-            .unwrap();
+        let d = "spi1.spi1mux.u5";
+        let imu = |s: Step| Model::Icm20948.witness(d, &s).unwrap();
         assert_eq!(
-            imu[2],
+            imu(step(StepKind::Identity, &[0x80], 1, 0xEA))[2],
             "[NOISY] spi1.spi1mux.u5: Read at bank #0 from 0x0 (WhoAmI), returned 0xEA"
         );
-        assert_eq!(Model::Icm20948.witness("d", 0x80, 2, 0), None);
-        assert_eq!(Model::Icm20948.witness("d", 0x81, 1, 0), None);
+        assert_eq!(
+            imu(step(StepKind::Configure, &[0x06, 0x01], 0, 0)),
+            [
+                "[NOISY] spi1.spi1mux.u5: Preparing for write at bank #0 to 0x6 (PowerManagement1)",
+                "[NOISY] spi1.spi1mux.u5: Received byte 0x6, returning 0x0",
+                "[NOISY] spi1.spi1mux.u5: Received byte 0x1, returning 0x0",
+            ]
+        );
+        let data = imu(step(StepKind::Data, &[0xAD], 6, 0x4000));
+        assert_eq!(data.len(), 14);
+        assert_eq!(
+            data[0],
+            "[NOISY] spi1.spi1mux.u5: Preparing for read at bank #0 from 0x2D (AccelerationXOutHigh)"
+        );
+        assert_eq!(
+            data[10],
+            "[NOISY] spi1.spi1mux.u5: Read at bank #0 from 0x31 (AccelerationZOutHigh), returned 0x40"
+        );
+        assert_eq!(
+            data[13],
+            "[NOISY] spi1.spi1mux.u5: Received byte 0x0, returning 0x0"
+        );
+        assert_eq!(
+            Model::Icm20948.warnings(d, &step(StepKind::Configure, &[0x06, 0x01], 0, 0)),
+            Some(vec![
+                "[WARNING] spi1.spi1mux.u5: Unhandled write to offset 0x6. Unhandled bits: [0] when writing value 0x1. Tags: CLKSEL (0x1).".to_owned()
+            ])
+        );
+        let baro = Model::Icp101xx
+            .witness(
+                "i2c1.u6",
+                &step(StepKind::Identity, &[0xEF, 0xC8], 2, 0x0008),
+            )
+            .unwrap();
+        assert_eq!(
+            baro,
+            [
+                "[DEBUG] i2c1.u6: Received command: [0xEF, 0xC8]",
+                "[DEBUG] i2c1.u6: Reading data with CRC: [0x0, 0x8], current command: 0xEFC8 (Id), requested: 2 bytes",
+            ]
+        );
+        assert_eq!(
+            Model::Icp101xx
+                .witness("i2c1.u6", &step(StepKind::Configure, &[0x80, 0x5D], 0, 0))
+                .unwrap(),
+            ["[DEBUG] i2c1.u6: Received command: [0x80, 0x5D]"]
+        );
+        // No known format: a named failure, never a skip.
+        let none = [
+            (
+                Model::GenericSpiFlash,
+                step(StepKind::Identity, &[0x90], 3, 0),
+            ),
+            (Model::Icm20948, step(StepKind::Identity, &[0x80], 2, 0)),
+            (Model::Icm20948, step(StepKind::Identity, &[0x81], 1, 0)),
+            (Model::Icm20948, step(StepKind::Configure, &[0x06], 0, 0)),
+            (
+                Model::Icm20948,
+                step(StepKind::Configure, &[0x06, 0x01, 0x02], 0, 0),
+            ),
+            (Model::Icp101xx, step(StepKind::Data, &[0x78, 0x66], 3, 0)),
+            (Model::Icp101xx, step(StepKind::Data, &[0x48, 0xA3], 2, 0)),
+            (Model::Bme280, step(StepKind::Data, &[0xF7], 1, 0)),
+        ];
+        for (m, s) in none {
+            assert_eq!(m.witness("d", &s), None, "{m:?} {s:?}");
+        }
+        assert_eq!(
+            Model::Icm20948.warnings("d", &step(StepKind::Configure, &[0x06, 0x41], 0, 0)),
+            None
+        );
+    }
+
+    #[test]
+    fn every_stimulus_is_a_property_of_its_model() {
+        assert_eq!(
+            Model::Icm20948.stimulus(Quantity::AccelerationZ),
+            Some("DefaultAccelerationZ")
+        );
+        assert_eq!(
+            Model::Icp101xx.stimulus(Quantity::Temperature),
+            Some("DefaultTemperature")
+        );
+        for m in [Model::Bme280, Model::GenericSpiFlash] {
+            for (q, _, _) in parts::QUANTITIES {
+                assert_eq!(m.stimulus(q), None);
+            }
+        }
     }
 }
