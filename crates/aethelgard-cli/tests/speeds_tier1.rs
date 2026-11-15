@@ -60,7 +60,10 @@ fn reason(v: &Value, net: &str) -> String {
 fn the_reference_drives_sck_and_mosi_at_01_and_names_every_other_line() {
     let (code, v) = speeds(&root().join("examples/sentinel-01-minimal.json"));
     assert_eq!(code, Some(0), "{v}");
-    assert_eq!((v["verdict"].as_str(), v["check"].as_str()), (Some("pass"), Some("speeds")));
+    assert_eq!(
+        (v["verdict"].as_str(), v["check"].as_str()),
+        (Some("pass"), Some("speeds"))
+    );
     assert_eq!(
         v["capacitance"],
         "declared (net_constraints); extract bounds it on the routed board"
@@ -73,7 +76,10 @@ fn the_reference_drives_sck_and_mosi_at_01_and_names_every_other_line() {
     for net in ["SPI_MISO", "FLASH_CS", "I2C_SDA", "I2C_SCL"] {
         assert_eq!(speed(net), "00", "{net}");
     }
-    assert_eq!(reason(&v, "SPI_MISO"), "input in master mode: no electrical effect");
+    assert_eq!(
+        reason(&v, "SPI_MISO"),
+        "input in master mode: no electrical effect"
+    );
     assert!(reason(&v, "FLASH_CS").starts_with("software-driven GPIO output"));
     assert!(reason(&v, "I2C_SDA").contains("6.3.32"));
     assert_eq!(lines.len(), 6);
@@ -88,7 +94,11 @@ fn the_reference_drives_sck_and_mosi_at_01_and_names_every_other_line() {
 #[test]
 fn the_four_layer_fixture_and_d1_hold_on_every_in_scope_line() {
     for (fixture, lines) in [("four-layer.json", 6), ("d1-24-i2c.json", 12)] {
-        let (code, v) = speeds(&root().join("crates/aethelgard-cli/tests/fixtures").join(fixture));
+        let (code, v) = speeds(
+            &root()
+                .join("crates/aethelgard-cli/tests/fixtures")
+                .join(fixture),
+        );
         assert_eq!(code, Some(0), "{fixture}: {v}");
         let all = by_net(&v);
         assert_eq!(all.len(), lines, "{fixture}");
@@ -106,7 +116,9 @@ fn the_icm_fixture_is_judged_on_its_declaration_and_labelled_unverified() {
     assert_eq!(code, Some(0), "{v}");
     let label = v["capacitance"].as_str().unwrap();
     assert!(
-        label.starts_with("declared (net_constraints), UNVERIFIED: no board can be drawn (UnknownPart:"),
+        label.starts_with(
+            "declared (net_constraints), UNVERIFIED: no board can be drawn (UnknownPart:"
+        ),
         "{label}"
     );
     let all = by_net(&v);

@@ -555,7 +555,8 @@ impl Role {
 /// takes `00`.
 pub const OPEN_DRAIN: &str = "open-drain I2C: its rise is the pull-up's, judged by extract and the campaign (RUL-19); DS12117 Rev 10 6.3.32 guarantees UM10204 timing by design";
 pub const MASTER_INPUT: &str = "input in master mode: no electrical effect";
-pub const SOFTWARE_DRIVEN: &str = "software-driven GPIO output: firmware may toggle it at any rate, so the topology states none";
+pub const SOFTWARE_DRIVEN: &str =
+    "software-driven GPIO output: firmware may toggle it at any rate, so the topology states none";
 
 /// What the output speed check found for one generated pin.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -581,7 +582,9 @@ pub enum SpeedCheck {
         row: speeds::Row,
         fmax_hz: u32,
     },
-    OutOfScope { reason: &'static str },
+    OutOfScope {
+        reason: &'static str,
+    },
 }
 
 /// Every pin [`generate`] emits, in pin order, with its speed and the
@@ -3401,8 +3404,14 @@ mod tests {
         assert!(lib.contains("Block::GpioA, 0x08, |v| v & !0x00003000);"));
         assert!(!lib.contains("0x08, |v| (v & !0x00000c00) | 0x00000800);"));
         let proofs = &files["src/proofs.rs"];
-        assert!(proofs.contains("& 0x00000c00 == 0x00000400"), "PA5 in the oracle");
-        assert!(proofs.contains("& 0x00003000 == 0x00000000"), "PA6 in the oracle");
+        assert!(
+            proofs.contains("& 0x00000c00 == 0x00000400"),
+            "PA5 in the oracle"
+        );
+        assert!(
+            proofs.contains("& 0x00003000 == 0x00000000"),
+            "PA6 in the oracle"
+        );
     }
 
     /// §1.4: a line whose rate needs `10` or `11`, or whose load is above the

@@ -1019,10 +1019,11 @@ pub fn lines(
                 if pads.is_empty() {
                     continue;
                 }
-                let device = spec
-                    .declared_spi_devices()
-                    .iter()
-                    .find(|d| d.reference == part.reference && d.bus == bus.id);
+                // The solved topology's copy of the device (`RUL-16`).
+                let device = solved
+                    .spi_devices
+                    .get(&part.reference)
+                    .filter(|d| d.bus == bus.id);
                 let load = if part.lib_id == crate::schematic::MCU {
                     Load::Driver
                 } else if let Some(d) = device {
