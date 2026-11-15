@@ -739,3 +739,21 @@ The ruling is copied to `~/.cache/aet-4300d-ruling.md` §3. Each decision, and w
   - **If `4210` lands first,** this PR renumbers at merge again, with the same tools.
   - **4300a's own tests that build version-6 specifications or topologies in code** now read the version constants and declare `bor_level` and `power`: `ir/tests/motor.rs`, `cli/tests/validate_cli.rs`, `ir/tests/validate.rs`. The generated `svd-hal/tests/ui/motors-pwm/board.rs` was re-blessed (`AETHELGARD_BLESS=1`); only its hash line moved.
 - **Gates after the merge and the ruling, on Furnace:** `cargo fmt --check` and `clippy -D warnings` exit 0. `cargo test --workspace` has 98 test targets: 97 ok on the first run, and the one failure (4300a's topology-version test, which hard-coded version 5) now reads the constant and passes.
+
+## B12. Gates, CI and close (READY)
+
+- **CI on the merge with the ruling applied, `5b3480c`** (run 43712809796): `ci`, `engine-image` and `ardupilot-image` green.
+  - **Shards:** the eight tools shards took 12 min 53 s to 17 min 18 s; the slowest is shard 4. Every shard is under 20 minutes.
+  - **Tier 2:** `tier2_tests_passed=110 floor=110`, so TIER2_MIN 110 (`main`'s, after `4300a`) is exact. This build adds no tier-2 test.
+- **On Furnace, under a capped scope, at `5b3480c`:** fmt and clippy exit 0, and every workspace test target is ok (B11).
+- **The adversarial pass (B7), the mutation pass (B6, plus D-B9's guard killed) and the reduction pass (B8)** stand for the ruled slice. The ruling's changes were each tested and mutated where they added a guard.
+- **The signal commit below changes this file only.** CI on it is the PR head's witness.
+
+**Slice A of `AET-WO-4300d` is done as ruled.**
+- **What it holds:** the cited power parts table, specification 7's `power` and `mcu.bor_level`, every ruled static check refused by name, the tree in solved topology 6 for `1303`, and the seam refusing emission.
+- **What follows:** slice B, `AET-WO-4300d2`, and K6, which both follow this PR.
+- **For the architect:**
+  - the title and body are in `~/.cache/aet-4300d/pr-title-body.md`;
+  - if `4210` or `4300b` lands first, this PR renumbers at merge, with the tools in `~/.cache/aet-4300d-build/tools/`.
+
+**AET-WO-4300d READY FOR REVIEW: PR #147.**
