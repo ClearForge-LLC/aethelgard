@@ -101,3 +101,38 @@ Probe plan, so the predictions have something to point at. Probes are built `420
 ### P9. The off-board net (§1.8)
 
 - **P9.1** [read, from `4300f`'s measured S2]: a fixture whose motor nets end at one MCU pin fails `check erc` with one `isolated_pin_label` per net; DRC passes. So the fixture's ERC cannot pass honestly until a connector part carries each net (`4300f`'s build). Not re-measured here unless `4300f`'s build changes the emitter.
+
+## 2. Runs
+
+- **Containers, one of mine at a time,** each through `~/.cache/aet-4300a/img.sh` (RULE3: `systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 -p TasksMax=8192` around `podman run --rm --cgroups=disabled --network none`, no podman memory flags, `TMPDIR` unset inside). Every run's scope read back `memory.max=8589934592 memory.swap.max=0 pids.max=8192` before its command (`~/.cache/aet-4300a/caps.log`); none stopped at the swap guard.
+  1. `main`'s binaries (`50d7a6f`): CLI with tools, bridge, reference firmware (`~/.cache/aet-4300a/baseline/main-bin`; CLI sha256 `40898e64…53fc`).
+  2. The probes (§1's harness, `~/.cache/aet-4300a/probe`, kept in `~/.cache/aet-4300a/evidence/probe-final`: `runs.jsonl`, `fw.txt` with each ELF's sha256, raw stdout under `raw/`). Earlier partial runs of the same cases were superseded by the final run of all 15 cases, which is the one cited.
+  3. D2 alone (commit `55690b2`): its binaries (`d2-bin`, CLI `3ae7c52b…84ea`), then `main`'s and D2's baselines: the reference campaign over every committed scenario (14), replay of every archive, and a static `simulate` (`4200`'s `run.sh`, compared by `4300c`'s keyed `compare-keyed.py`).
+- Probe firmware is the committed reference firmware with raw register code inserted (`fw.py`), so every probe also performs the reference's two identity reads; every probe wrote the boot word.
+
+## 3. Results beside predictions
+
+| id | prediction | result | label | verdict |
+|---|---|---|---|---|
+| P1.1 | `CFGR`, `D1CFGR`, `D2CFGR`, `D3CFGR` = 0; `HSIDIV` = 0 | The firmware's own reads (records 2–4 of `rcc`): `CFGR` 0, `D1CFGR` 0, `D2CFGR` 0, `D3CFGR` 0, `RCC_CR` `0x25` (`HSION`, `HSIRDY`, `HSIDIVF`; `HSIDIV` = 0). The monitor's reads after the run agree. | measured | as predicted: **§1.2 holds; the §7 stop does not fire** |
+| P1.2 | The same after `machine Reset` | `RCC_CR` `0x25`, the four prescaler registers 0 | measured | as predicted |
+| P2.1 | `UG` + `BSRR`: `IRQ pending` and the edge share each stamp, all on the grid | Exactly: `IRQ pending` and `LED state changed to True` both at 0, 6, 12 and 18 ms; every fall at +400 µs; no stamp off the grid | measured | as predicted. **The coincident forgery is measured** (`4300` D4's open item) |
+| P2.2 | `BSRR` alone: on the grid, no `IRQ pending` | The same edges, no `IRQ pending` | measured | as predicted |
+| P3.1 | D2 changes no verdict | All 14 campaign lines equal field for field (keyed by scenario), replay verdicts equal, **every trace and manifest byte-identical** (28 hashes); `simulate` differs only in the firmware's path | measured | as predicted: **the second §7 stop does not fire** |
+| P3.2 | Timer lines exact in 10 ns steps | Yes (P7) | measured | as predicted |
+| P5.1 | 10 ms, 4 channels: ≈ 189,000 observer lines, several seconds | 400,956 lines with `timer1` also at `Noisy` (half are its `received external input` lines), 33.6 MB, 4.3 s | measured | as predicted (the line count included the timer's lines) |
+| P5.2 | 100 ms: ≈ 1.9 M lines, ≈ 140 MB, over `LOG_FILTER` and over the 30 s wall bound | Observers only: **1,886,808 lines, 139.6 MB, 14.7 s** on Furnace. With no source at `Noisy`: 10.8 s, so the timer events, not the log, cost most | measured | lines and bytes as predicted; **the wall bound is wrong on Furnace** (14.7 s < 30 s). On CI's runners it would be about 3× slower (inferred from `BOOT_BOUNDS`' note: 2.16 s on Furnace against 6.84 s under CI's parallel tests), near or over 30 s |
+| P6.1 | All nine enable registers cold at reset values; the reference boots; `APB4ENR` reads `0x0001 0000` or 0 | `cold9`: the reference boots (boot word, both records `STATUS_OK`); after the run `AHB1ENR`, `AHB2ENR`, `AHB3ENR`, `APB1HENR`, `APB3ENR` read 0, **`APB4ENR` reads `0x0001 0000`** (Renode stores `RTCAPBEN`), and the three registers cold today read the reference's bits. Without the six new cold writes they read Renode's every-clock-on values (`AHB1ENR` `0x8023`, `AHB3ENR` `0x4010`, `APB4ENR` `0x11E8A`, …) | measured | as predicted |
+| P7.1 | `pwm400`: period 639,744 ns, high 256,000 ns, deviations in (−10, 10), span < 10, every rise after the first off the grid | 156 rises, 155 falls; deviations −6 to +2 ns (span 8); every stamp a multiple of 10 ns; **0 of 311 edges on the grid**; first rise at 639,750 ns | measured | as predicted |
+| P7.2 | `pwm50`: period 5,119,744 ns | 19 rises; deviations −6 to +2 (span 8); 0 of 38 on the grid | measured | as predicted |
+| P8.1 | `CR1` 0x81, `CCMR1` 0x60, `CCER` 1, `PSC` 63, `ARR` 2499, `CCR1` 1000, `BDTR` 0 | Exactly. Also: unused `CCR2`–`CCR4` read `0xFFFF` (silicon resets them to 0) | measured | as predicted |
+
+**Measured beyond the predictions:**
+- **M1, a polled timer loses its exact stamps.** A firmware that polls `TIM1_SR` (`UIF` or `CC1IF`) to count a 16-bit DShot burst saw 52–53 pulses, and every edge of the first ~38 periods carried one stamp (16.45 µs): Renode advanced the timer in one step when the core read it (`burst-cc1if`, `burst-uif-opm`, `burst-uif-force`). The WO's ground "an edge the timer causes is stamped exactly" holds only while the core does not touch the timer: a firmware that starts PWM and then runs the reference's I2C and SPI reads before idling (`pwm400-early`) keeps every stamp exact (span 8 ns, 0 of 311 on the grid). So the generated firmware writes a timer only to configure and start it, and the judge names stamps that collapse onto one instant (`motor_edges_batched`) apart from wrong timing.
+- **M2, the timer's phase is the quantum's.** In every PWM probe the first rise is one period after virtual time ≈ 6 ns, although the core ran thousands of instructions before `CEN`: a store the core makes takes effect at its quantum's start. So the judge anchors at the first observed rise and never predicts an absolute stamp.
+- **M3, short DShot windows.** Four DShot600 channels with only the observers at `Noisy`: 1 ms is 18,884 lines, 1.40 MB, 2.30 s; 2 ms is 37,748 lines, 2.80 MB, 2.64 s (Renode's start alone is about 2.0 s).
+
+## 4. Decisions taken inside the work order
+
+- **D2's quantum (F1).** Renode 1.17.0 has no configuration key for the quantum (§0), so the composition states it by `emulation SetGlobalQuantum "0.000100000"` (`renode::QUANTUM`), Renode's own value, and the judge reads the grid from `aethelgard_twin::boot::QUANTUM_NS`. Measured to change nothing (P3.1). A deviation from D2's words, recorded for the architect.
+- **DShot timing source.** No standard document defines DShot. The bit rates and duty are ArduPilot's, at the tag `4400` pinned (`Copter-4.7.2`, `fb773567`): DShot300 and DShot600 are 300,000 and 600,000 bit/s (`libraries/AP_HAL_ChibiOS/RCOutput.cpp` L2521–2524), a bit is 8 ticks and a `0` bit is high for 3 of them, a `1` for 6 (`libraries/AP_HAL/RCOutput.h` L406–408, `DSHOT_BIT_WIDTH_TICKS_DEFAULT`, `DSHOT_BIT_0_TICKS_DEFAULT`, `DSHOT_BIT_1_TICKS_DEFAULT`). [read]
