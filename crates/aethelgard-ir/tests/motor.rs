@@ -65,11 +65,11 @@ fn dshot(label: &str, pin: Option<&str>) -> Value {
 
 fn spec_json(motors: Vec<Value>) -> Value {
     json!({
-        "schema_version": 7,
+        "schema_version": aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
         "accept_lifecycle": [],
         "project_name": "t",
         "board": serde_json::from_str::<Value>(BOARD).unwrap(),
-        "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0},
+        "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 0},
         "voltage_domains": [{"id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50}],
         "i2c_buses": [], "spi_buses": [], "i2c_devices": [], "spi_devices": [],
         "net_constraints": [],
@@ -77,6 +77,7 @@ fn spec_json(motors: Vec<Value>) -> Value {
         "net_classes": [],
         "diff_pairs": [],
         "motor_outputs": motors,
+        "power": null,
     })
 }
 
@@ -397,7 +398,8 @@ fn a_version_4_topology_without_the_new_fields_is_refused_as_a_version() {
     v.as_object_mut().unwrap().remove("motor_outputs");
     let t: SolvedTopology = serde_json::from_value(v.clone()).unwrap();
     assert_eq!(t.validate().unwrap_err().kind(), "UnsupportedSchemaVersion");
-    v["schema_version"] = json!(5);
+    // Under the current version the missing keys are refused at parsing.
+    v["schema_version"] = json!(aethelgard_ir::SOLVED_SCHEMA_VERSION);
     assert!(serde_json::from_value::<SolvedTopology>(v).is_err());
 }
 

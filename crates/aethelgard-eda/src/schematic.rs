@@ -67,6 +67,10 @@ pub enum EmitError {
     Unroutable { net: String, why: String },
     #[error("the router cannot complete the board: {0}")]
     BoardUnroutable(String),
+    #[error(
+        "the specification declares a power tree, which this engine does not yet emit, place, route or judge on a board (`AET-WO-4300d` slice A; emission is slice B)"
+    )]
+    PowerNotEmitted,
     #[error("{0}")]
     Internal(String),
 }
@@ -82,6 +86,7 @@ impl EmitError {
             Self::ReservedName(_) => "ReservedName",
             Self::DuplicateReference(_) => "DuplicateReference",
             Self::Unroutable { .. } | Self::BoardUnroutable(_) => "Unroutable",
+            Self::PowerNotEmitted => "PowerNotEmitted",
             Self::Internal(_) => "EmitterError",
         }
     }
@@ -95,7 +100,10 @@ impl EmitError {
                 Some(id)
             }
             Self::UnknownPin { net, .. } | Self::Unroutable { net, .. } => Some(net),
-            Self::Library(_) | Self::BoardUnroutable(_) | Self::Internal(_) => None,
+            Self::Library(_)
+            | Self::BoardUnroutable(_)
+            | Self::PowerNotEmitted
+            | Self::Internal(_) => None,
         }
     }
 }
@@ -439,6 +447,16 @@ fn mcu_conn(b: &mut Builder<'_>, name: &str) -> Option<Conn> {
     }
 }
 
+/// The seam of `AET-WO-4300d`'s split: a specification that declares a power
+/// tree is refused by name wherever a board would be emitted or judged
+/// against it, never emitted without its tree (`INV-06`).
+pub fn refuse_power(spec: &Specification) -> Result<(), EmitError> {
+    if spec.power.is_some() {
+        return Err(EmitError::PowerNotEmitted);
+    }
+    Ok(())
+}
+
 /// Emits the schematic, the bill of materials and the placed board
 /// ([`crate::pcb`]), all from one set of parts. `table` is the MCU's pin table
 /// the topology was solved against: each solved pin is drawn on the symbol
@@ -529,6 +547,7 @@ pub(crate) fn design(
     solved: &SolvedTopology,
     table: &PinTable,
 ) -> Result<(Vec<Part>, BTreeSet<String>), EmitError> {
+    refuse_power(spec)?;
     if spec.mcu.part != "STM32H753ZITx" || table.part != spec.mcu.part {
         return Err(EmitError::UnknownPart {
             reference: "mcu".into(),

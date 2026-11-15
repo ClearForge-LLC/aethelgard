@@ -423,3 +423,337 @@ Vendoring needs capacitor footprints above 0402 (0805, 1210).
 - **The build waits** for the ruling, and for `4300f` and `1308`.
 
 **AET-WO-4300d STOPPED: spike done, ruling needed on PR #137.** S1–S5 measured or read; D1–D13 for the architect.
+
+---
+
+# Build (§2), after the ruling on PR #137
+
+**Branch:** `wo/aet-4300d-build` from `origin/main` `351d25c` · **Ruling:** PR #137 comment 6890078133, with the amendments the architect recorded at 10:30 UTC (`1309` D1, D2, D4; `1308`; the AMASS table; AN2834; the version rule; the scope clause) · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Cadence:** build, with a full adversarial pass.
+
+The predictions and the proposed split below were committed before any build code and before any measured run. They are not edited afterwards.
+
+## B0. The scope clause, applied first: a proposed split
+
+The ruling says: "If it cannot land as one reviewable PR with every gate green, STOP early with a proposed split." **This build proposes the split the ruling gives as its example, and builds the first slice in this PR.** [inferred]
+
+**Why one PR cannot hold §2 whole** [inferred, from `git diff --shortstat` of the merged builds]:
+- The four comparable builds merged at 2,911 (`1309`), 3,645 (`1308`), 3,908 (`4300c`) and 5,942 (`4300f`) lines.
+- §2.1–2.2 are an `ir` build at least `4300f`'s size: a cited parts table of about ten rows, `power` in the specification, about fifteen named refusals, and the tree in the topology.
+- §2.3 is an `eda`/`cli` build larger than `1309`'s: vendored symbols and footprints, a schematic emitter for the tree (D12's ERC measurement), an anchor declaration for the placer (spike A6, which the ruling did not settle), routing with `1308`'s classes, `Stack::of`'s joins and thermal pads (`1309` D1), and `fab`'s drill tools (`1309` D4).
+- Together that is roughly two to three reviewable PRs.
+
+**Slice A (this PR, `AET-WO-4300d`): §2.1 and §2.2.**
+- The ruled parts as cited rows, in a table of their own beside `parts.json` (D11).
+- `power`, its crossings, `mcu.bor_level` and the board temperature in the specification.
+- Every static check of the ruling, at `validate` and `solve`, each refused by name with its citation.
+- The tree in `SolvedTopology`, with each domain's source and return pads and its consumers' floors (S5, D3), for `1303`'s build.
+- The scenario reads `mcu.bor_level` (D4).
+- **The seam:** a specification that declares `power` is refused by name at `emit`, `place`, `route` and `fab` until slice B. It is never silently dropped (`INV-06`).
+
+**Slice B (proposed, `AET-WO-4300d2`): §2.3 and §2.4.**
+- Symbols and footprints vendored (`RUL-11`).
+- The schematic emitter for the tree, with D12 measured in ERC.
+- A declared anchor for a regulator's passives (spike A6).
+- Placement and routing with `1308`'s classes.
+- `Stack::of` mapping the regulator rows' `thermal_vias` and the power-in join (`1309` D1, D2).
+- `fab`'s drill tools (`1309` D4).
+- Every gate passing on a fixture.
+- Sentinel-02's board power tree for `4500`.
+- The sense net's ADC pin, solved (below).
+
+If the architect draws the seam elsewhere, this PR stops there.
+
+## B1. Forks taken (each for the architect to overturn)
+
+- **K1 · The table's file.** Regulators, the translator and the passives go in their own embedded file, `crates/aethelgard-ir/data/power-parts.json`, with its own schema version and one strict parser. `parts.json` is not touched, so `4210`'s schema 3 is not collided with (inbox note sent). The power-in connector is a row beside `4300f`'s connector parts, in `connectors.rs`.
+- **K2 · Required keys, explicit none.** Specification 6 requires `power` (`null` declares no power tree) and `mcu.bor_level`. Every existing fixture gains `"power": null` and the BOR level its scenarios already declare, or `0` (RM0433's factory default) where none does. Nothing defaults (`INV-06`).
+- **K3 · The board temperature** is `power.conditions.board_temperature_celsius` `{min, max, source}`. Only the power checks read it, so a specification with no power tree declares none. Moving it to `board` is a one-field change if ruled.
+- **K4 · The sense pin.** The divider, reservoir, ADC resolution and net are declared and judged statically. The ADC pin is not solved in slice A: the embedded pin table carries no ADC channels (read: no `ADC1_INP` outside the vendored ST XML). It is slice B's, behind the emit refusal.
+- **K5 · The source pad of a buck** is RFBT's pad 1, and its return pad is RFBB's pad 2. The emitter in slice B must put RFBT pin 1 on the domain's net and RFBB pin 2 on `GND`. `SolvedTopology` states the convention as data, so a slice-B emitter that differs fails at `1303`'s gate, not silently.
+- **K6 · D9's MISO round trip** needs the SPI device's output delay, a sensor-row field. It is added to `parts.json` only after `4210`'s schema 3 is on `main`. If `4210` has not landed by then, the round trip is refused as unjudgeable for any device behind a crossing (`INV-06`), never passed.
+
+## B2. Predictions (committed before any run)
+
+| id | prediction | label |
+|---|---|---|
+| PB1 | The facts the spike did not hold are fetchable from Furnace, from the makers: an inductor (Coilcraft or Würth) and MLCCs from at least one of Murata, TDK, Samsung, KEMET and Yageo. AN2834 Rev 10 states the reservoir rule as Cext ≥ about 2^N × the ADC's sampling capacitance. The ICM-20948's SPI output delay is a guaranteed maximum. | inferred |
+| PB2 | The −20 °C floor is on no AMASS-own document held (the board-type table is current and voltage only). The comet copy of AMASS spec V1.2 states −20…120 °C and is cited as what it is. | inferred |
+| PB3 | **Sentinel-02's power fixture validates and solves:** 2S–6S-HV, two LMR33630s, TLV75518, TXU0304, sense with reservoir, XT30. Its numbers equal the spike's `checks.out`: <ul><li>5 V: 4.816–5.245 V;</li><li>3.3 V: 3.146–3.421 V;</li><li>1.8 V: 1.773–1.827 V;</li><li>2S headroom: 5.389 V at 2 A with DCR 30 mΩ, moving only with the held inductor's DCR max;</li><li>tON: 401 and 266 ns;</li><li>power-in: 2.68 A steady, 10.1 A fault, against 20 A.</li></ul> Integer arithmetic reproduces each to the millivolt or better, rounded against the part. | inferred |
+| PB4 | **LDO junction temperature** (D1): (3.421 − 1.773) V × 20 mA × 231.1 °C/W ≈ 7.6 K above the board's maximum. It passes at an 85 °C board against Tj 125 °C. | inferred |
+| PB5 | Each refusal fires on a one-field change of the fixture, and on nothing else, with its citation: <ul><li>`BatteryOutsideRegulatorInput`, `DropoutViolated`, `BuckHeadroomViolated`, `OnTimeTooShort`, `RegulatorOutsideDomain`, `DomainOutsideConsumer`, `RegulatorOverloaded`, `PowerInputOverloaded` (steady and fault);</li><li>`JunctionTooHot`, `SenseFullScaleExceeded`, `SenseSourceImpedance`, `ExternalPartMissing`, `ExternalPartOutOfRange`, `BoardColderThanPart`;</li><li>`CrossingDomainMismatch`, `CrossingPullUp`;</li><li>`DomainWithoutSource`, `DomainWithTwoSources`, `PowerLoop`;</li><li>`PowerNotEmitted` at emit, place, route and fab.</li></ul> | inferred |
+| PB6 | The 1 % TI Table 9-2 divider is refused (`RegulatorOutsideDomain`) on a ±50 ‰ 3.3 V domain, and the 0.1 % centred divider passes. On a domain declared ±90 ‰ from its consumers (D13 (a)), 1 % centred passes and TI's 100 k/43.2 k fails at 3.603 V. | inferred |
+| PB7 | With `"power": null` and `bor_level` added, every existing test passes. Only literals that hash a specification change: the spec sha256 inside emitted boards and the BOM. No routed geometry changes, so no extraction bound moves. | inferred |
+| PB8 | **TIER2_MIN does not move for slice A:** every new test is tier 1, because no KiCad runs on a power tree yet. It changes only as `main`'s tier-2 count changes when other PRs land. | inferred |
+| PB9 | Moving `bor_level` from the droop override to the specification leaves both Sentinel-01 droop scenarios' verdicts and trace bytes unchanged, except the specification's hash where a record carries it. | inferred |
+| PB10 | The build adds about 3,500–5,000 lines, most of them in `aethelgard-ir` (the table, the parser, the checks and their tests). Shards stay under 20 minutes, because the new tests are arithmetic. | inferred |
+
+### B1, continued: the forks the build added
+
+- **K7 · Thermal-via layers come from the board, not the row.** A row cannot know a board's layer names, so a buck row's rule holds the datasheet's count, drill and pad. At `validate` the rule is joined to the declared board's `GND` planes, or to `B.Cu` at 2 layers, and handed to `1309`'s `ThermalVias::validate`. **No datasheet source exists for the pitch (0.9 mm, fitted to the 2.95 × 4.9 mm pad) or the ring (150 µm, the engine's via ring).** Each source string says so (decision D-B5).
+- **K8 · D4's scenario half is a refusal, not a read.** `resolve_droop` refuses `BorLevelContradictsSpecification` when a droop's `bor_level` differs from `mcu.bor_level`, so the two never disagree. Every rail reaches the boot only through `resolve_droop` (read: `campaign.rs` `prepare`, `main.rs` boot).
+  - **Why not a read:** the droop's level is part of the chaos scenario format and of the trace's override record (`record.rs` kind 3). Dropping it from the scenario changes `aethelgard-chaos`, which is inside `4300a`'s active fence (chaos kinds). It goes to the architect (D-B1).
+
+## B3. What was built, in order
+
+1. **The held facts** [read].
+   - A subagent read every datasheet field the checks need into `~/.cache/aet-4300d-build/facts.md`, with renders under `png/`.
+   - **What I checked myself against the rendered pages or the text:**
+     - DS12117 Table 194 (tsu(MI) 2 ns min; tw(SCKL) TPCLK − 2 ns min; "guaranteed by characterization") and Table 173 (RAIN maxima; CADC 4 pF **typical only**);
+     - AN2834 p. 45 (Cext ≥ Csh × Umax/Ulsb);
+     - LMR33630 p. 22, where Equation 5 prints **no units**; the µH/V/MHz reading is inferred, and the citation says so;
+     - the IHLP-5050FD-01 row (8.2 µH ± 20 %, DCR 15.5 mΩ max, Isat 16 A **typical only**);
+     - the AMASS board-type image (XT30PW: 20 A MAX (Δ < 85 °C), 500 V DC, no temperature column);
+     - the TNPW/CRCW TCR test reference (20 °C);
+     - the TXU0304 bypass rule (p. 25, 12.1);
+     - the X5R output capacitor's operating range (−55 to 85 °C, Murata "Rated Value" table).
+   - The remaining rows are the helper's reads, each cited to a page.
+   - **New documents fetched from the makers,** held by sha256 in `~/.cache/aet-4300d-build/ds/SHA256SUMS`:
+     - Vishay IHLP-5050FD-01 (doc 34123) and IHLP-4040DZ-01;
+     - fourteen Murata reference sheets;
+     - AMASS's own XT30PW-M30 sheet 2025V0.
+   - **Refused from Furnace:** Coilcraft, Würth and TDK (403 bot challenges); KEMET (no connection); `amassconnectors.com` (no connection).
+2. **`data/power-parts.json`, schema 1, and one strict parser, `power_parts.rs`** (D11, K1).
+   - **Thirteen rows:** the LMR33630ADDA, TLV75518PDBV, TXU0304PW and the STM32H753ZITx's supply facts; TNPW0603 (0.1 %, 25 ppm/K) and CRCW0603 (1 %, 100 ppm/K); the inductor; six Murata capacitors.
+   - **Citations:** every value carries `at` (document key, page and table), and every document is held by sha256. The parser refuses:
+     - a document nothing cites;
+     - a value citing a document the map lacks;
+     - wrong pin roles for the kind;
+     - a key given twice in a row;
+     - a part named twice in any case.
+   - **An `eol` row is refused** wherever a power tree names it (no acknowledgement exists yet).
+3. **`POWER_IN` beside `4300f`'s connector parts:**
+   - XT30PW-M, 20 A from AMASS's table (ruled), condition "a temperature rise under 85 K";
+   - −20…120 °C from AMASS's own V1.2 sheet (the comet-hosted copy names its maker and part);
+   - the join **solid** (`1309` D2).
+4. **Specification 6 requires `power` (`null`: none, K2) and `mcu.bor_level`.**
+   - **What moved:** 15 JSON fixtures, the Rust literals, `boards/sentinel-01`'s 8 hash lines (regenerated by `generate`, equal to the edited tree), the twin's `REFERENCE`, the pincheck topology (regenerated by `solve`) and two solve digests.
+   - **Proof that only the hash moved:** with `main`'s hash passed to `solve`, `order_2203`'s four digests equal `main`'s exactly.
+   - **Solved topology 5 adds `power`.**
+5. **`power.rs`: the tree and every static check, each refused by name with its citation.** In order:
+   - shape (identifiers, sources, ranges; the sense net a new net);
+   - the tree (`DomainWithoutSource`, `DomainWithTwoSources`, `PowerLoop`);
+   - the MCU row;
+   - the board temperature inside every power part's range and the MCU's (`BoardOutsidePartTemperature`, D7);
+   - the thermal-via rule (`1309`'s validator, K7);
+   - each regulator's guaranteed output at its source pad against its domain, with the design-only band **counted** (`RegulatorOutsideDomain`, D13);
+   - each domain inside every consumer's range and above its floor (`DomainOutsideConsumer`, D13 (a): the MCU at its BOR level, regulator inputs, translator sides);
+   - the battery against each battery-fed input (`BatteryOutsideRegulatorInput`);
+   - loads, children first (`RegulatorOverloaded`, D2);
+   - buck headroom from guaranteed fields (`BuckHeadroomViolated`, D5);
+   - the on-time (`OnTimeTooShort`);
+   - LDO dropout (`DropoutViolated`) and junction (`JunctionTooHot`, D1, the JEDEC board named);
+   - external parts at rated values, with Equation 5 and the Isat screen (`ExternalPartMissing`, `ExternalPartOutOfRange`, D6);
+   - power-in, steady and fault (`PowerInputOverloaded`, D2);
+   - the sense (`SenseFullScaleExceeded`, `SenseSourceImpedance`, D10 (a));
+   - the crossing (`CrossingInvalid`, `CrossingDomainMismatch`, `CrossingPullUp` on side A, `CrossingTooFast`, `MisoRoundTripTooSlow`, D9).
+
+   Step 5a's one-rail rule now admits a device on its crossing's B domain.
+6. **`SolvedTopology.power`.** For each domain:
+   - the regulator;
+   - its guaranteed output at the source pad;
+   - the source and return pads (RFBT pad 1 and RFBB pad 2 for a buck, K5; OUT and GND for the LDO);
+   - its load;
+   - each consumer's floor (the MCU at VBOR*n* falling max, regulator inputs, translator sides, declared devices).
+
+   Also: the steady and fault battery currents (the steady sum is also the shared ground path's total, D3), and every named condition, once each, sorted.
+7. **The seam.** `schematic::refuse_power` gives `PowerNotEmitted` in `design`, which `emit`, `generate`, `verify` (and so `--fab-out`), `extract` and `check speeds` all pass through, and in `check drc --spec`, before any tool is looked for.
+8. **D4 as K8** (above).
+
+## B4. Results against the predictions
+
+| id | result | label | verdict |
+|---|---|---|---|
+| PB1 | **Inductor and capacitors:** the inductor came from Vishay (Coilcraft and Würth refused Furnace) and the MLCCs from Murata. **AN2834:** the rule is Cext ≥ Csh × Umax/Ulsb, Ulsb 0.5 LSB, about 2^(N+1) × CADC, not 2^N; CADC is typical only. **ICM-20948 output delay:** tVD.SDO max 59 ns at 20 pF, "based on characterization of 5 parts", not production tested. | read | partly |
+| PB2 | The −20 °C floor **is** on AMASS's own documents: the V1.2 sheet (comet-hosted) and the maker's 2025V0 sheet for the XT30PW-M30. The two disagree on voltage (500 V against 80 V) and contact resistance. | read | wrong |
+| PB3 | **The committed fixture is refused by `validate`** (`MisoRoundTripTooSlow`: no sensor row carries an output delay, K6). Without its crossing it validates and solves: <ul><li>5 V: 4.818048–5.237403 V;</li><li>3.3 V: 3.144727–3.417204 V;</li><li>1.8 V: 1.773–1.827 V;</li><li>loads 2000, 679 and 20 mA;</li><li>power-in 2679 mA steady and 10 100 mA fault, against 20 A.</li></ul>The rails differ from the spike's numbers because the excursion is the board's declared −20…85 °C from the 20 °C TCR reference (65 K, not 100 K), the drift is TNPW's 8000 h row, and IFB is counted at both ends. The headroom at 2S is 5.418 V at 2 A with the held DCR max (16 mΩ). tON is 401 and 262 ns. | measured | wrong as stated |
+| PB4 | LDO junction: 7.85 K above an 85 °C board, so 92.9 °C against 125 °C. | measured | right |
+| PB5 | Every refusal fires on one change, by name. Five names differ from the prediction (`BoardOutsidePartTemperature`, `PowerValueInvalid`, `PowerPartUnknown`, `CrossingInvalid`, `CrossingTooFast`). Several needed a change to a **copy of the table** (`check_against`), because an earlier check fires first on any one-field change to the specification: headroom, on-time, dropout, the fault bound, Isat, Equation 5, the consumer range, the crossing's own domain rule. | measured | partly |
+| PB6 | **The 1 % (CRCW) dividers** are refused on the ±50 ‰ 3.3 V domain. **TI's 100 k/43.2 k is refused even on 0.1 %:** 3.471 V > 3.465 V. The ±90 ‰ variant was not built as a test. | measured | partly |
+| PB7 | Only literals that hash a specification moved (B3.4). With the old hash, every `order_2203` digest equals `main`'s. | measured | right |
+| PB8 | No tier-2 test was added. TIER2_MIN moves only with `main` (CI below). | measured | right (CI below) |
+| PB9 | The scenario format is unchanged (K8), so no trace byte moved. | read | wrong (K8) |
+| PB10 | 6,102 lines added at `49dab26` against `origin/main`, 5,810 of them in `aethelgard-ir`. The table JSON alone is 1,050 lines. | measured | wrong (larger) |
+
+**Findings the build measured, beyond the predictions:**
+- **F-B1 · The crossing caps the 1.8 V IMU bus at about 5.2 MHz.** SCK out 19 ns + tVD.SDO 59 ns + MISO back 15 ns + tsu(MI) 2 ns = 95 ns, against half a period less tw(SCKL)'s 2 ns shortfall. 5 MHz passes; 5.3 and 7 MHz are refused (measured, against a table copy holding the 59 ns). The fixture runs the IMU bus at 4 MHz. The ICM-20948's own limit is 7 MHz.
+- **F-B2 · The drift life decides the 5 V rail.** At TNPW's 8000 h row (0.10 %) the rail's maximum is 5.237 V. At its 225 000 h row (0.30 %) it is about 5.254 V, past 5.25 V, and refused (a test holds this boundary). Which life row a flight controller is judged at is a decision (D-B4).
+- **F-B3 · The only 16 V-or-better 22 µF capacitor Murata served is X5R, rated to 85 °C,** so the fixture's board ceiling is 85 °C. A 125 °C part would need another maker's sheet (KEMET and TDK refused Furnace).
+- **F-B4 · The MCU's 658 mA is Table 120's Tj 125 °C figure.** Table 111 note 5 limits VOS0 to Tj 105 °C, where the maximum is 504 mA. It is kept at 658 mA, as `1303` D4 ruled; it is conservative, and named as a condition.
+- **F-B5 · An empty file `9` sits at the repository root,** committed with `1309` (`351d25c`). It is not this build's to remove: a finding.
+
+## B5. Decisions needed (for the architect)
+
+- **D-B0 · The split (B0).** Is slice A the right seam? Or should the build instead have waited and landed whole? If the seam is accepted, `AET-WO-4300d2` is proposed as §2.3–2.4 and B0's list.
+- **D-B1 · K8, D4's scenario half.** The ruling says the scenario reads `mcu.bor_level`. The build refuses a droop whose level differs from it (`BorLevelContradictsSpecification`), so the two cannot disagree, but the scenario still states the level. Making the scenario stop stating it changes:
+  - the chaos scenario format (version 3);
+  - the trace's override record, which carries the level today.
+
+  Both are in `4300a`'s active fence. Proposed: either rule K8 sufficient, or give the format change to `4300a`'s successor or to slice B.
+- **D-B2 · K6, the MISO round trip's output delay.**
+  - **Today:** no sensor row carries one, so every crossing is refused (`MisoRoundTripTooSlow`). The committed Sentinel-02 fixture is refused by `validate` for that reason alone; every other check passes on it.
+  - **The fix:** one field on the sensor rows (parts.json schema 4) on top of `4210`'s schema 3, after `4210` lands.
+  - **The measured value:** the ICM-20948's 59 ns is "based on characterization of 5 parts" at 1.8 V and 25 °C (DS-000189 p. 17), and would be held as a bound with that named as its condition.
+  - **Rule:** does K6 belong in this PR after `4210` merges, or in slice B?
+- **D-B3 · Typical-only inputs the ruling named as bounds.**
+  - **Isat:** the ruling asks for an inductor row with "Isat min". The held IHLP-5050FD-01 states Isat **typical** only (16 A, 20 % drop), and the makers that publish other inductors refused Furnace. The build screens the typical against ISC max (5.05 A) and names it as a condition.
+  - **CADC:** AN2834's reservoir rule needs the ADC's sampling capacitance, which DS12117 states **typical** only (4 pF). It is used the same way.
+  - **Rule:** accept the screen plus condition, or require Scotty to fetch a guaranteed figure?
+- **D-B4 · Which drift life a flight controller is judged at.** The build holds TNPW's 8000 h row (0.10 %); the 225 000 h row (0.30 %) refuses the 5 V rail (F-B2, tested). A longer life needs a tighter divider (TNPW 25 ppm is the tightest held) or a 5 V domain declared from its consumers (D13 (a)). Today 5 V has none in the specification, only declared loads.
+- **D-B5 · The thermal-via pitch and ring have no datasheet source** (K7). TI states the count and drill only. The pitch is fitted to the footprint's pad and the ring is the engine's via ring. Each source string says so. Accept them as engine choices, or ask Scotty for TI's layout example?
+- **D-B6 · AMASS's two sheets disagree** (PB2):
+  - V1.2 for the XT30PW-M: 15 A rated, 500 V, 0.80 mΩ;
+  - the maker's 2025V0, which names the XT30PW-M30: 20 A, 80 V, ≤ 1.2 mΩ.
+
+  The build uses the board-type table's 20 A (ruled) and V1.2's −20…120 °C. The battery's 26.1 V maximum is under both voltages. Which sheet is Sentinel-02's part?
+- **D-B7 · The crossing caps the IMU bus at about 5.2 MHz** (F-B1), under the ICM-20948's own 7 MHz. This holds whichever IMU is behind a TXU0304 at 1.8 V. The recommended current parts (ICM-42688-P, BMP581) need no crossing (ruled D9).
+- **D-B8 · X7S is accepted for the 10 µF input capacitor** (Murata GCM32EC71H106KA03; no X7R 50 V 10 µF sheet resolved). TI's example says "X7R (or better)". X7S has X7R's temperature range with a wider change (±22 %), and it is judged at rated capacitance anyway (D6). Accept?
+
+## B6. Mutation pass (diff-sized)
+
+One mutant per guard this build adds, each negating its condition, run against the suites that hold it (`~/.cache/aet-4300d-build/tools/mutate.py`, `mutate2.py`; results in `mut/`). Each mutant is restored from a saved copy, never by `git checkout`.
+- **`power.rs`:**
+  - 42 guards: 36 killed in the first run, one of them (the loop guard) by a hang the cap killed;
+  - 2 match-arm mutants that did not compile;
+  - **4 survivors:** a 0 mV cell, a resistor whose error reaches exactly 100 % (which would have divided by zero), the RAIN shortcut, and the reservoir's voltage rating.
+
+  Tests were added for all four, and each was re-run killed. The two arms were re-mutated in their bodies; both were killed.
+- **Outside `power.rs`:** `mcu.bor_level`'s bound, step 5a's crossing admission, `refuse_power`, `resolve_droop`'s level check, and the parser's pin-role, min-above-max and uncited-document guards. All killed.
+- **Third round, on the guards the adversarial fixes added** (`mut/round3.tsv`): `campaign`'s power refusal, the BOR row's bounds-checked index, the shortfall's sign, the LDO's solved floor, and the duplicate-key refusal in `pins` and in `documents`. All killed. The `documents` mutant first survived: the test's first copy was itself malformed. The test was corrected and the mutant re-run killed.
+
+## B7. Adversarial pass
+
+A fresh Opus subagent reviewed a frozen copy of `49dab26`. It was given the code, the sources, the work order and the ruling, not my conclusions; the fixture's numbers were withheld, and it derived them itself. Its full record is `~/.cache/aet-4300d-adv/adversarial.md`.
+
+**Confirmed:**
+- Its hand derivations equal what `solve` prints and the tests assert, to the microvolt.
+- Every table value matched its cited page and condition (RAIN and TMAX re-rendered).
+- No `unwrap_or` can turn a failure into a pass, and no i128 can overflow.
+- 19 constructed mutant specifications were refused by the right name.
+- A buck fed by a buck and an LDO fed from 5 V both pass, as they should.
+
+**Findings:** no high, 8 medium, 14 low.
+
+| id | sev | finding | disposition |
+|---|---|---|---|
+| A1 | medium | declared devices' supply currents are never in a domain's load, and nothing says so | **named**, per domain. Counting them needs a current field on the sensor rows (finding F-B6) |
+| A2 | medium | the XT30's 20 A is "at a rise under 85 K"; on an 85 °C board that passes the part's 120 °C, and the AMASS sheets disagree | **named** (the rating used as stated, the ambient, both sheets); D-B6 |
+| A3 | medium | the solved floor of the LDO's input was its VIN minimum, but its output holds only with dropout headroom | **fixed**: the LDO input's solved floor is VOUT max + VDO max (2227 mV), while the range check still reads VIN min (the dropout check judges the rest). A buck fed from a domain keeps VIN min (finding F-B7) |
+| A4 | medium | the 5 V regulation band is stated for VIN 7 V up; it is applied at the 2S minimum, 6 V | **named** through its citation; decision D-B9 |
+| A5 | medium | a key given twice in `pins` or `documents` was collapsed (measured: the LDO's OUT became pad 1) | **fixed**: both maps are read through `unique_keys`, and tested |
+| A6 | medium | `campaign` accepted a specification declaring `power` | **fixed**: `effective` refuses `PowerNotEmitted`, tested |
+| A7 | medium | D3's VREF+ floor was missing from the consumers | **fixed**: `VREF+ (<net> full scale)` at the divided battery's maximum (2536 mV) |
+| A8 | medium | TLV755's ground current is a no-load maximum, used under load | **named** |
+| A9 | low | a condition said Table 9-2 gives 8.2 µH on both rails | **fixed** text |
+| A10 | low | the BOR floor ignores the rising threshold at start-up (VBOR3 2.78 V max) | finding F-B8 |
+| A11 | low | VOS0's own VDD floor is not counted | finding F-B8 |
+| A12 | low | the missing output delay was refused as `MisoRoundTripTooSlow` | **fixed**: `OutputDelayMissing` |
+| A13 | low | an `unread` lifecycle passes silently | **named** |
+| A14 | low | the inductor's DCR is the 25 °C maximum | **named** |
+| A15 | low | the reservoir's need rounded down; capacitor tolerance not counted | **fixed** (rounded up); tolerance **named** |
+| A16 | low | TMAX's one-channel condition and tw(SCKL)'s PCLK / 2 condition unnamed | **named** |
+| A17 | low | TXU0304 temperature cited from the switching table; `cin` admits X7S | **fixed** (ROC, p. 6); X7S is D-B8 |
+| A18 | low | a negative SCK shortfall was accepted | **fixed**, tested |
+| A19 | low | public `power::check` indexed the BOR table unguarded | **fixed**: `PowerValueInvalid`, tested |
+| A20 | low | the BOR thresholds live in two crates | **held equal by a test** (`belt-and-suspenders`); K8 is D-B1 |
+| A21 | low | Table 120's IDD excludes I/O, VDDA and VDD33USB; VDD33USB's floor is undeclared | **named** in the MCU row's condition; USB is `4300e1`'s |
+| A22 | low | a domain nothing consumes, a 4.29 GΩ sense resistor, the connector's voltage, VCC below 6 V | findings F-B9 |
+
+**Further findings:**
+- **F-B6:** a sensor row has no supply current, so device loads are declared by hand or not at all. That is a field for `4210`'s table, not this one.
+- **F-B7:** a buck fed from a domain exports its VIN minimum as its solved floor. Its headroom is judged at the domain's minimum, without the copper drop. No such buck is in the fixture.
+- **F-B8:** the MCU's floor is the falling threshold. Start-up needs the rising one (2.78 V at VBOR3) and VOS0 its own minimum. Neither binds on a 3.135 V floor.
+- **F-B9:** four declarations are accepted without remark: a domain nothing consumes; a sense resistor large enough that ADC leakage matters (unjudged); the connector's voltage rating against the battery (26.1 V against 80 or 500 V); the LMR33630's RDS(on) below VIN 6 V, where VCC is unregulated (only 1S reaches it, and VIN refuses 1S).
+
+**Added to the decisions:**
+- **D-B9 · The 5 V rail's regulation band at 2S.** It is stated from VIN 7 V. The fixture's 2S minimum is 6.0 V. Accept the band below its stated VIN, as D5 accepted the headroom bound, or require the battery's minimum to be at least 7 V for a 5 V buck?
+
+## B8. Reduction pass (diff)
+
+**Reduction pass (diff): about −50 net · 2 duplicates removed · 6 dead paths removed · 2 protected kept · 3 findings below.**
+- **Duplicates removed:**
+  - the fixture filter that drops the crossing, from three copies to two: `ir`'s test and `cli/tests/common/power.rs`;
+  - two resistor-error paths to one (`Ctx::error_ppm`, which also names the drift life).
+- **Dead paths removed:**
+  - the buck row's `low_side_limit_milliamps` (the ISC screen subsumes it);
+  - `POWER_IN.pins`;
+  - three discarded `let _` bindings;
+  - `Ctx::sensors`.
+- **Protected, both labelled or reasoned at the site:**
+  - the BOR thresholds held in `power-parts.json` and in `aethelgard_chaos::power`. The crate fence forbids one source; a `belt-and-suspenders:` test holds them equal;
+  - the droop's own `bor_level` (K8, D-B1).
+- **Findings:**
+  - the rows' `symbol`, `footprint`, and most `pins` are read only by slice B's emitter (D11 asks for them now);
+  - `PadJoin::Relief` is declared and unread: the ruled join is solid;
+  - the empty root file `9` (F-B5).
+
+## B9. Gates and CI
+
+- **On Furnace, under a capped user scope (`memory.swap.max` 0), at `77f6c32`:**
+  - `cargo fmt --all -- --check`: exit 0;
+  - `cargo clippy --workspace --all-targets -- -D warnings`: exit 0;
+  - `cargo test --workspace --no-fail-fast`: exit 0, 92 test targets, every one ok.
+- **CI on `77f6c32`** (run 43709698977): `ci`, `engine-image` and `ardupilot-image` green.
+  - **Shards:** the eight tools shards took 13 min 42 s to 18 min 05 s; the slowest is shard 1. Every shard is under 20 minutes.
+  - **Tier 2:** `tier2_tests_passed=103 floor=103`, so TIER2_MIN 103 is exact and unchanged, as PB8 predicted. No tier-2 test was added; no KiCad runs on a power tree yet.
+- **The first CI run (`df988b7`) failed one tier-2 test,** `verify_2k2_tier2`'s FAB-NOTES check. It pins the Sentinel-01 specification hash by an 8-character prefix, `1fe63a4f`, which my 16-character grep missed. The prefix is now `f98237db`. Lesson: grep a moved hash by its short prefixes too.
+- **The signal commit below changes this file only.** Its CI is the PR head's witness.
+
+## B10. The stop (ruled; superseded by B11)
+
+**Slice A is built, green, adversarially reviewed and reduced. Slice B is proposed and waits for the architect's ruling on the split (D-B0), together with D-B1 to D-B9.**
+
+**What the architect needs:**
+- **Merge:** the PR's title and body for a merge are in `~/.cache/aet-4300d/pr-title-body.md`.
+- **Specification version:** this build holds 6. If `4210` or `4300a` lands first, it renumbers at merge (fixtures, `boards/sentinel-01`'s hash lines, the pinned digests, by the tools in `~/.cache/aet-4300d-build/tools/`).
+- **K6, the MISO output delay:** it follows `4210`'s schema 3 on `main`, in this PR or in slice B (D-B2).
+- **Evidence:**
+  - `~/.cache/aet-4300d-build/` (facts.md, ds/, png/, txt/, mut/, logs/, tools/);
+  - `~/.cache/aet-4300d-adv/adversarial.md`.
+
+**AET-WO-4300d STOPPED: slice A of the proposed split is built, with CI green on PR #147; the split (D-B0) and D-B1–D-B9 need the architect's ruling before slice B.**
+
+## B11. The ruling on the stop, applied (PR #147, comment 6893999770, 12:10 UTC)
+
+The ruling is copied to `~/.cache/aet-4300d-ruling.md` §3. Each decision, and what it changed:
+
+- **D-B0 · The split is accepted.** This PR is slice A. Slice B is `AET-WO-4300d2` (B0's list, plus K6).
+- **D-B1 · K8 is sufficient.** The droop format change goes to the next chaos/trace work order. Nothing changed here.
+- **D-B2 · K6 goes to slice B; `OutputDelayMissing` stays fail-closed.** The committed fixture is still refused by `validate` for that reason alone.
+- **D-B3 · The typical Isat and CADC screens stay, with the margin stated in the verdict.**
+  - Isat: "16000 mA … against the high-side limit maximum of 5050 mA, a margin of 3.16 times".
+  - Reservoir: "with CADC typical, 32768 pF is needed and 100000 pF is declared, a margin of 3.05 times".
+  - Backlog (4500): a guaranteed-Isat inductor.
+- **D-B4 · 8000 h.** Each resistor series' condition reads "the 8000 h life, ruled D-B4". A declared service life is backlog (4500).
+- **D-B5 · TI's LMR33630EVM user's guide was fetched from ti.com:** SNVU573A, Rev. A, March 2018, sha256 `7d7d2aef…0855`, in `~/.cache/aet-4300d-build/ds2/`. It shows the layout only as four layer images, with no via dimensions. So the pitch (0.9 mm) and ring (150 µm) stay engine choices, and their source strings now say so and cite SNVU573A.
+- **D-B6 · The XT30PW-M is judged at 15 A,** from AMASS's V1.2 sheet, which names the exact part. `POWER_IN.disagreeing` cites AMASS's board-type table (XT30PW family, 20 A at a rise under 85 K) and its 2025V0 sheet (XT30PW-M30, 20 A, 80 V), each by sha256, and the verdict carries both.
+  - Temperature: −20…120 °C (V1.2).
+  - On the fixture: 2679 mA steady and 10 100 mA fault, under 15 A.
+  - A test holds the boundary: two 7.4 A limits pass, two 7.6 A limits are refused.
+- **D-B7 · Named.** The verdict states the crossing's cap: "the MISO round trip is 95 ns, which holds the bus `IMU` at or under 5154639 Hz".
+- **D-B8 · Named.** An X7S capacitor carries "X7S, accepted where TI's example says X7R or better".
+- **D-B9 · Refused.** The buck row gains `regulation_vin_min`: 7 V for any output above 3.3 V (SNVSAN3F p. 9, the 5 V rows' stated VIN), and 3.8 V otherwise. A battery-fed buck under it is refused, `BatteryOutsideRegulatorInput`. The Sentinel-02 fixture moves to 3S–6S (9.0–26.1 V). 2S is refused by test, and the guard's mutant is killed.
+- **Versions.** `4300a` merged specification 6 (`7ca65e6`). `origin/main` was merged into this branch with a merge commit, and this PR takes the next free numbers: **specification 7 and solved topology 6.**
+  - **Rebuilt on top of `main`:** every fixture (including 4300a's `motors-*`), Sentinel-02's fixture, `boards/sentinel-01` (8 hash lines, regenerated by `generate`), the twin's `REFERENCE`, the pincheck topology, `verify_2k2_tier2`'s hash prefix, and the solve and `order_2203` digests.
+  - **Proof that only the hash moved:** with `main`'s hash put back, `order_2203`'s four digests equal `main`'s.
+  - **`motors-dshot600.json` takes `bor_level` 3,** the level its droop scenario (`scenarios/motors/dshot600-droop.json`) declares, so K8's check holds there.
+  - **If `4210` lands first,** this PR renumbers at merge again, with the same tools.
+  - **4300a's own tests that build version-6 specifications or topologies in code** now read the version constants and declare `bor_level` and `power`: `ir/tests/motor.rs`, `cli/tests/validate_cli.rs`, `ir/tests/validate.rs`. The generated `svd-hal/tests/ui/motors-pwm/board.rs` was re-blessed (`AETHELGARD_BLESS=1`); only its hash line moved.
+- **Gates after the merge and the ruling, on Furnace:** `cargo fmt --check` and `clippy -D warnings` exit 0. `cargo test --workspace` has 98 test targets: 97 ok on the first run, and the one failure (4300a's topology-version test, which hard-coded version 5) now reads the constant and passes.
+
+## B12. Gates, CI and close (READY)
+
+- **CI on the merge with the ruling applied, `5b3480c`** (run 43712809796): `ci`, `engine-image` and `ardupilot-image` green.
+  - **Shards:** the eight tools shards took 12 min 53 s to 17 min 18 s; the slowest is shard 4. Every shard is under 20 minutes.
+  - **Tier 2:** `tier2_tests_passed=110 floor=110`, so TIER2_MIN 110 (`main`'s, after `4300a`) is exact. This build adds no tier-2 test.
+- **On Furnace, under a capped scope, at `5b3480c`:** fmt and clippy exit 0, and every workspace test target is ok (B11).
+- **The adversarial pass (B7), the mutation pass (B6, plus D-B9's guard killed) and the reduction pass (B8)** stand for the ruled slice. The ruling's changes were each tested and mutated where they added a guard.
+- **The signal commit below changes this file only.** CI on it is the PR head's witness.
+
+**Slice A of `AET-WO-4300d` is done as ruled.**
+- **What it holds:** the cited power parts table, specification 7's `power` and `mcu.bor_level`, every ruled static check refused by name, the tree in solved topology 6 for `1303`, and the seam refusing emission.
+- **What follows:** slice B, `AET-WO-4300d2`, and K6, which both follow this PR.
+- **For the architect:**
+  - the title and body are in `~/.cache/aet-4300d/pr-title-body.md`;
+  - if `4210` or `4300b` lands first, this PR renumbers at merge, with the tools in `~/.cache/aet-4300d-build/tools/`.
+
+**AET-WO-4300d READY FOR REVIEW: PR #147.**

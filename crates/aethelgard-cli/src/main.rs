@@ -756,6 +756,12 @@ fn check_kicad(
                 id: refusal.error.id,
                 message: refusal.error.message,
             })?;
+            aethelgard_eda::schematic::refuse_power(&spec).map_err(|e| run::Stop {
+                code: EXIT_INVALID_SPEC,
+                kind: e.kind(),
+                id: None,
+                message: e.to_string(),
+            })?;
             declared = Some(aethelgard_eda::stack::Stack::of(&spec));
             (
                 aethelgard_eda::rules::Rules::from_specification(&spec),

@@ -3910,6 +3910,7 @@ mod tests {
             spi_lines: BTreeMap::new(),
             clock: aethelgard_ir::SolvedClock::reset(),
             motor_outputs: BTreeMap::new(),
+            power: None,
         }
     }
 

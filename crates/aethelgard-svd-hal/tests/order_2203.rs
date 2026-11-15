@@ -93,22 +93,26 @@ fn digests() -> Vec<(&'static str, String)> {
 /// (`motor_outputs`, `mcu.hse_hz`) moved the specification's sha256 in the
 /// three (`44f22188…e3af`, `bd957c1d…d4b0`, `b962492f…ee15`); every enable
 /// register cold and judged in full (2100 F24) moved the boot image
-/// (`747bdc04…fbb3`). Re-taken in `AET-WO-4210` (each device's script and
-/// its records; specification version 7; the image's SysTick and NVIC words)
-/// at its merge of `4300a`: they were `dac44166…2e7e`, `693c78ad…dab0`,
-/// `2fe09c95…f5b0` and `893fb13d…c4a6` there.
+/// (`747bdc04…fbb3`). Re-taken in `AET-WO-4300d` (version 7, `power` and
+/// `mcu.bor_level`): with `main`'s hash `ff1786a9…5756` passed to `solve`, all
+/// four were `main`'s digests exactly (`dac44166…2e7e`, `693c78ad…dab0`,
+/// `2fe09c95…f5b0`, the boot image unchanged). Re-taken in `AET-WO-4210` (each
+/// device's script and its records; specification version 8,
+/// `accept_lifecycle`; the image's SysTick and NVIC words), merging after
+/// `4300d`: the four were `a5a8e53a…5e46`, `b3bf305f…a745`, `ea29d696…07f0` and
+/// `893fb13d…c4a6` there.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "7c7f480b762b02c15dfa79515384a3611da27c88d1c2b47554d675b662ed0562",
+        "d114ae787ece6238223fdd2ddf78c14021dbb548ce966cac310aceb9bc89c455",
     ),
     (
         "platform",
-        "0a1ba8520917b4ab1d5af7870a317dd060016379992770b61c2b8ef3d0ce358f",
+        "849eb6bc70882585b2fa054260861646f6bb026ef0203fbb0cd5c7447a844397",
     ),
     (
         "platform faulted",
-        "f468d2cbff6182ca26c0f747e7622870348e8d24528681b1c2b70cbff14c0389",
+        "b24f53ebd62e293e1edaabb0a0723c1accb0098e3e64ef4f7e21caf363459e35",
     ),
     (
         "boot image",

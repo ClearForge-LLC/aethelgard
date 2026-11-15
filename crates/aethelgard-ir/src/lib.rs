@@ -17,6 +17,8 @@ pub mod ds009;
 pub mod electrical;
 pub mod motor;
 pub mod parts;
+pub mod power;
+pub mod power_parts;
 mod solve;
 pub mod speeds;
 pub mod thermal;
@@ -39,17 +41,19 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// Version 4 added `connectors` (`AET-WO-4300f`). Version 5 requires
 /// `net_classes` and `diff_pairs` (`AET-WO-1308`); an empty array declares
 /// none. Version 6 requires `motor_outputs` and `mcu.hse_hz` (`AET-WO-4300a`
-/// §1.1, `4400` D1). Version 7 requires `accept_lifecycle`, each end-of-life
-/// or not-recommended part the board uses acknowledged with a statement
-/// (`AET-WO-4210`, Scotty's ruling on D1); an empty list acknowledges none.
-/// `4210` took 7 by the numbering rule, merging after `4300a`. Nothing
-/// supplies any of them for an older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 7;
+/// §1.1, `4400` D1). Version 7 requires `power` (`null` declares no power
+/// tree) and `mcu.bor_level` (`AET-WO-4300d`, ruled D4). Version 8 requires
+/// `accept_lifecycle`, each end-of-life or not-recommended part the board
+/// uses acknowledged with a statement (`AET-WO-4210`, Scotty's ruling on
+/// D1); an empty list acknowledges none. `4210` took 8 by the numbering
+/// rule, merging after `4300d`. Nothing supplies any of them for an older
+/// file.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 8;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
 
-/// The top-level specification, version 7 (`RUL-14`). Arrays keep the order a
+/// The top-level specification, version 8 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
@@ -79,6 +83,10 @@ pub struct Specification {
     pub diff_pairs: Vec<classes::DiffPair>,
     /// Each motor output: a timer channel the solver assigns (`AET-WO-4300a`).
     pub motor_outputs: Vec<MotorOutput>,
+    /// The power tree (`AET-WO-4300d`), or `null`: none declared. Required
+    /// as a key (`INV-06`).
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub power: Option<power::Power>,
     /// Each `eol` or `nrnd` part the board uses, acknowledged by name with its
     /// status and a statement of why (`AET-WO-4210`, ruled by Scotty on D1).
     /// `validate` refuses any such part not listed, and any entry that is not
@@ -141,17 +149,25 @@ pub fn lifecycle_banner<'a>(
         .collect()
 }
 
-/// The microcontroller: a part name, the domain that supplies it, and its
+/// The microcontroller: a part name, the domain that supplies it, its
 /// external crystal's frequency in Hz, `0` for none (`4400` D1): a crystal
 /// needs a crystal part with its load capacitors, which no table holds yet,
-/// so `validate` refuses any other value by name (`CrystalNotSupported`).
+/// so `validate` refuses any other value by name (`CrystalNotSupported`); and
+/// the brown-out level its option bytes select (`AET-WO-4300d` D4: the
+/// scenario and the supply floor both read it; the option-byte write is out
+/// of scope).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct Mcu {
     pub part: String,
     pub supply: String,
     pub hse_hz: u32,
+    /// `0` (RM0433's factory default) to `3`.
+    pub bor_level: u8,
 }
+
+/// The highest BOR level the option bytes can select (RM0433, `BOR_LEV`).
+pub const MAX_BOR_LEVEL: u8 = 3;
 
 /// A supply rail and how far it may stray from nominal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -238,8 +254,9 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// The `schema_version` of a [`SolvedTopology`]. Version 2 added `i2c_speeds`
 /// (`AET-WO-1205`), version 3 `spi_devices` (`AET-WO-4200`), version 4
 /// `spi_lines` (`AET-WO-4300c`), version 5 `clock` and `motor_outputs`
-/// (`AET-WO-4300a`); an older file is refused, never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 5;
+/// (`AET-WO-4300a`), version 6 `power` (`AET-WO-4300d`); an older file is
+/// refused, never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 6;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -293,6 +310,97 @@ pub struct SolvedTopology {
     /// `assignments` on a `TIMn_CHk` signal (`AET-WO-4300a`, `RUL-16`).
     #[serde(deserialize_with = "unique_keys")]
     pub motor_outputs: BTreeMap<String, SolvedMotorOutput>,
+    /// The power tree as the checks derived it (`AET-WO-4300d`), or `null`
+    /// when the specification declares none: what `1303`'s supply bound and
+    /// the slice-B emitter read, never the specification (`RUL-16`).
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub power: Option<SolvedPower>,
+}
+
+/// The solved power tree. Every load returns through `GND`, so
+/// `input_steady_milliamps` is also the total current of the shared ground
+/// path that the VSS term of a supply bound counts (ruled D3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SolvedPower {
+    /// Keyed by domain id.
+    #[serde(deserialize_with = "unique_keys")]
+    pub domains: BTreeMap<String, SolvedDomain>,
+    pub input_steady_milliamps: u64,
+    pub input_fault_milliamps: u64,
+    /// Every condition the checks rest on, each once, sorted.
+    pub conditions: Vec<String>,
+}
+
+/// One domain: its regulator, the regulator's guaranteed output at the
+/// source pad (the domain's tolerance holds there, ruled D3), the source and
+/// return pads (spike S5; for a buck, RFBT's pad 1 and RFBB's pad 2, `K5`),
+/// the regulator's load, and each consumer's floor: the lowest supply at
+/// which that consumer's own guarantees hold.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SolvedDomain {
+    pub regulator: String,
+    pub part: String,
+    pub vout_min_microvolts: u64,
+    pub vout_max_microvolts: u64,
+    pub source: Pad,
+    #[serde(rename = "return")]
+    pub ret: Pad,
+    pub load_milliamps: u64,
+    pub consumers: Vec<Consumer>,
+}
+
+/// A pad: a part's reference and its pad number.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct Pad {
+    pub reference: String,
+    pub pad: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct Consumer {
+    pub name: String,
+    pub floor_millivolts: u64,
+}
+
+impl From<power::Checked> for SolvedPower {
+    fn from(c: power::Checked) -> Self {
+        let pad = |(reference, pad): (String, String)| Pad { reference, pad };
+        SolvedPower {
+            domains: c
+                .domains
+                .into_iter()
+                .map(|(id, d)| {
+                    (
+                        id,
+                        SolvedDomain {
+                            regulator: d.regulator,
+                            part: d.part,
+                            vout_min_microvolts: d.vout_min_microvolts,
+                            vout_max_microvolts: d.vout_max_microvolts,
+                            source: pad(d.source),
+                            ret: pad(d.ret),
+                            load_milliamps: d.load_milliamps,
+                            consumers: d
+                                .consumers
+                                .into_iter()
+                                .map(|(name, floor_millivolts)| Consumer {
+                                    name,
+                                    floor_millivolts,
+                                })
+                                .collect(),
+                        },
+                    )
+                })
+                .collect(),
+            input_steady_milliamps: c.input_steady_milliamps,
+            input_fault_milliamps: c.input_fault_milliamps,
+            conditions: c.conditions,
+        }
+    }
 }
 
 /// One SPI line the MCU drives: the bus's declared clock (the most it
@@ -394,7 +502,7 @@ pub struct PinAssignment {
 
 /// serde's derived `BTreeMap` keeps the last value of a repeated key and drops
 /// the first without a word; this refuses it instead (`INV-06`).
-fn unique_keys<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
+pub(crate) fn unique_keys<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
     deserializer: D,
 ) -> Result<BTreeMap<String, V>, D::Error> {
     struct Unique<V>(std::marker::PhantomData<V>);
@@ -473,7 +581,11 @@ object_only!(
     AnalogLine,
     SolvedI2cDevice,
     SolvedSpiDevice,
-    SpiLine
+    SpiLine,
+    SolvedPower,
+    SolvedDomain,
+    Pad,
+    Consumer
 );
 
 /// The wire form of a [`SolvedTopology`]. It differs in one field: `i2c_speeds`
@@ -505,6 +617,16 @@ struct SolvedWire {
     clock: Option<SolvedClock>,
     #[serde(default, deserialize_with = "unique_keys_some")]
     motor_outputs: Option<BTreeMap<String, SolvedMotorOutput>>,
+    /// Absent under an older version; `null` or a tree under this one.
+    #[serde(default, deserialize_with = "present")]
+    power: Option<Option<SolvedPower>>,
+}
+
+/// A key that is present, whatever its value: `null` reads as `Some(None)`.
+fn present<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
+    deserializer: D,
+) -> Result<Option<Option<V>>, D::Error> {
+    Option::<V>::deserialize(deserializer).map(Some)
 }
 
 fn unique_keys_some<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
@@ -565,6 +687,12 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     None if w.schema_version != SOLVED_SCHEMA_VERSION => BTreeMap::new(),
                     None => return Err(serde::de::Error::missing_field("motor_outputs")),
                 };
+                // The same for `power`, which version 5 added.
+                let power = match w.power {
+                    Some(p) => p,
+                    None if w.schema_version != SOLVED_SCHEMA_VERSION => None,
+                    None => return Err(serde::de::Error::missing_field("power")),
+                };
                 Ok(SolvedTopology {
                     schema_version: w.schema_version,
                     specification_sha256: w.specification_sha256,
@@ -578,6 +706,7 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     spi_lines,
                     clock,
                     motor_outputs,
+                    power,
                 })
             }
         }
@@ -811,6 +940,20 @@ pub enum IrValidationError {
         "device reference `{id}` collides with `{with}`, a name the Renode platform would declare for another device or bus (`AET-WO-4200` D7)"
     )]
     ReferenceCollision { id: String, with: String },
+    #[error("mcu.bor_level is {value}, not 0 to 3")]
+    BorLevelOutOfRange { value: u8 },
+    #[error("power parts table{}: {reason}", part.as_deref().map(|p| format!(", part `{p}`")).unwrap_or_default())]
+    PowerPartsTable {
+        part: Option<String>,
+        reason: String,
+    },
+    #[error("{}: `{id}`: {detail} ({citation})", kind.name())]
+    Power {
+        kind: power::Refusal,
+        id: String,
+        detail: String,
+        citation: String,
+    },
     #[error("parts table{}: {reason}", part.as_ref().map(|p| format!(" entry `{p}`")).unwrap_or_default())]
     PartsTable {
         part: Option<String>,
@@ -843,7 +986,7 @@ pub enum IrValidationError {
         citation: String,
     },
     #[error(
-        "device `{id}` is a `{part}` on bus `{bus}`, whose domain runs {min_millivolts} to {max_millivolts} mV, outside the part's I/O range of {part_min_millivolts} to {part_max_millivolts} mV ({citation}); the specification cannot declare a level crossing (`AET-WO-4210` D7)"
+        "device `{id}` is a `{part}` on bus `{bus}`, whose domain runs {min_millivolts} to {max_millivolts} mV, outside the part's I/O range of {part_min_millivolts} to {part_max_millivolts} mV ({citation}); and no crossing declared on that bus puts it on another domain (`AET-WO-4210` D7, `AET-WO-4300d` D9)"
     )]
     IoOutsidePart {
         id: String,
@@ -1132,6 +1275,9 @@ impl IrValidationError {
             Self::SpiDeviceSelect { .. } => "SpiDeviceSelect",
             Self::ReferenceCollision { .. } => "ReferenceCollision",
             Self::PartsTable { .. } => "PartsTableInvalid",
+            Self::BorLevelOutOfRange { .. } => "BorLevelOutOfRange",
+            Self::PowerPartsTable { .. } => "PowerPartsTableInvalid",
+            Self::Power { kind, .. } => kind.name(),
             Self::OutputSpeedTable { .. } => "OutputSpeedTableInvalid",
             Self::AmbiguousPartName { .. } => "AmbiguousPartName",
             Self::PartNameCase { .. } => "PartNameCase",
@@ -1267,7 +1413,9 @@ impl IrValidationError {
             | Self::MotorOutputMismatch { id }
             | Self::TimerShared { id } => Some(id),
             Self::CrystalNotSupported { .. } | Self::UnsupportedClock => None,
-            Self::PartsTable { part, .. } => part.as_deref(),
+            Self::PartsTable { part, .. } | Self::PowerPartsTable { part, .. } => part.as_deref(),
+            Self::Power { id, .. } => Some(id),
+            Self::BorLevelOutOfRange { .. } => None,
             Self::CeilingNotDerived { bus, .. }
             | Self::BusTooFast { bus, .. }
             | Self::PullUpBelowSinkFloor { bus, .. } => Some(bus),
@@ -1542,7 +1690,7 @@ fn identifier(
         .map_err(|rule| IrValidationError::InvalidIdentifier { path: path(), rule })
 }
 
-fn plain(value: &str, path: impl FnOnce() -> String) -> Result<(), IrValidationError> {
+pub(crate) fn plain(value: &str, path: impl FnOnce() -> String) -> Result<(), IrValidationError> {
     identifier(IdentifierKind::Plain, value, path)
 }
 
@@ -1593,7 +1741,9 @@ impl Specification {
         let table = parts::table()?;
         self.validate_parts(table)?;
         // 15
-        connectors::validate(self)
+        connectors::validate(self)?;
+        // 16 (`AET-WO-4300d`)
+        power::check(self).map(|_| ())
     }
 
     /// Step 14 (`AET-WO-4300c` §1.5, F11): each device's part against the
@@ -1655,6 +1805,9 @@ impl Specification {
         // Each device's bus domain within its part's I/O range, where the
         // datasheet separates it from the supply (`AET-WO-4210` D7, `4200`
         // F19). Step 9 checked every device's bus, step 5 every bus's domain.
+        // An SPI device behind a declared crossing on its bus is on the
+        // crossing's B side, so that domain is the one judged, as step 5's
+        // supply rule reads it (`AET-WO-4300d` D9).
         let on_bus = self
             .i2c_devices
             .iter()
@@ -1670,14 +1823,23 @@ impl Specification {
                 )
             })
             .chain(self.spi_devices.iter().map(|d| {
+                let crossed = self.power.as_ref().and_then(|p| {
+                    p.crossings
+                        .iter()
+                        .find(|c| c.bus == d.bus && c.b_domain == d.supply)
+                });
                 (
                     &d.reference,
                     &d.part,
                     &d.bus,
-                    self.spi_buses
-                        .iter()
-                        .find(|b| b.id == d.bus)
-                        .map(|b| &b.domain),
+                    match crossed {
+                        Some(c) => Some(&c.b_domain),
+                        None => self
+                            .spi_buses
+                            .iter()
+                            .find(|b| b.id == d.bus)
+                            .map(|b| &b.domain),
+                    },
                 )
             }));
         for (reference, part, bus, domain) in on_bus {
@@ -1820,6 +1982,12 @@ impl Specification {
                 hse_hz: self.mcu.hse_hz,
             });
         }
+        // 2b
+        if self.mcu.bor_level > MAX_BOR_LEVEL {
+            return Err(E::BorLevelOutOfRange {
+                value: self.mcu.bor_level,
+            });
+        }
         // 3
         if self.voltage_domains.is_empty() {
             return Err(E::NoVoltageDomain);
@@ -1893,7 +2061,14 @@ impl Specification {
         }
         for device in &self.spi_devices {
             let bus = self.spi_buses.iter().find(|b| b.id == device.bus);
-            if bus.is_some_and(|b| b.domain != device.supply) {
+            // A device behind a declared crossing sits on the crossing's
+            // other side; step 16 judges that side (`AET-WO-4300d` D9).
+            let crossed = self.power.as_ref().is_some_and(|p| {
+                p.crossings
+                    .iter()
+                    .any(|c| c.bus == device.bus && c.b_domain == device.supply)
+            });
+            if !crossed && bus.is_some_and(|b| b.domain != device.supply) {
                 return Err(E::SupplyMismatch {
                     id: device.reference.clone(),
                 });
@@ -2148,7 +2323,9 @@ fn motor_shape(m: &MotorOutput) -> Result<(), IrValidationError> {
 /// a modelled flash's array, is a reserved name or another reference
 /// (`AET-WO-4200` D7). A reference equal to an emitted bus name (`spi1mux`) is
 /// in [`RESERVED_REFERENCES`], refused by the identifier rule.
-fn references_distinct<'r>(all: impl Iterator<Item = &'r str>) -> Result<(), IrValidationError> {
+pub(crate) fn references_distinct<'r>(
+    all: impl Iterator<Item = &'r str>,
+) -> Result<(), IrValidationError> {
     let mut references: BTreeMap<String, &str> = BTreeMap::new();
     for reference in all {
         if let Some(first) = references.insert(reference.to_lowercase(), reference) {
