@@ -63,6 +63,14 @@ pub enum Join {
 }
 
 impl Join {
+    /// The join a part row declares (`aethelgard-ir`'s connectors table).
+    pub fn of(join: aethelgard_ir::connectors::PadJoin) -> Join {
+        match join {
+            aethelgard_ir::connectors::PadJoin::Solid => Join::Solid,
+            aethelgard_ir::connectors::PadJoin::Relief => Join::Relief,
+        }
+    }
+
     /// The pad's own `zone_connect` that makes KiCad 10.0.7's refill join
     /// it so (measured, `AET-WO-1309` FEEDBACK B2): 2 solid, 1 relief.
     pub fn token(self) -> &'static str {
@@ -225,11 +233,21 @@ impl Stack {
                     width_nm: nm(p.width_um),
                 })
                 .collect(),
-            // No part row a specification can declare carries either yet:
-            // the regulators table and the power-in connector are `4300d`'s
-            // (FEEDBACK D1), so a board with either is refused at the gate.
-            joins: Vec::new(),
-            thermal: Vec::new(),
+            // The power tree's (`AET-WO-4300d2` §1.5, `1309` D1): the
+            // power-in connector's declared join, and each buck's array from
+            // its row's rule.
+            joins: spec
+                .power
+                .iter()
+                .filter_map(|p| {
+                    let row = aethelgard_ir::connectors::power_in(&p.input.part)?;
+                    Some((p.input.reference.clone(), Join::of(row.join)))
+                })
+                .collect(),
+            thermal: aethelgard_ir::power::thermal_arrays(spec)
+                .iter()
+                .map(|(reference, pad, rule)| ThermalPad::of(reference, pad, rule))
+                .collect(),
         }
     }
 

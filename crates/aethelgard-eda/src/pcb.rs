@@ -163,10 +163,25 @@ fn layer(item: &Sx) -> Option<&str> {
 }
 
 /// The box around a graphic's points: `fp_line`, `fp_rect` or `fp_poly`,
-/// and half its stroke on every side. Anything else is refused.
+/// and half its stroke on every side; for an `fp_arc`, the box of its whole
+/// circle, which holds the arc whatever its sweep (`AET-WO-4300d2`: the
+/// XT30PW-M's silkscreen rings its pegs with arcs). Anything else is refused.
 fn graphic_box(item: &Sx, reference: &str, theta: u16) -> Result<Rect, EmitError> {
     let mut points = Vec::new();
     match item.head() {
+        Some("fp_arc") => {
+            let mut at = [(0, 0); 3];
+            for (i, end) in ["start", "mid", "end"].into_iter().enumerate() {
+                let p = item
+                    .child(end)
+                    .ok_or_else(|| internal(reference, "an arc without its three points"))?;
+                at[i] = xy(p, reference)?;
+            }
+            let (c, r) = circle(at)
+                .ok_or_else(|| internal(reference, "an arc whose three points are in line"))?;
+            points.push((c.0 - r, c.1 - r));
+            points.push((c.0 + r, c.1 + r));
+        }
         Some("fp_line" | "fp_rect") => {
             for end in ["start", "end"] {
                 let at = item
@@ -210,6 +225,43 @@ fn graphic_box(item: &Sx, reference: &str, theta: u16) -> Result<Rect, EmitError
             r.union(Rect::point(x, y))
         })
         .grow(half))
+}
+
+/// The circle through three points, in nanometres: its centre rounded to the
+/// nearest, and a radius that reaches every point from that centre plus 2 nm,
+/// so the rounding can only grow it. `None` when the points are in line.
+fn circle(p: [(i64, i64); 3]) -> Option<((i64, i64), i64)> {
+    let [(ax, ay), (bx, by), (cx, cy)] = p.map(|(x, y)| (i128::from(x), i128::from(y)));
+    let d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+    if d == 0 {
+        return None;
+    }
+    let (a2, b2, c2) = (ax * ax + ay * ay, bx * bx + by * by, cx * cx + cy * cy);
+    let ux = a2 * (by - cy) + b2 * (cy - ay) + c2 * (ay - by);
+    let uy = a2 * (cx - bx) + b2 * (ax - cx) + c2 * (bx - ax);
+    // Round half away from zero, whatever the signs.
+    let round = |n: i128| {
+        let (q, r) = (n / d, n % d);
+        if 2 * r.abs() >= d.abs() {
+            q + if (r < 0) == (d < 0) { 1 } else { -1 }
+        } else {
+            q
+        }
+    };
+    let (x, y) = (round(ux), round(uy));
+    let far = [(ax, ay), (bx, by), (cx, cy)]
+        .iter()
+        .map(|&(px, py)| (px - x) * (px - x) + (py - y) * (py - y))
+        .max()?;
+    // The integer square root, rounded up.
+    let mut s = (far as f64).sqrt() as i128;
+    while s * s < far {
+        s += 1;
+    }
+    Some((
+        (i64::try_from(x).ok()?, i64::try_from(y).ok()?),
+        i64::try_from(s + 2).ok()?,
+    ))
 }
 
 /// A visible silkscreen text's box: every glyph as wide as KiCad 10.0.7's
@@ -1173,6 +1225,23 @@ fn copper(project: &str, routed: &route::Routed, o: Rect, stack: &crate::stack::
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_arcs_circle_holds_its_three_points() {
+        // A quarter of the unit circle, in nanometres, and the XT30PW-M's
+        // first silkscreen arc (start, mid, end, mm).
+        let ((x, y), r) = super::circle([(1_000_000, 0), (707_107, 707_107), (0, 1_000_000)])
+            .expect("a circle");
+        assert!(x.abs() <= 1 && y.abs() <= 1, "{x} {y}");
+        assert!((1_000_000..=1_000_004).contains(&r), "{r}");
+        let pts = [(-8_150_000, -8_890_000), (-9_260_000, -10_000_000), (-8_150_000, -11_110_000)];
+        let ((x, y), r) = super::circle(pts).expect("a circle");
+        for (px, py) in pts {
+            let d2 = i128::from(px - x).pow(2) + i128::from(py - y).pow(2);
+            assert!(d2 <= i128::from(r).pow(2), "({px},{py}) outside r {r}");
+        }
+        assert_eq!(super::circle([(0, 0), (1, 1), (2, 2)]), None);
+    }
+
     use super::*;
 
     fn part(
