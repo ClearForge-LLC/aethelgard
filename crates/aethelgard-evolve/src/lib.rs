@@ -426,12 +426,20 @@ fn witness_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
         (v, bytes.len())
     })
 }
-/// A step's read as its check records it (`AET-WO-4210`): a step that reads
-/// nothing (`width` 0, `configure`) matches whatever was observed; any other
-/// matches when a value was observed and equals the expected one under the
-/// mask.
+
+/// A step's read as its check records it (`AET-WO-4210`), as the judge holds
+/// it (`aethelgard_twin::boot::StepCheck::judge`): a value was observed, no
+/// bit of it lies above the read's `width` bytes (so a configuration's is 0),
+/// and it equals the expected one under the mask.
 fn read_matches(width: u8, expected: u64, mask: u64, observed: Option<u64>) -> bool {
-    width == 0 || observed.is_some_and(|o| o & mask == expected & mask)
+    // The bits a read of `width` bytes can set, as the judge holds them
+    // (`aethelgard_twin::boot::width_mask`): none for a configuration.
+    let read = match width {
+        0 => 0,
+        8.. => u64::MAX,
+        w => (1u64 << (8 * u32::from(w))) - 1,
+    };
+    observed.is_some_and(|o| o & !read == 0 && o & mask == expected & mask)
 }
 
 /// The finding kinds that each select their own events, one finding each.

@@ -693,7 +693,8 @@ fn a_script_and_its_two_citations_come_together() {
 
 #[test]
 fn refuses_a_malformed_script() {
-    let cases: [(&str, fn(&mut Value)); 9] = [
+    type Mutate = fn(&mut Value);
+    let cases: [(&str, Mutate); 9] = [
         ("script.configure.write", |p| {
             p["script"]["configure"]["write"] = json!([])
         }),

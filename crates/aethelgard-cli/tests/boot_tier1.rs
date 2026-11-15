@@ -91,8 +91,10 @@ fn elf() -> Vec<u8> {
 /// The listing of the emitted platform's CPU and every solved peripheral.
 const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n  \u{2502}   \u{2514}\u{2500}\u{2500} spi1mux (SPIMultiplexer)\n  \u{2502}       \u{2514}\u{2500}\u{2500} u4 (GenericSpiFlash)\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
 
-/// The reference topology's seven registers as a correct boot leaves them.
-const GOOD_REGISTERS: [&str; 7] = [
+/// The reference topology's seven registers as a correct boot leaves them,
+/// then SysTick's control word and the five NVIC set-enable words, all 0: no
+/// interrupt armed (`AET-WO-2204` A2, ruled D6 on PR #131).
+const GOOD_REGISTERS: [&str; 13] = [
     "0x0000A801",
     "0x55500000",
     "0x0000A000",
@@ -100,6 +102,12 @@ const GOOD_REGISTERS: [&str; 7] = [
     "0x00000003",
     "0x00200000",
     "0x00001000",
+    "0x00000000",
+    "0x00000000",
+    "0x00000000",
+    "0x00000000",
+    "0x00000000",
+    "0x00000000",
 ];
 
 /// A transcript: the run's log lines, then the reads between the markers,
@@ -338,8 +346,11 @@ fn three_agreeing_witnesses_pass() {
     assert_eq!(b["boot_word"]["address"], "0x20000000");
     assert_eq!(b["boot_word"]["observed"], "0x2100b007");
     assert_eq!(b["pc"], "0x08000010");
-    assert_eq!(b["registers"].as_array().unwrap().len(), 7);
+    assert_eq!(b["registers"].as_array().unwrap().len(), 13);
     assert_eq!(b["registers"][0]["name"], "GPIOA.MODER");
+    // `AET-WO-2204` A2 (ruled D6): no interrupt armed.
+    assert_eq!(b["registers"][7]["name"], "SysTick.CSR");
+    assert_eq!(b["registers"][12]["name"], "NVIC.ISER4");
     assert_eq!(
         b["unobservable"],
         serde_json::json!(["GPIOB.OTYPER", "I2C1.TIMINGR"])
@@ -975,8 +986,8 @@ fn a_passing_identity_read_passes_and_the_unmodelled_part_is_reported_as_info() 
     assert_eq!(
         v["boot"]["i2c"],
         serde_json::json!([{
-            "reference": "U2", "address": "0x76", "register": "0xd0",
-            "expected": "0x60", "observed": "0x60", "status": "ok"
+            "reference": "U2", "address": "0x76", "step": "identity", "register": "0xd0",
+            "width": 1, "expected": "0x60", "mask": "0xff", "observed": "0x60", "status": "ok"
         }])
     );
     // U3 (TMP117) is listed, not passed silently, and does not fail the run.
@@ -1083,7 +1094,7 @@ fn a_witness_that_shows_the_read_passes_and_is_reported() {
     assert_eq!(
         *w,
         serde_json::json!([{
-            "peripheral": "I2C1", "reference": "U2", "device": "i2c1.u2",
+            "peripheral": "I2C1", "reference": "U2", "step": "identity", "device": "i2c1.u2",
             "expected": lines, "observed": lines, "absent": []
         }])
     );
@@ -1337,9 +1348,9 @@ fn a_core_not_on_a_self_loop_fails_and_both_of_its_halfwords_pass() {
 
 /// `AET-WO-2204` D1: on a bus with two modelled devices (the test fixture
 /// `two-bme.json`: U2 at 0x76, U5 at 0x77), each read is witnessed by its own
-/// device's lines, and the devices' lines must come in the records' order.
+/// device's lines, in either device's order (`AET-WO-4210`: `2204` A4).
 #[test]
-fn two_devices_witness_their_own_reads_in_the_records_order() {
+fn two_devices_witness_their_own_reads_in_either_order() {
     let tree = Dir::new("two-bme");
     let out = run_cli(
         &cli(None),
@@ -1418,10 +1429,11 @@ fn two_devices_witness_their_own_reads_in_the_records_order() {
     let (code, v) = boot_two(&format!("{u2}{u5}"));
     assert_eq!(code, Some(0), "{v}");
     assert_eq!(v["boot"]["i2c_witness"].as_array().unwrap().len(), 2, "{v}");
-    // Each device's own lines are right, but U5's come first.
+    // Each device's own lines are right, U5's first: each device is judged
+    // by its own steps in order, never across devices (`2204` A4, closed by
+    // `AET-WO-4210`), so the devices may interleave.
     let (code, v) = boot_two(&format!("{u5}{u2}"));
-    assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["i2c_witness_out_of_order"], "{v}");
+    assert_eq!(code, Some(0), "{v}");
     // One device's lines alone: the other read is unwitnessed, named.
     let (code, v) = boot_two(&u5);
     assert_eq!(code, Some(1), "{v}");

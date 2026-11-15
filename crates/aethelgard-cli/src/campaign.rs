@@ -811,21 +811,46 @@ fn archived_lines(lines: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// The bytes a kind-22 witness's observed lines may take, and its
-/// multiplexer's lines: with the expected lines (eight of under 100 bytes for
-/// the flash) and the names, under the reader's 4,096-byte event bound.
-const WITNESS_BUDGET: usize = 1_800;
-const UNROUTED_BUDGET: usize = 1_200;
+/// A kind 13 or kind 22 with its tail cut until the event, at the largest
+/// timestamp, encodes within the reader's 4,096 bytes (`AET-WO-4200` A4;
+/// `AET-WO-4210` F18: a script's step and a 64-byte reference size it, not
+/// one identity read). A kind 22's multiplexer lines are cut first, then the
+/// observation's last lines, so the first lines kept are the step's own. The
+/// judge compared them whole first, so a cut observation still differs; the
+/// expected lines, the twin's, are never cut, and an event they alone
+/// overfill is the archive's refusal.
+fn fit(mut record: Record) -> Record {
+    let size = |r: &Record| {
+        aethelgard_chaos::cbor::to_bytes(
+            &aethelgard_chaos::event::Event::Record {
+                timestamp: u64::MAX,
+                record: r.clone(),
+            }
+            .to_value(),
+        )
+        .len()
+    };
+    while size(&record) > aethelgard_chaos::archive::MAX_EVENT_BYTES {
+        let cut = match &mut record {
+            Record::SpiWitness {
+                unrouted, observed, ..
+            } => unrouted.pop().is_some() || observed.as_mut().is_some_and(|o| o.pop().is_some()),
+            Record::I2cWitness { observed, .. } => {
+                observed.as_mut().is_some_and(|o| o.pop().is_some())
+            }
+            _ => false,
+        };
+        if !cut {
+            break;
+        }
+    }
+    record
+}
 
-/// The longest prefix of `lines` whose bytes sum to at most `budget`.
-fn within(lines: Vec<String>, budget: usize) -> Vec<String> {
-    let mut used = 0;
-    lines
-        .into_iter()
-        .take_while(|l| {
-            used += l.len();
-            used <= budget
-        })
+/// The bytes the verdict writes as `0xef 0xc8`, each 1 to 4 of them.
+fn write_bytes(text: &str) -> Result<Vec<u8>, String> {
+    text.split(' ')
+        .map(|b| u8::try_from(hex_u64(b)?).map_err(|e| e.to_string()))
         .collect()
 }
 
@@ -979,17 +1004,21 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
         out.push(Record::I2cCheck {
             reference: c.reference.clone(),
             address: u8::try_from(hex_u64(&c.address)?).map_err(|e| e.to_string())?,
-            register: u8::try_from(hex_u64(&c.register)?).map_err(|e| e.to_string())?,
+            step: c.step.to_owned(),
+            write: write_bytes(&c.register)?,
+            width: c.width,
             expected: hex_u64(&c.expected)?,
+            mask: hex_u64(&c.mask)?,
             observed: c.observed.as_deref().map(hex_u64).transpose()?,
             status: c.status.map(str::to_owned),
         });
     }
     for w in &boot.i2c_witness {
-        out.push(Record::I2cWitness {
+        out.push(fit(Record::I2cWitness {
             peripheral: w.peripheral.clone(),
             reference: w.reference.clone(),
             device: w.device.clone(),
+            step: w.step.to_owned(),
             expected: w.expected.clone(),
             observed: w.observed.as_deref().map(archived_lines),
             absent: w
@@ -998,7 +1027,7 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
                 .take(aethelgard_chaos::record::MAX_WITNESS_LINES)
                 .map(|a| u8::try_from(hex_u64(a)?).map_err(|e| e.to_string()))
                 .collect::<Result<_, _>>()?,
-        });
+        }));
     }
     for c in &boot.spi {
         out.push(Record::SpiCheck {
@@ -1006,29 +1035,28 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
             peripheral: c.peripheral.clone(),
             select: c.select.clone(),
             address: u8::try_from(hex_u64(&c.address)?).map_err(|e| e.to_string())?,
-            command: u8::try_from(hex_u64(&c.command)?).map_err(|e| e.to_string())?,
+            step: c.step.to_owned(),
+            write: write_bytes(&c.command)?,
+            width: c.width,
             expected: hex_u64(&c.expected)?,
+            mask: hex_u64(&c.mask)?,
             observed: c.observed.as_deref().map(hex_u64).transpose()?,
             status: c.status.map(str::to_owned),
         });
     }
     for w in &boot.spi_witness {
-        out.push(Record::SpiWitness {
+        out.push(fit(Record::SpiWitness {
             peripheral: w.peripheral.clone(),
             reference: w.reference.clone(),
             device: w.device.clone(),
+            step: w.step.to_owned(),
             expected: w.expected.clone(),
             // Kind 22 holds a witness and a multiplexer's lines, both of a
-            // length the firmware drives: each is cut to a byte budget so the
-            // event stays inside the reader's 4,096 bytes (adversarial A4). A
-            // cut observation still differs from what the judge expected, and
-            // the first lines are the read's own.
-            observed: w
-                .observed
-                .as_deref()
-                .map(|o| within(archived_lines(o), WITNESS_BUDGET)),
-            unrouted: within(archived_lines(&w.unrouted), UNROUTED_BUDGET),
-        });
+            // length the firmware drives: [`fit`] cuts them so the event stays
+            // inside the reader's 4,096 bytes (adversarial A4).
+            observed: w.observed.as_deref().map(archived_lines),
+            unrouted: archived_lines(&w.unrouted),
+        }));
     }
     let mut findings: BTreeMap<(String, String), u64> = BTreeMap::new();
     for f in &v.findings {
@@ -1221,30 +1249,98 @@ mod tests {
     /// printable ASCII, each at most 256 bytes; a changed line still differs
     /// from every line a model logs, so the archive cannot make it match.
     #[test]
-    fn a_kind_22_stays_inside_the_event_bound_however_long_its_lines() {
+    fn kinds_13_and_22_stay_inside_the_event_bound_however_long_their_lines() {
         // `AET-WO-4200` adversarial A4: a firmware that reads with eight
         // frames and then clocks 16 bytes with no chip select made a kind 22
         // of 16 witness and 16 multiplexer lines, over the reader's 4,096
-        // bytes, and the campaign stopped with an archive error.
+        // bytes, and the campaign stopped with an archive error. `AET-WO-4210`
+        // F18: a script's step with a 64-byte reference, kind 13 too.
         let lines =
             |n: usize, len: usize| -> Vec<String> { (0..n).map(|_| "x".repeat(len)).collect() };
-        let observed = super::within(archived_lines(&lines(16, 256)), super::WITNESS_BUDGET);
-        let unrouted = super::within(archived_lines(&lines(16, 256)), super::UNROUTED_BUDGET);
-        let w = Record::SpiWitness {
-            peripheral: "SPI1".into(),
-            reference: "U4".into(),
-            device: "spi1.spi1mux.u4".into(),
-            expected: lines(8, 100),
-            observed: Some(observed.clone()),
-            unrouted: unrouted.clone(),
+        let long = "u".repeat(64);
+        let device = format!("spi1.spi1mux.{long}");
+        // The largest step the twin expects: 14 lines, each naming the device.
+        let expected = lines(14, 70 + device.len());
+        let size = |r: &Record| {
+            aethelgard_chaos::cbor::to_bytes(
+                &aethelgard_chaos::event::Event::Record {
+                    timestamp: u64::MAX,
+                    record: r.clone(),
+                }
+                .to_value(),
+            )
+            .len()
         };
-        let bytes =
-            aethelgard_chaos::cbor::to_bytes(&aethelgard_chaos::cbor::Value::Array(w.fields()));
-        assert!(bytes.len() < 4096, "{}", bytes.len());
-        // A prefix, never a reordering: the first lines are the read's own.
-        assert_eq!(observed.len(), 1_800 / 256);
-        assert_eq!(unrouted.len(), 1_200 / 256);
-        assert_eq!(super::within(vec!["ab".into(), "c".into()], 2), ["ab"]);
+        let w = super::fit(Record::SpiWitness {
+            peripheral: "SPI1".into(),
+            reference: long.to_uppercase(),
+            device: device.clone(),
+            step: "data".into(),
+            expected: expected.clone(),
+            observed: Some(archived_lines(&lines(16, 256))),
+            unrouted: archived_lines(&lines(16, 256)),
+        });
+        assert!(size(&w) <= 4096, "{}", size(&w));
+        let Record::SpiWitness {
+            observed, unrouted, ..
+        } = &w
+        else {
+            unreachable!()
+        };
+        // The multiplexer's lines go first; the observation keeps its first
+        // lines, the step's own.
+        assert!(unrouted.is_empty() && !observed.as_ref().unwrap().is_empty());
+        let w = super::fit(Record::I2cWitness {
+            peripheral: "I2C1".into(),
+            reference: long.to_uppercase(),
+            device: format!("i2c1.{long}"),
+            step: "data".into(),
+            expected,
+            observed: Some(archived_lines(&lines(16, 256))),
+            absent: vec![0x7F; 16],
+        });
+        assert!(size(&w) <= 4096, "{}", size(&w));
+        // What fits is untouched.
+        let small = Record::I2cWitness {
+            peripheral: "I2C1".into(),
+            reference: "U2".into(),
+            device: "i2c1.u2".into(),
+            step: "identity".into(),
+            expected: lines(2, 30),
+            observed: Some(lines(2, 30)),
+            absent: Vec::new(),
+        };
+        assert_eq!(super::fit(small.clone()), small);
+    }
+
+    /// Every step of every modelled part's script, with a 64-byte reference,
+    /// expects lines that leave room in its event (`AET-WO-4210` F18).
+    #[test]
+    fn every_table_steps_expected_lines_fit_an_event_with_room() {
+        let long = "u".repeat(64);
+        for p in aethelgard_ir::parts::table().unwrap().parts() {
+            let Some(m) = p
+                .renode
+                .as_deref()
+                .and_then(aethelgard_twin::model::Model::from_renode)
+            else {
+                continue;
+            };
+            let device = match m.bus() {
+                aethelgard_ir::parts::BusKind::I2c => format!("i2c4.{long}"),
+                aethelgard_ir::parts::BusKind::Spi => format!("spi6.spi6mux.{long}"),
+            };
+            for step in p.steps() {
+                let w = m.witness(&device, &step).unwrap_or_default();
+                let bytes: usize = w.iter().map(String::len).sum();
+                assert!(
+                    w.len() <= 16 && bytes <= 2_000,
+                    "{} {:?}: {bytes}",
+                    p.part,
+                    step.kind
+                );
+            }
+        }
     }
 
     #[test]

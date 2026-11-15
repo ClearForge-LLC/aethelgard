@@ -126,7 +126,11 @@ fn the_imu_fixture_is_judged_on_its_declaration_and_labelled_unverified() {
     );
     let all = by_net(&v);
     for (net, speed, _) in &all {
-        let want = if *net == "SPI_SCK" || *net == "SPI_MOSI" { "01" } else { "00" };
+        let want = if *net == "SPI_SCK" || *net == "SPI_MOSI" {
+            "01"
+        } else {
+            "00"
+        };
         assert_eq!(*speed, want, "{net}");
     }
     assert_eq!(reason(&v, "SPI_SCK"), "30 pF");

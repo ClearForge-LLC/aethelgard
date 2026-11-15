@@ -301,8 +301,7 @@ fn reads(
     solved: &SolvedTopology,
     answers: &dyn Fn(&str) -> bool,
 ) -> Result<Vec<Read>, BoardError> {
-    let steps =
-        |part: &str| aethelgard_ir::parts::steps(part).map_err(BoardError::InvalidTopology);
+    let steps = |part: &str| aethelgard_ir::parts::steps(part).map_err(BoardError::InvalidTopology);
     let mut out = Vec::new();
     for (reference, d) in solved.i2c_devices_in_order() {
         if !answers(&d.part) {
@@ -646,11 +645,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
             }
         }
     }
-    let unset = if uniform {
-        "RECORD_UNSET"
-    } else {
-        "u64::MAX"
-    };
+    let unset = if uniform { "RECORD_UNSET" } else { "u64::MAX" };
     for (k, read) in reads.iter().enumerate() {
         let (to, errors) = match &read.target {
             Target::I2c { address } => (

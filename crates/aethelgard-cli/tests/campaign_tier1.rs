@@ -89,8 +89,10 @@ const U2_LINE: &str = "  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
 /// The listing of the emitted platform's CPU and every solved peripheral.
 const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n  \u{2502}   \u{2514}\u{2500}\u{2500} spi1mux (SPIMultiplexer)\n  \u{2502}       \u{2514}\u{2500}\u{2500} u4 (GenericSpiFlash)\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
 
-/// The reference topology's seven registers as a correct boot leaves them.
-const GOOD_REGISTERS: [&str; 7] = [
+/// The reference topology's seven registers as a correct boot leaves them,
+/// then SysTick's control word and the five NVIC set-enable words, all 0: no
+/// interrupt armed (`AET-WO-2204` A2, ruled D6 on PR #131).
+const GOOD_REGISTERS: [&str; 13] = [
     "0x0000A801",
     "0x55500000",
     "0x0000A000",
@@ -98,6 +100,12 @@ const GOOD_REGISTERS: [&str; 7] = [
     "0x00000003",
     "0x00200000",
     "0x00001000",
+    "0x00000000",
+    "0x00000000",
+    "0x00000000",
+    "0x00000000",
+    "0x00000000",
+    "0x00000000",
 ];
 
 /// What Renode 1.17.0's BME280 logs for U2's identity read (`AET-WO-2204`

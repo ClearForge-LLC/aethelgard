@@ -393,6 +393,8 @@ fn a_two_byte_identity_is_judged_whole_and_most_significant_byte_first() {
     c.expected = 0x0008;
     assert_eq!(c.judge(boot::STATUS_OK, 0xFFC8), Pass);
     assert_eq!(c.judge(boot::STATUS_OK, 0x0009), Mismatch);
+    // No bit above the read's two bytes, whatever the mask fixes.
+    assert_eq!(c.judge(boot::STATUS_OK, 0x1_0008), Mismatch);
 }
 
 /// `AET-WO-4210` S2: a scripted part is one record per step, in its

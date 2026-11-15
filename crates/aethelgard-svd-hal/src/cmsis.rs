@@ -716,7 +716,7 @@ mod tests {
         );
         assert_eq!(
             e("  A_IRQn = 0x7,").irq_max().unwrap_err().kind(),
-            "Malformed"
+            "MalformedSource"
         );
         assert_eq!(register_facts().unwrap().irq_max().unwrap(), 149);
         let outside = synthetic("  A_IRQn = 7,\ntypedef enum\n{\n} IRQn_Type;\n");

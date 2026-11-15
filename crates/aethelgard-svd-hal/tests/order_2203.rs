@@ -98,7 +98,7 @@ const BEFORE: [(&str, &str); 4] = [
     ),
     (
         "boot image",
-        "747bdc045a0c2a41b8e93922bb6e463d82b577a9e061905a708c4893228efbb3",
+        "c6524fdfbefa5afc72572579a35ed7c8aed32f9441a1107e65a178fd507f8fe0",
     ),
 ];
 

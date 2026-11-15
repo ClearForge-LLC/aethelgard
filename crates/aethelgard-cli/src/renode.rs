@@ -668,10 +668,10 @@ fn attribute(
                     seen[step_of(i)].push(body.to_owned());
                 }
                 for (i, line) in log.iter().enumerate() {
-                    if let Some(u) = unrouted_line(line, mux_of(c)) {
-                        if w.iter().any(|&(o, e)| o < i && i < e) {
-                            unrouted[step_of(i)].push(u.to_owned());
-                        }
+                    if let Some(u) = unrouted_line(line, mux_of(c))
+                        && w.iter().any(|&(o, e)| o < i && i < e)
+                    {
+                        unrouted[step_of(i)].push(u.to_owned());
                     }
                 }
             }
@@ -700,10 +700,10 @@ fn attribute(
         if let aethelgard_twin::boot::Wire::Spi { .. } = c.wire {
             let all = every_window.get(mux_of(c)).map_or(&[][..], Vec::as_slice);
             for (i, line) in log.iter().enumerate() {
-                if let Some(u) = unrouted_line(line, mux_of(c)) {
-                    if !all.iter().any(|&(o, e)| o < i && i < e) {
-                        unrouted[g.start].push(u.to_owned());
-                    }
+                if let Some(u) = unrouted_line(line, mux_of(c))
+                    && !all.iter().any(|&(o, e)| o < i && i < e)
+                {
+                    unrouted[g.start].push(u.to_owned());
                 }
             }
         }
@@ -1395,14 +1395,19 @@ mod tests {
                 address: 1,
                 select: "PA1".into(),
             },
-            write: 0x80,
+            step: aethelgard_ir::parts::StepKind::Identity,
+            write: vec![0x80],
             width: 1,
             expected: 0xEA,
+            mask: 0xFF,
             status_at: 0x2000_0004,
             value_at: 0x2000_0008,
+            level: (-1, "[NOISY] "),
             device: "spi1.spi1mux.u5".into(),
             witness: None,
+            idle_warning: None,
             skipped: vec!["[NOISY] spi1.spi1mux.u5: Finishing transmission, going idle".into()],
+            stimulus: Some(Vec::new()),
         };
         let at = |b: &str| format!("[03:07:39.4001] {b}");
         let idle = at("[NOISY] spi1.spi1mux.u5: Finishing transmission, going idle");
@@ -1660,15 +1665,27 @@ mod tests {
             assert_eq!(log_body(not), None, "{not}");
         }
         assert_eq!(
-            witness_shaped("[21:06:58.1004] [NOISY] i2c1.u2: Read 60 (2)", "i2c1.u2"),
+            witness_shaped(
+                "[21:06:58.1004] [NOISY] i2c1.u2: Read 60 (2)",
+                "i2c1.u2",
+                "[NOISY] "
+            ),
             Some("[NOISY] i2c1.u2: Read 60 (2)")
         );
         assert_eq!(
-            witness_shaped("[21:06:58.1004] [NOISY] i2c1.u20: Read 60", "i2c1.u2"),
+            witness_shaped(
+                "[21:06:58.1004] [NOISY] i2c1.u20: Read 60",
+                "i2c1.u2",
+                "[NOISY] "
+            ),
             None
         );
         assert_eq!(
-            witness_shaped("[21:06:58.1004] [INFO] i2c1.u2: Read 60", "i2c1.u2"),
+            witness_shaped(
+                "[21:06:58.1004] [INFO] i2c1.u2: Read 60",
+                "i2c1.u2",
+                "[NOISY] "
+            ),
             None
         );
         assert!(is_log_line("[21:06:58.1004] [WARNING] sysbus: x"));
