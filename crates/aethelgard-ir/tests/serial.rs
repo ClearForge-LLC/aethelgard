@@ -63,6 +63,7 @@ fn table_of(pins: Pins) -> PinTable {
                 let pin = Pin {
                     position: i as u16 + 1,
                     alternate_functions: afs.iter().map(|(s, af)| ((*s).into(), *af)).collect(),
+                    adc_channels: Default::default(),
                 };
                 ((*name).into(), pin)
             })

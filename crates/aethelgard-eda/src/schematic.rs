@@ -24,6 +24,12 @@ use sha2::{Digest, Sha256};
 use crate::library::{self, LibraryError};
 use crate::sexpr::{self, Sx, mm};
 
+// The power tree's drawing, a child of this module beside it in `src/`
+// (`strict_fence` gives every file of `src/` a role).
+#[path = "schematic_power.rs"]
+mod power;
+use aethelgard_ir::power::BATTERY_NET;
+
 /// KiCad 10's own schematic format version (ruled D7 on PR #40).
 pub const VERSION: &str = "20260306";
 
@@ -63,14 +69,12 @@ pub enum EmitError {
     ReservedName(String),
     #[error("`{0}` is used twice as a reference")]
     DuplicateReference(String),
+    #[error("`{reference}` of the power tree cannot be drawn: {why}")]
+    PowerNotDrawable { reference: String, why: String },
     #[error("the router cannot complete net `{net}`: {why}")]
     Unroutable { net: String, why: String },
     #[error("the router cannot complete the board: {0}")]
     BoardUnroutable(String),
-    #[error(
-        "the specification declares a power tree, which this engine does not yet emit, place, route or judge on a board (`AET-WO-4300d` slice A; emission is slice B)"
-    )]
-    PowerNotEmitted,
     #[error("{0}")]
     Internal(String),
 }
@@ -81,29 +85,26 @@ impl EmitError {
             Self::Library(_) => "LibraryCorrupt",
             Self::UnknownPart { .. } => "UnknownPart",
             Self::UnsupportedAddress { .. } => "UnsupportedAddress",
+            Self::PowerNotDrawable { .. } => "PowerNotDrawable",
             Self::UnsolvedNet(_) => "UnsolvedNet",
             Self::UnknownPin { .. } => "UnknownPin",
             Self::ReservedName(_) => "ReservedName",
             Self::DuplicateReference(_) => "DuplicateReference",
             Self::Unroutable { .. } | Self::BoardUnroutable(_) => "Unroutable",
-            Self::PowerNotEmitted => "PowerNotEmitted",
             Self::Internal(_) => "EmitterError",
         }
     }
 
     pub fn id(&self) -> Option<&str> {
         match self {
-            Self::UnknownPart { reference, .. } | Self::UnsupportedAddress { reference, .. } => {
-                Some(reference)
-            }
+            Self::UnknownPart { reference, .. }
+            | Self::UnsupportedAddress { reference, .. }
+            | Self::PowerNotDrawable { reference, .. } => Some(reference),
             Self::UnsolvedNet(id) | Self::ReservedName(id) | Self::DuplicateReference(id) => {
                 Some(id)
             }
             Self::UnknownPin { net, .. } | Self::Unroutable { net, .. } => Some(net),
-            Self::Library(_)
-            | Self::BoardUnroutable(_)
-            | Self::PowerNotEmitted
-            | Self::Internal(_) => None,
+            Self::Library(_) | Self::BoardUnroutable(_) | Self::Internal(_) => None,
         }
     }
 }
@@ -197,6 +198,20 @@ pub(crate) struct Part {
     /// A connector's declared off-board capacitance by pin number, with its
     /// source: what extraction adds to a line it carries (`AET-WO-4300f` D8).
     pub(crate) offboard: BTreeMap<String, (u64, String)>,
+    /// A power-tree part's place by its regulator's pin (`AET-WO-4300d2`
+    /// §1.3), which the placer targets and the DRC gate judges.
+    pub(crate) anchor: Option<Anchor>,
+}
+
+/// Where a power-tree part must sit, from the tree's declared ownership: the
+/// IC that owns it, each of its own pads with the IC pad it must lie beside,
+/// the largest copper-edge gap allowed, and the rule that asks for it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Anchor {
+    pub(crate) ic: String,
+    pub(crate) pads: Vec<(String, String)>,
+    pub(crate) bound_nm: i64,
+    pub(crate) rule: &'static str,
 }
 
 /// Each connector part's symbol and footprint, both vendored (`AET-WO-4300f`
@@ -237,6 +252,11 @@ pub fn declares_offboard(spec: &Specification) -> bool {
 /// and on a line counted as copper plus its declared budget, never at `Ci`.
 pub(crate) fn is_connector(part: &Part) -> bool {
     part.lib_id.starts_with("Connector_")
+}
+
+/// Whether `part` is a power tree's level translator (`AET-WO-4300d2`).
+pub(crate) fn is_translator(part: &Part) -> bool {
+    part.lib_id.starts_with("Logic_LevelTranslator:")
 }
 
 /// A UUID derived from content: sha256 of a domain-separated key, the first
@@ -284,7 +304,7 @@ fn ohms(v: u32) -> String {
 /// The MCU's symbol, the one part every design has.
 pub(crate) const MCU: &str = "MCU_ST_STM32H7:STM32H753ZITx";
 
-const KNOWN_PARTS: &str = "BME280, TMP117, W25Q64JVxIQ";
+const KNOWN_PARTS: &str = "BME280, TMP117, W25Q64JVxIQ, ICM20948";
 const STRAP: u32 = 10_000;
 
 struct Builder<'a> {
@@ -397,6 +417,7 @@ impl Builder<'_> {
             conns: BTreeMap::from([("1".into(), one), ("2".into(), two)]),
             note: None,
             decouples: None,
+            anchor: None,
             offboard: BTreeMap::new(),
         });
         Ok(())
@@ -445,16 +466,6 @@ fn mcu_conn(b: &mut Builder<'_>, name: &str) -> Option<Conn> {
     } else {
         None
     }
-}
-
-/// The seam of `AET-WO-4300d`'s split: a specification that declares a power
-/// tree is refused by name wherever a board would be emitted or judged
-/// against it, never emitted without its tree (`INV-06`).
-pub fn refuse_power(spec: &Specification) -> Result<(), EmitError> {
-    if spec.power.is_some() {
-        return Err(EmitError::PowerNotEmitted);
-    }
-    Ok(())
 }
 
 /// Emits the schematic, the bill of materials and the placed board
@@ -547,7 +558,6 @@ pub(crate) fn design(
     solved: &SolvedTopology,
     table: &PinTable,
 ) -> Result<(Vec<Part>, BTreeSet<String>), EmitError> {
-    refuse_power(spec)?;
     if spec.mcu.part != "STM32H753ZITx" || table.part != spec.mcu.part {
         return Err(EmitError::UnknownPart {
             reference: "mcu".into(),
@@ -562,6 +572,7 @@ pub(crate) fn design(
         .map(|d| &d.reference)
         .chain(spec.declared_spi_devices().iter().map(|d| &d.reference))
         .chain(spec.declared_connectors().iter().map(|c| &c.reference))
+        .chain(spec.power.iter().flat_map(power::references))
     {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
         // flag) and drops it from the netlist and BOM, and the emitter names its
@@ -588,10 +599,16 @@ pub(crate) fn design(
     for d in spec.declared_spi_devices() {
         spelled.push(d.cs.net.clone());
     }
+    spelled.extend(spec.power.iter().flat_map(power::spelled));
     let mut names = Taken::of(spelled);
     names
         .claim(GND)
         .map_err(|holder| collision(GND, holder, EmitError::ReservedName))?;
+    if spec.power.is_some() {
+        names
+            .claim(BATTERY_NET)
+            .map_err(|holder| collision(BATTERY_NET, holder, EmitError::ReservedName))?;
+    }
     let mut b = Builder {
         spec,
         parts: Vec::new(),
@@ -644,12 +661,13 @@ pub(crate) fn design(
     b.decouple(&mcu_ref, &spec.mcu.supply.clone(), "100n")?;
     b.parts.push(Part {
         lib_id: MCU,
-        reference: mcu_ref,
+        reference: mcu_ref.clone(),
         value: spec.mcu.part.clone(),
         footprint: mcu_sym.property("Footprint").unwrap_or("").to_owned(),
         conns,
         note: None,
         decouples: None,
+        anchor: None,
         offboard: BTreeMap::new(),
     });
 
@@ -742,6 +760,11 @@ pub(crate) fn design(
         device(&mut b, &d.reference, lib_id, conns)?;
         b.decouple(&d.reference, &d.supply, "100n")?;
     }
+    // Each crossing's device is drawn on the translator's B side.
+    let behind = match &spec.power {
+        Some(p) => power::behind(&mut b, p, spec.declared_spi_devices())?,
+        None => BTreeMap::new(),
+    };
     for d in spec.declared_spi_devices() {
         let bus = spec
             .spi_buses
@@ -756,30 +779,77 @@ pub(crate) fn design(
         if !solved.gpio.contains_key(&d.cs.net) {
             return Err(EmitError::UnsolvedNet(d.cs.net.clone()));
         }
-        if d.part != "W25Q64JVxIQ" {
-            return Err(EmitError::UnknownPart {
-                reference: d.reference.clone(),
-                part: d.part.clone(),
-                known: KNOWN_PARTS,
-            });
-        }
         let rail = b.rail(&d.supply);
         let gnd = b.ground();
-        let wp = b.strap(&d.reference, "WP", rail.clone())?;
-        let hold = b.strap(&d.reference, "HOLD", rail.clone())?;
-        let conns = [
-            ("1", Conn::Net(d.cs.net.clone())),
-            ("2", Conn::Net(bus.miso.net.clone())),
-            ("3", wp),
-            ("4", gnd),
-            ("5", Conn::Net(bus.mosi.net.clone())),
-            ("6", Conn::Net(bus.sck.net.clone())),
-            ("7", hold),
-            ("8", rail),
-        ]
-        .to_vec();
-        device(&mut b, &d.reference, "Memory_Flash:W25Q32JVSS", conns)?;
-        b.decouple(&d.reference, &d.supply, "100n")?;
+        let net = |line: power::Line, own: &String| {
+            Conn::Net(
+                behind
+                    .get(&d.reference)
+                    .and_then(|m| m.get(&line))
+                    .unwrap_or(own)
+                    .clone(),
+            )
+        };
+        match d.part.as_str() {
+            "W25Q64JVxIQ" => {
+                let wp = b.strap(&d.reference, "WP", rail.clone())?;
+                let hold = b.strap(&d.reference, "HOLD", rail.clone())?;
+                let conns = [
+                    ("1", net(power::Line::Cs, &d.cs.net)),
+                    ("2", net(power::Line::Miso, &bus.miso.net)),
+                    ("3", wp),
+                    ("4", gnd),
+                    ("5", net(power::Line::Mosi, &bus.mosi.net)),
+                    ("6", net(power::Line::Sck, &bus.sck.net)),
+                    ("7", hold),
+                    ("8", rail),
+                ]
+                .to_vec();
+                device(&mut b, &d.reference, "Memory_Flash:W25Q32JVSS", conns)?;
+                b.decouple(&d.reference, &d.supply, "100n")?;
+            }
+            // DS-000189 p. 20, 4.1 and 4.3: VDD and VDDIO on the supply, each
+            // bypassed; REGOUT's 0.1 uF filter capacitor (C1); FSYNC and RESV
+            // pin 20 to GND; RESV pin 19 and the auxiliary I2C master pins left
+            // open. SPI: SCLK, SDI, SDO and nCS (`AET-WO-4300d2` D2 (a)).
+            "ICM20948" => {
+                let regout = b.own_net(format!("{}_REGOUT", d.reference))?;
+                let conns = [
+                    ("8", rail.clone()),
+                    ("13", rail),
+                    ("18", gnd.clone()),
+                    ("20", gnd.clone()),
+                    ("11", gnd.clone()),
+                    ("10", Conn::Net(regout.clone())),
+                    ("22", net(power::Line::Cs, &d.cs.net)),
+                    ("23", net(power::Line::Sck, &bus.sck.net)),
+                    ("24", net(power::Line::Mosi, &bus.mosi.net)),
+                    ("9", net(power::Line::Miso, &bus.miso.net)),
+                ]
+                .to_vec();
+                device(&mut b, &d.reference, "Sensor_Motion:ICM-20948", conns)?;
+                b.passive('C', "100n".into(), Conn::Net(regout), gnd)?;
+                b.decouple(&d.reference, &d.supply, "100n")?;
+                b.decouple(&d.reference, &d.supply, "100n")?;
+            }
+            _ => {
+                return Err(EmitError::UnknownPart {
+                    reference: d.reference.clone(),
+                    part: d.part.clone(),
+                    known: KNOWN_PARTS,
+                });
+            }
+        }
+    }
+    if let Some(p) = &spec.power {
+        power::draw(
+            &mut b,
+            p,
+            spec.declared_spi_devices(),
+            &behind,
+            &mcu_ref,
+            solved,
+        )?;
     }
     connectors(&mut b)?;
     Ok((b.parts, b.rails))
@@ -818,6 +888,7 @@ fn connectors(b: &mut Builder<'_>) -> Result<(), EmitError> {
             conns,
             note: None,
             decouples: None,
+            anchor: None,
             offboard,
         });
     }
@@ -853,6 +924,7 @@ fn device(
         conns: conns.into_iter().map(|(n, c)| (n.to_owned(), c)).collect(),
         note,
         decouples: None,
+        anchor: None,
         offboard: BTreeMap::new(),
     });
     Ok(())
@@ -1160,9 +1232,23 @@ fn write_sheet(
         items: Vec::new(),
         power: 0,
     };
+    // A rail a `power_out` pin drives (an LDO's output) is driven already:
+    // a `PWR_FLAG` there would be a second driver, which ERC refuses, so its
+    // flag and the power symbol the flag sits on are left out (`AET-WO-4300d2`
+    // D12; the parts' own power symbols still draw the rail).
+    let mut driven = BTreeSet::new();
+    for part in parts {
+        for p in pins(&sheet.syms[part.lib_id]).map_err(EmitError::Internal)? {
+            if p.etype == "power_out"
+                && let Some(Conn::Rail(r)) = part.conns.get(&p.number)
+            {
+                driven.insert(r.clone());
+            }
+        }
+    }
     // Flags: one row at the top, a power symbol and a PWR_FLAG on one point.
     let mut flags = 0;
-    for rail in rails {
+    for rail in rails.iter().filter(|r| !driven.contains(*r)) {
         flags += 1;
         let pos = (GRID * 20 * flags, GRID * 10);
         sheet.power_symbol(rail, pos)?;
@@ -1404,6 +1490,7 @@ mod tests {
                     conns: Default::default(),
                     note: None,
                     decouples: None,
+                    anchor: None,
                     offboard: Default::default(),
                 }),
                 "{}: its symbol is not recognised as a connector",

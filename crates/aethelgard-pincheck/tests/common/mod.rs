@@ -218,6 +218,7 @@ pub fn package(pins: &[&str]) -> PinTable {
                 let pin = Pin {
                     position: 0,
                     alternate_functions: BTreeMap::new(),
+                    ..Default::default()
                 };
                 ((*p).to_owned(), pin)
             })

@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/parts.json`. It moves only with the file, on purpose.
-const PARTS_SHA256: &str = "ddfb72f8e51792b92c4a542764f721c1b272079231bf2c8ed34ce29f7fa57f1d";
+const PARTS_SHA256: &str = "b418b47ce601fd5ddbf6b8ee85d514c23b4c0e8b9ef59e35b9f1f18e65ea33b8";
 
 fn embedded() -> Value {
     serde_json::from_str(PARTS_JSON).unwrap()
@@ -206,8 +206,8 @@ fn refuses_an_unknown_key_at_top_level() {
 }
 
 #[test]
-fn refuses_schema_version_3_and_5() {
-    for version in [3, 5] {
+fn refuses_schema_version_2_3_4_and_6() {
+    for version in [2, 3, 4, 6] {
         let mut doc = embedded();
         doc["schema_version"] = version.into();
         let err = parse_parts(&doc.to_string()).unwrap_err();
@@ -501,7 +501,7 @@ fn a_key_twice_a_missing_renode_a_case_twin_or_no_parts_is_refused() {
     let err = parse_parts(&doc.to_string()).unwrap_err();
     assert_refused(&err, Some("bme280"), "twice");
     // No parts at all.
-    let err = parse_parts(r#"{"schema_version": 4, "parts": []}"#).unwrap_err();
+    let err = parse_parts(r#"{"schema_version": 5, "parts": []}"#).unwrap_err();
     assert_refused(&err, None, "`parts` is empty");
 }
 
@@ -852,6 +852,58 @@ fn an_io_range_and_its_citation_come_together() {
         p.as_object_mut().unwrap().remove("io_millivolts");
     });
     assert_refused(&err, Some("TMP117"), "io_millivolts");
+}
+
+/// `AET-WO-4300d2` K6: the output delay and its citation come together, the
+/// key is required, and only an SPI part may carry one.
+#[test]
+fn an_spi_output_delay_and_its_citation_come_together() {
+    let t = table().unwrap();
+    let imu = t.get("ICM20948").unwrap();
+    assert_eq!(imu.spi_output_delay_max_ns, Some(59));
+    let c = imu.citations.spi_output_delay.as_ref().unwrap();
+    assert!(c.section.contains("tVD.SDO max 59 ns at 20 pF"), "{c:?}");
+    assert!(c.section.contains("characterization of 5 parts"), "{c:?}");
+    for p in t.parts().iter().filter(|p| p.part != "ICM20948") {
+        assert_eq!(p.spi_output_delay_max_ns, None, "{}", p.part);
+        assert!(p.citations.spi_output_delay.is_none(), "{}", p.part);
+    }
+    // A value without its citation, and a citation without its value.
+    let err = refused_entry("ICM20948", |p| {
+        p["citations"]["spi_output_delay"] = Value::Null
+    });
+    assert_refused(&err, Some("ICM20948"), "citations.spi_output_delay");
+    let err = refused_entry("ICM20948", |p| p["spi_output_delay_max_ns"] = Value::Null);
+    assert_refused(&err, Some("ICM20948"), "citations.spi_output_delay");
+    // Each key is required: an absent one is refused, never read as none.
+    let err = refused_entry("ICM20948", |p| {
+        p.as_object_mut().unwrap().remove("spi_output_delay_max_ns");
+    });
+    assert_refused(&err, Some("ICM20948"), "spi_output_delay_max_ns");
+    let err = refused_entry("W25Q64JVxIQ", |p| {
+        p["citations"]
+            .as_object_mut()
+            .unwrap()
+            .remove("spi_output_delay");
+    });
+    assert_refused(&err, Some("W25Q64JVxIQ"), "spi_output_delay");
+    // Out of range.
+    for bad in [json!(0), json!(1001)] {
+        let err = refused_entry("ICM20948", |p| p["spi_output_delay_max_ns"] = bad.clone());
+        assert_refused(&err, Some("ICM20948"), "spi_output_delay_max_ns");
+    }
+    // A negative or fractional one is not a u32 (serde names the value).
+    for bad in [json!(-1), json!(1.5)] {
+        let err = refused_entry("ICM20948", |p| p["spi_output_delay_max_ns"] = bad.clone());
+        assert_refused(&err, Some("ICM20948"), "expected u32");
+    }
+    // An I2C part may not carry one, with or without a citation.
+    let cite = embedded()["parts"][1]["citations"]["spi_output_delay"].clone();
+    let err = refused_entry("TMP117", |p| {
+        p["spi_output_delay_max_ns"] = json!(59);
+        p["citations"]["spi_output_delay"] = cite.clone();
+    });
+    assert_refused(&err, Some("TMP117"), "on an I2C part");
 }
 
 #[test]

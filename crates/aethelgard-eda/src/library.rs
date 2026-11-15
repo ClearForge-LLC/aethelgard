@@ -15,10 +15,26 @@ use crate::sexpr::{self, Sx};
 /// `aethelgard-kicad-lib`, and the sha256 its bytes must have. The pins live
 /// here, in the consumer: a data crate that pinned its own files would be
 /// checking itself (AET-WO-1304).
-const PINS: [(&str, &str); 24] = [
+const PINS: [(&str, &str); 41] = [
     (
         "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
         "0403382fc4583ed510b461b1fa4a36dfaec6f4c0d9b1a67e6b0027837a54e1b5",
+    ),
+    (
+        "footprints/Capacitor_SMD.pretty/C_0603_1608Metric.kicad_mod",
+        "fe0dbfefbb181a0466f93a8de52d84ba7b00fcd9acdbb69575f4128a0af4e405",
+    ),
+    (
+        "footprints/Capacitor_SMD.pretty/C_1210_3225Metric.kicad_mod",
+        "e1dae516e079b70c4736d001fb81bfb4ef5f9c2a37c8175223a44f83a04ff75f",
+    ),
+    (
+        "footprints/Connector_AMASS.pretty/AMASS_XT30PW-M_1x02_P2.50mm_Horizontal.kicad_mod",
+        "07c4d13ce29915abf8fa0a76cc167ada9eeb5515e5e00edf1b18d3dcbcb6bbfd",
+    ),
+    (
+        "footprints/Inductor_SMD.pretty/L_Vishay_IHLP-5050.kicad_mod",
+        "2da846ed03a3bdcae6ce3e8ef3c7d8e670947704310d2df2e7f19e5927de92d8",
     ),
     (
         "footprints/Package_LGA.pretty/Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering.kicad_mod",
@@ -29,12 +45,24 @@ const PINS: [(&str, &str); 24] = [
         "c56afb80b84306b4ae3639fdd270987fc47b46ee531bbae036cc2ee25f2cf165",
     ),
     (
+        "footprints/Package_SO.pretty/TSSOP-14_4.4x5mm_P0.65mm.kicad_mod",
+        "e4bf82cea6d3b3259ddf42469b1407628ad1181a28ae6f3f340190c0cca31ccd",
+    ),
+    (
+        "footprints/Package_SO.pretty/Texas_HSOP-8-1EP_3.9x4.9mm_P1.27mm.kicad_mod",
+        "a2de8e28dd9f6a17dc2592de4c8500ac34f85d12e9e90e9c6499dc9de4937d91",
+    ),
+    (
         "footprints/Package_SON.pretty/WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm.kicad_mod",
         "5b7efafe23ba0a80faf2aa5786e7ceed526eb3802b254bc28577f1fc06abb633",
     ),
     (
         "footprints/Package_SO.pretty/SOIC-8_5.3x5.3mm_P1.27mm.kicad_mod",
         "cc86a7083c9df1c1bf808dfa469e913d446455fd7ab7a7941e18681b80e8b9b5",
+    ),
+    (
+        "footprints/Package_TO_SOT_SMD.pretty/SOT-23-5.kicad_mod",
+        "455a3f7c3e5eb5b8847eaa5df23e18651e78ab9f75afd09a0883758a0d901761",
     ),
     (
         "footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod",
@@ -57,6 +85,18 @@ const PINS: [(&str, &str); 24] = [
         "090e9bd7350aed224a938b922cc7d49020aa5235cc7e647a82cc3c08f37e881e",
     ),
     (
+        "footprints/Resistor_SMD.pretty/R_0603_1608Metric.kicad_mod",
+        "7190ac4a00125b807e54129ef0d87d87f2a658eeb74d025a7028203419b09f23",
+    ),
+    (
+        "footprints/Sensor_Motion.pretty/InvenSense_QFN-24_3x3mm_P0.4mm.kicad_mod",
+        "f8bb811410e1c549caa7667ad203ffc67fed319ae1957a41922c297ffb7cdffa",
+    ),
+    (
+        "symbols/Connector_Generic.kicad_symdir/Conn_01x02.kicad_sym",
+        "0fa71012f16ff9329d578174b763d6aee9b64f3b5112db4416a0cf5df7491fdc",
+    ),
+    (
         "symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x04_MountingPin.kicad_sym",
         "370c2845e6ad1e61ea1b6b5c6a0784dea59f4aedc6d16eedda5ea3108c5105ac",
     ),
@@ -73,8 +113,16 @@ const PINS: [(&str, &str); 24] = [
         "533df5a016c224a83701e2e66b767864f39fc44c972a2a4f821987f1fd99573e",
     ),
     (
+        "symbols/Device.kicad_symdir/L.kicad_sym",
+        "ea666fa611b3d896b47a0d12a8f2975511f696384535d3cc85bd039fb9259042",
+    ),
+    (
         "symbols/Device.kicad_symdir/R.kicad_sym",
         "db1dd3eb60dbcc9e239d107e2d123ee253aefdd841186076e9df39444d4e11c7",
+    ),
+    (
+        "symbols/Logic_LevelTranslator.kicad_symdir/TXU0304PW.kicad_sym",
+        "d3be2fad2f944f89603c948bb9d1ea8014e874da669406029c11e878411f6a7f",
     ),
     (
         "symbols/MCU_ST_STM32H7.kicad_symdir/STM32H753ZITx.kicad_sym",
@@ -83,6 +131,26 @@ const PINS: [(&str, &str); 24] = [
     (
         "symbols/Memory_Flash.kicad_symdir/W25Q32JVSS.kicad_sym",
         "49133cae4075c838798a68067881f10d0836a3316f7de485f334d92d71569550",
+    ),
+    (
+        "symbols/Regulator_Linear.kicad_symdir/TLV70012_SOT23-5.kicad_sym",
+        "f2d21a5bfe88c6651ffc16609c9184099c9063c47c05dcf89a78a2418ff64bda",
+    ),
+    (
+        "symbols/Regulator_Linear.kicad_symdir/TLV75518PDBV.kicad_sym",
+        "9a211c51a0f05e322fbeaad08cfaa300bc94c667266076d55da8982760bd3bef",
+    ),
+    (
+        "symbols/Regulator_Switching.kicad_symdir/LMR33630ADDA.kicad_sym",
+        "e4c9f73ab9ca38fcf757672e936c8a4f27bba0ec196086b1bf6e0144339e3795",
+    ),
+    (
+        "symbols/Regulator_Switching.kicad_symdir/LMR33640ADDA.kicad_sym",
+        "888e4dedeb4d2c14d3fad15bc15d911bd8c6289ee25621ec372e46a41b6510b4",
+    ),
+    (
+        "symbols/Sensor_Motion.kicad_symdir/ICM-20948.kicad_sym",
+        "6a92444c8a1137c38a8b9e080edb82872deea8f3f9f5d324e9c487d2ad6862d4",
     ),
     (
         "symbols/power.kicad_symdir/+3V3.kicad_sym",
@@ -388,6 +456,44 @@ mod tests {
         assert_eq!(crate::schematic::pins(&tmp117).unwrap().len(), 6);
     }
 
+    /// The power tree's symbols (AET-WO-4300d2) resolve, with `extends`
+    /// flattened, and carry the pin numbers the datasheet pinouts name.
+    #[test]
+    fn the_power_symbols_resolve_with_their_pin_numbers() {
+        for (id, numbers) in [
+            (
+                "Regulator_Switching:LMR33630ADDA",
+                &["1", "2", "3", "4", "5", "6", "7", "8", "9"][..],
+            ),
+            ("Regulator_Linear:TLV75518PDBV", &["1", "2", "3", "4", "5"]),
+            (
+                "Logic_LevelTranslator:TXU0304PW",
+                &[
+                    "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                ],
+            ),
+            (
+                "Sensor_Motion:ICM-20948",
+                &[
+                    "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                    "15", "16", "17", "18", "19", "20", "21", "22", "23", "24",
+                ],
+            ),
+            ("Device:L", &["1", "2"]),
+            ("Connector_Generic:Conn_01x02", &["1", "2"]),
+        ] {
+            let sym = symbol(id).unwrap();
+            assert!(sym.child("extends").is_none(), "{id}");
+            let mut got: Vec<String> = crate::schematic::pins(&sym)
+                .unwrap()
+                .into_iter()
+                .map(|p| p.number)
+                .collect();
+            got.sort_by_key(|n| n.parse::<u32>().unwrap_or(u32::MAX));
+            assert_eq!(got, numbers, "{id}");
+        }
+    }
+
     #[test]
     fn ki_fp_filters_is_dropped_from_every_symbol() {
         for id in [
@@ -409,8 +515,21 @@ mod tests {
         for &(path, _, bytes) in checked().unwrap() {
             if path.starts_with("footprints/") {
                 let text = std::str::from_utf8(bytes).unwrap();
-                assert_eq!(sexpr::parse(text).unwrap().head(), Some("footprint"));
-                assert!(!text.contains("(clearance"), "{path}");
+                let fp = sexpr::parse(text).unwrap();
+                assert_eq!(fp.head(), Some("footprint"));
+                // A clearance only inside a keepout zone's `connect_pads`
+                // (`RUL-03`, amended for `AET-WO-4300d2` D2 (a)).
+                let keepout_clearances: usize = fp
+                    .children("zone")
+                    .filter(|z| z.child("keepout").is_some())
+                    .filter_map(|z| z.child("connect_pads"))
+                    .map(|c| c.children("clearance").count())
+                    .sum();
+                assert_eq!(
+                    text.matches("(clearance").count(),
+                    keepout_clearances,
+                    "{path}"
+                );
             }
         }
     }
@@ -422,8 +541,8 @@ mod tests {
             "(lib (name \"Device\") (type \"KiCad\") (uri \"/s/lib/symbols/Device.kicad_symdir\")"
         ));
         assert!(fp.contains("(uri \"/s/lib/footprints/Package_QFP.pretty\")"));
-        assert_eq!(sym.matches("(lib ").count(), 7);
-        assert_eq!(fp.matches("(lib ").count(), 7);
+        assert_eq!(sym.matches("(lib ").count(), 12);
+        assert_eq!(fp.matches("(lib ").count(), 11);
         assert!(sexpr::parse(&sym).is_ok() && sexpr::parse(&fp).is_ok());
     }
 }

@@ -18,6 +18,7 @@ pub mod bom;
 pub mod extract;
 pub mod fab;
 pub mod library;
+pub mod loops;
 pub mod parity;
 pub mod pcb;
 pub mod route;

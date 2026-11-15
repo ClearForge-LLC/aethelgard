@@ -519,7 +519,7 @@ fn power_tree(dir: &Path) -> PathBuf {
 }
 
 #[test]
-fn a_power_tree_solves_into_the_topology_and_is_refused_at_emit() {
+fn a_power_tree_solves_into_the_topology_and_emits_its_board() {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("aet-4300d-power-tree");
     let _ = std::fs::remove_dir_all(&dir);
     let file = power_tree(&dir);
@@ -539,7 +539,36 @@ fn a_power_tree_solves_into_the_topology_and_is_refused_at_emit() {
         (p.input_steady_milliamps, p.input_fault_milliamps),
         (2679, 10_100)
     );
-    // The seam of the split: nothing emits a board without its power tree.
+    // `AET-WO-4300d2` §1.7: the sense net's pin, the lowest package position
+    // among the free pins that carry a single-ended ADC input.
+    let table = aethelgard_svd_hal::pin_table("STM32H753ZITx").unwrap();
+    let sense = &p.sense["VBAT_SENSE"];
+    let pin = &table.pins[&sense.pin];
+    assert_eq!(sense.position, pin.position);
+    assert_eq!(
+        sense.channels,
+        pin.adc_channels.iter().cloned().collect::<Vec<_>>()
+    );
+    assert!(!sense.channels.is_empty());
+    let taken: Vec<&str> = t
+        .assignments
+        .values()
+        .map(|a| a.pin.as_str())
+        .chain(t.gpio.values().map(String::as_str))
+        .collect();
+    assert!(!taken.contains(&sense.pin.as_str()));
+    let lowest = table
+        .pins
+        .iter()
+        .filter(|(n, q)| {
+            !q.adc_channels.is_empty()
+                && !aethelgard_ir::RESERVED_PINS.contains(&n.as_str())
+                && !taken.contains(&n.as_str())
+        })
+        .map(|(_, q)| q.position)
+        .min();
+    assert_eq!(lowest, Some(sense.position));
+    // `AET-WO-4300d2`: the tree is drawn and placed on a routed board.
     let out = dir.join("emitted");
     let output = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
         .args(["emit", "--file"])
@@ -548,24 +577,26 @@ fn a_power_tree_solves_into_the_topology_and_is_refused_at_emit() {
         .arg(&out)
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(2), "{output:?}");
-    let v: Value = serde_json::from_str(line(&output)).unwrap();
-    assert_eq!(v["error"]["kind"], "PowerNotEmitted", "{v}");
-    assert!(!out.join("sentinel-02-power.kicad_pcb").exists());
-    // Nor is a board judged against it: `check drc --spec` refuses before
-    // any tool is looked for.
-    let board = dir.join("any.kicad_pcb");
-    std::fs::write(&board, "(kicad_pcb (version 20241229))\n").unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
-        .args(["check", "drc", "--board"])
-        .arg(&board)
-        .arg("--spec")
-        .arg(&file)
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(2), "{output:?}");
-    let v: Value = serde_json::from_str(line(&output)).unwrap();
-    assert_eq!(v["error"]["kind"], "PowerNotEmitted", "{v}");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let board = std::fs::read_to_string(out.join("sentinel-02-power.kicad_pcb")).unwrap();
+    for r in [
+        "J1", "U10", "U11", "U12", "L1", "L2", "R10", "R11", "R50", "R51", "C50",
+    ] {
+        assert!(
+            board.contains(&format!("(property \"Reference\" \"{r}\"")),
+            "{r} is not on the board"
+        );
+    }
+    // Each buck's 4 x 3 array of 0.254 mm vias (`Stack::of`, `1309` D1), and
+    // J1's through-hole pads joined solid (`1309` D2).
+    assert_eq!(board.matches("(drill 0.254)").count(), 24);
+    let j1 = board
+        .split("\t(footprint ")
+        .find(|f| f.contains("(property \"Reference\" \"J1\""))
+        .expect("J1's footprint");
+    // Its two pins and its two plated pegs.
+    assert_eq!(j1.matches("thru_hole").count(), 4);
+    assert_eq!(j1.matches("(zone_connect 2)").count(), 4);
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

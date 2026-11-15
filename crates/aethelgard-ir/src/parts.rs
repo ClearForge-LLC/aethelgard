@@ -50,8 +50,9 @@ pub const PARTS_JSON: &str = include_str!("../data/parts.json");
 /// list with a mask, and added `lifecycle`, `stand_in`, `io_millivolts` and
 /// `script` (`AET-WO-4210`). Version 4 made `script.configure` a list of
 /// writes with a `settle_us`, and gave a channel its `bytes` and `order`
-/// (`AET-WO-4220`).
-pub const PARTS_SCHEMA_VERSION: u32 = 4;
+/// (`AET-WO-4220`). Version 5 added `spi_output_delay_max_ns`, an SPI part's
+/// output valid time, with its citation (`AET-WO-4300d2` K6).
+pub const PARTS_SCHEMA_VERSION: u32 = 5;
 
 /// A bus kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,6 +103,10 @@ pub const MAX_SUPPLY_MILLIVOLTS: u32 = 60_000;
 /// The highest pin capacitance an entry may state, in femtofarads: no
 /// part's signal pin comes near 100 pF, and anything above is a typo.
 pub const MAX_PIN_FEMTOFARADS: u64 = 100_000;
+
+/// The largest SPI output delay the table accepts, in nanoseconds: a larger
+/// value is a typing error, not a datasheet.
+pub const MAX_SPI_OUTPUT_DELAY_NS: u32 = 1_000;
 
 /// The SPI command that reads a JEDEC identity (`9Fh`), the identity's width,
 /// and the capacity codes (`2^code` bytes) a `SPI.GenericSpiFlash` is built
@@ -339,8 +344,9 @@ pub enum Held {
     Pending(String),
 }
 
-/// One citation per value group; `io`, `configure` and `data` exactly when
-/// the part has an I/O range and a script.
+/// One citation per value group; `io`, `spi_output_delay`, `configure` and
+/// `data` exactly when the part has an I/O range, an output delay and a
+/// script.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Citations {
     pub bus: Citation,
@@ -348,6 +354,7 @@ pub struct Citations {
     pub supply: Citation,
     pub io: Option<Citation>,
     pub pin_capacitance: Citation,
+    pub spi_output_delay: Option<Citation>,
     pub lifecycle: Citation,
     pub configure: Option<Citation>,
     pub data: Option<Citation>,
@@ -363,6 +370,11 @@ impl Citations {
         ];
         v.extend(self.io.as_ref().map(|c| ("io", c)));
         v.push(("pin_capacitance", &self.pin_capacitance));
+        v.extend(
+            self.spi_output_delay
+                .as_ref()
+                .map(|c| ("spi_output_delay", c)),
+        );
         v.push(("lifecycle", &self.lifecycle));
         v.extend(self.configure.as_ref().map(|c| ("configure", c)));
         v.extend(self.data.as_ref().map(|c| ("data", c)));
@@ -392,6 +404,10 @@ pub struct Part {
     /// part's signal pins, in femtofarads, or `None` when it prints none: a
     /// typical value is never promoted to a maximum (`AET-WO-4300c` D3).
     pub pin_capacitance_femtofarads: Option<u64>,
+    /// An SPI part's output valid time after the clock edge, at most, in
+    /// nanoseconds, or `None`: the datasheet states none, or the table holds
+    /// none (`AET-WO-4300d2` K6). Only an SPI part may carry one.
+    pub spi_output_delay_max_ns: Option<u32>,
     /// The Renode model, as `platforms` names it, or `None`: unmodelled.
     pub renode: Option<String>,
     /// The bring-up after the identity, or `None`: the identity alone.
@@ -516,6 +532,10 @@ struct RawPart {
     #[serde(deserialize_with = "Option::deserialize")]
     io_millivolts: Option<RawSupply>,
     pin_capacitance: RawPinCapacitance,
+    /// Required: `null` says the table holds no output delay for the part;
+    /// only an SPI part may give one.
+    #[serde(deserialize_with = "Option::deserialize")]
+    spi_output_delay_max_ns: Option<u32>,
     /// Required: `null` says unmodelled; an absent key is refused, never read
     /// as unmodelled (adversarial A2).
     #[serde(deserialize_with = "Option::deserialize")]
@@ -620,6 +640,9 @@ struct RawCitations {
     #[serde(deserialize_with = "Option::deserialize")]
     io: Option<RawCitation>,
     pin_capacitance: RawCitation,
+    /// Required: `null` exactly when `spi_output_delay_max_ns` is.
+    #[serde(deserialize_with = "Option::deserialize")]
+    spi_output_delay: Option<RawCitation>,
     lifecycle: RawCitation,
     /// Required: `null` exactly when `script` is.
     #[serde(deserialize_with = "Option::deserialize")]
@@ -980,6 +1003,19 @@ fn part(raw: RawPart) -> Result<Part, String> {
             "`pin_capacitance.max_femtofarads` is {pin_capacitance:?}, not null or 1 to {MAX_PIN_FEMTOFARADS}"
         ));
     }
+    if let Some(ns) = raw.spi_output_delay_max_ns {
+        if bus.kind() != BusKind::Spi {
+            return Err(
+                "`spi_output_delay_max_ns` is given on an I2C part, which has no SPI output"
+                    .to_owned(),
+            );
+        }
+        if !(1..=MAX_SPI_OUTPUT_DELAY_NS).contains(&ns) {
+            return Err(format!(
+                "`spi_output_delay_max_ns` is {ns}, not null or 1 to {MAX_SPI_OUTPUT_DELAY_NS}"
+            ));
+        }
+    }
     if let Some(model) = &raw.renode {
         let Some((_, buses)) = RENODE_MODELS.iter().find(|(m, _)| m == model) else {
             return Err(format!(
@@ -1011,6 +1047,12 @@ fn part(raw: RawPart) -> Result<Part, String> {
         supply: citation(c.supply, "supply")?,
         io: paired(c.io, io.is_some(), "io", "io_millivolts")?,
         pin_capacitance: citation(c.pin_capacitance, "pin_capacitance")?,
+        spi_output_delay: paired(
+            c.spi_output_delay,
+            raw.spi_output_delay_max_ns.is_some(),
+            "spi_output_delay",
+            "spi_output_delay_max_ns",
+        )?,
         lifecycle: citation(c.lifecycle, "lifecycle")?,
         configure: paired(c.configure, script.is_some(), "configure", "script")?,
         data: paired(c.data, script.is_some(), "data", "script")?,
@@ -1030,6 +1072,7 @@ fn part(raw: RawPart) -> Result<Part, String> {
         supply_millivolts: (min, max),
         io_millivolts: io,
         pin_capacitance_femtofarads: pin_capacitance,
+        spi_output_delay_max_ns: raw.spi_output_delay_max_ns,
         renode: raw.renode,
         script,
         citations,

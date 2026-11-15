@@ -56,6 +56,10 @@ use crate::{
 /// A regulator's input when it is fed straight from the battery.
 pub const BATTERY: &str = "battery";
 
+/// The battery's net on a drawn board (`AET-WO-4300d2` K10): a rail, reserved
+/// for the power tree, which a net class may name when a tree is declared.
+pub const BATTERY_NET: &str = "VBAT";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct Power {
@@ -1930,7 +1934,19 @@ fn crossings(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
 /// ground is a `B.Cu` zone), validated by [`crate::thermal::ThermalVias`].
 fn thermal(ctx: &Ctx<'_>) -> Result<(), IrValidationError> {
     let board = &ctx.spec.board;
-    let layers: Vec<String> = if board.copper_layers == 2 {
+    let layers = thermal_layers(board);
+    for r in &ctx.power.regulators {
+        if let Kind::Buck(b) = &ctx.row(&r.reference, &r.part)?.kind {
+            vias(&b.thermal_vias, layers.clone()).validate(&r.part, board)?;
+        }
+    }
+    Ok(())
+}
+
+/// The layers a thermal array joins (`K7`): the declared board's `GND`
+/// planes, or `B.Cu` on a two-layer board, where ground is a `B.Cu` zone.
+fn thermal_layers(board: &crate::board::Board) -> Vec<String> {
+    if board.copper_layers == 2 {
         vec!["B.Cu".to_owned()]
     } else {
         board
@@ -1938,13 +1954,36 @@ fn thermal(ctx: &Ctx<'_>) -> Result<(), IrValidationError> {
             .filter(|(_, net)| *net == crate::GND)
             .map(|(name, _)| name.to_owned())
             .collect()
-    };
-    for r in &ctx.power.regulators {
-        if let Kind::Buck(b) = &ctx.row(&r.reference, &r.part)?.kind {
-            vias(&b.thermal_vias, layers.clone()).validate(&r.part, board)?;
-        }
     }
-    Ok(())
+}
+
+/// Each buck's thermal array on a board (`AET-WO-4300d2` §1.5): its
+/// reference, the pad number its row's `pins` gives the rule's pad role, and
+/// the rule joined to [`thermal_layers`], as step 9a validated it. For a
+/// specification `validate` accepted.
+pub fn thermal_arrays(spec: &Specification) -> Vec<(String, String, crate::thermal::ThermalVias)> {
+    let (Some(p), Ok(table)) = (&spec.power, pp::table()) else {
+        return Vec::new();
+    };
+    let layers = thermal_layers(&spec.board);
+    let mut out = Vec::new();
+    for r in &p.regulators {
+        // belt-and-suspenders: `validate` refuses an unknown part and a pad
+        // role the row does not map (step 9a, the parser's pin roles).
+        let Some(row) = table.get(&r.part) else {
+            continue;
+        };
+        let Kind::Buck(b) = &row.kind else { continue };
+        let Some(pad) = row.pins.get(&b.thermal_vias.pad) else {
+            continue;
+        };
+        out.push((
+            r.reference.clone(),
+            pad.clone(),
+            vias(&b.thermal_vias, layers.clone()),
+        ));
+    }
+    out
 }
 
 /// A row's thermal rule as `1309`'s array, on the given layers.
@@ -1967,14 +2006,31 @@ pub fn check(spec: &Specification) -> Result<Option<Checked>, IrValidationError>
     if spec.power.is_none() {
         return Ok(None);
     }
-    // No sensor row carries its SPI output delay until `4210`'s schema 3 is
-    // on `main` (`K6`): every crossing's round trip is refused until then.
+    let sensors = crate::parts::table()?;
     check_against(
         spec,
         crate::power_parts::table()?,
-        crate::parts::table()?,
-        &BTreeMap::new(),
+        sensors,
+        &output_delays(sensors),
     )
+}
+
+/// The output delay each SPI part's row holds, with its citation as the
+/// verdict names it (`AET-WO-4300d2` K6). A part whose row holds none is
+/// absent, and a crossing in front of it is refused `OutputDelayMissing`.
+pub fn output_delays(sensors: &crate::parts::PartsTable) -> OutputDelays {
+    sensors
+        .parts()
+        .iter()
+        .filter_map(|p| {
+            let ns = p.spi_output_delay_max_ns?;
+            let c = p.citations.spi_output_delay.as_ref()?;
+            Some((
+                p.part.clone(),
+                (ns, format!("{} {}, {}", c.document, c.revision, c.section)),
+            ))
+        })
+        .collect()
 }
 
 /// Each sensor's SPI output delay after the clock edge, at most, ns, with its

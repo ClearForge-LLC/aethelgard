@@ -1378,6 +1378,70 @@ fn the_through_hole_and_thermal_fixtures_pass_drc_by_the_gates_rules() {
     }
 }
 
+/// `AET-WO-4300d2` §1.6: the drill files `through_hole_tier1.rs` pins are
+/// what this image's KiCad writes. Each fixture board, prepared with the
+/// gate's setup as `fab` prepares its copy, is exported with `fab`'s own
+/// flags (`pcb export drill --excellon-min-header`), into one file whose
+/// bytes are the pinned file's, and which holds exactly the tools
+/// `fab::drills` derives from the board.
+#[test]
+fn kicad_writes_the_pinned_drill_files() {
+    use aethelgard_eda::stack::Join;
+    let t = Temp::new("4300d2-drill");
+    let mut own_vias = common::th::thermal_board(false, None, true);
+    own_vias.0.joins = vec![("U5".to_owned(), Join::Solid)];
+    let boards = [
+        ("xt30-4", common::th::xt30_board(true, Join::Solid)),
+        (
+            "thermal-4",
+            common::th::thermal_board(true, Some(common::th::lmr33630_rule(&["In1.Cu"])), false),
+        ),
+        ("via-and-pad-0.3", own_vias),
+    ];
+    for (name, fixture) in boards {
+        let (stack, text) = common::th::write(fixture).unwrap();
+        let dir = t.0.join(name);
+        fs::create_dir_all(&dir).unwrap();
+        let tree = aethelgard_eda::board::read(&text).unwrap();
+        let prepared =
+            aethelgard_eda::board::prepare_read(&tree, &text, aethelgard_eda::rules::SETUP)
+                .unwrap();
+        fs::write(dir.join("input.kicad_pcb"), prepared).unwrap();
+        let out = Command::new("kicad-cli")
+            .args(["pcb", "export", "drill", "--excellon-min-header", "-o"])
+            .arg(format!("{}/", dir.display()))
+            .arg(dir.join("input.kicad_pcb"))
+            .current_dir(&dir)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{name}: {out:?}");
+        let mut written: Vec<String> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .filter(|n| n.ends_with(".drl"))
+            .collect();
+        written.sort();
+        assert_eq!(written, ["input.drl"], "{name}: one drill file");
+        let drl = fs::read(dir.join("input.drl")).unwrap();
+        let pinned = fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("tests/fixtures/fab/kicad-10.0.7-{name}.drl")),
+        )
+        .unwrap();
+        record(&format!("4300d2 {name}: drill file {} bytes", drl.len()));
+        assert_eq!(
+            String::from_utf8_lossy(&drl),
+            String::from_utf8_lossy(&pinned),
+            "{name}"
+        );
+        let strict = aethelgard_eda::strict::board(&text).unwrap();
+        let (board, routed) = aethelgard_eda::route::read(&strict, &stack).unwrap();
+        let drills = aethelgard_eda::fab::drills(&board, &routed).unwrap();
+        assert_eq!(aethelgard_eda::fab::holes(&drl, &drills), Ok(()), "{name}");
+    }
+}
+
 /// `AET-WO-1309` §2: a thermal via drilled other than its rule fails KiCad
 /// DRC by the gate's `thermal_U5_9` rule (KiCad's kind is `drill_out_of_range`);
 /// and the board's own 0.254 mm

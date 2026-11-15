@@ -106,6 +106,35 @@ fn name(item: &Node<'_>, within: &str) -> Result<Option<String>, BoardRefusal> {
     })
 }
 
+/// Whether `item` is a footprint's keepout zone whose `connect_pads` is
+/// KiCad's `(connect_pads (clearance <number>))` and nothing else: true only
+/// for a zone directly inside a footprint that carries a `keepout`. A
+/// `connect_pads` with anything else in it is refused as a local clearance.
+fn admitted_keepout(item: &Node<'_>, within: &str) -> Result<bool, BoardRefusal> {
+    if item.head() != Some("zone")
+        || !within.starts_with("footprint ")
+        || within.contains(" of ")
+        || item.one("keepout")?.is_none()
+    {
+        return Ok(false);
+    }
+    let Some(c) = item.one("connect_pads")? else {
+        return Ok(true);
+    };
+    let lists: Vec<_> = c.lists().collect();
+    let plain = c.texts().count() == 0
+        && matches!(lists.as_slice(), [l] if l.head() == Some("clearance")
+            && l.len() == 2
+            && l.arg(1).is_some_and(|v| crate::sexpr::nm(v).is_some()));
+    if plain {
+        Ok(true)
+    } else {
+        Err(BoardRefusal::LocalClearance(format!(
+            "the keepout zone of {within}"
+        )))
+    }
+}
+
 /// A footprint token that excuses its items from a check (measured on KiCad
 /// 10.0.7 by the adversarial pass: `net_tie_pad_groups` turned two clearance,
 /// a short and two mask bridges into nothing). Mask and paste margins are not
@@ -187,7 +216,16 @@ pub fn prepare_read(tree: &Tree, text: &str, setup: &str) -> Result<String, Boar
             _ => {}
         }
         let children: Vec<_> = item.lists().collect();
+        let keepout = admitted_keepout(&item, &within)?;
         for child in children.into_iter().rev() {
+            // A vendored footprint's keepout zone carries KiCad's own
+            // `(connect_pads (clearance N))`, which binds nothing in a zone
+            // that fills nothing; the keepout itself is judged by
+            // `route::check` and by KiCad's DRC (`RUL-03`, amended for
+            // `AET-WO-4300d2` D2 (a)).
+            if keepout && child.head() == Some("connect_pads") {
+                continue;
+            }
             stack.push((child, here.clone()));
         }
     }
