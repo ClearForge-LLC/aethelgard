@@ -349,7 +349,7 @@ fn the_reference_firmware_boots_and_two_boots_agree() {
     assert_eq!(
         b["i2c_witness"],
         serde_json::json!([{
-            "peripheral": "I2C1", "reference": "U2", "device": "i2c1.u2",
+            "peripheral": "I2C1", "reference": "U2", "step": "identity", "device": "i2c1.u2",
             "expected": WITNESS, "observed": WITNESS, "absent": []
         }]),
         "Renode's BME280 logged exactly the read the record claims"

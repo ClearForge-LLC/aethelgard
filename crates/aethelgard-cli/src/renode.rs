@@ -600,6 +600,33 @@ fn windows(log: &[&str], mux: &str, address: u8) -> Vec<(usize, usize)> {
     out
 }
 
+/// The device's own lines in `log`, with their positions: its witness-shaped
+/// lines ([`device_line`]), but for its model's edge artefact directly after
+/// the multiplexer's finish line for it, which is skipped (`AET-WO-4210` D4).
+/// The judge's attribution and the droop's probe read a device through this
+/// one filter.
+fn own_lines<'l>(c: &aethelgard_twin::boot::StepCheck, log: &[&'l str]) -> Vec<(usize, &'l str)> {
+    let finish = match c.wire {
+        aethelgard_twin::boot::Wire::Spi { address, .. } => Some(format!(
+            "[NOISY] {}: Finisihing transmission on device 0x{address:X}",
+            mux_of(c)
+        )),
+        aethelgard_twin::boot::Wire::I2c { .. } => None,
+    };
+    let mut lines = Vec::new();
+    for (i, line) in log.iter().enumerate() {
+        let Some(body) = device_line(c, line) else {
+            continue;
+        };
+        let after_finish = i > 0 && finish.is_some() && log_body(log[i - 1]) == finish.as_deref();
+        if after_finish && c.idle_warning.as_deref() == Some(body) {
+            continue;
+        }
+        lines.push((i, body));
+    }
+    lines
+}
+
 /// Each check's observed lines and, on SPI, the multiplexer lines of its
 /// window (`AET-WO-4210` S2, D4, D5). A device's lines are its witness-shaped
 /// lines ([`device_line`]), but for its model's edge artefact directly after
@@ -639,24 +666,7 @@ fn attribute(
             }
             aethelgard_twin::boot::Wire::I2c { .. } => None,
         };
-        let finish = spi.as_ref().map(|(address, _)| {
-            format!(
-                "[NOISY] {}: Finisihing transmission on device 0x{address:X}",
-                mux_of(c)
-            )
-        });
-        let mut lines: Vec<(usize, &str)> = Vec::new();
-        for (i, line) in log.iter().enumerate() {
-            let Some(body) = device_line(c, line) else {
-                continue;
-            };
-            let after_finish =
-                i > 0 && finish.is_some() && log_body(log[i - 1]) == finish.as_deref();
-            if after_finish && c.idle_warning.as_deref() == Some(body) {
-                continue;
-            }
-            lines.push((i, body));
-        }
+        let lines = own_lines(c, log);
         match &spi {
             Some((_, w)) => {
                 let step_of = |i: usize| {
@@ -1330,10 +1340,9 @@ fn probes_in(text: &str, dropped: bool, plan: &BootPlan<'_>) -> Result<Vec<Probe
             )));
         }
         let witness = check.filter(|_| !dropped).map(|c| {
-            lines[r + 1..b]
-                .iter()
-                .filter_map(|l| device_line(c, l))
-                .map(str::to_owned)
+            own_lines(c, &lines[r + 1..b])
+                .into_iter()
+                .map(|(_, l)| l.to_owned())
                 .collect()
         });
         out.push(Probe {
