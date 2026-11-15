@@ -103,18 +103,22 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `893fb13d…c4a6` there. The boot image was re-taken in `AET-WO-4220`, whose
 /// `StepCheck` names each step (`label`): with its three `label: "identity"`
 /// fields removed, the image's text hashes to the old `0e4d72ee…c8a2` exactly.
+/// Re-taken in `AET-WO-4300d3` (specification version 9, `power`'s
+/// declarations), which changes no generator: the first three moved with the
+/// specification's sha256 alone (`d114ae78…c455`, `849eb6bc…4397`,
+/// `b24f53eb…9e35` before), and the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "d114ae787ece6238223fdd2ddf78c14021dbb548ce966cac310aceb9bc89c455",
+        "c95b99bdc50ae7704eacbecc459c2c6d146ea3a6702f7a2b9a86fd806c57e855",
     ),
     (
         "platform",
-        "849eb6bc70882585b2fa054260861646f6bb026ef0203fbb0cd5c7447a844397",
+        "db83a5090aa5c7f556fa3cfe76611700483ac31d888de0d2a4afcffbf958f983",
     ),
     (
         "platform faulted",
-        "b24f53ebd62e293e1edaabb0a0723c1accb0098e3e64ef4f7e21caf363459e35",
+        "0fb8d3246b8563338d6160af48b7c06e5316487c9096d3ba3bdf8f8434583662",
     ),
     (
         "boot image",

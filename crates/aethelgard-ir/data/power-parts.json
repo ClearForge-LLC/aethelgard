@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "documents": {
     "SNVSAN3F": {
       "title": "TI LMR33630 datasheet SNVSAN3F",
@@ -84,6 +84,12 @@
       "revision": "Jun.26, 2026",
       "sha256": "063100b7649564e4f7bfa7f93f79fc0638b6b7c76c143dbada9b7466747f7b4e",
       "pending": null
+    },
+    "NICHICON_UCZ": {
+      "title": "Nichicon UCZ series catalog, aluminum electrolytic, chip type, high reliability",
+      "revision": "Jun. 2024",
+      "sha256": "7ecc96085b98e8b9255541bac789a21f19f67a1ce5f45bbc5ac1aa41117c3055",
+      "pending": null
     }
   },
   "parts": [
@@ -119,6 +125,21 @@
             "at": {
               "document": "SNVSAN3F",
               "section": "p. 7, 7.5 VIN minimum operating input voltage, max 3.8 V; p. 6, 7.3 VIN to 36 V"
+            }
+          },
+          "vin_abs_max_millivolts": {
+            "value": 38000,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 6, 7.1 Absolute Maximum Ratings, VIN to PGND max 38 V"
+            }
+          },
+          "input_damping_picofarads": {
+            "min": 20000000,
+            "max": 100000000,
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 32, Power Supply Recommendations: an aluminum or tantalum input capacitor in parallel with the ceramics; 20 uF to 100 uF is usually sufficient to provide input damping"
             }
           },
           "vfb_microvolts": {
@@ -238,6 +259,7 @@
               "role": "cin",
               "min_picofarads": 10000000,
               "max_picofarads": null,
+              "effective_min_picofarads": null,
               "rated_min_millivolts": null,
               "rated_step": null,
               "rated_at_least_working": true,
@@ -255,6 +277,7 @@
               "role": "cin_hf",
               "min_picofarads": 220000,
               "max_picofarads": 220000,
+              "effective_min_picofarads": null,
               "rated_min_millivolts": 50000,
               "rated_step": null,
               "rated_at_least_working": true,
@@ -270,6 +293,7 @@
               "role": "cboot",
               "min_picofarads": 100000,
               "max_picofarads": 100000,
+              "effective_min_picofarads": null,
               "rated_min_millivolts": 10000,
               "rated_step": null,
               "rated_at_least_working": false,
@@ -288,6 +312,7 @@
               "role": "cvcc",
               "min_picofarads": 1000000,
               "max_picofarads": 1000000,
+              "effective_min_picofarads": null,
               "rated_min_millivolts": 16000,
               "rated_step": null,
               "rated_at_least_working": false,
@@ -305,6 +330,7 @@
               "role": "cout",
               "min_picofarads": 88000000,
               "max_picofarads": 880000000,
+              "effective_min_picofarads": null,
               "rated_min_millivolts": 10000,
               "rated_step": {
                 "from_nominal_millivolts": 5000,
@@ -325,6 +351,7 @@
               "role": "inductor",
               "min_picofarads": null,
               "max_picofarads": null,
+              "effective_min_picofarads": null,
               "rated_min_millivolts": null,
               "rated_step": null,
               "rated_at_least_working": false,
@@ -332,6 +359,73 @@
               "at": {
                 "document": "SNVSAN3F",
                 "section": "p. 21-22, 9.2.2.4 and Table 9-2 (8 uH at 5 V, 6.8 uH at 3.3 V, 400 kHz)"
+              }
+            }
+          ],
+          "theta_ja": {
+            "package": "DDA",
+            "board_copper_layers": 4,
+            "condition": "typical and for illustration only: a four-layer board with 2 oz outer and 1 oz inner copper, the area being the copper on each layer",
+            "points": [
+              {
+                "square_centimetres": 7,
+                "decikelvin_per_watt": 420
+              },
+              {
+                "square_centimetres": 10,
+                "decikelvin_per_watt": 360
+              },
+              {
+                "square_centimetres": 15,
+                "decikelvin_per_watt": 300
+              },
+              {
+                "square_centimetres": 20,
+                "decikelvin_per_watt": 280
+              },
+              {
+                "square_centimetres": 30,
+                "decikelvin_per_watt": 270
+              },
+              {
+                "square_centimetres": 40,
+                "decikelvin_per_watt": 265
+              },
+              {
+                "square_centimetres": 50,
+                "decikelvin_per_watt": 255
+              },
+              {
+                "square_centimetres": 58,
+                "decikelvin_per_watt": 250
+              }
+            ],
+            "at": {
+              "document": "SNVSAN3F",
+              "section": "p. 25, Figure 9-3, typical RthetaJA versus copper area, four-layer board, HSOIC (DDA); read from the plot, each point rounded up to 0.5 C/W"
+            }
+          },
+          "controls": [
+            {
+              "pin": "EN",
+              "straps": [
+                "input"
+              ],
+              "wirable": true,
+              "at": {
+                "document": "SNVSAN3F",
+                "section": "p. 5, pin functions, EN: high = ON, low = OFF; can be connected directly to VIN; do not float"
+              }
+            },
+            {
+              "pin": "PG",
+              "straps": [
+                "open"
+              ],
+              "wirable": true,
+              "at": {
+                "document": "SNVSAN3F",
+                "section": "p. 5, pin functions, PG: open drain power-good flag output; can be left open when not used"
               }
             }
           ],
@@ -381,6 +475,13 @@
             "at": {
               "document": "SBVS320D",
               "section": "p. 4, 5.3 and p. 5, 5.5: VIN 1.45 to 5.5 V"
+            }
+          },
+          "vin_abs_max_millivolts": {
+            "value": 6000,
+            "at": {
+              "document": "SBVS320D",
+              "section": "p. 4, 5.1 Absolute Maximum Ratings, supply voltage VIN max 6.0 V"
             }
           },
           "vout_millivolts": {
@@ -434,6 +535,13 @@
               "role": "cin",
               "min_picofarads": 1000000,
               "max_picofarads": null,
+              "effective_min_picofarads": {
+                "value": 470000,
+                "at": {
+                  "document": "SBVS320D",
+                  "section": "p. 3, Table 4-1 note 1: make sure the effective capacitance at the pin is greater than 0.47 uF (nominal derating 50 %)"
+                }
+              },
               "rated_min_millivolts": null,
               "rated_step": null,
               "rated_at_least_working": true,
@@ -450,6 +558,13 @@
               "role": "cout",
               "min_picofarads": 1000000,
               "max_picofarads": 200000000,
+              "effective_min_picofarads": {
+                "value": 470000,
+                "at": {
+                  "document": "SBVS320D",
+                  "section": "p. 3, Table 4-1 note 1: make sure the effective capacitance at the pin is greater than 0.47 uF (nominal derating 50 %)"
+                }
+              },
               "rated_min_millivolts": null,
               "rated_step": null,
               "rated_at_least_working": true,
@@ -460,6 +575,19 @@
               "at": {
                 "document": "SBVS320D",
                 "section": "p. 4, 5.3 COUT 1 uF to 200 uF; p. 15, 7.1.1 X5R and X7R ceramics"
+              }
+            }
+          ],
+          "controls": [
+            {
+              "pin": "EN",
+              "straps": [
+                "input"
+              ],
+              "wirable": true,
+              "at": {
+                "document": "SBVS320D",
+                "section": "p. 3, Table 4-1, EN: drive EN greater than VHI to turn on the regulator, less than VLO for shutdown"
               }
             }
           ]
@@ -565,6 +693,7 @@
               "role": "bypass_a",
               "min_picofarads": 100000,
               "max_picofarads": 1100000,
+              "effective_min_picofarads": null,
               "rated_min_millivolts": null,
               "rated_step": null,
               "rated_at_least_working": true,
@@ -583,6 +712,7 @@
               "role": "bypass_b",
               "min_picofarads": 100000,
               "max_picofarads": 1100000,
+              "effective_min_picofarads": null,
               "rated_min_millivolts": null,
               "rated_step": null,
               "rated_at_least_working": true,
@@ -595,6 +725,20 @@
               "at": {
                 "document": "SCES935A",
                 "section": "p. 25, 12.1: a 0.1 uF bypass on each supply pin, or 1 uF and 0.1 uF in parallel"
+              }
+            }
+          ],
+          "controls": [
+            {
+              "pin": "OE",
+              "straps": [
+                "vcca",
+                "vccb"
+              ],
+              "wirable": true,
+              "at": {
+                "document": "SCES935A",
+                "section": "p. 4, Table 6-1, OE: pull to GND for high impedance; pull to VCCA or VCCB to enable all outputs"
               }
             }
           ]
@@ -660,6 +804,36 @@
               "at": {
                 "document": "DS12117",
                 "section": "p. 212, Table 115, VBOR3 falling max 2.68 V"
+              }
+            }
+          ],
+          "bor_rising_max_millivolts": [
+            {
+              "value": 1710,
+              "at": {
+                "document": "DS12117",
+                "section": "p. 212, Table 115, VBOR0 rising max 1.71 V, guaranteed by design (note 1)"
+              }
+            },
+            {
+              "value": 2150,
+              "at": {
+                "document": "DS12117",
+                "section": "p. 212, Table 115, VBOR1 rising max 2.15 V"
+              }
+            },
+            {
+              "value": 2470,
+              "at": {
+                "document": "DS12117",
+                "section": "p. 212, Table 115, VBOR2 rising max 2.47 V"
+              }
+            },
+            {
+              "value": 2780,
+              "at": {
+                "document": "DS12117",
+                "section": "p. 212, Table 115, VBOR3 rising max 2.78 V"
               }
             }
           ],
@@ -897,7 +1071,8 @@
               "section": "Rated Value table, rated voltage"
             }
           },
-          "dielectric": "X7S"
+          "dielectric": "X7S",
+          "dc_bias": []
         }
       }
     },
@@ -931,7 +1106,8 @@
               "section": "Rated Value table, rated voltage"
             }
           },
-          "dielectric": "X7R"
+          "dielectric": "X7R",
+          "dc_bias": []
         }
       }
     },
@@ -965,7 +1141,8 @@
               "section": "Rated Value table, rated voltage"
             }
           },
-          "dielectric": "X7R"
+          "dielectric": "X7R",
+          "dc_bias": []
         }
       }
     },
@@ -999,7 +1176,8 @@
               "section": "Rated Value table, rated voltage"
             }
           },
-          "dielectric": "X7R"
+          "dielectric": "X7R",
+          "dc_bias": []
         }
       }
     },
@@ -1033,7 +1211,8 @@
               "section": "Rated Value table, rated voltage"
             }
           },
-          "dielectric": "X7R"
+          "dielectric": "X7R",
+          "dc_bias": []
         }
       }
     },
@@ -1067,7 +1246,49 @@
               "section": "Rated Value table, rated voltage"
             }
           },
-          "dielectric": "X5R"
+          "dielectric": "X5R",
+          "dc_bias": []
+        }
+      }
+    },
+    {
+      "part": "UCZ1H470MCL1GS",
+      "lifecycle": "unread",
+      "symbol": "Device:C_Polarized",
+      "footprint": "Capacitor_SMD:CP_Elec_8x10",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -40,
+        "max": 125,
+        "at": {
+          "document": "NICHICON_UCZ",
+          "section": "p. 1, specifications, category temperature range -40 to +125 C"
+        }
+      },
+      "kind": {
+        "bulk_capacitor": {
+          "rated_picofarads": {
+            "value": 47000000,
+            "at": {
+              "document": "NICHICON_UCZ",
+              "section": "p. 2, standard ratings, 50 V (1H), 47 uF, 8 x 10, UCZ1H470M..1GS (the part string from p. 1's numbering system)"
+            }
+          },
+          "rated_millivolts": {
+            "value": 50000,
+            "at": {
+              "document": "NICHICON_UCZ",
+              "section": "p. 2, standard ratings, rated voltage 50 V (1H)"
+            }
+          },
+          "esr_max_milliohms": {
+            "value": 250,
+            "at": {
+              "document": "NICHICON_UCZ",
+              "section": "p. 2, standard ratings, ESR max 0.25 ohm, 20 C, 100 kHz, initial (50 V, 47 uF, 8 x 10)"
+            }
+          },
+          "esr_condition": "at 20 C and 100 kHz, initial; 3.50 ohm max at -40 C (p. 2); no figure between"
         }
       }
     }

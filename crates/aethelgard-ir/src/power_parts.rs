@@ -31,7 +31,7 @@ use crate::IrValidationError;
 pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 
 /// The `schema_version` the parser reads.
-pub const POWER_PARTS_SCHEMA_VERSION: u32 = 1;
+pub const POWER_PARTS_SCHEMA_VERSION: u32 = 2;
 
 /// A document the table cites.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,6 +87,12 @@ pub struct Buck {
     /// VIN: the maximum of the minimum operating input, and the recommended
     /// maximum, mV.
     pub vin_millivolts: Ranged,
+    /// VIN's absolute maximum, mV: the ceiling a hot-plug ring is judged
+    /// against (`AET-WO-4300d3` §1.1).
+    pub vin_abs_max_millivolts: Limit,
+    /// The bulk capacitance TI asks for in parallel with the ceramics to damp
+    /// the input's ring on long leads, pF (§1.1).
+    pub input_damping_picofarads: Ranged,
     /// The feedback reference, µV.
     pub vfb_microvolts: Ranged,
     /// The current into FB, at most, nA.
@@ -123,6 +129,62 @@ pub struct Buck {
     pub external: Vec<ExternalRule>,
     /// The thermal-via rule for the exposed pad (`AET-WO-1309` D1).
     pub thermal_vias: ThermalRule,
+    /// The θJA the junction screen reads (`AET-WO-4300d3` §1.2).
+    pub theta_ja: ThetaCurve,
+    /// The control pins and how each may be tied (§1.5).
+    pub controls: Vec<ControlRule>,
+}
+
+/// A typical θJA curve against the copper area on each layer, as a maker
+/// plots it for one package on one board. A screen, never a bound: each point
+/// is read from the plot and rounded up, and the curve falls with area, so a
+/// declared area takes the point at or below it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThetaCurve {
+    /// The package code the curve is for; the row's part ends with it.
+    pub package: String,
+    /// The copper layers of the board the curve was taken on.
+    pub board_copper_layers: u8,
+    pub condition: String,
+    /// `(cm² per layer, tenths of a kelvin per watt)`, area rising.
+    pub points: Vec<(i64, i64)>,
+    pub at: At,
+}
+
+/// How a control pin may be tied when nothing drives it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Strap {
+    /// To the regulator's own input.
+    Input,
+    /// Left unconnected, where the datasheet allows it.
+    Open,
+    Ground,
+    Vcca,
+    Vccb,
+}
+
+impl Strap {
+    pub fn name(self) -> &'static str {
+        match self {
+            Strap::Input => "input",
+            Strap::Open => "open",
+            Strap::Ground => "ground",
+            Strap::Vcca => "vcca",
+            Strap::Vccb => "vccb",
+        }
+    }
+}
+
+/// One control pin: the straps its datasheet allows, and whether it may be
+/// wired to a net instead (`AET-WO-4300d3` §1.5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControlRule {
+    /// A pin role of the row.
+    pub pin: String,
+    pub straps: Vec<Strap>,
+    pub wirable: bool,
+    pub at: At,
 }
 
 /// A linear regulator with a fixed output (the TLV75518PDBV).
@@ -130,6 +192,8 @@ pub struct Buck {
 pub struct Ldo {
     /// The input range, mV.
     pub vin_millivolts: Ranged,
+    /// VIN's absolute maximum, mV.
+    pub vin_abs_max_millivolts: Limit,
     /// The output over the junction range, mV, and the condition it is
     /// tested at, named in every check that reads it.
     pub vout_millivolts: Ranged,
@@ -147,6 +211,7 @@ pub struct Ldo {
     /// The junction's operating maximum, °C.
     pub junction_max_celsius: Limit,
     pub external: Vec<ExternalRule>,
+    pub controls: Vec<ControlRule>,
 }
 
 /// One channel of a fixed-direction translator: an input pin on one side
@@ -184,6 +249,7 @@ pub struct Translator {
     pub pull_up_max_ohms: Limit,
     pub channels: Vec<Channel>,
     pub external: Vec<ExternalRule>,
+    pub controls: Vec<ControlRule>,
 }
 
 /// A thin-film or thick-film resistor series: every value of the series
@@ -200,7 +266,7 @@ pub struct Resistor {
     pub drift_condition: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Dielectric {
     C0g,
@@ -215,6 +281,32 @@ pub struct Capacitor {
     pub rated_picofarads: Limit,
     pub rated_millivolts: Limit,
     pub dielectric: Dielectric,
+    /// The maker's typical capacitance under DC bias, `(mV, pF)`, voltage
+    /// rising: a screen, never a bound (`AET-WO-4300d3` §1.3). Empty where
+    /// no figure is held.
+    pub dc_bias: Vec<(i64, Limit)>,
+}
+
+/// An aluminium electrolytic or polymer capacitor that damps a battery
+/// input's ring (`AET-WO-4300d3` §1.1). Its ESR is cited because damping is
+/// the point.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BulkCapacitor {
+    pub rated_picofarads: Limit,
+    pub rated_millivolts: Limit,
+    /// ESR, at most, mΩ, at `esr_condition`.
+    pub esr_max_milliohms: Limit,
+    pub esr_condition: String,
+}
+
+/// A transient voltage suppressor on a battery input (§1.1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Tvs {
+    /// The reverse stand-off voltage, mV.
+    pub standoff_millivolts: Limit,
+    /// The clamping voltage, at most, mV, at the rated pulse `clamp_condition`.
+    pub clamp_max_millivolts: Limit,
+    pub clamp_condition: String,
 }
 
 /// One orderable inductor.
@@ -241,6 +333,9 @@ pub struct Mcu {
     pub idd_condition: String,
     /// VBOR0 to VBOR3 falling, each at most, mV.
     pub bor_falling_max_millivolts: Vec<Limit>,
+    /// VBOR0 to VBOR3 rising, each at most, mV: the supply must clear it to
+    /// leave reset (`AET-WO-4300d3` §1.4).
+    pub bor_rising_max_millivolts: Vec<Limit>,
     /// The ADC's largest external input resistance per resolution, Ω, as
     /// `(bits, limit)`, highest resolution first.
     pub rain_max_ohms: Vec<(u8, Limit)>,
@@ -274,7 +369,9 @@ pub enum Kind {
     Resistor(Resistor),
     Capacitor(Capacitor),
     Inductor(Inductor),
-    Mcu(Mcu),
+    Mcu(Box<Mcu>),
+    BulkCapacitor(BulkCapacitor),
+    Tvs(Tvs),
 }
 
 impl Kind {
@@ -287,6 +384,8 @@ impl Kind {
             Kind::Capacitor(_) => "capacitor",
             Kind::Inductor(_) => "inductor",
             Kind::Mcu(_) => "mcu",
+            Kind::BulkCapacitor(_) => "bulk_capacitor",
+            Kind::Tvs(_) => "tvs",
         }
     }
 }
@@ -351,6 +450,9 @@ pub struct ExternalRule {
     pub rated_at_least_working: bool,
     pub dielectrics: Vec<Dielectric>,
     pub at: At,
+    /// The least effective capacitance (under DC bias) the datasheet states
+    /// for the role, where it states one, pF (`AET-WO-4300d3` §1.3).
+    pub effective_min_picofarads: Option<Limit>,
 }
 
 /// The thermal-via rule of an exposed pad, as the datasheet states it. The
@@ -494,7 +596,7 @@ struct RawRow {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "lowercase")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 enum RawKind {
     Buck(Box<RawBuck>),
     Ldo(Box<RawLdo>),
@@ -502,13 +604,17 @@ enum RawKind {
     Resistor(RawResistor),
     Capacitor(RawCapacitor),
     Inductor(RawInductor),
-    Mcu(RawMcu),
+    Mcu(Box<RawMcu>),
+    BulkCapacitor(RawBulk),
+    Tvs(RawTvs),
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawBuck {
     vin_millivolts: RawRanged,
+    vin_abs_max_millivolts: RawLimit,
+    input_damping_picofarads: RawRanged,
     vfb_microvolts: RawRanged,
     ifb_max_nanoamps: RawLimit,
     regulation_permille: RawRanged,
@@ -525,7 +631,35 @@ struct RawBuck {
     inductor_min_coefficient: RawLimit,
     stated_at: String,
     external: Vec<RawExternal>,
+    theta_ja: RawTheta,
+    controls: Vec<RawControl>,
     thermal_vias: RawThermal,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawTheta {
+    package: String,
+    board_copper_layers: u8,
+    condition: String,
+    points: Vec<RawThetaPoint>,
+    at: RawAt,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawThetaPoint {
+    square_centimetres: i64,
+    decikelvin_per_watt: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawControl {
+    pin: String,
+    straps: Vec<Strap>,
+    wirable: bool,
+    at: RawAt,
 }
 
 #[derive(Deserialize)]
@@ -539,6 +673,7 @@ struct RawVinStep {
 #[serde(deny_unknown_fields)]
 struct RawLdo {
     vin_millivolts: RawRanged,
+    vin_abs_max_millivolts: RawLimit,
     vout_millivolts: RawRanged,
     vout_condition: String,
     dropout_max_millivolts: RawLimit,
@@ -549,6 +684,7 @@ struct RawLdo {
     theta_ja_condition: String,
     junction_max_celsius: RawLimit,
     external: Vec<RawExternal>,
+    controls: Vec<RawControl>,
 }
 
 #[derive(Deserialize)]
@@ -571,6 +707,7 @@ struct RawTranslator {
     pull_up_max_ohms: RawLimit,
     channels: Vec<RawChannel>,
     external: Vec<RawExternal>,
+    controls: Vec<RawControl>,
 }
 
 #[derive(Deserialize)]
@@ -589,6 +726,31 @@ struct RawCapacitor {
     rated_picofarads: RawLimit,
     rated_millivolts: RawLimit,
     dielectric: Dielectric,
+    dc_bias: Vec<RawBias>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawBias {
+    millivolts: i64,
+    picofarads: RawLimit,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawBulk {
+    rated_picofarads: RawLimit,
+    rated_millivolts: RawLimit,
+    esr_max_milliohms: RawLimit,
+    esr_condition: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawTvs {
+    standoff_millivolts: RawLimit,
+    clamp_max_millivolts: RawLimit,
+    clamp_condition: String,
 }
 
 #[derive(Deserialize)]
@@ -607,6 +769,7 @@ struct RawMcu {
     idd_max_milliamps: RawLimit,
     idd_condition: String,
     bor_falling_max_millivolts: Vec<RawLimit>,
+    bor_rising_max_millivolts: Vec<RawLimit>,
     rain_max_ohms: Vec<RawRain>,
     reservoir_rule: RawReservoirRule,
     spi_input_setup_min_ns: RawLimit,
@@ -638,6 +801,8 @@ struct RawExternal {
     min_picofarads: Option<i64>,
     #[serde(deserialize_with = "Option::deserialize")]
     max_picofarads: Option<i64>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    effective_min_picofarads: Option<RawLimit>,
     #[serde(deserialize_with = "Option::deserialize")]
     rated_min_millivolts: Option<i64>,
     #[serde(deserialize_with = "Option::deserialize")]
@@ -816,6 +981,13 @@ impl Reader<'_> {
                     "`{f}`: a capacitor role needs a rating rule and its allowed dielectrics"
                 ));
             }
+            let effective = match e.effective_min_picofarads {
+                Some(_) if inductor => {
+                    return Err(format!("`{f}`: an inductor has no effective capacitance"));
+                }
+                Some(l) => Some(self.positive(l, &format!("{f}.effective_min_picofarads"))?),
+                None => None,
+            };
             out.push(ExternalRule {
                 role: e.role,
                 value,
@@ -824,10 +996,89 @@ impl Reader<'_> {
                 rated_at_least_working: e.rated_at_least_working,
                 dielectrics: e.dielectrics,
                 at,
+                effective_min_picofarads: effective,
             });
         }
         out.sort_by_key(|e| e.role);
         Ok(out)
+    }
+}
+
+impl Reader<'_> {
+    fn controls(
+        &mut self,
+        raw: Vec<RawControl>,
+        roles: &[&str],
+        field: &str,
+    ) -> Result<Vec<ControlRule>, String> {
+        let mut out: Vec<ControlRule> = Vec::with_capacity(raw.len());
+        for c in raw {
+            let f = format!("{field}.{}", c.pin);
+            if !roles.contains(&c.pin.as_str()) {
+                return Err(format!(
+                    "`{field}` names `{}`, which is not a pin role",
+                    c.pin
+                ));
+            }
+            if out.iter().any(|o| o.pin == c.pin) {
+                return Err(format!("`{field}` names `{}` twice", c.pin));
+            }
+            let mut straps = c.straps;
+            straps.sort();
+            if straps.windows(2).any(|w| w[0] == w[1]) {
+                return Err(format!("`{f}.straps` names a strap twice"));
+            }
+            if straps.is_empty() && !c.wirable {
+                return Err(format!("`{f}` allows neither a strap nor a wire"));
+            }
+            out.push(ControlRule {
+                at: self.at(c.at, &f)?,
+                pin: c.pin,
+                straps,
+                wirable: c.wirable,
+            });
+        }
+        Ok(out)
+    }
+
+    fn theta(&mut self, t: RawTheta) -> Result<ThetaCurve, String> {
+        let f = "kind.buck.theta_ja";
+        text(&t.package, &format!("{f}.package"), 8)?;
+        text(&t.condition, &format!("{f}.condition"), 200)?;
+        if t.board_copper_layers == 0 || !t.board_copper_layers.is_multiple_of(2) {
+            return Err(format!(
+                "`{f}.board_copper_layers` is {}, not an even count above zero",
+                t.board_copper_layers
+            ));
+        }
+        if t.points.is_empty() {
+            return Err(format!("`{f}.points` is empty"));
+        }
+        let mut points: Vec<(i64, i64)> = Vec::with_capacity(t.points.len());
+        for q in t.points {
+            bounded(q.square_centimetres, f)?;
+            bounded(q.decikelvin_per_watt, f)?;
+            if q.square_centimetres <= 0 || q.decikelvin_per_watt <= 0 {
+                return Err(format!("`{f}.points` holds a value not above zero"));
+            }
+            // The curve falls with area: the lookup's rounding is safe only then.
+            if points
+                .last()
+                .is_some_and(|(a, th)| *a >= q.square_centimetres || *th < q.decikelvin_per_watt)
+            {
+                return Err(format!(
+                    "`{f}.points` is not area rising with θ falling or level"
+                ));
+            }
+            points.push((q.square_centimetres, q.decikelvin_per_watt));
+        }
+        Ok(ThetaCurve {
+            package: t.package,
+            board_copper_layers: t.board_copper_layers,
+            condition: t.condition,
+            points,
+            at: self.at(t.at, f)?,
+        })
     }
 }
 
@@ -848,13 +1099,22 @@ fn text(value: &str, field: &str, max: usize) -> Result<(), String> {
     Ok(())
 }
 
+const BUCK_PINS: &[&str] = &["BOOT", "EN", "EP", "FB", "PG", "PGND", "SW", "VCC", "VIN"];
+const LDO_PINS: &[&str] = &["EN", "GND", "IN", "NC", "OUT"];
+const TRANSLATOR_PINS: &[&str] = &["GND", "OE", "VCCA", "VCCB"];
+
 /// The pin roles each IC kind must name, exactly.
 fn pin_roles(kind: &Kind) -> &'static [&'static str] {
     match kind {
-        Kind::Buck(_) => &["BOOT", "EN", "EP", "FB", "PG", "PGND", "SW", "VCC", "VIN"],
-        Kind::Ldo(_) => &["EN", "GND", "IN", "NC", "OUT"],
-        Kind::Translator(_) => &["GND", "OE", "VCCA", "VCCB"],
-        Kind::Resistor(_) | Kind::Capacitor(_) | Kind::Inductor(_) | Kind::Mcu(_) => &[],
+        Kind::Buck(_) => BUCK_PINS,
+        Kind::Ldo(_) => LDO_PINS,
+        Kind::Translator(_) => TRANSLATOR_PINS,
+        Kind::Resistor(_)
+        | Kind::Capacitor(_)
+        | Kind::Inductor(_)
+        | Kind::Mcu(_)
+        | Kind::BulkCapacitor(_)
+        | Kind::Tvs(_) => &[],
     }
 }
 
@@ -870,6 +1130,12 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
             text(&t.pad, "kind.buck.thermal_vias.pad", 8)?;
             Kind::Buck(Box::new(Buck {
                 vin_millivolts: r.ranged_positive(b.vin_millivolts, "kind.buck.vin_millivolts")?,
+                vin_abs_max_millivolts: r
+                    .positive(b.vin_abs_max_millivolts, "kind.buck.vin_abs_max_millivolts")?,
+                input_damping_picofarads: r.ranged_positive(
+                    b.input_damping_picofarads,
+                    "kind.buck.input_damping_picofarads",
+                )?,
                 vfb_microvolts: r.ranged_positive(b.vfb_microvolts, "kind.buck.vfb_microvolts")?,
                 ifb_max_nanoamps: r.limit(b.ifb_max_nanoamps, "kind.buck.ifb_max_nanoamps")?,
                 regulation_permille: regulation,
@@ -921,6 +1187,8 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 )?,
                 stated_at: b.stated_at,
                 external: r.external(b.external, "kind.buck.external")?,
+                theta_ja: r.theta(b.theta_ja)?,
+                controls: r.controls(b.controls, BUCK_PINS, "kind.buck.controls")?,
                 thermal_vias: ThermalRule {
                     pad: t.pad,
                     columns: t.columns,
@@ -947,6 +1215,8 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
             bounded(l.dropout_at_milliamps, "kind.ldo.dropout_at_milliamps")?;
             Kind::Ldo(Box::new(Ldo {
                 vin_millivolts: r.ranged_positive(l.vin_millivolts, "kind.ldo.vin_millivolts")?,
+                vin_abs_max_millivolts: r
+                    .positive(l.vin_abs_max_millivolts, "kind.ldo.vin_abs_max_millivolts")?,
                 vout_millivolts: r
                     .ranged_positive(l.vout_millivolts, "kind.ldo.vout_millivolts")?,
                 vout_condition: l.vout_condition,
@@ -965,6 +1235,7 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 junction_max_celsius: r
                     .limit(l.junction_max_celsius, "kind.ldo.junction_max_celsius")?,
                 external: r.external(l.external, "kind.ldo.external")?,
+                controls: r.controls(l.controls, LDO_PINS, "kind.ldo.controls")?,
             }))
         }
         RawKind::Translator(t) => {
@@ -1004,6 +1275,7 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                     .positive(t.pull_up_max_ohms, "kind.translator.pull_up_max_ohms")?,
                 channels,
                 external: r.external(t.external, "kind.translator.external")?,
+                controls: r.controls(t.controls, TRANSLATOR_PINS, "kind.translator.controls")?,
             }))
         }
         RawKind::Resistor(s) => {
@@ -1021,11 +1293,68 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 drift_condition: s.drift_condition,
             })
         }
-        RawKind::Capacitor(c) => Kind::Capacitor(Capacitor {
-            rated_picofarads: r.positive(c.rated_picofarads, "kind.capacitor.rated_picofarads")?,
-            rated_millivolts: r.positive(c.rated_millivolts, "kind.capacitor.rated_millivolts")?,
-            dielectric: c.dielectric,
-        }),
+        RawKind::Capacitor(c) => {
+            let rated = r.positive(c.rated_picofarads, "kind.capacitor.rated_picofarads")?;
+            let volts = r.positive(c.rated_millivolts, "kind.capacitor.rated_millivolts")?;
+            let mut bias: Vec<(i64, Limit)> = Vec::with_capacity(c.dc_bias.len());
+            for b in c.dc_bias {
+                let f = "kind.capacitor.dc_bias";
+                bounded(b.millivolts, f)?;
+                let pf = r.positive(b.picofarads, f)?;
+                if b.millivolts <= 0 || b.millivolts > volts.value {
+                    return Err(format!(
+                        "`{f}` holds {} mV, not above zero and at most the rated voltage",
+                        b.millivolts
+                    ));
+                }
+                if pf.value > rated.value {
+                    return Err(format!(
+                        "`{f}` holds {} pF at {} mV, above the rated {} pF",
+                        pf.value, b.millivolts, rated.value
+                    ));
+                }
+                if bias
+                    .last()
+                    .is_some_and(|(v, q)| *v >= b.millivolts || q.value < pf.value)
+                {
+                    return Err(format!(
+                        "`{f}` is not voltage rising with capacitance falling or level"
+                    ));
+                }
+                bias.push((b.millivolts, pf));
+            }
+            Kind::Capacitor(Capacitor {
+                rated_picofarads: rated,
+                rated_millivolts: volts,
+                dielectric: c.dielectric,
+                dc_bias: bias,
+            })
+        }
+        RawKind::BulkCapacitor(c) => {
+            text(&c.esr_condition, "kind.bulk_capacitor.esr_condition", 200)?;
+            Kind::BulkCapacitor(BulkCapacitor {
+                rated_picofarads: r
+                    .positive(c.rated_picofarads, "kind.bulk_capacitor.rated_picofarads")?,
+                rated_millivolts: r
+                    .positive(c.rated_millivolts, "kind.bulk_capacitor.rated_millivolts")?,
+                esr_max_milliohms: r
+                    .positive(c.esr_max_milliohms, "kind.bulk_capacitor.esr_max_milliohms")?,
+                esr_condition: c.esr_condition,
+            })
+        }
+        RawKind::Tvs(t) => {
+            text(&t.clamp_condition, "kind.tvs.clamp_condition", 200)?;
+            let standoff = r.positive(t.standoff_millivolts, "kind.tvs.standoff_millivolts")?;
+            let clamp = r.positive(t.clamp_max_millivolts, "kind.tvs.clamp_max_millivolts")?;
+            if clamp.value <= standoff.value {
+                return Err("`kind.tvs.clamp_max_millivolts` is not above the stand-off".to_owned());
+            }
+            Kind::Tvs(Tvs {
+                standoff_millivolts: standoff,
+                clamp_max_millivolts: clamp,
+                clamp_condition: t.clamp_condition,
+            })
+        }
         RawKind::Inductor(i) => {
             text(&i.isat_definition, "kind.inductor.isat_definition", 200)?;
             Kind::Inductor(Inductor {
@@ -1058,6 +1387,23 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 }
                 bor.push(l);
             }
+            if m.bor_rising_max_millivolts.len() != 4 {
+                return Err(format!(
+                    "`kind.mcu.bor_rising_max_millivolts` holds {} levels, not VBOR0 to VBOR3",
+                    m.bor_rising_max_millivolts.len()
+                ));
+            }
+            let mut rising: Vec<Limit> = Vec::with_capacity(4);
+            for (i, l) in m.bor_rising_max_millivolts.into_iter().enumerate() {
+                let l = r.positive(l, &format!("kind.mcu.bor_rising_max_millivolts[{i}]"))?;
+                if rising.last().is_some_and(|p| p.value >= l.value) || l.value < bor[i].value {
+                    return Err(
+                        "`kind.mcu.bor_rising_max_millivolts` does not rise from VBOR0 to VBOR3, each at or above its falling maximum"
+                            .to_owned(),
+                    );
+                }
+                rising.push(l);
+            }
             if m.rain_max_ohms.is_empty() {
                 return Err("`kind.mcu.rain_max_ohms` is empty".to_owned());
             }
@@ -1083,11 +1429,12 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 rule.adc_capacitance_femtofarads,
                 "kind.mcu.reservoir_rule.adc_capacitance_femtofarads",
             )?;
-            Kind::Mcu(Mcu {
+            Kind::Mcu(Box::new(Mcu {
                 vdd_millivolts: r.ranged_positive(m.vdd_millivolts, "kind.mcu.vdd_millivolts")?,
                 idd_max_milliamps: r.positive(m.idd_max_milliamps, "kind.mcu.idd_max_milliamps")?,
                 idd_condition: m.idd_condition,
                 bor_falling_max_millivolts: bor,
+                bor_rising_max_millivolts: rising,
                 rain_max_ohms: rain,
                 reservoir_rule: ReservoirRule {
                     statement: rule.statement,
@@ -1107,7 +1454,7 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 },
                 spi_input_setup_min_ns: r
                     .positive(m.spi_input_setup_min_ns, "kind.mcu.spi_input_setup_min_ns")?,
-            })
+            }))
         }
     })
 }
@@ -1135,6 +1482,14 @@ fn row(raw: RawRow, r: &mut Reader<'_>) -> Result<Row, String> {
     }
     for (role, pin) in &raw.pins {
         text(pin, &format!("pins.{role}"), 8)?;
+    }
+    if let Kind::Buck(b) = &kind
+        && !raw.part.ends_with(&b.theta_ja.package)
+    {
+        return Err(format!(
+            "`kind.buck.theta_ja.package` is `{}`, and the part is not in that package",
+            b.theta_ja.package
+        ));
     }
     if let Kind::Buck(b) = &kind
         && !raw.pins.contains_key(&b.thermal_vias.pad)

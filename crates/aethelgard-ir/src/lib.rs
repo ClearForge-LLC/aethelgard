@@ -48,7 +48,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// D1); an empty list acknowledges none. `4210` took 8 by the numbering
 /// rule, merging after `4300d`. Nothing supplies any of them for an older
 /// file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 8;
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 9;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
