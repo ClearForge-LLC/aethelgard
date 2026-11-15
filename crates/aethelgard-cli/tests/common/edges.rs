@@ -4,6 +4,7 @@
 use std::fs;
 use std::path::Path;
 
+use aethelgard_eda::pcb::MARGIN_NM;
 use aethelgard_eda::schematic::Emission;
 use aethelgard_eda::stack::Stack;
 
@@ -13,6 +14,15 @@ use aethelgard_eda::stack::Stack;
 /// puts copper where KiCad does not. U3 is not turned 180: KiCad keeps its
 /// reference upright, which then meets its pin-1 mark (`silk_overlap`,
 /// measured; FEEDBACK).
+///
+/// The reference has a connector (`AET-WO-4300b`: the console at J1), and
+/// with one the bottom edge is the connector row's (`AET-WO-4300f`, ruled
+/// D7): the outline's bottom is the connectors' courtyard line and does not
+/// grow around a moved part, so a part below it is off the board. R1 sits
+/// in that row instead, at its right end: its turned keep-out box's bottom
+/// [`MARGIN_NM`] above the edge and its right [`MARGIN_NM`] inside the
+/// reference's right edge, the nearest the emitter lets a part other than a
+/// connector come (`pcb.rs`, `connectors_go_at_the_bottom_edge_in_reference_order`).
 pub fn moved() -> (aethelgard_ir::Specification, Emission) {
     let path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sentinel-01-minimal.json");
@@ -27,11 +37,25 @@ pub fn moved() -> (aethelgard_ir::Specification, Emission) {
     let o = b.outline;
     let (cx, cy) = ((o.x0 + o.x1) / 2, (o.y0 + o.y1) / 2);
     let mm = 1_000_000;
+    let sx = aethelgard_eda::sexpr::parse(&plain.board).unwrap();
+    let r1 = sx
+        .children("footprint")
+        .find(|f| f.property("Reference") == Some("R1"))
+        .unwrap();
+    let keep = aethelgard_eda::pcb::geometry_at(r1, "R1", 180)
+        .unwrap()
+        .keep;
+    // On the 50 um grid the placer uses (`pcb.rs` SNAP), rounded inward.
+    let down = |v: i64| v.div_euclid(50_000) * 50_000;
+    let bottom = (
+        down(o.x1 - MARGIN_NM - keep.x1),
+        down(o.y1 - MARGIN_NM - keep.y1),
+    );
     let moves = vec![
         ("U2".to_owned(), (o.x0 - 2 * mm, cy), 90),
         ("U3".to_owned(), (cx, o.y0 - 2 * mm), 0),
         ("U4".to_owned(), (o.x1 + 4 * mm, cy), 270),
-        ("R1".to_owned(), (cx, o.y1 + 2 * mm), 180),
+        ("R1".to_owned(), bottom, 180),
     ];
     let moved = aethelgard_eda::schematic::emit_moved(&spec, &solved, &table, &moves).unwrap();
     (spec, moved)
