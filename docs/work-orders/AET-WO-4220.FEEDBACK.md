@@ -516,7 +516,7 @@ The predictions above were committed alone at `de8698d`, before any Renode, Kani
 
 ## Adversarial pass (a fresh subagent, Opus: judgement over gate logic)
 
-The adversary was given the code and the rules, not the builder's reasoning. It attacked `38e1457` from its own worktree, with its own cargo target in the image after I told it the default one was shared (a stale-binary hazard: cargo's mtime check across two checkouts at one `/repo` path). It pushed and committed nothing. Its reproductions are uncommitted in its worktree (`adv_t2_4220.rs`, `adv/`), and its outputs are in `~/.cache/aet-4220-t2/adv-t2-*.txt`. I checked every finding I adopted at the code; the fixes are `c36aed3`.
+The adversary was given the code and the rules, not the builder's reasoning. It attacked `38e1457` from its own worktree, with its own cargo target in the image after I told it the default one was shared (a stale-binary hazard: cargo's mtime check across two checkouts at one `/repo` path). It pushed and committed nothing. Its reproductions are uncommitted in its worktree (`adv_t2_4220.rs`, `adv/`), and its outputs are kept in `~/.cache/aet-ds/aet-4220/evidence/adv-t2-*.txt`. I checked every finding I adopted at the code; the fixes are `c36aed3`.
 
 | id | severity | finding | disposition |
 |---|---|---|---|
@@ -604,13 +604,20 @@ Tier 2 in the pinned image (`t2.sh`, `capped-run`, the read-backs above):
 - `models_tier2` ran Renode without the CLI's configuration, so its logging was Renode's default, asynchronous, and a line written just before `quit` can be lost.
 - The binary now runs Renode with `use-synchronous-logging = true`, every other key at Renode's default, as the CLI does. After the fix it passed 3 of 3 in the image.
 
+**CI at `933b2df` (run 43736220910), measured:**
+- `gates` and every image job passed.
+- Tools shards, in minutes: 14.1 (0), 17.5 (1), 15.2 (2), 12.4 (3), 13.2 (4), 15.8 (5), 13.5 (6), 17.1 (7). Every one is under 20 and the spread is 5.1 minutes, so the refit rule did not fire.
+- Shard 6's only failure was the logging flake above, fixed at `f6c2956`.
+- The final head's run is reported on the PR.
+
 `TIER2_MIN` is **126**: 114 on `main`, plus 12. `twin_tier2` +5 (the fixture witnessed, no wait, listing and refusals, campaign and replay); `board_tier2` +1 (the fixture's proofs); `models_tier2` +7, a new tier-2 binary added to `TIER2_RE`.
 
 ## Cleanup (the architect's note)
 
 - The adversary's worktree was removed after its findings were harvested (6.2 GB).
 - Before the signal commit, my scratch trees go: `~/.cache/aet-4220-t2` (its two cargo targets included), `~/.cache/aet-4220/csdev` and the renders.
-- The datasheets and their hand-read notes move to `~/.cache/aet-ds/aet-4220/` (the paths above under `~/.cache/aet-4220/ds/` are now there).
+- The datasheets and their hand-read notes move to `~/.cache/aet-ds/aet-4220/ds/` (every path above under `~/.cache/aet-4220/ds/` is now there).
+- The container logs move to `~/.cache/aet-ds/aet-4220/evidence/`: `t2.log` (every tier-2 read-back), `csdev-caps.log`, `pb8.txt` and the adversary's `adv-t2-*.txt`. `~/.cache/aet-4220/` keeps only `pr-title-body.md`.
 
 ## Stop
 
