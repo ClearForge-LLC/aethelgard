@@ -8,7 +8,8 @@ fn main() {
     spec.validate().unwrap();
     let text = std::fs::read_to_string(&a[2]).unwrap();
     let tree = aethelgard_eda::board::read(&text).unwrap();
-    let board = aethelgard_eda::board::prepare_read(&tree, &text, aethelgard_eda::rules::SETUP).unwrap();
+    let board =
+        aethelgard_eda::board::prepare_read(&tree, &text, aethelgard_eda::rules::SETUP).unwrap();
     let rules = aethelgard_eda::rules::Rules::from_specification(&spec);
     let out = std::path::Path::new(&a[3]);
     std::fs::create_dir_all(out).unwrap();
