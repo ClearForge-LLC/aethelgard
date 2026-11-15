@@ -456,3 +456,54 @@ A runner that needs `${…}` inside the scope should pass `--expand-environment=
 - S2's measured answer is in the `4300a` and `4300b` inboxes.
 - At `f426009` (`main` `5f47a5d` merged in), host gates and CI were green: `gates`, `shards`, `tools` and all eight `tools` shards.
 - Decisions D1–D9 and D11 are open (§5); D10 is closed by the ruling.
+
+---
+
+# Build (§2), after the ruling on PR #134
+
+**Builder:** Claude (strong tier), worktree `~/aethelgard-4300f`, branch `wo/aet-4300f-build` from `main` `158d408`. The work order is read from `origin/claude/argon-repo-docs-synthesis-rjrb0d` (docs PR #136) and is not committed here. The ruling is `~/.cache/aet-4300f-ruling.md` (PR #134, comment 6889019743). The fence: `aethelgard-ir`, `aethelgard-kicad-lib`, `aethelgard-eda` (never `route.rs`), tests and fixtures, and this file.
+
+The spike's sections above are unchanged. The predictions in §9 were committed before any build run, including the baseline.
+
+## 9. Build predictions (committed before any run)
+
+**The plan, by ruling:**
+- **D1 (a):** `Specification.connectors[]`, each with `reference`, `part` (a row of a cited connectors table in `aethelgard-ir`), `standard` (a DS-009 port row, or `null`) and every pin with its net or `null`.
+  - It is a required key. A required key is a schema bump, as `board` was (`RUL-14` version 2): the new version is `main`'s + 1 through the one constant.
+  - Private, behind `declared_connectors()` and the `RUL-16` fence, as the device lists are. So the twin cannot read it.
+- **D2 (a):** the port rows cite DS-009 by its only commit `48dd6d1d` and sha256 `dbc6b94e…`. They name the document (`"DS-009 I2C"`), never the mark. The `standard` field, the ports rows and their refusals sit in one module, so that (c) is a deletion.
+- **D3 (a):** `Connector_Generic_MountingPin:Conn_01xNN_MountingPin`, with `MP` on `GND`.
+- **D4:** vendored footprints GH `SM04B`, `SM06B`, `SM10B` and SH `SM06B-SRSS`; symbols `Conn_01x04/06/10_MountingPin`.
+- **D5 (a):** a DS-009 port whose VCC pin is not a 5 V domain is refused by name.
+- **D7:** the bottom edge only.
+- **D8 (a):** every connector pin on an I2C or SPI net declares an off-board capacitance budget with its source. Extraction counts the connector's pad copper with no `Ci`, and adds the budget as its own term.
+
+**P10, the baseline.** Every specification fixture and example at `main` `158d408` emits.
+- After the build, each one changes only by `"connectors": []` and the schema version.
+- Its emitted `.kicad_sch`, `.kicad_pcb` and `.bom.csv` are byte-identical.
+- Sentinel-01's generated crate differs from the committed one only in the lines that carry the specification's sha256.
+
+**P11, the vendored files.** The seven files hash as the spike's §3.1 table, and the licence needs no new file.
+
+**P12, the thin slice through the image.** The reference plus J1, a GH 4-pin explicit map (`VDD_3V3`, `I2C_SCL`, `I2C_SDA`, `GND`), placed at the bottom edge:
+- ERC exit 0;
+- DRC with `--spec` and parity exit 0, with 0 findings. That includes no `lib_footprint_issues` or `lib_footprint_mismatch` once vendored.
+  - Both `MP` pads carry `GND`. Parity accepts one symbol pin `MP` on two pads named `MP`, because KiCad matches a pad to a pin by number.
+- `extract` accepts the board (the GH footprint's tokens are in the reader's list) and bounds each I2C line with J1's pad copper plus the declared budget.
+
+**P13, the acceptance fixture.** The reference plus a declared `VDD_5V` domain, plus:
+- a TELEM-shaped GH 6-pin explicit map with two `null` pins, each drawn as a `no_connect`;
+- a `"DS-009 I2C"` GH 4-pin with its budget.
+
+It passes ERC, DRC and parity in the image, each with exit 0 and 0 findings. A second rail is drawn with the rail symbol, and its pad is a one-pad net with no copper. Neither is a finding.
+
+**P14, S2 again.** S2's probe specification (a device-less SPI bus) plus a connector carrying its three lines measures ERC exit 0, where the spike measured exit 5.
+
+**P15, placement.** Connectors are placed after every other part, in reference order, left to right along the bottom.
+- Each housing's front (the courtyard's bottom) is within one 50 µm snap of the edge, and inside the board.
+- Every pad is at least `EDGE_NM` from the edge.
+- The no-connector path is untouched, which P10 checks.
+
+**P16, the twin.** `SolvedTopology`, the `.repl`, the board crate and the firmware do not change with connectors. A specification with connectors and the same specification without them solve to identical assignments; only the specification's sha256 differs.
+
+**P17, CI.** `TIER2_MIN` rises by exactly the new tier-2 tests, which I predict is 1: one test runs both gates on the acceptance fixture.
