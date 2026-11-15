@@ -512,3 +512,28 @@ fn a_power_tree_solves_into_the_topology_and_is_refused_at_emit() {
     assert_eq!(v["error"]["kind"], "PowerNotEmitted", "{v}");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// belt-and-suspenders: the BOR thresholds' falling maxima live in two
+/// crates that may not depend on each other (`workspace_shape`): the power
+/// parts table's MCU row (DS12117 Table 115) for the supply floor, and
+/// `aethelgard_chaos::power::BOR` (Table 16) for the scenario's resets. This
+/// holds the two equal, so neither drifts alone (`AET-WO-4300d` reduction).
+#[test]
+fn the_power_rows_bor_maxima_equal_the_supervisors() {
+    let table = aethelgard_ir::power_parts::table().unwrap();
+    let Some(aethelgard_ir::power_parts::Kind::Mcu(m)) =
+        table.get("STM32H753ZITx").map(|r| &r.kind)
+    else {
+        panic!("the MCU row");
+    };
+    let rows: Vec<i64> = m
+        .bor_falling_max_millivolts
+        .iter()
+        .map(|l| l.value)
+        .collect();
+    let chaos: Vec<i64> = aethelgard_chaos::power::BOR
+        .iter()
+        .map(|t| i64::try_from(t.falling_uv[2] / 1000).unwrap())
+        .collect();
+    assert_eq!(rows, chaos);
+}

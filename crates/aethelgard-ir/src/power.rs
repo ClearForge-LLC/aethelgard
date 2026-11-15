@@ -1732,11 +1732,9 @@ fn crossings(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                 ctx.cite(&t.vcca_millivolts.at),
             ));
         }
-        let pull = ctx.resistor(&c.cs_pull_up)?;
         let pmax = t.pull_up_max_ohms.value;
         let worst = div_ceil(
-            i128::from(c.cs_pull_up.ohms)
-                * (1_000_000 + resistor_error_ppm(pull, ctx.temperature())),
+            i128::from(c.cs_pull_up.ohms) * (1_000_000 + ctx.error_ppm(&c.cs_pull_up)?),
             1_000_000,
         );
         if worst > i128::from(pmax) {
