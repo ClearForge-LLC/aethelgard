@@ -148,24 +148,24 @@
           "pin": "2",
           "net": "EXT_SCK",
           "offboard": {
-            "capacitance_femtofarads": 30000,
-            "source": "condition: a JST GH cable of at most 300 mm at 50 pF/m (15 pF), the mated contact (5 pF) and one remote pin of at most 10 pF (UM10204 Table 10 Ci)"
+            "capacitance_femtofarads": 20000,
+            "source": "condition: a JST GH cable of at most 100 mm at 50 pF/m (5 pF), the mated contact (5 pF) and one remote SPI pin of at most 10 pF"
           }
         },
         {
           "pin": "3",
           "net": "EXT_MOSI",
           "offboard": {
-            "capacitance_femtofarads": 30000,
-            "source": "condition: a JST GH cable of at most 300 mm at 50 pF/m (15 pF), the mated contact (5 pF) and one remote pin of at most 10 pF (UM10204 Table 10 Ci)"
+            "capacitance_femtofarads": 20000,
+            "source": "condition: a JST GH cable of at most 100 mm at 50 pF/m (5 pF), the mated contact (5 pF) and one remote SPI pin of at most 10 pF"
           }
         },
         {
           "pin": "4",
           "net": "EXT_MISO",
           "offboard": {
-            "capacitance_femtofarads": 30000,
-            "source": "condition: a JST GH cable of at most 300 mm at 50 pF/m (15 pF), the mated contact (5 pF) and one remote pin of at most 10 pF (UM10204 Table 10 Ci)"
+            "capacitance_femtofarads": 20000,
+            "source": "condition: a JST GH cable of at most 100 mm at 50 pF/m (5 pF), the mated contact (5 pF) and one remote SPI pin of at most 10 pF"
           }
         },
         {
@@ -208,13 +208,13 @@
     },
     {
       "net_name": "EXT_SCK",
-      "max_capacitance_femtofarads": 60000,
+      "max_capacitance_femtofarads": 50000,
       "max_rise_time_nanoseconds": 100,
       "impedance_ohms": null
     },
     {
       "net_name": "EXT_MOSI",
-      "max_capacitance_femtofarads": 60000,
+      "max_capacitance_femtofarads": 50000,
       "max_rise_time_nanoseconds": 100,
       "impedance_ohms": null
     }

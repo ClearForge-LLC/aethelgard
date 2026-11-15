@@ -101,7 +101,7 @@ pub const PARTS: [Part; 4] = [
         cited: Cited {
             document: JST_SH,
             sha256: JST_SH_SHA256,
-            section: "Header, side entry type (SM06B-SRSS-TB, 6 circuits)",
+            section: "p. 3, Header, side entry type (SM06B-SRSS-TB, 6 circuits)",
         },
     },
 ];

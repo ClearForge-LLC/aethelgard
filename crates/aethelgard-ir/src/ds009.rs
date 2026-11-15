@@ -7,11 +7,17 @@
 //! ports, their roles and [`judge`]. Ruling (c), explicit maps only, would be
 //! this module, the `standard` field and their refusals deleted.
 //!
-//! The ports are the ones a vendored part can carry (D4). The analog power
-//! port is `AET-WO-4300d`'s (D6), and the SPI and full debug ports have no
-//! vendored part. A role whose net this schema cannot yet declare (a serial
-//! port's TX, a safety switch, SWD) refuses every net until the work order
-//! that declares it, unless DS-009 lets the pin float.
+//! The ports are the ones a vendored part carries (D4) and a work order needs:
+//! TELEM and both GPS ports (`AET-WO-4300b`), I2C, and the debug port
+//! (Sentinel-02's SWD). The analog power port is `AET-WO-4300d`'s (D6); the
+//! SPI and full debug ports have no vendored part; CAN (a GH 4-pin) is left
+//! out until a work order declares a CAN bus. A role whose net this schema
+//! cannot yet declare (a serial port's TX, a safety switch, SWD) refuses
+//! every net until the work order that declares it, unless DS-009 lets the
+//! pin float, so today only `"DS-009 I2C"` can validate. [`Role::name`]
+//! gives DS-009's signal and voltage columns together for a supply
+//! (`"VCC +5V"`). DS-009's "1.5K pullup on autopilot" on its I2C port is not
+//! judged.
 
 use std::collections::BTreeMap;
 

@@ -521,8 +521,10 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
 /// every part already placed, each keep-out box [`IC_GAP_NM`] from the next
 /// and from every box above. The edge is the first [`SNAP`] line that leaves
 /// [`MARGIN_NM`] below the other parts and lets every connector sit there:
-/// each housing's front, its courtyard's bottom, is within one [`SNAP`] of the
-/// edge and inside it, and every pad keeps [`route::EDGE_NM`] from it.
+/// each courtyard's bottom (the cable side) is within one [`SNAP`] of the
+/// edge and inside it, and every pad keeps [`route::EDGE_NM`] from it. The
+/// housing body (`F.Fab`) sits about 0.8 mm inside, by the courtyard's own
+/// clearance.
 /// Returns that edge, or `None` with no connector.
 fn place_connectors(
     items: &[Item<'_>],
@@ -838,7 +840,7 @@ fn layout_of(items: &[Item<'_>]) -> Result<Layout, EmitError> {
         x0: all.x0.div_euclid(SNAP) * SNAP,
         y0: all.y0.div_euclid(SNAP) * SNAP,
         x1: -((-all.x1).div_euclid(SNAP) * SNAP),
-        // With connectors, their housings' fronts are the bottom edge.
+        // With connectors, their courtyards' bottoms are the bottom edge.
         y1: edge.unwrap_or(-((-all.y1).div_euclid(SNAP) * SNAP)),
     };
     let pad_nets = items

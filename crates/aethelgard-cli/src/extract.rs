@@ -110,7 +110,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     if lines.iter().any(|b| b.spi_signal.is_some()) {
         conditions.push(bound::SPI_CONDITION.to_owned());
     }
-    if lines.iter().any(|b| !b.offboard.is_empty()) {
+    if aethelgard_eda::schematic::declares_offboard(&spec) {
         conditions.push(bound::OFFBOARD.to_owned());
     }
     for b in lines {

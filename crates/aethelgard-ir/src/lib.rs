@@ -754,11 +754,11 @@ pub enum IrValidationError {
         net: String,
     },
     #[error(
-        "connector `{id}` pin `{pin}` is on an I2C or SPI line and declares no off-board capacitance (null or 0): the line's bound would leave out the cable and the remote pins (`RUL-19` (1))"
+        "connector `{id}` pin `{pin}` is on an I2C or SPI line (a bus line or a chip select) and declares no off-board capacitance (null or 0); ruling D8 requires one on every such pin, so that a bound over the line can count the cable and the remote pins (`RUL-19` (1))"
     )]
     ConnectorBudgetMissing { id: String, pin: String },
     #[error(
-        "connector `{id}` pin `{pin}` declares an off-board capacitance, but it is on no I2C or SPI line, where nothing would count it"
+        "connector `{id}` pin `{pin}` declares an off-board capacitance, but it is on no I2C or SPI line (a ground, a domain or no net), which carries none"
     )]
     ConnectorBudgetNotApplicable { id: String, pin: String },
     #[error("connector `{id}` names standard `{standard}`, which is not in the ports table")]

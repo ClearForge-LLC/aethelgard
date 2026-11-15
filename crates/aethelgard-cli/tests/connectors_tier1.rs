@@ -224,10 +224,10 @@ fn extract_counts_each_connectors_declared_budget_and_no_ci() {
     for line in lines {
         let net = line["net"].as_str().unwrap();
         let connector_pad = match net {
-            "I2C_SCL" => Some("J1.2"),
-            "I2C_SDA" => Some("J1.3"),
-            "EXT_SCK" => Some("J2.2"),
-            "EXT_MOSI" => Some("J2.3"),
+            "I2C_SCL" => Some(("J1.2", 30_000)),
+            "I2C_SDA" => Some(("J1.3", 30_000)),
+            "EXT_SCK" => Some(("J2.2", 20_000)),
+            "EXT_MOSI" => Some(("J2.3", 20_000)),
             _ => None,
         };
         let pins = line["pins"].as_array().unwrap();
@@ -235,7 +235,7 @@ fn extract_counts_each_connectors_declared_budget_and_no_ci() {
             pins.iter().all(|p| !p.as_str().unwrap().starts_with('J')),
             "{net}: a connector pad is counted as a pin with a Ci: {pins:?}"
         );
-        let Some(pad) = connector_pad else {
+        let Some((pad, budget)) = connector_pad else {
             assert!(
                 line["terms"].get("offboard").is_none() && line.get("offboard").is_none(),
                 "{net}: a line no connector carries keeps its verdict object unchanged: {line}"
@@ -243,7 +243,7 @@ fn extract_counts_each_connectors_declared_budget_and_no_ci() {
             continue;
         };
         assert_eq!(
-            line["terms"]["offboard"], 30_000,
+            line["terms"]["offboard"], budget,
             "{net}: the off-board term is not the declared budget"
         );
         let named = line["offboard"].as_array().unwrap();
@@ -256,7 +256,7 @@ fn extract_counts_each_connectors_declared_budget_and_no_ci() {
             named[0]
                 .as_str()
                 .unwrap()
-                .starts_with(&format!("{pad}: 30000 fF (")),
+                .starts_with(&format!("{pad}: {budget} fF (")),
             "{net}: the off-board list does not name {pad} with its budget: {named:?}"
         );
         if net.starts_with("I2C") {
@@ -346,5 +346,37 @@ fn without_connectors_the_board_has_no_connector_footprint() {
     assert!(
         !text.contains("Connector_JST"),
         "a board with no connectors has a Connector_JST footprint"
+    );
+}
+
+/// The fixture is a whole specification, not only a board: `check speeds`
+/// (`AET-WO-4300c`) and `generate` accept it, so each off-board budget fits
+/// DS12117 Table 149's heaviest row as well as extraction's bound (adversarial
+/// pass, F1: a 30 pF budget on EXT's SPI lines passed both gates but not these).
+#[test]
+fn the_fixture_passes_check_speeds_and_generate() {
+    let speeds = json_line(
+        &run(&["check", "speeds", "--spec", fixture().to_str().unwrap()]),
+        0,
+    );
+    assert_eq!(
+        speeds["verdict"], "pass",
+        "check speeds accepts every declared SPI load: {speeds}"
+    );
+    let d = Dir::new("generate");
+    let out = d.0.join("tree");
+    let generated = json_line(
+        &run(&[
+            "generate",
+            "--spec",
+            fixture().to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ]),
+        0,
+    );
+    assert_eq!(
+        generated["ok"], true,
+        "generate accepts the fixture: {generated}"
     );
 }

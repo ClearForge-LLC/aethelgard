@@ -29,7 +29,7 @@ pub const VERSION: &str = "20260306";
 
 const GRID: i64 = 1_270_000;
 const STUB: i64 = 2 * GRID;
-pub(crate) const GND: &str = "GND";
+pub(crate) use aethelgard_ir::GND;
 const RAIL_SYMBOL: &str = "power:+3V3";
 const GND_SYMBOL: &str = "power:GND";
 const FLAG_SYMBOL: &str = "power:PWR_FLAG";
@@ -760,12 +760,11 @@ pub(crate) fn design(
 fn connectors(b: &mut Builder<'_>) -> Result<(), EmitError> {
     let spec = b.spec;
     for c in spec.declared_connectors() {
-        let (lib_id, footprint) =
-            connector_library(&c.part).ok_or_else(|| EmitError::UnknownPart {
-                reference: c.reference.clone(),
-                part: c.part.clone(),
-                known: KNOWN_CONNECTORS,
-            })?;
+        // belt-and-suspenders: `validate` refuses a part not in the IR's
+        // table (`UnknownConnectorPart`), and a tier-1 test maps every row.
+        let (lib_id, footprint) = connector_library(&c.part).ok_or_else(|| {
+            EmitError::Internal(format!("{}: no library entry for {}", c.reference, c.part))
+        })?;
         let mut conns = BTreeMap::from([("MP".to_owned(), b.ground())]);
         let mut offboard = BTreeMap::new();
         for p in &c.pins {
@@ -793,8 +792,6 @@ fn connectors(b: &mut Builder<'_>) -> Result<(), EmitError> {
     }
     Ok(())
 }
-
-const KNOWN_CONNECTORS: &str = "SM04B-GHS-TB, SM06B-GHS-TB, SM10B-GHS-TB, SM06B-SRSS-TB";
 
 /// A device's part, with the part's default footprint and the D2 note.
 fn device(
