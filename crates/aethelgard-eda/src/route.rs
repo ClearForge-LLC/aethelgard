@@ -3566,7 +3566,7 @@ fn through_hole(
         return Err(format!("{what} removes its unused layers"));
     }
     let drill = one(pad, "drill")?.ok_or_else(|| format!("{what} has no drill"))?;
-    if drill.arg(2).is_some() || drill.lists().next().is_some() {
+    if drill.arg(2).is_some() || drill.lists().count() != 0 {
         return Err(format!(
             "{what}: only a round drill at its centre is modelled"
         ));

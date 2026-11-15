@@ -503,6 +503,15 @@ pub fn through_hole_ff(ph: &Physics, rect: crate::pcb::Rect) -> Option<u64> {
     femtofarads(ph, shell(Base::boxed(w, h)?, ph.via_h, ph.s)?)
 }
 
+/// A pad's bound on a line: a through-hole pad's [`through_hole_ff`], an
+/// SMD pad's [`pad_ff`].
+pub fn pad_bound(ph: &Physics, pad: &route::Pad) -> Option<u64> {
+    match pad.drill_nm {
+        Some(_) => through_hole_ff(ph, pad.rect),
+        None => pad_ff(ph, pad.rect),
+    }
+}
+
 /// A refusal: a named kind and a message. No estimate follows one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Refused {
@@ -1258,11 +1267,7 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
             offboard.push(format!("{reference}.{pad}: {ff} fF ({source})"));
         }
         for pad in pads {
-            let ff = match pad.drill_nm {
-                Some(_) => through_hole_ff(&ph, pad.rect),
-                None => pad_ff(&ph, pad.rect),
-            }
-            .ok_or_else(|| overflow(net))?;
+            let ff = pad_bound(&ph, pad).ok_or_else(|| overflow(net))?;
             terms.pads = terms.pads.checked_add(ff).ok_or_else(|| overflow(net))?;
             pad_count += 1;
             match role.load {
