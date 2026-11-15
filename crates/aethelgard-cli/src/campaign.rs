@@ -363,13 +363,17 @@ pub(crate) fn effective(scenario: &Scenario, base: &[u8]) -> Result<Effective, E
         r.error.message = format!("scenario `{}`, base: {}", scenario.name, r.error.message);
         emit(&r, code)
     })?;
-    // `AET-WO-4300d`'s seam (adversarial A6): the twin models no power tree,
-    // so a campaign over one would judge a board nothing emits.
-    if let Err(e) = aethelgard_eda::schematic::refuse_power(&spec) {
+    // The twin models no power tree (`AET-WO-4300d` adversarial A6), so a
+    // campaign over one would judge rails no model drives. It stays refused
+    // until the battery-sag work order (`AET-WO-4300d2` §1.9).
+    if spec.power.is_some() {
         return Err(refuse(
-            e.kind(),
+            "PowerNotSimulated",
             None,
-            format!("scenario `{}`, base: {e}", scenario.name),
+            format!(
+                "scenario `{}`, base: the specification declares a power tree, which the twin does not model; a campaign over one waits for the battery-sag work order (AET-WO-4300d2 §1.9)",
+                scenario.name
+            ),
             EXIT_INVALID_SPEC,
         ));
     }

@@ -24,6 +24,9 @@ use sha2::{Digest, Sha256};
 use crate::library::{self, LibraryError};
 use crate::sexpr::{self, Sx, mm};
 
+mod power;
+pub(crate) use power::BATTERY_NET;
+
 /// KiCad 10's own schematic format version (ruled D7 on PR #40).
 pub const VERSION: &str = "20260306";
 
@@ -63,14 +66,12 @@ pub enum EmitError {
     ReservedName(String),
     #[error("`{0}` is used twice as a reference")]
     DuplicateReference(String),
+    #[error("`{reference}` of the power tree cannot be drawn: {why}")]
+    PowerNotDrawable { reference: String, why: String },
     #[error("the router cannot complete net `{net}`: {why}")]
     Unroutable { net: String, why: String },
     #[error("the router cannot complete the board: {0}")]
     BoardUnroutable(String),
-    #[error(
-        "the specification declares a power tree, which this engine does not yet emit, place, route or judge on a board (`AET-WO-4300d` slice A; emission is slice B)"
-    )]
-    PowerNotEmitted,
     #[error("{0}")]
     Internal(String),
 }
@@ -81,28 +82,27 @@ impl EmitError {
             Self::Library(_) => "LibraryCorrupt",
             Self::UnknownPart { .. } => "UnknownPart",
             Self::UnsupportedAddress { .. } => "UnsupportedAddress",
+            Self::PowerNotDrawable { .. } => "PowerNotDrawable",
             Self::UnsolvedNet(_) => "UnsolvedNet",
             Self::UnknownPin { .. } => "UnknownPin",
             Self::ReservedName(_) => "ReservedName",
             Self::DuplicateReference(_) => "DuplicateReference",
             Self::Unroutable { .. } | Self::BoardUnroutable(_) => "Unroutable",
-            Self::PowerNotEmitted => "PowerNotEmitted",
             Self::Internal(_) => "EmitterError",
         }
     }
 
     pub fn id(&self) -> Option<&str> {
         match self {
-            Self::UnknownPart { reference, .. } | Self::UnsupportedAddress { reference, .. } => {
-                Some(reference)
-            }
+            Self::UnknownPart { reference, .. }
+            | Self::UnsupportedAddress { reference, .. }
+            | Self::PowerNotDrawable { reference, .. } => Some(reference),
             Self::UnsolvedNet(id) | Self::ReservedName(id) | Self::DuplicateReference(id) => {
                 Some(id)
             }
             Self::UnknownPin { net, .. } | Self::Unroutable { net, .. } => Some(net),
             Self::Library(_)
             | Self::BoardUnroutable(_)
-            | Self::PowerNotEmitted
             | Self::Internal(_) => None,
         }
     }
@@ -447,16 +447,6 @@ fn mcu_conn(b: &mut Builder<'_>, name: &str) -> Option<Conn> {
     }
 }
 
-/// The seam of `AET-WO-4300d`'s split: a specification that declares a power
-/// tree is refused by name wherever a board would be emitted or judged
-/// against it, never emitted without its tree (`INV-06`).
-pub fn refuse_power(spec: &Specification) -> Result<(), EmitError> {
-    if spec.power.is_some() {
-        return Err(EmitError::PowerNotEmitted);
-    }
-    Ok(())
-}
-
 /// Emits the schematic, the bill of materials and the placed board
 /// ([`crate::pcb`]), all from one set of parts. `table` is the MCU's pin table
 /// the topology was solved against: each solved pin is drawn on the symbol
@@ -547,7 +537,6 @@ pub(crate) fn design(
     solved: &SolvedTopology,
     table: &PinTable,
 ) -> Result<(Vec<Part>, BTreeSet<String>), EmitError> {
-    refuse_power(spec)?;
     if spec.mcu.part != "STM32H753ZITx" || table.part != spec.mcu.part {
         return Err(EmitError::UnknownPart {
             reference: "mcu".into(),
@@ -562,6 +551,7 @@ pub(crate) fn design(
         .map(|d| &d.reference)
         .chain(spec.declared_spi_devices().iter().map(|d| &d.reference))
         .chain(spec.declared_connectors().iter().map(|c| &c.reference))
+        .chain(spec.power.iter().flat_map(power::references))
     {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
         // flag) and drops it from the netlist and BOM, and the emitter names its
@@ -588,10 +578,16 @@ pub(crate) fn design(
     for d in spec.declared_spi_devices() {
         spelled.push(d.cs.net.clone());
     }
+    spelled.extend(spec.power.iter().flat_map(power::spelled));
     let mut names = Taken::of(spelled);
     names
         .claim(GND)
         .map_err(|holder| collision(GND, holder, EmitError::ReservedName))?;
+    if spec.power.is_some() {
+        names
+            .claim(BATTERY_NET)
+            .map_err(|holder| collision(BATTERY_NET, holder, EmitError::ReservedName))?;
+    }
     let mut b = Builder {
         spec,
         parts: Vec::new(),
@@ -742,6 +738,11 @@ pub(crate) fn design(
         device(&mut b, &d.reference, lib_id, conns)?;
         b.decouple(&d.reference, &d.supply, "100n")?;
     }
+    // Each crossing's device is drawn on the translator's B side.
+    let behind = match &spec.power {
+        Some(p) => power::behind(&mut b, p)?,
+        None => BTreeMap::new(),
+    };
     for d in spec.declared_spi_devices() {
         let bus = spec
             .spi_buses
@@ -767,19 +768,31 @@ pub(crate) fn design(
         let gnd = b.ground();
         let wp = b.strap(&d.reference, "WP", rail.clone())?;
         let hold = b.strap(&d.reference, "HOLD", rail.clone())?;
+        let net = |line: power::Line, own: &String| {
+            Conn::Net(
+                behind
+                    .get(&d.reference)
+                    .and_then(|m| m.get(&line))
+                    .unwrap_or(own)
+                    .clone(),
+            )
+        };
         let conns = [
-            ("1", Conn::Net(d.cs.net.clone())),
-            ("2", Conn::Net(bus.miso.net.clone())),
+            ("1", net(power::Line::Cs, &d.cs.net)),
+            ("2", net(power::Line::Miso, &bus.miso.net)),
             ("3", wp),
             ("4", gnd),
-            ("5", Conn::Net(bus.mosi.net.clone())),
-            ("6", Conn::Net(bus.sck.net.clone())),
+            ("5", net(power::Line::Mosi, &bus.mosi.net)),
+            ("6", net(power::Line::Sck, &bus.sck.net)),
             ("7", hold),
             ("8", rail),
         ]
         .to_vec();
         device(&mut b, &d.reference, "Memory_Flash:W25Q32JVSS", conns)?;
         b.decouple(&d.reference, &d.supply, "100n")?;
+    }
+    if let Some(p) = &spec.power {
+        power::draw(&mut b, p, &behind)?;
     }
     connectors(&mut b)?;
     Ok((b.parts, b.rails))
@@ -1160,12 +1173,28 @@ fn write_sheet(
         items: Vec::new(),
         power: 0,
     };
+    // A rail a `power_out` pin drives (an LDO's output) is driven already:
+    // a `PWR_FLAG` there would be a second driver, which ERC refuses
+    // (`AET-WO-4300d2` D12).
+    let mut driven = BTreeSet::new();
+    for part in parts {
+        for p in pins(&sheet.syms[part.lib_id]).map_err(EmitError::Internal)? {
+            if p.etype == "power_out"
+                && let Some(Conn::Rail(r)) = part.conns.get(&p.number)
+            {
+                driven.insert(r.clone());
+            }
+        }
+    }
     // Flags: one row at the top, a power symbol and a PWR_FLAG on one point.
     let mut flags = 0;
     for rail in rails {
         flags += 1;
         let pos = (GRID * 20 * flags, GRID * 10);
         sheet.power_symbol(rail, pos)?;
+        if driven.contains(rail) {
+            continue;
+        }
         let r = format!("#FLG{flags:03}");
         let key = format!("{project}/flag/{r}");
         sheet.instance(FLAG_SYMBOL, &r, "PWR_FLAG", None, pos, &key)?;

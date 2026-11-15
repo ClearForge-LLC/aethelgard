@@ -56,6 +56,10 @@ use crate::{
 /// A regulator's input when it is fed straight from the battery.
 pub const BATTERY: &str = "battery";
 
+/// The battery's net on a drawn board (`AET-WO-4300d2` K10): a rail, reserved
+/// for the power tree, which a net class may name when a tree is declared.
+pub const BATTERY_NET: &str = "VBAT";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct Power {
