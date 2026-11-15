@@ -58,24 +58,6 @@ pub enum BoardError {
     )]
     UnsupportedPeripheral { peripheral: String },
     #[error(
-        "net `{net}` carries `{signal}`, which is not the TX or RX of a solved serial port on that peripheral"
-    )]
-    SerialSignalMismatch { net: String, signal: String },
-    #[error("serial port `{label}`: its {line} net `{net}` is not a solved assignment of its own")]
-    SerialPortIncomplete {
-        label: String,
-        line: &'static str,
-        net: String,
-    },
-    #[error("serial ports `{first}` and `{label}` share `{peripheral}`")]
-    SerialPeripheralShared {
-        peripheral: String,
-        first: String,
-        label: String,
-    },
-    #[error("serial port `{label}`: {what} cannot be written to its USART")]
-    UnwritableSerialPort { label: String, what: String },
-    #[error(
         "device `{reference}` is on `{peripheral}`, which is not a peripheral of this board of its bus's kind"
     )]
     DeviceNotOnABus {
@@ -130,10 +112,6 @@ impl BoardError {
             Self::UnknownPin { .. } => "UnknownPin",
             Self::AssignmentMismatch { .. } => "AssignmentMismatch",
             Self::UnsupportedPeripheral { .. } => "UnsupportedPeripheral",
-            Self::SerialSignalMismatch { .. } => "SerialSignalMismatch",
-            Self::SerialPortIncomplete { .. } => "SerialPortIncomplete",
-            Self::SerialPeripheralShared { .. } => "SerialPeripheralShared",
-            Self::UnwritableSerialPort { .. } => "UnwritableSerialPort",
             Self::DeviceNotOnABus { .. } => "DeviceNotOnABus",
             Self::SharedChipSelect { .. } => "SharedChipSelect",
             Self::UnsupportedSignal { .. } => "UnsupportedSignal",
@@ -867,11 +845,13 @@ impl Plan {
     }
 }
 
-/// The serial ports' nets (`AET-WO-4300b`), each to its port's peripheral,
-/// label and line, and each port's plan with its pins still empty: every port
-/// on a peripheral this generator emits, one port per peripheral, and a
-/// framing and `BRR` its USART can hold.
-type SerialNets<'a> = BTreeMap<&'a str, (&'a str, &'a str, Role)>;
+/// The serial ports' nets (`AET-WO-4300b`), each to its port's peripheral
+/// and line, and each port's plan with its pins still empty: every port on a
+/// peripheral this generator emits. `SolvedTopology::validate` holds the
+/// rest (`aethelgard_ir::serial`'s `validate_solved`): each net one port's,
+/// each port's TX and RX solved assignments on its own USART's signals, one
+/// port per peripheral, and a framing and `BRR` its USART can hold.
+type SerialNets<'a> = BTreeMap<&'a str, (&'a str, Role)>;
 
 fn serial_plans(
     solved: &SolvedTopology,
@@ -884,40 +864,8 @@ fn serial_plans(
                 peripheral: p.peripheral.clone(),
             });
         }
-        let unwritable = |what: String| BoardError::UnwritableSerialPort {
-            label: label.clone(),
-            what,
-        };
-        let m_bits = p.framing.m_bits().ok_or_else(|| {
-            unwritable(format!(
-                "a {}-bit word (M[1:0] holds 7, 8 or 9)",
-                p.framing.word_bits()
-            ))
-        })?;
-        let stop = p.framing.stop_field().ok_or_else(|| {
-            unwritable(format!(
-                "{} stop bits (STOP is written for 1 or 2)",
-                p.framing.stop_bits
-            ))
-        })?;
-        if !(16..=0xFFFF).contains(&p.brr) {
-            return Err(unwritable(format!(
-                "BRR {} (RM0433 Rev 9 §48.8.5: 16 to 0xFFFF)",
-                p.brr
-            )));
-        }
         for (net, role) in [(&p.tx, Role::UsartTx), (&p.rx, Role::UsartRx)] {
-            // A net two lines claim cannot be both: refuse it by name.
-            if nets
-                .insert(net.as_str(), (p.peripheral.as_str(), label.as_str(), role))
-                .is_some()
-            {
-                return Err(BoardError::SerialPortIncomplete {
-                    label: label.clone(),
-                    line: role.signal(),
-                    net: net.clone(),
-                });
-            }
+            nets.insert(net.as_str(), (p.peripheral.as_str(), role));
         }
         let plan = SerialPlan {
             index: p.index,
@@ -925,19 +873,19 @@ fn serial_plans(
             tx: String::new(),
             rx: String::new(),
             brr: p.brr,
-            m_bits,
-            stop,
+            m_bits: p
+                .framing
+                .m_bits()
+                .expect("validate holds every port's word to 7, 8 or 9 bits"),
+            stop: p
+                .framing
+                .stop_field()
+                .expect("validate holds every port to 1 or 2 stop bits"),
             parity: p.framing.parity,
             inverted: p.framing.inverted,
             framing: format!("{} baud {}", p.framing.baud, p.framing.short()),
         };
-        if let Some(first) = plans.insert(p.peripheral.clone(), plan) {
-            return Err(BoardError::SerialPeripheralShared {
-                peripheral: p.peripheral.clone(),
-                first: first.label,
-                label: label.clone(),
-            });
-        }
+        plans.insert(p.peripheral.clone(), plan);
     }
     Ok((nets, plans))
 }
@@ -1029,27 +977,12 @@ impl Plan {
             let channel = motor::timer_channel(&a.signal)
                 .filter(|(n, _)| a.peripheral == format!("TIM{n}"))
                 .and_then(|(n, k)| Some((n, k, Role::timer_channel(k)?)));
-            // A serial line: the TX or RX net of the one port on its peripheral,
-            // on that peripheral's own signal for the line. A port's net on any
-            // other signal, and a USART line no port names, are refused.
-            let port_net = serial_nets.get(net.as_str()).copied();
-            let serial =
-                if port_net.is_some() || serial::PERIPHERALS.contains(&a.peripheral.as_str()) {
-                    let line = port_net
-                        .filter(|(p, _, role)| {
-                            *p == a.peripheral && a.signal == format!("{p}_{}", role.signal())
-                        })
-                        .ok_or_else(|| BoardError::SerialSignalMismatch {
-                            net: net.clone(),
-                            signal: a.signal.clone(),
-                        })?;
-                    Some(line)
-                } else {
-                    None
-                };
+            // A serial line: `validate` holds every assignment on a USART to
+            // the TX or RX net of the one port on it, on its own signal.
+            let serial = serial_nets.get(net.as_str()).copied();
             // The pin's role, and its peripheral's kind unless it is a timer's
             // or a USART's.
-            let (role, kind) = if let Some((peripheral, _, role)) = serial {
+            let (role, kind) = if let Some((peripheral, role)) = serial {
                 let s = serials
                     .get_mut(peripheral)
                     .expect("serial_plans planned every port's peripheral");
@@ -1194,16 +1127,6 @@ impl Plan {
                     variant: reference.to_ascii_uppercase(),
                     pin: pin.clone(),
                 });
-        }
-        // Every port's two nets are solved assignments.
-        for (net, (_, label, role)) in &serial_nets {
-            if !solved.assignments.contains_key(*net) {
-                return Err(BoardError::SerialPortIncomplete {
-                    label: (*label).to_owned(),
-                    line: role.signal(),
-                    net: (*net).to_owned(),
-                });
-            }
         }
         let ports = pins.values().map(|p| p.port).collect();
         Ok(Plan {
