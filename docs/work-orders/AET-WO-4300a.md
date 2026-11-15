@@ -63,6 +63,9 @@
    - its trace records, replay and rule.
 6. **2100 F24:** cold-write every `RCC_*ENR` the header defines, and judge each in full.
 7. **A test fixture:** a 4-output PWM specification, and a 4-output DShot600 one, with every gate passing in the image.
+8. **Off-board nets (added 2026-11-15).** A motor output leaves the board, and no connector part exists yet (`AET-WO-4300f`). Use `4300f`'s S2 answer if it is in your mailbox; otherwise measure it yourself first: what `emit`, ERC and DRC do with a net that has one MCU pin and no other part.
+   - **If the gates pass it honestly** (no waived check, no dangling label), proceed, and the verdict names the gap: "off-board, no connector".
+   - **Otherwise, STOP with the messages.**
 
 **§1.2 The clock tree: pre-ruled at the `4400` ruling (D1).** On `main`, `svd-hal` has no clock-tree model: the board crate never touches `RCC_CR`/`RCC_CFGR` or the PLL (`board.rs`: "clock-tree solving is out of scope"). The bring-up firmware therefore runs on the reset clock.
 - **The ruling:** declare that as a solved fact in the `SolvedTopology`: source HSI, 64 MHz, and the `D1`/`D2`/`D3` prescalers at their reset value 1. Cite RM0433 for each reset value and for the timer-kernel-clock rule that follows from them, then derive `APB1`/`APB2` timer kernel clocks from it. The static check reads only that fact.
