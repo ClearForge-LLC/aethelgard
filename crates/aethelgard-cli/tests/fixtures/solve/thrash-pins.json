@@ -1,9 +1,10 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "project_name": "thrash",
   "mcu": {
     "part": "STM32H753ZITx",
-    "supply": "VDD_3V3"
+    "supply": "VDD_3V3",
+    "hse_hz": 0
   },
   "voltage_domains": [
     {
@@ -385,5 +386,6 @@
       "via_drill_um": 300,
       "via_diameter_um": 600
     }
-  }
+  },
+  "motor_outputs": []
 }

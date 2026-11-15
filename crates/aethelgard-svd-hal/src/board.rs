@@ -3085,7 +3085,7 @@ mod tests {
     /// Sentinel-01's solved topology, written out.
     fn solved() -> SolvedTopology {
         SolvedTopology {
-            schema_version: 4,
+            schema_version: aethelgard_ir::SOLVED_SCHEMA_VERSION,
             specification_sha256: "0".repeat(64),
             assignments: BTreeMap::from([
                 ("SCL".into(), assign("PB6", "I2C1", "I2C1_SCL", 4)),
@@ -3098,6 +3098,8 @@ mod tests {
             i2c_devices: BTreeMap::new(),
             spi_devices: BTreeMap::new(),
             spi_lines: BTreeMap::new(),
+            clock: aethelgard_ir::SolvedClock::reset(),
+            motor_outputs: BTreeMap::new(),
         }
     }
 

@@ -10,9 +10,9 @@ mod common;
 use common::devs;
 
 use aethelgard_ir::{
-    AnalogLine, I2cBus, Mcu, NetConstraint, Pin, PinSource, PinTable, RESERVED_PINS, Signal,
-    SolveError, SolvedTopology, Specification, SpiBus, SpiDevice, SpiLine, VoltageDomain, solve,
-    solve_with_limit,
+    AnalogLine, HSE_PINS, I2cBus, Mcu, NetConstraint, Pin, PinSource, PinTable, RESERVED_PINS,
+    Signal, SolveError, SolvedTopology, Specification, SpiBus, SpiDevice, SpiLine, VoltageDomain,
+    solve, solve_with_limit,
 };
 
 const PART: &str = "TEST_PART";
@@ -50,8 +50,8 @@ fn table() -> PinTable {
     table_of(&[
         ("PA0", &[]),
         ("PA1", &[]),
-        ("PA13", &[("I2C1_SDA", 4), ("SPI1_SCK", 5)]),
-        ("PA14", &[("I2C1_SCL", 4)]),
+        ("PA13", &[("I2C1_SDA", 4), ("I2C3_SDA", 4), ("SPI1_SCK", 5)]),
+        ("PA14", &[("I2C1_SCL", 4), ("I2C3_SCL", 4)]),
         ("PA5", &[("SPI1_SCK", 5), ("SPI3_SCK", 6)]),
         ("PA6", &[("SPI1_MISO", 5), ("SPI3_MISO", 6)]),
         ("PA7", &[("SPI1_MOSI", 5), ("SPI3_MOSI", 6)]),
@@ -66,8 +66,6 @@ fn table() -> PinTable {
         ("PC15", &[("I2C2_SCL", 4)]),
         ("PF0", &[("I2C2_SDA", 4)]),
         ("PF1", &[("I2C2_SCL", 4)]),
-        ("PH0", &[("I2C3_SDA", 4)]),
-        ("PH1", &[("I2C3_SCL", 4)]),
         // I2C5 has an SDA and no SCL, so it is not offered.
         ("PJ0", &[("I2C5_SDA", 4)]),
     ])
@@ -145,10 +143,10 @@ fn spec(
     // The device lists are private to the crate (`AET-WO-1204`), so the
     // specification is built from the JSON it reads.
     let json = serde_json::json!({
-        "schema_version": 3,
+        "schema_version": 4,
         "project_name": "t",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
-        "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into() },
+        "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into(), hse_hz: 0 },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,
@@ -159,6 +157,7 @@ fn spec(
         "i2c_devices": [],
         "spi_devices": spi_devices,
         "net_constraints": net_constraints,
+        "motor_outputs": [],
     });
     serde_json::from_value(json).expect("the fixture is a specification")
 }
@@ -237,12 +236,31 @@ fn no_reserved_pin_is_ever_assigned() {
     assert_eq!(pin_of(&t, "B_SDA"), "PF0");
 }
 
+/// `AET-WO-4300a` §1.1: with `mcu.hse_hz` 0 the HSE pins are free, so a bus
+/// whose only pins are PH0/PH1 is placed there (before, it was `NoInstance`).
 #[test]
-fn reserved_pins_are_the_debug_port_and_the_oscillators() {
+fn the_hse_pins_are_assigned_when_no_crystal_is_declared() {
+    let mut s = spec(vec![i2c("I")], vec![], vec![]);
+    let table = table_of(&[("PH0", &[("I2C3_SDA", 4)]), ("PH1", &[("I2C3_SCL", 4)])]);
+    let t = solve(&s, &table, HASH).expect("PH0/PH1 are free");
     assert_eq!(
-        RESERVED_PINS,
-        ["PA13", "PA14", "PC14", "PC15", "PH0", "PH1"]
+        (pin_of(&t, "I_SDA").as_str(), pin_of(&t, "I_SCL").as_str()),
+        ("PH0", "PH1")
     );
+    // A crystal is refused by name before the solver runs (`4400` D1).
+    s.mcu.hse_hz = 8_000_000;
+    assert_eq!(
+        solve(&s, &table, HASH).unwrap_err().kind(),
+        "CrystalNotSupported"
+    );
+}
+
+#[test]
+fn reserved_pins_are_the_debug_port_and_the_lse_oscillator() {
+    assert_eq!(RESERVED_PINS, ["PA13", "PA14", "PC14", "PC15"]);
+    // `mcu.hse_hz` is 0 in every specification `validate` admits (`4400`
+    // D1), so the HSE pins are free (`AET-WO-4300a` §1.1).
+    assert_eq!(HSE_PINS, ["PH0", "PH1"]);
 }
 
 #[test]

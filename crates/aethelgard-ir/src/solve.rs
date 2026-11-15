@@ -5,15 +5,21 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::motor::{self, MotorProtocol, PwmTiming, SolvedClock, SolvedMotorOutput, TimingError};
 use crate::{
     AnalogLine, IrValidationError, PinAssignment, PinTable, Signal, SolvedI2cDevice,
     SolvedSpiDevice, SolvedTopology, Specification, SpiLine, electrical,
 };
 
 /// Never assigned, and refused as a hand pin: the SWD debug port (`PA13`
-/// SWDIO, `PA14` SWCLK), so the board can be programmed, and the oscillator
-/// pins (`PC14`/`PC15` LSE, `PH0`/`PH1` HSE), so it keeps its crystals.
-pub const RESERVED_PINS: [&str; 6] = ["PA13", "PA14", "PC14", "PC15", "PH0", "PH1"];
+/// SWDIO, `PA14` SWCLK), so the board can be programmed, and the LSE pins
+/// (`PC14`/`PC15`), so it keeps its 32 kHz crystal.
+pub const RESERVED_PINS: [&str; 4] = ["PA13", "PA14", "PC14", "PC15"];
+
+/// The HSE oscillator's pins. Reserved only beside a crystal, which no
+/// specification can declare yet: `mcu.hse_hz` must be 0 (`4400` D1), so
+/// the solver may assign them (`AET-WO-4300a` §1.1).
+pub const HSE_PINS: [&str; 2] = ["PH0", "PH1"];
 
 /// The values [`solve`] may try, across the whole solve including the
 /// minimal-set searches, before refusing with [`SolveError::BudgetExceeded`].
@@ -106,6 +112,29 @@ pub enum SolveError {
     BudgetExceeded { bus: String, limit: u64 },
     #[error("`{claimant}` has no free pin left")]
     NoFreePin { claimant: String },
+    #[error("no timer channel can serve motor output `{output}`: {}", .reasons.join("; "))]
+    NoTimerChannel {
+        output: String,
+        reasons: Vec<String>,
+    },
+    #[error(
+        "motor outputs `{first}` and `{second}` can only be on timer `{timer}`, and their timing differs: the outputs of one timer share its rate"
+    )]
+    TimerRateConflict {
+        timer: String,
+        first: String,
+        second: String,
+    },
+    #[error(
+        "{} cannot all be placed at once (a minimal set: dropping any one makes the rest placeable)",
+        quoted(.claimants)
+    )]
+    MotorsInfeasible { claimants: Vec<String> },
+    #[error("motor output `{output}`: {reason}")]
+    MotorTiming {
+        output: String,
+        reason: &'static str,
+    },
 }
 
 fn quoted(names: &[String]) -> String {
@@ -139,6 +168,10 @@ impl SolveError {
             Self::Infeasible { .. } => "Infeasible",
             Self::BudgetExceeded { .. } => "BudgetExceeded",
             Self::NoFreePin { .. } => "NoFreePin",
+            Self::NoTimerChannel { .. } => "NoTimerChannel",
+            Self::TimerRateConflict { .. } => "TimerRateConflict",
+            Self::MotorsInfeasible { .. } => "MotorsInfeasible",
+            Self::MotorTiming { .. } => "MotorTiming",
         }
     }
 
@@ -161,7 +194,11 @@ impl SolveError {
             | Self::BusTooFast { bus, .. }
             | Self::PullUpBelowSinkFloor { bus, .. } => Some(bus),
             Self::BusCapacitanceOverLimit { net, .. } => Some(net),
-            Self::Infeasible { .. } | Self::NoFreePin { .. } => None,
+            Self::NoTimerChannel { output, .. } | Self::MotorTiming { output, .. } => Some(output),
+            Self::TimerRateConflict { timer, .. } => Some(timer),
+            Self::Infeasible { .. } | Self::NoFreePin { .. } | Self::MotorsInfeasible { .. } => {
+                None
+            }
         }
     }
 
@@ -188,6 +225,11 @@ impl SolveError {
             | Self::PullUpBelowSinkFloor { bus, .. } => vec![bus.clone()],
             Self::BusCapacitanceOverLimit { net, .. } => vec![net.clone()],
             Self::Infeasible { buses } => buses.clone(),
+            Self::NoTimerChannel { output, .. } | Self::MotorTiming { output, .. } => {
+                vec![output.clone()]
+            }
+            Self::TimerRateConflict { first, second, .. } => vec![first.clone(), second.clone()],
+            Self::MotorsInfeasible { claimants } => claimants.clone(),
         }
     }
 }
@@ -240,6 +282,8 @@ fn solve_inner(
         i2c_devices: BTreeMap::new(),
         spi_devices: BTreeMap::new(),
         spi_lines: BTreeMap::new(),
+        clock: SolvedClock::reset(),
+        motor_outputs: BTreeMap::new(),
     };
     out.validate().map_err(SolveError::InvalidSpecification)?;
     out.i2c_ceilings = i2c_ceilings(spec)?;
@@ -257,7 +301,9 @@ fn solve_inner(
         });
     }
 
+    let timing = motor_timing(spec, &out.clock)?;
     let model = Model::new(spec, table)?;
+    model.check_motors(budget)?;
     let all: Vec<usize> = (0..model.buses.len()).collect();
     let mut search = Search::new(&model, all.clone(), forced);
     let found = search.run(budget);
@@ -283,9 +329,36 @@ fn solve_inner(
             );
         }
     }
+    // The motor outputs, placed inside the search after the buses: each on
+    // its timer channel's pin, with the timing solved for the reset clock.
+    for (i, m) in model.motors.iter().enumerate() {
+        let (timer, channel, pin, af) = search.motor_chosen[i].expect("every motor placed");
+        out.assignments.insert(
+            m.label.to_owned(),
+            PinAssignment {
+                pin: pin.to_owned(),
+                peripheral: format!("TIM{timer}"),
+                signal: format!("TIM{timer}_CH{channel}"),
+                alternate_function: af,
+            },
+        );
+        let (psc, arr, ccr) = timing[i];
+        out.motor_outputs.insert(
+            m.label.to_owned(),
+            SolvedMotorOutput {
+                index: u32::try_from(i).expect("fewer outputs than u32::MAX"),
+                protocol: m.protocol,
+                pwm: m.pwm.cloned(),
+                psc,
+                arr,
+                ccr,
+            },
+        );
+    }
     // Every cs last, in document order: a hand pin is already owned; the rest
-    // take the first free, unreserved pin in key order. The buses use a fixed
-    // number of pins, so this greedy pass never loses a solution.
+    // take the first free, unreserved pin in key order. The buses and the
+    // motor outputs use a fixed number of pins, so this greedy pass never
+    // loses a solution.
     for cs in &model.cs {
         let pin = match cs.hand {
             Some(pin) => pin,
@@ -314,6 +387,40 @@ fn solve_inner(
     // checks; this refuses rather than emits if a change to it ever breaks one.
     out.validate().map_err(SolveError::InvalidSpecification)?;
     Ok(out)
+}
+
+/// Each motor output's `PSC`, `ARR` and `CCR` on the clock the firmware runs
+/// on, in document order. Every timer's kernel clock is the same on the
+/// reset clock (RM0433 Rev 9 Table 57), so the values do not depend on which
+/// timer the search picks; they are solved, and refused by name, before it.
+fn motor_timing(
+    spec: &Specification,
+    clock: &SolvedClock,
+) -> Result<Vec<(u32, u32, u32)>, SolveError> {
+    let (k1, k2) = (
+        clock.timer_kernel_hz(motor::Apb::Apb1),
+        clock.timer_kernel_hz(motor::Apb::Apb2),
+    );
+    assert_eq!(k1, k2, "the reset clock gives both buses one timer clock");
+    spec.motor_outputs
+        .iter()
+        .map(|m| {
+            motor::solve_timing(m.protocol, m.pwm.as_ref(), k1).map_err(|e| SolveError::MotorTiming {
+                output: m.label.clone(),
+                reason: match e {
+                    TimingError::NoMicrosecondTick => {
+                        "the timer clock is not a whole number of MHz, so no prescaler gives a 1 us tick"
+                    }
+                    TimingError::RateOutOfRange => {
+                        "its period does not fit a 16-bit ARR (a PWM rate below 16 Hz at a 1 us tick)"
+                    }
+                    TimingError::PulseExceedsPeriod => {
+                        "its longest pulse does not fit inside the period the rate rounds to at a 1 us tick"
+                    }
+                },
+            })
+        })
+        .collect()
 }
 
 /// Each I2C line's analog facts, copied from the specification (`AET-WO-2200`
@@ -570,9 +677,27 @@ struct Bus<'s, 't> {
     signals: Vec<Sig<'s, 't>>,
 }
 
+/// One motor output. `key` is what the outputs of one timer must share: the
+/// protocol, and a PWM output's rate.
+struct Motor<'s, 't> {
+    label: &'s str,
+    path: String,
+    hand: Option<&'t str>,
+    protocol: MotorProtocol,
+    pwm: Option<&'s PwmTiming>,
+    key: (MotorProtocol, Option<u32>),
+}
+
+/// A timer channel on a pin: `(timer, channel, pin, af)`.
+type Channel<'t> = (u32, u32, &'t str, u8);
+
 struct Model<'s, 't> {
     buses: Vec<Bus<'s, 't>>,
     cs: Vec<Sig<'s, 't>>,
+    motors: Vec<Motor<'s, 't>>,
+    /// Every unreserved timer channel of the table, by timer, channel, then
+    /// pin in key order.
+    channels: Vec<Channel<'t>>,
     i2c_instances: Vec<String>,
     spi_instances: Vec<String>,
     /// Per (instance, signal): the unreserved pins carrying it, in key order.
@@ -680,6 +805,33 @@ impl<'s, 't> Model<'s, 't> {
         for (i, d) in spec.spi_devices.iter().enumerate() {
             cs.push(sig("CS", &d.cs, format!("spi_devices[{i}].cs"))?);
         }
+        let mut motors = Vec::new();
+        for (i, m) in spec.motor_outputs.iter().enumerate() {
+            let path = format!("motor_outputs[{i}]");
+            let pin = Signal {
+                net: m.label.clone(),
+                pin: m.pin.clone(),
+            };
+            motors.push(Motor {
+                label: &m.label,
+                hand: hand(&pin, &path)?,
+                path,
+                protocol: m.protocol,
+                pwm: m.pwm.as_ref(),
+                key: (m.protocol, m.pwm.as_ref().map(|p| p.rate_hz)),
+            });
+        }
+        let mut channels: Vec<Channel<'t>> = table
+            .pins
+            .iter()
+            .filter(|(pin, _)| !RESERVED_PINS.contains(&pin.as_str()))
+            .flat_map(|(pin, p)| {
+                p.alternate_functions.iter().filter_map(move |(name, af)| {
+                    motor::timer_channel(name).map(|(n, k)| (n, k, pin.as_str(), *af))
+                })
+            })
+            .collect();
+        channels.sort_unstable();
 
         let i2c_instances = instances(table, Kind::I2c);
         let spi_instances = instances(table, Kind::Spi);
@@ -705,6 +857,8 @@ impl<'s, 't> Model<'s, 't> {
         let model = Model {
             buses,
             cs,
+            motors,
+            channels,
             i2c_instances,
             spi_instances,
             candidates,
@@ -795,9 +949,88 @@ impl<'s, 't> Model<'s, 't> {
         Ok(())
     }
 
+    /// The checks on the motor outputs before the search, in the README's
+    /// order: each alone can take a channel; two whose pins leave each only
+    /// one timer, the same one, share their timing; and together, beside
+    /// every hand pin and no bus, they can all be placed.
+    fn check_motors(&self, budget: &mut Budget) -> Result<(), SolveError> {
+        let alone = Search::beside_hand_pins(self);
+        let mut timers: Vec<BTreeSet<u32>> = Vec::new();
+        for (m, motor) in self.motors.iter().enumerate() {
+            let options: Vec<Channel<'t>> = alone.channels_for(m).collect();
+            if options.is_empty() {
+                let reason = match motor.hand {
+                    Some(h) if !self.channels.iter().any(|c| c.2 == h) => {
+                        format!("pin `{h}` carries no timer channel (`TIMn_CH1` to `TIMn_CH4`)")
+                    }
+                    Some(h) => format!("pin `{h}` is held by `{}`", alone.used[h]),
+                    None if self.channels.is_empty() => {
+                        "the table has no unreserved pin with a timer channel".to_owned()
+                    }
+                    None => "every pin with a timer channel is held by hand".to_owned(),
+                };
+                return Err(SolveError::NoTimerChannel {
+                    output: motor.label.to_owned(),
+                    reasons: vec![reason],
+                });
+            }
+            timers.push(options.iter().map(|c| c.0).collect());
+        }
+        for (a, first) in self.motors.iter().enumerate() {
+            for (b, second) in self.motors.iter().enumerate().skip(a + 1) {
+                if first.key != second.key && timers[a].len() == 1 && timers[a] == timers[b] {
+                    let timer = timers[a].iter().next().expect("one timer");
+                    return Err(SolveError::TimerRateConflict {
+                        timer: format!("TIM{timer}"),
+                        first: first.label.to_owned(),
+                        second: second.label.to_owned(),
+                    });
+                }
+            }
+        }
+        let all: Vec<usize> = (0..self.motors.len()).collect();
+        if self.motors_fit(&all, budget)? {
+            return Ok(());
+        }
+        // Deletion, as for the buses: the set left is minimal.
+        let mut set = all;
+        let mut i = 0;
+        while i < set.len() {
+            let mut without = set.clone();
+            without.remove(i);
+            if self.motors_fit(&without, budget)? {
+                i += 1;
+            } else {
+                set = without;
+            }
+        }
+        Err(SolveError::MotorsInfeasible {
+            claimants: set
+                .iter()
+                .map(|&m| self.motors[m].label.to_owned())
+                .collect(),
+        })
+    }
+
+    /// Whether the motor outputs in `subset` can all be placed beside every
+    /// hand pin, with no bus placed.
+    fn motors_fit(&self, subset: &[usize], budget: &mut Budget) -> Result<bool, SolveError> {
+        let mut search = Search::beside_hand_pins(self);
+        search.motor_active = subset.to_vec();
+        let found = search.run(budget);
+        if let Some(pos) = search.exceeded {
+            return Err(self.budget_error(&search, pos));
+        }
+        Ok(found)
+    }
+
     fn budget_error(&self, search: &Search, pos: usize) -> SolveError {
         SolveError::BudgetExceeded {
-            bus: self.buses[search.active[pos]].id.to_owned(),
+            bus: if pos == MOTORS {
+                "motor_outputs".to_owned()
+            } else {
+                self.buses[search.active[pos]].id.to_owned()
+            },
             limit: search.budget.limit,
         }
     }
@@ -821,8 +1054,18 @@ impl<'s, 't> Model<'s, 't> {
                 set = without;
             }
         }
-        SolveError::Infeasible {
-            buses: set.iter().map(|&b| self.buses[b].id.to_owned()).collect(),
+        let buses = set.iter().map(|&b| self.buses[b].id.to_owned());
+        if self.motors.is_empty() {
+            return SolveError::Infeasible {
+                buses: buses.collect(),
+            };
+        }
+        // `check_motors` placed every output beside the hand pins, so the
+        // conflict is between these buses and the outputs.
+        SolveError::MotorsInfeasible {
+            claimants: buses
+                .chain(self.motors.iter().map(|m| m.label.to_owned()))
+                .collect(),
         }
     }
 }
@@ -831,6 +1074,10 @@ struct Budget {
     spent: u64,
     limit: u64,
 }
+
+/// The position [`Search::tick`] records when the motor outputs spend the
+/// budget, where a bus's position is recorded otherwise.
+const MOTORS: usize = usize::MAX;
 
 /// A placed bus: its instance, and per signal its `(pin, af)`.
 type Placed<'t> = (String, Vec<(&'t str, u8)>);
@@ -849,6 +1096,13 @@ struct Search<'m, 's, 't> {
     exceeded: Option<usize>,
     /// Whether `consistent` runs the forced-instance check.
     forced: bool,
+    /// The motor outputs placed once every active bus is, in order.
+    motor_active: Vec<usize>,
+    /// Per motor output, its channel once placed.
+    motor_chosen: Vec<Option<Channel<'t>>>,
+    /// The timer channels taken, and each timer's shared key and outputs.
+    channels_used: BTreeSet<(u32, u32)>,
+    timer_keys: BTreeMap<u32, ((MotorProtocol, Option<u32>), usize)>,
 }
 
 impl<'m, 's, 't> Search<'m, 's, 't> {
@@ -863,6 +1117,11 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
                 used.insert(pin, sig.path.clone());
             }
         }
+        for m in &model.motors {
+            if let Some(pin) = m.hand {
+                used.insert(pin, m.path.clone());
+            }
+        }
         let n = active.len();
         Search {
             model,
@@ -873,7 +1132,23 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
             budget: Budget { spent: 0, limit: 0 },
             exceeded: None,
             forced,
+            motor_active: (0..model.motors.len()).collect(),
+            motor_chosen: vec![None; model.motors.len()],
+            channels_used: BTreeSet::new(),
+            timer_keys: BTreeMap::new(),
         }
+    }
+
+    /// A search with no bus active, and every hand pin owned: the buses',
+    /// the chip selects' and the motor outputs'.
+    fn beside_hand_pins(model: &'m Model<'s, 't>) -> Self {
+        let mut s = Self::new(model, Vec::new(), false);
+        for sig in model.buses.iter().flat_map(|b| &b.signals) {
+            if let Some(pin) = sig.hand {
+                s.used.insert(pin, sig.path.clone());
+            }
+        }
+        s
     }
 
     /// Runs the search inside `budget`, and charges what it spent.
@@ -986,7 +1261,7 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
 
     fn bus(&mut self, pos: usize) -> bool {
         if pos == self.active.len() {
-            return true;
+            return self.motor(0);
         }
         let model = self.model;
         let b = self.active[pos];
@@ -1002,6 +1277,65 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
                 return true;
             }
             self.used_instances.remove(inst);
+        }
+        false
+    }
+
+    /// The channels motor output `m` could take now: its hand pin's, or any
+    /// free pin's, on a channel not taken, of a timer free or already
+    /// carrying its key.
+    fn channels_for<'a>(&'a self, m: usize) -> impl Iterator<Item = Channel<'t>> + 'a {
+        let motor = &self.model.motors[m];
+        self.model
+            .channels
+            .iter()
+            .copied()
+            .filter(move |&(n, k, pin, _)| {
+                motor.hand.is_none_or(|h| h == pin)
+                    && self.free(pin, &motor.path)
+                    && !self.channels_used.contains(&(n, k))
+                    && self
+                        .timer_keys
+                        .get(&n)
+                        .is_none_or(|(key, _)| *key == motor.key)
+            })
+    }
+
+    /// Places the motor outputs from position `pos` of `motor_active` on,
+    /// trying each one's channels in order; the last one placed ends the
+    /// search.
+    fn motor(&mut self, pos: usize) -> bool {
+        if pos == self.motor_active.len() {
+            return true;
+        }
+        let m = self.motor_active[pos];
+        let options: Vec<Channel<'t>> = self.channels_for(m).collect();
+        let (path, key) = {
+            let motor = &self.model.motors[m];
+            (motor.path.clone(), motor.key)
+        };
+        for c @ (n, k, pin, _) in options {
+            if !self.tick(MOTORS) {
+                return false;
+            }
+            let owned = self.used.contains_key(pin);
+            self.used.insert(pin, path.clone());
+            self.channels_used.insert((n, k));
+            self.timer_keys.entry(n).or_insert((key, 0)).1 += 1;
+            self.motor_chosen[m] = Some(c);
+            if self.motor(pos + 1) {
+                return true;
+            }
+            self.motor_chosen[m] = None;
+            let e = self.timer_keys.get_mut(&n).expect("just counted");
+            e.1 -= 1;
+            if e.1 == 0 {
+                self.timer_keys.remove(&n);
+            }
+            self.channels_used.remove(&(n, k));
+            if !owned {
+                self.used.remove(pin);
+            }
         }
         false
     }
@@ -1223,12 +1557,13 @@ mod differential {
             })
         }));
         Specification {
-            schema_version: 3,
+            schema_version: 4,
             board: serde_json::from_str(BOARD).expect("the declared board"),
             project_name: "t".into(),
             mcu: Mcu {
                 part: "T".into(),
                 supply: "D".into(),
+                hse_hz: 0,
             },
             voltage_domains: vec![VoltageDomain {
                 id: "D".into(),
@@ -1240,6 +1575,7 @@ mod differential {
             i2c_devices: vec![],
             spi_devices,
             net_constraints,
+            motor_outputs: vec![],
         }
     }
 
