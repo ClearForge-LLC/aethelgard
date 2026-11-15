@@ -152,18 +152,8 @@ fn lifecycle_unheld(topology: &aethelgard_ir::SolvedTopology) -> Vec<String> {
     let Ok(table) = aethelgard_ir::parts::table() else {
         return Vec::new();
     };
-    let devices = topology
-        .i2c_devices_in_order()
-        .into_iter()
-        .map(|(r, d)| (r, d.part.as_str()))
-        .chain(
-            topology
-                .spi_devices_in_order()
-                .into_iter()
-                .map(|(r, d)| (r, d.part.as_str())),
-        );
     let mut unheld = Vec::new();
-    for (reference, part) in devices {
+    for (reference, part) in topology.parts_in_order() {
         let Some(p) = table.get(part) else { continue };
         if let aethelgard_ir::parts::Held::Pending(url) = &p.citations.lifecycle.held {
             let line = format!(

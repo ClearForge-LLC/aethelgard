@@ -248,6 +248,17 @@ pub struct Step {
     pub mask: u64,
 }
 
+/// The bits a read of `width` bytes can set: a value with any bit above them
+/// was not read, whatever the mask fixes (a configuration reads none, so its
+/// value is 0).
+pub fn width_mask(width: u8) -> u64 {
+    match width {
+        0 => 0,
+        8.. => u64::MAX,
+        w => (1u64 << (8 * u32::from(w))) - 1,
+    }
+}
+
 /// Where a value group was read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Citation {
@@ -367,11 +378,7 @@ impl Part {
                 write: s.data.clone(),
                 width,
                 expected,
-                mask: if width >= 8 {
-                    u64::MAX
-                } else {
-                    (1u64 << (8 * u32::from(width))) - 1
-                },
+                mask: width_mask(width),
             });
         }
         steps

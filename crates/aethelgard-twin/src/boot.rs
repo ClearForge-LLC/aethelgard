@@ -121,17 +121,6 @@ pub const RECORD_OFFSET: u32 = 4;
 /// every identity read is (`AET-WO-4210`).
 pub const RECORD_BYTES: u32 = 8;
 
-/// The bits a read of `width` bytes can set: a value with any bit above
-/// them was not read, whatever the mask fixes (a configuration reads none, so
-/// its value is 0).
-pub fn width_mask(width: u8) -> u64 {
-    match width {
-        0 => 0,
-        8.. => u64::MAX,
-        w => (1u64 << (8 * u32::from(w))) - 1,
-    }
-}
-
 /// The words a record's value takes for a read of `width` bytes.
 pub fn value_words(width: u8) -> u32 {
     u32::from(width).div_ceil(4).max(1)
@@ -304,7 +293,7 @@ impl StepCheck {
         let spi = matches!(self.wire, Wire::Spi { .. });
         match (status, spi) {
             (STATUS_OK, _)
-                if value & !width_mask(self.width) == 0
+                if value & !parts::width_mask(self.width) == 0
                     && value & self.mask == self.expected & self.mask =>
             {
                 Outcome::Pass

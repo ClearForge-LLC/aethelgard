@@ -2077,23 +2077,26 @@ impl SolvedTopology {
         Ok(())
     }
 
-    /// The SPI devices in the specification's order, as
-    /// [`SolvedTopology::i2c_devices_in_order`] orders the I2C ones.
-    /// [`lifecycle_banner`] for the solved devices, I2C then SPI, each in
-    /// the specification's order.
-    pub fn lifecycle_banner(&self) -> Result<Vec<String>, IrValidationError> {
-        let devices = self
-            .i2c_devices_in_order()
+    /// Every device's (reference, part), I2C then SPI, each in the
+    /// specification's order.
+    pub fn parts_in_order(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.i2c_devices_in_order()
             .into_iter()
             .map(|(r, d)| (r, d.part.as_str()))
             .chain(
                 self.spi_devices_in_order()
                     .into_iter()
                     .map(|(r, d)| (r, d.part.as_str())),
-            );
-        Ok(lifecycle_banner(parts::table()?, devices))
+            )
     }
 
+    /// [`lifecycle_banner`] for the solved devices.
+    pub fn lifecycle_banner(&self) -> Result<Vec<String>, IrValidationError> {
+        Ok(lifecycle_banner(parts::table()?, self.parts_in_order()))
+    }
+
+    /// The SPI devices in the specification's order, as
+    /// [`SolvedTopology::i2c_devices_in_order`] orders the I2C ones.
     pub fn spi_devices_in_order(&self) -> Vec<(&str, &SolvedSpiDevice)> {
         let mut out: Vec<_> = self
             .spi_devices

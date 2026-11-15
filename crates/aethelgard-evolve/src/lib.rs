@@ -433,7 +433,7 @@ fn witness_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
 /// and it equals the expected one under the mask.
 fn read_matches(width: u8, expected: u64, mask: u64, observed: Option<u64>) -> bool {
     // The bits a read of `width` bytes can set, as the judge holds them
-    // (`aethelgard_twin::boot::width_mask`): none for a configuration.
+    // (`aethelgard_ir::parts::width_mask`, which evolve does not depend on): none for a configuration.
     let read = match width {
         0 => 0,
         8.. => u64::MAX,
