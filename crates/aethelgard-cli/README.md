@@ -511,6 +511,15 @@ For a symptom on a motor output (`AET-WO-4300a`: `motor_output_unwitnessed`, `mo
 | `S4` | software | a register field the output owns is wrong (kind 11): the firmware's own configuration of the pin or the timer differs from the solved topology. The twin models nothing electrical on a timer's pin, so no rule attributes a motor symptom to the electrical half | 11, 26 |
 | `I4` | indeterminate | no owned register is wrong (an output with no edges and every register right, or a static mismatch, which is the topology's) | 25, 26 |
 
+For a symptom on a serial port (`AET-WO-4300b`: `serial_pattern_missing`, `serial_echo_missing`, `serial_capture_forged`, `serial_tag_mismatch` and `serial_framing_static_mismatch`, from kinds 29 and 28), and for a kind 11 wrong only in fields one port owns (its TX and RX pins' `MODER` and `AFR` fields, their ports' and its USART's clock gates, and any register of its USART's block; another port's fields of a shared register are never this port's):
+
+| rule | domain | holds when | evidence kinds |
+|---|---|---|---|
+| `S5` | software | a register field the port owns is wrong (kind 11), with the port's witness when it failed: the firmware's own configuration of the pins or the USART differs from the solved topology. The twin models nothing electrical on a USART's pins, so no rule attributes a serial symptom to the electrical half | 11, 29 |
+| `I6` | indeterminate | no owned register is wrong (a dead echo or pattern, or a tag warning, with every register right), or the port's static framing check failed, which is the topology's | 28, 29 |
+
+A witness or framing check is evidence only when it failed. `serial_capture_forged` may count more than the witnesses show: a foreign file in the capture directory names no port.
+
 For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bus not computed healthy, gives `I2`. Then board software evidence gives `S2` (software; evidence kinds 7, 10, 11), and none gives `I4`.
 
 **The run.**
@@ -551,8 +560,8 @@ Then it attributes the run (`attribute`), reads each evidence event through `aet
 | `E1`, every piece of evidence a complete rise past its ceiling (kind 7) or a bus fault caused only by one (kind 9) | a proposal per faulted bus, sized below |
 | `E1` with a line held low, a line stuck high, an incomplete rise, a bus fault of any other cause, or a line of the bus without exactly one complete rise | no rule: `no rule; RUL-18 model proposer slot`. A held line is a board fault no value change fixes |
 | `E2` | no rule: a device absent behind its chip select is a board fault no value change fixes |
-| `S1`, `S2`, `S3`, `S4` | a generator report, with no specification change |
-| `N1`, `I1` to `I5` | nothing is proposed, naming the rule: attribution precedes mutation (`INV-05`) |
+| `S1`, `S2`, `S3`, `S4`, `S5` | a generator report, with no specification change |
+| `N1`, `I1` to `I6` | nothing is proposed, naming the rule: attribution precedes mutation (`INV-05`) |
 
 **Sizing a pull-up.** The binding line is the one with the least `ceiling / rise`, which is the slowest line when the ceilings are equal. `R_target = R_now × ceiling × 0.8 / rise`, rounded down; the 0.8 is headroom for a ±5 % resistor tolerance and a capacitance spread the run did not measure. The value is the largest E12 value at or below `R_target`. If it is below `Rp_min`, the floor, nothing is proposed, never a value below it. The predicted rise is the binding line's rise scaled by the new value over the old, rounded up (the rise is linear in R × C, `docs/architecture.md` §2.18). Every rise is computed from declared values (`RUL-19`).
 
