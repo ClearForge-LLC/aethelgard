@@ -424,6 +424,7 @@ Every [WARNING] of the correct ICM run (`imu-script`, run 0), by source:
 
   The scripts' line counts are set from measurement, as these were.
 - **F13 · `systemd-run` expands `$VAR` in its command line** unless `--expand-environment=no` is given (systemd 259; measured). `RULE3.md`'s command form would otherwise rewrite any `$` in a container's command.
+- **F14 · From 4300c's bus note (peer information, not checked here):** under `parts.json` schema 2 (PR #129, unmerged), the ICM-20948's `pin_capacitance` is null. DS-000189 1.6 §3.4 gives only a typical CI "< 10". 4300c's `extract` then refuses a null part on a bounded SPI SCK or MOSI (`UnboundedPinCapacitance`). **The build of this recommendation needs a cited maximum, or a ruling, once 4300c lands.**
 
 ## Decisions needed
 
