@@ -111,3 +111,15 @@ What Renode gives: a monitor `include @file.cs` before `LoadPlatformDescription`
 5. **`replay` and `verify`** re-check the header's pins against the table, as they re-check the platform's other hashes.
 
 **What it claims.** The bytes Renode compiled are the pinned bytes, up to the same-uid residual `RUL-19` (2) already names for every gate (a process of the tool's uid could change the copy between the CLI's hash and Renode's read, unless the `1601` boundary held). It does not claim the compiled DLL: Roslyn's output is not pinned (its sha256 was `a4dd59c2…` in one run; whether it is stable across runs was not measured).
+
+### S4 — a model driven from the monitor (measured)
+
+`spike/4220/s1/s4.py`, one boot, no firmware and no `RunFor` (`out/s4.jsonl`).
+
+| # | Result | Measured |
+|---|---|---|
+| P4.1 | **held** | `Transmit 0x80` printed `0x00`, `Transmit 0x00` printed `0xA5`; `FinishTransmission` printed nothing. |
+| P4.2 | **held** | `Write [0xD0]` accepted the array literal; `Read 1` printed a one-byte array, `0x5A` (on three lines: `[`, `0x5A, `, `]`). |
+| P4.3 | **held** | each call logged the same Noisy line the firmware's byte logged in S1 (`AetProbeSpi byte 0x00 -> 0xA5`, `AetProbeI2C write 1 byte(s), pointer 0xD0`, …). |
+
+So a model's register map can be checked in the image against the datasheet's reset table with no firmware at all, and the line the check reads is the line the twin's witness reads.
