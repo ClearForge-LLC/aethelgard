@@ -162,3 +162,10 @@ Probe plan, so the predictions have something to point at. Probes are built `420
   - **(b)** keep 100 ms and accept the DShot fixture's campaign as failing closed (the static check alone judges DShot).
   - **(c)** raise `LOG_FILTER` and `BOOT_BOUNDS` for DShot boards (not recommended: the bounds exist for floods).
   Built as far as no ruling is needed: the solver, the static check, the firmware, the Kani harness and the three-part witness all cover DShot, and `simulate --for 2ms` witnesses the DShot fixture (tier 2). `VIRTUAL_NS` is unchanged.
+
+## 6. Questions for the architect (not stops)
+
+- **Q1, the quantum's key (F1).** D2 asked for the quantum as a `--config` key; Renode 1.17.0 has none, so the composition states it by `emulation SetGlobalQuantum` at Renode's own 100 µs. Acceptable as the reading of D2?
+- **Q2, `RCC_CR.HSIDIV`.** The 64 MHz the timers are solved for depends on `HSIDIV = 00`, which the generated firmware does not assert (the WO's list is `SWS` and the `D1CFGR`/`D2CFGR` prescalers; `TIMPRE`, in the same read, is asserted). Add it to the assertion in a later piece?
+- **Q3, a motor pin's output speed** once a connector part declares the off-board load (`4300f`): judge the timer pin by the Fmax check at the output's toggle rate (≤ 1.2 MHz for DShot600), as 4300c does SCK and MOSI?
+- **Q4, the seeded manifest's `spec` key.** A mutant may now name the specification whose generated board it patches (the motor case runs on the PWM fixture, whose board is not committed). The manifest stays at schema version 2 with the key optional; a version bump instead?
