@@ -70,7 +70,7 @@ Each item is **[read]**, this repository at `cb44872`.
   - S2's ERC and DRC;
   - S4's DRC.
 
-  Both are answered below as far as the host and KiCad's source go. The harness that measures them is committed, so they run as soon as D8 is ruled (§5, D10).
+  Both are answered below as far as the host and KiCad's source go. **Superseded:** the ruling on PR #134 replaced the rule, and both were measured (§7). The harness that measures them is committed, so they run as soon as D8 is ruled (§5, D10).
 
 ### 3.1 S1, what exists
 
