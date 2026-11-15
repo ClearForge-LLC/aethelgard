@@ -1070,3 +1070,33 @@ fn parity_fails_a_board_that_does_not_match_its_schematic() {
     );
     assert_eq!(v["verdict"], "fail");
 }
+
+// ---- AET-WO-1307: escape planning, tier 2 ----
+
+/// `AET-WO-1307` §2.1 and §4, ruled K4 ("every gate" is DRC with parity) and
+/// K5: `D3` (24 I2C devices and 12 SPI flashes) and `D1` route at 4 layers
+/// under the inward escape, vias under the LQFP's own body included, and each
+/// board's schematic passes ERC and the board passes `check drc --spec
+/// --schematic` with no finding of any kind.
+#[test]
+fn d3_and_d1_pass_erc_and_drc_with_parity_at_four_layers() {
+    let t = Temp::new("1307-dense");
+    for name in ["d3-24-i2c-12-spi.json", "d1-24-i2c.json"] {
+        let spec = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name);
+        let r = emit_to(&spec, &t.0.join(name));
+        let board = PathBuf::from(r["board"]["path"].as_str().unwrap());
+        let sch = PathBuf::from(r["schematic"]["path"].as_str().unwrap());
+        let erc = run(
+            &["check", "erc", "--schematic", sch.to_str().unwrap()],
+            None,
+        );
+        let erc = verdict(&erc, 0);
+        assert_eq!(kinds(&erc), Vec::<&str>::new(), "{name}: {erc}");
+        let drc = drc_parity(&board, &sch, &spec);
+        assert_eq!(drc["verdict"], "pass", "{name}: {drc}");
+        assert_eq!(kinds(&drc), Vec::<&str>::new(), "{name}: {drc}");
+        assert_eq!(drc["input"]["sha256"], r["board"]["sha256"], "{name}");
+    }
+}

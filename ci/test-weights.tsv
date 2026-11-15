@@ -184,8 +184,6 @@ tests/routing_tier1.rs	every_pair_of_copper_items_keeps_the_clearance	1.891
 tests/routing_tier1.rs	no_copper_touches_an_unconnected_pad	2.303
 tests/routing_tier1.rs	the_routed_board_is_byte_identical_and_a_function_of_its_pads	5.646
 tests/routing_tier1.rs	the_routers_judges_refuse_orphan_and_relabelled_copper	1.538
-tests/stackups_tier1.rs	d1_routes_at_four_layers_and_fails_closed_at_two	20.000
-tests/stackups_tier1.rs	d3_fails_closed_at_four_layers_naming_its_net	25.000
 tests/stackups_tier1.rs	the_declared_rules_are_the_ones_routed	5.000
 tests/stackups_tier1.rs	the_old_and_new_paths_agree_on_the_reference	2.000
 tests/stackups_tier1.rs	the_reader_refuses_a_board_that_disagrees_with_the_specification	2.000
@@ -252,8 +250,22 @@ unittests src/main.rs	run::tests::the_capture_cap_holds_with_and_without_the_fil
 unittests src/main.rs	tests::provenance_is_generated_only_for_the_generated_crate	2.755
 tests/twin_tier2.rs	the_reference_reads_u4_s_jedec_id_witnessed_behind_spi1_s_multiplexer	3.070
 tests/twin_tier2.rs	a_forged_spi_record_fails_unwitnessed	6.240
-tests/twin_tier2.rs	the_imu_and_barometer_fixture_runs_every_script_step_witnessed	6.000
-tests/twin_tier2.rs	a_seeded_imu_fault_is_named_by_its_step	6.000
-tests/twin_tier2.rs	a_seeded_barometer_fault_is_named_by_its_step	6.000
-tests/twin_tier2.rs	an_interrupt_armed_after_the_boot_word_fails_naming_it	12.000
-tests/board_tier2.rs	the_imu_fixture_s_transfers_prove_within_its_scripts	20.000
+# AET-WO-1307: estimates until the next refit, each the test alone on Furnace (2026-11-15, --report-time,
+# --test-threads=1) times 2.8, the CI-to-Furnace ratio of routing_tier1's measured weights above.
+tests/stackups_tier1.rs	d1_routes_at_four_layers_and_at_two	10.400
+tests/escape_tier1.rs	renamings_0_to_9_route_d3_to_its_own_copper	140.400
+tests/escape_tier1.rs	renamings_10_to_19_route_d3_to_its_own_copper	140.700
+tests/escape_tier1.rs	twenty_renamings_route_the_reference_to_its_own_copper	42.400
+tests/escape_tier1.rs	twenty_renamings_route_d1_to_its_own_copper	39.500
+tests/escape_tier1.rs	the_reproducers_of_1102_a6_and_2204_a5_route	23.800
+tests/escape_tier1.rs	a_zone_that_is_not_the_board_outline_is_refused_by_name	2.800
+tests/escape_tier1.rs	a_via_in_a_courtyard_is_refused_but_in_the_dense_parts_own_ring	2.100
+tests/with_tools.rs	d3_and_d1_pass_erc_and_drc_with_parity_at_four_layers	24.500
+tests/escape_tier1.rs	shifted_placements_route_without_reaching_the_exact_judge	3.300
+# AET-WO-4210: estimates until the next refit, each the test's wall time on Furnace (2026-11-15, in the
+# pinned image, --test-threads 4) times 2.8, as AET-WO-1307's above.
+tests/twin_tier2.rs	the_imu_and_barometer_fixture_runs_every_script_step_witnessed	9.700
+tests/twin_tier2.rs	a_seeded_imu_fault_is_named_by_its_step	8.500
+tests/twin_tier2.rs	a_seeded_barometer_fault_is_named_by_its_step	8.600
+tests/twin_tier2.rs	an_interrupt_armed_after_the_boot_word_fails_naming_it	17.000
+tests/board_tier2.rs	the_imu_fixture_s_transfers_prove_within_its_scripts	45.000

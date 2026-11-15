@@ -179,6 +179,7 @@ fn no_copper_touches_an_unconnected_pad() {
             parts: vec![route::Part {
                 reference: "lone".into(),
                 pads: vec![pad.clone()],
+                courtyard: Vec::new(),
             }],
         };
         route::check(&alone, &routed).unwrap();
@@ -206,8 +207,9 @@ fn every_nets_copper_is_connected() {
 }
 
 /// Every pad is left straight out: no F.Cu track runs inside a footprint's
-/// pad field (the box round its pads) except over a pad of its own net. At
-/// the LQFP that is the only way out between pads 0.2 mm apart.
+/// pad field (the box round its pads) except over a pad of its own net, or
+/// in a dense part's own ring interior (`AET-WO-1307` K1, inward escape). At
+/// the LQFP those are the only ways out between pads 0.2 mm apart.
 #[test]
 fn every_pad_is_left_straight_out_of_its_field() {
     let d = Dir::new("escape");
@@ -228,6 +230,7 @@ fn every_pad_is_left_straight_out_of_its_field() {
         else {
             continue;
         };
+        let ring = route::ring_interior(part);
         for s in routed.segments.iter().filter(|s| s.layer == Layer::F) {
             let (dx, dy) = (
                 (s.end.0 - s.start.0).signum(),
@@ -241,7 +244,7 @@ fn every_pad_is_left_straight_out_of_its_field() {
                     x1: at.0,
                     y1: at.1,
                 };
-                if field.contains(here) {
+                if field.contains(here) && !ring.is_some_and(|r| r.contains(here)) {
                     inside += 1;
                     assert!(
                         part.pads

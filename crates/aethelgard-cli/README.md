@@ -582,9 +582,9 @@ An upper bound on each I2C line's capacitance, and each SPI bus's SCK and MOSI (
  "input":{"path":"<as given>","sha256":"<64 hex>"},"specification_sha256":"<64 hex>",
  "capacitance":"upper bound estimated from routed geometry","conditions":["scope: …","…"],
  "lines":[{"net":"I2C_SDA","board_net":"/I2C_SDA","bus":"SENSORS","verdict":"pass",
-           "c_bound_femtofarads":46800,"declared_femtofarads":100000,
-           "terms":{"trace":9146,"vias":6076,"pads":1578,"pins":30000},
-           "length_nm":24250000,"segments":19,"via_count":4,"pad_count":4,
+           "c_bound_femtofarads":50576,"declared_femtofarads":100000,
+           "terms":{"trace":12922,"vias":6076,"pads":1578,"pins":30000},
+           "length_nm":33750000,"segments":28,"via_count":4,"pad_count":4,
            "pins":["U1.137","U2.3","U3.6"],"pull_ups":["R1"]},…],
  "findings":[]}
 ```

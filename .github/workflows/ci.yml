@@ -254,11 +254,13 @@ jobs:
       # witnessed behind SPI1's multiplexer; SPI forgeries unwitnessed; the
       # ICM-20948 fixture read end to end) and one in campaign_tier2.rs (a
       # droop on a board whose first read is SPI, adversarial A1).
-      # 100: plus 4 from AET-WO-4210: in twin_tier2.rs, the 1.8 V IMU and
+      # 97: plus 1 from AET-WO-1307 in with_tools.rs (D3 and D1 pass ERC and DRC with
+      # parity at 4 layers under the inward escape).
+      # 101: plus 4 from AET-WO-4210: in twin_tier2.rs, the 1.8 V IMU and
       # barometer fixture replaces the ICM-20948 fixture's test (minus 1, plus 1),
       # plus one seeded fault per part and an interrupt armed after the boot
       # word (plus 3); in board_tier2.rs, the fixture's transfers prove (plus 1).
-      TIER2_MIN: "100"
+      TIER2_MIN: "101"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
