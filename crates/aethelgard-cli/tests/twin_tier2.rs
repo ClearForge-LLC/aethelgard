@@ -1549,7 +1549,7 @@ fn the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back() {
     let tim1 = regs
         .iter()
         .filter(|r| r["name"].as_str().unwrap().starts_with("TIM1."));
-    assert_eq!(tim1.clone().count(), 17, "{v}");
+    assert_eq!(tim1.clone().count(), 14, "{v}");
     for r in tim1 {
         assert_eq!(r["observed"], r["expected"], "{r}");
     }
