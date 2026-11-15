@@ -155,13 +155,16 @@ A Sonnet subagent ran one mutant per new guard, each against `aethelgard-ir --te
 
 ## 6. Gates, reduction, close
 
-- **Gates on `2448b81`+fixes** [measured, Furnace]:
+- **Gates on `e8f5f34`** (the last code change; later commits touch FEEDBACK, one test comment and `ci/` only) [measured, Furnace]:
   - `cargo fmt --all -- --check`: clean.
   - `cargo clippy --workspace --all-targets -- -D warnings`: clean.
   - `cargo test --workspace --no-fail-fast`: 106 binaries, 0 failures.
-- **CI on `e42228d`** [measured]: `ci`, `engine-image` and `ardupilot-image` all green.
-  - Tools shards 12.6 to 18.4 minutes, gates 11.3 minutes.
-  - `tier2_tests_passed=129 floor=129`. TIER2_MIN is exact and unchanged.
+  - `bash ci/test-shard.sh`: 87 passes.
+- **CI** [measured]:
+  - `e42228d`: all green. Tools shards 12.6 to 18.4 minutes, gates 11.3. `tier2_tests_passed=129 floor=129`.
+  - `e8f5f34`: all green, tier 2 at 129 = floor. **Shard 0 ran 21.5 minutes**, past the refit rule's 20; the others ran 13.9 to 18.0. Its tier-2 content is the same as `e42228d`'s 18.4 minutes: this branch adds no test of 0.5 s or more. The planner's weights predate `4300d2`, `3303` and `4220`, so their heavy tests weigh the 0.05 s default.
+  - **Refit:** step 1 ran here as a throwaway (`9ac2774`, 4300b's `f28eb59` harness unchanged, run 43769041867), reverted exactly by `1e4acb0`. The architect then ruled (bus, 22:55): `4300b` owns the refit of `main`'s tests, and this PR takes 4300b's weights after it merges, then refits only if a shard still passes 20 minutes. So no weights change is committed here. The measurement is kept for comparison: `~/.cache/aet-4300d3/refit/weights.rows`, 339 tests of 0.5 s or more, planned at 894 s per shard. Its colocated maxima were sent to `4300b`.
+  - TIER2_MIN stays 129, exact on both runs.
 - **Reduction pass (diff): −5 net · 3 duplicates removed · 1 dead path removed · 0 protected kept · 2 findings below.**
   - Removed: three copies of the case-naming assertion, now one helper, and the `ground` strap, which no row allows.
   - Finding: `power.rs`'s `dielectric()` names repeat the serde names of `Dielectric`, the house pattern `Role::name` follows. Kept.
@@ -171,4 +174,9 @@ A Sonnet subagent ran one mutant per new guard, each against `aethelgard-ir --te
   - **D6:** TI's 20–100 µF as a hard range (F8), and the bulk's rating against the DC maximum only, not the ring (F13).
   - **D7:** `4300g`'s 1.71 V PDR_ON floor (§3 Overlaps).
 
-**Stop.** §7's second flag-and-stop condition holds at close: no held capacitor row has a published DC-bias figure, so the declared derating is the only source for every capacitor. Murata's chart for GCM32EC71H106KA03 has not landed in `~/.cache/aet-ds/` or the inbox. D1–D3 are unruled. Everything else in §1 is built and judged. When the chart lands, a figure is one row's `dc_bias` points. A ruling on D1–D3 changes one data field or one branch each.
+**Stop.** Three reasons, each named:
+1. §7's second flag-and-stop condition holds at close: no held capacitor row has a published DC-bias figure, so the declared derating is the only source for every capacitor. Murata's chart for GCM32EC71H106KA03 has not landed in `~/.cache/aet-ds/` or the inbox. When the chart lands, a figure is one row's `dc_bias` points.
+2. D1–D3 are unruled. A ruling on any of them changes one data field or one branch.
+3. Under the 22:55 ruling, the shard time waits on `4300b`'s refit. When this PR's head is under 20 minutes on every shard, that is variance, not a fix.
+
+Everything else in §1 is built, judged, adversarially reviewed, mutation-tested and reduced.
