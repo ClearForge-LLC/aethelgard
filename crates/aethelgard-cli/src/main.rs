@@ -19,6 +19,7 @@ mod propose;
 mod renode;
 mod run;
 mod said;
+mod speeds;
 mod tree;
 mod verdict;
 mod verify;
@@ -121,16 +122,16 @@ enum Command {
         #[arg(long, requires = "scenarios")]
         against_fab: Option<PathBuf>,
     },
-    /// Bound each I2C line's capacitance from above from a routed board's copper, and judge each bound against the specification's declared bound. Runs no tool.
+    /// Bound each I2C line's capacitance, and each SPI bus's SCK and MOSI, from above from a routed board's copper, and judge each bound against the specification's declared bound. Runs no tool.
     Extract {
         /// The routed .kicad_pcb file.
         #[arg(long)]
         board: PathBuf,
-        /// The specification whose I2C lines are judged.
+        /// The specification whose lines are judged.
         #[arg(long)]
         spec: PathBuf,
     },
-    /// Run a KiCad check on a board or schematic and print its verdict.
+    /// Run a check and print its verdict: KiCad's on a board or schematic, or the output speed check on a specification.
     Check {
         #[command(subcommand)]
         check: CheckCommand,
@@ -246,6 +247,12 @@ enum CheckCommand {
         /// A declared allow-list: pins outside the topology the firmware may configure, each exactly as declared, and why.
         #[arg(long)]
         allow: Option<PathBuf>,
+    },
+    /// Each generated pin's output speed against DS12117 Table 149: SPI SCK and MOSI judged at their declared rate, supply and load; every other line named with why it is out of scope. No tool runs.
+    Speeds {
+        /// The specification.
+        #[arg(long)]
+        spec: PathBuf,
     },
 }
 
@@ -398,6 +405,9 @@ fn main() -> ExitCode {
                 Err(stop) => stopped(stop),
             };
         }
+        Command::Check {
+            check: CheckCommand::Speeds { spec },
+        } => return speeds::speeds(&spec),
         Command::Prove {
             crate_dir,
             harness,

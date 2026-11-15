@@ -50,6 +50,7 @@ fn lists_the_five_tools_and_completes_two_calls() {
             "check_drc",
             "check_erc",
             "check_pinout",
+            "check_speeds",
             "prove",
             "simulate",
             "campaign",

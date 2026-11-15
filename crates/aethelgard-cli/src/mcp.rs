@@ -509,6 +509,7 @@ mod tests {
                 "check_drc",
                 "check_erc",
                 "check_pinout",
+                "check_speeds",
                 "prove",
                 "simulate",
                 "campaign",
@@ -557,7 +558,7 @@ mod tests {
             Some("A subcommand added by a test")
         );
         assert_eq!(t.input_schema["required"], json!(["thing"]));
-        assert_eq!(all.len(), 17);
+        assert_eq!(all.len(), 18);
     }
 
     #[test]

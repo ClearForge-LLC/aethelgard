@@ -1,6 +1,6 @@
 //! `AET-WO-4200` tier 1: the SPI half of the platform emitter and of the boot
-//! judge's plan, on the reference topology (schema 3: U2 BME280 and U3 TMP117
-//! on I2C1, U4 W25Q64JV on SPI1 with chip select FLASH_CS on PA0). Nothing
+//! judge's plan, on the reference topology (schema 4: U2 BME280 and U3 TMP117
+//! on I2C1, U4 W25Q64JVxIQ on SPI1 with chip select FLASH_CS on PA0). Nothing
 //! here starts Renode.
 
 use std::collections::BTreeSet;
@@ -11,7 +11,7 @@ use aethelgard_twin::boot::{self, RECORD_BYTES, Wire};
 use aethelgard_twin::platform;
 
 /// The reference topology, as `src/tests.rs` has it.
-const REFERENCE: &str = r#"{"schema_version":3,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JV","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}}}"#;
+const REFERENCE: &str = r#"{"schema_version":4,"specification_sha256":"9eb61c497036288a963fc6fe3ffe6e8b3d65a4f2107b21e9fe9a8babc1816446","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}}}"#;
 
 fn reference() -> SolvedTopology {
     serde_json::from_str(REFERENCE).unwrap()
@@ -34,6 +34,10 @@ fn spi_device(index: u32, part: &str, cs: &str) -> SolvedSpiDevice {
 /// The reference plus ICM20948 `U5` on SPI1, chip select `IMU_CS` on `PA1`.
 fn with_imu() -> SolvedTopology {
     let mut t = reference();
+    // The ICM20948 clocks at 7 MHz at most; the bus runs at that rate.
+    for line in t.spi_lines.values_mut() {
+        line.rate_hz = 7_000_000;
+    }
     t.gpio.insert("IMU_CS".to_owned(), "PA1".to_owned());
     t.spi_devices
         .insert("U5".to_owned(), spi_device(1, "ICM20948", "IMU_CS"));
@@ -186,7 +190,7 @@ fn an_absent_device_leaves_its_model_but_keeps_the_mux_and_the_wiring() {
         "{text}"
     );
     assert!(
-        text.contains("U4 (W25Q64JV) is absent behind its chip select PA0"),
+        text.contains("U4 (W25Q64JVxIQ) is absent behind its chip select PA0"),
         "{text}"
     );
     // The same topology with nobody absent is a different platform.
@@ -268,32 +272,35 @@ fn an_unmodelled_spi_part_is_commented_listed_and_reported_never_wired_to_a_mode
 
 #[test]
 fn a_model_on_the_wrong_kind_of_bus_is_refused() {
-    // The W25Q64JV is SPI-only, declared as an I2C device.
+    // The W25Q64JVxIQ is SPI-only, declared as an I2C device.
     let mut t = reference();
     t.i2c_devices.insert(
         "U6".to_owned(),
         SolvedI2cDevice {
             index: 2,
-            part: "W25Q64JV".to_owned(),
+            part: "W25Q64JVxIQ".to_owned(),
             bus: "SENSORS".to_owned(),
             peripheral: "I2C1".to_owned(),
             address: 0x50,
         },
     );
+    // Since `AET-WO-4300c` §1.5 the topology holds every listed part to its
+    // bus kind, so it refuses first; `ModelOffItsBus` stays the emitter's own
+    // check behind it.
     let e = platform::emit(&t).unwrap_err();
-    assert_eq!(
-        e,
-        TwinError::ModelOffItsBus {
-            reference: "U6".into(),
-            part: "W25Q64JV".into()
-        }
+    assert!(
+        matches!(&e, TwinError::InvalidTopology(v) if v.kind() == "PartOnWrongBus" && v.id() == Some("U6")),
+        "{e:?}"
     );
     // The BME280 is I2C-only, declared as an SPI device.
     let mut t = reference();
     t.spi_devices
         .insert("U6".to_owned(), spi_device(1, "BME280", "FLASH_CS"));
     let e = platform::emit(&t).unwrap_err();
-    assert_eq!(e.kind(), "ModelOffItsBus", "{e:?}");
+    assert!(
+        matches!(&e, TwinError::InvalidTopology(v) if v.kind() == "PartOnWrongBus"),
+        "{e:?}"
+    );
 }
 
 #[test]
