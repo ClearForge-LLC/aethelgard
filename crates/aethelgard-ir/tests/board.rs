@@ -33,22 +33,8 @@ fn the_reference_and_the_four_layer_fixture_are_valid() {
 }
 
 #[test]
-fn a_missing_board_or_key_is_a_shape_error_not_a_default() {
-    let mut v = reference();
-    v.as_object_mut().unwrap().remove("board");
-    assert!(serde_json::from_value::<Specification>(v).is_err());
-    for key in ["copper_layers", "layers", "stackup", "rules"] {
-        let mut v = reference();
-        v["board"].as_object_mut().unwrap().remove(key);
-        assert!(serde_json::from_value::<Specification>(v).is_err(), "{key}");
-    }
-    // A signal layer's `net` is required as a key, `null`.
-    let mut v = reference();
-    v["board"]["layers"][0]
-        .as_object_mut()
-        .unwrap()
-        .remove("net");
-    assert!(serde_json::from_value::<Specification>(v).is_err());
+fn an_unknown_board_key_is_a_shape_error() {
+    // Missing keys are `validate.rs`'s `removing_any_key_of_any_object_is_refused`.
     let mut v = reference();
     v["board"]["surprise"] = json!(1);
     assert!(serde_json::from_value::<Specification>(v).is_err());
