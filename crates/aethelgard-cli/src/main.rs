@@ -14,6 +14,7 @@ mod input;
 mod kani;
 mod kicad;
 mod mcp;
+mod pinout;
 mod propose;
 mod renode;
 mod run;
@@ -232,6 +233,21 @@ enum CheckCommand {
         #[arg(long)]
         schematic: PathBuf,
     },
+    /// Judge what a linked STM32H753 firmware writes to its GPIO registers at reset (gpio_default_config in the ELF) against a SolvedTopology: forward, reverse and package. Starts no process.
+    Pinout {
+        /// The SolvedTopology JSON the firmware was meant to realise.
+        #[arg(long)]
+        topology: PathBuf,
+        /// The linked firmware ELF (ELF32, little-endian, EM_ARM).
+        #[arg(long)]
+        elf: PathBuf,
+        /// ArduPilot's generated hwdef.h: its VAL_GPIOx_MODER/AFRL/AFRH must equal the ELF's, or the check refuses.
+        #[arg(long = "hwdef-h")]
+        hwdef_h: Option<PathBuf>,
+        /// A declared allow-list: pins outside the topology the firmware may configure, each exactly as declared, and why.
+        #[arg(long)]
+        allow: Option<PathBuf>,
+    },
     /// Each generated pin's output speed against DS12117 Table 149: SPI SCK and MOSI judged at their declared rate, supply and load; every other line named with why it is out of scope. No tool runs.
     Speeds {
         /// The specification.
@@ -378,6 +394,20 @@ fn main() -> ExitCode {
         Command::Check {
             check: CheckCommand::Erc { schematic },
         } => check_kicad(kicad::Check::Erc, &schematic, None, None),
+        Command::Check {
+            check:
+                CheckCommand::Pinout {
+                    topology,
+                    elf,
+                    hwdef_h,
+                    allow,
+                },
+        } => {
+            return match pinout::check(&topology, &elf, hwdef_h.as_deref(), allow.as_deref()) {
+                Ok(v) => emit(&v, if v.judgement.ok { 0 } else { EXIT_FAIL }),
+                Err(stop) => stopped(stop),
+            };
+        }
         Command::Check {
             check: CheckCommand::Speeds { spec },
         } => return speeds::speeds(&spec),
@@ -745,6 +775,7 @@ fn check_kicad(
     // With `--spec` the board is judged against the declared board before
     // KiCad runs (`AET-WO-4100`): its copper layers, planes, thickness and
     // vias, by name, never by the board's own claims (`RUL-03`).
+    let mut pairs = None;
     if let (Some(stack), Some(tree)) = (&declared, &board) {
         aethelgard_eda::route::declared(tree, stack).map_err(|d| run::Stop {
             code: EXIT_UNREADABLE,
@@ -752,6 +783,25 @@ fn check_kicad(
             id: None,
             message: d.message,
         })?;
+        // Declared coupled pairs are judged on the board's copper, read and
+        // joined by geometry first (`AET-WO-1308` §1.3): KiCad has no rule
+        // for a pair it cannot recognise by name.
+        if !stack.pairs.is_empty() {
+            use aethelgard_eda::route;
+            let stop = |kind: &'static str| {
+                move |message: String| run::Stop {
+                    code: EXIT_UNREADABLE,
+                    kind,
+                    id: None,
+                    message,
+                }
+            };
+            let (b, r) = route::read(tree, stack).map_err(stop("BoardUnreadable"))?;
+            route::connectivity(&b, &r).map_err(stop("NetLabelsDisagree"))?;
+            route::check(&b, &r).map_err(stop("ClearanceViolated"))?;
+            let reports = route::pairs(&b, &r).map_err(stop("PairNotCoupled"))?;
+            pairs = Some(reports.into_iter().map(verdict::PairRecord::from).collect());
+        }
     }
     // KiCad's parity check reads the schematic named like the board, beside
     // it; the copy is scanned like the board before any tool runs, and the
@@ -807,6 +857,7 @@ fn check_kicad(
     if matches!(check, kicad::Check::Drc) {
         v.rules = Some(rules.source.name());
         v.specification_sha256 = spec_sha256;
+        v.pairs = pairs;
         v.schematic = schematic.map(|s| verdict::InputReport {
             path: s.original.display().to_string(),
             sha256: s.sha256,

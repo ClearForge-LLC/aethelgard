@@ -87,18 +87,25 @@ fn digests() -> Vec<(&'static str, String)> {
 /// moved only the specification's sha256: with the old hash put back, each
 /// output's digest is the old one exactly. The three were `ecd58f5f…9b7b`,
 /// `bc1517cd…7522` and `f684f871…3dba`.
+/// Re-taken in `AET-WO-1308` (version 5) the same way: with `main`'s hash
+/// passed to `solve`, each was `f3e10417…2985`, `9c02c1e2…12bf4` and
+/// `cc3a3e65…2dff9` exactly.
+/// Re-taken in `AET-WO-4210` (each device's script, its records), and again at
+/// its merge of `1308` (specification version 6, `accept_lifecycle`): on the
+/// branch before that merge the three were `d22e776d…10f9`, `4008d4f1…3e6a`
+/// and `53cf0bd9…92ce`.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "d22e776d6f0e3f7df02043e2585f6b39d70779a9cd1d9d77bcc9b0e870ee10f9",
+        "61f7f72efbec8816795e244daa192c5834c9dfbc0cb15bc4a58fe58e9e8fb721",
     ),
     (
         "platform",
-        "4008d4f1dee119f421d6aefb9f36be51138fd50b9d5e3b912bbd4cdaf28f3e6a",
+        "6191ec930dd2cabe169ac2bad4c986a58d4e932e3739f2369edb9f7a9d919149",
     ),
     (
         "platform faulted",
-        "53cf0bd9388a1573d54a0dc4c285f0f7afd9c947c43b2b24971f28b820c892ce",
+        "5818f97b772a9f1e4ed584c03694fdacb2cd1e958fc386fa3c530a84374ef5f2",
     ),
     (
         "boot image",

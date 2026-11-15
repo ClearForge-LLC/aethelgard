@@ -8,6 +8,7 @@ members = [
     "crates/aethelgard-twin",
     "crates/aethelgard-chaos",
     "crates/aethelgard-evolve",
+    "crates/aethelgard-pincheck",
     "crates/aethelgard-cli",
 ]
 # Generated board crates (AET-WO-1400) and the analog bridge (AET-WO-2200):
@@ -32,6 +33,7 @@ aethelgard-svd-hal = { path = "crates/aethelgard-svd-hal", version = "0.1.0" }
 aethelgard-twin = { path = "crates/aethelgard-twin", version = "0.1.0" }
 aethelgard-eda = { path = "crates/aethelgard-eda", version = "0.1.0" }
 aethelgard-kicad-lib = { path = "crates/aethelgard-kicad-lib", version = "0.1.0" }
+aethelgard-pincheck = { path = "crates/aethelgard-pincheck", version = "0.1.0" }
 clap = { version = "4", features = ["derive"] }
 landlock = "0.4.7"
 rmcp = { version = "=3.7.0", default-features = false, features = ["server", "transport-io"] }

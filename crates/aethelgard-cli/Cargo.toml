@@ -22,6 +22,7 @@ with-tools = []
 aethelgard-chaos.workspace = true
 aethelgard-evolve.workspace = true
 aethelgard-ir.workspace = true
+aethelgard-pincheck.workspace = true
 aethelgard-svd-hal.workspace = true
 aethelgard-eda.workspace = true
 aethelgard-twin.workspace = true

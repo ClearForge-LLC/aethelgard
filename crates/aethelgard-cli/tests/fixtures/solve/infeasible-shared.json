@@ -1,5 +1,5 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "accept_lifecycle": [],
   "project_name": "inf",
   "mcu": {
@@ -204,5 +204,7 @@
       "via_drill_um": 300,
       "via_diameter_um": 600
     }
-  }
+  },
+  "net_classes": [],
+  "diff_pairs": []
 }

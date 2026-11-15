@@ -594,6 +594,7 @@ fn a_board_whose_own_files_are_looser_is_judged_by_the_gate() {
         source: aethelgard_eda::rules::Source::Specification,
         clearance_nm: 50_000,
         min_track_width_nm: None,
+        classes: Vec::new(),
     };
     fs::write(t.0.join("loose.kicad_pro"), loose.project("loose")).unwrap();
     fs::write(t.0.join("loose.kicad_dru"), loose.custom_rules()).unwrap();
@@ -672,6 +673,7 @@ fn with_a_token_free_setup_the_project_step_is_load_bearing() {
         source: aethelgard_eda::rules::Source::Specification,
         clearance_nm: 50_000,
         min_track_width_nm: None,
+        classes: Vec::new(),
     };
     let mut counts = Vec::new();
     for (name, project) in [("board's own project", &own), ("gate's project", &gate)] {
@@ -1099,4 +1101,121 @@ fn d3_and_d1_pass_erc_and_drc_with_parity_at_four_layers() {
         assert_eq!(kinds(&drc), Vec::<&str>::new(), "{name}: {drc}");
         assert_eq!(drc["input"]["sha256"], r["board"]["sha256"], "{name}");
     }
+}
+
+// ---- AET-WO-1308: router classes, coupled pairs and rotation, tier 2 ----
+
+fn record_1308(line: &str) {
+    use std::io::Write;
+    let _ = std::io::stderr()
+        .lock()
+        .write_all(format!("AET-WO-1308 {line}\n").as_bytes());
+}
+
+/// `AET-WO-1308` §1.6: the 4-layer `power` fixture and the stand-in pair
+/// fixture each pass ERC, and `check drc --spec --schematic` with no finding
+/// of any kind, judged by the gate's per-class rules; the pair's verdict
+/// reports its length difference and each conductor's vias, from copper.
+#[test]
+fn the_class_and_pair_fixtures_pass_erc_and_drc_and_the_pair_is_reported() {
+    let t = Temp::new("1308-fixtures");
+    for name in ["four-layer-power.json", "pair-standin.json"] {
+        let spec = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name);
+        let r = emit_to(&spec, &t.0.join(name));
+        let board = PathBuf::from(r["board"]["path"].as_str().unwrap());
+        let sch = PathBuf::from(r["schematic"]["path"].as_str().unwrap());
+        let erc = run(
+            &["check", "erc", "--schematic", sch.to_str().unwrap()],
+            None,
+        );
+        let erc = verdict(&erc, 0);
+        assert_eq!(kinds(&erc), Vec::<&str>::new(), "{name}: {erc}");
+        let drc = drc_parity(&board, &sch, &spec);
+        assert_eq!(drc["verdict"], "pass", "{name}: {drc}");
+        assert_eq!(kinds(&drc), Vec::<&str>::new(), "{name}: {drc}");
+        record_1308(&format!("{name}: drc pass, pairs {}", drc["pairs"]));
+        if name == "pair-standin.json" {
+            let p = &drc["pairs"][0];
+            assert_eq!(p["name"], "USB_STANDIN", "{drc}");
+            assert_eq!(p["vias"], serde_json::json!([0, 0]), "{drc}");
+            assert!(
+                p["length_difference_nm"].as_i64().unwrap()
+                    <= p["length_difference_max_nm"].as_i64().unwrap(),
+                "{drc}"
+            );
+        } else {
+            assert!(drc.get("pairs").is_none(), "{drc}");
+        }
+    }
+}
+
+/// `AET-WO-1308` §5.1: a board whose track is not its class's width, either
+/// way, fails DRC by the gate's own class rule, never the board's.
+#[test]
+fn a_track_that_is_not_its_class_width_fails_drc_by_the_gates_rule() {
+    let t = Temp::new("1308-lie");
+    let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/four-layer-power.json");
+    let r = emit_to(&spec, &t.0.join("emit"));
+    let text = fs::read_to_string(r["board"]["path"].as_str().unwrap()).unwrap();
+    let i = text.find("(width 0.25)").unwrap();
+    for (to, bound) in [
+        ("(width 0.2)", "min width 0.2500 mm"),
+        ("(width 0.3)", "max width 0.2500 mm"),
+    ] {
+        let lied = format!("{}{to}{}", &text[..i], &text[i + "(width 0.25)".len()..]);
+        let board = t.0.join(format!("lie-{}.kicad_pcb", &to[7..10]));
+        fs::write(&board, lied).unwrap();
+        let out = run(
+            &[
+                "check",
+                "drc",
+                "--board",
+                board.to_str().unwrap(),
+                "--spec",
+                spec.to_str().unwrap(),
+            ],
+            None,
+        );
+        let v = verdict(&out, 1);
+        let widths: Vec<&Value> = v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["kind"] == "track_width")
+            .collect();
+        assert_eq!(widths.len(), 1, "{v}");
+        let m = widths[0]["message"].as_str().unwrap();
+        assert!(
+            m.contains("class_power_track_width") && m.contains(bound),
+            "{m}"
+        );
+        record_1308(&format!("lie {to}: {m}"));
+    }
+}
+
+/// `AET-WO-1308` §1.5: a part on each board edge, at each of the four right
+/// angles, routes, and its schematic passes ERC and its board `check drc
+/// --spec --schematic` with no finding of any kind.
+#[test]
+fn a_part_on_each_edge_passes_erc_and_drc() {
+    let t = Temp::new("1308-edges");
+    let (spec, emitted) = common::edges::moved();
+    let spec_path = t.0.join("spec.json");
+    fs::write(&spec_path, serde_json::to_vec(&spec).unwrap()).unwrap();
+    let board = t.0.join(format!("{}.kicad_pcb", spec.project_name));
+    let sch = t.0.join(format!("{}.kicad_sch", spec.project_name));
+    fs::write(&board, &emitted.board).unwrap();
+    fs::write(&sch, &emitted.schematic).unwrap();
+    let erc = run(
+        &["check", "erc", "--schematic", sch.to_str().unwrap()],
+        None,
+    );
+    let erc = verdict(&erc, 0);
+    assert_eq!(kinds(&erc), Vec::<&str>::new(), "{erc}");
+    let drc = drc_parity(&board, &sch, &spec_path);
+    assert_eq!(drc["verdict"], "pass", "{drc}");
+    assert_eq!(kinds(&drc), Vec::<&str>::new(), "{drc}");
+    record_1308("edges: erc and drc pass");
 }
