@@ -552,9 +552,11 @@ fn timer_registers(
 /// stored field). `CR3`: 0 under `DMAR` and `DMAT` (L186–187). `BRR`: the
 /// solved value in its 16 stored bits (L210). Positions from ST's header.
 /// The tags the framing sets or relies on (`CR1.M0`, `M1`, `CR2.TXINV`,
-/// `RXINV`, `CR3.ONEBIT`; L162, L167, L177–178, L347) are stored nowhere
-/// and listed as unobservable here: the judge sees them only in the words
-/// Renode's access log shows written (`crate::serial::judge_writes`).
+/// `RXINV`, `CR3.ONEBIT`; L162, L167, L177–178, L347), and `CR1.FIFOEN`,
+/// which the bring-up sets (bits 29–31 reserved in the model; measured, fix
+/// 2 f1), are stored nowhere and listed as unobservable here: the judge sees
+/// them only in the words Renode's access log shows written
+/// (`crate::serial::judge_writes`).
 fn serial_registers(
     topology: &SolvedTopology,
     f: &cmsis::RegisterFacts,
@@ -615,7 +617,14 @@ fn serial_registers(
         )?;
         reg("CR3", cr3_stored, 0)?;
         reg("BRR", 0xFFFF, port.brr)?;
-        for tag in ["CR1.M0", "CR1.M1", "CR2.RXINV", "CR2.TXINV", "CR3.ONEBIT"] {
+        for tag in [
+            "CR1.FIFOEN",
+            "CR1.M0",
+            "CR1.M1",
+            "CR2.RXINV",
+            "CR2.TXINV",
+            "CR3.ONEBIT",
+        ] {
             unobservable.push(format!("{name}.{tag}"));
         }
     }

@@ -220,6 +220,9 @@ const PS: u32 = 1 << 9;
 const PCE: u32 = 1 << 10;
 const M0: u32 = 1 << 12;
 const M1: u32 = 1 << 28;
+/// FIFO mode (RM0433 Rev 9 §48.8.1; the PM's ruling on adversarial pass 2,
+/// H1).
+const FIFOEN: u32 = 1 << 29;
 const STOP_POS: u32 = 12;
 const RXINV: u32 = 1 << 16;
 const TXINV: u32 = 1 << 17;
@@ -229,7 +232,7 @@ const TXINV: u32 = 1 << 17;
 fn expected(ty: &str, port: &SolvedSerialPort) -> Vec<String> {
     let f = &port.framing;
     let m = f.m_bits().unwrap();
-    let mut cr1 = RE | TE;
+    let mut cr1 = RE | TE | FIFOEN;
     if m & 1 != 0 {
         cr1 |= M0;
     }
@@ -273,14 +276,15 @@ fn the_console_writes_exactly_its_solved_values_in_order() {
     assert_eq!(port.brr, 556);
     let writes = configuration(board, "Usart2");
     assert_eq!(writes, expected("Usart2", port));
-    // The literals, worked by hand: 64 MHz / 115200 rounds to 556, 8N1.
+    // The literals, worked by hand: 64 MHz / 115200 rounds to 556, 8N1, in
+    // FIFO mode.
     assert_eq!(
         writes,
         [
             "r.write(TOKEN, Block::Usart2, 0x0c, 0x0000022c); // BRR",
             "r.write(TOKEN, Block::Usart2, 0x04, 0x00000000); // CR2",
-            "r.write(TOKEN, Block::Usart2, 0x00, 0x0000000c); // CR1",
-            "r.write(TOKEN, Block::Usart2, 0x00, 0x0000000d); // CR1 | UE",
+            "r.write(TOKEN, Block::Usart2, 0x00, 0x2000000c); // CR1",
+            "r.write(TOKEN, Block::Usart2, 0x00, 0x2000000d); // CR1 | UE",
         ]
     );
 }
@@ -305,8 +309,8 @@ fn four_ports_each_write_their_solved_values() {
         [
             "r.write(TOKEN, Block::Usart6, 0x0c, 0x00000280); // BRR",
             "r.write(TOKEN, Block::Usart6, 0x04, 0x00032000); // CR2",
-            "r.write(TOKEN, Block::Usart6, 0x00, 0x0000140c); // CR1",
-            "r.write(TOKEN, Block::Usart6, 0x00, 0x0000140d); // CR1 | UE",
+            "r.write(TOKEN, Block::Usart6, 0x00, 0x2000140c); // CR1",
+            "r.write(TOKEN, Block::Usart6, 0x00, 0x2000140d); // CR1 | UE",
         ]
     );
     // USART1 and USART6 are on APB2ENR, UART4 on APB1LENR (RM0433 §8.7.40, 42).

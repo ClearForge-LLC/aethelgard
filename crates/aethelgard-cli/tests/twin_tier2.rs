@@ -2166,7 +2166,7 @@ fn the_four_port_fixture_s_campaign_passes_and_replays() {
 fn a_tdr_store_with_ue_clear_sends_no_pattern() {
     let elf = mutant_of_board_rs(
         "ue-clear",
-        "        r.write(TOKEN, Block::Usart1, 0x00, 0x0000000d); // CR1 | UE\n",
+        "        r.write(TOKEN, Block::Usart1, 0x00, 0x2000000d); // CR1 | UE\n",
         "",
     );
     let (code, v) = boot_elf("ue clear", &elf, "100ms");
@@ -2364,8 +2364,8 @@ fn adv_2_a_presc_write_in_the_bring_up_fails() {
     let elf = adv_reference(
         "presc",
         &[(
-            "        r.write(TOKEN, Block::Usart1, 0x00, 0x0000000c); // CR1\n",
-            "        r.write(TOKEN, Block::Usart1, 0x2c, 0x00000001); // PRESC /2\n        r.write(TOKEN, Block::Usart1, 0x00, 0x0000000c); // CR1\n",
+            "        r.write(TOKEN, Block::Usart1, 0x00, 0x2000000c); // CR1\n",
+            "        r.write(TOKEN, Block::Usart1, 0x2c, 0x00000001); // PRESC /2\n        r.write(TOKEN, Block::Usart1, 0x00, 0x2000000c); // CR1\n",
         )],
         &[],
     );
@@ -2414,8 +2414,8 @@ fn adv_3_sbus_s_m0_cleared_before_ue_fails() {
             edit(
                 d,
                 "src/board.rs",
-                "        r.write(TOKEN, Block::Uart4, 0x00, 0x0000140d); // CR1 | UE\n",
-                "        r.write(TOKEN, Block::Uart4, 0x00, 0x0000040c); // CR1, M0 cleared\n        r.write(TOKEN, Block::Uart4, 0x00, 0x0000040d); // CR1 | UE, no M0\n",
+                "        r.write(TOKEN, Block::Uart4, 0x00, 0x2000140d); // CR1 | UE\n",
+                "        r.write(TOKEN, Block::Uart4, 0x00, 0x2000040c); // CR1, M0 cleared\n        r.write(TOKEN, Block::Uart4, 0x00, 0x2000040d); // CR1 | UE, no M0\n",
             )
         },
         |_| {},
@@ -2449,8 +2449,8 @@ fn adv_4_sbus_s_inversion_written_after_ue_fails() {
             edit(
                 d,
                 "src/board.rs",
-                "        r.write(TOKEN, Block::Uart4, 0x00, 0x0000140d); // CR1 | UE\n",
-                "        r.write(TOKEN, Block::Uart4, 0x00, 0x0000140d); // CR1 | UE\n        r.write(TOKEN, Block::Uart4, 0x04, 0x00032000); // CR2 inverted, UE set\n",
+                "        r.write(TOKEN, Block::Uart4, 0x00, 0x2000140d); // CR1 | UE\n",
+                "        r.write(TOKEN, Block::Uart4, 0x00, 0x2000140d); // CR1 | UE\n        r.write(TOKEN, Block::Uart4, 0x04, 0x00032000); // CR2 inverted, UE set\n",
             );
         },
         |_| {},

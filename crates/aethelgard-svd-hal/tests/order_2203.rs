@@ -112,7 +112,10 @@ fn digests() -> Vec<(&'static str, String)> {
 /// The boot image again at `4300b`'s merge after `4220`: it was
 /// `80c36d58…ce16`, and with the `label: "identity"` fields removed it still
 /// is exactly; with the console removed and `main`'s hash passed, all four are
-/// `main`'s now (the boot image `a03116d6…6b64`).
+/// `main`'s now (the boot image `a03116d6…6b64`). The boot image again with
+/// `CR1.FIFOEN` (the PM's ruling on adversarial pass 2, H1): it was
+/// `224dfd8a…f501`, and with `USART1.CR1.FIFOEN` dropped from its
+/// unobservable list it still is exactly.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
@@ -128,7 +131,7 @@ const BEFORE: [(&str, &str); 4] = [
     ),
     (
         "boot image",
-        "224dfd8a13f7f0061911ac72b414419c521ef6340b359c1d8b0e6c99ec9df501",
+        "71c4fd53166f028d0613d0fcf529445a12145fc548754d28d69fc08d5dbe09a7",
     ),
 ];
 

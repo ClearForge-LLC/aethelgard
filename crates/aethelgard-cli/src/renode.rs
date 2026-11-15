@@ -3339,8 +3339,8 @@ mod tests {
         "[INFO] gpioPortA: [cpu: 0x80009BC] WriteUInt32 to 0x0 (Mode), value 0x28A801",
         "[INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0xC (BaudRate), value 0x22C",
         "[INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x4 (ControlRegister2), value 0x0",
-        "[INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x0 (ControlRegister1), value 0xC",
-        "[INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x0 (ControlRegister1), value 0xD",
+        "[INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x0 (ControlRegister1), value 0x2000000C",
+        "[INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x0 (ControlRegister1), value 0x2000000D",
         "[INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x28 (TransmitData), value 0x43",
         "[INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x28 (TransmitData), value 0x4F",
     ];

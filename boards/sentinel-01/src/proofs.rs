@@ -994,8 +994,8 @@ fn usart1_start_writes_the_solved_values() {
     kani::assert(spy.n == 4, "USART1's bring-up did not write it exactly 4 times");
     kani::assert(spy.writes[0] == (0x0c, 0x0000022c), "USART1 write 1 is not BRR = 0x0000022c");
     kani::assert(spy.writes[1] == (0x04, 0x00000000), "USART1 write 2 is not CR2 = 0x00000000");
-    kani::assert(spy.writes[2] == (0x00, 0x0000000c), "USART1 write 3 is not CR1 = 0x0000000c");
-    kani::assert(spy.writes[3] == (0x00, 0x0000000d), "USART1 write 4 is not CR1 | UE = 0x0000000d");
+    kani::assert(spy.writes[2] == (0x00, 0x2000000c), "USART1 write 3 is not CR1 = 0x2000000c");
+    kani::assert(spy.writes[3] == (0x00, 0x2000000d), "USART1 write 4 is not CR1 | UE = 0x2000000d");
     let mut rcc_after = before.rcc;
     rcc_after[56] |= 0x00000001;
     rcc_after[60] |= 0x00000010;

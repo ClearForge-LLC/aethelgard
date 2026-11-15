@@ -477,7 +477,11 @@ pub fn needed_tags(framing: &Framing) -> Result<Vec<Tag>, TwinError> {
 /// alone (`INV-07`): the word each of `CR1`, `CR2`, `CR3` and `BRR` holds at
 /// the write that first sets `CR1.UE` (`CR1` with `UE`; `CR3` its reset 0,
 /// never written), and `TDR`'s offset. The firmware writes `BRR`, `CR2`,
-/// `CR1`, `CR1 | UE`, then `TDR` only (the contract's order).
+/// `CR1`, `CR1 | UE`, then `TDR` only (the contract's order). `CR1` holds
+/// `FIFOEN` (RM0433 Rev 9 §48.8.1, bit 29, written only with `UE` clear;
+/// the PM's ruling on adversarial pass 2, H1): Renode stores none of bits
+/// 29–31 (measured, fix 2 f1: `Unhandled bits: [29] … Tags: RESERVED`, and
+/// `CR1` reads back without it), so it is seen only in the access log.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bringup {
     /// `(name, offset, word at UE)` for `CR1`, `CR2`, `CR3`, `BRR`.
@@ -502,7 +506,11 @@ impl Bringup {
         };
         let (pce, ps) = parity_bits(framing);
         let ue = bit("USART_CR1_UE_Pos")?;
-        let mut cr1 = ue | bit("USART_CR1_RE_Pos")? | bit("USART_CR1_TE_Pos")? | set("CR1");
+        let mut cr1 = ue
+            | bit("USART_CR1_RE_Pos")?
+            | bit("USART_CR1_TE_Pos")?
+            | bit("USART_CR1_FIFOEN_Pos")?
+            | set("CR1");
         if pce {
             cr1 |= bit("USART_CR1_PCE_Pos")?;
         }
@@ -1364,13 +1372,13 @@ mod tests {
     }
 
     /// The four-port fixture's SBUS on UART4: BRR, CR2, CR1, CR1 | UE, then a
-    /// byte; as the generated board writes it.
+    /// byte; as the generated board writes it, in FIFO mode.
     fn sbus_boot() -> Vec<Access> {
         vec![
             w("uart4", 0x0c, 640),
             w("uart4", 0x04, 0x0003_2000),
-            w("uart4", 0x00, 0x0000_140c),
-            w("uart4", 0x00, 0x0000_140d),
+            w("uart4", 0x00, 0x2000_140c),
+            w("uart4", 0x00, 0x2000_140d),
             w("uart4", 0x28, 0x53),
         ]
     }
@@ -1381,7 +1389,7 @@ mod tests {
         assert_eq!(
             b.words,
             [
-                ("CR1", 0, 0x140d),
+                ("CR1", 0, 0x2000_140d),
                 ("CR2", 4, 0x3_2000),
                 ("CR3", 8, 0),
                 ("BRR", 0xc, 640)
@@ -1389,7 +1397,7 @@ mod tests {
         );
         assert_eq!((b.tdr, b.ue), (0x28, 1));
         let console = Bringup::of(&framing(8, Parity::None, 1, false), 556).unwrap();
-        assert_eq!(console.words[0].2, 0xd);
+        assert_eq!(console.words[0].2, 0x2000_000d);
         assert_eq!(console.words[1].2, 0);
     }
 
@@ -1410,8 +1418,8 @@ mod tests {
         };
         // F1 (ADV-3): M0 set, then cleared by a second CR1 write before UE.
         let j = with(&|v| {
-            v[2] = w("uart4", 0, 0x040c);
-            v[3] = w("uart4", 0, 0x040d);
+            v[2] = w("uart4", 0, 0x2000_040c);
+            v[3] = w("uart4", 0, 0x2000_040d);
         });
         assert_eq!(j.missing, ["CR1.M0"]);
         assert!(j.unexpected.is_empty(), "{j:?}");
@@ -1430,14 +1438,18 @@ mod tests {
         // ADV-2b: UE cleared, PRESC, UE set again, after the bring-up.
         let j = with(&|v| {
             v.extend([
-                w("uart4", 0, 0x140c),
+                w("uart4", 0, 0x2000_140c),
                 w("uart4", 0x2c, 1),
-                w("uart4", 0, 0x140d),
+                w("uart4", 0, 0x2000_140d),
             ])
         });
         assert_eq!(
             j.unexpected,
-            ["CR1 0x140C after UE", "0x1 to 0x2C", "CR1 0x140D after UE"]
+            [
+                "CR1 0x2000140C after UE",
+                "0x1 to 0x2C",
+                "CR1 0x2000140D after UE"
+            ]
         );
         // A byte write that sets M0 is no word write (measured, P2).
         let j = with(&|v| {
@@ -1452,12 +1464,16 @@ mod tests {
         assert_eq!(j.unexpected, ["WriteByte to 0x1"]);
         // A tag set that the framing does not need, a stored bit off, a
         // byte before UE, and UE never set.
-        let j = with(&|v| v[3] = w("uart4", 0, 0x1000_140d));
+        let j = with(&|v| v[3] = w("uart4", 0, 0x3000_140d));
         assert_eq!(j.unexpected, ["CR1.M1 set at UE"]);
-        let j = with(&|v| v[3] = w("uart4", 0, 0x340d));
-        assert_eq!(j.unexpected, ["CR1 0x240D at UE, not 0x40D"]);
-        let j = with(&|v| v[3] = w("uart4", 0, 0x140f));
-        assert_eq!(j.unexpected, ["CR1 0x40F at UE, not 0x40D"]);
+        let j = with(&|v| v[3] = w("uart4", 0, 0x2000_340d));
+        assert_eq!(j.unexpected, ["CR1 0x2000240D at UE, not 0x2000040D"]);
+        let j = with(&|v| v[3] = w("uart4", 0, 0x2000_140f));
+        assert_eq!(j.unexpected, ["CR1 0x2000040F at UE, not 0x2000040D"]);
+        // The PM's ruling on pass 2's H1: FIFO mode is on at UE, which
+        // Renode stores nowhere; written with UE clear, then cleared with it.
+        let j = with(&|v| v[3] = w("uart4", 0, 0x140d));
+        assert_eq!(j.unexpected, ["CR1 0x40D at UE, not 0x2000040D"]);
         let j = with(&|v| v.insert(0, w("uart4", 0x28, 0)));
         assert_eq!(j.unexpected, ["TDR before UE"]);
         let j = with(&|v| v.truncate(3));

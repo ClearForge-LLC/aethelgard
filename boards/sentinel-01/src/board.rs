@@ -223,10 +223,10 @@ fn spi_frame<R: Registers>(r: &mut R, block: Block, byte: u8, spins: u32) -> Opt
     None
 }
 
-/// The most reads of `ISR` one USART send makes waiting for `TXE` before it gives up.
+/// The most reads of `ISR` one USART send makes waiting for `TXFNF` before it gives up.
 pub const USART_WAIT_SPINS: u32 = 20_000;
 
-/// `ISR.TXE` did not rise within its bound, and the byte was not written. A send
+/// `ISR.TXFNF` did not rise within its bound, and the byte was not written. A send
 /// never panics and never waits without a bound.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct TxeTimeout;
@@ -643,9 +643,10 @@ pub struct Usart1<S> {
 
 impl Usart1<Clocked> {
     /// The solved framing, every register written in full and none read, the
-    /// USART disabled until the last write: `BRR`, `CR2`, `CR1` with `UE` clear,
-    /// then `CR1` with `UE`. `CR3` and `PRESC` keep their reset values (`OVER8`
-    /// and `ONEBIT` 0, the kernel clock undivided), which the solved `BRR` assumes.
+    /// USART disabled until the last write: `BRR`, `CR2`, `CR1` with `UE` clear
+    /// and FIFO mode on (`FIFOEN`), then `CR1` with `UE`. `CR3` and `PRESC` keep
+    /// their reset values (`OVER8` and `ONEBIT` 0, the kernel clock undivided),
+    /// which the solved `BRR` assumes.
     pub fn configure<R: Registers>(
         self,
         r: &mut R,
@@ -655,14 +656,14 @@ impl Usart1<Clocked> {
     ) -> Usart1<Enabled<()>> {
         r.write(TOKEN, Block::Usart1, 0x0c, 0x0000022c); // BRR
         r.write(TOKEN, Block::Usart1, 0x04, 0x00000000); // CR2
-        r.write(TOKEN, Block::Usart1, 0x00, 0x0000000c); // CR1
-        r.write(TOKEN, Block::Usart1, 0x00, 0x0000000d); // CR1 | UE
+        r.write(TOKEN, Block::Usart1, 0x00, 0x2000000c); // CR1
+        r.write(TOKEN, Block::Usart1, 0x00, 0x2000000d); // CR1 | UE
         Usart1 { _state: PhantomData }
     }
 }
 
 impl Usart1<Enabled<()>> {
-    /// Waits at most [`USART_WAIT_SPINS`] reads of `ISR` for `TXE`, then writes
+    /// Waits at most [`USART_WAIT_SPINS`] reads of `ISR` for `TXFNF`, then writes
     /// `byte` to `TDR`; or gives up, writing nothing.
     pub fn send<R: Registers>(&mut self, r: &mut R, byte: u8) -> Result<(), TxeTimeout> {
         if usart_wait(r, Block::Usart1, 0x00000080, USART_WAIT_SPINS) {
@@ -673,7 +674,7 @@ impl Usart1<Enabled<()>> {
         }
     }
 
-    /// Waits at most `polls` reads of `ISR` for `RXNE`, then reads the low byte of
+    /// Waits at most `polls` reads of `ISR` for `RXFNE`, then reads the low byte of
     /// `RDR`; `None`, with `RDR` unread, when nothing arrived.
     pub fn receive<R: Registers>(&mut self, r: &mut R, polls: u32) -> Option<u8> {
         if usart_wait(r, Block::Usart1, 0x00000020, polls) {

@@ -1356,12 +1356,17 @@ struct UsartFacts {
     pce: u32,
     m0: u32,
     m1: u32,
+    /// `CR1.FIFOEN` (RM0433 Rev 9 §48.8.1, bit 29): FIFO mode, so a frame
+    /// that arrives while the firmware is elsewhere waits in the 16-deep
+    /// RXFIFO (§48.4 Table 402) instead of overrunning `RDR`.
+    fifoen: u32,
     /// `CR2.STOP`: position and width.
     stop: (u32, u32),
     txinv: u32,
     rxinv: u32,
-    /// `ISR.TXE` and `ISR.RXNE` (the header's `TXE_TXFNF` and `RXNE_RXFNE`:
-    /// with the FIFO disabled, its reset state, they are `TXE` and `RXNE`).
+    /// `ISR.TXFNF` and `ISR.RXFNE` (the header's `TXE_TXFNF` and
+    /// `RXNE_RXFNE`: with `FIFOEN` set, the TXFIFO not full and the RXFIFO
+    /// not empty, §48.8.10; the same bits as `TXE` and `RXNE` with it clear).
     txe: u32,
     rxne: u32,
 }
@@ -1382,6 +1387,7 @@ fn usart_facts(f: &RegisterFacts) -> Result<UsartFacts, BoardError> {
         pce: f.position("USART_CR1_PCE_Pos")?,
         m0: f.position("USART_CR1_M0_Pos")?,
         m1: f.position("USART_CR1_M1_Pos")?,
+        fifoen: f.position("USART_CR1_FIFOEN_Pos")?,
         stop: f.field("USART_CR2_STOP")?,
         txinv: f.position("USART_CR2_TXINV_Pos")?,
         rxinv: f.position("USART_CR2_RXINV_Pos")?,
@@ -1393,7 +1399,8 @@ fn usart_facts(f: &RegisterFacts) -> Result<UsartFacts, BoardError> {
 /// A port's configuration (`AET-WO-4300b`): (`BRR`, `CR2`, `CR1` without
 /// `UE`). `CR2` is `STOP`, with `TXINV` and `RXINV` when the port is
 /// inverted; `CR1` is `M0` and `M1` from `M[1:0]`, `PCE` with any parity, `PS`
-/// for odd, `TE` and `RE`.
+/// for odd, `TE`, `RE` and `FIFOEN` (writable only with `UE` clear, §48.8.1;
+/// the PM's ruling on adversarial pass 2, H1).
 fn usart_values(s: &SerialPlan, u: &UsartFacts) -> (u32, u32, u32) {
     let mut cr2 = u32::from(s.stop) << u.stop.0;
     if s.inverted {
@@ -1406,7 +1413,7 @@ fn usart_values(s: &SerialPlan, u: &UsartFacts) -> (u32, u32, u32) {
     if s.parity == Parity::Odd {
         cr1 |= 1 << u.ps;
     }
-    cr1 |= (1 << u.te) | (1 << u.re);
+    cr1 |= (1 << u.te) | (1 << u.re) | (1 << u.fifoen);
     (s.brr, cr2, cr1)
 }
 
@@ -2616,10 +2623,10 @@ fn timer_oracle(n: u32, t: &TimerPlan, tf: &TimFacts) -> Vec<(String, u32, u32)>
 fn emit_usart_shared(w: &mut String, u: &UsartFacts) {
     let _ = writeln!(
         w,
-        "/// The most reads of `ISR` one USART send makes waiting for `TXE` before it gives up.\n\
+        "/// The most reads of `ISR` one USART send makes waiting for `TXFNF` before it gives up.\n\
          pub const USART_WAIT_SPINS: u32 = 20_000;\n\
          \n\
-         /// `ISR.TXE` did not rise within its bound, and the byte was not written. A send\n\
+         /// `ISR.TXFNF` did not rise within its bound, and the byte was not written. A send\n\
          /// never panics and never waits without a bound.\n\
          #[derive(Clone, Copy, PartialEq, Eq, Debug)]\n\
          pub struct TxeTimeout;\n\
@@ -2664,9 +2671,10 @@ fn emit_usart(w: &mut String, name: &str, sp: &SerialPlan, plan: &Plan, u: &Usar
          \n\
          impl {t}<Clocked> {{\n    \
              /// The solved framing, every register written in full and none read, the\n    \
-             /// USART disabled until the last write: `BRR`, `CR2`, `CR1` with `UE` clear,\n    \
-             /// then `CR1` with `UE`. `CR3` and `PRESC` keep their reset values (`OVER8`\n    \
-             /// and `ONEBIT` 0, the kernel clock undivided), which the solved `BRR` assumes.\n    \
+             /// USART disabled until the last write: `BRR`, `CR2`, `CR1` with `UE` clear\n    \
+             /// and FIFO mode on (`FIFOEN`), then `CR1` with `UE`. `CR3` and `PRESC` keep\n    \
+             /// their reset values (`OVER8` and `ONEBIT` 0, the kernel clock undivided),\n    \
+             /// which the solved `BRR` assumes.\n    \
              pub fn configure<R: Registers>(\n        \
                  self,\n        \
                  r: &mut R,\n        \
@@ -2695,7 +2703,7 @@ fn emit_usart(w: &mut String, name: &str, sp: &SerialPlan, plan: &Plan, u: &Usar
          }}\n\
          \n\
          impl {t}<Enabled<()>> {{\n    \
-             /// Waits at most [`USART_WAIT_SPINS`] reads of `ISR` for `TXE`, then writes\n    \
+             /// Waits at most [`USART_WAIT_SPINS`] reads of `ISR` for `TXFNF`, then writes\n    \
              /// `byte` to `TDR`; or gives up, writing nothing.\n    \
              pub fn send<R: Registers>(&mut self, r: &mut R, byte: u8) -> Result<(), TxeTimeout> {{\n        \
                  if usart_wait(r, Block::{t}, {txe:#010x}, USART_WAIT_SPINS) {{\n            \
@@ -2706,7 +2714,7 @@ fn emit_usart(w: &mut String, name: &str, sp: &SerialPlan, plan: &Plan, u: &Usar
                  }}\n    \
              }}\n\
              \n    \
-             /// Waits at most `polls` reads of `ISR` for `RXNE`, then reads the low byte of\n    \
+             /// Waits at most `polls` reads of `ISR` for `RXFNE`, then reads the low byte of\n    \
              /// `RDR`; `None`, with `RDR` unread, when nothing arrived.\n    \
              pub fn receive<R: Registers>(&mut self, r: &mut R, polls: u32) -> Option<u8> {{\n        \
                  if usart_wait(r, Block::{t}, {rxne:#010x}, polls) {{\n            \
@@ -2741,7 +2749,7 @@ fn usart_oracle(sp: &SerialPlan, u: &UsartFacts) -> Vec<(String, u32, u32)> {
         Parity::Even => 1 << u.pce,
         Parity::Odd => (1 << u.pce) | (1 << u.ps),
     };
-    let cr1 = word | parity | (1 << u.re) | (1 << u.te);
+    let cr1 = word | parity | (1 << u.re) | (1 << u.te) | (1 << u.fifoen);
     let inversion = if sp.inverted {
         (1 << u.rxinv) | (1 << u.txinv)
     } else {

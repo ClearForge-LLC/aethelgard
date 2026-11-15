@@ -277,6 +277,7 @@ fn the_console_adds_its_usart_its_pins_and_its_gate() {
         [
             "GPIOB.OTYPER",
             "I2C1.TIMINGR",
+            "USART1.CR1.FIFOEN",
             "USART1.CR1.M0",
             "USART1.CR1.M1",
             "USART1.CR2.RXINV",
