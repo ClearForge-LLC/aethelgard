@@ -445,7 +445,6 @@ CC-BY-SA 4.0 with a design exception that covers designs made from them.
 /// order, with its diameter and what it drills (`AET-WO-4300d2` §1.6).
 fn holes_text(st: &Stack, drills: &[Drill]) -> String {
     if let [d] = drills
-        && d.hole == Hole::Via
         && d.drill_nm == DRILL_NM
         && d.what
             .iter()

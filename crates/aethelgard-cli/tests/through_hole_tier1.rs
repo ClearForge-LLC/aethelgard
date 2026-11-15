@@ -747,6 +747,12 @@ fn a_drill_file_that_lies_is_refused_by_name() {
             "tool T2 is not selected next",
         ),
         (
+            "a coordinate KiCad does not write",
+            &xt30,
+            x.replace("X110.0Y-116.0", "X110.Y-116.0"),
+            "under T3, `X110.Y-116.0` is not one round hit",
+        ),
+        (
             "inches",
             &xt30,
             x.replace("METRIC", "INCH"),
