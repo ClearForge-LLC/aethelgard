@@ -24,7 +24,7 @@ use common::*;
 /// (`8271f786…1ab4`, version 10) and `AET-WO-4300b`
 /// (version 11) each changed the version byte alone.
 const GOLDEN_TRACE_SHA256: &str =
-    "8271f78613d04bc41684aad3112a5b85813a951e969bf1cec32ee3557f721ab4";
+    "1db8a16f4e7ee03751e15c068dbeb5bf537f69749a81603a94def5f0485b12d9";
 /// The golden `state_hash`. Same rule. It was `535db225…adac4` (manifest
 /// version 1) until `AET-WO-0400a` made the chain hash each event's delta,
 /// then `af2d46bb…b4939` until `AET-WO-2300` changed the header it starts
@@ -35,7 +35,7 @@ const GOLDEN_TRACE_SHA256: &str =
 /// `AET-WO-4300a` did, then `35971fa6…2b99b` until `AET-WO-4210` did, then
 /// `8b4dc285…def7cf` until `AET-WO-4220` did, then `955d28e0…bbdbbd` until
 /// `AET-WO-4300b` did.
-const GOLDEN_STATE_HASH: &str = "955d28e08edced0531ced476c9b2a464c22503389cf9b655b3c288e4a3bbdbbd";
+const GOLDEN_STATE_HASH: &str = "d9b03dedeb1d70704a2776c1b230bb94721ffb6d312fcca2c2ba345caf07124f";
 
 #[test]
 fn golden_trace_and_state_hash_are_pinned() {
@@ -52,8 +52,8 @@ fn golden_trace_and_state_hash_are_pinned() {
     assert_eq!(state_hash, GOLDEN_STATE_HASH);
     // AET-WO-4300b, AET-WO-4220, AET-WO-4210, AET-WO-4300a and AET-WO-4200 each
     // changed the version byte alone: set back to 10, the bytes are version
-    // 10's golden trace (`8271f786…1ab4`, AET-WO-4220's); set back to 9, version 9's golden
-    // trace (`d107fffb…3e75`, AET-WO-4210's); set back to 8, version 8's
+    // 10's golden trace (`8271f786…1ab4`, AET-WO-4220's); set back to 9,
+    // version 9's (`d107fffb…3e75`, AET-WO-4210's); set back to 8, version 8's
     // (`43cbe654…0ea3`, AET-WO-4300a's); set back to 7, version 7's
     // (`dd0dd2db…c7ff`, AET-WO-4200's); set back to 6, version 6's
     // (AET-WO-2205's).

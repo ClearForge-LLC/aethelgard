@@ -108,7 +108,11 @@ fn digests() -> Vec<(&'static str, String)> {
 /// reference gains its console (USART1 on PA9/PA10). With the console and
 /// its connector removed and `main`'s hash passed to `solve`, all four were
 /// `main`'s digests exactly (`d114ae78…c455`, `849eb6bc…4397`,
-/// `b24f53eb…9e35`, `0e4d72ee…c8a2`), so the console alone moved them.
+/// `b24f53eb…9e35`, then `0e4d72ee…c8a2`), so the console alone moved them.
+/// The boot image again at `4300b`'s merge after `4220`: it was
+/// `80c36d58…ce16`, and with the `label: "identity"` fields removed it still
+/// is exactly; with the console removed and `main`'s hash passed, all four are
+/// `main`'s now (the boot image `a03116d6…6b64`).
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
@@ -124,7 +128,7 @@ const BEFORE: [(&str, &str); 4] = [
     ),
     (
         "boot image",
-        "80c36d58a4770cd334dba572279a3b9c02ae021b5e18580700c974289d53ce16",
+        "224dfd8a13f7f0061911ac72b414419c521ef6340b359c1d8b0e6c99ec9df501",
     ),
 ];
 
