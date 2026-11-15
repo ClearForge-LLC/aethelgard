@@ -448,3 +448,25 @@ fn adversarial_more_rates_than_timers_is_named_not_a_spent_budget() {
     assert_eq!(e.kind(), "MotorsInfeasible", "{e}");
     assert_eq!(e.claimants(), ["M0", "M1", "M2", "M3", "M4"]);
 }
+
+#[test]
+fn a_connector_ends_a_motor_net_with_no_off_board_capacitance() {
+    // §1.8 after `4300f`: a motor output leaves the board at a connector
+    // pin. It is on no bus, so it declares no off-board capacitance.
+    let pin = |n: &str, net: Option<&str>, offboard: Value| json!({"pin": n, "net": net, "offboard": offboard});
+    let with = |offboard: Value| {
+        let mut s = spec_json(vec![pwm("M1", None, 400)]);
+        s["connectors"] = json!([{
+            "reference": "J1", "part": "SM04B-GHS-TB", "standard": null,
+            "pins": [pin("1", Some("M1"), offboard), pin("2", None, Value::Null),
+                     pin("3", None, Value::Null), pin("4", Some("GND"), Value::Null)],
+        }]);
+        serde_json::from_value::<Specification>(s)
+            .unwrap()
+            .validate()
+    };
+    assert_eq!(with(Value::Null), Ok(()));
+    let e =
+        with(json!({"capacitance_femtofarads": 1000, "source": "condition: test"})).unwrap_err();
+    assert_eq!(e.kind(), "ConnectorBudgetNotApplicable", "{e}");
+}

@@ -151,7 +151,45 @@
       "via_diameter_um": 600
     }
   },
-  "connectors": [],
+  "connectors": [
+    {
+      "reference": "J1",
+      "part": "SM06B-GHS-TB",
+      "standard": null,
+      "pins": [
+        {
+          "pin": "1",
+          "net": "MOTOR1",
+          "offboard": null
+        },
+        {
+          "pin": "2",
+          "net": "MOTOR2",
+          "offboard": null
+        },
+        {
+          "pin": "3",
+          "net": "MOTOR3",
+          "offboard": null
+        },
+        {
+          "pin": "4",
+          "net": "MOTOR4",
+          "offboard": null
+        },
+        {
+          "pin": "5",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "6",
+          "net": "GND",
+          "offboard": null
+        }
+      ]
+    }
+  ],
   "motor_outputs": [
     {
       "label": "MOTOR1",
