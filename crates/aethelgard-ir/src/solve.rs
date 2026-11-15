@@ -1141,7 +1141,7 @@ mod differential {
             })
             .collect();
         Specification {
-            schema_version: 2,
+            schema_version: 3,
             board: serde_json::from_str(BOARD).expect("the declared board"),
             project_name: "t".into(),
             mcu: Mcu {
@@ -1157,6 +1157,7 @@ mod differential {
             spi_buses,
             i2c_devices: vec![],
             spi_devices,
+            connectors: vec![],
             net_constraints,
         }
     }

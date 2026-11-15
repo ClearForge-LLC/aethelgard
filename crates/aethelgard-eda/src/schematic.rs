@@ -186,6 +186,40 @@ pub(crate) struct Part {
     pub(crate) note: Option<&'static str>,
     /// A decoupling capacitor's IC: the reference it was drawn for.
     pub(crate) decouples: Option<String>,
+    /// A connector's declared off-board capacitance by pin number, with its
+    /// source: what extraction adds to a line it carries (`AET-WO-4300f` D8).
+    pub(crate) offboard: BTreeMap<String, (u64, String)>,
+}
+
+/// Each connector part's symbol and footprint, both vendored (`AET-WO-4300f`
+/// D3, D4). The symbol carries a mounting pin, `MP`, which both of the
+/// footprint's `MP` pads take.
+pub(crate) fn connector_library(part: &str) -> Option<(&'static str, &'static str)> {
+    Some(match part {
+        "SM04B-GHS-TB" => (
+            "Connector_Generic_MountingPin:Conn_01x04_MountingPin",
+            "Connector_JST:JST_GH_SM04B-GHS-TB_1x04-1MP_P1.25mm_Horizontal",
+        ),
+        "SM06B-GHS-TB" => (
+            "Connector_Generic_MountingPin:Conn_01x06_MountingPin",
+            "Connector_JST:JST_GH_SM06B-GHS-TB_1x06-1MP_P1.25mm_Horizontal",
+        ),
+        "SM10B-GHS-TB" => (
+            "Connector_Generic_MountingPin:Conn_01x10_MountingPin",
+            "Connector_JST:JST_GH_SM10B-GHS-TB_1x10-1MP_P1.25mm_Horizontal",
+        ),
+        "SM06B-SRSS-TB" => (
+            "Connector_Generic_MountingPin:Conn_01x06_MountingPin",
+            "Connector_JST:JST_SH_SM06B-SRSS-TB_1x06-1MP_P1.00mm_Horizontal",
+        ),
+        _ => return None,
+    })
+}
+
+/// Whether `part` is an off-board connector: placed last, at the board edge,
+/// and on a line counted as copper plus its declared budget, never at `Ci`.
+pub(crate) fn is_connector(part: &Part) -> bool {
+    part.lib_id.starts_with("Connector_")
 }
 
 /// A UUID derived from content: sha256 of a domain-separated key, the first
@@ -343,6 +377,7 @@ impl Builder<'_> {
             conns: BTreeMap::from([("1".into(), one), ("2".into(), two)]),
             note: None,
             decouples: None,
+            offboard: BTreeMap::new(),
         });
         Ok(())
     }
@@ -483,6 +518,7 @@ pub(crate) fn design(
         .iter()
         .map(|d| &d.reference)
         .chain(spec.declared_spi_devices().iter().map(|d| &d.reference))
+        .chain(spec.declared_connectors().iter().map(|c| &c.reference))
     {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
         // flag) and drops it from the netlist and BOM, and the emitter names its
@@ -571,6 +607,7 @@ pub(crate) fn design(
         conns,
         note: None,
         decouples: None,
+        offboard: BTreeMap::new(),
     });
 
     // The I2C buses' pull-ups, then their devices.
@@ -701,8 +738,54 @@ pub(crate) fn design(
         device(&mut b, &d.reference, "Memory_Flash:W25Q32JVSS", conns)?;
         b.decouple(&d.reference, &d.supply, "100n")?;
     }
+    connectors(&mut b)?;
     Ok((b.parts, b.rails))
 }
+
+/// Each declared connector, after every other part: a pin's net is drawn as
+/// the rail it names (`GND` or a domain), or a label, or a no-connect when it
+/// is `null`; the mounting pin goes to `GND` (`AET-WO-4300f` D3).
+fn connectors(b: &mut Builder<'_>) -> Result<(), EmitError> {
+    let spec = b.spec;
+    for c in spec.declared_connectors() {
+        let (lib_id, footprint) =
+            connector_library(&c.part).ok_or_else(|| EmitError::UnknownPart {
+                reference: c.reference.clone(),
+                part: c.part.clone(),
+                known: KNOWN_CONNECTORS,
+            })?;
+        let mut conns = BTreeMap::from([("MP".to_owned(), b.ground())]);
+        let mut offboard = BTreeMap::new();
+        for p in &c.pins {
+            let conn = match p.net.as_deref() {
+                None => Conn::NoConnect,
+                Some(GND) => b.ground(),
+                Some(n) if spec.voltage_domains.iter().any(|d| d.id == n) => b.rail(n),
+                Some(n) => Conn::Net(n.to_owned()),
+            };
+            conns.insert(p.pin.clone(), conn);
+            if let Some(o) = &p.offboard {
+                offboard.insert(
+                    p.pin.clone(),
+                    (o.capacitance_femtofarads, o.source.clone()),
+                );
+            }
+        }
+        b.parts.push(Part {
+            lib_id,
+            reference: c.reference.clone(),
+            value: c.part.clone(),
+            footprint: footprint.to_owned(),
+            conns,
+            note: None,
+            decouples: None,
+            offboard,
+        });
+    }
+    Ok(())
+}
+
+const KNOWN_CONNECTORS: &str = "SM04B-GHS-TB, SM06B-GHS-TB, SM10B-GHS-TB, SM06B-SRSS-TB";
 
 /// A device's part, with the part's default footprint and the D2 note.
 fn device(
@@ -730,6 +813,7 @@ fn device(
         conns: conns.into_iter().map(|(n, c)| (n.to_owned(), c)).collect(),
         note,
         decouples: None,
+        offboard: BTreeMap::new(),
     });
     Ok(())
 }

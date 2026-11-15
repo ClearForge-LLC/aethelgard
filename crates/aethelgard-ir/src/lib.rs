@@ -11,6 +11,8 @@
 #![forbid(unsafe_code)]
 
 pub mod board;
+pub mod connectors;
+pub mod ds009;
 pub mod electrical;
 pub mod parts;
 mod solve;
@@ -25,11 +27,14 @@ use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// The specification's schema version (`RUL-14`). Version 2 added `board`
-/// (`AET-WO-4100`); a version-1 file is refused by name, and nothing supplies a
-/// board for it.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 2;
+/// (`AET-WO-4100`); version 3 added `connectors` (`AET-WO-4300f`). A file of
+/// another version is refused by name, and nothing supplies a missing key.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 3;
 
-/// The top-level specification, version 2 (`RUL-14`). Arrays keep the order a
+/// The ground net: the emitter's ground symbol, never a declared domain.
+pub const GND: &str = "GND";
+
+/// The top-level specification, version 3 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
@@ -47,6 +52,9 @@ pub struct Specification {
     /// Private as `i2c_devices` is; read through
     /// [`Specification::declared_spi_devices`].
     spi_devices: Vec<SpiDevice>,
+    /// Private as the device lists are (`RUL-16`); read through
+    /// [`Specification::declared_connectors`].
+    connectors: Vec<connectors::Connector>,
     pub net_constraints: Vec<NetConstraint>,
     /// The copper layers, the stackup and the design rules (`board`).
     pub board: board::Board,
@@ -602,6 +610,60 @@ pub enum IrValidationError {
         capacitance_femtofarads: u64,
         limit_femtofarads: u64,
     },
+    #[error("connector `{id}` names part `{part}`, which is not in the connectors table")]
+    UnknownConnectorPart { id: String, part: String },
+    #[error("connector `{id}` lists pin `{pin}`; its part's signal pins are `1` to `{pins}`")]
+    ConnectorPinUnknown { id: String, pin: String, pins: u8 },
+    #[error("connector `{id}` lists pin `{pin}` more than once")]
+    ConnectorPinRepeated { id: String, pin: String },
+    #[error("connector `{id}` does not list pin `{pin}`; every signal pin is listed, `null` where it is unconnected")]
+    ConnectorPinMissing { id: String, pin: String },
+    #[error(
+        "connector `{id}` pin `{pin}` names net `{net}`, which is no declared signal, voltage domain or `GND`: a connector cannot invent a net"
+    )]
+    ConnectorNetUnknown {
+        id: String,
+        pin: String,
+        net: String,
+    },
+    #[error(
+        "connector `{id}` pin `{pin}` is on an I2C or SPI line and declares no off-board capacitance (null or 0): the line's bound would leave out the cable and the remote pins (`RUL-19` (1))"
+    )]
+    ConnectorBudgetMissing { id: String, pin: String },
+    #[error(
+        "connector `{id}` pin `{pin}` declares an off-board capacitance, but it is on no I2C or SPI line, where nothing would count it"
+    )]
+    ConnectorBudgetNotApplicable { id: String, pin: String },
+    #[error("connector `{id}` names standard `{standard}`, which is not in the ports table")]
+    UnknownConnectorStandard { id: String, standard: String },
+    #[error("connector `{id}` is part `{part}`, which is not the series and pin count of `{standard}`")]
+    ConnectorPartContradictsStandard {
+        id: String,
+        part: String,
+        standard: String,
+    },
+    #[error(
+        "connector `{id}` pin `{pin}` is `{role}` in its standard, and its net {} is not that{}",
+        net.as_deref().map_or_else(|| "(null)".to_owned(), |n| format!("`{n}`")),
+        required_millivolts.map_or_else(String::new, |mv| format!(": a voltage domain of nominal {mv} mV"))
+    )]
+    ConnectorSupplyContradictsStandard {
+        id: String,
+        pin: String,
+        role: &'static str,
+        net: Option<String>,
+        required_millivolts: Option<u32>,
+    },
+    #[error(
+        "connector `{id}` pin `{pin}` is `{role}` in its standard, and its net {} is not that (a role this schema cannot yet declare takes no net, and only a pin the standard lets float may be null)",
+        net.as_deref().map_or_else(|| "(null)".to_owned(), |n| format!("`{n}`"))
+    )]
+    ConnectorPinContradictsStandard {
+        id: String,
+        pin: String,
+        role: &'static str,
+        net: Option<String>,
+    },
 }
 
 impl IrValidationError {
@@ -662,6 +724,19 @@ impl IrValidationError {
             Self::BusTooFast { .. } => "BusTooFast",
             Self::PullUpBelowSinkFloor { .. } => "PullUpBelowSinkFloor",
             Self::BusCapacitanceOverLimit { .. } => "BusCapacitanceOverLimit",
+            Self::UnknownConnectorPart { .. } => "UnknownConnectorPart",
+            Self::ConnectorPinUnknown { .. } => "ConnectorPinUnknown",
+            Self::ConnectorPinRepeated { .. } => "ConnectorPinRepeated",
+            Self::ConnectorPinMissing { .. } => "ConnectorPinMissing",
+            Self::ConnectorNetUnknown { .. } => "ConnectorNetUnknown",
+            Self::ConnectorBudgetMissing { .. } => "ConnectorBudgetMissing",
+            Self::ConnectorBudgetNotApplicable { .. } => "ConnectorBudgetNotApplicable",
+            Self::UnknownConnectorStandard { .. } => "UnknownConnectorStandard",
+            Self::ConnectorPartContradictsStandard { .. } => "ConnectorPartContradictsStandard",
+            Self::ConnectorSupplyContradictsStandard { .. } => {
+                "ConnectorSupplyContradictsStandard"
+            }
+            Self::ConnectorPinContradictsStandard { .. } => "ConnectorPinContradictsStandard",
         }
     }
 
@@ -724,6 +799,17 @@ impl IrValidationError {
             | Self::BusTooFast { bus, .. }
             | Self::PullUpBelowSinkFloor { bus, .. } => Some(bus),
             Self::BusCapacitanceOverLimit { net, .. } => Some(net),
+            Self::UnknownConnectorPart { id, .. }
+            | Self::ConnectorPinUnknown { id, .. }
+            | Self::ConnectorPinRepeated { id, .. }
+            | Self::ConnectorPinMissing { id, .. }
+            | Self::ConnectorNetUnknown { id, .. }
+            | Self::ConnectorBudgetMissing { id, .. }
+            | Self::ConnectorBudgetNotApplicable { id, .. }
+            | Self::UnknownConnectorStandard { id, .. }
+            | Self::ConnectorPartContradictsStandard { id, .. }
+            | Self::ConnectorSupplyContradictsStandard { id, .. }
+            | Self::ConnectorPinContradictsStandard { id, .. } => Some(id),
         }
     }
 
@@ -984,6 +1070,13 @@ impl Specification {
         &self.spi_devices
     }
 
+    /// The off-board connectors the specification declares, in document
+    /// order; fenced as [`Specification::declared_i2c_devices`] is. Nothing
+    /// solves a connector, so the `SolvedTopology` never carries one.
+    pub fn declared_connectors(&self) -> &[connectors::Connector] {
+        &self.connectors
+    }
+
     /// Refuses the first malformed value found, in the order of
     /// `crates/aethelgard-ir/README.md`, and in document order within each step.
     /// It does not check that a part, peripheral or pin exists, nor that two
@@ -1128,7 +1221,8 @@ impl Specification {
             self.i2c_devices
                 .iter()
                 .map(|d| d.reference.as_str())
-                .chain(self.spi_devices.iter().map(|d| d.reference.as_str())),
+                .chain(self.spi_devices.iter().map(|d| d.reference.as_str()))
+                .chain(self.connectors.iter().map(|c| c.reference.as_str())),
         )?;
         // 9
         for device in &self.i2c_devices {
@@ -1210,7 +1304,9 @@ impl Specification {
             }
         }
         // 13
-        self.board.validate(&domains)
+        self.board.validate(&domains)?;
+        // 14
+        connectors::validate(self)
     }
 
     /// Step 2, in the order the README lists.
@@ -1265,7 +1361,7 @@ impl Specification {
         for (i, layer) in self.board.layers.iter().enumerate() {
             optional_identifier(&layer.net, || format!("board.layers[{i}].net"))?;
         }
-        Ok(())
+        connectors::identifiers(self)
     }
 }
 

@@ -502,13 +502,15 @@ fn invalid(e: &crate::schematic::EmitError) -> Refused {
     refused(e.kind(), e.to_string())
 }
 
-/// The four terms of one line's bound, femtofarads, each rounded up.
+/// The terms of one line's bound, femtofarads, each rounded up.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Terms {
     pub trace: u64,
     pub vias: u64,
     pub pads: u64,
     pub pins: u64,
+    /// The off-board capacitance its connectors declare (`AET-WO-4300f` D8).
+    pub offboard: u64,
 }
 
 /// One I2C line's bound and what it was computed from.
@@ -531,6 +533,9 @@ pub struct LineBound {
     pub pins: Vec<String>,
     /// The line's pull-ups, by reference: copper only.
     pub pull_ups: Vec<String>,
+    /// Each connector pad on the line and the off-board capacitance it
+    /// declares, as `<reference>.<pad>: <fF> fF (<source>)`.
+    pub offboard: Vec<String>,
 }
 
 /// The largest coordinate or size the reader accepts, so that every
@@ -859,8 +864,20 @@ struct Role {
     value: String,
     /// The part's pads on the line, by number.
     pads: BTreeSet<String>,
-    /// A pin part (counted at `Ci`), or the bus's pull-up (copper only).
-    pin: bool,
+    kind: Kind,
+}
+
+/// How a part on a line counts, beyond its pads' copper.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Kind {
+    /// A pin part: `Ci` per pad.
+    Pin,
+    /// The bus's pull-up: copper only.
+    PullUp,
+    /// An off-board connector (`AET-WO-4300f` D8): no `Ci`, and the
+    /// off-board capacitance each of its pads on the line declares, with
+    /// the source, as `(pad, femtofarads, source)`.
+    Connector(Vec<(String, u64, String)>),
 }
 
 /// One I2C line and every part the specification puts on it.
@@ -927,13 +944,38 @@ pub fn lines(
                         ),
                     ));
                 }
+                // belt-and-suspenders: `validate` refuses a connector pin on
+                // an I2C line without a budget (`ConnectorBudgetMissing`), so
+                // no test reaches the refusal below.
+                let kind = if crate::schematic::is_connector(part) {
+                    Kind::Connector(
+                        pads.iter()
+                            .map(|p| {
+                                let (ff, source) = part.offboard.get(p).cloned().ok_or_else(|| {
+                                    refused(
+                                        "UnmodelledPart",
+                                        format!(
+                                            "{}.{p} is on `{net}` with no declared off-board capacitance",
+                                            part.reference
+                                        ),
+                                    )
+                                })?;
+                                Ok((p.clone(), ff, source))
+                            })
+                            .collect::<Result<_, Refused>>()?,
+                    )
+                } else if passive {
+                    Kind::PullUp
+                } else {
+                    Kind::Pin
+                };
                 roles.insert(
                     part.reference.clone(),
                     Role {
                         footprint: part.footprint.clone(),
                         value: part.value.clone(),
                         pads,
-                        pin: !passive,
+                        kind,
                     },
                 );
             }
@@ -1010,7 +1052,8 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
         }
     }
     let mut terms = Terms::default();
-    let (mut pins, mut pull_ups, mut pad_count) = (Vec::new(), Vec::new(), 0u64);
+    let (mut pins, mut pull_ups, mut offboard, mut pad_count) =
+        (Vec::new(), Vec::new(), Vec::new(), 0u64);
     for (reference, pads) in &on_board {
         let Some(role) = want.parts.get(*reference) else {
             return Err(refused(
@@ -1034,14 +1077,24 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
                 ),
             ));
         }
-        if !role.pin {
-            pull_ups.push((*reference).to_owned());
+        match &role.kind {
+            Kind::PullUp => pull_ups.push((*reference).to_owned()),
+            Kind::Connector(declared) => {
+                for (pad, ff, source) in declared {
+                    terms.offboard = terms
+                        .offboard
+                        .checked_add(*ff)
+                        .ok_or_else(|| overflow(net))?;
+                    offboard.push(format!("{reference}.{pad}: {ff} fF ({source})"));
+                }
+            }
+            Kind::Pin => {}
         }
         for pad in pads {
             let ff = pad_ff(&ph, pad.rect).ok_or_else(|| overflow(net))?;
             terms.pads = terms.pads.checked_add(ff).ok_or_else(|| overflow(net))?;
             pad_count += 1;
-            if role.pin {
+            if role.kind == Kind::Pin {
                 pins.push(format!("{reference}.{}", pad.number));
                 terms.pins = terms
                     .pins
@@ -1080,7 +1133,13 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
     let via_count = routed.vias.iter().filter(|v| v.net == board_net).count() as u64;
     let via = via_ff(&ph).ok_or_else(|| overflow(net))?;
     terms.vias = via_count.checked_mul(via).ok_or_else(|| overflow(net))?;
-    let total = [terms.trace, terms.vias, terms.pads, terms.pins]
+    let total = [
+        terms.trace,
+        terms.vias,
+        terms.pads,
+        terms.pins,
+        terms.offboard,
+    ]
         .into_iter()
         .try_fold(0u64, u64::checked_add)
         .ok_or_else(|| overflow(net))?;
@@ -1096,6 +1155,7 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
         pad_count,
         pins,
         pull_ups,
+        offboard,
     })
 }
 

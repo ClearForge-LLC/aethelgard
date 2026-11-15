@@ -48,9 +48,9 @@ fn line(b: LineBound, declared: u64) -> Value {
         "net": b.net, "board_net": b.board_net, "bus": b.bus,
         "verdict": if b.c_bound_femtofarads <= declared { "pass" } else { "fail" },
         "c_bound_femtofarads": b.c_bound_femtofarads, "declared_femtofarads": declared,
-        "terms": {"trace": t.trace, "vias": t.vias, "pads": t.pads, "pins": t.pins},
+        "terms": {"trace": t.trace, "vias": t.vias, "pads": t.pads, "pins": t.pins, "offboard": t.offboard},
         "length_nm": b.length_nm, "segments": b.segments, "via_count": b.via_count,
-        "pad_count": b.pad_count, "pins": b.pins, "pull_ups": b.pull_ups,
+        "pad_count": b.pad_count, "pins": b.pins, "pull_ups": b.pull_ups, "offboard": b.offboard,
     })
 }
 
@@ -113,13 +113,14 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
             kind: "capacitance_over_declared_bound",
             severity: "error",
             message: format!(
-                "`{}`: bound {} fF (trace {}, vias {}, pads {}, pins {}) exceeds the declared {} fF",
+                "`{}`: bound {} fF (trace {}, vias {}, pads {}, pins {}, offboard {}) exceeds the declared {} fF",
                 l["net"].as_str().unwrap_or_default(),
                 l["c_bound_femtofarads"],
                 l["terms"]["trace"],
                 l["terms"]["vias"],
                 l["terms"]["pads"],
                 l["terms"]["pins"],
+                l["terms"]["offboard"],
                 l["declared_femtofarads"]
             ),
         })
