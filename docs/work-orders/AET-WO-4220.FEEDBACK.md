@@ -562,3 +562,68 @@ The adversary was given the code and the rules, not the builder's reasoning. It 
 - the schema's arithmetic is in i128.
 
 **A third finding from review (the advisor), fixed before the adversary reported:** the duplicate step names (D-B3).
+
+## Reduction pass (a fresh subagent, after the adversarial pass)
+
+Reduction pass (diff): −33 net · 2 duplicates removed · 1 dead path removed · 3 protected kept · 4 findings below (`d2b7184`).
+
+- **Removed:**
+  - the fixture's solve-generate-write code, copied in four new tests, is now two helpers in `tests/common/verify.rs`;
+  - `MAX_CHANNELS`, which `MAX_DATA_BYTES` (8, at 2 or more bytes a channel) already bounds;
+  - a `kani::assume` assertion that `board_tier2` repeated from `own_models_tier1`.
+- **Proof:**
+  - host, `cargo test --workspace` (102 binaries ok) and clippy;
+  - the image (me), `models_tier2` 7/7, the four fixture tests, and the fixture's Kani proofs.
+- **Protected, kept:**
+  - the CLI's re-hash (`ModelPinMismatch`);
+  - `firmware.rs`'s record layout;
+  - `step_index`. The subagent reported it as a deliberate but unlabelled copy of `CONFIGURE_STEPS`. I labelled it `belt-and-suspenders:`, since chaos may not depend on ir, and added `the_archive_orders_every_step_name_the_parts_table_gives` to hold the two equal.
+- **Findings:**
+  - the crate list lives in `ci.yml`, `docs/releasing.md`, `workspace_shape.rs` (two lists) and `Cargo.toml` (pre-existing; this build added one line to each);
+  - `MAX_SETTLE_US`'s doc says "64 MHz" in prose beside `CORE_HZ_PER_US`;
+  - the spin count's `saturating_mul` cannot saturate (30,000 × 64);
+  - the older `imu_baro_board` and `motor_board` test helpers would shrink the same way (outside the diff).
+
+## Gates
+
+At `efad973` (`main` `4246200` merged in), on the host, under `systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`:
+- `cargo fmt --all -- --check`: ok;
+- `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings`: ok;
+- `cargo test --workspace --no-fail-fast`: exit 0, 102 binaries `test result: ok`.
+
+Tier 2 in the pinned image (`t2.sh`, `capped-run`, the read-backs above):
+- every new tier-2 test passes (`models_tier2` 7, the five `twin_tier2` fixture tests, the `board_tier2` proof);
+- the full suite is CI's (`roadmap.md` §6).
+
+**The two red CI runs the architect named (inbox, 16:20), root-caused:**
+- **`38e1457` (run 43732050295):** `cargo fmt --check` failed on one line of `model.rs` I had shortened. Every shard runs the check first, so `gates` and every shard went red. Fixed at `eec3562`.
+- **`cf1fdb0` (run 43733647708):** `svd-hal`'s `order_2203` pins the twin's boot image by its `Debug` text, which gained `StepCheck`'s `label`. With the three `label: "identity"` fields removed, the text hashes to the old `0e4d72ee…` exactly (measured). Re-taken at `933b2df`. My full host run had been before the label commit.
+
+**A third red run, `933b2df` (run 43736220910), shard 6:**
+- `the_bmp581_measures_after_its_deep_start_up_and_reads_from_its_last_write` lost its last line, `read 0x36 -> 0x40`, on CI, where it had passed in the image.
+- `models_tier2` ran Renode without the CLI's configuration, so its logging was Renode's default, asynchronous, and a line written just before `quit` can be lost.
+- The binary now runs Renode with `use-synchronous-logging = true`, every other key at Renode's default, as the CLI does. After the fix it passed 3 of 3 in the image.
+
+`TIER2_MIN` is **126**: 114 on `main`, plus 12. `twin_tier2` +5 (the fixture witnessed, no wait, listing and refusals, campaign and replay); `board_tier2` +1 (the fixture's proofs); `models_tier2` +7, a new tier-2 binary added to `TIER2_RE`.
+
+## Cleanup (the architect's note)
+
+- The adversary's worktree was removed after its findings were harvested (6.2 GB).
+- Before the signal commit, my scratch trees go: `~/.cache/aet-4220-t2` (its two cargo targets included), `~/.cache/aet-4220/csdev` and the renders.
+- The datasheets and their hand-read notes move to `~/.cache/aet-ds/aet-4220/` (the paths above under `~/.cache/aet-4220/ds/` are now there).
+
+## Stop
+
+**`AET-WO-4220` STOPPED: the board path (D5, D10) waits on `4300d2` (#149).** Built, tested, adversarially attacked and reduced:
+- the models;
+- their pins and refusals (D6);
+- data-ready from the models' own sampling (D8);
+- schema 4 and the rows (D1, D3, D7);
+- the Sentinel-02-shaped fixture witnessed end to end.
+
+The ruled board path is not built, for three reasons (D-B8):
+- the BMP581's footprint needs the keepout reader of #149;
+- a power-tree board cannot be emitted before #149;
+- `extract.rs` is `4300d2`'s.
+
+The ruling needed is D-B8, the split. The other decisions are D-B1 to D-B7.

@@ -58,6 +58,30 @@ fn bench(label: &str) -> Bench {
     }
 }
 
+/// Renode 1.17.0's configuration as it writes it for itself, with
+/// `use-synchronous-logging = true` (`twin_tier2.rs` pins the default).
+const CONFIG: &str = "[general]
+use-synchronous-logging = true
+terminal = Termsharp
+compiler-cache-enabled = False
+serialization-mode = Generated
+always-log-machine-name = False
+collapse-repeated-log-entries = True
+log-timestamps-type = Host
+log-history-limit = 1000
+history-path = $HOME/.config/renode/history
+store-table-bits = 41
+[monitor]
+consume-exceptions-from-command = True
+break-script-on-exception = True
+number-format = Hexadecimal
+[plugins]
+enabled-plugins = 
+[translation]
+min-tb-size = 33554432
+max-tb-size = 536870912
+";
+
 /// One Renode run: the models included, the platform loaded, both devices
 /// at `Noisy`, then `commands`. Returns every log line of the two devices,
 /// without its timestamp, in order: the witness lines the judge reads.
@@ -74,9 +98,20 @@ fn run(b: &Bench, models: &[PathBuf], commands: &[String]) -> (String, Vec<Strin
     ]);
     c.extend(commands.iter().cloned());
     c.push("quit".to_owned());
+    // Synchronous logging, as the CLI runs Renode (`renode::config`): with
+    // Renode's default, a log line written just before `quit` can be lost
+    // (measured on CI: the last transaction's line was missing). Every other
+    // key is Renode's own default, so it only reads the file.
+    let home = b.dir.join("home");
+    fs::create_dir_all(&home).unwrap();
+    let config = b.dir.join("renode.config");
+    fs::write(&config, CONFIG.replace("$HOME", home.to_str().unwrap())).unwrap();
     let out = Command::new("renode")
+        .arg("--config")
+        .arg(&config)
         .args(["--disable-gui", "--console", "--plain", "-e", &c.join("; ")])
         .env("DOTNET_EnableDiagnostics", "0")
+        .env("HOME", &home)
         .current_dir(&b.dir)
         .stdin(Stdio::null())
         .output()
