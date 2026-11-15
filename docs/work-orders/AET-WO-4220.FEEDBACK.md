@@ -57,6 +57,16 @@ From recall, before any vendor page or datasheet is fetched. Each row will be re
 - **P2.3** Neither recommended part has a KiCad 10.0.7 symbol; both have a stock footprint. The build would vendor a symbol or ask for a ruling (recall; checked in the image).
 - **P2.4** ArduPilot reads the ICM-42688-P only through its FIFO (`FIFO_COUNTH`, `FIFO_DATA`), never the data registers, and its init writes fewer than 20 registers across banks 0, 1 and 2 (recall).
 
+### P4. S4 — a model tested without firmware (added before its run, after S1)
+
+Committed before `s4.py` ran. The method: Renode's monitor calls a peripheral's public methods by name.
+
+| # | Prediction |
+|---|---|
+| P4.1 | `sysbus.spi1.spi1mux.u5 Transmit 0x80` then `… Transmit 0x00` returns `0xA5` from the probe, printed by the monitor as a value, and `… FinishTransmission` returns nothing. No firmware and no `RunFor` are needed. |
+| P4.2 | `sysbus.i2c1.u2 Write [0xD0]` (an array literal) then `sysbus.i2c1.u2 Read 1` prints a one-byte array holding `0x5A`. |
+| P4.3 | The probe logs the same Noisy lines for these calls as for the firmware's bytes, so the same witness format serves both levels. |
+
 ## Results — after the predictions
 
 The predictions above were committed alone at `7ce365d`, before any container started and before any vendor fetch. They are unchanged below this line.
@@ -73,7 +83,7 @@ Every container ran through `spike/4220/run.sh`, which calls `~/bin/capped-run -
 |---|---|---|---|
 | P1.1 | compiles and loads offline | **held** | `include @/repo/spike/4220/s1/AetProbe.cs` logs `[INFO] Including script(s): …` and nothing else; no error; the boot ends with the boot word `0x2100B007`. `/opt/renode` carries `Microsoft.CodeAnalysis.CSharp.dll`. |
 | P1.2 | the include adds 1–6 s | **failed (faster)** | 3 boots each: 2.002 / 2.055 / 2.031 s without, 2.653 / 2.619 / 2.681 s with the include: **+0.62 s** for a 2-class file. |
-| P1.3 | both attach; records `0x5A` and `0xA5` | **held** | record 0 (I2C `0x76`, `0xD0`) = `0x5A`, record 2 (SPI `spi1mux` 1, `0x00`) = `0xA5`. The probe's 20 Noisy lines follow the firmware's bytes in order: `i2c1.u2: AetProbeI2C write 1 byte(s), pointer 0xD0`, `… read 1 byte(s), first 0x5A`, then `spi1.spi1mux.u5: AetProbeSpi byte 0x80 -> 0x00`, `… byte 0x00 -> 0xA5`, the configuration write's 2 bytes and the data read's 7, each transfer closed by `AetProbeSpi finish`. The multiplexer finishes the probe on other devices' edges too (`4210` F11): 4 of its 7 `finish` lines are not its own transfers. |
+| P1.3 | both attach; records `0x5A` and `0xA5` | **held** | record 0 (I2C `0x76`, `0xD0`) = `0x5A`, record 2 (SPI `spi1mux` 1, `0x00`) = `0xA5`. The probe's 20 Noisy lines follow the firmware's bytes in order: `i2c1.u2: AetProbeI2C write 1 byte(s), pointer 0xD0`, `… read 1 byte(s), first 0x5A`, then `spi1.spi1mux.u5: AetProbeSpi byte 0x80 -> 0x00`, `… byte 0x00 -> 0xA5`, the configuration write's 2 bytes and the data read's 7, each transfer closed by `AetProbeSpi finish`. The multiplexer finishes the probe on other devices' edges too (`4210` F11): 3 of its 6 `finish` lines close no transfer of its own. |
 | P1.4 | short name resolves in Renode's namespace; our own namespace only in full | **held for the first, failed for the second** | `Sensors.AetProbeSpi` resolves. `Aethelgard.Models.AetProbeOwnNs` does **not**, even written in full: `Error E04: Could not resolve type: 'Aethelgard.Models.AetProbeOwnNs'.` Read after: `TypeManager` indexes only types whose namespace starts with `Antmicro.Renode` or `NetMQ` (`TypeManager.cs` L262–266, L354–356). **A model must live in `Antmicro.Renode.Peripherals.*`.** |
 | P1.5 | the fault's text | **held** | `Errors during compilation or loading:` / `Could not compile assembly from: /repo/spike/4220/s1/AetProbeFault.cs` / `…AetProbeFault.cs(13,27): error CS1002: ; expected` / `…AetProbeFault.cs(14,13): error CS0246: The type or namespace name 'NoSuchType' could not be found (are you missing a using directive or an assembly reference?)`. Untimestamped monitor text, on stdout. |
 | P1.6 | the rest of the `-e` line runs; exit 0 | **failed in part** | **The line stops at the failed include:** no `LoadPlatformDescription`, no `RunFor`, no `BEGIN` marker; `machine-0: Disposed.` follows the diagnostics, and **Renode exits 0**. So the refusal must be the CLI's: the diagnostics' first line, or the missing `BEGIN`, which the CLI already treats as a failed boot. Never the exit code. |
