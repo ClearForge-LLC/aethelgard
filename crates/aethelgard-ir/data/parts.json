@@ -195,7 +195,7 @@
         "spi_output_delay": {
           "document": "TDK InvenSense DS-000189 ICM-20948",
           "revision": "1.6 (2024-03-12)",
-          "section": "table 8 (SPI timing, 7 MHz), p. 17: tVD.SDO max 59 ns at 20 pF; note 1: based on characterization of 5 parts, over temperature and voltage, on an evaluation board or in sockets (characterized, not production tested)",
+          "section": "table 8 (SPI timing, 7 MHz), p. 17: tVD.SDO max 59 ns at 20 pF; note 1: based on characterization of 5 parts, over temperature and voltage, as mounted on an evaluation board or in sockets",
           "sha256": "0588625f4f1d6d27382a4322f48073dc0ce569e537c63786b13aab3eeb76b718"
         },
         "lifecycle": {
