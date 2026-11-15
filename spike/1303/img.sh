@@ -8,6 +8,8 @@
 # /sys/fs/cgroup + the path in /proc/self/cgroup into caps.log; the run stops
 # (exit 99) if memory.swap.max is not 0. Nothing writes into a cgroup file.
 # TMPDIR is left unset inside the container. The repository is mounted at /repo.
+# --expand-environment=no: systemd 259 expands braced ${NAME} in the command
+# (measured here and by 4210); this script uses none, but the flag keeps it so.
 # (The first version of this script, with equal --memory/--memory-swap flags,
 # read memory.swap.max = 8589934592 and stopped: caps.log, FEEDBACK D9.)
 # Usage: spike/1303/img.sh <command...>
@@ -16,7 +18,7 @@ REPO=$(cd "$(dirname "$0")/../.." && pwd)
 CAPLOG="$REPO/spike/1303/caps.log"
 IMAGE=$(cat "$REPO/container/IMAGE")
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
-exec systemd-run --user --scope -q -p MemoryMax=8G -p MemorySwapMax=0 -p TasksMax=8192 \
+exec systemd-run --user --scope -q --expand-environment=no -p MemoryMax=8G -p MemorySwapMax=0 -p TasksMax=8192 \
   bash -c '
     cg=$(sed -n "s/^0:://p" /proc/self/cgroup); d=/sys/fs/cgroup$cg
     m=$(cat "$d/memory.max"); s=$(cat "$d/memory.swap.max"); k=$(cat "$d/pids.max")

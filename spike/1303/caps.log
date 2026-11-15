@@ -3,3 +3,4 @@
 2026-11-15T03:33:53+00:00 scope /user.slice/user-1001.slice/user@1001.service/app.slice/run-p716778-i143336439.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
 2026-11-15T03:34:03+00:00 scope /user.slice/user-1001.slice/user@1001.service/app.slice/run-p717505-i143336480.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
 2026-11-15T03:38:59+00:00 scope /user.slice/user-1001.slice/user@1001.service/app.slice/run-p758470-i143365204.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+2026-11-15T03:45:57+00:00 scope /user.slice/user-1001.slice/user@1001.service/app.slice/run-p809270-i143395041.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
