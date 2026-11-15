@@ -2,15 +2,15 @@
 
 The specification schema and the solved topology, as two separate types (`RUL-16`), with validation. Every type refuses unknown fields and accepts only a JSON object. Nothing defaults (`INV-06`).
 
-## `Specification`, version 5
+## `Specification`, version 6
 
-Version 2 (`AET-WO-4100`) added `board`. Version 3 (`AET-WO-4300c`) requires a net constraint on every SPI bus's `sck` and `mosi`, whose capacitance and rise time choose the pin's output speed, and names parts as the version-2 parts table does (`W25Q64JVxIQ`). Version 4 (`AET-WO-4300f`) adds `connectors`. Version 5 (`AET-WO-1308`) requires `net_classes` and `diff_pairs`; an empty array declares none. A file of another version is refused by name (`UnsupportedSchemaVersion`); nothing supplies a board, a declaration or a connector list for it. Every key is required. `peripheral`, `pin`, `impedance_ohms` and a signal layer's `net` may be `null`, but the key may not be missing. Arrays keep the order they were written in; nothing is sorted.
+Version 2 (`AET-WO-4100`) added `board`. Version 3 (`AET-WO-4300c`) requires a net constraint on every SPI bus's `sck` and `mosi`, whose capacitance and rise time choose the pin's output speed, and names parts as the version-2 parts table does (`W25Q64JVxIQ`). Version 4 (`AET-WO-4300f`) adds `connectors`. Version 5 (`AET-WO-1308`) requires `net_classes` and `diff_pairs`; an empty array declares none. Version 6 (`AET-WO-4300d`) requires `mcu.bor_level` (0 to 3) and `power`, whose value `null` declares no power tree. A file of another version is refused by name (`UnsupportedSchemaVersion`); nothing supplies a board, a declaration or a connector list for it. Every key is required. `peripheral`, `pin`, `impedance_ohms` and a signal layer's `net` may be `null`, but the key may not be missing. Arrays keep the order they were written in; nothing is sorted.
 
 ```json
 {
-  "schema_version": 4,
+  "schema_version": 6,
   "project_name": "sentinel-01",
-  "mcu": { "part": "STM32H753ZITx", "supply": "VDD_3V3" },
+  "mcu": { "part": "STM32H753ZITx", "supply": "VDD_3V3", "bor_level": 3 },
   "voltage_domains": [{ "id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50 }],
   "i2c_buses": [{
     "id": "SENSORS", "peripheral": null, "speed_hz": 400000, "pull_up_ohms": 2200, "domain": "VDD_3V3",
@@ -57,7 +57,8 @@ Version 2 (`AET-WO-4100`) added `board`. Version 3 (`AET-WO-4300c`) requires a n
   ],
   "diff_pairs": [
     { "name": "USB", "nets": ["SPI_SCK", "SPI_MOSI"], "gap_um": 300, "width_um": 200 }
-  ]
+  ],
+  "power": null
 }
 ```
 
@@ -83,6 +84,8 @@ Every list except `voltage_domains` may be empty.
 
 A connector is in the `Specification` only. Nothing solves it, so the twin, which reads only the `SolvedTopology`, never sees one.
 
+**`power`** (`AET-WO-4300d`, ruled on PR #137). The battery, the power-in connector (`connectors::POWER_IN`), each regulator with its feedback divider and external parts, declared loads, the battery sense and the bus crossings. Each part is a row of the power parts table, `data/power-parts.json`, read by `power_parts::parse_power_parts`; every value there is cited to a page of a document held by sha256. The shape and the order of the checks are `power.rs`'s module documentation. Every refusal is `IrValidationError::Power`, whose `kind()` names the check. A specification that declares a tree is refused by the emitter (`PowerNotEmitted`) until the emission work order lands.
+
 **`net_classes`, `diff_pairs`** (`AET-WO-1308` §1.1, §1.3; FEEDBACK F2 to F4). Micrometres. A class gives its nets a track width and, optionally, a via (`via` is a required key, `null` for the rules' via); a pair gives two nets, `[positive, negative]`, a gap and a width. Every class's clearance is `board.rules.clearance_um`, so none is declared (F2).
 
 **`board`** (`AET-WO-4100`, ruled on PR #120). Micrometres and thousandths. A stackup value is a bound with its source, never a nominal: a minimum dielectric is its source's value less a published tolerance, rounded down; a maximum is rounded up. The engine builds 2 copper layers (both signal) or 4 (`F.Cu`, `In1.Cu`, `In2.Cu`, `B.Cu`: outer layers signal, both inner layers planes, exactly one `GND` and the other a declared domain), through vias only. The rules are honoured: clearance and track width at or above the engine floor (0.2 mm), and the one via the engine builds (0.3 mm drill, 0.6 mm). See `crates/aethelgard-cli/tests/fixtures/four-layer.json` for a 4-layer board on OSH Park's published stackup.
@@ -93,12 +96,13 @@ Returns the first refusal, in this order, and in document order within a step. `
 
 | # | Rule | Refusal (`id()`) |
 |---|---|---|
-| 1 | `schema_version` is 4 | `UnsupportedSchemaVersion` (none) |
+| 1 | `schema_version` is 6 | `UnsupportedSchemaVersion` (none) |
 | 2 | Every identifier is 1 to 64 bytes of printable ASCII `0x21`–`0x7E`, none of them `/`, `{`, `}`, `$`, `[`, `]`, `"`, `%`, `*`, `,` or `\`, and none holding a date shape (`dddd-dd-dd`) or a time shape (`dd:dd:dd`). The project name is also a crate name (1 to 58 bytes of `a-z`, `0-9`, `-`; a letter first, no trailing or doubled `-`; 58 because `generate` adds `-board`), and a device or connector reference a Renode identifier (a letter, then letters, digits and `_`). One function, `check_identifier(IdentifierKind, &str)`, holds the table, and the error's message names the rule broken (`RUL-14`; `AET-WO-1102`) | `InvalidIdentifier` (none; `path()`) |
+| 2a | `mcu.bor_level` is 0 to 3 | `BorLevelOutOfRange` (none) |
 | 3 | `voltage_domains` is not empty | `NoVoltageDomain` (none) |
 | 4 | Domains: unique ids, nominal voltage not 0, tolerance in 1..=500 | `DuplicateDomainId`, `ZeroNominalVoltage`, `ToleranceOutOfRange` (the id) |
 | 5 | `mcu.supply`, every bus `domain` and every device `supply` names a declared domain | `UnknownDomain` (the name) |
-| 5a | Every bus `domain` equals `mcu.supply`, and every device `supply` equals its bus's `domain` (one rail; level shifting is unscoped). A device naming no bus is left to step 9 | `SupplyMismatch` (the bus id or device reference) |
+| 5a | Every bus `domain` equals `mcu.supply`, and every device `supply` equals its bus's `domain`, or the `b_domain` of a crossing `power` declares on its bus (`AET-WO-4300d` D9). A device naming no bus is left to step 9 | `SupplyMismatch` (the bus id or device reference) |
 | 6 | Bus ids are unique across both bus lists | `DuplicateBusId` (the id) |
 | 7 | An I2C `speed_hz` is 100000, 400000 or 1000000, and `pull_up_ohms` is not 0. An SPI `speed_hz` is not 0 | `UnsupportedI2cSpeed`, `ZeroPullUp`, `ZeroSpiSpeed` (the bus id) |
 | 8 | References are unique across both device lists and the connectors, compared with case folded | `DuplicateReference` (the reference; the message names the first spelling) |
@@ -110,6 +114,7 @@ Returns the first refusal, in this order, and in document order within a step. `
 | 13a | `net_classes` and `diff_pairs`, classes first, each in file order: a name is an identifier and unique across classes and pairs together; a class names at least one net; a pair names exactly two distinct nets, neither a voltage domain nor `GND`; every net is a declared signal net, a voltage domain id or `GND`, and holds neither `'` nor `?` (the gate names it in KiCad rule expressions, where `'` ends the quote and `?` is a wildcard); a net is in at most one class or pair (a pair is its nets' class); a class width and a pair width are at least the larger of 200 µm and `board.rules.track_width_um`, and at most 10000 µm; a class via has a drill at least `board.rules.via_drill_um`, a pad at most 10000 µm, and a ring `(diameter - drill) / 2` at least the rules' own `(via_diameter_um - via_drill_um) / 2` (150 µm); a pair gap is at least `board.rules.clearance_um` and at most 10000 µm | `InvalidIdentifier` (none; `path()`), `DuplicateClassName`, `ClassNoNets`, `PairNets`, `PairOnRail`, `ClassUnknownNet` (the net), `ClassNetNotLiteral` (the net), `NetInTwoClasses` (the net), `ClassBelowMinimum`, `ClassAboveMaximum` (none; `path()`), `ViaRingUnderRules` (the class) |
 | 14 | The embedded parts table parses (`PartsTableInvalid`); then each device's part, I2C devices first (`AET-WO-4300c` §1.5): the bare `W25Q64JV` is refused, naming both ordering codes; a part the table holds sits on its own kind of bus, an I2C device at an address its straps offer, an SPI device on a bus clocked no faster than the part. Each message cites the datasheet. A part the table does not hold is not refused here | `AmbiguousPartName`, `PartOnWrongBus`, `I2cAddressNotOffered`, `SpiClockAbovePart` (the device reference) |
 | 15 | `connectors` (`AET-WO-4300f`), each in document order: its part is a row of the table; its pins are `1` to N, each once (a pin `07` is not `7`); then pin by pin, in document order, its net is declared and, on an I2C or SPI line (a bus line or a chip select), it has a nonzero `offboard`, which no other pin has; then, if it names a standard, the port exists, has the part's series and pin count, and each pin in order holds its role | `UnknownConnectorPart`, `ConnectorPinUnknown`, `ConnectorPinRepeated`, `ConnectorPinMissing`, `ConnectorNetUnknown`, `ConnectorBudgetMissing`, `ConnectorBudgetNotApplicable`, `UnknownConnectorStandard`, `ConnectorPartContradictsStandard`, `ConnectorSupplyContradictsStandard`, `ConnectorPinContradictsStandard` (the reference) |
+| 16 | `power` (`AET-WO-4300d`), in the order of `power.rs`'s module documentation: the tree, the parts, the board temperature, the thermal-via rule, each regulator's output against its domain, each domain against its consumers, the battery, the loads, headroom and timing, the external parts, power-in, the sense and the crossings. Each refusal cites its datasheet page | `PowerPartsTableInvalid` (the part), the `power::Refusal` names (the reference, domain or net) |
 
 Step 2 walks the identifiers in this order: `project_name`; `mcu.part`, `mcu.supply`; `voltage_domains[i].id`; each I2C bus (`id`, `peripheral` if set, `domain`, then `sda` and `scl`: `net`, `pin` if set); each SPI bus (the same, with `sck`, `mosi`, `miso`); each I2C device (`reference`, `part`, `supply`, `bus`); each SPI device (the same, then `cs.net`, `cs.pin` if set); `net_constraints[i].net_name`; `board.layers[i].net` if set; each connector (`reference`, `part`, then each pin's `pin`, `net` if set and `offboard.source` if set, the last held to the board's source rule, `InvalidSource`). A connector's `standard` names a table row and may hold a space, so step 15 checks it against the table instead. Nothing is trimmed or case-folded, so ids that differ only in whitespace are refused, not matched.
 
@@ -118,14 +123,15 @@ Step 2 walks the identifiers in this order: `project_name`; `mcu.part`, `mcu.sup
 ## `SolvedTopology`
 
 What the solver derives (`RUL-16`):
-- `schema_version` (4; an older file is refused as `UnsupportedSchemaVersion`, whether or not it has the keys a later version added);
+- `schema_version` (5; an older file is refused as `UnsupportedSchemaVersion`, whether or not it has the keys a later version added);
 - `specification_sha256` (64 lowercase hex digits);
 - `assignments`, a `BTreeMap` keyed by net, holding every bus signal on an alternate function, each value a `PinAssignment` (`pin`, `peripheral`, `signal`, `alternate_function`);
 - `gpio`, a `BTreeMap` from net to pin, holding every net driven as a plain GPIO output: today, each SPI device's `cs`. It records no direction, because every entry is an output;
 - `i2c_ceilings`, a `BTreeMap` from I2C bus id to that bus's maximum speed in Hz (100,000, 400,000 or 1,000,000). It is empty when there are no I2C buses;
 - `i2c_speeds`, a `BTreeMap` from I2C bus id to the speed the specification declared for it (`speed_hz`), under the same keys as `i2c_ceilings` (`AET-WO-1205`). Required, never defaulted;
 - `analog_lines`, `i2c_devices` and `spi_devices` (`AET-WO-2200`, `2203`, `4200`);
-- `spi_lines` (version 4, `AET-WO-4300c`), a `BTreeMap` keyed by net holding each SPI bus's SCK and MOSI: its `bus`, `signal`, `rate_hz` (the bus's `speed_hz`), the declared `capacitance_femtofarads` and `rise_time_ns`, and `vdd_min_millivolts`, the MCU supply's nominal less its tolerance, rounded down. The generator chooses each pin's output speed from it alone (`RUL-16`).
+- `spi_lines` (version 4, `AET-WO-4300c`), a `BTreeMap` keyed by net holding each SPI bus's SCK and MOSI: its `bus`, `signal`, `rate_hz` (the bus's `speed_hz`), the declared `capacitance_femtofarads` and `rise_time_ns`, and `vdd_min_millivolts`, the MCU supply's nominal less its tolerance, rounded down. The generator chooses each pin's output speed from it alone (`RUL-16`);
+- `power` (version 5, `AET-WO-4300d`), `null` or the solved tree: per domain its regulator, the regulator's guaranteed output at the source pad, the source and return pads (a buck's RFBT pad 1 and RFBB pad 2), its load and each consumer's floor; the battery-side steady and fault currents; every named condition the checks rest on.
 
 A repeated key in `assignments`, `gpio`, `i2c_ceilings` or `i2c_speeds` is refused when parsing, and every key is required. `SolvedTopology::validate` refuses, in this order:
 1. `UnsupportedSchemaVersion`;
