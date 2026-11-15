@@ -3,7 +3,7 @@
 **Builder:** Claude (strong tier), worktree `~/aethelgard-4300b`, branch `wo/aet-4300b-serial` from `main` `7ca65e6`.
 **Work order:** `docs/work-orders/AET-WO-4300b.md` on `main`, as amended by the architect's kickoff amendments (`~/.cache/aet-4300b-ruling.md`, 2026-11-15 12:00 UTC).
 **Cadence:** build, with one measured stop (§1.6, now answered by connectors unless ERC or DRC fails).
-**Status:** built on PR #152. §1.6 measured and passed (ERC and DRC at connectors, no finding, no waiver); the §7 clock stop does not fire. Three fresh adversarial passes (§8), every finding fixed or asked (§9); reduction pass (§11); gates green. Specification 9, topology 7, trace 11, `TIER2_MIN` 151.
+**Status:** built on PR #152. §1.6 measured and passed (ERC and DRC at connectors, no finding, no waiver); the §7 clock stop does not fire. Three fresh adversarial passes (§8), every finding fixed or asked (§9); reduction pass (§11); gates green. Specification 9, topology 7, trace 11, `TIER2_MIN` 152.
 
 The predictions in §1 are committed before any container run, any firmware build for a probe, and any baseline run. They are not edited afterwards; corrections go in later sections.
 
@@ -180,6 +180,7 @@ Each harness alone in the pinned image under the 8 GiB scope (`~/.cache/aet-4300
 - `4300d` slice A (specification 7, topology 6) and `4210` (specification 8, trace 9) merged first, then `4220` (trace 10). By the numbering rule this work order takes **specification 9, topology 7, trace 11**, kinds 27–29 (`2b6e202`, `6df8dcb`). Each pinned hash that moved was re-taken only after it was shown equal to `main`'s with this work order's content undone (evidence/merge1, merge2).
 - After the merges the seeded evidence moved again by `4210`'s SysTick and NVIC words (+6 after the image's registers); every case kept its domain and rule (evidence/merge1/derive.md). `4220` moved nothing on Sentinel-01.
 - A probe board with an own-model part (`4220`) and the console on the TX pin's GPIO port: every device witness matched, with and without the console's access log (evidence/merge2/derive.md). [measured]
+- **`3303` merged before this work order (#155), so this one adds the serial coverage row, as ruled there (comment 6900789002):** `Target::Serial(label)`, walked from `serial_ports`, enters a non-blocking list `no_fault_kind` on the campaign-coverage precondition, worded `serial port `CONSOLE` (no fault kind yet: serial)`, in the verify verdict and the package manifest. The reference's package lists every other precondition `met` (board_tier2, measured). `attribute` names kinds 27–29 by the subject `port:<label>`. The whole-schedule harness split takes no USART action; a motor board with serial ports generates (string-checked only, not proved under Kani). The key name and the entry's wording are this work order's choice; the ruling fixes the phrase.
 - **Outside the fence, named.** CI's `pinout` job checks ArduPilot's step-G board (`crates/aethelgard-pincheck/fixtures/*.hwdef.dat`, `4400a`'s) against the reference's solved topology, which now routes CONSOLE_TX/RX on PA9/PA10. The four hand-written hwdef fixtures gained `PA9 USART1_TX`, `PA10 USART1_RX` and `SERIAL_ORDER USART1 USART3` (`33f4fd4`); USART3 on PD8/PD9 stays, allowed by the unchanged allow list, so `4400a`'s own tests are untouched.
 
 ## 8. Adversarial passes (full, fresh subagents)
