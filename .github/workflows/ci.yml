@@ -268,7 +268,11 @@ jobs:
       # fixtures witnessed, two forgeries, motor_output_dead, Kani on the
       # motor board's timer start and clock check with its HSIDIV negative,
       # and the DShot600 fixture's campaign inside its 2 ms window, D1 ruled (a)).
-      TIER2_MIN: "110"
+      # 117: plus 7 from AET-WO-4300b in twin_tier2.rs (the console's pattern and
+      # echo; the four-port fixture's ports and SBUS's tags; three forgeries: a TDR
+      # store with UE clear, an echo never received, a pattern on the wrong port;
+      # serial_rx_dead's dead echo; the four-port fixture's campaign and replay).
+      TIER2_MIN: "117"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

@@ -1888,6 +1888,72 @@ fn the_four_port_fixture_witnesses_every_port_and_sbus_s_tags() {
     }
 }
 
+/// `AET-WO-4300b` §1.5 and §1.7: the four-port fixture's campaign
+/// (`scenarios/serial/serial-four.json`, `expect: pass`) passes with every
+/// port witnessed, archives its kinds 27 to 29, replays, and `attribute`
+/// names none.
+#[test]
+fn the_four_port_fixture_s_campaign_passes_and_replays() {
+    let (_, _, elf) = motor_board("serial-four", "serial-campaign", |_| {}, |_| {});
+    let archive = std::env::temp_dir().join(format!(
+        "aet-4300b-t2-{}-serial-archive",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&archive);
+    let start = Instant::now();
+    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .current_dir(root())
+        .args([
+            "campaign",
+            "--scenarios",
+            "scenarios/serial/serial-four.json",
+        ])
+        .arg("--firmware")
+        .arg(&elf)
+        .arg("--archive")
+        .arg(&archive)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let lines: Vec<Value> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    answer(&format!(
+        "campaign serial-four: exit={:?} wall_s={:.2} {lines:?}",
+        out.status.code(),
+        start.elapsed().as_secs_f64()
+    ));
+    assert_eq!(out.status.code(), Some(0), "{lines:?}");
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    let line = &lines[0];
+    assert_eq!(
+        (&line["verdict"], &line["matched"]),
+        (&"pass".into(), &true.into()),
+        "{line}"
+    );
+    let run = line["run"].as_str().unwrap();
+    let records = aethelgard_chaos::replay_dir(Path::new(run))
+        .unwrap()
+        .state
+        .records;
+    let count = |k: u64| records.iter().filter(|r| r.kind() == k).count();
+    assert_eq!((count(27), count(28), count(29)), (4, 4, 4), "{records:?}");
+    for r in &records {
+        if let aethelgard_chaos::record::Record::SerialWitness { label, echo, .. } = r {
+            assert_eq!(echo, "witnessed", "{label}");
+        }
+    }
+    let (code, replayed) = aethelgard(&["replay", "--archive", run]);
+    assert_eq!(code, Some(0), "{replayed}");
+    assert_eq!(replayed["matched"], true, "{replayed}");
+    let (code, attributed) = aethelgard(&["attribute", "--archive", run]);
+    assert_eq!(code, Some(0), "{attributed}");
+    assert_eq!(attributed["rule"], "N1", "{attributed}");
+    let _ = fs::remove_dir_all(&archive);
+}
+
 /// `AET-WO-4300b` §2, forgery 1: a firmware that writes `TDR` with `UE`
 /// clear sends nothing; the pattern is missing and `CR1` reads without `UE`
 /// (FEEDBACK P2.3).
