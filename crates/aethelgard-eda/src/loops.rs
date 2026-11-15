@@ -220,14 +220,14 @@ mod tests {
             gap_nm(&pad(0, 0, 1000, 1000, 0), &pad(500, 0, 3000, 1000, 0)),
             0
         );
-        // Two circles of radius 500 whose centres are 3000 apart on a diagonal
-        // (3, 4, 5 scaled): 5000 - 500 - 500.
+        // Two circles of radius 500 whose centres are (3000, 4000) apart, 5000
+        // on the diagonal: 5000 - 500 - 500.
         assert_eq!(
             gap_nm(
                 &pad(0, 0, 1000, 1000, 500),
                 &pad(3000, 4000, 4000, 5000, 500)
             ),
-            3000
+            4000
         );
         // A rounded corner is farther than its box: corners 300, boxes 1 mm
         // 1.6 mm apart on both axes inside their roundings: 1.6 × √2 mm less
