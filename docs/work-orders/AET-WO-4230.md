@@ -59,6 +59,11 @@
      - `silicon-only`.
    - **Rows that are neither `independent-rule` nor `observed` must be acknowledged by name in the specification,** as `accept_lifecycle` acknowledges an EOL part. `--fab-out` refuses an unacknowledged row (`UnwitnessedFieldNotAcknowledged`).
    - The ledger is the bench sheet's source: generate the register rows of the next bench sheet from it.
+   - **Amended 2026-11-15 (`4220` D-B5, D-B7; comment 6898233775):** the ledger also carries non-register facts the twin cannot judge:
+     - each sensor script's wait sufficiency is `silicon-only` (the twin runs the spin 1.92 times long and models no instruction timing, `4220` F2);
+     - each register a model answers with 0x00 and a warning is `ignored-by-model`;
+     - each declared pin capacitance is its own row (`4220b`).
+9. **The waits, statically (`4220` D-B5).** Each `parts.json` script's `settle_us` must cover the row's cited start-up maximum, or twice a typical-only figure as a named condition (`SettleBelowStartUp`). The generated spin is sized from `settle_us`, so this binds the firmware as well as the table.
 8. **HSI tolerance (review A4, smaller).** DS12117's HSI accuracy over the declared temperature range is carried into `4300a`'s DShot and PWM timing check and the USART `BRR` tolerance check (`4300b`). The worst case is judged, not the nominal.
 
 ## 2. Acceptance
