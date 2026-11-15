@@ -311,6 +311,23 @@ impl Pad {
     fn inner(&self) -> Rect {
         self.rect.grow(-self.corner_nm)
     }
+
+    /// The box a track may end in. It is [`Pad::inner`] when that holds a
+    /// grid node, which every pad drawn before `AET-WO-4300d2` does. A circle's
+    /// inner box is its centre alone (the XT30PW-M's pad 2, a 1.9 mm hole),
+    /// so there it is the square inscribed in the rounding instead: shrunk by
+    /// `corner × (1 − 1/√2)`, rounded so the square stays inside the copper.
+    fn terminal_box(&self, grid: &Grid) -> Rect {
+        let inner = self.inner();
+        if grid.nodes(inner).next().is_some() {
+            return inner;
+        }
+        let c = i128::from(self.corner_nm);
+        // ⌊c / √2⌋ ≤ c × 707_106 / 1_000_000 < c / √2.
+        let kept = c * 707_106 / 1_000_000;
+        let shrink = i64::try_from(c - kept).unwrap_or(self.corner_nm);
+        self.rect.grow(-shrink)
+    }
 }
 
 // ---- the grid ----
@@ -1062,7 +1079,7 @@ impl<'a> Router<'a> {
     /// pads and the edge alone.
     fn terminals(&self, pad: &Pad, net: usize) -> Vec<usize> {
         self.grid
-            .nodes(pad.inner())
+            .nodes(pad.terminal_box(&self.grid))
             .filter(|&n| self.hard_open(Layer::F, n, net))
             .collect()
     }
@@ -1077,7 +1094,7 @@ impl<'a> Router<'a> {
         if pad.drill_nm.is_some() {
             out.extend(
                 self.grid
-                    .nodes(pad.inner())
+                    .nodes(pad.terminal_box(&self.grid))
                     .filter(|&n| self.hard_open(Layer::B, n, net))
                     .map(|n| (Layer::B, n)),
             );
@@ -3065,9 +3082,10 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
             let mut joined = false;
             for (k, &e) in ends(s).iter().enumerate() {
                 let here = if j < pad_count {
-                    // A pad: the track ends inside its copper.
+                    // A pad: the track ends inside its copper, its rounding
+                    // included (a circle's copper is not its inner box).
                     let pad = &board.parts.iter().flat_map(|p| &p.pads).nth(j);
-                    pad.is_some_and(|p| p.inner().contains(Rect::point(e.0, e.1)))
+                    pad.is_some_and(|p| fits(p, e, 0))
                 } else {
                     b.shape.holds(e)
                 };

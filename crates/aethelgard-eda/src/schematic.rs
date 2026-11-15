@@ -1192,8 +1192,9 @@ fn write_sheet(
         power: 0,
     };
     // A rail a `power_out` pin drives (an LDO's output) is driven already:
-    // a `PWR_FLAG` there would be a second driver, which ERC refuses
-    // (`AET-WO-4300d2` D12).
+    // a `PWR_FLAG` there would be a second driver, which ERC refuses, so its
+    // flag and the power symbol the flag sits on are left out (`AET-WO-4300d2`
+    // D12; the parts' own power symbols still draw the rail).
     let mut driven = BTreeSet::new();
     for part in parts {
         for p in pins(&sheet.syms[part.lib_id]).map_err(EmitError::Internal)? {
@@ -1206,13 +1207,10 @@ fn write_sheet(
     }
     // Flags: one row at the top, a power symbol and a PWR_FLAG on one point.
     let mut flags = 0;
-    for rail in rails {
+    for rail in rails.iter().filter(|r| !driven.contains(*r)) {
         flags += 1;
         let pos = (GRID * 20 * flags, GRID * 10);
         sheet.power_symbol(rail, pos)?;
-        if driven.contains(rail) {
-            continue;
-        }
         let r = format!("#FLG{flags:03}");
         let key = format!("{project}/flag/{r}");
         sheet.instance(FLAG_SYMBOL, &r, "PWR_FLAG", None, pos, &key)?;

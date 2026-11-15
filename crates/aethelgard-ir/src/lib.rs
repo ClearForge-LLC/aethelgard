@@ -1977,12 +1977,17 @@ impl Specification {
         }
         // 13
         self.board.validate(&domains)?;
-        // 13a
+        // 13a. A power tree adds its battery rail, which a class may name
+        // (`AET-WO-4300d2` K10).
+        let mut rails = domains.clone();
+        if self.power.is_some() {
+            rails.insert(power::BATTERY_NET);
+        }
         classes::validate(
             &self.net_classes,
             &self.diff_pairs,
             &self.board,
-            &domains,
+            &rails,
             &nets,
         )?;
         // 13b: each motor output's timing, in document order (`AET-WO-4300a`).

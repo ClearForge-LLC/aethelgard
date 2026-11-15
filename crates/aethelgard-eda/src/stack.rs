@@ -220,7 +220,12 @@ impl Stack {
                             .map_or(crate::route::DRILL_NM, |v| nm(v.drill_um)),
                     },
                     via_declared: c.via.is_some(),
-                    nets: c.nets.iter().map(|n| board_net(spec, n)).collect(),
+                    nets: c
+                        .nets
+                        .iter()
+                        .map(|n| board_net(spec, n))
+                        .chain(switch_nets(spec, &c.nets))
+                        .collect(),
                 })
                 .collect(),
             pairs: spec
@@ -316,10 +321,32 @@ impl Stack {
     }
 }
 
+/// Each buck's switch node, by its board name, whose output domain is one of
+/// `nets` (`AET-WO-4300d2` §1.4): the SW net carries the inductor's current,
+/// the output's, so it is laid at the output's class. The emitter names it
+/// `<reference>_SW` (`schematic::power`).
+fn switch_nets(spec: &Specification, nets: &[String]) -> Vec<String> {
+    let (Some(p), Ok(table)) = (&spec.power, aethelgard_ir::power_parts::table()) else {
+        return Vec::new();
+    };
+    p.regulators
+        .iter()
+        .filter(|r| nets.contains(&r.output))
+        .filter(|r| {
+            table
+                .get(&r.part)
+                .is_some_and(|row| matches!(row.kind, aethelgard_ir::power_parts::Kind::Buck(_)))
+        })
+        .map(|r| crate::extract::board_net(&format!("{}_SW", r.reference)))
+        .collect()
+}
+
 /// The board's name for a specification net: a rail (a voltage domain or
 /// `GND`) by its own name, a signal by its root-sheet label (`pcb`).
 fn board_net(spec: &Specification, net: &str) -> String {
-    let rail = net == crate::schematic::GND || spec.voltage_domains.iter().any(|d| d.id == net);
+    let rail = net == crate::schematic::GND
+        || spec.voltage_domains.iter().any(|d| d.id == net)
+        || (spec.power.is_some() && net == crate::schematic::BATTERY_NET);
     if rail {
         crate::pcb::escape(net)
     } else {

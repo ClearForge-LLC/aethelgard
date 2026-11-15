@@ -716,6 +716,9 @@ const FOOTPRINT: &[(&str, bool)] = &[
     ("fp_line", true),
     ("fp_rect", true),
     ("fp_poly", true),
+    // The XT30PW-M's silkscreen and fabrication rings (`AET-WO-4300d2`): a
+    // graphic, so one on a copper layer is still refused below.
+    ("fp_arc", true),
     ("fp_text", true),
     ("pad", true),
 ];
