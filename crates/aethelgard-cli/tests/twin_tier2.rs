@@ -1808,3 +1808,201 @@ fn the_dshot600_fixture_s_campaign_passes_inside_its_window() {
     }
     let _ = fs::remove_dir_all(&archive);
 }
+
+// ---------------------------------------------------------------- AET-WO-4300b
+
+fn serial(v: &Value) -> &Vec<Value> {
+    v["boot"]["serial"].as_array().unwrap()
+}
+
+/// `AET-WO-4300b` §2: the console, USART1 on PA9/PA10 at 115200 8N1, sends
+/// its pattern once and echoes the frame injected one quantum in; its
+/// registers read back, it logs no tag warning, and silicon's tolerance
+/// holds (measured, FEEDBACK P2.1, P3.1, P4.2).
+#[test]
+fn the_console_sends_its_pattern_and_echoes_its_frame() {
+    let (code, v) = boot("console", "100ms");
+    assert_eq!(code, Some(0), "{v}");
+    let ports = serial(&v);
+    assert_eq!(ports.len(), 1);
+    let c = &ports[0];
+    assert_eq!(c["label"], "CONSOLE");
+    assert_eq!(
+        (&c["peripheral"], &c["brr"]),
+        (&"USART1".into(), &556.into())
+    );
+    let t = &c["twin"];
+    assert_eq!(t["patterns"], 1, "{c}");
+    assert_eq!(t["echo"], "witnessed", "{c}");
+    assert_eq!(t["echoed"], 8);
+    assert_eq!(t["stray"], false);
+    assert_eq!(t["capture_bytes"], 20);
+    assert_eq!(t["rx_at_injection"], "PA10 MODER 0b10, AF7");
+    assert_eq!(t["tx_at_end"], "PA9 MODER 0b10, AF7");
+    assert_eq!(t["tag_warnings"], 0);
+    assert_eq!(c["silicon"]["holds"], true);
+    for r in v["boot"]["registers"].as_array().unwrap() {
+        if r["name"].as_str().unwrap().starts_with("USART1.") {
+            assert_eq!(r["observed"], r["expected"], "{r}");
+        }
+    }
+}
+
+/// `AET-WO-4300b` §1.7 and §2: the four-port fixture (MAVLINK 57600,
+/// GPS 115200, CRSF 420000 8N1; SBUS 100000 8E2 inverted) witnesses every
+/// port's pattern and echo; SBUS's `M0`, `RXINV` and `TXINV` are seen only
+/// as their warnings from its own USART, and the 8N1 ports log none
+/// (FEEDBACK P2.2, P4.1, P4.2).
+#[test]
+fn the_four_port_fixture_witnesses_every_port_and_sbus_s_tags() {
+    let (platform, spec, elf) = motor_board("serial-four", "serial-four", |_| {}, |_| {});
+    let (code, v) = boot_on("serial four", &platform, &spec, &elf, "100ms");
+    assert_eq!(code, Some(0), "{v}");
+    let ports = serial(&v);
+    let labels: Vec<&str> = ports.iter().map(|p| p["label"].as_str().unwrap()).collect();
+    assert_eq!(labels, ["MAVLINK", "GPS", "CRSF", "SBUS"]);
+    for p in ports {
+        let t = &p["twin"];
+        assert_eq!(
+            (&t["patterns"], &t["echo"]),
+            (&1.into(), &"witnessed".into()),
+            "{p}"
+        );
+        assert_eq!(p["silicon"]["holds"], true, "{p}");
+        assert_eq!(t["tags_missing"], serde_json::json!([]), "{p}");
+        assert_eq!(t["tags_unexpected"], serde_json::json!([]), "{p}");
+        if p["label"] == "SBUS" {
+            assert_eq!(
+                t["tags_needed"],
+                serde_json::json!(["CR1.M0", "CR2.RXINV", "CR2.TXINV"])
+            );
+            assert!(t["tag_warnings"].as_u64().unwrap() >= 2, "{p}");
+        } else {
+            assert_eq!(t["tag_warnings"], 0, "{p}");
+        }
+    }
+}
+
+/// `AET-WO-4300b` §2, forgery 1: a firmware that writes `TDR` with `UE`
+/// clear sends nothing; the pattern is missing and `CR1` reads without `UE`
+/// (FEEDBACK P2.3).
+#[test]
+fn a_tdr_store_with_ue_clear_sends_no_pattern() {
+    let elf = mutant_of_board_rs(
+        "ue-clear",
+        "        r.write(TOKEN, Block::Usart1, 0x00, 0x0000000d); // CR1 | UE\n",
+        "",
+    );
+    let (code, v) = boot_elf("ue clear", &elf, "100ms");
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert!(k.contains(&"serial_pattern_missing"), "{v}");
+    assert!(k.contains(&"register_mismatch"), "{v}");
+    assert_eq!(serial(&v)[0]["twin"]["patterns"], 0, "{v}");
+}
+
+/// `AET-WO-4300b` §2, forgery 2: bytes in the capture the firmware never
+/// received. An echo that sends a constant without reading `RDR` cannot
+/// send the frame, which is derived from the firmware's own sha256: the
+/// bytes after the pattern are stray (FEEDBACK P6.2).
+#[test]
+fn an_echo_the_firmware_never_received_is_forged() {
+    let elf = mutant("echo-const", |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "let Some(byte) = usart1.receive(&mut r, ECHO_POLLS) else {",
+            "let Some(byte) = Some(0x11u8) else {",
+        )
+    });
+    let (code, v) = boot_elf("echo const", &elf, "100ms");
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert!(k.contains(&"serial_capture_forged"), "{v}");
+    assert!(k.contains(&"serial_echo_missing"), "{v}");
+    assert!(!k.contains(&"serial_pattern_missing"), "{v}");
+}
+
+/// `AET-WO-4300b` §2, forgery 3: the four-port board's MAVLINK USART sends
+/// GPS's label. Each capture must hold its own port's pattern.
+#[test]
+fn a_pattern_on_the_wrong_port_fails() {
+    let bytes = |s: &str| {
+        s.bytes()
+            .map(|b| format!("{b:#04x}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let (mavlink, gps) = (bytes("MAVLINK"), bytes("GPS"));
+    let (platform, spec, elf) = motor_board(
+        "serial-four",
+        "serial-wrong-port",
+        |_| {},
+        |d| {
+            edit(
+                d,
+                "src/main.rs",
+                &format!("[{mavlink}]"),
+                &format!("[{gps}]"),
+            )
+        },
+    );
+    let (code, v) = boot_on("serial wrong port", &platform, &spec, &elf, "100ms");
+    assert_eq!(code, Some(1), "{v}");
+    let ports = serial(&v);
+    assert_eq!(ports[0]["twin"]["patterns"], 0, "{v}");
+    for p in &ports[1..] {
+        assert_eq!(p["twin"]["echo"], "witnessed", "{p}");
+    }
+    let k = kinds(&v);
+    assert!(k.contains(&"serial_pattern_missing"), "{v}");
+    assert!(k.contains(&"serial_capture_forged"), "{v}");
+}
+
+/// `AET-WO-4300b` §1.6 (`serial_rx_dead`): the console's RX pin on AF8.
+/// Renode's USART has no pin on its path, so the frame still comes back
+/// (FEEDBACK P5.1); the judge reads PA10's mux at the injection, does not
+/// count the echo, and the read-back names `GPIOA.AFRH`.
+#[test]
+fn the_console_s_rx_on_the_wrong_af_keeps_the_pattern_and_loses_the_echo() {
+    let elf = mutant_of_board_rs(
+        "rx-af8",
+        "r.modify(TOKEN, Block::GpioA, 0x24, |v| (v & !0x00000f00) | 0x00000700);",
+        "r.modify(TOKEN, Block::GpioA, 0x24, |v| (v & !0x00000f00) | 0x00000800);",
+    );
+    let (code, v) = boot_elf("rx af8", &elf, "100ms");
+    assert_eq!(code, Some(1), "{v}");
+    let mut k = kinds(&v);
+    k.sort();
+    assert_eq!(k, ["register_mismatch", "serial_echo_missing"], "{v}");
+    let t = &serial(&v)[0]["twin"];
+    assert_eq!(t["patterns"], 1, "{v}");
+    assert_eq!(t["echo"], "not_counted", "{v}");
+    assert_eq!(t["rx_at_injection"], "PA10 MODER 0b10, AF8", "{v}");
+}
+
+/// A copy of the reference board crate with `from` replaced by `to` once in
+/// its `src/board.rs`, and its firmware built from it.
+fn mutant_of_board_rs(name: &str, from: &str, to: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("aet-4300b-t2-{}-{name}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let src = root().join("boards/sentinel-01");
+    for rel in [
+        "Cargo.toml",
+        "Cargo.lock",
+        "src/lib.rs",
+        "src/board.rs",
+        "src/proofs.rs",
+        "firmware/Cargo.toml",
+        "firmware/Cargo.lock",
+        "firmware/.cargo/config.toml",
+        "firmware/link.x",
+        "firmware/src/main.rs",
+    ] {
+        let to = dir.join(rel);
+        fs::create_dir_all(to.parent().unwrap()).unwrap();
+        fs::copy(src.join(rel), &to).unwrap();
+    }
+    edit(&dir, "src/board.rs", from, to);
+    mutant_of(&dir, name, |_| {})
+}

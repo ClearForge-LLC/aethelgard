@@ -87,12 +87,19 @@ fn elf() -> Vec<u8> {
 const U2_LINE: &str = "  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
 
 /// The listing of the emitted platform's CPU and every solved peripheral.
-const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n  \u{2502}   \u{2514}\u{2500}\u{2500} spi1mux (SPIMultiplexer)\n  \u{2502}       \u{2514}\u{2500}\u{2500} u4 (GenericSpiFlash)\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
+const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n  \u{2502}   \u{2514}\u{2500}\u{2500} spi1mux (SPIMultiplexer)\n  \u{2502}       \u{2514}\u{2500}\u{2500} u4 (GenericSpiFlash)\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n  \u{251c}\u{2500}\u{2500} usart1 (STM32F7_USART)\n";
 
-/// The reference topology's seven registers as a correct boot leaves them.
-const GOOD_REGISTERS: [&str; 13] = [
-    "0x0000A801",
+/// The reference topology's registers as a correct boot leaves them, in
+/// address order: the console's USART1 (`AET-WO-4300b`), the ports' mode
+/// and AF registers, then every RCC enable register.
+const GOOD_REGISTERS: [&str; 18] = [
+    "0x0000000D",
+    "0x00000000",
+    "0x00000000",
+    "0x0000022C",
+    "0x0028A801",
     "0x55500000",
+    "0x00000770",
     "0x0000A000",
     "0x44000000",
     "0x00000000",
@@ -102,9 +109,32 @@ const GOOD_REGISTERS: [&str; 13] = [
     "0x00000000",
     "0x00200000",
     "0x00000000",
-    "0x00001000",
+    "0x00001010",
     "0x00010000",
 ];
+
+/// The reads at the injection instant (`AET-WO-4300b`): the console's RX
+/// pin, PA10, in AF mode on AF7, as measured.
+const INJECTION: &str = "AETHELGARD-INJECT-BEGIN\n0x0028A801\n0x00000770\nAETHELGARD-INJECT-END\n";
+
+/// What USART1's file backend holds after a boot of `firmware` that sent
+/// the console's pattern and echoed its frame (`AET-WO-4300b`; measured).
+fn capture_of(firmware: &[u8]) -> Vec<u8> {
+    use sha2::Digest;
+    let sha: [u8; 32] = sha2::Sha256::digest(firmware).into();
+    let mut c = aethelgard_twin::serial::pattern("CONSOLE");
+    c.extend(aethelgard_twin::serial::frame(&sha, "CONSOLE"));
+    c
+}
+
+/// The stub's lines that write the capture where the command line's
+/// `CreateFileBackend` names USART1's file, as Renode's backend would.
+fn capture_lines(bytes: &Path) -> String {
+    format!(
+        "cap=$(printf '%s' \"$7\" | /bin/sed -n 's/.*CreateFileBackend @\\([^ ]*\\) true.*/\\1/p')\n/bin/cat '{}' > \"$cap\" || exit 95\n",
+        bytes.display()
+    )
+}
 
 /// What Renode 1.17.0's BME280 logs for U2's identity read (`AET-WO-2204`
 /// S1, measured).
@@ -139,6 +169,7 @@ fn transcript(log: &str, reads: &[&str], listing: &str) -> String {
     let mut s = String::from(
         "(monitor) emulation SetSeed 2100;  echo \"AETHELGARD-BOOT-BEGIN\";  echo \"AETHELGARD-BOOT-END\"\n",
     );
+    s.push_str(INJECTION);
     s.push_str(log);
     s.push_str("AETHELGARD-BOOT-BEGIN\n");
     for r in reads {
@@ -205,6 +236,7 @@ const BUILD: &str = "1.17.0+20260907gitf1dd1b4af";
 fn toolbox_built(stdout: &str, build: &str) -> Dir {
     let tb = Dir::new("tb");
     let out = tb.write("renode.out", stdout.as_bytes());
+    let capture = capture_lines(&tb.write("capture.bin", &capture_of(&elf())));
     let body = format!(
         r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
@@ -213,10 +245,10 @@ fn toolbox_built(stdout: &str, build: &str) -> Dir {
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n{build_line}'; exit 0; fi
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; emulation RunFor \"0.000100000\"; echo \"AETHELGARD-INJECT-BEGIN\"; sysbus ReadDoubleWord 0x58020000; sysbus ReadDoubleWord 0x58020024; echo \"AETHELGARD-INJECT-END\"; sysbus.usart1 WriteChar 0x"*"; emulation RunFor \"0.099900000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
-/bin/cat '{out}'
+{capture}/bin/cat '{out}'
 "#,
         out = out.display(),
         // An empty `build` prints no build line at all.
@@ -2257,6 +2289,15 @@ if [ "$1" = --renode ]; then shift; exec "$@"; fi
 printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.4}' '{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","rise_30_70_ns":186.4}'
 "#;
 
+/// What USART1's backend holds after a droop boot that recovered: the
+/// pattern from the first boot and again from the one after the release,
+/// then the frame, injected after the release (`AET-WO-4300b`; measured).
+fn droop_capture_of(firmware: &[u8]) -> Vec<u8> {
+    let mut c = aethelgard_twin::serial::pattern("CONSOLE");
+    c.extend(capture_of(firmware));
+    c
+}
+
 /// When U2's witness lines appear in a droop boot's log: since the release
 /// and before the probe (a firmware that recovered in the bound), only after
 /// the probe (one that talked to the bus late), or never.
@@ -2297,6 +2338,7 @@ fn droop_toolbox_then(probe: [&str; 3], witness: Witness, then: &str) -> Dir {
         CPU_LISTING,
     ));
     let out = tb.write("renode.out", out.as_bytes());
+    let capture = capture_lines(&tb.write("capture.bin", &droop_capture_of(&elf())));
     let body = format!(
         r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
@@ -2306,7 +2348,7 @@ case "$7" in
   *"emulation RunFor \"0.001014430\"; machine Reset; "*"cpu IsHalted true; "*"emulation RunFor \"0.000213550\"; cpu IsHalted false; echo \"AETHELGARD-RELEASE-0\"; emulation RunFor \"0.000000010\"; emulation RunFor \"0.000099990\"; echo \"AETHELGARD-PROBE-BEGIN-0\""*) ;;
   *) exit 99;;
 esac
-/bin/cat '{out}'
+{capture}/bin/cat '{out}'
 {then}
 "#,
         out = out.display(),

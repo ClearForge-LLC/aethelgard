@@ -83,8 +83,19 @@ fn the_reference_drives_sck_and_mosi_at_01_and_names_every_other_line() {
     );
     assert!(reason(&v, "FLASH_CS").starts_with("software-driven GPIO output"));
     assert!(reason(&v, "I2C_SDA").contains("6.3.32"));
-    assert_eq!(lines.len(), 6);
-    let sck = &v["lines"].as_array().unwrap()[1]["judged"];
+    // The console (`AET-WO-4300b`): both its lines at `00`, out of scope as
+    // peripheral-driven serial lines that leave the board.
+    for net in ["CONSOLE_TX", "CONSOLE_RX"] {
+        assert_eq!(speed(net), "00", "{net}");
+        assert!(reason(&v, net).starts_with("serial line"), "{net}");
+    }
+    assert_eq!(lines.len(), 8);
+    let sck = &v["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["net"] == "SPI_SCK")
+        .unwrap()["judged"];
     assert_eq!(sck["vdd_min_millivolts"], 3135);
     assert_eq!(sck["band_millivolts"], serde_json::json!([2700, 3600]));
     assert_eq!(sck["fmax_hz"], 80_000_000);

@@ -1032,6 +1032,11 @@ struct Ready {
     /// Each motor output's observer, solved values and static check
     /// (`AET-WO-4300a`).
     motors: Vec<renode::Motor>,
+    /// Each serial port's expectations and silicon check (`AET-WO-4300b`).
+    serial: Vec<renode::Serial>,
+    /// The boot's fresh capture directory, inside the tool's own scratch;
+    /// `None` without a serial port.
+    capture: Option<PathBuf>,
     boot_word: u32,
     specification_sha256: String,
     virtual_ns: u64,
@@ -1115,6 +1120,25 @@ fn ready(
     let checked = elf::check(&bytes, &memory, boot_word)?;
     let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
     let motors = renode::motors(&boot.topology).map_err(twin_stop)?;
+    // `AET-WO-4300b`: each port's frame is derived from the firmware's own
+    // sha256, and injected one quantum into the boot; a boot too short to
+    // hold that quantum and the one after it is refused by name, never cut
+    // short (the ruling's amendment 3). A rendered release moves the
+    // instant; that boot is checked again once the rail is solved.
+    let sha = aethelgard_twin::serial::sha256_bytes(&firmware.sha256).ok_or_else(|| {
+        run::Stop::unreadable(format!(
+            "the firmware's sha256 `{}` is not hex",
+            firmware.sha256
+        ))
+    })?;
+    let serial = renode::serials(&boot.topology, &sha).map_err(twin_stop)?;
+    if !serial.is_empty() {
+        serial_fits(aethelgard_twin::serial::injection_ns(0), boot.virtual_ns)?;
+    }
+    let capture = match serial.is_empty() {
+        true => None,
+        false => Some(capture_dir(scratch)?),
+    };
     let vector_table =
         u32::try_from(memory.flash.start).expect("FLASH_BANK1_BASE is a 32-bit value");
     Ok((
@@ -1127,6 +1151,8 @@ fn ready(
             vector_table,
             image,
             motors,
+            serial,
+            capture,
             boot_word,
             specification_sha256: boot.topology.specification_sha256.clone(),
             virtual_ns: boot.virtual_ns,
@@ -1138,6 +1164,83 @@ fn ready(
             rail: boot.rail,
         },
     ))
+}
+
+/// `SerialInjectionPastBoot`: the frames go in at `injection_ns`, and the
+/// firmware needs the quantum after it to echo them, all inside the boot.
+fn serial_fits(injection_ns: u64, virtual_ns: u64) -> Result<(), run::Stop> {
+    if aethelgard_twin::serial::fits(injection_ns, virtual_ns) {
+        return Ok(());
+    }
+    Err(run::Stop::refused(
+        "SerialInjectionPastBoot",
+        format!(
+            "the serial frames go in at {injection_ns} ns and the firmware echoes them in the {} ns after, past this boot's {virtual_ns} ns (AET-WO-4300b)",
+            aethelgard_twin::boot::QUANTUM_NS
+        ),
+    ))
+}
+
+/// The boot's capture directory, made fresh inside the tool's scratch before
+/// any tool runs there. As root, it is the one directory there the tool uid
+/// may add to (`run::add_only`): Renode creates each port's file in it, and
+/// can change nothing the CLI made (`AET-WO-1601` §1.2).
+fn capture_dir(scratch: &Scratch) -> Result<PathBuf, run::Stop> {
+    let dir = scratch.tool.join("capture");
+    DirBuilder::new().mode(0o700).create(&dir).map_err(|e| {
+        run::Stop::tool_error(
+            "aethelgard",
+            format!("cannot create the capture directory: {e}"),
+        )
+    })?;
+    if rustix::process::geteuid().is_root() {
+        run::add_only(&dir).map_err(|e| {
+            run::Stop::sandbox(
+                "uid",
+                format!("cannot open the capture directory to the tool: {e}"),
+            )
+        })?;
+    }
+    Ok(dir)
+}
+
+/// The capture directory after the run, read by the CLI: each entry must be
+/// a regular file beneath it, reached by no link, of at most
+/// [`renode::CAPTURE_MAX_BYTES`]; anything else is named, never read past.
+fn read_capture(dir: &Path) -> renode::Captured {
+    let mut c = renode::Captured::default();
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => {
+            c.problems.push(format!("cannot be read: {e}"));
+            return c;
+        }
+    };
+    let mut names = Vec::new();
+    for entry in entries {
+        match entry {
+            Ok(e) => names.push(e.file_name()),
+            Err(e) => c.problems.push(format!("cannot be listed: {e}")),
+        }
+    }
+    names.sort();
+    for name in names {
+        let shown = name.to_string_lossy().escape_debug().to_string();
+        let Some(text) = name.to_str() else {
+            c.problems.push(format!("`{shown}` is not a UTF-8 name"));
+            continue;
+        };
+        match firmware::read_beneath(dir, &dir.join(text), renode::CAPTURE_MAX_BYTES) {
+            Ok(bytes) if bytes.len() as u64 > renode::CAPTURE_MAX_BYTES => c.problems.push(
+                format!("`{shown}` is past {} bytes", renode::CAPTURE_MAX_BYTES),
+            ),
+            Ok(bytes) => c.files.push((text.to_owned(), bytes)),
+            Err(e) => c
+                .problems
+                .push(format!("`{shown}` is not a regular file beneath it: {e}")),
+        }
+    }
+    c
 }
 
 fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run::Stop> {
@@ -1262,7 +1365,14 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             resets: droop
                 .as_ref()
                 .map_or(&[][..], |(_, _, resets)| resets.as_slice()),
+            serial: &r.serial,
+            capture: r.capture.as_deref(),
         });
+    // A rendered release moves the injection (`AET-WO-4300b`): refused by
+    // name before the boot runs, as `ready` refuses the undrooped instant.
+    if let Some(i) = plan.as_ref().and_then(renode::BootPlan::injection_ns) {
+        serial_fits(i, plan.as_ref().map_or(0, |p| p.virtual_ns))?;
+    }
     if let (Some(r), Some((pass, booted))) = (&ready, &analog) {
         booted_is_emitted(&booted.path, r, pass)?;
     }
@@ -1288,7 +1398,8 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         }
         (Some(plan), _) => {
             let code = out.code("renode")?;
-            (code, renode::judge_boot(code, &out, plan)?)
+            let captured = plan.capture.map(read_capture).unwrap_or_default();
+            (code, renode::judge_boot(code, &out, plan, &captured)?)
         }
         (None, _) => {
             let code = out.code("renode")?;
@@ -1300,6 +1411,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     // (`4300` D3), so a boot killed at a bound reports it too.
     if let Some(plan) = &plan {
         findings.extend(renode::static_motor_findings(plan.motors));
+        findings.extend(renode::static_serial_findings(plan.serial));
     }
     // The analog findings first: they are the evidence the boot's effect follows.
     let bridge = analog.as_ref().and_then(|(pass, _)| pass.sandbox);
@@ -1574,6 +1686,12 @@ fn boot_report(
             .iter()
             .enumerate()
             .map(|(i, m)| verdict::MotorReport::new(m, observed.map(|o| &o.motors[i])))
+            .collect(),
+        serial: plan
+            .serial
+            .iter()
+            .enumerate()
+            .map(|(i, s)| verdict::SerialReport::new(s, observed.map(|o| &o.serial[i])))
             .collect(),
         executable: plan.executable.to_vec(),
     }

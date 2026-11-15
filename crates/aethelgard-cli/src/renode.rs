@@ -270,6 +270,13 @@ pub struct BootPlan<'a> {
     /// The resets a declared droop renders, in time order; empty for every
     /// other boot (`AET-WO-2301`).
     pub resets: &'a [power::Reset],
+    /// Each serial port's expectations (`AET-WO-4300b`), in the
+    /// specification's order; empty for a board without one, whose commands
+    /// are then exactly what they were before.
+    pub serial: &'a [Serial],
+    /// The boot's fresh capture directory, which the CLI made and Renode may
+    /// add to: one file backend per port. `None` without a serial port.
+    pub capture: Option<&'a std::path::Path>,
 }
 
 /// The sentinels around the read after a release (`AET-WO-2301` §2.3), one
@@ -279,6 +286,11 @@ const PROBE_END: &str = "AETHELGARD-PROBE-END-";
 /// The sentinel at each release, numbered as the probes are: the log lines
 /// from it to the probe's `BEGIN` are the recovered boot's (`AET-WO-2204`).
 const RELEASE: &str = "AETHELGARD-RELEASE-";
+/// The sentinels around the reads at the injection instant (`AET-WO-4300b`):
+/// each port's RX pin's `MODER` and `AFR`, then nothing else; each matched
+/// as a whole line, once.
+const INJECT_BEGIN: &str = "AETHELGARD-INJECT-BEGIN";
+const INJECT_END: &str = "AETHELGARD-INJECT-END";
 
 fn run_for(ns: u64) -> String {
     format!(
@@ -304,6 +316,62 @@ impl BootPlan<'_> {
             Some(_) => return 0,
         };
         aethelgard_twin::boot::MIPS * self.virtual_ns.saturating_sub(ran_from) / 1000
+    }
+
+    /// The instant the serial frames are injected (`AET-WO-4300b`): one
+    /// quantum after the last boot's start, which is 0, or a rendered
+    /// release plus its nudge. `None` without a serial port, or when the last
+    /// reset is never released: no boot follows it to receive a frame.
+    pub fn injection_ns(&self) -> Option<u64> {
+        if self.serial.is_empty() {
+            return None;
+        }
+        let start = match self.resets.last() {
+            None => 0,
+            Some(power::Reset {
+                released_ns: Some(at),
+                ..
+            }) => at + power::NUDGE_NS,
+            Some(_) => return None,
+        };
+        Some(aethelgard_twin::serial::injection_ns(start))
+    }
+
+    /// One file backend per port, in the capture directory, before the first
+    /// `RunFor`: Renode opens each file new (`UartFileBackend.cs`) and writes
+    /// each byte the USART transmits, flushed (`true`).
+    fn capture_commands(&self) -> Vec<String> {
+        let Some(dir) = self.capture else {
+            return Vec::new();
+        };
+        self.serial
+            .iter()
+            .map(|p| {
+                format!(
+                    "sysbus.{n} CreateFileBackend @{}/{n}.bin true",
+                    dir.display(),
+                    n = p.port.renode
+                )
+            })
+            .collect()
+    }
+
+    /// The reads of each port's RX pin's mux at the injection instant, then
+    /// each frame written into its USART byte by byte (`UARTBase.WriteChar`).
+    fn injection_commands(&self) -> Vec<String> {
+        let mut c = vec![format!("echo \"{INJECT_BEGIN}\"")];
+        for p in self.serial {
+            for at in [p.rx.moder.1, p.rx.afr.1] {
+                c.push(format!("sysbus ReadDoubleWord {at:#010x}"));
+            }
+        }
+        c.push(format!("echo \"{INJECT_END}\""));
+        for p in self.serial {
+            for b in p.frame {
+                c.push(format!("sysbus.{} WriteChar {b:#04x}", p.port.renode));
+            }
+        }
+        c
     }
 
     /// Every read, in order, as the monitor command and what it reads.
@@ -439,7 +507,18 @@ impl BootPlan<'_> {
     fn droop_schedule(&self) -> Vec<String> {
         let mut c = Vec::new();
         let mut now = 0u64;
+        // The frames go in at the injection instant, wherever it falls
+        // between the schedule's own instants (`AET-WO-4300b`).
+        let mut inject = self.injection_ns();
         let mut at = |c: &mut Vec<String>, t: u64| {
+            if let Some(i) = inject.filter(|&i| i <= t) {
+                if i > now {
+                    c.push(run_for(i - now));
+                    now = i;
+                }
+                c.extend(self.injection_commands());
+                inject = None;
+            }
             if t > now {
                 c.push(run_for(t - now));
                 now = t;
@@ -486,10 +565,15 @@ impl BootPlan<'_> {
         c.extend(self.rearm());
         c.push(self.vtor());
         c.extend(self.witness_levels());
-        if self.resets.is_empty() {
-            c.push(run_for(self.virtual_ns));
-        } else {
-            c.extend(self.droop_schedule());
+        c.extend(self.capture_commands());
+        match (self.resets.is_empty(), self.injection_ns()) {
+            (true, None) => c.push(run_for(self.virtual_ns)),
+            (true, Some(i)) => {
+                c.push(run_for(i));
+                c.extend(self.injection_commands());
+                c.push(run_for(self.virtual_ns.saturating_sub(i)));
+            }
+            (false, _) => c.extend(self.droop_schedule()),
         }
         c.push(format!("echo \"{BEGIN}\""));
         c.extend(self.reads().into_iter().map(|(cmd, _)| cmd));
@@ -543,6 +627,9 @@ pub struct Observed {
     pub absent: Vec<Vec<u8>>,
     /// For each motor output, what its observer showed (`AET-WO-4300a`).
     pub motors: Vec<MotorWitness>,
+    /// For each serial port, what its capture, pins and tags showed
+    /// (`AET-WO-4300b`).
+    pub serial: Vec<SerialWitness>,
     /// For each identity check on SPI, every line its controller's
     /// multiplexer logged when it routed a byte to no device, to several, or
     /// to an address with none (`SPIMultiplexer.cs` L56, L62, L69), whole
@@ -580,6 +667,253 @@ pub fn motors(
             ccr: m.ccr,
         })
         .collect())
+}
+
+/// One serial port as a boot judges it (`AET-WO-4300b` §1.5): what the twin
+/// expects from the topology and the firmware's own sha256 (`INV-07`), and
+/// the static check for silicon (`aethelgard_ir::serial::check_silicon`),
+/// kept apart from the twin's judgement (`4300` D3, D8).
+#[derive(Debug, Clone)]
+pub struct Serial {
+    pub port: aethelgard_twin::serial::Port,
+    pub role: aethelgard_ir::SerialRole,
+    /// The bytes the port must send at each boot's start.
+    pub pattern: Vec<u8>,
+    /// The bytes injected at [`BootPlan::injection_ns`], and echoed back by
+    /// a firmware that reads them.
+    pub frame: [u8; aethelgard_twin::serial::FRAME_LEN],
+    pub tx: aethelgard_twin::serial::PinMux,
+    pub rx: aethelgard_twin::serial::PinMux,
+    pub silicon: aethelgard_ir::serial::SiliconFraming,
+}
+
+/// Every serial port of `topology`, in the specification's order, for the
+/// firmware whose file's sha256 is `firmware`.
+pub fn serials(
+    topology: &aethelgard_ir::SolvedTopology,
+    firmware: &[u8; 32],
+) -> Result<Vec<Serial>, aethelgard_twin::TwinError> {
+    let ports = aethelgard_twin::serial::ports(topology)?;
+    ports
+        .into_iter()
+        .zip(topology.serial_ports_in_order())
+        .map(|(port, (_, solved, _, _))| {
+            Ok(Serial {
+                role: solved.role,
+                pattern: aethelgard_twin::serial::pattern(&port.label),
+                frame: aethelgard_twin::serial::frame(firmware, &port.label),
+                tx: aethelgard_twin::serial::PinMux::of(&port.tx, port.tx_af)?,
+                rx: aethelgard_twin::serial::PinMux::of(&port.rx, port.rx_af)?,
+                silicon: aethelgard_ir::serial::check_silicon(&topology.clock, solved),
+                port,
+            })
+        })
+        .collect()
+}
+
+/// The capture directory as the CLI read it after the run: each regular
+/// file's name and bytes, and what else was there.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Captured {
+    pub files: Vec<(String, Vec<u8>)>,
+    /// Each entry that is not a regular file of at most
+    /// [`CAPTURE_MAX_BYTES`], or the directory itself unreadable, named.
+    pub problems: Vec<String>,
+}
+
+/// The most bytes the CLI reads of one capture file: the patterns of every
+/// boot a droop can render and the frame fit far inside it.
+pub const CAPTURE_MAX_BYTES: u64 = 64 * 1024;
+
+/// What one port's capture, pins and tags showed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SerialWitness {
+    /// The capture file's bytes; `None` when Renode left none.
+    pub bytes: Option<Vec<u8>>,
+    pub capture: Option<aethelgard_twin::serial::Capture>,
+    /// The RX pin's `MODER` and `AFR` at the injection instant; `None` when
+    /// no frame was injected.
+    pub rx_at_injection: Option<(u32, u32)>,
+    /// The TX pin's `MODER` and `AFR` at the end, from the image's reads.
+    pub tx_at_end: Option<(u32, u32)>,
+    /// The tag warnings judged; `None` when the log could not be read whole.
+    pub tags: Option<aethelgard_twin::serial::TagJudgement>,
+    /// `witnessed`, `missing`, `partial`, `not_counted` (the frame came back
+    /// with the RX pin off its AF at the injection) or `not_judged` (no boot
+    /// word).
+    pub echo: &'static str,
+}
+
+impl SerialWitness {
+    /// The pattern counts when there is at least one and the TX pin is on its
+    /// AF at the end.
+    fn pattern_out(&self, s: &Serial) -> bool {
+        self.capture.as_ref().is_some_and(|c| c.patterns > 0)
+            && self.tx_at_end.is_some_and(|(m, a)| s.tx.routed(m, a))
+    }
+}
+
+fn serial_who(s: &Serial) -> String {
+    format!(
+        "{} ({}, TX {}, RX {})",
+        s.port.label, s.port.peripheral, s.port.tx, s.port.rx
+    )
+}
+
+/// The silicon check's findings for every serial port (`4300` D8): decided
+/// from the topology alone, so a boot killed at a bound reports them too.
+pub fn static_serial_findings(serial: &[Serial]) -> Vec<Finding> {
+    serial
+        .iter()
+        .filter(|s| !s.silicon.holds)
+        .map(|s| {
+            let f = &s.silicon;
+            Finding::plain(
+                aethelgard_chaos::campaign::SERIAL_STATIC_FINDING,
+                format!(
+                    "{}: BRR {} on a {} Hz kernel clock gives {} mbaud, {} ppm from the declared {}; {}",
+                    serial_who(s),
+                    f.brr,
+                    f.kernel_hz,
+                    f.actual_millibaud,
+                    f.error_ppm,
+                    aethelgard_twin::serial::describe(&s.port.framing),
+                    match f.tolerance {
+                        Some(row) => format!(
+                            "{} M = {:02b} tolerates under {} ppm ({}), and BRR must be the nearest whole USARTDIV",
+                            row.table,
+                            row.m_bits,
+                            row.tolerance_ppm,
+                            aethelgard_ir::serial::TOLERANCE_SOURCE
+                        ),
+                        None => "no row of the receiver's tolerance applies".to_owned(),
+                    }
+                ),
+            )
+        })
+        .collect()
+}
+
+/// One port's witness findings, once the boot reached its fixed point.
+/// `releases` is the boots the droop rendered after the first.
+fn serial_findings_of(s: &Serial, w: &SerialWitness, releases: usize) -> Vec<Finding> {
+    use aethelgard_chaos::campaign::{
+        SERIAL_ECHO_FINDING, SERIAL_FORGED_FINDING, SERIAL_PATTERN_FINDING, SERIAL_TAG_FINDING,
+    };
+    let who = serial_who(s);
+    let mut out = Vec::new();
+    match w.tags.as_ref() {
+        None => out.push(Finding::plain(
+            SERIAL_TAG_FINDING,
+            format!("{who}: Renode's log could not be read whole, so its tag warnings were not"),
+        )),
+        Some(t) if !t.holds() => out.push(Finding::plain(
+            SERIAL_TAG_FINDING,
+            format!(
+                "{who}: the framing {} needs {}; {} warnings from {}: missing {}, unexpected {}",
+                aethelgard_twin::serial::describe(&s.port.framing),
+                if s.port.tags.is_empty() {
+                    "no tag set".to_owned()
+                } else {
+                    s.port
+                        .tags
+                        .iter()
+                        .map(|t| format!("{}.{}", t.register, t.field))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                },
+                t.warnings,
+                s.port.renode,
+                if t.missing.is_empty() {
+                    "none".to_owned()
+                } else {
+                    t.missing.join(", ")
+                },
+                if t.unexpected.is_empty() {
+                    "none".to_owned()
+                } else {
+                    t.unexpected.join(", ")
+                },
+            ),
+        )),
+        Some(_) => {}
+    }
+    let Some(c) = w.capture.as_ref() else {
+        out.push(Finding::plain(
+            SERIAL_FORGED_FINDING,
+            format!("{who}: Renode left no capture of {}", s.port.renode),
+        ));
+        return out;
+    };
+    if c.stray {
+        out.push(Finding::plain(
+            SERIAL_FORGED_FINDING,
+            format!(
+                "{who}: the capture's {} bytes are not its pattern {} time(s) then the frame's first bytes: {} whole pattern(s), then bytes the port was never sent",
+                c.len,
+                releases + 1,
+                c.patterns
+            ),
+        ));
+    } else if c.patterns > releases + 1 {
+        out.push(Finding::plain(
+            SERIAL_FORGED_FINDING,
+            format!(
+                "{who}: {} patterns in a run of {} boot(s); each boot sends one",
+                c.patterns,
+                releases + 1
+            ),
+        ));
+    }
+    if !w.pattern_out(s) {
+        out.push(Finding::plain(
+            SERIAL_PATTERN_FINDING,
+            match w.tx_at_end {
+                Some((m, a)) if c.patterns > 0 && !s.tx.routed(m, a) => format!(
+                    "{who}: the pattern was captured, but the TX pin ends at {}, not MODER 0b10 on AF{}: it never reached the pin",
+                    s.tx.describe(m, a),
+                    s.tx.alternate_function
+                ),
+                _ => format!(
+                    "{who}: the capture does not start with the pattern ({} bytes: the label then {})",
+                    s.pattern.len(),
+                    hex_bytes(&aethelgard_twin::serial::PATTERN_TAIL)
+                ),
+            },
+        ));
+    }
+    match w.echo {
+        "witnessed" | "not_judged" => {}
+        "not_counted" => out.push(Finding::plain(
+            SERIAL_ECHO_FINDING,
+            format!(
+                "{who}: the frame came back, but at the injection the RX pin was at {}, not MODER 0b10 on AF{}: no byte reached the receiver",
+                w.rx_at_injection
+                    .map(|(m, a)| s.rx.describe(m, a))
+                    .unwrap_or_default(),
+                s.rx.alternate_function
+            ),
+        )),
+        _ => out.push(Finding::plain(
+            SERIAL_ECHO_FINDING,
+            format!(
+                "{who}: {} of the frame's {} bytes ({}) came back",
+                c.echoed,
+                aethelgard_twin::serial::FRAME_LEN,
+                hex_bytes(&s.frame)
+            ),
+        )),
+    }
+    out
+}
+
+/// `43 4F 4E`: bytes as a finding names them.
+pub fn hex_bytes(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| format!("{b:02X}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// The grain of a timer-caused stamp, in ns: one instruction at the core's
@@ -956,7 +1290,12 @@ fn sentinels(lines: &[&str], prefix: &str, n: usize) -> Result<Vec<usize>, Strin
 /// Judges one boot. A finding means `fail`; a `Stop` means the output cannot
 /// be trusted (exit 5) or the tool exited nonzero. The exit code is never a
 /// witness (`architecture.md` §2.4).
-pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged, Stop> {
+pub fn judge_boot(
+    code: i32,
+    out: &Output,
+    plan: &BootPlan<'_>,
+    capture: &Captured,
+) -> Result<Judged, Stop> {
     let text = out.text();
     let untrusted = |what: String| {
         Stop::tool_error(
@@ -1015,12 +1354,56 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
     let releases = sentinels(&lines[..begin], RELEASE, released).map_err(untrusted)?;
     let probe_begins = sentinels(&lines[..begin], PROBE_BEGIN, released).map_err(untrusted)?;
     let probe_ends = sentinels(&lines[..begin], PROBE_END, released).map_err(untrusted)?;
+    // The reads at the injection instant (`AET-WO-4300b`): one block, before
+    // the reads, when a frame was injected; none otherwise.
+    let injected = usize::from(plan.injection_ns().is_some());
+    let exact = |want: &str| -> Vec<usize> { (0..begin).filter(|&i| lines[i] == want).collect() };
+    let (inject_begins, inject_ends) = (exact(INJECT_BEGIN), exact(INJECT_END));
+    let inject_block = match (inject_begins.as_slice(), inject_ends.as_slice()) {
+        ([], []) if injected == 0 => None,
+        ([b], [e]) if injected == 1 && b < e => Some((*b, *e)),
+        _ => {
+            return Err(untrusted(format!(
+                "renode printed {} `{INJECT_BEGIN}` and {} `{INJECT_END}` markers before the reads, not {injected} of each in order",
+                inject_begins.len(),
+                inject_ends.len()
+            )));
+        }
+    };
     let in_probe = |i: usize| {
         probe_begins
             .iter()
             .zip(&probe_ends)
+            .chain(inject_block.as_ref().map(|(b, e)| (b, e)))
             .any(|(&b, &e)| b <= i && i <= e)
     };
+    let mut injection_words = Vec::new();
+    if let Some((b, e)) = inject_block {
+        for line in &lines[b + 1..e] {
+            match value(line) {
+                Some(v) => injection_words.push(u32::try_from(v).map_err(|_| {
+                    untrusted(format!(
+                        "`{}` at the injection is not a word",
+                        line.escape_debug()
+                    ))
+                })?),
+                None if is_log_line(line) => {}
+                None => {
+                    return Err(untrusted(format!(
+                        "`{}` at the injection is neither a read nor a whole log line",
+                        line.escape_debug()
+                    )));
+                }
+            }
+        }
+        if injection_words.len() != 2 * plan.serial.len() {
+            return Err(untrusted(format!(
+                "renode printed {} values at the injection, not the {} reads",
+                injection_words.len(),
+                2 * plan.serial.len()
+            )));
+        }
+    }
     // Every log line the run caused: with synchronous logging, all of them
     // are on the console before `RunFor` returns, so before `BEGIN`.
     let run_log: Vec<&str> = (0..begin)
@@ -1114,6 +1497,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
                 }
             })
             .collect(),
+        serial: Vec::new(),
         // Past the filter's budget an edge may have been dropped, so no
         // output's edges can be read whole (`AET-WO-2204` D2's rule).
         motors: plan
@@ -1141,6 +1525,13 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             Read::Record(i, _) => observed.records[i].1 = word()?,
         }
     }
+    observed.serial = serial_witnesses(
+        plan,
+        &observed.registers,
+        &injection_words,
+        capture,
+        (out.dropped_log_lines == 0).then_some(&last_boot[..]),
+    );
     let (cpus, peripherals) = listing(&lines[end + 1..]);
     if cpus.is_empty() {
         return Err(untrusted("renode listed no CPU after the reads".into()));
@@ -1163,6 +1554,12 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         )));
     }
     let booted = observed.boot_word == aethelgard_twin::boot::BOOT_MAGIC;
+    // The echo follows the boot word, so without it nothing is judged of it.
+    if !booted {
+        for w in &mut observed.serial {
+            w.echo = "not_judged";
+        }
+    }
     let halted = observed.instructions < expected;
     if booted && halted {
         return Err(untrusted(format!(
@@ -1309,6 +1706,21 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             findings.extend(witness_findings_of(m, w, plan.window_ns));
         }
     }
+    // The serial ports (`AET-WO-4300b`): a capture directory holding what
+    // no port's backend wrote is forged whether or not the boot finished;
+    // each port's witness is read once the firmware reached its fixed point,
+    // as an identity record is. The silicon check is the caller's, apart.
+    findings.extend(capture_findings(plan, capture));
+    if booted {
+        let releases = plan
+            .resets
+            .iter()
+            .filter(|r| r.released_ns.is_some())
+            .count();
+        for (s, w) in plan.serial.iter().zip(&observed.serial) {
+            findings.extend(serial_findings_of(s, w, releases));
+        }
+    }
     for d in &plan.image.identity.unmodelled {
         findings.push(Finding::info(
             "device_unmodelled",
@@ -1326,6 +1738,104 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         Some(Machine { cpus, peripherals }),
         Some(observed),
     ))
+}
+
+/// Each port's witness from what the run left: its capture file, its RX
+/// pin's mux at the injection, its TX pin's at the end (among the image's
+/// reads), and the tag warnings its USART logged in the last boot (`None`
+/// when the log could not be read whole). The echo is `not_judged` until
+/// the caller knows the boot word; [`judge_boot`] sets it.
+fn serial_witnesses(
+    plan: &BootPlan<'_>,
+    registers: &[u32],
+    injection: &[u32],
+    capture: &Captured,
+    log: Option<&[&str]>,
+) -> Vec<SerialWitness> {
+    let warnings: Option<Vec<aethelgard_twin::serial::TagWarning>> = log.map(|lines| {
+        lines
+            .iter()
+            .filter_map(|l| log_body(l).and_then(aethelgard_twin::serial::tag_warning))
+            .collect()
+    });
+    let image = |address: u32| {
+        plan.image
+            .registers
+            .iter()
+            .position(|r| r.address == address)
+            .and_then(|i| registers.get(i).copied())
+    };
+    plan.serial
+        .iter()
+        .enumerate()
+        .map(|(k, s)| {
+            let name = format!("{}.bin", s.port.renode);
+            let bytes = capture
+                .files
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, b)| b.clone());
+            let parsed = bytes
+                .as_deref()
+                .map(|b| aethelgard_twin::serial::parse(b, &s.pattern, &s.frame));
+            let rx_at_injection = injection.get(2 * k..2 * k + 2).map(|w| (w[0], w[1]));
+            let tx_at_end = image(s.tx.moder.1).zip(image(s.tx.afr.1));
+            let echo = match (&parsed, rx_at_injection) {
+                (Some(c), Some((m, a)))
+                    if c.echoed == aethelgard_twin::serial::FRAME_LEN && !c.stray =>
+                {
+                    if s.rx.routed(m, a) {
+                        "witnessed"
+                    } else {
+                        "not_counted"
+                    }
+                }
+                (Some(c), Some(_)) if c.echoed > 0 && !c.stray => "partial",
+                _ => "missing",
+            };
+            SerialWitness {
+                bytes,
+                capture: parsed,
+                rx_at_injection,
+                tx_at_end,
+                tags: warnings
+                    .as_ref()
+                    .map(|w| aethelgard_twin::serial::judge_tags(s.port.renode, &s.port.tags, w)),
+                echo,
+            }
+        })
+        .collect()
+}
+
+/// A capture directory holding anything but the ports' own regular files,
+/// or a file the CLI could not read whole: forged, never read past.
+fn capture_findings(plan: &BootPlan<'_>, capture: &Captured) -> Vec<Finding> {
+    let mut out: Vec<Finding> = capture
+        .problems
+        .iter()
+        .map(|p| {
+            Finding::plain(
+                aethelgard_chaos::campaign::SERIAL_FORGED_FINDING,
+                format!("the capture directory: {p}"),
+            )
+        })
+        .collect();
+    for (name, _) in &capture.files {
+        if !plan
+            .serial
+            .iter()
+            .any(|s| format!("{}.bin", s.port.renode) == *name)
+        {
+            out.push(Finding::plain(
+                aethelgard_chaos::campaign::SERIAL_FORGED_FINDING,
+                format!(
+                    "the capture directory holds `{}`, which no port's file backend writes",
+                    name.escape_debug()
+                ),
+            ));
+        }
+    }
+    out
 }
 
 /// Each record that claims its read completed, against what Renode logged
@@ -1674,6 +2184,8 @@ mod tests {
             motors: &[],
             instances: &INSTANCES,
             resets,
+            serial: &[],
+            capture: None,
         }
     }
 
@@ -1866,6 +2378,167 @@ mod tests {
         let f = static_motor_findings(std::slice::from_ref(&m));
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].kind, "motor_timing_static_mismatch");
+    }
+
+    /// The reference topology with its console (`AET-WO-4300b`): USART1 on
+    /// PA9/PA10 at AF7, 115200 8N1.
+    fn console_topology() -> aethelgard_ir::SolvedTopology {
+        serde_json::from_str(CONSOLE_TOPOLOGY).unwrap()
+    }
+
+    const CONSOLE_TOPOLOGY: &str = r#"{"schema_version":6,"specification_sha256":"ec44a555c91600547071f73338042210de82ecbf74c086f194f5c06853912ff0","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}}}"#;
+
+    /// The console's expectations for a firmware whose sha256 is all `0x11`.
+    fn console() -> Vec<Serial> {
+        serials(&console_topology(), &[0x11; 32]).unwrap()
+    }
+
+    fn serial_plan<'a>(
+        image: &'a aethelgard_twin::boot::Image,
+        resets: &'a [power::Reset],
+        serial: &'a [Serial],
+    ) -> BootPlan<'a> {
+        BootPlan {
+            serial,
+            capture: Some(std::path::Path::new("/w/capture")),
+            ..plan(image, resets)
+        }
+    }
+
+    /// `AET-WO-4300b`: one file backend per port before anything runs; the
+    /// frame injected one quantum in, after the RX pin's mux is read between
+    /// its own markers; and with a droop, one quantum after the release's
+    /// nudge, after its probe.
+    #[test]
+    fn a_serial_boot_captures_first_and_injects_one_quantum_after_the_last_start() {
+        let t = console_topology();
+        let image = aethelgard_twin::boot::expected(&t).unwrap();
+        let serial = console();
+        let frame: Vec<String> = serial[0]
+            .frame
+            .iter()
+            .map(|b| format!("sysbus.usart1 WriteChar {b:#04x}"))
+            .collect();
+        let inject = format!(
+            "echo \"AETHELGARD-INJECT-BEGIN\"; sysbus ReadDoubleWord 0x58020000; sysbus ReadDoubleWord 0x58020024; echo \"AETHELGARD-INJECT-END\"; {}",
+            frame.join("; ")
+        );
+        let p = serial_plan(&image, &[], &serial);
+        assert_eq!(p.injection_ns(), Some(100_000));
+        let c = p.commands();
+        assert!(
+            c.contains(&format!(
+                "logLevel -1 sysbus.i2c1.u2; sysbus.usart1 CreateFileBackend @/w/capture/usart1.bin true; emulation RunFor \"0.000100000\"; {inject}; emulation RunFor \"0.099900000\"; echo \"AETHELGARD-BOOT-BEGIN\""
+            )),
+            "{c}"
+        );
+        assert_eq!(c.matches("CreateFileBackend").count(), 1);
+        assert_eq!(c.matches("WriteChar").count(), 8);
+        let resets = bor3();
+        let p = serial_plan(&image, &resets, &serial);
+        assert_eq!(p.injection_ns(), Some(1_227_980 + 10 + 100_000));
+        let c = p.commands();
+        assert!(
+            c.contains(&format!(
+                "echo \"AETHELGARD-PROBE-END-0\"; emulation RunFor \"0.000000010\"; {inject}; emulation RunFor \"0.098672010\"; echo \"AETHELGARD-BOOT-BEGIN\""
+            )),
+            "{c}"
+        );
+        // A reset never released: no boot follows it, and nothing goes in.
+        let held = vec![power::Reset {
+            asserted_ns: 1_014_430,
+            released_ns: None,
+            cause: vec!["VBOR3".to_owned()],
+        }];
+        let p = serial_plan(&image, &held, &serial);
+        assert_eq!(p.injection_ns(), None);
+        assert!(!p.commands().contains("INJECT"));
+        // A board without a port: no capture, no injection, one RunFor.
+        assert_eq!(plan(&image, &[]).injection_ns(), None);
+    }
+
+    /// `4300` D8: the silicon check is the topology's, reported apart; a port
+    /// whose check fails is named with its row and source.
+    #[test]
+    fn a_serial_port_failing_silicon_s_check_is_named_with_its_row() {
+        let mut s = console();
+        assert!(static_serial_findings(&s).is_empty());
+        s[0].silicon.holds = false;
+        let f = static_serial_findings(&s);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].kind, "serial_framing_static_mismatch");
+        assert!(
+            f[0].message
+                .starts_with("CONSOLE (USART1, TX PA9, RX PA10): BRR 556")
+                && f[0].message.contains("Table 407")
+                && f[0]
+                    .message
+                    .contains(aethelgard_ir::serial::TOLERANCE_SOURCE),
+            "{}",
+            f[0].message
+        );
+    }
+
+    /// The witness from forged inputs alone: the echo counts only with the RX
+    /// pin routed at the injection and the whole frame after the patterns;
+    /// the tags are unreadable without the whole log; a capture past the
+    /// boots a droop rendered is forged.
+    #[test]
+    fn a_serial_witness_is_read_from_its_capture_pins_and_log() {
+        let t = console_topology();
+        let image = aethelgard_twin::boot::expected(&t).unwrap();
+        let serial = console();
+        let p = serial_plan(&image, &[], &serial);
+        let regs: Vec<u32> = image.registers.iter().map(|r| r.value).collect();
+        let whole = [serial[0].pattern.clone(), serial[0].frame.to_vec()].concat();
+        let captured = |bytes: &[u8]| Captured {
+            files: vec![("usart1.bin".to_owned(), bytes.to_vec())],
+            problems: Vec::new(),
+        };
+        let routed = [0x0028_A801, 0x0000_0770];
+        let w = serial_witnesses(&p, &regs, &routed, &captured(&whole), Some(&[]));
+        assert_eq!(w[0].echo, "witnessed");
+        assert!(serial_findings_of(&serial[0], &w[0], 0).is_empty());
+        // Off its AF at the injection: the frame came back, not counted.
+        let w = serial_witnesses(
+            &p,
+            &regs,
+            &[0x0028_A801, 0x0000_0870],
+            &captured(&whole),
+            Some(&[]),
+        );
+        assert_eq!(w[0].echo, "not_counted");
+        let kinds = |f: Vec<Finding>| f.into_iter().map(|f| f.kind).collect::<Vec<_>>();
+        assert_eq!(
+            kinds(serial_findings_of(&serial[0], &w[0], 0)),
+            ["serial_echo_missing"]
+        );
+        // No injection read: never witnessed.
+        let w = serial_witnesses(&p, &regs, &[], &captured(&whole), Some(&[]));
+        assert_eq!(w[0].echo, "missing");
+        // The log not whole: the tags are not judged, and that fails.
+        let w = serial_witnesses(&p, &regs, &routed, &captured(&whole), None);
+        assert_eq!(
+            kinds(serial_findings_of(&serial[0], &w[0], 0)),
+            ["serial_tag_mismatch"]
+        );
+        // Two patterns: forged in one boot, the droop's two boots in one.
+        let two = [serial[0].pattern.clone(), whole.clone()].concat();
+        let w = serial_witnesses(&p, &regs, &routed, &captured(&two), Some(&[]));
+        assert_eq!(
+            kinds(serial_findings_of(&serial[0], &w[0], 0)),
+            ["serial_capture_forged"]
+        );
+        assert!(serial_findings_of(&serial[0], &w[0], 1).is_empty());
+        // A file no port writes, and a problem the CLI met, are forged.
+        let mut c = captured(&whole);
+        c.files.push(("usart2.bin".to_owned(), Vec::new()));
+        c.problems
+            .push("`x` is not a regular file beneath it".to_owned());
+        assert_eq!(
+            kinds(capture_findings(&p, &c)),
+            ["serial_capture_forged", "serial_capture_forged"]
+        );
     }
 
     fn bor3() -> Vec<power::Reset> {

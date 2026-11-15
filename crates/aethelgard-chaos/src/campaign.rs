@@ -1215,6 +1215,15 @@ pub const MOTOR_MISMATCH_FINDING: &str = "motor_timing_mismatch";
 /// `info`: the witness fit the model's sequence with every edge on the grid.
 pub const MOTOR_STATIC_ONLY_FINDING: &str = "motor_witness_static_only";
 
+/// The serial port findings the boot judge gives (`AET-WO-4300b`): the
+/// silicon check of a port's `BRR` and framing, and the twin's witness of its
+/// pattern, its echo, its capture and its tags.
+pub const SERIAL_STATIC_FINDING: &str = "serial_framing_static_mismatch";
+pub const SERIAL_PATTERN_FINDING: &str = "serial_pattern_missing";
+pub const SERIAL_ECHO_FINDING: &str = "serial_echo_missing";
+pub const SERIAL_FORGED_FINDING: &str = "serial_capture_forged";
+pub const SERIAL_TAG_FINDING: &str = "serial_tag_mismatch";
+
 /// Every motor finding kind the records explain.
 const MOTOR_FINDINGS: [&str; 4] = [
     MOTOR_STATIC_FINDING,
