@@ -5,28 +5,32 @@ FAIL      VOUT in VDD_5V [TI Table 9-2, CRCW0603 1% 100ppm]: 4.6397..5.4823 V in
 FAIL      VOUT in VDD_3V3 [TI Table 9-2, CRCW0603 1% 100ppm]: 3.0853..3.6029 V inside 3.1350..3.4650; margins -50 / -138 mV (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)
 FAIL      VOUT in VDD_5V [TI Table 9-2, TNPW0603 0.1% 25ppm]: 4.8318..5.2615 V inside 4.7500..5.2500; margins 82 / -12 mV (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)
 FAIL      VOUT in VDD_3V3 [TI Table 9-2, TNPW0603 0.1% 25ppm]: 3.1960..3.4756 V inside 3.1350..3.4650; margins 61 / -11 mV (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)
-FAIL      VOUT in VDD_5V [exact E96, CRCW0603 1% 100ppm]: 4.6251..5.4647 V inside 4.7500..5.2500; margins -125 / -215 mV (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)
-FAIL      VOUT in VDD_3V3 [exact E96, CRCW0603 1% 100ppm]: 3.0773..3.5936 V inside 3.1350..3.4650; margins -58 / -129 mV (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)
-PASS      VOUT in VDD_5V [exact E96, TNPW0603 0.1% 25ppm]: 4.8164..5.2447 V inside 4.7500..5.2500; margins 66 / 5 mV (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)
-FAIL      VOUT in VDD_3V3 [exact E96, TNPW0603 0.1% 25ppm]: 3.1876..3.4667 V inside 3.1350..3.4650; margins 53 / -2 mV (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)
+FAIL      VOUT in VDD_5V [centred E96, RFBT ~100 k, CRCW0603 1% 100ppm]: 4.6251..5.4647 V inside 4.7500..5.2500; margins -125 / -215 mV (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)
+FAIL      VOUT in VDD_3V3 [centred E96, RFBT ~100 k, CRCW0603 1% 100ppm]: 3.0379..3.5458 V inside 3.1350..3.4650; margins -97 / -81 mV (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)
+PASS      VOUT in VDD_5V [centred E96, RFBT ~100 k, TNPW0603 0.1% 25ppm]: 4.8164..5.2447 V inside 4.7500..5.2500; margins 66 / 5 mV (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)
+PASS      VOUT in VDD_3V3 [centred E96, RFBT ~100 k, TNPW0603 0.1% 25ppm]: 3.1461..3.4214 V inside 3.1350..3.4650; margins 11 / 44 mV (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)
+FAIL      VOUT in VDD_5V [centred E96, RFBT > 100 k (CFF), CRCW0603 1% 100ppm]: 4.5738..5.4196 V inside 4.7500..5.2500; margins -176 / -170 mV (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)
+FAIL      VOUT in VDD_3V3 [centred E96, RFBT > 100 k (CFF), CRCW0603 1% 100ppm]: 3.0485..3.5653 V inside 3.1350..3.4650; margins -87 / -100 mV (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)
+PASS      VOUT in VDD_5V [centred E96, RFBT > 100 k (CFF), TNPW0603 0.1% 25ppm]: 4.7624..5.2024 V inside 4.7500..5.2500; margins 12 / 48 mV (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)
+PASS      VOUT in VDD_3V3 [centred E96, RFBT > 100 k (CFF), TNPW0603 0.1% 25ppm]: 3.1572..3.4401 V inside 3.1350..3.4650; margins 22 / 25 mV (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)
 PASS      VOUT in VDD_1V8 (TLV75518): 1.7730..1.8270 inside 1.7100..1.8900 (tested at 1 mA, VIN 2.3 V; line/load regulation typ only: CONDITION)
 PASS      VDD_1V8 inside ICM-20948 VDDIO: 1.7730..1.8270 V inside (1.71, 1.95)
-PASS      LDO dropout (TLV75518 from VDD_3V3): VIN min 3.1876 >= VOUT max + VDO max = 2.2270 V
+PASS      LDO dropout (TLV75518 from VDD_3V3): VIN min 3.1461 >= VOUT max + VDO max = 2.2270 V
 PASS      buck headroom VDD_5V at 2S min (no foldback credit): D<= 0.9609; available 5.389 V >= VOUT max 5.245 V at 2.00 A (tOFF, RDS(on), fSW stated at VIN 12 V; DCR declared; input-path drop excluded: CONDITION)
-PASS      buck headroom VDD_3V3 at 2S min (no foldback credit): D<= 0.9609; available 5.638 V >= VOUT max 3.467 V at 0.68 A (tOFF, RDS(on), fSW stated at VIN 12 V; DCR declared; input-path drop excluded: CONDITION)
+PASS      buck headroom VDD_3V3 at 2S min (no foldback credit): D<= 0.9609; available 5.638 V >= VOUT max 3.421 V at 0.68 A (tOFF, RDS(on), fSW stated at VIN 12 V; DCR declared; input-path drop excluded: CONDITION)
 INFO      break-even inductor DCR, VDD_5V at 2S min, 2 A: 102 mOhm
 PASS      min on-time VDD_5V at 26.10 V: tON 401 ns >= 108 ns
-PASS      min on-time VDD_3V3 at 26.10 V: tON 265 ns >= 108 ns
+PASS      min on-time VDD_3V3 at 26.10 V: tON 262 ns >= 108 ns
 PASS      IOUT VDD_3V3 (LMR33630): 0.6780 A <= 3.0 A (MCU 658 mA + LDO input)
 PASS      IOUT VDD_5V (LMR33630): 2.0 A <= 3.0 A
 PASS      IOUT VDD_1V8 (TLV75518): 0.02 A <= 0.5 A
 PASS      IOUT VDD_5V if the 3.3 V buck hung off it (steady state): 2.678 A <= 3.0 A (buck bias excluded: CONDITION)
 PASS      power-in, steady state (XT30PW-M): 2.68 A <= 15.0 A (bias and Cin inrush excluded: CONDITION)
 PASS      power-in, fault bound (XT30PW-M): sum of buck ISC max 10.10 A <= 15.0 A (ISC tested open loop, TI note 4; overshoot past tON-MIN: CONDITION)
-PASS      VDD_3V3 max <= MCU VDD max: 3.4667 <= 3.6 V
-INFO      copper room, domain floor 3.135 V: 53 mV -> VDD+VSS R <= 80 mOhm at 658 mA (MCU current only)
-INFO      copper room, VDD33USB / TXU0304 3.0 V row: 188 mV -> VDD+VSS R <= 285 mOhm at 658 mA (MCU current only)
-INFO      copper room, VBOR3 falling max 2.68 V: 508 mV -> VDD+VSS R <= 771 mOhm at 658 mA (MCU current only)
+PASS      VDD_3V3 max <= MCU VDD max: 3.4214 <= 3.6 V
+INFO      copper room, domain floor 3.135 V: 11 mV -> VDD+VSS R <= 17 mOhm at 658 mA (MCU current only)
+INFO      copper room, VDD33USB / TXU0304 3.0 V row: 146 mV -> VDD+VSS R <= 222 mOhm at 658 mA (MCU current only)
+INFO      copper room, VBOR3 falling max 2.68 V: 466 mV -> VDD+VSS R <= 708 mOhm at 658 mA (MCU current only)
 PASS      sense full scale 2S: 0.806 V <= VREF+ = VDDA min 3.135 V (VREF+ tied to VDDA: a declaration)
 PASS      sense full scale 6S: 2.419 V <= VREF+ = VDDA min 3.135 V (VREF+ tied to VDDA: a declaration)
 PASS      sense full scale 6S-HV: 2.505 V <= VREF+ = VDDA min 3.135 V (VREF+ tied to VDDA: a declaration)

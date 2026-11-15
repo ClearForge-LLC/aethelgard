@@ -74,7 +74,7 @@
         "feedback": {
           "top": {
             "reference": "R12",
-            "ohms": 107000
+            "ohms": 105000
           },
           "bottom": {
             "reference": "R13",

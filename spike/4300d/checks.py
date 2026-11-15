@@ -48,9 +48,11 @@ DOMAINS = {"VDD_5V": (5.0, 0.05), "VDD_3V3": (3.3, 0.05), "VDD_1V8": (1.8, 0.05)
 LOAD_5V = 2.0      # declared by the user (DS-009 ports), A
 LOAD_1V8 = 0.020   # declared by the user, A
 DCR_MAX = 0.030    # the inductor's DCR maximum: an inductor part row, NOT held here -> a condition
-DIVIDERS = {  # (top, bottom): TI Table 9-2's values, and exact-ratio E96 pairs
+DIVIDERS = {  # (top, bottom): TI Table 9-2's values, and E96 pairs centred in the window against
+    # the asymmetric regulation band (found by searching every E96 pair; advisor, after A1)
     "TI Table 9-2": {"VDD_5V": (100e3, 24.9e3), "VDD_3V3": (100e3, 43.2e3)},
-    "exact E96": {"VDD_5V": (102e3, 25.5e3), "VDD_3V3": (107e3, 46.4e3)},
+    "centred E96, RFBT ~100 k": {"VDD_5V": (102e3, 25.5e3), "VDD_3V3": (105e3, 46.4e3)},
+    "centred E96, RFBT > 100 k (CFF)": {"VDD_5V": (422e3, 107e3), "VDD_3V3": (232e3, 102e3)},
 }
 
 
@@ -91,7 +93,7 @@ for dname, pairs in DIVIDERS.items():
             check(f"VOUT in {d} [{dname}, {res}]", v[0] >= lo and v[1] <= hi,
                   f"{v[0]:.4f}..{v[1]:.4f} V inside {lo:.4f}..{hi:.4f}; margins {1e3*(v[0]-lo):.0f} / {1e3*(hi-v[1]):.0f} mV"
                   " (regulation band -1.5/+2.5 % by design, not production tested: CONDITION)")
-CHOSEN = ("exact E96", "TNPW0603 0.1% 25ppm")
+CHOSEN = ("centred E96, RFBT ~100 k", "TNPW0603 0.1% 25ppm")
 v5, v33 = V[CHOSEN + ("VDD_5V",)], V[CHOSEN + ("VDD_3V3",)]
 lo, hi = rng("VDD_1V8")
 check("VOUT in VDD_1V8 (TLV75518)", TLV18["vout"][0] >= lo and TLV18["vout"][1] <= hi,

@@ -8,3 +8,4 @@ Shell and Python 3; the datasheets live outside the repository in `~/.cache/aet-
 - `power-shape.json`: S2's proposed `power` section, illustrative.
 - `read-bucks.md`, `read-ldo-xlat.md`: two delegated datasheet reads (subagents), every ambiguous table rendered. FEEDBACK names the rows spot-checked by hand.
 - `SHA256SUMS`: the held datasheets (`~/.cache/aet-4300d/ds/`).
+- `status.log`: product-status reads (URL, page sha256, result).
