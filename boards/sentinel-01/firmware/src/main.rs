@@ -14,7 +14,7 @@
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 
-use sentinel_01_board::{Board, i2c1_speed, I2cError, mmio::Mmio};
+use sentinel_01_board::{Board, i2c1_speed, I2cError, Spi1Device, Spi1Selects, SpiError, mmio::Mmio};
 
 /// What the fixed point writes: `aethelgard_twin::boot::BOOT_MAGIC`, the
 /// judge's constant. Neither RAM's reset value nor any register's.
@@ -26,7 +26,7 @@ const BOOT_MAGIC: u32 = 0x2100b007;
 // The boot word, then one record per identity read: the status, then the
 // value (`aethelgard_twin::boot`, `RECORD_OFFSET`). One array, so the first
 // word is the boot word whatever the linker orders.
-static mut AETHELGARD_BOOT: [u32; 3] = [0; 3];
+static mut AETHELGARD_BOOT: [u32; 5] = [0; 5];
 
 /// What a record holds when the read finished: the judge's constants,
 /// `aethelgard_twin::boot::STATUS_*`.
@@ -35,6 +35,7 @@ const STATUS_TXIS: u32 = 0x22020001;
 const STATUS_TC: u32 = 0x22020002;
 const STATUS_RXNE: u32 = 0x22020003;
 const STATUS_STOP: u32 = 0x22020004;
+const STATUS_RXP: u32 = 0x22020005;
 /// What a transfer that could not run leaves, the judge's own fill.
 const RECORD_UNSET: u32 = 0xffffffff;
 
@@ -127,14 +128,14 @@ extern "C" fn main() -> ! {
     let gpiob = rcc.enable_gpiob(&mut r, gpiob).split();
     let i2c1 = rcc.enable_i2c1(&mut r, i2c1);
     let spi1 = rcc.enable_spi1(&mut r, spi1);
-    let _pa0 = gpioa.pa0.into_output(&mut r);
+    let pa0 = gpioa.pa0.into_output(&mut r);
     let pa5 = gpioa.pa5.into_spi1_sck(&mut r);
     let pa6 = gpioa.pa6.into_spi1_miso(&mut r);
     let pa7 = gpioa.pa7.into_spi1_mosi(&mut r);
     let pb6 = gpiob.pb6.into_i2c1_scl(&mut r);
     let pb7 = gpiob.pb7.into_i2c1_sda(&mut r);
     let mut i2c1 = i2c1.init::<i2c1_speed::Fast400k, _>(&mut r, pb6, pb7);
-    let _spi1 = spi1.init(&mut r, pa5, pa7, pa6);
+    let mut spi1 = spi1.init(&mut r, pa5, pa7, pa6, Spi1Selects { pa0 });
     let mut buf0 = [0u8; 1];
     let (status, value) = match i2c1.transfer(&mut r, 0x76, &[0xd0], &mut buf0) {
         Ok(_) => (
@@ -148,6 +149,16 @@ extern "C" fn main() -> ! {
         Err(I2cError::Length) => (RECORD_UNSET, RECORD_UNSET),
     };
     record(0, status, value);
+    let mut buf1 = [0u8; 3];
+    let (status, value) = match spi1.transfer(&mut r, Spi1Device::U4, &[0x9f], &mut buf1) {
+        Ok(_) => (
+            STATUS_OK,
+            buf1.iter().fold(0u32, |v, &b| (v << 8) | u32::from(b)),
+        ),
+        Err(SpiError::Rxp) => (STATUS_RXP, 0),
+        Err(SpiError::Length) => (RECORD_UNSET, RECORD_UNSET),
+    };
+    record(1, status, value);
     // SAFETY: a word only this line writes, in RAM the linker script placed.
     unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_MAGIC) };
     // No sleep: the judge requires instructions executed to equal MIPS x time.

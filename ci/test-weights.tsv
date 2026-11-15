@@ -250,3 +250,6 @@ unittests src/main.rs	elf::tests::the_image_hash_binds_bytes_addresses_and_sizes
 unittests src/main.rs	renode::tests::a_probe_is_read_only_between_its_own_whole_line_markers	0.508
 unittests src/main.rs	run::tests::the_capture_cap_holds_with_and_without_the_filter	0.875
 unittests src/main.rs	tests::provenance_is_generated_only_for_the_generated_crate	2.755
+tests/twin_tier2.rs	the_reference_reads_u4_s_jedec_id_witnessed_behind_spi1_s_multiplexer	3.070
+tests/twin_tier2.rs	a_forged_spi_record_fails_unwitnessed	6.240
+tests/twin_tier2.rs	a_second_spi_device_an_icm20948_is_read_and_witnessed	3.400

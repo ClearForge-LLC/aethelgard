@@ -22,8 +22,9 @@ use crate::record::{self, BusLine, Droop, Line, Override, Reading, Record};
 use crate::replay::State;
 
 /// The scenario format versions read: 1 (static scenarios, unchanged) and 2,
-/// since `AET-WO-2301`, which admits the `droop` override and `expect_counts`;
-/// a version 1 file may use neither.
+/// since `AET-WO-2301`, which admits the `droop` override and `expect_counts`,
+/// and since `AET-WO-4200` the `spi_device_absent` override; a version 1 file
+/// may use none of them.
 pub const SCENARIO_VERSIONS: [u32; 2] = [1, 2];
 /// At most this many overrides, so the scenario record stays inside the
 /// reader's 4,096-byte event bound.
@@ -111,6 +112,8 @@ struct RawOverride {
     line_held_low: Option<serde_json::Value>,
     #[serde(default, deserialize_with = "present")]
     droop: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "present")]
+    spi_device_absent: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -234,7 +237,25 @@ fn override_from(raw: RawOverride) -> Result<Override, ScenarioError> {
         max_capacitance_femtofarads,
         line_held_low,
         droop,
+        spi_device_absent,
     } = raw;
+    let others = bus.is_some()
+        || net.is_some()
+        || pull_up_ohms.is_some()
+        || max_capacitance_femtofarads.is_some()
+        || line_held_low.is_some()
+        || droop.is_some();
+    if let Some(r) = spi_device_absent {
+        if others {
+            return Err(schema(
+                "an absent SPI device override is exactly {spi_device_absent: reference}"
+                    .to_owned(),
+            ));
+        }
+        return Ok(Override::SpiDeviceAbsent {
+            reference: text(r, "spi_device_absent")?,
+        });
+    }
     if let Some(d) = droop {
         if bus.is_some()
             || net.is_some()
@@ -271,7 +292,7 @@ fn override_from(raw: RawOverride) -> Result<Override, ScenarioError> {
             },
         }),
         _ => Err(schema(
-            "an override is exactly {bus, pull_up_ohms}, {net, max_capacitance_femtofarads}, {bus, line_held_low} or {droop}"
+            "an override is exactly {bus, pull_up_ohms}, {net, max_capacitance_femtofarads}, {bus, line_held_low}, {droop} or {spi_device_absent}"
                 .to_owned(),
         )),
     }
@@ -472,6 +493,7 @@ fn target(o: &Override) -> (u8, &str) {
         ),
         // One droop per scenario, whatever its domain.
         Override::Droop(_) => (4, ""),
+        Override::SpiDeviceAbsent { reference } => (5, reference),
     }
 }
 
@@ -547,11 +569,14 @@ impl Scenario {
             .map(override_from)
             .collect::<Result<Vec<_>, _>>()?;
         let mut expect_counts = raw.expect_counts.unwrap_or_default();
-        let v2_only =
-            overrides.iter().any(|o| matches!(o, Override::Droop(_))) || !expect_counts.is_empty();
+        let v2_only = overrides
+            .iter()
+            .any(|o| matches!(o, Override::Droop(_) | Override::SpiDeviceAbsent { .. }))
+            || !expect_counts.is_empty();
         if v2_only && raw.schema_version < 2 {
             return Err(schema(
-                "a droop override and expect_counts need schema_version 2".to_owned(),
+                "a droop override, an absent SPI device and expect_counts need schema_version 2"
+                    .to_owned(),
             ));
         }
         if expect_counts.len() > MAX_EXPECTED {
@@ -647,15 +672,15 @@ pub struct RunSummary {
 /// solved topology, the solved I2C buses (kind 15, sorted by bus), the analog
 /// records (kinds 7 and 8), the bus faults, the declared rail (kind 16), the
 /// droop's crossings, resets and observations (kinds 17 to 19) in time
-/// order, the boot's witnesses (kind 10, then 11, 12 and 13 in that order),
-/// and the verdict, last and once.
+/// order, the boot's witnesses (kind 10, then 11, 12, 13, 21 and 22 in that
+/// order), and the verdict, last and once.
 pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     fn rank(r: &Record) -> u8 {
         match r {
             Record::Scenario { .. } => 0,
             Record::ExpectedCounts { .. } => 1,
             Record::Solved { .. } => 2,
-            Record::I2cBusSolved { .. } => 3,
+            Record::I2cBusSolved { .. } | Record::SpiBusSolved { .. } => 3,
             Record::RiseComputed { .. } | Record::LineStuckHigh { .. } => 4,
             Record::BusFault { .. } => 5,
             Record::RailDeclared { .. } => 6,
@@ -666,7 +691,9 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             Record::RegisterObserved { .. } => 9,
             Record::I2cCheck { .. } => 10,
             Record::I2cWitness { .. } => 11,
-            Record::Verdict { .. } => 12,
+            Record::SpiCheck { .. } => 12,
+            Record::SpiWitness { .. } => 13,
+            Record::Verdict { .. } => 14,
         }
     }
     /// Within rank 7: time in ps, then crossing, reset, observation.
@@ -686,7 +713,7 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     if records.is_empty() || !ordered {
         return Err("the records are not in the campaign's order");
     }
-    if !(count_rank(0) == 1 && count_rank(2) == 1 && count_rank(8) == 1 && count_rank(12) == 1) {
+    if !(count_rank(0) == 1 && count_rank(2) == 1 && count_rank(8) == 1 && count_rank(14) == 1) {
         return Err("a run holds exactly one scenario, topology, boot and verdict");
     }
     if count_rank(1) > 1 || count_rank(6) > 1 {
@@ -876,10 +903,20 @@ fn check_observed_against_the_boot(records: &[Record]) -> Result<(), &'static st
         Record::BootObserved { boot_word, .. } => Some(boot_word),
         _ => None,
     });
-    let check = records.iter().find_map(|r| match r {
-        Record::I2cCheck { expected, .. } => Some(*expected),
-        _ => None,
-    });
+    // The first identity read: the first I2C one, or the first SPI one on a
+    // board with none, as the checks are ordered (`AET-WO-4200` adversarial A1).
+    let check = records
+        .iter()
+        .find_map(|r| match r {
+            Record::I2cCheck { expected, .. } => Some(*expected),
+            _ => None,
+        })
+        .or_else(|| {
+            records.iter().find_map(|r| match r {
+                Record::SpiCheck { expected, .. } => Some(*expected),
+                _ => None,
+            })
+        });
     let has_witness = first_witness(records).is_some();
     let same = |a: &Reading, b: &Reading| {
         (a.address, a.mask, a.expected) == (b.address, b.mask, b.expected)
@@ -907,13 +944,22 @@ fn check_observed_against_the_boot(records: &[Record]) -> Result<(), &'static st
     Ok(())
 }
 
-/// The first identity read's expected witness lines (kind 13), which a
-/// droop's observation must show since its release.
+/// The first identity read's expected witness lines (kind 13, or kind 22 on
+/// a board with no I2C read), which a droop's observation must show since
+/// its release.
 fn first_witness(records: &[Record]) -> Option<&[String]> {
-    records.iter().find_map(|r| match r {
-        Record::I2cWitness { expected, .. } => Some(expected.as_slice()),
-        _ => None,
-    })
+    records
+        .iter()
+        .find_map(|r| match r {
+            Record::I2cWitness { expected, .. } => Some(expected.as_slice()),
+            _ => None,
+        })
+        .or_else(|| {
+            records.iter().find_map(|r| match r {
+                Record::SpiWitness { expected, .. } => Some(expected.as_slice()),
+                _ => None,
+            })
+        })
 }
 
 /// A reading as the judge sees it: observed, and equal to the expected
@@ -1167,6 +1213,8 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
             }
             Record::I2cCheck { reference, .. } => vec![(1, reference, "")],
             Record::I2cWitness { reference, .. } => vec![(2, reference, "")],
+            Record::SpiCheck { reference, .. } => vec![(3, reference, "")],
+            Record::SpiWitness { reference, .. } => vec![(4, reference, "")],
             _ => vec![],
         };
         for key in keys {
@@ -1262,6 +1310,101 @@ fn check_joins(records: &[Record]) -> Result<(), &'static str> {
     };
     if named(false) != named(true) {
         return Err("an identity read without its witness, or a witness without its read");
+    }
+    // The same for SPI (`AET-WO-4200`, adversarial A3): each read joins its
+    // solved device (kind 23) at its address and chip select, is witnessed
+    // once under its own name behind its controller's multiplexer, and every
+    // multiplexer line a witness carries is that multiplexer's; an absent
+    // device is a solved one, and its model logged nothing; and no device is
+    // both an I2C and an SPI one.
+    let mut solved_spi: BTreeMap<&str, (&str, u8, &str)> = BTreeMap::new();
+    for r in records {
+        if let Record::SpiBusSolved {
+            peripheral,
+            devices,
+        } = r
+        {
+            for (reference, address, select) in devices {
+                if solved_spi
+                    .insert(
+                        reference.as_str(),
+                        (peripheral.as_str(), *address, select.as_str()),
+                    )
+                    .is_some()
+                {
+                    return Err("an SPI device is on two solved controllers");
+                }
+            }
+        }
+    }
+    let mut spi: BTreeMap<&str, &str> = BTreeMap::new();
+    for r in records {
+        if let Record::SpiCheck {
+            reference,
+            peripheral,
+            select,
+            address,
+            ..
+        } = r
+        {
+            if solved_spi.get(reference.as_str())
+                != Some(&(peripheral.as_str(), *address, select.as_str()))
+            {
+                return Err("an SPI read names no solved device at its address and chip select");
+            }
+            spi.insert(reference, peripheral);
+        }
+    }
+    let absent: BTreeSet<&str> = records
+        .iter()
+        .filter_map(|r| match r {
+            Record::Scenario { overrides, .. } => Some(overrides),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|o| match o {
+            Override::SpiDeviceAbsent { reference } => Some(reference.as_str()),
+            _ => None,
+        })
+        .collect();
+    if absent.iter().any(|r| !solved_spi.contains_key(r)) {
+        return Err("an absent SPI device is no solved one");
+    }
+    let mut witnessed: BTreeSet<&str> = BTreeSet::new();
+    for r in records {
+        let Record::SpiWitness {
+            peripheral,
+            reference,
+            device: path,
+            observed,
+            unrouted,
+            ..
+        } = r
+        else {
+            continue;
+        };
+        // belt-and-suspenders: the twin's `platform::spi_device_path` states
+        // this path; replay checks an archive without the twin, so it states
+        // it again (this crate never depends on the twin).
+        let c = peripheral.to_ascii_lowercase();
+        let mux = format!("{c}.{c}mux");
+        let want = format!("{mux}.{}", reference.to_ascii_lowercase());
+        if spi.get(reference.as_str()) != Some(&peripheral.as_str()) || *path != want {
+            return Err(
+                "an SPI witness is not its read's device behind its controller's multiplexer",
+            );
+        }
+        let line = format!("[WARNING] {mux}: Tried to transmit byte 0x");
+        if !unrouted.iter().all(|l| l.starts_with(&line)) {
+            return Err("an SPI witness carries a line that is not its multiplexer's");
+        }
+        if absent.contains(reference.as_str()) && observed.as_ref().is_some_and(|o| !o.is_empty()) {
+            return Err("an absent SPI device's model logged a transfer");
+        }
+        witnessed.insert(reference);
+    }
+    if witnessed.len() != spi.len() || spi.keys().any(|r| device.contains_key(r)) {
+        return Err("an SPI read without its witness, or a device on two buses");
     }
     Ok(())
 }

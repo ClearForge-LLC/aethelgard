@@ -154,6 +154,12 @@ pub struct Boot {
     pub i2c: Vec<I2cReport>,
     /// What Renode logged for each identity read's device (`AET-WO-2204` D1).
     pub i2c_witness: Vec<WitnessReport>,
+    /// One per SPI identity read the judge expects, after the I2C ones in the
+    /// records (`AET-WO-4200`).
+    pub spi: Vec<SpiReport>,
+    /// What Renode logged for each SPI read's device, and what its
+    /// controller's multiplexer logged when a byte reached no single device.
+    pub spi_witness: Vec<SpiWitnessReport>,
     /// `ICSR` after the run: `VECTACTIVE` [8:0] is 0 when the core is in
     /// thread mode (`AET-WO-2204` D3).
     pub icsr: Option<String>,
@@ -182,10 +188,42 @@ pub struct WitnessReport {
     pub absent: Vec<String>,
 }
 
+/// One SPI identity read: what the parts table says, and what the
+/// firmware's record held (`AET-WO-4200`).
+#[derive(Serialize)]
+pub struct SpiReport {
+    pub reference: String,
+    pub peripheral: String,
+    /// The chip select's pin, `PA0`.
+    pub select: String,
+    /// The multiplexer address the chip select drives, `0x00`.
+    pub address: String,
+    pub command: String,
+    pub expected: String,
+    pub observed: Option<String>,
+    /// `ok`, `timeout_rxp` or `invalid`; `null` until Renode has read the record.
+    pub status: Option<&'static str>,
+}
+
+/// One SPI read's witness, and the multiplexer's lines for its controller.
+#[derive(Serialize)]
+pub struct SpiWitnessReport {
+    pub peripheral: String,
+    pub reference: String,
+    /// The model's path in Renode, `spi1.spi1mux.u4`.
+    pub device: String,
+    pub expected: Vec<String>,
+    pub observed: Option<Vec<String>>,
+    /// Each line the controller's multiplexer logged when a byte reached no
+    /// device, several, or an address with none: attribution's evidence, never
+    /// part of the witness.
+    pub unrouted: Vec<String>,
+}
+
 impl WitnessReport {
     /// `check`'s witness as the judge expects it, with what Renode logged.
     pub fn of(
-        check: &aethelgard_twin::boot::I2cCheck,
+        check: &aethelgard_twin::boot::IdentityCheck,
         observed: Option<Vec<String>>,
         absent: Vec<String>,
     ) -> Self {
