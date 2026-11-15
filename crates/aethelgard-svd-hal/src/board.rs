@@ -1017,22 +1017,23 @@ impl Plan {
                 .filter(|(n, _)| a.peripheral == format!("TIM{n}"))
                 .and_then(|(n, k)| Some((n, k, Role::timer_channel(k)?)));
             // A serial line: the TX or RX net of the one port on its peripheral,
-            // on that peripheral's own signal for the line.
-            let serial = serial::PERIPHERALS
-                .contains(&a.peripheral.as_str())
-                .then(|| {
-                    serial_nets
-                        .get(net.as_str())
+            // on that peripheral's own signal for the line. A port's net on any
+            // other signal, and a USART line no port names, are refused.
+            let port_net = serial_nets.get(net.as_str()).copied();
+            let serial =
+                if port_net.is_some() || serial::PERIPHERALS.contains(&a.peripheral.as_str()) {
+                    let line = port_net
                         .filter(|(p, _, role)| {
                             *p == a.peripheral && a.signal == format!("{p}_{}", role.signal())
                         })
-                        .copied()
                         .ok_or_else(|| BoardError::SerialSignalMismatch {
                             net: net.clone(),
                             signal: a.signal.clone(),
-                        })
-                })
-                .transpose()?;
+                        })?;
+                    Some(line)
+                } else {
+                    None
+                };
             // The pin's role, and its peripheral's kind unless it is a timer's
             // or a USART's.
             let (role, kind) = if let Some((peripheral, _, role)) = serial {

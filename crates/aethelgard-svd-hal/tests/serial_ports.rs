@@ -525,6 +525,20 @@ fn what_the_generator_cannot_write_is_refused() {
     let port = solved.serial_ports.get_mut("console").unwrap();
     (port.tx, port.rx) = (port.rx.clone(), port.tx.clone());
     assert_eq!(kind(&solved, &table), "SerialSignalMismatch");
+    // A port's TX net on another peripheral's signal: I2C1's SDA, moved from
+    // its own net.
+    let (mut solved, table) = console();
+    let sda = solved
+        .assignments
+        .iter()
+        .find(|(_, a)| a.signal == "I2C1_SDA")
+        .map(|(n, _)| n.clone())
+        .unwrap();
+    let line = solved.analog_lines.remove(&sda).unwrap();
+    solved.analog_lines.insert("CONSOLE_TX".into(), line);
+    let sda = solved.assignments.remove(&sda).unwrap();
+    solved.assignments.insert("CONSOLE_TX".into(), sda);
+    assert_eq!(kind(&solved, &table), "SerialSignalMismatch");
     // A port whose RX net is not assigned.
     let (mut solved, table) = console();
     solved.assignments.remove("CONSOLE_RX");
