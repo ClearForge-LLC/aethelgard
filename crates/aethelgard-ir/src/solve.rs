@@ -37,6 +37,14 @@ pub enum SolveError {
     )]
     MissingSpiConstraint { bus: String, net: String },
     #[error(
+        "SPI bus `{bus}` is on a supply of {min_millivolts} to {max_millivolts} mV, outside DS12117 Table 149's 1620 to 3600 mV, so no output speed can be judged for it"
+    )]
+    SupplyOutsideSpeedTable {
+        bus: String,
+        min_millivolts: u32,
+        max_millivolts: u32,
+    },
+    #[error(
         "I2C bus `{bus}` allows a rise time of {rise_time_ns} ns, slower than any I2C mode (1000 ns at most)"
     )]
     RiseTimeTooSlow { bus: String, rise_time_ns: u32 },
@@ -117,6 +125,7 @@ impl SolveError {
             Self::PartMismatch { .. } => "PartMismatch",
             Self::MissingBusConstraint { .. } => "MissingBusConstraint",
             Self::MissingSpiConstraint { .. } => "MissingSpiConstraint",
+            Self::SupplyOutsideSpeedTable { .. } => "SupplyOutsideSpeedTable",
             Self::RiseTimeTooSlow { .. } => "RiseTimeTooSlow",
             Self::BusTooFast { .. } => "BusTooFast",
             Self::PullUpBelowSinkFloor { .. } => "PullUpBelowSinkFloor",
@@ -147,6 +156,7 @@ impl SolveError {
             | Self::BudgetExceeded { bus, .. }
             | Self::MissingBusConstraint { bus, .. }
             | Self::MissingSpiConstraint { bus, .. }
+            | Self::SupplyOutsideSpeedTable { bus, .. }
             | Self::RiseTimeTooSlow { bus, .. }
             | Self::BusTooFast { bus, .. }
             | Self::PullUpBelowSinkFloor { bus, .. } => Some(bus),
@@ -172,6 +182,7 @@ impl SolveError {
             | Self::BudgetExceeded { bus, .. }
             | Self::MissingBusConstraint { bus, .. }
             | Self::MissingSpiConstraint { bus, .. }
+            | Self::SupplyOutsideSpeedTable { bus, .. }
             | Self::RiseTimeTooSlow { bus, .. }
             | Self::BusTooFast { bus, .. }
             | Self::PullUpBelowSinkFloor { bus, .. } => vec![bus.clone()],
@@ -402,8 +413,25 @@ fn spi_lines(spec: &Specification) -> Result<BTreeMap<String, SpiLine>, SolveErr
         .iter()
         .find(|d| d.id == spec.mcu.supply)
         .expect("Specification::validate checked the MCU's supply");
+    let (min, max) = (
+        crate::minimum_millivolts(supply),
+        crate::maximum_millivolts(supply),
+    );
+    let (bottom, top) = (
+        crate::speeds::BANDS_MILLIVOLTS[0].0,
+        crate::speeds::BANDS_MILLIVOLTS[1].1,
+    );
     let mut out = BTreeMap::new();
     for bus in &spec.spi_buses {
+        // The table's bands bound the whole supply, not only its minimum
+        // (adversarial 2): above 3.6 V no row holds.
+        if min < bottom || max > top {
+            return Err(SolveError::SupplyOutsideSpeedTable {
+                bus: bus.id.clone(),
+                min_millivolts: min,
+                max_millivolts: max,
+            });
+        }
         for (signal, net) in [("SCK", &bus.sck.net), ("MOSI", &bus.mosi.net)] {
             let Some(c) = spec.net_constraints.iter().find(|c| &c.net_name == net) else {
                 return Err(SolveError::MissingSpiConstraint {
@@ -419,7 +447,7 @@ fn spi_lines(spec: &Specification) -> Result<BTreeMap<String, SpiLine>, SolveErr
                     rate_hz: bus.speed_hz,
                     capacitance_femtofarads: c.max_capacitance_femtofarads,
                     rise_time_ns: c.max_rise_time_nanoseconds,
-                    vdd_min_millivolts: crate::minimum_millivolts(supply),
+                    vdd_min_millivolts: min,
                 },
             );
         }

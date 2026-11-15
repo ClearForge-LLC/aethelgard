@@ -217,6 +217,15 @@ pub struct SpiLine {
 /// select is a software-driven GPIO.
 pub const DRIVEN_SPI_SIGNALS: [&str; 2] = ["SCK", "MOSI"];
 
+/// A domain's maximum, in millivolts: nominal plus its tolerance, rounded
+/// up.
+pub fn maximum_millivolts(domain: &VoltageDomain) -> u32 {
+    let high = (u64::from(domain.nominal_millivolts)
+        * (1000 + u64::from(domain.tolerance_permille)))
+    .div_ceil(1000);
+    u32::try_from(high).unwrap_or(u32::MAX)
+}
+
 /// A domain's minimum, in millivolts: nominal less its tolerance, rounded
 /// down.
 pub fn minimum_millivolts(domain: &VoltageDomain) -> u32 {
@@ -618,9 +627,33 @@ pub enum IrValidationError {
     #[error("output speed table: {reason}")]
     OutputSpeedTable { reason: String },
     #[error(
-        "device `{id}` names `{part}`, whose JEDEC identity depends on its ordering code: `W25Q64JVxIQ` for the IQ and JQ codes (EF 40 17); the IM and JM codes (EF 70 17) have no entry"
+        "device `{id}` names `{part}`, whose JEDEC identity depends on its ordering code: `W25Q64JVxIQ` answers EF 40 17, as the JQ code does; the IM and JM codes answer EF 70 17 and have no entry"
     )]
     AmbiguousPartName { id: String, part: String },
+    #[error(
+        "device `{id}` names `{part}`, which the parts table holds as `{table}`: part names are exact"
+    )]
+    PartNameCase {
+        id: String,
+        part: String,
+        table: String,
+    },
+    #[error(
+        "device `{id}` is a `{part}` on a supply of {min_millivolts} to {max_millivolts} mV, outside the part's {part_min_millivolts} to {part_max_millivolts} mV ({citation})"
+    )]
+    SupplyOutsidePart {
+        id: String,
+        part: String,
+        min_millivolts: u32,
+        max_millivolts: u32,
+        part_min_millivolts: u32,
+        part_max_millivolts: u32,
+        citation: String,
+    },
+    #[error(
+        "net constraint on `{id}`, an SPI bus's MISO or a chip select: no check reads it, so it cannot be held (`AET-WO-4300c` D3, D4)"
+    )]
+    UnjudgedSpiConstraint { id: String },
     #[error(
         "device `{id}` is a `{part}` on an {bus_kind} bus, but the part is an {part_kind} part ({citation})"
     )]
@@ -750,6 +783,9 @@ impl IrValidationError {
             Self::PartsTable { .. } => "PartsTableInvalid",
             Self::OutputSpeedTable { .. } => "OutputSpeedTableInvalid",
             Self::AmbiguousPartName { .. } => "AmbiguousPartName",
+            Self::PartNameCase { .. } => "PartNameCase",
+            Self::SupplyOutsidePart { .. } => "SupplyOutsidePart",
+            Self::UnjudgedSpiConstraint { .. } => "UnjudgedSpiConstraint",
             Self::PartOnWrongBus { .. } => "PartOnWrongBus",
             Self::I2cAddressNotOffered { .. } => "I2cAddressNotOffered",
             Self::SpiClockAbovePart { .. } => "SpiClockAbovePart",
@@ -817,6 +853,9 @@ impl IrValidationError {
             | Self::SpiDeviceSelect { id }
             | Self::ReferenceCollision { id, .. }
             | Self::AmbiguousPartName { id, .. }
+            | Self::PartNameCase { id, .. }
+            | Self::SupplyOutsidePart { id, .. }
+            | Self::UnjudgedSpiConstraint { id }
             | Self::PartOnWrongBus { id, .. }
             | Self::I2cAddressNotOffered { id, .. }
             | Self::SpiClockAbovePart { id, .. }
@@ -1113,6 +1152,49 @@ impl Specification {
     /// clocked no faster than it; each refusal cites the datasheet. A part
     /// with no entry has no limits to hold, as before.
     fn validate_parts(&self, table: &parts::PartsTable) -> Result<(), IrValidationError> {
+        // F-a: a declaration nothing judges is refused, not silently unread.
+        let unjudged = self
+            .spi_buses
+            .iter()
+            .map(|b| &b.miso.net)
+            .chain(self.spi_devices.iter().map(|d| &d.cs.net));
+        for net in unjudged {
+            if self.net_constraints.iter().any(|c| &c.net_name == net) {
+                return Err(IrValidationError::UnjudgedSpiConstraint { id: net.clone() });
+            }
+        }
+        // Each device's supply within its part's range (adversarial 2):
+        // step 5 checked every supply names a domain.
+        let devices = self
+            .i2c_devices
+            .iter()
+            .map(|d| (&d.reference, &d.part, &d.supply))
+            .chain(
+                self.spi_devices
+                    .iter()
+                    .map(|d| (&d.reference, &d.part, &d.supply)),
+            );
+        for (reference, part, supply) in devices {
+            let (Some(p), Some(domain)) = (
+                part_entry(table, reference, part)?,
+                self.voltage_domains.iter().find(|v| &v.id == supply),
+            ) else {
+                continue;
+            };
+            let (min, max) = (minimum_millivolts(domain), maximum_millivolts(domain));
+            let (part_min, part_max) = p.supply_millivolts;
+            if min < part_min || max > part_max {
+                return Err(IrValidationError::SupplyOutsidePart {
+                    id: reference.clone(),
+                    part: p.part.clone(),
+                    min_millivolts: min,
+                    max_millivolts: max,
+                    part_min_millivolts: part_min,
+                    part_max_millivolts: part_max,
+                    citation: cite(&p.citations.supply),
+                });
+            }
+        }
         for d in &self.i2c_devices {
             let Some(p) = part_entry(table, &d.reference, &d.part)? else {
                 continue;
@@ -1467,13 +1549,28 @@ fn part_entry<'t>(
     reference: &str,
     part: &str,
 ) -> Result<Option<&'t parts::Part>, IrValidationError> {
-    if part == parts::BARE_W25Q64JV {
+    if part.eq_ignore_ascii_case(parts::BARE_W25Q64JV) {
         return Err(IrValidationError::AmbiguousPartName {
             id: reference.to_owned(),
             part: part.to_owned(),
         });
     }
-    Ok(table.get(part))
+    if let Some(p) = table.get(part) {
+        return Ok(Some(p));
+    }
+    // A table part in another case would skip every limit (adversarial 3).
+    if let Some(p) = table
+        .parts()
+        .iter()
+        .find(|p| p.part.eq_ignore_ascii_case(part))
+    {
+        return Err(IrValidationError::PartNameCase {
+            id: reference.to_owned(),
+            part: part.to_owned(),
+            table: p.part.clone(),
+        });
+    }
+    Ok(None)
 }
 
 /// A citation as a refusal names it.
@@ -1670,6 +1767,9 @@ impl SolvedTopology {
             }
         }
         let mut buses: BTreeMap<&str, (&str, u32)> = BTreeMap::new();
+        // ... and the other way: one label and one rate per peripheral, so a
+        // relabelled line cannot give a peripheral two rates (adversarial 1).
+        let mut peripherals: BTreeMap<&str, (&str, u32)> = BTreeMap::new();
         for (net, line) in &self.spi_lines {
             plain(&line.bus, || format!("spi_lines.{net}.bus"))?;
             let Some(a) = self.assignments.get(net) else {
@@ -1686,7 +1786,12 @@ impl SolvedTopology {
             let first = *buses
                 .entry(line.bus.as_str())
                 .or_insert((a.peripheral.as_str(), line.rate_hz));
-            if first != (a.peripheral.as_str(), line.rate_hz) {
+            let by_peripheral = *peripherals
+                .entry(a.peripheral.as_str())
+                .or_insert((line.bus.as_str(), line.rate_hz));
+            if first != (a.peripheral.as_str(), line.rate_hz)
+                || by_peripheral != (line.bus.as_str(), line.rate_hz)
+            {
                 return Err(mismatch(net));
             }
         }

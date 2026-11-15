@@ -66,8 +66,9 @@ fn the_reference_drives_sck_and_mosi_at_01_and_names_every_other_line() {
     );
     assert_eq!(
         v["capacitance"],
-        "declared (net_constraints); extract bounds it on the routed board"
+        "declared (net_constraints), not bounded here: run extract, or verify's extract gate, on the routed board"
     );
+    assert_eq!(v["judged"], 2);
     let lines = by_net(&v);
     let speed = |net: &str| lines.iter().find(|l| l.0 == net).unwrap().1.clone();
     assert_eq!(speed("SPI_SCK"), "01");
@@ -149,6 +150,76 @@ fn a_rate_no_selectable_speed_serves_is_refused() {
             .as_str()
             .unwrap()
             .contains("100000000 Hz is above 80000000 Hz"),
+        "{v}"
+    );
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Adversarial 4: a specification with no SPI bus judges nothing, and says so.
+#[test]
+fn a_specification_with_no_spi_bus_judges_nothing_and_says_so() {
+    let mut spec: Value = serde_json::from_slice(
+        &fs::read(root().join("examples/sentinel-01-minimal.json")).unwrap(),
+    )
+    .unwrap();
+    spec["spi_buses"] = serde_json::json!([]);
+    spec["spi_devices"] = serde_json::json!([]);
+    let kept: Vec<Value> = spec["net_constraints"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["net_name"].as_str().unwrap().starts_with("I2C_"))
+        .cloned()
+        .collect();
+    spec["net_constraints"] = kept.into();
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("aet-4300c-nospi-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("no-spi.json");
+    fs::write(&path, spec.to_string()).unwrap();
+    let (code, v) = speeds(&path);
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["judged"], 0, "{v}");
+    assert!(
+        v["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|l| l.get("judged").is_none())
+    );
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Adversarial 2: the whole supply must lie in Table 149's bands. 3600 mV
+/// at 50 permille reaches 3780 mV, above 3.6 V. The parts are unlisted, so
+/// no part's own range refuses first.
+#[test]
+fn a_supply_above_the_table_s_bands_is_refused() {
+    let mut spec: Value = serde_json::from_slice(
+        &fs::read(root().join("examples/sentinel-01-minimal.json")).unwrap(),
+    )
+    .unwrap();
+    spec["voltage_domains"][0]["nominal_millivolts"] = 3_600.into();
+    for list in ["i2c_devices", "spi_devices"] {
+        for d in spec[list].as_array_mut().unwrap() {
+            d["part"] = "UNLISTED".into();
+        }
+    }
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("aet-4300c-vdd-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("vdd.json");
+    fs::write(&path, spec.to_string()).unwrap();
+    let (code, v) = speeds(&path);
+    assert_eq!(code, Some(2), "{v}");
+    assert_eq!(v["error"]["kind"], "SupplyOutsideSpeedTable", "{v}");
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("3420 to 3780 mV"),
         "{v}"
     );
     fs::remove_dir_all(&dir).unwrap();

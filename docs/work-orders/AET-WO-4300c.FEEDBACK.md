@@ -258,7 +258,7 @@ The kickoff runs every KiCad, Renode and tier-2 step under `--memory X --memory-
 | §1.7 F11 | `W25Q64JVxIQ` in the table, every fixture, eda's map and the examples. The bare name is refused by name. The schematic `Value` is now the full ordering code, `W25Q64JVSSIQ` (SS is the drawn SOIC-8 208-mil footprint; F-g below). | `parts.json`, `eda/src/schematic.rs` |
 | Verdict surface (F-c) | `aethelgard check speeds --spec`, also an MCP tool (`check_speeds`, since tools derive from the CLI tree). | `cli/src/speeds.rs` |
 | D1 fixture (F-d) | Raised to 150,000 fF on its eight I2C lines; SCK0/MOSI0 declared. A tier-1 test runs `extract` on D1 at 4 layers and needs every line to pass; it is killed by the old 100,000 fF (7 findings, exit 1) [measured]. | `fixtures/d1-24-i2c.json`, `stackups_tier1.rs` |
-| Reduction (ruled) | `spi/4300c/` deleted; the reproduce line points at `139226e`. | — |
+| Reduction (ruled) | `spike/4300c/` deleted; the reproduce line points at `139226e`. | — |
 
 ### Further forks taken during the build
 

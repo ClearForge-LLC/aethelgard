@@ -9,10 +9,12 @@
 //! solved topology alone (`RUL-16`), so it reaches a specification no board
 //! can be drawn for; its capacitance label says so.
 //!
-//! The capacitance judged is the declared one (`net_constraints`). Where the
-//! specification's design can be drawn, `extract` (and `verify`'s extract
-//! gate) bounds it on the routed board. Where it cannot, the verdict labels
-//! it unverified and names the emitter's refusal.
+//! The capacitance judged is the declared one (`net_constraints`), never a
+//! bound: this check draws no board. Where the specification's design can be
+//! drawn, `extract` (and `verify`'s extract gate) bounds it on the routed
+//! board; where it cannot, the verdict labels it unverified and names the
+//! emitter's refusal. `judged` counts the lines judged, 0 for a
+//! specification with no SPI bus.
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -32,8 +34,11 @@ struct Report {
     specification_sha256: String,
     /// The table judged against.
     table: Value,
-    /// Where the judged capacitance comes from, and whether a board bounds it.
+    /// Where the judged capacitance comes from, and whether a board can
+    /// bound it.
     capacitance: String,
+    /// How many lines were judged; the others are out of scope.
+    judged: usize,
     lines: Vec<Value>,
 }
 
@@ -60,13 +65,18 @@ pub fn speeds(spec_path: &Path) -> ExitCode {
         Ok(t) => t,
         Err(e) => return crate::emit(&Refusal::new(e.kind(), None, e.to_string()), 70),
     };
+    // Nothing here bounds the copper: say so, and who does (adversarial 4).
     let capacitance = match aethelgard_eda::schematic::emit(&spec, &topology, &table) {
-        Ok(_) => "declared (net_constraints); extract bounds it on the routed board".to_owned(),
+        Ok(_) => "declared (net_constraints), not bounded here: run extract, or verify's extract gate, on the routed board".to_owned(),
         Err(e) => format!(
             "declared (net_constraints), UNVERIFIED: no board can be drawn ({}: {e})",
             e.kind()
         ),
     };
+    let judged = pins
+        .iter()
+        .filter(|p| matches!(p.check, SpeedCheck::Judged { .. }))
+        .count();
     let lines = pins
         .into_iter()
         .map(|p| {
@@ -113,6 +123,7 @@ pub fn speeds(spec_path: &Path) -> ExitCode {
             "definition": speeds_table.definition,
         }),
         capacitance,
+        judged,
         lines,
     };
     crate::emit(&report, 0)

@@ -613,7 +613,7 @@ Speeds `10` and `11` need the I/O compensation cell and are never selected. Ever
 - MISO, an input in master mode;
 - a software-driven GPIO output such as a chip select.
 
-The capacitance judged is the declared one: `"capacitance"` says that `extract` bounds it on the routed board, or that it is `UNVERIFIED` when no board can be drawn, naming `emit`'s refusal.
+The capacitance judged is the declared one, never a bound: this check draws no board. `"capacitance"` says to run `extract` (or `verify`, whose extract gate does) on the routed board, or that it is `UNVERIFIED` when no board can be drawn, naming `emit`'s refusal. `"judged"` counts the lines judged; it is 0 for a specification with no SPI bus.
 
 ## `verify`
 

@@ -444,6 +444,13 @@ fn refuses_tolerance_out_of_range() {
     for value in [1, 500] {
         let mut spec = valid();
         spec.voltage_domains[0].tolerance_permille = value;
+        // At 500 permille the rail spans 1650 to 4950 mV, outside every
+        // listed part's supply (`SupplyOutsidePart`, `AET-WO-4300c`); only
+        // the tolerance's own range is under test here.
+        for d in devs(&mut spec).i2c.iter_mut() {
+            d.part = "UNLISTED".into();
+        }
+        devs(&mut spec).spi[0].part = "UNLISTED".into();
         assert_eq!(spec.validate(), Ok(()));
     }
 }
@@ -2089,4 +2096,88 @@ fn a_version_4_file_without_spi_lines_is_a_missing_field_and_a_version_3_one_is_
     v["schema_version"] = 3.into();
     let t = serde_json::from_value::<SolvedTopology>(v).expect("an older file still reads");
     assert_refusal(t.validate().unwrap_err(), "UnsupportedSchemaVersion", None);
+}
+
+/// Adversarial 2: each device's supply, nominal less and plus its tolerance,
+/// within its part's range, citing the datasheet.
+#[test]
+fn a_supply_outside_a_part_s_range_is_refused() {
+    let mut spec = valid();
+    spec.voltage_domains[0].nominal_millivolts = 3_600;
+    let err = spec.validate().unwrap_err();
+    assert_refusal(err.clone(), "SupplyOutsidePart", Some("U2"));
+    assert!(err.to_string().contains("3420 to 3780 mV"), "{err}");
+    // The flash alone, at 2.8 V less 5 %: 2660 mV, under its 2.7 V.
+    let mut spec = valid();
+    spec.voltage_domains[0].nominal_millivolts = 2_800;
+    for d in devs(&mut spec).i2c.iter_mut() {
+        d.part = "UNLISTED".into();
+    }
+    let err = spec.validate().unwrap_err();
+    assert_refusal(err.clone(), "SupplyOutsidePart", Some("U4"));
+    assert!(err.to_string().contains("9.2"), "{err}");
+}
+
+/// Adversarial 3: a table part named in another case, or the bare flash in
+/// any case, is refused rather than read as an unlisted part.
+#[test]
+fn a_part_name_in_another_case_is_refused() {
+    let mut spec = valid();
+    devs(&mut spec).spi[0].part = "W25Q64JVXIQ".into();
+    assert_refusal(spec.validate().unwrap_err(), "PartNameCase", Some("U4"));
+    let mut spec = valid();
+    devs(&mut spec).spi[0].part = "w25q64jv".into();
+    assert_refusal(
+        spec.validate().unwrap_err(),
+        "AmbiguousPartName",
+        Some("U4"),
+    );
+}
+
+/// F-a and adversarial 5: a net constraint on MISO or a chip select is
+/// refused, since nothing reads it.
+#[test]
+fn a_constraint_on_miso_or_a_chip_select_is_refused() {
+    for net in ["SPI_MISO", "FLASH_CS"] {
+        let mut spec = valid();
+        let mut c = spec.net_constraints[0].clone();
+        c.net_name = net.into();
+        spec.net_constraints.push(c);
+        assert_refusal(
+            spec.validate().unwrap_err(),
+            "UnjudgedSpiConstraint",
+            Some(net),
+        );
+    }
+}
+
+/// Adversarial 1: a relabelled line cannot give one peripheral two rates or
+/// two labels.
+#[test]
+fn a_peripheral_s_lines_share_one_label_and_one_rate() {
+    for forge in [
+        |t: &mut aethelgard_ir::SolvedTopology| {
+            let l = t.spi_lines.get_mut("SPI_MOSI").unwrap();
+            l.bus = "GHOST".into();
+            l.rate_hz = 1_000_000;
+        },
+        |t: &mut aethelgard_ir::SolvedTopology| {
+            t.spi_lines.get_mut("SPI_SCK").unwrap().bus = "GHOST".into();
+        },
+    ] {
+        let mut t = solved();
+        t.assignments.insert(
+            "SPI_MOSI".to_owned(),
+            PinAssignment {
+                pin: "PA7".into(),
+                peripheral: "SPI1".into(),
+                signal: "SPI1_MOSI".into(),
+                alternate_function: 5,
+            },
+        );
+        t.spi_lines.insert("SPI_MOSI".to_owned(), spi_line("MOSI"));
+        assert_eq!(t.validate(), Ok(()));
+        forge(&mut t);
+        assert_eq!(t.validate().unwrap_err().kind(), "SpiLineMismatch");
+    }
 }
