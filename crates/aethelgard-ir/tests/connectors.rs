@@ -1013,9 +1013,11 @@ fn no_name_or_citation_uses_the_mark() {
         ]
         .map(str::to_owned),
     );
+    // The needle is built, so the mark is not spelt in the source either.
+    let mark = ["pix", "hawk"].concat();
     for s in strings {
         assert!(
-            !s.to_lowercase().contains("pixhawk"),
+            !s.to_lowercase().contains(&mark),
             "D2: the mark is never used (`{s}`)"
         );
     }
