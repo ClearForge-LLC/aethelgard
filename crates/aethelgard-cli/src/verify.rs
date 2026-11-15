@@ -65,6 +65,11 @@ struct Report {
     topology_sha256: String,
     /// Every generated file's sha256, by its path in the tree.
     files: BTreeMap<String, String>,
+    /// The lifecycle banner (`AET-WO-4210` D1): one line per `eol` or `nrnd`
+    /// part the board uses, absent when it is empty. The package's verdict is
+    /// this one, so the fabrication package carries it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    lifecycle: Vec<String>,
     /// `--against`: whether the directory matched the tree; absent without it.
     #[serde(skip_serializing_if = "Option::is_none")]
     against: Option<&'static str>,
@@ -136,22 +141,15 @@ impl FabReport {
     }
 }
 
-/// The fabrication path's lifecycle rule (`AET-WO-4210` D1, ruled on PR
-/// #131): a board that names an `eol` part is refused by name, before any
-/// gate, so no end-of-life part reaches a purchase; and every part whose
-/// lifecycle the table cites as pending is named in the package. Devices in
-/// the specification's order, I2C then SPI.
-fn lifecycle(topology: &aethelgard_ir::SolvedTopology) -> Result<Vec<String>, ExitCode> {
-    let table = match aethelgard_ir::parts::table() {
-        Ok(t) => t,
-        Err(e) => {
-            return Err(refuse(
-                e.kind(),
-                e.id(),
-                e.to_string(),
-                crate::EXIT_INVALID_SPEC,
-            ));
-        }
+/// Every part on the board whose lifecycle the table cites as pending (not
+/// held), named with the page it must be read from, so a purchase never
+/// meets an unread lifecycle silently (`AET-WO-4210` D1). An `eol` or `nrnd`
+/// part needs no rule here: `validate` refuses it unless the specification
+/// acknowledges it, and the verdict's banner names it (Scotty's ruling on
+/// D1). Devices in the specification's order, I2C then SPI.
+fn lifecycle_unheld(topology: &aethelgard_ir::SolvedTopology) -> Vec<String> {
+    let Ok(table) = aethelgard_ir::parts::table() else {
+        return Vec::new();
     };
     let devices = topology
         .i2c_devices_in_order()
@@ -166,19 +164,7 @@ fn lifecycle(topology: &aethelgard_ir::SolvedTopology) -> Result<Vec<String>, Ex
     let mut unheld = Vec::new();
     for (reference, part) in devices {
         let Some(p) = table.get(part) else { continue };
-        let c = &p.citations.lifecycle;
-        if p.lifecycle == aethelgard_ir::parts::Lifecycle::Eol {
-            return Err(refuse(
-                "EolPartForFabrication",
-                Some(reference),
-                format!(
-                    "device `{reference}` is a `{part}`, which its vendor lists as end of life ({} {}, {}): a fabrication package never names an end-of-life part",
-                    c.document, c.revision, c.section
-                ),
-                crate::EXIT_INVALID_SPEC,
-            ));
-        }
-        if let aethelgard_ir::parts::Held::Pending(url) = &c.held {
+        if let aethelgard_ir::parts::Held::Pending(url) = &p.citations.lifecycle.held {
             let line = format!(
                 "{part} ({reference}): lifecycle `{}` not held, read {url}",
                 p.lifecycle.name()
@@ -188,7 +174,7 @@ fn lifecycle(topology: &aethelgard_ir::SolvedTopology) -> Result<Vec<String>, Ex
             }
         }
     }
-    Ok(unheld)
+    unheld
 }
 
 /// `--fab-out` must be an empty directory or absent. One that exists must be
@@ -565,13 +551,8 @@ pub fn verify(
         Ok(s) => s,
         Err(code) => return code,
     };
-    // The fabrication path's lifecycle rule, before anything is generated or
-    // any gate runs (`AET-WO-4210` D1).
     let lifecycle_unheld = match fab_mode {
-        Some(_) => match lifecycle(&topology) {
-            Ok(unheld) => unheld,
-            Err(code) => return code,
-        },
+        Some(_) => lifecycle_unheld(&topology),
         None => Vec::new(),
     };
     let (files, topology_sha256) = match crate::generated(&spec, &topology, &table) {
@@ -592,6 +573,7 @@ pub fn verify(
         specification_sha256: spec_sha256.clone(),
         topology_sha256,
         files: hashes.clone(),
+        lifecycle: topology.lifecycle_banner().unwrap_or_default(),
         against: None,
         elf_sha256: None,
         rise_times: RISE_TIMES,

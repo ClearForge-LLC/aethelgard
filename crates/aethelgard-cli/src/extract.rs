@@ -28,6 +28,9 @@ struct Report {
     /// The board, as read.
     input: InputReport,
     specification_sha256: String,
+    /// The lifecycle banner (`AET-WO-4210` D1); absent when it is empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    lifecycle: Vec<String>,
     capacitance: &'static str,
     conditions: Vec<String>,
     lines: Vec<Value>,
@@ -156,6 +159,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
             sha256: board_sha256,
         },
         specification_sha256: spec_sha256,
+        lifecycle: topology.lifecycle_banner().unwrap_or_default(),
         capacitance: CAPACITANCE,
         conditions,
         lines: out,

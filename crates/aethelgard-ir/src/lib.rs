@@ -30,7 +30,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// board for it. Version 3 requires a `net_constraints` entry on every SPI
 /// bus's `sck` and `mosi`, and names parts as the version-2 parts table does
 /// (`AET-WO-4300c` D2, F11); nothing supplies either for an older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 3;
+/// Version 4 requires `accept_lifecycle`, each end-of-life or
+/// not-recommended part the board uses acknowledged with a statement
+/// (`AET-WO-4210`, Scotty's ruling on D1); an empty list acknowledges none.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 4;
 
 /// The top-level specification, version 3 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
@@ -53,6 +56,66 @@ pub struct Specification {
     pub net_constraints: Vec<NetConstraint>,
     /// The copper layers, the stackup and the design rules (`board`).
     pub board: board::Board,
+    /// Each `eol` or `nrnd` part the board uses, acknowledged by name with its
+    /// status and a statement of why (`AET-WO-4210`, ruled by Scotty on D1).
+    /// `validate` refuses any such part not listed, and any entry that is not
+    /// one: no end-of-life part is accepted silently (`INV-06`).
+    pub accept_lifecycle: Vec<LifecycleAcceptance>,
+}
+
+/// One acknowledged lifecycle: the part, its status as the parts table cites
+/// it (`eol` or `nrnd`), and why the board uses it anyway.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct LifecycleAcceptance {
+    pub part: String,
+    pub status: String,
+    pub statement: String,
+}
+
+/// The longest acknowledgement statement, in bytes.
+pub const MAX_LIFECYCLE_STATEMENT: usize = 512;
+
+/// The banner every verdict, generated file and fabrication package carries
+/// when the board uses an `eol` or `nrnd` part (`AET-WO-4210`, ruled by Scotty
+/// on D1): one line per part, naming its status, the devices and the vendor
+/// page it is cited to. Empty for a board of `active` parts, so such a
+/// board's outputs are unchanged. Devices in the order given; a part with no
+/// table entry has no lifecycle and is not named.
+pub fn lifecycle_banner<'a>(
+    table: &parts::PartsTable,
+    devices: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Vec<String> {
+    let mut by_part: Vec<(&parts::Part, Vec<&str>)> = Vec::new();
+    for (reference, part) in devices {
+        let Some(p) = table.get(part) else { continue };
+        if p.lifecycle == parts::Lifecycle::Active {
+            continue;
+        }
+        match by_part.iter_mut().find(|(q, _)| q.part == p.part) {
+            Some((_, refs)) => refs.push(reference),
+            None => by_part.push((p, vec![reference])),
+        }
+    }
+    by_part
+        .into_iter()
+        .map(|(p, refs)| {
+            let c = &p.citations.lifecycle;
+            format!(
+                "LIFECYCLE {}: {} ({}) is {} by its vendor ({} {}, {}), acknowledged in accept_lifecycle",
+                p.lifecycle.name().to_ascii_uppercase(),
+                p.part,
+                refs.join(", "),
+                match p.lifecycle {
+                    parts::Lifecycle::Eol => "end of life",
+                    _ => "not recommended for new designs",
+                },
+                c.document,
+                c.revision,
+                c.section
+            )
+        })
+        .collect()
 }
 
 /// The microcontroller: a part name and the domain that supplies it.
@@ -361,6 +424,7 @@ pub(crate) use object_only;
 
 object_only!(
     Specification,
+    LifecycleAcceptance,
     Mcu,
     VoltageDomain,
     Signal,
@@ -668,6 +732,35 @@ pub enum IrValidationError {
     )]
     UnjudgedSpiConstraint { id: String },
     #[error(
+        "device `{id}` is a `{part}`, which its vendor lists as `{status}` ({citation}), and `accept_lifecycle` does not acknowledge it: name the part, its status and why the board uses it (`AET-WO-4210` D1)"
+    )]
+    LifecycleNotAccepted {
+        id: String,
+        part: String,
+        status: &'static str,
+        citation: String,
+    },
+    #[error(
+        "device `{id}` is a `{part}`, which its vendor lists as `{status}` ({citation}), but `accept_lifecycle` acknowledges it as `{accepted}`"
+    )]
+    LifecycleStatusMismatch {
+        id: String,
+        part: String,
+        status: &'static str,
+        accepted: String,
+        citation: String,
+    },
+    #[error("`accept_lifecycle` acknowledges `{id}` twice")]
+    LifecycleAcceptedTwice { id: String },
+    #[error(
+        "`accept_lifecycle` acknowledges `{id}` with a statement that is empty, longer than 512 bytes, or not printable ASCII"
+    )]
+    LifecycleStatementInvalid { id: String },
+    #[error(
+        "`accept_lifecycle` acknowledges `{id}`, which no device uses as an end-of-life or not-recommended part: an acknowledgement stands only for a part the board uses"
+    )]
+    LifecycleAcceptanceUnused { id: String },
+    #[error(
         "device `{id}` is a `{part}` on an {bus_kind} bus, but the part is an {part_kind} part ({citation})"
     )]
     PartOnWrongBus {
@@ -799,6 +892,11 @@ impl IrValidationError {
             Self::PartNameCase { .. } => "PartNameCase",
             Self::SupplyOutsidePart { .. } => "SupplyOutsidePart",
             Self::IoOutsidePart { .. } => "IoOutsidePart",
+            Self::LifecycleNotAccepted { .. } => "LifecycleNotAccepted",
+            Self::LifecycleStatusMismatch { .. } => "LifecycleStatusMismatch",
+            Self::LifecycleAcceptedTwice { .. } => "LifecycleAcceptedTwice",
+            Self::LifecycleStatementInvalid { .. } => "LifecycleStatementInvalid",
+            Self::LifecycleAcceptanceUnused { .. } => "LifecycleAcceptanceUnused",
             Self::UnjudgedSpiConstraint { .. } => "UnjudgedSpiConstraint",
             Self::PartOnWrongBus { .. } => "PartOnWrongBus",
             Self::I2cAddressNotOffered { .. } => "I2cAddressNotOffered",
@@ -870,6 +968,11 @@ impl IrValidationError {
             | Self::PartNameCase { id, .. }
             | Self::SupplyOutsidePart { id, .. }
             | Self::IoOutsidePart { id, .. }
+            | Self::LifecycleNotAccepted { id, .. }
+            | Self::LifecycleStatusMismatch { id, .. }
+            | Self::LifecycleAcceptedTwice { id }
+            | Self::LifecycleStatementInvalid { id }
+            | Self::LifecycleAcceptanceUnused { id }
             | Self::UnjudgedSpiConstraint { id }
             | Self::PartOnWrongBus { id, .. }
             | Self::I2cAddressNotOffered { id, .. }
@@ -1276,7 +1379,88 @@ impl Specification {
                 check_spi_clock(&d.reference, p, speed_hz)?;
             }
         }
+        self.validate_lifecycle(table)
+    }
+
+    /// Step 15 (`AET-WO-4210`, ruled by Scotty on D1): each `eol` or `nrnd`
+    /// part a device uses is acknowledged in `accept_lifecycle`, once, at the
+    /// status the table cites, with a statement; and each entry acknowledges
+    /// such a part. A part with no table entry has no lifecycle to
+    /// acknowledge. Devices in the specification's order, I2C then SPI.
+    fn validate_lifecycle(&self, table: &parts::PartsTable) -> Result<(), IrValidationError> {
+        use IrValidationError as E;
+        let mut seen = BTreeSet::new();
+        for a in &self.accept_lifecycle {
+            if !seen.insert(a.part.as_str()) {
+                return Err(E::LifecycleAcceptedTwice { id: a.part.clone() });
+            }
+            let printable = a.statement.bytes().all(|b| (0x20..=0x7E).contains(&b));
+            if a.statement.trim().is_empty()
+                || a.statement.len() > MAX_LIFECYCLE_STATEMENT
+                || !printable
+            {
+                return Err(E::LifecycleStatementInvalid { id: a.part.clone() });
+            }
+        }
+        let devices = self
+            .i2c_devices
+            .iter()
+            .map(|d| (&d.reference, &d.part))
+            .chain(self.spi_devices.iter().map(|d| (&d.reference, &d.part)));
+        let mut used = BTreeSet::new();
+        for (reference, part) in devices {
+            let Some(p) = part_entry(table, reference, part)? else {
+                continue;
+            };
+            if p.lifecycle == parts::Lifecycle::Active {
+                continue;
+            }
+            used.insert(p.part.as_str());
+            let status = p.lifecycle.name();
+            let citation = cite(&p.citations.lifecycle);
+            match self.accept_lifecycle.iter().find(|a| a.part == p.part) {
+                None => {
+                    return Err(E::LifecycleNotAccepted {
+                        id: reference.clone(),
+                        part: p.part.clone(),
+                        status,
+                        citation,
+                    });
+                }
+                Some(a) if a.status != status => {
+                    return Err(E::LifecycleStatusMismatch {
+                        id: reference.clone(),
+                        part: p.part.clone(),
+                        status,
+                        accepted: a.status.clone(),
+                        citation,
+                    });
+                }
+                Some(_) => {}
+            }
+        }
+        if let Some(a) = self
+            .accept_lifecycle
+            .iter()
+            .find(|a| !used.contains(a.part.as_str()))
+        {
+            return Err(E::LifecycleAcceptanceUnused { id: a.part.clone() });
+        }
         Ok(())
+    }
+
+    /// [`lifecycle_banner`] for the declared devices, in order.
+    pub fn lifecycle_banner(&self) -> Result<Vec<String>, IrValidationError> {
+        let devices = self
+            .i2c_devices
+            .iter()
+            .map(|d| (d.reference.as_str(), d.part.as_str()))
+            .chain(
+                self.spi_devices
+                    .iter()
+                    .map(|d| (d.reference.as_str(), d.part.as_str())),
+            );
+        Ok(lifecycle_banner(parts::table()?, devices))
     }
 
     fn validate_declared(&self) -> Result<(), IrValidationError> {
@@ -1893,6 +2077,21 @@ impl SolvedTopology {
 
     /// The SPI devices in the specification's order, as
     /// [`SolvedTopology::i2c_devices_in_order`] orders the I2C ones.
+    /// [`lifecycle_banner`] for the solved devices, I2C then SPI, each in
+    /// the specification's order.
+    pub fn lifecycle_banner(&self) -> Result<Vec<String>, IrValidationError> {
+        let devices = self
+            .i2c_devices_in_order()
+            .into_iter()
+            .map(|(r, d)| (r, d.part.as_str()))
+            .chain(
+                self.spi_devices_in_order()
+                    .into_iter()
+                    .map(|(r, d)| (r, d.part.as_str())),
+            );
+        Ok(lifecycle_banner(parts::table()?, devices))
+    }
+
     pub fn spi_devices_in_order(&self) -> Vec<(&str, &SolvedSpiDevice)> {
         let mut out: Vec<_> = self
             .spi_devices

@@ -1223,8 +1223,9 @@ mod differential {
             })
         }));
         Specification {
-            schema_version: 3,
+            schema_version: 4,
             board: serde_json::from_str(BOARD).expect("the declared board"),
+            accept_lifecycle: Vec::new(),
             project_name: "t".into(),
             mcu: Mcu {
                 part: "T".into(),

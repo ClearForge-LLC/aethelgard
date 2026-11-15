@@ -22,7 +22,8 @@ fn valid() -> Specification {
     // The device lists are private to the crate (`AET-WO-1204`), so the
     // fixture is built from the JSON the type reads.
     let json = serde_json::json!({
-        "schema_version": 3,
+        "schema_version": 4,
+        "accept_lifecycle": [],
         "project_name": "sentinel-01",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
         "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into() },
@@ -2146,6 +2147,7 @@ fn a_device_whose_io_range_excludes_its_bus_domain_is_refused() {
     let mut spec: Specification = serde_json::from_str(&v).unwrap();
     spec.voltage_domains[0].nominal_millivolts = 1_800;
     spec.spi_buses[0].speed_hz = 7_000_000;
+    spec.accept_lifecycle = acknowledge(&["ICP10111", "ICM20948"]);
     spec.validate().unwrap();
     // The BME280 separates VDDIO (1.2 to 3.6 V): at 1.2 V its supply refuses
     // it first, at its own minimum the I/O range alone would not.
@@ -2220,4 +2222,112 @@ fn a_peripheral_s_lines_share_one_label_and_one_rate() {
         forge(&mut t);
         assert_eq!(t.validate().unwrap_err().kind(), "SpiLineMismatch");
     }
+}
+
+fn acknowledge(parts: &[&str]) -> Vec<aethelgard_ir::LifecycleAcceptance> {
+    parts
+        .iter()
+        .map(|p| aethelgard_ir::LifecycleAcceptance {
+            part: (*p).into(),
+            status: "eol".into(),
+            statement: "a twin stand-in, never bought (AET-WO-4210 D1)".into(),
+        })
+        .collect()
+}
+
+/// The reference with U2 an ICP-10111 at 0x63 and U4 an ICM-20948, on a
+/// 1.8 V rail: the two stand-ins, both `eol`.
+fn stand_ins() -> Specification {
+    let mut spec = valid();
+    devs(&mut spec).spi[0].part = "ICM20948".into();
+    devs(&mut spec).i2c.truncate(1);
+    devs(&mut spec).i2c[0].part = "ICP10111".into();
+    devs(&mut spec).i2c[0].address = 0x63;
+    let v = serde_json::to_string(&spec)
+        .unwrap()
+        .replace("VDD_3V3", "VDD_1V8");
+    let mut spec: Specification = serde_json::from_str(&v).unwrap();
+    spec.voltage_domains[0].nominal_millivolts = 1_800;
+    spec.spi_buses[0].speed_hz = 7_000_000;
+    spec
+}
+
+/// `AET-WO-4210` D1, ruled by Scotty: an `eol` or `nrnd` part is used only
+/// when `accept_lifecycle` acknowledges it, once, at the table's status, with
+/// a statement; an acknowledgement stands only for a part the board uses as
+/// such. Each refusal is by name.
+#[test]
+fn an_eol_part_is_refused_unless_acknowledged_at_its_status() {
+    let spec = stand_ins();
+    let err = spec.validate().unwrap_err();
+    assert_refusal(err.clone(), "LifecycleNotAccepted", Some("U2"));
+    let m = err.to_string();
+    assert!(
+        m.contains("ICP10111") && m.contains("`eol`") && m.contains("EOL badge"),
+        "{m}"
+    );
+
+    let mut spec = stand_ins();
+    spec.accept_lifecycle = acknowledge(&["ICP10111"]);
+    assert_refusal(
+        spec.validate().unwrap_err(),
+        "LifecycleNotAccepted",
+        Some("U4"),
+    );
+
+    let mut spec = stand_ins();
+    spec.accept_lifecycle = acknowledge(&["ICP10111", "ICM20948"]);
+    spec.accept_lifecycle[1].status = "nrnd".into();
+    let err = spec.validate().unwrap_err();
+    assert_refusal(err.clone(), "LifecycleStatusMismatch", Some("U4"));
+    assert!(err.to_string().contains("as `nrnd`"), "{err}");
+
+    let mut spec = stand_ins();
+    spec.accept_lifecycle = acknowledge(&["ICP10111", "ICM20948", "ICP10111"]);
+    assert_refusal(
+        spec.validate().unwrap_err(),
+        "LifecycleAcceptedTwice",
+        Some("ICP10111"),
+    );
+
+    for bad in ["", "   ", "tab\there", &"x".repeat(513)] {
+        let mut spec = stand_ins();
+        spec.accept_lifecycle = acknowledge(&["ICP10111", "ICM20948"]);
+        spec.accept_lifecycle[0].statement = bad.to_owned();
+        assert_refusal(
+            spec.validate().unwrap_err(),
+            "LifecycleStatementInvalid",
+            Some("ICP10111"),
+        );
+    }
+
+    // An acknowledgement of a part the board does not use, or uses `active`.
+    for extra in ["BME280", "W25Q128"] {
+        let mut spec = stand_ins();
+        spec.accept_lifecycle = acknowledge(&["ICP10111", "ICM20948", extra]);
+        assert_refusal(
+            spec.validate().unwrap_err(),
+            "LifecycleAcceptanceUnused",
+            Some(extra),
+        );
+    }
+
+    let mut spec = stand_ins();
+    spec.accept_lifecycle = acknowledge(&["ICM20948", "ICP10111"]);
+    spec.validate().unwrap();
+    // The banner: one line per part, in the devices' order, each naming its
+    // status, devices and vendor citation.
+    let banner = spec.lifecycle_banner().unwrap();
+    assert_eq!(banner.len(), 2, "{banner:?}");
+    assert!(
+        banner[0].starts_with("LIFECYCLE EOL: ICP10111 (U2) is end of life"),
+        "{banner:?}"
+    );
+    assert!(
+        banner[1].starts_with("LIFECYCLE EOL: ICM20948 (U4) is end of life"),
+        "{banner:?}"
+    );
+    assert!(banner.iter().all(|l| l.contains("EOL badge")), "{banner:?}");
+    // A board of `active` parts has no banner.
+    assert!(valid().lifecycle_banner().unwrap().is_empty());
 }

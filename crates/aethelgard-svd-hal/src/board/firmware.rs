@@ -91,13 +91,18 @@ fn provenance(plan: &Plan) -> String {
          \n\
          - Solved topology of specification sha256 `{spec}`.\n\
          - Register facts: `{repo}` at `{commit}`, `{file}` sha256 `{hash}`.\n\
-         - Pin data: `STM32_open_pin_data` at `{pins}`.\n",
+         - Pin data: `STM32_open_pin_data` at `{pins}`.\n{banner}",
         spec = plan.specification_sha256,
         repo = cmsis::REPOSITORY,
         commit = cmsis::COMMIT,
         file = cmsis::HEADER_FILE,
         hash = cmsis::HEADER_SHA256,
         pins = plan.pin_commit,
+        banner = plan
+            .lifecycle
+            .iter()
+            .map(|l| format!("- {l}.\n"))
+            .collect::<String>(),
     )
 }
 

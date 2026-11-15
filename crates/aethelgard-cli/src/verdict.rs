@@ -10,6 +10,11 @@ pub struct Verdict {
     pub ok: bool,
     pub verdict: &'static str,
     pub check: &'static str,
+    /// `simulate --spec`: the lifecycle banner, one line per `eol` or `nrnd`
+    /// part the board uses (`aethelgard_ir::lifecycle_banner`; `AET-WO-4210`
+    /// D1). Absent for a board of `active` parts.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub lifecycle: Vec<String>,
     pub input: InputReport,
     pub tool: ToolReport,
     pub sandbox: SandboxReport,
@@ -392,6 +397,7 @@ impl Verdict {
             ok: pass,
             verdict: if pass { "pass" } else { "fail" },
             check,
+            lifecycle: Vec::new(),
             input: InputReport {
                 path: input.original.display().to_string(),
                 sha256: input.sha256.clone(),

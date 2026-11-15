@@ -222,41 +222,37 @@ fn each_fab_flag_requires_scenarios() {
     }
 }
 
-/// `AET-WO-4210` D1 (ruled on PR #131): with either fab flag, a board that
-/// names an `eol` part is refused by name before anything is generated or any
-/// gate runs, and nothing is written. The 1.8 V fixture's first `eol` device
-/// in the specification's order is U6, the ICP-10111 stand-in. Without a fab
-/// flag the same board reaches generation, whose own refusal (no KiCad symbol
-/// for the stand-ins) is not the lifecycle's.
+/// `AET-WO-4210` D1, ruled by Scotty: an `eol` part the specification does
+/// not acknowledge is refused by `validate`, so on the fab path too, by name,
+/// before anything is generated or written. The 1.8 V fixture acknowledges
+/// both stand-ins; without its list the first refused device in the
+/// specification's order is U6, the ICP-10111.
 #[test]
-fn a_board_naming_an_eol_part_is_refused_on_the_fab_path_by_name() {
-    let spec = "crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json";
-    for flag in ["--fab-out", "--against-fab"] {
-        let out = scratch(&format!("eol{flag}"));
-        if flag == "--against-fab" {
-            fs::create_dir_all(&out).unwrap();
-        }
-        let (code, v) = run(&[
-            "verify",
-            "--spec",
-            spec,
-            "--scenarios",
-            SCENARIO,
-            flag,
-            s(&out),
-        ]);
-        assert_eq!(code, Some(2), "{flag}: {v}");
-        assert_eq!(v["error"]["kind"], "EolPartForFabrication", "{v}");
-        assert_eq!(v["error"]["id"], "U6", "{v}");
-        let m = v["error"]["message"].as_str().unwrap();
-        assert!(m.contains("ICP10111") && m.contains("EOL badge"), "{m}");
-        if flag == "--fab-out" {
-            assert!(!out.exists(), "{flag}: nothing is created");
-        } else {
-            assert_eq!(fs::read_dir(&out).unwrap().count(), 0);
-        }
-    }
-    let (code, v) = run(&["verify", "--spec", spec]);
+fn an_unacknowledged_eol_part_is_refused_on_the_fab_path_by_name() {
+    let fixture = root().join("crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json");
+    let mut spec: Value = serde_json::from_slice(&fs::read(&fixture).unwrap()).unwrap();
+    spec["accept_lifecycle"] = serde_json::json!([]);
+    let dir = scratch("eol-spec");
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("unacknowledged.json");
+    fs::write(&path, spec.to_string()).unwrap();
+    let out = scratch("eol-out");
+    let (code, v) = run(&[
+        "verify",
+        "--spec",
+        s(&path),
+        "--scenarios",
+        SCENARIO,
+        "--fab-out",
+        s(&out),
+    ]);
     assert_eq!(code, Some(2), "{v}");
-    assert_eq!(v["error"]["kind"], "UnknownPart", "{v}");
+    assert_eq!(v["error"]["kind"], "LifecycleNotAccepted", "{v}");
+    assert_eq!(v["error"]["id"], "U6", "{v}");
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(
+        m.contains("ICP10111") && m.contains("`eol`") && m.contains("EOL badge"),
+        "{m}"
+    );
+    assert!(!out.exists(), "nothing is created");
 }

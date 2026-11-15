@@ -246,6 +246,9 @@ struct ValidReport<'a> {
     project_name: &'a str,
     voltage_domains: usize,
     net_constraints: usize,
+    /// The lifecycle banner (`AET-WO-4210` D1); absent when it is empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    lifecycle: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -1274,6 +1277,10 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     if let (Some(r), Some(plan)) = (&ready, &plan) {
         v.boot = Some(boot_report(r, plan, observed.as_ref()));
     }
+    if let Some(r) = &ready {
+        // `validate` read the topology's parts already, so the table is there.
+        v.lifecycle = r.topology.lifecycle_banner().unwrap_or_default();
+    }
     // What judged the boot, as each tool reported it (`AET-WO-2205` §1.1).
     if let Some(build) = build {
         use aethelgard_chaos::campaign::{ENGINE, RENODE};
@@ -1514,6 +1521,7 @@ fn validate(file: Option<&Path>) -> ExitCode {
                 project_name: &spec.project_name,
                 voltage_domains: spec.voltage_domains.len(),
                 net_constraints: spec.net_constraints.len(),
+                lifecycle: spec.lifecycle_banner().unwrap_or_default(),
             },
             0,
         ),
@@ -1803,6 +1811,9 @@ fn generate_tree(file: &Path, out: &Path) -> ExitCode {
         topology_sha256: String,
         /// Every file written, by its path under `--out`, with its sha256.
         files: std::collections::BTreeMap<String, String>,
+        /// The lifecycle banner (`AET-WO-4210` D1); absent when it is empty.
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        lifecycle: Vec<String>,
     }
 
     let (spec, topology, table) = match solved(file) {
@@ -1826,6 +1837,7 @@ fn generate_tree(file: &Path, out: &Path) -> ExitCode {
                 .iter()
                 .map(|(path, text)| (path.clone(), tree::sha256(text.as_bytes())))
                 .collect(),
+            lifecycle: topology.lifecycle_banner().unwrap_or_default(),
         },
         0,
     )
