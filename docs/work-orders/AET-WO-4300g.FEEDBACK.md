@@ -129,3 +129,43 @@ That is 13 per-pin 100 nF capacitors, not the work order's 16 (D1).
   `RM0433` and that XML join the documents. `4300d3`, which shares the file, was told (bus note, 21:40 UTC).
 - **K10 · The support gate takes from the specification only what it declares:** the MCU's part and supply, the domains, the connectors' pin map, and the source. It takes from the row the groups, roles, straps and bounds, and nothing from the emitter. It finds the MCU in the netlist by part number, not by reference.
 - **Finding, for `4300d3`, not built here:** with PDR_ON tied to VDD (this emitter), DS12117 p. 22 note 6 puts the supply's floor at 1.71 V, while the row's `vdd_millivolts.min` is 1.62 V (Table 111). That was sent to `4300d3`'s inbox.
+
+## 6. Routing with the network, measured: D5 (decision needed)
+
+**Which fixtures emit** (`emit` on every specification fixture at v9; `~/.cache/aet-4300g/emit-*`) [measured]:
+
+| fixture | `main` (v8) | this branch | the mirror (below) |
+|---|---|---|---|
+| `d1-24-i2c` | routes | **Unroutable `/SCL1`: cannot reach S9 pad 1** | routes |
+| `pair-standin` | routes | **Unroutable `/SPI_SCK`: pair `USB_STANDIN` cannot be coupled** | Unroutable `VDD_3V3`: cannot reach C10 pad 1 |
+| `d3-24-i2c-12-spi` | routes | routes | **Unroutable `/SCL3`: cannot reach S18 pad 4** |
+| `solve/stress`, `sentinel-02-power` | Unroutable (already on `main`) | the same | the same |
+| every other emitting fixture | routes | routes | routes |
+
+**The cause, measured on `pair-standin`.**
+- With the top row of pins ringed by their capacitors, the placer puts the I2C sensor U3 at (100.25, 86) mm, in front of the hand-pinned SPI6 pins PG13 and PG14.
+- That pushes the flash U4 from (102.75, 83) on `main` to (87.5, 82.25).
+- The pair is routed first, on the bare board (`AET-WO-1308`). It then has no coupled run.
+
+**Two variants were tried and are not kept** (time-boxed):
+- **The mirror** of `4300d2`'s reserve: a part not owned by an IC that owns anchored parts keeps that IC's room. It routes `d1` and breaks `d3`, and `pair-standin`'s pair then walls off C10's pad.
+- **The mirror for ICs only:** the same result.
+
+A third lever, re-pinning `pair-standin`'s I2C bus to I2C2 on PF0/PF1, routes the pair, and then C10's pad fails the same way.
+
+**The tier-1 tests this leaves failing** [measured]:
+- `adversarial_1301::attack_a_wide_reference_stays_clear_of_every_other_part` (d1);
+- `stackups_tier1::d1_routes_at_four_layers_and_at_two`;
+- `escape_tier1::twenty_renamings_route_d1_to_its_own_copper` (d1);
+- `classes_tier1::{the_stand_in_pair_is_routed_coupled_and_measured, the_pair_judge_refuses_each_breakage, extract_bounds_a_classed_line_at_its_own_width}` (pair-standin);
+- `escape_tier1::shifted_placements_route_without_reaching_the_exact_judge` (seed 22: `VDD_3V3` cannot take U3 pad 5 to a via);
+- `classes_tier1::a_part_on_each_edge_is_routed_and_read_back_where_kicad_puts_it` (`/I2C_SDA`: R1 pad 2 has no node clear to end a track).
+
+None is weakened or retargeted: d1's tests are the router's capacity claim, and editing the fixture would hide the regression.
+
+**D5, for the architect:** the network fills the ring around the MCU, and the router, which lays a pair first and escapes a pad on its own grid, now fails eight tests on two dense fixtures and two moved placements. The options:
+- (a) the router work order (`AET-WO-1310`, sub-grid escape, or a successor that routes each anchored part's pin connection before pairs) lands first, and this one waits on it;
+- (b) the fixtures change: `d1` loses devices, or `pair-standin` moves its pins, and the tests are re-read as the smaller claim;
+- (c) the placer gains a rule this builder did not find in its time box.
+
+Until a ruling, this work order's final line is STOPPED on D5.
