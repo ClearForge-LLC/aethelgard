@@ -267,9 +267,12 @@ pub struct Support {
     pub supply: String,
     /// The groups whose pins are all on `GND`.
     pub grounds: Vec<String>,
-    /// Groups each on some declared voltage domain.
-    pub powered: Vec<String>,
-    pub powered_at: At,
+    /// Groups each on a declared voltage domain whose whole tolerance band
+    /// lies in the group's operating range.
+    pub powered: Vec<Powered>,
+    /// Groups whose every pin is on a net of its own: no declared domain,
+    /// not `GND`, and no other support pin's (`AET-WO-4300g` adversarial A1).
+    pub own_nets: Vec<OwnNet>,
     pub capacitors: Vec<SupportCapacitor>,
     pub straps: Vec<Strap>,
 }
@@ -279,6 +282,21 @@ impl Support {
     pub fn group(&self, group: &str) -> &[String] {
         self.pins.get(group).map_or(&[], Vec::as_slice)
     }
+}
+
+/// A powered group and the range its supply must hold, mV.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Powered {
+    pub group: String,
+    pub millivolts: Range,
+    pub at: At,
+}
+
+/// A group whose pins each need a net of their own, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnNet {
+    pub group: String,
+    pub at: At,
 }
 
 /// What a support capacitor does.
@@ -714,10 +732,26 @@ struct RawSupport {
     pins_at: RawAt,
     supply: String,
     grounds: Vec<String>,
-    powered: Vec<String>,
-    powered_at: RawAt,
+    powered: Vec<RawPowered>,
+    own_nets: Vec<RawOwnNet>,
     capacitors: Vec<RawSupportCapacitor>,
     straps: Vec<RawStrap>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPowered {
+    group: String,
+    min_millivolts: i64,
+    max_millivolts: i64,
+    at: RawAt,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawOwnNet {
+    group: String,
+    at: RawAt,
 }
 
 #[derive(Deserialize)]
@@ -1024,11 +1058,30 @@ fn support(raw: RawSupport, r: &mut Reader<'_>) -> Result<Support, String> {
         .iter()
         .map(|g| group(g, "grounds"))
         .collect::<Result<Vec<_>, _>>()?;
-    let powered = raw
-        .powered
-        .iter()
-        .map(|g| group(g, "powered"))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut powered = Vec::with_capacity(raw.powered.len());
+    for p in raw.powered {
+        let g = group(&p.group, "powered")?;
+        if p.min_millivolts < 0 || p.min_millivolts > p.max_millivolts {
+            return Err(format!("`{F}.powered.{g}` is not a range of 0 mV or more"));
+        }
+        bounded(p.max_millivolts, &format!("{F}.powered.{g}"))?;
+        powered.push(Powered {
+            millivolts: Range {
+                min: p.min_millivolts,
+                max: p.max_millivolts,
+            },
+            at: r.at(p.at, &format!("{F}.powered.{g}"))?,
+            group: g,
+        });
+    }
+    let mut own_nets = Vec::with_capacity(raw.own_nets.len());
+    for o in raw.own_nets {
+        let g = group(&o.group, "own_nets")?;
+        own_nets.push(OwnNet {
+            at: r.at(o.at, &format!("{F}.own_nets.{g}"))?,
+            group: g,
+        });
+    }
     if grounds.is_empty() {
         return Err(format!("`{F}.grounds` is empty"));
     }
@@ -1091,7 +1144,7 @@ fn support(raw: RawSupport, r: &mut Reader<'_>) -> Result<Support, String> {
         supply,
         grounds,
         powered,
-        powered_at: r.at(raw.powered_at, &format!("{F}.powered"))?,
+        own_nets,
         capacitors,
         straps,
     })

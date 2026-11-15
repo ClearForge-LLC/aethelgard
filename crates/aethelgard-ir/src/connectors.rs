@@ -457,7 +457,9 @@ pub fn programming_connector(spec: &Specification) -> Option<(&Connector, bool)>
 /// Step 18 (`AET-WO-4300g` §1.4): the MCU's supply is driven by exactly one
 /// declared source. With `mcu.supply_source` `null`, a regulator of `power`
 /// must output the supply. With it set, it names a declared connector's
-/// listed pin on the supply, and no regulator drives the supply too.
+/// listed pin on the supply, on a connector other than the programming one
+/// (whose supply pin is the debugger's target-voltage sense, adversarial A3),
+/// and no regulator drives the supply too.
 pub(crate) fn supply_source(spec: &Specification) -> Result<(), E> {
     let supply = spec.mcu.supply.as_str();
     let refuse = |why: String| E::SupplyHasNoSource {
@@ -489,6 +491,12 @@ pub(crate) fn supply_source(spec: &Specification) -> Result<(), E> {
                         s.connector
                     ))
                 })?;
+            if programming_connector(spec).is_some_and(|(p, _)| p.reference == c.reference) {
+                return Err(refuse(format!(
+                    "`mcu.supply_source` names `{}`, the connector that programs the part: its supply pin is the debugger's target-voltage sense, not a source; name the connector the supply enters by",
+                    s.connector
+                )));
+            }
             match c.pins.iter().find(|p| p.pin == s.pin) {
                 Some(p) if p.net.as_deref() == Some(supply) => Ok(()),
                 Some(p) => Err(refuse(format!(

@@ -32,14 +32,25 @@ use aethelgard_ir::power_parts::{self, Kind, Support, SupportCapacitor};
 use crate::route::{Board, Pad};
 use crate::strict::{self, Node, Tree};
 
+/// The symbol a capacitor is drawn with: KiCad's own (`Device:C`), as every
+/// capacitor row of the power parts table names it.
+const CAPACITOR: &str = "Device:C";
+
 /// KiCad's prefix for a pin the schematic leaves unconnected.
 const UNCONNECTED: &str = "unconnected-";
 
-/// One component of the netlist: its value.
+/// One component of the netlist: its value, its symbol (`lib:part`), and
+/// whether a property marks it unpopulated (`dnp`, `exclude_from_bom`,
+/// `exclude_from_board`: adversarial A4).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Component {
     pub value: String,
+    pub symbol: Option<String>,
+    pub unpopulated: bool,
 }
+
+/// Properties that take a part off the built board.
+const UNPOPULATED: [&str; 3] = ["dnp", "exclude_from_bom", "exclude_from_board"];
 
 /// The netlist as the gate reads it: each component by reference, and each
 /// `(reference, pin)`'s net. A pin KiCad names `unconnected-…` has no net.
@@ -94,10 +105,22 @@ pub fn netlist(tree: &Tree) -> Result<Netlist, String> {
     for comp in components.all("comp") {
         let reference = text(&comp, "ref")?;
         let value = text(&comp, "value")?;
+        let symbol = match comp.one("libsource").map_err(|r| r.to_string())? {
+            Some(l) => Some(format!("{}:{}", text(&l, "lib")?, text(&l, "part")?)),
+            None => None,
+        };
+        let mut unpopulated = false;
+        for p in comp.all("property") {
+            if UNPOPULATED.contains(&text(&p, "name")?) {
+                unpopulated = true;
+            }
+        }
         let previous = out.components.insert(
             reference.to_owned(),
             Component {
                 value: value.to_owned(),
+                symbol,
+                unpopulated,
             },
         );
         if previous.is_some() {
@@ -135,11 +158,21 @@ pub fn netlist(tree: &Tree) -> Result<Netlist, String> {
 }
 
 /// A capacitor value as a schematic writes it, in pF: `100n`, `4u7`, `2u2`,
-/// `470p`, `1u`, optionally followed by `F`, then optionally a space and a
-/// part number. Anything else is not a capacitance. The gate's own reading,
+/// `470p`, `1u`, optionally followed by `F`, then optionally one space and a
+/// capacitor part of the power parts table (`10u GCM32EC71H106KA03`).
+/// Anything else (`100n DNP`) is not a capacitance. The gate's own reading,
 /// shared with no emitter (`RUL-20`).
 pub fn picofarads(value: &str) -> Option<i64> {
-    let token = value.split(' ').next()?;
+    let (token, part) = match value.split_once(' ') {
+        Some((t, p)) => (t, Some(p)),
+        None => (value, None),
+    };
+    if let Some(p) = part {
+        let table = power_parts::table().ok()?;
+        if !matches!(table.get(p).map(|r| &r.kind), Some(Kind::Capacitor(_))) {
+            return None;
+        }
+    }
     let token = token.strip_suffix('F').unwrap_or(token);
     let i = token.find(['p', 'n', 'u'])?;
     let (whole, rest) = token.split_at(i);
@@ -236,6 +269,9 @@ fn capacitors(n: &Netlist) -> Vec<Capacitor<'_>> {
     n.components
         .iter()
         .filter_map(|(reference, c)| {
+            if c.unpopulated || c.symbol.as_deref() != Some(CAPACITOR) {
+                return None;
+            }
             let picofarads = picofarads(&c.value)?;
             let pins: Vec<_> = n.pins_of(reference).collect();
             let [a, b] = pins.as_slice() else { return None };
@@ -355,10 +391,9 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
         fail(
             "support_pin_off_net",
             format!(
-                "{mcu} {} pins {} are not on the supply `{supply}` ({})",
+                "{mcu} {} pins {} are not on the supply `{supply}`",
                 s.supply,
                 off.join(", "),
-                power_parts::table().map_or_else(|_| String::new(), |t| t.cite(&s.powered_at))
             ),
         );
     }
@@ -371,17 +406,61 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
             );
         }
     }
-    let domains: BTreeSet<&str> = spec.voltage_domains.iter().map(|d| d.id.as_str()).collect();
-    for g in &s.powered {
-        let off = on(g, &|n| n.is_some_and(|n| domains.contains(n)));
+    // Each powered group on a declared domain whose whole tolerance band lies
+    // in the group's range (adversarial A2: Table 108 note 1's "in the
+    // permitted range").
+    let band = |id: &str| {
+        spec.voltage_domains.iter().find(|d| d.id == id).map(|d| {
+            let nominal = i64::from(d.nominal_millivolts);
+            let spread = nominal * i64::from(d.tolerance_permille) / 1000;
+            (nominal - spread, nominal + spread)
+        })
+    };
+    for p in &s.powered {
+        let r = p.millivolts;
+        let off = on(&p.group, &|n| {
+            n.and_then(band)
+                .is_some_and(|(lo, hi)| lo >= r.min && hi <= r.max)
+        });
         if !off.is_empty() {
             fail(
                 "support_pin_off_net",
                 format!(
-                    "{mcu} {g} pins {} are on no declared voltage domain",
-                    off.join(", ")
+                    "{mcu} {} pins {} are on no declared voltage domain held within {} to {} mV ({})",
+                    p.group,
+                    off.join(", "),
+                    r.min,
+                    r.max,
+                    power_parts::table().map_or_else(|_| p.at.section.clone(), |t| t.cite(&p.at))
                 ),
             );
+        }
+    }
+    // Each pin of an own-net group on a net no declared domain, `GND` or other
+    // support pin of the MCU shares (adversarial A1).
+    let support_pins: Vec<&String> = s.pins.values().flatten().collect();
+    for o in &s.own_nets {
+        for p in s.group(&o.group) {
+            let mine = net(p);
+            let shared = mine.as_deref().is_none_or(|n| {
+                n == gnd
+                    || band(n).is_some()
+                    || support_pins
+                        .iter()
+                        .any(|q| *q != p && netlist.net(mcu, q) == Some(n))
+            });
+            if shared {
+                fail(
+                    "support_pin_off_net",
+                    format!(
+                        "{mcu} {} (pin {p}) is on {}, which is not a net of its own ({})",
+                        o.group,
+                        mine.map_or_else(|| "no net".to_owned(), |n| format!("`{n}`")),
+                        power_parts::table()
+                            .map_or_else(|_| o.at.section.clone(), |t| t.cite(&o.at))
+                    ),
+                );
+            }
         }
     }
     // 3. The straps.
@@ -500,6 +579,20 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
     let mut off: BTreeSet<&str> = BTreeSet::new();
     for c in spec.declared_connectors() {
         for p in &c.pins {
+            // A pin declared not connected is on no net (adversarial A5).
+            if p.net.is_none() {
+                if let Some(n) = netlist.net(&c.reference, &p.pin) {
+                    off.insert(c.reference.as_str());
+                    fail(
+                        "connector_pin_off_net",
+                        format!(
+                            "{} pin {} is declared not connected and is on `{n}` in the netlist",
+                            c.reference, p.pin
+                        ),
+                    );
+                }
+                continue;
+            }
             let Some(want) = p.net.as_deref().and_then(expected) else {
                 continue;
             };
@@ -559,7 +652,7 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
         .map(|c| format!("{} placement: {}", c.role.name(), c.bound_basis))
         .collect();
     conditions.push(
-        "each capacitor's dielectric, rated voltage and ESR (VCAP: below 100 mOhm, DS12117 Table 113) are not chosen or judged: the BOM names a value and a 0402 footprint only".to_owned(),
+        "each capacitor's dielectric, rated voltage, package and ESR (VCAP: below 100 mOhm, DS12117 Table 113) are not judged: the gate reads a value and a symbol".to_owned(),
     );
     if spec.mcu.supply_source.is_none() {
         conditions.push(

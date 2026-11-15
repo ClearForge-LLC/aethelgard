@@ -1375,7 +1375,7 @@ mod tests {
         let sym = library::symbol("MCU_ST_STM32H7:STM32H753ZITx").unwrap();
         let pins = pins(&sym).unwrap();
         assert_eq!(pins.len(), 144);
-        let row = support::row().unwrap();
+        let row = support::row("STM32H753ZITx").unwrap();
         let mut covered = BTreeSet::new();
         for (group, numbers) in &row.pins {
             let name = match group.as_str() {

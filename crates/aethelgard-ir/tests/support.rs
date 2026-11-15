@@ -219,3 +219,36 @@ fn support_of(t: &mut Value) -> &mut Value {
         .unwrap();
     &mut row["kind"]["mcu"]["support"]
 }
+
+/// Adversarial A3: the programming connector's supply pin is the debugger's
+/// sense line, not a source.
+#[test]
+fn the_debug_ports_supply_pin_is_not_a_source() {
+    let mut v = value(REFERENCE);
+    v["connectors"].as_array_mut().unwrap().truncate(1);
+    v["mcu"]["supply_source"] = json!({"connector": "J1", "pin": "1"});
+    let e = check(&v).unwrap_err();
+    assert_eq!(e.kind(), "SupplyHasNoSource");
+    assert!(e.to_string().contains("programs the part"), "{e}");
+}
+
+/// §5.3: a regulator's output renamed leaves the supply sourceless, which the
+/// power tree's own check refuses first (step 16, before step 18).
+#[test]
+fn a_supply_whose_regulator_output_is_renamed_is_refused() {
+    let v = value(POWER);
+    let supply = v["mcu"]["supply"].as_str().unwrap().to_owned();
+    let regs = v["power"]["regulators"].as_array().unwrap();
+    let i = regs
+        .iter()
+        .position(|r| r["output"] == supply.as_str())
+        .unwrap();
+    for (to, kind) in [
+        ("VDD_3V3X", "UnknownDomain"),
+        ("VDD_5V", "DomainWithoutSource"),
+    ] {
+        let mut w = v.clone();
+        w["power"]["regulators"][i]["output"] = json!(to);
+        assert_eq!(refused(&w), kind, "{to}");
+    }
+}

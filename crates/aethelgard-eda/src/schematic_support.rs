@@ -24,28 +24,26 @@ use aethelgard_ir::{NRST, SWCLK, SWDIO};
 
 use super::{Anchor, Builder, Conn, EmitError, Owner};
 
-/// The MCU's row's support network.
-pub(super) fn row() -> Result<&'static Support, EmitError> {
+/// The support network of `part`'s row, as the gate looks it up.
+pub(super) fn row(part: &str) -> Result<&'static Support, EmitError> {
     let table = power_parts::table().map_err(|e| EmitError::Internal(e.to_string()))?;
-    table
-        .rows()
-        .iter()
-        .find_map(|r| match &r.kind {
-            Kind::Mcu(m) => Some(&m.support),
-            _ => None,
-        })
-        .ok_or_else(|| EmitError::Internal("the power parts table has no MCU row".into()))
+    match table.get(part).map(|r| &r.kind) {
+        Some(Kind::Mcu(m)) => Ok(&m.support),
+        _ => Err(EmitError::Internal(format!(
+            "the power parts table has no MCU row for `{part}`"
+        ))),
+    }
 }
 
 /// Each support pin's connection by package position, and the capacitors,
 /// drawn after the MCU's reference is taken and before its part is pushed.
 pub(super) fn draw(b: &mut Builder<'_>, mcu: &str) -> Result<BTreeMap<String, Conn>, EmitError> {
-    let s = row()?;
+    let s = row(&b.spec.mcu.part)?;
     let supply = b.spec.mcu.supply.clone();
     let mut by_group: BTreeMap<&str, Conn> = BTreeMap::new();
     by_group.insert(s.supply.as_str(), b.rail(&supply));
-    for g in &s.powered {
-        by_group.insert(g.as_str(), b.rail(&supply));
+    for p in &s.powered {
+        by_group.insert(p.group.as_str(), b.rail(&supply));
     }
     for g in &s.grounds {
         by_group.insert(g.as_str(), b.ground());

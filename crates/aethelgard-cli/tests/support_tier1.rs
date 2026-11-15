@@ -60,7 +60,14 @@ fn netlist_text((values, nets): &Pads) -> String {
     }
     let mut s = String::from("(export (version \"E\") (components\n");
     for (r, v) in values {
-        s.push_str(&format!("(comp (ref \"{r}\") (value \"{v}\"))\n"));
+        // The symbol, as KiCad writes it: every capacitor here is Device:C,
+        // every resistor Device:R (the tier-2 test reads KiCad's own export).
+        let lib = match r.chars().next() {
+            Some('C') => " (libsource (lib \"Device\") (part \"C\"))",
+            Some('R') => " (libsource (lib \"Device\") (part \"R\"))",
+            _ => "",
+        };
+        s.push_str(&format!("(comp (ref \"{r}\") (value \"{v}\"){lib})\n"));
     }
     s.push_str(")\n(nets\n");
     for (i, (n, nodes)) in by_net.iter().enumerate() {
@@ -385,4 +392,135 @@ fn a_ground_or_powered_pin_off_its_net_fails() {
         "{:?}",
         out.findings
     );
+}
+
+/// Judges a netlist given as text, for edits the pad map cannot express.
+fn judge_text(spec: &Specification, text: &str, board: &str) -> support::Record {
+    let n = support::netlist(&strict::netlist(text).unwrap()).unwrap();
+    let tree = strict::board(board).unwrap();
+    let (b, _) = route::read(&tree, &Stack::of(spec)).unwrap();
+    support::judge(spec, &n, &b).unwrap()
+}
+
+/// Every pin carrying `from`, on `to` instead (a net renamed or merged).
+fn renet(pads: &mut Pads, from: &str, to: &str) {
+    for net in pads.1.values_mut() {
+        if net == from {
+            *net = to.to_owned();
+        }
+    }
+}
+
+/// Adversarial A1: NRST, a VCAP and the SWD lines each need a net of their
+/// own. Moved onto the supply, onto GND or onto each other, with everything
+/// on them moved too, each fails by name.
+#[test]
+fn a_reset_vcap_or_debug_net_that_is_not_its_own_fails() {
+    let (spec, pads, board, _) = passing();
+    for (from, to, group) in [
+        ("/NRST", "VDD_3V3", "NRST"),
+        ("/U1_VCAP1", "VDD_3V3", "VCAP"),
+        ("/SWCLK", "/SWDIO", "SWCLK"),
+        ("/SWDIO", "GND", "SWDIO"),
+        ("/NRST", "/SWDIO", "NRST"),
+    ] {
+        let mut p = pads.clone();
+        renet(&mut p, from, to);
+        let out = judge(&spec, &p, &board);
+        assert!(
+            out.findings
+                .iter()
+                .any(|f| f.kind == "support_pin_off_net" && f.message.contains(group)),
+            "{from} on {to}: {:?}",
+            out.findings
+        );
+    }
+}
+
+/// Adversarial A2: a powered group on a declared domain outside its range
+/// (VDDA and VREF+ on 5 V, above Table 111's 3.6 V) fails.
+#[test]
+fn a_powered_group_out_of_its_range_fails() {
+    let (mut spec, mut pads, board, r) = passing();
+    let mut five = spec.voltage_domains[0].clone();
+    five.id = "VDD_5V".into();
+    five.nominal_millivolts = 5000;
+    spec.voltage_domains.push(five);
+    for pin in ["32", "33"] {
+        pads.1.insert(("U1".into(), pin.into()), "VDD_5V".into());
+    }
+    for role in ["analog_bypass", "analog_bulk"] {
+        let pin = if role == "analog_bypass" {
+            "33"
+        } else {
+            "VDDA"
+        };
+        let c = part_at(&r, role, pin);
+        for ((reference, _), net) in pads.1.iter_mut() {
+            if reference == &c && net == "VDD_3V3" {
+                *net = "VDD_5V".into();
+            }
+        }
+    }
+    let out = judge(&spec, &pads, &board);
+    assert!(
+        out.findings
+            .iter()
+            .any(|f| f.kind == "support_pin_off_net" && f.message.contains("VDDA")),
+        "{:?}",
+        out.findings
+    );
+}
+
+/// Adversarial A4: a capacitor marked unpopulated, drawn as another symbol,
+/// or whose value carries more than a capacitance and a table part, serves
+/// no role.
+#[test]
+fn an_unpopulated_or_mislabelled_capacitor_serves_no_role() {
+    let (spec, pads, board, r) = passing();
+    let c = part_at(&r, "vdd_bypass", "17");
+    let text = netlist_text(&pads);
+    let comp = format!("(comp (ref \"{c}\") (value \"100n\")");
+    assert!(text.contains(&comp));
+    for (edit, why) in [
+        (format!("{comp} (property (name \"dnp\"))"), "dnp"),
+        (
+            format!("{comp} (property (name \"exclude_from_board\"))"),
+            "off the board",
+        ),
+        (
+            format!("{comp} (property (name \"exclude_from_bom\"))"),
+            "off the BOM",
+        ),
+        (comp.replace("100n", "100n DNP"), "a value with DNP"),
+    ] {
+        let out = judge_text(&spec, &text.replace(&comp, &edit), &board);
+        assert_eq!(
+            kinds(&out),
+            ["support_capacitor_missing"],
+            "{why}: {:?}",
+            out.findings
+        );
+    }
+    let resistor = text.replace(
+        &format!("{comp} (libsource (lib \"Device\") (part \"C\"))"),
+        &format!("{comp} (libsource (lib \"Device\") (part \"R\"))"),
+    );
+    assert_ne!(resistor, text);
+    let out = judge_text(&spec, &resistor, &board);
+    assert_eq!(
+        kinds(&out),
+        ["support_capacitor_missing"],
+        "{:?}",
+        out.findings
+    );
+}
+
+/// Adversarial A5: a connector pin declared not connected, on a net.
+#[test]
+fn a_not_connected_connector_pin_on_a_net_fails() {
+    let (spec, mut pads, board, _) = passing();
+    pads.1.insert(("J1".into(), "2".into()), "/SWCLK".into());
+    let k = kinds(&judge(&spec, &pads, &board));
+    assert!(k.contains(&"connector_pin_off_net"), "{k:?}");
 }

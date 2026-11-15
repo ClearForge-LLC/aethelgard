@@ -821,14 +821,64 @@
               "VSSA"
             ],
             "powered": [
-              "VDDA",
-              "VDD33USB",
-              "VBAT"
+              {
+                "group": "VDDA",
+                "min_millivolts": 1620,
+                "max_millivolts": 3600,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 209, Table 111, VDDA with the ADC or COMP used 1.62 to 3.6 V; pp. 207-208, Table 108 note 1: connected to the external power supply, in the permitted range"
+                }
+              },
+              {
+                "group": "VDD33USB",
+                "min_millivolts": 0,
+                "max_millivolts": 3600,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 209, Table 111, VDD33USB with USB not used 0 to 3.6 V (no USB is declared); pp. 207-208, Table 108 note 1"
+                }
+              },
+              {
+                "group": "VBAT",
+                "min_millivolts": 1200,
+                "max_millivolts": 3600,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 27, 3.5.1: VBAT = 1.2 to 3.6 V; pp. 207-208, Table 108 note 1"
+                }
+              }
             ],
-            "powered_at": {
-              "document": "DS12117",
-              "section": "pp. 207-208, Table 108 note 1: all main power (VDD, VDDA, VDD33USB, VBAT) and ground (VSS, VSSA) pins must always be connected to the external power supply"
-            },
+            "own_nets": [
+              {
+                "group": "VCAP",
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 27, 3.5.1: VCAP is VCORE, 1.0 to 1.35 V by voltage scaling, from the internal regulator; p. 209, Table 111; p. 211, Table 113: one CEXT per VCAP pin"
+                }
+              },
+              {
+                "group": "NRST",
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 248, Figure 73 note 2: the level on the NRST pin must be able to go below VIL(NRST)"
+                }
+              },
+              {
+                "group": "SWDIO",
+                "at": {
+                  "document": "ST_PIN_DATA_H753ZI",
+                  "section": "PA13 carries JTMS-SWDIO: the debug port's data line, its own signal"
+                }
+              },
+              {
+                "group": "SWCLK",
+                "at": {
+                  "document": "ST_PIN_DATA_H753ZI",
+                  "section": "PA14 carries JTCK-SWCLK: the debug port's clock, its own signal"
+                }
+              }
+            ],
             "capacitors": [
               {
                 "role": "vdd_bypass",
