@@ -36,15 +36,45 @@ pub enum Model {
     /// fraction is ½ or more (30 °C: 28086 against 28087), so a stimulus is
     /// chosen where both agree (25 °C: `0x6666`).
     Icp101xx,
+    /// `Sensors.ICM42688P`, on SPI: this project's own (`AET-WO-4220`,
+    /// `models/renode/ICM42688P.cs`).
+    Icm42688p,
+    /// `Sensors.BMP581`, on I2C: this project's own (`AET-WO-4220`,
+    /// `models/renode/BMP581.cs`).
+    Bmp581,
 }
 
 /// Every model, for the exhaustive tests.
-pub const MODELS: [Model; 4] = [
+pub const MODELS: [Model; 6] = [
     Model::Bme280,
     Model::GenericSpiFlash,
     Model::Icm20948,
     Model::Icp101xx,
+    Model::Icm42688p,
+    Model::Bmp581,
 ];
+
+/// Each model of our own with its file in `aethelgard_renode_models::FILES`
+/// and that file's sha256 (`AET-WO-4220` D6): the pin. The emitted platform
+/// names it, and the CLI includes only a copy whose bytes hash to it. A
+/// changed model fails `every_model_of_our_own_is_pinned_by_its_sha256`
+/// until its pin moves with it.
+pub const OWN: [(Model, &str, &str); 2] = [
+    (
+        Model::Bmp581,
+        "BMP581.cs",
+        "7fa329f066b40ee3779063a0054ec630cecf0f38a19ddef1026377ec6342c802",
+    ),
+    (
+        Model::Icm42688p,
+        "ICM42688P.cs",
+        "72539e364fc7cbd0b253280af57a0959ae0fdfbd22393b4c8ae70381a55c0e71",
+    ),
+];
+
+/// Where a model of our own lives in the repository, as the platform's
+/// header names it.
+pub const OWN_DIR: &str = "models/renode";
 
 /// The ICM-20948's bank-0 registers a script may name, as Renode's
 /// `ICM20948_Bank0Registers.cs` names them: the model's lines carry the name.
@@ -77,6 +107,18 @@ const ICP_COMMANDS: [(u16, &str); 3] = [
     (0x7866, "UltraLowNoiseTemperaturePressure"),
 ];
 
+/// The ICM-42688-P's `REG_BANK_SEL` (DS-000347 14.59).
+const ICM_REG_BANK_SEL: u8 = 0x76;
+
+/// Bytes as our models write them: `0x47 0x00`, or `(none)`.
+fn listed(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        return "(none)".to_owned();
+    }
+    let each: Vec<String> = bytes.iter().map(|b| format!("0x{b:02X}")).collect();
+    each.join(" ")
+}
+
 fn icm_register(r: u8) -> Option<&'static str> {
     ICM_BANK0.iter().find(|x| x.0 == r).map(|x| x.1)
 }
@@ -103,7 +145,24 @@ impl Model {
             Model::GenericSpiFlash => "SPI.GenericSpiFlash",
             Model::Icm20948 => "Sensors.ICM20948",
             Model::Icp101xx => "Sensors.ICP_101xx",
+            Model::Icm42688p => "Sensors.ICM42688P",
+            Model::Bmp581 => "Sensors.BMP581",
         }
+    }
+
+    /// A model of our own: its file name and pinned sha256 (`OWN`); `None`
+    /// for one of Renode's.
+    pub fn own(self) -> Option<(&'static str, &'static str)> {
+        OWN.iter().find(|o| o.0 == self).map(|o| (o.1, o.2))
+    }
+
+    /// The text of a model of our own, from `aethelgard_renode_models`.
+    pub fn source(self) -> Option<&'static str> {
+        let (file, _) = self.own()?;
+        aethelgard_renode_models::FILES
+            .iter()
+            .find(|f| f.0 == file)
+            .map(|f| f.1)
     }
 
     /// The model the parts table's name stands for. Every name in
@@ -116,8 +175,8 @@ impl Model {
     /// too; the twin wires only its SPI side.
     pub fn bus(self) -> BusKind {
         match self {
-            Model::Bme280 | Model::Icp101xx => BusKind::I2c,
-            Model::GenericSpiFlash | Model::Icm20948 => BusKind::Spi,
+            Model::Bme280 | Model::Icp101xx | Model::Bmp581 => BusKind::I2c,
+            Model::GenericSpiFlash | Model::Icm20948 | Model::Icm42688p => BusKind::Spi,
         }
     }
 
@@ -127,7 +186,11 @@ impl Model {
     /// `Noisy` but its pressure arithmetic (`AET-WO-4210` P6.2, D2).
     pub fn level(self) -> (i8, &'static str) {
         match self {
-            Model::Bme280 | Model::GenericSpiFlash | Model::Icm20948 => (-1, "[NOISY] "),
+            Model::Bme280
+            | Model::GenericSpiFlash
+            | Model::Icm20948
+            | Model::Icm42688p
+            | Model::Bmp581 => (-1, "[NOISY] "),
             Model::Icp101xx => (0, "[DEBUG] "),
         }
     }
@@ -258,6 +321,49 @@ impl Model {
                 }
                 Some(lines)
             }
+            // Ours (`AET-WO-4220`): one line per transaction, every byte in
+            // it (`ICM42688P.cs` `FinishTransmission`). The bank is
+            // `REG_BANK_SEL`'s, 0 from reset; a step that selects another
+            // bank has no witness, since the next step's bank would depend
+            // on it.
+            Model::Icm42688p => {
+                let (&first, values) = w.split_first()?;
+                let r = first & 0x7F;
+                if first & 0x80 != 0 {
+                    if !values.is_empty() {
+                        return None;
+                    }
+                    Some(vec![format!(
+                        "[NOISY] {device}: bank 0 read 0x{r:02X} -> {}",
+                        listed(&bytes)
+                    )])
+                } else {
+                    if step.width != 0 || r == ICM_REG_BANK_SEL {
+                        return None;
+                    }
+                    Some(vec![format!(
+                        "[NOISY] {device}: bank 0 write 0x{r:02X} <- {}",
+                        listed(values)
+                    )])
+                }
+            }
+            // `BMP581.cs` `FinishTransmission`: the first byte written is
+            // the register pointer; a transaction that writes after it and
+            // also reads would log two lines, which no step makes.
+            Model::Bmp581 => {
+                let (&r, values) = w.split_first()?;
+                match (values.is_empty(), step.width) {
+                    (true, 0) | (false, 0) => Some(vec![format!(
+                        "[NOISY] {device}: write 0x{r:02X} <- {}",
+                        listed(values)
+                    )]),
+                    (true, _) => Some(vec![format!(
+                        "[NOISY] {device}: read 0x{r:02X} -> {}",
+                        listed(&bytes)
+                    )]),
+                    (false, _) => None,
+                }
+            }
         }
     }
 
@@ -271,7 +377,13 @@ impl Model {
         match self {
             // Measured: none of these warns in a correct identity read, or
             // in the ICP-101xx's script (`AET-WO-4210` P6.2).
-            Model::Bme280 | Model::GenericSpiFlash | Model::Icp101xx => Some(Vec::new()),
+            // Ours write a warning only for a store to a read-only or
+            // unmodelled register, which no correct step makes.
+            Model::Bme280
+            | Model::GenericSpiFlash
+            | Model::Icp101xx
+            | Model::Icm42688p
+            | Model::Bmp581 => Some(Vec::new()),
             Model::Icm20948 => match step.write.as_slice() {
                 [r, v] if r & 0x80 == 0 => ICM_WRITE_WARNINGS
                     .iter()
@@ -295,7 +407,12 @@ impl Model {
             Model::GenericSpiFlash => Some(format!(
                 "[WARNING] {device}: Transmission finished in the unexpected state: RecognizeOperation"
             )),
-            Model::Bme280 | Model::Icm20948 | Model::Icp101xx => None,
+            // Ours log nothing on an empty finish (`AET-WO-4220`).
+            Model::Bme280
+            | Model::Icm20948
+            | Model::Icp101xx
+            | Model::Icm42688p
+            | Model::Bmp581 => None,
         }
     }
 
@@ -308,7 +425,13 @@ impl Model {
         match self {
             // The ICP-101xx is read at `Debug`, which does not print its
             // `Noisy` arithmetic.
-            Model::Bme280 | Model::GenericSpiFlash | Model::Icp101xx => Vec::new(),
+            // Ours log nothing that is not a transaction, but an interrupt
+            // pin's change, which no step's firmware enables (D8).
+            Model::Bme280
+            | Model::GenericSpiFlash
+            | Model::Icp101xx
+            | Model::Icm42688p
+            | Model::Bmp581 => Vec::new(),
             // `ICM20948.cs` L162, on every chip-select edge the mux routes to it.
             Model::Icm20948 => vec![format!(
                 "[NOISY] {device}: Finishing transmission, going idle"
@@ -326,9 +449,20 @@ impl Model {
             (Model::Icm20948, Quantity::AccelerationZ) => Some("DefaultAccelerationZ"),
             // `ICP_101xx.cs`: in degrees Celsius.
             (Model::Icp101xx, Quantity::Temperature) => Some("DefaultTemperature"),
+            // Ours: in g, degrees Celsius and pascals (`AET-WO-4220`).
+            (Model::Icm42688p, Quantity::AccelerationX) => Some("AccelerationX"),
+            (Model::Icm42688p, Quantity::AccelerationY) => Some("AccelerationY"),
+            (Model::Icm42688p, Quantity::AccelerationZ) => Some("AccelerationZ"),
+            (Model::Icm42688p | Model::Bmp581, Quantity::Temperature) => Some("Temperature"),
+            (Model::Bmp581, Quantity::Pressure) => Some("Pressure"),
             (Model::Bme280 | Model::GenericSpiFlash, _)
-            | (Model::Icm20948, Quantity::Temperature)
-            | (Model::Icp101xx, _) => None,
+            | (Model::Icm20948, Quantity::Temperature | Quantity::Pressure)
+            | (Model::Icp101xx, _)
+            | (Model::Icm42688p, Quantity::Pressure)
+            | (
+                Model::Bmp581,
+                Quantity::AccelerationX | Quantity::AccelerationY | Quantity::AccelerationZ,
+            ) => None,
         }
     }
 }
@@ -391,10 +525,12 @@ mod tests {
     fn step(kind: StepKind, write: &[u8], width: u8, expected: u64) -> Step {
         Step {
             kind,
+            label: kind.name(),
             write: write.to_vec(),
             width,
             expected,
             mask: u64::MAX,
+            settle_us: 0,
         }
     }
 
@@ -622,6 +758,113 @@ mod tests {
             Model::Icm20948.witness("d", &step(StepKind::Configure, &[0x06, 0x41], 0, 0)),
             None
         );
+    }
+
+    /// `AET-WO-4220` D6: each model of our own is pinned by the sha256 of its
+    /// text as `aethelgard_renode_models` carries it, and every file there is
+    /// pinned. A changed model fails here until its pin moves with it.
+    #[test]
+    fn every_model_of_our_own_is_pinned_by_its_sha256() {
+        use sha2::{Digest, Sha256};
+        for (file, text) in aethelgard_renode_models::FILES {
+            let sha: String = Sha256::digest(text.as_bytes())
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            let pinned = OWN.iter().find(|o| o.1 == file).map(|o| o.2);
+            assert_eq!(pinned, Some(sha.as_str()), "{file}");
+        }
+        assert_eq!(OWN.len(), aethelgard_renode_models::FILES.len());
+        for m in MODELS {
+            assert_eq!(m.own().is_some(), m.source().is_some(), "{m:?}");
+            assert_eq!(
+                m.own().is_some(),
+                matches!(m, Model::Icm42688p | Model::Bmp581),
+                "{m:?}"
+            );
+        }
+    }
+
+    /// `AET-WO-4220`: each line the witness expects of a model of our own,
+    /// beside the C# format string that writes it, read from the pinned
+    /// source: a format changed on one side alone fails here.
+    #[test]
+    fn our_witness_lines_are_our_models_format_strings() {
+        let icm = Model::Icm42688p.source().unwrap();
+        let bmp = Model::Bmp581.source().unwrap();
+        for (source, format) in [
+            (icm, r#""bank {0} read 0x{1:X2} -> {2}""#),
+            (icm, r#""bank {0} write 0x{1:X2} <- {2}""#),
+            (bmp, r#""read 0x{0:X2} -> {1}""#),
+            (bmp, r#""write 0x{0:X2} <- {1}""#),
+            (bmp, r#""write 0x{0:X2} <- (none)""#),
+        ] {
+            assert!(source.contains(format), "{format}");
+        }
+        for source in [icm, bmp] {
+            assert!(source.contains("(none)"));
+            assert!(source.contains(r#".Append("0x").Append(b.ToString("X2"))"#));
+            assert!(source.contains("namespace Antmicro.Renode.Peripherals.Sensors"));
+        }
+        let d = "spi1.spi1mux.u5";
+        let imu = |s: Step| Model::Icm42688p.witness(d, &s).unwrap();
+        assert_eq!(
+            imu(step(StepKind::Identity, &[0xF5], 1, 0x47)),
+            ["[NOISY] spi1.spi1mux.u5: bank 0 read 0x75 -> 0x47"]
+        );
+        assert_eq!(
+            imu(step(StepKind::Configure, &[0x4E, 0x03], 0, 0)),
+            ["[NOISY] spi1.spi1mux.u5: bank 0 write 0x4E <- 0x03"]
+        );
+        assert_eq!(
+            imu(step(StepKind::Data, &[0x9D], 6, 0x1202_0000_0040)),
+            ["[NOISY] spi1.spi1mux.u5: bank 0 read 0x1D -> 0x12 0x02 0x00 0x00 0x00 0x40"]
+        );
+        let baro = |s: Step| Model::Bmp581.witness("i2c1.u8", &s).unwrap();
+        assert_eq!(
+            baro(step(StepKind::Configure, &[0x36, 0x40, 0x81], 0, 0)),
+            ["[NOISY] i2c1.u8: write 0x36 <- 0x40 0x81"]
+        );
+        assert_eq!(
+            baro(step(StepKind::Data, &[0x1D], 6, 0x0000_1940_F362)),
+            ["[NOISY] i2c1.u8: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"]
+        );
+        // No witness: a bank change, a write that also reads, a read with
+        // data bytes sent after its address.
+        assert_eq!(
+            Model::Icm42688p.witness(d, &step(StepKind::Configure, &[0x76, 0x01], 0, 0)),
+            None
+        );
+        assert_eq!(
+            Model::Bmp581.witness("i2c1.u8", &step(StepKind::Data, &[0x1D, 0x00], 1, 0)),
+            None
+        );
+        assert_eq!(
+            Model::Icm42688p.witness(d, &step(StepKind::Data, &[0x9D, 0x00], 1, 0)),
+            None
+        );
+        for m in [Model::Icm42688p, Model::Bmp581] {
+            assert_eq!(m.level(), (-1, "[NOISY] "));
+            assert_eq!(m.skipped("x.y"), Vec::<String>::new());
+            assert_eq!(m.idle_warning("x.y"), None);
+        }
+        // Every stimulus property is a public property of the model.
+        for (m, q) in [
+            (Model::Icm42688p, Quantity::AccelerationX),
+            (Model::Icm42688p, Quantity::AccelerationY),
+            (Model::Icm42688p, Quantity::AccelerationZ),
+            (Model::Icm42688p, Quantity::Temperature),
+            (Model::Bmp581, Quantity::Temperature),
+            (Model::Bmp581, Quantity::Pressure),
+        ] {
+            let prop = m.stimulus(q).unwrap();
+            assert!(
+                m.source()
+                    .unwrap()
+                    .contains(&format!("public double {prop} ")),
+                "{m:?} {prop}"
+            );
+        }
     }
 
     #[test]

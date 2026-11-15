@@ -58,7 +58,7 @@ jobs:
           set -euo pipefail
           # Dependency order: cargo packages a path dependency's sibling from the
           # same invocation, so this list is also the order docs/releasing.md publishes in.
-          crates="aethelgard-ir aethelgard-kicad-lib aethelgard-svd-hal aethelgard-eda aethelgard-twin aethelgard-chaos aethelgard-evolve aethelgard-pincheck aethelgard-cli"
+          crates="aethelgard-ir aethelgard-kicad-lib aethelgard-renode-models aethelgard-svd-hal aethelgard-eda aethelgard-twin aethelgard-chaos aethelgard-evolve aethelgard-pincheck aethelgard-cli"
           # The list must be exactly the workspace members that may publish.
           want=$(cargo metadata --no-deps --format-version 1 --locked \
             | jq -r '.packages[] | select(.publish != []) | .name' | sort | tr '\n' ' ')
@@ -272,7 +272,16 @@ jobs:
       # barometer fixture replaces the ICM-20948 fixture's test (minus 1, plus 1),
       # plus one seeded fault per part and an interrupt armed after the boot
       # word (plus 3); in board_tier2.rs, the fixture's transfers prove (plus 1).
-      TIER2_MIN: "114"
+      # 126: plus 12 from AET-WO-4220: in twin_tier2.rs, the Sentinel-02 fixture
+      # with the models of our own witnessed end to end, its data read without
+      # the cited wait, its platform listed with an unpinned one refused, and
+      # its campaign archived with each configuration as its own step and
+      # replayed (plus 4); in board_tier2.rs, its transfers prove (plus 1); in the new
+      # tier-2 binary models_tier2.rs, the models driven from the monitor:
+      # datasheet resets, ArduPilot's probe, rounding, data-ready, a model that
+      # does not compile, the BMP581's deep start-up and read pointer, the
+      # datasheets' access timing (plus 7).
+      TIER2_MIN: "126"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

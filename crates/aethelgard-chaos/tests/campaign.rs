@@ -2461,6 +2461,73 @@ fn a_step_given_twice_or_out_of_order_is_refused_by_replay() {
     );
 }
 
+/// `AET-WO-4220`: a device of several configuration writes names each
+/// `configure 1`, `configure 2`, ..., so each read and witness is its own
+/// step: they replay in order, and a name repeated, out of order, or unknown
+/// is refused as any step is.
+#[test]
+fn several_configurations_each_by_its_own_name_replay_in_order() {
+    let several = || {
+        let mut r = good();
+        let c = position(&r, |x| matches!(x, Record::I2cCheck { .. }));
+        let w = position(&r, |x| matches!(x, Record::I2cWitness { .. }));
+        for (k, name) in ["configure 1", "configure 2", "configure 3"]
+            .iter()
+            .enumerate()
+        {
+            let v = u8::try_from(k).unwrap();
+            r.insert(c + 1 + k, i2c_step_check(name, vec![0xF0 + v, v], 0, 0, 0));
+        }
+        r.insert(c + 4, i2c_step_check("data", vec![0xF7], 2, 0x1234, 0xFFFF));
+        let w = w + 4;
+        for (k, name) in ["configure 1", "configure 2", "configure 3"]
+            .iter()
+            .enumerate()
+        {
+            r.insert(w + 1 + k, i2c_step_witness(name, &["Write F0 00"]));
+        }
+        r.insert(w + 4, i2c_step_witness("data", &["Write F7", "Read 12 34"]));
+        r
+    };
+    let r = several();
+    assert!(check_run(&r).is_ok(), "{:?}", check_run(&r));
+    let (dir, manifest) = write_run("several-configurations", 7, &as_events(r.clone()));
+    let replayed = replay_dir(&dir).unwrap();
+    assert_eq!(replayed.state.records, r);
+    assert_eq!(replayed.manifest, manifest);
+    let rename = |r: &mut Vec<Record>, from: &str, to: &str| {
+        for x in r.iter_mut() {
+            if let Record::I2cCheck { step, .. } | Record::I2cWitness { step, .. } = x
+                && step == from
+            {
+                *step = to.to_owned();
+            }
+        }
+    };
+    // Two configurations under one name: each is "read twice".
+    let mut r = several();
+    rename(&mut r, "configure 2", "configure 1");
+    assert_eq!(
+        check_run(&r).unwrap_err(),
+        "a line measured twice, or a device step read or witnessed twice"
+    );
+    // Out of order: the third before the second.
+    let mut r = several();
+    rename(&mut r, "configure 2", "configure x");
+    rename(&mut r, "configure 3", "configure 2");
+    rename(&mut r, "configure x", "configure 3");
+    assert_eq!(
+        check_run(&r).unwrap_err(),
+        "a device's steps are not in the order identity, configure, data"
+    );
+    // A name that is no step.
+    for bad in ["configure 5", "configure 0", "configure", "configure  1"] {
+        let mut r = several();
+        rename(&mut r, "configure 3", bad);
+        assert!(check_run(&r).is_err(), "{bad}");
+    }
+}
+
 fn spi_step_check(step: &str, write: Vec<u8>, width: u8, expected: u64, mask: u64) -> Record {
     Record::SpiCheck {
         reference: "U4".into(),
