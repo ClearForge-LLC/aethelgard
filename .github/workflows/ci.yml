@@ -258,7 +258,10 @@ jobs:
       # parity at 4 layers under the inward escape).
       # 98: plus 1 from AET-WO-4300f in board_tier2.rs (the connectors fixture passes ERC
       # and DRC with the specification's rules and parity, at 2 layers and at 4).
-      TIER2_MIN: "98"
+      # 104: plus 6 from AET-WO-4300a in twin_tier2.rs (the PWM and DShot600
+      # fixtures witnessed, two forgeries, motor_output_dead, Kani on the
+      # motor board's timer start and clock check).
+      TIER2_MIN: "104"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
