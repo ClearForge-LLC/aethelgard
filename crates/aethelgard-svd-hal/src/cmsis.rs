@@ -370,6 +370,46 @@ impl RegisterFacts {
         Ok(v)
     }
 
+    /// A register field's position and width, from `<name>_Pos` and the one
+    /// shift shape the parse reads (`AET-WO-4300a`): `<name>_Msk` must be
+    /// `(<literal> << <name>_Pos)`, the literal a run of ones from bit 0, and
+    /// the field must end inside the word. Any other mask is refused,
+    /// a non-contiguous one (`TIM_CCMR1_OC1M`) included.
+    pub fn field(&self, name: &str) -> Result<(u32, u32), RegisterError> {
+        let pos_name = format!("{name}_Pos");
+        let msk_name = format!("{name}_Msk");
+        let pos = self.position(&pos_name)?;
+        let values = self
+            .defines
+            .get(&msk_name)
+            .ok_or_else(|| RegisterError::Undefined {
+                name: msk_name.clone(),
+            })?;
+        let [value] = values.as_slice() else {
+            return malformed(format!("`{msk_name}` is defined {} times", values.len()));
+        };
+        let shape = || {
+            malformed(format!(
+                "`{msk_name}` is `{value}`, not `(<run of ones> << {pos_name})`"
+            ))
+        };
+        let Some((ones, by)) = unwrap_parens(value).split_once("<<") else {
+            return shape();
+        };
+        let Some(ones) = literal(unwrap_parens(ones)).filter(|v| *v != 0 && v & (v + 1) == 0)
+        else {
+            return shape();
+        };
+        if unwrap_parens(by) != pos_name {
+            return shape();
+        }
+        let width = ones.count_ones();
+        if pos + width > 32 {
+            return malformed(format!("`{msk_name}` ends past bit 31"));
+        }
+        Ok((pos, width))
+    }
+
     /// The interrupt number of `name` (`SPI1` for `SPI1_IRQn`, `I2C1_EV` for
     /// `I2C1_EV_IRQn`): its one line inside the `IRQn_Type` enum.
     pub fn irq(&self, name: &str) -> Result<u32, RegisterError> {
@@ -660,6 +700,90 @@ mod tests {
             "MalformedSource"
         );
         assert_eq!(synthetic(ok).layout("Y").unwrap_err().kind(), "Undefined");
+    }
+
+    /// `AET-WO-4300a`: the reset-clock check's fields, by position and width
+    /// (RM0433 Rev 9 §8.7.7–8.7.9), and the masks the parse refuses.
+    #[test]
+    fn a_field_is_its_position_and_a_run_of_ones() {
+        let f = facts();
+        for (name, field) in [
+            ("RCC_CR_HSIDIV", (3, 2)),
+            ("RCC_CFGR_SWS", (3, 3)),
+            ("RCC_CFGR_TIMPRE", (15, 1)),
+            ("RCC_D1CFGR_D1CPRE", (8, 4)),
+            ("RCC_D1CFGR_D1PPRE", (4, 3)),
+            ("RCC_D1CFGR_HPRE", (0, 4)),
+            ("RCC_D2CFGR_D2PPRE1", (4, 3)),
+            ("RCC_D2CFGR_D2PPRE2", (8, 3)),
+        ] {
+            assert_eq!(f.field(name).unwrap(), field, "{name}");
+        }
+        // OC1M is bits 4-6 and 16: not one run.
+        assert_eq!(
+            f.field("TIM_CCMR1_OC1M").unwrap_err().kind(),
+            "MalformedSource"
+        );
+        let s = |msk: &str| {
+            synthetic(&format!("#define X_Pos (4U)\n#define X_Msk {msk}\n"))
+                .field("X")
+                .map_err(|e| e.kind())
+        };
+        assert_eq!(s("(0x7UL << X_Pos)"), Ok((4, 3)));
+        assert_eq!(s("0x7UL << X_Pos"), Ok((4, 3)));
+        for bad in [
+            "(0x5UL << X_Pos)",
+            "(0x0UL << X_Pos)",
+            "(0x7UL << Y_Pos)",
+            "(0x7UL)",
+            "(0x7UL >> X_Pos)",
+            "(0x1FFFFFFFUL << X_Pos)",
+        ] {
+            assert_eq!(s(bad), Err("MalformedSource"), "{bad}");
+        }
+        assert_eq!(
+            synthetic("#define X_Pos (4U)\n")
+                .field("X")
+                .unwrap_err()
+                .kind(),
+            "Undefined"
+        );
+    }
+
+    /// `AET-WO-4300a`: every timer the solver may assign has a base and one
+    /// clock gate in the header, and `TIM_TypeDef` holds the start's registers
+    /// where RM0433 Rev 9 §38.4 puts them.
+    #[test]
+    fn every_timer_with_channels_has_a_base_and_one_clock_gate() {
+        let f = facts();
+        for n in aethelgard_ir::motor::TIMERS {
+            let name = format!("TIM{n}");
+            assert!(f.base(&name).is_ok(), "{name}");
+            let (register, _) = f.enable_bit(&name).unwrap();
+            let want = if aethelgard_ir::motor::apb(n) == aethelgard_ir::motor::Apb::Apb2 {
+                "APB2ENR"
+            } else {
+                "APB1LENR"
+            };
+            assert_eq!(register, want, "{name}");
+        }
+        assert_eq!(f.base("TIM1").unwrap(), 0x4001_0000);
+        assert_eq!(f.enable_bit("TIM1").unwrap(), ("APB2ENR".into(), 0));
+        let t = f.layout("TIM").unwrap();
+        for (reg, offset) in [
+            ("CR1", 0x00),
+            ("EGR", 0x14),
+            ("CCMR1", 0x18),
+            ("CCMR2", 0x1C),
+            ("CCER", 0x20),
+            ("PSC", 0x28),
+            ("ARR", 0x2C),
+            ("CCR1", 0x34),
+            ("CCR4", 0x40),
+            ("BDTR", 0x44),
+        ] {
+            assert_eq!(t.offset(reg, 0).unwrap(), offset, "{reg}");
+        }
     }
 
     #[test]

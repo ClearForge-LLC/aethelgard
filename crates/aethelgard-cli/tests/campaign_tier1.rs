@@ -90,16 +90,24 @@ const U2_LINE: &str = "  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
 const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n  \u{2502}   \u{2514}\u{2500}\u{2500} spi1mux (SPIMultiplexer)\n  \u{2502}       \u{2514}\u{2500}\u{2500} u4 (GenericSpiFlash)\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
 
 /// The reference topology's seven registers as a correct boot leaves them,
-/// then SysTick's control word, unarmed, and the five NVIC set-enable words,
-/// 0: no interrupt armed (`AET-WO-2204` A2, ruled D6 on PR #131).
-const GOOD_REGISTERS: [&str; 13] = [
+/// the six other enable registers at their reset values (`AET-WO-4300a`,
+/// 2100 F24), then SysTick's control word, unarmed, and the five NVIC
+/// set-enable words, 0: no interrupt armed (`AET-WO-2204` A2, ruled D6 on
+/// PR #131).
+const GOOD_REGISTERS: [&str; 19] = [
     "0x0000A801",
     "0x55500000",
     "0x0000A000",
     "0x44000000",
+    "0x00000000",
+    "0x00000000",
+    "0x00000000",
     "0x00000003",
+    "0x00000000",
     "0x00200000",
+    "0x00000000",
     "0x00001000",
+    "0x00010000",
     // `CLKSOURCE` reads 1 in Renode whatever is written (`NVIC.cs` L1040).
     "0x00000004",
     "0x00000000",
@@ -111,8 +119,7 @@ const GOOD_REGISTERS: [&str; 13] = [
 
 /// What Renode 1.17.0's BME280 logs for U2's identity read (`AET-WO-2204`
 /// S1, measured).
-const GOOD_WITNESS: &str =
-    "[03:07:39.3762] [NOISY] i2c1.u2: Write D0\n[03:07:39.3765] [NOISY] i2c1.u2: Read 60\n";
+const GOOD_WITNESS: &str = "[00:00:00.037620000] [NOISY] i2c1.u2: Write D0\n[00:00:00.037650000] [NOISY] i2c1.u2: Read 60\n";
 
 /// The record a firmware that read U2's ID register (0xD0) as 0x60 leaves.
 const GOOD_RECORD: [&str; 2] = ["0x22020000", "0x00000060"];
@@ -122,14 +129,14 @@ const GOOD_SPI_RECORD: [&str; 2] = ["0x22020000", "0x00EF4017"];
 
 /// What Renode 1.17.0's `GenericSpiFlash` logs for U4's JEDEC ID read behind
 /// SPI1's multiplexer (`AET-WO-4200` S2, measured).
-const GOOD_SPI_WITNESS: &str = "[03:07:39.4001] [NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation\n\
-[03:07:39.4002] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadID, write enabled False\n\
-[03:07:39.4003] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
-[03:07:39.4004] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0xEF\n\
-[03:07:39.4005] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
-[03:07:39.4006] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x40\n\
-[03:07:39.4007] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
-[03:07:39.4008] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x17\n";
+const GOOD_SPI_WITNESS: &str = "[00:00:00.040010000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation\n\
+[00:00:00.040020000] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadID, write enabled False\n\
+[00:00:00.040030000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
+[00:00:00.040040000] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0xEF\n\
+[00:00:00.040050000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
+[00:00:00.040060000] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x40\n\
+[00:00:00.040070000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
+[00:00:00.040080000] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x17\n";
 
 /// U2's record when the wait for TXIS expired: the bus never answered.
 const TXIS_TIMEOUT: [&str; 2] = ["0x22020001", "0x00000060"];
@@ -213,11 +220,11 @@ fn toolbox_built(stdout: &str, build: &str) -> Dir {
         r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
 /bin/grep -qx 'use-synchronous-logging = true' "$2" || exit 97
-/bin/grep -qx 'log-timestamps-type = Host' "$2" || exit 97
+/bin/grep -qx 'log-timestamps-type = Virtual' "$2" || exit 97
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n{build_line}'; exit 0; fi
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 /bin/cat '{out}'
@@ -896,8 +903,8 @@ fn a_solved_topology_is_not_a_base() {
     work.dir
         .write("s.json", scenario_with_base("topology.json").as_bytes());
     let out = work.campaign(&cli(Some(BRIDGE_BY_PULL_UP)), &tb.0, &["s.json"]);
-    // A solved topology is at version 4 and a specification at version 6
-    // (`AET-WO-4210`: `accept_lifecycle`, after `AET-WO-1308`'s 5), so the
+    // A solved topology is at version 5 and a specification at version 7
+    // (`AET-WO-4210`: `accept_lifecycle`, after `AET-WO-4300a`'s 6), so the
     // reader refuses it at the version, before its shape: refused before
     // running either way.
     expect_refusal(&out, 2, "UnsupportedSchemaVersion");
@@ -2574,4 +2581,44 @@ fn the_droop_scenarios_carry_only_identifiers_the_base_set_admits() {
             );
         }
     }
+}
+
+/// `AET-WO-4300a` D1, ruled (a): a board with a DShot output boots inside
+/// `DSHOT_WINDOW_NS`. A droop whose effects run past it is refused by name,
+/// with its time, before any run, never cut short.
+#[test]
+fn a_droop_past_a_dshot_board_s_window_is_refused_with_its_time() {
+    let tb = toolbox(&good());
+    let droop = json!({"droop": {
+        "domain": "VDD_3V3", "floor_millivolts": 2400, "start_ns": 3000000,
+        "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
+        "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3
+    }});
+    let work = Work::new();
+    work.dir.write(
+        "spec.json",
+        &std::fs::read(root().join("crates/aethelgard-cli/tests/fixtures/motors-dshot600.json"))
+            .unwrap(),
+    );
+    let doc = json!({
+        "schema_version": 2,
+        "name": "late",
+        "base": "spec.json",
+        "expect": "pass",
+        "expect_findings": [],
+        "overrides": [droop],
+    });
+    work.dir.write("d.json", doc.to_string().as_bytes());
+    let out = campaign(
+        &cli(Some(DROOP_BRIDGE)),
+        &tb.0,
+        &work.dir.0,
+        &["d.json"],
+        &work.firmware,
+        &work.archive,
+    );
+    let v = expect_refusal(&out, 2, "DroopRefused");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(message.contains("past the boot's 2000000 ns"), "{message}");
+    assert!(!work.archive.exists(), "an archive was made");
 }

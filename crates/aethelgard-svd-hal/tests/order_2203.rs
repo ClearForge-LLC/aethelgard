@@ -89,27 +89,30 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `bc1517cd…7522` and `f684f871…3dba`.
 /// Re-taken in `AET-WO-1308` (version 5) the same way: with `main`'s hash
 /// passed to `solve`, each was `f3e10417…2985`, `9c02c1e2…12bf4` and
-/// `cc3a3e65…2dff9` exactly.
-/// Re-taken in `AET-WO-4210` (each device's script, its records), and again at
-/// its merge of `1308` (specification version 6, `accept_lifecycle`): on the
-/// branch before that merge the three were `d22e776d…10f9`, `4008d4f1…3e6a`
-/// and `53cf0bd9…92ce`.
+/// `cc3a3e65…2dff9` exactly. Re-taken in `AET-WO-4300a`: specification version 6
+/// (`motor_outputs`, `mcu.hse_hz`) moved the specification's sha256 in the
+/// three (`44f22188…e3af`, `bd957c1d…d4b0`, `b962492f…ee15`); every enable
+/// register cold and judged in full (2100 F24) moved the boot image
+/// (`747bdc04…fbb3`). Re-taken in `AET-WO-4210` (each device's script and
+/// its records; specification version 7; the image's SysTick and NVIC words)
+/// at its merge of `4300a`: they were `dac44166…2e7e`, `693c78ad…dab0`,
+/// `2fe09c95…f5b0` and `893fb13d…c4a6` there.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "61f7f72efbec8816795e244daa192c5834c9dfbc0cb15bc4a58fe58e9e8fb721",
+        "7c7f480b762b02c15dfa79515384a3611da27c88d1c2b47554d675b662ed0562",
     ),
     (
         "platform",
-        "6191ec930dd2cabe169ac2bad4c986a58d4e932e3739f2369edb9f7a9d919149",
+        "0a1ba8520917b4ab1d5af7870a317dd060016379992770b61c2b8ef3d0ce358f",
     ),
     (
         "platform faulted",
-        "5818f97b772a9f1e4ed584c03694fdacb2cd1e958fc386fa3c530a84374ef5f2",
+        "f468d2cbff6182ca26c0f747e7622870348e8d24528681b1c2b70cbff14c0389",
     ),
     (
         "boot image",
-        "ff8b0ae1add42114af2bc34c1a7498f0a34c1f63289f6e3254e0f7cf2b5353d9",
+        "0e4d72ee3bc5716b2aa3c6e8e3f66f65ecc34d61e01c9e84bad8549fc20cc8a2",
     ),
 ];
 

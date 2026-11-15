@@ -21,8 +21,13 @@ const LOG_ERROR: &str = "[ERROR]";
 pub const CONFIG_FILE: &str = "renode.config";
 
 /// That configuration (`AET-WO-2204` D4), for a call whose tool home is
-/// `home`. It changes one key from what Renode writes for itself when given
-/// no file: `use-synchronous-logging = true`, so each log entry is written by
+/// `home`. It changes two keys from what Renode writes for itself when given
+/// no file. `log-timestamps-type = Virtual` (`AET-WO-4300` D2, built in
+/// `AET-WO-4300a`): each line carries the emulation's virtual time
+/// (`Logger.cs` L592, `TimeInterval.ToString`), so a line a timer event
+/// causes carries its exact time and a line the CPU causes the start of its
+/// quantum ([`QUANTUM`]); the judge strips it as it stripped the host time,
+/// and reads it only for a motor output's edges. `use-synchronous-logging = true`, so each log entry is written by
 /// the thread that logs it, with no queue and no log thread (`Logger.cs`
 /// L822–834); a line the firmware caused is on the console before `RunFor`
 /// returns, never split below line level by the monitor's output (spike F2)
@@ -41,7 +46,7 @@ pub fn config(home: &std::path::Path) -> String {
          serialization-mode = Generated\n\
          always-log-machine-name = False\n\
          collapse-repeated-log-entries = True\n\
-         log-timestamps-type = Host\n\
+         log-timestamps-type = Virtual\n\
          log-history-limit = 1000\n\
          history-path = {}/.config/renode/history\n\
          store-table-bits = 41\n\
@@ -57,6 +62,13 @@ pub fn config(home: &std::path::Path) -> String {
         home.display()
     )
 }
+
+/// The quantum every boot runs at, stated rather than left to Renode's
+/// default (`AET-WO-4300` D2). Renode 1.17.0 reads no configuration key for
+/// it (`ConfigurationManager` is asked for none); its default is
+/// `TimeSourceBase.DefaultQuantum`, 100 µs (L814), and this command sets the
+/// same value, [`aethelgard_twin::boot::QUANTUM_NS`], by the monitor.
+pub const QUANTUM: &str = "emulation SetGlobalQuantum \"0.000100000\"";
 
 /// The monitor commands. The platform is always the call's own copy, at a
 /// path this CLI chose, so no part of the caller's input reaches the monitor.
@@ -181,9 +193,9 @@ pub const LOG_FILTER: LogFilter = LogFilter {
     keep: &[ABORTED, LOAD_ERROR, LOG_ERROR, LOCKED[0], LOCKED[1]],
 };
 
-/// A log line without Renode's host timestamp (`[21:06:58.1004] `), which
-/// differs run to run and so never belongs in a finding (`INV-04`,
-/// `AET-WO-2301` F10).
+/// A log line without Renode's timestamp (`[00:00:00.019999000] `), which
+/// is the run's own clock and so never belongs in a finding's text
+/// (`INV-04`, `AET-WO-2301` F10, `AET-WO-4300a`).
 fn log_text(line: &str) -> &str {
     let line = line.trim();
     log_body(line).unwrap_or(line).trim()
@@ -238,6 +250,9 @@ pub struct BootPlan<'a> {
     pub platform: &'a std::path::Path,
     pub firmware: &'a std::path::Path,
     pub virtual_ns: u64,
+    /// The board's window (`aethelgard_twin::boot::window`): shorter than
+    /// `MAX_VIRTUAL_NS` for a board with a DShot output (`AET-WO-4300a` D1).
+    pub window_ns: u64,
     pub boot_word: u32,
     /// Where the part boots from: `FLASH_BANK1_BASE`, the header's `FLASH_BASE`.
     pub vector_table: u32,
@@ -247,6 +262,9 @@ pub struct BootPlan<'a> {
     /// Every `yield; b.n` self-loop in the firmware's loaded bytes
     /// ([`aethelgard_twin::boot::self_loops`]): the core must end on one.
     pub self_loops: &'a [u64],
+    /// Each motor output's observer, solved values and static check
+    /// (`AET-WO-4300a`), in the specification's order.
+    pub motors: &'a [Motor],
     /// Every solved peripheral as the listing must name it: (name, model).
     pub instances: &'a [(String, String)],
     /// The resets a declared droop renders, in time order; empty for every
@@ -342,12 +360,13 @@ impl BootPlan<'_> {
         c
     }
 
-    /// The cold RCC writes, as the part's reset leaves those registers.
+    /// The cold RCC writes, as the part's reset leaves those registers: each
+    /// enable register at its reset value (`AET-WO-4300a` §1.6, 2100 F24).
     fn cold(&self) -> Vec<String> {
         self.image
             .cold
             .iter()
-            .map(|r| format!("sysbus WriteDoubleWord {:#010x} 0x0", r.address))
+            .map(|r| format!("sysbus WriteDoubleWord {:#010x} {:#x}", r.address, r.value))
             .collect()
     }
 
@@ -418,6 +437,10 @@ impl BootPlan<'_> {
                 }
             }
         }
+        // Each motor output's observer (`AET-WO-4300a`).
+        for m in self.motors {
+            c.push(format!("logLevel -1 sysbus.{}", m.observer.source));
+        }
         c
     }
 
@@ -481,6 +504,7 @@ impl BootPlan<'_> {
     pub fn commands(&self) -> String {
         let mut c = vec![
             format!("emulation SetSeed {}", aethelgard_twin::boot::SEED),
+            QUANTUM.to_owned(),
             "mach create".to_owned(),
             format!(
                 "machine LoadPlatformDescription @{}",
@@ -549,6 +573,8 @@ pub struct Observed {
     /// a witness (`AET-WO-2204`, the seeded set's `wrong-address`). Empty for
     /// an SPI check.
     pub absent: Vec<Vec<u8>>,
+    /// For each motor output, what its observer showed (`AET-WO-4300a`).
+    pub motors: Vec<MotorWitness>,
     /// For each step check on SPI, every line its controller's multiplexer
     /// logged when it routed a byte to no device, to several, or to an
     /// address with none (`SPIMultiplexer.cs` L56, L62, L69), whole and in
@@ -737,6 +763,280 @@ fn attribute(
     (seen, unrouted)
 }
 
+/// One motor output as a boot judges it (`AET-WO-4300a` §1.4): the twin's
+/// observer with the model's predicted timing, and the static check for
+/// silicon on the topology's clock (`4300` D3), each from the topology alone
+/// (`INV-07`).
+#[derive(Debug, Clone)]
+pub struct Motor {
+    pub observer: aethelgard_twin::timer::Observer,
+    pub psc: u32,
+    pub arr: u32,
+    pub ccr: u32,
+    pub silicon: aethelgard_ir::motor::SiliconTiming,
+}
+
+/// Every motor output of `topology`, in the specification's order.
+pub fn motors(
+    topology: &aethelgard_ir::SolvedTopology,
+) -> Result<Vec<Motor>, aethelgard_twin::TwinError> {
+    let observers = aethelgard_twin::timer::observers(topology)?;
+    Ok(observers
+        .into_iter()
+        .zip(topology.motor_outputs_in_order())
+        .map(|(observer, (_, m, _))| Motor {
+            silicon: aethelgard_ir::motor::check_silicon(&topology.clock, observer.timer, m),
+            observer,
+            psc: m.psc,
+            arr: m.arr,
+            ccr: m.ccr,
+        })
+        .collect())
+}
+
+/// The grain of a timer-caused stamp, in ns: one instruction at the core's
+/// `MIPS` (measured: every stamp a multiple of 10 ns, FEEDBACK P7). Two
+/// stamps of one exact sequence differ from it by less than this.
+pub const STAMP_GRAIN_NS: u64 = 1000 / aethelgard_twin::boot::MIPS;
+
+/// What an output's observer showed, judged against the model's
+/// conventions (`aethelgard_twin::timer`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MotorWitness {
+    /// `witnessed`, `static_only`, `unwitnessed`, `unreadable`, `mismatch`,
+    /// `batched` or `stopped`.
+    pub status: &'static str,
+    pub rises: u64,
+    pub falls: u64,
+    /// The first rise's stamp, the anchor every later edge is predicted from.
+    pub first_ns: Option<u64>,
+    /// The last rise's stamp, and the end of the window it must reach to
+    /// within one period and one stamp grain (adversarial H1: a timer
+    /// stopped after two periods).
+    pub last_ns: Option<u64>,
+    pub end_ns: u64,
+    /// The widest spread of the edges' deviations from the predicted
+    /// sequence, in ns: below [`STAMP_GRAIN_NS`] for an exact sequence.
+    pub span_ns: Option<u64>,
+    /// Edges whose stamp is off the quantum's grid. A store alone carries its
+    /// quantum's start (FEEDBACK P2.1), but one right after a timer access
+    /// carries an exact stamp (M4), so the grid is D4's third part, never the
+    /// witness's whole: the exact sequence and the read-back are the rest.
+    pub off_grid: u64,
+    /// Consecutive edges with one stamp: a timer the core touched while it
+    /// ran (FEEDBACK M1).
+    pub batched: u64,
+}
+
+/// The observer's edges, `(stamp, rising)`, in the log's order; `None` when
+/// a line of the observer is anything but a whole state change.
+fn observer_edges(source: &str, lines: &[&str]) -> Option<Vec<(u64, bool)>> {
+    let mut edges = Vec::new();
+    for line in lines {
+        let Some((ns, body)) = log_stamped(line) else {
+            continue;
+        };
+        let Some(rest) = body
+            .strip_prefix("[NOISY] ")
+            .and_then(|r| r.strip_prefix(source))
+            .and_then(|r| r.strip_prefix(": "))
+        else {
+            // Another source's line, or this source's at another level: a
+            // LED logs its state changes at `Noisy` alone.
+            if body.contains(&format!(" {source}: ")) {
+                return None;
+            }
+            continue;
+        };
+        match rest {
+            "LED state changed to True" => edges.push((ns, true)),
+            "LED state changed to False" => edges.push((ns, false)),
+            _ => return None,
+        }
+    }
+    Some(edges)
+}
+
+/// Judges one output's edges against the model's sequence: rises at
+/// `first + k·period` and falls `high` after each, alternating from a rise,
+/// every deviation inside one stamp grain of every other (the model's
+/// conventions, `aethelgard_twin::timer`). `None` is a log that could not be
+/// read whole; `Some(None)` an observer line that was not a state change.
+fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>, end_ns: u64) -> MotorWitness {
+    let mut w = MotorWitness {
+        status: "unreadable",
+        rises: 0,
+        falls: 0,
+        first_ns: None,
+        last_ns: None,
+        end_ns,
+        span_ns: None,
+        off_grid: 0,
+        batched: 0,
+    };
+    let Some(edges) = edges else {
+        return w;
+    };
+    let Some(edges) = edges else {
+        w.status = "mismatch";
+        return w;
+    };
+    w.rises = edges.iter().filter(|e| e.1).count() as u64;
+    w.falls = edges.len() as u64 - w.rises;
+    w.off_grid = edges
+        .iter()
+        .filter(|e| e.0 % aethelgard_twin::boot::QUANTUM_NS != 0)
+        .count() as u64;
+    w.batched = edges.windows(2).filter(|p| p[0].0 == p[1].0).count() as u64;
+    if w.rises < 2 {
+        w.status = "unwitnessed";
+        return w;
+    }
+    let (period, high) = (
+        i128::from(m.observer.period_ns),
+        i128::from(m.observer.high_ns),
+    );
+    let first = edges[0].0;
+    w.first_ns = Some(first);
+    let (mut lo, mut hi) = (i128::MAX, i128::MIN);
+    let mut alternating = edges[0].1;
+    for (i, &(ns, rising)) in edges.iter().enumerate() {
+        alternating &= rising == (i % 2 == 0);
+        let k = (i / 2) as i128;
+        let predicted = i128::from(first) + k * period + if rising { 0 } else { high };
+        let d = i128::from(ns) - predicted;
+        lo = lo.min(d);
+        hi = hi.max(d);
+    }
+    let span = u64::try_from(hi - lo).unwrap_or(u64::MAX);
+    w.span_ns = Some(span);
+    let last = edges.iter().rev().find(|e| e.1).map(|e| e.0);
+    w.last_ns = last;
+    // The outputs run to the end of the window: a rise is due every period,
+    // so the last one comes no earlier than a period and a grain before it.
+    let covers = last.is_some_and(|l| l + m.observer.period_ns + STAMP_GRAIN_NS >= end_ns);
+    w.status = if w.batched > 0 {
+        "batched"
+    } else if !alternating || span >= STAMP_GRAIN_NS {
+        "mismatch"
+    } else if !covers {
+        "stopped"
+    } else if w.off_grid == 0 {
+        "static_only"
+    } else {
+        "witnessed"
+    };
+    w
+}
+
+fn motor_who(o: &aethelgard_twin::timer::Observer) -> String {
+    format!("{} (TIM{}_CH{} on {})", o.label, o.timer, o.channel, o.pin)
+}
+
+/// The static check's findings for every motor output (`4300` D3): decided
+/// from the topology alone, so a boot killed at a bound reports them too.
+pub fn static_motor_findings(motors: &[Motor]) -> Vec<Finding> {
+    motors
+        .iter()
+        .filter(|m| !m.silicon.holds)
+        .map(|m| {
+            let s = &m.silicon;
+            Finding::plain(
+                aethelgard_chaos::campaign::MOTOR_STATIC_FINDING,
+                format!(
+                    "{}: PSC {}, ARR {}, CCR {} on a {} Hz timer clock give a period of {} ps and a high time of {} ps (silicon counts ARR + 1); the declared timing is {} ps and {} ps",
+                    motor_who(&m.observer),
+                    m.psc,
+                    m.arr,
+                    m.ccr,
+                    s.kernel_hz,
+                    s.period_ps,
+                    s.high_ps,
+                    s.nominal_period_ps,
+                    s.nominal_high_ps
+                ),
+            )
+        })
+        .collect()
+}
+
+/// One motor output's witness finding, once the boot reached its fixed
+/// point (as an identity record is judged only then).
+/// `window_ns` is the board's window (`aethelgard_twin::boot::window`), not
+/// the boot's own length: a boot shorter than its board's window says
+/// nothing about what a full one could show.
+fn witness_findings_of(m: &Motor, w: &MotorWitness, window_ns: u64) -> Vec<Finding> {
+    let o = &m.observer;
+    let who = motor_who(o);
+    let mut out = Vec::new();
+    let model = format!(
+        "the model's period {} ns and high time {} ns (ARR and CCR ticks at {} Hz)",
+        o.period_ns,
+        o.high_ns,
+        aethelgard_twin::timer::TIMER_HZ
+    );
+    match w.status {
+        "witnessed" => {}
+        "static_only" => out.push(Finding::info(
+            aethelgard_chaos::campaign::MOTOR_STATIC_ONLY_FINDING,
+            format!(
+                "{who}: {} rises at {model}, every edge on the {} ns quantum's grid, where a store can put one; judged by the static check alone",
+                w.rises,
+                aethelgard_twin::boot::QUANTUM_NS
+            ),
+        )),
+        "unreadable" => out.push(Finding::plain(
+            aethelgard_chaos::campaign::MOTOR_UNWITNESSED_FINDING,
+            format!("{who}: Renode's log could not be read whole, so the output's edges were not"),
+        )),
+        "unwitnessed" => out.push(Finding::plain(
+            aethelgard_chaos::campaign::MOTOR_UNWITNESSED_FINDING,
+            format!(
+                "{who}: the observer on {} logged {} rises and {} falls, too few to show a period{}",
+                o.pin,
+                w.rises,
+                w.falls,
+                // Two rises need two of the model's periods inside the window
+                // (`AET-WO-4300a` D1, adversarial F5): name it when they cannot.
+                if 2 * o.period_ns > window_ns {
+                    format!(
+                        "; the board's window of {window_ns} ns is shorter than two of its periods ({} ns), so no boot of this board can show one",
+                        2 * o.period_ns
+                    )
+                } else {
+                    String::new()
+                }
+            ),
+        )),
+        "stopped" => out.push(Finding::plain(
+            aethelgard_chaos::campaign::MOTOR_MISMATCH_FINDING,
+            format!(
+                "{who}: {} rises follow {model}, but the last is at {} ns, more than a period before the window's end at {} ns: the output stopped",
+                w.rises,
+                w.last_ns.unwrap_or(0),
+                w.end_ns
+            ),
+        )),
+        "batched" => out.push(Finding::plain(
+            aethelgard_chaos::campaign::MOTOR_MISMATCH_FINDING,
+            format!(
+                "{who}: {} pairs of edges share one stamp, so the timer's events were not delivered at their times",
+                w.batched
+            ),
+        )),
+        _ => out.push(Finding::plain(
+            aethelgard_chaos::campaign::MOTOR_MISMATCH_FINDING,
+            format!(
+                "{who}: {} rises and {} falls do not follow {model} from the first rise: their deviations span {} ns, not under {STAMP_GRAIN_NS} ns, or they do not alternate from a rise",
+                w.rises,
+                w.falls,
+                w.span_ns.map_or_else(|| "an unreadable".to_owned(), |s| s.to_string())
+            ),
+        )),
+    }
+    out
+}
+
 /// A line the multiplexer of `mux` (`spi1.spi1mux`) logs when a byte reaches
 /// no single device: its whole text after the timestamp.
 fn unrouted_line<'l>(line: &'l str, mux: &str) -> Option<&'l str> {
@@ -786,12 +1086,20 @@ fn value(line: &str) -> Option<u64> {
     u64::from_str_radix(hex, 16).ok()
 }
 
-/// The text of a whole Renode log line after its host timestamp
-/// (`[21:06:58.1004] `), exactly: nothing trimmed. `None` for any other line.
+/// The text of a whole Renode log line after its virtual timestamp
+/// (`[00:00:00.019999000] `, `TimeInterval.ToString`), exactly: nothing
+/// trimmed. `None` for any other line.
 fn log_body(line: &str) -> Option<&str> {
+    log_stamped(line).map(|(_, body)| body)
+}
+
+/// A whole Renode log line's virtual time in nanoseconds, and its text after
+/// the timestamp. The stamp is `[hh:mm:ss.nnnnnnnnn] `, 21 bytes, and Renode
+/// counts time in nanoseconds (`TimeInterval.TicksPerNanosecond = 1`).
+pub(crate) fn log_stamped(line: &str) -> Option<(u64, &str)> {
     let b = line.as_bytes();
     let digits = |r: std::ops::Range<usize>| b[r].iter().all(u8::is_ascii_digit);
-    let stamped = b.len() >= 16
+    let stamped = b.len() >= 21
         && b[0] == b'['
         && digits(1..3)
         && b[3] == b':'
@@ -799,10 +1107,15 @@ fn log_body(line: &str) -> Option<&str> {
         && b[6] == b':'
         && digits(7..9)
         && b[9] == b'.'
-        && digits(10..14)
-        && b[14] == b']'
-        && b[15] == b' ';
-    stamped.then(|| &line[16..])
+        && digits(10..19)
+        && b[19] == b']'
+        && b[20] == b' ';
+    if !stamped {
+        return None;
+    }
+    let n = |r: std::ops::Range<usize>| line[r].parse::<u64>().expect("digits");
+    let ns = ((n(1..3) * 60 + n(4..6)) * 60 + n(7..9)) * 1_000_000_000 + n(10..19);
+    Some((ns, &line[21..]))
 }
 
 /// Renode's log levels, as a line names them after its timestamp.
@@ -997,6 +1310,17 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             })
             .collect(),
         unrouted,
+        // Past the filter's budget an edge may have been dropped, so no
+        // output's edges can be read whole (`AET-WO-2204` D2's rule).
+        motors: plan
+            .motors
+            .iter()
+            .map(|m| {
+                let edges = (out.dropped_log_lines == 0)
+                    .then(|| observer_edges(&m.observer.source, &last_boot));
+                witness_motor(m, edges, plan.virtual_ns)
+            })
+            .collect(),
     };
     for ((cmd, read), line) in reads.iter().zip(values) {
         let v = value(line).ok_or_else(|| untrusted(format!("`{cmd}` read no value")))?;
@@ -1172,6 +1496,22 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             findings.extend(identity_finding(c, status, value));
         }
         findings.extend(witness_findings(checks, &observed));
+    } else {
+        findings.extend(reads_outside_window(
+            checks,
+            &observed.records,
+            plan.virtual_ns,
+            plan.window_ns,
+        ));
+    }
+    // The motor outputs (`AET-WO-4300a` §1.4): the static check judges
+    // silicon from the topology alone, the twin's witness the model's
+    // conventions, never blended (`4300` D3). The witness is read only once
+    // the firmware reached its fixed point, as an identity record is.
+    if booted {
+        for (m, w) in plan.motors.iter().zip(&observed.motors) {
+            findings.extend(witness_findings_of(m, w, plan.window_ns));
+        }
     }
     for d in &plan.image.identity.unmodelled {
         findings.push(Finding::info(
@@ -1257,6 +1597,41 @@ fn witness_finding(
             ),
         )),
     }
+}
+
+/// On a board whose window is shorter than `MAX_VIRTUAL_NS` (a DShot board,
+/// `AET-WO-4300a` D1, ruled (a)), every declared identity read whose record
+/// is still unset when the window ends did not complete inside it, and is
+/// named; the run already fails on its missing boot word. A record the
+/// firmware wrote, however it reads, is not named here.
+fn reads_outside_window(
+    checks: &[aethelgard_twin::boot::StepCheck],
+    records: &[(u32, u64)],
+    boot_ns: u64,
+    window_ns: u64,
+) -> Vec<Finding> {
+    if window_ns >= aethelgard_twin::boot::MAX_VIRTUAL_NS {
+        return Vec::new();
+    }
+    checks
+        .iter()
+        .zip(records)
+        .filter(|(_, r)| r.0 == aethelgard_twin::boot::RECORD_UNSET)
+        .map(|(c, _)| {
+            // A script's later steps say which step (`AET-WO-4210`).
+            let what = match c.step {
+                aethelgard_ir::parts::StepKind::Identity => "its identity read".to_owned(),
+                step => format!("its {} step's read", step.name()),
+            };
+            Finding::plain(
+                "identity_read_outside_window",
+                format!(
+                    "{}: {what} did not complete inside this boot of {boot_ns} ns (a board with a DShot output boots inside its window of {window_ns} ns, AET-WO-4300a D1)",
+                    who(c)
+                ),
+            )
+        })
+        .collect()
 }
 
 /// The finding for one identity record, or none when the read passed. The
@@ -1456,7 +1831,7 @@ mod tests {
             skipped: vec!["[NOISY] spi1.spi1mux.u5: Finishing transmission, going idle".into()],
             stimulus: Some(Vec::new()),
         };
-        let at = |b: &str| format!("[03:07:39.4001] {b}");
+        let at = |b: &str| format!("[00:00:00.040010000] {b}");
         let idle = at("[NOISY] spi1.spi1mux.u5: Finishing transmission, going idle");
         assert_eq!(device_line(&c, &idle), None);
         let read = at("[NOISY] spi1.spi1mux.u5: Received byte 0x80, returning 0x0");
@@ -1477,7 +1852,7 @@ mod tests {
 
     fn image() -> aethelgard_twin::boot::Image {
         let topology: aethelgard_ir::SolvedTopology = serde_json::from_str(
-            r#"{"schema_version":4,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{},"spi_lines":{}}"#,
+            r#"{"schema_version":5,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{},"spi_lines":{},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{}}"#,
         )
         .unwrap();
         aethelgard_twin::boot::expected(&topology).unwrap()
@@ -1495,14 +1870,207 @@ mod tests {
             platform: std::path::Path::new("/w/platform.repl"),
             firmware: std::path::Path::new("/w/firmware.elf"),
             virtual_ns: 100_000_000,
+            window_ns: 100_000_000,
             boot_word: 0x2000_0000,
             vector_table: 0x0800_0000,
             image,
             executable: &[],
             self_loops: &[],
+            motors: &[],
             instances: &INSTANCES,
             resets,
         }
+    }
+
+    /// The witness of a run whose window ends right after the edges given.
+    fn witness_motor_at(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>) -> MotorWitness {
+        let end = edges
+            .as_ref()
+            .and_then(|e| e.as_ref())
+            .and_then(|e| e.iter().map(|x| x.0).max())
+            .unwrap_or(0);
+        witness_motor(m, edges, end)
+    }
+
+    /// The PWM fixture's first output: the model's 639,744 ns period and
+    /// 256,000 ns high time (PSC 63, ARR 2499, CCR 1000 at 4 ns a tick).
+    fn motor() -> Motor {
+        Motor {
+            observer: aethelgard_twin::timer::Observer {
+                label: "MOTOR1".into(),
+                protocol: aethelgard_ir::MotorProtocol::Pwm,
+                timer: 1,
+                channel: 1,
+                pin: "PA8".into(),
+                port: 'A',
+                index: 8,
+                alternate_function: 1,
+                name: "pa8obs".into(),
+                source: "gpioPortA.pa8obs".into(),
+                period_ns: 639_744,
+                high_ns: 256_000,
+            },
+            psc: 63,
+            arr: 2499,
+            ccr: 1000,
+            silicon: aethelgard_ir::motor::check_silicon(
+                &aethelgard_ir::SolvedClock::reset(),
+                1,
+                &aethelgard_ir::SolvedMotorOutput {
+                    index: 0,
+                    protocol: aethelgard_ir::MotorProtocol::Pwm,
+                    pwm: Some(aethelgard_ir::PwmTiming {
+                        rate_hz: 400,
+                        pulse_min_us: 1000,
+                        pulse_max_us: 2000,
+                    }),
+                    psc: 63,
+                    arr: 2499,
+                    ccr: 1000,
+                },
+            ),
+        }
+    }
+
+    /// Edges as the probes measured them (`pwm400-63`): each the exact time
+    /// plus a deviation under the 10 ns grain, from the first rise at 639,750.
+    fn measured(n: u64, jitter: &[i64]) -> Vec<(u64, bool)> {
+        let mut out = Vec::new();
+        for k in 0..n {
+            let d = |i: u64| jitter[(i as usize) % jitter.len()];
+            let rise = 639_750 + k * 639_744;
+            out.push(((rise as i64 + d(2 * k)) as u64, true));
+            out.push(((rise as i64 + 256_000 + d(2 * k + 1)) as u64, false));
+        }
+        out
+    }
+
+    #[test]
+    fn a_motor_s_edges_on_the_model_s_sequence_are_witnessed() {
+        let m = motor();
+        let w = witness_motor_at(&m, Some(Some(measured(150, &[0, -6, 2, -4]))));
+        assert_eq!(w.status, "witnessed", "{w:?}");
+        assert_eq!((w.rises, w.falls, w.first_ns), (150, 150, Some(639_750)));
+        assert_eq!(w.span_ns, Some(8));
+        assert!(witness_findings_of(&m, &w, aethelgard_twin::boot::MAX_VIRTUAL_NS).is_empty());
+    }
+
+    #[test]
+    fn adversarial_2_a_correct_output_one_tick_off_or_the_silicon_period_fails() {
+        let m = motor();
+        // Silicon's ARR + 1 period, 256 ns longer each period.
+        let mut e = measured(10, &[0]);
+        for (i, edge) in e.iter_mut().enumerate() {
+            edge.0 += 256 * (i as u64 / 2);
+        }
+        assert_eq!(witness_motor_at(&m, Some(Some(e))).status, "mismatch");
+        // One grain off on one edge alone.
+        let mut e = measured(10, &[0]);
+        e[7].0 += 10;
+        let w = witness_motor_at(&m, Some(Some(e)));
+        assert_eq!((w.status, w.span_ns), ("mismatch", Some(10)));
+        let f = witness_findings_of(&m, &w, aethelgard_twin::boot::MAX_VIRTUAL_NS);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].kind, "motor_timing_mismatch");
+    }
+
+    #[test]
+    fn adversarial_1_store_made_edges_fail_and_a_single_pulse_is_too_few() {
+        let m = motor();
+        // `BSRR` edges (and the `UG` + `BSRR` pair) sit on the 100 us grid,
+        // 6 ms apart, high 400 us: not the model's sequence.
+        let store: Vec<(u64, bool)> = (0..4)
+            .flat_map(|k| [(k * 6_000_000, true), (k * 6_000_000 + 400_000, false)])
+            .collect();
+        assert_eq!(witness_motor_at(&m, Some(Some(store))).status, "mismatch");
+        // A store that copies the period exactly still cannot leave the grid:
+        // the model's period here is not a multiple of 100 us, so two rises
+        // on the grid cannot be one period apart.
+        let on_grid = vec![(0, true), (300_000, false), (700_000, true)];
+        assert_eq!(witness_motor_at(&m, Some(Some(on_grid))).status, "mismatch");
+        let one = vec![(639_750, true), (895_750, false)];
+        let w = witness_motor_at(&m, Some(Some(one)));
+        assert_eq!(w.status, "unwitnessed");
+        assert_eq!(
+            witness_findings_of(&m, &w, aethelgard_twin::boot::MAX_VIRTUAL_NS)[0].kind,
+            "motor_output_unwitnessed"
+        );
+        assert_eq!(
+            witness_motor_at(&m, Some(Some(vec![]))).status,
+            "unwitnessed"
+        );
+    }
+
+    #[test]
+    fn a_timing_whose_edges_all_fall_on_the_grid_is_judged_static_only() {
+        let mut m = motor();
+        // A period and high time that are whole quanta: every edge on the grid.
+        m.observer.period_ns = 2_000_000;
+        m.observer.high_ns = 1_000_000;
+        let e: Vec<(u64, bool)> = (0..5)
+            .flat_map(|k| [(k * 2_000_000, true), (k * 2_000_000 + 1_000_000, false)])
+            .collect();
+        let w = witness_motor_at(&m, Some(Some(e)));
+        assert_eq!(w.status, "static_only");
+        let f = witness_findings_of(&m, &w, aethelgard_twin::boot::MAX_VIRTUAL_NS);
+        assert_eq!(f.len(), 1);
+        assert_eq!(
+            (f[0].kind.as_str(), f[0].severity.as_str()),
+            ("motor_witness_static_only", "info")
+        );
+    }
+
+    #[test]
+    fn batched_edges_unreadable_logs_and_odd_lines_never_pass() {
+        let m = motor();
+        let mut e = measured(10, &[0]);
+        e[4].0 = e[3].0;
+        assert_eq!(witness_motor_at(&m, Some(Some(e))).status, "batched");
+        assert_eq!(witness_motor_at(&m, None).status, "unreadable");
+        assert_eq!(witness_motor_at(&m, Some(None)).status, "mismatch");
+        // Starting on a fall is not the model's sequence.
+        let mut e = measured(10, &[0]);
+        e.remove(0);
+        assert_eq!(witness_motor_at(&m, Some(Some(e))).status, "mismatch");
+        let lines = [
+            "[00:00:00.000639750] [NOISY] gpioPortA.pa8obs: LED state changed to True",
+            "[00:00:00.000639750] [NOISY] gpioPortA.pa9obs: LED state changed to True",
+            "[00:00:00.000895750] [NOISY] gpioPortA.pa8obs: LED state changed to False",
+            "[00:00:00.000895750] [NOISY] timer1: IRQ pending",
+        ];
+        assert_eq!(
+            observer_edges("gpioPortA.pa8obs", &lines),
+            Some(vec![(639_750, true), (895_750, false)])
+        );
+        let odd = ["[00:00:00.000639750] [INFO] gpioPortA.pa8obs: LED state changed to True"];
+        assert_eq!(observer_edges("gpioPortA.pa8obs", &odd), None);
+    }
+
+    /// Adversarial H1: a timer stopped after two periods (or started late,
+    /// which the coverage rule does not judge) passes no witness once the
+    /// window runs on past its last rise.
+    #[test]
+    fn adversarial_h1_edges_that_stop_before_the_window_s_end_fail() {
+        let m = motor();
+        let two = measured(2, &[0]);
+        let w = witness_motor(&m, Some(Some(two.clone())), 100_000_000);
+        assert_eq!(w.status, "stopped");
+        assert_eq!(
+            witness_findings_of(&m, &w, aethelgard_twin::boot::MAX_VIRTUAL_NS)[0].kind,
+            "motor_timing_mismatch"
+        );
+        // Within a period and a grain of the end, it covers the window.
+        let end = two[2].0 + 639_744 + 10;
+        assert_eq!(witness_motor(&m, Some(Some(two)), end).status, "witnessed");
+    }
+
+    #[test]
+    fn a_static_mismatch_is_its_own_finding() {
+        let mut m = motor();
+        m.silicon.holds = false;
+        let f = static_motor_findings(std::slice::from_ref(&m));
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].kind, "motor_timing_static_mismatch");
     }
 
     fn bor3() -> Vec<power::Reset> {
@@ -1513,10 +2081,70 @@ mod tests {
         }]
     }
 
+    /// `AET-WO-4300a` D1 and adversarial F5: a correct slow output in a
+    /// window shorter than two of its periods fails closed, and says why.
+    #[test]
+    fn an_output_too_slow_for_its_window_is_named_with_the_reason() {
+        let m = motor();
+        let short = witness_motor(&m, Some(Some(vec![(639_750, true)])), 1_000_000);
+        assert_eq!(short.status, "unwitnessed");
+        let f = witness_findings_of(&m, &short, 1_000_000);
+        assert_eq!(f.len(), 1);
+        assert!(
+            f[0].message
+                .contains("shorter than two of its periods (1279488 ns)"),
+            "{}",
+            f[0].message
+        );
+        // A boot shorter than a long enough window: the reason is not given
+        // (third adversarial review, F3: `--for 1ms` on a 100 ms board).
+        let long = witness_motor(&m, Some(Some(vec![(639_750, true)])), 1_000_000);
+        assert!(
+            !witness_findings_of(&m, &long, aethelgard_twin::boot::MAX_VIRTUAL_NS)[0]
+                .message
+                .contains("shorter than two")
+        );
+    }
+
+    /// `AET-WO-4300a` D1 (a): on a DShot board's short window, a declared
+    /// identity read whose record is still unset is named; one the firmware
+    /// wrote is not, and on the 100 ms window nothing is (the missing boot
+    /// word already fails the run).
+    #[test]
+    fn a_read_left_unset_by_a_short_window_is_named() {
+        use aethelgard_twin::boot::{DSHOT_WINDOW_NS, MAX_VIRTUAL_NS, RECORD_UNSET, STATUS_OK};
+        let image = image();
+        let checks = &image.identity.checks;
+        assert!(!checks.is_empty());
+        let unset = vec![(RECORD_UNSET, u64::from(RECORD_UNSET)); checks.len()];
+        let named = reads_outside_window(checks, &unset, DSHOT_WINDOW_NS, DSHOT_WINDOW_NS);
+        assert_eq!(named.len(), checks.len());
+        assert!(
+            named
+                .iter()
+                .all(|f| f.kind == "identity_read_outside_window")
+        );
+        assert!(
+            named[0].message.contains(&who(&checks[0])),
+            "{}",
+            named[0].message
+        );
+        assert!(
+            named[0].message.contains("2000000 ns"),
+            "{}",
+            named[0].message
+        );
+        let written = vec![(STATUS_OK, 0x60); checks.len()];
+        assert!(
+            reads_outside_window(checks, &written, DSHOT_WINDOW_NS, DSHOT_WINDOW_NS).is_empty()
+        );
+        assert!(reads_outside_window(checks, &unset, MAX_VIRTUAL_NS, MAX_VIRTUAL_NS).is_empty());
+    }
+
     #[test]
     fn a_log_line_loses_its_host_timestamp_and_nothing_else() {
         assert_eq!(
-            log_text("[21:06:58.1004] [WARNING] sysbus: Tried to write a locked peripheral"),
+            log_text("[00:00:00.010040000] [WARNING] sysbus: Tried to write a locked peripheral"),
             "[WARNING] sysbus: Tried to write a locked peripheral"
         );
         assert_eq!(log_text("  plain  "), "plain");
@@ -1595,8 +2223,7 @@ mod tests {
         let resets = bor3();
         let p = plan(&image, &resets);
         let lines = |l: &[&str]| l.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
-        let w =
-            "[21:06:58.1004] [NOISY] i2c1.u2: Write D0\n[21:06:58.1005] [NOISY] i2c1.u2: Read 60";
+        let w = "[00:00:00.010040000] [NOISY] i2c1.u2: Write D0\n[00:00:00.010050000] [NOISY] i2c1.u2: Read 60";
         let block = |log: &str, rows: &[&str]| {
             format!(
                 "x\nAETHELGARD-RELEASE-0\n{log}\nAETHELGARD-PROBE-BEGIN-0\n{}\nAETHELGARD-PROBE-END-0\n",
@@ -1619,7 +2246,7 @@ mod tests {
         let mut logged = good.to_vec();
         logged.insert(
             2,
-            "[21:06:58.1004] [WARNING] sysbus: Tried to write a locked peripheral",
+            "[00:00:00.010040000] [WARNING] sysbus: Tried to write a locked peripheral",
         );
         assert_eq!(probes_in(&block(w, &logged), false, &p).unwrap(), want);
         // Past the filter's budget the witness is unread, never guessed.
@@ -1646,7 +2273,7 @@ mod tests {
                 &[
                     "0x2100B007",
                     "0x22020000",
-                    "0x000000[21:06:58.1004] [WARNING] x",
+                    "0x000000[00:00:00.010040000] [WARNING] x",
                 ],
             ),
             format!("{}AETHELGARD-PROBE-BEGIN-1\n", block(w, &good)),
@@ -1663,8 +2290,8 @@ mod tests {
 
     /// `AET-WO-2204` D4: the configuration is Renode 1.17.0's own default
     /// (measured, and pinned on Renode by `twin_tier2::renode_s_configuration_
-    /// ...`) with `use-synchronous-logging` alone changed, and the history
-    /// under the call's home.
+    /// ...`) with `use-synchronous-logging` and, since `AET-WO-4300a` (D2),
+    /// `log-timestamps-type` changed, and the history under the call's home.
     #[test]
     fn the_configuration_is_renode_s_default_with_synchronous_logging() {
         let c = config(std::path::Path::new("/w/tool"));
@@ -1678,7 +2305,7 @@ mod tests {
             "serialization-mode = Generated",
             "always-log-machine-name = False",
             "collapse-repeated-log-entries = True",
-            "log-timestamps-type = Host",
+            "log-timestamps-type = Virtual",
             "log-history-limit = 1000",
             "history-path = /w/tool/.config/renode/history",
             "store-table-bits = 41",
@@ -1697,23 +2324,33 @@ mod tests {
     }
 
     #[test]
-    fn a_log_body_is_exactly_the_text_after_a_whole_host_timestamp() {
+    fn a_log_line_s_virtual_stamp_is_its_time_in_nanoseconds() {
         assert_eq!(
-            log_body("[21:06:58.1004] [NOISY] i2c1.u2: Read 60"),
+            log_stamped("[01:02:03.019999010] [NOISY] gpioPortA.m1: x"),
+            Some((3_723_019_999_010, "[NOISY] gpioPortA.m1: x"))
+        );
+        assert_eq!(log_stamped("[00:00:00.01999901] [NOISY] x"), None);
+        assert_eq!(log_stamped("[00:00:00.0199990100] [NOISY] x"), None);
+    }
+
+    #[test]
+    fn a_log_body_is_exactly_the_text_after_a_whole_virtual_timestamp() {
+        assert_eq!(
+            log_body("[00:00:00.010040000] [NOISY] i2c1.u2: Read 60"),
             Some("[NOISY] i2c1.u2: Read 60")
         );
         for not in [
             "[NOISY] i2c1.u2: Read 60",
-            "x[21:06:58.1004] [NOISY] i2c1.u2: Read 60",
+            "x[00:00:00.010040000] [NOISY] i2c1.u2: Read 60",
             "[21:06:58.104] [NOISY] i2c1.u2: Read 60",
-            "[21:06:58.1004][NOISY] i2c1.u2: Read 60",
+            "[00:00:00.010040000][NOISY] i2c1.u2: Read 60",
             "[2a:06:58.1004] [NOISY] i2c1.u2: Read 60",
         ] {
             assert_eq!(log_body(not), None, "{not}");
         }
         assert_eq!(
             witness_shaped(
-                "[21:06:58.1004] [NOISY] i2c1.u2: Read 60 (2)",
+                "[00:00:00.010040000] [NOISY] i2c1.u2: Read 60 (2)",
                 "i2c1.u2",
                 "[NOISY] "
             ),
@@ -1721,7 +2358,7 @@ mod tests {
         );
         assert_eq!(
             witness_shaped(
-                "[21:06:58.1004] [NOISY] i2c1.u20: Read 60",
+                "[00:00:00.010040000] [NOISY] i2c1.u20: Read 60",
                 "i2c1.u2",
                 "[NOISY] "
             ),
@@ -1729,14 +2366,14 @@ mod tests {
         );
         assert_eq!(
             witness_shaped(
-                "[21:06:58.1004] [INFO] i2c1.u2: Read 60",
+                "[00:00:00.010040000] [INFO] i2c1.u2: Read 60",
                 "i2c1.u2",
                 "[NOISY] "
             ),
             None
         );
-        assert!(is_log_line("[21:06:58.1004] [WARNING] sysbus: x"));
-        assert!(!is_log_line("[21:06:58.1004] WARNING sysbus: x"));
+        assert!(is_log_line("[00:00:00.010040000] [WARNING] sysbus: x"));
+        assert!(!is_log_line("[00:00:00.010040000] WARNING sysbus: x"));
     }
 
     /// One step of a scripted device, witnessed by `witness`.
@@ -1780,6 +2417,7 @@ mod tests {
             records: vec![(aethelgard_twin::boot::STATUS_OK, 0); checks.len()],
             witnesses: seen.into_iter().map(Some).collect(),
             absent: vec![Vec::new(); checks.len()],
+            motors: Vec::new(),
             unrouted,
         };
         witness_findings(checks, &observed)
@@ -1792,7 +2430,7 @@ mod tests {
     #[test]
     fn a_device_s_error_inside_a_step_fails_that_step_by_name() {
         use aethelgard_ir::parts::StepKind::{Configure, Data, Identity};
-        let at = |b: &str| format!("[03:07:39.4001] {b}");
+        let at = |b: &str| format!("[00:00:00.010040000] {b}");
         let i2c = || aethelgard_twin::boot::Wire::I2c { address: 0x63 };
         let d = "i2c1.u7";
         let checks = [

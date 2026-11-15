@@ -158,6 +158,9 @@ pub(crate) enum NetKind<'s> {
     I2cSda(&'s str),
     /// An SPI bus's clock, data or chip-select line.
     Spi,
+    /// A motor output's net (`AET-WO-4300a` §1.8): it leaves the board at
+    /// a connector, on no bus, so it declares no off-board capacitance.
+    Motor,
 }
 
 impl NetKind<'_> {
@@ -185,6 +188,9 @@ fn net_kinds(spec: &Specification) -> BTreeMap<&str, NetKind<'_>> {
     }
     for d in spec.declared_spi_devices() {
         kinds.insert(d.cs.net.as_str(), NetKind::Spi);
+    }
+    for m in &spec.motor_outputs {
+        kinds.insert(m.label.as_str(), NetKind::Motor);
     }
     kinds
 }

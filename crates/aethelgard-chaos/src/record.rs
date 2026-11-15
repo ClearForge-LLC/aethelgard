@@ -11,7 +11,26 @@ use crate::event::{name_ok, text_ok};
 /// The first campaign kind; [`Record::kind`] is this plus the variant's index.
 pub const FIRST_KIND: u64 = 5;
 /// The last campaign kind.
-pub const LAST_KIND: u64 = 23;
+pub const LAST_KIND: u64 = 26;
+
+/// The protocols a motor output may declare (`AET-WO-4300a`), as kind 24
+/// names them.
+pub const MOTOR_PROTOCOLS: [&str; 3] = ["pwm", "dshot300", "dshot600"];
+
+/// What kind 26's `status` may say (`AET-WO-4300a`): the observer's edges
+/// were the model's sequence with an edge off the grid; were, on the grid
+/// alone; showed fewer than two rises; could not be read whole; did not fit
+/// the sequence; shared stamps; or stopped more than a period before the
+/// window's end.
+pub const MOTOR_STATUSES: [&str; 7] = [
+    "witnessed",
+    "static_only",
+    "unwitnessed",
+    "unreadable",
+    "mismatch",
+    "batched",
+    "stopped",
+];
 
 /// One override a scenario applies to its specification (`AET-WO-2300` §1.1).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -322,6 +341,60 @@ pub enum Record {
         peripheral: String,
         devices: Vec<(String, u8, String)>,
     },
+    /// Kind 24: one solved motor output, from the solved topology alone
+    /// (`AET-WO-4300a`): its label (its net), timer and channel, pin and
+    /// alternate function, protocol, the solved `PSC`, `ARR` and `CCR`, and
+    /// for PWM its declared rate and pulse range in µs. Kinds 25 and 26 join
+    /// to it. Archived beside kinds 15 and 23, before the boot.
+    MotorOutputSolved {
+        label: String,
+        timer: String,
+        channel: u8,
+        pin: String,
+        alternate_function: u8,
+        protocol: String,
+        psc: u32,
+        arr: u32,
+        ccr: u32,
+        pwm: Option<(u32, u32, u32)>,
+    },
+    /// Kind 25: the static check for silicon of one motor output (`4300`
+    /// D3): its timer's kernel clock from the solved clock, the period and
+    /// high time the solved registers give with silicon's `ARR + 1`, the
+    /// declared ones, in ps, and whether they agree within the check's rules.
+    /// Decided from the topology alone, before the boot.
+    MotorTimingCheck {
+        label: String,
+        kernel_hz: u64,
+        period_ps: u64,
+        high_ps: u64,
+        nominal_period_ps: u64,
+        nominal_high_ps: u64,
+        holds: bool,
+    },
+    /// Kind 26: one motor output's twin witness (`4300` D4): its observer,
+    /// the model's period and high time, the stamp grain and the quantum, in
+    /// ns, and what the observer showed (`status`, one of
+    /// [`MOTOR_STATUSES`]; the counts; the first rise; the deviations'
+    /// spread; edges off the grid; edges sharing a stamp).
+    MotorWitness {
+        label: String,
+        observer: String,
+        period_ns: u64,
+        high_ns: u64,
+        grain_ns: u64,
+        quantum_ns: u64,
+        status: String,
+        rises: u64,
+        falls: u64,
+        first_ns: Option<u64>,
+        /// The last rise, and the end of the window it must reach.
+        last_ns: Option<u64>,
+        end_ns: u64,
+        span_ns: Option<u64>,
+        off_grid: u64,
+        batched: u64,
+    },
 }
 
 fn u(n: u64) -> Value {
@@ -627,6 +700,9 @@ impl Record {
                 Self::SpiCheck { .. } => 16,
                 Self::SpiWitness { .. } => 17,
                 Self::SpiBusSolved { .. } => 18,
+                Self::MotorOutputSolved { .. } => 19,
+                Self::MotorTimingCheck { .. } => 20,
+                Self::MotorWitness { .. } => 21,
             }
     }
 
@@ -652,6 +728,8 @@ impl Record {
                 | Self::Solved { .. }
                 | Self::I2cBusSolved { .. }
                 | Self::SpiBusSolved { .. }
+                | Self::MotorOutputSolved { .. }
+                | Self::MotorTimingCheck { .. }
                 | Self::RiseComputed { .. }
                 | Self::LineStuckHigh { .. }
                 | Self::BusFault { .. }
@@ -935,6 +1013,85 @@ impl Record {
                         .collect(),
                 ),
             ],
+            Self::MotorOutputSolved {
+                label,
+                timer,
+                channel,
+                pin,
+                alternate_function,
+                protocol,
+                psc,
+                arr,
+                ccr,
+                pwm,
+            } => vec![
+                t(label),
+                t(timer),
+                u((*channel).into()),
+                t(pin),
+                u((*alternate_function).into()),
+                t(protocol),
+                u((*psc).into()),
+                u((*arr).into()),
+                u((*ccr).into()),
+                Value::Array(
+                    pwm.iter()
+                        .map(|(r, lo, hi)| {
+                            Value::Array(vec![u((*r).into()), u((*lo).into()), u((*hi).into())])
+                        })
+                        .collect(),
+                ),
+            ],
+            Self::MotorTimingCheck {
+                label,
+                kernel_hz,
+                period_ps,
+                high_ps,
+                nominal_period_ps,
+                nominal_high_ps,
+                holds,
+            } => vec![
+                t(label),
+                u(*kernel_hz),
+                u(*period_ps),
+                u(*high_ps),
+                u(*nominal_period_ps),
+                u(*nominal_high_ps),
+                flag(*holds),
+            ],
+            Self::MotorWitness {
+                label,
+                observer,
+                period_ns,
+                high_ns,
+                grain_ns,
+                quantum_ns,
+                status,
+                rises,
+                falls,
+                first_ns,
+                last_ns,
+                end_ns,
+                span_ns,
+                off_grid,
+                batched,
+            } => vec![
+                t(label),
+                t(observer),
+                u(*period_ns),
+                u(*high_ns),
+                u(*grain_ns),
+                u(*quantum_ns),
+                t(status),
+                u(*rises),
+                u(*falls),
+                opt(*first_ns),
+                opt(*last_ns),
+                u(*end_ns),
+                opt(*span_ns),
+                u(*off_grid),
+                u(*batched),
+            ],
         }
     }
 
@@ -1157,6 +1314,53 @@ impl Record {
                     devices,
                 }
             }
+            24 => Self::MotorOutputSolved {
+                label: f.text()?,
+                timer: f.text()?,
+                channel: f.u8()?,
+                pin: f.text()?,
+                alternate_function: f.u8()?,
+                protocol: f.text()?,
+                psc: f.u32()?,
+                arr: f.u32()?,
+                ccr: f.u32()?,
+                pwm: match f.array()? {
+                    [] => None,
+                    [Value::Array(triple)] => {
+                        let mut g = Fields(triple.iter());
+                        let v = (g.u32()?, g.u32()?, g.u32()?);
+                        g.end()?;
+                        Some(v)
+                    }
+                    _ => return None,
+                },
+            },
+            25 => Self::MotorTimingCheck {
+                label: f.text()?,
+                kernel_hz: f.uint()?,
+                period_ps: f.uint()?,
+                high_ps: f.uint()?,
+                nominal_period_ps: f.uint()?,
+                nominal_high_ps: f.uint()?,
+                holds: f.flag()?,
+            },
+            26 => Self::MotorWitness {
+                label: f.text()?,
+                observer: f.text()?,
+                period_ns: f.uint()?,
+                high_ns: f.uint()?,
+                grain_ns: f.uint()?,
+                quantum_ns: f.uint()?,
+                status: f.text()?,
+                rises: f.uint()?,
+                falls: f.uint()?,
+                first_ns: f.opt()?,
+                last_ns: f.opt()?,
+                end_ns: f.uint()?,
+                span_ns: f.opt()?,
+                off_grid: f.uint()?,
+                batched: f.uint()?,
+            },
             _ => return None,
         };
         f.end()?;
@@ -1492,6 +1696,66 @@ impl Record {
                     Err(
                         "a solved SPI controller's addresses are not 0 to n in order, or two devices share a chip select",
                     )
+                } else {
+                    Ok(())
+                }
+            }
+            Self::MotorOutputSolved {
+                label,
+                timer,
+                channel,
+                pin,
+                alternate_function,
+                protocol,
+                psc,
+                arr,
+                ccr,
+                pwm,
+            } => {
+                let timer_ok = timer
+                    .strip_prefix("TIM")
+                    .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+                if !name_ok(label) || !timer_ok || split_pin(pin).is_none() {
+                    Err("a solved motor output's label, timer or pin is malformed")
+                } else if !(1..=4).contains(channel) || *alternate_function > 15 {
+                    Err("a solved motor output's channel is not 1 to 4 or its AF above 15")
+                } else if !MOTOR_PROTOCOLS.contains(&protocol.as_str())
+                    || pwm.is_some() != (protocol == "pwm")
+                {
+                    Err(
+                        "a solved motor output's protocol is unknown, or its PWM timing is not present exactly for PWM",
+                    )
+                } else if *psc > 0xFFFF || *arr == 0 || *arr > 0xFFFF || *ccr == 0 || ccr >= arr {
+                    Err(
+                        "a solved motor output's PSC, ARR or CCR is outside the timer (CCR from 1 to ARR - 1)",
+                    )
+                } else {
+                    Ok(())
+                }
+            }
+            Self::MotorTimingCheck {
+                label, kernel_hz, ..
+            } => {
+                if !name_ok(label) || *kernel_hz == 0 {
+                    Err("a motor timing check's label is malformed or its timer clock 0")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::MotorWitness {
+                label,
+                observer,
+                grain_ns,
+                quantum_ns,
+                status,
+                ..
+            } => {
+                if !name_ok(label) || !name_ok(observer) {
+                    Err("a motor witness's label or observer is malformed")
+                } else if !MOTOR_STATUSES.contains(&status.as_str()) {
+                    Err("a motor witness's status is not one the judge gives")
+                } else if *grain_ns == 0 || *quantum_ns == 0 {
+                    Err("a motor witness's grain or quantum is 0")
                 } else {
                     Ok(())
                 }

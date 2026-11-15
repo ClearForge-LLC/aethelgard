@@ -214,7 +214,7 @@ tests/twin_tier2.rs	a_value_one_bit_off_fails_as_an_identity_mismatch	6.398
 tests/twin_tier2.rs	an_aborted_machine_returns_inside_the_bound_as_cpu_aborted	32.421
 tests/twin_tier2.rs	on_a_bus_with_two_devices_each_read_is_witnessed	25.916
 tests/twin_tier2.rs	p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes	25.736
-tests/twin_tier2.rs	renode_s_configuration_differs_from_its_default_in_synchronous_logging_alone	7.964
+tests/twin_tier2.rs	renode_s_configuration_differs_from_its_default_in_synchronous_logging_and_virtual_time_alone	7.964
 tests/twin_tier2.rs	the_emitted_platform_loads_and_lists_every_solved_peripheral	3.661
 tests/twin_tier2.rs	the_judge_s_own_reads_of_a_gated_peripheral_are_never_the_firmware_s	6.226
 tests/twin_tier2.rs	the_reference_firmware_boots_and_two_boots_agree	12.390
@@ -268,6 +268,16 @@ tests/twin_tier2.rs	a_seeded_imu_fault_is_named_by_its_step	8.500
 tests/twin_tier2.rs	a_seeded_barometer_fault_is_named_by_its_step	8.600
 tests/twin_tier2.rs	an_interrupt_armed_after_the_boot_word_fails_naming_it	17.000
 tests/board_tier2.rs	the_imu_fixture_s_transfers_prove_within_its_scripts	45.000
+tests/twin_tier2.rs	the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back	12.000
+tests/twin_tier2.rs	the_dshot600_fixture_s_outputs_are_witnessed_in_a_two_millisecond_boot	12.000
+tests/twin_tier2.rs	adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail	26.000
+tests/twin_tier2.rs	adversarial_1_a_timer_at_another_rate_with_the_claim_kept_fails	13.000
+tests/twin_tier2.rs	motor_output_dead_leaves_its_pin_silent_and_reads_its_wrong_af	13.000
+# AET-WO-4300a resume: the Kani test gains the HSIDIV negative (a second board build and one failed
+# proof, about 8 s more) and the DShot600 campaign test (a board build and a 2 ms campaign, 4.8 s in
+# the image on Furnace); estimates until the next refit.
+tests/twin_tier2.rs	kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check	62.000
+tests/twin_tier2.rs	the_dshot600_fixture_s_campaign_passes_inside_its_window	40.000
 # AET-WO-1308: estimates until the next refit, as 1307's: each test's wall time in the pinned image on
 # Furnace (2026-11-15; 6.0, 3.0 and 2.4 s) times 2.8. The nine classes_tier1 tests took 1.3 s together (release eda).
 tests/with_tools.rs	the_class_and_pair_fixtures_pass_erc_and_drc_and_the_pair_is_reported	16.800

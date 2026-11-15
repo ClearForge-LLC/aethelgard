@@ -15,11 +15,13 @@ pub mod classes;
 pub mod connectors;
 pub mod ds009;
 pub mod electrical;
+pub mod motor;
 pub mod parts;
 mod solve;
 pub mod speeds;
 pub mod thermal;
 
+pub use motor::{MotorOutput, MotorProtocol, PwmTiming, SolvedClock, SolvedMotorOutput};
 pub use solve::{NODE_LIMIT, RESERVED_PINS, SolveError, solve, solve_with_limit};
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -36,17 +38,18 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// (`AET-WO-4300c` D2, F11); nothing supplies either for an older file.
 /// Version 4 added `connectors` (`AET-WO-4300f`). Version 5 requires
 /// `net_classes` and `diff_pairs` (`AET-WO-1308`); an empty array declares
-/// none, and nothing supplies either for an older file. Version 6 requires
-/// `accept_lifecycle`, each end-of-life or not-recommended part the board uses
-/// acknowledged with a statement (`AET-WO-4210`, Scotty's ruling on D1); an
-/// empty list acknowledges none. `4210` took 6 by the numbering rule, merging
-/// after `1308`.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 6;
+/// none. Version 6 requires `motor_outputs` and `mcu.hse_hz` (`AET-WO-4300a`
+/// §1.1, `4400` D1). Version 7 requires `accept_lifecycle`, each end-of-life
+/// or not-recommended part the board uses acknowledged with a statement
+/// (`AET-WO-4210`, Scotty's ruling on D1); an empty list acknowledges none.
+/// `4210` took 7 by the numbering rule, merging after `4300a`. Nothing
+/// supplies any of them for an older file.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 7;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
 
-/// The top-level specification, version 6 (`RUL-14`). Arrays keep the order a
+/// The top-level specification, version 7 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
@@ -74,6 +77,8 @@ pub struct Specification {
     pub net_classes: Vec<classes::NetClass>,
     /// Coupled pairs (`AET-WO-1308`); empty declares none.
     pub diff_pairs: Vec<classes::DiffPair>,
+    /// Each motor output: a timer channel the solver assigns (`AET-WO-4300a`).
+    pub motor_outputs: Vec<MotorOutput>,
     /// Each `eol` or `nrnd` part the board uses, acknowledged by name with its
     /// status and a statement of why (`AET-WO-4210`, ruled by Scotty on D1).
     /// `validate` refuses any such part not listed, and any entry that is not
@@ -136,12 +141,16 @@ pub fn lifecycle_banner<'a>(
         .collect()
 }
 
-/// The microcontroller: a part name and the domain that supplies it.
+/// The microcontroller: a part name, the domain that supplies it, and its
+/// external crystal's frequency in Hz, `0` for none (`4400` D1): a crystal
+/// needs a crystal part with its load capacitors, which no table holds yet,
+/// so `validate` refuses any other value by name (`CrystalNotSupported`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct Mcu {
     pub part: String,
     pub supply: String,
+    pub hse_hz: u32,
 }
 
 /// A supply rail and how far it may stray from nominal.
@@ -228,9 +237,9 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 
 /// The `schema_version` of a [`SolvedTopology`]. Version 2 added `i2c_speeds`
 /// (`AET-WO-1205`), version 3 `spi_devices` (`AET-WO-4200`), version 4
-/// `spi_lines` (`AET-WO-4300c`); an older file is refused, never defaulted
-/// (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 4;
+/// `spi_lines` (`AET-WO-4300c`), version 5 `clock` and `motor_outputs`
+/// (`AET-WO-4300a`); an older file is refused, never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 5;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -275,6 +284,15 @@ pub struct SolvedTopology {
     /// (`AET-WO-4300c` D2, D4, `RUL-16`).
     #[serde(deserialize_with = "unique_keys")]
     pub spi_lines: BTreeMap<String, SpiLine>,
+    /// The clock the generated firmware runs on, a solved fact: the reset
+    /// clock (`AET-WO-4300a` §1.2, `4400` D1). The timer values in
+    /// `motor_outputs` are solved for it, and the static timer check reads
+    /// only it.
+    pub clock: SolvedClock,
+    /// Each motor output, keyed by its label, which is its net: a key of
+    /// `assignments` on a `TIMn_CHk` signal (`AET-WO-4300a`, `RUL-16`).
+    #[serde(deserialize_with = "unique_keys")]
+    pub motor_outputs: BTreeMap<String, SolvedMotorOutput>,
 }
 
 /// One SPI line the MCU drives: the bus's declared clock (the most it
@@ -483,6 +501,10 @@ struct SolvedWire {
     spi_devices: Option<BTreeMap<String, SolvedSpiDevice>>,
     #[serde(default, deserialize_with = "unique_keys_some")]
     spi_lines: Option<BTreeMap<String, SpiLine>>,
+    #[serde(default)]
+    clock: Option<SolvedClock>,
+    #[serde(default, deserialize_with = "unique_keys_some")]
+    motor_outputs: Option<BTreeMap<String, SolvedMotorOutput>>,
 }
 
 fn unique_keys_some<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
@@ -530,6 +552,19 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     None if w.schema_version != SOLVED_SCHEMA_VERSION => BTreeMap::new(),
                     None => return Err(serde::de::Error::missing_field("spi_lines")),
                 };
+                // The same for `clock` and `motor_outputs`, which version 5
+                // added; an older file's stand-in is never read, because
+                // `validate` refuses its version first.
+                let clock = match w.clock {
+                    Some(c) => c,
+                    None if w.schema_version != SOLVED_SCHEMA_VERSION => SolvedClock::reset(),
+                    None => return Err(serde::de::Error::missing_field("clock")),
+                };
+                let motor_outputs = match w.motor_outputs {
+                    Some(m) => m,
+                    None if w.schema_version != SOLVED_SCHEMA_VERSION => BTreeMap::new(),
+                    None => return Err(serde::de::Error::missing_field("motor_outputs")),
+                };
                 Ok(SolvedTopology {
                     schema_version: w.schema_version,
                     specification_sha256: w.specification_sha256,
@@ -541,6 +576,8 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     i2c_devices: w.i2c_devices,
                     spi_devices,
                     spi_lines,
+                    clock,
+                    motor_outputs,
                 })
             }
         }
@@ -925,6 +962,48 @@ pub enum IrValidationError {
         capacitance_femtofarads: u64,
         limit_femtofarads: u64,
     },
+    #[error(
+        "mcu.hse_hz is {hse_hz}: a crystal needs a crystal part with its load capacitors placed and routed, and the parts table holds none (`4400` D1, backlog); declare 0 to run from HSI"
+    )]
+    CrystalNotSupported { hse_hz: u32 },
+    #[error(
+        "motor output `{id}`: `pwm` must be an object when the protocol is `pwm`, and null when it is DShot"
+    )]
+    MotorTimingShape { id: String },
+    #[error("motor output `{id}` has rate_hz 0")]
+    ZeroMotorRate { id: String },
+    #[error(
+        "motor output `{id}` has a pulse range of {min_us} to {max_us} us: the minimum is at least 1 and below the maximum"
+    )]
+    PulseRange {
+        id: String,
+        min_us: u32,
+        max_us: u32,
+    },
+    #[error(
+        "motor output `{id}`'s longest pulse, {max_us} us, does not fit inside its period at {rate_hz} Hz"
+    )]
+    PulseExceedsPeriod {
+        id: String,
+        max_us: u32,
+        rate_hz: u32,
+    },
+    #[error(
+        "net constraint on `{id}`, a motor output: no check reads it, so it cannot be held (the output leaves the board, and its load is off-board)"
+    )]
+    UnjudgedMotorConstraint { id: String },
+    #[error(
+        "motor output `{id}` disagrees with the solved topology: its net is one `TIMn_CHk` assignment of a timer with channels, each channel once, indices exactly 0..n, `pwm` present exactly for PWM, and PSC, ARR and CCR within the timer (CCR from 1 to ARR - 1, so a fall never meets the next update)"
+    )]
+    MotorOutputMismatch { id: String },
+    #[error(
+        "timer `{id}` carries outputs that differ in protocol, rate, PSC or ARR: the outputs of one timer share its counter"
+    )]
+    TimerShared { id: String },
+    #[error(
+        "the solved clock is not the reset clock (HSI at 64 MHz, every prescaler 1, TIMPRE 0, no crystal), the only one this engine generates firmware for (`AET-WO-4300a` §1.2)"
+    )]
+    UnsupportedClock,
     #[error("connector `{id}` names part `{part}`, which is not in the connectors table")]
     UnknownConnectorPart { id: String, part: String },
     #[error("connector `{id}` lists pin `{pin}`; its part's signal pins are `1` to `{pins}`")]
@@ -1073,6 +1152,15 @@ impl IrValidationError {
             Self::BusTooFast { .. } => "BusTooFast",
             Self::PullUpBelowSinkFloor { .. } => "PullUpBelowSinkFloor",
             Self::BusCapacitanceOverLimit { .. } => "BusCapacitanceOverLimit",
+            Self::CrystalNotSupported { .. } => "CrystalNotSupported",
+            Self::MotorTimingShape { .. } => "MotorTimingShape",
+            Self::ZeroMotorRate { .. } => "ZeroMotorRate",
+            Self::PulseRange { .. } => "PulseRange",
+            Self::PulseExceedsPeriod { .. } => "PulseExceedsPeriod",
+            Self::UnjudgedMotorConstraint { .. } => "UnjudgedMotorConstraint",
+            Self::MotorOutputMismatch { .. } => "MotorOutputMismatch",
+            Self::TimerShared { .. } => "TimerShared",
+            Self::UnsupportedClock => "UnsupportedClock",
             Self::UnknownConnectorPart { .. } => "UnknownConnectorPart",
             Self::ConnectorPinUnknown { .. } => "ConnectorPinUnknown",
             Self::ConnectorPinRepeated { .. } => "ConnectorPinRepeated",
@@ -1170,7 +1258,15 @@ impl IrValidationError {
             | Self::I2cAddressNotOffered { id, .. }
             | Self::SpiClockAbovePart { id, .. }
             | Self::SpiLineMismatch { id }
-            | Self::SpeedBusMismatch { id } => Some(id),
+            | Self::SpeedBusMismatch { id }
+            | Self::MotorTimingShape { id }
+            | Self::ZeroMotorRate { id }
+            | Self::PulseRange { id, .. }
+            | Self::PulseExceedsPeriod { id, .. }
+            | Self::UnjudgedMotorConstraint { id }
+            | Self::MotorOutputMismatch { id }
+            | Self::TimerShared { id } => Some(id),
+            Self::CrystalNotSupported { .. } | Self::UnsupportedClock => None,
             Self::PartsTable { part, .. } => part.as_deref(),
             Self::CeilingNotDerived { bus, .. }
             | Self::BusTooFast { bus, .. }
@@ -1411,8 +1507,30 @@ pub fn check_identifier(kind: IdentifierKind, value: &str) -> Result<(), &'stati
         if RESERVED_REFERENCES.binary_search(&lowered.as_str()).is_ok() {
             return Err(RESERVED_RULE);
         }
+        if is_observer_name(&lowered) {
+            return Err(OBSERVER_RULE);
+        }
     }
     Ok(())
+}
+
+const OBSERVER_RULE: &str = "a device reference may not be a motor output's observer name, `p`, a port letter `a` to `k`, a pin number 0 to 15, then `obs` (`pa8obs`), in any case: the Renode platform declares one on each motor output's pin (`AET-WO-4300a`)";
+
+/// Whether `name` (lowercase) is the name the twin's platform gives the
+/// observer of a pin, `pa8obs` (`aethelgard_twin::timer::observer_name`).
+pub fn is_observer_name(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix('p') else {
+        return false;
+    };
+    let mut chars = rest.chars();
+    let port = chars.next().is_some_and(|c| ('a'..='k').contains(&c));
+    let Some(number) = chars.as_str().strip_suffix("obs") else {
+        return false;
+    };
+    port && !number.is_empty()
+        && number.bytes().all(|b| b.is_ascii_digit())
+        && (number == "0" || !number.starts_with('0'))
+        && number.parse::<u32>().is_ok_and(|n| n <= 15)
 }
 
 fn identifier(
@@ -1493,6 +1611,13 @@ impl Specification {
         for net in unjudged {
             if self.net_constraints.iter().any(|c| &c.net_name == net) {
                 return Err(IrValidationError::UnjudgedSpiConstraint { id: net.clone() });
+            }
+        }
+        for m in &self.motor_outputs {
+            if self.net_constraints.iter().any(|c| c.net_name == m.label) {
+                return Err(IrValidationError::UnjudgedMotorConstraint {
+                    id: m.label.clone(),
+                });
             }
         }
         // Each device's supply within its part's range (adversarial 2):
@@ -1689,6 +1814,12 @@ impl Specification {
         }
         // 2
         self.identifiers()?;
+        // 2a: no crystal part exists, so only HSI can be declared (`4400` D1).
+        if self.mcu.hse_hz != 0 {
+            return Err(E::CrystalNotSupported {
+                hse_hz: self.mcu.hse_hz,
+            });
+        }
         // 3
         if self.voltage_domains.is_empty() {
             return Err(E::NoVoltageDomain);
@@ -1857,9 +1988,10 @@ impl Specification {
                     .iter()
                     .flat_map(|b| [&b.sck, &b.mosi, &b.miso]),
             )
-            .chain(self.spi_devices.iter().map(|d| &d.cs));
-        for signal in signals {
-            let net = &signal.net;
+            .chain(self.spi_devices.iter().map(|d| &d.cs))
+            .map(|s| &s.net)
+            .chain(self.motor_outputs.iter().map(|m| &m.label));
+        for net in signals {
             let folded = net.to_lowercase();
             if !folded_nets.insert(folded.clone()) {
                 return Err(E::DuplicateNetName { id: net.clone() });
@@ -1869,6 +2001,18 @@ impl Specification {
             if folded_domains.contains(&folded) || (folded == "gnd" && net != "GND") {
                 return Err(E::NetShadowsDomain { id: net.clone() });
             }
+        }
+        // A motor output's net is a signal that leaves the board; named
+        // `GND`, it would join the emitter's ground (second adversarial
+        // review, F2).
+        if let Some(m) = self
+            .motor_outputs
+            .iter()
+            .find(|m| m.label.eq_ignore_ascii_case(GND))
+        {
+            return Err(E::NetShadowsDomain {
+                id: m.label.clone(),
+            });
         }
         // 12
         let mut constrained = BTreeSet::new();
@@ -1899,7 +2043,12 @@ impl Specification {
             &self.board,
             &domains,
             &nets,
-        )
+        )?;
+        // 13b: each motor output's timing, in document order (`AET-WO-4300a`).
+        for m in &self.motor_outputs {
+            motor_shape(m)?;
+        }
+        Ok(())
     }
 
     /// Step 2, in the order the README lists.
@@ -1954,7 +2103,43 @@ impl Specification {
         for (i, layer) in self.board.layers.iter().enumerate() {
             optional_identifier(&layer.net, || format!("board.layers[{i}].net"))?;
         }
+        for (i, m) in self.motor_outputs.iter().enumerate() {
+            plain(&m.label, || format!("motor_outputs[{i}].label"))?;
+            optional_identifier(&m.pin, || format!("motor_outputs[{i}].pin"))?;
+        }
         connectors::identifiers(self)
+    }
+}
+
+/// Step 13b: `pwm` present exactly for PWM, a rate above 0, a pulse range
+/// from at least 1 µs to above it, and its longest pulse inside the period.
+fn motor_shape(m: &MotorOutput) -> Result<(), IrValidationError> {
+    use IrValidationError as E;
+
+    let id = || m.label.clone();
+    match (m.protocol, &m.pwm) {
+        (MotorProtocol::Pwm, Some(p)) => {
+            if p.rate_hz == 0 {
+                return Err(E::ZeroMotorRate { id: id() });
+            }
+            if p.pulse_min_us == 0 || p.pulse_min_us >= p.pulse_max_us {
+                return Err(E::PulseRange {
+                    id: id(),
+                    min_us: p.pulse_min_us,
+                    max_us: p.pulse_max_us,
+                });
+            }
+            if u64::from(p.pulse_max_us) * u64::from(p.rate_hz) >= 1_000_000 {
+                return Err(E::PulseExceedsPeriod {
+                    id: id(),
+                    max_us: p.pulse_max_us,
+                    rate_hz: p.rate_hz,
+                });
+            }
+            Ok(())
+        }
+        (MotorProtocol::Dshot300 | MotorProtocol::Dshot600, None) => Ok(()),
+        _ => Err(E::MotorTimingShape { id: id() }),
     }
 }
 
@@ -2160,6 +2345,10 @@ impl SolvedTopology {
                 .chain(self.spi_devices.keys())
                 .map(String::as_str),
         )?;
+        for net in self.motor_outputs.keys() {
+            plain(net, || format!("motor_outputs.{net}"))?;
+        }
+        plain(&self.clock.source, || "clock.source".into())?;
         for (net, a) in &self.assignments {
             if a.alternate_function > 15 {
                 return Err(E::AlternateFunctionOutOfRange {
@@ -2191,6 +2380,7 @@ impl SolvedTopology {
         self.validate_i2c_devices()?;
         self.validate_spi_devices()?;
         self.validate_spi_lines()?;
+        self.validate_motor_outputs()?;
         // The part limits again, from what the topology carries, so a bus
         // sped up or a device moved after `validate` is refused here too
         // (`AET-WO-4300c` §4.2, `RUL-16`).
@@ -2212,6 +2402,75 @@ impl SolvedTopology {
             }
         }
         Ok(())
+    }
+
+    /// The clock is the reset clock; `motor_outputs` holds exactly the nets
+    /// solved to a timer channel, each `TIMn_CHk` of a timer with channels,
+    /// each channel once, with indices exactly `0..n`, `pwm` present exactly
+    /// for PWM, `PSC` and `ARR` within 16 bits and `CCR` from 1 to `ARR - 1`; and
+    /// the outputs of one timer share its protocol, PWM rate, `PSC` and `ARR`.
+    /// It does not judge the values against the declared timing: that is the
+    /// static check, [`motor::check_silicon`] (`4300` D3).
+    fn validate_motor_outputs(&self) -> Result<(), IrValidationError> {
+        use IrValidationError as E;
+
+        if self.clock != SolvedClock::reset() {
+            return Err(E::UnsupportedClock);
+        }
+        let mismatch = |id: &str| E::MotorOutputMismatch { id: id.to_owned() };
+        for (net, a) in &self.assignments {
+            let timer = a.peripheral.starts_with("TIM");
+            if timer != self.motor_outputs.contains_key(net) {
+                return Err(mismatch(net));
+            }
+        }
+        let mut seen = BTreeSet::new();
+        let mut channels = BTreeSet::new();
+        let mut timers: BTreeMap<u32, (MotorProtocol, Option<u32>, u32, u32)> = BTreeMap::new();
+        for (net, m) in &self.motor_outputs {
+            let a = self.assignments.get(net).ok_or_else(|| mismatch(net))?;
+            let Some((timer, channel)) = motor::timer_channel(&a.signal) else {
+                return Err(mismatch(net));
+            };
+            let shaped = matches!(
+                (m.protocol, &m.pwm),
+                (MotorProtocol::Pwm, Some(_))
+                    | (MotorProtocol::Dshot300 | MotorProtocol::Dshot600, None)
+            );
+            let in_range = usize::try_from(m.index).is_ok_and(|i| i < self.motor_outputs.len());
+            if a.peripheral != format!("TIM{timer}")
+                || !shaped
+                || !in_range
+                || !seen.insert(m.index)
+                || !channels.insert((timer, channel))
+                || m.psc > 0xFFFF
+                || m.arr == 0
+                || m.arr > 0xFFFF
+                || m.ccr == 0
+                || m.ccr >= m.arr
+            {
+                return Err(mismatch(net));
+            }
+            let key = (m.protocol, m.pwm.as_ref().map(|p| p.rate_hz), m.psc, m.arr);
+            if *timers.entry(timer).or_insert(key) != key {
+                return Err(E::TimerShared {
+                    id: format!("TIM{timer}"),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// The motor outputs in the specification's order, with each one's
+    /// timer and channel (`TIMn_CHk`) and its pin's assignment.
+    pub fn motor_outputs_in_order(&self) -> Vec<(&str, &SolvedMotorOutput, &PinAssignment)> {
+        let mut out: Vec<_> = self
+            .motor_outputs
+            .iter()
+            .filter_map(|(net, m)| self.assignments.get(net).map(|a| (net.as_str(), m, a)))
+            .collect();
+        out.sort_by_key(|(_, m, _)| m.index);
+        out
     }
 
     /// `spi_lines` holds exactly the solved SCK and MOSI signals, each on its

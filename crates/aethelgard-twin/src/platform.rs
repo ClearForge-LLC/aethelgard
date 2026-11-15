@@ -15,8 +15,10 @@ use aethelgard_ir::parts::BusKind;
 use aethelgard_ir::{MEMORY_SUFFIX, SolvedI2cDevice, SolvedTopology};
 use aethelgard_svd_hal::cmsis::{self, RegisterFacts};
 
+use aethelgard_ir::motor::TIMERS;
+
 use crate::model::{self, Model};
-use crate::{Kind, TwinError, kind, split_pin};
+use crate::{Kind, TwinError, kind, split_pin, timer};
 
 /// The Renode release the stock table below was read from.
 pub const RENODE_VERSION: &str = "1.17.0";
@@ -65,6 +67,16 @@ pub const STOCK: [(&str, &str, &str, u32); 16] = [
 
 /// The model an added SPI instance takes: `spi4`'s, from [`STOCK_FILE`].
 const SPI_MODEL: &str = "SPI.STM32H7_SPI";
+
+/// The model of every stock timer of [`STOCK_FILE`] (`AET-WO-4300a`).
+const TIMER_MODEL: &str = "Timers.STM32_Timer";
+
+/// The Renode name of each timer of `aethelgard_ir::motor::TIMERS`, in its
+/// order: `timer1` for TIM1.
+const TIMER_NAMES: [&str; 12] = [
+    "timer1", "timer2", "timer3", "timer4", "timer5", "timer8", "timer12", "timer13", "timer14",
+    "timer15", "timer16", "timer17",
+];
 
 /// One solved peripheral as the platform has it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -610,7 +622,46 @@ pub fn emit_faulted(
         );
     }
     emit_spi(&mut out, &spi)?;
+    emit_observers(&mut out, topology)?;
     Ok(out)
+}
+
+/// Each motor output's observer (`AET-WO-4300a` §1.4): a
+/// `Miscellaneous.LED` on its pin, the cheapest pin observer the `4300`
+/// spike named, logging each change at `Noisy`. The pin's stock input route
+/// is restated with the observer added, one block per port, so the stock
+/// wiring is kept whole (a later route of a pin replaces an earlier one).
+fn emit_observers(out: &mut String, topology: &SolvedTopology) -> Result<(), TwinError> {
+    let observers = timer::observers(topology)?;
+    let mut ports: std::collections::BTreeMap<char, Vec<&timer::Observer>> =
+        std::collections::BTreeMap::new();
+    for o in &observers {
+        let _ = write!(
+            out,
+            "\n// {label}: {timer}_CH{ch} on {pin} (AF{af}), observed by Renode {RENODE_VERSION}'s\n\
+             // `Miscellaneous.LED` (AET-WO-4300a).\n\
+             {name}: Miscellaneous.LED @ gpioPort{port} {index}\n",
+            label = o.label,
+            timer = format_args!("TIM{}", o.timer),
+            ch = o.channel,
+            pin = o.pin,
+            af = o.alternate_function,
+            name = o.name,
+            port = o.port,
+            index = o.index,
+        );
+        ports.entry(o.port).or_default().push(o);
+    }
+    for (port, list) in ports {
+        let _ = write!(out, "\ngpioPort{port}:\n");
+        for o in list {
+            // `observers` refused a pin with no stock route, and every pin
+            // of `TIMER_ROUTES` has an input route (`tests/timer_routes.rs`).
+            let route = timer::stock_input(o.port, o.index).expect("a routed pin");
+            let _ = writeln!(out, "    {} -> {route} | {}@0", o.index, o.name);
+        }
+    }
+    Ok(())
 }
 
 /// The solved peripherals and the ports of every solved pin, in name order.
@@ -629,6 +680,30 @@ fn solved(topology: &SolvedTopology) -> Result<BTreeSet<String>, TwinError> {
 fn instance(peripheral: &str, facts: &RegisterFacts) -> Result<Instance, TwinError> {
     let kind = kind(peripheral)?;
     let header = facts.base(peripheral)?;
+    if kind == Kind::Timer {
+        // `kind` admitted only a number of `motor::TIMERS`, each stock.
+        let n: u32 = peripheral[3..].parse().expect("a timer's number");
+        let name: &'static str =
+            TIMER_NAMES[TIMERS.iter().position(|&t| t == n).expect("a stock timer")];
+        let (_, renode) = *timer::STOCK_TIMERS
+            .iter()
+            .find(|(t, _)| *t == n)
+            .expect("every timer with channels is stock");
+        if renode != header {
+            return Err(TwinError::AddressMismatch {
+                peripheral: peripheral.to_owned(),
+                name,
+                renode,
+                header,
+            });
+        }
+        return Ok(Instance {
+            peripheral: peripheral.to_owned(),
+            name: name.to_owned(),
+            model: short(TIMER_MODEL).to_owned(),
+            added: false,
+        });
+    }
     if let Some(&(_, name, model, renode)) = STOCK.iter().find(|s| s.0 == peripheral) {
         if renode != header {
             return Err(TwinError::AddressMismatch {

@@ -1,0 +1,5 @@
+error[E0451]: field `_private` of struct `ResetClock` is private
+  --> tests/ui/fail/timer_forged_reset_clock.rs:21:31
+   |
+21 |     let forged = ResetClock { _private: () };
+   |                               ^^^^^^^^ private field
