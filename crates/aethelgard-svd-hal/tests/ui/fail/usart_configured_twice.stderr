@@ -1,0 +1,20 @@
+error[E0599]: no method named `configure` found for struct `Usart1<Enabled<()>>` in the current scope
+  --> tests/ui/fail/usart_configured_twice.rs:23:25
+   |
+23 |     let _again = usart1.configure(&mut r, &clock, tx, rx);
+   |                         ^^^^^^^^^ method not found in `Usart1<Enabled<()>>`
+   |
+  ::: tests/ui/fail/../serial-four/board.rs
+   |
+   | pub struct Usart1<S> {
+   | -------------------- method `configure` not found for this struct
+   |
+note: there's an earlier shadowed binding `usart1` of type `Usart1<Clocked>` that has method `configure` available
+  --> tests/ui/fail/usart_configured_twice.rs:18:9
+   |
+18 |     let usart1 = rcc.enable_usart1(&mut r, board.usart1);
+   |         ^^^^^^ `usart1` of type `Usart1<Clocked>` that has method `configure` defined earlier here
+...
+22 |     let usart1 = usart1.configure(&mut r, &clock, tx, rx);
+   |         ------ earlier `usart1` shadowed here with type `Usart1<Enabled<()>>`
+   = note: the method was found for `Usart1<Clocked>`

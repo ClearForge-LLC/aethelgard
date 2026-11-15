@@ -115,7 +115,8 @@ fn the_start_takes_the_clock_token_and_only_its_own_configured_pins() {
          let cfgr = r.read(TOKEN, Block::Rcc, 0x010);\n        \
          let d1cfgr = r.read(TOKEN, Block::Rcc, 0x018);\n        \
          let d2cfgr = r.read(TOKEN, Block::Rcc, 0x01c);\n        \
-         if cr & 0x00000018 == 0 && cfgr & 0x00008038 == 0 && d1cfgr & 0x00000f7f == 0 && d2cfgr & 0x00000770 == 0 {\n            \
+         let d2ccip2r = r.read(TOKEN, Block::Rcc, 0x054);\n        \
+         if cr & 0x00000018 == 0 && cfgr & 0x00008038 == 0 && d1cfgr & 0x00000f7f == 0 && d2cfgr & 0x00000770 == 0 && d2ccip2r & 0x0000003f == 0 {\n            \
          Ok(ResetClock { _private: () })\n"
     ));
     // TIM1's clock gate is RCC_APB2ENR bit 0, and its block is at 0x40010000.

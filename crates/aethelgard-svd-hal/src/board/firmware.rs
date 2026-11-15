@@ -47,6 +47,16 @@ pub const STATUS_STOP: u32 = 0x2202_0004;
 /// An SPI read whose wait for `SR.RXP` expired (`AET-WO-4200`).
 pub const STATUS_RXP: u32 = 0x2202_0005;
 
+// belt-and-suspenders: the judge holds its own copies of the pattern and the
+// frame's length (`INV-07`); the firmware never knows the frame itself.
+/// What each serial port sends after its label's bytes (`AET-WO-4300b`).
+pub const PATTERN_TAIL: [u8; 5] = [0x00, 0xFE, 0x7F, 0x80, 0xFF];
+/// The most bytes each serial port echoes: the injected frame's length.
+pub const FRAME_LEN: u32 = 8;
+/// The most reads of `ISR` the echo makes waiting for each byte; a wait that
+/// expires ends that port's echo.
+pub const ECHO_POLLS: u32 = 20_000;
+
 /// The memory the linker script describes, from the header.
 struct Memory {
     flash_origin: u32,
@@ -435,6 +445,22 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
             v = first + 1,
         )
     };
+    let serial_consts = if plan.serials.is_empty() {
+        String::new()
+    } else {
+        let tail: Vec<String> = PATTERN_TAIL.iter().map(|b| format!("{b:#04x}")).collect();
+        format!(
+            "/// What each serial port sends after its label's bytes (`AET-WO-4300b`).\n\
+             const PATTERN_TAIL: [u8; {n}] = [{tail}];\n\
+             /// The most bytes each serial port echoes: the length of the judge's frame.\n\
+             const FRAME_LEN: u32 = {FRAME_LEN};\n\
+             /// The most reads of `ISR` the echo makes waiting for each byte.\n\
+             const ECHO_POLLS: u32 = {ECHO_POLLS};\n\
+             \n",
+            n = PATTERN_TAIL.len(),
+            tail = tail.join(", "),
+        )
+    };
     let boot_ptr = if reads.is_empty() {
         "(&raw mut AETHELGARD_BOOT)"
     } else {
@@ -460,6 +486,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
          {boot_static}\n\
          \n\
          {records}\
+         {serial_consts}\
          unsafe extern \"C\" {{\n    \
          fn Reset() -> !;\n\
          }}\n\
@@ -538,6 +565,9 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     for n in plan.timers.keys() {
         let _ = writeln!(s, "        tim{n},");
     }
+    for name in plan.serials.keys() {
+        let _ = writeln!(s, "        {},", name.to_ascii_lowercase());
+    }
     s.push_str(
         "    }) = Board::take()\n    \
          else {\n        \
@@ -556,6 +586,10 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     }
     for n in plan.timers.keys() {
         let _ = writeln!(s, "    let tim{n} = rcc.enable_tim{n}(&mut r, tim{n});");
+    }
+    for name in plan.serials.keys() {
+        let f = name.to_ascii_lowercase();
+        let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f});");
     }
     for (pin, p) in &plan.pins {
         let f = pin_field(pin);
@@ -604,6 +638,39 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
             }
         }
     }
+    let serials = plan.serials_in_order();
+    // The serial ports (`AET-WO-4300b`), before the identity reads: their
+    // `BRR` were solved for the reset clock, so without it the firmware stops
+    // here and never writes the boot word. Then each port is configured, and
+    // sends its pattern, in the specification's order.
+    if !serials.is_empty() {
+        s.push_str(CLOCK_CHECK_SERIAL);
+    }
+    for (name, sp) in &serials {
+        let f = name.to_ascii_lowercase();
+        let _ = writeln!(
+            s,
+            "    let mut {f} = {f}.configure(&mut r, &clock, {}, {});",
+            pin_field(&sp.tx),
+            pin_field(&sp.rx)
+        );
+    }
+    for (name, sp) in &serials {
+        let label: Vec<String> = sp.label.bytes().map(|b| format!("{b:#04x}")).collect();
+        let _ = write!(
+            s,
+            "    // Serial port {index}, `{text}`, on {name}: its label's bytes, then the tail.\n    \
+             for &byte in [{label}].iter().chain(PATTERN_TAIL.iter()) {{\n        \
+             if {f}.send(&mut r, byte).is_err() {{\n            \
+             break;\n        \
+             }}\n    \
+             }}\n",
+            index = sp.index,
+            text = sp.label_text(),
+            label = label.join(", "),
+            f = name.to_ascii_lowercase(),
+        );
+    }
     for (k, read) in reads.iter().enumerate() {
         let (to, errors) = match &read.target {
             Target::I2c { address } => (
@@ -640,7 +707,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     // timers' values were solved for the reset clock, so without it the
     // firmware stops here and never writes the boot word. Then each timer
     // starts, in ascending number, and is never touched again.
-    if !plan.timers.is_empty() {
+    if !plan.timers.is_empty() && serials.is_empty() {
         s.push_str(
             "    // The timers' values were solved for the reset clock: without it, stop\n    \
              // here, and the boot word is never written.\n    \
@@ -659,11 +726,32 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
             pins.join(", ")
         );
     }
-    let _ = write!(
+    let _ = writeln!(
         s,
         "    // SAFETY: a word only this line writes, in RAM the linker script placed.\n    \
-         unsafe {{ {boot_ptr}.write_volatile(BOOT_MAGIC) }};\n    \
-         // No sleep: the judge requires instructions executed to equal MIPS x time.\n    \
+         unsafe {{ {boot_ptr}.write_volatile(BOOT_MAGIC) }};"
+    );
+    // The echo (`AET-WO-4300b`), after the boot word: each port in the
+    // specification's order returns up to `FRAME_LEN` bytes, each awaited for
+    // at most `ECHO_POLLS` reads of `ISR`. A wait that expires ends that port's
+    // echo. Nothing here touches a timer, and nothing after it a USART.
+    for (name, _) in &serials {
+        let _ = write!(
+            s,
+            "    for _ in 0..FRAME_LEN {{\n        \
+             let Some(byte) = {f}.receive(&mut r, ECHO_POLLS) else {{\n            \
+             break;\n        \
+             }};\n        \
+             if {f}.send(&mut r, byte).is_err() {{\n            \
+             break;\n        \
+             }}\n    \
+             }}\n",
+            f = name.to_ascii_lowercase(),
+        );
+    }
+    let _ = write!(
+        s,
+        "    // No sleep: the judge requires instructions executed to equal MIPS x time.\n    \
          loop {{\n        \
          core::hint::spin_loop();\n    \
          }}\n\
@@ -678,3 +766,13 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     );
     s
 }
+
+/// The reset-clock check on a board with serial ports, before their
+/// configuration.
+const CLOCK_CHECK_SERIAL: &str = "    // The USARTs' `BRR` (and any timer's values) were solved for the reset\n    \
+     // clock: without it, stop here, and the boot word is never written.\n    \
+     let Ok(clock) = rcc.reset_clock(&mut r) else {\n        \
+     loop {\n            \
+     core::hint::spin_loop();\n        \
+     }\n    \
+     };\n";
