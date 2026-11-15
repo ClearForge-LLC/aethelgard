@@ -6,6 +6,13 @@ Every prediction here was written by the architect **before** the bench, from `m
 - It is the ELF the passing `verify --scenarios scenarios/sentinel-01/pullup-2k2.json --fab-out` named, and the one `simulate --firmware` booted.
 - On Furnace it is at `~/.cache/aet-3302-prep/sentinel-01.elf`. Copy it to the bench machine with `scp furnace:.cache/aet-3302-prep/sentinel-01.elf .`, then check `sha256sum sentinel-01.elf` against the hash above.
 
+**The instrument, added 2026-11-15 before the bench (the scope arrived: FNIRSI 2C53T, 2 channels, 50 MHz, 250 MSa/s, 10× probes):**
+- **Its own resolution is part of every rise-time row.** At 250 MSa/s one sample is 4 ns, so a 30–70 % edge is placed within about ±4 ns at each threshold. At 2.2 kΩ and the bench's likely 25–35 pF, the 30–70 % rise is about 45–65 ns, so a reading there carries roughly ±15 %. The 47 kΩ rise, around a microsecond, is resolved easily.
+- **Check the manual for the sample rate with both channels on.** If two channels halve it, measure the B3 and B5 rises **one line at a time** (one channel on), and use the second channel only for the SCL period.
+- **The probe is part of the bus.** A 10× probe adds its own input capacitance (read it off the probe or the manual), so C_bench in B3 includes it. Record the figure, and keep the same probe on the same line throughout.
+
+Sample rate, both channels on (manual): ________ · Probe input capacitance at 10×: ________ pF
+
 **Chip for `probe-rs`:** `STM32H753ZITx`. Run `probe-rs --version` and record it: ________
 
 ## B0. Pin conflicts (UM2407)
