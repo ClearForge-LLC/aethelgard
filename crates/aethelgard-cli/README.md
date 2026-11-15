@@ -55,7 +55,7 @@ aethelgard solve --file <path>
 Reads one `Specification` from the file, under the same 16 MiB cap and with the same exit `2` and `3` refusals as `validate`, and validates it. It then loads the pin table for `mcu.part` (exit `2`, `UnknownPart`, `id` the part, for any part but `STM32H753ZITx`), solves (`aethelgard_ir::solve`), and prints the `SolvedTopology` as one JSON line, exit `0`. `specification_sha256` is the sha256 of the file's bytes as read, so reformatting the file changes the hash and nothing else. It writes no file.
 
 ```json
-{"schema_version":6,"specification_sha256":"03a82a04…","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},…},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{…},"i2c_devices":{…},"spi_devices":{}}
+{"schema_version":6,"specification_sha256":"0fb05003…","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},…},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{…},"i2c_devices":{…},"spi_devices":{}}
 ```
 
 A specification the solver cannot realize is exit `2`. The refusal envelope adds `claimants`, an array naming who is in conflict:
@@ -117,6 +117,7 @@ Reads, validates and solves exactly as `solve` does, with the same refusals, the
 ```
 aethelgard check drc --board <file.kicad_pcb> [--spec <specification.json>] [--schematic <file.kicad_sch>]
 aethelgard check erc --schematic <file.kicad_sch>
+aethelgard check support --schematic <file.kicad_sch> --board <file.kicad_pcb> --spec <spec.json>
 aethelgard prove --crate <dir> --harness <name> [--spec <specification.json>]
 aethelgard build --crate <board-dir> --out <file.elf>
 aethelgard simulate --platform <file.repl | @path-inside-renode>
@@ -186,6 +187,29 @@ Without `--schematic`, nothing changes.
 DRC also runs with `--refill-zones`: zones are judged filled, and the board is never saved, because KiCad's saved fills are not deterministic. `check erc` writes only `input.kicad_pro`.
 
 **`check erc` refuses a hierarchical schematic** (exit `3`, before KiCad runs; `AET-WO-1601` §1.5): a `(sheet …)` anywhere makes KiCad read the file the sheet names, which the gate has neither copied nor hashed (`HierarchicalSchematic`). The copy is read by the same strict reader as a parity schematic, so a schematic it cannot read is refused too (`MalformedSchematic`): a sheet could hide where the two readers disagree. `emit` never writes a sheet.
+
+### The support gate (`check support`, `AET-WO-4300g`)
+
+`check support` judges the MCU's support network from the schematic's netlist as KiCad exports it (`kicad-cli sch export netlist --format kicadsexpr`, in the sandbox). The netlist is read through the strict reader (`MalformedNetlist`), against the MCU's row in `power-parts.json` (`kind.mcu.support`) and the specification, never against the emitter's choices (`RUL-20`). The board is read strictly for one thing, where each pad sits, so each bounded capacitor's distance to its pin can be measured, copper edge to copper edge.
+
+**In order:**
+- the MCU, found by the specification's part number;
+- every supply-group pin on the declared supply, every ground-group pin on `GND`, and every powered pin on a declared domain;
+- each strap's pin on its group's net;
+- each capacitor role, one distinct capacitor per pin (or per group): between the right two nets, of the role's value class (±20 %), and within its bound where the row gives one;
+- every declared connector pin on the supply, `GND` or a debug net, on that net, pin for pin;
+- the programming connector, with whether NRST reaches it;
+- the declared source's pin on the supply.
+
+**Findings:** each failure is a finding, so the check fails with exit `5`:
+- `support_pin_off_net`;
+- `strap_wrong`;
+- `support_capacitor_missing`;
+- `connector_pin_off_net`;
+- `no_programming_path`;
+- `supply_source_off_net`.
+
+**The verdict's `support`** carries each role with its part, value, gap and bound, the straps, the programming connector, the source, and every condition the gate cannot check (an unbounded role's placement; dielectric, rating and ESR). `verify` runs it after `check drc` as the gate `support`. The package's `FAB-NOTES.md` repeats its record, and the precondition `mcu_support_network_judged` holds only when it passed.
 
 ### The sandbox
 
@@ -664,8 +688,8 @@ One verdict that binds a specification to every artifact it produced (`INV-01`, 
 1. **Generate in memory.** Read, validate and solve `--spec` as `solve` does, and generate the tree as `generate` does. Every hash the verdict names comes from these bytes.
 2. **Check the scenarios.** Each is read as `campaign` reads it, and its `base` must be byte for byte `--spec` (exit `3`, `ScenarioBaseMismatch`).
 3. **`--against <dir>`**: compare `<dir>` with the tree byte for byte (`board/target/` is skipped, as a crate's `target/` is; a symlink is never followed and is a difference). Any differing, missing or extra file is a fail, exit `1`, with one finding each (`against_differs`, `against_missing`, `against_extra`, the path first in `message`), and no gate runs. This is `INV-01`'s "regenerate and diff", runnable by a user.
-4. **Run every gate on the tree**, written into a guarded scratch directory, each as this binary's own subcommand: `check erc` on the schematic; `check drc --spec --schematic` on the board; `extract --spec` on the board; `prove --spec` on the board crate, once for each harness of its `src/proofs.rs`; `build`; `simulate --firmware` with the generated platform for its board's window (`100ms`, or `2ms` for a board with a DShot output); and, with `--scenarios`, `campaign` over them with that ELF into a scratch archive.
-5. **Bind each gate to the bytes.** The hash each gate reports for what it judged must be the generated one: the schematic, the board, the parity schematic and the specification (ERC, DRC); the board and the specification (`extract`); the crate hash of `board/`, and `harness_provenance` `generated` (`prove`, `build`); the platform, the ELF `build` reported and the specification (`simulate`); and each run id, recomputed from the scenario, `--spec` with its overrides and the ELF (`campaign`). Anything else is exit `5`, `BindingMismatch`, naming the gate: a file swapped in `verify`'s own scratch, or a gate that reports judging other bytes, is never named in a verdict.
+4. **Run every gate on the tree**, written into a guarded scratch directory, each as this binary's own subcommand: `check erc` on the schematic; `check drc --spec --schematic` on the board; `check support` on the schematic, the board and the specification; `extract --spec` on the board; `prove --spec` on the board crate, once for each harness of its `src/proofs.rs`; `build`; `simulate --firmware` with the generated platform for its board's window (`100ms`, or `2ms` for a board with a DShot output); and, with `--scenarios`, `campaign` over them with that ELF into a scratch archive.
+5. **Bind each gate to the bytes.** The hash each gate reports for what it judged must be the generated one: the schematic, the board, the parity schematic and the specification (ERC, DRC); the schematic, the board and the specification (`check support`); the board and the specification (`extract`); the crate hash of `board/`, and `harness_provenance` `generated` (`prove`, `build`); the platform, the ELF `build` reported and the specification (`simulate`); and each run id, recomputed from the scenario, `--spec` with its overrides and the ELF (`campaign`). Anything else is exit `5`, `BindingMismatch`, naming the gate: a file swapped in `verify`'s own scratch, or a gate that reports judging other bytes, is never named in a verdict.
 
 **What `verify` does not bind.** Each gate hashes its own copy and then hands the copy's path to its tool, as every gate does. A process of the same user that writes into a gate's private scratch in between (a source file before cargo reads it, a `.cargo/config.toml` in the tool's `HOME`, an ELF before Renode loads it) changes what the tool judges while the gate still reports the generated hash. The adversarial pass made `verify` pass that way (`AET-WO-3301` FEEDBACK F1). `verify` binds a pair against everything but a concurrent process with the user's own identity, which by `RUL-19` (4) can also replace the tools themselves. Each gate entry carries the gate's `uid_boundary` and, when it is `false`, its `uid_boundary_unmet`. The campaign's is `true` only when every run's is, and a gate that did not run has `null`. Where it is `true`, that window is closed as [The verdict](#the-verdict) says (`AET-WO-1601`).
 
@@ -784,4 +808,4 @@ A `notifications/cancelled` for a call kills its child; the CLI's reaper then en
 npx @modelcontextprotocol/inspector aethelgard mcp
 ```
 
-lists the 17 tools, and a `validate` call with `file` set to `examples/sentinel-01-minimal.json` returns `isError` false.
+lists the 18 tools, and a `validate` call with `file` set to `examples/sentinel-01-minimal.json` returns `isError` false.
