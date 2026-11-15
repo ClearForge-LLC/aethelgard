@@ -685,3 +685,29 @@ A fresh Opus subagent reviewed a frozen copy of `49dab26`. It was given the code
   - the rows' `symbol`, `footprint`, and most `pins` are read only by slice B's emitter (D11 asks for them now);
   - `PadJoin::Relief` is declared and unread: the ruled join is solid;
   - the empty root file `9` (F-B5).
+
+## B9. Gates and CI
+
+- **On Furnace, under a capped user scope (`memory.swap.max` 0), at `77f6c32`:**
+  - `cargo fmt --all -- --check`: exit 0;
+  - `cargo clippy --workspace --all-targets -- -D warnings`: exit 0;
+  - `cargo test --workspace --no-fail-fast`: exit 0, 92 test targets, every one ok.
+- **CI on `77f6c32`** (run 43709698977): `ci`, `engine-image` and `ardupilot-image` green.
+  - **Shards:** the eight tools shards took 13 min 42 s to 18 min 05 s; the slowest is shard 1. Every shard is under 20 minutes.
+  - **Tier 2:** `tier2_tests_passed=103 floor=103`, so TIER2_MIN 103 is exact and unchanged, as PB8 predicted. No tier-2 test was added; no KiCad runs on a power tree yet.
+- **The first CI run (`df988b7`) failed one tier-2 test,** `verify_2k2_tier2`'s FAB-NOTES check. It pins the Sentinel-01 specification hash by an 8-character prefix, `1fe63a4f`, which my 16-character grep missed. The prefix is now `f98237db`. Lesson: grep a moved hash by its short prefixes too.
+- **The signal commit below changes this file only.** Its CI is the PR head's witness.
+
+## B10. Close
+
+**Slice A is built, green, adversarially reviewed and reduced. Slice B is proposed and waits for the architect's ruling on the split (D-B0), together with D-B1 to D-B9.**
+
+**What the architect needs:**
+- **Merge:** the PR's title and body for a merge are in `~/.cache/aet-4300d/pr-title-body.md`.
+- **Specification version:** this build holds 6. If `4210` or `4300a` lands first, it renumbers at merge (fixtures, `boards/sentinel-01`'s hash lines, the pinned digests, by the tools in `~/.cache/aet-4300d-build/tools/`).
+- **K6, the MISO output delay:** it follows `4210`'s schema 3 on `main`, in this PR or in slice B (D-B2).
+- **Evidence:**
+  - `~/.cache/aet-4300d-build/` (facts.md, ds/, png/, txt/, mut/, logs/, tools/);
+  - `~/.cache/aet-4300d-adv/adversarial.md`.
+
+**AET-WO-4300d STOPPED: slice A of the proposed split is built, with CI green on PR #147; the split (D-B0) and D-B1–D-B9 need the architect's ruling before slice B.**
