@@ -110,6 +110,8 @@ pub enum SolveError {
     BudgetExceeded { bus: String, limit: u64 },
     #[error("`{claimant}` has no free pin left")]
     NoFreePin { claimant: String },
+    #[error("no free pin carries a single-ended ADC input for sense net `{net}`")]
+    NoAdcPin { net: String },
     #[error("no timer channel can serve motor output `{output}`: {}", .reasons.join("; "))]
     NoTimerChannel {
         output: String,
@@ -166,6 +168,7 @@ impl SolveError {
             Self::Infeasible { .. } => "Infeasible",
             Self::BudgetExceeded { .. } => "BudgetExceeded",
             Self::NoFreePin { .. } => "NoFreePin",
+            Self::NoAdcPin { .. } => "NoAdcPin",
             Self::NoTimerChannel { .. } => "NoTimerChannel",
             Self::TimerRateConflict { .. } => "TimerRateConflict",
             Self::MotorsInfeasible { .. } => "MotorsInfeasible",
@@ -191,7 +194,7 @@ impl SolveError {
             | Self::RiseTimeTooSlow { bus, .. }
             | Self::BusTooFast { bus, .. }
             | Self::PullUpBelowSinkFloor { bus, .. } => Some(bus),
-            Self::BusCapacitanceOverLimit { net, .. } => Some(net),
+            Self::BusCapacitanceOverLimit { net, .. } | Self::NoAdcPin { net } => Some(net),
             Self::NoTimerChannel { output, .. } | Self::MotorTiming { output, .. } => Some(output),
             Self::TimerRateConflict { timer, .. } => Some(timer),
             Self::Infeasible { .. } | Self::NoFreePin { .. } | Self::MotorsInfeasible { .. } => {
@@ -221,7 +224,9 @@ impl SolveError {
             | Self::RiseTimeTooSlow { bus, .. }
             | Self::BusTooFast { bus, .. }
             | Self::PullUpBelowSinkFloor { bus, .. } => vec![bus.clone()],
-            Self::BusCapacitanceOverLimit { net, .. } => vec![net.clone()],
+            Self::BusCapacitanceOverLimit { net, .. } | Self::NoAdcPin { net } => {
+                vec![net.clone()]
+            }
             Self::Infeasible { buses } => buses.clone(),
             Self::NoTimerChannel { output, .. } | Self::MotorTiming { output, .. } => {
                 vec![output.clone()]
@@ -386,6 +391,39 @@ fn solve_inner(
     out.power = crate::power::check(spec)
         .map_err(SolveError::InvalidSpecification)?
         .map(Into::into);
+    // Each battery sense net takes the free pin of lowest package position
+    // that carries a single-ended ADC input (`AET-WO-4300d2` §1.7), after
+    // every pin above is owned, so it never takes one of theirs. It is in
+    // `power.sense`, not `assignments`: an analog pin has no alternate function.
+    if let (Some(solved), Some(power)) = (out.power.as_mut(), spec.power.as_ref()) {
+        let mut candidates: Vec<(&str, &crate::Pin)> = table
+            .pins
+            .iter()
+            .filter(|(name, pin)| {
+                !pin.adc_channels.is_empty() && !RESERVED_PINS.contains(&name.as_str())
+            })
+            .map(|(name, pin)| (name.as_str(), pin))
+            .collect();
+        candidates.sort_by_key(|(_, pin)| pin.position);
+        for s in &power.sense {
+            let Some((name, pin)) = candidates
+                .iter()
+                .find(|(name, _)| !search.used.contains_key(name))
+                .copied()
+            else {
+                return Err(SolveError::NoAdcPin { net: s.net.clone() });
+            };
+            search.used.insert(name, format!("power.sense {}", s.net));
+            solved.sense.insert(
+                s.net.clone(),
+                crate::SolvedSense {
+                    pin: name.to_owned(),
+                    position: pin.position,
+                    channels: pin.adc_channels.iter().cloned().collect(),
+                },
+            );
+        }
+    }
     // belt-and-suspenders: the search already keeps every rule `validate`
     // checks; this refuses rather than emits if a change to it ever breaks one.
     out.validate().map_err(SolveError::InvalidSpecification)?;
@@ -1485,6 +1523,7 @@ mod differential {
                     let pin = Pin {
                         position: i as u16 + 1,
                         alternate_functions: afs.remove(name).unwrap_or_default(),
+                        ..Default::default()
                     };
                     ((*name).to_owned(), pin)
                 })
@@ -1669,6 +1708,7 @@ mod differential {
                 .or_insert(Pin {
                     position: n,
                     alternate_functions: BTreeMap::new(),
+                    ..Default::default()
                 })
                 .alternate_functions
                 .insert(af, 5);

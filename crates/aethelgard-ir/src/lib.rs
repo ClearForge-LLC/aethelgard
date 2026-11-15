@@ -266,6 +266,25 @@ pub struct SolvedPower {
     pub input_fault_milliamps: u64,
     /// Every condition the checks rest on, each once, sorted.
     pub conditions: Vec<String>,
+    /// Each battery sense net's ADC pin, keyed by net (`AET-WO-4300d2` §1.7).
+    /// Absent when the tree declares no sense.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "unique_keys"
+    )]
+    pub sense: BTreeMap<String, SolvedSense>,
+}
+
+/// The pin a sense net was solved onto: an analog pin, so no alternate
+/// function and no entry in `assignments`. `channels` is every single-ended
+/// ADC input the pin carries, sorted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SolvedSense {
+    pub pin: String,
+    pub position: u16,
+    pub channels: Vec<String>,
 }
 
 /// One domain: its regulator, the regulator's guaranteed output at the
@@ -335,6 +354,7 @@ impl From<power::Checked> for SolvedPower {
             input_steady_milliamps: c.input_steady_milliamps,
             input_fault_milliamps: c.input_fault_milliamps,
             conditions: c.conditions,
+            sense: BTreeMap::new(),
         }
     }
 }
@@ -518,6 +538,7 @@ object_only!(
     SolvedSpiDevice,
     SpiLine,
     SolvedPower,
+    SolvedSense,
     SolvedDomain,
     Pad,
     Consumer
@@ -661,12 +682,20 @@ pub struct PinTable {
     pub pins: BTreeMap<String, Pin>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Pin {
     /// The package pin number.
     pub position: u16,
     /// Signal name to alternate-function number, such as `I2C1_SCL` to 4.
     pub alternate_functions: BTreeMap<String, u8>,
+    /// The single-ended ADC inputs the pin carries, such as `ADC1_INP3`
+    /// (`AET-WO-4300d2` §1.7). Only the positive input: a single-ended
+    /// measurement of a net against ground converts on `INPm`; `INNm` is the
+    /// negative leg of a differential pair and no battery sense uses it. An
+    /// analog function has no alternate-function number, so it is not in
+    /// `alternate_functions`. Not serialized when empty.
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    pub adc_channels: BTreeSet<String>,
 }
 
 /// Where a [`PinTable`] came from: a repository, a commit, and each file's sha256.
@@ -685,6 +714,9 @@ impl PinTable {
             plain(name, || format!("pins.{name}"))?;
             for signal in pin.alternate_functions.keys() {
                 plain(signal, || format!("pins.{name}.{signal}"))?;
+            }
+            for channel in &pin.adc_channels {
+                plain(channel, || format!("pins.{name}.{channel}"))?;
             }
         }
         Ok(())

@@ -1077,6 +1077,7 @@ fn table() -> PinTable {
                 let pin = Pin {
                     position: i as u16 + 1,
                     alternate_functions: afs.iter().map(|(s, af)| ((*s).into(), *af)).collect(),
+                    ..Default::default()
                 };
                 ((*name).into(), pin)
             })
