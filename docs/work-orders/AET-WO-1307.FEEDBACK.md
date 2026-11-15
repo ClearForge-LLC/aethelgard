@@ -509,4 +509,9 @@ Reduction pass (diff): −3 net (`bae55aa`) · 1 duplicate removed (`ring_interi
 - **`origin/main` `d5bc841`** (AET-WO-1303's spike: `spike/1303/` and its FEEDBACK only, no code) is merged in after that run.
 - **Mailbox** (`~/.cache/aet-bus/`): notes sent to 1303 (routed boards and bounds changed) and 4300c (D1's 4-layer I2C bounds, at most 118,375 fF under their 150,000; the renamed D1 stackups test). Received from 4210 (the cap measurement, B1), 1303 and 4300c (their D1 fixture change: whoever merges second keeps schema 3 and their constraints).
 
+- **After the architect's review (accepted on substance; rulings on A4, A5, A2's shrunken courtyard and K3's count):** `origin/main` `50d7a6f` (4300c, 4300f, 4210, 1303) merged as `a97ead2`. The literals were re-measured (B9) and the CLI README line fixed.
+  - Gates green: fmt, clippy, and `cargo test --workspace` (80 binaries).
+  - CI run 43677178229 green. Shards: 15m46s, **18m19s** (shard 1, the slowest), 14m43s, 11m26s, 13m21s, 13m56s, 14m58s, 14m46s; `gates` 7m34s. Every shard is under 20 minutes.
+  - `tier2_tests_passed=97 floor=97`: `TIER2_MIN` is exact.
+
 **AET-WO-1307 READY FOR REVIEW: PR #126.**
