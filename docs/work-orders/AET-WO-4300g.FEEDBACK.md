@@ -63,3 +63,22 @@ Each answer below is labelled **measured**, **read** (at source), or **inferred*
 - BOOT0 tied to ground and PDR_ON tied to the supply.
 
 That is 13 per-pin 100 nF capacitors, not the work order's 16 (D1).
+
+## 3. Placement, measured (§7's second stop: it did not fire)
+
+**The bound was stated before measuring** (P4): 2.0 mm, copper edge to copper edge, from the capacitor's pad on the owner's net to the owner pin's pad. That is `4300d2`'s near bound, an engine choice, because DS12117 asks only for "as close as possible to, or below, the appropriate pins" (p. 206). The bulk capacitors' bound, 5.0 mm, was also set before measuring (`4300d2`'s bulk precedent).
+
+**A throwaway probe** anchored 18 capacitors to their pins on every fixture that emits. Those were 11 VDD, VDDA 100 nF and 1 µF, VDD33USB 100 nF and 1 µF, two VCAP, and NRST. The probe lived on a local branch that was never pushed, and the gaps were measured with `loops::judge` [measured]:
+- **First run:** 15 of 18 met 2.0 mm (0.99 to 1.67 mm). The three on the MCU's top side (pins 121, 131 and 144) sat at 2.49 mm on every fixture. The cause was the MCU's silkscreen reference, which sits above the top row of pins and widens the MCU's keep-out box there.
+- **With the MCU's reference on `F.Fab`,** as `4300d2`'s K12 moved anchored parts' references, all 18 met it on every fixture that emitted. The worst gap was 1.669 mm. That is fork K1 (§5).
+- **Two fixtures stopped routing with the network:**
+  - `d1-24-i2c.json`: "cannot reach S9 pad 1";
+  - `pair-standin.json`: "pair `USB_STANDIN` cannot be coupled: no run on F.Cu holds both conductors 300000 nm apart".
+
+  Both route on `main`. They are taken up in §6.
+
+**On the built reference** (the real emitter, with J1 and J2), judged from KiCad's own netlist export (KiCad 10.0.7 in the pinned image, 0.3 s), every role passes [measured]:
+- the VDD capacitors at 0.99 to 1.19 mm;
+- the VCAPs at 1.38 and 1.21 mm;
+- VDDA and VDD33USB's 100 nF at 0.99 and 1.19 mm;
+- the bulks at 1.53 to 1.67 mm.

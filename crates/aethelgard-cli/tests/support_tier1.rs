@@ -305,3 +305,40 @@ fn an_unjudgeable_netlist_is_refused() {
     let twice = "(export (version \"E\") (components (comp (ref \"C1\") (ref \"C2\") (value \"1u\"))) (nets))";
     assert!(strict::netlist(twice).is_err());
 }
+
+/// One capacitor serves one pin. VDD pin 30's capacitor is within reach of
+/// VDDA (pin 33) too, on the same two nets here, so with VDDA's own capacitor
+/// removed a gate that let one capacitor serve two pins would still pass.
+#[test]
+fn one_capacitor_serves_one_pin() {
+    let (spec, mut pads, board, r) = passing();
+    let shared = part_at(&r, "vdd_bypass", "30");
+    let tree = strict::board(&board).unwrap();
+    let (b, _) = route::read(&tree, &Stack::of(&spec)).unwrap();
+    let pad = |reference: &str, number: &str| {
+        b.parts
+            .iter()
+            .find(|p| p.reference == reference)
+            .unwrap()
+            .pads
+            .iter()
+            .find(|p| p.number == number)
+            .unwrap()
+            .clone()
+    };
+    let reach = aethelgard_eda::loops::gap_nm(&pad(&shared, "1"), &pad("U1", "33"));
+    assert!(
+        reach <= 2_000_000,
+        "{shared} is {reach} nm from pin 33: no test"
+    );
+    let own = part_at(&r, "analog_bypass", "33");
+    pads.0.remove(&own);
+    pads.1.retain(|(reference, _), _| reference != &own);
+    let out = judge(&spec, &pads, &board);
+    assert_eq!(
+        kinds(&out),
+        ["support_capacitor_missing"],
+        "{:?}",
+        out.findings
+    );
+}
