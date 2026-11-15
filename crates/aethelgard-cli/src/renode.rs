@@ -318,7 +318,7 @@ impl BootPlan<'_> {
             ));
         }
         for (i, c) in self.image.identity.checks.iter().enumerate() {
-            for (at, word) in [(c.status_at, 0), (c.value_at, 1)] {
+            for (word, at) in record_words(c).into_iter().enumerate() {
                 reads.push((
                     format!("sysbus ReadDoubleWord {at:#010x}"),
                     Read::Record(i, word),
@@ -366,7 +366,7 @@ impl BootPlan<'_> {
             self.boot_word
         )];
         for check in &self.image.identity.checks {
-            for at in [check.status_at, check.value_at] {
+            for at in record_words(check) {
                 c.push(format!(
                     "sysbus WriteDoubleWord {at:#010x} {:#010x}",
                     aethelgard_twin::boot::RECORD_UNSET
@@ -395,18 +395,49 @@ impl BootPlan<'_> {
     /// device the booted platform declares: an analog fault leaves its bus's
     /// devices off the platform, and a level set on no element is a failed
     /// command.
+    ///
+    /// Each device at its model's level (`AET-WO-4210` D2: the ICP-101xx at
+    /// `Debug`), and each SPI controller's multiplexer at `Noisy`, whose
+    /// chip-select lines are the per-read windows (D5): attribution only,
+    /// never a witness.
     fn witness_levels(&self) -> Vec<String> {
-        self.image
-            .identity
-            .checks
-            .iter()
-            .filter(|c| {
-                self.instances
-                    .iter()
-                    .any(|(name, _)| c.device.rsplit('.').next() == Some(name.as_str()))
-            })
-            .map(|c| format!("logLevel -1 sysbus.{}", c.device))
-            .collect()
+        let mut c: Vec<String> = Vec::new();
+        for check in &self.image.identity.checks {
+            let present = self
+                .instances
+                .iter()
+                .any(|(name, _)| check.device.rsplit('.').next() == Some(name.as_str()));
+            let level = format!("logLevel {} sysbus.{}", check.level.0, check.device);
+            if present && !c.contains(&level) {
+                c.push(level);
+            }
+            if let aethelgard_twin::boot::Wire::Spi { .. } = check.wire {
+                let mux = format!("logLevel -1 sysbus.{}", mux_of(check));
+                if !c.contains(&mux) {
+                    c.push(mux);
+                }
+            }
+        }
+        c
+    }
+
+    /// The stimulus of each data read whose device the platform declares,
+    /// set by the judge before the run (`AET-WO-4210` D3): its own act,
+    /// never the firmware's.
+    fn stimuli(&self) -> Vec<String> {
+        let mut c = Vec::new();
+        for check in &self.image.identity.checks {
+            let present = self
+                .instances
+                .iter()
+                .any(|(name, _)| check.device.rsplit('.').next() == Some(name.as_str()));
+            for (property, value) in check.stimulus.iter().flatten() {
+                if present {
+                    c.push(format!("sysbus.{} {property} {value}", check.device));
+                }
+            }
+        }
+        c
     }
 
     /// The droop's schedule as monitor commands, from virtual time 0 to the
@@ -461,6 +492,7 @@ impl BootPlan<'_> {
         c.extend(self.rearm());
         c.push(self.vtor());
         c.extend(self.witness_levels());
+        c.extend(self.stimuli());
         if self.resets.is_empty() {
             c.push(run_for(self.virtual_ns));
         } else {
@@ -486,8 +518,9 @@ enum Read {
     /// from the machine.
     Loop(usize, u8),
     Register(usize),
-    /// Check `.0`'s record: word 0 is the status, word 1 the value.
-    Record(usize, u8),
+    /// Check `.0`'s record: word 0 is the status, then the value's words,
+    /// most significant first.
+    Record(usize, usize),
 }
 
 /// A boot's findings, the listing, and what the reads gave.
@@ -504,11 +537,11 @@ pub struct Observed {
     /// run: a firmware can rewrite its flash in Renode (adversarial A1).
     pub loops: Vec<[u32; 2]>,
     pub registers: Vec<u32>,
-    /// Each identity check's (status, value) words.
-    pub records: Vec<(u32, u32)>,
-    /// Each identity check's witness: every line Renode logged for its
-    /// device with a witness's shape, in order ([`witness_shaped`]); `None`
-    /// when the log could not be read whole (`AET-WO-2204` D2).
+    /// Each step check's status word and value.
+    pub records: Vec<(u32, u64)>,
+    /// Each step check's witness: the lines Renode logged for its device with
+    /// a witness's shape that fall to this step ([`attribute`]), in order;
+    /// `None` when the log could not be read whole (`AET-WO-2204` D2).
     pub witnesses: Vec<Option<Vec<String>>>,
     /// For each identity check, the addresses its bus's controller found no
     /// device at during the run (Renode's `Unknown slave at address N.`), in
@@ -516,12 +549,166 @@ pub struct Observed {
     /// a witness (`AET-WO-2204`, the seeded set's `wrong-address`). Empty for
     /// an SPI check.
     pub absent: Vec<Vec<u8>>,
-    /// For each identity check on SPI, every line its controller's
-    /// multiplexer logged when it routed a byte to no device, to several, or
-    /// to an address with none (`SPIMultiplexer.cs` L56, L62, L69), whole
-    /// and in order: attribution's evidence, never a witness (`AET-WO-4200`
-    /// D4). Empty for an I2C check.
+    /// For each step check on SPI, every line its controller's multiplexer
+    /// logged when it routed a byte to no device, to several, or to an
+    /// address with none (`SPIMultiplexer.cs` L56, L62, L69), whole and in
+    /// order, inside the step's chip-select window; a line inside no window
+    /// goes to every device's identity step (`AET-WO-4210` D5, `4200` F16):
+    /// attribution's evidence, never a witness (`AET-WO-4200` D4). Empty for
+    /// an I2C check.
     pub unrouted: Vec<Vec<String>>,
+}
+
+/// The words of a check's record in RAM, in the order the judge reads them:
+/// the status, then the value's [`aethelgard_twin::boot::value_words`].
+fn record_words(c: &aethelgard_twin::boot::StepCheck) -> Vec<u32> {
+    let words = aethelgard_twin::boot::value_words(c.width);
+    std::iter::once(c.status_at)
+        .chain((0..words).map(|w| c.value_at + 4 * w))
+        .collect()
+}
+
+/// The multiplexer an SPI check's device sits behind: `spi1.spi1mux`.
+fn mux_of(c: &aethelgard_twin::boot::StepCheck) -> &str {
+    c.device.rsplit_once('.').map_or("", |(m, _)| m)
+}
+
+/// A device's chip-select windows: each `[open, close)` from the
+/// multiplexer's `GPIO #a set to False` (selected: the inputs are
+/// active-low) to the next `GPIO #a set to True`, as positions in `log`
+/// (`SPIMultiplexer.cs` L30; `AET-WO-4210` P3.1). A window still open at the
+/// end runs to the end.
+fn windows(log: &[&str], mux: &str, address: u8) -> Vec<(usize, usize)> {
+    let edge = |level: &str| format!("[NOISY] {mux}: GPIO #{address} set to {level}");
+    let (low, high) = (edge("False"), edge("True"));
+    let mut out = Vec::new();
+    let mut open = None;
+    for (i, line) in log.iter().enumerate() {
+        match log_body(line) {
+            Some(b) if b == low && open.is_none() => open = Some(i),
+            Some(b) if b == high => {
+                if let Some(o) = open.take() {
+                    out.push((o, i));
+                }
+            }
+            _ => {}
+        }
+    }
+    if let Some(o) = open {
+        out.push((o, log.len()));
+    }
+    out
+}
+
+/// Each check's observed lines and, on SPI, the multiplexer lines of its
+/// window (`AET-WO-4210` S2, D4, D5). A device's lines are its witness-shaped
+/// lines ([`device_line`]), but for its model's edge artefact directly after
+/// the multiplexer's finish line for it (D4), which is skipped. They go to
+/// its steps:
+/// - on SPI by chip-select window: the device's `k`-th window is its `k`-th
+///   step's, a line in a later window or in none its last step's;
+/// - on I2C in order, each step taking as many lines as it expects and the
+///   last step the rest.
+///
+/// A line attributed to the wrong step only ever differs from what that step
+/// expects: attribution never passes a witness.
+fn attribute(
+    checks: &[aethelgard_twin::boot::StepCheck],
+    log: &[&str],
+) -> (Vec<Vec<String>>, Vec<Vec<String>>) {
+    let mut seen = vec![Vec::new(); checks.len()];
+    let mut unrouted = vec![Vec::new(); checks.len()];
+    // Each device's steps are consecutive, in its script's order.
+    let mut groups: Vec<std::ops::Range<usize>> = Vec::new();
+    for (i, c) in checks.iter().enumerate() {
+        match groups.last_mut() {
+            Some(g) if checks[g.start].reference == c.reference => g.end = i + 1,
+            _ => groups.push(i..i + 1),
+        }
+    }
+    let mut every_window: std::collections::BTreeMap<&str, Vec<(usize, usize)>> =
+        Default::default();
+    for g in &groups {
+        let c = &checks[g.start];
+        let last = g.end - 1;
+        let spi = match c.wire {
+            aethelgard_twin::boot::Wire::Spi { address, .. } => {
+                let w = windows(log, mux_of(c), address);
+                every_window.entry(mux_of(c)).or_default().extend(&w);
+                Some((address, w))
+            }
+            aethelgard_twin::boot::Wire::I2c { .. } => None,
+        };
+        let finish = spi.as_ref().map(|(address, _)| {
+            format!(
+                "[NOISY] {}: Finisihing transmission on device 0x{address:X}",
+                mux_of(c)
+            )
+        });
+        let mut lines: Vec<(usize, &str)> = Vec::new();
+        for (i, line) in log.iter().enumerate() {
+            let Some(body) = device_line(c, line) else {
+                continue;
+            };
+            let after_finish =
+                i > 0 && finish.is_some() && log_body(log[i - 1]) == finish.as_deref();
+            if after_finish && c.idle_warning.as_deref() == Some(body) {
+                continue;
+            }
+            lines.push((i, body));
+        }
+        match &spi {
+            Some((_, w)) => {
+                let step_of = |i: usize| {
+                    w.iter()
+                        .position(|&(o, e)| o < i && i < e)
+                        .map_or(last, |k| (g.start + k).min(last))
+                };
+                for (i, body) in lines {
+                    seen[step_of(i)].push(body.to_owned());
+                }
+                for (i, line) in log.iter().enumerate() {
+                    if let Some(u) = unrouted_line(line, mux_of(c)) {
+                        if w.iter().any(|&(o, e)| o < i && i < e) {
+                            unrouted[step_of(i)].push(u.to_owned());
+                        }
+                    }
+                }
+            }
+            None => {
+                let mut at = 0;
+                for k in g.clone() {
+                    let n = if k == last {
+                        lines.len().saturating_sub(at)
+                    } else {
+                        checks[k].witness.as_ref().map_or(0, Vec::len)
+                    };
+                    let end = (at + n).min(lines.len());
+                    seen[k] = lines[at..end]
+                        .iter()
+                        .map(|(_, b)| (*b).to_owned())
+                        .collect();
+                    at = end;
+                }
+            }
+        }
+    }
+    // A multiplexer line inside no device's window is the controller's: it
+    // goes to every device's identity step, as `4200` D4 collected it.
+    for g in &groups {
+        let c = &checks[g.start];
+        if let aethelgard_twin::boot::Wire::Spi { .. } = c.wire {
+            let all = every_window.get(mux_of(c)).map_or(&[][..], Vec::as_slice);
+            for (i, line) in log.iter().enumerate() {
+                if let Some(u) = unrouted_line(line, mux_of(c)) {
+                    if !all.iter().any(|&(o, e)| o < i && i < e) {
+                        unrouted[g.start].push(u.to_owned());
+                    }
+                }
+            }
+        }
+    }
+    (seen, unrouted)
 }
 
 /// A line the multiplexer of `mux` (`spi1.spi1mux`) logs when a byte reaches
@@ -536,7 +723,7 @@ fn unrouted_line<'l>(line: &'l str, mux: &str) -> Option<&'l str> {
 }
 
 /// `i2c` or `spi`: the prefix of a check's finding kinds.
-fn bus_word(c: &aethelgard_twin::boot::IdentityCheck) -> &'static str {
+fn bus_word(c: &aethelgard_twin::boot::StepCheck) -> &'static str {
     match c.wire {
         aethelgard_twin::boot::Wire::I2c { .. } => "i2c",
         aethelgard_twin::boot::Wire::Spi { .. } => "spi",
@@ -545,7 +732,7 @@ fn bus_word(c: &aethelgard_twin::boot::IdentityCheck) -> &'static str {
 
 /// How a finding names a check's device: `U2 at I2C address 0x76`, or `U4 on
 /// SPI1, chip select PA0`.
-fn who(c: &aethelgard_twin::boot::IdentityCheck) -> String {
+fn who(c: &aethelgard_twin::boot::StepCheck) -> String {
     format!("{} {}", c.reference, c.wire.describe(&c.peripheral))
 }
 
@@ -600,22 +787,25 @@ fn is_log_line(line: &str) -> bool {
     log_body(line).is_some_and(|b| LEVELS.iter().any(|l| b.starts_with(l)))
 }
 
-/// A log line's text, if it has a witness's shape for `device`:
-/// `[NOISY] i2c1.u2: …`. The shape only ever fails a witness: a pass needs
-/// the whole text equal to an expected line (`AET-WO-2204` D1).
-fn witness_shaped<'l>(line: &'l str, device: &str) -> Option<&'l str> {
+/// A log line's text, if it has a witness's shape for `device` at `level`:
+/// `[NOISY] i2c1.u2: …`, or a `[WARNING]` of the device (`AET-WO-4210` D4).
+/// The shape only ever fails a witness: a pass needs the whole text equal to
+/// an expected line (`AET-WO-2204` D1).
+fn witness_shaped<'l>(line: &'l str, device: &str, level: &str) -> Option<&'l str> {
     log_body(line).filter(|b| {
-        b.strip_prefix("[NOISY] ")
-            .and_then(|r| r.strip_prefix(device))
-            .is_some_and(|r| r.starts_with(": "))
+        [level, "[WARNING] "].into_iter().any(|l| {
+            b.strip_prefix(l)
+                .and_then(|r| r.strip_prefix(device))
+                .is_some_and(|r| r.starts_with(": "))
+        })
     })
 }
 
 /// A log line's text if it is `c`'s device's and not one of the lines its
 /// model writes that are not a transfer, which the judge skips, exactly as
 /// the twin lists them (`AET-WO-4200` D2).
-fn device_line<'l>(c: &aethelgard_twin::boot::IdentityCheck, line: &'l str) -> Option<&'l str> {
-    witness_shaped(line, &c.device).filter(|b| !c.skipped.iter().any(|s| s == b))
+fn device_line<'l>(c: &aethelgard_twin::boot::StepCheck, line: &'l str) -> Option<&'l str> {
+    witness_shaped(line, &c.device, c.level.1).filter(|b| !c.skipped.iter().any(|s| s == b))
 }
 
 /// The line index of each `{prefix}{k}` sentinel, `k` from 0 to `n` − 1: each
@@ -751,17 +941,10 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
     // (`AET-WO-2204` D2, ruled). A line the model writes that is not a
     // transfer, exactly as the twin lists it, is skipped; nothing else is
     // (`AET-WO-4200` D2).
-    let witnesses: Vec<Option<Vec<String>>> = checks
-        .iter()
-        .map(|c| {
-            (out.dropped_log_lines == 0).then(|| {
-                last_boot
-                    .iter()
-                    .filter_map(|l| device_line(c, l))
-                    .map(str::to_owned)
-                    .collect()
-            })
-        })
+    let (seen, unrouted) = attribute(checks, &last_boot);
+    let witnesses: Vec<Option<Vec<String>>> = seen
+        .into_iter()
+        .map(|w| (out.dropped_log_lines == 0).then_some(w))
         .collect();
     let mut observed = Observed {
         boot_word: 0,
@@ -786,20 +969,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
                 aethelgard_twin::boot::Wire::Spi { .. } => Vec::new(),
             })
             .collect(),
-        unrouted: checks
-            .iter()
-            .map(|c| match c.wire {
-                aethelgard_twin::boot::Wire::I2c { .. } => Vec::new(),
-                aethelgard_twin::boot::Wire::Spi { .. } => {
-                    let mux = c.device.rsplit_once('.').map_or("", |(m, _)| m);
-                    last_boot
-                        .iter()
-                        .filter_map(|l| unrouted_line(l, mux))
-                        .map(str::to_owned)
-                        .collect()
-                }
-            })
-            .collect(),
+        unrouted,
     };
     for ((cmd, read), line) in reads.iter().zip(values) {
         let v = value(line).ok_or_else(|| untrusted(format!("`{cmd}` read no value")))?;
@@ -813,7 +983,10 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             Read::Loop(i, k) => observed.loops[i][usize::from(k)] = word()?,
             Read::Register(i) => observed.registers[i] = word()?,
             Read::Record(i, 0) => observed.records[i].0 = word()?,
-            Read::Record(i, _) => observed.records[i].1 = word()?,
+            Read::Record(i, _) => {
+                let r = &mut observed.records[i].1;
+                *r = (*r << 32) | u64::from(word()?);
+            }
         }
     }
     let (cpus, peripherals) = listing(&lines[end + 1..]);
@@ -966,7 +1139,7 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         for (c, &(status, value)) in checks.iter().zip(&observed.records) {
             findings.extend(identity_finding(c, status, value));
         }
-        findings.extend(witness_findings(checks, &observed, &last_boot));
+        findings.extend(witness_findings(checks, &observed));
     }
     for d in &plan.image.identity.unmodelled {
         findings.push(Finding::info(
@@ -987,71 +1160,35 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
     ))
 }
 
-/// Each record that claims its read completed, against what Renode logged
-/// for its device (`AET-WO-2204` D1): exactly the model's expected lines, as
-/// whole lines, in order, and across the devices in the records' order. A
+/// Each record that claims its step completed, against what Renode logged
+/// for its device in that step (`AET-WO-2204` D1, `AET-WO-4210` S2):
+/// exactly the model's expected lines, as whole lines, in order. Each
+/// device's steps are judged in its script's order, by device, never across
+/// devices, so two devices' steps may interleave (`2204` A4, closed). A
 /// record that says a wait expired claims nothing.
 fn witness_findings(
-    checks: &[aethelgard_twin::boot::IdentityCheck],
+    checks: &[aethelgard_twin::boot::StepCheck],
     observed: &Observed,
-    log: &[&str],
 ) -> Vec<Finding> {
-    let claimed: Vec<usize> = (0..checks.len())
+    (0..checks.len())
         .filter(|&i| observed.records[i].0 == aethelgard_twin::boot::STATUS_OK)
-        .collect();
-    let each: Vec<Finding> = claimed
-        .iter()
-        .filter_map(|&i| witness_finding(&checks[i], observed.witnesses[i].as_deref()))
-        .collect();
-    if !each.is_empty() {
-        return each;
-    }
-    // Each device's own lines are right; the devices' order on each bus must
-    // be too. Two buses are judged apart: the I2C order as `AET-WO-2204`
-    // built it, and the SPI order (`AET-WO-4200`).
-    ["i2c", "spi"]
-        .into_iter()
-        .filter_map(|bus| {
-            let on: Vec<usize> = claimed
-                .iter()
-                .copied()
-                .filter(|&i| bus_word(&checks[i]) == bus)
-                .collect();
-            let seen: Vec<&str> = log
-                .iter()
-                .filter_map(|l| {
-                    on.iter().find_map(|&i| device_line(&checks[i], l))
-                })
-                .collect();
-            let want: Vec<&str> = on
-                .iter()
-                .flat_map(|&i| checks[i].witness.iter().flatten().map(String::as_str))
-                .collect();
-            (seen != want).then(|| {
-                Finding::plain(
-                    &format!("{bus}_witness_out_of_order"),
-                    format!(
-                        "the devices' witness lines are not in the records' order: Renode logged {seen:?}, the records need {want:?}"
-                    ),
-                )
-            })
-        })
+        .filter_map(|i| witness_finding(&checks[i], observed.witnesses[i].as_deref()))
         .collect()
 }
 
 /// The finding for one record that claims its read completed, or none when
 /// Renode logged exactly the model's lines for it.
 fn witness_finding(
-    c: &aethelgard_twin::boot::IdentityCheck,
+    c: &aethelgard_twin::boot::StepCheck,
     seen: Option<&[String]>,
 ) -> Option<Finding> {
-    let who = who(c);
+    let who = format!("{}, its {} step", who(c), c.step.name());
     let bus = bus_word(c);
     let Some(want) = &c.witness else {
         return Some(Finding::plain(
             &format!("{bus}_witness_unavailable"),
             format!(
-                "{who}: the twin knows no witness format for its model, so no read of it can be witnessed"
+                "{who}: the twin knows no witness format for this step of its model, so it cannot be witnessed"
             ),
         ));
     };
@@ -1078,28 +1215,40 @@ fn witness_finding(
 /// expectation is the check's, which comes from the part table, never from
 /// the firmware (`INV-07`).
 fn identity_finding(
-    c: &aethelgard_twin::boot::IdentityCheck,
+    c: &aethelgard_twin::boot::StepCheck,
     status: u32,
-    value: u32,
+    value: u64,
 ) -> Option<Finding> {
     use aethelgard_twin::boot::Outcome;
-    let who = who(c);
+    // An identity step is named as every identity read always was; a
+    // script's later steps say which step (`AET-WO-4210`).
+    let who = match c.step {
+        aethelgard_ir::parts::StepKind::Identity => who(c),
+        step => format!("{}, its {} step", who(c), step.name()),
+    };
     let bus = bus_word(c);
     let what = if bus == "i2c" { "register" } else { "command" };
+    let wrote: Vec<String> = c.write.iter().map(|b| format!("{b:#04x}")).collect();
+    let wrote = wrote.join(" ");
+    let under = if c.mask == u64::MAX >> (64 - 8 * u32::from(c.width.clamp(1, 8))) {
+        String::new()
+    } else {
+        format!(" under mask {:#x}", c.mask)
+    };
     match c.judge(status, value) {
         Outcome::Pass => None,
         Outcome::Mismatch => Some(Finding::plain(
             &format!("{bus}_identity_mismatch"),
             format!(
-                "{who}: {what} {:#04x} read {value:#x}, the part table says {:#x}",
-                c.write, c.expected
+                "{who}: {what} {wrote} read {value:#x}, the part table says {:#x}{under}",
+                c.expected
             ),
         )),
         Outcome::Timeout(stage) => Some(Finding::plain(
             &format!("{bus}_timeout"),
             format!(
-                "{who}: the firmware's wait for {stage} expired reading {what} {:#04x} (expected {:#x})",
-                c.write, c.expected
+                "{who}: the firmware's wait for {stage} expired reading {what} {wrote} (expected {:#x})",
+                c.expected
             ),
         )),
         Outcome::Invalid => Some(Finding::plain(
@@ -1214,7 +1363,7 @@ pub fn build(version_stdout: &[u8]) -> Option<String> {
 }
 
 /// How a record's status reads in the verdict.
-pub fn status_name(c: &aethelgard_twin::boot::IdentityCheck, status: u32) -> &'static str {
+pub fn status_name(c: &aethelgard_twin::boot::StepCheck, status: u32) -> &'static str {
     use aethelgard_twin::boot::Outcome;
     // The check's own judgement names it, so a status counts only on its own
     // bus (`AET-WO-4200`): an I2C record holding `RXP`'s word is invalid.
@@ -1239,7 +1388,7 @@ mod tests {
     /// one's, its path a prefix or not.
     #[test]
     fn a_device_s_line_is_kept_unless_its_model_lists_it_as_skipped() {
-        let c = aethelgard_twin::boot::IdentityCheck {
+        let c = aethelgard_twin::boot::StepCheck {
             reference: "U5".into(),
             peripheral: "SPI1".into(),
             wire: aethelgard_twin::boot::Wire::Spi {

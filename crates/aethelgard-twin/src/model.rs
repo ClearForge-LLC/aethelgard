@@ -126,7 +126,8 @@ impl Model {
     }
 
     /// The whole log lines (after the host timestamp) `device` writes, in
-    /// order, for `step`, answering its expected bytes; `None` when the twin
+    /// order, for `step`, answering its expected bytes, with the warnings a
+    /// correct step makes it write where it writes them; `None` when the twin
     /// knows no format for that step, a named failure, never a skip
     /// (`AET-WO-2204` D2). Bytes are upper-case hexadecimal without padding,
     /// as Renode's `{0:X}` writes them.
@@ -211,16 +212,21 @@ impl Model {
                     if values.len() != 1 || step.width != 0 {
                         return None;
                     }
-                    Some(vec![
+                    // The value is written when its byte arrives, before that
+                    // byte's `Received byte` line: so is any warning the
+                    // write makes (measured, `AET-WO-4210` P1.2, P1.3).
+                    let mut lines = vec![
                         format!(
                             "[NOISY] {device}: Preparing for write at bank #0 to 0x{r:X} ({name})"
                         ),
                         format!("[NOISY] {device}: Received byte 0x{first:X}, returning 0x0"),
-                        format!(
-                            "[NOISY] {device}: Received byte 0x{:X}, returning 0x0",
-                            values[0]
-                        ),
-                    ])
+                    ];
+                    lines.extend(self.warnings(device, step)?);
+                    lines.push(format!(
+                        "[NOISY] {device}: Received byte 0x{:X}, returning 0x0",
+                        values[0]
+                    ));
+                    Some(lines)
                 }
             }
             // `ICP_101xx.cs` `Write` (L61): one `Received command` line per
@@ -249,11 +255,12 @@ impl Model {
     }
 
     /// The `[WARNING]` lines a correct `step` makes the model write, exactly
-    /// and in order, each pinned to Renode's source (`AET-WO-4210` D4); any
-    /// other warning from the device in the step fails it. `None` when the
-    /// twin does not know what the step makes the model warn, which is a
-    /// named failure.
-    pub fn warnings(self, device: &str, step: &Step) -> Option<Vec<String>> {
+    /// and in order, each pinned to Renode's source (`AET-WO-4210` D4). The
+    /// witness holds them where the model writes them, so any other warning
+    /// from the device in the step, or a declared one missing, fails it.
+    /// `None` when the twin does not know what the step makes the model
+    /// warn, so the step has no witness: a named failure.
+    fn warnings(self, device: &str, step: &Step) -> Option<Vec<String>> {
         match self {
             // Measured: none of these warns in a correct identity read, or
             // in the ICP-101xx's script (`AET-WO-4210` P6.2).
@@ -464,7 +471,6 @@ mod tests {
         let mut lines: Vec<String> = Vec::new();
         for s in &imu {
             lines.extend(Model::Icm20948.witness("d", s).unwrap());
-            lines.extend(Model::Icm20948.warnings("d", s).unwrap());
         }
         for s in &baro {
             lines.extend(Model::Icp101xx.witness("d", s).unwrap());
@@ -547,6 +553,7 @@ mod tests {
             [
                 "[NOISY] spi1.spi1mux.u5: Preparing for write at bank #0 to 0x6 (PowerManagement1)",
                 "[NOISY] spi1.spi1mux.u5: Received byte 0x6, returning 0x0",
+                "[WARNING] spi1.spi1mux.u5: Unhandled write to offset 0x6. Unhandled bits: [0] when writing value 0x1. Tags: CLKSEL (0x1).",
                 "[NOISY] spi1.spi1mux.u5: Received byte 0x1, returning 0x0",
             ]
         );
@@ -563,12 +570,6 @@ mod tests {
         assert_eq!(
             data[13],
             "[NOISY] spi1.spi1mux.u5: Received byte 0x0, returning 0x0"
-        );
-        assert_eq!(
-            Model::Icm20948.warnings(d, &step(StepKind::Configure, &[0x06, 0x01], 0, 0)),
-            Some(vec![
-                "[WARNING] spi1.spi1mux.u5: Unhandled write to offset 0x6. Unhandled bits: [0] when writing value 0x1. Tags: CLKSEL (0x1).".to_owned()
-            ])
         );
         let baro = Model::Icp101xx
             .witness(
@@ -609,8 +610,9 @@ mod tests {
         for (m, s) in none {
             assert_eq!(m.witness("d", &s), None, "{m:?} {s:?}");
         }
+        // A write whose warnings the twin does not know has no witness.
         assert_eq!(
-            Model::Icm20948.warnings("d", &step(StepKind::Configure, &[0x06, 0x41], 0, 0)),
+            Model::Icm20948.witness("d", &step(StepKind::Configure, &[0x06, 0x41], 0, 0)),
             None
         );
     }

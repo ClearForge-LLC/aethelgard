@@ -227,14 +227,13 @@ pub struct StepCheck {
     /// What Renode itself records when the controller runs this read on the
     /// model (`AET-WO-2204` D1): the model's whole log lines, after the host
     /// timestamp, in order. Only a transfer the controller runs to the
-    /// device's address calls the model, so no store writes these lines. All
+    /// device's address calls the model, so no store writes these lines; with
+    /// them, the `[WARNING]` lines a correct step makes the model write,
+    /// pinned to source (`AET-WO-4210` D4). All
     /// of it comes from the part table and the emitter, never from the
     /// firmware (`INV-07`). `None` when the model has no known witness format:
     /// a named failure, never a skip (D2).
     pub witness: Option<Vec<String>>,
-    /// The `[WARNING]` lines the step makes the model write, exactly, pinned
-    /// to source; `None` when unknown, a named failure (`AET-WO-4210` D4).
-    pub warnings: Option<Vec<String>>,
     /// The model's edge artefact, allowed only directly after the
     /// multiplexer's finish line for the device ([`model::Model::idle_warning`]).
     pub idle_warning: Option<String>,
@@ -362,8 +361,9 @@ pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
                 status_at,
                 value_at: status_at + 4,
                 level: model.level(),
-                witness: model.witness(&device, &step),
-                warnings: model.warnings(&device, &step),
+                // A data read whose stimulus the model cannot be set to has
+                // no expected value the twin can witness (D3).
+                witness: model.witness(&device, &step).filter(|_| stimulus.is_some()),
                 idle_warning: model.idle_warning(&device),
                 skipped: model.skipped(&device),
                 stimulus,

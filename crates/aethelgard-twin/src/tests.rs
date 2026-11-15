@@ -380,7 +380,6 @@ fn a_two_byte_identity_is_judged_whole_and_most_significant_byte_first() {
         level: (-1, "[NOISY] "),
         device: "i2c1.u3".into(),
         witness: None,
-        warnings: Some(Vec::new()),
         idle_warning: None,
         skipped: Vec::new(),
         stimulus: Some(Vec::new()),

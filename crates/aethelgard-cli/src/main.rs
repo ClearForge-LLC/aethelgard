@@ -1427,8 +1427,11 @@ fn boot_report(
                 aethelgard_twin::boot::Wire::I2c { address } => Some(verdict::I2cReport {
                     reference: c.reference.clone(),
                     address: format!("{address:#04x}"),
-                    register: format!("{:#04x}", c.write),
+                    step: c.step.name(),
+                    register: bytes(&c.write),
+                    width: c.width,
                     expected: format!("{:#x}", c.expected),
+                    mask: format!("{:#x}", c.mask),
                     observed: observed.map(|o| format!("{:#x}", o.records[i].1)),
                     status: observed.map(|o| renode::status_name(c, o.records[i].0)),
                 }),
@@ -1464,8 +1467,11 @@ fn boot_report(
                     peripheral: c.peripheral.clone(),
                     select: select.clone(),
                     address: format!("{address:#04x}"),
-                    command: format!("{:#04x}", c.write),
+                    step: c.step.name(),
+                    command: bytes(&c.write),
+                    width: c.width,
                     expected: format!("{:#x}", c.expected),
+                    mask: format!("{:#x}", c.mask),
                     observed: observed.map(|o| format!("{:#x}", o.records[i].1)),
                     status: observed.map(|o| renode::status_name(c, o.records[i].0)),
                 }),
@@ -1482,6 +1488,7 @@ fn boot_report(
             .map(|(i, c)| verdict::SpiWitnessReport {
                 peripheral: c.peripheral.clone(),
                 reference: c.reference.clone(),
+                step: c.step.name(),
                 device: c.device.clone(),
                 expected: c.witness.clone().unwrap_or_default(),
                 observed: observed.and_then(|o| o.witnesses[i].clone()),
@@ -1491,6 +1498,12 @@ fn boot_report(
         icsr: observed.map(|o| word(o.icsr)),
         executable: plan.executable.to_vec(),
     }
+}
+
+/// Bytes as the verdict writes them: `0xef 0xc8`.
+fn bytes(write: &[u8]) -> String {
+    let each: Vec<String> = write.iter().map(|b| format!("{b:#04x}")).collect();
+    each.join(" ")
 }
 
 fn validate(file: Option<&Path>) -> ExitCode {
