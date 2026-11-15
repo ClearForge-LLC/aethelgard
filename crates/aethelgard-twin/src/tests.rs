@@ -385,6 +385,7 @@ fn a_two_byte_identity_is_judged_whole_and_most_significant_byte_first() {
         peripheral: "I2C1".into(),
         wire: boot::Wire::I2c { address: 0x48 },
         step: aethelgard_ir::parts::StepKind::Identity,
+        label: "identity",
         write: vec![0x0F],
         width: 2,
         expected: 0x0117,
@@ -499,6 +500,7 @@ fn the_witness_lines_are_computed_from_the_part_table_and_the_width() {
                 "i2c1.u9",
                 &aethelgard_ir::parts::Step {
                     kind: aethelgard_ir::parts::StepKind::Identity,
+                    label: "identity",
                     write: vec![register],
                     width,
                     expected: value,

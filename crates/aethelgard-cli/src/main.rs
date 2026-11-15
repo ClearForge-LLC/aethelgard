@@ -1465,9 +1465,11 @@ fn analog_pass(r: &Ready, scratch: &Scratch) -> Result<(analog::Pass, Booted), r
 ///
 /// Returns the copies' paths, in the header's order.
 fn own_models(platform: &Path, dir: &Path) -> Result<Vec<PathBuf>, run::Stop> {
-    let text = fs::read_to_string(platform)
+    // Lossy: a header line and a device line are ASCII either way, and a
+    // platform Renode would read is not refused here for another byte.
+    let bytes = fs::read(platform)
         .map_err(|e| run::Stop::unreadable(format!("cannot read the platform: {e}")))?;
-    let named = aethelgard_twin::platform::own_models(&text)
+    let named = aethelgard_twin::platform::own_models(&String::from_utf8_lossy(&bytes))
         .map_err(|e| run::Stop::refused(e.kind(), e.to_string()))?;
     if named.is_empty() {
         return Ok(Vec::new());
@@ -1579,7 +1581,7 @@ fn boot_report(
                 aethelgard_twin::boot::Wire::I2c { address } => Some(verdict::I2cReport {
                     reference: c.reference.clone(),
                     address: format!("{address:#04x}"),
-                    step: c.step.name(),
+                    step: c.label,
                     register: bytes(&c.write),
                     width: c.width,
                     expected: format!("{:#x}", c.expected),
@@ -1619,7 +1621,7 @@ fn boot_report(
                     peripheral: c.peripheral.clone(),
                     select: select.clone(),
                     address: format!("{address:#04x}"),
-                    step: c.step.name(),
+                    step: c.label,
                     command: bytes(&c.write),
                     width: c.width,
                     expected: format!("{:#x}", c.expected),
@@ -1640,7 +1642,7 @@ fn boot_report(
             .map(|(i, c)| verdict::SpiWitnessReport {
                 peripheral: c.peripheral.clone(),
                 reference: c.reference.clone(),
-                step: c.step.name(),
+                step: c.label,
                 device: c.device.clone(),
                 expected: c.witness.clone().unwrap_or_default(),
                 observed: observed.and_then(|o| o.witnesses[i].clone()),

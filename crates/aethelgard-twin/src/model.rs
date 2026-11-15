@@ -525,6 +525,7 @@ mod tests {
     fn step(kind: StepKind, write: &[u8], width: u8, expected: u64) -> Step {
         Step {
             kind,
+            label: kind.name(),
             write: write.to_vec(),
             width,
             expected,

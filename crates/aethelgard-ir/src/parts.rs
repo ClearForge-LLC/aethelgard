@@ -284,6 +284,13 @@ impl StepKind {
     }
 }
 
+/// The name of each configuration step of a script that makes more than one
+/// (`AET-WO-4220`): every step of a device has its own name, so a record or a
+/// witness of it is joined by (reference, name) to that step alone. A script
+/// with one configuration names it `configure`, as before.
+pub const CONFIGURE_STEPS: [&str; MAX_CONFIGURE] =
+    ["configure 1", "configure 2", "configure 3", "configure 4"];
+
 /// One transaction of a device's script, as the firmware makes it and the
 /// judge expects it: write `write`, then read `width` bytes (none for a
 /// configuration), which a present part answers with `expected` under
@@ -293,6 +300,9 @@ impl StepKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Step {
     pub kind: StepKind,
+    /// Its name among the device's steps: the kind's name, or, for one of
+    /// several configuration writes, its place among them ([`CONFIGURE_STEPS`]).
+    pub label: &'static str,
     pub write: Vec<u8>,
     pub width: u8,
     pub expected: u64,
@@ -407,6 +417,7 @@ impl Part {
         let id = &self.identity;
         let mut steps = vec![Step {
             kind: StepKind::Identity,
+            label: StepKind::Identity.name(),
             write: id.write.clone(),
             width: id.width,
             expected: u64::from(id.value),
@@ -418,6 +429,11 @@ impl Part {
             for (i, write) in s.configure.iter().enumerate() {
                 steps.push(Step {
                     kind: StepKind::Configure,
+                    label: if s.configure.len() == 1 {
+                        StepKind::Configure.name()
+                    } else {
+                        CONFIGURE_STEPS[i]
+                    },
                     write: write.clone(),
                     width: 0,
                     expected: 0,
@@ -434,6 +450,7 @@ impl Part {
             let expected = wire.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b));
             steps.push(Step {
                 kind: StepKind::Data,
+                label: StepKind::Data.name(),
                 write: s.data.clone(),
                 width,
                 expected,

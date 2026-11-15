@@ -1637,7 +1637,7 @@ fn witness_findings(
                 format!(
                     "{}, its {} step: Renode logged an error for `{}` inside the step: {e}",
                     who(c),
-                    c.step.name(),
+                    c.label,
                     c.device
                 ),
             ));
@@ -1654,7 +1654,7 @@ fn witness_finding(
     c: &aethelgard_twin::boot::StepCheck,
     seen: Option<&[String]>,
 ) -> Option<Finding> {
-    let who = format!("{}, its {} step", who(c), c.step.name());
+    let who = format!("{}, its {} step", who(c), c.label);
     let bus = bus_word(c);
     let Some(want) = &c.witness else {
         return Some(Finding::plain(
@@ -1705,7 +1705,7 @@ fn reads_outside_window(
             // A script's later steps say which step (`AET-WO-4210`).
             let what = match c.step {
                 aethelgard_ir::parts::StepKind::Identity => "its identity read".to_owned(),
-                step => format!("its {} step's read", step.name()),
+                _ => format!("its {} step's read", c.label),
             };
             Finding::plain(
                 "identity_read_outside_window",
@@ -1731,7 +1731,7 @@ fn identity_finding(
     // script's later steps say which step (`AET-WO-4210`).
     let who = match c.step {
         aethelgard_ir::parts::StepKind::Identity => who(c),
-        step => format!("{}, its {} step", who(c), step.name()),
+        _ => format!("{}, its {} step", who(c), c.label),
     };
     let bus = bus_word(c);
     let what = if bus == "i2c" { "register" } else { "command" };
@@ -1902,6 +1902,7 @@ mod tests {
                 select: "PA1".into(),
             },
             step: aethelgard_ir::parts::StepKind::Identity,
+            label: "identity",
             write: vec![0x80],
             width: 1,
             expected: 0xEA,
@@ -2539,6 +2540,7 @@ mod tests {
             peripheral: "I2C1".into(),
             wire,
             step,
+            label: step.name(),
             write: vec![0x00],
             width: 1,
             expected: 0,

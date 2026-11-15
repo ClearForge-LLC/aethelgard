@@ -685,6 +685,27 @@ fn the_two_parts_of_our_own_make_their_cited_scripts() {
             (StepKind::Data, vec![0x1D], 6, 0x0000_1940_F362, 0),
         ]
     );
+    // Each of several configurations has its own name, a lone one `configure`.
+    let labels = |part: &str| -> Vec<&str> {
+        t.get(part)
+            .unwrap()
+            .steps()
+            .iter()
+            .map(|s| s.label)
+            .collect()
+    };
+    assert_eq!(
+        labels("ICM42688P"),
+        [
+            "identity",
+            "configure 1",
+            "configure 2",
+            "configure 3",
+            "data"
+        ]
+    );
+    assert_eq!(labels("BMP581"), ["identity", "configure", "data"]);
+    assert_eq!(labels("ICM20948"), ["identity", "configure", "data"]);
     let truncated = (29 - 25) * 13_248 / 100;
     assert_eq!(truncated, 529);
     for part in ["ICM42688P", "BMP581"] {

@@ -2006,7 +2006,9 @@ fn the_dshot600_fixture_s_campaign_passes_inside_its_window() {
 /// `AET-WO-4220` §2.3: the Sentinel-02-shaped fixture with the parts of our
 /// own, `sentinel-02-own.json`: the BMP581 (U7) on I2C1 beside the BME280
 /// and the TMP117, the ICM-42688-P (U5) on its own SPI bus beside the
-/// flash's, every part `active`, so no `accept_lifecycle` entry. The board
+/// flash's, every part `active`, so no `accept_lifecycle` entry. Its power
+/// tree is left out (`power: null`): `campaign` refuses one until
+/// `AET-WO-4300d2` emits it, and the twin judges the buses alone. The board
 /// crate comes from its generator and the platform from the twin's emitter,
 /// as the CLI makes them (KiCad has no symbol for either part yet: D5).
 fn own_board(label: &str) -> (PathBuf, PathBuf, PathBuf) {
@@ -2086,9 +2088,9 @@ fn the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed() {
         [
             t("U4", "identity", "0xef4017"),
             t("U5", "identity", "0x47"),
-            t("U5", "configure", "0x0"),
-            t("U5", "configure", "0x0"),
-            t("U5", "configure", "0x0"),
+            t("U5", "configure 1", "0x0"),
+            t("U5", "configure 2", "0x0"),
+            t("U5", "configure 3", "0x0"),
             t("U5", "data", "0x120200000040"),
         ]
     );
@@ -2176,4 +2178,69 @@ fn the_fixture_s_platform_lists_its_models_and_an_unpinned_one_is_refused() {
         assert_eq!(code, Some(3), "{name}: {v}");
         assert_eq!(v["error"]["kind"], "ModelUnpinned", "{name}: {v}");
     }
+}
+
+/// `AET-WO-4220`: a campaign archives the fixture's run with each of the
+/// ICM-42688-P's three configurations as its own step (`configure 1` to
+/// `configure 3`, trace version 10), and replay reproduces it: before the
+/// names, two records of one device shared the step `configure`, which the
+/// archive refuses as a step read twice.
+#[test]
+fn the_fixture_s_campaign_archives_each_configuration_and_replays() {
+    let (dir, _, _) = own_board("campaign");
+    let elf = mutant_of(&dir, "own-campaign", |_| {});
+    let archive = dir.join("archive");
+    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args([
+            "campaign",
+            "--scenarios",
+            root()
+                .join("crates/aethelgard-cli/tests/fixtures/sentinel-02-own-base.json")
+                .to_str()
+                .unwrap(),
+            "--firmware",
+            elf.to_str().unwrap(),
+            "--archive",
+            archive.to_str().unwrap(),
+        ])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    answer(&format!(
+        "own campaign: exit={:?} {stdout}",
+        out.status.code()
+    ));
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    let run: Value = stdout
+        .lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .find(|l| l["scenario"] == "sentinel-02-own-base")
+        .unwrap();
+    assert_eq!(run["verdict"], "pass", "{run}");
+    let run_dir = PathBuf::from(run["run"].as_str().unwrap());
+    let (code, v) = aethelgard(&["replay", "--archive", run_dir.to_str().unwrap()]);
+    assert_eq!(code, Some(0), "{v}");
+    let replayed = aethelgard_chaos::replay_dir(&run_dir).unwrap();
+    let steps: Vec<&str> = replayed
+        .state
+        .records
+        .iter()
+        .filter_map(|r| match r {
+            aethelgard_chaos::record::Record::SpiCheck {
+                reference, step, ..
+            } if reference == "U5" => Some(step.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        steps,
+        [
+            "identity",
+            "configure 1",
+            "configure 2",
+            "configure 3",
+            "data"
+        ]
+    );
 }
