@@ -1,0 +1,56 @@
+#!/bin/bash
+# AET-WO-4300f spike runner: the pinned tools image under rootless podman, in the shape of
+# 4210's spike/4210/img.sh (kickoff rule 3):
+# - repo at /repo (read-write: probes write spike/4300f/out), cache at /cache (~/.cache/aet-4300f);
+# - TMPDIR unset inside the container (it is never passed);
+# - --memory/--memory-swap $MEM (default 8g, the kickoff's ceiling) and --pids-limit -1. Nothing is
+#   written into any cgroup file. memory.max, memory.swap.max and pids.max are sampled every 0.25 s
+#   into spike/4300f/out/caps.log;
+# - the command inside does not start until memory.swap.max has read 0 on 4 consecutive samples
+#   (a flag file under /capflags); otherwise it exits 99 having run nothing (the kickoff's stop);
+# - one container of this work order at a time.
+# Usage: img.sh [--mem 8g] -- <command...>
+set -u
+REPO=/home/forge/aethelgard-4300f
+CACHE=$HOME/.cache/aet-4300f
+NAME="aet4300f-$$-$RANDOM"; MEM=8g
+while [[ $# -gt 0 && "$1" == --* ]]; do
+  case "$1" in
+    --mem) MEM="$2"; shift;;
+    --) shift; break;;
+  esac
+  shift
+done
+case "$MEM" in [1-8]g) ;; *) echo "memory cap $MEM refused: at most 8g" >&2; exit 64;; esac
+if podman ps --format '{{.Names}}' | grep -q '^aet4300f-'; then
+  echo "another aet4300f container is running; one at a time" >&2; exit 75
+fi
+CAPLOG=$REPO/spike/4300f/out/caps.log
+FLAGS=$CACHE/capflags
+mkdir -p "$(dirname "$CAPLOG")" "$FLAGS"
+( last=""; zeros=0; rel=0; after=0
+  for _ in $(seq 1 160); do
+    p=$(podman inspect -f '{{.State.CgroupPath}}' "$NAME" 2>/dev/null) && [ -n "$p" ] \
+      && [ -e "/sys/fs/cgroup$p/memory.swap.max" ] && {
+      d=/sys/fs/cgroup$p
+      v="memory.max=$(cat "$d/memory.max") memory.swap.max=$(cat "$d/memory.swap.max") pids.max=$(cat "$d/pids.max")"
+      [ "$v" != "$last" ] && echo "$(date -u +%FT%T.%N | cut -c1-23)Z $NAME sample $v" >> "$CAPLOG"
+      last=$v
+      case "$v" in *"memory.swap.max=0 "*) zeros=$((zeros + 1));; *) zeros=0;; esac
+      if [ $rel = 1 ]; then
+        if [ $zeros = 0 ]; then
+          echo "$(date -u -Is) $NAME SWAP CHANGED AFTER RELEASE, killed: $v" >> "$CAPLOG"
+          podman kill "$NAME" >/dev/null 2>&1; exit 0
+        fi
+        after=$((after + 1))
+        [ $after = 4 ] && { echo "$(date -u -Is) $NAME final $v cmd: $*" >> "$CAPLOG"; exit 0; }
+      elif [ $zeros = 4 ]; then
+        echo "$(date -u -Is) $NAME released $v" >> "$CAPLOG"; touch "$FLAGS/$NAME"; rel=1
+      fi; }
+    sleep 0.25
+  done
+  [ $rel = 1 ] || echo "$(date -u -Is) $NAME SWAP NOT ZERO or CAPS NOT READ, nothing runs: last ${last:-none} cmd: $*" >> "$CAPLOG" ) &
+exec podman run --rm --name "$NAME" --network none --memory "$MEM" --memory-swap "$MEM" --pids-limit -1 \
+  -v "$REPO":/repo -v "$CACHE":/cache -v "$FLAGS":/capflags:ro -w /repo \
+  "$(cat "$REPO/container/IMAGE")" \
+  bash -c 'for _ in $(seq 1 600); do [ -e "/capflags/$0" ] && exec "$@"; sleep 0.1; done; echo "caps never read back: nothing ran" >&2; exit 99' "$NAME" "$@"

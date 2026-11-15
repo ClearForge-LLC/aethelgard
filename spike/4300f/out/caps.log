@@ -1,0 +1,2 @@
+2026-11-15T02:42:37.424Z aet4300f-366150-30558 sample memory.max=8589934592 memory.swap.max=8589934592 pids.max=max
+2026-11-15T02:43:22+00:00 aet4300f-366150-30558 SWAP NOT ZERO or CAPS NOT READ, nothing runs: last memory.max=8589934592 memory.swap.max=8589934592 pids.max=max cmd: true
