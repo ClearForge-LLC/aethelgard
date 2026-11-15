@@ -56,3 +56,48 @@ From recall, before any vendor page or datasheet is fetched. Each row will be re
 - **P2.2** The predicted recommendation: **ICM-42688-P** (one chip select, no blob, a register map ArduPilot drives through `Invensensev3`) and **BMP390** (registers, one identity byte, ArduPilot's `BMP388` driver), both active.
 - **P2.3** Neither recommended part has a KiCad 10.0.7 symbol; both have a stock footprint. The build would vendor a symbol or ask for a ruling (recall; checked in the image).
 - **P2.4** ArduPilot reads the ICM-42688-P only through its FIFO (`FIFO_COUNTH`, `FIFO_DATA`), never the data registers, and its init writes fewer than 20 registers across banks 0, 1 and 2 (recall).
+
+## Results — after the predictions
+
+The predictions above were committed alone at `7ce365d`, before any container started and before any vendor fetch. They are unchanged below this line.
+
+### Containers (measured)
+
+Every container ran through `spike/4220/run.sh`, which calls `~/bin/capped-run --mem 8G --tasks 8192` with `--network none`, the repository at `/repo` and `~/.cache/aet-4220` at `/cache`; it starts nothing while another `aet4220-*` container runs. Every read-back in `spike/4220/out/caps.log` is `memory.max=8589934592 memory.swap.max=0 pids.max=8192`, each with its own `run-p…scope` path. `TMPDIR` printed `unset` inside (`s1.py`'s first line). One container at a time.
+
+### S1 — the pinned Renode loads our C# (measured)
+
+`spike/4220/s1/s1.py`, 8 cases, 14 boots, in one container (`out/s1.jsonl`, 12 rows; a 13th boot in a second container listed the temporary directory after exit, `out/s1-ls.jsonl`). The firmware is `4210`'s `imu-script` ELF, checked by sha256 before every case; the platform is `4210`'s emitted `spi-imu` platform (sha256 `c91018d4…`) with only `u2` and `u5` swapped.
+
+| # | Prediction | Result | Measured |
+|---|---|---|---|
+| P1.1 | compiles and loads offline | **held** | `include @/repo/spike/4220/s1/AetProbe.cs` logs `[INFO] Including script(s): …` and nothing else; no error; the boot ends with the boot word `0x2100B007`. `/opt/renode` carries `Microsoft.CodeAnalysis.CSharp.dll`. |
+| P1.2 | the include adds 1–6 s | **failed (faster)** | 3 boots each: 2.002 / 2.055 / 2.031 s without, 2.653 / 2.619 / 2.681 s with the include: **+0.62 s** for a 2-class file. |
+| P1.3 | both attach; records `0x5A` and `0xA5` | **held** | record 0 (I2C `0x76`, `0xD0`) = `0x5A`, record 2 (SPI `spi1mux` 1, `0x00`) = `0xA5`. The probe's 20 Noisy lines follow the firmware's bytes in order: `i2c1.u2: AetProbeI2C write 1 byte(s), pointer 0xD0`, `… read 1 byte(s), first 0x5A`, then `spi1.spi1mux.u5: AetProbeSpi byte 0x80 -> 0x00`, `… byte 0x00 -> 0xA5`, the configuration write's 2 bytes and the data read's 7, each transfer closed by `AetProbeSpi finish`. The multiplexer finishes the probe on other devices' edges too (`4210` F11): 4 of its 7 `finish` lines are not its own transfers. |
+| P1.4 | short name resolves in Renode's namespace; our own namespace only in full | **held for the first, failed for the second** | `Sensors.AetProbeSpi` resolves. `Aethelgard.Models.AetProbeOwnNs` does **not**, even written in full: `Error E04: Could not resolve type: 'Aethelgard.Models.AetProbeOwnNs'.` Read after: `TypeManager` indexes only types whose namespace starts with `Antmicro.Renode` or `NetMQ` (`TypeManager.cs` L262–266, L354–356). **A model must live in `Antmicro.Renode.Peripherals.*`.** |
+| P1.5 | the fault's text | **held** | `Errors during compilation or loading:` / `Could not compile assembly from: /repo/spike/4220/s1/AetProbeFault.cs` / `…AetProbeFault.cs(13,27): error CS1002: ; expected` / `…AetProbeFault.cs(14,13): error CS0246: The type or namespace name 'NoSuchType' could not be found (are you missing a using directive or an assembly reference?)`. Untimestamped monitor text, on stdout. |
+| P1.6 | the rest of the `-e` line runs; exit 0 | **failed in part** | **The line stops at the failed include:** no `LoadPlatformDescription`, no `RunFor`, no `BEGIN` marker; `machine-0: Disposed.` follows the diagnostics, and **Renode exits 0**. So the refusal must be the CLI's: the diagnostics' first line, or the missing `BEGIN`, which the CLI already treats as a failed boot. Never the exit code. |
+| P1.7 | the DLL in `/tmp/renode-<pid>/`, gone at exit | **held for the place, failed for the cleanup** | `/tmp/renode-<pid>/<guid>.dll`, **4,096 bytes**, beside an empty `<guid>.tmp` and Renode's own 1,575,616-byte native library (`<guid>.tmp`, executable). **The directory and the DLL are left after exit** (listed after `quit`, `out/s1-ls.jsonl`); the next Renode deletes the directories of dead PIDs at start (`TemporaryFilesManager.Cleanup`, L119–137, read). Nothing is written under `HOME` but the history and `renode.config.lock`, as without an include. |
+| P1.8 | a changed file compiles silently | **held** | the probe with `0xA6`/`0x5B` compiles with no complaint and the records read `0x5B` and `0xA6`. |
+| — | (not predicted) two files defining the same types, in turn | **refused by Renode** | the second include fails with `Tried to load assembly 'Antmicro.Renode.Peripherals.Sensors.AetProbeSpi' that has been already loaded. Aborting operation.` (`TypeManager.cs` L570), and the line stops as in P1.6, in either order. A second model can never silently shadow the first. |
+| P1.9 | three runs identical | **held** | the probe's lines and all 12 read values are byte-identical across the 3 boots. |
+
+**Where the compiled assembly goes under the CLI.** The CLI gives Renode `TMPDIR` = `HOME` = the call's own `workdir`, read-write for the tool (`crates/aethelgard-cli/src/run.rs` L517–518). So the DLL would land in the call's scratch, and go with it (read, not measured: no run of this work order used the CLI's sandbox).
+
+**§7's first stop does not fire:** the pinned Renode compiles a C# file offline, in the image, in the CLI's composition.
+
+### S1 — the load mechanism and its pin (proposal)
+
+What Renode gives: a monitor `include @file.cs` before `LoadPlatformDescription`, which compiles whatever bytes are at that path (P1.8), hashes them only to skip a recompile (`Monitor.cs` L405–428), stops the line on a compile error with exit 0 (P1.6), and refuses a second definition of a type (above). The `.repl` cannot include C#. So the pin is ours, by the pattern this repository already uses twice (`aethelgard-kicad-lib`'s data crate with `aethelgard-eda`'s pins, `AET-WO-1304`; the bridge's `BRIDGE_SOURCE_SHA256`, `analog.rs` L66–74):
+
+1. **`models/renode/` is a data-only crate** (`aethelgard-renode-models`, `MIT OR Apache-2.0`, `#![no_std]`, `#![forbid(unsafe_code)]`): one `<Part>.cs` per part beside `src/lib.rs`, which exports `FILES: [(&str, &str); N]` by `include_str!` from inside its own package, so a published CLI carries them. No hashes there, no logic.
+2. **The pins live with the emitter** (`aethelgard-twin`): a table of `(part, file, sha256)` constants, and a test that recomputes each sha256 from `FILES`. A changed model fails the build's tests until its pin moves with it, in the same commit, by review.
+3. **The emitted platform names each model** in its `@generated` header, as it already names `stm32h7.repl`'s sha256: `// - Model: models/renode/ICM42688P.cs sha256 <64 hex>` for each part whose model is ours, and the device line uses the class's name in `Antmicro.Renode.Peripherals.Sensors` (P1.4). The regeneration test covers the header.
+4. **At boot the CLI**:
+   - refuses a platform whose header names a model or sha256 not in its own table (`ModelUnpinned`, by name);
+   - writes `FILES`' bytes into the call's sealed scratch (`AET-WO-1601`: the root is the CLI's, read-only to the tool uid), re-reads the copy and refuses unless its sha256 equals the pin (`ModelPinMismatch`);
+   - puts one `include @<copy>` per model, all models in one command, before `machine LoadPlatformDescription`;
+   - refuses the boot if the output holds `Errors during compilation or loading:` (`ModelLoadFailed`, carrying the diagnostics), before it looks for `BEGIN`.
+5. **`replay` and `verify`** re-check the header's pins against the table, as they re-check the platform's other hashes.
+
+**What it claims.** The bytes Renode compiled are the pinned bytes, up to the same-uid residual `RUL-19` (2) already names for every gate (a process of the tool's uid could change the copy between the CLI's hash and Renode's read, unless the `1601` boundary held). It does not claim the compiled DLL: Roslyn's output is not pinned (its sha256 was `a4dd59c2…` in one run; whether it is stable across runs was not measured).
