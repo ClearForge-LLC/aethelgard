@@ -71,6 +71,32 @@ pub fn sha(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// A fixture's solved topology and the board crate's files generated from it,
+/// as the CLI makes them (`AET-WO-4220`).
+pub fn generated(
+    spec_path: &Path,
+    name: &str,
+) -> (aethelgard_ir::SolvedTopology, BTreeMap<String, String>) {
+    let bytes = fs::read(spec_path).unwrap();
+    let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
+    spec.validate().unwrap();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &sha(&bytes)).unwrap();
+    let answers = |part: &str| matches!(aethelgard_twin::model::model(part), Ok(Some(_)));
+    let files = aethelgard_svd_hal::board::generate_with(name, &solved, &table, &answers).unwrap();
+    (solved, files)
+}
+
+/// Writes a generated crate's files under `dir`, emptied first.
+pub fn write_files(dir: &Path, files: &BTreeMap<String, String>) {
+    let _ = fs::remove_dir_all(dir);
+    for (rel, text) in files {
+        let to = dir.join(rel);
+        fs::create_dir_all(to.parent().unwrap()).unwrap();
+        fs::write(&to, text).unwrap();
+    }
+}
+
 /// Builds `board` with `aethelgard build`; the verdict and the ELF's bytes.
 pub fn build(board: &Path, elf: &Path) -> (Value, Vec<u8>) {
     let (code, stdout) = aethelgard(&[

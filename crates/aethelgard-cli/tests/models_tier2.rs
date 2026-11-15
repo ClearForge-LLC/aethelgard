@@ -12,14 +12,12 @@
 #![cfg(feature = "with-tools")]
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use sha2::{Digest, Sha256};
+mod common;
 
-fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
+use common::verify::{generated, root};
 
 /// The Sentinel-02 fixture's emitted platform and each model's Renode path.
 struct Bench {
@@ -31,15 +29,10 @@ struct Bench {
 }
 
 fn bench(label: &str) -> Bench {
-    let spec = root().join("crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json");
-    let bytes = fs::read(&spec).unwrap();
-    let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
-    let sha: String = Sha256::digest(&bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
-    let solved = aethelgard_ir::solve(&spec, &table, &sha).unwrap();
+    let (solved, _) = generated(
+        &root().join("crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json"),
+        "own-board",
+    );
     let dir = std::env::temp_dir().join(format!("aet-4220-models-{}-{label}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();

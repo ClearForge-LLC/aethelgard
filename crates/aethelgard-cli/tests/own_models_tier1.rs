@@ -2,14 +2,9 @@
 //! own, read without any tool: the firmware's cited waits, the platform's
 //! pins, and the transfer proofs' bounds.
 
-use std::fs;
-use std::path::{Path, PathBuf};
+mod common;
 
-use sha2::{Digest, Sha256};
-
-fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
+use common::verify::{generated, root};
 
 /// The fixture's solved topology and its generated board crate's files.
 fn board(
@@ -18,21 +13,7 @@ fn board(
     aethelgard_ir::SolvedTopology,
     std::collections::BTreeMap<String, String>,
 ) {
-    let bytes = fs::read(root().join(spec)).unwrap();
-    let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
-    spec.validate().unwrap();
-    let sha: String = Sha256::digest(&bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
-    let solved = aethelgard_ir::solve(&spec, &table, &sha).unwrap();
-    let answers = |part: &str| matches!(aethelgard_twin::model::model(part), Ok(Some(_)));
-    let files = aethelgard_svd_hal::board::generate_with("own-board", &solved, &table, &answers)
-        .unwrap()
-        .into_iter()
-        .collect();
-    (solved, files)
+    generated(&root().join(spec), "own-board")
 }
 
 const OWN: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json";
@@ -88,4 +69,23 @@ fn the_platform_pins_both_models_and_the_proofs_bound_the_data_read() {
         "{}",
         files["src/proofs.rs"]
     );
+}
+
+/// The archive names a device's steps as the parts table does, in the same
+/// order: chaos restates the configuration names it may not import
+/// (`belt-and-suspenders` at `step_index`).
+#[test]
+fn the_archive_orders_every_step_name_the_parts_table_gives() {
+    use aethelgard_chaos::record::step_index;
+    use aethelgard_ir::parts::{CONFIGURE_STEPS, StepKind};
+    assert_eq!(step_index(StepKind::Identity.name()), Some(0));
+    assert_eq!(step_index(StepKind::Configure.name()), Some(1));
+    for (k, name) in CONFIGURE_STEPS.iter().enumerate() {
+        assert_eq!(step_index(name), Some(k + 1), "{name}");
+    }
+    assert_eq!(
+        step_index(StepKind::Data.name()),
+        Some(CONFIGURE_STEPS.len() + 1)
+    );
+    assert_eq!(step_index("configure 0"), None);
 }

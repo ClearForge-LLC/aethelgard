@@ -77,10 +77,9 @@ pub const RENODE_MODELS: [(&str, &[BusKind]); 6] = [
 /// The most bytes a step writes: the ICP-10111's 16-bit commands are 2.
 pub const MAX_STEP_WRITE: usize = 4;
 
-/// The most channels a data read takes (`AET-WO-4210` S2, F18's `n <= 9`).
-pub const MAX_CHANNELS: usize = 4;
-
-/// The most bytes a data read takes, so one record's value fits 64 bits.
+/// The most bytes a data read takes, so one record's value fits 64 bits
+/// (`AET-WO-4210` S2, F18's `n <= 9`); a channel is at least 2, so at most 4
+/// channels.
 pub const MAX_DATA_BYTES: u32 = 8;
 
 /// The most configuration writes a script makes (`AET-WO-4220`).
@@ -832,10 +831,8 @@ fn script(raw: &RawScript, stand_in: bool) -> Result<Script, String> {
         _ => {}
     }
     let data = bytes(&raw.data.write, "script.data.write")?;
-    if raw.data.channels.is_empty() || raw.data.channels.len() > MAX_CHANNELS {
-        return Err(format!(
-            "`script.data.channels` is not 1 to {MAX_CHANNELS} channels"
-        ));
+    if raw.data.channels.is_empty() {
+        return Err("`script.data.channels` is empty".to_owned());
     }
     let channels = raw
         .data

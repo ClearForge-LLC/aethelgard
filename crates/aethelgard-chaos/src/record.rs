@@ -436,6 +436,9 @@ fn witness_lines_ok(v: &[String]) -> bool {
 /// of several, `configure 1` to `configure 4`, its number (`AET-WO-4220`:
 /// each step has its own name, so a record is joined to one step alone);
 /// `data` 5. `None` for any other name.
+// belt-and-suspenders: the names restate `aethelgard_ir::parts::CONFIGURE_STEPS`,
+// which this crate may not depend on (`workspace_shape`); the archive reads a
+// run without the table (`INV-07`). `own_models_tier1.rs` holds the two equal.
 pub fn step_index(step: &str) -> Option<usize> {
     match step {
         "identity" => Some(0),

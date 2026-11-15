@@ -28,6 +28,8 @@
 
 #![cfg(feature = "with-tools")]
 
+mod common;
+
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -2013,26 +2015,9 @@ fn the_dshot600_fixture_s_campaign_passes_inside_its_window() {
 /// as the CLI makes them (KiCad has no symbol for either part yet: D5).
 fn own_board(label: &str) -> (PathBuf, PathBuf, PathBuf) {
     let spec_path = root().join("crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json");
-    let bytes = fs::read(&spec_path).unwrap();
-    let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
-    spec.validate().unwrap();
-    let sha: String = Sha256::digest(&bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
-    let solved = aethelgard_ir::solve(&spec, &table, &sha).unwrap();
-    let answers = |part: &str| matches!(aethelgard_twin::model::model(part), Ok(Some(_)));
-    let files =
-        aethelgard_svd_hal::board::generate_with("sentinel-01-board", &solved, &table, &answers)
-            .unwrap();
+    let (solved, files) = common::verify::generated(&spec_path, "sentinel-01-board");
     let dir = std::env::temp_dir().join(format!("aet-4220-t2-{}-{label}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    for (rel, text) in &files {
-        let to = dir.join(rel);
-        fs::create_dir_all(to.parent().unwrap()).unwrap();
-        fs::write(&to, text).unwrap();
-    }
+    common::verify::write_files(&dir, &files);
     let platform = dir.join("sentinel-02-own.repl");
     fs::write(&platform, aethelgard_twin::platform::emit(&solved).unwrap()).unwrap();
     (dir, platform, spec_path)

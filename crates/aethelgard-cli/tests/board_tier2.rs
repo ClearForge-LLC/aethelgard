@@ -12,7 +12,8 @@
 mod common;
 
 use common::verify::{
-    SPEC, aethelgard, board, build, copy_tree, gate_reads, one, package_files, root, sha,
+    SPEC, aethelgard, board, build, copy_tree, gate_reads, generated, one, package_files, root,
+    sha, write_files,
 };
 
 use std::fs::{self, OpenOptions};
@@ -186,27 +187,11 @@ fn the_imu_fixture_s_transfers_prove_within_its_scripts() {
 fn the_own_parts_fixture_s_transfers_prove_within_its_scripts() {
     let spec_path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sentinel-02-own.json");
-    let bytes = fs::read(&spec_path).unwrap();
-    let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
-    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
-    let solved = aethelgard_ir::solve(&spec, &table, &sha(&bytes)).unwrap();
-    let answers = |part: &str| matches!(aethelgard_twin::model::model(part), Ok(Some(_)));
-    let files =
-        aethelgard_svd_hal::board::generate_with("own-parts-board", &solved, &table, &answers)
-            .unwrap();
+    let (solved, files) = generated(&spec_path, "own-parts-board");
     let dir = std::env::temp_dir().join(format!("aet-4220-prove-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    for (rel, text) in &files {
-        let to = dir.join(rel);
-        fs::create_dir_all(to.parent().unwrap()).unwrap();
-        fs::write(&to, text).unwrap();
-    }
+    write_files(&dir, &files);
     let proofs = &files["src/proofs.rs"];
     let imu = solved.spi_devices["U5"].peripheral.to_ascii_lowercase();
-    assert!(
-        proofs.contains("kani::assume(wl <= 2 && rl <= 6);"),
-        "{proofs}"
-    );
     let harnesses: Vec<String> = proofs
         .lines()
         .filter_map(|l| l.trim().strip_prefix("fn "))
