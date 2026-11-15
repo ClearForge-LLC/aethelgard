@@ -100,23 +100,28 @@ fn digests() -> Vec<(&'static str, String)> {
 /// device's script and its records; specification version 8,
 /// `accept_lifecycle`; the image's SysTick and NVIC words), merging after
 /// `4300d`: the four were `a5a8e53a…5e46`, `b3bf305f…a745`, `ea29d696…07f0` and
-/// `893fb13d…c4a6` there.
+/// `893fb13d…c4a6` there. Re-taken in `AET-WO-4300b`, merging after both
+/// (specification version 9, solved version 7, `serial_ports`): the
+/// reference gains its console (USART1 on PA9/PA10). With the console and
+/// its connector removed and `main`'s hash passed to `solve`, all four were
+/// `main`'s digests exactly (`d114ae78…c455`, `849eb6bc…4397`,
+/// `b24f53eb…9e35`, `0e4d72ee…c8a2`), so the console alone moved them.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "d114ae787ece6238223fdd2ddf78c14021dbb548ce966cac310aceb9bc89c455",
+        "72acc1b54ec7c32115b99f511147c5324ca4ea1309a8804162dfaf3a6700bbc1",
     ),
     (
         "platform",
-        "849eb6bc70882585b2fa054260861646f6bb026ef0203fbb0cd5c7447a844397",
+        "6b61b7613454477ce3fc397623945c8beecc6a5ada0b40e3de99bb6d3e45b403",
     ),
     (
         "platform faulted",
-        "b24f53ebd62e293e1edaabb0a0723c1accb0098e3e64ef4f7e21caf363459e35",
+        "2716e538bf3499b686baabaaa931a497aea746282bf4e37954e147c380e34530",
     ),
     (
         "boot image",
-        "0e4d72ee3bc5716b2aa3c6e8e3f66f65ecc34d61e01c9e84bad8549fc20cc8a2",
+        "80c36d58a4770cd334dba572279a3b9c02ae021b5e18580700c974289d53ce16",
     ),
 ];
 

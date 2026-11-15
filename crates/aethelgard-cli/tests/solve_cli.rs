@@ -42,10 +42,12 @@ use sha2::{Digest, Sha256};
 /// sha256 after `4300d`'s (`c7688dca…` and `fe4252eb…` before); and
 /// re-taken in `AET-WO-4300b`, merging after both (specification version 9,
 /// solved version 7, `serial_ports`, and the reference's console port),
-/// which moved them (`8646b4b0…41bd` and `c7df9caf…b4d8` before; no earlier
-/// assignment moved, `the_reference_s_console_moves_no_other_assignment`).
-const REFERENCE_DIGEST: &str = "8646b4b00eeb9ce5fd29e8af0f6950734d4cea10c5d20843840f60a4b61b41bd";
-const STRESS_DIGEST: &str = "c7df9cafd4628297628aab80e59dd3073cdf5b92f91dbcfd7b1e75c687f1b4d8";
+/// which moved them (`8646b4b0…41bd` and `c7df9caf…b4d8` before): with the
+/// version set back to 6, `serial_ports` and the console's two assignments
+/// removed and `main`'s specification sha256 put back, each output's digest
+/// is `main`'s exactly (`the_reference_s_console_moves_no_other_assignment`).
+const REFERENCE_DIGEST: &str = "7faed6e0c5879ae17ab9ff4067e9037236859c60d548864c07d8bb9b0a0d276a";
+const STRESS_DIGEST: &str = "84de8b88afc6d6e60e9a39ccbb0e537ecb0cde5b34837c0e9144dd9d5f3b016d";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
