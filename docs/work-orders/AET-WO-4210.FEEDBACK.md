@@ -624,3 +624,14 @@ Reduction pass (diff): −11 net · 2 duplicates removed · 0 dead paths removed
   - evolve keeps a third copy of the width mask, because it depends on neither ir nor twin;
   - the parser's channel rounding was already one function;
   - the generator's copy of the value-word count is deliberate.
+
+## CI and the final state
+
+- **PR #143, head `45c3e2e`.**
+  - `ci` run 43687552089: success.
+  - `engine-image` run 43687552065: success.
+- **Tools shards, in minutes,** each under the 20-minute limit: 12.2 (0), 17.5 (1), 11.6 (2), 11.4 (3), 14.5 (4), 15.5 (5), 13.1 (6), 12.2 (7).
+- **The canary:** `tier2_tests_passed=102 floor=102`, so `TIER2_MIN` is exact. `tools_total_passed=1487`.
+- `main` (`091003f`) is merged in, and nothing landed after it.
+
+**AET-WO-4210 READY FOR REVIEW: PR #143.** The build follows the work order §2 as ruled on PR #131, and Scotty's ruling on D1 (`accept_lifecycle`). It had a full adversarial pass by a fresh subagent and a reduction pass, and its gates and CI are green. The decisions for the architect are D-A1, D-A8 and D-B1 to D-B6 above.
