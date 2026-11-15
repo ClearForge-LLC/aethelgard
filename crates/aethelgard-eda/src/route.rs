@@ -155,6 +155,11 @@ pub struct Pad {
     pub rect: Rect,
     pub corner_nm: i64,
     pub drill_nm: Option<i64>,
+    /// A through-hole pad's own `zone_connect`: how KiCad's fill meets it.
+    /// The engine writes the declared join there, because KiCad 10.0.7's
+    /// refill takes it from the pad and not from a custom rule (measured,
+    /// FEEDBACK B2); `check` requires exactly the declared one.
+    pub join: Option<crate::stack::Join>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -487,25 +492,35 @@ fn filled(stack: &crate::stack::Stack, net: &str) -> bool {
 
 /// How `part`'s through-hole pads join a fill of their own net, as the
 /// specification declares; a pad of a filled net with none is refused.
+/// Each through-hole pad of a part with a declared join carries it as its
+/// own `zone_connect`, and no other pad carries one; a pad of a filled net
+/// with none declared is refused (`INV-06`).
 fn join_of(board: &Board, part: &Part, pad: &Pad) -> Result<Option<crate::stack::Join>, String> {
-    let Some(net) = pad.net.as_deref().filter(|n| filled(&board.stack, n)) else {
-        return Ok(None);
-    };
     if pad.drill_nm.is_none() {
         return Ok(None);
     }
-    board
+    let what = format!("{} pad {}", part.reference, pad.number);
+    let declared = board
         .stack
         .joins
         .iter()
         .find(|(r, _)| *r == part.reference)
-        .map(|&(_, j)| Some(j))
-        .ok_or_else(|| {
-            format!(
-                "{} pad {} is a through-hole pad on {net}, which is filled, and the specification declares no join for {}",
-                part.reference, pad.number, part.reference
-            )
-        })
+        .map(|&(_, j)| j);
+    if pad.join != declared {
+        return Err(format!(
+            "{what} joins a fill {:?} by its own `zone_connect`; the specification declares {declared:?}",
+            pad.join
+        ));
+    }
+    let Some(net) = pad.net.as_deref().filter(|n| filled(&board.stack, n)) else {
+        return Ok(None);
+    };
+    declared.map(Some).ok_or_else(|| {
+        format!(
+            "{what} is a through-hole pad on {net}, which is filled, and the specification declares no join for {}",
+            part.reference
+        )
+    })
 }
 
 /// True when a disc of radius `r` at `c` lies inside `pad`'s copper.
@@ -615,9 +630,11 @@ fn meets(grid: &Grid, core: &[bool], pad: &Pad, join: crate::stack::Join) -> Opt
     match join {
         crate::stack::Join::Solid => {
             let hole = pad.drill_nm.unwrap_or(0) / 2 + EPS_NM;
-            grid.nodes(pad.inner()).find(|&n| {
+            grid.nodes(pad.rect).find(|&n| {
                 let (x, y) = grid.at(n);
-                core[n] && (x - cx) * (x - cx) + (y - cy) * (y - cy) > hole * hole
+                core[n]
+                    && fits(pad, (x, y), 0)
+                    && (x - cx) * (x - cx) + (y - cy) * (y - cy) > hole * hole
             })
         }
         crate::stack::Join::Relief => {
@@ -2898,6 +2915,28 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
     }
     // Each thermal array exactly as its declared rule places it, and none
     // other; each through-hole pad of a filled net with a declared join.
+    // The gate writes each declared reference and pad into a KiCad rule
+    // between single quotes: only a literal KiCad reads as written may be
+    // named there (the `AET-WO-1308` A1 lesson).
+    let literal = |s: &str| {
+        !s.is_empty()
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'+' | b'.'))
+    };
+    let names = board.stack.joins.iter().map(|(r, _)| r).chain(
+        board
+            .stack
+            .thermal
+            .iter()
+            .flat_map(|t| [&t.reference, &t.pad]),
+    );
+    for name in names {
+        if !literal(name) {
+            return Err(format!(
+                "`{name}` is named in a gate rule, and is not a plain literal"
+            ));
+        }
+    }
     let want = arrays(board)?;
     if routed.arrays != want {
         return Err(array_disagrees(&want, &routed.arrays));
@@ -3379,9 +3418,9 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
         if copper.is_empty() {
             continue;
         }
-        let drill_nm = match (pad.arg(2), copper.as_slice()) {
-            (Some("smd"), ["F.Cu"]) => None,
-            (Some("thru_hole"), ["*.Cu"]) => Some(through_hole(&pad, &what)?),
+        let (drill_nm, join) = match (pad.arg(2), copper.as_slice()) {
+            (Some("smd"), ["F.Cu"]) => (None, None),
+            (Some("thru_hole"), ["*.Cu"]) => through_hole(&pad, &what)?,
             _ => {
                 return Err(format!(
                     "{what} is neither a front SMD pad nor a plated through-hole pad on *.Cu"
@@ -3421,6 +3460,7 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
             },
             corner_nm: corner,
             drill_nm,
+            join,
         });
         if drill_nm.is_some_and(|d| d >= w.min(h)) {
             return Err(format!("{what}: its drill leaves no copper ring"));
@@ -3493,12 +3533,21 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
     })
 }
 
-/// A plated through-hole pad's drill: one round hole at the pad's centre,
-/// with every layer's copper kept. Any token by which the pad would choose
-/// its own fill join, relief, padstack or unused-layer removal is refused.
-fn through_hole(pad: &strict::Node<'_>, what: &str) -> Result<i64, String> {
+/// A plated through-hole pad's drill (one round hole at the pad's centre,
+/// with every layer's copper kept) and its `zone_connect`: 2 solid, 1
+/// relief, or none. Any token by which the pad would set its own relief,
+/// padstack or unused-layer removal is refused.
+fn through_hole(
+    pad: &strict::Node<'_>,
+    what: &str,
+) -> Result<(Option<i64>, Option<crate::stack::Join>), String> {
+    let join = match one(pad, "zone_connect")?.map(|z| (z.arg(1), z.arg(2))) {
+        None => None,
+        Some((Some("2"), None)) => Some(crate::stack::Join::Solid),
+        Some((Some("1"), None)) => Some(crate::stack::Join::Relief),
+        Some(other) => return Err(format!("{what} has `zone_connect` {other:?}")),
+    };
     for token in [
-        "zone_connect",
         "thermal_gap",
         "thermal_width",
         "thermal_bridge_width",
@@ -3526,7 +3575,7 @@ fn through_hole(pad: &strict::Node<'_>, what: &str) -> Result<i64, String> {
     if d <= 0 {
         return Err(format!("{what}: drill {d} nm"));
     }
-    Ok(d)
+    Ok((Some(d), join))
 }
 
 /// True when `zone`'s outline is the board's (`AET-WO-1307` K6, 4100 F7):
@@ -3894,6 +3943,24 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
             .map(str::to_owned)
             .ok_or("a zone has no layer")?;
         let name = net(&z, "a zone")?;
+        // A relieved pad's gap and spokes are the zone's (measured, B2): the
+        // engine's own, which the join judge assumes.
+        let fill = one(&z, "fill")?;
+        let at = |token: &str| -> Result<Option<i64>, String> {
+            fill.as_ref()
+                .map(|f| one(f, token))
+                .transpose()?
+                .flatten()
+                .map(|t| nm_at(&t, 1, "a zone's fill"))
+                .transpose()
+        };
+        if at("thermal_gap")? != Some(THERMAL_GAP_NM)
+            || at("thermal_bridge_width")? != Some(THERMAL_BRIDGE_NM)
+        {
+            return Err(format!(
+                "zone `{name}` on {layer}: its relief gap and spoke are not the engine's {THERMAL_GAP_NM}/{THERMAL_BRIDGE_NM} nm"
+            ));
+        }
         if !zone_is_outline(&z, outline)? {
             return Err(format!(
                 "zone `{name}` on {layer}: its outline is not the board's"
@@ -3928,6 +3995,7 @@ mod tests {
     fn pad(number: &str, net: Option<&str>, r: Rect) -> Pad {
         Pad {
             drill_nm: None,
+            join: None,
             number: number.into(),
             net: net.map(str::to_owned),
             rect: r,
@@ -4448,7 +4516,7 @@ mod tests {
         let read = part_of(&fp("1 2", &th("(remove_unused_layers no)"))).unwrap();
         assert_eq!(read.pads[0].drill_nm, Some(500_000));
         for (pad, want) in [
-            (th("(zone_connect 2)"), "own `zone_connect`"),
+            (th("(zone_connect 0)"), "has `zone_connect` (Some(\"0\"), None)"),
             (th("(thermal_bridge_angle 45)"), "own `thermal_bridge_angle`"),
             (th("(remove_unused_layers yes)"), "removes its unused layers"),
             (

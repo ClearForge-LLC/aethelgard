@@ -1028,7 +1028,8 @@ pub fn write_placed(
         Sx::List(layers),
     ];
     let mut parts = Vec::new();
-    for fp in footprints {
+    for mut fp in footprints {
+        join(&mut fp, stack);
         parts.push(route::part_of(&fp).map_err(EmitError::Internal)?);
         out.push(fp);
     }
@@ -1061,6 +1062,29 @@ pub fn write_placed(
     out.extend(copper(project, &routed, o, stack));
     out.push(Sx::node("embedded_fonts", &["no"]));
     Ok(sexpr::write(&Sx::List(out)))
+}
+
+/// The declared join on each through-hole pad of a part that has one
+/// (`AET-WO-1309`), as the pad's own `zone_connect`: 2 solid, 1 relief.
+/// KiCad 10.0.7's refill takes the join from the pad, not from a custom
+/// rule (measured, FEEDBACK B2). A part with none declared is unchanged.
+fn join(fp: &mut Sx, stack: &crate::stack::Stack) {
+    let declared = fp
+        .property("Reference")
+        .and_then(|r| stack.joins.iter().find(|(x, _)| x == r).map(|&(_, j)| j));
+    let value = match declared {
+        Some(crate::stack::Join::Solid) => "2",
+        Some(crate::stack::Join::Relief) => "1",
+        None => return,
+    };
+    for pad in fp.items_mut().into_iter().flatten() {
+        if pad.head() == Some("pad")
+            && pad.arg(2) == Some("thru_hole")
+            && let Some(items) = pad.items_mut()
+        {
+            items.push(Sx::node("zone_connect", &[value]));
+        }
+    }
 }
 
 /// The router's tracks, vias and unfilled zones as board items, each

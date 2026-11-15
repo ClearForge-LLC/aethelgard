@@ -494,6 +494,15 @@ pub fn pad_ff(ph: &Physics, rect: crate::pcb::Rect) -> Option<u64> {
     femtofarads(ph, capped(ph, Base::boxed(w, h)?, ph.c, ph.h_top, true)?)
 }
 
+/// One through-hole pad (`AET-WO-1309`): its box through the declared
+/// maximum finished thickness, as [`via_ff`] bounds a via. The barrel and
+/// the pad's copper on every layer lie inside it.
+pub fn through_hole_ff(ph: &Physics, rect: crate::pcb::Rect) -> Option<u64> {
+    let w = u128::try_from(rect.x1.checked_sub(rect.x0)?).ok()?;
+    let h = u128::try_from(rect.y1.checked_sub(rect.y0)?).ok()?;
+    femtofarads(ph, shell(Base::boxed(w, h)?, ph.via_h, ph.s)?)
+}
+
 /// A refusal: a named kind and a message. No estimate follows one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Refused {
@@ -640,6 +649,10 @@ fn allowed(parent: &str) -> Option<&'static [(&'static str, Option<usize>, bool)
             ("property", None, false),
             ("zone_connect", Some(1), false),
             ("uuid", Some(1), false),
+            // A through-hole pad (`AET-WO-1309`): its round drill, and every
+            // layer's copper kept, as `route::part` requires.
+            ("drill", Some(1), false),
+            ("remove_unused_layers", Some(1), false),
         ],
         "zone" => &[
             ("net", Some(1), false),
@@ -800,7 +813,8 @@ fn footprint(fp: &Node<'_>) -> Result<(String, (String, String)), Refused> {
                         "{pad} has no `layers`, or names a layer by other than its canonical name"
                     )));
                 }
-                if !matches!(child.arg(3), Some("rect" | "roundrect")) {
+                // A circle lies inside its box, which the bound prices.
+                if !matches!(child.arg(3), Some("rect" | "roundrect" | "circle")) {
                     return Err(unmodelled(format!("{pad} has shape {:?}", child.arg(3))));
                 }
                 modelled(&child, &pad)?;
@@ -1235,7 +1249,11 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
             offboard.push(format!("{reference}.{pad}: {ff} fF ({source})"));
         }
         for pad in pads {
-            let ff = pad_ff(&ph, pad.rect).ok_or_else(|| overflow(net))?;
+            let ff = match pad.drill_nm {
+                Some(_) => through_hole_ff(&ph, pad.rect),
+                None => pad_ff(&ph, pad.rect),
+            }
+            .ok_or_else(|| overflow(net))?;
             terms.pads = terms.pads.checked_add(ff).ok_or_else(|| overflow(net))?;
             pad_count += 1;
             match role.load {
@@ -1278,6 +1296,18 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
     let via_count = routed.vias.iter().filter(|v| v.net == board_net).count() as u64;
     let via = via_ff(&ph).ok_or_else(|| overflow(net))?;
     terms.vias = via_count.checked_mul(via).ok_or_else(|| overflow(net))?;
+    // A thermal array's vias, each at its own size (`AET-WO-1309`).
+    for a in routed.arrays.iter().filter(|a| a.net == board_net) {
+        let own = Physics {
+            via: u128::try_from(a.via_nm).map_err(|_| overflow(net))?,
+            ..ph
+        };
+        let each = via_ff(&own).ok_or_else(|| overflow(net))?;
+        terms.vias = (a.at.len() as u64)
+            .checked_mul(each)
+            .and_then(|v| terms.vias.checked_add(v))
+            .ok_or_else(|| overflow(net))?;
+    }
     let total = [
         terms.trace,
         terms.vias,
