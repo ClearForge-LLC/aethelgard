@@ -3149,7 +3149,13 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let mut expect: BTreeMap<u32, (u32, u32)> = BTreeMap::new();
         let [mw, tw, sw, pw, aw] = g.widths;
         let mut touched: BTreeSet<u32> = BTreeSet::new();
-        for (pin, p) in plan.pins.iter().filter(|(_, p)| p.port == *port) {
+        // A USART's pins are not configured by the schedule: their fields
+        // are held unchanged with the unsolved pins' (`AET-WO-4300b`).
+        for (pin, p) in plan
+            .pins
+            .iter()
+            .filter(|(_, p)| p.port == *port && !p.role.is_serial())
+        {
             let pf = &facts.pins[pin];
             let (mode, otype, ospeed, pupd) = p.policy();
             expect_field(&mut expect, g.moder, pf.moder, mw, mode);
@@ -3227,7 +3233,6 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         .map(|p| &p.gate)
         .chain(facts.peripherals.values().map(|p| &p.gate))
         .chain(facts.timers.values().map(|t| &t.gate))
-        .chain(facts.serials.values().map(|s| &s.gate))
     {
         *gates.entry(gate.offset / 4).or_default() |= 1u32 << gate.bit;
     }
@@ -3340,11 +3345,11 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     let usarts = if plan.serials.is_empty() {
         ""
     } else {
-        "\n/// Then, in a fixed tail, each USART's two pins are configured and its clock\n\
-         /// enabled, under the same write rules: not free choices, because the free\n\
-         /// interleaving ran out of memory in CBMC (`AET-WO-4300b`). Its configuration\n\
-         /// is proved by `usartN_start_writes_the_solved_values`; the image holds no\n\
-         /// USART block, and any access to one fails."
+        "\n/// No step touches a USART, its pins or its clock gate: the final check holds\n\
+         /// them at their starting values, the image holds no USART block, and any\n\
+         /// access to one fails. Each port's bring-up is\n\
+         /// `usartN_start_writes_the_solved_values`' (`AET-WO-4300b`: USART steps in\n\
+         /// this schedule ran out of CBMC's memory)."
     };
     let _ = writeln!(
         w,
@@ -3391,13 +3396,14 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             );
         }
     }
-    for (pin, p) in &plan.pins {
+    for pin in plan
+        .pins
+        .iter()
+        .filter(|(_, p)| !p.role.is_serial())
+        .map(|(n, _)| n)
+    {
         let f = pin_field(pin);
-        if p.role.is_serial() {
-            let _ = writeln!(w, "    let mut {f} = None;");
-        } else {
-            let _ = writeln!(w, "    let mut {f} = None;\n    let mut {f}_done = None;");
-        }
+        let _ = writeln!(w, "    let mut {f} = None;\n    let mut {f}_done = None;");
     }
     if !plan.timers.is_empty() {
         let _ = writeln!(w, "    let mut clock = None;");
@@ -3419,15 +3425,16 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let f = port_field(*port);
         let pins: Vec<String> = plan
             .pins
-            .keys()
-            .filter(|n| plan.pins[*n].port == *port)
-            .map(|n| pin_field(n))
+            .iter()
+            .filter(|(_, p)| p.port == *port && !p.role.is_serial())
+            .map(|(n, _)| pin_field(n))
             .collect();
         let _ = writeln!(
             w,
             "            {a} => {{\n                \
                  kani::assume({f}.is_some());\n                \
-                 let pins = rcc.enable_{f}(&mut img, {f}.take().unwrap()).split();"
+                 let {bind} = rcc.enable_{f}(&mut img, {f}.take().unwrap()).split();",
+            bind = if pins.is_empty() { "_pins" } else { "pins" },
         );
         for p in &pins {
             let _ = writeln!(w, "                {p} = Some(pins.{p});");
@@ -3655,21 +3662,6 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let _ = writeln!(
             w,
             "    kani::assert(tim{n}_done, \"the schedule did not start TIM{n}\");"
-        );
-    }
-    // The USARTs, after every other step: each one's pins configured and its
-    // clock enabled. Its configuration is `usartN_start_writes_the_solved_values`'.
-    for (name, sp) in &plan.serials {
-        let f = name.to_ascii_lowercase();
-        let (tx, rx) = (pin_field(&sp.tx), pin_field(&sp.rx));
-        let _ = writeln!(
-            w,
-            "    let _{tx} = {tx}.take().unwrap().{mtx}(&mut img);\n    \
-             let _{rx} = {rx}.take().unwrap().{mrx}(&mut img);\n    \
-             let _{f} = rcc.enable_{f}(&mut img, board.{f});\n    \
-             kani::cover!(true, \"{name}'s pins and clock are ready\");",
-            mtx = method(&plan.pins[&sp.tx]),
-            mrx = method(&plan.pins[&sp.rx]),
         );
     }
     // A chip select is configured before its bus starts, which takes it.
@@ -3917,11 +3909,17 @@ fn harness_setup(plan: &Plan, pins: &[&String]) -> String {
     setup
 }
 
-/// One port's proof (`AET-WO-4300b` §1.4): from its configured pins, its
-/// clock gate set and the reset clock's token, its configuration writes
-/// exactly the oracle's registers and values in order, reads none, and sets
-/// `UE` only in its last write. Every expected value is [`usart_oracle`]'s,
-/// from the solved port, never read from `board.rs`.
+/// One port's proof (`AET-WO-4300b` §1.4): its whole bring-up from the board
+/// as `Board::take` hands it over, on any register contents. RCC and its pins'
+/// ports go to the harness image, under its clock-gate and write rules; every
+/// access to the USART is recorded, and any other block fails. Its pins' ports
+/// clocked, both pins put in their roles, the reset clock read, the USART
+/// clocked and configured: RCC is then before plus exactly those gates; each
+/// pin's fields hold their solved values and every other field of its port
+/// its old one; and the USART was written exactly the oracle's four writes, in
+/// order, each after its gate was set, and never read. Every expected value is
+/// [`usart_oracle`]'s or the generator's pin policy, never read from
+/// `board.rs`.
 fn emit_usart_proof(
     w: &mut String,
     name: &str,
@@ -3932,79 +3930,174 @@ fn emit_usart_proof(
 ) {
     let t = type_name(name);
     let f = name.to_ascii_lowercase();
+    let g = &facts.gpio;
     let writes = usart_oracle(sp, u);
     let count = writes.len();
-    let setup = harness_setup(plan, &[&sp.tx, &sp.rx]);
     let gate = &facts.serials[name].gate;
-    let expect: Vec<String> = writes
-        .iter()
-        .enumerate()
-        .map(|(i, (register, offset, value))| {
-            format!(
-                "    kani::assert(spy.writes[{i}] == (Block::{t}, {offset:#04x}, {value:#010x}), \"{name} write {k} is not {register} = {value:#010x}\");",
-                k = i + 1,
-            )
-        })
+    let pins = [&sp.tx, &sp.rx];
+    let ports: BTreeSet<char> = pins.iter().map(|p| plan.pins[*p].port).collect();
+    let owned: Vec<String> = std::iter::once("Block::Rcc".to_owned())
+        .chain(ports.iter().map(|p| format!("Block::{}", port_type(*p))))
         .collect();
+    let owned = owned
+        .iter()
+        .map(|b| format!("block == {b}"))
+        .collect::<Vec<_>>()
+        .join(" || ");
+    let mut body = String::new();
+    for b in image_fields(plan) {
+        let _ = writeln!(body, "        {b}: kani::any(),");
+    }
+    let _ = writeln!(
+        body,
+        "    }};\n    \
+         let before = img;\n    \
+         let mut spy = {t}Bringup {{ img, writes: [(0, 0); {count}], n: 0 }};\n    \
+         let board = Board::take().unwrap();\n    \
+         let mut rcc = board.rcc;"
+    );
+    for port in &ports {
+        let pf = port_field(*port);
+        let _ = writeln!(
+            body,
+            "    let {pf} = rcc.enable_{pf}(&mut spy, board.{pf}).split();"
+        );
+    }
+    for pin in pins {
+        let _ = writeln!(
+            body,
+            "    let {f} = {port}.{f}.{method}(&mut spy);",
+            f = pin_field(pin),
+            port = port_field(plan.pins[pin].port),
+            method = method(&plan.pins[pin])
+        );
+    }
+    let _ = writeln!(
+        body,
+        "    let clock = rcc.reset_clock(&mut spy);\n    \
+         kani::assume(clock.is_ok());\n    \
+         let clock = clock.unwrap();\n    \
+         let usart = rcc.enable_{f}(&mut spy, board.{f});\n    \
+         let _port = usart.configure(&mut spy, &clock, {tx}, {rx});\n    \
+         kani::assert(spy.n == {count}, \"{name}'s bring-up did not write it exactly {count} times\");",
+        tx = pin_field(&sp.tx),
+        rx = pin_field(&sp.rx),
+    );
+    for (i, (register, offset, value)) in writes.iter().enumerate() {
+        let _ = writeln!(
+            body,
+            "    kani::assert(spy.writes[{i}] == ({offset:#04x}, {value:#010x}), \"{name} write {k} is not {register} = {value:#010x}\");",
+            k = i + 1,
+        );
+    }
+    // RCC: before plus exactly the ports' gates and the USART's.
+    let mut gates: BTreeMap<u32, u32> = BTreeMap::new();
+    for g in ports.iter().map(|p| &facts.ports[p].gate).chain([gate]) {
+        *gates.entry(g.offset / 4).or_default() |= 1u32 << g.bit;
+    }
+    let _ = writeln!(body, "    let mut rcc_after = before.rcc;");
+    for (word, mask) in &gates {
+        let _ = writeln!(body, "    rcc_after[{word}] |= {mask:#010x};");
+    }
+    let _ = writeln!(
+        body,
+        "    for i in 0..{n} {{\n        \
+             kani::assert(spy.img.rcc[i] == rcc_after[i], \"RCC is not before plus exactly {name}'s gate and its pins' ports'\");\n    \
+         }}",
+        n = facts.rcc_words
+    );
+    // Each pin's port: the pin's fields solved, every other field unchanged.
+    let [mw, tw, sw, pw, aw] = g.widths;
+    for port in &ports {
+        let field = port_field(*port);
+        let mut expect: BTreeMap<u32, (u32, u32)> = BTreeMap::new();
+        for pin in pins.iter().filter(|p| plan.pins[**p].port == *port) {
+            let p = &plan.pins[*pin];
+            let pf = &facts.pins[*pin];
+            let (mode, otype, ospeed, pupd) = p.policy();
+            expect_field(&mut expect, g.moder, pf.moder, mw, mode);
+            expect_field(&mut expect, g.otyper, pf.otyper, tw, otype);
+            expect_field(&mut expect, g.ospeedr, pf.ospeedr, sw, ospeed);
+            expect_field(&mut expect, g.pupdr, pf.pupdr, pw, pupd);
+            expect_field(&mut expect, g.afr[pf.afr_index as usize], pf.afr, aw, p.af);
+        }
+        for i in 0..g.words {
+            match expect.get(&(i * 4)) {
+                Some((mask, value)) => {
+                    let _ = writeln!(
+                        body,
+                        "    kani::assert(spy.img.{field}[{i}] & {mask:#010x} == {value:#010x}, \"{t}: a pin's field in {field} word {i} is not its solved value\");\n    \
+                         kani::assert(spy.img.{field}[{i}] & !{mask:#010x} == before.{field}[{i}] & !{mask:#010x}, \"{t}'s bring-up changed another pin's field in {field} word {i}\");"
+                    );
+                }
+                None => {
+                    let _ = writeln!(
+                        body,
+                        "    kani::assert(spy.img.{field}[{i}] == before.{field}[{i}], \"{t}'s bring-up changed {field} word {i}\");"
+                    );
+                }
+            }
+        }
+    }
     let _ = writeln!(
         w,
         "\n\
-         /// {name}'s configuration as the list of its writes, in order.\n\
-         struct {t}Spy {{\n    \
-             writes: [(Block, usize, u32); {count}],\n    \
+         /// {name}'s bring-up as the hardware sees it: RCC and its pins' ports go to\n\
+         /// the harness image, under its gate and write rules; each {name} write is\n\
+         /// recorded, after its gate is set; any other access fails.\n\
+         struct {t}Bringup {{\n    \
+             img: Image,\n    \
+             writes: [(usize, u32); {count}],\n    \
              n: usize,\n\
          }}\n\
          \n\
-         impl sealed::Sealed for {t}Spy {{}}\n\
+         impl sealed::Sealed for {t}Bringup {{}}\n\
          \n\
-         impl Registers for {t}Spy {{\n    \
-             fn read(&mut self, _: sealed::Token, _: Block, _: usize) -> u32 {{\n        \
-                 kani::assert(false, \"{name}'s configuration read a register\");\n        \
-                 0\n    \
+         impl Registers for {t}Bringup {{\n    \
+             fn read(&mut self, token: sealed::Token, block: Block, offset: usize) -> u32 {{\n        \
+                 kani::assert({owned}, \"{name}'s bring-up read a block other than RCC and its pins' ports\");\n        \
+                 self.img.read(token, block, offset)\n    \
              }}\n    \
-             fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n        \
-                 kani::assert(self.n < {count}, \"{name}'s configuration wrote more than {count} registers\");\n        \
-                 if self.n < {count} {{\n            \
-                     self.writes[self.n] = (block, offset, value);\n        \
-                 }}\n        \
-                 self.n += 1;\n    \
+             fn write(&mut self, token: sealed::Token, block: Block, offset: usize, value: u32) {{\n        \
+                 if block == Block::{t} {{\n            \
+                     kani::assert(self.img.rcc[{word}] & {mask:#010x} != 0, \"{name} written before RCC_{register} bit {bit} is set\");\n            \
+                     kani::assert(self.n < {count}, \"{name}'s bring-up wrote it more than {count} times\");\n            \
+                     if self.n < {count} {{\n                \
+                         self.writes[self.n] = (offset, value);\n            \
+                     }}\n            \
+                     self.n += 1;\n        \
+                 }} else {{\n            \
+                     kani::assert({owned}, \"{name}'s bring-up wrote a block other than RCC, its pins' ports and {name}\");\n            \
+                     self.img.write(token, block, offset, value);\n        \
+                 }}\n    \
              }}\n    \
              fn read8(&mut self, _: sealed::Token, _: Block, _: usize) -> u8 {{\n        \
-                 kani::assert(false, \"{name}'s configuration made a byte access\");\n        \
+                 kani::assert(false, \"{name}'s bring-up made a byte access\");\n        \
                  0\n    \
              }}\n    \
              fn write8(&mut self, _: sealed::Token, _: Block, _: usize, _: u8) {{\n        \
-                 kani::assert(false, \"{name}'s configuration made a byte access\");\n    \
+                 kani::assert(false, \"{name}'s bring-up made a byte access\");\n    \
              }}\n\
          }}\n\
          \n\
-         /// Serial port `{label}`: from its configured pins, its clock gate and the\n\
-         /// reset clock's token, {name}'s configuration writes exactly the solved\n\
-         /// `BRR`, `CR2` and `CR1`, in order, the last write alone setting `UE`, and\n\
-         /// reads none.\n\
+         /// Serial port `{label}`, brought up from the board as `Board::take` hands it\n\
+         /// over, on any register contents: its pins' ports clocked, both pins in\n\
+         /// their roles, the reset clock read, {name} clocked and configured. RCC is\n\
+         /// then before plus exactly those gates; the pins' fields hold their solved\n\
+         /// values and no other field of their ports changed; and {name} was written\n\
+         /// exactly the solved `BRR`, `CR2`, `CR1`, then `CR1` with `UE`, in order, each\n\
+         /// after its gate was set, and never read.\n\
          #[kani::proof]\n\
          fn {f}_start_writes_the_solved_values() {{\n    \
-             let mut img = Image {{\n\
-         {setup}    \
-             let clock = rcc.reset_clock(&mut img);\n    \
-             kani::assume(clock.is_ok());\n    \
-             let clock = clock.unwrap();\n    \
-             let usart = rcc.enable_{f}(&mut img, board.{f});\n    \
-             kani::assert(img.rcc[{word}] & {mask:#010x} != 0, \"{name}'s clock gate, RCC_{register} bit {bit}, is not set\");\n    \
-             let mut spy = {t}Spy {{ writes: [(Block::Rcc, 0, 0); {count}], n: 0 }};\n    \
-             let _port = usart.configure(&mut spy, &clock, {tx}, {rx});\n    \
-             kani::assert(spy.n == {count}, \"{name}'s configuration did not make exactly {count} writes\");\n\
-         {expect}\n    \
-             kani::cover!(true, \"{name} configured\");\n\
+             let img = Image {{\n\
+         {body}    \
+             kani::cover!(true, \"{name} brought up\");\n\
          }}",
         label = sp.label_text(),
         word = gate.offset / 4,
         mask = 1u32 << gate.bit,
         register = gate.register,
         bit = gate.bit,
-        tx = pin_field(&sp.tx),
-        rx = pin_field(&sp.rx),
-        expect = expect.join("\n"),
     );
 }
 

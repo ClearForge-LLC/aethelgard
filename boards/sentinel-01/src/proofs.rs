@@ -213,35 +213,35 @@ impl Registers for Image {
 /// The state the specification allows, from any starting image.
 fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
     kani::assert(
-        after.gpioa[0] & 0x003cfc03 == 0x0028a801,
+        after.gpioa[0] & 0x0000fc03 == 0x0000a801,
         "GpioA word 0: a solved pin's field is not what the specification fixes",
     );
     kani::assert(
-        after.gpioa[0] & !0x003cfc03 == before.gpioa[0] & !0x003cfc03,
+        after.gpioa[0] & !0x0000fc03 == before.gpioa[0] & !0x0000fc03,
         "GpioA word 0: an unsolved pin's field changed",
     );
     kani::assert(
-        after.gpioa[1] & 0x000006e1 == 0x00000000,
+        after.gpioa[1] & 0x000000e1 == 0x00000000,
         "GpioA word 1: a solved pin's field is not what the specification fixes",
     );
     kani::assert(
-        after.gpioa[1] & !0x000006e1 == before.gpioa[1] & !0x000006e1,
+        after.gpioa[1] & !0x000000e1 == before.gpioa[1] & !0x000000e1,
         "GpioA word 1: an unsolved pin's field changed",
     );
     kani::assert(
-        after.gpioa[2] & 0x003cfc03 == 0x00004400,
+        after.gpioa[2] & 0x0000fc03 == 0x00004400,
         "GpioA word 2: a solved pin's field is not what the specification fixes",
     );
     kani::assert(
-        after.gpioa[2] & !0x003cfc03 == before.gpioa[2] & !0x003cfc03,
+        after.gpioa[2] & !0x0000fc03 == before.gpioa[2] & !0x0000fc03,
         "GpioA word 2: an unsolved pin's field changed",
     );
     kani::assert(
-        after.gpioa[3] & 0x003cfc03 == 0x00000000,
+        after.gpioa[3] & 0x0000fc03 == 0x00000000,
         "GpioA word 3: a solved pin's field is not what the specification fixes",
     );
     kani::assert(
-        after.gpioa[3] & !0x003cfc03 == before.gpioa[3] & !0x003cfc03,
+        after.gpioa[3] & !0x0000fc03 == before.gpioa[3] & !0x0000fc03,
         "GpioA word 3: an unsolved pin's field changed",
     );
     kani::assert(
@@ -252,14 +252,6 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
         after.gpioa[8] & !0xfff00000 == before.gpioa[8] & !0xfff00000,
         "GpioA word 8: an unsolved pin's field changed",
     );
-    kani::assert(
-        after.gpioa[9] & 0x00000ff0 == 0x00000770,
-        "GpioA word 9: a solved pin's field is not what the specification fixes",
-    );
-    kani::assert(
-        after.gpioa[9] & !0x00000ff0 == before.gpioa[9] & !0x00000ff0,
-        "GpioA word 9: an unsolved pin's field changed",
-    );
     kani::assert(after.gpioa[5] & 0x00000001 != 0, "PA0, a chip select, is not high once its bus started");
     kani::assert(
         after.gpioa[5] & !0x00000001 == before.gpioa[5] & !0x00000001,
@@ -267,6 +259,7 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
     );
     kani::assert(after.gpioa[4] == before.gpioa[4], "GpioA word 4 changed");
     kani::assert(after.gpioa[7] == before.gpioa[7], "GpioA word 7 changed");
+    kani::assert(after.gpioa[9] == before.gpioa[9], "GpioA word 9 changed");
     kani::assert(
         after.gpiob[0] & 0x0000f000 == 0x0000a000,
         "GpioB word 0: a solved pin's field is not what the specification fixes",
@@ -315,7 +308,7 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
     let mut rcc = before.rcc;
     rcc[56] |= 0x00000003;
     rcc[58] |= 0x00200000;
-    rcc[60] |= 0x00001010;
+    rcc[60] |= 0x00001000;
     // Word by word: `==` on the arrays is a `memcmp` loop under CBMC.
     for i in 0..76 {
         kani::assert(after.rcc[i] == rcc[i], "RCC is not before plus exactly the solved clock gates");
@@ -377,11 +370,11 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
 /// types forbid the rest at compile time. Each I2C peripheral writes zero or
 /// one byte when it starts; each SPI peripheral takes its bus's chip selects;
 /// and the output pins are driven zero or one time first.
-/// Then, in a fixed tail, each USART's two pins are configured and its clock
-/// enabled, under the same write rules: not free choices, because the free
-/// interleaving ran out of memory in CBMC (`AET-WO-4300b`). Its configuration
-/// is proved by `usartN_start_writes_the_solved_values`; the image holds no
-/// USART block, and any access to one fails.
+/// No step touches a USART, its pins or its clock gate: the final check holds
+/// them at their starting values, the image holds no USART block, and any
+/// access to one fails. Each port's bring-up is
+/// `usartN_start_writes_the_solved_values`' (`AET-WO-4300b`: USART steps in
+/// this schedule ran out of CBMC's memory).
 #[kani::proof]
 #[kani::unwind(77)]
 fn every_valid_sequence() {
@@ -406,14 +399,12 @@ fn every_valid_sequence() {
     let mut i2c1_timingr = 0u32;
     let mut pa0 = None;
     let mut pa0_done = None;
-    let mut pa10 = None;
     let mut pa5 = None;
     let mut pa5_done = None;
     let mut pa6 = None;
     let mut pa6_done = None;
     let mut pa7 = None;
     let mut pa7_done = None;
-    let mut pa9 = None;
     let mut pb6 = None;
     let mut pb6_done = None;
     let mut pb7 = None;
@@ -425,11 +416,9 @@ fn every_valid_sequence() {
                 kani::assume(gpioa.is_some());
                 let pins = rcc.enable_gpioa(&mut img, gpioa.take().unwrap()).split();
                 pa0 = Some(pins.pa0);
-                pa10 = Some(pins.pa10);
                 pa5 = Some(pins.pa5);
                 pa6 = Some(pins.pa6);
                 pa7 = Some(pins.pa7);
-                pa9 = Some(pins.pa9);
             }
             1 => {
                 kani::assume(gpiob.is_some());
@@ -525,10 +514,6 @@ fn every_valid_sequence() {
     }
     kani::assert(i2c1_done, "the schedule did not start I2C1");
     kani::assert(spi1_done, "the schedule did not start SPI1");
-    let _pa9 = pa9.take().unwrap().into_usart1_tx(&mut img);
-    let _pa10 = pa10.take().unwrap().into_usart1_rx(&mut img);
-    let _usart1 = rcc.enable_usart1(&mut img, board.usart1);
-    kani::cover!(true, "USART1's pins and clock are ready");
     check_final(&before, &img, i2c1_timingr);
     kani::cover!(true, "the end of a complete schedule is reachable");
 }
@@ -940,64 +925,97 @@ fn reset_clock_is_ok_exactly_at_reset() {
     kani::cover!(result.is_err(), "another clock is refused");
 }
 
-/// USART1's configuration as the list of its writes, in order.
-struct Usart1Spy {
-    writes: [(Block, usize, u32); 4],
+/// USART1's bring-up as the hardware sees it: RCC and its pins' ports go to
+/// the harness image, under its gate and write rules; each USART1 write is
+/// recorded, after its gate is set; any other access fails.
+struct Usart1Bringup {
+    img: Image,
+    writes: [(usize, u32); 4],
     n: usize,
 }
 
-impl sealed::Sealed for Usart1Spy {}
+impl sealed::Sealed for Usart1Bringup {}
 
-impl Registers for Usart1Spy {
-    fn read(&mut self, _: sealed::Token, _: Block, _: usize) -> u32 {
-        kani::assert(false, "USART1's configuration read a register");
-        0
+impl Registers for Usart1Bringup {
+    fn read(&mut self, token: sealed::Token, block: Block, offset: usize) -> u32 {
+        kani::assert(block == Block::Rcc || block == Block::GpioA, "USART1's bring-up read a block other than RCC and its pins' ports");
+        self.img.read(token, block, offset)
     }
-    fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {
-        kani::assert(self.n < 4, "USART1's configuration wrote more than 4 registers");
-        if self.n < 4 {
-            self.writes[self.n] = (block, offset, value);
+    fn write(&mut self, token: sealed::Token, block: Block, offset: usize, value: u32) {
+        if block == Block::Usart1 {
+            kani::assert(self.img.rcc[60] & 0x00000010 != 0, "USART1 written before RCC_APB2ENR bit 4 is set");
+            kani::assert(self.n < 4, "USART1's bring-up wrote it more than 4 times");
+            if self.n < 4 {
+                self.writes[self.n] = (offset, value);
+            }
+            self.n += 1;
+        } else {
+            kani::assert(block == Block::Rcc || block == Block::GpioA, "USART1's bring-up wrote a block other than RCC, its pins' ports and USART1");
+            self.img.write(token, block, offset, value);
         }
-        self.n += 1;
     }
     fn read8(&mut self, _: sealed::Token, _: Block, _: usize) -> u8 {
-        kani::assert(false, "USART1's configuration made a byte access");
+        kani::assert(false, "USART1's bring-up made a byte access");
         0
     }
     fn write8(&mut self, _: sealed::Token, _: Block, _: usize, _: u8) {
-        kani::assert(false, "USART1's configuration made a byte access");
+        kani::assert(false, "USART1's bring-up made a byte access");
     }
 }
 
-/// Serial port `CONSOLE`: from its configured pins, its clock gate and the
-/// reset clock's token, USART1's configuration writes exactly the solved
-/// `BRR`, `CR2` and `CR1`, in order, the last write alone setting `UE`, and
-/// reads none.
+/// Serial port `CONSOLE`, brought up from the board as `Board::take` hands it
+/// over, on any register contents: its pins' ports clocked, both pins in
+/// their roles, the reset clock read, USART1 clocked and configured. RCC is
+/// then before plus exactly those gates; the pins' fields hold their solved
+/// values and no other field of their ports changed; and USART1 was written
+/// exactly the solved `BRR`, `CR2`, `CR1`, then `CR1` with `UE`, in order, each
+/// after its gate was set, and never read.
 #[kani::proof]
 fn usart1_start_writes_the_solved_values() {
-    let mut img = Image {
+    let img = Image {
         rcc: kani::any(),
         gpioa: kani::any(),
         gpiob: kani::any(),
         i2c1: kani::any(),
         spi1: kani::any(),
     };
+    let before = img;
+    let mut spy = Usart1Bringup { img, writes: [(0, 0); 4], n: 0 };
     let board = Board::take().unwrap();
     let mut rcc = board.rcc;
-    let gpioa = rcc.enable_gpioa(&mut img, board.gpioa).split();
-    let pa9 = gpioa.pa9.into_usart1_tx(&mut img);
-    let pa10 = gpioa.pa10.into_usart1_rx(&mut img);
-    let clock = rcc.reset_clock(&mut img);
+    let gpioa = rcc.enable_gpioa(&mut spy, board.gpioa).split();
+    let pa9 = gpioa.pa9.into_usart1_tx(&mut spy);
+    let pa10 = gpioa.pa10.into_usart1_rx(&mut spy);
+    let clock = rcc.reset_clock(&mut spy);
     kani::assume(clock.is_ok());
     let clock = clock.unwrap();
-    let usart = rcc.enable_usart1(&mut img, board.usart1);
-    kani::assert(img.rcc[60] & 0x00000010 != 0, "USART1's clock gate, RCC_APB2ENR bit 4, is not set");
-    let mut spy = Usart1Spy { writes: [(Block::Rcc, 0, 0); 4], n: 0 };
+    let usart = rcc.enable_usart1(&mut spy, board.usart1);
     let _port = usart.configure(&mut spy, &clock, pa9, pa10);
-    kani::assert(spy.n == 4, "USART1's configuration did not make exactly 4 writes");
-    kani::assert(spy.writes[0] == (Block::Usart1, 0x0c, 0x0000022c), "USART1 write 1 is not BRR = 0x0000022c");
-    kani::assert(spy.writes[1] == (Block::Usart1, 0x04, 0x00000000), "USART1 write 2 is not CR2 = 0x00000000");
-    kani::assert(spy.writes[2] == (Block::Usart1, 0x00, 0x0000000c), "USART1 write 3 is not CR1 = 0x0000000c");
-    kani::assert(spy.writes[3] == (Block::Usart1, 0x00, 0x0000000d), "USART1 write 4 is not CR1 | UE = 0x0000000d");
-    kani::cover!(true, "USART1 configured");
+    kani::assert(spy.n == 4, "USART1's bring-up did not write it exactly 4 times");
+    kani::assert(spy.writes[0] == (0x0c, 0x0000022c), "USART1 write 1 is not BRR = 0x0000022c");
+    kani::assert(spy.writes[1] == (0x04, 0x00000000), "USART1 write 2 is not CR2 = 0x00000000");
+    kani::assert(spy.writes[2] == (0x00, 0x0000000c), "USART1 write 3 is not CR1 = 0x0000000c");
+    kani::assert(spy.writes[3] == (0x00, 0x0000000d), "USART1 write 4 is not CR1 | UE = 0x0000000d");
+    let mut rcc_after = before.rcc;
+    rcc_after[56] |= 0x00000001;
+    rcc_after[60] |= 0x00000010;
+    for i in 0..76 {
+        kani::assert(spy.img.rcc[i] == rcc_after[i], "RCC is not before plus exactly USART1's gate and its pins' ports'");
+    }
+    kani::assert(spy.img.gpioa[0] & 0x003c0000 == 0x00280000, "Usart1: a pin's field in gpioa word 0 is not its solved value");
+    kani::assert(spy.img.gpioa[0] & !0x003c0000 == before.gpioa[0] & !0x003c0000, "Usart1's bring-up changed another pin's field in gpioa word 0");
+    kani::assert(spy.img.gpioa[1] & 0x00000600 == 0x00000000, "Usart1: a pin's field in gpioa word 1 is not its solved value");
+    kani::assert(spy.img.gpioa[1] & !0x00000600 == before.gpioa[1] & !0x00000600, "Usart1's bring-up changed another pin's field in gpioa word 1");
+    kani::assert(spy.img.gpioa[2] & 0x003c0000 == 0x00000000, "Usart1: a pin's field in gpioa word 2 is not its solved value");
+    kani::assert(spy.img.gpioa[2] & !0x003c0000 == before.gpioa[2] & !0x003c0000, "Usart1's bring-up changed another pin's field in gpioa word 2");
+    kani::assert(spy.img.gpioa[3] & 0x003c0000 == 0x00000000, "Usart1: a pin's field in gpioa word 3 is not its solved value");
+    kani::assert(spy.img.gpioa[3] & !0x003c0000 == before.gpioa[3] & !0x003c0000, "Usart1's bring-up changed another pin's field in gpioa word 3");
+    kani::assert(spy.img.gpioa[4] == before.gpioa[4], "Usart1's bring-up changed gpioa word 4");
+    kani::assert(spy.img.gpioa[5] == before.gpioa[5], "Usart1's bring-up changed gpioa word 5");
+    kani::assert(spy.img.gpioa[6] == before.gpioa[6], "Usart1's bring-up changed gpioa word 6");
+    kani::assert(spy.img.gpioa[7] == before.gpioa[7], "Usart1's bring-up changed gpioa word 7");
+    kani::assert(spy.img.gpioa[8] == before.gpioa[8], "Usart1's bring-up changed gpioa word 8");
+    kani::assert(spy.img.gpioa[9] & 0x00000ff0 == 0x00000770, "Usart1: a pin's field in gpioa word 9 is not its solved value");
+    kani::assert(spy.img.gpioa[9] & !0x00000ff0 == before.gpioa[9] & !0x00000ff0, "Usart1's bring-up changed another pin's field in gpioa word 9");
+    kani::cover!(true, "USART1 brought up");
 }
