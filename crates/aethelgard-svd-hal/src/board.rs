@@ -94,6 +94,16 @@ pub enum BoardError {
     SpeedTable(IrValidationError),
     #[error("the output speed table is for `{table}`, but the pin table is for `{part}`")]
     SpeedTableMismatch { table: String, part: String },
+    #[error(
+        "{first} and {second} may both change {register}: the split schedule proof needs their footprints disjoint (AET-WO-3303)"
+    )]
+    FootprintOverlap {
+        first: String,
+        second: String,
+        register: String,
+    },
+    #[error("no part of the split schedule proof schedules {action} (AET-WO-3303)")]
+    UnscheduledAction { action: String },
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -123,6 +133,8 @@ impl BoardError {
             Self::SpeedTableMismatch { .. } => "SpeedTableMismatch",
             Self::CeilingMismatch { .. } => "CeilingMismatch",
             Self::CeilingTooLow { .. } => "CeilingTooLow",
+            Self::FootprintOverlap { .. } => "FootprintOverlap",
+            Self::UnscheduledAction { .. } => "UnscheduledAction",
             Self::Register(e) => e.kind(),
         }
     }
@@ -200,7 +212,7 @@ pub fn generate_with(
     files.insert("src/board.rs".to_owned(), emit_lib(&plan, &facts, &speeds));
     files.insert(
         "src/proofs.rs".to_owned(),
-        emit_proofs(&plan, &facts, &speeds),
+        emit_proofs(&plan, &facts, &speeds)?,
     );
     files.extend(firmware::emit(
         &plan,
@@ -2327,8 +2339,286 @@ fn expect_field(acc: &mut BTreeMap<u32, (u32, u32)>, reg: u32, pos: u32, width: 
     e.1 |= value << pos;
 }
 
-fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
+/// A slice of the whole-schedule harness (`AET-WO-3303` §1.2): the pins,
+/// ports, peripherals and timers whose actions it schedules. The whole
+/// harness's scope is everything, and its text is the one emitted before the
+/// split; a part's scope is one unit's ([`parts`]).
+struct Scope {
+    /// `None` for the whole harness; the unit's name for a part: `i2c1`,
+    /// `spi1`, `tim1`, or `gpio`.
+    part: Option<String>,
+    pins: BTreeSet<String>,
+    ports: BTreeSet<char>,
+    peripherals: BTreeSet<String>,
+    timers: BTreeSet<u32>,
+}
+
+/// One action of the schedule: one `match` arm of the harness.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Action {
+    Port(char),
+    Clock(String),
+    Pin(String),
+    Start(String),
+    ResetClock,
+    TimerClock(u32),
+    TimerStart(u32),
+}
+
+impl Action {
+    fn describe(&self) -> String {
+        match self {
+            Self::Port(p) => format!("the GPIO{p} enable"),
+            Self::Clock(name) => format!("the {name} clock enable"),
+            Self::Pin(pin) => format!("the {pin} configure"),
+            Self::Start(name) => format!("the {name} start"),
+            Self::ResetClock => "the reset-clock read".to_owned(),
+            Self::TimerClock(n) => format!("the TIM{n} clock enable"),
+            Self::TimerStart(n) => format!("the TIM{n} start"),
+        }
+    }
+}
+
+/// The bits an action may change, by (`Block` variant, register offset).
+type Footprint = BTreeMap<(String, u32), u32>;
+
+impl Scope {
+    fn whole(plan: &Plan) -> Self {
+        Self {
+            part: None,
+            pins: plan.pins.keys().cloned().collect(),
+            ports: plan.ports.clone(),
+            peripherals: plan.peripherals.keys().cloned().collect(),
+            timers: plan.timers.keys().copied().collect(),
+        }
+    }
+
+    fn unit(plan: &Plan, name: String, pins: BTreeSet<String>) -> Self {
+        Self {
+            part: Some(name),
+            ports: pins.iter().map(|p| plan.pins[p].port).collect(),
+            pins,
+            peripherals: BTreeSet::new(),
+            timers: BTreeSet::new(),
+        }
+    }
+
+    /// `_i2c1` for a part, empty for the whole harness.
+    fn suffix(&self) -> String {
+        self.part
+            .as_ref()
+            .map(|p| format!("_{p}"))
+            .unwrap_or_default()
+    }
+
+    /// `I2c1` for a part, empty for the whole harness.
+    fn type_suffix(&self) -> String {
+        self.part
+            .as_deref()
+            .map(|p| type_name(&p.to_ascii_uppercase()))
+            .unwrap_or_default()
+    }
+
+    /// Its actions, in the harness's arm order.
+    fn actions(&self, plan: &Plan) -> Vec<Action> {
+        let mut out: Vec<Action> = self.ports.iter().map(|p| Action::Port(*p)).collect();
+        let peripherals = || {
+            plan.peripherals
+                .keys()
+                .filter(|n| self.peripherals.contains(*n))
+        };
+        out.extend(peripherals().map(|n| Action::Clock(n.clone())));
+        out.extend(
+            plan.pins
+                .keys()
+                .filter(|p| self.pins.contains(*p))
+                .map(|p| Action::Pin(p.clone())),
+        );
+        out.extend(peripherals().map(|n| Action::Start(n.clone())));
+        if !self.timers.is_empty() {
+            out.push(Action::ResetClock);
+        }
+        out.extend(self.timers.iter().map(|n| Action::TimerClock(*n)));
+        out.extend(self.timers.iter().map(|n| Action::TimerStart(*n)));
+        out
+    }
+}
+
+/// The parts a board with motor outputs proves its schedule in
+/// (`AET-WO-3303` §1.2): one per I2C or SPI peripheral, holding its pins and
+/// its chip selects; one per timer, holding its channel pins; and one for the
+/// GPIO outputs no unit owns, if there are any. Each part also schedules the
+/// enable of every port its pins are on, and a timer's the reset-clock read.
+fn parts(plan: &Plan) -> Vec<Scope> {
+    let mut out = Vec::new();
+    let mut owned: BTreeSet<String> = BTreeSet::new();
+    for (name, p) in &plan.peripherals {
+        let mut pins: BTreeSet<String> = p.pins.values().cloned().collect();
+        pins.extend(
+            plan.selects
+                .get(name)
+                .into_iter()
+                .flatten()
+                .map(|s| s.pin.clone()),
+        );
+        owned.extend(pins.iter().cloned());
+        let mut part = Scope::unit(plan, name.to_ascii_lowercase(), pins);
+        part.peripherals.insert(name.clone());
+        out.push(part);
+    }
+    for (n, t) in &plan.timers {
+        let pins: BTreeSet<String> = t.channels.values().map(|(p, _)| p.clone()).collect();
+        owned.extend(pins.iter().cloned());
+        let mut part = Scope::unit(plan, format!("tim{n}"), pins);
+        part.timers.insert(*n);
+        out.push(part);
+    }
+    let rest: BTreeSet<String> = plan
+        .pins
+        .keys()
+        .filter(|p| !owned.contains(*p))
+        .cloned()
+        .collect();
+    if !rest.is_empty() {
+        out.push(Scope::unit(plan, "gpio".to_owned(), rest));
+    }
+    out
+}
+
+/// The bits `action` may change: exactly the bits the whole harness's
+/// final-state oracle lets differ from the starting image, each given to the
+/// action that sets it. Computed from the plan and the register facts, as the
+/// oracle is, never from `emit_lib`'s writes (`INV-07`).
+fn footprint(plan: &Plan, facts: &Facts, action: &Action) -> Footprint {
     let g = &facts.gpio;
+    let [mw, tw, sw, pw, aw] = g.widths;
+    let mut fp = Footprint::new();
+    let mut add = |variant: String, offset: u32, mask: u32| {
+        *fp.entry((variant, offset)).or_default() |= mask;
+    };
+    let gate = |gate: &Gate| ("Rcc".to_owned(), gate.offset, 1u32 << gate.bit);
+    // An output's level and its `BSRR` set and reset bits.
+    let level = |add: &mut dyn FnMut(String, u32, u32), pin: &str| {
+        let t = port_type(plan.pins[pin].port);
+        let pf = &facts.pins[pin];
+        add(t.clone(), g.odr, 1u32 << pf.bs);
+        add(t, g.bsrr, (1u32 << pf.bs) | (1u32 << pf.br));
+    };
+    match action {
+        Action::Port(p) => {
+            let (v, o, m) = gate(&facts.ports[p].gate);
+            add(v, o, m);
+        }
+        Action::Clock(name) => {
+            let (v, o, m) = gate(&facts.peripherals[name].gate);
+            add(v, o, m);
+        }
+        Action::TimerClock(n) => {
+            let (v, o, m) = gate(&facts.timers[n].gate);
+            add(v, o, m);
+        }
+        Action::Pin(pin) => {
+            let p = &plan.pins[pin];
+            let pf = &facts.pins[pin];
+            let t = port_type(p.port);
+            add(t.clone(), g.moder, oracle_mask(mw, pf.moder));
+            add(t.clone(), g.otyper, oracle_mask(tw, pf.otyper));
+            add(t.clone(), g.ospeedr, oracle_mask(sw, pf.ospeedr));
+            add(t.clone(), g.pupdr, oracle_mask(pw, pf.pupdr));
+            if p.role == Role::Output {
+                level(&mut add, pin);
+            } else {
+                add(t, g.afr[pf.afr_index as usize], oracle_mask(aw, pf.afr));
+            }
+        }
+        Action::Start(name) => {
+            let pf = &facts.peripherals[name];
+            let t = type_name(name);
+            add(t.clone(), pf.cr1, 1u32 << pf.enable);
+            match &pf.spi {
+                None => {
+                    add(t.clone(), pf.config, !0);
+                    add(t, pf.txdr, !0);
+                }
+                Some(spi) => {
+                    add(t.clone(), spi.cfg1, oracle_mask(spi.dsize_width, spi.dsize));
+                    add(t, pf.config, 1u32 << pf.master.unwrap_or_default());
+                    // It drives its own chip selects.
+                    for s in plan.selects.get(name).into_iter().flatten() {
+                        level(&mut add, &s.pin);
+                    }
+                }
+            }
+        }
+        Action::ResetClock => {}
+        Action::TimerStart(n) => {
+            if let Some(tf) = &facts.tim {
+                for (_, offset, _) in timer_oracle(*n, &plan.timers[n], tf) {
+                    add(format!("Tim{n}"), offset, !0);
+                }
+            }
+        }
+    }
+    fp
+}
+
+/// Refuses a split whose conjunction would not be the whole claim
+/// (`AET-WO-3303` §1.2): an action of the whole schedule no part schedules,
+/// or two owners whose footprints share a bit. The owners are each port's
+/// enable, which every part on that port schedules, and each part's own
+/// actions.
+fn check_parts(plan: &Plan, facts: &Facts, parts: &[Scope]) -> Result<(), BoardError> {
+    let scheduled: Vec<Vec<Action>> = parts.iter().map(|p| p.actions(plan)).collect();
+    for action in Scope::whole(plan).actions(plan) {
+        if !scheduled.iter().any(|acts| acts.contains(&action)) {
+            return Err(BoardError::UnscheduledAction {
+                action: action.describe(),
+            });
+        }
+    }
+    let mut owners: Vec<(String, Footprint)> = plan
+        .ports
+        .iter()
+        .map(|p| {
+            let a = Action::Port(*p);
+            (a.describe(), footprint(plan, facts, &a))
+        })
+        .collect();
+    for (part, acts) in parts.iter().zip(&scheduled) {
+        let mut own = Footprint::new();
+        for a in acts.iter().filter(|a| !matches!(a, Action::Port(_))) {
+            for (key, mask) in footprint(plan, facts, a) {
+                *own.entry(key).or_default() |= mask;
+            }
+        }
+        owners.push((
+            format!("the {} part", part.part.as_deref().unwrap_or_default()),
+            own,
+        ));
+    }
+    disjoint(&owners)
+}
+
+/// Refuses two owners whose footprints share a bit.
+fn disjoint(owners: &[(String, Footprint)]) -> Result<(), BoardError> {
+    for (i, (first, a)) in owners.iter().enumerate() {
+        for (second, b) in &owners[i + 1..] {
+            for ((variant, offset), mask) in a {
+                let shared = b.get(&(variant.clone(), *offset)).copied().unwrap_or(0) & mask;
+                if shared != 0 {
+                    return Err(BoardError::FootprintOverlap {
+                        first: first.clone(),
+                        second: second.clone(),
+                        register: format!("{variant} at {offset:#x}, bits {shared:#010x}"),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> Result<String, BoardError> {
     let mut s = header(
         plan,
         "The Kani harness: the specification's register rules over an image this\n\
@@ -2336,10 +2626,62 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          //! solved topology and the register source, not read from `lib.rs`.",
     );
     let w = &mut s;
+    let _ = writeln!(
+        w,
+        "\n\
+         use crate::board::sealed;\n\
+         use crate::*;\n"
+    );
+    // A board with motor outputs proves its schedule in parts (`AET-WO-3303`
+    // §1.2): the whole harness does not finish on one (`AET-WO-4300a` Q5).
+    // Without a timer, the whole harness is emitted, byte for byte as before.
+    // The whole image stays: the targeted harnesses set up through it.
+    if plan.timers.is_empty() {
+        emit_schedule(w, plan, facts, speeds, &Scope::whole(plan), false);
+    } else {
+        let parts = parts(plan);
+        check_parts(plan, facts, &parts)?;
+        emit_schedule(w, plan, facts, speeds, &Scope::whole(plan), true);
+        for (i, part) in parts.iter().enumerate() {
+            if i > 0 {
+                w.push('\n');
+            }
+            emit_schedule(w, plan, facts, speeds, part, false);
+        }
+    }
+    emit_transfer_proofs(w, plan, facts, speeds);
+    emit_spi_transfer_proofs(w, plan, facts);
+    emit_timer_proofs(w, plan, facts);
+    Ok(s)
+}
+
+/// The whole-schedule harness for `scope`: its register image and the
+/// image's write-time rules, its final-state oracle, and its scheduler. For a
+/// part, also the rely–guarantee that makes the parts' conjunction the whole
+/// claim (`AET-WO-3303` §1.2):
+/// - each write asserts it changes only bits of the running action's
+///   [`footprint`] (a stored `BSRR`: writes only such bits);
+/// - an access to a block outside the part fails;
+/// - before each step every bit another part's action may change is
+///   arbitrary (the rely), so the part holds whatever those actions did.
+///
+/// With `image_only`, only the image and its rules.
+fn emit_schedule(
+    w: &mut String,
+    plan: &Plan,
+    facts: &Facts,
+    speeds: &Speeds,
+    scope: &Scope,
+    image_only: bool,
+) {
+    let g = &facts.gpio;
+    let part = scope.part.as_deref();
+    let ty = scope.type_suffix();
+    let sfx = scope.suffix();
     // Blocks: (Block variant, image field, words, gate).
     let mut blocks: Vec<(String, String, u32, Option<&Gate>)> =
         vec![("Rcc".into(), "rcc".into(), facts.rcc_words, None)];
-    for port in &plan.ports {
+    for port in &scope.ports {
         blocks.push((
             port_type(*port),
             port_field(*port),
@@ -2347,7 +2689,11 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             Some(&facts.ports[port].gate),
         ));
     }
-    for (name, pf) in &facts.peripherals {
+    for (name, pf) in facts
+        .peripherals
+        .iter()
+        .filter(|(n, _)| scope.peripherals.contains(*n))
+    {
         blocks.push((
             type_name(name),
             name.to_ascii_lowercase(),
@@ -2355,7 +2701,11 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             Some(&pf.gate),
         ));
     }
-    for (n, tf) in &facts.timers {
+    for (n, tf) in facts
+        .timers
+        .iter()
+        .filter(|(n, _)| scope.timers.contains(n))
+    {
         blocks.push((
             format!("Tim{n}"),
             format!("tim{n}"),
@@ -2363,13 +2713,10 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             Some(&tf.gate),
         ));
     }
-    // Each timer is enabled and started; the reset clock is read once.
-    let timer_actions = if plan.timers.is_empty() {
-        0
-    } else {
-        2 * plan.timers.len() + 1
-    };
-    let actions = plan.ports.len() + 2 * plan.peripherals.len() + plan.pins.len() + timer_actions;
+    // A part's image holds only its own blocks; any other is outside it.
+    let partial = blocks.len() < 1 + plan.ports.len() + plan.peripherals.len() + plan.timers.len();
+    let acts = scope.actions(plan);
+    let actions = acts.len();
     let unwind = blocks
         .iter()
         .map(|b| b.2 as usize)
@@ -2377,30 +2724,61 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         .unwrap_or(0)
         .max(actions)
         + 1;
+    // The rely, by (variant, offset): every bit of the image that an action
+    // outside the part may change. A stored `BSRR` is arbitrary whole.
+    let mut rely: Footprint = Footprint::new();
+    if part.is_some() {
+        for a in Scope::whole(plan)
+            .actions(plan)
+            .iter()
+            .filter(|a| !acts.contains(a))
+        {
+            for ((variant, offset), mask) in footprint(plan, facts, a) {
+                if blocks.iter().any(|b| b.0 == variant) {
+                    *rely.entry((variant, offset)).or_default() |= mask;
+                }
+            }
+        }
+        for port in &scope.ports {
+            if let Some(m) = rely.get_mut(&(port_type(*port), g.bsrr)) {
+                *m = !0;
+            }
+        }
+    }
 
     let _ = writeln!(
         w,
-        "\n\
-         use crate::board::sealed;\n\
-         use crate::*;\n\
-         \n\
-         /// The harness-owned register image, and the oracle for the ordering rules.\n\
+        "/// The harness-owned register image, and the oracle for the ordering rules.\n\
          #[derive(Clone, Copy)]\n\
-         struct Image {{"
+         struct Image{ty} {{"
     );
     for (_, field, words, _) in &blocks {
         let _ = writeln!(w, "    {field}: [u32; {words}],");
+    }
+    if part.is_some() {
+        let _ = writeln!(
+            w,
+            "    /// The running action, its `match` arm's number: whose footprint a\n    \
+             /// write may change.\n    \
+             running: u8,"
+        );
     }
     let _ = writeln!(
         w,
         "}}\n\
          \n\
-         impl Image {{\n    \
+         impl Image{ty} {{\n    \
              fn slot(&mut self, block: Block, offset: usize) -> &mut u32 {{\n        \
                  let words: &mut [u32] = match block {{"
     );
     for (variant, field, _, _) in &blocks {
         let _ = writeln!(w, "            Block::{variant} => &mut self.{field},");
+    }
+    if partial {
+        let _ = writeln!(
+            w,
+            "            _ => unreachable!(\"`clocked` refuses a block outside the part\"),"
+        );
     }
     let _ = writeln!(
         w,
@@ -2431,21 +2809,75 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             bit = gate.bit,
         );
     }
+    if let (true, Some(part)) = (partial, part) {
+        let _ = writeln!(
+            w,
+            "            _ => {{\n                \
+                 kani::assert(false, \"a block outside the {part} part was accessed\");\n                \
+                 kani::assume(false);\n            \
+             }}"
+        );
+    }
+    let _ = writeln!(w, "        }}\n    }}");
+    if let Some(part) = part {
+        let _ = writeln!(
+            w,
+            "\n    \
+             /// The bits the running action may change in one register: the\n    \
+             /// generator's footprint of that action, from the oracle's own facts.\n    \
+             fn footprint(&self, block: Block, offset: usize) -> u32 {{\n        \
+                 match (self.running, block, offset) {{"
+        );
+        for (a, act) in acts.iter().enumerate() {
+            for ((variant, offset), mask) in footprint(plan, facts, act) {
+                let _ = writeln!(
+                    w,
+                    "            ({a}, Block::{variant}, {offset:#x}) => {mask:#010x},"
+                );
+            }
+        }
+        let _ = writeln!(
+            w,
+            "            _ => 0,\n        \
+                 }}\n    \
+             }}\n\
+             \n    \
+             /// The rely: every bit an action outside the {part} part may change\n    \
+             /// is arbitrary. A stored `BSRR` is the last value written, which any\n    \
+             /// writer of its port replaces whole, so it is arbitrary whole.\n    \
+             fn rely(&mut self) {{"
+        );
+        for ((variant, offset), mask) in &rely {
+            let field = &blocks
+                .iter()
+                .find(|b| &b.0 == variant)
+                .expect("in the image")
+                .1;
+            let i = offset / 4;
+            if *mask == !0 {
+                let _ = writeln!(w, "        self.{field}[{i}] = kani::any();");
+            } else {
+                let _ = writeln!(
+                    w,
+                    "        self.{field}[{i}] = (self.{field}[{i}] & !{mask:#010x}) | (kani::any::<u32>() & {mask:#010x});"
+                );
+            }
+        }
+        let _ = writeln!(w, "    }}");
+    }
     let _ = writeln!(
         w,
-        "        }}\n    \
-         }}\n\
-         }}\n\
+        "}}\n\
          \n\
-         impl sealed::Sealed for Image {{}}\n\
+         impl sealed::Sealed for Image{ty} {{}}\n\
          \n\
-         impl Registers for Image {{\n    \
+         impl Registers for Image{ty} {{\n    \
              fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {{\n        \
                  self.clocked(block);"
     );
     // Nothing reads a timer: its start writes only, and after `CEN` nothing
     // touches it (`AET-WO-4300a` §1.3).
-    for n in plan.timers.keys() {
+    for n in &scope.timers {
         let _ = writeln!(
             w,
             "        kani::assert(block != Block::Tim{n}, \"TIM{n} was read\");"
@@ -2458,7 +2890,11 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n        \
              self.clocked(block);"
     );
-    for (name, pf) in &facts.peripherals {
+    for (name, pf) in facts
+        .peripherals
+        .iter()
+        .filter(|(n, _)| scope.peripherals.contains(*n))
+    {
         let t = type_name(name);
         let field = name.to_ascii_lowercase();
         let what = match plan.peripherals[name].kind {
@@ -2495,14 +2931,21 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     // GPIO write-time rules (adversarial E6, E7): a BSRR write may touch only a
     // solved output's set or reset bit; a MODER write may move only solved pins,
     // only to their final mode, and only once every other field of that pin
-    // already holds its final value (an output's level already high).
+    // already holds its final value (an output's level already high). In a
+    // part, only its own pins' rules: the footprint assertion refuses a write
+    // to any other pin's bits.
     let [mw, tw, sw, pw, aw] = g.widths;
-    for port in &plan.ports {
+    for port in &scope.ports {
         let t = port_type(*port);
         let field = port_field(*port);
         let on_port: Vec<(&String, &PinPlan)> =
             plan.pins.iter().filter(|(_, p)| p.port == *port).collect();
-        let allowed: Vec<String> = on_port
+        let own: Vec<(&String, &PinPlan)> = on_port
+            .iter()
+            .filter(|(n, _)| scope.pins.contains(*n))
+            .copied()
+            .collect();
+        let allowed: Vec<String> = own
             .iter()
             .filter(|(_, p)| p.role == Role::Output)
             .flat_map(|(n, _)| {
@@ -2516,26 +2959,46 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         } else {
             allowed.join(" || ")
         };
+        let owner = match part {
+            None => "no solved output owns".to_owned(),
+            Some(part) => format!("no solved output of the {part} part owns"),
+        };
+        let level = match part {
+            None => format!(
+                "self.{field}[{oi}] = (self.{field}[{oi}] & !(value >> 16)) | (value & 0xffff);",
+                oi = g.odr / 4
+            ),
+            Some(_) => format!(
+                "let level = (self.{field}[{oi}] & !(value >> 16)) | (value & 0xffff);\n            \
+                 kani::assert(\n                \
+                     (level ^ self.{field}[{oi}]) & !self.footprint(block, {odr:#04x}) == 0,\n                \
+                     \"{t} ODR: a level changed outside the running action's footprint\",\n            \
+                 );\n            \
+                 self.{field}[{oi}] = level;",
+                oi = g.odr / 4,
+                odr = g.odr,
+            ),
+        };
         let _ = writeln!(
             w,
             "        if block == Block::{t} && offset == {bsrr:#04x} {{\n            \
-                 kani::assert({rule}, \"{t} BSRR write touches a pin no solved output owns\");\n            \
+                 kani::assert({rule}, \"{t} BSRR write touches a pin {owner}\");\n            \
                  // The level it leaves: a set bit wins over a reset bit (RM0433 §11.4.7).\n            \
-                 self.{field}[{oi}] = (self.{field}[{oi}] & !(value >> 16)) | (value & 0xffff);\n        \
+                 {level}\n        \
              }}\n        \
              if block == Block::{t} && offset == {moder:#04x} {{\n            \
                  let old = self.{field}[{mi}];",
             bsrr = g.bsrr,
-            oi = g.odr / 4,
             moder = g.moder,
             mi = g.moder / 4,
         );
-        let mut solved_mask = 0u32;
-        for (pin, p) in &on_port {
+        let solved_mask = on_port.iter().fold(0u32, |m, (pin, _)| {
+            m | oracle_mask(mw, facts.pins[*pin].moder)
+        });
+        for (pin, p) in &own {
             let pf = &facts.pins[*pin];
             let (mode, otype, ospeed, pupd) = p.policy();
             let mmask = oracle_mask(mw, pf.moder);
-            solved_mask |= mmask;
             let mut ready = vec![
                 format!(
                     "self.{field}[{}] & {:#010x} == {:#010x}",
@@ -2592,6 +3055,28 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
              }}"
         );
     }
+    // The guarantee: a write changes only the running action's bits. A stored
+    // `BSRR` is replaced whole, so there the bits written are judged.
+    if part.is_some() {
+        let bsrr: Vec<String> = scope
+            .ports
+            .iter()
+            .map(|p| format!("(Block::{}, {:#04x})", port_type(*p), g.bsrr))
+            .collect();
+        let _ = writeln!(
+            w,
+            "        let changed = if matches!((block, offset), {}) {{\n            \
+                 value\n        \
+             }} else {{\n            \
+                 *self.slot(block, offset) ^ value\n        \
+             }};\n        \
+             kani::assert(\n            \
+                 changed & !self.footprint(block, offset) == 0,\n            \
+                 \"a write changed a bit outside the running action's footprint\",\n        \
+             );",
+            bsrr.join(" | ")
+        );
+    }
     let _ = writeln!(
         w,
         "        *self.slot(block, offset) = value;\n    \
@@ -2606,51 +3091,84 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          }}\n\
          }}\n"
     );
+    if image_only {
+        return;
+    }
 
     // The final-state oracle.
-    let timingr_params: Vec<String> = plan
-        .peripherals
-        .iter()
-        .filter(|(_, p)| p.kind == Kind::I2c)
+    let i2c_in_scope = || {
+        plan.peripherals
+            .iter()
+            .filter(|(n, p)| p.kind == Kind::I2c && scope.peripherals.contains(*n))
+    };
+    let timingr_params: Vec<String> = i2c_in_scope()
         .map(|(n, _)| format!(", {}_timingr: u32", n.to_ascii_lowercase()))
         .collect();
+    match part {
+        None => {
+            let _ = writeln!(
+                w,
+                "/// The state the specification allows, from any starting image."
+            );
+        }
+        Some(part) => {
+            let _ = writeln!(
+                w,
+                "/// The {part} part's share of the state the specification allows, from\n\
+                 /// any starting image: its own fields as solved, and every bit no action\n\
+                 /// may change unchanged. Another part's bits are that part's to prove."
+            );
+        }
+    }
     let _ = writeln!(
         w,
-        "/// The state the specification allows, from any starting image.\n\
-         fn check_final(before: &Image, after: &Image{}) {{",
+        "fn check_final{sfx}(before: &Image{ty}, after: &Image{ty}{}) {{",
         timingr_params.concat()
     );
-    for port in &plan.ports {
+    for port in &scope.ports {
         let field = port_field(*port);
         let mut expect: BTreeMap<u32, (u32, u32)> = BTreeMap::new();
+        let mut own: BTreeMap<u32, (u32, u32)> = BTreeMap::new();
         let [mw, tw, sw, pw, aw] = g.widths;
         let mut touched: BTreeSet<u32> = BTreeSet::new();
         for (pin, p) in plan.pins.iter().filter(|(_, p)| p.port == *port) {
             let pf = &facts.pins[pin];
             let (mode, otype, ospeed, pupd) = p.policy();
-            expect_field(&mut expect, g.moder, pf.moder, mw, mode);
-            expect_field(&mut expect, g.otyper, pf.otyper, tw, otype);
-            expect_field(&mut expect, g.ospeedr, pf.ospeedr, sw, ospeed);
-            expect_field(&mut expect, g.pupdr, pf.pupdr, pw, pupd);
+            let fields = |acc: &mut BTreeMap<u32, (u32, u32)>| {
+                expect_field(acc, g.moder, pf.moder, mw, mode);
+                expect_field(acc, g.otyper, pf.otyper, tw, otype);
+                expect_field(acc, g.ospeedr, pf.ospeedr, sw, ospeed);
+                expect_field(acc, g.pupdr, pf.pupdr, pw, pupd);
+                if p.role != Role::Output {
+                    expect_field(acc, g.afr[pf.afr_index as usize], pf.afr, aw, p.af);
+                }
+            };
+            fields(&mut expect);
+            if scope.pins.contains(pin) {
+                fields(&mut own);
+            }
             if p.role == Role::Output {
                 touched.insert(g.bsrr);
-            } else {
-                expect_field(&mut expect, g.afr[pf.afr_index as usize], pf.afr, aw, p.af);
             }
         }
-        for (reg, (mask, value)) in &expect {
+        for (reg, (mask, _)) in &expect {
             let i = reg / 4;
+            let t = port_type(*port);
+            if let Some((own_mask, own_value)) = own.get(reg) {
+                let _ = writeln!(
+                    w,
+                    "    kani::assert(\n        \
+                         after.{field}[{i}] & {own_mask:#010x} == {own_value:#010x},\n        \
+                         \"{t} word {i}: a solved pin's field is not what the specification fixes\",\n    \
+                     );"
+                );
+            }
             let _ = writeln!(
                 w,
                 "    kani::assert(\n        \
-                     after.{field}[{i}] & {mask:#010x} == {value:#010x},\n        \
-                     \"{t} word {i}: a solved pin's field is not what the specification fixes\",\n    \
-                 );\n    \
-                 kani::assert(\n        \
                      after.{field}[{i}] & !{mask:#010x} == before.{field}[{i}] & !{mask:#010x},\n        \
                      \"{t} word {i}: an unsolved pin's field changed\",\n    \
-                 );",
-                t = port_type(*port),
+                 );"
             );
             touched.insert(*reg);
         }
@@ -2669,7 +3187,7 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             for (pin, _) in &outputs {
                 let bit = 1u32 << facts.pins[*pin].bs;
                 owned |= bit;
-                if plan.is_select(pin) {
+                if plan.is_select(pin) && scope.pins.contains(*pin) {
                     let _ = writeln!(
                         w,
                         "    kani::assert(after.{field}[{i}] & {bit:#010x} != 0, \"{pin}, a chip select, is not high once its bus started\");"
@@ -2695,14 +3213,28 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             }
         }
     }
-    // RCC: before plus exactly the gates.
+    // RCC: before plus exactly the gates; in a part, its own gates, and
+    // another part's gate bits are the rely's.
     let mut gates: BTreeMap<u32, u32> = BTreeMap::new();
     for gate in facts
         .ports
-        .values()
-        .map(|p| &p.gate)
-        .chain(facts.peripherals.values().map(|p| &p.gate))
-        .chain(facts.timers.values().map(|t| &t.gate))
+        .iter()
+        .filter(|(p, _)| scope.ports.contains(p))
+        .map(|(_, p)| &p.gate)
+        .chain(
+            facts
+                .peripherals
+                .iter()
+                .filter(|(n, _)| scope.peripherals.contains(*n))
+                .map(|(_, p)| &p.gate),
+        )
+        .chain(
+            facts
+                .timers
+                .iter()
+                .filter(|(n, _)| scope.timers.contains(n))
+                .map(|(_, t)| &t.gate),
+        )
     {
         *gates.entry(gate.offset / 4).or_default() |= 1u32 << gate.bit;
     }
@@ -2710,15 +3242,47 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     for (word, mask) in &gates {
         let _ = writeln!(w, "    rcc[{word}] |= {mask:#010x};");
     }
-    let _ = writeln!(
-        w,
-        "    // Word by word: `==` on the arrays is a `memcmp` loop under CBMC.\n    \
-         for i in 0..{n} {{\n        \
-             kani::assert(after.rcc[i] == rcc[i], \"RCC is not before plus exactly the solved clock gates\");\n    \
-         }}",
-        n = facts.rcc_words
-    );
-    for (name, pf) in &facts.peripherals {
+    if part.is_none() {
+        let _ = writeln!(
+            w,
+            "    // Word by word: `==` on the arrays is a `memcmp` loop under CBMC.\n    \
+             for i in 0..{n} {{\n        \
+                 kani::assert(after.rcc[i] == rcc[i], \"RCC is not before plus exactly the solved clock gates\");\n    \
+             }}",
+            n = facts.rcc_words
+        );
+    } else {
+        let others: Vec<(u32, u32)> = rely
+            .iter()
+            .filter(|((v, _), _)| v == "Rcc")
+            .map(|((_, o), m)| (o / 4, *m))
+            .collect();
+        let _ = writeln!(
+            w,
+            "    let {}rely = [0u32; {n}];",
+            if others.is_empty() { "" } else { "mut " },
+            n = facts.rcc_words
+        );
+        for (word, mask) in &others {
+            let _ = writeln!(w, "    rely[{word}] = {mask:#010x};");
+        }
+        let _ = writeln!(
+            w,
+            "    // Word by word: `==` on the arrays is a `memcmp` loop under CBMC.\n    \
+             for i in 0..{n} {{\n        \
+                 kani::assert(\n            \
+                     after.rcc[i] & !rely[i] == rcc[i] & !rely[i],\n            \
+                     \"RCC is not before plus exactly the solved clock gates\",\n        \
+                 );\n    \
+             }}",
+            n = facts.rcc_words
+        );
+    }
+    for (name, pf) in facts
+        .peripherals
+        .iter()
+        .filter(|(n, _)| scope.peripherals.contains(*n))
+    {
         let t = type_name(name);
         let field = name.to_ascii_lowercase();
         let cr1 = pf.cr1 / 4;
@@ -2790,7 +3354,7 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     // Each timer: every register its start writes holds the solved value, and
     // every other word is unchanged.
     if let Some(tf) = &facts.tim {
-        for (n, t) in &plan.timers {
+        for (n, t) in plan.timers.iter().filter(|(n, _)| scope.timers.contains(n)) {
             let writes = timer_oracle(*n, t, tf);
             for (name, offset, value) in &writes {
                 let _ = writeln!(
@@ -2812,20 +3376,41 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     let _ = writeln!(w, "}}\n");
 
     // The scheduler.
+    match part {
+        None => {
+            let _ = writeln!(
+                w,
+                "/// Every order the typestate API admits: at each of {actions} steps, any\n\
+                 /// action whose inputs exist. The `assume` admits only those orders; the\n\
+                 /// types forbid the rest at compile time. Each I2C peripheral writes zero or\n\
+                 /// one byte when it starts; each SPI peripheral takes its bus's chip selects;\n\
+                 /// and the output pins are driven zero or one time first."
+            );
+        }
+        Some(part) => {
+            let _ = writeln!(
+                w,
+                "/// The {part} part of the whole schedule (`AET-WO-3303` §1.2): every order\n\
+                 /// the typestate API admits of its {actions} actions, under the rely that\n\
+                 /// any other part's action may have run between any two of them. Each\n\
+                 /// write may change only its running action's footprint; the parts'\n\
+                 /// footprints are disjoint, so together the parts prove every schedule\n\
+                 /// of the whole board."
+            );
+        }
+    }
     let _ = writeln!(
         w,
-        "/// Every order the typestate API admits: at each of {actions} steps, any\n\
-         /// action whose inputs exist. The `assume` admits only those orders; the\n\
-         /// types forbid the rest at compile time. Each I2C peripheral writes zero or\n\
-         /// one byte when it starts; each SPI peripheral takes its bus's chip selects;\n\
-         /// and the output pins are driven zero or one time first.\n\
-         #[kani::proof]\n\
+        "#[kani::proof]\n\
          #[kani::unwind({unwind})]\n\
-         fn every_valid_sequence() {{\n    \
-             let mut img = Image {{"
+         fn every_valid_sequence{sfx}() {{\n    \
+             let mut img = Image{ty} {{"
     );
     for (_, field, _, _) in &blocks {
         let _ = writeln!(w, "        {field}: kani::any(),");
+    }
+    if part.is_some() {
+        let _ = writeln!(w, "        running: u8::MAX,");
     }
     let _ = writeln!(
         w,
@@ -2834,62 +3419,81 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          let board = Board::take().unwrap();\n    \
          let mut rcc = board.rcc;"
     );
-    for port in &plan.ports {
+    for port in &scope.ports {
         let _ = writeln!(
             w,
             "    let mut {f} = Some(board.{f});",
             f = port_field(*port)
         );
     }
-    for name in plan.peripherals.keys() {
+    for name in plan
+        .peripherals
+        .keys()
+        .filter(|n| scope.peripherals.contains(*n))
+    {
         let f = name.to_ascii_lowercase();
         let _ = writeln!(
             w,
             "    let mut {f} = Some(board.{f});\n    let mut {f}_clocked = None;\n    let mut {f}_done = false;"
         );
     }
-    for (name, p) in &plan.peripherals {
-        if p.kind == Kind::I2c {
-            let _ = writeln!(
-                w,
-                "    let mut {}_timingr = 0u32;",
-                name.to_ascii_lowercase()
-            );
-        }
+    for (name, _) in i2c_in_scope() {
+        let _ = writeln!(
+            w,
+            "    let mut {}_timingr = 0u32;",
+            name.to_ascii_lowercase()
+        );
     }
-    for pin in plan.pins.keys() {
+    for pin in plan.pins.keys().filter(|p| scope.pins.contains(*p)) {
         let f = pin_field(pin);
         let _ = writeln!(w, "    let mut {f} = None;\n    let mut {f}_done = None;");
     }
-    if !plan.timers.is_empty() {
+    if !scope.timers.is_empty() {
         let _ = writeln!(w, "    let mut clock = None;");
     }
-    for n in plan.timers.keys() {
+    for n in &scope.timers {
         let _ = writeln!(
             w,
             "    let mut tim{n} = Some(board.tim{n});\n    let mut tim{n}_clocked = None;\n    let mut tim{n}_done = false;"
         );
     }
+    let rely_step = if part.is_some() {
+        "\n        img.rely();"
+    } else {
+        ""
+    };
     let _ = writeln!(
         w,
-        "    for _ in 0..{actions} {{\n        \
+        "    for _ in 0..{actions} {{{rely_step}\n        \
              let action: u8 = kani::any();\n        \
              match action {{"
     );
+    // In a part, each arm names itself the running action once its inputs
+    // exist.
+    let running = |w: &mut String, a: usize| {
+        if part.is_some() {
+            let _ = writeln!(w, "                img.running = {a};");
+        }
+    };
     let mut a = 0usize;
-    for port in &plan.ports {
+    for port in &scope.ports {
+        debug_assert_eq!(acts[a], Action::Port(*port));
         let f = port_field(*port);
         let pins: Vec<String> = plan
             .pins
             .keys()
-            .filter(|n| plan.pins[*n].port == *port)
+            .filter(|n| plan.pins[*n].port == *port && scope.pins.contains(*n))
             .map(|n| pin_field(n))
             .collect();
         let _ = writeln!(
             w,
             "            {a} => {{\n                \
-                 kani::assume({f}.is_some());\n                \
-                 let pins = rcc.enable_{f}(&mut img, {f}.take().unwrap()).split();"
+                 kani::assume({f}.is_some());"
+        );
+        running(w, a);
+        let _ = writeln!(
+            w,
+            "                let pins = rcc.enable_{f}(&mut img, {f}.take().unwrap()).split();"
         );
         for p in &pins {
             let _ = writeln!(w, "                {p} = Some(pins.{p});");
@@ -2897,24 +3501,38 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let _ = writeln!(w, "            }}");
         a += 1;
     }
-    for name in plan.peripherals.keys() {
+    for name in plan
+        .peripherals
+        .keys()
+        .filter(|n| scope.peripherals.contains(*n))
+    {
+        debug_assert_eq!(acts[a], Action::Clock(name.clone()));
         let f = name.to_ascii_lowercase();
         let _ = writeln!(
             w,
             "            {a} => {{\n                \
-                 kani::assume({f}.is_some());\n                \
-                 {f}_clocked = Some(rcc.enable_{f}(&mut img, {f}.take().unwrap()));\n            \
+                 kani::assume({f}.is_some());"
+        );
+        running(w, a);
+        let _ = writeln!(
+            w,
+            "                {f}_clocked = Some(rcc.enable_{f}(&mut img, {f}.take().unwrap()));\n            \
              }}"
         );
         a += 1;
     }
-    for (pin, p) in &plan.pins {
+    for (pin, p) in plan.pins.iter().filter(|(n, _)| scope.pins.contains(*n)) {
+        debug_assert_eq!(acts[a], Action::Pin(pin.clone()));
         let f = pin_field(pin);
         let _ = writeln!(
             w,
             "            {a} => {{\n                \
-                 kani::assume({f}.is_some());\n                \
-                 let {mutable}pin = {f}.take().unwrap().{m}(&mut img);",
+                 kani::assume({f}.is_some());"
+        );
+        running(w, a);
+        let _ = writeln!(
+            w,
+            "                let {mutable}pin = {f}.take().unwrap().{m}(&mut img);",
             m = method(p),
             mutable = if p.role == Role::Output { "mut " } else { "" },
         );
@@ -2942,7 +3560,12 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let _ = writeln!(w, "                {f}_done = Some(pin);\n            }}");
         a += 1;
     }
-    for (name, p) in &plan.peripherals {
+    for (name, p) in plan
+        .peripherals
+        .iter()
+        .filter(|(n, _)| scope.peripherals.contains(*n))
+    {
+        debug_assert_eq!(acts[a], Action::Start(name.clone()));
         let f = name.to_ascii_lowercase();
         let pins: Vec<String> = p.pins.values().map(|n| pin_field(n)).collect();
         let selects: Vec<String> = plan
@@ -2975,12 +3598,13 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let _ = writeln!(
             w,
             "            {a} => {{\n                \
-                 kani::assume({f}_clocked.is_some() && {});\n                \
-                 let i = {f}_clocked.take().unwrap();",
+                 kani::assume({f}_clocked.is_some() && {});",
             ready.join(" && ")
         );
+        running(w, a);
+        let _ = writeln!(w, "                let i = {f}_clocked.take().unwrap();");
         // A byte written to a peripheral must not touch any output's level.
-        let bsrr_ports: Vec<String> = plan
+        let bsrr_ports: Vec<String> = scope
             .ports
             .iter()
             .map(|p| format!("img.{}[{}]", port_field(*p), facts.gpio.bsrr / 4))
@@ -3053,12 +3677,17 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     // clocked, then started from its own configured pins and the token. The
     // schedule runs on the reset clock; `reset_clock_is_ok_exactly_at_reset`
     // proves the check itself.
-    if !plan.timers.is_empty() {
+    if !scope.timers.is_empty() {
+        debug_assert_eq!(acts[a], Action::ResetClock);
         let _ = writeln!(
             w,
             "            {a} => {{\n                \
-                 kani::assume(clock.is_none());\n                \
-                 let read = rcc.reset_clock(&mut img);\n                \
+                 kani::assume(clock.is_none());"
+        );
+        running(w, a);
+        let _ = writeln!(
+            w,
+            "                let read = rcc.reset_clock(&mut img);\n                \
                  kani::assume(read.is_ok());\n                \
                  clock = read.ok();\n                \
                  kani::cover!(true, \"the reset clock was read\");\n            \
@@ -3066,17 +3695,23 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         );
         a += 1;
     }
-    for n in plan.timers.keys() {
+    for n in &scope.timers {
+        debug_assert_eq!(acts[a], Action::TimerClock(*n));
         let _ = writeln!(
             w,
             "            {a} => {{\n                \
-                 kani::assume(tim{n}.is_some());\n                \
-                 tim{n}_clocked = Some(rcc.enable_tim{n}(&mut img, tim{n}.take().unwrap()));\n            \
+                 kani::assume(tim{n}.is_some());"
+        );
+        running(w, a);
+        let _ = writeln!(
+            w,
+            "                tim{n}_clocked = Some(rcc.enable_tim{n}(&mut img, tim{n}.take().unwrap()));\n            \
              }}"
         );
         a += 1;
     }
-    for (n, t) in &plan.timers {
+    for (n, t) in plan.timers.iter().filter(|(n, _)| scope.timers.contains(n)) {
+        debug_assert_eq!(acts[a], Action::TimerStart(*n));
         let pins: Vec<String> = t.channels.values().map(|(p, _)| pin_field(p)).collect();
         let ready: Vec<String> = pins
             .iter()
@@ -3089,38 +3724,47 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let _ = writeln!(
             w,
             "            {a} => {{\n                \
-                 kani::assume(tim{n}_clocked.is_some() && clock.is_some(){ready});\n                \
-                 let _running = tim{n}_clocked\n                    \
+                 kani::assume(tim{n}_clocked.is_some() && clock.is_some(){ready});",
+            ready = ready.concat(),
+        );
+        running(w, a);
+        let _ = writeln!(
+            w,
+            "                let _running = tim{n}_clocked\n                    \
                      .take()\n                    \
                      .unwrap()\n                    \
                      .start_outputs(&mut img, clock.as_ref().unwrap(){args});\n                \
                  kani::cover!(true, \"TIM{n} started\");\n                \
                  tim{n}_done = true;\n            \
              }}",
-            ready = ready.concat(),
             args = args.concat(),
         );
         a += 1;
     }
+    debug_assert_eq!(a, actions);
     let _ = writeln!(
         w,
         "            _ => kani::assume(false),\n        }}\n    }}"
     );
-    for name in plan.peripherals.keys() {
+    for name in plan
+        .peripherals
+        .keys()
+        .filter(|n| scope.peripherals.contains(*n))
+    {
         let f = name.to_ascii_lowercase();
         let _ = writeln!(
             w,
             "    kani::assert({f}_done, \"the schedule did not start {name}\");"
         );
     }
-    for n in plan.timers.keys() {
+    for n in &scope.timers {
         let _ = writeln!(
             w,
             "    kani::assert(tim{n}_done, \"the schedule did not start TIM{n}\");"
         );
     }
     // A chip select is configured before its bus starts, which takes it.
-    for (pin, p) in &plan.pins {
+    for (pin, p) in plan.pins.iter().filter(|(n, _)| scope.pins.contains(*n)) {
         if p.role == Role::Output && !plan.is_select(pin) {
             let f = pin_field(pin);
             let _ = writeln!(
@@ -3129,23 +3773,16 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             );
         }
     }
-    let timingr_args: Vec<String> = plan
-        .peripherals
-        .iter()
-        .filter(|(_, p)| p.kind == Kind::I2c)
+    let timingr_args: Vec<String> = i2c_in_scope()
         .map(|(n, _)| format!(", {}_timingr", n.to_ascii_lowercase()))
         .collect();
     let _ = writeln!(
         w,
-        "    check_final(&before, &img{});\n    \
+        "    check_final{sfx}(&before, &img{});\n    \
          kani::cover!(true, \"the end of a complete schedule is reachable\");\n\
          }}",
         timingr_args.concat()
     );
-    emit_transfer_proofs(w, plan, facts, speeds);
-    emit_spi_transfer_proofs(w, plan, facts);
-    emit_timer_proofs(w, plan, facts);
-    s
 }
 
 /// The proofs of the motor outputs (`AET-WO-4300a` §1.3), when the topology
@@ -4436,5 +5073,77 @@ mod tests {
                 reference: "U5".into(),
             }
         );
+    }
+
+    /// The PWM motor fixture's plan and facts.
+    fn motor_plan() -> (Plan, Facts) {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../aethelgard-cli/tests/fixtures/motors-pwm.json");
+        let spec: aethelgard_ir::Specification =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let solved = aethelgard_ir::solve(&spec, &table(), &"0".repeat(64)).unwrap();
+        let plan = Plan::new("b", &solved, &table()).unwrap();
+        let facts = Facts::new(&plan, &cmsis::register_facts().unwrap()).unwrap();
+        (plan, facts)
+    }
+
+    #[test]
+    fn footprints_that_share_a_bit_are_refused() {
+        let fp = |mask: u32| Footprint::from([(("Rcc".to_owned(), 0xe0), mask)]);
+        let owners = |mask: u32| {
+            vec![
+                ("the GPIOA enable".to_owned(), fp(0x1)),
+                ("the i2c1 part".to_owned(), fp(mask)),
+            ]
+        };
+        assert_eq!(disjoint(&owners(0x2)), Ok(()));
+        assert_eq!(
+            disjoint(&owners(0x3)),
+            Err(BoardError::FootprintOverlap {
+                first: "the GPIOA enable".into(),
+                second: "the i2c1 part".into(),
+                register: "Rcc at 0xe0, bits 0x00000001".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_motor_plan_splits_into_disjoint_parts_that_schedule_every_action() {
+        let (plan, facts) = motor_plan();
+        let mut parts = parts(&plan);
+        let names: Vec<&str> = parts.iter().filter_map(|p| p.part.as_deref()).collect();
+        assert_eq!(names, ["i2c1", "spi1", "tim1"]);
+        assert_eq!(check_parts(&plan, &facts, &parts), Ok(()));
+        // The chip select is SPI1's; port A's enable is in both parts on it.
+        assert!(parts[1].pins.contains("PA0"));
+        assert_eq!(
+            parts[2].actions(&plan)[..2],
+            [Action::Port('A'), Action::Pin("PA10".into())]
+        );
+        // A part left out leaves its actions unscheduled.
+        assert_eq!(
+            check_parts(&plan, &facts, &parts[..2]),
+            Err(BoardError::UnscheduledAction {
+                action: "the PA10 configure".into(),
+            })
+        );
+        // A pin in two parts puts its fields in two footprints.
+        parts[2].pins.insert("PA0".into());
+        assert_eq!(
+            check_parts(&plan, &facts, &parts),
+            Err(BoardError::FootprintOverlap {
+                first: "the spi1 part".into(),
+                second: "the tim1 part".into(),
+                register: "GpioA at 0x0, bits 0x00000003".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_board_without_timers_keeps_the_whole_schedule_harness() {
+        let proofs = &generate("b", &solved(), &table()).unwrap()["src/proofs.rs"];
+        assert!(proofs.contains("fn every_valid_sequence() {"));
+        assert!(!proofs.contains("fn every_valid_sequence_"));
+        assert!(!proofs.contains("fn rely("));
     }
 }
