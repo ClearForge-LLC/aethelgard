@@ -1114,8 +1114,11 @@ mod tests {
         let got = tx_at_send(&tx, "usart1", 0x28, &[boot(&routed, &[])]);
         assert_eq!(got, [Some((0x8_0000, 0x70))]);
         assert!(got[0].is_some_and(|(m, a)| tx.routed(m, a)));
-        // ADV-1: PA9 an input while the pattern goes out, routed afterwards.
-        let got = tx_at_send(&tx, "usart1", 0x28, &[boot(&routed[..1], &routed[1..])]);
+        // ADV-1: PA9 an input while the pattern goes out, routed afterwards,
+        // before the pattern's next byte: the first TDR write is the one.
+        let mut after = routed[1..].to_vec();
+        after.push(send.clone());
+        let got = tx_at_send(&tx, "usart1", 0x28, &[boot(&routed[..1], &after)]);
         assert_eq!(got, [Some((0, 0x70))]);
         assert!(!got[0].is_some_and(|(m, a)| tx.routed(m, a)));
         // A half-word write to MODER cannot be rebuilt: not routed.
