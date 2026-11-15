@@ -738,6 +738,20 @@ fn the_search_backtracks_into_the_buses_for_a_port() {
 }
 
 #[test]
+fn a_port_s_tx_and_rx_never_share_a_pin() {
+    // A table whose PA2 carries USART2's TX and RX both: RX takes PA3.
+    let mut t = table();
+    let pa2 = &mut t.pins.get_mut("PA2").unwrap().alternate_functions;
+    pa2.insert("USART2_RX".into(), 7);
+    let s = spec(vec![port("C", Some("USART2"), None, None)]);
+    let t = solve(&s, &t, HASH).unwrap();
+    assert_eq!(
+        placed(&t, "C"),
+        ("USART2".into(), "PA2".into(), "PA3".into())
+    );
+}
+
+#[test]
 fn a_baud_no_brr_reaches_is_refused_by_name() {
     for baud in [900, 4_200_000] {
         let mut p = port("C", None, None, None);
