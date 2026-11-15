@@ -1002,7 +1002,7 @@ fn connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers() {
 }
 
 /// `AET-WO-4300d2` §1.9: the Sentinel-02 power fixture (slice A's copy without
-/// its crossing, which waits for `K6` and the ICM-20948's footprint, FEEDBACK
+/// its crossing, which waits for the ICM-20948's footprint, FEEDBACK
 /// D2) emits a schematic that passes ERC and a board that passes DRC by the
 /// specification's rules with schematic parity, with no finding of any kind,
 /// its loop rules measured from the board, every class named with its width,

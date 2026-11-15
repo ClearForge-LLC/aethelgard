@@ -1,5 +1,5 @@
 //! `AET-WO-4300d2`: the power tree on the board, judged without KiCad. The
-//! Sentinel-02 fixture (without its crossing, which waits for `K6` and the
+//! Sentinel-02 fixture (without its crossing, which waits for the
 //! ICM-20948's footprint, FEEDBACK D2) is emitted, read back, and its loop
 //! rules measured from the board as `check drc --spec` measures them; then
 //! each loop part is moved off its pin and fails its rule (§5.1), and a
@@ -129,7 +129,7 @@ fn a_rule_whose_part_is_missing_is_refused() {
 
 /// One translator carries one chip select: a crossing on a bus of two
 /// devices is refused by name at the emitter (reached here around
-/// `validate`, which refuses every crossing until `K6`).
+/// `validate`).
 #[test]
 fn a_crossing_on_a_bus_of_two_devices_is_not_drawable() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

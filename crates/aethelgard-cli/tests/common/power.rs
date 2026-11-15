@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 
 /// The fixture without its crossing and the 1.8 V IMU behind it, which wait
-/// for the sensor table's output delay (`K6`).
+/// for the ICM-20948's footprint (FEEDBACK D2); its output delay is in the sensor table (`K6`).
 pub fn power_tree() -> Value {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../aethelgard-ir/tests/fixtures/sentinel-02-power.json");

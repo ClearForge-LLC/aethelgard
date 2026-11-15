@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "parts": [
     {
       "part": "BME280",
@@ -33,6 +33,7 @@
       "pin_capacitance": {
         "max_femtofarads": null
       },
+      "spi_output_delay_max_ns": null,
       "renode": "I2C.BME280",
       "script": null,
       "citations": {
@@ -66,6 +67,7 @@
           "section": "6.4.1 (no pin capacitance is printed; only the I2C bus load Cb, 400 pF on SDI and SCK)",
           "sha256": "a2ccdb449fec94380742fe8eec851a11d9bd4142252d332b34682b4deecd7d89"
         },
+        "spi_output_delay": null,
         "lifecycle": {
           "document": "Bosch Sensortec BME280 product page",
           "revision": "fetched 2026-11-15",
@@ -109,6 +111,7 @@
       "pin_capacitance": {
         "max_femtofarads": null
       },
+      "spi_output_delay_max_ns": 59,
       "renode": "Sensors.ICM20948",
       "script": {
         "configure": {
@@ -189,6 +192,12 @@
           "section": "3.4 (digital input CI \"< 10\" pF in the TYP column: a typical, not a maximum; no figure for SDO)",
           "sha256": "0588625f4f1d6d27382a4322f48073dc0ce569e537c63786b13aab3eeb76b718"
         },
+        "spi_output_delay": {
+          "document": "TDK InvenSense DS-000189 ICM-20948",
+          "revision": "1.6 (2024-03-12)",
+          "section": "table 8 (SPI timing, 7 MHz), p. 17: tVD.SDO max 59 ns at 20 pF; note 1: based on characterization of 5 parts, over temperature and voltage, on an evaluation board or in sockets (characterized, not production tested)",
+          "sha256": "0588625f4f1d6d27382a4322f48073dc0ce569e537c63786b13aab3eeb76b718"
+        },
         "lifecycle": {
           "document": "TDK InvenSense ICM-20948 product page",
           "revision": "fetched 2026-11-15",
@@ -238,6 +247,7 @@
       "pin_capacitance": {
         "max_femtofarads": null
       },
+      "spi_output_delay_max_ns": null,
       "renode": "Sensors.ICP_101xx",
       "script": {
         "configure": {
@@ -292,6 +302,7 @@
           "section": "3.4 (no pin capacitance is printed; only the bus load CB, 400 pF), p. 10",
           "sha256": "249f1431a27dc70d39be1dfd39ff36429d1f66bdea115178ed05e3e3275a2d58"
         },
+        "spi_output_delay": null,
         "lifecycle": {
           "document": "TDK InvenSense ICP-10111 product page",
           "revision": "fetched 2026-11-15",
@@ -343,6 +354,7 @@
       "pin_capacitance": {
         "max_femtofarads": null
       },
+      "spi_output_delay_max_ns": null,
       "renode": null,
       "script": null,
       "citations": {
@@ -371,6 +383,7 @@
           "section": "6.5 (input capacitance 4 pF, typical only)",
           "sha256": "78212e91e478035a91165397a8de8a90bfc776759dc445243c033537f0c4b789"
         },
+        "spi_output_delay": null,
         "lifecycle": {
           "document": "Texas Instruments TMP117 product page",
           "revision": "fetched 2026-11-15",
@@ -411,6 +424,7 @@
       "pin_capacitance": {
         "max_femtofarads": 8000
       },
+      "spi_output_delay_max_ns": null,
       "renode": "SPI.GenericSpiFlash",
       "script": null,
       "citations": {
@@ -439,6 +453,7 @@
           "section": "9.4 (CIN 6 pF max, Cout 8 pF max; the larger is held; note 1: tested on sample basis at TA 25 C, VCC 3.0 V). 9.5's input TR/TF 5 ns is an AC measurement condition, not an input requirement",
           "sha256": "452d906c3be0da077fd751a2b8aa062629caf6081f8dd1eda04880854ce7c8f9"
         },
+        "spi_output_delay": null,
         "lifecycle": {
           "document": "Winbond W25Q64JV parts catalog",
           "revision": "fetched 2026-11-15",

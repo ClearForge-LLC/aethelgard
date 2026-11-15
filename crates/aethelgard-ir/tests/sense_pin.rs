@@ -36,7 +36,7 @@ fn table_of(rows: &[Row<'_>]) -> PinTable {
     }
 }
 
-/// The fixture without its crossing and the IMU behind it (`K6`).
+/// The fixture without its crossing and the IMU behind it (it waits for the ICM-20948's footprint).
 fn base() -> Value {
     let mut v: Value =
         serde_json::from_str(include_str!("fixtures/sentinel-02-power.json")).unwrap();

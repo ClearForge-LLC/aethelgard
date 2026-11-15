@@ -2006,14 +2006,31 @@ pub fn check(spec: &Specification) -> Result<Option<Checked>, IrValidationError>
     if spec.power.is_none() {
         return Ok(None);
     }
-    // No sensor row carries its SPI output delay until `4210`'s schema 3 is
-    // on `main` (`K6`): every crossing's round trip is refused until then.
+    let sensors = crate::parts::table()?;
     check_against(
         spec,
         crate::power_parts::table()?,
-        crate::parts::table()?,
-        &BTreeMap::new(),
+        sensors,
+        &output_delays(sensors),
     )
+}
+
+/// The output delay each SPI part's row holds, with its citation as the
+/// verdict names it (`AET-WO-4300d2` K6). A part whose row holds none is
+/// absent, and a crossing in front of it is refused `OutputDelayMissing`.
+pub fn output_delays(sensors: &crate::parts::PartsTable) -> OutputDelays {
+    sensors
+        .parts()
+        .iter()
+        .filter_map(|p| {
+            let ns = p.spi_output_delay_max_ns?;
+            let c = p.citations.spi_output_delay.as_ref()?;
+            Some((
+                p.part.clone(),
+                (ns, format!("{} {}, {}", c.document, c.revision, c.section)),
+            ))
+        })
+        .collect()
 }
 
 /// Each sensor's SPI output delay after the clock edge, at most, ns, with its
