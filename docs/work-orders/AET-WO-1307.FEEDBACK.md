@@ -275,3 +275,155 @@ Steering read after the merge of `origin/main` (PR #124): architecture §2.12, �
 - **Not run:** `img.sh`, the capped image runner (container denied).
 - **Data:** `s2-results.tsv` (labels: `b` appears twice, v1 then v2; `s3order` is order A, `s3orderB` is order B; `a` rows are hand-formatted), `s3-renamings.tsv`, and the figure `s1-d3-u1-pads-28-44.png`.
 - **Logs:** under `~/.cache/aet-1307/` (not committed).
+
+---
+
+# Build (§2), to the ruling (K1–K6, F2)
+
+**Base:** `origin/main` `c621461` (AET-WO-4200) merged as `34b4f8a`; build commits `f798bc3` onward. The spike's sections above are unchanged. `spike/1307/` is deleted by the build; its probes stay in git history at `f4a09e7`, and its tables are the ones above.
+
+Labels as above: **[measured]**, **[read]**, **[inferred]**.
+
+## B1. K5: the KiCad gate, first [measured]
+
+Before any build code, the spike's two probes (`s2-c-inward.patch` + `s3-order-b.patch`, `AET_C=2`) were built on `34b4f8a`. ERC, then `check drc --spec --schematic` (the specification's rules, schematic parity) ran in the pinned image on the reference, `four`, D1 and D3: **every board exits 0 with no finding of any kind**, `unconnected_items` included. KiCad 10.0.7 does not refuse a via under the LQFP's own body. No §7 stop.
+
+The same gate on the final binary (`409d7b7`'s tree) also exits 0 with no finding on the reference, `four`, D1, D3 and D1 at 2 layers (B5). The board sha256 prefixes are `59a8f1dc`, `455def47`, `72a43bee`, `d039f6cb` and `4651cfb4`. It is now held by a tier-2 test (B7).
+
+**Containers.** Every container this build ran used `--memory 8g --memory-swap 8g --pids-limit -1` and read back `memory.max=8589934592 memory.swap.max=0 pids.max=max`; `~/.cache/aet-1307/caps.log` holds each line. **Correction during the build:** until the architect's correction of kickoff rule 3 (2026-11-15), the runner also tried to write `0` into the container's `memory.swap.max` after start, as rule 3 then said. Furnace denies writes under `/sys/fs/cgroup`, and the correction removed the write. The runners (`~/.cache/aet-1307/{img,ci-img}.sh` and the adversary's) now only read back the three values and kill the container if `memory.swap.max` is not 0. Containers started before the correction: both K5 runs, the tenting export, and four CI-layout runs. The read-back from podman's own setting is recorded in B7.
+
+## B2. K1: the inward escape and the via rules [read + measured]
+
+- **The dense part** is chosen by rule, in `route::ring_interior`, with its reason in the doc comment. A part qualifies when it has pads on all four sides (pads near the field's centre lines), a free interior of at least `DENSE_INTERIOR_NM` = 4 mm each way, and no pad inside it, so a QFN's exposed pad excludes it.
+  - On every tested board, only the LQFP-144 qualifies. The SOIC-8, LGA-8, WSON-6 (exposed pad) and 0402 parts do not.
+  - `route.rs::tests::the_dense_part_is_chosen_by_rule` pins 4 mm as a literal, plus the 2-side, 3-side and exposed-pad cases.
+- **Opened.** Inside a dense part's own ring interior, F.Cu tracks of every net and through vias are admitted (c2). The ring, its pads' gaps and every other part's field stay closed.
+  - A part's interior opens only that part's restrictions. A spike-probe defect was not carried over: it marked the interior globally, so a later part's field could have been unblocked.
+- **The courtyard rule (the ruling's "outside any other part's courtyard"). A fork, taken by measurement.**
+  - `route::Part` now carries its F.Cu courtyard as straight edges, read from the footprint: `fp_line`, `fp_rect` and `fp_poly`; an `fp_arc`/`fp_circle` on F.CrtYd is refused by name, never approximated.
+  - **No via's copper may enter any part's courtyard, except inside that part's own ring interior.** Exactly: the via's centre is neither inside the outline nor on it, and no outline edge passes nearer than `VIA_NM/2`, in i128 integer arithmetic. A tangent via passes; 1 nm nearer fails.
+  - The router blocks such via sites, and `route::check`, the exact judge that `route()`, `extract` and `fab` run, refuses one: "via (x, y) (net) is in U4's courtyard".
+  - **Why copper, not centre.** The ruling says "a via under another part's courtyard stays an escape lie the gate refuses". That is **not** what `main` did: nothing judged courtyards.
+    - On `main`'s reference, one via centre sits inside U4's (SOIC-8) courtyard. My first count, by bounding box, said 2 to 34, but the SOIC's courtyard is a cross, and the exact polygon test gives 1. Many vias' copper overlaps passives' courtyard lines by under 0.3 mm.
+    - A probe in the k5 tree measured both definitions over the four inputs:
+
+| rule | ref | four | D1 | D3 |
+|---|---|---|---|---|
+| none (the ruled probe) | routed, 17 rip | routed, 3 | routed, 19 | routed, 151 |
+| via centre outside other courtyards | routed, 17 | routed, 3 | routed, 19 | **Unroutable `/MOSI1`** |
+| **via copper outside other courtyards** | routed, 27 | routed, 3 | routed, 25 | routed, 103 |
+
+    The copper rule is the stricter one, and it routes everything (20/20 board-level renamings, one geometry each), so it was taken. The centre rule is the weaker one, and it breaks D3 (routing is chaotic in its constraints).
+- **Vias in the ring touch no pad.** Each via site keeps the pads' clearance (`via_reach`), and `check` judges every pad against every via exactly.
+- **Tenting [measured].** The emitter writes no `tenting` node and no board `setup`, so KiCad's defaults apply.
+  - The F.Mask and B.Mask Gerbers of D3 and the reference were exported in the image (`kicad-cli pcb export gerbers --layers F.Mask,B.Mask`, the default plot settings, as `fab` uses). They carry **no** round 0.6 mm aperture.
+  - D3's F.Mask has 574 flashes, all of pad apertures (rect and roundrect), and B.Mask has none. The vias, 525 on that probe board, are covered by solder mask on both sides.
+  - Nothing was changed. `FAB-NOTES.md` does not need to say it: the mask Gerbers are the fabricator's statement of tenting.
+  - `fab`'s own call is `kicad-cli pcb export gerbers --layers … --check-zones` [read, `fab.rs`]. It passes no option touching the masks or tenting, so the package's masks are the ones measured.
+
+## B3. Order B and the guard (K3) [measured]
+
+- Nets are indexed once by `(stitched first, pad count, pads' centres (y, x) sorted, name)`, and a net's pads are ordered by centre. Every index-ordered choice follows the index: the queue, the blockers taken up, owner ids, the stitched list and the tree root.
+- The name decides only between two nets with identical pad centres, which `check` refuses. `Board.parts` order and each part's pad order are read only through these keys.
+- **The guard is `escape_tier1.rs`.** For the reference, D1 and D3, the emitted board is read with `route::read` and renamed by 20 fixed SplitMix64 seeds:
+  - every net (ground keeps its name at 2 layers, because that name is what makes it stitched there; plane nets are renamed in the stack too; `unconnected-` nets keep their name);
+  - and every reference;
+  - with `parts` and each part's `pads` permuted.
+
+  Each is routed, and **after naming the nets back, the copper equals the board's own exactly**: 60/60.
+- Mutants (B8): ordering by name (m8) and pads by reference (m9) each fail it.
+- **Spec-level** renaming, end to end with placement (`rename_spec.py`, seeds 0–19), information for K3:
+
+| routed of 20 | `main` (spike) | ruled probe (spike) | **build** |
+|---|---|---|---|
+| reference | 11 | 20 | **16** |
+| D1 | 9 | 19 | **18** |
+| D3 | – (never routed) | 13 | **16** |
+
+  The reference's four failures (seeds 9, 11, 12, 17) are all `VDD_3V3: cannot reach U4 pad 8`. Under the courtyard rule, U4's supply pad has fewer via sites. The remaining failures are SCL/MOSI nets at sensor and flash pads. **The spec-level count for the reference is lower than the spike's ruled probe (20).** The cause is the courtyard rule (B2), so it is a finding for the backlog row on geometric placement (K3), not a stop.
+
+## B4. The reproducers (K3) [measured]
+
+`escape_tier1::the_reproducers_of_1102_a6_and_2204_a5_route` covers:
+- 1102 A6: `FLASH_CS` renamed `nCS`, `cs`, `Z`, `a`, `~`, `_X`, `U`, plus 1102 §4 deviation 4's six nets renamed `N0`…`N5` in the reference's own order;
+- 2204 A5: the references `Peripherals` and `Sysbus_` on the first I2C and the first SPI device. The adversary's original specifications are schema version 1, so they were regenerated from today's reference by the same rule.
+
+On `main` (`34b4f8a`, release), the eight A6 cases and the two I2C A5 cases give `Unroutable`; the two SPI A5 cases route. **On the build, all 12 route.**
+
+## B5. K4 and the fixtures [measured]
+
+- **D3 routes at 4 layers** in 3.7 s (release) and passes DRC with parity (B1). It has 521 vias. Its I2C lines' `extract` bounds still exceed the fixtures' declared 100 pF: 109,657–130,500 fF on the final board. As ruled, the declared bound is unchanged; this is F1's backlog row.
+- **New: D1 at 2 layers now routes** (2.2 s release), and it passes DRC with parity (B1). `4100`'s test asserted it failed closed there. The test is now `d1_routes_at_four_layers_and_at_two`. D3 at 2 layers still fails closed (`/SDA1: cannot reach R3 pad 2`, 11.6 s), which no test holds; its cost was not worth CI time.
+- 2 × 5 (`4100`'s `many(2, 5)`) routes (126 vias, 2.7 s).
+
+## B6. F2: the cause and the fix [measured]
+
+- **The cause** was narrower than the spike's reading. `Router::search` seeded its sources unpriced:
+  - a pad's terminal nodes, which are open by `hard_track`, the pads alone;
+  - or a tree's nodes.
+
+  Moves *into* a node were judged against laid copper, but a path's first node was not. A track could therefore start where a foreign track end already stood within clearance: a GND and a `VDD_3V3` F.Cu end at (0.125, 0.375) mm, 0.395 mm centre to centre, against 0.4 needed.
+- **The fix:** a source is priced exactly as a move is (free; soft, at `SOFT_COST`; or barred), and `blockers` counts the source as a step.
+- **The reproducer.** Mutant m1, the build minus only that pricing, makes **D3 itself** (unrenamed) reach the exact judge: "track F (109125000, 119625000)-(109875000, 119625000) (GND) is within 200000 nm of track F (110000000, 119000000)-…". That is the reproducer in the final tree.
+  - The ruling's candidates no longer discriminate there. Board-level D1 seed 16 collapses into order B's single geometry. Spec-level D3 seed 19 now fails on `/SCL1` instead.
+  - D3's emit is in `escape_tier1`'s D3 renaming tests, which assert it routes. m1 was first killed by a stackups `d3_routes_at_four_layers` case, which was then folded into those tests to save CI time; their emit fails the same way under m1.
+- **The comment "no tested board reaches these" is true at the build:** no run of the sweep (60 spec-level renamings, 12 reproducers, 5 inputs) or of the tests reached the exact judge. The comment is kept.
+
+## B7. K6: the zone judge, and the corpus [measured]
+
+- `route::read` requires each zone to have exactly one `polygon` with one `pts` of exactly four `xy` points, which are the `Edge.Cuts` rectangle's corners in any cyclic order and direction (a diagonal walk of the corners is refused). Anything else gives "zone `NET` on LAYER: its outline is not the board's". `filled_polygon` is not read.
+- `escape_tier1::a_zone_that_is_not_the_board_outline_is_refused_by_name` covers the `four` GND plane and the reference's B.Cu zone:
+  - 8 accepted orders (4 rotations × 2 directions) and a saved fill;
+  - refused: smaller, larger, offset, diagonal, extra vertex, three corners, a corner twice, and holed (a second polygon).
+- **The two corpus recipes, re-measured** (`strict_tier1`, tier 1; the KiCad half in the image, B9):
+  - `zone_fill_close` keeps `drc 0 pass; extract 3 UnmodelledCopper`;
+  - `zone_clearance` keeps `drc 3 LocalClearance`.
+
+  The judge refuses neither, because neither changes the polygon.
+- **Nine other corpus recipes no longer applied.** They are anchored to text of the reference board that the new routing removed:
+  - `escape/pintype_{hex,octal}_no_connect`;
+  - `repeated-child/{big_plate, dup_end, dup_net_seg, dup_via_size, dup_width, segment_layer_and_layers}`;
+  - `unread-child/via_padstack`.
+
+  Each is re-anchored to the equivalent item of the new reference board:
+  - the pintype recipes remove U1 pad 137's SDA branch, F.Cu, via, B.Cu, via, F.Cu, up to the junction at (100.125, 85.125);
+  - the others use B.Cu SDA segment 51, F.Cu SDA segment 40 and SDA via 7.
+
+  The recorded paths follow (`segment[53]` → `segment[51]`, `via[10]` → `via[7]`, `big_plate` stays `segment[40]`), and so does `dup_end`'s note. The `main:` history lines are left as written.
+
+## B8. Mutation (sized to the diff) [measured]
+
+One mutant per guard this build adds, each run against the tests it lives in (`~/.cache/aet-1307/{mutants.py,run-mutants.sh,mut-*.log}`):
+
+| # | mutant | killed by |
+|---|---|---|
+| m1 | search sources unpriced (F2) | D3's emit (judge refuses) |
+| m2 | router ignores courtyards | the reference's emit (`check`: via in U3's courtyard) |
+| m3 | `check` ignores courtyards | `a_via_in_a_courtyard…` |
+| m4 | courtyard rule by centre only | `a_via_in_a_courtyard…` (the copper case) |
+| m5 | no own-ring exemption | `a_via_in_a_courtyard…` (U1's interior) |
+| m6 | zone outline not judged | `a_zone_that_is_not…` |
+| m7 | zone corners in any walk | `a_zone_that_is_not…` (diagonal) |
+| m8 | nets ordered by name before centres | D1 and reference renamings |
+| m9 | a net's pads by reference | D1 and reference renamings |
+| m10 | dense interior 3 mm | `the_dense_part_is_chosen_by_rule`, **after a fix**: the first form compared against the constant itself and let m10 survive; the threshold is now a literal |
+| m11 | exposed pad admitted | `the_dense_part_is_chosen_by_rule` |
+| m12 | no inward escape | D3's emit (`/SCK1` after 500 rip-ups) |
+
+Every kill was checked to be a failed assertion, not a build failure.
+
+## B9. Changed committed files, each with its cause
+
+- **K2 (the reference's routed board changed: 70 → 64 vias, 348.5 → 331.6 mm):**
+  - `crates/aethelgard-cli/tests/stackups_tier1.rs`: the `46_800, 58_235` literal is now `50_576, 43_749`, with a comment naming the ruling.
+  - `crates/aethelgard-cli/tests/extract_tier1.rs`: the reference's terms, lengths, segment and via counts, the 20 pF messages, and the 50 pF case, which now fails SDA, not SCL.
+  - The BME280 case of `a_foreign_pad_closer_than_the_clearance_to_a_line_is_refused` now moves the I2C pad, because the moved foreign pad's new track no longer reaches it, so connectivity refused first.
+  - The nine corpus recipes (B7).
+- **The ruled numbers differ from the spike's: cause, the K1 courtyard rule (B2).** The reference's bounds are **50,576 and 43,749 fF** (both pass 100,000), not the ruled 46,192 and 54,711. The fabrication package changes with the board; the repository commits none.
+- **K1/K2, the 4-layer fixture:** `stackups_tier1::the_four_layer_board_is_the_declared_one_and_extracts`' bounds `45_857, 48_827` → `49_641, 45_671`.
+- **K1, D1 at 2 layers:** `stackups_tier1`'s D1 test (B5); D3's former fail-closed test is removed (B6).
+- **K1:** `routing_tier1::every_pad_is_left_straight_out_of_its_field` admits a dense part's own ring interior.
+- **Not changed, outside the fence:** `crates/aethelgard-cli/README.md` line 578 shows an `extract` output with `"c_bound_femtofarads":46800`. It is now stale, and it is a finding for the architect.
+- **Protected documents, findings only:**
+  - `docs/architecture.md` §2.21 records D3 as needing escape planning;
+  - the router's order is described by name wherever the steering documents state it [inferred: not re-read line by line].
