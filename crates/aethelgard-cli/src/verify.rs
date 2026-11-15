@@ -447,6 +447,33 @@ fn bind(gate: &str, what: &str, want: &str, have: &Value) -> Result<(), ExitCode
     }
 }
 
+/// The whole-schedule harness, which does not finish on a board with motor
+/// outputs (`AET-WO-4300a` FEEDBACK Q5).
+const WHOLE_SCHEDULE: &str = "proofs::every_valid_sequence";
+
+/// The harnesses to prove, and the whole-schedule one left out. Only on a
+/// motor board and only that exact harness is dropped; the rest always run.
+fn harness_plan(all: Vec<String>, motor_board: bool) -> (Vec<String>, Option<String>) {
+    if motor_board && all.iter().any(|h| h == WHOLE_SCHEDULE) {
+        let ran = all.into_iter().filter(|h| h != WHOLE_SCHEDULE).collect();
+        (ran, Some(WHOLE_SCHEDULE.to_owned()))
+    } else {
+        (all, None)
+    }
+}
+
+/// The info finding that says which harnesses ran and which did not.
+fn skipped_finding(ran: &[String], skipped: &str) -> Finding {
+    Finding {
+        kind: "whole_schedule_harness_not_run",
+        severity: "info",
+        message: format!(
+            "harnesses run: {}; {skipped} did not run: a motor board: the whole-schedule harness does not finish (AET-WO-4300a FEEDBACK Q5); the targeted harnesses prove the timer start and the clock check; the split is AET-WO-4500's backlog",
+            ran.join(", ")
+        ),
+    }
+}
+
 /// The harnesses of a generated `src/proofs.rs`, as `proofs::<name>`: each
 /// `fn` after a `#[kani::proof]`. The text is the generator's, not a user's.
 pub fn harnesses(proofs: &str) -> Vec<String> {
@@ -626,6 +653,10 @@ pub fn verify(
     let repl = format!("{BOARD_DIR}/{project}.repl");
     let board = tree::subtree(&files, &format!("{BOARD_DIR}/"));
     let board_sha256 = tree::crate_sha256(&board);
+    let (harnesses, skipped) = harness_plan(
+        harnesses(board.get("src/proofs.rs").map_or("", String::as_str)),
+        !topology.motor_outputs.is_empty(),
+    );
     let path = |rel: &str| os(&root.join(rel));
     let spec_arg = os(&spec_copy);
 
@@ -646,13 +677,15 @@ pub fn verify(
             repl: &hashes[&repl],
             board: &board_sha256,
             spec: &spec_sha256,
-            harnesses: harnesses(board.get("src/proofs.rs").map_or("", String::as_str)),
+            harnesses,
+            skipped,
         },
         &expected,
     ) {
         return code;
     }
-    report.ok = report.findings.is_empty() && report.gates.iter().all(|g| g.verdict == "pass");
+    report.ok = report.findings.iter().all(|f| f.severity != "error")
+        && report.gates.iter().all(|g| g.verdict == "pass");
     report.verdict = if report.ok { "pass" } else { "fail" };
     if let Some(mode) = fab_mode {
         let elf_sha256 = report.elf_sha256.clone().unwrap_or_default();
@@ -806,6 +839,8 @@ struct Want<'a> {
     board: &'a str,
     spec: &'a str,
     harnesses: Vec<String>,
+    /// The whole-schedule harness left out on a motor board.
+    skipped: Option<String>,
 }
 
 fn args(items: &[&dyn AsRef<std::ffi::OsStr>]) -> Vec<OsString> {
@@ -858,6 +893,11 @@ fn run_gates(
             severity: "error",
             message: "the generated board crate has no Kani harness".to_owned(),
         });
+    }
+    if let Some(skipped) = &want.skipped {
+        report
+            .findings
+            .push(skipped_finding(&want.harnesses, skipped));
     }
     for harness in &want.harnesses {
         let h = OsString::from(harness);
@@ -1065,6 +1105,7 @@ mod tests {
             board: "board",
             spec: "spec",
             harnesses: Vec::new(),
+            skipped: None,
         }
     }
 
@@ -1127,6 +1168,66 @@ mod tests {
                 .iter()
                 .any(|(_, p, want)| *p == "/harness_provenance" && want == "generated")
         );
+    }
+
+    fn names(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_motor_board_drops_exactly_the_whole_schedule_harness_and_names_it() {
+        let all = names(&[
+            "proofs::every_valid_sequence",
+            "proofs::tim1_start_writes_the_solved_values",
+            "proofs::reset_clock_is_ok_exactly_at_reset",
+        ]);
+        let (ran, skipped) = harness_plan(all, true);
+        assert_eq!(
+            ran,
+            [
+                "proofs::tim1_start_writes_the_solved_values",
+                "proofs::reset_clock_is_ok_exactly_at_reset"
+            ]
+        );
+        assert_eq!(skipped.as_deref(), Some("proofs::every_valid_sequence"));
+        let f = skipped_finding(&ran, skipped.as_deref().unwrap());
+        assert_eq!(f.kind, "whole_schedule_harness_not_run");
+        assert_eq!(f.severity, "info");
+        assert!(
+            f.message
+                .contains("proofs::tim1_start_writes_the_solved_values")
+        );
+        assert!(
+            f.message
+                .contains("proofs::reset_clock_is_ok_exactly_at_reset")
+        );
+        assert!(
+            f.message
+                .contains("proofs::every_valid_sequence did not run")
+        );
+        assert!(f.message.contains("AET-WO-4500"));
+    }
+
+    #[test]
+    fn a_board_without_motors_keeps_every_harness() {
+        let all = names(&["proofs::every_valid_sequence", "proofs::i2c1_transfer"]);
+        let (ran, skipped) = harness_plan(all.clone(), false);
+        assert_eq!(ran, all);
+        assert_eq!(skipped, None);
+    }
+
+    #[test]
+    fn a_motor_board_without_the_whole_schedule_harness_names_nothing() {
+        let all = names(&["proofs::tim1_start_writes_the_solved_values"]);
+        let (ran, skipped) = harness_plan(all.clone(), true);
+        assert_eq!(ran, all);
+        assert_eq!(skipped, None);
+    }
+
+    #[test]
+    fn an_info_finding_does_not_fail_the_verdict() {
+        let f = skipped_finding(&names(&["proofs::a"]), WHOLE_SCHEDULE);
+        assert!([f].iter().all(|f| f.severity != "error"));
     }
 
     #[test]
