@@ -1,0 +1,23 @@
+PASS      input range 2S: battery 6.00..8.40 V against LMR33630 3.8..36.0 V
+PASS      input range 6S: battery 18.00..25.20 V against LMR33630 3.8..36.0 V
+PASS      input range 6S-HV: battery 18.00..26.10 V against LMR33630 3.8..36.0 V
+PASS      VOUT in VDD_5V: 4.8124..5.2281 V inside 4.7500..5.2500; margins 62 / 22 mV
+PASS      VOUT in VDD_3V3: 3.1911..3.4434 V inside 3.1350..3.4650; margins 56 / 22 mV
+PASS      VOUT in VDD_1V8: 1.7730..1.8270 V inside 1.7100..1.8900; margins 63 / 63 mV; accuracy tested at 1 mA, load regulation typ only: CONDITION
+PASS      VDD_1V8 inside ICM-20948 VDDIO: 1.7730..1.8270 V inside (1.71, 1.95)
+PASS      LDO dropout (TLV75518 from VDD_3V3): VIN min 3.1911 >= VOUT max + VDO max = 2.2270 V
+PASS      buck headroom VDD_5V at 2S min (computed bound, no foldback credit): D<= 0.9609; available 5.389 V >= VOUT max 5.228 V (tOFF limit stated at VIN 12 V, DCR declared: CONDITION)
+PASS      min on-time VDD_5V at 26.10 V: tON 401 ns >= 108 ns
+PASS      min on-time VDD_3V3 at 26.10 V: tON 266 ns >= 108 ns
+PASS      IOUT VDD_3V3 (LMR33630): 0.6780 A <= 3.0 A (MCU 658 mA + LDO input); other 3.3 V devices add their cited maxima
+PASS      IOUT VDD_5V (LMR33630): 2.0 A <= 3.0 A
+PASS      IOUT VDD_1V8 (TLV75518): 0.02 A <= 0.5 A
+PASS      power-in connector (XT30PW-M): sum of buck ISC max 10.10 A <= 15.0 A (ISC tested open loop, TI note 4: CONDITION)
+PASS      VDD_3V3 max <= MCU VDD max: 3.4434 <= 3.6 V
+INFO      copper room, domain floor: 56 mV over 3.135 V -> VDD+VSS R <= 85 mOhm at 658 mA
+INFO      copper room, BOR3 floor: 511 mV over VBOR3 falling max 2.68 V -> VDD+VSS R <= 777 mOhm at 658 mA
+PASS      sense full scale 2S: 0.787 V <= VREF+ = VDDA min 3.135 V (VREF+ tied to VDDA on VDD_3V3: a declaration)
+PASS      sense full scale 6S: 2.361 V <= VREF+ = VDDA min 3.135 V (VREF+ tied to VDDA on VDD_3V3: a declaration)
+PASS      sense full scale 6S-HV: 2.445 V <= VREF+ = VDDA min 3.135 V (VREF+ tied to VDDA on VDD_3V3: a declaration)
+FAIL      sense source impedance vs RAIN: Thevenin 9091 Ohm vs RAIN max 1150 Ohm (12-bit); needs a pin reservoir capacitor or a sampling time the firmware owns
+INFO      TLV75518 junction rise (inferred, not in S3's list): 33.8 mW x 231.1 C/W = 7.8 K
