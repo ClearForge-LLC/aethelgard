@@ -541,8 +541,9 @@ fn a_port_s_tags_fail_when_missing_unexpected_or_unread() {
             missing: vec!["CR1.M0".into()],
             unexpected: vec![],
         }),
-        // Every form the access log's judge writes (adversarial F1-F3),
-        // through the archive's text rule, at the most it carries.
+        // Every form the access log's judge writes (adversarial F1-F3, pass
+        // 2 A1, A2, L2), at its longest, through the archive's text rule, at
+        // the most it carries.
         Some(SerialTags {
             writes: 4,
             missing: vec!["CR2.RXINV".into(), "CR2.TXINV".into()],
@@ -555,6 +556,11 @@ fn a_port_s_tags_fail_when_missing_unexpected_or_unread() {
                 "0xFFFFFFFF to 0x2C",
                 "CR2 0x32000 after UE",
                 "CR1.M1 set at UE",
+                "RCC.APB1LRSTR.USART3RST set",
+                "WriteUInt16 to RCC 0xFFFFFFFF",
+                "PK15 OTYPER 1, OSPEEDR 0b11, PUPDR 0b11 at the injection",
+                "PK15 OTYPER/OSPEEDR/PUPDR not rebuilt at the injection",
+                "gpioPortK refused a write to 0xFFFFFFFF (a locked pin)",
             ]
             .iter()
             .cycle()

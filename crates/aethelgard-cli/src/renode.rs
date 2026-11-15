@@ -408,9 +408,10 @@ impl BootPlan<'_> {
     }
 
     /// Before the first `RunFor`, with a serial port: Renode's access log on
-    /// each port's USART and each TX pin's GPIO port (adversarial F1–F4;
-    /// measured, fix 1 P1, P2: one line per access, kept through `machine
-    /// Reset`), then one file backend per stock USART and UART in the
+    /// each port's USART, each of its pins' GPIO ports and the RCC
+    /// (adversarial F1–F4, pass 2 A1, A2; measured, fix 1 P1, P2: one line per
+    /// access, kept through `machine Reset`), then one file backend per stock
+    /// USART and UART in the
     /// capture directory, the ports' last and in their order: Renode opens
     /// each file new (`UartFileBackend.cs`) and writes each byte the USART
     /// transmits, flushed (`true`). A byte on a USART no port names is
@@ -437,13 +438,20 @@ impl BootPlan<'_> {
     }
 
     /// Every peripheral whose accesses Renode logs: each port's USART, then
-    /// each TX pin's GPIO port, once each, in the ports' order.
+    /// each TX and RX pin's GPIO port, once each, in the ports' order, then
+    /// the RCC, whose writes may reset any of them; none without a serial
+    /// port.
     fn logged_sources(&self) -> Vec<&'static str> {
         let mut out: Vec<&'static str> = self.serial.iter().map(|p| p.port.renode).collect();
         for p in self.serial {
-            if !out.contains(&p.tx.source) {
-                out.push(p.tx.source);
+            for source in [p.tx.source, p.rx.source] {
+                if !out.contains(&source) {
+                    out.push(source);
+                }
             }
+        }
+        if !out.is_empty() {
+            out.push(aethelgard_twin::serial::RCC_RENODE);
         }
         out
     }
@@ -511,9 +519,27 @@ impl BootPlan<'_> {
     /// again (`AET-WO-2301` F3), then the cold writes and the vector table
     /// re-applied, the core held, and the boot word and records re-armed so
     /// that only the firmware's code can set them again.
+    ///
+    /// With a serial port, the RCC's access log is off around the cold
+    /// writes: they are the judge's, and a logged write with no `[cpu: …]`
+    /// is never rebuilt (`AET-WO-4300b` adversarial pass 2, A1).
     fn assert_reset(&self) -> Vec<String> {
         let mut c = vec!["machine Reset".to_owned()];
+        let rcc = self
+            .logged_sources()
+            .contains(&aethelgard_twin::serial::RCC_RENODE)
+            .then(|| {
+                let at = |on| {
+                    format!(
+                        "sysbus LogPeripheralAccess sysbus.{} {on}",
+                        aethelgard_twin::serial::RCC_RENODE
+                    )
+                };
+                (at(false), at(true))
+            });
+        c.extend(rcc.as_ref().map(|r| r.0.clone()));
         c.extend(self.cold());
+        c.extend(rcc.map(|r| r.1));
         c.push(self.vtor());
         c.push("cpu IsHalted true".to_owned());
         c.extend(self.rearm());
@@ -1023,6 +1049,9 @@ pub struct Serial {
     /// What the bring-up writes, from the topology and the header, against
     /// which the access log's writes are judged.
     pub bringup: aethelgard_twin::serial::Bringup,
+    /// The reset bits of the port's USART and of its pins' GPIO ports, none
+    /// of which the firmware may set.
+    pub resets: Vec<aethelgard_twin::serial::ResetBit>,
 }
 
 /// Every serial port of `topology`, in the specification's order, for the
@@ -1044,6 +1073,10 @@ pub fn serials(
                 rx: aethelgard_twin::serial::PinMux::of(&port.rx, port.rx_af)?,
                 silicon: aethelgard_ir::serial::check_silicon(&topology.clock, solved),
                 bringup: aethelgard_twin::serial::Bringup::of(&port.framing, solved.brr)?,
+                resets: aethelgard_twin::serial::reset_bits(
+                    &port.peripheral,
+                    &[&port.tx, &port.rx],
+                )?,
                 port,
             })
         })
@@ -1926,12 +1959,26 @@ pub fn judge_boot(
     } else {
         None
     };
+    // How many of the last boot's accesses precede the injection: the RX
+    // pin's words there are rebuilt from them (adversarial pass 2, A2).
+    let last_start = releases.last().map_or(0, |&r| r + 1);
+    let inject_at = inject_block
+        .filter(|&(b, _)| b >= last_start)
+        .and_then(|(b, _)| {
+            let before: Vec<&str> = (last_start..b)
+                .filter(|&i| !in_probe(i))
+                .map(|i| lines[i])
+                .collect();
+            access_boots(&[before], &plan.logged_sources())
+        })
+        .map(|v| v[0].len());
     observed.serial = serial_witnesses(
         plan,
         &observed.registers,
         &injection_words,
         capture,
         accesses.as_deref(),
+        inject_at,
     );
     let (cpus, peripherals) = listing(&lines[end + 1..]);
     if cpus.is_empty() {
@@ -2151,8 +2198,10 @@ pub fn judge_boot(
 }
 
 /// Each boot's accesses on `sources` ([`aethelgard_twin::serial::access`]),
-/// in log order; `None` when a line of a logged source's own `INFO` log is
-/// not a whole access, so the writes cannot be rebuilt.
+/// in log order, each write a logged source's model says it ignored
+/// ([`aethelgard_twin::serial::refused_by`]) marked refused; `None` when a
+/// line of a logged source's own `INFO` log is not a whole access, or a
+/// refusal follows no write of its source, so the writes cannot be rebuilt.
 fn access_boots(
     boots: &[Vec<&str>],
     sources: &[&str],
@@ -2160,8 +2209,18 @@ fn access_boots(
     boots
         .iter()
         .map(|lines| {
-            let mut out = Vec::new();
+            let mut out: Vec<aethelgard_twin::serial::Access> = Vec::new();
             for body in lines.iter().filter_map(|l| log_body(l)) {
+                if let Some(source) =
+                    aethelgard_twin::serial::refused_by(body).filter(|s| sources.contains(s))
+                {
+                    let last = out.iter_mut().rev().find(|a| a.source == source)?;
+                    if !last.write || last.refused {
+                        return None;
+                    }
+                    last.refused = true;
+                    continue;
+                }
                 if !sources
                     .iter()
                     .any(|s| aethelgard_twin::serial::logged_by(body, s))
@@ -2177,16 +2236,19 @@ fn access_boots(
 
 /// Each port's witness from what the run left: its capture file, its RX
 /// pin's mux at the injection, its TX pin's at the end (among the image's
-/// reads) and at the first `TDR` write of each boot, and its USART's writes
-/// in each boot ([`access_boots`]; `None` when the log could not be read
-/// whole). The echo is `not_judged` until the caller knows the boot word;
-/// [`judge_boot`] sets it.
+/// reads) and at the first `TDR` write of each boot, and the writes of each
+/// boot ([`access_boots`]; `None` when the log could not be read whole): its
+/// USART's against the bring-up, the RCC's against its resets, its pins'
+/// beyond their mux (`inject_at`: how many of the last boot's accesses
+/// precede the injection). The echo is `not_judged` until the caller knows
+/// the boot word; [`judge_boot`] sets it.
 fn serial_witnesses(
     plan: &BootPlan<'_>,
     registers: &[u32],
     injection: &[u32],
     capture: &Captured,
     boots: Option<&[Vec<aethelgard_twin::serial::Access>]>,
+    inject_at: Option<usize>,
 ) -> Vec<SerialWitness> {
     let image = |address: u32| {
         plan.image
@@ -2242,8 +2304,23 @@ fn serial_witnesses(
                 rx_at_injection,
                 tx_at_end,
                 tx_at_send,
-                tags: boots
-                    .map(|b| aethelgard_twin::serial::judge_writes(&s.bringup, s.port.renode, b)),
+                tags: boots.map(|b| {
+                    use aethelgard_twin::serial::{judge_pins, judge_resets, judge_writes};
+                    let mut j = judge_writes(&s.bringup, s.port.renode, b);
+                    let tdr = s.bringup.tdr;
+                    let at = inject_at.filter(|_| rx_at_injection.is_some());
+                    for x in judge_resets(&s.resets, b).into_iter().chain(judge_pins(
+                        &s.tx,
+                        &s.rx,
+                        s.port.renode,
+                        tdr,
+                        at,
+                        b,
+                    )) {
+                        j.note(x);
+                    }
+                    j
+                }),
                 echo,
             }
         })
@@ -2955,8 +3032,9 @@ mod tests {
         let p = serial_plan(&image, &[], &serial);
         assert_eq!(p.injection_ns(), Some(100_000));
         let c = p.commands();
-        // The access log on the port's USART and its TX pin's GPIO port, then
-        // a backend on every stock USART, the port's last (adversarial F12).
+        // The access log on the port's USART, its pins' GPIO port and the RCC
+        // (adversarial pass 2, A1), then a backend on every stock USART, the
+        // port's last (adversarial F12).
         let others: String = [
             "usart2", "usart3", "uart4", "uart5", "usart6", "uart7", "uart8", "lpuart1",
         ]
@@ -2965,17 +3043,31 @@ mod tests {
         .collect();
         assert!(
             c.contains(&format!(
-                "logLevel -1 sysbus.i2c1.u2; logLevel -1 sysbus.spi1.spi1mux; sysbus LogPeripheralAccess sysbus.usart1 true; sysbus LogPeripheralAccess sysbus.gpioPortA true; {others}sysbus.usart1 CreateFileBackend @/w/capture/usart1.bin true; emulation RunFor \"0.000100000\"; {inject}; emulation RunFor \"0.099900000\"; echo \"AETHELGARD-BOOT-BEGIN\""
+                "logLevel -1 sysbus.i2c1.u2; logLevel -1 sysbus.spi1.spi1mux; sysbus LogPeripheralAccess sysbus.usart1 true; sysbus LogPeripheralAccess sysbus.gpioPortA true; sysbus LogPeripheralAccess sysbus.rcc true; {others}sysbus.usart1 CreateFileBackend @/w/capture/usart1.bin true; emulation RunFor \"0.000100000\"; {inject}; emulation RunFor \"0.099900000\"; echo \"AETHELGARD-BOOT-BEGIN\""
             )),
             "{c}"
         );
         assert_eq!(c.matches("CreateFileBackend").count(), 9);
-        assert_eq!(c.matches("LogPeripheralAccess").count(), 2);
+        assert_eq!(c.matches("LogPeripheralAccess").count(), 3);
         assert_eq!(c.matches("WriteChar").count(), 8);
         let resets = bor3();
         let p = serial_plan(&image, &resets, &serial);
         assert_eq!(p.injection_ns(), Some(1_227_980 + 10 + 100_000));
         let c = p.commands();
+        // The reset's cold writes are the judge's: the RCC's log is off
+        // around them, and on again before the core runs.
+        let cold = p.cold().join("; ");
+        assert!(
+            c.contains(&format!(
+                "machine Reset; sysbus LogPeripheralAccess sysbus.rcc false; {cold}; sysbus LogPeripheralAccess sysbus.rcc true; cpu VectorTableOffset"
+            )),
+            "{c}"
+        );
+        assert!(
+            !plan(&image, &resets)
+                .commands()
+                .contains("LogPeripheralAccess")
+        );
         assert!(
             c.contains(&format!(
                 "echo \"AETHELGARD-PROBE-END-0\"; emulation RunFor \"0.000000010\"; {inject}; emulation RunFor \"0.098672010\"; echo \"AETHELGARD-BOOT-BEGIN\""
@@ -3049,7 +3141,7 @@ mod tests {
         let routed = [0x0028_A801, 0x0000_0770];
         let boot = console_boot();
         let one: &[Vec<aethelgard_twin::serial::Access>] = std::slice::from_ref(&boot);
-        let w = serial_witnesses(&p, &regs, &routed, &captured(&whole), Some(one));
+        let w = serial_witnesses(&p, &regs, &routed, &captured(&whole), Some(one), None);
         assert_eq!(w[0].echo, "witnessed");
         assert_eq!(w[0].tx_at_send, Some((0x0028_A801, 0x0000_0770)));
         assert!(serial_findings_of(&serial[0], &w[0], 0, None).is_empty());
@@ -3060,7 +3152,7 @@ mod tests {
             .chain(&boot[8..])
             .cloned()
             .collect();
-        let w = serial_witnesses(&p, &regs, &routed, &captured(&whole), Some(&[late]));
+        let w = serial_witnesses(&p, &regs, &routed, &captured(&whole), Some(&[late]), None);
         assert_eq!(w[0].tx_at_send, Some((0, 0)));
         let f = serial_findings_of(&serial[0], &w[0], 0, None);
         assert_eq!(names(&f), ["serial_pattern_missing"]);
@@ -3073,7 +3165,7 @@ mod tests {
         // Adversarial F3: a PRESC write, judged by the access log.
         let mut presc = boot.clone();
         presc.insert(4, aethelgard_twin::serial::access(PRESC).unwrap());
-        let w = serial_witnesses(&p, &regs, &routed, &captured(&whole), Some(&[presc]));
+        let w = serial_witnesses(&p, &regs, &routed, &captured(&whole), Some(&[presc]), None);
         let f = serial_findings_of(&serial[0], &w[0], 0, None);
         assert_eq!(names(&f), ["serial_tag_mismatch"]);
         assert!(
@@ -3081,6 +3173,73 @@ mod tests {
             "{}",
             f[0].message
         );
+        // Adversarial pass 2, A1 (ADV2-1): GPIOA reset through the RCC after
+        // the bring-up, every word written back; A2 (ADV2-2): PA9 open-drain
+        // with a pull-down before the pattern; and PA10 pulled up at the
+        // injection (eight accesses in), released after it.
+        let line = |l: &str| aethelgard_twin::serial::access(l).unwrap();
+        let mut reset = boot.clone();
+        reset.splice(
+            3..3,
+            [
+                line("[INFO] rcc: [cpu: 0x8000710] WriteUInt32 to 0x88 (AHB4Reset), value 0x1"),
+                line("[INFO] rcc: [cpu: 0x8000714] WriteUInt32 to 0x88 (AHB4Reset), value 0x0"),
+            ],
+        );
+        reset.splice(5..5, boot[..3].iter().cloned());
+        let open_drain = {
+            let mut b = boot.clone();
+            b.splice(
+                7..7,
+                [
+                    line("[INFO] gpioPortA: [cpu: 0x8000A56] WriteUInt32 to 0x4 (OutputType), value 0x200"),
+                    line("[INFO] gpioPortA: [cpu: 0x8000A56] WriteUInt32 to 0xC (PullUpPullDown), value 0x80000"),
+                ],
+            );
+            b
+        };
+        let pulled = {
+            let mut b = boot.clone();
+            b.insert(7, line("[INFO] gpioPortA: [cpu: 0x8000A56] WriteUInt32 to 0xC (PullUpPullDown), value 0x100000"));
+            b.push(line(
+                "[INFO] gpioPortA: [cpu: 0x8000A56] WriteUInt32 to 0xC (PullUpPullDown), value 0x0",
+            ));
+            b
+        };
+        for (accesses, inject_at, unexpected) in [
+            (reset, None, "RCC.AHB4RSTR.GPIOARST set"),
+            (
+                open_drain,
+                None,
+                "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write, PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the end",
+            ),
+            (
+                pulled,
+                Some(8),
+                "PA10 OTYPER 0, OSPEEDR 0b00, PUPDR 0b01 at the injection",
+            ),
+        ] {
+            let w = serial_witnesses(
+                &p,
+                &regs,
+                &routed,
+                &captured(&whole),
+                Some(&[accesses]),
+                inject_at,
+            );
+            assert_eq!(w[0].tx_at_send, Some((0x0028_A801, 0x0000_0770)));
+            let f = serial_findings_of(&serial[0], &w[0], 0, None);
+            assert_eq!(names(&f), ["serial_tag_mismatch"]);
+            assert!(
+                f[0].message
+                    .ends_with(&format!("not the bring-up: {unexpected}")),
+                "{}",
+                f[0].message
+            );
+        }
+        // No frame injected: the RX pin is not judged at the injection.
+        let w = serial_witnesses(&p, &regs, &[], &captured(&whole), Some(one), Some(8));
+        assert!(w[0].tags.as_ref().is_some_and(|t| t.holds()));
         // Off its AF at the injection: the frame came back, not counted.
         let w = serial_witnesses(
             &p,
@@ -3088,6 +3247,7 @@ mod tests {
             &[0x0028_A801, 0x0000_0870],
             &captured(&whole),
             Some(one),
+            None,
         );
         assert_eq!(w[0].echo, "not_counted");
         assert_eq!(
@@ -3095,18 +3255,18 @@ mod tests {
             ["serial_echo_missing"]
         );
         // No injection read: never witnessed.
-        let w = serial_witnesses(&p, &regs, &[], &captured(&whole), Some(one));
+        let w = serial_witnesses(&p, &regs, &[], &captured(&whole), Some(one), None);
         assert_eq!(w[0].echo, "missing");
         // The log not whole: neither the writes nor the TX pin at its first
         // TDR write are judged, and both fail.
-        let w = serial_witnesses(&p, &regs, &routed, &captured(&whole), None);
+        let w = serial_witnesses(&p, &regs, &routed, &captured(&whole), None, None);
         assert_eq!(
             kinds(serial_findings_of(&serial[0], &w[0], 0, None)),
             ["serial_tag_mismatch", "serial_pattern_missing"]
         );
         // Two patterns: forged in one boot, the droop's two boots in one.
         let two = [serial[0].pattern.clone(), whole.clone()].concat();
-        let w = serial_witnesses(&p, &regs, &routed, &captured(&two), Some(one));
+        let w = serial_witnesses(&p, &regs, &routed, &captured(&two), Some(one), None);
         assert_eq!(
             kinds(serial_findings_of(&serial[0], &w[0], 0, None)),
             ["serial_capture_forged"]
@@ -3117,7 +3277,7 @@ mod tests {
         // cut and whole patterns pass the boots.
         let pattern = &serial[0].pattern;
         let cut = [&pattern[..3], &whole[..]].concat();
-        let w = serial_witnesses(&p, &regs, &routed, &captured(&cut), Some(one));
+        let w = serial_witnesses(&p, &regs, &routed, &captured(&cut), Some(one), None);
         assert_eq!(w[0].echo, "witnessed");
         assert_eq!(
             w[0].capture.as_ref().map(|c| (c.patterns, c.cut)),
@@ -3129,7 +3289,7 @@ mod tests {
             ["serial_capture_forged"]
         );
         let three = [&pattern[..3], &pattern[..], &whole[..]].concat();
-        let w = serial_witnesses(&p, &regs, &routed, &captured(&three), Some(one));
+        let w = serial_witnesses(&p, &regs, &routed, &captured(&three), Some(one), None);
         assert_eq!(
             kinds(serial_findings_of(&serial[0], &w[0], 1, None)),
             ["serial_capture_forged"]
@@ -3202,6 +3362,29 @@ mod tests {
         boot.extend([other.as_str(), warning.as_str(), "(monitor) usart1"]);
         let got = access_boots(&[boot.clone()], &["usart1", "gpioPortA"]).unwrap();
         assert_eq!(got, [console_boot()]);
+        // A locked pin's write refused (adversarial pass 2, L2): the write
+        // before it from its source is marked, once; a refusal after no
+        // write of its source leaves none; one from an unlogged source is
+        // another line.
+        let refused = stamp(
+            "[WARNING] gpioPortA: Ignoring attempt to change MODER configuration of the locked pin #9",
+        );
+        let mut locked = boot.clone();
+        locked.insert(3, refused.as_str());
+        let got = access_boots(&[locked.clone()], &["usart1", "gpioPortA"]).unwrap();
+        let mut want = console_boot();
+        want[2].refused = true;
+        assert_eq!(got, [want]);
+        locked.insert(3, refused.as_str());
+        assert_eq!(access_boots(&[locked], &["usart1", "gpioPortA"]), None);
+        assert_eq!(
+            access_boots(&[vec![refused.as_str()]], &["gpioPortA"]),
+            None
+        );
+        assert_eq!(
+            access_boots(&[vec![refused.as_str()]], &["usart1"]),
+            Some(vec![vec![]])
+        );
         let odd = stamp("[INFO] usart1: something else");
         boot.push(odd.as_str());
         assert_eq!(access_boots(&[boot], &["usart1", "gpioPortA"]), None);

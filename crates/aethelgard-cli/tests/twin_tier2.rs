@@ -2527,6 +2527,159 @@ fn adv_1b_a_tx_pin_unrouted_after_the_first_byte_fails() {
     assert_eq!(t["tx_at_send"], "PA9 MODER 0b00, AF7", "{v}");
 }
 
+// ------------------------------------------------- adversarial pass 2 (ADV2)
+
+/// The unexpected writes kind 28 shows for the port, as the verdict names
+/// them.
+fn unexpected(v: &Value) -> Vec<String> {
+    serial(v)[0]["twin"]["tags_unexpected"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|x| x.as_str().unwrap_or_default().to_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// ADV2-1 (A1, the PM's ruling): GPIOA reset through `RCC_AHB4RSTR` after
+/// the bring-up routed PA9, the pattern sent with PA9 in its reset mode, then
+/// every GPIOA word written back. The reset leaves no line in GPIOA's access
+/// log, so the RCC's is read: the reset fails by name.
+#[test]
+fn adv2_1_a_gpio_reset_through_the_rcc_fails() {
+    let elf = adv_reference(
+        "rcc-gpio-reset",
+        &[],
+        &[
+            (
+                "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n",
+                "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n    let saved: [u32; 10] = core::array::from_fn(|i| unsafe { (0x5802_0000 as *const u32).add(i).read_volatile() });\n    unsafe { let rst = 0x5802_4488 as *mut u32; rst.write_volatile(1); rst.write_volatile(0); }\n",
+            ),
+            (
+                "    let mut buf0 = [0u8; 1];\n",
+                "    unsafe { let g = 0x5802_0000 as *mut u32; for i in [1usize, 2, 3, 5, 8, 9, 0] { g.add(i).write_volatile(saved[i]); } }\n    let mut buf0 = [0u8; 1];\n",
+            ),
+        ],
+    );
+    let (code, v) = boot_elf("adv2 rcc gpio reset", &elf, "100ms");
+    answer(&format!("ADV2-1 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(unexpected(&v), ["RCC.AHB4RSTR.GPIOARST set"], "{v}");
+}
+
+/// ADV2-2 (A2, the PM's ruling): PA9 made open-drain with a pull-down
+/// after the bring-up routed it: on silicon the TX line never drives high.
+/// The pin's `OTYPER`, `OSPEEDR` and `PUPDR`, rebuilt from the access log,
+/// must be the bring-up's at every `TDR` write and at the end.
+#[test]
+fn adv2_2_an_open_drain_pulled_down_tx_fails() {
+    let elf = adv_reference(
+        "tx-open-drain",
+        &[],
+        &[(
+            "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n",
+            "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n    unsafe { let g = 0x5802_0000 as *mut u32; g.add(1).write_volatile(g.add(1).read_volatile() | 1 << 9); g.add(3).write_volatile((g.add(3).read_volatile() & !(3 << 18)) | 2 << 18); }\n",
+        )],
+    );
+    let (code, v) = boot_elf("adv2 tx open drain", &elf, "100ms");
+    answer(&format!("ADV2-2 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(
+        unexpected(&v),
+        [
+            "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write",
+            "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the end"
+        ],
+        "{v}"
+    );
+}
+
+/// ADV2-3 (held): one `SYSRESETREQ` at the very start. Renode does not
+/// reboot the firmware (no reset macro), so the boot word is never set.
+#[test]
+fn adv2_3_a_software_reset_at_start_fails() {
+    let elf = adv_reference(
+        "sysresetreq",
+        &[],
+        &[(
+            "    let mut r = unsafe { Mmio::new() };\n",
+            "    unsafe { let f = 0x2000_0200 as *mut u32; if f.read_volatile() != 0xA5A5_0001 { f.write_volatile(0xA5A5_0001); (0xE000_ED0C as *mut u32).write_volatile(0x05FA_0004); loop { core::hint::spin_loop(); } } }\n    let mut r = unsafe { Mmio::new() };\n",
+        )],
+    );
+    let (code, v) = boot_elf("adv2 sysresetreq", &elf, "100ms");
+    answer(&format!("ADV2-3 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert!(kinds(&v).contains(&"boot_word_missing"), "{v}");
+}
+
+/// ADV2-4 (held): one unaligned 32-bit `STR` at `GPIOA + 0x22`, over AFRH's
+/// low half (PA9's AFSEL to 0), the pattern, then AFRH written back whole:
+/// the rebuild cannot apply it, so the TX pin is not routed at its sends.
+#[test]
+fn adv2_4_an_unaligned_store_into_afrh_fails() {
+    let elf = adv_reference(
+        "afrh-unaligned",
+        &[],
+        &[
+            (
+                "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n",
+                "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n    unsafe { core::arch::asm!(\"str {v}, [{a}]\", v = in(reg) 0x0700_5550u32, a = in(reg) 0x5802_0022u32, options(nostack)); }\n",
+            ),
+            (
+                "    let mut buf0 = [0u8; 1];\n",
+                "    unsafe { (0x5802_0024 as *mut u32).write_volatile(0x770); }\n    let mut buf0 = [0u8; 1];\n",
+            ),
+        ],
+    );
+    let (code, v) = boot_elf("adv2 afrh unaligned", &elf, "100ms");
+    answer(&format!("ADV2-4 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_pattern_missing"], "{v}");
+}
+
+/// ADV2-5 (L2, the PM's ruling): PA9 locked by the `LCKR` key sequence in
+/// its reset mode before the HAL routes it. Renode ignores the routing
+/// writes the access log shows and says so: the refusal fails by name, and
+/// the rebuild does not apply the refused writes.
+#[test]
+fn adv2_5_a_locked_tx_pin_fails() {
+    let elf = adv_reference(
+        "lckr",
+        &[],
+        &[(
+            "    let pa9 = gpioa.pa9.into_usart1_tx(&mut r);\n",
+            "    unsafe { let l = 0x5802_001C as *mut u32; l.write_volatile(0x10200); l.write_volatile(0x200); l.write_volatile(0x10200); let _ = l.read_volatile(); let _ = l.read_volatile(); }\n    let pa9 = gpioa.pa9.into_usart1_tx(&mut r);\n",
+        )],
+    );
+    let (code, v) = boot_elf("adv2 lckr", &elf, "100ms");
+    answer(&format!("ADV2-5 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(
+        kinds(&v),
+        [
+            "register_mismatch",
+            "register_mismatch",
+            "serial_tag_mismatch",
+            "serial_pattern_missing"
+        ],
+        "{v}"
+    );
+    assert!(
+        unexpected(&v)
+            .iter()
+            .any(|x| x == "gpioPortA refused a write to 0x0 (a locked pin)"),
+        "{v}"
+    );
+    assert_eq!(
+        serial(&v)[0]["twin"]["tx_at_send"],
+        "PA9 MODER 0b00, AF0",
+        "{v}"
+    );
+}
+
 // ---------------------------------------------------------------- AET-WO-4220
 
 /// `AET-WO-4220` §2.3: the Sentinel-02-shaped fixture with the parts of our

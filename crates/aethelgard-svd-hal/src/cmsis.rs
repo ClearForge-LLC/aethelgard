@@ -11,7 +11,8 @@
 //!   array of them, or reserved padding of the same type. Offsets come from
 //!   field order, and every `Address offset:` comment must agree;
 //! - the RCC enable bit of a peripheral, `RCC_<register>_<peripheral>EN_Pos`,
-//!   which must name exactly one register;
+//!   and its reset bit, `RCC_<register>_<peripheral>RST_Pos`, each of which
+//!   must name exactly one register;
 //! - an interrupt number, the one `<NAME>_IRQn = <decimal>,` line inside
 //!   `typedef enum { … } IRQn_Type;` (`AET-WO-2100`);
 //! - a memory region's size, which the header states only in the comment of its
@@ -334,12 +335,29 @@ impl RegisterFacts {
     /// The RCC register and bit that gate `peripheral`'s clock: the one
     /// `RCC_<register>_<peripheral>EN_Pos` that exists.
     pub fn enable_bit(&self, peripheral: &str) -> Result<(String, u32), RegisterError> {
-        let suffix = format!("_{peripheral}EN_Pos");
+        self.rcc_bit(peripheral, "EN", "ENR", "clock enable")
+    }
+
+    /// The RCC register and bit that hold `peripheral` in reset while set:
+    /// the one `RCC_<register>_<peripheral>RST_Pos` that exists, `register`
+    /// one of the `*RSTR` (RM0433 Rev 9 §8.7, the RCC registers).
+    pub fn reset_bit(&self, peripheral: &str) -> Result<(String, u32), RegisterError> {
+        self.rcc_bit(peripheral, "RST", "RSTR", "reset")
+    }
+
+    fn rcc_bit(
+        &self,
+        peripheral: &str,
+        field: &str,
+        register_suffix: &str,
+        what: &str,
+    ) -> Result<(String, u32), RegisterError> {
+        let suffix = format!("_{peripheral}{field}_Pos");
         let found: Vec<&str> = self
             .defines
             .keys()
             .filter_map(|k| k.strip_prefix("RCC_")?.strip_suffix(suffix.as_str()))
-            .filter(|reg| identifier(reg) && reg.ends_with("ENR"))
+            .filter(|reg| identifier(reg) && reg.ends_with(register_suffix))
             .collect();
         let [register] = found.as_slice() else {
             return if found.is_empty() {
@@ -348,7 +366,7 @@ impl RegisterFacts {
                 })
             } else {
                 malformed(format!(
-                    "`{peripheral}`'s clock enable is in {} registers: {}",
+                    "`{peripheral}`'s {what} is in {} registers: {}",
                     found.len(),
                     found.join(", ")
                 ))
@@ -356,7 +374,7 @@ impl RegisterFacts {
         };
         let bit = self.value(&format!("RCC_{register}{suffix}"))?;
         if bit > 31 {
-            return malformed(format!("`{peripheral}`'s enable bit is {bit}"));
+            return malformed(format!("`{peripheral}`'s {what} bit is {bit}"));
         }
         Ok(((*register).to_owned(), bit))
     }
@@ -638,6 +656,14 @@ mod tests {
         assert_eq!(f.enable_bit("GPIOB").unwrap(), ("AHB4ENR".into(), 1));
         assert_eq!(f.enable_bit("I2C1").unwrap(), ("APB1LENR".into(), 21));
         assert_eq!(f.enable_bit("SPI1").unwrap(), ("APB2ENR".into(), 12));
+        // Each peripheral's reset bit, in its `*RSTR`.
+        assert_eq!(f.reset_bit("GPIOA").unwrap(), ("AHB4RSTR".into(), 0));
+        assert_eq!(f.reset_bit("USART1").unwrap(), ("APB2RSTR".into(), 4));
+        assert_eq!(f.reset_bit("UART8").unwrap(), ("APB1LRSTR".into(), 31));
+        let rcc = f.layout("RCC").unwrap();
+        assert_eq!(rcc.offset("AHB4RSTR", 0).unwrap(), 0x088);
+        assert_eq!(rcc.offset("APB1LRSTR", 0).unwrap(), 0x090);
+        assert_eq!(rcc.offset("APB2RSTR", 0).unwrap(), 0x098);
         // An alias chain: GPIO_MODER_MODE6_Pos is GPIO_MODER_MODER6_Pos.
         assert_eq!(f.position("GPIO_MODER_MODE6_Pos").unwrap(), 12);
         assert_eq!(f.position("GPIO_AFRH_AFSEL8_Pos").unwrap(), 0);
@@ -791,6 +817,9 @@ mod tests {
         let f = synthetic("#define RCC_AENR_X1EN_Pos (3U)\n#define RCC_BENR_X1EN_Pos (4U)\n");
         assert_eq!(f.enable_bit("X1").unwrap_err().kind(), "MalformedSource");
         assert_eq!(f.enable_bit("X2").unwrap_err().kind(), "Undefined");
+        let f = synthetic("#define RCC_ARSTR_X1RST_Pos (3U)\n#define RCC_BRSTR_X1RST_Pos (4U)\n");
+        assert_eq!(f.reset_bit("X1").unwrap_err().kind(), "MalformedSource");
+        assert_eq!(f.reset_bit("X1EN").unwrap_err().kind(), "Undefined");
     }
 
     #[test]

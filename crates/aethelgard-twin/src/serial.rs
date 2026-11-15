@@ -277,9 +277,10 @@ pub fn parse(bytes: &[u8], pattern: &[u8], frame: &[u8; FRAME_LEN]) -> Capture {
 }
 
 /// One access Renode's peripheral access log shows (`sysbus
-/// LogPeripheralAccess`, enabled by the composition for each port's USART and
-/// each TX pin's GPIO port): its source, whether it wrote, its width in bits,
-/// the offset in the peripheral and the value written or returned.
+/// LogPeripheralAccess`, enabled by the composition for each port's USART,
+/// each of its pins' GPIO ports and the RCC): its source, whether it wrote,
+/// its width in bits, the offset in the peripheral and the value written or
+/// returned, and whether the model refused the write ([`refused_by`]).
 ///
 /// Measured in Renode 1.17.0 (`AET-WO-4300b` fix 1, P1 and P2): one `INFO`
 /// line per access, whatever the offset or width, a defined register or not,
@@ -295,6 +296,9 @@ pub struct Access {
     pub bits: u8,
     pub offset: u32,
     pub value: u64,
+    /// The model logged that it ignored this write: a rebuild never applies
+    /// it (`AET-WO-4300b` adversarial pass 2, L2).
+    pub refused: bool,
 }
 
 /// `0x` then upper-case hexadecimal, as Renode writes `0x{:X}`.
@@ -348,34 +352,56 @@ pub fn access(body: &str) -> Option<Access> {
         bits,
         offset: u32::try_from(upper_hex(offset)?).ok()?,
         value: upper_hex(value)?,
+        refused: false,
     })
 }
 
+/// What Renode's GPIO model logs, right after the write's own access line,
+/// when it ignores a write to a pin its `LCKR` locked (measured, adversarial
+/// pass 2 q4): `[WARNING] gpioPortA: Ignoring attempt to change MODER
+/// configuration of the locked pin #9`, and the same for `AFSEL`.
+const LOCKED_PIN: &str = "Ignoring attempt to change ";
+
+/// The source of a whole log line's text after its timestamp in which the
+/// model says it ignored a write to a locked pin ([`LOCKED_PIN`]); `None` for
+/// any other line.
+pub fn refused_by(body: &str) -> Option<&str> {
+    let (source, rest) = body.strip_prefix("[WARNING] ")?.split_once(": ")?;
+    (!source.is_empty()
+        && source.bytes().all(|b| b.is_ascii_alphanumeric())
+        && rest.starts_with(LOCKED_PIN))
+    .then_some(source)
+}
+
 /// True for a line of Renode's access log ([`access`]) the judge never reads:
-/// a read, or a write to a GPIO port's word other than `MODER`, `AFRL` and
-/// `AFRH` (a sub-word write into one of those is kept, and fails closed).
-/// The boot's log filter discards these before its budget, uncounted: a
-/// firmware polling `ISR` writes one line per poll (measured: 20 000 polls,
-/// 2.3 MB, per port that waits out `ECHO_POLLS`; fix 1 P2), and one toggling
-/// a pin of a logged port (`BSRR`, `ODR`) one per toggle.
+/// a read (the RCC's included), or a write to a GPIO port's word other than
+/// `MODER`, `OTYPER`, `OSPEEDR`, `PUPDR`, `AFRL` and `AFRH` (a sub-word write
+/// into one of those is kept, and fails closed). The boot's log filter
+/// discards these before its budget, uncounted: a firmware polling `ISR`
+/// writes one line per poll (measured: 20 000 polls, 2.3 MB, per port that
+/// waits out `ECHO_POLLS`; fix 1 P2), and one toggling a pin of a logged port
+/// (`BSRR`, `ODR`) one per toggle.
 pub fn is_unjudged_access(body: &str) -> bool {
     access(body).is_some_and(|a| {
         !a.write
             || (a.source.starts_with("gpioPort")
-                && gpio_mux_offsets().is_some_and(|o| !o.contains(&(a.offset & !3))))
+                && gpio_judged_offsets().is_some_and(|o| !o.contains(&(a.offset & !3))))
     })
 }
 
-/// `MODER`'s, `AFRL`'s and `AFRH`'s offsets in a GPIO port, from the
-/// header, read once; `None` if the header cannot be read (then nothing is
-/// discarded).
-fn gpio_mux_offsets() -> Option<[u32; 3]> {
-    static OFFSETS: std::sync::OnceLock<Option<[u32; 3]>> = std::sync::OnceLock::new();
+/// The offsets in a GPIO port of the words the judge rebuilds (`MODER`,
+/// `OTYPER`, `OSPEEDR`, `PUPDR`, `AFRL`, `AFRH`), from the header, read once;
+/// `None` if the header cannot be read (then nothing is discarded).
+fn gpio_judged_offsets() -> Option<[u32; 6]> {
+    static OFFSETS: std::sync::OnceLock<Option<[u32; 6]>> = std::sync::OnceLock::new();
     *OFFSETS.get_or_init(|| {
         let f = cmsis::register_facts().ok()?;
         let g = f.layout("GPIO").ok()?;
         Some([
             g.offset("MODER", 0).ok()?,
+            g.offset("OTYPER", 0).ok()?,
+            g.offset("OSPEEDR", 0).ok()?,
+            g.offset("PUPDR", 0).ok()?,
             g.offset("AFR", 0).ok()?,
             g.offset("AFR", 1).ok()?,
         ])
@@ -519,13 +545,21 @@ pub struct TagJudgement {
     /// (`CR1.M1 set at UE`), another bit of a word at `UE` (`CR1 0x40D at UE,
     /// not 0x140D`), a word changed after `UE` (`CR2 0x32000 after UE`), a
     /// write the bring-up never makes (`0x1 to 0x2C`, `WriteByte to 0x1`,
-    /// `TDR before UE`), and a last boot that never set `UE`.
+    /// `TDR before UE`), and a last boot that never set `UE`; then what
+    /// [`judge_resets`] and [`judge_pins`] add.
     pub unexpected: Vec<String>,
 }
 
 impl TagJudgement {
     pub fn holds(&self) -> bool {
         self.missing.is_empty() && self.unexpected.is_empty()
+    }
+
+    /// Adds `x` to [`Self::unexpected`] unless it is there already.
+    pub fn note(&mut self, x: String) {
+        if !self.unexpected.contains(&x) {
+            self.unexpected.push(x);
+        }
     }
 }
 
@@ -540,11 +574,7 @@ impl TagJudgement {
 pub fn judge_writes(b: &Bringup, source: &str, boots: &[Vec<Access>]) -> TagJudgement {
     let mut j = TagJudgement::default();
     let mut missing = vec![false; b.tags.len()];
-    let note = |j: &mut TagJudgement, x: String| {
-        if !j.unexpected.contains(&x) {
-            j.unexpected.push(x);
-        }
-    };
+    let note = |j: &mut TagJudgement, x: String| j.note(x);
     for (k, boot) in boots.iter().enumerate() {
         let mut word = [0u32; 4];
         let mut enabled = false;
@@ -556,12 +586,10 @@ pub fn judge_writes(b: &Bringup, source: &str, boots: &[Vec<Access>]) -> TagJudg
             let slot = b.words.iter().position(|w| w.1 == a.offset);
             let value = u32::try_from(a.value).unwrap_or(u32::MAX);
             if a.bits != 32 {
-                let width = match a.bits {
-                    8 => "Byte",
-                    16 => "UInt16",
-                    _ => "UInt64",
-                };
-                note(&mut j, format!("Write{width} to {:#X}", a.offset));
+                note(
+                    &mut j,
+                    format!("Write{} to {:#X}", width_name(a.bits), a.offset),
+                );
                 continue;
             }
             if a.offset == b.tdr {
@@ -649,35 +677,230 @@ pub fn tx_at_send(
 ) -> Vec<Option<(u32, u32)>> {
     let mut out = Vec::new();
     for boot in boots {
-        let (mut moder, mut afr) = (Some(0u32), Some(0u32));
+        let mut words = PinWords::reset(tx);
         let mut first: Option<Option<(u32, u32)>> = None;
         let mut bad: Option<Option<(u32, u32)>> = None;
         for a in boot.iter().filter(|a| a.write) {
             if a.source == usart && a.offset == tdr {
-                let now = moder.zip(afr);
+                let now = words.moder.zip(words.afr);
                 first.get_or_insert(now);
                 if bad.is_none() && !now.is_some_and(|(m, f)| tx.routed(m, f)) {
                     bad = Some(now);
                 }
                 continue;
             }
-            if a.source != tx.source {
-                continue;
-            }
-            for (at, reg) in [(tx.offsets.0, &mut moder), (tx.offsets.1, &mut afr)] {
-                if a.offset & !3 == at {
-                    *reg = match (*reg, a.bits == 32 && a.offset == at) {
-                        (Some(_), true) => u32::try_from(a.value).ok(),
-                        _ => None,
-                    };
-                }
-            }
+            words.apply(tx, a);
         }
         if let Some(m) = bad.or(first) {
             out.push(m);
         }
     }
     out
+}
+
+/// A pin's words in its GPIO port, rebuilt in log order from the words the
+/// access log shows written: `MODER` and its `AFR` word from `0` (never
+/// routed), `OTYPER`, `OSPEEDR` and `PUPDR` from their reset values
+/// ([`PinMux::config_reset`]); a word becomes `None` once a write the rebuild
+/// cannot apply reaches it (not a word write at its offset), and a write the
+/// model refused ([`Access::refused`]) is not applied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PinWords {
+    moder: Option<u32>,
+    afr: Option<u32>,
+    /// `OTYPER`, `OSPEEDR`, `PUPDR`.
+    config: [Option<u32>; 3],
+}
+
+impl PinWords {
+    fn reset(pin: &PinMux) -> Self {
+        Self {
+            moder: Some(0),
+            afr: Some(0),
+            config: pin.config_reset.map(Some),
+        }
+    }
+
+    fn apply(&mut self, pin: &PinMux, a: &Access) {
+        if !a.write || a.refused || a.source != pin.source {
+            return;
+        }
+        let [ot, sp, pu] = &mut self.config;
+        for (at, word) in [
+            (pin.offsets.0, &mut self.moder),
+            (pin.offsets.1, &mut self.afr),
+            (pin.config_offsets[0], ot),
+            (pin.config_offsets[1], sp),
+            (pin.config_offsets[2], pu),
+        ] {
+            if a.offset & !3 == at {
+                *word = match (*word, a.bits == 32 && a.offset == at) {
+                    (Some(_), true) => u32::try_from(a.value).ok(),
+                    _ => None,
+                };
+            }
+        }
+    }
+
+    /// `None` when the pin is push-pull, low speed and pulled neither way;
+    /// else what it is, and `when`, for a finding.
+    fn misconfigured(&self, pin: &PinMux, when: &str) -> Option<String> {
+        match self.config {
+            [Some(ot), Some(sp), Some(pu)] => {
+                let (ot, sp, pu) = pin.config_fields([ot, sp, pu]);
+                ((ot, sp, pu) != (0, 0, 0)).then(|| {
+                    format!(
+                        "{} OTYPER {ot}, OSPEEDR {sp:#04b}, PUPDR {pu:#04b} {when}",
+                        pin.pin
+                    )
+                })
+            }
+            _ => Some(format!(
+                "{} OTYPER/OSPEEDR/PUPDR not rebuilt {when}",
+                pin.pin
+            )),
+        }
+    }
+}
+
+/// What the access log shows of a port's two pins beyond their mux
+/// (`AET-WO-4300b` adversarial pass 2, A2 and L2), each failure once, in the
+/// order first seen:
+/// - each pin push-pull, low speed (`00`, the contract's) and pulled neither
+///   way, as the bring-up leaves it (an open-drain TX with a pull-down never
+///   drives the line high): the TX pin at every `TDR` write of each boot, the
+///   RX pin at the injection (`inject_at`, how many of the last boot's
+///   accesses precede it; `None` when no frame went in), both at the end of
+///   the last boot (`PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write`);
+/// - no write to either pin's GPIO port refused by the model (a pin its
+///   `LCKR` locked; the rebuild does not apply it): `gpioPortA refused a
+///   write to 0x0 (a locked pin)`.
+pub fn judge_pins(
+    tx: &PinMux,
+    rx: &PinMux,
+    usart: &str,
+    tdr: u32,
+    inject_at: Option<usize>,
+    boots: &[Vec<Access>],
+) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut note = |x: Option<String>| {
+        if let Some(x) = x.filter(|x| !out.contains(x)) {
+            out.push(x);
+        }
+    };
+    for (k, boot) in boots.iter().enumerate() {
+        let last = k + 1 == boots.len();
+        let (mut t, mut r) = (PinWords::reset(tx), PinWords::reset(rx));
+        for (i, a) in boot.iter().enumerate() {
+            if last && inject_at == Some(i) {
+                note(r.misconfigured(rx, "at the injection"));
+            }
+            if a.write && a.source == usart && a.offset == tdr {
+                note(t.misconfigured(tx, "at a TDR write"));
+            }
+            if a.refused && (a.source == tx.source || a.source == rx.source) {
+                note(Some(format!(
+                    "{} refused a write to {:#X} (a locked pin)",
+                    a.source, a.offset
+                )));
+            }
+            t.apply(tx, a);
+            r.apply(rx, a);
+        }
+        if last {
+            if inject_at == Some(boot.len()) {
+                note(r.misconfigured(rx, "at the injection"));
+            }
+            note(t.misconfigured(tx, "at the end"));
+            note(r.misconfigured(rx, "at the end"));
+        }
+    }
+    out
+}
+
+/// Renode's name of the RCC in the stock platform (`rcc:
+/// Miscellaneous.STM32H7_RCC @ sysbus 0x58024400`, [`platform::STOCK_FILE`]):
+/// the composition logs its accesses beside the ports' (adversarial pass 2,
+/// A1).
+pub const RCC_RENODE: &str = "rcc";
+
+/// A peripheral's reset bit: its `RCC_*RSTR` register's name and offset in
+/// the RCC, and the bit, from the header.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResetBit {
+    pub peripheral: String,
+    pub register: String,
+    pub offset: u32,
+    pub mask: u32,
+}
+
+/// The reset bits of `peripheral` (a port's USART) and of each of `pins`'
+/// GPIO ports, once each. A write that sets one resets that peripheral's
+/// registers in Renode with no line in the access log (measured, adversarial
+/// pass 2 q1: `BRR`, `CR1`, `CR2` and `GPIOA.MODER` all read 0 after it), so
+/// the rebuild would no longer be the state ([`judge_resets`]).
+pub fn reset_bits(peripheral: &str, pins: &[&str]) -> Result<Vec<ResetBit>, TwinError> {
+    let f = cmsis::register_facts()?;
+    let rcc = f.layout("RCC")?;
+    let mut names = vec![peripheral.to_owned()];
+    for pin in pins {
+        let port = format!("GPIO{}", crate::split_pin(pin)?.0);
+        if !names.contains(&port) {
+            names.push(port);
+        }
+    }
+    names
+        .into_iter()
+        .map(|peripheral| {
+            let (register, bit) = f.reset_bit(&peripheral)?;
+            Ok(ResetBit {
+                offset: rcc.offset(&register, 0)?,
+                mask: 1 << bit,
+                register,
+                peripheral,
+            })
+        })
+        .collect()
+}
+
+/// The RCC's writes in `boots` that may reset one of `bits`' peripherals,
+/// each once, in the order first seen: a word write to its register with its
+/// bit set (`RCC.AHB4RSTR.GPIOARST set`), or a write into its register that
+/// is not a word write (`WriteByte to RCC 0x88`). The bring-up writes only
+/// enable registers (adversarial pass 2, q2), so no correct board fails.
+pub fn judge_resets(bits: &[ResetBit], boots: &[Vec<Access>]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for a in boots
+        .iter()
+        .flatten()
+        .filter(|a| a.write && a.source == RCC_RENODE)
+    {
+        for b in bits.iter().filter(|b| b.offset == a.offset & !3) {
+            let x = if a.bits != 32 || a.offset != b.offset {
+                format!("Write{} to RCC {:#X}", width_name(a.bits), a.offset)
+            } else if a.value & u64::from(b.mask) != 0 {
+                format!("RCC.{}.{}RST set", b.register, b.peripheral)
+            } else {
+                continue;
+            };
+            if !out.contains(&x) {
+                out.push(x);
+            }
+        }
+    }
+    out
+}
+
+/// How Renode names an access of `bits` bits: `Byte`, `UInt16`, `UInt32`,
+/// `UInt64`.
+fn width_name(bits: u8) -> &'static str {
+    match bits {
+        8 => "Byte",
+        16 => "UInt16",
+        32 => "UInt32",
+        _ => "UInt64",
+    }
 }
 
 /// One serial port as the judge needs it, in the specification's order.
@@ -734,10 +957,27 @@ pub struct PinMux {
     /// The pin's index in its port.
     pub index: u32,
     pub alternate_function: u8,
+    /// `OTYPER`'s, `OSPEEDR`'s and `PUPDR`'s offsets in the port, and their
+    /// words at reset.
+    pub config_offsets: [u32; 3],
+    pub config_reset: [u32; 3],
 }
 
 /// `MODER` = `10`, alternate function (RM0433 Rev 9 §11.4.1).
 const MODE_AF: u32 = 0b10;
+
+/// A port's `OTYPER`, `OSPEEDR` and `PUPDR` at reset (RM0433 Rev 9
+/// §11.4.2–11.4.4, pp. 541–542): `OTYPER` 0 in every port; `OSPEEDR`
+/// `0x0C00_0000` in port A and `0x0000_00C0` in port B, `PUPDR` `0x6400_0000`
+/// and `0x0000_0100`, 0 in every other port (the debug pins). A word the
+/// firmware never writes holds its reset value on silicon.
+fn config_reset(port: char) -> [u32; 3] {
+    match port {
+        'A' => [0, 0x0C00_0000, 0x6400_0000],
+        'B' => [0, 0x0000_00C0, 0x0000_0100],
+        _ => [0, 0, 0],
+    }
+}
 
 impl PinMux {
     /// The pin's mux from the header's layout.
@@ -765,7 +1005,24 @@ impl PinMux {
             ),
             index,
             alternate_function,
+            config_offsets: [
+                gpio.offset("OTYPER", 0)?,
+                gpio.offset("OSPEEDR", 0)?,
+                gpio.offset("PUPDR", 0)?,
+            ],
+            config_reset: config_reset(port),
         })
+    }
+
+    /// The pin's `OT`, `OSPEEDR` and `PUPDR` fields in `words` (`OTYPER`,
+    /// `OSPEEDR`, `PUPDR`).
+    pub fn config_fields(&self, words: [u32; 3]) -> (u8, u8, u8) {
+        let i = self.index;
+        (
+            ((words[0] >> i) & 1) as u8,
+            ((words[1] >> (2 * i)) & 0b11) as u8,
+            ((words[2] >> (2 * i)) & 0b11) as u8,
+        )
     }
 
     /// The pin's `MODER` and `AFSEL` fields in the registers `moder` and
@@ -963,6 +1220,7 @@ mod tests {
             bits,
             offset,
             value,
+            refused: false,
         };
         assert_eq!(access(WRITE_TDR), Some(a("usart1", true, 32, 0x28, 0x43)));
         assert_eq!(access(WRITE_PRESC), Some(a("usart1", true, 32, 0x2C, 1)));
@@ -973,10 +1231,35 @@ mod tests {
         );
         assert_eq!(access(GPIO_HALF), Some(a("gpioPortA", true, 16, 0, 0xA801)));
         assert!(is_unjudged_access(READ_ISR) && !is_unjudged_access(WRITE_TDR));
-        // A GPIO port's writes are judged only in MODER and AFR, a sub-word
-        // write into either included.
+        // A GPIO port's writes are judged only in MODER, OTYPER, OSPEEDR,
+        // PUPDR and AFR, a sub-word write into one included; the RCC's reads
+        // are discarded, its writes kept.
         for (line, unjudged) in [
             (GPIO_HALF, false),
+            (
+                "[INFO] gpioPortA: [cpu: 0x8000A56] WriteUInt32 to 0x4 (OutputType), value 0x200",
+                false,
+            ),
+            (
+                "[INFO] gpioPortA: [cpu: 0x8000A56] WriteUInt32 to 0x8 (OutputSpeed), value 0x400",
+                false,
+            ),
+            (
+                "[INFO] gpioPortA: [cpu: 0x8000A56] WriteUInt32 to 0xC (PullUpPullDown), value 0x80000",
+                false,
+            ),
+            (
+                "[INFO] gpioPortA: [cpu: 0x8000A56] WriteUInt32 to 0x1C (ConfigurationLock), value 0x10200",
+                true,
+            ),
+            (
+                "[INFO] rcc: [cpu: 0x8000710] WriteUInt32 to 0x88 (AHB4Reset), value 0x1",
+                false,
+            ),
+            (
+                "[INFO] rcc: [cpu: 0x8000A2A] ReadUInt32 from 0xE0 (AHB4Clock), returned 0x1",
+                true,
+            ),
             (
                 "[INFO] gpioPortA: [cpu: 0x8000728] WriteUInt32 to 0x18 (BitSet), value 0x1",
                 true,
@@ -1013,6 +1296,28 @@ mod tests {
             "[WARNING] usart1: Unhandled write to offset 0x2C, value 0x1.",
         ] {
             assert_eq!(access(bad), None, "{bad}");
+        }
+        // A locked pin's write refused, as Renode logs it (adversarial pass 2,
+        // q4), and nothing else.
+        for (line, source) in [
+            (
+                "[WARNING] gpioPortA: Ignoring attempt to change MODER configuration of the locked pin #9",
+                Some("gpioPortA"),
+            ),
+            (
+                "[WARNING] gpioPortB: Ignoring attempt to change AFSEL configuration of the locked pin #6",
+                Some("gpioPortB"),
+            ),
+            (
+                "[INFO] gpioPortA: Ignoring attempt to change MODER configuration of the locked pin #9",
+                None,
+            ),
+            (
+                "[WARNING] gpioPortB: Unhandled write to offset 0x4. Unhandled bits: [6] when writing value 0x40. Tags: OT6 (0x1).",
+                None,
+            ),
+        ] {
+            assert_eq!(refused_by(line), source, "{line}");
         }
     }
 
@@ -1054,6 +1359,7 @@ mod tests {
             bits: 32,
             offset,
             value: value.into(),
+            refused: false,
         }
     }
 
@@ -1230,6 +1536,187 @@ mod tests {
             [Some((0, 0))]
         );
         assert!(tx_at_send(&tx, "usart1", 0x28, &[routed.to_vec()]).is_empty());
+    }
+
+    /// Adversarial pass 2, A1 (ADV2-1): a write that sets the reset bit of
+    /// the port's USART or of a GPIO port holding one of its pins resets
+    /// those registers with no line in the access log, so it fails by name;
+    /// another peripheral's reset, and the enable registers, do not.
+    #[test]
+    fn adversarial_2_a1_a_reset_of_the_port_s_peripherals_is_named() {
+        let bits = reset_bits("USART1", &["PA9", "PA10"]).unwrap();
+        let named: Vec<(&str, &str, u32, u32)> = bits
+            .iter()
+            .map(|b| (b.peripheral.as_str(), b.register.as_str(), b.offset, b.mask))
+            .collect();
+        assert_eq!(
+            named,
+            [
+                ("USART1", "APB2RSTR", 0x98, 1 << 4),
+                ("GPIOA", "AHB4RSTR", 0x88, 1)
+            ]
+        );
+        let enable = [w("rcc", 0xE0, 1), w("rcc", 0xF0, 0x10)];
+        assert!(judge_resets(&bits, &[enable.to_vec()]).is_empty());
+        // ADV2-1: GPIOARST pulsed after the bring-up.
+        let pulse = [w("rcc", 0x88, 1), w("rcc", 0x88, 0)];
+        assert_eq!(
+            judge_resets(&bits, &[enable.to_vec(), pulse.to_vec()]),
+            ["RCC.AHB4RSTR.GPIOARST set"]
+        );
+        // A1b: USART1RST, among other bits of APB2RSTR.
+        assert_eq!(
+            judge_resets(&bits, &[vec![w("rcc", 0x98, 0x1011)]]),
+            ["RCC.APB2RSTR.USART1RST set"]
+        );
+        // GPIOB and USART6 are not this port's; a byte into AHB4RSTR may be.
+        assert!(judge_resets(&bits, &[vec![w("rcc", 0x88, 2), w("rcc", 0x98, 0x20)]]).is_empty());
+        let byte = Access {
+            bits: 8,
+            ..w("rcc", 0x89, 1)
+        };
+        assert_eq!(
+            judge_resets(&bits, &[vec![byte]]),
+            ["WriteByte to RCC 0x89"]
+        );
+        // Another source's write at the same offset is not the RCC's.
+        assert!(judge_resets(&bits, &[vec![w("gpioPortA", 0x88, 1)]]).is_empty());
+        // A UART8 port's pins on port E: its bit is APB1LRSTR's 31.
+        let uart8 = reset_bits("UART8", &["PE1", "PE0"]).unwrap();
+        assert_eq!(uart8.len(), 2);
+        assert_eq!((uart8[0].offset, uart8[0].mask), (0x90, 1 << 31));
+        assert_eq!(
+            (uart8[1].register.as_str(), uart8[1].mask),
+            ("AHB4RSTR", 1 << 4)
+        );
+    }
+
+    /// The console's TX and RX as the generated board leaves them: each word
+    /// written whole, push-pull, low speed, no pull, then routed.
+    fn console_pins() -> Vec<Access> {
+        vec![
+            w("gpioPortA", 0x4, 0),
+            w("gpioPortA", 0x8, 0),
+            w("gpioPortA", 0xC, 0),
+            w("gpioPortA", 0x24, 0x770),
+            w("gpioPortA", 0, 0x28_0000),
+        ]
+    }
+
+    /// Adversarial pass 2, A2 (ADV2-2): each pin must be push-pull, low
+    /// speed and pulled neither way, rebuilt from the words written: the TX
+    /// pin at every TDR write, the RX pin at the injection, both at the end.
+    #[test]
+    fn adversarial_2_a2_the_pins_are_push_pull_low_speed_and_unpulled() {
+        let (tx, rx) = (
+            PinMux::of("PA9", 7).unwrap(),
+            PinMux::of("PA10", 7).unwrap(),
+        );
+        assert_eq!(tx.config_offsets, [4, 8, 0xC]);
+        let send = w("usart1", 0x28, 0x43);
+        let judge = |boot: &[Access], inject_at| {
+            judge_pins(&tx, &rx, "usart1", 0x28, inject_at, &[boot.to_vec()])
+        };
+        let mut good = console_pins();
+        good.push(send.clone());
+        assert!(judge(&good, Some(good.len())).is_empty());
+        assert!(judge(&good, None).is_empty());
+        // ADV2-2: PA9 open-drain with a pull-down after it is routed.
+        let mut bad = console_pins();
+        bad.extend([w("gpioPortA", 0x4, 1 << 9), w("gpioPortA", 0xC, 0b10 << 18)]);
+        bad.push(send.clone());
+        assert_eq!(
+            judge(&bad, None),
+            [
+                "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write",
+                "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the end"
+            ]
+        );
+        // Open-drain for the pattern only, push-pull again before the end.
+        let mut brief = bad.clone();
+        brief.extend([w("gpioPortA", 0x4, 0), w("gpioPortA", 0xC, 0)]);
+        assert_eq!(
+            judge(&brief, None),
+            ["PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write"]
+        );
+        // PA10 pulled up at the injection, released after it; a speed set.
+        let mut rx_bad = good.clone();
+        rx_bad.push(w("gpioPortA", 0xC, 0b01 << 20));
+        let at = rx_bad.len();
+        rx_bad.push(w("gpioPortA", 0xC, 0));
+        assert_eq!(
+            judge(&rx_bad, Some(at)),
+            ["PA10 OTYPER 0, OSPEEDR 0b00, PUPDR 0b01 at the injection"]
+        );
+        rx_bad.push(w("gpioPortA", 0x8, 0b11 << 20));
+        assert_eq!(
+            judge(&rx_bad, None),
+            ["PA10 OTYPER 0, OSPEEDR 0b11, PUPDR 0b00 at the end"]
+        );
+        // A half-word write into OSPEEDR cannot be rebuilt.
+        let mut half = good.clone();
+        half.insert(
+            0,
+            Access {
+                bits: 16,
+                ..w("gpioPortA", 0xA, 0)
+            },
+        );
+        // Both pins' word.
+        assert_eq!(
+            judge(&half, None),
+            [
+                "PA9 OTYPER/OSPEEDR/PUPDR not rebuilt at a TDR write",
+                "PA9 OTYPER/OSPEEDR/PUPDR not rebuilt at the end",
+                "PA10 OTYPER/OSPEEDR/PUPDR not rebuilt at the end"
+            ]
+        );
+        // A word never written holds its reset value: PB4's pull-up and
+        // PB3's very high speed (RM0433 Rev 9 §11.4.3, §11.4.4).
+        let (pb4, pb3) = (
+            PinMux::of("PB4", 11).unwrap(),
+            PinMux::of("PB3", 11).unwrap(),
+        );
+        assert_eq!(pb4.config_reset, [0, 0xC0, 0x100]);
+        let tdr = [w("uart7", 0x28, 0x43)];
+        assert_eq!(
+            judge_pins(&pb4, &pb3, "uart7", 0x28, None, &[tdr.to_vec()]),
+            [
+                "PB4 OTYPER 0, OSPEEDR 0b00, PUPDR 0b01 at a TDR write",
+                "PB4 OTYPER 0, OSPEEDR 0b00, PUPDR 0b01 at the end",
+                "PB3 OTYPER 0, OSPEEDR 0b11, PUPDR 0b00 at the end"
+            ]
+        );
+        // Each boot from reset: a boot after a release judged on its own.
+        let rest = vec![send.clone()];
+        let got = judge_pins(&tx, &rx, "usart1", 0x28, None, &[good.clone(), rest]);
+        assert!(got.is_empty(), "{got:?}");
+        assert!(PinMux::of("PA9", 7).unwrap().config_reset[2] & (0b11 << 18) == 0);
+    }
+
+    /// Adversarial pass 2, L2 (ADV2-5): a write the model refused (a pin
+    /// `LCKR` locked) fails by name, and the rebuild does not apply it.
+    #[test]
+    fn adversarial_2_l2_a_refused_write_is_named_and_not_applied() {
+        let (tx, rx) = (
+            PinMux::of("PA9", 7).unwrap(),
+            PinMux::of("PA10", 7).unwrap(),
+        );
+        let mut boot = console_pins();
+        boot[4].refused = true;
+        boot.push(w("usart1", 0x28, 0x43));
+        assert_eq!(
+            judge_pins(&tx, &rx, "usart1", 0x28, None, &[boot.clone()]),
+            ["gpioPortA refused a write to 0x0 (a locked pin)"]
+        );
+        assert_eq!(tx_at_send(&tx, "usart1", 0x28, &[boot]), [Some((0, 0x770))]);
+        // Another port's refusal is not this port's.
+        let mut other = console_pins();
+        other.push(Access {
+            refused: true,
+            ..w("gpioPortB", 0, 0)
+        });
+        assert!(judge_pins(&tx, &rx, "usart1", 0x28, None, &[other]).is_empty());
     }
 
     /// The PM's ruling on F5: one character at the solved actual baud, in ns
