@@ -725,7 +725,8 @@ pub enum IrValidationError {
         max_millivolts: u32,
         part_min_millivolts: u32,
         part_max_millivolts: u32,
-        citation: String,
+        /// Boxed, so the error stays small enough to return by value.
+        citation: Box<str>,
     },
     #[error(
         "net constraint on `{id}`, an SPI bus's MISO or a chip select: no check reads it, so it cannot be held (`AET-WO-4300c` D3, D4)"
@@ -748,7 +749,8 @@ pub enum IrValidationError {
         part: String,
         status: &'static str,
         accepted: String,
-        citation: String,
+        /// Boxed, as `IoOutsidePart`'s is.
+        citation: Box<str>,
     },
     #[error("`accept_lifecycle` acknowledges `{id}` twice")]
     LifecycleAcceptedTwice { id: String },
@@ -1359,7 +1361,7 @@ impl Specification {
                     max_millivolts: max,
                     part_min_millivolts: part_min,
                     part_max_millivolts: part_max,
-                    citation: cite(citation),
+                    citation: cite(citation).into(),
                 });
             }
         }
@@ -1433,7 +1435,7 @@ impl Specification {
                         part: p.part.clone(),
                         status,
                         accepted: a.status.clone(),
-                        citation,
+                        citation: citation.into(),
                     });
                 }
                 Some(_) => {}

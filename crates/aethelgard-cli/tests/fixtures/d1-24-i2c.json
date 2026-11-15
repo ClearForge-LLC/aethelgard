@@ -1,5 +1,6 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
+  "accept_lifecycle": [],
   "project_name": "d1-24-i2c",
   "mcu": {
     "part": "STM32H753ZITx",
