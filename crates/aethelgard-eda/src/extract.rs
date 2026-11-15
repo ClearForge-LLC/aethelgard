@@ -1408,6 +1408,70 @@ mod tests {
         );
     }
 
+    /// Review 2, A12: a line's total is the sum of its five terms, the
+    /// connectors' off-board capacitance among them, pinned here and not
+    /// only in the CLI's tests (a mutant that drops `offboard` from the
+    /// total survived this crate's suite).
+    #[test]
+    fn a_lines_total_holds_every_term_and_the_offboard_budget() {
+        let pad = route::Pad {
+            number: "1".into(),
+            net: Some(board_net("I2C_SCL")),
+            rect: crate::pcb::Rect {
+                x0: 0,
+                y0: 0,
+                x1: 1_000_000,
+                y1: 1_000_000,
+            },
+            corner_nm: 0,
+            drill_nm: None,
+            join: None,
+        };
+        let read = ReadBoard {
+            board: route::Board {
+                outline: crate::pcb::Rect {
+                    x0: -10_000_000,
+                    y0: -10_000_000,
+                    x1: 10_000_000,
+                    y1: 10_000_000,
+                },
+                parts: vec![route::Part {
+                    reference: "J1".into(),
+                    rotation: 0,
+                    pads: vec![pad],
+                    courtyard: Vec::new(),
+                }],
+                stack: crate::stack::reference(),
+            },
+            routed: route::Routed::default(),
+            footprints: BTreeMap::from([("J1".into(), ("fp".into(), "v".into()))]),
+        };
+        let want = Line {
+            net: "I2C_SCL".into(),
+            bus: "SENSORS".into(),
+            spi_signal: None,
+            parts: BTreeMap::from([(
+                "J1".into(),
+                Role {
+                    footprint: "fp".into(),
+                    value: "v".into(),
+                    pads: BTreeSet::from(["1".to_owned()]),
+                    load: Load::Connector,
+                    offboard: vec![("1".into(), 20_000, "a cable".into())],
+                },
+            )]),
+        };
+        let b = line(&read, &want).unwrap();
+        assert_eq!(b.terms.offboard, 20_000);
+        assert!(b.terms.pads > 0);
+        let t = &b.terms;
+        assert_eq!(
+            b.c_bound_femtofarads,
+            t.trace + t.vias + t.pads + t.pins + t.offboard
+        );
+        assert_eq!(b.c_bound_femtofarads, t.pads + 20_000);
+    }
+
     /// §1.4: each derived value against its formula on the reference's
     /// declared board, and against the values the §1.3 measurement used.
     #[test]

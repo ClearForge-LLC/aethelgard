@@ -2865,9 +2865,11 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
     }
     let o = board.outline;
     let inner = o.grow(-EDGE_NM);
-    for item in all.iter().filter(|i| {
-        i.what.starts_with("track") || i.what.starts_with("via") || i.what.starts_with("thermal")
-    }) {
+    // Every item after the pads is a track, a via or a thermal via ([`items`]
+    // puts the pads first): chosen by position, never by its text, which
+    // starts with a part's reference for a pad (`via1`, review 2, A16).
+    let pads: usize = board.parts.iter().map(|p| p.pads.len()).sum();
+    for item in &all[pads..] {
         if !inner.contains(item.shape.rect.grow(item.shape.r)) {
             return Err(format!("{} is within {EDGE_NM} nm of the edge", item.what));
         }
@@ -3050,7 +3052,8 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
     let first_seg = all.len() - routed.segments.len() - routed.vias.len();
     let first_via = all.len() - routed.vias.len();
     // Items: every pad, then every thermal via, then tracks, then vias.
-    let pad_count: usize = board.parts.iter().map(|p| p.pads.len()).sum();
+    let pads: Vec<&Pad> = board.parts.iter().flat_map(|p| &p.pads).collect();
+    let pad_count = pads.len();
     // A track's end that joins nothing, reported after every other judgement.
     let mut dangling = None;
     for (si, s) in routed.segments.iter().enumerate() {
@@ -3066,8 +3069,7 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
             for (k, &e) in ends(s).iter().enumerate() {
                 let here = if j < pad_count {
                     // A pad: the track ends inside its copper.
-                    let pad = &board.parts.iter().flat_map(|p| &p.pads).nth(j);
-                    pad.is_some_and(|p| p.inner().contains(Rect::point(e.0, e.1)))
+                    pads[j].inner().contains(Rect::point(e.0, e.1))
                 } else {
                     b.shape.holds(e)
                 };
@@ -3456,6 +3458,12 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
                     .and_then(|r| strict::number(&r, 1))
                     .ok_or_else(|| format!("{what}: no `roundrect_rratio`"))?;
                 w.min(h) * ratio.clamp(0, 500_000) / 1_000_000
+            }
+            // KiCad draws a circle as a disk of its x size, which the
+            // stadium below holds only when the size is square, as
+            // `extract` requires (review 2, A16).
+            Some("circle") if w != h => {
+                return Err(format!("{what} is a circle whose size is not square"));
             }
             Some("oval" | "circle") => w.min(h) / 2,
             other => return Err(format!("{what} has shape {other:?}")),
@@ -4588,6 +4596,46 @@ mod tests {
     }
 
     /// What the router does not model is refused when read, never guessed.
+    /// Review 2, A16: a circle whose size is not square is refused, since
+    /// KiCad draws a disk of its x size (the stadium would under-size it);
+    /// a square circle reads.
+    #[test]
+    fn a_circle_pad_that_is_not_square_is_refused() {
+        let fp = |size: &str| {
+            crate::sexpr::parse(&format!(
+                "(footprint \"x\" (at 1 2) (property \"Reference\" \"R1\") (pad \"1\" smd circle (at 0 0) (size {size}) (layers \"F.Cu\")) (fp_rect (start -1 -1) (end 1 1) (layer \"F.CrtYd\")))"
+            ))
+            .unwrap()
+        };
+        assert!(part_of(&fp("1 1")).is_ok());
+        for size in ["1 0.6", "0.6 1"] {
+            let e = part_of(&fp(size)).unwrap_err();
+            assert!(e.contains("not square"), "{size}: {e}");
+        }
+    }
+
+    /// Review 2, A16: a part named `via1`, `track_x` or `thermal1` is held to
+    /// the clearance rules of a pad, not to the edge rule of a track or via.
+    #[test]
+    fn a_part_named_like_copper_is_judged_as_a_pad() {
+        for reference in ["via1", "track_x", "thermal1"] {
+            let mut part = resistor(reference, 0, "/A", "/B");
+            // Its pads 0.1 mm inside the left edge: clear of nothing a pad
+            // must keep, inside the edge margin a track must keep.
+            for p in &mut part.pads {
+                p.rect.x0 += 860_000;
+                p.rect.x1 += 860_000;
+            }
+            let board = Board {
+                outline: rect(0, 0, 10 * MM, 20 * MM),
+                parts: vec![part],
+                stack: crate::stack::reference(),
+            };
+            let e = check(&board, &Routed::default());
+            assert!(!e.as_ref().is_err_and(|m| m.contains("of the edge")), "{reference}: {e:?}");
+        }
+    }
+
     #[test]
     fn reading_refuses_what_the_router_does_not_model() {
         let yard = "(fp_rect (start -1 -1) (end 1 1) (layer \"F.CrtYd\"))";
