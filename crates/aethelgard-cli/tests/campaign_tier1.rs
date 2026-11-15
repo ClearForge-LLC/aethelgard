@@ -887,10 +887,18 @@ fn a_solved_topology_is_not_a_base() {
     work.dir
         .write("s.json", scenario_with_base("topology.json").as_bytes());
     let out = work.campaign(&cli(Some(BRIDGE_BY_PULL_UP)), &tb.0, &["s.json"]);
-    // A solved topology is at version 3 (`AET-WO-4200`) and a specification at
-    // version 2 (`AET-WO-4100`), so the reader refuses it at the version, before
-    // its shape: refused before running either way.
-    expect_refusal(&out, 2, "UnsupportedSchemaVersion");
+    // A solved topology and a specification are both at version 4 now
+    // (`AET-WO-1308` bumped the specification to it), so the reader no longer
+    // refuses at the version: it refuses the topology's shape, naming its
+    // `specification_sha256`. Refused before running either way.
+    let v = expect_refusal(&out, 2, "SchemaViolation");
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("specification_sha256"),
+        "{v}"
+    );
     assert!(work.runs().is_empty());
 }
 

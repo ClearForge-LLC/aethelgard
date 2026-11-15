@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "project_name": "sentinel-01-4l",
   "mcu": {
     "part": "STM32H753ZITx",
@@ -175,5 +175,7 @@
       "via_drill_um": 300,
       "via_diameter_um": 600
     }
-  }
+  },
+  "net_classes": [],
+  "diff_pairs": []
 }

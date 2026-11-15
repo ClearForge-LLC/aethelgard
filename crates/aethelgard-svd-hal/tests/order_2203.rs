@@ -83,18 +83,22 @@ fn digests() -> Vec<(&'static str, String)> {
 /// the flash is `W25Q64JVxIQ`; and the firmware's SPI output speeds): the
 /// firmware was `c468b3cb…604f`, the platform `9fd77dad…53aa` and the
 /// faulted platform `c80833a9…8bec`. The boot image's digest is unchanged.
+/// Re-taken in `AET-WO-1308` (specification version 4, so the specification's
+/// sha256 alone): the firmware was `ecd58f5f…9b7b`, the platform `bc1517cd…7522`
+/// and the faulted platform `f684f871…3dba`. Each reproduces from the old
+/// digest when the old sha256 is passed to `solve`. The boot image is unchanged.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "ecd58f5fd173ab3d59129da6c264a3072b093d74fcb492c93beef0556c089b7b",
+        "0a856c18e5fa9179f09feb60ee670b79d2223189b13d9d92995c391e6c034382",
     ),
     (
         "platform",
-        "bc1517cdcc3a9ece13c4d755506e638e881cd04ba7bf85214e554c56b3a67522",
+        "06a9bf509cef7a9e184383ec9d172f0dc2020f07279fb4ce58fd92c7e9c81a4b",
     ),
     (
         "platform faulted",
-        "f684f871019c69a477fc1839530ec54506b99cd84ecab8449d2caf4360a03dba",
+        "99bb772433724d258889400df43651a824430f28562d1b302915c7802f858c08",
     ),
     (
         "boot image",

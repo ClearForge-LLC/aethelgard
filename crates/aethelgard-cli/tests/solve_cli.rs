@@ -26,8 +26,8 @@ use sha2::{Digest, Sha256};
 /// (`53ac16ac…` and `0c9ce020…` there); and re-taken in `AET-WO-4300c`, whose
 /// specification version 3, solved version 4 (`spi_lines`) and `W25Q64JVxIQ`
 /// moved them (`3c39199f…` and `3169ae88…` before).
-const REFERENCE_DIGEST: &str = "ac9c929920add905a613e23b7a3e6ba18959dd611d8705ac87f41ebddd39cee5";
-const STRESS_DIGEST: &str = "a8606bf83953ce9e5794ee517a87972d6684abf19dec1555da6ef937a471f412";
+const REFERENCE_DIGEST: &str = "0f3d8bb53d58d151cb86cee47cde874520fc0ac125bf034b5a47d1b45a54cbef";
+const STRESS_DIGEST: &str = "bb7c5df47fbde8643839a754be4260988c8d34174349c7e0d0b557da81a661fe";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
