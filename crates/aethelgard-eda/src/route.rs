@@ -3419,7 +3419,7 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
             continue;
         }
         let (drill_nm, join) = match (pad.arg(2), copper.as_slice()) {
-            (Some("smd"), ["F.Cu"]) => (None, None),
+            (Some("smd"), ["F.Cu"]) if one(&pad, "drill")?.is_none() => (None, None),
             (Some("thru_hole"), ["*.Cu"]) => through_hole(&pad, &what)?,
             _ => {
                 return Err(format!(
@@ -4559,6 +4559,12 @@ mod tests {
             (
                 "1 2",
                 "(pad \"1\" smd rect (at 0 0) (size 1 1) (layers \"B.Cu\"))",
+                "front SMD",
+            ),
+            // A drill on an SMD pad: its offset would move the copper.
+            (
+                "1 2",
+                "(pad \"1\" smd rect (at 0 0) (size 1 1) (drill 0 (offset 0 2.5)) (layers \"F.Cu\"))",
                 "front SMD",
             ),
         ] {

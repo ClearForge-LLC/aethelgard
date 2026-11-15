@@ -1354,13 +1354,23 @@ fn the_through_hole_and_thermal_fixtures_pass_drc_by_the_gates_rules() {
         assert!(items.is_empty(), "{name}: {items:?}");
         if let Some(join) = name.strip_prefix("xt30-") {
             let saved = fs::read_to_string(t.0.join(&name).join("th.kicad_pcb")).unwrap();
-            let layer = if join.starts_with("true") { "In1.Cu" } else { "B.Cu" };
+            let layer = if join.starts_with("true") {
+                "In1.Cu"
+            } else {
+                "B.Cu"
+            };
             // J1 at (110, 116); pad 2, 1.9 mm drill, at x -5.
             let radii = fill_radii(&saved, layer, "GND", (105_000_000, 116_000_000), 2_600_000);
             let ring: Vec<i64> = radii.iter().copied().filter(|&r| r > 1_000_000).collect();
-            record_1309(&format!("{name}: fill vertices 1.0-2.6 mm from J1 pad 2: {}", ring.len()));
+            record_1309(&format!(
+                "{name}: fill vertices 1.0-2.6 mm from J1 pad 2: {}",
+                ring.len()
+            ));
             if join.ends_with("Relief") {
-                assert!(!ring.is_empty() && ring.iter().all(|r| (2_240_000..=2_260_000).contains(r)), "{name}: {ring:?}");
+                assert!(
+                    !ring.is_empty() && ring.iter().all(|r| (2_240_000..=2_260_000).contains(r)),
+                    "{name}: {ring:?}"
+                );
             } else {
                 assert!(ring.is_empty(), "{name}: {ring:?}");
             }

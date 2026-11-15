@@ -813,6 +813,15 @@ fn footprint(fp: &Node<'_>) -> Result<(String, (String, String)), Refused> {
                         "{pad} has no `layers`, or names a layer by other than its canonical name"
                     )));
                 }
+                // A drill is a through-hole pad's alone: on an SMD pad its
+                // offset would move the copper off the pad's `at`.
+                if child.arg(2) != Some("thru_hole")
+                    && child.one("drill").map_err(malformed)?.is_some()
+                {
+                    return Err(unmodelled(format!(
+                        "{pad} is drilled and not a through-hole pad"
+                    )));
+                }
                 // A circle lies inside its box, which the bound prices.
                 if !matches!(child.arg(3), Some("rect" | "roundrect" | "circle")) {
                     return Err(unmodelled(format!("{pad} has shape {:?}", child.arg(3))));

@@ -476,8 +476,10 @@ fn what_the_reader_does_not_model_is_refused() {
             unmodelled,
         ),
         (
-            "pad_circle",
-            once("smd roundrect", "smd circle"),
+            // A circle is modelled since `AET-WO-1309` (inside its box, which
+            // the bound prices); an oval is not.
+            "pad_oval",
+            once("smd roundrect", "smd oval"),
             unmodelled,
         ),
         (
