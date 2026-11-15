@@ -2946,6 +2946,21 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
             join_of(board, part, pad)?;
         }
     }
+    // Every declared join is a part's on the board, with a through-hole pad
+    // (`INV-06`; `AET-WO-1309` adversarial F9).
+    for (reference, _) in &board.stack.joins {
+        let has = board
+            .parts
+            .iter()
+            .filter(|p| p.reference == *reference)
+            .flat_map(|p| &p.pads)
+            .any(|p| p.drill_nm.is_some());
+        if !has {
+            return Err(format!(
+                "the specification declares a join for {reference}, and the board has no through-hole pad of {reference}"
+            ));
+        }
+    }
     for part in &board.parts {
         for pad in &part.pads {
             if let Some(v) = routed
@@ -3416,6 +3431,11 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
             .filter(|l| l.ends_with(".Cu"))
             .collect();
         if copper.is_empty() {
+            // A hole with no copper still cuts every layer it passes:
+            // not modelled, so refused (`AET-WO-1309` adversarial F1).
+            if one(&pad, "drill")?.is_some() {
+                return Err(format!("{what} is a drilled hole with no copper"));
+            }
             continue;
         }
         let (drill_nm, join) = match (pad.arg(2), copper.as_slice()) {
@@ -3555,6 +3575,10 @@ fn through_hole(
         "padstack",
         "keep_end_layers",
         "clearance",
+        "backdrill",
+        "tertiary_drill",
+        "front_post_machining",
+        "back_post_machining",
     ] {
         if one(pad, token)?.is_some() {
             return Err(format!("{what} sets its own `{token}`"));
@@ -3871,6 +3895,15 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
         });
     }
     for v in board.all("via") {
+        // The engine's via holds these and nothing else: a backdrill or a
+        // machining token would cut its hole off a layer the judges join it
+        // on (`AET-WO-1309` adversarial F2).
+        for child in v.lists() {
+            let head = child.head().unwrap_or("");
+            if !matches!(head, "at" | "size" | "drill" | "layers" | "net" | "uuid") {
+                return Err(format!("a via has `{head}`, which the gate does not model"));
+            }
+        }
         let size = one(&v, "size")?.map(|w| nm_at(&w, 1, "via")).transpose()?;
         let drill = one(&v, "drill")?.map(|w| nm_at(&w, 1, "via")).transpose()?;
         let layers: Vec<&str> = one(&v, "layers")?
@@ -3943,9 +3976,62 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
             .map(str::to_owned)
             .ok_or("a zone has no layer")?;
         let name = net(&z, "a zone")?;
-        // A relieved pad's gap and spokes are the zone's (measured, B2): the
-        // engine's own, which the join judge assumes.
+        // A fill is solid and as the engine writes it: its judges assume
+        // sure, solid copper (`AET-WO-1309` adversarial F3), and a relieved
+        // pad's gap and spokes are the zone's (measured, B2).
+        for child in z.lists() {
+            let head = child.head().unwrap_or("");
+            if !matches!(
+                head,
+                "net"
+                    | "layer"
+                    | "uuid"
+                    | "hatch"
+                    | "min_thickness"
+                    | "filled_areas_thickness"
+                    | "fill"
+                    | "polygon"
+            ) {
+                return Err(format!(
+                    "zone `{name}` on {layer} has `{head}`, which the gate does not model"
+                ));
+            }
+        }
         let fill = one(&z, "fill")?;
+        if let Some(f) = &fill {
+            for child in f.lists() {
+                let head = child.head().unwrap_or("");
+                if !matches!(
+                    head,
+                    "thermal_gap" | "thermal_bridge_width" | "island_removal_mode"
+                ) {
+                    return Err(format!(
+                        "zone `{name}` on {layer}: its fill has `{head}`, which the gate does not model"
+                    ));
+                }
+            }
+        }
+        let pinned = |item: Option<strict::Node<'_>>, want: &str| {
+            item.and_then(|i| i.arg(1).map(str::to_owned)) == Some(want.to_owned())
+        };
+        if fill.as_ref().is_some_and(|f| f.arg(1).is_some())
+            || !pinned(
+                one(&z, "min_thickness")?,
+                &crate::sexpr::mm(MIN_THICKNESS_NM),
+            )
+            || !pinned(
+                fill.as_ref()
+                    .map(|f| one(f, "island_removal_mode"))
+                    .transpose()?
+                    .flatten(),
+                "0",
+            )
+        {
+            return Err(format!(
+                "zone `{name}` on {layer}: its fill is not the engine's solid fill (min_thickness {}, island_removal_mode 0)",
+                crate::sexpr::mm(MIN_THICKNESS_NM)
+            ));
+        }
         let at = |token: &str| -> Result<Option<i64>, String> {
             fill.as_ref()
                 .map(|f| one(f, token))
@@ -4516,6 +4602,11 @@ mod tests {
         let read = part_of(&fp("1 2", &th("(remove_unused_layers no)"))).unwrap();
         assert_eq!(read.pads[0].drill_nm, Some(500_000));
         for (pad, want) in [
+            (th("(padstack (mode front_inner_back))"), "own `padstack`"),
+            (
+                "(pad \"1\" thru_hole circle (at 0 0) (size 1 1) (layers \"*.Cu\"))".to_owned(),
+                "has no drill",
+            ),
             (th("(zone_connect 0)"), "has `zone_connect` (Some(\"0\"), None)"),
             (th("(thermal_bridge_angle 45)"), "own `thermal_bridge_angle`"),
             (th("(remove_unused_layers yes)"), "removes its unused layers"),

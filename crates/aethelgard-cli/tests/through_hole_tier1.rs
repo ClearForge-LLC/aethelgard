@@ -443,3 +443,152 @@ fn extraction_prices_each_pad_by_its_kind() {
         aethelgard_eda::extract::pad_bound(&ph, &smd)
     );
 }
+
+// ---- the adversarial pass (FEEDBACK §5): each finding's refusal ----
+
+/// `text` with `new` put in once, right after the first `after`.
+fn after(text: &str, after: &str, new: &str) -> String {
+    let i = text.find(after).unwrap_or_else(|| panic!("no `{after}`")) + after.len();
+    format!("{}{new}{}", &text[..i], &text[i..])
+}
+
+/// Copper and fills the gate does not model are refused by name, never
+/// judged as if they were not there: a drilled hole with no copper inside
+/// the thermal pad (F1), a backdrill on a thermal via or a through-hole
+/// pad (F2), a hatched or otherwise non-engine fill or zone (F3).
+#[test]
+fn what_the_judges_do_not_model_is_refused() {
+    let (stack, text) = thermal(th::lmr33630_rule(&["In1.Cu"])).unwrap();
+    let (xstack, xtext) =
+        th::write(th::xt30_board(true, aethelgard_eda::stack::Join::Relief)).unwrap();
+    let cases = [
+        (
+            &stack,
+            text.replacen(
+                "(pad \"1\" smd rect",
+                "(pad \"\" np_thru_hole circle (at 1.2 2.2) (size 0.4 0.4) (drill 0.4) (layers \"*.Mask\"))\n\t\t(pad \"1\" smd rect",
+                1,
+            ),
+            "U5 pad  is a drilled hole with no copper",
+        ),
+        (
+            &stack,
+            after(
+                &text,
+                "(drill 0.254)",
+                " (backdrill (size 0.5) (layers \"B.Cu\" \"In1.Cu\"))",
+            ),
+            "a via has `backdrill`",
+        ),
+        (
+            &xstack,
+            after(
+                &xtext,
+                "(drill 1.9)",
+                " (backdrill (size 2.0) (layers \"B.Cu\" \"In1.Cu\"))",
+            ),
+            "sets its own `backdrill`",
+        ),
+        (
+            &stack,
+            after(&text, "(island_removal_mode 0)", " (mode hatch)"),
+            "its fill has `mode`",
+        ),
+        (
+            &stack,
+            text.replacen("(island_removal_mode 0)", "(island_removal_mode 1)", 1),
+            "is not the engine's solid fill",
+        ),
+        (
+            &stack,
+            text.replacen("(min_thickness 0.25)", "(min_thickness 0.2)", 1),
+            "is not the engine's solid fill",
+        ),
+        (
+            &stack,
+            after(&text, "(min_thickness 0.25)", " (priority 1)"),
+            "has `priority`, which the gate does not model",
+        ),
+    ];
+    for (stack, board, want) in cases {
+        assert_ne!(board, text);
+        let e = th::judge(stack, &board).unwrap_err();
+        assert!(e.contains(want), "{want}: {e}");
+    }
+}
+
+/// A declared join for a part the board does not have, or one with no
+/// through-hole pad, is refused (`INV-06`; F9).
+#[test]
+fn a_join_for_a_part_with_no_through_hole_pad_is_refused() {
+    let (mut stack, text) =
+        th::write(th::xt30_board(false, aethelgard_eda::stack::Join::Solid)).unwrap();
+    for absent in ["R1", "J9"] {
+        stack
+            .joins
+            .push((absent.into(), aethelgard_eda::stack::Join::Solid));
+        let e = th::judge(&stack, &text).unwrap_err();
+        assert!(
+            e.contains(&format!(
+                "declares a join for {absent}, and the board has no through-hole pad"
+            )),
+            "{e}"
+        );
+        stack.joins.pop();
+    }
+}
+
+/// Extraction reads a footprint turned to 270 degrees (its angle is not a
+/// coordinate; F7).
+#[test]
+fn extraction_reads_a_part_at_270_degrees() {
+    let (stack, mut fps, outline) = th::xt30_board(true, aethelgard_eda::stack::Join::Solid);
+    let r1 = fps
+        .iter_mut()
+        .find(|f| f.property("Reference") == Some("R1"))
+        .unwrap();
+    let at = r1
+        .items_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|i| i.head() == Some("at"))
+        .unwrap();
+    at.items_mut()
+        .unwrap()
+        .push(aethelgard_eda::sexpr::Sx::atom("270"));
+    let (stack, text) = th::write((stack, fps, outline)).unwrap();
+    assert!(text.contains("(at 122 116 270)"), "R1 is not turned");
+    aethelgard_eda::extract::read(&text, &stack).unwrap_or_else(|e| panic!("{e:?}"));
+}
+
+/// The array's declared pad must be exactly one SMD pad of one part, with a
+/// net; and a declared array the board lacks is refused.
+#[test]
+fn a_declared_array_needs_its_pad_and_its_vias() {
+    let rule = th::lmr33630_rule(&["In1.Cu"]);
+    for (reference, pad, want) in [
+        ("U9", "9", "the board has 0 parts U9"),
+        ("U5", "10", "U5 pad 10: 0 SMD pads of that number"),
+    ] {
+        let (mut stack, fps, outline) = th::thermal_board(true, None, false);
+        stack.thermal = vec![aethelgard_eda::stack::ThermalPad::of(reference, pad, &rule)];
+        let e = th::write((stack, fps, outline)).unwrap_err();
+        assert!(e.contains(want), "{e}");
+    }
+    let (mut stack, mut fps, outline) = th::thermal_board(true, Some(rule.clone()), false);
+    let mut nets = [None; 9];
+    nets[0] = Some("GND");
+    nets[1] = Some("VIN");
+    fps[0] = th::hsop8("U5", (110.0, 112.0), nets, false);
+    stack.thermal = vec![aethelgard_eda::stack::ThermalPad::of("U5", "9", &rule)];
+    let e = th::write((stack, fps, outline)).unwrap_err();
+    assert!(e.contains("U5 pad 9 has no net"), "{e}");
+    // Laid with no array, judged by a specification that declares one.
+    let (_, bare) = th::write(th::thermal_board(true, None, false)).unwrap();
+    let (stack, _) = thermal(rule).unwrap();
+    let e = th::judge(&stack, &bare).unwrap_err();
+    assert!(
+        e.contains("U5 pad 9 has no thermal array; the specification declares one"),
+        "{e}"
+    );
+}

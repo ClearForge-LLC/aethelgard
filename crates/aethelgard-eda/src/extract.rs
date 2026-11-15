@@ -745,7 +745,14 @@ fn bounded(item: &Node<'_>, what: &str) -> Result<(), Refused> {
     if !matches!(item.head(), Some("at" | "start" | "end" | "size" | "xy")) {
         return Ok(());
     }
-    for a in item.texts() {
+    // An `at` holds a rotation after its two coordinates: 270 is an angle,
+    // not 270 mm (`AET-WO-1309` adversarial F7).
+    let n = if item.head() == Some("at") {
+        2
+    } else {
+        usize::MAX
+    };
+    for a in item.texts().take(n) {
         if sexpr::nm(a).is_some_and(|v| v.abs() > MAX_COORD_NM) {
             return Err(refused(
                 "BoardTooLarge",
