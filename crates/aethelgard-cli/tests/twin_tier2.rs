@@ -1686,3 +1686,32 @@ fn motor_output_dead_leaves_its_pin_silent_and_reads_its_wrong_af() {
         ["unwitnessed", "witnessed", "witnessed", "witnessed"]
     );
 }
+
+/// `AET-WO-4300a` §1.3: Kani proves the PWM fixture's TIM1 start writes the
+/// solved values, in order, and the reset-clock check is exact. The board's
+/// whole-schedule harness (`every_valid_sequence`) did not finish in 33.5 min
+/// on this board (FEEDBACK), so CI runs the two targeted harnesses.
+#[test]
+fn kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check() {
+    let (platform, _, _) = motor_board("motors-pwm", "prove", |_| {}, |_| {});
+    let board = platform.parent().unwrap();
+    for harness in [
+        "proofs::tim1_start_writes_the_solved_values",
+        "proofs::reset_clock_is_ok_exactly_at_reset",
+    ] {
+        let start = Instant::now();
+        let (code, v) = aethelgard(&[
+            "prove",
+            "--crate",
+            board.to_str().unwrap(),
+            "--harness",
+            harness,
+        ]);
+        answer(&format!(
+            "prove {harness}: exit={code:?} wall_s={:.2}",
+            start.elapsed().as_secs_f64()
+        ));
+        assert_eq!(code, Some(0), "{harness}: {v}");
+        assert_eq!(v["verdict"], "pass", "{harness}: {v}");
+    }
+}
