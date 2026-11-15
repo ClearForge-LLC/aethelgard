@@ -479,6 +479,14 @@ Extraction for P4's gates (PR #133, ruled in comment 6888926396):
 - **Supply-path resistance.** Thomson's principle with an explicit flow gives a rigorous upper bound per pin. The closed-form pieces cover 8 of 16 MCU supply pins on the reference. On the 4-layer fixture they cover 11 of 16 with the hole concentric and 2 of 16 at JLCPCB's ±0.075 mm hole position. The 0.15 mm via ring, not the copper, limits the bound. KiCad's zone filler opens a plane's clearance by half its `min_thickness` (read in `zone_filler.cpp`).
 - **Loads and minima.** DS12117 Rev 10 Table 120 gives the MCU 658 mA maximum at Tj 125 °C. k = 1.181 for rated foil resistivity is cited (IPC-MF-150F). No reachable primary source publishes a finished-copper or hole-wall minimum, so they are declared, and the fabrication package states them as instructions.
 
+### 2.25 Measurements from AET-WO-4300c (2026-11-15, Furnace and GitHub Actions)
+
+Pin speeds (PR #129, ruled in comment 6887905174):
+- **Fmax is data:** DS12117 Rev 10 Table 149 (rev V) and Table 52 (rev Y) agree in all 48 cells, held in `aethelgard-ir/data/output-speeds.json`. Speeds `10`/`11` assume the compensation cell, which Renode does not model, so they are never selectable.
+- **Scope of the check (ruled D1, D4):** only lines whose edges a peripheral drives push-pull at a stated rate, which today means SPI SCK and MOSI. I2C is open-drain, and its rise belongs to the pull-up (DS12117 §6.3.32; `RUL-19` (1)). MISO is an input in master mode. A chip select or any GPIO output is software-driven, with no rate the topology can state. Each out-of-scope line is named with its reason in `aethelgard check speeds`.
+- **Capacitance is declared and confirmed:** each SCK and MOSI declares its C. `extract` bounds it on every drawn board, counting device pins at their cited maximum and leaving out the driving MCU pin. A part with no cited maximum makes extraction refuse the line.
+- **The reference:** SCK and MOSI moved from `10` to `01`, and MISO from `10` to `00`. Every verdict is unchanged against `main`'s binaries.
+
 ## 4. Ratified rulings
 
 Each carries its reason. Departures from Argon's plan are labelled as departures so they are not later mistaken for drift.
@@ -654,6 +662,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-11-15 | §2.22, §4 | Added §2.22 (SPI measured: the multiplexer, the witness, the unmodelled flight parts, parts as data). `RUL-19` (5) extended to SPI identity reads | PR #118 |
 | 2026-11-15 | §2.23, §4 | Added §2.23 (ArduPilot built on Furnace, what its board definition requires, the ELF's reset GPIO table). `RUL-15` amended: a second image for ArduPilot, with GPL kept out of the tools and engine images | PR #130, comment 6887864517 |
 | 2026-11-15 | §2.24 | Added §2.24 (`1303` spike: the certified Z bracket, no Z gate in P4, the USB full-speed device budget, the Thomson supply bound and its via-ring limit) | PR #133, comment 6888926396 |
+| 2026-11-15 | §2.25 | Added §2.25 (`4300c`: Fmax as data, the check's scope, declared and confirmed SPI capacitance) | PR #129 |
 
 New sections continue the sequence and never reuse a number.
 

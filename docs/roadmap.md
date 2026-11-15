@@ -491,6 +491,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | The 1303 build: supply and ground R bounds with coverage, stackup minima fields, USB pair C | 1303 ruling | `AET-WO-1303` build, after `1308` and `4300d` |
 | Off-board devices (a GPS module's compass on a DS-009 GPS port): modelled in the twin, not placed on the board | 4300f D9 | `AET-WO-4500` |
 | Sentinel-02's own IMU and barometer: current parts with Renode models of our own (the twin's modelled parts are all EOL) | 4210 D1 | Scotty's decision (a purchase, and `RUL-12`'s language rule) |
+| Three refusals now pre-empted by `validate` (eda `UnsupportedAddress`, twin `ModelOffItsBus`, emitter `InvalidDeviceName` for `spi1`–`spi6`): delete or keep as guards | 4300c reduction | unowned; the next eda/twin work order |
 
 ## 8. Amendments
 
