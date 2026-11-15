@@ -216,3 +216,43 @@ The ruling: (a) a detected intolerable fault covers its bus when it fails by the
   - the one-kind run fails the gate, so nothing is written (179 s).
 - **P20 [measured on Furnace; CI estimated].** Weights re-estimated at Furnace time × 1.7 (`ci/colocate.tsv`, `ci/test-weights.tsv`). CI's own shard times decide; the refit rule applies if any passes 20 minutes.
 - **3301 §3.2's statement** in `cli/README.md` is replaced by the ruled gate. The fab section names both refusals, the precondition list and the reference's seeded set.
+
+## 11. Adversarial re-pass on the coverage gate (a fresh Opus subagent, at `63e5c84`)
+
+It drove `build`, `campaign` and `attribute` on the committed board and on two mutant copies (`cs-never`, `wrong-address`), fed the real `attribute` output to `detection` in a scratch test, and ran `verify` end to end in the image (`~/.cache/aet-3303/adv2/`, removed after harvest). Fixed at the next commit unless said otherwise:
+
+| # | Severity | Finding | Done |
+|---|---|---|---|
+| F1 | false pass (measured) | A pull-up **lowered** to 1000 Ω (above the 967 Ω sink floor) counted as an I2C stress; with the rest of the seeded set a package was written with coverage `met` though nothing on `SENSORS` was made worse | A lowered pull-up is eased, as a lowered capacitance is |
+| F2 | false pass | An expect-pass scenario with a 3.3 kΩ pull-up and both lines at 1 fF covered `SENSORS`: the eased overrides were dropped | A tolerable scenario with any eased override covers nothing |
+| F3 | question | No magnitude floor: +1 Ω or +1 fF covers a bus | **Q for the architect** (§12); the ruling sets none |
+| F4 | latent false pass | A held line or an absent device in a scenario expecting **pass** would count as a survived fault | Never tolerable: such a scenario covers nothing |
+| F5 | false refusal (read) | The droop's band check uses the declared floor, not the floor less load × source resistance (`rail_levels`) | Not changed: it errs toward refusing; backlog (§12) |
+| F6 | wrong text | `FabReport.preconditions`' doc still said coverage is not enforced | Corrected |
+
+**Held [measured by the adversary]:**
+- the absent flash run against `cs-never` (same kinds, `software`/`S3`) is rejected on the rule;
+- 47 kΩ with `wrong-address` (`E1`, masked `[28,13]`) is rejected as masked;
+- the real subjects of the genuine detections pass: `spi-absent-u4` `E2` `["device:U4"]`; 47 kΩ and `held-low-scl` `E1` `["bus:SENSORS","device:U2"]`;
+- an expected fail with no baseline fails the gate, naming it;
+- the refusal comes before any gate;
+- `connectors.json` is refused naming only `VDD_5V`, the device-less `EXT` not blocking;
+- the verdict's and the manifest's preconditions are equal and true.
+
+Read:
+- a failing baseline fails the gate;
+- two targets, a mechanism mismatch, an expected-fail droop and a fault with an eased override (expecting fail) are `Other`;
+- a declared subset of the kinds fails on `matched`;
+- `attribute` is bound by run id and state hash;
+- `controller:` and `kind:<n>` subjects cannot widen what a run cites.
+
+**FEEDBACK claims it found false:** P17's "a stressing fault" was false for F1 and F2 at `63e5c84` (now true); P19 was by inference, and is now measured (the absent flash with `cs-never` is `S3`, rejected).
+
+Reduction pass (diff, D1 delta): −1 net · 0 duplicates · 1 dead binding removed (`coverage`'s unused bus id) · 0 protected · 0 findings.
+
+## 12. Questions for the architect (after the D1 build)
+
+- **F3:** should a covering fault have a magnitude floor (for example, a pull-up or capacitance past the line's own ceiling, as the seeded set's faults are), or is any stressing value enough?
+- **(c)'s row:** with a device-less bus, `campaign_faults_every_bus_and_rail` reads `state: met` with that bus in `no_device` (named `no device: nothing to fault`). The bus is never listed as met; is `met` for the row right, or should a row with `no_device` read otherwise?
+- **A serial port (`4300b`, #152, not yet merged):** #152 has no campaign override for a serial port; `serial_rx_dead` is a firmware mutant attributed `software`/`S5` (4300b's inbox note, 19:30 UTC, measured there). A campaign cannot seed a mutant (`verify` builds its own firmware) and ruling (a) counts only an `electrical` attribution, so a declared serial port has no covering fault. Under the ruled rule it is `unmet` and blocks the package of any board that declares one; that includes the reference if #152 gives Sentinel-01 its console port. Which merges second adds `Target::Serial`; should it stay `unmet` until a serial fault kind exists, or does the architect rule a serial-specific reading of (a)?
+- **Backlog (proposed):** the droop's band check against the loaded floor (F5).

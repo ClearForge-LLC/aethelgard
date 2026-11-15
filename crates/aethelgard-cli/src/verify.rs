@@ -111,8 +111,8 @@ struct FabReport {
     /// or `not_written` / `not_derived` when a gate failed: nothing is written.
     status: &'static str,
     /// Each precondition of a package and its state (`AET-WO-3303` §1.1). A
-    /// skipped harness was refused before any gate ran; campaign coverage is
-    /// stated here and not yet enforced (FEEDBACK D1).
+    /// skipped harness and a campaign short of coverage were refused before
+    /// any gate ran; here each is judged again on the gates (D1, ruled).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     preconditions: Vec<fab::Precondition>,
     /// `kicad-cli`'s version, as the export ran it.
@@ -628,7 +628,13 @@ fn stress(
     match o {
         Override::PullUpOhms { bus, ohms } => {
             let b = spec.i2c_buses.iter().find(|b| &b.id == bus)?;
-            (b.pull_up_ohms != *ohms).then(|| i2c(bus, RISE))
+            // Raised, the line rises slower; lowered, it only rises faster
+            // (adversary 2, F1; `solve` refuses one below the sink floor).
+            match ohms.cmp(&b.pull_up_ohms) {
+                std::cmp::Ordering::Equal => None,
+                std::cmp::Ordering::Greater => Some(i2c(bus, RISE)),
+                std::cmp::Ordering::Less => Some((None, None)),
+            }
         }
         Override::MaxCapacitance { net, femtofarads } => {
             let c = spec.net_constraints.iter().find(|c| &c.net_name == net)?;
@@ -691,6 +697,20 @@ fn classify(
     if scenario.expect_pass {
         if changed.is_empty() {
             return Seeded::Baseline;
+        }
+        // A scenario that also eases something covers nothing: its net change
+        // may ease the target it stresses (adversary 2, F2). A held line or an
+        // absent device is never a fault to survive: an absent IMU or flash
+        // must be caught, not survived (ruled (a); adversary 2, F4).
+        use aethelgard_chaos::record::Override;
+        let intolerable = scenario.overrides.iter().any(|o| {
+            matches!(
+                o,
+                Override::LineHeldLow { .. } | Override::SpiDeviceAbsent { .. }
+            )
+        });
+        if intolerable || changed.iter().any(|(t, _)| t.is_none()) {
+            return Seeded::Tolerable(Vec::new());
         }
         return Seeded::Tolerable(changed.into_iter().filter_map(|(t, _)| t).collect());
     }
@@ -762,19 +782,18 @@ fn coverage(
     }
     let mut c = Coverage::default();
     let nothing = "no device: nothing to fault";
-    for (id, used, target) in spec
+    for (used, target) in spec
         .i2c_buses
         .iter()
         .map(|b| {
             let used = topology.i2c_devices.values().any(|d| d.bus == b.id);
-            (&b.id, used, Target::I2c(b.id.clone()))
+            (used, Target::I2c(b.id.clone()))
         })
         .chain(spec.spi_buses.iter().map(|b| {
             let used = topology.spi_devices.values().any(|d| d.bus == b.id);
-            (&b.id, used, Target::Spi(b.id.clone()))
+            (used, Target::Spi(b.id.clone()))
         }))
     {
-        let _ = id;
         if !used {
             c.no_device.push(format!("{} ({nothing})", target.name()));
         } else if !covered.contains(&target) {
@@ -1782,6 +1801,33 @@ mod tests {
             json!([{"net": sda, "max_capacitance_femtofarads": 1}]),
         );
         assert_eq!(c(&eased), Seeded::Tolerable(Vec::new()));
+        // Adversary 2: a lowered pull-up only eases (F1); a stressing fault
+        // beside an eased one covers nothing (F2); a held line or an absent
+        // device expected to pass is never survived (F4).
+        let lowered = json_scenario(true, &[], json!([{"bus": "SENSORS", "pull_up_ohms": 1000}]));
+        assert_eq!(c(&lowered), Seeded::Tolerable(Vec::new()));
+        let mixed = json_scenario(
+            true,
+            &[],
+            json!([{"bus": "SENSORS", "pull_up_ohms": 3300},
+                {"net": sda, "max_capacitance_femtofarads": 1}]),
+        );
+        assert_eq!(c(&mixed), Seeded::Tolerable(Vec::new()));
+        for o in [
+            json!([{"spi_device_absent": "U4"}]),
+            json!([{"bus": "SENSORS", "line_held_low": "scl"}]),
+        ] {
+            assert_eq!(
+                c(&json_scenario(true, &[], o)),
+                Seeded::Tolerable(Vec::new())
+            );
+        }
+        let lowered_fail = json_scenario(
+            false,
+            &["i2c_timeout"],
+            json!([{"bus": "SENSORS", "pull_up_ohms": 1000}]),
+        );
+        assert_eq!(c(&lowered_fail), Seeded::Other);
     }
 
     /// Ruled (a), driven by `cases.json`: each seeded case's measured
