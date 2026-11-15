@@ -51,7 +51,7 @@ Probes under `~/.cache/aet-1308/{rot,p4}`, each through `~/bin/capped-run` (caps
 
 ## B2. What was built
 
-- **Specification v4** (subagent, spot-checked; `9681ede`, `e09fe38`): `net_classes` and `diff_pairs`, both required. Each refusal is its own kind, with a tier-1 test in `crates/aethelgard-ir/tests/classes.rs`: `NetInTwoClasses` (a pair counts as its nets' class), `ClassUnknownNet`, `ClassNoNets`, `ClassBelowMinimum`, `ClassAboveMaximum`, `ViaRingUnderRules`, `PairNets`, `PairOnRail`, `DuplicateClassName`, plus `ClassNetNotLiteral` (mine: RUL-14 admits `'`, which ends the gate's KiCad quote, and `?`, which KiCad's `==` reads as a wildcard (adversarial A1), so both are refused rather than escaped by guess).
+- **Specification v4, renumbered v5 at the merge (B12)** (subagent, spot-checked; `9681ede`, `e09fe38`): `net_classes` and `diff_pairs`, both required. Each refusal is its own kind, with a tier-1 test in `crates/aethelgard-ir/tests/classes.rs`: `NetInTwoClasses` (a pair counts as its nets' class), `ClassUnknownNet`, `ClassNoNets`, `ClassBelowMinimum`, `ClassAboveMaximum`, `ViaRingUnderRules`, `PairNets`, `PairOnRail`, `DuplicateClassName`, plus `ClassNetNotLiteral` (mine: RUL-14 admits `'`, which ends the gate's KiCad quote, and `?`, which KiCad's `==` reads as a wildcard (adversarial A1), so both are refused rather than escaped by guess).
 - **`stack::Rule`** per net: its class's width and via, its pair's width, or the board's.
 - **The router:** one set of occupancy maps per distinct rule, each reach computed at that rule. A board with one rule therefore runs today's arithmetic, which P1 measures. Exact judges (`check`, `connectivity`, `zone_core`) take each item's radius from its net's rule.
 - **`route::read`** refuses a track or via other than its net's rule, naming the class or pair.
@@ -126,16 +126,16 @@ The reference was emitted with U2 at the left edge at 90°, U3 at the top at 0°
 - **P4** held.
 - **P5** held, and found that text angles are absolute too.
 - **P6** held: 0 vias each and a 1.5 mm difference. The pair needed CS pinned, and one polarity.
-- **P7:** pending CI.
+- **P7** held: CI green on the PR head with every shard under 20 minutes, and `TIER2_MIN` exact (B13). There are three tier-2 tests, not the two predicted.
 
 ## B8. Questions for the architect
 
-1. **F1:** the schema bump changes `boards/sentinel-01`'s 8 hash lines and the twin's `REFERENCE`. This reads "byte-identical" as the KiCad files and the verdicts. 4300f also takes v4, so the second to merge renumbers.
+1. **F1:** the schema bump changes `boards/sentinel-01`'s 8 hash lines and the twin's `REFERENCE`. This reads "byte-identical" as the KiCad files and the verdicts. Since 4300f merged first, this is v5 (B12).
 2. **F2:** classes carry no clearance. Is a per-class clearance field wanted?
 3. **F6:** the bounds were chosen before any measurement: `PAIR_SKEW_NM` 2 mm and `PAIR_BREAKOUT_NM` 4 mm. Should they be specification fields?
 4. **F7:** 0.28 mm is the widest class at the LQFP. Is a neck-down at the pad wanted, so a supply class can be wider away from the part?
 5. **Pairs are F.Cu only, with no via.** A pair via needs a spacing at which two vias clear each other. At 0.5 mm spacing they cannot, so via pairs are refused by construction.
-6. **The subagent's judgement:** `campaign_tier1::a_solved_topology_is_not_a_base` now refuses as `SchemaViolation`, not `UnsupportedSchemaVersion`. Both documents are version 4 now. The refusal still comes before any run.
+6. **The subagent's judgement on `campaign_tier1::a_solved_topology_is_not_a_base`** is overtaken. At v5 against topology v4 it is `UnsupportedSchemaVersion` again (B12).
 7. **`1303` D5 (b):** decide from B4.
 
 ## B9. Mutation, sized to the diff [measured]
@@ -193,4 +193,18 @@ Reduction pass (diff): −19 net (stack −5, `read`'s lookup −6, `route_pair`
   - `solve_cli`'s two digests: with `main`'s hash substituted back, each equals `main`'s pin;
   - `order_2203`'s three digests: with `main`'s hash passed to `solve`, all four equal `main`'s pins.
   - `campaign_tier1::a_solved_topology_is_not_a_base` is back to `UnsupportedSchemaVersion`: specification 5 against topology 4 is refused at the version again.
+- **One rule withdrawn.** For a moved part below a connector edge I first wrote an outline rule. It had no test and no caller, so `pcb` keeps `main`'s line: with connectors, the outline's bottom is their edge. A moved part below it is then off the board, and the exact checks refuse it (fails closed).
+- **After the merge, guard tests for the judge's two bounds and one refusal,** each on a synthetic pair (`route.rs` tests):
+  - a 1.2 mm loop on one tail: 3.4 mm uncoupled, under 4 mm, and a 2.4 mm difference, over 2 mm;
+  - a 2 mm loop: 5 mm uncoupled;
+  - conductors ending on different parts.
+
+  Each of the earlier breakage cases tripped an earlier check, so neither bound had a test of its own.
 - **Identity against the new `main`'s binary** (`091003f`): 15 of 15 fixtures, 4300f's `connectors.json` included, give byte-identical schematic, BOM and board. All 7 `extract` verdicts are identical but for path and hash.
+- **Mutation, re-run on the final tree** (after the reduction and the merge; `~/.cache/aet-1308/mut/mutants-final.py`, `mut-final.tsv`): **21 distinct guards, 21 killed.**
+  - 18 of B9's guards, the three adversarial-fix guards, and three new ones: the skew bound, the breakout bound, and the same-two-parts refusal.
+  - `ir-two-classes` was re-anchored, since its first form did not compile.
+  - B9's `ir-quote` line is now `a1-wildcard`'s guard.
+- **Shards.** The first green run's slowest shard took 19.4 min. It was shard 6: `verify_2k2_tier2`'s reference verify took 608.6 s against its 382 s weight, and `main`'s run 43685243548 shows the same, 612.3 s, with `main`'s slowest shard at 18.9 min. This is pre-existing.
+  - The two `verify_2k2` weights now take the worst of the two runs (612.29 and 549.44 s), labelled as estimates until the refit.
+  - `ci/shard.sh plan` in the image then plans 816 s per shard, with the reference verify and `a_write_past_the_block_fails` in different shards.

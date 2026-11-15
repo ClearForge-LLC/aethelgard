@@ -3564,6 +3564,106 @@ mod tests {
         assert!(ok(&slanted).is_err());
     }
 
+    /// A pair `/P`, `/N` (gap 0.3 mm, width 0.2 mm: 0.5 mm apart) between two
+    /// parts at x = 2 mm and 12 mm, on a stack declaring it, with each part's
+    /// two pads `/P` at y = 5 mm and `/N` at 5.5 mm (`AET-WO-1308`).
+    fn paired(n_far: i64) -> Board {
+        let mut stack = crate::stack::reference();
+        stack.pairs.push(crate::stack::Pair {
+            name: "X".into(),
+            nets: ["/P".into(), "/N".into()],
+            gap_nm: 300_000,
+            width_nm: 200_000,
+        });
+        let at = |x: i64, y: i64| rect(x - 150_000, y - 150_000, x + 150_000, y + 150_000);
+        let part = |reference: &str, x: i64, xn: i64| Part {
+            reference: reference.into(),
+            pads: vec![
+                pad("1", Some("/P"), at(x, 5 * MM)),
+                pad("2", Some("/N"), at(xn, 5 * MM + MM / 2)),
+            ],
+            courtyard: Vec::new(),
+        };
+        Board {
+            outline: rect(0, 0, 20 * MM, 10 * MM),
+            parts: vec![part("A", 2 * MM, 2 * MM), part("B", 12 * MM, n_far)],
+            stack,
+        }
+    }
+
+    /// The pair laid straight and coupled, `/P` with `tail` (points after its
+    /// first pad) before its coupled run from x = `from`.
+    fn pair_copper(tail: &[(i64, i64)], from: i64) -> Routed {
+        let mut segments = Vec::new();
+        let mut at = (2 * MM, 5 * MM);
+        for &q in tail
+            .iter()
+            .chain([(from, 5 * MM), (12 * MM, 5 * MM)].iter())
+        {
+            if q != at {
+                segments.push(seg("/P", Layer::F, at, q));
+            }
+            at = q;
+        }
+        segments.push(seg(
+            "/N",
+            Layer::F,
+            (2 * MM, 5 * MM + MM / 2),
+            (12 * MM, 5 * MM + MM / 2),
+        ));
+        segments.sort();
+        Routed {
+            segments,
+            ..Routed::default()
+        }
+    }
+
+    /// The judge's two bounds, each alone (`AET-WO-1308` §1.3, F6): a loop
+    /// on `/P`'s tail 1.2 mm out leaves 3.4 mm uncoupled (under 4 mm) and a
+    /// 2.4 mm difference (over 2 mm); a loop 2 mm out leaves 5 mm uncoupled.
+    #[test]
+    fn the_pair_judge_holds_its_skew_and_breakout_bounds() {
+        let board = paired(12 * MM);
+        let ok = pairs(&board, &pair_copper(&[], 2 * MM)).unwrap();
+        assert_eq!(ok[0].length_difference_nm(), 0);
+        assert_eq!(ok[0].uncoupled_nm, [[0, 0], [0, 0]]);
+        let (x, y) = (2 * MM, 5 * MM);
+        let skew = pair_copper(
+            &[(x, y - 1_200_000), (x + MM, y - 1_200_000), (x + MM, y)],
+            x + MM,
+        );
+        let e = pairs(&board, &skew).unwrap_err();
+        assert!(e.contains("12400000 and 10000000 nm long"), "{e}");
+        let tail = pair_copper(
+            &[(x, y - 2 * MM), (x + MM, y - 2 * MM), (x + MM, y)],
+            x + MM,
+        );
+        let e = pairs(&board, &tail).unwrap_err();
+        assert!(e.contains("5000000 nm uncoupled"), "{e}");
+    }
+
+    /// A pair whose conductors end on different parts is refused by name
+    /// before any search (`AET-WO-1308` §1.3).
+    #[test]
+    fn a_pair_between_different_parts_is_refused() {
+        let mut board = paired(12 * MM);
+        board.parts.push(Part {
+            reference: "C".into(),
+            pads: vec![pad(
+                "1",
+                Some("/N"),
+                rect(15 * MM, 5 * MM, 15 * MM + 300_000, 5 * MM + 300_000),
+            )],
+            courtyard: Vec::new(),
+        });
+        board.parts[1].pads.pop();
+        let e = route(&board).unwrap_err();
+        assert!(
+            e.why.contains("pair `X`") && e.why.contains("same two parts"),
+            "{e:?}"
+        );
+    }
+
     /// Holes keep the gap at each via's own drill (`AET-WO-1308`): a class
     /// via drilled 0.4 mm beside a board via drilled 0.3 mm needs 0.6 mm
     /// centre to centre, not the board's 0.55.

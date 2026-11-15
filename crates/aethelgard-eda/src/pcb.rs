@@ -903,24 +903,8 @@ fn layout_of(items: &[Item<'_>], moves: &[Move]) -> Result<Layout, EmitError> {
         x0: all.x0.div_euclid(SNAP) * SNAP,
         y0: all.y0.div_euclid(SNAP) * SNAP,
         x1: -((-all.x1).div_euclid(SNAP) * SNAP),
-        // With connectors, their courtyards' bottoms are the bottom edge, unless
-        // a moved part stands lower (`AET-WO-1308`).
-        y1: {
-            let below = -((-all.y1).div_euclid(SNAP) * SNAP);
-            match edge {
-                Some(e)
-                    if moves.iter().all(|m| {
-                        placed
-                            .iter()
-                            .find(|p| p.reference == m.0)
-                            .is_none_or(|p| p.keep.y1 + MARGIN_NM <= e)
-                    }) =>
-                {
-                    e
-                }
-                _ => below,
-            }
-        },
+        // With connectors, their courtyards' bottoms are the bottom edge.
+        y1: edge.unwrap_or(-((-all.y1).div_euclid(SNAP) * SNAP)),
     };
     let pad_nets = items
         .iter()

@@ -219,8 +219,6 @@ tests/twin_tier2.rs	the_emitted_platform_loads_and_lists_every_solved_peripheral
 tests/twin_tier2.rs	the_judge_s_own_reads_of_a_gated_peripheral_are_never_the_firmware_s	6.226
 tests/twin_tier2.rs	the_reference_firmware_boots_and_two_boots_agree	12.390
 tests/uid_boundary_tier1.rs	the_emitted_schematic_names_no_sheet	2.291
-tests/verify_2k2_tier2.rs	verify_binds_the_reference_and_two_runs_print_the_same_bytes	382.411
-tests/verify_2k2_tier2.rs	verify_fab_out_writes_the_package_its_verdict_names_at_any_path	515.667
 tests/with_tools.rs	a_board_whose_own_files_are_looser_is_judged_by_the_gate	1.530
 tests/with_tools.rs	drc_violation_board_fails_with_exactly_one_clearance_finding	0.635
 tests/with_tools.rs	erc_dangling_label_fails_with_one_finding	0.533
@@ -269,3 +267,9 @@ tests/escape_tier1.rs	shifted_placements_route_without_reaching_the_exact_judge	
 tests/with_tools.rs	the_class_and_pair_fixtures_pass_erc_and_drc_and_the_pair_is_reported	16.800
 tests/with_tools.rs	a_track_that_is_not_its_class_width_fails_drc_by_the_gates_rule	8.400
 tests/with_tools.rs	a_part_on_each_edge_passes_erc_and_drc	6.720
+# AET-WO-1308: re-weighed from libtest's `finished in` for the binary, which runs one test per shard, on
+# main's run 43685243548 (091003f) and this branch's 43687627632: the reference verify took 612.29 and
+# 608.59 s against 382.411 here, the fab-out verify 500.11 and 549.44 against 515.667. The worst of each,
+# until the next refit (pre-existing on main: its slowest shard was 18.9 min, shard 6, with this test).
+tests/verify_2k2_tier2.rs	verify_binds_the_reference_and_two_runs_print_the_same_bytes	612.290
+tests/verify_2k2_tier2.rs	verify_fab_out_writes_the_package_its_verdict_names_at_any_path	549.440
