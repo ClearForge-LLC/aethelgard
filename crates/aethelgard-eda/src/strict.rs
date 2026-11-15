@@ -26,6 +26,12 @@
 //!   canonical, exact comparison is KiCad's, so a symbol's fields need no
 //!   folding to be found twice.
 //!
+//! - a value of a numeric node ([`NUMERIC`], [`KEYED`] past its keyword)
+//!   that is not a bare atom of
+//!   `-?[0-9]+(\.[0-9]{1,6})?` (`AET-WO-3303` A11): quoted, `+`, `--`, an
+//!   exponent, a leading `.`, a seventh decimal. [`version`] separately pins
+//!   a file's `(version …)` for the gate that judges it alone (`extract`).
+//!
 //! Each refusal is `MalformedBoard` or `MalformedSchematic` and names the
 //! path to the node (`INV-06`).
 //!
@@ -106,6 +112,21 @@ pub enum Refusal {
         path: String,
         child: String,
     },
+    #[error(
+        "{path} gives {text:?} where KiCad reads a number; a number is `-?[0-9]+(.[0-9]{{1,6}})?`, bare"
+    )]
+    Number {
+        kind: Kind,
+        path: String,
+        text: String,
+    },
+    #[error("{path} is version {found}; KiCad 10.0.7 writes {want}, and no other is read")]
+    Version {
+        kind: Kind,
+        path: String,
+        found: String,
+        want: &'static str,
+    },
 }
 
 impl Refusal {
@@ -116,6 +137,8 @@ impl Refusal {
             | Self::FieldTwice { kind, .. }
             | Self::FieldSpelling { kind, .. }
             | Self::Quoted { kind, .. }
+            | Self::Number { kind, .. }
+            | Self::Version { kind, .. }
             | Self::Ambiguous { kind, .. } => *kind,
         }
     }
@@ -137,6 +160,8 @@ impl Refusal {
             | Self::FieldTwice { path, .. }
             | Self::FieldSpelling { path, .. }
             | Self::Quoted { path, .. }
+            | Self::Number { path, .. }
+            | Self::Version { path, .. }
             | Self::Ambiguous { path, .. } => Some(path),
         }
     }
@@ -501,6 +526,38 @@ fn rule(kind: Kind, parent: &str, head: &str) -> Option<&'static Rule> {
         .find(|r| r.kind == kind && r.node.contains(&head) && r.parents.contains(&parent))
 }
 
+/// The `i`th element of `node` as a number in nanometres: a bare atom of
+/// KiCad's number grammar ([`sexpr::nm`]), never a quoted string. (A free
+/// function, not a `Node` method: the fence pins `Node`'s lookups.)
+pub fn number(node: &Node<'_>, i: usize) -> Option<i64> {
+    match node.sx.items().get(i)? {
+        Sx::Atom(a) => sexpr::nm(a),
+        _ => None,
+    }
+}
+
+/// A copper layer by KiCad's canonical name: `F.Cu`, `B.Cu`, `In1.Cu` to
+/// `In30.Cu`. A layer's user name, which a `(layers …)` row may give and
+/// KiCad then accepts for the layer, is never one (`AET-WO-3303` A11).
+pub fn copper_layer(name: &str) -> bool {
+    match name {
+        "F.Cu" | "B.Cu" => true,
+        _ => name
+            .strip_prefix("In")
+            .and_then(|n| n.strip_suffix(".Cu"))
+            .is_some_and(|n| {
+                !n.starts_with('0')
+                    && n.bytes().all(|b| b.is_ascii_digit())
+                    && n.parse::<u8>().is_ok_and(|n| (1..=30).contains(&n))
+            }),
+    }
+}
+
+/// A pad's copper layer: [`copper_layer`] or the `*.Cu` wildcard.
+pub fn copper_pad_layer(name: &str) -> bool {
+    name == "*.Cu" || copper_layer(name)
+}
+
 /// A file the strict reader accepted. Only this module makes one.
 pub struct Tree {
     root: Sx,
@@ -538,6 +595,34 @@ fn read(text: &str, kind: Kind) -> Result<Tree, Refusal> {
     Ok(tree)
 }
 
+/// The one `(version …)` a file may declare: the engine's own emitter's
+/// (`AET-WO-3303` A11), as a bare atom. KiCad reads another version's
+/// grammar differently; none is read here.
+pub fn version(tree: &Tree) -> Result<(), Refusal> {
+    let root = tree.root();
+    let want = match tree.kind {
+        Kind::Board => crate::pcb::VERSION,
+        Kind::Schematic => crate::schematic::VERSION,
+    };
+    let child = root.one("version")?;
+    let found = match child.as_ref().map(|v| v.sx.items()) {
+        Some([_, Sx::Atom(v)]) => Some(v.as_str()),
+        _ => None,
+    };
+    if found == Some(want) {
+        return Ok(());
+    }
+    Err(Refusal::Version {
+        kind: tree.kind,
+        path: child.map_or_else(|| root.path.clone(), |v| v.path),
+        found: found.map_or_else(
+            || "missing, quoted or not a single value".to_owned(),
+            str::to_owned,
+        ),
+        want,
+    })
+}
+
 /// Every node [`RULES`] names, judged; depth first, without recursion.
 fn check(tree: &Tree) -> Result<(), Refusal> {
     let mut stack = vec![(tree.root(), "")];
@@ -546,11 +631,78 @@ fn check(tree: &Tree) -> Result<(), Refusal> {
         if let Some(rule) = rule(tree.kind, parent, head) {
             judge(&node, rule)?;
         }
+        numbers(&node)?;
         if tree.kind == Kind::Schematic {
             spelling(&node)?;
         }
         for child in node.lists() {
             stack.push((child, head));
+        }
+    }
+    Ok(())
+}
+
+/// The nodes whose every value KiCad reads as a number (`parseDouble` and
+/// `parseInt` take a bare number token only: a quoted one, a `+`, a second
+/// `-` or an exponent is an error there, `AET-WO-3303` A11).
+const NUMERIC: &[&str] = &[
+    "at",
+    "start",
+    "end",
+    "mid",
+    "center",
+    "xy",
+    "size",
+    "width",
+    "thickness",
+    "roundrect_rratio",
+    // Every other child KiCad reads as a number (adversarial F4).
+    "min_thickness",
+    "zone_connect",
+    "thermal_gap",
+    "thermal_bridge_width",
+    "thermal_bridge_angle",
+];
+
+/// A node whose leading keyword is one of these words and whose every other
+/// value is a number: `(hatch edge 0.5)`, `(drill 0.3)`, `(drill oval 0.5 1)`.
+/// `offset` takes no keyword: a drill's is numbers, a model's holds `xyz`.
+const KEYED: &[(&str, &[&str])] = &[
+    ("hatch", &["edge", "full", "none"]),
+    ("drill", &["oval"]),
+    ("offset", &[]),
+];
+
+/// Each value of a [`NUMERIC`] node is a bare atom of KiCad's number
+/// grammar ([`sexpr::nm`]).
+fn numbers(node: &Node<'_>) -> Result<(), Refusal> {
+    let Some(head) = node.head() else {
+        return Ok(());
+    };
+    let (keyed, keywords): (bool, &[&str]) = match KEYED.iter().find(|(h, _)| *h == head) {
+        Some((_, words)) => (true, words),
+        None if NUMERIC.contains(&head) => (false, &[]),
+        None => return Ok(()),
+    };
+    for (i, v) in node.sx.items()[1..].iter().enumerate() {
+        // A keyed node's keyword, first and bare; its lists (a drill's
+        // `offset`, a model's `xyz`) are judged as nodes of their own.
+        if keyed && matches!(v, Sx::List(_))
+            || i == 0 && matches!(v, Sx::Atom(a) if keywords.contains(&a.as_str()))
+        {
+            continue;
+        }
+        let ok = matches!(v, Sx::Atom(a) if sexpr::nm(a).is_some());
+        if !ok {
+            return Err(Refusal::Number {
+                kind: node.kind,
+                path: node.path.clone(),
+                text: match v {
+                    Sx::Atom(t) => t.clone(),
+                    Sx::Str(t) => format!("\"{t}\""),
+                    Sx::List(_) => "(…)".to_owned(),
+                },
+            });
         }
     }
     Ok(())
@@ -906,5 +1058,156 @@ mod tests {
             fp.field("Reference"),
             Err(Refusal::FieldTwice { .. })
         ));
+    }
+
+    #[test]
+    fn a_number_is_kicads_bare_atom_or_refused_by_name() {
+        let with = |v: &str| format!("(kicad_pcb (segment (start 0 0) (end 1 1) (width {v})))");
+        for good in ["0", "5", "-5", "-0", "0.2", "-0.000001", "12.123456"] {
+            assert!(board(&with(good)).is_ok(), "{good}");
+        }
+        // `+`, a second `-`, an exponent, a leading or trailing `.`, a
+        // seventh decimal, U+2212 and a quoted number: none is a number KiCad
+        // writes (it loads an exponent, a leading `.` and a seventh decimal,
+        // measured: this reader is the stricter).
+        for bad in [
+            "+0.2",
+            "--5",
+            "1e3",
+            "1E-3",
+            ".2",
+            "-.2",
+            "1.",
+            "0.1234567",
+            "\"0.2\"",
+            "\"\"",
+            "(1)",
+        ] {
+            let r = refused(&with(bad));
+            assert!(
+                matches!(&r, Refusal::Number { path, .. } if path == "kicad_pcb/segment[1]/width[1]"),
+                "{bad}: {r:?}"
+            );
+            assert_eq!(r.kind(), "MalformedBoard");
+            assert!(r.to_string().contains("kicad_pcb/segment[1]/width[1]"));
+        }
+        // U+2212 never reaches a number: the tokenizer refuses the byte.
+        assert!(matches!(
+            refused(&with("\u{2212}5")),
+            Refusal::Unreadable(..)
+        ));
+        // Each numeric node is judged, a rotation and a size among them.
+        for text in [
+            "(kicad_pcb (footprint \"R\" (at 1 2 \"90\")))",
+            "(kicad_pcb (footprint \"R\" (at 1 +2)))",
+            "(kicad_pcb (footprint \"R\" (pad \"1\" smd rect (size 1 \"1\"))))",
+            "(kicad_pcb (general (thickness 1e0)))",
+            "(kicad_pcb (footprint \"R\" (pad \"1\" smd roundrect (roundrect_rratio .25))))",
+        ] {
+            assert!(matches!(refused(text), Refusal::Number { .. }), "{text}");
+        }
+        let r = schematic("(kicad_sch (symbol (at 1 2 \"0\")))")
+            .err()
+            .unwrap();
+        assert!(matches!(r, Refusal::Number { .. }));
+        assert_eq!(r.kind(), "MalformedSchematic");
+    }
+
+    /// Adversarial F4: every child KiCad reads as a number is judged as one,
+    /// a keyed node past its keyword; the forms KiCad writes still read.
+    #[test]
+    fn every_numeric_child_is_judged_past_its_keyword() {
+        let zone = |inner: &str| format!("(kicad_pcb (zone (net 1) {inner}))");
+        for good in [
+            "(min_thickness 0.25)",
+            "(hatch edge 0.5)",
+            "(fill yes (thermal_gap 0.5) (thermal_bridge_width 0.5))",
+        ] {
+            assert!(board(&zone(good)).is_ok(), "{good}");
+        }
+        for bad in [
+            "(min_thickness \"0.25\")",
+            "(hatch edge +0.5)",
+            "(hatch edge \"0.5\")",
+            "(hatch edge inf)",
+            "(fill yes (thermal_gap 0x2))",
+        ] {
+            assert!(board(&zone(bad)).is_err(), "{bad}");
+        }
+        let pad = |inner: &str| {
+            format!(
+                "(kicad_pcb (footprint \"x\" (pad \"1\" thru_hole circle (at 0 0) (size 1 1) {inner} (zone_connect 2))))"
+            )
+        };
+        for good in [
+            "(drill 0.3)",
+            "(drill oval 0.5 1)",
+            "(drill 0.3 (offset 0.1 0))",
+        ] {
+            assert!(board(&pad(good)).is_ok(), "{good}");
+        }
+        for bad in [
+            "(drill \"0.3\")",
+            "(drill oval 0.5 +1)",
+            "(drill 0.3 (offset .1 0))",
+        ] {
+            assert!(board(&pad(bad)).is_err(), "{bad}");
+        }
+        assert!(
+            board(&pad("(drill 0.3)").replace("(zone_connect 2)", "(zone_connect \"2\")")).is_err()
+        );
+    }
+
+    #[test]
+    fn a_node_reads_a_number_only_from_a_bare_atom() {
+        let tree = board("(kicad_pcb (x (y 0.5 \"0.5\" -2)))").unwrap();
+        let y = tree.root().one("x").unwrap().unwrap().one("y").unwrap();
+        let y = y.unwrap();
+        assert_eq!(number(&y, 1), Some(500_000));
+        assert_eq!(number(&y, 2), None);
+        assert_eq!(number(&y, 3), Some(-2_000_000));
+        assert_eq!(number(&y, 4), None);
+    }
+
+    #[test]
+    fn the_version_is_the_emitters_or_refused() {
+        let ok = |text: &str| version(&board(text).unwrap());
+        assert!(ok("(kicad_pcb (version 20260206))").is_ok());
+        for bad in [
+            "(kicad_pcb)",
+            "(kicad_pcb (version 20240108))",
+            "(kicad_pcb (version \"20260206\"))",
+            "(kicad_pcb (version 20260206 20260206))",
+            "(kicad_pcb (version))",
+            "(kicad_pcb (version +20260206))",
+        ] {
+            let r = ok(bad).unwrap_err();
+            assert!(matches!(r, Refusal::Version { .. }), "{bad}: {r:?}");
+            assert_eq!(r.kind(), "MalformedBoard");
+        }
+        // A second `(version …)` is refused by the same rule that refuses any.
+        assert!(
+            board("(kicad_pcb (version 20260206) (version 20240108))").is_err(),
+            "repeated"
+        );
+        let sch = schematic("(kicad_sch (version 20260306))").unwrap();
+        assert!(version(&sch).is_ok());
+        let sch = schematic("(kicad_sch (version 20260206))").unwrap();
+        assert_eq!(version(&sch).unwrap_err().kind(), "MalformedSchematic");
+    }
+
+    #[test]
+    fn a_copper_layer_is_kicads_canonical_name() {
+        for yes in ["F.Cu", "B.Cu", "In1.Cu", "In9.Cu", "In30.Cu"] {
+            assert!(copper_layer(yes), "{yes}");
+        }
+        for no in [
+            "TOP", "TOP.Cu", "f.Cu", "F.Cu ", "In0.Cu", "In01.Cu", "In31.Cu", "In.Cu", "In+1.Cu",
+            "*.Cu", "F.Mask", "Cu", "",
+        ] {
+            assert!(!copper_layer(no), "{no}");
+        }
+        assert!(copper_pad_layer("*.Cu") && copper_pad_layer("In2.Cu"));
+        assert!(!copper_pad_layer("X.Cu"));
     }
 }

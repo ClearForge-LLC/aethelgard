@@ -40,22 +40,27 @@ pub const KICAD_VERSION: &str = "10.0.7";
 const TOOL: &str = "kicad-cli";
 
 /// Each Gerber: the layer KiCad is asked for, the name KiCad gives its file
-/// after the copy's stem (`input-`), and the line its creator line is on,
-/// as measured. The package names the file after the project instead.
+/// after the copy's stem (`input-`), the line its creator line is on, as
+/// measured, and what the notes call it. The package names the file after the project instead.
 ///
 /// The creator line follows KiCad's header attributes, and the outline
 /// carries one fewer (no `%TF.FilePolarity`), so its creator line is line 8
 /// (`GERBER_plotter.cpp` `StartPlot`; FEEDBACK F3).
-pub const LAYERS: [(&str, &str, usize); 9] = [
-    ("F.Cu", "F_Cu.gtl", 9),
-    ("B.Cu", "B_Cu.gbl", 9),
-    ("F.Paste", "F_Paste.gtp", 9),
-    ("B.Paste", "B_Paste.gbp", 9),
-    ("F.SilkS", "F_Silkscreen.gto", 9),
-    ("B.SilkS", "B_Silkscreen.gbo", 9),
-    ("F.Mask", "F_Mask.gts", 9),
-    ("B.Mask", "B_Mask.gbs", 9),
-    ("Edge.Cuts", "Edge_Cuts.gm1", 8),
+pub const LAYERS: [(&str, &str, usize, &str); 9] = [
+    ("F.Cu", "F_Cu.gtl", 9, "Gerber, top copper"),
+    ("B.Cu", "B_Cu.gbl", 9, "Gerber, bottom copper"),
+    ("F.Paste", "F_Paste.gtp", 9, "Gerber, top solder paste"),
+    ("B.Paste", "B_Paste.gbp", 9, "Gerber, bottom solder paste"),
+    ("F.SilkS", "F_Silkscreen.gto", 9, "Gerber, top silkscreen"),
+    (
+        "B.SilkS",
+        "B_Silkscreen.gbo",
+        9,
+        "Gerber, bottom silkscreen",
+    ),
+    ("F.Mask", "F_Mask.gts", 9, "Gerber, top solder mask"),
+    ("B.Mask", "B_Mask.gbs", 9, "Gerber, bottom solder mask"),
+    ("Edge.Cuts", "Edge_Cuts.gm1", 8, "Gerber, board outline"),
 ];
 
 /// The package's manifest: written last, named in the verdict like every
@@ -80,6 +85,10 @@ pub struct Bound<'a> {
     pub elf_sha256: &'a str,
     /// `emit`'s bill of materials, as generated.
     pub bom: &'a [u8],
+    /// The conditions the `extract` gate's verdict stated, as it stated them.
+    pub conditions: &'a [String],
+    /// The verdict's lifecycle lines: its banner, then each part unheld.
+    pub lifecycle: &'a [String],
 }
 
 /// What the export reports for the verdict's `fab` key: the tool it ran and
@@ -214,7 +223,7 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
     }
 
     let mut copper = BTreeMap::new();
-    for (layer, suffix, creator) in &layers {
+    for (layer, suffix, creator, _) in &layers {
         let (layer, creator) = (layer.as_str(), *creator);
         let raw = read_output(TOOL, &scratch.tool.join(format!("{STEM}-{suffix}")))?;
         let stripped = strip_clock(&raw, creator).map_err(|m| {
@@ -257,6 +266,8 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
         b.specification_sha256,
         b.spec,
         &drills,
+        b.conditions,
+        b.lifecycle,
     );
     files.insert(NOTES.to_owned(), notes.into_bytes());
     Ok(Exported {
@@ -271,16 +282,25 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
 /// (`In1_Cu.g1`, `In2_Cu.g2`), its creator line on line 9 as on every copper
 /// layer (measured, S1). The list follows the specification, never the
 /// board, so a package cannot lose a declared layer.
-pub fn gerbers(stack: &aethelgard_eda::stack::Stack) -> Vec<(String, String, usize)> {
+pub fn gerbers(stack: &aethelgard_eda::stack::Stack) -> Vec<(String, String, usize, String)> {
     let mut out = Vec::new();
-    for (layer, suffix, creator) in LAYERS {
-        out.push((layer.to_owned(), suffix.to_owned(), creator));
+    for (layer, suffix, creator, what) in LAYERS {
+        out.push((
+            layer.to_owned(),
+            suffix.to_owned(),
+            creator,
+            what.to_owned(),
+        ));
         if layer == "B.Cu" {
             for (i, inner) in stack.copper[1..stack.copper.len() - 1].iter().enumerate() {
                 out.push((
                     inner.clone(),
                     format!("{}.g{}", inner.replace('.', "_"), i + 1),
                     9,
+                    format!(
+                        "Gerber, inner copper layer {}, a plane (see Stackup)",
+                        i + 1
+                    ),
                 ));
             }
         }
@@ -289,16 +309,20 @@ pub fn gerbers(stack: &aethelgard_eda::stack::Stack) -> Vec<(String, String, usi
 }
 
 /// `FAB-NOTES.md` for the package of `spec`'s board, whose drill file holds
-/// `drills`.
+/// `drills`, with the `extract` verdict's `conditions` and `lifecycle` lines
+/// as it stated them (`AET-WO-3303`).
 fn notes(
     project: &str,
     engine: &str,
     specification_sha256: &str,
     spec: &aethelgard_ir::Specification,
     drills: &[aethelgard_eda::fab::Drill],
+    conditions: &[String],
+    lifecycle: &[String],
 ) -> String {
     let stack = aethelgard_eda::stack::Stack::of(spec);
-    let described = describe(project, &gerbers(&stack));
+    let layers = gerbers(&stack);
+    let described = describe(project, &layers);
     aethelgard_eda::fab::notes(&aethelgard_eda::fab::Notes {
         project,
         engine_version: engine,
@@ -306,32 +330,21 @@ fn notes(
         kicad_version: KICAD_VERSION,
         files: &described,
         stack: &stack,
-        offboard: aethelgard_eda::schematic::declares_offboard(spec),
+        conditions,
+        lifecycle,
         drills,
         power: &aethelgard_eda::loops::conditions(spec),
     })
 }
 
 /// Every file of the package but the notes and the manifest, with what it is.
-fn describe(project: &str, layers: &[(String, String, usize)]) -> Vec<(String, &'static str)> {
-    let mut out: Vec<(String, &'static str)> = layers
+fn describe<'a>(
+    project: &str,
+    layers: &'a [(String, String, usize, String)],
+) -> Vec<(String, &'a str)> {
+    let mut out: Vec<(String, &'a str)> = layers
         .iter()
-        .map(|(layer, suffix, _)| {
-            let what = match layer.as_str() {
-                "F.Cu" => "Gerber, top copper",
-                "B.Cu" => "Gerber, bottom copper",
-                "In1.Cu" => "Gerber, inner copper layer 1, a plane (see Stackup)",
-                "In2.Cu" => "Gerber, inner copper layer 2, a plane (see Stackup)",
-                "F.Paste" => "Gerber, top solder paste",
-                "B.Paste" => "Gerber, bottom solder paste",
-                "F.SilkS" => "Gerber, top silkscreen",
-                "B.SilkS" => "Gerber, bottom silkscreen",
-                "F.Mask" => "Gerber, top solder mask",
-                "B.Mask" => "Gerber, bottom solder mask",
-                _ => "Gerber, board outline",
-            };
-            (format!("{project}-{suffix}"), what)
-        })
+        .map(|(_, suffix, _, what)| (format!("{project}-{suffix}"), what.as_str()))
         .collect();
     out.extend([
         (format!("{project}.drl"), "Excellon drill file"),
@@ -532,8 +545,36 @@ struct Manifest<'a> {
     topology_sha256: &'a str,
     /// Each `--scenarios` file, in the order given: its name and sha256.
     scenarios: &'a [Scenario],
+    /// Each precondition of the package and its state (`AET-WO-3303` §1.1),
+    /// as the verdict's `fab.preconditions` states them.
+    preconditions: &'a [Precondition],
     verdict_sha256: String,
     files: BTreeMap<&'a str, String>,
+}
+
+/// One precondition of a package: `met`, or `unmet` with what fails it.
+#[derive(Serialize, Clone)]
+pub struct Precondition {
+    pub precondition: &'static str,
+    pub state: &'static str,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unmet: Vec<String>,
+    /// Coverage: each bus no device uses, named and not blocking
+    /// (`AET-WO-3303` D1, ruled (c)).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub no_device: Vec<String>,
+}
+
+impl Precondition {
+    pub fn of(precondition: &'static str, unmet: Vec<String>) -> Self {
+        let state = if unmet.is_empty() { "met" } else { "unmet" };
+        Self {
+            precondition,
+            state,
+            unmet,
+            no_device: Vec::new(),
+        }
+    }
 }
 
 /// One scenario the emitting run was given.
@@ -549,6 +590,7 @@ pub struct Named<'a> {
     pub specification_sha256: &'a str,
     pub topology_sha256: &'a str,
     pub scenarios: &'a [Scenario],
+    pub preconditions: &'a [Precondition],
     /// The verdict line the same call prints without the fab flags.
     pub verdict_line: &'a str,
 }
@@ -560,6 +602,7 @@ pub fn manifest(n: &Named<'_>, files: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
         specification_sha256: n.specification_sha256,
         topology_sha256: n.topology_sha256,
         scenarios: n.scenarios,
+        preconditions: n.preconditions,
         verdict_sha256: tree::sha256(n.verdict_line.as_bytes()),
         files: files
             .iter()
@@ -738,6 +781,10 @@ mod tests {
             specification_sha256: "s",
             topology_sha256: "t",
             scenarios: &scenarios,
+            preconditions: &[
+                Precondition::of("met_one", Vec::new()),
+                Precondition::of("unmet_one", vec!["a".to_owned()]),
+            ],
             verdict_line: "{\"ok\":true}",
         };
         let m = manifest(&named, &files);
@@ -748,6 +795,14 @@ mod tests {
         );
         let v: serde_json::Value = serde_json::from_slice(&m).unwrap();
         assert_eq!(v["verdict_sha256"], tree::sha256(b"{\"ok\":true}"));
+        // `AET-WO-3303` §1.1: the package itself names each precondition.
+        assert_eq!(
+            v["preconditions"],
+            serde_json::json!([
+                {"precondition": "met_one", "state": "met"},
+                {"precondition": "unmet_one", "state": "unmet", "unmet": ["a"]}
+            ])
+        );
         assert_eq!(v["files"]["a"], tree::sha256(b"1"));
         assert_eq!(v["files"].as_object().unwrap().len(), 2);
         assert!(m.ends_with(b"}\n"));
@@ -757,7 +812,8 @@ mod tests {
     fn the_notes_describe_every_file_and_the_package_names_them_after_the_project() {
         let spec: aethelgard_ir::Specification =
             serde_json::from_str(&repo_file("examples/sentinel-01-minimal.json")).unwrap();
-        let d = describe("p", &gerbers(&aethelgard_eda::stack::Stack::of(&spec)));
+        let layers = gerbers(&aethelgard_eda::stack::Stack::of(&spec));
+        let d = describe("p", &layers);
         assert_eq!(d.len(), LAYERS.len() + 4);
         assert!(
             d.iter()
@@ -809,9 +865,22 @@ mod tests {
         ] {
             let spec: aethelgard_ir::Specification =
                 serde_json::from_str(&repo_file(spec)).unwrap();
+            // The conditions the code before 4300d2 wrote for these boards
+            // (none declares off-board capacitance), which an `extract`
+            // verdict now hands the notes (`AET-WO-3303`); no lifecycle line.
+            let stated =
+                aethelgard_eda::extract::conditions(&aethelgard_eda::stack::Stack::of(&spec));
             for n in [1, 64] {
                 assert_eq!(
-                    notes(project, "0.1.0", "SPEC_SHA", &spec, &vias_only(n)),
+                    notes(
+                        project,
+                        "0.1.0",
+                        "SPEC_SHA",
+                        &spec,
+                        &vias_only(n),
+                        &stated,
+                        &[]
+                    ),
                     golden,
                     "{project}"
                 );
@@ -858,22 +927,22 @@ mod tests {
             gerbers(&aethelgard_eda::stack::Stack::of(&spec))
         };
         let two = load(&repo_file("examples/sentinel-01-minimal.json"));
-        let today: Vec<(String, String, usize)> = LAYERS
+        let today: Vec<(String, String, usize, String)> = LAYERS
             .iter()
-            .map(|(l, s, c)| ((*l).to_owned(), (*s).to_owned(), *c))
+            .map(|(l, s, c, w)| ((*l).to_owned(), (*s).to_owned(), *c, (*w).to_owned()))
             .collect();
         assert_eq!(two, today);
         let four = load(&repo_file(
             "crates/aethelgard-cli/tests/fixtures/four-layer.json",
         ));
-        let inner: Vec<&(String, String, usize)> =
-            four.iter().filter(|(l, ..)| l.starts_with("In")).collect();
+        let inner: Vec<(&str, &str, usize)> = four
+            .iter()
+            .filter(|(l, ..)| l.starts_with("In"))
+            .map(|(l, s, c, _)| (l.as_str(), s.as_str(), *c))
+            .collect();
         assert_eq!(
             inner,
-            [
-                &("In1.Cu".to_owned(), "In1_Cu.g1".to_owned(), 9),
-                &("In2.Cu".to_owned(), "In2_Cu.g2".to_owned(), 9)
-            ]
+            [("In1.Cu", "In1_Cu.g1", 9), ("In2.Cu", "In2_Cu.g2", 9)]
         );
         assert_eq!(four.len(), LAYERS.len() + 2);
     }

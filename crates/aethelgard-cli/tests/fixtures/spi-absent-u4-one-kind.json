@@ -1,0 +1,10 @@
+{
+  "schema_version": 2,
+  "name": "spi-absent-u4-one-kind",
+  "base": "../../../../examples/sentinel-01-minimal.json",
+  "expect": "fail",
+  "expect_findings": ["spi_identity_mismatch"],
+  "overrides": [
+    { "spi_device_absent": "U4" }
+  ]
+}

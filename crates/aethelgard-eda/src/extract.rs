@@ -597,10 +597,6 @@ pub struct LineBound {
 /// distance `route::check` squares fits in an `i64`.
 pub const MAX_COORD_NM: i64 = 250_000_000;
 
-fn copper_layer(name: &str) -> bool {
-    name.ends_with(".Cu")
-}
-
 /// A pad layer by KiCad's canonical name (a user name such as `TOP` could
 /// stand for a copper layer the reader would not see as one).
 fn canonical_layer(name: &str) -> bool {
@@ -616,7 +612,8 @@ fn canonical_layer(name: &str) -> bool {
 
 /// True when `item` or any list inside it names a copper layer.
 fn on_copper(item: &Node<'_>) -> bool {
-    if matches!(item.head(), Some("layer" | "layers")) && item.texts().any(copper_layer) {
+    if matches!(item.head(), Some("layer" | "layers")) && item.texts().any(strict::copper_pad_layer)
+    {
         return true;
     }
     item.lists().any(|c| on_copper(&c))
@@ -898,7 +895,15 @@ pub struct ReadBoard {
 /// or copper closer than the declared clearance to another net's
 /// (`route::check`).
 pub fn read(text: &str, stack: &Stack) -> Result<ReadBoard, Refused> {
-    let tree = strict::board(text).map_err(malformed)?;
+    read_tree(&strict::board(text).map_err(malformed)?, stack)
+}
+
+/// [`read`] on a board the strict reader has already read: `check drc
+/// --spec` runs it on its own strict reading before it judges a declared
+/// pair, so the pair judge sees only copper this allowlist models
+/// (`AET-WO-3303` §1.3).
+pub fn read_tree(tree: &strict::Tree, stack: &Stack) -> Result<ReadBoard, Refused> {
+    strict::version(tree).map_err(malformed)?;
     let board = tree.root();
     let mut once = BTreeSet::new();
     let mut footprints = BTreeMap::new();
@@ -931,8 +936,8 @@ pub fn read(text: &str, stack: &Stack) -> Result<ReadBoard, Refused> {
             _ => {}
         }
     }
-    route::declared(&tree, stack).map_err(|d| refused(d.kind, d.message))?;
-    let (board, routed) = route::read(&tree, stack).map_err(|e| refused("BoardUnreadable", e))?;
+    route::declared(tree, stack).map_err(|d| refused(d.kind, d.message))?;
+    let (board, routed) = route::read(tree, stack).map_err(|e| refused("BoardUnreadable", e))?;
     route::connectivity(&board, &routed).map_err(|e| refused("NetLabelsDisagree", e))?;
     route::check(&board, &routed).map_err(|e| refused("ClearanceViolated", e))?;
     Ok(ReadBoard {
@@ -1421,6 +1426,71 @@ mod tests {
             c - exact < 1.0 + exact * 1e-6,
             "{name}: {c} over {exact} by 1 fF or more"
         );
+    }
+
+    /// Review 2, A12: a line's total is the sum of its five terms, the
+    /// connectors' off-board capacitance among them, pinned here and not
+    /// only in the CLI's tests (a mutant that drops `offboard` from the
+    /// total survived this crate's suite).
+    #[test]
+    fn a_lines_total_holds_every_term_and_the_offboard_budget() {
+        let pad = route::Pad {
+            number: "1".into(),
+            net: Some(board_net("I2C_SCL")),
+            rect: crate::pcb::Rect {
+                x0: 0,
+                y0: 0,
+                x1: 1_000_000,
+                y1: 1_000_000,
+            },
+            corner_nm: 0,
+            drill_nm: None,
+            join: None,
+        };
+        let read = ReadBoard {
+            board: route::Board {
+                outline: crate::pcb::Rect {
+                    x0: -10_000_000,
+                    y0: -10_000_000,
+                    x1: 10_000_000,
+                    y1: 10_000_000,
+                },
+                parts: vec![route::Part {
+                    reference: "J1".into(),
+                    rotation: 0,
+                    pads: vec![pad],
+                    courtyard: Vec::new(),
+                    keepouts: Vec::new(),
+                }],
+                stack: crate::stack::reference(),
+            },
+            routed: route::Routed::default(),
+            footprints: BTreeMap::from([("J1".into(), ("fp".into(), "v".into()))]),
+        };
+        let want = Line {
+            net: "I2C_SCL".into(),
+            bus: "SENSORS".into(),
+            spi_signal: None,
+            parts: BTreeMap::from([(
+                "J1".into(),
+                Role {
+                    footprint: "fp".into(),
+                    value: "v".into(),
+                    pads: BTreeSet::from(["1".to_owned()]),
+                    load: Load::Connector,
+                    offboard: vec![("1".into(), 20_000, "a cable".into())],
+                },
+            )]),
+        };
+        let b = line(&read, &want).unwrap();
+        assert_eq!(b.terms.offboard, 20_000);
+        assert!(b.terms.pads > 0);
+        let t = &b.terms;
+        assert_eq!(
+            b.c_bound_femtofarads,
+            t.trace + t.vias + t.pads + t.pins + t.offboard
+        );
+        assert_eq!(b.c_bound_femtofarads, t.pads + 20_000);
     }
 
     /// §1.4: each derived value against its formula on the reference's
