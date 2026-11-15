@@ -15,6 +15,36 @@ const TOOL: &str = "renode";
 const LOAD_ERROR: &str = "There was an error executing command";
 /// Renode's error log level; a CPU listed beside one is not a clean load.
 const LOG_ERROR: &str = "[ERROR]";
+/// What Renode's monitor prints when an included model fails to compile or
+/// load (`AET-WO-4220` spike F2, measured): untimestamped, on stdout, then the
+/// diagnostics. The `-e` line stops there and Renode still exits 0, so a
+/// load is judged by this line, never assumed (ruling D6).
+const MODEL_LOAD_ERROR: &str = "Errors during compilation or loading:";
+
+/// The monitor command that compiles one model of our own before the platform
+/// that declares it is loaded (`AET-WO-4220` D6): the CLI's own sealed copy.
+fn include(model: &std::path::Path) -> String {
+    format!("include @{}", model.display())
+}
+
+/// `ModelLoadFailed` (`AET-WO-4220` D6) when Renode said a model of ours did
+/// not compile or load: the line and the diagnostics after it, a few at most.
+fn model_load_failed(lines: &[&str]) -> Option<Stop> {
+    let i = lines.iter().position(|l| l.contains(MODEL_LOAD_ERROR))?;
+    let said: Vec<&str> = lines[i..]
+        .iter()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .take(6)
+        .collect();
+    Some(Stop::refused(
+        "ModelLoadFailed",
+        format!(
+            "Renode did not compile or load a C# file (a model of our own, or one the platform included): {}",
+            said.join(" | ")
+        ),
+    ))
+}
 
 /// The file name of the configuration every Renode this CLI starts reads,
 /// written into the call's own scratch directory and passed as `--config`.
@@ -71,12 +101,17 @@ pub fn config(home: &std::path::Path) -> String {
 pub const QUANTUM: &str = "emulation SetGlobalQuantum \"0.000100000\"";
 
 /// The monitor commands. The platform is always the call's own copy, at a
-/// path this CLI chose, so no part of the caller's input reaches the monitor.
-pub fn commands(copy: &std::path::Path) -> String {
-    format!(
-        "mach create; machine LoadPlatformDescription @{}; peripherals; quit",
-        copy.display()
-    )
+/// path this CLI chose, so no part of the caller's input reaches the monitor;
+/// so is each model of our own it declares, included first (`AET-WO-4220`).
+pub fn commands(copy: &std::path::Path, models: &[std::path::PathBuf]) -> String {
+    let mut c: Vec<String> = models.iter().map(|m| include(m)).collect();
+    c.extend([
+        "mach create".to_owned(),
+        format!("machine LoadPlatformDescription @{}", copy.display()),
+        "peripherals".to_owned(),
+        "quit".to_owned(),
+    ]);
+    c.join("; ")
 }
 
 /// Renode's console lines, each with any stray carriage return at either end
@@ -127,6 +162,9 @@ pub fn judge(code: i32, out: &Output) -> Result<(Vec<Finding>, Option<Machine>),
         ));
     }
     let lines = clean_lines(&text);
+    if let Some(stop) = model_load_failed(&lines) {
+        return Err(stop);
+    }
     let (cpus, peripherals) = listing(&lines);
     let error = lines.iter().position(|l| l.contains(LOAD_ERROR));
     match (cpus.is_empty(), error) {
@@ -190,7 +228,14 @@ const ABORTED: &str = "This machine has aborted";
 /// reads is kept, so a firmware flooding the log still reaches a verdict.
 pub const LOG_FILTER: LogFilter = LogFilter {
     budget: 8 * 1024 * 1024,
-    keep: &[ABORTED, LOAD_ERROR, LOG_ERROR, LOCKED[0], LOCKED[1]],
+    keep: &[
+        ABORTED,
+        LOAD_ERROR,
+        LOG_ERROR,
+        LOCKED[0],
+        LOCKED[1],
+        MODEL_LOAD_ERROR,
+    ],
 };
 
 /// A log line without Renode's timestamp (`[00:00:00.019999000] `), which
@@ -248,6 +293,9 @@ const LOCKED: [&str; 2] = [
 /// computed from the topology (`INV-07`).
 pub struct BootPlan<'a> {
     pub platform: &'a std::path::Path,
+    /// The CLI's sealed copy of each model of our own the platform declares,
+    /// included before it loads (`AET-WO-4220` D6).
+    pub models: &'a [std::path::PathBuf],
     pub firmware: &'a std::path::Path,
     pub virtual_ns: u64,
     /// The board's window (`aethelgard_twin::boot::window`): shorter than
@@ -505,13 +553,16 @@ impl BootPlan<'_> {
         let mut c = vec![
             format!("emulation SetSeed {}", aethelgard_twin::boot::SEED),
             QUANTUM.to_owned(),
+        ];
+        c.extend(self.models.iter().map(|m| include(m)));
+        c.extend([
             "mach create".to_owned(),
             format!(
                 "machine LoadPlatformDescription @{}",
                 self.platform.display()
             ),
             format!("sysbus LoadELF @{}", self.firmware.display()),
-        ];
+        ]);
         c.extend(self.cold());
         c.extend(self.rearm());
         c.push(self.vtor());
@@ -695,10 +746,38 @@ fn attribute(
         };
         let lines = own_lines(c, log);
         match &spi {
-            Some((_, w)) => {
+            Some((address, w)) => {
+                // A model that logs a transaction when it ends (ours,
+                // `AET-WO-4220`) logs it when the multiplexer finishes it:
+                // after the closing edge `GPIO #a set to True`, directly
+                // after `Finisihing transmission on device 0xa`, in that
+                // edge's burst, before the multiplexer's next edge
+                // (`SPIMultiplexer.cs` L30-32, L99-108, L111-129). The
+                // release ends the transaction, so such a line is its
+                // window's. Attribution only: it never passes a witness.
+                let finish = format!(
+                    "[NOISY] {}: Finisihing transmission on device 0x{address:X}",
+                    mux_of(c)
+                );
+                let edge = format!("[NOISY] {}: GPIO #", mux_of(c));
+                let closing: Vec<(usize, usize)> = w
+                    .iter()
+                    .map(|&(_, e)| {
+                        let next = (e + 1..log.len())
+                            .find(|&j| log_body(log[j]).is_some_and(|b| b.starts_with(&edge)))
+                            .unwrap_or(log.len());
+                        (e, next)
+                    })
+                    .collect();
                 let step_of = |i: usize| {
                     w.iter()
                         .position(|&(o, e)| o < i && i < e)
+                        .or_else(|| {
+                            let finished = i > 0 && log_body(log[i - 1]) == Some(finish.as_str());
+                            closing
+                                .iter()
+                                .position(|&(e, next)| finished && e < i && i < next)
+                        })
                         .map_or(last, |k| (g.start + k).min(last))
                 };
                 for (i, body) in lines {
@@ -1184,6 +1263,11 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
         return Err(untrusted(format!("renode exited {code}")));
     }
     let lines = clean_lines(&text);
+    // A model that did not compile stops the line before the platform loads,
+    // and Renode still exits 0: judged before any marker (`AET-WO-4220` F2).
+    if let Some(stop) = model_load_failed(&lines) {
+        return Err(stop);
+    }
     let begins: Vec<usize> = (0..lines.len()).filter(|&i| lines[i] == BEGIN).collect();
     let ends: Vec<usize> = (0..lines.len()).filter(|&i| lines[i] == END).collect();
     let errors: Vec<usize> = (0..lines.len())
@@ -1553,7 +1637,7 @@ fn witness_findings(
                 format!(
                     "{}, its {} step: Renode logged an error for `{}` inside the step: {e}",
                     who(c),
-                    c.step.name(),
+                    c.label,
                     c.device
                 ),
             ));
@@ -1570,7 +1654,7 @@ fn witness_finding(
     c: &aethelgard_twin::boot::StepCheck,
     seen: Option<&[String]>,
 ) -> Option<Finding> {
-    let who = format!("{}, its {} step", who(c), c.step.name());
+    let who = format!("{}, its {} step", who(c), c.label);
     let bus = bus_word(c);
     let Some(want) = &c.witness else {
         return Some(Finding::plain(
@@ -1621,7 +1705,7 @@ fn reads_outside_window(
             // A script's later steps say which step (`AET-WO-4210`).
             let what = match c.step {
                 aethelgard_ir::parts::StepKind::Identity => "its identity read".to_owned(),
-                step => format!("its {} step's read", step.name()),
+                _ => format!("its {} step's read", c.label),
             };
             Finding::plain(
                 "identity_read_outside_window",
@@ -1647,7 +1731,7 @@ fn identity_finding(
     // script's later steps say which step (`AET-WO-4210`).
     let who = match c.step {
         aethelgard_ir::parts::StepKind::Identity => who(c),
-        step => format!("{}, its {} step", who(c), step.name()),
+        _ => format!("{}, its {} step", who(c), c.label),
     };
     let bus = bus_word(c);
     let what = if bus == "i2c" { "register" } else { "command" };
@@ -1818,6 +1902,7 @@ mod tests {
                 select: "PA1".into(),
             },
             step: aethelgard_ir::parts::StepKind::Identity,
+            label: "identity",
             write: vec![0x80],
             width: 1,
             expected: 0xEA,
@@ -1868,6 +1953,7 @@ mod tests {
     ) -> BootPlan<'a> {
         BootPlan {
             platform: std::path::Path::new("/w/platform.repl"),
+            models: &[],
             firmware: std::path::Path::new("/w/firmware.elf"),
             virtual_ns: 100_000_000,
             window_ns: 100_000_000,
@@ -1880,6 +1966,72 @@ mod tests {
             instances: &INSTANCES,
             resets,
         }
+    }
+
+    /// `AET-WO-4220` D6: each model of our own is included from the CLI's own
+    /// copy before the platform loads, in a boot and in a load alike.
+    #[test]
+    fn models_of_our_own_are_included_before_the_platform_loads() {
+        let image = image();
+        let models = [
+            std::path::PathBuf::from("/w/models/BMP581.cs"),
+            std::path::PathBuf::from("/w/models/ICM42688P.cs"),
+        ];
+        let mut p = plan(&image, &[]);
+        p.models = &models;
+        let c = p.commands();
+        let at = |what: &str| c.find(what).unwrap_or_else(|| panic!("{what} not in {c}"));
+        assert!(at("include @/w/models/BMP581.cs") < at("include @/w/models/ICM42688P.cs"));
+        assert!(at("include @/w/models/ICM42688P.cs") < at("mach create"));
+        assert!(at("mach create") < at("machine LoadPlatformDescription"));
+        assert!(!plan(&image, &[]).commands().contains("include"));
+        assert_eq!(
+            commands(std::path::Path::new("/w/p.repl"), &models),
+            "include @/w/models/BMP581.cs; include @/w/models/ICM42688P.cs; mach create; machine LoadPlatformDescription @/w/p.repl; peripherals; quit"
+        );
+        assert_eq!(
+            commands(std::path::Path::new("/w/p.repl"), &[]),
+            "mach create; machine LoadPlatformDescription @/w/p.repl; peripherals; quit"
+        );
+    }
+
+    /// `AET-WO-4220` F2, D6: a model that does not compile stops Renode's
+    /// line with exit 0 and no marker; the CLI refuses it as
+    /// `ModelLoadFailed`, carrying the diagnostics, in a boot and in a load.
+    #[test]
+    fn a_model_that_does_not_compile_is_model_load_failed() {
+        // The spike's measured text (`AET-WO-4220` P1.5).
+        let text = "Errors during compilation or loading:\n\
+                    Could not compile assembly from: /w/models/BMP581.cs\n\
+                    /w/models/BMP581.cs(13,27): error CS1002: ; expected\n\
+                    [INFO] machine-0: Disposed.\n";
+        let out = Output {
+            ended: crate::run::Ended::Code(0),
+            stdout: text.as_bytes().to_vec(),
+            stderr: Vec::new(),
+            sandbox: crate::run::SandboxReport {
+                landlock_abi: 0,
+                tcp_confined: false,
+                scoped: false,
+                sockets_denied: true,
+                uid_boundary: false,
+                uid_boundary_unmet: None,
+            },
+            dropped_log_lines: 0,
+        };
+        let image = image();
+        for stop in [
+            judge_boot(0, &out, &plan(&image, &[])).err().unwrap(),
+            judge(0, &out).err().unwrap(),
+        ] {
+            assert_eq!(stop.kind, "ModelLoadFailed");
+            assert!(
+                stop.message.contains("error CS1002: ; expected"),
+                "{}",
+                stop.message
+            );
+        }
+        assert!(LOG_FILTER.keep.contains(&MODEL_LOAD_ERROR));
     }
 
     /// The witness of a run whose window ends right after the edges given.
@@ -2388,6 +2540,7 @@ mod tests {
             peripheral: "I2C1".into(),
             wire,
             step,
+            label: step.name(),
             write: vec![0x00],
             width: 1,
             expected: 0,
@@ -2421,6 +2574,63 @@ mod tests {
             unrouted,
         };
         witness_findings(checks, &observed)
+    }
+
+    /// `AET-WO-4220`: a model of our own logs a transaction when the
+    /// multiplexer finishes it, after the window's closing edge and directly
+    /// after `Finisihing transmission on device 0xa` (measured in the pinned
+    /// image, `SPIMultiplexer.cs` L30-32, L99-108). That line is its window's;
+    /// one after another address's finish, after the next edge, or with no
+    /// finish line before it is not, and fails.
+    #[test]
+    fn a_line_logged_at_its_own_release_belongs_to_that_window() {
+        use aethelgard_ir::parts::StepKind::{Configure, Identity};
+        let at = |b: &str| format!("[00:00:00.010040000] {b}");
+        let spi = || aethelgard_twin::boot::Wire::Spi {
+            address: 1,
+            select: "PA1".into(),
+        };
+        let d = "spi1.spi1mux.u7";
+        let id = "[NOISY] spi1.spi1mux.u7: bank 0 read 0x75 -> 0x47";
+        let cfg = "[NOISY] spi1.spi1mux.u7: bank 0 write 0x4E <- 0x03";
+        let checks = [
+            step(spi(), d, Identity, &[id]),
+            step(spi(), d, Configure, &[cfg]),
+        ];
+        let (low, high) = (
+            "[NOISY] spi1.spi1mux: GPIO #1 set to False",
+            "[NOISY] spi1.spi1mux: GPIO #1 set to True",
+        );
+        let finish0 = "[NOISY] spi1.spi1mux: Finisihing transmission on device 0x0";
+        let finish1 = "[NOISY] spi1.spi1mux: Finisihing transmission on device 0x1";
+        let other = "[NOISY] spi1.spi1mux: GPIO #0 set to True";
+        let judge = |log: Vec<&str>| -> Vec<String> {
+            let log: Vec<String> = log.into_iter().map(at).collect();
+            let log: Vec<&str> = log.iter().map(String::as_str).collect();
+            step_findings(&checks, &log)
+                .iter()
+                .map(|f| f.kind.clone())
+                .collect()
+        };
+        // As measured: each release finishes every deselected input in turn.
+        assert_eq!(
+            judge(vec![
+                low, high, finish0, finish1, id, low, high, finish0, finish1, cfg
+            ]),
+            Vec::<String>::new()
+        );
+        // After another address's finish line: not this window's.
+        assert!(
+            !judge(vec![
+                low, high, finish1, finish0, id, low, high, finish1, cfg
+            ])
+            .is_empty()
+        );
+        // After the multiplexer's next edge: not the closed window's, though a
+        // finish line for its address comes before it.
+        assert!(!judge(vec![low, high, other, finish1, id, low, high, finish1, cfg]).is_empty());
+        // Swapped steps still fail.
+        assert!(!judge(vec![low, high, finish1, cfg, low, high, finish1, id]).is_empty());
     }
 
     /// `AET-WO-4210` D-A1 (ruled): a scripted device's `[ERROR]` line inside a

@@ -100,7 +100,9 @@ fn digests() -> Vec<(&'static str, String)> {
 /// device's script and its records; specification version 8,
 /// `accept_lifecycle`; the image's SysTick and NVIC words), merging after
 /// `4300d`: the four were `a5a8e53a…5e46`, `b3bf305f…a745`, `ea29d696…07f0` and
-/// `893fb13d…c4a6` there.
+/// `893fb13d…c4a6` there. The boot image was re-taken in `AET-WO-4220`, whose
+/// `StepCheck` names each step (`label`): with its three `label: "identity"`
+/// fields removed, the image's text hashes to the old `0e4d72ee…c8a2` exactly.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
@@ -116,7 +118,7 @@ const BEFORE: [(&str, &str); 4] = [
     ),
     (
         "boot image",
-        "0e4d72ee3bc5716b2aa3c6e8e3f66f65ecc34d61e01c9e84bad8549fc20cc8a2",
+        "a03116d62e833cf8128e8bb677de97ff249186c743fa5393a94d7274ea206b64",
     ),
 ];
 

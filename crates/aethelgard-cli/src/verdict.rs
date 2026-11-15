@@ -375,7 +375,7 @@ impl WitnessReport {
         WitnessReport {
             peripheral: check.peripheral.clone(),
             reference: check.reference.clone(),
-            step: check.step.name(),
+            step: check.label,
             device: check.device.clone(),
             expected: check.witness.clone().unwrap_or_default(),
             observed,
