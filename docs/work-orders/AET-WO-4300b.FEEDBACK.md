@@ -3,7 +3,7 @@
 **Builder:** Claude (strong tier), worktree `~/aethelgard-4300b`, branch `wo/aet-4300b-serial` from `main` `7ca65e6`.
 **Work order:** `docs/work-orders/AET-WO-4300b.md` on `main`, as amended by the architect's kickoff amendments (`~/.cache/aet-4300b-ruling.md`, 2026-11-15 12:00 UTC).
 **Cadence:** build, with one measured stop (§1.6, now answered by connectors unless ERC or DRC fails).
-**Status:** built on PR #152. §1.6 measured and passed (ERC and DRC at connectors, no finding, no waiver); the §7 clock stop does not fire. Two fresh adversarial passes (§8), every finding fixed or asked (§9); reduction pass (§11); gates green. Specification 9, topology 7, trace 11, `TIER2_MIN` 146.
+**Status:** built on PR #152. §1.6 measured and passed (ERC and DRC at connectors, no finding, no waiver); the §7 clock stop does not fire. Three fresh adversarial passes (§8), every finding fixed or asked (§9); reduction pass (§11); gates green. Specification 9, topology 7, trace 11, `TIER2_MIN` 151.
 
 The predictions in §1 are committed before any container run, any firmware build for a probe, and any baseline run. They are not edited afterwards; corrections go in later sections.
 
@@ -212,6 +212,15 @@ F6, F7, F10, F14 and F15 are questions or notes (§9). Each fix has a test that 
 | L1, L2 | low | replay accepted `tx_at_send` without kind 28's writes; an LCKR-ignored write applied by the rebuild | replay refuses it (`572ebbf`); Renode's locked-pin line fails the write it follows, which the rebuild does not apply (`64dd9df`) |
 | M2 | medium | a DShot board cannot hold a 57600 MAVLINK, nor a droop late in its window, with a 115200 console | a question (§9 Q4) |
 
+**Pass 3** (a fresh Opus subagent, on fix 2 at `e0a51d1`; `~/.cache/aet-4300b/adv3/findings.md`). Six forged firmwares passed, in three classes; every correct board still passed (the console, the four-port fixture, `campaign_tier2` with its droops). Each fix has its ported test, and each new guard a killed mutant (evidence/fix3):
+
+| # | sev | finding | fix |
+|---|---|---|---|
+| ADV3-1/1b | critical | `RCC_D2CFGR` (APB2 ÷2) or `RCC_D2CCIP2R` (USART1 on CSI) written after the bring-up: pass; only the reset registers were judged | an RCC write is allowed only as a whole word to a run-mode enable register (`AHB3ENR`…`APB4ENR`); clearing a serial port's USART or pin-port gate once set fails. Measured first: the reference, the four-port fixture and both motor fixtures write only `AHB4ENR`, `APB1LENR`, `APB2ENR`. It subsumes pass 2's reset-bit rule, which was removed (`c396e4a`, `43bb051`) |
+| ADV3-2 | critical | `CR2` read back (Renode reads its tags as 0) and written XORed: the log shows the solved word, silicon is left uninverted | a firmware read of a solved USART's word other than `ISR`/`RDR` fails (the bring-up reads only `ISR` and `RDR`, measured) (`420757b`) |
+| ADV3-4/5 | critical | the TX pin routed only around each `TDR` write; the RX pin unrouted after the first echoed byte: pass (the checks were point samples) | an interval rule: once a serial pin's `MODER`, `AFR`, `OTYPER`, `OSPEEDR`, `PUPDR` all hold their solved values in a boot, no later write may change them; TX solved before the first `TDR` write, RX before the injection, both at the end (`f8895dc`) |
+| ADV3-3 | critical, a class | any bit Renode does not store reads 0, so it tells a firmware it is in the twin; a read-modify-write can then differ from silicon (`OTYPER`, which the generated HAL read-modify-writes for every pin) | the USART instance is closed by ADV3-2. The class is named in §10 with its enumerated instances; not closed (Q9) |
+
 ## 9. Questions for the architect (not stops)
 
 §0 (committed before any run, so unedited) calls Q1 "§6 Q1"; it is here.
@@ -223,10 +232,12 @@ F6, F7, F10, F14 and F15 are questions or notes (§9). Each fix has a test that 
 - **Q5, rounding.** `BRR` is the nearest whole `USARTDIV`, half up (pass 1 F7), not the least baud error; they differ only at `BRR` 16–17, where no declared baud sits today.
 - **Q6, spelling.** Peripherals are upper case (`USART1`), as the specification's I2C and SPI peripherals are; the work order wrote `usart1`. `LPUART1` is refused in any case (pass 1 F14).
 - **Q8, campaign coverage (`3303`, PR #155).** The architect ruled that a declared bus needs a seeded fault the campaign survives or detects by its named mechanism, and that a serial port is covered by `serial_rx_dead` failing as named. #152 has no campaign override kind for a serial port: its fault is a seeded firmware mutant, so `3303`'s `stress()` has nothing to map. Whoever merges second adds `Target::Serial` with the seeded case as its mechanism (coordinated by inbox).
+- **Q9, the twin-detection oracle (pass 3, ADV3-3).** Any bit Renode does not store reads 0 (enumerated in §10). A firmware may read one, learn it runs in the twin, and behave otherwise on silicon; the judge sees only what the twin does. The USART's configuration words are closed by refusing their reads; the GPIO `OTYPER` cannot be (the generated HAL read-modify-writes it), nor the I2C and SPI words below. Close by model changes (a Renode model that stores the bits) or generator changes (whole-word writes, no reads), or accept as a residual of the twin, with the Kani harnesses and byte-identical regeneration as the guard for generated firmware?
 - **Q7, the reference's console connector.** An explicit SM04B map (TX, RX, null, GND): DS-009 DEBUG MINI cannot validate until SWD is declared. Accept, or wait for Sentinel-02's SWD?
 
 ## 10. Residuals, named
 
+- **Unstored bits a firmware can read** (pass 3, measured by writing all-ones and reading back): every `GPIOx_OTYPER` bit; `I2C1_CR1` DNF, ANFOFF, TXDMAEN, SBC, WUPEN, GCEN, SMBHEN, SMBDEN, ALERTEN, PECEN; all of `I2C1_TIMINGR` (written whole, never read by the HAL); `SPI1` `CR1`, `CFG1`, `CFG2` fields (MASRX, HDDIR, SSI, CRC fields, FTHLV, UDRCFG, MBR, COMM, SP, CPHA, CPOL, SSM, SSOE, AFCNTR and others), all read-modify-written by the HAL; the RCC enable bits of peripherals Renode lacks (MDMA, FMC, SDMMC, ETH, USB OTG, DCMI, CRYP, HASH, SPI2/3/5/6, SAI, DFSDM, HRTIM, FDCAN, …). Status words (USART `ISR`, I2C `ISR`, SPI `SR`) are not compared with silicon. Q9.
 - The twin renders no wire time and no overrun: Renode's USART queues every injected byte. The static budget and `FIFOEN` cover the bring-up's frame; a faster or longer peer stream is not judged.
 - A firmware that stops mid-pattern in an earlier boot reads exactly like a reset cut (C2's parser); accepted.
 - The capture can be computed by anyone holding the ELF; the defence against a host-filled capture is the fresh directory the CLI owns and the access log of the writes that made the bytes.
