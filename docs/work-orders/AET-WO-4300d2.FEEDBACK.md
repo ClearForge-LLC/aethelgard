@@ -250,3 +250,27 @@ A fresh subagent proposed the cuts against the four questions; I applied those t
   7. The `notes-before-4300d2-four-layer-power.md` golden is the four-layer one plus three edits. It is kept as byte-identity evidence.
   8. Route's diff-pair path walk still tests a track end with `inner().contains`, while connectivity and the router use `reach()`. They agree on every pad drawn today.
   9. `Part.decouples` and `Part.anchor` are two mechanisms for "this part belongs to that IC".
+
+## 11. D7, the sub-grid measurement (for the router work order; ruled: READY, the crossing waits)
+
+**The part.** `Sensor_Motion:InvenSense_QFN-24_3x3mm_P0.4mm` (KiCad 10.0.7, vendored):
+- 24 SMD `roundrect` pads, 0.55 × 0.2 mm, `roundrect_rratio` 0.25 (corner 0.05 mm), at 0.4 mm pitch;
+- pads 1–6 (x = −1.5) and 13–18 (x = +1.5) at rotation 0, pads 7–12 (y = +1.5) and 19–24 (y = −1.5) at rotation 90;
+- the pad-to-pad gap along a side is 0.2 mm;
+- an F.Cu keepout of 1.75 × 1.59 mm under the die (D2) [read].
+
+**The engine.** The track width and clearance floor is 200 µm (`aethelgard-ir/src/board.rs` `FLOOR_UM`, `RUL-03`). The routing grid is 125 µm (`route.rs` `PITCH_NM`). Placement snaps to 50 µm (`pcb.rs` `SNAP`) [read].
+
+**Why no node is clear** (read, then measured on the committed fixture):
+- **The inner box is narrower than the grid.** A pad's inner box (copper less its rounding) is 0.45 × 0.1 mm, narrower than the 125 µm grid in one axis. So it holds a grid node only when the pad's centre falls within 25 µm of a grid line. Pad centres along a side step by 400 µm, which is not a multiple of 125 µm, so at most some pads of a row line up.
+- **A track clears its neighbours only when centred.** A 200 µm track leaving a 200 µm pad clears its neighbours by exactly 200 µm only when its centreline is the pad's centreline. One grid node off (up to 62.5 µm) leaves 137.5 µm.
+- **Measured:** `emit` on the committed fixture gives `Unroutable` for `GND`: "U5 pad 20 has no node clear to start a track".
+
+**The gate's pad clearance is conservative here.** `route::check` measures pad to pad by bounding boxes:
+- corner pads 1 (rotation 0) and 24 (rotation 90) read as 0.125 mm apart in x and in y, so 0.177 mm;
+- as rounded copper (inner boxes less both radii) they are 0.218 mm apart [computed; the gate's refusal measured on the bare footprint].
+
+**What the router work order needs.**
+- A pin-centred F.Cu escape for a pad whose inner box holds no grid node: an off-grid terminal on the pad's own axis, out to the first clear grid node.
+- An exact rounded-pad clearance in `route::check`.
+- Both should apply only to such pads, so every existing board stays byte-identical. No vendored footprint before this one has such pads [measured: every pad of `data/kicad-10.0.7/footprints` listed].
