@@ -748,4 +748,21 @@ The architect ruled again (mailbox, 12:40 UTC): `4300d` slice A (PR #147) took s
 - **Image, trial trees, under `capped-run`** (read-back `memory.max=8589934592 memory.swap.max=0 pids.max=8192` each time):
   - **The `4300a` trial:** 1,618 passed and 2 failed, the two seeded-set gates above.
   - **The `4300d` trial with the seeded fix:** 1,642 passed and 1 failed, `svd-hal`'s trybuild `board_ui`. Its eight mismatches are rustc leaving out the source snippet of `boards/sentinel-01/src/lib.rs` in a note, a property of the scratch checkout's build, not of the code. Rerun in the image on this worktree, with the same tree, it passed.
-- The full suite on this worktree's final tree, and CI, are recorded with the READY commit.
+- **Image, this worktree at `69c56ef`**, under `capped-run` with the same read-back: the full suite with `with-tools` (`final3.log`) ran 98 `test result: ok` binaries, 1,643 passed and none failed.
+
+**CI and the final state:**
+- PR #143 at `69c56ef`:
+  - `ci` run 43720429628: success.
+  - `engine-image` run 43720429540: success.
+  - `ardupilot-image` run 43720429557: success.
+- Tools shards, in minutes, each under the 20-minute limit: 13.7 (0), 13.8 (1), 12.7 (2), 13.0 (3), 16.9 (4), 16.8 (5), 15.7 (6), 16.8 (7). No refit was needed.
+- The canary reads `tier2_tests_passed=114 floor=114`, so `TIER2_MIN` is exact. `tools_total_passed=1670`.
+- `main` (`2907989`) is merged in, and nothing landed after it.
+
+**AET-WO-4210 READY FOR REVIEW: PR #143.** The review round is done:
+- `main` is merged (1308, 4400a, 1309, 4300a, 4300d slice A and docs #144 and #148);
+- the specification is at 8 and the trace at 9, as the numbering rule and the architect's rulings give;
+- D-A1 is built and measured in Renode, and D-B1 and D-A8 are recorded at their code;
+- `TIER2_MIN` is exact, and the gates and CI are green.
+
+The new interaction for the architect is D7 behind a declared crossing (above). The residuals R-1 and R-2 stand as named.
