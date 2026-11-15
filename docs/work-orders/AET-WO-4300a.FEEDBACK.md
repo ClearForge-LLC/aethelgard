@@ -3,7 +3,7 @@
 **Builder:** Claude (strong tier), worktree `~/aethelgard-4300a`, branch `wo/aet-4300a-motor-outputs` from `main` `50d7a6f`.
 **Work order:** `docs/work-orders/AET-WO-4300a.md` as on `origin/claude/argon-repo-docs-synthesis-rjrb0d` (docs PR #136); identical to `main`'s copy at `50d7a6f`.
 **Cadence:** build, with one measured stop (§1.2, pre-ruled at the `4400` ruling D1) and the off-board-net item (§1.8).
-**Status: STOPPED at D1** (§5), on PR #145. §1.2 held (measured); §1.8 passes at a connector after `4300f` (measured); every other clause of §1.7 and §2 passes in the pinned image. The DShot600 fixture's campaign clause waits on D1: its 100 ms boot fails closed on the log budget. Adversarial pass §7, reduction pass §8, gates green.
+**Status: READY** on PR #145. Stopped at D1 at `a2c4fa4`; the architect ruled D1 (a) and Q1–Q5 (comment 6892698852), and §9 builds the ruling. §1.2 held (measured). §1.8 passes at a connector after `4300f` (measured). The DShot600 fixture's campaign passes inside its 2 ms window, with and without a droop (measured). Every clause of §1.7 and §2 passes in the pinned image. Three fresh adversarial passes: §7, and two in §9. Reduction passes: §8 and §9. Gates are green.
 
 The predictions in §1 were committed before any container run, any firmware build for a probe, and any baseline run. They are not edited afterwards; corrections go in later sections.
 
@@ -320,6 +320,8 @@ What held, per the reviewer:
 - evolve's I4 wins beside a software symptom, `TIM1` does not match `TIM15.*`, and only failing records are evidence;
 - a `GND` motor label is refused in any case;
 - the tier-1 workspace passes.
+
+**CI on `2edb752`, measured:** every check green; the tools shards ran 12.8 to 19.9 min; the aggregate printed `tier2_tests_passed=110 floor=110`. The slowest shard (6) is `board_tier2`'s two reference `verify` runs (3301; 331.8 and 328.7 s) and a seed (181 s), none of which this work order changes. `1308` noted the same shard at 18.9 min on `main`. **The refit rule's spread clause has fired**: about 7 min between the slowest and fastest shard on two runs in a row, `a2c4fa4` and `2edb752`. It was not refit here, because every shard is under 20 min; a finding for the architect. If a shard passes 20 min, the rule's refit comes first.
 
 ### Questions for the architect (not stops)
 
