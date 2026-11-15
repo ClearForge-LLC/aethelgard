@@ -1468,7 +1468,14 @@ fn run_gates(
         ]),
     )?;
     bound("support", &support, want, "", "")?;
-    report.support = support.last().get("support").cloned();
+    // The record, less the board's scratch path, which differs every run: the
+    // verdict names the board by its sha256, as every gate's binding does.
+    report.support = support.last().get("support").cloned().map(|mut s| {
+        if let Some(b) = s.get_mut("board").and_then(Value::as_object_mut) {
+            b.remove("path");
+        }
+        s
+    });
     report.gates.push(gate_report("support", None, &support));
 
     let extract = gate(
