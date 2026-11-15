@@ -560,8 +560,31 @@ struct Manifest<'a> {
     topology_sha256: &'a str,
     /// Each `--scenarios` file, in the order given: its name and sha256.
     scenarios: &'a [Scenario],
+    /// Each precondition of the package and its state (`AET-WO-3303` §1.1),
+    /// as the verdict's `fab.preconditions` states them.
+    preconditions: &'a [Precondition],
     verdict_sha256: String,
     files: BTreeMap<&'a str, String>,
+}
+
+/// One precondition of a package: `met`, or `unmet` with what fails it.
+#[derive(Serialize, Clone)]
+pub struct Precondition {
+    pub precondition: &'static str,
+    pub state: &'static str,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unmet: Vec<String>,
+}
+
+impl Precondition {
+    pub fn of(precondition: &'static str, unmet: Vec<String>) -> Self {
+        let state = if unmet.is_empty() { "met" } else { "unmet" };
+        Self {
+            precondition,
+            state,
+            unmet,
+        }
+    }
 }
 
 /// One scenario the emitting run was given.
@@ -577,6 +600,7 @@ pub struct Named<'a> {
     pub specification_sha256: &'a str,
     pub topology_sha256: &'a str,
     pub scenarios: &'a [Scenario],
+    pub preconditions: &'a [Precondition],
     /// The verdict line the same call prints without the fab flags.
     pub verdict_line: &'a str,
 }
@@ -588,6 +612,7 @@ pub fn manifest(n: &Named<'_>, files: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
         specification_sha256: n.specification_sha256,
         topology_sha256: n.topology_sha256,
         scenarios: n.scenarios,
+        preconditions: n.preconditions,
         verdict_sha256: tree::sha256(n.verdict_line.as_bytes()),
         files: files
             .iter()
@@ -782,6 +807,10 @@ mod tests {
             specification_sha256: "s",
             topology_sha256: "t",
             scenarios: &scenarios,
+            preconditions: &[
+                Precondition::of("met_one", Vec::new()),
+                Precondition::of("unmet_one", vec!["a".to_owned()]),
+            ],
             verdict_line: "{\"ok\":true}",
         };
         let m = manifest(&named, &files);
@@ -792,6 +821,14 @@ mod tests {
         );
         let v: serde_json::Value = serde_json::from_slice(&m).unwrap();
         assert_eq!(v["verdict_sha256"], tree::sha256(b"{\"ok\":true}"));
+        // `AET-WO-3303` §1.1: the package itself names each precondition.
+        assert_eq!(
+            v["preconditions"],
+            serde_json::json!([
+                {"precondition": "met_one", "state": "met"},
+                {"precondition": "unmet_one", "state": "unmet", "unmet": ["a"]}
+            ])
+        );
         assert_eq!(v["files"]["a"], tree::sha256(b"1"));
         assert_eq!(v["files"].as_object().unwrap().len(), 2);
         assert!(m.ends_with(b"}\n"));

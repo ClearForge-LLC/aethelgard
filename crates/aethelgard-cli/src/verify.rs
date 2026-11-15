@@ -111,7 +111,7 @@ struct FabReport {
     /// skipped harness was refused before any gate ran; campaign coverage is
     /// stated here and not yet enforced (FEEDBACK D1).
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    preconditions: Vec<Precondition>,
+    preconditions: Vec<fab::Precondition>,
     /// `kicad-cli`'s version, as the export ran it.
     tool_version: Option<String>,
     /// Whether every export ran under the separate uid (`AET-WO-1601`).
@@ -132,29 +132,13 @@ struct FabReport {
     lifecycle_unheld: Vec<String>,
 }
 
-/// One precondition of a package: `met`, or `unmet` with what fails it.
-#[derive(Serialize, Clone)]
-struct Precondition {
-    precondition: &'static str,
-    state: &'static str,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    unmet: Vec<String>,
-}
-
-impl Precondition {
-    fn of(precondition: &'static str, unmet: Vec<String>) -> Self {
-        let state = if unmet.is_empty() { "met" } else { "unmet" };
-        Self {
-            precondition,
-            state,
-            unmet,
-        }
-    }
-}
-
 /// Every precondition of a package, in a fixed order, on the gates that ran,
 /// with [`uncovered`]'s list for the campaign's coverage.
-fn preconditions(report: &Report, planned: &[String], uncovered: Vec<String>) -> Vec<Precondition> {
+fn preconditions(
+    report: &Report,
+    planned: &[String],
+    uncovered: Vec<String>,
+) -> Vec<fab::Precondition> {
     let proved = |h: &String| {
         report
             .gates
@@ -178,7 +162,7 @@ fn preconditions(report: &Report, planned: &[String], uncovered: Vec<String>) ->
         )
         .collect();
     vec![
-        Precondition::of(
+        fab::Precondition::of(
             "every_harness_proved",
             planned
                 .iter()
@@ -186,8 +170,8 @@ fn preconditions(report: &Report, planned: &[String], uncovered: Vec<String>) ->
                 .map(|h| format!("{h} not proved"))
                 .collect(),
         ),
-        Precondition::of("campaign_faults_every_bus_and_rail", uncovered),
-        Precondition::of("every_gate_passed", failed),
+        fab::Precondition::of("campaign_faults_every_bus_and_rail", uncovered),
+        fab::Precondition::of("every_gate_passed", failed),
     ]
 }
 
@@ -557,14 +541,15 @@ fn bind(gate: &str, what: &str, want: &str, have: &Value) -> Result<(), ExitCode
 
 /// Every declared bus and rail the campaign seeds no fault on (`INV-03`,
 /// `AET-WO-3303` §1.1), each named with why, in the specification's order:
-/// I2C buses, SPI buses, then rails. A fault counts only where it can change
-/// what the campaign judges: on a bus some device uses, with a value other
-/// than the specification's own (a pull-up or a line's capacitance limit), a
-/// held line, an SPI device left absent, or a droop whose floor is below its
-/// domain's nominal. A rail is each voltage domain, and the battery when the
-/// specification declares a power tree. The campaign droops only the MCU's
-/// supply (`DroopNotMcuSupply`) and nothing names an SPI bus but through a
-/// device, so such a rail or bus is named as one no fault kind reaches.
+/// I2C buses, SPI buses, then rails. A fault counts only where it stresses
+/// what the campaign judges: on a bus some device uses, a pull-up other than
+/// the specification's own, a line's capacitance raised above its declared
+/// value, a held line, an SPI device left absent, or a droop whose floor is
+/// below its domain's tolerance band. A rail is each voltage domain, and the
+/// battery when the specification declares a power tree. The campaign droops
+/// only the MCU's supply (`DroopNotMcuSupply`) and nothing names an SPI bus
+/// but through a device, so such a rail or bus is named as one no fault kind
+/// reaches.
 pub(crate) fn uncovered(
     spec: &aethelgard_ir::Specification,
     topology: &aethelgard_ir::SolvedTopology,
@@ -587,10 +572,12 @@ pub(crate) fn uncovered(
                 }
             }
             Override::MaxCapacitance { net, femtofarads } => {
+                // A line's capacitance raised: the twin's line rises slower.
+                // A lowered one only eases the line (adversarial F3).
                 let changed = spec
                     .net_constraints
                     .iter()
-                    .any(|c| &c.net_name == net && c.max_capacitance_femtofarads != *femtofarads);
+                    .any(|c| &c.net_name == net && *femtofarads > c.max_capacitance_femtofarads);
                 if let Some(b) = spec
                     .i2c_buses
                     .iter()
@@ -603,10 +590,16 @@ pub(crate) fn uncovered(
                 i2c.insert(bus.as_str());
             }
             Override::Droop(d) => {
+                // Below the domain's own tolerance band: a droop inside it
+                // leaves the rail in its specification (adversarial F3).
+                let band = |v: &aethelgard_ir::VoltageDomain| {
+                    u64::from(v.nominal_millivolts) * (1000 - u64::from(v.tolerance_permille))
+                        / 1000
+                };
                 if spec
                     .voltage_domains
                     .iter()
-                    .any(|v| v.id == d.domain && d.floor_millivolts < v.nominal_millivolts)
+                    .any(|v| v.id == d.domain && u64::from(d.floor_millivolts) < band(v))
                 {
                     rails.insert(d.domain.as_str());
                 }
@@ -654,19 +647,13 @@ pub(crate) fn uncovered(
 }
 
 /// Each harness the board crate declares that `planned` does not name: every
-/// `kani::proof` attribute in every file of the crate is counted, however it
-/// is written, so a harness the line reader in [`harnesses`] misses is never
+/// `kani::proof` in every file of the crate is counted, however it is written
+/// (`kani::proof_for_contract` too, which Kani also runs), so a harness the line reader in [`harnesses`] misses is never
 /// silently left unproved (`AET-WO-3303` §1.1).
 fn unplanned(board: &BTreeMap<String, String>, planned: usize) -> Option<String> {
     let declared: usize = board
         .values()
-        .map(|text| {
-            text.match_indices("kani::proof")
-                .filter(|(i, m)| {
-                    !text[i + m.len()..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
-                })
-                .count()
-        })
+        .map(|text| text.matches("kani::proof").count())
         .sum();
     (declared != planned).then(|| {
         format!(
@@ -944,7 +931,7 @@ pub fn verify(
             })
             .collect();
         let pre = preconditions(&report, &harnesses, short);
-        if let Err(code) = package(&mut report, mode, &bound, &scenarios) {
+        if let Err(code) = package(&mut report, mode, &bound, &scenarios, &pre) {
             return code;
         }
         if let Some(f) = report.fab.as_mut() {
@@ -974,6 +961,7 @@ fn package(
     mode: &FabMode,
     bound: &fab::Bound<'_>,
     scenarios: &[fab::Scenario],
+    preconditions: &[fab::Precondition],
 ) -> Result<(), ExitCode> {
     if !report.ok {
         not_packaged(report, mode);
@@ -991,6 +979,7 @@ fn package(
             specification_sha256: &report.specification_sha256,
             topology_sha256: &report.topology_sha256,
             scenarios,
+            preconditions,
             verdict_line: &line,
         },
         &exported.files,
@@ -1329,12 +1318,12 @@ mod tests {
             ),
         ]);
         assert!(unplanned(&other, 1).is_some());
-        // A longer path that only starts with the attribute's is not one.
+        // A contract harness is a harness Kani runs (adversarial F6).
         let contract = BTreeMap::from([(
             "src/proofs.rs".to_owned(),
-            "#[kani::proof]\nfn a() {}\n#[kani::proof_for_contract(f)]\n".to_owned(),
+            "#[kani::proof]\nfn a() {}\n#[kani::proof_for_contract(f)]\nfn b() {}\n".to_owned(),
         )]);
-        assert!(unplanned(&contract, 1).is_none());
+        assert!(unplanned(&contract, 1).is_some());
     }
 
     fn solved(path: &str) -> (aethelgard_ir::Specification, aethelgard_ir::SolvedTopology) {
@@ -1364,7 +1353,7 @@ mod tests {
 
     /// `AET-WO-3303` §1.1: each declared bus and rail is named until a
     /// scenario seeds a fault on it. The reference's survivable faults
-    /// (`pullup-3k3`, `droop-tolerated`) cover `SENSORS` and `VDD_3V3`;
+    /// (`pullup-3k3`, `droop-bor3`) cover `SENSORS` and `VDD_3V3`;
     /// `FLASH` is covered only by `spi-absent-u4`, which no design survives
     /// (3301 §3.2), so a passing package always names it (FEEDBACK D1).
     #[test]
@@ -1379,9 +1368,18 @@ mod tests {
         assert_eq!(
             named(&[
                 "scenarios/sentinel-01/seeded/pullup-3k3.json",
-                "scenarios/sentinel-01/droop-tolerated.json"
+                "scenarios/sentinel-01/droop-bor3.json"
             ]),
             ["SPI bus `FLASH`"]
+        );
+        // A droop inside the tolerance band leaves the rail in its
+        // specification, so it covers nothing (adversarial F3).
+        assert_eq!(
+            named(&[
+                "scenarios/sentinel-01/seeded/pullup-3k3.json",
+                "scenarios/sentinel-01/droop-tolerated.json"
+            ]),
+            ["SPI bus `FLASH`", "rail `VDD_3V3`"]
         );
         assert_eq!(
             named(&[
@@ -1404,7 +1402,7 @@ mod tests {
                 "expect_findings": ["i2c_timeout"], "overrides": [
                     {"bus": "SENSORS", "line_held_low": "scl"},
                     {"spi_device_absent": "U4"},
-                    {"droop": {"domain": "VDD_3V3", "floor_millivolts": 3200, "start_ns": 1000000,
+                    {"droop": {"domain": "VDD_3V3", "floor_millivolts": 2400, "start_ns": 1000000,
                         "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
                         "source_milliohms": 500, "load_milliamps": 100, "bor_level": 0}}]})
             .to_string()
@@ -1421,8 +1419,9 @@ mod tests {
     }
 
     /// `AET-WO-3303` §5.2: a fault equal to the no-fault case covers
-    /// nothing: a capacitance limit at its declared value, a droop whose
-    /// floor is the nominal; nor does a fault on a bus no device uses.
+    /// nothing: a line's capacitance at or below its declared value (only a
+    /// raised one slows the line), a droop whose floor stays inside its
+    /// domain's tolerance band; nor does a fault on a bus no device uses.
     #[test]
     fn a_fault_that_changes_nothing_covers_nothing() {
         let bytes = std::fs::read(
@@ -1454,11 +1453,16 @@ mod tests {
                 "load_milliamps": 100, "bor_level": 3}})
         };
         let short = |o: Value| uncovered(&spec, &topology, &[scenario(o)]);
-        let all =
-            short(json!([{"net": sda, "max_capacitance_femtofarads": declared}, droop(3300)]));
-        assert_eq!(all.len(), 3, "{all:?}");
+        // VDD_3V3: 3300 mV, 50 permille, so its band ends at 3135 mV.
+        for eased in [
+            json!([{"net": sda, "max_capacitance_femtofarads": declared}, droop(3300)]),
+            json!([{"net": sda, "max_capacitance_femtofarads": declared - 1}, droop(3135)]),
+        ] {
+            let all = short(eased);
+            assert_eq!(all.len(), 3, "{all:?}");
+        }
         let covered =
-            short(json!([{"net": sda, "max_capacitance_femtofarads": declared + 1}, droop(3299)]));
+            short(json!([{"net": sda, "max_capacitance_femtofarads": declared + 1}, droop(3134)]));
         assert_eq!(covered, ["SPI bus `FLASH`"]);
     }
 

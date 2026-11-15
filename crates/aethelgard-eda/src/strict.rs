@@ -26,7 +26,8 @@
 //!   canonical, exact comparison is KiCad's, so a symbol's fields need no
 //!   folding to be found twice.
 //!
-//! - a value of a numeric node ([`NUMERIC`]) that is not a bare atom of
+//! - a value of a numeric node ([`NUMERIC`], [`KEYED`] past its keyword)
+//!   that is not a bare atom of
 //!   `-?[0-9]+(\.[0-9]{1,6})?` (`AET-WO-3303` A11): quoted, `+`, `--`, an
 //!   exponent, a leading `.`, a seventh decimal. [`version`] separately pins
 //!   a file's `(version …)` for the gate that judges it alone (`extract`).
@@ -655,15 +656,42 @@ const NUMERIC: &[&str] = &[
     "width",
     "thickness",
     "roundrect_rratio",
+    // Every other child KiCad reads as a number (adversarial F4).
+    "min_thickness",
+    "zone_connect",
+    "thermal_gap",
+    "thermal_bridge_width",
+    "thermal_bridge_angle",
+];
+
+/// A node whose leading keyword is one of these words and whose every other
+/// value is a number: `(hatch edge 0.5)`, `(drill 0.3)`, `(drill oval 0.5 1)`.
+/// `offset` takes no keyword: a drill's is numbers, a model's holds `xyz`.
+const KEYED: &[(&str, &[&str])] = &[
+    ("hatch", &["edge", "full", "none"]),
+    ("drill", &["oval"]),
+    ("offset", &[]),
 ];
 
 /// Each value of a [`NUMERIC`] node is a bare atom of KiCad's number
 /// grammar ([`sexpr::nm`]).
 fn numbers(node: &Node<'_>) -> Result<(), Refusal> {
-    if !node.head().is_some_and(|h| NUMERIC.contains(&h)) {
+    let Some(head) = node.head() else {
         return Ok(());
-    }
-    for v in &node.sx.items()[1..] {
+    };
+    let (keyed, keywords): (bool, &[&str]) = match KEYED.iter().find(|(h, _)| *h == head) {
+        Some((_, words)) => (true, words),
+        None if NUMERIC.contains(&head) => (false, &[]),
+        None => return Ok(()),
+    };
+    for (i, v) in node.sx.items()[1..].iter().enumerate() {
+        // A keyed node's keyword, first and bare; its lists (a drill's
+        // `offset`, a model's `xyz`) are judged as nodes of their own.
+        if keyed && matches!(v, Sx::List(_))
+            || i == 0 && matches!(v, Sx::Atom(a) if keywords.contains(&a.as_str()))
+        {
+            continue;
+        }
         let ok = matches!(v, Sx::Atom(a) if sexpr::nm(a).is_some());
         if !ok {
             return Err(Refusal::Number {
@@ -1039,7 +1067,9 @@ mod tests {
             assert!(board(&with(good)).is_ok(), "{good}");
         }
         // `+`, a second `-`, an exponent, a leading or trailing `.`, a
-        // seventh decimal, U+2212 and a quoted number: KiCad loads none.
+        // seventh decimal, U+2212 and a quoted number: none is a number KiCad
+        // writes (it loads an exponent, a leading `.` and a seventh decimal,
+        // measured: this reader is the stricter).
         for bad in [
             "+0.2",
             "--5",
@@ -1081,6 +1111,51 @@ mod tests {
             .unwrap();
         assert!(matches!(r, Refusal::Number { .. }));
         assert_eq!(r.kind(), "MalformedSchematic");
+    }
+
+    /// Adversarial F4: every child KiCad reads as a number is judged as one,
+    /// a keyed node past its keyword; the forms KiCad writes still read.
+    #[test]
+    fn every_numeric_child_is_judged_past_its_keyword() {
+        let zone = |inner: &str| format!("(kicad_pcb (zone (net 1) {inner}))");
+        for good in [
+            "(min_thickness 0.25)",
+            "(hatch edge 0.5)",
+            "(fill yes (thermal_gap 0.5) (thermal_bridge_width 0.5))",
+        ] {
+            assert!(board(&zone(good)).is_ok(), "{good}");
+        }
+        for bad in [
+            "(min_thickness \"0.25\")",
+            "(hatch edge +0.5)",
+            "(hatch edge \"0.5\")",
+            "(hatch edge inf)",
+            "(fill yes (thermal_gap 0x2))",
+        ] {
+            assert!(board(&zone(bad)).is_err(), "{bad}");
+        }
+        let pad = |inner: &str| {
+            format!(
+                "(kicad_pcb (footprint \"x\" (pad \"1\" thru_hole circle (at 0 0) (size 1 1) {inner} (zone_connect 2))))"
+            )
+        };
+        for good in [
+            "(drill 0.3)",
+            "(drill oval 0.5 1)",
+            "(drill 0.3 (offset 0.1 0))",
+        ] {
+            assert!(board(&pad(good)).is_ok(), "{good}");
+        }
+        for bad in [
+            "(drill \"0.3\")",
+            "(drill oval 0.5 +1)",
+            "(drill 0.3 (offset .1 0))",
+        ] {
+            assert!(board(&pad(bad)).is_err(), "{bad}");
+        }
+        assert!(
+            board(&pad("(drill 0.3)").replace("(zone_connect 2)", "(zone_connect \"2\")")).is_err()
+        );
     }
 
     #[test]

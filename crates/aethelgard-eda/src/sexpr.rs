@@ -373,10 +373,12 @@ pub fn mm(nm: i64) -> String {
     format!("{sign}{whole}.{f}")
 }
 
-/// Millimetre text to nanometres, exactly. The text is KiCad's own number
-/// and nothing wider: `-?[0-9]+(\.[0-9]{1,6})?` (`AET-WO-3303` A11). A `+`,
-/// a second `-`, an exponent, a leading or trailing `.`, a seventh decimal
-/// and any non-ASCII digit or sign are refused, as KiCad refuses them.
+/// Millimetre text to nanometres, exactly. The text is the number KiCad
+/// writes and nothing wider: `-?[0-9]+(\.[0-9]{1,6})?` (`AET-WO-3303` §1.4).
+/// A `+`, a second `-`, an exponent, a leading or trailing `.`, a seventh
+/// decimal and any non-ASCII digit or sign are refused. KiCad 10.0.7 refuses
+/// `+` and `--` but loads `0.2e0`, `.2` and `0.20000001` (measured,
+/// FEEDBACK §4): this reader is stricter than KiCad there, never looser.
 pub fn nm(text: &str) -> Option<i64> {
     let (neg, body) = match text.strip_prefix('-') {
         Some(rest) => (true, rest),

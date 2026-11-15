@@ -159,7 +159,8 @@ fn symbols_named(bytes: &[u8], sections: &[Section]) -> Result<Vec<(u32, u32, u8
     let mut found = Vec::new();
     for sym in entries.as_chunks::<{ SYM_LEN as usize }>().0 {
         let name_at = u32_at(sym, 0) as usize;
-        let Some(tail) = names.get(name_at..) else {
+        // An offset at the table's end names no string (its old refusal).
+        let Some(tail) = names.get(name_at..).filter(|t| !t.is_empty()) else {
             return refuse(
                 "MalformedElf",
                 format!("a symbol's name offset {name_at} is outside its string table"),
