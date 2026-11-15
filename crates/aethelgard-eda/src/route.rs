@@ -535,12 +535,25 @@ impl<'a> Router<'a> {
                 claim(&mut track[0], &grid, shape, board.track_reach(), who);
                 claim(&mut via, &grid, shape, board.via_reach(), who);
             }
+            // No via's copper in the courtyard, but in the part's own ring (K1).
+            let hole = ring_interior(part);
+            if let Some(yard) = part
+                .courtyard
+                .iter()
+                .map(|&(a, b)| span(a, b))
+                .reduce(|a, b| a.union(b))
+            {
+                for node in grid.nodes(yard.grow(VIA_NM / 2)) {
+                    if in_courtyard(part, hole, grid.at(node)) {
+                        via[node] = BLOCKED;
+                    }
+                }
+            }
             // The pad field: on F.Cu, only inside a pad; no via near it;
             // except in a dense part's own ring interior (K1).
             let Some(field) = part.pads.iter().map(|p| p.rect).reduce(|a, b| a.union(b)) else {
                 continue;
             };
-            let hole = ring_interior(part);
             let own = |node: usize| {
                 let (x, y) = grid.at(node);
                 hole.is_some_and(|h| h.contains(Rect::point(x, y)))
@@ -566,22 +579,6 @@ impl<'a> Router<'a> {
                         board.corridor_half() + VIA_NM / 2,
                         VIA_NM / 2 + board.s(),
                     ));
-                }
-            }
-        }
-        for part in &board.parts {
-            let hole = ring_interior(part);
-            let Some(yard) = part
-                .courtyard
-                .iter()
-                .map(|&(a, b)| span(a, b))
-                .reduce(|a, b| a.union(b))
-            else {
-                continue;
-            };
-            for node in grid.nodes(yard.grow(VIA_NM / 2)) {
-                if in_courtyard(part, hole, grid.at(node)) {
-                    via[node] = BLOCKED;
                 }
             }
         }
