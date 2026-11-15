@@ -1367,17 +1367,44 @@ mod tests {
         assert!(matches!(&a[19..20], "8" | "9" | "a" | "b"));
     }
 
+    /// The MCU row's support pins (ST's pin data) and KiCad's symbol agree,
+    /// pin for pin, and the row covers every supply, ground, reset, boot and
+    /// regulator pin the symbol has (`AET-WO-4300g`).
     #[test]
-    fn every_mcu_pin_rule_names_pins_the_symbol_has() {
+    fn the_mcu_rows_support_pins_are_the_symbols() {
         let sym = library::symbol("MCU_ST_STM32H7:STM32H753ZITx").unwrap();
         let pins = pins(&sym).unwrap();
         assert_eq!(pins.len(), 144);
-        for name in [
-            "VDD", "VBAT", "VREF+", "PDR_ON", "VSS", "BOOT0", "VCAP", "PB8", "PB9",
-        ] {
-            assert!(pins.iter().any(|p| p.name == name), "{name}");
+        let row = support::row().unwrap();
+        let mut covered = BTreeSet::new();
+        for (group, numbers) in &row.pins {
+            let name = match group.as_str() {
+                "VDD33USB" => "VDD33_USB",
+                "SWDIO" => "PA13",
+                "SWCLK" => "PA14",
+                g => g,
+            };
+            for n in numbers {
+                let p = pins.iter().find(|p| &p.number == n).unwrap();
+                assert_eq!(p.name, name, "pin {n} of {group}");
+                covered.insert(n.clone());
+            }
         }
-        let vcap: Vec<&str> = by_name(&pins, "VCAP").map(|p| p.etype.as_str()).collect();
+        let special = |n: &str| {
+            [
+                "VDD", "VSS", "VBAT", "VREF", "VCAP", "NRST", "BOOT0", "PDR_ON",
+            ]
+            .iter()
+            .any(|s| n.starts_with(s))
+        };
+        for p in pins.iter().filter(|p| special(&p.name)) {
+            assert!(covered.contains(&p.number), "{} ({})", p.number, p.name);
+        }
+        let vcap: Vec<&str> = row
+            .group("VCAP")
+            .iter()
+            .map(|n| pins.iter().find(|p| &p.number == n).unwrap().etype.as_str())
+            .collect();
         assert_eq!(vcap, ["power_out", "power_out"]);
     }
 

@@ -74,6 +74,10 @@ struct Report {
     elf_sha256: Option<String>,
     rise_times: &'static str,
     gates: Vec<Gate>,
+    /// The support gate's record (`AET-WO-4300g`): each role, strap and
+    /// condition as `check support` judged them; absent when it did not run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    support: Option<Value>,
     /// `--scenarios`: each scenario's run; absent without it.
     #[serde(skip_serializing_if = "Option::is_none")]
     campaign: Option<Vec<Run>>,
@@ -173,8 +177,73 @@ fn preconditions(report: &Report, planned: &[String], covered: Coverage) -> Vec<
             no_device: covered.no_device,
             ..fab::Precondition::of("campaign_faults_every_bus_and_rail", covered.unmet)
         },
+        fab::Precondition::of(
+            "mcu_support_network_judged",
+            match report.gates.iter().find(|g| g.gate == "support") {
+                Some(g) if g.verdict == "pass" => Vec::new(),
+                Some(g) => g
+                    .findings
+                    .iter()
+                    .map(|f| f["kind"].as_str().unwrap_or("finding").to_owned())
+                    .chain(
+                        g.findings
+                            .is_empty()
+                            .then(|| format!("support: {}", g.verdict)),
+                    )
+                    .collect(),
+                None => vec!["support: not run".to_owned()],
+            },
+        ),
         fab::Precondition::of("every_gate_passed", failed),
     ]
+}
+
+/// The support gate's record as the notes' lines (`AET-WO-4300g` §1.6): each
+/// role with its part and distance, each strap, the programming connector,
+/// the supply's source, then each condition the gate names.
+fn support_lines(record: Option<&Value>) -> Vec<String> {
+    let Some(r) = record else {
+        return Vec::new();
+    };
+    let s = |v: &Value| v.as_str().unwrap_or("").to_owned();
+    let mut out = Vec::new();
+    for role in r["roles"].as_array().into_iter().flatten() {
+        let gap = match (role["gap_um"].as_i64(), role["bound_um"].as_i64()) {
+            (Some(g), Some(b)) => format!(", {g} um from the pin (bound {b} um)"),
+            (Some(g), None) => format!(", {g} um from the pin (no bound: a condition below)"),
+            _ => String::new(),
+        };
+        out.push(format!(
+            "{} at {}: {} ({} pF){gap}, {}",
+            s(&role["role"]),
+            s(&role["pin"]),
+            role["part"].as_str().unwrap_or("none"),
+            role["picofarads"].as_i64().unwrap_or(0),
+            s(&role["rule"])
+        ));
+    }
+    for strap in r["straps"].as_array().into_iter().flatten() {
+        out.push(format!("strap: {}", s(strap)));
+    }
+    match r["programming"].as_object() {
+        Some(p) => out.push(format!(
+            "programming: {} carries SWDIO, SWCLK, GND and the supply{}",
+            p.get("connector").map(s).unwrap_or_default(),
+            if p.get("nrst") == Some(&Value::Bool(true)) {
+                ", and NRST"
+            } else {
+                "; NRST does not reach it (not required: DS-009's debug ports carry none)"
+            }
+        )),
+        None => out.push("programming: none".to_owned()),
+    }
+    if let Some(src) = r["supply_source"].as_str() {
+        out.push(format!("supply source: {src}"));
+    }
+    for c in r["conditions"].as_array().into_iter().flatten() {
+        out.push(format!("condition: {}", s(c)));
+    }
+    out
 }
 
 impl FabReport {
@@ -491,6 +560,11 @@ fn expectations(
         "drc" => vec![
             e("the board", "/input/sha256", w.pcb),
             e("the parity schematic", "/schematic/sha256", w.sch),
+            e("the specification", "/specification_sha256", w.spec),
+        ],
+        "support" => vec![
+            e("the schematic", "/input/sha256", w.sch),
+            e("the board", "/support/board/sha256", w.pcb),
             e("the specification", "/specification_sha256", w.spec),
         ],
         "extract" => vec![
@@ -990,6 +1064,7 @@ pub fn verify(
         elf_sha256: None,
         rise_times: RISE_TIMES,
         gates: Vec::new(),
+        support: None,
         campaign: None,
         findings: Vec::new(),
         against_fab: None,
@@ -1184,6 +1259,7 @@ pub fn verify(
             bom: files[&format!("{KICAD_DIR}/{project}.bom.csv")].as_bytes(),
             conditions: &conditions,
             lifecycle: &lifecycle,
+            support: &support_lines(report.support.as_ref()),
         };
         let scenarios: Vec<fab::Scenario> = expected
             .iter()
@@ -1372,6 +1448,24 @@ fn run_gates(
     )?;
     bound("drc", &drc, want, "", "")?;
     report.gates.push(gate_report("drc", None, &drc));
+
+    // The MCU's support network, from the schematic's netlist (`AET-WO-4300g`).
+    let support = gate(
+        "support",
+        args(&[
+            &"check",
+            &"support",
+            &"--schematic",
+            &p.sch,
+            &"--board",
+            &p.pcb,
+            &"--spec",
+            &p.spec,
+        ]),
+    )?;
+    bound("support", &support, want, "", "")?;
+    report.support = support.last().get("support").cloned();
+    report.gates.push(gate_report("support", None, &support));
 
     let extract = gate(
         "extract",

@@ -366,7 +366,7 @@ pub enum Kind {
     Resistor(Resistor),
     Capacitor(Capacitor),
     Inductor(Inductor),
-    Mcu(Mcu),
+    Mcu(Box<Mcu>),
 }
 
 impl Kind {
@@ -594,7 +594,7 @@ enum RawKind {
     Resistor(RawResistor),
     Capacitor(RawCapacitor),
     Inductor(RawInductor),
-    Mcu(RawMcu),
+    Mcu(Box<RawMcu>),
 }
 
 #[derive(Deserialize)]
@@ -1332,7 +1332,7 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 rule.adc_capacitance_femtofarads,
                 "kind.mcu.reservoir_rule.adc_capacitance_femtofarads",
             )?;
-            Kind::Mcu(Mcu {
+            Kind::Mcu(Box::new(Mcu {
                 vdd_millivolts: r.ranged_positive(m.vdd_millivolts, "kind.mcu.vdd_millivolts")?,
                 idd_max_milliamps: r.positive(m.idd_max_milliamps, "kind.mcu.idd_max_milliamps")?,
                 idd_condition: m.idd_condition,
@@ -1357,7 +1357,7 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 spi_input_setup_min_ns: r
                     .positive(m.spi_input_setup_min_ns, "kind.mcu.spi_input_setup_min_ns")?,
                 support: support(m.support, r)?,
-            })
+            }))
         }
     })
 }

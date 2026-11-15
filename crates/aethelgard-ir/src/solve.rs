@@ -1622,6 +1622,7 @@ mod differential {
                 supply: "D".into(),
                 hse_hz: 0,
                 bor_level: 0,
+                supply_source: None,
             },
             voltage_domains: vec![VoltageDomain {
                 id: "D".into(),

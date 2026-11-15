@@ -329,6 +329,10 @@ pub struct Notes<'a> {
     /// every condition its verdict states (`AET-WO-4300f` F2,
     /// `AET-WO-4300d2` §1.6). Empty, and no section, for any other board.
     pub power: &'a [String],
+    /// What the support gate's verdict judged of the MCU's support network,
+    /// then each condition it names (`AET-WO-4300g` §1.6), as the gate
+    /// states them. Empty, and no section, when no support gate ran.
+    pub support: &'a [String],
 }
 
 /// `nm` in millimetres, with no trailing zeros: 1_600_000 is `1.6`.
@@ -422,7 +426,7 @@ header carries no plating comment.
 - Track width: {track} mm.
 - Copper to copper: {space} mm.
 - Via: {via} mm pad, {drill} mm drill.
-{classes}{power}
+{classes}{power}{support}
 {lifecycle}## Files
 
 {files}
@@ -450,6 +454,7 @@ CC-BY-SA 4.0 with a design exception that covers designs made from them.
         holes = holes_text(st, n.drills),
         classes = classes(st),
         power = power(n.power),
+        support = support(n.support),
         lifecycle = lifecycle,
     )
 }
@@ -463,6 +468,18 @@ fn power(conditions: &[String]) -> String {
     let mut out = "\n## Power tree\n\nThe design-rule gate judged each loop part's distance to the pin it serves, each regulator's source and return pads, and each thermal array and through-hole join. Its verdict also states, and this package claims nothing beyond them:\n\n".to_owned();
     for c in conditions {
         out.push_str(&format!("- {c}\n"));
+    }
+    out
+}
+
+/// The MCU's support network, as the support gate's verdict states it.
+fn support(lines: &[String]) -> String {
+    if lines.is_empty() {
+        return String::new();
+    }
+    let mut out = "\n## MCU support network\n\nThe support gate judged the MCU's support network from KiCad's netlist of the schematic, against the MCU's datasheet as its parts row cites it, and each bounded capacitor's distance on the board. Its verdict states, and this package claims nothing beyond it:\n\n".to_owned();
+    for l in lines {
+        out.push_str(&format!("- {l}\n"));
     }
     out
 }
@@ -626,6 +643,7 @@ mod tests {
             lifecycle: &[],
             drills: &[routed(DRILL_NM, VIA_NM, 64)],
             power: &conditions,
+            support: &[],
         });
         assert!(
             text.contains("- Thermal vias under U10 pad 9: 3 x 4, 0.554 mm pad, 0.254 mm drill, 0.9 mm pitch.\n"),
@@ -655,6 +673,7 @@ mod tests {
             lifecycle,
             drills: &[routed(DRILL_NM, VIA_NM, 64)],
             power: &[],
+            support: &[],
         })
     }
 
@@ -697,6 +716,7 @@ mod tests {
             lifecycle: &[],
             drills,
             power: &[],
+            support: &[],
         })
     }
 
