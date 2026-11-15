@@ -1121,12 +1121,11 @@ fn ready(
     let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
     let motors = renode::motors(&boot.topology).map_err(twin_stop)?;
     // `AET-WO-4300b`: each port's frame is derived from the firmware's own
-    // sha256, and injected one quantum into the boot; a board whose window
-    // cannot hold that quantum and the one after it is refused by name,
-    // never cut short (the ruling's amendment 3). A `--for` shorter than the
-    // window injects nothing and fails closed on the echo, by name. A
-    // rendered release moves the instant; it is checked again once the rail
-    // is solved.
+    // sha256 and injected one quantum after the last boot's start. Undrooped,
+    // that is 200 us with the quantum after it, inside every window; a
+    // rendered release moves it, so `simulate` checks it against the window
+    // once the rail is solved. A `--for` shorter than the instant injects
+    // nothing and fails closed on the echo, by name.
     let sha = aethelgard_twin::serial::sha256_bytes(&firmware.sha256).ok_or_else(|| {
         run::Stop::unreadable(format!(
             "the firmware's sha256 `{}` is not hex",
@@ -1134,9 +1133,6 @@ fn ready(
         ))
     })?;
     let serial = renode::serials(&boot.topology, &sha).map_err(twin_stop)?;
-    if !serial.is_empty() {
-        serial_fits(aethelgard_twin::serial::injection_ns(0), window_ns, window)?;
-    }
     let capture = match serial.is_empty() {
         true => None,
         false => Some(capture_dir(scratch)?),
@@ -1371,8 +1367,9 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             serial: &r.serial,
             capture: r.capture.as_deref(),
         });
-    // A rendered release moves the injection (`AET-WO-4300b`): refused by
-    // name before the boot runs, as `ready` refuses the undrooped instant.
+    // A rendered release moves the injection (`AET-WO-4300b`): one whose
+    // instant and the quantum after it pass the board's window is refused by
+    // name before the boot runs, never cut short (the ruling's amendment 3).
     if let (Some(i), Some(r)) = (
         plan.as_ref().and_then(renode::BootPlan::injection_ns),
         &ready,

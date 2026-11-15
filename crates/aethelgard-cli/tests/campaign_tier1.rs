@@ -2652,3 +2652,54 @@ fn a_droop_past_a_dshot_board_s_window_is_refused_with_its_time() {
     assert!(message.contains("past the boot's 2000000 ns"), "{message}");
     assert!(!work.archive.exists(), "an archive was made");
 }
+
+// ---------------------------------------------------------------- AET-WO-4300b
+
+/// As [`DROOP_BRIDGE`], with the rail's crossings late in the 100 ms
+/// window: held from 99.6 ms, released at 99.85 ms. The release's probe at
+/// 99.95 ms still fits; the serial injection, one quantum after the
+/// release's nudge (99,950,010 ns), and the quantum after it do not.
+const LATE_DROOP_BRIDGE: &str = r#"#!/bin/sh
+if [ "$1" = --rail ]; then
+  printf '%s\n' \
+    '{"at_ps":99598000000,"falling":true,"level":"VBOR3_rising","method":"interpolated","microvolts":2700000,"ngspice":"44.2"}' \
+    '{"at_ps":99600000000,"falling":true,"level":"VBOR3_falling","method":"interpolated","microvolts":2610000,"ngspice":"44.2"}' \
+    '{"at_ps":99848000000,"falling":false,"level":"VBOR3_falling","method":"interpolated","microvolts":2610000,"ngspice":"44.2"}' \
+    '{"at_ps":99850000000,"falling":false,"level":"VBOR3_rising","method":"interpolated","microvolts":2700000,"ngspice":"44.2"}' \
+    '{"accepted_points":100027,"minimum_microvolts":2350000,"rail":"solved"}'
+  exit 0
+fi
+if [ "$1" = --renode ]; then shift; exec "$@"; fi
+printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.4}' '{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","rise_30_70_ns":186.4}'
+"#;
+
+/// The ruling's amendment 3 (`AET-WO-4300b`): a rendered release so late
+/// that the serial frames and the quantum after them pass the board's
+/// window is refused by name before the boot runs, never cut short. The
+/// stub would exit 99 on any boot; it is never asked for one.
+#[test]
+fn a_release_too_late_for_the_serial_injection_is_refused_by_name() {
+    let tb = droop_toolbox(
+        ["0x2100B007", "0x22020000", "0x00000060"],
+        Witness::BeforeProbe,
+    );
+    let work = Work::new();
+    let archive = Dir::new("archive");
+    let out = campaign(
+        &cli(Some(LATE_DROOP_BRIDGE)),
+        &tb.0,
+        &root(),
+        &["scenarios/sentinel-01/droop-bor3.json"],
+        &work.firmware,
+        &archive.0.join("a"),
+    );
+    let v = refusal(&out);
+    assert_eq!(out.status.code(), Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "SerialInjectionPastWindow", "{v}");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("go in at 99950010 ns")
+            && message.contains("MAX_VIRTUAL_NS of 100000000 ns"),
+        "{v}"
+    );
+}
