@@ -565,6 +565,11 @@ impl Role {
         }
     }
 
+    /// A USART's TX or RX.
+    fn is_serial(self) -> bool {
+        matches!(self, Self::UsartTx | Self::UsartRx)
+    }
+
     /// The role of timer channel `k`, 1 to 4.
     fn timer_channel(k: u32) -> Option<Self> {
         [Self::TimCh1, Self::TimCh2, Self::TimCh3, Self::TimCh4]
@@ -1378,13 +1383,11 @@ const RESET_CLOCK_FIELDS: [(&str, &[&str]); 5] = [
     ("D2CCIP2R", &["USART16SEL", "USART28SEL"]),
 ];
 
-/// One USART or UART instance (`AET-WO-4300b`): its base, clock gate and
-/// block size.
+/// One USART or UART instance (`AET-WO-4300b`): its base and clock gate.
 #[derive(Debug, Clone)]
 struct SerialFacts {
     base: u32,
     gate: Gate,
-    words: u32,
 }
 
 /// The `USART_TypeDef` registers (RM0433 Rev 9 §48.8) a port's configuration,
@@ -1702,14 +1705,12 @@ impl Facts {
         let mut serials = BTreeMap::new();
         let mut usart = None;
         if !plan.serials.is_empty() {
-            let words = f.layout("USART")?.size / 4;
             for name in plan.serials.keys() {
                 serials.insert(
                     name.clone(),
                     SerialFacts {
                         base: f.base(name)?,
                         gate: gate(f, &rcc, name)?,
-                        words,
                     },
                 );
             }
@@ -2821,13 +2822,12 @@ fn expect_field(acc: &mut BTreeMap<u32, (u32, u32)>, reg: u32, pos: u32, width: 
 }
 
 /// The harness image's fields, in its order: RCC, the ports, the I2C and SPI
-/// peripherals, the timers, then the USARTs.
+/// peripherals, then the timers. A USART's block is never in it.
 fn image_fields(plan: &Plan) -> Vec<String> {
     let mut blocks: Vec<String> = vec!["rcc".into()];
     blocks.extend(plan.ports.iter().map(|p| port_field(*p)));
     blocks.extend(plan.peripherals.keys().map(|n| n.to_ascii_lowercase()));
     blocks.extend(plan.timers.keys().map(|n| format!("tim{n}")));
-    blocks.extend(plan.serials.keys().map(|n| n.to_ascii_lowercase()));
     blocks
 }
 
@@ -2867,19 +2867,20 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             Some(&tf.gate),
         ));
     }
-    for (name, sf) in &facts.serials {
-        blocks.push((
-            type_name(name),
-            name.to_ascii_lowercase(),
-            sf.words,
-            Some(&sf.gate),
-        ));
-    }
-    // Each timer and each USART is enabled and started; the reset clock is
-    // read once.
-    let timer_actions =
-        2 * plan.timers.len() + 2 * plan.serials.len() + usize::from(plan.needs_clock());
-    let actions = plan.ports.len() + 2 * plan.peripherals.len() + plan.pins.len() + timer_actions;
+    // A USART's block is not in the image: no step of any harness on it
+    // reaches one (`usartN_start_writes_the_solved_values` proves the
+    // configuration on a spy of its own).
+    // Each timer is enabled and started, and the reset clock read once, inside
+    // the schedule; each USART after it (`emit_proofs`' scheduler).
+    let timer_actions = if plan.timers.is_empty() {
+        0
+    } else {
+        2 * plan.timers.len() + 1
+    };
+    // A USART's pins are configured in the schedule's tail, with the USART.
+    let serial_pins = plan.pins.values().filter(|p| p.role.is_serial()).count();
+    let actions = plan.ports.len() + 2 * plan.peripherals.len() + plan.pins.len() - serial_pins
+        + timer_actions;
     let unwind = blocks
         .iter()
         .map(|b| b.2 as usize)
@@ -2912,6 +2913,16 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     for (variant, field, _, _) in &blocks {
         let _ = writeln!(w, "            Block::{variant} => &mut self.{field},");
     }
+    for name in plan.serials.keys() {
+        let _ = writeln!(
+            w,
+            "            Block::{} => {{\n                \
+                 kani::assert(false, \"{name} was accessed through the harness image\");\n                \
+                 &mut self.rcc\n            \
+             }}",
+            type_name(name)
+        );
+    }
     let _ = writeln!(
         w,
         "        }};\n        \
@@ -2927,6 +2938,9 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
              match block {{\n            \
                  Block::Rcc => {{}}"
     );
+    for name in plan.serials.keys() {
+        let _ = writeln!(w, "            Block::{} => {{}}", type_name(name));
+    }
     for (variant, _, _, gate) in &blocks {
         let Some(gate) = gate else { continue };
         let _ = writeln!(
@@ -2999,26 +3013,6 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                 cfg1 = spi.cfg1,
                 cr1 = pf.cr1 / 4,
                 en = 1u32 << pf.enable,
-            );
-        }
-    }
-    // A USART's `TDR` is written only once its configuration set `UE` and `TE`
-    // (`AET-WO-4300b`: a store with `UE` clear is the forgery the twin refuses).
-    if let Some(u) = &facts.usart {
-        for name in plan.serials.keys() {
-            let t = type_name(name);
-            let _ = writeln!(
-                w,
-                "        if block == Block::{t} && offset == {tdr:#04x} {{\n            \
-                     kani::assert(\n                \
-                         self.{field}[{cr1}] & {on:#010x} == {on:#010x},\n                \
-                         \"{t} TDR written before UE and TE are set\",\n            \
-                     );\n        \
-                 }}",
-                tdr = u.tdr,
-                field = name.to_ascii_lowercase(),
-                cr1 = u.cr1 / 4,
-                on = (1u32 << u.ue) | (1u32 << u.te),
             );
         }
     }
@@ -3340,41 +3334,17 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             }
         }
     }
-    // Each USART: its configuration's last value in each register it writes,
-    // `UE` set; `TDR` as a send left it; every other word unchanged.
-    if let Some(u) = &facts.usart {
-        for (name, sp) in &plan.serials {
-            let t = type_name(name);
-            let field = name.to_ascii_lowercase();
-            let mut last: BTreeMap<u32, (String, u32)> = BTreeMap::new();
-            for (register, offset, value) in usart_oracle(sp, u) {
-                last.insert(offset, (register, value));
-            }
-            for (offset, (register, value)) in &last {
-                let _ = writeln!(
-                    w,
-                    "    kani::assert(after.{field}[{i}] == {value:#010x}, \"{t} {register} is not the solved value\");",
-                    i = offset / 4
-                );
-            }
-            for i in 0..facts.serials[name].words {
-                if !last.contains_key(&(i * 4)) && i * 4 != u.tdr {
-                    let _ = writeln!(
-                        w,
-                        "    kani::assert(after.{field}[{i}] == before.{field}[{i}], \"{t} word {i} changed\");"
-                    );
-                }
-            }
-        }
-    }
     let _ = writeln!(w, "}}\n");
 
     // The scheduler.
     let usarts = if plan.serials.is_empty() {
         ""
     } else {
-        "\n/// Each USART is configured once, from its pins and the reset clock, then\n\
-         /// sends zero or one byte."
+        "\n/// Then, in a fixed tail, each USART's two pins are configured and its clock\n\
+         /// enabled, under the same write rules: not free choices, because the free\n\
+         /// interleaving ran out of memory in CBMC (`AET-WO-4300b`). Its configuration\n\
+         /// is proved by `usartN_start_writes_the_solved_values`; the image holds no\n\
+         /// USART block, and any access to one fails."
     };
     let _ = writeln!(
         w,
@@ -3421,24 +3391,21 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             );
         }
     }
-    for pin in plan.pins.keys() {
+    for (pin, p) in &plan.pins {
         let f = pin_field(pin);
-        let _ = writeln!(w, "    let mut {f} = None;\n    let mut {f}_done = None;");
+        if p.role.is_serial() {
+            let _ = writeln!(w, "    let mut {f} = None;");
+        } else {
+            let _ = writeln!(w, "    let mut {f} = None;\n    let mut {f}_done = None;");
+        }
     }
-    if plan.needs_clock() {
+    if !plan.timers.is_empty() {
         let _ = writeln!(w, "    let mut clock = None;");
     }
     for n in plan.timers.keys() {
         let _ = writeln!(
             w,
             "    let mut tim{n} = Some(board.tim{n});\n    let mut tim{n}_clocked = None;\n    let mut tim{n}_done = false;"
-        );
-    }
-    for name in plan.serials.keys() {
-        let f = name.to_ascii_lowercase();
-        let _ = writeln!(
-            w,
-            "    let mut {f} = Some(board.{f});\n    let mut {f}_clocked = None;\n    let mut {f}_done = false;"
         );
     }
     let _ = writeln!(
@@ -3479,7 +3446,7 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         );
         a += 1;
     }
-    for (pin, p) in &plan.pins {
+    for (pin, p) in plan.pins.iter().filter(|(_, p)| !p.role.is_serial()) {
         let f = pin_field(pin);
         let _ = writeln!(
             w,
@@ -3624,7 +3591,7 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     // read once, each clocked, then started from its own configured pins and
     // the token. The schedule runs on the reset clock;
     // `reset_clock_is_ok_exactly_at_reset` proves the check itself.
-    if plan.needs_clock() {
+    if !plan.timers.is_empty() {
         let _ = writeln!(
             w,
             "            {a} => {{\n                \
@@ -3673,38 +3640,6 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         );
         a += 1;
     }
-    for name in plan.serials.keys() {
-        let f = name.to_ascii_lowercase();
-        let _ = writeln!(
-            w,
-            "            {a} => {{\n                \
-                 kani::assume({f}.is_some());\n                \
-                 {f}_clocked = Some(rcc.enable_{f}(&mut img, {f}.take().unwrap()));\n            \
-             }}"
-        );
-        a += 1;
-    }
-    for (name, sp) in &plan.serials {
-        let f = name.to_ascii_lowercase();
-        let (tx, rx) = (pin_field(&sp.tx), pin_field(&sp.rx));
-        let _ = writeln!(
-            w,
-            "            {a} => {{\n                \
-                 kani::assume({f}_clocked.is_some() && clock.is_some() && {tx}_done.is_some() && {rx}_done.is_some());\n                \
-                 let mut port = {f}_clocked\n                    \
-                     .take()\n                    \
-                     .unwrap()\n                    \
-                     .configure(&mut img, clock.as_ref().unwrap(), {tx}_done.take().unwrap(), {rx}_done.take().unwrap());\n                \
-                 kani::cover!(true, \"{name} configured\");\n                \
-                 if kani::any() {{\n                    \
-                     let sent = port.send_within(&mut img, kani::any(), 1);\n                    \
-                     kani::cover!(sent.is_ok(), \"{name} sent a byte\");\n                \
-                 }}\n                \
-                 {f}_done = true;\n            \
-             }}"
-        );
-        a += 1;
-    }
     let _ = writeln!(
         w,
         "            _ => kani::assume(false),\n        }}\n    }}"
@@ -3722,11 +3657,19 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             "    kani::assert(tim{n}_done, \"the schedule did not start TIM{n}\");"
         );
     }
-    for name in plan.serials.keys() {
+    // The USARTs, after every other step: each one's pins configured and its
+    // clock enabled. Its configuration is `usartN_start_writes_the_solved_values`'.
+    for (name, sp) in &plan.serials {
+        let f = name.to_ascii_lowercase();
+        let (tx, rx) = (pin_field(&sp.tx), pin_field(&sp.rx));
         let _ = writeln!(
             w,
-            "    kani::assert({f}_done, \"the schedule did not configure {name}\");",
-            f = name.to_ascii_lowercase()
+            "    let _{tx} = {tx}.take().unwrap().{mtx}(&mut img);\n    \
+             let _{rx} = {rx}.take().unwrap().{mrx}(&mut img);\n    \
+             let _{f} = rcc.enable_{f}(&mut img, board.{f});\n    \
+             kani::cover!(true, \"{name}'s pins and clock are ready\");",
+            mtx = method(&plan.pins[&sp.tx]),
+            mrx = method(&plan.pins[&sp.rx]),
         );
     }
     // A chip select is configured before its bus starts, which takes it.
