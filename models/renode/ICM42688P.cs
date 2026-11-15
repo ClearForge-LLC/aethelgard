@@ -71,6 +71,8 @@ namespace Antmicro.Renode.Peripherals.Sensors
 
         public void Reset()
         {
+            resetUntil = 0;
+            quietUntil = 0;
             ResetRegisters();
             txStarted = false;
             timer.Reset();
@@ -162,6 +164,7 @@ namespace Antmicro.Renode.Peripherals.Sensors
 
         private byte ReadRegister(int bank, byte reg)
         {
+            CheckTiming(bank, reg, false);
             if(reg == 0x76)
             {
                 return bankSel;
@@ -209,8 +212,25 @@ namespace Antmicro.Renode.Peripherals.Sensors
             return regs[bank][reg];
         }
 
+        // The datasheet's access rules, which it states and silicon does not answer for: no access
+        // for 1 ms after a soft reset (DS p.64), no write for 200 us after a sensor leaves OFF (DS p.76).
+        // The access goes ahead; the warning is the firmware's fault, which fails its step.
+        private void CheckTiming(int bank, byte reg, bool write)
+        {
+            var now = Now();
+            if(now < resetUntil)
+            {
+                this.Log(LogLevel.Warning, "bank {0} access to 0x{1:X2} within 1 ms of a soft reset", bank, reg);
+            }
+            else if(write && now < quietUntil)
+            {
+                this.Log(LogLevel.Warning, "bank {0} write to 0x{1:X2} within 200 us of a sensor leaving OFF", bank, reg);
+            }
+        }
+
         private void WriteRegister(int bank, byte reg, byte value)
         {
+            CheckTiming(bank, reg, true);
             if(reg == 0x76)
             {
                 bankSel = (byte)(value & 0x07); // BANK_SEL bits 2:0, DS p.88
@@ -237,7 +257,9 @@ namespace Antmicro.Renode.Peripherals.Sensors
             case 0x11: // DEVICE_CONFIG
                 if((value & 0x01) != 0)
                 {
-                    ResetRegisters(); // SOFT_RESET_CONFIG; the part is ready again at once here
+                    ResetRegisters(); // SOFT_RESET_CONFIG
+                    resetUntil = Now() + SoftResetNs;
+                    quietUntil = 0;
                     return;
                 }
                 regs[0][reg] = value;
@@ -295,6 +317,10 @@ namespace Antmicro.Renode.Peripherals.Sensors
             var pwr = regs[0][0x4E];
             var wantAccel = (pwr & 0x03) >= 2;      // LP (0b10) or LN (0b11), DS p.76
             var wantGyro = ((pwr >> 2) & 0x03) == 3; // LN only; standby gives no data
+            if((wantAccel && !accelOn) || (wantGyro && !gyroOn))
+            {
+                quietUntil = now + QuietNs; // DS p.76: no register writes for 200 us
+            }
             if(wantAccel && !accelOn)
             {
                 accelOn = true;
@@ -537,6 +563,10 @@ namespace Antmicro.Renode.Peripherals.Sensors
         private const byte RO = 2;
         private const int Banks = 5;
         private const ulong Never = ulong.MaxValue;
+        private const ulong SoftResetNs = 1000000UL; // DS p.64: wait 1 ms after a soft reset
+        private const ulong QuietNs = 200000UL;      // DS p.76: 200 us after leaving OFF
+        private ulong resetUntil;
+        private ulong quietUntil;
         private const ulong AccelStartNs = 10000000UL; // Table 2 p.12, typ 10 ms
         private const ulong GyroStartNs = 30000000UL;  // Table 1 p.11, typ 30 ms
 

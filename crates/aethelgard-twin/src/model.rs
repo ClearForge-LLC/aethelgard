@@ -63,12 +63,12 @@ pub const OWN: [(Model, &str, &str); 2] = [
     (
         Model::Bmp581,
         "BMP581.cs",
-        "ffdcbb3169d2fa0ca1eaf1fc6de9c58cdd51fa61b525afba66e006e0e38663c4",
+        "7fa329f066b40ee3779063a0054ec630cecf0f38a19ddef1026377ec6342c802",
     ),
     (
         Model::Icm42688p,
         "ICM42688P.cs",
-        "9c827af63d8bbbe57ca65d32b7a419ec0c5f521ec1ecd80be30c9aeaab3618c7",
+        "72539e364fc7cbd0b253280af57a0959ae0fdfbd22393b4c8ae70381a55c0e71",
     ),
 ];
 

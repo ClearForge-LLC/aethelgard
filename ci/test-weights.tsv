@@ -302,3 +302,5 @@ tests/models_tier2.rs	our_models_round_half_away_from_zero	4.000
 tests/models_tier2.rs	data_ready_is_the_models_own_act	4.000
 tests/models_tier2.rs	a_model_that_does_not_compile_prints_the_load_error_and_exits_0	3.000
 tests/twin_tier2.rs	the_fixture_s_campaign_archives_each_configuration_and_replays	12.000
+tests/models_tier2.rs	the_bmp581_measures_after_its_deep_start_up_and_reads_from_its_last_write	4.000
+tests/models_tier2.rs	an_access_the_datasheets_forbid_warns	4.000

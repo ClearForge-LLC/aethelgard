@@ -141,7 +141,7 @@ fn hex(bytes: &[u8]) -> String {
 fn our_models_answer_their_datasheets_reset_values() {
     let b = bench("resets");
     // DS-000347 1.9 (TDK), bank 0, each read alone.
-    let imu: [(u8, &[u8], &str); 13] = [
+    let imu: [(u8, &[u8], &str); 14] = [
         (0x75, &[0x47], "p. 88, 14.58 WHO_AM_I"),
         (0x11, &[0x00], "p. 64, 14.1 DEVICE_CONFIG"),
         (0x13, &[0x05], "p. 64, 14.2 DRIVE_CONFIG"),
@@ -153,6 +153,7 @@ fn our_models_answer_their_datasheets_reset_values() {
         (0x4E, &[0x00], "p. 76, 14.36 PWR_MGMT0"),
         (0x4F, &[0x06], "p. 77, 14.37 GYRO_CONFIG0"),
         (0x50, &[0x06], "p. 78, 14.38 ACCEL_CONFIG0"),
+        (0x51, &[0x16], "p. 79, 14.39 GYRO_CONFIG1"),
         (0x65, &[0x10], "p. 85, 14.51 INT_SOURCE0"),
         (
             0x1F,
@@ -161,7 +162,7 @@ fn our_models_answer_their_datasheets_reset_values() {
         ),
     ];
     // BST-BMP581-DS004-13 (Bosch), read (rendered).
-    let baro: [(u8, &[u8], &str); 10] = [
+    let baro: [(u8, &[u8], &str); 11] = [
         (0x01, &[0x50], "p. 51, 7.1 CHIP_ID"),
         (0x02, &[0x32], "p. 51, 7.2 REV_ID"),
         (0x13, &[0x30], "p. 52, 7.4 DRIVE_CONFIG"),
@@ -175,15 +176,24 @@ fn our_models_answer_their_datasheets_reset_values() {
         (0x27, &[0x00], "p. 58, 7.21 INT_STATUS, clear on read"),
         (0x36, &[0x00], "p. 64, 7.33 OSR_CONFIG"),
         (0x37, &[0x70], "p. 64, 7.34 ODR_CONFIG"),
+        (0x30, &[0x03], "p. 61, 7.27 DSP_CONFIG"),
         (0x1D, &[0x7F; 6], "pp. 56-57, 7.11-7.16 TEMP and PRESS data"),
     ];
-    let mut c = Vec::new();
+    // A finish with no transaction, as the multiplexer and the controller
+    // make on other devices' edges, logs nothing (counted below).
+    let mut c = vec![
+        format!("sysbus.{} FinishTransmission", b.imu),
+        format!("sysbus.{} FinishTransmission", b.baro),
+    ];
     for (r, v, _) in imu {
         c.extend(spi(&b, &[r | 0x80], v.len()));
     }
     for (r, v, _) in baro {
         c.extend(i2c(&b, &[r], v.len()));
     }
+    // `INT_STATUS` is read-only: a store warns and changes nothing.
+    c.extend(i2c(&b, &[0x27, 0x10], 0));
+    c.extend(i2c(&b, &[0x27], 1));
     let (text, lines) = run(&b, &b.models, &c);
     let mut want = Vec::new();
     for (r, v, page) in imu {
@@ -198,10 +208,110 @@ fn our_models_answer_their_datasheets_reset_values() {
             page,
         ));
     }
+    for (line, page) in [
+        (
+            format!(
+                "[WARNING] {}: write to read-only register 0x27 ignored",
+                b.baro
+            ),
+            "p. 58, 7.21 INT_STATUS is read-only",
+        ),
+        (
+            format!("[NOISY] {}: write 0x27 <- 0x10", b.baro),
+            "the store",
+        ),
+        (
+            format!("[NOISY] {}: read 0x27 -> 0x00", b.baro),
+            "unchanged",
+        ),
+    ] {
+        want.push((line, page));
+    }
     assert_eq!(lines.len(), want.len(), "{text}");
     for (line, (expected, page)) in lines.iter().zip(&want) {
         assert_eq!(line, expected, "{page}");
     }
+}
+
+/// The BMP581 out of reset is in DEEP STANDBY (DS p.16), so its first
+/// measurement starts `t_startup_deep` (4 ms max, p.11) after the write that
+/// leaves it, whatever that write sets `deep_dis` to, and ends after the
+/// conversions at their maximum, 1.05 ms each at OSR 1x (Table 4, p.12):
+/// 6.1 ms. A new read starts at the latest write's register (p.40), not
+/// where the write's auto-increment left off (adversarial F3, F4).
+#[test]
+fn the_bmp581_measures_after_its_deep_start_up_and_reads_from_its_last_write() {
+    let b = bench("bmp-start");
+    let mut c = i2c(&b, &[0x36, 0x40, 0x81], 0);
+    c.push("emulation RunFor \"0.006090000\"".to_owned());
+    c.extend(i2c(&b, &[0x1D], 6));
+    c.push("emulation RunFor \"0.000020000\"".to_owned());
+    c.extend(i2c(&b, &[0x1D], 6));
+    // The same configuration again changes nothing; a read alone after it
+    // starts at its register, 0x36, not at 0x38 where the write left off.
+    c.extend(i2c(&b, &[0x36, 0x40, 0x81], 0));
+    c.push(format!("sysbus.{} Read 1", b.baro));
+    c.push(format!("sysbus.{} FinishTransmission", b.baro));
+    let (text, lines) = run(&b, &b.models, &c);
+    let baro = |l: &str| format!("[NOISY] {}: {l}", b.baro);
+    assert_eq!(
+        lines,
+        [
+            baro("write 0x36 <- 0x40 0x81"),
+            baro("read 0x1D -> 0x7F 0x7F 0x7F 0x7F 0x7F 0x7F"),
+            baro("read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"),
+            baro("write 0x36 <- 0x40 0x81"),
+            baro("read 0x36 -> 0x40"),
+        ],
+        "{text}"
+    );
+}
+
+/// What the datasheets forbid the firmware, the models flag: a register
+/// write within 200 us of an ICM-42688-P sensor leaving OFF (DS-000347
+/// p.76), an access within 1 ms of its soft reset (p.64), and an access
+/// within 2 ms of the BMP581's (`t_soft_res`, p.11). Each is a warning, which
+/// fails the firmware's step (adversarial F5).
+#[test]
+fn an_access_the_datasheets_forbid_warns() {
+    let b = bench("timing");
+    let mut c = Vec::new();
+    c.extend(spi(&b, &[0x4E, 0x03], 0));
+    c.extend(spi(&b, &[0x50, 0x66], 0));
+    c.push("emulation RunFor \"0.000300000\"".to_owned());
+    c.extend(spi(&b, &[0x50, 0x66], 0));
+    c.extend(spi(&b, &[0x11, 0x01], 0));
+    c.extend(spi(&b, &[0x75 | 0x80], 1));
+    c.extend(i2c(&b, &[0x7E, 0xB6], 0));
+    c.extend(i2c(&b, &[0x01], 1));
+    c.push("emulation RunFor \"0.002100000\"".to_owned());
+    c.extend(spi(&b, &[0x75 | 0x80], 1));
+    c.extend(i2c(&b, &[0x01], 1));
+    let (text, lines) = run(&b, &b.models, &c);
+    let imu = |l: &str| format!("[NOISY] {}: {l}", b.imu);
+    let baro = |l: &str| format!("[NOISY] {}: {l}", b.baro);
+    let warn = |d: &str, l: &str| format!("[WARNING] {d}: {l}");
+    assert_eq!(
+        lines,
+        [
+            imu("bank 0 write 0x4E <- 0x03"),
+            warn(
+                &b.imu,
+                "bank 0 write to 0x50 within 200 us of a sensor leaving OFF"
+            ),
+            imu("bank 0 write 0x50 <- 0x66"),
+            imu("bank 0 write 0x50 <- 0x66"),
+            imu("bank 0 write 0x11 <- 0x01"),
+            warn(&b.imu, "bank 0 access to 0x75 within 1 ms of a soft reset"),
+            imu("bank 0 read 0x75 -> 0x47"),
+            baro("write 0x7E <- 0xB6"),
+            warn(&b.baro, "access to 0x01 within 2 ms of a soft reset"),
+            baro("read 0x01 -> 0x50"),
+            imu("bank 0 read 0x75 -> 0x47"),
+            baro("read 0x01 -> 0x50"),
+        ],
+        "{text}"
+    );
 }
 
 /// ArduPilot's probe and `start()` for the ICM-42688-P (`Invensensev3`,

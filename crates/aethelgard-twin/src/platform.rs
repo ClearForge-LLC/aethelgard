@@ -86,7 +86,10 @@ fn whose(m: Model) -> String {
 /// names, with its pin. Refused (`ModelUnpinned`, `AET-WO-4220` D6):
 /// - a header line naming a file the twin does not pin, or a sha256 other
 ///   than its pin, or one model twice;
-/// - a device line declaring a model of our own its header does not name.
+/// - a device line declaring a model of our own its header does not name,
+///   however the type is spelled: Renode resolves `Sensors.X` and
+///   `Antmicro.Renode.Peripherals.Sensors.X` alike, and needs no space after
+///   the colon (adversarial F1, F7).
 ///
 /// Only the header's leading comment lines are read as the header. A
 /// platform this emitter wrote passes; the CLI also reads a caller's.
@@ -128,13 +131,15 @@ pub fn own_models(text: &str) -> Result<Vec<Model>, TwinError> {
         named.push(m);
     }
     for line in text.lines() {
-        let declared = line
-            .split_once(": ")
-            .and_then(|(_, r)| r.split_whitespace().next());
-        if let Some(m) = declared
-            .and_then(Model::from_renode)
-            .filter(|m| m.own().is_some() && !named.contains(m))
-        {
+        let class = line
+            .split_once(':')
+            .and_then(|(_, r)| r.split_whitespace().next())
+            .map(|t| t.rsplit('.').next().unwrap_or(t));
+        let own = model::OWN
+            .iter()
+            .map(|o| o.0)
+            .find(|m| class.is_some_and(|c| m.renode().rsplit('.').next() == Some(c)));
+        if let Some(m) = own.filter(|m| !named.contains(m)) {
             return unpinned(format!(
                 "a device is declared as `{}`, but the header names no pinned copy of it",
                 m.renode()

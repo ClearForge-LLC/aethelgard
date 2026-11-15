@@ -62,6 +62,8 @@ namespace Antmicro.Renode.Peripherals.Sensors
         {
             ResetRegisters();
             pointer = 0; // "By default the start address is set at 8h'00", DS p.40
+            lastWriteAddress = 0;
+            resetUntil = 0;
             ClearTransaction();
             timer.Reset();
         }
@@ -73,6 +75,7 @@ namespace Antmicro.Renode.Peripherals.Sensors
                 if(!txPointerSet || txLastWasRead)
                 {
                     pointer = (byte)(b & 0x7F);
+                    lastWriteAddress = pointer;
                     txPointerSet = true;
                     txLastWasRead = false;
                     txPointerByte = pointer;
@@ -95,6 +98,9 @@ namespace Antmicro.Renode.Peripherals.Sensors
             {
                 if(txRead.Count == 0)
                 {
+                    // "Once a new data read transmission starts, the start address is set to the
+                    // register address specified in the latest I2C write command", DS p.40.
+                    pointer = lastWriteAddress;
                     txReadStart = pointer;
                 }
                 result[i] = ReadRegister(pointer);
@@ -169,8 +175,19 @@ namespace Antmicro.Renode.Peripherals.Sensors
             UpdatePin(false);
         }
 
+        // t_soft_res: the part comes out of a soft reset after 2 ms (DS p.11, p.18); an access
+        // before then is the firmware's fault, which fails its step. The access goes ahead.
+        private void CheckReset(byte reg)
+        {
+            if(Now() < resetUntil)
+            {
+                this.Log(LogLevel.Warning, "access to 0x{0:X2} within 2 ms of a soft reset", reg);
+            }
+        }
+
         private byte ReadRegister(byte reg)
         {
+            CheckReset(reg);
             if(kind[reg] == 0)
             {
                 this.Log(LogLevel.Warning, "access to unmodelled register 0x{0:X2}", reg);
@@ -198,6 +215,7 @@ namespace Antmicro.Renode.Peripherals.Sensors
 
         private void WriteRegister(byte reg, byte value)
         {
+            CheckReset(reg);
             if(kind[reg] == 0)
             {
                 this.Log(LogLevel.Warning, "access to unmodelled register 0x{0:X2}", reg);
@@ -213,9 +231,13 @@ namespace Antmicro.Renode.Peripherals.Sensors
                 if(value == 0xB6) // soft reset, DS p.67
                 {
                     ResetRegisters();
+                    resetUntil = Now() + SoftResetNs;
                 }
                 return;
             }
+            // The state the write leaves decides the start-up: after a reset the part is in DEEP
+            // STANDBY (DS p.16), whatever the same write sets deep_dis to.
+            leavingDeep = actualMode == 0 && DeepStandby();
             regs[reg] = (byte)((regs[reg] & ~mask[reg]) | (value & mask[reg]));
             switch(reg)
             {
@@ -291,8 +313,9 @@ namespace Antmicro.Renode.Peripherals.Sensors
             int osrP, osrT;
             bool valid;
             EffectiveOsr(out osrP, out osrT, out valid);
+            // The conversion's maximum, typ + 5 % (Table 4, DS p.12): the latest the data can come.
             var us = ConvTempUs[osrT] + (PressureOn() ? ConvPressUs[osrP] : 0UL);
-            return us * 1000UL;
+            return us * 1050UL;
         }
 
         private void OnConfigurationWrite()
@@ -314,7 +337,7 @@ namespace Antmicro.Renode.Peripherals.Sensors
             var now = Now();
             actualMode = mode;
             runKey = key;
-            var startup = DeepStandby() ? StartupDeepNs : StartupNs; // t_startup_deep 4 ms, t_startup 3 ms, DS p.11
+            var startup = leavingDeep ? StartupDeepNs : StartupNs; // t_startup_deep 4 ms, t_startup 3 ms (max), DS p.11
             measStart = now + startup;
             measDone = measStart + ConversionNs();
             measArmed = true;
@@ -458,6 +481,10 @@ namespace Antmicro.Renode.Peripherals.Sensors
         private const ulong StartupNs = 3000000UL;
         private const ulong StartupDeepNs = 4000000UL;
         private const ulong PulseNs = 105000UL;
+        private const ulong SoftResetNs = 2000000UL; // t_soft_res max 2 ms, DS p.11
+        private byte lastWriteAddress;
+        private ulong resetUntil;
+        private bool leavingDeep;
 
         // address, reset, kind, write mask
         private static readonly int[][] Defs = new int[][]

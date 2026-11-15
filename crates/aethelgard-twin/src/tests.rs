@@ -610,11 +610,28 @@ fn a_model_of_our_own_loads_only_by_its_pinned_header_line() {
         "is not `",
     );
     // A header line after the header (below the first non-comment line) is
-    // not the header: the device it would pin is refused.
+    // not the header: the device it would pin is refused, and with no such
+    // device it pins nothing (the CLI then includes nothing).
     refused(
         format!("{head}{body}{}", line(bmp_file, bmp_sha)),
         "the header names no pinned copy",
     );
+    assert_eq!(
+        own_models(&format!("{head}using \"x\"\n{}", line(bmp_file, bmp_sha))).unwrap(),
+        []
+    );
+    // Any spelling Renode resolves to one of our classes needs the header
+    // (adversarial F1, F7).
+    for device in [
+        "u5: Antmicro.Renode.Peripherals.Sensors.ICM42688P @ spi1mux 0",
+        "u5:Sensors.ICM42688P @ spi1mux 0",
+        "u5:\tICM42688P @ spi1mux 0",
+    ] {
+        refused(
+            format!("{head}{}using \"x\"\n{device}\n", line(bmp_file, bmp_sha)),
+            "`Sensors.ICM42688P`, but the header names no pinned copy",
+        );
+    }
 }
 
 /// `AET-WO-4220` D6: the emitter names the pin of each model of our own the

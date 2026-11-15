@@ -770,11 +770,32 @@ fn refuses_a_malformed_schema_4_script() {
         let err = refused_entry(part, mutate);
         assert_refused(&err, Some(part), field);
     }
-    // A 24-bit signed word holds what 16 bits cannot, and no more.
+    // A 24-bit signed word holds what 16 bits cannot, and no more: at 64
+    // counts a pascal, -131,072 Pa is -2^23 and fits; one pascal either side
+    // of the range does not (adversarial: the bound's mutants).
     let err = refused_entry("BMP581", |p| {
         p["script"]["data"]["channels"][1]["stimulus"] = 131_072.into()
     });
     assert_refused(&err, Some("BMP581"), "24-bit word");
+    let err = refused_entry("BMP581", |p| {
+        p["script"]["data"]["channels"][1]["stimulus"] = (-131_073).into()
+    });
+    assert_refused(&err, Some("BMP581"), "24-bit word");
+    let mut doc = embedded();
+    doc.pointer_mut(&at("BMP581")).unwrap()["script"]["data"]["channels"][1]["stimulus"] =
+        (-131_072).into();
+    let t = parse_parts(&doc.to_string()).unwrap();
+    let data = t.get("BMP581").unwrap().steps().pop().unwrap();
+    assert_eq!(
+        data.expected & 0xFF_FFFF,
+        0x00_0080,
+        "-2^23 is 0x800000, XLSB first"
+    );
+    // A word of one byte is no channel this table reads.
+    let err = refused_entry("BMP581", |p| {
+        p["script"]["data"]["channels"][0]["bytes"] = 1.into()
+    });
+    assert_refused(&err, Some("BMP581"), "bytes");
 }
 
 #[test]

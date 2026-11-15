@@ -1495,6 +1495,10 @@ fn own_models(platform: &Path, dir: &Path) -> Result<Vec<PathBuf>, run::Stop> {
         fs::write(&path, text).map_err(written)?;
         let back = fs::read(&path).map_err(written)?;
         let sha = input::hex(<sha2::Sha256 as sha2::Digest>::digest(&back));
+        // belt-and-suspenders: the bytes written and the pin come from one
+        // build, and the twin's tier-1 test holds them equal, so no test
+        // reaches this refusal (adversarial F8). Ruling D6 asks for the copy
+        // hashed again as written: a scratch a tool can reach is not trusted.
         if sha != pin {
             return Err(run::Stop::refused(
                 "ModelPinMismatch",

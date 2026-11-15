@@ -40,7 +40,7 @@ fn model_load_failed(lines: &[&str]) -> Option<Stop> {
     Some(Stop::refused(
         "ModelLoadFailed",
         format!(
-            "Renode did not compile or load a model of our own: {}",
+            "Renode did not compile or load a C# file (a model of our own, or one the platform included): {}",
             said.join(" | ")
         ),
     ))
