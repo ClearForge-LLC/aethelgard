@@ -105,9 +105,6 @@ pub struct Buck {
     pub rds_low_max_milliohms: Limit,
     /// The high-side current limit, mA: its maximum bounds a fault.
     pub high_side_limit_milliamps: Ranged,
-    /// The low-side current limit, mA: an inductor's saturation current is
-    /// never below its maximum.
-    pub low_side_limit_milliamps: Ranged,
     /// The recommended output current, at most, mA.
     pub iout_max_milliamps: Limit,
     /// The feedback divider's top resistor, at most, Ω.
@@ -247,6 +244,8 @@ pub struct Mcu {
     pub reservoir_rule: ReservoirRule,
     /// The SPI master's data-input setup time, at least, ns (ruled D9).
     pub spi_input_setup_min_ns: Limit,
+    /// How much shorter than half a period SCK's low phase may be, ns.
+    pub spi_sck_low_shortfall_ns: Limit,
 }
 
 /// AN2834's rule for an external reservoir capacitor at an ADC input,
@@ -513,7 +512,6 @@ struct RawBuck {
     rds_high_max_milliohms: RawLimit,
     rds_low_max_milliohms: RawLimit,
     high_side_limit_milliamps: RawRanged,
-    low_side_limit_milliamps: RawRanged,
     iout_max_milliamps: RawLimit,
     rfbt_max_ohms: RawLimit,
     inductor_min_coefficient: RawLimit,
@@ -597,6 +595,7 @@ struct RawMcu {
     rain_max_ohms: Vec<RawRain>,
     reservoir_rule: RawReservoirRule,
     spi_input_setup_min_ns: RawLimit,
+    spi_sck_low_shortfall_ns: RawLimit,
 }
 
 #[derive(Deserialize)]
@@ -871,10 +870,6 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                     b.high_side_limit_milliamps,
                     "kind.buck.high_side_limit_milliamps",
                 )?,
-                low_side_limit_milliamps: r.ranged_positive(
-                    b.low_side_limit_milliamps,
-                    "kind.buck.low_side_limit_milliamps",
-                )?,
                 iout_max_milliamps: r
                     .positive(b.iout_max_milliamps, "kind.buck.iout_max_milliamps")?,
                 rfbt_max_ohms: r.positive(b.rfbt_max_ohms, "kind.buck.rfbt_max_ohms")?,
@@ -1058,6 +1053,10 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                     adc_capacitance_femtofarads: rule.adc_capacitance_femtofarads,
                     at: r.at(rule.at, "kind.mcu.reservoir_rule")?,
                 },
+                spi_sck_low_shortfall_ns: r.limit(
+                    m.spi_sck_low_shortfall_ns,
+                    "kind.mcu.spi_sck_low_shortfall_ns",
+                )?,
                 spi_input_setup_min_ns: r
                     .positive(m.spi_input_setup_min_ns, "kind.mcu.spi_input_setup_min_ns")?,
             })

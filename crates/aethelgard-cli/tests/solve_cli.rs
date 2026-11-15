@@ -496,5 +496,19 @@ fn a_power_tree_solves_into_the_topology_and_is_refused_at_emit() {
     let v: Value = serde_json::from_str(line(&output)).unwrap();
     assert_eq!(v["error"]["kind"], "PowerNotEmitted", "{v}");
     assert!(!out.join("sentinel-02-power.kicad_pcb").exists());
+    // Nor is a board judged against it: `check drc --spec` refuses before
+    // any tool is looked for.
+    let board = dir.join("any.kicad_pcb");
+    std::fs::write(&board, "(kicad_pcb (version 20241229))\n").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["check", "drc", "--board"])
+        .arg(&board)
+        .arg("--spec")
+        .arg(&file)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let v: Value = serde_json::from_str(line(&output)).unwrap();
+    assert_eq!(v["error"]["kind"], "PowerNotEmitted", "{v}");
     std::fs::remove_dir_all(&dir).unwrap();
 }

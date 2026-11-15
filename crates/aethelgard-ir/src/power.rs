@@ -360,6 +360,7 @@ struct Ctx<'a> {
     power: &'a Power,
     table: &'a PowerPartsTable,
     sensors: &'a crate::parts::PartsTable,
+    delays: &'a OutputDelays,
     conditions: BTreeSet<String>,
 }
 
@@ -405,6 +406,19 @@ impl<'a> Ctx<'a> {
 
     fn note(&mut self, condition: impl Into<String>) {
         self.conditions.insert(condition.into());
+    }
+
+    /// A resistor's worst error, with its series' drift life named.
+    fn error_ppm(&mut self, r: &Resistor) -> Result<i128, IrValidationError> {
+        let s = self.resistor(r)?;
+        let e = resistor_error_ppm(s, self.temperature());
+        self.note(format!(
+            "{}: its drift is counted as {} ({})",
+            r.part,
+            s.drift_condition,
+            self.cite(&s.drift_ppm.at)
+        ));
+        Ok(e)
     }
 }
 
@@ -539,9 +553,36 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
             ));
         }
     }
+    // A sense net is a new net: folded, it may not be a signal, a domain or
+    // `GND` (KiCad's ERC compares labels with case folded, `AET-WO-1204`).
+    let mut taken: BTreeSet<String> = spec
+        .i2c_buses
+        .iter()
+        .flat_map(|b| [&b.sda.net, &b.scl.net])
+        .chain(
+            spec.spi_buses
+                .iter()
+                .flat_map(|b| [&b.sck.net, &b.mosi.net, &b.miso.net]),
+        )
+        .chain(spec.declared_spi_devices().iter().map(|d| &d.cs.net))
+        .map(|n| n.to_lowercase())
+        .collect();
+    let rails: BTreeSet<String> = spec
+        .voltage_domains
+        .iter()
+        .map(|d| d.id.to_lowercase())
+        .chain(std::iter::once(crate::GND.to_lowercase()))
+        .collect();
     for (i, s) in power.sense.iter().enumerate() {
         let path = format!("power.sense[{i}]");
         id(&s.net, format!("{path}.net"))?;
+        let folded = s.net.to_lowercase();
+        if rails.contains(&folded) {
+            return Err(IrValidationError::NetShadowsDomain { id: s.net.clone() });
+        }
+        if !taken.insert(folded) {
+            return Err(IrValidationError::DuplicateNetName { id: s.net.clone() });
+        }
         resistor(&s.top, &format!("{path}.top"))?;
         resistor(&s.bottom, &format!("{path}.bottom"))?;
         references.extend([s.top.reference.as_str(), s.bottom.reference.as_str()]);
@@ -678,9 +719,8 @@ fn outputs<'a>(ctx: &mut Ctx<'a>) -> Result<Vec<Derived<'a>>, IrValidationError>
                         ctx.cite(&b.rfbt_max_ohms.at),
                     ));
                 }
-                let t = ctx.temperature();
-                let et = resistor_error_ppm(ctx.resistor(&f.top)?, t);
-                let eb = resistor_error_ppm(ctx.resistor(&f.bottom)?, t);
+                let et = ctx.error_ppm(&f.top)?;
+                let eb = ctx.error_ppm(&f.bottom)?;
                 if et >= 1_000_000 || eb >= 1_000_000 {
                     return Err(refuse(
                         Refusal::RegulatorOutsideDomain,
@@ -716,8 +756,6 @@ fn outputs<'a>(ctx: &mut Ctx<'a>) -> Result<Vec<Derived<'a>>, IrValidationError>
                         ctx.cite(&b.regulation_permille.at)
                     ));
                 }
-                let pin = |r: &str| row.pins.get(r).cloned().unwrap_or_default();
-                let _ = pin;
                 (
                     (
                         u64::try_from(lo.max(0)).unwrap_or(0),
@@ -1046,6 +1084,10 @@ fn headroom(
                     - div_ceil((1_000_000 - d_ppm) * i * rls, 1_000_000)
                     - i * dcr;
                 ctx.note(format!(
+                    "{}: its thermal performance is a named condition: the datasheet's θJA is for comparison only, not design, so no junction check is made (ruled D1)",
+                    d.reg.part
+                ));
+                ctx.note(format!(
                     "{}: tOFF-MIN, RDS(on) and fSW are stated {} ({})",
                     d.reg.part,
                     b.stated_at,
@@ -1246,8 +1288,19 @@ fn every_part(power: &Power) -> Vec<(&str, &str)> {
 /// part's operating range.
 fn temperatures(ctx: &Ctx<'_>) -> Result<(), IrValidationError> {
     let t = ctx.temperature();
-    for (reference, part) in every_part(ctx.power) {
+    let mcu = ("mcu", ctx.spec.mcu.part.as_str());
+    for (reference, part) in std::iter::once(mcu).chain(every_part(ctx.power)) {
         let row = ctx.row(reference, part)?;
+        if row.lifecycle == pp::Lifecycle::Eol {
+            return Err(refuse(
+                Refusal::PowerPartUnknown,
+                reference,
+                format!(
+                    "`{part}` is end of life, and no acknowledgement of an EOL power part exists"
+                ),
+                "crates/aethelgard-ir/data/power-parts.json (lifecycle)",
+            ));
+        }
         let r = &row.temperature_celsius.range;
         if i64::from(t.min) < r.min || i64::from(t.max) > r.max {
             return Err(refuse(
@@ -1507,14 +1560,12 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
 /// its source impedance against RAIN at the declared resolution, or the
 /// reservoir capacitor AN2834 requires.
 fn sense(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
-    let (bmin, bmax) = battery_range(&ctx.power.battery);
-    let _ = bmin;
+    let (_, bmax) = battery_range(&ctx.power.battery);
     let vref_min = ctx.domain(&ctx.spec.mcu.supply).map_or(0, |d| range(d).0);
     for s in &ctx.power.sense {
         let (_, m) = mcu(ctx)?;
-        let t = ctx.temperature();
-        let et = resistor_error_ppm(ctx.resistor(&s.top)?, t);
-        let eb = resistor_error_ppm(ctx.resistor(&s.bottom)?, t);
+        let et = ctx.error_ppm(&s.top)?;
+        let eb = ctx.error_ppm(&s.bottom)?;
         let mm = 1_000_000i128;
         let (rt, rb) = (i128::from(s.top.ohms), i128::from(s.bottom.ohms));
         // The largest ratio: the bottom high, the top low.
@@ -1683,7 +1734,6 @@ fn crossings(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
             ));
         }
         let pull = ctx.resistor(&c.cs_pull_up)?;
-        let _ = pull;
         let pmax = t.pull_up_max_ohms.value;
         let worst = div_ceil(
             i128::from(c.cs_pull_up.ohms)
@@ -1722,7 +1772,7 @@ fn crossings(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
         // MISO: SCK out (A→B), the device's output delay, MISO back (B→A)
         // and the MCU's input setup must fit in half a clock period.
         let (_, m) = mcu(ctx)?;
-        let Some((tdo, tdo_cite)) = output_delay(ctx.sensors, &device.part) else {
+        let Some((tdo, tdo_cite)) = ctx.delays.get(&device.part).cloned() else {
             return Err(refuse(
                 Refusal::MisoRoundTripTooSlow,
                 &device.reference,
@@ -1741,8 +1791,9 @@ fn crossings(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
             + i128::from(tdo)
             + i128::from(t.tpd_b_to_a_max_ns.value)
             + i128::from(m.spi_input_setup_min_ns.value);
-        // Half a period, ns, rounded down.
-        let half = 500_000_000i128 / i128::from(bus.speed_hz);
+        // Half a period, ns, rounded down, less the SCK phase's own shortfall.
+        let half = 500_000_000i128 / i128::from(bus.speed_hz)
+            - i128::from(m.spi_sck_low_shortfall_ns.value);
         if total > half {
             return Err(refuse(
                 Refusal::MisoRoundTripTooSlow,
@@ -1759,13 +1810,6 @@ fn crossings(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
         }
     }
     Ok(())
-}
-
-/// A sensor's SPI output delay after the clock edge, at most, ns, with its
-/// citation: `None` until the sensor table carries the field (ruled D9;
-/// `AET-WO-4300d` K6, which waits for `4210`'s schema 3 on `main`).
-fn output_delay(_sensors: &crate::parts::PartsTable, _part: &str) -> Option<(u32, String)> {
-    None
 }
 
 /// Step 9a (`AET-WO-1309` D1): each buck row's thermal-via rule, joined to
@@ -1810,8 +1854,19 @@ pub fn check(spec: &Specification) -> Result<Option<Checked>, IrValidationError>
     if spec.power.is_none() {
         return Ok(None);
     }
-    check_against(spec, crate::power_parts::table()?, crate::parts::table()?)
+    // No sensor row carries its SPI output delay until `4210`'s schema 3 is
+    // on `main` (`K6`): every crossing's round trip is refused until then.
+    check_against(
+        spec,
+        crate::power_parts::table()?,
+        crate::parts::table()?,
+        &BTreeMap::new(),
+    )
 }
+
+/// Each sensor's SPI output delay after the clock edge, at most, ns, with its
+/// citation, keyed by part (ruled D9).
+pub type OutputDelays = BTreeMap<String, (u32, String)>;
 
 /// [`check`] against the given tables: the embedded ones in every caller but
 /// a test, which holds a table with one limit changed.
@@ -1819,6 +1874,7 @@ pub fn check_against(
     spec: &Specification,
     table: &PowerPartsTable,
     sensors: &crate::parts::PartsTable,
+    delays: &OutputDelays,
 ) -> Result<Option<Checked>, IrValidationError> {
     let Some(power) = spec.power.as_ref() else {
         return Ok(None);
@@ -1830,6 +1886,7 @@ pub fn check_against(
         power,
         table,
         sensors,
+        delays,
         conditions: BTreeSet::new(),
     };
     mcu(&ctx)?;

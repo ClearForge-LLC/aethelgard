@@ -189,14 +189,6 @@
               "section": "p. 7, 7.5 Current limits, ISC LMR33630 min 3.85 A, max 5.05 A (note 4: tested open loop)"
             }
           },
-          "low_side_limit_milliamps": {
-            "min": 2900,
-            "max": 4100,
-            "at": {
-              "document": "SNVSAN3F",
-              "section": "p. 7, 7.5 Current limits, ILIMIT min 2.9 A, max 4.1 A"
-            }
-          },
           "iout_max_milliamps": {
             "value": 3000,
             "at": {
@@ -215,7 +207,7 @@
             "value": 280,
             "at": {
               "document": "SNVSAN3F",
-              "section": "p. 22, 9.2.2.4, Equation 5: L_MIN >= 0.28 x VOUT / fSW (uH, V, MHz)"
+              "section": "p. 22, 9.2.2.4, Equation 5: L_MIN >= 0.28 x VOUT / fSW; no units printed, read as uH, V and MHz (3.5 uH at 5 V and 400 kHz against Table 9-2's 8 uH)"
             }
           },
           "stated_at": "at VIN = 12 V, VEN = 4 V and TJ -40 to 125 C (SNVSAN3F p. 7, 7.5 header)",
@@ -716,6 +708,13 @@
               "document": "DS12117",
               "section": "p. 301, Table 194, SPI master tsu(MI) min 2 ns (OSPEEDR 11, CL 30 pF)"
             }
+          },
+          "spi_sck_low_shortfall_ns": {
+            "value": 2,
+            "at": {
+              "document": "DS12117",
+              "section": "p. 301, Table 194, SPI master tw(SCKL) min TPCLK - 2 ns, typ TPCLK"
+            }
           }
         }
       }
@@ -857,7 +856,7 @@
         "max": 125,
         "at": {
           "document": "MURATA_GCM32EC71H106KA03",
-          "section": "specifications, operating temperature -55 to 125 C"
+          "section": "Rated Value table, operating temp. range -55 to 125 C"
         }
       },
       "kind": {
@@ -866,14 +865,14 @@
             "value": 10000000,
             "at": {
               "document": "MURATA_GCM32EC71H106KA03",
-              "section": "specifications, rated capacitance"
+              "section": "Rated Value table, capacitance"
             }
           },
           "rated_millivolts": {
             "value": 50000,
             "at": {
               "document": "MURATA_GCM32EC71H106KA03",
-              "section": "specifications, rated voltage"
+              "section": "Rated Value table, rated voltage"
             }
           },
           "dielectric": "X7S"
@@ -891,7 +890,7 @@
         "max": 125,
         "at": {
           "document": "MURATA_GCM188R71H224KA64",
-          "section": "specifications, operating temperature -55 to 125 C"
+          "section": "Rated Value table, operating temp. range -55 to 125 C"
         }
       },
       "kind": {
@@ -900,14 +899,14 @@
             "value": 220000,
             "at": {
               "document": "MURATA_GCM188R71H224KA64",
-              "section": "specifications, rated capacitance"
+              "section": "Rated Value table, capacitance"
             }
           },
           "rated_millivolts": {
             "value": 50000,
             "at": {
               "document": "MURATA_GCM188R71H224KA64",
-              "section": "specifications, rated voltage"
+              "section": "Rated Value table, rated voltage"
             }
           },
           "dielectric": "X7R"
@@ -925,7 +924,7 @@
         "max": 125,
         "at": {
           "document": "MURATA_GCM188R71H104KA57",
-          "section": "specifications, operating temperature -55 to 125 C"
+          "section": "Rated Value table, operating temp. range -55 to 125 C"
         }
       },
       "kind": {
@@ -934,14 +933,14 @@
             "value": 100000,
             "at": {
               "document": "MURATA_GCM188R71H104KA57",
-              "section": "specifications, rated capacitance"
+              "section": "Rated Value table, capacitance"
             }
           },
           "rated_millivolts": {
             "value": 50000,
             "at": {
               "document": "MURATA_GCM188R71H104KA57",
-              "section": "specifications, rated voltage"
+              "section": "Rated Value table, rated voltage"
             }
           },
           "dielectric": "X7R"
@@ -959,7 +958,7 @@
         "max": 125,
         "at": {
           "document": "MURATA_GRM188R71C105KA12",
-          "section": "specifications, operating temperature -55 to 125 C"
+          "section": "Rated Value table, operating temp. range -55 to 125 C"
         }
       },
       "kind": {
@@ -968,14 +967,14 @@
             "value": 1000000,
             "at": {
               "document": "MURATA_GRM188R71C105KA12",
-              "section": "specifications, rated capacitance"
+              "section": "Rated Value table, capacitance"
             }
           },
           "rated_millivolts": {
             "value": 16000,
             "at": {
               "document": "MURATA_GRM188R71C105KA12",
-              "section": "specifications, rated voltage"
+              "section": "Rated Value table, rated voltage"
             }
           },
           "dielectric": "X7R"
@@ -993,7 +992,7 @@
         "max": 125,
         "at": {
           "document": "MURATA_GRM32ER71A226KE20",
-          "section": "specifications, operating temperature -55 to 125 C"
+          "section": "Rated Value table, operating temp. range -55 to 125 C"
         }
       },
       "kind": {
@@ -1002,14 +1001,14 @@
             "value": 22000000,
             "at": {
               "document": "MURATA_GRM32ER71A226KE20",
-              "section": "specifications, rated capacitance"
+              "section": "Rated Value table, capacitance"
             }
           },
           "rated_millivolts": {
             "value": 10000,
             "at": {
               "document": "MURATA_GRM32ER71A226KE20",
-              "section": "specifications, rated voltage"
+              "section": "Rated Value table, rated voltage"
             }
           },
           "dielectric": "X7R"
@@ -1027,7 +1026,7 @@
         "max": 85,
         "at": {
           "document": "MURATA_GRM32ER61C226KE20",
-          "section": "specifications, operating temperature -55 to 85 C"
+          "section": "Rated Value table, operating temp. range -55 to 85 C"
         }
       },
       "kind": {
@@ -1036,14 +1035,14 @@
             "value": 22000000,
             "at": {
               "document": "MURATA_GRM32ER61C226KE20",
-              "section": "specifications, rated capacitance"
+              "section": "Rated Value table, capacitance"
             }
           },
           "rated_millivolts": {
             "value": 16000,
             "at": {
               "document": "MURATA_GRM32ER61C226KE20",
-              "section": "specifications, rated voltage"
+              "section": "Rated Value table, rated voltage"
             }
           },
           "dielectric": "X5R"

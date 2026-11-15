@@ -125,8 +125,6 @@ pub enum PadJoin {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PowerIn {
     pub name: &'static str,
-    /// The contacts, battery positive first.
-    pub pins: u8,
     /// The rated current, mA, and the condition the maker states it under.
     pub rated_milliamps: u32,
     pub rating_condition: &'static str,
@@ -154,7 +152,6 @@ pub const AMASS_XT30PW_M_V12_SHA256: &str =
 
 pub const POWER_IN: [PowerIn; 1] = [PowerIn {
     name: "XT30PW-M",
-    pins: 2,
     rated_milliamps: 20_000,
     rating_condition: "at most, for a temperature rise under 85 K",
     cited: Cited {

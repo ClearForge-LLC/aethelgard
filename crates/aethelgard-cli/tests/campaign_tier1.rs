@@ -2472,9 +2472,11 @@ fn a_record_that_claims_ok_without_the_device_logging_a_transfer_is_unrecovered(
 #[test]
 fn a_droop_the_runner_cannot_render_is_refused_before_any_run() {
     let tb = toolbox(&good());
-    for (domain, floor, kind) in [
-        ("VDD_OTHER", 2400, "DroopNotMcuSupply"),
-        ("VDD_3V3", 2660, "DroopRefused"),
+    for (domain, floor, bor_level, kind) in [
+        ("VDD_OTHER", 2400, 3, "DroopNotMcuSupply"),
+        ("VDD_3V3", 2660, 3, "DroopRefused"),
+        // `AET-WO-4300d` D4 (K8): the level is the specification's.
+        ("VDD_3V3", 2400, 2, "BorLevelContradictsSpecification"),
     ] {
         let work = Work::new();
         let doc = json!({
@@ -2486,7 +2488,7 @@ fn a_droop_the_runner_cannot_render_is_refused_before_any_run() {
             "overrides": [{"droop": {
                 "domain": domain, "floor_millivolts": floor, "start_ns": 1000000,
                 "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-                "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3
+                "source_milliohms": 500, "load_milliamps": 100, "bor_level": bor_level
             }}],
         });
         work.dir.write("d.json", doc.to_string().as_bytes());

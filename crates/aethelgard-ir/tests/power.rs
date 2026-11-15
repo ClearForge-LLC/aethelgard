@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/power-parts.json`. It moves only with the file.
-const TABLE_SHA256: &str = "2ddbd6e85f0d47aebed9a37d9562f5d5e091cfa6f541053c3f8a9f8509bdec8e";
+const TABLE_SHA256: &str = "dfb7835627736da6d164767d77d49d6abe26b25fcd2bbbaf001d8cd620950558";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -73,11 +73,20 @@ fn row<'v>(t: &'v mut Value, part: &str) -> &'v mut Value {
         .unwrap()
 }
 
-/// The fixture checked against `table`.
+/// The fixture checked against `table`, with the ICM-20948's SPI output
+/// delay as `K6` will hold it in the sensor table: TDK DS-000189 1.6, p. 17,
+/// Table 8, tVD.SDO at most 59 ns at 20 pF.
 fn against(v: &Value, table: &Value) -> Result<(), E> {
     let t = parse_power_parts(&table.to_string()).expect("the changed table parses");
     let sensors = aethelgard_ir::parts::table().unwrap();
-    power::check_against(&spec(v), &t, sensors).map(|_| ())
+    let delays = power::OutputDelays::from([(
+        "ICM20948".to_owned(),
+        (
+            59,
+            "TDK DS-000189 1.6, p. 17, Table 8, tVD.SDO max 59 ns at 20 pF".to_owned(),
+        ),
+    )]);
+    power::check_against(&spec(v), &t, sensors, &delays).map(|_| ())
 }
 
 fn table_refusal(mutate: impl FnOnce(&mut Value)) -> String {
@@ -179,6 +188,17 @@ fn the_table_parser_refuses_by_name() {
         parse_power_parts(&text),
         Err(E::PowerPartsTable { .. })
     ));
+}
+
+#[test]
+fn a_sense_net_is_a_new_net() {
+    let mut v = base();
+    v["power"]["sense"][0]["net"] = json!("vdd_3v3");
+    assert_eq!(refused(&v).kind(), "NetShadowsDomain");
+    v["power"]["sense"][0]["net"] = json!("Gnd");
+    assert_eq!(refused(&v).kind(), "NetShadowsDomain");
+    v["power"]["sense"][0]["net"] = json!("spi_sck");
+    assert_eq!(refused(&v).kind(), "DuplicateNetName");
 }
 
 #[test]
@@ -348,14 +368,6 @@ fn each_static_check_refuses_by_name() {
                 v["power"]["conditions"]["board_temperature_celsius"]["min"] = json!(-30);
             },
         ),
-        (
-            "a 100 C board",
-            Refusal::BoardOutsidePartTemperature,
-            "C14",
-            |v| {
-                v["power"]["conditions"]["board_temperature_celsius"]["max"] = json!(100);
-            },
-        ),
         ("no CBOOT", Refusal::ExternalPartMissing, "U10", |v| {
             v["power"]["regulators"][0]["external"]
                 .as_array_mut()
@@ -458,6 +470,14 @@ fn each_static_check_refuses_by_name() {
                 v["power"]["input"]["part"] = json!("XT60PW-M");
             },
         ),
+        (
+            "a 90 C board, past the MCU's 85 C",
+            Refusal::BoardOutsidePartTemperature,
+            "mcu",
+            |v| {
+                v["power"]["conditions"]["board_temperature_celsius"]["max"] = json!(90);
+            },
+        ),
     ];
     for (what, kind, id, mutate) in cases {
         let mut v = base();
@@ -509,6 +529,27 @@ fn a_datasheet_limit_changed_in_a_table_copy_is_refused_by_name() {
                     json!(5000);
             },
         ),
+        (
+            "an X5R output capacitor rated to 80 C",
+            Refusal::BoardOutsidePartTemperature,
+            "C14",
+            |t| {
+                row(t, "GRM32ER61C226KE20")["temperature_celsius"]["max"] = json!(80);
+            },
+        ),
+        // The drift life decides a verdict (FEEDBACK, a decision): at the
+        // TNPW's 225 000 h row, 0.30 %, the 5 V rail reaches past 5.25 V.
+        (
+            "TNPW drift at 225 000 h",
+            Refusal::RegulatorOutsideDomain,
+            "U10",
+            |t| {
+                row(t, "TNPW0603_B_E")["kind"]["resistor"]["drift_ppm"]["value"] = json!(3000);
+            },
+        ),
+        ("an EOL LDO", Refusal::PowerPartUnknown, "U12", |t| {
+            row(t, "TLV75518PDBV")["lifecycle"] = json!("eol");
+        }),
         (
             "Equation 5 at 2 uH/V MHz",
             Refusal::ExternalPartOutOfRange,
@@ -636,7 +677,187 @@ fn a_crossing_on_the_wrong_domain_is_refused_by_the_crossing_rule() {
     assert_power(&err, Refusal::CrossingDomainMismatch, "U13");
 }
 
+/// SCK out 19 + 59 + MISO back 15 + setup 2 = 95 ns: inside 4 MHz's
+/// 125 - 2 ns and 5 MHz's 100 - 2, outside 5.3 MHz's 94 - 2 and 7 MHz's
+/// 71 - 2, so the crossing caps the IMU bus below the part's own 7 MHz.
+#[test]
+fn the_miso_round_trip_bounds_the_crossed_bus() {
+    assert_eq!(against(&full(), &table_json()), Ok(()));
+    let mut v = full();
+    v["spi_buses"][1]["speed_hz"] = json!(5_000_000);
+    assert_eq!(against(&v, &table_json()), Ok(()));
+    for hz in [5_300_000, 7_000_000] {
+        v["spi_buses"][1]["speed_hz"] = json!(hz);
+        let err = against(&v, &table_json()).unwrap_err();
+        assert_power(&err, Refusal::MisoRoundTripTooSlow, "U13");
+    }
+    let mut t = table_json();
+    row(&mut t, "TXU0304PW")["kind"]["translator"]["tmax_a_to_b_bps"]["value"] = json!(7_000_000);
+    assert_power(
+        &against(&full(), &t).unwrap_err(),
+        Refusal::CrossingTooFast,
+        "U13",
+    );
+}
+
 #[test]
 fn a_miso_round_trip_with_no_cited_output_delay_is_refused_not_passed() {
     assert_power(&refused(&full()), Refusal::MisoRoundTripTooSlow, "U5");
+}
+
+#[test]
+fn every_remaining_guard_refuses_by_name() {
+    let cases: Vec<Case> = vec![
+        (
+            "no cells",
+            Refusal::PowerValueInvalid,
+            "power.battery.cells",
+            |v| {
+                v["power"]["battery"]["cells"]["min"] = json!(0);
+            },
+        ),
+        ("a 0 ohm resistor", Refusal::PowerValueInvalid, "R10", |v| {
+            v["power"]["regulators"][0]["feedback"]["top"]["ohms"] = json!(0);
+        }),
+        ("a 0 mA load", Refusal::PowerValueInvalid, "VDD_5V", |v| {
+            v["power"]["loads"][0]["milliamps"] = json!(0);
+        }),
+        (
+            "a board range upside down",
+            Refusal::PowerValueInvalid,
+            "power.conditions.board_temperature_celsius",
+            |v| {
+                v["power"]["conditions"]["board_temperature_celsius"]["min"] = json!(90);
+            },
+        ),
+        (
+            "an LDO with a divider",
+            Refusal::PowerValueInvalid,
+            "U12",
+            |v| {
+                v["power"]["regulators"][2]["feedback"] =
+                    v["power"]["regulators"][0]["feedback"].clone();
+                v["power"]["regulators"][2]["feedback"]["top"]["reference"] = json!("R90");
+                v["power"]["regulators"][2]["feedback"]["bottom"]["reference"] = json!("R91");
+            },
+        ),
+        (
+            "a buck with no divider",
+            Refusal::ExternalPartMissing,
+            "U10",
+            |v| {
+                v["power"]["regulators"][0]["feedback"] = Value::Null;
+            },
+        ),
+        (
+            "RFBT above 1 M",
+            Refusal::ExternalPartOutOfRange,
+            "R10",
+            |v| {
+                v["power"]["regulators"][0]["feedback"]["top"]["ohms"] = json!(1_020_000);
+                v["power"]["regulators"][0]["feedback"]["bottom"]["ohms"] = json!(255_000);
+            },
+        ),
+        ("no inductor", Refusal::ExternalPartMissing, "U10", |v| {
+            v["power"]["regulators"][0]["external"]
+                .as_array_mut()
+                .unwrap()
+                .pop();
+        }),
+        (
+            "two inductors",
+            Refusal::ExternalPartOutOfRange,
+            "U10",
+            |v| {
+                v["power"]["regulators"][0]["external"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"role": "inductor", "reference": "L9", "part": "IHLP5050FDER8R2M01"}));
+            },
+        ),
+        (
+            "an X7S part where X7R is required",
+            Refusal::ExternalPartOutOfRange,
+            "C11",
+            |v| {
+                v["power"]["regulators"][0]["external"][1]["part"] = json!("GCM32EC71H106KA03");
+            },
+        ),
+        (
+            "an inductor named as a capacitor",
+            Refusal::PowerPartUnknown,
+            "C10",
+            |v| {
+                v["power"]["regulators"][0]["external"][0]["part"] = json!("IHLP5050FDER8R2M01");
+            },
+        ),
+    ];
+    for (what, kind, id, mutate) in cases {
+        let mut v = base();
+        mutate(&mut v);
+        let err = refused(&v);
+        match &err {
+            E::Power { kind: k, id: i, .. } => {
+                assert_eq!((*k, i.as_str()), (kind, id), "{what}: {err}");
+            }
+            other => panic!("{what}: not a power refusal: {other}"),
+        }
+    }
+}
+
+#[test]
+fn the_crossing_structure_is_refused_by_name() {
+    let cases: Vec<Case> = vec![
+        (
+            "two crossings on one bus",
+            Refusal::CrossingInvalid,
+            "U13",
+            |v| {
+                let mut second = v["power"]["crossings"][0].clone();
+                second["reference"] = json!("U15");
+                second["cs_pull_up"]["reference"] = json!("R41");
+                second["external"][0]["reference"] = json!("C42");
+                second["external"][1]["reference"] = json!("C43");
+                v["power"]["crossings"].as_array_mut().unwrap().push(second);
+            },
+        ),
+        (
+            "two devices behind one chip-select crossing",
+            Refusal::CrossingInvalid,
+            "U13",
+            |v| {
+                let mut second = v["spi_devices"][1].clone();
+                second["reference"] = json!("U6");
+                second["cs"]["net"] = json!("IMU2_CS");
+                v["spi_devices"].as_array_mut().unwrap().push(second);
+            },
+        ),
+    ];
+    for (what, kind, id, mutate) in cases {
+        let mut v = full();
+        mutate(&mut v);
+        let err = refused(&v);
+        match &err {
+            E::Power { kind: k, id: i, .. } => {
+                assert_eq!((*k, i.as_str()), (kind, id), "{what}: {err}");
+            }
+            other => panic!("{what}: not a power refusal: {other}"),
+        }
+    }
+    // A translator with too few A-to-B channels for SCK, MOSI and CS.
+    let mut t = table_json();
+    row(&mut t, "TXU0304PW")["kind"]["translator"]["channels"][2]["direction"] = json!("b_to_a");
+    assert_power(
+        &against(&full(), &t).unwrap_err(),
+        Refusal::CrossingInvalid,
+        "U13",
+    );
+    // A load above the current the LDO's dropout is stated at.
+    let mut t = table_json();
+    row(&mut t, "TLV75518PDBV")["kind"]["ldo"]["dropout_at_milliamps"] = json!(10);
+    assert_power(
+        &against(&base(), &t).unwrap_err(),
+        Refusal::DropoutViolated,
+        "U12",
+    );
 }
