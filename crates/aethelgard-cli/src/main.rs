@@ -167,7 +167,8 @@ enum Command {
         #[arg(long, requires = "firmware")]
         spec: Option<PathBuf>,
         /// The virtual time the boot runs: an integer with ns, us or ms, at
-        /// most 100ms, a whole number of 10 ns instructions. Needs --firmware.
+        /// most 100ms and at most the board's window (2ms for a board with a
+        /// DShot output), a whole number of 10 ns instructions. Needs --firmware.
         #[arg(long = "for", id = "for_time", value_name = "TIME", requires = "firmware", value_parser = virtual_time)]
         for_time: Option<u64>,
     },

@@ -1869,10 +1869,6 @@ mod tests {
         }]
     }
 
-    /// `AET-WO-4300a` D1 (a): on a DShot board's short window, a declared
-    /// identity read whose record is still unset is named; one the firmware
-    /// wrote is not, and on the 100 ms window nothing is (the missing boot
-    /// word already fails the run).
     /// `AET-WO-4300a` D1 and adversarial F5: a correct slow output in a
     /// window shorter than two of its periods fails closed, and says why.
     #[test]
@@ -1896,6 +1892,10 @@ mod tests {
         );
     }
 
+    /// `AET-WO-4300a` D1 (a): on a DShot board's short window, a declared
+    /// identity read whose record is still unset is named; one the firmware
+    /// wrote is not, and on the 100 ms window nothing is (the missing boot
+    /// word already fails the run).
     #[test]
     fn a_read_left_unset_by_a_short_window_is_named() {
         use aethelgard_twin::boot::{DSHOT_WINDOW_NS, MAX_VIRTUAL_NS, RECORD_UNSET, STATUS_OK};

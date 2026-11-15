@@ -1320,8 +1320,9 @@ const TWIN_QUANTUM_NS: u64 = 100_000;
 /// only clock a solved topology admits.
 // belt-and-suspenders: `aethelgard_twin::boot::{MAX_VIRTUAL_NS,
 // DSHOT_WINDOW_NS, MIPS}` and `aethelgard_ir::SolvedClock::reset` state
-// these; replay checks an archive without the twin or `aethelgard-ir`
-// (RUL-16), so it states them again.
+// these, and `aethelgard_twin::boot::window` the rule that picks the window
+// (any DShot output); replay checks an archive without the twin or
+// `aethelgard-ir` (RUL-16), so it states them again.
 const TWIN_MAX_VIRTUAL_NS: u64 = 100_000_000;
 const TWIN_DSHOT_WINDOW_NS: u64 = 2_000_000;
 const TWIN_NS_PER_INSTRUCTION: u64 = 10;

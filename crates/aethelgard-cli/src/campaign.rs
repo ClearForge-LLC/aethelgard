@@ -28,12 +28,6 @@ use crate::{
     read_input, run,
 };
 
-// Every scenario boots for its board's window
-// (`aethelgard_twin::boot::window`): the longest virtual time `simulate
-// --firmware` admits, so a read that times out still reaches the boot word
-// (`AET-WO-2202`), or the shorter window of a board with a DShot output
-// (`AET-WO-4300a` D1).
-
 /// One scenario, read, applied and solved, ready to run.
 struct Prepared {
     path: PathBuf,

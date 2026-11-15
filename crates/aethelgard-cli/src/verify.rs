@@ -448,24 +448,27 @@ fn bind(gate: &str, what: &str, want: &str, have: &Value) -> Result<(), ExitCode
 /// outputs (`AET-WO-4300a` FEEDBACK Q5).
 const WHOLE_SCHEDULE: &str = "proofs::every_valid_sequence";
 
-/// The harnesses to prove, and the whole-schedule one left out. Only on a
-/// motor board and only that exact harness is dropped; the rest always run.
-fn harness_plan(all: Vec<String>, motor_board: bool) -> (Vec<String>, Option<String>) {
+/// The harnesses to prove, and whether [`WHOLE_SCHEDULE`] was left out. Only
+/// on a motor board and only that exact harness is dropped; the rest run.
+fn harness_plan(all: Vec<String>, motor_board: bool) -> (Vec<String>, bool) {
     if motor_board && all.iter().any(|h| h == WHOLE_SCHEDULE) {
-        let ran = all.into_iter().filter(|h| h != WHOLE_SCHEDULE).collect();
-        (ran, Some(WHOLE_SCHEDULE.to_owned()))
+        (
+            all.into_iter().filter(|h| h != WHOLE_SCHEDULE).collect(),
+            true,
+        )
     } else {
-        (all, None)
+        (all, false)
     }
 }
 
-/// The info finding that says which harnesses ran and which did not.
-fn skipped_finding(ran: &[String], skipped: &str) -> Finding {
+/// The info finding that says which harnesses ran and that
+/// [`WHOLE_SCHEDULE`] did not.
+fn skipped_finding(ran: &[String]) -> Finding {
     Finding {
         kind: "whole_schedule_harness_not_run",
         severity: "info",
         message: format!(
-            "harnesses run: {}; {skipped} did not run: a motor board: the whole-schedule harness does not finish (AET-WO-4300a FEEDBACK Q5); the targeted harnesses prove the timer start and the clock check; the split is AET-WO-4500's backlog",
+            "harnesses run: {}; {WHOLE_SCHEDULE} did not run: a motor board: the whole-schedule harness does not finish (AET-WO-4300a FEEDBACK Q5); the targeted harnesses prove the timer start and the clock check; the split is AET-WO-4500's backlog",
             ran.join(", ")
         ),
     }
@@ -837,8 +840,8 @@ struct Want<'a> {
     board: &'a str,
     spec: &'a str,
     harnesses: Vec<String>,
-    /// The whole-schedule harness left out on a motor board.
-    skipped: Option<String>,
+    /// Whether the whole-schedule harness is left out (a motor board).
+    skipped: bool,
     /// The `--for` `simulate` boots for: the board's window, as the
     /// campaign's (`AET-WO-4300a` D1).
     boot_time: String,
@@ -895,10 +898,8 @@ fn run_gates(
             message: "the generated board crate has no Kani harness".to_owned(),
         });
     }
-    if let Some(skipped) = &want.skipped {
-        report
-            .findings
-            .push(skipped_finding(&want.harnesses, skipped));
+    if want.skipped {
+        report.findings.push(skipped_finding(&want.harnesses));
     }
     for harness in &want.harnesses {
         let h = OsString::from(harness);
@@ -1106,7 +1107,7 @@ mod tests {
             board: "board",
             spec: "spec",
             harnesses: Vec::new(),
-            skipped: None,
+            skipped: false,
             boot_time: "100000000ns".to_owned(),
         }
     }
@@ -1191,8 +1192,8 @@ mod tests {
                 "proofs::reset_clock_is_ok_exactly_at_reset"
             ]
         );
-        assert_eq!(skipped.as_deref(), Some("proofs::every_valid_sequence"));
-        let f = skipped_finding(&ran, skipped.as_deref().unwrap());
+        assert!(skipped);
+        let f = skipped_finding(&ran);
         assert_eq!(f.kind, "whole_schedule_harness_not_run");
         assert_eq!(f.severity, "info");
         assert!(
@@ -1215,7 +1216,7 @@ mod tests {
         let all = names(&["proofs::every_valid_sequence", "proofs::i2c1_transfer"]);
         let (ran, skipped) = harness_plan(all.clone(), false);
         assert_eq!(ran, all);
-        assert_eq!(skipped, None);
+        assert!(!skipped);
     }
 
     #[test]
@@ -1223,13 +1224,7 @@ mod tests {
         let all = names(&["proofs::tim1_start_writes_the_solved_values"]);
         let (ran, skipped) = harness_plan(all.clone(), true);
         assert_eq!(ran, all);
-        assert_eq!(skipped, None);
-    }
-
-    #[test]
-    fn an_info_finding_does_not_fail_the_verdict() {
-        let f = skipped_finding(&names(&["proofs::a"]), WHOLE_SCHEDULE);
-        assert!([f].iter().all(|f| f.severity != "error"));
+        assert!(!skipped);
     }
 
     #[test]

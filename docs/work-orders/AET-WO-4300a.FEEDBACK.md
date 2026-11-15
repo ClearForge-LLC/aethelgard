@@ -290,6 +290,19 @@ The architect ruled D1 (a), Q1 accepted (`SetGlobalQuantum` stated, a deviation 
 
 `twin_tier2` 32 of 32, `campaign_tier2` and `attribute_seeded` pass. TIER2_MIN is 110 after the merge of `1309` (`main`'s 103, the six motor tests, and the DShot600 campaign test; the `#[test]` count of the ten tier-2 files is 110). `main` at `351d25c` holds an empty file named `9` at the repository root, from `1309`; outside this fence, reported.
 
+Reduction pass (diff, the resume): −9 net · 1 duplicate removed · 2 dead paths removed · 4 protected kept · 5 findings below. A fresh subagent read the resume's own commits; each proposal was checked before it was applied, and the reshaped `harness_plan` guard's mutant still fails its tests:
+- `verify`'s skipped harness is a bool, so `WHOLE_SCHEDULE` is stated once;
+- a tautological test (`an_info_finding_does_not_fail_the_verdict`) was removed;
+- an orphaned comment left by the removed `VIRTUAL_NS` was removed;
+- in the same change, the `--for` help and the CLI README now state the DShot window, and a misplaced test doc comment was moved.
+
+Protected, kept: replay's window, instruction and clock constants, and the selection rule (any DShot output), now named in the label. Findings, not removed:
+- `docs/architecture.md` still says "a fixed 100 ms"; it is a steering document, so the finding stays here;
+- `simulate` computes the window twice (in `ready` and for the boot plan), at 0 net lines;
+- the 11 `spec` lines in `cases.json` are the ruling's;
+- `MOTOR_SPEED_NOT_JUDGED` has one caller, kept as the ruled statement;
+- `Scope::MotorStatic` and `Scope::Motor` share an I4 tail, needed for F1.
+
 ### Questions for the architect (not stops)
 
 - **Q6, slow PWM beside DShot.** A board that mixes DShot with PWM below about 260 Hz cannot witness the PWM output in the 2 ms window: it fails closed, named. Accept that as the rule for mixed boards, or give such boards a window long enough for two of their slowest model periods?
