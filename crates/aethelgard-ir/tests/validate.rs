@@ -5,7 +5,7 @@ use common::devs;
 use aethelgard_ir::{
     AnalogLine, I2cBus, I2cDevice, IrValidationError as E, Mcu, NetConstraint, PinAssignment,
     Signal, SolvedI2cDevice, SolvedSpiDevice, SolvedTopology, Specification, SpiBus, SpiDevice,
-    VoltageDomain,
+    SpiLine, VoltageDomain,
 };
 
 /// The reference specification's declared board (`examples/sentinel-01-minimal.json`).
@@ -22,7 +22,7 @@ fn valid() -> Specification {
     // The device lists are private to the crate (`AET-WO-1204`), so the
     // fixture is built from the JSON the type reads.
     let json = serde_json::json!({
-        "schema_version": 2,
+        "schema_version": 3,
         "project_name": "sentinel-01",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
         "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into() },
@@ -67,7 +67,7 @@ fn valid() -> Specification {
         ],
         "spi_devices": [SpiDevice {
             reference: "U4".into(),
-            part: "W25Q64JV".into(),
+            part: "W25Q64JVxIQ".into(),
             supply: "VDD_3V3".into(),
             bus: "FLASH".into(),
             cs: sig("FLASH_CS"),
@@ -76,6 +76,16 @@ fn valid() -> Specification {
             net_name: "I2C_SDA".into(),
             max_capacitance_femtofarads: 400_000,
             max_rise_time_nanoseconds: 300,
+            impedance_ohms: None,
+        }, NetConstraint {
+            net_name: "SPI_SCK".into(),
+            max_capacitance_femtofarads: 30_000,
+            max_rise_time_nanoseconds: 20,
+            impedance_ohms: None,
+        }, NetConstraint {
+            net_name: "SPI_MOSI".into(),
+            max_capacitance_femtofarads: 30_000,
+            max_rise_time_nanoseconds: 20,
             impedance_ohms: None,
         }],
     });
@@ -118,7 +128,7 @@ fn empty_lists_other_than_domains_are_valid() {
 
 #[test]
 fn refuses_unsupported_schema_version() {
-    for version in [0, 1, 3, u32::MAX] {
+    for version in [0, 1, 2, 4, u32::MAX] {
         let err = refusal(|s| s.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -580,6 +590,9 @@ fn refuses_i2c_address_out_of_range_and_duplicate_on_a_bus() {
     }
     for value in [0x08, 0x77] {
         let mut spec = valid();
+        // The range is the point; a part the table does not hold keeps no
+        // strap limit to refuse the address by.
+        devs(&mut spec).i2c[0].part = "UNLISTED".into();
         devs(&mut spec).i2c[0].address = value;
         assert_eq!(spec.validate(), Ok(()));
     }
@@ -604,6 +617,8 @@ fn same_i2c_address_on_two_buses_is_valid() {
     spec.i2c_buses.push(second);
     devs(&mut spec).i2c[1].bus = "OTHER".into();
     devs(&mut spec).i2c[1].address = 118;
+    // A part the table does not hold keeps no strap limit on the address.
+    devs(&mut spec).i2c[1].part = "UNLISTED".into();
     assert_eq!(spec.validate(), Ok(()));
 }
 
@@ -829,7 +844,7 @@ fn assignment(pin: &str, af: u8) -> PinAssignment {
 
 fn solved() -> SolvedTopology {
     SolvedTopology {
-        schema_version: 3,
+        schema_version: 4,
         specification_sha256: HASH.into(),
         assignments: [
             ("I2C_SCL".to_owned(), assignment("PB8", 4)),
@@ -859,18 +874,34 @@ fn solved() -> SolvedTopology {
         .into(),
         // `U10` sorts before `U3`, so the map's order is not the index order.
         i2c_devices: [
-            ("U3".to_owned(), device(0, 0x48)),
+            ("U3".to_owned(), {
+                let mut tmp = device(0, 0x48);
+                tmp.part = "TMP117".into();
+                tmp
+            }),
             ("U10".to_owned(), device(1, 0x76)),
         ]
         .into(),
         spi_devices: [("U4".to_owned(), spi_device(0))].into(),
+        spi_lines: [("SPI_SCK".to_owned(), spi_line("SCK"))].into(),
+    }
+}
+
+fn spi_line(signal: &str) -> SpiLine {
+    SpiLine {
+        bus: "FLASH".into(),
+        signal: signal.into(),
+        rate_hz: 20_000_000,
+        capacitance_femtofarads: 30_000,
+        rise_time_ns: 20,
+        vdd_min_millivolts: 3135,
     }
 }
 
 fn spi_device(index: u32) -> SolvedSpiDevice {
     SolvedSpiDevice {
         index,
-        part: "W25Q64JV".into(),
+        part: "W25Q64JVxIQ".into(),
         bus: "FLASH".into(),
         peripheral: "SPI1".into(),
         cs: "FLASH_CS".into(),
@@ -912,8 +943,9 @@ fn valid_solved_topology_passes() {
 #[test]
 fn solved_refuses_version_and_hash() {
     // Version 1 is the file before `i2c_speeds` (`AET-WO-1205`), 2 the file
-    // before `spi_devices` (`AET-WO-4200`), 4 one this build does not know.
-    for version in [0, 1, 2, 4] {
+    // before `spi_devices` (`AET-WO-4200`), 3 the file before `spi_lines`
+    // (`AET-WO-4300c`), 5 one this build does not know.
+    for version in [0, 1, 2, 3, 5] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -979,8 +1011,8 @@ fn solved_round_trip_is_equal_and_byte_stable() {
 
 #[test]
 fn solved_serialization_is_sorted_whatever_the_input_order() {
-    let a = r#"{"schema_version":3,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"Z":"g","C":"c"},"i2c_ceilings":{"Y":100000,"B":400000},"i2c_speeds":{"Y":100000,"B":400000},"analog_lines":{},"i2c_devices":{},"spi_devices":{}}"#;
-    let b = r#"{"schema_version":3,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"C":"c","Z":"g"},"i2c_ceilings":{"B":400000,"Y":100000},"i2c_speeds":{"B":400000,"Y":100000},"analog_lines":{},"i2c_devices":{},"spi_devices":{}}"#;
+    let a = r#"{"schema_version":4,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"Z":"g","C":"c"},"i2c_ceilings":{"Y":100000,"B":400000},"i2c_speeds":{"Y":100000,"B":400000},"analog_lines":{},"i2c_devices":{},"spi_devices":{},"spi_lines":{}}"#;
+    let b = r#"{"schema_version":4,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"C":"c","Z":"g"},"i2c_ceilings":{"B":400000,"Y":100000},"i2c_speeds":{"B":400000,"Y":100000},"analog_lines":{},"i2c_devices":{},"spi_devices":{},"spi_lines":{}}"#;
     let a: SolvedTopology = serde_json::from_str(a).unwrap();
     let b: SolvedTopology = serde_json::from_str(b).unwrap();
     assert_eq!(
@@ -1492,7 +1524,7 @@ fn solved_refuses_a_missing_or_repeated_device() {
     );
     let text = solved_json().to_string();
     let entry =
-        r#""U3":{"address":72,"bus":"SENSORS","index":0,"part":"BME280","peripheral":"I2C1"}"#;
+        r#""U3":{"address":72,"bus":"SENSORS","index":0,"part":"TMP117","peripheral":"I2C1"}"#;
     assert!(text.contains(entry), "{text}");
     let twice = text.replace(entry, &format!("{entry},{entry}"));
     let err = serde_json::from_str::<SolvedTopology>(&twice).unwrap_err();
@@ -1555,7 +1587,7 @@ fn a_version_1_file_is_refused_by_version_not_by_a_missing_key() {
         "{err}"
     );
     // A repeated key is refused like every keyed collection.
-    let json = r#"{"schema_version":3,"specification_sha256":"h","assignments":{},"gpio":{},"i2c_ceilings":{},"i2c_speeds":{"B":400000,"B":100000},"analog_lines":{},"i2c_devices":{},"spi_devices":{}}"#;
+    let json = r#"{"schema_version":4,"specification_sha256":"h","assignments":{},"gpio":{},"i2c_ceilings":{},"i2c_speeds":{"B":400000,"B":100000},"analog_lines":{},"i2c_devices":{},"spi_devices":{},"spi_lines":{}}"#;
     assert!(serde_json::from_str::<SolvedTopology>(json).is_err());
 }
 
@@ -1756,7 +1788,7 @@ fn a_version_2_file_without_spi_devices_is_refused_by_version_not_by_a_missing_k
         "{err}"
     );
     // A repeated key is refused like every keyed collection.
-    let json = r#"{"schema_version":3,"specification_sha256":"h","assignments":{},"gpio":{},"i2c_ceilings":{},"i2c_speeds":{},"analog_lines":{},"i2c_devices":{},"spi_devices":{"U4":{"index":0,"part":"P","bus":"B","peripheral":"SPI1","cs":"C"},"U4":{"index":0,"part":"P","bus":"B","peripheral":"SPI1","cs":"C"}}}"#;
+    let json = r#"{"schema_version":4,"specification_sha256":"h","assignments":{},"gpio":{},"i2c_ceilings":{},"i2c_speeds":{},"analog_lines":{},"i2c_devices":{},"spi_devices":{"U4":{"index":0,"part":"P","bus":"B","peripheral":"SPI1","cs":"C"},"U4":{"index":0,"part":"P","bus":"B","peripheral":"SPI1","cs":"C"}},"spi_lines":{}}"#;
     assert!(serde_json::from_str::<SolvedTopology>(json).is_err());
 }
 
@@ -1931,4 +1963,130 @@ fn solved_refuses_a_reference_equal_in_any_case_across_both_maps() {
     // The same spelling in both maps.
     let err = solved_refusal(|t| rename_spi(t, "U4", "U3"));
     assert_refusal(err, "DuplicateReference", Some("U3"));
+}
+
+// ---- Part limits and SPI lines (AET-WO-4300c) -----------------------------
+
+#[test]
+fn the_bare_flash_name_is_refused_as_ambiguous_naming_both_ordering_codes() {
+    let err = refusal(|s| devs(s).spi[0].part = "W25Q64JV".into());
+    assert_refusal(err.clone(), "AmbiguousPartName", Some("U4"));
+    let text = err.to_string();
+    assert!(text.contains("W25Q64JVxIQ"), "{text}");
+    assert!(text.contains("EF 70 17"), "{text}");
+}
+
+#[test]
+fn a_flash_bus_above_the_parts_clock_is_refused_and_at_it_accepted() {
+    let err = refusal(|s| s.spi_buses[0].speed_hz = 104_000_001);
+    assert_refusal(err.clone(), "SpiClockAbovePart", Some("U4"));
+    assert!(err.to_string().contains("9.6"), "{err}");
+    let mut spec = valid();
+    spec.spi_buses[0].speed_hz = 104_000_000;
+    assert_eq!(spec.validate(), Ok(()));
+}
+
+#[test]
+fn a_part_on_the_wrong_kind_of_bus_is_refused() {
+    let err = refusal(|s| devs(s).spi[0].part = "BME280".into());
+    assert_refusal(err.clone(), "PartOnWrongBus", Some("U4"));
+    let text = err.to_string();
+    assert!(text.contains("BME280") && text.contains("6.2"), "{text}");
+    let err = refusal(|s| devs(s).i2c[0].part = "W25Q64JVxIQ".into());
+    assert_refusal(err.clone(), "PartOnWrongBus", Some("U2"));
+    let text = err.to_string();
+    assert!(
+        text.contains("W25Q64JVxIQ") && text.contains("9.6"),
+        "{text}"
+    );
+}
+
+#[test]
+fn an_i2c_address_the_part_does_not_offer_is_refused() {
+    let err = refusal(|s| {
+        // U3 moves too, so the refusal is the part's and not a duplicate's.
+        devs(s).i2c[1].address = 0x4B;
+        devs(s).i2c[0].address = 0x48;
+    });
+    assert_refusal(err.clone(), "I2cAddressNotOffered", Some("U2"));
+    let text = err.to_string();
+    assert!(text.contains("0x76") && text.contains("6.2"), "{text}");
+}
+
+#[test]
+fn a_part_the_table_does_not_hold_is_not_refused() {
+    let mut spec = valid();
+    devs(&mut spec).i2c[0].part = "UNLISTED".into();
+    devs(&mut spec).spi[0].part = "UNLISTED".into();
+    spec.spi_buses[0].speed_hz = 200_000_000;
+    assert_eq!(spec.validate(), Ok(()));
+}
+
+#[test]
+fn solved_holds_the_flash_to_its_clock_after_a_bus_is_sped_up() {
+    let mut ok = solved();
+    for l in ok.spi_lines.values_mut() {
+        l.rate_hz = 104_000_000;
+    }
+    assert_eq!(ok.validate(), Ok(()));
+    let err = solved_refusal(|t| {
+        for l in t.spi_lines.values_mut() {
+            l.rate_hz = 104_000_001;
+        }
+    });
+    assert_refusal(err.clone(), "SpiClockAbovePart", Some("U4"));
+    assert!(err.to_string().contains("9.6"), "{err}");
+}
+
+#[test]
+fn solved_holds_an_i2c_device_to_the_addresses_its_part_offers() {
+    let err = solved_refusal(|t| t.i2c_devices.get_mut("U10").unwrap().address = 0x40);
+    assert_refusal(err.clone(), "I2cAddressNotOffered", Some("U10"));
+    assert!(err.to_string().contains("6.2"), "{err}");
+}
+
+#[test]
+fn solved_holds_a_device_to_its_kind_of_bus_after_a_move() {
+    let err = solved_refusal(|t| t.spi_devices.get_mut("U4").unwrap().part = "BME280".into());
+    assert_refusal(err, "PartOnWrongBus", Some("U4"));
+    let err = solved_refusal(|t| t.i2c_devices.get_mut("U10").unwrap().part = "W25Q64JVxIQ".into());
+    assert_refusal(err, "PartOnWrongBus", Some("U10"));
+}
+
+#[test]
+fn spi_lines_must_match_the_solved_spi_signals() {
+    // An SCK assignment with no line.
+    let err = solved_refusal(|t| {
+        t.spi_lines.clear();
+    });
+    assert_refusal(err, "SpiLineMismatch", Some("SPI_SCK"));
+    // A line on a net that is not an SPI SCK or MOSI assignment.
+    let err = solved_refusal(|t| {
+        t.spi_lines.insert("I2C_SDA".into(), spi_line("SCK"));
+    });
+    assert_refusal(err, "SpiLineMismatch", Some("I2C_SDA"));
+    // A line on a net with no assignment.
+    let err = solved_refusal(|t| {
+        t.spi_lines.insert("GHOST".into(), spi_line("MOSI"));
+    });
+    assert_refusal(err, "SpiLineMismatch", Some("GHOST"));
+    // A line naming the other signal than its assignment's.
+    let err = solved_refusal(|t| t.spi_lines.get_mut("SPI_SCK").unwrap().signal = "MOSI".into());
+    assert_refusal(err, "SpiLineMismatch", Some("SPI_SCK"));
+    // A zero value.
+    let err = solved_refusal(|t| t.spi_lines.get_mut("SPI_SCK").unwrap().rate_hz = 0);
+    assert_refusal(err.clone(), "SpiLineMismatch", Some("SPI_SCK"));
+    assert!(err.to_string().contains("no zero value"), "{err}");
+}
+
+#[test]
+fn a_version_4_file_without_spi_lines_is_a_missing_field_and_a_version_3_one_is_refused_by_version()
+{
+    let mut v = solved_json();
+    v.as_object_mut().unwrap().remove("spi_lines");
+    let err = parse_solved(&v).unwrap_err();
+    assert!(err.contains("missing field `spi_lines`"), "{err}");
+    v["schema_version"] = 3.into();
+    let t = serde_json::from_value::<SolvedTopology>(v).expect("an older file still reads");
+    assert_refusal(t.validate().unwrap_err(), "UnsupportedSchemaVersion", None);
 }

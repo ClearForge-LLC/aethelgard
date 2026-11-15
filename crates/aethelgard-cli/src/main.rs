@@ -18,6 +18,7 @@ mod propose;
 mod renode;
 mod run;
 mod said;
+mod speeds;
 mod tree;
 mod verdict;
 mod verify;
@@ -231,6 +232,12 @@ enum CheckCommand {
         #[arg(long)]
         schematic: PathBuf,
     },
+    /// Each generated pin's output speed against DS12117 Table 149: SPI SCK and MOSI judged at their declared rate, supply and load; every other line named with why it is out of scope. No tool runs.
+    Speeds {
+        /// The specification.
+        #[arg(long)]
+        spec: PathBuf,
+    },
 }
 
 #[derive(Serialize)]
@@ -368,6 +375,9 @@ fn main() -> ExitCode {
         Command::Check {
             check: CheckCommand::Erc { schematic },
         } => check_kicad(kicad::Check::Erc, &schematic, None, None),
+        Command::Check {
+            check: CheckCommand::Speeds { spec },
+        } => return speeds::speeds(&spec),
         Command::Prove {
             crate_dir,
             harness,

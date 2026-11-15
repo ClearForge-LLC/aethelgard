@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     AnalogLine, IrValidationError, PinAssignment, PinTable, Signal, SolvedI2cDevice,
-    SolvedSpiDevice, SolvedTopology, Specification, electrical,
+    SolvedSpiDevice, SolvedTopology, Specification, SpiLine, electrical,
 };
 
 /// Never assigned, and refused as a hand pin: the SWD debug port (`PA13`
@@ -32,6 +32,10 @@ pub enum SolveError {
         "I2C bus `{bus}` has no net constraint on `{net}`, so it has no rise time to bound its speed"
     )]
     MissingBusConstraint { bus: String, net: String },
+    #[error(
+        "SPI bus `{bus}` has no net constraint on `{net}`, so its pin's output speed has no declared load to be chosen for (`AET-WO-4300c` D2)"
+    )]
+    MissingSpiConstraint { bus: String, net: String },
     #[error(
         "I2C bus `{bus}` allows a rise time of {rise_time_ns} ns, slower than any I2C mode (1000 ns at most)"
     )]
@@ -112,6 +116,7 @@ impl SolveError {
             Self::InvalidSpecification(e) => e.kind(),
             Self::PartMismatch { .. } => "PartMismatch",
             Self::MissingBusConstraint { .. } => "MissingBusConstraint",
+            Self::MissingSpiConstraint { .. } => "MissingSpiConstraint",
             Self::RiseTimeTooSlow { .. } => "RiseTimeTooSlow",
             Self::BusTooFast { .. } => "BusTooFast",
             Self::PullUpBelowSinkFloor { .. } => "PullUpBelowSinkFloor",
@@ -141,6 +146,7 @@ impl SolveError {
             Self::NoInstance { bus, .. }
             | Self::BudgetExceeded { bus, .. }
             | Self::MissingBusConstraint { bus, .. }
+            | Self::MissingSpiConstraint { bus, .. }
             | Self::RiseTimeTooSlow { bus, .. }
             | Self::BusTooFast { bus, .. }
             | Self::PullUpBelowSinkFloor { bus, .. } => Some(bus),
@@ -165,6 +171,7 @@ impl SolveError {
             Self::NoInstance { bus, .. }
             | Self::BudgetExceeded { bus, .. }
             | Self::MissingBusConstraint { bus, .. }
+            | Self::MissingSpiConstraint { bus, .. }
             | Self::RiseTimeTooSlow { bus, .. }
             | Self::BusTooFast { bus, .. }
             | Self::PullUpBelowSinkFloor { bus, .. } => vec![bus.clone()],
@@ -221,6 +228,7 @@ fn solve_inner(
         analog_lines: BTreeMap::new(),
         i2c_devices: BTreeMap::new(),
         spi_devices: BTreeMap::new(),
+        spi_lines: BTreeMap::new(),
     };
     out.validate().map_err(SolveError::InvalidSpecification)?;
     out.i2c_ceilings = i2c_ceilings(spec)?;
@@ -230,6 +238,7 @@ fn solve_inner(
         .map(|b| (b.id.clone(), b.speed_hz))
         .collect();
     i2c_electrical(spec)?;
+    let spi_lines = spi_lines(spec)?;
     if spec.mcu.part != table.part {
         return Err(SolveError::PartMismatch {
             spec: spec.mcu.part.clone(),
@@ -289,6 +298,7 @@ fn solve_inner(
     out.analog_lines = analog_lines(spec);
     out.i2c_devices = i2c_devices(spec, &out);
     out.spi_devices = spi_devices(spec, &out);
+    out.spi_lines = spi_lines;
     // belt-and-suspenders: the search already keeps every rule `validate`
     // checks; this refuses rather than emits if a change to it ever breaks one.
     out.validate().map_err(SolveError::InvalidSpecification)?;
@@ -379,6 +389,42 @@ fn spi_devices(spec: &Specification, solved: &SolvedTopology) -> BTreeMap<String
         );
     }
     out
+}
+
+/// Each SPI bus's SCK and MOSI, with what the output speed check reads,
+/// copied from the specification in document order (`AET-WO-4300c` D2). A
+/// line with no constraint refuses: nothing is defaulted (`INV-06`). Every
+/// bus is on the MCU's supply (`validate`'s step 5a), whose minimum selects
+/// the VDD band.
+fn spi_lines(spec: &Specification) -> Result<BTreeMap<String, SpiLine>, SolveError> {
+    let supply = spec
+        .voltage_domains
+        .iter()
+        .find(|d| d.id == spec.mcu.supply)
+        .expect("Specification::validate checked the MCU's supply");
+    let mut out = BTreeMap::new();
+    for bus in &spec.spi_buses {
+        for (signal, net) in [("SCK", &bus.sck.net), ("MOSI", &bus.mosi.net)] {
+            let Some(c) = spec.net_constraints.iter().find(|c| &c.net_name == net) else {
+                return Err(SolveError::MissingSpiConstraint {
+                    bus: bus.id.clone(),
+                    net: net.clone(),
+                });
+            };
+            out.insert(
+                net.clone(),
+                SpiLine {
+                    bus: bus.id.clone(),
+                    signal: signal.to_owned(),
+                    rate_hz: bus.speed_hz,
+                    capacitance_femtofarads: c.max_capacitance_femtofarads,
+                    rise_time_ns: c.max_rise_time_nanoseconds,
+                    vdd_min_millivolts: crate::minimum_millivolts(supply),
+                },
+            );
+        }
+    }
+    Ok(out)
 }
 
 /// Each I2C bus's ceiling, from the stricter of its two lines' declared
@@ -1130,7 +1176,7 @@ mod differential {
                 });
             }
         }
-        let net_constraints = i2c_buses
+        let mut net_constraints: Vec<NetConstraint> = i2c_buses
             .iter()
             .flat_map(|b| [&b.sda.net, &b.scl.net])
             .map(|net| NetConstraint {
@@ -1140,8 +1186,16 @@ mod differential {
                 impedance_ohms: None,
             })
             .collect();
+        net_constraints.extend(spi_buses.iter().flat_map(|b| {
+            [&b.sck.net, &b.mosi.net].map(|net| NetConstraint {
+                net_name: net.clone(),
+                max_capacitance_femtofarads: 30_000,
+                max_rise_time_nanoseconds: 20,
+                impedance_ohms: None,
+            })
+        }));
         Specification {
-            schema_version: 2,
+            schema_version: 3,
             board: serde_json::from_str(BOARD).expect("the declared board"),
             project_name: "t".into(),
             mcu: Mcu {
@@ -1261,7 +1315,6 @@ mod differential {
         let mut rng = Rng(1);
         let mut spec = spec(&mut rng, table.pins.len());
         spec.i2c_buses.clear();
-        spec.net_constraints.clear();
         spec.spi_devices.clear();
         spec.spi_buses = (0..6)
             .map(|i| {
@@ -1278,6 +1331,17 @@ mod differential {
                     mosi: sig("mosi"),
                     miso: sig("miso"),
                 }
+            })
+            .collect();
+        spec.net_constraints = spec
+            .spi_buses
+            .iter()
+            .flat_map(|b| [&b.sck.net, &b.mosi.net])
+            .map(|net| NetConstraint {
+                net_name: net.clone(),
+                max_capacitance_femtofarads: 30_000,
+                max_rise_time_nanoseconds: 20,
+                impedance_ohms: None,
             })
             .collect();
         let (on, spent_on) = run(&spec, &table, true);

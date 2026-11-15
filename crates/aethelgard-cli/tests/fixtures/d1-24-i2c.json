@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "project_name": "d1-24-i2c",
   "mcu": {
     "part": "STM32H753ZITx",
@@ -267,7 +267,7 @@
   "spi_devices": [
     {
       "reference": "S1000",
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "supply": "VDD_3V3",
       "bus": "F0",
       "cs": {
@@ -279,50 +279,62 @@
   "net_constraints": [
     {
       "net_name": "SDA0",
-      "max_capacitance_femtofarads": 100000,
+      "max_capacitance_femtofarads": 150000,
       "max_rise_time_nanoseconds": 300,
       "impedance_ohms": null
     },
     {
       "net_name": "SCL0",
-      "max_capacitance_femtofarads": 100000,
+      "max_capacitance_femtofarads": 150000,
       "max_rise_time_nanoseconds": 300,
       "impedance_ohms": null
     },
     {
       "net_name": "SDA1",
-      "max_capacitance_femtofarads": 100000,
+      "max_capacitance_femtofarads": 150000,
       "max_rise_time_nanoseconds": 300,
       "impedance_ohms": null
     },
     {
       "net_name": "SCL1",
-      "max_capacitance_femtofarads": 100000,
+      "max_capacitance_femtofarads": 150000,
       "max_rise_time_nanoseconds": 300,
       "impedance_ohms": null
     },
     {
       "net_name": "SDA2",
-      "max_capacitance_femtofarads": 100000,
+      "max_capacitance_femtofarads": 150000,
       "max_rise_time_nanoseconds": 300,
       "impedance_ohms": null
     },
     {
       "net_name": "SCL2",
-      "max_capacitance_femtofarads": 100000,
+      "max_capacitance_femtofarads": 150000,
       "max_rise_time_nanoseconds": 300,
       "impedance_ohms": null
     },
     {
       "net_name": "SDA3",
-      "max_capacitance_femtofarads": 100000,
+      "max_capacitance_femtofarads": 150000,
       "max_rise_time_nanoseconds": 300,
       "impedance_ohms": null
     },
     {
       "net_name": "SCL3",
-      "max_capacitance_femtofarads": 100000,
+      "max_capacitance_femtofarads": 150000,
       "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SCK0",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "MOSI0",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
       "impedance_ohms": null
     }
   ],

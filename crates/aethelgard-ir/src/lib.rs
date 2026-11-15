@@ -27,10 +27,12 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// The specification's schema version (`RUL-14`). Version 2 added `board`
 /// (`AET-WO-4100`); a version-1 file is refused by name, and nothing supplies a
-/// board for it.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 2;
+/// board for it. Version 3 requires a `net_constraints` entry on every SPI
+/// bus's `sck` and `mosi`, and names parts as the version-2 parts table does
+/// (`AET-WO-4300c` D2, F11); nothing supplies either for an older file.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 3;
 
-/// The top-level specification, version 2 (`RUL-14`). Arrays keep the order a
+/// The top-level specification, version 3 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
@@ -144,9 +146,10 @@ pub struct NetConstraint {
 const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 
 /// The `schema_version` of a [`SolvedTopology`]. Version 2 added `i2c_speeds`
-/// (`AET-WO-1205`), version 3 `spi_devices` (`AET-WO-4200`); an older file is
-/// refused, never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 3;
+/// (`AET-WO-1205`), version 3 `spi_devices` (`AET-WO-4200`), version 4
+/// `spi_lines` (`AET-WO-4300c`); an older file is refused, never defaulted
+/// (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 4;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -184,6 +187,43 @@ pub struct SolvedTopology {
     /// [`SolvedTopology::spi_devices_in_order`].
     #[serde(deserialize_with = "unique_keys")]
     pub spi_devices: BTreeMap<String, SolvedSpiDevice>,
+    /// Each SPI line whose edges the MCU drives at a rate its peripheral sets
+    /// (each bus's SCK and MOSI), keyed by net, with what the output speed
+    /// check reads: copied by `solve` from the specification so the
+    /// generator chooses each pin's speed from the topology alone
+    /// (`AET-WO-4300c` D2, D4, `RUL-16`).
+    #[serde(deserialize_with = "unique_keys")]
+    pub spi_lines: BTreeMap<String, SpiLine>,
+}
+
+/// One SPI line the MCU drives: the bus's declared clock (the most it
+/// toggles), the declared bound on everything it drives but its own pin, the
+/// declared rise time, and the minimum of the MCU's supply (nominal less its
+/// tolerance, rounded down), which selects the VDD band.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SpiLine {
+    pub bus: String,
+    /// `SCK` or `MOSI`.
+    pub signal: String,
+    pub rate_hz: u32,
+    pub capacitance_femtofarads: u64,
+    pub rise_time_ns: u32,
+    pub vdd_min_millivolts: u32,
+}
+
+/// The signals of an SPI bus whose edges the MCU drives at its peripheral's
+/// rate (`AET-WO-4300c` D4): MISO is an input in master mode, and a chip
+/// select is a software-driven GPIO.
+pub const DRIVEN_SPI_SIGNALS: [&str; 2] = ["SCK", "MOSI"];
+
+/// A domain's minimum, in millivolts: nominal less its tolerance, rounded
+/// down.
+pub fn minimum_millivolts(domain: &VoltageDomain) -> u32 {
+    let low = u64::from(domain.nominal_millivolts)
+        * (1000 - u64::from(domain.tolerance_permille.min(1000)))
+        / 1000;
+    u32::try_from(low).expect("at most the nominal")
 }
 
 /// One I2C device as the generators need it, copied by `solve` from the
@@ -323,7 +363,8 @@ object_only!(
     PinAssignment,
     AnalogLine,
     SolvedI2cDevice,
-    SolvedSpiDevice
+    SolvedSpiDevice,
+    SpiLine
 );
 
 /// The wire form of a [`SolvedTopology`]. It differs in one field: `i2c_speeds`
@@ -349,6 +390,8 @@ struct SolvedWire {
     i2c_devices: BTreeMap<String, SolvedI2cDevice>,
     #[serde(default, deserialize_with = "unique_keys_some")]
     spi_devices: Option<BTreeMap<String, SolvedSpiDevice>>,
+    #[serde(default, deserialize_with = "unique_keys_some")]
+    spi_lines: Option<BTreeMap<String, SpiLine>>,
 }
 
 fn unique_keys_some<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
@@ -390,6 +433,12 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     None if w.schema_version != SOLVED_SCHEMA_VERSION => BTreeMap::new(),
                     None => return Err(serde::de::Error::missing_field("spi_devices")),
                 };
+                // The same for `spi_lines`, which version 4 added.
+                let spi_lines = match w.spi_lines {
+                    Some(m) => m,
+                    None if w.schema_version != SOLVED_SCHEMA_VERSION => BTreeMap::new(),
+                    None => return Err(serde::de::Error::missing_field("spi_lines")),
+                };
                 Ok(SolvedTopology {
                     schema_version: w.schema_version,
                     specification_sha256: w.specification_sha256,
@@ -400,6 +449,7 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     analog_lines: w.analog_lines,
                     i2c_devices: w.i2c_devices,
                     spi_devices,
+                    spi_lines,
                 })
             }
         }
@@ -568,6 +618,44 @@ pub enum IrValidationError {
     #[error("output speed table: {reason}")]
     OutputSpeedTable { reason: String },
     #[error(
+        "device `{id}` names `{part}`, whose JEDEC identity depends on its ordering code: `W25Q64JVxIQ` for the IQ and JQ codes (EF 40 17); the IM and JM codes (EF 70 17) have no entry"
+    )]
+    AmbiguousPartName { id: String, part: String },
+    #[error(
+        "device `{id}` is a `{part}` on an {bus_kind} bus, but the part is an {part_kind} part ({citation})"
+    )]
+    PartOnWrongBus {
+        id: String,
+        part: String,
+        bus_kind: &'static str,
+        part_kind: &'static str,
+        citation: String,
+    },
+    #[error(
+        "device `{id}` is a `{part}` at address {address:#04X}, which its straps do not offer: {offered} ({citation})"
+    )]
+    I2cAddressNotOffered {
+        id: String,
+        part: String,
+        address: u8,
+        offered: String,
+        citation: String,
+    },
+    #[error(
+        "device `{id}` is a `{part}` on a bus clocked at {speed_hz} Hz, above the part's {max_clock_hz} Hz ({citation})"
+    )]
+    SpiClockAbovePart {
+        id: String,
+        part: String,
+        speed_hz: u32,
+        max_clock_hz: u32,
+        citation: String,
+    },
+    #[error(
+        "`spi_lines` and the solved SPI signals disagree at `{id}`: each solved SCK and MOSI has exactly one line, of its bus, with no zero value, and each bus one rate"
+    )]
+    SpiLineMismatch { id: String },
+    #[error(
         "I2C bus `{bus}` has ceiling {ceiling_hz} Hz, but its analog lines derive {}",
         derived_hz.map_or_else(|| "no mode (rise time slower than every mode, or no lines)".to_owned(), |hz| format!("{hz} Hz"))
     )]
@@ -661,6 +749,11 @@ impl IrValidationError {
             Self::ReferenceCollision { .. } => "ReferenceCollision",
             Self::PartsTable { .. } => "PartsTableInvalid",
             Self::OutputSpeedTable { .. } => "OutputSpeedTableInvalid",
+            Self::AmbiguousPartName { .. } => "AmbiguousPartName",
+            Self::PartOnWrongBus { .. } => "PartOnWrongBus",
+            Self::I2cAddressNotOffered { .. } => "I2cAddressNotOffered",
+            Self::SpiClockAbovePart { .. } => "SpiClockAbovePart",
+            Self::SpiLineMismatch { .. } => "SpiLineMismatch",
             Self::CeilingNotDerived { .. } => "CeilingNotDerived",
             Self::SpeedBusMismatch { .. } => "SpeedBusMismatch",
             Self::BusTooFast { .. } => "BusTooFast",
@@ -723,6 +816,11 @@ impl IrValidationError {
             | Self::SpiDevicePeripheral { id }
             | Self::SpiDeviceSelect { id }
             | Self::ReferenceCollision { id, .. }
+            | Self::AmbiguousPartName { id, .. }
+            | Self::PartOnWrongBus { id, .. }
+            | Self::I2cAddressNotOffered { id, .. }
+            | Self::SpiClockAbovePart { id, .. }
+            | Self::SpiLineMismatch { id }
             | Self::SpeedBusMismatch { id } => Some(id),
             Self::PartsTable { part, .. } => part.as_deref(),
             Self::CeilingNotDerived { bus, .. }
@@ -1005,7 +1103,55 @@ impl Specification {
     /// a panic later.
     pub fn validate(&self) -> Result<(), IrValidationError> {
         self.validate_declared()?;
-        parts::table().map(|_| ())
+        let table = parts::table()?;
+        self.validate_parts(table)
+    }
+
+    /// Step 14 (`AET-WO-4300c` §1.5, F11): each device's part against the
+    /// table. The bare `W25Q64JV` is refused by name; a part with an entry
+    /// must sit on its kind of bus, at an address its straps offer, on a bus
+    /// clocked no faster than it; each refusal cites the datasheet. A part
+    /// with no entry has no limits to hold, as before.
+    fn validate_parts(&self, table: &parts::PartsTable) -> Result<(), IrValidationError> {
+        for d in &self.i2c_devices {
+            let Some(p) = part_entry(table, &d.reference, &d.part)? else {
+                continue;
+            };
+            let parts::Bus::I2c { addresses } = &p.bus else {
+                return Err(wrong_bus(&d.reference, p, "I2C"));
+            };
+            if !addresses.contains(&d.address) {
+                return Err(IrValidationError::I2cAddressNotOffered {
+                    id: d.reference.clone(),
+                    part: p.part.clone(),
+                    address: d.address,
+                    offered: addresses
+                        .iter()
+                        .map(|a| format!("{a:#04X}"))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    citation: cite(&p.citations.bus),
+                });
+            }
+        }
+        for d in &self.spi_devices {
+            let Some(p) = part_entry(table, &d.reference, &d.part)? else {
+                continue;
+            };
+            let parts::Bus::Spi { max_clock_hz, .. } = &p.bus else {
+                return Err(wrong_bus(&d.reference, p, "SPI"));
+            };
+            // Step 9 checked every device's bus.
+            let speed_hz = self
+                .spi_buses
+                .iter()
+                .find(|b| b.id == d.bus)
+                .map_or(0, |b| b.speed_hz);
+            if speed_hz > *max_clock_hz {
+                return Err(spi_clock_above_part(&d.reference, p, speed_hz));
+            }
+        }
+        Ok(())
     }
 
     fn validate_declared(&self) -> Result<(), IrValidationError> {
@@ -1314,6 +1460,54 @@ fn references_distinct<'r>(all: impl Iterator<Item = &'r str>) -> Result<(), IrV
     Ok(())
 }
 
+/// A device's part entry, or `None` for a part the table does not hold; the
+/// bare `W25Q64JV` is refused (`AET-WO-4300c` F11).
+fn part_entry<'t>(
+    table: &'t parts::PartsTable,
+    reference: &str,
+    part: &str,
+) -> Result<Option<&'t parts::Part>, IrValidationError> {
+    if part == parts::BARE_W25Q64JV {
+        return Err(IrValidationError::AmbiguousPartName {
+            id: reference.to_owned(),
+            part: part.to_owned(),
+        });
+    }
+    Ok(table.get(part))
+}
+
+/// A citation as a refusal names it.
+fn cite(c: &parts::Citation) -> String {
+    format!("{} rev. {}, {}", c.document, c.revision, c.section)
+}
+
+fn wrong_bus(reference: &str, p: &parts::Part, bus_kind: &'static str) -> IrValidationError {
+    IrValidationError::PartOnWrongBus {
+        id: reference.to_owned(),
+        part: p.part.clone(),
+        bus_kind,
+        part_kind: match p.bus.kind() {
+            parts::BusKind::I2c => "I2C",
+            parts::BusKind::Spi => "SPI",
+        },
+        citation: cite(&p.citations.bus),
+    }
+}
+
+fn spi_clock_above_part(reference: &str, p: &parts::Part, speed_hz: u32) -> IrValidationError {
+    let max_clock_hz = match p.bus {
+        parts::Bus::Spi { max_clock_hz, .. } => max_clock_hz,
+        parts::Bus::I2c { .. } => 0,
+    };
+    IrValidationError::SpiClockAbovePart {
+        id: reference.to_owned(),
+        part: p.part.clone(),
+        speed_hz,
+        max_clock_hz,
+        citation: cite(&p.citations.bus),
+    }
+}
+
 /// What the emitter appends to a device's lowercased reference to name the
 /// memory array a modelled flash keeps (`AET-WO-4200` D7).
 pub const MEMORY_SUFFIX: &str = "_memory";
@@ -1417,7 +1611,91 @@ impl SolvedTopology {
         self.validate_analog_lines()?;
         self.validate_i2c_devices()?;
         self.validate_spi_devices()?;
-        parts::table().map(|_| ())
+        self.validate_spi_lines()?;
+        // The part limits again, from what the topology carries, so a bus
+        // sped up or a device moved after `validate` is refused here too
+        // (`AET-WO-4300c` §4.2, `RUL-16`).
+        let table = parts::table()?;
+        for (reference, d) in &self.i2c_devices {
+            if let Some(p) = part_entry(table, reference, &d.part)? {
+                let parts::Bus::I2c { addresses } = &p.bus else {
+                    return Err(wrong_bus(reference, p, "I2C"));
+                };
+                if !addresses.contains(&d.address) {
+                    return Err(IrValidationError::I2cAddressNotOffered {
+                        id: reference.clone(),
+                        part: p.part.clone(),
+                        address: d.address,
+                        offered: addresses
+                            .iter()
+                            .map(|a| format!("{a:#04X}"))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        citation: cite(&p.citations.bus),
+                    });
+                }
+            }
+        }
+        for (reference, d) in &self.spi_devices {
+            if let Some(p) = part_entry(table, reference, &d.part)? {
+                let parts::Bus::Spi { max_clock_hz, .. } = &p.bus else {
+                    return Err(wrong_bus(reference, p, "SPI"));
+                };
+                // `validate_spi_lines` gave every device's bus one rate.
+                let rate_hz = self
+                    .spi_lines
+                    .values()
+                    .find(|l| l.bus == d.bus)
+                    .map_or(0, |l| l.rate_hz);
+                if rate_hz > *max_clock_hz {
+                    return Err(spi_clock_above_part(reference, p, rate_hz));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `spi_lines` holds exactly the solved SCK and MOSI signals, each on its
+    /// own net's assignment, with no zero value; the lines of one bus share
+    /// one peripheral and one rate; and every SPI device's bus has lines.
+    fn validate_spi_lines(&self) -> Result<(), IrValidationError> {
+        let mismatch = |id: &str| IrValidationError::SpiLineMismatch { id: id.to_owned() };
+        for (net, a) in &self.assignments {
+            let driven = a.peripheral.starts_with("SPI")
+                && DRIVEN_SPI_SIGNALS
+                    .iter()
+                    .any(|s| a.signal == format!("{}_{s}", a.peripheral));
+            if driven != self.spi_lines.contains_key(net) {
+                return Err(mismatch(net));
+            }
+        }
+        let mut buses: BTreeMap<&str, (&str, u32)> = BTreeMap::new();
+        for (net, line) in &self.spi_lines {
+            plain(&line.bus, || format!("spi_lines.{net}.bus"))?;
+            let Some(a) = self.assignments.get(net) else {
+                return Err(mismatch(net));
+            };
+            if a.signal != format!("{}_{}", a.peripheral, line.signal)
+                || line.rate_hz == 0
+                || line.capacitance_femtofarads == 0
+                || line.rise_time_ns == 0
+                || line.vdd_min_millivolts == 0
+            {
+                return Err(mismatch(net));
+            }
+            let first = *buses
+                .entry(line.bus.as_str())
+                .or_insert((a.peripheral.as_str(), line.rate_hz));
+            if first != (a.peripheral.as_str(), line.rate_hz) {
+                return Err(mismatch(net));
+            }
+        }
+        for (reference, d) in &self.spi_devices {
+            if buses.get(d.bus.as_str()).map(|b| b.0) != Some(d.peripheral.as_str()) {
+                return Err(mismatch(reference));
+            }
+        }
+        Ok(())
     }
 
     /// Each SPI device is on a peripheral some solved signal is on, an `SPIn`;

@@ -11,13 +11,15 @@
 //!
 //! Register facts (base addresses, offsets, bit positions, field widths) come
 //! from ST's CMSIS header ([`crate::cmsis`]). Pin roles' electrical settings
-//! (output type, speed, pull) are this generator's policy, named in
-//! [`Role::policy`]. `I2C_TIMINGR` values are placeholders: clock-tree solving
+//! (output type, pull) are this generator's policy, named in [`Role::policy`];
+//! each pin's speed is the output speed check's ([`pin_speeds`],
+//! `AET-WO-4300c`). `I2C_TIMINGR` values are placeholders: clock-tree solving
 //! is out of scope (WO §4).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
+use aethelgard_ir::speeds::{self, OutputSpeeds};
 use aethelgard_ir::{IrValidationError, PinTable, RESERVED_PINS, SolvedTopology};
 
 use crate::cmsis::{self, RegisterError, RegisterFacts};
@@ -79,6 +81,16 @@ pub enum BoardError {
     },
     #[error("a ceiling of {hz} Hz is below every I2C mode")]
     CeilingTooLow { hz: u32 },
+    #[error("net `{net}` on `{pin}` has no output speed: {refusal}")]
+    PinSpeed {
+        net: String,
+        pin: String,
+        refusal: speeds::Refusal,
+    },
+    #[error("{0}")]
+    SpeedTable(IrValidationError),
+    #[error("the output speed table is for `{table}`, but the pin table is for `{part}`")]
+    SpeedTableMismatch { table: String, part: String },
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -98,6 +110,14 @@ impl BoardError {
             Self::SharedChipSelect { .. } => "SharedChipSelect",
             Self::UnsupportedSignal { .. } => "UnsupportedSignal",
             Self::IncompletePeripheral { .. } => "IncompletePeripheral",
+            Self::PinSpeed { refusal, .. } => match refusal {
+                speeds::Refusal::SupplyOutsideTable { .. } => "SupplyOutsideSpeedTable",
+                speeds::Refusal::LoadAboveTable { .. } => "LoadAboveSpeedTable",
+                speeds::Refusal::TooFastForPin { .. } => "RateAbovePinSpeed",
+                speeds::Refusal::RiseFasterThanPin { .. } => "RiseTimeBelowPinSpeed",
+            },
+            Self::SpeedTable(e) => e.kind(),
+            Self::SpeedTableMismatch { .. } => "SpeedTableMismatch",
             Self::CeilingMismatch { .. } => "CeilingMismatch",
             Self::CeilingTooLow { .. } => "CeilingTooLow",
             Self::Register(e) => e.kind(),
@@ -505,17 +525,127 @@ impl Role {
         }
     }
 
-    /// The generator's policy for a role: (mode, output type, speed, pull).
-    /// I2C is open-drain, low speed, no internal pull (the specification
-    /// requires an external pull-up); SPI is push-pull at high speed; a GPIO
-    /// output is push-pull, low speed, and starts high (an inactive chip select).
-    fn policy(self) -> (u32, u32, u32, u32) {
+    /// The generator's policy for a role: (mode, output type, pull). I2C is
+    /// open-drain with no internal pull (the specification requires an
+    /// external pull-up); SPI is push-pull; a GPIO output is push-pull and
+    /// starts high (an inactive chip select). The speed is [`Role::scope`]'s.
+    fn policy(self) -> (u32, u32, u32) {
         match self {
-            Self::I2cScl | Self::I2cSda => (MODE_AF, 1, 0b00, 0b00),
-            Self::SpiSck | Self::SpiMosi | Self::SpiMiso => (MODE_AF, 0, 0b10, 0b00),
-            Self::Output => (MODE_OUTPUT, 0, 0b00, 0b00),
+            Self::I2cScl | Self::I2cSda => (MODE_AF, 1, 0b00),
+            Self::SpiSck | Self::SpiMosi | Self::SpiMiso => (MODE_AF, 0, 0b00),
+            Self::Output => (MODE_OUTPUT, 0, 0b00),
         }
     }
+
+    /// Why the output speed check does not judge a role's pin, which then
+    /// takes `00`, the slowest speed (`AET-WO-4300c` D1, D3, D4); `None` for
+    /// SCK and MOSI, whose edges the MCU drives at the rate its peripheral
+    /// sets, and which the check judges.
+    fn scope(self) -> Option<&'static str> {
+        match self {
+            Self::SpiSck | Self::SpiMosi => None,
+            Self::I2cScl | Self::I2cSda => Some(OPEN_DRAIN),
+            Self::SpiMiso => Some(MASTER_INPUT),
+            Self::Output => Some(SOFTWARE_DRIVEN),
+        }
+    }
+}
+
+/// Out of the output speed check's scope, each with its reason; the pin
+/// takes `00`.
+pub const OPEN_DRAIN: &str = "open-drain I2C: its rise is the pull-up's, judged by extract and the campaign (RUL-19); DS12117 Rev 10 6.3.32 guarantees UM10204 timing by design";
+pub const MASTER_INPUT: &str = "input in master mode: no electrical effect";
+pub const SOFTWARE_DRIVEN: &str = "software-driven GPIO output: firmware may toggle it at any rate, so the topology states none";
+
+/// What the output speed check found for one generated pin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PinSpeed {
+    pub pin: String,
+    pub net: String,
+    /// ST's signal name (`SPI1_SCK`), or `OUT` for a GPIO output.
+    pub signal: String,
+    /// The `OSPEEDR` value emitted, 0 to 1.
+    pub ospeedr: u8,
+    pub check: SpeedCheck,
+}
+
+/// A judged line's figures, or why the line is not judged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpeedCheck {
+    Judged {
+        rate_hz: u32,
+        vdd_min_millivolts: u32,
+        capacitance_femtofarads: u64,
+        rise_time_ns: u32,
+        /// The row it was judged at, and that row's figures.
+        row: speeds::Row,
+        fmax_hz: u32,
+    },
+    OutOfScope { reason: &'static str },
+}
+
+/// Every pin [`generate`] emits, in pin order, with its speed and the
+/// check's reasons (`AET-WO-4300c` §1.2, §1.4). A pure function of the
+/// topology and the pin table (`RUL-16`); a line no selectable speed serves
+/// is refused by name.
+pub fn pin_speeds(solved: &SolvedTopology, table: &PinTable) -> Result<Vec<PinSpeed>, BoardError> {
+    let plan = Plan::new("pin-speeds", solved, table)?;
+    Ok(plan
+        .pins
+        .iter()
+        .map(|(pin, p)| PinSpeed {
+            pin: pin.clone(),
+            net: p.net.clone(),
+            signal: match &p.peripheral {
+                Some(periph) => format!("{periph}_{}", p.role.signal()),
+                None => p.role.signal().to_owned(),
+            },
+            ospeedr: u8::try_from(p.speed).expect("00 or 01"),
+            check: p.check.clone(),
+        })
+        .collect())
+}
+
+/// One pin's speed: `00` for a role out of scope, else the slowest the table
+/// allows for its line, read from `spi_lines` (`RUL-16`).
+fn choose_speed(
+    speeds_table: &OutputSpeeds,
+    solved: &SolvedTopology,
+    pin: &str,
+    net: &str,
+    role: Role,
+) -> Result<(u32, SpeedCheck), BoardError> {
+    if let Some(reason) = role.scope() {
+        return Ok((0b00, SpeedCheck::OutOfScope { reason }));
+    }
+    // `SolvedTopology::validate` gives every solved SCK and MOSI a line.
+    let line = solved.spi_lines.get(net).ok_or_else(|| {
+        BoardError::InvalidTopology(IrValidationError::SpiLineMismatch { id: net.to_owned() })
+    })?;
+    let choice = speeds_table
+        .choose(
+            pin,
+            line.rate_hz,
+            line.vdd_min_millivolts,
+            line.capacitance_femtofarads,
+            line.rise_time_ns,
+        )
+        .map_err(|refusal| BoardError::PinSpeed {
+            net: net.to_owned(),
+            pin: pin.to_owned(),
+            refusal,
+        })?;
+    Ok((
+        u32::from(choice.ospeedr),
+        SpeedCheck::Judged {
+            rate_hz: line.rate_hz,
+            vdd_min_millivolts: line.vdd_min_millivolts,
+            capacitance_femtofarads: line.capacitance_femtofarads,
+            rise_time_ns: line.rise_time_ns,
+            row: choice.row,
+            fmax_hz: choice.fmax_hz,
+        },
+    ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -547,6 +677,17 @@ struct PinPlan {
     af: u32,
     peripheral: Option<String>,
     net: String,
+    /// `OSPEEDR`, from the output speed check.
+    speed: u32,
+    check: SpeedCheck,
+}
+
+impl PinPlan {
+    /// (mode, output type, speed, pull).
+    fn policy(&self) -> (u32, u32, u32, u32) {
+        let (mode, otype, pupd) = self.role.policy();
+        (mode, otype, self.speed, pupd)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -639,6 +780,13 @@ impl Plan {
             });
         }
         solved.validate().map_err(BoardError::InvalidTopology)?;
+        let speeds_table = speeds::table().map_err(BoardError::SpeedTable)?;
+        if speeds_table.mcu != table.part {
+            return Err(BoardError::SpeedTableMismatch {
+                table: speeds_table.mcu.clone(),
+                part: table.part.clone(),
+            });
+        }
         let reserved = solved
             .assignments
             .values()
@@ -680,6 +828,7 @@ impl Plan {
                     peripheral: a.peripheral.clone(),
                     signal: a.signal.clone(),
                 })?;
+            let (speed, check) = choose_speed(speeds_table, solved, &a.pin, net, role)?;
             let plan = PinPlan {
                 port,
                 index,
@@ -687,6 +836,8 @@ impl Plan {
                 af: u32::from(a.alternate_function),
                 peripheral: Some(a.peripheral.clone()),
                 net: net.clone(),
+                speed,
+                check,
             };
             pins.insert(a.pin.clone(), plan);
             roles
@@ -702,6 +853,7 @@ impl Plan {
             if !table.pins.contains_key(pin) {
                 return Err(BoardError::UnknownPin { pin: pin.clone() });
             }
+            let (speed, check) = choose_speed(speeds_table, solved, pin, net, Role::Output)?;
             let plan = PinPlan {
                 port,
                 index,
@@ -709,6 +861,8 @@ impl Plan {
                 af: 0,
                 peripheral: None,
                 net: net.clone(),
+                speed,
+                check,
             };
             pins.insert(pin.clone(), plan);
         }
@@ -1373,7 +1527,7 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     for (pin, p) in &plan.pins {
         let pf = &facts.pins[pin];
         let g = &facts.gpio;
-        let (mode, otype, ospeed, pupd) = p.role.policy();
+        let (mode, otype, ospeed, pupd) = p.policy();
         let [mw, tw, sw, pw, aw] = g.widths;
         let block = port_type(p.port);
         let what = match &p.peripheral {
@@ -1934,7 +2088,7 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let mut solved_mask = 0u32;
         for (pin, p) in &on_port {
             let pf = &facts.pins[*pin];
-            let (mode, otype, ospeed, pupd) = p.role.policy();
+            let (mode, otype, ospeed, pupd) = p.policy();
             let mmask = oracle_mask(mw, pf.moder);
             solved_mask |= mmask;
             let mut ready = vec![
@@ -2028,7 +2182,7 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let mut touched: BTreeSet<u32> = BTreeSet::new();
         for (pin, p) in plan.pins.iter().filter(|(_, p)| p.port == *port) {
             let pf = &facts.pins[pin];
-            let (mode, otype, ospeed, pupd) = p.role.policy();
+            let (mode, otype, ospeed, pupd) = p.policy();
             expect_field(&mut expect, g.moder, pf.moder, mw, mode);
             expect_field(&mut expect, g.otyper, pf.otyper, tw, otype);
             expect_field(&mut expect, g.ospeedr, pf.ospeedr, sw, ospeed);
@@ -2928,7 +3082,7 @@ mod tests {
     /// Sentinel-01's solved topology, written out.
     fn solved() -> SolvedTopology {
         SolvedTopology {
-            schema_version: 3,
+            schema_version: 4,
             specification_sha256: "0".repeat(64),
             assignments: BTreeMap::from([
                 ("SCL".into(), assign("PB6", "I2C1", "I2C1_SCL", 4)),
@@ -2940,6 +3094,7 @@ mod tests {
             analog_lines: analog_lines(&[("SCL", "BUS"), ("SDA", "BUS")]),
             i2c_devices: BTreeMap::new(),
             spi_devices: BTreeMap::new(),
+            spi_lines: BTreeMap::new(),
         }
     }
 
@@ -3180,11 +3335,105 @@ mod tests {
     fn spi_device(index: u32, peripheral: &str, cs: &str) -> aethelgard_ir::SolvedSpiDevice {
         aethelgard_ir::SolvedSpiDevice {
             index,
-            part: "W25Q64JV".into(),
+            part: "W25Q64JVxIQ".into(),
             bus: format!("{peripheral}_BUS"),
             peripheral: peripheral.into(),
             cs: cs.into(),
         }
+    }
+
+    /// The reference's SPI line facts: 20 MHz, 30 pF, 20 ns, 3135 mV.
+    fn spi_line(signal: &str) -> aethelgard_ir::SpiLine {
+        aethelgard_ir::SpiLine {
+            bus: "SPI1_BUS".into(),
+            signal: signal.into(),
+            rate_hz: 20_000_000,
+            capacitance_femtofarads: 30_000,
+            rise_time_ns: 20,
+            vdd_min_millivolts: 3135,
+        }
+    }
+
+    /// `AET-WO-4300c` §1.4: SCK and MOSI take the slowest speed whose Fmax
+    /// meets the bus's rate at its declared load (`01` at 20 MHz and 30 pF);
+    /// MISO, a chip select and I2C take `00`, each with its reason.
+    #[test]
+    fn each_pin_takes_the_slowest_speed_its_line_allows() {
+        let s = with_spi(&[("U4", "CS", "PA0")]);
+        let speeds = pin_speeds(&s, &table()).unwrap();
+        let by_pin = |pin: &str| speeds.iter().find(|p| p.pin == pin).unwrap();
+        for pin in ["PA5", "PA7"] {
+            let p = by_pin(pin);
+            assert_eq!(p.ospeedr, 1, "{pin}");
+            let SpeedCheck::Judged { row, fmax_hz, .. } = &p.check else {
+                panic!("{pin} is judged");
+            };
+            assert_eq!((row.load_picofarads, *fmax_hz), (30, 80_000_000));
+        }
+        for (pin, reason) in [
+            ("PA6", MASTER_INPUT),
+            ("PA0", SOFTWARE_DRIVEN),
+            ("PB6", OPEN_DRAIN),
+            ("PB7", OPEN_DRAIN),
+        ] {
+            let p = by_pin(pin);
+            assert_eq!(p.ospeedr, 0, "{pin}");
+            assert_eq!(p.check, SpeedCheck::OutOfScope { reason }, "{pin}");
+        }
+        assert_eq!(speeds.len(), 6);
+        // At 7 MHz `00` suffices (12 MHz at 30 pF).
+        let mut slow = s.clone();
+        for line in slow.spi_lines.values_mut() {
+            line.rate_hz = 7_000_000;
+        }
+        let speeds = pin_speeds(&slow, &table()).unwrap();
+        assert!(speeds.iter().all(|p| p.ospeedr == 0));
+    }
+
+    /// The generated register write and the oracle both carry the chosen
+    /// speed: PA5 and PA7 at `01` (OSPEEDR bits 10-11 and 14-15), PA6 at `00`.
+    #[test]
+    fn the_generated_crate_and_its_oracle_carry_the_chosen_speed() {
+        let files = generate("b", &with_spi(&[("U4", "CS", "PA0")]), &table()).unwrap();
+        let lib = &files["src/board.rs"];
+        assert!(lib.contains("Block::GpioA, 0x08, |v| (v & !0x00000c00) | 0x00000400);"));
+        assert!(lib.contains("Block::GpioA, 0x08, |v| (v & !0x0000c000) | 0x00004000);"));
+        assert!(lib.contains("Block::GpioA, 0x08, |v| v & !0x00003000);"));
+        assert!(!lib.contains("0x08, |v| (v & !0x00000c00) | 0x00000800);"));
+        let proofs = &files["src/proofs.rs"];
+        assert!(proofs.contains("& 0x00000c00 == 0x00000400"), "PA5 in the oracle");
+        assert!(proofs.contains("& 0x00003000 == 0x00000000"), "PA6 in the oracle");
+    }
+
+    /// §1.4: a line whose rate needs `10` or `11`, or whose load is above the
+    /// table, is refused by name; nothing is sped up.
+    #[test]
+    fn a_line_no_selectable_speed_serves_is_refused() {
+        let mut s = with_spi(&[("U4", "CS", "PA0")]);
+        for line in s.spi_lines.values_mut() {
+            line.rate_hz = 80_000_001;
+        }
+        let err = generate("b", &s, &table()).unwrap_err();
+        assert_eq!(err.kind(), "RateAbovePinSpeed", "{err}");
+        assert!(err.to_string().contains("`MOSI` on `PA7`"), "{err}");
+        let mut s = with_spi(&[("U4", "CS", "PA0")]);
+        s.spi_lines.get_mut("MOSI").unwrap().capacitance_femtofarads = 50_001;
+        let err = generate("b", &s, &table()).unwrap_err();
+        assert_eq!(err.kind(), "LoadAboveSpeedTable", "{err}");
+        let mut s = with_spi(&[("U4", "CS", "PA0")]);
+        s.spi_lines.get_mut("MOSI").unwrap().rise_time_ns = 4;
+        assert_eq!(
+            generate("b", &s, &table()).unwrap_err().kind(),
+            "RiseTimeBelowPinSpeed"
+        );
+        for line in s.spi_lines.values_mut() {
+            line.rise_time_ns = 20;
+            line.vdd_min_millivolts = 1600;
+        }
+        assert_eq!(
+            generate("b", &s, &table()).unwrap_err().kind(),
+            "SupplyOutsideSpeedTable"
+        );
     }
 
     /// [`solved`], with SPI1 on PA5, PA6 and PA7 and the devices `devices`
@@ -3200,6 +3449,9 @@ mod tests {
                 net.into(),
                 assign(pin, "SPI1", &format!("SPI1_{signal}"), 5),
             );
+            if signal != "MISO" {
+                s.spi_lines.insert(net.into(), spi_line(signal));
+            }
         }
         s.gpio.clear();
         for (i, (reference, net, pin)) in devices.iter().enumerate() {
@@ -3327,6 +3579,13 @@ mod tests {
                 net.into(),
                 assign(pin, "SPI2", &format!("SPI2_{signal}"), 5),
             );
+            if signal != "MISO" {
+                let line = aethelgard_ir::SpiLine {
+                    bus: "SPI2_BUS".into(),
+                    ..spi_line(signal)
+                };
+                s.spi_lines.insert(net.into(), line);
+            }
         }
         s.gpio.insert("CS2".into(), "PA1".into());
         s.spi_devices

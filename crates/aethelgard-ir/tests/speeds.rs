@@ -30,7 +30,9 @@ fn at(doc: &Value, speed: &str, vdd_min: u32, load: u32) -> usize {
         .unwrap()
         .iter()
         .position(|r| {
-            r["ospeedr"] == speed && r["vdd_min_millivolts"] == vdd_min && r["load_picofarads"] == load
+            r["ospeedr"] == speed
+                && r["vdd_min_millivolts"] == vdd_min
+                && r["load_picofarads"] == load
         })
         .unwrap()
 }
@@ -50,10 +52,50 @@ fn the_embedded_table_is_pinned_by_its_sha256() {
 #[test]
 fn the_table_holds_every_cell_as_printed() {
     let printed: [(u8, [(f64, f64); 6]); 4] = [
-        (0, [(12.0, 16.6), (3.0, 33.3), (12.0, 13.3), (3.0, 25.0), (16.0, 10.0), (4.0, 20.0)]),
-        (1, [(60.0, 5.2), (15.0, 10.0), (80.0, 4.2), (15.0, 7.5), (110.0, 2.8), (20.0, 5.2)]),
-        (2, [(85.0, 3.8), (35.0, 6.9), (110.0, 2.8), (40.0, 5.2), (166.0, 1.8), (85.0, 3.3)]),
-        (3, [(100.0, 3.3), (50.0, 6.6), (133.0, 2.4), (66.0, 4.5), (220.0, 1.5), (100.0, 2.7)]),
+        (
+            0,
+            [
+                (12.0, 16.6),
+                (3.0, 33.3),
+                (12.0, 13.3),
+                (3.0, 25.0),
+                (16.0, 10.0),
+                (4.0, 20.0),
+            ],
+        ),
+        (
+            1,
+            [
+                (60.0, 5.2),
+                (15.0, 10.0),
+                (80.0, 4.2),
+                (15.0, 7.5),
+                (110.0, 2.8),
+                (20.0, 5.2),
+            ],
+        ),
+        (
+            2,
+            [
+                (85.0, 3.8),
+                (35.0, 6.9),
+                (110.0, 2.8),
+                (40.0, 5.2),
+                (166.0, 1.8),
+                (85.0, 3.3),
+            ],
+        ),
+        (
+            3,
+            [
+                (100.0, 3.3),
+                (50.0, 6.6),
+                (133.0, 2.4),
+                (66.0, 4.5),
+                (220.0, 1.5),
+                (100.0, 2.7),
+            ],
+        ),
     ];
     let t = table().unwrap();
     assert_eq!(t.rows().len(), 24);
@@ -61,10 +103,17 @@ fn the_table_holds_every_cell_as_printed() {
     for (speed, cells) in printed {
         for (k, (fmax, tr)) in cells.iter().enumerate() {
             let load = [50, 50, 30, 30, 10, 10][k];
-            let band = if k % 2 == 0 { (2700, 3600) } else { (1620, 2700) };
+            let band = if k % 2 == 0 {
+                (2700, 3600)
+            } else {
+                (1620, 2700)
+            };
             let r = t.row(speed, band, load).unwrap();
             assert_eq!(f64::from(r.fmax_hz), fmax * 1e6, "{speed} {band:?} {load}");
-            assert_eq!(f64::from(r.rise_fall_picoseconds), (tr * 1000.0_f64).round());
+            assert_eq!(
+                f64::from(r.rise_fall_picoseconds),
+                (tr * 1000.0_f64).round()
+            );
             assert_eq!(r.requires_compensation_cell, speed >= 2);
         }
     }
@@ -85,7 +134,10 @@ fn a_table_that_lies_is_refused_by_name() {
     );
     refused(
         |d| {
-            d["citations"]["rev_v"].as_object_mut().unwrap().remove("sha256");
+            d["citations"]["rev_v"]
+                .as_object_mut()
+                .unwrap()
+                .remove("sha256");
         },
         "citations.rev_v",
     );
@@ -166,10 +218,19 @@ fn a_table_that_lies_is_refused_by_name() {
 /// The reference: 20 MHz, VDD 3300 mV less 5 % (3135), 30 pF declared.
 #[test]
 fn the_reference_spi_line_takes_01_at_the_30_pf_row() {
-    let c = table().unwrap().choose("PA5", 20_000_000, 3135, 30_000, 20).unwrap();
-    assert_eq!((c.ospeedr, c.row.load_picofarads, c.fmax_hz), (1, 30, 80_000_000));
+    let c = table()
+        .unwrap()
+        .choose("PA5", 20_000_000, 3135, 30_000, 20)
+        .unwrap();
+    assert_eq!(
+        (c.ospeedr, c.row.load_picofarads, c.fmax_hz),
+        (1, 30, 80_000_000)
+    );
     // At 7 MHz (the ICM-20948 fixture) `00` suffices: 12 MHz.
-    let c = table().unwrap().choose("PA5", 7_000_000, 3135, 30_000, 20).unwrap();
+    let c = table()
+        .unwrap()
+        .choose("PA5", 7_000_000, 3135, 30_000, 20)
+        .unwrap();
     assert_eq!((c.ospeedr, c.fmax_hz), (0, 12_000_000));
 }
 
@@ -189,8 +250,18 @@ fn a_capacitance_rounds_up_to_the_next_row() {
     );
     // 16 MHz passes `00` at 10 pF but not at 10.001 pF (the 30 pF row).
     let t = table().unwrap();
-    assert_eq!(t.choose("PA5", 16_000_000, 3135, 10_000, 20).unwrap().ospeedr, 0);
-    assert_eq!(t.choose("PA5", 16_000_000, 3135, 10_001, 20).unwrap().ospeedr, 1);
+    assert_eq!(
+        t.choose("PA5", 16_000_000, 3135, 10_000, 20)
+            .unwrap()
+            .ospeedr,
+        0
+    );
+    assert_eq!(
+        t.choose("PA5", 16_000_000, 3135, 10_001, 20)
+            .unwrap()
+            .ospeedr,
+        1
+    );
 }
 
 /// §4.1: the band is the supply's minimum's, and 2.7 V exactly is the
@@ -210,7 +281,12 @@ fn the_band_is_the_minimum_s_and_2_7_v_takes_the_lower() {
     }
     // 20 MHz at 30 pF: `01` gives 80 MHz above 2.7 V, 15 MHz at or below.
     let t = table().unwrap();
-    assert_eq!(t.choose("PA5", 20_000_000, 2701, 30_000, 20).unwrap().ospeedr, 1);
+    assert_eq!(
+        t.choose("PA5", 20_000_000, 2701, 30_000, 20)
+            .unwrap()
+            .ospeedr,
+        1
+    );
     assert_eq!(
         t.choose("PA5", 20_000_000, 2700, 30_000, 20),
         Err(Refusal::TooFastForPin {
@@ -224,7 +300,12 @@ fn the_band_is_the_minimum_s_and_2_7_v_takes_the_lower() {
 #[test]
 fn a_rate_only_10_or_11_meets_is_refused() {
     let t = table().unwrap();
-    assert_eq!(t.choose("PA5", 80_000_000, 3135, 30_000, 20).unwrap().ospeedr, 1);
+    assert_eq!(
+        t.choose("PA5", 80_000_000, 3135, 30_000, 20)
+            .unwrap()
+            .ospeedr,
+        1
+    );
     assert_eq!(
         t.choose("PA5", 80_000_001, 3135, 30_000, 20),
         Err(Refusal::TooFastForPin {
@@ -238,7 +319,12 @@ fn a_rate_only_10_or_11_meets_is_refused() {
 #[test]
 fn a_vbat_pin_is_held_to_2_mhz() {
     let t = table().unwrap();
-    assert_eq!(t.choose("PC13", 2_000_000, 3135, 10_000, 20).unwrap().fmax_hz, 2_000_000);
+    assert_eq!(
+        t.choose("PC13", 2_000_000, 3135, 10_000, 20)
+            .unwrap()
+            .fmax_hz,
+        2_000_000
+    );
     assert_eq!(
         t.choose("PC13", 2_000_001, 3135, 10_000, 20),
         Err(Refusal::TooFastForPin {
@@ -254,8 +340,18 @@ fn a_vbat_pin_is_held_to_2_mhz() {
 fn the_declared_rise_time_is_met_or_refused() {
     let t = table().unwrap();
     // 1 MHz at 30 pF: `00`'s 13.3 ns meets 14 ns but not 13.
-    assert_eq!(t.choose("PA5", 1_000_000, 3135, 30_000, 14).unwrap().ospeedr, 0);
-    assert_eq!(t.choose("PA5", 1_000_000, 3135, 30_000, 13).unwrap().ospeedr, 1);
+    assert_eq!(
+        t.choose("PA5", 1_000_000, 3135, 30_000, 14)
+            .unwrap()
+            .ospeedr,
+        0
+    );
+    assert_eq!(
+        t.choose("PA5", 1_000_000, 3135, 30_000, 13)
+            .unwrap()
+            .ospeedr,
+        1
+    );
     // `01`'s 4.2 ns does not meet 4 ns.
     assert_eq!(
         t.choose("PA5", 1_000_000, 3135, 30_000, 4),

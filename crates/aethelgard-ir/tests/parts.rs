@@ -273,7 +273,9 @@ fn refuses_an_spi_mode_out_of_range_repeated_or_missing() {
 #[test]
 fn refuses_a_max_clock_of_zero_or_above_the_ceiling() {
     for hz in [0, u64::from(MAX_SPI_CLOCK_HZ) + 1] {
-        let err = refused_entry("W25Q64JVxIQ", |p| p["bus"]["spi"]["max_clock_hz"] = hz.into());
+        let err = refused_entry("W25Q64JVxIQ", |p| {
+            p["bus"]["spi"]["max_clock_hz"] = hz.into()
+        });
         assert_refused(&err, Some("W25Q64JVxIQ"), "bus.spi.max_clock_hz");
     }
     // The ceiling itself is accepted.
