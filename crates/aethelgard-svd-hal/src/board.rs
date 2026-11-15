@@ -20,12 +20,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use aethelgard_ir::motor;
+use aethelgard_ir::serial::{self, Parity};
 use aethelgard_ir::speeds::{self, OutputSpeeds};
 use aethelgard_ir::{IrValidationError, PinTable, RESERVED_PINS, SolvedTopology};
 
 use crate::cmsis::{self, RegisterError, RegisterFacts};
 
 mod firmware;
+
+pub use firmware::{ECHO_POLLS, FRAME_LEN, PATTERN_TAIL};
 
 /// One variant per refusal (`INV-06`).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -51,9 +54,27 @@ pub enum BoardError {
         table: Option<u8>,
     },
     #[error(
-        "peripheral `{peripheral}` is not one this generator emits (I2Cn, SPIn, and TIMn on a motor output)"
+        "peripheral `{peripheral}` is not one this generator emits (I2Cn, SPIn, TIMn on a motor output, and USARTn or UARTn on a serial port)"
     )]
     UnsupportedPeripheral { peripheral: String },
+    #[error(
+        "net `{net}` carries `{signal}`, which is not the TX or RX of a solved serial port on that peripheral"
+    )]
+    SerialSignalMismatch { net: String, signal: String },
+    #[error("serial port `{label}`: its {line} net `{net}` is not a solved assignment of its own")]
+    SerialPortIncomplete {
+        label: String,
+        line: &'static str,
+        net: String,
+    },
+    #[error("serial ports `{first}` and `{label}` share `{peripheral}`")]
+    SerialPeripheralShared {
+        peripheral: String,
+        first: String,
+        label: String,
+    },
+    #[error("serial port `{label}`: {what} cannot be written to its USART")]
+    UnwritableSerialPort { label: String, what: String },
     #[error(
         "device `{reference}` is on `{peripheral}`, which is not a peripheral of this board of its bus's kind"
     )]
@@ -109,6 +130,10 @@ impl BoardError {
             Self::UnknownPin { .. } => "UnknownPin",
             Self::AssignmentMismatch { .. } => "AssignmentMismatch",
             Self::UnsupportedPeripheral { .. } => "UnsupportedPeripheral",
+            Self::SerialSignalMismatch { .. } => "SerialSignalMismatch",
+            Self::SerialPortIncomplete { .. } => "SerialPortIncomplete",
+            Self::SerialPeripheralShared { .. } => "SerialPeripheralShared",
+            Self::UnwritableSerialPort { .. } => "UnwritableSerialPort",
             Self::DeviceNotOnABus { .. } => "DeviceNotOnABus",
             Self::SharedChipSelect { .. } => "SharedChipSelect",
             Self::UnsupportedSignal { .. } => "UnsupportedSignal",
@@ -509,6 +534,8 @@ enum Role {
     TimCh2,
     TimCh3,
     TimCh4,
+    UsartTx,
+    UsartRx,
 }
 
 /// MODER values (RM0433 §11.4.1).
@@ -533,6 +560,8 @@ impl Role {
             Self::TimCh2 => "CH2",
             Self::TimCh3 => "CH3",
             Self::TimCh4 => "CH4",
+            Self::UsartTx => "TX",
+            Self::UsartRx => "RX",
         }
     }
 
@@ -546,13 +575,14 @@ impl Role {
     /// The generator's policy for a role: (mode, output type, pull). I2C is
     /// open-drain with no internal pull (the specification requires an
     /// external pull-up); SPI is push-pull; a GPIO output is push-pull and
-    /// starts high (an inactive chip select); a timer channel is push-pull. The
-    /// speed is [`Role::scope`]'s.
+    /// starts high (an inactive chip select); a timer channel and a USART's TX
+    /// and RX are push-pull with no internal pull. The speed is [`Role::scope`]'s.
     fn policy(self) -> (u32, u32, u32) {
         match self {
             Self::I2cScl | Self::I2cSda => (MODE_AF, 1, 0b00),
             Self::SpiSck | Self::SpiMosi | Self::SpiMiso => (MODE_AF, 0, 0b00),
             Self::TimCh1 | Self::TimCh2 | Self::TimCh3 | Self::TimCh4 => (MODE_AF, 0, 0b00),
+            Self::UsartTx | Self::UsartRx => (MODE_AF, 0, 0b00),
             Self::Output => (MODE_OUTPUT, 0, 0b00),
         }
     }
@@ -568,6 +598,7 @@ impl Role {
             Self::SpiMiso => Some(MASTER_INPUT),
             Self::Output => Some(SOFTWARE_DRIVEN),
             Self::TimCh1 | Self::TimCh2 | Self::TimCh3 | Self::TimCh4 => Some(MOTOR_OUTPUT),
+            Self::UsartTx | Self::UsartRx => Some(SERIAL_LINE),
         }
     }
 }
@@ -579,6 +610,10 @@ pub const MASTER_INPUT: &str = "input in master mode: no electrical effect";
 pub const SOFTWARE_DRIVEN: &str =
     "software-driven GPIO output: firmware may toggle it at any rate, so the topology states none";
 pub const MOTOR_OUTPUT: &str = "motor output (a timer channel): it leaves the board, so its load is off-board, and no connector part declares it yet";
+/// A USART's TX or RX (`AET-WO-4300b` §1.4): the line is peripheral-driven at
+/// its declared baud and leaves the board at a connector, so the speed check
+/// (`AET-WO-4300c` D4) has no load for it, and it takes the slowest speed.
+pub const SERIAL_LINE: &str = "serial line (a USART TX or RX): peripheral-driven at its declared baud; it leaves the board, so the check has no off-board load for it";
 
 /// What the output speed check found for one generated pin.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -747,6 +782,33 @@ struct TimerPlan {
     channels: BTreeMap<u32, (String, u32)>,
 }
 
+/// One serial port (`AET-WO-4300b`): its place in the specification and its
+/// label, its two pins, and what its configuration writes, all copied from
+/// the solved port (`RUL-16`).
+#[derive(Debug, Clone)]
+struct SerialPlan {
+    index: u32,
+    label: String,
+    /// The TX and RX pins, `PA2`.
+    tx: String,
+    rx: String,
+    brr: u32,
+    /// `CR1.M[1:0]` and `CR2.STOP[1:0]`, from the framing.
+    m_bits: u8,
+    stop: u8,
+    parity: Parity,
+    inverted: bool,
+    /// `115200 baud 8N1`, for the documentation.
+    framing: String,
+}
+
+impl SerialPlan {
+    /// The port's label as a comment can hold it.
+    fn label_text(&self) -> String {
+        self.label.escape_debug().to_string()
+    }
+}
+
 /// What the topology asks for, checked against the pin table.
 #[derive(Debug, Clone)]
 struct Plan {
@@ -765,6 +827,10 @@ struct Plan {
     /// `peripherals`: a topology without motor outputs emits what it did
     /// before `AET-WO-4300a`, byte for byte.
     timers: BTreeMap<u32, TimerPlan>,
+    /// Peripheral name (`USART2`) to its serial port (`AET-WO-4300b`), kept
+    /// apart in the same way: a topology without serial ports emits what it did
+    /// before, byte for byte.
+    serials: BTreeMap<String, SerialPlan>,
 }
 
 impl Plan {
@@ -772,6 +838,95 @@ impl Plan {
     fn is_select(&self, pin: &str) -> bool {
         self.selects.values().flatten().any(|s| s.pin == pin)
     }
+
+    /// The serial ports in the specification's order, each with its
+    /// peripheral.
+    fn serials_in_order(&self) -> Vec<(&String, &SerialPlan)> {
+        let mut out: Vec<(&String, &SerialPlan)> = self.serials.iter().collect();
+        out.sort_by_key(|(_, s)| s.index);
+        out
+    }
+
+    /// Whether the board reads the reset clock: its timers' values and its
+    /// USARTs' `BRR` were solved for it.
+    fn needs_clock(&self) -> bool {
+        !self.timers.is_empty() || !self.serials.is_empty()
+    }
+}
+
+/// The serial ports' nets (`AET-WO-4300b`), each to its port's peripheral,
+/// label and line, and each port's plan with its pins still empty: every port
+/// on a peripheral this generator emits, one port per peripheral, and a
+/// framing and `BRR` its USART can hold.
+type SerialNets<'a> = BTreeMap<&'a str, (&'a str, &'a str, Role)>;
+
+fn serial_plans(
+    solved: &SolvedTopology,
+) -> Result<(SerialNets<'_>, BTreeMap<String, SerialPlan>), BoardError> {
+    let mut nets = BTreeMap::new();
+    let mut plans: BTreeMap<String, SerialPlan> = BTreeMap::new();
+    for (label, p) in &solved.serial_ports {
+        if !serial::PERIPHERALS.contains(&p.peripheral.as_str()) {
+            return Err(BoardError::UnsupportedPeripheral {
+                peripheral: p.peripheral.clone(),
+            });
+        }
+        let unwritable = |what: String| BoardError::UnwritableSerialPort {
+            label: label.clone(),
+            what,
+        };
+        let m_bits = p.framing.m_bits().ok_or_else(|| {
+            unwritable(format!(
+                "a {}-bit word (M[1:0] holds 7, 8 or 9)",
+                p.framing.word_bits()
+            ))
+        })?;
+        let stop = p.framing.stop_field().ok_or_else(|| {
+            unwritable(format!(
+                "{} stop bits (STOP is written for 1 or 2)",
+                p.framing.stop_bits
+            ))
+        })?;
+        if !(16..=0xFFFF).contains(&p.brr) {
+            return Err(unwritable(format!(
+                "BRR {} (RM0433 Rev 9 §48.8.5: 16 to 0xFFFF)",
+                p.brr
+            )));
+        }
+        for (net, role) in [(&p.tx, Role::UsartTx), (&p.rx, Role::UsartRx)] {
+            // A net two lines claim cannot be both: refuse it by name.
+            if nets
+                .insert(net.as_str(), (p.peripheral.as_str(), label.as_str(), role))
+                .is_some()
+            {
+                return Err(BoardError::SerialPortIncomplete {
+                    label: label.clone(),
+                    line: role.signal(),
+                    net: net.clone(),
+                });
+            }
+        }
+        let plan = SerialPlan {
+            index: p.index,
+            label: label.clone(),
+            tx: String::new(),
+            rx: String::new(),
+            brr: p.brr,
+            m_bits,
+            stop,
+            parity: p.framing.parity,
+            inverted: p.framing.inverted,
+            framing: format!("{} baud {}", p.framing.baud, p.framing.short()),
+        };
+        if let Some(first) = plans.insert(p.peripheral.clone(), plan) {
+            return Err(BoardError::SerialPeripheralShared {
+                peripheral: p.peripheral.clone(),
+                first: first.label,
+                label: label.clone(),
+            });
+        }
+    }
+    Ok((nets, plans))
 }
 
 fn crate_name_ok(name: &str) -> bool {
@@ -839,6 +994,7 @@ impl Plan {
         let mut pins: BTreeMap<String, PinPlan> = BTreeMap::new();
         let mut roles: BTreeMap<String, (Kind, BTreeMap<Role, Vec<String>>)> = BTreeMap::new();
         let mut timers: BTreeMap<u32, TimerPlan> = BTreeMap::new();
+        let (serial_nets, mut serials) = serial_plans(solved)?;
         for (net, a) in &solved.assignments {
             let (port, index) = split_pin(&a.pin)?;
             let entry = table
@@ -860,8 +1016,37 @@ impl Plan {
             let channel = motor::timer_channel(&a.signal)
                 .filter(|(n, _)| a.peripheral == format!("TIM{n}"))
                 .and_then(|(n, k)| Some((n, k, Role::timer_channel(k)?)));
-            // The pin's role, and its peripheral's kind unless it is a timer's.
-            let (role, kind) = if let Some((n, k, role)) = channel {
+            // A serial line: the TX or RX net of the one port on its peripheral,
+            // on that peripheral's own signal for the line. A port's net on any
+            // other signal, and a USART line no port names, are refused.
+            let port_net = serial_nets.get(net.as_str()).copied();
+            let serial =
+                if port_net.is_some() || serial::PERIPHERALS.contains(&a.peripheral.as_str()) {
+                    let line = port_net
+                        .filter(|(p, _, role)| {
+                            *p == a.peripheral && a.signal == format!("{p}_{}", role.signal())
+                        })
+                        .ok_or_else(|| BoardError::SerialSignalMismatch {
+                            net: net.clone(),
+                            signal: a.signal.clone(),
+                        })?;
+                    Some(line)
+                } else {
+                    None
+                };
+            // The pin's role, and its peripheral's kind unless it is a timer's
+            // or a USART's.
+            let (role, kind) = if let Some((peripheral, _, role)) = serial {
+                let s = serials
+                    .get_mut(peripheral)
+                    .expect("serial_plans planned every port's peripheral");
+                *if role == Role::UsartTx {
+                    &mut s.tx
+                } else {
+                    &mut s.rx
+                } = a.pin.clone();
+                (role, None)
+            } else if let Some((n, k, role)) = channel {
                 let mismatch = || {
                     BoardError::InvalidTopology(IrValidationError::MotorOutputMismatch {
                         id: net.clone(),
@@ -997,6 +1182,16 @@ impl Plan {
                     pin: pin.clone(),
                 });
         }
+        // Every port's two nets are solved assignments.
+        for (net, (_, label, role)) in &serial_nets {
+            if !solved.assignments.contains_key(*net) {
+                return Err(BoardError::SerialPortIncomplete {
+                    label: (*label).to_owned(),
+                    line: role.signal(),
+                    net: (*net).to_owned(),
+                });
+            }
+        }
         let ports = pins.values().map(|p| p.port).collect();
         Ok(Plan {
             crate_name: crate_name.into(),
@@ -1007,6 +1202,7 @@ impl Plan {
             ports,
             selects,
             timers,
+            serials,
         })
     }
 }
@@ -1161,19 +1357,107 @@ struct TimFacts {
 const PWM_MODE_1: u32 = 0b110;
 
 /// The registers [`Rcc::reset_clock`]-to-be reads and the fields each must
-/// hold at 0, their reset value (RM0433 Rev 9 §8.7.2, §8.7.7–8.7.9): register name,
-/// `RCC_TypeDef` offset, and each field's name, position and width.
+/// hold at 0, their reset value (RM0433 Rev 9 §8.7.2, §8.7.7–8.7.9, §8.7.21):
+/// register name, `RCC_TypeDef` offset, and each field's name, position and
+/// width.
 type ClockFacts = Vec<(&'static str, u32, Vec<(&'static str, u32, u32)>)>;
 
 /// The reset clock's fields, by register: `CR` `HSIDIV` (HSI undivided, so
 /// 64 MHz; `AET-WO-4300a` Q2, ruled), `CFGR` `SWS` (HSI) and `TIMPRE`,
-/// `D1CFGR` `D1CPRE`, `D1PPRE` and `HPRE`, `D2CFGR` `D2PPRE1` and `D2PPRE2`.
-const RESET_CLOCK_FIELDS: [(&str, &[&str]); 4] = [
+/// `D1CFGR` `D1CPRE`, `D1PPRE` and `HPRE`, `D2CFGR` `D2PPRE1` and `D2PPRE2`,
+/// and `D2CCIP2R`'s two USART kernel clock selections (`AET-WO-4300b`; at 0,
+/// `rcc_pclk2` for USART1 and USART6 and `rcc_pclk1` for the rest,
+/// `aethelgard_ir::serial::kernel_hz`). RM0433 Rev 9 §8.7.21 names the second
+/// `USART234578SEL`; ST's header names the same bits 2:0 `USART28SEL`, and
+/// the positions come from the header, so its name is the one written here.
+const RESET_CLOCK_FIELDS: [(&str, &[&str]); 5] = [
     ("CR", &["HSIDIV"]),
     ("CFGR", &["SWS", "TIMPRE"]),
     ("D1CFGR", &["D1CPRE", "D1PPRE", "HPRE"]),
     ("D2CFGR", &["D2PPRE1", "D2PPRE2"]),
+    ("D2CCIP2R", &["USART16SEL", "USART28SEL"]),
 ];
+
+/// One USART or UART instance (`AET-WO-4300b`): its base, clock gate and
+/// block size.
+#[derive(Debug, Clone)]
+struct SerialFacts {
+    base: u32,
+    gate: Gate,
+    words: u32,
+}
+
+/// The `USART_TypeDef` registers (RM0433 Rev 9 §48.8) a port's configuration,
+/// send and receive touch, and the bit positions of their fields, all read
+/// from the header.
+#[derive(Debug, Clone)]
+struct UsartFacts {
+    cr1: u32,
+    cr2: u32,
+    brr: u32,
+    isr: u32,
+    rdr: u32,
+    tdr: u32,
+    ue: u32,
+    re: u32,
+    te: u32,
+    ps: u32,
+    pce: u32,
+    m0: u32,
+    m1: u32,
+    /// `CR2.STOP`: position and width.
+    stop: (u32, u32),
+    txinv: u32,
+    rxinv: u32,
+    /// `ISR.TXE` and `ISR.RXNE` (the header's `TXE_TXFNF` and `RXNE_RXFNE`:
+    /// with the FIFO disabled, its reset state, they are `TXE` and `RXNE`).
+    txe: u32,
+    rxne: u32,
+}
+
+fn usart_facts(f: &RegisterFacts) -> Result<UsartFacts, BoardError> {
+    let u = f.layout("USART")?;
+    Ok(UsartFacts {
+        cr1: u.offset("CR1", 0)?,
+        cr2: u.offset("CR2", 0)?,
+        brr: u.offset("BRR", 0)?,
+        isr: u.offset("ISR", 0)?,
+        rdr: u.offset("RDR", 0)?,
+        tdr: u.offset("TDR", 0)?,
+        ue: f.position("USART_CR1_UE_Pos")?,
+        re: f.position("USART_CR1_RE_Pos")?,
+        te: f.position("USART_CR1_TE_Pos")?,
+        ps: f.position("USART_CR1_PS_Pos")?,
+        pce: f.position("USART_CR1_PCE_Pos")?,
+        m0: f.position("USART_CR1_M0_Pos")?,
+        m1: f.position("USART_CR1_M1_Pos")?,
+        stop: f.field("USART_CR2_STOP")?,
+        txinv: f.position("USART_CR2_TXINV_Pos")?,
+        rxinv: f.position("USART_CR2_RXINV_Pos")?,
+        txe: f.position("USART_ISR_TXE_TXFNF_Pos")?,
+        rxne: f.position("USART_ISR_RXNE_RXFNE_Pos")?,
+    })
+}
+
+/// A port's configuration (`AET-WO-4300b`): (`BRR`, `CR2`, `CR1` without
+/// `UE`). `CR2` is `STOP`, with `TXINV` and `RXINV` when the port is
+/// inverted; `CR1` is `M0` and `M1` from `M[1:0]`, `PCE` with any parity, `PS`
+/// for odd, `TE` and `RE`.
+fn usart_values(s: &SerialPlan, u: &UsartFacts) -> (u32, u32, u32) {
+    let mut cr2 = u32::from(s.stop) << u.stop.0;
+    if s.inverted {
+        cr2 |= (1 << u.txinv) | (1 << u.rxinv);
+    }
+    let mut cr1 = (u32::from(s.m_bits & 1) << u.m0) | (u32::from(s.m_bits >> 1) << u.m1);
+    if s.parity != Parity::None {
+        cr1 |= 1 << u.pce;
+    }
+    if s.parity == Parity::Odd {
+        cr1 |= 1 << u.ps;
+    }
+    cr1 |= (1 << u.te) | (1 << u.re);
+    (s.brr, cr2, cr1)
+}
 
 #[derive(Debug, Clone)]
 struct Facts {
@@ -1184,9 +1468,14 @@ struct Facts {
     pins: BTreeMap<String, PinFacts>,
     peripherals: BTreeMap<String, PeriphFacts>,
     /// Timer number to its instance facts; empty without motor outputs, and
-    /// then `tim` and `clock` are `None`: nothing timer-shaped is read.
+    /// then `tim` is `None`: nothing timer-shaped is read.
     timers: BTreeMap<u32, TimerFacts>,
     tim: Option<TimFacts>,
+    /// Peripheral name to its instance facts; empty without serial ports, and
+    /// then `usart` is `None`.
+    serials: BTreeMap<String, SerialFacts>,
+    usart: Option<UsartFacts>,
+    /// `None` unless the board has a timer or a serial port.
     clock: Option<ClockFacts>,
 }
 
@@ -1394,7 +1683,7 @@ impl Facts {
             );
         }
         let mut timers = BTreeMap::new();
-        let (mut tim, mut clock) = (None, None);
+        let mut tim = None;
         if !plan.timers.is_empty() {
             let words = f.layout("TIM")?.size / 4;
             for n in plan.timers.keys() {
@@ -1409,8 +1698,28 @@ impl Facts {
                 );
             }
             tim = Some(tim_facts(f)?);
-            clock = Some(clock_facts(f, &rcc)?);
         }
+        let mut serials = BTreeMap::new();
+        let mut usart = None;
+        if !plan.serials.is_empty() {
+            let words = f.layout("USART")?.size / 4;
+            for name in plan.serials.keys() {
+                serials.insert(
+                    name.clone(),
+                    SerialFacts {
+                        base: f.base(name)?,
+                        gate: gate(f, &rcc, name)?,
+                        words,
+                    },
+                );
+            }
+            usart = Some(usart_facts(f)?);
+        }
+        let clock = if plan.needs_clock() {
+            Some(clock_facts(f, &rcc)?)
+        } else {
+            None
+        };
         Ok(Facts {
             rcc_base: f.base("RCC")?,
             rcc_words: rcc.size / 4,
@@ -1420,6 +1729,8 @@ impl Facts {
             peripherals,
             timers,
             tim,
+            serials,
+            usart,
             clock,
         })
     }
@@ -1565,6 +1876,9 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     for n in plan.timers.keys() {
         let _ = writeln!(w, "    Tim{n},");
     }
+    for name in plan.serials.keys() {
+        let _ = writeln!(w, "    {},", type_name(name));
+    }
     let _ = writeln!(
         w,
         "}}\n\
@@ -1643,6 +1957,14 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     for (n, tf) in &facts.timers {
         let _ = writeln!(w, "            Block::Tim{n} => {:#010x},", tf.base);
     }
+    for (name, sf) in &facts.serials {
+        let _ = writeln!(
+            w,
+            "            Block::{} => {:#010x},",
+            type_name(name),
+            sf.base
+        );
+    }
     let _ = writeln!(
         w,
         "        }}\n    \
@@ -1681,15 +2003,30 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          pub struct Enabled<S>(PhantomData<S>);\n"
     );
     if !plan.timers.is_empty() {
-        let _ = writeln!(
-            w,
+        w.push_str(
             "/// A timer whose outputs run. It has no method: after `CEN`, nothing reads or\n\
              /// writes the timer again (`AET-WO-4300a`: in Renode, a core polling a running\n\
              /// timer collapses its edges onto one timestamp).\n\
              pub struct Running;\n\
-             \n\
-             /// The clock tree is the reset clock the timers' values were solved for: HSI\n\
-             /// at 64 MHz, every prescaler 1, `TIMPRE` 0. Only [`Rcc::reset_clock`] makes one.\n\
+             \n",
+        );
+    }
+    if plan.needs_clock() {
+        let solved_for = if plan.serials.is_empty() {
+            "/// The clock tree is the reset clock the timers' values were solved for: HSI\n\
+             /// at 64 MHz, every prescaler 1, `TIMPRE` 0. Only [`Rcc::reset_clock`] makes one.\n"
+        } else if plan.timers.is_empty() {
+            "/// The clock tree is the reset clock the USARTs' `BRR` were solved for: HSI at\n\
+             /// 64 MHz, every prescaler 1, `TIMPRE` 0, and each USART's kernel clock its APB\n\
+             /// clock. Only [`Rcc::reset_clock`] makes one.\n"
+        } else {
+            "/// The clock tree is the reset clock the timers' values and the USARTs' `BRR`\n\
+             /// were solved for: HSI at 64 MHz, every prescaler 1, `TIMPRE` 0, and each\n\
+             /// USART's kernel clock its APB clock. Only [`Rcc::reset_clock`] makes one.\n"
+        };
+        let _ = writeln!(
+            w,
+            "{solved_for}\
              pub struct ResetClock {{\n    \
                  _private: (),\n\
              }}\n\
@@ -1748,6 +2085,9 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     });
     if let Some((spi, txdr)) = spi {
         emit_spi_shared(w, spi, txdr);
+    }
+    if let Some(u) = &facts.usart {
+        emit_usart_shared(w, u);
     }
     // Pins.
     for (pin, p) in &plan.pins {
@@ -2022,6 +2362,11 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             emit_timer_start(w, *n, t, plan, tf);
         }
     }
+    if let Some(u) = &facts.usart {
+        for (name, sp) in &plan.serials {
+            emit_usart(w, name, sp, plan, u);
+        }
+    }
     // RCC.
     let _ = writeln!(
         w,
@@ -2047,6 +2392,12 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                 .timers
                 .iter()
                 .map(|(n, tf)| (format!("tim{n}"), format!("Tim{n}"), &tf.gate)),
+        )
+        .chain(
+            facts
+                .serials
+                .iter()
+                .map(|(name, sf)| (name.to_ascii_lowercase(), type_name(name), &sf.gate)),
         );
     let mut first = true;
     for (field, t, g) in gates {
@@ -2097,6 +2448,14 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     for n in plan.timers.keys() {
         let _ = writeln!(w, "    pub tim{n}: Tim{n}<Gated>,");
     }
+    for name in plan.serials.keys() {
+        let _ = writeln!(
+            w,
+            "    pub {}: {}<Gated>,",
+            name.to_ascii_lowercase(),
+            type_name(name)
+        );
+    }
     let _ = writeln!(
         w,
         "}}\n\
@@ -2131,6 +2490,14 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     }
     for n in plan.timers.keys() {
         let _ = writeln!(w, "            tim{n}: Tim{n} {{ _state: PhantomData }},");
+    }
+    for name in plan.serials.keys() {
+        let _ = writeln!(
+            w,
+            "            {}: {} {{ _state: PhantomData }},",
+            name.to_ascii_lowercase(),
+            type_name(name)
+        );
     }
     let _ = writeln!(w, "        }})\n    }}\n}}");
     s
@@ -2222,7 +2589,7 @@ fn emit_reset_clock(w: &mut String, clock: &ClockFacts) {
     let _ = writeln!(
         w,
         "\n    /// A [`ResetClock`], when each of these fields holds 0, its reset value\n    \
-         /// (RM0433 Rev 9 §8.7.2, §8.7.7–8.7.9). Reads the four registers and writes nothing.\n\
+         /// (RM0433 Rev 9 §8.7.2, §8.7.7–8.7.9, §8.7.21). Reads the {count} registers and writes nothing.\n\
          {named}\n    \
          pub fn reset_clock<R: Registers>(&self, r: &mut R) -> Result<ResetClock, NotResetClock> {{\n\
          {reads}\n        \
@@ -2235,7 +2602,17 @@ fn emit_reset_clock(w: &mut String, clock: &ClockFacts) {
         named = named.join("\n"),
         reads = reads.join("\n"),
         tests = tests.join(" && "),
+        count = count_word(clock.len()),
     );
+}
+
+/// `5` → `five`, for the generated prose.
+fn count_word(n: usize) -> String {
+    [
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    ]
+    .get(n)
+    .map_or_else(|| n.to_string(), |w| (*w).to_owned())
 }
 
 /// The oracle's writes of one timer's start, in order: (register, offset,
@@ -2274,6 +2651,158 @@ fn timer_oracle(n: u32, t: &TimerPlan, tf: &TimFacts) -> Vec<(String, u32, u32)>
     out
 }
 
+/// The items every USART shares (`AET-WO-4300b`): the bound on a send's wait,
+/// its refusal, and the bounded poll of `ISR`.
+fn emit_usart_shared(w: &mut String, u: &UsartFacts) {
+    let _ = writeln!(
+        w,
+        "/// The most reads of `ISR` one USART send makes waiting for `TXE` before it gives up.\n\
+         pub const USART_WAIT_SPINS: u32 = 20_000;\n\
+         \n\
+         /// `ISR.TXE` did not rise within its bound, and the byte was not written. A send\n\
+         /// never panics and never waits without a bound.\n\
+         #[derive(Clone, Copy, PartialEq, Eq, Debug)]\n\
+         pub struct TxeTimeout;\n\
+         \n\
+         /// Reads a USART's `ISR` at most `spins` times for any bit of `mask`.\n\
+         fn usart_wait<R: Registers>(r: &mut R, block: Block, mask: u32, spins: u32) -> bool {{\n    \
+             let mut n = 0;\n    \
+             while n < spins {{\n        \
+                 if r.read(TOKEN, block, {isr:#04x}) & mask != 0 {{\n            \
+                     return true;\n        \
+                 }}\n        \
+                 n += 1;\n    \
+             }}\n    \
+             false\n\
+         }}\n",
+        isr = u.isr,
+    );
+}
+
+/// One serial port's USART typestate (`AET-WO-4300b` §1.4): configured from
+/// `Clocked`, its two solved pins and the reset clock's token, every register
+/// written in full and none read, in the order `BRR`, `CR2`, `CR1` without
+/// `UE`, then `CR1` with `UE`; then a bounded send and receive, one byte each.
+fn emit_usart(w: &mut String, name: &str, sp: &SerialPlan, plan: &Plan, u: &UsartFacts) {
+    let t = type_name(name);
+    let (brr, cr2, cr1) = usart_values(sp, u);
+    let writes = [
+        ("BRR", u.brr, brr),
+        ("CR2", u.cr2, cr2),
+        ("CR1", u.cr1, cr1),
+        ("CR1 | UE", u.cr1, cr1 | (1 << u.ue)),
+    ];
+    let _ = writeln!(
+        w,
+        "/// `{name}`: serial port `{label}` (specification index {index}), TX `{tx}`, RX\n\
+         /// `{rx}`, {framing}. It is configured only from `Clocked`, only on its two\n\
+         /// solved pins, each in its solved function, only with a [`ResetClock`], and\n\
+         /// once; it sends and receives only once configured.\n\
+         pub struct {t}<S> {{\n    \
+             _state: PhantomData<S>,\n\
+         }}\n\
+         \n\
+         impl {t}<Clocked> {{\n    \
+             /// The solved framing, every register written in full and none read, the\n    \
+             /// USART disabled until the last write: `BRR`, `CR2`, `CR1` with `UE` clear,\n    \
+             /// then `CR1` with `UE`. `CR3` and `PRESC` keep their reset values (`OVER8`\n    \
+             /// and `ONEBIT` 0, the kernel clock undivided), which the solved `BRR` assumes.\n    \
+             pub fn configure<R: Registers>(\n        \
+                 self,\n        \
+                 r: &mut R,\n        \
+                 _clock: &ResetClock,\n        \
+                 _tx: {tx}<{tx_state}>,\n        \
+                 _rx: {rx}<{rx_state}>,\n    \
+             ) -> {t}<Enabled<()>> {{",
+        label = sp.label_text(),
+        index = sp.index,
+        tx = sp.tx,
+        rx = sp.rx,
+        framing = sp.framing,
+        tx_state = pin_state(&plan.pins[&sp.tx]),
+        rx_state = pin_state(&plan.pins[&sp.rx]),
+    );
+    for (register, offset, value) in writes {
+        let _ = writeln!(
+            w,
+            "        r.write(TOKEN, Block::{t}, {offset:#04x}, {value:#010x}); // {register}"
+        );
+    }
+    let _ = writeln!(
+        w,
+        "        {t} {{ _state: PhantomData }}\n    \
+             }}\n\
+         }}\n\
+         \n\
+         impl {t}<Enabled<()>> {{\n    \
+             /// Waits at most [`USART_WAIT_SPINS`] reads of `ISR` for `TXE`, then writes\n    \
+             /// `byte` to `TDR`; or gives up, writing nothing.\n    \
+             pub fn send<R: Registers>(&mut self, r: &mut R, byte: u8) -> Result<(), TxeTimeout> {{\n        \
+                 self.send_within(r, byte, USART_WAIT_SPINS)\n    \
+             }}\n\
+             \n    \
+             /// [`Self::send`] with its own bound on the wait, so the proof can use a\n    \
+             /// small one.\n    \
+             #[doc(hidden)]\n    \
+             pub fn send_within<R: Registers>(&mut self, r: &mut R, byte: u8, spins: u32) -> Result<(), TxeTimeout> {{\n        \
+                 if usart_wait(r, Block::{t}, {txe:#010x}, spins) {{\n            \
+                     r.write(TOKEN, Block::{t}, {tdr:#04x}, u32::from(byte));\n            \
+                     Ok(())\n        \
+                 }} else {{\n            \
+                     Err(TxeTimeout)\n        \
+                 }}\n    \
+             }}\n\
+             \n    \
+             /// Waits at most `polls` reads of `ISR` for `RXNE`, then reads the low byte of\n    \
+             /// `RDR`; `None`, with `RDR` unread, when nothing arrived.\n    \
+             pub fn receive<R: Registers>(&mut self, r: &mut R, polls: u32) -> Option<u8> {{\n        \
+                 if usart_wait(r, Block::{t}, {rxne:#010x}, polls) {{\n            \
+                     Some(u8::try_from(r.read(TOKEN, Block::{t}, {rdr:#04x}) & 0xFF).unwrap_or(0))\n        \
+                 }} else {{\n            \
+                     None\n        \
+                 }}\n    \
+             }}\n\
+         }}\n",
+        txe = 1u32 << u.txe,
+        tdr = u.tdr,
+        rxne = 1u32 << u.rxne,
+        rdr = u.rdr,
+    );
+}
+
+/// The oracle's writes of one port's configuration, in order: (register,
+/// offset, value), from the plan and the header's positions.
+///
+/// belt-and-suspenders: this restates `usart_values`' arithmetic and
+/// `emit_usart`'s order on purpose. The oracle must not read back what the
+/// crate under proof does (`INV-07`), so a slip in one copy is caught by the
+/// other.
+fn usart_oracle(sp: &SerialPlan, u: &UsartFacts) -> Vec<(String, u32, u32)> {
+    let word = match sp.m_bits {
+        0b01 => 1 << u.m0,
+        0b10 => 1 << u.m1,
+        _ => 0,
+    };
+    let parity = match sp.parity {
+        Parity::None => 0,
+        Parity::Even => 1 << u.pce,
+        Parity::Odd => (1 << u.pce) | (1 << u.ps),
+    };
+    let cr1 = word | parity | (1 << u.re) | (1 << u.te);
+    let inversion = if sp.inverted {
+        (1 << u.rxinv) | (1 << u.txinv)
+    } else {
+        0
+    };
+    let cr2 = inversion | (u32::from(sp.stop) << u.stop.0);
+    vec![
+        ("BRR".to_owned(), u.brr, sp.brr),
+        ("CR2".to_owned(), u.cr2, cr2),
+        ("CR1".to_owned(), u.cr1, cr1),
+        ("CR1 | UE".to_owned(), u.cr1, cr1 | (1 << u.ue)),
+    ]
+}
+
 /// A field's mask, as the oracle computes it.
 fn oracle_mask(width: u32, pos: u32) -> u32 {
     ((1u32 << width) - 1) << pos
@@ -2289,6 +2818,17 @@ fn expect_field(acc: &mut BTreeMap<u32, (u32, u32)>, reg: u32, pos: u32, width: 
     let e = acc.entry(reg).or_insert((0, 0));
     e.0 |= mask;
     e.1 |= value << pos;
+}
+
+/// The harness image's fields, in its order: RCC, the ports, the I2C and SPI
+/// peripherals, the timers, then the USARTs.
+fn image_fields(plan: &Plan) -> Vec<String> {
+    let mut blocks: Vec<String> = vec!["rcc".into()];
+    blocks.extend(plan.ports.iter().map(|p| port_field(*p)));
+    blocks.extend(plan.peripherals.keys().map(|n| n.to_ascii_lowercase()));
+    blocks.extend(plan.timers.keys().map(|n| format!("tim{n}")));
+    blocks.extend(plan.serials.keys().map(|n| n.to_ascii_lowercase()));
+    blocks
 }
 
 fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
@@ -2327,12 +2867,18 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             Some(&tf.gate),
         ));
     }
-    // Each timer is enabled and started; the reset clock is read once.
-    let timer_actions = if plan.timers.is_empty() {
-        0
-    } else {
-        2 * plan.timers.len() + 1
-    };
+    for (name, sf) in &facts.serials {
+        blocks.push((
+            type_name(name),
+            name.to_ascii_lowercase(),
+            sf.words,
+            Some(&sf.gate),
+        ));
+    }
+    // Each timer and each USART is enabled and started; the reset clock is
+    // read once.
+    let timer_actions =
+        2 * plan.timers.len() + 2 * plan.serials.len() + usize::from(plan.needs_clock());
     let actions = plan.ports.len() + 2 * plan.peripherals.len() + plan.pins.len() + timer_actions;
     let unwind = blocks
         .iter()
@@ -2453,6 +2999,26 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                 cfg1 = spi.cfg1,
                 cr1 = pf.cr1 / 4,
                 en = 1u32 << pf.enable,
+            );
+        }
+    }
+    // A USART's `TDR` is written only once its configuration set `UE` and `TE`
+    // (`AET-WO-4300b`: a store with `UE` clear is the forgery the twin refuses).
+    if let Some(u) = &facts.usart {
+        for name in plan.serials.keys() {
+            let t = type_name(name);
+            let _ = writeln!(
+                w,
+                "        if block == Block::{t} && offset == {tdr:#04x} {{\n            \
+                     kani::assert(\n                \
+                         self.{field}[{cr1}] & {on:#010x} == {on:#010x},\n                \
+                         \"{t} TDR written before UE and TE are set\",\n            \
+                     );\n        \
+                 }}",
+                tdr = u.tdr,
+                field = name.to_ascii_lowercase(),
+                cr1 = u.cr1 / 4,
+                on = (1u32 << u.ue) | (1u32 << u.te),
             );
         }
     }
@@ -2667,6 +3233,7 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         .map(|p| &p.gate)
         .chain(facts.peripherals.values().map(|p| &p.gate))
         .chain(facts.timers.values().map(|t| &t.gate))
+        .chain(facts.serials.values().map(|s| &s.gate))
     {
         *gates.entry(gate.offset / 4).or_default() |= 1u32 << gate.bit;
     }
@@ -2773,16 +3340,49 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             }
         }
     }
+    // Each USART: its configuration's last value in each register it writes,
+    // `UE` set; `TDR` as a send left it; every other word unchanged.
+    if let Some(u) = &facts.usart {
+        for (name, sp) in &plan.serials {
+            let t = type_name(name);
+            let field = name.to_ascii_lowercase();
+            let mut last: BTreeMap<u32, (String, u32)> = BTreeMap::new();
+            for (register, offset, value) in usart_oracle(sp, u) {
+                last.insert(offset, (register, value));
+            }
+            for (offset, (register, value)) in &last {
+                let _ = writeln!(
+                    w,
+                    "    kani::assert(after.{field}[{i}] == {value:#010x}, \"{t} {register} is not the solved value\");",
+                    i = offset / 4
+                );
+            }
+            for i in 0..facts.serials[name].words {
+                if !last.contains_key(&(i * 4)) && i * 4 != u.tdr {
+                    let _ = writeln!(
+                        w,
+                        "    kani::assert(after.{field}[{i}] == before.{field}[{i}], \"{t} word {i} changed\");"
+                    );
+                }
+            }
+        }
+    }
     let _ = writeln!(w, "}}\n");
 
     // The scheduler.
+    let usarts = if plan.serials.is_empty() {
+        ""
+    } else {
+        "\n/// Each USART is configured once, from its pins and the reset clock, then\n\
+         /// sends zero or one byte."
+    };
     let _ = writeln!(
         w,
         "/// Every order the typestate API admits: at each of {actions} steps, any\n\
          /// action whose inputs exist. The `assume` admits only those orders; the\n\
          /// types forbid the rest at compile time. Each I2C peripheral writes zero or\n\
          /// one byte when it starts; each SPI peripheral takes its bus's chip selects;\n\
-         /// and the output pins are driven zero or one time first.\n\
+         /// and the output pins are driven zero or one time first.{usarts}\n\
          #[kani::proof]\n\
          #[kani::unwind({unwind})]\n\
          fn every_valid_sequence() {{\n    \
@@ -2825,13 +3425,20 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let f = pin_field(pin);
         let _ = writeln!(w, "    let mut {f} = None;\n    let mut {f}_done = None;");
     }
-    if !plan.timers.is_empty() {
+    if plan.needs_clock() {
         let _ = writeln!(w, "    let mut clock = None;");
     }
     for n in plan.timers.keys() {
         let _ = writeln!(
             w,
             "    let mut tim{n} = Some(board.tim{n});\n    let mut tim{n}_clocked = None;\n    let mut tim{n}_done = false;"
+        );
+    }
+    for name in plan.serials.keys() {
+        let f = name.to_ascii_lowercase();
+        let _ = writeln!(
+            w,
+            "    let mut {f} = Some(board.{f});\n    let mut {f}_clocked = None;\n    let mut {f}_done = false;"
         );
     }
     let _ = writeln!(
@@ -3013,11 +3620,11 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let _ = writeln!(w, "                {f}_done = true;\n            }}");
         a += 1;
     }
-    // The timers (`AET-WO-4300a`): the reset clock read once, each timer
-    // clocked, then started from its own configured pins and the token. The
-    // schedule runs on the reset clock; `reset_clock_is_ok_exactly_at_reset`
-    // proves the check itself.
-    if !plan.timers.is_empty() {
+    // The timers (`AET-WO-4300a`) and USARTs (`AET-WO-4300b`): the reset clock
+    // read once, each clocked, then started from its own configured pins and
+    // the token. The schedule runs on the reset clock;
+    // `reset_clock_is_ok_exactly_at_reset` proves the check itself.
+    if plan.needs_clock() {
         let _ = writeln!(
             w,
             "            {a} => {{\n                \
@@ -3066,6 +3673,38 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         );
         a += 1;
     }
+    for name in plan.serials.keys() {
+        let f = name.to_ascii_lowercase();
+        let _ = writeln!(
+            w,
+            "            {a} => {{\n                \
+                 kani::assume({f}.is_some());\n                \
+                 {f}_clocked = Some(rcc.enable_{f}(&mut img, {f}.take().unwrap()));\n            \
+             }}"
+        );
+        a += 1;
+    }
+    for (name, sp) in &plan.serials {
+        let f = name.to_ascii_lowercase();
+        let (tx, rx) = (pin_field(&sp.tx), pin_field(&sp.rx));
+        let _ = writeln!(
+            w,
+            "            {a} => {{\n                \
+                 kani::assume({f}_clocked.is_some() && clock.is_some() && {tx}_done.is_some() && {rx}_done.is_some());\n                \
+                 let mut port = {f}_clocked\n                    \
+                     .take()\n                    \
+                     .unwrap()\n                    \
+                     .configure(&mut img, clock.as_ref().unwrap(), {tx}_done.take().unwrap(), {rx}_done.take().unwrap());\n                \
+                 kani::cover!(true, \"{name} configured\");\n                \
+                 if kani::any() {{\n                    \
+                     let sent = port.send_within(&mut img, kani::any(), 1);\n                    \
+                     kani::cover!(sent.is_ok(), \"{name} sent a byte\");\n                \
+                 }}\n                \
+                 {f}_done = true;\n            \
+             }}"
+        );
+        a += 1;
+    }
     let _ = writeln!(
         w,
         "            _ => kani::assume(false),\n        }}\n    }}"
@@ -3081,6 +3720,13 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let _ = writeln!(
             w,
             "    kani::assert(tim{n}_done, \"the schedule did not start TIM{n}\");"
+        );
+    }
+    for name in plan.serials.keys() {
+        let _ = writeln!(
+            w,
+            "    kani::assert({f}_done, \"the schedule did not configure {name}\");",
+            f = name.to_ascii_lowercase()
         );
     }
     // A chip select is configured before its bus starts, which takes it.
@@ -3120,7 +3766,7 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
 /// ([`timer_oracle`], and the fields' positions and widths), never read from
 /// `board.rs`.
 fn emit_timer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
-    let (Some(tf), Some(clock)) = (&facts.tim, &facts.clock) else {
+    let Some(clock) = &facts.clock else {
         return;
     };
     let words: Vec<String> = clock
@@ -3217,41 +3863,12 @@ fn emit_timer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
             .collect::<Vec<_>>()
             .join(" && "),
     );
-    let mut blocks: Vec<String> = vec!["rcc".into()];
-    blocks.extend(plan.ports.iter().map(|p| port_field(*p)));
-    blocks.extend(plan.peripherals.keys().map(|n| n.to_ascii_lowercase()));
-    blocks.extend(plan.timers.keys().map(|n| format!("tim{n}")));
     for (n, t) in &plan.timers {
+        let Some(tf) = &facts.tim else { break };
         let writes = timer_oracle(*n, t, tf);
         let count = writes.len();
         let pins: Vec<&String> = t.channels.values().map(|(p, _)| p).collect();
-        let ports: BTreeSet<char> = pins.iter().map(|p| plan.pins[*p].port).collect();
-        let mut setup = String::new();
-        for b in &blocks {
-            let _ = writeln!(setup, "        {b}: kani::any(),");
-        }
-        let _ = writeln!(
-            setup,
-            "    }};\n    \
-             let board = Board::take().unwrap();\n    \
-             let mut rcc = board.rcc;"
-        );
-        for port in &ports {
-            let f = port_field(*port);
-            let _ = writeln!(
-                setup,
-                "    let {f} = rcc.enable_{f}(&mut img, board.{f}).split();"
-            );
-        }
-        for pin in &pins {
-            let _ = writeln!(
-                setup,
-                "    let {f} = {port}.{f}.{method}(&mut img);",
-                f = pin_field(pin),
-                port = port_field(plan.pins[*pin].port),
-                method = method(&plan.pins[*pin])
-            );
-        }
+        let setup = harness_setup(plan, &pins);
         let expect: Vec<String> = writes
             .iter()
             .enumerate()
@@ -3316,6 +3933,136 @@ fn emit_timer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
             expect = expect.join("\n"),
         );
     }
+    if let Some(u) = &facts.usart {
+        for (name, sp) in &plan.serials {
+            emit_usart_proof(w, name, sp, plan, facts, u);
+        }
+    }
+}
+
+/// A targeted harness's image and setup, after `let mut img = Image {`: every
+/// block any, the board taken, and each of `pins`' ports clocked and the pin
+/// put in its role.
+fn harness_setup(plan: &Plan, pins: &[&String]) -> String {
+    let ports: BTreeSet<char> = pins.iter().map(|p| plan.pins[*p].port).collect();
+    let mut setup = String::new();
+    for b in image_fields(plan) {
+        let _ = writeln!(setup, "        {b}: kani::any(),");
+    }
+    let _ = writeln!(
+        setup,
+        "    }};\n    \
+         let board = Board::take().unwrap();\n    \
+         let mut rcc = board.rcc;"
+    );
+    for port in &ports {
+        let f = port_field(*port);
+        let _ = writeln!(
+            setup,
+            "    let {f} = rcc.enable_{f}(&mut img, board.{f}).split();"
+        );
+    }
+    for pin in pins {
+        let _ = writeln!(
+            setup,
+            "    let {f} = {port}.{f}.{method}(&mut img);",
+            f = pin_field(pin),
+            port = port_field(plan.pins[*pin].port),
+            method = method(&plan.pins[*pin])
+        );
+    }
+    setup
+}
+
+/// One port's proof (`AET-WO-4300b` §1.4): from its configured pins, its
+/// clock gate set and the reset clock's token, its configuration writes
+/// exactly the oracle's registers and values in order, reads none, and sets
+/// `UE` only in its last write. Every expected value is [`usart_oracle`]'s,
+/// from the solved port, never read from `board.rs`.
+fn emit_usart_proof(
+    w: &mut String,
+    name: &str,
+    sp: &SerialPlan,
+    plan: &Plan,
+    facts: &Facts,
+    u: &UsartFacts,
+) {
+    let t = type_name(name);
+    let f = name.to_ascii_lowercase();
+    let writes = usart_oracle(sp, u);
+    let count = writes.len();
+    let setup = harness_setup(plan, &[&sp.tx, &sp.rx]);
+    let gate = &facts.serials[name].gate;
+    let expect: Vec<String> = writes
+        .iter()
+        .enumerate()
+        .map(|(i, (register, offset, value))| {
+            format!(
+                "    kani::assert(spy.writes[{i}] == (Block::{t}, {offset:#04x}, {value:#010x}), \"{name} write {k} is not {register} = {value:#010x}\");",
+                k = i + 1,
+            )
+        })
+        .collect();
+    let _ = writeln!(
+        w,
+        "\n\
+         /// {name}'s configuration as the list of its writes, in order.\n\
+         struct {t}Spy {{\n    \
+             writes: [(Block, usize, u32); {count}],\n    \
+             n: usize,\n\
+         }}\n\
+         \n\
+         impl sealed::Sealed for {t}Spy {{}}\n\
+         \n\
+         impl Registers for {t}Spy {{\n    \
+             fn read(&mut self, _: sealed::Token, _: Block, _: usize) -> u32 {{\n        \
+                 kani::assert(false, \"{name}'s configuration read a register\");\n        \
+                 0\n    \
+             }}\n    \
+             fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n        \
+                 kani::assert(self.n < {count}, \"{name}'s configuration wrote more than {count} registers\");\n        \
+                 if self.n < {count} {{\n            \
+                     self.writes[self.n] = (block, offset, value);\n        \
+                 }}\n        \
+                 self.n += 1;\n    \
+             }}\n    \
+             fn read8(&mut self, _: sealed::Token, _: Block, _: usize) -> u8 {{\n        \
+                 kani::assert(false, \"{name}'s configuration made a byte access\");\n        \
+                 0\n    \
+             }}\n    \
+             fn write8(&mut self, _: sealed::Token, _: Block, _: usize, _: u8) {{\n        \
+                 kani::assert(false, \"{name}'s configuration made a byte access\");\n    \
+             }}\n\
+         }}\n\
+         \n\
+         /// Serial port `{label}`: from its configured pins, its clock gate and the\n\
+         /// reset clock's token, {name}'s configuration writes exactly the solved\n\
+         /// `BRR`, `CR2` and `CR1`, in order, the last write alone setting `UE`, and\n\
+         /// reads none.\n\
+         #[kani::proof]\n\
+         fn {f}_start_writes_the_solved_values() {{\n    \
+             let mut img = Image {{\n\
+         {setup}    \
+             let clock = rcc.reset_clock(&mut img);\n    \
+             kani::assume(clock.is_ok());\n    \
+             let clock = clock.unwrap();\n    \
+             let usart = rcc.enable_{f}(&mut img, board.{f});\n    \
+             kani::assert(img.rcc[{word}] & {mask:#010x} != 0, \"{name}'s clock gate, RCC_{register} bit {bit}, is not set\");\n    \
+             let mut spy = {t}Spy {{ writes: [(Block::Rcc, 0, 0); {count}], n: 0 }};\n    \
+             let _port = usart.configure(&mut spy, &clock, {tx}, {rx});\n    \
+             kani::assert(spy.n == {count}, \"{name}'s configuration did not make exactly {count} writes\");\n\
+         {expect}\n    \
+             kani::cover!(true, \"{name} configured\");\n\
+         }}",
+        label = sp.label_text(),
+        word = gate.offset / 4,
+        mask = 1u32 << gate.bit,
+        register = gate.register,
+        bit = gate.bit,
+        tx = pin_field(&sp.tx),
+        rx = pin_field(&sp.rx),
+        expect = expect.join("\n"),
+    );
 }
 
 /// The proof over each SPI peripheral's transfer (`AET-WO-4200`), on the
@@ -3472,10 +4219,7 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
             frames_set = shifted("self.tsize", ">>", s.tsize),
         );
         // The setup: the bus's ports, its pins and chip selects, `init`.
-        let mut blocks: Vec<String> = vec!["rcc".into()];
-        blocks.extend(plan.ports.iter().map(|p| port_field(*p)));
-        blocks.extend(plan.peripherals.keys().map(|n| n.to_ascii_lowercase()));
-        blocks.extend(plan.timers.keys().map(|n| format!("tim{n}")));
+        let blocks = image_fields(plan);
         let pins: Vec<&String> = p.pins.values().collect();
         let select_pins: Vec<&String> = selects.iter().map(|s| &s.pin).collect();
         let ports: BTreeSet<char> = pins
@@ -3618,10 +4362,7 @@ fn emit_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts, speeds: &Spe
         let mode = I2C_MODES[admitted[0]].0;
         let pins: Vec<String> = p.pins.values().map(|n| pin_field(n)).collect();
         let ports: BTreeSet<char> = p.pins.values().map(|n| plan.pins[n].port).collect();
-        let mut blocks: Vec<String> = vec!["rcc".into()];
-        blocks.extend(plan.ports.iter().map(|p| port_field(*p)));
-        blocks.extend(plan.peripherals.keys().map(|n| n.to_ascii_lowercase()));
-        blocks.extend(plan.timers.keys().map(|n| format!("tim{n}")));
+        let blocks = image_fields(plan);
         let _ = writeln!(
             w,
             "\n\
@@ -3944,7 +4685,8 @@ mod tests {
         let mut s = solved();
         s.assignments
             .insert("TX".into(), assign("PB14", "USART1", "USART1_TX", 4));
-        assert_eq!(kind(generate("b", &s, &t)), "UnsupportedPeripheral");
+        // A USART line no solved serial port names (`AET-WO-4300b`).
+        assert_eq!(kind(generate("b", &s, &t)), "SerialSignalMismatch");
 
         let mut s = solved();
         s.assignments

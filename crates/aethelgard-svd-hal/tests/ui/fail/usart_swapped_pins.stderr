@@ -1,0 +1,18 @@
+error[E0308]: arguments to this method are incorrect
+  --> tests/ui/fail/usart_swapped_pins.rs:22:26
+   |
+22 |     let _usart1 = usart1.configure(&mut r, &clock, rx, tx);
+   |                          ^^^^^^^^^                 --  -- expected `PA10<AlternateFunction<7>>`, found `PA9<AlternateFunction<7>>`
+   |                                                    |
+   |                                                    expected `PA9<AlternateFunction<7>>`, found `PA10<AlternateFunction<7>>`
+   |
+note: method defined here
+  --> tests/ui/fail/../serial-four/board.rs
+   |
+   |     pub fn configure<R: Registers>(
+   |            ^^^^^^^^^
+help: swap these arguments
+   |
+22 -     let _usart1 = usart1.configure(&mut r, &clock, rx, tx);
+22 +     let _usart1 = usart1.configure(&mut r, &clock, tx, rx);
+   |

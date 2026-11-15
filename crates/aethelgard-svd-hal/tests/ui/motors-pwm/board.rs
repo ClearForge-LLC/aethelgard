@@ -724,17 +724,19 @@ impl Rcc {
     }
 
     /// A [`ResetClock`], when each of these fields holds 0, its reset value
-    /// (RM0433 Rev 9 §8.7.2, §8.7.7–8.7.9). Reads the four registers and writes nothing.
+    /// (RM0433 Rev 9 §8.7.2, §8.7.7–8.7.9, §8.7.21). Reads the five registers and writes nothing.
     /// - `RCC_CR`: `HSIDIV`.
     /// - `RCC_CFGR`: `SWS`, `TIMPRE`.
     /// - `RCC_D1CFGR`: `D1CPRE`, `D1PPRE`, `HPRE`.
     /// - `RCC_D2CFGR`: `D2PPRE1`, `D2PPRE2`.
+    /// - `RCC_D2CCIP2R`: `USART16SEL`, `USART28SEL`.
     pub fn reset_clock<R: Registers>(&self, r: &mut R) -> Result<ResetClock, NotResetClock> {
         let cr = r.read(TOKEN, Block::Rcc, 0x000);
         let cfgr = r.read(TOKEN, Block::Rcc, 0x010);
         let d1cfgr = r.read(TOKEN, Block::Rcc, 0x018);
         let d2cfgr = r.read(TOKEN, Block::Rcc, 0x01c);
-        if cr & 0x00000018 == 0 && cfgr & 0x00008038 == 0 && d1cfgr & 0x00000f7f == 0 && d2cfgr & 0x00000770 == 0 {
+        let d2ccip2r = r.read(TOKEN, Block::Rcc, 0x054);
+        if cr & 0x00000018 == 0 && cfgr & 0x00008038 == 0 && d1cfgr & 0x00000f7f == 0 && d2cfgr & 0x00000770 == 0 && d2ccip2r & 0x0000003f == 0 {
             Ok(ResetClock { _private: () })
         } else {
             Err(NotResetClock)

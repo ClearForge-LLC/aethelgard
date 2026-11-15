@@ -2,7 +2,9 @@
 //! does not compile, and a valid driver does. Snapshots are regenerated with
 //! `TRYBUILD=overwrite` whenever the board crate is (spike F7). The `timer_*`
 //! cases and `valid_timer_driver` include the generated `motors-pwm` board by
-//! path (`tests/ui/motors-pwm/board.rs`, `AET-WO-4300a`).
+//! path (`tests/ui/motors-pwm/board.rs`, `AET-WO-4300a`); the `usart_*` cases
+//! and `valid_usart_driver` the four-port board (`tests/ui/serial-four/board.rs`,
+//! `AET-WO-4300b`).
 
 #[test]
 fn misuse_does_not_compile_and_the_driver_does() {
