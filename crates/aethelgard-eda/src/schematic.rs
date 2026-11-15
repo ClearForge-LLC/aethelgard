@@ -28,6 +28,8 @@ use crate::sexpr::{self, Sx, mm};
 // (`strict_fence` gives every file of `src/` a role).
 #[path = "schematic_power.rs"]
 mod power;
+#[path = "schematic_support.rs"]
+mod support;
 use aethelgard_ir::power::BATTERY_NET;
 
 /// KiCad 10's own schematic format version (ruled D7 on PR #40).
@@ -217,13 +219,14 @@ pub(crate) struct Owner {
 }
 
 /// Where an owned part must sit: each of its own pads with the IC pad it
-/// must lie beside, the largest copper-edge gap allowed, and the rule that
-/// asks for it.
+/// must lie beside, and, for a power-tree part, the largest copper-edge gap
+/// allowed with the rule that asks for it, which the loop gate judges
+/// (`crate::loops`). The MCU's support parts carry none: the support gate
+/// judges them from the MCU's row, not from here (`AET-WO-4300g`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Anchor {
     pub(crate) pads: Vec<(String, String)>,
-    pub(crate) bound_nm: i64,
-    pub(crate) rule: &'static str,
+    pub(crate) loop_rule: Option<(i64, &'static str)>,
 }
 
 /// Each connector part's symbol and footprint, both vendored (`AET-WO-4300f`
@@ -466,23 +469,6 @@ impl Builder<'_> {
     }
 }
 
-fn by_name<'p>(pins: &'p [Pin], name: &str) -> impl Iterator<Item = &'p Pin> + 'p {
-    let name = name.to_owned();
-    pins.iter().filter(move |p| p.name == name)
-}
-
-/// The MCU's connection for a pin, by name. Signal pins are set later.
-fn mcu_conn(b: &mut Builder<'_>, name: &str) -> Option<Conn> {
-    let supply = b.spec.mcu.supply.clone();
-    if name.starts_with("VDD") || name == "VBAT" || name == "VREF+" || name == "PDR_ON" {
-        Some(b.rail(&supply))
-    } else if name.starts_with("VSS") || name == "BOOT0" {
-        Some(b.ground())
-    } else {
-        None
-    }
-}
-
 /// Emits the schematic, the bill of materials and the placed board
 /// ([`crate::pcb`]), all from one set of parts. `table` is the MCU's pin table
 /// the topology was solved against: each solved pin is drawn on the symbol
@@ -640,12 +626,9 @@ pub(crate) fn design(
     let mcu_ref = b.reference('U')?;
     let mcu_sym = library::symbol(MCU)?;
     let mcu_pins = pins(&mcu_sym).map_err(EmitError::Internal)?;
-    let mut conns = BTreeMap::new();
-    for p in &mcu_pins {
-        if let Some(c) = mcu_conn(&mut b, &p.name) {
-            conns.insert(p.number.clone(), c);
-        }
-    }
+    // Its support pins and network, from its row (`AET-WO-4300g`); signal
+    // pins are set below.
+    let mut conns = support::draw(&mut b, &mcu_ref)?;
     let solved_pins = solved
         .assignments
         .iter()
@@ -666,17 +649,23 @@ pub(crate) fn design(
             .iter()
             .find(|p| p.number == position)
             .ok_or_else(unknown)?;
+        // belt-and-suspenders: `solve` never assigns a reserved pin, and the
+        // row's pins are power, reset, boot and debug pins.
+        if conns.contains_key(&p.number) {
+            return Err(EmitError::Internal(format!(
+                "{net}: the MCU's pin {position} is already a support pin"
+            )));
+        }
         conns.insert(p.number.clone(), Conn::Net(net.clone()));
     }
-    let mut vcaps: Vec<&Pin> = by_name(&mcu_pins, "VCAP").collect();
-    vcaps.sort_by_key(|p| p.number.parse::<u32>().unwrap_or(u32::MAX));
-    for (i, p) in vcaps.iter().enumerate() {
-        let net = b.own_net(format!("{mcu_ref}_VCAP{}", i + 1))?;
-        conns.insert(p.number.clone(), Conn::Net(net.clone()));
-        let g = b.ground();
-        b.passive('C', "2u2".into(), Conn::Net(net), g)?;
+    if let Some((pin, _)) = conns
+        .iter()
+        .find(|(pin, _)| !mcu_pins.iter().any(|p| &p.number == *pin))
+    {
+        return Err(EmitError::Internal(format!(
+            "the MCU's row names pin {pin}, which the symbol lacks"
+        )));
     }
-    b.decouple(&mcu_ref, &spec.mcu.supply.clone(), "100n")?;
     b.parts.push(Part {
         lib_id: MCU,
         reference: mcu_ref.clone(),

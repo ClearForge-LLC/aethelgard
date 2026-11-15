@@ -72,8 +72,7 @@ fn anchor(b: &mut Builder<'_>, ic: &str, pads: &[(&str, &str)], bound_nm: i64, r
                     .iter()
                     .map(|(own, theirs)| ((*own).to_owned(), (*theirs).to_owned()))
                     .collect(),
-                bound_nm,
-                rule,
+                loop_rule: Some((bound_nm, rule)),
             }),
             decouples: false,
         });
@@ -112,7 +111,7 @@ fn row(reference: &str, part: &str) -> Result<&'static Row, EmitError> {
 }
 
 /// Picofarads the way schematics write them: `100n`, `10u`, `2u2`.
-fn farads(pf: u64) -> String {
+pub(super) fn farads(pf: u64) -> String {
     si(pf, ['p', 'n', 'u'])
 }
 

@@ -1020,7 +1020,17 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
     let mut out = Vec::new();
     for part in parts {
         let mut fp = library::footprint(&part.footprint)?;
-        if part.owner.as_ref().is_some_and(|o| o.anchor.is_some()) {
+        // The MCU's own reference too, when its support network rings it: on
+        // the silkscreen, its box above the top row of pins pushed that row's
+        // capacitors 2.49 mm out (`AET-WO-4300g` §3, measured).
+        let rings = parts.iter().any(|x| {
+            x.owner
+                .as_ref()
+                .is_some_and(|o| o.anchor.is_some() && o.ic == part.reference)
+        });
+        if part.owner.as_ref().is_some_and(|o| o.anchor.is_some())
+            || (rings && part.lib_id == schematic::MCU)
+        {
             reference_on_fab(&mut fp);
         }
         let nets = pin_nets(part)?;
