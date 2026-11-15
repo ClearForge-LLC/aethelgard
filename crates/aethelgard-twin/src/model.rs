@@ -817,9 +817,7 @@ mod tests {
         );
         assert_eq!(
             imu(step(StepKind::Data, &[0x9D], 6, 0x1202_0000_0040)),
-            [
-                "[NOISY] spi1.spi1mux.u5: bank 0 read 0x1D -> 0x12 0x02 0x00 0x00 0x00 0x40"
-            ]
+            ["[NOISY] spi1.spi1mux.u5: bank 0 read 0x1D -> 0x12 0x02 0x00 0x00 0x00 0x40"]
         );
         let baro = |s: Step| Model::Bmp581.witness("i2c1.u8", &s).unwrap();
         assert_eq!(
