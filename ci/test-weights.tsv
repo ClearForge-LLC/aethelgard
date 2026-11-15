@@ -42,12 +42,12 @@ tests/board_tier2.rs	a_missing_clock_enable_fails	179.733
 tests/board_tier2.rs	a_vacuous_harness_fails	101.815
 tests/board_tier2.rs	a_write_past_the_block_fails	178.851
 tests/board_tier2.rs	a_wrong_alternate_function_fails	127.107
-tests/board_tier2.rs	against_fab_names_a_missing_inner_layer_and_a_stackup_that_lies	460.000
+tests/board_tier2.rs	against_fab_names_a_missing_inner_layer_and_a_stackup_that_lies	566.000
 tests/board_tier2.rs	build_gives_one_sha256_at_two_paths	1.180
 tests/board_tier2.rs	connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers	4.000
-tests/board_tier2.rs	every_admitted_identifier_character_survives_every_output	251.072
+tests/board_tier2.rs	every_admitted_identifier_character_survives_every_output	280.000
 tests/board_tier2.rs	every_corpus_file_the_reader_accepts_gets_its_stated_kicad_verdict	51.275
-tests/board_tier2.rs	four_layer_fixture_passes_every_gate_and_its_package_holds	460.000
+tests/board_tier2.rs	four_layer_fixture_passes_every_gate_and_its_package_holds	560.000
 tests/board_tier2.rs	prove_with_spec_tells_a_hand_written_harness_from_the_generated_one	16.101
 tests/board_tier2.rs	the_generated_board_proves	183.195
 tests/board_tier2.rs	verify_refuses_a_board_swapped_before_extract	4.222
@@ -289,7 +289,7 @@ tests/with_tools.rs	a_part_on_each_edge_passes_erc_and_drc	6.720
 # 608.59 s against 382.411 here, the fab-out verify 500.11 and 549.44 against 515.667. The worst of each,
 # until the next refit (pre-existing on main: its slowest shard was 18.9 min, shard 6, with this test).
 tests/verify_2k2_tier2.rs	verify_binds_the_reference_and_two_runs_print_the_same_bytes	612.290
-tests/verify_2k2_tier2.rs	verify_fab_out_writes_the_package_its_verdict_names_at_any_path	549.440
+tests/verify_2k2_tier2.rs	verify_fab_out_writes_the_package_its_verdict_names_at_any_path	661.000
 # AET-WO-1309: both took 3.4 s together in the pinned image on Furnace (2026-11-15), taken at about twice that for CI until a CI run refits them.
 tests/with_tools.rs	the_through_hole_and_thermal_fixtures_pass_drc_by_the_gates_rules	6.000
 tests/with_tools.rs	a_thermal_via_other_than_its_rule_fails_drc_by_the_gates_rule	2.000
