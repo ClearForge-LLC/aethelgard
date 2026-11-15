@@ -288,7 +288,7 @@ The architect ruled D1 (a), Q1 accepted (`SetGlobalQuantum` stated, a deviation 
 | P15 | reference mutants' evidence unchanged | **Held.** `attribute_seeded` 11 of 11 with every mutant generating its board. |
 | P16 | `verify` on the PWM fixture | **Held.** Pass in 30 s: ERC, DRC, extract, five targeted `prove` gates, build, simulate; the info finding names them and `proofs::every_valid_sequence` as not run. |
 
-`twin_tier2` 32 of 32, `campaign_tier2` and `attribute_seeded` pass. TIER2_MIN is 108 (`main`'s 101, the six motor tests, and the DShot600 campaign test; the `#[test]` count of the ten tier-2 files is 108).
+`twin_tier2` 32 of 32, `campaign_tier2` and `attribute_seeded` pass. TIER2_MIN is 110 after the merge of `1309` (`main`'s 103, the six motor tests, and the DShot600 campaign test; the `#[test]` count of the ten tier-2 files is 110). `main` at `351d25c` holds an empty file named `9` at the repository root, from `1309`; outside this fence, reported.
 
 ### Questions for the architect (not stops)
 
