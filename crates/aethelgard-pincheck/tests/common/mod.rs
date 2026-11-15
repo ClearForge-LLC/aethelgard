@@ -32,6 +32,13 @@ pub struct Elf {
     pub shndx: u16,
     /// Make the symbol a function.
     pub function: bool,
+    pub etype: u16,
+    /// The segment's load address, if not where it runs.
+    pub paddr: Option<u32>,
+    /// A second PT_LOAD flashing 4 other bytes over the symbol's first word.
+    pub overlay: bool,
+    /// `.rodata` marked writable.
+    pub writable: bool,
 }
 
 /// Step G's registers as the `4400` spike decoded them by hand (FEEDBACK §5):
@@ -61,6 +68,10 @@ impl Default for Elf {
             section_offset: None,
             shndx: 1,
             function: false,
+            etype: 2,
+            paddr: None,
+            overlay: false,
+            writable: false,
         }
     }
 }
@@ -120,35 +131,28 @@ impl Elf {
         b.extend_from_slice(b"\x7fELF");
         b.extend_from_slice(&[self.class, self.data, 1, 0]);
         b.extend_from_slice(&[0; 8]);
-        put16(&mut b, 2); // ET_EXEC
+        put16(&mut b, self.etype);
         put16(&mut b, self.machine);
         put32(&mut b, 1);
         put32(&mut b, ADDR); // entry
-        put32(&mut b, EHDR as u32); // phoff
+        // The program headers go after the section headers, so a second one
+        // moves no other offset; the PHDR bytes at EHDR stay zero.
+        let phoff = shoff + 4 * 40;
+        let phnum: u16 = if self.overlay { 2 } else { 1 };
+        put32(&mut b, phoff as u32);
         put32(&mut b, shoff as u32);
         put32(&mut b, 0x0500_0400);
-        for v in [EHDR as u16, PHDR as u16, 1, 40, 4, 0] {
+        for v in [EHDR as u16, PHDR as u16, phnum, 40, 4, 0] {
             put16(&mut b, v);
         }
-        // One PT_LOAD: the data, flashed at ADDR.
-        for v in [
-            1,
-            DATA_OFF as u32,
-            ADDR,
-            ADDR,
-            data.len() as u32,
-            data.len() as u32,
-            4,
-            4,
-        ] {
-            put32(&mut b, v);
-        }
+        b.extend_from_slice(&[0; PHDR]);
         b.extend_from_slice(&data);
         b.extend_from_slice(&syms);
         b.extend_from_slice(STRTAB);
         section(&mut b, [0, 0, 0, 0, 0, 0, 0, 0]);
         let rodata = self.section_offset.unwrap_or(DATA_OFF as u32);
-        section(&mut b, [0, 1, 2, ADDR, rodata, data.len() as u32, 0, 0]);
+        let flags = if self.writable { 3 } else { 2 };
+        section(&mut b, [0, 1, flags, ADDR, rodata, data.len() as u32, 0, 0]);
         section(
             &mut b,
             [0, 2, 0, 0, symtab_off as u32, syms.len() as u32, 3, 16],
@@ -157,6 +161,18 @@ impl Elf {
             &mut b,
             [0, 3, 0, 0, strtab_off as u32, STRTAB.len() as u32, 0, 0],
         );
+        // One PT_LOAD: the data, run at ADDR and flashed at `paddr`.
+        let len = data.len() as u32;
+        let paddr = self.paddr.unwrap_or(ADDR);
+        for v in [1, DATA_OFF as u32, ADDR, paddr, len, len, 4, 4] {
+            put32(&mut b, v);
+        }
+        if self.overlay {
+            // Four bytes of the symbol table, flashed at ADDR, run in RAM.
+            for v in [1, symtab_off as u32, 0x3000_0000, ADDR, 4, 4, 6, 4] {
+                put32(&mut b, v);
+            }
+        }
         b
     }
 }

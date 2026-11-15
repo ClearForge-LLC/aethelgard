@@ -20,8 +20,9 @@
 //! at its reset state. The reset state is RM0433 Rev 9 §11.4.1 (`MODER` resets
 //! to analog, except PA13–PA15 and PB3–PB4, which reset to alternate) and
 //! §11.4.9–10 (both AF registers reset to 0). Input and analog drive nothing,
-//! and ArduPilot writes input to every pin it is not told about, so neither
-//! counts (`AET-WO-4400a` FEEDBACK).
+//! and ArduPilot writes input to every pin it is not told about (unless a
+//! `DEFAULTGPIO` line before `MCU` says otherwise), so neither counts
+//! (`AET-WO-4400a` FEEDBACK).
 
 #![forbid(unsafe_code)]
 

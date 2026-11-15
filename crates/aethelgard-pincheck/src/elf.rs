@@ -5,8 +5,13 @@
 //! The bytes are located twice: through the symbol's section, and through the
 //! `PT_LOAD` segment that holds its address, which is what is flashed. The two
 //! must name the same file offset, so a section table that lies is refused
-//! rather than read (`AET-WO-4400a` §5). Every malformed input is refused by
-//! name (`INV-06`).
+//! rather than read (`AET-WO-4400a` §5). The segment must run where it is
+//! flashed (`p_vaddr == p_paddr`), no other segment may flash over those
+//! bytes, and the section may not be writable. Every malformed input is
+//! refused by name (`INV-06`).
+//!
+//! The symbol table itself is trusted: a `st_value` pointing at a decoy copy
+//! is caught only by the `hwdef.h` cross-check (adversarial A6).
 
 use crate::{GpioConfig, PORTS, PortRegisters, Refusal};
 
@@ -19,6 +24,8 @@ const SHDR_LEN: u32 = 40;
 const PHDR_LEN: u32 = 32;
 const SYM_LEN: u32 = 16;
 const EM_ARM: u16 = 40;
+const ET_EXEC: u16 = 2;
+const SHF_WRITE: u32 = 1;
 const SHT_PROGBITS: u32 = 1;
 const SHT_SYMTAB: u32 = 2;
 const SHT_STRTAB: u32 = 3;
@@ -188,32 +195,67 @@ fn loaded_offset(bytes: &[u8], value: u32, size: u32) -> Result<u64, Refusal> {
         u32::from(phnum) * PHDR_LEN,
         "the program header table",
     )?;
-    let mut holding = Vec::new();
+    // Each PT_LOAD with file bytes: (offset, vaddr, paddr, filesz).
+    let mut loads = Vec::new();
     for p in table.as_chunks::<{ PHDR_LEN as usize }>().0 {
-        let (offset, vaddr, filesz) = (u32_at(p, 4), u32_at(p, 8), u32_at(p, 16));
-        if u32_at(p, 0) != PT_LOAD {
+        if u32_at(p, 0) != PT_LOAD || u32_at(p, 16) == 0 {
             continue;
         }
+        let (offset, vaddr, paddr, filesz) =
+            (u32_at(p, 4), u32_at(p, 8), u32_at(p, 12), u32_at(p, 16));
         range(bytes, u64::from(offset), filesz, "a PT_LOAD segment")?;
-        let inside = value >= vaddr
-            && u64::from(value) + u64::from(size) <= u64::from(vaddr) + u64::from(filesz);
-        if inside {
-            holding.push(u64::from(offset) + u64::from(value - vaddr));
+        loads.push((offset, vaddr, paddr, filesz));
+    }
+    let holds = |start: u32, len: u32, at: u32| {
+        at >= start && u64::from(at) + u64::from(size) <= u64::from(start) + u64::from(len)
+    };
+    let holding: Vec<_> = loads
+        .iter()
+        .filter(|&&(_, v, _, f)| holds(v, f, value))
+        .collect();
+    let &&(offset, vaddr, paddr, _) = match holding.as_slice() {
+        [one] => one,
+        [] => {
+            return refuse(
+                "SymbolNotLoaded",
+                format!(
+                    "no PT_LOAD's file image holds {value:#010x}..+{size}: nothing flashed carries it"
+                ),
+            );
         }
-    }
-    match holding.as_slice() {
-        [one] => Ok(*one),
-        [] => refuse(
-            "SymbolNotLoaded",
+        _ => {
+            return refuse(
+                "MalformedElf",
+                format!("{} PT_LOAD segments hold {value:#010x}", holding.len()),
+            );
+        }
+    };
+    // The image is flashed by physical address and read in place at reset
+    // (ChibiOS's __early_init runs before .data is copied): the bytes must sit
+    // where they are read, and nothing else may be flashed over them
+    // (AET-WO-4400a adversarial A2, A5).
+    if vaddr != paddr {
+        return refuse(
+            "SymbolNotInPlace",
             format!(
-                "no PT_LOAD's file image holds {value:#010x}..+{size}: nothing flashed carries it"
+                "{value:#010x} is in a PT_LOAD loaded at {paddr:#010x} and run at {vaddr:#010x}: what reset reads is not what was flashed"
             ),
-        ),
-        _ => refuse(
-            "MalformedElf",
-            format!("{} PT_LOAD segments hold {value:#010x}", holding.len()),
-        ),
+        );
     }
+    let overlaps = loads
+        .iter()
+        .filter(|&&(_, _, p, f)| {
+            u64::from(p) < u64::from(value) + u64::from(size)
+                && u64::from(value) < u64::from(p) + u64::from(f)
+        })
+        .count();
+    if overlaps != 1 {
+        return refuse(
+            "SegmentsOverlap",
+            format!("{overlaps} PT_LOAD segments flash bytes over {value:#010x}..+{size}"),
+        );
+    }
+    Ok(u64::from(offset) + u64::from(value - vaddr))
 }
 
 /// Reads the reset GPIO configuration out of a linked ELF.
@@ -237,6 +279,13 @@ pub fn read(bytes: &[u8]) -> Result<GpioConfig, Refusal> {
         return refuse(
             "WrongByteOrder",
             format!("EI_DATA is {}, not 1 (little-endian)", bytes[5]),
+        );
+    }
+    let kind = u16_at(bytes, 16);
+    if kind != ET_EXEC {
+        return refuse(
+            "WrongType",
+            format!("e_type is {kind}, not {ET_EXEC} (ET_EXEC): not a linked firmware"),
         );
     }
     let machine = u16_at(bytes, 18);
@@ -284,6 +333,14 @@ pub fn read(bytes: &[u8]) -> Result<GpioConfig, Refusal> {
             "SymbolOutsideSection",
             format!(
                 "{name}'s section is not allocated PROGBITS: it holds no bytes the part receives"
+            ),
+        );
+    }
+    if section.flags & SHF_WRITE != 0 {
+        return refuse(
+            "SymbolOutsideSection",
+            format!(
+                "{name}'s section is writable: RAM the firmware may change before or after reset reads it"
             ),
         );
     }

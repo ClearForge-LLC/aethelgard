@@ -52,6 +52,11 @@ for i in "${!lines[@]}"; do
   fi
 
   if [[ "$line" == *"||"* ]]; then refuse "$i" "'||' would swallow a failure"; fi
+  # Docker's /bin/sh -c has no -e: after `;` or a lone `&`, a failed check
+  # above it no longer stops the build (AET-WO-4400a adversarial A3).
+  if [[ "$line" == *";"* ]] || [[ "$line" =~ (^|[^&])\&([^&]|$) ]]; then
+    refuse "$i" "';' or a lone '&' would let a failed check pass: $line"
+  fi
 
   if [[ "${line,,}" =~ ^[[:space:]]*from[[:space:]] ]]; then
     from_seen=1
@@ -120,7 +125,7 @@ for i in "${!lines[@]}"; do
     fi
   fi
 
-  if [ "$shaped" -eq 0 ] && { [[ "$line" =~ (^|[^a-z-])(wget|pip3?|npm|git[[:space:]]+clone)([^a-z-]|$) ]] || [[ "${line,,}" =~ ^[[:space:]]*add[[:space:]].*:// ]]; }; then
+  if [ "$shaped" -eq 0 ] && { [[ "$line" =~ (^|[^a-z-])(wget|pip3?|npm|git[[:space:]].*clone)([^a-z-]|$) ]] || [[ "${line,,}" =~ ^[[:space:]]*add[[:space:]].*:// ]]; }; then
     refuse "$i" "fetches outside the checked curl, clone and pip shapes: $line"
   fi
 

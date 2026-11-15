@@ -284,6 +284,33 @@ fn every_malformed_elf_is_refused_by_name() {
         ..Elf::default()
     };
     assert_eq!(elf_kind(&lie), "SectionTableDisagrees");
+    assert_eq!(
+        elf_kind(&Elf {
+            etype: 4,
+            ..Elf::default()
+        }),
+        "WrongType"
+    );
+    // Adversarial A2, A5: what reset reads must be what was flashed there.
+    let moved = Elf {
+        paddr: Some(common::ADDR + 0x1000),
+        ..Elf::default()
+    };
+    assert_eq!(elf_kind(&moved), "SymbolNotInPlace");
+    assert_eq!(
+        elf_kind(&Elf {
+            overlay: true,
+            ..Elf::default()
+        }),
+        "SegmentsOverlap"
+    );
+    assert_eq!(
+        elf_kind(&Elf {
+            writable: true,
+            ..Elf::default()
+        }),
+        "SymbolOutsideSection"
+    );
     let mut renamed = bytes.clone();
     let at = renamed
         .windows(19)
