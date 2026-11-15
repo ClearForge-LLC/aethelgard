@@ -103,7 +103,7 @@ const GOOD_REGISTERS: [&str; 7] = [
 /// What Renode 1.17.0's BME280 logs for U2's identity read (`AET-WO-2204`
 /// S1, measured).
 const GOOD_WITNESS: &str =
-    "[03:07:39.3762] [NOISY] i2c1.u2: Write D0\n[03:07:39.3765] [NOISY] i2c1.u2: Read 60\n";
+    "[00:00:00.037620000] [NOISY] i2c1.u2: Write D0\n[00:00:00.037650000] [NOISY] i2c1.u2: Read 60\n";
 
 /// The record a firmware that read U2's ID register (0xD0) as 0x60 leaves.
 const GOOD_RECORD: [&str; 2] = ["0x22020000", "0x00000060"];
@@ -113,14 +113,14 @@ const GOOD_SPI_RECORD: [&str; 2] = ["0x22020000", "0x00EF4017"];
 
 /// What Renode 1.17.0's `GenericSpiFlash` logs for U4's JEDEC ID read behind
 /// SPI1's multiplexer (`AET-WO-4200` S2, measured).
-const GOOD_SPI_WITNESS: &str = "[03:07:39.4001] [NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation\n\
-[03:07:39.4002] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadID, write enabled False\n\
-[03:07:39.4003] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
-[03:07:39.4004] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0xEF\n\
-[03:07:39.4005] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
-[03:07:39.4006] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x40\n\
-[03:07:39.4007] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
-[03:07:39.4008] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x17\n";
+const GOOD_SPI_WITNESS: &str = "[00:00:00.040010000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation\n\
+[00:00:00.040020000] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadID, write enabled False\n\
+[00:00:00.040030000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
+[00:00:00.040040000] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0xEF\n\
+[00:00:00.040050000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
+[00:00:00.040060000] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x40\n\
+[00:00:00.040070000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
+[00:00:00.040080000] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x17\n";
 
 /// U2's record when the wait for TXIS expired: the bus never answered.
 const TXIS_TIMEOUT: [&str; 2] = ["0x22020001", "0x00000060"];
@@ -204,11 +204,11 @@ fn toolbox_built(stdout: &str, build: &str) -> Dir {
         r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
 /bin/grep -qx 'use-synchronous-logging = true' "$2" || exit 97
-/bin/grep -qx 'log-timestamps-type = Host' "$2" || exit 97
+/bin/grep -qx 'log-timestamps-type = Virtual' "$2" || exit 97
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n{build_line}'; exit 0; fi
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 /bin/cat '{out}'

@@ -1263,7 +1263,8 @@ fn a_device_named_for_a_renode_instance_or_keyword_breaks_the_load() {
 
 /// Renode 1.17.0's own configuration when given none, as it writes it (the
 /// home as `$HOME`), measured; the CLI's (`renode::config`, pinned by its
-/// unit test) is this with `use-synchronous-logging = true`.
+/// unit test) is this with `use-synchronous-logging = true` and, since
+/// `AET-WO-4300a` (`4300` D2), `log-timestamps-type = Virtual`.
 const RENODE_DEFAULT_CONFIG: &str = "[general]
 use-synchronous-logging = False
 terminal = Termsharp
@@ -1287,7 +1288,7 @@ max-tb-size = 536870912
 ";
 
 #[test]
-fn renode_s_configuration_differs_from_its_default_in_synchronous_logging_alone() {
+fn renode_s_configuration_differs_from_its_default_in_synchronous_logging_and_virtual_time_alone() {
     // AET-WO-2204 D4. Renode writes every key it reads into its default file
     // when given none; given a file stating every one of them, it only reads
     // it: the CLI's file is sealed read-only for the tool uid (AET-WO-1601),
@@ -1331,7 +1332,7 @@ fn renode_s_configuration_differs_from_its_default_in_synchronous_logging_alone(
         sorted(RENODE_DEFAULT_CONFIG),
         "Renode's default configuration is exactly the pinned table"
     );
-    // The same with the one key changed is read and never written.
+    // The same with the two keys changed is read and never written.
     let given = dir.join("given");
     fs::create_dir_all(&given).unwrap();
     let text = RENODE_DEFAULT_CONFIG
@@ -1339,6 +1340,10 @@ fn renode_s_configuration_differs_from_its_default_in_synchronous_logging_alone(
         .replace(
             "use-synchronous-logging = False",
             "use-synchronous-logging = true",
+        )
+        .replace(
+            "log-timestamps-type = Host",
+            "log-timestamps-type = Virtual",
         );
     let config = given.join("renode.config");
     fs::write(&config, &text).unwrap();

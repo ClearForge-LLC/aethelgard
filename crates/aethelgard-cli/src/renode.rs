@@ -21,8 +21,13 @@ const LOG_ERROR: &str = "[ERROR]";
 pub const CONFIG_FILE: &str = "renode.config";
 
 /// That configuration (`AET-WO-2204` D4), for a call whose tool home is
-/// `home`. It changes one key from what Renode writes for itself when given
-/// no file: `use-synchronous-logging = true`, so each log entry is written by
+/// `home`. It changes two keys from what Renode writes for itself when given
+/// no file. `log-timestamps-type = Virtual` (`AET-WO-4300` D2, built in
+/// `AET-WO-4300a`): each line carries the emulation's virtual time
+/// (`Logger.cs` L592, `TimeInterval.ToString`), so a line a timer event
+/// causes carries its exact time and a line the CPU causes the start of its
+/// quantum ([`QUANTUM`]); the judge strips it as it stripped the host time,
+/// and reads it only for a motor output's edges. `use-synchronous-logging = true`, so each log entry is written by
 /// the thread that logs it, with no queue and no log thread (`Logger.cs`
 /// L822–834); a line the firmware caused is on the console before `RunFor`
 /// returns, never split below line level by the monitor's output (spike F2)
@@ -41,7 +46,7 @@ pub fn config(home: &std::path::Path) -> String {
          serialization-mode = Generated\n\
          always-log-machine-name = False\n\
          collapse-repeated-log-entries = True\n\
-         log-timestamps-type = Host\n\
+         log-timestamps-type = Virtual\n\
          log-history-limit = 1000\n\
          history-path = {}/.config/renode/history\n\
          store-table-bits = 41\n\
@@ -57,6 +62,13 @@ pub fn config(home: &std::path::Path) -> String {
         home.display()
     )
 }
+
+/// The quantum every boot runs at, stated rather than left to Renode's
+/// default (`AET-WO-4300` D2). Renode 1.17.0 reads no configuration key for
+/// it (`ConfigurationManager` is asked for none); its default is
+/// `TimeSourceBase.DefaultQuantum`, 100 µs (L814), and this command sets the
+/// same value, [`aethelgard_twin::boot::QUANTUM_NS`], by the monitor.
+pub const QUANTUM: &str = "emulation SetGlobalQuantum \"0.000100000\"";
 
 /// The monitor commands. The platform is always the call's own copy, at a
 /// path this CLI chose, so no part of the caller's input reaches the monitor.
@@ -181,9 +193,9 @@ pub const LOG_FILTER: LogFilter = LogFilter {
     keep: &[ABORTED, LOAD_ERROR, LOG_ERROR, LOCKED[0], LOCKED[1]],
 };
 
-/// A log line without Renode's host timestamp (`[21:06:58.1004] `), which
-/// differs run to run and so never belongs in a finding (`INV-04`,
-/// `AET-WO-2301` F10).
+/// A log line without Renode's timestamp (`[00:00:00.019999000] `), which
+/// is the run's own clock and so never belongs in a finding's text
+/// (`INV-04`, `AET-WO-2301` F10, `AET-WO-4300a`).
 fn log_text(line: &str) -> &str {
     let line = line.trim();
     log_body(line).unwrap_or(line).trim()
@@ -450,6 +462,7 @@ impl BootPlan<'_> {
     pub fn commands(&self) -> String {
         let mut c = vec![
             format!("emulation SetSeed {}", aethelgard_twin::boot::SEED),
+            QUANTUM.to_owned(),
             "mach create".to_owned(),
             format!(
                 "machine LoadPlatformDescription @{}",
@@ -573,12 +586,20 @@ fn value(line: &str) -> Option<u64> {
     u64::from_str_radix(hex, 16).ok()
 }
 
-/// The text of a whole Renode log line after its host timestamp
-/// (`[21:06:58.1004] `), exactly: nothing trimmed. `None` for any other line.
+/// The text of a whole Renode log line after its virtual timestamp
+/// (`[00:00:00.019999000] `, `TimeInterval.ToString`), exactly: nothing
+/// trimmed. `None` for any other line.
 fn log_body(line: &str) -> Option<&str> {
+    log_stamped(line).map(|(_, body)| body)
+}
+
+/// A whole Renode log line's virtual time in nanoseconds, and its text after
+/// the timestamp. The stamp is `[hh:mm:ss.nnnnnnnnn] `, 21 bytes, and Renode
+/// counts time in nanoseconds (`TimeInterval.TicksPerNanosecond = 1`).
+pub(crate) fn log_stamped(line: &str) -> Option<(u64, &str)> {
     let b = line.as_bytes();
     let digits = |r: std::ops::Range<usize>| b[r].iter().all(u8::is_ascii_digit);
-    let stamped = b.len() >= 16
+    let stamped = b.len() >= 21
         && b[0] == b'['
         && digits(1..3)
         && b[3] == b':'
@@ -586,10 +607,15 @@ fn log_body(line: &str) -> Option<&str> {
         && b[6] == b':'
         && digits(7..9)
         && b[9] == b'.'
-        && digits(10..14)
-        && b[14] == b']'
-        && b[15] == b' ';
-    stamped.then(|| &line[16..])
+        && digits(10..19)
+        && b[19] == b']'
+        && b[20] == b' ';
+    if !stamped {
+        return None;
+    }
+    let n = |r: std::ops::Range<usize>| line[r].parse::<u64>().expect("digits");
+    let ns = ((n(1..3) * 60 + n(4..6)) * 60 + n(7..9)) * 1_000_000_000 + n(10..19);
+    Some((ns, &line[21..]))
 }
 
 /// Renode's log levels, as a line names them after its timestamp.
@@ -1255,7 +1281,7 @@ mod tests {
             witness: None,
             skipped: vec!["[NOISY] spi1.spi1mux.u5: Finishing transmission, going idle".into()],
         };
-        let at = |b: &str| format!("[03:07:39.4001] {b}");
+        let at = |b: &str| format!("[00:00:00.040010000] {b}");
         let idle = at("[NOISY] spi1.spi1mux.u5: Finishing transmission, going idle");
         assert_eq!(device_line(&c, &idle), None);
         let read = at("[NOISY] spi1.spi1mux.u5: Received byte 0x80, returning 0x0");
@@ -1315,7 +1341,7 @@ mod tests {
     #[test]
     fn a_log_line_loses_its_host_timestamp_and_nothing_else() {
         assert_eq!(
-            log_text("[21:06:58.1004] [WARNING] sysbus: Tried to write a locked peripheral"),
+            log_text("[00:00:00.010040000] [WARNING] sysbus: Tried to write a locked peripheral"),
             "[WARNING] sysbus: Tried to write a locked peripheral"
         );
         assert_eq!(log_text("  plain  "), "plain");
@@ -1395,7 +1421,7 @@ mod tests {
         let p = plan(&image, &resets);
         let lines = |l: &[&str]| l.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
         let w =
-            "[21:06:58.1004] [NOISY] i2c1.u2: Write D0\n[21:06:58.1005] [NOISY] i2c1.u2: Read 60";
+            "[00:00:00.010040000] [NOISY] i2c1.u2: Write D0\n[00:00:00.010050000] [NOISY] i2c1.u2: Read 60";
         let block = |log: &str, rows: &[&str]| {
             format!(
                 "x\nAETHELGARD-RELEASE-0\n{log}\nAETHELGARD-PROBE-BEGIN-0\n{}\nAETHELGARD-PROBE-END-0\n",
@@ -1418,7 +1444,7 @@ mod tests {
         let mut logged = good.to_vec();
         logged.insert(
             2,
-            "[21:06:58.1004] [WARNING] sysbus: Tried to write a locked peripheral",
+            "[00:00:00.010040000] [WARNING] sysbus: Tried to write a locked peripheral",
         );
         assert_eq!(probes_in(&block(w, &logged), false, &p).unwrap(), want);
         // Past the filter's budget the witness is unread, never guessed.
@@ -1445,7 +1471,7 @@ mod tests {
                 &[
                     "0x2100B007",
                     "0x22020000",
-                    "0x000000[21:06:58.1004] [WARNING] x",
+                    "0x000000[00:00:00.010040000] [WARNING] x",
                 ],
             ),
             format!("{}AETHELGARD-PROBE-BEGIN-1\n", block(w, &good)),
@@ -1462,8 +1488,8 @@ mod tests {
 
     /// `AET-WO-2204` D4: the configuration is Renode 1.17.0's own default
     /// (measured, and pinned on Renode by `twin_tier2::renode_s_configuration_
-    /// ...`) with `use-synchronous-logging` alone changed, and the history
-    /// under the call's home.
+    /// ...`) with `use-synchronous-logging` and, since `AET-WO-4300a` (D2),
+    /// `log-timestamps-type` changed, and the history under the call's home.
     #[test]
     fn the_configuration_is_renode_s_default_with_synchronous_logging() {
         let c = config(std::path::Path::new("/w/tool"));
@@ -1477,7 +1503,7 @@ mod tests {
             "serialization-mode = Generated",
             "always-log-machine-name = False",
             "collapse-repeated-log-entries = True",
-            "log-timestamps-type = Host",
+            "log-timestamps-type = Virtual",
             "log-history-limit = 1000",
             "history-path = /w/tool/.config/renode/history",
             "store-table-bits = 41",
@@ -1496,33 +1522,43 @@ mod tests {
     }
 
     #[test]
-    fn a_log_body_is_exactly_the_text_after_a_whole_host_timestamp() {
+    fn a_log_line_s_virtual_stamp_is_its_time_in_nanoseconds() {
         assert_eq!(
-            log_body("[21:06:58.1004] [NOISY] i2c1.u2: Read 60"),
+            log_stamped("[01:02:03.019999010] [NOISY] gpioPortA.m1: x"),
+            Some((3_723_019_999_010, "[NOISY] gpioPortA.m1: x"))
+        );
+        assert_eq!(log_stamped("[00:00:00.01999901] [NOISY] x"), None);
+        assert_eq!(log_stamped("[00:00:00.0199990100] [NOISY] x"), None);
+    }
+
+    #[test]
+    fn a_log_body_is_exactly_the_text_after_a_whole_virtual_timestamp() {
+        assert_eq!(
+            log_body("[00:00:00.010040000] [NOISY] i2c1.u2: Read 60"),
             Some("[NOISY] i2c1.u2: Read 60")
         );
         for not in [
             "[NOISY] i2c1.u2: Read 60",
-            "x[21:06:58.1004] [NOISY] i2c1.u2: Read 60",
+            "x[00:00:00.010040000] [NOISY] i2c1.u2: Read 60",
             "[21:06:58.104] [NOISY] i2c1.u2: Read 60",
-            "[21:06:58.1004][NOISY] i2c1.u2: Read 60",
+            "[00:00:00.010040000][NOISY] i2c1.u2: Read 60",
             "[2a:06:58.1004] [NOISY] i2c1.u2: Read 60",
         ] {
             assert_eq!(log_body(not), None, "{not}");
         }
         assert_eq!(
-            witness_shaped("[21:06:58.1004] [NOISY] i2c1.u2: Read 60 (2)", "i2c1.u2"),
+            witness_shaped("[00:00:00.010040000] [NOISY] i2c1.u2: Read 60 (2)", "i2c1.u2"),
             Some("[NOISY] i2c1.u2: Read 60 (2)")
         );
         assert_eq!(
-            witness_shaped("[21:06:58.1004] [NOISY] i2c1.u20: Read 60", "i2c1.u2"),
+            witness_shaped("[00:00:00.010040000] [NOISY] i2c1.u20: Read 60", "i2c1.u2"),
             None
         );
         assert_eq!(
-            witness_shaped("[21:06:58.1004] [INFO] i2c1.u2: Read 60", "i2c1.u2"),
+            witness_shaped("[00:00:00.010040000] [INFO] i2c1.u2: Read 60", "i2c1.u2"),
             None
         );
-        assert!(is_log_line("[21:06:58.1004] [WARNING] sysbus: x"));
-        assert!(!is_log_line("[21:06:58.1004] WARNING sysbus: x"));
+        assert!(is_log_line("[00:00:00.010040000] [WARNING] sysbus: x"));
+        assert!(!is_log_line("[00:00:00.010040000] WARNING sysbus: x"));
     }
 }

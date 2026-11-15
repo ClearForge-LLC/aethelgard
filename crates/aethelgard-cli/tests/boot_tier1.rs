@@ -146,19 +146,19 @@ const GOOD_SPI_RECORD: [&str; 2] = ["0x22020000", "0x00EF4017"];
 
 /// What Renode 1.17.0's `GenericSpiFlash` logs for U4's JEDEC ID read behind
 /// SPI1's multiplexer (`AET-WO-4200` S2, measured).
-const GOOD_SPI_WITNESS: &str = "[03:07:39.4001] [NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation\n\
-[03:07:39.4002] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadID, write enabled False\n\
-[03:07:39.4003] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
-[03:07:39.4004] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0xEF\n\
-[03:07:39.4005] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
-[03:07:39.4006] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x40\n\
-[03:07:39.4007] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
-[03:07:39.4008] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x17\n";
+const GOOD_SPI_WITNESS: &str = "[00:00:00.040010000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation\n\
+[00:00:00.040020000] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadID, write enabled False\n\
+[00:00:00.040030000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
+[00:00:00.040040000] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0xEF\n\
+[00:00:00.040050000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
+[00:00:00.040060000] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x40\n\
+[00:00:00.040070000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand\n\
+[00:00:00.040080000] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x17\n";
 
 /// What Renode 1.17.0's BME280 logs for U2's identity read (`AET-WO-2204`
 /// S1, measured): the run's witness, before `BEGIN`.
 const GOOD_WITNESS: &str =
-    "[03:07:39.3762] [NOISY] i2c1.u2: Write D0\n[03:07:39.3765] [NOISY] i2c1.u2: Read 60\n";
+    "[00:00:00.037620000] [NOISY] i2c1.u2: Write D0\n[00:00:00.037650000] [NOISY] i2c1.u2: Read 60\n";
 
 /// The record a firmware that read U2's ID register (0xD0) as 0x60 leaves.
 const GOOD_RECORD: [&str; 2] = ["0x22020000", "0x00000060"];
@@ -203,12 +203,12 @@ fn toolbox_then(stdout: &str, version: &str, then: &str) -> Dir {
         r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
 /bin/grep -qx 'use-synchronous-logging = true' "$2" || exit 97
-/bin/grep -qx 'log-timestamps-type = Host' "$2" || exit 97
+/bin/grep -qx 'log-timestamps-type = Virtual' "$2" || exit 97
 if [ "$3" = --version ]; then printf '{version}\n  build: 1.17.0+20260907gitf1dd1b4af\n'; exit 0; fi
 # No console level is ever set (`AET-WO-2204` D4); only a device's source level.
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.010000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.010000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 /bin/cat '{out}'
@@ -370,7 +370,7 @@ fn a_stray_carriage_return_around_a_line_is_tolerated() {
 fn log_text_inside_a_value_is_refused() {
     let text = good().replace(
         "0x0000A801\n",
-        "0x00[05:58:25.9357] [WARNING] sysbus: x\n00A801\n",
+        "0x00[00:00:00.093570000] [WARNING] sysbus: x\n00A801\n",
     );
     untrusted(boot(&text));
     let text = good().replace("0x2100B007\n", "0x2100\rB007\n");
@@ -509,7 +509,7 @@ fn another_renode_is_unusable_for_a_boot() {
 
 #[test]
 fn a_touch_of_a_gated_peripheral_fails() {
-    let log = "[06:00:00.0000] [WARNING] sysbus: [cpu: 0x8000100] Tried to write a locked peripheral: machine-0.gpioPortA. Address 0x58020000, value 0x5\n";
+    let log = "[00:00:00.000000000] [WARNING] sysbus: [cpu: 0x8000100] Tried to write a locked peripheral: machine-0.gpioPortA. Address 0x58020000, value 0x5\n";
     let (code, v) = boot(&with(
         log,
         "0x2100B007",
@@ -663,7 +663,7 @@ fn a_boot_past_the_memory_cap_fails_and_names_it() {
 
 #[test]
 fn an_aborted_machine_killed_at_a_bound_is_cpu_aborted() {
-    let log = "[08:06:18.9274] [ERROR] machine-0: This machine has aborted. Emulation cannot continue until this machine is removed.\n";
+    let log = "[00:00:00.092740000] [ERROR] machine-0: This machine has aborted. Emulation cannot continue until this machine is removed.\n";
     let (code, v, _) = bounded(log, HOG);
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["cpu_aborted"]);
@@ -1090,14 +1090,14 @@ fn a_witness_that_shows_the_read_passes_and_is_reported() {
     assert_eq!(v["boot"]["icsr"], "0x00000800");
     // Other log lines around the witness are not the witness.
     let around = format!(
-        "[03:07:39.3700] [INFO] machine-0: Machine started.\n{GOOD_WITNESS}[03:07:39.3790] [WARNING] i2c1: Unhandled write to offset 0x1C.\n"
+        "[00:00:00.037000000] [INFO] machine-0: Machine started.\n{GOOD_WITNESS}[00:00:00.037900000] [WARNING] i2c1: Unhandled write to offset 0x1C.\n"
     );
     let (code, v) = boot(&with_log(GOOD_RECORD, &around));
     assert_eq!(code, Some(0), "{v}");
     // The controller's `Unknown slave` lines are kept for attribution, never
     // judged: here a stray transfer to 0x77 beside a witnessed read passes.
     let stray =
-        format!("[03:07:39.3700] [WARNING] i2c1: Unknown slave at address 119.\n{GOOD_WITNESS}");
+        format!("[00:00:00.037000000] [WARNING] i2c1: Unknown slave at address 119.\n{GOOD_WITNESS}");
     let (code, v) = boot(&with_log(GOOD_RECORD, &stray));
     assert_eq!(code, Some(0), "{v}");
     assert_eq!(
@@ -1108,7 +1108,7 @@ fn a_witness_that_shows_the_read_passes_and_is_reported() {
 
 #[test]
 fn any_witness_but_the_model_s_exact_lines_fails() {
-    let w = |a: &str, b: &str| format!("[03:07:39.3762] {a}\n[03:07:39.3765] {b}\n");
+    let w = |a: &str, b: &str| format!("[00:00:00.037620000] {a}\n[00:00:00.037650000] {b}\n");
     for (log, what) in [
         (
             String::new(),
@@ -1164,10 +1164,10 @@ fn any_witness_but_the_model_s_exact_lines_fails() {
     // Witness-shaped text that is not a whole log line of the device's own is
     // not a witness at all: the read is unwitnessed.
     for log in [
-        "[03:07:39.3762] [INFO] i2c1.u2: Write D0\n[03:07:39.3765] [INFO] i2c1.u2: Read 60\n",
+        "[00:00:00.037620000] [INFO] i2c1.u2: Write D0\n[00:00:00.037650000] [INFO] i2c1.u2: Read 60\n",
         "[NOISY] i2c1.u2: Write D0\n[NOISY] i2c1.u2: Read 60\n",
-        "[03:07:39.3762] [NOISY] usart1: [NOISY] i2c1.u2: Write D0\n[03:07:39.3765] [NOISY] usart1: [NOISY] i2c1.u2: Read 60\n",
-        "x[03:07:39.3762] [NOISY] i2c1.u2: Write D0\nx[03:07:39.3765] [NOISY] i2c1.u2: Read 60\n",
+        "[00:00:00.037620000] [NOISY] usart1: [NOISY] i2c1.u2: Write D0\n[00:00:00.037650000] [NOISY] usart1: [NOISY] i2c1.u2: Read 60\n",
+        "x[00:00:00.037620000] [NOISY] i2c1.u2: Write D0\nx[00:00:00.037650000] [NOISY] i2c1.u2: Read 60\n",
     ] {
         let (code, v) = boot(&with_log(GOOD_RECORD, log));
         assert_eq!(code, Some(1), "{log}: {v}");
@@ -1197,7 +1197,7 @@ fn the_judge_s_own_log_after_begin_is_never_the_run_s() {
         r.splice(1..1, lines.iter().map(|l| (*l).to_owned()));
         r
     };
-    let locked = "[03:07:40.0001] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.i2c1. Address 0x40005404.";
+    let locked = "[00:00:00.000010000] [WARNING] sysbus: Tried to read a locked peripheral: machine-0.i2c1. Address 0x40005404.";
     let r = after(&[locked, locked]);
     let (code, v) = boot(&transcript(
         &format!("{GOOD_WITNESS}{GOOD_SPI_WITNESS}"),
@@ -1206,8 +1206,8 @@ fn the_judge_s_own_log_after_begin_is_never_the_run_s() {
     assert_eq!(code, Some(0), "{v}");
     // The witness among the judge's reads is not the run's: unwitnessed.
     let r = after(&[
-        "[03:07:40.0001] [NOISY] i2c1.u2: Write D0",
-        "[03:07:40.0002] [NOISY] i2c1.u2: Read 60",
+        "[00:00:00.000010000] [NOISY] i2c1.u2: Write D0",
+        "[00:00:00.000020000] [NOISY] i2c1.u2: Read 60",
     ]);
     let (code, v) = boot(&transcript(
         "",
@@ -1222,7 +1222,7 @@ fn the_judge_s_own_log_after_begin_is_never_the_run_s() {
     // Anything after `BEGIN` that is neither a value nor a whole log line is
     // refused, never read (F2: a log line split below line level).
     for split in [
-        "0x000000[03:07:40.0001] [WARNING] sysbus: Tried to read a locked peripheral",
+        "0x000000[00:00:00.000010000] [WARNING] sysbus: Tried to read a locked peripheral",
         "AETHELGARD-BOOT-B",
         "[WARNING] sysbus: no timestamp",
     ] {
@@ -1239,7 +1239,7 @@ fn a_log_past_the_filter_s_budget_leaves_every_read_unwitnessed() {
     // `AET-WO-2204` D2, ruled: past 8 MiB a log line may have been dropped,
     // so the witness, though printed first, cannot be read whole: never a
     // pass.
-    let flood = "[03:07:39.4000] [WARNING] i2c1: Receive buffer underflow!\n".repeat(160_000);
+    let flood = "[00:00:00.040000000] [WARNING] i2c1: Receive buffer underflow!\n".repeat(160_000);
     let (code, v) = boot(&with_log(GOOD_RECORD, &format!("{GOOD_WITNESS}{flood}")));
     assert_eq!(code, Some(1), "{v}");
     // Every read, U4's on SPI too (`AET-WO-4200`).
@@ -1357,7 +1357,7 @@ fn two_devices_witness_their_own_reads_in_the_records_order() {
     assert_eq!(out.status.code(), Some(0), "{out:?}");
     let platform = tree.0.join("g/board/sentinel-01.repl");
     let spec = root().join("crates/aethelgard-cli/tests/fixtures/two-bme.json");
-    let line = |t: &str, d: &str, l: &str| format!("[03:07:39.{t}] [NOISY] i2c1.{d}: {l}\n");
+    let line = |t: &str, d: &str, l: &str| format!("[00:00:00.0{t}0000] [NOISY] i2c1.{d}: {l}\n");
     let u2 = format!(
         "{}{}",
         line("3762", "u2", "Write D0"),
