@@ -51,18 +51,8 @@ fn a_version_three_file_is_refused_by_version() {
 }
 
 #[test]
-fn the_two_keys_are_required_and_closed() {
-    for key in ["net_classes", "diff_pairs"] {
-        let mut v = reference();
-        v.as_object_mut().unwrap().remove(key);
-        assert!(serde_json::from_value::<Specification>(v).is_err(), "{key}");
-    }
-    // `via` is required as a key, `null`; no key is unknown.
-    let mut c = power();
-    c.as_object_mut().unwrap().remove("via");
-    let mut v = reference();
-    v["net_classes"] = json!([c]);
-    assert!(serde_json::from_value::<Specification>(v).is_err());
+fn the_two_sections_are_closed() {
+    // Missing keys are `validate.rs`'s `removing_any_key_of_any_object_is_refused`.
     let mut c = power();
     c["surprise"] = json!(1);
     let mut v = reference();

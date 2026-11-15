@@ -663,3 +663,21 @@ fn nothing_but_protocol_reaches_stdout() {
     }
     let _ = WAIT;
 }
+
+/// D1 (`AET-WO-3303`): the README's human check names the number of tools
+/// `tools/list` really returns.
+#[test]
+fn the_readme_names_the_real_tool_count() {
+    let mut c = Client::spawn(|_| {});
+    c.initialize();
+    let list = c.request("tools/list", json!({}));
+    let count = list["result"]["tools"].as_array().unwrap().len();
+    let readme =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md")).unwrap();
+    let claimed: Vec<usize> = readme
+        .lines()
+        .filter_map(|l| l.strip_prefix("lists the "))
+        .filter_map(|r| r.split(" tools").next()?.parse().ok())
+        .collect();
+    assert_eq!(claimed, [count], "README `lists the N tools` vs tools/list");
+}

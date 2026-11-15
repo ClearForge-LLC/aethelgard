@@ -263,6 +263,9 @@ fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
             || (file.starts_with("src/") && file.ends_with(".rs"))
             || (file.starts_with("tests/") && file.ends_with(".rs"))
             || (file.starts_with("tests/ui/") && file.ends_with(".stderr"))
+            // `AET-WO-3303` §1.2: the motor fixture's solved topology, read by
+            // the split's unit tests, held to `solve` by `tests/motor_outputs.rs`.
+            || file == "tests/ui/motors-pwm/topology.json"
             || DATA.contains(&file.as_str());
         assert!(
             allowed,

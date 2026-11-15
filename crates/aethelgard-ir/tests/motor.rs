@@ -101,19 +101,8 @@ fn refused(motors: Vec<Value>) -> IrValidationError {
 }
 
 #[test]
-fn every_key_of_a_motor_output_is_required() {
-    for key in ["label", "pin", "protocol", "pwm"] {
-        let mut m = pwm("M1", None, 400);
-        m.as_object_mut().unwrap().remove(key);
-        let e = serde_json::from_value::<Specification>(spec_json(vec![m])).unwrap_err();
-        assert!(e.to_string().contains(key), "{key}: {e}");
-    }
-    let mut v = spec_json(vec![]);
-    v["mcu"].as_object_mut().unwrap().remove("hse_hz");
-    assert!(serde_json::from_value::<Specification>(v).is_err());
-    let mut v = spec_json(vec![]);
-    v.as_object_mut().unwrap().remove("motor_outputs");
-    assert!(serde_json::from_value::<Specification>(v).is_err());
+fn a_protocol_outside_the_closed_set_is_refused() {
+    // Missing keys are `validate.rs`'s `removing_any_key_of_any_object_is_refused`.
     let bad = json!({"label": "M1", "pin": null, "protocol": "dshot1200", "pwm": null});
     assert!(serde_json::from_value::<Specification>(spec_json(vec![bad])).is_err());
 }

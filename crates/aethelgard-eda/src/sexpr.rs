@@ -373,27 +373,36 @@ pub fn mm(nm: i64) -> String {
     format!("{sign}{whole}.{f}")
 }
 
-/// Millimetre text to nanometres, exactly; at most six decimals.
+/// Millimetre text to nanometres, exactly. The text is the number KiCad
+/// writes and nothing wider: `-?[0-9]+(\.[0-9]{1,6})?` (`AET-WO-3303` §1.4).
+/// A `+`, a second `-`, an exponent, a leading or trailing `.`, a seventh
+/// decimal and any non-ASCII digit or sign are refused. KiCad 10.0.7 refuses
+/// `+` and `--` but loads `0.2e0`, `.2` and `0.20000001` (measured,
+/// FEEDBACK §4): this reader is stricter than KiCad there, never looser.
 pub fn nm(text: &str) -> Option<i64> {
     let (neg, body) = match text.strip_prefix('-') {
         Some(rest) => (true, rest),
         None => (false, text),
     };
-    let (whole, frac) = body.split_once('.').unwrap_or((body, ""));
-    if frac.len() > 6 || (whole.is_empty() && frac.is_empty()) {
+    let (whole, frac) = match body.split_once('.') {
+        Some((w, f)) if (1..=6).contains(&f.len()) => (w, f),
+        Some(_) => return None,
+        None => (body, ""),
+    };
+    let digits = |t: &str| t.bytes().all(|b| b.is_ascii_digit());
+    if whole.is_empty() || !digits(whole) || !digits(frac) {
         return None;
     }
-    let w: i64 = if whole.is_empty() {
-        0
-    } else {
-        whole.parse().ok()?
-    };
     let f: i64 = if frac.is_empty() {
         0
     } else {
         format!("{frac:0<6}").parse().ok()?
     };
-    let v = w.checked_mul(1_000_000)?.checked_add(f)?;
+    let v = whole
+        .parse::<i64>()
+        .ok()?
+        .checked_mul(1_000_000)?
+        .checked_add(f)?;
     Some(if neg { -v } else { v })
 }
 
@@ -466,5 +475,31 @@ mod tests {
         assert_eq!(nm("1.0000001"), None);
         assert_eq!(nm("x"), None);
         assert_eq!(nm("."), None);
+        assert_eq!(nm("0"), Some(0));
+        assert_eq!(nm("-0.5"), Some(-500_000));
+        assert_eq!(nm("0.123456"), Some(123_456));
+        for bad in [
+            "--5",
+            "+0.2",
+            "+5",
+            "1e3",
+            "1E3",
+            "1e-3",
+            ".2",
+            "-.2",
+            "1.",
+            "",
+            "-",
+            "0.1234567",
+            "\u{2212}5",
+            "1,5",
+            " 1",
+            "1 ",
+            "\u{0663}",
+            "0x10",
+            "1_0",
+        ] {
+            assert_eq!(nm(bad), None, "{bad:?}");
+        }
     }
 }

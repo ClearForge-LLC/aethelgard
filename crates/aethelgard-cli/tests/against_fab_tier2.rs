@@ -13,7 +13,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use common::verify::{SPEC, Shared, aethelgard, copy_tree, one, package_files, scratch};
+use common::verify::{SEEDED, SPEC, Shared, aethelgard, copy_tree, one, package_files, scratch};
 use serde_json::Value;
 
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
@@ -27,17 +27,12 @@ struct Package {
 
 static PACKAGE: Shared<Package> = Shared::new("verify 2k2 --fab-out, the package to compare");
 
-/// `verify` of the reference with the 2.2 kΩ scenario and `flag <dir>`.
+/// `verify` of the reference with its seeded set and `flag <dir>`.
 fn fab_verify(dir: &Path, flag: &str) -> (Option<i32>, String) {
-    aethelgard(&[
-        "verify",
-        "--spec",
-        SPEC,
-        "--scenarios",
-        "scenarios/sentinel-01/pullup-2k2.json",
-        flag,
-        dir.to_str().unwrap(),
-    ])
+    let mut args = vec!["verify", "--spec", SPEC, "--scenarios"];
+    args.extend(SEEDED);
+    args.extend([flag, dir.to_str().unwrap()]);
+    aethelgard(&args)
 }
 
 /// A copy of the shared package under `label`, for one test to compare.

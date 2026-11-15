@@ -1288,6 +1288,37 @@ struct Attributed {
     symptoms: Vec<EventLine>,
     masked: Vec<EventLine>,
     unexplained: Vec<String>,
+    /// What each evidence and symptom event is about, sorted and unique
+    /// ([`subject`]): `verify` holds a detected fault to its own subject
+    /// (`AET-WO-3303` D1, ruled (a)).
+    subjects: Vec<String>,
+}
+
+/// What one record is about: `bus:<id>`, `device:<reference>`, `rail:<id>`,
+/// `register:<name>`, `output:<label>`, `controller:<peripheral>`, `boot`,
+/// or `kind:<n>` for a record that names none.
+fn subject(r: &Record) -> String {
+    match r {
+        Record::RiseComputed { bus, .. }
+        | Record::LineStuckHigh { bus, .. }
+        | Record::BusFault { bus, .. }
+        | Record::I2cBusSolved { bus, .. } => format!("bus:{bus}"),
+        Record::I2cCheck { reference, .. }
+        | Record::I2cWitness { reference, .. }
+        | Record::SpiCheck { reference, .. }
+        | Record::SpiWitness { reference, .. } => format!("device:{reference}"),
+        Record::RailDeclared { droop, .. } => format!("rail:{}", droop.domain),
+        Record::RailCrossing { domain, .. } => format!("rail:{domain}"),
+        Record::RegisterObserved { name, .. } => format!("register:{name}"),
+        Record::MotorOutputSolved { label, .. }
+        | Record::MotorTimingCheck { label, .. }
+        | Record::MotorWitness { label, .. } => format!("output:{label}"),
+        Record::SpiBusSolved { peripheral, .. } => format!("controller:{peripheral}"),
+        Record::BootObserved { .. }
+        | Record::ResetRendered { .. }
+        | Record::FirmwareObserved { .. } => "boot".to_owned(),
+        other => format!("kind:{}", other.kind()),
+    }
 }
 
 /// `aethelgard attribute --archive <run dir>`: `replay`'s checks, then
@@ -1327,6 +1358,14 @@ pub fn attribute(dir: &Path) -> ExitCode {
             })
             .collect()
     };
+    let records = &replayed.state.records;
+    let subjects: BTreeSet<String> = a
+        .evidence
+        .iter()
+        .chain(&a.symptoms)
+        .filter_map(|e| usize::try_from(e.index).ok().and_then(|i| records.get(i)))
+        .map(subject)
+        .collect();
     let determinate = a.domain != Domain::Indeterminate;
     emit(
         &Attributed {
@@ -1340,6 +1379,7 @@ pub fn attribute(dir: &Path) -> ExitCode {
             symptoms: lines(a.symptoms),
             masked: lines(a.masked),
             unexplained: a.unexplained,
+            subjects: subjects.into_iter().collect(),
         },
         if determinate { 0 } else { EXIT_FAIL },
     )

@@ -7,7 +7,7 @@
 //! are unchanged (ruled D5). The text claims what the package's verdict shows
 //! and nothing beyond it (`RUL-19`).
 
-use crate::extract::{conditions, permille};
+use crate::extract::permille;
 use crate::route::{DRILL_NM, VIA_NM};
 use crate::stack::Stack;
 
@@ -22,9 +22,14 @@ pub struct Notes<'a> {
     pub files: &'a [(String, &'a str)],
     /// The board the specification declares.
     pub stack: &'a Stack,
-    /// Whether its connectors declare off-board capacitance, which the
-    /// bound adds ([`crate::extract::OFFBOARD`]).
-    pub offboard: bool,
+    /// The bound's scope and conditions exactly as the `extract` verdict
+    /// that judged this board states them (`AET-WO-4300f` F2): never
+    /// assembled a second time here, so the notes cannot state fewer.
+    pub conditions: &'a [String],
+    /// The lifecycle lines the verdict states for the board's parts: the
+    /// banner of each acknowledged `eol` or `nrnd` part and each part whose
+    /// lifecycle no held page states (`AET-WO-4210` F-B3). None, no section.
+    pub lifecycle: &'a [String],
 }
 
 /// `nm` in millimetres, with no trailing zeros: 1_600_000 is `1.6`.
@@ -51,11 +56,15 @@ pub fn notes(n: &Notes<'_>) -> String {
     for (name, what) in n.files {
         files.push_str(&format!("- `{name}`: {what}\n"));
     }
-    let mut conditions = conditions(st);
-    if n.offboard {
-        conditions.push(crate::extract::OFFBOARD.to_owned());
-    }
-    let conditions: String = conditions.iter().map(|c| format!("- {c}\n")).collect();
+    let conditions: String = n.conditions.iter().map(|c| format!("- {c}\n")).collect();
+    let lifecycle = if n.lifecycle.is_empty() {
+        String::new()
+    } else {
+        let lines: String = n.lifecycle.iter().map(|l| format!("- {l}\n")).collect();
+        format!(
+            "## Lifecycle\n\nThe verdict that names this package states, for the board's parts:\n\n{lines}\n"
+        )
+    };
     format!(
         "# Fabrication notes: {project}
 
@@ -115,7 +124,7 @@ header carries no plating comment.
 - Copper to copper: {space} mm.
 - Via: {via} mm pad, {drill} mm drill.
 {classes}
-## Files
+{lifecycle}## Files
 
 {files}
 ## Licence
@@ -145,6 +154,7 @@ CC-BY-SA 4.0 with a design exception that covers designs made from them.
             ""
         },
         classes = classes(st),
+        lifecycle = lifecycle,
     )
 }
 
@@ -223,6 +233,10 @@ mod tests {
     }
 
     fn sample_on(stack: &Stack) -> String {
+        sample_with(stack, &[])
+    }
+
+    fn sample_with(stack: &Stack, lifecycle: &[String]) -> String {
         let files = [("p-F_Cu.gtl".to_owned(), "F.Cu")];
         notes(&Notes {
             project: "p",
@@ -231,8 +245,35 @@ mod tests {
             kicad_version: "10.0.7",
             files: &files,
             stack,
-            offboard: false,
+            conditions: &stated(),
+            lifecycle,
         })
+    }
+
+    /// The conditions as the reference's `extract` verdict states them.
+    fn stated() -> Vec<String> {
+        let mut c = crate::extract::conditions(&crate::stack::reference());
+        c.push(crate::extract::SPI_CONDITION.to_owned());
+        c
+    }
+
+    /// `AET-WO-4300f` F2: every condition the `extract` verdict states,
+    /// `SPI_CONDITION` among them, is in the notes, in its order.
+    #[test]
+    fn the_notes_state_every_condition_the_extract_verdict_states() {
+        let text = sample();
+        let listed: String = stated().iter().map(|c| format!("- {c}\n")).collect();
+        assert!(text.contains(&listed), "{text}");
+    }
+
+    /// `AET-WO-4210` F-B3: a lifecycle line the verdict states is in the
+    /// package's notes; with none, the notes have no such section.
+    #[test]
+    fn the_notes_carry_the_verdicts_lifecycle_lines() {
+        let line = "LIFECYCLE EOL: W25Q64JV (U4) is end of life by its vendor".to_owned();
+        let text = sample_with(&crate::stack::reference(), std::slice::from_ref(&line));
+        assert!(text.contains(&format!("## Lifecycle\n\nThe verdict that names this package states, for the board's parts:\n\n- {line}\n\n## Files")), "{text}");
+        assert!(!sample().contains("Lifecycle"));
     }
 
     /// `AET-WO-1305` F3's conditions, the stackup, the rule minima and the
@@ -263,7 +304,7 @@ mod tests {
         ] {
             assert!(text.contains(want), "missing {want:?}");
         }
-        for c in conditions(&crate::stack::reference()) {
+        for c in crate::extract::conditions(&crate::stack::reference()) {
             assert!(text.contains(&format!("- {c}\n")), "{c}");
         }
         assert_eq!(text, sample());

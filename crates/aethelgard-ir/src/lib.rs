@@ -1173,6 +1173,19 @@ pub enum IrValidationError {
         "connector `{id}` pin `{pin}` declares an off-board capacitance, but it is on no I2C or SPI line (a ground, a domain or no net), which carries none"
     )]
     ConnectorBudgetNotApplicable { id: String, pin: String },
+    #[error(
+        "connector `{id}` takes a reference the emitter numbers its own parts by (`U`, `R` or `C` and a number, in any case): the emitter would renumber its own part or refuse the board; name a connector otherwise, such as `J1`"
+    )]
+    ConnectorReferenceReserved { id: String },
+    #[error(
+        "connector `{id}` pin `{pin}` declares {femtofarads} fF off the board, above the {max} fF any line's bound admits"
+    )]
+    ConnectorBudgetTooLarge {
+        id: String,
+        pin: String,
+        femtofarads: u64,
+        max: u64,
+    },
     #[error("connector `{id}` names standard `{standard}`, which is not in the ports table")]
     UnknownConnectorStandard { id: String, standard: String },
     #[error(
@@ -1314,6 +1327,8 @@ impl IrValidationError {
             Self::ConnectorNetUnknown { .. } => "ConnectorNetUnknown",
             Self::ConnectorBudgetMissing { .. } => "ConnectorBudgetMissing",
             Self::ConnectorBudgetNotApplicable { .. } => "ConnectorBudgetNotApplicable",
+            Self::ConnectorReferenceReserved { .. } => "ConnectorReferenceReserved",
+            Self::ConnectorBudgetTooLarge { .. } => "ConnectorBudgetTooLarge",
             Self::UnknownConnectorStandard { .. } => "UnknownConnectorStandard",
             Self::ConnectorPartContradictsStandard { .. } => "ConnectorPartContradictsStandard",
             Self::ConnectorSupplyContradictsStandard { .. } => "ConnectorSupplyContradictsStandard",
@@ -1427,6 +1442,8 @@ impl IrValidationError {
             | Self::ConnectorNetUnknown { id, .. }
             | Self::ConnectorBudgetMissing { id, .. }
             | Self::ConnectorBudgetNotApplicable { id, .. }
+            | Self::ConnectorReferenceReserved { id }
+            | Self::ConnectorBudgetTooLarge { id, .. }
             | Self::UnknownConnectorStandard { id, .. }
             | Self::ConnectorPartContradictsStandard { id, .. }
             | Self::ConnectorSupplyContradictsStandard { id, .. }
