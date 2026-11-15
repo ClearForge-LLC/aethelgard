@@ -224,6 +224,10 @@ fn a_sense_net_is_a_new_net() {
 fn power_is_a_required_key_and_null_declares_none() {
     let mut v = base();
     v["power"] = Value::Null;
+    // Without a tree there is no battery rail, so a class naming it names an
+    // unknown net (`AET-WO-4300d2` K10).
+    assert_eq!(refused(&v).kind(), "ClassUnknownNet");
+    v["net_classes"] = json!([]);
     assert_eq!(spec(&v).validate(), Ok(()));
     v.as_object_mut().unwrap().remove("power");
     assert!(serde_json::from_value::<Specification>(v).is_err());
