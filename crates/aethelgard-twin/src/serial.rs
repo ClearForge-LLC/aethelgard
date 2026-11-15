@@ -638,12 +638,15 @@ pub fn judge_writes(b: &Bringup, source: &str, boots: &[Vec<Access>]) -> TagJudg
     j
 }
 
-/// The TX pin's `MODER` and `AFR` words at the first `TDR` write of each
-/// boot that wrote one, rebuilt from the words the access log shows the
-/// firmware wrote to the pin's GPIO port in that boot (a register never
-/// written reads `0` here: never routed); `None` for a boot in which a
-/// non-word write reached either register before it. The pattern counts
-/// only if every boot's is routed (`AET-WO-4300b` adversarial F4).
+/// The TX pin's `MODER` and `AFR` words at the `TDR` writes of each boot
+/// that wrote one, rebuilt in log order from the words the access log shows
+/// the firmware wrote to the pin's GPIO port in that boot (a register never
+/// written reads `0` here: never routed): the first `TDR` write's at which
+/// the pin was not routed, else the first's; `None` for a boot in which a
+/// non-word write reached either register before a `TDR` write. The pattern
+/// counts only if every boot's is routed: the pin routed at every `TDR`
+/// write (`AET-WO-4300b` adversarial F4 and the PM's ruling on its
+/// residual: route, send one, unroute, send the rest).
 pub fn tx_at_send(
     tx: &PinMux,
     usart: &str,
@@ -653,10 +656,16 @@ pub fn tx_at_send(
     let mut out = Vec::new();
     for boot in boots {
         let (mut moder, mut afr) = (Some(0u32), Some(0u32));
+        let mut first: Option<Option<(u32, u32)>> = None;
+        let mut bad: Option<Option<(u32, u32)>> = None;
         for a in boot.iter().filter(|a| a.write) {
             if a.source == usart && a.offset == tdr {
-                out.push(moder.zip(afr));
-                break;
+                let now = moder.zip(afr);
+                first.get_or_insert(now);
+                if bad.is_none() && !now.is_some_and(|(m, f)| tx.routed(m, f)) {
+                    bad = Some(now);
+                }
+                continue;
             }
             if a.source != tx.source {
                 continue;
@@ -669,6 +678,9 @@ pub fn tx_at_send(
                     };
                 }
             }
+        }
+        if let Some(m) = bad.or(first) {
+            out.push(m);
         }
     }
     out
@@ -1209,6 +1221,15 @@ mod tests {
             &[boot(&routed, &[]), boot(&[], &routed)],
         );
         assert_eq!(got, [Some((0x8_0000, 0x70)), Some((0, 0))]);
+        // The PM's ruling on F4's residual: routed, one byte, unrouted, the
+        // rest, routed again before the end: the unrouted writes count.
+        let mut residual = routed.to_vec();
+        residual.push(send.clone());
+        residual.push(w("gpioPortA", 0, 0));
+        residual.extend(std::iter::repeat_n(send.clone(), 11));
+        residual.push(routed[1].clone());
+        let got = tx_at_send(&tx, "usart1", 0x28, &[residual]);
+        assert_eq!(got, [Some((0, 0x70))]);
         // Another port's GPIO words, and a boot with no TDR write.
         let other = [w("gpioPortB", 0x24, 0x70), w("gpioPortB", 0, 0x8_0000)];
         assert_eq!(

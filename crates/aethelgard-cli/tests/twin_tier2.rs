@@ -2495,3 +2495,32 @@ fn adv_5_a_pattern_on_a_usart_no_port_names_is_forged() {
         "{m:?}"
     );
 }
+
+/// The PM's ruling on F4's residual: PA9 routed for the pattern's first
+/// byte, made an input for the other eleven, routed again before the end.
+/// The TX pin must be routed at every `TDR` write of each boot.
+#[test]
+fn adv_1b_a_tx_pin_unrouted_after_the_first_byte_fails() {
+    let elf = adv_reference(
+        "tx-unrouted",
+        &[],
+        &[
+            (
+                "    for &byte in [0x43, 0x4f, 0x4e, 0x53, 0x4f, 0x4c, 0x45].iter().chain(PATTERN_TAIL.iter()) {\n        if usart1.send(&mut r, byte).is_err() {",
+                "    for (k, &byte) in [0x43, 0x4f, 0x4e, 0x53, 0x4f, 0x4c, 0x45].iter().chain(PATTERN_TAIL.iter()).enumerate() {\n        if k == 1 { unsafe { let p = 0x5802_0000 as *mut u32; p.write_volatile(p.read_volatile() & !0x000c0000); } }\n        if usart1.send(&mut r, byte).is_err() {",
+            ),
+            (
+                "    let mut buf0 = [0u8; 1];\n",
+                "    unsafe { let p = 0x5802_0000 as *mut u32; p.write_volatile((p.read_volatile() & !0x000c0000) | 0x00080000); }\n    let mut buf0 = [0u8; 1];\n",
+            ),
+        ],
+    );
+    let (code, v) = boot_elf("adv tx unrouted", &elf, "100ms");
+    answer(&format!("ADV-1b code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_pattern_missing"], "{v}");
+    let t = &serial(&v)[0]["twin"];
+    assert_eq!(t["patterns"], 1, "{v}");
+    assert_eq!(t["tx_at_end"], "PA9 MODER 0b10, AF7", "{v}");
+    assert_eq!(t["tx_at_send"], "PA9 MODER 0b00, AF7", "{v}");
+}
