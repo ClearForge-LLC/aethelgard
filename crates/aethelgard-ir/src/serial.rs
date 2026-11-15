@@ -163,16 +163,6 @@ pub fn kernel_hz(clock: &SolvedClock, peripheral: &str) -> Option<u64> {
     Some(clock.hclk_hz() / u64::from(ppre.max(1)))
 }
 
-/// The `RCC_D2CCIP2R` field that selects `peripheral`'s kernel clock, and
-/// the value (0, its reset value) [`kernel_hz`] assumes.
-pub fn kernel_select(peripheral: &str) -> &'static str {
-    if matches!(peripheral, "USART1" | "USART6") {
-        "USART16SEL"
-    } else {
-        "USART234578SEL"
-    }
-}
-
 /// `BRR` for `baud` on `kernel_hz` with oversampling by 16: the nearest whole
 /// `USARTDIV`, half up. `None` outside `BRR`'s range: at least 16 (RM0433 Rev 9
 /// §48.8.5, "BRR[15:0] … must be greater than or equal to 16") and at most

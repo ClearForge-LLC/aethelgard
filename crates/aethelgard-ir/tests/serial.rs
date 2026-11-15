@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use aethelgard_ir::serial::{
-    self, CRSF_SOURCE, PERIPHERALS, SolvedSerialPort, check_silicon, solve_brr, tolerance, within,
+    CRSF_SOURCE, PERIPHERALS, SolvedSerialPort, check_silicon, solve_brr, tolerance, within,
 };
 use aethelgard_ir::{
     Framing, IrValidationError, Parity, Pin, PinSource, PinTable, SerialRole, SolveError,
@@ -1130,17 +1130,4 @@ fn a_version_6_topology_without_serial_ports_is_refused_as_a_version() {
     assert_eq!(t.validate().unwrap_err().kind(), "UnsupportedSchemaVersion");
     v["schema_version"] = json!(aethelgard_ir::SOLVED_SCHEMA_VERSION);
     assert!(serde_json::from_value::<SolvedTopology>(v).is_err());
-}
-
-#[test]
-fn the_kernel_clock_names_its_select_field() {
-    for p in PERIPHERALS {
-        let field = serial::kernel_select(p);
-        let expected = if matches!(p, "USART1" | "USART6") {
-            "USART16SEL"
-        } else {
-            "USART234578SEL"
-        };
-        assert_eq!(field, expected, "{p}");
-    }
 }
