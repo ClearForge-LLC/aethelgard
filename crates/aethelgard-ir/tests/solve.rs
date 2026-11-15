@@ -145,7 +145,9 @@ fn spec(
     // The device lists are private to the crate (`AET-WO-1204`), so the
     // specification is built from the JSON it reads.
     let json = serde_json::json!({
-        "schema_version": 4,
+        "schema_version": 5,
+        "net_classes": [],
+        "diff_pairs": [],
         "project_name": "t",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
         "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into() },

@@ -11,6 +11,7 @@
 #![forbid(unsafe_code)]
 
 pub mod board;
+pub mod classes;
 pub mod connectors;
 pub mod ds009;
 pub mod electrical;
@@ -32,13 +33,15 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// board for it. Version 3 requires a `net_constraints` entry on every SPI
 /// bus's `sck` and `mosi`, and names parts as the version-2 parts table does
 /// (`AET-WO-4300c` D2, F11); nothing supplies either for an older file.
-/// Version 4 added `connectors` (`AET-WO-4300f`).
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 4;
+/// Version 4 added `connectors` (`AET-WO-4300f`). Version 5 requires
+/// `net_classes` and `diff_pairs` (`AET-WO-1308`); an empty array declares
+/// none, and nothing supplies either for an older file.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 5;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
 
-/// The top-level specification, version 4 (`RUL-14`). Arrays keep the order a
+/// The top-level specification, version 5 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
@@ -62,6 +65,10 @@ pub struct Specification {
     pub net_constraints: Vec<NetConstraint>,
     /// The copper layers, the stackup and the design rules (`board`).
     pub board: board::Board,
+    /// Per-net track widths and vias (`AET-WO-1308`); empty declares none.
+    pub net_classes: Vec<classes::NetClass>,
+    /// Coupled pairs (`AET-WO-1308`); empty declares none.
+    pub diff_pairs: Vec<classes::DiffPair>,
 }
 
 /// The microcontroller: a part name and the domain that supplies it.
@@ -552,6 +559,53 @@ pub enum IrValidationError {
         value: u32,
         required: u32,
     },
+    #[error("`{path}` is {value} um, below the minimum of {minimum} um ({of})")]
+    ClassBelowMinimum {
+        path: String,
+        value: u32,
+        minimum: u32,
+        of: &'static str,
+    },
+    #[error("`{path}` is {value} um, above the maximum of {maximum} um")]
+    ClassAboveMaximum {
+        path: String,
+        value: u32,
+        maximum: u32,
+    },
+    #[error(
+        "net class `{id}`: the via ring is {ring_um} um, under the {minimum_um} um the board rules' own via has ((diameter - drill) / 2)"
+    )]
+    ViaRingUnderRules {
+        id: String,
+        ring_um: String,
+        minimum_um: String,
+    },
+    #[error("the name `{id}` is used more than once among net_classes and diff_pairs")]
+    DuplicateClassName { id: String },
+    #[error("net class `{id}` names no nets")]
+    ClassNoNets { id: String },
+    #[error(
+        "`{class}` names the net `{id}`, which is no declared signal net, voltage domain or `GND`"
+    )]
+    ClassUnknownNet { id: String, class: String },
+    #[error(
+        "`{class}` names the net `{id}`, which holds `'` or `?`: the gate's DRC rules name a class's nets in KiCad expressions, where `'` ends the quote and `?` matches any character"
+    )]
+    ClassNetNotLiteral { id: String, class: String },
+    #[error(
+        "net `{id}` is in two classes: `{first}` and `{second}` (a diff pair counts as its nets' class)"
+    )]
+    NetInTwoClasses {
+        id: String,
+        first: String,
+        second: String,
+    },
+    #[error("diff pair `{id}`: {rule}")]
+    PairNets { id: String, rule: &'static str },
+    #[error(
+        "diff pair `{id}` names `{net}`, a voltage domain or `GND`: a rail, a plane or ground is not a coupled conductor"
+    )]
+    PairOnRail { id: String, net: String },
     #[error("`{path}` is not an identifier: {rule}")]
     InvalidIdentifier { path: String, rule: &'static str },
     #[error("voltage_domains is empty")]
@@ -811,6 +865,16 @@ impl IrValidationError {
             Self::InvalidSource { .. } => "InvalidSource",
             Self::RuleBelowFloor { .. } => "RuleBelowFloor",
             Self::UnsupportedViaRule { .. } => "UnsupportedViaRule",
+            Self::ClassBelowMinimum { .. } => "ClassBelowMinimum",
+            Self::ClassAboveMaximum { .. } => "ClassAboveMaximum",
+            Self::ViaRingUnderRules { .. } => "ViaRingUnderRules",
+            Self::DuplicateClassName { .. } => "DuplicateClassName",
+            Self::ClassNoNets { .. } => "ClassNoNets",
+            Self::ClassUnknownNet { .. } => "ClassUnknownNet",
+            Self::ClassNetNotLiteral { .. } => "ClassNetNotLiteral",
+            Self::NetInTwoClasses { .. } => "NetInTwoClasses",
+            Self::PairNets { .. } => "PairNets",
+            Self::PairOnRail { .. } => "PairOnRail",
             Self::InvalidIdentifier { .. } => "InvalidIdentifier",
             Self::NoVoltageDomain => "NoVoltageDomain",
             Self::DuplicateDomainId { .. } => "DuplicateDomainId",
@@ -892,11 +956,21 @@ impl IrValidationError {
             | Self::InvalidSource { .. }
             | Self::RuleBelowFloor { .. }
             | Self::UnsupportedViaRule { .. }
+            | Self::ClassBelowMinimum { .. }
+            | Self::ClassAboveMaximum { .. }
             | Self::InvalidIdentifier { .. }
             | Self::NoVoltageDomain
             | Self::OutputSpeedTable { .. }
             | Self::MalformedSpecificationHash => None,
             Self::PlaneNet { id } => Some(id),
+            Self::ViaRingUnderRules { id, .. }
+            | Self::DuplicateClassName { id }
+            | Self::ClassNoNets { id }
+            | Self::ClassUnknownNet { id, .. }
+            | Self::ClassNetNotLiteral { id, .. }
+            | Self::NetInTwoClasses { id, .. }
+            | Self::PairNets { id, .. }
+            | Self::PairOnRail { id, .. } => Some(id),
             Self::DuplicateDomainId { id }
             | Self::ZeroNominalVoltage { id }
             | Self::ToleranceOutOfRange { id, .. }
@@ -969,7 +1043,9 @@ impl IrValidationError {
             | Self::StackupValue { path, .. }
             | Self::InvalidSource { path }
             | Self::RuleBelowFloor { path, .. }
-            | Self::UnsupportedViaRule { path, .. } => Some(path),
+            | Self::UnsupportedViaRule { path, .. }
+            | Self::ClassBelowMinimum { path, .. }
+            | Self::ClassAboveMaximum { path, .. } => Some(path),
             _ => None,
         }
     }
@@ -1526,7 +1602,15 @@ impl Specification {
             }
         }
         // 13
-        self.board.validate(&domains)
+        self.board.validate(&domains)?;
+        // 13a
+        classes::validate(
+            &self.net_classes,
+            &self.diff_pairs,
+            &self.board,
+            &domains,
+            &nets,
+        )
     }
 
     /// Step 2, in the order the README lists.

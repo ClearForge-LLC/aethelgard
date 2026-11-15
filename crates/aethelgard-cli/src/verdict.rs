@@ -24,6 +24,10 @@ pub struct Verdict {
     /// `check drc --schematic` only: the schematic parity was judged against.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schematic: Option<InputReport>,
+    /// `check drc --spec` of a specification that declares coupled pairs
+    /// (`AET-WO-1308` §1.3): each pair as the board's copper measures it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pairs: Option<Vec<PairRecord>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub harness: Option<String>,
     /// `prove` only (`AET-WO-3301` §1.4): `generated` when the crate copied is
@@ -60,6 +64,41 @@ pub struct Verdict {
     /// §1.1). Not part of the verdict's JSON.
     #[serde(skip)]
     pub tools: Vec<(&'static str, String)>,
+}
+
+/// One coupled pair, measured on the board's copper by
+/// `aethelgard_eda::route::pairs`: per conductor (positive, negative) its
+/// length, its vias and its uncoupled length at each end, and the bounds it
+/// was judged by.
+#[derive(Serialize)]
+pub struct PairRecord {
+    pub name: String,
+    pub nets: [String; 2],
+    pub gap_nm: i64,
+    pub layers: Vec<&'static str>,
+    pub length_nm: [i64; 2],
+    pub length_difference_nm: i64,
+    pub length_difference_max_nm: i64,
+    pub vias: [usize; 2],
+    pub uncoupled_nm: [[i64; 2]; 2],
+    pub uncoupled_max_nm: i64,
+}
+
+impl From<aethelgard_eda::route::PairReport> for PairRecord {
+    fn from(p: aethelgard_eda::route::PairReport) -> PairRecord {
+        PairRecord {
+            length_difference_nm: p.length_difference_nm(),
+            name: p.name,
+            nets: p.nets,
+            gap_nm: p.gap_nm,
+            layers: p.layers,
+            length_nm: p.length_nm,
+            length_difference_max_nm: aethelgard_eda::route::PAIR_SKEW_NM,
+            vias: p.vias,
+            uncoupled_nm: p.uncoupled_nm,
+            uncoupled_max_nm: aethelgard_eda::route::PAIR_BREAKOUT_NM,
+        }
+    }
 }
 
 /// A droop's records, as `campaign` archives them (kinds 16 to 19).
@@ -385,6 +424,7 @@ impl Verdict {
             rules: None,
             specification_sha256: None,
             schematic: None,
+            pairs: None,
             harness: None,
             harness_provenance: None,
             cover_count: None,

@@ -83,7 +83,7 @@ fn a_version_one_specification_is_refused_by_name() {
         let (code, v) = run(&args);
         assert_eq!(code, 2, "{sub}: {v}");
         assert_eq!(v["error"]["kind"], "UnsupportedSchemaVersion", "{sub}: {v}");
-        assert!(v["error"]["message"].as_str().unwrap().contains("not 4"));
+        assert!(v["error"]["message"].as_str().unwrap().contains("not 5"));
     }
     fs::remove_dir_all(&dir).unwrap();
 }
@@ -352,6 +352,8 @@ fn the_reference_declares_todays_two_layer_board() {
             permittivity_source: "the IPC-4101 FR-4 maximum, specified at 1 MHz".into(),
             clearance_nm: 200_000,
             width_nm: 200_000,
+            classes: vec![],
+            pairs: vec![],
         }
     );
 }
