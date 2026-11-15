@@ -87,8 +87,8 @@ Each step was measured; the dumps are `l5`–`l10.tsv`.
 - **K11 · A buck's SW net takes its output domain's class** (`stack::switch_nets`): the inductor carries the output's current. On the fixture, U10's SW is 0.5 mm (`POWER`) and U11's 0.2 mm (`SUPPLY_MCU`, the `1308` ruling's default width). Whether a class is wide enough for its current is named, not judged: no current-to-width source is held.
 - **K12 · An anchored part's reference is on `F.Fab`, not the silkscreen** (`pcb::reference_on_fab`). The BOM and the placement file name every part.
 - **K13 · A circle pad is reached in its inscribed square.** `Pad::inner` shrinks a box by its rounding, so a circle's inner box is its centre, which lies inside the XT30PW-M pad 2's 1.9 mm hole: the router found no terminal [measured: `Unroutable VBAT`, "J1 pad 2 has no node clear to end a track"].
-  - `Pad::terminal_box` falls back to the inscribed square only where the inner box holds no grid node, so no existing pad's terminals move.
-  - The connectivity judge now asks whether a track end lies in the copper (`fits`, rounding included), not in the inner box.
+  - `Pad::reach` is the inscribed square only for a pad that is all rounding (a circle or an oval); every other pad keeps its inner box, so no existing pad's terminals move. No footprint vendored before this work order has such a pad (read: every pad of `data/kicad-10.0.7/footprints` listed).
+  - The router's terminals and the connectivity judge both use `reach`. A first version made the judge exact (`fits`), but `routing_tier1`'s cut test showed it then counted a track ending in a pad's rounded corner as joined, a semantic change, so it was replaced [measured].
 - **K14 · `SolvedPower.sense` is a required key, always written** (`{}` when no sense is declared). A topology without it is refused, never read as "no sense solved" (`INV-06`). Only power-tree topologies, which no test digests, gain bytes.
 - **K15 · `campaign` refuses a power tree as `PowerNotSimulated`.** The message names the battery-sag work order (§1.9). `PowerNotEmitted` is gone from `eda`, `emit` and `check drc`.
 - **K16 · The placer measures an `fp_arc` as its whole circle's box**, and `extract`'s footprint reader admits `fp_arc` (refused on a copper layer, as every graphic is). The XT30PW-M's silkscreen rings its pegs with arcs, and both readers refused it [measured]. Without this, `§7`'s first stop would fire for the power-in connector.
@@ -117,8 +117,101 @@ Each step was measured; the dumps are `l5`–`l10.tsv`.
   - `verify --fab-out` and `--against-fab` require `--scenarios` (`cli/src/main.rs:118-122`: "`INV-03` counts the fault campaign", `3300`).
   - `fab::derive` is reached only from `verify`'s gates, after the campaign.
   - §1.9 keeps `campaign` refusing a power tree until the battery-sag work order. So no path writes a fabrication package for the Sentinel-02 fixture.
-  - Built anyway, and proved where it can be: `fab`'s drill tools, on `1309`'s through-hole and thermal fixtures, and on the power board's own drill file.
+  - Built anyway, and proved where it can be: `fab`'s drill tools, on `1309`'s through-hole and thermal fixtures and on KiCad's own drill files pinned from the image. The adversarial pass exported the power board's drill file in the image and found it equal to `fab::drills` (measured there; no committed test holds it, because no package is derived for the fixture).
   - Options:
     - (a) `verify --fab-out` without scenarios for a specification whose campaign is refused by name (an `INV-03` exception);
     - (b) the battery-sag work order first;
     - (c) accept `fab` proved below `verify` for this work order.
+
+## 5. The rulings, applied (PR #149, comment of 14:43 UTC, and the architect's answers to D5–D7)
+
+- **D1 · accepted.** `svd-hal::parse`'s 8 lines stay (`e0e4466`).
+- **D2 · (a).** The ICM-20948's KiCad 10.0.7 symbol and footprint are vendored again (blobs equal to GitLab's).
+  - **The reader** (`board::admitted_keepout`) admits a keepout zone's `(connect_pads (clearance N))` only when the zone is a direct child of a footprint and carries `keepout`, and only when `connect_pads` holds that clearance and nothing else.
+  - **The router** (`route::part`) reads a footprint zone, which must be a keepout. It must be a right-angle rectangle on one copper layer, with each of its five kinds `allowed` or `not_allowed` and no net; anything else is refused by name. The router blocks tracks on that layer, and vias, wherever their copper would reach in.
+  - **The gate** (`route::check`'s `keepouts`) refuses a track, a via or thermal via, another part's pad, or a fill on that layer, inside it. KiCad's own DRC also judges rule areas.
+  - **The footprint writer** refuses to turn a footprint carrying a zone.
+  - **`extract`** admits a footprint's keepout as no copper.
+  - **The library test** admits `(clearance` only inside a footprint keepout's `connect_pads`.
+  - **The ICM-20948 is drawn** to DS-000189 p. 20 (4.1, 4.3).
+- **K6 · built after #143 merged** (`1080652`).
+  - **The table:** parts.json schema 4 gives every row `spi_output_delay_max_ns` with its paired citation; only an SPI part may carry it. The ICM-20948 holds 59 ns (DS-000189 p. 17, Table 8, tVD.SDO at 20 pF; note 1: characterization of 5 parts, in the datasheet's words).
+  - **The check:** `power::check` reads the delays from the table. The committed fixture, crossing and all, validates and solves: the round trip is 95 ns at 4 MHz.
+- **D3 · accepted as named engine choices.** SNVU573A (the EVM guide) shows its layout as images without dimensions (D-B5), so no TI distance is cited. The bounds stand as stated, each rule's text saying so.
+- **D4 · Scotty's (`4500`).** The fixture stays two-layer, with SNVSAN3F 10.1 item 5 named as not met.
+- **D5 · (c).** `fab` is accepted as proved below `verify` for this work order. The fixture's full package waits for the battery-sag work order. Named here and in the verdict's conditions; FAB-NOTES carries the power conditions.
+- **D6 · (b).** `extract` refuses, by name (`TranslatorPinUnbounded`), a line that carries a translator's data pin. SCES935A p. 9 prints Cio once per temperature range, centred across MIN, TYP and MAX, at OE = GND and 3.3 V on both sides, so no maximum is held for this circuit [read, rendered at `~/.cache/aet-4300d2/render/txu-cio.png`].
+- **D7 · READY with the crossing waiting** (asked after D2 (a) was applied).
+  - **What fails:** the committed fixture is drawn, but its board does not route: "U5 pad 20 has no node clear to start a track" [measured].
+  - **Why:** the QFN-24's pads are 0.2 mm wide at 0.4 mm pitch. The engine floor is 200 µm of track and clearance (`FLOOR_UM`, `RUL-03`) and the grid is 125 µm, so a track clears its neighbours only when it is centred exactly on the pad.
+  - **The gate's pad clearance is also conservative here:** it measures pads by their boxes, which read the corner pads 1 and 24 as 0.177 mm apart. As rounded copper they are 0.218 mm apart [measured on the footprint; computed].
+  - **What follows:** a router work order (pin-centred escape for sub-grid pads, and an exact rounded-pad clearance) brings the crossing's board up. Until then a tier-1 test pins both refusals by name.
+
+## 6. What was built
+
+| piece | where | proved by |
+|---|---|---|
+| Vendored parts: the LMR33630 and TLV755 (with their parents), the TXU0304, the inductor, Conn_01x02, the ICM-20948; 9 footprints | `aethelgard-kicad-lib`, `eda/src/library.rs` | library tests (pinned sha256, courtyard, keepout-only clearance) |
+| The tree drawn: regulators, divider (`K5`), external parts, translator, sense and reservoir, J1 | `eda/src/schematic_power.rs` | ERC 0 findings in the image; tier-1 tests |
+| The battery rail `VBAT` (K10); a rail a `power_out` pin drives carries no flag (D12) | `schematic.rs` | tier-1 flag test; ERC |
+| Anchors from ownership; the placer orders, turns and reserves room for loop parts; their references on F.Fab | `schematic_power.rs`, `pcb.rs` | §2's measurement; every loop rule passes |
+| The loop gate in `check drc --spec`: loop rules, `K5`, `route::check` (arrays, joins, keepouts), classes with widths, named conditions | `eda/src/loops.rs`, `cli/src/main.rs` `power_gate` | tier 1 (§5.1–5.3 cases) and tier 2 (the fixture passes; a moved part fails) |
+| Classes: `VBAT` admitted at step 13a with a tree; SW nets at their output's class | `ir/src/lib.rs`, `eda/src/stack.rs` | tier 1 |
+| `Stack::of`: thermal arrays and J1's solid join | `stack.rs`, `ir/src/power.rs` `thermal_arrays` | tier 1 (24 drills of 0.254 mm; 4 solid joins) |
+| A circle pad reached in its inscribed square | `route.rs` `Pad::reach` | the fixture routes; byte identity |
+| `fp_arc` measured by the placer and read by `extract` | `pcb.rs`, `extract.rs` | eda unit test; extract passes |
+| `fab`: one tool per drill, a hit count per tool, plated through-holes, FAB-NOTES naming every drill, each thermal array and the power conditions | `eda/src/fab.rs`, `cli/src/fab.rs` | tier 1 against KiCad's pinned drill files; tier 2 `kicad_writes_the_pinned_drill_files`; via-only notes byte-identical (goldens) |
+| ADC channels; the sense pin solved (`NoAdcPin`) | `ir/src/lib.rs`, `solve.rs`, `svd-hal` (D1) | `sense_pin.rs`, `adc_channels.rs` |
+| K6: the output delay in the sensor table | `ir/src/parts.rs`, `power.rs`, `parts.json` | `ir` tests |
+| D6: `TranslatorPinUnbounded`; D7: the crossing pinned | `extract.rs`; tests | tier 1 |
+| `campaign` refuses a tree as `PowerNotSimulated` (battery-sag work order) | `cli/src/campaign.rs` | `campaign_tier1` |
+
+## 7. Predictions against the results
+
+| id | result | label | verdict |
+|---|---|---|---|
+| P1 | Every file vendored byte-equal to GitLab's blob. Two existing rules refused one file each: the XT30PW-M's `fp_arc` silkscreen, now measured (K16), and the ICM-20948's keepout clearance (D2). The unnumbered pads (the HSOP's mask and paste apertures, the XT30's plated pegs) are read as predicted at risk, and accepted. | measured | partly |
+| P2 | One ERC finding first (`pin_not_connected` on `VDD_1V8`'s flag-row power symbol, once its flag was dropped), then 0. No waiver. | measured | right |
+| P3 | Rail-only parts landed by the wrong IC. So did label-net parts: the tie went to the MCU. | measured | half wrong |
+| P4 | Every bound met with anchors except the bulk Cin (3.0–4.7 mm) and L1 (3.5 mm). Those bounds were set at 5.0 and 4.0 mm, after the measurement (D3, ruled). | measured | partly |
+| P5 | The first full route failed at J1's circle pad (K13); with classes declared, it routed. `VBAT`, `VDD_5V` and U10's SW are at 0.5 mm; `VDD_3V3` and U11's SW at 0.2 mm. | measured | right |
+| P6 | 24 vias of 0.254 mm into B.Cu; J1's four through-holes (two pins, two plated pegs) are solid; DRC passes. | measured | right |
+| P7 | Tools per drill measured in the image (sub-agent table, §8). Existing packages are unchanged (goldens). The power board's drill file equals `fab::drills` (adversarial pass, measured). | measured | right |
+| P8 | A table extension. The serialized pin table's test digest moved (test-only; its old value still holds with the field cleared). No topology or verdict of an existing specification moved. | measured | partly |
+| P9 | 95 ns at 4 MHz, after #143. The crossing's board waits on D7. | measured | right for K6 |
+| P10 | Every existing board's schematic, board and BOM, and every verdict, is byte-identical with `main`'s, measured after each merge. The exception is `imu-baro-1v8.json`, which has no board: its `UnknownPart` refusal text now lists ICM20948 among the known parts. | measured | right |
+| P11 | +2 tier-2 tests, so TIER2_MIN is `main`'s 114 + 2 = 116. | read | right |
+| P12 | CI: §11. | — | — |
+| P13 | About 4,700 lines of code, tests and fixtures, plus about 3,900 of vendored KiCad files. | measured | wrong (larger) |
+
+## 8. Adversarial pass (full; a fresh Opus subagent, frozen at `065be44`)
+
+The reviewer was given the brief (`~/.cache/aet-4300d2/adversarial-brief.md`), the code and the sources, not these conclusions. Its record is `~/.cache/aet-4300d2-adv/adversarial.md`.
+
+**What held** [measured by the reviewer]:
+- Byte identity on all 20 fixtures.
+- §5.1: each of the 17 loop parts moved off fails its own rule and no other. 10 µm past its bound fails, and so does a swap of two parts.
+- §5.2: a K5 swap is caught by K5, the loop rules and parity.
+- §5.4: drill files with a missing tool, a hit off by one, a swapped diameter or an unplated peg are refused. The power board's real drill file equals `fab::drills`.
+- ERC passes with 0 findings, legitimately. Pin roles are against the datasheets.
+
+| id | sev | finding | disposition |
+|---|---|---|---|
+| A1 | high | `check drc --spec` did not run `route::check` on a power tree's board, so a short or misplaced thermal array passed DRC (only `extract` refused it) | **fixed**: `power_gate` runs `route::check`, tested (`a_starved_thermal_array_is_refused`) |
+| A2 | medium | several datasheet layout items the gate does not judge were not named | **fixed**: the conditions name SNVSAN3F 10.1 items 2, 3, 7 and 8, SBVS320D 7.4.1, and the ground side of one-pad rules |
+| A3 | low | `fab::drills` takes an array's count from the board | **covered by A1**: such a board now fails DRC before `fab` |
+| A4 | low | the drill check compares hit counts, not positions | **named** (fork F-fab-3: counts, not positions) |
+| A5 | low | the Power-tree section's opening said "did not judge" over lines that are not unjudged items | **fixed** wording |
+| A6 | low | FEEDBACK stale (K13's name, D5's claim, §2's gaps against the final verdict) | **fixed** K13 and D5; §2 is the measurement as taken, and §7 gives the final values |
+| A7 | low | U11's SW and `VDD_3V3` at 0.2 mm for 679 mA | **named** (the CLASSES condition; K11 for the architect) |
+| A8 | low | `filter_map`/`continue` that would drop a malformed row (unreachable after `validate`) | **named**: each sits behind a validation that refuses the row first |
+| A9 | low | the crossing's drawing was unexercised | **fixed after D2 (a) and K6**: the committed fixture is drawn, and a tier-1 test pins its refusals |
+| A10 | info | J1's polarity rests on the footprint's silkscreen | **named** here: KiCad's `+` beside pad 2 [read]; AMASS's drawing is not held |
+
+## 9. Mutation pass (diff-sized)
+
+`~/.cache/aet-4300d2/tools/mutate.py` ran one mutant per guard this build added or changed, each restored from memory, never by `git checkout`. Results are in `~/.cache/aet-4300d2/mut/`.
+- **Round 1:** 21 mutants, 19 killed.
+- **Two survived:** the battery name's claim and the sense pin's MCU pad. A test was added for each, and both were re-run killed (round 2).
+- **The fab sub-agent's own mutants:** 12, killed, after one guard was removed as implied and one test added.
+- **Guards added since:** the keepout reader, router and judge, D6's refusal, K6's pairing and range, and A1's call. Each is held by a named tier-1 test (`a_keepout_is_read_routed_around_and_judged`, `the_reader_admits_a_footprints_keepout_clearance_and_nothing_more`, `the_crossing_is_drawn_and_its_limits_are_refused_by_name`, `a_starved_thermal_array_is_refused`, `an_spi_output_delay_and_its_citation_come_together`).
