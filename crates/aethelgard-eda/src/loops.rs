@@ -173,6 +173,8 @@ pub fn conditions(spec: &Specification) -> Vec<String> {
     let mut out = vec![
         "LAYOUT: each loop part's distance to its pin is judged against an engine bound; SNVSAN3F, SBVS320D, SCES935A and AN2834 state \"close\" or \"as close as possible\" and no distance".to_owned(),
         "LAYOUT: not judged: the input loop's area (SNVSAN3F p. 33, Figure 10-1), the SW node's copper area (item 9), the feedback trace's distance from SW (item 4), the PGND side of the ground planes (p. 34, 10.1.1)".to_owned(),
+        "LAYOUT: not judged: the width of the traces SNVSAN3F 10.1 asks to be short and wide (item 2, CVCC; item 3, CBOOT; item 7, VIN, VOUT and GND), the copper weight and heat-sinking area (item 8), and the LDO's copper planes and thermal vias (SBVS320D p. 21, 7.4.1)".to_owned(),
+        "LAYOUT: not judged: the ground side of a part whose rule names one pin (the LDO's capacitors, each translator bypass, the sense reservoir, CVCC)".to_owned(),
         "LAYOUT: not judged: the placement of each buck's output capacitors, each sense divider's resistors and each crossing's pull-up".to_owned(),
         "CLASSES: each declared class's width is not judged against the current it carries: no current-to-width source is held; a buck's SW net is laid at its output domain's class".to_owned(),
         "SILKSCREEN: each loop part's reference is on F.Fab, not the silkscreen".to_owned(),

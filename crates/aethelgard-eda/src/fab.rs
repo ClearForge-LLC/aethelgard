@@ -450,7 +450,7 @@ fn power(conditions: &[String]) -> String {
     if conditions.is_empty() {
         return String::new();
     }
-    let mut out = "\n## Power tree\n\nThe design-rule gate judged each loop part's distance to the pin it serves and each regulator's source and return pads. It did not judge, and this package does not claim:\n\n".to_owned();
+    let mut out = "\n## Power tree\n\nThe design-rule gate judged each loop part's distance to the pin it serves, each regulator's source and return pads, and each thermal array and through-hole join. Its verdict also states, and this package claims nothing beyond them:\n\n".to_owned();
     for c in conditions {
         out.push_str(&format!("- {c}\n"));
     }
