@@ -421,3 +421,5 @@ Vendoring needs capacitor footprints above 0402 (0805, 1210).
 - **The adversarial pass:** fifteen findings, three high, all applied.
 - **For the architect:** the table (S1), the recommended parts, the specification's shape (S2), the checks (S3), the board (S4), the output pad (S5), and D1–D13.
 - **The build waits** for the ruling, and for `4300f` and `1308`.
+
+**AET-WO-4300d STOPPED: spike done, ruling needed on PR #137.** S1–S5 measured or read; D1–D13 for the architect.
