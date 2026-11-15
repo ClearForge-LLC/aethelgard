@@ -565,6 +565,15 @@ pub fn verify(
         Ok(s) => s,
         Err(code) => return code,
     };
+    // The fabrication path's lifecycle rule, before anything is generated or
+    // any gate runs (`AET-WO-4210` D1).
+    let lifecycle_unheld = match fab_mode {
+        Some(_) => match lifecycle(&topology) {
+            Ok(unheld) => unheld,
+            Err(code) => return code,
+        },
+        None => Vec::new(),
+    };
     let (files, topology_sha256) = match crate::generated(&spec, &topology, &table) {
         Ok(generated) => generated,
         Err(code) => return code,
@@ -591,7 +600,7 @@ pub fn verify(
         findings: Vec::new(),
         against_fab: None,
         fab: None,
-        lifecycle_unheld: Vec::new(),
+        lifecycle_unheld,
     };
 
     // Every scenario must start from exactly `--spec`, or its campaign would
@@ -638,12 +647,6 @@ pub fn verify(
     };
     if let Err(s) = fab_checked {
         return crate::stopped(s);
-    }
-    if fab_mode.is_some() {
-        match lifecycle(&topology) {
-            Ok(unheld) => report.lifecycle_unheld = unheld,
-            Err(code) => return code,
-        }
     }
 
     // `--against` first: a directory that is not the tree fails, naming

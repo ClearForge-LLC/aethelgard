@@ -252,4 +252,8 @@ unittests src/main.rs	run::tests::the_capture_cap_holds_with_and_without_the_fil
 unittests src/main.rs	tests::provenance_is_generated_only_for_the_generated_crate	2.755
 tests/twin_tier2.rs	the_reference_reads_u4_s_jedec_id_witnessed_behind_spi1_s_multiplexer	3.070
 tests/twin_tier2.rs	a_forged_spi_record_fails_unwitnessed	6.240
-tests/twin_tier2.rs	a_second_spi_device_an_icm20948_is_read_and_witnessed	3.400
+tests/twin_tier2.rs	the_imu_and_barometer_fixture_runs_every_script_step_witnessed	6.000
+tests/twin_tier2.rs	a_seeded_imu_fault_is_named_by_its_step	6.000
+tests/twin_tier2.rs	a_seeded_barometer_fault_is_named_by_its_step	6.000
+tests/twin_tier2.rs	an_interrupt_armed_after_the_boot_word_fails_naming_it	12.000
+tests/board_tier2.rs	the_imu_fixture_s_transfers_prove_within_its_scripts	20.000
