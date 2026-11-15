@@ -104,6 +104,11 @@ struct FabReport {
     /// `written` (`--fab-out`, every gate passed), `derived` (`--against-fab`),
     /// or `not_written` / `not_derived` when a gate failed: nothing is written.
     status: &'static str,
+    /// Each precondition of a package and its state (`AET-WO-3303` §1.1):
+    /// those the inputs decide were refused by name before any gate ran, so
+    /// they are met here; the rest are judged on the gates.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    preconditions: Vec<Precondition>,
     /// `kicad-cli`'s version, as the export ran it.
     tool_version: Option<String>,
     /// Whether every export ran under the separate uid (`AET-WO-1601`).
@@ -124,10 +129,70 @@ struct FabReport {
     lifecycle_unheld: Vec<String>,
 }
 
+/// One precondition of a package: `met`, or `unmet` with what fails it.
+#[derive(Serialize, Clone)]
+struct Precondition {
+    precondition: &'static str,
+    state: &'static str,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    unmet: Vec<String>,
+}
+
+impl Precondition {
+    fn of(precondition: &'static str, unmet: Vec<String>) -> Self {
+        let state = if unmet.is_empty() { "met" } else { "unmet" };
+        Self {
+            precondition,
+            state,
+            unmet,
+        }
+    }
+}
+
+/// Every precondition of a package, in a fixed order, on the gates that ran.
+/// Coverage was refused before any gate when short, so it is met here.
+fn preconditions(report: &Report, planned: &[String]) -> Vec<Precondition> {
+    let proved = |h: &String| {
+        report
+            .gates
+            .iter()
+            .any(|g| g.gate == "prove" && g.harness.as_ref() == Some(h) && g.verdict == "pass")
+    };
+    let failed = report
+        .gates
+        .iter()
+        .filter(|g| g.verdict != "pass")
+        .map(|g| match &g.harness {
+            Some(h) => format!("{} {h}: {}", g.gate, g.verdict),
+            None => format!("{}: {}", g.gate, g.verdict),
+        })
+        .chain(
+            report
+                .findings
+                .iter()
+                .filter(|f| f.severity == "error")
+                .map(|f| format!("finding {}", f.kind)),
+        )
+        .collect();
+    vec![
+        Precondition::of(
+            "every_harness_proved",
+            planned
+                .iter()
+                .filter(|h| !proved(h))
+                .map(|h| format!("{h} not proved"))
+                .collect(),
+        ),
+        Precondition::of("campaign_faults_every_bus_and_rail", Vec::new()),
+        Precondition::of("every_gate_passed", failed),
+    ]
+}
+
 impl FabReport {
     fn none(status: &'static str, lifecycle_unheld: Vec<String>) -> Self {
         Self {
             status,
+            preconditions: Vec::new(),
             tool_version: None,
             uid_boundary: None,
             uid_boundary_unmet: None,
@@ -517,6 +582,126 @@ fn skipped_finding(ran: &[String]) -> Finding {
     }
 }
 
+/// Every declared bus and rail the campaign seeds no fault on (`INV-03`,
+/// `AET-WO-3303` §1.1), each named with why, in the specification's order:
+/// I2C buses, SPI buses, then rails. A fault counts only where it can change
+/// what the campaign judges: on a bus some device uses, with a value other
+/// than the specification's own (a pull-up or a line's capacitance limit), a
+/// held line, an SPI device left absent, or a droop whose floor is below its
+/// domain's nominal. A rail is each voltage domain, and the battery when the
+/// specification declares a power tree. The campaign droops only the MCU's
+/// supply (`DroopNotMcuSupply`) and nothing names an SPI bus but through a
+/// device, so such a rail or bus is named as one no fault kind reaches.
+pub(crate) fn uncovered(
+    spec: &aethelgard_ir::Specification,
+    topology: &aethelgard_ir::SolvedTopology,
+    scenarios: &[aethelgard_chaos::campaign::Scenario],
+) -> Vec<String> {
+    use aethelgard_chaos::record::Override;
+    use std::collections::BTreeSet;
+    let mut i2c = BTreeSet::new();
+    let mut spi = BTreeSet::new();
+    let mut rails = BTreeSet::new();
+    for o in scenarios.iter().flat_map(|s| &s.overrides) {
+        match o {
+            Override::PullUpOhms { bus, ohms } => {
+                if spec
+                    .i2c_buses
+                    .iter()
+                    .any(|b| &b.id == bus && b.pull_up_ohms != *ohms)
+                {
+                    i2c.insert(bus.as_str());
+                }
+            }
+            Override::MaxCapacitance { net, femtofarads } => {
+                let changed = spec
+                    .net_constraints
+                    .iter()
+                    .any(|c| &c.net_name == net && c.max_capacitance_femtofarads != *femtofarads);
+                if let Some(b) = spec
+                    .i2c_buses
+                    .iter()
+                    .find(|b| changed && (&b.sda.net == net || &b.scl.net == net))
+                {
+                    i2c.insert(b.id.as_str());
+                }
+            }
+            Override::LineHeldLow { bus, .. } => {
+                i2c.insert(bus.as_str());
+            }
+            Override::Droop(d) => {
+                if spec
+                    .voltage_domains
+                    .iter()
+                    .any(|v| v.id == d.domain && d.floor_millivolts < v.nominal_millivolts)
+                {
+                    rails.insert(d.domain.as_str());
+                }
+            }
+            Override::SpiDeviceAbsent { reference } => {
+                if let Some(d) = topology.spi_devices.get(reference) {
+                    spi.insert(d.bus.as_str());
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    let unused = "no device uses it, so a fault there judges nothing";
+    for b in &spec.i2c_buses {
+        if !topology.i2c_devices.values().any(|d| d.bus == b.id) {
+            out.push(format!("I2C bus `{}` ({unused})", b.id));
+        } else if !i2c.contains(b.id.as_str()) {
+            out.push(format!("I2C bus `{}`", b.id));
+        }
+    }
+    for b in &spec.spi_buses {
+        if !topology.spi_devices.values().any(|d| d.bus == b.id) {
+            out.push(format!(
+                "SPI bus `{}` ({unused}; no fault kind names an SPI bus but through a device)",
+                b.id
+            ));
+        } else if !spi.contains(b.id.as_str()) {
+            out.push(format!("SPI bus `{}`", b.id));
+        }
+    }
+    for v in &spec.voltage_domains {
+        if v.id != spec.mcu.supply {
+            out.push(format!(
+                "rail `{}` (not the MCU's supply: no fault kind droops it)",
+                v.id
+            ));
+        } else if !rails.contains(v.id.as_str()) {
+            out.push(format!("rail `{}`", v.id));
+        }
+    }
+    if spec.power.is_some() {
+        out.push("rail `battery` (no fault kind droops it)".to_owned());
+    }
+    out
+}
+
+/// Each harness the board crate declares that `planned` does not name: every
+/// `kani::proof` attribute in every file of the crate is counted, however it
+/// is written, so a harness the line reader in [`harnesses`] misses is never
+/// silently left unproved (`AET-WO-3303` §1.1).
+fn unplanned(board: &BTreeMap<String, String>, planned: usize) -> Option<String> {
+    let declared: usize = board
+        .values()
+        .map(|text| {
+            text.match_indices("kani::proof")
+                .filter(|(i, m)| {
+                    !text[i + m.len()..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
+                })
+                .count()
+        })
+        .sum();
+    (declared != planned).then(|| {
+        format!(
+            "the board crate declares {declared} Kani harnesses and the plan names {planned}: a harness the plan misses would not be proved"
+        )
+    })
+}
+
 /// The harnesses of a generated `src/proofs.rs`, as `proofs::<name>`: each
 /// `fn` after a `#[kani::proof]`. The text is the generator's, not a user's.
 pub fn harnesses(proofs: &str) -> Vec<String> {
@@ -606,6 +791,7 @@ pub fn verify(
     // Every scenario must start from exactly `--spec`, or its campaign would
     // judge another specification.
     let mut expected = Vec::new();
+    let mut read = Vec::new();
     for path in scenarios {
         let scenario = match campaign::read_scenario(path) {
             Ok(s) => s,
@@ -637,6 +823,7 @@ pub fn verify(
             scenario: scenario.sha256,
             specification: effective.specification_sha256,
         });
+        read.push(scenario);
     }
 
     // An unusable `--fab-out` or `--against-fab` is refused before any gate.
@@ -647,6 +834,37 @@ pub fn verify(
     };
     if let Err(s) = fab_checked {
         return crate::stopped(s);
+    }
+
+    let board = tree::subtree(&files, &format!("{BOARD_DIR}/"));
+    let board_sha256 = tree::crate_sha256(&board);
+    let (harnesses, skipped) = harness_plan(
+        harnesses(board.get("src/proofs.rs").map_or("", String::as_str)),
+        !topology.motor_outputs.is_empty(),
+    );
+    // A package's preconditions that the inputs decide (`AET-WO-3303` §1.1),
+    // refused by name before any gate runs; the rest are judged on the gates.
+    if fab_mode.is_some() {
+        let left_out = if skipped {
+            Some(format!("{WHOLE_SCHEDULE} is not proved on a board with motor outputs"))
+        } else {
+            unplanned(&board, harnesses.len())
+        };
+        if let Some(m) = left_out {
+            return refuse("HarnessSkipped", None, format!("no package: {m}"), EXIT_UNREADABLE);
+        }
+        let short = uncovered(&spec, &topology, &read);
+        if !short.is_empty() {
+            return refuse(
+                "CampaignCoverageShort",
+                None,
+                format!(
+                    "no package: the campaign seeds no fault on {}",
+                    short.join(", ")
+                ),
+                EXIT_UNREADABLE,
+            );
+        }
     }
 
     // `--against` first: a directory that is not the tree fails, naming
@@ -700,12 +918,6 @@ pub fn verify(
     let sch = format!("{KICAD_DIR}/{project}.kicad_sch");
     let pcb = format!("{KICAD_DIR}/{project}.kicad_pcb");
     let repl = format!("{BOARD_DIR}/{project}.repl");
-    let board = tree::subtree(&files, &format!("{BOARD_DIR}/"));
-    let board_sha256 = tree::crate_sha256(&board);
-    let (harnesses, skipped) = harness_plan(
-        harnesses(board.get("src/proofs.rs").map_or("", String::as_str)),
-        !topology.motor_outputs.is_empty(),
-    );
     let path = |rel: &str| os(&root.join(rel));
     let spec_arg = os(&spec_copy);
 
@@ -726,7 +938,7 @@ pub fn verify(
             repl: &hashes[&repl],
             board: &board_sha256,
             spec: &spec_sha256,
-            harnesses,
+            harnesses: harnesses.clone(),
             skipped,
             boot_time: format!("{}ns", aethelgard_twin::boot::window(&topology).0),
         },
@@ -756,8 +968,12 @@ pub fn verify(
                 sha256: hex(e.scenario),
             })
             .collect();
+        let pre = preconditions(&report, &harnesses);
         if let Err(code) = package(&mut report, mode, &bound, &scenarios) {
             return code;
+        }
+        if let Some(f) = report.fab.as_mut() {
+            f.preconditions = pre;
         }
     }
     let code = if report.ok { 0 } else { EXIT_FAIL };
@@ -812,6 +1028,7 @@ fn package(
     files.insert(fab::MANIFEST.to_owned(), tree::sha256(&manifest));
     let mut fab_report = FabReport {
         status: "derived",
+        preconditions: Vec::new(),
         tool_version: Some(exported.tool_version.clone()),
         uid_boundary: Some(exported.sandbox.uid_boundary),
         uid_boundary_unmet: exported.sandbox.uid_boundary_unmet,

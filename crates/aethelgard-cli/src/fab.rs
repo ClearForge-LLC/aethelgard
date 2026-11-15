@@ -40,22 +40,22 @@ pub const KICAD_VERSION: &str = "10.0.7";
 const TOOL: &str = "kicad-cli";
 
 /// Each Gerber: the layer KiCad is asked for, the name KiCad gives its file
-/// after the copy's stem (`input-`), and the line its creator line is on,
-/// as measured. The package names the file after the project instead.
+/// after the copy's stem (`input-`), the line its creator line is on, as
+/// measured, and what the notes call it. The package names the file after the project instead.
 ///
 /// The creator line follows KiCad's header attributes, and the outline
 /// carries one fewer (no `%TF.FilePolarity`), so its creator line is line 8
 /// (`GERBER_plotter.cpp` `StartPlot`; FEEDBACK F3).
-pub const LAYERS: [(&str, &str, usize); 9] = [
-    ("F.Cu", "F_Cu.gtl", 9),
-    ("B.Cu", "B_Cu.gbl", 9),
-    ("F.Paste", "F_Paste.gtp", 9),
-    ("B.Paste", "B_Paste.gbp", 9),
-    ("F.SilkS", "F_Silkscreen.gto", 9),
-    ("B.SilkS", "B_Silkscreen.gbo", 9),
-    ("F.Mask", "F_Mask.gts", 9),
-    ("B.Mask", "B_Mask.gbs", 9),
-    ("Edge.Cuts", "Edge_Cuts.gm1", 8),
+pub const LAYERS: [(&str, &str, usize, &str); 9] = [
+    ("F.Cu", "F_Cu.gtl", 9, "Gerber, top copper"),
+    ("B.Cu", "B_Cu.gbl", 9, "Gerber, bottom copper"),
+    ("F.Paste", "F_Paste.gtp", 9, "Gerber, top solder paste"),
+    ("B.Paste", "B_Paste.gbp", 9, "Gerber, bottom solder paste"),
+    ("F.SilkS", "F_Silkscreen.gto", 9, "Gerber, top silkscreen"),
+    ("B.SilkS", "B_Silkscreen.gbo", 9, "Gerber, bottom silkscreen"),
+    ("F.Mask", "F_Mask.gts", 9, "Gerber, top solder mask"),
+    ("B.Mask", "B_Mask.gbs", 9, "Gerber, bottom solder mask"),
+    ("Edge.Cuts", "Edge_Cuts.gm1", 8, "Gerber, board outline"),
 ];
 
 /// The package's manifest: written last, named in the verdict like every
@@ -209,7 +209,7 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
     }
 
     let mut copper = BTreeMap::new();
-    for (layer, suffix, creator) in &layers {
+    for (layer, suffix, creator, _) in &layers {
         let (layer, creator) = (layer.as_str(), *creator);
         let raw = read_output(TOOL, &scratch.tool.join(format!("{STEM}-{suffix}")))?;
         let stripped = strip_clock(&raw, creator).map_err(|m| {
@@ -269,16 +269,20 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
 /// (`In1_Cu.g1`, `In2_Cu.g2`), its creator line on line 9 as on every copper
 /// layer (measured, S1). The list follows the specification, never the
 /// board, so a package cannot lose a declared layer.
-pub fn gerbers(stack: &aethelgard_eda::stack::Stack) -> Vec<(String, String, usize)> {
+pub fn gerbers(stack: &aethelgard_eda::stack::Stack) -> Vec<(String, String, usize, String)> {
     let mut out = Vec::new();
-    for (layer, suffix, creator) in LAYERS {
-        out.push((layer.to_owned(), suffix.to_owned(), creator));
+    for (layer, suffix, creator, what) in LAYERS {
+        out.push((layer.to_owned(), suffix.to_owned(), creator, what.to_owned()));
         if layer == "B.Cu" {
             for (i, inner) in stack.copper[1..stack.copper.len() - 1].iter().enumerate() {
                 out.push((
                     inner.clone(),
                     format!("{}.g{}", inner.replace('.', "_"), i + 1),
                     9,
+                    format!(
+                        "Gerber, inner copper layer {}, a plane (see Stackup)",
+                        i + 1
+                    ),
                 ));
             }
         }
@@ -287,25 +291,13 @@ pub fn gerbers(stack: &aethelgard_eda::stack::Stack) -> Vec<(String, String, usi
 }
 
 /// Every file of the package but the notes and the manifest, with what it is.
-fn describe(project: &str, layers: &[(String, String, usize)]) -> Vec<(String, &'static str)> {
-    let mut out: Vec<(String, &'static str)> = layers
+fn describe<'a>(
+    project: &str,
+    layers: &'a [(String, String, usize, String)],
+) -> Vec<(String, &'a str)> {
+    let mut out: Vec<(String, &'a str)> = layers
         .iter()
-        .map(|(layer, suffix, _)| {
-            let what = match layer.as_str() {
-                "F.Cu" => "Gerber, top copper",
-                "B.Cu" => "Gerber, bottom copper",
-                "In1.Cu" => "Gerber, inner copper layer 1, a plane (see Stackup)",
-                "In2.Cu" => "Gerber, inner copper layer 2, a plane (see Stackup)",
-                "F.Paste" => "Gerber, top solder paste",
-                "B.Paste" => "Gerber, bottom solder paste",
-                "F.SilkS" => "Gerber, top silkscreen",
-                "B.SilkS" => "Gerber, bottom silkscreen",
-                "F.Mask" => "Gerber, top solder mask",
-                "B.Mask" => "Gerber, bottom solder mask",
-                _ => "Gerber, board outline",
-            };
-            (format!("{project}-{suffix}"), what)
-        })
+        .map(|(_, suffix, _, what)| (format!("{project}-{suffix}"), what.as_str()))
         .collect();
     out.extend([
         (format!("{project}.drl"), "Excellon drill file"),
@@ -843,23 +835,20 @@ mod tests {
             gerbers(&aethelgard_eda::stack::Stack::of(&spec))
         };
         let two = load(&repo_file("examples/sentinel-01-minimal.json"));
-        let today: Vec<(String, String, usize)> = LAYERS
+        let today: Vec<(String, String, usize, String)> = LAYERS
             .iter()
-            .map(|(l, s, c)| ((*l).to_owned(), (*s).to_owned(), *c))
+            .map(|(l, s, c, w)| ((*l).to_owned(), (*s).to_owned(), *c, (*w).to_owned()))
             .collect();
         assert_eq!(two, today);
         let four = load(&repo_file(
             "crates/aethelgard-cli/tests/fixtures/four-layer.json",
         ));
-        let inner: Vec<&(String, String, usize)> =
-            four.iter().filter(|(l, ..)| l.starts_with("In")).collect();
-        assert_eq!(
-            inner,
-            [
-                &("In1.Cu".to_owned(), "In1_Cu.g1".to_owned(), 9),
-                &("In2.Cu".to_owned(), "In2_Cu.g2".to_owned(), 9)
-            ]
-        );
+        let inner: Vec<(&str, &str, usize)> = four
+            .iter()
+            .filter(|(l, ..)| l.starts_with("In"))
+            .map(|(l, s, c, _)| (l.as_str(), s.as_str(), *c))
+            .collect();
+        assert_eq!(inner, [("In1.Cu", "In1_Cu.g1", 9), ("In2.Cu", "In2_Cu.g2", 9)]);
         assert_eq!(four.len(), LAYERS.len() + 2);
     }
 }
