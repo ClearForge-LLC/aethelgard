@@ -348,7 +348,10 @@ fn the_configuration_takes_the_clock_token_and_only_its_own_pins() {
     assert!(enabled.contains("pub fn send<R: Registers>"));
     assert!(enabled.contains("pub fn receive<R: Registers>"));
     // TXE is ISR bit 7, RXNE bit 5; TDR is at 0x28, RDR at 0x24.
-    assert!(enabled.contains("usart_wait(r, Block::Usart2, 0x00000080, spins)"));
+    // `send` waits its own bound: no proof takes a smaller one, so no
+    // `send_within` claims one does (adversarial F13).
+    assert!(enabled.contains("usart_wait(r, Block::Usart2, 0x00000080, USART_WAIT_SPINS)"));
+    assert!(!board.contains("send_within"));
     assert!(enabled.contains("r.write(TOKEN, Block::Usart2, 0x28, u32::from(byte));"));
     assert!(enabled.contains("usart_wait(r, Block::Usart2, 0x00000020, polls)"));
     assert!(enabled.contains("r.read(TOKEN, Block::Usart2, 0x24)"));

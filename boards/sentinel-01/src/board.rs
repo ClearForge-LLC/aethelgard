@@ -665,14 +665,7 @@ impl Usart1<Enabled<()>> {
     /// Waits at most [`USART_WAIT_SPINS`] reads of `ISR` for `TXE`, then writes
     /// `byte` to `TDR`; or gives up, writing nothing.
     pub fn send<R: Registers>(&mut self, r: &mut R, byte: u8) -> Result<(), TxeTimeout> {
-        self.send_within(r, byte, USART_WAIT_SPINS)
-    }
-
-    /// [`Self::send`] with its own bound on the wait, so the proof can use a
-    /// small one.
-    #[doc(hidden)]
-    pub fn send_within<R: Registers>(&mut self, r: &mut R, byte: u8, spins: u32) -> Result<(), TxeTimeout> {
-        if usart_wait(r, Block::Usart1, 0x00000080, spins) {
+        if usart_wait(r, Block::Usart1, 0x00000080, USART_WAIT_SPINS) {
             r.write(TOKEN, Block::Usart1, 0x28, u32::from(byte));
             Ok(())
         } else {

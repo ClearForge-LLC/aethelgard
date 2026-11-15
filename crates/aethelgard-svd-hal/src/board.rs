@@ -2775,14 +2775,7 @@ fn emit_usart(w: &mut String, name: &str, sp: &SerialPlan, plan: &Plan, u: &Usar
              /// Waits at most [`USART_WAIT_SPINS`] reads of `ISR` for `TXE`, then writes\n    \
              /// `byte` to `TDR`; or gives up, writing nothing.\n    \
              pub fn send<R: Registers>(&mut self, r: &mut R, byte: u8) -> Result<(), TxeTimeout> {{\n        \
-                 self.send_within(r, byte, USART_WAIT_SPINS)\n    \
-             }}\n\
-             \n    \
-             /// [`Self::send`] with its own bound on the wait, so the proof can use a\n    \
-             /// small one.\n    \
-             #[doc(hidden)]\n    \
-             pub fn send_within<R: Registers>(&mut self, r: &mut R, byte: u8, spins: u32) -> Result<(), TxeTimeout> {{\n        \
-                 if usart_wait(r, Block::{t}, {txe:#010x}, spins) {{\n            \
+                 if usart_wait(r, Block::{t}, {txe:#010x}, USART_WAIT_SPINS) {{\n            \
                      r.write(TOKEN, Block::{t}, {tdr:#04x}, u32::from(byte));\n            \
                      Ok(())\n        \
                  }} else {{\n            \
