@@ -284,7 +284,7 @@ run() {
       set -e
       t1=$(date +%s%N)
       [ "$rc" -eq 0 ] || status=1
-      times=$(grep -oE '^test .* (ok|FAILED) <[0-9.]+s>' "$out/one.log" | grep -oE '<[0-9.]+s>' | tr -d '<>s' | tr '\n' ' ')
+      times=$(grep -oE '^test .* (ok|FAILED) <[0-9.]+s>' "$out/one.log" | grep -oE '<[0-9.]+s>' | tr -d '<>s' | tr '\n' ' ' || true)
       printf 'MEASURE\t%s\t%s\t%s\t%s\n' "$n" "$rc" "$(( (t1 - t0) / 1000000 ))" "$times"
       cat "$out/one.log" >> "$out/test-ws.log"
     done
