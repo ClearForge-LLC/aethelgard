@@ -1263,6 +1263,7 @@ fn gate_drc(dir: &Path, text: &str, rules: &aethelgard_eda::rules::Rules) -> (Op
             "--format",
             "json",
             "--refill-zones",
+            "--save-board",
             "-o",
         ])
         .arg(&report)
@@ -1273,6 +1274,33 @@ fn gate_drc(dir: &Path, text: &str, rules: &aethelgard_eda::rules::Rules) -> (Op
         .unwrap();
     let doc: Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
     (out.status.code(), doc)
+}
+
+/// The radii, from `centre`, of every vertex of `net`'s fill on `layer` in
+/// a board KiCad saved after refilling it, within `within` nm.
+fn fill_radii(board: &str, layer: &str, net: &str, centre: (i64, i64), within: i64) -> Vec<i64> {
+    let tree = aethelgard_eda::sexpr::parse(board).unwrap();
+    let mut out = Vec::new();
+    for zone in tree.children("zone") {
+        if zone.child("net").and_then(|n| n.arg(1)) != Some(net)
+            || zone.child("layer").and_then(|l| l.arg(1)) != Some(layer)
+        {
+            continue;
+        }
+        for poly in zone.children("filled_polygon") {
+            for xy in poly.child("pts").unwrap().children("xy") {
+                let (x, y) = (
+                    aethelgard_eda::sexpr::nm(xy.arg(1).unwrap()).unwrap(),
+                    aethelgard_eda::sexpr::nm(xy.arg(2).unwrap()).unwrap(),
+                );
+                let r = (((x - centre.0) as f64).hypot((y - centre.1) as f64)).round() as i64;
+                if r < within {
+                    out.push(r);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Every DRC item of a report: violations, unconnected items and parity, as
@@ -1294,7 +1322,10 @@ fn drc_items(doc: &Value) -> Vec<String> {
 /// `AET-WO-1309` §1.3: the XT30 fixture at 2 and 4 layers with each join,
 /// and the thermal fixture's 4 x 3 array into the 4-layer ground plane (and
 /// into the 2-layer ground zone), pass KiCad DRC by the gate's own rules
-/// with no finding of any kind, unconnected items included.
+/// with no finding of any kind, unconnected items included. And the fill
+/// KiCad refills meets J1's `GND` pad as declared (FEEDBACK B2): relieved,
+/// its edge is the 0.5 mm relief gap from the 3.5 mm pad (2.25 mm from its
+/// centre); solid, no edge of the fill lies between the hole and 2.6 mm.
 #[test]
 fn the_through_hole_and_thermal_fixtures_pass_drc_by_the_gates_rules() {
     use aethelgard_eda::stack::Join;
@@ -1321,6 +1352,19 @@ fn the_through_hole_and_thermal_fixtures_pass_drc_by_the_gates_rules() {
         record_1309(&format!("{name}: exit {code:?}, {items:?}"));
         assert_eq!(code, Some(0), "{name}: {items:?}");
         assert!(items.is_empty(), "{name}: {items:?}");
+        if let Some(join) = name.strip_prefix("xt30-") {
+            let saved = fs::read_to_string(t.0.join(&name).join("th.kicad_pcb")).unwrap();
+            let layer = if join.starts_with("true") { "In1.Cu" } else { "B.Cu" };
+            // J1 at (110, 116); pad 2, 1.9 mm drill, at x -5.
+            let radii = fill_radii(&saved, layer, "GND", (105_000_000, 116_000_000), 2_600_000);
+            let ring: Vec<i64> = radii.iter().copied().filter(|&r| r > 1_000_000).collect();
+            record_1309(&format!("{name}: fill vertices 1.0-2.6 mm from J1 pad 2: {}", ring.len()));
+            if join.ends_with("Relief") {
+                assert!(!ring.is_empty() && ring.iter().all(|r| (2_240_000..=2_260_000).contains(r)), "{name}: {ring:?}");
+            } else {
+                assert!(ring.is_empty(), "{name}: {ring:?}");
+            }
+        }
     }
 }
 
