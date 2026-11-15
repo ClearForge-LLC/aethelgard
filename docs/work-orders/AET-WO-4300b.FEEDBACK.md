@@ -109,3 +109,53 @@ Probes run through the CLI's composition with the work order's generated firmwar
 - **The echo is bounded and the core still parks.** The firmware sends each pattern at start, runs its identity reads, writes the boot word, then polls each port for its frame's length a bounded number of times, echoing each byte, and parks on the `yield; b.n` loop. A port that receives nothing ends its wait and the core still parks, so a dead port is named by its echo alone.
 - **The frame** is eight bytes per port, the first eight of `sha256("aethelgard-serial-frame" ‖ firmware sha256 ‖ label)`: replay re-derives it from the header's `firmware` artifact; a firmware cannot hold it at build time.
 - **The capture** is one Renode file backend per port in a directory the CLI creates for the boot; the judge reads every file whole and refuses an unexpected file.
+
+## 3. How it was built
+
+The PM (this session) wrote the shapes (`serial.rs`, `5833b9c`) and a contract every worker read (`~/.cache/aet-4300b/contract.md`), then delegated, one editor per worktree at a time: ir (validation, solver, DS-009, fixtures); the board crate in its own worktree (USART typestate, firmware, Kani harnesses), merged at `feff00a`; the twin and the CLI judge; the board-side test re-pins in their own worktree, merged at `afcbfce`; chaos, evolve, the seeded case and tier 2. Each report was checked against its artifact before it was adopted (the register values against RM0433, the evidence files, tier 1 after every merge).
+
+## 4. Runs and results beside the predictions
+
+Every container ran through `~/.cache/aet-4300b/img.sh` (`~/bin/capped-run`: scope `memory.max` 8 GiB, `memory.swap.max` 0, `pids.max` 8192, read back into `~/.cache/aet-4300b/caps.log` before each run; one container at a time by a lock). Evidence: `~/.cache/aet-4300b/evidence/{board,c1,c2,b}`.
+
+| id | prediction | result | label | verdict |
+|---|---|---|---|---|
+| P1.1 | the clock check with `D2CCIP2R` passes; §7 stop does not fire | Every serial board boots and passes; the generated check reads `RCC_D2CCIP2R` (ST's header names bits 2:0 `USART28SEL`, RM0433 `USART234578SEL`) and Renode's tags read 0 | measured | as predicted: **the §7 clock stop does not fire** |
+| P1.2 | the read logs nothing | No warning from `rcc` in any serial boot's log | measured | as predicted |
+| P2.1 | console: pattern then frame, nothing per byte | `usart1.bin` = `43 4F 4E 53 4F 4C 45 00 FE 7F 80 FF` + the 8-byte frame; `CR1` 0x0D, `CR2` 0, `CR3` 0, `BRR` 0x22C; nothing logged per byte; two boots identical | measured | as predicted |
+| P2.2 | four ports, each its own | MAVLINK USART1 PA9/PA10 BRR 1111; GPS USART2 PA2/PA3 BRR 556; CRSF USART3 PB10/PB11 BRR 152; SBUS UART4 PA0/PA1 AF8 BRR 640; each capture its own pattern once and its own frame | measured | as predicted |
+| P2.3 | `UE` clear: nothing captured | Capture empty; `register_mismatch` USART1.CR1 0x0C, `serial_pattern_missing`, `serial_echo_missing`. The "Ignoring" warning was not inspected | measured | as predicted (the warning not measured) |
+| P3.1 | `RE`/`UE` set before 100 µs | `CR1` reads 0x0D from 20 µs on (0 at 10 µs): 80 µs of margin; echoed | measured | as predicted |
+| P3.2 | inject at 0: dropped, fails closed | Capture holds the pattern only; no `Debug` line at the default level | measured | as predicted |
+| P4.1 | SBUS: tags warned once per write | `CR1` 0x40D, `CR2` 0x2000, `BRR` 0x280; `RXINV (0x1), TXINV (0x1)` once (one `CR2` write) and `MO (0x1)` twice (the configuration write 0x140C and the `UE` write 0x140D) | measured | as predicted ("one per write"; two `CR1` writes) |
+| P4.2 | no warning on 8N1 ports | 0 tag warnings from those USARTs | measured | as predicted |
+| P5.1 | Renode still echoes with RX off its AF; the judge must model the mux | RX on AF8: Renode echoes the whole frame; the judge reads PA10 `MODER` 10, AF8 at the injection: echo `not_counted`; findings `register_mismatch` (GPIOA.AFRH) and `serial_echo_missing`; pattern witnessed. RX left analog: the same, naming `GPIOA.MODER` | measured | as predicted |
+| P6.1 | a file at the capture path is moved aside | Moved to `usart1.bin.1`, a fresh file written; the judge names the extra file `serial_capture_forged` | measured | as predicted |
+| P6.2 | a constant echo without `RDR` fails | `serial_capture_forged` (stray bytes) and `serial_echo_missing` | measured | as predicted |
+| P6.3 | pattern on the wrong port fails | That port: `serial_capture_forged`, `serial_pattern_missing`, `serial_echo_missing`; the other three witnessed | measured | as predicted |
+| P7.1 | ERC and DRC pass at connectors, no finding | Sentinel-01 + console and the four-port fixture: `emit` 0, `check erc` 0 pass, `check drc --spec --schematic` 0 pass, **no findings** (KiCad 10.0.7). No `no_connect` on a pad carrying a net: the reference's 109 markers are its 110 on `main` less PA9/PA10 plus J1 pin 3 (an unused connector contact) | measured | as predicted: **the §1.6 STOP does not fire** |
+| P8.2 | `every_valid_sequence` on Sentinel-01 + console finishes under 4 min | **OOM-killed at the 8 GiB cap after 678 s**, in `cbmc` (journal: scope `oom-kill`). `main`'s reference: about 121 s | measured | **wrong**; §5 |
+| P9 | every scenario keeps its verdict; a droop resends the pattern | Every committed scenario keeps verdict, `matched` and finding kinds against `main`'s binaries, scenario by scenario; 15 of 15 replays ok. `droop-bor3`'s kind 29: 2 whole patterns, 0 cut, then the frame, witnessed | measured | as predicted |
+
+**The seeded set's evidence, re-derived from `attribute`** in the image (`evidence/c2/derive.md`). Every case keeps its domain and rule. Indices after rank 3 move by 1 (kind 27, the console's solved port, archived with kinds 15 and 23); registers after USART1's move by 5 more (its `CR1`, `CR2`, `CR3`, `BRR` and one more `GPIOA` register in the image). `motor-output-dead` (the PWM fixture, no port) does not move. The new case `serial-rx-dead` attributes **S5, software**, evidence `14:11` (GPIOA.AFRH) and `31:29` (the console's failed echo).
+- `leave-firmware`'s mutant jumped right after the boot word, so it now also skipped the echo and attributed I6. The jump was moved to just after the echo loop (`e85e0fe`), which keeps the case's meaning (the firmware leaves its fixed point): S2 again, `5:7 6:7 7:10`.
+
+**Board side.** Eight tier-1 tests pinned the reference's layout from before it had a connector; none is an `aethelgard-eda` defect (`evidence/board`):
+- the placement test held every courtyard `FLOOR_NM` inside the outline; ruled D7 (`4300f`) puts a connector's courtyard bottom on the edge, so J1 is held to D7 (bottom within one `SNAP` of the edge) and every other part to the floor, as before;
+- the edges helper moved R1 below the old bottom edge, now J1's row and fixed by the connector: R1 (at 180°) now sits in the connector row, `MARGIN_NM` from the edge;
+- the extracted SPI bounds moved because order B routes the console's two nets first (SCK 16,972 → 15,534 fF, MOSI 13,772 → 17,567 fF); J1 alone (no console nets) moves nothing (measured);
+- the strict corpus re-anchored: ids shifted by J1 and the console copper (each new id checked to name the same element), and `controller_renamed` renames U1 to J2, since J1 now exists.
+
+## 5. Decisions taken inside the work order
+
+- **CRSF (Q1 below).** 8N1 and non-inverted refused otherwise; the baud refused below 416666; 420000 validates as a negotiated higher rate.
+- **SBUS:** no vendor-published source; nothing refused on its behalf.
+- **Connectors.** MAVLINK and CRSF at `DS-009 TELEM` ("Telemetry (any serial port)": DS-009 names no RC port), GPS at `DS-009 GPS` (its SCL/SDA the board's SENSORS bus with `offboard` declared), SBUS and the console at explicit SM04B maps (DEBUG MINI cannot validate: its SWD pins are undeclared). DS-009's TX/RX pins now have roles (`SerialTx`/`SerialRx`, the autopilot's TX out on the port's `tx`, read at the held DS-009 text), so TELEM and GPS validate; GPS FULL and DEBUG MINI still cannot.
+- **The kernel clock** is `rcc_pclk2` for USART1/6 and `rcc_pclk1` for the rest (`RCC_D2CCIP2R` reset 0, §8.7.21), 64 MHz on the solved clock; `RESET_CLOCK_FIELDS` gains `D2CCIP2R`'s two fields, and the clock check is generated on a board with motor outputs or serial ports. Every motor board's check reads one more register.
+- **The tolerance check is unreachable through `solve`** (ir's finding, proven exhaustively over every `BRR` at 64 MHz): with the nearest `BRR` ≥ 16 the error is at most 1/(2·BRR), 3.125 % at 16 (Table 406, tightest row 3.41 %) and 2.94 % from 17 (Table 407, tightest 3.03 %). The refusal stays as a guard (`belt-and-suspenders:`), and the edge is tested in exact integers on `serial::within`. WO §5.2's "a baud at the tolerance's edge" therefore cannot fail a solved port at 64 MHz.
+- **The firmware.** Configure (gate, pins at `00`, `BRR`, `CR2`, `CR1` without `UE`, then `CR1` with `UE` by a second full write), each pattern, the identity reads, the boot word, then the bounded echo (`FRAME_LEN` 8 per port, `ECHO_POLLS` 20,000 per byte), then the park loop. The `TXE` wait is bounded too.
+- **The witness.** One Renode file backend per port in a directory the CLI makes per boot; the frame (eight bytes of `sha256("aethelgard-serial-frame" ‖ firmware sha256 ‖ label)`) injected one quantum after the last release; the capture must read (cut patterns, at most one per reset) whole patterns then exactly the frame, at most releases + 1 boots in all. A file backend because it keeps every byte, binary included, and the composition needs no log parsing for bytes; an analyzer logs text lines.
+- **The pin mux is the judge's (Q2 below).** Renode wires no USART to a pin, so an echo counts only when the RX pin was on its solved AF at the injection instant (read then by the composition), and the pattern only when the TX pin is at the end.
+- **Findings.** A firmware register wrong on a USART is `register_mismatch` (kind 11), as a timer's is; `serial_framing_static_mismatch` is the silicon check alone, and the two are never blended. A log flood adds `serial_tag_mismatch` on a board with a port (a dropped line may be a tag warning).
+- **Attribution.** S5 (software): a serial symptom beside a wrong field the port owns (its pins' `MODER`/`AFR`, its USART's registers, its clock gate and its pins' port gates); I6: a serial symptom with no wrong owned field, or a failing static check; never software by elimination; a witness is evidence only when it failed.
+- **Pin speed.** Each port's verdict states "serial pin speed not judged: off-board load undeclared", as motors do (`4300a` Q3).
