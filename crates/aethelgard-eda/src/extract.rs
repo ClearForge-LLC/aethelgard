@@ -841,8 +841,15 @@ fn footprint(fp: &Node<'_>) -> Result<(String, (String, String)), Refused> {
                         "{pad} is drilled and not a through-hole pad"
                     )));
                 }
-                // A circle lies inside its box, which the bound prices.
-                if !matches!(child.arg(3), Some("rect" | "roundrect" | "circle")) {
+                // KiCad draws a circle as a disk of its x size (`1305` A11),
+                // which lies inside the box the bound prices only when the
+                // size is square (`AET-WO-1309`).
+                let square = child
+                    .one("size")
+                    .map_err(malformed)?
+                    .is_some_and(|z| z.arg(1).is_some() && z.arg(1) == z.arg(2));
+                let circle = child.arg(3) == Some("circle") && square;
+                if !circle && !matches!(child.arg(3), Some("rect" | "roundrect")) {
                     return Err(unmodelled(format!("{pad} has shape {:?}", child.arg(3))));
                 }
                 modelled(&child, &pad)?;

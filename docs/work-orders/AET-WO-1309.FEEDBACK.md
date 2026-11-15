@@ -141,7 +141,7 @@ The plan in F5 was a gate-written `.kicad_dru` rule, `(constraint zone_connectio
 - **`extract`** (F6):
   - a through-hole pad on a line is bounded as a via is bounded, around its whole box through the maximum thickness (`through_hole_ff`);
   - an array via on a line is bounded at its own size;
-  - the reader admits a pad's `drill`, its `remove_unused_layers`, and the `circle` shape (inside its box, which the bound prices).
+  - the reader admits a through-hole pad's `drill` and its `remove_unused_layers`, and a `circle` whose size is square. KiCad draws a circle as a disk of its x size (`1305` A11), which lies inside the priced box only when the size is square.
 - **Fixtures** (`tests/common/th.rs`) are footprints authored from cited geometry (F3), placed by hand, routed by `write_placed`:
   - the XT30 shape on `VBAT`/`GND` with an 0402 load, at 2 and 4 layers, with each join;
   - the HSOP-8 shape with the LMR33630 rule (4 × 3, 1.0 mm, 0.254 mm drill, 0.15 mm ring) into In1's GND plane, and into the B.Cu zone at 2 layers.
@@ -223,7 +223,7 @@ Its report and reproducers are in `~/.cache/aet-1309/adv/`. The builder wrote `R
     - extraction's pad bound.
   - On re-run all 8 were killed, as were 10 more for the guards added since: the SMD drill (route and extract), and 8 for the adversarial fixes.
   - Two re-mutated after the reduction (the hole gap, the join token) were killed.
-  - **36 of 36 killed.**
+  - **36 of 36 killed** (37 of 37 after the square-circle guard, below).
 - **Reduction pass (diff): +20 net (7 of them a test pinning the join tokens) · 4 duplicates removed · 0 dead paths removed · 1 protected kept · 0 findings.**
   - **The duplicates:**
     - the router's stitched-net rule now is `filled()`;
@@ -231,5 +231,9 @@ Its report and reproducers are in `~/.cache/aet-1309/adv/`. The builder wrote `R
     - the join tokens live once, in `Join::token`, for the writer and the reader;
     - `base_of` serves both pad bounds.
   - **Protected:** the router's fill cuts and the judge's are built separately, by design, because the judge must not reuse the router's copper (`check` and `connectivity` stand behind the router).
-- **A pre-existing test was edited:** `extract_tier1`'s `pad_circle` case became `pad_oval`, because a circle is now modelled (inside its box). That same test then caught an SMD pad's `(drill (offset …))` slipping through extraction's widened allowlist, which is fixed: a drill is a through-hole pad's alone, in `route` and in `extract`.
+- **My first widening was wrong, and existing tests caught it:**
+  - **The circle.** I first admitted every `circle` pad to extraction and edited `extract_tier1`'s `pad_circle` case. The 1306 corpus (`pad_circle2`, `1305` A11: KiCad reads a 1.0 × 0.3 mm circle as a 1.0 mm disk) showed that a non-square circle's box does not hold its copper. The edit is reverted, and `extract_tier1.rs` is `main`'s again. Only a square circle is admitted.
+  - **The drill.** The same test caught an SMD pad's `(drill (offset …))` slipping through the widened allowlist. That is fixed: a drill is a through-hole pad's alone, in `route` and in `extract`.
+  - **Mutation:** with the square-circle guard, 37 of 37 killed.
+- **The saved fill.** The zone allowlist first refused KiCad's saved `filled_polygon`, which the gate accepts unread (`escape_tier1`). It is admitted unread again.
 - **The strict fence** caught a first-match read (`lists().next()`) in the drill check; it is now a count over every child.
