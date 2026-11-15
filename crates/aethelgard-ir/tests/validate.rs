@@ -23,14 +23,14 @@ fn valid() -> Specification {
     // The device lists are private to the crate (`AET-WO-1204`), so the
     // fixture is built from the JSON the type reads.
     let json = serde_json::json!({
-        "schema_version": 8,
+        "schema_version": 9,
         "accept_lifecycle": [],
         "net_classes": [],
         "diff_pairs": [],
         "power": null,
         "project_name": "sentinel-01",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
-        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0 },
+        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }) },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,
@@ -77,7 +77,20 @@ fn valid() -> Specification {
             bus: "FLASH".into(),
             cs: sig("FLASH_CS"),
         }],
-        "connectors": [],
+        "connectors": [
+            {"reference": "J1", "part": "SM06B-SRSS-TB", "standard": null, "pins": [
+                {"pin": "1", "net": "VDD_3V3", "offboard": null},
+                {"pin": "2", "net": null, "offboard": null},
+                {"pin": "3", "net": null, "offboard": null},
+                {"pin": "4", "net": "SWDIO", "offboard": null},
+                {"pin": "5", "net": "SWCLK", "offboard": null},
+                {"pin": "6", "net": "GND", "offboard": null}]},
+            {"reference": "J2", "part": "SM04B-GHS-TB", "standard": null, "pins": [
+                {"pin": "1", "net": "VDD_3V3", "offboard": null},
+                {"pin": "2", "net": null, "offboard": null},
+                {"pin": "3", "net": null, "offboard": null},
+                {"pin": "4", "net": "GND", "offboard": null}]}
+        ],
         "net_constraints": [NetConstraint {
             net_name: "I2C_SDA".into(),
             max_capacitance_femtofarads: 400_000,

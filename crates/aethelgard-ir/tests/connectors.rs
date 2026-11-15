@@ -81,10 +81,18 @@ fn fixture_validates() {
 #[test]
 fn empty_connector_list_validates() {
     let mut v = fixture();
-    v["connectors"] = json!([]);
+    // AET-WO-4300g: the programming path and the supply input stay (J3, J4);
+    // the list holds nothing besides them.
+    let kept: Vec<Value> = v["connectors"].as_array().unwrap()[2..].to_vec();
+    v["connectors"] = Value::Array(kept);
     let spec = spec_of(&v);
     assert_eq!(spec.validate(), Ok(()), "no connectors is valid");
-    assert!(spec.declared_connectors().is_empty(), "none are declared");
+    let refs: Vec<_> = spec
+        .declared_connectors()
+        .iter()
+        .map(|c| c.reference.as_str())
+        .collect();
+    assert_eq!(refs, ["J3", "J4"], "only the programming path and the supply are declared");
 }
 
 #[test]
@@ -95,7 +103,7 @@ fn declared_connectors_are_in_document_order() {
         .iter()
         .map(|c| c.reference.as_str())
         .collect();
-    assert_eq!(refs, ["J1", "J2"], "document order is kept");
+    assert_eq!(refs, ["J1", "J2", "J3", "J4"], "document order is kept");
 }
 
 // 2. Refusals of the connectors' step.
@@ -1027,7 +1035,9 @@ fn solved(v: &Value) -> SolvedTopology {
 fn solve_is_blind_to_connectors() {
     let with = solved(&fixture());
     let mut v = fixture();
-    v["connectors"] = json!([]);
+    // J1 and J2 go; the programming path and the supply (J3, J4) stay.
+    let kept: Vec<Value> = v["connectors"].as_array().unwrap()[2..].to_vec();
+    v["connectors"] = Value::Array(kept);
     let without = solved(&v);
     assert_eq!(
         with, without,

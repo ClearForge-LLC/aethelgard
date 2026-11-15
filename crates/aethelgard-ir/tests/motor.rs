@@ -70,11 +70,25 @@ fn spec_json(motors: Vec<Value>) -> Value {
         "accept_lifecycle": [],
         "project_name": "t",
         "board": serde_json::from_str::<Value>(BOARD).unwrap(),
-        "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 0},
+        "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 0,
+                "supply_source": {"connector": "J2", "pin": "1"}},
         "voltage_domains": [{"id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50}],
         "i2c_buses": [], "spi_buses": [], "i2c_devices": [], "spi_devices": [],
         "net_constraints": [],
-        "connectors": [],
+        "connectors": [
+            {"reference": "J1", "part": "SM06B-SRSS-TB", "standard": null, "pins": [
+                {"pin": "1", "net": "VDD_3V3", "offboard": null},
+                {"pin": "2", "net": null, "offboard": null},
+                {"pin": "3", "net": null, "offboard": null},
+                {"pin": "4", "net": "SWDIO", "offboard": null},
+                {"pin": "5", "net": "SWCLK", "offboard": null},
+                {"pin": "6", "net": "GND", "offboard": null}]},
+            {"reference": "J2", "part": "SM04B-GHS-TB", "standard": null, "pins": [
+                {"pin": "1", "net": "VDD_3V3", "offboard": null},
+                {"pin": "2", "net": null, "offboard": null},
+                {"pin": "3", "net": null, "offboard": null},
+                {"pin": "4", "net": "GND", "offboard": null}]}
+        ],
         "net_classes": [],
         "diff_pairs": [],
         "motor_outputs": motors,
@@ -451,11 +465,11 @@ fn a_connector_ends_a_motor_net_with_no_off_board_capacitance() {
     let pin = |n: &str, net: Option<&str>, offboard: Value| json!({"pin": n, "net": net, "offboard": offboard});
     let with = |offboard: Value| {
         let mut s = spec_json(vec![pwm("M1", None, 400)]);
-        s["connectors"] = json!([{
-            "reference": "J1", "part": "SM04B-GHS-TB", "standard": null,
+        s["connectors"].as_array_mut().unwrap().push(json!({
+            "reference": "J3", "part": "SM04B-GHS-TB", "standard": null,
             "pins": [pin("1", Some("M1"), offboard), pin("2", None, Value::Null),
                      pin("3", None, Value::Null), pin("4", Some("GND"), Value::Null)],
-        }]);
+        }));
         serde_json::from_value::<Specification>(s)
             .unwrap()
             .validate()

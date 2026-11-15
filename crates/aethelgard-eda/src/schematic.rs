@@ -1377,7 +1377,7 @@ mod tests {
         ] {
             assert!(pins.iter().any(|p| p.name == name), "{name}");
         }
-        let vcap: Vec<&str> = by_name(&pins, "VCAP").map(|p| p.etype.as_str()).collect();
+        let vcap: Vec<&str> = pins.iter().filter(|p| p.name == "VCAP").map(|p| p.etype.as_str()).collect();
         assert_eq!(vcap, ["power_out", "power_out"]);
     }
 
