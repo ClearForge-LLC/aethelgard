@@ -910,6 +910,11 @@ fn power_gate(
         .map_err(|e| stop(EXIT_INVALID_SPEC, e.kind())(e.to_string()))?;
     let (b, r) = route::read(tree, stack).map_err(stop(EXIT_UNREADABLE, "BoardUnreadable"))?;
     route::connectivity(&b, &r).map_err(stop(EXIT_UNREADABLE, "NetLabelsDisagree"))?;
+    // Each buck's thermal array against its rule (count, size, sites) and each
+    // through-hole pad's join, as declared (`1309` D1, D2; §1.5): KiCad's
+    // `thermal_*` rule bounds a via's size and drill, not the array (adversarial
+    // pass A1).
+    route::check(&b, &r).map_err(stop(EXIT_UNREADABLE, "ClearanceViolated"))?;
     let records = loops::judge(&b, &rules).map_err(stop(EXIT_UNREADABLE, "LoopPartMissing"))?;
     let finding = |kind: &str, message: String| verdict::Finding {
         kind: kind.to_owned(),

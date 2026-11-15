@@ -232,3 +232,22 @@ fn a_net_spelled_vbat_beside_a_power_tree_is_refused() {
         other => panic!("{other:?}"),
     }
 }
+
+/// §5.3 (adversarial pass A1): a thermal array short of its rule, or a via
+/// off its site, is refused by `route::check`, which `check drc --spec` runs on
+/// a power tree's board; the array as emitted passes.
+#[test]
+fn a_starved_thermal_array_is_refused() {
+    let (spec, solved, table) = fixture();
+    let e = schematic::emit(&spec, &solved, &table).unwrap();
+    let tree = strict::board(&e.board).unwrap();
+    let (b, r) = route::read(&tree, &Stack::of(&spec)).unwrap();
+    route::check(&b, &r).unwrap();
+    assert_eq!(r.arrays.len(), 2);
+    let mut short = r.clone();
+    short.arrays[0].at.pop();
+    assert!(route::check(&b, &short).is_err());
+    let mut moved = r.clone();
+    moved.arrays[0].at[0].0 += 300_000;
+    assert!(route::check(&b, &moved).is_err());
+}
