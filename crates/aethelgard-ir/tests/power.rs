@@ -1467,3 +1467,154 @@ fn an_unwired_control_pin_is_refused_by_name() {
     });
     assert!(r.contains("a strap twice"), "{r}");
 }
+
+/// The edges of every new guard, each where the datasheet's comparison
+/// decides it (the mutation run's survivors).
+#[test]
+fn the_new_guards_hold_at_their_edges() {
+    // A TVS standing off exactly the pack's 26.1 V is refused by its
+    // stand-off alone; one clamping exactly at 38 V passes.
+    let mut t = tvs_table();
+    row(&mut t, "TVS_TEST_PASS")["kind"]["tvs"]["standoff_millivolts"]["value"] = json!(26_100);
+    assert_power(
+        &against(&with_clamp("TVS_TEST_PASS"), &t).unwrap_err(),
+        Refusal::BatteryInputUndamped,
+        "D1",
+    );
+    let mut t = tvs_table();
+    row(&mut t, "TVS_TEST_PASS")["kind"]["tvs"]["clamp_max_millivolts"]["value"] = json!(38_000);
+    assert_eq!(against(&with_clamp("TVS_TEST_PASS"), &t), Ok(()));
+    // Bulk at exactly 20 µF, and two at exactly 100 µF, pass.
+    for (pf, parts) in [(20_000_000, 1), (50_000_000, 2)] {
+        let mut t = table_json();
+        row(&mut t, "UCZ1H470MCL1GS")["kind"]["bulk_capacitor"]["rated_picofarads"]["value"] =
+            json!(pf);
+        let mut v = base();
+        if parts == 2 {
+            v["power"]["input"]["hot_plug"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"reference": "C2", "part": "UCZ1H470MCL1GS", "side": "board"}));
+        }
+        assert_eq!(against(&v, &t), Ok(()), "{pf} x {parts}");
+    }
+    // The junction: exactly 125 °C passes (1600 mW × 25.0 °C/W at 58 cm²),
+    // and the rise rounds up (1001 mW × 26.5 °C/W is 26526.5 mK, 26527).
+    let mut v = base();
+    reg(&mut v, "U10")["junction"]["copper_square_centimetres"]["value"] = json!(58);
+    reg(&mut v, "U10")["junction"]["loss_milliwatts"]["value"] = json!(1600);
+    assert_eq!(spec(&v).validate().map(|_| ()), Ok(()));
+    reg(&mut v, "U10")["junction"]["copper_square_centimetres"]["value"] = json!(40);
+    reg(&mut v, "U10")["junction"]["loss_milliwatts"]["value"] = json!(1001);
+    let c = conditions(&v, &table_json());
+    assert!(
+        c.iter()
+            .any(|x| x.contains("is 111527 m°C on a 85 °C board"))
+    );
+    // Declared values at and past their maxima.
+    for (what, value, ok) in [
+        ("copper_square_centimetres", 10_000, true),
+        ("copper_square_centimetres", 10_001, false),
+        ("loss_milliwatts", 1_000_001, false),
+    ] {
+        let mut v = base();
+        reg(&mut v, "U10")["junction"][what]["value"] = json!(value);
+        let r = spec(&v).validate().map(|_| ());
+        if ok {
+            assert_eq!(r, Ok(()), "{what} {value}");
+        } else {
+            assert_power(&r.unwrap_err(), Refusal::PowerValueInvalid, "U10");
+        }
+    }
+    // A derating band past 1000 per mille is refused.
+    let mut v = base();
+    v["power"]["conditions"]["dc_bias_derating"][0]["ratio_max_permille"] = json!(1001);
+    assert_power(
+        &refused(&v),
+        Refusal::PowerValueInvalid,
+        "power.conditions.dc_bias_derating[0]",
+    );
+    // The smallest band covering the ratio is used, its edge inclusive: the
+    // LDO's input works at 217 per mille, so a band ending at 217 keeping 400
+    // per mille decides it over a band to 1000 keeping 900; its output, at
+    // 119 per mille, takes a band to 150 keeping 900 and passes.
+    let mut v = base();
+    v["power"]["conditions"]["dc_bias_derating"] = json!([
+        {"dielectrics": ["X5R", "X7R", "X7S"], "ratio_max_permille": 1000, "retained_permille": 900, "source": "a wide band"},
+        {"dielectrics": ["X7R"], "ratio_max_permille": 217, "retained_permille": 400, "source": "a narrow band"},
+        {"dielectrics": ["X7R"], "ratio_max_permille": 150, "retained_permille": 900, "source": "a low band"}
+    ]);
+    let err = refused(&v);
+    assert_power(&err, Refusal::EffectiveCapacitanceBelowMinimum, "U12");
+    assert!(err.to_string().contains("`cin` holds 400000 pF"), "{err}");
+    // The maker's point at or above the working voltage is used before the
+    // derating: one at exactly 3465 mV holding 480000 pF clears the LDO's
+    // input, where the declared 400 per mille would not.
+    let mut v = base();
+    v["power"]["conditions"]["dc_bias_derating"][0]["retained_permille"] = json!(400);
+    let mut t = table_json();
+    let at = json!({"document": "MURATA_GRM188R71C105KA12", "section": "test only"});
+    row(&mut t, "GRM188R71C105KA12")["kind"]["capacitor"]["dc_bias"] =
+        json!([{"millivolts": 3465, "picofarads": {"value": 480_000, "at": at}}]);
+    assert_eq!(against(&v, &t), Ok(()));
+    // A later point is not used for an earlier voltage: with an extra point
+    // at 1000 mV holding 900000 pF, the input still reads the 3465 mV one.
+    row(&mut t, "GRM188R71C105KA12")["kind"]["capacitor"]["dc_bias"] = json!([
+        {"millivolts": 1000, "picofarads": {"value": 900_000, "at": at}},
+        {"millivolts": 3465, "picofarads": {"value": 400_000, "at": at}}
+    ]);
+    assert_power(
+        &against(&base(), &t).unwrap_err(),
+        Refusal::EffectiveCapacitanceBelowMinimum,
+        "U12",
+    );
+    // An effective minimum on a role with no working voltage cannot clear.
+    let mut t = table_json();
+    let ext = row(&mut t, "LMR33630ADDA")["kind"]["buck"]["external"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|e| e["role"] == "cboot")
+        .unwrap();
+    ext["effective_min_picofarads"] =
+        json!({"value": 1, "at": {"document": "SNVSAN3F", "section": "test only"}});
+    assert_power(
+        &against(&base(), &t).unwrap_err(),
+        Refusal::EffectiveCapacitanceBelowMinimum,
+        "U10",
+    );
+    // The parser's edges: an odd layer count, a repeated area or bias
+    // voltage, and a bias voltage above the rating are refused; a level θ,
+    // level capacitance, and a point at the rated voltage or capacitance pass.
+    let theta =
+        |t: &mut Value| -> Value { row(t, "LMR33630ADDA")["kind"]["buck"]["theta_ja"].clone() };
+    for (change, bad) in [
+        (json!({"board_copper_layers": 3}), true),
+        (
+            json!({"points": [{"square_centimetres": 7, "decikelvin_per_watt": 420}, {"square_centimetres": 7, "decikelvin_per_watt": 400}]}),
+            true,
+        ),
+        (
+            json!({"points": [{"square_centimetres": 7, "decikelvin_per_watt": 420}, {"square_centimetres": 10, "decikelvin_per_watt": 420}]}),
+            false,
+        ),
+    ] {
+        let mut t = table_json();
+        let mut th = theta(&mut t);
+        for (k, val) in change.as_object().unwrap() {
+            th[k] = val.clone();
+        }
+        row(&mut t, "LMR33630ADDA")["kind"]["buck"]["theta_ja"] = th;
+        let parsed = parse_power_parts(&t.to_string());
+        assert_eq!(parsed.is_err(), bad, "{change}");
+    }
+    let bias = |points: Value| {
+        let mut t = table_json();
+        row(&mut t, "GRM188R71C105KA12")["kind"]["capacitor"]["dc_bias"] = points;
+        parse_power_parts(&t.to_string()).is_err()
+    };
+    let p = |mv: i64, pf: i64| json!({"millivolts": mv, "picofarads": {"value": pf, "at": {"document": "MURATA_GRM188R71C105KA12", "section": "x"}}});
+    assert!(bias(json!([p(16_001, 500_000)])));
+    assert!(bias(json!([p(1000, 600_000), p(1000, 500_000)])));
+    assert!(!bias(json!([p(1000, 1_000_000), p(16_000, 1_000_000)])));
+}
