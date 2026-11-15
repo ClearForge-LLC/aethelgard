@@ -188,7 +188,10 @@ Probe plan, so the predictions have something to point at. Probes are built `420
 
 - **Versions, after two merges of `main`.** `4300f` merged specification 4 (`connectors`) first, then `1308` specification 5 (`net_classes`, `diff_pairs`), so by the numbering rule this work order takes **specification 6** (`motor_outputs`, `mcu.hse_hz`), topology 5 and trace 8 (`4fd0dcf`, `7e75295`). Every specification carries all four keys; the motor shape is step 13b after `1308`'s 13a. `4210` also claims trace 8: whoever merges second renumbers. TIER2_MIN is 107 (`main`'s 101 and the six motor tests; the `#[test]` count of the ten tier-2 files is 107).
 
-## 5. Decisions needed
+## 5. Decisions needed (ruled on PR #145, comment 6892698852)
+
+**D1 ruled (a), built (§9):** a DShot board's boot runs `aethelgard_twin::boot::DSHOT_WINDOW_NS` (2 ms), named in the verdict and on each campaign line; a boot past it is refused (`BootPastWindow`), a droop past it is refused with its time, and an identity read still unset at its end is named (`identity_read_outside_window`). `VIRTUAL_NS` is 100 ms for every other board. The options as written before the ruling:
+
 
 - **D1, DShot in the campaign's boot (blocks only the DShot fixture's campaign clause of §1.7 and §2).** Every boot runs 100 ms of virtual time (`aethelgard_twin::boot::MAX_VIRTUAL_NS`, the campaign's `VIRTUAL_NS`). Measured (P5.2, M3): four DShot600 channels for 100 ms cost 10.8 s of timer events alone and, observed, 1.89 M lines and 139.6 MB, 17× `LOG_FILTER`'s 8 MiB, so the witness would be dropped and fail closed; on CI's runners the boot would also approach the 30 s wall bound (inferred). A firmware-ended burst cannot replace it: polling the timer collapses its stamps (M1), an interrupt reopens `RUL-19` (5)'s A2, and one-pulse mode gives no second rise to witness a period. Options:
   - **(a)** a stated, shorter fixed window for a boot whose topology has a DShot output (2 ms measured: 37,748 lines, 2.80 MB, 2.64 s on Furnace), the window named in the verdict. Cost: a DShot board's identity reads and droop schedules must fit it. **Recommended.**
@@ -196,7 +199,10 @@ Probe plan, so the predictions have something to point at. Probes are built `420
   - **(c)** raise `LOG_FILTER` and `BOOT_BOUNDS` for DShot boards (not recommended: the bounds exist for floods).
   Built as far as no ruling is needed: the solver, the static check, the firmware, the Kani harness and the three-part witness all cover DShot, and `simulate --for 2ms` witnesses the DShot fixture (tier 2). `VIRTUAL_NS` is unchanged.
 
-## 6. Questions for the architect (not stops)
+## 6. Questions for the architect (not stops) — ruled
+
+Ruled on PR #145 (comment 6892698852): **Q1** accepted, a deviation of form (`SetGlobalQuantum` stated); **Q2** yes, built (§9); **Q3** not here: the verdict states "motor pin speed not judged: off-board load undeclared" on each output, `UnjudgedMotorConstraint` stays, backlog owned by `4500`; **Q4** built: the seeded manifest is schema 3 and every mutant names its `spec`; **Q5** the targeted harnesses prove motor boards, and `verify` on a motor board states which ran and that the whole-schedule one did not (an info finding, never a silent skip); the split is `4500`'s backlog. The questions as asked:
+
 
 - **Q1, the quantum's key (F1).** D2 asked for the quantum as a `--config` key; Renode 1.17.0 has none, so the composition states it by `emulation SetGlobalQuantum` at Renode's own 100 µs. Acceptable as the reading of D2?
 - **Q2, `RCC_CR.HSIDIV`.** The 64 MHz the timers are solved for depends on `HSIDIV = 00`, which the generated firmware does not assert (the WO's list is `SWS` and the `D1CFGR`/`D2CFGR` prescalers; `TIMPRE`, in the same read, is asserted). Add it to the assertion in a later piece?
@@ -252,3 +258,39 @@ The architect ruled D1 (a), Q1 accepted (`SetGlobalQuantum` stated, a deviation 
 - **P14, Q2.** Renode's `RCC_CR` reads 0x25 (P1.1), so `HSIDIV` is 0 and the motor fixtures still boot; the Kani harness proves the check, and a copy whose check omits `HSIDIV` fails it as a failed proof. [inferred]
 - **P15, Q4.** The reference mutants, generating their board from `examples/sentinel-01-minimal.json`, give the same evidence as the committed board (the regeneration guard holds them byte-identical). [inferred]
 - **P16, Q5.** `verify` on the PWM fixture runs the targeted harnesses, names `every_valid_sequence` as not run in an info finding, and otherwise passes. [inferred]
+
+### What was built (inside the fence; the commits from `cb17d54` on)
+
+- **D1 (a).** `aethelgard_twin::boot::window(topology)` gives `DSHOT_WINDOW_NS` (2 ms) for a board with a DShot output and `MAX_VIRTUAL_NS` otherwise. The verdict's `boot.window` and each campaign line's `window` and `virtual_time_ns` name it. The campaign summary's `virtual_time_ns` is the longest window any scenario ran. `simulate --for` past the board's window is refused (`BootPastWindow`), and so is a droop whose effects end past it (`DroopRefused`, naming the time). `verify` boots for the board's window. A declared identity read whose record is still `RECORD_UNSET` when a short window ends is named (`identity_read_outside_window`). An output whose two model periods exceed its window is named as the reason it is unwitnessed. Replay derives the window from kind 24's protocols and requires every kind 26 to end at it and kind 10 to have run exactly its instructions.
+- **Q2.** `RESET_CLOCK_FIELDS` gains `RCC_CR.HSIDIV`. The generated check reads four registers; the Kani harness, generated from the same table, covers it; `twin_tier2`'s Kani test proves a copy whose check leaves it out fails as a failed proof.
+- **Q3.** Each motor report carries `speed`: "motor pin speed not judged: off-board load undeclared".
+- **Q4.** `cases.json` is schema 3. `Mutant.spec` is required, every mutant names it, and the reference mutants generate their board from `examples/sentinel-01-minimal.json`.
+- **Q5.** `verify` drops exactly `proofs::every_valid_sequence` on a board with motor outputs and states it in an info finding naming the harnesses that ran (`harness_plan`, by a subagent, `cb17d54`, reviewed). `report.ok` now ignores info findings (every other finding of `verify` is an error).
+- **The second review's findings.**
+  - F1: a failing static check has its own scope, which decides I4.
+  - F2: a motor output named `GND` is refused (`NetShadowsDomain`). A chip select named `GND` still validates on `main`; this work order does not change it, and it is reported here.
+  - F3: replay ties each witness's fields to each other and to its window.
+  - F4: replay pins the reset clock's 64 MHz.
+  - F5: the reason is named, as above.
+  - F6: only failing records are motor evidence.
+
+  Each new guard was mutated once against its suite, and every mutant failed it.
+
+### Results beside the predictions (measured in the pinned image, `~/.cache/aet-4300a/m6`, `02601a8`, one container under RULE3, caps read back, swap 0)
+
+| | Prediction | Measured |
+|---|---|---|
+| P10 | DShot600 campaign passes at 2 ms | **Held.** `motors-dshot600` (`scenarios/motors/dshot600.json`): pass, matched, `virtual_time_ns` 2,000,000, `window` `DSHOT_WINDOW_NS`; replay exit 0; `attribute` N1. `simulate --for 2ms`: 4 × `witnessed`. |
+| P11 | late droop refused with its time | **Held** (tier 1, `campaign_tier1`): `DroopRefused`, "past the boot's 2000000 ns", no archive. `simulate --for 100ms` on the DShot board: exit 3, `BootPastWindow`, measured in the image. |
+| P12 | held-low SCL: U2 named | **Held.** Findings `boot_word_missing`, `i2c_line_held_low`, `identity_read_outside_window`, `register_mismatch` (the timers were never started). Replay exit 0. **`attribute` answers I1** (the finding is unexplained by any rule): fail-closed, and a question below. |
+| P13 | a 400 Hz PWM output beside DShot cannot be witnessed in 2 ms | **Wrong.** The twin witnesses the model's period, 639,744 ns at 400 Hz (Renode's 250 MHz with `PSC` 63, §0), not silicon's 2.5 ms: the mixed board passes, MOTOR1 `witnessed` with 3 rises. Only a PWM rate whose two model periods exceed the window (below about 260 Hz, e.g. 50 Hz servos) fails, closed and named. |
+| P14 | HSIDIV reads 0; Kani negative fails | **Held.** Both motor fixtures boot and pass; `reset_clock_is_ok_exactly_at_reset` passes (0.8 s); the copy without HSIDIV exits 1, `proof_failed`. |
+| P15 | reference mutants' evidence unchanged | **Held.** `attribute_seeded` 11 of 11 with every mutant generating its board. |
+| P16 | `verify` on the PWM fixture | **Held.** Pass in 30 s: ERC, DRC, extract, five targeted `prove` gates, build, simulate; the info finding names them and `proofs::every_valid_sequence` as not run. |
+
+`twin_tier2` 32 of 32, `campaign_tier2` and `attribute_seeded` pass. TIER2_MIN is 108 (`main`'s 101, the six motor tests, and the DShot600 campaign test; the `#[test]` count of the ten tier-2 files is 108).
+
+### Questions for the architect (not stops)
+
+- **Q6, slow PWM beside DShot.** A board that mixes DShot with PWM below about 260 Hz cannot witness the PWM output in the 2 ms window: it fails closed, named. Accept that as the rule for mixed boards, or give such boards a window long enough for two of their slowest model periods?
+- **Q7, attributing a read outside the window.** `identity_read_outside_window` has no rule in `aethelgard-evolve`, so `attribute` answers I1 on such a run. Add one (indeterminate, by the unset record) in a later piece?
