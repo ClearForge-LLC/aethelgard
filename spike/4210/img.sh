@@ -10,7 +10,8 @@
 #   memory.max, memory.swap.max and pids.max are read back into spike/4210/out/caps.log with the
 #   command;
 # - the command inside does not start until the host has read the caps back AND found
-#   memory.swap.max exactly 0 (a flag file under /capflags); otherwise it exits 99 having run nothing.
+#   memory.swap.max 0 on 4 consecutive samples (a flag file under /capflags); otherwise it exits 99
+#   having run nothing.
 # - one container of this work order at a time: refuses to start while another aet4210-* runs.
 # Usage: img.sh [--name N] [--mem 8g] -- <command...>
 set -u
@@ -33,21 +34,33 @@ CAPLOG=$REPO/spike/4210/out/caps.log
 FLAGS=$CACHE/capflags
 mkdir -p "$(dirname "$CAPLOG")" "$FLAGS"
 rm -f "$FLAGS/$NAME"
-( for _ in $(seq 1 240); do
+# The caps are sampled every 0.25 s, not read once: the second session's first version read the
+# file the instant it appeared and logged swap 8 GiB, while a settled container with these flags
+# reads 0 (FEEDBACK F10). Every change of value is logged; the command is released only after
+# swap reads 0 on 4 consecutive samples; one more read is logged 1 s after release, and a swap
+# value other than 0 after release kills the container.
+( last=""; zeros=0; rel=0; after=0
+  for _ in $(seq 1 160); do
     p=$(podman inspect -f '{{.State.CgroupPath}}' "$NAME" 2>/dev/null) && [ -n "$p" ] \
       && [ -e "/sys/fs/cgroup$p/memory.swap.max" ] && {
       d=/sys/fs/cgroup$p
-      mm=$(cat "$d/memory.max"); ms=$(cat "$d/memory.swap.max"); pm=$(cat "$d/pids.max")
-      if [ "$ms" = 0 ]; then
-        echo "$(date -Is) $NAME memory.max=$mm memory.swap.max=$ms pids.max=$pm cmd: $*" >> "$CAPLOG"
-        touch "$FLAGS/$NAME"
-      else
-        echo "$(date -Is) $NAME SWAP NOT ZERO, nothing runs: memory.max=$mm memory.swap.max=$ms pids.max=$pm cmd: $*" >> "$CAPLOG"
-      fi
-      exit 0; }
+      v="memory.max=$(cat "$d/memory.max") memory.swap.max=$(cat "$d/memory.swap.max") pids.max=$(cat "$d/pids.max")"
+      [ "$v" != "$last" ] && echo "$(date +%FT%T.%N | cut -c1-23) $NAME sample $v" >> "$CAPLOG"
+      last=$v
+      case "$v" in *"memory.swap.max=0 "*) zeros=$((zeros + 1));; *) zeros=0;; esac
+      if [ $rel = 1 ]; then
+        if [ $zeros = 0 ]; then
+          echo "$(date -Is) $NAME SWAP CHANGED AFTER RELEASE, killed: $v" >> "$CAPLOG"
+          podman kill "$NAME" >/dev/null 2>&1; exit 0
+        fi
+        after=$((after + 1))
+        [ $after = 4 ] && { echo "$(date -Is) $NAME final $v cmd: $*" >> "$CAPLOG"; exit 0; }
+      elif [ $zeros = 4 ]; then
+        echo "$(date -Is) $NAME released $v" >> "$CAPLOG"; touch "$FLAGS/$NAME"; rel=1
+      fi; }
     sleep 0.25
   done
-  echo "$(date -Is) $NAME CAPS NOT READ cmd: $*" >> "$CAPLOG" ) &
+  [ $rel = 1 ] || echo "$(date -Is) $NAME SWAP NOT ZERO or CAPS NOT READ, nothing runs: last ${last:-none} cmd: $*" >> "$CAPLOG" ) &
 exec podman run --rm --name "$NAME" --network none --memory "$MEM" --memory-swap "$MEM" --pids-limit -1 \
   -v "$REPO":/repo -v "$CACHE":/cache -v "$FLAGS":/capflags:ro -w /repo \
   -e CARGO_HOME=/cache/cargo-home -e CARGO_TARGET_DIR=/cache/target \
