@@ -297,7 +297,11 @@ jobs:
       # ADV2-5 a locked TX pin).
       # 146: plus 1 from the PM's ruling on fix 2's A2 hole in twin_tier2.rs
       # (ADV2-6 PA9's OT set, then OTYPER read-modify-written).
-      TIER2_MIN: "146"
+      # 151: plus 5 from adversarial pass 3 in twin_tier2.rs (ADV3-1 D2CFGR
+      # written, ADV3-1b D2CCIP2R written, ADV3-2 SBUS's CR2 read back,
+      # ADV3-4 PA9 unrouted between TDR writes, ADV3-5 PA10 unrouted after
+      # the first byte); recounted in the image (shard.sh parse, 151).
+      TIER2_MIN: "151"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
