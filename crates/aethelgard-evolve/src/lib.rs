@@ -1044,8 +1044,10 @@ impl<'a> Run<'a> {
                 let motors: Vec<usize> = (0..self.motors.len())
                     .filter(|&m| self.motor_owned_wrong(m, name, reading))
                     .collect();
-                // A register wrong in one serial port's fields alone is that
-                // port's (`AET-WO-4300b`).
+                // A register wrong in serial ports' fields alone is theirs
+                // (`AET-WO-4300b`): the first of them stands for it (one
+                // symptom, one decision), as a timer's register does for its
+                // outputs; each port's own symptoms cite it too.
                 let ports: Vec<usize> = (0..self.serial.len())
                     .filter(|&s| self.serial_owned_wrong(s, name, reading))
                     .collect();
@@ -1060,7 +1062,7 @@ impl<'a> Run<'a> {
                     {
                         Scope::Motor(*m)
                     }
-                    ([], [], [s]) if unowned == 0 => Scope::Serial(*s),
+                    ([], [], [s, ..]) if unowned == 0 => Scope::Serial(*s),
                     _ => Scope::Board,
                 }
             }

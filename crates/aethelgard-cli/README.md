@@ -511,7 +511,7 @@ For a symptom on a motor output (`AET-WO-4300a`: `motor_output_unwitnessed`, `mo
 | `S4` | software | a register field the output owns is wrong (kind 11): the firmware's own configuration of the pin or the timer differs from the solved topology. The twin models nothing electrical on a timer's pin, so no rule attributes a motor symptom to the electrical half | 11, 26 |
 | `I4` | indeterminate | no owned register is wrong (an output with no edges and every register right, or a static mismatch, which is the topology's) | 25, 26 |
 
-For a symptom on a serial port (`AET-WO-4300b`: `serial_pattern_missing`, `serial_echo_missing`, `serial_capture_forged`, `serial_tag_mismatch` and `serial_framing_static_mismatch`, from kinds 29 and 28), and for a kind 11 wrong only in fields one port owns (its TX and RX pins' `MODER` and `AFR` fields, their ports' and its USART's clock gates, and any register of its USART's block; another port's fields of a shared register are never this port's):
+For a symptom on a serial port (`AET-WO-4300b`: `serial_pattern_missing`, `serial_echo_missing`, `serial_capture_forged`, `serial_tag_mismatch` and `serial_framing_static_mismatch`, from kinds 29 and 28), and for a kind 11 wrong only in fields serial ports own (a port's TX and RX pins' `MODER` and `AFR` fields, their ports' and its USART's clock gates, and any register of its USART's block; the first port stands for a register several ports' fields share, and another port's fields are never this port's evidence):
 
 | rule | domain | holds when | evidence kinds |
 |---|---|---|---|

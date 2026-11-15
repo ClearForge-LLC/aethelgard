@@ -9,10 +9,11 @@
 //! capture witnesses what the USART sent, and the pins' `MODER`/`AFR`, read
 //! by the composition, decide whether it reached a pin (FEEDBACK P5.1).
 //!
-//! A boot's capture of one port is `P^k F`:
+//! A boot's capture of one port is its boots' patterns, then `F`:
 //! - `P`, the pattern ([`pattern`]): the label's bytes and [`PATTERN_TAIL`],
-//!   sent once by each boot that reached it, so `k` is at least 1 and at most
-//!   the releases plus one;
+//!   sent once by each boot that reached it, whole, or cut short (a proper
+//!   prefix) by a rendered reset; the last one whole, and whole and cut
+//!   together at most the releases plus one ([`parse`]);
 //! - `F`, the frame ([`frame`]): bytes the composition injects at
 //!   [`injection_ns`], which only a firmware that reads `RDR` sends back.
 //!   They are derived from the firmware's own sha256, which no firmware can

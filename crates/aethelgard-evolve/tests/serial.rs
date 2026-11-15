@@ -178,6 +178,8 @@ fn witness(label: &str, echo: Echo) -> Record {
 
 /// What a firmware may have got wrong, and how each port's witness went.
 struct Case {
+    /// `GPIOA.MODER` as read: PA2, PA3, PA9 and PA10 in AF mode when right.
+    moder: u32,
     /// `GPIOA.AFRH` as read: PA9 and PA10's fields, `0x770` when right.
     afrh: u32,
     /// `GPIOA.AFRL` as read: PA2 and PA3's fields, `0x7700` when right.
@@ -195,6 +197,7 @@ struct Case {
 impl Default for Case {
     fn default() -> Self {
         Self {
+            moder: 0x0028_00A0,
             afrh: 0x770,
             afrl: 0x7700,
             usart1_cr1: 0xD,
@@ -267,7 +270,7 @@ fn run(c: &Case, findings: &[(&str, u64)]) -> Vec<Record> {
             0x5802_0000,
             0x003C_00F0,
             0x0028_00A0,
-            0x0028_00A0,
+            c.moder,
         ),
         register("GPIOA.AFRL", 0x5802_0020, 0x0000_FF00, 0x7700, c.afrl),
         register("GPIOA.AFRH", 0x5802_0024, 0x0000_0FF0, 0x770, c.afrh),
@@ -607,4 +610,27 @@ fn propose_answers_the_dead_rx_with_a_generator_report_of_its_af_field() {
         .map(|e| (e.what.as_str(), e.mask.unwrap(), e.solved, e.observed))
         .collect();
     assert_eq!(what, [("GPIOA.AFRH", 0xF00, 0x700, Some(0x800))]);
+}
+
+/// One register wrong in two ports' fields (`GPIOA.MODER`: PA10, the
+/// console's RX, and PA3, GPS's RX, both analog): the first port stands for
+/// the register, as a timer's first output does, and each port's dead echo
+/// cites it as its own evidence. Never the board's, so never I4.
+#[test]
+fn a_register_wrong_in_two_ports_fields_is_both_ports_evidence() {
+    let r = run(
+        &Case {
+            moder: 0x0038_00E0,
+            console: Echo::NotCounted,
+            gps: Echo::NotCounted,
+            ..Case::default()
+        },
+        &[("register_mismatch", 1), (SERIAL_ECHO_FINDING, 2)],
+    );
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S5), "{a:?}");
+    assert_eq!(
+        named(&r, &a),
+        ["GPIOA.MODER", "kind 29 CONSOLE", "kind 29 GPS"]
+    );
 }
