@@ -261,6 +261,7 @@ It went to both inboxes at 02:50Z, with the same labels.
 - **Placement legal:** yes, by the placer's keep-out boxes and gaps and by `EDGE_NM` **[measured]**.
   - The first version of this probe compared J1's courtyard against pads only. The adversarial pass caught that, and the probe now uses `pcb::geometry`.
   - The position moved by 25 µm, and the routing counts are unchanged.
+  - **The keep-out boxes are validated:** their union grown by `MARGIN_NM` reproduces the emitted outline within 30 µm, inside the 50 µm snap. J1's smallest clearance over all 15 boxes is 2.05 mm, to U1 (an IC; it needs 1 mm).
 - **Routed, with the router's exact `check` and `connectivity`:** yes, both variants. Two runs gave identical output (wall times aside) and identical boards **[measured]**.
 - **DRC:** not measured (§3.0). `spike/4300f/gates.sh` runs it on both boards, unrun.
   - The boards carry no schematic symbol for J1, so the DRC there omits parity.
@@ -299,11 +300,11 @@ It went to both inboxes at 02:50Z, with the same labels.
 | S1: DS-009 fetchable from Furnace | yes, from the Pixhawk-Standards repository (only commit `48dd6d1d`), `dbc6b94e…` | measured |
 | S1: JST-GH datasheet fetchable | yes, from jst-mfg.com, `b1dcb317…`: 1.25 mm, 1.0 A at AWG #26, 50 V, mated 4.35 mm (side) / 7.3 mm (top) | measured / read |
 | S1: DS-009 pinouts | §3.1 table: 9 ports. Debug ports are **JST SH**, not GH. Every VCC is +5 V. No motor, PWM or USB port. | read |
-| S1: KiCad GH/SH footprints and symbols vendorable under `RUL-11` | yes: CC-BY-SA 4.0 + design exception, the same licence file byte for byte; GitLab = image bytes | read |
+| S1: KiCad GH/SH footprints and symbols vendorable under `RUL-11` | yes: CC-BY-SA 4.0 + design exception, the same licence file byte for byte; footprints: GitLab = image bytes (the image ships symbols merged, so symbols are GitLab's only) | read |
 | S2: `validate`/`solve`/`emit` with a one-pin net | all exit 0; one label on one MCU pin; one pad, no copper | measured |
 | S2: ERC | `isolated_pin_label` warning per net, so the gate fails (exit 5 expected) | read (KiCad source), **run blocked** |
 | S2: DRC | no finding expected | inferred, **run blocked** |
-| S3: shape | (a) explicit `connectors`, with `standard` or `null`; seven named refusals | inferred |
+| S3: shape | (a) explicit `connectors`, with `standard` or `null`; eight named refusals, one waiting for `4300d` | inferred |
 | S4: placer puts a connector at an edge | no: beside an IC; no rotation (`route::part` refuses it) | read, measured |
 | S4: hand-placed GH 4-pin at the bottom edge | placement legal, routed, `check` and `connectivity` Ok, both MP variants, deterministic | measured (host) |
 | S4: DRC of that board | **not run**; harness `spike/4300f/gates.sh` | blocked |
@@ -369,7 +370,8 @@ Into `aethelgard-kicad-lib`, verbatim from KiCad GitLab tag `10.0.7`, each with 
 - **D9. Off-board devices** (a GPS's compass on a DS-009 GPS port): modelled in the twin, not placed on the board. Is that in `4300f`'s build or a later work order?
 - **D10. The caps stop (= 4210's D8 on PR #131).** S2's ERC and DRC and S4's DRC are unmeasured because swap read 8 GiB.
   - The harness is committed: `bash spike/4300f/img.sh -- bash spike/4300f/gates.sh`.
-  - Once D8 is ruled, it runs in under a minute and answers `4300a`/`4300b` by measurement. Both inboxes already have the host half and the source read.
+  - `gates.sh` has never executed. Once D8 is ruled it measures S2's ERC/DRC and S4's DRC, and the result goes to `4300a`/`4300b`. Both inboxes already have the host half and the source read.
+  - Alternatively, the architect can measure the gate half in CI's `tools` job, which has KiCad.
 - **D11. Sequencing for `4300a` and `4300b`.** By KiCad's source, their off-board nets fail ERC honestly, so both will STOP at their §1 measured stop unless connectors land first. Should `4300f`'s build come before their board side, or should they carry a bottom-edge connector themselves?
 
 ## 6. Adversarial pass, reduction pass, gates
@@ -400,7 +402,7 @@ Into `aethelgard-kicad-lib`, verbatim from KiCad GitLab tag `10.0.7`, each with 
 
 Outside the repository, an 802 MB scratch copy of KiCad's share tree was deleted from `~/.cache/aet-4300f`.
 
-**Gates** **[measured]**, Furnace, host, under a capped user scope (`systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`, nice 10), at `fbbfd4f`, whose code is unchanged from `main` `cb44872`:
+**Gates** **[measured]**, Furnace, host, under a capped user scope (`systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`, nice 10), at `fbbfd4f`, whose code is unchanged from `main` `cb44872`. Later commits touch only `spike/4300f/` and this file:
 - `cargo fmt --all -- --check`: 0;
 - `cargo clippy --workspace --all-targets -- -D warnings`: 0;
 - `cargo test --workspace`: 0, with 1200 passed, 0 failed and 0 ignored across 77 test binaries.

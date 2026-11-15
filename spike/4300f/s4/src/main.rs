@@ -220,6 +220,50 @@ fn main() {
         oy += 50_000;
     }
     let origin = (cx, oy);
+    {
+        // Validation of `keeps`: the emitter's outline is their union grown by MARGIN_NM
+        // (pcb.rs `layout_of`), so rebuilding it here must reproduce `board.outline`.
+        let u = keeps
+            .iter()
+            .map(|(_, _, r)| *r)
+            .reduce(|a, b| Rect {
+                x0: a.x0.min(b.x0),
+                y0: a.y0.min(b.y0),
+                x1: a.x1.max(b.x1),
+                y1: a.y1.max(b.y1),
+            })
+            .expect("keeps");
+        let g = grow(u, aethelgard_eda::pcb::MARGIN_NM);
+        println!(
+            "keeps union grown by MARGIN {:?} vs emitted outline {:?}: max |delta| {} nm",
+            g,
+            o,
+            [g.x0 - o.x0, g.y0 - o.y0, g.x1 - o.x1, g.y1 - o.y1]
+                .iter()
+                .map(|d| d.abs())
+                .max()
+                .unwrap()
+        );
+        // Smallest clearance (Chebyshev box gap) from J1's keep to any placed keep.
+        let k = shift(jg.keep, origin);
+        let gap_to = |r: &Rect| {
+            let dx = (r.x0 - k.x1).max(k.x0 - r.x1).max(0);
+            let dy = (r.y0 - k.y1).max(k.y0 - r.y1).max(0);
+            dx.max(dy)
+        };
+        let min = keeps
+            .iter()
+            .map(|(n, ic, r)| (gap_to(r), n.clone(), *ic))
+            .min()
+            .unwrap();
+        println!(
+            "smallest J1 keep-out clearance over all {} boxes: {} mm to {} (is_ic {})",
+            keeps.len(),
+            mm(min.0),
+            min.1,
+            min.2
+        );
+    }
     let court_top = oy + jg.courtyard.y0;
     let new_y1 = oy + jg.courtyard.y1;
     {
