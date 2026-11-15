@@ -13,6 +13,8 @@ Python 3 with numpy, scipy (any recent); no network. Run from each directory.
   - `run_paths2.py conditions.json` → `paths.out`: the reported bounds.
   - `run_paths.py` → `paths-v1-inadmissible.out`: the first version, kept as the record of FEEDBACK F7; not a bound.
   - `check_exact.py` → `check_exact.out`: bar, annulus, barrel, 90° bend bracket, transfer resistance.
+  - `check_barrel.py` → `check_barrel.out`: the spread barrel against a certified lower bound on the unrolled sheet.
+  - `check_offset.py` → `check_offset.out`: hole-offset sensitivity of the via entry.
   - `check_fan_plane.py` → `check_fan_plane.out`: the bowtie against the exact two-hole sheet; the general fan and the pad pass against certified lower bounds; via-entry admissibility by brute force.
 - `img.sh`: the capped container runner; `caps.log` is its read-back (the guard stopped the only run: FEEDBACK D9).
 - `research-sources.md`: the research pass's record, labelled.

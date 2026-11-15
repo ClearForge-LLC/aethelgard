@@ -109,8 +109,8 @@ The predictions below were committed before any measured run. They are not edite
 | P4.3 | Every input is on the wrong side as declared | Confirmed. Copper minimum, plating minimum, temperature and a material allowance are all new | read | right |
 | P4.4 | Exact checks hold | Bar, annulus and barrel equal their closed forms; the 90° bend lies inside a certified bracket (corner 0.558–0.560 squares against the tube's 1) | measured | right |
 | P4.5 | Reference 50–300 mΩ from the best stand-in | **9.1–125 mΩ** on the 7 of 16 pins it bounds; 9 pins are refused by name from every stand-in | measured | partly; coverage not predicted |
-| P4.6 | 4-layer 10–40 mΩ | **8.1–116 mΩ** on 15 of 16 pins; U1.108 refused | measured | wrong high end |
-| P4.7 | Refill joins vias solidly | **Blocked** (container guard) | — | not measured |
+| P4.6 | 4-layer 10–40 mΩ | **8.1–63.2 mΩ** on 11 of 16 pins; 5 pins refused | measured | close; coverage not predicted |
+| P4.7 | Refill joins vias solidly | **Not measured** (container guard), but **read at source**. KiCad 10.0.7 `pcbnew/zone_filler.cpp` `knockoutThermalReliefs` gives thermal reliefs to footprint pads, and gives them to vias only in a `HATCH_PATTERN` zone (l.2002–2112). The planes here are solid fill, so a same-net via joins the fill all round. The same source shows the zone's `min_thickness` opening the fill (F9) | read | right |
 | P4.8 | Per-pin R × total load bounds the drop | Holds on 300 random networks: the maximum ratio is 1.000000 | measured | right |
 | P5.1–P5.3 | Shape of the verdict and limits | Proposal below | inferred | — |
 
@@ -222,11 +222,17 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
   - plane: the two-hole sheet;
   - load: transfer resistance.
 - **Coverage.** A pin with no admissible path carries **no** bound: it is refused by name, never given a number.
-- **Stated conditions the bound still rests on,** none checked from the board:
-  - the plane's fill is the declared plane: the outline less 0.51 mm discs around foreign vias, meeting each own-net via all round (P4.7 was blocked, D9);
-  - each pad is an equipotential terminal;
-  - the via pad is concentric with its hole;
-  - the plating, copper and temperature figures in `conditions.json`.
+- **The spread barrel against a certified lower bound** (`s4/check_barrel.out`). The barrel's bound, (ρ/A)∫(q² + r_d²p²), is exactly the energy of the same flow in an isotropic periodic sheet of width 2πr_d. That sheet has two terminals, the entry arc and the far edge, and a P1 primal there gives a certified lower bound. The spread bound holds above it at five entries (symmetric, offset and tilted; barrels of 0.34, 1.07, 1.6 and 2.0 mm), at 1.15–1.79×.
+- **The plane-to-via joint, read at source:** KiCad 10.0.7 `zone_filler.cpp` (P4.7 row). A solid-fill zone joins a same-net via all round.
+- **The plane's opening.** The zone's `min_thickness` (0.25 mm) is a deflate-then-inflate by 0.125 mm. So the rhombus check grows every foreign clearance disc to 0.635 mm and the edge to 0.625 mm: a point that far from every knockout survives the opening. This is applied in the table above (F9).
+- **Hole offset** (`s4/check_offset.out`, a sensitivity over 64 directions, not a proof of the maximum). With the hole up to 0.05 mm off its pad's centre, an admissible cut still exists, at no greater via-end cost than the concentric one. At JLCPCB's published ±0.075 mm hole-position tolerance [read], the 0.15 mm annular ring leaves **no** admissible cut 0.2 mm wide (F10).
+- **Stated conditions the bound still rests on.** The work order's S4 itself allows these: "the plating thickness is a fabricator figure, so cite it or declare it as a condition".
+  - **Fabrication:** the hole within 0.05 mm of its pad's centre;
+  - **Material:** plating ≥ 18 µm (JLCPCB publishes an 18 µm *average* [read]), outer copper ≥ 30 µm, plane copper ≥ 15 µm, copper at most 105 °C, resistivity allowance k = 1 (`conditions.json`, each with its source);
+  - **Terminal:** each pad is one equipotential;
+  - **DRC gate:** the plane's fill is the declared plane, which the DRC gate refills and judges.
+
+  Each is input to a bound, not a bound itself. None is substituted by default (`INV-06`): S5 makes each a declared field.
 
 **Conditions taken** (`s4/conditions.json`, each with its source):
 - ρ20: IACS 1.7241 µΩ·cm (NBS Handbook 100, read);
@@ -243,7 +249,7 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
 | Board | Pins bounded | Best stand-in, range over the bounded pins | Pairs bounded | Drop at 658 mA, worst bounded pin | Refused by name |
 |---|---|---|---|---|---|
 | Reference (2 layers, 0.2 mm tracks) | **7 of 16** | 9.1–125.4 mΩ | 45 of 208 | 83 mV of 165 mV | 9 pins from every stand-in: U1.32, and 39–121 behind vias and pads. 156 pairs have no path the flow rules admit; the rest fail at a pad end |
-| 4-layer fixture (`In2` plane) | **15 of 16** | 8.1–116.1 mΩ | 89 of 208 | 76 mV | U1.108 from every stand-in |
+| 4-layer fixture (`In2` plane) | **11 of 16** | 8.1–63.2 mΩ | 74 of 208 | 42 mV | U1.6, 30, 108, 143 and 144 from every stand-in, once the plane's `min_thickness` opening is honoured (F9) |
 
 - **These are `main`'s routes (`121344d`).** `1307` (PR #126, unmerged) changes every routed board: the reference goes from 70 to 64 vias, and from 348.5 to 331.6 mm of track (its mailbox note, `bae55aa`). The numbers above will move. The build re-measures after `1307` merges, as the work order's cadence already says. The method and its checks do not depend on the routes.
 - **What limits coverage:** the closed-form pieces, not the copper. A via entered after a turn inside its pad, a pad too narrow for the tube, or a plane hop blocked by crowded foreign vias each refuse a path that real current would use. Where the pieces do fit, the plane hop dominates at 4 layers: 6–44 mΩ per hop against 2.05 mΩ for an ideal two-via sheet at 10 mm (not a bound).
@@ -279,7 +285,7 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
 | S1 | Three consumers, each with its direction and precision as tabled. Add a fourth, the ground return (D7). `4300e1`'s quantity for a full-speed device is C per conductor (≤ 25 pF) and its mismatch, not 90 Ω (D2) | USB 2.0 §7.1.6.1; DS12117 Tables 118–120; PR #129 |
 | S2 | Nothing to build here: `4300c`'s ruling widens the line list. Arcs, inner tracks and non-rectangular pads stay refused by name until a board needs them | PR #129 ruling; `extract.rs`, `route.rs` reads |
 | S3 | If any impedance check stays: the certified 2D bracket (D1 (a)), never closed forms. For full speed, check C instead (D2 (b)). Refuse at 2 layers | S3 A, B, exact and nested checks |
-| S4 | Thomson's principle with an explicit flow, reported per pin, refused by name where no admissible flow is found. The closed-form pieces are rigorous but cover 7/16 and 15/16 pins on today's routes. For the build, a certified discrete flow (D5 (b)), checked against the closed forms where both apply | S4 table and checks |
+| S4 | Thomson's principle with an explicit flow, reported per pin, refused by name where no admissible flow is found. The closed-form pieces are rigorous but cover 7/16 and 11/16 pins on today's routes. For the build, a certified discrete flow (D5 (b)), checked against the closed forms where both apply | S4 table and checks |
 | S5 | `pairs` and `supplies` beside `lines`, gated like `lines`. New limit and stackup fields, a schema version, refused by name when absent | `INV-06`, `RUL-14` |
 
 ## Decisions needed
@@ -298,7 +304,7 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
   - the source pad is `4300d`'s regulator output, and until a board has one there is no supply gate;
   - the drop is per-pin R × the total declared load (P4.8), with the load cited from the parts table (DS12117 Table 120: 658 mA at Tj 125 °C).
 - **D5 · How the flow is built.**
-  - **(a)** The closed-form pieces measured here. Rigorous, but they cover 7 of 16 pins on the reference and 15 of 16 on the 4-layer fixture, and the plane hop is 3–20× the ideal.
+  - **(a)** The closed-form pieces measured here. Rigorous, but they cover 7 of 16 pins on the reference and 11 of 16 on the 4-layer fixture, and the plane hop is 2.7–78× the exact two-hole sheet.
   - **(b)** A certified discrete Thomson flow over the copper: per-layer sheets with holes, as S3's stream-function dual, joined by barrels. It never refuses connected copper and is tighter, but it is numerical.
   - **Recommended: (b) for the build, with (a)'s closed forms as its exact-case tests.** D1 (a) puts a numerical variational solve in the engine anyway.
 - **D6 · Material allowance and temperature.** No citable maximum resistivity for electrodeposited foil or barrel plating was reachable (IPC-4562 is paywalled). **Recommended:** k and the copper temperature are declared conditions with their sources, and the build cites IPC-4562 Table 3-2 once someone holds a copy. Every R scales linearly in k and in 1 + α(T − 20).
@@ -324,7 +330,5 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
 | F6 | OSH Park's 4-layer lots sometimes use an EM528 core (Dk 4.11) instead of FR408HR. That does not touch the F.Cu–In1 prepreg, but a stackup source should name the lot risk | research record item 5 | data | D3 |
 | F7 | **My first S4 table was not a bound.** It let a path hop through an intermediate pad at zero cost (120 of the reference's 208 paths did) and pass across a via's hole on one layer. It ignored own-net via holes in the plane and never checked via entry or pad ends. The advisor's review found it before the push. The second version (`rbound2.py`) recomputes every reported bound from its path's geometry; the first output is kept as `paths-v1-inadmissible.out` | `s4/` | process / lesson | no |
 | F8 | On today's routes the closed-form pieces refuse many paths real current uses: a turn inside a via pad, narrow pads, crowded plane rhombi. Coverage, not looseness, is their limit | S4 | measured | D5 |
-
-## What a build deletes
-
-`spike/1303/` (`roadmap.md` §6). The tables above are the record; every measurement a build relies on returns as a Rust test.
+| F9 | **Only KiCad's source showed the plane's `min_thickness` opening.** The rhombus clearance must grow by half of it (0.125 mm). Without that, 4 more pins on the 4-layer fixture would carry a bound the fill may not support. Applied: 15 → 11 pins | `zone_filler.cpp`; `conditions.json` | measured / read | no |
+| F10 | **The router's via (0.6 mm pad, 0.3 mm drill) leaves a 0.15 mm annular ring,** at JLCPCB's ±0.075 mm hole-position tolerance [read]. At full tolerance no tube 0.2 mm wide can enter the via's copper on a proven path. The S4 bound needs the hole within 0.05 mm of centre, or a larger via pad | `route.rs` `VIA_NM`/`DRILL_NM` | condition | D3, D8 |
