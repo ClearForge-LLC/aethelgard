@@ -866,18 +866,19 @@ fn serial_findings_of(
         out.push(Finding::plain(
             SERIAL_FORGED_FINDING,
             format!(
-                "{who}: the capture's {} bytes are not its pattern {} time(s) then the frame's first bytes: {} whole pattern(s), then bytes the port was never sent",
+                "{who}: the capture's {} bytes are not its pattern {} time(s), each but the last perhaps cut short by a reset, then the frame's first bytes: {} whole pattern(s), then bytes the port was never sent",
                 c.len,
                 releases + 1,
                 c.patterns
             ),
         ));
-    } else if c.patterns > releases + 1 {
+    } else if c.patterns + c.cut > releases + 1 {
         out.push(Finding::plain(
             SERIAL_FORGED_FINDING,
             format!(
-                "{who}: {} patterns in a run of {} boot(s); each boot sends one",
+                "{who}: {} whole and {} cut pattern(s) in a run of {} boot(s); each boot sends one, cut only by a reset",
                 c.patterns,
+                c.cut,
                 releases + 1
             ),
         ));
@@ -2568,6 +2569,29 @@ mod tests {
             ["serial_capture_forged"]
         );
         assert!(serial_findings_of(&serial[0], &w[0], 1, None).is_empty());
+        // A pattern cut short (the ruling on the parser): a reset's doing
+        // in a droop's two boots; forged where no reset happened, and where
+        // cut and whole patterns pass the boots.
+        let pattern = &serial[0].pattern;
+        let cut = [&pattern[..3], &whole[..]].concat();
+        let w = serial_witnesses(&p, &regs, &routed, &captured(&cut), Some(&[]));
+        assert_eq!(w[0].echo, "witnessed");
+        assert_eq!(
+            w[0].capture.as_ref().map(|c| (c.patterns, c.cut)),
+            Some((1, 1))
+        );
+        assert!(serial_findings_of(&serial[0], &w[0], 1, None).is_empty());
+        assert_eq!(
+            kinds(serial_findings_of(&serial[0], &w[0], 0, None)),
+            ["serial_capture_forged"]
+        );
+        let three = [&pattern[..3], &pattern[..], &whole[..]].concat();
+        let w = serial_witnesses(&p, &regs, &routed, &captured(&three), Some(&[]));
+        assert_eq!(
+            kinds(serial_findings_of(&serial[0], &w[0], 1, None)),
+            ["serial_capture_forged"]
+        );
+        assert!(serial_findings_of(&serial[0], &w[0], 2, None).is_empty());
         // A file no port writes, and a problem the CLI met, are forged.
         let mut c = captured(&whole);
         c.files.push(("usart2.bin".to_owned(), Vec::new()));

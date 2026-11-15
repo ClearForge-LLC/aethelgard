@@ -1604,8 +1604,13 @@ fn a_capture_that_is_not_the_pattern_then_the_frame_fails_by_name() {
     let whole = capture_of(&elf());
     let p = aethelgard_twin::serial::pattern("CONSOLE");
     let frame = &whole[p.len()..];
-    let cases: [(&str, Vec<u8>, &[&str]); 7] = [
+    let cases: [(&str, Vec<u8>, &[&str]); 8] = [
         ("pattern only", p.clone(), &["serial_echo_missing"]),
+        (
+            "a pattern cut short in a boot no reset ended",
+            [&p[..3], &whole[..]].concat(),
+            &["serial_capture_forged"],
+        ),
         ("frame only", frame.to_vec(), &["serial_pattern_missing"]),
         (
             "a byte after the frame",

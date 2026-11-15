@@ -121,51 +121,111 @@ pub fn fits(injection_ns: u64, virtual_ns: u64) -> bool {
 /// What one port's capture holds, read against its pattern and frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Capture {
-    /// The whole patterns at the start, in a row.
+    /// The whole patterns before the frame: one per boot that sent its
+    /// pattern.
     pub patterns: usize,
-    /// How many of the frame's bytes follow them, in order: [`FRAME_LEN`]
-    /// for the whole frame, fewer for its first bytes only.
+    /// The patterns cut short among them: each a proper prefix of the
+    /// pattern, which a boot sends when a rendered reset stops it mid-pattern
+    /// (the ruling on C1's capture parser). The fewest that read the bytes.
+    pub cut: usize,
+    /// How many of the frame's bytes follow the last whole pattern, in
+    /// order: [`FRAME_LEN`] for the whole frame, fewer for its first bytes
+    /// only.
     pub echoed: usize,
-    /// True when the bytes are not `P^k` then the frame's first `echoed`
+    /// True when the bytes are not boots then the frame's first `echoed`
     /// bytes, exactly: anything else is in the capture.
     pub stray: bool,
     pub len: usize,
 }
 
-/// Reads `bytes` as `P^k` then a prefix of `frame`, from the frame's end:
-/// - the whole frame at the end, then `P^k` before it;
-/// - else `P^k` alone (no echo; this wins where a partial echo would also
-///   read, so a pattern's last bytes are never taken for the frame's first);
-/// - else the longest proper prefix of the frame at the end, `P^k` before it;
-/// - else the whole patterns at the start, and `stray` set.
-pub fn parse(bytes: &[u8], pattern: &[u8], frame: &[u8; FRAME_LEN]) -> Capture {
-    let whole = |body: &[u8]| -> Option<usize> {
-        if pattern.is_empty() || !body.len().is_multiple_of(pattern.len()) {
-            return None;
+/// Reads `body` as the boots' patterns: whole patterns and patterns cut
+/// short (each a non-empty proper prefix of `pattern`), in any order, the
+/// last one whole; or nothing. `Some((whole, cut))` with the fewest
+/// patterns in all that read it, `None` when no reading exists.
+///
+/// The fewest, by dynamic programming over the body: a greedy reading fails
+/// where the pattern overlaps itself (`AB` then `ABAC…` read greedily takes
+/// `ABA` and is left with `BAC…`). For a pattern [`pattern`] builds the
+/// whole patterns are fixed anyway: `0xFF` ends [`PATTERN_TAIL`] and is in
+/// no UTF-8 label, so each `0xFF` of the body ends a whole pattern, and a
+/// cut one holds none.
+fn boots(body: &[u8], pattern: &[u8]) -> Option<(usize, usize)> {
+    if body.is_empty() {
+        return Some((0, 0));
+    }
+    let (n, len) = (body.len(), pattern.len());
+    if len == 0 {
+        return None;
+    }
+    // `(patterns, cut)` to reach each position, the last pattern whole or cut.
+    type Best = Option<(usize, usize)>;
+    let better = |slot: &mut Best, cand: (usize, usize)| {
+        if slot.is_none_or(|s| cand < s) {
+            *slot = Some(cand);
         }
-        body.chunks(pattern.len())
-            .all(|c| c == pattern)
-            .then(|| body.len() / pattern.len())
     };
-    let done = |patterns, echoed| Capture {
+    let mut whole: Vec<Best> = vec![None; n + 1];
+    let mut cut: Vec<Best> = vec![None; n + 1];
+    for i in 0..n {
+        let here = if i == 0 {
+            Some((0, 0))
+        } else {
+            match (whole[i], cut[i]) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            }
+        };
+        let Some((k, c)) = here else {
+            continue;
+        };
+        let common = body[i..]
+            .iter()
+            .zip(pattern)
+            .take_while(|(a, b)| a == b)
+            .count();
+        if common == len {
+            better(&mut whole[i + len], (k + 1, c));
+        }
+        for l in 1..=common.min(len - 1) {
+            better(&mut cut[i + l], (k + 1, c + 1));
+        }
+    }
+    whole[n].map(|(k, c)| (k - c, c))
+}
+
+/// Reads `bytes` as boots then a prefix of `frame`, from the frame's end
+/// (the boots read by [`boots`]: whole and cut patterns, the last whole):
+/// - the whole frame at the end, the boots before it;
+/// - else the boots alone (no echo; this wins where a partial echo would
+///   also read, so a pattern's last bytes are never taken for the frame's
+///   first);
+/// - else the longest proper prefix of the frame at the end, the boots
+///   before it;
+/// - else the whole patterns at the start, and `stray` set.
+///
+/// The caller judges the count: at most one pattern, whole or cut, per boot
+/// the run rendered, so a cut in a run with no reset is forged.
+pub fn parse(bytes: &[u8], pattern: &[u8], frame: &[u8; FRAME_LEN]) -> Capture {
+    let done = |(patterns, cut), echoed| Capture {
         patterns,
+        cut,
         echoed,
         stray: false,
         len: bytes.len(),
     };
     if let Some(body) = bytes.strip_suffix(&frame[..])
-        && let Some(k) = whole(body)
+        && let Some(b) = boots(body, pattern)
     {
-        return done(k, FRAME_LEN);
+        return done(b, FRAME_LEN);
     }
-    if let Some(k) = whole(bytes) {
-        return done(k, 0);
+    if let Some(b) = boots(bytes, pattern) {
+        return done(b, 0);
     }
     for n in (1..FRAME_LEN).rev() {
         if let Some(body) = bytes.strip_suffix(&frame[..n])
-            && let Some(k) = whole(body)
+            && let Some(b) = boots(body, pattern)
         {
-            return done(k, n);
+            return done(b, n);
         }
     }
     let patterns = if pattern.is_empty() {
@@ -178,6 +238,7 @@ pub fn parse(bytes: &[u8], pattern: &[u8], frame: &[u8; FRAME_LEN]) -> Capture {
     };
     Capture {
         patterns,
+        cut: 0,
         echoed: 0,
         stray: true,
         len: bytes.len(),
@@ -421,21 +482,24 @@ impl PinMux {
         })
     }
 
-    /// True when `moder` and `afr` put the pin in AF mode on its solved AF.
-    pub fn routed(&self, moder: u32, afr: u32) -> bool {
+    /// The pin's `MODER` and `AFSEL` fields in the registers `moder` and
+    /// `afr`.
+    pub fn fields(&self, moder: u32, afr: u32) -> (u8, u8) {
         let mode = (moder >> (2 * self.index)) & 0b11;
         let af = (afr >> (4 * (self.index % 8))) & 0xF;
-        mode == MODE_AF && af == u32::from(self.alternate_function)
+        (mode as u8, af as u8)
+    }
+
+    /// True when `moder` and `afr` put the pin in AF mode on its solved AF.
+    pub fn routed(&self, moder: u32, afr: u32) -> bool {
+        let (mode, af) = self.fields(moder, afr);
+        u32::from(mode) == MODE_AF && af == self.alternate_function
     }
 
     /// `PA10 MODER 0b10, AF7`: what the reads showed, for a finding.
     pub fn describe(&self, moder: u32, afr: u32) -> String {
-        format!(
-            "{} MODER {:#04b}, AF{}",
-            self.pin,
-            (moder >> (2 * self.index)) & 0b11,
-            (afr >> (4 * (self.index % 8))) & 0xF
-        )
+        let (mode, af) = self.fields(moder, afr);
+        format!("{} MODER {mode:#04b}, AF{af}", self.pin)
     }
 }
 
@@ -518,6 +582,7 @@ mod tests {
             c(&cat(&[&p, &f])),
             Capture {
                 patterns: 1,
+                cut: 0,
                 echoed: 8,
                 stray: false,
                 len: 16
@@ -531,11 +596,10 @@ mod tests {
             (partial.patterns, partial.echoed, partial.stray),
             (1, 3, false)
         );
-        // The frame without a pattern, a byte after the frame, a cut pattern,
-        // and the pattern of another port are all stray or patternless.
+        // The frame without a pattern, a byte after the frame, and the
+        // pattern of another port are all stray or patternless.
         assert_eq!(c(&f).patterns, 0);
         assert!(c(&cat(&[&p, &f, &[0]])).stray);
-        assert!(c(&cat(&[&p[..4], &p, &f])).stray);
         let other = c(&cat(&[&pattern("RC"), &f]));
         assert!(other.stray && other.patterns == 0);
         assert_eq!(c(&[]), parse(&[], &p, &f));
@@ -544,6 +608,55 @@ mod tests {
         let g = [0xFF, 9, 9, 9, 9, 9, 9, 9];
         let amb = parse(&p, &p, &g);
         assert_eq!((amb.patterns, amb.echoed), (1, 0));
+    }
+
+    /// The ruling on C1's parser: a pattern a reset cut short reads as a
+    /// cut, never as stray, before the last whole pattern; the caller bounds
+    /// cut and whole together by the boots.
+    #[test]
+    fn a_pattern_cut_by_a_reset_reads_as_a_cut_before_the_last_whole_one() {
+        let p = pattern("GPS");
+        let f = [1, 2, 3, 4, 5, 6, 7, 8];
+        let cat = |parts: &[&[u8]]| parts.concat();
+        let c = |b: &[u8]| parse(b, &p, &f);
+        let one = c(&cat(&[&p[..4], &p, &f]));
+        assert_eq!(
+            (one.patterns, one.cut, one.echoed, one.stray),
+            (1, 1, 8, false)
+        );
+        // Cuts and whole patterns interleave, each cut any proper prefix.
+        let many = c(&cat(&[&p[..1], &p, &p[..7], &p[..3], &p, &f[..2]]));
+        assert_eq!(
+            (many.patterns, many.cut, many.echoed, many.stray),
+            (2, 3, 2, false)
+        );
+        // A cut after the last whole pattern, a cut alone, a cut before the
+        // frame, and a cut that is not the pattern's prefix are stray.
+        for bad in [
+            cat(&[&p, &p[..4]]),
+            cat(&[&p, &p[..4], &f]),
+            p[..4].to_vec(),
+            cat(&[&p[..4], &f]),
+            cat(&[&p[1..4], &p, &f]),
+            cat(&[&p, &[0x00], &p, &f]),
+        ] {
+            assert!(c(&bad).stray, "{bad:02X?}");
+        }
+    }
+
+    /// A label that overlaps itself: a greedy reading of `AB` then `ABAC…`
+    /// takes `ABA` and fails; the fewest-patterns reading finds the cut.
+    #[test]
+    fn a_self_overlapping_pattern_still_reads_its_cut() {
+        let p = pattern("ABAC");
+        let f = [9; FRAME_LEN];
+        let cap = parse(&[&p[..2], &p[..], &f[..]].concat(), &p, &f);
+        assert_eq!((cap.patterns, cap.cut, cap.stray), (1, 1, false));
+        let cap = parse(&[&p[..3], &p[..3], &p[..], &f[..]].concat(), &p, &f);
+        assert_eq!((cap.patterns, cap.cut, cap.stray), (1, 2, false));
+        // The fewest: `ABA` + `ABAC…` is one cut, never `AB` + `A` + ….
+        let cap = parse(&[&p[..3], &p[..]].concat(), &p, &f);
+        assert_eq!((cap.patterns, cap.cut), (1, 1));
     }
 
     #[test]
