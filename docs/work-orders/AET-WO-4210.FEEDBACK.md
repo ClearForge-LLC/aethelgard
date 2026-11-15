@@ -1,6 +1,6 @@
 # AET-WO-4210 — FEEDBACK (spike)
 
-Builder: Claude Code (Opus 5.5) in `~/aethelgard-4210`, branch `wo/aet-4210-imu-baro`, cut from `main` at `c621461`. The work order is read from `origin/claude/argon-repo-docs-synthesis-rjrb0d` at `733bbca` (docs PR #127); it is not committed here.
+Builder: Claude Code (Opus 5.5) in `~/aethelgard-4210`, branch `wo/aet-4210-imu-baro`, cut from `main` at `c621461`. The work order was read from `origin/claude/argon-repo-docs-synthesis-rjrb0d` at `733bbca`; it reached `main` with docs PR #127 (`121344d`), merged in here, byte-identical.
 
 Labels: **measured** (a run), **read** (at source, in a datasheet, or on a vendor page, cited), **inferred** (reasoned from what was read, not run).
 
@@ -302,4 +302,11 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
 
 ## Gates (spike)
 
-The fence: `git diff --name-only origin/main...HEAD` lists this file and `spike/4210/` only. Results are recorded below once run.
+The fence: `git diff --name-only origin/main...HEAD` lists this file and `spike/4210/` only (`main` merged in at `121344d`).
+
+On the host, under `systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`, at the merge (`9634f7b`):
+- `cargo fmt --all -- --check`: ok;
+- `cargo clippy --workspace --all-targets -- -D warnings`: ok;
+- `cargo test --workspace`: exit 0, no failure.
+
+Tier 2 is CI's (`roadmap.md` §6). This branch changes no crate, so nothing of tier 2's is touched.
