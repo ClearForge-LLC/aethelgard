@@ -702,6 +702,42 @@ mod tests {
         );
     }
 
+    /// `AET-WO-4300a`: every timer the solver may assign has a base and one
+    /// clock gate in the header, and `TIM_TypeDef` holds the start's registers
+    /// where RM0433 Rev 9 §38.4 puts them.
+    #[test]
+    fn every_timer_with_channels_has_a_base_and_one_clock_gate() {
+        let f = facts();
+        for n in aethelgard_ir::motor::TIMERS {
+            let name = format!("TIM{n}");
+            assert!(f.base(&name).is_ok(), "{name}");
+            let (register, _) = f.enable_bit(&name).unwrap();
+            let want = if aethelgard_ir::motor::apb(n) == aethelgard_ir::motor::Apb::Apb2 {
+                "APB2ENR"
+            } else {
+                "APB1LENR"
+            };
+            assert_eq!(register, want, "{name}");
+        }
+        assert_eq!(f.base("TIM1").unwrap(), 0x4001_0000);
+        assert_eq!(f.enable_bit("TIM1").unwrap(), ("APB2ENR".into(), 0));
+        let t = f.layout("TIM").unwrap();
+        for (reg, offset) in [
+            ("CR1", 0x00),
+            ("EGR", 0x14),
+            ("CCMR1", 0x18),
+            ("CCMR2", 0x1C),
+            ("CCER", 0x20),
+            ("PSC", 0x28),
+            ("ARR", 0x2C),
+            ("CCR1", 0x34),
+            ("CCR4", 0x40),
+            ("BDTR", 0x44),
+        ] {
+            assert_eq!(t.offset(reg, 0).unwrap(), offset, "{reg}");
+        }
+    }
+
     #[test]
     fn a_clock_gate_must_be_in_exactly_one_register() {
         let f = synthetic("#define RCC_AENR_X1EN_Pos (3U)\n#define RCC_BENR_X1EN_Pos (4U)\n");
