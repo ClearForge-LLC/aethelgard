@@ -587,7 +587,7 @@
               "wirable": true,
               "at": {
                 "document": "SBVS320D",
-                "section": "p. 3, Table 4-1, EN: drive EN greater than VHI to turn on the regulator, less than VLO for shutdown"
+                "section": "p. 11, 6.3.2 Enable (EN): if shutdown capability is not required, connect EN to IN"
               }
             }
           ]

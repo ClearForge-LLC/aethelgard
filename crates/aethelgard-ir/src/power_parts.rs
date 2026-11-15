@@ -159,7 +159,6 @@ pub enum Strap {
     Input,
     /// Left unconnected, where the datasheet allows it.
     Open,
-    Ground,
     Vcca,
     Vccb,
 }
@@ -169,7 +168,6 @@ impl Strap {
         match self {
             Strap::Input => "input",
             Strap::Open => "open",
-            Strap::Ground => "ground",
             Strap::Vcca => "vcca",
             Strap::Vccb => "vccb",
         }
@@ -1005,24 +1003,24 @@ impl Reader<'_> {
 }
 
 impl Reader<'_> {
+    /// The control rules of a row, which name exactly the kind's control
+    /// pins (`roles`, sorted), each once (adversarial F7).
     fn controls(
         &mut self,
         raw: Vec<RawControl>,
         roles: &[&str],
         field: &str,
     ) -> Result<Vec<ControlRule>, String> {
+        let mut named: Vec<&str> = raw.iter().map(|c| c.pin.as_str()).collect();
+        named.sort_unstable();
+        if named != roles {
+            return Err(format!(
+                "`{field}` names {named:?}, and the kind's control pins are exactly {roles:?}"
+            ));
+        }
         let mut out: Vec<ControlRule> = Vec::with_capacity(raw.len());
         for c in raw {
             let f = format!("{field}.{}", c.pin);
-            if !roles.contains(&c.pin.as_str()) {
-                return Err(format!(
-                    "`{field}` names `{}`, which is not a pin role",
-                    c.pin
-                ));
-            }
-            if out.iter().any(|o| o.pin == c.pin) {
-                return Err(format!("`{field}` names `{}` twice", c.pin));
-            }
             let mut straps = c.straps;
             straps.sort();
             if straps.windows(2).any(|w| w[0] == w[1]) {
@@ -1099,16 +1097,12 @@ fn text(value: &str, field: &str, max: usize) -> Result<(), String> {
     Ok(())
 }
 
-const BUCK_PINS: &[&str] = &["BOOT", "EN", "EP", "FB", "PG", "PGND", "SW", "VCC", "VIN"];
-const LDO_PINS: &[&str] = &["EN", "GND", "IN", "NC", "OUT"];
-const TRANSLATOR_PINS: &[&str] = &["GND", "OE", "VCCA", "VCCB"];
-
 /// The pin roles each IC kind must name, exactly.
 fn pin_roles(kind: &Kind) -> &'static [&'static str] {
     match kind {
-        Kind::Buck(_) => BUCK_PINS,
-        Kind::Ldo(_) => LDO_PINS,
-        Kind::Translator(_) => TRANSLATOR_PINS,
+        Kind::Buck(_) => &["BOOT", "EN", "EP", "FB", "PG", "PGND", "SW", "VCC", "VIN"],
+        Kind::Ldo(_) => &["EN", "GND", "IN", "NC", "OUT"],
+        Kind::Translator(_) => &["GND", "OE", "VCCA", "VCCB"],
         Kind::Resistor(_)
         | Kind::Capacitor(_)
         | Kind::Inductor(_)
@@ -1128,10 +1122,20 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
             text(&b.stated_at, "kind.buck.stated_at", 200)?;
             let t = b.thermal_vias;
             text(&t.pad, "kind.buck.thermal_vias.pad", 8)?;
+            let vin_max = b.vin_millivolts.max;
             Kind::Buck(Box::new(Buck {
                 vin_millivolts: r.ranged_positive(b.vin_millivolts, "kind.buck.vin_millivolts")?,
-                vin_abs_max_millivolts: r
-                    .positive(b.vin_abs_max_millivolts, "kind.buck.vin_abs_max_millivolts")?,
+                vin_abs_max_millivolts: {
+                    let abs =
+                        r.positive(b.vin_abs_max_millivolts, "kind.buck.vin_abs_max_millivolts")?;
+                    if abs.value < vin_max {
+                        return Err(
+                            "`kind.buck.vin_abs_max_millivolts` is below the recommended VIN maximum"
+                                .to_owned(),
+                        );
+                    }
+                    abs
+                },
                 input_damping_picofarads: r.ranged_positive(
                     b.input_damping_picofarads,
                     "kind.buck.input_damping_picofarads",
@@ -1188,7 +1192,7 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 stated_at: b.stated_at,
                 external: r.external(b.external, "kind.buck.external")?,
                 theta_ja: r.theta(b.theta_ja)?,
-                controls: r.controls(b.controls, BUCK_PINS, "kind.buck.controls")?,
+                controls: r.controls(b.controls, &["EN", "PG"], "kind.buck.controls")?,
                 thermal_vias: ThermalRule {
                     pad: t.pad,
                     columns: t.columns,
@@ -1213,10 +1217,20 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 return Err("`kind.ldo.dropout_at_milliamps` is not above zero".to_owned());
             }
             bounded(l.dropout_at_milliamps, "kind.ldo.dropout_at_milliamps")?;
+            let vin_max = l.vin_millivolts.max;
             Kind::Ldo(Box::new(Ldo {
                 vin_millivolts: r.ranged_positive(l.vin_millivolts, "kind.ldo.vin_millivolts")?,
-                vin_abs_max_millivolts: r
-                    .positive(l.vin_abs_max_millivolts, "kind.ldo.vin_abs_max_millivolts")?,
+                vin_abs_max_millivolts: {
+                    let abs =
+                        r.positive(l.vin_abs_max_millivolts, "kind.ldo.vin_abs_max_millivolts")?;
+                    if abs.value < vin_max {
+                        return Err(
+                            "`kind.ldo.vin_abs_max_millivolts` is below the recommended VIN maximum"
+                                .to_owned(),
+                        );
+                    }
+                    abs
+                },
                 vout_millivolts: r
                     .ranged_positive(l.vout_millivolts, "kind.ldo.vout_millivolts")?,
                 vout_condition: l.vout_condition,
@@ -1235,7 +1249,7 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 junction_max_celsius: r
                     .limit(l.junction_max_celsius, "kind.ldo.junction_max_celsius")?,
                 external: r.external(l.external, "kind.ldo.external")?,
-                controls: r.controls(l.controls, LDO_PINS, "kind.ldo.controls")?,
+                controls: r.controls(l.controls, &["EN"], "kind.ldo.controls")?,
             }))
         }
         RawKind::Translator(t) => {
@@ -1275,7 +1289,7 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                     .positive(t.pull_up_max_ohms, "kind.translator.pull_up_max_ohms")?,
                 channels,
                 external: r.external(t.external, "kind.translator.external")?,
-                controls: r.controls(t.controls, TRANSLATOR_PINS, "kind.translator.controls")?,
+                controls: r.controls(t.controls, &["OE"], "kind.translator.controls")?,
             }))
         }
         RawKind::Resistor(s) => {

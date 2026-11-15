@@ -120,3 +120,54 @@ Specification 9 changed every specification's sha256. With the old hash put back
 ### Overlaps
 - `4300g` also bumps `power-parts.json` to schema 2. Whoever merges second takes 3. Both sides were told on the bus.
 - `4300g` reports that, with PDR_ON tied to VDD, DS12117 p. 22 note 6 needs VDD above 1.71 V. No check here reads the MCU's VDD minimum except the existing floor, max(VDD min, VBOR falling); at `bor_level` 3, VBOR governs. This is `4300g`'s to rule.
+
+## 4. Adversarial pass (a fresh Opus subagent, on `e42228d`)
+
+The reviewer worked from a copy, given the code and the work order but not this file's conclusions. Probes and repro specifications are in `~/.cache/aet-4300d3/adv/`. Nothing panicked, and every new key is required. Each finding was checked at source before it was adopted.
+
+| id | sev | finding | disposition |
+|---|---|---|---|
+| F1–F4 | high | A control pin wired to `GND`, a rail or the battery passed: a strap refused by name got through as a wire. PG on the 26.1 V pack passes SNVSAN3F p. 6's 22 V PG maximum. No condition named the declared wire. | **Fixed.** A wire to a domain, `GND`, `VBAT` or `battery` (case-folded) is refused `ControlPinUnwired`: it is a strap, which the row judges. Every other wire is named in the verdict, with this condition: "neither the net's driver nor its level is judged". A one-ended (floating) net cannot be detected without a netlist. That is D5's backlog row. |
+| F5 | high | Where a maker's DC-bias figure stops below the working voltage, the declared derating could exceed it. | **Fixed.** The derating is capped at the maker's last point. |
+| F6 | med | Overlapping derating bands gave a verdict that hung on their order. | **Fixed.** The shape refuses two bands that share a dielectric at one ratio, and a narrower band keeping less than a wider one. |
+| F7 | med | A row could omit a control pin and so switch the check off. | **Fixed.** Each row names exactly its kind's control pins: EN and PG on a buck, EN on an LDO, OE on a translator. |
+| F8 | med | Three 47 µF parts (141 µF) are refused. TI says "20 µF to 100 µF is usually sufficient", which is not a maximum. | **Kept**, as the work order's letter ("in TI's 20–100 µF range") reads. **Question D6.** |
+| F9 | med | A declared loss of 1 mW passes: the loss is not tied to the load. | **By design**, a declared bound. The verdict names the declaration and the load it was taken at. Backlog: a floor from the switches' conduction loss at the load. |
+| F10 | low | The TLV755 EN strap cited p. 3, which does not license tying EN to IN. | **Fixed.** It now cites p. 11, 6.3.2: "if shutdown capability is not required, connect EN to IN" [read]. |
+| F11 | low | The θ curve's package check is a suffix match, so `A` passes. | **Kept.** TI's part numbers end with the package code. Backlog: compare against the row's footprint. |
+| F12 | low | A VIN absolute maximum below the recommended maximum was accepted. | **Fixed** for the buck and the LDO. A rising BOR equal to its falling one stays accepted, as consistent. |
+| F13 | low | A bulk rated 26.101 V passes on a 26.1 V pack. | The work order's letter ("above the battery's maximum"). **Question D6.** |
+| F14 | low | Rated capacitance is used before its tolerance. A battery input feeding only an LDO has no damping range. | **Named in the verdict** ("from rated capacitance before its tolerance"). The LDO-only case is named as its row stating no range. |
+| F15 | process | §7's second condition is true, and the build went on. | **Accepted.** The kickoff said to build on the declared derating until Murata's chart lands. This build stops on it (§6). |
+
+## 5. Mutation run (diff-sized)
+
+A Sonnet subagent ran one mutant per new guard, each against `aethelgard-ir --test power`: 49 mutants plus 6 "guard dropped" mutants.
+- **The first run left 19 survivors.** Twelve were boundary mutants with no equality case. Seven were real gaps:
+  - the TVS stand-off guard was shadowed by its clamp in every case;
+  - the junction's round-up;
+  - the maker-point choice;
+  - the smallest-band choice;
+  - an effective minimum with no working voltage;
+  - two parser bounds.
+- `the_new_guards_hold_at_their_edges` pins each one. **On re-run, all 55 were killed** [measured, `~/.cache/aet-4300d3/mut2/log.txt`].
+- **The guards added for F1–F12 were each mutated once. Each mutant was killed.**
+
+## 6. Gates, reduction, close
+
+- **Gates on `2448b81`+fixes** [measured, Furnace]:
+  - `cargo fmt --all -- --check`: clean.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+  - `cargo test --workspace --no-fail-fast`: 106 binaries, 0 failures.
+- **CI on `e42228d`** [measured]: `ci`, `engine-image` and `ardupilot-image` all green.
+  - Tools shards 12.6 to 18.4 minutes, gates 11.3 minutes.
+  - `tier2_tests_passed=129 floor=129`. TIER2_MIN is exact and unchanged.
+- **Reduction pass (diff): −5 net · 3 duplicates removed · 1 dead path removed · 0 protected kept · 2 findings below.**
+  - Removed: three copies of the case-naming assertion, now one helper, and the `ground` strap, which no row allows.
+  - Finding: `power.rs`'s `dielectric()` names repeat the serde names of `Dielectric`, the house pattern `Role::name` follows. Kept.
+  - Finding: `effective()` builds its explanation strings even when nothing is judged. Left, as cheap.
+- **Questions for the architect, beyond §2:**
+  - **D6:** TI's 20–100 µF as a hard range (F8), and the bulk's rating against the DC maximum only, not the ring (F13).
+  - **D7:** `4300g`'s 1.71 V PDR_ON floor (§3 Overlaps).
+
+**Stop.** §7's second flag-and-stop condition holds at close: no held capacitor row has a published DC-bias figure, so the declared derating is the only source for every capacitor. Murata's chart for GCM32EC71H106KA03 has not landed in `~/.cache/aet-ds/` or the inbox. D1–D3 are unruled. Everything else in §1 is built and judged. When the chart lands, a figure is one row's `dc_bias` points. A ruling on D1–D3 changes one data field or one branch each.

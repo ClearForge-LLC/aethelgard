@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/power-parts.json`. It moves only with the file.
-const TABLE_SHA256: &str = "2acd1dea05ba93199204bab869850895405914cc70a044253945fa2c8b4caea2";
+const TABLE_SHA256: &str = "31c17f92a5b0d4389247561d7fd0e2011c68d4d9efc7f935e25b0509c0fd7b4a";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -59,6 +59,14 @@ fn assert_power(err: &E, kind: Refusal, id: &str) {
             assert_eq!((*k, i.as_str()), (kind, id), "{err}");
         }
         other => panic!("not a power refusal: {other}"),
+    }
+}
+
+/// [`assert_power`], naming the case that failed.
+fn assert_case(err: &E, kind: Refusal, id: &str, what: &str) {
+    match err {
+        E::Power { kind: k, id: i, .. } => assert_eq!((*k, i.as_str()), (kind, id), "{what}"),
+        other => panic!("{what}: not a power refusal: {other}"),
     }
 }
 
@@ -1115,10 +1123,7 @@ fn an_undamped_battery_input_is_refused_by_name() {
     for (what, kind, id, mutate) in cases {
         let mut v = base();
         mutate(&mut v);
-        match &refused(&v) {
-            E::Power { kind: k, id: i, .. } => assert_eq!((*k, i.as_str()), (kind, id), "{what}"),
-            other => panic!("{what}: {other}"),
-        }
+        assert_case(&refused(&v), kind, id, what);
     }
     // Two bulks (94 µF) are inside TI's 20 to 100 µF.
     let mut v = base();
@@ -1238,11 +1243,7 @@ fn a_hot_buck_is_refused_by_name() {
     for (what, kind, id, mutate) in cases {
         let mut v = base();
         mutate(&mut v);
-        let err = refused(&v);
-        match &err {
-            E::Power { kind: k, id: i, .. } => assert_eq!((*k, i.as_str()), (kind, id), "{what}"),
-            other => panic!("{what}: {other}"),
-        }
+        assert_case(&refused(&v), kind, id, what);
     }
     // A loss bound with no source is refused by the shape.
     let mut v = base();
@@ -1398,11 +1399,11 @@ fn an_unwired_control_pin_is_refused_by_name() {
             reg(v, "U11")["controls"][0]["strap"] = json!("open");
         }),
         (
-            "the LDO's EN to ground",
+            "the LDO's EN to VCCA",
             Refusal::ControlPinUnwired,
             "U12",
             |v| {
-                reg(v, "U12")["controls"][0]["strap"] = json!("ground");
+                reg(v, "U12")["controls"][0]["strap"] = json!("vcca");
             },
         ),
         ("FB as a control", Refusal::PowerValueInvalid, "U10", |v| {
@@ -1421,15 +1422,11 @@ fn an_unwired_control_pin_is_refused_by_name() {
     for (what, kind, id, mutate) in cases {
         let mut v = base();
         mutate(&mut v);
-        let err = refused(&v);
-        match &err {
-            E::Power { kind: k, id: i, .. } => assert_eq!((*k, i.as_str()), (kind, id), "{what}"),
-            other => panic!("{what}: {other}"),
-        }
+        assert_case(&refused(&v), kind, id, what);
     }
-    // The translator's OE strapped to ground disables the bus.
+    // The translator's OE left open disables the bus.
     let mut v = full();
-    v["power"]["crossings"][0]["controls"][0]["strap"] = json!("ground");
+    v["power"]["crossings"][0]["controls"][0]["strap"] = json!("open");
     assert_power(&refused(&v), Refusal::ControlPinUnwired, "U13");
     // Both or neither of `strap` and `wire` is refused by the shape.
     for wire in [json!({"net": "PG_5V", "role": "a role"}), Value::Null] {
@@ -1461,7 +1458,7 @@ fn an_unwired_control_pin_is_refused_by_name() {
     let r = table_refusal(|t| {
         row(t, "LMR33630ADDA")["kind"]["buck"]["controls"][0]["pin"] = json!("XX");
     });
-    assert!(r.contains("not a pin role"), "{r}");
+    assert!(r.contains("control pins are exactly"), "{r}");
     let r = table_refusal(|t| {
         row(t, "LMR33630ADDA")["kind"]["buck"]["controls"][0]["straps"] = json!(["input", "input"]);
     });
@@ -1535,18 +1532,32 @@ fn the_new_guards_hold_at_their_edges() {
         "power.conditions.dc_bias_derating[0]",
     );
     // The smallest band covering the ratio is used, its edge inclusive: the
-    // LDO's input works at 217 per mille, so a band ending at 217 keeping 400
-    // per mille decides it over a band to 1000 keeping 900; its output, at
-    // 119 per mille, takes a band to 150 keeping 900 and passes.
-    let mut v = base();
-    v["power"]["conditions"]["dc_bias_derating"] = json!([
-        {"dielectrics": ["X5R", "X7R", "X7S"], "ratio_max_permille": 1000, "retained_permille": 900, "source": "a wide band"},
-        {"dielectrics": ["X7R"], "ratio_max_permille": 217, "retained_permille": 400, "source": "a narrow band"},
+    // LDO's input works at 217 per mille, so a band ending at 217 keeping 480
+    // per mille clears it, where the band to 1000 keeping 400 would not; its
+    // output, at 119 per mille, takes the band to 150.
+    let bands = json!([
+        {"dielectrics": ["X5R", "X7R", "X7S"], "ratio_max_permille": 1000, "retained_permille": 400, "source": "a wide band"},
+        {"dielectrics": ["X7R"], "ratio_max_permille": 217, "retained_permille": 480, "source": "a narrow band"},
         {"dielectrics": ["X7R"], "ratio_max_permille": 150, "retained_permille": 900, "source": "a low band"}
     ]);
-    let err = refused(&v);
-    assert_power(&err, Refusal::EffectiveCapacitanceBelowMinimum, "U12");
-    assert!(err.to_string().contains("`cin` holds 400000 pF"), "{err}");
+    let mut v = base();
+    v["power"]["conditions"]["dc_bias_derating"] = bands.clone();
+    assert_eq!(spec(&v).validate().map(|_| ()), Ok(()));
+    // Bands that make the verdict hang on their order are refused
+    // (adversarial F6): two at one ratio, or a narrower one keeping less.
+    for (i, field, value) in [
+        (2, "ratio_max_permille", 217),
+        (1, "retained_permille", 300),
+    ] {
+        let mut v = base();
+        v["power"]["conditions"]["dc_bias_derating"] = bands.clone();
+        v["power"]["conditions"]["dc_bias_derating"][i][field] = json!(value);
+        assert_power(
+            &refused(&v),
+            Refusal::PowerValueInvalid,
+            &format!("power.conditions.dc_bias_derating[{}]", i.max(1)),
+        );
+    }
     // The maker's point at or above the working voltage is used before the
     // derating: one at exactly 3465 mV holding 480000 pF clears the LDO's
     // input, where the declared 400 per mille would not.
@@ -1617,4 +1628,51 @@ fn the_new_guards_hold_at_their_edges() {
     assert!(bias(json!([p(16_001, 500_000)])));
     assert!(bias(json!([p(1000, 600_000), p(1000, 500_000)])));
     assert!(!bias(json!([p(1000, 1_000_000), p(16_000, 1_000_000)])));
+    // The derating never exceeds the maker's last point below the working
+    // voltage (adversarial F5): 400000 pF at 1000 mV refuses the LDO's input
+    // at 3465 mV, though the declared 50 % would give 500000.
+    let mut t = table_json();
+    row(&mut t, "GRM188R71C105KA12")["kind"]["capacitor"]["dc_bias"] = json!([p(1000, 400_000)]);
+    assert_power(
+        &against(&base(), &t).unwrap_err(),
+        Refusal::EffectiveCapacitanceBelowMinimum,
+        "U12",
+    );
+    // A control's row names exactly its kind's control pins (F7), and a VIN
+    // absolute maximum below the recommended maximum does not parse (F12).
+    let r = table_refusal(|t| row(t, "LMR33630ADDA")["kind"]["buck"]["controls"] = json!([]));
+    assert!(r.contains("control pins are exactly"), "{r}");
+    let r = table_refusal(|t| {
+        row(t, "LMR33630ADDA")["kind"]["buck"]["vin_abs_max_millivolts"]["value"] = json!(35_999);
+    });
+    assert!(r.contains("below the recommended VIN maximum"), "{r}");
+    let r = table_refusal(|t| {
+        row(t, "TLV75518PDBV")["kind"]["ldo"]["vin_abs_max_millivolts"]["value"] = json!(5_499);
+    });
+    assert!(r.contains("kind.ldo.vin_abs_max_millivolts"), "{r}");
+}
+
+/// Adversarial F1 to F4: a wire to a rail, ground or the battery is a strap
+/// in disguise and is refused; a wire to any other net is named.
+#[test]
+fn a_wire_to_a_rail_is_refused_and_every_wire_is_named() {
+    for (r, i, net) in [
+        ("U10", 0, "GND"),
+        ("U10", 1, "vbat"),
+        ("U12", 0, "VDD_3V3"),
+        ("U11", 1, "battery"),
+    ] {
+        let mut v = base();
+        reg(&mut v, r)["controls"][i] = json!({"pin": if i == 0 { "EN" } else { "PG" },
+            "strap": null, "wire": {"net": net, "role": "a role"}});
+        assert_power(&refused(&v), Refusal::ControlPinUnwired, r);
+    }
+    let mut v = full();
+    v["power"]["crossings"][0]["controls"][0] =
+        json!({"pin": "OE", "strap": null, "wire": {"net": "gnd", "role": "a role"}});
+    assert_power(&refused(&v), Refusal::ControlPinUnwired, "U13");
+    let mut v = base();
+    reg(&mut v, "U10")["controls"][1] = json!({"pin": "PG", "strap": null, "wire": {"net": "PG_5V", "role": "the 5 V rail's power-good"}});
+    let c = conditions(&v, &table_json());
+    assert!(c.iter().any(|x| x.contains("U10: PG is declared wired to `PG_5V` (the 5 V rail's power-good)")));
 }

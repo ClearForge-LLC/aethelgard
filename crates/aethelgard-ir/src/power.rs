@@ -609,6 +609,21 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
                 "names no dielectric, or one twice".to_owned(),
             ));
         }
+        // A wider band keeping more, or two bands at one ratio, would make
+        // the verdict depend on the bands' order (adversarial F6).
+        let clash = power.conditions.dc_bias_derating[..i].iter().find(|e| {
+            e.dielectrics.iter().any(|k| d.dielectrics.contains(k))
+                && (e.ratio_max_permille == d.ratio_max_permille
+                    || (e.ratio_max_permille < d.ratio_max_permille)
+                        != (e.retained_permille > d.retained_permille)
+                        && e.retained_permille != d.retained_permille)
+        });
+        if clash.is_some() {
+            return Err(invalid(
+                &path,
+                "shares a dielectric with an earlier band at the same ratio, or keeps more over a wider ratio".to_owned(),
+            ));
+        }
         // A derating above 1 would raise capacitance under bias.
         if !(1..=1000).contains(&d.ratio_max_permille) || !(1..=1000).contains(&d.retained_permille)
         {
@@ -1878,7 +1893,7 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                         ));
                     }
                     ctx.note(format!(
-                        "{}: `{role}` holds {eff} pF effective at {w} mV under DC bias ({how}); it is screened against the {} pF minimum ({}), a margin of {}.{:02} times, typical, not guaranteed",
+                        "{}: `{role}` holds {eff} pF effective at {w} mV under DC bias ({how}), from rated capacitance before its tolerance; it is screened against the {} pF minimum ({}), a margin of {}.{:02} times, typical, not guaranteed",
                         o.reference,
                         min.value,
                         ctx.cite(&min.at),
@@ -2525,11 +2540,25 @@ fn effective(
         .min_by_key(|d| d.ratio_max_permille);
     match d {
         Some(d) => {
-            let pf = c.rated_picofarads.value * i64::from(d.retained_permille) / 1000;
+            let derated = c.rated_picofarads.value * i64::from(d.retained_permille) / 1000;
+            // The curve falls with voltage, so above the maker's last point
+            // the capacitance is at most that point's (adversarial F5).
+            if let Some((mv, last)) = c.dc_bias.last()
+                && last.value < derated
+            {
+                return Ok((
+                    last.value,
+                    format!(
+                        "{part}: {} pF, its maker's typical figure at {mv} mV, below the working voltage, which the declared derating may not exceed ({})",
+                        last.value,
+                        ctx.cite(&last.at)
+                    ),
+                ));
+            }
             Ok((
-                pf,
+                derated,
                 format!(
-                    "{part}: {pf} pF, {} per mille of its rating kept at {ratio} per mille of its rated voltage, by the declared derating",
+                    "{part}: {derated} pF, {} per mille of its rating kept at {ratio} per mille of its rated voltage, by the declared derating",
                     d.retained_permille
                 ),
             ))
@@ -2576,6 +2605,15 @@ fn bor_rising(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
 /// pins, each declared once, strapped as its row allows or wired to a named
 /// net with a stated role.
 fn controls(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
+    // Rails, ground and the battery, folded as KiCad folds labels.
+    let rails: BTreeSet<String> = ctx
+        .spec
+        .voltage_domains
+        .iter()
+        .map(|d| d.id.to_lowercase())
+        .chain([crate::GND, BATTERY_NET, BATTERY].map(str::to_lowercase))
+        .collect();
+    let mut wires = Vec::new();
     let owners = ctx
         .power
         .regulators
@@ -2646,9 +2684,22 @@ fn controls(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                         rule.pin, w.net
                     )));
                 }
+                (_, Some(w)) if rails.contains(&w.net.to_lowercase()) => {
+                    return Err(unwired(format!(
+                        "{} is wired to `{}`, a rail: a tie to a rail is a strap, which its row judges (adversarial F1, F3)",
+                        rule.pin, w.net
+                    )));
+                }
+                (_, Some(w)) => wires.push(format!(
+                    "{reference}: {} is declared wired to `{}` ({}); neither the net's driver nor its level is judged, and the board does not draw it (FEEDBACK D5)",
+                    rule.pin, w.net, w.role
+                )),
                 _ => {}
             }
         }
+    }
+    for w in wires {
+        ctx.note(w);
     }
     Ok(())
 }
