@@ -566,7 +566,10 @@ The adversary reported five tool calls the permission classifier refused in its 
   - The ICP's pressure words come from Renode's own calibration constants, not a datasheet scale, so the build does not judge pressure.
 - **D-A1 · Device `[ERROR]` lines.** Should a scripted device's `[ERROR]` fail its step by name as well as the run (`renode_error_log` today)? Either is a few lines.
 - **D-A8 · Rounding.** D3 says `round(g × sensitivity)`; the parts table rounds half away from zero. Renode's ICP truncates, so a stimulus whose conversion has a fraction of ½ or more expects one more than the model answers (30 °C: 28087 against 28086). Rule: keep `round` and choose stimuli the model agrees on (today's), or match each model's rounding in the twin.
-- **D-B5 · Specification version 4.** The ruling's `accept_lifecycle` is a required key, so the specification moved 3 → 4, as `board` (v2) and 4300c (v3) did. `4300a` also takes 4. The numbering rule applies, and its inbox has the note. The bump moved only the specification-hash lines of Sentinel-01's board crate, and the pinned solve and order digests.
+- **D-B5 · Specification version 5.**
+  - The ruling's `accept_lifecycle` is a required key, so the specification moved up a version, as `board` (v2) and 4300c (v3) did.
+  - `4300f` merged version 4 (`connectors`) first, so by the numbering rule this build took **5** in its merge of `main`. `4300a` takes the next free one, and its inbox has the note.
+  - The bump moved only Sentinel-01's board-crate specification-hash lines, the pinned solve and order digests, and the twin's reference hash.
 - **D-B6 · Refusals the ruling did not name:** an acknowledgement given twice, one for a part the board does not use as `eol`/`nrnd`, and a statement that is empty, whitespace, non-printable or over 512 bytes. The stand-in rule (A6) makes a stand-in always need an acknowledgement.
 
 ## Findings (build)
@@ -590,3 +593,34 @@ The adversary reported five tool calls the permission classifier refused in its 
 - `4200` F18: kinds 13 and 22 fitted to the event bound, one per step.
 - `4200` F22: device warnings judged per step, declared or failing.
 - `4200` F19: `IoOutsidePart` consumes the I/O range.
+
+## Gates (build)
+
+Run at the merge `4b3c73a` (main `091003f`, with `4300f`, `4220`, `4300d` and `1307` merged in), each on the host under `systemd-run --user --scope -p MemoryMax=24G -p MemorySwapMax=0`:
+- `cargo fmt --all -- --check`: ok.
+- `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings`: ok.
+- `cargo test --workspace`: 82 `test result: ok`, no failure. `AET-WO-1307`'s two `renamings_` routing tests (140 s each) were skipped locally; CI runs them.
+
+Tier 2, in the pinned image under `capped-run` (read-backs in `~/.cache/aet-4210/t2.log`):
+- The full suite ran at `908fce4`. Its five failures were each fixed and the five tests rerun green at `8c54b9f`:
+  - the two `attribute_seeded` gates (the seeded set's evidence indices moved +6 past the A2 registers, same rule and domain);
+  - the SPI-first droop (the probe now skips the flash's edge artefact through the judge's own filter);
+  - the reference boot's JSON (the `step` key);
+  - the fab package's specification-hash prefix.
+- `twin_tier2` ran green in full (28 tests).
+- CI is the gate for the merged tree.
+
+`TIER2_MIN`: 98 on `main` plus 4 (in `twin_tier2.rs`, minus 1 and plus 4; in `board_tier2.rs`, plus 1), so **102**.
+
+Reduction pass (diff): −11 net · 2 duplicates removed · 0 dead paths removed · 2 protected kept · 3 findings below. This was a fresh subagent's pass, `5e1f83e`:
+- **Removed:**
+  - the read-width mask, now one copy (`aethelgard_ir::parts::width_mask`);
+  - the I2C-then-SPI device chain, now `SolvedTopology::parts_in_order`.
+- **Kept, protected:** the judge's record layout and status codes (`boot.rs`), and the generator's copy of the value-word count (`firmware.rs`), now labelled `belt-and-suspenders:` (INV-07).
+- **Its two uncaught mutants now each fail a test** (`438d423`):
+  - drop the SPI devices from `parts_in_order`: `speeds_tier1`'s fixture test;
+  - set width 0's mask to all ones: twin's `a_two_byte_identity…`.
+- **Findings:**
+  - evolve keeps a third copy of the width mask, because it depends on neither ir nor twin;
+  - the parser's channel rounding was already one function;
+  - the generator's copy of the value-word count is deliberate.
