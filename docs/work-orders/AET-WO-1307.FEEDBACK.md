@@ -290,7 +290,11 @@ Before any build code, the spike's two probes (`s2-c-inward.patch` + `s3-order-b
 
 The same gate on the final binary (`409d7b7`'s tree) also exits 0 with no finding on the reference, `four`, D1, D3 and D1 at 2 layers (B5). The board sha256 prefixes are `59a8f1dc`, `455def47`, `72a43bee`, `d039f6cb` and `4651cfb4`. It is now held by a tier-2 test (B7).
 
-**Containers.** Every container this build ran used `--memory 8g --memory-swap 8g --pids-limit -1` and read back `memory.max=8589934592 memory.swap.max=0 pids.max=max`; `~/.cache/aet-1307/caps.log` holds each line. **Correction during the build:** until the architect's correction of kickoff rule 3 (2026-11-15), the runner also tried to write `0` into the container's `memory.swap.max` after start, as rule 3 then said. Furnace denies writes under `/sys/fs/cgroup`, and the correction removed the write. The runners (`~/.cache/aet-1307/{img,ci-img}.sh` and the adversary's) now only read back the three values and kill the container if `memory.swap.max` is not 0. Containers started before the correction: both K5 runs, the tenting export, and four CI-layout runs. The read-back from podman's own setting is recorded in B7.
+**Containers.** Every container this build ran used `--memory 8g --memory-swap 8g --pids-limit -1` and read back `memory.max=8589934592 memory.swap.max=0 pids.max=max`; `~/.cache/aet-1307/caps.log` holds each line. **Correction during the build:** until the architect's correction of kickoff rule 3 (2026-11-15), the runner also tried to write `0` into the container's `memory.swap.max` after start, as rule 3 then said. Furnace denies writes under `/sys/fs/cgroup`, and the correction removed the write. The runners (`~/.cache/aet-1307/{img,ci-img}.sh` and the adversary's) now only read back the three values and kill the container if `memory.swap.max` is not 0.
+- **Containers started before the correction** (each with the write, each reading back `memory.swap.max=0`): the two K5 runs, the tenting export, the final K5, the CI-layout build, the bridge build, the timed tier-2 test, and the tier-2 suites.
+- **After the correction, podman 5.7 does not set `memory.swap.max` to 0.** With equal `--memory 8g --memory-swap 8g` and no write, the adversary's only container read back `memory.max=8589934592 memory.swap.max=8589934592 pids.max=max`, and the runner killed it as the rule requires. This matches the Furnace global note (AET-WO-2101 F11: podman 5.7 writes `--memory-swap` into `memory.swap.max`).
+- **So no container could run under the corrected rule.** I did not work around it. The architect then **replaced rule 3** (`~/.cache/aet-bus/RULE3.md`, 03:40 UTC): a capped systemd user scope (`MemoryMax=8G`, `MemorySwapMax=0`, `TasksMax=8192`), the container in it via `podman run --cgroups=disabled` with no memory or pids flags, and the caps read (never written) inside the scope before the container.
+- **K5 again, under the replaced rule, on the final binary** (`~/.cache/aet-1307/img3.sh`). The scope read back `memory.max=8589934592 memory.swap.max=0 pids.max=8192`. ERC and DRC with parity exit 0 with no finding on the reference, `four`, D1, D3 and D1 at 2 layers, the boards after the A1 fix (board sha256 prefixes `59a8f1dc`, `ecd09af8`, `6d4e9d86`, `04b3f84f`, `4651cfb4`). Each DRC took 0.8–1.2 s.
 
 ## B2. K1: the inward escape and the via rules [read + measured]
 
@@ -334,13 +338,13 @@ The same gate on the final binary (`409d7b7`'s tree) also exits 0 with no findin
 - Mutants (B8): ordering by name (m8) and pads by reference (m9) each fail it.
 - **Spec-level** renaming, end to end with placement (`rename_spec.py`, seeds 0–19), information for K3:
 
-| routed of 20 | `main` (spike) | ruled probe (spike) | **build** |
-|---|---|---|---|
-| reference | 11 | 20 | **16** |
-| D1 | 9 | 19 | **18** |
-| D3 | – (never routed) | 13 | **16** |
+| routed of 20 | `main` (spike) | ruled probe (spike) | build `f798bc3` | **build, final (A1 fixed)** |
+|---|---|---|---|---|
+| reference | 11 | 20 | 16 | **16** |
+| D1 | 9 | 19 | 18 | **18** |
+| D3 | – (never routed) | 13 | 16 | **15** |
 
-  The reference's four failures (seeds 9, 11, 12, 17) are all `VDD_3V3: cannot reach U4 pad 8`. Under the courtyard rule, U4's supply pad has fewer via sites. The remaining failures are SCL/MOSI nets at sensor and flash pads. **The spec-level count for the reference is lower than the spike's ruled probe (20).** The cause is the courtyard rule (B2), so it is a finding for the backlog row on geometric placement (K3), not a stop.
+  The reference's four failures (seeds 9, 11, 12, 17) are all `VDD_3V3: cannot reach U4 pad 8`. Under the courtyard rule, U4's supply pad has fewer via sites. The remaining failures are SCL and MOSI nets at sensor and flash pads: final D3 fails at seeds 0, 7, 10, 11 and 16. None of the 60 reached the exact judge (`~/.cache/aet-1307/sweep-build2.tsv`). **The spec-level count for the reference is lower than the spike's ruled probe (20).** The cause is the courtyard rule (B2), so it is a finding for the backlog row on geometric placement (K3), not a stop.
 
 ## B4. The reproducers (K3) [measured]
 
@@ -364,9 +368,13 @@ On `main` (`34b4f8a`, release), the eight A6 cases and the two I2C A5 cases give
 
   Moves *into* a node were judged against laid copper, but a path's first node was not. A track could therefore start where a foreign track end already stood within clearance: a GND and a `VDD_3V3` F.Cu end at (0.125, 0.375) mm, 0.395 mm centre to centre, against 0.4 needed.
 - **The fix:** a source is priced exactly as a move is (free; soft, at `SOFT_COST`; or barred), and `blockers` counts the source as a step.
-- **The reproducer.** Mutant m1, the build minus only that pricing, makes **D3 itself** (unrenamed) reach the exact judge: "track F (109125000, 119625000)-(109875000, 119625000) (GND) is within 200000 nm of track F (110000000, 119000000)-…". That is the reproducer in the final tree.
-  - The ruling's candidates no longer discriminate there. Board-level D1 seed 16 collapses into order B's single geometry. Spec-level D3 seed 19 now fails on `/SCL1` instead.
-  - D3's emit is in `escape_tier1`'s D3 renaming tests, which assert it routes. m1 was first killed by a stackups `d3_routes_at_four_layers` case, which was then folded into those tests to save CI time; their emit fails the same way under m1.
+- **The reproducer**, found by mutant: the build minus only that pricing (m1).
+  - The ruling's candidates do not discriminate in the final tree. Board-level D1 seed 16 collapses into order B's single geometry. Spec-level D3 seed 19 now fails on `/SCL1`.
+  - At `f798bc3`, D3 itself reached the exact judge under m1. After the A1 fix (B10) it no longer does, and m1 survived the D3 tests: a guard had lost its test.
+  - The adversary's geometry sweep supplies the replacement. On the 4-layer fixture's board, each part of at most 8 pads is moved by a seeded offset (seeds 0–299, 57 skipped for overlap).
+    - The final build reaches the exact judge **0** times (`four` 0/243, D1 0/239). m1 reaches it 11 and 3 times.
+    - Every hit is a GND and a `VDD_3V3` F.Cu end within clearance (D1's: `/SCL3` against `/SDA3`).
+  - `escape_tier1::shifted_placements_route_without_reaching_the_exact_judge` holds seeds 5, 6, 12, 22 and 48 (1.2 s). Under m1 it fails: "seed 5: Unroutable { net: "", … GND … VDD_3V3 }". Evidence: `~/.cache/aet-1307/f2probe/`.
 - **The comment "no tested board reaches these" is true at the build:** no run of the sweep (60 spec-level renamings, 12 reproducers, 5 inputs) or of the tests reached the exact judge. The comment is kept.
 
 ## B7. K6: the zone judge, and the corpus [measured]
@@ -409,6 +417,19 @@ One mutant per guard this build adds, each run against the tests it lives in (`~
 | m10 | dense interior 3 mm | `the_dense_part_is_chosen_by_rule`, **after a fix**: the first form compared against the constant itself and let m10 survive; the threshold is now a literal |
 | m11 | exposed pad admitted | `the_dense_part_is_chosen_by_rule` |
 | m12 | no inward escape | D3's emit (`/SCK1` after 500 rip-ups) |
+| m13 | the router lets a ring via touch a pad (A1) | `a_via_in_the_ring_may_not_touch_even_its_own_nets_pad` |
+| m14 | `check` lets a via touch a pad (A1) | the same |
+| m15 | "touch" made strict (`<`, a tangent admitted) | the same (exact at the box) |
+| m16 | dangling ends not reported (A3) | `a_via_in_a_courtyard…` (the U4 pad-2 stub) |
+| m17 | an `fp_poly`'s non-`xy` points dropped (A2) | `reading_refuses_what_the_router_does_not_model` |
+| m18 | a courtyard edge twice accepted (A2) | the same |
+| m19 | an unclosed courtyard accepted (A2) | the same |
+| m20 | a footprint without a courtyard accepted (A2) | the same |
+
+**Re-run on the final tree** (`~/.cache/aet-1307/mutants2.out`): 17 killed at once. Three needed work:
+- **m1 survived.** Its D3 reproducer had gone with A1's fix. It is killed by the new F2 test (B6).
+- **m12 had to be re-anchored** after the reduction moved its line; it is then killed.
+- **m17 did not compile as first written.** As written now, it does compile and is killed.
 
 Every kill was checked to be a failed assertion, not a build failure.
 
@@ -427,3 +448,41 @@ Every kill was checked to be a failed assertion, not a build failure.
 - **Protected documents, findings only:**
   - `docs/architecture.md` §2.21 records D3 as needing escape planning;
   - the router's order is described by name wherever the steering documents state it [inferred: not re-read line by line].
+
+## B10. Adversarial pass (full; a fresh Opus subagent, on a frozen copy at `f798bc3`) [measured by the adversary; each fix measured by me]
+
+- **Harness and evidence:** `~/.cache/aet-1307-adv/` (`probe/…/examples/adv.rs`, `lies*.py`, `logs/`).
+- **KiCad did not run in the adversary's pass.** Its one container was stopped by the cap guard (B1), and a host `check drc` was denied by the permission classifier. Every "extract pass" below is therefore "DRC not run".
+
+| # | §5 | finding | severity | disposition |
+|---|---|---|---|---|
+| A1 | 2 / K1 | The router put vias **into U1's own pads** inside the ring. On `four`, D1 and D3, three VDD_3V3 vias overlap pads 144, 108 and 72 by 0.25 / 0.16 / 0.16 mm, and the drill cuts into the pad. The ring's opening lifted the field's via ban, and a same-net pad's claim admits its own net. Nothing refused it, against the ruling's "they must not touch any pad" and the WO's "not … via-in-pad". | **high** | **Fixed.** The router closes every via site in the ring whose copper touches any pad (any net), and `route::check` refuses a via that touches any pad anywhere ("via … touches U1 pad 144"). Outside rings the field rule already keeps vias clear, so the reference is byte-identical. `four`, D1 and D3 change (D3: 514 vias, routes in 4.1 s), and no via of any of them touches a pad (re-measured). `four`'s extract bounds are unchanged. Held by `route.rs::tests::a_via_in_the_ring_may_not_touch_even_its_own_nets_pad` (exact at the pad box; the router's node closed). Mutants m13–m15 are killed. |
+| A2 | 2 | Courtyard holes. A missing courtyard, every edge duplicated (even-odd cancels), an `fp_poly` with an `arc` in its `pts` (silently dropped, against `part()`'s own comment) and an unclosed outline all passed `extract`. A *shrunken* courtyard passed too. | medium | **Fixed, but for the shrunken case.** `part()` refuses: a footprint with copper pads and no courtyard; an edge twice (either direction); an outline that is not closed (a corner met an odd number of times); and anything but `xy` in an `fp_poly`'s points. Held by `reading_refuses_what_the_router_does_not_model`'s new cases; mutants m17–m20 are killed. **A shrunken but closed courtyard** can only be told from the library's, which is KiCad's `lib_footprint_mismatch` (unmeasured here). It is a named residual. |
+| A3 | 2 | Dangling stubs (an F.Cu stub off U4 pad 2; B.Cu stubs off a via) passed `extract`. `connectivity` required only that copper be one piece. | medium (conditional on DRC) | **Fixed.** `connectivity` refuses a track whose end joins none of its net's pads, vias or tracks: "…ends at (x, y), joined to nothing". It is reported after every other judgement, so earlier refusals keep their reasons. Held by `escape_tier1::a_via_in_a_courtyard…` (the U4 pad-2 stub); mutant m16 is killed. |
+| A4 | 3 | A board-level adversary (a 249 mm board, 4 LQFP-144 copies, 288 random two-pad nets, built as `route::Board`) fails closed after 500 rip-ups in 616 s (568 MB). | low/medium | **Residual, named.** It never hung, because `RIPUPS` bounds it. `emit` cannot produce this board: one MCU per specification, and the outline is the parts' box plus 2 mm. A wall-time bound on the router is a backlog question for the architect. |
+| A5 | 2 | `ring_interior` admits parts that are not quad rings: four single pads round a 6 mm interior, or a side's one stray pad up to 30 mm away. | low | **Residual.** It is the ruled rule as written ("pads on all four sides, ≥ 4 mm, no exposed pad"). Only the LQFP-144 qualifies among the vendored footprints, and the router places only vendored parts. Tightening it (a pad count per side) would change the ruled rule, so it is a question for the architect. |
+| A6 | 1 | Two same-net pads with one centre (nested) route under one `parts` order and fail closed at the exact judge under the other. | low | **Residual**, the case `net_pads`' comment names. It fails closed, and no vendored footprint overlaps pads. "No tested board reaches these" stays true of tested boards. |
+| A7 | 1/F2 | With F2's `blockers` first-step hunk reverted as well, nothing tells it apart. Its geometry sweep (B6) showed the exact judge reached by the sources-unpriced mutant, never by the build. | low | **Kept, named.** It is the soft search's counterpart to the source pricing (a path may start where it is not free, and that node's owner is a blocker). No test separates it. The sweep's seeds became F2's test (B6), which the source-pricing hunk alone already passes. |
+| A8 | 4 | `route::read` alone accepts a `keepout` zone, a `filled_polygon` and quoted numbers in `xy`. `extract` refuses the first two (UnmodelledCopper). | info | **No change.** K6 says `filled_polygon` is not read. Zone type and token form belong to the strict reader (AET-WO-1306) in front of every gate. |
+| I1 | 1 | Spec-level random renamings: `Unroutable` for the reference 1 of 98, D1 2/45, D3 9/29, D3 net-only 1/22. | info | K3 (placement order, backlog). |
+
+**Withstood** (the adversary's evidence):
+- **§5.1, board level.** Renamings, reversed/empty/control-character/1 KB names, and parts, pads and pad numbers reversed or rotated give identical copper on the reference, `four`, D1 and D3.
+- **F2.** Over geometry sweeps (`four` 300 seeds, D1 100), the build reached the exact judge 0 times; the sources-unpriced mutant 13 and 2 times.
+- **The courtyard predicate.** It agreed with an independent exact oracle on 140,288 points, tangency ±1 nm included.
+- **The ring.** Another part's courtyard inside U1's ring refuses a via there.
+- **§5.3, the escape plan's own attacks** (alternating plane pins, plane/plane/signal patterns) fail closed in 6–15 s or route.
+- **§5.4.** Every zone variant is refused by name (smaller, larger, offset, extra or duplicated points, zero area, bow-tie, diagonal, holed, `arc`, two `pts`, three-value `xy`), and the legitimate rotations and reversals are accepted.
+
+## B11. Reduction pass (diff)
+
+Reduction pass (diff): −3 net (`bae55aa`) · 1 duplicate removed (`ring_interior` computed in two per-part loops of `Router::new`; one loop now; boards byte-identical; m2 still killed) · 1 dead path dropped before commit (an in-fill exemption for dangling ends, written with A3's fix, which router output never reaches and no test told apart; refusing such a hand-made board is fail-closed) · 0 protected kept · 2 findings (`escape_tier1`'s helpers repeat `stackups_tier1`'s, the house pattern per test file, and `common::verify`'s helpers log 3301's `ANSWER` lines, so reuse would be a mismatch; `crates/aethelgard-cli/README.md` line 578, B9).
+
+## B12. Gates and CI
+
+- **Host gates** (every run under a capped user scope): `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings`, `cargo test --workspace`.
+- **The first build CI run, at `ccb8dbc`** (run 43667202095): green.
+  - Shards: 14m30s, 13m49s, 11m49s, 13m57s, 13m17s, **15m28s** (shard 5), 13m28s, 14m31s; `gates` 10m03s.
+  - The aggregate: `tier2_tests_passed=97 floor=97`. `TIER2_MIN` is exact.
+- **Local tier-2 in the image** (before the cap correction): `with_tools` 24/24, the new test included (8.75 s alone). Also green: `against_fab_tier2`, `verify_2k2_tier2`, `verify_47k_tier2`, `adversarial_1301_tools` and `adversarial_1302_tools`, plus `board_tier2`'s corpus, four-layer, against-fab, swapped-board and identifier tests.
+

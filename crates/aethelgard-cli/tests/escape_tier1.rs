@@ -194,6 +194,49 @@ fn renamings_10_to_19_route_d3_to_its_own_copper() {
     one_geometry("d3b", D3, 10..20);
 }
 
+/// F2's reproducer (adversarial A7; FEEDBACK B6): the 4-layer fixture's
+/// board with each part of at most 8 pads moved by a seeded offset, whole
+/// pitches plus, for some seeds, a part of one (the adversary's sweep, seeds
+/// 5, 6, 12, 22 and 48; none of them varies the rules). With a
+/// search's sources unpriced, as before this work order, each of these
+/// reaches the router's exact judge (a GND and a `VDD_3V3` F.Cu end within
+/// the clearance); with them priced, each routes.
+#[test]
+fn shifted_placements_route_without_reaching_the_exact_judge() {
+    let (board, _, _) = emitted("f2", FOUR);
+    for seed in [5u64, 6, 12, 22, 48] {
+        let mut b = board.clone();
+        let mut z = seed * 7919 + 1;
+        for p in &mut b.parts {
+            z = mix(z);
+            if p.pads.len() > 8 {
+                continue;
+            }
+            let part = |shift: u32, on: bool| {
+                if on {
+                    ((z >> shift) % 125_000) as i64
+                } else {
+                    0
+                }
+            };
+            let dx = ((z % 9) as i64 - 4) * 125_000 + part(8, seed % 3 == 1);
+            let dy = (((z >> 16) % 9) as i64 - 4) * 125_000 + part(24, seed % 3 == 2);
+            for pad in &mut p.pads {
+                pad.rect = aethelgard_eda::pcb::Rect {
+                    x0: pad.rect.x0 + dx,
+                    y0: pad.rect.y0 + dy,
+                    x1: pad.rect.x1 + dx,
+                    y1: pad.rect.y1 + dy,
+                };
+            }
+            for e in &mut p.courtyard {
+                *e = ((e.0.0 + dx, e.0.1 + dy), (e.1.0 + dx, e.1.1 + dy));
+            }
+        }
+        route::route(&b).unwrap_or_else(|e| panic!("seed {seed}: {e:?}"));
+    }
+}
+
 /// Ruled K3: the exact reproducers of `1102` A6 (`FLASH_CS` renamed `nCS`,
 /// `cs`, `Z`, `a`, `~`, `_X`, `U`; the six bus nets renamed `N0`…`N5` in the
 /// reference's own order, §4 deviation 4) and of `2204` A5 (the references
@@ -351,7 +394,7 @@ fn a_zone_that_is_not_the_board_outline_is_refused_by_name() {
 /// a via whose copper enters any part's courtyard elsewhere is refused by
 /// `route::check`, the exact judge the router and `extract` run, naming the
 /// part. The rule is copper, exactly: a via tangent to the courtyard passes,
-/// 1 nm nearer fails.
+/// 1 nm nearer fails. A stub that joins nothing is refused too (WO §5.2).
 #[test]
 fn a_via_in_a_courtyard_is_refused_but_in_the_dense_parts_own_ring() {
     let (board, _, _) = emitted("courtyard", SPEC);
@@ -377,6 +420,22 @@ fn a_via_in_a_courtyard_is_refused_but_in_the_dense_parts_own_ring() {
     let centre = ((left + right) / 2, mid);
     let e = route::check(&board, &only(centre)).unwrap_err();
     assert!(e.contains("is in U4's courtyard"), "{e}");
+    // Adversarial A3: a stub that leaves U4's pad 2 and joins nothing is
+    // refused by the router's own judge (`connectivity`), by name.
+    let (_, routed, _) = emitted("stub", SPEC);
+    let pad = u4.pads.iter().find(|p| p.number == "2").unwrap();
+    let ((x0, y0), (x1, y1)) = ((pad.rect.x0, pad.rect.y0), (pad.rect.x1, pad.rect.y1));
+    let from = ((x0 + x1) / 2, (y0 + y1) / 2);
+    let mut stub = routed.clone();
+    route::connectivity(&board, &stub).unwrap();
+    stub.segments.push(route::Segment {
+        net: pad.net.clone().unwrap(),
+        layer: route::Layer::F,
+        start: from,
+        end: (from.0 + 1_000_000, from.1),
+    });
+    let e = route::connectivity(&board, &stub).unwrap_err();
+    assert!(e.contains("joined to nothing"), "{e}");
     let tangent = (right + route::VIA_NM / 2, mid);
     route::check(&board, &only(tangent)).unwrap();
     let e = route::check(&board, &only((tangent.0 - 1, mid))).unwrap_err();

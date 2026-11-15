@@ -484,6 +484,12 @@ fn near(edges: &[Edge], p: (i64, i64), r: i64) -> bool {
     })
 }
 
+/// True when a via centred at `p` touches `pad`'s copper (its box), exactly.
+fn touches(pad: &Pad, p: (i64, i64)) -> bool {
+    let r = VIA_NM / 2;
+    gap2(pad.rect, Rect::point(p.0, p.1)) <= r * r
+}
+
 /// True when a via centred at `p` puts copper in `part`'s courtyard, outside
 /// the part's own ring interior `hole` (K1).
 fn in_courtyard(part: &Part, hole: Option<Rect>, p: (i64, i64)) -> bool {
@@ -567,6 +573,14 @@ impl<'a> Router<'a> {
             for node in grid.nodes(field.grow(VIA_NM / 2 + board.s())) {
                 if !own(node) {
                     via[node] = BLOCKED;
+                }
+            }
+            // In the ring, a via of any net touches no pad (K1: no via in pad).
+            for pad in &part.pads {
+                for node in grid.nodes(pad.rect.grow(VIA_NM / 2)) {
+                    if own(node) && touches(pad, grid.at(node)) {
+                        via[node] = BLOCKED;
+                    }
                 }
             }
             for pad in &part.pads {
@@ -1706,8 +1720,9 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
 /// Every pair of copper items on a shared layer, of different nets (a pad
 /// with no net differs from everything), keeps the declared clearance; every
 /// track and via keeps [`EDGE_NM`] from the edge; holes keep
-/// [`HOLE_GAP_NM`]; tracks run along an axis; no via's copper is in a part's
-/// courtyard, but inside that part's own ring interior (`AET-WO-1307` K1).
+/// [`HOLE_GAP_NM`]; tracks run along an axis; no via touches a pad of any
+/// net, and no via's copper is in a part's courtyard, but inside that part's
+/// own ring interior (`AET-WO-1307` K1).
 pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
     let all = items(board, routed);
     for (i, a) in all.iter().enumerate() {
@@ -1753,6 +1768,14 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
         }
     }
     for part in &board.parts {
+        for pad in &part.pads {
+            if let Some(v) = routed.vias.iter().find(|v| touches(pad, v.at)) {
+                return Err(format!(
+                    "via {:?} ({}) touches {} pad {}",
+                    v.at, v.net, part.reference, pad.number
+                ));
+            }
+        }
         let hole = ring_interior(part);
         if let Some(v) = routed.vias.iter().find(|v| in_courtyard(part, hole, v.at)) {
             return Err(format!(
@@ -1788,27 +1811,34 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
     let mut via_layers: BTreeMap<(i64, i64), [bool; 3]> = BTreeMap::new();
     let first_seg = all.len() - routed.segments.len() - routed.vias.len();
     let first_via = all.len() - routed.vias.len();
+    // A track's end that joins nothing, reported after every other judgement.
+    let mut dangling = None;
     for (si, s) in routed.segments.iter().enumerate() {
         let a = first_seg + si;
+        // Each end must join its net's pad, via or track (`AET-WO-1307`
+        // §5.2: a stub that joins nothing is an escape lie).
+        let mut end_joined = [false; 2];
         for (j, b) in all.iter().enumerate() {
             if j == a || b.net != Some(s.net.as_str()) || !b.layers[s.layer.index()] {
                 continue;
             }
-            let joined = if j < first_seg {
-                // A pad: the track ends inside its copper.
-                let pad = &board.parts.iter().flat_map(|p| &p.pads).nth(j);
-                pad.is_some_and(|p| {
-                    ends(s)
-                        .iter()
-                        .any(|&e| p.inner().contains(Rect::point(e.0, e.1)))
-                })
-            } else {
-                ends(s).iter().any(|&e| b.shape.holds(e))
-                    || (j < first_via && {
-                        let o = &routed.segments[j - first_seg];
-                        ends(o).iter().any(|&e| all[a].shape.holds(e))
-                    })
-            };
+            let mut joined = false;
+            for (k, &e) in ends(s).iter().enumerate() {
+                let here = if j < first_seg {
+                    // A pad: the track ends inside its copper.
+                    let pad = &board.parts.iter().flat_map(|p| &p.pads).nth(j);
+                    pad.is_some_and(|p| p.inner().contains(Rect::point(e.0, e.1)))
+                } else {
+                    b.shape.holds(e)
+                };
+                end_joined[k] |= here;
+                joined |= here;
+            }
+            joined = joined
+                || (j >= first_seg && j < first_via && {
+                    let o = &routed.segments[j - first_seg];
+                    ends(o).iter().any(|&e| all[a].shape.holds(e))
+                });
             if joined {
                 let (ra, rb) = (find(&mut parent, a), find(&mut parent, j));
                 parent[ra] = rb;
@@ -1817,6 +1847,18 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
                         true;
                 }
             }
+        }
+        if let Some(k) = end_joined.iter().position(|j| !j)
+            && dangling.is_none()
+        {
+            dangling = Some(format!(
+                "{}: track {:?} {:?}-{:?} ends at {:?}, joined to nothing",
+                s.net,
+                s.layer,
+                s.start,
+                s.end,
+                ends(s)[k]
+            ));
         }
     }
 
@@ -1961,7 +2003,7 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
             ));
         }
     }
-    Ok(())
+    dangling.map_or(Ok(()), Err)
 }
 
 // ---- reading a board ----
@@ -2080,13 +2122,37 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
             "fp_poly" => {
                 let pts = one(&g, "pts")?.ok_or_else(|| format!("{what}: no `pts`"))?;
                 let c = pts
-                    .all("xy")
-                    .map(|xy| xy_of(Some(xy), &what).map(at))
+                    .lists()
+                    .map(|xy| match xy.head() {
+                        Some("xy") => xy_of(Some(xy), &what).map(at),
+                        h => Err(format!(
+                            "{what}: a `{}` in its points is not modelled",
+                            h.unwrap_or("()")
+                        )),
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 courtyard.extend((0..c.len()).map(|i| (c[i], c[(i + 1) % c.len()])));
             }
             _ => return Err(format!("{what} is not modelled")),
         }
+    }
+    // The outline is judged by crossings, so it must be one closed outline
+    // with no edge twice: every corner met by an even number of edges, and no
+    // edge repeated in either direction.
+    let mut corners: BTreeMap<(i64, i64), usize> = BTreeMap::new();
+    let mut seen = BTreeSet::new();
+    for &(a, b) in &courtyard {
+        *corners.entry(a).or_default() += 1;
+        *corners.entry(b).or_default() += 1;
+        if !seen.insert((a.min(b), a.max(b))) {
+            return Err(format!("{reference}'s courtyard has an edge twice"));
+        }
+    }
+    if corners.values().any(|n| n % 2 == 1) {
+        return Err(format!("{reference}'s courtyard is not a closed outline"));
+    }
+    if courtyard.is_empty() && !pads.is_empty() {
+        return Err(format!("{reference} has copper pads and no courtyard"));
     }
     Ok(Part {
         reference,
@@ -2476,6 +2542,38 @@ mod tests {
         assert_eq!(ring_interior(&ring(9, 5 * MM, 4, true)), None);
     }
 
+    /// K1, adversarial A1: in a dense part's ring a via touches no pad, its
+    /// own net's included (no via in pad); exactly, at the pad's box.
+    #[test]
+    fn a_via_in_the_ring_may_not_touch_even_its_own_nets_pad() {
+        let mut part = ring(9, 5 * MM, 4, false);
+        for p in &mut part.pads {
+            p.net = Some("/P".into());
+        }
+        let board = Board {
+            outline: rect(0, 0, 100 * MM, 100 * MM),
+            parts: vec![part],
+            stack: crate::stack::reference(),
+        };
+        let hole = ring_interior(&board.parts[0]).unwrap();
+        let via = |x: i64| Routed {
+            vias: vec![Via {
+                net: "/P".into(),
+                at: (x, 50 * MM),
+            }],
+            ..Routed::default()
+        };
+        check(&board, &via(hole.x0 + VIA_NM / 2 + 1)).unwrap();
+        let e = check(&board, &via(hole.x0 + VIA_NM / 2)).unwrap_err();
+        assert!(e.contains("touches U pad"), "{e}");
+        // The router never sites one there: the node 0.25 mm in from the pad
+        // is closed to vias, while one clear of every pad is open.
+        let r = Router::new(&board, Grid::new(board.outline).unwrap(), vec!["/P".into()]);
+        let node = |x: i64| r.grid.nodes(Rect::point(x, 50 * MM)).next().unwrap();
+        assert_eq!(r.via[node(hole.x0 + 250_000)], BLOCKED);
+        assert_eq!(r.via[node(50 * MM)], FREE);
+    }
+
     /// The courtyard predicates are exact: on the outline is under it; a via
     /// tangent to it is clear, 1 nm nearer is not.
     #[test]
@@ -2697,9 +2795,10 @@ mod tests {
     /// What the router does not model is refused when read, never guessed.
     #[test]
     fn reading_refuses_what_the_router_does_not_model() {
+        let yard = "(fp_rect (start -1 -1) (end 1 1) (layer \"F.CrtYd\"))";
         let fp = |at: &str, pad: &str| {
             crate::sexpr::parse(&format!(
-                "(footprint \"x\" (at {at}) (property \"Reference\" \"R1\") {pad})"
+                "(footprint \"x\" (at {at}) (property \"Reference\" \"R1\") {pad} {yard})"
             ))
             .unwrap()
         };
@@ -2730,6 +2829,42 @@ mod tests {
         ] {
             let e = part_of(&fp(at, pad)).unwrap_err();
             assert!(e.contains(want), "{pad}: {e}");
+        }
+        // K1's courtyard is read exactly or refused (adversarial A2).
+        let with = |yard: &str| {
+            crate::sexpr::parse(&format!(
+                "(footprint \"x\" (at 1 2) (property \"Reference\" \"R1\") {smd} {yard})"
+            ))
+            .unwrap()
+        };
+        let line =
+            |a: &str, b: &str| format!("(fp_line (start {a}) (end {b}) (layer \"F.CrtYd\"))");
+        let square = [
+            line("-1 -1", "1 -1"),
+            line("1 -1", "1 1"),
+            line("1 1", "-1 1"),
+            line("-1 1", "-1 -1"),
+        ];
+        assert_eq!(part_of(&with(&square.concat())).unwrap().courtyard.len(), 4);
+        for (yard, want) in [
+            (String::new(), "no courtyard"),
+            (square[..3].concat(), "not a closed outline"),
+            (format!("{}{}", square.concat(), square[0]), "an edge twice"),
+            (
+                format!("{}{}", square.concat(), line("1 -1", "-1 -1")),
+                "an edge twice",
+            ),
+            (
+                "(fp_poly (pts (xy -1 -1) (arc (start 1 -1) (mid 1.4 0) (end 1 1)) (xy -1 1)) (layer \"F.CrtYd\"))".into(),
+                "`arc` in its points",
+            ),
+            (
+                "(fp_circle (center 0 0) (end 1 0) (layer \"F.CrtYd\"))".into(),
+                "not modelled",
+            ),
+        ] {
+            let e = part_of(&with(&yard)).unwrap_err();
+            assert!(e.contains(want), "{yard}: {e}");
         }
         let board = |copper: &str| {
             strict::board(&format!(

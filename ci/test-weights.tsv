@@ -262,3 +262,4 @@ tests/escape_tier1.rs	the_reproducers_of_1102_a6_and_2204_a5_route	23.800
 tests/escape_tier1.rs	a_zone_that_is_not_the_board_outline_is_refused_by_name	2.800
 tests/escape_tier1.rs	a_via_in_a_courtyard_is_refused_but_in_the_dense_parts_own_ring	2.100
 tests/with_tools.rs	d3_and_d1_pass_erc_and_drc_with_parity_at_four_layers	24.500
+tests/escape_tier1.rs	shifted_placements_route_without_reaching_the_exact_judge	3.300
