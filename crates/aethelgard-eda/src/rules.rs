@@ -53,6 +53,11 @@ pub struct Rules {
     /// Each declared class and pair's own rules (`AET-WO-1308`), none without
     /// a specification.
     pub classes: Vec<ClassRules>,
+    /// Each declared thermal array's via (`AET-WO-1309`), none without a
+    /// specification. A through-hole join is not a KiCad rule: KiCad's
+    /// refill ignores a custom `zone_connection` (measured, FEEDBACK B2), so
+    /// the pad carries it and `route::check` judges it.
+    pub arrays: Vec<crate::stack::ThermalPad>,
 }
 
 /// One class's or pair's rules, by the board's net names: its tracks exactly
@@ -74,7 +79,11 @@ impl Rules {
     /// The rules a specification declares (`board.rules`): its clearance and
     /// track width, each at or above the floor once `validate` has passed.
     pub fn from_specification(spec: &Specification) -> Rules {
-        let stack = crate::stack::Stack::of(spec);
+        Rules::from_stack(&crate::stack::Stack::of(spec))
+    }
+
+    /// The same from the declared board itself.
+    pub fn from_stack(stack: &crate::stack::Stack) -> Rules {
         let classes = stack
             .classes
             .iter()
@@ -96,6 +105,7 @@ impl Rules {
             clearance_nm: stack.clearance_nm,
             min_track_width_nm: Some(stack.width_nm),
             classes,
+            arrays: stack.thermal.clone(),
         }
     }
 
@@ -107,6 +117,7 @@ impl Rules {
             clearance_nm: FLOOR_NM,
             min_track_width_nm: None,
             classes: Vec::new(),
+            arrays: Vec::new(),
         }
     }
 
@@ -192,6 +203,21 @@ impl Rules {
                 ));
             }
         }
+        // A thermal array's vias exactly as its rule sizes them: the vias in
+        // its part's courtyard, where no other via of any net may stand
+        // (`route::check`). These come after the classes, so they win. Count
+        // and sites are not KiCad's to judge; `route::check` compares them
+        // with the rule.
+        for t in &self.arrays {
+            out.push_str(&format!(
+                "(rule \"thermal_{r}_{p}\"\n\t(condition \"A.Type == 'Via' && A.intersectsCourtyard('{r}')\")\n\t(constraint via_diameter (min {d}mm) (max {d}mm))\n\t(constraint hole_size (min {h}mm) (max {h}mm))\n\t(constraint annular_width (min {a}mm)))\n",
+                r = t.reference,
+                p = t.pad,
+                d = mm(t.via_nm),
+                h = mm(t.drill_nm),
+                a = mm((t.via_nm - t.drill_nm) / 2),
+            ));
+        }
         out
     }
 }
@@ -207,6 +233,7 @@ mod tests {
     #[test]
     fn the_specification_sets_every_minimum_and_kicad_default_only_the_net_class() {
         let spec = Rules {
+            arrays: Vec::new(),
             source: Source::Specification,
             clearance_nm: FLOOR_NM,
             min_track_width_nm: Some(FLOOR_NM),
@@ -239,6 +266,7 @@ mod tests {
     #[test]
     fn a_class_writes_its_exact_width_and_via() {
         let rules = Rules {
+            arrays: Vec::new(),
             source: Source::Specification,
             clearance_nm: FLOOR_NM,
             min_track_width_nm: Some(FLOOR_NM),
@@ -263,6 +291,7 @@ mod tests {
         assert!(dru.starts_with("(version 1)\n(rule \"specification_clearance\""));
         // No class: the file is today's, byte for byte.
         let none = Rules {
+            arrays: Vec::new(),
             classes: Vec::new(),
             ..rules
         };
@@ -284,6 +313,7 @@ mod tests {
         for rules in [
             Rules::kicad_default(),
             Rules {
+                arrays: Vec::new(),
                 source: Source::Specification,
                 clearance_nm: FLOOR_NM,
                 min_track_width_nm: Some(FLOOR_NM),

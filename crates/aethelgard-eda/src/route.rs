@@ -76,9 +76,13 @@ pub const DRILL_NM: i64 = 300_000;
 /// project (measured: "board setup constraints edge clearance 0.5000 mm").
 pub const EDGE_NM: i64 = 500_000;
 /// Hole to hole: KiCad's default minimum.
-pub const HOLE_GAP_NM: i64 = 250_000;
+pub const HOLE_GAP_NM: i64 = aethelgard_ir::thermal::HOLE_GAP_UM as i64 * 1000;
 /// The zone's minimum width, as the zone states it.
 pub const MIN_THICKNESS_NM: i64 = 250_000;
+/// A relieved pad's gap to the fill and its spokes' width, as the zone
+/// states them (`thermal_gap`, `thermal_bridge_width`).
+pub const THERMAL_GAP_NM: i64 = 500_000;
+pub const THERMAL_BRIDGE_NM: i64 = 500_000;
 /// The net the B.Cu zone carries at 2 layers, and one plane at 4.
 pub const GROUND: &str = crate::schematic::GND;
 /// How many nets may be taken up, in all, to make way for others.
@@ -140,19 +144,29 @@ impl Layer {
     }
 }
 
-/// A front SMD pad's copper: its box (a superset of a rounded rectangle)
-/// and the rounding radius.
+/// A pad's copper: its box (a superset of a rounded rectangle) and the
+/// rounding radius. A front SMD pad has no drill; a through-hole pad
+/// (`AET-WO-1309`) has the same copper on every copper layer, around a round
+/// plated hole at its centre.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pad {
     pub number: String,
     pub net: Option<String>,
     pub rect: Rect,
     pub corner_nm: i64,
+    pub drill_nm: Option<i64>,
+    /// A through-hole pad's own `zone_connect`: how KiCad's fill meets it.
+    /// The engine writes the declared join there, because KiCad 10.0.7's
+    /// refill takes it from the pad and not from a custom rule (measured,
+    /// FEEDBACK B2); `check` requires exactly the declared one.
+    pub join: Option<crate::stack::Join>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Part {
     pub reference: String,
+    /// The footprint's rotation: 0, 90, 180 or 270 ([`rotate`]).
+    pub rotation: u16,
     pub pads: Vec<Pad>,
     /// The front courtyard's outline, as straight edges in board
     /// coordinates; empty for a footprint with none.
@@ -218,6 +232,8 @@ pub struct Routed {
     pub vias: Vec<Via>,
     /// Each zone's net and KiCad layer name; its outline is the board's.
     pub zones: Vec<(String, String)>,
+    /// The thermal-via arrays under declared pads (`AET-WO-1309` §1.2).
+    pub arrays: Vec<Array>,
     /// How many nets were taken up and routed again (not read back from a
     /// board).
     pub ripups: usize,
@@ -230,6 +246,18 @@ impl Routed {
             .map(|s| (s.end.0 - s.start.0).abs() + (s.end.1 - s.start.1).abs())
             .sum()
     }
+}
+
+/// A thermal-via array: the pad it is under, its net and its vias' centres,
+/// sorted. Each via is drilled and sized as the pad's declared rule says.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Array {
+    pub reference: String,
+    pub pad: String,
+    pub net: String,
+    pub via_nm: i64,
+    pub drill_nm: i64,
+    pub at: Vec<(i64, i64)>,
 }
 
 /// A net the router could not complete, and why.
@@ -373,19 +401,28 @@ fn claim(map: &mut [u32], grid: &Grid, shape: Shape, reach: i64, owner: u32) {
     }
 }
 
-/// Hole to hole, centre to centre, for vias drilled by `a` and `b`.
-fn hole_pitch(a: Rule, b: Rule) -> i64 {
-    a.drill_nm / 2 + b.drill_nm / 2 + HOLE_GAP_NM
+/// Hole to hole, centre to centre, for holes drilled `a` and `b` nm.
+fn hole_pitch(a: i64, b: i64) -> i64 {
+    a / 2 + b / 2 + HOLE_GAP_NM
 }
 /// The same with the grid's margin.
 fn hole_reach(a: Rule, b: Rule) -> i64 {
-    hole_pitch(a, b) + EPS_NM
+    hole_pitch(a.drill_nm, b.drill_nm) + EPS_NM
 }
 
 /// A pad of a net, by part and pad index.
 type PadRef = (usize, usize);
 /// A grid state: (layer, node).
 type Node = (Layer, usize);
+
+/// A fixed piece of a filled net's copper that the fill must reach
+/// (`AET-WO-1309`): a through-hole pad, by its declared join, or a thermal
+/// array's via.
+#[derive(Clone, Copy, Debug)]
+enum Anchor {
+    Pad(PadRef, crate::stack::Join),
+    Via((i64, i64)),
+}
 
 /// Why a net stopped: nets whose copper is in the way, or nothing to do.
 enum Stuck {
@@ -427,6 +464,11 @@ struct Router<'a> {
     banned: BTreeSet<usize>,
     /// Whether searches may not change layer: a pair's breakouts (§1.3).
     no_vias: bool,
+    /// Fixed copper on every layer, with its net: through-hole pads and
+    /// thermal-array vias. It cuts every other net's fill.
+    cuts: Vec<(Option<usize>, Shape)>,
+    /// Per net, the fixed copper its fill must reach.
+    anchors: Vec<Vec<Anchor>>,
     /// Per net, whether its copper is a coupled pair's, which no other net
     /// takes up: a pair is laid first and whole.
     fixed: Vec<bool>,
@@ -435,6 +477,187 @@ struct Router<'a> {
     cost: Vec<u32>,
     prev: Vec<u8>,
     generation: u16,
+}
+
+// ---- through-hole joins and thermal arrays (`AET-WO-1309`) ----
+
+/// Whether `net` is filled: ground's B.Cu zone at 2 layers, a plane at 4.
+fn filled(stack: &crate::stack::Stack, net: &str) -> bool {
+    if stack.has_planes() {
+        stack.plane_of(net).is_some()
+    } else {
+        net == GROUND
+    }
+}
+
+/// How `part`'s through-hole pads join a fill of their own net, as the
+/// specification declares; a pad of a filled net with none is refused.
+/// Each through-hole pad of a part with a declared join carries it as its
+/// own `zone_connect`, and no other pad carries one; a pad of a filled net
+/// with none declared is refused (`INV-06`).
+fn join_of(board: &Board, part: &Part, pad: &Pad) -> Result<Option<crate::stack::Join>, String> {
+    if pad.drill_nm.is_none() {
+        return Ok(None);
+    }
+    let what = format!("{} pad {}", part.reference, pad.number);
+    let declared = board
+        .stack
+        .joins
+        .iter()
+        .find(|(r, _)| *r == part.reference)
+        .map(|&(_, j)| j);
+    if pad.join != declared {
+        return Err(format!(
+            "{what} joins a fill {:?} by its own `zone_connect`; the specification declares {declared:?}",
+            pad.join
+        ));
+    }
+    let Some(net) = pad.net.as_deref().filter(|n| filled(&board.stack, n)) else {
+        return Ok(None);
+    };
+    declared.map(Some).ok_or_else(|| {
+        format!(
+            "{what} is a through-hole pad on {net}, which is filled, and the specification declares no join for {}",
+            part.reference
+        )
+    })
+}
+
+/// True when a disc of radius `r` at `c` lies inside `pad`'s copper.
+fn fits(pad: &Pad, c: (i64, i64), r: i64) -> bool {
+    let (corner, at) = (pad.corner_nm, Rect::point(c.0, c.1));
+    if corner >= r {
+        gap2(pad.inner(), at) <= (corner - r) * (corner - r)
+    } else {
+        pad.inner().grow(corner - r).contains(at)
+    }
+}
+
+/// Every declared thermal array at its sites on this board: `columns` x
+/// `rows` vias `pitch` apart, centred on the pad, turned with the footprint.
+/// Refused by name: a declared pad that is not exactly one SMD pad of one
+/// part, a footprint that carries vias of its own under it (KiCad's
+/// `_ThermalVias` footprints do, as through-hole pads of the same number),
+/// a pad with no net, a rule layer that is not a fill of the pad's net, and
+/// a site whose via would leave the pad's copper.
+pub fn arrays(board: &Board) -> Result<Vec<Array>, String> {
+    let mut out: Vec<Array> = Vec::new();
+    for t in &board.stack.thermal {
+        let what = format!("{} pad {}", t.reference, t.pad);
+        let parts: Vec<&Part> = board
+            .parts
+            .iter()
+            .filter(|p| p.reference == t.reference)
+            .collect();
+        let [part] = parts.as_slice() else {
+            return Err(format!(
+                "the specification declares a thermal array under {what}, and the board has {} parts {}",
+                parts.len(),
+                t.reference
+            ));
+        };
+        let numbered: Vec<&Pad> = part.pads.iter().filter(|p| p.number == t.pad).collect();
+        let own: Vec<i64> = numbered.iter().filter_map(|p| p.drill_nm).collect();
+        if !own.is_empty() {
+            return Err(format!(
+                "{what}: the footprint carries {} vias of its own (drills {own:?} nm), which contradict the declared array of {} x {} drilled {} nm",
+                own.len(),
+                t.columns,
+                t.rows,
+                t.drill_nm
+            ));
+        }
+        let [pad] = numbered.as_slice() else {
+            return Err(format!(
+                "{what}: {} SMD pads of that number",
+                numbered.len()
+            ));
+        };
+        let net = pad
+            .net
+            .clone()
+            .ok_or_else(|| format!("{what} has no net"))?;
+        for l in &t.layers {
+            let fill = board.stack.plane_of_layer(l) == Some(net.as_str())
+                || (!board.stack.has_planes() && l == "B.Cu" && net == GROUND);
+            if !fill {
+                return Err(format!(
+                    "{what}: the rule's layer {l} is not a fill of {net}"
+                ));
+            }
+        }
+        if out
+            .iter()
+            .any(|a| a.reference == t.reference && a.pad == t.pad)
+        {
+            return Err(format!("{what}: two arrays are declared under it"));
+        }
+        let (cx, cy) = pad.rect.centre();
+        let offset = |i: usize, n: usize| (2 * i as i64 - (n as i64 - 1)) * t.pitch_nm / 2;
+        let mut at = Vec::new();
+        for j in 0..t.rows {
+            for i in 0..t.columns {
+                let (dx, dy) = rotate(part.rotation, (offset(i, t.columns), offset(j, t.rows)));
+                let c = (cx + dx, cy + dy);
+                if !fits(pad, c, t.via_nm / 2) {
+                    return Err(format!(
+                        "{what}: the array's via at {c:?} leaves the pad's copper; the rule cannot be met on this footprint"
+                    ));
+                }
+                at.push(c);
+            }
+        }
+        at.sort();
+        out.push(Array {
+            reference: t.reference.clone(),
+            pad: t.pad.clone(),
+            net,
+            via_nm: t.via_nm,
+            drill_nm: t.drill_nm,
+            at,
+        });
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// Where a pad of a filled net meets the fill's sure copper `core`: solid,
+/// at a node of its own copper ring outside the hole; relieved, at the ring
+/// past its relief gap, every node of which must be sure fill so that a
+/// spoke at any angle lands in it (FEEDBACK F5).
+fn meets(grid: &Grid, core: &[bool], pad: &Pad, join: crate::stack::Join) -> Option<usize> {
+    let (cx, cy) = pad.rect.centre();
+    match join {
+        crate::stack::Join::Solid => {
+            let hole = pad.drill_nm.unwrap_or(0) / 2 + EPS_NM;
+            grid.nodes(pad.rect).find(|&n| {
+                let (x, y) = grid.at(n);
+                core[n]
+                    && fits(pad, (x, y), 0)
+                    && (x - cx) * (x - cx) + (y - cy) * (y - cy) > hole * hole
+            })
+        }
+        crate::stack::Join::Relief => {
+            let lo = THERMAL_GAP_NM + MIN_THICKNESS_NM / 2 + EPS_NM;
+            let hi = lo + 2 * PITCH_NM;
+            let ring: Vec<usize> = grid
+                .nodes(pad.rect.grow(hi))
+                .filter(|&n| {
+                    let (x, y) = grid.at(n);
+                    let d2 = gap2(pad.rect, Rect::point(x, y));
+                    d2 >= lo * lo && d2 <= hi * hi
+                })
+                .collect();
+            ring.iter()
+                .all(|&n| core[n])
+                .then(|| ring.first().copied())?
+        }
+    }
+}
+
+/// The node nearest a point that need not lie on the grid.
+fn nearest(grid: &Grid, (x, y): (i64, i64)) -> Option<usize> {
+    grid.nodes(Rect::point(x, y).grow(PITCH_NM / 2)).next()
 }
 
 /// The dense part's ring interior (`AET-WO-1307` K1, the build's rule): the
@@ -538,7 +761,7 @@ fn opens(o: u32, who: u32) -> bool {
 }
 
 impl<'a> Router<'a> {
-    fn new(board: &'a Board, grid: Grid, nets: Vec<String>) -> Router<'a> {
+    fn new(board: &'a Board, grid: Grid, nets: Vec<String>, arrays: &[Array]) -> Router<'a> {
         let n = grid.len();
         let count = nets.len();
         // One set of maps per distinct rule: each is the board's arithmetic
@@ -581,16 +804,58 @@ impl<'a> Router<'a> {
             .map(|(i, n)| (n.as_str(), i))
             .collect();
         let net_of = |pad: &Pad| pad.net.as_deref().and_then(|n| index.get(n).copied());
-        for part in &board.parts {
-            for pad in &part.pads {
+        let mut cuts = Vec::new();
+        let mut anchors = vec![Vec::new(); count];
+        // A drilled hole keeps every via's hole the gap away.
+        let hole = |via: &mut Vec<Vec<u32>>, at: (i64, i64), drill: i64| {
+            let centre = Shape {
+                rect: Rect::point(at.0, at.1),
+                r: 0,
+            };
+            for (k, r) in kinds.iter().enumerate() {
+                let reach = hole_pitch(drill, r.drill_nm) + EPS_NM;
+                claim(&mut via[k], &grid, centre, reach, BLOCKED);
+            }
+        };
+        for array in arrays {
+            let net = index.get(array.net.as_str()).copied();
+            let who = net.map_or(BLOCKED, owner);
+            for &at in &array.at {
+                let shape = Shape {
+                    rect: Rect::point(at.0, at.1),
+                    r: array.via_nm / 2,
+                };
+                for (k, &r) in kinds.iter().enumerate() {
+                    claim(&mut track[k][1], &grid, shape, board.track_reach(r), who);
+                    claim(&mut via[k], &grid, shape, board.via_reach(r), who);
+                }
+                hole(&mut via, at, array.drill_nm);
+                cuts.push((net, shape));
+                if let Some(n) = net {
+                    anchors[n].push(Anchor::Via(at));
+                }
+            }
+        }
+        for (pi, part) in board.parts.iter().enumerate() {
+            for (i, pad) in part.pads.iter().enumerate() {
                 let who = net_of(pad).map_or(BLOCKED, owner);
                 let shape = Shape {
                     rect: pad.rect,
                     r: 0,
                 };
+                let layers = if pad.drill_nm.is_some() { 2 } else { 1 };
                 for (k, &r) in kinds.iter().enumerate() {
-                    claim(&mut track[k][0], &grid, shape, board.track_reach(r), who);
+                    for t in &mut track[k][..layers] {
+                        claim(t, &grid, shape, board.track_reach(r), who);
+                    }
                     claim(&mut via[k], &grid, shape, board.via_reach(r), who);
+                }
+                if let Some(d) = pad.drill_nm {
+                    hole(&mut via, pad.rect.centre(), d);
+                    cuts.push((net_of(pad), shape));
+                    if let (Some(n), Ok(Some(join))) = (net_of(pad), join_of(board, part, pad)) {
+                        anchors[n].push(Anchor::Pad((pi, i), join));
+                    }
                 }
             }
             // No via's copper in the courtyard, but in the part's own ring (K1).
@@ -688,6 +953,8 @@ impl<'a> Router<'a> {
             history: [vec![0; n], vec![0; n]],
             banned: BTreeSet::new(),
             no_vias: false,
+            cuts,
+            anchors,
             fixed: vec![false; count],
             stamp: vec![0; 2 * n * 5],
             cost: vec![0; 2 * n * 5],
@@ -798,6 +1065,24 @@ impl<'a> Router<'a> {
             .nodes(pad.inner())
             .filter(|&n| self.hard_open(Layer::F, n, net))
             .collect()
+    }
+
+    /// The same as states, on B.Cu as well for a through-hole pad.
+    fn ends(&self, pad: &Pad, net: usize) -> Vec<Node> {
+        let mut out: Vec<Node> = self
+            .terminals(pad, net)
+            .into_iter()
+            .map(|n| (Layer::F, n))
+            .collect();
+        if pad.drill_nm.is_some() {
+            out.extend(
+                self.grid
+                    .nodes(pad.inner())
+                    .filter(|&n| self.hard_open(Layer::B, n, net))
+                    .map(|n| (Layer::B, n)),
+            );
+        }
+        out
     }
 
     /// The cheapest path from any source to a node `goal` accepts, inside
@@ -1177,14 +1462,14 @@ impl<'a> Router<'a> {
     /// A signal net: a tree grown from its first pad.
     fn route_net(&mut self, net: usize, pads: &[PadRef]) -> Result<(), Stuck> {
         let first = pads[0];
-        let start = self.terminals(self.pad(first), net);
+        let start = self.ends(self.pad(first), net);
         if start.is_empty() {
             return Err(Stuck::Unroutable(format!(
                 "{} has no node clear to start a track",
                 self.pad_name(first)
             )));
         }
-        let mut tree: BTreeSet<Node> = start.iter().map(|&n| (Layer::F, n)).collect();
+        let mut tree: BTreeSet<Node> = start.into_iter().collect();
         let mut remaining: Vec<PadRef> = pads[1..].to_vec();
         while !remaining.is_empty() {
             // The pad nearest the tree, then the first in order.
@@ -1207,13 +1492,14 @@ impl<'a> Router<'a> {
                 .ok_or_else(|| Stuck::Unroutable("no pad left".into()))?;
             let target = remaining.remove(k);
             let name = self.pad_name(target);
-            let ends = self.terminals(self.pad(target), net);
-            if ends.is_empty() {
+            let states = self.ends(self.pad(target), net);
+            if states.is_empty() {
                 return Err(Stuck::Unroutable(format!(
                     "{name} has no node clear to end a track"
                 )));
             }
-            let set: BTreeSet<usize> = ends.iter().copied().collect();
+            let set: BTreeSet<Node> = states.iter().copied().collect();
+            let ends: Vec<usize> = states.iter().map(|&(_, n)| n).collect();
             let bx = self.grid.span(&ends).unwrap_or_default();
             let bx = (bx.0 as i64, bx.1 as i64, bx.2 as i64, bx.3 as i64);
             let h = move |node: usize| {
@@ -1222,7 +1508,7 @@ impl<'a> Router<'a> {
                 let dy = (bx.2 - y).max(y - bx.3).max(0);
                 u32::try_from(dx + dy).unwrap_or(u32::MAX / 4) * STEP_F
             };
-            let goal = |l: Layer, n: usize| l == Layer::F && set.contains(&n);
+            let goal = |l: Layer, n: usize| set.contains(&(l, n));
             let sources: Vec<Node> = tree.iter().copied().collect();
             let mut window_ends = ends.clone();
             window_ends.push(from);
@@ -1236,7 +1522,7 @@ impl<'a> Router<'a> {
                     tree.insert((Layer::B, n));
                 }
             }
-            tree.extend(ends.iter().map(|&n| (Layer::F, n)));
+            tree.extend(states);
         }
         Ok(())
     }
@@ -1255,6 +1541,21 @@ impl<'a> Router<'a> {
         let mut joined: BTreeSet<usize> = BTreeSet::new();
         for &p in pads {
             let name = self.pad_name(p);
+            // The fill reaches a through-hole pad itself, by its declared
+            // join, and a pad over a thermal array through the array's vias
+            // (`AET-WO-1309`): neither needs a track to a via.
+            let part = &self.board.parts[p.0];
+            join_of(self.board, part, self.pad(p)).map_err(Stuck::Unroutable)?;
+            if self.pad(p).drill_nm.is_some()
+                || self
+                    .board
+                    .stack
+                    .thermal
+                    .iter()
+                    .any(|t| t.reference == part.reference && t.pad == self.pad(p).number)
+            {
+                continue;
+            }
             let ends = self.terminals(self.pad(p), net);
             if ends.is_empty() {
                 return Err(Stuck::Unroutable(format!(
@@ -1283,19 +1584,20 @@ impl<'a> Router<'a> {
     /// of `ground`, the stitched net; otherwise the nets whose copper fences
     /// it apart. Every node on such a fence costs B.Cu searches more from now
     /// on.
-    fn zone_blockers(&mut self, ground: usize) -> Option<BTreeSet<usize>> {
-        let seeds: Vec<usize> = self
+    fn zone_blockers(&mut self, ground: usize) -> Result<Option<BTreeSet<usize>>, String> {
+        let core = self.zone_core(ground);
+        let mut seeds: Vec<usize> = self
             .vias
             .iter()
             .filter(|&(_, &net)| net == ground)
             .map(|(&n, _)| n)
             .collect();
-        let core = self.zone_core(ground);
+        seeds.extend(self.anchor_seeds(ground, &core)?);
         let labels = components(&self.grid, &core, &seeds);
         // The piece holding the most ground vias, then the first, is the zone.
         let main = main_label(&labels);
         if labels.iter().all(|l| l.is_some() && *l == main) {
-            return None;
+            return Ok(None);
         }
         let mut fence = BTreeSet::new();
         let mut seen = vec![false; self.grid.len()];
@@ -1328,7 +1630,7 @@ impl<'a> Router<'a> {
             let here = Rect::point(x, y);
             out.extend(self.contest(here, shadow, reach, [false, true], ground, None));
         }
-        Some(out)
+        Ok(Some(out))
     }
 
     /// The nodes the stitched net's fill is sure to cover: at least the
@@ -1361,8 +1663,35 @@ impl<'a> Router<'a> {
                         rect: Rect::point(x, y),
                         r: self.rule(net).via_nm / 2,
                     }
-                }),
+                })
+                .chain(
+                    self.cuts
+                        .iter()
+                        .filter(|(n, _)| *n != Some(ground))
+                        .map(|&(_, s)| s),
+                ),
         )
+    }
+
+    /// The nodes where `net`'s fixed copper meets its fill's sure copper
+    /// `core`, or the first piece that meets it nowhere.
+    fn anchor_seeds(&self, net: usize, core: &[bool]) -> Result<Vec<usize>, String> {
+        self.anchors[net]
+            .iter()
+            .map(|a| match *a {
+                Anchor::Via(at) => nearest(&self.grid, at)
+                    .ok_or_else(|| format!("a thermal via at {at:?} is off the grid")),
+                Anchor::Pad(p, join) => {
+                    meets(&self.grid, core, self.pad(p), join).ok_or_else(|| {
+                        format!(
+                            "{} meets the {} nowhere it is sure to be filled ({join:?})",
+                            self.pad_name(p),
+                            zone_name(&self.board.stack, &self.nets[net])
+                        )
+                    })
+                }
+            })
+            .collect()
     }
 
     /// The copper as segments: each net's unit edges merged into straight
@@ -1625,15 +1954,10 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
         )
     })?;
     let pads = net_pads(board);
-    // The stitched nets: ground at 2 layers (the B.Cu zone); at 4, each plane's
-    // net. Their stitching is laid before any net is tracked.
-    let is_stitched = |n: &str| {
-        if board.stack.has_planes() {
-            board.stack.planes.iter().any(|(_, p)| p == n)
-        } else {
-            n == GROUND
-        }
-    };
+    // The stitched nets, the filled ones: ground at 2 layers (the B.Cu zone);
+    // at 4, each plane's net. Their stitching is laid before any net is
+    // tracked.
+    let is_stitched = |n: &str| filled(&board.stack, n);
     // Order B: each net's index is its rank by (stitched first, pad count,
     // its pads' centres), the name last; so is every choice made by index.
     let mut nets: Vec<String> = pads.keys().cloned().collect();
@@ -1653,7 +1977,8 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
         .filter(|&i| pads[i].len() > 1 && !nets[i].starts_with(crate::parity::UNCONNECTED))
         .collect();
     let stitched: Vec<usize> = (0..nets.len()).filter(|&i| is_stitched(&nets[i])).collect();
-    let mut r = Router::new(board, grid, nets.clone());
+    let arrays = arrays(board).map_err(|why| fail("", why))?;
+    let mut r = Router::new(board, grid, nets.clone(), &arrays);
     // Each declared pair first, whole, on the bare board (`AET-WO-1308`):
     // its copper is fixed, and its nets leave the queue. A board with no
     // pair is routed as before.
@@ -1717,11 +2042,12 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
         // Each stitched net's fill must be one piece holding its vias.
         let mut split = None;
         for &g in &stitched {
-            if r.vias.values().any(|v| *v == g)
-                && let Some(by) = r.zone_blockers(g)
-            {
-                split = Some((g, by));
-                break;
+            if r.vias.values().any(|v| *v == g) || !r.anchors[g].is_empty() {
+                let by = r.zone_blockers(g).map_err(|why| fail(&nets[g], why))?;
+                if let Some(by) = by {
+                    split = Some((g, by));
+                    break;
+                }
             }
         }
         let Some((g, by)) = split else {
@@ -1732,7 +2058,10 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
                     .iter()
                     .map(|(l, n)| (n.clone(), l.clone()))
                     .collect()
-            } else if stitched.iter().any(|g| r.vias.values().any(|v| v == g)) {
+            } else if stitched
+                .iter()
+                .any(|&g| r.vias.values().any(|&v| v == g) || !r.anchors[g].is_empty())
+            {
                 vec![(GROUND.to_owned(), "B.Cu".to_owned())]
             } else {
                 Vec::new()
@@ -1776,6 +2105,7 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
             .into_iter()
             .collect(),
         zones,
+        arrays,
         ripups,
     };
     // belt-and-suspenders: the grid's margins already keep the copper clear
@@ -2467,7 +2797,20 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
                     rect: pad.rect,
                     r: 0,
                 },
-                layers: [true, false],
+                layers: [true, pad.drill_nm.is_some()],
+            });
+        }
+    }
+    for a in &routed.arrays {
+        for &at in &a.at {
+            out.push(Item {
+                what: format!("thermal via {at:?} under {} pad {}", a.reference, a.pad),
+                net: Some(&a.net),
+                shape: Shape {
+                    rect: Rect::point(at.0, at.1),
+                    r: a.via_nm / 2,
+                },
+                layers: [true, true],
             });
         }
     }
@@ -2522,10 +2865,9 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
     }
     let o = board.outline;
     let inner = o.grow(-EDGE_NM);
-    for item in all
-        .iter()
-        .filter(|i| i.what.starts_with("track") || i.what.starts_with("via"))
-    {
+    for item in all.iter().filter(|i| {
+        i.what.starts_with("track") || i.what.starts_with("via") || i.what.starts_with("thermal")
+    }) {
         if !inner.contains(item.shape.rect.grow(item.shape.r)) {
             return Err(format!("{} is within {EDGE_NM} nm of the edge", item.what));
         }
@@ -2538,12 +2880,80 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
             ));
         }
     }
-    for (i, a) in routed.vias.iter().enumerate() {
-        for b in &routed.vias[i + 1..] {
-            let need = hole_pitch(board.rule(&a.net), board.rule(&b.net));
-            if gap2(Rect::point(a.at.0, a.at.1), Rect::point(b.at.0, b.at.1)) < need * need {
-                return Err(format!("vias {:?} and {:?} are too close", a.at, b.at));
+    // Every drilled hole, edge to edge: vias, thermal vias and through-hole
+    // pads (`AET-WO-1309`).
+    let holes: Vec<((i64, i64), i64)> = routed
+        .vias
+        .iter()
+        .map(|v| (v.at, board.rule(&v.net).drill_nm))
+        .chain(
+            routed
+                .arrays
+                .iter()
+                .flat_map(|a| a.at.iter().map(|&at| (at, a.drill_nm))),
+        )
+        .chain(
+            board
+                .parts
+                .iter()
+                .flat_map(|p| &p.pads)
+                .filter_map(|p| Some((p.rect.centre(), p.drill_nm?))),
+        )
+        .collect();
+    for (i, &(a, da)) in holes.iter().enumerate() {
+        for &(b, db) in &holes[i + 1..] {
+            let need = hole_pitch(da, db);
+            if gap2(Rect::point(a.0, a.1), Rect::point(b.0, b.1)) < need * need {
+                return Err(format!("holes at {a:?} and {b:?} are too close"));
             }
+        }
+    }
+    // Each thermal array exactly as its declared rule places it, and none
+    // other; each through-hole pad of a filled net with a declared join.
+    // The gate writes each declared reference and pad into a KiCad rule
+    // between single quotes: only a literal KiCad reads as written may be
+    // named there (the `AET-WO-1308` A1 lesson).
+    let literal = |s: &str| {
+        !s.is_empty()
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'+' | b'.'))
+    };
+    let names = board.stack.joins.iter().map(|(r, _)| r).chain(
+        board
+            .stack
+            .thermal
+            .iter()
+            .flat_map(|t| [&t.reference, &t.pad]),
+    );
+    for name in names {
+        if !literal(name) {
+            return Err(format!(
+                "`{name}` is named in a gate rule, and is not a plain literal"
+            ));
+        }
+    }
+    let want = arrays(board)?;
+    if routed.arrays != want {
+        return Err(array_disagrees(&want, &routed.arrays));
+    }
+    for part in &board.parts {
+        for pad in &part.pads {
+            join_of(board, part, pad)?;
+        }
+    }
+    // Every declared join is a part's on the board, with a through-hole pad
+    // (`INV-06`; `AET-WO-1309` adversarial F9).
+    for (reference, _) in &board.stack.joins {
+        let has = board
+            .parts
+            .iter()
+            .filter(|p| p.reference == *reference)
+            .flat_map(|p| &p.pads)
+            .any(|p| p.drill_nm.is_some());
+        if !has {
+            return Err(format!(
+                "the specification declares a join for {reference}, and the board has no through-hole pad of {reference}"
+            ));
         }
     }
     for part in &board.parts {
@@ -2574,6 +2984,47 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
     Ok(())
 }
 
+/// Why the board's thermal arrays are not the declared ones: the first pad
+/// whose array differs, by count, drill, size or sites.
+fn array_disagrees(want: &[Array], got: &[Array]) -> String {
+    let key = |a: &Array| (a.reference.clone(), a.pad.clone());
+    for g in got {
+        let Some(w) = want.iter().find(|w| key(w) == key(g)) else {
+            return format!(
+                "{} pad {} carries {} thermal vias, and the specification declares no array there",
+                g.reference,
+                g.pad,
+                g.at.len()
+            );
+        };
+        let what = format!("{} pad {}'s thermal array", w.reference, w.pad);
+        if g.at.len() != w.at.len() {
+            return format!(
+                "{what} has {} vias; the rule declares {}",
+                g.at.len(),
+                w.at.len()
+            );
+        }
+        if (g.via_nm, g.drill_nm) != (w.via_nm, w.drill_nm) {
+            return format!(
+                "{what}: vias {}/{} nm; the rule declares {}/{} nm",
+                g.via_nm, g.drill_nm, w.via_nm, w.drill_nm
+            );
+        }
+        if let Some(at) = g.at.iter().find(|at| !w.at.contains(at)) {
+            return format!("{what}: a via at {at:?} is not at a site the rule's pitch gives");
+        }
+        if g.net != w.net {
+            return format!("{what} is on {}; its pad is on {}", g.net, w.net);
+        }
+    }
+    let w = want
+        .iter()
+        .find(|w| !got.iter().any(|g| key(g) == key(w)))
+        .map_or_else(String::new, |w| format!("{} pad {}", w.reference, w.pad));
+    format!("{w} has no thermal array; the specification declares one")
+}
+
 /// Every routed net's copper is one piece, as KiCad joins it: a track's end
 /// inside a pad's copper, a via, or another track of the net; a stitched
 /// net's vias by its fill, judged by the area the fill is sure to cover: at 2
@@ -2598,6 +3049,8 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
     let mut via_layers: BTreeMap<(i64, i64), [bool; 3]> = BTreeMap::new();
     let first_seg = all.len() - routed.segments.len() - routed.vias.len();
     let first_via = all.len() - routed.vias.len();
+    // Items: every pad, then every thermal via, then tracks, then vias.
+    let pad_count: usize = board.parts.iter().map(|p| p.pads.len()).sum();
     // A track's end that joins nothing, reported after every other judgement.
     let mut dangling = None;
     for (si, s) in routed.segments.iter().enumerate() {
@@ -2611,7 +3064,7 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
             }
             let mut joined = false;
             for (k, &e) in ends(s).iter().enumerate() {
-                let here = if j < first_seg {
+                let here = if j < pad_count {
                     // A pad: the track ends inside its copper.
                     let pad = &board.parts.iter().flat_map(|p| &p.pads).nth(j);
                     pad.is_some_and(|p| p.inner().contains(Rect::point(e.0, e.1)))
@@ -2649,6 +3102,32 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
         }
     }
 
+    // Each thermal via is joined to the pad it is under; the fill must
+    // join it too (below).
+    let pad_item = |reference: &str, number: &str| {
+        board
+            .parts
+            .iter()
+            .flat_map(|p| p.pads.iter().map(move |pad| (p, pad)))
+            .position(|(p, pad)| p.reference == reference && pad.number == number)
+    };
+    let mut k = pad_count;
+    let mut thermal: Vec<(usize, &Array, (i64, i64))> = Vec::new();
+    for a in &routed.arrays {
+        let pad = pad_item(&a.reference, &a.pad).ok_or_else(|| {
+            format!(
+                "a thermal array under {} pad {}, which the board does not have",
+                a.reference, a.pad
+            )
+        })?;
+        for &at in &a.at {
+            let (ra, rb) = (find(&mut parent, k), find(&mut parent, pad));
+            parent[ra] = rb;
+            thermal.push((k, a, at));
+            k += 1;
+        }
+    }
+    let mut thermal_joined = vec![false; thermal.len()];
     let stack = &board.stack;
     let declared: Vec<(String, String)> = if stack.has_planes() {
         stack
@@ -2688,11 +3167,60 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
                     rect: span(s.start, s.end),
                     r: board.rule(&s.net).width_nm / 2,
                 }),
-            routed.vias.iter().filter(|v| v.net != *net).map(|v| Shape {
-                rect: Rect::point(v.at.0, v.at.1),
-                r: board.rule(&v.net).via_nm / 2,
-            }),
+            routed
+                .vias
+                .iter()
+                .filter(|v| v.net != *net)
+                .map(|v| Shape {
+                    rect: Rect::point(v.at.0, v.at.1),
+                    r: board.rule(&v.net).via_nm / 2,
+                })
+                // Fixed copper on every layer cuts every other net's fill.
+                .chain(
+                    thermal
+                        .iter()
+                        .filter(|(_, a, _)| a.net != *net)
+                        .map(|&(_, a, at)| Shape {
+                            rect: Rect::point(at.0, at.1),
+                            r: a.via_nm / 2,
+                        }),
+                )
+                .chain(
+                    board
+                        .parts
+                        .iter()
+                        .flat_map(|p| &p.pads)
+                        .filter(|p| p.drill_nm.is_some() && p.net.as_deref() != Some(net.as_str()))
+                        .map(|p| Shape { rect: p.rect, r: 0 }),
+                ),
         );
+        // The fill's anchors: this net's thermal vias and its through-hole
+        // pads by their declared joins, each where it meets sure fill.
+        let mut anchors: Vec<(usize, usize)> = Vec::new();
+        for (t, &(item, a, at)) in thermal.iter().enumerate() {
+            if a.net == *net {
+                let node = nearest(&grid, at).ok_or("a thermal via is off the grid")?;
+                anchors.push((item, node));
+                thermal_joined[t] = true;
+            }
+        }
+        let mut pi = 0;
+        for part in &board.parts {
+            for pad in &part.pads {
+                if pad.net.as_deref() == Some(net.as_str())
+                    && let Some(join) = join_of(board, part, pad)?
+                {
+                    let node = meets(&grid, &core, pad, join).ok_or_else(|| {
+                        format!(
+                            "{} pad {} meets the {layer} fill of {net} nowhere it is sure to be filled ({join:?})",
+                            part.reference, pad.number
+                        )
+                    })?;
+                    anchors.push((pi, node));
+                }
+                pi += 1;
+            }
+        }
         let stitched: Vec<usize> = (0..routed.vias.len())
             .filter(|&i| routed.vias[i].net == *net)
             .collect();
@@ -2706,12 +3234,28 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
         if seeds.contains(&usize::MAX) {
             return Err(format!("a {net} via is off the grid"));
         }
-        if !b_cu && stitched.is_empty() {
+        if !b_cu && stitched.is_empty() && anchors.is_empty() {
             return Err(format!(
                 "the {layer} plane of {net} reaches no via: no pad draws from it"
             ));
         }
-        let labels = components(&grid, &core, &seeds);
+        let mut all_seeds = seeds.clone();
+        all_seeds.extend(anchors.iter().map(|&(_, n)| n));
+        let labels = components(&grid, &core, &all_seeds);
+        let main = labels.first().copied().flatten();
+        for (k, &(item, node)) in anchors.iter().enumerate() {
+            let label = labels[stitched.len() + k];
+            if label.is_none() || label != main {
+                return Err(format!(
+                    "the {layer} fill of {net} does not reach {} at {:?}",
+                    all[item].what,
+                    grid.at(node)
+                ));
+            }
+            let root = stitched.first().map_or(anchors[0].0, |&i| first_via + i);
+            let (ra, rb) = (find(&mut parent, item), find(&mut parent, root));
+            parent[ra] = rb;
+        }
         for (k, &i) in stitched.iter().enumerate() {
             if labels[k].is_none() || labels[k] != labels[0] {
                 let fill = if b_cu {
@@ -2733,6 +3277,12 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
             );
             parent[ra] = rb;
         }
+    }
+    if let Some(t) = thermal_joined.iter().position(|j| !j) {
+        return Err(format!(
+            "{} joins no fill of its net",
+            all[thermal[t].0].what
+        ));
     }
     for v in &routed.vias {
         let met = via_layers
@@ -2847,9 +3397,12 @@ pub fn angle(at: Option<&str>) -> Option<u16> {
 }
 
 /// A placed footprint's copper pads, in board coordinates. Only front SMD
-/// pads at a right angle, rectangular or rounded, on a footprint at a right
-/// angle ([`rotate`]), are modelled; anything else is refused, never
-/// approximated.
+/// pads and plated through-hole pads (`AET-WO-1309`: `*.Cu`, one round
+/// drill at the pad's centre, the same copper on every layer), at a right
+/// angle, rectangular or rounded, on a footprint at a right angle
+/// ([`rotate`]), are modelled; anything else is refused, never approximated.
+/// A through-hole pad that sets its own plane join, relief or padstack is
+/// refused: how it meets a fill is the specification's (FEEDBACK F5).
 pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
     let reference = fp
         .field("Reference")
@@ -2873,11 +3426,22 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
             .filter(|l| l.ends_with(".Cu"))
             .collect();
         if copper.is_empty() {
+            // A hole with no copper still cuts every layer it passes:
+            // not modelled, so refused (`AET-WO-1309` adversarial F1).
+            if one(&pad, "drill")?.is_some() {
+                return Err(format!("{what} is a drilled hole with no copper"));
+            }
             continue;
         }
-        if pad.arg(2) != Some("smd") || copper != ["F.Cu"] {
-            return Err(format!("{what} is not a front SMD pad"));
-        }
+        let (drill_nm, join) = match (pad.arg(2), copper.as_slice()) {
+            (Some("smd"), ["F.Cu"]) if one(&pad, "drill")?.is_none() => (None, None),
+            (Some("thru_hole"), ["*.Cu"]) => through_hole(&pad, &what)?,
+            _ => {
+                return Err(format!(
+                    "{what} is neither a front SMD pad nor a plated through-hole pad on *.Cu"
+                ));
+            }
+        };
         let pat = one(&pad, "at")?;
         let angle = pat.as_ref().and_then(|a| a.arg(3)).unwrap_or("0");
         let (px, py) = rotate(theta, xy_of(pat, &what)?);
@@ -2910,7 +3474,12 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
                 y1: cy + h - h / 2,
             },
             corner_nm: corner,
+            drill_nm,
+            join,
         });
+        if drill_nm.is_some_and(|d| d >= w.min(h)) {
+            return Err(format!("{what}: its drill leaves no copper ring"));
+        }
     }
     // The front courtyard, as straight edges; an arc or circle in it is not
     // modelled and is refused, never approximated.
@@ -2973,9 +3542,58 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
     }
     Ok(Part {
         reference,
+        rotation: theta,
         pads,
         courtyard,
     })
+}
+
+/// A plated through-hole pad's drill (one round hole at the pad's centre,
+/// with every layer's copper kept) and its `zone_connect`: 2 solid, 1
+/// relief, or none. Any token by which the pad would set its own relief,
+/// padstack or unused-layer removal is refused.
+fn through_hole(
+    pad: &strict::Node<'_>,
+    what: &str,
+) -> Result<(Option<i64>, Option<crate::stack::Join>), String> {
+    let join = match one(pad, "zone_connect")?.map(|z| (z.arg(1), z.arg(2))) {
+        None => None,
+        Some((Some(t), None)) if let Some(j) = crate::stack::Join::of_token(t) => Some(j),
+        Some(other) => return Err(format!("{what} has `zone_connect` {other:?}")),
+    };
+    for token in [
+        "thermal_gap",
+        "thermal_width",
+        "thermal_bridge_width",
+        "thermal_bridge_angle",
+        "padstack",
+        "keep_end_layers",
+        "clearance",
+        "backdrill",
+        "tertiary_drill",
+        "front_post_machining",
+        "back_post_machining",
+    ] {
+        if one(pad, token)?.is_some() {
+            return Err(format!("{what} sets its own `{token}`"));
+        }
+    }
+    if let Some(r) = one(pad, "remove_unused_layers")?
+        && (r.arg(1) != Some("no") || r.arg(2).is_some())
+    {
+        return Err(format!("{what} removes its unused layers"));
+    }
+    let drill = one(pad, "drill")?.ok_or_else(|| format!("{what} has no drill"))?;
+    if drill.arg(2).is_some() || drill.lists().count() != 0 {
+        return Err(format!(
+            "{what}: only a round drill at its centre is modelled"
+        ));
+    }
+    let d = nm_at(&drill, 1, what)?;
+    if d <= 0 {
+        return Err(format!("{what}: drill {d} nm"));
+    }
+    Ok((Some(d), join))
 }
 
 /// True when `zone`'s outline is the board's (`AET-WO-1307` K6, 4100 F7):
@@ -3234,6 +3852,21 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
             _ => String::new(),
         })
     };
+    // The pads the specification puts a thermal array under (`AET-WO-1309`):
+    // a via whose centre is in one is that array's, judged by its rule in
+    // `check`, never by its own size.
+    let under: Vec<(&str, &str, Rect)> = stack
+        .thermal
+        .iter()
+        .flat_map(|t| {
+            parts
+                .iter()
+                .filter(move |p| p.reference == t.reference)
+                .flat_map(|p| &p.pads)
+                .filter(move |p| p.number == t.pad && p.drill_nm.is_none())
+                .map(move |p| (t.reference.as_str(), t.pad.as_str(), p.rect))
+        })
+        .collect();
     let mut routed = Routed::default();
     for s in board.all("segment") {
         let width = one(&s, "width")?
@@ -3256,11 +3889,59 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
         });
     }
     for v in board.all("via") {
+        // The engine's via holds these and nothing else: a backdrill or a
+        // machining token would cut its hole off a layer the judges join it
+        // on (`AET-WO-1309` adversarial F2).
+        for child in v.lists() {
+            let head = child.head().unwrap_or("");
+            if !matches!(head, "at" | "size" | "drill" | "layers" | "net" | "uuid") {
+                return Err(format!("a via has `{head}`, which the gate does not model"));
+            }
+        }
         let size = one(&v, "size")?.map(|w| nm_at(&w, 1, "via")).transpose()?;
         let drill = one(&v, "drill")?.map(|w| nm_at(&w, 1, "via")).transpose()?;
         let layers: Vec<&str> = one(&v, "layers")?
             .map(|l| l.texts().collect())
             .unwrap_or_default();
+        let at = xy_of(one(&v, "at")?, "via")?;
+        if let Some(&(reference, pad, _)) = under
+            .iter()
+            .find(|(_, _, r)| r.contains(Rect::point(at.0, at.1)))
+        {
+            let (Some(size), Some(drill)) = (size, drill) else {
+                return Err(format!("a thermal via at {at:?} has no size or drill"));
+            };
+            if v.arg(1).is_some() || layers != ["F.Cu", "B.Cu"] {
+                return Err(format!("a thermal via at {at:?} on {layers:?}"));
+            }
+            let net = net(&v, "a via")?;
+            let i = match routed
+                .arrays
+                .iter()
+                .position(|a| a.reference == reference && a.pad == pad)
+            {
+                Some(i) => i,
+                None => {
+                    routed.arrays.push(Array {
+                        reference: reference.to_owned(),
+                        pad: pad.to_owned(),
+                        net: net.clone(),
+                        via_nm: size,
+                        drill_nm: drill,
+                        at: Vec::new(),
+                    });
+                    routed.arrays.len() - 1
+                }
+            };
+            let a = &mut routed.arrays[i];
+            if (a.via_nm, a.drill_nm, a.net.as_str()) != (size, drill, net.as_str()) {
+                return Err(format!(
+                    "the thermal vias under {reference} pad {pad} differ in size, drill or net"
+                ));
+            }
+            a.at.push(at);
+            continue;
+        }
         let rule = rule_of(&v)?;
         if v.arg(1).is_some()
             || size != Some(rule.via_nm)
@@ -3279,7 +3960,7 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
         }
         routed.vias.push(Via {
             net: net(&v, "a via")?,
-            at: xy_of(one(&v, "at")?, "via")?,
+            at,
         });
     }
     let outline = span(a, b);
@@ -3289,6 +3970,79 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
             .map(str::to_owned)
             .ok_or("a zone has no layer")?;
         let name = net(&z, "a zone")?;
+        // A fill is solid and as the engine writes it: its judges assume
+        // sure, solid copper (`AET-WO-1309` adversarial F3), and a relieved
+        // pad's gap and spokes are the zone's (measured, B2).
+        for child in z.lists() {
+            let head = child.head().unwrap_or("");
+            if !matches!(
+                head,
+                "net"
+                    | "layer"
+                    | "uuid"
+                    | "hatch"
+                    | "min_thickness"
+                    | "filled_areas_thickness"
+                    | "fill"
+                    | "polygon"
+                    // KiCad's saved fill: not read (the gate refills), as before.
+                    | "filled_polygon"
+            ) {
+                return Err(format!(
+                    "zone `{name}` on {layer} has `{head}`, which the gate does not model"
+                ));
+            }
+        }
+        let fill = one(&z, "fill")?;
+        if let Some(f) = &fill {
+            for child in f.lists() {
+                let head = child.head().unwrap_or("");
+                if !matches!(
+                    head,
+                    "thermal_gap" | "thermal_bridge_width" | "island_removal_mode"
+                ) {
+                    return Err(format!(
+                        "zone `{name}` on {layer}: its fill has `{head}`, which the gate does not model"
+                    ));
+                }
+            }
+        }
+        let pinned = |item: Option<strict::Node<'_>>, want: &str| {
+            item.and_then(|i| i.arg(1).map(str::to_owned)) == Some(want.to_owned())
+        };
+        if fill.as_ref().is_some_and(|f| f.arg(1).is_some())
+            || !pinned(
+                one(&z, "min_thickness")?,
+                &crate::sexpr::mm(MIN_THICKNESS_NM),
+            )
+            || !pinned(
+                fill.as_ref()
+                    .map(|f| one(f, "island_removal_mode"))
+                    .transpose()?
+                    .flatten(),
+                "0",
+            )
+        {
+            return Err(format!(
+                "zone `{name}` on {layer}: its fill is not the engine's solid fill (min_thickness {}, island_removal_mode 0)",
+                crate::sexpr::mm(MIN_THICKNESS_NM)
+            ));
+        }
+        let at = |token: &str| -> Result<Option<i64>, String> {
+            fill.as_ref()
+                .map(|f| one(f, token))
+                .transpose()?
+                .flatten()
+                .map(|t| nm_at(&t, 1, "a zone's fill"))
+                .transpose()
+        };
+        if at("thermal_gap")? != Some(THERMAL_GAP_NM)
+            || at("thermal_bridge_width")? != Some(THERMAL_BRIDGE_NM)
+        {
+            return Err(format!(
+                "zone `{name}` on {layer}: its relief gap and spoke are not the engine's {THERMAL_GAP_NM}/{THERMAL_BRIDGE_NM} nm"
+            ));
+        }
         if !zone_is_outline(&z, outline)? {
             return Err(format!(
                 "zone `{name}` on {layer}: its outline is not the board's"
@@ -3298,6 +4052,10 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
     }
     routed.segments.sort();
     routed.vias.sort();
+    for a in &mut routed.arrays {
+        a.at.sort();
+    }
+    routed.arrays.sort();
     Ok((
         Board {
             outline,
@@ -3318,6 +4076,8 @@ mod tests {
 
     fn pad(number: &str, net: Option<&str>, r: Rect) -> Pad {
         Pad {
+            drill_nm: None,
+            join: None,
             number: number.into(),
             net: net.map(str::to_owned),
             rect: r,
@@ -3335,6 +4095,7 @@ mod tests {
     fn resistor(reference: &str, x: i64, a: &str, b: &str) -> Part {
         let y = 10 * MM;
         Part {
+            rotation: 0,
             reference: reference.into(),
             pads: vec![
                 pad(
@@ -3389,6 +4150,7 @@ mod tests {
             pads.push(pad("EP", None, rect(49 * MM, 49 * MM, 51 * MM, 51 * MM)));
         }
         Part {
+            rotation: 0,
             reference: "U".into(),
             pads,
             courtyard: Vec::new(),
@@ -3440,7 +4202,12 @@ mod tests {
         assert!(e.contains("touches U pad"), "{e}");
         // The router never sites one there: the node 0.25 mm in from the pad
         // is closed to vias, while one clear of every pad is open.
-        let r = Router::new(&board, Grid::new(board.outline).unwrap(), vec!["/P".into()]);
+        let r = Router::new(
+            &board,
+            Grid::new(board.outline).unwrap(),
+            vec!["/P".into()],
+            &[],
+        );
         let node = |x: i64| r.grid.nodes(Rect::point(x, 50 * MM)).next().unwrap();
         assert_eq!(r.via[0][node(hole.x0 + 250_000)], BLOCKED);
         assert_eq!(r.via[0][node(50 * MM)], FREE);
@@ -3491,6 +4258,7 @@ mod tests {
         let board = Board {
             outline: rect(0, 0, 10 * MM, 10 * MM),
             parts: vec![Part {
+                rotation: 0,
                 reference: "R1".into(),
                 pads: vec![pad("1", Some("/A"), rect(4 * MM, 4 * MM, 5 * MM, 5 * MM))],
                 courtyard: Vec::new(),
@@ -3577,6 +4345,7 @@ mod tests {
         });
         let at = |x: i64, y: i64| rect(x - 150_000, y - 150_000, x + 150_000, y + 150_000);
         let part = |reference: &str, x: i64, xn: i64| Part {
+            rotation: 0,
             reference: reference.into(),
             pads: vec![
                 pad("1", Some("/P"), at(x, 5 * MM)),
@@ -3648,6 +4417,7 @@ mod tests {
     fn a_pair_between_different_parts_is_refused() {
         let mut board = paired(12 * MM);
         board.parts.push(Part {
+            rotation: 0,
             reference: "C".into(),
             pads: vec![pad(
                 "1",
@@ -3817,14 +4587,58 @@ mod tests {
         assert!(part_of(&fp("1 2", smd)).is_ok());
         // A right angle is modelled (`AET-WO-1308` §1.5); any other is not.
         assert!(part_of(&fp("1 2 90", smd)).is_ok());
+        // A plated through-hole pad on every copper layer is modelled
+        // (`AET-WO-1309`), with its drill; one that picks its own join,
+        // relief, padstack or layers is not.
+        let th = |extra: &str| {
+            format!(
+                "(pad \"1\" thru_hole circle (at 0 0) (size 1 1) (drill 0.5) (layers \"*.Cu\") {extra})"
+            )
+        };
+        let read = part_of(&fp("1 2", &th("(remove_unused_layers no)"))).unwrap();
+        assert_eq!(read.pads[0].drill_nm, Some(500_000));
+        // KiCad 10.0.7's tokens, measured (FEEDBACK B2): 2 solid, 1 relief.
+        use crate::stack::Join;
+        for (token, join) in [("2", Join::Solid), ("1", Join::Relief)] {
+            let read = part_of(&fp("1 2", &th(&format!("(zone_connect {token})")))).unwrap();
+            assert_eq!(read.pads[0].join, Some(join));
+        }
+        for (pad, want) in [
+            (th("(padstack (mode front_inner_back))"), "own `padstack`"),
+            (
+                "(pad \"1\" thru_hole circle (at 0 0) (size 1 1) (layers \"*.Cu\"))".to_owned(),
+                "has no drill",
+            ),
+            (th("(zone_connect 0)"), "has `zone_connect` (Some(\"0\"), None)"),
+            (th("(thermal_bridge_angle 45)"), "own `thermal_bridge_angle`"),
+            (th("(remove_unused_layers yes)"), "removes its unused layers"),
+            (
+                "(pad \"1\" thru_hole oval (at 0 0) (size 1 2) (drill oval 0.5 1) (layers \"*.Cu\"))".to_owned(),
+                "only a round drill",
+            ),
+            (
+                "(pad \"1\" thru_hole circle (at 0 0) (size 1 1) (drill 0.5 (offset 0.1 0)) (layers \"*.Cu\"))".to_owned(),
+                "only a round drill",
+            ),
+            (
+                "(pad \"1\" thru_hole circle (at 0 0) (size 1 1) (drill 1) (layers \"*.Cu\"))".to_owned(),
+                "no copper ring",
+            ),
+            (
+                "(pad \"1\" thru_hole circle (at 0 0) (size 1 1) (drill 0.5) (layers \"F.Cu\" \"B.Cu\"))".to_owned(),
+                "plated through-hole pad on *.Cu",
+            ),
+            (
+                "(pad \"\" np_thru_hole circle (at 0 0) (size 1 1) (drill 1) (layers \"*.Cu\"))".to_owned(),
+                "plated through-hole pad on *.Cu",
+            ),
+        ] {
+            let e = part_of(&fp("1 2", &pad)).unwrap_err();
+            assert!(e.contains(want), "{pad}: {e}");
+        }
         for (at, pad, want) in [
             ("1 2 45", smd, "rotated by Some(\"45\")"),
             ("1 2 90.0", smd, "rotated by Some(\"90.0\")"),
-            (
-                "1 2",
-                "(pad \"1\" thru_hole circle (at 0 0) (size 1 1) (drill 0.5) (layers \"*.Cu\"))",
-                "front SMD",
-            ),
             (
                 "1 2",
                 "(pad \"1\" smd rect (at 0 0 45) (size 1 1) (layers \"F.Cu\"))",
@@ -3838,6 +4652,12 @@ mod tests {
             (
                 "1 2",
                 "(pad \"1\" smd rect (at 0 0) (size 1 1) (layers \"B.Cu\"))",
+                "front SMD",
+            ),
+            // A drill on an SMD pad: its offset would move the copper.
+            (
+                "1 2",
+                "(pad \"1\" smd rect (at 0 0) (size 1 1) (drill 0 (offset 0 2.5)) (layers \"F.Cu\"))",
                 "front SMD",
             ),
         ] {
