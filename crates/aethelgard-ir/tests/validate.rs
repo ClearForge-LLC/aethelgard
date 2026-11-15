@@ -23,12 +23,13 @@ fn valid() -> Specification {
     // The device lists are private to the crate (`AET-WO-1204`), so the
     // fixture is built from the JSON the type reads.
     let json = serde_json::json!({
-        "schema_version": 6,
+        "schema_version": 7,
         "net_classes": [],
         "diff_pairs": [],
+        "power": null,
         "project_name": "sentinel-01",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
-        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse_hz: 0 },
+        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0 },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,
@@ -133,7 +134,7 @@ fn empty_lists_other_than_domains_are_valid() {
 
 #[test]
 fn refuses_unsupported_schema_version() {
-    for version in [0, 1, 2, 3, 4, 5, 7, u32::MAX] {
+    for version in [0, 1, 2, 3, 4, 5, 6, 8, u32::MAX] {
         let err = refusal(|s| s.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -856,7 +857,7 @@ fn assignment(pin: &str, af: u8) -> PinAssignment {
 
 fn solved() -> SolvedTopology {
     SolvedTopology {
-        schema_version: 5,
+        schema_version: aethelgard_ir::SOLVED_SCHEMA_VERSION,
         specification_sha256: HASH.into(),
         assignments: [
             ("I2C_SCL".to_owned(), assignment("PB8", 4)),
@@ -898,6 +899,7 @@ fn solved() -> SolvedTopology {
         spi_lines: [("SPI_SCK".to_owned(), spi_line("SCK"))].into(),
         clock: SolvedClock::reset(),
         motor_outputs: BTreeMap::new(),
+        power: None,
     }
 }
 
@@ -959,8 +961,9 @@ fn solved_refuses_version_and_hash() {
     // Version 1 is the file before `i2c_speeds` (`AET-WO-1205`), 2 the file
     // before `spi_devices` (`AET-WO-4200`), 3 the file before `spi_lines`
     // (`AET-WO-4300c`), 4 the file before `clock` and `motor_outputs`
-    // (`AET-WO-4300a`), 6 one this build does not know.
-    for version in [0, 1, 2, 3, 4, 6] {
+    // (`AET-WO-4300a`), 5 the file before `power` (`AET-WO-4300d`), 7 one
+    // this build does not know.
+    for version in [0, 1, 2, 3, 4, 5, 7] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }

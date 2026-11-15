@@ -282,6 +282,7 @@ fn solve_inner(
         spi_lines: BTreeMap::new(),
         clock: SolvedClock::reset(),
         motor_outputs: BTreeMap::new(),
+        power: None,
     };
     out.validate().map_err(SolveError::InvalidSpecification)?;
     out.i2c_ceilings = i2c_ceilings(spec)?;
@@ -381,6 +382,10 @@ fn solve_inner(
     out.i2c_devices = i2c_devices(spec, &out);
     out.spi_devices = spi_devices(spec, &out);
     out.spi_lines = spi_lines;
+    // `validate` ran every power check; this derives what they found.
+    out.power = crate::power::check(spec)
+        .map_err(SolveError::InvalidSpecification)?
+        .map(Into::into);
     // belt-and-suspenders: the search already keeps every rule `validate`
     // checks; this refuses rather than emits if a change to it ever breaks one.
     out.validate().map_err(SolveError::InvalidSpecification)?;
@@ -1570,11 +1575,13 @@ mod differential {
             board: serde_json::from_str(BOARD).expect("the declared board"),
             net_classes: vec![],
             diff_pairs: vec![],
+            power: None,
             project_name: "t".into(),
             mcu: Mcu {
                 part: "T".into(),
                 supply: "D".into(),
                 hse_hz: 0,
+                bor_level: 0,
             },
             voltage_domains: vec![VoltageDomain {
                 id: "D".into(),

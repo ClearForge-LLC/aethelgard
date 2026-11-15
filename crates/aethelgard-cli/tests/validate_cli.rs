@@ -73,7 +73,7 @@ fn zero_domain_example_exits_2_naming_the_domain() {
 #[test]
 fn solved_topology_document_exits_2() {
     let solved = serde_json::json!({
-        "schema_version": 6,
+        "schema_version": aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
         "specification_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         "assignments": {}
     });

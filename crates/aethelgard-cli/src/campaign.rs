@@ -257,6 +257,17 @@ fn resolve_droop(
     topology: &SolvedTopology,
 ) -> Result<crate::analog::Rail, ScenarioError> {
     let refuse = |kind: &'static str, m: String| ScenarioError::new(kind, Some(&droop.domain), m);
+    // `AET-WO-4300d` D4: the BOR level is the specification's (`mcu.bor_level`);
+    // a droop that states another is refused, so the two never disagree (K8).
+    if droop.bor_level != spec.mcu.bor_level {
+        return Err(refuse(
+            "BorLevelContradictsSpecification",
+            format!(
+                "the droop states BOR level {}, and the specification's mcu.bor_level is {}",
+                droop.bor_level, spec.mcu.bor_level
+            ),
+        ));
+    }
     if droop.domain != spec.mcu.supply {
         return Err(refuse(
             "DroopNotMcuSupply",
@@ -352,6 +363,16 @@ pub(crate) fn effective(scenario: &Scenario, base: &[u8]) -> Result<Effective, E
         r.error.message = format!("scenario `{}`, base: {}", scenario.name, r.error.message);
         emit(&r, code)
     })?;
+    // `AET-WO-4300d`'s seam (adversarial A6): the twin models no power tree,
+    // so a campaign over one would judge a board nothing emits.
+    if let Err(e) = aethelgard_eda::schematic::refuse_power(&spec) {
+        return Err(refuse(
+            e.kind(),
+            None,
+            format!("scenario `{}`, base: {e}", scenario.name),
+            EXIT_INVALID_SPEC,
+        ));
+    }
     let held = apply(scenario, &mut spec).map_err(|e| {
         refuse(
             e.kind,

@@ -93,19 +93,22 @@ fn digests() -> Vec<(&'static str, String)> {
 /// (`motor_outputs`, `mcu.hse_hz`) moved the specification's sha256 in the
 /// three (`44f22188…e3af`, `bd957c1d…d4b0`, `b962492f…ee15`); every enable
 /// register cold and judged in full (2100 F24) moved the boot image
-/// (`747bdc04…fbb3`).
+/// (`747bdc04…fbb3`). Re-taken in `AET-WO-4300d` (version 7, `power` and
+/// `mcu.bor_level`): with `main`'s hash `ff1786a9…5756` passed to `solve`, all
+/// four were `main`'s digests exactly (`dac44166…2e7e`, `693c78ad…dab0`,
+/// `2fe09c95…f5b0`, the boot image unchanged).
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "dac441661258773151468edeee5d357de637c793da0d81f79ec0aa44091e2e7e",
+        "a5a8e53a75f8884aaba2a4c361a21b79f2213dfebde76931a1f9d0b56d1a5e46",
     ),
     (
         "platform",
-        "693c78ad1dc30b44fc1b467fcba243dce1e5ea09d225841339ae9e8bfd41dab0",
+        "b3bf305f90f93e934a1e3f673e0417e107dcf2ad7fae1414bfbff10bb178a745",
     ),
     (
         "platform faulted",
-        "2fe09c9590bdeffae53d193034dec3561e9d07d5223257e118adde9cdadcf5b0",
+        "ea29d696acd78e13fdf69d9dcabd874372c5910a0cf978b685cd3189995307f0",
     ),
     (
         "boot image",

@@ -2477,9 +2477,11 @@ fn a_record_that_claims_ok_without_the_device_logging_a_transfer_is_unrecovered(
 #[test]
 fn a_droop_the_runner_cannot_render_is_refused_before_any_run() {
     let tb = toolbox(&good());
-    for (domain, floor, kind) in [
-        ("VDD_OTHER", 2400, "DroopNotMcuSupply"),
-        ("VDD_3V3", 2660, "DroopRefused"),
+    for (domain, floor, bor_level, kind) in [
+        ("VDD_OTHER", 2400, 3, "DroopNotMcuSupply"),
+        ("VDD_3V3", 2660, 3, "DroopRefused"),
+        // `AET-WO-4300d` D4 (K8): the level is the specification's.
+        ("VDD_3V3", 2400, 2, "BorLevelContradictsSpecification"),
     ] {
         let work = Work::new();
         let doc = json!({
@@ -2491,7 +2493,7 @@ fn a_droop_the_runner_cannot_render_is_refused_before_any_run() {
             "overrides": [{"droop": {
                 "domain": domain, "floor_millivolts": floor, "start_ns": 1000000,
                 "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-                "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3
+                "source_milliohms": 500, "load_milliamps": 100, "bor_level": bor_level
             }}],
         });
         work.dir.write("d.json", doc.to_string().as_bytes());
@@ -2569,6 +2571,31 @@ fn the_droop_scenarios_carry_only_identifiers_the_base_set_admits() {
             );
         }
     }
+}
+
+/// `AET-WO-4300d`'s seam (adversarial A6): the twin models no power tree, so
+/// a scenario whose base declares one is refused before any run.
+#[test]
+fn a_scenario_on_a_power_tree_is_refused_before_any_run() {
+    let tb = toolbox(&good());
+    let work = Work::new();
+    let spec = common::power::power_tree();
+    work.dir.write("power.json", spec.to_string().as_bytes());
+    let doc = json!({
+        "schema_version": 2, "name": "p", "base": "power.json", "expect": "pass",
+        "expect_findings": [], "overrides": [],
+    });
+    work.dir.write("p.json", doc.to_string().as_bytes());
+    let out = campaign(
+        &cli(None),
+        &tb.0,
+        &work.dir.0,
+        &["p.json"],
+        &work.firmware,
+        &work.archive,
+    );
+    expect_refusal(&out, 2, "PowerNotEmitted");
+    assert!(!work.archive.exists(), "an archive was made");
 }
 
 /// `AET-WO-4300a` D1, ruled (a): a board with a DShot output boots inside

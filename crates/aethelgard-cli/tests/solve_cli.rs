@@ -4,6 +4,8 @@
 //! `AET-WO-1200` spike's specifications, byte for byte, so the digests below
 //! are the ones the spike measured on Furnace.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{Duration, Instant};
@@ -33,9 +35,11 @@ use sha2::{Digest, Sha256};
 /// way (`26771d90…` and `6e4af649…` before); and re-taken in `AET-WO-4300a`,
 /// whose specification version 6 (`motor_outputs`, `mcu.hse_hz`) and solved
 /// version 5 (`clock`, `motor_outputs`) moved them (`8100aadf…` and
-/// `798ae634…` before).
-const REFERENCE_DIGEST: &str = "e61864b97aba69bb3865e060c0bd186ab6c6295d50ba0c9fb869aeb046ab413e";
-const STRESS_DIGEST: &str = "33b079d1071240b656ac24091f0a4c61befb15c0df4e3064af65a085f7f10721";
+/// `798ae634…` before); and in `AET-WO-4300d`, whose specification version
+/// 7 (`power`, `mcu.bor_level`) and solved version 6 (`power`) moved them
+/// (`e61864b9…` and `33b079d1…` before).
+const REFERENCE_DIGEST: &str = "c7688dcac8a0e015c9e73766eef85a099878def4aa5b489ce706c5e2eaad0e99";
+const STRESS_DIGEST: &str = "fe4252ebbcee5bc138c248d0fa2e29de093474665081021165589502b8231ce8";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -205,7 +209,7 @@ fn the_reference_solves_to_the_expected_pins() {
     // Both lines declare 300 ns: Fast-mode, 400 kHz, the bus's own speed.
     assert_eq!(t.i2c_ceilings, [("SENSORS".to_owned(), 400_000)].into());
     assert_eq!(t.i2c_speeds, [("SENSORS".to_owned(), 400_000)].into());
-    assert_eq!(t.schema_version, 5);
+    assert_eq!(t.schema_version, aethelgard_ir::SOLVED_SCHEMA_VERSION);
 }
 
 #[test]
@@ -434,4 +438,89 @@ fn a_line_over_the_bus_capacitance_limit_is_refused_by_net() {
     );
     assert_eq!(report["error"]["id"], "I2C_SDA", "{report}");
     assert_eq!(report["error"]["claimants"], json!(["I2C_SDA"]), "{report}");
+}
+
+/// `AET-WO-4300d`: the power tree (`common::power`), written to `dir`.
+fn power_tree(dir: &Path) -> PathBuf {
+    let v = common::power::power_tree();
+    std::fs::create_dir_all(dir).unwrap();
+    let path = dir.join("power-tree.json");
+    std::fs::write(&path, serde_json::to_vec(&v).unwrap()).unwrap();
+    path
+}
+
+#[test]
+fn a_power_tree_solves_into_the_topology_and_is_refused_at_emit() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("aet-4300d-power-tree");
+    let _ = std::fs::remove_dir_all(&dir);
+    let file = power_tree(&dir);
+    let (t, _) = solved(&file);
+    let p = t.power.expect("the solved tree");
+    let d = &p.domains["VDD_3V3"];
+    assert_eq!(
+        (d.vout_min_microvolts, d.vout_max_microvolts),
+        (3_144_727, 3_417_204)
+    );
+    assert_eq!(
+        (d.source.reference.as_str(), d.source.pad.as_str()),
+        ("R20", "1")
+    );
+    assert_eq!((d.ret.reference.as_str(), d.ret.pad.as_str()), ("R21", "2"));
+    assert_eq!(
+        (p.input_steady_milliamps, p.input_fault_milliamps),
+        (2679, 10_100)
+    );
+    // The seam of the split: nothing emits a board without its power tree.
+    let out = dir.join("emitted");
+    let output = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["emit", "--file"])
+        .arg(&file)
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let v: Value = serde_json::from_str(line(&output)).unwrap();
+    assert_eq!(v["error"]["kind"], "PowerNotEmitted", "{v}");
+    assert!(!out.join("sentinel-02-power.kicad_pcb").exists());
+    // Nor is a board judged against it: `check drc --spec` refuses before
+    // any tool is looked for.
+    let board = dir.join("any.kicad_pcb");
+    std::fs::write(&board, "(kicad_pcb (version 20241229))\n").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["check", "drc", "--board"])
+        .arg(&board)
+        .arg("--spec")
+        .arg(&file)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let v: Value = serde_json::from_str(line(&output)).unwrap();
+    assert_eq!(v["error"]["kind"], "PowerNotEmitted", "{v}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// belt-and-suspenders: the BOR thresholds' falling maxima live in two
+/// crates that may not depend on each other (`workspace_shape`): the power
+/// parts table's MCU row (DS12117 Table 115) for the supply floor, and
+/// `aethelgard_chaos::power::BOR` (Table 16) for the scenario's resets. This
+/// holds the two equal, so neither drifts alone (`AET-WO-4300d` reduction).
+#[test]
+fn the_power_rows_bor_maxima_equal_the_supervisors() {
+    let table = aethelgard_ir::power_parts::table().unwrap();
+    let Some(aethelgard_ir::power_parts::Kind::Mcu(m)) =
+        table.get("STM32H753ZITx").map(|r| &r.kind)
+    else {
+        panic!("the MCU row");
+    };
+    let rows: Vec<i64> = m
+        .bor_falling_max_millivolts
+        .iter()
+        .map(|l| l.value)
+        .collect();
+    let chaos: Vec<i64> = aethelgard_chaos::power::BOR
+        .iter()
+        .map(|t| i64::try_from(t.falling_uv[2] / 1000).unwrap())
+        .collect();
+    assert_eq!(rows, chaos);
 }

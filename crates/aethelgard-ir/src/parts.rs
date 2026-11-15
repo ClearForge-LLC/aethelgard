@@ -272,6 +272,26 @@ pub(crate) struct RawCitation {
     pending: Option<String>,
 }
 
+impl RawCitation {
+    /// A citation built from its parts, for the power parts table's
+    /// documents, which [`citation`] then checks as it checks these.
+    pub(crate) fn new(
+        document: String,
+        revision: String,
+        section: String,
+        sha256: Option<String>,
+        pending: Option<String>,
+    ) -> Self {
+        Self {
+            document,
+            revision,
+            section,
+            sha256,
+            pending,
+        }
+    }
+}
+
 fn refused(part: Option<&str>, reason: impl Into<String>) -> IrValidationError {
     IrValidationError::PartsTable {
         part: part.map(str::to_owned),

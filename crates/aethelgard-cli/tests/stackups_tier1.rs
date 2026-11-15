@@ -83,7 +83,8 @@ fn a_version_one_specification_is_refused_by_name() {
         let (code, v) = run(&args);
         assert_eq!(code, 2, "{sub}: {v}");
         assert_eq!(v["error"]["kind"], "UnsupportedSchemaVersion", "{sub}: {v}");
-        assert!(v["error"]["message"].as_str().unwrap().contains("not 6"));
+        let want = format!("not {}", aethelgard_ir::SPECIFICATION_SCHEMA_VERSION);
+        assert!(v["error"]["message"].as_str().unwrap().contains(&want));
     }
     fs::remove_dir_all(&dir).unwrap();
 }
