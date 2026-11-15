@@ -1,0 +1,380 @@
+//! `AET-WO-4300a` §1.5, tier 1: attribution of a motor output's symptoms
+//! (`Rule::S4`) on campaign runs written through `aethelgard-chaos`'s own
+//! writer, with no Renode. The run is the reference board's I2C run (as
+//! `attribute.rs` builds it) with one motor output, `MOTOR1`, TIM1_CH1 on
+//! PA8 at AF1, added where `check_run` ranks its records.
+
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use aethelgard_chaos::campaign::{
+    self, MOTOR_MISMATCH_FINDING, MOTOR_STATIC_FINDING, MOTOR_UNWITNESSED_FINDING, run_id,
+};
+use aethelgard_chaos::record::{BusLine, Override, Reading, Record};
+use aethelgard_chaos::{Event, Header, Replayed, TraceWriter, replay_dir};
+use aethelgard_evolve::{Attribution, Domain, Rule, attribute};
+
+fn reading(address: u32, mask: u32, expected: u32, observed: u32) -> Reading {
+    Reading {
+        address,
+        mask,
+        expected,
+        observed: Some(observed),
+    }
+}
+
+fn register(name: &str, address: u32, mask: u32, expected: u32, observed: u32) -> Record {
+    Record::RegisterObserved {
+        name: name.into(),
+        reading: reading(address, mask, expected, observed),
+    }
+}
+
+fn line(suffix: &str, net: &str, pin: &str) -> BusLine {
+    BusLine {
+        signal: format!("I2C1{suffix}"),
+        net: net.into(),
+        pin: pin.into(),
+        alternate_function: 4,
+        ceiling_ps: 300_000,
+    }
+}
+
+fn rise(net: &str) -> Record {
+    Record::RiseComputed {
+        bus: "SENSORS".into(),
+        net: net.into(),
+        rise_30_70_ps: 186_402,
+        complete: true,
+        ceiling_ps: 300_000,
+        exceeds: false,
+        window: aethelgard_chaos::record::Window {
+            deck_hz: 400_000,
+            declared_hz: 400_000,
+        },
+    }
+}
+
+fn i2c_witness() -> Record {
+    let device = "i2c1.u2".to_owned();
+    let lines = vec![
+        format!("[NOISY] {device}: Write D0"),
+        format!("[NOISY] {device}: Read 60"),
+    ];
+    Record::I2cWitness {
+        peripheral: "I2C1".into(),
+        reference: "U2".into(),
+        expected: lines.clone(),
+        observed: Some(lines),
+        device,
+        absent: Vec::new(),
+    }
+}
+
+/// What a firmware may have got wrong.
+#[derive(Default)]
+struct Wrong {
+    afrh: Option<u32>,
+    cr1: Option<u32>,
+    psc: Option<u32>,
+}
+
+fn witness(status: &str) -> Record {
+    Record::MotorWitness {
+        label: "MOTOR1".into(),
+        observer: "gpioPortA.pa8obs".into(),
+        period_ns: 639_744,
+        high_ns: 256_000,
+        grain_ns: 10,
+        quantum_ns: 100_000,
+        status: status.into(),
+        rises: if status == "witnessed" || status == "mismatch" {
+            156
+        } else {
+            0
+        },
+        falls: if status == "witnessed" || status == "mismatch" {
+            155
+        } else {
+            0
+        },
+        first_ns: None,
+        span_ns: None,
+        off_grid: 0,
+        batched: 0,
+    }
+}
+
+fn run(wrong: &Wrong, status: &str, holds: bool, findings: &[(&str, u64)]) -> Vec<Record> {
+    let ok = |w: Option<u32>, v: u32| w.unwrap_or(v);
+    let mut findings: Vec<(String, String, u64)> = findings
+        .iter()
+        .map(|(k, n)| ((*k).into(), "error".into(), *n))
+        .collect();
+    findings.push(("device_unmodelled".into(), "info".into(), 1));
+    findings.sort();
+    vec![
+        Record::Scenario {
+            name: "motors".into(),
+            sha256: [1; 32],
+            expect_pass: findings.iter().all(|f| f.1 == "info"),
+            expect_findings: findings
+                .iter()
+                .filter(|f| f.1 != "info")
+                .map(|f| f.0.clone())
+                .collect(),
+            overrides: vec![Override::PullUpOhms {
+                bus: "SENSORS".into(),
+                ohms: 2200,
+            }],
+        },
+        Record::Solved {
+            specification_sha256: [2; 32],
+            topology_sha256: [3; 32],
+        },
+        Record::I2cBusSolved {
+            bus: "SENSORS".into(),
+            peripheral: "I2C1".into(),
+            lines: vec![
+                line("_SCL", "I2C_SCL", "PB6"),
+                line("_SDA", "I2C_SDA", "PB7"),
+            ],
+            devices: vec![("U2".into(), 0x76), ("U3".into(), 0x48)],
+        },
+        Record::MotorOutputSolved {
+            label: "MOTOR1".into(),
+            timer: "TIM1".into(),
+            channel: 1,
+            pin: "PA8".into(),
+            alternate_function: 1,
+            protocol: "pwm".into(),
+            psc: 63,
+            arr: 2499,
+            ccr: 1000,
+            pwm: Some((400, 1000, 2000)),
+        },
+        Record::MotorTimingCheck {
+            label: "MOTOR1".into(),
+            kernel_hz: 64_000_000,
+            period_ps: 2_500_000_000,
+            high_ps: 1_000_000_000,
+            nominal_period_ps: 2_500_000_000,
+            nominal_high_ps: 1_000_000_000,
+            holds,
+        },
+        rise("I2C_SCL"),
+        rise("I2C_SDA"),
+        Record::BootObserved {
+            image_sha256: [4; 32],
+            boot_word: reading(0x2000_0000, u32::MAX, 0x2100_B007, 0x2100_B007),
+            instructions_expected: 10_000_000,
+            instructions_observed: Some(10_000_000),
+            pc: Some(0x0800_0596),
+            executable: vec![(0x0800_0000, 0x0800_1000)],
+        },
+        register(
+            "GPIOA.MODER",
+            0x5802_0000,
+            0x0003_0000,
+            0x0002_0000,
+            0x0002_0000,
+        ),
+        register(
+            "GPIOA.AFRH",
+            0x5802_0024,
+            0x0000_000F,
+            0x1,
+            ok(wrong.afrh, 0x1),
+        ),
+        register(
+            "GPIOB.MODER",
+            0x5802_0400,
+            0x0000_F000,
+            0x0000_A000,
+            0x0000_A000,
+        ),
+        register(
+            "GPIOB.AFRL",
+            0x5802_0420,
+            0xFF00_0000,
+            0x4400_0000,
+            0x4400_0000,
+        ),
+        register("RCC.AHB4ENR", 0x5802_44E0, u32::MAX, 0x3, 0x3),
+        register(
+            "RCC.APB1LENR",
+            0x5802_44E8,
+            u32::MAX,
+            0x0020_0000,
+            0x0020_0000,
+        ),
+        register("RCC.APB2ENR", 0x5802_44F0, u32::MAX, 0x1, 0x1),
+        register("TIM1.CR1", 0x4001_0000, 0xFF, 0x81, ok(wrong.cr1, 0x81)),
+        register("TIM1.PSC", 0x4001_0028, u32::MAX, 63, ok(wrong.psc, 63)),
+        Record::I2cCheck {
+            reference: "U2".into(),
+            address: 0x76,
+            register: 0xD0,
+            expected: 0x60,
+            observed: Some(0x60),
+            status: Some("ok".into()),
+        },
+        i2c_witness(),
+        witness(status),
+        Record::Verdict {
+            pass: findings.iter().all(|f| f.1 == "info"),
+            findings,
+        },
+    ]
+}
+
+fn archived(records: &[Record]) -> Replayed {
+    static N: AtomicUsize = AtomicUsize::new(0);
+    let dir: PathBuf = std::env::temp_dir().join(format!(
+        "aet-4300a-evolve-motor-{}-{}",
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed)
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    let firmware = [9u8; 32];
+    let header = Header {
+        run_id: run_id(&[1; 32], &[2; 32], &firmware),
+        artifacts: vec![
+            ("base".into(), [8; 32]),
+            ("firmware".into(), firmware),
+            ("scenario".into(), [1; 32]),
+            ("specification".into(), [2; 32]),
+            ("topology".into(), [3; 32]),
+        ],
+        tools: campaign::tools_of(records)
+            .iter()
+            .map(|n| ((*n).to_owned(), "test".to_owned()))
+            .collect(),
+    };
+    let mut w = TraceWriter::create(&dir, &header).unwrap();
+    for record in records.iter().cloned() {
+        let timestamp = if record.before_boot() { 0 } else { 100_000_000 };
+        w.append(&Event::Record { timestamp, record }).unwrap();
+    }
+    w.commit().unwrap();
+    let run = replay_dir(&dir).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    run
+}
+
+fn attributed(records: &[Record]) -> Attribution {
+    campaign::check_run(records).expect("the run is one check_run accepts");
+    let a = attribute(&archived(records)).unwrap();
+    for e in &a.evidence {
+        assert!(a.rule.evidence_kinds().contains(&e.kind), "{a:?}");
+    }
+    assert!(a.unexplained.is_empty(), "{a:?}");
+    a
+}
+
+fn named(records: &[Record], a: &Attribution) -> Vec<String> {
+    a.evidence
+        .iter()
+        .map(|e| match &records[e.index as usize] {
+            Record::RegisterObserved { name, .. } => name.clone(),
+            r => format!("kind {}", r.kind()),
+        })
+        .collect()
+}
+
+#[test]
+fn a_healthy_motor_run_passes_none() {
+    let a = attributed(&run(&Wrong::default(), "witnessed", true, &[]));
+    assert_eq!((a.domain, a.rule), (Domain::None, Rule::N1));
+}
+
+/// The seeded `motor_output_dead`: PA8 on AF2, not the solved AF1, so the
+/// timer's channel never reaches the pin. The alternate-function register is
+/// the firmware's own write, and nothing electrical is modelled on the pin:
+/// software, S4, by the register and the unwitnessed output.
+#[test]
+fn a_pin_on_the_wrong_alternate_function_is_software_s4() {
+    let r = run(
+        &Wrong {
+            afrh: Some(0x2),
+            ..Wrong::default()
+        },
+        "unwitnessed",
+        true,
+        &[("register_mismatch", 1), (MOTOR_UNWITNESSED_FINDING, 1)],
+    );
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S4));
+    assert_eq!(named(&r, &a), ["GPIOA.AFRH", "kind 26"]);
+}
+
+#[test]
+fn adversarial_4_a_stopped_or_re_rated_timer_is_s4_by_its_own_register() {
+    let stopped = run(
+        &Wrong {
+            cr1: Some(0x80),
+            ..Wrong::default()
+        },
+        "unwitnessed",
+        true,
+        &[("register_mismatch", 1), (MOTOR_UNWITNESSED_FINDING, 1)],
+    );
+    let a = attributed(&stopped);
+    assert_eq!(a.rule, Rule::S4);
+    assert_eq!(named(&stopped, &a), ["TIM1.CR1", "kind 26"]);
+    // The timer run at another rate, the claim kept: the edges miss the
+    // model's sequence, and the prescaler is the evidence.
+    let re_rated = run(
+        &Wrong {
+            psc: Some(31),
+            ..Wrong::default()
+        },
+        "mismatch",
+        true,
+        &[("register_mismatch", 1), (MOTOR_MISMATCH_FINDING, 1)],
+    );
+    let a = attributed(&re_rated);
+    assert_eq!(a.rule, Rule::S4);
+    assert_eq!(named(&re_rated, &a), ["TIM1.PSC", "kind 26"]);
+}
+
+#[test]
+fn adversarial_4_no_register_evidence_is_never_a_guess() {
+    // Every owned register right and still no edges: nothing shows which half
+    // failed, so the run is indeterminate, never software by elimination.
+    let silent = run(
+        &Wrong::default(),
+        "unwitnessed",
+        true,
+        &[(MOTOR_UNWITNESSED_FINDING, 1)],
+    );
+    let a = attributed(&silent);
+    assert_eq!((a.domain, a.rule), (Domain::Indeterminate, Rule::I4));
+    // A static mismatch is the topology's, not the firmware's: indeterminate.
+    let static_only = run(
+        &Wrong::default(),
+        "witnessed",
+        false,
+        &[(MOTOR_STATIC_FINDING, 1)],
+    );
+    assert_eq!(attributed(&static_only).rule, Rule::I4);
+}
+
+#[test]
+fn adversarial_4_a_rewritten_verdict_cannot_move_the_domain() {
+    // The register is wrong but the verdict names only the dead output: the
+    // register's event shows a failure the verdict does not name.
+    let r = run(
+        &Wrong {
+            afrh: Some(0x2),
+            ..Wrong::default()
+        },
+        "unwitnessed",
+        true,
+        &[(MOTOR_UNWITNESSED_FINDING, 1)],
+    );
+    // check_run does not re-derive register_mismatch; attribution refuses
+    // to explain the run.
+    let a = attribute(&archived(&r)).unwrap();
+    assert_eq!(a.rule, Rule::I1, "{a:?}");
+}

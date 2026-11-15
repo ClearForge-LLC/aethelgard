@@ -439,6 +439,9 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 | `register_mismatch` | kind 11 that differs from its expectation under its mask |
 | `boot_word_missing`, `cpu_halted` | kind 10 without the boot word, or with fewer instructions than expected |
 | `locked_peripheral_access` | kind 11 in RCC with an expected enable bit clear, at least one: the same fact, archived (the count is not compared, since the judge reports one finding for any number of accesses) |
+| `motor_output_unwitnessed` | each kind 26 whose status is `unwitnessed` or `unreadable` (`AET-WO-4300a`) |
+| `motor_timing_mismatch` | each kind 26 whose status is `mismatch` or `batched` |
+| `motor_timing_static_mismatch` | each kind 25 whose check does not hold |
 | anything else (`renode_error_log`, a reaper bound, `pc_outside_firmware`: executable segments are not archived) | none: unexplained |
 
 **Where a symptom is.**
@@ -474,6 +477,13 @@ For a symptom on an SPI device (`AET-WO-4200`: `spi_timeout`, `spi_record_invali
 | `E2` | electrical | the device's witness (kind 22) shows its controller's multiplexer routing a byte to the device's own address and finding nothing there, and the model logged nothing: a device absent behind a chip select the firmware asserted; its software evidence goes to `masked` | 22 |
 | `S3` | software | the multiplexer found no chip select asserted, or several; or the model logged lines other than the read's; or the read (kind 21) claims completion with nothing logged or routed | 21, 22 |
 | `I4` | indeterminate | neither | none |
+
+For a symptom on a motor output (`AET-WO-4300a`: `motor_output_unwitnessed`, `motor_timing_mismatch` and `motor_timing_static_mismatch`, from kinds 26 and 25), and for a kind 11 wrong only in fields an output owns (its pin's `MODER` and `AFR` fields, its port's and timer's clock gates, and any register of its timer's block; a timer's register stands for the first of its outputs):
+
+| rule | domain | holds when | evidence kinds |
+|---|---|---|---|
+| `S4` | software | a register field the output owns is wrong (kind 11): the firmware's own configuration of the pin or the timer differs from the solved topology. The twin models nothing electrical on a timer's pin, so no rule attributes a motor symptom to the electrical half | 11, 26 |
+| `I4` | indeterminate | no owned register is wrong (an output with no edges and every register right, or a static mismatch, which is the topology's) | 25, 26 |
 
 For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bus not computed healthy, gives `I2`. Then board software evidence gives `S2` (software; evidence kinds 7, 10, 11), and none gives `I4`.
 
@@ -515,7 +525,7 @@ Then it attributes the run (`attribute`), reads each evidence event through `aet
 | `E1`, every piece of evidence a complete rise past its ceiling (kind 7) or a bus fault caused only by one (kind 9) | a proposal per faulted bus, sized below |
 | `E1` with a line held low, a line stuck high, an incomplete rise, a bus fault of any other cause, or a line of the bus without exactly one complete rise | no rule: `no rule; RUL-18 model proposer slot`. A held line is a board fault no value change fixes |
 | `E2` | no rule: a device absent behind its chip select is a board fault no value change fixes |
-| `S1`, `S2`, `S3` | a generator report, with no specification change |
+| `S1`, `S2`, `S3`, `S4` | a generator report, with no specification change |
 | `N1`, `I1` to `I5` | nothing is proposed, naming the rule: attribution precedes mutation (`INV-05`) |
 
 **Sizing a pull-up.** The binding line is the one with the least `ceiling / rise`, which is the slowest line when the ceilings are equal. `R_target = R_now × ceiling × 0.8 / rise`, rounded down; the 0.8 is headroom for a ±5 % resistor tolerance and a capacitance spread the run did not measure. The value is the largest E12 value at or below `R_target`. If it is below `Rp_min`, the floor, nothing is proposed, never a value below it. The predicted rise is the binding line's rise scaled by the new value over the old, rounded up (the rise is linear in R × C, `docs/architecture.md` §2.18). Every rise is computed from declared values (`RUL-19`).
