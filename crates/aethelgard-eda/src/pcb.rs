@@ -1482,7 +1482,6 @@ mod tests {
             "Capacitor_SMD:C_0603_1608Metric",
             "Capacitor_SMD:C_1210_3225Metric",
             "Resistor_SMD:R_0603_1608Metric",
-            "Sensor_Motion:InvenSense_QFN-24_3x3mm_P0.4mm",
         ] {
             let g = geometry(&library::footprint(id).unwrap(), "R1").unwrap();
             assert!(g.keep.contains(g.courtyard), "{id}");

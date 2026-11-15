@@ -7,7 +7,7 @@
 #![forbid(unsafe_code)]
 
 /// Every vendored file: its path under `data/kicad-10.0.7/` and its bytes.
-pub const FILES: [(&str, &[u8]); 41] = [
+pub const FILES: [(&str, &[u8]); 39] = [
     (
         "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
         include_bytes!(
@@ -117,12 +117,6 @@ pub const FILES: [(&str, &[u8]); 41] = [
         ),
     ),
     (
-        "footprints/Sensor_Motion.pretty/InvenSense_QFN-24_3x3mm_P0.4mm.kicad_mod",
-        include_bytes!(
-            "../data/kicad-10.0.7/footprints/Sensor_Motion.pretty/InvenSense_QFN-24_3x3mm_P0.4mm.kicad_mod"
-        ),
-    ),
-    (
         "symbols/Connector_Generic.kicad_symdir/Conn_01x02.kicad_sym",
         include_bytes!(
             "../data/kicad-10.0.7/symbols/Connector_Generic.kicad_symdir/Conn_01x02.kicad_sym"
@@ -198,12 +192,6 @@ pub const FILES: [(&str, &[u8]); 41] = [
         "symbols/Regulator_Switching.kicad_symdir/LMR33640ADDA.kicad_sym",
         include_bytes!(
             "../data/kicad-10.0.7/symbols/Regulator_Switching.kicad_symdir/LMR33640ADDA.kicad_sym"
-        ),
-    ),
-    (
-        "symbols/Sensor_Motion.kicad_symdir/ICM-20948.kicad_sym",
-        include_bytes!(
-            "../data/kicad-10.0.7/symbols/Sensor_Motion.kicad_symdir/ICM-20948.kicad_sym"
         ),
     ),
     (
