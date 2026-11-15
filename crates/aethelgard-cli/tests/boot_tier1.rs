@@ -157,8 +157,7 @@ const GOOD_SPI_WITNESS: &str = "[00:00:00.040010000] [NOISY] spi1.spi1mux.u4: Tr
 
 /// What Renode 1.17.0's BME280 logs for U2's identity read (`AET-WO-2204`
 /// S1, measured): the run's witness, before `BEGIN`.
-const GOOD_WITNESS: &str =
-    "[00:00:00.037620000] [NOISY] i2c1.u2: Write D0\n[00:00:00.037650000] [NOISY] i2c1.u2: Read 60\n";
+const GOOD_WITNESS: &str = "[00:00:00.037620000] [NOISY] i2c1.u2: Write D0\n[00:00:00.037650000] [NOISY] i2c1.u2: Read 60\n";
 
 /// The record a firmware that read U2's ID register (0xD0) as 0x60 leaves.
 const GOOD_RECORD: [&str; 2] = ["0x22020000", "0x00000060"];
@@ -1096,8 +1095,9 @@ fn a_witness_that_shows_the_read_passes_and_is_reported() {
     assert_eq!(code, Some(0), "{v}");
     // The controller's `Unknown slave` lines are kept for attribution, never
     // judged: here a stray transfer to 0x77 beside a witnessed read passes.
-    let stray =
-        format!("[00:00:00.037000000] [WARNING] i2c1: Unknown slave at address 119.\n{GOOD_WITNESS}");
+    let stray = format!(
+        "[00:00:00.037000000] [WARNING] i2c1: Unknown slave at address 119.\n{GOOD_WITNESS}"
+    );
     let (code, v) = boot(&with_log(GOOD_RECORD, &stray));
     assert_eq!(code, Some(0), "{v}");
     assert_eq!(

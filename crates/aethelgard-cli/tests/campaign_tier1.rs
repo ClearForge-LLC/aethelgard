@@ -102,8 +102,7 @@ const GOOD_REGISTERS: [&str; 7] = [
 
 /// What Renode 1.17.0's BME280 logs for U2's identity read (`AET-WO-2204`
 /// S1, measured).
-const GOOD_WITNESS: &str =
-    "[00:00:00.037620000] [NOISY] i2c1.u2: Write D0\n[00:00:00.037650000] [NOISY] i2c1.u2: Read 60\n";
+const GOOD_WITNESS: &str = "[00:00:00.037620000] [NOISY] i2c1.u2: Write D0\n[00:00:00.037650000] [NOISY] i2c1.u2: Read 60\n";
 
 /// The record a firmware that read U2's ID register (0xD0) as 0x60 leaves.
 const GOOD_RECORD: [&str; 2] = ["0x22020000", "0x00000060"];

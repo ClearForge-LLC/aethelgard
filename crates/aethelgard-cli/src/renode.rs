@@ -1420,8 +1420,7 @@ mod tests {
         let resets = bor3();
         let p = plan(&image, &resets);
         let lines = |l: &[&str]| l.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
-        let w =
-            "[00:00:00.010040000] [NOISY] i2c1.u2: Write D0\n[00:00:00.010050000] [NOISY] i2c1.u2: Read 60";
+        let w = "[00:00:00.010040000] [NOISY] i2c1.u2: Write D0\n[00:00:00.010050000] [NOISY] i2c1.u2: Read 60";
         let block = |log: &str, rows: &[&str]| {
             format!(
                 "x\nAETHELGARD-RELEASE-0\n{log}\nAETHELGARD-PROBE-BEGIN-0\n{}\nAETHELGARD-PROBE-END-0\n",
@@ -1547,7 +1546,10 @@ mod tests {
             assert_eq!(log_body(not), None, "{not}");
         }
         assert_eq!(
-            witness_shaped("[00:00:00.010040000] [NOISY] i2c1.u2: Read 60 (2)", "i2c1.u2"),
+            witness_shaped(
+                "[00:00:00.010040000] [NOISY] i2c1.u2: Read 60 (2)",
+                "i2c1.u2"
+            ),
             Some("[NOISY] i2c1.u2: Read 60 (2)")
         );
         assert_eq!(
