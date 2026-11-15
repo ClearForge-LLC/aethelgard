@@ -71,25 +71,46 @@ jobs:
           git merge-base --is-ancestor "$commits" origin/main || { echo "$commits is not reachable from origin/main" >&2; exit 1; }
           echo "specification commit $commits is on main"
 
-      # On a push to main the block runs against the image built from this very
-      # commit, not the README's pin: the IMAGE line is replaced, exactly once,
-      # and the image must name this commit in its revision label.
-      - name: test this commit's image, not the README's pin
+      # On a push to main a copy of the block runs against the image built from
+      # this very commit and this commit's own reference specification
+      # (AET-WO-3303 §1.7): the IMAGE and SPEC lines and the checksum line are
+      # each replaced exactly once, and the image must name this commit in its
+      # revision label. A specification bump then never turns main red; the
+      # README's own pair still runs, as written, in the step after.
+      - name: test this commit's image and example
         if: inputs.image != ''
         env:
           MAIN_IMAGE: ${{ inputs.image }}
         run: |
           set -euo pipefail
           [[ "$MAIN_IMAGE" =~ ^ghcr\.io/clearforge-llc/aethelgard@sha256:[0-9a-f]{64}$ ]] || { echo "not a digest of the engine image: $MAIN_IMAGE" >&2; exit 1; }
-          [ "$(grep -c '^IMAGE=' "$RUNNER_TEMP/quickstart.sh")" -eq 1 ] || { echo "the block must hold exactly one IMAGE= line" >&2; exit 1; }
-          sed -i "s|^IMAGE=.*|IMAGE=$MAIN_IMAGE|" "$RUNNER_TEMP/quickstart.sh"
-          grep -qxF "IMAGE=$MAIN_IMAGE" "$RUNNER_TEMP/quickstart.sh" || { echo "the IMAGE line was not replaced" >&2; exit 1; }
+          example="$GITHUB_WORKSPACE/examples/sentinel-01-minimal.json"
+          sum=$(sha256sum "$example" | cut -d' ' -f1)
+          main="$RUNNER_TEMP/quickstart-main.sh"
+          cp "$RUNNER_TEMP/quickstart.sh" "$main"
+          [ "$(grep -c '^IMAGE=' "$main")" -eq 1 ] || { echo "the block must hold exactly one IMAGE= line" >&2; exit 1; }
+          [ "$(grep -c '^SPEC=' "$main")" -eq 1 ] || { echo "the block must hold exactly one SPEC= line" >&2; exit 1; }
+          check='^echo "[0-9a-f]{64}  spec\.json" \| sha256sum -c -$'
+          [ "$(grep -cE "$check" "$main")" -eq 1 ] || { echo "the block must hold exactly one checksum line" >&2; exit 1; }
+          sed -i -e "s|^IMAGE=.*|IMAGE=$MAIN_IMAGE|" -e "s|^SPEC=.*|SPEC=file://$example|" \
+            -E -e "s#^echo \"[0-9a-f]{64}  spec\\.json\"#echo \"$sum  spec.json\"#" "$main"
+          grep -qxF "IMAGE=$MAIN_IMAGE" "$main" || { echo "the IMAGE line was not replaced" >&2; exit 1; }
+          grep -qxF "SPEC=file://$example" "$main" || { echo "the SPEC line was not replaced" >&2; exit 1; }
+          grep -qxF "echo \"$sum  spec.json\" | sha256sum -c -" "$main" || { echo "the checksum line was not replaced" >&2; exit 1; }
+          rest() { grep -vE -e '^IMAGE=' -e '^SPEC=' -e "$check" "$1"; }
+          diff <(rest "$RUNNER_TEMP/quickstart.sh") <(rest "$main") >/dev/null || { echo "a line other than the three changed" >&2; exit 1; }
           docker pull -q "$MAIN_IMAGE"
           rev=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$MAIN_IMAGE")
           [ "$rev" = "$GITHUB_SHA" ] || { echo "image revision '$rev' is not this commit $GITHUB_SHA" >&2; exit 1; }
-          echo "testing $MAIN_IMAGE built from $rev"
+          echo "testing $MAIN_IMAGE built from $rev on examples/sentinel-01-minimal.json ($sum)"
+          d=$(mktemp -d)
+          cd "$d"
+          bash -euo pipefail "$main" 2>&1 | tee "$RUNNER_TEMP/quickstart-main.out"
+          grep -qx 'quickstart ok' "$RUNNER_TEMP/quickstart-main.out"
 
-      # No checkout in the run directory, and no toolchain on the path it uses.
+      # The README's block exactly as written, against its own pinned image and
+      # specification, on every run. No checkout in the run directory, and no
+      # toolchain on the path it uses.
       - name: run it, as written
         run: |
           set -euo pipefail
