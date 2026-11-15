@@ -132,6 +132,9 @@ pub struct PowerIn {
     /// The operating temperature, °C, and where it was read.
     pub temperature_celsius: (i32, i32),
     pub temperature_cited: Cited,
+    /// AMASS's other documents, which state other ratings: cited beside the
+    /// judged one so the disagreement is in every verdict (ruled D-B6).
+    pub disagreeing: [Cited; 2],
     /// Declared solid: a relieved through-hole pad on a supply path is
     /// refused until its spokes are priced (`1309` D2, ruled at 10:30 UTC).
     pub join: PadJoin,
@@ -144,20 +147,28 @@ pub const AMASS_XT30_TABLE: &str =
 pub const AMASS_XT30_TABLE_SHA256: &str =
     "7fa569aa04e90c72a5a37333efd2bf057bf63aac6265d2485a47b073d3e0c7bc";
 /// AMASS's own XT30PW-M specification V1.2, a copy hosted by a distributor
-/// (store.comet.bg): the sheet names its maker and its part.
+/// (store.comet.bg): the sheet names its maker and its exact part, so it is
+/// the rating judged (ruled D-B6). AMASS's board-type table gives the XT30PW
+/// family 20 A at a rise under 85 K, and AMASS's 2025V0 sheet gives 20 A at
+/// 80 V for the XT30PW-M30, a different part number.
 pub const AMASS_XT30PW_M_V12: &str =
     "AMASS specification XT30PW-M, version V1.2 (copy hosted by store.comet.bg)";
 pub const AMASS_XT30PW_M_V12_SHA256: &str =
     "c57b5a373507b2cd0004dbd3e043448347b5ff8e95d6435d61a409c81cdcf185";
+/// AMASS's own 2025V0 sheet from its site, for the XT30PW-M30.
+pub const AMASS_XT30PW_M30_2025: &str =
+    "AMASS product specification XT30PW-M30, version 2025V0 (china-amass.net)";
+pub const AMASS_XT30PW_M30_2025_SHA256: &str =
+    "475a4aa380f31dff1962c9efa578b63c966701d755eae6188739a76b46ad25ef";
 
 pub const POWER_IN: [PowerIn; 1] = [PowerIn {
     name: "XT30PW-M",
-    rated_milliamps: 20_000,
-    rating_condition: "at most, for a temperature rise under 85 K",
+    rated_milliamps: 15_000,
+    rating_condition: "rated current, as AMASS's V1.2 sheet for the XT30PW-M states it (ruled D-B6); AMASS's board-type table states 20 A at a rise under 85 K for the XT30PW family, and its 2025V0 sheet 20 A at 80 V for the XT30PW-M30",
     cited: Cited {
-        document: AMASS_XT30_TABLE,
-        sha256: AMASS_XT30_TABLE_SHA256,
-        section: "the XT30PW row: current rating 20A MAX (delta < 85 C), max voltage 500V DC",
+        document: AMASS_XT30PW_M_V12,
+        sha256: AMASS_XT30PW_M_V12_SHA256,
+        section: "the one page: rated current 15A, rated voltage DC 500V",
     },
     temperature_celsius: (-20, 120),
     temperature_cited: Cited {
@@ -165,6 +176,18 @@ pub const POWER_IN: [PowerIn; 1] = [PowerIn {
         sha256: AMASS_XT30PW_M_V12_SHA256,
         section: "the one page: operating temperature -20 C to 120 C",
     },
+    disagreeing: [
+        Cited {
+            document: AMASS_XT30_TABLE,
+            sha256: AMASS_XT30_TABLE_SHA256,
+            section: "the XT30PW row: current rating 20A MAX (delta < 85 C), 500V DC",
+        },
+        Cited {
+            document: AMASS_XT30PW_M30_2025,
+            sha256: AMASS_XT30PW_M30_2025_SHA256,
+            section: "current rating 20 A (16AWG, delta <= 85 K), rated voltage 80 V DC",
+        },
+    ],
     join: PadJoin::Solid,
 }];
 
@@ -220,6 +243,9 @@ pub(crate) enum NetKind<'s> {
     I2cSda(&'s str),
     /// An SPI bus's clock, data or chip-select line.
     Spi,
+    /// A motor output's net (`AET-WO-4300a` §1.8): it leaves the board at
+    /// a connector, on no bus, so it declares no off-board capacitance.
+    Motor,
 }
 
 impl NetKind<'_> {
@@ -247,6 +273,9 @@ fn net_kinds(spec: &Specification) -> BTreeMap<&str, NetKind<'_>> {
     }
     for d in spec.declared_spi_devices() {
         kinds.insert(d.cs.net.as_str(), NetKind::Spi);
+    }
+    for m in &spec.motor_outputs {
+        kinds.insert(m.label.as_str(), NetKind::Motor);
     }
     kinds
 }

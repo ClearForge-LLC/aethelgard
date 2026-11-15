@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/power-parts.json`. It moves only with the file.
-const TABLE_SHA256: &str = "6d571194a1ed7380a389563476cd14b34ceadbccad32be5dbebf1b9ca0c85783";
+const TABLE_SHA256: &str = "34673e733aeaceb54afd1e648be9b6907bb530ea8d58fecf112b3ff9457245f7";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -933,4 +933,53 @@ fn check_on_an_unvalidated_bor_level_refuses_rather_than_panics() {
     v["mcu"]["bor_level"] = json!(7);
     let err = power::check(&spec(&v)).unwrap_err();
     assert_power(&err, Refusal::PowerValueInvalid, "mcu");
+}
+
+/// The ruling on PR #147 (comment 6893999770).
+#[test]
+fn the_build_rulings_hold() {
+    // D-B9: a 5 V LMR33630 rail needs a battery minimum of at least 7 V; 2S
+    // (6.0 V) is refused, 3S (9.0 V) is the fixture.
+    let mut v = base();
+    v["power"]["battery"]["cells"]["min"] = json!(2);
+    assert_power(&refused(&v), Refusal::BatteryOutsideRegulatorInput, "U10");
+    // D-B6: the XT30PW-M is judged at 15 A. Two high-side limits of 7.4 A
+    // (14.8 A) pass; of 7.6 A (15.2 A) are refused.
+    for (isc, ok) in [(7400, true), (7600, false)] {
+        let mut t = table_json();
+        row(&mut t, "LMR33630ADDA")["kind"]["buck"]["high_side_limit_milliamps"]["max"] =
+            json!(isc);
+        let r = against(&base(), &t);
+        if ok {
+            assert_eq!(r, Ok(()), "{isc}");
+        } else {
+            assert_power(&r.unwrap_err(), Refusal::PowerInputOverloaded, "J1");
+        }
+    }
+    // D-B3, D-B4, D-B6, D-B7, D-B8: each margin and condition is in the verdict.
+    let t = parse_power_parts(POWER_PARTS_JSON).unwrap();
+    let delays = power::OutputDelays::from([(
+        "ICM20948".to_owned(),
+        (59, "TDK DS-000189 1.6, p. 17, Table 8".to_owned()),
+    )]);
+    let p = power::check_against(
+        &spec(&full()),
+        &t,
+        aethelgard_ir::parts::table().unwrap(),
+        &delays,
+    )
+    .unwrap()
+    .unwrap();
+    let has = |s: &str| p.conditions.iter().any(|c| c.contains(s));
+    assert!(has(
+        "a margin of 3.16 times, not guaranteed above it (ruled D-B3)"
+    ));
+    assert!(has(
+        "32768 pF is needed and 100000 pF is declared, a margin of 3.05 times"
+    ));
+    assert!(has("the 8000 h life, ruled D-B4"));
+    assert!(has("rated 15000 mA"));
+    assert!(has("XT30PW-M30"));
+    assert!(has("at or under 5154639 Hz"));
+    assert!(has("X7S, accepted"));
 }

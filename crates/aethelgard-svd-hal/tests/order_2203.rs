@@ -89,27 +89,30 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `bc1517cd…7522` and `f684f871…3dba`.
 /// Re-taken in `AET-WO-1308` (version 5) the same way: with `main`'s hash
 /// passed to `solve`, each was `f3e10417…2985`, `9c02c1e2…12bf4` and
-/// `cc3a3e65…2dff9` exactly.
-/// Re-taken in `AET-WO-4300d` (version 6, `power` and `mcu.bor_level`) the
-/// same way: with `main`'s hash `3b2d7972…cfde` passed to `solve`, all four
-/// were `main`'s digests exactly (`44f22188…e3af`, `bd957c1d…d4b0`,
-/// `b962492f…ee15`, `747bdc04…efbb3`); the boot image does not carry the hash.
+/// `cc3a3e65…2dff9` exactly. Re-taken in `AET-WO-4300a`: specification version 6
+/// (`motor_outputs`, `mcu.hse_hz`) moved the specification's sha256 in the
+/// three (`44f22188…e3af`, `bd957c1d…d4b0`, `b962492f…ee15`); every enable
+/// register cold and judged in full (2100 F24) moved the boot image
+/// (`747bdc04…fbb3`). Re-taken in `AET-WO-4300d` (version 7, `power` and
+/// `mcu.bor_level`): with `main`'s hash `ff1786a9…5756` passed to `solve`, all
+/// four were `main`'s digests exactly (`dac44166…2e7e`, `693c78ad…dab0`,
+/// `2fe09c95…f5b0`, the boot image unchanged).
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "2ecfb1e139c4a64cc77ab4fd6d5c7c860e570174a3afcb5ded2411ed4fc25386",
+        "a5a8e53a75f8884aaba2a4c361a21b79f2213dfebde76931a1f9d0b56d1a5e46",
     ),
     (
         "platform",
-        "eb0ae4f279c8dbf45ce5a06768122a542faec564c562804e3a4a19db10e63376",
+        "b3bf305f90f93e934a1e3f673e0417e107dcf2ad7fae1414bfbff10bb178a745",
     ),
     (
         "platform faulted",
-        "9cb8d335e28c95e6144d9eee3388dbb6ccde3220ebb2d0c26f1d31b7a04aab2c",
+        "ea29d696acd78e13fdf69d9dcabd874372c5910a0cf978b685cd3189995307f0",
     ),
     (
         "boot image",
-        "747bdc045a0c2a41b8e93922bb6e463d82b577a9e061905a708c4893228efbb3",
+        "893fb13d4ae7e065b25f237b728f1c455d1e7cbd21972369c2815d8f9906c4a6",
     ),
 ];
 

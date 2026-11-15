@@ -6,7 +6,7 @@ use crate::platform;
 
 /// The reference topology, as `aethelgard solve` gives it for
 /// `examples/sentinel-01-minimal.json`.
-pub(crate) const REFERENCE: &str = r#"{"schema_version":5,"specification_sha256":"f98237db173faf0b113eaafcd68648c4f009fa704e76fad67f8def0bb32c07a9","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"power":null}"#;
+pub(crate) const REFERENCE: &str = r#"{"schema_version":6,"specification_sha256":"921207936b7d56bd04c03e59bf0185e659839fb094e3e1c776c0716b3d9f8e04","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"power":null}"#;
 
 fn reference() -> SolvedTopology {
     serde_json::from_str(REFERENCE).unwrap()
@@ -135,7 +135,7 @@ fn what_cannot_be_lowered_is_refused() {
     assert_eq!(kind(t), "Undefined");
     assert_eq!(kind(edited("\"PA0\"", "\"PZ0\"")), "InvalidPin");
     assert_eq!(
-        kind(edited("\"schema_version\":5", "\"schema_version\":6")),
+        kind(edited("\"schema_version\":6", "\"schema_version\":7")),
         "InvalidTopology"
     );
     assert_eq!(
@@ -181,8 +181,10 @@ fn reg(name: &str, address: u32, mask: u32, value: u32) -> Register {
 }
 
 /// The values the spike read back from Renode after the reference firmware's
-/// boot from a cold RCC (`spike/2100/out/s3/s3-image-cold.out`); here they are
-/// computed from the topology alone.
+/// boot from a cold RCC (`spike/2100/out/s3/s3-image-cold.out`), and since
+/// `AET-WO-4300a` (2100 F24) every enable register cold at its reset value,
+/// read back by the `cold9` probe (FEEDBACK P6.1); here they are computed
+/// from the topology alone.
 #[test]
 fn the_reference_image_is_the_one_the_spike_read_back() {
     let image = boot::expected(&bare()).unwrap();
@@ -193,17 +195,29 @@ fn the_reference_image_is_the_one_the_spike_read_back() {
             reg("GPIOA.AFRL", 0x5802_0020, 0xFFF0_0000, 0x5550_0000),
             reg("GPIOB.MODER", 0x5802_0400, 0x0000_F000, 0x0000_A000),
             reg("GPIOB.AFRL", 0x5802_0420, 0xFF00_0000, 0x4400_0000),
+            reg("RCC.AHB3ENR", 0x5802_44D4, u32::MAX, 0),
+            reg("RCC.AHB1ENR", 0x5802_44D8, u32::MAX, 0),
+            reg("RCC.AHB2ENR", 0x5802_44DC, u32::MAX, 0),
             reg("RCC.AHB4ENR", 0x5802_44E0, u32::MAX, 0x0000_0003),
+            reg("RCC.APB3ENR", 0x5802_44E4, u32::MAX, 0),
             reg("RCC.APB1LENR", 0x5802_44E8, u32::MAX, 0x0020_0000),
+            reg("RCC.APB1HENR", 0x5802_44EC, u32::MAX, 0),
             reg("RCC.APB2ENR", 0x5802_44F0, u32::MAX, 0x0000_1000),
+            reg("RCC.APB4ENR", 0x5802_44F4, u32::MAX, 0x0001_0000),
         ]
     );
     assert_eq!(
         image.cold,
         [
+            reg("RCC.AHB3ENR", 0x5802_44D4, u32::MAX, 0),
+            reg("RCC.AHB1ENR", 0x5802_44D8, u32::MAX, 0),
+            reg("RCC.AHB2ENR", 0x5802_44DC, u32::MAX, 0),
             reg("RCC.AHB4ENR", 0x5802_44E0, u32::MAX, 0),
+            reg("RCC.APB3ENR", 0x5802_44E4, u32::MAX, 0),
             reg("RCC.APB1LENR", 0x5802_44E8, u32::MAX, 0),
+            reg("RCC.APB1HENR", 0x5802_44EC, u32::MAX, 0),
             reg("RCC.APB2ENR", 0x5802_44F0, u32::MAX, 0),
+            reg("RCC.APB4ENR", 0x5802_44F4, u32::MAX, 0x0001_0000),
         ]
     );
     assert_eq!(image.unobservable, ["GPIOB.OTYPER", "I2C1.TIMINGR"]);

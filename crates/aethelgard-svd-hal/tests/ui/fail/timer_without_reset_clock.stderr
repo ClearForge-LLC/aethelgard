@@ -1,0 +1,18 @@
+error[E0308]: mismatched types
+  --> tests/ui/fail/timer_without_reset_clock.rs:22:47
+   |
+22 |     let _running = tim1.start_outputs(&mut r, &unchecked, ch1, ch2, ch3, ch4);
+   |                         -------------         ^^^^^^^^^^ expected `&ResetClock`, found `&Result<ResetClock, NotResetClock>`
+   |                         |
+   |                         arguments to this method are incorrect
+   |
+   = note: expected reference `&ResetClock`
+              found reference `&Result<ResetClock, NotResetClock>`
+note: method defined here
+  --> tests/ui/fail/../motors-pwm/board.rs
+   |
+   |     pub fn start_outputs<R: Registers>(
+   |            ^^^^^^^^^^^^^
+...
+   |         _clock: &ResetClock,
+   |         -------------------

@@ -28,10 +28,6 @@ use crate::{
     read_input, run,
 };
 
-/// Every scenario boots for the longest virtual time `simulate --firmware`
-/// admits, so a read that times out still reaches the boot word (`AET-WO-2202`).
-pub const VIRTUAL_NS: u64 = aethelgard_twin::boot::MAX_VIRTUAL_NS;
-
 /// One scenario, read, applied and solved, ready to run.
 struct Prepared {
     path: PathBuf,
@@ -43,6 +39,8 @@ struct Prepared {
     held: Vec<HeldLow>,
     rail: Option<crate::analog::Rail>,
     run_id: [u8; 16],
+    /// The board's window and the constant that states it (`AET-WO-4300a` D1).
+    window: (u64, &'static str),
 }
 
 pub(crate) fn refuse(kind: &'static str, id: Option<&str>, message: String, code: u8) -> ExitCode {
@@ -235,6 +233,7 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         None => None,
     };
     let run_id = rules::run_id(&scenario.sha256, &specification_sha256, firmware_sha256);
+    let window = aethelgard_twin::boot::window(&topology);
     Ok(Prepared {
         path: path.to_path_buf(),
         base_sha256: digest(&base),
@@ -244,6 +243,7 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         held,
         rail,
         run_id,
+        window,
     })
 }
 
@@ -298,7 +298,9 @@ fn resolve_droop(
         droop,
         domain.nominal_millivolts,
         decoupling_picofarads,
-        VIRTUAL_NS,
+        // A droop past the board's window is refused with its time, never
+        // cut short (`AET-WO-4300a` D1).
+        aethelgard_twin::boot::window(topology).0,
     )?;
     Ok(crate::analog::Rail {
         droop: droop.clone(),
@@ -423,6 +425,10 @@ struct ScenarioLine {
     state_sequence_hash: String,
     event_count: u64,
     trace_bytes: u64,
+    /// The boot's virtual time, its board's window, and the constant that
+    /// states it (`AET-WO-4300a` D1).
+    virtual_time_ns: u64,
+    window: &'static str,
     /// The boot's `uid_boundary` and, when false, why (`AET-WO-1601`).
     uid_boundary: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -436,6 +442,7 @@ struct CampaignSummary {
     check: &'static str,
     scenarios: usize,
     matched: usize,
+    /// The longest window any scenario booted for; each line names its own.
     virtual_time_ns: u64,
     trace_bytes: u64,
 }
@@ -496,6 +503,7 @@ pub fn run(scenarios: &[PathBuf], firmware: &Path, archive: &Path) -> ExitCode {
     }
 
     let (mut matched, mut total) = (0, 0u64);
+    let longest = prepared.iter().map(|p| p.window.0).max().unwrap_or(0);
     for p in prepared {
         let (line, ok) = match run_one(p, firmware, &firmware_sha256, archive) {
             Ok(done) => done,
@@ -516,7 +524,7 @@ pub fn run(scenarios: &[PathBuf], firmware: &Path, archive: &Path) -> ExitCode {
             check: "campaign",
             scenarios: scenarios.len(),
             matched,
-            virtual_time_ns: VIRTUAL_NS,
+            virtual_time_ns: longest,
             trace_bytes: total,
         },
         if all { 0 } else { EXIT_FAIL },
@@ -556,12 +564,13 @@ fn run_one(
         crate::diagnose(&e.to_string());
         ExitCode::from(EXIT_INTERNAL)
     })?;
+    let motors = solved_motors(&p.topology);
     let verdict = crate::simulate(
         &platform,
         Some(Boot {
             firmware: firmware.to_path_buf(),
             topology: p.topology,
-            virtual_ns: VIRTUAL_NS,
+            virtual_ns: p.window.0,
             scenario: p.scenario.name.clone(),
             held: p.held,
             absent: absent(&p.scenario.overrides),
@@ -603,6 +612,7 @@ fn run_one(
     }]);
     records.extend(buses);
     records.extend(spi_buses);
+    records.extend(motors);
     records.extend(records_of(&verdict).map_err(internal)?);
     // The run must pass the rules replay will judge it by before it is written.
     let summary = rules::check_run(&records)
@@ -627,7 +637,7 @@ fn run_one(
     let archived = (|| {
         let mut writer = TraceWriter::create(&dir, &header)?;
         for record in records {
-            let timestamp = record.timestamp(VIRTUAL_NS);
+            let timestamp = record.timestamp(p.window.0);
             writer.append(&Event::Record { timestamp, record })?;
         }
         writer.commit()
@@ -655,6 +665,8 @@ fn run_one(
             state_sequence_hash: hex(archived.state_hash),
             event_count: archived.event_count,
             trace_bytes: archived.trace_bytes,
+            virtual_time_ns: p.window.0,
+            window: p.window.1,
             uid_boundary,
             uid_boundary_unmet,
         },
@@ -748,6 +760,47 @@ pub(crate) fn solved_spi(t: &SolvedTopology) -> Result<Vec<Record>, aethelgard_t
             }
         })
         .collect())
+}
+
+/// Kinds 24 and 25, one of each per motor output, from the solved topology
+/// alone (`AET-WO-4300a`): the output as solved, and the static check for
+/// silicon the judge reports, by the same function (`motor::check_silicon`).
+pub(crate) fn solved_motors(t: &SolvedTopology) -> Vec<Record> {
+    let mut solved = Vec::new();
+    let mut checks = Vec::new();
+    for (label, m, a) in t.motor_outputs_in_order() {
+        // `SolvedTopology::validate` gave every output a `TIMn_CHk`.
+        let Some((timer, channel)) = aethelgard_ir::motor::timer_channel(&a.signal) else {
+            continue;
+        };
+        solved.push(Record::MotorOutputSolved {
+            label: label.to_owned(),
+            timer: a.peripheral.clone(),
+            channel: u8::try_from(channel).expect("1 to 4"),
+            pin: a.pin.clone(),
+            alternate_function: a.alternate_function,
+            protocol: m.protocol.name().to_owned(),
+            psc: m.psc,
+            arr: m.arr,
+            ccr: m.ccr,
+            pwm: m
+                .pwm
+                .as_ref()
+                .map(|p| (p.rate_hz, p.pulse_min_us, p.pulse_max_us)),
+        });
+        let s = aethelgard_ir::motor::check_silicon(&t.clock, timer, m);
+        checks.push(Record::MotorTimingCheck {
+            label: label.to_owned(),
+            kernel_hz: s.kernel_hz,
+            period_ps: s.period_ps,
+            high_ps: s.high_ps,
+            nominal_period_ps: s.nominal_period_ps,
+            nominal_high_ps: s.nominal_high_ps,
+            holds: s.holds,
+        });
+    }
+    solved.extend(checks);
+    solved
 }
 
 /// Kinds 16 to 19 from a droop's report, the crossings, resets and
@@ -1049,6 +1102,33 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
                 .as_deref()
                 .map(|o| within(archived_lines(o), WITNESS_BUDGET)),
             unrouted: within(archived_lines(&w.unrouted), UNROUTED_BUDGET),
+        });
+    }
+    // Kind 26, each motor output's twin witness, once Renode has run
+    // (`AET-WO-4300a`).
+    for m in &boot.motor {
+        let w = &m.twin;
+        let (Some(status), Some(rises), Some(falls), Some(off_grid), Some(batched), Some(end_ns)) =
+            (w.status, w.rises, w.falls, w.off_grid, w.batched, w.end_ns)
+        else {
+            continue;
+        };
+        out.push(Record::MotorWitness {
+            label: m.label.clone(),
+            observer: w.observer.clone(),
+            period_ns: w.period_ns,
+            high_ns: w.high_ns,
+            grain_ns: w.grain_ns,
+            quantum_ns: w.quantum_ns,
+            status: status.to_owned(),
+            rises,
+            falls,
+            first_ns: w.first_ns,
+            last_ns: w.last_ns,
+            end_ns,
+            span_ns: w.span_ns,
+            off_grid,
+            batched,
         });
     }
     let mut findings: BTreeMap<(String, String), u64> = BTreeMap::new();

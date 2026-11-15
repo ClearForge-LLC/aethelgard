@@ -145,6 +145,28 @@
             }
           },
           "regulation_production_tested": false,
+          "regulation_vin_min": [
+            {
+              "from_vout_millivolts": 3301,
+              "vin_min": {
+                "value": 7000,
+                "at": {
+                  "document": "SNVSAN3F",
+                  "section": "p. 9, 7.7: the VOUT = 5 V rows are stated for VIN 7 V to 36 V; held for any output above 3.3 V (ruled D-B9)"
+                }
+              }
+            },
+            {
+              "from_vout_millivolts": 0,
+              "vin_min": {
+                "value": 3800,
+                "at": {
+                  "document": "SNVSAN3F",
+                  "section": "p. 9, 7.7: the VOUT = 3.3 V rows are stated for VIN 3.8 V to 36 V"
+                }
+              }
+            }
+          ],
           "fsw_hz": {
             "min": 340000,
             "max": 460000,
@@ -322,9 +344,9 @@
             "ring_um": 150,
             "sources": {
               "count": "SNVSAN3F p. 34, 10.1.1: a minimum 4 x 3 array of thermal vias, evenly distributed under the PAD",
-              "pitch": "fitted to the 2.95 x 4.9 mm exposed pad of Package_SO:Texas_HSOP-8-1EP_3.9x4.9mm_P1.27mm; SNVSAN3F p. 34 states only an even distribution",
+              "pitch": "an engine choice, fitted to the 2.95 x 4.9 mm exposed pad: SNVSAN3F p. 34 states only an even distribution, and TI's LMR33630EVM guide SNVU573A shows its layout as images without dimensions (D-B5)",
               "drill": "SNVSAN3F p. 34, 10.1.1: 10-mil thermal vias (254 um)",
-              "ring": "the engine's via ring for a 0.3 mm drill in a 0.6 mm pad; SNVSAN3F states none",
+              "ring": "an engine choice, the engine's via ring for a 0.3 mm drill in a 0.6 mm pad: neither SNVSAN3F nor SNVU573A states one (D-B5)",
               "layers": "SNVSAN3F p. 34, 10.1.1: to the system ground plane heat sink"
             }
           }

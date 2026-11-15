@@ -20,15 +20,16 @@ use common::*;
 /// the header's tools: the version byte, the header's length and its empty
 /// tools array changed, and undoing the three gives version 5's hash again.
 const GOLDEN_TRACE_SHA256: &str =
-    "dd0dd2dbdf44f6a8f04ad9ad9ea80144b37ce38a12ec11bc08e471dd0b20c7ff";
+    "43cbe654d5d57b2fabcad9ab5c83655d65c3ebbdf6d27b3e225787dde6a50ea3";
 /// The golden `state_hash`. Same rule. It was `535db225…adac4` (manifest
 /// version 1) until `AET-WO-0400a` made the chain hash each event's delta,
 /// then `af2d46bb…b4939` until `AET-WO-2300` changed the header it starts
 /// from, then `eb6408ee…93edc` until `AET-WO-3100` changed it again, then
 /// `0db4b4f9…10cea` until `AET-WO-2301` did, then `e5dcbe7c…37925` until
 /// `AET-WO-2204` did, then `28d3096c…1f82d` until `AET-WO-2205` did, then
-/// `6868123f…ec11b` until `AET-WO-4200` did.
-const GOLDEN_STATE_HASH: &str = "abf1ccd2d100f56ab44e9539044e2bac1d6033a9d047e59d035e100192962524";
+/// `6868123f…ec11b` until `AET-WO-4200` did, then `abf1ccd2…62524` until
+/// `AET-WO-4300a` did.
+const GOLDEN_STATE_HASH: &str = "35971fa6331cb0f43e66bd9461b8983f3479262cb1745f75402ac6ef34d2b99b";
 
 #[test]
 fn golden_trace_and_state_hash_are_pinned() {
@@ -43,11 +44,17 @@ fn golden_trace_and_state_hash_are_pinned() {
     );
     assert_eq!(trace_sha, GOLDEN_TRACE_SHA256);
     assert_eq!(state_hash, GOLDEN_STATE_HASH);
-    // AET-WO-4200 changed the version byte alone: set back to 6, the bytes
-    // are version 6's golden trace (AET-WO-2205's) again.
+    // AET-WO-4300a and AET-WO-4200 each changed the version byte alone: set
+    // back to 7, the bytes are version 7's golden trace (`dd0dd2db…c7ff`,
+    // AET-WO-4200's); set back to 6, version 6's (AET-WO-2205's).
     let at = 1 + 1 + "aethelgard-trace".len();
-    assert_eq!(bytes[at], 7);
+    assert_eq!(bytes[at], 8);
     let mut bytes = bytes.clone();
+    bytes[at] = 7;
+    assert_eq!(
+        hex(&Sha256::digest(&bytes)),
+        "dd0dd2dbdf44f6a8f04ad9ad9ea80144b37ce38a12ec11bc08e471dd0b20c7ff"
+    );
     bytes[at] = 6;
     assert_eq!(
         hex(&Sha256::digest(&bytes)),

@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 
 use crate::event::{Header, name_ok};
 use crate::power::{self, Band};
-use crate::record::{self, BusLine, Droop, Line, Override, Reading, Record};
+use crate::record::{self, BusLine, Droop, Line, Override, Reading, Record, split_pin};
 use crate::replay::State;
 
 /// The scenario format versions read: 1 (static scenarios, unchanged) and 2,
@@ -672,15 +672,20 @@ pub struct RunSummary {
 /// solved topology, the solved I2C buses (kind 15, sorted by bus), the analog
 /// records (kinds 7 and 8), the bus faults, the declared rail (kind 16), the
 /// droop's crossings, resets and observations (kinds 17 to 19) in time
-/// order, the boot's witnesses (kind 10, then 11, 12, 13, 21 and 22 in that
-/// order), and the verdict, last and once.
+/// order, the boot's witnesses (kind 10, then 11, 12, 13, 21, 22 and 26 in
+/// that order), and the verdict, last and once. The solved motor outputs
+/// (kind 24) and their static checks (kind 25) sit with the solved buses
+/// (`AET-WO-4300a`).
 pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     fn rank(r: &Record) -> u8 {
         match r {
             Record::Scenario { .. } => 0,
             Record::ExpectedCounts { .. } => 1,
             Record::Solved { .. } => 2,
-            Record::I2cBusSolved { .. } | Record::SpiBusSolved { .. } => 3,
+            Record::I2cBusSolved { .. }
+            | Record::SpiBusSolved { .. }
+            | Record::MotorOutputSolved { .. }
+            | Record::MotorTimingCheck { .. } => 3,
             Record::RiseComputed { .. } | Record::LineStuckHigh { .. } => 4,
             Record::BusFault { .. } => 5,
             Record::RailDeclared { .. } => 6,
@@ -693,7 +698,8 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             Record::I2cWitness { .. } => 11,
             Record::SpiCheck { .. } => 12,
             Record::SpiWitness { .. } => 13,
-            Record::Verdict { .. } => 14,
+            Record::MotorWitness { .. } => 14,
+            Record::Verdict { .. } => 15,
         }
     }
     /// Within rank 7: time in ps, then crossing, reset, observation.
@@ -713,7 +719,7 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     if records.is_empty() || !ordered {
         return Err("the records are not in the campaign's order");
     }
-    if !(count_rank(0) == 1 && count_rank(2) == 1 && count_rank(8) == 1 && count_rank(14) == 1) {
+    if !(count_rank(0) == 1 && count_rank(2) == 1 && count_rank(8) == 1 && count_rank(15) == 1) {
         return Err("a run holds exactly one scenario, topology, boot and verdict");
     }
     if count_rank(1) > 1 || count_rank(6) > 1 {
@@ -840,6 +846,43 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
         return Err(
             "the verdict names pc_not_on_self_loop for a pc outside the firmware or unread",
         );
+    }
+    // The motor outputs (`AET-WO-4300a`): the verdict names a static
+    // mismatch once per check that fails, and, once the boot word is set,
+    // each witness's finding by its status, exactly; before it, none.
+    let booted = records.iter().any(|r| {
+        matches!(r, Record::BootObserved { boot_word, .. }
+            if boot_word.observed == Some(boot_word.expected))
+    });
+    let mut motor_needed: BTreeMap<&str, u64> = BTreeMap::new();
+    for r in records {
+        match r {
+            Record::MotorTimingCheck { holds: false, .. } => {
+                *motor_needed.entry(MOTOR_STATIC_FINDING).or_default() += 1;
+            }
+            Record::MotorWitness { status, .. } if booted => {
+                let kind = match status.as_str() {
+                    "unwitnessed" | "unreadable" => Some(MOTOR_UNWITNESSED_FINDING),
+                    "mismatch" | "batched" | "stopped" => Some(MOTOR_MISMATCH_FINDING),
+                    "static_only" => Some(MOTOR_STATIC_ONLY_FINDING),
+                    _ => None,
+                };
+                if let Some(kind) = kind {
+                    *motor_needed.entry(kind).or_default() += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    for kind in MOTOR_FINDINGS {
+        if any_severity(kind) != motor_needed.get(kind).copied().unwrap_or(0) {
+            return Err("the verdict's motor findings do not match the motor records");
+        }
+    }
+    if findings.iter().any(|(k, s, _)| {
+        (k == MOTOR_STATIC_ONLY_FINDING) != (s == "info") && MOTOR_FINDINGS.contains(&k.as_str())
+    }) {
+        return Err("a motor finding has the wrong severity");
     }
     let droop_counts = check_droop_records(records, overrides)?;
     for (kind, want) in droop_counts {
@@ -1165,7 +1208,272 @@ fn check_droop_records(
     ])
 }
 
+/// The motor output findings the boot judge gives (`AET-WO-4300a`).
+pub const MOTOR_STATIC_FINDING: &str = "motor_timing_static_mismatch";
+pub const MOTOR_UNWITNESSED_FINDING: &str = "motor_output_unwitnessed";
+pub const MOTOR_MISMATCH_FINDING: &str = "motor_timing_mismatch";
+/// `info`: the witness fit the model's sequence with every edge on the grid.
+pub const MOTOR_STATIC_ONLY_FINDING: &str = "motor_witness_static_only";
+
+/// Every motor finding kind the records explain.
+const MOTOR_FINDINGS: [&str; 4] = [
+    MOTOR_STATIC_FINDING,
+    MOTOR_UNWITNESSED_FINDING,
+    MOTOR_MISMATCH_FINDING,
+    MOTOR_STATIC_ONLY_FINDING,
+];
+
+/// Kinds 25 and 26 each join one solved motor output (kind 24) by label,
+/// every output has exactly one static check and at most one witness, and
+/// a witness's observer is its output's pin's (`AET-WO-4300a`).
+fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
+    let mut solved: BTreeMap<&str, &Record> = BTreeMap::new();
+    for r in records {
+        if let Record::MotorOutputSolved { label, .. } = r
+            && solved.insert(label.as_str(), r).is_some()
+        {
+            return Err("a motor output is solved twice");
+        }
+    }
+    // The board's window, from its outputs' protocols (`AET-WO-4300a` D1):
+    // every witness ends at it. Kind 10's instruction count is not tied to
+    // it: a droop's boot counts from the last reset's release (third
+    // adversarial review, F1).
+    let window = if solved.values().any(
+        |m| matches!(m, Record::MotorOutputSolved { protocol, .. } if protocol.starts_with("dshot")),
+    ) {
+        TWIN_DSHOT_WINDOW_NS
+    } else {
+        TWIN_MAX_VIRTUAL_NS
+    };
+    let mut checked: BTreeSet<&str> = BTreeSet::new();
+    let mut witnessed: BTreeSet<&str> = BTreeSet::new();
+    for r in records {
+        match r {
+            Record::MotorTimingCheck { label, .. } => {
+                let Some(m) = solved.get(label.as_str()) else {
+                    return Err("a motor timing check names no solved output");
+                };
+                if !checked.insert(label) {
+                    return Err("a motor timing check names one output twice");
+                }
+                if silicon_check(m, r) != Some(true) {
+                    return Err("a motor timing check is not what its solved output gives");
+                }
+            }
+            Record::MotorWitness {
+                label, observer, ..
+            } => {
+                let Some(m @ Record::MotorOutputSolved { pin, .. }) =
+                    solved.get(label.as_str()).copied()
+                else {
+                    return Err("a motor witness names no solved output");
+                };
+                if !matches!(r, Record::MotorWitness { end_ns, .. } if *end_ns == window) {
+                    return Err("a motor witness does not end at its board's window");
+                }
+                if !witness_consistent(m, r) {
+                    return Err(
+                        "a motor witness's status is not what its counts and its output's timing give",
+                    );
+                }
+                // belt-and-suspenders: the twin's `timer::observer_name`
+                // states this path; replay checks an archive without the
+                // twin, so it states it again.
+                let want = split_pin(pin).map(|(port, n)| {
+                    format!("gpioPort{port}.p{}{n}obs", port.to_ascii_lowercase())
+                });
+                if want.as_deref() != Some(observer.as_str()) || !witnessed.insert(label) {
+                    return Err(
+                        "a motor witness is not its output's pin's observer, or is there twice",
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+    if checked.len() != solved.len() {
+        return Err("a solved motor output has no static timing check");
+    }
+    Ok(())
+}
+
+/// The cycle of the twin's timers (4 ns at Renode's fixed 250 MHz), the
+/// stamp grain (10 ns) and the quantum (100 µs) the judge witnesses with.
+// belt-and-suspenders: `aethelgard_twin::timer::CYCLE_NS`,
+// `aethelgard-cli`'s `STAMP_GRAIN_NS` and `aethelgard_twin::boot::QUANTUM_NS`
+// state these; replay checks an archive without the twin or the CLI, so it
+// states them again.
+const TWIN_CYCLE_NS: u64 = 4;
+const TWIN_GRAIN_NS: u64 = 10;
+const TWIN_QUANTUM_NS: u64 = 100_000;
+
+/// A boot's windows: 100 ms, or 2 ms for a board with a DShot output
+/// (`AET-WO-4300a` D1); and every timer's kernel clock, the reset clock's 64 MHz (RM0433 Table 57), the
+/// only clock a solved topology admits.
+// belt-and-suspenders: `aethelgard_twin::boot::{MAX_VIRTUAL_NS,
+// DSHOT_WINDOW_NS}` and `aethelgard_ir::SolvedClock::reset` state
+// these, and `aethelgard_twin::boot::window` the rule that picks the window
+// (any DShot output); replay checks an archive without the twin or
+// `aethelgard-ir` (RUL-16), so it states them again.
+const TWIN_MAX_VIRTUAL_NS: u64 = 100_000_000;
+const TWIN_DSHOT_WINDOW_NS: u64 = 2_000_000;
+const RESET_KERNEL_HZ: u64 = 64_000_000;
+
+/// Whether kind 25 `check` is exactly the static check of kind 24 `m` on its
+/// own kernel clock: the figures and `holds`, re-derived (adversarial pass:
+/// a forged `holds` beside its own failing figures).
+// belt-and-suspenders: `aethelgard_ir::motor::check_silicon` is the judge's
+// check; replay never depends on `aethelgard-ir` (RUL-16), so it states the
+// same exact-integer rules again.
+fn silicon_check(m: &Record, check: &Record) -> Option<bool> {
+    let (
+        Record::MotorOutputSolved {
+            protocol,
+            psc,
+            arr,
+            ccr,
+            pwm,
+            ..
+        },
+        Record::MotorTimingCheck {
+            kernel_hz,
+            period_ps,
+            high_ps,
+            nominal_period_ps,
+            nominal_high_ps,
+            holds,
+            ..
+        },
+    ) = (m, check)
+    else {
+        return None;
+    };
+    if *kernel_hz != RESET_KERNEL_HZ {
+        return Some(false);
+    }
+    let kernel = u128::from(*kernel_hz);
+    let (psc1, arr1, ccr) = (u128::from(*psc) + 1, u128::from(*arr) + 1, u128::from(*ccr));
+    let ps = |cycles: u128| u64::try_from(cycles * 1_000_000_000_000 / kernel.max(1)).ok();
+    let bit_rate = match protocol.as_str() {
+        "dshot300" => Some(300_000u128),
+        "dshot600" => Some(600_000),
+        _ => None,
+    };
+    let (want_holds, nominal, nominal_high) = match (bit_rate, pwm) {
+        (Some(rate), None) => {
+            let period_ok = (2 * arr1 * psc1 * rate).abs_diff(2 * kernel) <= psc1 * rate;
+            let high_ok = (8 * ccr * psc1 * rate).abs_diff(3 * kernel) <= 4 * psc1 * rate;
+            let n = 1_000_000_000_000 / rate;
+            (period_ok && high_ok, n, n * 3 / 8)
+        }
+        (None, Some((rate, lo, hi))) => {
+            let rate = u128::from(*rate);
+            let period_ok =
+                rate > 0 && (2 * arr1 * psc1 * rate).abs_diff(2 * kernel) <= psc1 * rate;
+            let high_ok = ccr * psc1 * 1_000_000 == u128::from(*lo) * kernel;
+            let max_ok = u128::from(*hi) * kernel < arr1 * psc1 * 1_000_000;
+            (
+                period_ok && high_ok && max_ok,
+                1_000_000_000_000 / rate.max(1),
+                u128::from(*lo) * 1_000_000,
+            )
+        }
+        _ => return Some(false),
+    };
+    Some(
+        ps(arr1 * psc1) == Some(*period_ps)
+            && ps(ccr * psc1) == Some(*high_ps)
+            && u64::try_from(nominal).ok() == Some(*nominal_period_ps)
+            && u64::try_from(nominal_high).ok() == Some(*nominal_high_ps)
+            && want_holds == *holds,
+    )
+}
+
+/// Whether kind 26 `w` is consistent with kind 24 `m` and with its own
+/// counts: the model's timing is the output's (`ARR` and `CCR` ticks of
+/// `PSC + 1` cycles), and a status is one its counts allow. A passing status
+/// needs two rises or more, alternating counts, no shared stamp, a spread
+/// under the grain, the last rise within a period and a grain of the
+/// window's end, and edges off the grid exactly when `witnessed`.
+fn witness_consistent(m: &Record, w: &Record) -> bool {
+    let (
+        Record::MotorOutputSolved { psc, arr, ccr, .. },
+        Record::MotorWitness {
+            period_ns,
+            high_ns,
+            grain_ns,
+            quantum_ns,
+            status,
+            rises,
+            falls,
+            first_ns,
+            last_ns,
+            end_ns,
+            span_ns,
+            off_grid,
+            batched,
+            ..
+        },
+    ) = (m, w)
+    else {
+        return false;
+    };
+    let cycles = (u64::from(*psc) + 1) * TWIN_CYCLE_NS;
+    if *period_ns != u64::from(*arr) * cycles
+        || *high_ns != u64::from(*ccr) * cycles
+        || *grain_ns != TWIN_GRAIN_NS
+        || *quantum_ns != TWIN_QUANTUM_NS
+    {
+        return false;
+    }
+    // The fields agree with each other (adversarial F3, on `a2c4fa4`): the
+    // first rise no later than the last, which is no later than the end;
+    // no more edges off the grid than edges; and a passing sequence's last
+    // rise exactly `rises - 1` periods after its first, within its span.
+    if first_ns.zip(*last_ns).is_some_and(|(f, l)| f > l)
+        || last_ns.is_some_and(|l| l > *end_ns)
+        || rises
+            .checked_add(*falls)
+            .is_none_or(|edges| *off_grid > edges)
+    {
+        return false;
+    }
+    let none = *rises == 0 && *falls == 0 && first_ns.is_none();
+    let shaped = *rises >= 2
+        && *batched == 0
+        && first_ns.is_some()
+        && span_ns.is_some_and(|s| s < *grain_ns);
+    let covers =
+        last_ns.is_some_and(|l| l.saturating_add(*period_ns).saturating_add(*grain_ns) >= *end_ns);
+    // Checked: a forged count must not wrap onto the honest spacing, nor
+    // panic (third adversarial review, F2).
+    let spaced = first_ns
+        .zip(*last_ns)
+        .zip(*span_ns)
+        .is_some_and(|((f, l), s)| {
+            rises
+                .checked_sub(1)
+                .and_then(|n| n.checked_mul(*period_ns))
+                .is_some_and(|due| (l - f).abs_diff(due) <= s)
+        });
+    let alternating = *falls == *rises || rises.checked_sub(1) == Some(*falls);
+    let passing = shaped && spaced && alternating && covers;
+    match status.as_str() {
+        "witnessed" => passing && *off_grid > 0,
+        "static_only" => passing && *off_grid == 0,
+        "unwitnessed" => *rises < 2,
+        "unreadable" => none,
+        "batched" => *rises >= 2 && *batched > 0,
+        "stopped" => shaped && !covers,
+        // An unreadable log, or edges off the model's sequence.
+        "mismatch" => none || *rises >= 2,
+        _ => false,
+    }
+}
+
 fn check_joins(records: &[Record]) -> Result<(), &'static str> {
+    check_motor_joins(records)?;
     /// A kind 15's bus, peripheral, lines and devices.
     type Solved<'a> = (&'a str, &'a str, &'a [BusLine], &'a [(String, u8)]);
     let solved: Vec<Solved> = records

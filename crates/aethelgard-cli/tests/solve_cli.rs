@@ -32,9 +32,14 @@ use sha2::{Digest, Sha256};
 /// specification's sha256: with the old hash put back, each output's digest is
 /// the old one exactly (`ac9c9299…` and `a8606bf8…` before; FEEDBACK); and
 /// re-taken in `AET-WO-1308` (version 5, `net_classes` and `diff_pairs`) the same
-/// way (`26771d90…` and `6e4af649…` before).
-const REFERENCE_DIGEST: &str = "22b50ac89f9b1a63a2f8210f2fb28946c2aed11a42ffdfa57786ca62b46109aa";
-const STRESS_DIGEST: &str = "0ccc5888041848bb97fc22750d04ec65d71519c257a1e618e7511c2dac7b89fd";
+/// way (`26771d90…` and `6e4af649…` before); and re-taken in `AET-WO-4300a`,
+/// whose specification version 6 (`motor_outputs`, `mcu.hse_hz`) and solved
+/// version 5 (`clock`, `motor_outputs`) moved them (`8100aadf…` and
+/// `798ae634…` before); and in `AET-WO-4300d`, whose specification version
+/// 7 (`power`, `mcu.bor_level`) and solved version 6 (`power`) moved them
+/// (`e61864b9…` and `33b079d1…` before).
+const REFERENCE_DIGEST: &str = "c7688dcac8a0e015c9e73766eef85a099878def4aa5b489ce706c5e2eaad0e99";
+const STRESS_DIGEST: &str = "fe4252ebbcee5bc138c248d0fa2e29de093474665081021165589502b8231ce8";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -204,7 +209,7 @@ fn the_reference_solves_to_the_expected_pins() {
     // Both lines declare 300 ns: Fast-mode, 400 kHz, the bus's own speed.
     assert_eq!(t.i2c_ceilings, [("SENSORS".to_owned(), 400_000)].into());
     assert_eq!(t.i2c_speeds, [("SENSORS".to_owned(), 400_000)].into());
-    assert_eq!(t.schema_version, 5);
+    assert_eq!(t.schema_version, aethelgard_ir::SOLVED_SCHEMA_VERSION);
 }
 
 #[test]
@@ -270,9 +275,9 @@ fn each_refusal_before_the_search_names_its_cause() {
             json!(["spi_devices[0].cs"]),
         ),
         (
-            |d| d["spi_buses"][0]["sck"]["pin"] = "PH0".into(),
+            |d| d["spi_buses"][0]["sck"]["pin"] = "PC14".into(),
             "ReservedPin",
-            json!("PH0"),
+            json!("PC14"),
             json!(["spi_buses[0].sck"]),
         ),
         (

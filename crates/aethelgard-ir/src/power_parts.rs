@@ -95,6 +95,10 @@ pub struct Buck {
     /// the set point; and whether the maker tests it in production.
     pub regulation_permille: Ranged,
     pub regulation_production_tested: bool,
+    /// The lowest VIN the band is stated from, by output: `(nominal mV from
+    /// which the row applies, VIN min)`, highest first. Below it the band is
+    /// unstated, and the regulator is refused (ruled D-B9).
+    pub regulation_vin_min: Vec<(i64, Limit)>,
     /// The switching frequency, Hz.
     pub fsw_hz: Ranged,
     /// Minimum on-time and off-time, each at most, ns.
@@ -509,6 +513,7 @@ struct RawBuck {
     ifb_max_nanoamps: RawLimit,
     regulation_permille: RawRanged,
     regulation_production_tested: bool,
+    regulation_vin_min: Vec<RawVinStep>,
     fsw_hz: RawRanged,
     ton_min_max_ns: RawLimit,
     toff_min_max_ns: RawLimit,
@@ -521,6 +526,13 @@ struct RawBuck {
     stated_at: String,
     external: Vec<RawExternal>,
     thermal_vias: RawThermal,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawVinStep {
+    from_vout_millivolts: i64,
+    vin_min: RawLimit,
 }
 
 #[derive(Deserialize)]
@@ -862,6 +874,33 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 ifb_max_nanoamps: r.limit(b.ifb_max_nanoamps, "kind.buck.ifb_max_nanoamps")?,
                 regulation_permille: regulation,
                 regulation_production_tested: b.regulation_production_tested,
+                regulation_vin_min: {
+                    if b.regulation_vin_min.is_empty() {
+                        return Err("`kind.buck.regulation_vin_min` is empty".to_owned());
+                    }
+                    let mut steps: Vec<(i64, Limit)> = Vec::new();
+                    for st in b.regulation_vin_min {
+                        bounded(st.from_vout_millivolts, "kind.buck.regulation_vin_min")?;
+                        if st.from_vout_millivolts < 0
+                            || steps
+                                .last()
+                                .is_some_and(|(f, _)| *f <= st.from_vout_millivolts)
+                        {
+                            return Err(
+                                "`kind.buck.regulation_vin_min` is not highest first, each from 0 mV or more"
+                                    .to_owned(),
+                            );
+                        }
+                        let l = r.positive(st.vin_min, "kind.buck.regulation_vin_min")?;
+                        steps.push((st.from_vout_millivolts, l));
+                    }
+                    if steps.last().is_some_and(|(f, _)| *f != 0) {
+                        return Err(
+                            "`kind.buck.regulation_vin_min` has no row from 0 mV".to_owned()
+                        );
+                    }
+                    steps
+                },
                 fsw_hz: r.ranged_positive(b.fsw_hz, "kind.buck.fsw_hz")?,
                 ton_min_max_ns: r.positive(b.ton_min_max_ns, "kind.buck.ton_min_max_ns")?,
                 toff_min_max_ns: r.positive(b.toff_min_max_ns, "kind.buck.toff_min_max_ns")?,

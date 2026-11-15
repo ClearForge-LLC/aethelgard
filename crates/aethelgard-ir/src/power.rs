@@ -417,7 +417,7 @@ impl<'a> Ctx<'a> {
         let s = self.resistor(r)?;
         let e = resistor_error_ppm(s, self.temperature());
         self.note(format!(
-            "{}: its drift is counted as {} ({})",
+            "{}: its drift is counted as {} (the 8000 h life, ruled D-B4; {})",
             r.part,
             s.drift_condition,
             self.cite(&s.drift_ppm.at)
@@ -967,6 +967,28 @@ fn battery_inputs(ctx: &Ctx<'_>) -> Result<(), IrValidationError> {
         };
         let ok = i128::from(bmin) >= i128::from(vin.range.min)
             && i128::from(bmax) <= i128::from(vin.range.max);
+        // D-B9: the regulation band holds only from its stated VIN.
+        if ok && let Kind::Buck(b) = &row.kind {
+            let nominal = ctx
+                .domain(&r.output)
+                .map_or(0, |d| i64::from(d.nominal_millivolts));
+            if let Some((_, floor)) = b
+                .regulation_vin_min
+                .iter()
+                .find(|(from, _)| nominal >= *from)
+                && i128::from(bmin) < i128::from(floor.value)
+            {
+                return Err(refuse(
+                    Refusal::BatteryOutsideRegulatorInput,
+                    &r.reference,
+                    format!(
+                        "the battery's minimum of {bmin} mV is below the {} mV from which the output regulation band is stated for a {nominal} mV output (ruled D-B9)",
+                        floor.value
+                    ),
+                    ctx.cite(&floor.at),
+                ));
+            }
+        }
         if !ok {
             return Err(refuse(
                 Refusal::BatteryOutsideRegulatorInput,
@@ -1259,13 +1281,20 @@ fn power_in(
         }
     }
     ctx.note(format!(
-        "{}: rated {} mA {} ({}); no rating is held for a board at {} °C, where that rise passes the part's {} °C, so the rating is used as stated; AMASS's V1.2 sheet states 15 A and its 2025V0 sheet (the XT30PW-M30) 20 A at 80 V",
+        "{}: rated {} mA, {} ({}, sha256 {}); no derating is held for a {} °C board against the part's {} °C; disagreeing: {}, {} (sha256 {}); {}, {} (sha256 {})",
         conn.name,
         conn.rated_milliamps,
         conn.rating_condition,
         conn.cited.document,
+        conn.cited.sha256,
         ctx.temperature().max,
-        conn.temperature_celsius.1
+        conn.temperature_celsius.1,
+        conn.disagreeing[0].document,
+        conn.disagreeing[0].section,
+        conn.disagreeing[0].sha256,
+        conn.disagreeing[1].document,
+        conn.disagreeing[1].section,
+        conn.disagreeing[1].sha256
     ));
     for (what, amps) in [("steady state", steady), ("fault", fault)] {
         if amps > u64::from(conn.rated_milliamps) {
@@ -1517,16 +1546,25 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                             ));
                         }
                         ctx.note(format!(
-                            "{}: {}'s saturation current is stated typical only ({} mA, {}; {}); it is screened against the high-side limit maximum, not guaranteed above it",
+                            "{}: {}'s saturation current is stated typical only ({} mA, {}; {}); it is screened against the high-side limit maximum of {} mA, a margin of {}.{:02} times, not guaranteed above it (ruled D-B3)",
                             e.reference,
                             e.part,
                             l.isat_typical_milliamps.value,
                             l.isat_definition,
-                            ctx.cite(&l.isat_typical_milliamps.at)
+                            ctx.cite(&l.isat_typical_milliamps.at),
+                            limit.range.max,
+                            l.isat_typical_milliamps.value * 100 / limit.range.max / 100,
+                            l.isat_typical_milliamps.value * 100 / limit.range.max % 100
                         ));
                     }
                     (Kind::Capacitor(c), role) if role != Role::Inductor => {
                         total += i128::from(c.rated_picofarads.value);
+                        if c.dielectric == pp::Dielectric::X7s {
+                            ctx.note(format!(
+                                "{}: {} is X7S, accepted where TI's example says X7R or better (ruled D-B8)",
+                                e.reference, e.part
+                            ));
+                        }
                         if !rule.dielectrics.contains(&c.dielectric) {
                             return Err(refuse(
                                 Refusal::ExternalPartOutOfRange,
@@ -1703,9 +1741,13 @@ fn sense(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
             ));
         }
         ctx.note(format!(
-            "{}: the reservoir rule is {}; the reservoir is judged at rated capacitance, without its tolerance or DC bias; the ADC's sampling rate must let the reservoir recharge through the divider between conversions ({})",
+            "{}: the reservoir rule is {}; with CADC typical, {} pF is needed and {} pF is declared, a margin of {}.{:02} times (ruled D-B3); the reservoir is judged at rated capacitance, without its tolerance or DC bias; the ADC's sampling rate must let the reservoir recharge through the divider between conversions ({})",
             s.net,
             m.reservoir_rule.statement,
+            need,
+            cap.rated_picofarads.value,
+            i128::from(cap.rated_picofarads.value) * 100 / need / 100,
+            i128::from(cap.rated_picofarads.value) * 100 / need % 100,
             ctx.cite(&m.reservoir_rule.at)
         ));
     }
@@ -1859,6 +1901,12 @@ fn crossings(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
         // Half a period, ns, rounded down, less the SCK phase's own shortfall.
         let half = 500_000_000i128 / i128::from(bus.speed_hz)
             - i128::from(m.spi_sck_low_shortfall_ns.value);
+        ctx.note(format!(
+            "{}: the MISO round trip is {total} ns, which holds the bus `{}` at or under {} Hz, under its device's own limit (ruled D-B7)",
+            c.reference,
+            bus.id,
+            500_000_000i128 / (total + i128::from(m.spi_sck_low_shortfall_ns.value))
+        ));
         if total > half {
             return Err(refuse(
                 Refusal::MisoRoundTripTooSlow,
