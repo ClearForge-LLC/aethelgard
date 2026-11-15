@@ -80,10 +80,12 @@ pub enum Rule {
     /// ports' or its USART's clock gate, or a register of its USART); or the
     /// firmware's writes, rebuilt from Renode's access log, failed the
     /// port's judgement (kind 28's tags: a word wrong at `UE` or changed
-    /// after it, a write the bring-up never makes, a reset of its
-    /// peripherals, a pin misconfigured or locked); or its TX pin was not
-    /// routed at a `TDR` write (kind 29's `tx_at_send`; adversarial pass 2,
-    /// M1). Each is direct evidence of a write. The twin models nothing
+    /// after it, a write or a read the bring-up never makes, an RCC write
+    /// but to an enable register or one clearing a gate it set, a pin
+    /// misconfigured, changed once solved, or locked); or its TX pin was not
+    /// routed at a boot's first `TDR` write (kind 29's `tx_at_send`;
+    /// adversarial pass 2, M1; pass 3). Each is direct evidence of a write
+    /// (a read: of a firmware that reads what it must not). The twin models nothing
     /// electrical on a USART's pins, so no rule attributes a serial symptom
     /// to the electrical half.
     S5,
@@ -934,8 +936,8 @@ impl<'a> Run<'a> {
     /// Software evidence for serial port `s`: each register it owns that is
     /// wrong; once the boot word is set, its framing check whose write
     /// judgement failed (read and not held: an unread one shows no write),
-    /// and its witness whose TX pin was rebuilt unrouted at a `TDR` write
-    /// (adversarial pass 2, M1).
+    /// and its witness whose TX pin was rebuilt unrouted at a boot's first
+    /// `TDR` write (adversarial pass 2, M1).
     fn serial_software(&self, s: usize) -> Vec<usize> {
         let label = self.serial[s].label;
         let tx_af = match self.serial_port(label) {
