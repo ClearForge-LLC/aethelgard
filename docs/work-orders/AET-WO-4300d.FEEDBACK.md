@@ -423,3 +423,66 @@ Vendoring needs capacitor footprints above 0402 (0805, 1210).
 - **The build waits** for the ruling, and for `4300f` and `1308`.
 
 **AET-WO-4300d STOPPED: spike done, ruling needed on PR #137.** S1–S5 measured or read; D1–D13 for the architect.
+
+---
+
+# Build (§2), after the ruling on PR #137
+
+**Branch:** `wo/aet-4300d-build` from `origin/main` `351d25c` · **Ruling:** PR #137 comment 6890078133, with the amendments the architect recorded at 10:30 UTC (`1309` D1, D2, D4; `1308`; the AMASS table; AN2834; the version rule; the scope clause) · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace · **Cadence:** build, with a full adversarial pass.
+
+The predictions and the proposed split below were committed before any build code and before any measured run. They are not edited afterwards.
+
+## B0. The scope clause, applied first: a proposed split
+
+The ruling says: "If it cannot land as one reviewable PR with every gate green, STOP early with a proposed split." **This build proposes the split the ruling gives as its example, and builds the first slice in this PR.** [inferred]
+
+**Why one PR cannot hold §2 whole** [inferred, from `git diff --shortstat` of the merged builds]:
+- The four comparable builds merged at 2,911 (`1309`), 3,645 (`1308`), 3,908 (`4300c`) and 5,942 (`4300f`) lines.
+- §2.1–2.2 are an `ir` build at least `4300f`'s size: a cited parts table of about ten rows, `power` in the specification, about fifteen named refusals, and the tree in the topology.
+- §2.3 is an `eda`/`cli` build larger than `1309`'s: vendored symbols and footprints, a schematic emitter for the tree (D12's ERC measurement), an anchor declaration for the placer (spike A6, which the ruling did not settle), routing with `1308`'s classes, `Stack::of`'s joins and thermal pads (`1309` D1), and `fab`'s drill tools (`1309` D4).
+- Together that is roughly two to three reviewable PRs.
+
+**Slice A (this PR, `AET-WO-4300d`): §2.1 and §2.2.**
+- The ruled parts as cited rows, in a table of their own beside `parts.json` (D11).
+- `power`, its crossings, `mcu.bor_level` and the board temperature in the specification.
+- Every static check of the ruling, at `validate` and `solve`, each refused by name with its citation.
+- The tree in `SolvedTopology`, with each domain's source and return pads and its consumers' floors (S5, D3), for `1303`'s build.
+- The scenario reads `mcu.bor_level` (D4).
+- **The seam:** a specification that declares `power` is refused by name at `emit`, `place`, `route` and `fab` until slice B. It is never silently dropped (`INV-06`).
+
+**Slice B (proposed, `AET-WO-4300d2`): §2.3 and §2.4.**
+- Symbols and footprints vendored (`RUL-11`).
+- The schematic emitter for the tree, with D12 measured in ERC.
+- A declared anchor for a regulator's passives (spike A6).
+- Placement and routing with `1308`'s classes.
+- `Stack::of` mapping the regulator rows' `thermal_vias` and the power-in join (`1309` D1, D2).
+- `fab`'s drill tools (`1309` D4).
+- Every gate passing on a fixture.
+- Sentinel-02's board power tree for `4500`.
+- The sense net's ADC pin, solved (below).
+
+If the architect draws the seam elsewhere, this PR stops there.
+
+## B1. Forks taken (each for the architect to overturn)
+
+- **K1 · The table's file.** Regulators, the translator and the passives go in their own embedded file, `crates/aethelgard-ir/data/power-parts.json`, with its own schema version and one strict parser. `parts.json` is not touched, so `4210`'s schema 3 is not collided with (inbox note sent). The power-in connector is a row beside `4300f`'s connector parts, in `connectors.rs`.
+- **K2 · Required keys, explicit none.** Specification 6 requires `power` (`null` declares no power tree) and `mcu.bor_level`. Every existing fixture gains `"power": null` and the BOR level its scenarios already declare, or `0` (RM0433's factory default) where none does. Nothing defaults (`INV-06`).
+- **K3 · The board temperature** is `power.conditions.board_temperature_celsius` `{min, max, source}`. Only the power checks read it, so a specification with no power tree declares none. Moving it to `board` is a one-field change if ruled.
+- **K4 · The sense pin.** The divider, reservoir, ADC resolution and net are declared and judged statically. The ADC pin is not solved in slice A: the embedded pin table carries no ADC channels (read: no `ADC1_INP` outside the vendored ST XML). It is slice B's, behind the emit refusal.
+- **K5 · The source pad of a buck** is RFBT's pad 1, and its return pad is RFBB's pad 2. The emitter in slice B must put RFBT pin 1 on the domain's net and RFBB pin 2 on `GND`. `SolvedTopology` states the convention as data, so a slice-B emitter that differs fails at `1303`'s gate, not silently.
+- **K6 · D9's MISO round trip** needs the SPI device's output delay, a sensor-row field. It is added to `parts.json` only after `4210`'s schema 3 is on `main`. If `4210` has not landed by then, the round trip is refused as unjudgeable for any device behind a crossing (`INV-06`), never passed.
+
+## B2. Predictions (committed before any run)
+
+| id | prediction | label |
+|---|---|---|
+| PB1 | The facts the spike did not hold are fetchable from Furnace, from the makers: an inductor (Coilcraft or Würth) and MLCCs from at least one of Murata, TDK, Samsung, KEMET and Yageo. AN2834 Rev 10 states the reservoir rule as Cext ≥ about 2^N × the ADC's sampling capacitance. The ICM-20948's SPI output delay is a guaranteed maximum. | inferred |
+| PB2 | The −20 °C floor is on no AMASS-own document held (the board-type table is current and voltage only). The comet copy of AMASS spec V1.2 states −20…120 °C and is cited as what it is. | inferred |
+| PB3 | **Sentinel-02's power fixture validates and solves:** 2S–6S-HV, two LMR33630s, TLV75518, TXU0304, sense with reservoir, XT30. Its numbers equal the spike's `checks.out`: <ul><li>5 V: 4.816–5.245 V;</li><li>3.3 V: 3.146–3.421 V;</li><li>1.8 V: 1.773–1.827 V;</li><li>2S headroom: 5.389 V at 2 A with DCR 30 mΩ, moving only with the held inductor's DCR max;</li><li>tON: 401 and 266 ns;</li><li>power-in: 2.68 A steady, 10.1 A fault, against 20 A.</li></ul> Integer arithmetic reproduces each to the millivolt or better, rounded against the part. | inferred |
+| PB4 | **LDO junction temperature** (D1): (3.421 − 1.773) V × 20 mA × 231.1 °C/W ≈ 7.6 K above the board's maximum. It passes at an 85 °C board against Tj 125 °C. | inferred |
+| PB5 | Each refusal fires on a one-field change of the fixture, and on nothing else, with its citation: <ul><li>`BatteryOutsideRegulatorInput`, `DropoutViolated`, `BuckHeadroomViolated`, `OnTimeTooShort`, `RegulatorOutsideDomain`, `DomainOutsideConsumer`, `RegulatorOverloaded`, `PowerInputOverloaded` (steady and fault);</li><li>`JunctionTooHot`, `SenseFullScaleExceeded`, `SenseSourceImpedance`, `ExternalPartMissing`, `ExternalPartOutOfRange`, `BoardColderThanPart`;</li><li>`CrossingDomainMismatch`, `CrossingPullUp`;</li><li>`DomainWithoutSource`, `DomainWithTwoSources`, `PowerLoop`;</li><li>`PowerNotEmitted` at emit, place, route and fab.</li></ul> | inferred |
+| PB6 | The 1 % TI Table 9-2 divider is refused (`RegulatorOutsideDomain`) on a ±50 ‰ 3.3 V domain, and the 0.1 % centred divider passes. On a domain declared ±90 ‰ from its consumers (D13 (a)), 1 % centred passes and TI's 100 k/43.2 k fails at 3.603 V. | inferred |
+| PB7 | With `"power": null` and `bor_level` added, every existing test passes. Only literals that hash a specification change: the spec sha256 inside emitted boards and the BOM. No routed geometry changes, so no extraction bound moves. | inferred |
+| PB8 | **TIER2_MIN does not move for slice A:** every new test is tier 1, because no KiCad runs on a power tree yet. It changes only as `main`'s tier-2 count changes when other PRs land. | inferred |
+| PB9 | Moving `bor_level` from the droop override to the specification leaves both Sentinel-01 droop scenarios' verdicts and trace bytes unchanged, except the specification's hash where a record carries it. | inferred |
+| PB10 | The build adds about 3,500–5,000 lines, most of them in `aethelgard-ir` (the table, the parser, the checks and their tests). Shards stay under 20 minutes, because the new tests are arithmetic. | inferred |
