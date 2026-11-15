@@ -589,7 +589,7 @@ fn a_port_s_tags_fail_when_missing_unexpected_or_unread() {
                 "0xFFFFFFFF to 0x2C",
                 "CR2 0x32000 after UE",
                 "CR1.M1 set at UE",
-                "RCC.APB1LRSTR.USART3RST set",
+                "RCC.APB1LRSTR 0x40000 written, not an enable register",
                 "WriteUInt16 to RCC 0xFFFFFFFF",
                 "PK15 OTYPER 1, OSPEEDR 0b11, PUPDR 0b11 at the injection",
                 "PK15 OTYPER/OSPEEDR/PUPDR not rebuilt at the injection",

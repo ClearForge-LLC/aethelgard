@@ -628,7 +628,7 @@ fn a_failing_write_judgement_or_an_unrouted_send_is_software_s5() {
         } = x
             && label == "GPS"
         {
-            t.unexpected = vec!["RCC.APB1LRSTR.USART2RST set".into()];
+            t.unexpected = vec!["RCC.APB1LRSTR 0x20000 written, not an enable register".into()];
         }
     }
     let a = attributed(&r);
