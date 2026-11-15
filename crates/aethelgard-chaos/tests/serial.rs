@@ -629,6 +629,32 @@ fn a_port_whose_kernel_clock_is_not_the_reset_clock_fails_silicon() {
     assert!(ok(&judged(r, &[(SERIAL_STATIC_FINDING, 1)])));
 }
 
+/// The baud and the error a `BRR` gives are re-derived, not only matched
+/// between the port and its check: both forged alike are refused.
+#[test]
+fn a_port_and_its_check_forged_alike_are_refused() {
+    for (millibaud, ppm) in [(115_107_914, -799), (115_107_913, -800)] {
+        let r = edit(|r| {
+            for at in [CONSOLE, CHECK_CONSOLE] {
+                match &mut r[at] {
+                    Record::SerialPortSolved {
+                        actual_millibaud,
+                        error_ppm,
+                        ..
+                    }
+                    | Record::SerialFramingCheck {
+                        actual_millibaud,
+                        error_ppm,
+                        ..
+                    } => (*actual_millibaud, *error_ppm) = (millibaud, ppm),
+                    _ => unreachable!(),
+                }
+            }
+        });
+        assert!(check_run(&r).is_err(), "{millibaud} {ppm}");
+    }
+}
+
 #[test]
 fn replay_ties_each_echo_to_its_capture_and_rx_pin() {
     let forge = |f: Box<

@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use aethelgard_chaos::campaign::{
-    self, SERIAL_ECHO_FINDING, SERIAL_PATTERN_FINDING, SERIAL_STATIC_FINDING, SERIAL_TAG_FINDING,
-    run_id,
+    self, SERIAL_ECHO_FINDING, SERIAL_FORGED_FINDING, SERIAL_PATTERN_FINDING,
+    SERIAL_STATIC_FINDING, SERIAL_TAG_FINDING, run_id,
 };
 use aethelgard_chaos::record::{
     BusLine, Override, Reading, Record, SerialCapture, SerialFraming, SerialTags, serial_frame,
@@ -633,4 +633,31 @@ fn a_register_wrong_in_two_ports_fields_is_both_ports_evidence() {
         named(&r, &a),
         ["GPIOA.MODER", "kind 29 CONSOLE", "kind 29 GPS"]
     );
+}
+
+/// A port whose USART left no capture at all is forged, a failure no
+/// register explains: I6, by its witness.
+#[test]
+fn a_port_with_no_capture_is_indeterminate_by_its_witness() {
+    let mut r = run(&Case::default(), &[(SERIAL_FORGED_FINDING, 1)]);
+    for x in r.iter_mut() {
+        if let Record::SerialWitness {
+            label,
+            capture,
+            echo,
+            ..
+        } = x
+            && label == "GPS"
+        {
+            *capture = None;
+            *echo = "missing".into();
+        }
+    }
+    let a = attributed(&r);
+    assert_eq!(
+        (a.domain, a.rule),
+        (Domain::Indeterminate, Rule::I6),
+        "{a:?}"
+    );
+    assert_eq!(named(&r, &a), ["kind 29 GPS"]);
 }
