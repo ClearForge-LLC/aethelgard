@@ -42,7 +42,7 @@ Probes under `spike/1303/`. **Predictions go into FEEDBACK before any run.**
 
 **S4. Supply-path resistance.** Propose an upper bound on the copper resistance from a regulator's output pad to each MCU supply pin:
 - along tracks and through vias, and through a plane if the domain has one;
-- with copper resistivity at its maximum temperature and the copper maximum;
+- with copper resistivity at its maximum temperature and the copper **minimum** (corrected 2026-11-15, `1303` D10: an upper R bound needs the minimum);
 - with the via barrel's plating at its minimum.
 
 Name every condition: the plating thickness is a fabricator figure, so cite it or declare it as a condition. Measure on the reference and the 4-layer fixture.
