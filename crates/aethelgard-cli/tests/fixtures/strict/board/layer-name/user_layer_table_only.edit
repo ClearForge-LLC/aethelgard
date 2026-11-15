@@ -1,0 +1,11 @@
+# class: layer-name
+# note: F.Cu given the user name TOP in the layer table alone: KiCad loads and passes it (F10, the control until AET-WO-3303), but a copper row is read by its canonical name only, so every gate that reads the board refuses it (AET-WO-3303 §1.4)
+# main: drc 0 pass; drc-parity 0 pass; extract 0 pass
+# drc: 0 pass
+# drc-parity: 3 LayersDisagree
+# extract: 3 LayersDisagree
+@@ find
+		(0 "F.Cu" signal)
+@@ replace
+		(0 "F.Cu" signal "TOP")
+@@ end
