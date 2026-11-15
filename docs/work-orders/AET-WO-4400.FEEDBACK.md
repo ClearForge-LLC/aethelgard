@@ -193,3 +193,212 @@ Reasons:
 - **Per PR that runs the build:** about 331 CPU-s ÷ 4 vCPU, so 1.5–2 min on a 4-vCPU GitHub runner, plus the image pull (about 2.5 GB, roughly 1 min). That is **3–4 min**.
 - **The image build** happens only when its pins change: the clone, the toolchain and pip, about 2–5 min on GitHub's network.
 - **Without an image** (fetching every time), add the clone and the toolchain. That is fast from GitHub's network, and 4.5 min from Furnace's.
+
+## 3. S2 — the `hwdef.dat` format and the field table
+
+Read at `Copter-4.7.2` by a subagent; every row used here was spot-checked at source (`chibios_hwdef.py`, called `CH` below; its base class `libraries/AP_HAL/hwdef/scripts/hwdef.py`, called `HB`). The subagent tried once to run `chibios_hwdef.py` into a scratch directory, outside its read-only brief. The permission classifier denied it and it did not retry. I record it here. No call of mine was denied.
+
+**How the file is read** [read]:
+- A line `Pxn LABEL TYPE [extras]` is a pin.
+- Any other line is `config[keyword] = rest`. Unknown keywords are stored and ignored, never refused (CH:2884).
+- Required keys fail with `missing required value X in hwdef.dat` (CH:632).
+- **The AF is never written.** `get_alt_function` (CH:151-179) looks up `"PIN:LABEL"` in the MCU module's `AltFunction_map`. A label with no entry is `Unknown pin function` and exits 1. There is no AF token, and `ALT(n)` selects an alternate configuration set, not an AF.
+- **The MCU line.** `MCU STM32H7xx STM32H753xx` imports `STM32H753xx.py`. That file is `STM32H743xx.py` byte for byte except the shebang and the docstring (diff, read). The table has no package data: ports A–K, 16 pins each.
+- **What reaches silicon.** The AF reaches the binary only through `VAL_GPIOx_{MODER,AFRL,AFRH}` in `hwdef.h` (CH:2605-2623). `board.c:108` compiles these into `gpio_default_config`, which `gpio_init` writes at start-up. A few `PAL_LINE`s go into bus configurations. The per-pin comment block is not compiled.
+- **Out of tree.** There is none. `--board` resolves only to `libraries/AP_HAL_ChibiOS/hwdef/<name>/` (boards.py:677-697). `--extra-hwdef` appends to a board's file and cannot replace it (wscript:423, chibios.py:631).
+
+### The field table
+
+Key to "today": **T** = emitted from `SolvedTopology` today; **S** = the value exists only in the `Specification` (`RUL-16` forbids reading it there); **N** = in neither.
+
+| field | `hwdef.dat` form | ArduPilot needs it? | today | waits on |
+|---|---|---|---|---|
+| MCU | `MCU STM32H7xx STM32H753xx` | required (CH:3102) | **S**: `SolvedTopology` has no MCU | a topology `mcu` field, copied by `solve` (small; with `4400`'s build) |
+| oscillator | `OSCILLATOR_HZ 8000000`; no HSE pin lines | required (CH:885). `0` is legal on H7: HSI drives the PLLs, giving 400 MHz (`stm32h7_mcuconf.h:113`, read) | **N**: the solver reserves PH0/PH1; there is no declared frequency | **no work order**: the oscillator and clock tree as a declared fact (D1) |
+| flash size | `FLASH_SIZE_KB 2048` | required | **N**: a part fact | a parts-table row for the MCU (with the `mcu` field) |
+| flash layout | `FLASH_RESERVE_START_KB` (default 16) | optional, but must be 0 without a bootloader (§4, measured) | **N** | decision D3 |
+| bootloader | `define AP_BOOTLOADER_FLASHING_ENABLED 0`, or a `hwdef-bl.dat` and a built bootloader | one or the other is required (measured, step A) | **N** | decision D3 |
+| storage | `define HAL_STORAGE_SIZE n`; `STORAGE_FLASH_PAGE p` | the size is required to compile (measured, step C); the page is optional to build | **N** | D3: a generator constant |
+| board id | `APJ_BOARD_ID <name or number>` | required. A name must be in `Tools/AP_Bootloader/board_types.txt`; a number is refused in CI (`GITHUB_ACTIONS`) | **N** | decision D4 |
+| system timer | `STM32_ST_USE_TIMER n` | optional (default TIM5, `stm32h7_mcuconf.h:605`) | n/a | `4300a`: must avoid the timers motors take |
+| UARTs, `SERIAL_ORDER` | `PD8 USART3_TX USART3` and RX; `SERIAL_ORDER USART3 …` | **at least one USART/UART is required** (measured: `EMPTY` and `OTG1` alone both fail) | **N** | **`4300b`** |
+| SPI bus pins | `PA5 SPI1_SCK SPI1` … | when an `SPIDEV` exists | **T** (`assignments`) | — |
+| chip select | `PA0 FLASH_CS CS` | for each `SPIDEV` | **T** (`gpio`, label = net) | — |
+| `SPIDEV` | `SPIDEV name SPIn DEVIDk CS MODEm low high` (7 tokens, CH:1451-1475) | per SPI device | bus and CS **T**; speed **S** (`spi_buses[].speed_hz`); mode and role name **N** | the bus speed into the topology; the mode and ArduPilot role as parts-table columns |
+| I2C pins, `I2C_ORDER` | `PB6 I2C1_SCL I2C1`; `I2C_ORDER I2C1` | `I2C_ORDER` is required with I2C pins (CH:1932) | **T** (`assignments`, `i2c_devices[].peripheral`) | — |
+| I2C speed | **no per-bus field.** One global `define HAL_I2C_MAX_CLOCK` (default 100 kHz, I2CDevice.cpp:53) | optional | **T** (`i2c_speeds`), but ArduPilot cannot say "per bus" | decision D6 |
+| `BARO` | `BARO BMP280 I2C:0:0x76`; the index is the position in `I2C_ORDER` | optional | **T** (part, address, order). The driver name is a mapping (`BME280` → `BMP280`, AP_Baro_BMP280.cpp:39) | a parts-table column "ArduPilot driver" |
+| other I2C parts | TMP117 | — | **no line possible**: ArduPilot's `TMP119` driver refuses ID 0x0117 (`…TMP119.cpp:31,62`); temperature sensors are set by parameters, not `hwdef` | — |
+| flash logger | `define HAL_LOGGING_DATAFLASH_ENABLED 1` with an `SPIDEV dataflash` | optional | **N**: the part's role | parts-table column (the W25Q64 is `0xEF4017`, AP_Logger_Flash_JEDEC.cpp:54) |
+| PWM outputs | `PE9 TIM1_CH1 TIM1 PWM(1) GPIO(50)`, plus `BIDIR` | optional (`HAL_USE_PWM FALSE`) | **N** | **`4300a`** |
+| DMA | computed by `dma_resolver.py` (DMAMUX on H7); `DMA_PRIORITY` and `DMA_NOSHARE` optional | — | n/a | — (see S5: TX DMA in the twin) |
+| ADC sense | `PC0 BATT_VOLTAGE_SENS ADC1 SCALE(1)`, plus `define HAL_BATT_VOLT_PIN/SCALE …` | **with no ADC pin, `define HAL_USE_ADC FALSE` is required** (measured, step B: `STM32_ADC_ADC12_DMA_STREAM not defined`) | **N** | **`4300d`** (pins and scales) |
+| USB | `PA11 OTG_FS_DM OTG1`, `PA12 OTG_FS_DP OTG1`, `OTG1` in `SERIAL_ORDER` | optional | **N** | **`4300e1`** |
+| LEDs | `PE3 LED0 OUTPUT LOW GPIO(90)` plus `define HAL_GPIO_A_LED_PIN 90` | optional | **N** | **no work order**: declared generic GPIO outputs |
+| buzzer | a timer channel with `ALARM` | optional | **N** | `4300a` (timers) plus no work order for the part |
+| SD card | `PC8 SDMMC1_D0 SDMMC1` … | optional | **N** | **no work order** |
+| `IMU` | `IMU Invensensev3 SPI:icm42688 ROTATION_YAW_180` | optional to build; needed to fly | **N** | P4's IMU work order: `SPIDEV`, driver and rotation (a mechanical fact) |
+| `COMPASS` | `COMPASS <drv> I2C:b:addr …` | optional | **N** | no device declared |
+
+**Required to configure and compile, by measurement:** `MCU`, `OSCILLATOR_HZ`, `FLASH_SIZE_KB` and `APJ_BOARD_ID`. Then a bootloader or its absence, at least one USART, `HAL_USE_ADC FALSE` (or an ADC pin) and `HAL_STORAGE_SIZE`. None of these is in the topology.
+
+## 4. S3 — a minimal `hwdef.dat` for Sentinel-01 (measured)
+
+**The input** is `spike/4400/sentinel-01.topology.json`, from `aethelgard solve --file examples/sentinel-01-minimal.json` at `c621461`. Its specification sha256 is `a277c933…1196`.
+
+**The method.** `spike/4400/s3.sh` copies `spike/4400/hwdef/<step>.hwdef.dat` into an untracked board directory, `libraries/AP_HAL_ChibiOS/hwdef/Sentinel01/`, in the clone. It then runs `./waf configure --board Sentinel01` and `./waf copter -j6` under `nice 10` in the capped scope. After every step, `git status --porcelain --untracked-files=no` printed nothing: the clone's tracked files are unmodified. Each step adds only what the previous step's error named.
+
+| step | added | configure | `copter` | the error that named the next line |
+|---|---|---|---|---|
+| A | the topology's 9 lines plus the 4 required keys | **fails** | — | `Bootloader (./Tools/bootloaders/Sentinel01_bl.bin) does not exist and AP_BOOTLOADER_FLASHING_ENABLED` |
+| B | `define AP_BOOTLOADER_FLASHING_ENABLED 0` | ok | **fails** | `#error "STM32_ADC_ADC12_DMA_STREAM not defined"` and `#error "SERIAL driver activated but no USART/UART peripheral assigned"` |
+| C | `SERIAL_ORDER EMPTY`, `define HAL_USE_ADC FALSE` | ok | **fails** | `StorageManager.h:30: "HAL_STORAGE_SIZE" is not defined` |
+| D | `define HAL_STORAGE_SIZE 16384` | ok | **fails** | `UARTDriver.cpp:514: 'SerialDriver' was not declared` (`EMPTY` alone leaves no serial driver) |
+| E | D, with `SERIAL_ORDER OTG1` and PA11/PA12 in place of `EMPTY` | ok | **fails** | the same `#error "SERIAL driver activated but no USART/UART peripheral assigned"` |
+| F | D, with `SERIAL_ORDER USART3`, PD8 and PD9 in place of `EMPTY` | ok | **builds**: 48.1 s wall, 280 CPU-s, peak 1.04 GB; 1,286,028 B of flash | — but `FLASH_LOAD_ADDRESS 0x08004000`: the default 16 KB reserve with no bootloader leaves the reset vector empty, so it would not boot |
+| **G** | `FLASH_RESERVE_START_KB 0` | ok | **builds**: 48.4 s, 280.5 CPU-s, peak 1.06 GB; 1,285,344 B of flash, 811,804 B free; `FLASH_LOAD_ADDRESS 0x08000000` | — |
+
+**Step G is `spike/4400/sentinel-01.hwdef.dat`.** It has 21 lines, each tagged:
+- **9 `[T]`**, emitted from the topology today: the five pin lines, the chip select, `I2C_ORDER`, and `BARO`, whose driver name is a mapping. Also the bus and CS fields of `SPIDEV`, whose speed is `[S]` and whose mode and role are `[N]`.
+- **1 `[S]`**: `MCU`.
+- **11 `[N]`**: `OSCILLATOR_HZ`, `FLASH_SIZE_KB`, `APJ_BOARD_ID`, the bootloader define, the logger role, `SERIAL_ORDER` and the two USART pins, `HAL_USE_ADC FALSE`, `HAL_STORAGE_SIZE` and `FLASH_RESERVE_START_KB`.
+
+Notes on the board:
+- **The USART3 pins (PD8/PD9) are my choice,** the Nucleo's ST-LINK console. No declared fact chose them.
+- **The TMP117 has no line** (§3).
+- **The oscillator value 8 MHz is a guess,** the Nucleo's.
+
+## 5. S4 — the pinout check (`INV-07`)
+
+**What it is.** `spike/4400/pincheck.py` takes the topology, ArduPilot's build directory and the toolchain:
+- **Expected values** come only from `SolvedTopology` (`assignments` and `gpio`).
+- **Observed values** come from ArduPilot's own computation, which it makes from its own table, in two decodes:
+  - (1) the **308 bytes of `gpio_default_config` in the linked ELF**: the 11 ports × `MODER OTYPER OSPEEDR PUPDR ODR AFRL AFRH` that `gpio_init` writes at reset, found by `nm -S` and read by `objdump -s`;
+  - (2) the `VAL_GPIOx_MODER/AFRL/AFRH` initialisers in `hwdef.h`.
+- **It never reads the `hwdef.dat` the generator wrote.** For each net it checks that the solved pin is in alternate mode at the solved AF, or is an output for a `gpio` entry.
+- **In reverse,** it lists every pin in alternate mode that the topology does not name.
+- **It requires the two decodes to agree.**
+
+**Measured on step G and three seeds.** All four images built. ArduPilot raised no error for any of them, because every seed is legal `hwdef.dat`.
+
+| board | check | what it named |
+|---|---|---|
+| step G (clean) | **exit 0** | 5 AF lines and 1 GPIO match in both decodes. Outside the topology: `PD8 AF7`, `PD9 AF7` (the USART the build needed). The decodes agree. Hand decode of the ELF: GPIOA `MODER` = `0x0000A801`, so PA0 is an output and PA5–7 are alternate |
+| `seed-pin`: `PB8 I2C1_SCL I2C1` in place of PB6 (PB8 carries `I2C1_SCL` on AF4 too) | **exit 1** | `I2C_SCL (I2C1_SCL): solved pin PB6 is input, not alternate AF4` in both decodes; outside the topology: `PB8 AF4` |
+| `seed-af`: PB6/PB7 as `I2C4_SCL/SDA`, `I2C_ORDER I2C4` (AF6 in the table) | **exit 1** | `I2C_SCL (I2C1_SCL): PB6 is on AF6, the topology solved AF4`, and the same for `I2C_SDA` at PB7, in both decodes |
+| `seed-pkg`: `PI0 SEED_GPIO OUTPUT LOW GPIO(1)`; PI0 does not exist on the LQFP144 package | **exit 0** | nothing. **ArduPilot builds a board on a pin the package lacks**, and the forward check cannot see it |
+
+**`hwdef.dat` cannot carry an AF number.** "Seed a wrong AF into the `hwdef.dat`" as the work order words it is therefore done by naming a function whose table AF differs on the same pin, as `seed-af` does.
+
+**How independent the two tables are** [measured, `spike/4400/tablediff.py`]. It compares ArduPilot's `STM32H753xx.py` `AltFunction_map`, read as a literal and never imported, with the `STM32_open_pin_data` files the solver vendors (`STM32H753ZITx.xml` and `GPIO-STM32H747_gpio_v1_0_Modes.xml`), over the 112 GPIO pins of the LQFP144 package:
+- **597 (pin, signal) pairs share a name, with 0 AF disagreements.**
+- ArduPilot has 924 entries on those pins and ST has 830 with an AF.
+- In the families a flight controller uses (I2C, SPI, USART, UART, TIM, OTG, SDMMC, CAN, QUADSPI, LPUART), 22 of ArduPilot's 372 entries differ from ST after normalising `CANn` to `FDCANn` and `OTG_FS` to `USB_OTG_FS`:
+  - 12 are name merges: `USARTn_CTS_NSS`, `TIMx_BKIN_COMP12`;
+  - **10 are CAN entries on pins where ST's data has no FDCAN signal at all:** PA9, PA10, PB7, PD4, PD5, PD6, PD9, PD10, PE0 and PE1, all AF9. They are hand-added lines with different indentation (e.g. `STM32H753xx.py:352` `"PB7:CAN2_TX"`, `:674`, `:724`).
+- **Every I2C, SPI, USART/UART data line, OTG and SDMMC entry equals ST's.**
+- ArduPilot's header says the table was extracted from the datasheet by tabula (`af_parse.py`). That is an independent extraction from a different ST product (the datasheet PDF against ST's XML), but not an independent source: both are ST.
+
+### The proposal
+
+1. **The check.** After `./waf copter`, read `gpio_default_config` from the ELF. Decode (1) is the primary one, because it is what the hardware receives. Decode (2) is a cross-check that refuses on disagreement.
+   - Judge every topology net forward: the mode, the AF, and output for `gpio`.
+   - Judge in reverse: every pin whose `MODER` is not its reset or `DEFAULTGPIO` state must be named by the topology, or by a declared non-topology line (USART, USB and so on, as the `4300` pieces arrive).
+   - Judge the package: every pin the image configures must exist in `STM32H753ZITx.xml`, a file the solver holds and ArduPilot does not. This closes `seed-pkg`.
+2. **Where it runs.** In Rust (`RUL-12`), as a gate in `aethelgard-eda` or a new consumer crate, reading the ELF with a small ELF symbol reader. It needs only `nm`/`objdump`-equivalent logic, not the toolchain.
+3. **What it cannot see:**
+   - pins ArduPilot reconfigures at run time (the I2C bus-clear GPIO toggle, the `ALT(n)` sets in `HAL_PIN_ALT_CONFIG`);
+   - `OSPEEDR`, `PUPDR` and `OTYPER` against `4300c`'s speeds, which is possible later from the same bytes;
+   - whether the I2C driver uses the bus the `BARO` line names;
+   - and AF agreement between two ST-derived tables is not proof against ST's own error.
+4. **`INV-07` holds.** Expected values come from the topology. Observed values come from ArduPilot's own computation, never from the emitted `hwdef.dat`.
+
+## 6. S5 — ArduPilot in the twin (read only, not chased)
+
+Read by a subagent in Renode 1.17.0's source (`~/.cache/aet-2301/src`) and ChibiOS/ArduPilot at the tag. Key points were spot-checked by me.
+
+**The verdict: as generated, the banner would not reach a UART** [read + inferred]. The clock and power start-up is not the blocker; output is.
+- **Every busy-wait on the path is satisfied by the model** [read]:
+  - `PWR_CSR1.ACTVOSRDY` and `PWR_D3CR.VOSRDY`: the platform's PWR is a Python stub returning `0x6000` and `0x2000` (checked: `stm32h7.repl:728`);
+  - `HSIRDY`, `HSERDY`, `HSI48RDY` and `PLL1-3RDY`, which the RCC model mirrors from the enables;
+  - `SWS`;
+  - the read-back of `FLASH_ACR.LATENCY`.
+- **The compensation cell is never touched.** No `CCCSR` access exists in ChibiOS or ArduPilot outside ST's headers (checked by grep). `4300` S5's hanging `READY` wait does not arise. My round-1 prediction was wrong.
+- **The banner.** It is `DEV_PRINTF("\n\nInit %s…")` (AP_Vehicle.cpp:318) to `hal.console`, which is SERIAL0. On a board whose SERIAL0 is `OTG1` it waits for USB enumeration. On S3's board SERIAL0 is USART3, and `hwdef.h` gives it a TX DMA stream (`STM32_UART_USART3_TX_DMA_STREAM STM32_DMA_STREAM_ID(1, 2)`, measured). Renode's `STM32F7_USART` has only a receive DMA request: `DMAT` is an inert flag (`STM32F7_USART.cs:187`, checked). So TX by DMA would stall [inferred].
+- **What would get past it (not run):** `NODMA` on the console UART, or the USB route through `USB_UART` that `4300` measured with Zephyr.
+- **Also unverified:**
+  - the OTG model's reset and flush waits;
+  - the TIM-based tickless timer at Renode's fixed 250 MHz, which is self-consistent but skewed against TIMCLK;
+  - loading an ELF at `0x08000000`.
+- Neither Renode's tree nor its tests mention ArduPilot or ChibiOS.
+
+## 7. Results beside predictions
+
+| prediction (round) | result |
+|---|---|
+| tag `Copter-4.6.x` or `4.7.x` (1) | `Copter-4.7.2` ✔ |
+| toolchain 10-2020-q4-major from firmware.ardupilot.org, about 150 MB (1) | ✔ 156.9 MB, 693 MB unpacked |
+| host Python 3.14 fails (1) | ✘ it worked. No uv Python, and one fewer host |
+| no host compiler needed (1) | ✔ `make` and `rsync` are looked for (present) |
+| disk about 3 GB (1) | about 2.5 GB |
+| configure about 30 s; copter 4–8 min wall, 20–35 CPU-min, `-j6` (1) | ✘ 0.6 s; **60 s wall, 5.5 CPU-min**. I overestimated about 5× |
+| peak memory 2–4 GB (1) | ✘ 1.23 GB |
+| hosts: github, firmware.ardupilot.org, pypi, uv's host (1) | ✔ the first three; there was no uv host |
+| build phase offline (1) | ✔ 0 network syscalls (traced) |
+| `--board` has no out-of-tree option; untracked dir leaves tracked files clean (1) | ✔ (`--extra-hwdef` only appends) |
+| configure fails on a missing required field (1) | ✔ partly. It failed on the bootloader embed, which I did not name |
+| configure passes with the 4 keys; copter fails without `SERIAL_ORDER` (2) | ✘ configure first needs the bootloader define; ✔ copter fails on serial, and also on ADC DMA (not predicted) |
+| with `SERIAL_ORDER` (`EMPTY` or `OTG1`) it builds (2) | ✘ both fail; **one real USART is required** |
+| storage not needed (2) | ✘ `HAL_STORAGE_SIZE` is required |
+| at most 9 of about 16 lines from the topology (2) | 9 of 21 |
+| the check names the seeds as predicted (2) | ✔ both, with the exact wording predicted |
+| more than 98 % AF agreement; a handful of disagreements, `PB7:CAN2_TX` among them (2) | ✔ 0 AF disagreements in 597 shared pairs; 10 unsupported CAN lines, `PB7:CAN2_TX` among them |
+| ArduPilot accepts a pin the package lacks (2) | ✔ PI0 builds |
+| S5: no banner, blocked by `CCCSR`, VOS or PLL waits (1) | ✘ for the reason: all of those waits are modelled and `CCCSR` is never touched. ✔ for "no banner" (TX DMA), by reading, not measured |
+
+## 8. Proposed staging of the build behind the `4300` pieces
+
+**Today, with no `4300` piece,** the generator could emit S3's 9 `[T]` lines. A board that builds needs 11 more, none of which comes from the topology. The pieces add as follows:
+1. **`4400a`, now (no `4300` dependency):**
+   - Small topology additions copied by `solve`: `mcu`, plus the SPI bus speed. The MCU and the SPI speed are already declared; `solve` copies them, as `2203` did for devices.
+   - Parts-table columns: ArduPilot driver (`BMP280`), `SPIDEV` mode and role (`dataflash`), and the MCU's flash size.
+   - The generator, the pinout check (§5, in Rust), and the second image with CI's ArduPilot build.
+   - The `[N]` lines with no source are fixed generator constants, named in the emitted file's header: no bootloader, reserve 0, storage size, and `HAL_USE_ADC FALSE` while there is no ADC.
+   - **What it cannot satisfy is the required USART**, so `4400a` either waits for `4300b`, or emits a fixed console USART as a declared constant (decision D2).
+2. **After `4300b`** (serial links): `SERIAL_ORDER` and the UART pins come from the topology. The constant console goes.
+3. **After `4300a`** (motor outputs): `PWM(n)` lines, `BIDIR`, and `STM32_ST_USE_TIMER` chosen off the motor timers.
+4. **After `4300d`** (power parts): ADC sense pins, `SCALE`, `HAL_BATT_*`. `HAL_USE_ADC FALSE` goes.
+5. **After `4300e1`** (USB static): `OTG1` pins, and `OTG1` first in `SERIAL_ORDER`.
+6. **After P4's IMU work order:** `SPIDEV` plus `IMU` with rotation.
+7. **Not covered by any work order yet:** the oscillator as a declared fact (`OSCILLATOR_HZ`), LEDs and buzzer as declared GPIO, the SD card, the `APJ_BOARD_ID` registry. Until the oscillator lands, `OSCILLATOR_HZ` is a guess, which `INV-06` does not allow in an emitted file. That is D1.
+
+**P4 exit clause 3** ("builds unmodified ArduPilot, and the pinout check passes") is reachable at step 1 with D1 and D2 ruled, and grows with each piece.
+
+## 9. Decisions needed
+
+- **D1 — the oscillator.** `OSCILLATOR_HZ` is required and nothing declares it.
+  - ArduPilot's H7 configuration does support no crystal: `OSCILLATOR_HZ 0` selects HSI as the PLL source, giving 400 MHz (`stm32h7_mcuconf.h:113-119`, read; I corrected an earlier inference here). So the choice is a declared fact either way:
+    - **(a)** the specification gains an HSE frequency (`mcu.hse_hz`, `0` for none), copied into the topology;
+    - **(b)** `4400a` emits `0` as a fixed constant and the solver stops reserving PH0/PH1.
+  - Neither may be a guess (`INV-06`). S3's 8 MHz is the Nucleo's and is a placeholder.
+  - **Recommended: (a)**, a small schema bump, with `4400a`. A flight controller wants a crystal for USB and UART baud accuracy [inferred].
+- **D2 — the required USART before `4300b`.** ArduPilot cannot build without one (measured). Options:
+  - **(a)** `4400a` waits for `4300b`;
+  - **(b)** `4400a` emits a fixed console USART whose pins the solver must reserve, a declared constant;
+  - **(c)** reorder so that `4300b` lands before `4400a`.
+  - **Recommended: (c)**, because `4300b` is already ruled before `4400` (`4300` S7).
+- **D3 — the bootloader and storage.** Either no bootloader (`AP_BOOTLOADER_FLASHING_ENABLED 0`, `FLASH_RESERVE_START_KB 0`, as built here), or build ArduPilot's bootloader from a generated `hwdef-bl.dat` (the twin and the factory flash both get simpler with none). Also: the storage size, and whether `STORAGE_FLASH_PAGE` is emitted. **Recommended: no bootloader for P4,** with the storage page set to the last sector.
+- **D4 — `APJ_BOARD_ID`.** A name must be in ArduPilot's `board_types.txt`, which would be a change to ArduPilot, not "unmodified". A number is refused under `GITHUB_ACTIONS`, which our CI sets. Options:
+  - **(a)** unset `GITHUB_ACTIONS` for the ArduPilot build step (it gates only ArduPilot's own CI checks) [inferred, not run];
+  - **(b)** use an existing registered name;
+  - **(c)** apply for an ID upstream.
+  - **Recommended: (a), measured first in `4400a`.**
+- **D5 — where the build lives.** The second image (§2), the tools-image layer, or Furnace only. **Recommended: the second image.**
+- **D6 — I2C speed.** ArduPilot has one global I2C clock (`HAL_I2C_MAX_CLOCK`), not one per bus. Emit the minimum of `i2c_speeds`, or refuse a topology whose buses differ?
+- **D7 — the pinout check's scope.** Forward, reverse and package, from the ELF bytes with `hwdef.h` as a cross-check (§5). Should the package check use the solver's own `STM32H753ZITx.xml`, as proposed? It is independent of ArduPilot, but it is the solver's input.
+- **D8 — S5.** The twin booting ArduPilot is reachable only with a console UART without TX DMA, or USB. Pursue in a later work order, or drop? **Recommended: a later work order,** after `4300e1` (USB through `USB_UART`), not now.
+- **D9 — the 10 unsupported CAN lines** in ArduPilot's H743/H753 tables. Report them upstream (a public issue, Scotty's call), or only make our check refuse CAN on those pins when CAN arrives?
+
+## 10. What a build deletes
+
+`spike/4400/` (`roadmap.md` §6). The tables above are the record. Measurements a build relies on return as Rust tests (`RUL-12`): the pinout check and its three seeds, and the table comparison if D7 keeps it.
