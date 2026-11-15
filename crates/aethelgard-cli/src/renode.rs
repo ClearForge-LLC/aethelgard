@@ -635,7 +635,8 @@ fn own_lines<'l>(c: &aethelgard_twin::boot::StepCheck, log: &[&'l str]) -> Vec<(
 /// - on SPI by chip-select window: the device's `k`-th window is its `k`-th
 ///   step's, a line in a later window or in none its last step's;
 /// - on I2C in order, each step taking as many lines as it expects and the
-///   last step the rest.
+///   last step the rest; an `[ERROR]` line is counted toward none, and goes
+///   to the step under way, the last whose first line came before it (D-A1).
 ///
 /// A line attributed to the wrong step only ever differs from what that step
 /// expects: attribution never passes a witness.
@@ -686,7 +687,11 @@ fn attribute(
                 }
             }
             None => {
+                let (errors, lines): (Vec<_>, Vec<_>) = lines
+                    .into_iter()
+                    .partition(|(_, b)| b.starts_with(LOG_ERROR));
                 let mut at = 0;
+                let mut begun = Vec::new();
                 for k in g.clone() {
                     let n = if k == last {
                         lines.len().saturating_sub(at)
@@ -694,11 +699,22 @@ fn attribute(
                         checks[k].witness.as_ref().map_or(0, Vec::len)
                     };
                     let end = (at + n).min(lines.len());
+                    if let Some(&(i, _)) = lines.get(at).filter(|_| at < end) {
+                        begun.push((i, k));
+                    }
                     seen[k] = lines[at..end]
                         .iter()
                         .map(|(_, b)| (*b).to_owned())
                         .collect();
                     at = end;
+                }
+                for (i, body) in errors {
+                    let k = begun
+                        .iter()
+                        .rev()
+                        .find(|&&(b, _)| b < i)
+                        .map_or(g.start, |&(_, k)| k);
+                    seen[k].push(body.to_owned());
                 }
             }
         }
@@ -798,12 +814,13 @@ fn is_log_line(line: &str) -> bool {
 }
 
 /// A log line's text, if it has a witness's shape for `device` at `level`:
-/// `[NOISY] i2c1.u2: …`, or a `[WARNING]` of the device (`AET-WO-4210` D4).
+/// `[NOISY] i2c1.u2: …`, or a `[WARNING]` of the device (`AET-WO-4210` D4),
+/// or an `[ERROR]` of it, which fails the step it falls in by name (D-A1).
 /// The shape only ever fails a witness: a pass needs the whole text equal to
 /// an expected line (`AET-WO-2204` D1).
 fn witness_shaped<'l>(line: &'l str, device: &str, level: &str) -> Option<&'l str> {
     log_body(line).filter(|b| {
-        [level, "[WARNING] "].into_iter().any(|l| {
+        [level, "[WARNING] ", "[ERROR] "].into_iter().any(|l| {
             b.strip_prefix(l)
                 .and_then(|r| r.strip_prefix(device))
                 .is_some_and(|r| r.starts_with(": "))
@@ -1131,6 +1148,11 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             ));
         }
     }
+    // Each register under its mask. `SysTick.CSR` is judged under
+    // `SYST_CSR_ARMED`, 0x00010003 (`ENABLE`, `TICKINT`, `COUNTFLAG`), since
+    // Renode reads `CLKSOURCE` as 1 whatever is written (`NVIC.cs` L1040 at
+    // `066a7f13`), and `NVIC.ISER0`-`4` whole: nothing armed, nothing counted
+    // (`AET-WO-4210` D-B1, accepted).
     for (r, &got) in plan.image.registers.iter().zip(&observed.registers) {
         if got & r.mask != r.value {
             findings.push(Finding::plain(
@@ -1175,15 +1197,31 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
 /// exactly the model's expected lines, as whole lines, in order. Each
 /// device's steps are judged in its script's order, by device, never across
 /// devices, so two devices' steps may interleave (`2204` A4, closed). A
-/// record that says a wait expired claims nothing.
+/// record that says a wait expired claims nothing. Whatever its record says,
+/// a step in which the device logged an `[ERROR]` fails by name, beside the
+/// run's `renode_error_log` (`AET-WO-4210` D-A1, ruled).
 fn witness_findings(
     checks: &[aethelgard_twin::boot::StepCheck],
     observed: &Observed,
 ) -> Vec<Finding> {
-    (0..checks.len())
-        .filter(|&i| observed.records[i].0 == aethelgard_twin::boot::STATUS_OK)
-        .filter_map(|i| witness_finding(&checks[i], observed.witnesses[i].as_deref()))
-        .collect()
+    let mut out = Vec::new();
+    for (i, c) in checks.iter().enumerate() {
+        let seen = observed.witnesses[i].as_deref();
+        if let Some(e) = seen.and_then(|s| s.iter().find(|l| l.starts_with(LOG_ERROR))) {
+            out.push(Finding::plain(
+                &format!("{}_step_error", bus_word(c)),
+                format!(
+                    "{}, its {} step: Renode logged an error for `{}` inside the step: {e}",
+                    who(c),
+                    c.step.name(),
+                    c.device
+                ),
+            ));
+        } else if observed.records[i].0 == aethelgard_twin::boot::STATUS_OK {
+            out.extend(witness_finding(c, seen));
+        }
+    }
+    out
 }
 
 /// The finding for one record that claims its read completed, or none when
@@ -1699,5 +1737,159 @@ mod tests {
         );
         assert!(is_log_line("[21:06:58.1004] [WARNING] sysbus: x"));
         assert!(!is_log_line("[21:06:58.1004] WARNING sysbus: x"));
+    }
+
+    /// One step of a scripted device, witnessed by `witness`.
+    fn step(
+        wire: aethelgard_twin::boot::Wire,
+        device: &str,
+        step: aethelgard_ir::parts::StepKind,
+        witness: &[&str],
+    ) -> aethelgard_twin::boot::StepCheck {
+        aethelgard_twin::boot::StepCheck {
+            reference: "U7".into(),
+            peripheral: "I2C1".into(),
+            wire,
+            step,
+            write: vec![0x00],
+            width: 1,
+            expected: 0,
+            mask: 0xFF,
+            status_at: 0x2000_0004,
+            value_at: 0x2000_0008,
+            level: (-1, "[NOISY] "),
+            device: device.into(),
+            witness: Some(witness.iter().map(|&w| w.to_owned()).collect()),
+            idle_warning: None,
+            skipped: Vec::new(),
+            stimulus: Some(Vec::new()),
+        }
+    }
+
+    /// The findings of `checks` against `log`, every record `ok`.
+    fn step_findings(checks: &[aethelgard_twin::boot::StepCheck], log: &[&str]) -> Vec<Finding> {
+        let (seen, unrouted) = attribute(checks, log);
+        let observed = Observed {
+            boot_word: 0,
+            instructions: 0,
+            mips: 0,
+            pc: 0,
+            icsr: 0,
+            loops: Vec::new(),
+            registers: Vec::new(),
+            records: vec![(aethelgard_twin::boot::STATUS_OK, 0); checks.len()],
+            witnesses: seen.into_iter().map(Some).collect(),
+            absent: vec![Vec::new(); checks.len()],
+            unrouted,
+        };
+        witness_findings(checks, &observed)
+    }
+
+    /// `AET-WO-4210` D-A1 (ruled): a scripted device's `[ERROR]` line inside a
+    /// step fails that step by name. On I2C the line counts toward no step's
+    /// expected lines, so the steps around it keep their witnesses; on SPI it
+    /// falls in its chip-select window.
+    #[test]
+    fn a_device_s_error_inside_a_step_fails_that_step_by_name() {
+        use aethelgard_ir::parts::StepKind::{Configure, Data, Identity};
+        let at = |b: &str| format!("[03:07:39.4001] {b}");
+        let i2c = || aethelgard_twin::boot::Wire::I2c { address: 0x63 };
+        let d = "i2c1.u7";
+        let checks = [
+            step(i2c(), d, Identity, &["[NOISY] i2c1.u7: id"]),
+            step(i2c(), d, Configure, &["[NOISY] i2c1.u7: cfg"]),
+            step(i2c(), d, Data, &["[NOISY] i2c1.u7: data"]),
+        ];
+        let error = "[ERROR] i2c1.u7: Unknown command 0x80";
+        for (log, named) in [
+            (
+                vec![
+                    "[NOISY] i2c1.u7: id",
+                    "[NOISY] i2c1.u7: cfg",
+                    "[NOISY] i2c1.u7: data",
+                ],
+                None,
+            ),
+            (
+                vec![
+                    "[NOISY] i2c1.u7: id",
+                    "[NOISY] i2c1.u7: cfg",
+                    error,
+                    "[NOISY] i2c1.u7: data",
+                ],
+                Some("configure"),
+            ),
+            (
+                vec![
+                    "[NOISY] i2c1.u7: id",
+                    "[NOISY] i2c1.u7: cfg",
+                    "[NOISY] i2c1.u7: data",
+                    error,
+                ],
+                Some("data"),
+            ),
+            (
+                vec![
+                    error,
+                    "[NOISY] i2c1.u7: id",
+                    "[NOISY] i2c1.u7: cfg",
+                    "[NOISY] i2c1.u7: data",
+                ],
+                Some("identity"),
+            ),
+        ] {
+            let log: Vec<String> = log.into_iter().map(at).collect();
+            let log: Vec<&str> = log.iter().map(String::as_str).collect();
+            let f = step_findings(&checks, &log);
+            let kinds: Vec<&str> = f.iter().map(|f| f.kind.as_str()).collect();
+            match named {
+                None => assert!(f.is_empty(), "{kinds:?}"),
+                Some(name) => {
+                    assert_eq!(kinds, ["i2c_step_error"], "{log:?}");
+                    let m = &f[0].message;
+                    assert!(
+                        m.contains(&format!("U7 at I2C address 0x63, its {name} step")),
+                        "{m}"
+                    );
+                    assert!(m.ends_with(error), "{m}");
+                }
+            }
+        }
+        // On SPI, the error falls in its step's chip-select window.
+        let spi = || aethelgard_twin::boot::Wire::Spi {
+            address: 1,
+            select: "PA1".into(),
+        };
+        let d = "spi1.spi1mux.u7";
+        let checks = [
+            step(spi(), d, Identity, &["[NOISY] spi1.spi1mux.u7: id"]),
+            step(spi(), d, Configure, &["[NOISY] spi1.spi1mux.u7: cfg"]),
+        ];
+        let (low, high) = (
+            "[NOISY] spi1.spi1mux: GPIO #1 set to False",
+            "[NOISY] spi1.spi1mux: GPIO #1 set to True",
+        );
+        let error = "[ERROR] spi1.spi1mux.u7: Unknown register";
+        let log: Vec<String> = [
+            low,
+            "[NOISY] spi1.spi1mux.u7: id",
+            error,
+            high,
+            low,
+            "[NOISY] spi1.spi1mux.u7: cfg",
+            high,
+        ]
+        .into_iter()
+        .map(at)
+        .collect();
+        let log: Vec<&str> = log.iter().map(String::as_str).collect();
+        let f = step_findings(&checks, &log);
+        let kinds: Vec<&str> = f.iter().map(|f| f.kind.as_str()).collect();
+        assert_eq!(kinds, ["spi_step_error"]);
+        assert!(
+            f[0].message.contains("its identity step"),
+            "{}",
+            f[0].message
+        );
     }
 }

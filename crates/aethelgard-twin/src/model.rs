@@ -28,6 +28,13 @@ pub enum Model {
     Icm20948,
     /// `Sensors.ICP_101xx`, on I2C: it logs each transaction at `Debug`
     /// only (`AET-WO-4210` D2).
+    ///
+    /// Model divergence (`AET-WO-4210` D-A8, ruled): the model truncates its
+    /// raw temperature, `(ushort)((Temperature + 45) * (1 << 16) / 175)`
+    /// (`ICP_101xx.cs` L374 at `066a7f13`), where the datasheet's conversion,
+    /// and so the judge's expected value, rounds. They differ by one when the
+    /// fraction is ½ or more (30 °C: 28086 against 28087), so a stimulus is
+    /// chosen where both agree (25 °C: `0x6666`).
     Icp101xx,
 }
 
