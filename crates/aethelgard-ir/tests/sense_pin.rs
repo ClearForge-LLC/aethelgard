@@ -41,6 +41,8 @@ fn base() -> Value {
     let mut v: Value =
         serde_json::from_str(include_str!("fixtures/sentinel-02-power.json")).unwrap();
     v["power"]["crossings"] = json!([]);
+    // U5 goes, so its acknowledgement would stand for no part (`4210`).
+    v["accept_lifecycle"] = json!([]);
     for key in ["spi_devices", "spi_buses", "net_constraints"] {
         let kept: Vec<Value> = v[key]
             .as_array()
