@@ -689,8 +689,10 @@ mod tests {
 
     #[test]
     fn a_name_the_emitter_adds_is_refused_here() {
-        // `SPI1` is solved in the reference topology, so the emitter declares `spi1`.
-        for name in ["SPI1", "spi1", "GPIOA", "gpioa"] {
+        // `GPIOA` is the emitter's own port block. `SPI1`, which it also
+        // declares, is a reserved reference since `AET-WO-4300c` F21, so the
+        // topology refuses it first (below).
+        for name in ["GPIOA", "gpioa"] {
             assert_eq!(
                 kind(&[(name, "BME280", 0x76)]),
                 "InvalidDeviceName",
@@ -712,7 +714,7 @@ mod tests {
 
     #[test]
     fn a_reserved_name_is_the_topology_s_refusal_not_the_emitter_s() {
-        for name in ["nvic", "NVIC", "i2c1", "True", "sysbus"] {
+        for name in ["nvic", "NVIC", "i2c1", "True", "sysbus", "SPI1", "spi1"] {
             assert_eq!(kind(&[(name, "BME280", 0x76)]), "InvalidTopology", "{name}");
         }
         // Only the lowercased form collides: `gpioPortA` loads.

@@ -1,5 +1,8 @@
 //! Extraction, first step (`AET-WO-1305`): an upper bound on each I2C
-//! line's capacitance, from the routed board's own copper.
+//! line's capacitance, from the routed board's own copper. `AET-WO-4300c`
+//! widens the line list to each SPI bus's SCK and MOSI, whose declared
+//! capacitance chooses its pin's output speed: the copper is bounded the
+//! same way, and only the pins are counted differently (see [`lines`]).
 //!
 //! **Why a bound is enough.** RC rise time grows with C. When a line's
 //! bound is at most its declared `max_capacitance_femtofarads`, the
@@ -232,6 +235,11 @@ pub fn conditions(stack: &Stack) -> Vec<String> {
     );
     out
 }
+
+/// What the bound assumes of an SPI line's pins, stated beside
+/// [`conditions`] when the specification has SPI lines (`AET-WO-4300c` D3).
+/// [`conditions`] itself is unchanged, so the fabrication notes are too.
+pub const SPI_CONDITION: &str = "on SCK and MOSI, each device pin at its part's cited maximum pin capacitance (parts table); the MCU's own pin drives the line and is not counted (DS12117 Table 149's C is the external load)";
 
 // A via's barrel lies inside its checked disk.
 const _: () = assert!(DRILL_NM <= VIA_NM);
@@ -511,7 +519,7 @@ pub struct Terms {
     pub pins: u64,
 }
 
-/// One I2C line's bound and what it was computed from.
+/// One line's bound and what it was computed from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LineBound {
     /// The specification's net name.
@@ -527,8 +535,13 @@ pub struct LineBound {
     pub via_count: u64,
     /// Every copper pad on the line, pins included.
     pub pad_count: u64,
-    /// Pads counted at `Ci`, as `<reference>.<pad>`.
+    /// Pads counted as a pin, as `<reference>.<pad>`.
     pub pins: Vec<String>,
+    /// `SCK` or `MOSI` for an SPI line; `None` for I2C.
+    pub spi_signal: Option<&'static str>,
+    /// The driver's pads, whose copper is counted and whose pin is not: the
+    /// MCU's, on an SPI line (DS12117 Table 149's C is the external load).
+    pub drivers: Vec<String>,
     /// The line's pull-ups, by reference: copper only.
     pub pull_ups: Vec<String>,
 }
@@ -859,25 +872,76 @@ struct Role {
     value: String,
     /// The part's pads on the line, by number.
     pads: BTreeSet<String>,
-    /// A pin part (counted at `Ci`), or the bus's pull-up (copper only).
-    pin: bool,
+    load: Load,
 }
 
-/// One I2C line and every part the specification puts on it.
+/// How a part's pads load a line, beyond their copper.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Load {
+    /// A pin, counted at this many femtofarads per pad.
+    Pin(u64),
+    /// The bus's pull-up: copper only.
+    PullUp,
+    /// The driver of an SPI line, the MCU: copper only.
+    Driver,
+}
+
+/// A device's pin on an SPI line the MCU drives: its part's cited maximum,
+/// or a refusal by name when the table cites none (`AET-WO-4300c` D3). No
+/// drawable part lacks one today (the ICM-20948 has no vendored symbol), so
+/// only its unit test reaches the refusal.
+fn device_pin(
+    table: &aethelgard_ir::parts::PartsTable,
+    reference: &str,
+    part: &str,
+    net: &str,
+) -> Result<Load, Refused> {
+    match table.get(part).and_then(|p| p.pin_capacitance_femtofarads) {
+        Some(ff) => Ok(Load::Pin(ff)),
+        None => Err(refused(
+            "UnboundedPinCapacitance",
+            format!(
+                "the design puts {reference} ({part}) on `{net}`, a line the MCU drives, and the parts table cites no maximum for its pin capacitance"
+            ),
+        )),
+    }
+}
+
+/// One line and every part the specification puts on it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Line {
     net: String,
     bus: String,
+    spi_signal: Option<&'static str>,
     parts: BTreeMap<String, Role>,
 }
 
+/// The pads of `part` the design puts on board net `on`.
+fn pads_on(part: &crate::schematic::Part, on: &str) -> Result<BTreeSet<String>, Refused> {
+    let pin_nets = crate::pcb::pin_nets(part).map_err(|e| invalid(&e))?;
+    Ok(pin_nets
+        .into_iter()
+        .filter(|(_, n)| n == on)
+        .map(|(p, _)| p)
+        .collect())
+}
+
 /// Each I2C line of `spec`, bus by bus in document order, SDA then SCL,
-/// with the parts the generator's design puts on it (`schematic::design`,
-/// from the specification and its solved topology: `RUL-16`). A part is a
-/// pin part when it is not a passive (the MCU and the declared devices),
-/// and a pull-up when it is the resistor between the line and the bus's
-/// rail. A passive that is not a pull-up is refused: its capacitance is
-/// not known.
+/// then each SPI bus's SCK and MOSI (`AET-WO-4300c` D2), with the parts the
+/// generator's design puts on it (`schematic::design`, from the
+/// specification and its solved topology: `RUL-16`).
+///
+/// - **On an I2C line** a part is a pin part when it is not a passive (the
+///   MCU and the declared devices), each pin at UM10204's `Ci` (unchanged),
+///   and a pull-up when it is the resistor between the line and the bus's
+///   rail.
+/// - **On an SPI line** the MCU drives the edge, so its pin is not counted
+///   (Table 149's C is the load it drives); each declared device's pin is
+///   counted at its part's cited maximum (`parts.json` `pin_capacitance`,
+///   `AET-WO-4300c` D3). A device whose part cites no maximum is refused by
+///   name: no typical value stands in for one.
+///
+/// A passive that is not a pull-up is refused: its capacitance is not known.
 pub fn lines(
     spec: &Specification,
     solved: &SolvedTopology,
@@ -890,17 +954,17 @@ pub fn lines(
             let on = board_net(net);
             let mut roles = BTreeMap::new();
             for part in &parts {
-                let pin_nets = crate::pcb::pin_nets(part).map_err(|e| invalid(&e))?;
-                let pads: BTreeSet<String> = pin_nets
-                    .into_iter()
-                    .filter(|(_, n)| *n == on)
-                    .map(|(p, _)| p)
-                    .collect();
+                let pads = pads_on(part, &on)?;
                 if pads.is_empty() {
                     continue;
                 }
                 let passive =
                     part.lib_id == crate::schematic::R || part.lib_id == crate::schematic::C;
+                let load = if passive {
+                    Load::PullUp
+                } else {
+                    Load::Pin(PIN_FF)
+                };
                 let pull_up = part.lib_id == crate::schematic::R
                     && part
                         .conns
@@ -933,13 +997,62 @@ pub fn lines(
                         footprint: part.footprint.clone(),
                         value: part.value.clone(),
                         pads,
-                        pin: !passive,
+                        load,
                     },
                 );
             }
             out.push(Line {
                 net: net.clone(),
                 bus: bus.id.clone(),
+                spi_signal: None,
+                parts: roles,
+            });
+        }
+    }
+    let table = aethelgard_ir::parts::table().map_err(|e| refused(e.kind(), e.to_string()))?;
+    for bus in &spec.spi_buses {
+        for (signal, net) in [("SCK", &bus.sck.net), ("MOSI", &bus.mosi.net)] {
+            let on = board_net(net);
+            let mut roles = BTreeMap::new();
+            for part in &parts {
+                let pads = pads_on(part, &on)?;
+                if pads.is_empty() {
+                    continue;
+                }
+                // The solved topology's copy of the device (`RUL-16`).
+                let device = solved
+                    .spi_devices
+                    .get(&part.reference)
+                    .filter(|d| d.bus == bus.id);
+                let load = if part.lib_id == crate::schematic::MCU {
+                    Load::Driver
+                } else if let Some(d) = device {
+                    device_pin(table, &part.reference, &d.part, net)?
+                } else {
+                    // belt-and-suspenders: today's generator puts only the
+                    // MCU and the bus's devices on SCK and MOSI.
+                    return Err(refused(
+                        "UnmodelledPart",
+                        format!(
+                            "the design puts {} on `{net}`, and its capacitance is not known",
+                            part.reference
+                        ),
+                    ));
+                };
+                roles.insert(
+                    part.reference.clone(),
+                    Role {
+                        footprint: part.footprint.clone(),
+                        value: part.value.clone(),
+                        pads,
+                        load,
+                    },
+                );
+            }
+            out.push(Line {
+                net: net.clone(),
+                bus: bus.id.clone(),
+                spi_signal: Some(signal),
                 parts: roles,
             });
         }
@@ -1011,6 +1124,7 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
     }
     let mut terms = Terms::default();
     let (mut pins, mut pull_ups, mut pad_count) = (Vec::new(), Vec::new(), 0u64);
+    let mut drivers = Vec::new();
     for (reference, pads) in &on_board {
         let Some(role) = want.parts.get(*reference) else {
             return Err(refused(
@@ -1034,19 +1148,20 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
                 ),
             ));
         }
-        if !role.pin {
+        if role.load == Load::PullUp {
             pull_ups.push((*reference).to_owned());
         }
         for pad in pads {
             let ff = pad_ff(&ph, pad.rect).ok_or_else(|| overflow(net))?;
             terms.pads = terms.pads.checked_add(ff).ok_or_else(|| overflow(net))?;
             pad_count += 1;
-            if role.pin {
-                pins.push(format!("{reference}.{}", pad.number));
-                terms.pins = terms
-                    .pins
-                    .checked_add(PIN_FF)
-                    .ok_or_else(|| overflow(net))?;
+            match role.load {
+                Load::Pin(ff) => {
+                    pins.push(format!("{reference}.{}", pad.number));
+                    terms.pins = terms.pins.checked_add(ff).ok_or_else(|| overflow(net))?;
+                }
+                Load::Driver => drivers.push(format!("{reference}.{}", pad.number)),
+                Load::PullUp => {}
             }
         }
     }
@@ -1095,6 +1210,8 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
         via_count,
         pad_count,
         pins,
+        spi_signal: want.spi_signal,
+        drivers,
         pull_ups,
     })
 }
@@ -1411,5 +1528,30 @@ mod tests {
             y1: 1,
         };
         assert_eq!(pad_ff(&ph, inverted), None);
+    }
+
+    /// `AET-WO-4300c` D3: a device pin on SCK or MOSI counts at its part's
+    /// cited maximum; a part with only a typical value (the ICM-20948's
+    /// "< 10" pF) is refused by name, never given that value.
+    #[test]
+    fn a_device_pin_is_its_cited_maximum_or_refused() {
+        let table = aethelgard_ir::parts::table().unwrap();
+        assert_eq!(
+            device_pin(table, "U4", "W25Q64JVxIQ", "SPI_SCK"),
+            Ok(Load::Pin(8_000))
+        );
+        let err = device_pin(table, "U5", "ICM20948", "SPI_SCK").unwrap_err();
+        assert_eq!(err.kind, "UnboundedPinCapacitance");
+        assert!(
+            err.message.contains("U5 (ICM20948) on `SPI_SCK`"),
+            "{}",
+            err.message
+        );
+        assert_eq!(
+            device_pin(table, "U9", "UNLISTED", "SPI_SCK")
+                .unwrap_err()
+                .kind,
+            "UnboundedPinCapacitance"
+        );
     }
 }

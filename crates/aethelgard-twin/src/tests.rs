@@ -6,7 +6,7 @@ use crate::platform;
 
 /// The reference topology, as `aethelgard solve` gives it for
 /// `examples/sentinel-01-minimal.json`.
-pub(crate) const REFERENCE: &str = r#"{"schema_version":3,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JV","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}}}"#;
+pub(crate) const REFERENCE: &str = r#"{"schema_version":4,"specification_sha256":"9eb61c497036288a963fc6fe3ffe6e8b3d65a4f2107b21e9fe9a8babc1816446","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}}}"#;
 
 fn reference() -> SolvedTopology {
     serde_json::from_str(REFERENCE).unwrap()
@@ -115,10 +115,10 @@ fn an_added_spi_takes_its_base_and_interrupt_from_the_header() {
 #[test]
 fn what_cannot_be_lowered_is_refused() {
     let kind = |t: SolvedTopology| platform::emit(&t).unwrap_err().kind();
-    assert_eq!(
-        kind(edited("\"SPI1\"", "\"USART1\"")),
-        "UnsupportedPeripheral"
-    );
+    // No SPI peripheral is solved any more, so no `spi_lines` either.
+    let mut usart = edited("\"SPI1\"", "\"USART1\"");
+    usart.spi_lines.clear();
+    assert_eq!(kind(usart), "UnsupportedPeripheral");
     // Every I2C1 name, signals too: an analog line must stay an I2C line.
     let t = SolvedTopology {
         assignments: reference()
@@ -135,7 +135,7 @@ fn what_cannot_be_lowered_is_refused() {
     assert_eq!(kind(t), "Undefined");
     assert_eq!(kind(edited("\"PA0\"", "\"PZ0\"")), "InvalidPin");
     assert_eq!(
-        kind(edited("\"schema_version\":3", "\"schema_version\":4")),
+        kind(edited("\"schema_version\":4", "\"schema_version\":5")),
         "InvalidTopology"
     );
     assert_eq!(

@@ -257,7 +257,19 @@ fn attack_wide_references_leave_the_emitted_board_clean() {
     let t = Temp::new("wide");
     let mut s: Value =
         serde_json::from_slice(&fs::read(example("sentinel-01-minimal.json")).unwrap()).unwrap();
-    let (mut buses, mut devices, mut constraints) = (vec![], vec![], vec![]);
+    let (mut buses, mut devices) = (vec![], vec![]);
+    // The SPI bus stays, so its SCK and MOSI constraints (specification v3) stay.
+    let mut constraints: Vec<Value> = s["net_constraints"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| {
+            c["net_name"]
+                .as_str()
+                .is_some_and(|n| n.starts_with("SPI_"))
+        })
+        .cloned()
+        .collect();
     for b in 0..4 {
         buses.push(serde_json::json!({
             "id": format!("B{b}"), "peripheral": null, "speed_hz": 400000,
