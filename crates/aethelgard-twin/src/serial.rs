@@ -73,12 +73,6 @@ pub fn stock_uarts() -> Vec<&'static str> {
         .collect()
 }
 
-/// The file the composition captures `peripheral`'s bytes into, inside the
-/// boot's fresh capture directory: `usart1.bin`.
-pub fn capture_file(peripheral: &str) -> Result<String, TwinError> {
-    Ok(format!("{}.bin", renode_name(peripheral)?))
-}
-
 /// The pattern a port sends at start: its label's UTF-8 bytes, then
 /// [`PATTERN_TAIL`].
 pub fn pattern(label: &str) -> Vec<u8> {
@@ -834,7 +828,6 @@ mod tests {
         for p in ["LPUART1", "SPI1", "I2C1", "USART9"] {
             assert!(renode_name(p).is_err(), "{p}");
         }
-        assert_eq!(capture_file("UART7").unwrap(), "uart7.bin");
     }
 
     #[test]
