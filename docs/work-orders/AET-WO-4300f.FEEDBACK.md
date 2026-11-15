@@ -64,7 +64,7 @@ Each item is **[read]**, this repository at `cb44872`.
 ### 3.0 The caps (P0: as predicted)
 
 - **[measured]** `spike/4300f/img.sh -- true` started `podman run --memory 8g --memory-swap 8g --pids-limit -1 --network none` and wrote no cgroup file.
-- It sampled the container's cgroup every 0.25 s and read `memory.max=8589934592`, **`memory.swap.max=8589934592`**, `pids.max=max`. The value held for 45 s (`spike/4300f/out/caps.log`).
+- It sampled the container's cgroup every 0.25 s and read `memory.max=8589934592`, **`memory.swap.max=8589934592`**, `pids.max=max` (`spike/4300f/out/caps.log`, first sample 02:42:37Z). The runner logs only a change of value. None was logged before it gave up at 02:43:22Z, and its last read was still 8 GiB.
 - The runner releases the command only after four consecutive reads of swap 0. It never released, so `true` never ran (exit 99).
 - This is `4210`'s F10, which is D8 on PR #131. **The kickoff's rule 3 therefore stops every KiCad step of this spike:**
   - S2's ERC and DRC;
@@ -89,7 +89,7 @@ JST's text layer uses a font whose glyph codes are offset by 0x1F; it was decode
 - Current 1.0 A AC/DC at AWG #26; voltage 50 V; −40 to +105 °C; wire AWG #30 to #26.
 - Headers: side entry `SM02B`–`SM15B-GHS-TB`, top entry `BM02B`–`BM15B-GHS-TBT`; housing `GHR-0xV-S`; contact `SSHL-002T-P0.2`.
 - **Mated height (reference values):** side entry 4.35 mm above the board, with the plug body (7.15) mm long and the cable leaving parallel to the board. Top entry is (7.3) mm.
-- The side-entry cable leaves on the side away from the signal tails. **[inferred]** In KiCad's footprint frame that is +y, the mounting-pad side, so at rotation 0 the cable leaves toward the board's bottom edge (+y).
+- **[inferred]** The side-entry cable leaves on the side away from the signal tails: JST's side view shows the cable leaving one end, but nothing in the figure ties that end to the pad view. In KiCad's footprint frame that is +y, the mounting-pad side, so at rotation 0 the cable leaves toward the board's bottom edge (+y). The courtyard is symmetric, so the footprint does not settle this. **Check the 3D model or JST's drawing before the build commits to an edge.**
 
 **JST SH** **[read]**: 1.0 mm pitch; 1.0 A at AWG #28; 50 V.
 
@@ -111,8 +111,8 @@ What the read changes against the prediction (P1):
 - **DS-009's debug ports are not JST GH.** They are JST SH (1.0 mm). SWD for Sentinel-02 needs a second connector series.
 - **DS-009 has no power-port wording "POWER".** It names it "Analog Power". Its VCC needs 2.5 A continuous over two pins, but JST GH rates a contact at 1.0 A at AWG #26, so two carry 2.0 A **[read]**, both documents. DS-009 does not reconcile this. It is 4300d's problem, recorded here.
 - **There is no motor-output, PWM or USB port in DS-009 rev 0.1.0.** `4300a`'s motor outputs and `4300e1`'s USB have no published pinout to validate against, so they need an explicit pin map.
-- **Every DS-009 port's pin 1 is +5 V** (+5.3 V on power). Sentinel-01 declares only `VDD_3V3` (§4, D5).
-- **DS-009's licence** (p. 3): "Redistribution and use in products, without modification, are permitted provided that … the trademark shall only be used for compliant products and in combination with a signed adopter agreement … A royalty-free, non-exclusive license is provided to adopters with a valid adopter agreement for schematics and drawings based on the standard documentation." Copyright 2020, Pixhawk SIG. So the PDF is not vendored, and the "Pixhawk" name is not used for a port. Whether a schematic emitted to a DS-009 pinout needs an adopter agreement is a question for Scotty (D2).
+- **Every external DS-009 port's pin 1 is +5 V** (+5.3 V on power). The two debug ports' pin 1 is the target processor voltage, 1.8–3.3 V. Sentinel-01 declares only `VDD_3V3` (§5, D5).
+- **DS-009's licence** (p. 3): "Redistribution and use in products, without modification, are permitted provided that the following conditions are met: ● The trademark shall only be used for compliant products and in combination with a signed adopter agreement. ● Implementations of the standard must be compliant with the full specification. ● A royalty-free, non-exclusive license is provided to adopters with a valid adopter agreement for schematics and drawings based on the standard documentation." Copyright 2020, Pixhawk SIG. So the PDF is not vendored, and the "Pixhawk" name is not used for a port. Whether a schematic emitted to a DS-009 pinout needs an adopter agreement is a question for Scotty (D2).
 
 **KiCad's connector files** **[read]**:
 - The image at `c69ff9bc…` holds `Connector_JST.pretty` with 28 GH footprints and 29 SH footprints. Symbols ship as merged `.kicad_sym` files (`Connector_Generic.kicad_sym`, `Connector_Generic_MountingPin.kicad_sym`).
@@ -234,6 +234,48 @@ It went to both inboxes at 02:50Z, with the same labels.
 - The twin takes only the latter.
 - Keeping connectors in the `Specification` only, never in the `SolvedTopology`, keeps them out of the twin by construction (§3.5).
 
+### 3.4 S4, placement and routing
+
+**Today's placement** **[read]**, `pcb.rs`:
+- **No edge.** `place` puts each part beside the IC it shares most nets with, and the outline is the placed keep-out boxes plus `MARGIN_NM` (2 mm). A connector given to today's placer lands beside the MCU, inside the board, with the outline following it, as P4 predicted.
+- **No rotation.** Every footprint is at rotation 0 (`pcb.rs` header), and **`route::part` refuses a rotated footprint** ("J1 is rotated", also measured). At rotation 0 the GH side-entry footprint's cable leaves toward +y (§3.1), so **the bottom edge is the only edge a connector can face today.**
+
+**The probe** **[measured]** (host, `spike/4300f/s4/`, output `result.txt`), built by a subagent and spot-checked against `result.txt` and the written boards:
+- **The reference**, emitted unmodified: 15 parts, 360 segments, 70 vias and 1 zone.
+  - Re-routing it with `route::route` gives identical copper, with 37 rip-ups, in 6.5 s (a debug build).
+  - `check` and `connectivity` pass.
+- **J1** is `JST_GH_SM04B-GHS-TB` at rotation 0, origin (94.8, 118.275) mm, x-centred.
+  - It is placed by the placer's own rule. Its keep-out box comes from `pcb::geometry`: the courtyard, ±4.755 × ±3.225 mm with its line width, plus the visible silkscreen `Reference` text at y −3.9, giving a top of −4.55. That box must clear every placed keep-out box by `GAP_NM`, or by `IC_GAP_NM` (1 mm) when both are ICs. A connector is an IC to `is_ic`, because its lib id is not `Device:`.
+  - The first candidate below the old edge clears every box. The nearest box overlapping its x range is U1's, 2.05 mm away.
+  - The outline's bottom moves from 116.55 to 121.5 mm (+4.95 mm), so the housing's front (the courtyard's bottom) is flush with the edge.
+- **J1's pads** follow DS-009's I2C port: 1 `VDD_3V3` (DS-009 says +5 V, and Sentinel-01 has none), 2 `/I2C_SCL`, 3 `/I2C_SDA`, 4 `GND`.
+- **The two MP pads** sit 0.525 mm from the bottom edge (`EDGE_NM` is 0.5 mm).
+
+| | A: MP no net | B: MP on GND |
+|---|---|---|
+| `route` | Ok, 390 segments, 78 vias, 37 rip-ups, 6.3 s | Ok, 396 segments, 80 vias, 37 rip-ups, 6.4 s |
+| `check` / `connectivity` | Ok / Ok | Ok / Ok |
+| board written, read back by `strict` + `route::read` | equal, Ok | equal, Ok |
+| sha256 (`~/.cache/aet-4300f/s4-out/`) | `000550fa…` | `a459f8e2…` |
+
+- **Placement legal:** yes, by the placer's keep-out boxes and gaps and by `EDGE_NM` **[measured]**.
+  - The first version of this probe compared J1's courtyard against pads only. The adversarial pass caught that, and the probe now uses `pcb::geometry`.
+  - The position moved by 25 µm, and the routing counts are unchanged.
+- **Routed, with the router's exact `check` and `connectivity`:** yes, both variants. Two runs gave identical output (wall times aside) and identical boards **[measured]**.
+- **DRC:** not measured (§3.0). `spike/4300f/gates.sh` runs it on both boards, unrun.
+  - The boards carry no schematic symbol for J1, so the DRC there omits parity.
+  - **[inferred]** the risks DRC would judge that the router does not: courtyard and silkscreen against the edge (the housing is flush with it), and mask slivers between the 0.65 mm-gap GH pads.
+
+**Proposal** **[inferred]**:
+1. **Placement.** Place the core as today, then each connector last, on an edge the specification names (`"edge": "bottom"` and so on, or the placer's default), ordered along that edge by reference and spaced by `GAP_NM`. Then grow the outline so each housing's front is flush with its edge, keeping `EDGE_NM` from every pad.
+   - **For v1, bottom only** needs nothing new.
+   - **Other edges** need `route::part` and `pcb.rs` to accept 90°, 180° and 270°. Pads stay axis-aligned at right angles, so the router's exact box arithmetic holds. That is `1307`'s fence: after it merges, and by the architect's split (D7).
+2. **Routing.** No change. A connector's nets are ordinary multi-pad nets; GND pins reach the B.Cu zone (2 layers) or the GND plane (4) by the existing via path.
+   - VCC pins are tracked at the one declared width. A connector that carries supply current (DS-009 VCC, up to 2.5 A) needs a width for its current, which belongs with `4300d`.
+3. **What each board gains.**
+   - **The 2-layer reference:** connectors on F.Cu at the bottom edge, ground by via to the B.Cu zone, and rails as tracks.
+   - **The 4-layer fixture:** the same, plus each VCC pin on the plane's domain by via to the plane, and shorter signal escapes, because the plane frees B.Cu.
+
 ### 3.5 S5, the twin
 
 **A connector is invisible to the twin** **[read]**:
@@ -248,41 +290,119 @@ It went to both inboxes at 02:50Z, with the same labels.
 
 **DS-009's I2C port says "1.5K pullup on autopilot".** A bus on that port could have its declared `pull_up_ohms` checked against 1500 by the same `ConnectorPinContradictsStandard` path. That is optional and is recorded for the ruling.
 
-### 3.4 S4, placement and routing
+## 4. The stop
 
-**Today's placement** **[read]**, `pcb.rs`:
-- **No edge.** `place` puts each part beside the IC it shares most nets with, and the outline is the placed keep-out boxes plus `MARGIN_NM` (2 mm). A connector given to today's placer lands beside the MCU, inside the board, with the outline following it, as P4 predicted.
-- **No rotation.** Every footprint is at rotation 0 (`pcb.rs` header), and **`route::part` refuses a rotated footprint** ("J1 is rotated", also measured). At rotation 0 the GH side-entry footprint's cable leaves toward +y (§3.1), so **the bottom edge is the only edge a connector can face today.**
+### 4.1 The table
 
-**The probe** **[measured]** (host, `spike/4300f/s4/`, output `result.txt`), built by a subagent and spot-checked against `result.txt` and the written boards:
-- **The reference**, emitted unmodified: 15 parts, 360 segments, 70 vias and 1 zone.
-  - Re-routing it with `route::route` gives identical copper, with 37 rip-ups, in 6.5 s (a debug build).
-  - `check` and `connectivity` pass.
-- **J1** is `JST_GH_SM04B-GHS-TB` at rotation 0, origin (94.8, 118.25) mm, x-centred.
-  - Its courtyard top is 1.5 mm inside the old bottom edge. That is exactly `GAP_NM` (0.5 mm) from any keep-out box, which lies at least `MARGIN_NM` inside.
-  - The outline's bottom moves from 116.55 to 121.45 mm (+4.9 mm), so the housing's front is flush with the edge.
-- **J1's pads** follow DS-009's I2C port: 1 `VDD_3V3` (DS-009 says +5 V, and Sentinel-01 has none), 2 `/I2C_SCL`, 3 `/I2C_SDA`, 4 `GND`.
-- **The two MP pads** sit exactly 0.5 mm (`EDGE_NM`) from the bottom edge: legal, with no slack.
-
-| | A: MP no net | B: MP on GND |
+| Question | Answer | Label |
 |---|---|---|
-| `route` | Ok, 390 segments, 78 vias, 37 rip-ups, 6.3 s | Ok, 396 segments, 80 vias, 37 rip-ups, 6.4 s |
-| `check` / `connectivity` | Ok / Ok | Ok / Ok |
-| board written, read back by `strict` + `route::read` | equal, Ok | equal, Ok |
-| sha256 (`~/.cache/aet-4300f/s4-out/`) | `a1155101…` | `ac45d441…` |
+| S1: DS-009 fetchable from Furnace | yes, from the Pixhawk-Standards repository (only commit `48dd6d1d`), `dbc6b94e…` | measured |
+| S1: JST-GH datasheet fetchable | yes, from jst-mfg.com, `b1dcb317…`: 1.25 mm, 1.0 A at AWG #26, 50 V, mated 4.35 mm (side) / 7.3 mm (top) | measured / read |
+| S1: DS-009 pinouts | §3.1 table: 9 ports. Debug ports are **JST SH**, not GH. Every VCC is +5 V. No motor, PWM or USB port. | read |
+| S1: KiCad GH/SH footprints and symbols vendorable under `RUL-11` | yes: CC-BY-SA 4.0 + design exception, the same licence file byte for byte; GitLab = image bytes | read |
+| S2: `validate`/`solve`/`emit` with a one-pin net | all exit 0; one label on one MCU pin; one pad, no copper | measured |
+| S2: ERC | `isolated_pin_label` warning per net, so the gate fails (exit 5 expected) | read (KiCad source), **run blocked** |
+| S2: DRC | no finding expected | inferred, **run blocked** |
+| S3: shape | (a) explicit `connectors`, with `standard` or `null`; seven named refusals | inferred |
+| S4: placer puts a connector at an edge | no: beside an IC; no rotation (`route::part` refuses it) | read, measured |
+| S4: hand-placed GH 4-pin at the bottom edge | placement legal, routed, `check` and `connectivity` Ok, both MP variants, deterministic | measured (host) |
+| S4: DRC of that board | **not run**; harness `spike/4300f/gates.sh` | blocked |
+| S5: twin | unchanged; no peripheral, no witness change | read |
+| S5: exceptions | extraction refuses a connector pad on an I2C line (`UnmodelledPart`); the bound ignores cable and remote `Ci`; an off-board device is placed by `emit` | read, inferred |
+| caps | `memory.swap.max` = 8 GiB under `--memory 8g --memory-swap 8g` | measured |
 
-- **Placement legal:** yes, by the placer's own `GAP_NM` and `EDGE_NM` **[measured]**.
-- **Routed, with the router's exact `check` and `connectivity`:** yes, both variants. A second run was byte-identical.
-- **DRC:** not measured (§3.0). `spike/4300f/gates.sh` runs it on both boards, unrun.
-  - The boards carry no schematic symbol for J1, so the DRC there omits parity.
-  - **[inferred]** the risks DRC would judge that the router does not: courtyard and silkscreen against the edge (the housing is flush with it), and mask slivers between the 0.65 mm-gap GH pads.
+**Predictions against results:**
+- **P0 held.** Swap read 8 GiB.
+- **P1 held in part, with three misses:**
+  - debug is SH;
+  - the power port is "Analog Power", with a current contradiction;
+  - there is no motor or USB port.
+- **P2 held** where it could be checked: the device-less SPI bus is admitted, there is one pad and no copper, and the ERC rule exists as predicted (read). The ERC and DRC predictions are unmeasured.
+- **P3 stands as the recommendation.**
+- **P4 held on the host.** It missed that rotation is refused, which confines v1 to one edge. DRC is unmeasured.
+- **P5 held.** The exception is wider than predicted: extraction refuses outright, rather than under-counting, and there is the off-board-device case.
 
-**Proposal** **[inferred]**:
-1. **Placement.** Place the core as today, then each connector last, on an edge the specification names (`"edge": "bottom"` and so on, or the placer's default), ordered along that edge by reference and spaced by `GAP_NM`. Then grow the outline so each housing's front is flush with its edge, keeping `EDGE_NM` from every pad.
-   - **For v1, bottom only** needs nothing new.
-   - **Other edges** need `route::part` and `pcb.rs` to accept 90°, 180° and 270°. Pads stay axis-aligned at right angles, so the router's exact box arithmetic holds. That is `1307`'s fence: after it merges, and by the architect's split (D7).
-2. **Routing.** No change. A connector's nets are ordinary multi-pad nets; GND pins reach the B.Cu zone (2 layers) or the GND plane (4) by the existing via path.
-   - VCC pins are tracked at the one declared width. A connector that carries supply current (DS-009 VCC, up to 2.5 A) needs a width for its current, which belongs with `4300d`.
-3. **What each board gains.**
-   - **The 2-layer reference:** connectors on F.Cu at the bottom edge, ground by via to the B.Cu zone, and rails as tracks.
-   - **The 4-layer fixture:** the same, plus each VCC pin on the plane's domain by via to the plane, and shorter signal escapes, because the plane frees B.Cu.
+### 4.2 Recommended shape
+
+§3.3 option (a): `connectors[]`, each holding:
+- `reference`;
+- `part` (a cited connectors table in `aethelgard-ir`);
+- `standard` (a cited DS-009 ports table row, or `null`);
+- every pin with its net or `null`.
+
+It sits in the `Specification` only. GND and VCC pins join through the emitter's ground and rail symbols. Placement is on a named edge, bottom-only until rotation lands.
+
+### 4.3 Vendoring list (for the build, if ruled)
+
+Into `aethelgard-kicad-lib`, verbatim from KiCad GitLab tag `10.0.7`, each with its sha256 pinned in `aethelgard-eda::library` (§3.1 table):
+- **Footprints:**
+  - `JST_GH_SM04B-GHS-TB_1x04-1MP_P1.25mm_Horizontal` (DS-009 I2C, CAN);
+  - `JST_GH_SM06B-GHS-TB_1x06-1MP_P1.25mm_Horizontal` (TELEM, basic GPS, power);
+  - `JST_GH_SM10B-GHS-TB_1x10-1MP_P1.25mm_Horizontal` (full GPS).
+  - For Sentinel-02's SWD, if ruled: `JST_SH_SM06B-SRSS-TB_1x06-1MP_P1.00mm_Horizontal` (debug mini).
+  - The 7-pin SPI port and the 10-pin SH debug are left out until a board needs them.
+  - The vertical `BM…` parts are left out: horizontal is cable-friendly at an edge, and one orientation keeps the table small.
+- **Symbols:** `Connector_Generic_MountingPin.kicad_symdir/Conn_01x04_MountingPin`, `…01x06…` and `…01x10…` (D3).
+- **Licence:** no new file. The existing `LICENSE.md` is byte-identical.
+- **The 3D-model line** stays as KiCad wrote it, as for the 6 vendored footprints.
+
+## 5. Decisions needed (for the architect; D2 is Scotty's)
+
+- **D1. Shape:** (a) explicit `connectors` (recommended), (b) implied by I/O group, or (c) (a) plus a shorthand.
+- **D2. DS-009's licence and trademark (Scotty).** The standard grants a schematic and drawing licence "to adopters with a valid adopter agreement", and reserves the Pixhawk mark for compliant, signed adopters.
+  - Options: (a) cite DS-009 pinouts as facts, never use the mark, and vendor no PDF; (b) get an adopter agreement; (c) explicit pin maps only, with no `standard` field.
+  - Recommended: (a) if Scotty accepts the reading, else (c).
+- **D3. Mounting pads:**
+  - (a) the `Conn_01xNN_MountingPin` symbol with `MP` on `GND`: its filter matches, and the pads are ground-stitched (measured: routes, +2 vias);
+  - (b) `MP` with a `no_connect`;
+  - (c) the plain `Conn_01xNN`, with no net on `MP` (measured: routes).
+  - Recommended: (a).
+- **D4. The vendoring list in §4.3.** Should SH come in now for Sentinel-02's SWD, or wait?
+- **D5. DS-009 VCC is +5 V; Sentinel-01 has only `VDD_3V3`.**
+  - Options: (a) refuse a DS-009 port without a 5 V domain (recommended, `INV-06`), so Sentinel-01's connectors are explicit maps until `4300d` declares 5 V; (b) allow VCC `null` on a DS-009 port; (c) allow 3V3 on pin 1 with a named deviation. DS-009's licence requires that "implementations of the standard must be compliant with the full specification", so (c) could not be called DS-009.
+- **D6. DS-009's power port needs 2.5 A over two GH contacts rated 1.0 A each.** Should `4300d` take a different connector for power-in?
+- **D7. Rotation.** For v1, bottom edge only (no router change), or rotation in `route::part` and `pcb.rs` after `1307` merges (its fence)?
+- **D8. Lines that leave the board.**
+  - Extraction must count connector pads (not refuse them).
+  - Who declares the off-board capacitance budget (cable plus remote `Ci`, with a source), so that the bound in `RUL-19` (1) and `4300c`'s `Fmax(C)` stay true?
+  - Options: (a) a per-connector-pin declared budget, required on I2C and SPI lines (recommended); (b) the line's `max_capacitance` covers it, so extraction checks board + 0, which is weaker and should be stated.
+- **D9. Off-board devices** (a GPS's compass on a DS-009 GPS port): modelled in the twin, not placed on the board. Is that in `4300f`'s build or a later work order?
+- **D10. The caps stop (= 4210's D8 on PR #131).** S2's ERC and DRC and S4's DRC are unmeasured because swap read 8 GiB.
+  - The harness is committed: `bash spike/4300f/img.sh -- bash spike/4300f/gates.sh`.
+  - Once D8 is ruled, it runs in under a minute and answers `4300a`/`4300b` by measurement. Both inboxes already have the host half and the source read.
+- **D11. Sequencing for `4300a` and `4300b`.** By KiCad's source, their off-board nets fail ERC honestly, so both will STOP at their §1 measured stop unless connectors land first. Should `4300f`'s build come before their board side, or should they carry a bottom-edge connector themselves?
+
+## 6. Adversarial pass, reduction pass, gates
+
+**Adversarial pass:** a fresh subagent was given the sources, not this document's conclusions, and asked to falsify §3–§5. What it found:
+- **Confirmed**, at source:
+  - S2's ERC reading, including that no pin type, label type or `has_nc` path spares a single MCU pin's local label;
+  - the gate counting warnings;
+  - the DS-009 table, pin by pin;
+  - the JST figures;
+  - every KiCad file hash;
+  - the rotation refusal and the one-pad skip;
+  - extraction's `UnmodelledPart`;
+  - the twin never reading a `Specification`.
+- **Wrong, fixed:** S4's "placement legal by `GAP_NM`" was unchecked. The probe compared pads, not keep-out boxes, which include silkscreen text.
+  - The probe now places by `pcb::geometry` and the placer's gaps.
+  - That measured the placement legal, 2.05 mm from U1 (the subagent's inferred overlap with U1 did not hold when measured), and moved J1 by 25 µm (§3.4).
+- **Wrong, fixed:** "every DS-009 port's pin 1 is +5 V". The debug ports' pin 1 is the target voltage.
+- **Overstated, fixed:**
+  - the cable direction was listed as read; it is now inferred, with a check named for the build;
+  - "held 45 s" is now worded as the log supports it;
+  - the licence quote's ellipsis dropped the full-compliance condition, which bears on D2 and D5 (c), and is now quoted whole;
+  - "second run byte-identical" had no record, and is now measured.
+
+**Reduction pass (diff):** nothing to remove in the repository. There are 2 findings, both spike-only, which the build deletes:
+- `spike/4300f/img.sh` is `4210`'s runner pattern copied. A shared runner would be one copy, but spikes never reach `main`.
+- The S4 probe copies `pcb.rs`'s private `copper()` to write boards. If the build needs a probe-like path, it should reach the function rather than copy it.
+
+Outside the repository, an 802 MB scratch copy of KiCad's share tree was deleted from `~/.cache/aet-4300f`.
+
+**Gates** **[measured]**, Furnace, host, under a capped user scope (`systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`, nice 10), at `fbbfd4f`, whose code is unchanged from `main` `cb44872`:
+- `cargo fmt --all -- --check`: 0;
+- `cargo clippy --workspace --all-targets -- -D warnings`: 0;
+- `cargo test --workspace`: 0, with 1200 passed, 0 failed and 0 ignored across 77 test binaries.
+
+The spike adds no workspace code. Its probe crate has its own `[workspace]`. Tier 2 is CI's.

@@ -160,9 +160,78 @@ fn main() {
     // Placement.
     let o = board.outline;
     let cx = ((o.x0 + o.x1) / 2 + 25_000).div_euclid(50_000) * 50_000;
-    let court_top = o.y1 - 1_500_000;
-    let origin = (cx, court_top + 3_200_000);
-    let new_y1 = court_top + 6_400_000;
+    // The placer's own legality (pcb.rs `place`/`spot`): J1's keep-out box (courtyard ∪
+    // silkscreen ∪ visible silkscreen text, `pcb::geometry`) clears every placed keep-out box
+    // by GAP_NM, or IC_GAP_NM when both are ICs (`is_ic`: lib id not `Device:`; a connector
+    // is one). The first such origin moving down from the old edge, on the 50 µm snap.
+    let shift = |r: Rect, (dx, dy): (i64, i64)| Rect {
+        x0: r.x0 + dx,
+        y0: r.y0 + dy,
+        x1: r.x1 + dx,
+        y1: r.y1 + dy,
+    };
+    let grow = |r: Rect, d: i64| Rect {
+        x0: r.x0 - d,
+        y0: r.y0 - d,
+        x1: r.x1 + d,
+        y1: r.y1 + d,
+    };
+    let mut keeps: Vec<(String, bool, Rect)> = Vec::new();
+    for item in sx.items() {
+        if item.head() != Some("footprint") {
+            continue;
+        }
+        let lib_id = item.arg(1).unwrap_or("").to_owned();
+        let reference = item
+            .items()
+            .iter()
+            .find(|c| c.head() == Some("property") && c.arg(1) == Some("Reference"))
+            .and_then(|c| c.arg(2))
+            .unwrap_or("?")
+            .to_owned();
+        let at = item.child("at").expect("footprint at");
+        let x = at.arg(1).and_then(sexpr::nm).expect("at x");
+        let y = at.arg(2).and_then(sexpr::nm).expect("at y");
+        let g = aethelgard_eda::pcb::geometry(item, &reference).expect("geometry");
+        keeps.push((reference, !lib_id.starts_with("Device:"), shift(g.keep, (x, y))));
+    }
+    let jg = aethelgard_eda::pcb::geometry(&lib, "J1").expect("J1 geometry");
+    println!(
+        "J1 local courtyard {:?} keep {:?} (keep is courtyard + silkscreen text)",
+        jg.courtyard, jg.keep
+    );
+    let clears = |oy: i64| {
+        let k = shift(jg.keep, (cx, oy));
+        keeps.iter().all(|(_, ic, r)| {
+            let gap = if *ic {
+                aethelgard_eda::pcb::IC_GAP_NM
+            } else {
+                aethelgard_eda::pcb::GAP_NM
+            };
+            !grow(k, gap).overlaps(*r)
+        })
+    };
+    let mut oy = o.y1 - 1_500_000 - jg.courtyard.y0;
+    while !clears(oy) {
+        oy += 50_000;
+    }
+    let origin = (cx, oy);
+    let court_top = oy + jg.courtyard.y0;
+    let new_y1 = oy + jg.courtyard.y1;
+    {
+        let k = shift(jg.keep, origin);
+        let nearest = keeps
+            .iter()
+            .filter(|(_, _, r)| r.x1 > k.x0 && r.x0 < k.x1)
+            .map(|(n, ic, r)| (k.y0 - r.y1, n.clone(), *ic))
+            .min();
+        println!(
+            "placed by keep-out: J1 keep {:?}; nearest box above (gap, ref, is_ic): {:?}; keep bottom vs new edge: {} mm",
+            k,
+            nearest.map(|(g, n, ic)| (mm(g), n, ic)),
+            mm(new_y1 - k.y1)
+        );
+    }
     let new_outline = Rect { y1: new_y1, ..o };
     println!(
         "old outline {:?}\nconnector origin=({},{}) courtyard y {}..{} new outline {:?}",

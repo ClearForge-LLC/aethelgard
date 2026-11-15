@@ -4,23 +4,25 @@ route::declared: Ok(())
 parts=15 outline_nm=Rect { x0: 72200000, y0: 76150000, x1: 117400000, y1: 116550000 } nets=123
 nets matching I2C|3V3|GND: ["/I2C_SCL", "/I2C_SDA", "GND", "VDD_3V3"]
 read():  segments=360 vias=70 zones=1 ripups=0 length_nm=348500000
-route(): segments=360 vias=70 zones=1 ripups=37 length_nm=348500000  wall=6.535282825s
+route(): segments=360 vias=70 zones=1 ripups=37 length_nm=348500000  wall=6.65894639s
 reroute == read (segments, vias, zones): true true true
 reference check: Ok(()); connectivity: Ok(())
 parse/write round-trip identical to emitted text: true
+J1 local courtyard Rect { x0: -4755000, y0: -3225000, x1: 4755000, y1: 3225000 } keep Rect { x0: -4755000, y0: -4550000, x1: 4755000, y1: 3225000 } (keep is courtyard + silkscreen text)
+placed by keep-out: J1 keep Rect { x0: 90045000, y0: 113725000, x1: 99555000, y1: 121500000 }; nearest box above (gap, ref, is_ic): Some(("2.05", "U1", true)); keep bottom vs new edge: 0 mm
 old outline Rect { x0: 72200000, y0: 76150000, x1: 117400000, y1: 116550000 }
-connector origin=(94.8,118.25) courtyard y 115.05..121.45 new outline Rect { x0: 72200000, y0: 76150000, x1: 117400000, y1: 121450000 }
+connector origin=(94.8,118.275) courtyard y 115.05..121.5 new outline Rect { x0: 72200000, y0: 76150000, x1: 117400000, y1: 121500000 }
 part_of(J1 at 90 deg): Err("J1 is rotated")
 existing pads: max pad y1 = 114.36 mm (old outline y1 116.55 mm, margin 2.19)
 
 === variant A (MP net: None) ===
-  pad  1 net=Some("VDD_3V3") rect=(92.625,115.55)-(93.225,117.25) edge_dist_mm=4.2 (>= EDGE 0.5: true)
-  pad  2 net=Some("/I2C_SCL") rect=(93.875,115.55)-(94.475,117.25) edge_dist_mm=4.2 (>= EDGE 0.5: true)
-  pad  3 net=Some("/I2C_SDA") rect=(95.125,115.55)-(95.725,117.25) edge_dist_mm=4.2 (>= EDGE 0.5: true)
-  pad  4 net=Some("GND") rect=(96.375,115.55)-(96.975,117.25) edge_dist_mm=4.2 (>= EDGE 0.5: true)
-  pad MP net=None rect=(90.575,118.25)-(91.575,120.95) edge_dist_mm=0.5 (>= EDGE 0.5: true)
-  pad MP net=None rect=(98.025,118.25)-(99.025,120.95) edge_dist_mm=0.5 (>= EDGE 0.5: true)
-route: Ok  segments=390 vias=78 zones=1 ripups=37 length_nm=401000000  wall=6.346935158s
+  pad  1 net=Some("VDD_3V3") rect=(92.625,115.575)-(93.225,117.275) edge_dist_mm=4.225 (>= EDGE 0.5: true)
+  pad  2 net=Some("/I2C_SCL") rect=(93.875,115.575)-(94.475,117.275) edge_dist_mm=4.225 (>= EDGE 0.5: true)
+  pad  3 net=Some("/I2C_SDA") rect=(95.125,115.575)-(95.725,117.275) edge_dist_mm=4.225 (>= EDGE 0.5: true)
+  pad  4 net=Some("GND") rect=(96.375,115.575)-(96.975,117.275) edge_dist_mm=4.225 (>= EDGE 0.5: true)
+  pad MP net=None rect=(90.575,118.275)-(91.575,120.975) edge_dist_mm=0.525 (>= EDGE 0.5: true)
+  pad MP net=None rect=(98.025,118.275)-(99.025,120.975) edge_dist_mm=0.525 (>= EDGE 0.5: true)
+route: Ok  segments=390 vias=78 zones=1 ripups=37 length_nm=401000000  wall=6.414262901s
 check:        Ok(())
 connectivity: Ok(())
   net /I2C_SCL: segments=31 vias=5 (zones on net: 0)
@@ -28,18 +30,18 @@ connectivity: Ok(())
   net GND: segments=64 vias=24 (zones on net: 1)
   net VDD_3V3: segments=184 vias=28 (zones on net: 0)
   F.Cu segs=331 B.Cu segs=59
-wrote /home/forge/.cache/aet-4300f/s4-out/sentinel-01-J1-A.kicad_pcb sha256 a1155101da14b53cd8a191b9235bf6d9146d383df50b9cd8209f2e9dd05af05c
+wrote /home/forge/.cache/aet-4300f/s4-out/sentinel-01-J1-A.kicad_pcb sha256 000550fa7d5019a4532767ee4ecb294090efd28534efc722829cd8f0267c93a4
   declared: Ok(())
   read-back: parts=16 outline_eq=true board_eq=true segs_eq=true vias_eq=true  check=Ok(()) connectivity=Ok(())
 
 === variant B (MP net: Some("GND")) ===
-  pad  1 net=Some("VDD_3V3") rect=(92.625,115.55)-(93.225,117.25) edge_dist_mm=4.2 (>= EDGE 0.5: true)
-  pad  2 net=Some("/I2C_SCL") rect=(93.875,115.55)-(94.475,117.25) edge_dist_mm=4.2 (>= EDGE 0.5: true)
-  pad  3 net=Some("/I2C_SDA") rect=(95.125,115.55)-(95.725,117.25) edge_dist_mm=4.2 (>= EDGE 0.5: true)
-  pad  4 net=Some("GND") rect=(96.375,115.55)-(96.975,117.25) edge_dist_mm=4.2 (>= EDGE 0.5: true)
-  pad MP net=Some("GND") rect=(90.575,118.25)-(91.575,120.95) edge_dist_mm=0.5 (>= EDGE 0.5: true)
-  pad MP net=Some("GND") rect=(98.025,118.25)-(99.025,120.95) edge_dist_mm=0.5 (>= EDGE 0.5: true)
-route: Ok  segments=396 vias=80 zones=1 ripups=37 length_nm=402750000  wall=6.392985537s
+  pad  1 net=Some("VDD_3V3") rect=(92.625,115.575)-(93.225,117.275) edge_dist_mm=4.225 (>= EDGE 0.5: true)
+  pad  2 net=Some("/I2C_SCL") rect=(93.875,115.575)-(94.475,117.275) edge_dist_mm=4.225 (>= EDGE 0.5: true)
+  pad  3 net=Some("/I2C_SDA") rect=(95.125,115.575)-(95.725,117.275) edge_dist_mm=4.225 (>= EDGE 0.5: true)
+  pad  4 net=Some("GND") rect=(96.375,115.575)-(96.975,117.275) edge_dist_mm=4.225 (>= EDGE 0.5: true)
+  pad MP net=Some("GND") rect=(90.575,118.275)-(91.575,120.975) edge_dist_mm=0.525 (>= EDGE 0.5: true)
+  pad MP net=Some("GND") rect=(98.025,118.275)-(99.025,120.975) edge_dist_mm=0.525 (>= EDGE 0.5: true)
+route: Ok  segments=396 vias=80 zones=1 ripups=37 length_nm=402750000  wall=7.349153115s
 check:        Ok(())
 connectivity: Ok(())
   net /I2C_SCL: segments=31 vias=5 (zones on net: 0)
@@ -47,6 +49,6 @@ connectivity: Ok(())
   net GND: segments=70 vias=26 (zones on net: 1)
   net VDD_3V3: segments=184 vias=28 (zones on net: 0)
   F.Cu segs=337 B.Cu segs=59
-wrote /home/forge/.cache/aet-4300f/s4-out/sentinel-01-J1-B.kicad_pcb sha256 ac45d4410a9228570a5522661ad5b6c3622eada5bad942cc47ad00018a65945a
+wrote /home/forge/.cache/aet-4300f/s4-out/sentinel-01-J1-B.kicad_pcb sha256 a459f8e27fe98b5cd2073c5e3bf7a60c7ecfb236c512e4d052fb22e9933f867f
   declared: Ok(())
   read-back: parts=16 outline_eq=true board_eq=true segs_eq=true vias_eq=true  check=Ok(()) connectivity=Ok(())
