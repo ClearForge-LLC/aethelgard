@@ -303,6 +303,24 @@ Protected, kept: replay's window, instruction and clock constants, and the selec
 - `MOTOR_SPEED_NOT_JUDGED` has one caller, kept as the ruled statement;
 - `Scope::MotorStatic` and `Scope::Motor` share an I4 tail, needed for F1.
 
+### Third fresh adversarial review, on the final code (`1d90dcc`)
+
+A fresh Opus subagent attacked the resume at `1d90dcc` (tier 1 and one capped image run, `~/.cache/aet-4300a/adv3`). It found no false pass and no wrong attribution. Its findings, all fixed at `33d3228`:
+- **F1, medium (a wrong refusal), measured.** Replay tied kind 10's instruction count to the window. A droop's boot counts its instructions from the last reset's release, so every droop on a motor board ended its campaign with an internal error (exit 70). That broke §7's droop claim, measured at `12320c6`. The tie is removed: each witness's `end_ns`, derived from the protocols, already pins the window. Re-measured at `33d3228` in the image (`~/.cache/aet-4300a/m7`): the reviewer's DShot droop (a brownout reset at 100 µs, inside 2 ms) and the PWM fixture's droop at 60 ms both pass, matched; replay and `attribute` N1 on each. The DShot droop is now committed (`scenarios/motors/dshot600-droop.json`) in `twin_tier2`'s DShot campaign test, and chaos tests a motor run with fewer instructions than its window.
+- **F2, medium, measured.** `witness_consistent`'s new ties used unchecked arithmetic: a forged count panicked in debug or, in release, wrapped onto the honest spacing (2^56 + 156 rises). The ties are now checked and saturating, with three forgeries in chaos `motor.rs`.
+- **F3, low, measured.** The reason "shorter than two of its periods" was computed from `--for`, not the board's window. It now uses the board's window, so a 1 ms boot of the PWM fixture is unwitnessed without that reason (re-measured).
+- **F4, low, read.** `identity_read_outside_window` named the window, not the boot that ran. It now names both.
+- **F5, low.** A stale comment in a chaos test was fixed.
+
+What held, per the reviewer:
+- no override or topology escapes the window, and a forged DShot or PWM kind 24 is refused;
+- an honest mixed 2 ms run, a `stopped` output on it, and an unbooted run all replay;
+- `RCC` is read at 0x000 with mask 0x18 (`HSIDIV`);
+- `verify` has only error and info severities;
+- evolve's I4 wins beside a software symptom, `TIM1` does not match `TIM15.*`, and only failing records are evidence;
+- a `GND` motor label is refused in any case;
+- the tier-1 workspace passes.
+
 ### Questions for the architect (not stops)
 
 - **Q6, slow PWM beside DShot.** A board that mixes DShot with PWM below about 260 Hz cannot witness the PWM output in the 2 ms window: it fails closed, named. Accept that as the rule for mixed boards, or give such boards a window long enough for two of their slowest model periods?

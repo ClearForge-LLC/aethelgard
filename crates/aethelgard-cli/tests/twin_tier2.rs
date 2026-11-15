@@ -1758,7 +1758,8 @@ fn kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check() {
 /// `AET-WO-4300a` D1, ruled (a): the DShot600 fixture's campaign boots inside
 /// its board's `DSHOT_WINDOW_NS` (2 ms), named on its line; every output is
 /// witnessed and both identity reads complete inside it; replay agrees and
-/// `attribute` names none.
+/// `attribute` names none. A droop inside the window (a brownout reset at
+/// 100 µs, recovered) passes too (third adversarial review, F1).
 #[test]
 fn the_dshot600_fixture_s_campaign_passes_inside_its_window() {
     let (_, _, elf) = motor_board("motors-dshot600", "campaign", |_| {}, |_| {});
@@ -1768,7 +1769,12 @@ fn the_dshot600_fixture_s_campaign_passes_inside_its_window() {
     let start = Instant::now();
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
         .current_dir(root())
-        .args(["campaign", "--scenarios", "scenarios/motors/dshot600.json"])
+        .args([
+            "campaign",
+            "--scenarios",
+            "scenarios/motors/dshot600.json",
+            "scenarios/motors/dshot600-droop.json",
+        ])
         .arg("--firmware")
         .arg(&elf)
         .arg("--archive")
@@ -1787,16 +1793,18 @@ fn the_dshot600_fixture_s_campaign_passes_inside_its_window() {
         start.elapsed().as_secs_f64()
     ));
     assert_eq!(out.status.code(), Some(0), "{lines:?}");
-    let line = &lines[0];
-    assert_eq!(line["verdict"], "pass", "{line}");
-    assert_eq!(line["matched"], true, "{line}");
-    assert_eq!(line["virtual_time_ns"], 2_000_000, "{line}");
-    assert_eq!(line["window"], "DSHOT_WINDOW_NS", "{line}");
-    let run = line["run"].as_str().unwrap();
-    let (code, replayed) = aethelgard(&["replay", "--archive", run]);
-    assert_eq!(code, Some(0), "{replayed}");
-    let (code, attributed) = aethelgard(&["attribute", "--archive", run]);
-    assert_eq!(code, Some(0), "{attributed}");
-    assert_eq!(attributed["rule"], "N1", "{attributed}");
+    assert_eq!(lines.len(), 3, "{lines:?}");
+    for line in &lines[..2] {
+        assert_eq!(line["verdict"], "pass", "{line}");
+        assert_eq!(line["matched"], true, "{line}");
+        assert_eq!(line["virtual_time_ns"], 2_000_000, "{line}");
+        assert_eq!(line["window"], "DSHOT_WINDOW_NS", "{line}");
+        let run = line["run"].as_str().unwrap();
+        let (code, replayed) = aethelgard(&["replay", "--archive", run]);
+        assert_eq!(code, Some(0), "{replayed}");
+        let (code, attributed) = aethelgard(&["attribute", "--archive", run]);
+        assert_eq!(code, Some(0), "{attributed}");
+        assert_eq!(attributed["rule"], "N1", "{attributed}");
+    }
     let _ = fs::remove_dir_all(&archive);
 }
