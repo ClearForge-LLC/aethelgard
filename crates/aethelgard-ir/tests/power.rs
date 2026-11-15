@@ -861,3 +861,41 @@ fn the_crossing_structure_is_refused_by_name() {
         "U12",
     );
 }
+
+/// The guards the mutation pass found untested (FEEDBACK B6).
+#[test]
+fn the_mutation_survivors_are_held() {
+    // A 0 mV cell.
+    let mut v = base();
+    v["power"]["battery"]["cell_min_millivolts"]["value"] = json!(0);
+    assert_power(&refused(&v), Refusal::PowerValueInvalid, "power.battery");
+    // A resistor whose worst error reaches 100 % is refused, never divided by.
+    let mut t = table_json();
+    // 997 375 + 25 ppm/K x 65 K + 1000 = exactly 1 000 000 ppm.
+    row(&mut t, "TNPW0603_B_E")["kind"]["resistor"]["tolerance_ppm"]["value"] = json!(997_375);
+    assert_power(
+        &against(&base(), &t).unwrap_err(),
+        Refusal::RegulatorOutsideDomain,
+        "U10",
+    );
+    // A divider already under RAIN needs no reservoir: 10 k / 1 k is at most
+    // about 1.1 k at 12 bits, under 1150 ohms.
+    let mut v = base();
+    v["power"]["sense"][0]["top"]["ohms"] = json!(10_000);
+    v["power"]["sense"][0]["bottom"]["ohms"] = json!(1_000);
+    v["power"]["sense"][0]["reservoir"] = Value::Null;
+    assert_eq!(spec(&v).validate(), Ok(()));
+    // A reservoir rated under the pin's voltage.
+    let mut t = table_json();
+    let mut low = row(&mut t, "GCM188R71H104KA57").clone();
+    low["part"] = json!("LOW_VOLTAGE_100N");
+    low["kind"]["capacitor"]["rated_millivolts"]["value"] = json!(2500);
+    t["parts"].as_array_mut().unwrap().push(low);
+    let mut v = base();
+    v["power"]["sense"][0]["reservoir"]["part"] = json!("LOW_VOLTAGE_100N");
+    assert_power(
+        &against(&v, &t).unwrap_err(),
+        Refusal::ExternalPartOutOfRange,
+        "C50",
+    );
+}
