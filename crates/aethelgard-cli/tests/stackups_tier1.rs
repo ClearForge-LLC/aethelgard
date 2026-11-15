@@ -354,6 +354,8 @@ fn the_reference_declares_todays_two_layer_board() {
             width_nm: 200_000,
             classes: vec![],
             pairs: vec![],
+            joins: vec![],
+            thermal: vec![],
         }
     );
 }

@@ -19,6 +19,7 @@ pub mod motor;
 pub mod parts;
 mod solve;
 pub mod speeds;
+pub mod thermal;
 
 pub use motor::{MotorOutput, MotorProtocol, PwmTiming, SolvedClock, SolvedMotorOutput};
 pub use solve::{NODE_LIMIT, RESERVED_PINS, SolveError, solve, solve_with_limit};
@@ -617,6 +618,32 @@ pub enum IrValidationError {
         ring_um: String,
         minimum_um: String,
     },
+    #[error("part `{part}`: thermal_vias `{field}` is zero")]
+    ThermalViasZero { part: String, field: &'static str },
+    #[error("part `{part}`: thermal_vias `{field}` has no source (empty or only whitespace)")]
+    ThermalViasUnsourced { part: String, field: &'static str },
+    #[error(
+        "part `{part}`: the thermal via ring is {ring_um} um, under the {min_um} um the board rules' own via has ((diameter - drill) / 2, rounded up)"
+    )]
+    ThermalViaRingUnderRules {
+        part: String,
+        ring_um: u32,
+        min_um: u32,
+    },
+    #[error(
+        "part `{part}`: the thermal via pitch is {pitch_um} um, under the {min_um} um two holes need (drill plus the hole-to-hole gap)"
+    )]
+    ThermalViaPitch {
+        part: String,
+        pitch_um: u32,
+        min_um: u64,
+    },
+    #[error("part `{part}`: thermal via layer `{layer}`: {rule}")]
+    ThermalViaLayers {
+        part: String,
+        layer: String,
+        rule: &'static str,
+    },
     #[error("the name `{id}` is used more than once among net_classes and diff_pairs")]
     DuplicateClassName { id: String },
     #[error("net class `{id}` names no nets")]
@@ -947,6 +974,11 @@ impl IrValidationError {
             Self::ClassBelowMinimum { .. } => "ClassBelowMinimum",
             Self::ClassAboveMaximum { .. } => "ClassAboveMaximum",
             Self::ViaRingUnderRules { .. } => "ViaRingUnderRules",
+            Self::ThermalViasZero { .. } => "ThermalViasZero",
+            Self::ThermalViasUnsourced { .. } => "ThermalViasUnsourced",
+            Self::ThermalViaRingUnderRules { .. } => "ThermalViaRingUnderRules",
+            Self::ThermalViaPitch { .. } => "ThermalViaPitch",
+            Self::ThermalViaLayers { .. } => "ThermalViaLayers",
             Self::DuplicateClassName { .. } => "DuplicateClassName",
             Self::ClassNoNets { .. } => "ClassNoNets",
             Self::ClassUnknownNet { .. } => "ClassUnknownNet",
@@ -1051,6 +1083,11 @@ impl IrValidationError {
             | Self::OutputSpeedTable { .. }
             | Self::MalformedSpecificationHash => None,
             Self::PlaneNet { id } => Some(id),
+            Self::ThermalViasZero { part, .. }
+            | Self::ThermalViasUnsourced { part, .. }
+            | Self::ThermalViaRingUnderRules { part, .. }
+            | Self::ThermalViaPitch { part, .. }
+            | Self::ThermalViaLayers { part, .. } => Some(part),
             Self::ViaRingUnderRules { id, .. }
             | Self::DuplicateClassName { id }
             | Self::ClassNoNets { id }

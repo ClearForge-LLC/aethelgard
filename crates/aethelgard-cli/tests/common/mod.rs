@@ -295,6 +295,7 @@ pub fn eventually(what: &str, mut cond: impl FnMut() -> bool) {
 
 pub mod corpus;
 pub mod edges;
+pub mod th;
 pub mod verify;
 
 /// The identity line the bridge built from this tree prints first
