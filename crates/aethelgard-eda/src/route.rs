@@ -2467,14 +2467,13 @@ mod tests {
     fn the_dense_part_is_chosen_by_rule() {
         let r = ring_interior(&ring(9, 5 * MM, 4, false)).unwrap();
         assert_eq!(r, rect(47_500_000, 47_500_000, 52_500_000, 52_500_000));
+        // The threshold is 4 mm, as a literal: an interior of 4 mm qualifies,
+        // one of 3.999998 mm does not.
         assert_eq!(
-            ring_interior(&ring(9, DENSE_INTERIOR_NM, 4, false)).map(|r| r.x1 - r.x0),
-            Some(DENSE_INTERIOR_NM)
+            ring_interior(&ring(9, 4 * MM, 4, false)).map(|r| r.x1 - r.x0),
+            Some(4 * MM)
         );
-        assert_eq!(
-            ring_interior(&ring(9, DENSE_INTERIOR_NM - 1, 4, false)),
-            None
-        );
+        assert_eq!(ring_interior(&ring(9, 4 * MM - 2, 4, false)), None);
         assert_eq!(ring_interior(&ring(9, 5 * MM, 2, false)), None);
         assert_eq!(ring_interior(&ring(9, 5 * MM, 3, false)), None);
         assert_eq!(ring_interior(&ring(9, 5 * MM, 4, true)), None);

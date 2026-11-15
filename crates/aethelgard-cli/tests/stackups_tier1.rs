@@ -12,7 +12,6 @@ use serde_json::{Value, json};
 const SPEC: &str = "examples/sentinel-01-minimal.json";
 const FOUR: &str = "crates/aethelgard-cli/tests/fixtures/four-layer.json";
 const D1: &str = "crates/aethelgard-cli/tests/fixtures/d1-24-i2c.json";
-const D3: &str = "crates/aethelgard-cli/tests/fixtures/d3-24-i2c-12-spi.json";
 
 fn root() -> PathBuf {
     fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
@@ -219,11 +218,10 @@ fn the_reader_refuses_a_board_that_disagrees_with_the_specification() {
 }
 
 /// 1302 B10 (ruled D3): the reviewer's `D1` (24 I2C devices, short
-/// references) fails closed at 2 layers and routes at 4; `D3` (the same with
-/// 4 SPI buses of 3 flashes) still fails closed at 4, naming its net, the
-/// target of the escape-planning work order.
-/// D1 routes at 4 layers, and since `AET-WO-1307`'s inward escape (K1) at
-/// 2 as well, where `4100` measured it failing closed.
+/// references) routes at 4 layers, and since `AET-WO-1307`'s inward escape
+/// (K1) at 2 as well, where `4100` measured it failing closed. `D3` (the same
+/// with 4 SPI buses of 3 flashes), which failed closed at 4, now routes there:
+/// `escape_tier1.rs`.
 #[test]
 fn d1_routes_at_four_layers_and_at_two() {
     let dir = scratch("d1");
@@ -238,20 +236,6 @@ fn d1_routes_at_four_layers_and_at_two() {
     let (code, v, board) = emit(&two_dir, &path);
     assert_eq!(code, 0, "{v}");
     assert!(!board.contains("In1.Cu"));
-    fs::remove_dir_all(&dir).unwrap();
-}
-
-/// `AET-WO-1307` §2.1: D3 routes at 4 layers (it failed closed on
-/// `VDD_3V3` before the inward escape, K1). It is also F2's reproducer: with
-/// a search's sources unpriced, as before this work order, the router's
-/// exact judge refuses this board's own copper (a GND and a `VDD_3V3` F.Cu
-/// end 0.395 mm apart; FEEDBACK). Its DRC with parity is tier 2's.
-#[test]
-fn d3_routes_at_four_layers() {
-    let dir = scratch("d3");
-    let (code, v, board) = emit(&dir, D3);
-    assert_eq!(code, 0, "{v}");
-    assert!(board.contains("(6 \"In2.Cu\" signal)"));
     fs::remove_dir_all(&dir).unwrap();
 }
 

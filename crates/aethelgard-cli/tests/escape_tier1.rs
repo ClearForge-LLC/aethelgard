@@ -178,6 +178,12 @@ fn twenty_renamings_route_d1_to_its_own_copper() {
     one_geometry("d1", D1, 0..20);
 }
 
+/// `D3` routes at 4 layers (WO §2.1; it failed closed on `VDD_3V3` before
+/// the inward escape, K1), and every renaming routes to its copper. Its first
+/// emit is also F2's reproducer: with a search's sources unpriced, as before
+/// this work order, the router's exact judge refuses D3's own copper (a GND
+/// and a `VDD_3V3` F.Cu end 0.395 mm apart; FEEDBACK). DRC with parity is
+/// tier 2's (`with_tools.rs`).
 #[test]
 fn renamings_0_to_9_route_d3_to_its_own_copper() {
     one_geometry("d3a", D3, 0..10);
