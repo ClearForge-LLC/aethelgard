@@ -291,7 +291,7 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
   - No pair is routed coupled, with a fixed gap.
   - Both a supply gate and a pair check need these. **Recommended:** a router work order after `1307`. `1303`'s build gates what the router produces and refuses what it cannot bound.
 - **D9 · Container caps.**
-  - With equal flags, podman 5.7 leaves `memory.swap.max` at 8 GiB (read back). The guard stopped the run, and nothing was written under `/sys/fs/cgroup`. The correction's premise does not hold on this podman.
+  - With equal flags, podman 5.7 leaves `memory.swap.max` at 8 GiB (read back). The guard stopped the run, and nothing was written under `/sys/fs/cgroup`. The correction's premise does not hold on this podman. `4210` measured the same, independently (its mailbox note, `540ae8f`: 8589934592, steady over 40 s).
   - **Recommended:** P4.7 stays a stated condition (the plane meets each own-net via all round, and keeps 0.2005 mm from foreign vias, as `4100` measured) until a capped-swap route is ruled.
 - **D10 · The work order's S4 says "the copper maximum".** An upper R bound needs the copper **minimum**; the maximum bounds the wrong way. Read as a slip; please confirm.
 
