@@ -795,7 +795,7 @@ pub enum IrValidationError {
     )]
     UnjudgedMotorConstraint { id: String },
     #[error(
-        "motor output `{id}` disagrees with the solved topology: its net is one `TIMn_CHk` assignment of a timer with channels, each channel once, indices exactly 0..n, `pwm` present exactly for PWM, and PSC, ARR and CCR within the timer (CCR from 1 to ARR)"
+        "motor output `{id}` disagrees with the solved topology: its net is one `TIMn_CHk` assignment of a timer with channels, each channel once, indices exactly 0..n, `pwm` present exactly for PWM, and PSC, ARR and CCR within the timer (CCR from 1 to ARR - 1, so a fall never meets the next update)"
     )]
     MotorOutputMismatch { id: String },
     #[error(
@@ -1185,8 +1185,30 @@ pub fn check_identifier(kind: IdentifierKind, value: &str) -> Result<(), &'stati
         if RESERVED_REFERENCES.binary_search(&lowered.as_str()).is_ok() {
             return Err(RESERVED_RULE);
         }
+        if is_observer_name(&lowered) {
+            return Err(OBSERVER_RULE);
+        }
     }
     Ok(())
+}
+
+const OBSERVER_RULE: &str = "a device reference may not be a motor output's observer name, `p`, a port letter `a` to `k`, a pin number 0 to 15, then `obs` (`pa8obs`), in any case: the Renode platform declares one on each motor output's pin (`AET-WO-4300a`)";
+
+/// Whether `name` (lowercase) is the name the twin's platform gives the
+/// observer of a pin, `pa8obs` (`aethelgard_twin::timer::observer_name`).
+pub fn is_observer_name(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix('p') else {
+        return false;
+    };
+    let mut chars = rest.chars();
+    let port = chars.next().is_some_and(|c| ('a'..='k').contains(&c));
+    let Some(number) = chars.as_str().strip_suffix("obs") else {
+        return false;
+    };
+    port && !number.is_empty()
+        && number.bytes().all(|b| b.is_ascii_digit())
+        && (number == "0" || !number.starts_with('0'))
+        && number.parse::<u32>().is_ok_and(|n| n <= 15)
 }
 
 fn identifier(
@@ -1902,7 +1924,7 @@ impl SolvedTopology {
     /// The clock is the reset clock; `motor_outputs` holds exactly the nets
     /// solved to a timer channel, each `TIMn_CHk` of a timer with channels,
     /// each channel once, with indices exactly `0..n`, `pwm` present exactly
-    /// for PWM, `PSC` and `ARR` within 16 bits and `CCR` from 1 to `ARR`; and
+    /// for PWM, `PSC` and `ARR` within 16 bits and `CCR` from 1 to `ARR - 1`; and
     /// the outputs of one timer share its protocol, PWM rate, `PSC` and `ARR`.
     /// It does not judge the values against the declared timing: that is the
     /// static check, [`motor::check_silicon`] (`4300` D3).
@@ -1942,7 +1964,7 @@ impl SolvedTopology {
                 || m.arr == 0
                 || m.arr > 0xFFFF
                 || m.ccr == 0
-                || m.ccr > m.arr
+                || m.ccr >= m.arr
             {
                 return Err(mismatch(net));
             }

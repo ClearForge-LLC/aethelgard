@@ -348,6 +348,12 @@ fn the_topology_refuses_a_motor_output_that_disagrees_with_its_assignment() {
     );
     assert_eq!(
         kind(&|t| {
+            t.motor_outputs.get_mut("M2").unwrap().ccr = 2499;
+        }),
+        Err("MotorOutputMismatch")
+    );
+    assert_eq!(
+        kind(&|t| {
             t.motor_outputs.get_mut("M2").unwrap().pwm = None;
         }),
         Err("MotorOutputMismatch")
@@ -406,4 +412,24 @@ fn the_solved_motor_output_round_trips_and_keeps_the_declared_timing() {
     );
     let declared: Vec<MotorOutput> = spec(vec![pwm("M1", None, 400)]).motor_outputs;
     assert_eq!(declared[0].protocol, MotorProtocol::Pwm);
+}
+
+#[test]
+fn a_device_reference_may_not_be_an_observer_s_name() {
+    use aethelgard_ir::{IdentifierKind, check_identifier, is_observer_name};
+    for name in ["PA8OBS", "pa8obs", "Pk15obs", "pa0obs"] {
+        assert!(
+            check_identifier(IdentifierKind::Reference, name).is_err(),
+            "{name}"
+        );
+    }
+    for name in [
+        "pa16obs", "pl8obs", "pa08obs", "pa8ob", "pa8obs2", "pa_obs", "U2",
+    ] {
+        assert!(!is_observer_name(&name.to_ascii_lowercase()), "{name}");
+        assert!(
+            check_identifier(IdentifierKind::Reference, name).is_ok(),
+            "{name}"
+        );
+    }
 }

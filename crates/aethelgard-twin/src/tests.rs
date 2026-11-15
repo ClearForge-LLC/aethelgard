@@ -181,8 +181,10 @@ fn reg(name: &str, address: u32, mask: u32, value: u32) -> Register {
 }
 
 /// The values the spike read back from Renode after the reference firmware's
-/// boot from a cold RCC (`spike/2100/out/s3/s3-image-cold.out`); here they are
-/// computed from the topology alone.
+/// boot from a cold RCC (`spike/2100/out/s3/s3-image-cold.out`), and since
+/// `AET-WO-4300a` (2100 F24) every enable register cold at its reset value,
+/// read back by the `cold9` probe (FEEDBACK P6.1); here they are computed
+/// from the topology alone.
 #[test]
 fn the_reference_image_is_the_one_the_spike_read_back() {
     let image = boot::expected(&bare()).unwrap();
@@ -193,17 +195,29 @@ fn the_reference_image_is_the_one_the_spike_read_back() {
             reg("GPIOA.AFRL", 0x5802_0020, 0xFFF0_0000, 0x5550_0000),
             reg("GPIOB.MODER", 0x5802_0400, 0x0000_F000, 0x0000_A000),
             reg("GPIOB.AFRL", 0x5802_0420, 0xFF00_0000, 0x4400_0000),
+            reg("RCC.AHB3ENR", 0x5802_44D4, u32::MAX, 0),
+            reg("RCC.AHB1ENR", 0x5802_44D8, u32::MAX, 0),
+            reg("RCC.AHB2ENR", 0x5802_44DC, u32::MAX, 0),
             reg("RCC.AHB4ENR", 0x5802_44E0, u32::MAX, 0x0000_0003),
+            reg("RCC.APB3ENR", 0x5802_44E4, u32::MAX, 0),
             reg("RCC.APB1LENR", 0x5802_44E8, u32::MAX, 0x0020_0000),
+            reg("RCC.APB1HENR", 0x5802_44EC, u32::MAX, 0),
             reg("RCC.APB2ENR", 0x5802_44F0, u32::MAX, 0x0000_1000),
+            reg("RCC.APB4ENR", 0x5802_44F4, u32::MAX, 0x0001_0000),
         ]
     );
     assert_eq!(
         image.cold,
         [
+            reg("RCC.AHB3ENR", 0x5802_44D4, u32::MAX, 0),
+            reg("RCC.AHB1ENR", 0x5802_44D8, u32::MAX, 0),
+            reg("RCC.AHB2ENR", 0x5802_44DC, u32::MAX, 0),
             reg("RCC.AHB4ENR", 0x5802_44E0, u32::MAX, 0),
+            reg("RCC.APB3ENR", 0x5802_44E4, u32::MAX, 0),
             reg("RCC.APB1LENR", 0x5802_44E8, u32::MAX, 0),
+            reg("RCC.APB1HENR", 0x5802_44EC, u32::MAX, 0),
             reg("RCC.APB2ENR", 0x5802_44F0, u32::MAX, 0),
+            reg("RCC.APB4ENR", 0x5802_44F4, u32::MAX, 0x0001_0000),
         ]
     );
     assert_eq!(image.unobservable, ["GPIOB.OTYPER", "I2C1.TIMINGR"]);

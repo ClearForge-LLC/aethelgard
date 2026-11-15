@@ -22,6 +22,7 @@ pub mod analog;
 pub mod boot;
 pub mod model;
 pub mod platform;
+pub mod timer;
 
 use aethelgard_ir::IrValidationError;
 use aethelgard_svd_hal::cmsis::RegisterError;
@@ -33,7 +34,7 @@ pub enum TwinError {
     InvalidTopology(IrValidationError),
     #[error("pin `{pin}` is not a GPIO pin name (`P[A-K]` and 0 to 15)")]
     InvalidPin { pin: String },
-    #[error("peripheral `{peripheral}` has no Renode model here (I2Cn, SPIn)")]
+    #[error("peripheral `{peripheral}` has no Renode model here (I2Cn, SPIn, TIMn with channels)")]
     UnsupportedPeripheral { peripheral: String },
     #[error("`{peripheral}` is not in Renode's {file}, and only an SPI instance is added")]
     NotInRenode {
@@ -74,6 +75,23 @@ pub enum TwinError {
         "the fault decision names SPI device `{reference}`, which the solved topology does not have"
     )]
     UnknownAbsentDevice { reference: String },
+    #[error(
+        "motor output `{label}`: `{signal}` on pin `{pin}` at AF{alternate_function} has no route in Renode's stm32h7.repl, so no edge of the timer would reach the pin"
+    )]
+    NoTimerRoute {
+        label: String,
+        signal: String,
+        pin: String,
+        alternate_function: u8,
+    },
+    #[error(
+        "motor output `{label}`: pin `{pin}` at AF{alternate_function} is one Renode's stm32h7.repl inverts (`invertedAFPins`, a complementary output), so its edges would reach the pin inverted"
+    )]
+    InvertedRoute {
+        label: String,
+        pin: String,
+        alternate_function: u8,
+    },
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -94,6 +112,8 @@ impl TwinError {
             Self::ModelOffItsBus { .. } => "ModelOffItsBus",
             Self::FlashIdentity { .. } => "FlashIdentity",
             Self::UnknownAbsentDevice { .. } => "UnknownAbsentDevice",
+            Self::NoTimerRoute { .. } => "NoTimerRoute",
+            Self::InvertedRoute { .. } => "InvertedRoute",
             Self::Register(e) => e.kind(),
         }
     }
@@ -105,6 +125,8 @@ pub(crate) enum Kind {
     Gpio,
     I2c,
     Spi,
+    /// A timer with channels (`AET-WO-4300a`).
+    Timer,
 }
 
 pub(crate) fn kind(peripheral: &str) -> Result<Kind, TwinError> {
@@ -122,6 +144,12 @@ pub(crate) fn kind(peripheral: &str) -> Result<Kind, TwinError> {
         Ok(Kind::I2c)
     } else if numbered("SPI") {
         Ok(Kind::Spi)
+    } else if numbered("TIM")
+        && peripheral[3..]
+            .parse()
+            .is_ok_and(|n| aethelgard_ir::motor::TIMERS.contains(&n))
+    {
+        Ok(Kind::Timer)
     } else {
         Err(TwinError::UnsupportedPeripheral {
             peripheral: peripheral.to_owned(),

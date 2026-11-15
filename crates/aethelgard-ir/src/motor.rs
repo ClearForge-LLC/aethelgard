@@ -260,7 +260,7 @@ pub fn solve_timing(
         }
         (None, None) => return Err(TimingError::RateOutOfRange),
     };
-    if !(2..=0x1_0000).contains(&ticks) || psc > 0xFFFF || ccr == 0 || ccr >= ticks {
+    if !(3..=0x1_0000).contains(&ticks) || psc > 0xFFFF || ccr == 0 || ccr + 1 >= ticks {
         return Err(TimingError::RateOutOfRange);
     }
     let narrow = |v: u64| u32::try_from(v).expect("at most 0xFFFF");

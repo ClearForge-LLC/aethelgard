@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use aethelgard_ir::SolvedTopology;
 use aethelgard_ir::parts;
-use aethelgard_svd_hal::cmsis;
+use aethelgard_svd_hal::cmsis::{self, RegisterError};
 
 use crate::{TwinError, kind, model, platform, split_pin};
 
@@ -348,20 +348,99 @@ pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
 /// What a boot of `topology` must leave.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Image {
-    /// The RCC enable registers that gate a solved port or peripheral. The
-    /// boot writes 0 to each before it starts, silicon's reset value, because
-    /// Renode resets them with every clock on (spike F10).
+    /// Every RCC enable register the header defines (`AET-WO-4300a` §1.6,
+    /// 2100 F24), each with silicon's reset value as `value`: the boot writes
+    /// it before it starts, because Renode resets them with every clock on
+    /// (spike F10).
     pub cold: Vec<Register>,
     /// Every register to compare after the run, in address order: the mode
     /// and alternate function of each solved pin, and each cold register in
     /// full, which must hold exactly the solved enable bits.
     pub registers: Vec<Register>,
     /// Solved fields Renode 1.17.0 does not store, so no read can judge them
-    /// (spike F11): `OTYPER` of a port with an I2C pin, an I2C's `TIMINGR`.
+    /// (spike F11): `OTYPER` of a port with an I2C pin, an I2C's `TIMINGR`;
+    /// a timer's `BDTR.MOE` and each channel's `OCxPE` (`AET-WO-4300a`).
     pub unobservable: Vec<String>,
     /// The identity reads of the devices (`AET-WO-2202`, `AET-WO-4200`).
     pub identity: IdentityPlan,
 }
+
+/// The enable registers whose reset value is not 0 (RM0433 Rev 9 Tables
+/// 66–74): `RCC_APB4ENR` resets with `RTCAPBEN` (bit 16) set. Every other
+/// `*ENR` of the header resets to 0.
+pub const ENR_RESET: [(&str, u32); 1] = [("APB4ENR", 0x0001_0000)];
+
+/// Each solved timer's registers after the boot, from the topology alone
+/// (`AET-WO-4300a` §1.4, `INV-07`): the fields Renode 1.17.0's
+/// `STM32_Timer` stores, each with the value the bring-up writes. `CR1`:
+/// `CEN | ARPE` under the stored bits 0–7 (L143–165; `CKD` is a tag). `DIER`:
+/// 0 under its stored interrupt enables (bits 0–4 and 6; the DMA enables
+/// are tags), so a firmware that arms an update interrupt fails here.
+/// `CCMR1` and `CCMR2`: each used channel `OCxM` = 110 (PWM mode 1) and
+/// `CCxS` = 00 (output), under the stored `CCxS` and `OCxM` bits (L425–445;
+/// `OCxFE`, `OCxPE` and `OCxCE` are tags). `CCER`: each used channel's
+/// `CCxE`, polarity 0, under the stored `CCxE`, `CCxP` and `CCxNP` bits
+/// (`CCxNE` is a tag). `PSC`, `ARR` and each used channel's `CCRx` in full.
+/// `BDTR` is all tags, so `MOE` is listed as unobservable. An unused
+/// channel's `CCRx` is not written and not read: Renode resets it to
+/// `0xFFFF` where silicon resets it to 0 (measured, FEEDBACK P8.1).
+fn timer_registers(
+    topology: &SolvedTopology,
+    f: &cmsis::RegisterFacts,
+    field: &mut impl FnMut(u32, String, u32, u32),
+) -> Result<(), TwinError> {
+    let tim = f.layout("TIM")?;
+    let mut timers: BTreeMap<u32, (&aethelgard_ir::SolvedMotorOutput, Vec<u32>)> = BTreeMap::new();
+    for (net, m, a) in topology.motor_outputs_in_order() {
+        let (timer, channel) = aethelgard_ir::motor::timer_channel(&a.signal).ok_or_else(|| {
+            TwinError::UnsupportedPeripheral {
+                peripheral: format!("{} ({net})", a.signal),
+            }
+        })?;
+        timers
+            .entry(timer)
+            .or_insert((m, Vec::new()))
+            .1
+            .push(channel);
+    }
+    for (timer, (m, channels)) in timers {
+        let name = format!("TIM{timer}");
+        let base = f.base(&name)?;
+        let mut reg = |r: &str, mask: u32, value: u32| -> Result<(), TwinError> {
+            field(base + tim.offset(r, 0)?, format!("{name}.{r}"), mask, value);
+            Ok(())
+        };
+        reg("CR1", 0xFF, CR1_ARPE | CR1_CEN)?;
+        reg("DIER", 0x5F, 0)?;
+        let (mut ccmr, mut ccer) = ([0u32; 2], 0u32);
+        for &c in &channels {
+            let half = (c - 1) % 2;
+            ccmr[((c - 1) / 2) as usize] |= OCM_PWM1 << (4 + 8 * half);
+            ccer |= 1 << (4 * (c - 1));
+        }
+        reg("CCMR1", 0x7373, ccmr[0])?;
+        reg("CCMR2", 0x7373, ccmr[1])?;
+        reg("CCER", 0xBBBB, ccer)?;
+        reg("PSC", u32::MAX, m.psc)?;
+        reg("ARR", u32::MAX, m.arr)?;
+        for &c in &channels {
+            let ccr = topology
+                .motor_outputs_in_order()
+                .into_iter()
+                .find(|(_, _, a)| a.signal == format!("TIM{timer}_CH{c}"))
+                .map(|(_, m, _)| m.ccr)
+                .expect("a used channel has its output");
+            reg(&format!("CCR{c}"), u32::MAX, ccr)?;
+        }
+    }
+    Ok(())
+}
+
+/// `TIMx_CR1.CEN` and `ARPE` (RM0433 Rev 9 §38.4.1).
+const CR1_CEN: u32 = 1;
+const CR1_ARPE: u32 = 1 << 7;
+/// `OCxM` = 110, PWM mode 1 (RM0433 Rev 9 §38.4.8, the output-compare view).
+const OCM_PWM1: u32 = 0b110;
 
 // belt-and-suspenders: the generator's `board.rs` states these too; the
 // judge computes the expected image without the generator's code (`INV-07`).
@@ -391,6 +470,13 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
         if a.peripheral.starts_with("I2C") {
             unobservable.push(format!("GPIO{port}.OTYPER"));
             unobservable.push(format!("{}.TIMINGR", a.peripheral));
+        }
+        if let Some((timer, channel)) = aethelgard_ir::motor::timer_channel(&a.signal) {
+            let ccmr = if channel <= 2 { 1 } else { 2 };
+            unobservable.push(format!("{}.CCMR{ccmr}.OC{channel}PE", a.peripheral));
+            if aethelgard_ir::motor::has_main_output_enable(timer) {
+                unobservable.push(format!("{}.BDTR.MOE", a.peripheral));
+            }
         }
     }
     for pin in topology.gpio.values() {
@@ -428,23 +514,43 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
             );
         }
     }
-    let mut cold: BTreeMap<(u32, String), u32> = BTreeMap::new();
+    timer_registers(topology, &f, &mut field)?;
+    // Every enable register (`*ENR`, not `*LPENR`) of the header's
+    // `RCC_TypeDef`, cold at its reset value and judged in full: the reset
+    // value and exactly the solved enable bits (2100 F24).
+    let mut cold: BTreeMap<(u32, String), (u32, u32)> = BTreeMap::new();
+    for reg in rcc
+        .fields
+        .iter()
+        .filter(|r| r.name.ends_with("ENR") && !r.name.ends_with("LPENR"))
+    {
+        let reset = ENR_RESET
+            .iter()
+            .find(|(name, _)| *name == reg.name)
+            .map_or(0, |(_, v)| *v);
+        cold.insert(
+            (rcc_base + reg.offset, format!("RCC.{}", reg.name)),
+            (reset, 0),
+        );
+    }
     for peripheral in &gates {
         let (register, bit) = f.enable_bit(peripheral)?;
         let address = rcc_base + rcc.offset(&register, 0)?;
-        *cold
-            .entry((address, format!("RCC.{register}")))
-            .or_default() |= 1 << bit;
+        cold.get_mut(&(address, format!("RCC.{register}")))
+            .ok_or_else(|| RegisterError::Undefined {
+                name: format!("RCC_TypeDef.{register}"),
+            })?
+            .1 |= 1 << bit;
     }
     let cold: Vec<Register> = cold
         .into_iter()
-        .map(|((address, name), bits)| {
-            field(address, name.clone(), u32::MAX, bits);
+        .map(|((address, name), (reset, bits))| {
+            field(address, name.clone(), u32::MAX, reset | bits);
             Register {
                 name,
                 address,
                 mask: u32::MAX,
-                value: 0,
+                value: reset,
             }
         })
         .collect();
