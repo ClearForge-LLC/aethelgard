@@ -4,8 +4,8 @@
 # publish. A push to main does the same and then publishes from one job, the
 # only one holding packages: write, the very image it has just smoke-tested.
 #
-# The `ardupilot` job also builds step G and the three seeds in the image, and
-# `pinout` judges them with `aethelgard check pinout` (ruling D7). The jobs live
+# The `ardupilot` jobs build step G and the three seeds in the image, one each,
+# and `pinout` judges them with `aethelgard check pinout` (ruling D7). The jobs live
 # here, not in ci.yml, because they need this image, which only this workflow
 # builds. They run whenever the image, the check or anything the topology
 # comes from changes.
@@ -39,9 +39,9 @@ env:
   IMAGE: aethelgard-ardupilot:ci
 
 jobs:
-  ardupilot:
+  image:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -72,7 +72,7 @@ jobs:
 
       # D4 (PR #130): the runner sets GITHUB_ACTIONS=true, and ArduPilot then
       # refuses a numeric APJ_BOARD_ID. This control passes it into the
-      # container and requires that refusal, so the builds below, which run
+      # container and requires that refusal, so the board builds, which run
       # with the variable unset, prove what unsetting it does.
       - name: D4 control, GITHUB_ACTIONS=true refuses the board ID
         run: |
@@ -81,29 +81,75 @@ jobs:
             -v "$PWD/crates/aethelgard-pincheck/fixtures:/boards:ro" \
             "$IMAGE" bash /container/ardupilot-build.sh d4
 
-      - name: build step G and the three seeds with --network none, GITHUB_ACTIONS unset
+  # One board per job: a clean build takes about 3 minutes on the runner, so
+  # four in one job with the image and its smoke would pass 20 minutes
+  # (AET-WO-4400a FEEDBACK). Each job builds the image from the same cache.
+  ardupilot:
+    name: ardupilot (${{ matrix.board }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [step-g, seed-pin, seed-af, seed-pkg]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: refuse an unpinned base, download, package, clone or pip file
+        run: bash container/check-pins.sh container/ardupilot.Dockerfile
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: container
+          file: container/ardupilot.Dockerfile
+          tags: ${{ env.IMAGE }}
+          load: true
+          cache-from: type=gha,scope=ardupilot-image
+
+      - name: build ${{ matrix.board }} with --network none, GITHUB_ACTIONS unset
         run: |
           mkdir -p "$RUNNER_TEMP/boards"
           docker run --rm --network none -v "$PWD/container:/container:ro" \
             -v "$PWD/crates/aethelgard-pincheck/fixtures:/boards:ro" -v "$RUNNER_TEMP/boards:/out" \
-            "$IMAGE" bash /container/ardupilot-build.sh boards step-g seed-pin seed-af seed-pkg
-
-      # Measured once for the work order (§1.2): the same four in one build
-      # directory, reused. Only the clean builds above are judged.
-      - name: the four again, one build directory reused (measurement)
-        run: |
-          docker run --rm --network none -v "$PWD/container:/container:ro" \
-            -v "$PWD/crates/aethelgard-pincheck/fixtures:/boards:ro" -v "$RUNNER_TEMP/reuse:/out" \
-            "$IMAGE" bash /container/ardupilot-build.sh boards -i step-g seed-pin seed-af seed-pkg
+            "$IMAGE" bash /container/ardupilot-build.sh boards "${{ matrix.board }}"
 
       # GPL binaries: they live only here and in this run's artifacts, never in
       # the repository (ARDUPILOT-LICENSE.md).
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ardupilot-boards
+          name: ardupilot-${{ matrix.board }}
           path: ${{ runner.temp }}/boards
           if-no-files-found: error
           retention-days: 7
+
+  # Measured once for the work order (§1.2): the four in one build directory,
+  # reused. Nothing it builds is judged.
+  ardupilot-reuse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: container
+          file: container/ardupilot.Dockerfile
+          tags: ${{ env.IMAGE }}
+          load: true
+          cache-from: type=gha,scope=ardupilot-image
+      - name: the four, one build directory reused
+        run: |
+          docker run --rm --network none -v "$PWD/container:/container:ro" \
+            -v "$PWD/crates/aethelgard-pincheck/fixtures:/boards:ro" -v "$RUNNER_TEMP/reuse:/out" \
+            "$IMAGE" bash /container/ardupilot-build.sh boards -i step-g seed-pin seed-af seed-pkg
 
   cli:
     runs-on: ubuntu-latest
@@ -132,7 +178,8 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: ardupilot-boards
+          pattern: ardupilot-*
+          merge-multiple: true
           path: ${{ runner.temp }}/boards
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -148,7 +195,7 @@ jobs:
             crates/aethelgard-pincheck/fixtures/step-g.allow.json
 
   publish:
-    needs: [ardupilot, pinout]
+    needs: [image, pinout]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
