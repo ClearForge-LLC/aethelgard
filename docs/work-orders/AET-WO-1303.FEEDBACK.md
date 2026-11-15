@@ -133,6 +133,12 @@ The predictions below were committed before any measured run. They are not edite
   - I2C keeps UM10204's 10 pF per pin.
 
   This work order adds nothing to that.
+- **Built by 4300c** (its mailbox note, `d9ccdff`, PR #129, unmerged) [read]:
+  - `extract::lines` takes each SPI bus's SCK and MOSI after the I2C lines;
+  - device pads count at `parts.json` `pin_capacitance` (W25Q64JVxIQ 8,000 fF); the MCU's pad counts as copper only;
+  - a part with no cited maximum is refused as `UnboundedPinCapacitance`;
+  - MISO and chip selects are out of scope (ruled D3/D4);
+  - reference SPI_SCK 18,521 fF and SPI_MOSI 17,188 fF; the I2C bounds are unchanged.
 - **4300c measured it** (PR #129, `4cbe26d`, `spike/4300c/probe-output.txt`):
   - the bound machinery is net-agnostic;
   - on the reference, the 4-layer fixture and D1, every SPI line bounds at 8.9–14.8 pF of copper;
