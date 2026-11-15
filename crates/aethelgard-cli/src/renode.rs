@@ -3214,17 +3214,19 @@ mod tests {
             (
                 reset,
                 None,
-                "RCC.AHB4RSTR 0x1 written, not an enable register, RCC.AHB4RSTR 0x0 written, not an enable register",
+                // Written back as the bring-up wrote them, AFRH's first word
+                // unroutes PA9 in the rebuild: the interval rule sees it too.
+                "RCC.AHB4RSTR 0x1 written, not an enable register, RCC.AHB4RSTR 0x0 written, not an enable register, PA9 MODER 0b10, AF0, OTYPER 0, OSPEEDR 0b00, PUPDR 0b00 after it was solved",
             ),
             (
                 open_drain,
                 None,
-                "PA9 OT set in OTYPER, a bit Renode does not store, PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write, PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the end",
+                "PA9 OT set in OTYPER, a bit Renode does not store, PA9 MODER 0b10, AF7, OTYPER 1, OSPEEDR 0b00, PUPDR 0b00 after it was solved, PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the first TDR write, PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the end",
             ),
             (
                 pulled,
                 Some(8),
-                "PA10 OTYPER 0, OSPEEDR 0b00, PUPDR 0b01 at the injection",
+                "PA10 MODER 0b10, AF7, OTYPER 0, OSPEEDR 0b00, PUPDR 0b01 after it was solved, PA10 OTYPER 0, OSPEEDR 0b00, PUPDR 0b01 at the injection",
             ),
         ] {
             let w = serial_witnesses(

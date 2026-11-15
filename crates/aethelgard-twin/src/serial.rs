@@ -782,15 +782,16 @@ pub fn judge_writes(b: &Bringup, source: &str, boots: &[Vec<Access>]) -> TagJudg
     j
 }
 
-/// The TX pin's `MODER` and `AFR` words at the `TDR` writes of each boot
-/// that wrote one, rebuilt in log order from the words the access log shows
-/// the firmware wrote to the pin's GPIO port in that boot (a register never
-/// written reads `0` here: never routed): the first `TDR` write's at which
-/// the pin was not routed, else the first's; `None` for a boot in which a
-/// non-word write reached either register before a `TDR` write. The pattern
-/// counts only if every boot's is routed: the pin routed at every `TDR`
-/// write (`AET-WO-4300b` adversarial F4 and the PM's ruling on its
-/// residual: route, send one, unroute, send the rest).
+/// The TX pin's `MODER` and `AFR` words at the first `TDR` write of each
+/// boot that wrote one, rebuilt in log order from the words the access log
+/// shows the firmware wrote to the pin's GPIO port in that boot (a register
+/// never written reads `0` here: never routed); `None` for a boot in which a
+/// non-word write reached either register before it. The pattern counts only
+/// if every boot's is routed (`AET-WO-4300b` adversarial F4). That the pin
+/// stays routed at every later `TDR` write is [`judge_pins`]' interval rule
+/// (the PM's ruling on adversarial pass 3, ADV3-4, which replaced the sample
+/// at every `TDR` write: Renode emits a byte at its `TDR` write, silicon
+/// shifts it out over the next character).
 pub fn tx_at_send(
     tx: &PinMux,
     usart: &str,
@@ -800,21 +801,12 @@ pub fn tx_at_send(
     let mut out = Vec::new();
     for boot in boots {
         let mut words = PinWords::reset(tx);
-        let mut first: Option<Option<(u32, u32)>> = None;
-        let mut bad: Option<Option<(u32, u32)>> = None;
         for a in boot.iter().filter(|a| a.write) {
             if a.source == usart && a.offset == tdr {
-                let now = words.moder.zip(words.afr);
-                first.get_or_insert(now);
-                if bad.is_none() && !now.is_some_and(|(m, f)| tx.routed(m, f)) {
-                    bad = Some(now);
-                }
-                continue;
+                out.push(words.moder.zip(words.afr));
+                break;
             }
             words.apply(tx, a);
-        }
-        if let Some(m) = bad.or(first) {
-            out.push(m);
         }
     }
     out
@@ -883,17 +875,54 @@ impl PinWords {
             )),
         }
     }
+
+    /// True when every one of the pin's five fields holds its solved value:
+    /// `MODER` on AF, `AFSEL` the solved AF, push-pull, low speed, no pull.
+    fn solved(&self, pin: &PinMux) -> bool {
+        self.moder
+            .zip(self.afr)
+            .is_some_and(|(m, a)| pin.routed(m, a))
+            && self.misconfigured(pin, "").is_none()
+    }
+
+    /// `PA9 MODER 0b00, AF7, OTYPER 0, OSPEEDR 0b00, PUPDR 0b00`, or what of
+    /// it the rebuild cannot say: what a finding names.
+    fn state(&self, pin: &PinMux) -> String {
+        let mux = self.moder.zip(self.afr).map_or_else(
+            || format!("{} MODER/AFR not rebuilt", pin.pin),
+            |(m, a)| pin.describe(m, a),
+        );
+        match self.config {
+            [Some(ot), Some(sp), Some(pu)] => {
+                let (ot, sp, pu) = pin.config_fields([ot, sp, pu]);
+                format!("{mux}, OTYPER {ot}, OSPEEDR {sp:#04b}, PUPDR {pu:#04b}")
+            }
+            _ => format!("{mux}, OTYPER/OSPEEDR/PUPDR not rebuilt"),
+        }
+    }
 }
 
-/// What the access log shows of a port's two pins beyond their mux
-/// (`AET-WO-4300b` adversarial pass 2, A2 and L2), each failure once, in the
-/// order first seen:
+/// What the access log shows of a port's two pins beyond their mux at the
+/// first `TDR` write and at the injection (`AET-WO-4300b` adversarial pass
+/// 2, A2 and L2; pass 3, ADV3-4 and 5), each failure once, in the order
+/// first seen:
 /// - each pin push-pull, low speed (`00`, the contract's) and pulled neither
 ///   way, as the bring-up leaves it (an open-drain TX with a pull-down never
-///   drives the line high): the TX pin at every `TDR` write of each boot, the
-///   RX pin at the injection (`inject_at`, how many of the last boot's
+///   drives the line high): the TX pin at the first `TDR` write of each boot,
+///   the RX pin at the injection (`inject_at`, how many of the last boot's
 ///   accesses precede it; `None` when no frame went in), both at the end of
-///   the last boot (`PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write`);
+///   the last boot (`PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the first TDR
+///   write`);
+/// - the interval rule (the PM's ruling on pass 3): once a pin's `MODER`,
+///   `AFSEL`, `OT`, `OSPEEDR` and `PUPDR` fields first all hold their solved
+///   values in a boot, no later write in that boot changes any of them, a
+///   write the rebuild cannot apply included (`PA9 MODER 0b00, AF7, OTYPER 0,
+///   OSPEEDR 0b00, PUPDR 0b00 after it was solved`, the first change of each
+///   pin in each boot). Renode emits a byte at
+///   its `TDR` write and queues the frame at the injection, where silicon
+///   shifts each bit over a character's time, so a pin unrouted between two
+///   samples loses bytes on silicon only;
+/// - no write sets a serial pin's `OT`, which Renode does not store;
 /// - no write to either pin's GPIO port refused by the model (a pin its
 ///   `LCKR` locked; the rebuild does not apply it): `gpioPortA refused a
 ///   write to 0x0 (a locked pin)`.
@@ -914,12 +943,15 @@ pub fn judge_pins(
     for (k, boot) in boots.iter().enumerate() {
         let last = k + 1 == boots.len();
         let (mut t, mut r) = (PinWords::reset(tx), PinWords::reset(rx));
+        // Each pin's: solved once in this boot, and a change after it named.
+        let (mut sent, mut solved, mut changed) = (false, [false; 2], [false; 2]);
         for (i, a) in boot.iter().enumerate() {
             if last && inject_at == Some(i) {
                 note(r.misconfigured(rx, "at the injection"));
             }
-            if a.write && a.source == usart && a.offset == tdr {
-                note(t.misconfigured(tx, "at a TDR write"));
+            if !sent && a.write && a.source == usart && a.offset == tdr {
+                sent = true;
+                note(t.misconfigured(tx, "at the first TDR write"));
             }
             // `OT` is a tag in Renode's GPIO model: it reads back 0, so a
             // read-modify-write clears it in the log and keeps it on silicon.
@@ -944,6 +976,14 @@ pub fn judge_pins(
             }
             t.apply(tx, a);
             r.apply(rx, a);
+            for (pin, words, n) in [(tx, &t, 0), (rx, &r, 1)] {
+                let now = words.solved(pin);
+                if solved[n] && !now && !changed[n] {
+                    changed[n] = true;
+                    note(Some(format!("{} after it was solved", words.state(pin))));
+                }
+                solved[n] |= now;
+            }
         }
         if last {
             if inject_at == Some(boot.len()) {
@@ -1857,14 +1897,16 @@ mod tests {
         );
         assert_eq!(got, [Some((0x8_0000, 0x70)), Some((0, 0))]);
         // The PM's ruling on F4's residual: routed, one byte, unrouted, the
-        // rest, routed again before the end: the unrouted writes count.
+        // rest, routed again before the end. Only the first TDR write is
+        // sampled (pass 3): the unrouting is the interval rule's
+        // (`adversarial_3_adv3_4_5_a_solved_pin_never_changes`).
         let mut residual = routed.to_vec();
         residual.push(send.clone());
         residual.push(w("gpioPortA", 0, 0));
         residual.extend(std::iter::repeat_n(send.clone(), 11));
         residual.push(routed[1].clone());
         let got = tx_at_send(&tx, "usart1", 0x28, &[residual]);
-        assert_eq!(got, [Some((0, 0x70))]);
+        assert_eq!(got, [Some((0x8_0000, 0x70))]);
         // Another port's GPIO words, and a boot with no TDR write.
         let other = [w("gpioPortB", 0x24, 0x70), w("gpioPortB", 0, 0x8_0000)];
         assert_eq!(
@@ -1998,7 +2040,8 @@ mod tests {
 
     /// Adversarial pass 2, A2 (ADV2-2): each pin must be push-pull, low
     /// speed and pulled neither way, rebuilt from the words written: the TX
-    /// pin at every TDR write, the RX pin at the injection, both at the end.
+    /// pin at the first TDR write, the RX pin at the injection, both at the
+    /// end, and neither changed once solved (pass 3).
     #[test]
     fn adversarial_2_a2_the_pins_are_push_pull_low_speed_and_unpulled() {
         let (tx, rx) = (
@@ -2022,7 +2065,8 @@ mod tests {
             judge(&bad, None),
             [
                 "PA9 OT set in OTYPER, a bit Renode does not store",
-                "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write",
+                "PA9 MODER 0b10, AF7, OTYPER 1, OSPEEDR 0b00, PUPDR 0b00 after it was solved",
+                "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the first TDR write",
                 "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the end"
             ]
         );
@@ -2033,7 +2077,8 @@ mod tests {
             judge(&brief, None),
             [
                 "PA9 OT set in OTYPER, a bit Renode does not store",
-                "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write"
+                "PA9 MODER 0b10, AF7, OTYPER 1, OSPEEDR 0b00, PUPDR 0b00 after it was solved",
+                "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the first TDR write"
             ]
         );
         // The PM's ruling on fix 2's A2 hole (ADV2-6): OT9 set, then OTYPER
@@ -2044,7 +2089,10 @@ mod tests {
         rmw.push(send.clone());
         assert_eq!(
             judge(&rmw, None),
-            ["PA9 OT set in OTYPER, a bit Renode does not store"]
+            [
+                "PA9 OT set in OTYPER, a bit Renode does not store",
+                "PA9 MODER 0b10, AF7, OTYPER 1, OSPEEDR 0b00, PUPDR 0b00 after it was solved"
+            ]
         );
         // Another pin's OT on the port is not a serial pin's.
         let mut other = good.clone();
@@ -2055,14 +2103,18 @@ mod tests {
         rx_bad.push(w("gpioPortA", 0xC, 0b01 << 20));
         let at = rx_bad.len();
         rx_bad.push(w("gpioPortA", 0xC, 0));
+        let pulled = "PA10 MODER 0b10, AF7, OTYPER 0, OSPEEDR 0b00, PUPDR 0b01 after it was solved";
         assert_eq!(
             judge(&rx_bad, Some(at)),
-            ["PA10 OTYPER 0, OSPEEDR 0b00, PUPDR 0b01 at the injection"]
+            [
+                pulled,
+                "PA10 OTYPER 0, OSPEEDR 0b00, PUPDR 0b01 at the injection"
+            ]
         );
         rx_bad.push(w("gpioPortA", 0x8, 0b11 << 20));
         assert_eq!(
             judge(&rx_bad, None),
-            ["PA10 OTYPER 0, OSPEEDR 0b11, PUPDR 0b00 at the end"]
+            [pulled, "PA10 OTYPER 0, OSPEEDR 0b11, PUPDR 0b00 at the end"]
         );
         // A half-word write into OSPEEDR cannot be rebuilt.
         let mut half = good.clone();
@@ -2077,7 +2129,7 @@ mod tests {
         assert_eq!(
             judge(&half, None),
             [
-                "PA9 OTYPER/OSPEEDR/PUPDR not rebuilt at a TDR write",
+                "PA9 OTYPER/OSPEEDR/PUPDR not rebuilt at the first TDR write",
                 "PA9 OTYPER/OSPEEDR/PUPDR not rebuilt at the end",
                 "PA10 OTYPER/OSPEEDR/PUPDR not rebuilt at the end"
             ]
@@ -2093,7 +2145,7 @@ mod tests {
         assert_eq!(
             judge_pins(&pb4, &pb3, "uart7", 0x28, None, &[tdr.to_vec()]),
             [
-                "PB4 OTYPER 0, OSPEEDR 0b00, PUPDR 0b01 at a TDR write",
+                "PB4 OTYPER 0, OSPEEDR 0b00, PUPDR 0b01 at the first TDR write",
                 "PB4 OTYPER 0, OSPEEDR 0b00, PUPDR 0b01 at the end",
                 "PB3 OTYPER 0, OSPEEDR 0b11, PUPDR 0b00 at the end"
             ]
@@ -2103,6 +2155,92 @@ mod tests {
         let got = judge_pins(&tx, &rx, "usart1", 0x28, None, &[good.clone(), rest]);
         assert!(got.is_empty(), "{got:?}");
         assert!(PinMux::of("PA9", 7).unwrap().config_reset[2] & (0b11 << 18) == 0);
+    }
+
+    /// Adversarial pass 3, ADV3-4 and 5 (the PM's ruling): once a pin's five
+    /// fields first all hold their solved values in a boot, no later write
+    /// in that boot changes any; before that, any order of writes is free.
+    #[test]
+    fn adversarial_3_adv3_4_5_a_solved_pin_never_changes() {
+        let (tx, rx) = (
+            PinMux::of("PA9", 7).unwrap(),
+            PinMux::of("PA10", 7).unwrap(),
+        );
+        let send = w("usart1", 0x28, 0x43);
+        let judge = |boot: &[Access], inject_at| {
+            judge_pins(&tx, &rx, "usart1", 0x28, inject_at, &[boot.to_vec()])
+        };
+        let (both, rx_only, tx_only) = (
+            w("gpioPortA", 0, 0x28_0000),
+            w("gpioPortA", 0, 0x20_0000),
+            w("gpioPortA", 0, 0x08_0000),
+        );
+        // ADV3-4: PA9 routed before each TDR write, an input after it: every
+        // TDR write sees it routed, the interval rule does not.
+        let mut gap = console_pins();
+        for _ in 0..3 {
+            gap.extend([both.clone(), send.clone(), rx_only.clone()]);
+        }
+        gap.push(both.clone());
+        let unrouted =
+            "PA9 MODER 0b00, AF7, OTYPER 0, OSPEEDR 0b00, PUPDR 0b00 after it was solved";
+        assert_eq!(judge(&gap, None), [unrouted]);
+        assert_eq!(
+            tx_at_send(&tx, "usart1", 0x28, &[gap.clone()]),
+            [Some((0x28_0000, 0x770))]
+        );
+        // ADV3-5: PA10 an input after the first byte is read, routed again
+        // before the end; the injection sees it routed.
+        let mut rx_gap = console_pins();
+        rx_gap.push(send.clone());
+        let at = rx_gap.len();
+        rx_gap.extend([send.clone(), tx_only.clone(), send.clone(), both.clone()]);
+        assert_eq!(
+            judge(&rx_gap, Some(at)),
+            ["PA10 MODER 0b00, AF7, OTYPER 0, OSPEEDR 0b00, PUPDR 0b00 after it was solved"]
+        );
+        // Another pin's field in the same word, rewritten, is no change; nor
+        // is the pin's own word rewritten with its solved fields.
+        let mut same = console_pins();
+        same.extend([
+            w("gpioPortA", 0, 0x28_0001),
+            w("gpioPortA", 0x24, 0x7770),
+            w("gpioPortA", 0xC, 0b01),
+            send.clone(),
+        ]);
+        assert!(judge(&same, Some(same.len())).is_empty());
+        // Before it is solved, the bring-up's order is free: MODER on AF
+        // first with AF0, then the AF.
+        let order = [
+            w("gpioPortA", 0, 0x28_0000),
+            w("gpioPortA", 0x24, 0x770),
+            send.clone(),
+        ];
+        assert!(judge(&order, Some(order.len())).is_empty());
+        // A write the rebuild cannot apply, once solved, is a change.
+        let mut half = console_pins();
+        half.push(Access {
+            bits: 16,
+            ..w("gpioPortA", 0, 0x0001)
+        });
+        half.push(send.clone());
+        assert_eq!(
+            judge(&half, None),
+            [
+                "PA9 MODER/AFR not rebuilt, OTYPER 0, OSPEEDR 0b00, PUPDR 0b00 after it was solved",
+                "PA10 MODER/AFR not rebuilt, OTYPER 0, OSPEEDR 0b00, PUPDR 0b00 after it was solved"
+            ]
+        );
+        // In a boot before the last; a boot cut before its pins are solved
+        // owes the rule nothing.
+        let cut = console_pins()[..3].to_vec();
+        assert_eq!(
+            judge_pins(&tx, &rx, "usart1", 0x28, None, &[gap.clone(), cut.clone()]),
+            [unrouted]
+        );
+        let mut good = console_pins();
+        good.push(send.clone());
+        assert!(judge_pins(&tx, &rx, "usart1", 0x28, None, &[cut, good]).is_empty());
     }
 
     /// Adversarial pass 2, L2 (ADV2-5): a write the model refused (a pin

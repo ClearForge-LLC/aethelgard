@@ -2500,7 +2500,9 @@ fn adv_5_a_pattern_on_a_usart_no_port_names_is_forged() {
 
 /// The PM's ruling on F4's residual: PA9 routed for the pattern's first
 /// byte, made an input for the other eleven, routed again before the end.
-/// The TX pin must be routed at every `TDR` write of each boot.
+/// Since adversarial pass 3 (the PM's ruling on ADV3-4) the TX pin is
+/// sampled at the first `TDR` write alone, routed here, and the interval
+/// rule fails it: once solved, PA9's fields never change in the boot.
 #[test]
 fn adv_1b_a_tx_pin_unrouted_after_the_first_byte_fails() {
     let elf = adv_reference(
@@ -2520,11 +2522,12 @@ fn adv_1b_a_tx_pin_unrouted_after_the_first_byte_fails() {
     let (code, v) = boot_elf("adv tx unrouted", &elf, "100ms");
     answer(&format!("ADV-1b code={code:?} kinds={:?}", kinds(&v)));
     assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["serial_pattern_missing"], "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
     let t = &serial(&v)[0]["twin"];
     assert_eq!(t["patterns"], 1, "{v}");
     assert_eq!(t["tx_at_end"], "PA9 MODER 0b10, AF7", "{v}");
-    assert_eq!(t["tx_at_send"], "PA9 MODER 0b00, AF7", "{v}");
+    assert_eq!(t["tx_at_send"], "PA9 MODER 0b10, AF7", "{v}");
+    assert_eq!(unexpected(&v), [ADV3_PA9_UNROUTED], "{v}");
 }
 
 // ------------------------------------------------- adversarial pass 2 (ADV2)
@@ -2580,7 +2583,8 @@ fn adv2_1_a_gpio_reset_through_the_rcc_fails() {
 /// ADV2-2 (A2, the PM's ruling): PA9 made open-drain with a pull-down
 /// after the bring-up routed it: on silicon the TX line never drives high.
 /// The pin's `OTYPER`, `OSPEEDR` and `PUPDR`, rebuilt from the access log,
-/// must be the bring-up's at every `TDR` write and at the end.
+/// must be the bring-up's at the first `TDR` write and at the end, and never
+/// change once solved (pass 3).
 #[test]
 fn adv2_2_an_open_drain_pulled_down_tx_fails() {
     let elf = adv_reference(
@@ -2599,7 +2603,8 @@ fn adv2_2_an_open_drain_pulled_down_tx_fails() {
         unexpected(&v),
         [
             "PA9 OT set in OTYPER, a bit Renode does not store",
-            "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write",
+            "PA9 MODER 0b10, AF7, OTYPER 1, OSPEEDR 0b00, PUPDR 0b00 after it was solved",
+            "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the first TDR write",
             "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the end"
         ],
         "{v}"
@@ -2626,7 +2631,8 @@ fn adv2_3_a_software_reset_at_start_fails() {
 
 /// ADV2-4 (held): one unaligned 32-bit `STR` at `GPIOA + 0x22`, over AFRH's
 /// low half (PA9's AFSEL to 0), the pattern, then AFRH written back whole:
-/// the rebuild cannot apply it, so the TX pin is not routed at its sends.
+/// the rebuild cannot apply it, so the TX pin is not routed at its sends;
+/// since pass 3 the interval rule names both pins of the word too.
 #[test]
 fn adv2_4_an_unaligned_store_into_afrh_fails() {
     let elf = adv_reference(
@@ -2646,7 +2652,18 @@ fn adv2_4_an_unaligned_store_into_afrh_fails() {
     let (code, v) = boot_elf("adv2 afrh unaligned", &elf, "100ms");
     answer(&format!("ADV2-4 code={code:?} kinds={:?}", kinds(&v)));
     assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["serial_pattern_missing"], "{v}");
+    assert_eq!(
+        kinds(&v),
+        ["serial_tag_mismatch", "serial_pattern_missing"],
+        "{v}"
+    );
+    assert!(
+        unexpected(&v)
+            .iter()
+            .any(|x| x.starts_with("PA9 MODER/AFR not rebuilt")
+                && x.ends_with("after it was solved")),
+        "{v}"
+    );
 }
 
 /// ADV2-5 (L2, the PM's ruling): PA9 locked by the `LCKR` key sequence in
@@ -2710,12 +2727,19 @@ fn adv2_6_an_open_drain_tx_read_modify_written_fails() {
     assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
     assert_eq!(
         unexpected(&v),
-        ["PA9 OT set in OTYPER, a bit Renode does not store"],
+        [
+            "PA9 OT set in OTYPER, a bit Renode does not store",
+            "PA9 MODER 0b10, AF7, OTYPER 1, OSPEEDR 0b00, PUPDR 0b00 after it was solved"
+        ],
         "{v}"
     );
 }
 
 // ------------------------------------------------- adversarial pass 3 (ADV3)
+
+/// The finding the interval rule names for PA9 made an input once solved.
+const ADV3_PA9_UNROUTED: &str =
+    "PA9 MODER 0b00, AF7, OTYPER 0, OSPEEDR 0b00, PUPDR 0b00 after it was solved";
 
 /// One boot of the reference with `line` inserted right after the console's
 /// bring-up, in `main.rs`.
@@ -2794,6 +2818,72 @@ fn adv3_2_sbus_s_cr2_read_back_and_xored_fails() {
     assert_eq!(
         sbus["twin"]["tags_unexpected"],
         serde_json::json!(["ReadUInt32 from CR2 (0x4)"]),
+        "{v}"
+    );
+}
+
+/// ADV3-4 (the PM's ruling): PA9 routed just before each `TDR` write of the
+/// pattern and the echo and made an input right after it, routed again
+/// before the end. Renode emits the byte at the write; silicon shifts it out
+/// over the next character, from the FIFO. Passed before the ruling: every
+/// `TDR` write saw PA9 routed. Once solved, a pin's fields never change.
+#[test]
+fn adv3_4_a_tx_pin_unrouted_between_tdr_writes_fails() {
+    let route = "unsafe { let p = 0x5802_0000 as *mut u32; p.write_volatile((p.read_volatile() & !0x000c0000) | 0x00080000); }";
+    let unroute = "unsafe { let p = 0x5802_0000 as *mut u32; p.write_volatile(p.read_volatile() & !0x000c0000); }";
+    let pat_from = "chain(PATTERN_TAIL.iter()) {\n        if usart1.send(&mut r, byte).is_err() {";
+    let pat_to = format!(
+        "chain(PATTERN_TAIL.iter()) {{\n        {route}\n        let sent = usart1.send(&mut r, byte);\n        {unroute}\n        if sent.is_err() {{"
+    );
+    let echo_from = "        if usart1.send(&mut r, byte).is_err() {\n            break;\n        }\n    }\n    // No sleep";
+    let echo_to = format!(
+        "        {route}\n        let sent = usart1.send(&mut r, byte);\n        {unroute}\n        if sent.is_err() {{\n            break;\n        }}\n    }}\n    {route}\n    // No sleep"
+    );
+    let elf = adv_reference(
+        "adv3-tx-gap",
+        &[],
+        &[(pat_from, pat_to.as_str()), (echo_from, echo_to.as_str())],
+    );
+    let (code, v) = boot_elf("adv3-4", &elf, "100ms");
+    answer(&format!("ADV3-4 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    let t = &serial(&v)[0]["twin"];
+    assert_eq!(t["tx_at_send"], "PA9 MODER 0b10, AF7", "{v}");
+    assert_eq!(t["echo"], "witnessed", "{v}");
+    assert_eq!(unexpected(&v), [ADV3_PA9_UNROUTED], "{v}");
+}
+
+/// ADV3-5 (the PM's ruling): after the first echoed byte is read, PA10 made
+/// an input; the other seven, queued in Renode at the injection, read and
+/// echoed; PA10 routed again before the end. On silicon bytes 2 to 8 arrive
+/// after PA10 left its AF and are lost. Passed before the ruling: PA10 was
+/// routed at the injection.
+#[test]
+fn adv3_5_an_rx_pin_unrouted_after_the_first_byte_fails() {
+    let elf = adv_reference(
+        "adv3-rx-gap",
+        &[],
+        &[
+            (
+                "        let Some(byte) = usart1.receive(&mut r, ECHO_POLLS) else {\n            break;\n        };\n",
+                "        let Some(byte) = usart1.receive(&mut r, ECHO_POLLS) else {\n            break;\n        };\n        unsafe { let p = 0x5802_0000 as *mut u32; p.write_volatile(p.read_volatile() & !0x00300000); }\n",
+            ),
+            (
+                "    // No sleep",
+                "    unsafe { let p = 0x5802_0000 as *mut u32; p.write_volatile((p.read_volatile() & !0x00300000) | 0x00200000); }\n    // No sleep",
+            ),
+        ],
+    );
+    let (code, v) = boot_elf("adv3-5", &elf, "100ms");
+    answer(&format!("ADV3-5 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    let t = &serial(&v)[0]["twin"];
+    assert_eq!(t["echo"], "witnessed", "{v}");
+    assert_eq!(
+        unexpected(&v),
+        ["PA10 MODER 0b00, AF7, OTYPER 0, OSPEEDR 0b00, PUPDR 0b00 after it was solved"],
         "{v}"
     );
 }
