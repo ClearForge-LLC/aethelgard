@@ -115,16 +115,16 @@
           "pin": "2",
           "net": "I2C_SCL",
           "offboard": {
-            "capacitance_femtofarads": 30000,
-            "source": "condition: a JST GH cable of at most 300 mm at 50 pF/m (15 pF), the mated contact (5 pF) and one remote pin of at most 10 pF (UM10204 Table 10 Ci)"
+            "capacitance_femtofarads": 20000,
+            "source": "condition: a JST cable of at most 100 mm at 50 pF/m (5 pF), the mated contact (5 pF) and one remote pin of at most 10 pF (UM10204 Table 10 Ci for I2C)"
           }
         },
         {
           "pin": "3",
           "net": "I2C_SDA",
           "offboard": {
-            "capacitance_femtofarads": 30000,
-            "source": "condition: a JST GH cable of at most 300 mm at 50 pF/m (15 pF), the mated contact (5 pF) and one remote pin of at most 10 pF (UM10204 Table 10 Ci)"
+            "capacitance_femtofarads": 20000,
+            "source": "condition: a JST cable of at most 100 mm at 50 pF/m (5 pF), the mated contact (5 pF) and one remote pin of at most 10 pF (UM10204 Table 10 Ci for I2C)"
           }
         },
         {
@@ -149,7 +149,7 @@
           "net": "EXT_SCK",
           "offboard": {
             "capacitance_femtofarads": 20000,
-            "source": "condition: a JST GH cable of at most 100 mm at 50 pF/m (5 pF), the mated contact (5 pF) and one remote SPI pin of at most 10 pF"
+            "source": "condition: a JST cable of at most 100 mm at 50 pF/m (5 pF), the mated contact (5 pF) and one remote pin of at most 10 pF (UM10204 Table 10 Ci for I2C)"
           }
         },
         {
@@ -157,7 +157,7 @@
           "net": "EXT_MOSI",
           "offboard": {
             "capacitance_femtofarads": 20000,
-            "source": "condition: a JST GH cable of at most 100 mm at 50 pF/m (5 pF), the mated contact (5 pF) and one remote SPI pin of at most 10 pF"
+            "source": "condition: a JST cable of at most 100 mm at 50 pF/m (5 pF), the mated contact (5 pF) and one remote pin of at most 10 pF (UM10204 Table 10 Ci for I2C)"
           }
         },
         {
@@ -165,7 +165,7 @@
           "net": "EXT_MISO",
           "offboard": {
             "capacitance_femtofarads": 20000,
-            "source": "condition: a JST GH cable of at most 100 mm at 50 pF/m (5 pF), the mated contact (5 pF) and one remote SPI pin of at most 10 pF"
+            "source": "condition: a JST cable of at most 100 mm at 50 pF/m (5 pF), the mated contact (5 pF) and one remote pin of at most 10 pF (UM10204 Table 10 Ci for I2C)"
           }
         },
         {

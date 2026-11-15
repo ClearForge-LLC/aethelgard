@@ -224,8 +224,8 @@ fn extract_counts_each_connectors_declared_budget_and_no_ci() {
     for line in lines {
         let net = line["net"].as_str().unwrap();
         let connector_pad = match net {
-            "I2C_SCL" => Some(("J1.2", 30_000)),
-            "I2C_SDA" => Some(("J1.3", 30_000)),
+            "I2C_SCL" => Some(("J1.2", 20_000)),
+            "I2C_SDA" => Some(("J1.3", 20_000)),
             "EXT_SCK" => Some(("J2.2", 20_000)),
             "EXT_MOSI" => Some(("J2.3", 20_000)),
             _ => None,
