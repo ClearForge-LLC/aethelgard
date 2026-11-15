@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/power-parts.json`. It moves only with the file.
-const TABLE_SHA256: &str = "34673e733aeaceb54afd1e648be9b6907bb530ea8d58fecf112b3ff9457245f7";
+const TABLE_SHA256: &str = "dccab3389be7c70d831f6410e7c1c859c9786b811920d06d042110f7adc713ed";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -137,8 +137,8 @@ fn the_embedded_table_parses_with_every_document_held() {
 
 #[test]
 fn the_table_parser_refuses_by_name() {
-    let r = table_refusal(|t| t["schema_version"] = json!(2));
-    assert!(r.contains("schema_version is 2"), "{r}");
+    let r = table_refusal(|t| t["schema_version"] = json!(1));
+    assert!(r.contains("schema_version is 1"), "{r}");
     let r = table_refusal(|t| row(t, "TLV75518PDBV")["kind"]["ldo"]["extra"] = json!(1));
     assert!(r.contains("unknown field"), "{r}");
     let r = table_refusal(|t| {
@@ -219,6 +219,9 @@ fn a_sense_net_is_a_new_net() {
 fn power_is_a_required_key_and_null_declares_none() {
     let mut v = base();
     v["power"] = Value::Null;
+    // Without a tree no regulator outputs the supply, so it enters by a
+    // connector pin (`AET-WO-4300g`): the debug connector's.
+    v["mcu"]["supply_source"] = json!({"connector": "J2", "pin": "1"});
     // Without a tree there is no battery rail, so a class naming it names an
     // unknown net (`AET-WO-4300d2` K10).
     assert_eq!(refused(&v).kind(), "ClassUnknownNet");

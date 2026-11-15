@@ -132,10 +132,13 @@ fn the_reference_passes_with_every_term() {
         (Some("I2C_SDA"), Some("I2C_SCL"))
     );
     // AET-WO-1307 K2 (ruled): the reference's routed board, so these terms,
-    // moved with the escape and the order; were 46_800 and 58_235.
-    assert_eq!(terms(sda), [12_922, 6_076, 1_578, 30_000, 50_576]);
-    assert_eq!(terms(scl), [9_133, 3_038, 1_578, 30_000, 43_749]);
-    for (line, length, segments, vias) in [(sda, 33_750_000, 28, 4), (scl, 22_875_000, 22, 2)] {
+    // moved with the escape and the order; were 46_800 and 58_235. Moved again
+    // in AET-WO-4300g, the MCU's support network now on the board: were
+    // [12_922, 6_076, 1_578, 30_000, 50_576] and [9_133, 3_038, 1_578, 30_000,
+    // 43_749], on 33_750_000 nm / 28 segments / 4 vias and 22_875_000 / 22 / 2.
+    assert_eq!(terms(sda), [8_701, 3_038, 1_578, 30_000, 43_317]);
+    assert_eq!(terms(scl), [9_273, 6_076, 1_578, 30_000, 46_927]);
+    for (line, length, segments, vias) in [(sda, 24_875_000, 14, 2), (scl, 23_375_000, 22, 4)] {
         assert_eq!(line["verdict"], "pass");
         assert_eq!(line["declared_femtofarads"], 100_000);
         assert_eq!(line["length_nm"], length);
@@ -152,8 +155,10 @@ fn the_reference_passes_with_every_term() {
     // AET-WO-1307 K2: the SPI terms on its routed board; were 18_521 and
     // 17_188 on `AET-WO-4300c`'s.
     let (sck, mosi) = (&lines[2], &lines[3]);
-    assert_eq!(terms(sck), [4_371, 3_038, 1_563, 8_000, 16_972]);
-    assert_eq!(terms(mosi), [4_209, 0, 1_563, 8_000, 13_772]);
+    // AET-WO-4300g: were [4_371, 3_038, 1_563, 8_000, 16_972] and
+    // [4_209, 0, 1_563, 8_000, 13_772].
+    assert_eq!(terms(sck), [4_123, 3_038, 1_563, 8_000, 16_724]);
+    assert_eq!(terms(mosi), [5_173, 3_038, 1_563, 8_000, 17_774]);
     for (line, net, signal, pin, driver) in [
         (sck, "SPI_SCK", "SCK", "U4.6", "U1.41"),
         (mosi, "SPI_MOSI", "MOSI", "U4.5", "U1.43"),
@@ -189,15 +194,15 @@ fn a_declared_spi_bound_below_the_bound_fails_and_at_it_passes() {
             }
         }
     };
-    let spec = spec_with("sck-under", |v| set(v, 16_971));
+    let spec = spec_with("sck-under", |v| set(v, 16_723));
     let (code, v) = extract("sck-under", reference(), spec.to_str().unwrap());
     assert_eq!(code, 1, "{v}");
     assert_eq!(
         v["findings"][0]["message"],
-        "`SPI_SCK`: bound 16972 fF (trace 4371, vias 3038, pads 1563, pins 8000) exceeds the declared 16971 fF"
+        "`SPI_SCK`: bound 16724 fF (trace 4123, vias 3038, pads 1563, pins 8000) exceeds the declared 16723 fF"
     );
     assert_eq!(v["findings"].as_array().unwrap().len(), 1);
-    let spec = spec_with("sck-at", |v| set(v, 16_972));
+    let spec = spec_with("sck-at", |v| set(v, 16_724));
     let (code, v) = extract("sck-at", reference(), spec.to_str().unwrap());
     assert_eq!(code, 0, "{v}");
 }
@@ -223,13 +228,16 @@ fn a_declared_bound_below_the_bound_fails_naming_each_line() {
     assert_eq!(
         messages,
         [
-            "`I2C_SDA`: bound 50576 fF (trace 12922, vias 6076, pads 1578, pins 30000) exceeds the declared 20000 fF",
-            "`I2C_SCL`: bound 43749 fF (trace 9133, vias 3038, pads 1578, pins 30000) exceeds the declared 20000 fF",
+            "`I2C_SDA`: bound 43317 fF (trace 8701, vias 3038, pads 1578, pins 30000) exceeds the declared 20000 fF",
+            "`I2C_SCL`: bound 46927 fF (trace 9273, vias 6076, pads 1578, pins 30000) exceeds the declared 20000 fF",
         ]
     );
 
-    let spec = spec_with("50p", |v| declared(v, 50_000));
-    let (code, v) = extract("50p", reference(), spec.to_str().unwrap());
+    // AET-WO-4300g: the lines' bounds moved to 43_317 (SDA) and 46_927 (SCL), so
+    // the declaration that fails one line only is 45 pF, and it fails SCL
+    // (50 pF failed SDA only before).
+    let spec = spec_with("45p", |v| declared(v, 45_000));
+    let (code, v) = extract("45p", reference(), spec.to_str().unwrap());
     assert_eq!(code, 1, "{v}");
     let verdicts: Vec<&str> = v["lines"]
         .as_array()
@@ -237,16 +245,16 @@ fn a_declared_bound_below_the_bound_fails_naming_each_line() {
         .iter()
         .map(|l| l["verdict"].as_str().unwrap())
         .collect();
-    assert_eq!(verdicts, ["fail", "pass", "pass", "pass"]);
+    assert_eq!(verdicts, ["pass", "fail", "pass", "pass"]);
     assert_eq!(v["findings"].as_array().unwrap().len(), 1);
 
     // At the bound exactly, the line passes.
     let spec = spec_with("at", |v| {
         for c in v["net_constraints"].as_array_mut().unwrap() {
             let at = if c["net_name"] == "I2C_SDA" {
-                50_576
+                43_317
             } else {
-                43_749
+                46_927
             };
             c["max_capacitance_femtofarads"] = at.into();
         }

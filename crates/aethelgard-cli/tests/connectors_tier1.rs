@@ -296,7 +296,9 @@ fn extract_counts_each_connectors_declared_budget_and_no_ci() {
 fn solve_does_not_see_the_connectors() {
     let d = Dir::new("solve");
     let mut bare = spec();
-    bare["connectors"] = Value::Array(vec![]);
+    // The programming path and the supply input (J3, J4; AET-WO-4300g) stay.
+    let kept = bare["connectors"].as_array().unwrap()[2..].to_vec();
+    bare["connectors"] = Value::Array(kept);
     let bare = d.write("bare.json", &bare);
     let solved = |p: &Path| {
         let mut v = json_line(&run(&["solve", "--file", p.to_str().unwrap()]), 0);
@@ -349,7 +351,9 @@ fn a_connector_pin_with_no_budget_is_refused_naming_the_connector() {
 fn without_connectors_the_board_has_no_connector_footprint() {
     let d = Dir::new("none");
     let mut bare = spec();
-    bare["connectors"] = Value::Array(vec![]);
+    // The programming path and the supply input (J3, J4; AET-WO-4300g) stay.
+    let kept = bare["connectors"].as_array().unwrap()[2..].to_vec();
+    bare["connectors"] = Value::Array(kept);
     let p = d.write("bare.json", &bare);
     emit(&p, &d.0.join("a"));
     let (text, _) = board(&d, "a");

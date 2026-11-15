@@ -103,18 +103,21 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `893fb13d…c4a6` there. The boot image was re-taken in `AET-WO-4220`, whose
 /// `StepCheck` names each step (`label`): with its three `label: "identity"`
 /// fields removed, the image's text hashes to the old `0e4d72ee…c8a2` exactly.
+/// Re-taken in `AET-WO-4300g` (version 9): the firmware, the platform and the
+/// faulted platform were `d114ae78…c455`, `849eb6bc…4397` and `b24f53eb…9e35`;
+/// the boot image is unchanged.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "d114ae787ece6238223fdd2ddf78c14021dbb548ce966cac310aceb9bc89c455",
+        "a3b7b0fa6c93823a8365fe5e58719c8abd9d4c3c2a267c55302182fb812d43ba",
     ),
     (
         "platform",
-        "849eb6bc70882585b2fa054260861646f6bb026ef0203fbb0cd5c7447a844397",
+        "7c014c136dc1f30802b46c7d0e3f580592054b0347e44b663fa1fa66794f6dbe",
     ),
     (
         "platform faulted",
-        "b24f53ebd62e293e1edaabb0a0723c1accb0098e3e64ef4f7e21caf363459e35",
+        "371c345deef410a1ba877bec69e3074f2e749ddccba94069b4db2f4f3d567ac2",
     ),
     (
         "boot image",
