@@ -243,6 +243,7 @@ The kickoff runs every KiCad, Renode and tier-2 step under `--memory X --memory-
 
   The host build, the tier-1 tests and the three gates proceed under a capped user scope. CI on GitHub runs tier 2.
 - **Without a ruling** that gives a compliant container, this work order ends `STOPPED`: §2's "every verdict is unchanged … against `main`'s binaries" cannot be shown on Furnace.
+- **Ruled at 03:40 UTC** (`~/.cache/aet-bus/RULE3.md`): rule 3 is replaced. A container now runs inside a capped systemd user scope (`MemoryMax=8G`, `MemorySwapMax=0`, `TasksMax=8192`) with `podman run --cgroups=disabled`, and the caps are read back from `/proc/self/cgroup` before it starts. The runner is `~/.cache/aet-4300c/img2.sh`. Dependencies are fetched on the host, so the container runs with `--network none`. Every run read back swap 0, and B8 was then measured.
 
 ## Built (commits `501a070` … `2de70f6`)
 
@@ -277,7 +278,7 @@ The kickoff runs every KiCad, Renode and tier-2 step under `--memory X --memory-
 | B5 | D1 passes extract after F-d | 8 I2C lines 97,767–119,603 fF under 150,000; SCK0/MOSI0 under 30,000 | measured |
 | B6 | Reference files change only in the spec hash, the SPI speed fields and the part name | As predicted. The 8 changed files under `boards/sentinel-01/` differ only in the spec-hash line, three `OSPEEDR` writes (PA5 and PA7 `10`→`01`, PA6 `10`→`00`), their three oracle lines and one combined mask, and the doc comment `a W25Q64JV` → `a W25Q64JVxIQ`. The `.repl` changes only in its hash line | measured (`git show e60cd48`) |
 | B7 | No tier-2 time; `TIER2_MIN` stays 96 | No tier-2 test was added; `TIER2_MIN` stays 96 | read |
-| B8 | Verdicts unchanged against `main`'s binaries | **Not measured: the container question** | — |
+| B8 | Verdicts unchanged against `main`'s binaries | **Unchanged** [measured, rule 3 as replaced]. `main` (`9dc8861`) and this build (`e1e174c`) each built their CLI, bridge and reference firmware in the pinned image. Each then ran all 15 campaign scenarios, replayed all 14 archives, and ran a 100 ms static `simulate`; the scripts are `~/.cache/aet-4300c/baseline/{build,run}.sh`. Keyed by scenario (`compare-keyed.py`), every verdict, expectation and finding is identical. The only differences are hashes: `state_sequence_hash`, and replay's `artifacts.{base,specification,topology,firmware}` (the spec hash, topology v4, the ELF). `simulate` passes on both. The flash reads `0xEF4017` and is witnessed identically, and the I2C reads are identical. Only hashes, paths and `boot.pc` (`0x080006e8` → `0x080006ea`, the new ELF's code) differ. Caps were read back in each scope: `memory.max` 8 GiB, `memory.swap.max` 0, `pids.max` 8192 (`~/.cache/aet-4300c/caps.log`). `4200`'s positional `compare.py` paired different scenarios, because the campaign prints in run-id order, so its apparent verdict flips are an artefact. | measured |
 | B9 | Note 2 never reached on the LQFP144 | As predicted; held as data and tested (`a_vbat_pin_is_held_to_2_mhz`) | read, measured |
 
 ### Refusals shadowed by an earlier one (reduction candidates outside this fence)
