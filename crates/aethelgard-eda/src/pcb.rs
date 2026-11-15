@@ -608,9 +608,9 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
         }
         let target = {
             item.shared(&items[anchor])
-            .first()
-            .and_then(|net| items[anchor].pad_on(net))
-            .map(|(x, y)| (at.0 + x, at.1 + y))
+                .first()
+                .and_then(|net| items[anchor].pad_on(net))
+                .map(|(x, y)| (at.0 + x, at.1 + y))
         }
         .unwrap_or_else(|| {
             placed[anchor]
@@ -655,7 +655,10 @@ fn place_anchored(
             .get(own)
             .ok_or_else(|| internal(reference, format!("anchored by pad {own}, which it lacks")))?;
         let (pin, _) = ic.pads.get(theirs).ok_or_else(|| {
-            internal(reference, format!("anchored to {} pad {theirs}, which it lacks", a.ic))
+            internal(
+                reference,
+                format!("anchored to {} pad {theirs}, which it lacks", a.ic),
+            )
         })?;
         pairs.push((*mine, (at.0 + pin.0, at.1 + pin.1)));
     }
@@ -667,9 +670,9 @@ fn place_anchored(
             .iter()
             .map(|&(mine, pin)| (route::rotate(theta, mine), pin))
             .collect();
-        let ideal = turned.iter().fold((0, 0), |s, &(m, p)| {
-            (s.0 + p.0 - m.0, s.1 + p.1 - m.1)
-        });
+        let ideal = turned
+            .iter()
+            .fold((0, 0), |s, &(m, p)| (s.0 + p.0 - m.0, s.1 + p.1 - m.1));
         let (kx, ky) = g.keep.centre();
         let target = (ideal.0 / n + kx, ideal.1 / n + ky);
         let Some(origin) = spot(g, target, taken) else {
@@ -1362,11 +1365,15 @@ mod tests {
     fn an_arcs_circle_holds_its_three_points() {
         // A quarter of the unit circle, in nanometres, and the XT30PW-M's
         // first silkscreen arc (start, mid, end, mm).
-        let ((x, y), r) = super::circle([(1_000_000, 0), (707_107, 707_107), (0, 1_000_000)])
-            .expect("a circle");
+        let ((x, y), r) =
+            super::circle([(1_000_000, 0), (707_107, 707_107), (0, 1_000_000)]).expect("a circle");
         assert!(x.abs() <= 1 && y.abs() <= 1, "{x} {y}");
         assert!((1_000_000..=1_000_004).contains(&r), "{r}");
-        let pts = [(-8_150_000, -8_890_000), (-9_260_000, -10_000_000), (-8_150_000, -11_110_000)];
+        let pts = [
+            (-8_150_000, -8_890_000),
+            (-9_260_000, -10_000_000),
+            (-8_150_000, -11_110_000),
+        ];
         let ((x, y), r) = super::circle(pts).expect("a circle");
         for (px, py) in pts {
             let d2 = i128::from(px - x).pow(2) + i128::from(py - y).pow(2);

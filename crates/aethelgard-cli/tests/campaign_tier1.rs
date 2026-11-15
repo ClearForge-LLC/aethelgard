@@ -2573,8 +2573,9 @@ fn the_droop_scenarios_carry_only_identifiers_the_base_set_admits() {
     }
 }
 
-/// `AET-WO-4300d`'s seam (adversarial A6): the twin models no power tree, so
-/// a scenario whose base declares one is refused before any run.
+/// `AET-WO-4300d` adversarial A6: the twin models no power tree, so a scenario
+/// whose base declares one is refused before any run, until the battery-sag
+/// work order (`AET-WO-4300d2` §1.9).
 #[test]
 fn a_scenario_on_a_power_tree_is_refused_before_any_run() {
     let tb = toolbox(&good());
@@ -2594,7 +2595,7 @@ fn a_scenario_on_a_power_tree_is_refused_before_any_run() {
         &work.firmware,
         &work.archive,
     );
-    expect_refusal(&out, 2, "PowerNotEmitted");
+    expect_refusal(&out, 2, "PowerNotSimulated");
     assert!(!work.archive.exists(), "an archive was made");
 }
 

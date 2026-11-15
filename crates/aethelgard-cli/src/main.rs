@@ -745,6 +745,7 @@ fn check_kicad(
 ) -> Result<verdict::Verdict, run::Stop> {
     let original = input::file_check(path)?;
     let mut declared = None;
+    let mut read_spec_value = None;
     let (rules, spec_sha256) = match spec {
         Some(file) => {
             let (spec, sha256) = read_spec(Some(file)).map_err(|(refusal, code)| run::Stop {
@@ -754,6 +755,7 @@ fn check_kicad(
                 message: refusal.error.message,
             })?;
             declared = Some(aethelgard_eda::stack::Stack::of(&spec));
+            read_spec_value = Some((spec.clone(), sha256.clone()));
             (
                 aethelgard_eda::rules::Rules::from_specification(&spec),
                 Some(sha256),
@@ -804,6 +806,16 @@ fn check_kicad(
     // KiCad's parity check reads the schematic named like the board, beside
     // it; the copy is scanned like the board before any tool runs, and the
     // board is judged on the strict reading `prepare` made of it.
+    // A power tree's layout rules, judged from the same board (`AET-WO-4300d2`).
+    let mut power = None;
+    let mut power_findings = Vec::new();
+    if let (Some(stack), Some(tree), Some((spec, sha256))) = (&declared, &board, &read_spec_value)
+        && spec.power.is_some()
+    {
+        let (record, findings) = power_gate(spec, sha256, stack, tree)?;
+        power = Some(record);
+        power_findings = findings;
+    }
     let schematic = match (schematic, &board) {
         (Some(path), Some(board)) => {
             let copy = input::file(path, &scratch.tool.join(kicad::Check::Erc.copy_name()))?;
@@ -841,7 +853,8 @@ fn check_kicad(
     args.push(input.copy.clone().into_os_string());
     let out = invocation(args, "status-run").run()?;
     let code = out.code("kicad-cli")?;
-    let findings = kicad::judge(check, code, &report, &version)?;
+    let mut findings = kicad::judge(check, code, &report, &version)?;
+    findings.extend(power_findings);
     let mut v = verdict::Verdict::new(
         check.name(),
         &input,
@@ -856,6 +869,7 @@ fn check_kicad(
         v.rules = Some(rules.source.name());
         v.specification_sha256 = spec_sha256;
         v.pairs = pairs;
+        v.power = power;
         v.schematic = schematic.map(|s| verdict::InputReport {
             path: s.original.display().to_string(),
             sha256: s.sha256,
@@ -867,6 +881,86 @@ fn check_kicad(
 /// The board crate `generate` writes for the specification in `file`, its
 /// paths relative to the crate; every refusal as a `Stop`, with `solve`'s and
 /// `generate`'s kinds and codes.
+/// `check drc --spec` on a specification with a power tree (`AET-WO-4300d2`
+/// §1.3-§1.4): the board read and its labels proved by copper, each loop rule
+/// measured, each domain's source and return pad on its net (`K5`), each
+/// class named with its width, and every rule the board cannot show named.
+/// A rule the board breaks is a finding; a board the rules cannot be read
+/// from is refused.
+fn power_gate(
+    spec: &Specification,
+    sha256: &str,
+    stack: &aethelgard_eda::stack::Stack,
+    tree: &aethelgard_eda::strict::Tree,
+) -> Result<(verdict::PowerRecord, Vec<verdict::Finding>), run::Stop> {
+    use aethelgard_eda::{loops, route};
+    let stop = |code: u8, kind: &'static str| {
+        move |message: String| run::Stop {
+            code,
+            kind,
+            id: None,
+            message,
+        }
+    };
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part)
+        .map_err(|e| stop(EXIT_INVALID_SPEC, e.kind())(e.to_string()))?;
+    let solved = aethelgard_ir::solve(spec, &table, sha256)
+        .map_err(|e| stop(EXIT_INVALID_SPEC, e.kind())(e.to_string()))?;
+    let rules = loops::rules(spec, &solved, &table)
+        .map_err(|e| stop(EXIT_INVALID_SPEC, e.kind())(e.to_string()))?;
+    let (b, r) = route::read(tree, stack).map_err(stop(EXIT_UNREADABLE, "BoardUnreadable"))?;
+    route::connectivity(&b, &r).map_err(stop(EXIT_UNREADABLE, "NetLabelsDisagree"))?;
+    let records = loops::judge(&b, &rules).map_err(stop(EXIT_UNREADABLE, "LoopPartMissing"))?;
+    let finding = |kind: &str, message: String| verdict::Finding {
+        kind: kind.to_owned(),
+        severity: "error".to_owned(),
+        message,
+        location: Vec::new(),
+    };
+    let mut findings = Vec::new();
+    if let Err(m) = loops::source_pads(&b, &solved) {
+        findings.push(finding("source_pad", m));
+    }
+    for l in records.iter().filter(|l| l.verdict == "fail") {
+        let worst = l.pads.iter().map(|g| g.gap_um).max().unwrap_or(0);
+        findings.push(finding(
+            "loop_rule",
+            format!(
+                "{} is {worst} um from {} (pads {}), over the {} um bound: {}",
+                l.part,
+                l.ic,
+                l.pads
+                    .iter()
+                    .map(|g| format!("{} to {}", g.pad, g.pin))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                l.bound_um,
+                l.rule
+            ),
+        ));
+    }
+    let classes = stack
+        .classes
+        .iter()
+        .map(|c| verdict::ClassRecord {
+            name: c.name.clone(),
+            width_um: c.rule.width_nm / 1000,
+            via_um: c
+                .via_declared
+                .then_some((c.rule.via_nm / 1000, c.rule.drill_nm / 1000)),
+            nets: c.nets.clone(),
+        })
+        .collect();
+    Ok((
+        verdict::PowerRecord {
+            loops: records.into_iter().map(verdict::LoopRecord::from).collect(),
+            classes,
+            conditions: loops::conditions(spec),
+        },
+        findings,
+    ))
+}
+
 fn generated_board(file: &Path) -> Result<std::collections::BTreeMap<String, String>, run::Stop> {
     let (spec, sha256) = read_spec(Some(file)).map_err(|(refusal, code)| run::Stop {
         code,

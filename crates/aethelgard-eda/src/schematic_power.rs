@@ -27,7 +27,7 @@ use std::collections::BTreeMap;
 use aethelgard_ir::power::{Power, Resistor};
 use aethelgard_ir::power_parts::{self, Direction, Kind, Role, Row};
 
-use aethelgard_ir::{PinTable, SolvedTopology};
+use aethelgard_ir::{PinTable, SolvedTopology, SpiDevice};
 
 use super::{Anchor, Builder, Conn, EmitError, Part};
 
@@ -100,9 +100,12 @@ fn row(reference: &str, part: &str) -> Result<&'static Row, EmitError> {
     let table = power_parts::table().map_err(|e| EmitError::Internal(e.to_string()))?;
     // belt-and-suspenders: `validate` refuses a part the table lacks
     // (`PowerPartUnknown`) before any emitter runs.
-    table
-        .get(part)
-        .ok_or_else(|| refuse(reference, format!("`{part}` is not in the power parts table")))
+    table.get(part).ok_or_else(|| {
+        refuse(
+            reference,
+            format!("`{part}` is not in the power parts table"),
+        )
+    })
 }
 
 /// Picofarads the way schematics write them: `100n`, `10u`, `2u2`.
@@ -249,15 +252,17 @@ pub(crate) fn spelled(p: &Power) -> Vec<String> {
 
 /// Each crossing's device: the reference of the one SPI device on its bus,
 /// with its B-side nets, which the device is drawn on instead of the bus's.
-pub(crate) fn behind(b: &mut Builder<'_>, p: &Power) -> Result<BTreeMap<String, Behind>, EmitError> {
-    let spec = b.spec;
+///
+/// `spi` is the specification's SPI devices, which `schematic` reads for this
+/// module (`RUL-16`: `eda`'s one reader of declared devices).
+pub(crate) fn behind(
+    b: &mut Builder<'_>,
+    p: &Power,
+    spi: &[SpiDevice],
+) -> Result<BTreeMap<String, Behind>, EmitError> {
     let mut out = BTreeMap::new();
     for c in &p.crossings {
-        let devices: Vec<_> = spec
-            .declared_spi_devices()
-            .iter()
-            .filter(|d| d.bus == c.bus)
-            .collect();
+        let devices: Vec<_> = spi.iter().filter(|d| d.bus == c.bus).collect();
         let [device] = devices.as_slice() else {
             return Err(refuse(
                 &c.reference,
@@ -314,6 +319,7 @@ fn lines(reference: &str, part: &str) -> Result<Vec<(Line, String)>, EmitError> 
 pub(crate) fn draw(
     b: &mut Builder<'_>,
     p: &Power,
+    spi: &[SpiDevice],
     behind: &BTreeMap<String, Behind>,
     mcu: &str,
     solved: &SolvedTopology,
@@ -323,7 +329,7 @@ pub(crate) fn draw(
         regulator(b, r)?;
     }
     for c in &p.crossings {
-        crossing(b, c, behind)?;
+        crossing(b, c, spi, behind)?;
     }
     for s in &p.sense {
         let pin = solved
@@ -436,7 +442,10 @@ fn regulator(b: &mut Builder<'_>, reg: &aethelgard_ir::power::Regulator) -> Resu
             }
             for e in of(Role::Inductor) {
                 let Kind::Inductor(l) = &row(&e.reference, &e.part)?.kind else {
-                    return Err(refuse(&e.reference, format!("`{}` is not an inductor", e.part)));
+                    return Err(refuse(
+                        &e.reference,
+                        format!("`{}` is not an inductor", e.part),
+                    ));
                 };
                 // The nominal: the row's ± tolerance is symmetric.
                 let n = &l.nanohenries.range;
@@ -504,6 +513,7 @@ fn regulator(b: &mut Builder<'_>, reg: &aethelgard_ir::power::Regulator) -> Resu
 fn crossing(
     b: &mut Builder<'_>,
     c: &aethelgard_ir::power::Crossing,
+    spi: &[SpiDevice],
     behind: &BTreeMap<String, Behind>,
 ) -> Result<(), EmitError> {
     let spec = b.spec;
@@ -513,8 +523,7 @@ fn crossing(
         .iter()
         .find(|x| x.id == c.bus)
         .ok_or_else(|| refuse(&c.reference, format!("no SPI bus `{}`", c.bus)))?;
-    let device = spec
-        .declared_spi_devices()
+    let device = spi
         .iter()
         .find(|d| d.bus == c.bus)
         .ok_or_else(|| refuse(&c.reference, format!("bus `{}` has no device", c.bus)))?;
@@ -540,7 +549,10 @@ fn crossing(
         Line::Cs => device.cs.net.clone(),
     };
     let Kind::Translator(t) = &r.kind else {
-        return Err(refuse(&c.reference, format!("`{}` is not a translator", c.part)));
+        return Err(refuse(
+            &c.reference,
+            format!("`{}` is not a translator", c.part),
+        ));
     };
     let sym = crate::library::symbol(r.symbol.as_str())?;
     let pins = super::pins(&sym).map_err(EmitError::Internal)?;
@@ -564,13 +576,23 @@ fn crossing(
         conns.insert(number(b_pin)?, Conn::Net(b_nets[&line].clone()));
     }
     ic(b, &c.reference, r, conns)?;
-    resistor(b, &c.cs_pull_up, a.clone(), Conn::Net(device.cs.net.clone()))?;
+    resistor(
+        b,
+        &c.cs_pull_up,
+        a.clone(),
+        Conn::Net(device.cs.net.clone()),
+    )?;
     let (vcca, vccb) = (pin(&c.reference, r, "VCCA")?, pin(&c.reference, r, "VCCB")?);
     for e in &c.external {
         let (rail, at) = match e.role {
             Role::BypassA => (a.clone(), &vcca),
             Role::BypassB => (bside.clone(), &vccb),
-            _ => return Err(refuse(&e.reference, "a translator part that is not a bypass")),
+            _ => {
+                return Err(refuse(
+                    &e.reference,
+                    "a translator part that is not a bypass",
+                ));
+            }
         };
         capacitor(b, &e.reference, &e.part, rail, g.clone())?;
         anchor(b, &c.reference, &[("1", at)], NEAR_NM, BYPASS_RULE);

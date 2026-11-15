@@ -203,7 +203,28 @@
       "via_diameter_um": 600
     }
   },
-  "net_classes": [],
+  "net_classes": [
+    {
+      "name": "POWER",
+      "track_width_um": 500,
+      "via": null,
+      "nets": [
+        "VBAT",
+        "VDD_5V"
+      ]
+    },
+    {
+      "name": "SUPPLY_MCU",
+      "track_width_um": 200,
+      "via": {
+        "diameter_um": 700,
+        "drill_um": 300
+      },
+      "nets": [
+        "VDD_3V3"
+      ]
+    }
+  ],
   "diff_pairs": [],
   "motor_outputs": [],
   "power": {

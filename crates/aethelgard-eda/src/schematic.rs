@@ -24,6 +24,9 @@ use sha2::{Digest, Sha256};
 use crate::library::{self, LibraryError};
 use crate::sexpr::{self, Sx, mm};
 
+// The power tree's drawing, a child of this module beside it in `src/`
+// (`strict_fence` gives every file of `src/` a role).
+#[path = "schematic_power.rs"]
 mod power;
 pub(crate) use power::BATTERY_NET;
 
@@ -101,9 +104,7 @@ impl EmitError {
                 Some(id)
             }
             Self::UnknownPin { net, .. } | Self::Unroutable { net, .. } => Some(net),
-            Self::Library(_)
-            | Self::BoardUnroutable(_)
-            | Self::Internal(_) => None,
+            Self::Library(_) | Self::BoardUnroutable(_) | Self::Internal(_) => None,
         }
     }
 }
@@ -756,7 +757,7 @@ pub(crate) fn design(
     }
     // Each crossing's device is drawn on the translator's B side.
     let behind = match &spec.power {
-        Some(p) => power::behind(&mut b, p)?,
+        Some(p) => power::behind(&mut b, p, spec.declared_spi_devices())?,
         None => BTreeMap::new(),
     };
     for d in spec.declared_spi_devices() {
@@ -808,7 +809,15 @@ pub(crate) fn design(
         b.decouple(&d.reference, &d.supply, "100n")?;
     }
     if let Some(p) = &spec.power {
-        power::draw(&mut b, p, &behind, &mcu_ref, solved, table)?;
+        power::draw(
+            &mut b,
+            p,
+            spec.declared_spi_devices(),
+            &behind,
+            &mcu_ref,
+            solved,
+            table,
+        )?;
     }
     connectors(&mut b)?;
     Ok((b.parts, b.rails))

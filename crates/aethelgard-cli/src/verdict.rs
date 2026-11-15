@@ -28,6 +28,11 @@ pub struct Verdict {
     /// (`AET-WO-1308` §1.3): each pair as the board's copper measures it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pairs: Option<Vec<PairRecord>>,
+    /// `check drc --spec` of a specification with a power tree
+    /// (`AET-WO-4300d2`): its loop rules as the board measures them, each
+    /// class with its width, and what the board cannot show.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub power: Option<PowerRecord>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub harness: Option<String>,
     /// `prove` only (`AET-WO-3301` §1.4): `generated` when the crate copied is
@@ -436,6 +441,54 @@ pub struct Finding {
     pub location: Vec<Where>,
 }
 
+/// The power tree on a judged board (`AET-WO-4300d2`).
+#[derive(Serialize)]
+pub struct PowerRecord {
+    pub loops: Vec<LoopRecord>,
+    pub classes: Vec<ClassRecord>,
+    pub conditions: Vec<String>,
+}
+
+/// One loop rule as the board measures it (`aethelgard_eda::loops`).
+#[derive(Serialize)]
+pub struct LoopRecord {
+    pub part: String,
+    pub ic: String,
+    /// Each pad with its IC pin and the copper-edge gap, in micrometres
+    /// rounded up.
+    pub pads: Vec<(String, String, i64)>,
+    pub bound_um: i64,
+    pub rule: &'static str,
+    pub verdict: &'static str,
+}
+
+impl From<aethelgard_eda::loops::LoopRecord> for LoopRecord {
+    fn from(l: aethelgard_eda::loops::LoopRecord) -> Self {
+        Self {
+            part: l.part,
+            ic: l.ic,
+            pads: l
+                .pads
+                .into_iter()
+                .map(|g| (g.pad, g.pin, g.gap_um))
+                .collect(),
+            bound_um: l.bound_um,
+            rule: l.rule,
+            verdict: l.verdict,
+        }
+    }
+}
+
+/// A declared net class as the board is laid with it: its width, its via
+/// (diameter and drill) when it declares one, and its nets by board name.
+#[derive(Serialize)]
+pub struct ClassRecord {
+    pub name: String,
+    pub width_um: i64,
+    pub via_um: Option<(i64, i64)>,
+    pub nets: Vec<String>,
+}
+
 #[derive(Serialize)]
 pub struct Where {
     pub description: String,
@@ -513,6 +566,7 @@ impl Verdict {
             specification_sha256: None,
             schematic: None,
             pairs: None,
+            power: None,
             harness: None,
             harness_provenance: None,
             cover_count: None,

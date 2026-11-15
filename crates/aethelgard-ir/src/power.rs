@@ -1970,9 +1970,13 @@ pub fn thermal_arrays(spec: &Specification) -> Vec<(String, String, crate::therm
     for r in &p.regulators {
         // belt-and-suspenders: `validate` refuses an unknown part and a pad
         // role the row does not map (step 9a, the parser's pin roles).
-        let Some(row) = table.get(&r.part) else { continue };
+        let Some(row) = table.get(&r.part) else {
+            continue;
+        };
         let Kind::Buck(b) = &row.kind else { continue };
-        let Some(pad) = row.pins.get(&b.thermal_vias.pad) else { continue };
+        let Some(pad) = row.pins.get(&b.thermal_vias.pad) else {
+            continue;
+        };
         out.push((
             r.reference.clone(),
             pad.clone(),
