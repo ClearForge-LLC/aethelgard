@@ -970,6 +970,26 @@ pub(crate) fn write_moved(
 ) -> Result<String, EmitError> {
     let items = items(parts)?;
     let layout = layout_of(&items, moves)?;
+    let mut order: Vec<usize> = (0..items.len()).collect();
+    order.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference));
+    // `place` returns each item's placement at the item's index.
+    let mut footprints = Vec::new();
+    for i in order {
+        let p = &layout.placed[i];
+        footprints.push(footprint(project, &items[i], p.origin, p.rotation)?);
+    }
+    write_placed(project, footprints, layout.outline, stack)
+}
+
+/// The board of `footprints`, each already placed and netted, inside
+/// `outline`, routed: the second half of [`write`], for a board whose parts
+/// the specification cannot yet declare (`AET-WO-1309` FEEDBACK D1).
+pub fn write_placed(
+    project: &str,
+    footprints: Vec<Sx>,
+    outline: Rect,
+    stack: &crate::stack::Stack,
+) -> Result<String, EmitError> {
     let mut layers = vec![Sx::atom("layers")];
     for (id, name, kind, user) in LAYERS {
         // Inner copper rows follow F.Cu and precede B.Cu, as KiCad saves them.
@@ -1007,17 +1027,12 @@ pub(crate) fn write_moved(
         Sx::List(vec![Sx::atom("paper"), Sx::str("A4")]),
         Sx::List(layers),
     ];
-    let mut order: Vec<usize> = (0..items.len()).collect();
-    order.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference));
-    // `place` returns each item's placement at the item's index.
     let mut parts = Vec::new();
-    for i in order {
-        let p = &layout.placed[i];
-        let fp = footprint(project, &items[i], p.origin, p.rotation)?;
+    for fp in footprints {
         parts.push(route::part_of(&fp).map_err(EmitError::Internal)?);
         out.push(fp);
     }
-    let o = layout.outline;
+    let o = outline;
     let board = route::Board {
         outline: o,
         parts,
@@ -1086,6 +1101,22 @@ fn copper(project: &str, routed: &route::Routed, o: Rect, stack: &crate::stack::
             uuid_sx(&format!("{project}/via/{}/{} {}", v.net, v.at.0, v.at.1)),
         ]));
     }
+    for a in &routed.arrays {
+        for &at in &a.at {
+            out.push(Sx::List(vec![
+                Sx::atom("via"),
+                at_sx("at", at),
+                Sx::node("size", &[&mm(a.via_nm)]),
+                Sx::node("drill", &[&mm(a.drill_nm)]),
+                Sx::List(vec![Sx::atom("layers"), Sx::str("F.Cu"), Sx::str("B.Cu")]),
+                net(&a.net),
+                uuid_sx(&format!(
+                    "{project}/thermal/{}/{}/{} {}",
+                    a.reference, a.pad, at.0, at.1
+                )),
+            ]));
+        }
+    }
     for (n, l) in &routed.zones {
         let corner = |x, y| Sx::node("xy", &[&mm(x), &mm(y)]);
         out.push(Sx::List(vec![
@@ -1098,8 +1129,8 @@ fn copper(project: &str, routed: &route::Routed, o: Rect, stack: &crate::stack::
             Sx::node("filled_areas_thickness", &["no"]),
             Sx::List(vec![
                 Sx::atom("fill"),
-                Sx::node("thermal_gap", &["0.5"]),
-                Sx::node("thermal_bridge_width", &["0.5"]),
+                Sx::node("thermal_gap", &[&mm(route::THERMAL_GAP_NM)]),
+                Sx::node("thermal_bridge_width", &[&mm(route::THERMAL_BRIDGE_NM)]),
                 Sx::node("island_removal_mode", &["0"]),
             ]),
             Sx::List(vec![

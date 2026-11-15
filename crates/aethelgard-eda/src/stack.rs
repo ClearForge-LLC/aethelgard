@@ -45,6 +45,58 @@ pub struct Stack {
     /// none, whose board is then today's.
     pub classes: Vec<Class>,
     pub pairs: Vec<Pair>,
+    /// How each declared through-hole part's pads join a plane or zone of
+    /// their own net, by reference (`AET-WO-1309` F5). A through-hole pad of
+    /// a filled net with no entry here is refused by name (`INV-06`).
+    pub joins: Vec<(String, Join)>,
+    /// Each declared thermal-via array: the pad it is under and its rule
+    /// (`AET-WO-1309` §1.2). The engine emits it; the gate judges it from
+    /// this, never from the board.
+    pub thermal: Vec<ThermalPad>,
+}
+
+/// How a through-hole pad meets a fill of its own net.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Join {
+    Solid,
+    Relief,
+}
+
+/// A declared thermal-via array, in nanometres: `columns` along the
+/// footprint's x as drawn at rotation 0, `rows` along its y, centred on the
+/// pad, `pitch_nm` apart both ways.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ThermalPad {
+    pub reference: String,
+    pub pad: String,
+    pub columns: usize,
+    pub rows: usize,
+    pub pitch_nm: i64,
+    pub drill_nm: i64,
+    pub via_nm: i64,
+    /// The layers each via must join besides the pad's F.Cu.
+    pub layers: Vec<String>,
+}
+
+impl ThermalPad {
+    /// The array `rule` (an IR part row's, validated) declares under
+    /// `reference`'s pad `pad`.
+    pub fn of(
+        reference: &str,
+        pad: &str,
+        rule: &aethelgard_ir::thermal::ThermalVias,
+    ) -> ThermalPad {
+        ThermalPad {
+            reference: reference.to_owned(),
+            pad: pad.to_owned(),
+            columns: usize::from(rule.columns),
+            rows: usize::from(rule.rows),
+            pitch_nm: nm(rule.pitch_um),
+            drill_nm: nm(rule.drill_um),
+            via_nm: nm(rule.diameter_um()),
+            layers: rule.layers.clone(),
+        }
+    }
 }
 
 /// The copper one net is laid with: its track width and its via.
@@ -155,6 +207,11 @@ impl Stack {
                     width_nm: nm(p.width_um),
                 })
                 .collect(),
+            // No part row a specification can declare carries either yet:
+            // the regulators table and the power-in connector are `4300d`'s
+            // (FEEDBACK D1), so a board with either is refused at the gate.
+            joins: Vec::new(),
+            thermal: Vec::new(),
         }
     }
 
@@ -263,5 +320,7 @@ pub(crate) fn reference() -> Stack {
         width_nm: 200_000,
         classes: vec![],
         pairs: vec![],
+        joins: vec![],
+        thermal: vec![],
     }
 }

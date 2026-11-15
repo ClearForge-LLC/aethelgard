@@ -177,6 +177,7 @@ fn no_copper_touches_an_unconnected_pad() {
             outline: board.outline,
             stack: stack(),
             parts: vec![route::Part {
+                rotation: 0,
                 reference: "lone".into(),
                 pads: vec![pad.clone()],
                 courtyard: Vec::new(),
