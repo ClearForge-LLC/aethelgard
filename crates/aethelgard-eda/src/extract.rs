@@ -886,6 +886,27 @@ enum Load {
     Driver,
 }
 
+/// A device's pin on an SPI line the MCU drives: its part's cited maximum,
+/// or a refusal by name when the table cites none (`AET-WO-4300c` D3). No
+/// drawable part lacks one today (the ICM-20948 has no vendored symbol), so
+/// only its unit test reaches the refusal.
+fn device_pin(
+    table: &aethelgard_ir::parts::PartsTable,
+    reference: &str,
+    part: &str,
+    net: &str,
+) -> Result<Load, Refused> {
+    match table.get(part).and_then(|p| p.pin_capacitance_femtofarads) {
+        Some(ff) => Ok(Load::Pin(ff)),
+        None => Err(refused(
+            "UnboundedPinCapacitance",
+            format!(
+                "the design puts {reference} ({part}) on `{net}`, a line the MCU drives, and the parts table cites no maximum for its pin capacitance"
+            ),
+        )),
+    }
+}
+
 /// One line and every part the specification puts on it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Line {
@@ -1001,19 +1022,7 @@ pub fn lines(
                 let load = if part.lib_id == crate::schematic::MCU {
                     Load::Driver
                 } else if let Some(d) = device {
-                    let cited = table
-                        .get(&d.part)
-                        .and_then(|p| p.pin_capacitance_femtofarads);
-                    let Some(ff) = cited else {
-                        return Err(refused(
-                            "UnboundedPinCapacitance",
-                            format!(
-                                "the design puts {} ({}) on `{net}`, a line the MCU drives, and the parts table cites no maximum for its pin capacitance",
-                                part.reference, d.part
-                            ),
-                        ));
-                    };
-                    Load::Pin(ff)
+                    device_pin(table, &part.reference, &d.part, net)?
                 } else {
                     // belt-and-suspenders: today's generator puts only the
                     // MCU and the bus's devices on SCK and MOSI.
@@ -1514,5 +1523,24 @@ mod tests {
             y1: 1,
         };
         assert_eq!(pad_ff(&ph, inverted), None);
+    }
+
+    /// `AET-WO-4300c` D3: a device pin on SCK or MOSI counts at its part's
+    /// cited maximum; a part with only a typical value (the ICM-20948's
+    /// "< 10" pF) is refused by name, never given that value.
+    #[test]
+    fn a_device_pin_is_its_cited_maximum_or_refused() {
+        let table = aethelgard_ir::parts::table().unwrap();
+        assert_eq!(
+            device_pin(table, "U4", "W25Q64JVxIQ", "SPI_SCK"),
+            Ok(Load::Pin(8_000))
+        );
+        let err = device_pin(table, "U5", "ICM20948", "SPI_SCK").unwrap_err();
+        assert_eq!(err.kind, "UnboundedPinCapacitance");
+        assert!(err.message.contains("U5 (ICM20948) on `SPI_SCK`"), "{}", err.message);
+        assert_eq!(
+            device_pin(table, "U9", "UNLISTED", "SPI_SCK").unwrap_err().kind,
+            "UnboundedPinCapacitance"
+        );
     }
 }
