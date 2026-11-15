@@ -1,0 +1,23 @@
+== Regulator_Switching.kicad_sym sha256 6dacbfde85ce964f09f329e807a1a784e7af39a2dc0456a30fec9aae311a7a8c
+  LMR33630ADDA: footprint Package_SO:Texas_HSOP-8-1EP_3.9x4.9mm_P1.27mm_ThermalVias; pins 1 GND:power_in, 2 VIN:power_in, 3 EN:input, 4 PG:open_collector, 5 FB:input, 6 VCC:power_out, 7 BOOT:input, 8 SW:output, 9 GND:passive
+  TPS62933: footprint Package_TO_SOT_SMD:SOT-583-8; pins 1 RT:passive, 2 EN:input, 3 VIN:power_in, 4 GND:power_in, 5 SW:output, 6 BST:passive, 7 SS:passive, 8 FB:input
+  LMR51430: footprint Package_TO_SOT_SMD:SOT-23-6; pins 1 GND:power_in, 2 SW:power_out, 3 VIN:power_in, 4 FB:input, 5 EN:input, 6 CB:passive
+  AP63205WU: footprint Package_TO_SOT_SMD:TSOT-23-6; pins 1 FB:input, 2 EN:input, 3 IN:power_in, 4 GND:power_in, 5 SW:output, 6 BST:passive
+  AP63203WU: footprint Package_TO_SOT_SMD:TSOT-23-6; pins 1 FB:input, 2 EN:input, 3 IN:power_in, 4 GND:power_in, 5 SW:output, 6 BST:passive
+== Regulator_Linear.kicad_sym sha256 09d0d95dbe5040452c683015077fcdff881b87112c1610008347f5be0df1eaea
+  TLV75518PDBV: footprint Package_TO_SOT_SMD:SOT-23-5; pins 1 IN:power_in, 2 GND:power_in, 3 EN:input, 4 NC:no_connect, 5 OUT:power_out
+  TLV75533PDBV: footprint Package_TO_SOT_SMD:SOT-23-5; pins 1 IN:power_in, 2 GND:power_in, 3 EN:input, 4 NC:no_connect, 5 OUT:power_out
+  AP2112K-1.8: footprint Package_TO_SOT_SMD:SOT-23-5; pins 1 VIN:power_in, 2 GND:power_in, 3 EN:input, 4 NC:no_connect, 5 VOUT:power_out
+== Logic_LevelTranslator.kicad_sym sha256 1512b92932491c4c5828e20bfccb0883088a4237e25137fb56a99f576ddee746
+  TXU0304PW: footprint Package_SO:TSSOP-14_4.4x5mm_P0.65mm; pins 1 V_{CCA}:power_in, 2 A1:input, 3 A2:input, 4 A3:input, 5 A4Y:output, 6 NC:no_connect, 7 GND:power_in, 8 OE:input, 9 NC:no_connect, 10 B4:input, 11 B3Y:output, 12 B2Y:output, 13 B1Y:output, 14 V_{CCB}:power_in
+  TXB0104PW: footprint Package_SO:TSSOP-14_4.4x5mm_P0.65mm; pins 1 VCCA:power_in, 2 A1:bidirectional, 3 A2:bidirectional, 4 A3:bidirectional, 5 A4:bidirectional, 6 NC:no_connect, 7 GND:power_in, 8 OE:input, 9 NC:no_connect, 10 B4:bidirectional, 11 B3:bidirectional, 12 B2:bidirectional, 13 B1:bidirectional, 14 VCCB:power_in
+== footprints (pad name/kind/shape counts)
+  Package_SO.pretty/Texas_HSOP-8-1EP_3.9x4.9mm_P1.27mm_ThermalVias: sha256 bfc7ec4585d3cb1b pads 20 {'smd/rect': 12, 'thru_hole/circle': 8}
+  Package_SO.pretty/Texas_HSOP-8-1EP_3.9x4.9mm_P1.27mm: sha256 a2de8e28dd9f6a17 pads 11 {'smd/rect': 11}
+  Package_TO_SOT_SMD.pretty/SOT-583-8: sha256 1edaacd60f1584e0 pads 8 {'smd/roundrect': 8}
+  Package_TO_SOT_SMD.pretty/SOT-23-6: sha256 f341c73aac9dcb55 pads 6 {'smd/roundrect': 6}
+  Package_TO_SOT_SMD.pretty/TSOT-23-6: sha256 2b3e097508a6979b pads 6 {'smd/roundrect': 6}
+  Package_TO_SOT_SMD.pretty/SOT-23-5: sha256 455a3f7c3e5eb5b8 pads 5 {'smd/roundrect': 5}
+  Package_SO.pretty/TSSOP-14_4.4x5mm_P0.65mm: sha256 e4bf82cea6d3b325 pads 14 {'smd/roundrect': 14}
+  Connector_AMASS.pretty/AMASS_XT30PW-M_1x02_P2.50mm_Horizontal: sha256 07c4d13ce29915ab pads 4 {'thru_hole/circle': 3, 'thru_hole/roundrect': 1}
+  Connector_AMASS.pretty/AMASS_XT60PW-M_1x02_P7.20mm_Horizontal: sha256 138a788b1bf40eae pads 4 {'thru_hole/rect': 2, 'thru_hole/roundrect': 1, 'thru_hole/circle': 1}

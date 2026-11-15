@@ -1,0 +1,21 @@
+2026-11-15T04:14:11Z lmr33630.pdf https://www.ti.com/lit/ds/symlink/lmr33630.pdf http=200 type=application/pdf bytes=4156395 sha256=3b0920a4e56a0b3f5f214a6317d3c06cff6e541e5054024adc31c30acc50c04a
+2026-11-15T04:14:11Z tps62933.pdf https://www.ti.com/lit/ds/symlink/tps62933.pdf http=200 type=application/pdf bytes=4034940 sha256=16ec2eac43c7374eb9e7edd7df7bdb24de6862f695e1582c68716ced4820e5f6
+2026-11-15T04:14:11Z lmr51430.pdf https://www.ti.com/lit/ds/symlink/lmr51430.pdf http=200 type=application/pdf bytes=1512584 sha256=f7d8053844fb07ae773844f023373c0c570507ca61603fe28dda15364987296c
+2026-11-15T04:14:11Z tlv755p.pdf https://www.ti.com/lit/ds/symlink/tlv755p.pdf http=200 type=application/pdf bytes=2882462 sha256=d617843b63c23921f6ed65ae0f91c251cb79d14ae290aeb1778ffdf89b662e97
+2026-11-15T04:14:11Z txu0304.pdf https://www.ti.com/lit/ds/symlink/txu0304.pdf http=200 type=application/pdf bytes=2666346 sha256=425338d941c0f63da7c2f9dc23136161de457e137394d9b10e38bb0bd602550f
+2026-11-15T04:14:12Z txb0104.pdf https://www.ti.com/lit/ds/symlink/txb0104.pdf http=200 type=application/pdf bytes=3420900 sha256=9a852f7bcc4104df0676d7ee3e4918429c3db2cbd79a5338aca0a1d34471e400
+2026-11-15T04:14:12Z ap6320x.pdf https://www.diodes.com/assets/Datasheets/AP63200-AP63201-AP63203-AP63205.pdf http=200 type=application/pdf bytes=1226090 sha256=ef99daa3789d835bc025dfcb4c605c5c2e6d3e7223e86d40b33e6b497ea5a722
+2026-11-15T04:14:13Z ap2112.pdf https://www.diodes.com/assets/Datasheets/AP2112.pdf http=200 type=application/pdf bytes=755270 sha256=ef8d376f2ec356e29172eb9e053819a0ebdcc576dba7fc9ab0505c568427920f
+2026-11-15T04:14:13Z st-test.pdf https://www.st.com/resource/en/datasheet/stm32h753zi.pdf http=curl: (92) HTTP/2 stream 1 was not closed cleanly: INTERNAL_ERROR (err 2)
+000 FAILED
+2026-11-15T04:15:48Z panasonic-erj-pa.pdf https://industrial.panasonic.com/cdbs/www-data/pdf/RDA0000/AOA0000C304.pdf http=curl: (28) Operation timed out after 60002 milliseconds with 0 bytes received
+000 FAILED
+2026-11-15T04:15:49Z yageo-rc.pdf https://www.yageo.com/upload/media/product/products/datasheet/rchip/PYu-RC_Group_51_RoHS_L_12.pdf http=404 type=text/html bytes=1049496 sha256=933916f847a7ad0414f3935e671d469cc6e0cedf9e2bb1d6b034c217b9b5c832
+2026-11-15T04:15:49Z vishay-crcw.pdf https://www.vishay.com/docs/20035/dcrcwe3.pdf http=200 type=application/pdf bytes=150402 sha256=113d2d57a320a1b1736c92ba201e9a705c38ebf2c78a8f79523ee47aebdae8b3
+2026-11-15T04:19:40Z amass-xt30pw-m.pdf https://www.tme.eu/Document/6eb2005a51a52592b3f19e8a450c54c8/XT30PW-M.pdf http=403 type=text/html bytes=5598 sha256=d6e94ebf640d0c483849148d4b73af22a641ebbc8b0bba4b7711586a8b5bbc59
+2026-11-15T04:19:40Z amass-xt30pb-m.pdf https://www.tme.eu/Document/e5863b891432488e7531b3c4468225ac/XT30PB-M.pdf http=403 type=text/html bytes=5598 sha256=7b8b33c9612eb577cfb2ec7cd61ad32d813f1bc495b984c4d0056b6fd7357283
+2026-11-15T04:19:40Z amass-xt60pw-m.pdf https://www.tme.eu/Document/b13629717d44ae038681dba08d18c0b6/XT60PW-M.pdf http=403 type=text/html bytes=5598 sha256=c3f9b5dad5e15d6e04bc2967c797267dcf75bb3474f646ee3b0451919c288a61
+2026-11-15T04:20:03Z amass-xt30pw-m-spec.pdf https://www.china-amass.net/uploads/XT30PW-M-SPEC.pdf http=404 type=text/html bytes=146 sha256=55f7d9e99b8e2d4e0e193b2f0275501e6d9c1ebd29cadbea6a0da48a8587e3e0
+2026-11-15T04:20:03Z amass-xt60pw-m-spec.pdf https://www.china-amass.net/uploads/XT60PW-M-SPEC.pdf http=404 type=text/html bytes=146 sha256=55f7d9e99b8e2d4e0e193b2f0275501e6d9c1ebd29cadbea6a0da48a8587e3e0
+2026-11-15T04:20:05Z amass-xt30pw-m-comet.pdf https://store.comet.bg/download-file.php?id=30571 http=200 type=application/pdf bytes=2912566 sha256=c57b5a373507b2cd0004dbd3e043448347b5ff8e95d6435d61a409c81cdcf185
+2026-11-15T04:47:50Z vishay-tnpw.pdf https://www.vishay.com/docs/28758/tnpw_e3.pdf http=200 type=application/pdf bytes=363615 sha256=6f0508c568cb355aaf2accdd33fe3a780d3ea5ef207c4c9a71839a8acadc33a5
