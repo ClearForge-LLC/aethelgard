@@ -1149,6 +1149,19 @@ pub fn lines(
                     .filter(|d| d.bus == bus.id);
                 let load = if part.lib_id == crate::schematic::MCU {
                     Load::Driver
+                } else if crate::schematic::is_translator(part) {
+                    // `AET-WO-4300d2` D6 (b): SCES935A p. 9 prints the TXU0304's
+                    // Cio once per temperature range, across its MIN, TYP and
+                    // MAX columns, at OE = GND and 3.3 V on both sides: no
+                    // maximum for this circuit, and no typical stands in for
+                    // one (`AET-WO-4300c` D3).
+                    return Err(refused(
+                        "TranslatorPinUnbounded",
+                        format!(
+                            "the design puts translator {} on `{net}`, and its data pins' capacitance has no stated maximum (SCES935A p. 9, Cio)",
+                            part.reference
+                        ),
+                    ));
                 } else if let Some(d) = device {
                     device_pin(table, &part.reference, &d.part, net)?
                 } else if crate::schematic::is_connector(part) {

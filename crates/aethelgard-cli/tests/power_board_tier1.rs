@@ -251,3 +251,150 @@ fn a_starved_thermal_array_is_refused() {
     moved.arrays[0].at[0].0 += 300_000;
     assert!(route::check(&b, &moved).is_err());
 }
+
+// ---- The crossing and the IMU behind it (`AET-WO-4300d2` D2 (a), K6, D6, D7) ----
+
+/// The vendored ICM-20948 footprint, as its bytes.
+fn icm_footprint() -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../aethelgard-kicad-lib/data/kicad-10.0.7/footprints/Sensor_Motion.pretty/InvenSense_QFN-24_3x3mm_P0.4mm.kicad_mod",
+    );
+    std::fs::read_to_string(path).unwrap()
+}
+
+fn full() -> (Specification, SolvedTopology, PinTable) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../aethelgard-ir/tests/fixtures/sentinel-02-power.json");
+    let spec: Specification = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    spec.validate().unwrap();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+    (spec, solved, table)
+}
+
+/// K6 and D2 (a): the committed fixture, crossing and all, validates and is
+/// drawn. Its board does not route yet (D7: the ICM-20948's 0.2 mm pads at
+/// 0.4 mm pitch, under the 200 um floor on the 125 um grid), refused by name;
+/// and `extract` refuses the IMU's MCU-side lines by name (D6 (b)): the
+/// translator's data pins have no stated maximum capacitance.
+#[test]
+fn the_crossing_is_drawn_and_its_limits_are_refused_by_name() {
+    let (spec, solved, table) = full();
+    match schematic::emit(&spec, &solved, &table) {
+        Err(e @ EmitError::Unroutable { .. }) => assert!(e.to_string().contains("U5"), "{e}"),
+        other => panic!("{other:?}"),
+    }
+    match aethelgard_eda::extract::lines(&spec, &solved, &table) {
+        Err(r) => {
+            assert_eq!(r.kind, "TranslatorPinUnbounded", "{r:?}");
+            assert!(r.message.contains("U13"), "{r:?}");
+        }
+        Ok(_) => panic!("the IMU's lines were bounded"),
+    }
+}
+
+/// D2 (a): the ICM-20948's keepout is read from its vendored footprint as a
+/// rectangle on F.Cu forbidding tracks, vias, pads and fill; a track or a via
+/// inside it is refused by `route::check`, and one beside it is not.
+#[test]
+fn a_keepout_is_read_routed_around_and_judged() {
+    let mut text = icm_footprint();
+    text = text.replacen(
+        "(footprint \"InvenSense_QFN-24_3x3mm_P0.4mm\"",
+        "(footprint \"InvenSense_QFN-24_3x3mm_P0.4mm\" (at 100 100)",
+        1,
+    );
+    text = text.replacen("\"REF**\"", "\"U5\"", 1);
+    let part = route::part_of(&aethelgard_eda::sexpr::parse(&text).unwrap()).unwrap();
+    assert_eq!(part.keepouts.len(), 1);
+    let k = &part.keepouts[0];
+    assert_eq!(k.layer, route::Layer::F);
+    assert!(k.tracks && k.vias && k.pads && k.fill);
+    assert_eq!(
+        (k.rect.x0, k.rect.y0, k.rect.x1, k.rect.y1),
+        (99_125_000, 99_205_000, 100_875_000, 100_795_000)
+    );
+    // The keepout alone: the gate's pad clearance measures pads by their
+    // boxes, which read the QFN's corner pads 1 and 24 as 0.177 mm apart
+    // (0.218 mm as rounded copper; FEEDBACK D7), so the pads are left out.
+    let mut part = part;
+    part.pads.clear();
+    let (spec, _, _) = fixture();
+    let board = route::Board {
+        outline: aethelgard_eda::pcb::Rect {
+            x0: 90_000_000,
+            y0: 90_000_000,
+            x1: 110_000_000,
+            y1: 110_000_000,
+        },
+        parts: vec![part],
+        stack: {
+            // The fixture's board, without its power parts' arrays and joins.
+            let mut stack = Stack::of(&spec);
+            stack.thermal.clear();
+            stack.joins.clear();
+            stack
+        },
+    };
+    let track = |y: i64| route::Routed {
+        segments: vec![route::Segment {
+            net: "/X".into(),
+            layer: route::Layer::F,
+            start: (95_000_000, y),
+            end: (96_000_000, y),
+        }],
+        ..Default::default()
+    };
+    route::check(&board, &track(95_000_000)).unwrap();
+    let mut inside = track(95_000_000);
+    inside.segments[0].start = (100_000_000, 100_000_000);
+    inside.segments[0].end = (100_000_000, 100_500_000);
+    let err = route::check(&board, &inside).unwrap_err();
+    assert!(err.contains("keepout"), "{err}");
+    let via = route::Routed {
+        vias: vec![route::Via {
+            net: "/X".into(),
+            at: (100_000_000, 100_000_000),
+        }],
+        ..Default::default()
+    };
+    let err = route::check(&board, &via).unwrap_err();
+    assert!(err.contains("keepout"), "{err}");
+    // A footprint zone that is not a keepout is refused, never dropped.
+    let copper = text.replacen("(keepout", "(fill_keepout_removed", 1);
+    let err = route::part_of(&aethelgard_eda::sexpr::parse(&copper).unwrap()).unwrap_err();
+    assert!(err.contains("not a keepout"), "{err}");
+}
+
+/// `RUL-03` as amended for D2 (a): the strict reader admits a keepout's own
+/// `(connect_pads (clearance N))` inside a footprint, and nothing more: the
+/// same clearance on a zone that is not a footprint's keepout, or a keepout's
+/// `connect_pads` carrying anything else, is still a local clearance.
+#[test]
+fn the_reader_admits_a_footprints_keepout_clearance_and_nothing_more() {
+    let (spec, solved, table) = fixture();
+    let e = schematic::emit(&spec, &solved, &table).unwrap();
+    let lib = icm_footprint()
+        .replacen(
+            "(footprint \"InvenSense_QFN-24_3x3mm_P0.4mm\"",
+            "(footprint \"Sensor_Motion:InvenSense_QFN-24_3x3mm_P0.4mm\" (at 50 50)",
+            1,
+        )
+        .replacen("\"REF**\"", "\"U99\"", 1);
+    let with = |fp: &str| {
+        let end = e.board.trim_end().rfind(')').unwrap();
+        format!("{}{fp}\n)\n", &e.board[..end])
+    };
+    let prepare = |text: &str| {
+        let tree = aethelgard_eda::board::read(text).unwrap();
+        aethelgard_eda::board::prepare_read(&tree, text, "(setup)")
+    };
+    prepare(&with(&lib)).unwrap();
+    let extra = lib.replacen("(clearance 0)", "(clearance 0) (unrelated 1)", 1);
+    assert_eq!(prepare(&with(&extra)).unwrap_err().kind(), "LocalClearance");
+    let not_keepout = lib.replacen("(keepout", "(kept", 1);
+    assert_eq!(
+        prepare(&with(&not_keepout)).unwrap_err().kind(),
+        "LocalClearance"
+    );
+}

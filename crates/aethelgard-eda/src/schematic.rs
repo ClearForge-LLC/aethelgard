@@ -254,6 +254,11 @@ pub(crate) fn is_connector(part: &Part) -> bool {
     part.lib_id.starts_with("Connector_")
 }
 
+/// Whether `part` is a power tree's level translator (`AET-WO-4300d2`).
+pub(crate) fn is_translator(part: &Part) -> bool {
+    part.lib_id.starts_with("Logic_LevelTranslator:")
+}
+
 /// A UUID derived from content: sha256 of a domain-separated key, the first
 /// 16 bytes, with RFC 9562's version 8 and variant bits set.
 pub fn uuid(key: &str) -> String {
