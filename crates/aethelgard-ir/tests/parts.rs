@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/parts.json`. It moves only with the file, on purpose.
-const PARTS_SHA256: &str = "3252804077e9985f2beca19ff1eb83a74ae83b4e5d8f8a9eae71d5794659217c";
+const PARTS_SHA256: &str = "ddfb72f8e51792b92c4a542764f721c1b272079231bf2c8ed34ce29f7fa57f1d";
 
 fn embedded() -> Value {
     serde_json::from_str(PARTS_JSON).unwrap()
@@ -50,12 +50,20 @@ fn the_embedded_table_is_pinned_by_its_sha256() {
 }
 
 #[test]
-fn the_embedded_table_parses_and_holds_five_parts() {
+fn the_embedded_table_parses_and_holds_seven_parts() {
     let t = table().unwrap();
     let names: Vec<&str> = t.parts().iter().map(|p| p.part.as_str()).collect();
     assert_eq!(
         names,
-        ["BME280", "ICM20948", "ICP10111", "TMP117", "W25Q64JVxIQ"]
+        [
+            "BME280",
+            "BMP581",
+            "ICM20948",
+            "ICM42688P",
+            "ICP10111",
+            "TMP117",
+            "W25Q64JVxIQ"
+        ]
     );
     assert_eq!(parse_parts(PARTS_JSON).unwrap(), *t);
 }
@@ -198,8 +206,8 @@ fn refuses_an_unknown_key_at_top_level() {
 }
 
 #[test]
-fn refuses_schema_version_2_and_4() {
-    for version in [2, 4] {
+fn refuses_schema_version_3_and_5() {
+    for version in [3, 5] {
         let mut doc = embedded();
         doc["schema_version"] = version.into();
         let err = parse_parts(&doc.to_string()).unwrap_err();
@@ -493,7 +501,7 @@ fn a_key_twice_a_missing_renode_a_case_twin_or_no_parts_is_refused() {
     let err = parse_parts(&doc.to_string()).unwrap_err();
     assert_refused(&err, Some("bme280"), "twice");
     // No parts at all.
-    let err = parse_parts(r#"{"schema_version": 3, "parts": []}"#).unwrap_err();
+    let err = parse_parts(r#"{"schema_version": 4, "parts": []}"#).unwrap_err();
     assert_refused(&err, None, "`parts` is empty");
 }
 
@@ -564,7 +572,9 @@ fn the_stand_ins_hold_their_scripts_and_lifecycles() {
         life,
         [
             ("BME280", Lifecycle::Active, false),
+            ("BMP581", Lifecycle::Active, false),
             ("ICM20948", Lifecycle::Eol, true),
+            ("ICM42688P", Lifecycle::Active, false),
             ("ICP10111", Lifecycle::Eol, true),
             ("TMP117", Lifecycle::Active, false),
             ("W25Q64JVxIQ", Lifecycle::Active, false),
@@ -616,11 +626,134 @@ fn a_channel_rounds_half_away_from_zero_and_wraps_signed() {
         zero,
         lsb,
         signed,
+        bytes: 2,
+        big_endian: true,
     };
     assert_eq!(c(1, 0, (3, 2), false).raw(), 2);
     assert_eq!(c(-1, 0, (3, 2), true).raw(), 0xFFFE);
     assert_eq!(c(-1, 0, (16384, 1), true).raw(), 0xC000);
     assert_eq!(c(1, 0, (1, 4), false).raw(), 0);
+    // `AET-WO-4220`: a 24-bit word wraps in 24 bits, and its bytes cross the
+    // wire in the stated order.
+    let wide = |stimulus, big_endian| Channel {
+        quantity: Quantity::Pressure,
+        stimulus,
+        zero: 0,
+        lsb: (64, 1),
+        signed: true,
+        bytes: 3,
+        big_endian,
+    };
+    assert_eq!(wide(-1, false).raw(), 0xFF_FFC0);
+    assert_eq!(wide(101_325, false).wire(), [0x40, 0xF3, 0x62]);
+    assert_eq!(wide(101_325, true).wire(), [0x62, 0xF3, 0x40]);
+    assert_eq!(c(1, 0, (16384, 1), true).wire(), [0x40, 0x00]);
+}
+
+/// `AET-WO-4220`: the two parts of our own, each step as the firmware makes
+/// it and the judge expects it. The ICM-42688-P's temperature at 29 degrees C
+/// is (29 - 25) x 132.48 = 529.92, so rounding (530, 0x0212) and truncation
+/// (529) differ: the table rounds, as the datasheet's conversion does (the
+/// `4210` D-A8 amendment).
+#[test]
+fn the_two_parts_of_our_own_make_their_cited_scripts() {
+    use aethelgard_ir::parts::{Lifecycle, StepKind};
+    let t = table().unwrap();
+    let shape = |part: &str| -> Vec<(StepKind, Vec<u8>, u8, u64, u32)> {
+        t.get(part)
+            .unwrap()
+            .steps()
+            .iter()
+            .map(|s| (s.kind, s.write.clone(), s.width, s.expected, s.settle_us))
+            .collect()
+    };
+    assert_eq!(
+        shape("ICM42688P"),
+        [
+            (StepKind::Identity, vec![0xF5], 1, 0x47, 0),
+            (StepKind::Configure, vec![0x4C, 0xC0], 0, 0, 0),
+            (StepKind::Configure, vec![0x50, 0x66], 0, 0, 0),
+            (StepKind::Configure, vec![0x4E, 0x03], 0, 0, 20_000),
+            (StepKind::Data, vec![0x9D], 6, 0x1202_0000_0040, 0),
+        ]
+    );
+    assert_eq!(
+        shape("BMP581"),
+        [
+            (StepKind::Identity, vec![0x01], 1, 0x50, 0),
+            (StepKind::Configure, vec![0x36, 0x40, 0x81], 0, 0, 10_000),
+            (StepKind::Data, vec![0x1D], 6, 0x0000_1940_F362, 0),
+        ]
+    );
+    let truncated = (29 - 25) * 13_248 / 100;
+    assert_eq!(truncated, 529);
+    for part in ["ICM42688P", "BMP581"] {
+        let p = t.get(part).unwrap();
+        assert_eq!(p.lifecycle, Lifecycle::Active, "{part}");
+        assert!(!p.stand_in, "{part}");
+        assert_eq!(p.pin_capacitance_femtofarads, None, "{part}: D10");
+    }
+    // The stand-ins answer at once and wait for nothing.
+    for part in ["ICM20948", "ICP10111"] {
+        assert!(
+            t.get(part)
+                .unwrap()
+                .steps()
+                .iter()
+                .all(|s| s.settle_us == 0)
+        );
+    }
+}
+
+/// `AET-WO-4220`: the configuration list, the wait and the wider words are
+/// each refused when malformed.
+#[test]
+fn refuses_a_malformed_schema_4_script() {
+    type Mutate = fn(&mut Value);
+    let cases: [(&str, &str, Mutate); 9] = [
+        ("BMP581", "settle_us", |p| {
+            p["script"]["configure"]["settle_us"] = Value::Null
+        }),
+        ("BMP581", "settle_us", |p| {
+            p["script"]["configure"]["settle_us"] = 0.into()
+        }),
+        ("BMP581", "settle_us", |p| {
+            p["script"]["configure"]["settle_us"] = 30_001.into()
+        }),
+        ("BMP581", "settle_us", |p| {
+            p["script"]["configure"]
+                .as_object_mut()
+                .unwrap()
+                .remove("settle_us");
+        }),
+        ("ICM42688P", "script.configure.writes", |p| {
+            let w = p["script"]["configure"]["writes"][0].clone();
+            p["script"]["configure"]["writes"] =
+                json!([w.clone(), w.clone(), w.clone(), w.clone(), w]);
+        }),
+        ("ICM42688P", "script.configure.writes[1]", |p| {
+            p["script"]["configure"]["writes"][1] = json!([])
+        }),
+        ("BMP581", "bytes", |p| {
+            p["script"]["data"]["channels"][0]["bytes"] = 4.into()
+        }),
+        ("BMP581", "order", |p| {
+            p["script"]["data"]["channels"][0]["order"] = "middle".into()
+        }),
+        ("BMP581", "more than 8", |p| {
+            let c = p["script"]["data"]["channels"][0].clone();
+            p["script"]["data"]["channels"] = json!([c.clone(), c.clone(), c]);
+        }),
+    ];
+    for (part, field, mutate) in cases {
+        let err = refused_entry(part, mutate);
+        assert_refused(&err, Some(part), field);
+    }
+    // A 24-bit signed word holds what 16 bits cannot, and no more.
+    let err = refused_entry("BMP581", |p| {
+        p["script"]["data"]["channels"][1]["stimulus"] = 131_072.into()
+    });
+    assert_refused(&err, Some("BMP581"), "24-bit word");
 }
 
 #[test]
@@ -695,8 +828,8 @@ fn a_script_and_its_two_citations_come_together() {
 fn refuses_a_malformed_script() {
     type Mutate = fn(&mut Value);
     let cases: [(&str, Mutate); 9] = [
-        ("script.configure.write", |p| {
-            p["script"]["configure"]["write"] = json!([])
+        ("script.configure.writes", |p| {
+            p["script"]["configure"]["writes"] = json!([])
         }),
         ("script.data.write", |p| {
             p["script"]["data"]["write"] = json!(["0x1FF"])
@@ -710,7 +843,7 @@ fn refuses_a_malformed_script() {
                 json!([c.clone(), c.clone(), c.clone(), c.clone(), c]);
         }),
         ("quantity", |p| {
-            p["script"]["data"]["channels"][0]["quantity"] = "pressure".into()
+            p["script"]["data"]["channels"][0]["quantity"] = "humidity".into()
         }),
         ("unit", |p| {
             p["script"]["data"]["channels"][0]["unit"] = "celsius".into()

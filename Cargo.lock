@@ -81,6 +81,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "aethelgard-renode-models"
+version = "0.1.0"
+
+[[package]]
 name = "aethelgard-svd-hal"
 version = "0.1.0"
 dependencies = [
@@ -100,6 +104,7 @@ name = "aethelgard-twin"
 version = "0.1.0"
 dependencies = [
  "aethelgard-ir",
+ "aethelgard-renode-models",
  "aethelgard-svd-hal",
  "serde_json",
  "sha2",

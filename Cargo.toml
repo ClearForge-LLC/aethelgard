@@ -10,6 +10,7 @@ members = [
     "crates/aethelgard-evolve",
     "crates/aethelgard-pincheck",
     "crates/aethelgard-cli",
+    "models/renode",
 ]
 # Generated board crates (AET-WO-1400) and the analog bridge (AET-WO-2200):
 # never members, so the workspace's lints and `forbid(unsafe_code)` do not reach
@@ -34,6 +35,7 @@ aethelgard-twin = { path = "crates/aethelgard-twin", version = "0.1.0" }
 aethelgard-eda = { path = "crates/aethelgard-eda", version = "0.1.0" }
 aethelgard-kicad-lib = { path = "crates/aethelgard-kicad-lib", version = "0.1.0" }
 aethelgard-pincheck = { path = "crates/aethelgard-pincheck", version = "0.1.0" }
+aethelgard-renode-models = { path = "models/renode", version = "0.1.0" }
 clap = { version = "4", features = ["derive"] }
 landlock = "0.4.7"
 rmcp = { version = "=3.7.0", default-features = false, features = ["server", "transport-io"] }

@@ -26,6 +26,13 @@
 //! conversion of the stimulus the twin sets (D3), computed here from the
 //! table alone, so the generator and the judge share it and neither takes it
 //! from the other.
+//!
+//! Schema 4 (`AET-WO-4220`, ruled on PR #140) lets a script configure more
+//! than one register, as D7 makes the ICM-42688-P's set its full scale, its
+//! byte order and its enable, and wait a cited time after: a model of our own
+//! samples on its own timer (D8), so its data is not ready the instant the
+//! enable lands. A data word is two or three bytes, in either byte order (the
+//! BMP581's are 24-bit, least significant byte first).
 
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
@@ -41,8 +48,10 @@ pub const PARTS_JSON: &str = include_str!("../data/parts.json");
 /// Version 2 added `pin_capacitance` and named the flash for its ordering
 /// code (`AET-WO-4300c` D3, F11). Version 3 made the identity's write a byte
 /// list with a mask, and added `lifecycle`, `stand_in`, `io_millivolts` and
-/// `script` (`AET-WO-4210`).
-pub const PARTS_SCHEMA_VERSION: u32 = 3;
+/// `script` (`AET-WO-4210`). Version 4 made `script.configure` a list of
+/// writes with a `settle_us`, and gave a channel its `bytes` and `order`
+/// (`AET-WO-4220`).
+pub const PARTS_SCHEMA_VERSION: u32 = 4;
 
 /// A bus kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,19 +63,35 @@ pub enum BusKind {
 /// The Renode 1.17.0 models a part may name, each with the buses it attaches
 /// to. A name outside this set is refused; `aethelgard-twin` maps each to its
 /// own model, exhaustively.
-pub const RENODE_MODELS: [(&str, &[BusKind]); 4] = [
+/// `Sensors.ICM42688P` and `Sensors.BMP581` are this project's own
+/// (`models/renode/`, `AET-WO-4220`), each written for one bus.
+pub const RENODE_MODELS: [(&str, &[BusKind]); 6] = [
     ("I2C.BME280", &[BusKind::I2c]),
     ("SPI.GenericSpiFlash", &[BusKind::Spi]),
+    ("Sensors.BMP581", &[BusKind::I2c]),
     ("Sensors.ICM20948", &[BusKind::I2c, BusKind::Spi]),
+    ("Sensors.ICM42688P", &[BusKind::Spi]),
     ("Sensors.ICP_101xx", &[BusKind::I2c]),
 ];
 
 /// The most bytes a step writes: the ICP-10111's 16-bit commands are 2.
 pub const MAX_STEP_WRITE: usize = 4;
 
-/// The most bytes a data read takes: two per channel, at most four channels,
-/// so one record's value fits 64 bits (`AET-WO-4210` S2, F18's `n <= 9`).
+/// The most channels a data read takes (`AET-WO-4210` S2, F18's `n <= 9`).
 pub const MAX_CHANNELS: usize = 4;
+
+/// The most bytes a data read takes, so one record's value fits 64 bits.
+pub const MAX_DATA_BYTES: u32 = 8;
+
+/// The most configuration writes a script makes (`AET-WO-4220`).
+pub const MAX_CONFIGURE: usize = 4;
+
+/// The longest wait a script may state after its configuration, in
+/// microseconds. The firmware's wait is sized for silicon (64 MHz, one cycle
+/// an iteration), so Renode, at 100 MIPS and a few instructions an
+/// iteration, takes longer; the boot's 100 ms must hold it with the rest of
+/// the script (`AET-WO-4220`).
+pub const MAX_SETTLE_US: u32 = 30_000;
 
 /// The highest SPI clock an entry may state: no part in the table comes near
 /// it, and anything above is a typo.
@@ -159,14 +184,17 @@ pub enum Quantity {
     AccelerationZ,
     /// In degrees Celsius.
     Temperature,
+    /// In pascals (`AET-WO-4220`).
+    Pressure,
 }
 
 /// Every quantity, its table name and its unit.
-pub const QUANTITIES: [(Quantity, &str, &str); 4] = [
+pub const QUANTITIES: [(Quantity, &str, &str); 5] = [
     (Quantity::AccelerationX, "acceleration_x", "g"),
     (Quantity::AccelerationY, "acceleration_y", "g"),
     (Quantity::AccelerationZ, "acceleration_z", "g"),
     (Quantity::Temperature, "temperature", "celsius"),
+    (Quantity::Pressure, "pressure", "pascal"),
 ];
 
 impl Quantity {
@@ -175,8 +203,9 @@ impl Quantity {
     }
 }
 
-/// One 16-bit word of a data read, high byte first: the quantity the twin
-/// sets to `stimulus`, and the datasheet's conversion,
+/// One word of a data read, `bytes` long (2 or 3), most significant byte
+/// first on the wire when `big_endian`, else least significant first: the
+/// quantity the twin sets to `stimulus`, and the datasheet's conversion,
 /// `raw = round((stimulus - zero) * lsb.0 / lsb.1)`, in two's complement when
 /// `signed`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,14 +215,28 @@ pub struct Channel {
     pub zero: i32,
     pub lsb: (u32, u32),
     pub signed: bool,
+    pub bytes: u8,
+    pub big_endian: bool,
 }
 
 impl Channel {
     /// The word the part answers for the stimulus, rounded half away from
-    /// zero. The parser refused a channel whose word does not fit 16 bits.
-    pub fn raw(&self) -> u16 {
-        // Two's complement in 16 bits; `channel` checked the range.
-        (self.rounded() & 0xFFFF) as u16
+    /// zero, in `bytes` bytes. The parser refused a channel whose word does
+    /// not fit them.
+    pub fn raw(&self) -> u32 {
+        // Two's complement in `bytes` bytes; `channel` checked the range.
+        let mask = (1u64 << (8 * u32::from(self.bytes))) - 1;
+        (self.rounded() as u64 & mask) as u32
+    }
+
+    /// The word's bytes in the order they cross the wire.
+    pub fn wire(&self) -> Vec<u8> {
+        let raw = self.raw().to_le_bytes();
+        let mut bytes = raw[..usize::from(self.bytes)].to_vec();
+        if self.big_endian {
+            bytes.reverse();
+        }
+        bytes
     }
 
     /// `round((stimulus - zero) * lsb.0 / lsb.1)`, half away from zero, in
@@ -205,15 +248,21 @@ impl Channel {
     }
 }
 
-/// What a device's bring-up does after its identity (`AET-WO-4210` S2): one
-/// configuration write, then one data read, each in its own transaction.
+/// What a device's bring-up does after its identity (`AET-WO-4210` S2): its
+/// configuration writes, a wait, then one data read, each write and the read
+/// in its own transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Script {
-    /// The bytes the configuration writes; nothing is read back.
-    pub configure: Vec<u8>,
+    /// The bytes each configuration write sends, in order; nothing is read
+    /// back (`AET-WO-4220`: 1 to [`MAX_CONFIGURE`]).
+    pub configure: Vec<Vec<u8>>,
+    /// How long the firmware waits after the last write before the data read,
+    /// in microseconds, cited to the datasheet's start-up and conversion
+    /// times; `None` only for a stand-in whose model answers at once.
+    pub settle_us: Option<u32>,
     /// The bytes the data read writes first (a register or a command).
     pub data: Vec<u8>,
-    /// The words it reads back, in order: two bytes each.
+    /// The words it reads back, in order.
     pub channels: Vec<Channel>,
 }
 
@@ -238,7 +287,9 @@ impl StepKind {
 /// One transaction of a device's script, as the firmware makes it and the
 /// judge expects it: write `write`, then read `width` bytes (none for a
 /// configuration), which a present part answers with `expected` under
-/// `mask`, the first byte on the wire as the most significant.
+/// `mask`, the first byte on the wire as the most significant. After it the
+/// firmware waits `settle_us` microseconds (the script's last configuration
+/// write only; 0 elsewhere), which the judge does not read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Step {
     pub kind: StepKind,
@@ -246,6 +297,7 @@ pub struct Step {
     pub width: u8,
     pub expected: u64,
     pub mask: u64,
+    pub settle_us: u32,
 }
 
 /// The bits a read of `width` bytes can set: a value with any bit above them
@@ -359,26 +411,34 @@ impl Part {
             width: id.width,
             expected: u64::from(id.value),
             mask: u64::from(id.mask),
+            settle_us: 0,
         }];
         if let Some(s) = &self.script {
-            steps.push(Step {
-                kind: StepKind::Configure,
-                write: s.configure.clone(),
-                width: 0,
-                expected: 0,
-                mask: 0,
-            });
-            let width = u8::try_from(2 * s.channels.len()).unwrap_or(u8::MAX);
-            let expected = s
-                .channels
-                .iter()
-                .fold(0u64, |v, c| (v << 16) | u64::from(c.raw()));
+            let last = s.configure.len().saturating_sub(1);
+            for (i, write) in s.configure.iter().enumerate() {
+                steps.push(Step {
+                    kind: StepKind::Configure,
+                    write: write.clone(),
+                    width: 0,
+                    expected: 0,
+                    mask: 0,
+                    settle_us: if i == last {
+                        s.settle_us.unwrap_or(0)
+                    } else {
+                        0
+                    },
+                });
+            }
+            let wire: Vec<u8> = s.channels.iter().flat_map(Channel::wire).collect();
+            let width = u8::try_from(wire.len()).unwrap_or(u8::MAX);
+            let expected = wire.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b));
             steps.push(Step {
                 kind: StepKind::Data,
                 write: s.data.clone(),
                 width,
                 expected,
                 mask: width_mask(width),
+                settle_us: 0,
             });
         }
         steps
@@ -453,14 +513,17 @@ struct RawPart {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawScript {
-    configure: RawWrite,
+    configure: RawConfigure,
     data: RawData,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawWrite {
-    write: Vec<String>,
+struct RawConfigure {
+    writes: Vec<Vec<String>>,
+    /// Required: `null` says the model answers at once (a stand-in only).
+    #[serde(deserialize_with = "Option::deserialize")]
+    settle_us: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -479,6 +542,8 @@ struct RawChannel {
     zero: i32,
     lsb: [u32; 2],
     signed: bool,
+    bytes: u8,
+    order: String,
 }
 
 #[derive(Deserialize)]
@@ -686,30 +751,69 @@ fn channel(raw: &RawChannel, at: usize) -> Result<Channel, String> {
     if num == 0 || den == 0 {
         return Err(format!("`{field}.lsb` holds a zero"));
     }
+    if !(2..=3).contains(&raw.bytes) {
+        return Err(format!("`{field}.bytes` is {}, not 2 or 3", raw.bytes));
+    }
+    let big_endian = match raw.order.as_str() {
+        "big" => true,
+        "little" => false,
+        other => {
+            return Err(format!(
+                "`{field}.order` is `{other}`, not `big` or `little`"
+            ));
+        }
+    };
     let c = Channel {
         quantity,
         stimulus: raw.stimulus,
         zero: raw.zero,
         lsb: (num, den),
         signed: raw.signed,
+        bytes: raw.bytes,
+        big_endian,
     };
     let rounded = c.rounded();
+    let bits = 8 * u32::from(c.bytes);
     let range = if c.signed {
-        -32_768..=32_767
+        -(1i128 << (bits - 1))..=(1i128 << (bits - 1)) - 1
     } else {
-        0..=65_535
+        0..=(1i128 << bits) - 1
     };
     if !range.contains(&rounded) {
         return Err(format!(
-            "`{field}`: the stimulus converts to {rounded}, which a {} 16-bit word cannot hold",
+            "`{field}`: the stimulus converts to {rounded}, which a {} {bits}-bit word cannot hold",
             if c.signed { "signed" } else { "unsigned" }
         ));
     }
     Ok(c)
 }
 
-fn script(raw: &RawScript) -> Result<Script, String> {
-    let configure = bytes(&raw.configure.write, "script.configure.write")?;
+fn script(raw: &RawScript, stand_in: bool) -> Result<Script, String> {
+    let writes = &raw.configure.writes;
+    if writes.is_empty() || writes.len() > MAX_CONFIGURE {
+        return Err(format!(
+            "`script.configure.writes` is not 1 to {MAX_CONFIGURE} writes"
+        ));
+    }
+    let configure = writes
+        .iter()
+        .enumerate()
+        .map(|(i, w)| bytes(w, &format!("script.configure.writes[{i}]")))
+        .collect::<Result<Vec<_>, _>>()?;
+    let settle_us = raw.configure.settle_us;
+    match settle_us {
+        None if !stand_in => {
+            return Err(
+                "`script.configure.settle_us` is null, which only a twin stand-in may be: a part's model samples on its own timer, so the firmware waits a cited time".to_owned(),
+            );
+        }
+        Some(us) if !(1..=MAX_SETTLE_US).contains(&us) => {
+            return Err(format!(
+                "`script.configure.settle_us` is {us}, not null or 1 to {MAX_SETTLE_US}"
+            ));
+        }
+        _ => {}
+    }
     let data = bytes(&raw.data.write, "script.data.write")?;
     if raw.data.channels.is_empty() || raw.data.channels.len() > MAX_CHANNELS {
         return Err(format!(
@@ -723,8 +827,15 @@ fn script(raw: &RawScript) -> Result<Script, String> {
         .enumerate()
         .map(|(i, c)| channel(c, i))
         .collect::<Result<Vec<_>, _>>()?;
+    let width: u32 = channels.iter().map(|c| u32::from(c.bytes)).sum();
+    if width > MAX_DATA_BYTES {
+        return Err(format!(
+            "`script.data.channels` read {width} bytes, more than {MAX_DATA_BYTES}"
+        ));
+    }
     Ok(Script {
         configure,
+        settle_us,
         data,
         channels,
     })
@@ -844,7 +955,11 @@ fn part(raw: RawPart) -> Result<Part, String> {
         .as_ref()
         .map(|r| millivolts(r, "io_millivolts"))
         .transpose()?;
-    let script = raw.script.as_ref().map(script).transpose()?;
+    let script = raw
+        .script
+        .as_ref()
+        .map(|s| script(s, raw.stand_in))
+        .transpose()?;
     let pin_capacitance = raw.pin_capacitance.max_femtofarads;
     if pin_capacitance.is_some_and(|c| !(1..=MAX_PIN_FEMTOFARADS).contains(&c)) {
         return Err(format!(
@@ -987,12 +1102,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_embedded_table_parses_and_holds_the_four_parts() {
+    fn the_embedded_table_parses_and_holds_the_seven_parts() {
         let t = table().unwrap();
         let names: Vec<&str> = t.parts().iter().map(|p| p.part.as_str()).collect();
         assert_eq!(
             names,
-            ["BME280", "ICM20948", "ICP10111", "TMP117", "W25Q64JVxIQ"]
+            [
+                "BME280",
+                "BMP581",
+                "ICM20948",
+                "ICM42688P",
+                "ICP10111",
+                "TMP117",
+                "W25Q64JVxIQ"
+            ]
         );
         assert_eq!(identity("BME280").unwrap().unwrap().value, 0x60);
         assert_eq!(identity("TMP117").unwrap().unwrap().width, 2);

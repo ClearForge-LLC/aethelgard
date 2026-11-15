@@ -1,0 +1,13 @@
+[package]
+name = "aethelgard-renode-models"
+description = "Aethelgard's own Renode peripheral models (C#), as text. Data only."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["renode","models","sensors","data"]
+categories = ["simulation","embedded"]
+
+[lints]
+workspace = true

@@ -2002,3 +2002,178 @@ fn the_dshot600_fixture_s_campaign_passes_inside_its_window() {
     }
     let _ = fs::remove_dir_all(&archive);
 }
+
+/// `AET-WO-4220` §2.3: the Sentinel-02-shaped fixture with the parts of our
+/// own, `sentinel-02-own.json`: the BMP581 (U7) on I2C1 beside the BME280
+/// and the TMP117, the ICM-42688-P (U5) on its own SPI bus beside the
+/// flash's, every part `active`, so no `accept_lifecycle` entry. The board
+/// crate comes from its generator and the platform from the twin's emitter,
+/// as the CLI makes them (KiCad has no symbol for either part yet: D5).
+fn own_board(label: &str) -> (PathBuf, PathBuf, PathBuf) {
+    let spec_path = root().join("crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json");
+    let bytes = fs::read(&spec_path).unwrap();
+    let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
+    spec.validate().unwrap();
+    let sha: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &sha).unwrap();
+    let answers = |part: &str| matches!(aethelgard_twin::model::model(part), Ok(Some(_)));
+    let files =
+        aethelgard_svd_hal::board::generate_with("sentinel-01-board", &solved, &table, &answers)
+            .unwrap();
+    let dir = std::env::temp_dir().join(format!("aet-4220-t2-{}-{label}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    for (rel, text) in &files {
+        let to = dir.join(rel);
+        fs::create_dir_all(to.parent().unwrap()).unwrap();
+        fs::write(&to, text).unwrap();
+    }
+    let platform = dir.join("sentinel-02-own.repl");
+    fs::write(&platform, aethelgard_twin::platform::emit(&solved).unwrap()).unwrap();
+    (dir, platform, spec_path)
+}
+
+/// Each bus's steps as the verdict reports them: (reference, step, observed).
+fn steps_of(v: &Value, bus: &str) -> Vec<(String, String, String)> {
+    v["boot"][bus]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            (
+                c["reference"].as_str().unwrap().to_owned(),
+                c["step"].as_str().unwrap().to_owned(),
+                c["observed"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect()
+}
+
+/// `AET-WO-4220` §2.3, PB6: both models of our own load from the CLI's
+/// pinned copies, and every step of their scripts is witnessed by its own
+/// one-line transaction; each data read answers the datasheet's conversion
+/// of the judge's stimulus, rounded as the datasheet converts (29 degrees C:
+/// 529.92 to 530, `0x0212`); no part needs a lifecycle acknowledgement.
+#[test]
+fn the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed() {
+    let (dir, platform, spec_path) = own_board("fixture");
+    let text = fs::read_to_string(&platform).unwrap();
+    assert_eq!(
+        aethelgard_twin::platform::own_models(&text).unwrap(),
+        [
+            aethelgard_twin::model::Model::Bmp581,
+            aethelgard_twin::model::Model::Icm42688p
+        ]
+    );
+    let elf = mutant_of(&dir, "own", |_| {});
+    let (code, v) = boot_on("own", &platform, &spec_path, &elf, "100ms");
+    assert_eq!(code, Some(0), "{v}");
+    let t = |r: &str, s: &str, o: &str| (r.to_owned(), s.to_owned(), o.to_owned());
+    assert_eq!(
+        steps_of(&v, "i2c"),
+        [
+            t("U2", "identity", "0x60"),
+            t("U7", "identity", "0x50"),
+            t("U7", "configure", "0x0"),
+            t("U7", "data", "0x1940f362"),
+        ]
+    );
+    assert_eq!(
+        steps_of(&v, "spi"),
+        [
+            t("U4", "identity", "0xef4017"),
+            t("U5", "identity", "0x47"),
+            t("U5", "configure", "0x0"),
+            t("U5", "configure", "0x0"),
+            t("U5", "configure", "0x0"),
+            t("U5", "data", "0x120200000040"),
+        ]
+    );
+    for bus in ["i2c_witness", "spi_witness"] {
+        for w in v["boot"][bus].as_array().unwrap() {
+            assert_eq!(w["observed"], w["expected"], "{w}");
+            assert!(!w["expected"].as_array().unwrap().is_empty(), "{w}");
+            if ["U5", "U7"].contains(&w["reference"].as_str().unwrap()) {
+                assert_eq!(w["expected"].as_array().unwrap().len(), 1, "{w}");
+            }
+        }
+    }
+    assert!(v.get("lifecycle").is_none(), "{v}");
+    answer(&format!(
+        "own fixture: instructions {}",
+        v["boot"]["instructions"]
+    ));
+}
+
+/// `AET-WO-4220` PB7: the models sample on their own timer (D8), so a
+/// firmware that reads before the cited wait reads the parts' reset values,
+/// as silicon would, and fails each data step by its value.
+#[test]
+fn without_the_cited_wait_each_data_read_answers_its_reset_value() {
+    let (dir, platform, spec_path) = own_board("no-wait");
+    let elf = mutant_of(&dir, "own-no-wait", |d| {
+        edit(d, "src/main.rs", "    settle(640000);\n", "");
+        edit(d, "src/main.rs", "    settle(1280000);\n", "");
+    });
+    let (code, v) = boot_on("own no wait", &platform, &spec_path, &elf, "100ms");
+    assert_eq!(code, Some(1), "{v}");
+    let data: Vec<(String, String, String)> = steps_of(&v, "i2c")
+        .into_iter()
+        .chain(steps_of(&v, "spi"))
+        .filter(|s| s.1 == "data")
+        .collect();
+    assert_eq!(
+        data,
+        [
+            ("U7".into(), "data".into(), "0x7f7f7f7f7f7f".into()),
+            // `INTF_CONFIG0` 0xC0 sets `FIFO_HOLD_LAST_DATA_EN`, under which a
+            // sense register reads 0 until its first sample (DS-000347 12.8,
+            // p. 59), not its reset -32768.
+            ("U5".into(), "data".into(), "0x0".into()),
+        ]
+    );
+    let k = kinds(&v);
+    assert!(k.contains(&"i2c_identity_mismatch"), "{k:?}");
+    assert!(k.contains(&"spi_identity_mismatch"), "{k:?}");
+}
+
+/// `AET-WO-4220` PB1, D6: the emitted platform loads with its models of our
+/// own included from the CLI's copies, and lists them; a header whose pin is
+/// not the twin's is refused before Renode loads anything.
+#[test]
+fn the_fixture_s_platform_lists_its_models_and_an_unpinned_one_is_refused() {
+    let (dir, platform, _) = own_board("listing");
+    let (code, v) = aethelgard(&["simulate", "--platform", platform.to_str().unwrap()]);
+    answer(&format!("own platform: exit={code:?} verdict={v}"));
+    assert_eq!(code, Some(0), "{v}");
+    let listed: Vec<(&str, &str)> = v["machine"]["peripherals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| (p["name"].as_str().unwrap(), p["type"].as_str().unwrap()))
+        .collect();
+    assert!(listed.contains(&("u5", "ICM42688P")), "{listed:?}");
+    assert!(listed.contains(&("u7", "BMP581")), "{listed:?}");
+    let text = fs::read_to_string(&platform).unwrap();
+    let (_, _, sha) = aethelgard_twin::model::OWN[0];
+    for (name, changed) in [
+        ("wrong-pin", text.replacen(sha, &"0".repeat(64), 1)),
+        (
+            "no-header",
+            text.lines()
+                .filter(|l| !l.contains(aethelgard_twin::platform::OWN_LINE))
+                .map(|l| format!("{l}\n"))
+                .collect(),
+        ),
+    ] {
+        assert_ne!(changed, text, "{name}");
+        let path = dir.join(format!("{name}.repl"));
+        fs::write(&path, changed).unwrap();
+        let (code, v) = aethelgard(&["simulate", "--platform", path.to_str().unwrap()]);
+        assert_eq!(code, Some(3), "{name}: {v}");
+        assert_eq!(v["error"]["kind"], "ModelUnpinned", "{name}: {v}");
+    }
+}
