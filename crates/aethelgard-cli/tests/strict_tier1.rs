@@ -153,14 +153,21 @@ fn the_corpus_is_1305s_and_its_schematic_counterparts_by_class() {
             "no schematic {class}"
         );
     }
-    let control = cases
+    // `AET-WO-3303` §1.4: a copper layer is read by its canonical name, so
+    // a user name on it, which KiCad loads (1306 F10's control), is refused
+    // by every gate that reads the board; KiCad alone (`drc`) still passes it.
+    let named = cases
         .iter()
         .find(|c| c.name == "user_layer_table_only")
         .unwrap();
-    assert!(
-        control.expect.iter().all(|e| e.code == 0),
-        "the control must pass"
-    );
+    for e in &named.expect {
+        let want = if e.gate == "drc" {
+            (0, "pass")
+        } else {
+            (3, "LayersDisagree")
+        };
+        assert_eq!((e.code, e.what.as_str()), want, "{}", e.gate);
+    }
 }
 
 /// §3: the reference board and schematic pass the strict reader and reach

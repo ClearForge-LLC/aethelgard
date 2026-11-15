@@ -744,18 +744,54 @@ fn every_admitted_identifier_character_survives_every_output() {
     fs::create_dir_all(&base).unwrap();
     let spec_path = base.join("spec.json");
     fs::write(&spec_path, serde_json::to_vec(&spec).unwrap()).unwrap();
-    let scenario = serde_json::json!({
-        "schema_version": 1,
-        "name": scenario_name,
-        // Only a relative `base` inside the current directory is accepted
-        // (`BaseOutsideRoot`): here, next to the scenario.
-        "base": "spec.json",
-        "expect": "pass",
-        "expect_findings": [],
-        "overrides": [{ "bus": sensors, "pull_up_ohms": 2200 }],
-    });
-    let scenario_path = base.join("scenario.json");
-    fs::write(&scenario_path, serde_json::to_vec(&scenario).unwrap()).unwrap();
+    // The seeded set, renamed (`AET-WO-3303` D1, ruled): the first scenario
+    // carries the admitted characters into the manifest.
+    let droop = serde_json::json!({"droop": {"domain": domain, "floor_millivolts": 2400,
+        "start_ns": 1000000, "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
+        "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3}});
+    let seeded = [
+        (
+            "scenario.json",
+            scenario_name.as_str(),
+            "pass",
+            serde_json::json!([]),
+            serde_json::json!([{ "bus": sensors, "pull_up_ohms": 3300 }]),
+        ),
+        (
+            "droop.json",
+            "droop",
+            "pass",
+            serde_json::json!([]),
+            serde_json::json!([droop]),
+        ),
+        (
+            "absent.json",
+            "absent",
+            "fail",
+            serde_json::json!(["spi_identity_mismatch", "spi_transaction_unwitnessed"]),
+            serde_json::json!([{ "spi_device_absent": refs[2] }]),
+        ),
+        (
+            "baseline.json",
+            "baseline",
+            "pass",
+            serde_json::json!([]),
+            serde_json::json!([{ "bus": sensors, "pull_up_ohms": 2200 }]),
+        ),
+    ];
+    for (file, name, expect, findings, overrides) in &seeded {
+        let scenario = serde_json::json!({
+            "schema_version": 2,
+            "name": name,
+            // Only a relative `base` inside the current directory is accepted
+            // (`BaseOutsideRoot`): here, next to the scenario.
+            "base": "spec.json",
+            "expect": expect,
+            "expect_findings": findings,
+            "overrides": overrides,
+        });
+        fs::write(base.join(file), serde_json::to_vec(&scenario).unwrap()).unwrap();
+    }
     let pkg = base.join("pkg");
 
     // A scenario's `base` is confined to the current directory, so this run
@@ -768,6 +804,9 @@ fn every_admitted_identifier_character_survives_every_output() {
             "spec.json",
             "--scenarios",
             "scenario.json",
+            "droop.json",
+            "absent.json",
+            "baseline.json",
             "--fab-out",
             pkg.to_str().unwrap(),
         ])
@@ -872,23 +911,36 @@ fn every_admitted_identifier_character_survives_every_output() {
         damage.push("the verdict names another scenario".into());
     }
     assert!(damage.is_empty(), "{}", damage.join("\n"));
+    // Ruled on #155: the reference's console port is named in the coverage
+    // row, `no fault kind yet: serial`, and does not block; every
+    // precondition is met, in the verdict and the manifest alike.
+    let met = serde_json::json!([
+        {"precondition": "every_harness_proved", "state": "met"},
+        {"precondition": "campaign_faults_every_bus_and_rail", "state": "met",
+            "no_fault_kind": ["serial port `CONSOLE` (no fault kind yet: serial)"]},
+        {"precondition": "every_gate_passed", "state": "met"},
+    ]);
+    assert_eq!(v["fab"]["preconditions"], met, "{v}");
+    assert_eq!(manifest["preconditions"], met, "{manifest}");
     fs::remove_dir_all(&base).unwrap();
 }
 
 const FOUR: &str = "crates/aethelgard-cli/tests/fixtures/four-layer.json";
-const FOUR_SCENARIO: &str = "crates/aethelgard-cli/tests/fixtures/four-layer-pullup.json";
+/// The 4-layer fixture's seeded set (`AET-WO-3303` D1, ruled): a tolerated
+/// pull-up and droop, the absent flash detected, and the 2.2 kΩ baseline.
+const FOUR_SCENARIOS: [&str; 4] = [
+    "crates/aethelgard-cli/tests/fixtures/four-layer-3k3.json",
+    "crates/aethelgard-cli/tests/fixtures/four-layer-droop.json",
+    "crates/aethelgard-cli/tests/fixtures/four-layer-spi-absent.json",
+    "crates/aethelgard-cli/tests/fixtures/four-layer-pullup.json",
+];
 
-/// `verify` of the 4-layer fixture with its 2.2 kΩ scenario and `flag <dir>`.
+/// `verify` of the 4-layer fixture with its seeded set and `flag <dir>`.
 fn four_verify(dir: &Path, flag: &str) -> (Option<i32>, String) {
-    aethelgard(&[
-        "verify",
-        "--spec",
-        FOUR,
-        "--scenarios",
-        FOUR_SCENARIO,
-        flag,
-        dir.to_str().unwrap(),
-    ])
+    let mut args = vec!["verify", "--spec", FOUR, "--scenarios"];
+    args.extend(FOUR_SCENARIOS);
+    args.extend([flag, dir.to_str().unwrap()]);
+    aethelgard(&args)
 }
 
 /// `AET-WO-4100` §2.6 and §4: the 4-layer fixture (OSH Park's stackup, ruled

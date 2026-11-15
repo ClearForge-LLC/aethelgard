@@ -364,3 +364,29 @@ fn a_malformed_header_is_refused_by_macro() {
     let wrong_half = text.replacen("PIN_AFIO_AF(8U,", "PIN_AFIO_AF(7U,", 1);
     assert_eq!(refused(&wrong_half).kind(), "MalformedHeader");
 }
+
+/// Review 2, A15.1: each symbol's name is compared in at most
+/// `SYMBOL.len() + 1` bytes, so 400,000 symbols naming one 8 MiB name read in
+/// moments (a scan to the NUL per symbol was about 3 × 10^12 steps); a name
+/// that only starts with the symbol's is not it; and a string table that does
+/// not end in NUL is refused, since no name in it is then known terminated.
+#[test]
+fn a_crowd_of_long_names_reads_in_bounded_time() {
+    let start = std::time::Instant::now();
+    let config = elf::read(
+        &Elf {
+            crowd: Some((400_000, 8 << 20)),
+            ..Elf::default()
+        }
+        .bytes(),
+    );
+    assert!(config.is_ok(), "{:?}", config.err().map(|e| e.kind()));
+    assert!(start.elapsed().as_secs() < 30, "{:?}", start.elapsed());
+    assert_eq!(
+        elf_kind(&Elf {
+            unterminated: true,
+            ..Elf::default()
+        }),
+        "MalformedElf"
+    );
+}

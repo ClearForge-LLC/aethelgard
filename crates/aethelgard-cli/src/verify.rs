@@ -91,6 +91,12 @@ struct Report {
     /// flag.
     #[serde(skip)]
     lifecycle_unheld: Vec<String>,
+    /// The `extract` gate's stated conditions, for the package's notes.
+    #[serde(skip)]
+    conditions: Vec<String>,
+    /// Whether each scenario's run passed the campaign gate, in order.
+    #[serde(skip)]
+    outcome: Vec<bool>,
 }
 
 /// `--fab-out D` writes the package into `D`; `--against-fab D` compares it.
@@ -104,6 +110,11 @@ struct FabReport {
     /// `written` (`--fab-out`, every gate passed), `derived` (`--against-fab`),
     /// or `not_written` / `not_derived` when a gate failed: nothing is written.
     status: &'static str,
+    /// Each precondition of a package and its state (`AET-WO-3303` §1.1). A
+    /// skipped harness and a campaign short of coverage were refused before
+    /// any gate ran; here each is judged again on the gates (D1, ruled).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    preconditions: Vec<fab::Precondition>,
     /// `kicad-cli`'s version, as the export ran it.
     tool_version: Option<String>,
     /// Whether every export ran under the separate uid (`AET-WO-1601`).
@@ -124,10 +135,54 @@ struct FabReport {
     lifecycle_unheld: Vec<String>,
 }
 
+/// Every precondition of a package, in a fixed order, on the gates that ran,
+/// with [`coverage`] after the gates for the campaign's.
+fn preconditions(report: &Report, planned: &[String], covered: Coverage) -> Vec<fab::Precondition> {
+    let proved = |h: &String| {
+        report
+            .gates
+            .iter()
+            .any(|g| g.gate == "prove" && g.harness.as_ref() == Some(h) && g.verdict == "pass")
+    };
+    let failed = report
+        .gates
+        .iter()
+        .filter(|g| g.verdict != "pass")
+        .map(|g| match &g.harness {
+            Some(h) => format!("{} {h}: {}", g.gate, g.verdict),
+            None => format!("{}: {}", g.gate, g.verdict),
+        })
+        .chain(
+            report
+                .findings
+                .iter()
+                .filter(|f| f.severity == "error")
+                .map(|f| format!("finding {}", f.kind)),
+        )
+        .collect();
+    vec![
+        fab::Precondition::of(
+            "every_harness_proved",
+            planned
+                .iter()
+                .filter(|h| !proved(h))
+                .map(|h| format!("{h} not proved"))
+                .collect(),
+        ),
+        fab::Precondition {
+            no_device: covered.no_device,
+            no_fault_kind: covered.no_fault_kind,
+            ..fab::Precondition::of("campaign_faults_every_bus_and_rail", covered.unmet)
+        },
+        fab::Precondition::of("every_gate_passed", failed),
+    ]
+}
+
 impl FabReport {
     fn none(status: &'static str, lifecycle_unheld: Vec<String>) -> Self {
         Self {
             status,
+            preconditions: Vec::new(),
             tool_version: None,
             uid_boundary: None,
             uid_boundary_unmet: None,
@@ -205,6 +260,9 @@ struct Gate {
     gate: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     harness: Option<String>,
+    /// `attribute`: the scenario whose run it attributed (`AET-WO-3303` D1).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scenario: Option<String>,
     /// `pass`, `fail`, or `not_run` when a gate before it failed so it could not run.
     verdict: &'static str,
     exit_code: Option<i32>,
@@ -378,6 +436,7 @@ fn gate_report(name: &'static str, harness: Option<String>, ran: &Ran) -> Gate {
     Gate {
         gate: name,
         harness,
+        scenario: None,
         verdict: if ran.code == 0 && v["verdict"] == "pass" {
             "pass"
         } else {
@@ -405,6 +464,7 @@ fn not_run(name: &'static str) -> Gate {
     Gate {
         gate: name,
         harness: None,
+        scenario: None,
         verdict: "not_run",
         exit_code: None,
         tool_version: None,
@@ -487,34 +547,381 @@ fn bind(gate: &str, what: &str, want: &str, have: &Value) -> Result<(), ExitCode
     }
 }
 
-/// The whole-schedule harness, which does not finish on a board with motor
-/// outputs (`AET-WO-4300a` FEEDBACK Q5).
-const WHOLE_SCHEDULE: &str = "proofs::every_valid_sequence";
+/// What a scenario's fault stresses (`AET-WO-3303` D1).
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Target {
+    I2c(String),
+    Spi(String),
+    /// A serial port, by label: no fault kind reaches one yet (ruled on #155).
+    Serial(String),
+    Rail(String),
+}
 
-/// The harnesses to prove, and whether [`WHOLE_SCHEDULE`] was left out. Only
-/// on a motor board and only that exact harness is dropped; the rest run.
-fn harness_plan(all: Vec<String>, motor_board: bool) -> (Vec<String>, bool) {
-    if motor_board && all.iter().any(|h| h == WHOLE_SCHEDULE) {
-        (
-            all.into_iter().filter(|h| h != WHOLE_SCHEDULE).collect(),
-            true,
-        )
-    } else {
-        (all, false)
+impl Target {
+    fn name(&self) -> String {
+        match self {
+            Self::I2c(b) => format!("I2C bus `{b}`"),
+            Self::Spi(b) => format!("SPI bus `{b}`"),
+            Self::Serial(l) => format!("serial port `{l}`"),
+            Self::Rail(r) => format!("rail `{r}`"),
+        }
     }
 }
 
-/// The info finding that says which harnesses ran and that
-/// [`WHOLE_SCHEDULE`] did not.
-fn skipped_finding(ran: &[String]) -> Finding {
-    Finding {
-        kind: "whole_schedule_harness_not_run",
-        severity: "info",
-        message: format!(
-            "harnesses run: {}; {WHOLE_SCHEDULE} did not run: a motor board: the whole-schedule harness does not finish (AET-WO-4300a FEEDBACK Q5); the targeted harnesses prove the timer start and the clock check; the split is AET-WO-4500's backlog",
-            ran.join(", ")
-        ),
+/// An intolerable fault's named mechanism: the only finding kinds its run
+/// may fail by, the half and rule `attribute` must name, and every subject
+/// the attribution may cite (ruled (a)).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Mechanism {
+    kinds: &'static [&'static str],
+    rule: &'static str,
+    subjects: std::collections::BTreeSet<String>,
+}
+
+/// Each override kind's mechanism, a closed table: the engine's, never the
+/// scenario's own `expect_findings`.
+const RISE: &[&str] = &["analog_rise_exceeds_ceiling", "i2c_timeout"];
+const HELD: &[&str] = &["i2c_line_held_low", "i2c_timeout"];
+const ABSENT: &[&str] = &["spi_identity_mismatch", "spi_transaction_unwitnessed"];
+
+/// What one scenario seeds, judged against the specification.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Seeded {
+    /// Expects a pass and every override changes nothing: the no-fault baseline.
+    Baseline,
+    /// Expects a pass: the design must survive each of these.
+    Tolerable(Vec<Target>),
+    /// Expects a fail by one fault's mechanism, on one target.
+    Detect(Target, Mechanism),
+    /// Anything else: it covers nothing, and its run is judged as before.
+    Other,
+}
+
+/// One override: `None` when it changes nothing the campaign judges (a value
+/// equal to the specification's own); otherwise what it stresses, with its
+/// mechanism when it is intolerable by kind. An eased value (a lower line
+/// capacitance, a droop inside its band) stresses nothing yet changes the
+/// specification: `Some((None, None))`.
+fn stress(
+    spec: &aethelgard_ir::Specification,
+    topology: &aethelgard_ir::SolvedTopology,
+    o: &aethelgard_chaos::record::Override,
+) -> Option<(Option<Target>, Option<Mechanism>)> {
+    use aethelgard_chaos::record::Override;
+    let bus_subjects = |bus: &str| -> std::collections::BTreeSet<String> {
+        std::iter::once(format!("bus:{bus}"))
+            .chain(
+                topology
+                    .i2c_devices
+                    .iter()
+                    .filter(|(_, d)| d.bus == bus)
+                    .map(|(r, _)| format!("device:{r}")),
+            )
+            .collect()
+    };
+    let i2c = |bus: &str, kinds: &'static [&'static str]| {
+        (
+            Some(Target::I2c(bus.to_owned())),
+            Some(Mechanism {
+                kinds,
+                rule: "E1",
+                subjects: bus_subjects(bus),
+            }),
+        )
+    };
+    match o {
+        Override::PullUpOhms { bus, ohms } => {
+            let b = spec.i2c_buses.iter().find(|b| &b.id == bus)?;
+            // Raised, the line rises slower; lowered, it only rises faster
+            // (adversary 2, F1; `solve` refuses one below the sink floor).
+            match ohms.cmp(&b.pull_up_ohms) {
+                std::cmp::Ordering::Equal => None,
+                std::cmp::Ordering::Greater => Some(i2c(bus, RISE)),
+                std::cmp::Ordering::Less => Some((None, None)),
+            }
+        }
+        Override::MaxCapacitance { net, femtofarads } => {
+            let c = spec.net_constraints.iter().find(|c| &c.net_name == net)?;
+            if c.max_capacitance_femtofarads == *femtofarads {
+                return None;
+            }
+            // Raised, a line rises slower; lowered, it only eases (§4 F3).
+            let bus = spec
+                .i2c_buses
+                .iter()
+                .find(|b| &b.sda.net == net || &b.scl.net == net);
+            Some(match bus {
+                Some(b) if *femtofarads > c.max_capacitance_femtofarads => i2c(&b.id, RISE),
+                _ => (None, None),
+            })
+        }
+        Override::LineHeldLow { bus, .. } => Some(i2c(bus, HELD)),
+        Override::SpiDeviceAbsent { reference } => {
+            let d = topology.spi_devices.get(reference)?;
+            Some((
+                Some(Target::Spi(d.bus.clone())),
+                Some(Mechanism {
+                    kinds: ABSENT,
+                    rule: "E2",
+                    subjects: [
+                        format!("device:{reference}"),
+                        format!("controller:{}", d.peripheral),
+                    ]
+                    .into(),
+                }),
+            ))
+        }
+        Override::Droop(d) => {
+            // Below the domain's tolerance band: inside it the rail stays in
+            // its specification (§4 F3). A droop names no mechanism: an
+            // expected-fail droop is judged as before.
+            let v = spec.voltage_domains.iter().find(|v| v.id == d.domain)?;
+            let band =
+                u64::from(v.nominal_millivolts) * (1000 - u64::from(v.tolerance_permille)) / 1000;
+            Some(if u64::from(d.floor_millivolts) < band {
+                (Some(Target::Rail(d.domain.clone())), None)
+            } else {
+                (None, None)
+            })
+        }
     }
+}
+
+/// What `scenario` seeds (`AET-WO-3303` D1, ruled (a)).
+fn classify(
+    spec: &aethelgard_ir::Specification,
+    topology: &aethelgard_ir::SolvedTopology,
+    scenario: &aethelgard_chaos::campaign::Scenario,
+) -> Seeded {
+    let changed: Vec<_> = scenario
+        .overrides
+        .iter()
+        .filter_map(|o| stress(spec, topology, o))
+        .collect();
+    if scenario.expect_pass {
+        if changed.is_empty() {
+            return Seeded::Baseline;
+        }
+        // A scenario that also eases something covers nothing: its net change
+        // may ease the target it stresses (adversary 2, F2). A held line or an
+        // absent device is never a fault to survive: an absent IMU or flash
+        // must be caught, not survived (ruled (a); adversary 2, F4).
+        use aethelgard_chaos::record::Override;
+        let intolerable = scenario.overrides.iter().any(|o| {
+            matches!(
+                o,
+                Override::LineHeldLow { .. } | Override::SpiDeviceAbsent { .. }
+            )
+        });
+        if intolerable || changed.iter().any(|(t, _)| t.is_none()) {
+            return Seeded::Tolerable(Vec::new());
+        }
+        return Seeded::Tolerable(changed.into_iter().filter_map(|(t, _)| t).collect());
+    }
+    // One target, one mechanism, every changed override stressing it, and the
+    // declared findings within that mechanism's kinds.
+    let mut seeded = None;
+    for c in changed {
+        let (Some(t), Some(m)) = c else {
+            return Seeded::Other;
+        };
+        match &seeded {
+            None => seeded = Some((t, m)),
+            Some((t0, m0)) if *t0 == t && *m0 == m => {}
+            Some(_) => return Seeded::Other,
+        }
+    }
+    match seeded {
+        Some((t, m))
+            if !scenario.expect_findings.is_empty()
+                && scenario
+                    .expect_findings
+                    .iter()
+                    .all(|k| m.kinds.contains(&k.as_str())) =>
+        {
+            Seeded::Detect(t, m)
+        }
+        _ => Seeded::Other,
+    }
+}
+
+/// The campaign's coverage of every declared bus and rail.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Coverage {
+    /// Each bus or rail no fault covers, named with why where no kind can.
+    unmet: Vec<String>,
+    /// Each bus no device uses: never `met`, and it does not block (ruled (c)).
+    no_device: Vec<String>,
+    /// Each serial port, named `no fault kind yet: serial`: never `met`, and
+    /// it does not block. A narrow, temporary exemption (ruled on #155): it
+    /// ends when the battery-sag / chaos work order lands a serial fault kind
+    /// (an RX line held, or open).
+    no_fault_kind: Vec<String>,
+}
+
+/// Coverage, in the specification's order: I2C buses, SPI buses, serial
+/// ports (each named in `no_fault_kind`, never blocking: ruled on #155), then
+/// rails (each voltage domain, and the battery when a power tree is declared).
+/// Before any gate `outcome` is `None` and a seeded fault counts as it is
+/// declared; after the gates `outcome[i]` says whether scenario `i`'s run
+/// passed the gate, and only those count. A tolerable fault covers its
+/// target; a detected one covers its bus only when the campaign holds a
+/// baseline (ruled (a)). Rails other than the MCU's supply and the battery
+/// stay `unmet` until a fault kind reaches them (ruled (b)).
+fn coverage(
+    spec: &aethelgard_ir::Specification,
+    topology: &aethelgard_ir::SolvedTopology,
+    seeded: &[Seeded],
+    outcome: Option<&[bool]>,
+) -> Coverage {
+    use std::collections::BTreeSet;
+    let ran = |i: usize| outcome.is_none_or(|o| o.get(i) == Some(&true));
+    let baseline = seeded
+        .iter()
+        .enumerate()
+        .any(|(i, s)| *s == Seeded::Baseline && ran(i));
+    let mut covered: BTreeSet<&Target> = BTreeSet::new();
+    for (i, s) in seeded.iter().enumerate() {
+        match s {
+            Seeded::Tolerable(targets) if ran(i) => covered.extend(targets),
+            Seeded::Detect(t, _) if baseline && ran(i) => {
+                covered.insert(t);
+            }
+            _ => {}
+        }
+    }
+    let mut c = Coverage::default();
+    let nothing = "no device: nothing to fault";
+    for (used, target) in spec
+        .i2c_buses
+        .iter()
+        .map(|b| {
+            let used = topology.i2c_devices.values().any(|d| d.bus == b.id);
+            (used, Target::I2c(b.id.clone()))
+        })
+        .chain(spec.spi_buses.iter().map(|b| {
+            let used = topology.spi_devices.values().any(|d| d.bus == b.id);
+            (used, Target::Spi(b.id.clone()))
+        }))
+    {
+        if !used {
+            c.no_device.push(format!("{} ({nothing})", target.name()));
+        } else if !covered.contains(&target) {
+            c.unmet.push(target.name());
+        }
+    }
+    for p in &spec.serial_ports {
+        let target = Target::Serial(p.label.clone());
+        c.no_fault_kind
+            .push(format!("{} (no fault kind yet: serial)", target.name()));
+    }
+    for v in &spec.voltage_domains {
+        let target = Target::Rail(v.id.clone());
+        if v.id != spec.mcu.supply {
+            c.unmet.push(format!(
+                "{} (not the MCU's supply: no fault kind droops it)",
+                target.name()
+            ));
+        } else if !covered.contains(&target) {
+            c.unmet.push(target.name());
+        }
+    }
+    if spec.power.is_some() {
+        c.unmet
+            .push("rail `battery` (no fault kind droops it)".to_owned());
+    }
+    c
+}
+
+/// Whether a failed run is its seeded fault detected by the named mechanism
+/// (ruled (a)): it failed and met its expectation, every finding kind is the
+/// mechanism's, and `attribute` (bound to the run) names the electrical half,
+/// the mechanism's rule, nothing unexplained or masked, and only the seeded
+/// subjects.
+/// `Err` says why not.
+fn detection(m: &Mechanism, run: &Run, attributed: &Value) -> Result<(), String> {
+    if run.verdict != "fail" || !run.matched {
+        return Err(format!(
+            "verdict {}, its expectation {}",
+            run.verdict,
+            if run.matched { "met" } else { "unmet" }
+        ));
+    }
+    let kinds: Vec<&str> = run
+        .findings
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    if kinds.is_empty() || kinds.iter().any(|k| !m.kinds.contains(k)) {
+        return Err(format!(
+            "it failed by {kinds:?}, not only by its fault's {:?}",
+            m.kinds
+        ));
+    }
+    let text = |k: &str| attributed[k].as_str().unwrap_or_default();
+    if attributed["ok"] != true || text("domain") != "electrical" || text("rule") != m.rule {
+        return Err(format!(
+            "attribute names `{}` by rule `{}`, not `electrical` by `{}`",
+            text("domain"),
+            text("rule"),
+            m.rule
+        ));
+    }
+    if attributed["unexplained"]
+        .as_array()
+        .is_none_or(|u| !u.is_empty())
+    {
+        return Err(format!(
+            "attribute leaves {} unexplained",
+            attributed["unexplained"]
+        ));
+    }
+    // Software evidence on the faulted bus is something else failing in the
+    // same run (a wrong address behind a weak pull-up, `cases.json`'s trap).
+    if attributed["masked"]
+        .as_array()
+        .is_none_or(|m| !m.is_empty())
+    {
+        return Err(format!(
+            "attribute masks {} on the faulted bus: something else fails too",
+            attributed["masked"]
+        ));
+    }
+    let subjects: Vec<&str> = attributed["subjects"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    let other: Vec<&&str> = subjects
+        .iter()
+        .filter(|s| !m.subjects.contains(**s))
+        .collect();
+    if subjects.is_empty() || !other.is_empty() {
+        return Err(format!(
+            "attribute cites {other:?} beyond the seeded {:?}",
+            m.subjects
+        ));
+    }
+    Ok(())
+}
+
+/// Each harness the board crate declares that `planned` does not name: every
+/// `kani::proof` in every file of the crate is counted, however it is written
+/// (`kani::proof_for_contract` too, which Kani also runs), so a harness the line reader in [`harnesses`] misses is never
+/// silently left unproved (`AET-WO-3303` §1.1).
+fn unplanned(board: &BTreeMap<String, String>, planned: usize) -> Option<String> {
+    let declared: usize = board
+        .values()
+        .map(|text| text.matches("kani::proof").count())
+        .sum();
+    (declared != planned).then(|| {
+        format!(
+            "the board crate declares {declared} Kani harnesses and the plan names {planned}: a harness the plan misses would not be proved"
+        )
+    })
 }
 
 /// The harnesses of a generated `src/proofs.rs`, as `proofs::<name>`: each
@@ -548,6 +955,8 @@ struct Expected {
     name: String,
     scenario: [u8; 32],
     specification: [u8; 32],
+    /// What it seeds (`AET-WO-3303` D1).
+    seeded: Seeded,
 }
 
 /// `aethelgard verify --spec <file> [--scenarios <file>...] [--against <dir>]`.
@@ -601,11 +1010,14 @@ pub fn verify(
         against_fab: None,
         fab: None,
         lifecycle_unheld,
+        conditions: Vec::new(),
+        outcome: Vec::new(),
     };
 
     // Every scenario must start from exactly `--spec`, or its campaign would
     // judge another specification.
     let mut expected = Vec::new();
+    let mut read = Vec::new();
     for path in scenarios {
         let scenario = match campaign::read_scenario(path) {
             Ok(s) => s,
@@ -636,7 +1048,9 @@ pub fn verify(
             name: scenario.name.clone(),
             scenario: scenario.sha256,
             specification: effective.specification_sha256,
+            seeded: classify(&spec, &topology, &scenario),
         });
+        read.push(scenario);
     }
 
     // An unusable `--fab-out` or `--against-fab` is refused before any gate.
@@ -647,6 +1061,41 @@ pub fn verify(
     };
     if let Err(s) = fab_checked {
         return crate::stopped(s);
+    }
+
+    let board = tree::subtree(&files, &format!("{BOARD_DIR}/"));
+    let board_sha256 = tree::crate_sha256(&board);
+    let harnesses = harnesses(board.get("src/proofs.rs").map_or("", String::as_str));
+    // A harness the plan leaves out is refused by name before any gate runs
+    // (`AET-WO-3303` §1.1); the other preconditions are judged on the gates.
+    if fab_mode.is_some() {
+        let left_out = unplanned(&board, harnesses.len());
+        if let Some(m) = left_out {
+            return refuse(
+                "HarnessSkipped",
+                None,
+                format!("no package: {m}"),
+                EXIT_UNREADABLE,
+            );
+        }
+    }
+    // Every bus and rail a fault must cover, as the scenarios declare them,
+    // before any gate (`AET-WO-3303` D1, ruled): the gates then decide
+    // whether each run survived or detected its fault.
+    let seeded: Vec<Seeded> = expected.iter().map(|e| e.seeded.clone()).collect();
+    if fab_mode.is_some() {
+        let short = coverage(&spec, &topology, &seeded, None);
+        if !short.unmet.is_empty() {
+            return refuse(
+                "CampaignCoverageShort",
+                None,
+                format!(
+                    "no package: the campaign covers no fault on {}",
+                    short.unmet.join(", ")
+                ),
+                EXIT_UNREADABLE,
+            );
+        }
     }
 
     // `--against` first: a directory that is not the tree fails, naming
@@ -700,12 +1149,6 @@ pub fn verify(
     let sch = format!("{KICAD_DIR}/{project}.kicad_sch");
     let pcb = format!("{KICAD_DIR}/{project}.kicad_pcb");
     let repl = format!("{BOARD_DIR}/{project}.repl");
-    let board = tree::subtree(&files, &format!("{BOARD_DIR}/"));
-    let board_sha256 = tree::crate_sha256(&board);
-    let (harnesses, skipped) = harness_plan(
-        harnesses(board.get("src/proofs.rs").map_or("", String::as_str)),
-        !topology.motor_outputs.is_empty(),
-    );
     let path = |rel: &str| os(&root.join(rel));
     let spec_arg = os(&spec_copy);
 
@@ -726,8 +1169,7 @@ pub fn verify(
             repl: &hashes[&repl],
             board: &board_sha256,
             spec: &spec_sha256,
-            harnesses,
-            skipped,
+            harnesses: harnesses.clone(),
             boot_time: format!("{}ns", aethelgard_twin::boot::window(&topology).0),
         },
         &expected,
@@ -739,6 +1181,13 @@ pub fn verify(
     report.verdict = if report.ok { "pass" } else { "fail" };
     if let Some(mode) = fab_mode {
         let elf_sha256 = report.elf_sha256.clone().unwrap_or_default();
+        let lifecycle: Vec<String> = report
+            .lifecycle
+            .iter()
+            .chain(&report.lifecycle_unheld)
+            .cloned()
+            .collect();
+        let conditions = std::mem::take(&mut report.conditions);
         let bound = fab::Bound {
             project: &project,
             spec: &spec,
@@ -748,6 +1197,8 @@ pub fn verify(
             elf: &scratch.tool.join("firmware.elf"),
             elf_sha256: &elf_sha256,
             bom: files[&format!("{KICAD_DIR}/{project}.bom.csv")].as_bytes(),
+            conditions: &conditions,
+            lifecycle: &lifecycle,
         };
         let scenarios: Vec<fab::Scenario> = expected
             .iter()
@@ -756,8 +1207,14 @@ pub fn verify(
                 sha256: hex(e.scenario),
             })
             .collect();
-        if let Err(code) = package(&mut report, mode, &bound, &scenarios) {
+        let outcome = report.outcome.clone();
+        let short = coverage(&spec, &topology, &seeded, Some(&outcome));
+        let pre = preconditions(&report, &harnesses, short);
+        if let Err(code) = package(&mut report, mode, &bound, &scenarios, &pre) {
             return code;
+        }
+        if let Some(f) = report.fab.as_mut() {
+            f.preconditions = pre;
         }
     }
     let code = if report.ok { 0 } else { EXIT_FAIL };
@@ -783,6 +1240,7 @@ fn package(
     mode: &FabMode,
     bound: &fab::Bound<'_>,
     scenarios: &[fab::Scenario],
+    preconditions: &[fab::Precondition],
 ) -> Result<(), ExitCode> {
     if !report.ok {
         not_packaged(report, mode);
@@ -800,6 +1258,7 @@ fn package(
             specification_sha256: &report.specification_sha256,
             topology_sha256: &report.topology_sha256,
             scenarios,
+            preconditions,
             verdict_line: &line,
         },
         &exported.files,
@@ -812,6 +1271,7 @@ fn package(
     files.insert(fab::MANIFEST.to_owned(), tree::sha256(&manifest));
     let mut fab_report = FabReport {
         status: "derived",
+        preconditions: Vec::new(),
         tool_version: Some(exported.tool_version.clone()),
         uid_boundary: Some(exported.sandbox.uid_boundary),
         uid_boundary_unmet: exported.sandbox.uid_boundary_unmet,
@@ -890,8 +1350,6 @@ struct Want<'a> {
     board: &'a str,
     spec: &'a str,
     harnesses: Vec<String>,
-    /// Whether the whole-schedule harness is left out (a motor board).
-    skipped: bool,
     /// The `--for` `simulate` boots for: the board's window, as the
     /// campaign's (`AET-WO-4300a` D1).
     boot_time: String,
@@ -937,6 +1395,12 @@ fn run_gates(
     bound("extract", &extract, want, "", "")?;
     // `extract` runs no external tool, so its verdict has no `sandbox` and no
     // uid boundary to report: null, never a value it did not measure.
+    report.conditions = extract.last()["conditions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|c| c.as_str().map(str::to_owned))
+        .collect();
     let mut g = gate_report("extract", None, &extract);
     g.uid_boundary = None;
     report.gates.push(g);
@@ -947,9 +1411,6 @@ fn run_gates(
             severity: "error",
             message: "the generated board crate has no Kani harness".to_owned(),
         });
-    }
-    if want.skipped {
-        report.findings.push(skipped_finding(&want.harnesses));
     }
     for harness in &want.harnesses {
         let h = OsString::from(harness);
@@ -1066,19 +1527,65 @@ fn run_gates(
     g.uid_boundary_unmet = runs
         .iter()
         .find_map(|line| line["uid_boundary_unmet"].as_str().map(str::to_owned));
-    // The design must survive every scenario: each run's own verdict is
-    // `pass`, and the campaign matched every expectation. A scenario that
-    // expects a fail can never let `verify` pass (`AET-WO-3301` §3.2).
-    let survived = out.iter().all(|r| r.verdict == "pass" && r.matched);
-    g.verdict = if ran.code == 0 && ran.last()["ok"] == true && survived {
+    // `AET-WO-3303` D1, ruled (a), reversing `AET-WO-3301` §3.2: a run
+    // passes the campaign gate when it survived (its verdict `pass`, every
+    // expectation met), or when it is its seeded intolerable fault detected by
+    // the named mechanism, with the no-fault baseline in the campaign passing.
+    // A failure for any other reason fails the gate.
+    let survived = |r: &Run| r.verdict == "pass" && r.matched;
+    let baseline = out
+        .iter()
+        .zip(expected)
+        .any(|(r, e)| e.seeded == Seeded::Baseline && survived(r));
+    let mut why: Vec<Option<String>> = Vec::new();
+    for (r, e) in out.iter().zip(expected) {
+        why.push(match &e.seeded {
+            _ if survived(r) => None,
+            Seeded::Detect(_, m) if !baseline => Some(format!(
+                "it seeds a fault by {:?}, and the campaign holds no passing no-fault baseline",
+                m.kinds
+            )),
+            Seeded::Detect(_, m) if r.verdict == "fail" && r.matched => {
+                let dir = OsString::from(Path::new(&p.archive).join(&r.run_id));
+                let attributed = gate("attribute", args(&[&"attribute", &"--archive", &dir]))?;
+                let a = attributed.last();
+                bind(
+                    "attribute",
+                    "the run it attributes",
+                    &r.run_id,
+                    &a["run_id"],
+                )?;
+                bind(
+                    "attribute",
+                    "the run's state sequence",
+                    &r.state_sequence_hash,
+                    &a["state_sequence_hash"],
+                )?;
+                let mut g = gate_report("attribute", None, &attributed);
+                g.scenario = Some(r.scenario.clone());
+                g.uid_boundary = None;
+                g.verdict = if attributed.code == 0 && a["ok"] == true {
+                    "pass"
+                } else {
+                    "fail"
+                };
+                report.gates.push(g);
+                detection(m, r, a).err()
+            }
+            _ => Some(format!("verdict {}, expected {}", r.verdict, r.expect)),
+        });
+    }
+    report.outcome = why.iter().map(Option::is_none).collect();
+    g.verdict = if ran.code == 0 && why.iter().all(Option::is_none) {
         "pass"
     } else {
         "fail"
     };
     g.findings = out
         .iter()
-        .filter(|r| r.verdict != "pass" || !r.matched)
-        .flat_map(|r| {
+        .zip(&why)
+        .filter_map(|(r, w)| w.as_ref().map(|w| (r, w)))
+        .flat_map(|(r, w)| {
             let kinds: Vec<String> = r
                 .findings
                 .as_array()
@@ -1097,10 +1604,7 @@ fn run_gates(
                 serde_json::json!({
                     "kind": kind,
                     "severity": "error",
-                    "message": format!(
-                        "scenario `{}`: verdict {}, expected {}",
-                        r.scenario, r.verdict, r.expect
-                    ),
+                    "message": format!("scenario `{}`: {w}", r.scenario),
                 })
             })
         })
@@ -1114,6 +1618,379 @@ fn run_gates(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// `AET-WO-3303` §1.1: every `kani::proof` attribute in the crate is
+    /// counted, so a harness the line reader misses (its attribute and `fn`
+    /// on one line, or in another file) refuses the package.
+    #[test]
+    fn a_harness_the_plan_misses_is_counted() {
+        let proofs = "#[kani::proof]\nfn a() {}\n#[kani::proof] fn b() {}\n";
+        let crate_ = BTreeMap::from([("src/proofs.rs".to_owned(), proofs.to_owned())]);
+        assert_eq!(harnesses(proofs), ["proofs::a"]);
+        assert!(unplanned(&crate_, 1).is_some());
+        assert!(unplanned(&crate_, 2).is_none());
+        let other = BTreeMap::from([
+            (
+                "src/proofs.rs".to_owned(),
+                "#[kani::proof]\nfn a() {}\n".to_owned(),
+            ),
+            (
+                "src/lib.rs".to_owned(),
+                "#[kani::proof]\nfn c() {}\n".to_owned(),
+            ),
+        ]);
+        assert!(unplanned(&other, 1).is_some());
+        // A contract harness is a harness Kani runs (adversarial F6).
+        let contract = BTreeMap::from([(
+            "src/proofs.rs".to_owned(),
+            "#[kani::proof]\nfn a() {}\n#[kani::proof_for_contract(f)]\nfn b() {}\n".to_owned(),
+        )]);
+        assert!(unplanned(&contract, 1).is_some());
+    }
+
+    fn seeded(
+        spec: &aethelgard_ir::Specification,
+        t: &aethelgard_ir::SolvedTopology,
+        files: &[&str],
+    ) -> Vec<Seeded> {
+        files
+            .iter()
+            .map(|f| classify(spec, t, &scenario_file(f)))
+            .collect()
+    }
+
+    fn json_scenario(
+        expect_pass: bool,
+        findings: &[&str],
+        overrides: Value,
+    ) -> aethelgard_chaos::campaign::Scenario {
+        aethelgard_chaos::campaign::Scenario::parse(
+            json!({"schema_version": 2, "name": "x", "base": "b.json",
+                "expect": if expect_pass { "pass" } else { "fail" },
+                "expect_findings": findings, "overrides": overrides})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap()
+    }
+
+    fn failed(findings: Value) -> Run {
+        Run {
+            scenario: "x".into(),
+            verdict: "fail".into(),
+            expect: "fail".into(),
+            matched: true,
+            findings,
+            run_id: String::new(),
+            state_sequence_hash: String::new(),
+        }
+    }
+
+    const S1: &str = "examples/sentinel-01-minimal.json";
+    const BASELINE: &str = "scenarios/sentinel-01/pullup-2k2.json";
+    const TOLERATED_I2C: &str = "scenarios/sentinel-01/seeded/pullup-3k3.json";
+    const RAIL: &str = "scenarios/sentinel-01/droop-bor3.json";
+    const ABSENT_U4: &str = "scenarios/sentinel-01/seeded/spi-absent-u4.json";
+
+    /// `AET-WO-3303` D1, ruled: each declared bus and rail is named until a
+    /// fault covers it. A tolerable fault covers its target; a detected one
+    /// its bus only beside a baseline; before the gates as declared, after
+    /// them only when the run passed the gate. The reference's seeded set
+    /// covers everything.
+    #[test]
+    fn coverage_needs_a_survived_or_a_detected_fault_beside_a_baseline() {
+        let (spec, t) = solved(S1);
+        let all = ["I2C bus `SENSORS`", "SPI bus `FLASH`", "rail `VDD_3V3`"];
+        let unmet = |files: &[&str], outcome: Option<&[bool]>| {
+            coverage(&spec, &t, &seeded(&spec, &t, files), outcome).unmet
+        };
+        assert_eq!(unmet(&[BASELINE], None), all);
+        assert_eq!(unmet(&[TOLERATED_I2C, RAIL], None), ["SPI bus `FLASH`"]);
+        // A detected fault without a baseline covers nothing.
+        assert_eq!(
+            unmet(&[TOLERATED_I2C, RAIL, ABSENT_U4], None),
+            ["SPI bus `FLASH`"]
+        );
+        let set = [TOLERATED_I2C, RAIL, ABSENT_U4, BASELINE];
+        assert!(unmet(&set, None).is_empty());
+        assert!(unmet(&set, Some(&[true; 4])).is_empty());
+        // After the gates, a detection that failed covers nothing, nor does
+        // one beside a baseline that failed.
+        assert_eq!(
+            unmet(&set, Some(&[true, true, false, true])),
+            ["SPI bus `FLASH`"]
+        );
+        assert_eq!(
+            unmet(&set, Some(&[true, true, true, false])),
+            ["SPI bus `FLASH`"]
+        );
+        // A droop inside the tolerance band covers nothing (§4 F3).
+        assert_eq!(
+            unmet(
+                &["scenarios/sentinel-01/droop-tolerated.json", TOLERATED_I2C],
+                None
+            ),
+            ["SPI bus `FLASH`", "rail `VDD_3V3`"]
+        );
+    }
+
+    /// Ruled (b) and (c): a rail other than the MCU's supply stays `unmet`
+    /// whatever is seeded; a bus no device uses is named as having nothing to
+    /// fault and does not block.
+    #[test]
+    fn a_rail_no_kind_reaches_is_unmet_and_a_deviceless_bus_does_not_block() {
+        let (spec, t) = solved("crates/aethelgard-cli/tests/fixtures/connectors.json");
+        let faults = json_scenario(
+            true,
+            &[],
+            json!([{"bus": "SENSORS", "pull_up_ohms": 3300},
+                {"droop": {"domain": "VDD_3V3", "floor_millivolts": 2400, "start_ns": 1000000,
+                    "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
+                    "source_milliohms": 500, "load_milliamps": 100, "bor_level": 0}}]),
+        );
+        let absent = json_scenario(
+            false,
+            &["spi_identity_mismatch"],
+            json!([{"spi_device_absent": "U4"}]),
+        );
+        let base = json_scenario(true, &[], json!([]));
+        let s: Vec<Seeded> = [faults, absent, base]
+            .iter()
+            .map(|x| classify(&spec, &t, x))
+            .collect();
+        let c = coverage(&spec, &t, &s, None);
+        assert_eq!(
+            c.unmet,
+            ["rail `VDD_5V` (not the MCU's supply: no fault kind droops it)"]
+        );
+        assert_eq!(c.no_device, ["SPI bus `EXT` (no device: nothing to fault)"]);
+    }
+
+    /// Ruled on #155: each serial port is named `no fault kind yet: serial`,
+    /// in the specification's order, and never blocks, whatever is seeded;
+    /// the row with them and nothing unmet reads `met`, in the verdict and
+    /// the manifest alike (one `Precondition`).
+    #[test]
+    fn a_serial_port_is_named_without_a_fault_kind_and_does_not_block() {
+        let (spec, t) = solved(S1);
+        let set = [TOLERATED_I2C, RAIL, ABSENT_U4, BASELINE];
+        let c = coverage(&spec, &t, &seeded(&spec, &t, &set), None);
+        assert!(c.unmet.is_empty(), "{:?}", c.unmet);
+        assert_eq!(
+            c.no_fault_kind,
+            ["serial port `CONSOLE` (no fault kind yet: serial)"]
+        );
+        let c = coverage(&spec, &t, &seeded(&spec, &t, &[BASELINE]), None);
+        assert!(
+            !c.unmet.iter().any(|u| u.contains("serial")),
+            "{:?}",
+            c.unmet
+        );
+        let row = fab::Precondition {
+            no_fault_kind: c.no_fault_kind,
+            ..fab::Precondition::of("campaign_faults_every_bus_and_rail", Vec::new())
+        };
+        assert_eq!(
+            serde_json::to_value(&row).unwrap(),
+            json!({"precondition": "campaign_faults_every_bus_and_rail", "state": "met",
+                "no_fault_kind": ["serial port `CONSOLE` (no fault kind yet: serial)"]})
+        );
+        let (spec, t) = solved("crates/aethelgard-cli/tests/fixtures/serial-four.json");
+        let c = coverage(&spec, &t, &[], None);
+        assert!(
+            !c.unmet.iter().any(|u| u.contains("serial")),
+            "{:?}",
+            c.unmet
+        );
+        assert_eq!(
+            c.no_fault_kind,
+            ["MAVLINK", "GPS", "CRSF", "SBUS"]
+                .map(|l| format!("serial port `{l}` (no fault kind yet: serial)"))
+        );
+    }
+
+    /// What a scenario seeds: a value equal to the specification's is no
+    /// fault (so the 2.2 kΩ scenario is the baseline); a fault is detectable
+    /// only by its own kinds; two targets, a declared kind outside the
+    /// mechanism, or a droop make an expected fail count for nothing; an
+    /// eased value is no baseline.
+    #[test]
+    fn a_scenario_seeds_one_fault_by_its_own_mechanism_or_counts_for_nothing() {
+        let (spec, t) = solved(S1);
+        let c = |s: &aethelgard_chaos::campaign::Scenario| classify(&spec, &t, s);
+        assert_eq!(c(&scenario_file(BASELINE)), Seeded::Baseline);
+        assert!(
+            matches!(c(&scenario_file(ABSENT_U4)), Seeded::Detect(Target::Spi(b), _) if b == "FLASH")
+        );
+        for f in [
+            "scenarios/sentinel-01/seeded/held-low-scl.json",
+            "scenarios/sentinel-01/seeded/cap-220p-2k2.json",
+            "scenarios/sentinel-01/pullup-47k.json",
+        ] {
+            assert!(
+                matches!(c(&scenario_file(f)), Seeded::Detect(Target::I2c(b), _) if b == "SENSORS"),
+                "{f}"
+            );
+        }
+        let wrong = json_scenario(
+            false,
+            &["register_mismatch"],
+            json!([{"spi_device_absent": "U4"}]),
+        );
+        assert_eq!(c(&wrong), Seeded::Other);
+        let two = json_scenario(
+            false,
+            &["i2c_timeout"],
+            json!([{"bus": "SENSORS", "pull_up_ohms": 47000}, {"spi_device_absent": "U4"}]),
+        );
+        assert_eq!(c(&two), Seeded::Other);
+        let droop = json_scenario(
+            false,
+            &["brownout_unrecovered"],
+            json!([{"droop": {"domain": "VDD_3V3", "floor_millivolts": 2400, "start_ns": 1000000,
+                "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000, "source_milliohms": 500,
+                "load_milliamps": 100, "bor_level": 3}}]),
+        );
+        assert_eq!(c(&droop), Seeded::Other);
+        let sda = &spec.i2c_buses[0].sda.net;
+        let eased = json_scenario(
+            true,
+            &[],
+            json!([{"net": sda, "max_capacitance_femtofarads": 1}]),
+        );
+        assert_eq!(c(&eased), Seeded::Tolerable(Vec::new()));
+        // Adversary 2: a lowered pull-up only eases (F1); a stressing fault
+        // beside an eased one covers nothing (F2); a held line or an absent
+        // device expected to pass is never survived (F4).
+        let lowered = json_scenario(true, &[], json!([{"bus": "SENSORS", "pull_up_ohms": 1000}]));
+        assert_eq!(c(&lowered), Seeded::Tolerable(Vec::new()));
+        let mixed = json_scenario(
+            true,
+            &[],
+            json!([{"bus": "SENSORS", "pull_up_ohms": 3300},
+                {"net": sda, "max_capacitance_femtofarads": 1}]),
+        );
+        assert_eq!(c(&mixed), Seeded::Tolerable(Vec::new()));
+        for o in [
+            json!([{"spi_device_absent": "U4"}]),
+            json!([{"bus": "SENSORS", "line_held_low": "scl"}]),
+        ] {
+            assert_eq!(
+                c(&json_scenario(true, &[], o)),
+                Seeded::Tolerable(Vec::new())
+            );
+        }
+        let lowered_fail = json_scenario(
+            false,
+            &["i2c_timeout"],
+            json!([{"bus": "SENSORS", "pull_up_ohms": 1000}]),
+        );
+        assert_eq!(c(&lowered_fail), Seeded::Other);
+    }
+
+    /// Ruled (a), driven by `cases.json`: each seeded case's measured
+    /// attribution, given to the mechanism its finding kinds name. Only an
+    /// unmutated electrical case is a detection: a mutant behind a weak
+    /// pull-up (masked evidence), a software cause with the same kinds
+    /// (`cs-never`, `S3`) and an indeterminate case are not. A subject beyond
+    /// the seeded one is something else failing.
+    #[test]
+    fn only_an_unmutated_electrical_case_of_the_seeded_set_is_a_detection() {
+        let (spec, t) = solved(S1);
+        let mech = |f: &str| match classify(&spec, &t, &scenario_file(f)) {
+            Seeded::Detect(_, m) => m,
+            other => panic!("{f}: {other:?}"),
+        };
+        let rise = mech("scenarios/sentinel-01/pullup-47k.json");
+        let held = mech("scenarios/sentinel-01/seeded/held-low-scl.json");
+        let absent = mech(ABSENT_U4);
+        let cases: Value = serde_json::from_slice(
+            &std::fs::read(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../scenarios/sentinel-01/seeded/cases.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let mut accepted = Vec::new();
+        for case in cases["cases"].as_array().unwrap() {
+            let findings: Vec<&str> = case["findings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|f| f.as_str().unwrap())
+                .collect();
+            let Some(m) = [&rise, &held, &absent]
+                .into_iter()
+                .find(|m| !findings.is_empty() && findings.iter().all(|k| m.kinds.contains(k)))
+            else {
+                continue;
+            };
+            let attributed = json!({
+                "ok": case["domain"] != "indeterminate",
+                "domain": case["domain"],
+                "rule": case["rule"],
+                "unexplained": [],
+                "masked": case["masked"],
+                "subjects": m.subjects.iter().collect::<Vec<_>>(),
+            });
+            let ok = detection(m, &failed(json!(findings)), &attributed).is_ok();
+            let electrical = case["mutant"].is_null() && case["domain"] == "electrical";
+            assert_eq!(ok, electrical, "{}", case["name"]);
+            if ok {
+                accepted.push(case["name"].as_str().unwrap());
+            }
+        }
+        for want in [
+            "spi-absent-u4",
+            "held-low-scl",
+            "pullup-47k",
+            "cap-220p-2k2",
+        ] {
+            assert!(accepted.contains(&want), "{want}: {accepted:?}");
+        }
+        let run = failed(json!(["spi_identity_mismatch"]));
+        let a = |subjects: Value| {
+            json!({"ok": true, "domain": "electrical", "rule": "E2", "unexplained": [],
+                "masked": [], "subjects": subjects})
+        };
+        assert!(detection(&absent, &run, &a(json!(["device:U4"]))).is_ok());
+        assert!(detection(&absent, &run, &a(json!(["device:U4", "device:U2"]))).is_err());
+        assert!(detection(&absent, &run, &a(json!([]))).is_err());
+        assert!(detection(&rise, &run, &a(json!(["device:U4"]))).is_err());
+        // A run that passed, or failed unmatched, is not a detection.
+        let mut passed = failed(json!([]));
+        passed.verdict = "pass".into();
+        assert!(detection(&absent, &passed, &a(json!(["device:U4"]))).is_err());
+        let mut unmatched = run;
+        unmatched.matched = false;
+        assert!(detection(&absent, &unmatched, &a(json!(["device:U4"]))).is_err());
+    }
+
+    fn solved(path: &str) -> (aethelgard_ir::Specification, aethelgard_ir::SolvedTopology) {
+        let bytes = std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join(path),
+        )
+        .unwrap();
+        let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        (spec, topology)
+    }
+
+    fn scenario_file(path: &str) -> aethelgard_chaos::campaign::Scenario {
+        aethelgard_chaos::campaign::Scenario::parse(
+            &std::fs::read(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../..")
+                    .join(path),
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    }
 
     /// `uid_boundary` is the gate's own `sandbox.uid_boundary`, and true only
     /// when that is the JSON `true`; a gate that did not run has none; the
@@ -1157,7 +2034,6 @@ mod tests {
             board: "board",
             spec: "spec",
             harnesses: Vec::new(),
-            skipped: false,
             boot_time: "100000000ns".to_owned(),
         }
     }
@@ -1221,60 +2097,6 @@ mod tests {
                 .iter()
                 .any(|(_, p, want)| *p == "/harness_provenance" && want == "generated")
         );
-    }
-
-    fn names(v: &[&str]) -> Vec<String> {
-        v.iter().map(|s| (*s).to_owned()).collect()
-    }
-
-    #[test]
-    fn a_motor_board_drops_exactly_the_whole_schedule_harness_and_names_it() {
-        let all = names(&[
-            "proofs::every_valid_sequence",
-            "proofs::tim1_start_writes_the_solved_values",
-            "proofs::reset_clock_is_ok_exactly_at_reset",
-        ]);
-        let (ran, skipped) = harness_plan(all, true);
-        assert_eq!(
-            ran,
-            [
-                "proofs::tim1_start_writes_the_solved_values",
-                "proofs::reset_clock_is_ok_exactly_at_reset"
-            ]
-        );
-        assert!(skipped);
-        let f = skipped_finding(&ran);
-        assert_eq!(f.kind, "whole_schedule_harness_not_run");
-        assert_eq!(f.severity, "info");
-        assert!(
-            f.message
-                .contains("proofs::tim1_start_writes_the_solved_values")
-        );
-        assert!(
-            f.message
-                .contains("proofs::reset_clock_is_ok_exactly_at_reset")
-        );
-        assert!(
-            f.message
-                .contains("proofs::every_valid_sequence did not run")
-        );
-        assert!(f.message.contains("AET-WO-4500"));
-    }
-
-    #[test]
-    fn a_board_without_motors_keeps_every_harness() {
-        let all = names(&["proofs::every_valid_sequence", "proofs::i2c1_transfer"]);
-        let (ran, skipped) = harness_plan(all.clone(), false);
-        assert_eq!(ran, all);
-        assert!(!skipped);
-    }
-
-    #[test]
-    fn a_motor_board_without_the_whole_schedule_harness_names_nothing() {
-        let all = names(&["proofs::tim1_start_writes_the_solved_values"]);
-        let (ran, skipped) = harness_plan(all.clone(), true);
-        assert_eq!(ran, all);
-        assert!(!skipped);
     }
 
     #[test]

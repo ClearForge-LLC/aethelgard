@@ -777,10 +777,167 @@ fn unknown_field_in_each_struct_is_refused() {
     }
 }
 
+/// A document with every section of the specification populated, and one
+/// entry of each variant a section has: `sentinel-02-power.json` (power,
+/// lifecycle, devices, board) plus the connectors, net classes, pair and
+/// motor outputs it lacks. A new section earns its place in the walk by being
+/// added here; `the_full_document_is_valid_and_populates_every_section` fails
+/// until it is.
+fn full_document() -> serde_json::Value {
+    use serde_json::{Value, json};
+    let mut v: Value = serde_json::from_str(include_str!("fixtures/sentinel-02-power.json"))
+        .expect("the power fixture");
+    // Without the 1.8 V IMU and the crossing to it, which wait for `K6`
+    // (the sensor table has no output delay for it yet): `power.crossings`
+    // is the one empty list, named in `EMPTY_LISTS`. Its lifecycle
+    // acknowledgement goes with it (`AET-WO-4210`).
+    v["power"]["crossings"] = json!([]);
+    v["accept_lifecycle"] = json!([]);
+    for key in ["spi_devices", "spi_buses", "net_constraints"] {
+        let list = v[key].as_array().unwrap().clone();
+        v[key] = Value::Array(
+            list.into_iter()
+                .filter(|x| {
+                    !(x["reference"] == "U5"
+                        || x["id"] == "IMU"
+                        || x["net_name"].as_str().is_some_and(|n| n.starts_with("IMU")))
+                })
+                .collect(),
+        );
+    }
+    let c: Value = serde_json::from_str(include_str!(
+        "../../aethelgard-cli/tests/fixtures/connectors.json"
+    ))
+    .expect("the connectors fixture");
+    // The power fixture's J1 is the battery input; the two connectors are
+    // moved to J5 and J6, J2's pins onto the first SPI bus's nets.
+    let text = c["connectors"]
+        .to_string()
+        .replace("\"J1\"", "\"J5\"")
+        .replace("\"J2\"", "\"J6\"")
+        .replace("EXT_", "SPI_");
+    v["connectors"] = serde_json::from_str(&text).unwrap();
+    v["net_classes"] = json!([
+        {"name": "power", "track_width_um": 250,
+         "via": {"diameter_um": 700, "drill_um": 300}, "nets": ["VDD_3V3", "GND"]},
+        {"name": "sig", "track_width_um": 250, "via": null, "nets": ["I2C_SDA"]}
+    ]);
+    v["diff_pairs"] = json!([
+        {"name": "USB", "nets": ["SPI_SCK", "SPI_MOSI"], "gap_um": 300, "width_um": 200}
+    ]);
+    v["motor_outputs"] = json!([
+        {"label": "M1", "pin": null, "protocol": "pwm",
+         "pwm": {"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000}},
+        {"label": "M2", "pin": null, "protocol": "dshot600", "pwm": null}
+    ]);
+    v
+}
+
 #[test]
-fn missing_key_in_each_struct_is_refused() {
-    for pointer in OBJECT_POINTERS {
-        let keys: Vec<String> = spec_json()
+fn the_full_document_is_valid_and_populates_every_section() {
+    let doc = full_document();
+    let spec: Specification = serde_json::from_value(doc.clone()).expect("parses");
+    assert_eq!(spec.validate(), Ok(()));
+    // Every key the type writes is in the document.
+    let written = serde_json::to_value(&spec).unwrap();
+    assert_eq!(
+        written.as_object().unwrap().keys().collect::<Vec<_>>(),
+        doc.as_object().unwrap().keys().collect::<Vec<_>>(),
+        "the document and the type disagree on the sections"
+    );
+    // No list is empty and no section null (an empty list walks nothing),
+    // but for the named ones.
+    fn unpopulated(v: &serde_json::Value, at: &str, out: &mut Vec<String>) {
+        match v {
+            serde_json::Value::Null if at.matches('/').count() == 1 => out.push(at.to_owned()),
+            serde_json::Value::Array(a) if a.is_empty() => out.push(at.to_owned()),
+            serde_json::Value::Array(a) => {
+                for (i, c) in a.iter().enumerate() {
+                    unpopulated(c, &format!("{at}/{i}"), out);
+                }
+            }
+            serde_json::Value::Object(o) => {
+                for (k, c) in o {
+                    unpopulated(c, &format!("{at}/{k}"), out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut empty = Vec::new();
+    unpopulated(&doc, "", &mut empty);
+    let named: Vec<&str> = EMPTY_LISTS.iter().map(|(p, _)| *p).collect();
+    assert_eq!(empty, named, "the lists the full document leaves empty");
+}
+
+/// The lists the full document cannot populate, and why. Each is covered
+/// where it can be (`an_acknowledgement_s_keys_are_each_required`) or waits
+/// for the work that makes it buildable.
+const EMPTY_LISTS: &[(&str, &str)] = &[
+    (
+        "/accept_lifecycle",
+        "an acknowledgement stands only for an eol or nrnd part the board uses, and \
+         the only such parts (ICP10111, ICM20948) need a 1.8 V bus",
+    ),
+    (
+        "/power/crossings",
+        "the 1.8 V IMU crossing waits for K6: the sensor table has no output delay \
+         for ICM20948 (`OutputDelayMissing`)",
+    ),
+];
+
+#[test]
+fn an_acknowledgement_s_keys_are_each_required() {
+    use aethelgard_ir::LifecycleAcceptance;
+    let whole = serde_json::json!({"part": "ICM20948", "status": "eol", "statement": "why"});
+    assert!(serde_json::from_value::<LifecycleAcceptance>(whole.clone()).is_ok());
+    for key in ["part", "status", "statement"] {
+        let mut cut = whole.clone();
+        cut.as_object_mut().unwrap().remove(key);
+        let err = serde_json::from_value::<LifecycleAcceptance>(cut).unwrap_err();
+        assert!(
+            err.to_string().contains(&format!("missing field `{key}`")),
+            "{err}"
+        );
+    }
+}
+
+/// Keys whose removal is legitimately accepted: JSON pointer to the object,
+/// key, reason. None today: every key of every object is required, the
+/// nullable ones included (`INV-06`). A key that becomes optional is listed
+/// here with the reason, or the walk fails.
+const OPTIONAL_KEYS: &[(&str, &str, &str)] = &[];
+
+/// Every JSON object in `v`, as a pointer.
+fn object_pointers(v: &serde_json::Value, at: &str, out: &mut Vec<String>) {
+    match v {
+        serde_json::Value::Object(o) => {
+            out.push(at.to_owned());
+            for (k, child) in o {
+                let key = k.replace('~', "~0").replace('/', "~1");
+                object_pointers(child, &format!("{at}/{key}"), out);
+            }
+        }
+        serde_json::Value::Array(a) => {
+            for (i, child) in a.iter().enumerate() {
+                object_pointers(child, &format!("{at}/{i}"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Removing any one key of any object of the full document is refused, by
+/// name: `missing field`, not a default (`INV-06`). This is every
+/// per-section missing-key test in one walk.
+#[test]
+fn removing_any_key_of_any_object_is_refused() {
+    let doc = full_document();
+    let mut pointers = Vec::new();
+    object_pointers(&doc, "", &mut pointers);
+    let mut walked = 0;
+    for pointer in &pointers {
+        let keys: Vec<String> = doc
             .pointer(pointer)
             .unwrap()
             .as_object()
@@ -789,40 +946,29 @@ fn missing_key_in_each_struct_is_refused() {
             .cloned()
             .collect();
         for key in keys {
-            let mut doc = spec_json();
-            doc.pointer_mut(pointer)
+            let mut cut = doc.clone();
+            cut.pointer_mut(pointer)
                 .unwrap()
                 .as_object_mut()
                 .unwrap()
                 .remove(&key);
-            let err = parse(&doc).unwrap_err();
+            let outcome = parse(&cut).and_then(|s| s.validate().map_err(|e| e.to_string()));
+            if let Some((_, _, why)) = OPTIONAL_KEYS
+                .iter()
+                .find(|(p, k, _)| p == pointer && *k == key)
+            {
+                assert!(outcome.is_ok(), "{pointer}/{key} ({why}) is refused");
+                continue;
+            }
+            let err = outcome.expect_err(&format!("{pointer} without `{key}` is accepted"));
             assert!(
                 err.contains(&format!("missing field `{key}`")),
-                "{pointer} without {key}: {err}"
+                "{pointer} without `{key}`: {err}"
             );
+            walked += 1;
         }
     }
-}
-
-#[test]
-fn missing_optional_keys_are_refused() {
-    for (pointer, key) in [
-        ("/i2c_buses/0", "peripheral"),
-        ("/spi_buses/0", "peripheral"),
-        ("/i2c_buses/0/sda", "pin"),
-        ("/spi_buses/0/miso", "pin"),
-        ("/spi_devices/0/cs", "pin"),
-        ("/net_constraints/0", "impedance_ohms"),
-    ] {
-        let mut doc = spec_json();
-        doc.pointer_mut(pointer)
-            .unwrap()
-            .as_object_mut()
-            .unwrap()
-            .remove(key);
-        let err = parse(&doc).unwrap_err();
-        assert!(err.contains(&format!("missing field `{key}`")), "{err}");
-    }
+    assert!(walked > 250, "the walk only reached {walked} keys");
 }
 
 #[test]

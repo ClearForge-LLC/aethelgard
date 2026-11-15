@@ -39,6 +39,11 @@ pub struct Elf {
     pub overlay: bool,
     /// `.rodata` marked writable.
     pub writable: bool,
+    /// `(n, len)`: `n` more symbols, each named by one name of `len` bytes
+    /// appended to the string table (review 2, A15.1).
+    pub crowd: Option<(u32, u32)>,
+    /// The string table's last NUL left off.
+    pub unterminated: bool,
 }
 
 /// Step G's registers as the `4400` spike decoded them by hand (FEEDBACK §5):
@@ -72,6 +77,8 @@ impl Default for Elf {
             paddr: None,
             overlay: false,
             writable: false,
+            crowd: None,
+            unterminated: false,
         }
     }
 }
@@ -123,9 +130,20 @@ impl Elf {
         if self.duplicate {
             symbol(&mut syms, 1, ADDR, 308, 1, 1);
         }
+        let mut strtab = STRTAB.to_vec();
+        if let Some((n, len)) = self.crowd {
+            for _ in 0..n {
+                symbol(&mut syms, STRTAB.len() as u32, ADDR, 4, 1, 1);
+            }
+            strtab.extend(std::iter::repeat_n(b'g', len as usize));
+            strtab.push(0);
+        }
+        if self.unterminated {
+            strtab.pop();
+        }
         let symtab_off = DATA_OFF + data.len();
         let strtab_off = symtab_off + syms.len();
-        let shoff = strtab_off + STRTAB.len();
+        let shoff = strtab_off + strtab.len();
 
         let mut b = Vec::new();
         b.extend_from_slice(b"\x7fELF");
@@ -148,7 +166,7 @@ impl Elf {
         b.extend_from_slice(&[0; PHDR]);
         b.extend_from_slice(&data);
         b.extend_from_slice(&syms);
-        b.extend_from_slice(STRTAB);
+        b.extend_from_slice(&strtab);
         section(&mut b, [0, 0, 0, 0, 0, 0, 0, 0]);
         let rodata = self.section_offset.unwrap_or(DATA_OFF as u32);
         let flags = if self.writable { 3 } else { 2 };
@@ -159,7 +177,7 @@ impl Elf {
         );
         section(
             &mut b,
-            [0, 3, 0, 0, strtab_off as u32, STRTAB.len() as u32, 0, 0],
+            [0, 3, 0, 0, strtab_off as u32, strtab.len() as u32, 0, 0],
         );
         // One PT_LOAD: the data, run at ADDR and flashed at `paddr`.
         let len = data.len() as u32;

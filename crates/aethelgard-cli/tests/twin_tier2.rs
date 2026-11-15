@@ -1893,10 +1893,44 @@ fn motor_output_dead_leaves_its_pin_silent_and_reads_its_wrong_af() {
     );
 }
 
+/// `AET-WO-3303` §1.2: on a motor board the whole schedule is proved in
+/// parts, one per peripheral and timer (the whole harness did not finish in
+/// 33.5 min, `AET-WO-4300a` Q5), and every part of both motor fixtures
+/// proves in CI. The board crate names exactly these schedule harnesses.
+#[test]
+fn kani_proves_every_part_of_both_motor_fixtures() {
+    for fixture in ["motors-pwm", "motors-dshot600"] {
+        let (platform, _, _) = motor_board(fixture, "parts", |_| {}, |_| {});
+        let board = platform.parent().unwrap();
+        let proofs = fs::read_to_string(board.join("src/proofs.rs")).unwrap();
+        let parts: Vec<&str> = proofs
+            .lines()
+            .filter_map(|l| l.strip_prefix("fn every_valid_sequence"))
+            .map(|l| l.split('(').next().unwrap())
+            .collect();
+        assert_eq!(parts, ["_i2c1", "_spi1", "_tim1"], "{fixture}");
+        for part in parts {
+            let harness = format!("proofs::every_valid_sequence{part}");
+            let start = Instant::now();
+            let (code, v) = aethelgard(&[
+                "prove",
+                "--crate",
+                board.to_str().unwrap(),
+                "--harness",
+                &harness,
+            ]);
+            answer(&format!(
+                "prove {fixture} {harness}: exit={code:?} wall_s={:.2}",
+                start.elapsed().as_secs_f64()
+            ));
+            assert_eq!(code, Some(0), "{fixture} {harness}: {v}");
+            assert_eq!(v["verdict"], "pass", "{fixture} {harness}: {v}");
+        }
+    }
+}
+
 /// `AET-WO-4300a` §1.3: Kani proves the PWM fixture's TIM1 start writes the
-/// solved values, in order, and the reset-clock check is exact. The board's
-/// whole-schedule harness (`every_valid_sequence`) did not finish in 33.5 min
-/// on this board (FEEDBACK), so CI runs the two targeted harnesses.
+/// solved values, in order, and the reset-clock check is exact.
 #[test]
 fn kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check() {
     let (platform, _, _) = motor_board("motors-pwm", "prove", |_| {}, |_| {});

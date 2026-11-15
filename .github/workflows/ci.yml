@@ -301,7 +301,10 @@ jobs:
       # written, ADV3-1b D2CCIP2R written, ADV3-2 SBUS's CR2 read back,
       # ADV3-4 PA9 unrouted between TDR writes, ADV3-5 PA10 unrouted after
       # the first byte); recounted in the image (shard.sh parse, 151).
-      TIER2_MIN: "151"
+      # 152: plus 1 from AET-WO-3303 in twin_tier2.rs (Kani proves every part of
+      # both motor fixtures' schedule; main's 126 -> 127); recounted in the image
+      # after the merge (shard.sh parse, 152).
+      TIER2_MIN: "152"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

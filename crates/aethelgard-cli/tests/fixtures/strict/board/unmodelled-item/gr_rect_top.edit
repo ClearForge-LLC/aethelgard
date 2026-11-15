@@ -2,7 +2,7 @@
 # note: a gr_rect on a layer named TOP, which KiCad will not load
 # main: drc 5 ToolError kicad-cli; drc-parity 5 ToolError kicad-cli; extract 3 UnmodelledCopper
 # drc: 5 ToolError kicad-cli
-# drc-parity: 5 ToolError kicad-cli
+# drc-parity: 3 LayersDisagree
 # extract: 3 UnmodelledCopper
 @@ find
 		(0 "F.Cu" signal)

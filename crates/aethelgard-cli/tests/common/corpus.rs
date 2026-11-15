@@ -42,6 +42,7 @@ pub const BOARD_CLASSES: &[&str] = &[
     "parts",
     "connectivity",
     "coordinate",
+    "layer-name",
     "control",
 ];
 pub const SCHEMATIC_CLASSES: &[&str] = &[

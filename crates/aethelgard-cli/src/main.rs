@@ -792,21 +792,25 @@ fn check_kicad(
         })?;
         // Declared coupled pairs are judged on the board's copper, read and
         // joined by geometry first (`AET-WO-1308` §1.3): KiCad has no rule
-        // for a pair it cannot recognise by name.
+        // for a pair it cannot recognise by name. Extraction's allowlist runs
+        // first, so copper the pair judge does not read (an arc, a stray
+        // shape) is refused as `extract` refuses it (`AET-WO-3303` §1.3).
         if !stack.pairs.is_empty() {
-            use aethelgard_eda::route;
-            let stop = |kind: &'static str| {
-                move |message: String| run::Stop {
-                    code: EXIT_UNREADABLE,
-                    kind,
-                    id: None,
-                    message,
-                }
-            };
-            let (b, r) = route::read(tree, stack).map_err(stop("BoardUnreadable"))?;
-            route::connectivity(&b, &r).map_err(stop("NetLabelsDisagree"))?;
-            route::check(&b, &r).map_err(stop("ClearanceViolated"))?;
-            let reports = route::pairs(&b, &r).map_err(stop("PairNotCoupled"))?;
+            let read = aethelgard_eda::extract::read_tree(tree, stack).map_err(|r| run::Stop {
+                code: EXIT_UNREADABLE,
+                kind: r.kind,
+                id: r.id,
+                message: r.message,
+            })?;
+            let reports =
+                aethelgard_eda::route::pairs(&read.board, &read.routed).map_err(|message| {
+                    run::Stop {
+                        code: EXIT_UNREADABLE,
+                        kind: "PairNotCoupled",
+                        id: None,
+                        message,
+                    }
+                })?;
             pairs = Some(reports.into_iter().map(verdict::PairRecord::from).collect());
         }
     }

@@ -274,3 +274,112 @@ fn the_ui_board_is_the_generated_one() {
         path.display()
     );
 }
+
+/// The unit tests of the schedule proof's split read the PWM fixture's
+/// solved topology from this file; it must be exactly what `solve` gives.
+/// `AETHELGARD_BLESS=1` rewrites it.
+#[test]
+fn the_ui_topology_is_the_solved_one() {
+    let path: PathBuf =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/ui/motors-pwm/topology.json");
+    let (solved, _) = fixture("motors-pwm");
+    let text = serde_json::to_string(&solved).unwrap() + "\n";
+    if std::env::var_os("AETHELGARD_BLESS").is_some() {
+        fs::write(&path, &text).unwrap();
+    }
+    assert!(
+        fs::read_to_string(&path).unwrap() == text,
+        "{} differs",
+        path.display()
+    );
+}
+
+/// Each `#[kani::proof]` harness of a generated `proofs.rs`, by name.
+fn harnesses(proofs: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut armed = false;
+    for line in proofs.lines().map(str::trim) {
+        if line == "#[kani::proof]" {
+            armed = true;
+        } else if armed && let Some(rest) = line.strip_prefix("fn ") {
+            out.push(&rest[..rest.find('(').unwrap()]);
+            armed = false;
+        }
+    }
+    out
+}
+
+fn schedule_parts(proofs: &str) -> Vec<&str> {
+    harnesses(proofs)
+        .into_iter()
+        .filter(|h| h.starts_with("every_valid_sequence"))
+        .collect()
+}
+
+/// `AET-WO-3303` §1.2: a board with motor outputs proves its schedule in one
+/// part per unit, and keeps every targeted harness; the whole-schedule
+/// harness is not emitted.
+#[test]
+fn a_motor_board_proves_its_schedule_in_one_part_per_unit() {
+    for name in ["motors-pwm", "motors-dshot600"] {
+        let files = generated(name);
+        let proofs = &files["src/proofs.rs"];
+        assert_eq!(
+            schedule_parts(proofs),
+            [
+                "every_valid_sequence_i2c1",
+                "every_valid_sequence_spi1",
+                "every_valid_sequence_tim1"
+            ],
+            "{name}"
+        );
+        for kept in [
+            "i2c1_transfer_is_bounded_and_ordered",
+            "spi1_transfer_is_bounded_and_ordered",
+            "tim1_start_writes_the_solved_values",
+            "reset_clock_is_ok_exactly_at_reset",
+        ] {
+            assert!(harnesses(proofs).contains(&kept), "{name}: {kept}");
+        }
+        // Each part starts its own unit and no other, under the rely.
+        let starts = ["I2C1 started", "SPI1 started", "TIM1 started"];
+        for (part, own) in ["i2c1", "spi1", "tim1"].into_iter().zip(starts) {
+            let body = item(proofs, &format!("fn every_valid_sequence_{part}() {{"));
+            assert!(body.contains(own), "{name} {part}");
+            for other in starts.iter().filter(|o| **o != own) {
+                assert!(!body.contains(other), "{name} {part} schedules {other}");
+            }
+            assert!(body.contains("img.rely();"), "{name} {part}");
+        }
+    }
+}
+
+/// A GPIO output no unit owns gets its own part, which schedules its port's
+/// enable and its configure.
+#[test]
+fn an_output_no_unit_owns_is_proved_in_the_gpio_part() {
+    let (mut solved, table) = fixture("motors-pwm");
+    solved.gpio.insert("LED".into(), "PB0".into());
+    let files = generate_with("motors-board", &solved, &table, &answers).unwrap();
+    let proofs = &files["src/proofs.rs"];
+    assert_eq!(
+        schedule_parts(proofs),
+        [
+            "every_valid_sequence_i2c1",
+            "every_valid_sequence_spi1",
+            "every_valid_sequence_tim1",
+            "every_valid_sequence_gpio"
+        ]
+    );
+    let body = item(proofs, "fn every_valid_sequence_gpio() {");
+    assert!(body.contains("rcc.enable_gpiob(&mut img"), "{body}");
+    assert!(
+        body.contains("pb0.take().unwrap().into_output(&mut img)"),
+        "{body}"
+    );
+    assert!(
+        body.contains("the schedule did not configure PB0"),
+        "{body}"
+    );
+    assert!(!body.contains("enable_gpioa"), "{body}");
+}

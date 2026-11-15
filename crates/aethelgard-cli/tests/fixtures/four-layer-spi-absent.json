@@ -1,0 +1,10 @@
+{
+  "schema_version": 2,
+  "name": "four-layer-spi-absent",
+  "base": "four-layer.json",
+  "expect": "fail",
+  "expect_findings": ["spi_identity_mismatch", "spi_transaction_unwitnessed"],
+  "overrides": [
+    { "spi_device_absent": "U4" }
+  ]
+}

@@ -593,3 +593,27 @@ fn the_power_rows_bor_maxima_equal_the_supervisors() {
         .collect();
     assert_eq!(rows, chaos);
 }
+
+/// D2 (`AET-WO-3303`): the README's example success line carries the solved
+/// schema version and the reference's specification hash; neither may drift.
+#[test]
+fn the_readme_example_line_names_the_real_version_and_hash() {
+    let readme = std::fs::read_to_string(root().join("crates/aethelgard-cli/README.md")).unwrap();
+    let line = readme
+        .lines()
+        .find(|l| l.starts_with("{\"schema_version\":") && l.contains("\"specification_sha256\":"))
+        .expect("the README's example solved-topology line");
+    assert!(
+        line.starts_with(&format!(
+            "{{\"schema_version\":{},",
+            aethelgard_ir::SOLVED_SCHEMA_VERSION
+        )),
+        "{line}"
+    );
+    let (topology, _) = solved(&reference());
+    let prefix = &topology.specification_sha256[..8];
+    assert!(
+        line.contains(&format!("\"specification_sha256\":\"{prefix}…\"")),
+        "README hash prefix is not {prefix}: {line}"
+    );
+}
