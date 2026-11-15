@@ -359,3 +359,9 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
 | F8 | On today's routes the closed-form pieces refuse many paths real current uses: a turn inside a via pad, narrow pads, crowded plane rhombi. Coverage, not looseness, is their limit | S4 | measured | D5 |
 | F9 | **Only KiCad's source showed the plane's `min_thickness` opening.** The rhombus clearance must grow by half of it (0.125 mm). Without that, 4 more pins on the 4-layer fixture would carry a bound the fill may not support. Applied: 15 → 11 pins | `zone_filler.cpp`; `conditions.json` | measured / read | no |
 | F10 | **The router's via (0.6 mm pad, 0.3 mm drill) leaves a 0.15 mm annular ring.** At JLCPCB's ±0.075 mm hole-position tolerance [read], the bound made rigorous for every offset covers 2 of 16 pins at 4 layers, against 11 of 16 with the hole concentric. The ring, not the copper, limits the bound. A larger via pad (for example 0.7 mm), or the certified discrete flow (D5 (b)), is the remedy | `route.rs` `VIA_NM`/`DRILL_NM`; `s4/paths.out`, `paths-concentric.out` | measured | D3, D5, D8 |
+
+## Stop
+
+2026-11-15. AET-WO-1303 STOPPED: spike done, ruling needed on PR #133. Decisions D1–D10 are above.
+
+One clause of the builder's session goal stays open. It asked that "each bound [be] checked against an exact or cited case". The S4 bound is a formula in three thickness minimums: outer copper, plane copper and via plating. Every piece of the formula is checked against an exact or certified case, but no primary source reachable here publishes the three minimums. They stay declared conditions, which the work order's S4 permits. D6 asks for the ruling or a source (IPC-6012 Tables 3-4 and 3-14).
