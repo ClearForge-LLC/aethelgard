@@ -142,6 +142,7 @@ Probe plan, so the predictions have something to point at. Probes are built `420
 - **All 14 shared scenarios keep their verdict and finding kinds**, field for field. They differ only in `run_id`, `run`, `state_sequence_hash`, `trace_bytes` and `event_count` (+6 each). Each difference is named: the six enable registers judged in full (§1.6, F24) are six more kind 11 events; trace version 8 (§1.4) and specification version 4 (§1.1, which moves the specification's hash, and with it the run id) change every trace's bytes. D2 itself changes nothing (P3.1).
 - `simulate` differs in `boot.registers` (the same six), `boot.specification_sha256` and `input.sha256` (specification 4), and the firmware's path.
 - The new seeded scenario `motors-pwm` runs here with the reference firmware, which starts no timers, and fails `motor_output_unwitnessed` and `register_mismatch`: it is a seeded case's scenario, meant for its mutant firmware on the PWM fixture's board.
+- **Re-measured after the merge of `main` `091003f` (4300f's connectors)**, this head `07d0ffd` against `main`'s binaries built from `091003f` in the image (`~/.cache/aet-4300a/baseline/main3`, `head3`): the same result. All 14 shared scenarios keep their verdict and `matched`; each differs by `event_count` +6 and its hashes; every archive replays `ok` (15 on this side, the extra one `motors-pwm` as above); `simulate` passes on both with the same finding kinds, and its registers differ by the same six enable registers (`AHB1ENR`, `AHB2ENR`, `AHB3ENR`, `APB1HENR`, `APB3ENR` at 0, `APB4ENR` at 0x00010000). [measured]
 
 **The seeded set's evidence, re-derived from `attribute`** on the image's run (`~/.cache/aet-4300a/derive.log`; every case's domain and rule unchanged). Every move is 2100 F24's: the six enable registers now judged in full are kind 11 records archived in address order, `AHB3ENR`, `AHB1ENR` and `AHB2ENR` before `AHB4ENR`, `APB3ENR` before `APB1LENR`, `APB1HENR` and `APB4ENR` among the rest, so each event after them moves by six, and an enable register by the ones now before it:
 
@@ -152,7 +153,7 @@ Probe plan, so the predictions have something to point at. Probes are built `420
 | `i2c-clock-skipped` | [[4,7],[5,7],[12,11]] | [[4,7],[5,7],[16,11]] (`APB1LENR`, now after four enable registers) |
 | `gpiob-clock-skipped` | [[4,7],[5,7],[9,11],[10,11],[11,11]] | [[4,7],[5,7],[9,11],[10,11],[14,11]] (`AHB4ENR`, now after three) |
 | `spi-absent-u4`, `cs-never` | [[17,22]] | [[23,22]] |
-| `motor-output-dead` (new) | — | [[28,11],[44,26]]: `GPIOA.AFRH` and MOTOR1's witness, S4 |
+| `motor-output-dead` (new) | — | [[31,11],[47,26]]: `GPIOA.AFRH` and MOTOR1's witness, S4 (was [[28,11],[44,26]] before the adversarial pass judged `TIM1.CR2`, `SMCR` and `RCR`, three more kind 11 events before them; re-derived at `07d0ffd`, `attribute_seeded` 11 of 11 in the image) |
 
 **§1.8, the off-board net, measured on this work order's fixture** (`~/.cache/aet-4300a/evidence/gates-1.8`, HEAD `9fe8baa`'s binaries built in the pinned image, one container under RULE3, caps read back: memory.max 8 GiB, swap 0, pids 8192):
 - `aethelgard emit --file crates/aethelgard-cli/tests/fixtures/motors-pwm.json`: exit 0. The schematic carries each motor net `MOTOR1`–`MOTOR4` as one local label on one MCU pin (PA8–PA11), and nothing else on it.
