@@ -389,3 +389,28 @@ Each must be killed by a test above, one mutant each (sized to the diff).
 | TDK ICP-20100 product.tdk.com page | `7dc0209e35730f39545fdae83379e5bbf6b826227b2a954c9fc0375581174494` |
 | TE MS5611 page (403 body) | `6bb58f6c965a9529b86c497dfbfa0bd5a226f92895edf3b2cd3ea276b9d58e7e` |
 | TE MS5611 datasheet (403 body) | `5a8db0129245eed3af0b5e2b0e1bbd5c0796d71f862ba821248dc7ac22806e3a` |
+
+## Notes sent (mailbox, appended with a quoted heredoc)
+
+- **`4210.md`**: what our models will log. One Noisy line per transaction with every byte, nothing on an empty finish, no warning in a correct step. It also carries the size bound, the need for `Quantity::Pressure`, the namespace rule, and that a failed include is not `LOAD_ERROR`.
+- **`4300d.md`**: each candidate's I/O voltage, and that the recommended pair needs no 1.8 V domain.
+- **`4300f.md`**: no KiCad 10.0.7 symbol exists for either recommended part (D5 would land in its vendoring fence).
+- **Inbox `4220.md` read** at start and before the push. It holds the architect's note that `1307` merged (`d52c051`). `origin/main` at `cd0bd31` (docs PR #139, this work order) is merged in at `777d216`. This work order holds no literal from the routed board.
+
+## Gates (spike)
+
+**The fence:** `git diff --name-only origin/main...HEAD` lists this file and `spike/4220/` only. The work order on `main` is byte-identical to the docs branch's copy that was read (sha256 `1a798148…`).
+
+**Reduction pass (diff):** −1 line net, 0 duplicates removed, 2 dead items removed (an unused import in `s1.py`, and a `__pycache__` committed by the S4 run), 0 protected kept, 0 findings. The spike's harness reuses `s1.py`'s configuration in `s4.py` rather than copying it. The configuration itself is a copy of `renode.rs`'s, via `4210`'s `drive.py`, kept because the spike runs Renode without the CLI.
+
+On the host, under `systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`, at `777d216`:
+- `cargo fmt --all -- --check`: ok.
+- `cargo clippy --workspace --all-targets -- -D warnings`: ok.
+- `cargo test --workspace`:
+  - **The first run failed one test:** `tools_tier1::a_stub_cannot_create_files_beside_the_original_input`, with `cannot start kicad-cli: Text file busy (os error 26)`. That is an exec of a freshly written stub while a parallel test thread still held a write descriptor. This branch changes no crate.
+  - **The rerun passed:** that binary alone, 121 of 121; then the whole workspace, exit 0, 80 `test result: ok` and no failure.
+  - The flake is F15 below. No test was changed.
+
+This branch changes no crate, so tier 2 is CI's (`roadmap.md` §6). The spike's Renode runs are listed under "Containers".
+
+- **F15 · An `ETXTBSY` flake in `tools_tier1`** (measured once in two full runs on Furnace). `a_stub_cannot_create_files_beside_the_original_input` execs a stub `kicad-cli` that the test has just written. If another test thread forks while holding that file's write descriptor, `execve` fails with `ETXTBSY`. That is a test-harness race, outside this fence, reported for the architect.
