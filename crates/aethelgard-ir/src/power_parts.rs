@@ -450,7 +450,24 @@ pub struct ExternalRule {
     pub at: At,
     /// The least effective capacitance (under DC bias) the datasheet states
     /// for the role, where it states one, pF (`AET-WO-4300d3` §1.3).
-    pub effective_min_picofarads: Option<Limit>,
+    pub effective_min_picofarads: Option<EffectiveMin>,
+}
+
+/// A role's effective minimum, and what a shortfall found only under the
+/// declared derating does: refuse, where the regulator's own datasheet states
+/// that derating, or be reported, until a maker's DC-bias figure is held for
+/// the part (ruled D2 (c) on PR #158).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectiveMin {
+    pub limit: Limit,
+    pub on_declared: OnDeclared,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OnDeclared {
+    Enforce,
+    Report,
 }
 
 /// The thermal-via rule of an exposed pad, as the datasheet states it. The
@@ -800,7 +817,7 @@ struct RawExternal {
     #[serde(deserialize_with = "Option::deserialize")]
     max_picofarads: Option<i64>,
     #[serde(deserialize_with = "Option::deserialize")]
-    effective_min_picofarads: Option<RawLimit>,
+    effective_min_picofarads: Option<RawEffective>,
     #[serde(deserialize_with = "Option::deserialize")]
     rated_min_millivolts: Option<i64>,
     #[serde(deserialize_with = "Option::deserialize")]
@@ -808,6 +825,14 @@ struct RawExternal {
     rated_at_least_working: bool,
     dielectrics: Vec<Dielectric>,
     at: RawAt,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawEffective {
+    value: i64,
+    at: RawAt,
+    on_declared: OnDeclared,
 }
 
 #[derive(Deserialize)]
@@ -983,7 +1008,16 @@ impl Reader<'_> {
                 Some(_) if inductor => {
                     return Err(format!("`{f}`: an inductor has no effective capacitance"));
                 }
-                Some(l) => Some(self.positive(l, &format!("{f}.effective_min_picofarads"))?),
+                Some(m) => Some(EffectiveMin {
+                    limit: self.positive(
+                        RawLimit {
+                            value: m.value,
+                            at: m.at,
+                        },
+                        &format!("{f}.effective_min_picofarads"),
+                    )?,
+                    on_declared: m.on_declared,
+                }),
                 None => None,
             };
             out.push(ExternalRule {

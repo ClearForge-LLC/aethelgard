@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/power-parts.json`. It moves only with the file.
-const TABLE_SHA256: &str = "31c17f92a5b0d4389247561d7fd0e2011c68d4d9efc7f935e25b0509c0fd7b4a";
+const TABLE_SHA256: &str = "3b6a9bbd2c995afb11193ed84c1c9a7b830ec1c25f4113640c8885e5a221dc5a";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -1073,7 +1073,13 @@ fn the_fixture_passes_every_new_check_and_names_each_condition() {
     // §1.3: the LDO's 1 µF at 50 % against 0.47 µF; the buck's named (D2).
     assert!(has("`cin` holds 500000 pF effective at 3465 mV"));
     assert!(has("a margin of 1.06 times, typical, not guaranteed"));
-    assert!(has("`cin` would hold 5000000 pF effective at 26100 mV"));
+    // Ruled D2 (c): the buck's 10 µF input minimum is effective, and its
+    // shortfall under the declared derating is named, not blocking.
+    assert!(has(
+        "U10: `cin` holds 5.000 µF effective at 26100 mV under the declared derating"
+    ));
+    assert!(has("5.000 µF short of the 10.000 µF minimum"));
+    assert!(has("non-blocking until a maker's DC-bias figure is held"));
     assert!(has("a declared derating, not a maker's figure"));
     // §1.1, §1.4, D5.
     assert!(has(
@@ -1319,13 +1325,15 @@ fn a_bias_lie_and_a_short_effective_capacitance_are_refused() {
             );
         }
     }
-    // No derating covers the LDO's input at 217 per mille of its rating.
+    // No derating covers the buck's input at 522 per mille of its rating:
+    // the screen cannot be computed, so it refuses even where it would only
+    // report (ruled D2 (c) names a shortfall, not a missing figure).
     let mut v = base();
-    derate(&mut v, 200, 900);
+    derate(&mut v, 500, 500);
     assert_power(
         &refused(&v),
         Refusal::EffectiveCapacitanceBelowMinimum,
-        "U12",
+        "U10",
     );
     // The maker's typical figure, where held, is used before the derating.
     let mut t = table_json();
@@ -1344,21 +1352,61 @@ fn a_bias_lie_and_a_short_effective_capacitance_are_refused() {
         ]);
     });
     assert!(r.contains("above the rated"), "{r}");
-    // D2's other reading, pinned: were the buck's 10 µF effective, the
-    // fixture's single 10 µF input capacitor would be refused.
+    // Ruled D2 (c): the buck's input shortfall blocks once a maker's figure
+    // is held for its part (6 µF at 26.1 V here, against 10 µF), or where the
+    // row enforces on the declared derating.
     let mut t = table_json();
-    let ext = row(&mut t, "LMR33630ADDA")["kind"]["buck"]["external"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|e| e["role"] == "cin")
-        .unwrap();
-    ext["effective_min_picofarads"] =
-        json!({"value": 10_000_000, "at": {"document": "SNVSAN3F", "section": "test only"}});
+    row(&mut t, "GCM32EC71H106KA03")["kind"]["capacitor"]["dc_bias"] = json!([
+        {"millivolts": 26_100, "picofarads": {"value": 6_000_000, "at": {"document": "MURATA_GCM32EC71H106KA03", "section": "test only"}}}
+    ]);
     assert_power(
         &against(&base(), &t).unwrap_err(),
         Refusal::EffectiveCapacitanceBelowMinimum,
         "U10",
+    );
+    let mut t = table_json();
+    row(&mut t, "LMR33630ADDA")["kind"]["buck"]["external"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|e| e["role"] == "cin")
+        .unwrap()["effective_min_picofarads"]["on_declared"] = json!("enforce");
+    assert_power(
+        &against(&base(), &t).unwrap_err(),
+        Refusal::EffectiveCapacitanceBelowMinimum,
+        "U10",
+    );
+    // A maker's figure held only below the working voltage still counts as
+    // held: 4 µF at 20 V caps the derating and blocks.
+    let mut t = table_json();
+    row(&mut t, "GCM32EC71H106KA03")["kind"]["capacitor"]["dc_bias"] = json!([
+        {"millivolts": 20_000, "picofarads": {"value": 4_000_000, "at": {"document": "MURATA_GCM32EC71H106KA03", "section": "test only"}}}
+    ]);
+    assert_power(
+        &against(&base(), &t).unwrap_err(),
+        Refusal::EffectiveCapacitanceBelowMinimum,
+        "U10",
+    );
+    // A declared class-2 derating keeps at most 50 % (ruled on PR #158); a
+    // C0G band may keep all of it.
+    let mut v = base();
+    derate(&mut v, 1000, 501);
+    assert_power(
+        &refused(&v),
+        Refusal::PowerValueInvalid,
+        "power.conditions.dc_bias_derating[0]",
+    );
+    let mut v = base();
+    v["power"]["conditions"]["dc_bias_derating"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"dielectrics": ["C0G"], "ratio_max_permille": 1000, "retained_permille": 1000, "source": "class 1"}));
+    assert_eq!(spec(&v).validate().map(|_| ()), Ok(()));
+    v["power"]["conditions"]["dc_bias_derating"][1]["retained_permille"] = json!(1001);
+    assert_power(
+        &refused(&v),
+        Refusal::PowerValueInvalid,
+        "power.conditions.dc_bias_derating[1]",
     );
 }
 
@@ -1533,12 +1581,12 @@ fn the_new_guards_hold_at_their_edges() {
     );
     // The smallest band covering the ratio is used, its edge inclusive: the
     // LDO's input works at 217 per mille, so a band ending at 217 keeping 480
-    // per mille clears it, where the band to 1000 keeping 400 would not; its
+    // per mille clears it, where the band to 1000 keeping 300 would not; its
     // output, at 119 per mille, takes the band to 150.
     let bands = json!([
-        {"dielectrics": ["X5R", "X7R", "X7S"], "ratio_max_permille": 1000, "retained_permille": 400, "source": "a wide band"},
+        {"dielectrics": ["X5R", "X7R", "X7S"], "ratio_max_permille": 1000, "retained_permille": 300, "source": "a wide band"},
         {"dielectrics": ["X7R"], "ratio_max_permille": 217, "retained_permille": 480, "source": "a narrow band"},
-        {"dielectrics": ["X7R"], "ratio_max_permille": 150, "retained_permille": 900, "source": "a low band"}
+        {"dielectrics": ["X7R"], "ratio_max_permille": 150, "retained_permille": 500, "source": "a low band"}
     ]);
     let mut v = base();
     v["power"]["conditions"]["dc_bias_derating"] = bands.clone();
@@ -1547,7 +1595,7 @@ fn the_new_guards_hold_at_their_edges() {
     // (adversarial F6): two at one ratio, or a narrower one keeping less.
     for (i, field, value) in [
         (2, "ratio_max_permille", 217),
-        (1, "retained_permille", 300),
+        (1, "retained_permille", 200),
     ] {
         let mut v = base();
         v["power"]["conditions"]["dc_bias_derating"] = bands.clone();
@@ -1587,8 +1635,7 @@ fn the_new_guards_hold_at_their_edges() {
         .iter_mut()
         .find(|e| e["role"] == "cboot")
         .unwrap();
-    ext["effective_min_picofarads"] =
-        json!({"value": 1, "at": {"document": "SNVSAN3F", "section": "test only"}});
+    ext["effective_min_picofarads"] = json!({"value": 1, "at": {"document": "SNVSAN3F", "section": "test only"}, "on_declared": "enforce"});
     assert_power(
         &against(&base(), &t).unwrap_err(),
         Refusal::EffectiveCapacitanceBelowMinimum,

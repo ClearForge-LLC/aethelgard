@@ -624,6 +624,18 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
                 "shares a dielectric with an earlier band at the same ratio, or keeps more over a wider ratio".to_owned(),
             ));
         }
+        // Ruled on PR #158: a class-2 ceramic's declared derating is the
+        // conservative 50 % (SBVS320D p. 15) until a maker's curve is held.
+        let class2 = d.dielectrics.iter().any(|k| *k != pp::Dielectric::C0g);
+        if class2 && d.retained_permille > 500 {
+            return Err(invalid(
+                &path,
+                format!(
+                    "keeps {} per mille of a class-2 ceramic; the declared derating keeps at most 500 (the conservative 50 %, SBVS320D p. 15, ruled on PR #158)",
+                    d.retained_permille
+                ),
+            ));
+        }
         // A derating above 1 would raise capacitance under bias.
         if !(1..=1000).contains(&d.ratio_max_permille) || !(1..=1000).contains(&d.retained_permille)
         {
@@ -1853,9 +1865,10 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                         .map(|(part, c)| effective(ctx, part, c, w))
                         .collect::<Result<Vec<_>, String>>()
                         .map(|v| {
-                            let sum: i64 = v.iter().map(|(pf, _)| pf).sum();
-                            let how: Vec<String> = v.into_iter().map(|(_, h)| h).collect();
-                            (sum, how.join("; "), w)
+                            let sum: i64 = v.iter().map(|(pf, _, _)| pf).sum();
+                            let declared = v.iter().any(|(_, _, d)| *d);
+                            let how: Vec<String> = v.into_iter().map(|(_, h, _)| h).collect();
+                            (sum, how.join("; "), w, declared)
                         }),
                 ),
                 _ => None,
@@ -1869,7 +1882,7 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                         format!(
                             "`{role}`: no working voltage is known for the role, so the screen cannot clear it"
                         ),
-                        ctx.cite(&min.at),
+                        ctx.cite(&min.limit.at),
                     ));
                 }
                 (Some(min), Some(Err(why))) => {
@@ -1877,10 +1890,29 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                         Refusal::EffectiveCapacitanceBelowMinimum,
                         o.reference,
                         format!("`{role}`: {why}, so the screen cannot clear it"),
-                        ctx.cite(&min.at),
+                        ctx.cite(&min.limit.at),
                     ));
                 }
-                (Some(min), Some(Ok((eff, how, w)))) => {
+                (Some(min), Some(Ok((eff, how, w, true))))
+                    if eff <= min.limit.value && min.on_declared == pp::OnDeclared::Report =>
+                {
+                    // Ruled D2 (c): named, not blocking, until a maker's
+                    // figure is held for the part.
+                    let short = min.limit.value - eff;
+                    ctx.note(format!(
+                        "{}: `{role}` holds {}.{:03} µF effective at {w} mV under the declared derating ({how}), {}.{:03} µF short of the {}.{:03} µF minimum ({}); non-blocking until a maker's DC-bias figure is held for its parts, when it is enforced (ruled D2 (c))",
+                        o.reference,
+                        eff / 1_000_000,
+                        eff % 1_000_000 / 1000,
+                        short / 1_000_000,
+                        short % 1_000_000 / 1000,
+                        min.limit.value / 1_000_000,
+                        min.limit.value % 1_000_000 / 1000,
+                        ctx.cite(&min.limit.at)
+                    ));
+                }
+                (Some(min), Some(Ok((eff, how, w, _)))) => {
+                    let min = &min.limit;
                     if eff <= min.value {
                         return Err(refuse(
                             Refusal::EffectiveCapacitanceBelowMinimum,
@@ -1901,9 +1933,11 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                         eff * 100 / min.value % 100
                     ));
                 }
-                (None, Some(Ok((eff, how, w)))) if matches!(rule.role, Role::Cin | Role::Cout) => {
+                (None, Some(Ok((eff, how, w, _))))
+                    if matches!(rule.role, Role::Cin | Role::Cout) =>
+                {
                     ctx.note(format!(
-                        "{}: `{role}` would hold {eff} pF effective at {w} mV under DC bias ({how}); its row states no effective minimum, so only the rated value is judged (FEEDBACK D2)",
+                        "{}: `{role}` would hold {eff} pF effective at {w} mV under DC bias ({how}); its row states no effective minimum, so only the rated value is judged",
                         o.reference
                     ));
                 }
@@ -2510,13 +2544,14 @@ fn dielectric(d: pp::Dielectric) -> &'static str {
 /// A ceramic's effective capacitance at `working` mV, pF, and how it was
 /// found: its maker's typical figure at the first voltage at or above
 /// `working`, or else the declared derating with the smallest ratio band
-/// that covers it. `Err` says why there is neither.
+/// that covers it, and whether the declared derating decided it. `Err` says
+/// why there is neither.
 fn effective(
     ctx: &Ctx<'_>,
     part: &str,
     c: &pp::Capacitor,
     working: i64,
-) -> Result<(i64, String), String> {
+) -> Result<(i64, String, bool), String> {
     if let Some((mv, pf)) = c.dc_bias.iter().find(|(mv, _)| *mv >= working) {
         return Ok((
             pf.value,
@@ -2525,6 +2560,7 @@ fn effective(
                 pf.value,
                 ctx.cite(&pf.at)
             ),
+            false,
         ));
     }
     let rated = c.rated_millivolts.value;
@@ -2553,6 +2589,7 @@ fn effective(
                         last.value,
                         ctx.cite(&last.at)
                     ),
+                    false,
                 ));
             }
             Ok((
@@ -2561,6 +2598,7 @@ fn effective(
                     "{part}: {derated} pF, {} per mille of its rating kept at {ratio} per mille of its rated voltage, by the declared derating",
                     d.retained_permille
                 ),
+                true,
             ))
         }
         None => Err(format!(

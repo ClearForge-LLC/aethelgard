@@ -180,3 +180,23 @@ A Sonnet subagent ran one mutant per new guard, each against `aethelgard-ir --te
 3. Under the 22:55 ruling, the shard time waits on `4300b`'s refit. When this PR's head is under 20 minutes on every shard, that is variance, not a fix.
 
 Everything else in §1 is built, judged, adversarially reviewed, mutation-tested and reduced.
+
+## 7. Rulings applied (PR #158, comment 6902904831)
+
+- **§7, declared derating at the conservative 50 %.**
+  - The shape now refuses a declared derating that keeps more than 500 per mille of a class-2 ceramic (X5R, X7R, X7S), citing SBVS320D p. 15 and the ruling. A C0G band may keep up to 1000.
+  - The fixture declares 500. Murata's chart replaces the derating for its row when the chart lands: one row's `dc_bias` points, used before the derating.
+- **D2 (c), effective, named non-blocking until a figure is held.**
+  - LMR33630's `cin` row now holds a 10 µF effective minimum, cited to SNVSAN3F p. 23 and p. 19, with `on_declared: report`.
+  - When only the declared derating decides it, a shortfall is a named condition giving the row and the shortfall in µF. For the fixture: "U10: `cin` holds 5.000 µF effective at 26100 mV under the declared derating, 5.000 µF short of the 10.000 µF minimum … non-blocking until a maker's DC-bias figure is held for its parts, when it is enforced (ruled D2 (c))", and the same for U11.
+  - Once any of the role's parts has a maker figure, including one held only below the working voltage, it refuses `EffectiveCapacitanceBelowMinimum`.
+  - TLV755's 0.47 µF stays `on_declared: enforce`, because its own datasheet states the 50 % it is judged at.
+  - A ratio no figure or derating covers still refuses: a missing figure is not a shortfall.
+- **D1 (a), D3, D4:** accepted as built, with no change.
+- **D5: backlog, required before `4500`.** The emitter draws `power.input.hot_plug` and reads `controls`; Sentinel-02's board must carry its bulk capacitor. Owner: the next eda work order after `4300g`. The verdict's D5 condition stays.
+- **Backlog row (ruled):** effective input capacitance enforced when the chart arrives, and the fixture's input capacitance re-picked then. Owner: the next power work order.
+- **TVS:** binds the 6S fixture only. Sentinel-02 is ruled 3S–4S (`4500` declares its own).
+- **Mutation of the ruling's guards** (one mutant each, `aethelgard-ir --test power`):
+  - Mutants: report regardless of mode; the declared flag never set; a maker point, or the capped last point, counted as declared; the ceiling at 501; the class-2 test inverted.
+  - The first run left one survivor: the capped last point. A test now pins it. **6 of 6 killed** [measured, `~/.cache/aet-4300d3/evidence/mut/rulings-log.txt`].
+- **Shard time, as ruled at 22:55:** when `4300b` merges, merge `main` and take its `ci/test-weights.tsv`. Re-measure only if a shard still passes 20 minutes.
