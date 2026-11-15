@@ -29,12 +29,12 @@ With only Docker, `bash`, `curl` and `sha256sum`: this block fetches the pinned 
 ```bash
 (
 set -euo pipefail
-IMAGE=ghcr.io/clearforge-llc/aethelgard@sha256:4c440a2d9e8ebcfbfc5ac49c0d10c7ca3b705a232e0c8895d1e98e0c7764234f
-SPEC=https://raw.githubusercontent.com/ClearForge-LLC/aethelgard/3d13f4922b0adddb2f761c3a814c53fcfec61ac8/examples/sentinel-01-minimal.json
+IMAGE=ghcr.io/clearforge-llc/aethelgard@sha256:59e9f0aa2e1ee6ab48aa12855b659fae7ca9a5e9a43046f9d1c1cede9ffdce62
+SPEC=https://raw.githubusercontent.com/ClearForge-LLC/aethelgard/10806528ce75ab9b17fdf09f5eda360ae78c7cf8/examples/sentinel-01-minimal.json
 
 # The reference specification, checked against its hash.
 curl -fsSL -o spec.json "$SPEC"
-echo "acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1  spec.json" | sha256sum -c -
+echo "03a82a043d459930e254adf5ef24bc5899efe2f5507d29e1c717f315c7bfe7ea  spec.json" | sha256sum -c -
 
 docker pull -q "$IMAGE"
 # HOME is the run directory, so the CLI's scratch is private to you (AET-WO-1601).
