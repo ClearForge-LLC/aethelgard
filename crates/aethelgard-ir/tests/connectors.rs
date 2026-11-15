@@ -92,7 +92,11 @@ fn empty_connector_list_validates() {
         .iter()
         .map(|c| c.reference.as_str())
         .collect();
-    assert_eq!(refs, ["J3", "J4"], "only the programming path and the supply are declared");
+    assert_eq!(
+        refs,
+        ["J3", "J4"],
+        "only the programming path and the supply are declared"
+    );
 }
 
 #[test]

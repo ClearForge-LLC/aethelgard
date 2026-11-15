@@ -1637,7 +1637,11 @@ mod differential {
             i2c_devices: vec![],
             spi_devices,
             connectors: vec![
-                connector("J1", "SM06B-SRSS-TB", &["D", "", "", "SWDIO", "SWCLK", "GND"]),
+                connector(
+                    "J1",
+                    "SM06B-SRSS-TB",
+                    &["D", "", "", "SWDIO", "SWCLK", "GND"],
+                ),
                 connector("J2", "SM04B-GHS-TB", &["D", "", "", "GND"]),
             ],
             net_constraints,
