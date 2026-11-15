@@ -42,9 +42,28 @@
         "input": "battery",
         "output": "VDD_5V",
         "feedback": {
-          "top_ohms": 100000,
-          "bottom_ohms": 24900,
-          "part": "CRCW0603-1%"
+          "top": {
+            "reference": "R10",
+            "ohms": 102000
+          },
+          "bottom": {
+            "reference": "R11",
+            "ohms": 25500
+          },
+          "part": "TNPW0603-0.1%-25ppm"
+        },
+        "external": {
+          "inductor": {
+            "reference": "L10",
+            "part": "<a cited inductor row: L, Isat min, DCR max>"
+          },
+          "input_capacitors": [
+            {
+              "reference": "C10",
+              "part": "<a cited capacitor row: rated C, voltage, dielectric>"
+            }
+          ],
+          "_note": "each a declared part; the check reads rated values against the regulator row's stated ranges (D6)"
         }
       },
       {
@@ -53,9 +72,28 @@
         "input": "battery",
         "output": "VDD_3V3",
         "feedback": {
-          "top_ohms": 100000,
-          "bottom_ohms": 43200,
-          "part": "CRCW0603-1%"
+          "top": {
+            "reference": "R12",
+            "ohms": 107000
+          },
+          "bottom": {
+            "reference": "R13",
+            "ohms": 46400
+          },
+          "part": "TNPW0603-0.1%-25ppm"
+        },
+        "external": {
+          "inductor": {
+            "reference": "L11",
+            "part": "<a cited inductor row: L, Isat min, DCR max>"
+          },
+          "input_capacitors": [
+            {
+              "reference": "C11",
+              "part": "<a cited capacitor row: rated C, voltage, dielectric>"
+            }
+          ],
+          "_note": "each a declared part; the check reads rated values against the regulator row's stated ranges (D6)"
         }
       },
       {
@@ -79,13 +117,23 @@
     ],
     "sense": [
       {
-        "reference": "R20",
-        "top_ohms": 100000,
-        "bottom_ohms": 10000,
+        "top": {
+          "reference": "R20",
+          "ohms": 100000
+        },
+        "bottom": {
+          "reference": "R21",
+          "ohms": 10000
+        },
         "part": "CRCW0603-1%",
+        "reservoir": {
+          "reference": "C20",
+          "part": "<a cited capacitor row>"
+        },
         "from": "battery",
         "net": "VBAT_SENSE",
-        "pin": null
+        "pin": null,
+        "adc_resolution_bits": 12
       }
     ],
     "crossings": [
@@ -97,7 +145,14 @@
         "b_domain": "VDD_1V8",
         "_note": "TXU0304: A1-A3 to B1Y-B3Y carry SCK, MOSI and CS from the MCU (A side, 3.3 V); B4 to A4Y carries MISO back from the IMU (B side, 1.8 V). The channel directions are the part row's"
       }
-    ]
+    ],
+    "conditions": {
+      "board_temperature_celsius": {
+        "min": -40,
+        "max": 125,
+        "source": "declared: resistor and part temperature range the checks evaluate at (A2)"
+      }
+    }
   },
   "_mcu_load": "not declared by hand: the MCU's 658 mA comes from its parts row (DS12117 Rev 10 Table 120, Tj 125 C), and each device's from its row where a maximum is cited"
 }
