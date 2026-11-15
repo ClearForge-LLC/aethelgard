@@ -563,6 +563,16 @@ fn debug_mini_refuses_a_5v_supply_at_pin_1() {
         } if pin == "1"),
         "the supply is the MCU's, not the 5 V rail: {err}"
     );
+    assert!(
+        matches!(
+            &err,
+            E::ConnectorSupplyContradictsStandard {
+                required_millivolts: Some(3300),
+                ..
+            }
+        ),
+        "the required supply is the MCU's nominal, 3300 mV: {err}"
+    );
 }
 
 #[test]

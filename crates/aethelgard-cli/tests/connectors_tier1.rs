@@ -246,6 +246,16 @@ fn extract_counts_each_connectors_declared_budget_and_no_ci() {
             line["terms"]["offboard"], budget,
             "{net}: the off-board term is not the declared budget"
         );
+        let t = &line["terms"];
+        let sum: u64 = ["trace", "vias", "pads", "pins", "offboard"]
+            .iter()
+            .map(|k| t[k].as_u64().unwrap())
+            .sum();
+        assert_eq!(
+            line["c_bound_femtofarads"].as_u64(),
+            Some(sum),
+            "{net}: the bound is the sum of its terms, the off-board budget included"
+        );
         let named = line["offboard"].as_array().unwrap();
         assert_eq!(
             named.len(),

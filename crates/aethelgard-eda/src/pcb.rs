@@ -565,6 +565,9 @@ fn place_connectors(
     for &i in &row {
         let (item, g) = (&items[i], items[i].geometry);
         let origin = (up(x - g.keep.x0), down(edge - g.courtyard.y1));
+        // belt-and-suspenders: every vendored connector's pads sit inside its
+        // courtyard by more than EDGE_NM, so no shipped part trips this (a
+        // mutation that loosens it survives); a footprint added later might.
         for pad in item.fp.children("pad") {
             let r = pad_box(pad, &item.part.reference)?;
             if origin.1 + r.y1 + route::EDGE_NM > edge {
