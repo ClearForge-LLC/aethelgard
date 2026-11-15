@@ -13,12 +13,13 @@ categories = ["simulation","embedded"]
 aethelgard-ir.workspace = true
 # The register facts (AET-WO-2100, ruled on PR #56, R6).
 aethelgard-svd-hal.workspace = true
+# The serial frame (AET-WO-4300b), and the sha256 of the vendored Renode
+# files in tests (AET-WO-2204 D5).
+sha2.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
-# The sha256 of the vendored Renode files (AET-WO-2204 D5).
-sha2.workspace = true
 
 [lints]
 workspace = true

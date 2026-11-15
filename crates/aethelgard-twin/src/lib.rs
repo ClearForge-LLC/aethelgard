@@ -15,6 +15,11 @@
 //! `SPI.SPIMultiplexer`, each chip select a GPIO wired active-low (D1), and can
 //! leave one device absent behind its chip select (D4); [`model`] holds each
 //! model's witness and skipped lines (D2).
+//!
+//! `AET-WO-4300b`: [`serial`] holds what the judge expects of each serial
+//! port (its pattern, frame, injection instant and tags) and the parsers for
+//! its capture and its tag warnings; [`boot`] adds each USART's stored
+//! registers to the expected image.
 
 #![forbid(unsafe_code)]
 
@@ -22,6 +27,7 @@ pub mod analog;
 pub mod boot;
 pub mod model;
 pub mod platform;
+pub mod serial;
 pub mod timer;
 
 use aethelgard_ir::IrValidationError;
@@ -34,7 +40,9 @@ pub enum TwinError {
     InvalidTopology(IrValidationError),
     #[error("pin `{pin}` is not a GPIO pin name (`P[A-K]` and 0 to 15)")]
     InvalidPin { pin: String },
-    #[error("peripheral `{peripheral}` has no Renode model here (I2Cn, SPIn, TIMn with channels)")]
+    #[error(
+        "peripheral `{peripheral}` has no Renode model here (I2Cn, SPIn, TIMn with channels, USARTn or UARTn of a serial port)"
+    )]
     UnsupportedPeripheral { peripheral: String },
     #[error("`{peripheral}` is not in Renode's {file}, and only an SPI instance is added")]
     NotInRenode {
@@ -127,6 +135,9 @@ pub(crate) enum Kind {
     Spi,
     /// A timer with channels (`AET-WO-4300a`).
     Timer,
+    /// A USART or UART a serial port may use (`AET-WO-4300b`,
+    /// `aethelgard_ir::serial::PERIPHERALS`).
+    Serial,
 }
 
 pub(crate) fn kind(peripheral: &str) -> Result<Kind, TwinError> {
@@ -150,6 +161,8 @@ pub(crate) fn kind(peripheral: &str) -> Result<Kind, TwinError> {
             .is_ok_and(|n| aethelgard_ir::motor::TIMERS.contains(&n))
     {
         Ok(Kind::Timer)
+    } else if aethelgard_ir::serial::PERIPHERALS.contains(&peripheral) {
+        Ok(Kind::Serial)
     } else {
         Err(TwinError::UnsupportedPeripheral {
             peripheral: peripheral.to_owned(),

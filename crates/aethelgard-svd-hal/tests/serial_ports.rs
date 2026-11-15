@@ -74,6 +74,12 @@ type Port = (
 /// `aethelgard_ir::serial` on the reset clock and its nets `<LABEL>_TX` and
 /// `<LABEL>_RX` assigned.
 fn add_ports(solved: &mut SolvedTopology, ports: &[Port]) {
+    insert_ports(solved, ports);
+    solved.validate().unwrap();
+}
+
+/// [`add_ports`] without the topology's check, for a refusal the check makes.
+fn insert_ports(solved: &mut SolvedTopology, ports: &[Port]) {
     let clock = SolvedClock::reset();
     for (i, (label, peripheral, tx, rx, af, role, f)) in ports.iter().enumerate() {
         let kernel = serial::kernel_hz(&clock, peripheral).unwrap();
@@ -107,7 +113,6 @@ fn add_ports(solved: &mut SolvedTopology, ports: &[Port]) {
             },
         );
     }
-    solved.validate().unwrap();
 }
 
 const CONSOLE: [Port; 1] = [(
@@ -495,36 +500,63 @@ fn regeneration_is_byte_identical() {
     }
 }
 
-/// Each refusal, by name.
+/// Each refusal, by name. Since `aethelgard-ir` judges `serial_ports` in
+/// `SolvedTopology::validate` (step `validate_solved`), every case here is the
+/// topology's refusal before the generator looks, named with the id the
+/// check reports; the generator's own refusals stay behind it.
 #[test]
 fn what_the_generator_cannot_write_is_refused() {
-    let kind = |solved: &SolvedTopology, table: &PinTable| {
-        generate_with("b", solved, table, &answers)
-            .unwrap_err()
-            .kind()
+    // The refusal's name, and for a topology the check refuses, the check's
+    // own name and the id it names.
+    let kind = |solved: &SolvedTopology, table: &PinTable| match generate_with(
+        "b", solved, table, &answers,
+    )
+    .unwrap_err()
+    {
+        aethelgard_svd_hal::board::BoardError::InvalidTopology(e) => {
+            format!("InvalidTopology({} {})", e.kind(), e.id().unwrap_or("-"))
+        }
+        e => e.kind().to_owned(),
     };
-    // LPUART1: refused by name, whatever its pins.
+    // LPUART1: refused by name, whatever its pins. The topology's own
+    // serial check refuses it first, since `aethelgard-ir` judges
+    // `serial_ports` in `SolvedTopology::validate`: the port's first net (in
+    // name order) is on USART2, not on the port's LPUART1.
     let (mut solved, table) = console();
     solved.serial_ports.get_mut("console").unwrap().peripheral = "LPUART1".into();
-    assert_eq!(kind(&solved, &table), "UnsupportedPeripheral");
+    assert_eq!(
+        kind(&solved, &table),
+        "InvalidTopology(SerialPortMismatch CONSOLE_RX)"
+    );
     // Two ports on one USART.
     let (mut solved, table) = reference();
     let mut two = four_ports();
     (two[1].1, two[1].2, two[1].3, two[1].4) = ("USART1", "PB14", "PB15", 4);
-    add_ports(&mut solved, &two);
-    assert_eq!(kind(&solved, &table), "SerialPeripheralShared");
+    insert_ports(&mut solved, &two);
+    // The topology's serial check refuses it first, naming the second port
+    // (in label order) on USART1.
+    assert_eq!(
+        kind(&solved, &table),
+        "InvalidTopology(SerialPortMismatch mavlink)"
+    );
     // A TX on another USART's signal.
     let (mut solved, table) = console();
     let a = solved.assignments.get_mut("CONSOLE_TX").unwrap();
     a.pin = "PA9".into();
     a.peripheral = "USART1".into();
     a.signal = "USART1_TX".into();
-    assert_eq!(kind(&solved, &table), "SerialSignalMismatch");
+    assert_eq!(
+        kind(&solved, &table),
+        "InvalidTopology(SerialPortMismatch CONSOLE_TX)"
+    );
     // The port's TX and RX nets swapped, each now on the other's signal.
     let (mut solved, table) = console();
     let port = solved.serial_ports.get_mut("console").unwrap();
     (port.tx, port.rx) = (port.rx.clone(), port.tx.clone());
-    assert_eq!(kind(&solved, &table), "SerialSignalMismatch");
+    assert_eq!(
+        kind(&solved, &table),
+        "InvalidTopology(SerialPortMismatch console)"
+    );
     // A port's TX net on another peripheral's signal: I2C1's SDA, moved from
     // its own net.
     let (mut solved, table) = console();
@@ -538,15 +570,24 @@ fn what_the_generator_cannot_write_is_refused() {
     solved.analog_lines.insert("CONSOLE_TX".into(), line);
     let sda = solved.assignments.remove(&sda).unwrap();
     solved.assignments.insert("CONSOLE_TX".into(), sda);
-    assert_eq!(kind(&solved, &table), "SerialSignalMismatch");
+    assert_eq!(
+        kind(&solved, &table),
+        "InvalidTopology(SerialPortMismatch console)"
+    );
     // A port whose RX net is not assigned.
     let (mut solved, table) = console();
     solved.assignments.remove("CONSOLE_RX");
-    assert_eq!(kind(&solved, &table), "SerialPortIncomplete");
+    assert_eq!(
+        kind(&solved, &table),
+        "InvalidTopology(SerialPortMismatch console)"
+    );
     // One net for TX and RX.
     let (mut solved, table) = console();
     solved.serial_ports.get_mut("console").unwrap().rx = "CONSOLE_TX".into();
-    assert_eq!(kind(&solved, &table), "SerialPortIncomplete");
+    assert_eq!(
+        kind(&solved, &table),
+        "InvalidTopology(SerialPortMismatch console)"
+    );
     // Three stop bits, and a BRR past 16 bits.
     let (mut solved, table) = console();
     solved
@@ -555,10 +596,16 @@ fn what_the_generator_cannot_write_is_refused() {
         .unwrap()
         .framing
         .stop_bits = 3;
-    assert_eq!(kind(&solved, &table), "UnwritableSerialPort");
+    assert_eq!(
+        kind(&solved, &table),
+        "InvalidTopology(SerialPortMismatch console)"
+    );
     let (mut solved, table) = console();
     solved.serial_ports.get_mut("console").unwrap().brr = 0x1_0000;
-    assert_eq!(kind(&solved, &table), "UnwritableSerialPort");
+    assert_eq!(
+        kind(&solved, &table),
+        "InvalidTopology(SerialPortMismatch console)"
+    );
 }
 
 /// The files the board generator writes for the reference without serial

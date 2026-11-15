@@ -4685,8 +4685,15 @@ mod tests {
         let mut s = solved();
         s.assignments
             .insert("TX".into(), assign("PB14", "USART1", "USART1_TX", 4));
-        // A USART line no solved serial port names (`AET-WO-4300b`).
-        assert_eq!(kind(generate("b", &s, &t)), "SerialSignalMismatch");
+        // A USART line no solved serial port names (`AET-WO-4300b`): the
+        // topology's own serial check refuses it, naming the net, before the
+        // generator looks.
+        assert!(matches!(
+            generate("b", &s, &t),
+            Err(BoardError::InvalidTopology(
+                IrValidationError::SerialPortMismatch { id }
+            )) if id == "TX"
+        ));
 
         let mut s = solved();
         s.assignments

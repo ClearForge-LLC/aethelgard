@@ -467,6 +467,86 @@ fn timer_registers(
     Ok(())
 }
 
+/// Each serial port's USART after the boot, from the topology alone
+/// (`AET-WO-4300b` §1.5, `INV-07`): the fields Renode 1.17.0's
+/// `UART.STM32F7_USART` stores, each with the value the bring-up leaves.
+/// `CR1`: `UE | RE | TE`, `PCE` with any parity and `PS` for odd, under the
+/// stored bits (`UE`, `RE`, `TE`, `RXNEIE`, `TCIE`, `TXEIE`, `PEIE`, `PS`,
+/// `PCE`, `OVER8`, `RTOIE`; `STM32F7_USART.cs` L144–160, L317–318), so an
+/// interrupt enable or `OVER8` set fails here. `CR2`: `STOP` (L175, the only
+/// stored field). `CR3`: 0 under `DMAR` and `DMAT` (L186–187). `BRR`: the
+/// solved value in its 16 stored bits (L210). Positions from ST's header.
+/// The tags the framing sets or relies on (`CR1.M0`, `M1`, `CR2.TXINV`,
+/// `RXINV`, `CR3.ONEBIT`; L162, L167, L177–178, L347) are stored nowhere
+/// and listed as unobservable here: the judge sees them only as the warning
+/// a write that sets one logs (`crate::serial::judge_tags`).
+fn serial_registers(
+    topology: &SolvedTopology,
+    f: &cmsis::RegisterFacts,
+    field: &mut impl FnMut(u32, String, u32, u32),
+    unobservable: &mut Vec<String>,
+) -> Result<(), TwinError> {
+    let usart = f.layout("USART")?;
+    let bit = |name: &str| -> Result<u32, TwinError> { Ok(1 << f.position(name)?) };
+    let cr1_stored = [
+        "USART_CR1_UE_Pos",
+        "USART_CR1_RE_Pos",
+        "USART_CR1_TE_Pos",
+        "USART_CR1_RXNEIE_RXFNEIE_Pos",
+        "USART_CR1_TCIE_Pos",
+        "USART_CR1_TXEIE_TXFNFIE_Pos",
+        "USART_CR1_PEIE_Pos",
+        "USART_CR1_PS_Pos",
+        "USART_CR1_PCE_Pos",
+        "USART_CR1_OVER8_Pos",
+        "USART_CR1_RTOIE_Pos",
+    ]
+    .iter()
+    .try_fold(0u32, |m, n| Ok::<_, TwinError>(m | bit(n)?))?;
+    let (stop_pos, stop_width) = f.field("USART_CR2_STOP")?;
+    let cr3_stored = bit("USART_CR3_DMAR_Pos")? | bit("USART_CR3_DMAT_Pos")?;
+    for (_, port, _, _) in topology.serial_ports_in_order() {
+        let name = &port.peripheral;
+        kind(name)?;
+        let base = f.base(name)?;
+        let mut reg = |r: &str, mask: u32, value: u32| -> Result<(), TwinError> {
+            field(
+                base + usart.offset(r, 0)?,
+                format!("{name}.{r}"),
+                mask,
+                value,
+            );
+            Ok(())
+        };
+        let (pce, ps) = crate::serial::parity_bits(&port.framing);
+        let mut cr1 =
+            bit("USART_CR1_UE_Pos")? | bit("USART_CR1_RE_Pos")? | bit("USART_CR1_TE_Pos")?;
+        if pce {
+            cr1 |= bit("USART_CR1_PCE_Pos")?;
+        }
+        if ps {
+            cr1 |= bit("USART_CR1_PS_Pos")?;
+        }
+        reg("CR1", cr1_stored, cr1)?;
+        let stop = port.framing.stop_field().ok_or_else(|| {
+            TwinError::InvalidTopology(aethelgard_ir::IrValidationError::SerialPortMismatch {
+                id: name.clone(),
+            })
+        })?;
+        reg(
+            "CR2",
+            ((1u32 << stop_width) - 1) << stop_pos,
+            u32::from(stop) << stop_pos,
+        )?;
+        reg("CR3", cr3_stored, 0)?;
+        reg("BRR", 0xFFFF, port.brr)?;
+        for tag in ["CR1.M0", "CR1.M1", "CR2.RXINV", "CR2.TXINV", "CR3.ONEBIT"] {
+            unobservable.push(format!("{name}.{tag}"));
+        }
+    }
+    Ok(())
+}
+
 /// `TIMx_CR1.CEN` and `ARPE` (RM0433 Rev 9 §38.4.1).
 const CR1_CEN: u32 = 1;
 const CR1_ARPE: u32 = 1 << 7;
@@ -521,8 +601,6 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
         pins.insert(pin, (port, index, None));
         gates.insert(format!("GPIO{port}"));
     }
-    unobservable.sort();
-    unobservable.dedup();
 
     // (address, name) to (mask, value), so the list comes out in address order.
     let mut regs: BTreeMap<(u32, String), (u32, u32)> = BTreeMap::new();
@@ -552,6 +630,9 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
         }
     }
     timer_registers(topology, &f, &mut field)?;
+    serial_registers(topology, &f, &mut field, &mut unobservable)?;
+    unobservable.sort();
+    unobservable.dedup();
     // Every enable register (`*ENR`, not `*LPENR`) of the header's
     // `RCC_TypeDef`, cold at its reset value and judged in full: the reset
     // value and exactly the solved enable bits (2100 F24).

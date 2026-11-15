@@ -93,23 +93,29 @@ fn digests() -> Vec<(&'static str, String)> {
 /// (`motor_outputs`, `mcu.hse_hz`) moved the specification's sha256 in the
 /// three (`44f22188…e3af`, `bd957c1d…d4b0`, `b962492f…ee15`); every enable
 /// register cold and judged in full (2100 F24) moved the boot image
-/// (`747bdc04…fbb3`).
+/// (`747bdc04…fbb3`). Re-taken in `AET-WO-4300b`: the reference gains its
+/// console (specification version 7, USART1 on PA9/PA10), so the firmware
+/// configures USART1, sends its pattern and echoes (`200a6fac…fb44`); both
+/// platforms move by the specification's sha256 alone, USART1 being stock
+/// (`392ea776…68a3`, `dbf59971…3582`); and the boot image gains USART1's
+/// four registers, PA9/PA10's mode and AF, `USART1EN`, and its five tags
+/// unobservable (`893fb13d…c4a6`).
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "200a6fac97b95a58b7debf1b48504c30be71fdd182694de4f305af13af7ffb44",
+        "133070e47d446c842e298da09fef061e5e55b886792ce72ebb780eb364f6cbfc",
     ),
     (
         "platform",
-        "392ea7769db6ba466b88c78537a8f26f87911afa0eff8f9e07330ccc60da68a3",
+        "c15f83303fb212256d80e0b11be7f70b2a13112188b4c7962b8529b6cb84288a",
     ),
     (
         "platform faulted",
-        "dbf59971b4cbeea04b0ac6758e0af46cbc31b2d725b345c9fc1317fdeeb13582",
+        "a0a919aacd386fffe1f5e4e69c31611d43761fba735bb548827cf2c538eb1ea6",
     ),
     (
         "boot image",
-        "893fb13d4ae7e065b25f237b728f1c455d1e7cbd21972369c2815d8f9906c4a6",
+        "a235ac9e778f833964eed171c1fdf1fa9422204cf168db5aa362e58f23077722",
     ),
 ];
 

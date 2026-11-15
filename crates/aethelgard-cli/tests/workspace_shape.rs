@@ -477,10 +477,11 @@ fn twin_has_only_its_known_files_keys_and_dependencies() {
     };
     assert_eq!(
         table("dependencies"),
-        ["aethelgard-ir", "aethelgard-svd-hal", "thiserror"]
+        ["aethelgard-ir", "aethelgard-svd-hal", "sha2", "thiserror"]
     );
-    // `sha2` checks the vendored Renode files (`AET-WO-2204` D5).
-    assert_eq!(table("dev-dependencies"), ["serde_json", "sha2"]);
+    // `sha2` derives the serial frame (`AET-WO-4300b`), and checks the
+    // vendored Renode files in tests (`AET-WO-2204` D5).
+    assert_eq!(table("dev-dependencies"), ["serde_json"]);
     for key in ["dependencies", "dev-dependencies"] {
         for (name, dep) in twin[key].as_table().unwrap() {
             assert_eq!(

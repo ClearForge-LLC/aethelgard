@@ -6,7 +6,7 @@ use crate::platform;
 
 /// The reference topology, as `aethelgard solve` gives it for
 /// `examples/sentinel-01-minimal.json`.
-pub(crate) const REFERENCE: &str = r#"{"schema_version":6,"specification_sha256":"79f60a54044afeb2ef6e9c2c27edbdd6e065d9757cb0024144108a5982c6702c","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"serial_ports":{}}"#;
+pub(crate) const REFERENCE: &str = r#"{"schema_version":6,"specification_sha256":"ec44a555c91600547071f73338042210de82ecbf74c086f194f5c06853912ff0","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}}}"#;
 
 fn reference() -> SolvedTopology {
     serde_json::from_str(REFERENCE).unwrap()
@@ -17,6 +17,15 @@ pub(crate) fn bare() -> SolvedTopology {
     let mut t = reference();
     t.i2c_devices.clear();
     t.spi_devices.clear();
+    t
+}
+
+/// The reference with no device and no serial port: the board the `2100`
+/// spike and `4300a`'s probes read back, before `AET-WO-4300b`'s console.
+pub(crate) fn pre_serial() -> SolvedTopology {
+    let mut t = bare();
+    t.serial_ports.clear();
+    t.assignments.retain(|net, _| !net.starts_with("CONSOLE_"));
     t
 }
 
@@ -68,7 +77,7 @@ fn the_reference_platform_adds_spi1_and_names_every_solved_peripheral() {
         "spi1: SPI.STM32H7_SPI @ {\n        sysbus 0x40013000;\n        rcc RegistrationPeripheralAlias.SPI1\n    }\n    IRQ -> nvic@35\n"
     ));
     let names: Vec<(String, bool)> = platform::instances(
-        &bare(),
+        &pre_serial(),
         &std::collections::BTreeSet::new(),
         &std::collections::BTreeSet::new(),
     )
@@ -115,10 +124,15 @@ fn an_added_spi_takes_its_base_and_interrupt_from_the_header() {
 #[test]
 fn what_cannot_be_lowered_is_refused() {
     let kind = |t: SolvedTopology| platform::emit(&t).unwrap_err().kind();
-    // No SPI peripheral is solved any more, so no `spi_lines` either.
+    // No SPI peripheral is solved any more, so no `spi_lines` either. A
+    // USART is lowered since `AET-WO-4300b`, and one without its serial
+    // port is the topology's refusal; FDCAN1 has no model here.
+    let mut can = edited("\"SPI1\"", "\"FDCAN1\"");
+    can.spi_lines.clear();
+    assert_eq!(kind(can), "UnsupportedPeripheral");
     let mut usart = edited("\"SPI1\"", "\"USART1\"");
     usart.spi_lines.clear();
-    assert_eq!(kind(usart), "UnsupportedPeripheral");
+    assert_eq!(kind(usart), "InvalidTopology");
     // Every I2C1 name, signals too: an analog line must stay an I2C line.
     let t = SolvedTopology {
         assignments: reference()
@@ -187,7 +201,7 @@ fn reg(name: &str, address: u32, mask: u32, value: u32) -> Register {
 /// from the topology alone.
 #[test]
 fn the_reference_image_is_the_one_the_spike_read_back() {
-    let image = boot::expected(&bare()).unwrap();
+    let image = boot::expected(&pre_serial()).unwrap();
     assert_eq!(
         image.registers,
         [
@@ -221,6 +235,61 @@ fn the_reference_image_is_the_one_the_spike_read_back() {
         ]
     );
     assert_eq!(image.unobservable, ["GPIOB.OTYPER", "I2C1.TIMINGR"]);
+}
+
+/// The console (`AET-WO-4300b`): USART1 on PA9/PA10 at AF7, 115200 8N1.
+/// Its four registers under Renode's stored bits, its pins' mode and AF, its
+/// enable bit (`APB2ENR.USART1EN`, bit 4), and its five tags unobservable;
+/// nothing else of the image moves.
+#[test]
+fn the_console_adds_its_usart_its_pins_and_its_gate() {
+    let image = boot::expected(&bare()).unwrap();
+    let before = boot::expected(&pre_serial()).unwrap();
+    let mut added: Vec<&Register> = image
+        .registers
+        .iter()
+        .filter(|r| !before.registers.contains(r))
+        .collect();
+    added.sort_by_key(|r| r.address);
+    assert_eq!(
+        added,
+        [
+            &reg("USART1.CR1", 0x4001_1000, 0x0400_87ED, 0x0000_000D),
+            &reg("USART1.CR2", 0x4001_1004, 0x0000_3000, 0),
+            &reg("USART1.CR3", 0x4001_1008, 0x0000_00C0, 0),
+            &reg("USART1.BRR", 0x4001_100C, 0x0000_FFFF, 556),
+            &reg("GPIOA.MODER", 0x5802_0000, 0x003C_FC03, 0x0028_A801),
+            &reg("GPIOA.AFRH", 0x5802_0024, 0x0000_0FF0, 0x0000_0770),
+            &reg("RCC.APB2ENR", 0x5802_44F0, u32::MAX, 0x0000_1010),
+        ]
+    );
+    assert_eq!(image.cold, before.cold);
+    assert_eq!(
+        image.unobservable,
+        [
+            "GPIOB.OTYPER",
+            "I2C1.TIMINGR",
+            "USART1.CR1.M0",
+            "USART1.CR1.M1",
+            "USART1.CR2.RXINV",
+            "USART1.CR2.TXINV",
+            "USART1.CR3.ONEBIT",
+        ]
+    );
+}
+
+/// An SBUS-like port (8E2, odd parity here for `PS`): `PCE`, `PS`, `STOP`
+/// `10`, and the solved `BRR`.
+#[test]
+fn parity_and_two_stop_bits_reach_cr1_and_cr2() {
+    let mut t = bare();
+    let p = t.serial_ports.get_mut("CONSOLE").unwrap();
+    p.framing.parity = aethelgard_ir::Parity::Odd;
+    p.framing.stop_bits = 2;
+    let image = boot::expected(&t).unwrap();
+    let get = |n: &str| image.registers.iter().find(|r| r.name == n).unwrap().value;
+    assert_eq!(get("USART1.CR1"), 0x0000_060D);
+    assert_eq!(get("USART1.CR2"), 0x0000_2000);
 }
 
 #[test]
