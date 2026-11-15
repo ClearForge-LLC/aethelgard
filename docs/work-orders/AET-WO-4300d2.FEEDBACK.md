@@ -224,7 +224,7 @@ The reviewer was given the brief (`~/.cache/aet-4300d2/adversarial-brief.md`), t
 
 A fresh subagent proposed the cuts against the four questions; I applied those that remove a copy or a dead path at low risk, then re-ran the suite and the touched mutants.
 
-**Reduction pass (diff): −22 net · 4 duplicates removed · 3 dead paths removed · 4 protected kept · 9 findings below.**
+**Reduction pass (diff): −16 net (code: 43 added, 59 removed) · 4 duplicates removed · 3 dead paths removed · 4 protected kept · 9 findings below.**
 - **Duplicates removed:**
   - one rounded-up integer square root (`pcb::isqrt_up`) for the arc's circle and the loop gap;
   - `loops::gap_nm` reuses `route::gap2` and `Pad::inner` instead of re-deriving both;
