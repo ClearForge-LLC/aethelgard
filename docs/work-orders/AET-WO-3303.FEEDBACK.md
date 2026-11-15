@@ -1,6 +1,6 @@
 # AET-WO-3303 FEEDBACK — package preconditions, the harness split, the pair judge's allowlist, a strict number reader, `main` kept green
 
-**Status: STOPPED on D1** (§7, the second flag-and-stop condition), PR #155, on branch `wo/aet-3303-preconditions`, from `main` at `4246200`. Campaign coverage is judged and stated in every package's verdict, and **not enforced** until D1 is ruled: enforcing it today refuses every board with an SPI bus, the reference among them. Everything else in §1 is built, and §1.2's measured stop did not fire: the split proves in seconds.
+**Status: READY** on PR #155. Stopped on D1 at `65a44ae` (§7); the architect ruled D1 on PR #155 (comment 6899438039): (a) with a matched-detection condition and a passing baseline, (c) for device-less buses, (b) to the battery-sag work order, the refusal enforced. Built in §10, re-attacked in §11; open questions in §12. The original record of the stop (§2, §7) is kept as written.
 
 The predictions in §1 were committed before any container run, any measured run of the CLI and any Kani run. They are not edited afterwards; corrections go in later sections.
 
