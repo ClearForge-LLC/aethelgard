@@ -152,7 +152,7 @@ fn the_emitted_schematic_is_kicad_10_with_every_part_and_no_fp_filters() {
     let bom = fs::read_to_string(d.0.join("sentinel-01.bom.csv")).unwrap();
     assert!(bom.starts_with("Reference,Value,Footprint,Symbol,Note\r\n"));
     assert!(
-        bom.contains("U4,W25Q64JVSS,Package_SO:SOIC-8_5.3x5.3mm_P1.27mm,Memory_Flash:W25Q32JVSS,\"symbol Memory_Flash:W25Q32JVSS stands in for W25Q64JV"),
+        bom.contains("U4,W25Q64JVSSIQ,Package_SO:SOIC-8_5.3x5.3mm_P1.27mm,Memory_Flash:W25Q32JVSS,\"symbol Memory_Flash:W25Q32JVSS stands in for W25Q64JVSSIQ"),
         "{bom}"
     );
     assert!(bom.contains("U2,BME280,Package_LGA:Bosch_LGA-8"), "{bom}");
@@ -191,8 +191,10 @@ fn an_unknown_part_and_an_unanswerable_address_are_refused() {
     assert_eq!(v["error"]["id"], "U3");
     let mut spec = sentinel_spec();
     spec["i2c_devices"][0]["address"] = json!(0x40);
+    // Since `AET-WO-4300c` §1.5 `validate` refuses an address the part's
+    // straps do not offer, before the emitter's own check is reached.
     let v = json_line(&emit(&write_spec(&d, &spec), &d.0.join("o")), 2);
-    assert_eq!(v["error"]["kind"], "UnsupportedAddress");
+    assert_eq!(v["error"]["kind"], "I2cAddressNotOffered");
     assert_eq!(v["error"]["id"], "U2");
     assert!(!d.0.join("o").exists(), "nothing is written for a refusal");
 }

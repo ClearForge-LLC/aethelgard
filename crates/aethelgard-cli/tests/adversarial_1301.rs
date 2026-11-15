@@ -141,7 +141,18 @@ fn attack_a_wide_reference_stays_clear_of_every_other_part() {
     let mut s = reference_spec();
     let mut buses = Vec::new();
     let mut devices = Vec::new();
-    let mut constraints = Vec::new();
+    // The SPI bus stays, so its SCK and MOSI constraints (specification v3) stay.
+    let mut constraints: Vec<Value> = s["net_constraints"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| {
+            c["net_name"]
+                .as_str()
+                .is_some_and(|n| n.starts_with("SPI_"))
+        })
+        .cloned()
+        .collect();
     for b in 0..4 {
         buses.push(serde_json::json!({
             "id": format!("B{b}"), "peripheral": null, "speed_hz": 400000,

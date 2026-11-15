@@ -56,6 +56,9 @@ fn a_reserved_reference_is_refused_before_any_output() {
         ("i2c_devices", "True"),
         ("spi_devices", "sysbus"),
         ("spi_devices", "crypto"),
+        // `AET-WO-4300c` F21: the emitter declares the SPI controllers.
+        ("spi_devices", "SPI1"),
+        ("i2c_devices", "spi6"),
     ] {
         let (code, v, created) = generate(&format!("reserved-{list}-{name}"), |spec| {
             spec[list][0]["reference"] = name.into();
