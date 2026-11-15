@@ -89,8 +89,12 @@ const U2_LINE: &str = "  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
 /// The listing of the emitted platform's CPU and every solved peripheral.
 const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n  \u{2502}   \u{2514}\u{2500}\u{2500} spi1mux (SPIMultiplexer)\n  \u{2502}       \u{2514}\u{2500}\u{2500} u4 (GenericSpiFlash)\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
 
-/// The reference topology's seven registers as a correct boot leaves them.
-const GOOD_REGISTERS: [&str; 13] = [
+/// The reference topology's seven registers as a correct boot leaves them,
+/// the six other enable registers at their reset values (`AET-WO-4300a`,
+/// 2100 F24), then SysTick's control word, unarmed, and the five NVIC
+/// set-enable words, 0: no interrupt armed (`AET-WO-2204` A2, ruled D6 on
+/// PR #131).
+const GOOD_REGISTERS: [&str; 19] = [
     "0x0000A801",
     "0x55500000",
     "0x0000A000",
@@ -104,6 +108,13 @@ const GOOD_REGISTERS: [&str; 13] = [
     "0x00000000",
     "0x00001000",
     "0x00010000",
+    // `CLKSOURCE` reads 1 in Renode whatever is written (`NVIC.cs` L1040).
+    "0x00000004",
+    "0x00000000",
+    "0x00000000",
+    "0x00000000",
+    "0x00000000",
+    "0x00000000",
 ];
 
 /// What Renode 1.17.0's BME280 logs for U2's identity read (`AET-WO-2204`
@@ -892,9 +903,10 @@ fn a_solved_topology_is_not_a_base() {
     work.dir
         .write("s.json", scenario_with_base("topology.json").as_bytes());
     let out = work.campaign(&cli(Some(BRIDGE_BY_PULL_UP)), &tb.0, &["s.json"]);
-    // A solved topology is at version 4 and a specification at version 5
-    // (`AET-WO-1308`), so the reader refuses it at the version, before its
-    // shape: refused before running either way.
+    // A solved topology is at version 6 and a specification at version 8
+    // (`AET-WO-4210`: `accept_lifecycle`, after `AET-WO-4300d`'s 7), so the
+    // reader refuses it at the version, before its shape: refused before
+    // running either way.
     expect_refusal(&out, 2, "UnsupportedSchemaVersion");
     assert!(work.runs().is_empty());
 }

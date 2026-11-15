@@ -9,8 +9,11 @@
 //! record per device after the boot word, judged against `aethelgard-ir`'s
 //! part table ([`I2cPlan`]). `AET-WO-2204` witnesses each read by what Renode
 //! records, not by what the firmware writes: the device model's own log lines
-//! ([`I2cCheck::witness`]); and requires the core parked in thread mode on a
-//! self-loop ([`VECTACTIVE_MASK`], [`self_loops`]).
+//! ([`StepCheck::witness`]); and requires the core parked in thread mode on a
+//! self-loop ([`VECTACTIVE_MASK`], [`self_loops`]). `AET-WO-4210` grows the
+//! one identity read into each device's script, one record per step
+//! ([`StepCheck`]), and requires that the core enabled no interrupt
+//! ([`SYST_CSR`], [`NVIC_ISER`]; `AET-WO-2204` A2, ruled D6).
 //!
 //! Every expected value here comes from the [`SolvedTopology`] and ST's
 //! header, never from the firmware or from the generator that wrote it
@@ -142,9 +145,16 @@ pub struct Register {
 /// Where the first I2C record starts, from the boot word: the word after it.
 pub const RECORD_OFFSET: u32 = 4;
 
-/// One record is two words: the status, then the bytes read, first byte on
-/// the wire as the most significant.
+/// One record is the status word, then the bytes read in as many words as
+/// they need, at least one, the first byte on the wire as the most
+/// significant of the first word: a read of up to four bytes is two words, as
+/// every identity read is (`AET-WO-4210`).
 pub const RECORD_BYTES: u32 = 8;
+
+/// The words a record's value takes for a read of `width` bytes.
+pub fn value_words(width: u8) -> u32 {
+    u32::from(width).div_ceil(4).max(1)
+}
 
 /// What the judge writes to both words of every record before the core runs,
 /// as it does the boot word, so a record is only ever what the firmware wrote.
@@ -159,6 +169,19 @@ pub const STATUS_RXNE: u32 = 0x2202_0003;
 pub const STATUS_STOP: u32 = 0x2202_0004;
 /// An SPI read whose bounded wait for `SR.RXP` expired (`AET-WO-4200`).
 pub const STATUS_RXP: u32 = 0x2202_0005;
+
+/// SysTick's Control and Status Register (ARMv7-M Architecture Reference
+/// Manual, B3.3.2) and the NVIC's Interrupt Set-Enable Registers (B3.4.4):
+/// after the boot word, every one must read 0, because the generated
+/// firmware arms no interrupt, so "parked" claims none runs
+/// (`AET-WO-2204` A2, ruled D6 on PR #131; `RUL-19` (5)).
+pub const SYST_CSR: u32 = 0xE000_E010;
+pub const NVIC_ISER: u32 = 0xE000_E100;
+/// The `SYST_CSR` bits judged: `ENABLE`, `TICKINT` and `COUNTFLAG`. Renode's
+/// `CLKSOURCE` reads 1 whatever the firmware writes (`NVIC.cs` L1040, read at
+/// `066a7f13`), so the whole word is never 0 in the twin; these three say no
+/// SysTick is armed and none has counted to 0 (`AET-WO-4210` F-A2).
+pub const SYST_CSR_ARMED: u32 = 0x0001_0003;
 
 /// The Cortex-M7's Interrupt Control and State Register, and its `VECTACTIVE`
 /// field: the exception the core is handling, 0 in thread mode (ARMv7-M
@@ -210,34 +233,52 @@ impl Wire {
     }
 }
 
-/// One identity read the judge expects, from the parts table alone.
+/// One step of a device's script the judge expects (`AET-WO-4210` S2), from
+/// the parts table alone: the identity read, then a scripted part's
+/// configuration write and data read.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IdentityCheck {
+pub struct StepCheck {
     pub reference: String,
     /// ST's name of the controller the device is on, such as `I2C1`.
     pub peripheral: String,
     pub wire: Wire,
-    /// The byte written first: an I2C register, or an SPI command.
-    pub write: u8,
+    pub step: parts::StepKind,
+    /// The bytes written first: an I2C register or command, or an SPI command.
+    pub write: Vec<u8>,
     pub width: u8,
-    pub expected: u32,
-    /// The record's two words in RAM.
+    /// What the part answers, under `mask`: the identity, or the datasheet's
+    /// conversion of the stimulus (D3). A configuration reads nothing.
+    pub expected: u64,
+    pub mask: u64,
+    /// The record in RAM: its status word, then [`value_words`] words.
     pub status_at: u32,
     pub value_at: u32,
+    /// The level the judge sets the device's log to, and its witness lines'
+    /// prefix ([`model::Model::level`]).
+    pub level: (i8, &'static str),
     /// The model's path in Renode: `i2c1.u2` (the bus's stock name, then the
     /// device's emitted name), or `spi1.spi1mux.u4` (with the multiplexer).
     pub device: String,
     /// What Renode itself records when the controller runs this read on the
     /// model (`AET-WO-2204` D1): the model's whole log lines, after the host
     /// timestamp, in order. Only a transfer the controller runs to the
-    /// device's address calls the model, so no store writes these lines. All
+    /// device's address calls the model, so no store writes these lines; with
+    /// them, the `[WARNING]` lines a correct step makes the model write,
+    /// pinned to source (`AET-WO-4210` D4). All
     /// of it comes from the part table and the emitter, never from the
     /// firmware (`INV-07`). `None` when the model has no known witness format:
     /// a named failure, never a skip (D2).
     pub witness: Option<Vec<String>>,
+    /// The model's edge artefact, allowed only directly after the
+    /// multiplexer's finish line for the device ([`model::Model::idle_warning`]).
+    pub idle_warning: Option<String>,
     /// The model's `Noisy` lines that are not a transfer, which the judge
     /// skips; any other line from the device fails (`AET-WO-4200` D2).
     pub skipped: Vec<String>,
+    /// What the judge sets on the model before the run, for a data read: each
+    /// channel's property and value (D3). `None` when the model has no
+    /// property for a channel, so the read cannot be judged.
+    pub stimulus: Option<Vec<(&'static str, i32)>>,
 }
 
 /// A device the twin has no model for: reported, never passed.
@@ -252,10 +293,11 @@ pub struct Unmodelled {
 /// What a boot must leave for the devices.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct IdentityPlan {
-    /// One per device whose part has an identity and a model: the I2C
-    /// devices in the order they are declared, then the SPI devices in theirs;
-    /// the record index is the position.
-    pub checks: Vec<IdentityCheck>,
+    /// One per step of each device whose part has a model: the I2C devices
+    /// in the order they are declared, then the SPI devices in theirs, each
+    /// device's steps in its script's order; the record index is the
+    /// position.
+    pub checks: Vec<StepCheck>,
     pub unmodelled: Vec<Unmodelled>,
 }
 
@@ -272,15 +314,20 @@ pub enum Outcome {
     Invalid,
 }
 
-impl IdentityCheck {
-    /// The status word and value word, judged. Pass needs both: a status of
-    /// OK and exactly the table's value.
-    pub fn judge(&self, status: u32, value: u32) -> Outcome {
+impl StepCheck {
+    /// The status word and value, judged. Pass needs both: a status of OK and
+    /// exactly the table's value under its mask.
+    pub fn judge(&self, status: u32, value: u64) -> Outcome {
         // A status counts only on its own bus: an I2C read never writes
         // `RXP`, and an SPI read none of the I2C waits.
         let spi = matches!(self.wire, Wire::Spi { .. });
         match (status, spi) {
-            (STATUS_OK, _) if value == self.expected => Outcome::Pass,
+            (STATUS_OK, _)
+                if value & !parts::width_mask(self.width) == 0
+                    && value & self.mask == self.expected & self.mask =>
+            {
+                Outcome::Pass
+            }
             (STATUS_OK, _) => Outcome::Mismatch,
             (STATUS_TXIS, false) => Outcome::Timeout("TXIS"),
             (STATUS_TC, false) => Outcome::Timeout("TC"),
@@ -292,19 +339,21 @@ impl IdentityCheck {
     }
 }
 
-/// The identity reads a boot of the topology's devices must make: the I2C
-/// devices in the specification's order, then the SPI devices in theirs; and
-/// the devices it cannot check. The identity is the parts table's; the device
-/// is modelled when [`model::kind`] says so.
+/// The steps a boot of the topology's devices must make: the I2C devices
+/// in the specification's order, then the SPI devices in theirs, each
+/// device's script in order ([`parts::Part::steps`]); and the devices it
+/// cannot check. The steps are the parts table's; the device is modelled when
+/// [`model::kind`] says so.
 pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
     let base = boot_word()?;
     let mut plan = IdentityPlan::default();
-    let push = |plan: &mut IdentityPlan,
-                reference: &str,
-                peripheral: &str,
-                part: &str,
-                wire: Wire,
-                device: &dyn Fn() -> Result<String, TwinError>|
+    let mut next = RECORD_OFFSET;
+    let mut push = |plan: &mut IdentityPlan,
+                    reference: &str,
+                    peripheral: &str,
+                    part: &str,
+                    wire: Wire,
+                    device: &dyn Fn() -> Result<String, TwinError>|
      -> Result<(), TwinError> {
         let Some(model) = model::kind(part)? else {
             plan.unmodelled.push(Unmodelled {
@@ -315,31 +364,53 @@ pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
             });
             return Ok(());
         };
-        let Some(id) = parts::identity(part).map_err(TwinError::InvalidTopology)? else {
+        let table = parts::table().map_err(TwinError::InvalidTopology)?;
+        let Some(p) = table.get(part) else {
             return Ok(());
         };
-        let at = u32::try_from(plan.checks.len())
-            .ok()
-            .and_then(|n| n.checked_mul(RECORD_BYTES))
-            .and_then(|n| n.checked_add(RECORD_OFFSET))
-            .and_then(|n| base.checked_add(n))
-            .ok_or_else(|| TwinError::InvalidDeviceName {
-                reference: reference.to_owned(),
-            })?;
         let device = device()?;
-        plan.checks.push(IdentityCheck {
-            reference: reference.to_owned(),
-            peripheral: peripheral.to_owned(),
-            wire,
-            write: id.write,
-            width: id.width,
-            expected: id.value,
-            status_at: at,
-            value_at: at + 4,
-            witness: model.witness(&device, id.write, id.width, id.value),
-            skipped: model.skipped(&device),
-            device,
-        });
+        for step in p.steps() {
+            let words = value_words(step.width);
+            let at = next;
+            next = at
+                .checked_add(4 * (1 + words))
+                .ok_or_else(|| TwinError::InvalidDeviceName {
+                    reference: reference.to_owned(),
+                })?;
+            let status_at = base
+                .checked_add(at)
+                .ok_or_else(|| TwinError::InvalidDeviceName {
+                    reference: reference.to_owned(),
+                })?;
+            let stimulus = match (&p.script, step.kind) {
+                (Some(s), parts::StepKind::Data) => s
+                    .channels
+                    .iter()
+                    .map(|c| model.stimulus(c.quantity).map(|prop| (prop, c.stimulus)))
+                    .collect::<Option<Vec<_>>>(),
+                _ => Some(Vec::new()),
+            };
+            plan.checks.push(StepCheck {
+                reference: reference.to_owned(),
+                peripheral: peripheral.to_owned(),
+                wire: wire.clone(),
+                step: step.kind,
+                width: step.width,
+                expected: step.expected,
+                mask: step.mask,
+                status_at,
+                value_at: status_at + 4,
+                level: model.level(),
+                // A data read whose stimulus the model cannot be set to has
+                // no expected value the twin can witness (D3).
+                witness: model.witness(&device, &step).filter(|_| stimulus.is_some()),
+                idle_warning: model.idle_warning(&device),
+                skipped: model.skipped(&device),
+                stimulus,
+                device: device.clone(),
+                write: step.write,
+            });
+        }
         Ok(())
     };
     for (reference, d) in topology.i2c_devices_in_order() {
@@ -591,6 +662,13 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
             }
         })
         .collect();
+    // No interrupt armed (`AET-WO-2204` A2, ruled D6): SysTick's control
+    // word, and one set-enable word per 32 of the part's interrupt lines
+    // (the header's highest `IRQn`).
+    field(SYST_CSR, "SysTick.CSR".to_owned(), SYST_CSR_ARMED, 0);
+    for i in 0..=f.irq_max()? / 32 {
+        field(NVIC_ISER + 4 * i, format!("NVIC.ISER{i}"), u32::MAX, 0);
+    }
     let registers = regs
         .into_iter()
         .map(|((address, name), (mask, value))| Register {

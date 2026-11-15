@@ -333,16 +333,18 @@ fn a_timestamp_of_u64_max_followed_by_another_event_is_refused() {
 #[test]
 fn an_unknown_version_is_refused() {
     // [magic, version, ...] -> the version byte is the one right after the
-    // magic text. The trace's version is 8 since AET-WO-4300a added kinds 24
-    // to 26 (7 since AET-WO-4200 added kinds 21 to 23, 6 since AET-WO-2205 named the tools in the header, 5 since
+    // magic text. The trace's version is 9 since AET-WO-4210 made kinds 12, 13,
+    // 21 and 22 one event per script step (8 since AET-WO-4300a added kinds 24
+    // to 26, 7 since AET-WO-4200 added kinds 21 to 23, 6 since AET-WO-2205
+    // named the tools in the header, 5 since
     // AET-WO-2204 made kinds 13 and 19 carry the device model's log lines, 4
     // since AET-WO-2301 added kinds 16 to 20, 3 since AET-WO-3100 added kind
-    // 15, 2 since AET-WO-2300 added the campaign's kinds); 1 to 7 and 9 are
-    // refused, so an older trace never replays under version 8's rules (INV-06).
+    // 15, 2 since AET-WO-2300 added the campaign's kinds); 1 to 8 and 10 are
+    // refused, so an older trace never replays under version 9's rules (INV-06).
     let at = 1 + 1 + "aethelgard-trace".len();
-    for found in [1u8, 2, 3, 4, 5, 6, 7, 9] {
+    for found in [1u8, 2, 3, 4, 5, 6, 7, 8, 10] {
         let mut trace = header_bytes();
-        assert_eq!(trace[at], 0x08);
+        assert_eq!(trace[at], 0x09);
         trace[at] = found;
         let dir = commit_raw(&format!("v{found}-trace"), &trace, 0, [0; 32]);
         assert!(matches!(

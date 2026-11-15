@@ -80,8 +80,11 @@ fn check(status: &str, observed: u64) -> Record {
     Record::I2cCheck {
         reference: "U2".into(),
         address: 0x76,
-        register: 0xD0,
+        step: "identity".into(),
+        write: vec![0xD0],
+        width: 1,
         expected: 0x60,
+        mask: 0xFF,
         observed: Some(observed),
         status: Some(status.into()),
     }
@@ -108,6 +111,7 @@ fn witness_with(
         v.iter().map(|l| format!("[NOISY] {device}: {l}")).collect()
     };
     Record::I2cWitness {
+        step: "identity".into(),
         peripheral: peripheral.into(),
         reference: reference.into(),
         expected: lines(expected),
@@ -777,8 +781,11 @@ fn u5_read(r: &mut Vec<Record>, status: &str, observed: &[&str]) {
         Record::I2cCheck {
             reference: "U5".into(),
             address: 0x40,
-            register: 0xD0,
+            step: "identity".into(),
+            write: vec![0xD0],
+            width: 1,
             expected: 0x60,
+            mask: 0xFF,
             observed: Some(0),
             status: Some(status.into()),
         },
@@ -882,8 +889,11 @@ fn a4_one_devices_witness_never_explains_another_devices_timeout() {
         Record::I2cCheck {
             reference: "U3".into(),
             address: 0x48,
-            register: 0x0F,
+            step: "identity".into(),
+            write: vec![0x0F],
+            width: 2,
             expected: 0x117,
+            mask: 0xFFFF,
             observed: Some(0x00),
             status: Some("ok".into()),
         },
@@ -1549,4 +1559,104 @@ fn a_witness_on_a_faulted_bus_stays_masked_when_the_run_is_indeterminate() {
         [13],
         "the wrong witness on the faulted bus is masked"
     );
+}
+
+// ---- AET-WO-4210: one check and one witness per step of a device's script ----
+
+/// U2's `data` step (register 0xF7, two bytes, 0x1234) as a check and its
+/// witness, appended after the identity read's.
+fn with_data_step(r: &mut Vec<Record>, observed_lines: &[&str]) {
+    insert_after_last(
+        r,
+        is_check,
+        Record::I2cCheck {
+            reference: "U2".into(),
+            address: 0x76,
+            step: "data".into(),
+            write: vec![0xF7],
+            width: 2,
+            expected: 0x1234,
+            mask: 0xFFFF,
+            observed: Some(0x1234),
+            status: Some("ok".into()),
+        },
+    );
+    let mut w = witness_with(
+        "I2C1",
+        "U2",
+        &["Write F7", "Read 12 34"],
+        Some(observed_lines),
+    );
+    if let Record::I2cWitness { step, .. } = &mut w {
+        *step = "data".into();
+    }
+    insert_after_last(r, is_witness, w);
+}
+
+#[test]
+fn a_data_steps_witness_that_differs_is_that_steps_event() {
+    let mut r = healthy();
+    with_data_step(&mut r, &["Write F7", "Read 12 35"]);
+    replace(
+        &mut r,
+        is_verdict,
+        verdict(&[("i2c_transaction_unwitnessed", 1)]),
+    );
+    let data_witness = r
+        .iter()
+        .rposition(|x| matches!(x, Record::I2cWitness { step, .. } if step == "data"))
+        .unwrap() as u64;
+    let a = attributed(&r);
+    assert_eq!(a.rule, Rule::S1);
+    assert_eq!(
+        a.symptoms.iter().map(|e| e.index).collect::<Vec<_>>(),
+        [data_witness]
+    );
+    // The same data step, read as solved, is no symptom of that finding.
+    let mut r = healthy();
+    with_data_step(&mut r, &["Write F7", "Read 12 34"]);
+    replace(
+        &mut r,
+        is_verdict,
+        verdict(&[("i2c_transaction_unwitnessed", 1)]),
+    );
+    assert_eq!(attributed(&r).rule, Rule::I1);
+}
+
+#[test]
+fn a_masked_identity_check_counts_as_passing() {
+    let masked = |observed: u64| {
+        let mut r = healthy();
+        replace(
+            &mut r,
+            is_check,
+            Record::I2cCheck {
+                reference: "U2".into(),
+                address: 0x76,
+                step: "identity".into(),
+                write: vec![0xD0],
+                width: 2,
+                expected: 0x0008,
+                mask: 0x3F,
+                observed: Some(observed),
+                status: Some("ok".into()),
+            },
+        );
+        replace(
+            &mut r,
+            is_witness,
+            witness_with(
+                "I2C1",
+                "U2",
+                &["Write D0", "Read 00 08"],
+                Some(&["Write D0", "Read 00 08"]),
+            ),
+        );
+        replace(&mut r, is_verdict, verdict(&[("i2c_identity_mismatch", 1)]));
+        attributed(&r).rule
+    };
+    // 0xFFC8 & 0x3F == 0x08: the claimed mismatch has no event to show it.
+    assert_eq!(masked(0xFFC8), Rule::I1);
+    // 0xFF00 & 0x3F == 0: a real mismatch.
+    assert_ne!(masked(0xFF00), Rule::I1);
 }

@@ -6,7 +6,7 @@ use crate::platform;
 
 /// The reference topology, as `aethelgard solve` gives it for
 /// `examples/sentinel-01-minimal.json`.
-pub(crate) const REFERENCE: &str = r#"{"schema_version":6,"specification_sha256":"921207936b7d56bd04c03e59bf0185e659839fb094e3e1c776c0716b3d9f8e04","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"power":null}"#;
+pub(crate) const REFERENCE: &str = r#"{"schema_version":6,"specification_sha256":"03a82a043d459930e254adf5ef24bc5899efe2f5507d29e1c717f315c7bfe7ea","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"power":null}"#;
 
 fn reference() -> SolvedTopology {
     serde_json::from_str(REFERENCE).unwrap()
@@ -204,6 +204,14 @@ fn the_reference_image_is_the_one_the_spike_read_back() {
             reg("RCC.APB1HENR", 0x5802_44EC, u32::MAX, 0),
             reg("RCC.APB2ENR", 0x5802_44F0, u32::MAX, 0x0000_1000),
             reg("RCC.APB4ENR", 0x5802_44F4, u32::MAX, 0x0001_0000),
+            // `AET-WO-2204` A2 (ruled D6): no interrupt armed, one ISER per
+            // 32 lines up to the header's `WAKEUP_PIN_IRQn` = 149.
+            reg("SysTick.CSR", 0xE000_E010, 0x0001_0003, 0),
+            reg("NVIC.ISER0", 0xE000_E100, u32::MAX, 0),
+            reg("NVIC.ISER1", 0xE000_E104, u32::MAX, 0),
+            reg("NVIC.ISER2", 0xE000_E108, u32::MAX, 0),
+            reg("NVIC.ISER3", 0xE000_E10C, u32::MAX, 0),
+            reg("NVIC.ISER4", 0xE000_E110, u32::MAX, 0),
         ]
     );
     assert_eq!(
@@ -297,13 +305,18 @@ fn the_judge_expects_the_part_table_s_values_in_records_after_the_boot_word() {
     );
     let c = &image.identity.checks[0];
     assert_eq!(
-        (c.reference.as_str(), &c.wire, c.write),
-        ("U2", &boot::Wire::I2c { address: 0x76 }, 0xD0)
+        (c.reference.as_str(), &c.wire, c.write.as_slice()),
+        ("U2", &boot::Wire::I2c { address: 0x76 }, &[0xD0][..])
     );
     let f = &image.identity.checks[1];
     assert_eq!(
-        (f.reference.as_str(), f.write, f.width, f.expected),
-        ("U4", 0x9F, 3, 0xEF_4017)
+        (
+            f.reference.as_str(),
+            f.write.as_slice(),
+            f.width,
+            f.expected
+        ),
+        ("U4", &[0x9F][..], 3, 0xEF_4017)
     );
     assert_eq!((f.status_at, f.value_at), (word + 12, word + 16));
     assert_eq!(f.judge(boot::STATUS_RXP, 0), boot::Outcome::Timeout("RXP"));
@@ -319,7 +332,10 @@ fn the_judge_expects_the_part_table_s_values_in_records_after_the_boot_word() {
     assert_eq!(c.judge(boot::STATUS_OK, 0x61), Mismatch);
     assert_eq!(c.judge(boot::STATUS_TXIS, 0x60), Timeout("TXIS"));
     assert_eq!(c.judge(boot::STATUS_RXNE, 0), Timeout("RXNE"));
-    assert_eq!(c.judge(boot::RECORD_UNSET, boot::RECORD_UNSET), Invalid);
+    assert_eq!(
+        c.judge(boot::RECORD_UNSET, u64::from(boot::RECORD_UNSET)),
+        Invalid
+    );
     assert_eq!(c.judge(0, 0x60), Invalid);
 }
 
@@ -364,23 +380,83 @@ fn a_part_name_that_is_not_exactly_a_table_s_is_unmodelled_not_skipped() {
 
 #[test]
 fn a_two_byte_identity_is_judged_whole_and_most_significant_byte_first() {
-    let c = boot::IdentityCheck {
+    let mut c = boot::StepCheck {
         reference: "U3".into(),
         peripheral: "I2C1".into(),
         wire: boot::Wire::I2c { address: 0x48 },
-        write: 0x0F,
+        step: aethelgard_ir::parts::StepKind::Identity,
+        write: vec![0x0F],
         width: 2,
         expected: 0x0117,
+        mask: 0xFFFF,
         status_at: 0x2000_0004,
         value_at: 0x2000_0008,
+        level: (-1, "[NOISY] "),
         device: "i2c1.u3".into(),
         witness: None,
+        idle_warning: None,
         skipped: Vec::new(),
+        stimulus: Some(Vec::new()),
     };
     use boot::Outcome::*;
     assert_eq!(c.judge(boot::STATUS_OK, 0x0117), Pass);
     assert_eq!(c.judge(boot::STATUS_OK, 0x1701), Mismatch);
     assert_eq!(c.judge(boot::STATUS_OK, 0x17), Mismatch);
+    // `AET-WO-4210` F6: a masked identity judges only its fixed bits.
+    c.mask = 0x3F;
+    c.expected = 0x0008;
+    assert_eq!(c.judge(boot::STATUS_OK, 0xFFC8), Pass);
+    assert_eq!(c.judge(boot::STATUS_OK, 0x0009), Mismatch);
+    // No bit above the read's two bytes, whatever the mask fixes.
+    assert_eq!(c.judge(boot::STATUS_OK, 0x1_0008), Mismatch);
+    // A configuration reads nothing, so its value is 0 (the reduction pass's guard).
+    c.step = aethelgard_ir::parts::StepKind::Configure;
+    c.width = 0;
+    c.mask = 0;
+    c.expected = 0;
+    assert_eq!(c.judge(boot::STATUS_OK, 0), Pass);
+    assert_eq!(c.judge(boot::STATUS_OK, 1), Mismatch);
+}
+
+/// `AET-WO-4210` S2: a scripted part is one record per step, in its
+/// script's order, each record as wide as its read; a part with no script is
+/// its identity alone, so a board without one keeps its layout.
+#[test]
+fn a_scripted_device_is_one_record_per_step() {
+    let words: Vec<u32> = [0u8, 1, 4, 5, 6, 8].map(boot::value_words).to_vec();
+    assert_eq!(words, [1, 1, 1, 2, 2, 2]);
+    let plan = boot::identity(&with_devices(&[
+        ("U2", "BME280", 0x76),
+        ("U6", "ICP10111", 0x63),
+    ]))
+    .unwrap();
+    let steps: Vec<(&str, &str, u32)> = plan
+        .checks
+        .iter()
+        .map(|c| {
+            (
+                c.reference.as_str(),
+                c.step.name(),
+                c.status_at - plan.checks[0].status_at,
+            )
+        })
+        .collect();
+    assert_eq!(
+        steps,
+        [
+            ("U2", "identity", 0),
+            ("U6", "identity", 8),
+            ("U6", "configure", 16),
+            ("U6", "data", 24),
+        ]
+    );
+    let data = &plan.checks[3];
+    assert_eq!(data.level, (0, "[DEBUG] "));
+    assert_eq!(data.stimulus, Some(vec![("DefaultTemperature", 25)]));
+    assert_eq!(
+        data.witness.as_deref().unwrap()[1],
+        "[DEBUG] i2c1.u6: Reading data with CRC: [0x66, 0x66], current command: 0x7866 (UltraLowNoiseTemperaturePressure), requested: 2 bytes"
+    );
 }
 
 #[test]
@@ -417,9 +493,18 @@ fn each_identity_read_carries_the_models_log_lines_of_its_device() {
 fn the_witness_lines_are_computed_from_the_part_table_and_the_width() {
     // A two-byte identity reads most significant byte first, each byte in
     // upper-case hexadecimal without zero padding: 0x0A is "A", 0x00 is "0".
-    let lines = |register, width, value| {
+    let lines = |register: u8, width: u8, value: u64| {
         crate::model::Model::Bme280
-            .witness("i2c1.u9", register, width, value)
+            .witness(
+                "i2c1.u9",
+                &aethelgard_ir::parts::Step {
+                    kind: aethelgard_ir::parts::StepKind::Identity,
+                    write: vec![register],
+                    width,
+                    expected: value,
+                    mask: u64::MAX,
+                },
+            )
             .unwrap()
     };
     assert_eq!(

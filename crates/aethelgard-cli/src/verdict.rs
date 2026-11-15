@@ -10,6 +10,11 @@ pub struct Verdict {
     pub ok: bool,
     pub verdict: &'static str,
     pub check: &'static str,
+    /// `simulate --spec`: the lifecycle banner, one line per `eol` or `nrnd`
+    /// part the board uses (`aethelgard_ir::lifecycle_banner`; `AET-WO-4210`
+    /// D1). Absent for a board of `active` parts.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub lifecycle: Vec<String>,
     pub input: InputReport,
     pub tool: ToolReport,
     pub sandbox: SandboxReport,
@@ -192,7 +197,8 @@ pub struct Boot {
     pub boot_word: Word,
     pub registers: Vec<RegisterReport>,
     pub unobservable: Vec<String>,
-    /// One per identity read the judge expects (`AET-WO-2202`).
+    /// One per step the judge expects (`AET-WO-2202`; one per step of a
+    /// device's script since `AET-WO-4210`).
     pub i2c: Vec<I2cReport>,
     /// What Renode logged for each identity read's device (`AET-WO-2204` D1).
     pub i2c_witness: Vec<WitnessReport>,
@@ -304,6 +310,8 @@ impl MotorReport {
 pub struct WitnessReport {
     pub peripheral: String,
     pub reference: String,
+    /// `identity`, `configure` or `data` (`AET-WO-4210`).
+    pub step: &'static str,
     /// The model's path in Renode, `i2c1.u2`.
     pub device: String,
     /// Empty when the model has no known witness format (a named failure).
@@ -325,8 +333,15 @@ pub struct SpiReport {
     pub select: String,
     /// The multiplexer address the chip select drives, `0x00`.
     pub address: String,
+    /// `identity`, `configure` or `data` (`AET-WO-4210`).
+    pub step: &'static str,
+    /// The bytes written first, space-separated: `0x9f`.
     pub command: String,
+    /// The bytes read back; 0 for a configuration.
+    pub width: u8,
     pub expected: String,
+    /// The bits `expected` fixes (`AET-WO-4210` F6).
+    pub mask: String,
     pub observed: Option<String>,
     /// `ok`, `timeout_rxp` or `invalid`; `null` until Renode has read the record.
     pub status: Option<&'static str>,
@@ -337,26 +352,30 @@ pub struct SpiReport {
 pub struct SpiWitnessReport {
     pub peripheral: String,
     pub reference: String,
+    /// `identity`, `configure` or `data` (`AET-WO-4210`).
+    pub step: &'static str,
     /// The model's path in Renode, `spi1.spi1mux.u4`.
     pub device: String,
     pub expected: Vec<String>,
     pub observed: Option<Vec<String>>,
     /// Each line the controller's multiplexer logged when a byte reached no
-    /// device, several, or an address with none: attribution's evidence, never
-    /// part of the witness.
+    /// device, several, or an address with none, inside this step's
+    /// chip-select window, or inside none for the identity step
+    /// (`AET-WO-4210` D5): attribution's evidence, never part of the witness.
     pub unrouted: Vec<String>,
 }
 
 impl WitnessReport {
     /// `check`'s witness as the judge expects it, with what Renode logged.
     pub fn of(
-        check: &aethelgard_twin::boot::IdentityCheck,
+        check: &aethelgard_twin::boot::StepCheck,
         observed: Option<Vec<String>>,
         absent: Vec<String>,
     ) -> Self {
         WitnessReport {
             peripheral: check.peripheral.clone(),
             reference: check.reference.clone(),
+            step: check.step.name(),
             device: check.device.clone(),
             expected: check.witness.clone().unwrap_or_default(),
             observed,
@@ -370,8 +389,15 @@ impl WitnessReport {
 pub struct I2cReport {
     pub reference: String,
     pub address: String,
+    /// `identity`, `configure` or `data` (`AET-WO-4210`).
+    pub step: &'static str,
+    /// The bytes written first, space-separated: `0xd0`, or `0xef 0xc8`.
     pub register: String,
+    /// The bytes read back; 0 for a configuration.
+    pub width: u8,
     pub expected: String,
+    /// The bits `expected` fixes (`AET-WO-4210` F6).
+    pub mask: String,
     pub observed: Option<String>,
     /// `ok`, `timeout_txis`, `timeout_tc`, `timeout_rxne`, `timeout_stopf` or `invalid`;
     /// `null` until Renode has read the record.
@@ -498,6 +524,7 @@ impl Verdict {
             ok: pass,
             verdict: if pass { "pass" } else { "fail" },
             check,
+            lifecycle: Vec::new(),
             input: InputReport {
                 path: input.original.display().to_string(),
                 sha256: input.sha256.clone(),

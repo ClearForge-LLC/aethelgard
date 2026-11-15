@@ -458,6 +458,22 @@ fn witness_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
         (v, bytes.len())
     })
 }
+
+/// A step's read as its check records it (`AET-WO-4210`), as the judge holds
+/// it (`aethelgard_twin::boot::StepCheck::judge`): a value was observed, no
+/// bit of it lies above the read's `width` bytes (so a configuration's is 0),
+/// and it equals the expected one under the mask.
+fn read_matches(width: u8, expected: u64, mask: u64, observed: Option<u64>) -> bool {
+    // The bits a read of `width` bytes can set, as the judge holds them
+    // (`aethelgard_ir::parts::width_mask`, which evolve does not depend on): none for a configuration.
+    let read = match width {
+        0 => 0,
+        8.. => u64::MAX,
+        w => (1u64 << (8 * u32::from(w))) - 1,
+    };
+    observed.is_some_and(|o| o & !read == 0 && o & mask == expected & mask)
+}
+
 /// The finding kinds that each select their own events, one finding each.
 const PER_EVENT: [&str; 18] = [
     campaign::PAST_CEILING_FINDING,
@@ -491,18 +507,18 @@ impl<'a> Run<'a> {
             .position(|b| b.devices.iter().any(|(r, _)| r == reference))
     }
 
-    /// The device's identity read: at most one, by R2.
-    fn check_of(&self, reference: &str) -> Option<&'a Record> {
-        self.records
-            .iter()
-            .find(|r| matches!(r, Record::I2cCheck { reference: x, .. } if x == reference))
+    /// The device's read of `step`: at most one, by the run rules.
+    fn check_of(&self, reference: &str, step: &str) -> Option<&'a Record> {
+        self.records.iter().find(|r| {
+            matches!(r, Record::I2cCheck { reference: x, step: s, .. } if x == reference && s == step)
+        })
     }
 
-    /// The device's SPI read: at most one, by the run rules.
-    fn spi_check_of(&self, reference: &str) -> Option<&'a Record> {
-        self.records
-            .iter()
-            .find(|r| matches!(r, Record::SpiCheck { reference: x, .. } if x == reference))
+    /// The device's SPI read of `step`: at most one, by the run rules.
+    fn spi_check_of(&self, reference: &str, step: &str) -> Option<&'a Record> {
+        self.records.iter().find(|r| {
+            matches!(r, Record::SpiCheck { reference: x, step: s, .. } if x == reference && s == step)
+        })
     }
 
     /// An SPI witness's fields, each with its solved value and whether it is
@@ -514,6 +530,7 @@ impl<'a> Run<'a> {
         let Record::SpiWitness {
             reference,
             device,
+            step,
             expected,
             observed: Some(observed),
             unrouted,
@@ -524,15 +541,18 @@ impl<'a> Run<'a> {
         };
         let Some(Record::SpiCheck {
             address,
-            command,
+            write,
+            width,
             expected: value,
             observed: value_read,
             status,
             ..
-        }) = self.spi_check_of(reference)
+        }) = self.spi_check_of(reference, step)
         else {
             return Vec::new();
         };
+        // The command is the first byte a step writes.
+        let command = write.first().copied().unwrap_or(0);
         let unselected = unrouted.iter().any(|l| {
             l.starts_with("[WARNING] ")
                 && (l.contains(", but no device is currently selected - ")
@@ -554,24 +574,28 @@ impl<'a> Run<'a> {
             observed,
             wrong,
         };
-        vec![
+        let mut fields = vec![
             at("select", 0xFF, u32::from(*address), None, unselected),
             at(
                 "command",
                 0xFF,
-                u32::from(*command),
+                u32::from(command),
                 decoded,
                 (!observed.is_empty() && observed != expected)
-                    || decoded.is_some_and(|d| d != u32::from(*command)),
+                    || decoded.is_some_and(|d| d != u32::from(command)),
             ),
-            at(
+        ];
+        // A configure step reads nothing back.
+        if *width > 0 {
+            fields.push(at(
                 "read",
                 u32::MAX,
                 *value as u32,
                 value_read.map(|v| v as u32),
                 claimed && observed.is_empty() && unrouted.is_empty(),
-            ),
-        ]
+            ));
+        }
+        fields
     }
 
     /// An SPI device's evidence (`AET-WO-4200` D4), from its witness (kind
@@ -586,58 +610,54 @@ impl<'a> Run<'a> {
     ///
     /// A witness that could not be read whole is no evidence.
     fn spi_evidence(&self, reference: &str) -> (Vec<usize>, Vec<usize>) {
-        let Some(Record::SpiCheck { address, .. }) = self.spi_check_of(reference) else {
-            return (vec![], vec![]);
-        };
-        let check = self
-            .records
-            .iter()
-            .position(|r| matches!(r, Record::SpiCheck { reference: x, .. } if x == reference));
-        let Some(w) = self
-            .records
-            .iter()
-            .position(|r| matches!(r, Record::SpiWitness { reference: x, .. } if x == reference))
-        else {
-            return (vec![], vec![]);
-        };
-        let Record::SpiWitness {
-            device,
-            observed: Some(observed),
-            unrouted,
-            ..
-        } = &self.records[w]
-        else {
-            return (vec![], vec![]);
-        };
-        // The device's own multiplexer's line, whole: its source is the path
-        // before the device's name (adversarial A3: a line of another source
-        // is no evidence).
-        let mux = device.rsplit_once('.').map_or("", |(m, _)| m);
-        let absent = format!(
-            " to device {address:#X}, but it's not connected - ignoring transfer and returning a dummy byte"
-        )
-        .replace("0X", "0x");
-        let source = format!("[WARNING] {mux}: Tried to transmit byte 0x");
-        let electrical = observed.is_empty()
-            && unrouted
-                .iter()
-                .any(|l| l.starts_with(&source) && l.ends_with(&absent));
-        // The software conditions are the fields' (`spi_fields`): one
-        // statement of each. A claim with nothing logged is the read's own
-        // event as well as the witness's.
-        let fields = self.spi_fields(&self.records[w]);
-        let software = if fields.iter().any(|f| f.wrong) {
-            [
-                Some(w),
-                check.filter(|_| fields.get(2).is_some_and(|f| f.wrong)),
-            ]
-            .into_iter()
-            .flatten()
-            .collect()
-        } else {
-            vec![]
-        };
-        (if electrical { vec![w] } else { vec![] }, software)
+        let mut electrical = Vec::new();
+        let mut software = Vec::new();
+        // Every step's witness of the device (`AET-WO-4210`), in order.
+        for w in
+            self.indices(|r| matches!(r, Record::SpiWitness { reference: x, .. } if x == reference))
+        {
+            let Record::SpiWitness {
+                device,
+                step,
+                observed: Some(observed),
+                unrouted,
+                ..
+            } = &self.records[w]
+            else {
+                continue;
+            };
+            let Some(Record::SpiCheck { address, .. }) = self.spi_check_of(reference, step) else {
+                continue;
+            };
+            let check = self.records.iter().position(|r| {
+                matches!(r, Record::SpiCheck { reference: x, step: s, .. } if x == reference && s == step)
+            });
+            // The device's own multiplexer's line, whole: its source is the
+            // path before the device's name (adversarial A3: a line of
+            // another source is no evidence).
+            let mux = device.rsplit_once('.').map_or("", |(m, _)| m);
+            let absent = format!(
+                " to device {address:#X}, but it's not connected - ignoring transfer and returning a dummy byte"
+            )
+            .replace("0X", "0x");
+            let source = format!("[WARNING] {mux}: Tried to transmit byte 0x");
+            if observed.is_empty()
+                && unrouted
+                    .iter()
+                    .any(|l| l.starts_with(&source) && l.ends_with(&absent))
+            {
+                electrical.push(w);
+            }
+            // The software conditions are the fields' (`spi_fields`): one
+            // statement of each. A claim with nothing logged is the read's
+            // own event as well as the witness's.
+            let fields = self.spi_fields(&self.records[w]);
+            if fields.iter().any(|f| f.wrong) {
+                software.push(w);
+                software.extend(check.filter(|_| fields.get(2).is_some_and(|f| f.wrong)));
+            }
+        }
+        (electrical, software)
     }
 
     /// Kinds 7 past ceiling, 8 and 9 on bus `b`.
@@ -695,10 +715,11 @@ impl<'a> Run<'a> {
     /// solved value, the first the model logged, and whether it counts as
     /// evidence ([`Self::witness_wrong`]); `None` for a witness that is no
     /// evidence.
-    fn witness_fields(&self, b: usize, record: &Record) -> Option<[Field; 3]> {
+    fn witness_fields(&self, b: usize, record: &Record) -> Option<Vec<Field>> {
         let Record::I2cWitness {
             reference,
             device,
+            step,
             expected,
             observed,
             absent,
@@ -711,11 +732,13 @@ impl<'a> Run<'a> {
         bus.joined.as_ref()?;
         let (_, address) = bus.devices.iter().find(|(r, _)| r == reference)?;
         let Some(Record::I2cCheck {
-            register,
+            write,
+            width: read_width,
             expected: value,
+            mask: value_mask,
             status,
             ..
-        }) = self.check_of(reference)
+        }) = self.check_of(reference, step)
         else {
             return None;
         };
@@ -723,23 +746,32 @@ impl<'a> Run<'a> {
         let logged = |lines: &[String], what: &str| {
             lines.iter().find_map(|l| witness_bytes(l, device, what))
         };
-        let (Some(reg_want), Some(value_want)) =
-            (logged(expected, "Write"), logged(expected, "Read"))
-        else {
-            return None;
-        };
-        let width = u32::try_from(value_want.1).ok()?;
-        if reg_want.0 != u64::from(*register) || value_want.0 != *value || width > 4 {
+        let reg_want = logged(expected, "Write")?;
+        let write_value = write.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b));
+        if reg_want != (write_value, write.len()) || *read_width > 4 {
             return None;
         }
+        // A configure step reads nothing back; the others' read is the part's
+        // value under the step's mask.
+        let value_want = if *read_width == 0 {
+            None
+        } else {
+            let want = logged(expected, "Read")?;
+            if want.1 != usize::from(*read_width) || (want.0 ^ *value) & *value_mask != 0 {
+                return None;
+            }
+            Some(want)
+        };
         let claimed = status.as_deref() == Some("ok");
         let silent = claimed && observed.is_empty();
         let reg = logged(observed, "Write").map(|(v, _)| v);
         let read = logged(observed, "Read").map(|(v, _)| v);
-        let mask = if width == 4 {
-            u32::MAX
-        } else {
-            (1u32 << (8 * width)) - 1
+        let width_mask = |n: usize| {
+            if n >= 4 {
+                u32::MAX
+            } else {
+                (1u32 << (8 * n)) - 1
+            }
         };
         let at = |name: &str, mask: u32, solved: u64, got: Option<u64>| Field {
             register: format!("{device}.{name}"),
@@ -750,7 +782,7 @@ impl<'a> Run<'a> {
             wrong: silent || got.is_some_and(|g| g != solved),
         };
         let elsewhere = absent.iter().copied().find(|a| a != address);
-        Some([
+        let mut fields = vec![
             Field {
                 register: format!("{device}.address"),
                 address: u32::from(*address),
@@ -759,9 +791,12 @@ impl<'a> Run<'a> {
                 observed: elsewhere.map(u32::from),
                 wrong: elsewhere.is_some(),
             },
-            at("Write", 0xFF, reg_want.0, reg),
-            at("Read", mask, value_want.0, read),
-        ])
+            at("Write", width_mask(write.len()), reg_want.0, reg),
+        ];
+        if let Some(want) = value_want {
+            fields.push(at("Read", width_mask(want.1), want.0, read));
+        }
+        Some(fields)
     }
 
     /// The fields of `reading` the bus owns that are wrong.
@@ -930,17 +965,18 @@ impl<'a> Run<'a> {
             "i2c_timeout" => self.indices(|r| status_is(r, &|s| s.starts_with("timeout_"))),
             "i2c_record_invalid" => self.indices(|r| status_is(r, &|s| s == "invalid")),
             "i2c_identity_mismatch" => self.indices(|r| {
-                matches!(r, Record::I2cCheck { status: Some(s), expected, observed, .. }
-                    if s == "ok" && *observed != Some(*expected))
+                matches!(r, Record::I2cCheck { status: Some(s), expected, mask, width, observed, .. }
+                    if s == "ok" && !read_matches(*width, *expected, *mask, *observed))
             }),
             "i2c_transaction_unwitnessed" => self.indices(|r| match r {
                 Record::I2cWitness {
                     reference,
+                    step,
                     expected,
                     observed,
                     ..
                 } => {
-                    matches!(self.check_of(reference),
+                    matches!(self.check_of(reference, step),
                         Some(Record::I2cCheck { status: Some(s), .. }) if s == "ok")
                         && observed.as_deref() != Some(expected.as_slice())
                 }
@@ -953,17 +989,18 @@ impl<'a> Run<'a> {
                 |r| matches!(r, Record::SpiCheck { status: Some(s), .. } if s == "invalid"),
             ),
             "spi_identity_mismatch" => self.indices(|r| {
-                matches!(r, Record::SpiCheck { status: Some(s), expected, observed, .. }
-                    if s == "ok" && *observed != Some(*expected))
+                matches!(r, Record::SpiCheck { status: Some(s), expected, mask, width, observed, .. }
+                    if s == "ok" && !read_matches(*width, *expected, *mask, *observed))
             }),
             "spi_transaction_unwitnessed" => self.indices(|r| match r {
                 Record::SpiWitness {
                     reference,
+                    step,
                     expected,
                     observed,
                     ..
                 } => {
-                    matches!(self.spi_check_of(reference),
+                    matches!(self.spi_check_of(reference, step),
                         Some(Record::SpiCheck { status: Some(s), .. }) if s == "ok")
                         && observed.as_deref() != Some(expected.as_slice())
                 }
@@ -1321,7 +1358,6 @@ impl RunView<'_> {
                 fields: run
                     .bus_of_device(reference)
                     .and_then(|b| run.witness_fields(b, record))
-                    .map(Vec::from)
                     .unwrap_or_default(),
             },
             // The chip select is the board crate's: its transfer drives it.

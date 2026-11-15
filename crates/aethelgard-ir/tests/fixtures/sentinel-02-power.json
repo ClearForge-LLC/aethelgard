@@ -1,5 +1,12 @@
 {
-  "schema_version": 7,
+  "schema_version": 8,
+  "accept_lifecycle": [
+    {
+      "part": "ICM20948",
+      "status": "eol",
+      "statement": "A twin stand-in for the IMU, never bought: no current flight-controller IMU is modelled in Renode 1.17.0 (AET-WO-4210 D1)"
+    }
+  ],
   "project_name": "sentinel-02-power",
   "mcu": {
     "part": "STM32H753ZITx",
