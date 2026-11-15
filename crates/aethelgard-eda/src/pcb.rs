@@ -1328,4 +1328,155 @@ mod tests {
             );
         }
     }
+
+    /// A connector of `name` as `design` makes one: pins 1..N on `net`
+    /// (the last on GND), the mounting pin on GND.
+    fn connector(name: &str, reference: &str, net_name: Option<&str>) -> Part {
+        let (sym, fp) = schematic::connector_library(name).unwrap();
+        let n = aethelgard_ir::connectors::part(name).unwrap().pins;
+        let mut conns: Vec<(String, Conn)> = (1..=n)
+            .map(|i| {
+                let c = match (net_name, i == n) {
+                    (_, true) => Conn::Rail("GND".into()),
+                    (Some(x), false) => net(x),
+                    (None, false) => Conn::NoConnect,
+                };
+                (i.to_string(), c)
+            })
+            .collect();
+        conns.push(("MP".into(), Conn::Rail("GND".into())));
+        let mut p = part(sym, fp, reference, &[]);
+        p.conns = conns.into_iter().collect();
+        p
+    }
+
+    fn passives() -> Vec<Part> {
+        vec![
+            mcu(&[("34", net("A")), ("35", net("B"))]),
+            part("Device:R", R0402, "R2", &[("1", net("A")), ("2", net("B"))]),
+            part(
+                "Device:R",
+                R0402,
+                "R10",
+                &[("1", net("B")), ("2", Conn::Rail("GND".into()))],
+            ),
+        ]
+    }
+
+    /// Connectors go at the bottom edge, in reference order.
+    #[test]
+    fn connectors_go_at_the_bottom_edge_in_reference_order() {
+        let mut parts = passives();
+        parts.push(connector("SM06B-GHS-TB", "J3", None));
+        parts.push(connector("SM04B-GHS-TB", "J1", None));
+        parts.push(connector("SM10B-GHS-TB", "J10", None));
+        let l = layout(&parts).unwrap();
+        let items = items(&parts).unwrap();
+        let at = |r: &str| l.placed.iter().find(|p| p.reference == r).unwrap();
+        // String order: J1 < J10 < J3.
+        let (j1, j10, j3) = (at("J1"), at("J10"), at("J3"));
+        assert!(
+            j1.keep.x1 < j10.keep.x0 && j10.keep.x1 < j3.keep.x0,
+            "connectors are not in reference (string) order left to right"
+        );
+        assert_eq!(
+            j1.origin.1, j3.origin.1,
+            "the connectors are not in one row"
+        );
+        let o = l.outline;
+        assert_eq!(o.y1 % SNAP, 0, "the outline's bottom is off the 50 um grid");
+        assert_eq!(o.x0 % SNAP, 0, "the outline's left is off the 50 um grid");
+        assert_eq!(o.y0 % SNAP, 0, "the outline's top is off the 50 um grid");
+        assert_eq!(o.x1 % SNAP, 0, "the outline's right is off the 50 um grid");
+        for c in [j1, j10, j3] {
+            assert!(
+                c.courtyard.y1 <= o.y1,
+                "{} courtyard is past the bottom edge",
+                c.reference
+            );
+            assert!(
+                c.courtyard.y1 > o.y1 - SNAP,
+                "{} courtyard bottom is more than one SNAP above the edge",
+                c.reference
+            );
+            let i = items
+                .iter()
+                .position(|i| i.part.reference == c.reference)
+                .unwrap();
+            for pad in items[i].fp.children("pad") {
+                let r = pad_box(pad, &c.reference).unwrap();
+                assert!(
+                    c.origin.1 + r.y1 + route::EDGE_NM <= o.y1,
+                    "{} pad {} is nearer the edge than EDGE_NM",
+                    c.reference,
+                    pad.arg(1).unwrap_or("")
+                );
+            }
+            for other in &l.placed {
+                if other.reference == c.reference {
+                    continue;
+                }
+                assert!(
+                    !c.keep.grow(IC_GAP_NM).overlaps(other.keep),
+                    "{} keep box is within IC_GAP_NM of {}",
+                    c.reference,
+                    other.reference
+                );
+            }
+        }
+        assert!(
+            l.placed
+                .iter()
+                .all(|p| p.keep.y1 <= o.y1 - MARGIN_NM || p.reference.starts_with('J')),
+            "a non-connector keep box is within MARGIN_NM of the bottom edge"
+        );
+    }
+
+    /// A connector moves nothing else.
+    #[test]
+    fn a_connector_moves_no_other_part() {
+        let without = layout(&passives()).unwrap();
+        let mut parts = passives();
+        parts.push(connector("SM04B-GHS-TB", "J1", Some("A")));
+        let with = layout(&parts).unwrap();
+        assert_eq!(with.placed.len(), without.placed.len() + 1);
+        for p in &without.placed {
+            let q = with.placed.iter().find(|q| q.reference == p.reference);
+            assert_eq!(
+                q.map(|q| q.origin),
+                Some(p.origin),
+                "adding a connector moved {}",
+                p.reference
+            );
+        }
+    }
+
+    /// Every connector part of the IR table fits the edge rule, alone and
+    /// together, and the board writes.
+    #[test]
+    fn every_connector_part_places_and_writes() {
+        for row in aethelgard_ir::connectors::PARTS.iter() {
+            let mut parts = passives();
+            parts.push(connector(row.name, "J1", None));
+            let l = layout(&parts).unwrap_or_else(|e| panic!("{} does not place: {e:?}", row.name));
+            let j = l.placed.iter().find(|p| p.reference == "J1").unwrap();
+            assert!(
+                j.courtyard.y1 <= l.outline.y1 && j.courtyard.y1 > l.outline.y1 - SNAP,
+                "{} courtyard is not at the edge",
+                row.name
+            );
+            write("p", &parts, &crate::stack::reference())
+                .unwrap_or_else(|e| panic!("{} does not write: {e:?}", row.name));
+        }
+        let all: Vec<Part> = passives()
+            .into_iter()
+            .chain(
+                aethelgard_ir::connectors::PARTS
+                    .iter()
+                    .enumerate()
+                    .map(|(i, r)| connector(r.name, &format!("J{i}"), None)),
+            )
+            .collect();
+        layout(&all).expect("all four connector parts together do not place");
+    }
 }

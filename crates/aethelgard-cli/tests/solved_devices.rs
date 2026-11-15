@@ -119,9 +119,13 @@ fn the_eda_reader_is_exactly_the_schematic() {
     let mut readers = std::collections::BTreeSet::new();
     for (path, text) in sources(&crates().join("aethelgard-eda").join("src")) {
         for (_, line) in code(&text) {
-            if [".declared_i2c_devices(", ".declared_spi_devices(", ".declared_connectors("]
-                .iter()
-                .any(|a| line.contains(a))
+            if [
+                ".declared_i2c_devices(",
+                ".declared_spi_devices(",
+                ".declared_connectors(",
+            ]
+            .iter()
+            .any(|a| line.contains(a))
             {
                 readers.insert(path.file_name().unwrap().to_string_lossy().into_owned());
             }

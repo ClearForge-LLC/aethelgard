@@ -616,7 +616,9 @@ pub enum IrValidationError {
     ConnectorPinUnknown { id: String, pin: String, pins: u8 },
     #[error("connector `{id}` lists pin `{pin}` more than once")]
     ConnectorPinRepeated { id: String, pin: String },
-    #[error("connector `{id}` does not list pin `{pin}`; every signal pin is listed, `null` where it is unconnected")]
+    #[error(
+        "connector `{id}` does not list pin `{pin}`; every signal pin is listed, `null` where it is unconnected"
+    )]
     ConnectorPinMissing { id: String, pin: String },
     #[error(
         "connector `{id}` pin `{pin}` names net `{net}`, which is no declared signal, voltage domain or `GND`: a connector cannot invent a net"
@@ -636,7 +638,9 @@ pub enum IrValidationError {
     ConnectorBudgetNotApplicable { id: String, pin: String },
     #[error("connector `{id}` names standard `{standard}`, which is not in the ports table")]
     UnknownConnectorStandard { id: String, standard: String },
-    #[error("connector `{id}` is part `{part}`, which is not the series and pin count of `{standard}`")]
+    #[error(
+        "connector `{id}` is part `{part}`, which is not the series and pin count of `{standard}`"
+    )]
     ConnectorPartContradictsStandard {
         id: String,
         part: String,
@@ -733,9 +737,7 @@ impl IrValidationError {
             Self::ConnectorBudgetNotApplicable { .. } => "ConnectorBudgetNotApplicable",
             Self::UnknownConnectorStandard { .. } => "UnknownConnectorStandard",
             Self::ConnectorPartContradictsStandard { .. } => "ConnectorPartContradictsStandard",
-            Self::ConnectorSupplyContradictsStandard { .. } => {
-                "ConnectorSupplyContradictsStandard"
-            }
+            Self::ConnectorSupplyContradictsStandard { .. } => "ConnectorSupplyContradictsStandard",
             Self::ConnectorPinContradictsStandard { .. } => "ConnectorPinContradictsStandard",
         }
     }

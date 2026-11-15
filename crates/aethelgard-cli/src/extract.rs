@@ -137,7 +137,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         },
         specification_sha256: spec_sha256,
         capacitance: CAPACITANCE,
-        conditions: bound::conditions(&stack),
+        conditions: bound::conditions(&stack, aethelgard_eda::schematic::declares_offboard(&spec)),
         lines: out,
         findings,
     };

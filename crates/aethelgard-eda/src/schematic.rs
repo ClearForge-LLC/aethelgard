@@ -216,6 +216,15 @@ pub(crate) fn connector_library(part: &str) -> Option<(&'static str, &'static st
     })
 }
 
+/// Whether `spec`'s connectors declare any off-board capacitance, which the
+/// extraction bound then adds ([`crate::extract::OFFBOARD`]). Here, so that
+/// `eda`'s one reader of declared intent stays this module (`RUL-16`).
+pub fn declares_offboard(spec: &Specification) -> bool {
+    spec.declared_connectors()
+        .iter()
+        .any(|c| c.pins.iter().any(|p| p.offboard.is_some()))
+}
+
 /// Whether `part` is an off-board connector: placed last, at the board edge,
 /// and on a line counted as copper plus its declared budget, never at `Ci`.
 pub(crate) fn is_connector(part: &Part) -> bool {
@@ -765,10 +774,7 @@ fn connectors(b: &mut Builder<'_>) -> Result<(), EmitError> {
             };
             conns.insert(p.pin.clone(), conn);
             if let Some(o) = &p.offboard {
-                offboard.insert(
-                    p.pin.clone(),
-                    (o.capacitance_femtofarads, o.source.clone()),
-                );
+                offboard.insert(p.pin.clone(), (o.capacitance_femtofarads, o.source.clone()));
             }
         }
         b.parts.push(Part {
@@ -1305,5 +1311,78 @@ mod tests {
                 .collect();
             assert_eq!(got, want, "{id}");
         }
+    }
+
+    #[test]
+    fn the_connector_table_and_the_vendored_files_agree() {
+        use aethelgard_ir::connectors::{PARTS, Series};
+        for row in PARTS.iter() {
+            let (sym_id, fp_id) = connector_library(row.name)
+                .unwrap_or_else(|| panic!("{} has no connector_library mapping", row.name));
+            let mut want: Vec<String> = (1..=row.pins).map(|i| i.to_string()).collect();
+            want.push("MP".into());
+            want.sort();
+            let mut got: Vec<String> = pins(&library::symbol(sym_id).unwrap())
+                .unwrap()
+                .into_iter()
+                .map(|p| p.number)
+                .collect();
+            got.sort();
+            assert_eq!(
+                got, want,
+                "{}: symbol pins differ from 1..N plus MP",
+                row.name
+            );
+            let fp = library::footprint(fp_id).unwrap();
+            let mut pads: Vec<String> = fp
+                .children("pad")
+                .map(|p| p.arg(1).unwrap_or("").to_owned())
+                .collect();
+            pads.sort();
+            let mut want_pads = want.clone();
+            want_pads.push("MP".into());
+            want_pads.sort();
+            assert_eq!(
+                pads, want_pads,
+                "{}: footprint pads differ from 1..N plus two MP",
+                row.name
+            );
+            let pitch = match row.series {
+                Series::JstGh => "P1.25mm",
+                Series::JstSh => "P1.00mm",
+            };
+            assert!(
+                fp_id.contains(pitch),
+                "{}: footprint name lacks the series pitch {pitch}",
+                row.name
+            );
+            assert!(
+                fp_id.contains(row.name),
+                "{}: footprint name lacks the part name",
+                row.name
+            );
+            assert!(
+                is_connector(&Part {
+                    lib_id: sym_id,
+                    reference: "J1".into(),
+                    value: row.name.into(),
+                    footprint: fp_id.into(),
+                    conns: Default::default(),
+                    note: None,
+                    decouples: None,
+                    offboard: Default::default(),
+                }),
+                "{}: its symbol is not recognised as a connector",
+                row.name
+            );
+        }
+        assert!(
+            connector_library("SM05B-GHS-TB").is_none(),
+            "a name not in PARTS has a mapping"
+        );
+        assert!(
+            connector_library("").is_none(),
+            "the empty name has a mapping"
+        );
     }
 }

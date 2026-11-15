@@ -230,13 +230,17 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), E> {
         for p in &c.pins {
             let kind = match &p.net {
                 None => None,
-                Some(net) => Some(*kinds.get(net.as_str()).ok_or_else(|| {
-                    E::ConnectorNetUnknown {
-                        id: id(),
-                        pin: p.pin.clone(),
-                        net: net.clone(),
-                    }
-                })?),
+                Some(net) => {
+                    Some(
+                        *kinds
+                            .get(net.as_str())
+                            .ok_or_else(|| E::ConnectorNetUnknown {
+                                id: id(),
+                                pin: p.pin.clone(),
+                                net: net.clone(),
+                            })?,
+                    )
+                }
             };
             let line = kind.is_some_and(NetKind::is_line);
             match &p.offboard {

@@ -190,13 +190,18 @@ pub fn permille(v: u32) -> String {
     }
 }
 
+/// The condition a connector's declared budget adds (`AET-WO-4300f` D8).
+pub const OFFBOARD: &str = "beyond the board, each connector pin on a line adds the capacitance its specification declares for the mated contact, the cable and the remote pins, as declared with its source (the line's `offboard`); nothing here measures it";
+
 /// What the bound assumes of the fabricated board and its parts, from the
 /// declared stack. At 2 layers the words are `AET-WO-1305`'s, so the
 /// reference's `extract` output and `FAB-NOTES.md` are unchanged (ruled D5):
 /// there the dielectric follows from the finished minimum less both copper
 /// maxima, which `validate` requires. At 4 each dielectric's minimum is
-/// stated as well.
-pub fn conditions(stack: &Stack) -> Vec<String> {
+/// stated as well. With `offboard` (a specification whose connectors
+/// declare off-board capacitance, [`crate::schematic::declares_offboard`]),
+/// [`OFFBOARD`] is the last condition; without, the list is unchanged.
+pub fn conditions(stack: &Stack, offboard: bool) -> Vec<String> {
     let mut out = vec![
         "scope: the bare board's copper and each I2C pin's Ci; part bodies, solder and terminations above the pads are not included".to_owned(),
         format!(
@@ -230,6 +235,9 @@ pub fn conditions(stack: &Stack) -> Vec<String> {
         ]
         .map(str::to_owned),
     );
+    if offboard {
+        out.push(OFFBOARD.to_owned());
+    }
     out
 }
 
@@ -1140,9 +1148,9 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
         terms.pins,
         terms.offboard,
     ]
-        .into_iter()
-        .try_fold(0u64, u64::checked_add)
-        .ok_or_else(|| overflow(net))?;
+    .into_iter()
+    .try_fold(0u64, u64::checked_add)
+    .ok_or_else(|| overflow(net))?;
     Ok(LineBound {
         net: net.to_owned(),
         board_net,

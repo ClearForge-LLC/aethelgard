@@ -554,7 +554,7 @@ An upper bound on each I2C line's capacitance, from the routed board's own coppe
    - `UnmodelledPart`: two footprints with one reference;
    - `NetLabelsDisagree`: net labels that disagree with the copper's connections (`route::connectivity`);
    - `ClearanceViolated`: copper closer than the 0.2 mm clearance to another net's (`route::check`).
-3. **The parts on each line are the design's** (each bus's SDA and SCL, in document order). The design is the parts `emit` draws from the specification and its solved topology. Each part on a line must be the design's part of that reference, with its footprint, its `Value` and exactly its pads on the line. A part that is not a passive (the MCU, a declared device) is a pin part. The resistor between the line and the bus's rail is a pull-up. Refused, exit `3`:
+3. **The parts on each line are the design's** (each bus's SDA and SCL, in document order). The design is the parts `emit` draws from the specification and its solved topology. Each part on a line must be the design's part of that reference, with its footprint, its `Value` and exactly its pads on the line. A part that is not a passive or a connector (the MCU, a declared device) is a pin part. The resistor between the line and the bus's rail is a pull-up. A connector (`AET-WO-4300f`) is counted as copper with no `Ci`, plus its declared off-board capacitance. Refused, exit `3`:
    - `LineNotOnBoard`: a line with no pad;
    - `DeviceNotOnLine`: a design part missing from the line;
    - `UnmodelledPart`: a part the design does not put there;
@@ -562,11 +562,12 @@ An upper bound on each I2C line's capacitance, from the routed board's own coppe
    - `Overflow`: a bound too large for integer arithmetic.
 
    A design that puts any other passive on a line is refused with exit `2`, because its capacitance is not known.
-4. **Bound each line**, in integer femtofarads, each step rounded up, as the sum of four terms:
+4. **Bound each line**, in integer femtofarads, each step rounded up, as the sum of five terms:
    - **trace:** 280 fF per millimetre of routed length, plus 124 fF for each track's two round ends;
    - **vias:** 1,519 fF each;
    - **pads:** each copper pad on the line, by its box, pins' lands included;
    - **pins:** each pad of a pin part, at UM10204's maximum `Ci`, 10 pF.
+   - **offboard:** each connector pad's declared off-board capacitance (the mated contact, the cable and the remote pins), as the specification states it with its source (ruled D8). It is 0 on a line with no connector. The line's `offboard` lists each one, and the conditions then end with the one it adds.
 
    Each copper term is the energy of one trial potential: 1 on the piece, falling linearly to 0 at the 0.2 mm clearance, where every other net's copper must be. With the permittivity at its maximum, that energy is an upper bound on the piece's capacitance (Chew, arXiv:2107.09672v2, §7.1.2). The constants, their derivation and their sources are in `aethelgard_eda::extract`.
 
@@ -576,13 +577,13 @@ An upper bound on each I2C line's capacitance, from the routed board's own coppe
  "capacitance":"upper bound estimated from routed geometry","conditions":["scope: …","…"],
  "lines":[{"net":"I2C_SDA","board_net":"/I2C_SDA","bus":"SENSORS","verdict":"pass",
            "c_bound_femtofarads":46800,"declared_femtofarads":100000,
-           "terms":{"trace":9146,"vias":6076,"pads":1578,"pins":30000},
+           "terms":{"trace":9146,"vias":6076,"pads":1578,"pins":30000,"offboard":0},
            "length_nm":24250000,"segments":19,"via_count":4,"pad_count":4,
-           "pins":["U1.137","U2.3","U3.6"],"pull_ups":["R1"]},…],
+           "pins":["U1.137","U2.3","U3.6"],"pull_ups":["R1"],"offboard":[]},…],
  "findings":[]}
 ```
 
-Exit `0` when every line's bound is at most its declared bound; `1` otherwise, with one `capacitance_over_declared_bound` finding per line over its bound, naming the line, the bound, its four terms and the declared value. A specification with no I2C bus passes with no lines.
+Exit `0` when every line's bound is at most its declared bound; `1` otherwise, with one `capacitance_over_declared_bound` finding per line over its bound, naming the line, the bound, its five terms and the declared value. A specification with no I2C bus passes with no lines.
 
 **Scope and conditions** (`conditions` in the verdict). The bound is the bare board's copper plus each pin's `Ci`. These are outside it:
 - part bodies: a ceramic resistor body's permittivity is near 10, above the bound's 5.4;

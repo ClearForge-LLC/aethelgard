@@ -2,13 +2,13 @@
 
 The specification schema and the solved topology, as two separate types (`RUL-16`), with validation. Every type refuses unknown fields and accepts only a JSON object. Nothing defaults (`INV-06`).
 
-## `Specification`, version 2
+## `Specification`, version 3
 
-Version 2 (`AET-WO-4100`) added `board`. A version-1 file is refused by name (`UnsupportedSchemaVersion`); nothing supplies a board for it. Every key is required. `peripheral`, `pin`, `impedance_ohms` and a signal layer's `net` may be `null`, but the key may not be missing. Arrays keep the order they were written in; nothing is sorted.
+Version 2 (`AET-WO-4100`) added `board`, and version 3 (`AET-WO-4300f`) added `connectors`. A file of another version is refused by name (`UnsupportedSchemaVersion`); nothing supplies a missing key. Every key is required. `peripheral`, `pin`, `impedance_ohms` and a signal layer's `net` may be `null`, but the key may not be missing. Arrays keep the order they were written in; nothing is sorted.
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "project_name": "sentinel-01",
   "mcu": { "part": "STM32H753ZITx", "supply": "VDD_3V3" },
   "voltage_domains": [{ "id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50 }],
@@ -27,6 +27,7 @@ Version 2 (`AET-WO-4100`) added `board`. A version-1 file is refused by name (`U
   ],
   "spi_devices": [{ "reference": "U4", "part": "W25Q64JV", "supply": "VDD_3V3", "bus": "FLASH",
     "cs": { "net": "FLASH_CS", "pin": null } }],
+  "connectors": [],
   "net_constraints": [
     { "net_name": "I2C_SDA", "max_capacitance_femtofarads": 100000,
       "max_rise_time_nanoseconds": 300, "impedance_ohms": null },
@@ -52,6 +53,26 @@ Version 2 (`AET-WO-4100`) added `board`. A version-1 file is refused by name (`U
 
 Every list except `voltage_domains` may be empty.
 
+**`connectors`** (`AET-WO-4300f`, ruled on PR #134). Where a net leaves the board. Each connector names its `reference`, its `part` (a row of `connectors::PARTS`: JST GH `SM04B-GHS-TB`, `SM06B-GHS-TB`, `SM10B-GHS-TB` and JST SH `SM06B-SRSS-TB`, each cited by its catalogue's sha256), its `standard` (a row of `ds009::PORTS` by name, or `null` for an explicit map), and every signal pin, `1` to N, once:
+
+```json
+{ "reference": "J1", "part": "SM04B-GHS-TB", "standard": "DS-009 I2C", "pins": [
+  { "pin": "1", "net": "VDD_5V", "offboard": null },
+  { "pin": "2", "net": "I2C_SCL", "offboard": { "capacitance_femtofarads": 30000, "source": "condition: …" } },
+  { "pin": "3", "net": "I2C_SDA", "offboard": { "capacitance_femtofarads": 30000, "source": "condition: …" } },
+  { "pin": "4", "net": "GND", "offboard": null } ] }
+```
+
+- A pin's `net` is a declared signal net, a voltage domain or `GND`, or `null` for a pin left unconnected. A connector cannot invent a net.
+- A pin on an I2C or SPI line (a bus line or a chip select) declares its `offboard` capacitance, with its source: the mated contact, the cable and the remote pins, at most. Extraction adds it to the board's copper (`RUL-19` (1)). Any other pin's `offboard` is `null`.
+- The mounting pads are not declared. The emitter puts them on `GND`.
+- A `standard` holds the connector to DS-009's pinout for that port. DS-009 rev 0.1.0 is cited by its only commit `48dd6d1d` and its sha256, never vendored, and its mark is used nowhere (ruled D2, provisionally). The ports are `DS-009 TELEM`, `DS-009 GPS`, `DS-009 GPS FULL`, `DS-009 I2C` and `DS-009 DEBUG MINI`.
+  - A supply pin must be a domain of the voltage DS-009 states: +5 V for the external ports (ruled D5), and the microcontroller's supply for the debug port.
+  - A role this schema cannot yet declare (a serial TX or RX, a safety switch, SWD) takes no net, so a port that has one is refused until the work order that declares it. CTS and RTS may be `null`, as DS-009 lets them float.
+  - Everything that judges a standard is `ds009.rs`. Explicit maps only (ruling (c)) would be that module, the field and its four refusals deleted.
+
+A connector is in the `Specification` only. Nothing solves it, so the twin, which reads only the `SolvedTopology`, never sees one.
+
 **`board`** (`AET-WO-4100`, ruled on PR #120). Micrometres and thousandths. A stackup value is a bound with its source, never a nominal: a minimum dielectric is its source's value less a published tolerance, rounded down; a maximum is rounded up. The engine builds 2 copper layers (both signal) or 4 (`F.Cu`, `In1.Cu`, `In2.Cu`, `B.Cu`: outer layers signal, both inner layers planes, exactly one `GND` and the other a declared domain), through vias only. The rules are honoured: clearance and track width at or above the engine floor (0.2 mm), and the one via the engine builds (0.3 mm drill, 0.6 mm). See `crates/aethelgard-cli/tests/fixtures/four-layer.json` for a 4-layer board on OSH Park's published stackup.
 
 ## `Specification::validate`
@@ -60,22 +81,23 @@ Returns the first refusal, in this order, and in document order within a step. `
 
 | # | Rule | Refusal (`id()`) |
 |---|---|---|
-| 1 | `schema_version` is 2 | `UnsupportedSchemaVersion` (none) |
-| 2 | Every identifier is 1 to 64 bytes of printable ASCII `0x21`–`0x7E`, none of them `/`, `{`, `}`, `$`, `[`, `]`, `"`, `%`, `*`, `,` or `\`, and none holding a date shape (`dddd-dd-dd`) or a time shape (`dd:dd:dd`). The project name is also a crate name (1 to 58 bytes of `a-z`, `0-9`, `-`; a letter first, no trailing or doubled `-`; 58 because `generate` adds `-board`), and a device reference, I2C or SPI, a Renode identifier (a letter, then letters, digits and `_`). One function, `check_identifier(IdentifierKind, &str)`, holds the table, and the error's message names the rule broken (`RUL-14`; `AET-WO-1102`) | `InvalidIdentifier` (none; `path()`) |
+| 1 | `schema_version` is 3 | `UnsupportedSchemaVersion` (none) |
+| 2 | Every identifier is 1 to 64 bytes of printable ASCII `0x21`–`0x7E`, none of them `/`, `{`, `}`, `$`, `[`, `]`, `"`, `%`, `*`, `,` or `\`, and none holding a date shape (`dddd-dd-dd`) or a time shape (`dd:dd:dd`). The project name is also a crate name (1 to 58 bytes of `a-z`, `0-9`, `-`; a letter first, no trailing or doubled `-`; 58 because `generate` adds `-board`), and a device or connector reference a Renode identifier (a letter, then letters, digits and `_`). One function, `check_identifier(IdentifierKind, &str)`, holds the table, and the error's message names the rule broken (`RUL-14`; `AET-WO-1102`) | `InvalidIdentifier` (none; `path()`) |
 | 3 | `voltage_domains` is not empty | `NoVoltageDomain` (none) |
 | 4 | Domains: unique ids, nominal voltage not 0, tolerance in 1..=500 | `DuplicateDomainId`, `ZeroNominalVoltage`, `ToleranceOutOfRange` (the id) |
 | 5 | `mcu.supply`, every bus `domain` and every device `supply` names a declared domain | `UnknownDomain` (the name) |
 | 5a | Every bus `domain` equals `mcu.supply`, and every device `supply` equals its bus's `domain` (one rail; level shifting is unscoped). A device naming no bus is left to step 9 | `SupplyMismatch` (the bus id or device reference) |
 | 6 | Bus ids are unique across both bus lists | `DuplicateBusId` (the id) |
 | 7 | An I2C `speed_hz` is 100000, 400000 or 1000000, and `pull_up_ohms` is not 0. An SPI `speed_hz` is not 0 | `UnsupportedI2cSpeed`, `ZeroPullUp`, `ZeroSpiSpeed` (the bus id) |
-| 8 | References are unique across both device lists, compared with case folded | `DuplicateReference` (the reference; the message names the first spelling) |
+| 8 | References are unique across both device lists and the connectors, compared with case folded | `DuplicateReference` (the reference; the message names the first spelling) |
 | 9 | A device's `bus` names a bus of its own kind | `UnknownBus` (the name) |
 | 10 | An I2C address is in `0x08..=0x77` and unique on its bus | `I2cAddressOutOfRange`, `DuplicateI2cAddress` (the device reference) |
 | 11 | A net is declared by exactly one signal across every bus and every `cs`, and no signal net has a voltage domain's id (compared with case folded),, none differs from `GND` only in case, and voltage domain ids are compared the same way (`DuplicateDomainId`) | `DuplicateNetName`, `NetShadowsDomain` (the net) |
 | 12 | Net constraints: unique `net_name`; each names a declared signal net or a voltage domain id; capacitance, rise time and impedance are not 0 | `DuplicateNetConstraint`, `UnknownNet`, `ZeroCapacitance`, `ZeroRiseTime`, `ZeroImpedance` (the net) |
 | 13 | `board`, in this order: `copper_layers` is 2 or 4; `layers` is KiCad's copper names in order; each role fits (outer signal, at 4 both inner planes, a plane names a net, a signal layer none); each plane net is `GND` or a declared domain, one plane per net, exactly one `GND` at 4; `dielectrics` is the adjacent pairs in order, each minimum above 0; `finished_thickness_um` has `0 < min <= nominal <= max <= 10000` and `min` at least the dielectric minima summed (at 2 layers, the dielectric minimum at most `min` less twice `copper_max_um`, which the notes then imply); `copper_max_um` in 1..=10000, permittivity in 1000..=100000; every `source` 1 to 200 bytes of printable ASCII, no space at either end; clearance and track width at least 200 µm; via drill 300 µm and diameter 600 µm exactly | `UnsupportedLayerCount` (none), `LayerTable`, `LayerRole`, `DielectricTable`, `StackupValue`, `InvalidSource`, `RuleBelowFloor`, `UnsupportedViaRule` (none; `path()`), `PlaneNet` (the net), `PlaneLayout`, `FinishedThickness` (none) |
+| 14 | `connectors`, each in document order: its part is a row of the table; its pins are `1` to N, each once (a pin `07` is not `7`); each pin's net is declared; a pin on an I2C or SPI line has a nonzero `offboard`, and no other pin has one; then, if it names a standard, the port exists, has the part's series and pin count, and each pin in order holds its role | `UnknownConnectorPart`, `ConnectorPinUnknown`, `ConnectorPinRepeated`, `ConnectorPinMissing`, `ConnectorNetUnknown`, `ConnectorBudgetMissing`, `ConnectorBudgetNotApplicable`, `UnknownConnectorStandard`, `ConnectorPartContradictsStandard`, `ConnectorSupplyContradictsStandard`, `ConnectorPinContradictsStandard` (the reference) |
 
-Step 2 walks the identifiers in this order: `project_name`; `mcu.part`, `mcu.supply`; `voltage_domains[i].id`; each I2C bus (`id`, `peripheral` if set, `domain`, then `sda` and `scl`: `net`, `pin` if set); each SPI bus (the same, with `sck`, `mosi`, `miso`); each I2C device (`reference`, `part`, `supply`, `bus`); each SPI device (the same, then `cs.net`, `cs.pin` if set); `net_constraints[i].net_name`; `board.layers[i].net` if set. Nothing is trimmed or case-folded, so ids that differ only in whitespace are refused, not matched.
+Step 2 walks the identifiers in this order: `project_name`; `mcu.part`, `mcu.supply`; `voltage_domains[i].id`; each I2C bus (`id`, `peripheral` if set, `domain`, then `sda` and `scl`: `net`, `pin` if set); each SPI bus (the same, with `sck`, `mosi`, `miso`); each I2C device (`reference`, `part`, `supply`, `bus`); each SPI device (the same, then `cs.net`, `cs.pin` if set); `net_constraints[i].net_name`; `board.layers[i].net` if set; each connector (`reference`, `part`, then each pin's `pin`, `net` if set and `offboard.source` if set, the last held to the board's source rule, `InvalidSource`). A connector's `standard` names a table row and may hold a space, so step 14 checks it against the table instead. Nothing is trimmed or case-folded, so ids that differ only in whitespace are refused, not matched.
 
 `validate` does not check that a part, peripheral or pin exists, nor that two signals ask for one pin. Both need the pin table, so `solve` refuses them (below).
 
@@ -100,7 +122,7 @@ A repeated key in `assignments`, `gpio`, `i2c_ceilings` or `i2c_speeds` is refus
 8. the analog lines, then `CeilingNotDerived` (a ceiling that is not what `solve` derives from the bus's own lines: `electrical::ceiling_hz` of the smallest `ceiling_ns` among them; a bus with no line, or a bound slower than every mode, derives nothing; the bus id) (`AET-WO-1204`);
 9. the declared speeds (`AET-WO-1205`): `SpeedBusMismatch` (the key sets of `i2c_speeds` and `i2c_ceilings` differ; the stray bus), then per bus `UnsupportedI2cSpeed` (not 100, 400 or 1,000 kHz), `BusTooFast` (above its ceiling), `PullUpBelowSinkFloor` and `BusCapacitanceOverLimit`, each line held to `electrical::i2c_pull_up_floor_ohms` and `i2c_bus_capacitance_limit_femtofarads` at the declared speed, with the names `solve` uses.
 
-A specification's device lists are private to this crate (`RUL-16`, `AET-WO-1204`). Read them through `Specification::declared_i2c_devices` and `declared_spi_devices`; `cli`, `svd-hal` and `twin` carry a `clippy.toml` that disallows both.
+A specification's device lists and connectors are private to this crate (`RUL-16`, `AET-WO-1204`). Read them through `Specification::declared_i2c_devices`, `declared_spi_devices` and `declared_connectors`; `cli`, `svd-hal` and `twin` carry a `clippy.toml` that disallows all three.
 
 The CLI's `validate` accepts only a `Specification`.
 
