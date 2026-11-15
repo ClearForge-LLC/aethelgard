@@ -121,7 +121,10 @@ fn two_spi_devices_share_one_mux_and_one_port_block_and_the_judge_reads_both() {
 
     let plan = boot::identity(&t).unwrap();
     let refs: Vec<&str> = plan.checks.iter().map(|c| c.reference.as_str()).collect();
-    assert_eq!(refs, ["U2", "U4", "U5"]);
+    // U5, a scripted part, makes three steps (`AET-WO-4210`).
+    assert_eq!(refs, ["U2", "U4", "U5", "U5", "U5"]);
+    let steps: Vec<&str> = plan.checks[2..].iter().map(|c| c.step.name()).collect();
+    assert_eq!(steps, ["identity", "configure", "data"]);
     assert_eq!(plan.checks[0].wire, Wire::I2c { address: 0x76 });
     assert_eq!(
         plan.checks[1].wire,
@@ -137,19 +140,24 @@ fn two_spi_devices_share_one_mux_and_one_port_block_and_the_judge_reads_both() {
             select: "PA1".into()
         }
     );
-    // Records follow the boot word's, one pair each, consecutive.
+    // Records follow the boot word's, consecutive: the status, then as many
+    // value words as the read needs (the data read's six bytes take two).
     let first = plan.checks[0].status_at;
-    for (n, c) in plan.checks.iter().enumerate() {
-        assert_eq!(c.status_at, first + RECORD_BYTES * n as u32);
+    let mut at = first;
+    for c in &plan.checks {
+        assert_eq!(c.status_at, at);
         assert_eq!(c.value_at, c.status_at + 4);
+        at += 4 + 4 * boot::value_words(c.width);
     }
+    assert_eq!(plan.checks[1].status_at, first + RECORD_BYTES);
+    assert_eq!(at - first, 2 * RECORD_BYTES + 8 + 8 + 12);
     assert_eq!(first, boot::boot_word().unwrap() + boot::RECORD_OFFSET);
 
     // U5's witness is the ICM's four lines, and its skipped line is the one
     // chip-select edge the model logs.
     let u5 = &plan.checks[2];
     assert_eq!(u5.device, "spi1.spi1mux.u5");
-    assert_eq!((u5.write, u5.width), (0x80, 1));
+    assert_eq!((u5.write.as_slice(), u5.width), (&[0x80][..], 1));
     let id = u5.expected;
     let d = "spi1.spi1mux.u5";
     assert_eq!(

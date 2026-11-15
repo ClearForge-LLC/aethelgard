@@ -86,10 +86,11 @@ fn port(label: &str, peripheral: Option<&str>, tx: Option<&str>, rx: Option<&str
 
 fn spec_json(ports: Vec<Value>) -> Value {
     json!({
-        "schema_version": 7,
+        "schema_version": aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
+        "accept_lifecycle": [],
         "project_name": "t",
         "board": serde_json::from_str::<Value>(BOARD).unwrap(),
-        "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0},
+        "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 0},
         "voltage_domains": [
             {"id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50},
             {"id": "VDD_5V", "nominal_millivolts": 5000, "tolerance_permille": 50}],
@@ -99,6 +100,7 @@ fn spec_json(ports: Vec<Value>) -> Value {
         "net_classes": [],
         "diff_pairs": [],
         "motor_outputs": [],
+        "power": null,
         "serial_ports": ports,
     })
 }
@@ -979,9 +981,9 @@ fn the_topology_refuses_a_port_that_disagrees_with_its_assignments() {
 }
 
 #[test]
-fn a_version_5_topology_without_serial_ports_is_refused_as_a_version() {
+fn a_version_6_topology_without_serial_ports_is_refused_as_a_version() {
     let mut v = serde_json::to_value(topology()).unwrap();
-    v["schema_version"] = json!(5);
+    v["schema_version"] = json!(6);
     v.as_object_mut().unwrap().remove("serial_ports");
     let t: SolvedTopology = serde_json::from_value(v.clone()).unwrap();
     assert_eq!(t.validate().unwrap_err().kind(), "UnsupportedSchemaVersion");

@@ -143,12 +143,14 @@ fn spec(
     // The device lists are private to the crate (`AET-WO-1204`), so the
     // specification is built from the JSON it reads.
     let json = serde_json::json!({
-        "schema_version": 7,
+        "schema_version": aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
+        "accept_lifecycle": [],
         "net_classes": [],
         "diff_pairs": [],
+        "power": null,
         "project_name": "t",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
-        "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into(), hse_hz: 0 },
+        "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0 },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,

@@ -110,6 +110,74 @@ fn the_generated_board_proves() {
     assert_eq!(v["findings"], serde_json::json!([]));
 }
 
+/// `AET-WO-4210` §2.2: the 1.8 V IMU and barometer fixture's board crate
+/// (generated as the CLI generates it; KiCad cannot draw the stand-ins). Its
+/// transfer proofs are bounded by the largest step of each bus's scripts
+/// (the IMU's data read: one byte out, six in; the ICP-10111's 16-bit
+/// commands), so every transfer the firmware makes is inside what Kani
+/// proves bounded and ordered.
+#[test]
+fn the_imu_fixture_s_transfers_prove_within_its_scripts() {
+    let spec_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/imu-baro-1v8.json");
+    let bytes = fs::read(&spec_path).unwrap();
+    let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &sha(&bytes)).unwrap();
+    let answers = |part: &str| matches!(aethelgard_twin::model::model(part), Ok(Some(_)));
+    let files =
+        aethelgard_svd_hal::board::generate_with("imu-baro-board", &solved, &table, &answers)
+            .unwrap();
+    let dir = std::env::temp_dir().join(format!("aet-4210-prove-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    for (rel, text) in &files {
+        let to = dir.join(rel);
+        fs::create_dir_all(to.parent().unwrap()).unwrap();
+        fs::write(&to, text).unwrap();
+    }
+    let proofs = &files["src/proofs.rs"];
+    assert!(
+        proofs.contains("kani::assume(wl <= 2 && rl <= 6);"),
+        "{proofs}"
+    );
+    assert!(
+        proofs.contains("Spi1 made a data step's frames"),
+        "{proofs}"
+    );
+    for harness in [
+        "proofs::spi1_transfer_is_bounded_and_ordered",
+        "proofs::i2c1_transfer_is_bounded_and_ordered",
+    ] {
+        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let start = Instant::now();
+        let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+            .args([
+                "prove",
+                "--crate",
+                dir.to_str().unwrap(),
+                "--harness",
+                harness,
+            ])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8(out.stdout).unwrap();
+        let mut log = OpenOptions::new().append(true).open("/dev/stderr").unwrap();
+        log.write_all(
+            format!(
+                "ANSWER 4210-PB10: {harness}: exit={:?} wall_s={:.2} verdict={}\n",
+                out.status.code(),
+                start.elapsed().as_secs_f64(),
+                stdout.trim()
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        let v: Value = serde_json::from_str(stdout.trim()).unwrap();
+        assert_eq!(out.status.code(), Some(0), "{v}");
+        assert_eq!(v["verdict"], "pass", "{v}");
+    }
+}
+
 #[test]
 fn a_wrong_alternate_function_fails() {
     fails_on(

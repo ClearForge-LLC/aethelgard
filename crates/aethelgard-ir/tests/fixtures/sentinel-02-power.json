@@ -1,0 +1,454 @@
+{
+  "schema_version": 9,
+  "accept_lifecycle": [
+    {
+      "part": "ICM20948",
+      "status": "eol",
+      "statement": "A twin stand-in for the IMU, never bought: no current flight-controller IMU is modelled in Renode 1.17.0 (AET-WO-4210 D1)"
+    }
+  ],
+  "project_name": "sentinel-02-power",
+  "mcu": {
+    "part": "STM32H753ZITx",
+    "supply": "VDD_3V3",
+    "hse_hz": 0,
+    "bor_level": 3
+  },
+  "voltage_domains": [
+    {
+      "id": "VDD_3V3",
+      "nominal_millivolts": 3300,
+      "tolerance_permille": 50
+    },
+    {
+      "id": "VDD_5V",
+      "nominal_millivolts": 5000,
+      "tolerance_permille": 50
+    },
+    {
+      "id": "VDD_1V8",
+      "nominal_millivolts": 1800,
+      "tolerance_permille": 50
+    }
+  ],
+  "i2c_buses": [
+    {
+      "id": "SENSORS",
+      "peripheral": null,
+      "speed_hz": 400000,
+      "pull_up_ohms": 2200,
+      "domain": "VDD_3V3",
+      "sda": {
+        "net": "I2C_SDA",
+        "pin": null
+      },
+      "scl": {
+        "net": "I2C_SCL",
+        "pin": null
+      }
+    }
+  ],
+  "spi_buses": [
+    {
+      "id": "FLASH",
+      "peripheral": null,
+      "speed_hz": 20000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "SPI_SCK",
+        "pin": null
+      },
+      "mosi": {
+        "net": "SPI_MOSI",
+        "pin": null
+      },
+      "miso": {
+        "net": "SPI_MISO",
+        "pin": null
+      }
+    },
+    {
+      "id": "IMU",
+      "peripheral": null,
+      "speed_hz": 4000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "IMU_SCK",
+        "pin": null
+      },
+      "mosi": {
+        "net": "IMU_MOSI",
+        "pin": null
+      },
+      "miso": {
+        "net": "IMU_MISO",
+        "pin": null
+      }
+    }
+  ],
+  "i2c_devices": [
+    {
+      "reference": "U2",
+      "part": "BME280",
+      "supply": "VDD_3V3",
+      "bus": "SENSORS",
+      "address": 118
+    },
+    {
+      "reference": "U3",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "SENSORS",
+      "address": 72
+    }
+  ],
+  "spi_devices": [
+    {
+      "reference": "U4",
+      "part": "W25Q64JVxIQ",
+      "supply": "VDD_3V3",
+      "bus": "FLASH",
+      "cs": {
+        "net": "FLASH_CS",
+        "pin": null
+      }
+    },
+    {
+      "reference": "U5",
+      "part": "ICM20948",
+      "supply": "VDD_1V8",
+      "bus": "IMU",
+      "cs": {
+        "net": "IMU_CS",
+        "pin": null
+      }
+    }
+  ],
+  "connectors": [],
+  "net_constraints": [
+    {
+      "net_name": "I2C_SDA",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "I2C_SCL",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI_SCK",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "SPI_MOSI",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "IMU_SCK",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "IMU_MOSI",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    }
+  ],
+  "board": {
+    "copper_layers": 2,
+    "layers": [
+      {
+        "name": "F.Cu",
+        "role": "signal",
+        "net": null
+      },
+      {
+        "name": "B.Cu",
+        "role": "signal",
+        "net": null
+      }
+    ],
+    "stackup": {
+      "finished_thickness_um": {
+        "nominal": 1600,
+        "min": 340,
+        "max": 2000,
+        "source": "AET-WO-1305 conditions: 1.6 mm declared; 0.34 mm = 2 x 70 um + 0.2 mm; 2.0 mm = 1.6 mm + 25 %"
+      },
+      "dielectrics": [
+        {
+          "between": [
+            "F.Cu",
+            "B.Cu"
+          ],
+          "min_thickness_um": 200,
+          "source": "implied: the finished minimum 340 um less twice the copper maximum 70 um"
+        }
+      ],
+      "copper_max_um": {
+        "value": 70,
+        "source": "AET-WO-1305 condition: twice KiCad's default 35 um (2 oz)"
+      },
+      "relative_permittivity_max_permille": {
+        "value": 5400,
+        "source": "the IPC-4101 FR-4 maximum, specified at 1 MHz"
+      }
+    },
+    "rules": {
+      "clearance_um": 200,
+      "track_width_um": 200,
+      "via_drill_um": 300,
+      "via_diameter_um": 600
+    }
+  },
+  "net_classes": [],
+  "diff_pairs": [],
+  "motor_outputs": [],
+  "power": {
+    "conditions": {
+      "board_temperature_celsius": {
+        "min": -20,
+        "max": 85,
+        "source": "Sentinel-02 declared range: the XT30's -20 C floor and the 5 V output capacitors' 85 C ceiling"
+      }
+    },
+    "input": {
+      "reference": "J1",
+      "part": "XT30PW-M"
+    },
+    "battery": {
+      "chemistry": "LiPo, 3S to 6S, high-voltage cells allowed",
+      "cells": {
+        "min": 3,
+        "max": 6
+      },
+      "cell_min_millivolts": {
+        "value": 3000,
+        "source": "the pack's discharge floor the flight controller declares (AET-WO-4300d spike P1.2)"
+      },
+      "cell_max_millivolts": {
+        "value": 4350,
+        "source": "LiHV full charge (AET-WO-4300d spike P1.2)"
+      }
+    },
+    "regulators": [
+      {
+        "reference": "U10",
+        "part": "LMR33630ADDA",
+        "input": "battery",
+        "output": "VDD_5V",
+        "feedback": {
+          "top": {
+            "reference": "R10",
+            "part": "TNPW0603_B_E",
+            "ohms": 102000
+          },
+          "bottom": {
+            "reference": "R11",
+            "part": "TNPW0603_B_E",
+            "ohms": 25500
+          }
+        },
+        "external": [
+          {
+            "role": "cin",
+            "reference": "C10",
+            "part": "GCM32EC71H106KA03"
+          },
+          {
+            "role": "cin_hf",
+            "reference": "C11",
+            "part": "GCM188R71H224KA64"
+          },
+          {
+            "role": "cboot",
+            "reference": "C12",
+            "part": "GCM188R71H104KA57"
+          },
+          {
+            "role": "cvcc",
+            "reference": "C13",
+            "part": "GRM188R71C105KA12"
+          },
+          {
+            "role": "cout",
+            "reference": "C14",
+            "part": "GRM32ER61C226KE20"
+          },
+          {
+            "role": "cout",
+            "reference": "C15",
+            "part": "GRM32ER61C226KE20"
+          },
+          {
+            "role": "cout",
+            "reference": "C16",
+            "part": "GRM32ER61C226KE20"
+          },
+          {
+            "role": "cout",
+            "reference": "C17",
+            "part": "GRM32ER61C226KE20"
+          },
+          {
+            "role": "inductor",
+            "reference": "L1",
+            "part": "IHLP5050FDER8R2M01"
+          }
+        ]
+      },
+      {
+        "reference": "U11",
+        "part": "LMR33630ADDA",
+        "input": "battery",
+        "output": "VDD_3V3",
+        "feedback": {
+          "top": {
+            "reference": "R20",
+            "part": "TNPW0603_B_E",
+            "ohms": 105000
+          },
+          "bottom": {
+            "reference": "R21",
+            "part": "TNPW0603_B_E",
+            "ohms": 46400
+          }
+        },
+        "external": [
+          {
+            "role": "cin",
+            "reference": "C20",
+            "part": "GCM32EC71H106KA03"
+          },
+          {
+            "role": "cin_hf",
+            "reference": "C21",
+            "part": "GCM188R71H224KA64"
+          },
+          {
+            "role": "cboot",
+            "reference": "C22",
+            "part": "GCM188R71H104KA57"
+          },
+          {
+            "role": "cvcc",
+            "reference": "C23",
+            "part": "GRM188R71C105KA12"
+          },
+          {
+            "role": "cout",
+            "reference": "C24",
+            "part": "GRM32ER71A226KE20"
+          },
+          {
+            "role": "cout",
+            "reference": "C25",
+            "part": "GRM32ER71A226KE20"
+          },
+          {
+            "role": "cout",
+            "reference": "C26",
+            "part": "GRM32ER71A226KE20"
+          },
+          {
+            "role": "cout",
+            "reference": "C27",
+            "part": "GRM32ER71A226KE20"
+          },
+          {
+            "role": "inductor",
+            "reference": "L2",
+            "part": "IHLP5050FDER8R2M01"
+          }
+        ]
+      },
+      {
+        "reference": "U12",
+        "part": "TLV75518PDBV",
+        "input": "VDD_3V3",
+        "output": "VDD_1V8",
+        "feedback": null,
+        "external": [
+          {
+            "role": "cin",
+            "reference": "C30",
+            "part": "GRM188R71C105KA12"
+          },
+          {
+            "role": "cout",
+            "reference": "C31",
+            "part": "GRM188R71C105KA12"
+          }
+        ]
+      }
+    ],
+    "loads": [
+      {
+        "domain": "VDD_5V",
+        "milliamps": 2000,
+        "source": "DS-009 port budget for Sentinel-02 (AET-WO-4300d spike checks.py, LOAD_5V)"
+      },
+      {
+        "domain": "VDD_1V8",
+        "milliamps": 20,
+        "source": "the 1.8 V I/O domain budget (AET-WO-4300d spike checks.py, LOAD_1V8)"
+      }
+    ],
+    "sense": [
+      {
+        "net": "VBAT_SENSE",
+        "top": {
+          "reference": "R50",
+          "part": "CRCW0603_F_K",
+          "ohms": 100000
+        },
+        "bottom": {
+          "reference": "R51",
+          "part": "CRCW0603_F_K",
+          "ohms": 10000
+        },
+        "reservoir": {
+          "reference": "C50",
+          "part": "GCM188R71H104KA57"
+        },
+        "adc_resolution_bits": 12
+      }
+    ],
+    "crossings": [
+      {
+        "reference": "U13",
+        "part": "TXU0304PW",
+        "bus": "IMU",
+        "a_domain": "VDD_3V3",
+        "b_domain": "VDD_1V8",
+        "cs_pull_up": {
+          "reference": "R40",
+          "part": "CRCW0603_F_K",
+          "ohms": 100000
+        },
+        "external": [
+          {
+            "role": "bypass_a",
+            "reference": "C40",
+            "part": "GCM188R71H104KA57"
+          },
+          {
+            "role": "bypass_b",
+            "reference": "C41",
+            "part": "GCM188R71H104KA57"
+          }
+        ]
+      }
+    ]
+  },
+  "serial_ports": []
+}

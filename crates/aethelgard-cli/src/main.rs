@@ -263,6 +263,9 @@ struct ValidReport<'a> {
     project_name: &'a str,
     voltage_domains: usize,
     net_constraints: usize,
+    /// The lifecycle banner (`AET-WO-4210` D1); absent when it is empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    lifecycle: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -752,6 +755,12 @@ fn check_kicad(
                 kind: refusal.error.kind,
                 id: refusal.error.id,
                 message: refusal.error.message,
+            })?;
+            aethelgard_eda::schematic::refuse_power(&spec).map_err(|e| run::Stop {
+                code: EXIT_INVALID_SPEC,
+                kind: e.kind(),
+                id: None,
+                message: e.to_string(),
             })?;
             declared = Some(aethelgard_eda::stack::Stack::of(&spec));
             (
@@ -1469,6 +1478,10 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     if let (Some(r), Some(plan)) = (&ready, &plan) {
         v.boot = Some(boot_report(r, plan, observed.as_ref()));
     }
+    if let Some(r) = &ready {
+        // `validate` read the topology's parts already, so the table is there.
+        v.lifecycle = r.topology.lifecycle_banner().unwrap_or_default();
+    }
     // What judged the boot, as each tool reported it (`AET-WO-2205` §1.1).
     if let Some(build) = build {
         use aethelgard_chaos::campaign::{ENGINE, RENODE};
@@ -1623,8 +1636,11 @@ fn boot_report(
                 aethelgard_twin::boot::Wire::I2c { address } => Some(verdict::I2cReport {
                     reference: c.reference.clone(),
                     address: format!("{address:#04x}"),
-                    register: format!("{:#04x}", c.write),
+                    step: c.step.name(),
+                    register: bytes(&c.write),
+                    width: c.width,
                     expected: format!("{:#x}", c.expected),
+                    mask: format!("{:#x}", c.mask),
                     observed: observed.map(|o| format!("{:#x}", o.records[i].1)),
                     status: observed.map(|o| renode::status_name(c, o.records[i].0)),
                 }),
@@ -1660,8 +1676,11 @@ fn boot_report(
                     peripheral: c.peripheral.clone(),
                     select: select.clone(),
                     address: format!("{address:#04x}"),
-                    command: format!("{:#04x}", c.write),
+                    step: c.step.name(),
+                    command: bytes(&c.write),
+                    width: c.width,
                     expected: format!("{:#x}", c.expected),
+                    mask: format!("{:#x}", c.mask),
                     observed: observed.map(|o| format!("{:#x}", o.records[i].1)),
                     status: observed.map(|o| renode::status_name(c, o.records[i].0)),
                 }),
@@ -1678,6 +1697,7 @@ fn boot_report(
             .map(|(i, c)| verdict::SpiWitnessReport {
                 peripheral: c.peripheral.clone(),
                 reference: c.reference.clone(),
+                step: c.step.name(),
                 device: c.device.clone(),
                 expected: c.witness.clone().unwrap_or_default(),
                 observed: observed.and_then(|o| o.witnesses[i].clone()),
@@ -1701,6 +1721,12 @@ fn boot_report(
     }
 }
 
+/// Bytes as the verdict writes them: `0xef 0xc8`.
+fn bytes(write: &[u8]) -> String {
+    let each: Vec<String> = write.iter().map(|b| format!("{b:#04x}")).collect();
+    each.join(" ")
+}
+
 fn validate(file: Option<&Path>) -> ExitCode {
     match read_spec(file) {
         Ok((spec, _)) => emit(
@@ -1709,6 +1735,7 @@ fn validate(file: Option<&Path>) -> ExitCode {
                 project_name: &spec.project_name,
                 voltage_domains: spec.voltage_domains.len(),
                 net_constraints: spec.net_constraints.len(),
+                lifecycle: spec.lifecycle_banner().unwrap_or_default(),
             },
             0,
         ),
@@ -1998,6 +2025,9 @@ fn generate_tree(file: &Path, out: &Path) -> ExitCode {
         topology_sha256: String,
         /// Every file written, by its path under `--out`, with its sha256.
         files: std::collections::BTreeMap<String, String>,
+        /// The lifecycle banner (`AET-WO-4210` D1); absent when it is empty.
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        lifecycle: Vec<String>,
     }
 
     let (spec, topology, table) = match solved(file) {
@@ -2021,6 +2051,7 @@ fn generate_tree(file: &Path, out: &Path) -> ExitCode {
                 .iter()
                 .map(|(path, text)| (path.clone(), tree::sha256(text.as_bytes())))
                 .collect(),
+            lifecycle: topology.lifecycle_banner().unwrap_or_default(),
         },
         0,
     )

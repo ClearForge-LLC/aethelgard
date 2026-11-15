@@ -324,12 +324,17 @@ pub enum Record {
     },
     /// Kind 11: one solved register after the boot.
     RegisterObserved { name: String, reading: Reading },
-    /// Kind 12: one identity read, as the firmware recorded it.
+    /// Kind 12: one step of a device's script, as the firmware recorded it
+    /// (`AET-WO-4210`): the bytes it writes, then the read of `width` bytes
+    /// (none for a `configure` step) against the part's value under `mask`.
     I2cCheck {
         reference: String,
         address: u8,
-        register: u8,
+        step: String,
+        write: Vec<u8>,
+        width: u8,
         expected: u64,
+        mask: u64,
         observed: Option<u64>,
         status: Option<String>,
     },
@@ -343,6 +348,7 @@ pub enum Record {
         reference: String,
         /// The model's path in Renode, `i2c1.u2`.
         device: String,
+        step: String,
         expected: Vec<String>,
         observed: Option<Vec<String>>,
         /// The addresses the device's controller found no device at during
@@ -421,8 +427,11 @@ pub enum Record {
         peripheral: String,
         select: String,
         address: u8,
-        command: u8,
+        step: String,
+        write: Vec<u8>,
+        width: u8,
         expected: u64,
+        mask: u64,
         observed: Option<u64>,
         status: Option<String>,
     },
@@ -436,8 +445,11 @@ pub enum Record {
         peripheral: String,
         reference: String,
         device: String,
+        step: String,
         expected: Vec<String>,
         observed: Option<Vec<String>>,
+        /// The multiplexer's lines inside this step's chip-select window
+        /// (`AET-WO-4210` D5).
         unrouted: Vec<String>,
     },
     /// Kind 23: one solved SPI controller, from the solved topology alone
@@ -590,6 +602,10 @@ fn texts(v: &[String]) -> Value {
     Value::Array(v.iter().map(|s| t(s)).collect())
 }
 
+fn u8s(v: &[u8]) -> Value {
+    Value::Array(v.iter().map(|&b| u(b.into())).collect())
+}
+
 fn opt_texts(v: Option<&[String]>) -> Value {
     Value::Array(v.map(texts).into_iter().collect())
 }
@@ -598,6 +614,33 @@ fn opt_texts(v: Option<&[String]>) -> Value {
 /// each 1 to 256 printable ASCII bytes.
 fn witness_lines_ok(v: &[String]) -> bool {
     v.len() <= MAX_WITNESS_LINES && v.iter().all(|s| text_ok(s, 1, 256))
+}
+
+/// The steps of a device's script, in the order a script runs them.
+pub const STEPS: [&str; 3] = ["identity", "configure", "data"];
+
+/// A step's fields as kinds 12 and 21 carry them (`AET-WO-4210`): a known
+/// step, a write of 1 to 4 bytes, a read of 0 to 8 bytes (0 exactly for
+/// `configure`), and an expected value and mask that fit the read.
+fn step_ok(
+    step: &str,
+    write: &[u8],
+    width: u8,
+    expected: u64,
+    mask: u64,
+) -> Result<(), &'static str> {
+    let fits = |v: u64| width >= 8 || v >> (8 * u32::from(width)) == 0;
+    if !STEPS.contains(&step) {
+        Err("step is not identity, configure or data")
+    } else if write.is_empty() || write.len() > 4 {
+        Err("write is not 1 to 4 bytes")
+    } else if width > 8 || (width == 0) != (step == "configure") {
+        Err("width is not 0 to 8, or is 0 for a step that reads or not 0 for configure")
+    } else if !fits(mask) || !fits(expected) {
+        Err("expected or mask does not fit the width")
+    } else {
+        Ok(())
+    }
 }
 
 /// The most witness lines a record carries: a judge sees two per identity
@@ -683,6 +726,14 @@ impl<'a> Fields<'a> {
         let mut out = Vec::new();
         while inner.0.len() > 0 {
             out.push(inner.text()?);
+        }
+        Some(out)
+    }
+    fn u8s(&mut self) -> Option<Vec<u8>> {
+        let mut inner = Fields(self.array()?.iter());
+        let mut out = Vec::new();
+        while inner.0.len() > 0 {
+            out.push(inner.u8()?);
         }
         Some(out)
     }
@@ -987,15 +1038,21 @@ impl Record {
             Self::I2cCheck {
                 reference,
                 address,
-                register,
+                step,
+                write,
+                width,
                 expected,
+                mask,
                 observed,
                 status,
             } => vec![
                 t(reference),
                 u((*address).into()),
-                u((*register).into()),
+                t(step),
+                u8s(write),
+                u((*width).into()),
                 u(*expected),
+                u(*mask),
                 opt(*observed),
                 Value::Array(status.iter().map(|s| t(s)).collect()),
             ],
@@ -1003,6 +1060,7 @@ impl Record {
                 peripheral,
                 reference,
                 device,
+                step,
                 expected,
                 observed,
                 absent,
@@ -1010,9 +1068,10 @@ impl Record {
                 t(peripheral),
                 t(reference),
                 t(device),
+                t(step),
                 texts(expected),
                 opt_texts(observed.as_deref()),
-                Value::Array(absent.iter().map(|&a| u(a.into())).collect()),
+                u8s(absent),
             ],
             Self::Verdict { pass, findings } => vec![
                 flag(*pass),
@@ -1113,8 +1172,11 @@ impl Record {
                 peripheral,
                 select,
                 address,
-                command,
+                step,
+                write,
+                width,
                 expected,
+                mask,
                 observed,
                 status,
             } => vec![
@@ -1122,8 +1184,11 @@ impl Record {
                 t(peripheral),
                 t(select),
                 u((*address).into()),
-                u((*command).into()),
+                t(step),
+                u8s(write),
+                u((*width).into()),
                 u(*expected),
+                u(*mask),
                 opt(*observed),
                 Value::Array(status.iter().map(|s| t(s)).collect()),
             ],
@@ -1131,6 +1196,7 @@ impl Record {
                 peripheral,
                 reference,
                 device,
+                step,
                 expected,
                 observed,
                 unrouted,
@@ -1138,6 +1204,7 @@ impl Record {
                 t(peripheral),
                 t(reference),
                 t(device),
+                t(step),
                 texts(expected),
                 opt_texts(observed.as_deref()),
                 texts(unrouted),
@@ -1408,8 +1475,11 @@ impl Record {
             12 => Self::I2cCheck {
                 reference: f.text()?,
                 address: f.u8()?,
-                register: f.u8()?,
+                step: f.text()?,
+                write: f.u8s()?,
+                width: f.u8()?,
                 expected: f.uint()?,
+                mask: f.uint()?,
                 observed: f.opt()?,
                 status: match f.array()? {
                     [] => None,
@@ -1421,16 +1491,10 @@ impl Record {
                 peripheral: f.text()?,
                 reference: f.text()?,
                 device: f.text()?,
+                step: f.text()?,
                 expected: f.texts()?,
                 observed: f.opt_texts()?,
-                absent: {
-                    let mut inner = Fields(f.array()?.iter());
-                    let mut v = Vec::new();
-                    while inner.0.len() > 0 {
-                        v.push(inner.u8()?);
-                    }
-                    v
-                },
+                absent: f.u8s()?,
             },
             14 => {
                 let pass = f.flag()?;
@@ -1522,8 +1586,11 @@ impl Record {
                 peripheral: f.text()?,
                 select: f.text()?,
                 address: f.u8()?,
-                command: f.u8()?,
+                step: f.text()?,
+                write: f.u8s()?,
+                width: f.u8()?,
                 expected: f.uint()?,
+                mask: f.uint()?,
                 observed: f.opt()?,
                 status: match f.array()? {
                     [] => None,
@@ -1535,6 +1602,7 @@ impl Record {
                 peripheral: f.text()?,
                 reference: f.text()?,
                 device: f.text()?,
+                step: f.text()?,
                 expected: f.texts()?,
                 observed: f.opt_texts()?,
                 unrouted: f.texts()?,
@@ -1787,8 +1855,16 @@ impl Record {
                 }
             }
             Self::I2cCheck {
-                reference, status, ..
+                reference,
+                status,
+                step,
+                write,
+                width,
+                expected,
+                mask,
+                ..
             } => {
+                step_ok(step, write, *width, *expected, *mask)?;
                 if !name_ok(reference) {
                     Err("device reference is not 1 to 64 printable ASCII bytes")
                 } else if status.as_deref().is_some_and(|s| !name_ok(s)) {
@@ -1801,11 +1877,14 @@ impl Record {
                 peripheral,
                 reference,
                 device,
+                step,
                 expected,
                 observed,
                 absent,
             } => {
-                if absent.len() > MAX_WITNESS_LINES || absent.iter().any(|&a| a > 0x7F) {
+                if !STEPS.contains(&step.as_str()) {
+                    Err("step is not identity, configure or data")
+                } else if absent.len() > MAX_WITNESS_LINES || absent.iter().any(|&a| a > 0x7F) {
                     Err("absent addresses are not at most 16 seven-bit addresses")
                 } else if !(name_ok(peripheral) && name_ok(reference) && name_ok(device)) {
                     Err("peripheral, reference or device is not 1 to 64 printable ASCII bytes")
@@ -1924,8 +2003,14 @@ impl Record {
                 peripheral,
                 select,
                 status,
+                step,
+                write,
+                width,
+                expected,
+                mask,
                 ..
             } => {
+                step_ok(step, write, *width, *expected, *mask)?;
                 if !(name_ok(reference) && name_ok(peripheral) && name_ok(select)) {
                     Err(
                         "device reference, peripheral or select is not 1 to 64 printable ASCII bytes",
@@ -1940,11 +2025,14 @@ impl Record {
                 peripheral,
                 reference,
                 device,
+                step,
                 expected,
                 observed,
                 unrouted,
             } => {
-                if !(name_ok(peripheral) && name_ok(reference) && name_ok(device)) {
+                if !STEPS.contains(&step.as_str()) {
+                    Err("step is not identity, configure or data")
+                } else if !(name_ok(peripheral) && name_ok(reference) && name_ok(device)) {
                     Err("peripheral, reference or device is not 1 to 64 printable ASCII bytes")
                 } else if !witness_lines_ok(expected)
                     || observed.as_deref().is_some_and(|o| !witness_lines_ok(o))

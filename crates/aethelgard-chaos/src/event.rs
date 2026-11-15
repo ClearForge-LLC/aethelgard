@@ -19,13 +19,20 @@ pub const VERSION: u64 = 1;
 /// beside the bus's declared speed, kind 10 carries the firmware's executable
 /// segments, and kind 19's witness is the lines it archives; 7 since
 /// `AET-WO-4200` added kinds 21 to 23 (an SPI identity read, its witness and
-/// the solved SPI controller) and override 4 (an SPI device left absent). An
-/// archive of any other version is refused by name (`Fault::Version`), as
-/// 2204 refused version 4; 8 since `AET-WO-4300a` added kinds 24 to 26 (a
-/// solved motor output, its static timing check for silicon, and its twin
-/// witness); 9 since `AET-WO-4300b` added kinds 27 to 29 (a solved serial
-/// port, its static framing judgement, and its twin witness).
-pub const TRACE_VERSION: u64 = 9;
+/// the solved SPI controller) and override 4 (an SPI device left absent); 8
+/// since `AET-WO-4300a` added kinds 24 to 26 (a solved motor output, its
+/// static timing check for silicon, and its twin witness); 9 since
+/// `AET-WO-4210`: kinds 12, 13, 21 and 22 are one event per step of a
+/// device's script (identity, configure, data), each naming its step, the
+/// check's write as a byte list with the read's width and mask, and a
+/// witness's lines may include the device's own `[WARNING]` and `[ERROR]`
+/// lines; kind 22's multiplexer lines are its step's chip-select window's.
+/// `4210` took 9 by the numbering rule, merging after `4300a`; 10 since
+/// `AET-WO-4300b` added kinds 27 to 29 (a solved serial port, its static
+/// framing judgement, and its twin witness), renumbered from 9 by the same
+/// rule. An archive of any other version is refused by name
+/// (`Fault::Version`), as 2204 refused version 4.
+pub const TRACE_VERSION: u64 = 10;
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.

@@ -311,10 +311,12 @@ fn the_reference_firmware_boots_and_two_boots_agree() {
         "the first boot executes exactly 1,000,000 instructions"
     );
     assert_eq!(b["seed"], 2100, "the boot runs with the pinned seed 2100");
+    let word = |v: &Value| u32::from_str_radix(&v.as_str().unwrap()[2..], 16).unwrap();
     for r in b["registers"].as_array().unwrap() {
         assert_eq!(
-            r["observed"], r["expected"],
-            "every register at the end of the boot equals its expected value: {r}"
+            word(&r["observed"]) & word(&r["mask"]),
+            word(&r["expected"]),
+            "every register at the end of the boot equals its expected value under its mask: {r}"
         );
     }
     // AET-WO-2202: U2's ID register reads 0x60, from the part table; U3 is
@@ -322,8 +324,8 @@ fn the_reference_firmware_boots_and_two_boots_agree() {
     assert_eq!(
         b["i2c"],
         serde_json::json!([{
-            "reference": "U2", "address": "0x76", "register": "0xd0",
-            "expected": "0x60", "observed": "0x60", "status": "ok"
+            "reference": "U2", "address": "0x76", "step": "identity", "register": "0xd0",
+            "width": 1, "expected": "0x60", "mask": "0xff", "observed": "0x60", "status": "ok"
         }]),
         "the i2c record is U2 reading 0x60 at register 0xd0 with status ok"
     );
@@ -347,7 +349,7 @@ fn the_reference_firmware_boots_and_two_boots_agree() {
     assert_eq!(
         b["i2c_witness"],
         serde_json::json!([{
-            "peripheral": "I2C1", "reference": "U2", "device": "i2c1.u2",
+            "peripheral": "I2C1", "reference": "U2", "step": "identity", "device": "i2c1.u2",
             "expected": WITNESS, "observed": WITNESS, "absent": []
         }]),
         "Renode's BME280 logged exactly the read the record claims"
@@ -1115,10 +1117,15 @@ fn a_firmware_parked_in_its_fault_handler_fails_naming_vectactive() {
     });
     let (code, v) = boot_elf("fault-parked", &elf, "10ms");
     assert_eq!(code, Some(1), "a fault-parked firmware exits 1: {v}");
+    // `AET-WO-4210` D6: and SysTick is armed after the boot word.
     assert_eq!(
         kinds(&v),
-        ["core_in_exception"],
-        "a fault-parked firmware reports exactly core_in_exception: {v}"
+        ["core_in_exception", "register_mismatch"],
+        "a fault-parked firmware reports core_in_exception and the armed SysTick: {v}"
+    );
+    assert!(
+        message(&v, "register_mismatch").starts_with("SysTick.CSR"),
+        "{v}"
     );
     assert!(
         message(&v, "core_in_exception").contains("exception 15"),
@@ -1132,6 +1139,42 @@ fn a_firmware_parked_in_its_fault_handler_fails_naming_vectactive() {
         v["boot"]["instructions"]["observed"], 1_000_000,
         "the fault-parked core ran the full instruction budget"
     );
+}
+
+/// `AET-WO-2204` A2, ruled D6 on PR #131: after the boot word the core is
+/// parked with no interrupt armed. A SysTick counting without its interrupt,
+/// or one NVIC line enabled that never fires, leaves the core on its loop
+/// and passed before this build; each now fails naming the register.
+#[test]
+fn an_interrupt_armed_after_the_boot_word_fails_naming_it() {
+    for (label, store, register) in [
+        (
+            "systick-counting",
+            "core::ptr::write_volatile(0xE000_E014 as *mut u32, 999); core::ptr::write_volatile(0xE000_E010 as *mut u32, 1);",
+            "SysTick.CSR",
+        ),
+        (
+            "nvic-line",
+            "core::ptr::write_volatile(0xE000_E100 as *mut u32, 1);",
+            "NVIC.ISER0",
+        ),
+    ] {
+        let elf = mutant(label, |d| {
+            edit(
+                d,
+                "src/main.rs",
+                "    // No sleep: the judge requires",
+                &format!("    unsafe {{ {store} }}\n    // No sleep: the judge requires"),
+            );
+        });
+        let (code, v) = boot_elf(label, &elf, "10ms");
+        assert_eq!(code, Some(1), "{label}: {v}");
+        assert_eq!(kinds(&v), ["register_mismatch"], "{label}: {v}");
+        assert!(
+            message(&v, "register_mismatch").starts_with(register),
+            "{label}: {v}"
+        );
+    }
 }
 
 #[test]
@@ -1402,7 +1445,9 @@ fn spi_forged(name: &str, forgery: &'static str) -> PathBuf {
 /// `AET-WO-4200` D2: a record that claims the flash's identity is witnessed
 /// only by the model's lines for that read. Claimed with no transfer, the
 /// model logs nothing; after a transfer of another command, it logs that
-/// command (and Renode an `[ERROR]` for it), never the read's lines.
+/// command (and Renode an `[ERROR]` for it), never the read's lines. That
+/// `[ERROR]` falls inside U4's chip-select window, so it fails the identity
+/// step by name, beside the run's `renode_error_log` (`AET-WO-4210` D-A1).
 #[test]
 fn a_forged_spi_record_fails_unwitnessed() {
     let elf = spi_forged("spi-forged", "Ok::<usize, SpiError>(3)");
@@ -1426,8 +1471,14 @@ fn a_forged_spi_record_fails_unwitnessed() {
     assert_eq!(code, Some(1), "{v}");
     let k = kinds(&v);
     assert!(
-        k.contains(&"spi_transaction_unwitnessed") && k.contains(&"renode_error_log"),
+        k.contains(&"spi_step_error") && k.contains(&"renode_error_log"),
         "{v}"
+    );
+    let m = message(&v, "spi_step_error");
+    assert!(
+        m.contains("U4 on SPI1, chip select PA0, its identity step")
+            && m.ends_with("[ERROR] spi1.spi1mux.u4: Command decoding failed on byte: 0x90 (144)."),
+        "{m}"
     );
     let observed = v["boot"]["spi_witness"][0]["observed"].as_array().unwrap();
     assert_eq!(
@@ -1436,18 +1487,17 @@ fn a_forged_spi_record_fails_unwitnessed() {
     );
 }
 
-/// `AET-WO-4200` D5: the test fixture `spi-imu.json` (the reference with an
-/// ICM-20948, U5, on the flash's bus, chip select `IMU_CS`) is read end to
-/// end. Generated through the board crate's generator and the twin's emitter
-/// (KiCad has no ICM-20948 symbol, so `generate` cannot draw it), built as
-/// the CLI builds a firmware, and judged by `simulate`: both reads pass, each
-/// witnessed by its own model behind one multiplexer, the IMU's idle lines
-/// skipped.
-#[test]
-fn a_second_spi_device_an_icm20948_is_read_and_witnessed() {
-    let spec_path = root().join("crates/aethelgard-cli/tests/fixtures/spi-imu.json");
+/// `AET-WO-4210` §2.4: the test fixture `imu-baro-1v8.json`, the board at
+/// 1.8 V (D7: the ICM-20948's `VDDIO`; the ICP-10111's only supply), with two
+/// ICM-20948s (U5, U7) on SPI1 and a BME280 (U2) and an ICP-10111 (U6) on
+/// I2C1. KiCad has no symbol for the stand-ins, so `generate` cannot draw it:
+/// the board crate comes from its generator and the platform from the twin's
+/// emitter, as the CLI makes them.
+fn imu_baro_board(label: &str) -> (PathBuf, PathBuf, PathBuf) {
+    let spec_path = root().join("crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json");
     let bytes = fs::read(&spec_path).unwrap();
     let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
+    spec.validate().unwrap();
     let sha: String = Sha256::digest(&bytes)
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -1458,26 +1508,170 @@ fn a_second_spi_device_an_icm20948_is_read_and_witnessed() {
     let files =
         aethelgard_svd_hal::board::generate_with("sentinel-01-board", &solved, &table, &answers)
             .unwrap();
-    let dir = std::env::temp_dir().join(format!("aet-4200-t2-{}-imu", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("aet-4210-t2-{}-{label}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     for (rel, text) in &files {
         let to = dir.join(rel);
         fs::create_dir_all(to.parent().unwrap()).unwrap();
         fs::write(&to, text).unwrap();
     }
-    let platform = dir.join("sentinel-01.repl");
+    let platform = dir.join("imu-baro-1v8.repl");
     fs::write(&platform, aethelgard_twin::platform::emit(&solved).unwrap()).unwrap();
-    let elf = mutant_of(&dir, "imu", |_| {});
-    let (code, v) = boot_on("spi imu", &platform, &spec_path, &elf, "10ms");
+    (dir, platform, spec_path)
+}
+
+/// `AET-WO-4210` §2.2-§2.4: every device's script runs and each step is
+/// witnessed by its own model's lines, on SPI inside its own chip-select
+/// window; each data read answers the datasheet's conversion of the judge's
+/// stimulus (D3); no interrupt is armed (D6).
+#[test]
+fn the_imu_and_barometer_fixture_runs_every_script_step_witnessed() {
+    let (dir, platform, spec_path) = imu_baro_board("fixture");
+    let elf = mutant_of(&dir, "imu-baro", |_| {});
+    let (code, v) = boot_on("imu baro", &platform, &spec_path, &elf, "10ms");
     assert_eq!(code, Some(0), "{v}");
-    let spi = v["boot"]["spi"].as_array().unwrap();
-    assert_eq!(spi.len(), 2, "{v}");
-    assert_eq!(spi[1]["reference"], "U5");
-    assert_eq!(spi[1]["observed"], "0xea");
-    let w = &v["boot"]["spi_witness"][1];
-    assert_eq!(w["device"], "spi1.spi1mux.u5");
-    assert_eq!(w["observed"], w["expected"], "{v}");
-    assert_eq!(w["expected"].as_array().unwrap().len(), 4);
+    let steps = |bus: &str| -> Vec<(String, String, String)> {
+        v["boot"][bus]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| {
+                (
+                    c["reference"].as_str().unwrap().to_owned(),
+                    c["step"].as_str().unwrap().to_owned(),
+                    c["observed"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect()
+    };
+    let t = |r: &str, s: &str, o: &str| (r.to_owned(), s.to_owned(), o.to_owned());
+    assert_eq!(
+        steps("i2c"),
+        [
+            t("U2", "identity", "0x60"),
+            t("U6", "identity", "0x8"),
+            t("U6", "configure", "0x0"),
+            t("U6", "data", "0x6666"),
+        ]
+    );
+    assert_eq!(
+        steps("spi"),
+        [
+            t("U5", "identity", "0xea"),
+            t("U5", "configure", "0x0"),
+            t("U5", "data", "0x4000"),
+            t("U7", "identity", "0xea"),
+            t("U7", "configure", "0x0"),
+            t("U7", "data", "0x4000"),
+        ]
+    );
+    for bus in ["i2c_witness", "spi_witness"] {
+        for w in v["boot"][bus].as_array().unwrap() {
+            assert_eq!(w["observed"], w["expected"], "{w}");
+            assert!(!w["expected"].as_array().unwrap().is_empty(), "{w}");
+        }
+    }
+    let spi = v["boot"]["spi_witness"].as_array().unwrap();
+    let lines: Vec<usize> = spi
+        .iter()
+        .map(|w| w["expected"].as_array().unwrap().len())
+        .collect();
+    assert_eq!(lines, [4, 4, 14, 4, 4, 14]);
+    assert!(spi.iter().all(|w| w["unrouted"] == serde_json::json!([])));
+    let csr = v["boot"]["registers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "SysTick.CSR")
+        .unwrap();
+    answer(&format!(
+        "imu baro: SysTick.CSR observed {}",
+        csr["observed"]
+    ));
+    // Scotty's ruling on D1: the acknowledged stand-ins are named in a loud
+    // banner, in the verdict and in the header of every generated file.
+    let banner: Vec<&str> = v["lifecycle"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l.as_str().unwrap())
+        .collect();
+    assert_eq!(banner.len(), 2, "{v}");
+    assert!(
+        banner[0].starts_with("LIFECYCLE EOL: ICP10111 (U6)"),
+        "{banner:?}"
+    );
+    assert!(
+        banner[1].starts_with("LIFECYCLE EOL: ICM20948 (U5, U7)"),
+        "{banner:?}"
+    );
+    for rel in [
+        "imu-baro-1v8.repl",
+        "src/lib.rs",
+        "src/board.rs",
+        "src/proofs.rs",
+        "Cargo.toml",
+        "firmware/src/main.rs",
+        "firmware/Cargo.toml",
+        "firmware/.cargo/config.toml",
+        "firmware/link.x",
+    ] {
+        let text = fs::read_to_string(dir.join(rel)).unwrap();
+        for line in &banner {
+            assert!(text.contains(line), "{rel} lacks the banner `{line}`");
+        }
+    }
+}
+
+/// `AET-WO-4210` §2.4, one seeded fault per part, each named by its step:
+/// - the IMU (U5) never woken: the wake's transfer deleted and its record
+///   claimed (F5: the bench reads zeros, the twin's record says OK);
+/// - the barometer (U6) measured with the pressure-first command.
+#[test]
+fn a_seeded_imu_fault_is_named_by_its_step() {
+    let (dir, platform, spec_path) = imu_baro_board("imu-fault");
+    let elf = mutant_of(&dir, "imu-unwoken", |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "spi1.transfer(&mut r, Spi1Device::U5, &[0x06, 0x01], &mut buf5)",
+            "Ok::<usize, SpiError>(0)",
+        );
+    });
+    let (code, v) = boot_on("imu unwoken", &platform, &spec_path, &elf, "10ms");
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert!(
+        !k.is_empty() && k.iter().all(|k| *k == "spi_transaction_unwitnessed"),
+        "{v}"
+    );
+    let m = message(&v, "spi_transaction_unwitnessed");
+    assert!(
+        m.starts_with("U5 on SPI1") && m.contains("its configure step"),
+        "{m}"
+    );
+}
+
+#[test]
+fn a_seeded_barometer_fault_is_named_by_its_step() {
+    let (dir, platform, spec_path) = imu_baro_board("baro-fault");
+    let elf = mutant_of(&dir, "baro-pressure-first", |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "i2c1.transfer(&mut r, 0x63, &[0x78, 0x66], &mut buf3)",
+            "i2c1.transfer(&mut r, 0x63, &[0x48, 0xa3], &mut buf3)",
+        );
+    });
+    let (code, v) = boot_on("baro pressure first", &platform, &spec_path, &elf, "10ms");
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert!(k.contains(&"i2c_transaction_unwitnessed"), "{v}");
+    let m = message(&v, "i2c_transaction_unwitnessed");
+    assert!(
+        m.starts_with("U6 at I2C address 0x63") && m.contains("its data step"),
+        "{m}"
+    );
 }
 
 /// `AET-WO-4300a` §1.7: a motor fixture's board, generated by the board

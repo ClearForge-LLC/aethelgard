@@ -101,13 +101,18 @@ fn provenance(plan: &Plan) -> String {
          \n\
          - Solved topology of specification sha256 `{spec}`.\n\
          - Register facts: `{repo}` at `{commit}`, `{file}` sha256 `{hash}`.\n\
-         - Pin data: `STM32_open_pin_data` at `{pins}`.\n",
+         - Pin data: `STM32_open_pin_data` at `{pins}`.\n{banner}",
         spec = plan.specification_sha256,
         repo = cmsis::REPOSITORY,
         commit = cmsis::COMMIT,
         file = cmsis::HEADER_FILE,
         hash = cmsis::HEADER_SHA256,
         pins = plan.pin_commit,
+        banner = plan
+            .lifecycle
+            .iter()
+            .map(|l| format!("- {l}.\n"))
+            .collect::<String>(),
     )
 }
 
@@ -280,29 +285,41 @@ enum Target {
     Spi { device: String, variant: String },
 }
 
-/// One identity read the firmware makes.
+/// One step of a device's script the firmware makes (`AET-WO-4210`): its
+/// identity read, or a scripted part's configuration write or data read.
 struct Read {
     /// The peripheral's field, `i2c1` or `spi1`.
     bus: String,
     target: Target,
-    /// The byte written first: an I2C register, or an SPI command.
-    register: u8,
+    /// The bytes written first: an I2C register or command, or an SPI command.
+    write: Vec<u8>,
+    /// The bytes read back; none for a configuration.
     width: u8,
 }
 
-/// The identity reads, as the judge orders its records
+// belt-and-suspenders: the judge holds its own copy of the record layout
+// (`aethelgard_twin::boot::value_words`), because its expectations are never
+// taken from the generator (`INV-07`); `tests/spi_devices.rs` proves they agree.
+impl Read {
+    /// The words its record's value takes (`aethelgard_twin::boot::value_words`).
+    fn words(&self) -> u32 {
+        u32::from(self.width).div_ceil(4).max(1)
+    }
+}
+
+/// The steps, as the judge orders its records
 /// (`aethelgard_twin::boot::identity`): the I2C devices in the
-/// specification's order, then the SPI devices in theirs; one per device
+/// specification's order, then the SPI devices in theirs, each device's
+/// script in order (`aethelgard_ir::parts::Part::steps`); for each device
 /// that `answers` accepts (the twin has a model for it; this crate cannot
-/// depend on the twin) and whose part has an identity. A device on a
+/// depend on the twin) and whose part is in the table. A device on a
 /// peripheral the board does not have as a bus of its kind is refused.
 fn reads(
     plan: &Plan,
     solved: &SolvedTopology,
     answers: &dyn Fn(&str) -> bool,
 ) -> Result<Vec<Read>, BoardError> {
-    let identity =
-        |part: &str| aethelgard_ir::parts::identity(part).map_err(BoardError::InvalidTopology);
+    let steps = |part: &str| aethelgard_ir::parts::steps(part).map_err(BoardError::InvalidTopology);
     let mut out = Vec::new();
     for (reference, d) in solved.i2c_devices_in_order() {
         if !answers(&d.part) {
@@ -314,21 +331,23 @@ fn reads(
                 peripheral: d.peripheral.clone(),
             });
         }
-        let Some(id) = identity(&d.part)? else {
+        let Some(steps) = steps(&d.part)? else {
             continue;
         };
-        out.push(Read {
-            bus: d.peripheral.to_ascii_lowercase(),
-            target: Target::I2c { address: d.address },
-            register: id.write,
-            width: id.width,
-        });
+        for step in steps {
+            out.push(Read {
+                bus: d.peripheral.to_ascii_lowercase(),
+                target: Target::I2c { address: d.address },
+                write: step.write,
+                width: step.width,
+            });
+        }
     }
     for (reference, d) in solved.spi_devices_in_order() {
         if !answers(&d.part) {
             continue;
         }
-        let Some(id) = identity(&d.part)? else {
+        let Some(steps) = steps(&d.part)? else {
             continue;
         };
         // `Plan::new` placed every SPI device on its bus, or refused it.
@@ -340,15 +359,17 @@ fn reads(
                 reference: reference.to_owned(),
                 peripheral: d.peripheral.clone(),
             })?;
-        out.push(Read {
-            bus: d.peripheral.to_ascii_lowercase(),
-            target: Target::Spi {
-                device: format!("{}Device", type_name(&d.peripheral)),
-                variant: sel.variant.clone(),
-            },
-            register: id.write,
-            width: id.width,
-        });
+        for step in steps {
+            out.push(Read {
+                bus: d.peripheral.to_ascii_lowercase(),
+                target: Target::Spi {
+                    device: format!("{}Device", type_name(&d.peripheral)),
+                    variant: sel.variant.clone(),
+                },
+                write: step.write,
+                width: step.width,
+            });
+        }
     }
     Ok(out)
 }
@@ -395,7 +416,16 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     }
     imports.push("mmio::Mmio".to_owned());
     let (first, stride) = (RECORD_OFFSET / 4, RECORD_BYTES / 4);
-    let n_words = first as usize + stride as usize * reads.len();
+    // Every record two words, as every identity read is: the layout and the
+    // text a board without a script has always had. Otherwise each record is
+    // the status and as many value words as its read needs (`AET-WO-4210`).
+    let uniform = reads.iter().all(|r| r.words() == 1);
+    let mut at = Vec::with_capacity(reads.len());
+    let mut n_words = first as usize;
+    for r in reads {
+        at.push(n_words);
+        n_words += 1 + r.words() as usize;
+    }
     let boot_static = if reads.is_empty() {
         "static mut AETHELGARD_BOOT: u32 = 0;".to_owned()
     } else {
@@ -422,6 +452,31 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     }
     let records = if reads.is_empty() {
         String::new()
+    } else if !uniform {
+        format!(
+            "/// What a record holds when the read finished: the judge's constants,\n\
+             /// `aethelgard_twin::boot::STATUS_*`.\n\
+             {statuses}\
+             /// What a transfer that could not run leaves, the judge's own fill.\n\
+             const RECORD_UNSET: u32 = {unset:#010x};\n\
+             \n\
+             /// The record at word `at` after the boot word: the status word, then the\n\
+             /// value in `words` words, its most significant first.\n\
+             fn record(at: usize, words: usize, status: u32, value: u64) {{\n    \
+             let base = (&raw mut AETHELGARD_BOOT).cast::<u32>();\n    \
+             // SAFETY: words of the array above, which `link.x` placed in RAM; the\n    \
+             // only code that writes them.\n    \
+             unsafe {{\n        \
+             base.add(at).write_volatile(status);\n        \
+             for i in 0..words {{\n            \
+             let word = (value >> (32 * (words - 1 - i))) & 0xFFFF_FFFF;\n            \
+             base.add(at + 1 + i).write_volatile(u32::try_from(word).unwrap_or(RECORD_UNSET));\n        \
+             }}\n    \
+             }}\n\
+             }}\n\
+             \n",
+            unset = RECORD_UNSET,
+        )
     } else {
         format!(
             "/// What a record holds when the read finished: the judge's constants,\n\
@@ -671,36 +726,53 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
             f = name.to_ascii_lowercase(),
         );
     }
+    let unset = if uniform { "RECORD_UNSET" } else { "u64::MAX" };
     for (k, read) in reads.iter().enumerate() {
         let (to, errors) = match &read.target {
             Target::I2c { address } => (
                 format!("{address:#04x}"),
-                "        Err(I2cError::Txis) => (STATUS_TXIS, 0),\n        \
-                 Err(I2cError::Tc) => (STATUS_TC, 0),\n        \
-                 Err(I2cError::Rxne) => (STATUS_RXNE, 0),\n        \
-                 Err(I2cError::Stop) => (STATUS_STOP, 0),\n        \
-                 Err(I2cError::Length) => (RECORD_UNSET, RECORD_UNSET),\n",
+                format!(
+                    "        Err(I2cError::Txis) => (STATUS_TXIS, 0),\n        \
+                     Err(I2cError::Tc) => (STATUS_TC, 0),\n        \
+                     Err(I2cError::Rxne) => (STATUS_RXNE, 0),\n        \
+                     Err(I2cError::Stop) => (STATUS_STOP, 0),\n        \
+                     Err(I2cError::Length) => (RECORD_UNSET, {unset}),\n"
+                ),
             ),
             Target::Spi { device, variant } => (
                 format!("{device}::{variant}"),
-                "        Err(SpiError::Rxp) => (STATUS_RXP, 0),\n        \
-                 Err(SpiError::Length) => (RECORD_UNSET, RECORD_UNSET),\n",
+                format!(
+                    "        Err(SpiError::Rxp) => (STATUS_RXP, 0),\n        \
+                     Err(SpiError::Length) => (RECORD_UNSET, {unset}),\n"
+                ),
             ),
+        };
+        let write: Vec<String> = read.write.iter().map(|b| format!("{b:#04x}")).collect();
+        let (fold, store) = if uniform {
+            (
+                format!("buf{k}.iter().fold(0u32, |v, &b| (v << 8) | u32::from(b))"),
+                format!("record({k}, status, value);"),
+            )
+        } else {
+            (
+                format!("buf{k}.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b))"),
+                format!("record({}, {}, status, value);", at[k], read.words()),
+            )
         };
         let _ = write!(
             s,
             "    let mut buf{k} = [0u8; {w}];\n    \
-             let (status, value) = match {bus}.transfer(&mut r, {to}, &[{reg:#04x}], &mut buf{k}) {{\n        \
+             let (status, value) = match {bus}.transfer(&mut r, {to}, &[{write}], &mut buf{k}) {{\n        \
              Ok(_) => (\n            \
              STATUS_OK,\n            \
-             buf{k}.iter().fold(0u32, |v, &b| (v << 8) | u32::from(b)),\n        \
+             {fold},\n        \
              ),\n\
              {errors}    \
              }};\n    \
-             record({k}, status, value);\n",
+             {store}\n",
             w = read.width,
             bus = read.bus,
-            reg = read.register,
+            write = write.join(", "),
         );
     }
     // The motor outputs (`AET-WO-4300a` §1.3), after the identity reads: the

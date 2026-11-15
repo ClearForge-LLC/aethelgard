@@ -575,6 +575,14 @@ pub fn emit_faulted(
         file = cmsis::HEADER_FILE,
         sha = cmsis::HEADER_SHA256,
     );
+    // The lifecycle banner (`AET-WO-4210` D1): none for a board of `active`
+    // parts, whose platform is then unchanged.
+    for line in topology
+        .lifecycle_banner()
+        .map_err(TwinError::InvalidTopology)?
+    {
+        let _ = writeln!(out, "// - {line}.");
+    }
     let spi_unmodelled: Vec<String> = spi
         .iter()
         .flat_map(|(c, ds)| {

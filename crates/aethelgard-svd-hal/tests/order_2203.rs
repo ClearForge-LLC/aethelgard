@@ -93,29 +93,30 @@ fn digests() -> Vec<(&'static str, String)> {
 /// (`motor_outputs`, `mcu.hse_hz`) moved the specification's sha256 in the
 /// three (`44f22188…e3af`, `bd957c1d…d4b0`, `b962492f…ee15`); every enable
 /// register cold and judged in full (2100 F24) moved the boot image
-/// (`747bdc04…fbb3`). Re-taken in `AET-WO-4300b`: the reference gains its
-/// console (specification version 7, USART1 on PA9/PA10), so the firmware
-/// configures USART1, sends its pattern and echoes (`200a6fac…fb44`); both
-/// platforms move by the specification's sha256 alone, USART1 being stock
-/// (`392ea776…68a3`, `dbf59971…3582`); and the boot image gains USART1's
-/// four registers, PA9/PA10's mode and AF, `USART1EN`, and its five tags
-/// unobservable (`893fb13d…c4a6`).
+/// (`747bdc04…fbb3`). Re-taken in `AET-WO-4300d` (version 7, `power` and
+/// `mcu.bor_level`): with `main`'s hash `ff1786a9…5756` passed to `solve`, all
+/// four were `main`'s digests exactly (`dac44166…2e7e`, `693c78ad…dab0`,
+/// `2fe09c95…f5b0`, the boot image unchanged). Re-taken in `AET-WO-4210` (each
+/// device's script and its records; specification version 8,
+/// `accept_lifecycle`; the image's SysTick and NVIC words), merging after
+/// `4300d`: the four were `a5a8e53a…5e46`, `b3bf305f…a745`, `ea29d696…07f0` and
+/// `893fb13d…c4a6` there.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "133070e47d446c842e298da09fef061e5e55b886792ce72ebb780eb364f6cbfc",
+        "d114ae787ece6238223fdd2ddf78c14021dbb548ce966cac310aceb9bc89c455",
     ),
     (
         "platform",
-        "c15f83303fb212256d80e0b11be7f70b2a13112188b4c7962b8529b6cb84288a",
+        "849eb6bc70882585b2fa054260861646f6bb026ef0203fbb0cd5c7447a844397",
     ),
     (
         "platform faulted",
-        "a0a919aacd386fffe1f5e4e69c31611d43761fba735bb548827cf2c538eb1ea6",
+        "b24f53ebd62e293e1edaabb0a0723c1accb0098e3e64ef4f7e21caf363459e35",
     ),
     (
         "boot image",
-        "a235ac9e778f833964eed171c1fdf1fa9422204cf168db5aa362e58f23077722",
+        "0e4d72ee3bc5716b2aa3c6e8e3f66f65ecc34d61e01c9e84bad8549fc20cc8a2",
     ),
 ];
 

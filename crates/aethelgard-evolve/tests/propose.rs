@@ -72,8 +72,11 @@ fn check(status: &str, observed: u64) -> Record {
     Record::I2cCheck {
         reference: "U2".into(),
         address: 0x76,
-        register: 0xD0,
+        step: "identity".into(),
+        write: vec![0xD0],
+        width: 1,
         expected: 0x60,
+        mask: 0xFF,
         observed: Some(observed),
         status: Some(status.into()),
     }
@@ -100,6 +103,7 @@ fn witness_with(
         v.iter().map(|l| format!("[NOISY] {device}: {l}")).collect()
     };
     Record::I2cWitness {
+        step: "identity".into(),
         peripheral: peripheral.into(),
         reference: reference.into(),
         expected: lines(expected),
@@ -1642,8 +1646,11 @@ fn on_two_buses_the_view_puts_each_event_and_rise_on_its_own_bus() {
         Record::I2cCheck {
             reference: "U5".into(),
             address: 0x40,
-            register: 0xD0,
+            step: "identity".into(),
+            write: vec![0xD0],
+            width: 1,
             expected: 0x60,
+            mask: 0xFF,
             observed: Some(0x60),
             status: Some("ok".into()),
         },

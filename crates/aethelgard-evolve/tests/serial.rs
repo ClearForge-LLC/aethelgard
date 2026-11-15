@@ -68,6 +68,7 @@ fn i2c_witness() -> Record {
     ];
     Record::I2cWitness {
         peripheral: "I2C1".into(),
+        step: "identity".into(),
         reference: "U2".into(),
         expected: lines.clone(),
         observed: Some(lines),
@@ -302,8 +303,11 @@ fn run(c: &Case, findings: &[(&str, u64)]) -> Vec<Record> {
         Record::I2cCheck {
             reference: "U2".into(),
             address: 0x76,
-            register: 0xD0,
+            step: "identity".into(),
+            write: vec![0xD0],
+            width: 1,
             expected: 0x60,
+            mask: 0xFF,
             observed: Some(0x60),
             status: Some("ok".into()),
         },

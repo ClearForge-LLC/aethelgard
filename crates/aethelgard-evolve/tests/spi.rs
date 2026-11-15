@@ -80,6 +80,7 @@ fn i2c_witness() -> Record {
         format!("[NOISY] {device}: Read 60"),
     ];
     Record::I2cWitness {
+        step: "identity".into(),
         peripheral: "I2C1".into(),
         reference: "U2".into(),
         expected: lines.clone(),
@@ -139,8 +140,11 @@ fn base() -> Vec<Record> {
         Record::I2cCheck {
             reference: "U2".into(),
             address: 0x76,
-            register: 0xD0,
+            step: "identity".into(),
+            write: vec![0xD0],
+            width: 1,
             expected: 0x60,
+            mask: 0xFF,
             observed: Some(0x60),
             status: Some("ok".into()),
         },
@@ -220,8 +224,11 @@ fn spi_check(status: &str, observed: Option<u64>) -> Record {
         peripheral: "SPI1".into(),
         select: "PA0".into(),
         address: 0,
-        command: 0x9F,
+        step: "identity".into(),
+        write: vec![0x9F],
+        width: 3,
         expected: EXPECTED_ID,
+        mask: 0x00FF_FFFF,
         observed,
         status: Some(status.into()),
     }
@@ -229,6 +236,7 @@ fn spi_check(status: &str, observed: Option<u64>) -> Record {
 
 fn spi_witness(observed: Option<Vec<String>>, unrouted: Vec<String>) -> Record {
     Record::SpiWitness {
+        step: "identity".into(),
         peripheral: "SPI1".into(),
         reference: "U4".into(),
         device: DEV.into(),
@@ -610,4 +618,32 @@ fn replay_refuses_spi_records_that_do_not_join_the_solved_controller() {
         });
     }
     campaign::check_run(&r).unwrap();
+}
+
+/// `AET-WO-4210`: a device whose identity step went well and whose data step
+/// found nothing at its address is electrical E2 by that step's witness
+/// alone: each step's multiplexer lines are its own.
+#[test]
+fn a_data_step_found_absent_is_electrical_e2_by_that_steps_witness() {
+    let mut data_check = spi_check("ok", Some(0xFF_FFFF));
+    if let Record::SpiCheck { step, .. } = &mut data_check {
+        *step = "data".into();
+    }
+    let mut data_witness = spi_witness(Some(vec![]), not_connected(0));
+    if let Record::SpiWitness { step, .. } = &mut data_witness {
+        *step = "data".into();
+    }
+    let mut r = base();
+    r.extend([
+        spi_check("ok", Some(EXPECTED_ID)),
+        data_check,
+        spi_witness(Some(flash_ok()), vec![]),
+        data_witness,
+        verdict(&BOTH),
+    ]);
+    let a = attributed(&r);
+    let (c, w) = (at(&r, 21) + 1, at(&r, 22) + 1);
+    assert_eq!((a.domain, a.rule), (Domain::Electrical, Rule::E2), "{a:?}");
+    assert_eq!(a.evidence, vec![ev(w, 22)]);
+    assert_eq!(a.symptoms, vec![ev(c, 21), ev(w, 22)]);
 }
