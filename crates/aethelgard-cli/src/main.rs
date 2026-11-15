@@ -14,6 +14,7 @@ mod input;
 mod kani;
 mod kicad;
 mod mcp;
+mod pinout;
 mod propose;
 mod renode;
 mod run;
@@ -232,6 +233,21 @@ enum CheckCommand {
         #[arg(long)]
         schematic: PathBuf,
     },
+    /// Judge what a linked STM32H753 firmware writes to its GPIO registers at reset (gpio_default_config in the ELF) against a SolvedTopology: forward, reverse and package. Starts no process.
+    Pinout {
+        /// The SolvedTopology JSON the firmware was meant to realise.
+        #[arg(long)]
+        topology: PathBuf,
+        /// The linked firmware ELF (ELF32, little-endian, EM_ARM).
+        #[arg(long)]
+        elf: PathBuf,
+        /// ArduPilot's generated hwdef.h: its VAL_GPIOx_MODER/AFRL/AFRH must equal the ELF's, or the check refuses.
+        #[arg(long = "hwdef-h")]
+        hwdef_h: Option<PathBuf>,
+        /// A declared allow-list: pins outside the topology the firmware may configure, each exactly as declared, and why.
+        #[arg(long)]
+        allow: Option<PathBuf>,
+    },
     /// Each generated pin's output speed against DS12117 Table 149: SPI SCK and MOSI judged at their declared rate, supply and load; every other line named with why it is out of scope. No tool runs.
     Speeds {
         /// The specification.
@@ -375,6 +391,20 @@ fn main() -> ExitCode {
         Command::Check {
             check: CheckCommand::Erc { schematic },
         } => check_kicad(kicad::Check::Erc, &schematic, None, None),
+        Command::Check {
+            check:
+                CheckCommand::Pinout {
+                    topology,
+                    elf,
+                    hwdef_h,
+                    allow,
+                },
+        } => {
+            return match pinout::check(&topology, &elf, hwdef_h.as_deref(), allow.as_deref()) {
+                Ok(v) => emit(&v, if v.judgement.ok { 0 } else { EXIT_FAIL }),
+                Err(stop) => stopped(stop),
+            };
+        }
         Command::Check {
             check: CheckCommand::Speeds { spec },
         } => return speeds::speeds(&spec),

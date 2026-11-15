@@ -21,6 +21,7 @@ dependencies = [
  "aethelgard-eda",
  "aethelgard-evolve",
  "aethelgard-ir",
+ "aethelgard-pincheck",
  "aethelgard-svd-hal",
  "aethelgard-twin",
  "clap",
@@ -68,6 +69,16 @@ dependencies = [
 [[package]]
 name = "aethelgard-kicad-lib"
 version = "0.1.0"
+
+[[package]]
+name = "aethelgard-pincheck"
+version = "0.1.0"
+dependencies = [
+ "aethelgard-ir",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "aethelgard-svd-hal"

@@ -1,0 +1,5 @@
+# setuptools builds empy 3.3.4, which PyPI ships as an sdist only. It is
+# installed first, by hash, so the second install can run with
+# --no-build-isolation: pip's isolated build would fetch setuptools again
+# without a hash check (AET-WO-4400a).
+setuptools==84.2.1 --hash=sha256:ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2
