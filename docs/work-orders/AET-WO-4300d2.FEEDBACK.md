@@ -134,7 +134,7 @@ Each step was measured; the dumps are `l5`–`l10.tsv`.
   - **`extract`** admits a footprint's keepout as no copper.
   - **The library test** admits `(clearance` only inside a footprint keepout's `connect_pads`.
   - **The ICM-20948 is drawn** to DS-000189 p. 20 (4.1, 4.3).
-- **K6 · built after #143 merged** (`1080652`).
+- **K6 · built after #143 merged** (`1080652`). **Renumbered at the merge of `4220` (#151, `78f700d`), which took parts.json schema 4: K6 is schema 5.** `4220`'s new rows (BMP581, ICM-42688-P) carry `null` and a `null` citation: neither sits behind a crossing, and no output delay is held for them. The parts digest was re-taken.
   - **The table:** parts.json schema 4 gives every row `spi_output_delay_max_ns` with its paired citation; only an SPI part may carry it. The ICM-20948 holds 59 ns (DS-000189 p. 17, Table 8, tVD.SDO at 20 pF; note 1: characterization of 5 parts, in the datasheet's words).
   - **The check:** `power::check` reads the delays from the table. The committed fixture, crossing and all, validates and solves: the round trip is 95 ns at 4 MHz.
 - **D3 · accepted as named engine choices.** SNVU573A (the EVM guide) shows its layout as images without dimensions (D-B5), so no TI distance is cited. The bounds stand as stated, each rule's text saying so.
@@ -180,7 +180,7 @@ Each step was measured; the dumps are `l5`–`l10.tsv`.
 | P8 | A table extension. The serialized pin table's test digest moved (test-only; its old value still holds with the field cleared). No topology or verdict of an existing specification moved. | measured | partly |
 | P9 | 95 ns at 4 MHz, after #143. The crossing's board waits on D7. | measured | right for K6 |
 | P10 | Every existing board's schematic, board and BOM, and every verdict, is byte-identical with `main`'s, measured after each merge. The exception is `imu-baro-1v8.json`, which has no board: its `UnknownPart` refusal text now lists ICM20948 among the known parts. | measured | right |
-| P11 | +2 tier-2 tests, so TIER2_MIN is `main`'s 114 + 2 = 116. | read | right |
+| P11 | +2 tier-2 tests: TIER2_MIN is `main`'s + 2 at every merge (116 after `4210`, 128 after `4220`). | read | right |
 | P12 | CI: §11. | — | — |
 | P13 | About 4,700 lines of code, tests and fixtures, plus about 3,900 of vendored KiCad files. | measured | wrong (larger) |
 
