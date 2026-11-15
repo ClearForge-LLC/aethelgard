@@ -160,7 +160,7 @@ The plan in F5 was a gate-written `.kicad_dru` rule, `(constraint zone_connectio
 | P4 | XT30 routes and passes DRC at 2 and 4 layers; ERC on a stand-in | **DRC holds**, with no item of any kind, at both counts with each join. **No ERC was run** (F2, corrected in §3) | measured |
 | P5 | 12 vias at the sites, joined to In1 solidly, every judge passes; 4 × 2, pitch and drill copies refused | **Holds**: 12 vias, no unconnected item. The gate refuses the 3 × 2, 1.1 mm and 0.3 mm copies by name, and KiCad catches the drill too | measured |
 | P6 | Refusals named, each with a tier-1 test | **Holds** | measured |
-| P7 | Shards under 20 minutes; `TIER2_MIN` +2 | `TIER2_MIN` 101 → 103; CI below | pending |
+| P7 | Shards under 20 minutes; `TIER2_MIN` +2 | **Holds.** CI run 43699915766 on `b100d2f`: every check green. The 8 tools shards took 12.4–16.5 min. The aggregate counts `tier2_tests_passed=103 floor=103` | measured |
 
 ## 3. Corrections to §1
 
@@ -237,3 +237,12 @@ Its report and reproducers are in `~/.cache/aet-1309/adv/`. The builder wrote `R
   - **Mutation:** with the square-circle guard, 37 of 37 killed.
 - **The saved fill.** The zone allowlist first refused KiCad's saved `filled_polygon`, which the gate accepts unread (`escape_tier1`). It is admitted unread again.
 - **The strict fence** caught a first-match read (`lists().next()`) in the drill check; it is now a count over every child.
+
+## 7. Close
+
+- **CI** (run 43699915766, head `b100d2f`, `main` `0a84ae0` merged in): every check green.
+  - **Shards:** tools shards 0–7 at 14.3, 12.7, 12.4, 13.5, 16.5, 12.9, 13.9 and 13.9 min, all under 20.
+  - **Tier 2:** `ANSWER tier2_tests_passed=103 floor=103`, exact.
+  - **Gates:** 10.7 min.
+- **Locally:** gates green (fmt, clippy, 1,411 tests). The two new tier-2 tests pass in the pinned image. Every existing board is IDENTICAL to `main` (17 specifications).
+- **For the architect:** D1–D4 (§4). The PR title and body are in `~/.cache/aet-1309/pr-title-body.md`. `4300d`'s inbox has the `Stack` wiring note.
