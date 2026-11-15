@@ -15,6 +15,15 @@ U1. 121: best  414.6 mOhm from R1.1 {'padend': 2, 'seg': 9, 'fan': 4, 'barrel': 
 U1. 131: best   30.0 mOhm from R2.1 {'padend': 2, 'seg': 11} | worst  183.6 from U2.2 | refused from 10
 U1. 143: best   25.8 mOhm from U3.5 {'padend': 2, 'seg': 6} | worst  548.0 from R1.1 | refused from 11
 U1. 144: best   28.2 mOhm from U3.5 {'padend': 2, 'seg': 7} | worst  560.1 from R1.1 | refused from 11
+   coefficients: R = rho_max (a/t_out + b/t_plane + c/A(t_p)), fitted exactly on 4 thickness sets per path; worst relative residual 6.3e-15
+   U1.   6 best (U3.5): a     79.20 mm, b     -0.00 mm, c 1.1558e+01 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1.  17 best (C6.1): a     33.75 mm, b     -0.00 mm, c 3.8122e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1.  30 best (U4.8): a     13.12 mm, b     -0.00 mm, c 1.4766e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1.  33 best (U4.8): a     11.87 mm, b     -0.00 mm, c 1.3185e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1. 121 best (R1.1): a    233.87 mm, b     -0.00 mm, c 1.6801e+01 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1. 131 best (R2.1): a     31.25 mm, b     -0.00 mm, c 3.4890e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1. 143 best (U3.5): a     26.87 mm, b     -0.00 mm, c 2.9439e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1. 144 best (U3.5): a     29.37 mm, b     -0.00 mm, c 3.3544e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
    best-stand-in range over pins: 11.4..414.6 mOhm; all pairs max 1643.4; pairs bounded 22 of 208; refusals {'no path under the flow rules': 182, 'pad end': 4, 'narrowed (bounded)': 8}
 == four/sentinel-01-4l: rho_max 2.8761e-05 ohm*mm; 16 MCU pins, 13 stand-ins
 U1.   6: REFUSED from every stand-in
@@ -33,4 +42,7 @@ U1. 121: REFUSED from every stand-in
 U1. 131: REFUSED from every stand-in
 U1. 143: REFUSED from every stand-in
 U1. 144: REFUSED from every stand-in
+   coefficients: R = rho_max (a/t_out + b/t_plane + c/A(t_p)), fitted exactly on 4 thickness sets per path; worst relative residual 6.1e-15
+   U1.  32 best (U4.8): a     10.62 mm, b     -0.00 mm, c 1.2122e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
+   U1.  33 best (U4.8): a     13.12 mm, b     -0.00 mm, c 1.4766e-14 mm^3   [a, b in mm of squares x thickness; c x 1/A]
    best-stand-in range over pins: 10.2..12.6 mOhm; all pairs max 12.6; pairs bounded 2 of 208; refusals {'no path under the flow rules': 183, 'pad end': 23}

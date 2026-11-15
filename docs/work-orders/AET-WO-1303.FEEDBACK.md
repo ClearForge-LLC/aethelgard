@@ -244,7 +244,17 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
 - plating minimum: 18 µm (a condition);
 - barrel lengths: from the declared stack.
 
-**Measured** (`s4/paths.out`, recomputed paths only), per MCU supply pin, from its best stand-in source:
+**What is measured: geometry coefficients, independent of any thickness.**
+- Every piece's energy is exactly proportional to one of:
+  - ρ/t_out: tracks, pad passes, fans;
+  - ρ/t_plane: plane bowties;
+  - ρ/A(t_p), A = t_p(2r_d − t_p)/2: barrel spreads, un-spreads and uniform runs.
+- None of the choices inside a path depends on the thicknesses: the cut and the spread depth trade like-for-like terms, and the tube's width is set by geometry.
+- So each path's bound is exactly **R ≤ ρ_max·(a/t_out + b/t_plane + c/A(t_p))**, with a, b and c set by the routed copper alone. `run_paths2.py` evaluates each accepted path at four thickness sets and solves for them, with a worst relative residual of 6×10⁻¹⁵ on both boards and both hole cases. The coefficients per pin are printed in `paths.out` and `paths-concentric.out`.
+- **No S4 bound therefore depends on an uncited value.** ρ_max is cited: IACS × (1 + α(125 − 20)) × k, with k from IPC-MF-150F. The bound is a formula the gate evaluates with the specification's declared, sourced minima of t_out, t_plane and t_p (S5, D3, `RUL-14`), refusing by name when one is absent (`INV-06`).
+- The milliohm figures below evaluate that formula at the stated conditions (30, 15 and 18 µm), to show the scale against the 165 mV tolerance.
+
+**Measured** (`s4/paths.out`, recomputed paths only), per MCU supply pin, from its best stand-in source, at those conditions:
 
 | Board | Pins bounded | Best stand-in, range over the bounded pins | Pairs bounded | Drop at 658 mA, worst bounded pin | Refused by name |
 |---|---|---|---|---|---|
@@ -316,7 +326,7 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
     - JLCPCB gives an 18 µm hole-plating *average*.
     - The rest are second-hand quotations of IPC-6012.
 
-    `RUL-14` forbids declaring a nominal as a minimum, so these stay stated conditions, below every published nominal: 30 µm outer against 43 µm, 15 µm plane against 17.3 µm, 18 µm plating against 25.4 µm. A ruling is needed: accept them as conditions, or name a source.
+    These three values are no longer inside any measured bound. S4 reports each path's coefficients a, b and c, and the bound is R ≤ ρ_max·(a/t_out + b/t_plane + c/A(t_p)) for whatever minima the specification declares with a source. The 30, 15 and 18 µm figures only illustrate the scale. `RUL-14` forbids declaring a nominal as a minimum, so a Sentinel-02 specification needs a fabricator's stated minimum. Absent one, the fabrication package states the minimum as an instruction, as 1305 F3 did for copper and thickness.
   - **Temperature:** 125 °C, the Tj of the cited load.
   - **Recommended:** the specification declares each with its source, and the build cites IPC-4562 and IPC-6012 once someone holds copies. Every R scales linearly in k, in 1 + α(T − 20) and in 1/t_min.
 - **D7 · The ground return.** The MCU sees VDD − VSS, so a supply gate that bounds only VDD under-claims. **Recommended:** the same bound on GND (zone or plane plus its stitching), with the drop limit applied to the sum.

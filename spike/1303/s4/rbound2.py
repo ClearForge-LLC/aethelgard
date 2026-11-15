@@ -289,7 +289,11 @@ def path_bound(nodes, tags, vias, c, w, H, plane_depth):
             dlt = c.get("hole_offset_mm", 0.0)
             total += (spread_off(c, w, pa, sa, rd, dpl, dlt) if dlt > 0 else spread_line(c, w, pa, sa, rd, dpl)) + rho / A * (plane_depth[1] - 2 * dpl) / (2 * math.pi)
         elif tag[0] == "plane":
-            total += tag[4]
+            # recomputed from geometry, so the bound scales with every input
+            _, ia, ib, beta = tag[:4]
+            dlt = c.get("hole_offset_mm", 0.0)
+            D = math.dist((vias[ia]["x"], vias[ia]["y"]), (vias[ib]["x"], vias[ib]["y"]))
+            total += 2 * unspread_uniform(c, rd, beta, dpl) + bowtie(c, rd, beta, D + 2 * dlt)
             if last_plane is not None and tags[k - 1][0] == "plane":
                 total += unspread_uniform(c, rd, last_plane, dpl) + unspread_uniform(c, rd, tag[3], dpl)
             last_plane = tag[3]
