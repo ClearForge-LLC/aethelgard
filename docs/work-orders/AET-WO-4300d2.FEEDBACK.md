@@ -274,3 +274,35 @@ A fresh subagent proposed the cuts against the four questions; I applied those t
 - A pin-centred F.Cu escape for a pad whose inner box holds no grid node: an off-grid terminal on the pad's own axis, out to the first clear grid node.
 - An exact rounded-pad clearance in `route::check`.
 - Both should apply only to such pads, so every existing board stays byte-identical. No vendored footprint before this one has such pads [measured: every pad of `data/kicad-10.0.7/footprints` listed].
+
+## 12. Gates, CI and close (READY)
+
+- **On Furnace, under a capped user scope (`memory.swap.max` 0), at `c7790a7`:**
+  - `cargo fmt --all -- --check`: exit 0;
+  - `cargo clippy --workspace --all-targets -- -D warnings`, with and without `--features aethelgard-cli/with-tools`: clean;
+  - `cargo test --workspace --no-fail-fast`: 105 test targets, every one ok.
+- **Tier 2 in the pinned image** (`~/bin/capped-run`, caps read back: 8 GiB, swap 0, 8192 tasks), before the last merge:
+  - `board_tier2` 17/17 (the power fixture's test takes 5.1 s);
+  - `with_tools` 30/30;
+  - `verify_2k2_tier2` 2/2;
+  - `against_fab_tier2` 2/2.
+- **Byte identity, re-measured against `main` at `62f5b29`** (after `4220`): every existing board's schematic, board and BOM is identical. The verdicts are identical apart from three groups:
+  - the Sentinel-02 power fixture's own (it now validates, K6);
+  - the `UnknownPart` refusal text of `imu-baro-1v8.json` and `sentinel-02-own.json`, which have no board, now listing ICM20948 among the parts drawn.
+- **CI on `c7790a7`** (run 43754584052): every check is green.
+  - **Shards:** the eight tools shards took 12.9 to 16.4 minutes; the slowest is shard 6, and the spread is 3.5 minutes. Every shard is under 20 minutes, so no refit was needed.
+  - **Tier 2:** `tier2_tests_passed=128 floor=128`, so TIER2_MIN 128 is exact (`main`'s 126, plus 2 from this work order).
+- **Clean-up (the architect's 17:20 note):**
+  - every harvested sub-agent worktree, its branch and my two helper worktrees are removed;
+  - `~/.cache/aet-4300d2` and `-adv` keep only the evidence this file cites (tools, logs, mutation results, probe dumps, the adversarial record, renders): 45 MB, down from about 12 GB;
+  - no PDF was fetched by this build.
+- **The signal commit below changes this file only.** CI on it is the PR head's witness.
+
+**`AET-WO-4300d2` is done as ruled.**
+- **On the board:** the power tree is drawn, its loop parts are anchored by regulator pin and judged, its paths are routed at their classes, its thermal arrays, joins and keepouts are judged, and its drills are packaged.
+- **K6** is in the sensor table.
+- **The crossing** is drawn, and its board waits for the sub-grid router work order (D7, §11).
+- **The fixture's full fabrication package** waits for the battery-sag work order (D5 (c)).
+- **For the architect:**
+  - the title and body are in `~/.cache/aet-4300d2/pr-title-body.md`;
+  - the reduction findings 1–9 (§10) and K11 (U11's SW and `VDD_3V3` at 0.2 mm) are open.
