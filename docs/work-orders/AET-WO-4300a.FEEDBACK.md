@@ -132,6 +132,12 @@ Probe plan, so the predictions have something to point at. Probes are built `420
 - **M2, the timer's phase is the quantum's.** In every PWM probe the first rise is one period after virtual time ≈ 6 ns, although the core ran thousands of instructions before `CEN`: a store the core makes takes effect at its quantum's start. So the judge anchors at the first observed rise and never predicts an absolute stamp.
 - **M3, short DShot windows.** Four DShot600 channels with only the observers at `Noisy`: 1 ms is 18,884 lines, 1.40 MB, 2.30 s; 2 ms is 37,748 lines, 2.80 MB, 2.64 s (Renode's start alone is about 2.0 s).
 
+**§1.8, the off-board net, measured on this work order's fixture** (`~/.cache/aet-4300a/evidence/gates-1.8`, HEAD `9fe8baa`'s binaries built in the pinned image, one container under RULE3, caps read back: memory.max 8 GiB, swap 0, pids 8192):
+- `aethelgard emit --file crates/aethelgard-cli/tests/fixtures/motors-pwm.json`: exit 0. The schematic carries each motor net `MOTOR1`–`MOTOR4` as one local label on one MCU pin (PA8–PA11), and nothing else on it.
+- `aethelgard check erc`: kicad-cli exit 5, verdict fail, **four findings, each `isolated_pin_label` (warning) "Label connected to only one pin"**, one per motor net. The reference (`sentinel-01-minimal.json`) passes with none.
+- `aethelgard check drc --spec … --schematic …`: exit 0, pass, parity included, for both.
+- This agrees with `4300f`'s S2 (measured on three SPI nets, PR #134). **The gates do not pass an off-board net honestly**: only a `no_connect` on a used pin would silence ERC, which marks a driven pin unused. By §1.8 that is the STOP branch, and the kickoff applies it only if `4300f`'s connector build has not landed when the board side is reached: at `origin/main` `cd0bd31` (2026-11-15 05:40 UTC) it has not.
+
 ## 4. Decisions taken inside the work order
 
 - **D2's quantum (F1).** Renode 1.17.0 has no configuration key for the quantum (§0), so the composition states it by `emulation SetGlobalQuantum "0.000100000"` (`renode::QUANTUM`), Renode's own value, and the judge reads the grid from `aethelgard_twin::boot::QUANTUM_NS`. Measured to change nothing (P3.1). A deviation from D2's words, recorded for the architect.
