@@ -295,7 +295,7 @@ fn span(a: (i64, i64), b: (i64, i64)) -> Rect {
 }
 
 /// The squared distance between two closed boxes.
-fn gap2(a: Rect, b: Rect) -> i64 {
+pub(crate) fn gap2(a: Rect, b: Rect) -> i64 {
     let dx = (a.x0 - b.x1).max(b.x0 - a.x1).max(0);
     let dy = (a.y0 - b.y1).max(b.y0 - a.y1).max(0);
     dx * dx + dy * dy
@@ -324,7 +324,7 @@ impl Shape {
 impl Pad {
     /// The box in which every point is inside the pad's copper, whatever its
     /// rounding: a track that ends here is joined to the pad.
-    fn inner(&self) -> Rect {
+    pub(crate) fn inner(&self) -> Rect {
         self.rect.grow(-self.corner_nm)
     }
 

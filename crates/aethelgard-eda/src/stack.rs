@@ -346,7 +346,7 @@ fn switch_nets(spec: &Specification, nets: &[String]) -> Vec<String> {
 fn board_net(spec: &Specification, net: &str) -> String {
     let rail = net == crate::schematic::GND
         || spec.voltage_domains.iter().any(|d| d.id == net)
-        || (spec.power.is_some() && net == crate::schematic::BATTERY_NET);
+        || (spec.power.is_some() && net == aethelgard_ir::power::BATTERY_NET);
     if rail {
         crate::pcb::escape(net)
     } else {

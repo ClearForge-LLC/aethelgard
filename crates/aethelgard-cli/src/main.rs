@@ -806,9 +806,6 @@ fn check_kicad(
             pairs = Some(reports.into_iter().map(verdict::PairRecord::from).collect());
         }
     }
-    // KiCad's parity check reads the schematic named like the board, beside
-    // it; the copy is scanned like the board before any tool runs, and the
-    // board is judged on the strict reading `prepare` made of it.
     // A power tree's layout rules, judged from the same board (`AET-WO-4300d2`).
     let mut power = None;
     let mut power_findings = Vec::new();
@@ -819,6 +816,9 @@ fn check_kicad(
         power = Some(record);
         power_findings = findings;
     }
+    // KiCad's parity check reads the schematic named like the board, beside
+    // it; the copy is scanned like the board before any tool runs, and the
+    // board is judged on the strict reading `prepare` made of it.
     let schematic = match (schematic, &board) {
         (Some(path), Some(board)) => {
             let copy = input::file(path, &scratch.tool.join(kicad::Check::Erc.copy_name()))?;
@@ -881,9 +881,6 @@ fn check_kicad(
     Ok(v)
 }
 
-/// The board crate `generate` writes for the specification in `file`, its
-/// paths relative to the crate; every refusal as a `Stop`, with `solve`'s and
-/// `generate`'s kinds and codes.
 /// `check drc --spec` on a specification with a power tree (`AET-WO-4300d2`
 /// §1.3-§1.4): the board read and its labels proved by copper, each loop rule
 /// measured, each domain's source and return pad on its net (`K5`), each
@@ -969,6 +966,9 @@ fn power_gate(
     ))
 }
 
+/// The board crate `generate` writes for the specification in `file`, its
+/// paths relative to the crate; every refusal as a `Stop`, with `solve`'s and
+/// `generate`'s kinds and codes.
 fn generated_board(file: &Path) -> Result<std::collections::BTreeMap<String, String>, run::Stop> {
     let (spec, sha256) = read_spec(Some(file)).map_err(|(refusal, code)| run::Stop {
         code,

@@ -228,6 +228,19 @@ fn graphic_box(item: &Sx, reference: &str, theta: u16) -> Result<Rect, EmitError
         .grow(half))
 }
 
+/// The least `d` with `d * d >= n`: an integer square root rounded up, so a
+/// distance from it is never understated.
+pub(crate) fn isqrt_up(n: i128) -> i128 {
+    let mut d = (n as f64).sqrt() as i128;
+    while d * d < n {
+        d += 1;
+    }
+    while d > 0 && (d - 1) * (d - 1) >= n {
+        d -= 1;
+    }
+    d
+}
+
 /// The circle through three points, in nanometres: its centre rounded to the
 /// nearest, and a radius that reaches every point from that centre plus 2 nm,
 /// so the rounding can only grow it. `None` when the points are in line.
@@ -255,13 +268,9 @@ fn circle(p: [(i64, i64); 3]) -> Option<((i64, i64), i64)> {
         .map(|&(px, py)| (px - x) * (px - x) + (py - y) * (py - y))
         .max()?;
     // The integer square root, rounded up.
-    let mut s = (far as f64).sqrt() as i128;
-    while s * s < far {
-        s += 1;
-    }
     Some((
         (i64::try_from(x).ok()?, i64::try_from(y).ok()?),
-        i64::try_from(s + 2).ok()?,
+        i64::try_from(isqrt_up(far) + 2).ok()?,
     ))
 }
 
@@ -895,8 +904,10 @@ fn footprint(
         let mut c = child.clone();
         match child.head() {
             Some("version" | "generator" | "generator_version" | "layer") => continue,
-            // A keepout's polygon is not turned here (`AET-WO-4300d2` D2): a
-            // footprint carrying one is drawn at rotation 0 only.
+            // belt-and-suspenders: a keepout's polygon is not turned here
+            // (`AET-WO-4300d2` D2), and today no footprint carrying one is
+            // turned (the placer turns only anchored parts and connectors);
+            // a later placer that turned one would draw the keepout askew.
             Some("zone") if rotation != 0 => {
                 return Err(internal(
                     &part.reference,

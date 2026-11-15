@@ -27,11 +27,11 @@ use std::collections::BTreeMap;
 use aethelgard_ir::power::{Power, Resistor};
 use aethelgard_ir::power_parts::{self, Direction, Kind, Role, Row};
 
-use aethelgard_ir::{PinTable, SolvedTopology, SpiDevice};
+use aethelgard_ir::{SolvedTopology, SpiDevice};
 
 use super::{Anchor, Builder, Conn, EmitError, Part};
 
-pub(crate) use aethelgard_ir::power::BATTERY_NET;
+use aethelgard_ir::power::BATTERY_NET;
 
 /// The power-in connector's symbol and footprint, both vendored (`RUL-11`),
 /// and which pad is which: the footprint's silkscreen puts `+` beside pad 2.
@@ -216,11 +216,11 @@ fn pin(reference: &str, r: &Row, role: &str) -> Result<String, EmitError> {
 
 /// A domain or the battery, as the rail it is drawn on.
 fn supply(b: &mut Builder<'_>, name: &str) -> Conn {
-    if name == aethelgard_ir::power::BATTERY {
-        b.rail(BATTERY_NET)
+    b.rail(if name == aethelgard_ir::power::BATTERY {
+        BATTERY_NET
     } else {
-        b.rail(name)
-    }
+        name
+    })
 }
 
 /// Every reference the power tree declares, for the emitter's reference
@@ -314,8 +314,8 @@ fn lines(reference: &str, part: &str) -> Result<Vec<(Line, String)>, EmitError> 
 
 /// Draws the whole tree. `behind` is [`behind`]'s map; the devices
 /// themselves are drawn with the other SPI devices. `mcu` is the MCU's
-/// reference, whose solved sense pins (`SolvedTopology.power.sense`, by the
-/// table's package position) are connected here.
+/// reference, whose solved sense pins (`SolvedTopology.power.sense`, by
+/// package position) are connected here.
 pub(crate) fn draw(
     b: &mut Builder<'_>,
     p: &Power,
@@ -323,7 +323,6 @@ pub(crate) fn draw(
     behind: &BTreeMap<String, Behind>,
     mcu: &str,
     solved: &SolvedTopology,
-    table: &PinTable,
 ) -> Result<(), EmitError> {
     for r in &p.regulators {
         regulator(b, r)?;
@@ -337,15 +336,7 @@ pub(crate) fn draw(
             .as_ref()
             .and_then(|sp| sp.sense.get(&s.net))
             .ok_or_else(|| EmitError::UnsolvedNet(s.net.clone()))?;
-        let position = table
-            .pins
-            .get(&pin.pin)
-            .ok_or_else(|| EmitError::UnknownPin {
-                net: s.net.clone(),
-                pin: pin.pin.clone(),
-            })?
-            .position
-            .to_string();
+        let position = pin.position.to_string();
         let m = b
             .parts
             .iter_mut()

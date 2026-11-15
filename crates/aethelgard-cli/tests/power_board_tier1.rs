@@ -142,8 +142,7 @@ fn a_crossing_on_a_bus_of_two_devices_is_not_drawable() {
     devices.push(second);
     let spec: Specification = serde_json::from_value(v).unwrap();
     let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
-    let (fixture_spec, solved, _) = fixture();
-    let _ = fixture_spec;
+    let (_, solved, _) = fixture();
     match schematic::emit(&spec, &solved, &table) {
         Err(e @ EmitError::PowerNotDrawable { .. }) => {
             assert_eq!(e.kind(), "PowerNotDrawable");

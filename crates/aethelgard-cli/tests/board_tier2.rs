@@ -1072,7 +1072,8 @@ fn the_power_fixture_passes_erc_drc_its_loop_rules_and_extract() {
     assert_eq!(x["verdict"], "pass", "extract: {x}");
 
     // §5.1: the high-frequency input capacitor of U10 moved 25 mm off.
-    let spec: aethelgard_ir::Specification = serde_json::from_value(v_spec(&spec_path)).unwrap();
+    let spec: aethelgard_ir::Specification =
+        serde_json::from_value(common::power::power_tree()).unwrap();
     let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
     let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
     let tree = aethelgard_eda::strict::board(&fs::read_to_string(&board).unwrap()).unwrap();
@@ -1103,8 +1104,4 @@ fn the_power_fixture_passes_erc_drc_its_loop_rules_and_extract() {
         "{v}"
     );
     fs::remove_dir_all(&base).unwrap();
-}
-
-fn v_spec(path: &Path) -> Value {
-    serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
 }

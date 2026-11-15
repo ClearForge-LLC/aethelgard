@@ -28,7 +28,7 @@ use crate::sexpr::{self, Sx, mm};
 // (`strict_fence` gives every file of `src/` a role).
 #[path = "schematic_power.rs"]
 mod power;
-pub(crate) use power::BATTERY_NET;
+use aethelgard_ir::power::BATTERY_NET;
 
 /// KiCad 10's own schematic format version (ruled D7 on PR #40).
 pub const VERSION: &str = "20260306";
@@ -849,7 +849,6 @@ pub(crate) fn design(
             &behind,
             &mcu_ref,
             solved,
-            table,
         )?;
     }
     connectors(&mut b)?;

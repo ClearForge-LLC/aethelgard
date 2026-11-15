@@ -215,3 +215,38 @@ The reviewer was given the brief (`~/.cache/aet-4300d2/adversarial-brief.md`), t
 - **Two survived:** the battery name's claim and the sense pin's MCU pad. A test was added for each, and both were re-run killed (round 2).
 - **The fab sub-agent's own mutants:** 12, killed, after one guard was removed as implied and one test added.
 - **Guards added since:** the keepout reader, router and judge, D6's refusal, K6's pairing and range, and A1's call. Each is held by a named tier-1 test (`a_keepout_is_read_routed_around_and_judged`, `the_reader_admits_a_footprints_keepout_clearance_and_nothing_more`, `the_crossing_is_drawn_and_its_limits_are_refused_by_name`, `a_starved_thermal_array_is_refused`, `an_spi_output_delay_and_its_citation_come_together`).
+- **Round 3**, on the guards added after the ruling: the keepout judge, the reader's keepout-only and `connect_pads`-content conditions, the not-a-keepout refusal, D6's refusal and K6's I2C refusal were all killed.
+  - The router's keepout blocking survived. Its new test (`the_router_goes_around_a_keepout`) found a real bug: the blocking sat after a `continue` that skips parts with no pads.
+  - The bug is fixed, and the mutant was re-run killed.
+- **Round 4**, after the reduction: the two mutants whose code it touched (`gap radii`, `sense pin drawn`) were re-run killed.
+
+## 10. Reduction pass (diff)
+
+A fresh subagent proposed the cuts against the four questions; I applied those that remove a copy or a dead path at low risk, then re-ran the suite and the touched mutants.
+
+**Reduction pass (diff): −22 net · 4 duplicates removed · 3 dead paths removed · 4 protected kept · 9 findings below.**
+- **Duplicates removed:**
+  - one rounded-up integer square root (`pcb::isqrt_up`) for the arc's circle and the loop gap;
+  - `loops::gap_nm` reuses `route::gap2` and `Pad::inner` instead of re-deriving both;
+  - the sense pin's package position is read once, from `SolvedSense.position` (`power::draw` loses its table);
+  - `BATTERY_NET` is imported from `ir` where used, not re-exported twice.
+- **Dead paths removed:**
+  - `board_tier2`'s `v_spec`;
+  - a discarded binding in `power_board_tier1`;
+  - `thermal_layers`' needless `pub`.
+- **Protected, labelled `belt-and-suspenders:` at the site:**
+  - the power row lookup (`PowerPartUnknown`);
+  - the buck with no divider;
+  - the `thermal_arrays` skips;
+  - the refusal to turn a footprint carrying a keepout (labelled in this pass).
+- **Also fixed:** two comments in `main.rs` displaced by the power-gate insertion.
+- **Findings (for the architect, not cut):**
+  1. `loops::LoopRule` mirrors `schematic::Anchor` field for field. Collapsing them widens `Anchor` to `pub`.
+  2. The line-to-net mapping (SCK, MOSI, MISO, CS to the bus's nets) is written in both `schematic.rs` and `schematic_power.rs::crossing`.
+  3. `crossing` looks up again the channel that `lines` already found.
+  4. `SolvedSense.channels` is read only by tests, a topology field kept for a future consumer.
+  5. `fab::holes`'s two tool-mismatch messages could share one format string; that would change asserted wording.
+  6. `check_kicad` holds the specification twice: `read_spec_value` and `declared`.
+  7. The `notes-before-4300d2-four-layer-power.md` golden is the four-layer one plus three edits. It is kept as byte-identity evidence.
+  8. Route's diff-pair path walk still tests a track end with `inner().contains`, while connectivity and the router use `reach()`. They agree on every pad drawn today.
+  9. `Part.decouples` and `Part.anchor` are two mechanisms for "this part belongs to that IC".

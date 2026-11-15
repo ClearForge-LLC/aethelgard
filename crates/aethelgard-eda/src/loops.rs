@@ -15,7 +15,6 @@
 
 use aethelgard_ir::{PinTable, SolvedTopology, Specification};
 
-use crate::pcb::Rect;
 use crate::route::{Board, Pad};
 use crate::schematic::EmitError;
 
@@ -91,20 +90,8 @@ fn pad<'b>(board: &'b Board, reference: &str, number: &str) -> Result<&'b Pad, S
 /// The copper-edge distance between two pads, in nanometres, exact for
 /// rectangles, rounded rectangles and circles.
 pub fn gap_nm(a: &Pad, b: &Pad) -> i64 {
-    let inner = |p: &Pad| p.rect.grow(-p.corner_nm);
-    let (ia, ib): (Rect, Rect) = (inner(a), inner(b));
-    let dx = i128::from((ia.x0 - ib.x1).max(ib.x0 - ia.x1).max(0));
-    let dy = i128::from((ia.y0 - ib.y1).max(ib.y0 - ia.y1).max(0));
-    let d2 = dx * dx + dy * dy;
-    // The integer square root, rounded up: the gap is never understated.
-    let mut d = (d2 as f64).sqrt() as i128;
-    while d * d < d2 {
-        d += 1;
-    }
-    while d > 0 && (d - 1) * (d - 1) >= d2 {
-        d -= 1;
-    }
-    let d = i64::try_from(d).unwrap_or(i64::MAX);
+    let d2 = i128::from(crate::route::gap2(a.inner(), b.inner()));
+    let d = i64::try_from(crate::pcb::isqrt_up(d2)).unwrap_or(i64::MAX);
     (d - a.corner_nm - b.corner_nm).max(0)
 }
 

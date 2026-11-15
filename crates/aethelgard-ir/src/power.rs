@@ -1945,7 +1945,7 @@ fn thermal(ctx: &Ctx<'_>) -> Result<(), IrValidationError> {
 
 /// The layers a thermal array joins (`K7`): the declared board's `GND`
 /// planes, or `B.Cu` on a two-layer board, where ground is a `B.Cu` zone.
-pub fn thermal_layers(board: &crate::board::Board) -> Vec<String> {
+fn thermal_layers(board: &crate::board::Board) -> Vec<String> {
     if board.copper_layers == 2 {
         vec!["B.Cu".to_owned()]
     } else {
