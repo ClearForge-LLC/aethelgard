@@ -657,14 +657,13 @@ fn a_port_and_its_check_forged_alike_are_refused() {
 
 #[test]
 fn replay_ties_each_echo_to_its_capture_and_rx_pin() {
-    let forge = |f: Box<
-        dyn FnOnce(
-            &mut Option<SerialCapture>,
-            &mut String,
-            &mut Option<(u8, u8)>,
-            &mut Option<(u8, u8)>,
-        ),
-    >| {
+    type Forge = dyn FnOnce(
+        &mut Option<SerialCapture>,
+        &mut String,
+        &mut Option<(u8, u8)>,
+        &mut Option<(u8, u8)>,
+    );
+    let forge = |f: Box<Forge>| {
         let r = edit(|r| set_witness(r, WITNESS_CONSOLE, |c, e, rx, tx| f(c, e, rx, tx)));
         check_run(&r).map(|_| ())
     };
