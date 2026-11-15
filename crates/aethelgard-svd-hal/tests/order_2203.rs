@@ -83,6 +83,11 @@ fn digests() -> Vec<(&'static str, String)> {
 /// the flash is `W25Q64JVxIQ`; and the firmware's SPI output speeds): the
 /// firmware was `c468b3cb…604f`, the platform `9fd77dad…53aa` and the
 /// faulted platform `c80833a9…8bec`. The boot image's digest is unchanged.
+/// Re-taken in `AET-WO-4300a`: specification version 4 moved the
+/// specification's sha256 in the firmware (`ecd58f5f…7b7b`), the platform
+/// (`bc1517cd…7522`) and the faulted platform (`f684f871…3dba`), and every
+/// enable register cold and judged in full (2100 F24) moved the boot image
+/// (`747bdc04…fbb3`).
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
@@ -98,7 +103,7 @@ const BEFORE: [(&str, &str); 4] = [
     ),
     (
         "boot image",
-        "747bdc045a0c2a41b8e93922bb6e463d82b577a9e061905a708c4893228efbb3",
+        "893fb13d4ae7e065b25f237b728f1c455d1e7cbd21972369c2815d8f9906c4a6",
     ),
 ];
 

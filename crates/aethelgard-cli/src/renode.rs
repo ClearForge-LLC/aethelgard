@@ -259,6 +259,9 @@ pub struct BootPlan<'a> {
     /// Every `yield; b.n` self-loop in the firmware's loaded bytes
     /// ([`aethelgard_twin::boot::self_loops`]): the core must end on one.
     pub self_loops: &'a [u64],
+    /// Each motor output's observer, solved values and static check
+    /// (`AET-WO-4300a`), in the specification's order.
+    pub motors: &'a [Motor],
     /// Every solved peripheral as the listing must name it: (name, model).
     pub instances: &'a [(String, String)],
     /// The resets a declared droop renders, in time order; empty for every
@@ -354,12 +357,13 @@ impl BootPlan<'_> {
         c
     }
 
-    /// The cold RCC writes, as the part's reset leaves those registers.
+    /// The cold RCC writes, as the part's reset leaves those registers: each
+    /// enable register at its reset value (`AET-WO-4300a` §1.6, 2100 F24).
     fn cold(&self) -> Vec<String> {
         self.image
             .cold
             .iter()
-            .map(|r| format!("sysbus WriteDoubleWord {:#010x} 0x0", r.address))
+            .map(|r| format!("sysbus WriteDoubleWord {:#010x} {:#x}", r.address, r.value))
             .collect()
     }
 
@@ -418,6 +422,11 @@ impl BootPlan<'_> {
                     .any(|(name, _)| c.device.rsplit('.').next() == Some(name.as_str()))
             })
             .map(|c| format!("logLevel -1 sysbus.{}", c.device))
+            .chain(
+                self.motors
+                    .iter()
+                    .map(|m| format!("logLevel -1 sysbus.{}", m.observer.source)),
+            )
             .collect()
     }
 
@@ -529,12 +538,230 @@ pub struct Observed {
     /// a witness (`AET-WO-2204`, the seeded set's `wrong-address`). Empty for
     /// an SPI check.
     pub absent: Vec<Vec<u8>>,
+    /// For each motor output, what its observer showed (`AET-WO-4300a`).
+    pub motors: Vec<MotorWitness>,
     /// For each identity check on SPI, every line its controller's
     /// multiplexer logged when it routed a byte to no device, to several, or
     /// to an address with none (`SPIMultiplexer.cs` L56, L62, L69), whole
     /// and in order: attribution's evidence, never a witness (`AET-WO-4200`
     /// D4). Empty for an I2C check.
     pub unrouted: Vec<Vec<String>>,
+}
+
+/// One motor output as a boot judges it (`AET-WO-4300a` §1.4): the twin's
+/// observer with the model's predicted timing, and the static check for
+/// silicon on the topology's clock (`4300` D3), each from the topology alone
+/// (`INV-07`).
+#[derive(Debug, Clone)]
+pub struct Motor {
+    pub observer: aethelgard_twin::timer::Observer,
+    pub psc: u32,
+    pub arr: u32,
+    pub ccr: u32,
+    pub silicon: aethelgard_ir::motor::SiliconTiming,
+}
+
+/// Every motor output of `topology`, in the specification's order.
+pub fn motors(
+    topology: &aethelgard_ir::SolvedTopology,
+) -> Result<Vec<Motor>, aethelgard_twin::TwinError> {
+    let observers = aethelgard_twin::timer::observers(topology)?;
+    Ok(observers
+        .into_iter()
+        .zip(topology.motor_outputs_in_order())
+        .map(|(observer, (_, m, _))| Motor {
+            silicon: aethelgard_ir::motor::check_silicon(&topology.clock, observer.timer, m),
+            observer,
+            psc: m.psc,
+            arr: m.arr,
+            ccr: m.ccr,
+        })
+        .collect())
+}
+
+/// The grain of a timer-caused stamp, in ns: one instruction at the core's
+/// `MIPS` (measured: every stamp a multiple of 10 ns, FEEDBACK P7). Two
+/// stamps of one exact sequence differ from it by less than this.
+pub const STAMP_GRAIN_NS: u64 = 1000 / aethelgard_twin::boot::MIPS;
+
+/// What an output's observer showed, judged against the model's
+/// conventions (`aethelgard_twin::timer`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MotorWitness {
+    /// `witnessed`, `static_only`, `unwitnessed`, `unreadable`, `mismatch`
+    /// or `batched`.
+    pub status: &'static str,
+    pub rises: u64,
+    pub falls: u64,
+    /// The first rise's stamp, the anchor every later edge is predicted from.
+    pub first_ns: Option<u64>,
+    /// The widest spread of the edges' deviations from the predicted
+    /// sequence, in ns: below [`STAMP_GRAIN_NS`] for an exact sequence.
+    pub span_ns: Option<u64>,
+    /// Edges whose stamp is off the quantum's grid: a store cannot place one
+    /// there (FEEDBACK P2.1).
+    pub off_grid: u64,
+    /// Consecutive edges with one stamp: a timer the core touched while it
+    /// ran (FEEDBACK M1).
+    pub batched: u64,
+}
+
+/// The observer's edges, `(stamp, rising)`, in the log's order; `None` when
+/// a line of the observer is anything but a whole state change.
+fn observer_edges(source: &str, lines: &[&str]) -> Option<Vec<(u64, bool)>> {
+    let mut edges = Vec::new();
+    for line in lines {
+        let Some((ns, body)) = log_stamped(line) else {
+            continue;
+        };
+        let Some(rest) = body
+            .strip_prefix("[NOISY] ")
+            .and_then(|r| r.strip_prefix(source))
+            .and_then(|r| r.strip_prefix(": "))
+        else {
+            // Another source's line, or this source's at another level: a
+            // LED logs its state changes at `Noisy` alone.
+            if body.contains(&format!(" {source}: ")) {
+                return None;
+            }
+            continue;
+        };
+        match rest {
+            "LED state changed to True" => edges.push((ns, true)),
+            "LED state changed to False" => edges.push((ns, false)),
+            _ => return None,
+        }
+    }
+    Some(edges)
+}
+
+/// Judges one output's edges against the model's sequence: rises at
+/// `first + k·period` and falls `high` after each, alternating from a rise,
+/// every deviation inside one stamp grain of every other (the model's
+/// conventions, `aethelgard_twin::timer`). `None` is a log that could not be
+/// read whole; `Some(None)` an observer line that was not a state change.
+fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>) -> MotorWitness {
+    let mut w = MotorWitness {
+        status: "unreadable",
+        rises: 0,
+        falls: 0,
+        first_ns: None,
+        span_ns: None,
+        off_grid: 0,
+        batched: 0,
+    };
+    let Some(edges) = edges else {
+        return w;
+    };
+    let Some(edges) = edges else {
+        w.status = "mismatch";
+        return w;
+    };
+    w.rises = edges.iter().filter(|e| e.1).count() as u64;
+    w.falls = edges.len() as u64 - w.rises;
+    w.off_grid = edges
+        .iter()
+        .filter(|e| e.0 % aethelgard_twin::boot::QUANTUM_NS != 0)
+        .count() as u64;
+    w.batched = edges.windows(2).filter(|p| p[0].0 == p[1].0).count() as u64;
+    if w.rises < 2 {
+        w.status = "unwitnessed";
+        return w;
+    }
+    let (period, high) = (
+        i128::from(m.observer.period_ns),
+        i128::from(m.observer.high_ns),
+    );
+    let first = edges[0].0;
+    w.first_ns = Some(first);
+    let (mut lo, mut hi) = (i128::MAX, i128::MIN);
+    let mut alternating = edges[0].1;
+    for (i, &(ns, rising)) in edges.iter().enumerate() {
+        alternating &= rising == (i % 2 == 0);
+        let k = (i / 2) as i128;
+        let predicted = i128::from(first) + k * period + if rising { 0 } else { high };
+        let d = i128::from(ns) - predicted;
+        lo = lo.min(d);
+        hi = hi.max(d);
+    }
+    let span = u64::try_from(hi - lo).unwrap_or(u64::MAX);
+    w.span_ns = Some(span);
+    w.status = if w.batched > 0 {
+        "batched"
+    } else if !alternating || span >= STAMP_GRAIN_NS {
+        "mismatch"
+    } else if w.off_grid == 0 {
+        "static_only"
+    } else {
+        "witnessed"
+    };
+    w
+}
+
+/// The findings of one motor output: the static check's, then the
+/// witness's when the boot reached its fixed point.
+fn motor_findings(m: &Motor, witness: Option<&MotorWitness>) -> Vec<Finding> {
+    let o = &m.observer;
+    let who = format!("{} (TIM{}_CH{} on {})", o.label, o.timer, o.channel, o.pin);
+    let mut out = Vec::new();
+    let s = &m.silicon;
+    if !s.holds {
+        out.push(Finding::plain(
+            "motor_timing_static_mismatch",
+            format!(
+                "{who}: PSC {}, ARR {}, CCR {} on a {} Hz timer clock give a period of {} ps and a high time of {} ps (silicon counts ARR + 1); the declared timing is {} ps and {} ps",
+                m.psc, m.arr, m.ccr, s.kernel_hz, s.period_ps, s.high_ps, s.nominal_period_ps, s.nominal_high_ps
+            ),
+        ));
+    }
+    let Some(w) = witness else {
+        return out;
+    };
+    let model = format!(
+        "the model's period {} ns and high time {} ns (ARR and CCR ticks at {} Hz)",
+        o.period_ns,
+        o.high_ns,
+        aethelgard_twin::timer::TIMER_HZ
+    );
+    match w.status {
+        "witnessed" => {}
+        "static_only" => out.push(Finding::info(
+            "motor_witness_static_only",
+            format!(
+                "{who}: {} rises at {model}, every edge on the {} ns quantum's grid, where a store can put one; judged by the static check alone",
+                w.rises,
+                aethelgard_twin::boot::QUANTUM_NS
+            ),
+        )),
+        "unreadable" => out.push(Finding::plain(
+            "motor_output_unwitnessed",
+            format!("{who}: Renode's log could not be read whole, so the output's edges were not"),
+        )),
+        "unwitnessed" => out.push(Finding::plain(
+            "motor_output_unwitnessed",
+            format!(
+                "{who}: the observer on {} logged {} rises and {} falls, too few to show a period",
+                o.pin, w.rises, w.falls
+            ),
+        )),
+        "batched" => out.push(Finding::plain(
+            "motor_timing_mismatch",
+            format!(
+                "{who}: {} pairs of edges share one stamp, so the timer's events were not delivered at their times",
+                w.batched
+            ),
+        )),
+        _ => out.push(Finding::plain(
+            "motor_timing_mismatch",
+            format!(
+                "{who}: {} rises and {} falls do not follow {model} from the first rise: their deviations span {} ns, not under {STAMP_GRAIN_NS} ns, or they do not alternate from a rise",
+                w.rises,
+                w.falls,
+                w.span_ns.map_or_else(|| "an unreadable".to_owned(), |s| s.to_string())
+            ),
+        )),
+    }
+    out
 }
 
 /// A line the multiplexer of `mux` (`spi1.spi1mux`) logs when a byte reaches
@@ -826,6 +1053,17 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
                 }
             })
             .collect(),
+        // Past the filter's budget an edge may have been dropped, so no
+        // output's edges can be read whole (`AET-WO-2204` D2's rule).
+        motors: plan
+            .motors
+            .iter()
+            .map(|m| {
+                let edges = (out.dropped_log_lines == 0)
+                    .then(|| observer_edges(&m.observer.source, &last_boot));
+                witness_motor(m, edges)
+            })
+            .collect(),
     };
     for ((cmd, read), line) in reads.iter().zip(values) {
         let v = value(line).ok_or_else(|| untrusted(format!("`{cmd}` read no value")))?;
@@ -993,6 +1231,13 @@ pub fn judge_boot(code: i32, out: &Output, plan: &BootPlan<'_>) -> Result<Judged
             findings.extend(identity_finding(c, status, value));
         }
         findings.extend(witness_findings(checks, &observed, &last_boot));
+    }
+    // The motor outputs (`AET-WO-4300a` §1.4): the static check judges
+    // silicon from the topology alone, the twin's witness the model's
+    // conventions, never blended (`4300` D3). The witness is read only once
+    // the firmware reached its fixed point, as an identity record is.
+    for (m, w) in plan.motors.iter().zip(&observed.motors) {
+        findings.extend(motor_findings(m, booted.then_some(w)));
     }
     for d in &plan.image.identity.unmodelled {
         findings.push(Finding::info(
@@ -1325,9 +1570,170 @@ mod tests {
             image,
             executable: &[],
             self_loops: &[],
+            motors: &[],
             instances: &INSTANCES,
             resets,
         }
+    }
+
+    /// The PWM fixture's first output: the model's 639,744 ns period and
+    /// 256,000 ns high time (PSC 63, ARR 2499, CCR 1000 at 4 ns a tick).
+    fn motor() -> Motor {
+        Motor {
+            observer: aethelgard_twin::timer::Observer {
+                label: "MOTOR1".into(),
+                protocol: aethelgard_ir::MotorProtocol::Pwm,
+                timer: 1,
+                channel: 1,
+                pin: "PA8".into(),
+                port: 'A',
+                index: 8,
+                alternate_function: 1,
+                name: "pa8obs".into(),
+                source: "gpioPortA.pa8obs".into(),
+                period_ns: 639_744,
+                high_ns: 256_000,
+            },
+            psc: 63,
+            arr: 2499,
+            ccr: 1000,
+            silicon: aethelgard_ir::motor::check_silicon(
+                &aethelgard_ir::SolvedClock::reset(),
+                1,
+                &aethelgard_ir::SolvedMotorOutput {
+                    index: 0,
+                    protocol: aethelgard_ir::MotorProtocol::Pwm,
+                    pwm: Some(aethelgard_ir::PwmTiming {
+                        rate_hz: 400,
+                        pulse_min_us: 1000,
+                        pulse_max_us: 2000,
+                    }),
+                    psc: 63,
+                    arr: 2499,
+                    ccr: 1000,
+                },
+            ),
+        }
+    }
+
+    /// Edges as the probes measured them (`pwm400-63`): each the exact time
+    /// plus a deviation under the 10 ns grain, from the first rise at 639,750.
+    fn measured(n: u64, jitter: &[i64]) -> Vec<(u64, bool)> {
+        let mut out = Vec::new();
+        for k in 0..n {
+            let d = |i: u64| jitter[(i as usize) % jitter.len()];
+            let rise = 639_750 + k * 639_744;
+            out.push(((rise as i64 + d(2 * k)) as u64, true));
+            out.push(((rise as i64 + 256_000 + d(2 * k + 1)) as u64, false));
+        }
+        out
+    }
+
+    #[test]
+    fn a_motor_s_edges_on_the_model_s_sequence_are_witnessed() {
+        let m = motor();
+        let w = witness_motor(&m, Some(Some(measured(150, &[0, -6, 2, -4]))));
+        assert_eq!(w.status, "witnessed", "{w:?}");
+        assert_eq!((w.rises, w.falls, w.first_ns), (150, 150, Some(639_750)));
+        assert_eq!(w.span_ns, Some(8));
+        assert!(motor_findings(&m, Some(&w)).is_empty());
+    }
+
+    #[test]
+    fn adversarial_2_a_correct_output_one_tick_off_or_the_silicon_period_fails() {
+        let m = motor();
+        // Silicon's ARR + 1 period, 256 ns longer each period.
+        let mut e = measured(10, &[0]);
+        for (i, edge) in e.iter_mut().enumerate() {
+            edge.0 += 256 * (i as u64 / 2);
+        }
+        assert_eq!(witness_motor(&m, Some(Some(e))).status, "mismatch");
+        // One grain off on one edge alone.
+        let mut e = measured(10, &[0]);
+        e[7].0 += 10;
+        let w = witness_motor(&m, Some(Some(e)));
+        assert_eq!((w.status, w.span_ns), ("mismatch", Some(10)));
+        let f = motor_findings(&m, Some(&w));
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].kind, "motor_timing_mismatch");
+    }
+
+    #[test]
+    fn adversarial_1_store_made_edges_fail_and_a_single_pulse_is_too_few() {
+        let m = motor();
+        // `BSRR` edges (and the `UG` + `BSRR` pair) sit on the 100 us grid,
+        // 6 ms apart, high 400 us: not the model's sequence.
+        let store: Vec<(u64, bool)> = (0..4)
+            .flat_map(|k| [(k * 6_000_000, true), (k * 6_000_000 + 400_000, false)])
+            .collect();
+        assert_eq!(witness_motor(&m, Some(Some(store))).status, "mismatch");
+        // A store that copies the period exactly still cannot leave the grid:
+        // the model's period here is not a multiple of 100 us, so two rises
+        // on the grid cannot be one period apart.
+        let on_grid = vec![(0, true), (300_000, false), (700_000, true)];
+        assert_eq!(witness_motor(&m, Some(Some(on_grid))).status, "mismatch");
+        let one = vec![(639_750, true), (895_750, false)];
+        let w = witness_motor(&m, Some(Some(one)));
+        assert_eq!(w.status, "unwitnessed");
+        assert_eq!(
+            motor_findings(&m, Some(&w))[0].kind,
+            "motor_output_unwitnessed"
+        );
+        assert_eq!(witness_motor(&m, Some(Some(vec![]))).status, "unwitnessed");
+    }
+
+    #[test]
+    fn a_timing_whose_edges_all_fall_on_the_grid_is_judged_static_only() {
+        let mut m = motor();
+        // A period and high time that are whole quanta: every edge on the grid.
+        m.observer.period_ns = 2_000_000;
+        m.observer.high_ns = 1_000_000;
+        let e: Vec<(u64, bool)> = (0..5)
+            .flat_map(|k| [(k * 2_000_000, true), (k * 2_000_000 + 1_000_000, false)])
+            .collect();
+        let w = witness_motor(&m, Some(Some(e)));
+        assert_eq!(w.status, "static_only");
+        let f = motor_findings(&m, Some(&w));
+        assert_eq!(f.len(), 1);
+        assert_eq!(
+            (f[0].kind.as_str(), f[0].severity.as_str()),
+            ("motor_witness_static_only", "info")
+        );
+    }
+
+    #[test]
+    fn batched_edges_unreadable_logs_and_odd_lines_never_pass() {
+        let m = motor();
+        let mut e = measured(10, &[0]);
+        e[4].0 = e[3].0;
+        assert_eq!(witness_motor(&m, Some(Some(e))).status, "batched");
+        assert_eq!(witness_motor(&m, None).status, "unreadable");
+        assert_eq!(witness_motor(&m, Some(None)).status, "mismatch");
+        // Starting on a fall is not the model's sequence.
+        let mut e = measured(10, &[0]);
+        e.remove(0);
+        assert_eq!(witness_motor(&m, Some(Some(e))).status, "mismatch");
+        let lines = [
+            "[00:00:00.000639750] [NOISY] gpioPortA.pa8obs: LED state changed to True",
+            "[00:00:00.000639750] [NOISY] gpioPortA.pa9obs: LED state changed to True",
+            "[00:00:00.000895750] [NOISY] gpioPortA.pa8obs: LED state changed to False",
+            "[00:00:00.000895750] [NOISY] timer1: IRQ pending",
+        ];
+        assert_eq!(
+            observer_edges("gpioPortA.pa8obs", &lines),
+            Some(vec![(639_750, true), (895_750, false)])
+        );
+        let odd = ["[00:00:00.000639750] [INFO] gpioPortA.pa8obs: LED state changed to True"];
+        assert_eq!(observer_edges("gpioPortA.pa8obs", &odd), None);
+    }
+
+    #[test]
+    fn a_static_mismatch_is_its_own_finding() {
+        let mut m = motor();
+        m.silicon.holds = false;
+        let f = motor_findings(&m, None);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].kind, "motor_timing_static_mismatch");
     }
 
     fn bor3() -> Vec<power::Reset> {

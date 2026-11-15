@@ -163,11 +163,102 @@ pub struct Boot {
     /// `ICSR` after the run: `VECTACTIVE` [8:0] is 0 when the core is in
     /// thread mode (`AET-WO-2204` D3).
     pub icsr: Option<String>,
+    /// One per motor output, in the specification's order (`AET-WO-4300a`):
+    /// the static check for silicon and the twin's witness, apart. Absent
+    /// from the JSON when the topology has none, so a board without motor
+    /// outputs reports as before.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub motor: Vec<MotorReport>,
     /// The firmware's executable segments, `[start, end)` at their physical
     /// address, that the judge placed `pc` against: kind 10 archives them
     /// (`AET-WO-2205` §1.5). Not part of the verdict's JSON.
     #[serde(skip)]
     pub executable: Vec<(u64, u64)>,
+}
+
+/// One motor output's two judgements (`AET-WO-4300a`, `4300` D3), never
+/// blended: `silicon`, the solved registers on the topology's clock with
+/// silicon's `ARR + 1`; and `twin`, the observer's edges against the model's
+/// conventions (`ARR` ticks at a fixed 250 MHz).
+#[derive(Serialize)]
+pub struct MotorReport {
+    pub label: String,
+    pub protocol: &'static str,
+    pub timer: String,
+    pub channel: u32,
+    pub pin: String,
+    pub psc: u32,
+    pub arr: u32,
+    pub ccr: u32,
+    pub silicon: SiliconReport,
+    pub twin: TwinReport,
+}
+
+#[derive(Serialize)]
+pub struct SiliconReport {
+    pub kernel_hz: u64,
+    pub period_ps: u64,
+    pub high_ps: u64,
+    pub nominal_period_ps: u64,
+    pub nominal_high_ps: u64,
+    pub holds: bool,
+}
+
+#[derive(Serialize)]
+pub struct TwinReport {
+    /// The observer's log source, `gpioPortA.pa8obs`.
+    pub observer: String,
+    pub period_ns: u64,
+    pub high_ns: u64,
+    pub grain_ns: u64,
+    pub quantum_ns: u64,
+    /// `null` until Renode has run, as every field below.
+    pub status: Option<&'static str>,
+    pub rises: Option<u64>,
+    pub falls: Option<u64>,
+    pub first_ns: Option<u64>,
+    pub span_ns: Option<u64>,
+    pub off_grid: Option<u64>,
+    pub batched: Option<u64>,
+}
+
+impl MotorReport {
+    pub fn new(m: &crate::renode::Motor, w: Option<&crate::renode::MotorWitness>) -> Self {
+        let o = &m.observer;
+        let s = &m.silicon;
+        MotorReport {
+            label: o.label.clone(),
+            protocol: o.protocol.name(),
+            timer: format!("TIM{}", o.timer),
+            channel: o.channel,
+            pin: o.pin.clone(),
+            psc: m.psc,
+            arr: m.arr,
+            ccr: m.ccr,
+            silicon: SiliconReport {
+                kernel_hz: s.kernel_hz,
+                period_ps: s.period_ps,
+                high_ps: s.high_ps,
+                nominal_period_ps: s.nominal_period_ps,
+                nominal_high_ps: s.nominal_high_ps,
+                holds: s.holds,
+            },
+            twin: TwinReport {
+                observer: o.source.clone(),
+                period_ns: o.period_ns,
+                high_ns: o.high_ns,
+                grain_ns: crate::renode::STAMP_GRAIN_NS,
+                quantum_ns: aethelgard_twin::boot::QUANTUM_NS,
+                status: w.map(|w| w.status),
+                rises: w.map(|w| w.rises),
+                falls: w.map(|w| w.falls),
+                first_ns: w.and_then(|w| w.first_ns),
+                span_ns: w.and_then(|w| w.span_ns),
+                off_grid: w.map(|w| w.off_grid),
+                batched: w.map(|w| w.batched),
+            },
+        }
+    }
 }
 
 /// One identity read's witness: the device model's whole log lines the judge

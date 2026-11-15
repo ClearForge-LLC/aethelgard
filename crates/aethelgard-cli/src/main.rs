@@ -977,6 +977,9 @@ struct Ready {
     self_loops: Vec<u64>,
     vector_table: u32,
     image: aethelgard_twin::boot::Image,
+    /// Each motor output's observer, solved values and static check
+    /// (`AET-WO-4300a`).
+    motors: Vec<renode::Motor>,
     boot_word: u32,
     specification_sha256: String,
     virtual_ns: u64,
@@ -1045,6 +1048,7 @@ fn ready(
     let boot_word = aethelgard_twin::boot::boot_word().map_err(twin_stop)?;
     let checked = elf::check(&bytes, &memory, boot_word)?;
     let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
+    let motors = renode::motors(&boot.topology).map_err(twin_stop)?;
     let vector_table =
         u32::try_from(memory.flash.start).expect("FLASH_BANK1_BASE is a 32-bit value");
     Ok((
@@ -1056,6 +1060,7 @@ fn ready(
             self_loops: checked.self_loops,
             vector_table,
             image,
+            motors,
             boot_word,
             specification_sha256: boot.topology.specification_sha256.clone(),
             virtual_ns: boot.virtual_ns,
@@ -1184,6 +1189,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             image: &r.image,
             executable: &r.executable,
             self_loops: &r.self_loops,
+            motors: &r.motors,
             instances: &booted.instances,
             resets: droop
                 .as_ref()
@@ -1489,6 +1495,12 @@ fn boot_report(
             })
             .collect(),
         icsr: observed.map(|o| word(o.icsr)),
+        motor: plan
+            .motors
+            .iter()
+            .enumerate()
+            .map(|(i, m)| verdict::MotorReport::new(m, observed.map(|o| &o.motors[i])))
+            .collect(),
         executable: plan.executable.to_vec(),
     }
 }
