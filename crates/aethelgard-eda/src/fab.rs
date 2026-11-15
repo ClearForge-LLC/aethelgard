@@ -788,6 +788,33 @@ mod tests {
             &[routed(DRILL_NM, VIA_NM, 1), routed(400_000, 800_000, 2)],
         );
         assert!(other.contains("- T2: 0.4 mm, plated, 2 holes: routed vias, 0.8 mm pad (2).\n"));
+        // One tool that is not only routed vias at the router's drill: an
+        // array merged into it, pads of that drill, or vias of another drill.
+        let array = Drilled::Thermal {
+            reference: "U5".into(),
+            pad: "9".into(),
+            via_nm: VIA_NM,
+        };
+        let pads = Drilled::Pad {
+            reference: "U5".into(),
+            number: "9".into(),
+        };
+        for one in [
+            Drill {
+                what: vec![(Drilled::Routed { via_nm: VIA_NM }, 2), (array, 12)],
+                ..routed(DRILL_NM, VIA_NM, 0)
+            },
+            Drill {
+                hole: Hole::Pad,
+                what: vec![(pads, 8)],
+                ..routed(DRILL_NM, VIA_NM, 0)
+            },
+            routed(400_000, VIA_NM, 2),
+        ] {
+            let text = notes_with(&st, std::slice::from_ref(&one));
+            assert!(!text.contains("Every hole is a plated via"), "{one:?}");
+            assert!(text.contains("- T1: "), "{one:?}");
+        }
     }
 
     /// `AET-WO-1305` F3's conditions, the stackup, the rule minima and the
