@@ -337,6 +337,16 @@ impl BootPlan<'_> {
         Some(aethelgard_twin::serial::injection_ns(start))
     }
 
+    /// The instant the frames actually go in: [`Self::injection_ns`] when this
+    /// boot holds it and the quantum after it, in which the firmware echoes.
+    /// A `--for` shorter than that is not cut to fit: nothing is injected,
+    /// and the echo fails closed by name ([`serial_findings_of`]). A board
+    /// whose window cannot hold it is refused before the boot (`main.rs`).
+    pub fn injected_ns(&self) -> Option<u64> {
+        self.injection_ns()
+            .filter(|&i| aethelgard_twin::serial::fits(i, self.virtual_ns))
+    }
+
     /// One file backend per port, in the capture directory, before the first
     /// `RunFor`: Renode opens each file new (`UartFileBackend.cs`) and writes
     /// each byte the USART transmits, flushed (`true`).
@@ -509,7 +519,7 @@ impl BootPlan<'_> {
         let mut now = 0u64;
         // The frames go in at the injection instant, wherever it falls
         // between the schedule's own instants (`AET-WO-4300b`).
-        let mut inject = self.injection_ns();
+        let mut inject = self.injected_ns();
         let mut at = |c: &mut Vec<String>, t: u64| {
             if let Some(i) = inject.filter(|&i| i <= t) {
                 if i > now {
@@ -566,7 +576,7 @@ impl BootPlan<'_> {
         c.push(self.vtor());
         c.extend(self.witness_levels());
         c.extend(self.capture_commands());
-        match (self.resets.is_empty(), self.injection_ns()) {
+        match (self.resets.is_empty(), self.injected_ns()) {
             (true, None) => c.push(run_for(self.virtual_ns)),
             (true, Some(i)) => {
                 c.push(run_for(i));
@@ -795,8 +805,15 @@ pub fn static_serial_findings(serial: &[Serial]) -> Vec<Finding> {
 }
 
 /// One port's witness findings, once the boot reached its fixed point.
-/// `releases` is the boots the droop rendered after the first.
-fn serial_findings_of(s: &Serial, w: &SerialWitness, releases: usize) -> Vec<Finding> {
+/// `releases` is the boots the droop rendered after the first; `short` the
+/// boot's length and the injection instant it does not hold, when no frame
+/// went in for that reason.
+fn serial_findings_of(
+    s: &Serial,
+    w: &SerialWitness,
+    releases: usize,
+    short: Option<(u64, u64)>,
+) -> Vec<Finding> {
     use aethelgard_chaos::campaign::{
         SERIAL_ECHO_FINDING, SERIAL_FORGED_FINDING, SERIAL_PATTERN_FINDING, SERIAL_TAG_FINDING,
     };
@@ -896,12 +913,18 @@ fn serial_findings_of(s: &Serial, w: &SerialWitness, releases: usize) -> Vec<Fin
         )),
         _ => out.push(Finding::plain(
             SERIAL_ECHO_FINDING,
-            format!(
-                "{who}: {} of the frame's {} bytes ({}) came back",
-                c.echoed,
-                aethelgard_twin::serial::FRAME_LEN,
-                hex_bytes(&s.frame)
-            ),
+            match short {
+                Some((virtual_ns, at)) => format!(
+                    "{who}: no frame went in: the boot of {virtual_ns} ns ends before the injection at {at} ns and the {} ns after it, so its echo cannot be witnessed",
+                    aethelgard_twin::boot::QUANTUM_NS
+                ),
+                None => format!(
+                    "{who}: {} of the frame's {} bytes ({}) came back",
+                    c.echoed,
+                    aethelgard_twin::serial::FRAME_LEN,
+                    hex_bytes(&s.frame)
+                ),
+            },
         )),
     }
     out
@@ -1356,7 +1379,7 @@ pub fn judge_boot(
     let probe_ends = sentinels(&lines[..begin], PROBE_END, released).map_err(untrusted)?;
     // The reads at the injection instant (`AET-WO-4300b`): one block, before
     // the reads, when a frame was injected; none otherwise.
-    let injected = usize::from(plan.injection_ns().is_some());
+    let injected = usize::from(plan.injected_ns().is_some());
     let exact = |want: &str| -> Vec<usize> { (0..begin).filter(|&i| lines[i] == want).collect() };
     let (inject_begins, inject_ends) = (exact(INJECT_BEGIN), exact(INJECT_END));
     let inject_block = match (inject_begins.as_slice(), inject_ends.as_slice()) {
@@ -1717,8 +1740,12 @@ pub fn judge_boot(
             .iter()
             .filter(|r| r.released_ns.is_some())
             .count();
+        let short = match (plan.injection_ns(), plan.injected_ns()) {
+            (Some(at), None) => Some((plan.virtual_ns, at)),
+            _ => None,
+        };
         for (s, w) in plan.serial.iter().zip(&observed.serial) {
-            findings.extend(serial_findings_of(s, w, releases));
+            findings.extend(serial_findings_of(s, w, releases, short));
         }
     }
     for d in &plan.image.identity.unmodelled {
@@ -2455,6 +2482,17 @@ mod tests {
         assert!(!p.commands().contains("INJECT"));
         // A board without a port: no capture, no injection, one RunFor.
         assert_eq!(plan(&image, &[]).injection_ns(), None);
+        // A boot too short for the instant and the quantum after it: the
+        // instant is known, nothing goes in, and the run is one `RunFor`.
+        let mut p = serial_plan(&image, &[], &serial);
+        p.virtual_ns = 199_999;
+        assert_eq!((p.injection_ns(), p.injected_ns()), (Some(100_000), None));
+        let c = p.commands();
+        assert!(!c.contains("INJECT") && !c.contains("WriteChar"), "{c}");
+        assert!(c.contains("CreateFileBackend"));
+        assert!(c.contains("emulation RunFor \"0.000199999\"; echo \"AETHELGARD-BOOT-BEGIN\""));
+        p.virtual_ns = 200_000;
+        assert_eq!(p.injected_ns(), Some(100_000));
     }
 
     /// `4300` D8: the silicon check is the topology's, reported apart; a port
@@ -2498,7 +2536,7 @@ mod tests {
         let routed = [0x0028_A801, 0x0000_0770];
         let w = serial_witnesses(&p, &regs, &routed, &captured(&whole), Some(&[]));
         assert_eq!(w[0].echo, "witnessed");
-        assert!(serial_findings_of(&serial[0], &w[0], 0).is_empty());
+        assert!(serial_findings_of(&serial[0], &w[0], 0, None).is_empty());
         // Off its AF at the injection: the frame came back, not counted.
         let w = serial_witnesses(
             &p,
@@ -2510,7 +2548,7 @@ mod tests {
         assert_eq!(w[0].echo, "not_counted");
         let kinds = |f: Vec<Finding>| f.into_iter().map(|f| f.kind).collect::<Vec<_>>();
         assert_eq!(
-            kinds(serial_findings_of(&serial[0], &w[0], 0)),
+            kinds(serial_findings_of(&serial[0], &w[0], 0, None)),
             ["serial_echo_missing"]
         );
         // No injection read: never witnessed.
@@ -2519,17 +2557,17 @@ mod tests {
         // The log not whole: the tags are not judged, and that fails.
         let w = serial_witnesses(&p, &regs, &routed, &captured(&whole), None);
         assert_eq!(
-            kinds(serial_findings_of(&serial[0], &w[0], 0)),
+            kinds(serial_findings_of(&serial[0], &w[0], 0, None)),
             ["serial_tag_mismatch"]
         );
         // Two patterns: forged in one boot, the droop's two boots in one.
         let two = [serial[0].pattern.clone(), whole.clone()].concat();
         let w = serial_witnesses(&p, &regs, &routed, &captured(&two), Some(&[]));
         assert_eq!(
-            kinds(serial_findings_of(&serial[0], &w[0], 0)),
+            kinds(serial_findings_of(&serial[0], &w[0], 0, None)),
             ["serial_capture_forged"]
         );
-        assert!(serial_findings_of(&serial[0], &w[0], 1).is_empty());
+        assert!(serial_findings_of(&serial[0], &w[0], 1, None).is_empty());
         // A file no port writes, and a problem the CLI met, are forged.
         let mut c = captured(&whole);
         c.files.push(("usart2.bin".to_owned(), Vec::new()));

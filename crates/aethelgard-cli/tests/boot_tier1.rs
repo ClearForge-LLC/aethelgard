@@ -1834,17 +1834,61 @@ fn a_tag_warning_the_framing_does_not_need_fails_and_another_source_s_does_not_c
     assert_eq!(console(&v)["tag_warnings"], 0);
 }
 
-/// The ruling's amendment 3: a boot too short to hold the injection and the
-/// quantum after it is refused by name before Renode runs.
+/// The ruling's amendment 3: a `--for` too short to hold the injection and
+/// the quantum after it is not cut to fit. Nothing is injected, the run is
+/// one `RunFor`, and once the boot word is set the echo fails closed, by
+/// name. (A board whose window cannot hold it is refused before the boot.)
 #[test]
-fn a_boot_too_short_for_the_injection_is_refused_by_name() {
-    let tb = toolbox(&good());
+fn a_boot_too_short_for_the_injection_fails_closed_on_the_echo() {
+    let tb = Dir::new("tb-short");
+    let reads = reads(
+        "0x2100B007",
+        "0x0000000000003A98",
+        "0x00000064",
+        &GOOD_REGISTERS,
+    );
+    let text = transcript(
+        &format!("{GOOD_WITNESS}{GOOD_SPI_WITNESS}"),
+        &reads.iter().map(String::as_str).collect::<Vec<_>>(),
+    )
+    .replacen(INJECTION, "", 1);
+    let out = tb.write("renode.out", text.as_bytes());
+    let bytes = tb.write("capture.bin", &aethelgard_twin::serial::pattern("CONSOLE"));
+    // A stub that checks the configuration, that the run is one `RunFor` of
+    // 150 us with no injection, and writes the capture.
+    let stub = tb.write(
+        "renode",
+        format!(
+            r#"#!/bin/sh
+[ "$1" = --config ] || exit 97
+if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: 1.17.0+20260907gitf1dd1b4af\n'; exit 0; fi
+case "$7" in *INJECT*|*WriteChar*) exit 98;; esac
+case "$7" in *"CreateFileBackend @"*"/capture/usart1.bin true; emulation RunFor \"0.000150000\"; echo \"AETHELGARD-BOOT-BEGIN\""*) ;; *) exit 99;; esac
+cap=$(printf '%s' "$7" | /bin/sed -n 's/.*CreateFileBackend @\([^ ]*\) true.*/\1/p')
+/bin/cat '{}' > "$cap" || exit 95
+/bin/cat '{}'
+"#,
+            bytes.display(),
+            out.display()
+        )
+        .as_bytes(),
+    );
+    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
     let input = Dir::new("in");
     let fw = input.write("fw.elf", &elf());
-    for t in ["10ns", "199us"] {
-        let out = boot_with(&tb.0, &platform(), &fw, t);
-        let v = report(&out);
-        assert_eq!(out.status.code(), Some(3), "{t}: {v}");
-        assert_eq!(v["error"]["kind"], "SerialInjectionPastBoot", "{t}: {v}");
-    }
+    let out = boot_with(&tb.0, &platform(), &fw, "150us");
+    let v = report(&out);
+    assert_eq!(out.status.code(), Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_echo_missing"], "{v}");
+    assert!(
+        finding(&v, "serial_echo_missing").unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .contains(
+                "no frame went in: the boot of 150000 ns ends before the injection at 100000 ns"
+            ),
+        "{v}"
+    );
+    assert_eq!(console(&v)["patterns"], 1, "{v}");
+    assert_eq!(console(&v)["rx_at_injection"], Value::Null, "{v}");
 }

@@ -1121,10 +1121,12 @@ fn ready(
     let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
     let motors = renode::motors(&boot.topology).map_err(twin_stop)?;
     // `AET-WO-4300b`: each port's frame is derived from the firmware's own
-    // sha256, and injected one quantum into the boot; a boot too short to
-    // hold that quantum and the one after it is refused by name, never cut
-    // short (the ruling's amendment 3). A rendered release moves the
-    // instant; that boot is checked again once the rail is solved.
+    // sha256, and injected one quantum into the boot; a board whose window
+    // cannot hold that quantum and the one after it is refused by name,
+    // never cut short (the ruling's amendment 3). A `--for` shorter than the
+    // window injects nothing and fails closed on the echo, by name. A
+    // rendered release moves the instant; it is checked again once the rail
+    // is solved.
     let sha = aethelgard_twin::serial::sha256_bytes(&firmware.sha256).ok_or_else(|| {
         run::Stop::unreadable(format!(
             "the firmware's sha256 `{}` is not hex",
@@ -1133,7 +1135,7 @@ fn ready(
     })?;
     let serial = renode::serials(&boot.topology, &sha).map_err(twin_stop)?;
     if !serial.is_empty() {
-        serial_fits(aethelgard_twin::serial::injection_ns(0), boot.virtual_ns)?;
+        serial_fits(aethelgard_twin::serial::injection_ns(0), window_ns, window)?;
     }
     let capture = match serial.is_empty() {
         true => None,
@@ -1166,16 +1168,17 @@ fn ready(
     ))
 }
 
-/// `SerialInjectionPastBoot`: the frames go in at `injection_ns`, and the
-/// firmware needs the quantum after it to echo them, all inside the boot.
-fn serial_fits(injection_ns: u64, virtual_ns: u64) -> Result<(), run::Stop> {
-    if aethelgard_twin::serial::fits(injection_ns, virtual_ns) {
+/// `SerialInjectionPastWindow`: the frames go in at `injection_ns`, and the
+/// firmware needs the quantum after it to echo them, all inside the board's
+/// window (`aethelgard_twin::boot::window`), named by `window`.
+fn serial_fits(injection_ns: u64, window_ns: u64, window: &str) -> Result<(), run::Stop> {
+    if aethelgard_twin::serial::fits(injection_ns, window_ns) {
         return Ok(());
     }
     Err(run::Stop::refused(
-        "SerialInjectionPastBoot",
+        "SerialInjectionPastWindow",
         format!(
-            "the serial frames go in at {injection_ns} ns and the firmware echoes them in the {} ns after, past this boot's {virtual_ns} ns (AET-WO-4300b)",
+            "the serial frames go in at {injection_ns} ns and the firmware echoes them in the {} ns after, past this board's {window} of {window_ns} ns (AET-WO-4300b)",
             aethelgard_twin::boot::QUANTUM_NS
         ),
     ))
@@ -1370,8 +1373,12 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         });
     // A rendered release moves the injection (`AET-WO-4300b`): refused by
     // name before the boot runs, as `ready` refuses the undrooped instant.
-    if let Some(i) = plan.as_ref().and_then(renode::BootPlan::injection_ns) {
-        serial_fits(i, plan.as_ref().map_or(0, |p| p.virtual_ns))?;
+    if let (Some(i), Some(r)) = (
+        plan.as_ref().and_then(renode::BootPlan::injection_ns),
+        &ready,
+    ) {
+        let (window_ns, window) = aethelgard_twin::boot::window(&r.topology);
+        serial_fits(i, window_ns, window)?;
     }
     if let (Some(r), Some((pass, booted))) = (&ready, &analog) {
         booted_is_emitted(&booted.path, r, pass)?;
