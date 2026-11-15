@@ -3,7 +3,7 @@
 **Builder:** Claude (strong tier), worktree `~/aethelgard-4300b`, branch `wo/aet-4300b-serial` from `main` `7ca65e6`.
 **Work order:** `docs/work-orders/AET-WO-4300b.md` on `main`, as amended by the architect's kickoff amendments (`~/.cache/aet-4300b-ruling.md`, 2026-11-15 12:00 UTC).
 **Cadence:** build, with one measured stop (§1.6, now answered by connectors unless ERC or DRC fails).
-**Status:** built on PR #152. §1.6 measured and passed (ERC and DRC at connectors, no finding, no waiver); the §7 clock stop does not fire. Three fresh adversarial passes (§8), every finding fixed or asked (§9); reduction pass (§11); gates green. Specification 9, topology 7, trace 11, `TIER2_MIN` 152.
+**Status:** built on PR #152. §1.6 measured and passed (ERC and DRC at connectors, no finding, no waiver); the §7 clock stop does not fire. Three fresh adversarial passes (§8), every finding fixed or asked (§9); reduction pass (§11); gates green. Specification 9, topology 7, trace 11, `TIER2_MIN` 154.
 
 The predictions in §1 are committed before any container run, any firmware build for a probe, and any baseline run. They are not edited afterwards; corrections go in later sections.
 
@@ -253,3 +253,14 @@ F6, F7, F10, F14 and F15 are questions or notes (§9). Each fix has a test that 
 - **P4 (`19b34f9`):** the CLI README's lines on the removed tag-warning matcher, reworded to the access log.
 - **Protected, kept (`belt-and-suspenders:`):** ir's `SerialBaudTolerance` (unreachable at 64 MHz, §5); replay's copies of `TOLERANCE`, `check_silicon`, the frame and its lengths, the tag rule; the twin's `PATTERN_TAIL`/`FRAME_LEN` with their agreement test; the generator's `usart_oracle`.
 - **Findings for the owner:** the historical FEEDBACK files mention tag warnings (records, kept); no other dead public serial helper (callers counted across ir, twin, chaos).
+
+## 12. CI and the shard refit
+
+- CI on `e0a51d1` (run 43752525127): every job green; the tools shards 14m55s to 19m20s.
+- CI on `dda613d` (run 43763615224, after merging `3303` and `4300d2`): every job green, but **shard 2 ran 21m47s**, so `ci/shard.sh`'s refit rule fired. The serial tier-2 tests this work order adds (Renode boots, many building a patched firmware) carried the 0.05 s default weight.
+- **The refit, by the rule:**
+  - A throwaway commit ran each test alone on CI (libtest `--report-time`, `RUSTC_BOOTSTRAP=1`, wall time per invocation; `7941a4b`, fixed for a name with no result line in `f28eb59`; run 43767871690, every shard green). 1877 of 1904 tests were timed by libtest; 23 KiCad-spawning tests carry their wall time, where the tool's output hid the result line. The throwaway was reverted (`86f2d4c`, `3b6b95d`), so `git diff dda613d -- ci .github` before the weights is empty.
+  - `ci/test-weights.tsv`: the 373 tests of 0.5 s or more, from that run.
+  - `ci/colocate.tsv`: the four blocks at their worst in-process wall time (libtest's `finished in`) over runs 43752525127 and 43763615224: `attribute_seeded` 873 s (was 720), `against_fab_tier2` 870 s (was an estimate of 900), `verify_47k_tier2` 279 s (was 305), `campaign_tier2` 46 s (was 55).
+  - `shard.sh assign` over the run's entries plans 1006 s on every shard; the guard holds (1899 names, 1904 occurrences).
+- `TIER2_MIN` 154: the `#[test]` count of the files `TIER2_RE` names (with_tools 30, twin_tier2 65, board_tier2 18, attribute_seeded 11, campaign_tier2 9, models_tier2 7, adversarial_1301_tools 6, and 2 each in adversarial_1302_tools, against_fab_tier2, verify_2k2_tier2 and verify_47k_tier2), `main`'s 129 with this work order's 25.
