@@ -535,6 +535,9 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     for name in plan.peripherals.keys() {
         let _ = writeln!(s, "        {},", name.to_ascii_lowercase());
     }
+    for n in plan.timers.keys() {
+        let _ = writeln!(s, "        tim{n},");
+    }
     s.push_str(
         "    }) = Board::take()\n    \
          else {\n        \
@@ -550,6 +553,9 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     for name in plan.peripherals.keys() {
         let f = name.to_ascii_lowercase();
         let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f});");
+    }
+    for n in plan.timers.keys() {
+        let _ = writeln!(s, "    let tim{n} = rcc.enable_tim{n}(&mut r, tim{n});");
     }
     for (pin, p) in &plan.pins {
         let f = pin_field(pin);
@@ -628,6 +634,29 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
             w = read.width,
             bus = read.bus,
             reg = read.register,
+        );
+    }
+    // The motor outputs (`AET-WO-4300a` §1.3), after the identity reads: the
+    // timers' values were solved for the reset clock, so without it the
+    // firmware stops here and never writes the boot word. Then each timer
+    // starts, in ascending number, and is never touched again.
+    if !plan.timers.is_empty() {
+        s.push_str(
+            "    // The timers' values were solved for the reset clock: without it, stop\n    \
+             // here, and the boot word is never written.\n    \
+             let Ok(clock) = rcc.reset_clock(&mut r) else {\n        \
+             loop {\n            \
+             core::hint::spin_loop();\n        \
+             }\n    \
+             };\n",
+        );
+    }
+    for (n, t) in &plan.timers {
+        let pins: Vec<String> = t.channels.values().map(|(pin, _)| pin_field(pin)).collect();
+        let _ = writeln!(
+            s,
+            "    let _tim{n} = tim{n}.start_outputs(&mut r, &clock, {});",
+            pins.join(", ")
         );
     }
     let _ = write!(

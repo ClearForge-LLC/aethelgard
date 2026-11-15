@@ -1,0 +1,12 @@
+error[E0599]: no method named `start_outputs` found for struct `Tim1<Running>` in the current scope
+  --> tests/ui/fail/timer_running_touched.rs:25:26
+   |
+25 |     let _again = running.start_outputs(&mut r, &clock, ch1, ch2, ch3, ch4);
+   |                          ^^^^^^^^^^^^^ method not found in `Tim1<Running>`
+   |
+  ::: tests/ui/fail/../motors-pwm/board.rs
+   |
+   | pub struct Tim1<S> {
+   | ------------------ method `start_outputs` not found for this struct
+   |
+   = note: the method was found for `Tim1<Clocked>`

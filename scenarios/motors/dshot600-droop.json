@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "name": "motors-dshot600-droop",
+  "base": "../../crates/aethelgard-cli/tests/fixtures/motors-dshot600.json",
+  "expect": "pass",
+  "expect_findings": [],
+  "expect_counts": {
+    "brownout_reset": 1,
+    "brownout_unrecovered": 0,
+    "rail_below_tolerance": 1
+  },
+  "overrides": [
+    {
+      "bus": "SENSORS",
+      "pull_up_ohms": 2200
+    },
+    {
+      "droop": {
+        "domain": "VDD_3V3",
+        "floor_millivolts": 2400,
+        "start_ns": 100000,
+        "fall_ns": 20000,
+        "hold_ns": 200000,
+        "rise_ns": 20000,
+        "source_milliohms": 500,
+        "load_milliamps": 100,
+        "bor_level": 3
+      }
+    }
+  ]
+}

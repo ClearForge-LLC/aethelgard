@@ -19,6 +19,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
+use aethelgard_ir::motor;
 use aethelgard_ir::speeds::{self, OutputSpeeds};
 use aethelgard_ir::{IrValidationError, PinTable, RESERVED_PINS, SolvedTopology};
 
@@ -49,7 +50,9 @@ pub enum BoardError {
         solved: u8,
         table: Option<u8>,
     },
-    #[error("peripheral `{peripheral}` is not one this generator emits (I2Cn, SPIn)")]
+    #[error(
+        "peripheral `{peripheral}` is not one this generator emits (I2Cn, SPIn, and TIMn on a motor output)"
+    )]
     UnsupportedPeripheral { peripheral: String },
     #[error(
         "device `{reference}` is on `{peripheral}`, which is not a peripheral of this board of its bus's kind"
@@ -502,6 +505,10 @@ enum Role {
     SpiMosi,
     SpiMiso,
     Output,
+    TimCh1,
+    TimCh2,
+    TimCh3,
+    TimCh4,
 }
 
 /// MODER values (RM0433 §11.4.1).
@@ -522,17 +529,30 @@ impl Role {
             Self::SpiMosi => "MOSI",
             Self::SpiMiso => "MISO",
             Self::Output => "OUT",
+            Self::TimCh1 => "CH1",
+            Self::TimCh2 => "CH2",
+            Self::TimCh3 => "CH3",
+            Self::TimCh4 => "CH4",
         }
+    }
+
+    /// The role of timer channel `k`, 1 to 4.
+    fn timer_channel(k: u32) -> Option<Self> {
+        [Self::TimCh1, Self::TimCh2, Self::TimCh3, Self::TimCh4]
+            .get(usize::try_from(k.checked_sub(1)?).ok()?)
+            .copied()
     }
 
     /// The generator's policy for a role: (mode, output type, pull). I2C is
     /// open-drain with no internal pull (the specification requires an
     /// external pull-up); SPI is push-pull; a GPIO output is push-pull and
-    /// starts high (an inactive chip select). The speed is [`Role::scope`]'s.
+    /// starts high (an inactive chip select); a timer channel is push-pull. The
+    /// speed is [`Role::scope`]'s.
     fn policy(self) -> (u32, u32, u32) {
         match self {
             Self::I2cScl | Self::I2cSda => (MODE_AF, 1, 0b00),
             Self::SpiSck | Self::SpiMosi | Self::SpiMiso => (MODE_AF, 0, 0b00),
+            Self::TimCh1 | Self::TimCh2 | Self::TimCh3 | Self::TimCh4 => (MODE_AF, 0, 0b00),
             Self::Output => (MODE_OUTPUT, 0, 0b00),
         }
     }
@@ -547,6 +567,7 @@ impl Role {
             Self::I2cScl | Self::I2cSda => Some(OPEN_DRAIN),
             Self::SpiMiso => Some(MASTER_INPUT),
             Self::Output => Some(SOFTWARE_DRIVEN),
+            Self::TimCh1 | Self::TimCh2 | Self::TimCh3 | Self::TimCh4 => Some(MOTOR_OUTPUT),
         }
     }
 }
@@ -557,6 +578,7 @@ pub const OPEN_DRAIN: &str = "open-drain I2C: its rise is the pull-up's, judged 
 pub const MASTER_INPUT: &str = "input in master mode: no electrical effect";
 pub const SOFTWARE_DRIVEN: &str =
     "software-driven GPIO output: firmware may toggle it at any rate, so the topology states none";
+pub const MOTOR_OUTPUT: &str = "motor output (a timer channel): it leaves the board, so its load is off-board, and no connector part declares it yet";
 
 /// What the output speed check found for one generated pin.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -714,6 +736,17 @@ struct Select {
     pin: String,
 }
 
+/// One timer's motor outputs (`AET-WO-4300a`): its solved channels, and the
+/// values its start writes. The outputs of one timer share `PSC` and `ARR`
+/// (`SolvedTopology::validate`).
+#[derive(Debug, Clone)]
+struct TimerPlan {
+    psc: u32,
+    arr: u32,
+    /// Channel, 1 to 4, to its pin and its `CCRk`.
+    channels: BTreeMap<u32, (String, u32)>,
+}
+
 /// What the topology asks for, checked against the pin table.
 #[derive(Debug, Clone)]
 struct Plan {
@@ -728,6 +761,10 @@ struct Plan {
     /// SPI peripheral name (`SPI1`) to its devices, in the specification's
     /// order. A peripheral with no device has no entry.
     selects: BTreeMap<String, Vec<Select>>,
+    /// Timer number to its plan, so in ascending number. Kept apart from
+    /// `peripherals`: a topology without motor outputs emits what it did
+    /// before `AET-WO-4300a`, byte for byte.
+    timers: BTreeMap<u32, TimerPlan>,
 }
 
 impl Plan {
@@ -801,6 +838,7 @@ impl Plan {
         }
         let mut pins: BTreeMap<String, PinPlan> = BTreeMap::new();
         let mut roles: BTreeMap<String, (Kind, BTreeMap<Role, Vec<String>>)> = BTreeMap::new();
+        let mut timers: BTreeMap<u32, TimerPlan> = BTreeMap::new();
         for (net, a) in &solved.assignments {
             let (port, index) = split_pin(&a.pin)?;
             let entry = table
@@ -817,20 +855,52 @@ impl Plan {
                     table: in_table,
                 });
             }
-            let kind = peripheral_kind(&a.peripheral)?;
-            let role_name = a
-                .signal
-                .strip_prefix(a.peripheral.as_str())
-                .and_then(|s| s.strip_prefix('_'));
-            let role = kind
-                .roles()
-                .iter()
-                .copied()
-                .find(|r| Some(r.signal()) == role_name)
-                .ok_or_else(|| BoardError::UnsupportedSignal {
-                    peripheral: a.peripheral.clone(),
-                    signal: a.signal.clone(),
-                })?;
+            // A motor output: `validate` holds every `TIM` assignment to one
+            // `TIMn_CHk` of its own timer, with a motor output on its net.
+            let channel = motor::timer_channel(&a.signal)
+                .filter(|(n, _)| a.peripheral == format!("TIM{n}"))
+                .and_then(|(n, k)| Some((n, k, Role::timer_channel(k)?)));
+            // The pin's role, and its peripheral's kind unless it is a timer's.
+            let (role, kind) = if let Some((n, k, role)) = channel {
+                let mismatch = || {
+                    BoardError::InvalidTopology(IrValidationError::MotorOutputMismatch {
+                        id: net.clone(),
+                    })
+                };
+                let m = solved.motor_outputs.get(net).ok_or_else(mismatch)?;
+                let t = timers.entry(n).or_insert_with(|| TimerPlan {
+                    psc: m.psc,
+                    arr: m.arr,
+                    channels: BTreeMap::new(),
+                });
+                if (t.psc, t.arr) != (m.psc, m.arr) {
+                    return Err(BoardError::InvalidTopology(
+                        IrValidationError::TimerShared {
+                            id: a.peripheral.clone(),
+                        },
+                    ));
+                }
+                if t.channels.insert(k, (a.pin.clone(), m.ccr)).is_some() {
+                    return Err(mismatch());
+                }
+                (role, None)
+            } else {
+                let kind = peripheral_kind(&a.peripheral)?;
+                let role_name = a
+                    .signal
+                    .strip_prefix(a.peripheral.as_str())
+                    .and_then(|s| s.strip_prefix('_'));
+                let role = kind
+                    .roles()
+                    .iter()
+                    .copied()
+                    .find(|r| Some(r.signal()) == role_name)
+                    .ok_or_else(|| BoardError::UnsupportedSignal {
+                        peripheral: a.peripheral.clone(),
+                        signal: a.signal.clone(),
+                    })?;
+                (role, Some(kind))
+            };
             let (speed, check) = choose_speed(speeds_table, solved, &a.pin, net, role)?;
             let plan = PinPlan {
                 port,
@@ -843,13 +913,15 @@ impl Plan {
                 check,
             };
             pins.insert(a.pin.clone(), plan);
-            roles
-                .entry(a.peripheral.clone())
-                .or_insert_with(|| (kind, BTreeMap::new()))
-                .1
-                .entry(role)
-                .or_default()
-                .push(a.pin.clone());
+            if let Some(kind) = kind {
+                roles
+                    .entry(a.peripheral.clone())
+                    .or_insert_with(|| (kind, BTreeMap::new()))
+                    .1
+                    .entry(role)
+                    .or_default()
+                    .push(a.pin.clone());
+            }
         }
         for (net, pin) in &solved.gpio {
             let (port, index) = split_pin(pin)?;
@@ -934,6 +1006,7 @@ impl Plan {
             peripherals,
             ports,
             selects,
+            timers,
         })
     }
 }
@@ -1050,6 +1123,58 @@ struct I2cFacts {
     nackcf: u32,
 }
 
+/// One timer instance: its base, clock gate and block size.
+#[derive(Debug, Clone)]
+struct TimerFacts {
+    base: u32,
+    gate: Gate,
+    words: u32,
+}
+
+/// The `TIM_TypeDef` registers (RM0433 Rev 9 §38.4) a timer's start writes,
+/// and the bit positions of its fields, all read from the header. Index
+/// `k - 1` of a per-channel array is channel `k`'s.
+#[derive(Debug, Clone)]
+struct TimFacts {
+    cr1: u32,
+    egr: u32,
+    /// `CCMR1` (channels 1 and 2) and `CCMR2` (3 and 4).
+    ccmr: [u32; 2],
+    ccer: u32,
+    psc: u32,
+    arr: u32,
+    ccr: [u32; 4],
+    bdtr: u32,
+    cen: u32,
+    arpe: u32,
+    ug: u32,
+    moe: u32,
+    /// `OCkM` and `OCkPE`, each in its channel's `CCMR`.
+    ocm: [u32; 4],
+    ocpe: [u32; 4],
+    /// `CCkE`.
+    cce: [u32; 4],
+}
+
+/// `PWM mode 1`, `OCkM = 110` (RM0433 Rev 9 §38.4.7): the channel is active
+/// while the counter is below `CCRk`. The fourth bit, `OCkM[3]`, stays 0.
+const PWM_MODE_1: u32 = 0b110;
+
+/// The registers [`Rcc::reset_clock`]-to-be reads and the fields each must
+/// hold at 0, their reset value (RM0433 Rev 9 §8.7.2, §8.7.7–8.7.9): register name,
+/// `RCC_TypeDef` offset, and each field's name, position and width.
+type ClockFacts = Vec<(&'static str, u32, Vec<(&'static str, u32, u32)>)>;
+
+/// The reset clock's fields, by register: `CR` `HSIDIV` (HSI undivided, so
+/// 64 MHz; `AET-WO-4300a` Q2, ruled), `CFGR` `SWS` (HSI) and `TIMPRE`,
+/// `D1CFGR` `D1CPRE`, `D1PPRE` and `HPRE`, `D2CFGR` `D2PPRE1` and `D2PPRE2`.
+const RESET_CLOCK_FIELDS: [(&str, &[&str]); 4] = [
+    ("CR", &["HSIDIV"]),
+    ("CFGR", &["SWS", "TIMPRE"]),
+    ("D1CFGR", &["D1CPRE", "D1PPRE", "HPRE"]),
+    ("D2CFGR", &["D2PPRE1", "D2PPRE2"]),
+];
+
 #[derive(Debug, Clone)]
 struct Facts {
     rcc_base: u32,
@@ -1058,6 +1183,58 @@ struct Facts {
     ports: BTreeMap<char, PortFacts>,
     pins: BTreeMap<String, PinFacts>,
     peripherals: BTreeMap<String, PeriphFacts>,
+    /// Timer number to its instance facts; empty without motor outputs, and
+    /// then `tim` and `clock` are `None`: nothing timer-shaped is read.
+    timers: BTreeMap<u32, TimerFacts>,
+    tim: Option<TimFacts>,
+    clock: Option<ClockFacts>,
+}
+
+fn tim_facts(f: &RegisterFacts) -> Result<TimFacts, BoardError> {
+    let t = f.layout("TIM")?;
+    let each = |name: &dyn Fn(usize) -> String| -> Result<[u32; 4], BoardError> {
+        let mut out = [0; 4];
+        for (i, slot) in out.iter_mut().enumerate() {
+            *slot = f.position(&name(i))?;
+        }
+        Ok(out)
+    };
+    let ccmr = |i: usize| if i < 2 { 1 } else { 2 };
+    Ok(TimFacts {
+        cr1: t.offset("CR1", 0)?,
+        egr: t.offset("EGR", 0)?,
+        ccmr: [t.offset("CCMR1", 0)?, t.offset("CCMR2", 0)?],
+        ccer: t.offset("CCER", 0)?,
+        psc: t.offset("PSC", 0)?,
+        arr: t.offset("ARR", 0)?,
+        ccr: [
+            t.offset("CCR1", 0)?,
+            t.offset("CCR2", 0)?,
+            t.offset("CCR3", 0)?,
+            t.offset("CCR4", 0)?,
+        ],
+        bdtr: t.offset("BDTR", 0)?,
+        cen: f.position("TIM_CR1_CEN_Pos")?,
+        arpe: f.position("TIM_CR1_ARPE_Pos")?,
+        ug: f.position("TIM_EGR_UG_Pos")?,
+        moe: f.position("TIM_BDTR_MOE_Pos")?,
+        ocm: each(&|i| format!("TIM_CCMR{}_OC{}M_Pos", ccmr(i), i + 1))?,
+        ocpe: each(&|i| format!("TIM_CCMR{}_OC{}PE_Pos", ccmr(i), i + 1))?,
+        cce: each(&|i| format!("TIM_CCER_CC{}E_Pos", i + 1))?,
+    })
+}
+
+fn clock_facts(f: &RegisterFacts, rcc: &cmsis::Layout) -> Result<ClockFacts, BoardError> {
+    let mut out = Vec::new();
+    for (register, fields) in RESET_CLOCK_FIELDS {
+        let mut read = Vec::new();
+        for field in fields {
+            let (pos, width) = f.field(&format!("RCC_{register}_{field}"))?;
+            read.push((*field, pos, width));
+        }
+        out.push((register, rcc.offset(register, 0)?, read));
+    }
+    Ok(out)
 }
 
 fn spi_facts(f: &RegisterFacts, layout: &cmsis::Layout) -> Result<SpiFacts, BoardError> {
@@ -1216,6 +1393,24 @@ impl Facts {
                 },
             );
         }
+        let mut timers = BTreeMap::new();
+        let (mut tim, mut clock) = (None, None);
+        if !plan.timers.is_empty() {
+            let words = f.layout("TIM")?.size / 4;
+            for n in plan.timers.keys() {
+                let name = format!("TIM{n}");
+                timers.insert(
+                    *n,
+                    TimerFacts {
+                        base: f.base(&name)?,
+                        gate: gate(f, &rcc, &name)?,
+                        words,
+                    },
+                );
+            }
+            tim = Some(tim_facts(f)?);
+            clock = Some(clock_facts(f, &rcc)?);
+        }
         Ok(Facts {
             rcc_base: f.base("RCC")?,
             rcc_words: rcc.size / 4,
@@ -1223,6 +1418,9 @@ impl Facts {
             ports,
             pins,
             peripherals,
+            timers,
+            tim,
+            clock,
         })
     }
 }
@@ -1364,6 +1562,9 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     for name in plan.peripherals.keys() {
         let _ = writeln!(w, "    {},", type_name(name));
     }
+    for n in plan.timers.keys() {
+        let _ = writeln!(w, "    Tim{n},");
+    }
     let _ = writeln!(
         w,
         "}}\n\
@@ -1439,6 +1640,9 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             facts.peripherals[name].base
         );
     }
+    for (n, tf) in &facts.timers {
+        let _ = writeln!(w, "            Block::Tim{n} => {:#010x},", tf.base);
+    }
     let _ = writeln!(
         w,
         "        }}\n    \
@@ -1476,6 +1680,25 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          pub struct Clocked;\n\
          pub struct Enabled<S>(PhantomData<S>);\n"
     );
+    if !plan.timers.is_empty() {
+        let _ = writeln!(
+            w,
+            "/// A timer whose outputs run. It has no method: after `CEN`, nothing reads or\n\
+             /// writes the timer again (`AET-WO-4300a`: in Renode, a core polling a running\n\
+             /// timer collapses its edges onto one timestamp).\n\
+             pub struct Running;\n\
+             \n\
+             /// The clock tree is the reset clock the timers' values were solved for: HSI\n\
+             /// at 64 MHz, every prescaler 1, `TIMPRE` 0. Only [`Rcc::reset_clock`] makes one.\n\
+             pub struct ResetClock {{\n    \
+                 _private: (),\n\
+             }}\n\
+             \n\
+             /// [`Rcc::reset_clock`] read a field away from its reset value.\n\
+             #[derive(Clone, Copy, PartialEq, Eq, Debug)]\n\
+             pub struct NotResetClock;\n"
+        );
+    }
     // Speeds.
     for (name, (hz, admitted)) in speeds {
         let note = format!(
@@ -1794,6 +2017,11 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             emit_transfer(w, name, i, pf.txdr);
         }
     }
+    if let Some(tf) = &facts.tim {
+        for (n, t) in &plan.timers {
+            emit_timer_start(w, *n, t, plan, tf);
+        }
+    }
     // RCC.
     let _ = writeln!(
         w,
@@ -1813,6 +2041,12 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                 .peripherals
                 .iter()
                 .map(|(name, pf)| (name.to_ascii_lowercase(), type_name(name), &pf.gate)),
+        )
+        .chain(
+            facts
+                .timers
+                .iter()
+                .map(|(n, tf)| (format!("tim{n}"), format!("Tim{n}"), &tf.gate)),
         );
     let mut first = true;
     for (field, t, g) in gates {
@@ -1832,6 +2066,9 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             off = g.offset,
             mask = 1u32 << g.bit,
         );
+    }
+    if let Some(clock) = &facts.clock {
+        emit_reset_clock(w, clock);
     }
     let _ = writeln!(
         w,
@@ -1856,6 +2093,9 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             name.to_ascii_lowercase(),
             type_name(name)
         );
+    }
+    for n in plan.timers.keys() {
+        let _ = writeln!(w, "    pub tim{n}: Tim{n}<Gated>,");
     }
     let _ = writeln!(
         w,
@@ -1889,8 +2129,149 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             type_name(name)
         );
     }
+    for n in plan.timers.keys() {
+        let _ = writeln!(w, "            tim{n}: Tim{n} {{ _state: PhantomData }},");
+    }
     let _ = writeln!(w, "        }})\n    }}\n}}");
     s
+}
+
+/// One timer's typestate and its start (`AET-WO-4300a` §1.3): the solved
+/// values, every register written in full and none read, in the order `PSC`,
+/// `ARR`, each used channel's `CCRk`, `CCMR1`, `CCMR2`, `CCER`, `BDTR` (only
+/// on a timer with a main output enable), `EGR`, then `CR1` last.
+fn emit_timer_start(w: &mut String, n: u32, t: &TimerPlan, plan: &Plan, tf: &TimFacts) {
+    let mut writes: Vec<(&str, u32, u32)> = vec![("PSC", tf.psc, t.psc), ("ARR", tf.arr, t.arr)];
+    let mut ccmr = [0u32; 2];
+    let mut ccer = 0u32;
+    for (&k, (_, ccr)) in &t.channels {
+        let i = (k - 1) as usize;
+        writes.push((["CCR1", "CCR2", "CCR3", "CCR4"][i], tf.ccr[i], *ccr));
+        ccmr[i / 2] |= (PWM_MODE_1 << tf.ocm[i]) | (1 << tf.ocpe[i]);
+        ccer |= 1 << tf.cce[i];
+    }
+    writes.push(("CCMR1", tf.ccmr[0], ccmr[0]));
+    writes.push(("CCMR2", tf.ccmr[1], ccmr[1]));
+    writes.push(("CCER", tf.ccer, ccer));
+    if motor::has_main_output_enable(n) {
+        writes.push(("BDTR", tf.bdtr, 1 << tf.moe));
+    }
+    writes.push(("EGR", tf.egr, 1 << tf.ug));
+    writes.push(("CR1", tf.cr1, (1 << tf.arpe) | (1 << tf.cen)));
+    let params: Vec<String> = t
+        .channels
+        .iter()
+        .map(|(k, (pin, _))| format!("_ch{k}: {pin}<{}>", pin_state(&plan.pins[pin])))
+        .collect();
+    let _ = writeln!(
+        w,
+        "/// `TIM{n}`. Its outputs start only from `Clocked`, only on its solved channel\n\
+         /// pins, each in its solved function, and only with a [`ResetClock`].\n\
+         pub struct Tim{n}<S> {{\n    \
+             _state: PhantomData<S>,\n\
+         }}\n\
+         \n\
+         impl Tim{n}<Clocked> {{\n    \
+             /// PWM mode 1 on each solved channel at its solved values, every register\n    \
+             /// written in full and none read, `CR1` last. The result has no method.\n    \
+             pub fn start_outputs<R: Registers>(\n        \
+                 self,\n        \
+                 r: &mut R,\n        \
+                 _clock: &ResetClock,\n        \
+                 {params},\n    \
+             ) -> Tim{n}<Running> {{",
+        params = params.join(",\n        "),
+    );
+    for (name, offset, value) in writes {
+        let _ = writeln!(
+            w,
+            "        r.write(TOKEN, Block::Tim{n}, {offset:#04x}, {value:#010x}); // {name}"
+        );
+    }
+    let _ = writeln!(w, "        Tim{n} {{ _state: PhantomData }}\n    }}\n}}\n");
+}
+
+/// [`Rcc`]'s `reset_clock`: the four registers read, and each one's fields
+/// held at 0 as one mask.
+fn emit_reset_clock(w: &mut String, clock: &ClockFacts) {
+    let reads: Vec<String> = clock
+        .iter()
+        .map(|(register, offset, _)| {
+            format!(
+                "        let {} = r.read(TOKEN, Block::Rcc, {offset:#05x});",
+                register.to_ascii_lowercase()
+            )
+        })
+        .collect();
+    let tests: Vec<String> = clock
+        .iter()
+        .map(|(register, _, fields)| {
+            let mask = fields.iter().fold(0u32, |m, (_, pos, width)| {
+                m | (((1u32 << width) - 1) << pos)
+            });
+            format!("{} & {mask:#010x} == 0", register.to_ascii_lowercase())
+        })
+        .collect();
+    let named: Vec<String> = clock
+        .iter()
+        .map(|(register, _, fields)| {
+            let names: Vec<String> = fields.iter().map(|(f, _, _)| format!("`{f}`")).collect();
+            format!("    /// - `RCC_{register}`: {}.", names.join(", "))
+        })
+        .collect();
+    let _ = writeln!(
+        w,
+        "\n    /// A [`ResetClock`], when each of these fields holds 0, its reset value\n    \
+         /// (RM0433 Rev 9 §8.7.2, §8.7.7–8.7.9). Reads the four registers and writes nothing.\n\
+         {named}\n    \
+         pub fn reset_clock<R: Registers>(&self, r: &mut R) -> Result<ResetClock, NotResetClock> {{\n\
+         {reads}\n        \
+             if {tests} {{\n            \
+                 Ok(ResetClock {{ _private: () }})\n        \
+             }} else {{\n            \
+                 Err(NotResetClock)\n        \
+             }}\n    \
+         }}",
+        named = named.join("\n"),
+        reads = reads.join("\n"),
+        tests = tests.join(" && "),
+    );
+}
+
+/// The oracle's writes of one timer's start, in order: (register, offset,
+/// value), from the plan and the header's positions.
+///
+/// belt-and-suspenders: this restates `emit_timer_start`'s values and order on
+/// purpose. The oracle must not read back what the crate under proof does
+/// (`INV-07`), so a slip in one copy is caught by the other.
+fn timer_oracle(n: u32, t: &TimerPlan, tf: &TimFacts) -> Vec<(String, u32, u32)> {
+    let mut out = vec![
+        ("PSC".to_owned(), tf.psc, t.psc),
+        ("ARR".to_owned(), tf.arr, t.arr),
+    ];
+    for (k, (_, ccr)) in &t.channels {
+        out.push((format!("CCR{k}"), tf.ccr[(k - 1) as usize], *ccr));
+    }
+    for (m, channels) in [(1u32, [1u32, 2]), (2, [3, 4])] {
+        let mut value = 0;
+        for k in channels.into_iter().filter(|k| t.channels.contains_key(k)) {
+            let i = (k - 1) as usize;
+            value |= PWM_MODE_1 << tf.ocm[i];
+            value |= 1 << tf.ocpe[i];
+        }
+        out.push((format!("CCMR{m}"), tf.ccmr[(m - 1) as usize], value));
+    }
+    let ccer = t
+        .channels
+        .keys()
+        .fold(0, |v, k| v | (1 << tf.cce[(k - 1) as usize]));
+    out.push(("CCER".to_owned(), tf.ccer, ccer));
+    if motor::has_main_output_enable(n) {
+        out.push(("BDTR".to_owned(), tf.bdtr, 1 << tf.moe));
+    }
+    out.push(("EGR".to_owned(), tf.egr, 1 << tf.ug));
+    out.push(("CR1".to_owned(), tf.cr1, (1 << tf.cen) | (1 << tf.arpe)));
+    out
 }
 
 /// A field's mask, as the oracle computes it.
@@ -1938,7 +2319,21 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             Some(&pf.gate),
         ));
     }
-    let actions = plan.ports.len() + 2 * plan.peripherals.len() + plan.pins.len();
+    for (n, tf) in &facts.timers {
+        blocks.push((
+            format!("Tim{n}"),
+            format!("tim{n}"),
+            tf.words,
+            Some(&tf.gate),
+        ));
+    }
+    // Each timer is enabled and started; the reset clock is read once.
+    let timer_actions = if plan.timers.is_empty() {
+        0
+    } else {
+        2 * plan.timers.len() + 1
+    };
+    let actions = plan.ports.len() + 2 * plan.peripherals.len() + plan.pins.len() + timer_actions;
     let unwind = blocks
         .iter()
         .map(|b| b.2 as usize)
@@ -2010,11 +2405,22 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          \n\
          impl Registers for Image {{\n    \
              fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {{\n        \
-                 self.clocked(block);\n        \
-                 *self.slot(block, offset)\n    \
-             }}\n    \
-             fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n        \
                  self.clocked(block);"
+    );
+    // Nothing reads a timer: its start writes only, and after `CEN` nothing
+    // touches it (`AET-WO-4300a` §1.3).
+    for n in plan.timers.keys() {
+        let _ = writeln!(
+            w,
+            "        kani::assert(block != Block::Tim{n}, \"TIM{n} was read\");"
+        );
+    }
+    let _ = writeln!(
+        w,
+        "        *self.slot(block, offset)\n    \
+         }}\n    \
+         fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n        \
+             self.clocked(block);"
     );
     for (name, pf) in &facts.peripherals {
         let t = type_name(name);
@@ -2260,6 +2666,7 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         .values()
         .map(|p| &p.gate)
         .chain(facts.peripherals.values().map(|p| &p.gate))
+        .chain(facts.timers.values().map(|t| &t.gate))
     {
         *gates.entry(gate.offset / 4).or_default() |= 1u32 << gate.bit;
     }
@@ -2344,6 +2751,28 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             }
         }
     }
+    // Each timer: every register its start writes holds the solved value, and
+    // every other word is unchanged.
+    if let Some(tf) = &facts.tim {
+        for (n, t) in &plan.timers {
+            let writes = timer_oracle(*n, t, tf);
+            for (name, offset, value) in &writes {
+                let _ = writeln!(
+                    w,
+                    "    kani::assert(after.tim{n}[{i}] == {value:#010x}, \"TIM{n} {name} is not the solved value\");",
+                    i = offset / 4
+                );
+            }
+            for i in 0..facts.timers[n].words {
+                if !writes.iter().any(|(_, offset, _)| *offset == i * 4) {
+                    let _ = writeln!(
+                        w,
+                        "    kani::assert(after.tim{n}[{i}] == before.tim{n}[{i}], \"TIM{n} word {i} changed\");"
+                    );
+                }
+            }
+        }
+    }
     let _ = writeln!(w, "}}\n");
 
     // The scheduler.
@@ -2395,6 +2824,15 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     for pin in plan.pins.keys() {
         let f = pin_field(pin);
         let _ = writeln!(w, "    let mut {f} = None;\n    let mut {f}_done = None;");
+    }
+    if !plan.timers.is_empty() {
+        let _ = writeln!(w, "    let mut clock = None;");
+    }
+    for n in plan.timers.keys() {
+        let _ = writeln!(
+            w,
+            "    let mut tim{n} = Some(board.tim{n});\n    let mut tim{n}_clocked = None;\n    let mut tim{n}_done = false;"
+        );
     }
     let _ = writeln!(
         w,
@@ -2575,6 +3013,59 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let _ = writeln!(w, "                {f}_done = true;\n            }}");
         a += 1;
     }
+    // The timers (`AET-WO-4300a`): the reset clock read once, each timer
+    // clocked, then started from its own configured pins and the token. The
+    // schedule runs on the reset clock; `reset_clock_is_ok_exactly_at_reset`
+    // proves the check itself.
+    if !plan.timers.is_empty() {
+        let _ = writeln!(
+            w,
+            "            {a} => {{\n                \
+                 kani::assume(clock.is_none());\n                \
+                 let read = rcc.reset_clock(&mut img);\n                \
+                 kani::assume(read.is_ok());\n                \
+                 clock = read.ok();\n                \
+                 kani::cover!(true, \"the reset clock was read\");\n            \
+             }}"
+        );
+        a += 1;
+    }
+    for n in plan.timers.keys() {
+        let _ = writeln!(
+            w,
+            "            {a} => {{\n                \
+                 kani::assume(tim{n}.is_some());\n                \
+                 tim{n}_clocked = Some(rcc.enable_tim{n}(&mut img, tim{n}.take().unwrap()));\n            \
+             }}"
+        );
+        a += 1;
+    }
+    for (n, t) in &plan.timers {
+        let pins: Vec<String> = t.channels.values().map(|(p, _)| pin_field(p)).collect();
+        let ready: Vec<String> = pins
+            .iter()
+            .map(|p| format!(" && {p}_done.is_some()"))
+            .collect();
+        let args: Vec<String> = pins
+            .iter()
+            .map(|p| format!(", {p}_done.take().unwrap()"))
+            .collect();
+        let _ = writeln!(
+            w,
+            "            {a} => {{\n                \
+                 kani::assume(tim{n}_clocked.is_some() && clock.is_some(){ready});\n                \
+                 let _running = tim{n}_clocked\n                    \
+                     .take()\n                    \
+                     .unwrap()\n                    \
+                     .start_outputs(&mut img, clock.as_ref().unwrap(){args});\n                \
+                 kani::cover!(true, \"TIM{n} started\");\n                \
+                 tim{n}_done = true;\n            \
+             }}",
+            ready = ready.concat(),
+            args = args.concat(),
+        );
+        a += 1;
+    }
     let _ = writeln!(
         w,
         "            _ => kani::assume(false),\n        }}\n    }}"
@@ -2584,6 +3075,12 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let _ = writeln!(
             w,
             "    kani::assert({f}_done, \"the schedule did not start {name}\");"
+        );
+    }
+    for n in plan.timers.keys() {
+        let _ = writeln!(
+            w,
+            "    kani::assert(tim{n}_done, \"the schedule did not start TIM{n}\");"
         );
     }
     // A chip select is configured before its bus starts, which takes it.
@@ -2611,7 +3108,214 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     );
     emit_transfer_proofs(w, plan, facts, speeds);
     emit_spi_transfer_proofs(w, plan, facts);
+    emit_timer_proofs(w, plan, facts);
     s
+}
+
+/// The proofs of the motor outputs (`AET-WO-4300a` §1.3), when the topology
+/// has a timer: that `reset_clock` is `Ok` exactly when every field it checks
+/// holds its reset value, reading only its four registers and writing none;
+/// and, for each timer, that its start writes exactly the solved registers and
+/// values in order, reading none. Every expected value is the oracle's
+/// ([`timer_oracle`], and the fields' positions and widths), never read from
+/// `board.rs`.
+fn emit_timer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
+    let (Some(tf), Some(clock)) = (&facts.tim, &facts.clock) else {
+        return;
+    };
+    let words: Vec<String> = clock
+        .iter()
+        .map(|(r, _, _)| r.to_ascii_lowercase())
+        .collect();
+    let arms: Vec<String> = clock
+        .iter()
+        .enumerate()
+        .map(|(i, (r, offset, _))| {
+            format!(
+                "if offset == {offset:#05x} {{\n            \
+                     kani::assert(!self.reads[{i}], \"reset_clock read {r} twice\");\n            \
+                     self.reads[{i}] = true;\n            \
+                     self.{f}\n        \
+                 }} else ",
+                f = r.to_ascii_lowercase()
+            )
+        })
+        .collect();
+    let reset: Vec<String> = clock
+        .iter()
+        .flat_map(|(r, _, fields)| {
+            let f = r.to_ascii_lowercase();
+            fields.iter().map(move |(_, pos, width)| {
+                let field = if *pos == 0 {
+                    f.clone()
+                } else {
+                    format!("({f} >> {pos})")
+                };
+                format!("{field} & {:#x} == 0", oracle_mask(*width, 0))
+            })
+        })
+        .collect();
+    let n_reads = clock.len();
+    let _ = writeln!(
+        w,
+        "\n\
+         /// The registers `reset_clock` reads, as any words.\n\
+         struct ClockSpy {{\n    \
+             {fields},\n    \
+             reads: [bool; {n_reads}],\n\
+         }}\n\
+         \n\
+         impl sealed::Sealed for ClockSpy {{}}\n\
+         \n\
+         impl Registers for ClockSpy {{\n    \
+             fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {{\n        \
+                 kani::assert(block == Block::Rcc, \"reset_clock read outside RCC\");\n        \
+                 {arms}{{\n            \
+                     kani::assert(false, \"reset_clock read a register it does not check\");\n            \
+                     0\n        \
+                 }}\n    \
+             }}\n    \
+             fn write(&mut self, _: sealed::Token, _: Block, _: usize, _: u32) {{\n        \
+                 kani::assert(false, \"reset_clock wrote a register\");\n    \
+             }}\n    \
+             fn read8(&mut self, _: sealed::Token, _: Block, _: usize) -> u8 {{\n        \
+                 kani::assert(false, \"reset_clock made a byte access\");\n        \
+                 0\n    \
+             }}\n    \
+             fn write8(&mut self, _: sealed::Token, _: Block, _: usize, _: u8) {{\n        \
+                 kani::assert(false, \"reset_clock made a byte access\");\n    \
+             }}\n\
+         }}\n\
+         \n\
+         /// `reset_clock` is `Ok` exactly when every field it checks is 0, its reset\n\
+         /// value, for any words in its registers; it reads each register once and\n\
+         /// writes none.\n\
+         #[kani::proof]\n\
+         fn reset_clock_is_ok_exactly_at_reset() {{\n    \
+             let ({words}) = ({anys});\n    \
+             let mut spy = ClockSpy {{ {inits}, reads: [false; {n_reads}] }};\n    \
+             let board = Board::take().unwrap();\n    \
+             let result = board.rcc.reset_clock(&mut spy);\n    \
+             let reset = {reset};\n    \
+             kani::assert(result.is_ok() == reset, \"reset_clock is not Ok exactly at the reset clock\");\n    \
+             kani::assert({all_read}, \"reset_clock did not read every register it checks\");\n    \
+             kani::cover!(result.is_ok(), \"the reset clock is admitted\");\n    \
+             kani::cover!(result.is_err(), \"another clock is refused\");\n\
+         }}",
+        fields = words
+            .iter()
+            .map(|f| format!("{f}: u32"))
+            .collect::<Vec<_>>()
+            .join(",\n    "),
+        arms = arms.concat(),
+        words = words.join(", "),
+        anys = vec!["kani::any()"; n_reads].join(", "),
+        inits = words.join(", "),
+        reset = reset.join("\n        && "),
+        all_read = (0..n_reads)
+            .map(|i| format!("spy.reads[{i}]"))
+            .collect::<Vec<_>>()
+            .join(" && "),
+    );
+    let mut blocks: Vec<String> = vec!["rcc".into()];
+    blocks.extend(plan.ports.iter().map(|p| port_field(*p)));
+    blocks.extend(plan.peripherals.keys().map(|n| n.to_ascii_lowercase()));
+    blocks.extend(plan.timers.keys().map(|n| format!("tim{n}")));
+    for (n, t) in &plan.timers {
+        let writes = timer_oracle(*n, t, tf);
+        let count = writes.len();
+        let pins: Vec<&String> = t.channels.values().map(|(p, _)| p).collect();
+        let ports: BTreeSet<char> = pins.iter().map(|p| plan.pins[*p].port).collect();
+        let mut setup = String::new();
+        for b in &blocks {
+            let _ = writeln!(setup, "        {b}: kani::any(),");
+        }
+        let _ = writeln!(
+            setup,
+            "    }};\n    \
+             let board = Board::take().unwrap();\n    \
+             let mut rcc = board.rcc;"
+        );
+        for port in &ports {
+            let f = port_field(*port);
+            let _ = writeln!(
+                setup,
+                "    let {f} = rcc.enable_{f}(&mut img, board.{f}).split();"
+            );
+        }
+        for pin in &pins {
+            let _ = writeln!(
+                setup,
+                "    let {f} = {port}.{f}.{method}(&mut img);",
+                f = pin_field(pin),
+                port = port_field(plan.pins[*pin].port),
+                method = method(&plan.pins[*pin])
+            );
+        }
+        let expect: Vec<String> = writes
+            .iter()
+            .enumerate()
+            .map(|(i, (name, offset, value))| {
+                format!(
+                    "    kani::assert(spy.writes[{i}] == (Block::Tim{n}, {offset:#04x}, {value:#010x}), \"TIM{n} write {k} is not {name} = {value}\");",
+                    k = i + 1
+                )
+            })
+            .collect();
+        let args: Vec<String> = pins.iter().map(|p| pin_field(p)).collect();
+        let _ = writeln!(
+            w,
+            "\n\
+             /// TIM{n}'s start as the list of its writes, in order.\n\
+             struct Tim{n}Spy {{\n    \
+                 writes: [(Block, usize, u32); {count}],\n    \
+                 n: usize,\n\
+             }}\n\
+             \n\
+             impl sealed::Sealed for Tim{n}Spy {{}}\n\
+             \n\
+             impl Registers for Tim{n}Spy {{\n    \
+                 fn read(&mut self, _: sealed::Token, _: Block, _: usize) -> u32 {{\n        \
+                     kani::assert(false, \"TIM{n}'s start read a register\");\n        \
+                     0\n    \
+                 }}\n    \
+                 fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n        \
+                     kani::assert(self.n < {count}, \"TIM{n}'s start wrote more than {count} registers\");\n        \
+                     if self.n < {count} {{\n            \
+                         self.writes[self.n] = (block, offset, value);\n        \
+                     }}\n        \
+                     self.n += 1;\n    \
+                 }}\n    \
+                 fn read8(&mut self, _: sealed::Token, _: Block, _: usize) -> u8 {{\n        \
+                     kani::assert(false, \"TIM{n}'s start made a byte access\");\n        \
+                     0\n    \
+                 }}\n    \
+                 fn write8(&mut self, _: sealed::Token, _: Block, _: usize, _: u8) {{\n        \
+                     kani::assert(false, \"TIM{n}'s start made a byte access\");\n    \
+                 }}\n\
+             }}\n\
+             \n\
+             /// From its configured pins, its clock and the reset clock's token, TIM{n}'s\n\
+             /// start writes exactly the solved registers and values, in order, and\n\
+             /// reads none.\n\
+             #[kani::proof]\n\
+             fn tim{n}_start_writes_the_solved_values() {{\n    \
+                 let mut img = Image {{\n\
+             {setup}    \
+                 let clock = rcc.reset_clock(&mut img);\n    \
+                 kani::assume(clock.is_ok());\n    \
+                 let clock = clock.unwrap();\n    \
+                 let tim = rcc.enable_tim{n}(&mut img, board.tim{n});\n    \
+                 let mut spy = Tim{n}Spy {{ writes: [(Block::Rcc, 0, 0); {count}], n: 0 }};\n    \
+                 let _running = tim.start_outputs(&mut spy, &clock, {args});\n    \
+                 kani::assert(spy.n == {count}, \"TIM{n}'s start did not make exactly {count} writes\");\n\
+             {expect}\n    \
+                 kani::cover!(true, \"TIM{n} started\");\n\
+             }}",
+            args = args.join(", "),
+            expect = expect.join("\n"),
+        );
+    }
 }
 
 /// The proof over each SPI peripheral's transfer (`AET-WO-4200`), on the
@@ -2771,6 +3475,7 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
         let mut blocks: Vec<String> = vec!["rcc".into()];
         blocks.extend(plan.ports.iter().map(|p| port_field(*p)));
         blocks.extend(plan.peripherals.keys().map(|n| n.to_ascii_lowercase()));
+        blocks.extend(plan.timers.keys().map(|n| format!("tim{n}")));
         let pins: Vec<&String> = p.pins.values().collect();
         let select_pins: Vec<&String> = selects.iter().map(|s| &s.pin).collect();
         let ports: BTreeSet<char> = pins
@@ -2916,6 +3621,7 @@ fn emit_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts, speeds: &Spe
         let mut blocks: Vec<String> = vec!["rcc".into()];
         blocks.extend(plan.ports.iter().map(|p| port_field(*p)));
         blocks.extend(plan.peripherals.keys().map(|n| n.to_ascii_lowercase()));
+        blocks.extend(plan.timers.keys().map(|n| format!("tim{n}")));
         let _ = writeln!(
             w,
             "\n\
@@ -3085,7 +3791,7 @@ mod tests {
     /// Sentinel-01's solved topology, written out.
     fn solved() -> SolvedTopology {
         SolvedTopology {
-            schema_version: 4,
+            schema_version: aethelgard_ir::SOLVED_SCHEMA_VERSION,
             specification_sha256: "0".repeat(64),
             assignments: BTreeMap::from([
                 ("SCL".into(), assign("PB6", "I2C1", "I2C1_SCL", 4)),
@@ -3098,6 +3804,8 @@ mod tests {
             i2c_devices: BTreeMap::new(),
             spi_devices: BTreeMap::new(),
             spi_lines: BTreeMap::new(),
+            clock: aethelgard_ir::SolvedClock::reset(),
+            motor_outputs: BTreeMap::new(),
         }
     }
 

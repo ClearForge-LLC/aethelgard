@@ -30,9 +30,12 @@ use sha2::{Digest, Sha256};
 /// specification's sha256: with the old hash put back, each output's digest is
 /// the old one exactly (`ac9c9299…` and `a8606bf8…` before; FEEDBACK); and
 /// re-taken in `AET-WO-1308` (version 5, `net_classes` and `diff_pairs`) the same
-/// way (`26771d90…` and `6e4af649…` before).
-const REFERENCE_DIGEST: &str = "8100aadf717d99a1a004808be856509482f797ac8f6c7653944926c003cd29fd";
-const STRESS_DIGEST: &str = "798ae634e9de56232228f8a1289d0e4e8816a2b8aa095ce5f0dd41ee2cea9fbf";
+/// way (`26771d90…` and `6e4af649…` before); and re-taken in `AET-WO-4300a`,
+/// whose specification version 6 (`motor_outputs`, `mcu.hse_hz`) and solved
+/// version 5 (`clock`, `motor_outputs`) moved them (`8100aadf…` and
+/// `798ae634…` before).
+const REFERENCE_DIGEST: &str = "e61864b97aba69bb3865e060c0bd186ab6c6295d50ba0c9fb869aeb046ab413e";
+const STRESS_DIGEST: &str = "33b079d1071240b656ac24091f0a4c61befb15c0df4e3064af65a085f7f10721";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -202,7 +205,7 @@ fn the_reference_solves_to_the_expected_pins() {
     // Both lines declare 300 ns: Fast-mode, 400 kHz, the bus's own speed.
     assert_eq!(t.i2c_ceilings, [("SENSORS".to_owned(), 400_000)].into());
     assert_eq!(t.i2c_speeds, [("SENSORS".to_owned(), 400_000)].into());
-    assert_eq!(t.schema_version, 4);
+    assert_eq!(t.schema_version, 5);
 }
 
 #[test]
@@ -268,9 +271,9 @@ fn each_refusal_before_the_search_names_its_cause() {
             json!(["spi_devices[0].cs"]),
         ),
         (
-            |d| d["spi_buses"][0]["sck"]["pin"] = "PH0".into(),
+            |d| d["spi_buses"][0]["sck"]["pin"] = "PC14".into(),
             "ReservedPin",
-            json!("PH0"),
+            json!("PC14"),
             json!(["spi_buses[0].sck"]),
         ),
         (

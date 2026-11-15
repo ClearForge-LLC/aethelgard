@@ -67,6 +67,13 @@ pub enum Rule {
     /// other than the read's; or the record claims the read and nothing was
     /// logged or routed (`AET-WO-4200` D4).
     S3,
+    /// The symptom's motor output was the firmware's doing (`AET-WO-4300a`):
+    /// a register field the output owns read back other than the solved
+    /// topology (its pin's mode or alternate function, its port's or timer's
+    /// clock gate, or one of its timer's registers). The twin models nothing
+    /// electrical on a timer's pin, so no rule attributes a motor symptom to
+    /// the electrical half.
+    S4,
     /// The run passed.
     N1,
     /// A failing finding has no archived event that shows it, or an event
@@ -86,12 +93,13 @@ pub enum Rule {
 
 impl Rule {
     /// Every rule, in order.
-    pub const ALL: [Rule; 11] = [
+    pub const ALL: [Rule; 12] = [
         Self::E1,
         Self::E2,
         Self::S1,
         Self::S2,
         Self::S3,
+        Self::S4,
         Self::N1,
         Self::I1,
         Self::I2,
@@ -113,6 +121,7 @@ impl Rule {
             Self::S1 => "S1",
             Self::S2 => "S2",
             Self::S3 => "S3",
+            Self::S4 => "S4",
             Self::N1 => "N1",
             Self::I1 => "I1",
             Self::I2 => "I2",
@@ -125,7 +134,7 @@ impl Rule {
     pub fn domain(self) -> Domain {
         match self {
             Self::E1 | Self::E2 => Domain::Electrical,
-            Self::S1 | Self::S2 | Self::S3 => Domain::Software,
+            Self::S1 | Self::S2 | Self::S3 | Self::S4 => Domain::Software,
             Self::N1 => Domain::None,
             _ => Domain::Indeterminate,
         }
@@ -139,11 +148,12 @@ impl Rule {
             Self::S1 => &[7, 11, 13],
             Self::S2 => &[7, 10, 11],
             Self::S3 => &[21, 22],
+            Self::S4 => &[11, 26],
             Self::N1 | Self::I1 => &[],
             Self::I2 => &[15],
             Self::I3 => &[7, 8, 9],
-            Self::I4 => &[7],
-            Self::I5 => &[7, 8, 9, 10, 11, 13, 21, 22],
+            Self::I4 => &[7, 25, 26],
+            Self::I5 => &[7, 8, 9, 10, 11, 13, 21, 22, 26],
         }
     }
 }
@@ -222,6 +232,9 @@ pub enum View {
         device: Option<String>,
         fields: Vec<Field>,
     },
+    /// Kind 26: a motor output's twin witness and what it showed
+    /// (`AET-WO-4300a`): a symptom, never a solved expectation of its own.
+    MotorWitness { label: String, status: String },
     /// Any other kind.
     Other,
 }
@@ -388,18 +401,37 @@ struct Bus<'a> {
     joined: Option<Joined>,
 }
 
+/// One solved motor output (kind 24, `AET-WO-4300a`) and the register
+/// fields it owns: the bus join's pin and gate fields, from the header, and
+/// its channel's fields of its timer's block (`timer`, `[start, end)`; see
+/// [`timer_bits`]).
+struct Motor<'a> {
+    label: &'a str,
+    /// `None` when the header lacks a fact the output names: it then owns
+    /// nothing, as a bus that cannot join does.
+    joined: Option<Joined>,
+    timer: (&'a str, u32, u32),
+    channel: u8,
+}
+
 /// Where a symptom is: on a bus, for a device of it or not, or on the board.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Scope<'a> {
     Bus(usize, Option<&'a str>),
     /// An SPI device's read, by its reference (`AET-WO-4200`).
     Spi(&'a str),
+    /// A motor output, by its position among the kind 24s (`AET-WO-4300a`).
+    Motor(usize),
+    /// A motor output's failing static check (kind 25): the topology's
+    /// timing, never the firmware's (second adversarial review, F1).
+    MotorStatic(usize),
     Board,
 }
 
 struct Run<'a> {
     records: &'a [Record],
     buses: Vec<Bus<'a>>,
+    motors: Vec<Motor<'a>>,
     rcc: (u32, u32),
 }
 
@@ -427,7 +459,7 @@ fn witness_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
     })
 }
 /// The finding kinds that each select their own events, one finding each.
-const PER_EVENT: [&str; 15] = [
+const PER_EVENT: [&str; 18] = [
     campaign::PAST_CEILING_FINDING,
     campaign::STUCK_HIGH_FINDING,
     campaign::HELD_LOW_FINDING,
@@ -443,6 +475,9 @@ const PER_EVENT: [&str; 15] = [
     "boot_word_missing",
     "cpu_halted",
     "locked_peripheral_access",
+    campaign::MOTOR_STATIC_FINDING,
+    campaign::MOTOR_UNWITNESSED_FINDING,
+    campaign::MOTOR_MISMATCH_FINDING,
 ];
 
 impl<'a> Run<'a> {
@@ -751,15 +786,73 @@ impl<'a> Run<'a> {
         })
     }
 
-    /// The bits of a register reading that are wrong and that no bus owns.
+    /// The bits of a register reading that are wrong and that no bus or
+    /// motor output owns.
     fn unowned(&self, name: &str, r: &Reading) -> u32 {
         let owned = self
             .buses
             .iter()
             .flat_map(|b| b.joined.iter().flat_map(|j| &j.owned))
+            .chain(
+                self.motors
+                    .iter()
+                    .flat_map(|m| m.joined.iter().flat_map(|j| &j.owned)),
+            )
             .filter(|o| o.name == name && o.address == r.address)
-            .fold(0, |m, o| m | o.mask);
+            .fold(0, |m, o| m | o.mask)
+            | self.timer_owned(name, r);
         mismatch(r) & !owned
+    }
+
+    /// The bits of a timer register reading that some motor output owns.
+    fn timer_owned(&self, name: &str, r: &Reading) -> u32 {
+        self.motors
+            .iter()
+            .fold(0, |bits, m| bits | timer_bits(m, name, r))
+    }
+
+    /// Whether motor output `m` owns a wrong field of `reading`: its pin's or
+    /// gates' (as a bus owns its own), or a wrong bit of its channel's fields
+    /// of its timer (adversarial pass: another channel's `CCRk` made a dead
+    /// output software).
+    fn motor_owned_wrong(&self, m: usize, name: &str, reading: &Reading) -> bool {
+        let motor = &self.motors[m];
+        motor
+            .joined
+            .iter()
+            .flat_map(|j| &j.owned)
+            .any(|o| wrong(o, name, reading))
+            || mismatch(reading) & timer_bits(motor, name, reading) != 0
+    }
+
+    /// Software evidence for motor output `m`: each register it owns that is
+    /// wrong.
+    fn motor_software(&self, m: usize) -> Vec<usize> {
+        self.indices(|r| match r {
+            Record::RegisterObserved { name, reading } => self.motor_owned_wrong(m, name, reading),
+            _ => false,
+        })
+    }
+
+    /// Motor output `m`'s failing records: its static check when it does not
+    /// hold, and its witness when it failed. A passing one is never evidence
+    /// (adversarial pass, and F6 of the second review).
+    fn motor_failing(&self, m: usize) -> Vec<usize> {
+        let label = self.motors[m].label;
+        self.indices(|r| match r {
+            Record::MotorTimingCheck {
+                label: l, holds, ..
+            } => l == label && !holds,
+            Record::MotorWitness {
+                label: l, status, ..
+            } => l == label && !PASSING_WITNESS.contains(&status.as_str()),
+            _ => false,
+        })
+    }
+
+    /// The position among the kind 24s of the output labelled `label`.
+    fn motor_named(&self, label: &str) -> Option<usize> {
+        self.motors.iter().position(|m| m.label == label)
     }
 
     /// Software evidence on no bus: the boot, and registers wrong outside
@@ -792,12 +885,27 @@ impl<'a> Run<'a> {
             Record::SpiCheck { reference, .. } | Record::SpiWitness { reference, .. } => {
                 Scope::Spi(reference.as_str())
             }
+            Record::MotorTimingCheck { label, .. } => Scope::MotorStatic(self.motor_named(label)?),
+            Record::MotorWitness { label, .. } => Scope::Motor(self.motor_named(label)?),
             Record::RegisterObserved { name, reading } => {
                 let on: Vec<usize> = (0..self.buses.len())
                     .filter(|&b| self.owned_wrong(b, name, reading))
                     .collect();
-                match on.as_slice() {
-                    [b] if self.unowned(name, reading) == 0 => Scope::Bus(*b, None),
+                // A timer register is every output of the timer's: the first
+                // of them stands for it (one symptom, one decision).
+                let motors: Vec<usize> = (0..self.motors.len())
+                    .filter(|&m| self.motor_owned_wrong(m, name, reading))
+                    .collect();
+                match (on.as_slice(), motors.as_slice()) {
+                    ([b], []) if self.unowned(name, reading) == 0 => Scope::Bus(*b, None),
+                    ([], [m, ..])
+                        if self.unowned(name, reading) == 0
+                            && motors
+                                .iter()
+                                .all(|&o| self.motors[o].timer.0 == self.motors[*m].timer.0) =>
+                    {
+                        Scope::Motor(*m)
+                    }
                     _ => Scope::Board,
                 }
             }
@@ -860,6 +968,17 @@ impl<'a> Run<'a> {
                         && observed.as_deref() != Some(expected.as_slice())
                 }
                 _ => false,
+            }),
+            campaign::MOTOR_STATIC_FINDING => {
+                self.indices(|r| matches!(r, Record::MotorTimingCheck { holds: false, .. }))
+            }
+            campaign::MOTOR_UNWITNESSED_FINDING => self.indices(|r| {
+                matches!(r, Record::MotorWitness { status, .. }
+                    if status == "unwitnessed" || status == "unreadable")
+            }),
+            campaign::MOTOR_MISMATCH_FINDING => self.indices(|r| {
+                matches!(r, Record::MotorWitness { status, .. }
+                    if status == "mismatch" || status == "batched" || status == "stopped")
             }),
             "register_mismatch" => self.indices(
                 |r| matches!(r, Record::RegisterObserved { reading, .. } if mismatch(reading) != 0),
@@ -933,6 +1052,25 @@ impl<'a> Run<'a> {
                     (Rule::I4, vec![], vec![])
                 }
             }
+            // A failing static check is the topology's: indeterminate, never
+            // software, whatever else of the output's is wrong (F1).
+            Scope::MotorStatic(m) => (Rule::I4, self.motor_failing(m), vec![]),
+            Scope::Motor(m) => {
+                let software = self.motor_software(m);
+                if software.is_empty() {
+                    (Rule::I4, self.motor_failing(m), vec![])
+                } else {
+                    let witness = self
+                        .motor_failing(m)
+                        .into_iter()
+                        .filter(|&i| matches!(self.records[i], Record::MotorWitness { .. }));
+                    (
+                        Rule::S4,
+                        software.into_iter().chain(witness).collect(),
+                        vec![],
+                    )
+                }
+            }
             Scope::Board if !faulted.is_empty() => (Rule::I3, faults_of(&faulted), vec![]),
             Scope::Board => {
                 let unmeasured: Vec<usize> = all.clone().filter(|&b| !self.healthy(b)).collect();
@@ -950,6 +1088,36 @@ impl<'a> Run<'a> {
             }
         }
     }
+}
+
+/// The witness statuses that pass (`AET-WO-4300a` D4).
+const PASSING_WITNESS: [&str; 2] = ["witnessed", "static_only"];
+
+/// The bits of `reading` (of register `name`) that motor output `m` owns in
+/// its timer's block (named `TIMn.` and inside it): its own `CCRk` whole,
+/// its byte of `CCMR1` or `CCMR2`, its nibble of `CCER`, and every other
+/// register of the timer whole, which all the timer's outputs share; 0
+/// outside the block and for another channel's fields.
+fn timer_bits(m: &Motor<'_>, name: &str, reading: &Reading) -> u32 {
+    let (timer, start, end) = m.timer;
+    let Some(register) = name
+        .strip_prefix(timer)
+        .and_then(|rest| rest.strip_prefix('.'))
+        .filter(|_| (start..end).contains(&reading.address))
+    else {
+        return 0;
+    };
+    // Channels 1 to 4 (kind 24's field rule).
+    let k = u32::from(m.channel).clamp(1, 4) - 1;
+    let ccmr = if k < 2 { "CCMR1" } else { "CCMR2" };
+    let bits = match register {
+        "CCMR1" | "CCMR2" if register == ccmr => 0xFF << (8 * (k % 2)),
+        "CCER" => 0xF << (4 * k),
+        r if r == format!("CCR{}", k + 1) => u32::MAX,
+        r if r.starts_with("CCMR") || r.starts_with("CCR") => 0,
+        _ => u32::MAX,
+    };
+    bits & reading.mask
 }
 
 /// Kind 10 with its `pc` outside every executable segment it archives: the
@@ -986,9 +1154,42 @@ fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
             });
         }
     }
+    let tim_size = f.layout("TIM")?.size;
+    let mut motors = Vec::new();
+    for r in records {
+        if let Record::MotorOutputSolved {
+            label,
+            timer,
+            channel,
+            pin,
+            alternate_function,
+            ..
+        } = r
+        {
+            let line = BusLine {
+                signal: String::new(),
+                net: label.clone(),
+                pin: pin.clone(),
+                alternate_function: *alternate_function,
+                ceiling_ps: 0,
+            };
+            let base = f.base(timer).ok();
+            motors.push(Motor {
+                channel: *channel,
+                label,
+                joined: join(&f, timer, std::slice::from_ref(&line)).ok(),
+                timer: (
+                    timer.as_str(),
+                    base.unwrap_or(0),
+                    base.map_or(0, |b| b + tim_size),
+                ),
+            });
+        }
+    }
     let state = Run {
         records,
         buses,
+        motors,
         rcc: (rcc, rcc + f.layout("RCC")?.size),
     };
     Ok((state, summary.pass))
@@ -1061,6 +1262,11 @@ impl RunView<'_> {
                     .buses
                     .iter()
                     .flat_map(|b| b.joined.iter().flat_map(|j| &j.owned))
+                    .chain(
+                        run.motors
+                            .iter()
+                            .flat_map(|m| m.joined.iter().flat_map(|j| &j.owned)),
+                    )
                     .filter(|o| {
                         o.name == *name
                             && o.address == reading.address
@@ -1082,6 +1288,18 @@ impl RunView<'_> {
                     seen.push(f.clone());
                     new
                 });
+                // The motor outputs' fields of a timer register, as one.
+                let timer = run.timer_owned(name, reading);
+                if mismatch(reading) & timer != 0 {
+                    fields.push(Field {
+                        register: name.clone(),
+                        address: reading.address,
+                        mask: timer,
+                        solved: reading.expected & timer,
+                        observed: reading.observed.map(|v| v & timer),
+                        wrong: true,
+                    });
+                }
                 let unowned = run.unowned(name, reading);
                 if unowned != 0 {
                     fields.push(Field {
@@ -1117,6 +1335,10 @@ impl RunView<'_> {
                     fields,
                 }
             }
+            Record::MotorWitness { label, status, .. } => View::MotorWitness {
+                label: label.clone(),
+                status: status.clone(),
+            },
             _ => View::Other,
         };
         Some(Evidence {

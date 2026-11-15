@@ -1,9 +1,10 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "project_name": "sentinel-01-4l-power",
   "mcu": {
     "part": "STM32H753ZITx",
-    "supply": "VDD_3V3"
+    "supply": "VDD_3V3",
+    "hse_hz": 0
   },
   "voltage_domains": [
     {
@@ -191,5 +192,6 @@
       ]
     }
   ],
-  "diff_pairs": []
+  "diff_pairs": [],
+  "motor_outputs": []
 }

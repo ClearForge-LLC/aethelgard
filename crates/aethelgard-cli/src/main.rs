@@ -167,7 +167,8 @@ enum Command {
         #[arg(long, requires = "firmware")]
         spec: Option<PathBuf>,
         /// The virtual time the boot runs: an integer with ns, us or ms, at
-        /// most 100ms, a whole number of 10 ns instructions. Needs --firmware.
+        /// most 100ms and at most the board's window (2ms for a board with a
+        /// DShot output), a whole number of 10 ns instructions. Needs --firmware.
         #[arg(long = "for", id = "for_time", value_name = "TIME", requires = "firmware", value_parser = virtual_time)]
         for_time: Option<u64>,
     },
@@ -1028,9 +1029,14 @@ struct Ready {
     self_loops: Vec<u64>,
     vector_table: u32,
     image: aethelgard_twin::boot::Image,
+    /// Each motor output's observer, solved values and static check
+    /// (`AET-WO-4300a`).
+    motors: Vec<renode::Motor>,
     boot_word: u32,
     specification_sha256: String,
     virtual_ns: u64,
+    /// The constant that bounds `virtual_ns` for this board (`AET-WO-4300a` D1).
+    window: &'static str,
     topology: aethelgard_ir::SolvedTopology,
     scenario: String,
     held: Vec<campaign::HeldLow>,
@@ -1089,6 +1095,18 @@ fn ready(
             ),
         ));
     }
+    // `AET-WO-4300a` D1: a board with a DShot output boots inside its own
+    // shorter window, refused by name past it, never cut short.
+    let (window_ns, window) = aethelgard_twin::boot::window(&boot.topology);
+    if boot.virtual_ns > window_ns {
+        return Err(run::Stop::refused(
+            "BootPastWindow",
+            format!(
+                "a boot of {} ns is past this board's {window} of {window_ns} ns (a board with a DShot output boots inside it, AET-WO-4300a D1)",
+                boot.virtual_ns
+            ),
+        ));
+    }
     let firmware = input::file(&boot.firmware, &scratch.tool.join("firmware.elf"))?;
     let bytes = fs::read(&firmware.copy)
         .map_err(|e| run::Stop::unreadable(format!("cannot read the firmware's copy: {e}")))?;
@@ -1096,6 +1114,7 @@ fn ready(
     let boot_word = aethelgard_twin::boot::boot_word().map_err(twin_stop)?;
     let checked = elf::check(&bytes, &memory, boot_word)?;
     let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
+    let motors = renode::motors(&boot.topology).map_err(twin_stop)?;
     let vector_table =
         u32::try_from(memory.flash.start).expect("FLASH_BANK1_BASE is a 32-bit value");
     Ok((
@@ -1107,9 +1126,11 @@ fn ready(
             self_loops: checked.self_loops,
             vector_table,
             image,
+            motors,
             boot_word,
             specification_sha256: boot.topology.specification_sha256.clone(),
             virtual_ns: boot.virtual_ns,
+            window,
             topology: boot.topology,
             scenario: boot.scenario,
             held: boot.held,
@@ -1230,11 +1251,13 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             platform: &booted.path,
             firmware: &r.firmware.copy,
             virtual_ns: r.virtual_ns,
+            window_ns: aethelgard_twin::boot::window(&r.topology).0,
             boot_word: r.boot_word,
             vector_table: r.vector_table,
             image: &r.image,
             executable: &r.executable,
             self_loops: &r.self_loops,
+            motors: &r.motors,
             instances: &booted.instances,
             resets: droop
                 .as_ref()
@@ -1257,7 +1280,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         (Some(_), None) => run.run_bounded_filtered(renode::BOOT_BOUNDS, renode::LOG_FILTER)?,
         (None, _) => run.run()?,
     };
-    let (code, (findings, machine, observed)) = match (&plan, &out.ended) {
+    let (code, (mut findings, machine, observed)) = match (&plan, &out.ended) {
         // Killed at a bound: a fail that names it, with nothing read. A killed
         // tool has no exit code, so the verdict records -1.
         (Some(_), run::Ended::Bounded(bound)) => {
@@ -1273,6 +1296,11 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             (code, (findings, machine, None))
         }
     };
+    // The motor outputs' static check judges the topology, never the run
+    // (`4300` D3), so a boot killed at a bound reports it too.
+    if let Some(plan) = &plan {
+        findings.extend(renode::static_motor_findings(plan.motors));
+    }
     // The analog findings first: they are the evidence the boot's effect follows.
     let bridge = analog.as_ref().and_then(|(pass, _)| pass.sandbox);
     let mut tools: Vec<(&'static str, String)> = analog
@@ -1443,6 +1471,7 @@ fn boot_report(
         specification_sha256: r.specification_sha256.clone(),
         seed: aethelgard_twin::boot::SEED,
         virtual_time_ns: r.virtual_ns,
+        window: r.window,
         mips: observed.map(|o| o.mips),
         instructions: verdict::Expected {
             expected: plan.instructions(),
@@ -1540,6 +1569,12 @@ fn boot_report(
             })
             .collect(),
         icsr: observed.map(|o| word(o.icsr)),
+        motor: plan
+            .motors
+            .iter()
+            .enumerate()
+            .map(|(i, m)| verdict::MotorReport::new(m, observed.map(|o| &o.motors[i])))
+            .collect(),
         executable: plan.executable.to_vec(),
     }
 }

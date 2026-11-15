@@ -89,23 +89,27 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `bc1517cd…7522` and `f684f871…3dba`.
 /// Re-taken in `AET-WO-1308` (version 5) the same way: with `main`'s hash
 /// passed to `solve`, each was `f3e10417…2985`, `9c02c1e2…12bf4` and
-/// `cc3a3e65…2dff9` exactly.
+/// `cc3a3e65…2dff9` exactly. Re-taken in `AET-WO-4300a`: specification version 6
+/// (`motor_outputs`, `mcu.hse_hz`) moved the specification's sha256 in the
+/// three (`44f22188…e3af`, `bd957c1d…d4b0`, `b962492f…ee15`); every enable
+/// register cold and judged in full (2100 F24) moved the boot image
+/// (`747bdc04…fbb3`).
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "44f22188f559ecb595304ba8fa905876c7ff1ed563b4a5388f059eeb7797e3af",
+        "dac441661258773151468edeee5d357de637c793da0d81f79ec0aa44091e2e7e",
     ),
     (
         "platform",
-        "bd957c1dea50e5f2261a797fbeeb9d7fecaa4f68af13799482810e8d8c93d4b0",
+        "693c78ad1dc30b44fc1b467fcba243dce1e5ea09d225841339ae9e8bfd41dab0",
     ),
     (
         "platform faulted",
-        "b962492fa26128b8d84385623e0fb5f6d9e04292dabc524c66c6f8d8e61aee15",
+        "2fe09c9590bdeffae53d193034dec3561e9d07d5223257e118adde9cdadcf5b0",
     ),
     (
         "boot image",
-        "747bdc045a0c2a41b8e93922bb6e463d82b577a9e061905a708c4893228efbb3",
+        "893fb13d4ae7e065b25f237b728f1c455d1e7cbd21972369c2815d8f9906c4a6",
     ),
 ];
 

@@ -15,7 +15,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -24,7 +24,6 @@ mod common;
 use common::verify::root;
 
 const MANIFEST: &str = "scenarios/sentinel-01/seeded/cases.json";
-const BOARD: &str = "boards/sentinel-01";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,9 +40,35 @@ struct Manifest {
 struct Mutant {
     #[allow(dead_code)]
     why: String,
+    /// The specification whose generated board the patch applies to,
+    /// required since schema version 3 (`AET-WO-4300a` Q4, ruled: no
+    /// default is substituted, `INV-06`).
+    spec: String,
     file: String,
     find: String,
     replace: String,
+}
+
+/// The board source `m` patches: the board `aethelgard generate` writes for
+/// `m.spec`, generated into `out`. For the reference specification it is
+/// `boards/sentinel-01` byte for byte (the regeneration guard,
+/// `generate_tier1`).
+fn board_of(m: &Mutant, out: &Path) -> PathBuf {
+    let spec = &m.spec;
+    let _ = fs::remove_dir_all(out);
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["generate", "--spec"])
+        .arg(root().join(spec))
+        .arg("--out")
+        .arg(out)
+        .stdout(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "the mutant's specification generates: {spec}"
+    );
+    out.join("board")
 }
 
 #[derive(Deserialize, Clone)]
@@ -65,8 +90,8 @@ struct Case {
 fn manifest() -> Manifest {
     let m: Manifest = serde_json::from_slice(&fs::read(root().join(MANIFEST)).unwrap()).unwrap();
     assert_eq!(
-        m.schema_version, 2,
-        "the manifest is schema version 2, with each case's exact evidence"
+        m.schema_version, 3,
+        "the manifest is schema version 3: each case's exact evidence, each mutant's spec"
     );
     m
 }
@@ -234,7 +259,9 @@ fn the_manifest_seeds_twenty_failing_cases_eight_per_domain_and_the_three_traps(
 #[test]
 fn every_mutant_applies_exactly_once_to_the_generated_board_as_committed() {
     for (name, m) in &manifest().mutants {
-        let text = fs::read_to_string(root().join(BOARD).join(&m.file)).unwrap();
+        let out = Path::new(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("aet-4300a-mutant-{}-{name}", std::process::id()));
+        let text = fs::read_to_string(board_of(m, &out).join(&m.file)).unwrap();
         let patched = patch(name, &text, m).unwrap();
         assert_ne!(patched, text, "the mutant changes the board source: {name}");
     }
@@ -244,6 +271,7 @@ fn every_mutant_applies_exactly_once_to_the_generated_board_as_committed() {
 fn a_patch_that_matches_zero_or_two_times_is_refused_naming_the_mutant() {
     let m = Mutant {
         why: String::new(),
+        spec: "examples/sentinel-01-minimal.json".into(),
         file: "f.rs".into(),
         find: "0x76".into(),
         replace: "0x77".into(),
@@ -470,7 +498,12 @@ mod tier2 {
         let dir = scratch().join(label);
         let _ = fs::remove_dir_all(&dir);
         let board = dir.join("board");
-        copy_tree(&root().join(BOARD), &board);
+        let source = match mutant {
+            Some((_, m)) => board_of(m, &dir.join("generated")),
+            // The unmutated firmware is the committed reference board's.
+            None => root().join("boards/sentinel-01"),
+        };
+        copy_tree(&source, &board);
         if let Some((name, m)) = mutant {
             let file = board.join(&m.file);
             let text = fs::read_to_string(&file).unwrap();
