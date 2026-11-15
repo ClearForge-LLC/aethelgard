@@ -181,9 +181,12 @@ I re-ran its 41 crafted cases on the fixed binary.
 - **A2, BROKEN, fixed.** The reader used `p_vaddr`, but the flash image follows `p_paddr`: a second `PT_LOAD` could flash other bytes over the symbol and pass. The holding segment must now run where it is flashed, and no other segment may flash over the symbol (`SymbolNotInPlace`, `SegmentsOverlap`). The real symbol is in `.text`, with vaddr equal to paddr [measured, `readelf`].
 - **A5, BROKEN (latent), fixed.** A symbol in a writable section was accepted, but ChibiOS's `__early_init` runs before `.data` is copied. A writable section is now `SymbolOutsideSection`.
 - **A3, BROKEN, fixed in `check-pins.sh`.** `;` after the HEAD test or after `sha256sum -c` let a moved tag or other bytes through, because Docker's `sh -c` has no `-e` [measured]. `;` and a lone `&` are now refused.
-- **A4, BROKEN in part.**
-  - **Fixed:** `git -c … clone` passed the deny-list. It now matches `git … clone`.
-  - **Backlog, older than this work order:** `COPY --from=<unpinned name>`, `RUN --mount=…from=`, and `ADD git@…` pass (they also pass at `cb44872`).
+- **A4, BROKEN, fixed.**
+  - `git -c … clone` passed the deny-list. It now matches `git … clone`.
+  - Three holes older than this work order (they pass at `cb44872`), closed in the second round:
+    - `COPY --from=busybox` and `RUN --mount=…,from=alpine:latest` pulled from a registry. A `from=` must now name a stage declared above or a digest-pinned image.
+    - `ADD git@…` fetched. `ADD` is now refused outright, since no Dockerfile here uses it.
+  - [measured] Each of the four mutants is refused. A declared stage (`FROM … AS base` then `COPY --from=base`) still passes, and all three Dockerfiles pass.
 - **ET_CORE, fixed:** `e_type` other than `ET_EXEC` is `WrongType`.
 - **A1, BROKEN by the ruled rule: a decision for `4400b`.** A `DEFAULTGPIO OUTPUT` line before `MCU` (11 upstream boards do this) drives every pin of ports A–K. The package check then names the 62 pins the LQFP144 does not bond out, and no input can clear them. §1.3 mandates that outcome. Either the generator never emits such a line, or a declared input exempts pins the package does not bond out. The READMEs now say so.
 - **A6, BLIND SPOT, documented.** A symbol table that points at a decoy copy of good bytes passes on the ELF alone. Only the cross-check catches it (`11-symlie-realh` exits 5), and CI always passes `hwdef.h`.
@@ -216,7 +219,7 @@ I re-ran its 41 crafted cases on the fixed binary.
   - 19 in `aethelgard-pincheck`, each killed by the crate's suite;
   - two separation mutants (`pincheck` depending on `svd-hal`; `twin` depending on `pincheck`), both killed;
   - four mutants of the CLI's exit-code mapping (`DecodesDisagree` to 1, a malformed input to 2, a wrong-shape topology to 3, findings to 0), each killed by `tests/pinout_tier1.rs`, which also pins exactly one `ok` key on the line;
-  - 13 `check-pins.sh` mutants refused, and one (the toolchain hash) passing by design.
+  - 17 `check-pins.sh` mutants refused, one (the toolchain hash) passing by design, and one declared-stage control passing.
 - **`ci.yml`'s package step** was reproduced on Furnace as written, without its `rm -rf`, because `gates` failed before it on `e61b061`. `aethelgard-pincheck` packages at 26,182 B with its README and licences, and the CLI installs offline from the nine packages and validates the example.
 - **Reduction pass (diff):**
   - −446 net. 2 duplicates removed: the spike's topology copy, and `lib.rs` restating the README's rules. 2 dead paths removed: the `ardupilot-reuse` measurement job and the build script's `-i` flag. The rest of `spike/4400/` is deleted, as builds delete `spike/` (roadmap §6) and the spike's FEEDBACK §10 names it. 0 protected kept. 1 finding below.
@@ -228,7 +231,6 @@ I re-ran its 41 crafted cases on the fixed binary.
 - **D-2, the GPL toolchain binaries in a published image.** The image carries Arm's GCC binaries (GPL) as well as ArduPilot's source. `ARDUPILOT-LICENSE.md` names Arm's release as the corresponding source. The tools image does the same with KiCad's official image. Whether a pointer to Arm's source meets GPLv3 §6 for a public `ghcr.io` package is Scotty's call [inferred].
 - **D-3, the `ardupilot-image.yml` triggers** include `crates/**`, `examples/**` and `Cargo.*`, so any solver change re-judges step G. That costs about 5 min of runner wall time (parallel jobs) on most PRs. Narrow it to the check's and the solver's crates if that is too much.
 - **D-4, the first publish.** `container/ARDUPILOT-IMAGE` does not exist until `main` publishes. A follow-up PR sets it from the publish summary, as `RUL-15` says.
-- **Older `check-pins.sh` holes (A4: `COPY --from`, `RUN --mount from=`, `ADD git@`)** are backlog. They predate this work order, and the tools and engine images rely on the same rules.
 - **`tablediff.py` leaves with `spike/4400/`.** D7's independence measurement (597 shared pairs, 0 AF disagreements) has no Rust successor. The spike's FEEDBACK §5 is its record. A test could be added if the table comparison should stay live.
 - **Q-1, the refused removal (§8).** Rule 3 says to stop on a tool call denied by the permission classifier. Claude Code's built-in removal check refused one command. I read that check as distinct from the classifier and carried on without the removal, which was never done another way. The reading is yours to make: if it counts, this work order should have stopped there.
 
@@ -250,3 +252,10 @@ I re-ran its 41 crafted cases on the fixed binary.
   - `renode --version` under the old rule, which the gate held: nothing ran;
   - `renode --version` under the new rule;
   - one Renode rehearsal of the D8 script on a 10-byte hand-made ELF.
+
+## 9. After the first READY commit
+
+- **AET-WO-4300c (#129) merged** after the first READY commit, `3a5a817`, which was CI green on every job. PR #135 then conflicted.
+- **Two rules apply.** Kickoff item 4 says to merge `main` whenever another PR lands; item 7 says to push nothing after the READY commit unless asked. I merged, so that the head under review is mergeable, and put a new READY commit on top, so the last push still carries the READY subject.
+- **The merge** keeps both `check` subcommands: `pinout`, then 4300c's `speeds`. That puts 18 tools in the list. Solved schema 4 (4300c) changes the test topology's `schema_version`, `specification_sha256`, `spi_devices` and `spi_lines`, but not its pins, so `tests/common/topology.json` is regenerated with `aethelgard solve`.
+- **The same commit** closes adversarial A4's three older `check-pins.sh` holes (§4).

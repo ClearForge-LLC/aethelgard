@@ -2,7 +2,8 @@
 # container/check-pins.sh: refuses a Dockerfile that can drift (INV-06). It
 # accepts only known-safe shapes rather than hunting for bad ones:
 #   - every FROM, in any case or indent, names image@sha256:<64 hex>, and a
-#     COPY --from names a build stage or a digest-pinned image;
+#     `--from=` or a `--mount`'s `from=` names a stage declared above or a
+#     digest-pinned image; ADD is refused (COPY a local file instead);
 #   - every curl is exactly `curl -fsSLo PATH https://URL`, and the next line is
 #     `&& echo "<64 hex>  PATH" | sha256sum -c -`, the only pipe allowed;
 #   - apt runs only as `apt-get update` and one `apt-get install -y
@@ -32,6 +33,7 @@ bad=0
 from_seen=0
 arg_seen=0
 in_apt=0
+stages=" "
 refuse() {
   echo "check-pins: line $(($1 + 1)): $2" >&2
   bad=1
@@ -62,9 +64,15 @@ for i in "${!lines[@]}"; do
     from_seen=1
     read -ra words <<< "$line"
     image=
-    for word in "${words[@]:1}"; do
-      [[ "$word" == --* ]] || { image=$word; break; }
+    for k in "${!words[@]}"; do
+      [ "$k" -eq 0 ] && continue
+      [[ "${words[$k]}" == --* ]] || { image=${words[$k]}; break; }
     done
+    # FROM IMAGE AS NAME declares a stage a later --from= may name.
+    nextw=${words[$((k + 1))]:-}
+    if [ -n "$image" ] && [ "${nextw,,}" = as ] && [ -n "${words[$((k + 2))]:-}" ]; then
+      stages="$stages${words[$((k + 2))]} "
+    fi
     if [ "$image" = '${TOOLS_IMAGE}' ] && [ "$arg_seen" -eq 1 ]; then
       [ -f "$image_file" ] || refuse "$i" "$image_file not found: the base digest is unreadable"
       [ -f "$image_file" ] && ! [[ "$(<"$image_file")" =~ ^[^@[:space:]]+@sha256:${hex}$ ]] \
@@ -82,11 +90,17 @@ for i in "${!lines[@]}"; do
     fi
   fi
 
-  if [[ "$line" =~ --from=([^[:space:]]+) ]]; then
-    ref=${BASH_REMATCH[1]}
-    if [[ "$ref" =~ [:/@.] ]] && ! [[ "$ref" =~ @sha256:${hex}$ ]]; then
-      refuse "$i" "COPY --from an unpinned image: $ref"
+  # A name that is not a declared stage is pulled from a registry at its
+  # latest tag (AET-WO-4400a adversarial A4), so only a stage or a digest.
+  if [[ "$line" =~ (^|[[:space:],-])from=([^[:space:],]+) ]]; then
+    ref=${BASH_REMATCH[2]}
+    if ! [[ "$ref" =~ @sha256:${hex}$ ]] && [[ "$stages" != *" $ref "* ]]; then
+      refuse "$i" "from= names neither a stage declared above nor a digest-pinned image: $ref"
     fi
+  fi
+
+  if [[ "${line,,}" =~ ^[[:space:]]*add[[:space:]] ]]; then
+    refuse "$i" "ADD can fetch and unpack (a URL, a git source): COPY a local file instead: $line"
   fi
 
   # Two more fetch shapes (AET-WO-4400a), each checked as tightly as curl's:
@@ -125,7 +139,7 @@ for i in "${!lines[@]}"; do
     fi
   fi
 
-  if [ "$shaped" -eq 0 ] && { [[ "$line" =~ (^|[^a-z-])(wget|pip3?|npm|git[[:space:]].*clone)([^a-z-]|$) ]] || [[ "${line,,}" =~ ^[[:space:]]*add[[:space:]].*:// ]]; }; then
+  if [ "$shaped" -eq 0 ] && { [[ "$line" =~ (^|[^a-z-])(wget|pip3?|npm|git[[:space:]].*clone)([^a-z-]|$) ]]; }; then
     refuse "$i" "fetches outside the checked curl, clone and pip shapes: $line"
   fi
 
