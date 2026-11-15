@@ -42,6 +42,18 @@
 //!   even the soft search finds nothing, the net is named and routing fails
 //!   closed.
 //! - **Ties** go to the lower state index: never to a hash or an address.
+//! - **Classes** (`AET-WO-1308`): each net is laid by its rule
+//!   ([`crate::stack::Rule`]): its class's width and via, its pair's width,
+//!   or the board's. Each distinct rule has its own occupancy maps, every
+//!   reach computed at that rule's width and via against each piece of
+//!   copper's own, so a board that declares no class has one rule and is
+//!   routed exactly as before. Clearance is the declared one for every class
+//!   (FEEDBACK F2).
+//! - **Pairs** (`AET-WO-1308` §1.3): each declared pair is laid first and
+//!   whole by [`Router::route_pair`], on F.Cu with no via, and its copper is
+//!   fixed; [`pairs`] judges it from the copper alone.
+//! - **Rotation** (`AET-WO-1308` §1.5): a part at a right angle is read by
+//!   [`part`] through [`rotate`], as KiCad places it (measured).
 //!
 //! Before the copper is returned, [`check`] and [`connectivity`] judge it
 //! exactly, without the grid's margins.
@@ -2123,16 +2135,6 @@ impl<'a> Router<'a> {
             let [pos, neg] = self
                 .pair_paths(m, start, d0, &turns)
                 .ok_or_else(|| format!("pair `{name}`: its run leaves the grid"))?;
-            if std::env::var_os("AET_PAIR_TRACE").is_some() {
-                eprintln!(
-                    "PAIRTRACE start {:?} d0 {d0} turns {turns:?} pos {:?}..{:?} neg {:?}..{:?} ends {ends:?}",
-                    self.grid.at(start),
-                    self.grid.at(pos[0].1),
-                    self.grid.at(pos[pos.len() - 1].1),
-                    self.grid.at(neg[0].1),
-                    self.grid.at(neg[neg.len() - 1].1)
-                );
-            }
             self.commit(p, &pos);
             self.commit(n, &neg);
             for (net, pad, target) in [

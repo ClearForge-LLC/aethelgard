@@ -157,11 +157,12 @@ No rule is ever read from the input (`RUL-03` as amended, `INV-07`). KiCad keeps
     - nesting deeper than 256, or more than 1,000,000 tokens.
 
     Each of these was measured hiding a board's rules from a naive scan while KiCad honoured them (`AET-WO-1300` adversarial pass).
+  - with `--spec` declaring coupled pairs (`AET-WO-1308`): the board read as `extract` reads it, then each pair judged from its copper (`route::pairs`): `BoardUnreadable` (including a track or via that is not its net's class's), `NetLabelsDisagree`, `ClearanceViolated`, or `PairNotCoupled`, naming the pair and what breaks it. The verdict then carries `pairs`: for each, its nets, gap, layers, each conductor's length, vias and uncoupled length at each end, the length difference and the bounds it was judged by;
   - **the strict reader's refusals** (`aethelgard_eda::strict`, `AET-WO-1306`), `MalformedBoard` with `id` the path to the node, such as `kicad_pcb/general[1]`. In a node any gate reads, a second child setting a value KiCad 10.0.7 holds once (it keeps the last, and no gate may pick either), whichever spelling sets it: a second `(thickness …)`, a pad's second `(net …)`, a track's `(layer …)` and `(layers …)`, a second `general` section. A footprint field named twice, counting a legacy `(fp_text reference …)` or `(fp_text value …)` as the `Reference` or `Value` property it sets. The same reader serves `check erc`, parity and `extract`, so every gate reads one tree.
 - **Writes the setup block over the board's**, with no clearance token, so the board minimum has one source. Nothing else in the board changes.
 - **Writes `input.kicad_pro`, `input.kicad_dru`, `sym-lib-table` and `fp-lib-table`** beside the copy:
   - `input.kicad_pro` holds the Default net class, the board minimum, and ERC's library checks set to `ignore`;
-  - `input.kicad_dru` holds the same minimums as custom rules;
+  - `input.kicad_dru` holds the same minimums as custom rules, then, for each declared net class and coupled pair (`AET-WO-1308`), a rule keyed on its nets' names: tracks exactly its width (min and max), and for a class that declares a via, vias exactly its pad and drill with at least its ring. A later rule replaces the board minimum on those nets. KiCad 10.0.7 was measured reporting a class track too narrow and one too wide, and a class via too small (FEEDBACK §3);
   - `sym-lib-table` and `fp-lib-table` name the vendored KiCad 10.0.7 libraries, which the gate copies into `lib/` beside them.
 
   The board's own `.kicad_pro` and `.kicad_dru` are never copied. No environment variable is set.
@@ -546,7 +547,7 @@ An upper bound on each I2C line's capacitance, and each SPI bus's SCK and MOSI (
 
 1. **Read the specification** as `solve` does, and build its design as `emit` does (exit `2` for what either refuses).
 2. **Read the board once, into memory**; its sha256 and the bound both come from those bytes. The reader is strict, so that it never reads a board otherwise than KiCad. Refused with exit `3`, before any estimate:
-   - `BoardUnreadable`: not one KiCad S-expression, or what `route::read` refuses (a rotated or non-front-SMD part, a track or via of another size);
+   - `BoardUnreadable`: not one KiCad S-expression, or what `route::read` refuses (a part rotated other than by a right angle, a non-front-SMD part, a track or via other than its net's class's or the board's);
    - `LayersDisagree`, `PlanesDisagree`, `ThicknessDisagrees`, `ViaNotThrough` (`AET-WO-4100`; `ThicknessDisagrees` was `BoardThickness`): a board whose copper layer table (read by KiCad's ids), zones and planes, `(general (thickness …))` or vias are not the specification's declared board;
    - `MalformedBoard`: what the strict reader refuses (`check drc` above), with `id` the path to the node: a repeated child KiCad holds once, or a footprint field named twice (a legacy `fp_text reference` beside the `Reference` property included);
    - `UnmodelledCopper`: an item, a child, a list with no keyword, or a repeated child the bound does not model, or a value count other than its own. This covers an arc; a graphic or text on copper; copper in a footprint other than its pads; a pad without `layers`, naming a layer other than by its canonical name, or shaped other than `rect` or `roundrect`; a padstack, drill or offset; a zone fill or local clearance; and a stackup;

@@ -24,9 +24,9 @@
 //! front. The placer gives every footprint rotation 0; a placement may carry
 //! 90, 180 or 270 (`AET-WO-1308` §1.5, [`write_moved`]), which rotates the
 //! footprint's pads, graphics and text positions about its origin
-//! ([`route::rotate`]) and adds the rotation to each pad's own angle, which
-//! KiCad's file holds absolute (measured). Text angles are left as the
-//! library writes them, so text stays upright.
+//! ([`route::rotate`]) and adds the rotation to each pad's and property's own
+//! angle, which KiCad's file holds absolute (measured): the footprint turns
+//! whole.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -220,7 +220,7 @@ fn text_box(item: &Sx, text: &str, reference: &str, theta: u16) -> Result<Rect, 
     let at = item
         .child("at")
         .ok_or_else(|| internal(reference, "a text without `at`"))?;
-    // The position turns with the footprint; the angle is absolute (P5).
+    // The text turns whole with the footprint ([`turn`]).
     let (x, y) = route::rotate(theta, xy(at, reference)?);
     let font = item
         .child("effects")
@@ -237,10 +237,14 @@ fn text_box(item: &Sx, text: &str, reference: &str, theta: u16) -> Result<Rect, 
         .unwrap_or(h / 8);
     let chars = i64::try_from(text.chars().count()).unwrap_or(i64::MAX / 4);
     let (mut hw, mut hh) = (chars.saturating_mul(w) * 2 / 3 + thick, h / 2 + thick);
-    match at.arg(3).unwrap_or("0") {
-        "0" | "180" => {}
-        "90" | "270" => std::mem::swap(&mut hw, &mut hh),
-        a => return Err(internal(reference, format!("a text at angle {a}"))),
+    let own = route::angle(at.arg(3)).ok_or_else(|| {
+        internal(
+            reference,
+            format!("a text at angle {}", at.arg(3).unwrap_or("?")),
+        )
+    })?;
+    if matches!((own + theta) % 360, 90 | 270) {
+        std::mem::swap(&mut hw, &mut hh);
     }
     Ok(Rect {
         x0: x - hw,
@@ -619,7 +623,11 @@ fn footprint(
         let mut c = child.clone();
         match child.head() {
             Some("version" | "generator" | "generator_version" | "layer") => continue,
+            Some("fp_text") if rotation != 0 => turn(&mut c, rotation, &part.reference)?,
             Some("property") => {
+                if rotation != 0 {
+                    turn(&mut c, rotation, &part.reference)?;
+                }
                 let text = match child.arg(1) {
                     Some("Reference") => Some(part.reference.as_str()),
                     Some("Value") => Some(part.value.as_str()),
@@ -633,7 +641,7 @@ fn footprint(
             Some("pad") => {
                 let number = child.arg(1).unwrap_or("");
                 if rotation != 0 {
-                    turn_pad(&mut c, rotation, &part.reference)?;
+                    turn(&mut c, rotation, &part.reference)?;
                 }
                 if let Some((_, net)) = item.pads.get(number)
                     && let Some(items) = c.items_mut()
@@ -811,20 +819,22 @@ fn layout(parts: &[Part]) -> Result<Layout, EmitError> {
     layout_of(&items(parts)?, &[])
 }
 
-/// A pad's `(at x y [a])` with the footprint's rotation added to its own
-/// angle, which KiCad's file holds absolute (measured, `AET-WO-1308` P5).
-/// Only right angles are written; the library's pads are at right angles.
-fn turn_pad(pad: &mut Sx, rotation: u16, reference: &str) -> Result<(), EmitError> {
-    let items = pad
+/// A pad's or a text's `(at x y [a])` with the footprint's rotation added to
+/// its own angle, which KiCad's file holds absolute (measured, `AET-WO-1308`
+/// P5), so the footprint turns whole: text kept upright would land on the
+/// footprint's own turned silkscreen (measured, KiCad's `silk_overlap`).
+/// Only right angles are written; the library's are right angles.
+fn turn(item: &mut Sx, rotation: u16, reference: &str) -> Result<(), EmitError> {
+    let items = item
         .items_mut()
-        .ok_or_else(|| internal(reference, "a pad that is not a list"))?;
+        .ok_or_else(|| internal(reference, "a pad or text that is not a list"))?;
     let at = items
         .iter_mut()
         .find(|i| i.head() == Some("at"))
-        .ok_or_else(|| internal(reference, "a pad without `at`"))?;
+        .ok_or_else(|| internal(reference, "a pad or text without `at`"))?;
     let (x, y) = xy(at, reference)?;
     let own = route::angle(at.arg(3))
-        .ok_or_else(|| internal(reference, format!("a pad at angle {:?}", at.arg(3))))?;
+        .ok_or_else(|| internal(reference, format!("an item at angle {:?}", at.arg(3))))?;
     let turned = (own + rotation) % 360;
     *at = match turned {
         0 => at_sx("at", (x, y)),

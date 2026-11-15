@@ -256,7 +256,10 @@ jobs:
       # droop on a board whose first read is SPI, adversarial A1).
       # 97: plus 1 from AET-WO-1307 in with_tools.rs (D3 and D1 pass ERC and DRC with
       # parity at 4 layers under the inward escape).
-      TIER2_MIN: "97"
+      # 100: plus 3 from AET-WO-1308 in with_tools.rs (the power-class and stand-in pair
+      # fixtures pass ERC and DRC with parity, the pair reported; a track off its class
+      # width fails DRC by the gate's rule; a part on each board edge passes ERC and DRC).
+      TIER2_MIN: "100"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

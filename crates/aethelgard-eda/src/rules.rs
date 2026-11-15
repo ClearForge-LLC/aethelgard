@@ -233,6 +233,45 @@ mod tests {
         assert!(!dru.contains("track_width"));
     }
 
+    /// Each class's width is its tracks' exact width, and its declared via
+    /// its vias' exact size with at least its ring, by net name, after the
+    /// board minimum so that it replaces it (`AET-WO-1308` P4, measured).
+    #[test]
+    fn a_class_writes_its_exact_width_and_via() {
+        let rules = Rules {
+            source: Source::Specification,
+            clearance_nm: FLOOR_NM,
+            min_track_width_nm: Some(FLOOR_NM),
+            classes: vec![
+                ClassRules {
+                    name: "class_power".into(),
+                    nets: vec!["VDD_3V3".into(), "GND".into()],
+                    width_nm: 250_000,
+                    via_nm: Some((700_000, 300_000)),
+                },
+                ClassRules {
+                    name: "pair_USB".into(),
+                    nets: vec!["/D+".into(), "/D-".into()],
+                    width_nm: 200_000,
+                    via_nm: None,
+                },
+            ],
+        };
+        let dru = rules.custom_rules();
+        let tail = "(rule \"class_power_track_width\"\n\t(condition \"A.NetName == 'VDD_3V3' || A.NetName == 'GND'\")\n\t(constraint track_width (min 0.25mm) (max 0.25mm)))\n(rule \"class_power_via\"\n\t(condition \"A.Type == 'Via' && (A.NetName == 'VDD_3V3' || A.NetName == 'GND')\")\n\t(constraint via_diameter (min 0.7mm) (max 0.7mm))\n\t(constraint hole_size (min 0.3mm) (max 0.3mm))\n\t(constraint annular_width (min 0.2mm)))\n(rule \"pair_USB_track_width\"\n\t(condition \"A.NetName == '/D+' || A.NetName == '/D-'\")\n\t(constraint track_width (min 0.2mm) (max 0.2mm)))\n";
+        assert!(dru.ends_with(tail), "{dru}");
+        assert!(dru.starts_with("(version 1)\n(rule \"specification_clearance\""));
+        // No class: the file is today's, byte for byte.
+        let none = Rules {
+            classes: Vec::new(),
+            ..rules
+        };
+        assert_eq!(
+            none.custom_rules(),
+            "(version 1)\n(rule \"specification_clearance\"\n\t(constraint clearance (min 0.2mm)))\n(rule \"specification_track_width\"\n\t(constraint track_width (min 0.2mm)))\n"
+        );
+    }
+
     #[test]
     fn the_setup_block_carries_no_clearance_token() {
         let setup = crate::sexpr::parse(SETUP).unwrap();

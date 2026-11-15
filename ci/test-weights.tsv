@@ -263,3 +263,8 @@ tests/escape_tier1.rs	a_zone_that_is_not_the_board_outline_is_refused_by_name	2.
 tests/escape_tier1.rs	a_via_in_a_courtyard_is_refused_but_in_the_dense_parts_own_ring	2.100
 tests/with_tools.rs	d3_and_d1_pass_erc_and_drc_with_parity_at_four_layers	24.500
 tests/escape_tier1.rs	shifted_placements_route_without_reaching_the_exact_judge	3.300
+# AET-WO-1308: estimates until the next refit, as 1307's: each test's wall time in the pinned image on
+# Furnace (2026-11-15; 6.0, 3.0 and 2.4 s) times 2.8. The nine classes_tier1 tests took 1.3 s together (release eda).
+tests/with_tools.rs	the_class_and_pair_fixtures_pass_erc_and_drc_and_the_pair_is_reported	16.800
+tests/with_tools.rs	a_track_that_is_not_its_class_width_fails_drc_by_the_gates_rule	8.400
+tests/with_tools.rs	a_part_on_each_edge_passes_erc_and_drc	6.720
