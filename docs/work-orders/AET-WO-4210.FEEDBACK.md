@@ -481,3 +481,13 @@ Committed alone, before any Renode, Kani or tier-2 container of this build ran. 
 | PB8 | Sentinel-01's tier-2 verdicts stay pass. The flash's idle warnings are each directly after `Finisihing transmission on device 0x0`, so they are skipped. Every expected witness is unchanged. | P1.6, `SPIMultiplexer.cs` L107 |
 | PB9 | The existing SysTick mutant (`a_firmware_parked_in_its_fault_handler…`) now also gives `register_mismatch` on `SysTick.CSR` (`ENABLE` and `TICKINT` set). A firmware that only sets `ENABLE` (no tick interrupt) after the boot word, or enables one NVIC line, passed before this build and now fails with `register_mismatch` naming the register. | D6; `NVIC.cs` |
 | PB10 | The fixture's Kani harness proves; its SPI transfer proof runs at unwind 8 (wl ≤ 2, rl ≤ 6) and takes under 400 s in the image. Each boot of the fixture takes under 10 s. | the reference's 183 s (`ci/test-weights.tsv`) |
+
+### Predictions for Scotty's ruling on D1 (`accept_lifecycle`), written before its first container run
+
+The architect relayed the ruling at 05:15 UTC into this builder's inbox (`~/.cache/aet-bus/4210.md`). It is the authority for this added scope: "A specification that uses any part whose lifecycle is `eol` or `nrnd` must acknowledge each one explicitly … `validate` refuses by name any unacknowledged eol/nrnd part … Every verdict, every generated file's header and the fabrication package then carry a loud banner … A fab-intended specification is no longer refused outright: it is refused unless acknowledged." The same author's next note (1307 merged at `d52c051`) matches `origin/main`.
+
+| # | Prediction | Rests on |
+|---|---|---|
+| PL1 | With both stand-ins acknowledged, the fixture's `simulate --spec` verdict carries `lifecycle` with two lines, ICP10111 (U6) first, then ICM20948 (U5, U7), each naming `EOL` and TDK's product page. The emitted platform's header and every board-crate file with a header (`lib.rs`, `board.rs`, `proofs.rs`, `Cargo.toml`, `firmware/src/main.rs`, `firmware/Cargo.toml`, `firmware/.cargo/config.toml`, `firmware/link.x`) carry the same two lines. | `lifecycle_banner`, devices I2C then SPI |
+| PL2 | Every Sentinel-01 verdict, board-crate file and platform is unchanged but for the specification hash. It has no `lifecycle` key, because its parts are `active`. | `skip_serializing_if`, an empty banner |
+| PL3 | The fixture's earlier tier-2 results (PB1-PB10) are unchanged: only the verdict's new key and the headers differ. | — |
