@@ -76,7 +76,7 @@ The predictions below were committed before any measured run. They are not edite
 ### Where it ran
 
 - **Host only, for every number below.** `aethelgard emit` and `extract` (debug build), and Python probes in a scratch venv (numpy 2.5.4, scipy 1.18.1). `emit` reproduces 1305's reference board, sha256 `7b9b0e3d…2070`, and the 4-layer fixture `6acc50fe…65d9` (`spike/1303/boards/`). `extract` on both writes `boards/*/extract.json`.
-- **The container, once, stopped by its own guard.** `spike/1303/img.sh` runs the pinned image (`c69ff9bc…`) under rootless podman with `--memory 8g --memory-swap 8g --pids-limit -1`, and writes nothing under `/sys/fs/cgroup` (the architect's correction to kickoff rule 3). Its read-back (`spike/1303/caps.log`):
+- **The container: first stopped by its own guard, then run under the replaced rule 3 (D9).** `spike/1303/img.sh` runs the pinned image (`c69ff9bc…`) under rootless podman with `--memory 8g --memory-swap 8g --pids-limit -1`, and writes nothing under `/sys/fs/cgroup` (the architect's correction to kickoff rule 3). Its read-back (`spike/1303/caps.log`):
   - `memory.max=8589934592`;
   - **`memory.swap.max=8589934592`, not 0**;
   - `pids.max=max`.
@@ -110,7 +110,7 @@ The predictions below were committed before any measured run. They are not edite
 | P4.4 | Exact checks hold | Bar, annulus and barrel equal their closed forms; the 90° bend lies inside a certified bracket (corner 0.558–0.560 squares against the tube's 1) | measured | right |
 | P4.5 | Reference 50–300 mΩ from the best stand-in | **11.4–156.8 mΩ** on 8 of 16 pins with the hole concentric; **11.4–414.6 mΩ** on 8 of 16 with the hole anywhere in JLCPCB's ±0.075 mm; the rest are refused by name | measured | partly; coverage not predicted |
 | P4.6 | 4-layer 10–40 mΩ | **10.2–79.0 mΩ** on 11 of 16 pins, concentric; **2 of 16** (10.2–12.6 mΩ) at ±0.075 mm | measured | close only under the concentric condition |
-| P4.7 | Refill joins vias solidly | **Not measured** (container guard), but **read at source**. KiCad 10.0.7 `pcbnew/zone_filler.cpp` `knockoutThermalReliefs` gives thermal reliefs to footprint pads, and gives them to vias only in a `HATCH_PATTERN` zone (l.2002–2112). The planes here are solid fill, so a same-net via joins the fill all round. The same source shows the zone's `min_thickness` opening the fill (F9) | read | right |
+| P4.7 | Refill joins vias solidly | **Measured** under the replaced rule 3 (`spike/1303/p47/`; caps `memory.max=8589934592`, `memory.swap.max=0`, `pids.max=8192`). The 4-layer board was prepared exactly as the DRC gate and the fabrication package prepare it, by the same `aethelgard-eda` calls (`p47/prep`). `In1`/`In2` were then exported by KiCad 10.0.7 with `--check-zones`, and every own-net via sampled at r 0.32–0.70 mm. **No thermal relief:** on `In2` every missing sample (617) lies in a foreign via's knockout. On `In1`, 462 do and one lies 0.022 mm beyond one, inside the `min_thickness` opening's 0.125 mm (F9). Foreign knockouts measure 0.2025 mm from the via pad on the prepared copy (0.5025 mm unprepared), inside the S4 rhombus check's 0.51 mm. This agrees with KiCad's source (`zone_filler.cpp` l.2002–2112: reliefs for vias only in hatched zones) | measured / read | right |
 | P4.8 | Per-pin R × total load bounds the drop | Holds on 300 random networks: the maximum ratio is 1.000000 | measured | right |
 | P5.1–P5.3 | Shape of the verdict and limits | Proposal below | inferred | — |
 
@@ -223,14 +223,14 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
   - load: transfer resistance.
 - **Coverage.** A pin with no admissible path carries **no** bound: it is refused by name, never given a number.
 - **The spread barrel against a certified lower bound** (`s4/check_barrel.out`). The barrel's bound, (ρ/A)∫(q² + r_d²p²), is exactly the energy of the same flow in an isotropic periodic sheet of width 2πr_d. That sheet has two terminals, the entry arc and the far edge, and a P1 primal there gives a certified lower bound. The spread bound holds above it at five entries (symmetric, offset and tilted; barrels of 0.34, 1.07, 1.6 and 2.0 mm), at 1.15–1.79×.
-- **The plane-to-via joint, read at source:** KiCad 10.0.7 `zone_filler.cpp` (P4.7 row). A solid-fill zone joins a same-net via all round.
+- **The plane-to-via joint, read at source and measured** (P4.7 row). A solid-fill zone joins a same-net via with no relief. Where copper is missing around an own via, a foreign knockout explains it.
 - **The plane's opening.** The zone's `min_thickness` (0.25 mm) is a deflate-then-inflate by 0.125 mm. So the rhombus check grows every foreign clearance disc to 0.635 mm and the edge to 0.625 mm: a point that far from every knockout survives the opening. This is applied in the table above (F9).
 - **Hole offset, rigorous** (`rbound2.py` `fan_off`, `spread_off`, `best_cut_off`). The hole centre c' may lie anywhere within δ of the pad centre. The cut stays in the pad disc and clears 1.05·r_d + δ, so rays to any c' stay in the pad. Each energy is bounded in closed form over every c', using p' ≥ p − δ and r' ≤ r + δ (integrand increasing). The barrel spread is bounded via f(j) = j ln(2πj)/(2πj − 1), which is increasing, with ∫j0 dφ0 = 1 and |Φ − φ0| ≤ 2π. In the plane, discs grow by δ and D by 2δ. These worst-case forms dominate a 64-direction sample at every case tried (`s4/check_offset.out` is the earlier sensitivity). **At JLCPCB's ±0.075 mm [read] the bound is rigorous with no concentricity condition** (`s4/paths.out`), but the 0.15 mm annular ring leaves few admissible entries and the worst-case spread is about 8× loose (F10).
 - **Stated conditions the bound still rests on.** The work order's S4 itself allows these: "the plating thickness is a fabricator figure, so cite it or declare it as a condition".
   - **Fabrication:** none in `paths.out` (the hole anywhere within the cited ±0.075 mm); `paths-concentric.out` adds the condition "hole concentric with its pad";
   - **Material:** plating ≥ 18 µm (JLCPCB publishes an 18 µm *average* [read]), outer copper ≥ 30 µm, plane copper ≥ 15 µm, copper at most 125 °C (the Tj of the cited load). Resistivity allowance **k = 1.181, cited**: the largest rated foil resistivity in IPC-MF-150F §3.8.1.2, 0.181 Ω·g/m², as quoted in US 6,652,725 B2 [read], over IACS's 0.15328. That is cited for foil; applying it to plated copper is a condition. Each input is in `conditions.json` with its source. The copper minima remain declared conditions: IPC-6012 Tables 3-4 and 3-14 are paywalled, vendor pages quote them second-hand and disagree, and OSH Park publishes a nominal with no tolerance (D6). For plating, the lower of two fabricator figures is taken: JLCPCB's 18 µm average and PCBWay's 'minimum … typically 20 micrometers' per IPC-6012 [both read];
   - **Terminal:** each pad is one equipotential;
-  - **DRC gate:** the plane's fill is the declared plane, which the DRC gate refills and judges.
+  - **DRC gate:** the plane's fill is the declared plane, which the DRC gate refills and judges. It was measured on the 4-layer fixture's prepared copy (P4.7): solid joints, and 0.2025 mm foreign clearance.
 
   Each is input to a bound, not a bound itself. None is substituted by default (`INV-06`): S5 makes each a declared field.
 
@@ -336,7 +336,7 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
   - Both a supply gate and a pair check need these. **Recommended:** a router work order after `1307`. `1303`'s build gates what the router produces and refuses what it cannot bound.
 - **D9 · Container caps.**
   - With equal flags, podman 5.7 leaves `memory.swap.max` at 8 GiB (read back). The guard stopped the run, and nothing was written under `/sys/fs/cgroup`. The correction's premise does not hold on this podman. `4210` measured the same, independently (its mailbox note, `540ae8f`: 8589934592, steady over 40 s).
-  - **Recommended:** P4.7 stays a stated condition (the plane meets each own-net via all round, and keeps 0.2005 mm from foreign vias, as `4100` measured) until a capped-swap route is ruled.
+  - **Ruled 2026-11-15 03:40 UTC:** the architect replaced rule 3 (`~/.cache/aet-bus/RULE3.md`). The container now runs inside a capped systemd user scope (`MemoryMax=8G`, `MemorySwapMax=0`, `TasksMax=8192`) with `podman --cgroups=disabled`. `img.sh` follows it, and its read-back is `memory.max=8589934592`, `memory.swap.max=0`, `pids.max=8192` (`caps.log`). P4.7 then ran (below).
 - **D10 · The work order's S4 says "the copper maximum".** An upper R bound needs the copper **minimum**; the maximum bounds the wrong way. Read as a slip; please confirm.
 
 ## Findings

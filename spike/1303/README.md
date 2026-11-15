@@ -17,5 +17,6 @@ Python 3 with numpy, scipy (any recent); no network. Run from each directory.
   - `check_barrel.py` → `check_barrel.out`: the spread barrel against a certified lower bound on the unrolled sheet.
   - `check_offset.py` → `check_offset.out`: hole-offset sensitivity of the via entry.
   - `check_fan_plane.py` → `check_fan_plane.out`: the bowtie against the exact two-hole sheet; the general fan and the pad pass against certified lower bounds; via-entry admissibility by brute force.
-- `img.sh`: the capped container runner; `caps.log` is its read-back (the guard stopped the only run: FEEDBACK D9).
+- `img.sh`: the capped container runner, by the architect's replaced rule 3 (a capped systemd user scope plus `podman --cgroups=disabled`). `caps.log` is its read-back; its first line is the earlier flag-based runner's stop (FEEDBACK D9).
+- `p47/`: P4.7. `prep/` is a standalone probe that prepares a board as the DRC gate does. `prepared/` holds the 4-layer board so prepared, and `prepared/out/` its refilled `In1`/`In2` Gerbers. `out/` holds the unprepared board's (`boards/four/`, copied in for the run). `analyse.py` → `analyse.out`.
 - `research-sources.md`: the research pass's record, labelled.
