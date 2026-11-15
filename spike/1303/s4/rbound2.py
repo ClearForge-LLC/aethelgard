@@ -106,7 +106,8 @@ def add_plane(g, board, net, c, vias):
     rd = c["drill_mm"] / 2
     d = c["plane_depth_min_mm"] / 4
     foreign = [v for v in board.vias if v["net"] != net]
-    rx, edge = c["antipad_radius_mm"], c["edge_mm"]
+    dlt = c.get("hole_offset_mm", 0.0)
+    rx, edge = c["antipad_radius_mm"] + dlt, c["edge_mm"] + dlt
     x0, y0, x1, y1 = board.outline
     for i, A in enumerate(vias):
         for k, B in enumerate(vias):
@@ -124,11 +125,11 @@ def add_plane(g, board, net, c, vias):
                 rh = [(ax, ay), (mx - uy * h, my + ux * h), (bx, by), (mx + uy * h, my - ux * h)]
                 if any(disc_hits_polygon((f["x"], f["y"]), rx, rh) for f in foreign):
                     continue
-                if any(disc_hits_polygon((f["x"], f["y"]), rd, rh) for f in own):
+                if any(disc_hits_polygon((f["x"], f["y"]), rd + dlt, rh) for f in own):
                     continue
                 if any(not (x0 + edge <= px <= x1 - edge and y0 + edge <= py <= y1 - edge) for px, py in rh):
                     continue
-                cost = 2 * unspread_uniform(c, rd, beta, d) + bowtie(c, rd, beta, D)
+                cost = 2 * unspread_uniform(c, rd, beta, d) + bowtie(c, rd, beta, D + 2 * dlt)
                 if best is None or cost < best[0]:
                     best = (cost, beta)
             if best:
@@ -249,7 +250,8 @@ def path_bound(nodes, tags, vias, c, w, H, plane_depth):
                 else:  # leaving: reverse so it heads to the via
                     poly = [b] + (poly if poly else [a])
                 kk += step
-            cut = best_cut(poly, centre, c, w, t_out)
+            dlt = c.get("hole_offset_mm", 0.0)
+            cut = best_cut_off(poly, centre, c, w, t_out, dlt) if dlt > 0 else best_cut(poly, centre, c, w, t_out)
             if cut is None:
                 return None, "via entry: no admissible cross-section inside the via pad", ("ban", (step_detail(tags[k + step]), step_detail(tag)))
             saved, p, s0, e = cut
@@ -276,13 +278,16 @@ def path_bound(nodes, tags, vias, c, w, H, plane_depth):
     for k, tag in enumerate(tags):
         if tag[0] == "barrel":
             (pa, sa), (pb, sb) = xes[tag[1]][0], xes[tag[1]][-1]
+            dlt = c.get("hole_offset_mm", 0.0)
+            spr = (lambda p_, s_, dd_: spread_off(c, w, p_, s_, rd, dd_, dlt)) if dlt > 0 else (lambda p_, s_, dd_: spread_line(c, w, p_, s_, rd, dd_))
             total += min(
-                spread_line(c, w, pa, sa, rd, dd) + spread_line(c, w, pb, sb, rd, dd) + rho / A * (H[1] - 2 * dd) / (2 * math.pi)
+                spr(pa, sa, dd) + spr(pb, sb, dd) + rho / A * (H[1] - 2 * dd) / (2 * math.pi)
                 for dd in [H[0] / 2 * f for f in (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)]
             )
         elif tag[0] == "barrel-plane":
             pa, sa = xes[tag[1]][0]
-            total += spread_line(c, w, pa, sa, rd, dpl) + rho / A * (plane_depth[1] - 2 * dpl) / (2 * math.pi)
+            dlt = c.get("hole_offset_mm", 0.0)
+            total += (spread_off(c, w, pa, sa, rd, dpl, dlt) if dlt > 0 else spread_line(c, w, pa, sa, rd, dpl)) + rho / A * (plane_depth[1] - 2 * dpl) / (2 * math.pi)
         elif tag[0] == "plane":
             total += tag[4]
             if last_plane is not None and tags[k - 1][0] == "plane":
@@ -376,6 +381,90 @@ def best_cut(poly, centre, c, w, t_out):
                 continue
             saved = (L - sc) + after
             e = fan_line(c, w, t_out, p, s0, rd)
+            cost = e - rho * saved / (w * t_out)
+            if best is None or cost < best[0]:
+                best = (cost, saved, p, s0, e)
+        after += L
+    return None if best is None else best[1:]
+
+
+# ------------------------------------------------- a hole off its pad's centre
+#
+# The drilled hole's centre c' may sit anywhere within delta of the pad centre
+# c (a fabricator's hole-position tolerance). For a cut line q(s) with
+# |q - c| <= r_p (in the pad disc) and |q - c| > 1.05 r_d + delta (clear of the
+# hole wherever it is), rays from q to c' lie in the pad disc by convexity and
+# end at the hole wall. With p' = (c' - m).t >= p - delta and
+# r'(s) = |q(s) - c'| <= r(s) + delta, and r^2 ln(r/r_d) increasing for
+# r > r_d, for every c':
+#   E_fan <= (rho/t)(1/w^2)/(p - delta) * integral((r + delta)^2 ln((r + delta)/r_d) ds).
+# The spread: integral(j0^2 L(2 pi j0) dphi0) <= max_j f(j) with
+# f(j) = j ln(2 pi j)/(2 pi j - 1) (increasing) and integral(j0 dphi0) = 1;
+# j0 = r'^2/(w p') <= (r_max + delta)^2/(w (p - delta)); and
+# |Phi - phi0| <= 2 pi. So
+#   E_spread <= (rho/A) f(j_max) (d + r_d^2 (2 pi)^2 / d).
+# In the plane the bowtie runs from c' to the other via's hole, so D grows by at
+# most 2 delta and every clearance disc by delta.
+
+
+def fan_off(c, w, t, p, s0, rd, delta):
+    r = lambda s: math.sqrt(p * p + (s - s0) ** 2) + delta
+    val, err = _quad(lambda s: r(s) ** 2 * math.log(r(s) / rd), -w / 2, w / 2, epsabs=1e-14, epsrel=1e-12)
+    return rho_max(c) / t / (w * w) / (p - delta) * (val + 10 * err)
+
+
+def _f(j):
+    x = 2 * math.pi * j
+    return j * math.log(x) / (x - 1) if abs(x - 1) > 1e-12 else j
+
+
+def spread_off(c, w, p, s0, rd, d, delta):
+    tp = c["plating_min_mm"]
+    A = tp * (2 * rd - tp) / 2
+    rmax = math.sqrt(p * p + (abs(s0) + w / 2) ** 2) + delta
+    jmax = rmax * rmax / (w * (p - delta))
+    fmax = max(_f(jmax * k / 1000) for k in range(1, 1001))  # f is increasing; sampled to the end
+    return rho_max(c) / A * fmax * (d + rd * rd * (2 * math.pi) ** 2 / d)
+
+
+def best_cut_off(poly, centre, c, w, t_out, delta):
+    """best_cut, admissible for every hole centre within delta: the line in
+    the pad disc, clear of 1.05 r_d + delta, p > delta; fan_off energy."""
+    rp, rd = c["via_pad_mm"] / 2, c["drill_mm"] / 2
+    rho = rho_max(c)
+    best = None
+    n = len(poly)
+    after = 0.0
+    for m in range(n - 1, max(0, n - 4), -1):
+        a, b = poly[m - 1], poly[m]
+        L = math.dist(a, b)
+        if L < 1e-12:
+            continue
+        tx, ty = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+        ux, uy = -ty, tx
+        need = 0.0
+        if m - 2 >= 0:
+            a0 = poly[m - 2]
+            v0 = (a[0] - a0[0], a[1] - a0[1])
+            th = abs(math.atan2(v0[0] * ty - v0[1] * tx, v0[0] * tx + v0[1] * ty))
+            need = (w / 2) * math.tan(th / 2)
+        for k in range(1, 81):
+            sc = L * k / 80
+            if sc < need - 1e-12:
+                continue
+            mx, my = a[0] + tx * sc, a[1] + ty * sc
+            qs = [(mx + sg * ux * w / 2, my + sg * uy * w / 2) for sg in (1, -1)]
+            if any(math.dist(q, centre) > rp + 1e-9 for q in qs):
+                continue
+            p = (centre[0] - mx) * tx + (centre[1] - my) * ty
+            s0 = (centre[0] - mx) * ux + (centre[1] - my) * uy
+            if p <= delta:
+                continue
+            dmin = p if abs(s0) <= w / 2 else math.hypot(p, abs(s0) - w / 2)
+            if dmin <= 1.05 * rd + delta:
+                continue
+            saved = (L - sc) + after
+            e = fan_off(c, w, t_out, p, s0, rd, delta)
             cost = e - rho * saved / (w * t_out)
             if best is None or cost < best[0]:
                 best = (cost, saved, p, s0, e)

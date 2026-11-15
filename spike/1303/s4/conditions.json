@@ -1,7 +1,7 @@
 {
  "rho20_ohm_mm": 1.7241e-05,
  "alpha": 0.00393,
- "t_max_c": 105,
+ "t_max_c": 125,
  "k_material": 1.0,
  "t_outer_min_mm": 0.03,
  "t_plane_min_mm": 0.015,
@@ -23,7 +23,7 @@
  "_sources": {
   "rho20_ohm_mm": "IACS annealed copper 1.7241 uOhm*cm at 20 C, NBS Handbook 100 (read by the research pass)",
   "alpha": "0.00393 /C at 20 C, NBS Handbook 100; IPC-TM-650 2.5.14A",
-  "t_max_c": "condition: 105 C (DS12117 Table 118 gives IDD max up to Tj 105 C at 480 MHz)",
+  "t_max_c": "condition: 125 C, the junction temperature at which DS12117 Rev 10 Table 120 gives the 658 mA load (read); copper taken no hotter",
   "k_material": "condition: 1.0 = annealed IACS; IPC-4562 foil maximum not reached, no cited maximum for plated copper; every R scales linearly with it",
   "t_outer_min_mm": "condition: 30 um (OSH Park: 1 oz + plating 1.7 mil nominal, no tolerance; NCAB second-hand: 1 oz foil minimum 30.9 um)",
   "t_plane_min_mm": "condition: 15 um (OSH Park inner 0.5 oz 0.68 mil nominal; NCAB second-hand 1/2 oz foil minimum 15.4 um)",
@@ -33,6 +33,8 @@
   "antipad_radius_mm": "0.3 + 0.2005 measured plane clearance to a foreign via (architecture 2.21), rounded up to 0.51, plus 0.125: the zone's min_thickness 0.25 opens the fill by a 0.125 mm disc (KiCad deflate/inflate), so a point 0.125 from every knockout survives",
   "edge_mm": "route.rs EDGE_NM 0.5 mm, plus the 0.125 mm opening",
   "h_*": "barrel length bounds: the reference's declared finished 0.34..2.0 mm; at 4 layers F.Cu to In2 at least 0.179 + 0.891 mm, at most the finished 1.851 mm",
-  "plane_via_joint": "read at source: KiCad 10.0.7 pcbnew/zone_filler.cpp knockoutThermalReliefs gives thermal reliefs to footprint pads; vias get them only in HATCH_PATTERN zones (l.2002-2112); the planes are solid fill, so a same-net via joins the fill all round"
- }
+  "plane_via_joint": "read at source: KiCad 10.0.7 pcbnew/zone_filler.cpp knockoutThermalReliefs gives thermal reliefs to footprint pads; vias get them only in HATCH_PATTERN zones (l.2002-2112); the planes are solid fill, so a same-net via joins the fill all round",
+  "hole_offset_mm": "JLCPCB capabilities page, 'Hole Position Tolerance +-0.075 mm' (read); the bound holds for every hole centre within it"
+ },
+ "hole_offset_mm": 0.075
 }

@@ -10,7 +10,8 @@ Python 3 with numpy, scipy (any recent); no network. Run from each directory.
   - `run_sens.py` → `sens.out`: what widens the interval.
   - `run_nested.py` → `nested.out`: `microstrip_odd`'s bounds under nested refinement.
 - `s4/`: the Thomson resistance bound (`rbound.py` pieces, `rbound2.py` graph and per-path recomputation, `pcb.py`).
-  - `run_paths2.py conditions.json` → `paths.out`: the reported bounds.
+  - `run_paths2.py conditions.json` → `paths.out`: the reported bounds, hole anywhere within ±0.075 mm.
+  - `run_paths2.py conditions-concentric.json` → `paths-concentric.out`: the same, hole concentric (a condition).
   - `run_paths.py` → `paths-v1-inadmissible.out`: the first version, kept as the record of FEEDBACK F7; not a bound.
   - `check_exact.py` → `check_exact.out`: bar, annulus, barrel, 90° bend bracket, transfer resistance.
   - `check_barrel.py` → `check_barrel.out`: the spread barrel against a certified lower bound on the unrolled sheet.
