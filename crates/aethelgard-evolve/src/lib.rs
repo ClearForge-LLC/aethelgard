@@ -232,6 +232,9 @@ pub enum View {
         device: Option<String>,
         fields: Vec<Field>,
     },
+    /// Kind 26: a motor output's twin witness and what it showed
+    /// (`AET-WO-4300a`): a symptom, never a solved expectation of its own.
+    MotorWitness { label: String, status: String },
     /// Any other kind.
     Other,
 }
@@ -1211,6 +1214,11 @@ impl RunView<'_> {
                     .buses
                     .iter()
                     .flat_map(|b| b.joined.iter().flat_map(|j| &j.owned))
+                    .chain(
+                        run.motors
+                            .iter()
+                            .flat_map(|m| m.joined.iter().flat_map(|j| &j.owned)),
+                    )
                     .filter(|o| {
                         o.name == *name
                             && o.address == reading.address
@@ -1232,6 +1240,17 @@ impl RunView<'_> {
                     seen.push(f.clone());
                     new
                 });
+                // A motor output's timer register is owned whole.
+                if run.motors.iter().any(|m| in_timer(m, name, reading)) && mismatch(reading) != 0 {
+                    fields.push(Field {
+                        register: name.clone(),
+                        address: reading.address,
+                        mask: reading.mask,
+                        solved: reading.expected & reading.mask,
+                        observed: reading.observed.map(|v| v & reading.mask),
+                        wrong: true,
+                    });
+                }
                 let unowned = run.unowned(name, reading);
                 if unowned != 0 {
                     fields.push(Field {
@@ -1267,6 +1286,10 @@ impl RunView<'_> {
                     fields,
                 }
             }
+            Record::MotorWitness { label, status, .. } => View::MotorWitness {
+                label: label.clone(),
+                status: status.clone(),
+            },
             _ => View::Other,
         };
         Some(Evidence {

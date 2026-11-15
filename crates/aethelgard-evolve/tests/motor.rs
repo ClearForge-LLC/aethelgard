@@ -12,7 +12,10 @@ use aethelgard_chaos::campaign::{
 };
 use aethelgard_chaos::record::{BusLine, Override, Reading, Record};
 use aethelgard_chaos::{Event, Header, Replayed, TraceWriter, replay_dir};
-use aethelgard_evolve::{Attribution, Domain, Rule, attribute};
+use std::collections::BTreeMap;
+
+use aethelgard_evolve::propose::{self, BusFacts, Input, Outcome, Rules};
+use aethelgard_evolve::{Attribution, Domain, Evidence, Rule, attribute, view};
 
 fn reading(address: u32, mask: u32, expected: u32, observed: u32) -> Reading {
     Reading {
@@ -377,4 +380,48 @@ fn adversarial_4_a_rewritten_verdict_cannot_move_the_domain() {
     // to explain the run.
     let a = attribute(&archived(&r)).unwrap();
     assert_eq!(a.rule, Rule::I1, "{a:?}");
+}
+
+/// `propose` answers S4 with a generator report naming the board crate's
+/// wrong alternate-function field, and nothing else (`INV-05`).
+#[test]
+fn propose_answers_the_dead_output_with_a_generator_report_of_its_af_field() {
+    let r = run(
+        &Wrong {
+            afrh: Some(0x2),
+            ..Wrong::default()
+        },
+        "unwitnessed",
+        true,
+        &[("register_mismatch", 1), (MOTOR_UNWITNESSED_FINDING, 1)],
+    );
+    let archived = archived(&r);
+    let a = attribute(&archived).unwrap();
+    let v = view(&archived).unwrap();
+    let evidence: Vec<Evidence> = a.evidence.iter().map(|e| v.event(*e).unwrap()).collect();
+    let buses = v.buses();
+    let facts = BTreeMap::from([(
+        "SENSORS".to_owned(),
+        BusFacts {
+            pull_up_ohms: 2200,
+            domain_millivolts: 3300,
+            floor_ohms: 967,
+        },
+    )]);
+    let input = Input {
+        attribution: &a,
+        evidence: &evidence,
+        buses: &buses,
+        facts: &facts,
+    };
+    let ans = propose::propose(&[&Rules], &input);
+    let Outcome::GeneratorReport(report) = &ans.outcome else {
+        panic!("{:?}", ans.outcome)
+    };
+    let what: Vec<(&str, u32, u64, Option<u64>)> = report
+        .expectations
+        .iter()
+        .map(|e| (e.what.as_str(), e.mask.unwrap(), e.solved, e.observed))
+        .collect();
+    assert_eq!(what, [("GPIOA.AFRH", 0xF, 1, Some(2))]);
 }

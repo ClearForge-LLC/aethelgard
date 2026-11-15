@@ -377,7 +377,9 @@ fn report(input: &Input) -> Outcome {
             observed: f.observed.map(u64::from),
         };
         let found: Vec<Expectation> = match &e.view {
-            View::Rise { .. } => continue,
+            // A rise, or a motor output's witness, is a symptom with no
+            // solved expectation of its own.
+            View::Rise { .. } | View::MotorWitness { .. } => continue,
             View::Fields { device, fields } => {
                 let generator = if device.is_some() {
                     Generator::Firmware
