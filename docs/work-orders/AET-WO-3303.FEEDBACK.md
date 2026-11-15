@@ -1,6 +1,6 @@
 # AET-WO-3303 FEEDBACK — package preconditions, the harness split, the pair judge's allowlist, a strict number reader, `main` kept green
 
-**Status: in progress, stopping on D1** (§7, the second flag-and-stop condition) on branch `wo/aet-3303-preconditions`, from `main` at `4246200`. Campaign coverage is judged and stated in every package's verdict, and **not enforced** until D1 is ruled: enforcing it today refuses every board with an SPI bus, the reference among them. Everything else in §1 is built, and §1.2's measured stop did not fire: the split proves in seconds.
+**Status: STOPPED on D1** (§7, the second flag-and-stop condition), PR #155, on branch `wo/aet-3303-preconditions`, from `main` at `4246200`. Campaign coverage is judged and stated in every package's verdict, and **not enforced** until D1 is ruled: enforcing it today refuses every board with an SPI bus, the reference among them. Everything else in §1 is built, and §1.2's measured stop did not fire: the split proves in seconds.
 
 The predictions in §1 were committed before any container run, any measured run of the CLI and any Kani run. They are not edited afterwards; corrections go in later sections.
 
@@ -40,7 +40,7 @@ Labels:
 | Declared | A fault the design survives | Source |
 |---|---|---|
 | I2C bus `SENSORS` | `pullup-3k3` (3.3 kΩ against the declared 2.2 kΩ, expects pass) | [read] `scenarios/sentinel-01/seeded/pullup-3k3.json` |
-| rail `VDD_3V3` (the MCU's supply) | `droop-tolerated`, `droop-bor3` (expect pass) | [read] |
+| rail `VDD_3V3` (the MCU's supply) | `droop-bor3` (2400 mV, below the 3135 mV band; expects pass). `droop-tolerated` (3200 mV) stays inside the band and covers nothing (§4 F3) | [read] |
 | SPI bus `FLASH` | **none.** `spi_device_absent` is the only SPI kind, and an absent flash fails the identity read (`spi-absent-u4` expects fail). A changed `max_capacitance_femtofarads` on `SPI_SCK`/`SPI_MOSI` either is refused by `solve` (`ir/src/solve.rs:630`) or moves only the solved `OSPEEDR`, which the firmware built from `--spec` then disagrees with [inferred] | [read] |
 
 Counting any seeded fault, the reference covers (`pullup-47k`, `spi-absent-u4`, `droop-bor3`), but then its campaign gate fails and nothing is written. Counting only survived faults, `FLASH` is never covered. Either way **no board with an SPI bus gets a package** while the rule is enforced: the reference, the four-layer fixture, both motor fixtures, and Sentinel-02, for which `roadmap.md:312` asks both "a fault campaign that includes an SPI fault" and the fabrication package.
@@ -51,7 +51,7 @@ Counting any seeded fault, the reference covers (`pullup-47k`, `spi-absent-u4`, 
 - An SPI bus no device uses (`connectors.json`'s `EXT`): `spi_device_absent` names a device, and `EXT` is refused, `UnknownDevice`. A bus no device uses is named uncovered whatever is seeded on it: a fault there judges nothing (§5.2's first attack). This reading is mine; an I2C bus with no device is treated the same.
 - Pending: `4300b` (PR #152) brings `serial_ports`; a USART becomes a declared bus with no override kind unless #152 adds one (asked in its inbox, 16:48 UTC).
 
-**What is built meanwhile.** `verify::uncovered` judges coverage from the specification and the scenarios (a value equal to the specification's own, a droop floor at or above nominal and a bus no device uses cover nothing). Its list is the verdict's `fab.preconditions` row `campaign_faults_every_bus_and_rail`, `unmet` with each name and why. It does **not** refuse: wiring the refusal turns every tier-2 package test red and leaves the rest of §1.8 untestable end to end. Flipping it is one `if` before any gate (the refusal `CampaignCoverageShort` was built, measured on the host and then unwired; its tests are now unit tests on `uncovered`).
+**What is built meanwhile.** `verify::uncovered` judges coverage from the specification and the scenarios (a pull-up equal to the specification's own, a line capacitance at or below its declared value, a droop inside its domain's tolerance band and a bus no device uses cover nothing). Its list is the verdict's `fab.preconditions` row `campaign_faults_every_bus_and_rail`, `unmet` with each name and why. It does **not** refuse: wiring the refusal turns every tier-2 package test red and leaves the rest of §1.8 untestable end to end. Flipping it is one `if` before any gate (the refusal `CampaignCoverageShort` was built, measured on the host and then unwired; its tests are now unit tests on `uncovered`).
 
 **Options.**
 - **(a)** A fault scenario that fails exactly as it expects counts as covering *and* passes the campaign gate: "verified" becomes "survived every tolerable fault and detected every intolerable one". It reverses `3301` §3.2, which is the architect's.
@@ -63,7 +63,7 @@ Blocks: §2's "the reference package's `VERDICT` lists every precondition as met
 ## 3. What was built, and what was measured
 
 ### §1.1 Preconditions
-- `--fab-out` and `--against-fab` refuse `HarnessSkipped` before any gate when the plan leaves a harness out: today the motor board's dropped `every_valid_sequence` **[measured, host: `motors-pwm.json` exit 3, `HarnessSkipped`]**, and any `kani::proof` attribute in the board crate that the plan's line reader does not name (`unplanned`, unit-tested with an attribute and `fn` on one line and a harness in another file).
+- `--fab-out` and `--against-fab` refuse `HarnessSkipped` before any gate when the plan leaves a harness out: before the split, the motor board's dropped `every_valid_sequence` **[measured, host, before §1.2 landed: `motors-pwm.json` exit 3, `HarnessSkipped`; after it nothing is skipped and the drop is gone]**, and any `kani::proof` attribute in the board crate that the plan's line reader does not name (`unplanned`, unit-tested with an attribute and `fn` on one line and a harness in another file).
 - Every package verdict carries `fab.preconditions`: `every_harness_proved` (each planned harness has a `prove` gate that passed; a timed-out or failed harness is named), `campaign_faults_every_bus_and_rail` (D1: stated, not enforced), `every_gate_passed` (each gate not `pass`, and each error finding). It sits inside `fab`, so the manifest's `verdict_sha256` line is unchanged. `4230` appends its ledger row to the same list.
 - **P3 was wrong [read].** It counted `pullup-47k` and `spi-absent-u4`, which fail, and a package needs every scenario to pass (D1).
 - **P4 held [measured]**, and D1 grew beyond it.
@@ -88,7 +88,7 @@ Blocks: §2's "the reference package's `VERDICT` lists every precondition as met
 - **P8 held [measured, host].** `pair-standin.json`'s emitted board reaches the tool lookup (`ToolMissing`, exit 4, so every check before KiCad passed); with one `(arc …)` on `/SPI_SCK` it is refused `UnmodelledCopper` ("a top-level `arc`, which the bound does not read"), exit 3, before any tool.
 
 ### §1.4 Strict numbers (a Sonnet subagent, checked against its diff)
-- `sexpr::nm` accepts exactly `-?[0-9]+(\.[0-9]{1,6})?`; `strict` refuses a quoted value or a value outside the grammar in every numeric child it reads (`at`, `start`, `end`, `mid`, `center`, `xy`, `size`, `width`, `thickness`, `roundrect_rratio`), naming the path (`Refusal::Number`). U+2212 never reaches it: the tokeniser refuses the byte.
+- `sexpr::nm` accepts exactly `-?[0-9]+(\.[0-9]{1,6})?`; `strict` refuses a quoted value or a value outside the grammar in every numeric child it reads (`at`, `start`, `end`, `mid`, `center`, `xy`, `size`, `width`, `thickness`, `roundrect_rratio`, and after §4's F4 `min_thickness`, `zone_connect`, `thermal_gap`, `thermal_bridge_width`, `thermal_bridge_angle`, and `hatch`, `drill`, `offset` past their keyword), naming the path (`Refusal::Number`). U+2212 never reaches it: the tokeniser refuses the byte.
 - **A11's subagent items [read]: all real.** The version was never pinned; a copper row's user name passed `declared`; `ends_with(".Cu")` at `extract.rs:600`, `route.rs:3426` and `:3672`. One `strict::copper_layer` (`F.Cu`, `B.Cu`, `In1.Cu`…`In30.Cu`) now serves all three.
 - **Deviation, stated:** KiCad 10.0.7 itself writes a fourth element on non-copper rows (`(9 "F.Adhes" user "F.Adhesive")` in the reference), so the fourth element is refused on a copper row, or on any row whose user name is a copper name, not on every row.
 - **The version pin** (`20260206`, `pcb::VERSION`) is on `extract`'s path (`read_tree`), so it also holds on `check drc --spec`'s pair path. It is not in the shared strict reader: `check drc` without a declared pair, and its container fixtures (20240108, 20231120), let KiCad judge the version. **P7 held [measured, in the image]:** `kicad-cli pcb upgrade --force` (KiCad 10.0.7) re-saves `container/fixtures/drc-clean.kicad_pcb` from `(version 20240108)` as `(version 20260206)`.
@@ -123,3 +123,51 @@ Blocks: §2's "the reference package's `VERDICT` lists every precondition as met
 | No minimum coupled length | **real, a design gap**: `DiffPair` has no length field; a pair of conductors at most ≈8 mm can pass with a short coupled run (4 mm uncoupled each end); longer ones need at least L − 8 mm | none: backlog (§9) |
 | `via1` / `track_x` references | **real, false refusal only**: pads of a part whose reference starts `via`, `track` or `thermal` were held to the 0.5 mm edge rule | items after the pads are chosen by position; unit test, the string mutant fails it |
 | `connectivity` O(segments × pads²); no item cap | **partly**: the `nth(j)` walk made each pad lookup O(pads); there is no item cap in `extract` either (the claim's premise); the input is bounded by 16 MiB and 1 M tokens | pads indexed once; no cap added (backlog §9). The strict reader's path strings: real and bounded by the token cap (≈1 GB estimated, not measured): backlog |
+
+## 4. Adversarial pass (full, a fresh Opus subagent)
+
+It attacked `5358f98` through the real CLI, on the host and in the image (its scripts and fixtures are in `~/.cache/aet-3303/adv/`), and read this FEEDBACK only after its own findings. Each fixed at `321de1f` unless said otherwise.
+
+| # | Severity | Finding | Done |
+|---|---|---|---|
+| F1 | false pass (disclosed) | A campaign with no fault writes a package; `campaign_faults_every_bus_and_rail` says `unmet` | D1: stated, not enforced, by design until ruled |
+| F2 | wrong text | The package itself did not name its preconditions: the list was only in stdout's `fab`, outside the manifest | `MANIFEST.json` gains `preconditions`, as `fab.preconditions` states them (`fab::tests` pins it) |
+| F3 | vacuous coverage | A lowered capacitance limit (which only eases a line) and a droop 1 mV below nominal counted as faults | Only a raised line capacitance counts, and a droop below the domain's tolerance band (so `droop-tolerated`, 3200 mV against 3135, covers nothing; `droop-bor3` does) |
+| F4 | false pass of `extract` alone | `extract` passed boards KiCad 10.0.7 will not load (measured): a quoted `min_thickness`, `(hatch edge +0.5)`/`"0.5"`/`inf`, `(zone_connect "2")`/`inf`/`0x2`; and an `fp_line` on `"F&B.Cu"`, `"F.Cu "`, `"f.cu"` or `"Top"` | `min_thickness`, `zone_connect`, `thermal_gap`, `thermal_bridge_width`, `thermal_bridge_angle` judged as numbers; `hatch`, `drill` and `offset` past their keyword (`strict::KEYED`). **Not fixed:** a layer name outside the board's layer table (beyond §1.4's list; `check drc` and `verify` still fail in KiCad): backlog §9. `clearance` is left out: on a pad it is refused as `LocalClearance` already (1300's test pins that kind) |
+| F5 | wrong text | KiCad 10.0.7 loads `0.2e0`, `.2`, `0.20000001` and `00.2` (measured); comments said it refuses them | The comments say this reader is stricter than KiCad there; no false pass |
+| F6 | latent | `unplanned` did not count `kani::proof_for_contract`; an ELF name offset equal to the table's length was skipped, where it was refused before | Every `kani::proof` counted; the empty offset refused again |
+
+**Held [measured by the adversary]:** the pair allowlist against `gr_arc`, a track `arc`, `gr_line`, `gr_poly`, `gr_circle`, `gr_text`, a second `gr_rect`, a filled zone on SCK, a via in one or both pads, layer-table swaps and aliases, a footprint line on copper, a diagonal segment; the split against a restore of another pin's pull-up (fails `_tim1` on the footprint assertion, 14 s) and a vacuous `reset_clock` (`cover_unsatisfied`, 15 s), and no cross-unit rule of the whole claim missed by the parts; a failed or timed-out prove writes no package on either flag; `validate`'s two refusals at their edges; the quickstart dry run.
+
+**FEEDBACK claims it found false at `5358f98`, corrected here:** §3's "`motors-pwm.json` exit 3, `HarnessSkipped`" was measured before the split landed; after it nothing is skipped and the motor board reaches its tools. §3's "every numeric child it reads" was false for `min_thickness` and `zone_connect` (F4, now fixed). The coverage line left out the loosened limit (F3, now fixed).
+
+## 5. Reduction pass (diff, a fresh Sonnet subagent over `git diff origin/main...HEAD`)
+
+Reduction pass (diff): −35 net · 2 duplicates removed · 1 dead path removed · 3 protected kept · 5 findings below.
+- **Removed:** the coverage unit test's own spec-and-solve block (it reuses the `solved` helper beside it); the 24 number words that parsed `cli/README.md`'s tool count (the line now says "17" and the test parses a digit); an unused `PartialOrd, Ord` on the split's `Action`.
+- **Kept, deliberate:** `check_parts`, `disjoint`, `UnscheduledAction` and `FootprintOverlap` (the split's soundness premises, mechanised; unreachable on today's boards by construction); `preconditions()`'s `every_harness_proved` and `every_gate_passed` rows (the work order asks for every precondition listed); the quickstart's whole-file `diff` beside its three anchored checks (it is what catches a malformed `sed`).
+- **Not taken:** making `strict::version` board-only (a schematic would then be compared with the board's version, silently); a shared conditions assembler for the notes test (the test is kept independent of the assembler it checks); a `Scope` iterator helper in `emit_schedule` (taste).
+- **Findings (outside the diff, or not lines):** `cli/src/fab.rs:227` tests copper by `ends_with(".Cu")` on the engine's own trusted names; `check drc --spec` runs `route::declared` again inside `read_tree` when pairs exist (a repeated computation); a doc line displaced by this work order's own test in `route.rs` was put back.
+
+## 6. Gates
+
+- `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (and with `--features aethelgard-cli/with-tools`), `cargo test --workspace`: green on the host at the signal commit.
+- Tier 2: `twin_tier2::kani_proves_every_part_of_both_motor_fixtures` passes in the image (185 s on Furnace) and on CI (shard 7). TIER2_MIN is 127: `main`'s 126 and this one test.
+- CI at `6583369` (before the adversarial fixes): every shard green, the slowest 18.7 min. The signal commit's own run is the PR's head.
+
+## 7. Stop
+
+**STOPPED on D1 (§7): campaign coverage needs fault kinds the chaos crate does not have.** No fault a design survives reaches an SPI bus, a rail other than the MCU's supply, the battery or a bus no device uses, and `verify` packages only a campaign the design survives. Coverage is judged and stated (`fab.preconditions` and `MANIFEST.json`'s `preconditions`), not enforced; enforcing it is one refusal before any gate once D1 is ruled. Everything else in §1 is built and holds §2, except the clause D1 blocks: the reference package lists `campaign_faults_every_bus_and_rail` as `unmet` (`SPI bus FLASH`).
+
+## 8. Questions for the architect
+
+- **D1** (§2): options (a) a matched expected-fail fault covers and passes the campaign gate, (b) survivable SPI and rail kinds in a chaos work order, (c) a ruled exemption. `roadmap.md:312`'s Sentinel-02 needs both an SPI fault and a package.
+- **Fence:** `validate`'s two refusals are in `aethelgard-ir` (§3, §1.8), outside its "tests only" fence, because the CLI may not read connectors (`RUL-16`'s clippy rule).
+- **The corpus:** 1306 F10's control (`user_layer_table_only`) is now refused by §1.4's rule; it moved to a class `layer-name` (§3, §1.4).
+
+## 9. Backlog (proposed rows for `roadmap.md` §7.1)
+
+- A layer name outside the board's layer table (`"F&B.Cu"`, `"Top"` on a footprint line) passes `extract` alone; KiCad refuses to load the board, so `check drc` and `verify` fail (§4 F4).
+- The pair judge has no minimum coupled length (A16; `DiffPair` has no length field).
+- No item cap on `route::read`'s items, and the strict reader's per-node path strings (A16; both bounded by the 1 M-token cap).
+- A board with two timers: the split's shared reset-clock read is argued, not measured (§3, §1.2).

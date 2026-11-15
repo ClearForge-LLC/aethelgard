@@ -2354,7 +2354,7 @@ struct Scope {
 }
 
 /// One action of the schedule: one `match` arm of the harness.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Action {
     Port(char),
     Clock(String),

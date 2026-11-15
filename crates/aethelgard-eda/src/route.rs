@@ -4595,7 +4595,6 @@ mod tests {
         assert!(e.why.contains("reaches no via"), "{e:?}");
     }
 
-    /// What the router does not model is refused when read, never guessed.
     /// Review 2, A16: a circle whose size is not square is refused, since
     /// KiCad draws a disk of its x size (the stadium would under-size it);
     /// a square circle reads.
@@ -4639,6 +4638,7 @@ mod tests {
         }
     }
 
+    /// What the router does not model is refused when read, never guessed.
     #[test]
     fn reading_refuses_what_the_router_does_not_model() {
         let yard = "(fp_rect (start -1 -1) (end 1 1) (layer \"F.CrtYd\"))";

@@ -1424,13 +1424,7 @@ mod tests {
     /// domain's tolerance band; nor does a fault on a bus no device uses.
     #[test]
     fn a_fault_that_changes_nothing_covers_nothing() {
-        let bytes = std::fs::read(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sentinel-01-minimal.json"),
-        )
-        .unwrap();
-        let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
-        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
-        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let (spec, topology) = solved("examples/sentinel-01-minimal.json");
         let sda = &spec.i2c_buses[0].sda.net;
         let declared = spec
             .net_constraints

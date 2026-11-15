@@ -674,37 +674,10 @@ fn the_readme_names_the_real_tool_count() {
     let count = list["result"]["tools"].as_array().unwrap().len();
     let readme =
         fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md")).unwrap();
-    let words = [
-        "one",
-        "two",
-        "three",
-        "four",
-        "five",
-        "six",
-        "seven",
-        "eight",
-        "nine",
-        "ten",
-        "eleven",
-        "twelve",
-        "thirteen",
-        "fourteen",
-        "fifteen",
-        "sixteen",
-        "seventeen",
-        "eighteen",
-        "nineteen",
-        "twenty",
-        "twenty-one",
-        "twenty-two",
-        "twenty-three",
-        "twenty-four",
-    ];
     let claimed: Vec<usize> = readme
         .lines()
         .filter_map(|l| l.strip_prefix("lists the "))
-        .filter_map(|r| r.split(" tools").next())
-        .filter_map(|w| words.iter().position(|x| *x == w).map(|i| i + 1))
+        .filter_map(|r| r.split(" tools").next()?.parse().ok())
         .collect();
     assert_eq!(claimed, [count], "README `lists the N tools` vs tools/list");
 }

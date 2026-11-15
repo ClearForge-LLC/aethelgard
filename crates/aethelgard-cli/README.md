@@ -784,4 +784,4 @@ A `notifications/cancelled` for a call kills its child; the CLI's reaper then en
 npx @modelcontextprotocol/inspector aethelgard mcp
 ```
 
-lists the seventeen tools, and a `validate` call with `file` set to `examples/sentinel-01-minimal.json` returns `isError` false.
+lists the 17 tools, and a `validate` call with `file` set to `examples/sentinel-01-minimal.json` returns `isError` false.
