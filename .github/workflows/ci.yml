@@ -261,7 +261,10 @@ jobs:
       # 101: plus 3 from AET-WO-1308 in with_tools.rs (the power-class and stand-in pair
       # fixtures pass ERC and DRC with parity, the pair reported; a track off its class
       # width fails DRC by the gate's rule; a part on each board edge passes ERC and DRC).
-      TIER2_MIN: "101"
+      # 103: plus 2 from AET-WO-1309 in with_tools.rs (the through-hole and thermal-via
+      # fixtures pass DRC by the gate's rules, each join filled as declared; a thermal via
+      # drilled other than its rule fails DRC by the gate's thermal rule).
+      TIER2_MIN: "103"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

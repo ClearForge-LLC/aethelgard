@@ -273,3 +273,6 @@ tests/with_tools.rs	a_part_on_each_edge_passes_erc_and_drc	6.720
 # until the next refit (pre-existing on main: its slowest shard was 18.9 min, shard 6, with this test).
 tests/verify_2k2_tier2.rs	verify_binds_the_reference_and_two_runs_print_the_same_bytes	612.290
 tests/verify_2k2_tier2.rs	verify_fab_out_writes_the_package_its_verdict_names_at_any_path	549.440
+# AET-WO-1309: both took 3.4 s together in the pinned image on Furnace (2026-11-15), taken at about twice that for CI until a CI run refits them.
+tests/with_tools.rs	the_through_hole_and_thermal_fixtures_pass_drc_by_the_gates_rules	6.000
+tests/with_tools.rs	a_thermal_via_other_than_its_rule_fails_drc_by_the_gates_rule	2.000

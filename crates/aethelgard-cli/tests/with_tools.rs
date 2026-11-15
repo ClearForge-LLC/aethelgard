@@ -591,6 +591,7 @@ fn a_board_whose_own_files_are_looser_is_judged_by_the_gate() {
     let board = t.0.join("loose.kicad_pcb");
     fs::write(&board, LOOSE10).unwrap();
     let loose = aethelgard_eda::rules::Rules {
+        arrays: Vec::new(),
         source: aethelgard_eda::rules::Source::Specification,
         clearance_nm: 50_000,
         min_track_width_nm: None,
@@ -670,6 +671,7 @@ fn with_a_token_free_setup_the_project_step_is_load_bearing() {
             .unwrap(),
     );
     let own = aethelgard_eda::rules::Rules {
+        arrays: Vec::new(),
         source: aethelgard_eda::rules::Source::Specification,
         clearance_nm: 50_000,
         min_track_width_nm: None,
@@ -1218,4 +1220,201 @@ fn a_part_on_each_edge_passes_erc_and_drc() {
     assert_eq!(drc["verdict"], "pass", "{drc}");
     assert_eq!(kinds(&drc), Vec::<&str>::new(), "{drc}");
     record_1308("edges: erc and drc pass");
+}
+
+// ---- AET-WO-1309: through-hole pads and thermal-via arrays, tier 2 ----
+
+fn record_1309(line: &str) {
+    use std::io::Write;
+    let _ = std::io::stderr()
+        .lock()
+        .write_all(format!("AET-WO-1309 {line}\n").as_bytes());
+}
+
+/// KiCad's DRC report on `text`, prepared exactly as `check drc` prepares
+/// its scratch copy (`kicad.rs`): the strict reading and the gate's setup,
+/// the gate's project and `.kicad_dru` from `rules`, the vendored libraries
+/// and their tables, and `--refill-zones`. The rules come from a declared
+/// board (`Rules::from_stack`), because no specification can yet declare a
+/// thermal array or a through-hole join (FEEDBACK D1).
+fn gate_drc(dir: &Path, text: &str, rules: &aethelgard_eda::rules::Rules) -> (Option<i32>, Value) {
+    fs::create_dir_all(dir).unwrap();
+    let board = dir.join("th.kicad_pcb");
+    let tree = aethelgard_eda::board::read(text).unwrap();
+    let prepared =
+        aethelgard_eda::board::prepare_read(&tree, text, aethelgard_eda::rules::SETUP).unwrap();
+    fs::write(&board, prepared).unwrap();
+    fs::write(dir.join("th.kicad_pro"), rules.project("th")).unwrap();
+    fs::write(dir.join("th.kicad_dru"), rules.custom_rules()).unwrap();
+    for (path, bytes) in aethelgard_eda::library::files().unwrap() {
+        let p = dir.join("lib").join(path);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, bytes).unwrap();
+    }
+    let (sym, fp) = aethelgard_eda::library::tables(dir.join("lib").to_str().unwrap()).unwrap();
+    fs::write(dir.join("sym-lib-table"), sym).unwrap();
+    fs::write(dir.join("fp-lib-table"), fp).unwrap();
+    let report = dir.join("report.json");
+    let out = Command::new("kicad-cli")
+        .args([
+            "pcb",
+            "drc",
+            "--exit-code-violations",
+            "--format",
+            "json",
+            "--refill-zones",
+            "--save-board",
+            "-o",
+        ])
+        .arg(&report)
+        .arg(&board)
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let doc: Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    (out.status.code(), doc)
+}
+
+/// The radii, from `centre`, of every vertex of `net`'s fill on `layer` in
+/// a board KiCad saved after refilling it, within `within` nm.
+fn fill_radii(board: &str, layer: &str, net: &str, centre: (i64, i64), within: i64) -> Vec<i64> {
+    let tree = aethelgard_eda::sexpr::parse(board).unwrap();
+    let mut out = Vec::new();
+    for zone in tree.children("zone") {
+        if zone.child("net").and_then(|n| n.arg(1)) != Some(net)
+            || zone.child("layer").and_then(|l| l.arg(1)) != Some(layer)
+        {
+            continue;
+        }
+        for poly in zone.children("filled_polygon") {
+            for xy in poly.child("pts").unwrap().children("xy") {
+                let (x, y) = (
+                    aethelgard_eda::sexpr::nm(xy.arg(1).unwrap()).unwrap(),
+                    aethelgard_eda::sexpr::nm(xy.arg(2).unwrap()).unwrap(),
+                );
+                let r = (((x - centre.0) as f64).hypot((y - centre.1) as f64)).round() as i64;
+                if r < within {
+                    out.push(r);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Every DRC item of a report: violations, unconnected items and parity, as
+/// `type: description`.
+fn drc_items(doc: &Value) -> Vec<String> {
+    ["violations", "unconnected_items", "schematic_parity"]
+        .iter()
+        .flat_map(|k| doc[*k].as_array().cloned().unwrap_or_default())
+        .map(|f| {
+            format!(
+                "{}: {}",
+                f["type"].as_str().unwrap_or("?"),
+                f["description"].as_str().unwrap_or("?")
+            )
+        })
+        .collect()
+}
+
+/// `AET-WO-1309` §1.3: the XT30 fixture at 2 and 4 layers with each join,
+/// and the thermal fixture's 4 x 3 array into the 4-layer ground plane (and
+/// into the 2-layer ground zone), pass KiCad DRC by the gate's own rules
+/// with no finding of any kind, unconnected items included. And the fill
+/// KiCad refills meets J1's `GND` pad as declared (FEEDBACK B2): relieved,
+/// its edge is the 0.5 mm relief gap from the 3.5 mm pad (2.25 mm from its
+/// centre); solid, no edge of the fill lies between the hole and 2.6 mm.
+#[test]
+fn the_through_hole_and_thermal_fixtures_pass_drc_by_the_gates_rules() {
+    use aethelgard_eda::stack::Join;
+    let t = Temp::new("1309-fixtures");
+    let mut boards = Vec::new();
+    for four in [false, true] {
+        for join in [Join::Solid, Join::Relief] {
+            boards.push((
+                format!("xt30-{four}-{join:?}"),
+                common::th::xt30_board(four, join),
+            ));
+        }
+        let layer = if four { "In1.Cu" } else { "B.Cu" };
+        boards.push((
+            format!("thermal-{four}"),
+            common::th::thermal_board(four, Some(common::th::lmr33630_rule(&[layer])), false),
+        ));
+    }
+    for (name, fixture) in boards {
+        let (stack, text) = common::th::write(fixture).unwrap();
+        let rules = aethelgard_eda::rules::Rules::from_stack(&stack);
+        let (code, doc) = gate_drc(&t.0.join(&name), &text, &rules);
+        let items = drc_items(&doc);
+        record_1309(&format!("{name}: exit {code:?}, {items:?}"));
+        assert_eq!(code, Some(0), "{name}: {items:?}");
+        assert!(items.is_empty(), "{name}: {items:?}");
+        if let Some(join) = name.strip_prefix("xt30-") {
+            let saved = fs::read_to_string(t.0.join(&name).join("th.kicad_pcb")).unwrap();
+            let layer = if join.starts_with("true") {
+                "In1.Cu"
+            } else {
+                "B.Cu"
+            };
+            // J1 at (110, 116); pad 2, 1.9 mm drill, at x -5.
+            let radii = fill_radii(&saved, layer, "GND", (105_000_000, 116_000_000), 2_600_000);
+            let ring: Vec<i64> = radii.iter().copied().filter(|&r| r > 1_000_000).collect();
+            record_1309(&format!(
+                "{name}: fill vertices 1.0-2.6 mm from J1 pad 2: {}",
+                ring.len()
+            ));
+            if join.ends_with("Relief") {
+                assert!(
+                    !ring.is_empty() && ring.iter().all(|r| (2_240_000..=2_260_000).contains(r)),
+                    "{name}: {ring:?}"
+                );
+            } else {
+                assert!(ring.is_empty(), "{name}: {ring:?}");
+            }
+        }
+    }
+}
+
+/// `AET-WO-1309` §2: a thermal via drilled other than its rule fails KiCad
+/// DRC by the gate's `thermal_U5_9` rule (KiCad's kind is `drill_out_of_range`);
+/// and the board's own 0.254 mm
+/// drill, judged with no array declared, is measured against KiCad's board
+/// minimum (FEEDBACK P3).
+#[test]
+fn a_thermal_via_other_than_its_rule_fails_drc_by_the_gates_rule() {
+    let t = Temp::new("1309-thermal-lie");
+    let (stack, text) = common::th::write(common::th::thermal_board(
+        true,
+        Some(common::th::lmr33630_rule(&["In1.Cu"])),
+        false,
+    ))
+    .unwrap();
+    let rules = aethelgard_eda::rules::Rules::from_stack(&stack);
+    let i = text.find("(drill 0.254)").unwrap();
+    let lied = format!(
+        "{}(drill 0.3){}",
+        &text[..i],
+        &text[i + "(drill 0.254)".len()..]
+    );
+    let (code, doc) = gate_drc(&t.0.join("lie"), &lied, &rules);
+    let items = drc_items(&doc);
+    record_1309(&format!(
+        "one thermal via drilled 0.3: exit {code:?}, {items:?}"
+    ));
+    assert_eq!(code, Some(5), "{items:?}");
+    assert!(
+        items.iter().any(|i| i.starts_with("drill_out_of_range")
+            && i.contains("rule 'thermal_U5_9' max hole 0.2540 mm")),
+        "{items:?}"
+    );
+    let mut none = rules.clone();
+    none.arrays.clear();
+    let (code, doc) = gate_drc(&t.0.join("unruled"), &text, &none);
+    record_1309(&format!(
+        "the declared array with no thermal rule written: exit {code:?}, {:?}",
+        drc_items(&doc)
+    ));
 }
