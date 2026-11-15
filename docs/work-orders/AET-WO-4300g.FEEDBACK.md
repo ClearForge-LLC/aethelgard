@@ -206,3 +206,27 @@ One mutant per guard this work order adds, each against the suite its test lives
   Three discriminating tests were added: a capacitor between the wrong nets within its bound, a VSS pin off `GND`, and VDDA on no domain. All three mutants are now caught.
 - **The fixes of §7 add 7 guards,** m28–m34 (own nets, powered range, population, symbol, value tail, NC pins, source not on the debug port). Each mutant is caught.
 - **Total: 34 mutants, 34 caught.**
+
+## 9. Reduction pass (diff)
+
+A fresh subagent proposed cuts against the four questions. All four were applied; the fifth was labelled instead.
+
+**Reduction pass (diff): −10 net · 3 duplicates removed · 1 dead path removed · 1 protected kept (labelled) · 5 findings below.**
+- **Duplicates removed:**
+  - `programming_path` is now `programming_connector(spec).is_some()`, one predicate for the validator and the gate;
+  - one notes-section writer for the power tree's and the support network's sections, byte-identical (the notes goldens hold);
+  - one wording, `quoted`, for a missing net, where there were six copies.
+- **Dead path removed:** the gate's three `Err` fallbacks on the parts table, which `row()` had already unwrapped.
+- **Protected, labelled `belt-and-suspenders:` in this pass:** the emitter's refusal of a row pin the symbol lacks. It is backed by `the_mcu_rows_support_pins_are_the_symbols` for the one MCU row today.
+- **Protected by design (`RUL-20`), kept unlabelled:** the gate's own value reader beside the emitter's, and the gate's and emitter's row lookups.
+- **Proved:**
+  - the tier-1 suite: every failure left is D5's (§6);
+  - clippy `-D warnings` with tier 2 compiled;
+  - `fmt`;
+  - all 34 mutants re-run on the reduced code: 33 caught, and m27 is superseded, its guard replaced by A2's range check, which m29 covers.
+- **Findings, for the architect, not cut:**
+  1. `verdict::{SupportRole, Programming}` mirror `support::{RoleRecord, Programming}`, because `eda` carries no serde.
+  2. `Stated` exists for clippy's argument count. It copies three `Bound` fields.
+  3. The netlist's strict rules name `once` children no gate reads. That is stricter than the module's convention.
+  4. `eda::support::row` could be private.
+  5. `check support`'s two refusal mappers repeat `main.rs`'s `Stop` shape, outside this diff.
