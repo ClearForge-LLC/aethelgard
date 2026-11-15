@@ -190,13 +190,13 @@ Reasons:
 - **Against the other two options.** A layer in the tools image is the second choice: it is simpler to pin, but every tools-image rebuild would carry ArduPilot, and an ArduPilot bump would move the digest every tier-2 test runs in. Furnace-only fails "CI is the witness" (roadmap §6) for a P4 exit clause.
 
 **CI time** [inferred, scaled from the measured CPU time]:
-- **Per PR that runs the build:** about 331 CPU-s ÷ 4 vCPU, so 1.5–2 min on a 4-vCPU GitHub runner, plus the image pull (about 2.5 GB, roughly 1 min). That is **3–4 min**.
+- **Per PR that runs the build:** about 331 CPU-s ÷ 4 vCPU, so 1.5–2 min on a 4-vCPU GitHub runner (`ci.yml` uses `ubuntu-latest`). This assumes a runner core is as fast as a Furnace core, which was not measured, plus the image pull (about 2.5 GB, roughly 1 min). That is **3–4 min**.
 - **The image build** happens only when its pins change: the clone, the toolchain and pip, about 2–5 min on GitHub's network.
 - **Without an image** (fetching every time), add the clone and the toolchain. That is fast from GitHub's network, and 4.5 min from Furnace's.
 
 ## 3. S2 — the `hwdef.dat` format and the field table
 
-Read at `Copter-4.7.2` by a subagent; every row used here was spot-checked at source (`chibios_hwdef.py`, called `CH` below; its base class `libraries/AP_HAL/hwdef/scripts/hwdef.py`, called `HB`). The subagent tried once to run `chibios_hwdef.py` into a scratch directory, outside its read-only brief. The permission classifier denied it and it did not retry. I record it here. No call of mine was denied.
+Read at `Copter-4.7.2` by a subagent (`chibios_hwdef.py`, called `CH` below; its base class `libraries/AP_HAL/hwdef/scripts/hwdef.py`, called `HB`). I spot-checked these at source: the AF lookup, the table files, `hwdef.h`'s macros and `gpio_default_config`, the required-key errors, `APJ_BOARD_ID`'s CI refusal (`hwdef.py:129-139`), `--board`, the I2C bus order and clock (`I2CDevice.cpp:40, 53, 205-209`), the UART DMA enable (`UARTDriver.cpp:317-349`), and every example line quoted below. The other rows are the subagent's reads, each with its citation. The subagent tried once to run `chibios_hwdef.py` into a scratch directory, outside its read-only brief. The permission classifier denied it and it did not retry. I record it here. No call of mine was denied.
 
 **How the file is read** [read]:
 - A line `Pxn LABEL TYPE [extras]` is a pin.
@@ -226,16 +226,16 @@ Key to "today": **T** = emitted from `SolvedTopology` today; **S** = the value e
 | chip select | `PA0 FLASH_CS CS` | for each `SPIDEV` | **T** (`gpio`, label = net) | — |
 | `SPIDEV` | `SPIDEV name SPIn DEVIDk CS MODEm low high` (7 tokens, CH:1451-1475) | per SPI device | bus and CS **T**; speed **S** (`spi_buses[].speed_hz`); mode and role name **N** | the bus speed into the topology; the mode and ArduPilot role as parts-table columns |
 | I2C pins, `I2C_ORDER` | `PB6 I2C1_SCL I2C1`; `I2C_ORDER I2C1` | `I2C_ORDER` is required with I2C pins (CH:1932) | **T** (`assignments`, `i2c_devices[].peripheral`) | — |
-| I2C speed | **no per-bus field.** One global `define HAL_I2C_MAX_CLOCK` (default 100 kHz, I2CDevice.cpp:53) | optional | **T** (`i2c_speeds`), but ArduPilot cannot say "per bus" | decision D6 |
-| `BARO` | `BARO BMP280 I2C:0:0x76`; the index is the position in `I2C_ORDER` | optional | **T** (part, address, order). The driver name is a mapping (`BME280` → `BMP280`, AP_Baro_BMP280.cpp:39) | a parts-table column "ArduPilot driver" |
+| I2C speed | **no per-bus field.** One global ceiling, `define HAL_I2C_MAX_CLOCK` (default 100 kHz, I2CDevice.cpp:53-54). Each bus starts at it, and each device a driver opens lowers its bus to the minimum requested (I2CDevice.cpp:205-209, read) | optional | **T** (`i2c_speeds`), but ArduPilot cannot say "per bus" | decision D6 |
+| `BARO` | `BARO BMP280 I2C:0:0x76`. The index is the position in `I2C_ORDER`: `I2CD[] = { HAL_I2C_DEVICE_LIST }` (I2CDevice.cpp:40), which `hwdef.h` writes in `I2C_ORDER`'s order (read) | optional | **T** (part, address, order). The driver name is a mapping (`BME280` → `BMP280`, AP_Baro_BMP280.cpp:39) | a parts-table column "ArduPilot driver" |
 | other I2C parts | TMP117 | — | **no line possible**: ArduPilot's `TMP119` driver refuses ID 0x0117 (`…TMP119.cpp:31,62`); temperature sensors are set by parameters, not `hwdef` | — |
 | flash logger | `define HAL_LOGGING_DATAFLASH_ENABLED 1` with an `SPIDEV dataflash` | optional | **N**: the part's role | parts-table column (the W25Q64 is `0xEF4017`, AP_Logger_Flash_JEDEC.cpp:54) |
-| PWM outputs | `PE9 TIM1_CH1 TIM1 PWM(1) GPIO(50)`, plus `BIDIR` | optional (`HAL_USE_PWM FALSE`) | **N** | **`4300a`** |
+| PWM outputs | `PB0  TIM8_CH2N TIM8  PWM(1)  GPIO(50)` (MatekH743:145), plus `BIDIR` | optional (`HAL_USE_PWM FALSE`) | **N** | **`4300a`** |
 | DMA | computed by `dma_resolver.py` (DMAMUX on H7); `DMA_PRIORITY` and `DMA_NOSHARE` optional | — | n/a | — (see S5: TX DMA in the twin) |
 | ADC sense | `PC0 BATT_VOLTAGE_SENS ADC1 SCALE(1)`, plus `define HAL_BATT_VOLT_PIN/SCALE …` | **with no ADC pin, `define HAL_USE_ADC FALSE` is required** (measured, step B: `STM32_ADC_ADC12_DMA_STREAM not defined`) | **N** | **`4300d`** (pins and scales) |
 | USB | `PA11 OTG_FS_DM OTG1`, `PA12 OTG_FS_DP OTG1`, `OTG1` in `SERIAL_ORDER` | optional | **N** | **`4300e1`** |
-| LEDs | `PE3 LED0 OUTPUT LOW GPIO(90)` plus `define HAL_GPIO_A_LED_PIN 90` | optional | **N** | **no work order**: declared generic GPIO outputs |
-| buzzer | a timer channel with `ALARM` | optional | **N** | `4300a` (timers) plus no work order for the part |
+| LEDs | `PE3 LED0 OUTPUT LOW GPIO(90)` plus `define HAL_GPIO_B_LED_PIN 90` (MatekH743:96, 99) | optional | **N** | **no work order**: declared generic GPIO outputs |
+| buzzer | `PA15 TIM2_CH1 TIM2 GPIO(32) ALARM` (MatekH743:160) | optional | **N** | `4300a` (timers) plus no work order for the part |
 | SD card | `PC8 SDMMC1_D0 SDMMC1` … | optional | **N** | **no work order** |
 | `IMU` | `IMU Invensensev3 SPI:icm42688 ROTATION_YAW_180` | optional to build; needed to fly | **N** | P4's IMU work order: `SPIDEV`, driver and rotation (a mechanical fact) |
 | `COMPASS` | `COMPASS <drv> I2C:b:addr …` | optional | **N** | no device declared |
@@ -311,26 +311,33 @@ Notes on the board:
    - `OSPEEDR`, `PUPDR` and `OTYPER` against `4300c`'s speeds, which is possible later from the same bytes;
    - whether the I2C driver uses the bus the `BARO` line names;
    - and AF agreement between two ST-derived tables is not proof against ST's own error.
-4. **`INV-07` holds.** Expected values come from the topology. Observed values come from ArduPilot's own computation, never from the emitted `hwdef.dat`.
+4. **`INV-07` holds.** Expected values come from the topology. Observed values come from ArduPilot's own computation, never from the emitted `hwdef.dat`. The check judges the generator and ArduPilot's table, not the solver: a wrong `SolvedTopology` passes it. That is the P1 gates' job (ERC, DRC, parity), not this one's.
 
 ## 6. S5 — ArduPilot in the twin (read only, not chased)
 
-Read by a subagent in Renode 1.17.0's source (`~/.cache/aet-2301/src`) and ChibiOS/ArduPilot at the tag. Key points were spot-checked by me.
+Read by a subagent in Renode 1.17.0's source (`~/.cache/aet-2301/src`) and ChibiOS/ArduPilot at the tag. The points below were checked by me at source.
 
-**The verdict: as generated, the banner would not reach a UART** [read + inferred]. The clock and power start-up is not the blocker; output is.
-- **Every busy-wait on the path is satisfied by the model** [read]:
-  - `PWR_CSR1.ACTVOSRDY` and `PWR_D3CR.VOSRDY`: the platform's PWR is a Python stub returning `0x6000` and `0x2000` (checked: `stm32h7.repl:728`);
+**Verdict: unknown. No blocker was found on the read path to the banner.** The subagent also returned "unknown". Its leading candidate blocker does not hold (below).
+- **Every busy-wait on the start-up path is satisfied by the model** [read]:
+  - `PWR_CSR1.ACTVOSRDY` and `PWR_D3CR.VOSRDY`: the platform's PWR is a Python stub that returns `0x6000` and `0x2000` (checked, `stm32h7.repl:728`);
   - `HSIRDY`, `HSERDY`, `HSI48RDY` and `PLL1-3RDY`, which the RCC model mirrors from the enables;
   - `SWS`;
   - the read-back of `FLASH_ACR.LATENCY`.
-- **The compensation cell is never touched.** No `CCCSR` access exists in ChibiOS or ArduPilot outside ST's headers (checked by grep). `4300` S5's hanging `READY` wait does not arise. My round-1 prediction was wrong.
-- **The banner.** It is `DEV_PRINTF("\n\nInit %s…")` (AP_Vehicle.cpp:318) to `hal.console`, which is SERIAL0. On a board whose SERIAL0 is `OTG1` it waits for USB enumeration. On S3's board SERIAL0 is USART3, and `hwdef.h` gives it a TX DMA stream (`STM32_UART_USART3_TX_DMA_STREAM STM32_DMA_STREAM_ID(1, 2)`, measured). Renode's `STM32F7_USART` has only a receive DMA request: `DMAT` is an inert flag (`STM32F7_USART.cs:187`, checked). So TX by DMA would stall [inferred].
-- **What would get past it (not run):** `NODMA` on the console UART, or the USB route through `USB_UART` that `4300` measured with Zephyr.
-- **Also unverified:**
+- **The compensation cell is never touched.** No `CCCSR` access exists in ChibiOS or ArduPilot outside ST's headers (checked by grep). The hanging `READY` wait of `4300` S5 does not arise. My round-1 prediction was wrong.
+- **The banner** is `DEV_PRINTF("\n\nInit %s…")` (AP_Vehicle.cpp:318), sent to `hal.console`, which is SERIAL0.
+  - On a board whose SERIAL0 is `OTG1`, it waits for USB enumeration.
+  - On S3's board, SERIAL0 is USART3. `hwdef.h` gives it a TX DMA stream (`STM32_UART_USART3_TX_DMA_STREAM STM32_DMA_STREAM_ID(1, 2)`, measured), and `UARTDriver.cpp:317-349` enables TX DMA whenever a stream exists (read).
+- **TX by DMA does not stall in the model,** as far as read:
+  - Renode's `STM32F7_USART` has no TX DMA request line; `DMAT` is an inert flag (`STM32F7_USART.cs:187`, checked).
+  - But `STM32DMA` performs a memory-to-peripheral transfer at once when the stream is enabled, with no request (`STM32DMA.cs:236-243`, `HandleEnable`, checked).
+  - The bytes would reach `TDR` in one burst [inferred]. Whether the model transmits each write, and whether ChibiOS's transfer-complete handling then behaves, was not read.
+- **Not read:**
   - the OTG model's reset and flush waits;
-  - the TIM-based tickless timer at Renode's fixed 250 MHz, which is self-consistent but skewed against TIMCLK;
-  - loading an ELF at `0x08000000`.
-- Neither Renode's tree nor its tests mention ArduPilot or ChibiOS.
+  - the tickless TIM5 timer at Renode's fixed 250 MHz, which is self-consistent but skewed against TIMCLK;
+  - the IWDG reset if the loop is late;
+  - loading an ELF linked at `0x08000000`.
+- **Neither Renode's tree nor its tests mention ArduPilot or ChibiOS.**
+- **What would settle it:** one run of step G's ELF in the pinned image, watching USART3. That is a measurement, which S5 forbids here, so it belongs to D8.
 
 ## 7. Results beside predictions
 
@@ -354,7 +361,7 @@ Read by a subagent in Renode 1.17.0's source (`~/.cache/aet-2301/src`) and Chibi
 | the check names the seeds as predicted (2) | ✔ both, with the exact wording predicted |
 | more than 98 % AF agreement; a handful of disagreements, `PB7:CAN2_TX` among them (2) | ✔ 0 AF disagreements in 597 shared pairs; 10 unsupported CAN lines, `PB7:CAN2_TX` among them |
 | ArduPilot accepts a pin the package lacks (2) | ✔ PI0 builds |
-| S5: no banner, blocked by `CCCSR`, VOS or PLL waits (1) | ✘ for the reason: all of those waits are modelled and `CCCSR` is never touched. ✔ for "no banner" (TX DMA), by reading, not measured |
+| S5: no banner, blocked by `CCCSR`, VOS or PLL waits (1) | ✘: all of those waits are modelled and `CCCSR` is never touched. The verdict by reading is unknown, with no blocker found |
 
 ## 8. Proposed staging of the build behind the `4300` pieces
 
@@ -394,9 +401,9 @@ Read by a subagent in Renode 1.17.0's source (`~/.cache/aet-2301/src`) and Chibi
   - **(c)** apply for an ID upstream.
   - **Recommended: (a), measured first in `4400a`.**
 - **D5 — where the build lives.** The second image (§2), the tools-image layer, or Furnace only. **Recommended: the second image.**
-- **D6 — I2C speed.** ArduPilot has one global I2C clock (`HAL_I2C_MAX_CLOCK`), not one per bus. Emit the minimum of `i2c_speeds`, or refuse a topology whose buses differ?
+- **D6 — I2C speed.** ArduPilot has one global ceiling (`HAL_I2C_MAX_CLOCK`, default 100 kHz). Each bus starts at it, and the drivers' own requests lower it. A per-bus speed cannot be stated. Options: emit `HAL_I2C_MAX_CLOCK` as the maximum of `i2c_speeds` (each bus may then run faster than the specification declared, if a driver asks), or as the minimum (slower buses only), or refuse a topology whose buses differ. Sentinel-01 has one bus at 400 kHz, so the default of 100 kHz would run it slower than declared.
 - **D7 — the pinout check's scope.** Forward, reverse and package, from the ELF bytes with `hwdef.h` as a cross-check (§5). Should the package check use the solver's own `STM32H753ZITx.xml`, as proposed? It is independent of ArduPilot, but it is the solver's input.
-- **D8 — S5.** The twin booting ArduPilot is reachable only with a console UART without TX DMA, or USB. Pursue in a later work order, or drop? **Recommended: a later work order,** after `4300e1` (USB through `USB_UART`), not now.
+- **D8 — S5.** By reading, no blocker stands between reset and the banner on USART3. One container run of step G's ELF in the pinned image would settle it. Should that run be scoped into `4400a`, or into a later twin work order? **Recommended: one measured run in `4400a`,** with the result recorded and not chased if it fails.
 - **D9 — the 10 unsupported CAN lines** in ArduPilot's H743/H753 tables. Report them upstream (a public issue, Scotty's call), or only make our check refuse CAN on those pins when CAN arrives?
 
 ## 10. What a build deletes
