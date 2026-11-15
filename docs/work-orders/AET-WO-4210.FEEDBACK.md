@@ -133,7 +133,8 @@ The architect's ruling on PR #131 (comment `6888603447`) replaces rule 3 with `~
   - Every boot exited 0 with the boot word `0x2100B007` and no `[ERROR]` line.
   - The firmware sha256s are in `out/fw.txt`, and every row in `out/s2.jsonl`.
   - The table below is `out/s2-table.md`, which `s2_read.py` generates from the rows.
-- **One harness fix before the sweep:** `IRQ` is read as `IRQ IsSet`, because the bare GPIO does not print a value (`d7c31c0`). No prediction was changed.
+- **One harness fix before the sweep:** `IRQ` is read as `IRQ IsSet`, because the bare GPIO does not print a value (`d7c31c0`). No prediction was changed: the Predictions block is byte-identical to `1c193b7`'s.
+- **A trial run came first.** One `imu-script` container ran at 03:35:09 (its read-back is in `caps.log`) to shake out the harness. Its three rows were deleted before the full sweep, which reran that case.
 
 ### Second session (2026-11-15): the corrected rule stops at the swap read-back (measured)
 
@@ -177,7 +178,7 @@ The hosts below refuse Furnace or no longer serve the part. Each was retried onc
   - then `spike/4210/img.sh -- bash -c 'echo inside; env | grep -c TMPDIR; renode --version | head -2; ls /cache'`;
   - then `cat spike/4210/out/caps.log`.
 
-  Which part tripped the classifier is not known, so D8's permission rule should name the runner, `bash spike/4210/img.sh -- …`.
+  Which part tripped the classifier was not known then. The architect later named the cause: the cgroup write.
 - The kickoff says a denial is not worked around, so:
   - I did not retry it, split it or reword it;
   - I did not hand it to a subagent;
@@ -264,7 +265,7 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
 ```
 
 - **The witness grows from one format per model to one per step kind.** A write step writes `register, value…`; a read step reads `register, n` bytes. Each model's formatter is pinned to Renode's source, as `skipped` is today. The ICM-20948's read lines name each register, so the twin needs the bank 0 enum names for the registers a script reads (`0x2D`–`0x32`), each pinned to its source line.
-- **The data read's value (D3).** The twin sets a stimulus in the emitted platform, for example `DefaultAccelerationZ 1`. The judge expects `round(g × sensitivity)` with the datasheet's sensitivity, cited (P1.5). That is the judge's stimulus and the datasheet's scale, never the firmware's output (`INV-07`). The weaker option is to match the line's shape with any value. That proves a read happened, not what it returned.
+- **The data read's value (D3).** The twin sets a stimulus, for example `DefaultAccelerationZ 1`. The spike measured it set by a monitor command before `RunFor` (`s2.py` `STIM`). Setting it in the emitted platform instead is unmeasured. The judge expects `round(g × sensitivity)` with the datasheet's sensitivity, cited (P1.5). That is the judge's stimulus and the datasheet's scale, never the firmware's output (`INV-07`). The weaker option is to match the line's shape with any value. That proves a read happened, not what it returned.
 - **Order (2204 A4).** Each device's steps are judged in order, by device, not globally across devices. So `W U2, W U5, R U2, R U5` passes. Extra traffic to a device beyond its script still fails, as today.
 - **Per-read windows on SPI (F16).**
   - A window is the multiplexer's own `GPIO #k set to False` … `GPIO #k set to True` (`SPIMultiplexer.cs` L30, Noisy), `k` being the device's address. Each step's transfer lines must lie inside one window of its own select.
@@ -279,14 +280,14 @@ Each subagent's claims that the recommendation rests on were spot-checked by me 
   - configuration write: 3 Noisy lines, 195 bytes. With its Debug and Warning lines it is 5 lines, 394 bytes;
   - 6-byte data read: 14 lines, 1,006 bytes, a mean of 71.9 bytes and a longest line of 87.
 
-  So a step reading `n` bytes logs `2 + 2n` lines (measured for n = 1 and 6). At the longest measured line, `(2 + 2n) × 87 ≤ 1,800` gives **`n ≤ 9`**. A 14-byte ArduPilot-sized burst does not fit. Kind 13 takes kind 22's per-step budget, which closes F18.
+  So a step reading `n` bytes logs `2 + 2n` lines (measured for n = 1 and 6). At the longest measured line, `(2 + 2n) × 87 ≤ 1,800` gives **`n ≤ 9`**. That cap is inferred, not measured: it assumes kind 22's 1,800 bytes and an event that stores each whole log body. The build sets it from the event format. A 14-byte ArduPilot-sized burst does not fit. Kind 13 takes kind 22's per-step budget, which closes F18.
 - **Device warnings (F22, D4), measured.** A correct configuration write warns: `CLKSEL`, exactly as predicted (P1.3). `I2C_IF_DIS` was not scripted here (read only). So "any device warning fails" would fail a correct script.
-  - **A second source of device warnings (measured, P1.6; F11):**
+  - **A second source of device warnings (measured, P1.6; F11).** `4200` recorded the flash's idle-finish warning on `PA0` and `PA1` edges (`AET-WO-4200.FEEDBACK.md` L72, L319–326). This spike measures how far it reaches:
     - on every chip-select edge, the multiplexer finishes every deselected device (`SPIMultiplexer.cs` `UpdateChipSelectState`);
     - the flash model warns `Transmission finished in the unexpected state: RecognizeOperation` whenever it is finished idle (`GenericSpiFlash.cs` L95);
     - so in a correct run, **U4 warns 8 times on edges that are not its own transfers**.
 
-    A device-warning rule that judges U4 would fail U4 for U5's script, and today's sentinel-01 has U4 too.
+    A device-warning rule that judges U4 would fail U4 for U5's script. Sentinel-01's firmware reads U4 (`boards/sentinel-01/firmware/src/main.rs` L153).
   - **The correct ICM run's warnings, every one:** U5's `CLKSEL` (1); U4's idle finish (8); the multiplexer's `Tried to finish transmission … not connected`, logged with no source name during platform load, before `Machine started` and before the devices were attached (3; raw log L6–8); and the controllers' own tag warnings, `i2c1` (2) and `gpioPortB` (2). No barometer model warned in any case.
   - **Proposal:**
     - each step declares its expected warnings exactly, pinned to source;
@@ -412,7 +413,7 @@ Every [WARNING] of the correct ICM run (`imu-script`, run 0), by source:
     - the global contract's "write `0` into `memory.swap.max`" step is hard-denied by Furnace;
     - the runner's old version did exactly that, and was denied (F1).
   - The global contract (furnace777, `host/home/forge/.claude/CLAUDE.md`) still prescribes that write. It needs the same correction, by PR there.
-- **F11 · The multiplexer finishes every deselected device on every chip-select edge** (measured P1.6, P3.2; `SPIMultiplexer.cs` `UpdateChipSelectState`). Three consequences:
+- **F11 · The multiplexer finishes every deselected device on every chip-select edge.** It extends `4200`'s observation, L319–326 (measured P1.6, P3.2; `SPIMultiplexer.cs` `UpdateChipSelectState`). Three consequences:
   - the flash model warns on edges that are not its own transfers;
   - U5 logs its idle line on U4's edges;
   - with a select's device absent, a `Tried to finish transmission … not connected` Warning lands inside other devices' windows.
@@ -439,6 +440,10 @@ Every [WARNING] of the correct ICM run (`imu-script`, run 0), by source:
 - **D6 · Interrupts:** stay polled, and adopt `2204` A2's `SysTick`/`ISER` check now (recommended), or arm one EXTI. The model gives no sensor-driven data-ready to learn from.
 - **D7 · 1.8 V.** Where a device's I/O domain and a bus's level crossing are declared (`4300d`, or this build), and whether a translator is a part or a refusal.
 - **D8 · How a container is held to zero swap on Furnace: ruled** (PR #131 comment `6888603447`, `RULE3.md`). S2 and S3 were measured under it.
+
+## Stop
+
+**AET-WO-4210 STOPPED: spike done, ruling needed on PR #131.** S1 was read; S2 and S3 were measured under `RULE3.md`. D1–D7 are for the architect.
 
 ## Gates (spike)
 
