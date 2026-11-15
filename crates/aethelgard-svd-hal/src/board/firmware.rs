@@ -287,6 +287,9 @@ struct Read {
     width: u8,
 }
 
+// belt-and-suspenders: the judge holds its own copy of the record layout
+// (`aethelgard_twin::boot::value_words`), because its expectations are never
+// taken from the generator (`INV-07`); `tests/spi_devices.rs` proves they agree.
 impl Read {
     /// The words its record's value takes (`aethelgard_twin::boot::value_words`).
     fn words(&self) -> u32 {

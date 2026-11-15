@@ -508,3 +508,85 @@ Every container of this build ran under `~/bin/capped-run`, through `~/.cache/ae
 | PB8 | held | Sentinel-01's tier-2 boots pass (`twin_tier2`, 28 tests, run 2). The flash's idle warnings are skipped as edge artefacts |
 | PB9 | held | The fault-parked SysTick mutant: `core_in_exception` and `register_mismatch` on `SysTick.CSR`. `systick-counting` (CSR = 1) and `nvic-line` (ISER0 = 1): `register_mismatch` alone, each naming its register |
 | PB10 | held | The fixture's `spi1_transfer_is_bounded_and_ordered` (wl ≤ 2, rl ≤ 6, unwind 8) proved in 10.67 s; `i2c1_transfer_is_bounded_and_ordered` in 5.22 s. Fixture boots: 2.9-3.1 s each |
+
+## Adversarial pass (a fresh subagent, Opus: judgement over gate logic)
+
+The adversary was not shown the builder's reasoning. It attacked `fa01450`, then the `accept_lifecycle` delta (`fa01450..908fce4`). Its reproduction tests are on its own worktree's detached HEAD `53b8051` (`~/aethelgard/.claude/worktrees/agent-a438bc9390ce88630`), not in this branch. It ran host-only; no container. Every claim below that the builder adopted was checked by the builder at the code; the fixes are `e9ee98c`.
+
+| id | severity | finding | disposition |
+|---|---|---|---|
+| A1 | medium | A scripted device's `[ERROR]` and `[INFO]` lines are not witness lines (D4 names `[WARNING]`), so the step's witness does not see them. | **Held at run level (read by the builder):** `judge_boot` fails any run whose log holds an `[ERROR]` line before `BEGIN` (`renode_error_log`, `renode.rs`), so the ICP's `Unexpected write with no data.` (L53) and `Attempted read, but Command not specified.` (L70) fail the run, though the finding does not name the step. No model in the table logs `[INFO]` per transaction. **Decision D-A1** below. |
+| A2 | low | `EolPartForFabrication` could never fire (the KiCad emitter refuses the stand-ins first). | Superseded: Scotty's ruling withdrew it, and the builder moved the rule into `validate`. |
+| A3 | low | The banner and `fab.lifecycle_unheld` are in the verdict that names the package, not in `FAB-NOTES.md` or `MANIFEST.json`; a comment said otherwise. | Comment corrected. **Finding F-B3:** no board with an `eol`/`nrnd` part can be drawn today (D-B2), so the package side is unreachable. `lifecycle_unheld` (the W25Q64JV) reaches only the verdict's `fab` key, which `verdict_sha256` excludes. |
+| A4 | low | `cargo test --workspace` was red at `fa01450` (a stale digest). | Fixed at `908fce4`. |
+| A5 | low | A channel's conversion overflowed 64 bits and panicked in debug builds. | **Fixed:** 128-bit arithmetic, one function for both uses. Test `an_overflowing_channel_or_an_active_stand_in_is_refused`. |
+| A6 | low | A stand-in marked `active` parsed, so it needed no acknowledgement and carried no banner. | **Fixed:** a stand-in must be `eol` or `nrnd`. Same test. |
+| A7 | low, fails safe | The parser accepts a script on a model with no script format, and a data step over `SPI_MAX_FRAMES`. Either ends `witness_unavailable` or an invalid record. | Finding F-B4: the parts parser cannot know the twin's formats or the board crate's frame limit without a dependency it must not have (`INV-01`). Fails closed. |
+| A8 | low, latent | D3 says `round`; Renode's ICP model truncates. At 25 °C both give 26214; at 30 °C they differ by one. | **Decision D-A8** below. The fixture's stimulus agrees with both. |
+| A9 | low, latent | The I2C transfer proof stayed at 2 bytes each way. | **Fixed:** derived from the bus's scripts, as SPI's is. Sentinel-01 and the fixture are both (2, 2), so their text is unchanged. |
+| A10 | low | evolve's report fields are 32 bits, so a 6-byte read shows truncated in S1/S2 text. Selection uses the full 64 bits. | Finding F-B5 (report text only). |
+| A11 | low | A2 is judged at the end of the run: SysTick armed then disarmed, or ISER5-15 (Renode implements them; the part has 150 lines), passes. | Residual of D6's "at the end", recorded. |
+| D-B1 | low | The banner is not in either `Cargo.lock`. | Recorded: those are Cargo's own format, rewritten by Cargo; every other generated file carries the banner (measured, `the_imu_and_barometer_fixture_runs_every_script_step_witnessed`). |
+| D-B2 | low | `generate` and `verify` refuse the acknowledged fixture with `UnknownPart` before writing, so the banner in `generate`'s verdict, `verify`'s verdict and a package is unreachable from the CLI. | Recorded: KiCad has no symbol for the stand-ins (vendoring is `4300f`'s). Measured surfaces: `validate`, `simulate --spec`, `check speeds`, the board crate's and platform's headers. |
+| D-B3 | low | `campaign`'s lines carried no banner. | **Fixed:** each scenario line carries its boot's banner. |
+
+**Attacks that held**, by the adversary's measurement unless marked read:
+- SPI windows: these each fail, never pass:
+  - all three steps in one window;
+  - an empty first window;
+  - another address's edges;
+  - configure and data swapped;
+  - lines before any window.
+- A device warning inside a step fails it, on I2C and SPI.
+- `fit()` never cuts a failing observation to the expected lines. Reference lengths 1-51 were swept; the largest event was 4,102 bytes before fitting.
+- Every spec-reading subcommand (`validate`, `solve`, `emit`, `generate`, `check speeds`, `extract`, `simulate --spec`, `campaign`, `verify`) refuses the unacknowledged fixture with `LifecycleNotAccepted` naming U6.
+- Sentinel-01 is unchanged but its specification-hash lines.
+- Read:
+  - a value with bits above its width, or a forged high word, fails;
+  - evolve's `read_matches` agrees with the judge;
+  - masks are refused when too wide, zero, or leaving value bits unfixed;
+  - a part name in the wrong case is refused first;
+  - `Tried to finish … not connected` stays out of the evidence;
+  - the flash's idle warning is skipped only after its own address's finish line;
+  - replay joins on (reference, step);
+  - the IMU bus's Kani bounds are (2, 6);
+  - `irq_max` is 149;
+  - the changed tests are faithful updates, not weakened.
+
+The adversary reported five tool calls the permission classifier refused in its own worktree (a heredoc append, a chained checkout, a `git log` in this worktree, a `HOME` override, a foreground sleep). Each was done another way or not at all; none touched this worktree.
+
+## Build decisions for the architect (forks taken; each reversible)
+
+- **D-B1 · SysTick's `CLKSOURCE`** (read, `NVIC.cs` L1040; measured PB4). The ruling says "`SysTick CSR` = 0". Renode reads `CLKSOURCE` as 1 whatever the firmware writes, so the whole word is `0x00000004` on every boot, and the literal check would fail every board. The judge checks `ENABLE`, `TICKINT` and `COUNTFLAG` (mask `0x00010003`) = 0. That keeps the ruling's intent: no SysTick armed, and none that counted to 0. Say if the whole word is meant; then the check needs Renode's value, not 0.
+- **D-B2 · The stimulus** (D3; measured PB5). The emitted platform *can* set it (`DefaultAccelerationZ: 1`, `DefaultTemperature: 25` load and read back). The build keeps the judge's monitor command before `RunFor` anyway. `simulate --platform` takes a caller's platform, and the judge's own act holds whatever platform is passed: the expected value and the stimulus both come from the parts table, never from the platform. Moving it into the emitter is two lines in `platform.rs`, if preferred.
+- **D-B3 · The fixture is honest at 1.8 V** (D7). The whole board, MCU included, runs on a 1.8 V rail (STM32H753 `VDD` 1.62-3.6 V), so no bus crosses a level and no translator is needed. The specification cannot declare a crossing, which stays `4300d`'s. The flash (2.7-3.6 V) cannot sit on it. So the F11/F16 cross-device windows are exercised by two ICM-20948s on one bus, a common redundant-IMU layout, and the flash's edge artefact by Sentinel-01.
+- **D-B4 · The data reads.**
+  - The ICM-20948 reads `ACCEL_XOUT_H`-`ZOUT_L` (6 bytes) after the wake. The stimulus is 0, 0, 1 g, so 16,384 LSB/g gives `0x4000`. The datasheet does not state two's complement, so the stimuli stay non-negative, where signed and unsigned agree.
+  - The ICP-10111 soft-resets (`0x805D`), then measures with ArduPilot's command, ULN temperature first (`0x7866`, `AP_Baro_ICP101XX.cpp` L44, L93). It reads 2 bytes, which the datasheet allows (§5.5: NACK after any byte). Its expected value is the datasheet's conversion (§5.9, sample code §5.11) of 25 °C, `0x6666`.
+  - The ICP's pressure words come from Renode's own calibration constants, not a datasheet scale, so the build does not judge pressure.
+- **D-A1 · Device `[ERROR]` lines.** Should a scripted device's `[ERROR]` fail its step by name as well as the run (`renode_error_log` today)? Either is a few lines.
+- **D-A8 · Rounding.** D3 says `round(g × sensitivity)`; the parts table rounds half away from zero. Renode's ICP truncates, so a stimulus whose conversion has a fraction of ½ or more expects one more than the model answers (30 °C: 28087 against 28086). Rule: keep `round` and choose stimuli the model agrees on (today's), or match each model's rounding in the twin.
+- **D-B5 · Specification version 4.** The ruling's `accept_lifecycle` is a required key, so the specification moved 3 → 4, as `board` (v2) and 4300c (v3) did. `4300a` also takes 4. The numbering rule applies, and its inbox has the note. The bump moved only the specification-hash lines of Sentinel-01's board crate, and the pinned solve and order digests.
+- **D-B6 · Refusals the ruling did not name:** an acknowledgement given twice, one for a part the board does not use as `eol`/`nrnd`, and a statement that is empty, whitespace, non-printable or over 512 bytes. The stand-in rule (A6) makes a stand-in always need an acknowledgement.
+
+## Findings (build)
+
+- **F-B1 · Renode accepts the stimulus in the platform** (PB5, measured). See D-B2.
+- **F-B2 · F5 measured at the twin:** U5's data read answered `0x4000` though it was never woken (PB6). Only the witness catches a missing wake; the value cannot.
+- **F-B3 · The fabrication package carries no lifecycle line** (A3). The banner and `lifecycle_unheld` are in the verdict, outside `verdict_sha256`'s bytes (the `fab` key is excluded). For a package with an `eol` part, the line belongs in `FAB-NOTES.md`, which is `aethelgard-eda`'s. Unreachable until a stand-in or an EOL part can be drawn.
+- **F-B4 · The parts parser cannot refuse a script no model can witness, or one over the board crate's frame limit** (A7). Either fails closed at the judge.
+- **F-B5 · evolve's S1/S2 report text truncates a 6-byte value to 32 bits** (A10). Selection is unaffected.
+- **F-B6 · The W25Q64JV's lifecycle is not held.** Winbond's catalog page (`https://www.winbond.com/hq/new-online-purchasing-guide/?__locale=en&pLine=/product/code-storage-flash/qspi-nor/&pNo=W25Q64JV`) loads the status by script; one plain POST to its endpoint returned 4 bytes. It is cited `pending`, and `fab.lifecycle_unheld` names it. **For Scotty:** the page as a browser shows it, saved into `~/.cache/aet-4210/ds/pages/`.
+- **F-B7 · The BME280's `active` rests on the Bosch page listing it with order links and no discontinuation notice.** No status word is printed (held `974f1fe8…`).
+- **F-B8 · `main`'s `engine-image` workflow is red at `50d7a6f`** (its quickstart exits 2; run 43676073419). That is not `ci`. The cause is not investigated here: it is outside the fence.
+- **F-B9 · The droop probe compares a masked first identity as a whole word.** It can fail a probe, never pass one. Today's droops are Sentinel-01's, which is unmasked.
+- **F-B10 · A data read mismatch is reported as `{bus}_identity_mismatch`, naming the step.** A kind of its own would need evolve's rule table: a naming question for the architect.
+
+## Closed by this build
+
+- `2204` A2 (D6): `SysTick.CSR` and `NVIC.ISER0`-`4` are judged.
+- `2204` A4: per-device step order; the cross-device check is removed.
+- `4200` F16: per-read windows.
+- `4200` F18: kinds 13 and 22 fitted to the event bound, one per step.
+- `4200` F22: device warnings judged per step, declared or failing.
+- `4200` F19: `IoOutsidePart` consumes the I/O range.

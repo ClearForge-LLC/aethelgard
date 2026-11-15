@@ -395,6 +395,13 @@ fn a_two_byte_identity_is_judged_whole_and_most_significant_byte_first() {
     assert_eq!(c.judge(boot::STATUS_OK, 0x0009), Mismatch);
     // No bit above the read's two bytes, whatever the mask fixes.
     assert_eq!(c.judge(boot::STATUS_OK, 0x1_0008), Mismatch);
+    // A configuration reads nothing, so its value is 0 (the reduction pass's guard).
+    c.step = aethelgard_ir::parts::StepKind::Configure;
+    c.width = 0;
+    c.mask = 0;
+    c.expected = 0;
+    assert_eq!(c.judge(boot::STATUS_OK, 0), Pass);
+    assert_eq!(c.judge(boot::STATUS_OK, 1), Mismatch);
 }
 
 /// `AET-WO-4210` S2: a scripted part is one record per step, in its

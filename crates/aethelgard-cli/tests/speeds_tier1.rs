@@ -136,6 +136,23 @@ fn the_imu_fixture_is_judged_on_its_declaration_and_labelled_unverified() {
     assert_eq!(reason(&v, "SPI_SCK"), "30 pF");
     assert!(reason(&v, "IMU_CS").starts_with("software-driven"));
     assert!(reason(&v, "IMU2_CS").starts_with("software-driven"));
+    // `AET-WO-4210` D1: the banner names the acknowledged stand-ins, the I2C
+    // device first, then the SPI devices (the reduction pass's guard).
+    let banner: Vec<&str> = v["lifecycle"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l.as_str().unwrap())
+        .collect();
+    assert_eq!(banner.len(), 2, "{v}");
+    assert!(
+        banner[0].starts_with("LIFECYCLE EOL: ICP10111 (U6)"),
+        "{banner:?}"
+    );
+    assert!(
+        banner[1].starts_with("LIFECYCLE EOL: ICM20948 (U5, U7)"),
+        "{banner:?}"
+    );
 }
 
 /// §1.4: a bus whose rate needs `10` or `11` is refused by name, exit 2.
