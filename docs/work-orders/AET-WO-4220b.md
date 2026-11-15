@@ -3,7 +3,7 @@
 **Repo:** `ClearForge-LLC/aethelgard` · **Base:** `main`, named in the kickoff.
 **Branch:** `wo/aet-4220b-board`.
 **Author:** Claude (architect) · **Builder:** strong tier, with a full adversarial pass.
-**Phase:** P4. The board slice of `AET-WO-4220`, split at the builder's stop (PR #151, D-B8, ruled in comment 6898233775). It runs after `AET-WO-4300d2` merges. **Cadence: build.**
+**Phase:** P4. The board slice of `AET-WO-4220`, split at the builder's stop (PR #151, D-B8, ruled in comment 6898233775). It runs after `AET-WO-4300d2` and `AET-WO-1310` (the router's escape for sub-grid pads, which these LGA parts need) merge. **Cadence: build.**
 
 **Grounds, on `main` after PR #151 (`78f700d`):**
 - **The models slice is merged.** The ICM-42688-P and BMP581 are `active` rows in `parts.json` schema 4, modelled in `models/renode/`, and witnessed end to end on the Sentinel-02-shaped fixture.
