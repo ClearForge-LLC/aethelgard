@@ -274,10 +274,20 @@ run() {
   mapfile -t ws < <(names "$shard" ws)
   mapfile -t br < <(names "$shard" bridge)
   if [ "${#ws[@]}" -gt 0 ]; then
-    set +e
-    cargo test --workspace "${FEATURES[@]}" -- --exact "${ws[@]}" 2>&1 | tee "$out/test-ws.log"
-    [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
-    set -e
+    # THROWAWAY (AET-WO-4300d3, after 4300b f28eb59): REFIT RULE step 1, each name alone, libtest's report-time, plus wall time.
+    : > "$out/test-ws.log"
+    for n in "${ws[@]}"; do
+      t0=$(date +%s%N)
+      set +e
+      RUSTC_BOOTSTRAP=1 cargo test --workspace "${FEATURES[@]}" -- -Z unstable-options --report-time --test-threads=1 --exact "$n" > "$out/one.log" 2>&1
+      rc=$?
+      set -e
+      t1=$(date +%s%N)
+      [ "$rc" -eq 0 ] || status=1
+      times=$(grep -oE '^test .* (ok|FAILED) <[0-9.]+s>' "$out/one.log" | grep -oE '<[0-9.]+s>' | tr -d '<>s' | tr '\n' ' ' || true)
+      printf 'MEASURE\t%s\t%s\t%s\t%s\n' "$n" "$rc" "$(( (t1 - t0) / 1000000 ))" "$times"
+      cat "$out/one.log" >> "$out/test-ws.log"
+    done
   fi
   if [ "${#br[@]}" -gt 0 ]; then
     set +e

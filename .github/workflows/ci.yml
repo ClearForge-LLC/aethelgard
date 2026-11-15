@@ -145,7 +145,7 @@ jobs:
     name: tools-shard (${{ matrix.shard }})
     needs: shards
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
