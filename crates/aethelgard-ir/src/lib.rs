@@ -14,6 +14,7 @@ pub mod board;
 pub mod electrical;
 pub mod parts;
 mod solve;
+pub mod speeds;
 
 pub use solve::{NODE_LIMIT, RESERVED_PINS, SolveError, solve, solve_with_limit};
 
@@ -564,6 +565,8 @@ pub enum IrValidationError {
         part: Option<String>,
         reason: String,
     },
+    #[error("output speed table: {reason}")]
+    OutputSpeedTable { reason: String },
     #[error(
         "I2C bus `{bus}` has ceiling {ceiling_hz} Hz, but its analog lines derive {}",
         derived_hz.map_or_else(|| "no mode (rise time slower than every mode, or no lines)".to_owned(), |hz| format!("{hz} Hz"))
@@ -657,6 +660,7 @@ impl IrValidationError {
             Self::SpiDeviceSelect { .. } => "SpiDeviceSelect",
             Self::ReferenceCollision { .. } => "ReferenceCollision",
             Self::PartsTable { .. } => "PartsTableInvalid",
+            Self::OutputSpeedTable { .. } => "OutputSpeedTableInvalid",
             Self::CeilingNotDerived { .. } => "CeilingNotDerived",
             Self::SpeedBusMismatch { .. } => "SpeedBusMismatch",
             Self::BusTooFast { .. } => "BusTooFast",
@@ -683,6 +687,7 @@ impl IrValidationError {
             | Self::UnsupportedViaRule { .. }
             | Self::InvalidIdentifier { .. }
             | Self::NoVoltageDomain
+            | Self::OutputSpeedTable { .. }
             | Self::MalformedSpecificationHash => None,
             Self::PlaneNet { id } => Some(id),
             Self::DuplicateDomainId { id }
@@ -776,7 +781,7 @@ const BASE_RULE: &str = "1 to 64 bytes of printable ASCII 0x21-0x7E, none of the
 const PROJECT_RULE: &str = "a project name is a crate name: 1 to 58 bytes of `a-z`, `0-9` and `-`, starting with a letter, not ending with `-`, with no `--` (`generate` names the board crate `<project>-board`, at most 64 bytes)";
 const REFERENCE_RULE: &str =
     "a device reference is a Renode identifier: a letter, then letters, digits and `_`";
-const RESERVED_RULE: &str = "a device reference may not be a name the Renode platform already holds, in any case: a stock instance, `machine`, `sysbus`, a `.repl` keyword, or an SPI bus's multiplexer `spi1mux` to `spi6mux` (`RESERVED_REFERENCES`)";
+const RESERVED_RULE: &str = "a device reference may not be a name the Renode platform already holds, in any case: a stock instance, `machine`, `sysbus`, a `.repl` keyword, or an SPI controller `spi1` to `spi6` or its multiplexer `spi1mux` to `spi6mux` (`RESERVED_REFERENCES`)";
 
 /// The names a device reference may not take, compared on its ASCII-lowercase
 /// form (`AET-WO-2204` D5, `RUL-14`). The emitter declares each modelled device
@@ -791,9 +796,10 @@ const RESERVED_RULE: &str = "a device reference may not be a name the Renode pla
 /// (`86b2c2c5...b231c`) and `stm32h7.repl` (`b85cb4af...251e`); `machine` and
 /// `sysbus`, which `CreationDriver.cs` declares first; and the keywords of
 /// `Grammar.cs` (`using`, `new`, `as`, `preinit`, `init`, `reset`, `local`,
-/// `true`, `false`, `none`, `empty`) lowercased; and the multiplexer the
-/// emitter declares on each SPI controller, `spi1mux` to `spi6mux`
-/// (`AET-WO-4200` D7). The tier-1 test `aethelgard-twin/tests/reserved_names.rs`
+/// `true`, `false`, `none`, `empty`) lowercased; and what the emitter declares
+/// for each SPI controller: the controller itself where the chain does not
+/// (`spi1` to `spi6`, `AET-WO-4300c` F21) and its multiplexer, `spi1mux` to
+/// `spi6mux` (`AET-WO-4200` D7). The tier-1 test `aethelgard-twin/tests/reserved_names.rs`
 /// parses the pinned files and asserts this list equal to that set and the
 /// emitter's mux names, so the list moves only with the pin or the emitter.
 pub const RESERVED_REFERENCES: &[&str] = &[
@@ -843,12 +849,17 @@ pub const RESERVED_REFERENCES: &[&str] = &[
     "rng",
     "rtc",
     "sdmmc",
+    "spi1",
     "spi1mux",
+    "spi2",
     "spi2mux",
+    "spi3",
     "spi3mux",
     "spi4",
     "spi4mux",
+    "spi5",
     "spi5mux",
+    "spi6",
     "spi6mux",
     "sram1",
     "sram2",

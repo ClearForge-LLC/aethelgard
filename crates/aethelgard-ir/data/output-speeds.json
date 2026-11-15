@@ -1,0 +1,248 @@
+{
+  "schema_version": 1,
+  "mcu": "STM32H753ZITx",
+  "citations": {
+    "rev_v": {
+      "document": "STMicroelectronics DS12117 STM32H753xI",
+      "revision": "10 (2026-01-13)",
+      "section": "7.3.15, Table 149, pp. 245-246 (rev V silicon; HSLV off; notes 1 to 5)",
+      "sha256": "607b9eadaef1c54f93e02d7cea58c862a1552bda47c848d96f2de5c0ee84c032"
+    },
+    "rev_y": {
+      "document": "STMicroelectronics DS12117 STM32H753xI",
+      "revision": "10 (2026-01-13)",
+      "section": "6.3.15, Table 52, pp. 141-142 (rev Y silicon; HSLV off; the same value in every cell as Table 149)",
+      "sha256": "607b9eadaef1c54f93e02d7cea58c862a1552bda47c848d96f2de5c0ee84c032"
+    }
+  },
+  "definition": "Fmax holds with (tr + tf) <= 2/3 T, skew <= T/20 and 45 % < duty cycle < 55 % (note 3); tr and tf between 10 % and 90 % of the output (note 4); guaranteed by design (note 1)",
+  "vbat_pins": {
+    "pins": [
+      "PC13",
+      "PC14",
+      "PC15",
+      "PI8"
+    ],
+    "fmax_hz": 2000000,
+    "note": "note 2: the GPIOs that can be supplied in VBAT mode are limited to 2 MHz"
+  },
+  "open_drain": "I2C lines have no row and are out of this check's scope (AET-WO-4300c D1): their rise belongs to the pull-up, judged by extract and the campaign (RUL-19). DS12117 Rev 10 6.3.32 (rev Y) and 7.3.32 (rev V), I2C interface characteristics: the UM10204 timings are guaranteed by design when the I2C peripheral is properly configured and i2c_ker_ck is above the minimum of Table 93 (rev Y) or Table 191 (rev V)",
+  "rows": [
+    {
+      "ospeedr": "00",
+      "vdd_min_millivolts": 2700,
+      "vdd_max_millivolts": 3600,
+      "load_picofarads": 50,
+      "fmax_hz": 12000000,
+      "rise_fall_picoseconds": 16600,
+      "requires_compensation_cell": false
+    },
+    {
+      "ospeedr": "00",
+      "vdd_min_millivolts": 1620,
+      "vdd_max_millivolts": 2700,
+      "load_picofarads": 50,
+      "fmax_hz": 3000000,
+      "rise_fall_picoseconds": 33300,
+      "requires_compensation_cell": false
+    },
+    {
+      "ospeedr": "00",
+      "vdd_min_millivolts": 2700,
+      "vdd_max_millivolts": 3600,
+      "load_picofarads": 30,
+      "fmax_hz": 12000000,
+      "rise_fall_picoseconds": 13300,
+      "requires_compensation_cell": false
+    },
+    {
+      "ospeedr": "00",
+      "vdd_min_millivolts": 1620,
+      "vdd_max_millivolts": 2700,
+      "load_picofarads": 30,
+      "fmax_hz": 3000000,
+      "rise_fall_picoseconds": 25000,
+      "requires_compensation_cell": false
+    },
+    {
+      "ospeedr": "00",
+      "vdd_min_millivolts": 2700,
+      "vdd_max_millivolts": 3600,
+      "load_picofarads": 10,
+      "fmax_hz": 16000000,
+      "rise_fall_picoseconds": 10000,
+      "requires_compensation_cell": false
+    },
+    {
+      "ospeedr": "00",
+      "vdd_min_millivolts": 1620,
+      "vdd_max_millivolts": 2700,
+      "load_picofarads": 10,
+      "fmax_hz": 4000000,
+      "rise_fall_picoseconds": 20000,
+      "requires_compensation_cell": false
+    },
+    {
+      "ospeedr": "01",
+      "vdd_min_millivolts": 2700,
+      "vdd_max_millivolts": 3600,
+      "load_picofarads": 50,
+      "fmax_hz": 60000000,
+      "rise_fall_picoseconds": 5200,
+      "requires_compensation_cell": false
+    },
+    {
+      "ospeedr": "01",
+      "vdd_min_millivolts": 1620,
+      "vdd_max_millivolts": 2700,
+      "load_picofarads": 50,
+      "fmax_hz": 15000000,
+      "rise_fall_picoseconds": 10000,
+      "requires_compensation_cell": false
+    },
+    {
+      "ospeedr": "01",
+      "vdd_min_millivolts": 2700,
+      "vdd_max_millivolts": 3600,
+      "load_picofarads": 30,
+      "fmax_hz": 80000000,
+      "rise_fall_picoseconds": 4200,
+      "requires_compensation_cell": false
+    },
+    {
+      "ospeedr": "01",
+      "vdd_min_millivolts": 1620,
+      "vdd_max_millivolts": 2700,
+      "load_picofarads": 30,
+      "fmax_hz": 15000000,
+      "rise_fall_picoseconds": 7500,
+      "requires_compensation_cell": false
+    },
+    {
+      "ospeedr": "01",
+      "vdd_min_millivolts": 2700,
+      "vdd_max_millivolts": 3600,
+      "load_picofarads": 10,
+      "fmax_hz": 110000000,
+      "rise_fall_picoseconds": 2800,
+      "requires_compensation_cell": false
+    },
+    {
+      "ospeedr": "01",
+      "vdd_min_millivolts": 1620,
+      "vdd_max_millivolts": 2700,
+      "load_picofarads": 10,
+      "fmax_hz": 20000000,
+      "rise_fall_picoseconds": 5200,
+      "requires_compensation_cell": false
+    },
+    {
+      "ospeedr": "10",
+      "vdd_min_millivolts": 2700,
+      "vdd_max_millivolts": 3600,
+      "load_picofarads": 50,
+      "fmax_hz": 85000000,
+      "rise_fall_picoseconds": 3800,
+      "requires_compensation_cell": true
+    },
+    {
+      "ospeedr": "10",
+      "vdd_min_millivolts": 1620,
+      "vdd_max_millivolts": 2700,
+      "load_picofarads": 50,
+      "fmax_hz": 35000000,
+      "rise_fall_picoseconds": 6900,
+      "requires_compensation_cell": true
+    },
+    {
+      "ospeedr": "10",
+      "vdd_min_millivolts": 2700,
+      "vdd_max_millivolts": 3600,
+      "load_picofarads": 30,
+      "fmax_hz": 110000000,
+      "rise_fall_picoseconds": 2800,
+      "requires_compensation_cell": true
+    },
+    {
+      "ospeedr": "10",
+      "vdd_min_millivolts": 1620,
+      "vdd_max_millivolts": 2700,
+      "load_picofarads": 30,
+      "fmax_hz": 40000000,
+      "rise_fall_picoseconds": 5200,
+      "requires_compensation_cell": true
+    },
+    {
+      "ospeedr": "10",
+      "vdd_min_millivolts": 2700,
+      "vdd_max_millivolts": 3600,
+      "load_picofarads": 10,
+      "fmax_hz": 166000000,
+      "rise_fall_picoseconds": 1800,
+      "requires_compensation_cell": true
+    },
+    {
+      "ospeedr": "10",
+      "vdd_min_millivolts": 1620,
+      "vdd_max_millivolts": 2700,
+      "load_picofarads": 10,
+      "fmax_hz": 85000000,
+      "rise_fall_picoseconds": 3300,
+      "requires_compensation_cell": true
+    },
+    {
+      "ospeedr": "11",
+      "vdd_min_millivolts": 2700,
+      "vdd_max_millivolts": 3600,
+      "load_picofarads": 50,
+      "fmax_hz": 100000000,
+      "rise_fall_picoseconds": 3300,
+      "requires_compensation_cell": true
+    },
+    {
+      "ospeedr": "11",
+      "vdd_min_millivolts": 1620,
+      "vdd_max_millivolts": 2700,
+      "load_picofarads": 50,
+      "fmax_hz": 50000000,
+      "rise_fall_picoseconds": 6600,
+      "requires_compensation_cell": true
+    },
+    {
+      "ospeedr": "11",
+      "vdd_min_millivolts": 2700,
+      "vdd_max_millivolts": 3600,
+      "load_picofarads": 30,
+      "fmax_hz": 133000000,
+      "rise_fall_picoseconds": 2400,
+      "requires_compensation_cell": true
+    },
+    {
+      "ospeedr": "11",
+      "vdd_min_millivolts": 1620,
+      "vdd_max_millivolts": 2700,
+      "load_picofarads": 30,
+      "fmax_hz": 66000000,
+      "rise_fall_picoseconds": 4500,
+      "requires_compensation_cell": true
+    },
+    {
+      "ospeedr": "11",
+      "vdd_min_millivolts": 2700,
+      "vdd_max_millivolts": 3600,
+      "load_picofarads": 10,
+      "fmax_hz": 220000000,
+      "rise_fall_picoseconds": 1500,
+      "requires_compensation_cell": true
+    },
+    {
+      "ospeedr": "11",
+      "vdd_min_millivolts": 1620,
+      "vdd_max_millivolts": 2700,
+      "load_picofarads": 10,
+      "fmax_hz": 100000000,
+      "rise_fall_picoseconds": 2700,
+      "requires_compensation_cell": true
+    }
+  ]
+}

@@ -7,8 +7,9 @@
 //! through [`table`], whose error `validate` returns like any other refusal.
 //!
 //! Each entry holds the part's values: its bus (I2C addresses, or SPI modes
-//! and clock), its identity read, its supply range, and the Renode model that
-//! stands in for it, or none. Each value group carries its datasheet citation:
+//! and clock), its identity read, its supply range, the largest capacitance of
+//! any of its signal pins where the datasheet prints a maximum
+//! (`AET-WO-4300c` D3), and the Renode model that stands in for it, or none. Each value group carries its datasheet citation:
 //! the document, revision and section, and the document's sha256 when it is
 //! held, or the URL it must be fetched from (`pending`), never a value from
 //! memory. What a Renode model logs is not a part value: that stays code in
@@ -27,7 +28,9 @@ use crate::IrValidationError;
 pub const PARTS_JSON: &str = include_str!("../data/parts.json");
 
 /// The `schema_version` the parser reads.
-pub const PARTS_SCHEMA_VERSION: u32 = 1;
+/// Version 2 added `pin_capacitance` and named the flash for its ordering
+/// code (`AET-WO-4300c` D3, F11).
+pub const PARTS_SCHEMA_VERSION: u32 = 2;
 
 /// A bus kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,6 +54,24 @@ pub const MAX_SPI_CLOCK_HZ: u32 = 1_000_000_000;
 
 /// The highest supply an entry may state, in millivolts.
 pub const MAX_SUPPLY_MILLIVOLTS: u32 = 60_000;
+
+/// The highest pin capacitance an entry may state, in femtofarads: no
+/// part's signal pin comes near 100 pF, and anything above is a typo.
+pub const MAX_PIN_FEMTOFARADS: u64 = 100_000;
+
+/// The SPI command that reads a JEDEC identity (`9Fh`), the identity's width,
+/// and the capacity codes (`2^code` bytes) a `SPI.GenericSpiFlash` is built
+/// from: the shape the twin's emitter requires (`aethelgard-twin`
+/// `FlashIdentity`), checked here so a malformed one never reaches
+/// `generate` (`AET-WO-4300c` F20).
+pub const JEDEC_READ: u8 = 0x9F;
+pub const JEDEC_WIDTH: u8 = 3;
+pub const FLASH_CAPACITY_CODES: std::ops::RangeInclusive<u8> = 0x10..=0x19;
+
+/// The name the W25Q64JV had before its ordering code was part of it
+/// (`AET-WO-4300c` F11). Its JEDEC identity depends on that code, so a
+/// specification naming it is refused, naming both.
+pub const BARE_W25Q64JV: &str = "W25Q64JV";
 
 /// How a part sits on its bus.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,6 +127,7 @@ pub struct Citations {
     pub bus: Citation,
     pub identity: Citation,
     pub supply: Citation,
+    pub pin_capacitance: Citation,
 }
 
 /// One part.
@@ -116,6 +138,10 @@ pub struct Part {
     pub identity: Identity,
     /// The supply range, (min, max) in millivolts.
     pub supply_millivolts: (u32, u32),
+    /// The largest maximum capacitance the datasheet prints for any of the
+    /// part's signal pins, in femtofarads, or `None` when it prints none: a
+    /// typical value is never promoted to a maximum (`AET-WO-4300c` D3).
+    pub pin_capacitance_femtofarads: Option<u64>,
     /// The Renode model, as `platforms` names it, or `None`: unmodelled.
     pub renode: Option<String>,
     pub citations: Citations,
@@ -147,6 +173,7 @@ impl PartsTable {
                 ("bus", &p.citations.bus),
                 ("identity", &p.citations.identity),
                 ("supply", &p.citations.supply),
+                ("pin_capacitance", &p.citations.pin_capacitance),
             ] {
                 if let Held::Pending(url) = &c.held {
                     out.push((p.part.as_str(), group, url.as_str()));
@@ -174,6 +201,7 @@ struct RawPart {
     bus: RawBus,
     identity: RawIdentity,
     supply_millivolts: RawSupply,
+    pin_capacitance: RawPinCapacitance,
     /// Required: `null` says unmodelled; an absent key is refused, never read
     /// as unmodelled (adversarial A2).
     #[serde(deserialize_with = "Option::deserialize")]
@@ -216,17 +244,27 @@ struct RawSupply {
     max: u32,
 }
 
+/// Required: `null` says the datasheet prints no maximum; an absent key is
+/// refused, never read as none.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPinCapacitance {
+    #[serde(deserialize_with = "Option::deserialize")]
+    max_femtofarads: Option<u64>,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawCitations {
     bus: RawCitation,
     identity: RawCitation,
     supply: RawCitation,
+    pin_capacitance: RawCitation,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawCitation {
+pub(crate) struct RawCitation {
     document: String,
     revision: String,
     section: String,
@@ -270,7 +308,7 @@ fn text(value: &str, field: &str, max: usize) -> Result<(), String> {
     Ok(())
 }
 
-fn citation(raw: RawCitation, group: &str) -> Result<Citation, String> {
+pub(crate) fn citation(raw: RawCitation, group: &str) -> Result<Citation, String> {
     text(&raw.document, &format!("citations.{group}.document"), 128)?;
     text(&raw.revision, &format!("citations.{group}.revision"), 64)?;
     text(&raw.section, &format!("citations.{group}.section"), 256)?;
@@ -367,6 +405,12 @@ fn part(raw: RawPart) -> Result<Part, String> {
             "`supply_millivolts` is {min} to {max}, not 1 <= min <= max <= {MAX_SUPPLY_MILLIVOLTS}"
         ));
     }
+    let pin_capacitance = raw.pin_capacitance.max_femtofarads;
+    if pin_capacitance.is_some_and(|c| !(1..=MAX_PIN_FEMTOFARADS).contains(&c)) {
+        return Err(format!(
+            "`pin_capacitance.max_femtofarads` is {pin_capacitance:?}, not null or 1 to {MAX_PIN_FEMTOFARADS}"
+        ));
+    }
     if let Some(model) = &raw.renode {
         let Some((_, buses)) = RENODE_MODELS.iter().find(|(m, _)| m == model) else {
             return Err(format!(
@@ -376,6 +420,18 @@ fn part(raw: RawPart) -> Result<Part, String> {
         if !buses.contains(&bus.kind()) {
             return Err(format!(
                 "`renode` names `{model}`, which does not attach to the part's bus"
+            ));
+        }
+        let capacity = u8::try_from(value & 0xFF).map_err(|e| e.to_string())?;
+        if model == "SPI.GenericSpiFlash"
+            && (write != JEDEC_READ
+                || width != JEDEC_WIDTH
+                || !FLASH_CAPACITY_CODES.contains(&capacity))
+        {
+            return Err(format!(
+                "`identity` is not a JEDEC identity a `SPI.GenericSpiFlash` is built from: write {JEDEC_READ:#04X}, read {JEDEC_WIDTH}, a capacity code {:#04X} to {:#04X} in the last byte",
+                FLASH_CAPACITY_CODES.start(),
+                FLASH_CAPACITY_CODES.end()
             ));
         }
     }
@@ -388,11 +444,13 @@ fn part(raw: RawPart) -> Result<Part, String> {
             value,
         },
         supply_millivolts: (min, max),
+        pin_capacitance_femtofarads: pin_capacitance,
         renode: raw.renode,
         citations: Citations {
             bus: citation(raw.citations.bus, "bus")?,
             identity: citation(raw.citations.identity, "identity")?,
             supply: citation(raw.citations.supply, "supply")?,
+            pin_capacitance: citation(raw.citations.pin_capacitance, "pin_capacitance")?,
         },
     })
 }
@@ -474,10 +532,11 @@ mod tests {
     fn the_embedded_table_parses_and_holds_the_four_parts() {
         let t = table().unwrap();
         let names: Vec<&str> = t.parts().iter().map(|p| p.part.as_str()).collect();
-        assert_eq!(names, ["BME280", "ICM20948", "TMP117", "W25Q64JV"]);
+        assert_eq!(names, ["BME280", "ICM20948", "TMP117", "W25Q64JVxIQ"]);
         assert_eq!(identity("BME280").unwrap().unwrap().value, 0x60);
         assert_eq!(identity("TMP117").unwrap().unwrap().width, 2);
         assert_eq!(identity("bme280").unwrap(), None);
         assert_eq!(identity("W25Q128").unwrap(), None);
+        assert_eq!(identity(BARE_W25Q64JV).unwrap(), None);
     }
 }
