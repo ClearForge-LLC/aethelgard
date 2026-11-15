@@ -39,6 +39,10 @@ fn answers(part: &str) -> bool {
 /// select on PA1, built by hand from the reference's solved topology.
 fn two_devices() -> (SolvedTopology, aethelgard_ir::PinTable) {
     let (mut solved, table) = reference();
+    // The ICM-20948 clocks at 7 MHz at most; the bus runs at that rate.
+    for line in solved.spi_lines.values_mut() {
+        line.rate_hz = 7_000_000;
+    }
     let flash = solved.spi_devices["U4"].clone();
     solved.gpio.insert("IMU_CS".into(), "PA1".into());
     solved.spi_devices.insert(

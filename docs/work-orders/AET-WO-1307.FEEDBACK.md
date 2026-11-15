@@ -444,7 +444,24 @@ Every kill was checked to be a failed assertion, not a build failure.
 - **K1/K2, the 4-layer fixture:** `stackups_tier1::the_four_layer_board_is_the_declared_one_and_extracts`' bounds `45_857, 48_827` → `49_641, 45_671`.
 - **K1, D1 at 2 layers:** `stackups_tier1`'s D1 test (B5); D3's former fail-closed test is removed (B6).
 - **K1:** `routing_tier1::every_pad_is_left_straight_out_of_its_field` admits a dense part's own ring interior.
-- **Not changed, outside the fence:** `crates/aethelgard-cli/README.md` line 578 shows an `extract` output with `"c_bound_femtofarads":46800`. It is now stale, and it is a finding for the architect.
+- **`crates/aethelgard-cli/README.md` line 578** (in scope by the architect's review): the example `extract` line is now the reference's measured SDA line, bound 50,576 fF, trace 12,922, length 33,750,000 nm, 28 segments. It was 46,800 / 9,146 / 24,250,000 / 19.
+- **The merge of `origin/main` `50d7a6f` (AET-WO-4300c merged first) [measured on the merged tree, release].**
+  - Two conflicts, both literals: `extract_tier1` and `stackups_tier1` now also bound SCK and MOSI. Resolved as agreed in the mailbox: D1 keeps specification schema 3 and 4300c's SCK/MOSI constraints, at 150 pF for I2C. Git combined 4300c's extract check with this work order's `d1_routes_at_four_layers_and_at_two` without a conflict.
+  - Each literal re-measured:
+
+| literal | `main` (4300c's routes) | merged (1307's routes) |
+|---|---|---|
+| reference SDA / SCL / SCK / MOSI bound (`the_old_and_new_paths_agree_on_the_reference`) | 46,800 / 58,235 / 18,521 / 17,188 | **50,576 / 43,749 / 16,972 / 13,772** |
+| reference SCK terms (trace, vias, pads, pins, bound) | 5,920, 3,038, 1,563, 8,000, 18,521 | **4,371, 3,038, 1,563, 8,000, 16,972** |
+| reference MOSI terms | 4,587, 3,038, 1,563, 8,000, 17,188 | **4,209, 0, 1,563, 8,000, 13,772** |
+| `a_declared_spi_bound…`: under / at | 18,520 / 18,521 | **16,971 / 16,972** |
+| 50 pF verdicts (SDA, SCL, SCK, MOSI) | pass, fail, pass, pass | **fail, pass, pass, pass** |
+| `four` SDA / SCL / SCK / MOSI | 45,857 / 48,827 / 18,470 / 17,114 | **49,641 / 45,671 / 15,264 / 16,439** |
+
+  - **D1 at 4 layers against 4300c's declarations:** every line passes, and the test holds it.
+    - I2C (150,000 fF): SDA0 114,235, SCL0 103,483, SDA1 118,205, SCL1 98,854, SDA2 104,704, SCL2 116,644, SDA3 118,375, SCL3 113,015.
+    - SCK0 15,264 and MOSI0 16,439 (30,000 fF).
+  - The reference's I2C lines are unchanged by the merge. Main's reference specification changed (schema 3, the flash part), so its board bytes differ.
 - **Protected documents, findings only:**
   - `docs/architecture.md` §2.21 records D3 as needing escape planning;
   - the router's order is described by name wherever the steering documents state it [inferred: not re-read line by line].

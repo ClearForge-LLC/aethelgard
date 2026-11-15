@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "parts": [
     {
       "part": "BME280",
@@ -20,6 +20,9 @@
         "min": 1710,
         "max": 3600
       },
+      "pin_capacitance": {
+        "max_femtofarads": null
+      },
       "renode": "I2C.BME280",
       "citations": {
         "bus": {
@@ -38,6 +41,12 @@
           "document": "Bosch Sensortec BST-BME280-DS001-24",
           "revision": "1.24 (2024-02-20)",
           "section": "1.1, table 1 (VDD 1.71 to 3.6 V)",
+          "sha256": "a2ccdb449fec94380742fe8eec851a11d9bd4142252d332b34682b4deecd7d89"
+        },
+        "pin_capacitance": {
+          "document": "Bosch Sensortec BST-BME280-DS001-24",
+          "revision": "1.24 (2024-02-20)",
+          "section": "6.4.1 (no pin capacitance is printed; only the I2C bus load Cb, 400 pF on SDI and SCK)",
           "sha256": "a2ccdb449fec94380742fe8eec851a11d9bd4142252d332b34682b4deecd7d89"
         }
       }
@@ -62,6 +71,9 @@
         "min": 1710,
         "max": 3600
       },
+      "pin_capacitance": {
+        "max_femtofarads": null
+      },
       "renode": "Sensors.ICM20948",
       "citations": {
         "bus": {
@@ -80,6 +92,12 @@
           "document": "TDK InvenSense DS-000189 ICM-20948",
           "revision": "1.6 (2024-03-12)",
           "section": "3.4 (VDD 1.71 to 3.6 V; VDDIO is 1.71 to 1.95 V)",
+          "sha256": "0588625f4f1d6d27382a4322f48073dc0ce569e537c63786b13aab3eeb76b718"
+        },
+        "pin_capacitance": {
+          "document": "TDK InvenSense DS-000189 ICM-20948",
+          "revision": "1.6 (2024-03-12)",
+          "section": "3.4 (digital input CI \"< 10\" pF in the TYP column: a typical, not a maximum; no figure for SDO)",
           "sha256": "0588625f4f1d6d27382a4322f48073dc0ce569e537c63786b13aab3eeb76b718"
         }
       }
@@ -105,6 +123,9 @@
         "min": 1800,
         "max": 5500
       },
+      "pin_capacitance": {
+        "max_femtofarads": null
+      },
       "renode": null,
       "citations": {
         "bus": {
@@ -124,11 +145,17 @@
           "revision": "D (2022-09)",
           "section": "6.3 (V+ 1.8 to 5.5 V)",
           "sha256": "78212e91e478035a91165397a8de8a90bfc776759dc445243c033537f0c4b789"
+        },
+        "pin_capacitance": {
+          "document": "Texas Instruments SNOSD82D TMP117",
+          "revision": "D (2022-09)",
+          "section": "6.5 (input capacitance 4 pF, typical only)",
+          "sha256": "78212e91e478035a91165397a8de8a90bfc776759dc445243c033537f0c4b789"
         }
       }
     },
     {
-      "part": "W25Q64JV",
+      "part": "W25Q64JVxIQ",
       "bus": {
         "spi": {
           "modes": [
@@ -147,6 +174,9 @@
         "min": 2700,
         "max": 3600
       },
+      "pin_capacitance": {
+        "max_femtofarads": 8000
+      },
       "renode": "SPI.GenericSpiFlash",
       "citations": {
         "bus": {
@@ -158,13 +188,19 @@
         "identity": {
           "document": "Winbond W25Q64JV",
           "revision": "J (2018-03-27)",
-          "section": "8.1 (Read JEDEC ID 9Fh: EFh, then 4017h for the IQ/JQ parts)",
+          "section": "8.1 (Read JEDEC ID 9Fh: EFh, then 4017h for the IQ and JQ ordering codes; the IM and JM codes answer 7017h and are another entry)",
           "sha256": "452d906c3be0da077fd751a2b8aa062629caf6081f8dd1eda04880854ce7c8f9"
         },
         "supply": {
           "document": "Winbond W25Q64JV",
           "revision": "J (2018-03-27)",
           "section": "9.2 (VCC 2.7 to 3.6 V)",
+          "sha256": "452d906c3be0da077fd751a2b8aa062629caf6081f8dd1eda04880854ce7c8f9"
+        },
+        "pin_capacitance": {
+          "document": "Winbond W25Q64JV",
+          "revision": "J (2018-03-27)",
+          "section": "9.4 (CIN 6 pF max, Cout 8 pF max; the larger is held; note 1: tested on sample basis at TA 25 C, VCC 3.0 V). 9.5's input TR/TF 5 ns is an AC measurement condition, not an input requirement",
           "sha256": "452d906c3be0da077fd751a2b8aa062629caf6081f8dd1eda04880854ce7c8f9"
         }
       }
