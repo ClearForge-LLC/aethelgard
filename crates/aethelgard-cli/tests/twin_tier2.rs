@@ -1435,7 +1435,9 @@ fn spi_forged(name: &str, forgery: &'static str) -> PathBuf {
 /// `AET-WO-4200` D2: a record that claims the flash's identity is witnessed
 /// only by the model's lines for that read. Claimed with no transfer, the
 /// model logs nothing; after a transfer of another command, it logs that
-/// command (and Renode an `[ERROR]` for it), never the read's lines.
+/// command (and Renode an `[ERROR]` for it), never the read's lines. That
+/// `[ERROR]` falls inside U4's chip-select window, so it fails the identity
+/// step by name, beside the run's `renode_error_log` (`AET-WO-4210` D-A1).
 #[test]
 fn a_forged_spi_record_fails_unwitnessed() {
     let elf = spi_forged("spi-forged", "Ok::<usize, SpiError>(3)");
@@ -1459,8 +1461,14 @@ fn a_forged_spi_record_fails_unwitnessed() {
     assert_eq!(code, Some(1), "{v}");
     let k = kinds(&v);
     assert!(
-        k.contains(&"spi_transaction_unwitnessed") && k.contains(&"renode_error_log"),
+        k.contains(&"spi_step_error") && k.contains(&"renode_error_log"),
         "{v}"
+    );
+    let m = message(&v, "spi_step_error");
+    assert!(
+        m.contains("U4 on SPI1, chip select PA0, its identity step")
+            && m.ends_with("[ERROR] spi1.spi1mux.u4: Command decoding failed on byte: 0x90 (144)."),
+        "{m}"
     );
     let observed = v["boot"]["spi_witness"][0]["observed"].as_array().unwrap();
     assert_eq!(

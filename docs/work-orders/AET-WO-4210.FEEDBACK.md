@@ -635,3 +635,60 @@ Reduction pass (diff): −11 net · 2 duplicates removed · 0 dead paths removed
 - `main` (`091003f`) is merged in, and nothing landed after it.
 
 **AET-WO-4210 READY FOR REVIEW: PR #143.** The build follows the work order §2 as ruled on PR #131, and Scotty's ruling on D1 (`accept_lifecycle`). It had a full adversarial pass by a fresh subagent and a reduction pass, and its gates and CI are green. The decisions for the architect are D-A1, D-A8 and D-B1 to D-B6 above.
+
+## Review round (PR #143, comment `6892722292`, at `f8e3f2c`)
+
+The architect accepted the build, conditional on three things. All three are done.
+
+1. **`main` merged** (`0a84ae0`: `1308` #142, `4400a` #135, docs #144). There were 34 conflicted files:
+   - the specification fixtures and examples, where `accept_lifecycle` met `net_classes`/`diff_pairs`. Each keeps all three keys;
+   - Sentinel-01's eight hash lines, re-blessed (only those lines changed);
+   - the pinned digests, re-taken below;
+   - `ci.yml`, `test-weights.tsv` (both blocks kept) and the CLI README (this build's row-2 kinds and `1308`'s row-3 `ClassNetAbsent`).
+   - `1308`'s two new fixtures (`four-layer-power.json`, `pair-standin.json`) gained `"accept_lifecycle": []`, since every part they use is `active`.
+   - `spi-imu.json`, which this build replaced with `imu-baro-1v8.json`, stays deleted; `main`'s edit to it went to the replacement.
+2. **Specification 6** (D-B5, the numbering rule: `1308` merged 5 first). `SPECIFICATION_SCHEMA_VERSION` is 6, and every specification file is at 6. The trace stays 8: `4300a` renumbers if this lands first. The bump moved only hash-bound values:
+   - the reference's sha256 is `8029a44e…`;
+   - `solve_cli`'s two digests (the solved reference differs only in `specification_sha256`, as printed);
+   - `order_2203`'s three (old values in its comment);
+   - the twin's `REFERENCE` hash, and `verify_2k2`'s fab-notes prefix.
+   - `aethelgard-pincheck/tests/common/topology.json` (`4400a`'s) still names `main`'s hash. Nothing compares it, so it is left as `main` has it.
+3. **D-A1, built.** A device's `[ERROR]` line is one of its lines (`witness_shaped`), so it falls in a step:
+   - on SPI by its chip-select window;
+   - on I2C it counts toward no step's expected lines, and goes to the step under way.
+   - Whatever the record says, that step fails as `i2c_step_error`/`spi_step_error`, naming the device, the step and the line. The run's `renode_error_log` stands beside it.
+   - Evolve is unchanged: the run was already `indeterminate` (I1) through `renode_error_log`, and the new kind joins it as unexplained.
+   - It applies to every device's steps, not only a scripted device's, because an identity-only device has one step. Unit test: `renode::tests::a_device_s_error_inside_a_step_fails_that_step_by_name`. Each of its four guards, mutated once, fails the test: the `[ERROR]` level, the I2C partition, the step-under-way choice, and the finding.
+
+The rulings, applied:
+- **D-B1.** The mask `0x00010003` and `NVIC.cs` L1040 at `066a7f13` (re-read: `CLKSOURCE` "reads as 1 and ignores writes") are named in a comment beside the judge's register loop in `renode.rs`.
+- **D-A8.** `round` is kept. The ICP model's truncation is recorded on `Model::Icp101xx` in `aethelgard-twin/src/model.rs` as a model divergence, citing `ICP_101xx.cs` L374 at `066a7f13`.
+- **Routing.** F-B3, F-B5 and F-B10 go to the backlog as routed; F-B6 goes to Scotty; F-B8 is the architect's.
+- **`aethelgard-ir/README.md`** said version 4 on this branch. It now says 6 and names `accept_lifecycle`.
+
+- **Then `1309` merged** (`351d25c`, #146, no specification bump), and was merged in at `a492662`. Its only conflict was `TIER2_MIN`.
+
+`TIER2_MIN`: 103 on `main` (101, plus `1309`'s 2), plus this build's 4, so **107**. D-A1's test is tier 1.
+
+**Adversarial pass on this round's diff** (a fresh subagent, read-only). It found no way an error escapes the run, and no fail-open. Two cases can name the wrong step, and both still fail the run:
+- **R-1 · An I2C step that expects no line.** Its witness is `None` or empty, for example a model with no known format. It has no position, so an `[ERROR]` logged during it goes to the step before it.
+- **R-2 · An SPI `[ERROR]` outside every chip-select window.** It goes to the device's last step, by the attribution rule `4200` D4 already uses for any line outside a window.
+
+Neither is fixed here. Whether Renode logs a device's error outside its window is not measured. The other notes:
+- an `[ERROR]` in a probe's interval now fails that probe's witness (fail-closed);
+- an error before the last release, or past the filter's budget, still has only `renode_error_log`.
+
+**Finding F-B11 (for the architect):** `main` at `351d25c` holds an empty file named `9` at the repository root, added by `1309`. It is left as `main` has it.
+
+**D-A1 measured in Renode.** `twin_tier2`'s `a_forged_spi_record_fails_unwitnessed` was the full suite's one failure. Its wrong-command firmware makes the flash model log `[ERROR] spi1.spi1mux.u4: Command decoding failed on byte: 0x90 (144).`. That line falls inside U4's chip-select window, so the judge names `spi_step_error` for U4's identity step, where it used to report `spi_transaction_unwitnessed`. The test now asserts the ruled finding and its message. This measures, for the flash model, that a device error falls inside its window (R-2 above).
+
+**Gates (review round), at `a492662` plus the test edit:**
+- On the host, under `systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`:
+  - `cargo fmt --all -- --check`: ok.
+  - `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings`: ok.
+  - `cargo test --workspace --no-fail-fast`: 91 `test result: ok`, none failed. The `renamings_` tests were skipped, as before.
+- In the pinned image under `capped-run`. The read-back was `memory.max=8589934592 memory.swap.max=0 pids.max=8192`, in `~/.cache/aet-4210/t2.log`.
+  - The full suite with `with-tools` (`final2.log`): 1,537 passed and 1 failed (the test above).
+  - After the test edit, `twin_tier2` reran in full: 28 passed.
+
+CI: recorded with the READY commit that follows this round.
