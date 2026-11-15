@@ -594,6 +594,8 @@ fn a_port_s_tags_fail_when_missing_unexpected_or_unread() {
                 "PK15 OTYPER 1, OSPEEDR 0b11, PUPDR 0b11 at the injection",
                 "PK15 OTYPER/OSPEEDR/PUPDR not rebuilt at the injection",
                 "gpioPortK refused a write to 0xFFFFFFFF (a locked pin)",
+                "CR2 0xFFFFFFFF set, a bit Renode does not store",
+                "PK15 OT set in OTYPER, a bit Renode does not store",
             ]
             .iter()
             .cycle()

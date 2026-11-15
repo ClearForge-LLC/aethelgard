@@ -3218,7 +3218,7 @@ mod tests {
             (
                 open_drain,
                 None,
-                "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write, PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the end",
+                "PA9 OT set in OTYPER, a bit Renode does not store, PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write, PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the end",
             ),
             (
                 pulled,

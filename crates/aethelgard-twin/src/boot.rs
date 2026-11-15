@@ -565,23 +565,7 @@ fn serial_registers(
 ) -> Result<(), TwinError> {
     let usart = f.layout("USART")?;
     let bit = |name: &str| -> Result<u32, TwinError> { Ok(1 << f.position(name)?) };
-    let cr1_stored = [
-        "USART_CR1_UE_Pos",
-        "USART_CR1_RE_Pos",
-        "USART_CR1_TE_Pos",
-        "USART_CR1_RXNEIE_RXFNEIE_Pos",
-        "USART_CR1_TCIE_Pos",
-        "USART_CR1_TXEIE_TXFNFIE_Pos",
-        "USART_CR1_PEIE_Pos",
-        "USART_CR1_PS_Pos",
-        "USART_CR1_PCE_Pos",
-        "USART_CR1_OVER8_Pos",
-        "USART_CR1_RTOIE_Pos",
-    ]
-    .iter()
-    .try_fold(0u32, |m, n| Ok::<_, TwinError>(m | bit(n)?))?;
-    let (stop_pos, stop_width) = f.field("USART_CR2_STOP")?;
-    let cr3_stored = bit("USART_CR3_DMAR_Pos")? | bit("USART_CR3_DMAT_Pos")?;
+    let [cr1_stored, cr2_stored, cr3_stored] = crate::serial::usart_stored(f)?;
     for (_, port, _, _) in topology.serial_ports_in_order() {
         let name = &port.peripheral;
         kind(name)?;
@@ -612,8 +596,8 @@ fn serial_registers(
         })?;
         reg(
             "CR2",
-            ((1u32 << stop_width) - 1) << stop_pos,
-            u32::from(stop) << stop_pos,
+            cr2_stored,
+            u32::from(stop) << f.field("USART_CR2_STOP")?.0,
         )?;
         reg("CR3", cr3_stored, 0)?;
         reg("BRR", 0xFFFF, port.brr)?;

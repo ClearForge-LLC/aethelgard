@@ -2590,6 +2590,7 @@ fn adv2_2_an_open_drain_pulled_down_tx_fails() {
     assert_eq!(
         unexpected(&v),
         [
+            "PA9 OT set in OTYPER, a bit Renode does not store",
             "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write",
             "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the end"
         ],
@@ -2676,6 +2677,32 @@ fn adv2_5_a_locked_tx_pin_fails() {
     assert_eq!(
         serial(&v)[0]["twin"]["tx_at_send"],
         "PA9 MODER 0b00, AF0",
+        "{v}"
+    );
+}
+
+/// ADV2-6 (the PM's ruling on fix 2's A2 hole): PA9 made open-drain (OT9
+/// set), then `OTYPER` read-modify-written before the pattern. Renode stores
+/// no `OT` bit, so the read gives 0 and the log shows 0 written back; on
+/// silicon the read gives OT9 and the pin stays open-drain. A write that sets
+/// a bit Renode does not store, where the solved value has it clear, fails.
+#[test]
+fn adv2_6_an_open_drain_tx_read_modify_written_fails() {
+    let elf = adv_reference(
+        "tx-open-drain-rmw",
+        &[],
+        &[(
+            "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n",
+            "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n    unsafe { let g = 0x5802_0004 as *mut u32; g.write_volatile(g.read_volatile() | 1 << 9); let v = g.read_volatile(); g.write_volatile(v); }\n",
+        )],
+    );
+    let (code, v) = boot_elf("adv2 tx open drain rmw", &elf, "100ms");
+    answer(&format!("ADV2-6 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(
+        unexpected(&v),
+        ["PA9 OT set in OTYPER, a bit Renode does not store"],
         "{v}"
     );
 }

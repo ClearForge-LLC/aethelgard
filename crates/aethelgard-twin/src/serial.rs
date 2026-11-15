@@ -475,6 +475,37 @@ pub fn needed_tags(framing: &Framing) -> Result<Vec<Tag>, TwinError> {
         .collect())
 }
 
+/// The bits of `CR1`, `CR2` and `CR3` Renode 1.17.0's `UART.STM32F7_USART`
+/// stores (`STM32F7_USART.cs` L144–160, L175, L186–187, L317–318), from ST's
+/// header: `CR1`'s `UE`, `RE`, `TE`, `RXNEIE`, `TCIE`, `TXEIE`, `PEIE`, `PS`,
+/// `PCE`, `OVER8`, `RTOIE`; `CR2`'s `STOP`; `CR3`'s `DMAR`, `DMAT`. Every
+/// other bit is a tag or reserved: it reads back 0, so a read-modify-write
+/// in the twin clears what silicon keeps ([`judge_writes`]).
+pub(crate) fn usart_stored(f: &cmsis::RegisterFacts) -> Result<[u32; 3], TwinError> {
+    let bit = |name: &str| -> Result<u32, TwinError> { Ok(1 << f.position(name)?) };
+    let cr1 = [
+        "USART_CR1_UE_Pos",
+        "USART_CR1_RE_Pos",
+        "USART_CR1_TE_Pos",
+        "USART_CR1_RXNEIE_RXFNEIE_Pos",
+        "USART_CR1_TCIE_Pos",
+        "USART_CR1_TXEIE_TXFNFIE_Pos",
+        "USART_CR1_PEIE_Pos",
+        "USART_CR1_PS_Pos",
+        "USART_CR1_PCE_Pos",
+        "USART_CR1_OVER8_Pos",
+        "USART_CR1_RTOIE_Pos",
+    ]
+    .iter()
+    .try_fold(0u32, |m, n| Ok::<_, TwinError>(m | bit(n)?))?;
+    let (stop_pos, stop_width) = f.field("USART_CR2_STOP")?;
+    Ok([
+        cr1,
+        ((1u32 << stop_width) - 1) << stop_pos,
+        bit("USART_CR3_DMAR_Pos")? | bit("USART_CR3_DMAT_Pos")?,
+    ])
+}
+
 /// What a port's bring-up writes, from the solved topology and ST's header
 /// alone (`INV-07`): the word each of `CR1`, `CR2`, `CR3` and `BRR` holds at
 /// the write that first sets `CR1.UE` (`CR1` with `UE`; `CR3` its reset 0,
@@ -492,6 +523,9 @@ pub struct Bringup {
     pub ue: u32,
     pub tags: Vec<Tag>,
     pub needed: Vec<Tag>,
+    /// For each of [`Self::words`], the bits Renode stores nowhere
+    /// ([`usart_stored`]; none of `BRR`'s are judged here).
+    pub unstored: [u32; 4],
 }
 
 impl Bringup {
@@ -537,6 +571,10 @@ impl Bringup {
             ue,
             tags: all_tags()?,
             needed,
+            unstored: {
+                let [a, b, c] = usart_stored(&f)?;
+                [!a, !b, !c, 0]
+            },
         })
     }
 }
@@ -576,11 +614,12 @@ impl TagJudgement {
 /// Judges the writes `source` (the port's USART, `usart1`) made in each boot,
 /// in log order (`boots`, the first boot then one per rendered release;
 /// every boot starts from reset, `0` in each word), against `b`: in each
-/// boot, every write a word write to `CR1`, `CR2`, `BRR` or `TDR`; at the
-/// write that first sets `UE`, the four words exactly `b`'s, the tags
-/// judged apart; after it, no word changed and before it no `TDR` write; and
-/// the last boot sets `UE`. A boot cut by a reset before `UE` is judged as
-/// far as it went.
+/// boot, every write a word write to `CR1`, `CR2`, `BRR` or `TDR`; no write
+/// sets a bit Renode does not store ([`Bringup::unstored`]) that `b`'s word
+/// leaves clear; at the write that first sets `UE`, the four words exactly
+/// `b`'s, the tags judged apart; after it, no word changed and before it no
+/// `TDR` write; and the last boot sets `UE`. A boot cut by a reset before
+/// `UE` is judged as far as it went.
 pub fn judge_writes(b: &Bringup, source: &str, boots: &[Vec<Access>]) -> TagJudgement {
     let mut j = TagJudgement::default();
     let mut missing = vec![false; b.tags.len()];
@@ -612,6 +651,20 @@ pub fn judge_writes(b: &Bringup, source: &str, boots: &[Vec<Access>]) -> TagJudg
                 note(&mut j, format!("{value:#X} to {:#X}", a.offset));
                 continue;
             };
+            // A bit Renode stores nowhere reads back 0, so a later
+            // read-modify-write clears it in the log and keeps it on silicon:
+            // set once where the bring-up leaves it clear, it fails (the PM's
+            // ruling on fix 2's A2 hole).
+            let unstored = value & b.unstored[i] & !b.words[i].2;
+            if unstored != 0 {
+                note(
+                    &mut j,
+                    format!(
+                        "{} {unstored:#X} set, a bit Renode does not store",
+                        b.words[i].0
+                    ),
+                );
+            }
             if enabled {
                 if word[i] != value {
                     note(&mut j, format!("{} {value:#X} after UE", b.words[i].0));
@@ -808,6 +861,21 @@ pub fn judge_pins(
             }
             if a.write && a.source == usart && a.offset == tdr {
                 note(t.misconfigured(tx, "at a TDR write"));
+            }
+            // `OT` is a tag in Renode's GPIO model: it reads back 0, so a
+            // read-modify-write clears it in the log and keeps it on silicon.
+            // A serial pin's solved `OT` is 0: a write that sets it fails.
+            for pin in [tx, rx] {
+                if a.write
+                    && a.source == pin.source
+                    && a.offset == pin.config_offsets[0]
+                    && a.value & (1 << pin.index) != 0
+                {
+                    note(Some(format!(
+                        "{} OT set in OTYPER, a bit Renode does not store",
+                        pin.pin
+                    )));
+                }
             }
             if a.refused && (a.source == tx.source || a.source == rx.source) {
                 note(Some(format!(
@@ -1467,11 +1535,49 @@ mod tests {
         // A tag set that the framing does not need, a stored bit off, a
         // byte before UE, and UE never set.
         let j = with(&|v| v[3] = w("uart4", 0, 0x3000_140d));
-        assert_eq!(j.unexpected, ["CR1.M1 set at UE"]);
+        assert_eq!(
+            j.unexpected,
+            [
+                "CR1 0x10000000 set, a bit Renode does not store",
+                "CR1.M1 set at UE"
+            ]
+        );
+        // The PM's ruling on fix 2's A2 hole: an unstored bit the bring-up
+        // leaves clear, set and then cleared (a read-modify-write reads it as
+        // 0), fails wherever it is set: M1 before UE, CR2's ADDM7 after it.
+        let j = with(&|v| v.insert(2, w("uart4", 0, 0x3000_140c)));
+        assert_eq!(
+            j.unexpected,
+            ["CR1 0x10000000 set, a bit Renode does not store"]
+        );
+        let j = with(&|v| v.extend([w("uart4", 4, 0x3_2010), w("uart4", 4, 0x3_2000)]));
+        assert_eq!(
+            j.unexpected,
+            [
+                "CR2 0x10 set, a bit Renode does not store",
+                "CR2 0x32010 after UE",
+                "CR2 0x32000 after UE"
+            ]
+        );
+        // A stored bit, or one the bring-up sets (M0, the inversion), is not.
+        assert_eq!(b.unstored[0] & 0x8d, 0);
+        assert_eq!(b.unstored[0] & 0x2000_1000, 0x2000_1000);
         let j = with(&|v| v[3] = w("uart4", 0, 0x2000_340d));
-        assert_eq!(j.unexpected, ["CR1 0x2000240D at UE, not 0x2000040D"]);
+        assert_eq!(
+            j.unexpected,
+            [
+                "CR1 0x2000 set, a bit Renode does not store",
+                "CR1 0x2000240D at UE, not 0x2000040D"
+            ]
+        );
         let j = with(&|v| v[3] = w("uart4", 0, 0x2000_140f));
-        assert_eq!(j.unexpected, ["CR1 0x2000040F at UE, not 0x2000040D"]);
+        assert_eq!(
+            j.unexpected,
+            [
+                "CR1 0x2 set, a bit Renode does not store",
+                "CR1 0x2000040F at UE, not 0x2000040D"
+            ]
+        );
         // The PM's ruling on pass 2's H1: FIFO mode is on at UE, which
         // Renode stores nowhere; written with UE clear, then cleared with it.
         let j = with(&|v| v[3] = w("uart4", 0, 0x140d));
@@ -1646,6 +1752,7 @@ mod tests {
         assert_eq!(
             judge(&bad, None),
             [
+                "PA9 OT set in OTYPER, a bit Renode does not store",
                 "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write",
                 "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the end"
             ]
@@ -1655,8 +1762,25 @@ mod tests {
         brief.extend([w("gpioPortA", 0x4, 0), w("gpioPortA", 0xC, 0)]);
         assert_eq!(
             judge(&brief, None),
-            ["PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write"]
+            [
+                "PA9 OT set in OTYPER, a bit Renode does not store",
+                "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at a TDR write"
+            ]
         );
+        // The PM's ruling on fix 2's A2 hole (ADV2-6): OT9 set, then OTYPER
+        // read-modify-written; Renode reads OT back as 0, so the log shows it
+        // cleared before the pattern, which silicon would not.
+        let mut rmw = console_pins();
+        rmw.extend([w("gpioPortA", 0x4, 1 << 9), w("gpioPortA", 0x4, 0)]);
+        rmw.push(send.clone());
+        assert_eq!(
+            judge(&rmw, None),
+            ["PA9 OT set in OTYPER, a bit Renode does not store"]
+        );
+        // Another pin's OT on the port is not a serial pin's.
+        let mut other = good.clone();
+        other.insert(0, w("gpioPortA", 0x4, 1 << 8));
+        assert!(judge(&other, None).is_empty());
         // PA10 pulled up at the injection, released after it; a speed set.
         let mut rx_bad = good.clone();
         rx_bad.push(w("gpioPortA", 0xC, 0b01 << 20));
