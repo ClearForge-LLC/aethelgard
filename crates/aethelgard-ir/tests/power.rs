@@ -1172,8 +1172,8 @@ fn a_clamp_is_judged_by_its_stand_off_and_its_clamp() {
         c.iter()
             .any(|x| x.contains("clamps at up to 37000 mV at IPP"))
     );
-    // A clamp above the LDO's 6 V, were the LDO fed from the battery, is
-    // refused by the LDO's own ceiling.
+    // Each battery-fed regulator's own ceiling decides: with the buck's
+    // lowered to 36.999 V, the 37 V clamp is refused.
     let mut t = tvs_table();
     row(&mut t, "LMR33630ADDA")["kind"]["buck"]["vin_abs_max_millivolts"]["value"] = json!(36_999);
     assert_power(

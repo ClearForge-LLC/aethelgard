@@ -38,7 +38,7 @@ Each answer is labelled **measured**, **read** (at source), or **inferred**. The
 ### DC bias [read]
 - **No held capacitor document gives a DC-bias figure** [measured]. Murata's reference sheets give only "Temperature Characteristics… No bias". Murata's chart for GCM32EC71H106KA03 is being fetched by the operator. So **§7's second stop condition is true today**: the declared derating is the only source for every capacitor.
 - **The derating sources held:**
-  - SBVS320D (TLV755P) p. 15: "Generally, derate ceramic capacitors by 50%". Its p. 4 note 1 adds: "Throughout this document the nominal derating on these capacitors is 50%. Make sure the effective capacitance at the pin is greater than 0.47µF". So **TLV755's 0.47 µF is an effective minimum, read at source.**
+  - SBVS320D (TLV755P) p. 15: "Generally, derate ceramic capacitors by 50%". Its p. 3 note 1 (Table 4-1; corrected at close from "p. 4") adds: "Throughout this document the nominal derating on these capacitors is 50%. Make sure the effective capacitance at the pin is greater than 0.47µF". So **TLV755's 0.47 µF is an effective minimum, read at source.**
   - SNVSAN3F p. 22, in the 5 V design example: "a 10% bias de-rating" for 16 V 1210 ceramics at 5 V. **The two sources disagree** (10 % against 50 %). That disagreement is a finding, not something to average.
 - **SNVSAN3F's minima.**
   - p. 19 Note: "the effective value of capacitance is defined as the actual capacitance under D.C. bias and temperature… ensure that the minimum value of effective capacitance is provided."
@@ -106,7 +106,7 @@ Each answer is labelled **measured**, **read** (at source), or **inferred**. The
 | P4 | **Held.** 3135 mV clears VBOR3's 2780 mV rising maximum. With the rising maximum moved to 3135 mV in a table copy, the fixture is refused `SupplyFloorBelowBorRising`; at 3134 mV it passes. | measured |
 | P5 | **Held, with one addition:** three bulk parts (141 µF) are refused for exceeding TI's 100 µF. | measured |
 | P6 | **Held.** `emit`, `solve` and `check speeds` were run with `main`'s binary and with this branch's, over all 19 specifications (91 files). Every board, schematic, BOM and verdict is byte-identical once specification hashes and the output directory's name are masked. The one other change is the power fixture's `solve`: the same topology, with its conditions replaced (15 removed, 25 added). | measured |
-| P7 | TIER2_MIN stays 129: no tier-2 test was added. See §5 for CI. | measured |
+| P7 | TIER2_MIN stays 129: no tier-2 test was added. See §6 for CI. | measured |
 | P8 | **About 1,860 lines in `aethelgard-ir`,** most of them tests and table data. Beyond `ir`, only lines the version bump moved. | measured |
 
 ### What the version bump moved [measured]
@@ -150,8 +150,8 @@ A Sonnet subagent ran one mutant per new guard, each against `aethelgard-ir --te
   - the smallest-band choice;
   - an effective minimum with no working voltage;
   - two parser bounds.
-- `the_new_guards_hold_at_their_edges` pins each one. **On re-run, all 55 were killed** [measured, `~/.cache/aet-4300d3/mut2/log.txt`].
-- **The guards added for F1–F12 were each mutated once. Each mutant was killed.**
+- `the_new_guards_hold_at_their_edges` pins each one.
+- **Re-run in full on `e8f5f34`**, after the adversarial fixes and the reduction: the 55 above plus one mutant per guard added for F1, F4, F5, F6 (two), F7 and F12 (buck and LDO separately). **69 killed, none survived** [measured, `~/.cache/aet-4300d3/evidence/mut/e8f5f34-log.txt`]. One mutant had no target: 11a's pin-role check was replaced by F7's exact-set check, whose own mutant is killed.
 
 ## 6. Gates, reduction, close
 
@@ -166,6 +166,7 @@ A Sonnet subagent ran one mutant per new guard, each against `aethelgard-ir --te
   - Removed: three copies of the case-naming assertion, now one helper, and the `ground` strap, which no row allows.
   - Finding: `power.rs`'s `dielectric()` names repeat the serde names of `Dielectric`, the house pattern `Role::name` follows. Kept.
   - Finding: `effective()` builds its explanation strings even when nothing is judged. Left, as cheap.
+- **`tRSTTEMPO`** (the review response sends this row here) [read]: DS12117 p. 212, Table 115 gives "Reset temporization after BOR0 released" with Conditions "-", Min "-", **Typ 377**, Max "-" µs, and note 1 ("guaranteed by design"). It is a typical figure: nothing in the table bounds it. Its user is `aethelgard-chaos/src/power.rs`, outside this fence. Backlog row for the owner of the twin's power model: name it as typical wherever it is used.
 - **Questions for the architect, beyond §2:**
   - **D6:** TI's 20–100 µF as a hard range (F8), and the bulk's rating against the DC maximum only, not the ring (F13).
   - **D7:** `4300g`'s 1.71 V PDR_ON floor (§3 Overlaps).
