@@ -13,7 +13,7 @@ Run (repository mounted at /repo, ~/.cache/aet-4220 at /cache):
     python3 /repo/spike/4220/s1/s1.py [case ...]
 One JSON line per run into /repo/spike/4220/out/s1.jsonl; raw stdout into /cache/raw/.
 """
-import glob, hashlib, json, os, re, shutil, subprocess, sys, tempfile, threading, time
+import glob, hashlib, json, os, re, subprocess, sys, tempfile, threading, time
 
 HERE = "/repo/spike/4220/s1"
 OUT = "/repo/spike/4220/out/s1.jsonl"
