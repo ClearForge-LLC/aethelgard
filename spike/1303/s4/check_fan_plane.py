@@ -14,6 +14,8 @@
    the hole (both only raise conductance), gives G(K') <= E, so
    R(K) >= R(K') >= 1/E. Checked: bound >= 1/E, at straight and turned
    (45 and 90 degree, inside the pad) entries.
+3. Pass through a pad. The same certified lower bound for two tracks joined
+   through a rounded pad, against the tube plus the virtual segment.
 """
 import math, sys, json
 import numpy as np
@@ -79,5 +81,74 @@ for name, poly in [("straight", [(-1.2, 0.0), (0.0, 0.0)]),
     held = bound >= R_lo
     ok &= held
     print(f"   {name}: tube+fan bound {bound:7.4f}, certified R >= {R_lo:7.4f}, ratio {bound/R_lo:5.2f} {'holds' if held else 'FAILS'}")
+print("3. pass through a pad: tube + virtual segment vs a certified lower bound on R(K) (squares)")
+# K = two tracks of width W ending inside a pad (box px x py, corner rc) plus the pad;
+# terminals at the tracks' far ends. The bound: both tracks' centre lengths to
+# their ends inside the pad, plus the straight virtual segment between the ends,
+# all at width W (admissible when in_pad holds for the stadium and the bends'
+# length condition holds, as rbound2 checks).
+from rbound2 import in_pad
+from rbound import tube_width_ok
+for name, pad, e1, e2, f1, f2 in [
+        ("straight across", dict(x=0, y=0, w=1.0, h=0.6, corner=0.15), (-0.375, 0.0), (0.375, 0.0), (-1.5, 0.0), (1.5, 0.0)),
+        ("corner inside the pad", dict(x=0, y=0, w=1.0, h=1.0, corner=0.25), (-0.25, 0.0), (0.0, -0.25), (-1.5, 0.0), (0.0, -1.5)),
+        ("offset ends", dict(x=0, y=0, w=1.2, h=0.6, corner=0.15), (-0.375, 0.125), (0.375, -0.125), (-1.5, 0.125), (1.5, -0.125))]:
+    poly = [f1, e1, e2, f2]
+    w, _ = tube_width_ok([("pt", "F.Cu", q) for q in poly], W)
+    stad_ok = all(in_pad(q, w / 2, pad) for q in (e1, e2))
+    if not stad_ok:
+        print(f"   {name}: virtual segment not admissible"); ok = False; continue
+    bound = sum(math.dist(a, b) for a, b in zip(poly[:-1], poly[1:])) / w
+    h = 0.004
+    xs = np.arange(-1.55, 1.56, h); ys = np.arange(-1.55, 0.6, h)
+    m = Mesh(xs, ys); cen = m.centroid(); grow = h * 1.5
+    def dseg(pt, a, b):
+        dx, dy = b[0]-a[0], b[1]-a[1]
+        tt = max(0, min(1, ((pt[0]-a[0])*dx + (pt[1]-a[1])*dy) / (dx*dx + dy*dy)))
+        return math.hypot(pt[0]-a[0]-tt*dx, pt[1]-a[1]-tt*dy)
+    def in_box_grown(pt):
+        return abs(pt[0]-pad["x"]) <= pad["w"]/2 + grow and abs(pt[1]-pad["y"]) <= pad["h"]/2 + grow
+    inK = np.array([in_box_grown(q) or dseg(q, f1, e1) <= W/2 + grow or dseg(q, e2, f2) <= W/2 + grow for q in cen])
+    tris = m.tris[inK]
+    used = np.zeros(m.n, bool); used[tris.ravel()] = True
+    K = stiffness(m.p, tris, np.ones(len(tris)))
+    def behind(a, b):
+        tx, ty = (b[0]-a[0]) / math.dist(a, b), (b[1]-a[1]) / math.dist(a, b)
+        return used & (((m.p[:, 0]-a[0])*tx + (m.p[:, 1]-a[1])*ty) <= 0.0) & (np.hypot(m.p[:, 0]-a[0], m.p[:, 1]-a[1]) <= W)
+    t1 = np.where(behind(f1, e1))[0]; t2 = np.where(behind(f2, e2))[0]
+    unused = np.where(~used)[0]
+    _, E = solve_fixed(K, np.concatenate([t1, t2, unused]), np.concatenate([np.ones(len(t1)), np.zeros(len(t2)), np.zeros(len(unused))]))
+    R_lo = 1 / E
+    held = bound >= R_lo
+    ok &= held
+    print(f"   {name}: tube width {w:.3f}, bound {bound:7.4f}, certified R >= {R_lo:7.4f}, ratio {bound/R_lo:5.2f} {'holds' if held else 'FAILS'}")
+print("4. via entry admissibility, brute force: every chosen cut's fan region is via-pad copper")
+import random
+random.seed(1303)
+bad = tried = cuts = 0
+for _ in range(400):
+    # a random 2-3 segment approach on the 0.125 mm grid, 45-degree moves, ending at the centre
+    pts = [(0.0, 0.0)]
+    dirs = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
+    for _k in range(random.randint(1, 3)):
+        dx, dy = random.choice(dirs); n = random.randint(1, 4)
+        last = pts[0]
+        pts.insert(0, (last[0] - dx * 0.125 * n, last[1] - dy * 0.125 * n))
+    if len(set(pts)) < len(pts):
+        continue
+    tried += 1
+    cut = best_cut(pts, (0.0, 0.0), c, W, 1.0)
+    if cut is None:
+        continue
+    cuts += 1
+    saved, p, s0, e = cut
+    # reconstruct the cut line from (p, s0): q(s) = c - p t - s0 u + s u, |s| <= W/2, any (t, u)
+    # rotation-free test: points along rays from the line to the rim lie at radius in [r_d, max |q|]
+    for s_ in np.linspace(-W / 2, W / 2, 41):
+        rq = math.hypot(p, s_ - s0)
+        if not (1.05 * rd < rq <= rp + 1e-9):
+            bad += 1
+print(f"   {tried} random approaches, {cuts} admissible cuts; points of cut lines outside the via-pad annulus: {bad}")
+ok &= bad == 0
 print("ALL HOLD" if ok else "A CHECK FAILS")
 sys.exit(0 if ok else 1)

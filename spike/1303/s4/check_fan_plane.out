@@ -23,4 +23,10 @@
    straight: tube+fan bound  5.3313, certified R >=  4.7989, ratio  1.11 holds
    45 deg turn at 0.125: tube+fan bound  4.3303, certified R >=  3.7270, ratio  1.16 holds
    90 deg turn at 0.125: tube+fan bound  4.7152, certified R >=  3.9360, ratio  1.20 holds
+3. pass through a pad: tube + virtual segment vs a certified lower bound on R(K) (squares)
+   straight across: tube width 0.200, bound 15.0000, certified R >= 11.5021, ratio  1.30 holds
+   corner inside the pad: tube width 0.200, bound 14.2678, certified R >= 10.9221, ratio  1.31 holds
+   offset ends: tube width 0.200, bound 15.2028, certified R >= 11.0317, ratio  1.38 holds
+4. via entry admissibility, brute force: every chosen cut's fan region is via-pad copper
+   381 random approaches, 293 admissible cuts; points of cut lines outside the via-pad annulus: 0
 ALL HOLD

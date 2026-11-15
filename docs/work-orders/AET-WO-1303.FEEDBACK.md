@@ -212,6 +212,16 @@ The mask is taken at OSH Park's maximum, 0.6 ± 0.2 mil (≤ 0.021 mm) [read], w
 - The pad-copper test agrees with a 720-point brute force on 3,000 random discs.
 - **The plane bowtie against an exact case** (`s4/check_fan_plane.out`). Two equipotential holes in an infinite sheet have R = (ρ/πt)·acosh(D/2r_d) exactly. The bowtie's flow is admissible there, and its bound holds at every β from 2° to 75° and every D from 1 to 30 mm. It sits 2.7–78× above the exact value: the narrow sectors are the loose ones.
 - **The general fan against a certified lower bound.** Take the copper of a track ending at a via, terminals at the far end and at the hole rim. A P1 primal on a grid domain that contains the copper, with the hole terminal grown, gives R ≥ 1/E. Tube plus fan holds above it at a straight entry and at 45° and 90° turns 0.125 mm before the centre: 1.11×, 1.16× and 1.20× the lower bound.
+- **The pass through a pad against a certified lower bound.** Two tracks joined through a rounded pad, as a straight crossing, a corner inside the pad, and offset ends: tube plus virtual segment is 1.30×, 1.31× and 1.38× the lower bound, and holds.
+- **Via-entry admissibility, by brute force.** On 381 random 45°-grid approaches, 293 give an admissible cut. Every point of each cut line lies between 1.05·r_d and r_p from the via centre. Rays from those points toward the centre therefore stay in the via-pad annulus down to the hole, so each fan region is copper.
+- **Every piece of the flow has now been checked against an exact or certified case:**
+  - track chain and bends: bar, 90° bend bracket;
+  - pad end and pad pass: the pad-copper brute force and the pad-pass bracket;
+  - via entry: the fan bracket and the brute force;
+  - barrel: uniform exact;
+  - plane: the two-hole sheet;
+  - load: transfer resistance.
+- **Coverage.** A pin with no admissible path carries **no** bound: it is refused by name, never given a number.
 - **Stated conditions the bound still rests on,** none checked from the board:
   - the plane's fill is the declared plane: the outline less 0.51 mm discs around foreign vias, meeting each own-net via all round (P4.7 was blocked, D9);
   - each pad is an equipotential terminal;
