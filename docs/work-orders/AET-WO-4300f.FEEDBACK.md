@@ -440,3 +440,19 @@ The architect's ruling on PR #134 withdrew the swap stop. It replaced rule 3 wit
   - **[inferred]** Vendoring the footprint (§4.3) removes it. KiCad's library-mismatch check then judges J1 against its library, which it should pass, because J1 is the vendored bytes placed. The build should test that.
   - Parity was not judged for S4, because no schematic carries J1.
 - **The answer** is now "spike done", ruling needed on the decisions in §5, with D10 closed.
+
+**`systemd-run` expands `${…}` in its command's arguments** (4210's note, measured with systemd 259). That is why this spike's first in-scope probe, `echo ${TMPDIR-unset}`, printed an empty value with "Invalid environment variable name …". The runner is unaffected:
+- Its in-scope script holds no `${…}`; the only one in `img.sh` (line 30) runs before `systemd-run`.
+- Every `$VAR` value it logged is the real one (`caps.log`).
+- `TMPDIR` was confirmed unset with `env | grep -c '^TMPDIR='` → 0.
+
+A runner that needs `${…}` inside the scope should pass `--expand-environment=no`.
+
+## 8. The stop
+
+**Stopped 2026-11-15: spike done, ruling needed on PR #134.**
+- S1–S5 are measured or read. The predictions were committed first (`75d66b3`).
+- The KiCad steps were measured under `RULE3.md` (§7).
+- S2's measured answer is in the `4300a` and `4300b` inboxes.
+- At `f426009` (`main` `5f47a5d` merged in), host gates and CI were green: `gates`, `shards`, `tools` and all eight `tools` shards.
+- Decisions D1–D9 and D11 are open (§5); D10 is closed by the ruling.
