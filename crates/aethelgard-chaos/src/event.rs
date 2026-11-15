@@ -23,8 +23,9 @@ pub const VERSION: u64 = 1;
 /// archive of any other version is refused by name (`Fault::Version`), as
 /// 2204 refused version 4; 8 since `AET-WO-4300a` added kinds 24 to 26 (a
 /// solved motor output, its static timing check for silicon, and its twin
-/// witness).
-pub const TRACE_VERSION: u64 = 8;
+/// witness); 9 since `AET-WO-4300b` added kinds 27 to 29 (a solved serial
+/// port, its static framing judgement, and its twin witness).
+pub const TRACE_VERSION: u64 = 9;
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.

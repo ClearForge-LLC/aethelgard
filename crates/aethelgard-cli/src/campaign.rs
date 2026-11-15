@@ -544,6 +544,7 @@ fn run_one(
         ExitCode::from(EXIT_INTERNAL)
     })?;
     let motors = solved_motors(&p.topology);
+    let serial = solved_serial(&p.topology);
     let verdict = crate::simulate(
         &platform,
         Some(Boot {
@@ -592,9 +593,11 @@ fn run_one(
     records.extend(buses);
     records.extend(spi_buses);
     records.extend(motors);
+    records.extend(serial);
     records.extend(records_of(&verdict).map_err(internal)?);
     // The run must pass the rules replay will judge it by before it is written.
     let summary = rules::check_run(&records)
+        .and_then(|s| rules::check_serial_frames(firmware_sha256, &records).map(|()| s))
         .map_err(|reason| internal(format!("the campaign built a run replay refuses: {reason}")))?;
 
     let header = Header {
@@ -780,6 +783,101 @@ pub(crate) fn solved_motors(t: &SolvedTopology) -> Vec<Record> {
     }
     solved.extend(checks);
     solved
+}
+
+/// Kind 27, one per serial port in the specification's order, from the
+/// solved topology alone (`AET-WO-4300b`).
+pub(crate) fn solved_serial(t: &SolvedTopology) -> Vec<Record> {
+    t.serial_ports_in_order()
+        .into_iter()
+        .map(|(label, p, tx, rx)| Record::SerialPortSolved {
+            label: label.to_owned(),
+            index: p.index,
+            peripheral: p.peripheral.clone(),
+            tx: tx.pin.clone(),
+            tx_af: tx.alternate_function,
+            rx: rx.pin.clone(),
+            rx_af: rx.alternate_function,
+            role: p.role.name().to_owned(),
+            framing: aethelgard_chaos::record::SerialFraming {
+                baud: p.framing.baud,
+                data_bits: p.framing.data_bits,
+                parity: p.framing.parity.name().to_owned(),
+                stop_bits: p.framing.stop_bits,
+                inverted: p.framing.inverted,
+            },
+            kernel_hz: p.kernel_hz,
+            brr: p.brr,
+            actual_millibaud: p.actual_millibaud,
+            error_ppm: p.error_ppm,
+        })
+        .collect()
+}
+
+/// Kinds 28 and 29 from the boot's serial reports (`AET-WO-4300b`): every
+/// port's static framing judgement, its silicon half from the topology and
+/// its tags once Renode has run; then every port's witness, once Renode has
+/// run. A longer list of unexpected tags than kind 28 holds is cut: it fails
+/// the port's tags all the same.
+fn serial_records(serial: &[crate::verdict::SerialReport]) -> Vec<Record> {
+    use aethelgard_chaos::record::{MAX_SERIAL_UNEXPECTED, SerialCapture, SerialTags};
+    let mut out: Vec<Record> = serial
+        .iter()
+        .map(|s| {
+            let (f, w) = (&s.silicon, &s.twin);
+            Record::SerialFramingCheck {
+                label: s.label.clone(),
+                kernel_hz: f.kernel_hz,
+                brr: f.brr,
+                actual_millibaud: f.actual_millibaud,
+                error_ppm: f.error_ppm,
+                tolerance: f
+                    .tolerance
+                    .map(|r| (r.table.to_owned(), r.m_bits, r.tolerance_ppm)),
+                holds: f.holds,
+                tags_needed: w.tags_needed.clone(),
+                tags: match (w.tag_warnings, &w.tags_missing, &w.tags_unexpected) {
+                    (Some(n), Some(missing), Some(unexpected)) => Some(SerialTags {
+                        warnings: n as u64,
+                        missing: missing.clone(),
+                        unexpected: unexpected
+                            .iter()
+                            .take(MAX_SERIAL_UNEXPECTED)
+                            .cloned()
+                            .collect(),
+                    }),
+                    _ => None,
+                },
+            }
+        })
+        .collect();
+    for s in serial {
+        let w = &s.twin;
+        let Some(echo) = w.echo else {
+            continue;
+        };
+        let capture = match (w.patterns, w.cut, w.echoed, w.stray, w.capture_bytes) {
+            (Some(patterns), Some(cut), Some(echoed), Some(stray), Some(len)) => {
+                Some(SerialCapture {
+                    patterns: patterns as u64,
+                    cut: cut as u64,
+                    echoed: echoed as u64,
+                    stray,
+                    len: len as u64,
+                })
+            }
+            _ => None,
+        };
+        out.push(Record::SerialWitness {
+            label: s.label.clone(),
+            capture,
+            frame: w.frame_bytes,
+            echo: echo.to_owned(),
+            rx_at_injection: w.rx_fields,
+            tx_at_end: w.tx_fields,
+        });
+    }
+    out
 }
 
 /// Kinds 16 to 19 from a droop's report, the crossings, resets and
@@ -1110,6 +1208,7 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
             batched,
         });
     }
+    out.extend(serial_records(&boot.serial));
     let mut findings: BTreeMap<(String, String), u64> = BTreeMap::new();
     for f in &v.findings {
         *findings

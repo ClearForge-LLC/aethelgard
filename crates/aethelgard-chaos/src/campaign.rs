@@ -18,7 +18,10 @@ use sha2::{Digest, Sha256};
 
 use crate::event::{Header, name_ok};
 use crate::power::{self, Band};
-use crate::record::{self, BusLine, Droop, Line, Override, Reading, Record, split_pin};
+use crate::record::{
+    self, BusLine, Droop, Line, Override, Reading, Record, SERIAL_FRAME_LEN, SerialCapture,
+    split_pin,
+};
 use crate::replay::State;
 
 /// The scenario format versions read: 1 (static scenarios, unchanged) and 2,
@@ -672,10 +675,11 @@ pub struct RunSummary {
 /// solved topology, the solved I2C buses (kind 15, sorted by bus), the analog
 /// records (kinds 7 and 8), the bus faults, the declared rail (kind 16), the
 /// droop's crossings, resets and observations (kinds 17 to 19) in time
-/// order, the boot's witnesses (kind 10, then 11, 12, 13, 21, 22 and 26 in
-/// that order), and the verdict, last and once. The solved motor outputs
-/// (kind 24) and their static checks (kind 25) sit with the solved buses
-/// (`AET-WO-4300a`).
+/// order: the boot's witnesses (kind 10, then 11, 12, 13, 21, 22, 26, 28 and
+/// 29 in that order), and the verdict, last and once. The solved motor
+/// outputs (kind 24) and their static checks (kind 25) sit with the solved
+/// buses (`AET-WO-4300a`), and so do the solved serial ports (kind 27,
+/// `AET-WO-4300b`).
 pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     fn rank(r: &Record) -> u8 {
         match r {
@@ -685,7 +689,8 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             Record::I2cBusSolved { .. }
             | Record::SpiBusSolved { .. }
             | Record::MotorOutputSolved { .. }
-            | Record::MotorTimingCheck { .. } => 3,
+            | Record::MotorTimingCheck { .. }
+            | Record::SerialPortSolved { .. } => 3,
             Record::RiseComputed { .. } | Record::LineStuckHigh { .. } => 4,
             Record::BusFault { .. } => 5,
             Record::RailDeclared { .. } => 6,
@@ -699,7 +704,9 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             Record::SpiCheck { .. } => 12,
             Record::SpiWitness { .. } => 13,
             Record::MotorWitness { .. } => 14,
-            Record::Verdict { .. } => 15,
+            Record::SerialFramingCheck { .. } => 15,
+            Record::SerialWitness { .. } => 16,
+            Record::Verdict { .. } => 17,
         }
     }
     /// Within rank 7: time in ps, then crossing, reset, observation.
@@ -719,13 +726,18 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     if records.is_empty() || !ordered {
         return Err("the records are not in the campaign's order");
     }
-    if !(count_rank(0) == 1 && count_rank(2) == 1 && count_rank(8) == 1 && count_rank(15) == 1) {
+    if !(count_rank(0) == 1 && count_rank(2) == 1 && count_rank(8) == 1 && count_rank(17) == 1) {
         return Err("a run holds exactly one scenario, topology, boot and verdict");
     }
     if count_rank(1) > 1 || count_rank(6) > 1 {
         return Err("a run holds at most one declared rail and one set of expected counts");
     }
     check_joins(records)?;
+    let booted = records.iter().any(|r| {
+        matches!(r, Record::BootObserved { boot_word, .. }
+            if boot_word.observed == Some(boot_word.expected))
+    });
+    check_serial_joins(records, booted)?;
     let Record::Scenario {
         name,
         expect_pass,
@@ -850,10 +862,6 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     // The motor outputs (`AET-WO-4300a`): the verdict names a static
     // mismatch once per check that fails, and, once the boot word is set,
     // each witness's finding by its status, exactly; before it, none.
-    let booted = records.iter().any(|r| {
-        matches!(r, Record::BootObserved { boot_word, .. }
-            if boot_word.observed == Some(boot_word.expected))
-    });
     let mut motor_needed: BTreeMap<&str, u64> = BTreeMap::new();
     for r in records {
         match r {
@@ -883,6 +891,33 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
         (k == MOTOR_STATIC_ONLY_FINDING) != (s == "info") && MOTOR_FINDINGS.contains(&k.as_str())
     }) {
         return Err("a motor finding has the wrong severity");
+    }
+    // The serial ports (`AET-WO-4300b`), as the judge decides them: a
+    // failing silicon check always; once the boot word is set, a port's tags
+    // (kind 28) and its witness (kind 29), exactly. A capture directory
+    // holding what no port's backend wrote is forged too and names no port,
+    // so the records bound `serial_capture_forged` from below only; with no
+    // port there is no capture directory, and none.
+    let serial = serial_findings(records, booted);
+    for kind in SERIAL_FINDINGS {
+        let (have, want) = (any_severity(kind), serial.get(kind).copied().unwrap_or(0));
+        let ports = records
+            .iter()
+            .any(|r| matches!(r, Record::SerialPortSolved { .. }));
+        let ok = if kind == SERIAL_FORGED_FINDING && ports {
+            have >= want
+        } else {
+            have == want
+        };
+        if !ok {
+            return Err("the verdict's serial findings do not match the serial records");
+        }
+    }
+    if findings
+        .iter()
+        .any(|(k, s, _)| s == "info" && SERIAL_FINDINGS.contains(&k.as_str()))
+    {
+        return Err("a serial finding has the wrong severity");
     }
     let droop_counts = check_droop_records(records, overrides)?;
     for (kind, want) in droop_counts {
@@ -1223,6 +1258,324 @@ pub const SERIAL_PATTERN_FINDING: &str = "serial_pattern_missing";
 pub const SERIAL_ECHO_FINDING: &str = "serial_echo_missing";
 pub const SERIAL_FORGED_FINDING: &str = "serial_capture_forged";
 pub const SERIAL_TAG_FINDING: &str = "serial_tag_mismatch";
+
+/// Every serial finding kind the records explain.
+const SERIAL_FINDINGS: [&str; 5] = [
+    SERIAL_STATIC_FINDING,
+    SERIAL_PATTERN_FINDING,
+    SERIAL_ECHO_FINDING,
+    SERIAL_FORGED_FINDING,
+    SERIAL_TAG_FINDING,
+];
+
+/// Each serial finding kind the records give, and how many: a failing
+/// static check (kind 28's `holds`) always; once `booted`, each port's tags
+/// that failed or were not read (kind 28), and each witness's findings
+/// ([`serial_witness_findings`]).
+fn serial_findings(records: &[Record], booted: bool) -> BTreeMap<&'static str, u64> {
+    let releases = released(records);
+    let mut out: BTreeMap<&'static str, u64> = BTreeMap::new();
+    for r in records {
+        match r {
+            Record::SerialFramingCheck { holds, tags, .. } => {
+                if !holds {
+                    *out.entry(SERIAL_STATIC_FINDING).or_default() += 1;
+                }
+                if booted && tags.as_ref().is_none_or(|t| !t.holds()) {
+                    *out.entry(SERIAL_TAG_FINDING).or_default() += 1;
+                }
+            }
+            Record::SerialWitness { label, .. } if booted => {
+                let port = records
+                    .iter()
+                    .find(|p| matches!(p, Record::SerialPortSolved { label: l, .. } if l == label));
+                for kind in port
+                    .map(|p| serial_witness_findings(p, r, releases))
+                    .unwrap_or_default()
+                {
+                    *out.entry(kind).or_default() += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The resets the run rendered and released (kind 18): the boots after the
+/// first.
+pub fn released(records: &[Record]) -> u64 {
+    records
+        .iter()
+        .filter(|r| matches!(r, Record::ResetRendered { released: true, .. }))
+        .count() as u64
+}
+
+/// Whether a pin's `MODER` and `AFSEL` fields, as kind 29 carries them, put
+/// it in alternate-function mode (`10`, RM0433 Rev 9 §11.4.1) on `af`.
+fn routed(mux: Option<(u8, u8)>, af: u8) -> bool {
+    mux.is_some_and(|(mode, a)| mode == 0b10 && a == af)
+}
+
+/// The finding kinds kind 29 `witness` gives, joined to kind 27 `port`, in a
+/// run whose boot word is set, with `releases` boots after the first, as the
+/// boot judge gives them: no capture is forged and nothing else; a capture
+/// with stray bytes, or more patterns (whole and cut) than boots, is forged;
+/// the pattern is out when at least one whole pattern was captured and the
+/// TX pin ends on its AF; and the echo fails unless witnessed.
+pub fn serial_witness_findings(
+    port: &Record,
+    witness: &Record,
+    releases: u64,
+) -> Vec<&'static str> {
+    let (
+        Record::SerialPortSolved { tx_af, .. },
+        Record::SerialWitness {
+            capture,
+            echo,
+            tx_at_end,
+            ..
+        },
+    ) = (port, witness)
+    else {
+        return Vec::new();
+    };
+    let Some(c) = capture else {
+        return vec![SERIAL_FORGED_FINDING];
+    };
+    let mut out = Vec::new();
+    let boots = releases.saturating_add(1);
+    if c.stray || c.patterns.saturating_add(c.cut) > boots {
+        out.push(SERIAL_FORGED_FINDING);
+    }
+    if !(c.patterns > 0 && routed(*tx_at_end, *tx_af)) {
+        out.push(SERIAL_PATTERN_FINDING);
+    }
+    if echo != "witnessed" && echo != "not_judged" {
+        out.push(SERIAL_ECHO_FINDING);
+    }
+    out
+}
+
+/// Kinds 28 and 29 each join one solved serial port (kind 27) by label
+/// (`AET-WO-4300b`): the ports are in the specification's order, each on
+/// its own USART and pins; every port has exactly one framing check, in the
+/// ports' order, which is what its solved port gives silicon; and its
+/// witnesses are in the ports' order too, every port's or none, and every
+/// port's once the boot word is set, each echo the status its own counts and
+/// pins give.
+fn check_serial_joins(records: &[Record], booted: bool) -> Result<(), &'static str> {
+    let ports: Vec<&Record> = records
+        .iter()
+        .filter(|r| matches!(r, Record::SerialPortSolved { .. }))
+        .collect();
+    let mut labels = BTreeSet::new();
+    let mut peripherals = BTreeSet::new();
+    let mut pins = BTreeSet::new();
+    let mut last_index = None;
+    for p in &ports {
+        let Record::SerialPortSolved {
+            label,
+            index,
+            peripheral,
+            tx,
+            rx,
+            ..
+        } = p
+        else {
+            unreachable!("filtered");
+        };
+        if !labels.insert(label.as_str())
+            || !peripherals.insert(peripheral.as_str())
+            || !pins.insert(tx.as_str())
+            || !pins.insert(rx.as_str())
+            || last_index.is_some_and(|l| l >= *index)
+        {
+            return Err(
+                "the solved serial ports are not in the specification's order, each with its own label, USART and pins",
+            );
+        }
+        last_index = Some(*index);
+    }
+    let label_of = |r: &Record| match r {
+        Record::SerialPortSolved { label, .. }
+        | Record::SerialFramingCheck { label, .. }
+        | Record::SerialWitness { label, .. } => label.clone(),
+        _ => String::new(),
+    };
+    let order: Vec<String> = ports.iter().map(|p| label_of(p)).collect();
+    let of = |pick: fn(&Record) -> bool| -> Vec<&Record> {
+        records.iter().filter(|r| pick(r)).collect()
+    };
+    let checks = of(|r| matches!(r, Record::SerialFramingCheck { .. }));
+    let witnesses = of(|r| matches!(r, Record::SerialWitness { .. }));
+    if checks.iter().map(|r| label_of(r)).collect::<Vec<_>>() != order {
+        return Err("the serial framing checks are not one per solved port, in the ports' order");
+    }
+    let witnessed: Vec<String> = witnesses.iter().map(|r| label_of(r)).collect();
+    if witnessed != order && (booted || !witnessed.is_empty()) {
+        return Err(
+            "the serial witnesses are not one per solved port in the ports' order, or are absent from a run whose boot word is set",
+        );
+    }
+    for (port, check) in ports.iter().zip(&checks) {
+        if !serial_silicon(port, check) {
+            return Err("a serial framing check is not what its solved port gives");
+        }
+    }
+    for (port, witness) in ports.iter().zip(&witnesses) {
+        if !serial_echo(port, witness, booted) {
+            return Err("a serial witness's echo is not what its capture and its RX pin give");
+        }
+    }
+    Ok(())
+}
+
+/// RM0433 Rev 9 §48.5.8, Tables 406 (`BRR[3:0]` = 0) and 407, column
+/// `OVER8` = 0, `ONEBIT` = 0: the receiver's tolerance in ppm by `M[1:0]`.
+// belt-and-suspenders: `aethelgard_ir::serial::TOLERANCE` is the judge's
+// table; replay never depends on `aethelgard-ir` (RUL-16), so it states the
+// table again.
+const SERIAL_TOLERANCE: [(&str, u8, u32); 6] = [
+    ("Table 406", 0b00, 37_500),
+    ("Table 406", 0b01, 34_100),
+    ("Table 406", 0b10, 41_600),
+    ("Table 407", 0b00, 33_300),
+    ("Table 407", 0b01, 30_300),
+    ("Table 407", 0b10, 37_000),
+];
+
+/// Whether kind 28 `check` is exactly the static framing check of kind 27
+/// `port`: the figures, the tolerance row, `holds`, and the tags the framing
+/// needs, re-derived (as kind 25's are: adversarial pass on `4300a`).
+// belt-and-suspenders: `aethelgard_ir::serial::check_silicon` is the judge's
+// check; replay never depends on `aethelgard-ir` (RUL-16), so it states the
+// same exact-integer rules again: the kernel clock at reset (RM0433 Rev 9
+// §8.7.21, every prescaler 1), `BRR` the nearest whole `USARTDIV` from 16 to
+// `0xFFFF`, a 7- to 9-bit word and 1 or 2 stop bits, and an error strictly
+// below the row's tolerance.
+fn serial_silicon(port: &Record, check: &Record) -> bool {
+    let (
+        Record::SerialPortSolved {
+            framing,
+            kernel_hz: k_port,
+            brr: b_port,
+            actual_millibaud: a_port,
+            error_ppm: e_port,
+            ..
+        },
+        Record::SerialFramingCheck {
+            kernel_hz,
+            brr,
+            actual_millibaud,
+            error_ppm,
+            tolerance,
+            holds,
+            tags_needed,
+            ..
+        },
+    ) = (port, check)
+    else {
+        return false;
+    };
+    let (k, b, baud) = (
+        u128::from(*kernel_hz),
+        u128::from(*brr),
+        u128::from(framing.baud),
+    );
+    let d = b * baud;
+    let actual = u64::try_from(k * 1000 / b.max(1)).ok();
+    // The error, rounded half away from zero.
+    let error = (d > 0).then(|| {
+        let num =
+            (i128::try_from(k).unwrap_or(i128::MAX) - i128::try_from(d).unwrap_or(0)) * 1_000_000;
+        let d = i128::try_from(d).unwrap_or(i128::MAX);
+        let q = (2 * num.abs() + d) / (2 * d);
+        i64::try_from(if num < 0 { -q } else { q }).unwrap_or(i64::MAX)
+    });
+    let m_bits = match framing.word_bits() {
+        8 => Some(0b00),
+        9 => Some(0b01),
+        7 => Some(0b10),
+        _ => None,
+    };
+    let table = if brr & 0xF == 0 {
+        "Table 406"
+    } else {
+        "Table 407"
+    };
+    let row = m_bits.and_then(|m| {
+        SERIAL_TOLERANCE
+            .iter()
+            .find(|(t, rm, _)| *t == table && *rm == m)
+    });
+    let solved = (baud > 0)
+        .then(|| (2 * k + baud) / (2 * baud))
+        .is_some_and(|n| n == b && (16..=0xFFFF).contains(&n));
+    let within = row.is_some_and(|(_, _, ppm)| k.abs_diff(d) * 1_000_000 < u128::from(*ppm) * d);
+    let want_holds =
+        *kernel_hz == RESET_KERNEL_HZ && solved && (1..=2).contains(&framing.stop_bits) && within;
+    (kernel_hz, brr) == (k_port, b_port)
+        && actual == Some(*actual_millibaud)
+        && *a_port == *actual_millibaud
+        && error.unwrap_or(i64::MAX) == *error_ppm
+        && *e_port == *error_ppm
+        && tolerance.as_ref().map(|(t, m, p)| (t.as_str(), *m, *p))
+            == row.map(|&(t, m, p)| (t, m, p))
+        && want_holds == *holds
+        && *tags_needed == framing.tags()
+}
+
+/// Whether kind 29 `witness`'s echo is the status the judge gives its
+/// capture and its RX pin at the injection, joined to kind 27 `port`: not
+/// judged without the boot word; else the whole frame after the patterns
+/// with the RX pin read is witnessed when that pin was on its AF and not
+/// counted otherwise; some of it is partial; anything else is missing.
+fn serial_echo(port: &Record, witness: &Record, booted: bool) -> bool {
+    let (
+        Record::SerialPortSolved { rx_af, .. },
+        Record::SerialWitness {
+            capture,
+            echo,
+            rx_at_injection,
+            ..
+        },
+    ) = (port, witness)
+    else {
+        return false;
+    };
+    let clean = |c: &&SerialCapture| !c.stray;
+    let echoed = capture.as_ref().filter(clean).map_or(0, |c| c.echoed);
+    let want = match (booted, rx_at_injection) {
+        (false, _) => "not_judged",
+        (true, Some(_)) if echoed == SERIAL_FRAME_LEN as u64 => {
+            if routed(*rx_at_injection, *rx_af) {
+                "witnessed"
+            } else {
+                "not_counted"
+            }
+        }
+        (true, Some(_)) if echoed > 0 => "partial",
+        (true, _) => "missing",
+    };
+    echo == want
+}
+
+/// Each serial port's frame, kind 29's, against the one the judge injects
+/// into the firmware the header names (`artifacts` "firmware"): the frame is
+/// re-derived from that sha256 and the port's label, never read from the
+/// record alone (`AET-WO-4300b`).
+pub fn check_serial_frames(firmware: &[u8; 32], records: &[Record]) -> Result<(), &'static str> {
+    let forged = records.iter().any(|r| {
+        matches!(r, Record::SerialWitness { label, frame, .. }
+            if *frame != record::serial_frame(firmware, label))
+    });
+    if forged {
+        Err("a serial witness's frame is not the one its firmware and label give")
+    } else {
+        Ok(())
+    }
+}
 
 /// Every motor finding kind the records explain.
 const MOTOR_FINDINGS: [&str; 4] = [
@@ -1802,5 +2155,6 @@ pub fn check_archived(header: &Header, state: &State) -> Result<RunSummary, &'st
     if run_id(hash(2), hash(3), hash(1)) != header.run_id {
         return Err("the run id is not the one its scenario, specification and firmware give");
     }
+    check_serial_frames(hash(1), &state.records)?;
     Ok(summary)
 }

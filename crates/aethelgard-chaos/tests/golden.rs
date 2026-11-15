@@ -20,7 +20,7 @@ use common::*;
 /// the header's tools: the version byte, the header's length and its empty
 /// tools array changed, and undoing the three gives version 5's hash again.
 const GOLDEN_TRACE_SHA256: &str =
-    "43cbe654d5d57b2fabcad9ab5c83655d65c3ebbdf6d27b3e225787dde6a50ea3";
+    "d107fffb7dd3ec316224b798f3d877630deb57e0158482ac6655a71ee4a63e75";
 /// The golden `state_hash`. Same rule. It was `535db225…adac4` (manifest
 /// version 1) until `AET-WO-0400a` made the chain hash each event's delta,
 /// then `af2d46bb…b4939` until `AET-WO-2300` changed the header it starts
@@ -28,8 +28,8 @@ const GOLDEN_TRACE_SHA256: &str =
 /// `0db4b4f9…10cea` until `AET-WO-2301` did, then `e5dcbe7c…37925` until
 /// `AET-WO-2204` did, then `28d3096c…1f82d` until `AET-WO-2205` did, then
 /// `6868123f…ec11b` until `AET-WO-4200` did, then `abf1ccd2…62524` until
-/// `AET-WO-4300a` did.
-const GOLDEN_STATE_HASH: &str = "35971fa6331cb0f43e66bd9461b8983f3479262cb1745f75402ac6ef34d2b99b";
+/// `AET-WO-4300a` did, then `35971fa6…2b99b` until `AET-WO-4300b` did.
+const GOLDEN_STATE_HASH: &str = "8b4dc2859032fdbf8f0d0e653a455ad3c69d095491cc285ec4112082d9def7cf";
 
 #[test]
 fn golden_trace_and_state_hash_are_pinned() {
@@ -44,12 +44,18 @@ fn golden_trace_and_state_hash_are_pinned() {
     );
     assert_eq!(trace_sha, GOLDEN_TRACE_SHA256);
     assert_eq!(state_hash, GOLDEN_STATE_HASH);
-    // AET-WO-4300a and AET-WO-4200 each changed the version byte alone: set
-    // back to 7, the bytes are version 7's golden trace (`dd0dd2db…c7ff`,
-    // AET-WO-4200's); set back to 6, version 6's (AET-WO-2205's).
+    // AET-WO-4300b, AET-WO-4300a and AET-WO-4200 each changed the version
+    // byte alone: set back to 8, the bytes are version 8's golden trace
+    // (`43cbe654…50ea3`, AET-WO-4300a's); to 7, version 7's (`dd0dd2db…c7ff`,
+    // AET-WO-4200's); to 6, version 6's (AET-WO-2205's).
     let at = 1 + 1 + "aethelgard-trace".len();
-    assert_eq!(bytes[at], 8);
+    assert_eq!(u64::from(bytes[at]), aethelgard_chaos::event::TRACE_VERSION);
     let mut bytes = bytes.clone();
+    bytes[at] = 8;
+    assert_eq!(
+        hex(&Sha256::digest(&bytes)),
+        "43cbe654d5d57b2fabcad9ab5c83655d65c3ebbdf6d27b3e225787dde6a50ea3"
+    );
     bytes[at] = 7;
     assert_eq!(
         hex(&Sha256::digest(&bytes)),

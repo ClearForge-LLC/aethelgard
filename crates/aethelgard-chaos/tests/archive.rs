@@ -333,16 +333,19 @@ fn a_timestamp_of_u64_max_followed_by_another_event_is_refused() {
 #[test]
 fn an_unknown_version_is_refused() {
     // [magic, version, ...] -> the version byte is the one right after the
-    // magic text. The trace's version is 8 since AET-WO-4300a added kinds 24
-    // to 26 (7 since AET-WO-4200 added kinds 21 to 23, 6 since AET-WO-2205 named the tools in the header, 5 since
+    // magic text. The trace's version is 9 since AET-WO-4300b added kinds 27
+    // to 29 (8 since AET-WO-4300a added kinds 24 to 26, 7 since AET-WO-4200
+    // added kinds 21 to 23, 6 since AET-WO-2205 named the tools in the header, 5 since
     // AET-WO-2204 made kinds 13 and 19 carry the device model's log lines, 4
     // since AET-WO-2301 added kinds 16 to 20, 3 since AET-WO-3100 added kind
-    // 15, 2 since AET-WO-2300 added the campaign's kinds); 1 to 7 and 9 are
-    // refused, so an older trace never replays under version 8's rules (INV-06).
+    // 15, 2 since AET-WO-2300 added the campaign's kinds); every other
+    // version from 1 to one past it is refused, so an older trace never
+    // replays under this version's rules (INV-06).
     let at = 1 + 1 + "aethelgard-trace".len();
-    for found in [1u8, 2, 3, 4, 5, 6, 7, 9] {
+    let version = u8::try_from(aethelgard_chaos::event::TRACE_VERSION).unwrap();
+    for found in (1..=version + 1).filter(|&v| v != version) {
         let mut trace = header_bytes();
-        assert_eq!(trace[at], 0x08);
+        assert_eq!(trace[at], version);
         trace[at] = found;
         let dir = commit_raw(&format!("v{found}-trace"), &trace, 0, [0; 32]);
         assert!(matches!(
@@ -424,8 +427,11 @@ fn field_level_refusals_name_their_own_variant() {
     let bad_events: Vec<(&str, Vec<u8>)> = vec![
         (
             "unknown-kind",
-            // 5 to 26 are the campaign's records since AET-WO-4300a.
-            cbor::to_bytes(&Value::Array(vec![Value::Uint(27), Value::Uint(0)])),
+            // 5 to `LAST_KIND` are the campaign's records.
+            cbor::to_bytes(&Value::Array(vec![
+                Value::Uint(aethelgard_chaos::record::LAST_KIND + 1),
+                Value::Uint(0),
+            ])),
         ),
         (
             "short-payload",
@@ -524,12 +530,8 @@ fn field_level_refusals_name_their_own_variant() {
     for (name, item) in bad_events {
         let result = raw_with_event(name, item);
         match (name, result) {
-            (
-                "unknown-kind",
-                Err(E::UnknownEventKind {
-                    kind: 27, index: 0, ..
-                }),
-            ) => {}
+            ("unknown-kind", Err(E::UnknownEventKind { kind, index: 0, .. }))
+                if kind == aethelgard_chaos::record::LAST_KIND + 1 => {}
             ("float-microvolts", Err(E::NotDeterministicCbor(_))) => {}
             (n, Err(E::MalformedEvent { index: 0, .. }))
                 if n != "unknown-kind" && n != "float-microvolts" => {}

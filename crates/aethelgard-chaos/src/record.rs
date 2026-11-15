@@ -11,7 +11,7 @@ use crate::event::{name_ok, text_ok};
 /// The first campaign kind; [`Record::kind`] is this plus the variant's index.
 pub const FIRST_KIND: u64 = 5;
 /// The last campaign kind.
-pub const LAST_KIND: u64 = 26;
+pub const LAST_KIND: u64 = 29;
 
 /// The protocols a motor output may declare (`AET-WO-4300a`), as kind 24
 /// names them.
@@ -31,6 +31,127 @@ pub const MOTOR_STATUSES: [&str; 7] = [
     "batched",
     "stopped",
 ];
+
+/// The roles a serial port may declare (`AET-WO-4300b`), as kind 27 names
+/// them.
+pub const SERIAL_ROLES: [&str; 5] = ["console", "mavlink", "gps", "rc_crsf", "rc_sbus"];
+
+/// The parities a serial port's framing may declare, as kind 27 names them.
+pub const SERIAL_PARITIES: [&str; 3] = ["none", "even", "odd"];
+
+/// The framing fields Renode's USART stores nowhere (`AET-WO-4300b`), seen
+/// only as the warning a write that sets one logs, in the order kind 28
+/// lists the ones a framing needs.
+pub const SERIAL_TAGS: [&str; 4] = ["CR1.M0", "CR1.M1", "CR2.RXINV", "CR2.TXINV"];
+
+/// What kind 29's `echo` may say (`AET-WO-4300b`): the frame came back
+/// whole with the RX pin on its AF at the injection; did not come back; came
+/// back in part; came back with the RX pin off its AF; or was not judged,
+/// because the boot word was never set.
+pub const SERIAL_ECHO_STATUSES: [&str; 5] = [
+    "witnessed",
+    "missing",
+    "partial",
+    "not_counted",
+    "not_judged",
+];
+
+/// The injected frame's length, and the bytes each port's pattern adds to
+/// its label (`00 FE 7F 80 FF`).
+// belt-and-suspenders: `aethelgard_twin::serial::{FRAME_LEN, PATTERN_TAIL}`
+// state these; replay checks an archive without the twin, so it states them
+// again.
+pub const SERIAL_FRAME_LEN: usize = 8;
+pub const SERIAL_TAIL_LEN: usize = 5;
+
+/// The most unexpected tag warnings kind 28 carries: the CLI cuts a longer
+/// list, which still fails the port's tags, so the event fits the bound.
+pub const MAX_SERIAL_UNEXPECTED: usize = 16;
+
+/// A serial port's framing as kind 27 carries it, from the specification
+/// through the solved topology (`AET-WO-4300b` §1.1).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SerialFraming {
+    pub baud: u32,
+    /// Data bits, not counting the parity bit.
+    pub data_bits: u8,
+    /// One of [`SERIAL_PARITIES`].
+    pub parity: String,
+    pub stop_bits: u8,
+    pub inverted: bool,
+}
+
+impl SerialFraming {
+    /// The word the receiver samples: data bits and a parity bit if any.
+    pub fn word_bits(&self) -> u8 {
+        self.data_bits
+            .saturating_add(u8::from(self.parity != "none"))
+    }
+
+    /// The tags of [`SERIAL_TAGS`] this framing needs set: `M0` for a 9-bit
+    /// word, `M1` for a 7-bit one (RM0433 Rev 9 §48.8.1), both inversions
+    /// when inverted (§48.8.2).
+    // belt-and-suspenders: `aethelgard_twin::serial::needed_tags` is the
+    // judge's; replay never depends on the twin, so it states the rule again.
+    pub fn tags(&self) -> Vec<String> {
+        let word = self.word_bits();
+        [word == 9, word == 7, self.inverted, self.inverted]
+            .iter()
+            .zip(SERIAL_TAGS)
+            .filter(|(needed, _)| **needed)
+            .map(|(_, t)| t.to_owned())
+            .collect()
+    }
+}
+
+/// What one port's capture held, as kind 29 carries it: the whole patterns,
+/// the ones among them cut short by a reset, the frame's bytes after them,
+/// whether anything else was there, and the file's length.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SerialCapture {
+    pub patterns: u64,
+    pub cut: u64,
+    pub echoed: u64,
+    pub stray: bool,
+    pub len: u64,
+}
+
+/// What a port's tag warnings showed, as kind 28 carries it: the warnings
+/// from its USART, each needed tag none carried, and each tag a warning
+/// carried that the framing does not need (at most
+/// [`MAX_SERIAL_UNEXPECTED`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SerialTags {
+    pub warnings: u64,
+    pub missing: Vec<String>,
+    pub unexpected: Vec<String>,
+}
+
+impl SerialTags {
+    pub fn holds(&self) -> bool {
+        self.missing.is_empty() && self.unexpected.is_empty()
+    }
+}
+
+/// The first [`SERIAL_FRAME_LEN`] bytes of
+/// `sha256("aethelgard-serial-frame" ‖ firmware ‖ label)`: the frame the
+/// judge injects into the port labelled `label` of the firmware whose file's
+/// sha256 is `firmware` (`AET-WO-4300b`).
+// belt-and-suspenders: `aethelgard_twin::serial::frame` is the judge's;
+// replay checks an archive without the twin (`aethelgard-twin` depends on
+// `aethelgard-ir`, `RUL-16`), so it states the formula again, and the CLI's
+// tests hold the two equal.
+pub fn serial_frame(firmware: &[u8; 32], label: &str) -> [u8; SERIAL_FRAME_LEN] {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"aethelgard-serial-frame");
+    h.update(firmware);
+    h.update(label.as_bytes());
+    let digest = h.finalize();
+    let mut out = [0u8; SERIAL_FRAME_LEN];
+    out.copy_from_slice(&digest[..SERIAL_FRAME_LEN]);
+    out
+}
 
 /// One override a scenario applies to its specification (`AET-WO-2300` §1.1).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -383,6 +504,70 @@ pub enum Record {
         off_grid: u64,
         batched: u64,
     },
+    /// Kind 27: one solved serial port, from the solved topology alone
+    /// (`AET-WO-4300b`): its label, its place in the specification, its
+    /// USART, its TX and RX pins and their alternate functions, its role and
+    /// framing, and the `BRR` solved on its kernel clock with the baud it
+    /// gives (in thousandths) and its error (ppm). Kinds 28 and 29 join to
+    /// it. Archived beside kinds 15, 23 and 24, before the boot.
+    SerialPortSolved {
+        label: String,
+        index: u32,
+        peripheral: String,
+        tx: String,
+        tx_af: u8,
+        rx: String,
+        rx_af: u8,
+        role: String,
+        framing: SerialFraming,
+        kernel_hz: u64,
+        brr: u32,
+        actual_millibaud: u64,
+        error_ppm: i64,
+    },
+    /// Kind 28: one port's static framing judgement, its two halves apart
+    /// (`4300` D8). Silicon's: the kernel clock, `BRR`, the baud and error it
+    /// gives, the receiver-tolerance row that applies (RM0433 Rev 9 Tables
+    /// 406 and 407: the table, `M[1:0]`, the tolerance in ppm) and whether
+    /// every rule held. The twin's: the tags the framing needs (of
+    /// [`SERIAL_TAGS`]) and what the USART's warnings showed, absent until
+    /// Renode has run or when its log could not be read whole. The stored
+    /// fields (`CR1`, `CR2.STOP`, `CR3`, `BRR`) are read back as kind 11s
+    /// and judged there. Archived after the boot.
+    SerialFramingCheck {
+        label: String,
+        kernel_hz: u64,
+        brr: u32,
+        actual_millibaud: u64,
+        error_ppm: i64,
+        tolerance: Option<(String, u8, u32)>,
+        holds: bool,
+        tags_needed: Vec<String>,
+        tags: Option<SerialTags>,
+    },
+    /// Kind 29: one port's twin witness (`AET-WO-4300b` §1.5): what its
+    /// capture held (absent when Renode left no file), the frame injected,
+    /// the echo's status (one of [`SERIAL_ECHO_STATUSES`]), and the RX pin's
+    /// `MODER` and `AFSEL` fields at the injection (absent when no frame went
+    /// in) and the TX pin's at the end. Archived after kind 28, once Renode
+    /// has run.
+    SerialWitness {
+        label: String,
+        capture: Option<SerialCapture>,
+        frame: [u8; SERIAL_FRAME_LEN],
+        echo: String,
+        rx_at_injection: Option<(u8, u8)>,
+        tx_at_end: Option<(u8, u8)>,
+    },
+}
+
+/// A pin's `MODER` and `AFSEL` fields, present or absent.
+fn mux(m: Option<(u8, u8)>) -> Value {
+    Value::Array(
+        m.iter()
+            .map(|(mode, af)| Value::Array(vec![u((*mode).into()), u((*af).into())]))
+            .collect(),
+    )
 }
 
 fn u(n: u64) -> Value {
@@ -533,6 +718,25 @@ impl<'a> Fields<'a> {
     fn end(&mut self) -> Option<()> {
         self.0.next().is_none().then_some(())
     }
+    /// An array of zero or one element, the one read by `inner`.
+    fn opt_with<T>(
+        &mut self,
+        inner: impl FnOnce(&mut Fields<'a>) -> Option<T>,
+    ) -> Option<Option<T>> {
+        match self.array()? {
+            [] => Some(None),
+            [Value::Array(items)] => {
+                let mut g = Fields(items.iter());
+                let v = inner(&mut g)?;
+                g.end()?;
+                Some(Some(v))
+            }
+            _ => None,
+        }
+    }
+    fn mux(&mut self) -> Option<Option<(u8, u8)>> {
+        self.opt_with(|g| Some((g.u8()?, g.u8()?)))
+    }
 }
 
 fn override_value(o: &Override) -> Value {
@@ -652,6 +856,9 @@ impl Record {
                 Self::MotorOutputSolved { .. } => 19,
                 Self::MotorTimingCheck { .. } => 20,
                 Self::MotorWitness { .. } => 21,
+                Self::SerialPortSolved { .. } => 22,
+                Self::SerialFramingCheck { .. } => 23,
+                Self::SerialWitness { .. } => 24,
             }
     }
 
@@ -679,6 +886,7 @@ impl Record {
                 | Self::SpiBusSolved { .. }
                 | Self::MotorOutputSolved { .. }
                 | Self::MotorTimingCheck { .. }
+                | Self::SerialPortSolved { .. }
                 | Self::RiseComputed { .. }
                 | Self::LineStuckHigh { .. }
                 | Self::BusFault { .. }
@@ -1025,6 +1233,107 @@ impl Record {
                 u(*off_grid),
                 u(*batched),
             ],
+            Self::SerialPortSolved {
+                label,
+                index,
+                peripheral,
+                tx,
+                tx_af,
+                rx,
+                rx_af,
+                role,
+                framing,
+                kernel_hz,
+                brr,
+                actual_millibaud,
+                error_ppm,
+            } => vec![
+                t(label),
+                u((*index).into()),
+                t(peripheral),
+                t(tx),
+                u((*tx_af).into()),
+                t(rx),
+                u((*rx_af).into()),
+                t(role),
+                Value::Array(vec![
+                    u(framing.baud.into()),
+                    u(framing.data_bits.into()),
+                    t(&framing.parity),
+                    u(framing.stop_bits.into()),
+                    flag(framing.inverted),
+                ]),
+                u(*kernel_hz),
+                u((*brr).into()),
+                u(*actual_millibaud),
+                Value::from_i64(*error_ppm),
+            ],
+            Self::SerialFramingCheck {
+                label,
+                kernel_hz,
+                brr,
+                actual_millibaud,
+                error_ppm,
+                tolerance,
+                holds,
+                tags_needed,
+                tags,
+            } => vec![
+                t(label),
+                u(*kernel_hz),
+                u((*brr).into()),
+                u(*actual_millibaud),
+                Value::from_i64(*error_ppm),
+                Value::Array(
+                    tolerance
+                        .iter()
+                        .map(|(table, m, ppm)| {
+                            Value::Array(vec![t(table), u((*m).into()), u((*ppm).into())])
+                        })
+                        .collect(),
+                ),
+                flag(*holds),
+                texts(tags_needed),
+                Value::Array(
+                    tags.iter()
+                        .map(|j| {
+                            Value::Array(vec![
+                                u(j.warnings),
+                                texts(&j.missing),
+                                texts(&j.unexpected),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ],
+            Self::SerialWitness {
+                label,
+                capture,
+                frame,
+                echo,
+                rx_at_injection,
+                tx_at_end,
+            } => vec![
+                t(label),
+                Value::Array(
+                    capture
+                        .iter()
+                        .map(|c| {
+                            Value::Array(vec![
+                                u(c.patterns),
+                                u(c.cut),
+                                u(c.echoed),
+                                flag(c.stray),
+                                u(c.len),
+                            ])
+                        })
+                        .collect(),
+                ),
+                Value::Bytes(frame.to_vec()),
+                t(echo),
+                mux(*rx_at_injection),
+                mux(*tx_at_end),
+            ],
         }
     }
 
@@ -1292,6 +1601,68 @@ impl Record {
                 span_ns: f.opt()?,
                 off_grid: f.uint()?,
                 batched: f.uint()?,
+            },
+            27 => Self::SerialPortSolved {
+                label: f.text()?,
+                index: f.u32()?,
+                peripheral: f.text()?,
+                tx: f.text()?,
+                tx_af: f.u8()?,
+                rx: f.text()?,
+                rx_af: f.u8()?,
+                role: f.text()?,
+                framing: {
+                    let mut g = Fields(f.array()?.iter());
+                    let framing = SerialFraming {
+                        baud: g.u32()?,
+                        data_bits: g.u8()?,
+                        parity: g.text()?,
+                        stop_bits: g.u8()?,
+                        inverted: g.flag()?,
+                    };
+                    g.end()?;
+                    framing
+                },
+                kernel_hz: f.uint()?,
+                brr: f.u32()?,
+                actual_millibaud: f.uint()?,
+                error_ppm: f.int()?,
+            },
+            28 => Self::SerialFramingCheck {
+                label: f.text()?,
+                kernel_hz: f.uint()?,
+                brr: f.u32()?,
+                actual_millibaud: f.uint()?,
+                error_ppm: f.int()?,
+                tolerance: f.opt_with(|g| Some((g.text()?, g.u8()?, g.u32()?)))?,
+                holds: f.flag()?,
+                tags_needed: f.texts()?,
+                tags: f.opt_with(|g| {
+                    Some(SerialTags {
+                        warnings: g.uint()?,
+                        missing: g.texts()?,
+                        unexpected: g.texts()?,
+                    })
+                })?,
+            },
+            29 => Self::SerialWitness {
+                label: f.text()?,
+                capture: f.opt_with(|g| {
+                    Some(SerialCapture {
+                        patterns: g.uint()?,
+                        cut: g.uint()?,
+                        echoed: g.uint()?,
+                        stray: g.flag()?,
+                        len: g.uint()?,
+                    })
+                })?,
+                frame: match f.next()? {
+                    Value::Bytes(b) => <[u8; SERIAL_FRAME_LEN]>::try_from(b.as_slice()).ok()?,
+                    _ => return None,
+                },
+                echo: f.text()?,
+                rx_at_injection: f.mux()?,
+                tx_at_end: f.mux()?,
             },
             _ => return None,
         };
@@ -1672,6 +2043,128 @@ impl Record {
                     Ok(())
                 }
             }
+            Self::SerialPortSolved {
+                label,
+                peripheral,
+                tx,
+                tx_af,
+                rx,
+                rx_af,
+                role,
+                framing,
+                kernel_hz,
+                brr,
+                ..
+            } => {
+                let pins = split_pin(tx).is_some() && split_pin(rx).is_some() && tx != rx;
+                if !name_ok(label) || !name_ok(peripheral) || !pins {
+                    Err(
+                        "a solved serial port's label, peripheral or pins are malformed, or its TX and RX share a pin",
+                    )
+                } else if *tx_af > MAX_ALTERNATE_FUNCTION || *rx_af > MAX_ALTERNATE_FUNCTION {
+                    Err("a solved serial port's alternate function is above 15")
+                } else if !SERIAL_ROLES.contains(&role.as_str())
+                    || !SERIAL_PARITIES.contains(&framing.parity.as_str())
+                {
+                    Err("a solved serial port's role or parity is not one a specification declares")
+                } else if framing.baud == 0
+                    || !(7..=9).contains(&framing.word_bits())
+                    || !(1..=2).contains(&framing.stop_bits)
+                {
+                    Err(
+                        "a solved serial port's framing is not a baud above 0, a 7- to 9-bit word and 1 or 2 stop bits",
+                    )
+                } else if *kernel_hz == 0 || !(16..=0xFFFF).contains(brr) {
+                    Err("a solved serial port's kernel clock is 0 or its BRR outside 16 to 0xFFFF")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::SerialFramingCheck {
+                label,
+                kernel_hz,
+                tolerance,
+                tags_needed,
+                tags,
+                ..
+            } => {
+                let canonical = |v: &[String]| {
+                    let mut at = SERIAL_TAGS.iter();
+                    v.iter().all(|t| at.any(|s| s == t))
+                };
+                if !name_ok(label) || *kernel_hz == 0 {
+                    Err("a serial framing check's label is malformed or its kernel clock 0")
+                } else if tolerance
+                    .as_ref()
+                    .is_some_and(|(table, m, _)| !text_ok(table, 1, 64) || *m > 2)
+                {
+                    Err("a serial framing check's tolerance row is malformed")
+                } else if !canonical(tags_needed) {
+                    Err("a serial framing check's needed tags are not tags, in order, once each")
+                } else if tags.as_ref().is_some_and(|j| {
+                    !j.missing.iter().all(|m| tags_needed.contains(m))
+                        || !canonical(&j.missing)
+                        || j.unexpected.len() > MAX_SERIAL_UNEXPECTED
+                        || !j.unexpected.iter().all(|x| text_ok(x, 1, 64))
+                }) {
+                    Err(
+                        "a serial framing check's tag judgement names a tag the framing does not need as missing, or too many or malformed unexpected ones",
+                    )
+                } else {
+                    Ok(())
+                }
+            }
+            Self::SerialWitness {
+                label,
+                capture,
+                echo,
+                rx_at_injection,
+                tx_at_end,
+                ..
+            } => {
+                let mux_ok = |m: &Option<(u8, u8)>| {
+                    m.is_none_or(|(mode, af)| mode <= 3 && af <= MAX_ALTERNATE_FUNCTION)
+                };
+                if !name_ok(label) {
+                    Err("a serial witness's label is malformed")
+                } else if !SERIAL_ECHO_STATUSES.contains(&echo.as_str()) {
+                    Err("a serial witness's echo is not one the judge gives")
+                } else if !mux_ok(rx_at_injection) || !mux_ok(tx_at_end) {
+                    Err("a serial witness's pin mode is above 3 or its alternate function above 15")
+                } else if capture.is_some_and(|c| !capture_fits(&c, label)) {
+                    Err(
+                        "a serial witness's counts do not fit its capture's length and its pattern's",
+                    )
+                } else {
+                    Ok(())
+                }
+            }
         }
     }
+}
+
+/// Whether a capture's counts fit its length, for the pattern of a port
+/// labelled `label` (`P`, the label's bytes and [`SERIAL_TAIL_LEN`]): at
+/// most the whole frame after the patterns; a stray capture read no cut and
+/// no frame, and holds its whole patterns; otherwise its length is the whole
+/// patterns, each cut one's 1 to `P - 1` bytes, and the frame's bytes.
+fn capture_fits(c: &SerialCapture, label: &str) -> bool {
+    let p = (label.len() + SERIAL_TAIL_LEN) as u64;
+    let whole = c.patterns.checked_mul(p);
+    if c.echoed > SERIAL_FRAME_LEN as u64 {
+        return false;
+    }
+    if c.stray {
+        return c.cut == 0 && c.echoed == 0 && whole.is_some_and(|w| w <= c.len);
+    }
+    let least = whole
+        .and_then(|w| w.checked_add(c.cut))
+        .and_then(|n| n.checked_add(c.echoed));
+    let most = whole
+        .zip(c.cut.checked_mul(p - 1))
+        .and_then(|(w, k)| w.checked_add(k))
+        .and_then(|n| n.checked_add(c.echoed));
+    least
+        .zip(most)
+        .is_some_and(|(lo, hi)| lo <= c.len && c.len <= hi)
 }

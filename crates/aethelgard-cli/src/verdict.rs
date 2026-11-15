@@ -296,8 +296,10 @@ pub struct SerialTwinReport {
     /// The tags the framing needs set (`CR1.M0`), each seen only as its
     /// warning; the register image holds the stored fields.
     pub tags_needed: Vec<String>,
-    /// Whole patterns at the capture's start.
+    /// Whole patterns before the frame.
     pub patterns: Option<usize>,
+    /// Patterns among them cut short, each by a rendered reset.
+    pub cut: Option<usize>,
     /// The frame's bytes that came back after them.
     pub echoed: Option<usize>,
     /// The capture's length, and whether anything in it was not a pattern
@@ -315,6 +317,14 @@ pub struct SerialTwinReport {
     pub tag_warnings: Option<usize>,
     pub tags_missing: Option<Vec<String>>,
     pub tags_unexpected: Option<Vec<String>>,
+    /// What the campaign archives (kind 29) and the JSON says in words: the
+    /// frame's bytes, and each pin's `MODER` and `AFSEL` fields.
+    #[serde(skip)]
+    pub frame_bytes: [u8; aethelgard_twin::serial::FRAME_LEN],
+    #[serde(skip)]
+    pub rx_fields: Option<(u8, u8)>,
+    #[serde(skip)]
+    pub tx_fields: Option<(u8, u8)>,
 }
 
 impl SerialReport {
@@ -352,6 +362,7 @@ impl SerialReport {
                     .map(|t| format!("{}.{}", t.register, t.field))
                     .collect(),
                 patterns: c.map(|c| c.patterns),
+                cut: c.map(|c| c.cut),
                 echoed: c.map(|c| c.echoed),
                 capture_bytes: c.map(|c| c.len),
                 stray: c.map(|c| c.stray),
@@ -365,6 +376,11 @@ impl SerialReport {
                 tag_warnings: tags.map(|t| t.warnings),
                 tags_missing: tags.map(|t| t.missing.clone()),
                 tags_unexpected: tags.map(|t| t.unexpected.clone()),
+                frame_bytes: s.frame,
+                rx_fields: w
+                    .and_then(|w| w.rx_at_injection)
+                    .map(|(m, a)| s.rx.fields(m, a)),
+                tx_fields: w.and_then(|w| w.tx_at_end).map(|(m, a)| s.tx.fields(m, a)),
             },
             speed: SERIAL_SPEED_NOT_JUDGED,
         }

@@ -1843,6 +1843,11 @@ fn propose_on_a_software_run_writes_a_generator_report_and_no_specification() {
                 if let Record::BootObserved { boot_word, .. } = x {
                     boot_word.observed = Some(0);
                 }
+                // Without the boot word, the judge never judges an echo
+                // (`AET-WO-4300b`), and replay holds it to that.
+                if let Record::SerialWitness { echo, .. } = x {
+                    *echo = "not_judged".into();
+                }
             }
             let last = r.len() - 1;
             r[last] = Record::Verdict {
