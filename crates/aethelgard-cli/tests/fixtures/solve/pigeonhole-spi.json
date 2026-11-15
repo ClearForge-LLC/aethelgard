@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "project_name": "ph-spi",
   "mcu": {
     "part": "STM32H753ZITx",
@@ -215,6 +215,7 @@
       }
     }
   ],
+  "connectors": [],
   "net_constraints": [
     {
       "net_name": "SPI0_SCK_NET",

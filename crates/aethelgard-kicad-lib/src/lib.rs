@@ -7,7 +7,7 @@
 #![forbid(unsafe_code)]
 
 /// Every vendored file: its path under `data/kicad-10.0.7/` and its bytes.
-pub const FILES: [(&str, &[u8]); 17] = [
+pub const FILES: [(&str, &[u8]); 24] = [
     (
         "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
         include_bytes!(
@@ -42,6 +42,48 @@ pub const FILES: [(&str, &[u8]); 17] = [
         "footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod",
         include_bytes!(
             "../data/kicad-10.0.7/footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Connector_JST.pretty/JST_GH_SM04B-GHS-TB_1x04-1MP_P1.25mm_Horizontal.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Connector_JST.pretty/JST_GH_SM04B-GHS-TB_1x04-1MP_P1.25mm_Horizontal.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Connector_JST.pretty/JST_GH_SM06B-GHS-TB_1x06-1MP_P1.25mm_Horizontal.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Connector_JST.pretty/JST_GH_SM06B-GHS-TB_1x06-1MP_P1.25mm_Horizontal.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Connector_JST.pretty/JST_GH_SM10B-GHS-TB_1x10-1MP_P1.25mm_Horizontal.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Connector_JST.pretty/JST_GH_SM10B-GHS-TB_1x10-1MP_P1.25mm_Horizontal.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Connector_JST.pretty/JST_SH_SM06B-SRSS-TB_1x06-1MP_P1.00mm_Horizontal.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Connector_JST.pretty/JST_SH_SM06B-SRSS-TB_1x06-1MP_P1.00mm_Horizontal.kicad_mod"
+        ),
+    ),
+    (
+        "symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x04_MountingPin.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x04_MountingPin.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x06_MountingPin.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x06_MountingPin.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x10_MountingPin.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Connector_Generic_MountingPin.kicad_symdir/Conn_01x10_MountingPin.kicad_sym"
         ),
     ),
     (

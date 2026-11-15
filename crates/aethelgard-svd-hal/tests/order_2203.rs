@@ -83,23 +83,24 @@ fn digests() -> Vec<(&'static str, String)> {
 /// the flash is `W25Q64JVxIQ`; and the firmware's SPI output speeds): the
 /// firmware was `c468b3cb…604f`, the platform `9fd77dad…53aa` and the
 /// faulted platform `c80833a9…8bec`. The boot image's digest is unchanged.
-/// Re-taken in `AET-WO-4300a`: specification version 4 moved the
-/// specification's sha256 in the firmware (`ecd58f5f…7b7b`), the platform
-/// (`bc1517cd…7522`) and the faulted platform (`f684f871…3dba`), and every
+/// Re-taken in `AET-WO-4300a` after `4300f`: specification version 5
+/// (`motor_outputs`, `mcu.hse_hz`, after `4300f`'s `connectors`) moved the
+/// specification's sha256 in the firmware (`f3e10417…2985`), the platform
+/// (`9c02c1e2…2bf4`) and the faulted platform (`cc3a3e65…2dff9`); every
 /// enable register cold and judged in full (2100 F24) moved the boot image
 /// (`747bdc04…fbb3`).
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "b886252ae039ff18e772a3a7d2627a0ba467028d4ef6f64b3ba8e58d9fb7be09",
+        "b392afd7187b7751ce75efb06fb16dee31cf988156b0e969ab2c58c418029ce6",
     ),
     (
         "platform",
-        "e6180ae08b35dbbfced28cc30b5603250d6f276fc29c584354d80b494a02dd3f",
+        "bd4f15a916ae92f256ce8c0ee119b43d4833457707f85c52a1dd59ea43a6d664",
     ),
     (
         "platform faulted",
-        "da34c6403003998175fc363316d5936048a58dc9cd54d8626be031318aa17355",
+        "70e6de90b5cfbcc1704a7d2f9e691810672eca6a5e6b83eedbf914ad7d40f67d",
     ),
     (
         "boot image",

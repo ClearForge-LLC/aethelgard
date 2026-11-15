@@ -860,3 +860,75 @@ fn against_fab_names_a_missing_inner_layer_and_a_stackup_that_lies() {
     assert_eq!(named.len(), 2, "{named:?}");
     fs::remove_dir_all(&base).unwrap();
 }
+
+const CONNECTORS: &str = "crates/aethelgard-cli/tests/fixtures/connectors.json";
+
+/// `AET-WO-4300f`: the connectors fixture (JST GH headers at the bottom
+/// edge, an unconnected pin, mounting pins on GND) emits a schematic that
+/// passes ERC and a board that passes DRC by the specification's rules with
+/// schematic parity, with no finding of any kind, on two copper layers and
+/// on four (the 4-layer fixture's board, with its planes).
+#[test]
+fn connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let base = std::env::temp_dir().join(format!("aet-4300f-gate-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    fs::create_dir_all(&base).unwrap();
+    let read =
+        |p: &str| -> Value { serde_json::from_slice(&fs::read(root().join(p)).unwrap()).unwrap() };
+    let mut four = read(CONNECTORS);
+    four["board"] = read(FOUR)["board"].clone();
+    let four_path = base.join("connectors-4l.json");
+    fs::write(&four_path, serde_json::to_vec_pretty(&four).unwrap()).unwrap();
+    for (label, spec, layers) in [("2l", root().join(CONNECTORS), 2), ("4l", four_path, 4)] {
+        let out = base.join(label);
+        let (code, text) = aethelgard(&[
+            "emit",
+            "--file",
+            spec.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ]);
+        let r = one(&text);
+        assert_eq!(code, Some(0), "{label}: emit: {r}");
+        let board = r["board"]["path"].as_str().unwrap().to_owned();
+        let sch = r["schematic"]["path"].as_str().unwrap().to_owned();
+        let board_text = fs::read_to_string(&board).unwrap();
+        assert_eq!(
+            board_text.matches(" signal)").count(),
+            layers,
+            "{label}: the emitted board does not have {layers} copper layers"
+        );
+
+        let (code, text) = aethelgard(&["check", "erc", "--schematic", &sch]);
+        let erc = one(&text);
+        assert_eq!(code, Some(0), "{label}: erc: {erc}");
+        assert_eq!(erc["verdict"], "pass", "{label}: erc: {erc}");
+        assert_eq!(
+            erc["findings"],
+            Value::Array(vec![]),
+            "{label}: erc has findings"
+        );
+
+        let (code, text) = aethelgard(&[
+            "check",
+            "drc",
+            "--board",
+            &board,
+            "--spec",
+            spec.to_str().unwrap(),
+            "--schematic",
+            &sch,
+        ]);
+        let drc = one(&text);
+        assert_eq!(code, Some(0), "{label}: drc: {drc}");
+        assert_eq!(drc["verdict"], "pass", "{label}: drc: {drc}");
+        assert_eq!(drc["rules"], "specification", "{label}: drc: {drc}");
+        assert_eq!(
+            drc["findings"],
+            Value::Array(vec![]),
+            "{label}: drc has findings, unconnected items included"
+        );
+    }
+    fs::remove_dir_all(&base).unwrap();
+}

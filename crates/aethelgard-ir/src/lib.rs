@@ -11,6 +11,8 @@
 #![forbid(unsafe_code)]
 
 pub mod board;
+pub mod connectors;
+pub mod ds009;
 pub mod electrical;
 pub mod motor;
 pub mod parts;
@@ -32,9 +34,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// board for it. Version 3 requires a `net_constraints` entry on every SPI
 /// bus's `sck` and `mosi`, and names parts as the version-2 parts table does
 /// (`AET-WO-4300c` D2, F11); nothing supplies either for an older file.
-/// Version 4 requires `motor_outputs` and `mcu.hse_hz` (`AET-WO-4300a` §1.1,
-/// `4400` D1); nothing supplies either for an older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 4;
+/// Version 4 added `connectors` (`AET-WO-4300f`); version 5 requires
+/// `motor_outputs` and `mcu.hse_hz` (`AET-WO-4300a` §1.1, `4400` D1), which
+/// nothing supplies for an older file.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 5;
+
+/// The ground net: the emitter's ground symbol, never a declared domain.
+pub const GND: &str = "GND";
 
 /// The top-level specification, version 4 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
@@ -54,6 +60,9 @@ pub struct Specification {
     /// Private as `i2c_devices` is; read through
     /// [`Specification::declared_spi_devices`].
     spi_devices: Vec<SpiDevice>,
+    /// Private as the device lists are (`RUL-16`); read through
+    /// [`Specification::declared_connectors`].
+    connectors: Vec<connectors::Connector>,
     pub net_constraints: Vec<NetConstraint>,
     /// The copper layers, the stackup and the design rules (`board`).
     pub board: board::Board,
@@ -806,6 +815,64 @@ pub enum IrValidationError {
         "the solved clock is not the reset clock (HSI at 64 MHz, every prescaler 1, TIMPRE 0, no crystal), the only one this engine generates firmware for (`AET-WO-4300a` §1.2)"
     )]
     UnsupportedClock,
+    #[error("connector `{id}` names part `{part}`, which is not in the connectors table")]
+    UnknownConnectorPart { id: String, part: String },
+    #[error("connector `{id}` lists pin `{pin}`; its part's signal pins are `1` to `{pins}`")]
+    ConnectorPinUnknown { id: String, pin: String, pins: u8 },
+    #[error("connector `{id}` lists pin `{pin}` more than once")]
+    ConnectorPinRepeated { id: String, pin: String },
+    #[error(
+        "connector `{id}` does not list pin `{pin}`; every signal pin is listed, `null` where it is unconnected"
+    )]
+    ConnectorPinMissing { id: String, pin: String },
+    #[error(
+        "connector `{id}` pin `{pin}` names net `{net}`, which is no declared signal, voltage domain or `GND`: a connector cannot invent a net"
+    )]
+    ConnectorNetUnknown {
+        id: String,
+        pin: String,
+        net: String,
+    },
+    #[error(
+        "connector `{id}` pin `{pin}` is on an I2C or SPI line (a bus line or a chip select) and declares no off-board capacitance (null or 0); ruling D8 requires one on every such pin, so that a bound over the line can count the cable and the remote pins (`RUL-19` (1))"
+    )]
+    ConnectorBudgetMissing { id: String, pin: String },
+    #[error(
+        "connector `{id}` pin `{pin}` declares an off-board capacitance, but it is on no I2C or SPI line (a ground, a domain or no net), which carries none"
+    )]
+    ConnectorBudgetNotApplicable { id: String, pin: String },
+    #[error("connector `{id}` names standard `{standard}`, which is not in the ports table")]
+    UnknownConnectorStandard { id: String, standard: String },
+    #[error(
+        "connector `{id}` is part `{part}`, which is not the series and pin count of `{standard}`"
+    )]
+    ConnectorPartContradictsStandard {
+        id: String,
+        part: String,
+        standard: String,
+    },
+    #[error(
+        "connector `{id}` pin `{pin}` is `{role}` in its standard, and its net {} is not that{}",
+        net.as_deref().map_or_else(|| "(null)".to_owned(), |n| format!("`{n}`")),
+        required_millivolts.map_or_else(String::new, |mv| format!(": a voltage domain of nominal {mv} mV"))
+    )]
+    ConnectorSupplyContradictsStandard {
+        id: String,
+        pin: String,
+        role: &'static str,
+        net: Option<String>,
+        required_millivolts: Option<u32>,
+    },
+    #[error(
+        "connector `{id}` pin `{pin}` is `{role}` in its standard, and its net {} is not that (a role this schema cannot yet declare takes no net, and only a pin the standard lets float may be null)",
+        net.as_deref().map_or_else(|| "(null)".to_owned(), |n| format!("`{n}`"))
+    )]
+    ConnectorPinContradictsStandard {
+        id: String,
+        pin: String,
+        role: &'static str,
+        net: Option<String>,
+    },
 }
 
 impl IrValidationError {
@@ -884,6 +951,17 @@ impl IrValidationError {
             Self::MotorOutputMismatch { .. } => "MotorOutputMismatch",
             Self::TimerShared { .. } => "TimerShared",
             Self::UnsupportedClock => "UnsupportedClock",
+            Self::UnknownConnectorPart { .. } => "UnknownConnectorPart",
+            Self::ConnectorPinUnknown { .. } => "ConnectorPinUnknown",
+            Self::ConnectorPinRepeated { .. } => "ConnectorPinRepeated",
+            Self::ConnectorPinMissing { .. } => "ConnectorPinMissing",
+            Self::ConnectorNetUnknown { .. } => "ConnectorNetUnknown",
+            Self::ConnectorBudgetMissing { .. } => "ConnectorBudgetMissing",
+            Self::ConnectorBudgetNotApplicable { .. } => "ConnectorBudgetNotApplicable",
+            Self::UnknownConnectorStandard { .. } => "UnknownConnectorStandard",
+            Self::ConnectorPartContradictsStandard { .. } => "ConnectorPartContradictsStandard",
+            Self::ConnectorSupplyContradictsStandard { .. } => "ConnectorSupplyContradictsStandard",
+            Self::ConnectorPinContradictsStandard { .. } => "ConnectorPinContradictsStandard",
         }
     }
 
@@ -963,6 +1041,17 @@ impl IrValidationError {
             | Self::BusTooFast { bus, .. }
             | Self::PullUpBelowSinkFloor { bus, .. } => Some(bus),
             Self::BusCapacitanceOverLimit { net, .. } => Some(net),
+            Self::UnknownConnectorPart { id, .. }
+            | Self::ConnectorPinUnknown { id, .. }
+            | Self::ConnectorPinRepeated { id, .. }
+            | Self::ConnectorPinMissing { id, .. }
+            | Self::ConnectorNetUnknown { id, .. }
+            | Self::ConnectorBudgetMissing { id, .. }
+            | Self::ConnectorBudgetNotApplicable { id, .. }
+            | Self::UnknownConnectorStandard { id, .. }
+            | Self::ConnectorPartContradictsStandard { id, .. }
+            | Self::ConnectorSupplyContradictsStandard { id, .. }
+            | Self::ConnectorPinContradictsStandard { id, .. } => Some(id),
         }
     }
 
@@ -1251,6 +1340,13 @@ impl Specification {
         &self.spi_devices
     }
 
+    /// The off-board connectors the specification declares, in document
+    /// order; fenced as [`Specification::declared_i2c_devices`] is. Nothing
+    /// solves a connector, so the `SolvedTopology` never carries one.
+    pub fn declared_connectors(&self) -> &[connectors::Connector] {
+        &self.connectors
+    }
+
     /// Refuses the first malformed value found, in the order of
     /// `crates/aethelgard-ir/README.md`, and in document order within each step.
     /// It does not check that a part, peripheral or pin exists, nor that two
@@ -1262,7 +1358,9 @@ impl Specification {
     pub fn validate(&self) -> Result<(), IrValidationError> {
         self.validate_declared()?;
         let table = parts::table()?;
-        self.validate_parts(table)
+        self.validate_parts(table)?;
+        // 15
+        connectors::validate(self)
     }
 
     /// Step 14 (`AET-WO-4300c` §1.5, F11): each device's part against the
@@ -1477,7 +1575,8 @@ impl Specification {
             self.i2c_devices
                 .iter()
                 .map(|d| d.reference.as_str())
-                .chain(self.spi_devices.iter().map(|d| d.reference.as_str())),
+                .chain(self.spi_devices.iter().map(|d| d.reference.as_str()))
+                .chain(self.connectors.iter().map(|c| c.reference.as_str())),
         )?;
         // 9
         for device in &self.i2c_devices {
@@ -1624,7 +1723,7 @@ impl Specification {
             plain(&m.label, || format!("motor_outputs[{i}].label"))?;
             optional_identifier(&m.pin, || format!("motor_outputs[{i}].pin"))?;
         }
-        Ok(())
+        connectors::identifiers(self)
     }
 }
 

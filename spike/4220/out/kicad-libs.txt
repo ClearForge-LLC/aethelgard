@@ -1,0 +1,71 @@
+== symbols/Sensor_Motion.kicad_sym ff5ca17655257971225b18b72dba773413de77660d0f4d1fe8116dd5491c843a
+
+== symbols/Sensor_Pressure.kicad_sym 63740b4b4412c9b66605e456e1a90ddc7a8fab67760db0e02176878ea7cffd87
+
+-- ICM-42688: 
+-- ICM-45686: 
+-- BMI088: symbols/Sensor_Motion.kicad_sym 
+-- BMI270: 
+-- BMP390: 
+-- BMP388: 
+-- BMP581: 
+-- DPS310: 
+-- DPS368: 
+-- ICP-20100: 
+-- ICP-201: 
+-- MS5611: symbols/Sensor_Pressure.kicad_sym 
+footprints/Sensor_Motion.pretty:
+Analog_LGA-16_3.25x3mm_P0.5mm_LayoutBorder3x5y.kicad_mod
+InvenSense_QFN-24_3x3mm_P0.4mm.kicad_mod
+InvenSense_QFN-24_3x3mm_P0.4mm_NoMask.kicad_mod
+InvenSense_QFN-24_4x4mm_P0.5mm.kicad_mod
+InvenSense_QFN-24_4x4mm_P0.5mm_NoMask.kicad_mod
+
+footprints/Sensor_Pressure.pretty:
+CFSensor_XGZP6859D_7x7mm.kicad_mod
+CFSensor_XGZP6897x.kicad_mod
+CFSensor_XGZP6899x.kicad_mod
+Freescale_98ARH99066A.kicad_mod
+Freescale_98ARH99089A.kicad_mod
+Honeywell_40PCxxxG1A.kicad_mod
+Honeywell_ABPDAN.kicad_mod
+TE_MS5525DSO-DBxxxyS.kicad_mod
+TE_MS5837-xxBA.kicad_mod
+AMS_LGA-10-1EP_2.7x4mm_P0.6mm.kicad_mod
+AMS_OLGA-8_2x3.1mm_P0.8mm.kicad_mod
+Bosch_LGA-14_3x2.5mm_P0.5mm.kicad_mod
+Bosch_LGA-16_4.5x3mm_P0.5mm_LayoutBorder7x1y_ClockwisePinNumbering.kicad_mod
+Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering.kicad_mod
+Bosch_LGA-8_2x2.5mm_P0.65mm_ClockwisePinNumbering.kicad_mod
+Bosch_LGA-8_3x3mm_P0.8mm_ClockwisePinNumbering.kicad_mod
+Infineon_PG-TSNP-6-10_0.7x1.1mm_0.7x1.1mm_P0.4mm.kicad_mod
+LGA-14_2x2mm_P0.35mm_LayoutBorder3x4y.kicad_mod
+LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y.kicad_mod
+LGA-14_3x5mm_P0.8mm_LayoutBorder1x6y.kicad_mod
+LGA-16_3x3mm_P0.5mm.kicad_mod
+LGA-16_3x3mm_P0.5mm_LayoutBorder3x5y.kicad_mod
+LGA-16_4x4mm_P0.65mm_LayoutBorder4x4y.kicad_mod
+LGA-8_3x5mm_P1.25mm.kicad_mod
+LGA-8_8x6.2mm_P1.27mm.kicad_mod
+LGA-8_8x6mm_P1.27mm.kicad_mod
+NXP_LGA-8_3x5mm_P1.25mm_H1.1mm.kicad_mod
+NXP_LGA-8_3x5mm_P1.25mm_H1.2mm.kicad_mod
+Nordic_nRF9151-LAxx_LGA-80-33EP_12.1x11.1mm_P0.5mm.kicad_mod
+Nordic_nRF9160-SIxx_LGA-102-59EP_16.0x10.5mm_P0.5mm.kicad_mod
+Rohm_MLGA010V020A_LGA-10_2x2mm_P0.45mm_LayoutBorder2x3y.kicad_mod
+ST_HLGA-10_2.5x2.5mm_P0.6mm_LayoutBorder3x2y.kicad_mod
+ST_HLGA-10_2x2mm_P0.5mm_LayoutBorder3x2y.kicad_mod
+== Sensor_Motion
+ADXL343 ADXL363 BMF055 BMI088 BMI160 BNO055 ICM-20602 ICM-20948 IIM-42652 IIS3DWB IPS2200 ISM330DHCX KX022-1020 KX122-1042 KX222-1054 KXTJ3-1057 L3GD20 LIS2DE12 LIS2DH LIS2HH12 LIS331HH LIS3DH LSM303C LSM303D LSM303DLHC LSM6DS3 LSM6DSL LSM6DSM LSM9DS1 MMA8653FCR1 MPU-6000 MPU-6050 MPU-9150 MPU-9250 SC7A20 
+== Sensor_Pressure
+40PC015G 40PC100G 40PC150G 40PC250G ABPxxxxxxxxx0 ABPxxxxxxxxxA ABPxxxxxxxxxS BMP280 ILPS28QSW LPS22DF LPS22HB LPS22HH LPS25HB MPL115A1 MPL3115A2 MPXA6115A MPXAZ6115A MPXH6115A MPXHZ6115A MS5525DSO MS5607-02BA MS5611-01BA MS5837-xxBA WSEN-PADS_2511020213301 XGZP6859D XGZP6897D XGZP6899D 
+-- BMI088
+Sensor_Motion.kicad_sym:	(symbol "BMI088"
+Sensor_Motion.kicad_sym-		(property "Footprint" "Package_LGA:Bosch_LGA-16_4.5x3mm_P0.5mm_LayoutBorder7x1y_ClockwisePinNumbering"
+Sensor_Motion.kicad_sym-		(property "Datasheet" "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi088-ds001.pdf"
+Sensor_Motion.kicad_sym:		(symbol "BMI088_1_1"
+-- MS5611
+Sensor_Pressure.kicad_sym:	(symbol "MS5611-01BA"
+Sensor_Pressure.kicad_sym-		(extends "MS5607-02BA")
+Sensor_Pressure.kicad_sym-		(property "Footprint" "Package_LGA:LGA-8_3x5mm_P1.25mm"
+Sensor_Pressure.kicad_sym-		(property "Datasheet" "https://www.te.com/commerce/DocumentDelivery/DDEController?Action=srchrtrv&DocNm=MS5611-01BA03&DocType=Data+Sheet&DocLang=English"

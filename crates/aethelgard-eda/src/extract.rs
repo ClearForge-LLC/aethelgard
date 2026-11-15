@@ -193,6 +193,12 @@ pub fn permille(v: u32) -> String {
     }
 }
 
+/// What the bound assumes of a connector's pins (`AET-WO-4300f` D8), stated
+/// beside [`conditions`] when a line carries a declared off-board budget, as
+/// [`SPI_CONDITION`] is, so every other verdict and the fabrication notes of a
+/// board without connectors are unchanged.
+pub const OFFBOARD: &str = "beyond the board, each connector pin on a line adds the capacitance its specification declares for the mated contact, the cable and the remote pins, as declared with its source (the line's `offboard`); nothing here measures it";
+
 /// What the bound assumes of the fabricated board and its parts, from the
 /// declared stack. At 2 layers the words are `AET-WO-1305`'s, so the
 /// reference's `extract` output and `FAB-NOTES.md` are unchanged (ruled D5):
@@ -510,13 +516,15 @@ fn invalid(e: &crate::schematic::EmitError) -> Refused {
     refused(e.kind(), e.to_string())
 }
 
-/// The four terms of one line's bound, femtofarads, each rounded up.
+/// The terms of one line's bound, femtofarads, each rounded up.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Terms {
     pub trace: u64,
     pub vias: u64,
     pub pads: u64,
     pub pins: u64,
+    /// The off-board capacitance its connectors declare (`AET-WO-4300f` D8).
+    pub offboard: u64,
 }
 
 /// One line's bound and what it was computed from.
@@ -544,6 +552,9 @@ pub struct LineBound {
     pub drivers: Vec<String>,
     /// The line's pull-ups, by reference: copper only.
     pub pull_ups: Vec<String>,
+    /// Each connector pad on the line and the off-board capacitance it
+    /// declares, as `<reference>.<pad>: <fF> fF (<source>)`.
+    pub offboard: Vec<String>,
 }
 
 /// The largest coordinate or size the reader accepts, so that every
@@ -873,6 +884,9 @@ struct Role {
     /// The part's pads on the line, by number.
     pads: BTreeSet<String>,
     load: Load,
+    /// A connector's declared off-board capacitance for each of its pads on
+    /// the line, as `(pad, femtofarads, source)`; empty for any other part.
+    offboard: Vec<(String, u64, String)>,
 }
 
 /// How a part's pads load a line, beyond their copper.
@@ -884,6 +898,35 @@ enum Load {
     PullUp,
     /// The driver of an SPI line, the MCU: copper only.
     Driver,
+    /// An off-board connector (`AET-WO-4300f` D8): copper, no `Ci`, and the
+    /// off-board capacitance its pins declare (`Role::offboard`).
+    Connector,
+}
+
+/// A connector's declared off-board capacitance for each of `pads`, the pads
+/// it has on `net`.
+fn offboard_of(
+    part: &crate::schematic::Part,
+    pads: &BTreeSet<String>,
+    net: &str,
+) -> Result<Vec<(String, u64, String)>, Refused> {
+    // belt-and-suspenders: `validate` refuses a connector pin on an I2C or
+    // SPI line without a budget (`ConnectorBudgetMissing`), so no test
+    // reaches the refusal below.
+    pads.iter()
+        .map(|p| {
+            let (ff, source) = part.offboard.get(p).cloned().ok_or_else(|| {
+                refused(
+                    "UnmodelledPart",
+                    format!(
+                        "{}.{p} is on `{net}` with no declared off-board capacitance",
+                        part.reference
+                    ),
+                )
+            })?;
+            Ok((p.clone(), ff, source))
+        })
+        .collect()
 }
 
 /// A device's pin on an SPI line the MCU drives: its part's cited maximum,
@@ -960,7 +1003,10 @@ pub fn lines(
                 }
                 let passive =
                     part.lib_id == crate::schematic::R || part.lib_id == crate::schematic::C;
-                let load = if passive {
+                let connector = crate::schematic::is_connector(part);
+                let load = if connector {
+                    Load::Connector
+                } else if passive {
                     Load::PullUp
                 } else {
                     Load::Pin(PIN_FF)
@@ -991,6 +1037,11 @@ pub fn lines(
                         ),
                     ));
                 }
+                let offboard = if connector {
+                    offboard_of(part, &pads, net)?
+                } else {
+                    Vec::new()
+                };
                 roles.insert(
                     part.reference.clone(),
                     Role {
@@ -998,6 +1049,7 @@ pub fn lines(
                         value: part.value.clone(),
                         pads,
                         load,
+                        offboard,
                     },
                 );
             }
@@ -1028,6 +1080,8 @@ pub fn lines(
                     Load::Driver
                 } else if let Some(d) = device {
                     device_pin(table, &part.reference, &d.part, net)?
+                } else if crate::schematic::is_connector(part) {
+                    Load::Connector
                 } else {
                     // belt-and-suspenders: today's generator puts only the
                     // MCU and the bus's devices on SCK and MOSI.
@@ -1039,6 +1093,11 @@ pub fn lines(
                         ),
                     ));
                 };
+                let offboard = if load == Load::Connector {
+                    offboard_of(part, &pads, net)?
+                } else {
+                    Vec::new()
+                };
                 roles.insert(
                     part.reference.clone(),
                     Role {
@@ -1046,6 +1105,7 @@ pub fn lines(
                         value: part.value.clone(),
                         pads,
                         load,
+                        offboard,
                     },
                 );
             }
@@ -1124,7 +1184,7 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
     }
     let mut terms = Terms::default();
     let (mut pins, mut pull_ups, mut pad_count) = (Vec::new(), Vec::new(), 0u64);
-    let mut drivers = Vec::new();
+    let (mut drivers, mut offboard) = (Vec::new(), Vec::new());
     for (reference, pads) in &on_board {
         let Some(role) = want.parts.get(*reference) else {
             return Err(refused(
@@ -1151,6 +1211,13 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
         if role.load == Load::PullUp {
             pull_ups.push((*reference).to_owned());
         }
+        for (pad, ff, source) in &role.offboard {
+            terms.offboard = terms
+                .offboard
+                .checked_add(*ff)
+                .ok_or_else(|| overflow(net))?;
+            offboard.push(format!("{reference}.{pad}: {ff} fF ({source})"));
+        }
         for pad in pads {
             let ff = pad_ff(&ph, pad.rect).ok_or_else(|| overflow(net))?;
             terms.pads = terms.pads.checked_add(ff).ok_or_else(|| overflow(net))?;
@@ -1161,7 +1228,7 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
                     terms.pins = terms.pins.checked_add(ff).ok_or_else(|| overflow(net))?;
                 }
                 Load::Driver => drivers.push(format!("{reference}.{}", pad.number)),
-                Load::PullUp => {}
+                Load::PullUp | Load::Connector => {}
             }
         }
     }
@@ -1195,10 +1262,16 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
     let via_count = routed.vias.iter().filter(|v| v.net == board_net).count() as u64;
     let via = via_ff(&ph).ok_or_else(|| overflow(net))?;
     terms.vias = via_count.checked_mul(via).ok_or_else(|| overflow(net))?;
-    let total = [terms.trace, terms.vias, terms.pads, terms.pins]
-        .into_iter()
-        .try_fold(0u64, u64::checked_add)
-        .ok_or_else(|| overflow(net))?;
+    let total = [
+        terms.trace,
+        terms.vias,
+        terms.pads,
+        terms.pins,
+        terms.offboard,
+    ]
+    .into_iter()
+    .try_fold(0u64, u64::checked_add)
+    .ok_or_else(|| overflow(net))?;
     Ok(LineBound {
         net: net.to_owned(),
         board_net,
@@ -1213,6 +1286,7 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
         spi_signal: want.spi_signal,
         drivers,
         pull_ups,
+        offboard,
     })
 }
 

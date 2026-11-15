@@ -65,13 +65,14 @@ fn dshot(label: &str, pin: Option<&str>) -> Value {
 
 fn spec_json(motors: Vec<Value>) -> Value {
     json!({
-        "schema_version": 4,
+        "schema_version": 5,
         "project_name": "t",
         "board": serde_json::from_str::<Value>(BOARD).unwrap(),
         "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0},
         "voltage_domains": [{"id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50}],
         "i2c_buses": [], "spi_buses": [], "i2c_devices": [], "spi_devices": [],
         "net_constraints": [],
+        "connectors": [],
         "motor_outputs": motors,
     })
 }

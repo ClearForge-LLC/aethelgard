@@ -23,7 +23,7 @@ fn valid() -> Specification {
     // The device lists are private to the crate (`AET-WO-1204`), so the
     // fixture is built from the JSON the type reads.
     let json = serde_json::json!({
-        "schema_version": 4,
+        "schema_version": 5,
         "project_name": "sentinel-01",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
         "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse_hz: 0 },
@@ -73,6 +73,7 @@ fn valid() -> Specification {
             bus: "FLASH".into(),
             cs: sig("FLASH_CS"),
         }],
+        "connectors": [],
         "net_constraints": [NetConstraint {
             net_name: "I2C_SDA".into(),
             max_capacitance_femtofarads: 400_000,
@@ -130,7 +131,7 @@ fn empty_lists_other_than_domains_are_valid() {
 
 #[test]
 fn refuses_unsupported_schema_version() {
-    for version in [0, 1, 2, 3, 5, u32::MAX] {
+    for version in [0, 1, 2, 3, 4, 6, u32::MAX] {
         let err = refusal(|s| s.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }

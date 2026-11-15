@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "project_name": "motors-pwm",
   "mcu": {
     "part": "STM32H753ZITx",
@@ -151,6 +151,7 @@
       "via_diameter_um": 600
     }
   },
+  "connectors": [],
   "motor_outputs": [
     {
       "label": "MOTOR1",

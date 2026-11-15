@@ -22,6 +22,9 @@ pub struct Notes<'a> {
     pub files: &'a [(String, &'a str)],
     /// The board the specification declares.
     pub stack: &'a Stack,
+    /// Whether its connectors declare off-board capacitance, which the
+    /// bound adds ([`crate::extract::OFFBOARD`]).
+    pub offboard: bool,
 }
 
 /// `nm` in millimetres, with no trailing zeros: 1_600_000 is `1.6`.
@@ -48,7 +51,11 @@ pub fn notes(n: &Notes<'_>) -> String {
     for (name, what) in n.files {
         files.push_str(&format!("- `{name}`: {what}\n"));
     }
-    let conditions: String = conditions(st).iter().map(|c| format!("- {c}\n")).collect();
+    let mut conditions = conditions(st);
+    if n.offboard {
+        conditions.push(crate::extract::OFFBOARD.to_owned());
+    }
+    let conditions: String = conditions.iter().map(|c| format!("- {c}\n")).collect();
     format!(
         "# Fabrication notes: {project}
 
@@ -184,6 +191,7 @@ mod tests {
             kicad_version: "10.0.7",
             files: &files,
             stack,
+            offboard: false,
         })
     }
 

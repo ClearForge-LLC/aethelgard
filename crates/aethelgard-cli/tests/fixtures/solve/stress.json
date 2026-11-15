@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "project_name": "stress",
   "mcu": {
     "part": "STM32H753ZITx",
@@ -261,6 +261,7 @@
       }
     }
   ],
+  "connectors": [],
   "net_constraints": [
     {
       "net_name": "I2C0_SDA_NET",
