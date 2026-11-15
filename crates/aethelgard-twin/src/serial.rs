@@ -136,6 +136,25 @@ pub fn fits(injection_ns: u64, virtual_ns: u64) -> bool {
         .is_some_and(|end| end <= virtual_ns)
 }
 
+/// One character's time on the wire in ns, rounded up: its start bit, data
+/// bits, parity bit if any and stop bits at the solved actual baud
+/// (`actual_millibaud`, thousandths). `None` for a baud of 0 or an overflow.
+pub fn char_ns(framing: &Framing, actual_millibaud: u64) -> Option<u64> {
+    let bits = 1 + u64::from(framing.word_bits()) + u64::from(framing.stop_bits);
+    let num = bits.checked_mul(1_000_000_000_000)?;
+    (actual_millibaud > 0).then(|| num.div_ceil(actual_millibaud))
+}
+
+/// A port's wire-time budget in ns (the PM's ruling on adversarial F5): its
+/// pattern, the frame, and one character more, since the firmware echoes
+/// byte by byte, each character [`char_ns`]. The twin renders no wire time
+/// (Renode queues the bytes): the budget is judged statically, before the
+/// boot, against the board's window.
+pub fn wire_ns(label: &str, framing: &Framing, actual_millibaud: u64) -> Option<u64> {
+    let chars = u64::try_from(pattern(label).len() + FRAME_LEN + 1).ok()?;
+    char_ns(framing, actual_millibaud)?.checked_mul(chars)
+}
+
 /// What one port's capture holds, read against its pattern and frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Capture {
@@ -1197,6 +1216,36 @@ mod tests {
             [Some((0, 0))]
         );
         assert!(tx_at_send(&tx, "usart1", 0x28, &[routed.to_vec()]).is_empty());
+    }
+
+    /// The PM's ruling on F5: one character at the solved actual baud, in ns
+    /// rounded up; the budget is the pattern, the frame and one character.
+    /// 115200 8N1 (BRR 556, 115 107.913 baud): 10 bits, 86 876 ns, 21
+    /// characters for `CONSOLE`, 1 824 396 ns. 9600 8N1 (BRR 6667, 9 599.520
+    /// baud): 1 041 719 ns, 21 876 099 ns. SBUS 100000 8E2: 12 bits, 120 000
+    /// ns.
+    #[test]
+    fn a_port_s_wire_time_is_its_characters_at_the_solved_baud() {
+        let f = |baud, data_bits, parity, stop_bits| Framing {
+            baud,
+            data_bits,
+            parity,
+            stop_bits,
+            inverted: false,
+        };
+        let console = f(115_200, 8, Parity::None, 1);
+        assert_eq!(char_ns(&console, 115_107_913), Some(86_876));
+        assert_eq!(wire_ns("CONSOLE", &console, 115_107_913), Some(1_824_396));
+        let slow = f(9_600, 8, Parity::None, 1);
+        assert_eq!(char_ns(&slow, 9_599_520), Some(1_041_719));
+        assert_eq!(wire_ns("CONSOLE", &slow, 9_599_520), Some(21_876_099));
+        assert_eq!(
+            char_ns(&f(100_000, 8, Parity::Even, 2), 100_000_000),
+            Some(120_000)
+        );
+        // Exact: 10 bits at 10 000 baud is 1 ms, not rounded up past it.
+        assert_eq!(char_ns(&slow, 10_000_000), Some(1_000_000));
+        assert_eq!(char_ns(&slow, 0), None);
     }
 
     #[test]

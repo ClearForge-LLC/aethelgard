@@ -1189,6 +1189,42 @@ fn serial_fits(injection_ns: u64, window_ns: u64, window: &str) -> Result<(), ru
     ))
 }
 
+/// `SerialWireTimePastWindow` (the PM's ruling on adversarial F5): each
+/// port's pattern, the frame and one echoed character, at its solved actual
+/// baud, from the injection at `injection_ns`, inside the board's window.
+/// The twin renders no wire time, so this is judged before the boot.
+fn serial_wire_fits(
+    serial: &[renode::Serial],
+    injection_ns: u64,
+    window_ns: u64,
+    window: &str,
+) -> Result<(), run::Stop> {
+    let Some((s, times, end)) = renode::wire_past_window(serial, injection_ns, window_ns) else {
+        return Ok(());
+    };
+    Err(run::Stop::refused(
+        "SerialWireTimePastWindow",
+        format!(
+            "serial port `{}` ({}, {}): {}, from the injection at {injection_ns} ns, past this board's {window} of {window_ns} ns (AET-WO-4300b)",
+            s.port.label,
+            s.port.peripheral,
+            aethelgard_twin::serial::describe(&s.port.framing),
+            match (times, end) {
+                (Some((char_ns, wire)), Some(end)) => format!(
+                    "its pattern ({} characters), the frame ({}) and one echoed character take {wire} ns on the wire at {} mbaud ({char_ns} ns a character), ending at {end} ns",
+                    s.pattern.len(),
+                    aethelgard_twin::serial::FRAME_LEN,
+                    s.silicon.actual_millibaud
+                ),
+                _ => format!(
+                    "its wire time at {} mbaud cannot be computed",
+                    s.silicon.actual_millibaud
+                ),
+            }
+        ),
+    ))
+}
+
 /// The boot's capture directory, made fresh inside the tool's scratch before
 /// any tool runs there. As root, it is the one directory there the tool uid
 /// may add to (`run::add_only`): Renode creates each port's file in it, and
@@ -1385,6 +1421,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     ) {
         let (window_ns, window) = aethelgard_twin::boot::window(&r.topology);
         serial_fits(i, window_ns, window)?;
+        serial_wire_fits(&r.serial, i, window_ns, window)?;
     }
     if let (Some(r), Some((pass, booted))) = (&ready, &analog) {
         booted_is_emitted(&booted.path, r, pass)?;

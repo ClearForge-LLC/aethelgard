@@ -1027,6 +1027,30 @@ fn serial_who(s: &Serial) -> String {
     )
 }
 
+/// A port whose wire-time budget does not fit: the port, its character's
+/// and its budget's ns, and where the budget ends (`None` where its baud
+/// gives no time).
+pub type WirePast<'a> = (&'a Serial, Option<(u64, u64)>, Option<u64>);
+
+/// The first port, in the specification's order, whose wire-time budget
+/// ([`aethelgard_twin::serial::wire_ns`]) does not fit between the
+/// injection at `injection_ns` and the board's window `window_ns` (the PM's
+/// ruling on adversarial F5): the port, its character's and its budget's ns,
+/// and where the budget ends. A port whose baud gives no time is the same.
+pub fn wire_past_window(
+    serial: &[Serial],
+    injection_ns: u64,
+    window_ns: u64,
+) -> Option<WirePast<'_>> {
+    serial.iter().find_map(|s| {
+        let millibaud = s.silicon.actual_millibaud;
+        let char_ns = aethelgard_twin::serial::char_ns(&s.port.framing, millibaud);
+        let wire = aethelgard_twin::serial::wire_ns(&s.port.label, &s.port.framing, millibaud);
+        let end = wire.and_then(|w| injection_ns.checked_add(w));
+        (!end.is_some_and(|e| e <= window_ns)).then_some((s, char_ns.zip(wire), end))
+    })
+}
+
 /// The silicon check's findings for every serial port (`4300` D8): decided
 /// from the topology alone, so a boot killed at a bound reports them too.
 pub fn static_serial_findings(serial: &[Serial]) -> Vec<Finding> {
@@ -3034,6 +3058,46 @@ mod tests {
         assert!(!unjudged_access_line(
             &CONSOLE_BOOT[3].replace("Write", "Read")
         ));
+    }
+
+    /// The PM's ruling on adversarial F5, from the topology alone: the
+    /// console's pattern (12 characters), the frame (8) and one echoed
+    /// character, from the injection one quantum in (100 000 ns), inside the
+    /// board's window. At 115 200 8N1 (BRR 556): 21 x 86 876 = 1 824 396 ns,
+    /// ending at 1 924 396 ns, inside `DSHOT_WINDOW_NS` (2 000 000). At 9600
+    /// 8N1 (BRR 6667, 9 599.520 baud): 21 x 1 041 719 = 21 876 099 ns,
+    /// ending at 21 976 099 ns: past the DShot window, inside
+    /// `MAX_VIRTUAL_NS` (100 000 000).
+    #[test]
+    fn a_port_s_wire_time_must_fit_the_board_s_window() {
+        let dshot = aethelgard_twin::boot::DSHOT_WINDOW_NS;
+        let full = aethelgard_twin::boot::MAX_VIRTUAL_NS;
+        let fast = console();
+        assert!(wire_past_window(&fast, 100_000, dshot).is_none());
+        // At its edge: a budget ending at the window's last ns fits.
+        assert!(wire_past_window(&fast, 175_604, dshot).is_none());
+        let late = wire_past_window(&fast, 175_605, dshot).unwrap();
+        assert_eq!(
+            (late.1, late.2),
+            (Some((86_876, 1_824_396)), Some(2_000_001))
+        );
+        let slow_json = CONSOLE_TOPOLOGY
+            .replace("\"baud\":115200", "\"baud\":9600")
+            .replace(
+                "\"brr\":556,\"actual_millibaud\":115107913,\"error_ppm\":-799",
+                "\"brr\":6667,\"actual_millibaud\":9599520,\"error_ppm\":-50",
+            );
+        let slow_topology: aethelgard_ir::SolvedTopology =
+            serde_json::from_str(&slow_json).unwrap();
+        let slow = serials(&slow_topology, &[0x11; 32]).unwrap();
+        assert_eq!(slow[0].silicon.actual_millibaud, 9_599_520);
+        let (port, times, end) = wire_past_window(&slow, 100_000, dshot).unwrap();
+        assert_eq!(port.port.label, "CONSOLE");
+        assert_eq!(
+            (times, end),
+            (Some((1_041_719, 21_876_099)), Some(21_976_099))
+        );
+        assert!(wire_past_window(&slow, 100_000, full).is_none());
     }
 
     fn bor3() -> Vec<power::Reset> {

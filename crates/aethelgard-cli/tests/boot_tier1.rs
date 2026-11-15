@@ -2005,3 +2005,56 @@ cap=$(printf '%s' "$7" | /bin/sed -n 's/.*CreateFileBackend @\([^ ]*\) true.*/\1
     assert_eq!(console(&v)["patterns"], 1, "{v}");
     assert_eq!(console(&v)["rx_at_injection"], Value::Null, "{v}");
 }
+
+/// The PM's ruling on adversarial F5: a port's pattern, the frame and one
+/// echoed character must fit between the injection and the board's window,
+/// judged before the boot. The DShot600 fixture with a 9600 8N1 console
+/// (`serial-dshot-9600.json`: BRR 6667, 9 599.520 baud, 1 041 719 ns a
+/// character, 21 characters, 21 876 099 ns) ends at 21 976 099 ns from the
+/// injection at 100 000 ns, past `DSHOT_WINDOW_NS`: refused by name, and the
+/// stub (which exits 99 on any boot) is never asked for one.
+#[test]
+fn a_console_too_slow_for_its_board_s_window_is_refused_before_the_boot() {
+    let tb = toolbox("");
+    let input = Dir::new("in");
+    let fw = input.write("fw.elf", &elf());
+    let spec = root().join("crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json");
+    // The platform the twin emits for it (`generate` starts no process).
+    let generated = input.0.join("gen");
+    let made = run(
+        &tb.0,
+        &[
+            OsStr::new("generate"),
+            OsStr::new("--spec"),
+            spec.as_os_str(),
+            OsStr::new("--out"),
+            generated.as_os_str(),
+        ],
+    );
+    assert_eq!(made.status.code(), Some(0), "{made:?}");
+    let platform = generated.join("board/motors-dshot600-console.repl");
+    let out = run(
+        &tb.0,
+        &[
+            OsStr::new("simulate"),
+            OsStr::new("--platform"),
+            platform.as_os_str(),
+            OsStr::new("--firmware"),
+            fw.as_os_str(),
+            OsStr::new("--spec"),
+            spec.as_os_str(),
+            OsStr::new("--for"),
+            OsStr::new("2ms"),
+        ],
+    );
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "SerialWireTimePastWindow", "{v}");
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(
+        m.contains("serial port `CONSOLE` (USART1, 9600 8N1)")
+            && m.contains("take 21876099 ns on the wire at 9599520 mbaud (1041719 ns a character), ending at 21976099 ns")
+            && m.contains("DSHOT_WINDOW_NS of 2000000 ns"),
+        "{m}"
+    );
+}
