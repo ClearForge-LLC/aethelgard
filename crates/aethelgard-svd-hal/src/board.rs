@@ -5075,13 +5075,14 @@ mod tests {
         );
     }
 
-    /// The PWM motor fixture's plan and facts.
+    /// The PWM motor fixture's plan and facts, from its solved topology as
+    /// `solve` writes it (`tests/ui/motors-pwm/topology.json`, held equal to
+    /// `solve`'s output by `tests/motor_outputs.rs`): a generator reads a
+    /// topology, never a specification (`RUL-16`).
     fn motor_plan() -> (Plan, Facts) {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../aethelgard-cli/tests/fixtures/motors-pwm.json");
-        let spec: aethelgard_ir::Specification =
-            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-        let solved = aethelgard_ir::solve(&spec, &table(), &"0".repeat(64)).unwrap();
+            .join("tests/ui/motors-pwm/topology.json");
+        let solved: SolvedTopology = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         let plan = Plan::new("b", &solved, &table()).unwrap();
         let facts = Facts::new(&plan, &cmsis::register_facts().unwrap()).unwrap();
         (plan, facts)

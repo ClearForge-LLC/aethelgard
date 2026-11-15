@@ -274,6 +274,25 @@ fn the_ui_board_is_the_generated_one() {
     );
 }
 
+/// The unit tests of the schedule proof's split read the PWM fixture's
+/// solved topology from this file; it must be exactly what `solve` gives.
+/// `AETHELGARD_BLESS=1` rewrites it.
+#[test]
+fn the_ui_topology_is_the_solved_one() {
+    let path: PathBuf =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/ui/motors-pwm/topology.json");
+    let (solved, _) = fixture("motors-pwm");
+    let text = serde_json::to_string(&solved).unwrap() + "\n";
+    if std::env::var_os("AETHELGARD_BLESS").is_some() {
+        fs::write(&path, &text).unwrap();
+    }
+    assert!(
+        fs::read_to_string(&path).unwrap() == text,
+        "{} differs",
+        path.display()
+    );
+}
+
 /// Each `#[kani::proof]` harness of a generated `proofs.rs`, by name.
 fn harnesses(proofs: &str) -> Vec<&str> {
     let mut out = Vec::new();
