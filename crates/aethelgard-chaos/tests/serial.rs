@@ -541,10 +541,26 @@ fn a_port_s_tags_fail_when_missing_unexpected_or_unread() {
             missing: vec!["CR1.M0".into()],
             unexpected: vec![],
         }),
+        // Every form the access log's judge writes (adversarial F1-F3),
+        // through the archive's text rule, at the most it carries.
         Some(SerialTags {
             writes: 4,
-            missing: vec![],
-            unexpected: vec!["SWAP (0x1) at 0x4".into()],
+            missing: vec!["CR2.RXINV".into(), "CR2.TXINV".into()],
+            unexpected: [
+                "CR1 0xFFFFFFFF at UE, not 0xFFFFFFFF",
+                "the last boot never set CR1.UE",
+                "WriteUInt16 to 0xFFFFFFFF",
+                "WriteByte to 0x1",
+                "TDR before UE",
+                "0xFFFFFFFF to 0x2C",
+                "CR2 0x32000 after UE",
+                "CR1.M1 set at UE",
+            ]
+            .iter()
+            .cycle()
+            .take(16)
+            .map(|x| (*x).to_owned())
+            .collect(),
         }),
     ] {
         let r = edit(|r| {
@@ -552,12 +568,20 @@ fn a_port_s_tags_fail_when_missing_unexpected_or_unread() {
                 *t = tags.clone();
             }
         });
+        assert_eq!(r[CHECK_SBUS].check(), Ok(()), "{tags:?}");
         assert!(
             ok(&judged(r.clone(), &[(SERIAL_TAG_FINDING, 1)])),
             "{tags:?}"
         );
         assert!(check_run(&judged(r, &[])).is_err(), "{tags:?}");
     }
+    // Past the most kind 28 carries, the record is malformed.
+    let r = edit(|r| {
+        if let Record::SerialFramingCheck { tags: Some(t), .. } = &mut r[CHECK_SBUS] {
+            t.unexpected = vec!["0x1 to 0x2C".into(); 17];
+        }
+    });
+    assert!(r[CHECK_SBUS].check().is_err());
 }
 
 /// `BRR` 557 for 115200 on 64 MHz: inside the tolerance, but not the
