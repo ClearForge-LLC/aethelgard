@@ -145,3 +145,62 @@ fn a_crossing_on_a_bus_of_two_devices_is_not_drawable() {
         other => panic!("{other:?}"),
     }
 }
+
+/// D12: the rail an LDO's `power_out` pin drives carries no `PWR_FLAG` (it
+/// would be a second driver), and every other rail keeps its flag.
+#[test]
+fn only_a_rail_no_power_out_pin_drives_carries_a_flag() {
+    let (spec, solved, table) = fixture();
+    let e = schematic::emit(&spec, &solved, &table).unwrap();
+    let flags = e.schematic.matches("(lib_id \"power:PWR_FLAG\")").count();
+    // GND, VBAT, VDD_3V3 and VDD_5V; not VDD_1V8, which U12's OUT drives.
+    assert_eq!(flags, 4, "{flags} flags");
+}
+
+/// A buck's switch node is laid at its output's class; nothing else joins
+/// a class it did not declare.
+#[test]
+fn a_bucks_sw_net_takes_its_outputs_class_and_an_ldo_adds_nothing() {
+    let mut v = common::power::power_tree();
+    v["net_classes"][0]["nets"] = serde_json::json!(["VBAT", "VDD_5V", "VDD_1V8"]);
+    let spec: Specification = serde_json::from_value(v).unwrap();
+    spec.validate().unwrap();
+    let stack = Stack::of(&spec);
+    let power = stack.classes.iter().find(|c| c.name == "POWER").unwrap();
+    assert_eq!(power.nets, ["VBAT", "VDD_5V", "VDD_1V8", "/U10_SW"]);
+    let mcu = stack
+        .classes
+        .iter()
+        .find(|c| c.name == "SUPPLY_MCU")
+        .unwrap();
+    assert_eq!(mcu.nets, ["VDD_3V3", "/U11_SW"]);
+}
+
+/// `extract` (no tool) bounds the fixture's board: its through-hole pads,
+/// thermal vias and arc-drawn silkscreen are read, and every line passes.
+#[test]
+fn extract_bounds_the_power_board() {
+    let (spec, solved, table) = fixture();
+    let e = schematic::emit(&spec, &solved, &table).unwrap();
+    let dir = std::env::temp_dir().join(format!("aet-4300d2-extract-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let board = dir.join("b.kicad_pcb");
+    std::fs::write(&board, &e.board).unwrap();
+    let spec_path = dir.join("s.json");
+    std::fs::write(
+        &spec_path,
+        serde_json::to_vec(&common::power::power_tree()).unwrap(),
+    )
+    .unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["extract", "--board"])
+        .arg(&board)
+        .arg("--spec")
+        .arg(&spec_path)
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(0), "{v}");
+    assert_eq!(v["verdict"], "pass", "{v}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
