@@ -455,3 +455,29 @@ On the host, under `systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax
 - `cargo test --workspace`: exit 0, 77 `test result: ok`, no failure.
 
 This branch changes no crate. Tier 2 is CI's (`roadmap.md` §6). The spike's Renode runs are the third session's, under `RULE3.md`.
+
+---
+
+# Build (WO §2, as ruled on PR #131, comment `6888973755`)
+
+Builder: Claude Code (Opus 5.5) in `~/aethelgard-4210`, branch `wo/aet-4210-build`, cut from `main` at `50d7a6f`. The work order was read from `origin/claude/argon-repo-docs-synthesis-rjrb0d` (docs PR #136); it is not committed here. Labels as above: **measured**, **read**, **inferred**.
+
+## Build predictions — written before any container run
+
+Committed alone, before any Renode, Kani or tier-2 container of this build ran. What they rest on:
+- the spike's measured lines (`spike/4210/out/s2.jsonl`);
+- Renode at `066a7f13`, read at the lines cited in the code;
+- the code as committed at this commit.
+
+| # | Prediction | Rests on |
+|---|---|---|
+| PB1 | The 1.8 V fixture (`imu-baro-1v8.json`: U2 BME280 and U6 ICP-10111 on I2C1; U5 and U7 ICM-20948 on SPI1) boots and passes with the generated firmware. 10 records in order: U2 identity; U6 identity, configure, data; U5 the same; U7 the same. U6's data reads `0x6666` (25 °C). U5's and U7's data read `0x4000` (0 g, 0 g, 1 g at 16,384 LSB/g). | S2 measured; `ICP_101xx.cs` L372-375 (truncating, 26214.4 → 26214) |
+| PB2 | Each IMU's steps lie in its own chip-select windows, step k in window k. Lines per step: identity 4, configure 4 (3 Noisy plus the `CLKSEL` warning, between `Received byte 0x6` and `Received byte 0x1`), data 14. Each IMU's idle line, logged on its own edges and on the other's (F11), is skipped. No `unrouted` line. | P1.1-P1.6, P3.1 measured |
+| PB3 | At `Debug`, the ICP logs exactly 2, 1 and 2 lines for its steps. The data line is `Reading data with CRC: [0x66, 0x66], current command: 0x7866 (UltraLowNoiseTemperaturePressure), requested: 2 bytes`. No ICP `[NOISY]` line prints. | `ICP_101xx.cs` L61, L75; `logLevel 0` |
+| PB4 | After the run, `SysTick.CSR` reads `0x00000004` (`CLKSOURCE` alone, `NVIC.cs` L1040) and `NVIC.ISER0`-`ISER4` read `0x00000000`. So the judged bits (`0x00010003`) are 0. | `NVIC.cs` L1023-1046, L719-722 |
+| PB5 | The stimulus can be set in the emitted platform: `DefaultAccelerationZ: 1` under the ICM's `.repl` entry, and `DefaultTemperature: 25` under the ICP's, both load. The monitor then reads `1` and `25` back. | Renode's `.repl` sets a writable property by name (inferred) |
+| PB6 | Seeded IMU fault (U5's wake transfer deleted, its record forged OK): exit 1. The findings are exactly `spi_transaction_unwitnessed`, twice, both for U5: its configure step, which holds the data read's lines (window 1), and its data step, which holds none. U7 passes. | the window rule, `renode.rs` `attribute` |
+| PB7 | Seeded barometer fault (U6's data command `0x48A3`, pressure first, not `0x7866`): exit 1 with `i2c_transaction_unwitnessed` for U6's data step (command and name differ). The 2 bytes read are pressure, not `0x6666`, so also `i2c_identity_mismatch` naming the data step. | `ICP_101xx.cs` command table |
+| PB8 | Sentinel-01's tier-2 verdicts stay pass. The flash's idle warnings are each directly after `Finisihing transmission on device 0x0`, so they are skipped. Every expected witness is unchanged. | P1.6, `SPIMultiplexer.cs` L107 |
+| PB9 | The existing SysTick mutant (`a_firmware_parked_in_its_fault_handler…`) now also gives `register_mismatch` on `SysTick.CSR` (`ENABLE` and `TICKINT` set). A firmware that only sets `ENABLE` (no tick interrupt) after the boot word, or enables one NVIC line, passed before this build and now fails with `register_mismatch` naming the register. | D6; `NVIC.cs` |
+| PB10 | The fixture's Kani harness proves; its SPI transfer proof runs at unwind 8 (wl ≤ 2, rl ≤ 6) and takes under 400 s in the image. Each boot of the fixture takes under 10 s. | the reference's 183 s (`ci/test-weights.tsv`) |

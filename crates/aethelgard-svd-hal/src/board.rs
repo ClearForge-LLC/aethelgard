@@ -2623,6 +2623,27 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
 /// value, and `CSTART` may or may not have cleared itself.
 fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
     for (name, selects) in &plan.selects {
+        // The proof's frames: up to two bytes out and three in (an identity
+        // read is one and three), or as many as any step of a script on this
+        // bus writes and reads (`AET-WO-4210`: the IMU's data read is one and
+        // six), so the proof covers every transfer the firmware makes.
+        let steps: Vec<aethelgard_ir::parts::Step> = selects
+            .iter()
+            .filter_map(|s| aethelgard_ir::parts::steps(&s.part).ok().flatten())
+            .flatten()
+            .collect();
+        let wmax = steps.iter().map(|s| s.write.len()).fold(2, usize::max);
+        let rmax = steps.iter().map(|s| usize::from(s.width)).fold(3, usize::max);
+        let scripted: Vec<(usize, usize, &'static str)> = {
+            let mut v: Vec<(usize, usize, &'static str)> = steps
+                .iter()
+                .filter(|s| s.kind != aethelgard_ir::parts::StepKind::Identity)
+                .map(|s| (s.write.len(), usize::from(s.width), s.kind.name()))
+                .collect();
+            v.sort_unstable();
+            v.dedup();
+            v
+        };
         let pf = &facts.peripherals[name];
         let Some(s) = &pf.spi else { continue };
         let p = &plan.peripherals[name];
@@ -2652,7 +2673,7 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
              /// disabled, 7 once deselected.\n\
              struct {t}Spy {{\n    \
                  device: {t}Device,\n    \
-                 out: [u8; 2],\n    \
+                 out: [u8; {wmax}],\n    \
                  wl: usize,\n    \
                  stage: u8,\n    \
                  cr1: u32,\n    \
@@ -2830,23 +2851,48 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
         let spy = format!(
             "{t}Spy {{ device, out, wl, stage: 0, cr1, tsize: 0, sr_reads: 0, rxp: false, sent: 0, received: 0, touched: false }}"
         );
+        let rest = "and any answers, with each wait bounded at two reads\n\
+             /// of `SR`: selects that device before its first frame and deselects it after\n\
+             /// the peripheral is disabled, also after a wait that expired; reads `RXDR`\n\
+             /// only after `RXP`; and returns `Ok` only when every frame moved.\n";
+        let doc = if (wmax, rmax) == (2, 3) {
+            format!(
+                "/// A transfer of any device, up to two bytes out and three in (an identity\n\
+                 /// read is one and three) {rest}"
+            )
+        } else {
+            format!(
+                "/// A transfer of any device, up to {wmax} bytes out and {rmax} in (an identity\n\
+                 /// read, or the largest step of a script on this bus, `AET-WO-4210`)\n\
+                 /// {rest}"
+            )
+        };
+        let unwind = wmax + rmax;
+        let most = match unwind {
+            5 => "five".to_owned(),
+            n => n.to_string(),
+        };
+        let covers: String = scripted
+            .iter()
+            .map(|(a, b, step)| {
+                format!(
+                    "            kani::cover!(wl == {a} && rl == {b}, \"{t} made a {step} step's frames\");\n"
+                )
+            })
+            .collect();
         let _ = writeln!(
             w,
             "\n\
-             /// A transfer of any device, up to two bytes out and three in (an identity\n\
-             /// read is one and three) and any answers, with each wait bounded at two reads\n\
-             /// of `SR`: selects that device before its first frame and deselects it after\n\
-             /// the peripheral is disabled, also after a wait that expired; reads `RXDR`\n\
-             /// only after `RXP`; and returns `Ok` only when every frame moved.\n\
+             {doc}\
              #[kani::proof]\n\
-             #[kani::unwind(5)]\n\
+             #[kani::unwind({unwind})]\n\
              fn {m}_transfer_is_bounded_and_ordered() {{\n    \
                  let mut img = Image {{\n\
              {setup}    \
                  let (wl, rl): (usize, usize) = (kani::any(), kani::any());\n    \
-                 kani::assume(wl <= 2 && rl <= 3);\n    \
-                 let out: [u8; 2] = kani::any();\n    \
-                 let mut back = [0u8; 3];\n    \
+                 kani::assume(wl <= {wmax} && rl <= {rmax});\n    \
+                 let out: [u8; {wmax}] = kani::any();\n    \
+                 let mut back = [0u8; {rmax}];\n    \
                  let mut spy = {spy};\n    \
                  let spins = 2;\n    \
                  let result = bus.transfer_within(&mut spy, device, &out[..wl], &mut back[..rl], spins);\n    \
@@ -2867,13 +2913,13 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
                      Ok(n) => {{\n            \
                          kani::assert(n == rl && spy.sent == frames && spy.received == frames, \"Ok without every frame moved\");\n            \
                          kani::cover!(wl > 0 && rl > 0, \"{t} wrote, then read\");\n            \
-                         kani::cover!(wl == 1 && rl == 3, \"{t} made an identity read's frames\");\n        \
+                         kani::cover!(wl == 1 && rl == 3, \"{t} made an identity read's frames\");\n{covers}        \
                      }}\n        \
                      Err(SpiError::Rxp) => {{\n            \
                          kani::assert(spy.received < frames, \"Rxp after every frame moved\");\n            \
                          kani::cover!(true, \"{t} timed out waiting for RXP\");\n        \
                      }}\n        \
-                     Err(SpiError::Length) => kani::assert(false, \"a transfer of at most five frames was refused\"),\n    \
+                     Err(SpiError::Length) => kani::assert(false, \"a transfer of at most {most} frames was refused\"),\n    \
                  }}\n\
              }}\n\
              \n\
@@ -2884,7 +2930,7 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
              fn {m}_transfer_refuses_too_many_frames() {{\n    \
                  let mut img = Image {{\n\
              {setup}    \
-                 let (wl, out) = (1, [0u8; 2]);\n    \
+                 let (wl, out) = (1, [0u8; {wmax}]);\n    \
                  let mut back = [0u8; SPI_MAX_FRAMES as usize];\n    \
                  let mut spy = {spy};\n    \
                  let result = bus.transfer(&mut spy, device, &out[..wl], &mut back);\n    \

@@ -198,7 +198,7 @@ fn the_reference_image_is_the_one_the_spike_read_back() {
             reg("RCC.APB2ENR", 0x5802_44F0, u32::MAX, 0x0000_1000),
             // `AET-WO-2204` A2 (ruled D6): no interrupt armed, one ISER per
             // 32 lines up to the header's `WAKEUP_PIN_IRQn` = 149.
-            reg("SysTick.CSR", 0xE000_E010, u32::MAX, 0),
+            reg("SysTick.CSR", 0xE000_E010, 0x0001_0003, 0),
             reg("NVIC.ISER0", 0xE000_E100, u32::MAX, 0),
             reg("NVIC.ISER1", 0xE000_E104, u32::MAX, 0),
             reg("NVIC.ISER2", 0xE000_E108, u32::MAX, 0),

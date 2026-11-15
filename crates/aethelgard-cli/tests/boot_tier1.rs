@@ -92,8 +92,8 @@ fn elf() -> Vec<u8> {
 const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n  \u{2502}   \u{2514}\u{2500}\u{2500} spi1mux (SPIMultiplexer)\n  \u{2502}       \u{2514}\u{2500}\u{2500} u4 (GenericSpiFlash)\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
 
 /// The reference topology's seven registers as a correct boot leaves them,
-/// then SysTick's control word and the five NVIC set-enable words, all 0: no
-/// interrupt armed (`AET-WO-2204` A2, ruled D6 on PR #131).
+/// then SysTick's control word, unarmed, and the five NVIC set-enable words,
+/// 0: no interrupt armed (`AET-WO-2204` A2, ruled D6 on PR #131).
 const GOOD_REGISTERS: [&str; 13] = [
     "0x0000A801",
     "0x55500000",
@@ -102,7 +102,8 @@ const GOOD_REGISTERS: [&str; 13] = [
     "0x00000003",
     "0x00200000",
     "0x00001000",
-    "0x00000000",
+    // `CLKSOURCE` reads 1 in Renode whatever is written (`NVIC.cs` L1040).
+    "0x00000004",
     "0x00000000",
     "0x00000000",
     "0x00000000",
@@ -474,6 +475,44 @@ fn a_register_off_the_solved_image_fails() {
     // Bits outside a pin field's mask do not count.
     let mut regs = GOOD_REGISTERS;
     regs[0] = "0x0000A8FD";
+    let (code, v) = boot(&with(
+        "",
+        "0x2100B007",
+        "0x00000000000F4240",
+        "0x00000064",
+        &regs,
+    ));
+    assert_eq!(code, Some(0), "{v}");
+}
+
+/// `AET-WO-2204` A2, ruled D6 on PR #131: "parked" claims no interrupt is
+/// armed. SysTick armed, or counted to 0, or any NVIC line enabled, after the
+/// boot word, fails by name; `CLKSOURCE`, which Renode reads as 1 whatever is
+/// written, does not count (`AET-WO-4210`).
+#[test]
+fn an_armed_interrupt_after_the_boot_word_fails() {
+    for (at, value, name) in [
+        (7, "0x00000007", "SysTick.CSR"),
+        (7, "0x00010004", "SysTick.CSR"),
+        (8, "0x00000001", "NVIC.ISER0"),
+        (12, "0x00200000", "NVIC.ISER4"),
+    ] {
+        let mut regs = GOOD_REGISTERS;
+        regs[at] = value;
+        let (code, v) = boot(&with(
+            "",
+            "0x2100B007",
+            "0x00000000000F4240",
+            "0x00000064",
+            &regs,
+        ));
+        assert_eq!(code, Some(1), "{v}");
+        assert_eq!(kinds(&v), ["register_mismatch"], "{v}");
+        let m = v["findings"][0]["message"].as_str().unwrap();
+        assert!(m.starts_with(name), "{m}");
+    }
+    let mut regs = GOOD_REGISTERS;
+    regs[7] = "0x00000000";
     let (code, v) = boot(&with(
         "",
         "0x2100B007",

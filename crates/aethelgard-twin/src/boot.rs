@@ -158,6 +158,11 @@ pub const STATUS_RXP: u32 = 0x2202_0005;
 /// (`AET-WO-2204` A2, ruled D6 on PR #131; `RUL-19` (5)).
 pub const SYST_CSR: u32 = 0xE000_E010;
 pub const NVIC_ISER: u32 = 0xE000_E100;
+/// The `SYST_CSR` bits judged: `ENABLE`, `TICKINT` and `COUNTFLAG`. Renode's
+/// `CLKSOURCE` reads 1 whatever the firmware writes (`NVIC.cs` L1040, read at
+/// `066a7f13`), so the whole word is never 0 in the twin; these three say no
+/// SysTick is armed and none has counted to 0 (`AET-WO-4210` F-A2).
+pub const SYST_CSR_ARMED: u32 = 0x0001_0003;
 
 /// The Cortex-M7's Interrupt Control and State Register, and its `VECTACTIVE`
 /// field: the exception the core is handling, 0 in thread mode (ARMv7-M
@@ -521,7 +526,7 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
     // No interrupt armed (`AET-WO-2204` A2, ruled D6): SysTick's control
     // word, and one set-enable word per 32 of the part's interrupt lines
     // (the header's highest `IRQn`).
-    field(SYST_CSR, "SysTick.CSR".to_owned(), u32::MAX, 0);
+    field(SYST_CSR, "SysTick.CSR".to_owned(), SYST_CSR_ARMED, 0);
     for i in 0..=f.irq_max()? / 32 {
         field(NVIC_ISER + 4 * i, format!("NVIC.ISER{i}"), u32::MAX, 0);
     }
