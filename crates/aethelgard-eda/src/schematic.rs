@@ -406,11 +406,23 @@ pub fn emit(
     solved: &SolvedTopology,
     table: &PinTable,
 ) -> Result<Emission, EmitError> {
+    emit_moved(spec, solved, table, &[])
+}
+
+/// [`emit`], with each of `moves` placed at its own origin and rotation
+/// instead of by the placer (`AET-WO-1308` §1.5: a part on any board edge).
+pub fn emit_moved(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+    moves: &[crate::pcb::Move],
+) -> Result<Emission, EmitError> {
     let (parts, rails) = design(spec, solved, table)?;
+    let stack = crate::stack::Stack::of(spec);
     Ok(Emission {
         schematic: write_sheet(&spec.project_name, &parts, &rails)?,
         bom: crate::bom::write(&parts.iter().map(BomRow::from).collect::<Vec<_>>()),
-        board: crate::pcb::write(&spec.project_name, &parts, &crate::stack::Stack::of(spec))?,
+        board: crate::pcb::write_moved(&spec.project_name, &parts, &stack, moves)?,
     })
 }
 

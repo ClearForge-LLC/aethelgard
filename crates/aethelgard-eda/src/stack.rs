@@ -40,6 +40,39 @@ pub struct Stack {
     pub permittivity_source: String,
     pub clearance_nm: i64,
     pub width_nm: i64,
+    /// The declared net classes and coupled pairs (`AET-WO-1308`), each net
+    /// by the board's name for it. Empty for a specification that declares
+    /// none, whose board is then today's.
+    pub classes: Vec<Class>,
+    pub pairs: Vec<Pair>,
+}
+
+/// The copper one net is laid with: its track width and its via.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Rule {
+    pub width_nm: i64,
+    pub via_nm: i64,
+    pub drill_nm: i64,
+}
+
+/// A declared net class: its nets' rule.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Class {
+    pub name: String,
+    pub rule: Rule,
+    /// Whether the class declares its via; otherwise it is the board's.
+    pub via_declared: bool,
+    pub nets: Vec<String>,
+}
+
+/// A declared coupled pair: its positive and negative nets, the gap between
+/// their copper and their width. Its nets' via is the board's.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Pair {
+    pub name: String,
+    pub nets: [String; 2],
+    pub gap_nm: i64,
+    pub width_nm: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -92,7 +125,72 @@ impl Stack {
             permittivity_source: s.relative_permittivity_max_permille.source.clone(),
             clearance_nm: nm(b.rules.clearance_um),
             width_nm: nm(b.rules.track_width_um),
+            classes: spec
+                .net_classes
+                .iter()
+                .map(|c| Class {
+                    name: c.name.clone(),
+                    rule: Rule {
+                        width_nm: nm(c.track_width_um),
+                        via_nm: c
+                            .via
+                            .as_ref()
+                            .map_or(crate::route::VIA_NM, |v| nm(v.diameter_um)),
+                        drill_nm: c
+                            .via
+                            .as_ref()
+                            .map_or(crate::route::DRILL_NM, |v| nm(v.drill_um)),
+                    },
+                    via_declared: c.via.is_some(),
+                    nets: c.nets.iter().map(|n| board_net(spec, n)).collect(),
+                })
+                .collect(),
+            pairs: spec
+                .diff_pairs
+                .iter()
+                .map(|p| Pair {
+                    name: p.name.clone(),
+                    nets: [board_net(spec, &p.nets[0]), board_net(spec, &p.nets[1])],
+                    gap_nm: nm(p.gap_um),
+                    width_nm: nm(p.width_um),
+                })
+                .collect(),
         }
+    }
+
+    /// The rule a net (by the board's name) is laid with: its class's, its
+    /// pair's width with the board's via, or the board's own.
+    pub fn rule(&self, net: &str) -> Rule {
+        if let Some(c) = self
+            .classes
+            .iter()
+            .find(|c| c.nets.iter().any(|n| n == net))
+        {
+            return c.rule;
+        }
+        let width_nm = self
+            .pairs
+            .iter()
+            .find(|p| p.nets.iter().any(|n| n == net))
+            .map_or(self.width_nm, |p| p.width_nm);
+        Rule {
+            width_nm,
+            ..self.default_rule()
+        }
+    }
+
+    /// The board's own rule: the declared track width and the engine's via.
+    pub fn default_rule(&self) -> Rule {
+        Rule {
+            width_nm: self.width_nm,
+            via_nm: crate::route::VIA_NM,
+            drill_nm: crate::route::DRILL_NM,
+        }
+    }
+
+    /// The pair a net (by the board's name) is a conductor of.
+    pub fn pair_of(&self, net: &str) -> Option<&Pair> {
+        self.pairs.iter().find(|p| p.nets.iter().any(|n| n == net))
     }
 
     /// The number of copper layers.
@@ -130,6 +228,17 @@ impl Stack {
     }
 }
 
+/// The board's name for a specification net: a rail (a voltage domain or
+/// `GND`) by its own name, a signal by its root-sheet label (`pcb`).
+fn board_net(spec: &Specification, net: &str) -> String {
+    let rail = net == crate::schematic::GND || spec.voltage_domains.iter().any(|d| d.id == net);
+    if rail {
+        crate::pcb::escape(net)
+    } else {
+        crate::extract::board_net(net)
+    }
+}
+
 /// The reference's declared board (`examples/sentinel-01-minimal.json`), for
 /// tests. The CLI's `stackups_tier1` asserts it equals `Stack::of` on that
 /// file, so the two cannot drift.
@@ -157,5 +266,7 @@ pub(crate) fn reference() -> Stack {
         permittivity_source: "the IPC-4101 FR-4 maximum, specified at 1 MHz".into(),
         clearance_nm: 200_000,
         width_nm: 200_000,
+        classes: vec![],
+        pairs: vec![],
     }
 }

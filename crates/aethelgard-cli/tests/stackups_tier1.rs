@@ -352,6 +352,8 @@ fn the_reference_declares_todays_two_layer_board() {
             permittivity_source: "the IPC-4101 FR-4 maximum, specified at 1 MHz".into(),
             clearance_nm: 200_000,
             width_nm: 200_000,
+            classes: vec![],
+            pairs: vec![],
         }
     );
 }

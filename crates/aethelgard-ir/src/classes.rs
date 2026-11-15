@@ -224,7 +224,15 @@ fn known(
     domains: &BTreeSet<&str>,
     nets: &BTreeSet<&str>,
 ) -> Result<(), IrValidationError> {
-    if net == "GND" || domains.contains(net) || nets.contains(net) {
+    if net.contains('\'') {
+        // The gate names a class's nets inside KiCad rule expressions, which
+        // quote with `'` (`aethelgard_eda::rules`); such a net is refused,
+        // never escaped by guess.
+        Err(IrValidationError::ClassNetQuoted {
+            id: net.to_owned(),
+            class: owner.to_owned(),
+        })
+    } else if net == "GND" || domains.contains(net) || nets.contains(net) {
         Ok(())
     } else {
         Err(IrValidationError::ClassUnknownNet {

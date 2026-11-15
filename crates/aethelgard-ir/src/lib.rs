@@ -580,6 +580,10 @@ pub enum IrValidationError {
     )]
     ClassUnknownNet { id: String, class: String },
     #[error(
+        "`{class}` names the net `{id}`, which holds `'`: the gate's DRC rules name a class's nets in KiCad expressions quoted with `'`"
+    )]
+    ClassNetQuoted { id: String, class: String },
+    #[error(
         "net `{id}` is in two classes: `{first}` and `{second}` (a diff pair counts as its nets' class)"
     )]
     NetInTwoClasses {
@@ -800,6 +804,7 @@ impl IrValidationError {
             Self::DuplicateClassName { .. } => "DuplicateClassName",
             Self::ClassNoNets { .. } => "ClassNoNets",
             Self::ClassUnknownNet { .. } => "ClassUnknownNet",
+            Self::ClassNetQuoted { .. } => "ClassNetQuoted",
             Self::NetInTwoClasses { .. } => "NetInTwoClasses",
             Self::PairNets { .. } => "PairNets",
             Self::PairOnRail { .. } => "PairOnRail",
@@ -884,6 +889,7 @@ impl IrValidationError {
             | Self::DuplicateClassName { id }
             | Self::ClassNoNets { id }
             | Self::ClassUnknownNet { id, .. }
+            | Self::ClassNetQuoted { id, .. }
             | Self::NetInTwoClasses { id, .. }
             | Self::PairNets { id, .. }
             | Self::PairOnRail { id, .. } => Some(id),

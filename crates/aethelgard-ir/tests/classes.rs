@@ -255,3 +255,16 @@ fn names_are_identifiers_and_unique_across_classes_and_pairs() {
     assert_eq!(e.kind(), "InvalidIdentifier");
     assert_eq!(e.path(), Some("diff_pairs[0].name"));
 }
+
+#[test]
+fn a_class_net_holding_a_quote_is_refused() {
+    // RUL-14 admits `'` in a net name; the gate's KiCad rules quote with it.
+    let text =
+        include_str!("../../../examples/sentinel-01-minimal.json").replace("I2C_SDA", "I2C'SDA");
+    let mut v: Value = serde_json::from_str(&text).unwrap();
+    verdict(&v).unwrap();
+    v["net_classes"] = json!([class("sig", json!(["I2C'SDA"]))]);
+    let e = verdict(&v).unwrap_err();
+    assert_eq!(e.kind(), "ClassNetQuoted");
+    assert_eq!(e.id(), Some("I2C'SDA"));
+}

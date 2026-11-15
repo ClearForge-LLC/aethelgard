@@ -50,6 +50,24 @@ pub struct Rules {
     pub clearance_nm: i64,
     /// The narrowest track; `None` where KiCad's default sets no minimum.
     pub min_track_width_nm: Option<i64>,
+    /// Each declared class and pair's own rules (`AET-WO-1308`), none without
+    /// a specification.
+    pub classes: Vec<ClassRules>,
+}
+
+/// One class's or pair's rules, by the board's net names: its tracks exactly
+/// its width, and, where the class declares one, its vias exactly that via
+/// with at least its ring. A track wider or narrower than its class, or a
+/// via other than its class's, is a DRC finding (measured, `AET-WO-1308` P4:
+/// KiCad 10.0.7 reports a rule keyed on the net name at both bounds).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClassRules {
+    /// `class_<name>` or `pair_<name>`.
+    pub name: String,
+    pub nets: Vec<String>,
+    pub width_nm: i64,
+    /// Diameter and drill.
+    pub via_nm: Option<(i64, i64)>,
 }
 
 impl Rules {
@@ -57,10 +75,27 @@ impl Rules {
     /// track width, each at or above the floor once `validate` has passed.
     pub fn from_specification(spec: &Specification) -> Rules {
         let stack = crate::stack::Stack::of(spec);
+        let classes = stack
+            .classes
+            .iter()
+            .map(|c| ClassRules {
+                name: format!("class_{}", c.name),
+                nets: c.nets.clone(),
+                width_nm: c.rule.width_nm,
+                via_nm: c.via_declared.then_some((c.rule.via_nm, c.rule.drill_nm)),
+            })
+            .chain(stack.pairs.iter().map(|p| ClassRules {
+                name: format!("pair_{}", p.name),
+                nets: p.nets.to_vec(),
+                width_nm: p.width_nm,
+                via_nm: None,
+            }))
+            .collect();
         Rules {
             source: Source::Specification,
             clearance_nm: stack.clearance_nm,
             min_track_width_nm: Some(stack.width_nm),
+            classes,
         }
     }
 
@@ -71,6 +106,7 @@ impl Rules {
             source: Source::KicadDefault,
             clearance_nm: FLOOR_NM,
             min_track_width_nm: None,
+            classes: Vec::new(),
         }
     }
 
@@ -132,6 +168,30 @@ impl Rules {
                 mm(w)
             ));
         }
+        // A later rule beats an earlier one for the same constraint, so each
+        // class's own width replaces the board minimum on its nets (P4).
+        for c in &self.classes {
+            let nets = c
+                .nets
+                .iter()
+                .map(|n| format!("A.NetName == '{n}'"))
+                .collect::<Vec<_>>()
+                .join(" || ");
+            let w = mm(c.width_nm);
+            out.push_str(&format!(
+                "(rule \"{}_track_width\"\n\t(condition \"{nets}\")\n\t(constraint track_width (min {w}mm) (max {w}mm)))\n",
+                c.name
+            ));
+            if let Some((d, h)) = c.via_nm {
+                out.push_str(&format!(
+                    "(rule \"{}_via\"\n\t(condition \"A.Type == 'Via' && ({nets})\")\n\t(constraint via_diameter (min {d}mm) (max {d}mm))\n\t(constraint hole_size (min {h}mm) (max {h}mm))\n\t(constraint annular_width (min {r}mm)))\n",
+                    c.name,
+                    d = mm(d),
+                    h = mm(h),
+                    r = mm((d - h) / 2),
+                ));
+            }
+        }
         out
     }
 }
@@ -150,6 +210,7 @@ mod tests {
             source: Source::Specification,
             clearance_nm: FLOOR_NM,
             min_track_width_nm: Some(FLOOR_NM),
+            classes: Vec::new(),
         };
         assert_eq!(spec.source.name(), "specification");
         let pro = spec.project("input");
@@ -187,6 +248,12 @@ mod tests {
                 source: Source::Specification,
                 clearance_nm: FLOOR_NM,
                 min_track_width_nm: Some(FLOOR_NM),
+                classes: vec![ClassRules {
+                    name: "class_power".into(),
+                    nets: vec!["VDD_3V3".into(), "GND".into()],
+                    width_nm: 250_000,
+                    via_nm: Some((700_000, 300_000)),
+                }],
             },
         ] {
             let wrapped = format!("(file {})", rules.custom_rules());
