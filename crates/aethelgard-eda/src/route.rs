@@ -3530,6 +3530,45 @@ mod tests {
         assert!(ok(&slanted).is_err());
     }
 
+    /// Holes keep the gap at each via's own drill (`AET-WO-1308`): a class
+    /// via drilled 0.4 mm beside a board via drilled 0.3 mm needs 0.6 mm
+    /// centre to centre, not the board's 0.55.
+    #[test]
+    fn the_check_judges_holes_at_each_vias_own_drill() {
+        let mut stack = crate::stack::reference();
+        stack.classes.push(crate::stack::Class {
+            name: "big".into(),
+            rule: Rule {
+                width_nm: 200_000,
+                via_nm: 800_000,
+                drill_nm: 400_000,
+            },
+            via_declared: true,
+            nets: vec!["/P".into()],
+        });
+        let board = Board {
+            outline: rect(0, 0, 10 * MM, 10 * MM),
+            parts: vec![],
+            stack,
+        };
+        let vias = |gap: i64| Routed {
+            vias: vec![
+                Via {
+                    net: "/P".into(),
+                    at: (5 * MM, 5 * MM),
+                },
+                Via {
+                    net: "/P".into(),
+                    at: (5 * MM + gap, 5 * MM),
+                },
+            ],
+            ..Routed::default()
+        };
+        assert!(check(&board, &vias(400_000 + HOLE_GAP_NM)).is_ok());
+        let e = check(&board, &vias(400_000 + HOLE_GAP_NM - 1)).unwrap_err();
+        assert!(e.contains("too close"), "{e}");
+    }
+
     /// A ground via the zone cannot reach, a zone taken away, and a via with
     /// copper on one layer only, each leave the copper unjoined.
     #[test]

@@ -457,3 +457,42 @@ fn validate_refuses_a_net_in_two_classes() {
     assert_eq!(out["error"]["kind"], "NetInTwoClasses", "{out}");
     fs::remove_dir_all(&dir).unwrap();
 }
+
+/// `extract` bounds a classed line at its own width (`AET-WO-1308`): the
+/// stand-in pair widened to 0.25 mm, its SCK's trace term recomputed from the
+/// class's width, which a bound at the board's 0.2 mm would undercount.
+#[test]
+fn extract_bounds_a_classed_line_at_its_own_width() {
+    use aethelgard_eda::extract;
+    let dir = scratch("extract");
+    let mut v = json_of(PAIR);
+    v["diff_pairs"][0]["width_um"] = json!(250);
+    v["diff_pairs"][0]["gap_um"] = json!(250);
+    let path = write_spec(&dir, "wide.json", &v);
+    let (code, out, board) = emit(&dir, &path);
+    assert_eq!(code, 0, "{out}");
+    let spec: aethelgard_ir::Specification = serde_json::from_value(v).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+    let stack = Stack::of(&spec);
+    let read = extract::read(&board, &stack).unwrap();
+    let lines = extract::lines(&spec, &solved, &table).unwrap();
+    let sck = extract::bound(&read, &lines)
+        .unwrap()
+        .into_iter()
+        .find(|l| l.net == "SPI_SCK")
+        .unwrap();
+    let h = u128::try_from(stack.outer_dielectrics_nm().0).unwrap();
+    let trace = |rule| {
+        let ph = extract::Physics::of(&stack).laid_by(rule);
+        let per = u128::from(extract::per_mm_ff(&ph, h).unwrap());
+        let ends = u128::from(extract::segment_ff(&ph, h).unwrap());
+        u64::try_from(
+            (u128::from(sck.length_nm) * per).div_ceil(1_000_000) + u128::from(sck.segments) * ends,
+        )
+        .unwrap()
+    };
+    assert_eq!(sck.terms.trace, trace(stack.rule("/SPI_SCK")));
+    assert!(sck.terms.trace > trace(stack.default_rule()), "{sck:?}");
+    fs::remove_dir_all(&dir).unwrap();
+}
