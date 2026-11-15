@@ -472,6 +472,13 @@ ArduPilot's board definition (PR #130, ruled in comment 6887864517):
 - **`hwdef.dat` cannot carry an AF number.** The AF comes from ArduPilot's own table, which agrees with ST's open pin data on all 597 shared (pin, signal) pairs. It also carries 10 hand-added CAN lines that ST's data does not support.
 - **What the hardware receives is in the ELF:** `gpio_default_config`, 308 bytes, is what `gpio_init` writes at reset, and `hwdef.h` agrees with it. ArduPilot builds a board on a pin its package lacks, so the package check is ours to do.
 
+### 2.24 Measurements from the AET-WO-1303 spike (2026-11-15, Furnace)
+
+Extraction for P4's gates (PR #133, ruled in comment 6888926396):
+- **Impedance.** A certified 2D bracket (Dirichlet P1 plus a stream-function Thomson dual) holds Cohn's exact coupled stripline and is under 0.5 % wide. IPC-2141 falls outside it at all six points tried (−8.6 % to +3.9 %), so closed forms are not bounds. Over the 4-layer fixture's tolerances, Z_diff hi/lo is 1.45–1.93, against the 1.353 that 90 Ω ±15 % allows. No P4 gate bounds Z (`1303` D1 (c)). A full-speed USB device is judged by USB 2.0 §7.1.6.1's device budget instead: ≤ 25 pF per conductor (D2 (b)).
+- **Supply-path resistance.** Thomson's principle with an explicit flow gives a rigorous upper bound per pin. The closed-form pieces cover 8 of 16 MCU supply pins on the reference. On the 4-layer fixture they cover 11 of 16 with the hole concentric and 2 of 16 at JLCPCB's ±0.075 mm hole position. The 0.15 mm via ring, not the copper, limits the bound. KiCad's zone filler opens a plane's clearance by half its `min_thickness` (read in `zone_filler.cpp`).
+- **Loads and minima.** DS12117 Rev 10 Table 120 gives the MCU 658 mA maximum at Tj 125 °C. k = 1.181 for rated foil resistivity is cited (IPC-MF-150F). No reachable primary source publishes a finished-copper or hole-wall minimum, so they are declared, and the fabrication package states them as instructions.
+
 ## 4. Ratified rulings
 
 Each carries its reason. Departures from Argon's plan are labelled as departures so they are not later mistaken for drift.
@@ -646,6 +653,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-11-14 | §2.21, §4 | Added §2.21 (stackups measured, extraction's bound over a near plane, and the flight-I/O models read and measured). `RUL-03` amended (the rules are the specification's; `check drc --spec` judges the declared board). `RUL-14` amended (specification version 2, the `board` section, bounds with sources) | PRs #120, #123 |
 | 2026-11-15 | §2.22, §4 | Added §2.22 (SPI measured: the multiplexer, the witness, the unmodelled flight parts, parts as data). `RUL-19` (5) extended to SPI identity reads | PR #118 |
 | 2026-11-15 | §2.23, §4 | Added §2.23 (ArduPilot built on Furnace, what its board definition requires, the ELF's reset GPIO table). `RUL-15` amended: a second image for ArduPilot, with GPL kept out of the tools and engine images | PR #130, comment 6887864517 |
+| 2026-11-15 | §2.24 | Added §2.24 (`1303` spike: the certified Z bracket, no Z gate in P4, the USB full-speed device budget, the Thomson supply bound and its via-ring limit) | PR #133, comment 6888926396 |
 
 New sections continue the sequence and never reuse a number.
 
