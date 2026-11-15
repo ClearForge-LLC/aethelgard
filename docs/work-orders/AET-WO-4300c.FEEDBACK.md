@@ -170,3 +170,76 @@ Nothing in `crates/` changes. `spike/4300c/` (the probe and its output) is the o
 - **Gates:** `cargo fmt --all -- --check` passes; `cargo clippy --workspace --all-targets -- -D warnings` exits 0; `cargo test --workspace` passes with no failing test binary [measured, on `139226e`; nothing compiled has changed since].
 - **Tier 2:** no tier-2 test is added, so `TIER2_MIN` stays at 96.
 - **Containers:** none were started.
+
+---
+
+# BUILD, after the ruling (resumed 2026-11-15, fresh session)
+
+The ruling is on PR #129 (comment 6887905174, copy at `~/.cache/aet-4300c-ruling.md`): D1 (a), D2 (a), D3 (a) with MISO (ii), and D4 (a). It amends the work order where the two differ. `origin/main` at `9dc8861` was merged first (`b3f1563`).
+
+## Forks taken inside the ruling (each for the architect to overturn)
+
+- **F-a · Which SPI lines carry a declaration.** **SCK and MOSI of every SPI bus, and nothing else.** Those are the lines whose toggle rate a peripheral sets (D4) and whose load extraction can bound under D3:
+  - **MISO** is out of scope. Its load is the MCU's own input, which has no cited maximum (D3: backlog).
+  - **A chip select** is a software-driven GPIO (D4).
+
+  A declaration on either would be a value nothing could confirm, which is why the declared set equals the confirmable set. Solve refuses a missing SCK or MOSI declaration by name (`MissingSpiConstraint`), beside `MissingBusConstraint`.
+- **F-b · `max_rise_time_nanoseconds` on an SPI line.** `NetConstraint` requires the key, and this work order does not change the struct.
+  - **Its consumer is the Fmax check:** Table 149 note 3's `(tr + tf) ≤ 2/3 T`.
+  - The check reads the table's tr/tf maximum at the chosen speed, row and band. It refuses a line whose declared rise time is below that maximum, because the pin cannot be shown to meet the declaration.
+  - So the value is read, never defaulted, and never left silently unread.
+- **F-c · Where the check's verdict lives.** `aethelgard check speeds --spec F` prints one verdict per specification:
+  - every line the board drives or carries, with its `OSPEEDR`;
+  - for an in-scope line: the rate, VDD minimum, band, declared C, row, Fmax and tr/tf, with `pass` or a refusal;
+  - for an out-of-scope line: its reason (I2C open-drain, DS12117 §6.3.32; MISO an input in master mode; a chip select software-driven, D4).
+
+  The verdict is a pure function of the topology (`RUL-16`), so it reaches the board-less ICM-20948 fixture, which no `emit`, `generate`, `extract` or `verify` can. **The capacitance label** is `declared, confirmed by extract on the routed board` when the specification's design can be drawn. Otherwise it is `declared, UNVERIFIED: no board (<emit's refusal>)`. This is a new CLI subcommand, which is outside the fence's letter ("the CLI's tests and fixtures"); the ruling's "named … in the verdict" needs a verdict that every board reaches.
+- **F-d · D1's fixture fix: raise the declared bound, not fewer devices per bus.**
+  - `D1` is the 1302 reviewer's 24-device routing board (`architecture.md` §2.21, roadmap). The STM32H753 has four I2C controllers, so fewer devices per bus means fewer devices, which ends what `D1` is for, and 1307's three tests read it.
+  - Its eight I2C lines are declared at **150,000 fF**, up from 100,000. Its pull-ups meet that under `1203`'s static rule at its declared 400 kHz:
+    - the 2,200 Ω pull-up is above the 967 Ω floor (unchanged);
+    - 150 pF is within UM10204's 400 pF Cb;
+    - 0.8473 · 2.2 kΩ · 150 pF = 279.6 ns, within its own declared 300 ns rise.
+  - **Consequence:** only `d1-24-i2c.json` changes; no file is committed from it.
+- **F-e · Versions.**
+  - The specification moves 2 → 3, for the required SPI declarations and the part rename (once).
+  - The solved topology moves 3 → 4, for the SPI lines it now carries.
+  - `parts.json` moves 1 → 2, for `pin_capacitance` and the ordering code.
+
+  `4300a` takes the specification's 4.
+
+## Predictions — written before any measured run of the build
+
+| # | Question | Prediction | Basis |
+|---|---|---|---|
+| B1 | The reference's SPI bounds under D3 (a): copper plus the flash's 8 pF, the MCU's pin uncounted | `SPI_SCK` 18.5 pF, `SPI_MOSI` 17.2 pF, each within 1 fF of the probe's column B | measured by the probe; the convention is the same |
+| B2 | Declared C for SCK and MOSI | 30 pF on the reference, the 4-layer fixture, `D1`, `spi-only*` and the ICM fixture. 50 pF on `D3` (three flashes per bus) and on the solve fixtures | inferred: 30 pF covers B1 with about 60 % headroom |
+| B3 | Speeds chosen | Reference, 4-layer, `D1`: SCK and MOSI `01` (20 MHz at the 30 pF row, 2.7–3.6 V: `00` gives 12 MHz, `01` 80 MHz); MISO `00` (was `10`); chip select and I2C `00` (unchanged). **ICM fixture at 7 MHz: SCK and MOSI `00`** (12 MHz ≥ 7 MHz) | Table 149 [read] |
+| B4 | VDD band | Every fixture is 3300 mV at 50 ‰, so 3135 mV minimum and the 2.7–3.6 V band. 2700 mV exactly takes the 1.62–2.7 V band (the table prints it in both; the lower is the conservative one) | read |
+| B5 | `D1` under extract after F-d | Passes: 8 I2C lines at 97.8–119.6 pF, under 150; `SCK0` and `MOSI0` at 17.5–22.8 pF, under 30 | measured by the probe |
+| B6 | The reference's committed files | Change only in: the specification's hash (every file that names it); `OSPEEDR` for SCK and MOSI `10` → `01` and MISO `10` → `00` in `board.rs` and `proofs.rs`; and anything that names the flash's part (`W25Q64JV` → `W25Q64JVxIQ`), if any does. The `.repl` changes only if it names the spec hash or the part | inferred |
+| B7 | Tier-2 time added | None. Every new test is tier 1, so `TIER2_MIN` stays 96 | inferred |
+| B8 | Verdicts against `main`'s binaries | Every campaign, replay and simulate verdict is unchanged apart from hashes. `OSPEEDR` has no effect in Renode 1.17.0 (the twin models no edge rate) | inferred; cannot be measured until the container question below is ruled |
+| B9 | Note 2 (PC13, PC14, PC15 and PI8 at 2 MHz) | Never reached on the LQFP144: PI8 is absent, and PC13–15 carry no SPI signal. It is held as data, and the check applies it to an in-scope pin | read: `STM32H753ZITx.xml` |
+
+## Container caps: the kickoff's premise does not hold on Furnace [measured]
+
+The kickoff runs every KiCad, Renode and tier-2 step under `--memory X --memory-swap X --pids-limit -1`, stating that podman then sets `memory.swap.max` to 0 itself; it says to stop if it does not, and never to write a cgroup file. On Furnace (podman 5.7.0, crun 1.21), read back from each container's own cgroup:
+
+| Flags | `memory.max` | `memory.swap.max` |
+|---|---|---|
+| `--memory 8g --memory-swap 8g` (four runs, with and without mounts and `--network none`) | 8589934592 | **8589934592** |
+| `--memory 8g` | 8589934592 | **17179869184** |
+| `--memory 8g --memory-swap 8g --cgroup-conf memory.swap.max=0` | 8589934592 | **8589934592** |
+
+- The 8 GB reading held at every one-second sample over 4 s.
+- **The first container was the baseline build.** My runner's guard killed it before its command started, so nothing ran in it. The other five were probes that ran only `sleep`, started after the first reading, to find whether the reading was a race. It was not.
+- **4210 measured the same** (its F10, its D8 on PR #131), and `~/.cache/aet-bus` records it. 1307's zero readings came from containers started before its scripts were rewritten at 02:16 (file mtimes, as 4210 read them; inferred, not measured here).
+- **The global contract and the kickoff disagree.** The contract's own recipe is to write `0` into the container's `memory.swap.max` after start (Aethelgard F11). The kickoff forbids that write. I have not attempted it.
+- **What this blocks:**
+  - the baseline against `main`'s binaries (B8);
+  - the reference ELF and its re-witnessed identity;
+  - any local tier-2 run.
+
+  The host build, the tier-1 tests and the three gates proceed under a capped user scope. CI on GitHub runs tier 2.
+- **Without a ruling** that gives a compliant container, this work order ends `STOPPED`: §2's "every verdict is unchanged … against `main`'s binaries" cannot be shown on Furnace.
