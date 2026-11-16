@@ -99,12 +99,12 @@ All new rules are steps of `Specification::validate`, after every existing step,
 
 ### 4.2 Tier-1 tests (each with the behaviour before)
 - `reserved_references_tier1.rs`:
-  - `aet_1206_validate_refuses_what_generate_refuses_byte_for_byte` holds 16 rows (A2, A4, A5, the serial short, §1.8, `MissingBusConstraint`). On each, `validate`'s stdout equals `generate`'s byte for byte.
+  - `aet_1206_validate_refuses_what_generate_refuses_byte_for_byte` holds 18 rows (A2, A4 with the KiCad-key pairs, A5, the serial short, §1.8, `MissingBusConstraint`). On each, `validate`'s stdout equals `generate`'s byte for byte.
   - The old behaviour (`validate` exit 0, `generate` refusing with this kind and `id`) was committed first, as `58c2438`. Its rows other than §1.8 and the serial short are the same; those two were measured on the baseline binary (§1, §5).
   - It also holds the F1 pins and the eda guard test.
 - `ir/tests/validate.rs` gains a test per rule (A2, A4, A5, A7, `MissingBusConstraint`, §1.8), each with the names that must still pass.
 - `ir/tests/solve.rs` gains the §1.7 tests.
-- `power_board_tier1.rs` gains `the_nets_validate_reserves_are_the_emitters_own`: on the reference and the power tree, every listed net is drawn, and every net the emitter draws that the specification does not spell is listed.
+- `power_board_tier1.rs` gains `the_nets_validate_reserves_are_the_emitters_own` (on the reference and the power tree, every listed net is drawn, and every net the emitter draws that the specification does not spell is listed) and `a_power_reference_the_emitter_refuses_is_refused_at_validate` (`#U10`, and `unconnected-x` making `unconnected-x_FB`, each with the emitter's kind, `id` and message).
 
 ### 4.3 The CLI envelope (a fork; outside the named fence)
 `MissingBusConstraint` printed `claimants` from `solve`, `emit` and `generate`. To keep those bytes once `validate` refuses it, the CLI's `Refusal` gained an optional `claimants` (between `id` and `path`), set for a validation refusal that names one.
@@ -119,7 +119,7 @@ All new rules are steps of `Specification::validate`, after every existing step,
 - No container was started.
 
 ### 4.5 Mutation (diff-sized: one mutant per guard this work order adds)
-16 mutants, run one at a time against `ir` validate/solve, twin `spi_platform`, and cli `reserved_references_tier1`, `power_board_tier1` and `solve_cli` (`~/.cache/aet-1206/mutants/`). **15 killed** by test failures (none by compilation).
+19 mutants, run one at a time against `ir` validate/solve, twin `spi_platform`, and cli `reserved_references_tier1`, `power_board_tier1` and `solve_cli` (`~/.cache/aet-1206/mutants/`). Three are for the adversarial fixes, run after `dee28d9`. **18 killed** by test failures (none by compilation).
 - **The survivor is mutant 12** (the emitter's `own_net` guard off). It fires only when `own_nets` and the emitter disagree, which no correct tree does.
 - Mutant 13 (the list drops a buck's nets) is killed by that very guard: `Internal("the emitter names net U10_FB, which aethelgard_ir::names::own_nets does not list")`. So the guard is load-bearing exactly when the two lists drift.
 
@@ -145,7 +145,31 @@ All new rules are steps of `Specification::validate`, after every existing step,
 
 ## 6. Adversarial pass (targeted)
 
-@@ADV@@
+A fresh subagent (no stake in the code, given the code and both binaries, not this document) generated 5,422 specifications over the reference and the power-tree fixture. It ran `validate` and `generate` on both binaries for each, plus the work order's targeted list: Unicode case (`İ`, `ſ`, the Kelvin sign `K`, fullwidth, NBSP, ZWSP), trailing dots, `CON.`, `con .txt`, `Gnd`/`gNd`/`Vbat`/`UNCONNECTED-x`/`Unconnected-x`, `U01`/`u001`/`R0`/`U0`, buck and translator nets, and every 1-, 2- and 3-fault combination of 11 faults. Harness and specifications: `~/.cache/aet-1206/adv/` (`drive.py`; each class's report in `rep/`, the rerun in `rep3/`; repros in `repro/`, `run.sh <spec>`).
+
+- **Unicode, dots, Windows spellings:**
+  - Every non-ASCII name is `InvalidIdentifier` on both binaries; the Kelvin sign alone is ASCII `K`.
+  - `CON.` and `con .txt` are `InvalidIdentifier` on both (the crate rule refuses `.` and space before the Windows rule).
+  - `GND.` passes everywhere.
+  - Mixed-case `gnd`, `Gnd`, `gNd` and `Vbat` give the same refusal from all four runs. `Unconnected-x`, `UNCONNECTED-x` and `uNconnected-x` pass on every binary (KiCad's prefix match is case-sensitive) [measured].
+- **Escapes found against `47de363`, all measured with both binaries:**
+  - **A1.** Two of the specification's references with one KiCad key by a leading zero: `J1` and `J01`, `U1` and `U01`, `U010` beside the power tree's `U10`; over 100 such specifications. Step 8 folds case only; the board writer's pair check refused them. **Fixed** (`dee28d9`): step 18 holds every reference to KiCad's key, printing the writer's sorted pair.
+  - **A2.** A power-tree reference starting `#` (KiCad's virtual-symbol prefix), on every power reference slot but `hot_plug`, which the emitter does not draw. **Fixed:** `ReservedName`, the reference.
+  - **A3.** A power reference starting `unconnected-`, which makes the emitter's own nets start with it (`unconnected-x_FB`). **Fixed:** `ReservedName`, the own net.
+  - **A4.** A part with a table row but no vendored model (`ICM42688P`, `ICP10111`, `BMP581`, and the repository's own `imu-baro-1v8` fixture), and an `mcu.part` other than `STM32H753ZITx`. Both are `UnknownPart` at `generate` only. **Not moved:** the work order's "It is NOT" keeps the closed vocabularies with their tables (`1102` A9), and §1.8 is worded "no row". Finding F10.
+- **The rerun after the fix** (`dee28d9`, all 5,422) [measured]:
+  - **Escapes:** 9 left, all `UnknownPart` (A4).
+  - **False refusals:** 101, every one a licensed widening:
+    - `R7`/`c99` (6);
+    - A2's table (51);
+    - Windows names (13);
+    - serial nets named for an emitter net, in any case (31).
+  - **New `validate` against new `generate`:** byte-identical wherever both refuse.
+  - **New `validate` against baseline `generate`, same kind:** 25 differ in bytes. 23 are multi-fault specifications that name a different fault first. Two are one power reference named `unconnected-x`:
+    - on a buck whose sense net also takes one of its own nets' names, which is two faults (F12);
+    - on the translator, where the board writer names the first offending pad in its symbol's pin order (`_B4`) and `validate` names the first in `crossing_lines`' order (`_B1Y`). Kind and message form agree; residual F11.
+- **First refusals of multi-fault specifications:** of the 231 combinations, 84 report a different first kind than baseline `generate` did. Most are a Windows project name, a §1.8 part or a step 18 name that `validate` now meets first; new `validate` and new `generate` always agree. A measurement, not a defect (§5).
+- **A hand-written topology reaching a deleted refusal's path:** the deleted twin I2C site is reached only through `instances` and `emit_faulted`. Both validate the topology first; `platform::emit` with a BME280 declared on SPI, or a W25Q64JVxIQ on I2C, is `PartOnWrongBus` (`spi_platform.rs`, `a_model_on_the_wrong_kind_of_bus_is_refused`). The table test pins every modelled row on its model's bus [measured].
 
 ## 7. Reduction pass
 
@@ -166,7 +190,7 @@ Reduction pass (diff): −19 lines net (the envelope merge; the guard deletion i
 | # | Finding | Where | Evidence | Disposition | Decision needed |
 |---|---|---|---|---|---|
 | F1 | The emitter compares its own nets with domains, bus lines, chip selects and sense nets, not serial or motor nets, so on `main` a serial net named `U1_VCAP1` generated a board shorting VCAP1 to a UART pin. `validate` now refuses it (A5 reads every net), so `generate` cannot reach it. A library caller of `schematic::emit` with an unvalidated specification still can | `eda/src/schematic.rs` `design` (`spelled`) | measured (§5) | backlog: add serial and motor nets to the emitter's `spelled` (outside this fence: "moved, not changed") | no |
-| F2 | Two specification references with one KiCad key by a leading zero (`U2` and `U02`) pass `validate`, and `generate` refuses them (`DuplicateReference`, `U02 and U2`, the board writer's pair check). Step 8 folds case only. Not in A2/A4/A5/A7, so not built | `lib.rs` step 8 `references_distinct`; `pcb.rs` `items` | measured on both binaries | could be one line: `names::reference_key` in step 8, or a spec-vs-spec check in step 18 printing the pair | yes (small) |
+| F2 | Two specification references with one KiCad key by a leading zero (`U2` and `U02`) passed `validate`, and `generate` refused them (`DuplicateReference`, `U02 and U2`, the board writer's pair check). The adversarial pass found the same (§6 A1) | `names.rs` step 18 | measured | **fixed** in step 18 with the writer's bytes, as part of A4's family (a fork: the work order names the emitter's references; this is the specification's against each other, the same check and kind) | confirm the fork |
 | F3 | `MissingSpiConstraint`, `RiseTimeTooSlow` and `SupplyOutsideSpeedTable` are still `solve`'s alone. Each is static in the specification as `MissingBusConstraint` was, so `validate` passes a specification `solve` refuses for them. Not listed in the work order, so not moved | `solve.rs` `spi_lines`, `i2c_ceilings` | read | backlog row, the same pattern as §1.2 | yes |
 | F4 | A4's `R<n>`/`C<n>` refusal, where the emitter would not reach that number (`r30` on the reference), prints the emitter's message, "`R30 and r30` is used twice as a reference", about a part not yet drawn. A distinct message would break byte-identity where the emitter does reach it | `names.rs` `emitter_numbered` | measured | kept for byte-identity | no |
 | F5 | Four messages live as one literal in `ir` and one in eda or the twin; the byte-identity test pins each pair equal | `lib.rs`, `eda/schematic.rs`, `twin/lib.rs` | read | the test is the single source; a shared type would be a cross-crate error redesign | no |
@@ -174,6 +198,9 @@ Reduction pass (diff): −19 lines net (the envelope merge; the guard deletion i
 | F7 | A7 refuses the work order's list. Microsoft's naming page also lists `COM0`, `LPT0` and the superscript forms; the superscripts are non-ASCII and already refused, and `com0`/`lpt0` pass | `names.rs` `WINDOWS_RESERVED` | read | as listed in the work order | yes (trivial) |
 | F8 | §6's split-on-touch rule names `ir/src/lib.rs` and `ir/src/power.rs`, both touched here. **Declined:** `4300g` (#159) and `4230` (#161) both have open hunks in `lib.rs`, so a split now turns both of their merges into rewrites. This work order's new code went to `names.rs`, adding 98 lines net to `lib.rs` (variants, steps 17 and 18, §1.8, the Windows rule) | roadmap §6 | read | declined with that reason | no |
 | F9 | `IrValidationError::InvalidDeviceName` has `id: null` at `validate`, because the twin prints none and byte-identity rules. Every other new refusal names its reference | `names.rs` A2 | measured | kept for byte-identity | no |
+| F10 | `validate` passes a part with a table row but no vendored model (`ICM42688P`, `ICP10111`, `BMP581`; the fixture `imu-baro-1v8.json`) and an `mcu.part` other than `STM32H753ZITx`; `generate` refuses both as `UnknownPart` | eda `KNOWN_PARTS` (`names::VENDORED_PARTS`), svd-hal pin table | measured (§6 A4) | not moved: the work order's "It is NOT" (`1102` A9). Moving the first would refuse two committed fixtures at `validate` (`imu-baro-1v8`, `sentinel-02-own`), which six test files use past `validate` (`board_tier2`, `models_tier2`, `twin_tier2`, `own_models_tier1`, `speeds_tier1`, `fab_tier1`) | yes, if it should move |
+| F11 | A crossing (translator) reference starting `unconnected-`: `validate` names `<ref>_B1Y`, while the board writer named `<ref>_B4`, the first offending pad in the KiCad symbol's pin order, which `ir` does not hold. Kind and message form agree, and `generate` now prints `validate`'s refusal | `names.rs` A3 fix | measured | residual: exotic, one fault | no |
+| F12 | A multi-fault specification can report a different first refusal than `generate` did: 84 of 231 combinations measured, and 23 byte differences of the same kind. New `validate` and new `generate` always agree | step 17/18 order | measured | a measurement (§5) | no |
 
 **Peers told (inbox, 09:45 UTC):**
 - `4300g`: `own_nets` must list its support network's nets when the second of us merges.
