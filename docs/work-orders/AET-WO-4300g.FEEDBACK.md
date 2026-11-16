@@ -230,3 +230,65 @@ A fresh subagent proposed cuts against the four questions. All four were applied
   3. The netlist's strict rules name `once` children no gate reads. That is stricter than the module's convention.
   4. `eda::support::row` could be private.
   5. `check support`'s two refusal mappers repeat `main.rs`'s `Stop` shape, outside this diff.
+
+## 10. Tier 2, CI and the predictions against the results
+
+**Tier 2 in the pinned image** (every tier-2 binary, `~/.cache/aet-4300g/logs/t2-*.log`) [measured]. These classes of failure were found and fixed:
+- **The verdict printed a scratch path.** `verify`'s support record carried the board's scratch path, so two runs printed different bytes, and `--against-fab`'s MANIFEST differed. It now names the board by sha256 only.
+- **The swap test is caught one gate earlier.** It now times its swap after the support gate's copy, so `extract`'s binding is still the one exercised.
+- **Fixed coordinates against the moved board:**
+  - 1302's floating loop;
+  - 1301's extra parity footprint;
+  - two corpus edits (an F.Cu rectangle and a copper text).
+
+  Each is placed clear of the support network, its meaning unchanged.
+- **Expected lists gain the new gate:** `verify`'s gate order, and the package's preconditions.
+- **P5:** see the table below.
+
+The tier-2 tests left failing are D5's four:
+- `adversarial_1301_tools::attack_wide_references_leave_the_emitted_board_clean` (d1's S9);
+- `with_tools::{a_part_on_each_edge_passes_erc_and_drc, the_class_and_pair_fixtures_pass_erc_and_drc_and_the_pair_is_reported, d3_and_d1_pass_erc_and_drc_with_parity_at_four_layers}`.
+
+**The support gate on KiCad's real export:** the new tier-2 test passes. All 19 roles hold; a VDD capacitor moved 25 mm off fails by its role alone. `TIER2_MIN` is 130, plus 1 for it, exact.
+
+**CI on `a4cdb58`** (run 43772121004) [measured]:
+- **Every tools shard ran under 20 minutes.** The slowest was 14 m 50 s. Every shard failed, on D5's tests and on the tier-2 items fixed above.
+- **The image and ardupilot jobs passed.**
+- **The `gates` job failed on D5's tier-1 test** `adversarial_1301::attack_a_wide_reference_stays_clear_of_every_other_part`.
+
+`fmt` and `clippy -D warnings`, tier 2 included, pass locally.
+
+| # | Prediction | Result | Right? |
+|---|---|---|---|
+| P1 | Figure 14 by pin | VCAP, VDD and VDDA/VREF+ right. VBAT has no capacitor; VDD33USB also takes 100 nF (§2) | partly |
+| P2 | N = 11, not 16 | 11 [read], so 13 per-pin capacitors (D1) | right |
+| P3 | NRST 100 nF, BOOT0 low, PDR_ON to VDD | right; BOOT0's level is from RM0433 | right |
+| P4 | Every capacitor within 2.0 mm, and the router completes | Within 2.0 mm once the MCU's reference moved to F.Fab: worst 1.67 mm (§3). The router does not complete on two dense fixtures (D5) | half |
+| P5 | Decoupling about 0.4 to 9 µF, and a droop test's numbers move | 0.4 to 8.3 µF. The reference droop's crossings moved: VBOR3 rising 1 012 422 222 to 1 016 291 380 ns, falling 1 014 422 222 to 1 018 322 818 ns, then 1 225 977 778 to 1 229 512 382 and 1 227 977 778 to 1 231 681 149 ns. Resets 1 014 430 / 1 227 980 to 1 018 330 / 1 231 690 µs; the firmware is observed at 1 331 690 µs, not 1 327 980; the boot's instructions 9 877 201 to 9 876 830. The test is re-pinned to the measurement; the verdict and the reset count are unchanged | right |
+| P6 | The tools shard crosses 20 minutes | the slowest shard ran 14 m 50 s, though shards that failed may have stopped early | not yet shown |
+| P7 | Every fixture refused `NoProgrammingPath` first | all 18 valid fixtures (subagent's table, re-read here); `invalid-zero-domain` keeps `ZeroNominalVoltage` | right |
+| P8 | `TIER2_MIN` +1 or +2 | +1 (130) | right |
+
+## 11. Close: STOPPED on D5
+
+**Built:**
+- the MCU row's support network (`power-parts.json` schema 2), every value read by rendering;
+- specification v9 with `mcu.supply_source`, and the debug nets;
+- `NoProgrammingPath` and `SupplyHasNoSource`;
+- the emitter drawing the network from the row, anchored by owning pin;
+- the support gate on KiCad's netlist: `check support`, `verify`'s gate, the package precondition, FAB-NOTES;
+- Sentinel-01's J1 and J2;
+- every fixture moved to v9.
+
+**Passes made:** the adversarial pass (§7, A1–A5 fixed), the mutation pass (§8, 34 of 34), and the reduction pass (§9). `fmt` and clippy are green.
+
+**Why STOPPED:**
+- **Not met:** acceptance's "the power fixture and every other fixture pass", and CI green. D5 (§6) leaves eight tier-1 and four tier-2 tests failing, all on router capacity around the ringed MCU. None is weakened.
+- **Rulings that unblock it:** D5, plus D1–D4, which carry the schema.
+- **Next free versions:** `4300d3` (PR #158) also takes specification 9 and parts schema 2; whichever merges second takes 10 and 3.
+
+**The architect's CI clause of 23:55 UTC** (bus): a shard plan at or under 1006 s per shard, and a green final run with every shard under 20 minutes. It is not met at this STOPPED head:
+- the run cannot be green while D5 stands;
+- the plan is to be taken after `4300b` merges and its weights land, per the clause.
+
+The last measured run's shards were all under 20 minutes (§10).
