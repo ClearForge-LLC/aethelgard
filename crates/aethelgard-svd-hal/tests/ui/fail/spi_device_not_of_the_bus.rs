@@ -10,14 +10,15 @@ fn main() {
     let mut r = unsafe { Mmio::new() };
     let board = Board::take().unwrap();
     let mut rcc = board.rcc;
-    let a = rcc.enable_gpioa(&mut r, board.gpioa).split();
+    let clock = rcc.reset_clock(&mut r).unwrap();
+    let a = rcc.enable_gpioa(&mut r, board.gpioa).split(&mut r);
     let sck = a.pa5.into_spi1_sck(&mut r);
     let mosi = a.pa7.into_spi1_mosi(&mut r);
     let miso = a.pa6.into_spi1_miso(&mut r);
     let pa0 = a.pa0.into_output(&mut r);
     let mut spi = rcc
         .enable_spi1(&mut r, board.spi1)
-        .init(&mut r, sck, mosi, miso, Spi1Selects { pa0 });
+        .init(&mut r, &clock, sck, mosi, miso, Spi1Selects { pa0 });
     let mut back = [0u8; 3];
     let _ = spi.transfer(&mut r, 0x76, &[0x9f], &mut back);
 }

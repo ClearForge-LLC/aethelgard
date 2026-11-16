@@ -115,14 +115,18 @@ fn the_start_takes_the_clock_token_and_only_its_own_configured_pins() {
          let cfgr = r.read(TOKEN, Block::Rcc, 0x010);\n        \
          let d1cfgr = r.read(TOKEN, Block::Rcc, 0x018);\n        \
          let d2cfgr = r.read(TOKEN, Block::Rcc, 0x01c);\n        \
+         let d1ccipr = r.read(TOKEN, Block::Rcc, 0x04c);\n        \
+         let d2ccip1r = r.read(TOKEN, Block::Rcc, 0x050);\n        \
          let d2ccip2r = r.read(TOKEN, Block::Rcc, 0x054);\n        \
-         if cr & 0x00000018 == 0 && cfgr & 0x00008038 == 0 && d1cfgr & 0x00000f7f == 0 && d2cfgr & 0x00000770 == 0 && d2ccip2r & 0x0000003f == 0 {\n            \
+         if cr & 0x00000018 == 0 && cfgr & 0x00008038 == 0 && d1cfgr & 0x00000f7f == 0 && d2cfgr & 0x00000770 == 0 && d1ccipr & 0x30000000 == 0 && d2ccip1r & 0x00077000 == 0 && d2ccip2r & 0x0000303f == 0 {\n            \
          Ok(ResetClock { _private: () })\n"
     ));
     // TIM1's clock gate is RCC_APB2ENR bit 0, and its block is at 0x40010000.
     assert!(rcc.contains(
         "pub fn enable_tim1<R: Registers>(&mut self, r: &mut R, _gated: Tim1<Gated>) -> Tim1<Clocked> {\n        \
-         r.modify(TOKEN, Block::Rcc, 0x0f0, |v| v | 0x00000001);"
+         r.modify(TOKEN, Block::Rcc, 0x0f0, |v| v | 0x00000001);\n        \
+         let _ = r.read(TOKEN, Block::Rcc, 0x0f0);\n        \
+         Tim1 { _state: PhantomData }"
     ));
     assert!(board.contains("            Block::Tim1 => 0x40010000,"));
     // Each pin's own AF1 (AFRH, pins 8 to 11) and MODER, push-pull, no pull.
@@ -139,11 +143,12 @@ fn the_start_takes_the_clock_token_and_only_its_own_configured_pins() {
     assert!(pa8.contains("r.modify(TOKEN, Block::GpioA, 0x08, |v| v & !0x00030000);"));
 }
 
-/// §1.3 and the WO's "stops": after the identity reads and before the boot
-/// word, the firmware obtains the token or parks without the boot word, then
-/// starts TIM1 on its four pins and never names it again.
+/// §1.3 and the WO's "stops": the firmware obtains the token first, before
+/// any write (`AET-WO-4230` D6), or parks without the boot word; after the
+/// identity reads and before the boot word it starts TIM1 on its four pins and
+/// never names it again.
 #[test]
-fn the_firmware_starts_the_timer_after_the_reads_or_stops() {
+fn the_firmware_reads_the_clock_first_and_starts_the_timer_after_the_reads() {
     let files = generated("motors-pwm");
     let main = &files["firmware/src/main.rs"];
     let last_read = main.rfind("record(").unwrap();
@@ -160,7 +165,8 @@ fn the_firmware_starts_the_timer_after_the_reads_or_stops() {
         .find("    let _tim1 = tim1.start_outputs(&mut r, &clock, pa8, pa9, pa10, pa11);\n")
         .unwrap();
     let boot = main.find(".write_volatile(BOOT_MAGIC)").unwrap();
-    assert!(last_read < clock && clock < start && start < boot);
+    let first_write = main.find("rcc.enable_").unwrap();
+    assert!(clock < first_write && last_read < start && start < boot);
     assert_eq!(main.matches("tim1.").count(), 1);
     assert!(main.contains("    let tim1 = rcc.enable_tim1(&mut r, tim1);\n"));
     for (pin, k) in [("pa8", 1), ("pa9", 2), ("pa10", 3), ("pa11", 4)] {

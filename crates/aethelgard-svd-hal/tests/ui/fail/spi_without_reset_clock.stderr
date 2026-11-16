@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/ui/fail/spi_without_reset_clock.rs:18:33
+   |
+18 |     let _bus = spi.init(&mut r, &unchecked, sck, mosi, miso, Spi1Selects { pa0 });
+   |                    ----         ^^^^^^^^^^ expected `&ResetClock`, found `&Result<ResetClock, NotResetClock>`
+   |                    |
+   |                    arguments to this method are incorrect
+   |
+   = note: expected reference `&ResetClock`
+              found reference `&Result<ResetClock, NotResetClock>`
+note: method defined here
+  --> $WORKSPACE/boards/sentinel-01/src/board.rs
+   |
+   |     pub fn init<R: Registers>(
+   |            ^^^^

@@ -36,6 +36,7 @@ const STATUS_TC: u32 = 0x22020002;
 const STATUS_RXNE: u32 = 0x22020003;
 const STATUS_STOP: u32 = 0x22020004;
 const STATUS_RXP: u32 = 0x22020005;
+const STATUS_EOT: u32 = 0x22020006;
 /// What a transfer that could not run leaves, the judge's own fill.
 const RECORD_UNSET: u32 = 0xffffffff;
 
@@ -132,8 +133,16 @@ extern "C" fn main() -> ! {
             core::hint::spin_loop();
         }
     };
-    let gpioa = rcc.enable_gpioa(&mut r, gpioa).split();
-    let gpiob = rcc.enable_gpiob(&mut r, gpiob).split();
+    // Every value below was solved for the reset clock: read it before any write
+    // (a selection the bring-up wrote reads 0 in Renode), and without it stop
+    // here, and the boot word is never written.
+    let Ok(clock) = rcc.reset_clock(&mut r) else {
+        loop {
+            core::hint::spin_loop();
+        }
+    };
+    let gpioa = rcc.enable_gpioa(&mut r, gpioa).split(&mut r);
+    let gpiob = rcc.enable_gpiob(&mut r, gpiob).split(&mut r);
     let i2c1 = rcc.enable_i2c1(&mut r, i2c1);
     let spi1 = rcc.enable_spi1(&mut r, spi1);
     let usart1 = rcc.enable_usart1(&mut r, usart1);
@@ -145,15 +154,8 @@ extern "C" fn main() -> ! {
     let pa9 = gpioa.pa9.into_usart1_tx(&mut r);
     let pb6 = gpiob.pb6.into_i2c1_scl(&mut r);
     let pb7 = gpiob.pb7.into_i2c1_sda(&mut r);
-    let mut i2c1 = i2c1.init::<i2c1_speed::Fast400k, _>(&mut r, pb6, pb7);
-    let mut spi1 = spi1.init(&mut r, pa5, pa7, pa6, Spi1Selects { pa0 });
-    // The USARTs' `BRR` (and any timer's values) were solved for the reset
-    // clock: without it, stop here, and the boot word is never written.
-    let Ok(clock) = rcc.reset_clock(&mut r) else {
-        loop {
-            core::hint::spin_loop();
-        }
-    };
+    let mut i2c1 = i2c1.init::<i2c1_speed::Fast400k, _>(&mut r, &clock, pb6, pb7);
+    let mut spi1 = spi1.init(&mut r, &clock, pa5, pa7, pa6, Spi1Selects { pa0 });
     let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);
     // Serial port 0, `CONSOLE`, on USART1: its label's bytes, then the tail.
     for &byte in [0x43, 0x4f, 0x4e, 0x53, 0x4f, 0x4c, 0x45].iter().chain(PATTERN_TAIL.iter()) {
@@ -181,6 +183,7 @@ extern "C" fn main() -> ! {
             buf1.iter().fold(0u32, |v, &b| (v << 8) | u32::from(b)),
         ),
         Err(SpiError::Rxp) => (STATUS_RXP, 0),
+        Err(SpiError::Eot) => (STATUS_EOT, 0),
         Err(SpiError::Length) => (RECORD_UNSET, RECORD_UNSET),
     };
     record(1, status, value);

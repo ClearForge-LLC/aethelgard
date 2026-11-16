@@ -46,6 +46,10 @@ pub const STATUS_RXNE: u32 = 0x2202_0003;
 pub const STATUS_STOP: u32 = 0x2202_0004;
 /// An SPI read whose wait for `SR.RXP` expired (`AET-WO-4200`).
 pub const STATUS_RXP: u32 = 0x2202_0005;
+/// An SPI read whose wait for `SR.EOT` expired after its last frame
+/// (`AET-WO-4230`). `aethelgard_twin::boot` has no constant for it yet, so its
+/// judge reads it as neither a status nor its fill: a failed read either way.
+pub const STATUS_EOT: u32 = 0x2202_0006;
 
 // belt-and-suspenders: the judge holds its own copies of the pattern and the
 // frame's length (`INV-07`); the firmware never knows the frame itself.
@@ -458,6 +462,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     }
     if spi_reads {
         let _ = writeln!(statuses, "const STATUS_RXP: u32 = {STATUS_RXP:#010x};");
+        let _ = writeln!(statuses, "const STATUS_EOT: u32 = {STATUS_EOT:#010x};");
     }
     let records = if reads.is_empty() {
         String::new()
@@ -658,9 +663,18 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
          }\n    \
          };\n",
     );
+    // The reset clock (`AET-WO-4230` D6), read once, first, before any write:
+    // every value the bring-up writes was solved for it, so without it the
+    // firmware stops here and never writes the boot word.
+    if plan.needs_clock() {
+        s.push_str(CLOCK_CHECK);
+    }
     for port in &plan.ports {
         let f = port_field(*port);
-        let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f}).split();");
+        let _ = writeln!(
+            s,
+            "    let {f} = rcc.enable_{f}(&mut r, {f}).split(&mut r);"
+        );
     }
     for name in plan.peripherals.keys() {
         let f = name.to_ascii_lowercase();
@@ -699,7 +713,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
                 };
                 let _ = writeln!(
                     s,
-                    "    let {bind} = {f}.init::<{f}_speed::{}, _>(&mut r, {args});",
+                    "    let {bind} = {f}.init::<{f}_speed::{}, _>(&mut r, &clock, {args});",
                     highest(speeds, name)
                 );
             }
@@ -716,18 +730,16 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
                     }
                     None => String::new(),
                 };
-                let _ = writeln!(s, "    let {bind} = {f}.init(&mut r, {args}{selects});");
+                let _ = writeln!(
+                    s,
+                    "    let {bind} = {f}.init(&mut r, &clock, {args}{selects});"
+                );
             }
         }
     }
     let serials = plan.serials_in_order();
-    // The serial ports (`AET-WO-4300b`), before the identity reads: their
-    // `BRR` were solved for the reset clock, so without it the firmware stops
-    // here and never writes the boot word. Then each port is configured, and
-    // sends its pattern, in the specification's order.
-    if !serials.is_empty() {
-        s.push_str(CLOCK_CHECK_SERIAL);
-    }
+    // The serial ports (`AET-WO-4300b`), before the identity reads: each port
+    // is configured, and sends its pattern, in the specification's order.
     for (name, sp) in &serials {
         let f = name.to_ascii_lowercase();
         let _ = writeln!(
@@ -770,6 +782,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
                 format!("{device}::{variant}"),
                 format!(
                     "        Err(SpiError::Rxp) => (STATUS_RXP, 0),\n        \
+                     Err(SpiError::Eot) => (STATUS_EOT, 0),\n        \
                      Err(SpiError::Length) => (RECORD_UNSET, {unset}),\n"
                 ),
             ),
@@ -812,21 +825,8 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
             );
         }
     }
-    // The motor outputs (`AET-WO-4300a` §1.3), after the identity reads: the
-    // timers' values were solved for the reset clock, so without it the
-    // firmware stops here and never writes the boot word. Then each timer
-    // starts, in ascending number, and is never touched again.
-    if !plan.timers.is_empty() && serials.is_empty() {
-        s.push_str(
-            "    // The timers' values were solved for the reset clock: without it, stop\n    \
-             // here, and the boot word is never written.\n    \
-             let Ok(clock) = rcc.reset_clock(&mut r) else {\n        \
-             loop {\n            \
-             core::hint::spin_loop();\n        \
-             }\n    \
-             };\n",
-        );
-    }
+    // The motor outputs (`AET-WO-4300a` §1.3), after the identity reads: each
+    // timer starts, in ascending number, and is never touched again.
     for (n, t) in &plan.timers {
         let pins: Vec<String> = t.channels.values().map(|(pin, _)| pin_field(pin)).collect();
         let _ = writeln!(
@@ -876,10 +876,10 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     s
 }
 
-/// The reset-clock check on a board with serial ports, before their
-/// configuration.
-const CLOCK_CHECK_SERIAL: &str = "    // The USARTs' `BRR` (and any timer's values) were solved for the reset\n    \
-     // clock: without it, stop here, and the boot word is never written.\n    \
+/// The reset-clock check, first in the bring-up (`AET-WO-4230` D6).
+const CLOCK_CHECK: &str = "    // Every value below was solved for the reset clock: read it before any write\n    \
+     // (a selection the bring-up wrote reads 0 in Renode), and without it stop\n    \
+     // here, and the boot word is never written.\n    \
      let Ok(clock) = rcc.reset_clock(&mut r) else {\n        \
      loop {\n            \
      core::hint::spin_loop();\n        \

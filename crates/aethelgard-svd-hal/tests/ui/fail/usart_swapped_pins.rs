@@ -12,7 +12,7 @@ fn main() {
     let mut r = unsafe { Mmio::new() };
     let board = Board::take().unwrap();
     let mut rcc = board.rcc;
-    let a = rcc.enable_gpioa(&mut r, board.gpioa).split();
+    let a = rcc.enable_gpioa(&mut r, board.gpioa).split(&mut r);
     let tx = a.pa9.into_usart1_tx(&mut r);
     let rx = a.pa10.into_usart1_rx(&mut r);
     let usart1 = rcc.enable_usart1(&mut r, board.usart1);

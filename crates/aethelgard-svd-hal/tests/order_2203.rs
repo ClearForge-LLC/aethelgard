@@ -119,11 +119,15 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `negotiated` key (ruled on PR #152, §9 Q1): with the key dropped from the
 /// hashed document, the three moved digests were `72acc1b5…bbc1`,
 /// `6b61b761…b403` and `2716e538…4530` exactly (the specification's sha256
-/// alone moved them); the boot image did not move.
+/// alone moved them); the boot image did not move. The firmware's digest was
+/// re-taken in `AET-WO-4230`, whose bring-up reads the reset clock first and
+/// hands it to I2C1 and SPI1, passes the registers to each port's `split`,
+/// and names the SPI `EOT` timeout; it was `1564c394…3474`. The device reads'
+/// text and order are unchanged, and the platform and boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "1564c3949380f353dba9d3e450ca705ea9fb5d7942bf99d0e859d8bf15113474",
+        "dca32616070f9242fb4ae8f51d62a9b00d0896fb809924b594ab75f721c7ec2d",
     ),
     (
         "platform",

@@ -72,6 +72,14 @@ impl sealed::Sealed for Image {}
 impl Registers for Image {
     fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {
         self.clocked(block);
+        kani::assert(
+            !(block == Block::GpioA && offset == 0x04),
+            "GpioA OTYPER was read",
+        );
+        kani::assert(
+            !(block == Block::GpioB && offset == 0x04),
+            "GpioB OTYPER was read",
+        );
         *self.slot(block, offset)
     }
     fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {
@@ -93,6 +101,9 @@ impl Registers for Image {
                 self.spi1[0] & 0x00000001 == 0,
                 "Spi1 CFG1 written while the peripheral is enabled",
             );
+        }
+        if block == Block::GpioA && offset == 0x04 {
+            kani::assert(value == 0x00000000, "GpioA OTYPER is not the solved word, whole");
         }
         if block == Block::GpioA && offset == 0x18 {
             kani::assert(value == 0x00000001 || value == 0x00010000, "GpioA BSRR write touches a pin no solved output owns");
@@ -166,6 +177,9 @@ impl Registers for Image {
                 "a GpioA MODER write moved a pin the topology does not use",
             );
         }
+        if block == Block::GpioB && offset == 0x04 {
+            kani::assert(value == 0x000000c0, "GpioB OTYPER is not the solved word, whole");
+        }
         if block == Block::GpioB && offset == 0x18 {
             kani::assert(false, "GpioB BSRR write touches a pin no solved output owns");
             // The level it leaves: a set bit wins over a reset bit (RM0433 §11.4.7).
@@ -212,6 +226,7 @@ impl Registers for Image {
 
 /// The state the specification allows, from any starting image.
 fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
+    kani::assert(after.gpioa[1] == 0x00000000, "GpioA OTYPER is not the solved word");
     kani::assert(
         after.gpioa[0] & 0x0000fc03 == 0x0000a801,
         "GpioA word 0: a solved pin's field is not what the specification fixes",
@@ -219,14 +234,6 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
     kani::assert(
         after.gpioa[0] & !0x0000fc03 == before.gpioa[0] & !0x0000fc03,
         "GpioA word 0: an unsolved pin's field changed",
-    );
-    kani::assert(
-        after.gpioa[1] & 0x000000e1 == 0x00000000,
-        "GpioA word 1: a solved pin's field is not what the specification fixes",
-    );
-    kani::assert(
-        after.gpioa[1] & !0x000000e1 == before.gpioa[1] & !0x000000e1,
-        "GpioA word 1: an unsolved pin's field changed",
     );
     kani::assert(
         after.gpioa[2] & 0x0000fc03 == 0x00004400,
@@ -260,6 +267,7 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
     kani::assert(after.gpioa[4] == before.gpioa[4], "GpioA word 4 changed");
     kani::assert(after.gpioa[7] == before.gpioa[7], "GpioA word 7 changed");
     kani::assert(after.gpioa[9] == before.gpioa[9], "GpioA word 9 changed");
+    kani::assert(after.gpiob[1] == 0x000000c0, "GpioB OTYPER is not the solved word");
     kani::assert(
         after.gpiob[0] & 0x0000f000 == 0x0000a000,
         "GpioB word 0: a solved pin's field is not what the specification fixes",
@@ -267,14 +275,6 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
     kani::assert(
         after.gpiob[0] & !0x0000f000 == before.gpiob[0] & !0x0000f000,
         "GpioB word 0: an unsolved pin's field changed",
-    );
-    kani::assert(
-        after.gpiob[1] & 0x000000c0 == 0x000000c0,
-        "GpioB word 1: a solved pin's field is not what the specification fixes",
-    );
-    kani::assert(
-        after.gpiob[1] & !0x000000c0 == before.gpiob[1] & !0x000000c0,
-        "GpioB word 1: an unsolved pin's field changed",
     );
     kani::assert(
         after.gpiob[2] & 0x0000f000 == 0x00000000,
@@ -365,7 +365,7 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
     kani::assert(after.spi1[20] == before.spi1[20], "Spi1 word 20 changed");
 }
 
-/// Every order the typestate API admits: at each of 12 steps, any
+/// Every order the typestate API admits: at each of 13 steps, any
 /// action whose inputs exist. The `assume` admits only those orders; the
 /// types forbid the rest at compile time. Each I2C peripheral writes zero or
 /// one byte when it starts; each SPI peripheral takes its bus's chip selects;
@@ -409,12 +409,13 @@ fn every_valid_sequence() {
     let mut pb6_done = None;
     let mut pb7 = None;
     let mut pb7_done = None;
-    for _ in 0..12 {
+    let mut clock = None;
+    for _ in 0..13 {
         let action: u8 = kani::any();
         match action {
             0 => {
                 kani::assume(gpioa.is_some());
-                let pins = rcc.enable_gpioa(&mut img, gpioa.take().unwrap()).split();
+                let pins = rcc.enable_gpioa(&mut img, gpioa.take().unwrap()).split(&mut img);
                 pa0 = Some(pins.pa0);
                 pa5 = Some(pins.pa5);
                 pa6 = Some(pins.pa6);
@@ -422,7 +423,7 @@ fn every_valid_sequence() {
             }
             1 => {
                 kani::assume(gpiob.is_some());
-                let pins = rcc.enable_gpiob(&mut img, gpiob.take().unwrap()).split();
+                let pins = rcc.enable_gpiob(&mut img, gpiob.take().unwrap()).split(&mut img);
                 pb6 = Some(pins.pb6);
                 pb7 = Some(pins.pb7);
             }
@@ -476,12 +477,12 @@ fn every_valid_sequence() {
                 pb7_done = Some(pin);
             }
             10 => {
-                kani::assume(i2c1_clocked.is_some() && pb6_done.is_some() && pb7_done.is_some());
+                kani::assume(i2c1_clocked.is_some() && clock.is_some() && pb6_done.is_some() && pb7_done.is_some());
                 let i = i2c1_clocked.take().unwrap();
                 let speed: u8 = kani::any();
                 if speed == 0 {
                     i2c1_timingr = 0x10707dbc;
-                    let mut bus = i.init::<i2c1_speed::Standard100k, _>(&mut img, pb6_done.take().unwrap(), pb7_done.take().unwrap());
+                    let mut bus = i.init::<i2c1_speed::Standard100k, _>(&mut img, clock.as_ref().unwrap(), pb6_done.take().unwrap(), pb7_done.take().unwrap());
                     kani::cover!(true, "I2C1 started at Standard100k");
                     if kani::any() {
                         let levels = [img.gpioa[6], img.gpiob[6]];
@@ -491,7 +492,7 @@ fn every_valid_sequence() {
                     }
                 } else {
                     i2c1_timingr = 0x00602173;
-                    let mut bus = i.init::<i2c1_speed::Fast400k, _>(&mut img, pb6_done.take().unwrap(), pb7_done.take().unwrap());
+                    let mut bus = i.init::<i2c1_speed::Fast400k, _>(&mut img, clock.as_ref().unwrap(), pb6_done.take().unwrap(), pb7_done.take().unwrap());
                     kani::cover!(true, "I2C1 started at Fast400k");
                     if kani::any() {
                         let levels = [img.gpioa[6], img.gpiob[6]];
@@ -503,11 +504,18 @@ fn every_valid_sequence() {
                 i2c1_done = true;
             }
             11 => {
-                kani::assume(spi1_clocked.is_some() && pa5_done.is_some() && pa7_done.is_some() && pa6_done.is_some() && pa0_done.is_some());
+                kani::assume(spi1_clocked.is_some() && clock.is_some() && pa5_done.is_some() && pa7_done.is_some() && pa6_done.is_some() && pa0_done.is_some());
                 let i = spi1_clocked.take().unwrap();
-                let _bus = i.init::<_>(&mut img, pa5_done.take().unwrap(), pa7_done.take().unwrap(), pa6_done.take().unwrap(), Spi1Selects { pa0: pa0_done.take().unwrap() });
+                let _bus = i.init::<_>(&mut img, clock.as_ref().unwrap(), pa5_done.take().unwrap(), pa7_done.take().unwrap(), pa6_done.take().unwrap(), Spi1Selects { pa0: pa0_done.take().unwrap() });
                 kani::cover!(true, "SPI1 started");
                 spi1_done = true;
+            }
+            12 => {
+                kani::assume(clock.is_none());
+                let read = rcc.reset_clock(&mut img);
+                kani::assume(read.is_ok());
+                clock = read.ok();
+                kani::cover!(true, "the reset clock was read");
             }
             _ => kani::assume(false),
         }
@@ -595,12 +603,15 @@ fn i2c1_transfer_is_bounded_and_ordered() {
     };
     let board = Board::take().unwrap();
     let mut rcc = board.rcc;
-    let gpiob = rcc.enable_gpiob(&mut img, board.gpiob).split();
+    let clock = rcc.reset_clock(&mut img);
+    kani::assume(clock.is_ok());
+    let clock = clock.unwrap();
+    let gpiob = rcc.enable_gpiob(&mut img, board.gpiob).split(&mut img);
     let pb6 = gpiob.pb6.into_i2c1_scl(&mut img);
     let pb7 = gpiob.pb7.into_i2c1_sda(&mut img);
     let mut bus = rcc
         .enable_i2c1(&mut img, board.i2c1)
-        .init::<i2c1_speed::Standard100k, _>(&mut img, pb6, pb7);
+        .init::<i2c1_speed::Standard100k, _>(&mut img, &clock, pb6, pb7);
     let mut spy = I2c1Spy { stage: 0, isr_reads: 0, bytes_written: 0 };
     let (wl, rl): (usize, usize) = (kani::any(), kani::any());
     kani::assume(wl <= 2 && rl <= 2);
@@ -645,6 +656,8 @@ struct Spi1Spy {
     tsize: u32,
     sr_reads: u32,
     rxp: bool,
+    /// `SR.EOT` read set once every frame was received.
+    eot: bool,
     sent: usize,
     received: usize,
     touched: bool,
@@ -672,6 +685,9 @@ impl Registers for Spi1Spy {
             self.sr_reads += 1;
             let v: u32 = kani::any();
             self.rxp = v & 0x00000001 != 0;
+            if v & 0x00000008 != 0 && self.received as u32 == self.tsize {
+                self.eot = true;
+            }
             v
         } else {
             kani::assert(false, "a Spi1 transfer read a register it does not own");
@@ -746,7 +762,8 @@ impl Registers for Spi1Spy {
 /// read is one and three) and any answers, with each wait bounded at two reads
 /// of `SR`: selects that device before its first frame and deselects it after
 /// the peripheral is disabled, also after a wait that expired; reads `RXDR`
-/// only after `RXP`; and returns `Ok` only when every frame moved.
+/// only after `RXP`; and returns `Ok` only when every frame moved and `EOT`
+/// was read set after the last, before `EOTC`.
 #[kani::proof]
 #[kani::unwind(5)]
 fn spi1_transfer_is_bounded_and_ordered() {
@@ -759,14 +776,17 @@ fn spi1_transfer_is_bounded_and_ordered() {
     };
     let board = Board::take().unwrap();
     let mut rcc = board.rcc;
-    let gpioa = rcc.enable_gpioa(&mut img, board.gpioa).split();
+    let clock = rcc.reset_clock(&mut img);
+    kani::assume(clock.is_ok());
+    let clock = clock.unwrap();
+    let gpioa = rcc.enable_gpioa(&mut img, board.gpioa).split(&mut img);
     let pa5 = gpioa.pa5.into_spi1_sck(&mut img);
     let pa7 = gpioa.pa7.into_spi1_mosi(&mut img);
     let pa6 = gpioa.pa6.into_spi1_miso(&mut img);
     let pa0 = gpioa.pa0.into_output(&mut img);
     let mut bus = rcc
         .enable_spi1(&mut img, board.spi1)
-        .init(&mut img, pa5, pa7, pa6, Spi1Selects { pa0 });
+        .init(&mut img, &clock, pa5, pa7, pa6, Spi1Selects { pa0 });
     let devices = [Spi1Device::U4];
     let pick: usize = kani::any();
     kani::assume(pick < devices.len());
@@ -779,7 +799,7 @@ fn spi1_transfer_is_bounded_and_ordered() {
     kani::assume(wl <= 2 && rl <= 3);
     let out: [u8; 2] = kani::any();
     let mut back = [0u8; 3];
-    let mut spy = Spi1Spy { device, out, wl, stage: 0, cr1, tsize: 0, sr_reads: 0, rxp: false, sent: 0, received: 0, touched: false };
+    let mut spy = Spi1Spy { device, out, wl, stage: 0, cr1, tsize: 0, sr_reads: 0, rxp: false, eot: false, sent: 0, received: 0, touched: false };
     let spins = 2;
     let result = bus.transfer_within(&mut spy, device, &out[..wl], &mut back[..rl], spins);
     let frames = wl + rl;
@@ -792,18 +812,23 @@ fn spi1_transfer_is_bounded_and_ordered() {
     kani::assert(spy.stage == 7, "a transfer did not end disabled and deselected");
     kani::assert(spy.tsize == frames as u32, "TSIZE is not the frames of the transfer");
     kani::assert(
-        spy.sr_reads as usize <= frames * spins as usize,
+        spy.sr_reads as usize <= (frames + 1) * spins as usize,
         "a wait read SR more often than its bound",
     );
     match result {
         Ok(n) => {
             kani::assert(n == rl && spy.sent == frames && spy.received == frames, "Ok without every frame moved");
+            kani::assert(spy.eot, "Ok without EOT read after the last frame, before EOTC");
             kani::cover!(wl > 0 && rl > 0, "Spi1 wrote, then read");
             kani::cover!(wl == 1 && rl == 3, "Spi1 made an identity read's frames");
         }
         Err(SpiError::Rxp) => {
             kani::assert(spy.received < frames, "Rxp after every frame moved");
             kani::cover!(true, "Spi1 timed out waiting for RXP");
+        }
+        Err(SpiError::Eot) => {
+            kani::assert(spy.received == frames && !spy.eot, "Eot with a frame missing, or after EOT was read");
+            kani::cover!(true, "Spi1 timed out waiting for EOT");
         }
         Err(SpiError::Length) => kani::assert(false, "a transfer of at most five frames was refused"),
     }
@@ -823,14 +848,17 @@ fn spi1_transfer_refuses_too_many_frames() {
     };
     let board = Board::take().unwrap();
     let mut rcc = board.rcc;
-    let gpioa = rcc.enable_gpioa(&mut img, board.gpioa).split();
+    let clock = rcc.reset_clock(&mut img);
+    kani::assume(clock.is_ok());
+    let clock = clock.unwrap();
+    let gpioa = rcc.enable_gpioa(&mut img, board.gpioa).split(&mut img);
     let pa5 = gpioa.pa5.into_spi1_sck(&mut img);
     let pa7 = gpioa.pa7.into_spi1_mosi(&mut img);
     let pa6 = gpioa.pa6.into_spi1_miso(&mut img);
     let pa0 = gpioa.pa0.into_output(&mut img);
     let mut bus = rcc
         .enable_spi1(&mut img, board.spi1)
-        .init(&mut img, pa5, pa7, pa6, Spi1Selects { pa0 });
+        .init(&mut img, &clock, pa5, pa7, pa6, Spi1Selects { pa0 });
     let devices = [Spi1Device::U4];
     let pick: usize = kani::any();
     kani::assume(pick < devices.len());
@@ -841,7 +869,7 @@ fn spi1_transfer_refuses_too_many_frames() {
     kani::assume(cr1 & 0x00000001 == 0);
     let (wl, out) = (1, [0u8; 2]);
     let mut back = [0u8; SPI_MAX_FRAMES as usize];
-    let mut spy = Spi1Spy { device, out, wl, stage: 0, cr1, tsize: 0, sr_reads: 0, rxp: false, sent: 0, received: 0, touched: false };
+    let mut spy = Spi1Spy { device, out, wl, stage: 0, cr1, tsize: 0, sr_reads: 0, rxp: false, eot: false, sent: 0, received: 0, touched: false };
     let result = bus.transfer(&mut spy, device, &out[..wl], &mut back);
     kani::assert(result == Err(SpiError::Length), "a transfer of too many frames was not refused");
     kani::assert(!spy.touched, "a refused transfer touched a register");
@@ -854,8 +882,10 @@ struct ClockSpy {
     cfgr: u32,
     d1cfgr: u32,
     d2cfgr: u32,
+    d1ccipr: u32,
+    d2ccip1r: u32,
     d2ccip2r: u32,
-    reads: [bool; 5],
+    reads: [bool; 7],
 }
 
 impl sealed::Sealed for ClockSpy {}
@@ -879,9 +909,17 @@ impl Registers for ClockSpy {
             kani::assert(!self.reads[3], "reset_clock read D2CFGR twice");
             self.reads[3] = true;
             self.d2cfgr
-        } else if offset == 0x054 {
-            kani::assert(!self.reads[4], "reset_clock read D2CCIP2R twice");
+        } else if offset == 0x04c {
+            kani::assert(!self.reads[4], "reset_clock read D1CCIPR twice");
             self.reads[4] = true;
+            self.d1ccipr
+        } else if offset == 0x050 {
+            kani::assert(!self.reads[5], "reset_clock read D2CCIP1R twice");
+            self.reads[5] = true;
+            self.d2ccip1r
+        } else if offset == 0x054 {
+            kani::assert(!self.reads[6], "reset_clock read D2CCIP2R twice");
+            self.reads[6] = true;
             self.d2ccip2r
         } else {
             kani::assert(false, "reset_clock read a register it does not check");
@@ -905,8 +943,8 @@ impl Registers for ClockSpy {
 /// writes none.
 #[kani::proof]
 fn reset_clock_is_ok_exactly_at_reset() {
-    let (cr, cfgr, d1cfgr, d2cfgr, d2ccip2r) = (kani::any(), kani::any(), kani::any(), kani::any(), kani::any());
-    let mut spy = ClockSpy { cr, cfgr, d1cfgr, d2cfgr, d2ccip2r, reads: [false; 5] };
+    let (cr, cfgr, d1cfgr, d2cfgr, d1ccipr, d2ccip1r, d2ccip2r) = (kani::any(), kani::any(), kani::any(), kani::any(), kani::any(), kani::any(), kani::any());
+    let mut spy = ClockSpy { cr, cfgr, d1cfgr, d2cfgr, d1ccipr, d2ccip1r, d2ccip2r, reads: [false; 7] };
     let board = Board::take().unwrap();
     let result = board.rcc.reset_clock(&mut spy);
     let reset = (cr >> 3) & 0x3 == 0
@@ -917,10 +955,14 @@ fn reset_clock_is_ok_exactly_at_reset() {
         && d1cfgr & 0xf == 0
         && (d2cfgr >> 4) & 0x7 == 0
         && (d2cfgr >> 8) & 0x7 == 0
+        && (d1ccipr >> 28) & 0x3 == 0
+        && (d2ccip1r >> 12) & 0x7 == 0
+        && (d2ccip1r >> 16) & 0x7 == 0
         && (d2ccip2r >> 3) & 0x7 == 0
-        && d2ccip2r & 0x7 == 0;
+        && d2ccip2r & 0x7 == 0
+        && (d2ccip2r >> 12) & 0x3 == 0;
     kani::assert(result.is_ok() == reset, "reset_clock is not Ok exactly at the reset clock");
-    kani::assert(spy.reads[0] && spy.reads[1] && spy.reads[2] && spy.reads[3] && spy.reads[4], "reset_clock did not read every register it checks");
+    kani::assert(spy.reads[0] && spy.reads[1] && spy.reads[2] && spy.reads[3] && spy.reads[4] && spy.reads[5] && spy.reads[6], "reset_clock did not read every register it checks");
     kani::cover!(result.is_ok(), "the reset clock is admitted");
     kani::cover!(result.is_err(), "another clock is refused");
 }
@@ -983,7 +1025,7 @@ fn usart1_start_writes_the_solved_values() {
     let mut spy = Usart1Bringup { img, writes: [(0, 0); 4], n: 0 };
     let board = Board::take().unwrap();
     let mut rcc = board.rcc;
-    let gpioa = rcc.enable_gpioa(&mut spy, board.gpioa).split();
+    let gpioa = rcc.enable_gpioa(&mut spy, board.gpioa).split(&mut spy);
     let pa9 = gpioa.pa9.into_usart1_tx(&mut spy);
     let pa10 = gpioa.pa10.into_usart1_rx(&mut spy);
     let clock = rcc.reset_clock(&mut spy);
@@ -1004,8 +1046,7 @@ fn usart1_start_writes_the_solved_values() {
     }
     kani::assert(spy.img.gpioa[0] & 0x003c0000 == 0x00280000, "Usart1: a pin's field in gpioa word 0 is not its solved value");
     kani::assert(spy.img.gpioa[0] & !0x003c0000 == before.gpioa[0] & !0x003c0000, "Usart1's bring-up changed another pin's field in gpioa word 0");
-    kani::assert(spy.img.gpioa[1] & 0x00000600 == 0x00000000, "Usart1: a pin's field in gpioa word 1 is not its solved value");
-    kani::assert(spy.img.gpioa[1] & !0x00000600 == before.gpioa[1] & !0x00000600, "Usart1's bring-up changed another pin's field in gpioa word 1");
+    kani::assert(spy.img.gpioa[1] == 0x00000000, "Usart1: gpioa OTYPER is not the solved word");
     kani::assert(spy.img.gpioa[2] & 0x003c0000 == 0x00000000, "Usart1: a pin's field in gpioa word 2 is not its solved value");
     kani::assert(spy.img.gpioa[2] & !0x003c0000 == before.gpioa[2] & !0x003c0000, "Usart1's bring-up changed another pin's field in gpioa word 2");
     kani::assert(spy.img.gpioa[3] & 0x003c0000 == 0x00000000, "Usart1: a pin's field in gpioa word 3 is not its solved value");

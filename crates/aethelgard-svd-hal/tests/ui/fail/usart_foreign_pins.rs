@@ -11,7 +11,7 @@ fn main() {
     let mut r = unsafe { Mmio::new() };
     let board = Board::take().unwrap();
     let mut rcc = board.rcc;
-    let d = rcc.enable_gpiod(&mut r, board.gpiod).split();
+    let d = rcc.enable_gpiod(&mut r, board.gpiod).split(&mut r);
     let tx3 = d.pd8.into_usart3_tx(&mut r);
     let rx3 = d.pd9.into_usart3_rx(&mut r);
     let usart1 = rcc.enable_usart1(&mut r, board.usart1);
