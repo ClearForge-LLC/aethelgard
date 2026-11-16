@@ -649,11 +649,11 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "Cargo.toml",
-        "95dae76dc3e44a14fb85fe4cd4bcd49c95c4c90914438836f8c1236a6f218d82",
+        "f4e5c4dbdb6a816e1efdc99cd8071a1598acef82224b27225b86217a1f9d6169",
     ),
     (
         "firmware/.cargo/config.toml",
-        "01d39c1181ecd3b81f8bf2d67b2804adb460b7e163ea9aeaf1324f5f4c395cd8",
+        "468c489444b42d98dc223d65af57707b9890a5de8253ac814104eb9e478b5de2",
     ),
     (
         "firmware/Cargo.lock",
@@ -661,27 +661,27 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "firmware/Cargo.toml",
-        "06d92b39f922df27de13ee3d2fc906690fc57f3df58c419de595c99c951cf14b",
+        "b13172b26c76bde6ff2d706dd9804bee9b5835806bd187eebd398b8d45afb97f",
     ),
     (
         "firmware/link.x",
-        "0b973d0a160d243e6e030c176cb1a35ba6f86e15cb5ba20703d9959b82faefd5",
+        "f8b01e41ab824305cd250c72742294d94606ec8e46a6f34bb0fb85955c76aa68",
     ),
     (
         "firmware/src/main.rs",
-        "5aef5db3332fb6c0bc9c7f0c492d7a3545c4a2ba2c1c787ed5e6fc86ad9d6639",
+        "ff451c44b6f7ac8b28e10611e7f12cd85b401ad2cbe93df3ed6de7edd0d08d2e",
     ),
     (
         "src/board.rs",
-        "3a0b4e48429d59bc7f32daba3c243b85281770bc719a5604fb6bcd5d2770e2d5",
+        "59f194d1e1ce562906667f7b205eec79771b42476e9fd67c5dcab2883160c792",
     ),
     (
         "src/lib.rs",
-        "0312a0eb3a329d5d9ee1a976146462b7c0631a6adbdc7eed02bbece32d5736de",
+        "7b8e13544cfa36e35068ca9e05b2106972cb267c2304b0aaecdc3d779f2ba67d",
     ),
     (
         "src/proofs.rs",
-        "376ea4c1223fb578c242eb3053e0aa61e783c2af09164b53412b5b88a4769d89",
+        "e693dcba3c9b246246b6351d1eb5e5dc30ec8515476d479d2ca3d6e90c1418df",
     ),
 ];
 

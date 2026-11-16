@@ -800,7 +800,7 @@
         "lifecycle": {
           "document": "Winbond Parts Catalog export winbond-W25Q64JV-catalog-export-2026-11-16.csv",
           "revision": "exported by Scotty 2026-11-16",
-          "section": "column 15 Status-Industrial = N (Not Recommended for New Design) for W25Q64JVSSIQ and all 16 xIQ codes; Longevity Y since 2016/03 (WPLP; image sha256 7091ccdc...); DigiKey shows Active (not held): the maker wins",
+          "section": "column 15 Status-Industrial = N for all 16 xIQ codes (legend N = Not Recommended for New Design, relayed: not in the export); SSIQ screenshots 73aa6c75 (N) and 7091ccdc (Longevity Y since 2016/03); DigiKey: Active (not held)",
           "sha256": "f10526aeaa7efbf7da5f358f1d1ac933275dcf1628546f136c9e39445ab42ac4"
         },
         "configure": null,
